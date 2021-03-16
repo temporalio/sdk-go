@@ -1892,9 +1892,10 @@ func recordActivityHeartbeat(
 
 	if heartbeatErr == nil && heartbeatResponse != nil && heartbeatResponse.GetCancelRequested() {
 		return NewCanceledError()
+	} else if heartbeatErr != nil {
+		return heartbeatErr
 	}
-
-	return heartbeatErr
+	return nil
 }
 
 func recordActivityHeartbeatByID(
@@ -1929,9 +1930,10 @@ func recordActivityHeartbeatByID(
 
 	if heartbeatErr == nil && heartbeatResponse != nil && heartbeatResponse.GetCancelRequested() {
 		return NewCanceledError()
+	} else if heartbeatErr != nil {
+		return heartbeatErr
 	}
-
-	return heartbeatErr
+	return nil
 }
 
 // This enables verbose logging in the client library.

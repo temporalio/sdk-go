@@ -602,7 +602,10 @@ WaitResult:
 		// local activity completed
 	}
 
-	return &localActivityResult{result: laResult, err: err, task: task}
+	if err != nil {
+		return &localActivityResult{result: laResult, err: err, task: task}
+	}
+	return &localActivityResult{result: laResult, err: nil, task: task}
 }
 
 func (wtp *workflowTaskPoller) release(kind enumspb.TaskQueueKind) {
@@ -965,7 +968,11 @@ func reportActivityComplete(ctx context.Context, service workflowservice.Workflo
 				return nil
 			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 	}
-	return reportErr
+
+	if reportErr != nil {
+		return reportErr
+	}
+	return nil
 }
 
 func reportActivityCompleteByID(ctx context.Context, service workflowservice.WorkflowServiceClient, request interface{}, rpcScope tally.Scope) error {
@@ -1013,7 +1020,11 @@ func reportActivityCompleteByID(ctx context.Context, service workflowservice.Wor
 				return nil
 			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 	}
-	return reportErr
+
+	if reportErr != nil {
+		return reportErr
+	}
+	return nil
 }
 
 func convertActivityResultToRespondRequest(identity string, taskToken []byte, result *commonpb.Payloads, err error,
