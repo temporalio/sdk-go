@@ -1163,6 +1163,73 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_ChildWorkflowCancell
 	require.NoError(s.T(), err)
 }
 
+func testReplayWorkflowCancelWorkflowWhileSleepingWithActivities(ctx Context) error {
+	defer func() {
+		// When workflow is canceled, it has to get a new disconnected context to execute any activities
+		newCtx, _ := NewDisconnectedContext(ctx)
+		err := ExecuteActivity(newCtx, testInfiniteActivity).Get(ctx, nil)
+		if err != nil {
+			panic("Cleanup activity errored")
+		}
+	}()
+
+	if err := Sleep(ctx, time.Minute*1); err != nil {
+		return err
+	}
+
+	// This is the activity that should get cancelled
+	_ = ExecuteActivity(ctx, "testActivityNoResult").Get(ctx, nil)
+
+	_ = ExecuteActivity(ctx, "testActivityNoResult").Get(ctx, nil)
+
+	return nil
+}
+
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_CancelWorkflowWhileSleepingWithActivities() {
+	taskQueue := "taskQueue1"
+	testEvents := []*historypb.HistoryEvent{
+
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflowCancelWorkflowWhileSleepingWithActivities"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
+		}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
+		createTestEventTimerStarted(5, 5),
+		createTestEventWorkflowExecutionCancelRequested(6, &historypb.WorkflowExecutionCancelRequestedEventAttributes{}),
+		createTestEventWorkflowTaskScheduled(7, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(8),
+		createTestEventWorkflowTaskCompleted(9, &historypb.WorkflowTaskCompletedEventAttributes{}),
+		createTestEventTimerCanceled(10, 5),
+		createTestEventActivityTaskScheduled(11, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "11",
+			ActivityType: &commonpb.ActivityType{Name: "testInfiniteActivity"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+		}),
+		createTestEventActivityTaskStarted(12, &historypb.ActivityTaskStartedEventAttributes{
+			ScheduledEventId: 11,
+		}),
+		createTestEventActivityTaskCompleted(13, &historypb.ActivityTaskCompletedEventAttributes{
+			ScheduledEventId: 11,
+			StartedEventId:   12,
+		}),
+		createTestEventWorkflowTaskScheduled(14, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(15),
+	}
+
+	history := &historypb.History{Events: testEvents}
+	logger := getLogger()
+	replayer := NewWorkflowReplayer()
+	replayer.RegisterWorkflow(testReplayWorkflowCancelWorkflowWhileSleepingWithActivities)
+	err := replayer.ReplayWorkflowHistory(logger, history)
+	if err != nil {
+		fmt.Printf("replay failed.  Error: %v", err.Error())
+	}
+	require.NoError(s.T(), err)
+}
+
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result_Mismatch() {
 	taskQueue := "taskQueue1"
 	result, _ := converter.GetDefaultDataConverter().ToPayloads("some-incorrect-result")
@@ -1824,6 +1891,16 @@ func testActivityReturnNilStructPtrPtr() (**testActivityResult, error) {
 func testActivityReturnStructPtrPtr() (**testActivityResult, error) {
 	r := &testActivityResult{Index: 10}
 	return &r, nil
+}
+
+func testInfiniteActivity(ctx context.Context) error {
+	for {
+		select {
+		case <-time.After(1 * time.Second):
+		case <-ctx.Done():
+			return nil
+		}
+	}
 }
 
 type testActivityStructWithFns struct{}

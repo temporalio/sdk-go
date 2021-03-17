@@ -269,6 +269,13 @@ func createTestEventRequestCancelExternalWorkflowExecutionInitiated(eventID int6
 		Attributes: &historypb.HistoryEvent_RequestCancelExternalWorkflowExecutionInitiatedEventAttributes{RequestCancelExternalWorkflowExecutionInitiatedEventAttributes: attr}}
 }
 
+func createTestEventWorkflowExecutionCancelRequested(eventID int64, attr *historypb.WorkflowExecutionCancelRequestedEventAttributes) *historypb.HistoryEvent {
+	return &historypb.HistoryEvent{
+		EventId:    eventID,
+		EventType:  enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCEL_REQUESTED,
+		Attributes: &historypb.HistoryEvent_WorkflowExecutionCancelRequestedEventAttributes{WorkflowExecutionCancelRequestedEventAttributes: attr}}
+}
+
 func createTestEventExternalWorkflowExecutionCancelRequested(eventID int64, attr *historypb.ExternalWorkflowExecutionCancelRequestedEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,

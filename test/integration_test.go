@@ -642,11 +642,26 @@ func (ts *IntegrationTestSuite) TestCancelChildWorkflowUnusualTransitions() {
 }
 
 func (ts *IntegrationTestSuite) TestCancelActivityImmediately() {
-	ts.T().Skip(`Currently fails with "PanicError": "unknown command internal.commandID{commandType:0, id:"5"}, possible causes are nondeterministic workflow definition code or incompatible change in the workflow definition`)
 	var expected []string
 	err := ts.executeWorkflow("test-cancel-activity-immediately", ts.workflows.CancelActivityImmediately, &expected)
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
+}
+
+func (ts *IntegrationTestSuite) TestCancelMultipleCommandsOverMultipleTasks() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-cancel-multiple-commands-over-multiple-tasks"),
+		ts.workflows.CancelMultipleCommandsOverMultipleTasks)
+	ts.NoError(err)
+	ts.NotNil(run)
+	// We need to wait a beat before firing the cancellation
+	time.Sleep(time.Second)
+	ts.Nil(ts.client.CancelWorkflow(ctx, "test-cancel-multiple-commands-over-multiple-tasks",
+		run.GetRunID()))
+	err = run.Get(ctx, nil)
+	ts.NoError(err)
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowWithLocalActivityCtxPropagation() {
