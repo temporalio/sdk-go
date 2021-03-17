@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -1429,7 +1430,9 @@ func (s *internalWorkerTestSuite) TestCreateWorkerRun() {
 	time.Sleep(time.Millisecond * 200)
 	p, err := os.FindProcess(os.Getpid())
 	assert.NoError(s.T(), err)
-	assert.NoError(s.T(), p.Signal(os.Interrupt))
+	if runtime.GOOS != "windows" {
+		assert.NoError(s.T(), p.Signal(os.Interrupt)) // Not supported on Windows.
+	}
 	wg.Wait()
 	assert.False(s.T(), worker.activityWorker.worker.isWorkerStarted)
 	assert.False(s.T(), worker.workflowWorker.worker.isWorkerStarted)
