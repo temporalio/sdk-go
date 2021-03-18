@@ -353,7 +353,11 @@ func validateAndSerializeSearchAttributes(attributes map[string]interface{}) (*c
 }
 
 func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
-	wc.cancelHandler = handler
+	wrappedHandler := func() {
+		wc.commandsHelper.workflowExecutionIsCancelling = true
+		handler()
+	}
+	wc.cancelHandler = wrappedHandler
 }
 
 func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
