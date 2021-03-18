@@ -154,7 +154,7 @@ var (
 // Use ApplicationError for any use case specific errors that cross activity and child workflow boundaries.
 // errType can be used to control if error is retryable or not. Add the same type in to RetryPolicy.NonRetryableErrorTypes
 // to avoid retrying of particular error types.
-func NewApplicationError(message, errType string, details ...interface{}) *ApplicationError {
+func NewApplicationError(message, errType string, details ...interface{}) error {
 	return internal.NewApplicationError(message, errType, false, nil, details...)
 }
 
@@ -168,13 +168,13 @@ func NewApplicationErrorWithCause(message, errType string, cause error, details 
 
 // NewNonRetryableApplicationError creates new instance of non-retryable *ApplicationError with message, type, and optional cause and details.
 // Use ApplicationError for any use case specific errors that cross activity and child workflow boundaries.
-func NewNonRetryableApplicationError(message, errType string, cause error, details ...interface{}) *ApplicationError {
+func NewNonRetryableApplicationError(message, errType string, cause error, details ...interface{}) error {
 	return internal.NewApplicationError(message, errType, true, cause, details...)
 }
 
 // NewCanceledError creates CanceledError instance.
 // Return this error from activity or child workflow to indicate that it was successfully canceled.
-func NewCanceledError(details ...interface{}) *CanceledError {
+func NewCanceledError(details ...interface{}) error {
 	return internal.NewCanceledError(details...)
 }
 
@@ -218,13 +218,13 @@ func IsPanicError(err error) bool {
 // Use NewHeartbeatTimeoutError to create heartbeat TimeoutError
 // WARNING: This function is public only to support unit testing of workflows.
 // It shouldn't be used by application level code.
-func NewTimeoutError(timeoutType enumspb.TimeoutType, lastErr error, details ...interface{}) *TimeoutError {
+func NewTimeoutError(timeoutType enumspb.TimeoutType, lastErr error, details ...interface{}) error {
 	return internal.NewTimeoutError("Test timeout", timeoutType, lastErr, details...)
 }
 
 // NewHeartbeatTimeoutError creates TimeoutError instance
 // WARNING: This function is public only to support unit testing of workflows.
 // It shouldn't be used by application level code.
-func NewHeartbeatTimeoutError(details ...interface{}) *TimeoutError {
+func NewHeartbeatTimeoutError(details ...interface{}) error {
 	return internal.NewHeartbeatTimeoutError(details...)
 }

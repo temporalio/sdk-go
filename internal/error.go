@@ -256,7 +256,7 @@ var (
 )
 
 // NewApplicationError create new instance of *ApplicationError with message, type, and optional details.
-func NewApplicationError(msg string, errType string, nonRetryable bool, cause error, details ...interface{}) *ApplicationError {
+func NewApplicationError(msg string, errType string, nonRetryable bool, cause error, details ...interface{}) error {
 	applicationErr := &ApplicationError{
 		msg:          msg,
 		errType:      errType,
@@ -278,7 +278,7 @@ func NewApplicationError(msg string, errType string, nonRetryable bool, cause er
 
 // NewTimeoutError creates TimeoutError instance.
 // Use NewHeartbeatTimeoutError to create heartbeat TimeoutError.
-func NewTimeoutError(msg string, timeoutType enumspb.TimeoutType, cause error, lastHeartbeatDetails ...interface{}) *TimeoutError {
+func NewTimeoutError(msg string, timeoutType enumspb.TimeoutType, cause error, lastHeartbeatDetails ...interface{}) error {
 	timeoutErr := &TimeoutError{
 		msg:         msg,
 		timeoutType: timeoutType,
@@ -296,12 +296,12 @@ func NewTimeoutError(msg string, timeoutType enumspb.TimeoutType, cause error, l
 }
 
 // NewHeartbeatTimeoutError creates TimeoutError instance.
-func NewHeartbeatTimeoutError(details ...interface{}) *TimeoutError {
+func NewHeartbeatTimeoutError(details ...interface{}) error {
 	return NewTimeoutError("heartbeat timeout", enumspb.TIMEOUT_TYPE_HEARTBEAT, nil, details...)
 }
 
 // NewCanceledError creates CanceledError instance.
-func NewCanceledError(details ...interface{}) *CanceledError {
+func NewCanceledError(details ...interface{}) error {
 	if len(details) == 1 {
 		if d, ok := details[0].(*EncodedValues); ok {
 			return &CanceledError{details: d}
@@ -311,7 +311,7 @@ func NewCanceledError(details ...interface{}) *CanceledError {
 }
 
 // NewServerError create new instance of *ServerError with message.
-func NewServerError(msg string, nonRetryable bool, cause error) *ServerError {
+func NewServerError(msg string, nonRetryable bool, cause error) error {
 	return &ServerError{msg: msg, nonRetryable: nonRetryable, cause: cause}
 }
 
@@ -400,7 +400,7 @@ func IsCanceledError(err error) bool {
 //  wfn - workflow function. for new execution it can be different from the currently running.
 //  args - arguments for the new workflow.
 //
-func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) *ContinueAsNewError {
+func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) error {
 	// Validate type and its arguments.
 	options := getWorkflowEnvOptions(ctx)
 	if options == nil {
@@ -526,11 +526,11 @@ func (e *CanceledError) Details(d ...interface{}) error {
 	return e.details.Get(d...)
 }
 
-func newPanicError(value interface{}, stackTrace string) *PanicError {
+func newPanicError(value interface{}, stackTrace string) error {
 	return &PanicError{value: value, stackTrace: stackTrace}
 }
 
-func newWorkflowPanicError(value interface{}, stackTrace string) *workflowPanicError {
+func newWorkflowPanicError(value interface{}, stackTrace string) error {
 	return &workflowPanicError{value: value, stackTrace: stackTrace}
 }
 
