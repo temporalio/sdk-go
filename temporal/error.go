@@ -162,7 +162,7 @@ func NewApplicationError(message, errType string, details ...interface{}) error 
 // Use ApplicationError for any use case specific errors that cross activity and child workflow boundaries.
 // errType can be used to control if error is retryable or not. Add the same type in to RetryPolicy.NonRetryableErrorTypes
 // to avoid retrying of particular error types.
-func NewApplicationErrorWithCause(message, errType string, cause error, details ...interface{}) *ApplicationError {
+func NewApplicationErrorWithCause(message, errType string, cause error, details ...interface{}) error {
 	return internal.NewApplicationError(message, errType, false, cause, details...)
 }
 
