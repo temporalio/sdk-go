@@ -1025,13 +1025,36 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.WorkflowTaskTimeout = cwo.WorkflowTaskTimeout
 	wfOptions.WaitForCancellation = cwo.WaitForCancellation
 	wfOptions.WorkflowIDReusePolicy = cwo.WorkflowIDReusePolicy
-	wfOptions.RetryPolicy = convertRetryPolicy(cwo.RetryPolicy)
+	wfOptions.RetryPolicy = convertToPBRetryPolicy(cwo.RetryPolicy)
 	wfOptions.CronSchedule = cwo.CronSchedule
 	wfOptions.Memo = cwo.Memo
 	wfOptions.SearchAttributes = cwo.SearchAttributes
 	wfOptions.ParentClosePolicy = cwo.ParentClosePolicy
 
 	return ctx1
+}
+
+// GetChildWorkflowOptions returns all workflow options present on the context.
+func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
+	opts := getWorkflowEnvOptions(ctx)
+	if opts == nil {
+		return ChildWorkflowOptions{}
+	}
+	return ChildWorkflowOptions{
+		Namespace:                opts.Namespace,
+		WorkflowID:               opts.WorkflowID,
+		TaskQueue:                opts.TaskQueueName,
+		WorkflowExecutionTimeout: opts.WorkflowExecutionTimeout,
+		WorkflowRunTimeout:       opts.WorkflowRunTimeout,
+		WorkflowTaskTimeout:      opts.WorkflowTaskTimeout,
+		WaitForCancellation:      opts.WaitForCancellation,
+		WorkflowIDReusePolicy:    opts.WorkflowIDReusePolicy,
+		RetryPolicy:              convertFromPBRetryPolicy(opts.RetryPolicy),
+		CronSchedule:             opts.CronSchedule,
+		Memo:                     opts.Memo,
+		SearchAttributes:         opts.SearchAttributes,
+		ParentClosePolicy:        opts.ParentClosePolicy,
+	}
 }
 
 // WithWorkflowNamespace adds a namespace to the context.
@@ -1418,7 +1441,7 @@ func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	eap.HeartbeatTimeout = options.HeartbeatTimeout
 	eap.WaitForCancellation = options.WaitForCancellation
 	eap.ActivityID = options.ActivityID
-	eap.RetryPolicy = convertRetryPolicy(options.RetryPolicy)
+	eap.RetryPolicy = convertToPBRetryPolicy(options.RetryPolicy)
 	return ctx1
 }
 
@@ -1488,11 +1511,11 @@ func WithWaitForCancellation(ctx Context, wait bool) Context {
 // WithRetryPolicy adds retry policy to the copy of the context
 func WithRetryPolicy(ctx Context, retryPolicy RetryPolicy) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).RetryPolicy = convertRetryPolicy(&retryPolicy)
+	getActivityOptions(ctx1).RetryPolicy = convertToPBRetryPolicy(&retryPolicy)
 	return ctx1
 }
 
-func convertRetryPolicy(retryPolicy *RetryPolicy) *commonpb.RetryPolicy {
+func convertToPBRetryPolicy(retryPolicy *RetryPolicy) *commonpb.RetryPolicy {
 	if retryPolicy == nil {
 		return nil
 	}
@@ -1504,6 +1527,28 @@ func convertRetryPolicy(retryPolicy *RetryPolicy) *commonpb.RetryPolicy {
 		MaximumAttempts:        retryPolicy.MaximumAttempts,
 		NonRetryableErrorTypes: retryPolicy.NonRetryableErrorTypes,
 	}
+}
+
+func convertFromPBRetryPolicy(retryPolicy *commonpb.RetryPolicy) *RetryPolicy {
+	if retryPolicy == nil {
+		return nil
+	}
+
+	p := RetryPolicy{
+		BackoffCoefficient:     retryPolicy.BackoffCoefficient,
+		MaximumAttempts:        retryPolicy.MaximumAttempts,
+		NonRetryableErrorTypes: retryPolicy.NonRetryableErrorTypes,
+	}
+
+	// Avoid nil pointer dereferences
+	if v := retryPolicy.MaximumInterval; v != nil {
+		p.MaximumInterval = *v
+	}
+	if v := retryPolicy.InitialInterval; v != nil {
+		p.InitialInterval = *v
+	}
+
+	return &p
 }
 
 // GetLastCompletionResultFromWorkflowInfo returns value of last completion result.
