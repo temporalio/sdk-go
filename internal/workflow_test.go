@@ -14,13 +14,6 @@ import (
 )
 
 func TestGetChildWorkflowOptions(t *testing.T) {
-	ctx := newWorkflowContext(&workflowEnvironmentImpl{
-		dataConverter: converter.GetDefaultDataConverter(),
-		workflowInfo: &WorkflowInfo{
-			Namespace:     "default",
-			TaskQueueName: "default",
-		},
-	}, nil, nil).(Context)
 	opts := ChildWorkflowOptions{
 		Namespace:                "foo",
 		WorkflowID:               "bar",
@@ -30,14 +23,8 @@ func TestGetChildWorkflowOptions(t *testing.T) {
 		WorkflowTaskTimeout:      3,
 		WaitForCancellation:      true,
 		WorkflowIDReusePolicy:    enums.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE,
-		RetryPolicy: &RetryPolicy{
-			InitialInterval:        1,
-			BackoffCoefficient:     2,
-			MaximumInterval:        3,
-			MaximumAttempts:        4,
-			NonRetryableErrorTypes: []string{"my_error"},
-		},
-		CronSchedule: "todo",
+		RetryPolicy:              newTestRetryPolicy(),
+		CronSchedule:             "todo",
 		Memo: map[string]interface{}{
 			"foo": "bar",
 		},
@@ -51,7 +38,34 @@ func TestGetChildWorkflowOptions(t *testing.T) {
 	// GetChildWorkflowOptions implementation) when new fields are added to the ChildWorkflowOptions struct.
 	assertNonZero(t, opts)
 	// Check that the same opts set on context are also extracted from context
-	assert.Equal(t, opts, GetChildWorkflowOptions(WithChildWorkflowOptions(ctx, opts)))
+	assert.Equal(t, opts, GetChildWorkflowOptions(WithChildWorkflowOptions(newTestWorkflowContext(), opts)))
+}
+
+func TestGetActivityOptions(t *testing.T) {
+	opts := ActivityOptions{
+		TaskQueue:              "foo",
+		ScheduleToCloseTimeout: time.Millisecond,
+		ScheduleToStartTimeout: time.Second,
+		StartToCloseTimeout:    time.Minute,
+		HeartbeatTimeout:       time.Hour,
+		WaitForCancellation:    true,
+		ActivityID:             "bar",
+		RetryPolicy:            newTestRetryPolicy(),
+	}
+
+	assertNonZero(t, opts)
+	assert.Equal(t, opts, GetActivityOptions(WithActivityOptions(newTestWorkflowContext(), opts)))
+}
+
+func TestGetLocalActivityOptions(t *testing.T) {
+	opts := LocalActivityOptions{
+		ScheduleToCloseTimeout: time.Minute,
+		StartToCloseTimeout:    time.Hour,
+		RetryPolicy:            newTestRetryPolicy(),
+	}
+
+	assertNonZero(t, opts)
+	assert.Equal(t, opts, GetLocalActivityOptions(WithLocalActivityOptions(newTestWorkflowContext(), opts)))
 }
 
 func TestConvertRetryPolicy(t *testing.T) {
@@ -67,6 +81,26 @@ func TestConvertRetryPolicy(t *testing.T) {
 	assertNonZero(t, pbRetryPolicy)
 	// Check that converting from/to commonpb.RetryPolicy is transparent
 	assert.Equal(t, &pbRetryPolicy, convertToPBRetryPolicy(convertFromPBRetryPolicy(&pbRetryPolicy)))
+}
+
+func newTestWorkflowContext() Context {
+	return newWorkflowContext(&workflowEnvironmentImpl{
+		dataConverter: converter.GetDefaultDataConverter(),
+		workflowInfo: &WorkflowInfo{
+			Namespace:     "default",
+			TaskQueueName: "default",
+		},
+	}, nil, nil)
+}
+
+func newTestRetryPolicy() *RetryPolicy {
+	return &RetryPolicy{
+		InitialInterval:        1,
+		BackoffCoefficient:     2,
+		MaximumInterval:        3,
+		MaximumAttempts:        4,
+		NonRetryableErrorTypes: []string{"my_error"},
+	}
 }
 
 // assertNonZero checks that every top level value, struct field, and item in a slice is a non-zero value.

@@ -1465,6 +1465,37 @@ func WithTaskQueue(ctx Context, name string) Context {
 	return ctx1
 }
 
+// GetActivityOptions returns all activity options present on the context.
+func GetActivityOptions(ctx Context) ActivityOptions {
+	opts := getActivityOptions(ctx)
+	if opts == nil {
+		return ActivityOptions{}
+	}
+	return ActivityOptions{
+		TaskQueue:              opts.TaskQueueName,
+		ScheduleToCloseTimeout: opts.ScheduleToCloseTimeout,
+		ScheduleToStartTimeout: opts.ScheduleToStartTimeout,
+		StartToCloseTimeout:    opts.StartToCloseTimeout,
+		HeartbeatTimeout:       opts.HeartbeatTimeout,
+		WaitForCancellation:    opts.WaitForCancellation,
+		ActivityID:             opts.ActivityID,
+		RetryPolicy:            convertFromPBRetryPolicy(opts.RetryPolicy),
+	}
+}
+
+// GetLocalActivityOptions returns all local activity options present on the context.
+func GetLocalActivityOptions(ctx Context) LocalActivityOptions {
+	opts := getLocalActivityOptions(ctx)
+	if opts == nil {
+		return LocalActivityOptions{}
+	}
+	return LocalActivityOptions{
+		ScheduleToCloseTimeout: opts.ScheduleToCloseTimeout,
+		StartToCloseTimeout:    opts.StartToCloseTimeout,
+		RetryPolicy:            opts.RetryPolicy,
+	}
+}
+
 // WithScheduleToCloseTimeout adds a timeout to the copy of the context.
 // The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
