@@ -113,3 +113,13 @@ func WithWaitForCancellation(ctx Context, wait bool) Context {
 func WithRetryPolicy(ctx Context, retryPolicy temporal.RetryPolicy) Context {
 	return internal.WithRetryPolicy(ctx, retryPolicy)
 }
+
+// GetActivityOptions returns all activity options present on the context.
+func GetActivityOptions(ctx Context) ActivityOptions {
+	return internal.GetActivityOptions(ctx)
+}
+
+// GetLocalActivityOptions returns all local activity options present on the context.
+func GetLocalActivityOptions(ctx Context) LocalActivityOptions {
+	return internal.GetLocalActivityOptions(ctx)
+}
