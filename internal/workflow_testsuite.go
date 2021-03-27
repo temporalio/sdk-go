@@ -714,6 +714,11 @@ func (e *TestWorkflowEnvironment) QueryWorkflow(queryType string, args ...interf
 	return e.impl.queryWorkflow(queryType, args...)
 }
 
+// QueryWorkflowByID queries a child workflow by its ID and returns the result synchronously
+func (e *TestWorkflowEnvironment) QueryWorkflowByID(workflowID, queryType string, args ...interface{}) (converter.EncodedValue, error) {
+	return e.impl.queryWorkflowByID(workflowID, queryType, args...)
+}
+
 // RegisterDelayedCallback creates a new timer with specified delayDuration using workflow clock (not wall clock). When
 // the timer fires, the callback will be called. By default, this test suite uses mock clock which automatically move
 // forward to fire next timer when workflow is blocked. Use this API to make some event (like activity completion,
