@@ -439,7 +439,7 @@ type (
 		// It includes retries and continue as new. Use WorkflowRunTimeout to limit execution time
 		// of a single workflow run.
 		// The resolution is seconds.
-		// Optional: defaulted to 10 years.
+		// Optional: defaulted to unlimited.
 		WorkflowExecutionTimeout time.Duration
 
 		// WorkflowRunTimeout - The timeout for duration of a single workflow run.
