@@ -52,4 +52,18 @@ type (
 		// ToStrings converts payloads object into human readable strings.
 		ToStrings(input *commonpb.Payloads) []string
 	}
+
+	DataConverterWithContext interface {
+		DataConverter
+
+		WithContext(interface{}) DataConverter
+	}
 )
+
+func WithContext(ctx interface{}, dc DataConverter) DataConverter {
+	if dcwc, ok := dc.(DataConverterWithContext); ok {
+		return dcwc.WithContext(ctx)
+	}
+
+	return dc
+}
