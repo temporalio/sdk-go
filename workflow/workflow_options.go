@@ -69,3 +69,8 @@ func WithWorkflowTaskTimeout(ctx Context, d time.Duration) Context {
 func WithDataConverter(ctx Context, dc converter.DataConverter) Context {
 	return internal.WithDataConverter(ctx, dc)
 }
+
+// GetChildWorkflowOptions returns all workflow options present on the context.
+func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
+	return internal.GetChildWorkflowOptions(ctx)
+}
