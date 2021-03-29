@@ -53,16 +53,14 @@ type (
 		ToStrings(input *commonpb.Payloads) []string
 	}
 
-	DataConverterWithContext interface {
-		DataConverter
-
-		WithContext(interface{}) DataConverter
+	Stateful interface {
+		WithValue(interface{}) DataConverter
 	}
 )
 
-func WithContext(ctx interface{}, dc DataConverter) DataConverter {
-	if dcwc, ok := dc.(DataConverterWithContext); ok {
-		return dcwc.WithContext(ctx)
+func WithValue(dc DataConverter, value interface{}) DataConverter {
+	if dcwv, ok := dc.(Stateful); ok {
+		return dcwv.WithValue(value)
 	}
 
 	return dc
