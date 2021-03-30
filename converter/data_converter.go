@@ -53,14 +53,17 @@ type (
 		ToStrings(input *commonpb.Payloads) []string
 	}
 
-	// Stateful DataConverters can return a copy of themselves tailored to a Workflow or Activity context.
-	// This interface is optional.
+	// Stateful is an optional interface to be implemented alongside DataConverter.
+	// This interface allows Temporal to pass Workflow/Activity contexts to the DataConverter
+	// so that it may tailor it's behaviour.
 	Stateful interface {
 		WithValue(interface{}) DataConverter
 	}
 )
 
-// WithValue returns a new DataConverter tailored to the passed in Workflow or Activity context.
+// WithValue returns a new DataConverter tailored to the passed Workflow or Activity context if
+// the DataConverter implements the Stateful interface. If the DataConverter does not implement the
+// Stateful interface the DataConverter is returned as-is.
 func WithValue(dc DataConverter, ctx interface{}) DataConverter {
 	if dcwv, ok := dc.(Stateful); ok {
 		return dcwv.WithValue(ctx)
