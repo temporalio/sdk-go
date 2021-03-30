@@ -206,7 +206,7 @@ type (
 
 		// WorkflowExecutionTimeout - The end to end timeout for the child workflow execution including retries
 		// and continue as new.
-		// Optional: defaults to 10 years
+		// Optional: defaults to unlimited.
 		WorkflowExecutionTimeout time.Duration
 
 		// WorkflowRunTimeout - The timeout for a single run of the child workflow execution. Each retry or

@@ -86,8 +86,11 @@ type (
 		// Optional: The default value is the sum of ScheduleToStartTimeout and StartToCloseTimeout
 		ScheduleToCloseTimeout time.Duration
 
-		// ScheduleToStartTimeout - The queue timeout before the activity starts executed.
-		// Mandatory: No default.
+		// ScheduleToStartTimeout - The maximum time an activity task can stay in a task queue before being picked up by a worker.
+		// Note that ScheduleToStartTimeout is not retryable as retry would return it back into the same task queue.
+		// In almost all situations that don't involve routing activities to specific hosts
+		// it is better to rely on the default value.
+		// Optional: defaults to unlimited
 		ScheduleToStartTimeout time.Duration
 
 		// StartToCloseTimeout - The timeout from the start of execution to end of it.
