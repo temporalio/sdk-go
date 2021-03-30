@@ -42,7 +42,7 @@ type (
 // Order is important here because during serialization DataConverter will try PayloadsConverters in
 // that order until PayloadConverter returns non nil payload.
 // Last PayloadConverter should always serialize the value (JSONPayloadConverter is good candidate for it).
-func NewCompositeDataConverter(payloadConverters ...PayloadConverter) *CompositeDataConverter {
+func NewCompositeDataConverter(payloadConverters ...PayloadConverter) DataConverter {
 	dc := &CompositeDataConverter{
 		payloadConverters: make(map[string]PayloadConverter, len(payloadConverters)),
 		orderedEncodings:  make([]string, len(payloadConverters)),

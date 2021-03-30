@@ -53,14 +53,14 @@ type (
 		ToStrings(input *commonpb.Payloads) []string
 	}
 
-	stateful interface {
+	Stateful interface {
 		WithValue(interface{}) DataConverter
 	}
 )
 
 // WithValue returns a new DataConverter with state recorded.
 func WithValue(dc DataConverter, value interface{}) DataConverter {
-	if dcwv, ok := dc.(stateful); ok {
+	if dcwv, ok := dc.(Stateful); ok {
 		return dcwv.WithValue(value)
 	}
 
