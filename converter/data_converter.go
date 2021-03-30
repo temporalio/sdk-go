@@ -53,15 +53,17 @@ type (
 		ToStrings(input *commonpb.Payloads) []string
 	}
 
+	// Stateful DataConverters can return a copy of themselves tailored to a Workflow or Activity context.
+	// This interface is optional.
 	Stateful interface {
 		WithValue(interface{}) DataConverter
 	}
 )
 
-// WithValue returns a new DataConverter with state recorded.
-func WithValue(dc DataConverter, value interface{}) DataConverter {
+// WithValue returns a new DataConverter tailored to the passed in Workflow or Activity context.
+func WithValue(dc DataConverter, ctx interface{}) DataConverter {
 	if dcwv, ok := dc.(Stateful); ok {
-		return dcwv.WithValue(value)
+		return dcwv.WithValue(ctx)
 	}
 
 	return dc
