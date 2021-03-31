@@ -53,20 +53,44 @@ type (
 		ToStrings(input *commonpb.Payloads) []string
 	}
 
-	// Stateful is an optional interface to be implemented alongside DataConverter.
+	// ActivityContext defines the interface we expect for Activity contexts
+	ActivityContext interface {
+		Value(interface{}) interface{}
+	}
+
+	// WorkflowContext defines the interface we expect for Workflow contexts.
+	// This will usually be a workflow.Context but may be a context.Context in some
+	// code paths such as StartWorkflow, where a workflow.Context does not exist.
+	WorkflowContext interface {
+		Value(interface{}) interface{}
+	}
+
+	// ContextAware is an optional interface that can be implemented alongside DataConverter.
 	// This interface allows Temporal to pass Workflow/Activity contexts to the DataConverter
 	// so that it may tailor it's behaviour.
-	Stateful interface {
-		WithValue(interface{}) DataConverter
+	ContextAware interface {
+		WithWorkflowContext(WorkflowContext) DataConverter
+		WithActivityContext(ActivityContext) DataConverter
 	}
 )
 
-// WithValue returns a new DataConverter tailored to the passed Workflow or Activity context if
-// the DataConverter implements the Stateful interface. If the DataConverter does not implement the
-// Stateful interface the DataConverter is returned as-is.
-func WithValue(dc DataConverter, ctx interface{}) DataConverter {
-	if dcwv, ok := dc.(Stateful); ok {
-		return dcwv.WithValue(ctx)
+// WithWorkflowContext returns a new DataConverter tailored to the passed Workflow context if
+// the DataConverter implements the ContextAware interface. Otherwise the DataConverter is returned
+// as-is.
+func WithWorkflowContext(dc DataConverter, ctx WorkflowContext) DataConverter {
+	if dcwv, ok := dc.(ContextAware); ok {
+		return dcwv.WithWorkflowContext(ctx)
+	}
+
+	return dc
+}
+
+// WithWorkflowContext returns a new DataConverter tailored to the passed Activity context if
+// the DataConverter implements the ContextAware interface. Otherwise the DataConverter is returned
+// as-is.
+func WithActivityContext(dc DataConverter, ctx ActivityContext) DataConverter {
+	if dcwv, ok := dc.(ContextAware); ok {
+		return dcwv.WithActivityContext(ctx)
 	}
 
 	return dc

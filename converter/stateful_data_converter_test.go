@@ -25,34 +25,35 @@
 package converter
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 )
 
-type StatefulDataConverter struct {
+type ContextAwareDataConverter struct {
 	dataConverter DataConverter
 	prefix        string
 }
 
-func (dc *StatefulDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+func (dc *ContextAwareDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
 	return dc.dataConverter.ToPayload(value)
 }
 
-func (dc *StatefulDataConverter) ToPayloads(values ...interface{}) (*commonpb.Payloads, error) {
+func (dc *ContextAwareDataConverter) ToPayloads(values ...interface{}) (*commonpb.Payloads, error) {
 	return dc.dataConverter.ToPayloads(values)
 }
 
-func (dc *StatefulDataConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
+func (dc *ContextAwareDataConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
 	return dc.dataConverter.FromPayload(payload, valuePtr)
 }
 
-func (dc *StatefulDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
+func (dc *ContextAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
 	return dc.dataConverter.FromPayloads(payloads, valuePtrs...)
 }
 
-func (dc *StatefulDataConverter) ToString(payload *commonpb.Payload) string {
+func (dc *ContextAwareDataConverter) ToString(payload *commonpb.Payload) string {
 	if dc.prefix != "" {
 		return dc.prefix + ": " + dc.dataConverter.ToString(payload)
 	}
@@ -60,7 +61,7 @@ func (dc *StatefulDataConverter) ToString(payload *commonpb.Payload) string {
 	return dc.dataConverter.ToString(payload)
 }
 
-func (dc *StatefulDataConverter) ToStrings(payloads *commonpb.Payloads) []string {
+func (dc *ContextAwareDataConverter) ToStrings(payloads *commonpb.Payloads) []string {
 	var result []string
 	for _, payload := range payloads.GetPayloads() {
 		result = append(result, dc.ToString(payload))
@@ -69,38 +70,72 @@ func (dc *StatefulDataConverter) ToStrings(payloads *commonpb.Payloads) []string
 	return result
 }
 
-func (dc *StatefulDataConverter) WithValue(v interface{}) DataConverter {
+func (dc *ContextAwareDataConverter) WithActivityContext(ctx ActivityContext) DataConverter {
+	v := ctx.Value("prefix")
 	prefix, ok := v.(string)
 	if !ok {
 		return dc
 	}
 
-	return &StatefulDataConverter{
+	return &ContextAwareDataConverter{
 		dataConverter: dc.dataConverter,
 		prefix:        prefix,
 	}
 }
 
-func newStatefulDataConverter(dataConverter DataConverter) DataConverter {
-	return &StatefulDataConverter{
+func (dc *ContextAwareDataConverter) WithWorkflowContext(ctx WorkflowContext) DataConverter {
+	v := ctx.Value("prefix")
+	prefix, ok := v.(string)
+	if !ok {
+		return dc
+	}
+
+	return &ContextAwareDataConverter{
+		dataConverter: dc.dataConverter,
+		prefix:        prefix,
+	}
+}
+
+func newContextAwareDataConverter(dataConverter DataConverter) DataConverter {
+	return &ContextAwareDataConverter{
 		dataConverter: dataConverter,
 	}
 }
 
-var statefulDataConverter = newStatefulDataConverter(defaultDataConverter)
+var contextAwareDataConverter = newContextAwareDataConverter(defaultDataConverter)
 
-func TestStatefulDataConverter(t *testing.T) {
+func TestContextAwareDataConverter(t *testing.T) {
 	t.Parallel()
 	t.Run("default", func(t *testing.T) {
 		t.Parallel()
-		payload, _ := statefulDataConverter.ToPayload("test")
-		result := statefulDataConverter.ToString(payload)
+		payload, _ := contextAwareDataConverter.ToPayload("test")
+		result := contextAwareDataConverter.ToString(payload)
 
 		require.Equal(t, `"test"`, result)
 	})
-	t.Run("with state", func(t *testing.T) {
+	t.Run("implements ContextAware", func(t *testing.T) {
 		t.Parallel()
-		dc := WithValue(statefulDataConverter, "testing")
+		_, ok := contextAwareDataConverter.(ContextAware)
+		require.True(t, ok)
+	})
+	t.Run("with activity context", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+		ctx = context.WithValue(ctx, "prefix", "testing")
+
+		dc := WithActivityContext(contextAwareDataConverter, ctx)
+
+		payload, _ := dc.ToPayload("test")
+		result := dc.ToString(payload)
+
+		require.Equal(t, `testing: "test"`, result)
+	})
+	t.Run("with workflow context", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+		ctx = context.WithValue(ctx, "prefix", "testing")
+
+		dc := WithWorkflowContext(contextAwareDataConverter, ctx)
 
 		payload, _ := dc.ToPayload("test")
 		result := dc.ToString(payload)

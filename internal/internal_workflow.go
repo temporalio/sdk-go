@@ -1246,7 +1246,7 @@ func getDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 		dataConverter = converter.GetDefaultDataConverter()
 	}
 
-	return converter.WithValue(dataConverter, ctx)
+	return converter.WithWorkflowContext(dataConverter, ctx)
 }
 
 func getRegistryFromWorkflowContext(ctx Context) *registry {

@@ -172,7 +172,7 @@ func (wc *WorkflowClient) StartWorkflow(
 	runTimeout := options.WorkflowRunTimeout
 	workflowTaskTimeout := options.WorkflowTaskTimeout
 
-	dataConverter := converter.WithValue(wc.dataConverter, ctx)
+	dataConverter := converter.WithWorkflowContext(wc.dataConverter, ctx)
 	// Validate type and its arguments.
 	workflowType, input, err := getValidatedWorkflowFunction(workflowFunc, args, dataConverter, wc.registry)
 	if err != nil {

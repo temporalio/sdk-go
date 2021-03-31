@@ -746,7 +746,7 @@ type workflowExecutor struct {
 
 func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*commonpb.Payloads, error) {
 	var args []interface{}
-	dataConverter := converter.WithValue(getWorkflowEnvOptions(ctx).DataConverter, ctx)
+	dataConverter := converter.WithWorkflowContext(getWorkflowEnvOptions(ctx).DataConverter, ctx)
 	fnType := reflect.TypeOf(we.fn)
 
 	decoded, err := decodeArgsToValues(dataConverter, fnType, input)
@@ -840,7 +840,7 @@ func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverte
 	} else {
 		dataConverter = converter.GetDefaultDataConverter()
 	}
-	return converter.WithValue(dataConverter, ctx)
+	return converter.WithActivityContext(dataConverter, ctx)
 }
 
 func getNamespaceFromActivityCtx(ctx context.Context) string {

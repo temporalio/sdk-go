@@ -679,7 +679,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		executionFuture:  executionFuture.(*futureImpl),
 	}
 	workflowOptionsFromCtx := getWorkflowEnvOptions(ctx)
-	dc := converter.WithValue(workflowOptionsFromCtx.DataConverter, ctx)
+	dc := converter.WithWorkflowContext(workflowOptionsFromCtx.DataConverter, ctx)
 	env := getWorkflowEnvironment(ctx)
 	wfType, input, err := getValidatedWorkflowFunction(childWorkflowType, args, dc, env.GetRegistry())
 	if err != nil {
