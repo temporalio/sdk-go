@@ -477,7 +477,7 @@ func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) erro
 //  wfn - workflow function. for new execution it can be different from the currently running.
 //  args - arguments for the new workflow.
 //
-func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) *ContinueAsNewError {
+func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) error {
 	return internal.NewContinueAsNewError(ctx, wfn, args...)
 }
 

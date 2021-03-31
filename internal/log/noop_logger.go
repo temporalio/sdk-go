@@ -28,44 +28,28 @@ import (
 	"go.temporal.io/sdk/log"
 )
 
-// With returns Logger instance that prepend every log entry with keyvals. If logger implments WithLogger it is used, otherwise every log call will be intercepted.
-func With(logger log.Logger, keyvals ...interface{}) log.Logger {
-	if wl, ok := logger.(log.WithLogger); ok {
-		return wl.With(keyvals...)
-	}
-
-	return newWithLogger(logger, keyvals...)
+// NoopLogger is Logger implementation that doesn't produce any logs.
+type NoopLogger struct {
 }
 
-type withLogger struct {
-	logger  log.Logger
-	keyvals []interface{}
+// NewNopLogger creates new instance of NoopLogger.
+func NewNopLogger() *NoopLogger {
+	return &NoopLogger{}
 }
 
-func newWithLogger(logger log.Logger, keyvals ...interface{}) *withLogger {
-	return &withLogger{logger: logger, keyvals: keyvals}
-}
+// Debug does nothing.
+func (l *NoopLogger) Debug(string, ...interface{}) {}
 
-func (l *withLogger) prependKeyvals(keyvals []interface{}) []interface{} {
-	return append(l.keyvals, keyvals...)
-}
+// Info does nothing.
+func (l *NoopLogger) Info(string, ...interface{}) {}
 
-// Debug writes message to the log.
-func (l *withLogger) Debug(msg string, keyvals ...interface{}) {
-	l.logger.Debug(msg, l.prependKeyvals(keyvals)...)
-}
+// Warn does nothing.
+func (l *NoopLogger) Warn(string, ...interface{}) {}
 
-// Info writes message to the log.
-func (l *withLogger) Info(msg string, keyvals ...interface{}) {
-	l.logger.Info(msg, l.prependKeyvals(keyvals)...)
-}
+// Error does nothing.
+func (l *NoopLogger) Error(string, ...interface{}) {}
 
-// Warn writes message to the log.
-func (l *withLogger) Warn(msg string, keyvals ...interface{}) {
-	l.logger.Warn(msg, l.prependKeyvals(keyvals)...)
-}
-
-// Error writes message to the log.
-func (l *withLogger) Error(msg string, keyvals ...interface{}) {
-	l.logger.Error(msg, l.prependKeyvals(keyvals)...)
+// With returns new NoopLogger.
+func (l *NoopLogger) With(...interface{}) log.Logger {
+	return NewNopLogger()
 }

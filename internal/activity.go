@@ -35,7 +35,6 @@ import (
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
-	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
 )
 
@@ -68,6 +67,10 @@ type (
 		// this Name as a prefix + activity function name.
 		Name                          string
 		DisableAlreadyRegisteredCheck bool
+
+		// When registering a struct with activities, skip functions that are not valid activities. If false,
+		// registration panics.
+		SkipInvalidStructFunctions bool
 	}
 
 	// ActivityOptions stores all activity-specific parameters that will be stored inside of a context.
@@ -83,8 +86,11 @@ type (
 		// Optional: The default value is the sum of ScheduleToStartTimeout and StartToCloseTimeout
 		ScheduleToCloseTimeout time.Duration
 
-		// ScheduleToStartTimeout - The queue timeout before the activity starts executed.
-		// Mandatory: No default.
+		// ScheduleToStartTimeout - The maximum time an activity task can stay in a task queue before being picked up by a worker.
+		// Note that ScheduleToStartTimeout is not retryable as retry would return it back into the same task queue.
+		// In almost all situations that don't involve routing activities to specific hosts
+		// it is better to rely on the default value.
+		// Optional: defaults to unlimited
 		ScheduleToStartTimeout time.Duration
 
 		// StartToCloseTimeout - The timeout from the start of execution to end of it.
@@ -269,11 +275,11 @@ func WithActivityTask(
 		deadline = startToCloseDeadline
 	}
 
-	logger = ilog.With(logger,
+	logger = log.With(logger,
 		tagActivityID, task.ActivityId,
-		tagActivityType, task.ActivityType.Name,
+		tagActivityType, task.ActivityType.GetName(),
 		tagAttempt, task.Attempt,
-		tagWorkflowType, task.WorkflowType.Name,
+		tagWorkflowType, task.WorkflowType.GetName(),
 		tagWorkflowID, task.WorkflowExecution.WorkflowId,
 		tagRunID, task.WorkflowExecution.RunId,
 	)
@@ -281,7 +287,7 @@ func WithActivityTask(
 	return context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		taskToken:      task.TaskToken,
 		serviceInvoker: invoker,
-		activityType:   ActivityType{Name: task.ActivityType.Name},
+		activityType:   ActivityType{Name: task.ActivityType.GetName()},
 		activityID:     task.ActivityId,
 		workflowExecution: WorkflowExecution{
 			RunID: task.WorkflowExecution.RunId,
@@ -297,7 +303,7 @@ func WithActivityTask(
 		attempt:          task.GetAttempt(),
 		heartbeatDetails: task.HeartbeatDetails,
 		workflowType: &WorkflowType{
-			Name: task.WorkflowType.Name,
+			Name: task.WorkflowType.GetName(),
 		},
 		workflowNamespace:  task.WorkflowNamespace,
 		workerStopChannel:  workerStopChannel,

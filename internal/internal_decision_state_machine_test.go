@@ -276,6 +276,43 @@ func Test_ActivityStateMachine_CompletedAfterCancel(t *testing.T) {
 	require.Equal(t, 0, len(h.getCommands(false)))
 }
 
+func Test_ActivityStateMachine_CancelInitiated_After_CanceledBeforeSent(t *testing.T) {
+	t.Parallel()
+	activityID := "test-activity-1"
+	attributes := &commandpb.ScheduleActivityTaskCommandAttributes{
+		ActivityId: activityID,
+	}
+	h := newCommandsHelper()
+	h.setCurrentWorkflowTaskStartedEventID(3)
+
+	// schedule activity
+	scheduleID := h.getNextID()
+	d := h.scheduleActivityTask(scheduleID, attributes)
+	require.Equal(t, commandStateCreated, d.getState())
+
+	// cancel activity before sent
+	h.requestCancelActivityTask(activityID)
+	require.Equal(t, commandStateCanceledBeforeSent, d.getState())
+	commands := h.getCommands(true)
+	require.Equal(t, 2, len(commands))
+	require.Equal(t, enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK, commands[0].GetCommandType())
+	require.Equal(t, enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK, commands[1].GetCommandType())
+
+	// Activity initiated
+	h.handleActivityTaskScheduled(activityID, scheduleID)
+	require.Equal(t, commandStateCanceledAfterInitiated, d.getState())
+	// no commands fetched though!
+
+	// Cancel requested event comes in
+	h.handleActivityTaskCancelRequested(scheduleID)
+	require.Equal(t, commandStateCanceledAfterInitiated, d.getState())
+
+	// activity completed after cancel
+	h.handleActivityTaskClosed(activityID, scheduleID)
+	require.Equal(t, commandStateCompleted, d.getState())
+	require.Equal(t, 0, len(h.getCommands(false)))
+}
+
 func Test_ActivityStateMachine_PanicInvalidStateTransition(t *testing.T) {
 	t.Parallel()
 	activityID := "test-activity-1"
@@ -651,7 +688,7 @@ func Test_CancelExternalWorkflowStateMachine_Failed(t *testing.T) {
 	require.NotNil(t, err)
 }
 
-func runAndCatchPanic(f func()) (err *PanicError) {
+func runAndCatchPanic(f func()) (err error) {
 	// panic handler
 	defer func() {
 		if p := recover(); p != nil {

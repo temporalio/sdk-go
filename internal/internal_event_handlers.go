@@ -196,7 +196,7 @@ func newWorkflowExecutionEventHandler(
 		tracer:                tracer,
 	}
 	context.logger = ilog.NewReplayLogger(
-		ilog.With(logger,
+		log.With(logger,
 			tagWorkflowType, workflowInfo.WorkflowType.Name,
 			tagWorkflowID, workflowInfo.WorkflowExecution.ID,
 			tagRunID, workflowInfo.WorkflowExecution.RunID,
@@ -353,7 +353,11 @@ func validateAndSerializeSearchAttributes(attributes map[string]interface{}) (*c
 }
 
 func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
-	wc.cancelHandler = handler
+	wrappedHandler := func() {
+		wc.commandsHelper.workflowExecutionIsCancelling = true
+		handler()
+	}
+	wc.cancelHandler = wrappedHandler
 }
 
 func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
@@ -1186,6 +1190,9 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 		lamd.Backoff = lar.backoff
 	} else {
 		details[localActivityMarkerResultDetailsName] = lar.result
+		if details[localActivityMarkerResultDetailsName] == nil {
+			details[localActivityMarkerResultDetailsName] = &commonpb.Payloads{}
+		}
 	}
 
 	// encode marker data
