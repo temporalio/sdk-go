@@ -542,31 +542,35 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 	i := getWorkflowOutboundCallsInterceptor(ctx)
 	env := getWorkflowEnvironment(ctx)
 	activityType := getActivityFunctionName(env.GetRegistry(), activity)
-	ctx = WithValue(ctx, localActivityFnContextKey, activity)
 	return i.ExecuteLocalActivity(ctx, activityType, args...)
 }
 
-func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, activityType string, args ...interface{}) Future {
+func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, typeName string, args ...interface{}) Future {
 	header := getHeadersFromContext(ctx)
-	activityFn := ctx.Value(localActivityFnContextKey)
-	if activityFn == nil {
-		panic("ExecuteLocalActivity: Expected context key " + localActivityFnContextKey + " is missing")
-	}
-
-	future, settable := newDecodeFuture(ctx, activityFn)
-	if err := validateFunctionArgs(activityFn, args, false); err != nil {
+	registry := getRegistryFromWorkflowContext(ctx)
+	future, settable := newDecodeFuture(ctx, typeName)
+	activityType, err := getValidatedActivityFunction(typeName, args, registry)
+	if err != nil {
 		settable.Set(nil, err)
 		return future
 	}
+
 	options, err := getValidatedLocalActivityOptions(ctx)
 	if err != nil {
 		settable.Set(nil, err)
 		return future
 	}
+
+	activity, ok := registry.GetActivity(activityType.Name)
+	if !ok {
+		settable.Set(nil, fmt.Errorf("local activity %s is not registered by the worker", activityType.Name))
+		return future
+	}
+
 	params := &ExecuteLocalActivityParams{
 		ExecuteLocalActivityOptions: *options,
-		ActivityFn:                  activityFn,
-		ActivityType:                activityType,
+		ActivityFn:                  activity.GetFunction(),
+		ActivityType:                typeName,
 		InputArgs:                   args,
 		WorkflowInfo:                GetWorkflowInfo(ctx),
 		DataConverter:               getDataConverterFromWorkflowContext(ctx),
