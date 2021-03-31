@@ -1859,7 +1859,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_QueryWorkflow() {
 
 func (s *WorkflowTestSuiteUnitTest) Test_QueryChildWorkflow() {
 	queryType := "state"
-	childWorkflowId := "test-query-child-workflow"
+	childWorkflowID := "test-query-child-workflow"
 	stateWaitSignal, stateWaitActivity, stateDone := "wait for signal", "wait for activity", "done"
 	childWorkflowFn := func(ctx Context) error {
 		var state string
@@ -1884,7 +1884,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_QueryChildWorkflow() {
 	}
 	workflowFn := func(ctx Context) error {
 		cwo := ChildWorkflowOptions{
-			WorkflowID:         childWorkflowId,
+			WorkflowID:         childWorkflowID,
 			WorkflowRunTimeout: time.Hour * 3,
 			RetryPolicy: &RetryPolicy{
 				InitialInterval:    time.Second * 3,
@@ -1905,7 +1905,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_QueryChildWorkflow() {
 	env.RegisterWorkflow(workflowFn)
 	env.RegisterActivity(testActivityHello)
 	verifyStateWithQuery := func(expected string) {
-		encodedValue, err := env.QueryWorkflowByID(childWorkflowId, queryType, "input")
+		encodedValue, err := env.QueryWorkflowByID(childWorkflowID, queryType, "input")
 		s.NoError(err)
 		s.NotNil(encodedValue)
 		var state string
@@ -1916,7 +1916,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_QueryChildWorkflow() {
 
 	env.RegisterDelayedCallback(func() {
 		verifyStateWithQuery(stateWaitSignal)
-		_ = env.SignalWorkflowByID(childWorkflowId, "query-signal", "hello-query")
+		_ = env.SignalWorkflowByID(childWorkflowID, "query-signal", "hello-query")
 	}, time.Hour)
 	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).After(time.Hour).Return("hello_mock", nil)
 	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.EncodedValues) {
