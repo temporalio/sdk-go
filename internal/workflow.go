@@ -546,27 +546,50 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 	return i.ExecuteLocalActivity(ctx, activityType, args...)
 }
 
-func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, activityType string, args ...interface{}) Future {
+func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, typeName string, args ...interface{}) Future {
 	header := getHeadersFromContext(ctx)
-	activityFn := ctx.Value(localActivityFnContextKey)
-	if activityFn == nil {
+	future, settable := newDecodeFuture(ctx, typeName)
+
+	var activityFn interface{}
+	activityFnOrName := ctx.Value(localActivityFnContextKey)
+	if activityFnOrName == nil {
 		panic("ExecuteLocalActivity: Expected context key " + localActivityFnContextKey + " is missing")
 	}
 
-	future, settable := newDecodeFuture(ctx, activityFn)
-	if err := validateFunctionArgs(activityFn, args, false); err != nil {
-		settable.Set(nil, err)
-		return future
+	if activityName, ok := activityFnOrName.(string); ok {
+		registry := getRegistryFromWorkflowContext(ctx)
+		activityType, err := getValidatedActivityFunction(typeName, args, registry)
+		if err != nil {
+			settable.Set(nil, err)
+			return future
+		}
+
+		activity, ok := registry.GetActivity(activityName)
+		if !ok {
+			settable.Set(nil, fmt.Errorf("local activity %s is not registered by the worker", activityType.Name))
+			return future
+		}
+
+		activityFn = activity.GetFunction()
+	} else {
+		if err := validateFunctionArgs(activityFnOrName, args, false); err != nil {
+			settable.Set(nil, err)
+			return future
+		}
+
+		activityFn = activityFnOrName
 	}
+
 	options, err := getValidatedLocalActivityOptions(ctx)
 	if err != nil {
 		settable.Set(nil, err)
 		return future
 	}
+
 	params := &ExecuteLocalActivityParams{
 		ExecuteLocalActivityOptions: *options,
 		ActivityFn:                  activityFn,
-		ActivityType:                activityType,
+		ActivityType:                typeName,
 		InputArgs:                   args,
 		WorkflowInfo:                GetWorkflowInfo(ctx),
 		DataConverter:               getDataConverterFromWorkflowContext(ctx),
