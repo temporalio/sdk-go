@@ -1238,10 +1238,15 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 
 func getDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 	options := getWorkflowEnvOptions(ctx)
-	if options == nil || options.DataConverter == nil {
-		return converter.GetDefaultDataConverter()
+	var dataConverter converter.DataConverter
+
+	if options != nil && options.DataConverter != nil {
+		dataConverter = options.DataConverter
+	} else {
+		dataConverter = converter.GetDefaultDataConverter()
 	}
-	return options.DataConverter
+
+	return WithWorkflowContext(ctx, dataConverter)
 }
 
 func getRegistryFromWorkflowContext(ctx Context) *registry {
