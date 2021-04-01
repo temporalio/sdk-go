@@ -542,17 +542,36 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 	i := getWorkflowOutboundCallsInterceptor(ctx)
 	env := getWorkflowEnvironment(ctx)
 	activityType := getActivityFunctionName(env.GetRegistry(), activity)
+	ctx = WithValue(ctx, localActivityFnContextKey, activity)
 	return i.ExecuteLocalActivity(ctx, activityType, args...)
 }
 
 func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, typeName string, args ...interface{}) Future {
 	header := getHeadersFromContext(ctx)
-	registry := getRegistryFromWorkflowContext(ctx)
 	future, settable := newDecodeFuture(ctx, typeName)
-	activityType, err := getValidatedActivityFunction(typeName, args, registry)
-	if err != nil {
-		settable.Set(nil, err)
-		return future
+
+	var activityFn interface{}
+	activityFnOrName := ctx.Value(localActivityFnContextKey)
+	if activityFnOrName == nil {
+		panic("ExecuteLocalActivity: Expected context key " + localActivityFnContextKey + " is missing")
+	}
+	if activityName, ok := activityFnOrName.(string); ok {
+		registry := getRegistryFromWorkflowContext(ctx)
+		activityType, err := getValidatedActivityFunction(typeName, args, registry)
+		if err != nil {
+			settable.Set(nil, err)
+			return future
+		}
+
+		activity, ok := registry.GetActivity(activityName)
+		if !ok {
+			settable.Set(nil, fmt.Errorf("local activity %s is not registered by the worker", activityType.Name))
+			return future
+		}
+
+		activityFn = activity.GetFunction()
+	} else {
+		activityFn = activityFnOrName
 	}
 
 	options, err := getValidatedLocalActivityOptions(ctx)
@@ -561,15 +580,9 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 		return future
 	}
 
-	activity, ok := registry.GetActivity(activityType.Name)
-	if !ok {
-		settable.Set(nil, fmt.Errorf("local activity %s is not registered by the worker", activityType.Name))
-		return future
-	}
-
 	params := &ExecuteLocalActivityParams{
 		ExecuteLocalActivityOptions: *options,
-		ActivityFn:                  activity.GetFunction(),
+		ActivityFn:                  activityFn,
 		ActivityType:                typeName,
 		InputArgs:                   args,
 		WorkflowInfo:                GetWorkflowInfo(ctx),
