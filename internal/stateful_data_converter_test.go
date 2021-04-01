@@ -22,10 +22,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package converter
+package internal
 
 import (
 	"context"
+	"go.temporal.io/sdk/converter"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -33,9 +34,15 @@ import (
 )
 
 type ContextAwareDataConverter struct {
-	dataConverter DataConverter
+	dataConverter converter.DataConverter
 	prefix        string
 }
+
+type contextKeyType int
+
+const (
+	prefixContextKey contextKeyType = iota
+)
 
 func (dc *ContextAwareDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
 	return dc.dataConverter.ToPayload(value)
@@ -70,8 +77,8 @@ func (dc *ContextAwareDataConverter) ToStrings(payloads *commonpb.Payloads) []st
 	return result
 }
 
-func (dc *ContextAwareDataConverter) WithActivityContext(ctx ActivityContext) DataConverter {
-	v := ctx.Value("prefix")
+func (dc *ContextAwareDataConverter) WithContext(ctx context.Context) converter.DataConverter {
+	v := ctx.Value(prefixContextKey)
 	prefix, ok := v.(string)
 	if !ok {
 		return dc
@@ -83,8 +90,8 @@ func (dc *ContextAwareDataConverter) WithActivityContext(ctx ActivityContext) Da
 	}
 }
 
-func (dc *ContextAwareDataConverter) WithWorkflowContext(ctx WorkflowContext) DataConverter {
-	v := ctx.Value("prefix")
+func (dc *ContextAwareDataConverter) WithWorkflowContext(ctx Context) converter.DataConverter {
+	v := ctx.Value(prefixContextKey)
 	prefix, ok := v.(string)
 	if !ok {
 		return dc
@@ -96,13 +103,13 @@ func (dc *ContextAwareDataConverter) WithWorkflowContext(ctx WorkflowContext) Da
 	}
 }
 
-func newContextAwareDataConverter(dataConverter DataConverter) DataConverter {
+func newContextAwareDataConverter(dataConverter converter.DataConverter) converter.DataConverter {
 	return &ContextAwareDataConverter{
 		dataConverter: dataConverter,
 	}
 }
 
-var contextAwareDataConverter = newContextAwareDataConverter(defaultDataConverter)
+var contextAwareDataConverter = newContextAwareDataConverter(converter.GetDefaultDataConverter())
 
 func TestContextAwareDataConverter(t *testing.T) {
 	t.Parallel()
@@ -121,9 +128,9 @@ func TestContextAwareDataConverter(t *testing.T) {
 	t.Run("with activity context", func(t *testing.T) {
 		t.Parallel()
 		ctx := context.Background()
-		ctx = context.WithValue(ctx, "prefix", "testing")
+		ctx = context.WithValue(ctx, prefixContextKey, "testing")
 
-		dc := WithActivityContext(contextAwareDataConverter, ctx)
+		dc := WithContext(ctx, contextAwareDataConverter)
 
 		payload, _ := dc.ToPayload("test")
 		result := dc.ToString(payload)
@@ -132,10 +139,10 @@ func TestContextAwareDataConverter(t *testing.T) {
 	})
 	t.Run("with workflow context", func(t *testing.T) {
 		t.Parallel()
-		ctx := context.Background()
-		ctx = context.WithValue(ctx, "prefix", "testing")
+		ctx := Background()
+		ctx = WithValue(ctx, prefixContextKey, "testing")
 
-		dc := WithWorkflowContext(contextAwareDataConverter, ctx)
+		dc := WithWorkflowContext(ctx, contextAwareDataConverter)
 
 		payload, _ := dc.ToPayload("test")
 		result := dc.ToString(payload)
