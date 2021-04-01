@@ -555,6 +555,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 	if activityFnOrName == nil {
 		panic("ExecuteLocalActivity: Expected context key " + localActivityFnContextKey + " is missing")
 	}
+
 	if activityName, ok := activityFnOrName.(string); ok {
 		registry := getRegistryFromWorkflowContext(ctx)
 		activityType, err := getValidatedActivityFunction(typeName, args, registry)
@@ -571,6 +572,11 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 
 		activityFn = activity.GetFunction()
 	} else {
+		if err := validateFunctionArgs(activityFnOrName, args, false); err != nil {
+			settable.Set(nil, err)
+			return future
+		}
+
 		activityFn = activityFnOrName
 	}
 
