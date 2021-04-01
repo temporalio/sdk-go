@@ -2215,6 +2215,21 @@ func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...
 	return newEncodedValue(blob, env.GetDataConverter()), nil
 }
 
+func (env *testWorkflowEnvironmentImpl) queryWorkflowByID(workflowID, queryType string, args ...interface{}) (converter.EncodedValue, error) {
+	if workflowHandle, ok := env.runningWorkflows[workflowID]; ok {
+		data, err := encodeArgs(workflowHandle.env.GetDataConverter(), args)
+		if err != nil {
+			return nil, err
+		}
+		blob, err := workflowHandle.env.queryHandler(queryType, data)
+		if err != nil {
+			return nil, err
+		}
+		return newEncodedValue(blob, workflowHandle.env.GetDataConverter()), nil
+	}
+	return nil, serviceerror.NewNotFound(fmt.Sprintf("Workflow %v not exists", workflowID))
+}
+
 func (env *testWorkflowEnvironmentImpl) getMockRunFn(callWrapper *MockCallWrapper) func(args mock.Arguments) {
 	env.locker.Lock()
 	defer env.locker.Unlock()
