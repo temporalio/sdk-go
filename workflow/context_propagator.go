@@ -24,7 +24,9 @@
 
 package workflow
 
-import "go.temporal.io/sdk/internal"
+import (
+	"go.temporal.io/sdk/internal"
+)
 
 type (
 	// HeaderReader is an interface to read information from temporal headers
@@ -36,4 +38,9 @@ type (
 	// ContextPropagator is an interface that determines what information from
 	// context to pass along
 	ContextPropagator = internal.ContextPropagator
+
+	// ContextAware is an optional interface that can be implemented alongside DataConverter.
+	// This interface allows Temporal to pass Workflow/Activity contexts to the DataConverter
+	// so that it may tailor it's behaviour.
+	ContextAware = internal.ContextAware
 )

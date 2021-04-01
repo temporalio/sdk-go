@@ -171,9 +171,10 @@ func (wc *WorkflowClient) StartWorkflow(
 	executionTimeout := options.WorkflowExecutionTimeout
 	runTimeout := options.WorkflowRunTimeout
 	workflowTaskTimeout := options.WorkflowTaskTimeout
+	dataConverter := WithContext(ctx, wc.dataConverter)
 
 	// Validate type and its arguments.
-	workflowType, input, err := getValidatedWorkflowFunction(workflowFunc, args, wc.dataConverter, wc.registry)
+	workflowType, input, err := getValidatedWorkflowFunction(workflowFunc, args, dataConverter, wc.registry)
 	if err != nil {
 		return nil, err
 	}

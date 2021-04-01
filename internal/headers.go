@@ -26,42 +26,53 @@ package internal
 
 import (
 	"context"
+	"go.temporal.io/sdk/converter"
 
 	commonpb "go.temporal.io/api/common/v1"
 )
 
 // HeaderWriter is an interface to write information to temporal headers
-type HeaderWriter interface {
-	Set(string, *commonpb.Payload)
-}
+type (
+	HeaderWriter interface {
+		Set(string, *commonpb.Payload)
+	}
 
-// HeaderReader is an interface to read information from temporal headers
-type HeaderReader interface {
-	Get(string) (*commonpb.Payload, bool)
-	ForEachKey(handler func(string, *commonpb.Payload) error) error
-}
+	// HeaderReader is an interface to read information from temporal headers
+	HeaderReader interface {
+		Get(string) (*commonpb.Payload, bool)
+		ForEachKey(handler func(string, *commonpb.Payload) error) error
+	}
 
-// ContextPropagator is an interface that determines what information from
-// context to pass along
-type ContextPropagator interface {
-	// Inject injects information from a Go Context into headers
-	Inject(context.Context, HeaderWriter) error
+	// ContextPropagator is an interface that determines what information from
+	// context to pass along
+	ContextPropagator interface {
+		// Inject injects information from a Go Context into headers
+		Inject(context.Context, HeaderWriter) error
 
-	// Extract extracts context information from headers and returns a context
-	// object
-	Extract(context.Context, HeaderReader) (context.Context, error)
+		// Extract extracts context information from headers and returns a context
+		// object
+		Extract(context.Context, HeaderReader) (context.Context, error)
 
-	// InjectFromWorkflow injects information from workflow context into headers
-	InjectFromWorkflow(Context, HeaderWriter) error
+		// InjectFromWorkflow injects information from workflow context into headers
+		InjectFromWorkflow(Context, HeaderWriter) error
 
-	// ExtractToWorkflow extracts context information from headers and returns
-	// a workflow context
-	ExtractToWorkflow(Context, HeaderReader) (Context, error)
-}
+		// ExtractToWorkflow extracts context information from headers and returns
+		// a workflow context
+		ExtractToWorkflow(Context, HeaderReader) (Context, error)
+	}
 
-type headerReader struct {
-	header *commonpb.Header
-}
+	// ContextAware is an optional interface that can be implemented alongside DataConverter.
+	// This interface allows Temporal to pass Workflow/Activity contexts to the DataConverter
+	// so that it may tailor it's behaviour.
+	ContextAware interface {
+		WithWorkflowContext(ctx Context) converter.DataConverter
+		WithContext(ctx context.Context) converter.DataConverter
+	}
+
+	headerReader struct {
+		header *commonpb.Header
+	}
+)
 
 func (hr *headerReader) ForEachKey(handler func(string, *commonpb.Payload) error) error {
 	if hr.header == nil {
@@ -105,4 +116,24 @@ func NewHeaderWriter(header *commonpb.Header) HeaderWriter {
 		header.Fields = make(map[string]*commonpb.Payload)
 	}
 	return &headerWriter{header: header}
+}
+
+// WithWorkflowContext returns a new DataConverter tailored to the passed Workflow context if
+// the DataConverter implements the ContextAware interface. Otherwise the DataConverter is returned
+// as-is.
+func WithWorkflowContext(ctx Context, dc converter.DataConverter) converter.DataConverter {
+	if d, ok := dc.(ContextAware); ok {
+		return d.WithWorkflowContext(ctx)
+	}
+	return dc
+}
+
+// WithContext returns a new DataConverter tailored to the passed Activity context if
+// the DataConverter implements the ContextAware interface. Otherwise the DataConverter is returned
+// as-is.
+func WithContext(ctx context.Context, dc converter.DataConverter) converter.DataConverter {
+	if d, ok := dc.(ContextAware); ok {
+		return d.WithContext(ctx)
+	}
+	return dc
 }

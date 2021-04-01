@@ -746,7 +746,7 @@ type workflowExecutor struct {
 
 func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*commonpb.Payloads, error) {
 	var args []interface{}
-	dataConverter := getWorkflowEnvOptions(ctx).DataConverter
+	dataConverter := WithWorkflowContext(ctx, getWorkflowEnvOptions(ctx).DataConverter)
 	fnType := reflect.TypeOf(we.fn)
 
 	decoded, err := decodeArgsToValues(dataConverter, fnType, input)
@@ -833,10 +833,13 @@ func (ae *activityExecutor) executeWithActualArgsWithoutParseResult(ctx context.
 
 func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverter {
 	env := getActivityEnvironmentFromCtx(ctx)
-	if env == nil || env.dataConverter == nil {
-		return converter.GetDefaultDataConverter()
+	var dataConverter converter.DataConverter
+	if env != nil && env.dataConverter != nil {
+		dataConverter = env.dataConverter
+	} else {
+		dataConverter = converter.GetDefaultDataConverter()
 	}
-	return env.dataConverter
+	return WithContext(ctx, dataConverter)
 }
 
 func getNamespaceFromActivityCtx(ctx context.Context) string {
