@@ -878,6 +878,28 @@ func (ts *IntegrationTestSuite) TestTimerCancellationConcurrentWithOtherCommandD
 	ts.NoError(err)
 }
 
+func (ts *IntegrationTestSuite) TestResetWorkflowExecution() {
+	var originalResult []string
+	err := ts.executeWorkflow("basic-reset-workflow-execution", ts.workflows.Basic, &originalResult)
+	ts.NoError(err)
+	resp, err := ts.client.ResetWorkflowExecution(context.Background(), &workflowservice.ResetWorkflowExecutionRequest{
+		Namespace: namespace,
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: "basic-reset-workflow-execution",
+		},
+		Reason:                    "integration test",
+		WorkflowTaskFinishEventId: 4,
+	})
+
+	ts.NoError(err)
+	ts.NotEmpty(resp.GetRunId())
+	newWf := ts.client.GetWorkflow(context.Background(), "basic-reset-workflow-execution", resp.GetRunId())
+	var newResult []string
+	err = newWf.Get(context.Background(), &newResult)
+	ts.NoError(err)
+	ts.Equal(originalResult, newResult)
+}
+
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{HostPort: ts.config.ServiceAddr})
 	ts.NoError(err)
