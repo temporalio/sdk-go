@@ -215,8 +215,10 @@ type (
 		// Optional: defaults to WorkflowExecutionTimeout
 		WorkflowRunTimeout time.Duration
 
-		// WorkflowTaskTimeout - The workflow task timeout for the child workflow.
-		// Optional: default is 10s if this is not provided (or if 0 is provided).
+		// WorkflowTaskTimeout - Maximum execution time of a single Workflow Task. In the majority of cases there is
+		// no need to change this timeout. Note that this timeout is not related to the overall Workflow duration in
+		// any way. It defines for how long the Workflow can get blocked in the case of a Workflow Worker crash.
+		// Default is 10 seconds. Maximum value allowed by the Temporal Server is 1 minute.
 		WorkflowTaskTimeout time.Duration
 
 		// WaitForCancellation - Whether to wait for canceled child workflow to be ended (child workflow can be ended
