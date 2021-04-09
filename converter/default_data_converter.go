@@ -41,6 +41,6 @@ var (
 )
 
 // GetDefaultDataConverter returns default data converter used by Temporal worker.
-func GetDefaultDataConverter() *CompositeDataConverter {
+func GetDefaultDataConverter() DataConverter {
 	return defaultDataConverter
 }

@@ -40,7 +40,7 @@ All PR titles should start with Upper case.
 ## Testing
 
 Run all the tests (including integration tests, requiring you are running a server locally - see
-[here]https://github.com/temporalio/temporal/blob/master/CONTRIBUTING.md()) with coverage and race detector enabled:
+[here](https://github.com/temporalio/temporal/blob/master/CONTRIBUTING.md) with coverage and race detector enabled:
 
 ```bash
 make test

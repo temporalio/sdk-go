@@ -215,8 +215,10 @@ type (
 		// Optional: defaults to WorkflowExecutionTimeout
 		WorkflowRunTimeout time.Duration
 
-		// WorkflowTaskTimeout - The workflow task timeout for the child workflow.
-		// Optional: default is 10s if this is not provided (or if 0 is provided).
+		// WorkflowTaskTimeout - Maximum execution time of a single Workflow Task. In the majority of cases there is
+		// no need to change this timeout. Note that this timeout is not related to the overall Workflow duration in
+		// any way. It defines for how long the Workflow can get blocked in the case of a Workflow Worker crash.
+		// Default is 10 seconds. Maximum value allowed by the Temporal Server is 1 minute.
 		WorkflowTaskTimeout time.Duration
 
 		// WaitForCancellation - Whether to wait for canceled child workflow to be ended (child workflow can be ended
@@ -546,27 +548,50 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 	return i.ExecuteLocalActivity(ctx, activityType, args...)
 }
 
-func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, activityType string, args ...interface{}) Future {
+func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, typeName string, args ...interface{}) Future {
 	header := getHeadersFromContext(ctx)
-	activityFn := ctx.Value(localActivityFnContextKey)
-	if activityFn == nil {
+	future, settable := newDecodeFuture(ctx, typeName)
+
+	var activityFn interface{}
+	activityFnOrName := ctx.Value(localActivityFnContextKey)
+	if activityFnOrName == nil {
 		panic("ExecuteLocalActivity: Expected context key " + localActivityFnContextKey + " is missing")
 	}
 
-	future, settable := newDecodeFuture(ctx, activityFn)
-	if err := validateFunctionArgs(activityFn, args, false); err != nil {
-		settable.Set(nil, err)
-		return future
+	if activityName, ok := activityFnOrName.(string); ok {
+		registry := getRegistryFromWorkflowContext(ctx)
+		activityType, err := getValidatedActivityFunction(typeName, args, registry)
+		if err != nil {
+			settable.Set(nil, err)
+			return future
+		}
+
+		activity, ok := registry.GetActivity(activityName)
+		if !ok {
+			settable.Set(nil, fmt.Errorf("local activity %s is not registered by the worker", activityType.Name))
+			return future
+		}
+
+		activityFn = activity.GetFunction()
+	} else {
+		if err := validateFunctionArgs(activityFnOrName, args, false); err != nil {
+			settable.Set(nil, err)
+			return future
+		}
+
+		activityFn = activityFnOrName
 	}
+
 	options, err := getValidatedLocalActivityOptions(ctx)
 	if err != nil {
 		settable.Set(nil, err)
 		return future
 	}
+
 	params := &ExecuteLocalActivityParams{
 		ExecuteLocalActivityOptions: *options,
 		ActivityFn:                  activityFn,
-		ActivityType:                activityType,
+		ActivityType:                typeName,
 		InputArgs:                   args,
 		WorkflowInfo:                GetWorkflowInfo(ctx),
 		DataConverter:               getDataConverterFromWorkflowContext(ctx),
@@ -679,7 +704,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		executionFuture:  executionFuture.(*futureImpl),
 	}
 	workflowOptionsFromCtx := getWorkflowEnvOptions(ctx)
-	dc := workflowOptionsFromCtx.DataConverter
+	dc := WithWorkflowContext(ctx, workflowOptionsFromCtx.DataConverter)
 	env := getWorkflowEnvironment(ctx)
 	wfType, input, err := getValidatedWorkflowFunction(childWorkflowType, args, dc, env.GetRegistry())
 	if err != nil {

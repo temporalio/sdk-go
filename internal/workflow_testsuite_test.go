@@ -128,3 +128,76 @@ func TestUnregisteredActivity(t *testing.T) {
 
 	require.True(t, strings.HasPrefix(err1.Error(), "unable to find activityType=unregistered"), err1.Error())
 }
+
+func namedActivity(ctx context.Context, arg string) (string, error) {
+	return arg + " World!", nil
+}
+
+func TestLocalActivityExecutionByActivityName(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+
+	env.RegisterActivity(namedActivity)
+	env.ExecuteWorkflow(func(ctx Context, arg1 string) (string, error) {
+		ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{
+			ScheduleToCloseTimeout: time.Hour,
+			StartToCloseTimeout:    time.Hour,
+		})
+		var result string
+		err := ExecuteLocalActivity(ctx, "namedActivity", arg1).Get(ctx, &result)
+		if err != nil {
+			return "", err
+		}
+		return result, nil
+	}, "Hello")
+	require.NoError(t, env.GetWorkflowError())
+	var result string
+	err := env.GetWorkflowResult(&result)
+	require.NoError(t, err)
+	require.Equal(t, "Hello World!", result)
+}
+
+func TestLocalActivityExecutionByActivityNameAlias(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+
+	env.RegisterActivityWithOptions(namedActivity, RegisterActivityOptions{
+		Name: "localActivity",
+	})
+	env.ExecuteWorkflow(func(ctx Context, arg1 string) (string, error) {
+		ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{
+			ScheduleToCloseTimeout: time.Hour,
+			StartToCloseTimeout:    time.Hour,
+		})
+		var result string
+		err := ExecuteLocalActivity(ctx, "localActivity", arg1).Get(ctx, &result)
+		if err != nil {
+			return "", err
+		}
+		return result, nil
+	}, "Hello")
+	require.NoError(t, env.GetWorkflowError())
+	var result string
+	err := env.GetWorkflowResult(&result)
+	require.NoError(t, err)
+	require.Equal(t, "Hello World!", result)
+}
+
+func TestLocalActivityExecutionByActivityNameAliasMissingRegistration(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+
+	env.ExecuteWorkflow(func(ctx Context, arg1 string) (string, error) {
+		ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{
+			ScheduleToCloseTimeout: time.Hour,
+			StartToCloseTimeout:    time.Hour,
+		})
+		var result string
+		err := ExecuteLocalActivity(ctx, "localActivity", arg1).Get(ctx, &result)
+		if err != nil {
+			return "", err
+		}
+		return result, nil
+	}, "Hello")
+	require.NotNil(t, env.GetWorkflowError())
+}
