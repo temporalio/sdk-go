@@ -783,15 +783,18 @@ type WorkflowInfo struct {
 	WorkflowTaskTimeout      time.Duration
 	Namespace                string
 	Attempt                  int32 // Attempt starts from 1 and increased by 1 for every retry if retry policy is specified.
-	lastCompletionResult     *commonpb.Payloads
-	lastFailure              *failurepb.Failure
-	CronSchedule             string
-	ContinuedExecutionRunID  string
-	ParentWorkflowNamespace  string
-	ParentWorkflowExecution  *WorkflowExecution
-	Memo                     *commonpb.Memo             // Value can be decoded using data converter (defaultDataConverter, or custom one if set).
-	SearchAttributes         *commonpb.SearchAttributes // Value can be decoded using defaultDataConverter.
-	BinaryChecksum           string
+	// Time of the workflow start.
+	// workflow.Now at the beginning of a workflow can return a later time if the Workflow Worker was down.
+	WorkflowStartTime       time.Time
+	lastCompletionResult    *commonpb.Payloads
+	lastFailure             *failurepb.Failure
+	CronSchedule            string
+	ContinuedExecutionRunID string
+	ParentWorkflowNamespace string
+	ParentWorkflowExecution *WorkflowExecution
+	Memo                    *commonpb.Memo             // Value can be decoded using data converter (defaultDataConverter, or custom one if set).
+	SearchAttributes        *commonpb.SearchAttributes // Value can be decoded using defaultDataConverter.
+	BinaryChecksum          string
 }
 
 // GetBinaryChecksum return binary checksum.
