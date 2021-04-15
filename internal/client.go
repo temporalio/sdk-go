@@ -407,19 +407,35 @@ type (
 
 	// ConnectionOptions is provided by SDK consumers to control optional connection params.
 	ConnectionOptions struct {
-		TLS                *tls.Config
+		// TLS configures a connection level security credentials.
+		TLS *tls.Config
+
+		// Authority specifies the value to be used as the :authority pseudo-header.
+		// This value only works only when TLS is nil.
+		Authority string
+
+		// By default, after gRPC connection to server is created, client will make a request to
+		// health check endpoint to make sure that server is accessible.
+		// Set DisableHealthCheck to true to disable it.
 		DisableHealthCheck bool
+
+		// Specify how to long to wait while checking server connection when creating new client.
+		// Default: 5s.
 		HealthCheckTimeout time.Duration
+
 		// Enables keep alive ping from client to the server, which can help detect abruptly closed connections faster.
 		EnableKeepAliveCheck bool
+
 		// After a duration of this time if the client doesn't see any activity it
 		// pings the server to see if the transport is still alive.
 		// If set below 10s, a minimum value of 10s will be used instead.
 		KeepAliveTime time.Duration
+
 		// After having pinged for keepalive check, the client waits for a duration
 		// of Timeout and if no activity is seen even after that the connection is
 		// closed.
 		KeepAliveTimeout time.Duration
+
 		// If true, client sends keepalive pings even with no active RPCs. If false,
 		// when there are no active RPCs, Time and Timeout will be ignored and no
 		// keepalive pings will be sent.
