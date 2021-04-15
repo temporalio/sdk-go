@@ -407,11 +407,11 @@ type (
 
 	// ConnectionOptions is provided by SDK consumers to control optional connection params.
 	ConnectionOptions struct {
-		TLS                *tls.Config
-		// Allows setting the GRPC authority for the request.
-		// By default, when empty, the authority for the GRPC request is not overridden.
-		// If TLS settings are passed in, setting the authority has no effect, as it only works in insecure GRPC mode.
-		GRPCAuthority string
+		TLS *tls.Config
+		// Allows setting the gRPC authority for the request.
+		// By default, when empty, the authority for the gRPC request is not overridden.
+		// If TLS settings are passed in, setting the authority has no effect, as it only works in insecure gRPC mode.
+		Authority          string
 		DisableHealthCheck bool
 		HealthCheckTimeout time.Duration
 		// Enables keep alive ping from client to the server, which can help detect abruptly closed connections faster.

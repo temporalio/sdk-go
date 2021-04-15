@@ -86,8 +86,8 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 		grpc.WithConnectParams(cp),
 	}
 
-	if params.UserConnectionOptions.GRPCAuthority != "" {
-		opts = append(opts, grpc.WithAuthority(params.UserConnectionOptions.GRPCAuthority))
+	if params.UserConnectionOptions.Authority != "" {
+		opts = append(opts, grpc.WithAuthority(params.UserConnectionOptions.Authority))
 	}
 
 	if params.UserConnectionOptions.EnableKeepAliveCheck {
