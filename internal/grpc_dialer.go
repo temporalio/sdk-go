@@ -86,6 +86,10 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 		grpc.WithConnectParams(cp),
 	}
 
+	if params.UserConnectionOptions.GRPCAuthority != "" {
+		opts = append(opts, grpc.WithAuthority(params.UserConnectionOptions.GRPCAuthority))
+	}
+
 	if params.UserConnectionOptions.EnableKeepAliveCheck {
 		// gRPC utilizes keep alive mechanism to detect dead connections in case if server didn't close them
 		// gracefully. Client would ping the server periodically and expect replies withing the specified timeout.
