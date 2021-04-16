@@ -407,19 +407,19 @@ type (
 
 	// ConnectionOptions is provided by SDK consumers to control optional connection params.
 	ConnectionOptions struct {
-		// TLS configures a connection level security credentials.
+		// TLS configures connection level security credentials.
 		TLS *tls.Config
 
 		// Authority specifies the value to be used as the :authority pseudo-header.
-		// This value only works only when TLS is nil.
+		// This value only used when TLS is nil.
 		Authority string
 
-		// By default, after gRPC connection to server is created, client will make a request to
-		// health check endpoint to make sure that server is accessible.
+		// By default, after gRPC connection to the Server is created, client will make a request to
+		// health check endpoint to make sure that the Server is accessible.
 		// Set DisableHealthCheck to true to disable it.
 		DisableHealthCheck bool
 
-		// Specify how to long to wait while checking server connection when creating new client.
+		// HealthCheckTimeout specifies how to long to wait while checking server connection when creating new client.
 		// Default: 5s.
 		HealthCheckTimeout time.Duration
 
