@@ -14,7 +14,7 @@ This doc is intended for contributors to Go SDK (hopefully that's you!)
 
 Temporal GO SDK uses go modules, there is no dependency on `$GOPATH` variable. Clone the repo into the preffered location:
 ```bash
-$ git clone https://github.com/temporalio/sdk-go.git
+git clone https://github.com/temporalio/sdk-go.git
 ```
 
 ## Licence headers
@@ -22,7 +22,7 @@ $ git clone https://github.com/temporalio/sdk-go.git
 This project is Open Source Software, and requires a header at the beginning of
 all source files. To verify that all files contain the header execute:
 
-```lang=bash
+```bash
 make copyright
 ```
 
@@ -38,6 +38,11 @@ Please don't use very generic titles like "bug fixes".
 All PR titles should start with Upper case.
 
 ## Testing
+
+Run all static analysis tools:
+```bash
+make check
+```
 
 Run all the tests (including integration tests, requiring you are running a server locally - see
 [here](https://github.com/temporalio/temporal/blob/master/CONTRIBUTING.md) with coverage and race detector enabled:
