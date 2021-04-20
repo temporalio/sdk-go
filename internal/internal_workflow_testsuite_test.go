@@ -2534,6 +2534,47 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 	s.Equal(4, attempt2Count)
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry_NoRetries() {
+	maxRetryAttempts := int32(1)
+	fakeError := fmt.Errorf("fake network error")
+	activityFailedFn := func(ctx context.Context) (string, error) {
+		info := GetActivityInfo(ctx)
+		if info.Attempt <= maxRetryAttempts {
+			return "", fakeError
+		}
+		return "", nil
+	}
+
+	workflowFn := func(ctx Context) (string, error) {
+		ao := ActivityOptions{
+			ScheduleToStartTimeout: time.Minute,
+			StartToCloseTimeout:    time.Minute,
+			RetryPolicy: &RetryPolicy{
+				InitialInterval:    time.Second,
+				MaximumAttempts:    maxRetryAttempts,
+				BackoffCoefficient: 0,
+			},
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		err := ExecuteActivity(ctx, activityFailedFn).Get(ctx, nil)
+		s.Error(err)
+		return "", err
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.SetTestTimeout(time.Hour)
+	env.RegisterWorkflow(workflowFn)
+	env.RegisterActivity(activityFailedFn)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	s.Error(err)
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+	s.True(errors.As(err, &fakeError))
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityHeartbeatRetry() {
 	var startedFrom []int
 	activityHeartBeatFn := func(ctx context.Context, firstTaskID, taskCount int) error {
