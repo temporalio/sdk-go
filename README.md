@@ -18,9 +18,9 @@ or
 go get -u go.temporal.io/sdk
 ```
 
-See [samples](https://github.com/temporalio/samples-go) to get started. 
+See [samples](https://github.com/temporalio/samples-go) to get started.
 
-Documentation is available [here](https://docs.temporal.io/docs/get-started). 
+Documentation is available [here](https://docs.temporal.io). 
 You can also find the API documentation [here](https://pkg.go.dev/go.temporal.io/sdk).
 
 ## Using a custom logger
@@ -48,4 +48,3 @@ We'd love your help in making the Temporal Go SDK great. Please review our [cont
 
 ## License
 MIT License, please see [LICENSE](LICENSE) for details.
-
