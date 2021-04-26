@@ -26,6 +26,7 @@ package internal
 
 import (
 	"context"
+	"net"
 	"time"
 
 	"github.com/gogo/status"
@@ -44,6 +45,7 @@ type (
 	// dialParameters are passed to GRPCDialer and must be used to create gRPC connection.
 	dialParameters struct {
 		HostPort              string
+		UnixSocket            string
 		UserConnectionOptions ConnectionOptions
 		RequiredInterceptors  []grpc.UnaryClientInterceptor
 		DefaultServiceConfig  string
@@ -105,6 +107,13 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 		}
 		opts = append(opts, grpc.WithKeepaliveParams(kap))
 	}
+
+	if params.UnixSocket != "" {
+		opts = append(opts, grpc.WithDialer(func(addr string, timeout time.Duration) (net.Conn, error) {
+			return net.DialTimeout("unix", params.UnixSocket, timeout)
+		}))
+	}
+
 	return grpc.Dial(params.HostPort, opts...)
 }
 

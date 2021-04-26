@@ -398,6 +398,11 @@ type (
 		// Optional: HeadersProvider will be invoked on every outgoing gRPC request and gives user ability to
 		// set custom request headers. This can be used to set auth headers for example.
 		HeadersProvider HeadersProvider
+
+		// Optional: To proxy connections via a unix socket, set this
+		// to the location of the unix socket. Value should be a valid
+		// path in the filesystem.
+		UnixSocket string
 	}
 
 	// HeadersProvider returns a map of gRPC headers that should be used on every request.
@@ -613,6 +618,7 @@ func newDialParameters(options *ClientOptions) dialParameters {
 	return dialParameters{
 		UserConnectionOptions: options.ConnectionOptions,
 		HostPort:              options.HostPort,
+		UnixSocket:            options.UnixSocket,
 		RequiredInterceptors:  requiredInterceptors(options.MetricsScope, options.HeadersProvider),
 		DefaultServiceConfig:  defaultServiceConfig,
 	}
