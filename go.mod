@@ -24,6 +24,7 @@ require (
 	go.temporal.io/api v1.4.1-0.20210420220407-6f00f7f98373
 	go.uber.org/atomic v1.7.0
 	go.uber.org/goleak v1.0.0
+	golang.org/x/sys v0.0.0-20210426230700-d19ff857e887 // indirect
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba
 	google.golang.org/grpc v1.37.0
 	google.golang.org/protobuf v1.26.0
