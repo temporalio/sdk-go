@@ -237,6 +237,15 @@ func (s *scheduledChildWorkflow) handle(result *commonpb.Payloads, err error) {
 	s.resultCallback(result, err)
 }
 
+func (s *scheduledChildWorkflow) handleFailedToStart(result *commonpb.Payloads, err error) {
+	if s.handled {
+		panic(fmt.Sprintf("child workflow already handled %v", s))
+	}
+	s.handled = true
+	s.resultCallback(result, err)
+	s.startedCallback(WorkflowExecution{}, err)
+}
+
 func (t *localActivityTask) cancel() {
 	t.Lock()
 	t.canceled = true
@@ -1241,7 +1250,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionF
 			enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE,
 			errors.New("workflow execution already started"),
 		)
-		childWorkflow.handle(nil, err)
+		childWorkflow.handleFailedToStart(nil, err)
 		return nil
 	}
 
