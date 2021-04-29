@@ -1142,8 +1142,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details map[string]*commonpb.Payloads, failure *failurepb.Failure) error {
 	var markerData *commonpb.Payloads
 	var ok bool
-	if markerData, ok = details[localActivityMarkerDataDetailsName]; !ok {
-		return fmt.Errorf("key %q: %w", localActivityMarkerDataDetailsName, ErrMissingMarkerDataKey)
+	if markerData, ok = details[localActivityMarkerDataName]; !ok {
+		return fmt.Errorf("key %q: %w", localActivityMarkerDataName, ErrMissingMarkerDataKey)
 	}
 
 	lamd := localActivityMarkerData{}
@@ -1168,8 +1168,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 		} else {
 			var result *commonpb.Payloads
 			var ok bool
-			if result, ok = details[localActivityMarkerResultDetailsName]; !ok {
-				return fmt.Errorf("key %q: %w", localActivityMarkerResultDetailsName, ErrMissingMarkerDataKey)
+			if result, ok = details[localActivityResultName]; !ok {
+				return fmt.Errorf("key %q: %w", localActivityResultName, ErrMissingMarkerDataKey)
 			}
 			lar.Result = result
 		}
@@ -1197,11 +1197,8 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 	}
 	if lar.err != nil {
 		lamd.Backoff = lar.backoff
-	} else {
-		details[localActivityMarkerResultDetailsName] = lar.result
-		if details[localActivityMarkerResultDetailsName] == nil {
-			details[localActivityMarkerResultDetailsName] = &commonpb.Payloads{}
-		}
+	} else if lar.result != nil {
+		details[localActivityResultName] = lar.result
 	}
 
 	// encode marker data
@@ -1209,7 +1206,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 	if err != nil {
 		return err
 	}
-	details[localActivityMarkerDataDetailsName] = markerData
+	details[localActivityMarkerDataName] = markerData
 
 	// create marker event for local activity result
 	markerEvent := &historypb.HistoryEvent{

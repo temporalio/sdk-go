@@ -169,8 +169,8 @@ func (s *internalWorkerTestSuite) createLocalActivityMarkerDataForTest(activityI
 	s.NoError(err)
 
 	return map[string]*commonpb.Payloads{
-		localActivityMarkerDataDetailsName:   markerData,
-		localActivityMarkerResultDetailsName: {},
+		localActivityMarkerDataName: markerData,
+		localActivityResultName:     {},
 	}
 }
 
