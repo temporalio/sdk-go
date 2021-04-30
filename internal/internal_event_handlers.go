@@ -1166,7 +1166,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 			lar.Backoff = lamd.Backoff
 			lar.Err = ConvertFailureToError(failure, weh.GetDataConverter())
 		} else {
-			lar.Result, _ = details[localActivityResultName]
+			// Result might not be there if local activity doesn't have return value.
+			lar.Result = details[localActivityResultName]
 		}
 		la.callback(lar)
 
