@@ -1166,12 +1166,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 			lar.Backoff = lamd.Backoff
 			lar.Err = ConvertFailureToError(failure, weh.GetDataConverter())
 		} else {
-			var result *commonpb.Payloads
-			var ok bool
-			if result, ok = details[localActivityResultName]; !ok {
-				return fmt.Errorf("key %q: %w", localActivityResultName, ErrMissingMarkerDataKey)
-			}
-			lar.Result = result
+			lar.Result, _ = details[localActivityResultName]
 		}
 		la.callback(lar)
 
