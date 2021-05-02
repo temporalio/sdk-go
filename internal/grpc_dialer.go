@@ -62,9 +62,16 @@ const (
 )
 
 func dial(params dialParameters) (*grpc.ClientConn, error) {
-	grpcSecurityOptions := grpc.WithInsecure()
+	var securityOptions []grpc.DialOption
 	if params.UserConnectionOptions.TLS != nil {
-		grpcSecurityOptions = grpc.WithTransportCredentials(credentials.NewTLS(params.UserConnectionOptions.TLS))
+		securityOptions = []grpc.DialOption{
+			grpc.WithTransportCredentials(credentials.NewTLS(params.UserConnectionOptions.TLS)),
+		}
+	} else {
+		securityOptions = []grpc.DialOption{
+			grpc.WithInsecure(),
+			grpc.WithAuthority(params.UserConnectionOptions.Authority),
+		}
 	}
 
 	// gRPC maintains connection pool inside grpc.ClientConn.
@@ -80,11 +87,12 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 	cp.Backoff.BaseDelay = retryPollOperationInitialInterval
 	cp.Backoff.MaxDelay = retryPollOperationMaxInterval
 	opts := []grpc.DialOption{
-		grpcSecurityOptions,
 		grpc.WithChainUnaryInterceptor(params.RequiredInterceptors...),
 		grpc.WithDefaultServiceConfig(params.DefaultServiceConfig),
 		grpc.WithConnectParams(cp),
 	}
+
+	opts = append(opts, securityOptions...)
 
 	if params.UserConnectionOptions.EnableKeepAliveCheck {
 		// gRPC utilizes keep alive mechanism to detect dead connections in case if server didn't close them

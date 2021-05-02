@@ -30,8 +30,10 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/client"
 )
@@ -90,4 +92,28 @@ func Test_MockClient(t *testing.T) {
 	next, err := historyIter.Next()
 	require.NotNil(t, next)
 	require.NoError(t, err)
+}
+
+func Test_MockResetWorkflowExecution(t *testing.T) {
+	mockClient := &Client{}
+
+	req := &workflowservice.ResetWorkflowExecutionRequest{
+		Namespace: "test-namespace",
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: "wid",
+			RunId:      "rid",
+		},
+		Reason:                    "bad deployment",
+		WorkflowTaskFinishEventId: 6,
+		RequestId:                 "request-id-random",
+	}
+	resp := &workflowservice.ResetWorkflowExecutionResponse{
+		RunId: "new-run-id",
+	}
+
+	mockClient.On("ResetWorkflowExecution", mock.Anything, mock.Anything).Return(resp, nil).Once()
+	actualResp, err := mockClient.ResetWorkflowExecution(context.Background(), req)
+	mockClient.AssertExpectations(t)
+	require.NoError(t, err)
+	require.Equal(t, "new-run-id", actualResp.GetRunId())
 }

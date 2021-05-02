@@ -101,10 +101,9 @@ type (
 
 	// workflowExecutionContextImpl is the cached workflow state for sticky execution
 	workflowExecutionContextImpl struct {
-		mutex             sync.Mutex
-		workflowStartTime time.Time
-		workflowInfo      *WorkflowInfo
-		wth               *workflowTaskHandlerImpl
+		mutex        sync.Mutex
+		workflowInfo *WorkflowInfo
+		wth          *workflowTaskHandlerImpl
 
 		eventHandler *workflowExecutionEventHandler
 
@@ -401,14 +400,12 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 }
 
 func newWorkflowExecutionContext(
-	startTime time.Time,
 	workflowInfo *WorkflowInfo,
 	taskHandler *workflowTaskHandlerImpl,
 ) *workflowExecutionContextImpl {
 	workflowContext := &workflowExecutionContextImpl{
-		workflowStartTime: startTime,
-		workflowInfo:      workflowInfo,
-		wth:               taskHandler,
+		workflowInfo: workflowInfo,
+		wth:          taskHandler,
 	}
 	workflowContext.createEventHandler()
 	return workflowContext
@@ -539,7 +536,8 @@ func resetHistory(task *workflowservice.PollWorkflowTaskQueueResponse, historyIt
 
 func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.PollWorkflowTaskQueueResponse) (*workflowExecutionContextImpl, error) {
 	h := task.History
-	attributes := h.Events[0].GetWorkflowExecutionStartedEventAttributes()
+	startedEvent := h.Events[0]
+	attributes := startedEvent.GetWorkflowExecutionStartedEventAttributes()
 	if attributes == nil {
 		return nil, errors.New("first history event is not WorkflowExecutionStarted")
 	}
@@ -571,6 +569,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		WorkflowTaskTimeout:      common.DurationValue(attributes.GetWorkflowTaskTimeout()),
 		Namespace:                wth.namespace,
 		Attempt:                  attributes.GetAttempt(),
+		WorkflowStartTime:        common.TimeValue(startedEvent.GetEventTime()),
 		lastCompletionResult:     attributes.LastCompletionResult,
 		lastFailure:              attributes.ContinuedFailure,
 		CronSchedule:             attributes.CronSchedule,
@@ -581,8 +580,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		SearchAttributes:         attributes.SearchAttributes,
 	}
 
-	wfStartTime := common.TimeValue(h.Events[0].GetEventTime())
-	return newWorkflowExecutionContext(wfStartTime, workflowInfo, wth), nil
+	return newWorkflowExecutionContext(workflowInfo, wth), nil
 }
 
 func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
@@ -1491,7 +1489,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 
 	if closeCommand != nil {
 		commands = append(commands, closeCommand)
-		elapsed := time.Since(workflowContext.workflowStartTime)
+		elapsed := time.Since(workflowContext.workflowInfo.WorkflowStartTime)
 		metricsScope.Timer(metrics.WorkflowEndToEndLatency).Record(elapsed)
 		forceNewWorkflowTask = false
 	}

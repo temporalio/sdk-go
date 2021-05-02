@@ -1182,20 +1182,26 @@ func (env *testWorkflowEnvironmentImpl) validateRetryPolicy(policy *commonpb.Ret
 		// nil policy is valid which means no retry
 		return nil
 	}
+
+	if policy.GetMaximumAttempts() == 1 {
+		// One maximum attempt effectively disable retries. Validating the
+		// rest of the arguments is pointless
+		return nil
+	}
 	if common.DurationValue(policy.GetInitialInterval()) < 0 {
-		return serviceerror.NewInvalidArgument("InitialIntervalInSeconds cannot be less than 0 on retry policy.")
+		return serviceerror.NewInvalidArgument("InitialInterval cannot be negative on retry policy.")
 	}
 	if policy.GetBackoffCoefficient() < 1 {
 		return serviceerror.NewInvalidArgument("BackoffCoefficient cannot be less than 1 on retry policy.")
 	}
 	if common.DurationValue(policy.GetMaximumInterval()) < 0 {
-		return serviceerror.NewInvalidArgument("MaximumIntervalInSeconds cannot be less than 0 on retry policy.")
+		return serviceerror.NewInvalidArgument("MaximumInterval cannot be negative on retry policy.")
 	}
 	if common.DurationValue(policy.GetMaximumInterval()) > 0 && common.DurationValue(policy.GetMaximumInterval()) < common.DurationValue(policy.GetInitialInterval()) {
-		return serviceerror.NewInvalidArgument("MaximumIntervalInSeconds cannot be less than InitialIntervalInSeconds on retry policy.")
+		return serviceerror.NewInvalidArgument("MaximumInterval cannot be less than InitialInterval on retry policy.")
 	}
 	if policy.GetMaximumAttempts() < 0 {
-		return serviceerror.NewInvalidArgument("MaximumAttempts cannot be less than 0 on retry policy.")
+		return serviceerror.NewInvalidArgument("MaximumAttempts cannot be negative on retry policy.")
 	}
 	return nil
 }
@@ -2213,6 +2219,21 @@ func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...
 		return nil, err
 	}
 	return newEncodedValue(blob, env.GetDataConverter()), nil
+}
+
+func (env *testWorkflowEnvironmentImpl) queryWorkflowByID(workflowID, queryType string, args ...interface{}) (converter.EncodedValue, error) {
+	if workflowHandle, ok := env.runningWorkflows[workflowID]; ok {
+		data, err := encodeArgs(workflowHandle.env.GetDataConverter(), args)
+		if err != nil {
+			return nil, err
+		}
+		blob, err := workflowHandle.env.queryHandler(queryType, data)
+		if err != nil {
+			return nil, err
+		}
+		return newEncodedValue(blob, workflowHandle.env.GetDataConverter()), nil
+	}
+	return nil, serviceerror.NewNotFound(fmt.Sprintf("Workflow %v not exists", workflowID))
 }
 
 func (env *testWorkflowEnvironmentImpl) getMockRunFn(callWrapper *MockCallWrapper) func(args mock.Arguments) {
