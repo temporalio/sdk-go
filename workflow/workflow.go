@@ -122,8 +122,6 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 //
 // • No need to register local activity.
 //
-// • The parameter activity to ExecuteLocalActivity() must be a function.
-//
 // • Local activity is for short living activities (usually finishes within seconds).
 //
 // • Local activity cannot heartbeat.

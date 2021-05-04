@@ -92,6 +92,7 @@ func testInternalWorkerRegister(r *registry) {
 		Name:                       "testActivityStructWithFns_",
 		SkipInvalidStructFunctions: true,
 	})
+	r.RegisterActivity(&testActivityStruct{})
 }
 
 func testInternalWorkerRegisterWithTestEnv(env *TestWorkflowEnvironment) {
@@ -130,6 +131,7 @@ func testInternalWorkerRegisterWithTestEnv(env *TestWorkflowEnvironment) {
 		Name:                       "testActivityStructWithFns_",
 		SkipInvalidStructFunctions: true,
 	})
+	env.RegisterActivity(&testActivityStruct{})
 }
 
 type internalWorkerTestSuite struct {
@@ -1437,7 +1439,7 @@ func testActivityMultipleArgs(context.Context, int, []string, bool) ([]byte, err
 }
 
 // test testActivityMultipleArgsWithStruct
-func testActivityMultipleArgsWithStruct(_ context.Context, i int, s testActivityArg) ([]byte, error) {
+func testActivityMultipleArgsWithStruct(_ context.Context, i int, s *testActivityArg) ([]byte, error) {
 	fmt.Printf("Executing testActivityMultipleArgsWithStruct: %d, %v\n", i, s)
 	return nil, nil
 }
@@ -1758,113 +1760,140 @@ type activitiesCallingOptionsWorkflow struct {
 }
 
 func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (result []byte, err error) {
+	type exeType func(activity interface{}, args ...interface{}) Future
+	type exeAndCtx struct {
+		exe exeType
+		ctx Context
+	}
+
 	ao := ActivityOptions{
 		ScheduleToStartTimeout: 10 * time.Second,
 		StartToCloseTimeout:    5 * time.Second,
 	}
-	ctx = WithActivityOptions(ctx, ao)
+	nonlocalCtx := WithActivityOptions(ctx, ao)
+	nonlocalExecutor := func(activity interface{}, args ...interface{}) Future {
+		return ExecuteActivity(nonlocalCtx, activity, args...)
+	}
+	localOptions := LocalActivityOptions{
+		StartToCloseTimeout: time.Second * 5,
+	}
+	localCtx := WithLocalActivityOptions(ctx, localOptions)
+	localExecutor := func(activity interface{}, args ...interface{}) Future {
+		return ExecuteLocalActivity(localCtx, activity, args...)
+	}
+	nonlocal := exeAndCtx{exe: nonlocalExecutor, ctx: nonlocalCtx}
+	local := exeAndCtx{exe: localExecutor, ctx: localCtx}
 
-	// By functions.
-	err = ExecuteActivity(ctx, testActivityByteArgs, input).Get(ctx, nil)
-	require.NoError(w.t, err, err)
+	for _, executor := range []exeAndCtx{nonlocal, local} {
+		// By functions.
+		err = executor.exe(testActivityByteArgs, input).Get(executor.ctx, nil)
+		require.NoError(w.t, err, err)
 
-	err = ExecuteActivity(ctx, testActivityMultipleArgs, 2, []string{"test"}, true).Get(ctx, nil)
-	require.NoError(w.t, err, err)
+		err = executor.exe(testActivityMultipleArgs, 2, []string{"test"}, true).Get(executor.ctx, nil)
+		require.NoError(w.t, err, err)
 
-	err = ExecuteActivity(ctx, testActivityMultipleArgsWithStruct, -8, newTestActivityArg()).Get(ctx, nil)
-	require.NoError(w.t, err, err)
+		err = executor.exe(testActivityMultipleArgsWithStruct, -8, newTestActivityArg()).Get(executor.ctx, nil)
+		require.NoError(w.t, err, err)
 
-	err = ExecuteActivity(ctx, testActivityNoResult, 2, "test").Get(ctx, nil)
-	require.NoError(w.t, err, err)
+		err = executor.exe(testActivityNoResult, 2, "test").Get(executor.ctx, nil)
+		require.NoError(w.t, err, err)
 
-	err = ExecuteActivity(ctx, testActivityNoContextArg, 2, "test").Get(ctx, nil)
-	require.NoError(w.t, err, err)
+		err = executor.exe(testActivityNoContextArg, 2, "test").Get(executor.ctx, nil)
+		require.NoError(w.t, err, err)
 
-	f := ExecuteActivity(ctx, testActivityReturnByteArray)
-	var r []byte
-	err = f.Get(ctx, &r)
-	require.NoError(w.t, err, err)
-	require.Equal(w.t, []byte("testActivity"), r)
+		f := executor.exe(testActivityReturnByteArray)
+		var r []byte
+		err = f.Get(executor.ctx, &r)
+		require.NoError(w.t, err, err)
+		require.Equal(w.t, []byte("testActivity"), r)
 
-	f = ExecuteActivity(ctx, testActivityReturnInt)
-	var rInt int
-	err = f.Get(ctx, &rInt)
-	require.NoError(w.t, err, err)
-	require.Equal(w.t, 5, rInt)
+		f = executor.exe(testActivityReturnInt)
+		var rInt int
+		err = f.Get(executor.ctx, &rInt)
+		require.NoError(w.t, err, err)
+		require.Equal(w.t, 5, rInt)
 
-	f = ExecuteActivity(ctx, testActivityReturnString)
-	var rString string
-	err = f.Get(ctx, &rString)
+		f = executor.exe(testActivityReturnString)
+		var rString string
+		err = f.Get(executor.ctx, &rString)
 
-	require.NoError(w.t, err, err)
-	require.Equal(w.t, "testActivity", rString)
+		require.NoError(w.t, err, err)
+		require.Equal(w.t, "testActivity", rString)
 
-	f = ExecuteActivity(ctx, testActivityReturnEmptyString)
-	var r2String string
-	err = f.Get(ctx, &r2String)
-	require.NoError(w.t, err, err)
-	require.Equal(w.t, "", r2String)
+		f = executor.exe(testActivityReturnEmptyString)
+		var r2String string
+		err = f.Get(executor.ctx, &r2String)
+		require.NoError(w.t, err, err)
+		require.Equal(w.t, "", r2String)
 
-	f = ExecuteActivity(ctx, testActivityReturnEmptyStruct)
-	var r2Struct testActivityResult
-	err = f.Get(ctx, &r2Struct)
-	require.NoError(w.t, err, err)
-	require.Equal(w.t, testActivityResult{}, r2Struct)
+		f = executor.exe(testActivityReturnEmptyStruct)
+		var r2Struct testActivityResult
+		err = f.Get(executor.ctx, &r2Struct)
+		require.NoError(w.t, err, err)
+		require.Equal(w.t, testActivityResult{}, r2Struct)
 
-	f = ExecuteActivity(ctx, testActivityReturnNilStructPtr)
-	var rStructPtr *testActivityResult
-	err = f.Get(ctx, &rStructPtr)
-	require.NoError(w.t, err, err)
-	require.True(w.t, rStructPtr == nil)
+		f = executor.exe(testActivityReturnNilStructPtr)
+		var rStructPtr *testActivityResult
+		err = f.Get(executor.ctx, &rStructPtr)
+		require.NoError(w.t, err, err)
+		require.True(w.t, rStructPtr == nil)
 
-	f = ExecuteActivity(ctx, testActivityReturnStructPtr)
-	err = f.Get(ctx, &rStructPtr)
-	require.NoError(w.t, err, err)
-	require.Equal(w.t, *rStructPtr, testActivityResult{Index: 10})
+		f = executor.exe(testActivityReturnStructPtr)
+		err = f.Get(executor.ctx, &rStructPtr)
+		require.NoError(w.t, err, err)
+		require.Equal(w.t, *rStructPtr, testActivityResult{Index: 10})
 
-	f = ExecuteActivity(ctx, testActivityReturnNilStructPtrPtr)
-	var rStruct2Ptr **testActivityResult
-	err = f.Get(ctx, &rStruct2Ptr)
-	require.NoError(w.t, err, err)
-	require.True(w.t, rStruct2Ptr == nil)
+		f = executor.exe(testActivityReturnNilStructPtrPtr)
+		var rStruct2Ptr **testActivityResult
+		err = f.Get(executor.ctx, &rStruct2Ptr)
+		require.NoError(w.t, err, err)
+		require.True(w.t, rStruct2Ptr == nil)
 
-	f = ExecuteActivity(ctx, testActivityReturnStructPtrPtr)
-	err = f.Get(ctx, &rStruct2Ptr)
-	require.NoError(w.t, err, err)
-	require.True(w.t, **rStruct2Ptr == testActivityResult{Index: 10})
+		f = executor.exe(testActivityReturnStructPtrPtr)
+		err = f.Get(executor.ctx, &rStruct2Ptr)
+		require.NoError(w.t, err, err)
+		require.True(w.t, **rStruct2Ptr == testActivityResult{Index: 10})
 
-	// By names.
-	err = ExecuteActivity(ctx, "testActivityByteArgs", input).Get(ctx, nil)
-	require.NoError(w.t, err, err)
+		// By names.
+		err = executor.exe("testActivityByteArgs", input).Get(executor.ctx, nil)
+		require.NoError(w.t, err, err)
 
-	err = ExecuteActivity(ctx, "testActivityMultipleArgs", 2, []string{"test"}, true).Get(ctx, nil)
-	require.NoError(w.t, err, err)
+		err = executor.exe("testActivityMultipleArgs", 2, []string{"test"}, true).Get(executor.ctx, nil)
+		require.NoError(w.t, err, err)
 
-	err = ExecuteActivity(ctx, "testActivityNoResult", 2, "test").Get(ctx, nil)
-	require.NoError(w.t, err, err)
+		err = executor.exe("testActivityNoResult", 2, "test").Get(executor.ctx, nil)
+		require.NoError(w.t, err, err)
 
-	err = ExecuteActivity(ctx, "testActivityNoContextArg", 2, "test").Get(ctx, nil)
-	require.NoError(w.t, err, err)
+		err = executor.exe("testActivityNoContextArg", 2, "test").Get(executor.ctx, nil)
+		require.NoError(w.t, err, err)
 
-	f = ExecuteActivity(ctx, "testActivityReturnString")
-	err = f.Get(ctx, &rString)
-	require.NoError(w.t, err, err)
-	require.Equal(w.t, "testActivity", rString, rString)
+		f = executor.exe("testActivityReturnString")
+		err = f.Get(executor.ctx, &rString)
+		require.NoError(w.t, err, err)
+		require.Equal(w.t, "testActivity", rString, rString)
 
-	f = ExecuteActivity(ctx, "testActivityReturnEmptyString")
-	var r2sString string
-	err = f.Get(ctx, &r2String)
-	require.NoError(w.t, err, err)
-	require.Equal(w.t, "", r2sString)
+		f = executor.exe("testActivityReturnEmptyString")
+		var r2sString string
+		err = f.Get(executor.ctx, &r2String)
+		require.NoError(w.t, err, err)
+		require.Equal(w.t, "", r2sString)
 
-	f = ExecuteActivity(ctx, "testActivityReturnEmptyStruct")
-	err = f.Get(ctx, &r2Struct)
-	require.NoError(w.t, err, err)
-	require.Equal(w.t, testActivityResult{}, r2Struct)
+		f = executor.exe("testActivityReturnEmptyStruct")
+		err = f.Get(executor.ctx, &r2Struct)
+		require.NoError(w.t, err, err)
+		require.Equal(w.t, testActivityResult{}, r2Struct)
 
-	f = ExecuteActivity(ctx, "testActivityStructWithFns_ValidActivity")
-	err = f.Get(ctx, nil)
-	require.NoError(w.t, err, err)
+		f = executor.exe("testActivityStructWithFns_ValidActivity")
+		err = f.Get(executor.ctx, nil)
+		require.NoError(w.t, err, err)
+
+		// By struct
+		actStruct := &testActivityStruct{}
+		f = executor.exe(actStruct.SomeActivity)
+		err = f.Get(executor.ctx, nil)
+		require.NoError(w.t, err, err)
+
+	}
 
 	return []byte("Done"), nil
 }
@@ -1957,6 +1986,12 @@ func testInfiniteActivity(ctx context.Context) error {
 			return nil
 		}
 	}
+}
+
+type testActivityStruct struct{}
+
+func (a *testActivityStruct) SomeActivity() (string, error) {
+	return "some activity on a struct", nil
 }
 
 type testActivityStructWithFns struct{}
