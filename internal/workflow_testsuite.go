@@ -449,8 +449,8 @@ func (c *MockCallWrapper) Times(i int) *MockCallWrapper {
 	return c
 }
 
-// Zero indicates that the mock should not be called.
-func (c *MockCallWrapper) Zero() *MockCallWrapper {
+// Never indicates that the mock should not be called.
+func (c *MockCallWrapper) Never() *MockCallWrapper {
 	c.call.Maybe()
 	c.call.Panic(fmt.Sprintf("unexpected call: %s(%s)", c.call.Method, c.call.Arguments.String()))
 	return c

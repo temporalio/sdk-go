@@ -93,7 +93,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunction() {
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunctionZero() {
 	env := s.NewTestWorkflowEnvironment()
-	env.OnActivity(testActivityHello, mock.Anything, "world").Zero()
+	env.OnActivity(testActivityHello, mock.Anything, "world").Never()
 	env.RegisterWorkflow(testWorkflowHello)
 	env.ExecuteWorkflow(testWorkflowHello)
 
