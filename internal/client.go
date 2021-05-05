@@ -603,6 +603,9 @@ func NewClient(options ClientOptions) (Client, error) {
 	}
 
 	if err = checkHealth(connection, options.ConnectionOptions); err != nil {
+		if err := connection.Close(); err != nil {
+			options.Logger.Warn("Unable to close connection on health check failure.", "error", err)
+		}
 		return nil, err
 	}
 
@@ -668,6 +671,9 @@ func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
 	}
 
 	if err = checkHealth(connection, options.ConnectionOptions); err != nil {
+		if err := connection.Close(); err != nil {
+			options.Logger.Warn("Unable to close connection on health check failure.", "error", err)
+		}
 		return nil, err
 	}
 
