@@ -449,6 +449,13 @@ func (c *MockCallWrapper) Times(i int) *MockCallWrapper {
 	return c
 }
 
+// Never indicates that the mock should not be called.
+func (c *MockCallWrapper) Never() *MockCallWrapper {
+	c.call.Maybe()
+	c.call.Panic(fmt.Sprintf("unexpected call: %s(%s)", c.call.Method, c.call.Arguments.String()))
+	return c
+}
+
 // Run sets a handler to be called before returning. It can be used when mocking a method such as unmarshalers that
 // takes a pointer to a struct and sets properties in such struct.
 func (c *MockCallWrapper) Run(fn func(args mock.Arguments)) *MockCallWrapper {

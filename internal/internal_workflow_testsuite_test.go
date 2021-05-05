@@ -91,6 +91,18 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunction() {
 	env.AssertExpectations(s.T())
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunctionZero() {
+	env := s.NewTestWorkflowEnvironment()
+	env.OnActivity(testActivityHello, mock.Anything, "world").Never()
+	env.RegisterWorkflow(testWorkflowHello)
+	env.ExecuteWorkflow(testWorkflowHello)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NotNil(env.GetWorkflowError())
+	s.Contains(env.GetWorkflowError().Error(), "unexpected call: testActivityHello(string,string)")
+	env.AssertExpectations(s.T())
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityByNameMockFunction() {
 	mockActivity := func(ctx context.Context, msg string) (string, error) {
 		return "mock_" + msg, nil
