@@ -27,7 +27,6 @@ package converter
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	commonpb "go.temporal.io/api/common/v1"
 )
@@ -61,18 +60,7 @@ func (c *JSONPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr i
 
 // ToString converts payload object into human readable string.
 func (c *JSONPayloadConverter) ToString(payload *commonpb.Payload) string {
-	var value interface{}
-	err := c.FromPayload(payload, &value)
-	if err != nil {
-		return err.Error()
-	}
-	s := fmt.Sprintf("%+v", value)
-	if strings.HasPrefix(s, "map[") {
-		s = strings.TrimPrefix(s, "map[")
-		s = strings.TrimSuffix(s, "]")
-		s = fmt.Sprintf("{%s}", s)
-	}
-	return s
+	return string(payload.GetData())
 }
 
 // Encoding returns MetadataEncodingJSON.

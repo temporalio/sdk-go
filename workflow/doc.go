@@ -49,10 +49,6 @@ the sole parameter it receives as part of its initialization as a parameter to t
 		"go.temporal.io/sdk/workflow"
 	)
 
-	func init() {
-		workflow.Register(SimpleWorkflow)
-	}
-
 	func SimpleWorkflow(ctx workflow.Context, value string) error {
 		ao := workflow.ActivityOptions{
 			TaskQueue:               "sampleTaskQueue",
@@ -463,12 +459,17 @@ Registration
 For some client code to be able to invoke a workflow type, the worker process needs to be aware of all the
 implementations it has access to. A workflow is registered with the following call:
 
-	workflow.Register(SimpleWorkflow)
+	worker.RegisterWorkflow(SimpleWorkflow)
 
 This call essentially creates an in memory mapping inside the worker process between the fully qualified function name
-and the implementation. It is safe to call this registration method from an **init()** function. If the worker
-receives tasks for a workflow type it does not know it will fail that task. However, the failure of the task will not
-cause the entire workflow to fail.
+and the implementation. If the worker receives tasks for a workflow type it does not know it will fail that task.
+However, the failure of the task will not cause the entire workflow to fail.
+
+Similarly, we need to have at least one worker that hosts the activity functions:
+
+	worker.RegisterActivity(MyActivity)
+
+See the activity package for more details on activity registration.
 
 Testing
 

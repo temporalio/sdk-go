@@ -64,8 +64,8 @@ func (c *ProtoPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload,
 			}
 			return newPayload(byteSlice, c), nil
 		}
-		if valueGogoProto, ok := value.(gogoproto.Marshaler); ok {
-			data, err := valueGogoProto.Marshal()
+		if valueGogoProto, ok := value.(gogoproto.Message); ok {
+			data, err := gogoproto.Marshal(valueGogoProto)
 			if err != nil {
 				return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
 			}

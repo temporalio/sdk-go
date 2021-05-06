@@ -159,7 +159,7 @@ type (
 		keptBlocked  bool             // true indicates that coroutine didn't make any progress since the last yield unblocking
 		closed       atomic.Bool      // indicates that owning coroutine has finished execution
 		blocked      atomic.Bool
-		panicError   *workflowPanicError // non nil if coroutine had unhandled panic
+		panicError   error // non nil if coroutine had unhandled panic
 	}
 
 	dispatcherImpl struct {
@@ -1238,10 +1238,15 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 
 func getDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 	options := getWorkflowEnvOptions(ctx)
-	if options == nil || options.DataConverter == nil {
-		return converter.GetDefaultDataConverter()
+	var dataConverter converter.DataConverter
+
+	if options != nil && options.DataConverter != nil {
+		dataConverter = options.DataConverter
+	} else {
+		dataConverter = converter.GetDefaultDataConverter()
 	}
-	return options.DataConverter
+
+	return WithWorkflowContext(ctx, dataConverter)
 }
 
 func getRegistryFromWorkflowContext(ctx Context) *registry {

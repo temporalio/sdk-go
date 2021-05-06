@@ -153,7 +153,7 @@ func (e *UnknownEncodingTypeError) Error() string {
 }
 
 // NewSerializationError returns a SerializationError
-func NewSerializationError(msg string) *SerializationError {
+func NewSerializationError(msg string) error {
 	return &SerializationError{msg: msg}
 }
 
@@ -162,7 +162,7 @@ func (e *SerializationError) Error() string {
 }
 
 // NewDeserializationError returns a DeserializationError
-func NewDeserializationError(msg string) *DeserializationError {
+func NewDeserializationError(msg string) error {
 	return &DeserializationError{msg: msg}
 }
 

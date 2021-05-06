@@ -28,21 +28,13 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"go.temporal.io/sdk/log"
 )
 
 func TestMemoryLogger_With(t *testing.T) {
 	logger := NewMemoryLogger()
-	withLogger := With(logger, "p1", 1, "p2", "v2")
-	withLogger.Info("message", "p3", float64(3))
-	logger.Info("message2", "p4", 4)
-
-	assert.Equal(t, "INFO  message p1 1 p2 v2 p3 3\n", logger.Lines()[0])
-	assert.Equal(t, "INFO  message2 p4 4\n", logger.Lines()[1])
-}
-
-func TestWithLogger(t *testing.T) {
-	logger := NewMemoryLogger()
-	withLogger := newWithLogger(logger, "p1", 1, "p2", "v2")
+	withLogger := log.With(logger, "p1", 1, "p2", "v2")
 	withLogger.Info("message", "p3", float64(3))
 	logger.Info("message2", "p4", 4)
 
@@ -82,4 +74,17 @@ func TestReplayLogger(t *testing.T) {
 	assert.NotContains(t, logger.Lines(), "INFO  replay info\n")
 	assert.Contains(t, logger.Lines(), "INFO  normal2 info\n")
 	assert.Contains(t, logger.Lines(), "INFO  replay2 info\n")
+}
+
+func TestReplayLogger_With(t *testing.T) {
+	logger := NewMemoryLogger()
+	isReplay, enableLoggingInReplay := false, false
+	replayLogger := NewReplayLogger(logger, &isReplay, &enableLoggingInReplay)
+	withReplayLogger := log.With(replayLogger, "p1", 1, "p2", "v2")
+	withReplayLogger.Info("message", "p3", float64(3))
+	logger.Info("message2", "p4", 4)
+
+	withReplayLogger.Info("message")
+	assert.Equal(t, "INFO  message p1 1 p2 v2 p3 3\n", logger.Lines()[0])
+	assert.Equal(t, "INFO  message2 p4 4\n", logger.Lines()[1])
 }

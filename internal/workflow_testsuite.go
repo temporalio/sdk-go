@@ -449,6 +449,13 @@ func (c *MockCallWrapper) Times(i int) *MockCallWrapper {
 	return c
 }
 
+// Never indicates that the mock should not be called.
+func (c *MockCallWrapper) Never() *MockCallWrapper {
+	c.call.Maybe()
+	c.call.Panic(fmt.Sprintf("unexpected call: %s(%s)", c.call.Method, c.call.Arguments.String()))
+	return c
+}
+
 // Run sets a handler to be called before returning. It can be used when mocking a method such as unmarshalers that
 // takes a pointer to a struct and sets properties in such struct.
 func (c *MockCallWrapper) Run(fn func(args mock.Arguments)) *MockCallWrapper {
@@ -712,6 +719,11 @@ func (e *TestWorkflowEnvironment) SignalWorkflowByID(workflowID, signalName stri
 // QueryWorkflow queries to the currently running test workflow and returns result synchronously.
 func (e *TestWorkflowEnvironment) QueryWorkflow(queryType string, args ...interface{}) (converter.EncodedValue, error) {
 	return e.impl.queryWorkflow(queryType, args...)
+}
+
+// QueryWorkflowByID queries a child workflow by its ID and returns the result synchronously
+func (e *TestWorkflowEnvironment) QueryWorkflowByID(workflowID, queryType string, args ...interface{}) (converter.EncodedValue, error) {
+	return e.impl.queryWorkflowByID(workflowID, queryType, args...)
 }
 
 // RegisterDelayedCallback creates a new timer with specified delayDuration using workflow clock (not wall clock). When

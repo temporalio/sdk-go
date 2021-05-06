@@ -34,6 +34,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/keepalive"
+	"google.golang.org/grpc/metadata"
 
 	"go.temporal.io/sdk/internal/common/metrics"
 )
@@ -60,9 +62,16 @@ const (
 )
 
 func dial(params dialParameters) (*grpc.ClientConn, error) {
-	grpcSecurityOptions := grpc.WithInsecure()
+	var securityOptions []grpc.DialOption
 	if params.UserConnectionOptions.TLS != nil {
-		grpcSecurityOptions = grpc.WithTransportCredentials(credentials.NewTLS(params.UserConnectionOptions.TLS))
+		securityOptions = []grpc.DialOption{
+			grpc.WithTransportCredentials(credentials.NewTLS(params.UserConnectionOptions.TLS)),
+		}
+	} else {
+		securityOptions = []grpc.DialOption{
+			grpc.WithInsecure(),
+			grpc.WithAuthority(params.UserConnectionOptions.Authority),
+		}
 	}
 
 	// gRPC maintains connection pool inside grpc.ClientConn.
@@ -77,17 +86,47 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 	}
 	cp.Backoff.BaseDelay = retryPollOperationInitialInterval
 	cp.Backoff.MaxDelay = retryPollOperationMaxInterval
-
-	return grpc.Dial(params.HostPort,
-		grpcSecurityOptions,
+	opts := []grpc.DialOption{
 		grpc.WithChainUnaryInterceptor(params.RequiredInterceptors...),
 		grpc.WithDefaultServiceConfig(params.DefaultServiceConfig),
 		grpc.WithConnectParams(cp),
-	)
+	}
+
+	opts = append(opts, securityOptions...)
+
+	if params.UserConnectionOptions.EnableKeepAliveCheck {
+		// gRPC utilizes keep alive mechanism to detect dead connections in case if server didn't close them
+		// gracefully. Client would ping the server periodically and expect replies withing the specified timeout.
+		// Learn more by reading https://github.com/grpc/grpc/blob/master/doc/keepalive.md
+		var kap = keepalive.ClientParameters{
+			Time:                params.UserConnectionOptions.KeepAliveTime,
+			Timeout:             params.UserConnectionOptions.KeepAliveTimeout,
+			PermitWithoutStream: params.UserConnectionOptions.KeepAlivePermitWithoutStream,
+		}
+		opts = append(opts, grpc.WithKeepaliveParams(kap))
+	}
+	return grpc.Dial(params.HostPort, opts...)
 }
 
-func requiredInterceptors(metricScope tally.Scope) []grpc.UnaryClientInterceptor {
-	return []grpc.UnaryClientInterceptor{metrics.NewScopeInterceptor(metricScope), errorInterceptor}
+func requiredInterceptors(metricScope tally.Scope, headersProvider HeadersProvider) []grpc.UnaryClientInterceptor {
+	interceptors := []grpc.UnaryClientInterceptor{metrics.NewScopeInterceptor(metricScope), errorInterceptor}
+	if headersProvider != nil {
+		interceptors = append(interceptors, headersProviderInterceptor(headersProvider))
+	}
+	return interceptors
+}
+
+func headersProviderInterceptor(headersProvider HeadersProvider) grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		headers, err := headersProvider.GetHeaders(ctx)
+		if err != nil {
+			return err
+		}
+		for k, v := range headers {
+			ctx = metadata.AppendToOutgoingContext(ctx, k, v)
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
 }
 
 func errorInterceptor(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {

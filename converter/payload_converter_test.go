@@ -188,7 +188,7 @@ func TestJsonPayloadConverter(t *testing.T) {
 	assert.Equal(t, "qwe", wt4.Name)
 
 	s := pc.ToString(payload)
-	assert.Equal(t, "{Age:0 Name:qwe}", s)
+	assert.Equal(t, `{"Name":"qwe","Age":0}`, s)
 }
 
 func TestProtoJsonPayloadConverter_Nil(t *testing.T) {

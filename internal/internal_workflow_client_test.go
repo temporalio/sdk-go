@@ -701,8 +701,10 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 	eventType := enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED
 	reason := "some reason"
 	details := "some details"
-	applicationError := NewApplicationError(reason, "", false, nil, details)
-	failure := ConvertErrorToFailure(applicationError, converter.GetDefaultDataConverter())
+	err := NewApplicationError(reason, "", false, nil, details)
+	var applicationErr *ApplicationError
+	s.True(errors.As(err, &applicationErr))
+	failure := ConvertErrorToFailure(applicationErr, converter.GetDefaultDataConverter())
 
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
@@ -740,8 +742,8 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 	s.True(ok)
 	var applicationErr2 *ApplicationError
 	s.True(errors.As(err, &applicationErr2))
-	s.Equal(applicationError.msg, applicationErr2.msg)
-	s.Equal(applicationError.nonRetryable, applicationErr2.nonRetryable)
+	s.Equal(applicationErr.msg, applicationErr2.msg)
+	s.Equal(applicationErr.nonRetryable, applicationErr2.nonRetryable)
 	s.Equal(time.Minute, decodedResult)
 }
 

@@ -91,6 +91,18 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunction() {
 	env.AssertExpectations(s.T())
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunctionZero() {
+	env := s.NewTestWorkflowEnvironment()
+	env.OnActivity(testActivityHello, mock.Anything, "world").Never()
+	env.RegisterWorkflow(testWorkflowHello)
+	env.ExecuteWorkflow(testWorkflowHello)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NotNil(env.GetWorkflowError())
+	s.Contains(env.GetWorkflowError().Error(), "unexpected call: testActivityHello(string,string)")
+	env.AssertExpectations(s.T())
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityByNameMockFunction() {
 	mockActivity := func(ctx context.Context, msg string) (string, error) {
 		return "mock_" + msg, nil
@@ -605,6 +617,47 @@ func (s *WorkflowTestSuiteUnitTest) Test_SideEffect() {
 	env.RegisterActivity(testActivityHello)
 
 	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.Nil(env.GetWorkflowError())
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_SideEffect_WithVersion() {
+	workflowFn := func(ctx Context) error {
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+
+		qerr := SetQueryHandler(ctx, "test-query", func() (string, error) {
+			return "queryresult", nil
+		})
+
+		if qerr != nil {
+			return qerr
+		}
+		var uniqueID *string
+
+		v := GetVersion(ctx, "UniqueID", DefaultVersion, 1)
+		if v == 1 {
+			encodedUID := SideEffect(ctx, func(ctx Context) interface{} {
+				return "TEST-UNIQUE-ID"
+			})
+			err := encodedUID.Get(&uniqueID)
+			if err != nil {
+				return err
+			}
+		}
+
+		f := ExecuteActivity(ctx, testActivityHello, "msg1")
+		err := f.Get(ctx, nil) // wait for result
+		return err
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(workflowFn)
+	env.RegisterActivity(testActivityHello)
+
+	env.ExecuteWorkflow(workflowFn)
+	_, err := env.QueryWorkflow("test-query")
+	s.NoError(err)
 
 	s.True(env.IsWorkflowCompleted())
 	s.Nil(env.GetWorkflowError())
@@ -1816,6 +1869,79 @@ func (s *WorkflowTestSuiteUnitTest) Test_QueryWorkflow() {
 	verifyStateWithQuery(stateDone)
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_QueryChildWorkflow() {
+	queryType := "state"
+	childWorkflowID := "test-query-child-workflow"
+	stateWaitSignal, stateWaitActivity, stateDone := "wait for signal", "wait for activity", "done"
+	childWorkflowFn := func(ctx Context) error {
+		var state string
+		err := SetQueryHandler(ctx, queryType, func(queryInput string) (string, error) {
+			return queryInput + state, nil
+		})
+		if err != nil {
+			return err
+		}
+		state = stateWaitSignal
+		var signalData string
+		GetSignalChannel(ctx, "query-signal").Receive(ctx, &signalData)
+
+		state = stateWaitActivity
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+		err = ExecuteActivity(ctx, testActivityHello, signalData).Get(ctx, nil)
+		if err != nil {
+			return err
+		}
+		state = stateDone
+		return err
+	}
+	workflowFn := func(ctx Context) error {
+		cwo := ChildWorkflowOptions{
+			WorkflowID:         childWorkflowID,
+			WorkflowRunTimeout: time.Hour * 3,
+			RetryPolicy: &RetryPolicy{
+				InitialInterval:    time.Second * 3,
+				MaximumInterval:    time.Second * 3,
+				BackoffCoefficient: 1,
+			},
+		}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		err := ExecuteChildWorkflow(ctx, childWorkflowFn).Get(ctx, nil)
+		if err != nil {
+			return err
+		}
+		return err
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(childWorkflowFn)
+	env.RegisterWorkflow(workflowFn)
+	env.RegisterActivity(testActivityHello)
+	verifyStateWithQuery := func(expected string) {
+		encodedValue, err := env.QueryWorkflowByID(childWorkflowID, queryType, "input")
+		s.NoError(err)
+		s.NotNil(encodedValue)
+		var state string
+		err = encodedValue.Get(&state)
+		s.NoError(err)
+		s.Equal("input"+expected, state)
+	}
+
+	env.RegisterDelayedCallback(func() {
+		verifyStateWithQuery(stateWaitSignal)
+		_ = env.SignalWorkflowByID(childWorkflowID, "query-signal", "hello-query")
+	}, time.Hour)
+	env.OnActivity(testActivityHello, mock.Anything, mock.Anything).After(time.Hour).Return("hello_mock", nil)
+	env.SetOnActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args converter.EncodedValues) {
+		verifyStateWithQuery(stateWaitActivity)
+	})
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
+	verifyStateWithQuery(stateDone)
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowWithLocalActivity() {
 	localActivityFn := func(ctx context.Context, name string) (string, error) {
 		return "hello " + name, nil
@@ -2418,6 +2544,47 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 	s.Equal("retry-done", result)
 	s.Equal(2, attempt1Count)
 	s.Equal(4, attempt2Count)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry_NoRetries() {
+	maxRetryAttempts := int32(1)
+	fakeError := fmt.Errorf("fake network error")
+	activityFailedFn := func(ctx context.Context) (string, error) {
+		info := GetActivityInfo(ctx)
+		if info.Attempt <= maxRetryAttempts {
+			return "", fakeError
+		}
+		return "", nil
+	}
+
+	workflowFn := func(ctx Context) (string, error) {
+		ao := ActivityOptions{
+			ScheduleToStartTimeout: time.Minute,
+			StartToCloseTimeout:    time.Minute,
+			RetryPolicy: &RetryPolicy{
+				InitialInterval:    time.Second,
+				MaximumAttempts:    maxRetryAttempts,
+				BackoffCoefficient: 0,
+			},
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		err := ExecuteActivity(ctx, activityFailedFn).Get(ctx, nil)
+		s.Error(err)
+		return "", err
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.SetTestTimeout(time.Hour)
+	env.RegisterWorkflow(workflowFn)
+	env.RegisterActivity(activityFailedFn)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	s.Error(err)
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+	s.True(errors.As(err, &fakeError))
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityHeartbeatRetry() {

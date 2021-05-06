@@ -531,7 +531,10 @@ func (r *registry) RegisterActivityWithOptions(
 	// Validate that it is a function
 	fnType := reflect.TypeOf(af)
 	if fnType.Kind() == reflect.Ptr && fnType.Elem().Kind() == reflect.Struct {
-		_ = r.registerActivityStructWithOptions(af, options)
+		registerErr := r.registerActivityStructWithOptions(af, options)
+		if registerErr != nil {
+			panic(registerErr)
+		}
 		return
 	}
 	if err := validateFnFormat(fnType, false); err != nil {
@@ -574,6 +577,10 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 		}
 		name := method.Name
 		if err := validateFnFormat(method.Type, false); err != nil {
+			if options.SkipInvalidStructFunctions {
+				continue
+			}
+
 			return fmt.Errorf("method %v of %v: %e", name, structType.Name(), err)
 		}
 		registerName := options.Name + name
@@ -739,7 +746,7 @@ type workflowExecutor struct {
 
 func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*commonpb.Payloads, error) {
 	var args []interface{}
-	dataConverter := getWorkflowEnvOptions(ctx).DataConverter
+	dataConverter := WithWorkflowContext(ctx, getWorkflowEnvOptions(ctx).DataConverter)
 	fnType := reflect.TypeOf(we.fn)
 
 	decoded, err := decodeArgsToValues(dataConverter, fnType, input)
@@ -825,11 +832,15 @@ func (ae *activityExecutor) executeWithActualArgsWithoutParseResult(ctx context.
 }
 
 func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverter {
+	var dataConverter converter.DataConverter
+
 	env := getActivityEnvironmentFromCtx(ctx)
-	if env == nil || env.dataConverter == nil {
-		return converter.GetDefaultDataConverter()
+	if env != nil && env.dataConverter != nil {
+		dataConverter = env.dataConverter
+	} else {
+		dataConverter = converter.GetDefaultDataConverter()
 	}
-	return env.dataConverter
+	return WithContext(ctx, dataConverter)
 }
 
 func getNamespaceFromActivityCtx(ctx context.Context) string {
@@ -1287,7 +1298,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	ensureRequiredParams(&workerParams)
-	workerParams.Logger = ilog.With(workerParams.Logger,
+	workerParams.Logger = log.With(workerParams.Logger,
 		tagNamespace, client.namespace,
 		tagTaskQueue, taskQueue,
 		tagWorkerID, workerParams.Identity,

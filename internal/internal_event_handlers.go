@@ -196,7 +196,7 @@ func newWorkflowExecutionEventHandler(
 		tracer:                tracer,
 	}
 	context.logger = ilog.NewReplayLogger(
-		ilog.With(logger,
+		log.With(logger,
 			tagWorkflowType, workflowInfo.WorkflowType.Name,
 			tagWorkflowID, workflowInfo.WorkflowExecution.ID,
 			tagRunID, workflowInfo.WorkflowExecution.RunID,
@@ -235,6 +235,15 @@ func (s *scheduledChildWorkflow) handle(result *commonpb.Payloads, err error) {
 	}
 	s.handled = true
 	s.resultCallback(result, err)
+}
+
+func (s *scheduledChildWorkflow) handleFailedToStart(result *commonpb.Payloads, err error) {
+	if s.handled {
+		panic(fmt.Sprintf("child workflow already handled %v", s))
+	}
+	s.handled = true
+	s.resultCallback(result, err)
+	s.startedCallback(WorkflowExecution{}, err)
 }
 
 func (t *localActivityTask) cancel() {
@@ -353,7 +362,11 @@ func validateAndSerializeSearchAttributes(attributes map[string]interface{}) (*c
 }
 
 func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
-	wc.cancelHandler = handler
+	wrappedHandler := func() {
+		wc.commandsHelper.workflowExecutionIsCancelling = true
+		handler()
+	}
+	wc.cancelHandler = wrappedHandler
 }
 
 func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
@@ -1186,6 +1199,9 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 		lamd.Backoff = lar.backoff
 	} else {
 		details[localActivityMarkerResultDetailsName] = lar.result
+		if details[localActivityMarkerResultDetailsName] == nil {
+			details[localActivityMarkerResultDetailsName] = &commonpb.Payloads{}
+		}
 	}
 
 	// encode marker data
@@ -1234,7 +1250,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionF
 			enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE,
 			errors.New("workflow execution already started"),
 		)
-		childWorkflow.handle(nil, err)
+		childWorkflow.handleFailedToStart(nil, err)
 		return nil
 	}
 
