@@ -191,12 +191,12 @@ const (
 	localActivityMarkerName     = "LocalActivity"
 	mutableSideEffectMarkerName = "MutableSideEffect"
 
-	sideEffectMarkerIDName               = "side-effect-id"
-	sideEffectMarkerDataName             = "data"
-	versionMarkerChangeIDName            = "change-id"
-	versionMarkerDataName                = "version"
-	localActivityMarkerDataDetailsName   = "data"
-	localActivityMarkerResultDetailsName = "result"
+	sideEffectMarkerIDName      = "side-effect-id"
+	sideEffectMarkerDataName    = "data"
+	versionMarkerChangeIDName   = "change-id"
+	versionMarkerDataName       = "version"
+	localActivityMarkerDataName = "data"
+	localActivityResultName     = "result"
 )
 
 func (d commandState) String() string {
