@@ -170,9 +170,12 @@ func (s *internalWorkerTestSuite) createLocalActivityMarkerDataForTest(activityI
 	markerData, err := s.dataConverter.ToPayloads(lamd)
 	s.NoError(err)
 
+	result, err := s.dataConverter.ToPayloads(nil)
+	s.NoError(err)
+
 	return map[string]*commonpb.Payloads{
-		localActivityMarkerDataDetailsName:   markerData,
-		localActivityMarkerResultDetailsName: {},
+		localActivityMarkerDataName: markerData,
+		localActivityResultName:     result,
 	}
 }
 
