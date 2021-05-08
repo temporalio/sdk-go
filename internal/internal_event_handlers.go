@@ -237,6 +237,15 @@ func (s *scheduledChildWorkflow) handle(result *commonpb.Payloads, err error) {
 	s.resultCallback(result, err)
 }
 
+func (s *scheduledChildWorkflow) handleFailedToStart(result *commonpb.Payloads, err error) {
+	if s.handled {
+		panic(fmt.Sprintf("child workflow already handled %v", s))
+	}
+	s.handled = true
+	s.resultCallback(result, err)
+	s.startedCallback(WorkflowExecution{}, err)
+}
+
 func (t *localActivityTask) cancel() {
 	t.Lock()
 	t.canceled = true
@@ -1133,8 +1142,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details map[string]*commonpb.Payloads, failure *failurepb.Failure) error {
 	var markerData *commonpb.Payloads
 	var ok bool
-	if markerData, ok = details[localActivityMarkerDataDetailsName]; !ok {
-		return fmt.Errorf("key %q: %w", localActivityMarkerDataDetailsName, ErrMissingMarkerDataKey)
+	if markerData, ok = details[localActivityMarkerDataName]; !ok {
+		return fmt.Errorf("key %q: %w", localActivityMarkerDataName, ErrMissingMarkerDataKey)
 	}
 
 	lamd := localActivityMarkerData{}
@@ -1157,12 +1166,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 			lar.Backoff = lamd.Backoff
 			lar.Err = ConvertFailureToError(failure, weh.GetDataConverter())
 		} else {
-			var result *commonpb.Payloads
-			var ok bool
-			if result, ok = details[localActivityMarkerResultDetailsName]; !ok {
-				return fmt.Errorf("key %q: %w", localActivityMarkerResultDetailsName, ErrMissingMarkerDataKey)
-			}
-			lar.Result = result
+			// Result might not be there if local activity doesn't have return value.
+			lar.Result = details[localActivityResultName]
 		}
 		la.callback(lar)
 
@@ -1188,11 +1193,8 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 	}
 	if lar.err != nil {
 		lamd.Backoff = lar.backoff
-	} else {
-		details[localActivityMarkerResultDetailsName] = lar.result
-		if details[localActivityMarkerResultDetailsName] == nil {
-			details[localActivityMarkerResultDetailsName] = &commonpb.Payloads{}
-		}
+	} else if lar.result != nil {
+		details[localActivityResultName] = lar.result
 	}
 
 	// encode marker data
@@ -1200,7 +1202,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 	if err != nil {
 		return err
 	}
-	details[localActivityMarkerDataDetailsName] = markerData
+	details[localActivityMarkerDataName] = markerData
 
 	// create marker event for local activity result
 	markerEvent := &historypb.HistoryEvent{
@@ -1241,7 +1243,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionF
 			enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE,
 			errors.New("workflow execution already started"),
 		)
-		childWorkflow.handle(nil, err)
+		childWorkflow.handleFailedToStart(nil, err)
 		return nil
 	}
 

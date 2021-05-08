@@ -168,9 +168,12 @@ func (s *internalWorkerTestSuite) createLocalActivityMarkerDataForTest(activityI
 	markerData, err := s.dataConverter.ToPayloads(lamd)
 	s.NoError(err)
 
+	result, err := s.dataConverter.ToPayloads(nil)
+	s.NoError(err)
+
 	return map[string]*commonpb.Payloads{
-		localActivityMarkerDataDetailsName:   markerData,
-		localActivityMarkerResultDetailsName: {},
+		localActivityMarkerDataName: markerData,
+		localActivityResultName:     result,
 	}
 }
 
@@ -953,6 +956,65 @@ func createHistoryForCancelTimerAfterActivity(workflowType string) []*historypb.
 		}),
 		createTestEventWorkflowExecutionCompleted(13, &historypb.WorkflowExecutionCompletedEventAttributes{
 			WorkflowTaskCompletedEventId: 12,
+		}),
+	}
+}
+
+func testReplayFailedToStartChildWorkflow(ctx Context) error {
+	opts := ChildWorkflowOptions{
+		WorkflowTaskTimeout:      5 * time.Second,
+		WorkflowExecutionTimeout: 10 * time.Second,
+		WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE,
+		WorkflowID:               "workflowId",
+	}
+	ctx = WithChildWorkflowOptions(ctx, opts)
+	err := ExecuteChildWorkflow(ctx, "testWorkflow").GetChildWorkflowExecution().Get(ctx, nil)
+	if err != nil {
+		if strings.HasSuffix(err.Error(), "workflow execution already started") {
+			return nil
+		}
+		return err
+	}
+	return errors.New("expected an error, but didn't get one")
+}
+
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_FailedToStartChildWorkflow() {
+	testEvents := createHistoryForFailedToStartChildWorkflow("testReplayFailedToStartChildWorkflow")
+	history := &historypb.History{Events: testEvents}
+	logger := getLogger()
+	replayer := NewWorkflowReplayer()
+	replayer.RegisterWorkflow(testReplayFailedToStartChildWorkflow)
+	err := replayer.ReplayWorkflowHistory(logger, history)
+	require.NoError(s.T(), err)
+}
+
+func createHistoryForFailedToStartChildWorkflow(workflowType string) []*historypb.HistoryEvent {
+	taskQueue := "taskQueue1"
+	return []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &commonpb.WorkflowType{Name: workflowType},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
+		}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
+		createTestEventStartChildWorkflowExecutionInitiated(5, &historypb.StartChildWorkflowExecutionInitiatedEventAttributes{
+			TaskQueue:  &taskqueuepb.TaskQueue{Name: taskQueue},
+			WorkflowId: "workflowId",
+		}),
+		createTestEventStartChildWorkflowExecutionFailed(6, &historypb.StartChildWorkflowExecutionFailedEventAttributes{
+			WorkflowId:                   "workflowId",
+			InitiatedEventId:             5,
+			WorkflowTaskCompletedEventId: 4,
+			WorkflowType:                 &commonpb.WorkflowType{Name: "testWorkflow"},
+			Cause:                        enumspb.START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_WORKFLOW_ALREADY_EXISTS,
+		}),
+		createTestEventWorkflowTaskScheduled(7, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(8),
+		createTestEventWorkflowTaskCompleted(9, &historypb.WorkflowTaskCompletedEventAttributes{}),
+		createTestEventWorkflowExecutionCompleted(10, &historypb.WorkflowExecutionCompletedEventAttributes{
+			WorkflowTaskCompletedEventId: 9,
 		}),
 	}
 }
