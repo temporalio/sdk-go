@@ -490,7 +490,7 @@ func (r *registry) RegisterWorkflowWithOptions(
 	if err := validateFnFormat(fnType, true); err != nil {
 		panic(err)
 	}
-	fnName := getFunctionName(wf)
+	fnName, _ := getFunctionName(wf)
 	alias := options.Name
 	registerName := fnName
 	if len(alias) > 0 {
@@ -540,7 +540,7 @@ func (r *registry) RegisterActivityWithOptions(
 	if err := validateFnFormat(fnType, false); err != nil {
 		panic(err)
 	}
-	fnName := getFunctionName(af)
+	fnName, _ := getFunctionName(af)
 	alias := options.Name
 	registerName := fnName
 	if len(alias) > 0 {
@@ -1383,11 +1383,12 @@ func isError(inType reflect.Type) bool {
 	return inType != nil && inType.Implements(errorElem)
 }
 
-func getFunctionName(i interface{}) string {
+func getFunctionName(i interface{}) (name string, isMethod bool) {
 	if fullName, ok := i.(string); ok {
-		return fullName
+		return fullName, false
 	}
 	fullName := runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
+	isMethod = strings.ContainsAny(fullName, "*")
 	elements := strings.Split(fullName, ".")
 	shortName := elements[len(elements)-1]
 	// This allows to call activities by method pointer
@@ -1398,11 +1399,11 @@ func getFunctionName(i interface{}) string {
 	// var a *Activities
 	// ExecuteActivity(ctx, a.Foo)
 	// will call this function which is going to return "Foo"
-	return strings.TrimSuffix(shortName, "-fm")
+	return strings.TrimSuffix(shortName, "-fm"), isMethod
 }
 
 func getActivityFunctionName(r *registry, i interface{}) string {
-	result := getFunctionName(i)
+	result, _ := getFunctionName(i)
 	if alias, ok := r.getActivityAlias(result); ok {
 		result = alias
 	}
@@ -1416,7 +1417,7 @@ func getWorkflowFunctionName(r *registry, workflowFunc interface{}) (string, err
 	case reflect.String:
 		fnName = reflect.ValueOf(workflowFunc).String()
 	case reflect.Func:
-		fnName = getFunctionName(workflowFunc)
+		fnName, _ = getFunctionName(workflowFunc)
 		if alias, ok := r.getWorkflowAlias(fnName); ok {
 			fnName = alias
 		}

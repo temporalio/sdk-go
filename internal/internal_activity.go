@@ -234,7 +234,7 @@ func validateFunctionArgs(workflowFunc interface{}, args []interface{}, isWorkfl
 			workflowFunc)
 	}
 
-	fnName := getFunctionName(workflowFunc)
+	fnName, _ := getFunctionName(workflowFunc)
 	fnArgIndex := 0
 	// Skip Context function argument.
 	if fType.NumIn() > 0 {
@@ -277,7 +277,7 @@ func getValidatedActivityFunction(f interface{}, args []interface{}, registry *r
 		if err := validateFunctionArgs(f, args, false); err != nil {
 			return nil, err
 		}
-		fnName = getFunctionName(f)
+		fnName, _ = getFunctionName(f)
 		if alias, ok := registry.getActivityAlias(fnName); ok {
 			fnName = alias
 		}
@@ -306,7 +306,7 @@ func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataCo
 	resultSize := len(values)
 
 	if resultSize < 1 || resultSize > 2 {
-		fnName := getFunctionName(f)
+		fnName, _ := getFunctionName(f)
 		return nil, fmt.Errorf(
 			"the function: %v signature returns %d results, it is expecting to return either error or (result, error)",
 			fnName, resultSize)
@@ -348,7 +348,7 @@ func serializeResults(f interface{}, results []interface{}, dataConverter conver
 	resultSize := len(results)
 
 	if resultSize < 1 || resultSize > 2 {
-		fnName := getFunctionName(f)
+		fnName, _ := getFunctionName(f)
 		err = fmt.Errorf(
 			"the function: %v signature returns %d results, it is expecting to return either error or (result, error)",
 			fnName, resultSize)

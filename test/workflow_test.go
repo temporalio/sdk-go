@@ -785,7 +785,7 @@ func (w *Workflows) InspectLocalActivityInfo(ctx workflow.Context) error {
 	wfType := info.WorkflowType.Name
 	taskQueue := info.TaskQueueName
 	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
-	activities := Activities{}
+	var activities *Activities
 	return workflow.ExecuteLocalActivity(
 		ctx, activities.InspectActivityInfo, namespace, taskQueue, wfType).Get(ctx, nil)
 }
@@ -793,7 +793,7 @@ func (w *Workflows) InspectLocalActivityInfo(ctx workflow.Context) error {
 func (w *Workflows) WorkflowWithLocalActivityCtxPropagation(ctx workflow.Context) (string, error) {
 	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
 	ctx = workflow.WithValue(ctx, contextKey(testContextKey1), "test-data-in-context")
-	activities := Activities{}
+	var activities *Activities
 	var result string
 	err := workflow.ExecuteLocalActivity(ctx, activities.DuplicateStringInContext).Get(ctx, &result)
 	if err != nil {
@@ -804,7 +804,7 @@ func (w *Workflows) WorkflowWithLocalActivityCtxPropagation(ctx workflow.Context
 
 func (w *Workflows) WorkflowWithParallelLocalActivities(ctx workflow.Context) (string, error) {
 	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
-	activities := Activities{}
+	var activities *Activities
 	var futures []workflow.Future
 
 	for i := 0; i < 10; i++ {
@@ -828,7 +828,7 @@ func (w *Workflows) WorkflowWithParallelLocalActivities(ctx workflow.Context) (s
 func (w *Workflows) WorkflowWithLocalActivityStartWhenTimerCancel(ctx workflow.Context) (bool, error) {
 	timerCtx, cancelTimer := workflow.WithCancel(ctx)
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
-	activities := Activities{}
+	var activities *Activities
 	// Start a timer
 	_ = workflow.NewTimer(timerCtx, time.Second*3)
 
@@ -851,6 +851,7 @@ func (w *Workflows) WorkflowWithParallelLongLocalActivityAndHeartbeat(ctx workfl
 	ao := w.defaultLocalActivityOptions()
 	ao.ScheduleToCloseTimeout = 10 * time.Second
 	ctx = workflow.WithLocalActivityOptions(ctx, ao)
+	// Intentionally instantiating to test legacy path of non nil receiver.
 	activities := Activities{}
 	var futures []workflow.Future
 
@@ -880,7 +881,7 @@ func (w *Workflows) WorkflowWithLocalActivityRetries(ctx workflow.Context) error
 		MaximumInterval:    time.Second * 5,
 	}
 	ctx = workflow.WithLocalActivityOptions(ctx, laOpts)
-	activities := Activities{}
+	var activities *Activities
 
 	var futures []workflow.Future
 	for i := 1; i <= 10; i++ {
