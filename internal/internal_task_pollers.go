@@ -89,13 +89,13 @@ type (
 		dataConverter converter.DataConverter
 
 		stickyUUID                   string
-		disableStickyExecution       bool
 		StickyScheduleToStartTimeout time.Duration
 
 		pendingRegularPollCount int
 		pendingStickyPollCount  int
 		stickyBacklog           int64
 		requestLock             sync.Mutex
+		stickyCacheSize         int
 	}
 
 	// activityTaskPoller implements polling/processing a workflow task
@@ -232,8 +232,8 @@ func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service workflowserv
 		logger:                       params.Logger,
 		dataConverter:                params.DataConverter,
 		stickyUUID:                   uuid.New(),
-		disableStickyExecution:       params.DisableStickyExecution,
 		StickyScheduleToStartTimeout: params.StickyScheduleToStartTimeout,
+		stickyCacheSize:              params.cache.MaxWorkflowCacheSize(),
 	}
 }
 
@@ -275,6 +275,7 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 
 	doneCh := make(chan struct{})
 	laResultCh := make(chan *localActivityResult)
+	laRetryCh := make(chan *localActivityTask)
 	// close doneCh so local activity worker won't get blocked forever when trying to send back result to laResultCh.
 	defer close(doneCh)
 
@@ -283,6 +284,7 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 		startTime := time.Now()
 		task.doneCh = doneCh
 		task.laResultCh = laResultCh
+		task.laRetryCh = laRetryCh
 		completedRequest, err := wtp.taskHandler.ProcessWorkflowTask(
 			task,
 			func(response interface{}, startTime time.Time) (*workflowTask, error) {
@@ -297,6 +299,7 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 				task := wtp.toWorkflowTask(heartbeatResponse.WorkflowTask)
 				task.doneCh = doneCh
 				task.laResultCh = laResultCh
+				task.laRetryCh = laRetryCh
 				return task, nil
 			},
 		)
@@ -350,9 +353,10 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 			tagWorkflowType, task.WorkflowType.GetName(),
 			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 			tagRunID, task.WorkflowExecution.GetRunId(),
+			tagAttempt, task.Attempt,
 			tagError, taskErr)
 		// convert err to WorkflowTaskFailed
-		completedRequest = errorToFailWorkflowTask(task.TaskToken, taskErr, wtp.identity, wtp.dataConverter)
+		completedRequest = errorToFailWorkflowTask(task.TaskToken, taskErr, wtp.identity, wtp.dataConverter, wtp.namespace)
 	}
 
 	workflowMetricsScope.Timer(metrics.WorkflowTaskExecutionLatency).Record(time.Since(startTime))
@@ -384,7 +388,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 					}
 				}
 			case *workflowservice.RespondWorkflowTaskCompletedRequest:
-				if request.StickyAttributes == nil && !wtp.disableStickyExecution {
+				if request.StickyAttributes == nil && wtp.stickyCacheSize > 0 {
 					request.StickyAttributes = &taskqueuepb.StickyExecutionAttributes{
 						WorkerTaskQueue: &taskqueuepb.TaskQueue{
 							Name: getWorkerTaskQueue(wtp.stickyUUID),
@@ -511,8 +515,9 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 				tagWorkflowID, task.params.WorkflowInfo.WorkflowExecution.ID,
 				tagRunID, task.params.WorkflowInfo.WorkflowExecution.RunID,
 				tagActivityType, activityType,
-				"PanicError", fmt.Sprintf("%v", p),
-				"PanicStack", st)
+				tagAttempt, task.attempt,
+				tagPanicError, fmt.Sprintf("%v", p),
+				tagPanicStack, st)
 			activityMetricsScope.Counter(metrics.LocalActivityErrorCounter).Inc(1)
 			panicErr := newPanicError(p, st)
 			result = &localActivityResult{
@@ -598,7 +603,7 @@ WaitResult:
 }
 
 func (wtp *workflowTaskPoller) release(kind enumspb.TaskQueueKind) {
-	if wtp.disableStickyExecution {
+	if wtp.stickyCacheSize <= 0 {
 		return
 	}
 
@@ -612,7 +617,7 @@ func (wtp *workflowTaskPoller) release(kind enumspb.TaskQueueKind) {
 }
 
 func (wtp *workflowTaskPoller) updateBacklog(taskQueueKind enumspb.TaskQueueKind, backlogCountHint int64) {
-	if taskQueueKind == enumspb.TASK_QUEUE_KIND_NORMAL || wtp.disableStickyExecution {
+	if taskQueueKind == enumspb.TASK_QUEUE_KIND_NORMAL || wtp.stickyCacheSize <= 0 {
 		// we only care about sticky backlog for now.
 		return
 	}
@@ -631,7 +636,7 @@ func (wtp *workflowTaskPoller) updateBacklog(taskQueueKind enumspb.TaskQueueKind
 func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.PollWorkflowTaskQueueRequest) {
 	taskQueueName := wtp.taskQueueName
 	taskQueueKind := enumspb.TASK_QUEUE_KIND_NORMAL
-	if !wtp.disableStickyExecution {
+	if wtp.stickyCacheSize > 0 {
 		wtp.requestLock.Lock()
 		if wtp.stickyBacklog > 0 || wtp.pendingStickyPollCount <= wtp.pendingRegularPollCount {
 			wtp.pendingStickyPollCount++
@@ -905,7 +910,9 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 		return reportErr
 	}
 
-	activityMetricsScope.Timer(metrics.ActivityEndToEndLatency).Record(time.Since(activityTask.pollStartTime))
+	activityMetricsScope.
+		Timer(metrics.ActivityEndToEndLatency).
+		Record(time.Since(common.TimeValue(activityTask.task.GetStartedTime())))
 	return nil
 }
 
@@ -988,7 +995,7 @@ func reportActivityCompleteByID(ctx context.Context, service workflowservice.Wor
 }
 
 func convertActivityResultToRespondRequest(identity string, taskToken []byte, result *commonpb.Payloads, err error,
-	dataConverter converter.DataConverter) interface{} {
+	dataConverter converter.DataConverter, namespace string) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
 		// nothing to report at this point
@@ -999,7 +1006,8 @@ func convertActivityResultToRespondRequest(identity string, taskToken []byte, re
 		return &workflowservice.RespondActivityTaskCompletedRequest{
 			TaskToken: taskToken,
 			Result:    result,
-			Identity:  identity}
+			Identity:  identity,
+			Namespace: namespace}
 	}
 
 	var canceledErr *CanceledError
@@ -1007,18 +1015,21 @@ func convertActivityResultToRespondRequest(identity string, taskToken []byte, re
 		return &workflowservice.RespondActivityTaskCanceledRequest{
 			TaskToken: taskToken,
 			Details:   convertErrDetailsToPayloads(canceledErr.details, dataConverter),
-			Identity:  identity}
+			Identity:  identity,
+			Namespace: namespace}
 	}
 	if errors.Is(err, context.Canceled) {
 		return &workflowservice.RespondActivityTaskCanceledRequest{
 			TaskToken: taskToken,
-			Identity:  identity}
+			Identity:  identity,
+			Namespace: namespace}
 	}
 
 	return &workflowservice.RespondActivityTaskFailedRequest{
 		TaskToken: taskToken,
-		Failure:   convertErrorToFailure(err, dataConverter),
-		Identity:  identity}
+		Failure:   ConvertErrorToFailure(err, dataConverter),
+		Identity:  identity,
+		Namespace: namespace}
 }
 
 func convertActivityResultToRespondRequestByID(identity, namespace, workflowID, runID, activityID string,
@@ -1064,6 +1075,6 @@ func convertActivityResultToRespondRequestByID(identity, namespace, workflowID, 
 		WorkflowId: workflowID,
 		RunId:      runID,
 		ActivityId: activityID,
-		Failure:    convertErrorToFailure(err, dataConverter),
+		Failure:    ConvertErrorToFailure(err, dataConverter),
 		Identity:   identity}
 }

@@ -29,6 +29,8 @@ package internal
 import (
 	"errors"
 	"fmt"
+	"math"
+	"os"
 	"reflect"
 	"runtime"
 	"strings"
@@ -157,7 +159,7 @@ type (
 		keptBlocked  bool             // true indicates that coroutine didn't make any progress since the last yield unblocking
 		closed       atomic.Bool      // indicates that owning coroutine has finished execution
 		blocked      atomic.Bool
-		panicError   *workflowPanicError // non nil if coroutine had unhandled panic
+		panicError   error // non nil if coroutine had unhandled panic
 	}
 
 	dispatcherImpl struct {
@@ -260,6 +262,7 @@ var _ WaitGroup = (*waitGroupImpl)(nil)
 var _ dispatcher = (*dispatcherImpl)(nil)
 
 var stackBuf [100000]byte
+var debugMode = os.Getenv("TEMPORAL_DEBUG") != ""
 
 // Pointer to pointer to workflow result
 func getWorkflowResultPointerPointer(ctx Context) **workflowResult {
@@ -599,6 +602,14 @@ func getState(ctx Context) *coroutineState {
 	return state
 }
 
+func (c *channelImpl) CanReceiveWithoutBlocking() bool {
+	return c.recValue != nil || len(c.buffer) > 0 || len(c.blockedSends) > 0 || c.closed
+}
+
+func (c *channelImpl) CanSendWithoutBlocking() bool {
+	return len(c.buffer) < c.size || len(c.blockedReceives) > 0
+}
+
 func (c *channelImpl) Receive(ctx Context, valuePtr interface{}) (more bool) {
 	state := getState(ctx)
 	hasResult := false
@@ -856,7 +867,11 @@ func (s *coroutineState) call() {
 		return false // unblock
 	}
 
-	deadlockTimer := time.NewTimer(time.Second)
+	deadlockDetectorTimeout := time.Second
+	if debugMode {
+		deadlockDetectorTimeout = math.MaxInt64
+	}
+	deadlockTimer := time.NewTimer(deadlockDetectorTimeout)
 	defer func() { deadlockTimer.Stop() }()
 
 	select {
@@ -1035,6 +1050,19 @@ func (s *selectorImpl) AddDefault(f func()) {
 	s.defaultFunc = &f
 }
 
+func (s *selectorImpl) HasPending() bool {
+	for _, pair := range s.cases {
+		if pair.receiveFunc != nil && pair.channel.CanReceiveWithoutBlocking() {
+			return true
+		} else if pair.sendFunc != nil && pair.channel.CanSendWithoutBlocking() {
+			return true
+		} else if pair.futureFunc != nil && pair.future.IsReady() {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *selectorImpl) Select(ctx Context) {
 	state := getState(ctx)
 	var readyBranch func()
@@ -1072,6 +1100,8 @@ func (s *selectorImpl) Select(ctx Context) {
 				// c.RecValue != nil and breaks the nil check at the beginning of receiveAsyncImpl
 				if more {
 					c.recValue = &v
+				} else {
+					pair.receiveFunc = nil
 				}
 				f(c, more)
 				return
@@ -1208,10 +1238,15 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 
 func getDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 	options := getWorkflowEnvOptions(ctx)
-	if options == nil || options.DataConverter == nil {
-		return converter.GetDefaultDataConverter()
+	var dataConverter converter.DataConverter
+
+	if options != nil && options.DataConverter != nil {
+		dataConverter = options.DataConverter
+	} else {
+		dataConverter = converter.GetDefaultDataConverter()
 	}
-	return options.DataConverter
+
+	return WithWorkflowContext(ctx, dataConverter)
 }
 
 func getRegistryFromWorkflowContext(ctx Context) *registry {

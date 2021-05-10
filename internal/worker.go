@@ -104,6 +104,9 @@ type (
 		// will clear the stickiness for that workflow execution and automatically reschedule a new workflow task that
 		// is available for any worker to pick up and resume the progress.
 		// default: false
+		//
+		// Deprecated: DisableStickyExecution harms performance. It will be removed soon. See SetStickyWorkflowCacheSize
+		// instead.
 		DisableStickyExecution bool
 
 		// Optional: Sticky schedule to start timeout.
@@ -144,6 +147,15 @@ type (
 		// Optional: Specifies factories used to instantiate workflow interceptor chain
 		// The chain is instantiated per each replay of a workflow execution
 		WorkflowInterceptorChainFactories []WorkflowInterceptor
+
+		// Optional: If set to true worker would only handle workflow tasks and local activities.
+		// Non-local activities will not be executed by this worker.
+		// default: false
+		LocalActivityWorkerOnly bool
+
+		// Optional: If set overwrites the client level Identify value.
+		// default: client identity
+		Identity string
 	}
 )
 

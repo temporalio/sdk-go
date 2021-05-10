@@ -42,7 +42,6 @@ import (
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
-	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
 )
 
@@ -178,7 +177,7 @@ func newBaseWorker(options baseWorkerOptions, logger log.Logger, metricsScope ta
 		stopCh:          make(chan struct{}),
 		taskLimiter:     rate.NewLimiter(rate.Limit(options.maxTaskPerSecond), 1),
 		retrier:         backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
-		logger:          ilog.With(logger, tagWorkerType, options.workerType),
+		logger:          log.With(logger, tagWorkerType, options.workerType),
 		metricsScope:    metrics.GetWorkerScope(metricsScope, options.workerType),
 		pollerRequestCh: make(chan struct{}, options.maxConcurrentTask),
 		taskQueueCh:     make(chan interface{}), // no buffer, so poller only able to poll new task after previous is dispatched.

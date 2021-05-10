@@ -490,6 +490,29 @@ func (_m *Client) TerminateWorkflow(ctx context.Context, workflowID string, runI
 	return r0
 }
 
+// ResetWorkflowExecution provides a mock function with given fields: request
+func (_m *Client) ResetWorkflowExecution(ctx context.Context, request *workflowservice.ResetWorkflowExecutionRequest) (*workflowservice.ResetWorkflowExecutionResponse, error) {
+	ret := _m.Called(ctx, request)
+
+	var r0 *workflowservice.ResetWorkflowExecutionResponse
+	if rf, ok := ret.Get(0).(func(context.Context, *workflowservice.ResetWorkflowExecutionRequest) *workflowservice.ResetWorkflowExecutionResponse); ok {
+		r0 = rf(ctx, request)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*workflowservice.ResetWorkflowExecutionResponse)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, *workflowservice.ResetWorkflowExecutionRequest) error); ok {
+		r1 = rf(ctx, request)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // Close provides a mock function without given fields
 func (_m *Client) Close() {
 	ret := _m.Called()

@@ -25,6 +25,8 @@
 package workflow
 
 import (
+	"errors"
+
 	"github.com/uber-go/tally"
 
 	"go.temporal.io/sdk/converter"
@@ -64,6 +66,7 @@ type (
 // Context can be used to pass the settings for this activity.
 // For example: task queue that this need to be routed, timeouts that need to be configured.
 // Use ActivityOptions to pass down the options.
+//
 //  ao := ActivityOptions{
 // 	    TaskQueue: "exampleTaskQueue",
 // 	    ScheduleToStartTimeout: 10 * time.Second,
@@ -72,10 +75,30 @@ type (
 // 	    HeartbeatTimeout: 0,
 // 	}
 //	ctx := WithActivityOptions(ctx, ao)
+//
 // Or to override a single option
+//
 //  ctx := WithTaskQueue(ctx, "exampleTaskQueue")
+//
 // Input activity is either an activity name (string) or a function representing an activity that is getting scheduled.
+// Note that the function implementation is ignored by this call.
+// It uses function to extract activity type string from it.
 // Input args are the arguments that need to be passed to the scheduled activity.
+// To call an activity that is a member of a structure use the function reference with nil receiver.
+// For example if an activity is defined as:
+//
+//  type Activities struct {
+//    ... // members
+//  }
+//
+//  func (a *Activities) Activity1() (string, error) {
+//     ...
+//  }
+//
+// Then a workflow can invoke it as:
+//
+//  var a *Activities
+//  workflow.ExecuteActivity(ctx, a.Activity1)
 //
 // If the activity failed to complete then the future get error would indicate the failure.
 // The error will be of type *ActivityError. It will have important activity information and actual error that caused
@@ -85,7 +108,7 @@ type (
 // You can cancel the pending activity using context(workflow.WithCancel(ctx)) and that will fail the activity with
 // *CanceledError set as cause for *ActivityError.
 //
-// ExecuteActivity returns Future with activity result or failure.
+// ExecuteActivity immediately returns a Future that can be used to block waiting for activity result or failure.
 func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
 	return internal.ExecuteActivity(ctx, activity, args...)
 }
@@ -454,6 +477,12 @@ func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) erro
 //  wfn - workflow function. for new execution it can be different from the currently running.
 //  args - arguments for the new workflow.
 //
-func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) *ContinueAsNewError {
+func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) error {
 	return internal.NewContinueAsNewError(ctx, wfn, args...)
+}
+
+// IsContinueAsNewError return if the err is a ContinueAsNewError
+func IsContinueAsNewError(err error) bool {
+	var continueAsNewErr *ContinueAsNewError
+	return errors.As(err, &continueAsNewErr)
 }

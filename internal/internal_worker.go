@@ -174,9 +174,6 @@ type (
 		// Context cancel function to cancel user context
 		UserContextCancel context.CancelFunc
 
-		// Disable sticky execution
-		DisableStickyExecution bool
-
 		StickyScheduleToStartTimeout time.Duration
 
 		// WorkflowPanicPolicy is used for configuring how client's workflow task handler deals with workflow
@@ -199,6 +196,9 @@ type (
 		ContextPropagators []ContextPropagator
 
 		Tracer opentracing.Tracer
+
+		// Pointer to the shared worker cache
+		cache *WorkerCache
 	}
 )
 
@@ -531,7 +531,10 @@ func (r *registry) RegisterActivityWithOptions(
 	// Validate that it is a function
 	fnType := reflect.TypeOf(af)
 	if fnType.Kind() == reflect.Ptr && fnType.Elem().Kind() == reflect.Struct {
-		_ = r.registerActivityStructWithOptions(af, options)
+		registerErr := r.registerActivityStructWithOptions(af, options)
+		if registerErr != nil {
+			panic(registerErr)
+		}
 		return
 	}
 	if err := validateFnFormat(fnType, false); err != nil {
@@ -574,6 +577,10 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 		}
 		name := method.Name
 		if err := validateFnFormat(method.Type, false); err != nil {
+			if options.SkipInvalidStructFunctions {
+				continue
+			}
+
 			return fmt.Errorf("method %v of %v: %e", name, structType.Name(), err)
 		}
 		registerName := options.Name + name
@@ -739,7 +746,7 @@ type workflowExecutor struct {
 
 func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*commonpb.Payloads, error) {
 	var args []interface{}
-	dataConverter := getWorkflowEnvOptions(ctx).DataConverter
+	dataConverter := WithWorkflowContext(ctx, getWorkflowEnvOptions(ctx).DataConverter)
 	fnType := reflect.TypeOf(we.fn)
 
 	decoded, err := decodeArgsToValues(dataConverter, fnType, input)
@@ -825,14 +832,30 @@ func (ae *activityExecutor) executeWithActualArgsWithoutParseResult(ctx context.
 }
 
 func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverter {
+	var dataConverter converter.DataConverter
+
+	env := getActivityEnvironmentFromCtx(ctx)
+	if env != nil && env.dataConverter != nil {
+		dataConverter = env.dataConverter
+	} else {
+		dataConverter = converter.GetDefaultDataConverter()
+	}
+	return WithContext(ctx, dataConverter)
+}
+
+func getNamespaceFromActivityCtx(ctx context.Context) string {
+	env := getActivityEnvironmentFromCtx(ctx)
+	if env == nil {
+		return ""
+	}
+	return env.workflowNamespace
+}
+
+func getActivityEnvironmentFromCtx(ctx context.Context) *activityEnvironment {
 	if ctx == nil || ctx.Value(activityEnvContextKey) == nil {
-		return converter.GetDefaultDataConverter()
+		return nil
 	}
-	info := ctx.Value(activityEnvContextKey).(*activityEnvironment)
-	if info.dataConverter == nil {
-		return converter.GetDefaultDataConverter()
-	}
-	return info.dataConverter
+	return ctx.Value(activityEnvContextKey).(*activityEnvironment)
 }
 
 // AggregatedWorker combines management of both workflowWorker and activityWorker worker lifecycle.
@@ -873,7 +896,7 @@ func (aw *AggregatedWorker) Start() error {
 
 	if !util.IsInterfaceNil(aw.workflowWorker) {
 		if len(aw.registry.getRegisteredWorkflowTypes()) == 0 {
-			aw.logger.Info("No workflows registered. Skipping workflow worker start")
+			aw.logger.Debug("No workflows registered. Skipping workflow worker start")
 		} else {
 			if err := aw.workflowWorker.Start(); err != nil {
 				return err
@@ -882,7 +905,7 @@ func (aw *AggregatedWorker) Start() error {
 	}
 	if !util.IsInterfaceNil(aw.activityWorker) {
 		if len(aw.registry.getRegisteredActivities()) == 0 {
-			aw.logger.Info("No activities registered. Skipping activity worker start")
+			aw.logger.Debug("No activities registered. Skipping activity worker start")
 		} else {
 			if err := aw.activityWorker.Start(); err != nil {
 				// stop workflow worker.
@@ -1152,11 +1175,13 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(loger log.Logger, service work
 		metricsScope:  nil,
 		taskQueue:     taskQueue,
 	}
+	cache := NewWorkerCache()
 	params := workerExecutionParameters{
 		Namespace: namespace,
 		TaskQueue: taskQueue,
 		Identity:  "replayID",
 		Logger:    loger,
+		cache:     cache,
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
 	resp, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, nil)
@@ -1241,6 +1266,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 	backgroundActivityContext, backgroundActivityContextCancel := context.WithCancel(ctx)
 
+	cache := NewWorkerCache()
 	workerParams := workerExecutionParameters{
 		Namespace:                             client.namespace,
 		TaskQueue:                             taskQueue,
@@ -1257,7 +1283,6 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		EnableLoggingInReplay:                 options.EnableLoggingInReplay,
 		UserContext:                           backgroundActivityContext,
 		UserContextCancel:                     backgroundActivityContextCancel,
-		DisableStickyExecution:                options.DisableStickyExecution,
 		StickyScheduleToStartTimeout:          options.StickyScheduleToStartTimeout,
 		TaskQueueActivitiesPerSecond:          options.TaskQueueActivitiesPerSecond,
 		WorkflowPanicPolicy:                   options.WorkflowPanicPolicy,
@@ -1265,10 +1290,15 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		WorkerStopTimeout:                     options.WorkerStopTimeout,
 		ContextPropagators:                    client.contextPropagators,
 		Tracer:                                client.tracer,
+		cache:                                 cache,
+	}
+
+	if options.Identity != "" {
+		workerParams.Identity = options.Identity
 	}
 
 	ensureRequiredParams(&workerParams)
-	workerParams.Logger = ilog.With(workerParams.Logger,
+	workerParams.Logger = log.With(workerParams.Logger,
 		tagNamespace, client.namespace,
 		tagTaskQueue, taskQueue,
 		tagWorkerID, workerParams.Identity,
@@ -1290,10 +1320,13 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	// activity types.
-	activityWorker := newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
+	var activityWorker *activityWorker
+	if !options.LocalActivityWorkerOnly {
+		activityWorker = newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
+	}
 
 	var sessionWorker *sessionWorker
-	if options.EnableSessionWorker {
+	if options.EnableSessionWorker && !options.LocalActivityWorkerOnly {
 		sessionWorker = newSessionWorker(client.workflowService, workerParams, nil, registry, options.MaxConcurrentSessionExecutionSize)
 		registry.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
 			Name: sessionCreationActivityName,

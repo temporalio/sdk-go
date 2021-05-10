@@ -28,6 +28,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -164,9 +165,14 @@ type (
 
 	// ContinueAsNewError contains information about how to continue the workflow as new.
 	ContinueAsNewError struct {
-		wfn    interface{}
-		args   []interface{}
-		params *ExecuteWorkflowParams
+		//params *ExecuteWorkflowParams
+		WorkflowType             *WorkflowType
+		Input                    *commonpb.Payloads
+		Header                   *commonpb.Header
+		TaskQueueName            string
+		WorkflowExecutionTimeout time.Duration
+		WorkflowRunTimeout       time.Duration
+		WorkflowTaskTimeout      time.Duration
 	}
 
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
@@ -250,7 +256,7 @@ var (
 )
 
 // NewApplicationError create new instance of *ApplicationError with message, type, and optional details.
-func NewApplicationError(msg string, errType string, nonRetryable bool, cause error, details ...interface{}) *ApplicationError {
+func NewApplicationError(msg string, errType string, nonRetryable bool, cause error, details ...interface{}) error {
 	applicationErr := &ApplicationError{
 		msg:          msg,
 		errType:      errType,
@@ -272,7 +278,7 @@ func NewApplicationError(msg string, errType string, nonRetryable bool, cause er
 
 // NewTimeoutError creates TimeoutError instance.
 // Use NewHeartbeatTimeoutError to create heartbeat TimeoutError.
-func NewTimeoutError(msg string, timeoutType enumspb.TimeoutType, cause error, lastHeartbeatDetails ...interface{}) *TimeoutError {
+func NewTimeoutError(msg string, timeoutType enumspb.TimeoutType, cause error, lastHeartbeatDetails ...interface{}) error {
 	timeoutErr := &TimeoutError{
 		msg:         msg,
 		timeoutType: timeoutType,
@@ -290,12 +296,12 @@ func NewTimeoutError(msg string, timeoutType enumspb.TimeoutType, cause error, l
 }
 
 // NewHeartbeatTimeoutError creates TimeoutError instance.
-func NewHeartbeatTimeoutError(details ...interface{}) *TimeoutError {
+func NewHeartbeatTimeoutError(details ...interface{}) error {
 	return NewTimeoutError("heartbeat timeout", enumspb.TIMEOUT_TYPE_HEARTBEAT, nil, details...)
 }
 
 // NewCanceledError creates CanceledError instance.
-func NewCanceledError(details ...interface{}) *CanceledError {
+func NewCanceledError(details ...interface{}) error {
 	if len(details) == 1 {
 		if d, ok := details[0].(*EncodedValues); ok {
 			return &CanceledError{details: d}
@@ -305,7 +311,7 @@ func NewCanceledError(details ...interface{}) *CanceledError {
 }
 
 // NewServerError create new instance of *ServerError with message.
-func NewServerError(msg string, nonRetryable bool, cause error) *ServerError {
+func NewServerError(msg string, nonRetryable bool, cause error) error {
 	return &ServerError{msg: msg, nonRetryable: nonRetryable, cause: cause}
 }
 
@@ -394,7 +400,7 @@ func IsCanceledError(err error) bool {
 //  wfn - workflow function. for new execution it can be different from the currently running.
 //  args - arguments for the new workflow.
 //
-func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) *ContinueAsNewError {
+func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) error {
 	// Validate type and its arguments.
 	options := getWorkflowEnvOptions(ctx)
 	if options == nil {
@@ -406,14 +412,15 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) *C
 		panic(err)
 	}
 
-	params := &ExecuteWorkflowParams{
-		WorkflowOptions: *options,
-		WorkflowType:    workflowType,
-		Input:           input,
-		Header:          getWorkflowHeader(ctx, options.ContextPropagators),
-		attempt:         1,
+	return &ContinueAsNewError{
+		WorkflowType:             workflowType,
+		Input:                    input,
+		Header:                   getWorkflowHeader(ctx, options.ContextPropagators),
+		TaskQueueName:            options.TaskQueueName,
+		WorkflowExecutionTimeout: options.WorkflowExecutionTimeout,
+		WorkflowRunTimeout:       options.WorkflowRunTimeout,
+		WorkflowTaskTimeout:      options.WorkflowTaskTimeout,
 	}
-	return &ContinueAsNewError{wfn: wfn, args: args, params: params}
 }
 
 // Error from error interface.
@@ -519,11 +526,11 @@ func (e *CanceledError) Details(d ...interface{}) error {
 	return e.details.Get(d...)
 }
 
-func newPanicError(value interface{}, stackTrace string) *PanicError {
+func newPanicError(value interface{}, stackTrace string) error {
 	return &PanicError{value: value, stackTrace: stackTrace}
 }
 
-func newWorkflowPanicError(value interface{}, stackTrace string) *workflowPanicError {
+func newWorkflowPanicError(value interface{}, stackTrace string) error {
 	return &workflowPanicError{value: value, stackTrace: stackTrace}
 }
 
@@ -558,16 +565,6 @@ func (e *ContinueAsNewError) Error() string {
 
 func (e *ContinueAsNewError) message() string {
 	return "continue as new"
-}
-
-// WorkflowType return WorkflowType of the new run
-func (e *ContinueAsNewError) WorkflowType() *WorkflowType {
-	return e.params.WorkflowType
-}
-
-// Args return workflow argument of the new run
-func (e *ContinueAsNewError) Args() []interface{} {
-	return e.args
 }
 
 // newTerminatedError creates NewTerminatedError instance
@@ -725,8 +722,8 @@ func getErrType(err error) string {
 	return t.Name()
 }
 
-// convertErrorToFailure converts error to failure.
-func convertErrorToFailure(err error, dc converter.DataConverter) *failurepb.Failure {
+// ConvertErrorToFailure converts error to failure.
+func ConvertErrorToFailure(err error, dc converter.DataConverter) *failurepb.Failure {
 	if err == nil {
 		return nil
 	}
@@ -818,13 +815,13 @@ func convertErrorToFailure(err error, dc converter.DataConverter) *failurepb.Fai
 		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: failureInfo}
 	}
 
-	failure.Cause = convertErrorToFailure(errors.Unwrap(err), dc)
+	failure.Cause = ConvertErrorToFailure(errors.Unwrap(err), dc)
 
 	return failure
 }
 
-// convertFailureToError converts failure to error.
-func convertFailureToError(failure *failurepb.Failure, dc converter.DataConverter) error {
+// ConvertFailureToError converts failure to error.
+func ConvertFailureToError(failure *failurepb.Failure, dc converter.DataConverter) error {
 	if failure == nil {
 		return nil
 	}
@@ -842,7 +839,7 @@ func convertFailureToError(failure *failurepb.Failure, dc converter.DataConverte
 				failure.GetMessage(),
 				applicationFailureInfo.GetType(),
 				applicationFailureInfo.GetNonRetryable(),
-				convertFailureToError(failure.GetCause(), dc),
+				ConvertFailureToError(failure.GetCause(), dc),
 				details)
 		}
 	} else if failure.GetCanceledFailureInfo() != nil {
@@ -854,14 +851,14 @@ func convertFailureToError(failure *failurepb.Failure, dc converter.DataConverte
 		err = NewTimeoutError(
 			failure.GetMessage(),
 			timeoutFailureInfo.GetTimeoutType(),
-			convertFailureToError(failure.GetCause(), dc),
+			ConvertFailureToError(failure.GetCause(), dc),
 			lastHeartbeatDetails)
 	} else if failure.GetTerminatedFailureInfo() != nil {
 		err = newTerminatedError()
 	} else if failure.GetServerFailureInfo() != nil {
-		err = NewServerError(failure.GetMessage(), failure.GetServerFailureInfo().GetNonRetryable(), convertFailureToError(failure.GetCause(), dc))
+		err = NewServerError(failure.GetMessage(), failure.GetServerFailureInfo().GetNonRetryable(), ConvertFailureToError(failure.GetCause(), dc))
 	} else if failure.GetResetWorkflowFailureInfo() != nil {
-		err = NewApplicationError(failure.GetMessage(), "", true, convertFailureToError(failure.GetCause(), dc), failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails())
+		err = NewApplicationError(failure.GetMessage(), "", true, ConvertFailureToError(failure.GetCause(), dc), failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails())
 	} else if failure.GetActivityFailureInfo() != nil {
 		activityTaskInfoFailure := failure.GetActivityFailureInfo()
 		err = NewActivityError(
@@ -871,7 +868,7 @@ func convertFailureToError(failure *failurepb.Failure, dc converter.DataConverte
 			activityTaskInfoFailure.GetActivityType(),
 			activityTaskInfoFailure.GetActivityId(),
 			activityTaskInfoFailure.GetRetryState(),
-			convertFailureToError(failure.GetCause(), dc),
+			ConvertFailureToError(failure.GetCause(), dc),
 		)
 	} else if failure.GetChildWorkflowExecutionFailureInfo() != nil {
 		childWorkflowExecutionFailureInfo := failure.GetChildWorkflowExecutionFailureInfo()
@@ -883,13 +880,13 @@ func convertFailureToError(failure *failurepb.Failure, dc converter.DataConverte
 			childWorkflowExecutionFailureInfo.GetInitiatedEventId(),
 			childWorkflowExecutionFailureInfo.GetStartedEventId(),
 			childWorkflowExecutionFailureInfo.GetRetryState(),
-			convertFailureToError(failure.GetCause(), dc),
+			ConvertFailureToError(failure.GetCause(), dc),
 		)
 	}
 
 	if err == nil {
 		// All unknown types are considered to be retryable ApplicationError.
-		err = NewApplicationError(failure.GetMessage(), "", false, convertFailureToError(failure.GetCause(), dc))
+		err = NewApplicationError(failure.GetMessage(), "", false, ConvertFailureToError(failure.GetCause(), dc))
 	}
 
 	if fh, ok := err.(failureHolder); ok {

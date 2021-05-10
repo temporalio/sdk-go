@@ -32,6 +32,7 @@ import (
 	"time"
 
 	workflowpb "go.temporal.io/api/workflow/v1"
+
 	ilog "go.temporal.io/sdk/internal/log"
 
 	"github.com/golang/mock/gomock"
@@ -442,75 +443,75 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_RawHistory_Success() {
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedError() {
+	mockerr := serviceerror.NewWorkflowExecutionAlreadyStarted("Already Started", "", runID)
 	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Already Started", "", runID)).Times(1)
+		Return(nil, mockerr).Times(1)
 
-	eventType := enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED
-	workflowResult := time.Hour * 59
-	encodedResult, _ := encodeArg(s.dataConverter, workflowResult)
-	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
-		History: &historypb.History{
-			Events: []*historypb.HistoryEvent{
-				{
-					EventType: eventType,
-					Attributes: &historypb.HistoryEvent_WorkflowExecutionCompletedEventAttributes{WorkflowExecutionCompletedEventAttributes: &historypb.WorkflowExecutionCompletedEventAttributes{
-						Result: encodedResult,
-					}},
-				},
-			},
-		},
-		NextPageToken: nil,
-	}
-	getHistory := s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any()).
-		Return(getResponse, nil).Times(1)
-	getHistory.Do(func(ctx interface{}, getRequest *workflowservice.GetWorkflowExecutionHistoryRequest) {
-		workflowID := getRequest.Execution.WorkflowId
-		s.NotEmpty(workflowID)
-	})
-
-	workflowRun, err := s.workflowClient.ExecuteWorkflow(
+	_, err := s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
-			ID:                       workflowID,
-			TaskQueue:                taskqueue,
-			WorkflowExecutionTimeout: timeoutInSeconds * time.Second,
-			WorkflowTaskTimeout:      timeoutInSeconds * time.Second,
-			WorkflowIDReusePolicy:    workflowIDReusePolicy,
+			ID:                                       workflowID,
+			TaskQueue:                                taskqueue,
+			WorkflowExecutionTimeout:                 timeoutInSeconds * time.Second,
+			WorkflowTaskTimeout:                      timeoutInSeconds * time.Second,
+			WorkflowIDReusePolicy:                    workflowIDReusePolicy,
+			WorkflowExecutionErrorWhenAlreadyStarted: true,
 		}, workflowType,
 	)
-	s.Nil(err)
-	s.Equal(workflowRun.GetID(), workflowID)
-	s.Equal(workflowRun.GetRunID(), runID)
-	decodedResult := time.Minute
-	err = workflowRun.Get(context.Background(), &decodedResult)
-	s.Nil(err)
-	s.Equal(workflowResult, decodedResult)
+	s.Error(err)
+	s.Equal(mockerr, err)
+}
+
+func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedErrorAllowStarted() {
+	s.alreadyStartedErrTest(s.dataConverter, false)
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedError_RawHistory() {
+	s.alreadyStartedErrTest(converter.GetDefaultDataConverter(), true)
+}
+
+func (s *workflowRunSuite) alreadyStartedErrTest(dc converter.DataConverter, rawHistory bool) {
 	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Already Started", "", runID)).Times(1)
 
 	eventType := enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED
 	workflowResult := time.Hour * 59
-	encodedResult, _ := encodeArg(converter.GetDefaultDataConverter(), workflowResult)
-	events := []*historypb.HistoryEvent{
-		{
-			EventType: eventType,
-			Attributes: &historypb.HistoryEvent_WorkflowExecutionCompletedEventAttributes{WorkflowExecutionCompletedEventAttributes: &historypb.WorkflowExecutionCompletedEventAttributes{
-				Result: encodedResult,
-			}},
-		},
+	encodedResult, _ := encodeArg(dc, workflowResult)
+	var getResponse *workflowservice.GetWorkflowExecutionHistoryResponse
+	if rawHistory {
+		events := []*historypb.HistoryEvent{
+			{
+				EventType: eventType,
+				Attributes: &historypb.HistoryEvent_WorkflowExecutionCompletedEventAttributes{WorkflowExecutionCompletedEventAttributes: &historypb.WorkflowExecutionCompletedEventAttributes{
+					Result: encodedResult,
+				}},
+			},
+		}
+
+		blobData := serializeEvents(events)
+
+		getResponse = &workflowservice.GetWorkflowExecutionHistoryResponse{
+			RawHistory: []*commonpb.DataBlob{
+				blobData,
+			},
+			NextPageToken: nil,
+		}
+	} else {
+		getResponse = &workflowservice.GetWorkflowExecutionHistoryResponse{
+			History: &historypb.History{
+				Events: []*historypb.HistoryEvent{
+					{
+						EventType: eventType,
+						Attributes: &historypb.HistoryEvent_WorkflowExecutionCompletedEventAttributes{WorkflowExecutionCompletedEventAttributes: &historypb.WorkflowExecutionCompletedEventAttributes{
+							Result: encodedResult,
+						}},
+					},
+				},
+			},
+			NextPageToken: nil,
+		}
 	}
 
-	blobData := serializeEvents(events)
-
-	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
-		RawHistory: []*commonpb.DataBlob{
-			blobData,
-		},
-		NextPageToken: nil,
-	}
 	getHistory := s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any()).
 		Return(getResponse, nil).Times(1)
 	getHistory.Do(func(ctx interface{}, getRequest *workflowservice.GetWorkflowExecutionHistoryRequest) {
@@ -700,8 +701,10 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 	eventType := enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED
 	reason := "some reason"
 	details := "some details"
-	applicationError := NewApplicationError(reason, "", false, nil, details)
-	failure := convertErrorToFailure(applicationError, converter.GetDefaultDataConverter())
+	err := NewApplicationError(reason, "", false, nil, details)
+	var applicationErr *ApplicationError
+	s.True(errors.As(err, &applicationErr))
+	failure := ConvertErrorToFailure(applicationErr, converter.GetDefaultDataConverter())
 
 	getRequest := getGetWorkflowExecutionHistoryRequest(filterType)
 	getResponse := &workflowservice.GetWorkflowExecutionHistoryResponse{
@@ -739,8 +742,8 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Failed() {
 	s.True(ok)
 	var applicationErr2 *ApplicationError
 	s.True(errors.As(err, &applicationErr2))
-	s.Equal(applicationError.msg, applicationErr2.msg)
-	s.Equal(applicationError.nonRetryable, applicationErr2.nonRetryable)
+	s.Equal(applicationErr.msg, applicationErr2.msg)
+	s.Equal(applicationErr.nonRetryable, applicationErr2.nonRetryable)
 	s.Equal(time.Minute, decodedResult)
 }
 
@@ -950,6 +953,18 @@ func (s *workflowRunSuite) TestGetWorkflowNoRunId() {
 		"",
 	)
 	s.Equal(runID, workflowRunNoRunID.GetRunID())
+}
+
+func (s *workflowRunSuite) TestGetWorkflowNoExtantWorkflowAndNoRunId() {
+	describeResp := &workflowservice.DescribeWorkflowExecutionResponse{
+		WorkflowExecutionInfo: nil}
+	s.workflowServiceClient.EXPECT().DescribeWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(describeResp, nil).Times(1)
+	workflowRunNoRunID := s.workflowClient.GetWorkflow(
+		context.Background(),
+		workflowID,
+		"",
+	)
+	s.Equal("", workflowRunNoRunID.GetRunID())
 }
 
 func getGetWorkflowExecutionHistoryRequest(filterType enumspb.HistoryEventFilterType) *workflowservice.GetWorkflowExecutionHistoryRequest {

@@ -87,11 +87,32 @@ type (
 	// Selector must be used instead of native go select by workflow code.
 	// Create through workflow.NewSelector(ctx).
 	Selector interface {
+		// AddReceive registers a callback function to be called when a channel has a message to receive.
+		// The callback is called when Select(ctx) is called.
+		// The message is expected be consumed by the callback function.
+		// The branch is automatically removed after the channel is closed and callback function is called once
+		// with more parameter set to false.
 		AddReceive(c ReceiveChannel, f func(c ReceiveChannel, more bool)) Selector
+		// AddSend registers a callback function to be called when sending message to channel is not going to block.
+		// The callback is called when Select(ctx) is called.
+		// The sending message to the channel is expected to be done by the callback function
 		AddSend(c SendChannel, v interface{}, f func()) Selector
+		// AddFuture registers a callback function to be called when a future is ready.
+		// The callback is called when Select(ctx) is called.
+		// The callback is called once per ready future even if Select is called multiple times for the same
+		// Selector instance.
 		AddFuture(future Future, f func(f Future)) Selector
+		// AddDefault register callback function to be called if none of other branches matched.
+		// The callback is called when Select(ctx) is called.
+		// When the default branch is registered Select never blocks.
 		AddDefault(f func())
+		// Select checks if any of the registered branches satisfies its condition blocking if necessary.
+		// When a branch becomes eligible its callback is invoked.
+		// If multiple branches are eligible only one of them (picked randomly) is invoked per Select call.
+		// It is OK to call Select multiple times for the same Selector instance.
 		Select(ctx Context)
+		// HasPending returns true if call to Select is guaranteed to not block.
+		HasPending() bool
 	}
 
 	// WaitGroup must be used instead of native go sync.WaitGroup by
@@ -185,7 +206,7 @@ type (
 
 		// WorkflowExecutionTimeout - The end to end timeout for the child workflow execution including retries
 		// and continue as new.
-		// Optional: defaults to 10 years
+		// Optional: defaults to unlimited.
 		WorkflowExecutionTimeout time.Duration
 
 		// WorkflowRunTimeout - The timeout for a single run of the child workflow execution. Each retry or
@@ -194,8 +215,10 @@ type (
 		// Optional: defaults to WorkflowExecutionTimeout
 		WorkflowRunTimeout time.Duration
 
-		// WorkflowTaskTimeout - The workflow task timeout for the child workflow.
-		// Optional: default is 10s if this is not provided (or if 0 is provided).
+		// WorkflowTaskTimeout - Maximum execution time of a single Workflow Task. In the majority of cases there is
+		// no need to change this timeout. Note that this timeout is not related to the overall Workflow duration in
+		// any way. It defines for how long the Workflow can get blocked in the case of a Workflow Worker crash.
+		// Default is 10 seconds. Maximum value allowed by the Temporal Server is 1 minute.
 		WorkflowTaskTimeout time.Duration
 
 		// WaitForCancellation - Whether to wait for canceled child workflow to be ended (child workflow can be ended
@@ -525,27 +548,50 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 	return i.ExecuteLocalActivity(ctx, activityType, args...)
 }
 
-func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, activityType string, args ...interface{}) Future {
+func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, typeName string, args ...interface{}) Future {
 	header := getHeadersFromContext(ctx)
-	activityFn := ctx.Value(localActivityFnContextKey)
-	if activityFn == nil {
+	future, settable := newDecodeFuture(ctx, typeName)
+
+	var activityFn interface{}
+	activityFnOrName := ctx.Value(localActivityFnContextKey)
+	if activityFnOrName == nil {
 		panic("ExecuteLocalActivity: Expected context key " + localActivityFnContextKey + " is missing")
 	}
 
-	future, settable := newDecodeFuture(ctx, activityFn)
-	if err := validateFunctionArgs(activityFn, args, false); err != nil {
-		settable.Set(nil, err)
-		return future
+	if activityName, ok := activityFnOrName.(string); ok {
+		registry := getRegistryFromWorkflowContext(ctx)
+		activityType, err := getValidatedActivityFunction(typeName, args, registry)
+		if err != nil {
+			settable.Set(nil, err)
+			return future
+		}
+
+		activity, ok := registry.GetActivity(activityName)
+		if !ok {
+			settable.Set(nil, fmt.Errorf("local activity %s is not registered by the worker", activityType.Name))
+			return future
+		}
+
+		activityFn = activity.GetFunction()
+	} else {
+		if err := validateFunctionArgs(activityFnOrName, args, false); err != nil {
+			settable.Set(nil, err)
+			return future
+		}
+
+		activityFn = activityFnOrName
 	}
+
 	options, err := getValidatedLocalActivityOptions(ctx)
 	if err != nil {
 		settable.Set(nil, err)
 		return future
 	}
+
 	params := &ExecuteLocalActivityParams{
 		ExecuteLocalActivityOptions: *options,
 		ActivityFn:                  activityFn,
-		ActivityType:                activityType,
+		ActivityType:                typeName,
 		InputArgs:                   args,
 		WorkflowInfo:                GetWorkflowInfo(ctx),
 		DataConverter:               getDataConverterFromWorkflowContext(ctx),
@@ -658,7 +704,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		executionFuture:  executionFuture.(*futureImpl),
 	}
 	workflowOptionsFromCtx := getWorkflowEnvOptions(ctx)
-	dc := workflowOptionsFromCtx.DataConverter
+	dc := WithWorkflowContext(ctx, workflowOptionsFromCtx.DataConverter)
 	env := getWorkflowEnvironment(ctx)
 	wfType, input, err := getValidatedWorkflowFunction(childWorkflowType, args, dc, env.GetRegistry())
 	if err != nil {
@@ -737,15 +783,18 @@ type WorkflowInfo struct {
 	WorkflowTaskTimeout      time.Duration
 	Namespace                string
 	Attempt                  int32 // Attempt starts from 1 and increased by 1 for every retry if retry policy is specified.
-	lastCompletionResult     *commonpb.Payloads
-	lastFailure              *failurepb.Failure
-	CronSchedule             string
-	ContinuedExecutionRunID  string
-	ParentWorkflowNamespace  string
-	ParentWorkflowExecution  *WorkflowExecution
-	Memo                     *commonpb.Memo             // Value can be decoded using data converter (defaultDataConverter, or custom one if set).
-	SearchAttributes         *commonpb.SearchAttributes // Value can be decoded using defaultDataConverter.
-	BinaryChecksum           string
+	// Time of the workflow start.
+	// workflow.Now at the beginning of a workflow can return a later time if the Workflow Worker was down.
+	WorkflowStartTime       time.Time
+	lastCompletionResult    *commonpb.Payloads
+	lastFailure             *failurepb.Failure
+	CronSchedule            string
+	ContinuedExecutionRunID string
+	ParentWorkflowNamespace string
+	ParentWorkflowExecution *WorkflowExecution
+	Memo                    *commonpb.Memo             // Value can be decoded using data converter (defaultDataConverter, or custom one if set).
+	SearchAttributes        *commonpb.SearchAttributes // Value can be decoded using defaultDataConverter.
+	BinaryChecksum          string
 }
 
 // GetBinaryChecksum return binary checksum.
@@ -1004,13 +1053,36 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.WorkflowTaskTimeout = cwo.WorkflowTaskTimeout
 	wfOptions.WaitForCancellation = cwo.WaitForCancellation
 	wfOptions.WorkflowIDReusePolicy = cwo.WorkflowIDReusePolicy
-	wfOptions.RetryPolicy = convertRetryPolicy(cwo.RetryPolicy)
+	wfOptions.RetryPolicy = convertToPBRetryPolicy(cwo.RetryPolicy)
 	wfOptions.CronSchedule = cwo.CronSchedule
 	wfOptions.Memo = cwo.Memo
 	wfOptions.SearchAttributes = cwo.SearchAttributes
 	wfOptions.ParentClosePolicy = cwo.ParentClosePolicy
 
 	return ctx1
+}
+
+// GetChildWorkflowOptions returns all workflow options present on the context.
+func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
+	opts := getWorkflowEnvOptions(ctx)
+	if opts == nil {
+		return ChildWorkflowOptions{}
+	}
+	return ChildWorkflowOptions{
+		Namespace:                opts.Namespace,
+		WorkflowID:               opts.WorkflowID,
+		TaskQueue:                opts.TaskQueueName,
+		WorkflowExecutionTimeout: opts.WorkflowExecutionTimeout,
+		WorkflowRunTimeout:       opts.WorkflowRunTimeout,
+		WorkflowTaskTimeout:      opts.WorkflowTaskTimeout,
+		WaitForCancellation:      opts.WaitForCancellation,
+		WorkflowIDReusePolicy:    opts.WorkflowIDReusePolicy,
+		RetryPolicy:              convertFromPBRetryPolicy(opts.RetryPolicy),
+		CronSchedule:             opts.CronSchedule,
+		Memo:                     opts.Memo,
+		SearchAttributes:         opts.SearchAttributes,
+		ParentClosePolicy:        opts.ParentClosePolicy,
+	}
 }
 
 // WithWorkflowNamespace adds a namespace to the context.
@@ -1378,7 +1450,7 @@ func GetLastError(ctx Context) error {
 
 func (wc *workflowEnvironmentInterceptor) GetLastError(ctx Context) error {
 	info := wc.GetWorkflowInfo(ctx)
-	return convertFailureToError(info.lastFailure, wc.env.GetDataConverter())
+	return ConvertFailureToError(info.lastFailure, wc.env.GetDataConverter())
 }
 
 // WithActivityOptions adds all options to the copy of the context.
@@ -1397,7 +1469,7 @@ func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	eap.HeartbeatTimeout = options.HeartbeatTimeout
 	eap.WaitForCancellation = options.WaitForCancellation
 	eap.ActivityID = options.ActivityID
-	eap.RetryPolicy = convertRetryPolicy(options.RetryPolicy)
+	eap.RetryPolicy = convertToPBRetryPolicy(options.RetryPolicy)
 	return ctx1
 }
 
@@ -1419,6 +1491,37 @@ func WithTaskQueue(ctx Context, name string) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
 	getActivityOptions(ctx1).TaskQueueName = name
 	return ctx1
+}
+
+// GetActivityOptions returns all activity options present on the context.
+func GetActivityOptions(ctx Context) ActivityOptions {
+	opts := getActivityOptions(ctx)
+	if opts == nil {
+		return ActivityOptions{}
+	}
+	return ActivityOptions{
+		TaskQueue:              opts.TaskQueueName,
+		ScheduleToCloseTimeout: opts.ScheduleToCloseTimeout,
+		ScheduleToStartTimeout: opts.ScheduleToStartTimeout,
+		StartToCloseTimeout:    opts.StartToCloseTimeout,
+		HeartbeatTimeout:       opts.HeartbeatTimeout,
+		WaitForCancellation:    opts.WaitForCancellation,
+		ActivityID:             opts.ActivityID,
+		RetryPolicy:            convertFromPBRetryPolicy(opts.RetryPolicy),
+	}
+}
+
+// GetLocalActivityOptions returns all local activity options present on the context.
+func GetLocalActivityOptions(ctx Context) LocalActivityOptions {
+	opts := getLocalActivityOptions(ctx)
+	if opts == nil {
+		return LocalActivityOptions{}
+	}
+	return LocalActivityOptions{
+		ScheduleToCloseTimeout: opts.ScheduleToCloseTimeout,
+		StartToCloseTimeout:    opts.StartToCloseTimeout,
+		RetryPolicy:            opts.RetryPolicy,
+	}
 }
 
 // WithScheduleToCloseTimeout adds a timeout to the copy of the context.
@@ -1467,11 +1570,11 @@ func WithWaitForCancellation(ctx Context, wait bool) Context {
 // WithRetryPolicy adds retry policy to the copy of the context
 func WithRetryPolicy(ctx Context, retryPolicy RetryPolicy) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).RetryPolicy = convertRetryPolicy(&retryPolicy)
+	getActivityOptions(ctx1).RetryPolicy = convertToPBRetryPolicy(&retryPolicy)
 	return ctx1
 }
 
-func convertRetryPolicy(retryPolicy *RetryPolicy) *commonpb.RetryPolicy {
+func convertToPBRetryPolicy(retryPolicy *RetryPolicy) *commonpb.RetryPolicy {
 	if retryPolicy == nil {
 		return nil
 	}
@@ -1483,4 +1586,31 @@ func convertRetryPolicy(retryPolicy *RetryPolicy) *commonpb.RetryPolicy {
 		MaximumAttempts:        retryPolicy.MaximumAttempts,
 		NonRetryableErrorTypes: retryPolicy.NonRetryableErrorTypes,
 	}
+}
+
+func convertFromPBRetryPolicy(retryPolicy *commonpb.RetryPolicy) *RetryPolicy {
+	if retryPolicy == nil {
+		return nil
+	}
+
+	p := RetryPolicy{
+		BackoffCoefficient:     retryPolicy.BackoffCoefficient,
+		MaximumAttempts:        retryPolicy.MaximumAttempts,
+		NonRetryableErrorTypes: retryPolicy.NonRetryableErrorTypes,
+	}
+
+	// Avoid nil pointer dereferences
+	if v := retryPolicy.MaximumInterval; v != nil {
+		p.MaximumInterval = *v
+	}
+	if v := retryPolicy.InitialInterval; v != nil {
+		p.InitialInterval = *v
+	}
+
+	return &p
+}
+
+// GetLastCompletionResultFromWorkflowInfo returns value of last completion result.
+func GetLastCompletionResultFromWorkflowInfo(info *WorkflowInfo) *commonpb.Payloads {
+	return info.lastCompletionResult
 }

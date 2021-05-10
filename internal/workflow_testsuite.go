@@ -29,7 +29,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"testing"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
@@ -450,6 +449,13 @@ func (c *MockCallWrapper) Times(i int) *MockCallWrapper {
 	return c
 }
 
+// Never indicates that the mock should not be called.
+func (c *MockCallWrapper) Never() *MockCallWrapper {
+	c.call.Maybe()
+	c.call.Panic(fmt.Sprintf("unexpected call: %s(%s)", c.call.Method, c.call.Arguments.String()))
+	return c
+}
+
 // Run sets a handler to be called before returning. It can be used when mocking a method such as unmarshalers that
 // takes a pointer to a struct and sets properties in such struct.
 func (c *MockCallWrapper) Run(fn func(args mock.Arguments)) *MockCallWrapper {
@@ -715,6 +721,11 @@ func (e *TestWorkflowEnvironment) QueryWorkflow(queryType string, args ...interf
 	return e.impl.queryWorkflow(queryType, args...)
 }
 
+// QueryWorkflowByID queries a child workflow by its ID and returns the result synchronously
+func (e *TestWorkflowEnvironment) QueryWorkflowByID(workflowID, queryType string, args ...interface{}) (converter.EncodedValue, error) {
+	return e.impl.queryWorkflowByID(workflowID, queryType, args...)
+}
+
 // RegisterDelayedCallback creates a new timer with specified delayDuration using workflow clock (not wall clock). When
 // the timer fires, the callback will be called. By default, this test suite uses mock clock which automatically move
 // forward to fire next timer when workflow is blocked. Use this API to make some event (like activity completion,
@@ -763,6 +774,6 @@ func (e *TestWorkflowEnvironment) SetSearchAttributesOnStart(searchAttributes ma
 
 // AssertExpectations  asserts that everything specified with OnActivity
 // in fact called as expected.  Calls may have occurred in any order.
-func (e *TestWorkflowEnvironment) AssertExpectations(t *testing.T) bool {
+func (e *TestWorkflowEnvironment) AssertExpectations(t mock.TestingT) bool {
 	return e.mock.AssertExpectations(t)
 }

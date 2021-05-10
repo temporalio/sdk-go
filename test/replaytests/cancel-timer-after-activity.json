@@ -1,0 +1,219 @@
+{
+ "events": [
+  {
+   "eventId": "1",
+   "eventTime": "2020-12-10T22:18:41.248154805Z",
+   "eventType": "WorkflowExecutionStarted",
+   "taskId": "4195749",
+   "workflowExecutionStartedEventAttributes": {
+    "workflowType": {
+     "name": "CancelTimerAfterActivity"
+    },
+    "taskQueue": {
+     "name": "tq-1-TestIntegrationSuite/TestCancelTimerAfterActivity",
+     "kind": "Normal"
+    },
+    "workflowExecutionTimeout": "15s",
+    "workflowRunTimeout": "15s",
+    "workflowTaskTimeout": "1s",
+    "originalExecutionRunId": "b3481d08-84c0-4afa-bcea-0f29a5c62b2f",
+    "identity": "535538@monolith-linux@",
+    "firstExecutionRunId": "b3481d08-84c0-4afa-bcea-0f29a5c62b2f",
+    "attempt": 1,
+    "workflowExecutionExpirationTime": "2020-12-10T22:18:56.248Z",
+    "firstWorkflowTaskBackoff": "0s",
+    "header": {
+
+    }
+   }
+  },
+  {
+   "eventId": "2",
+   "eventTime": "2020-12-10T22:18:41.248161396Z",
+   "eventType": "WorkflowTaskScheduled",
+   "taskId": "4195750",
+   "workflowTaskScheduledEventAttributes": {
+    "taskQueue": {
+     "name": "tq-1-TestIntegrationSuite/TestCancelTimerAfterActivity",
+     "kind": "Normal"
+    },
+    "startToCloseTimeout": "1s",
+    "attempt": 1
+   }
+  },
+  {
+   "eventId": "3",
+   "eventTime": "2020-12-10T22:18:41.253464064Z",
+   "eventType": "WorkflowTaskStarted",
+   "taskId": "4195758",
+   "workflowTaskStartedEventAttributes": {
+    "scheduledEventId": "2",
+    "identity": "535538@monolith-linux@",
+    "requestId": "74482163-d6d4-4e1c-af6c-724f5bb04851"
+   }
+  },
+  {
+   "eventId": "4",
+   "eventTime": "2020-12-10T22:18:41.257522209Z",
+   "eventType": "WorkflowTaskCompleted",
+   "taskId": "4195761",
+   "workflowTaskCompletedEventAttributes": {
+    "scheduledEventId": "2",
+    "startedEventId": "3",
+    "identity": "535538@monolith-linux@",
+    "binaryChecksum": "a4b8d193e6d5ec59e5fc139cd9dea460"
+   }
+  },
+  {
+   "eventId": "5",
+   "eventTime": "2020-12-10T22:18:41.257540585Z",
+   "eventType": "TimerStarted",
+   "taskId": "4195762",
+   "timerStartedEventAttributes": {
+    "timerId": "5",
+    "startToFireTimeout": "3s",
+    "workflowTaskCompletedEventId": "4"
+   }
+  },
+  {
+   "eventId": "6",
+   "eventTime": "2020-12-10T22:18:41.257550289Z",
+   "eventType": "ActivityTaskScheduled",
+   "taskId": "4195763",
+   "activityTaskScheduledEventAttributes": {
+    "activityId": "6",
+    "activityType": {
+     "name": "Prefix_ToUpper"
+    },
+    "taskQueue": {
+     "name": "tq-1-TestIntegrationSuite/TestCancelTimerAfterActivity",
+     "kind": "Normal"
+    },
+    "header": {
+
+    },
+    "input": {
+     "payloads": [
+      {
+       "metadata": {
+        "encoding": "anNvbi9wbGFpbg=="
+       },
+       "data": "ImhlbGxvIg=="
+      }
+     ]
+    },
+    "scheduleToCloseTimeout": "15s",
+    "scheduleToStartTimeout": "1s",
+    "startToCloseTimeout": "5s",
+    "heartbeatTimeout": "0s",
+    "workflowTaskCompletedEventId": "4",
+    "retryPolicy": {
+     "initialInterval": "1s",
+     "backoffCoefficient": 2,
+     "maximumInterval": "100s"
+    }
+   }
+  },
+  {
+   "eventId": "7",
+   "eventTime": "2020-12-10T22:18:41.257555945Z",
+   "eventType": "TimerCanceled",
+   "taskId": "4195764",
+   "timerCanceledEventAttributes": {
+    "timerId": "5",
+    "startedEventId": "5",
+    "workflowTaskCompletedEventId": "4",
+    "identity": "535538@monolith-linux@"
+   }
+  },
+  {
+   "eventId": "8",
+   "eventTime": "2020-12-10T22:18:41.260949614Z",
+   "eventType": "ActivityTaskStarted",
+   "taskId": "4195769",
+   "activityTaskStartedEventAttributes": {
+    "scheduledEventId": "6",
+    "identity": "535538@monolith-linux@",
+    "requestId": "7313eb51-e18d-473d-991d-22bc2d0c1d93",
+    "attempt": 1
+   }
+  },
+  {
+   "eventId": "9",
+   "eventTime": "2020-12-10T22:18:41.263783666Z",
+   "eventType": "ActivityTaskCompleted",
+   "taskId": "4195770",
+   "activityTaskCompletedEventAttributes": {
+    "result": {
+     "payloads": [
+      {
+       "metadata": {
+        "encoding": "anNvbi9wbGFpbg=="
+       },
+       "data": "IkhFTExPIg=="
+      }
+     ]
+    },
+    "scheduledEventId": "6",
+    "startedEventId": "8",
+    "identity": "535538@monolith-linux@"
+   }
+  },
+  {
+   "eventId": "10",
+   "eventTime": "2020-12-10T22:18:41.263787644Z",
+   "eventType": "WorkflowTaskScheduled",
+   "taskId": "4195773",
+   "workflowTaskScheduledEventAttributes": {
+    "taskQueue": {
+     "name": "tq-1-TestIntegrationSuite/TestCancelTimerAfterActivity",
+     "kind": "Normal"
+    },
+    "startToCloseTimeout": "1s",
+    "attempt": 1
+   }
+  },
+  {
+   "eventId": "11",
+   "eventTime": "2020-12-10T22:18:41.267032751Z",
+   "eventType": "WorkflowTaskStarted",
+   "taskId": "4195776",
+   "workflowTaskStartedEventAttributes": {
+    "scheduledEventId": "10",
+    "identity": "535538@monolith-linux@",
+    "requestId": "8e1a8e88-04a3-4d60-aae5-642c0dba0c20"
+   }
+  },
+  {
+   "eventId": "12",
+   "eventTime": "2020-12-10T22:18:41.271761645Z",
+   "eventType": "WorkflowTaskCompleted",
+   "taskId": "4195779",
+   "workflowTaskCompletedEventAttributes": {
+    "scheduledEventId": "10",
+    "startedEventId": "11",
+    "identity": "535538@monolith-linux@",
+    "binaryChecksum": "a4b8d193e6d5ec59e5fc139cd9dea460"
+   }
+  },
+  {
+   "eventId": "13",
+   "eventTime": "2020-12-10T22:18:41.271776260Z",
+   "eventType": "WorkflowExecutionCompleted",
+   "taskId": "4195780",
+   "workflowExecutionCompletedEventAttributes": {
+    "result": {
+     "payloads": [
+      {
+       "metadata": {
+        "encoding": "anNvbi9wbGFpbg=="
+       },
+       "data": "IkhFTExPIg=="
+      }
+     ]
+    },
+    "workflowTaskCompletedEventId": "12"
+   }
+  }
+ ]
+}

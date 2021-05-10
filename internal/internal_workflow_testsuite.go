@@ -582,7 +582,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 		details := newEncodedValues(request.Details, env.GetDataConverter())
 		return nil, env.wrapActivityError(activityID, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, NewCanceledError(details))
 	case *workflowservice.RespondActivityTaskFailedRequest:
-		return nil, env.wrapActivityError(activityID, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATE_UNSPECIFIED, convertFailureToError(request.GetFailure(), env.GetDataConverter()))
+		return nil, env.wrapActivityError(activityID, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATE_UNSPECIFIED, ConvertFailureToError(request.GetFailure(), env.GetDataConverter()))
 	case *workflowservice.RespondActivityTaskCompletedRequest:
 		return newEncodedValue(request.Result, env.GetDataConverter()), nil
 	default:
@@ -828,8 +828,8 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 		} else if errors.As(err, &workflowPanicErr) {
 			env.testError = newPanicError(workflowPanicErr.value, workflowPanicErr.stackTrace)
 		} else {
-			failure := convertErrorToFailure(err, dc)
-			env.testError = convertFailureToError(failure, dc)
+			failure := ConvertErrorToFailure(err, dc)
+			env.testError = ConvertFailureToError(failure, dc)
 		}
 
 		if !env.isChildWorkflow() {
@@ -960,7 +960,8 @@ func (env *testWorkflowEnvironmentImpl) CompleteActivity(taskToken []byte, resul
 				tagActivityID, activityID)
 			return
 		}
-		request := convertActivityResultToRespondRequest("test-identity", taskToken, data, err, env.GetDataConverter())
+		request := convertActivityResultToRespondRequest("test-identity", taskToken, data, err,
+			env.GetDataConverter(), defaultTestNamespace)
 		env.handleActivityResult(activityID, request, activityHandle.activityType, env.GetDataConverter())
 	}, false /* do not auto schedule workflow task, because activity might be still pending */)
 
@@ -1029,12 +1030,12 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 			if result == nil && panicErr == nil {
 				failureErr := errors.New("activity called runtime.Goexit")
 				result = &workflowservice.RespondActivityTaskFailedRequest{
-					Failure: convertErrorToFailure(failureErr, env.GetDataConverter()),
+					Failure: ConvertErrorToFailure(failureErr, env.GetDataConverter()),
 				}
 			} else if panicErr != nil {
 				failureErr := newPanicError(fmt.Sprintf("%v", panicErr), "")
 				result = &workflowservice.RespondActivityTaskFailedRequest{
-					Failure: convertErrorToFailure(failureErr, env.GetDataConverter()),
+					Failure: ConvertErrorToFailure(failureErr, env.GetDataConverter()),
 				}
 			}
 			// post activity result to workflow dispatcher
@@ -1181,20 +1182,26 @@ func (env *testWorkflowEnvironmentImpl) validateRetryPolicy(policy *commonpb.Ret
 		// nil policy is valid which means no retry
 		return nil
 	}
+
+	if policy.GetMaximumAttempts() == 1 {
+		// One maximum attempt effectively disable retries. Validating the
+		// rest of the arguments is pointless
+		return nil
+	}
 	if common.DurationValue(policy.GetInitialInterval()) < 0 {
-		return serviceerror.NewInvalidArgument("InitialIntervalInSeconds cannot be less than 0 on retry policy.")
+		return serviceerror.NewInvalidArgument("InitialInterval cannot be negative on retry policy.")
 	}
 	if policy.GetBackoffCoefficient() < 1 {
 		return serviceerror.NewInvalidArgument("BackoffCoefficient cannot be less than 1 on retry policy.")
 	}
 	if common.DurationValue(policy.GetMaximumInterval()) < 0 {
-		return serviceerror.NewInvalidArgument("MaximumIntervalInSeconds cannot be less than 0 on retry policy.")
+		return serviceerror.NewInvalidArgument("MaximumInterval cannot be negative on retry policy.")
 	}
 	if common.DurationValue(policy.GetMaximumInterval()) > 0 && common.DurationValue(policy.GetMaximumInterval()) < common.DurationValue(policy.GetInitialInterval()) {
-		return serviceerror.NewInvalidArgument("MaximumIntervalInSeconds cannot be less than InitialIntervalInSeconds on retry policy.")
+		return serviceerror.NewInvalidArgument("MaximumInterval cannot be less than InitialInterval on retry policy.")
 	}
 	if policy.GetMaximumAttempts() < 0 {
-		return serviceerror.NewInvalidArgument("MaximumAttempts cannot be less than 0 on retry policy.")
+		return serviceerror.NewInvalidArgument("MaximumAttempts cannot be negative on retry policy.")
 	}
 	return nil
 }
@@ -1241,7 +1248,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 		// check if a retry is needed
 		if request, ok := result.(*workflowservice.RespondActivityTaskFailedRequest); ok && parameters.RetryPolicy != nil {
 			p := fromProtoRetryPolicy(parameters.RetryPolicy)
-			backoff := getRetryBackoffWithNowTime(p, task.GetAttempt(), convertFailureToError(request.GetFailure(), env.GetDataConverter()), env.Now(), expireTime)
+			backoff := getRetryBackoffWithNowTime(p, task.GetAttempt(), ConvertFailureToError(request.GetFailure(), env.GetDataConverter()), env.Now(), expireTime)
 			if backoff > 0 {
 				// need a retry
 				waitCh := make(chan struct{})
@@ -1380,7 +1387,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID Activity
 			activityID,
 			activityType,
 			enumspb.RETRY_STATE_UNSPECIFIED,
-			convertFailureToError(request.GetFailure(), dataConverter),
+			ConvertFailureToError(request.GetFailure(), dataConverter),
 		)
 		activityHandle.callback(nil, err)
 	case *workflowservice.RespondActivityTaskCompletedRequest:
@@ -2214,6 +2221,21 @@ func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...
 	return newEncodedValue(blob, env.GetDataConverter()), nil
 }
 
+func (env *testWorkflowEnvironmentImpl) queryWorkflowByID(workflowID, queryType string, args ...interface{}) (converter.EncodedValue, error) {
+	if workflowHandle, ok := env.runningWorkflows[workflowID]; ok {
+		data, err := encodeArgs(workflowHandle.env.GetDataConverter(), args)
+		if err != nil {
+			return nil, err
+		}
+		blob, err := workflowHandle.env.queryHandler(queryType, data)
+		if err != nil {
+			return nil, err
+		}
+		return newEncodedValue(blob, workflowHandle.env.GetDataConverter()), nil
+	}
+	return nil, serviceerror.NewNotFound(fmt.Sprintf("Workflow %v not exists", workflowID))
+}
+
 func (env *testWorkflowEnvironmentImpl) getMockRunFn(callWrapper *MockCallWrapper) func(args mock.Arguments) {
 	env.locker.Lock()
 	defer env.locker.Unlock()
@@ -2233,7 +2255,7 @@ func (env *testWorkflowEnvironmentImpl) setLastCompletionResult(result interface
 }
 
 func (env *testWorkflowEnvironmentImpl) setLastError(err error) {
-	env.workflowInfo.lastFailure = convertErrorToFailure(err, env.dataConverter)
+	env.workflowInfo.lastFailure = ConvertErrorToFailure(err, env.dataConverter)
 }
 
 func (env *testWorkflowEnvironmentImpl) setHeartbeatDetails(details interface{}) {

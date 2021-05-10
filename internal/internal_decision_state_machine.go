@@ -27,6 +27,7 @@ package internal
 import (
 	"container/list"
 	"fmt"
+	"strconv"
 
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
@@ -82,10 +83,19 @@ type (
 		attributes *commandpb.ScheduleActivityTaskCommandAttributes
 	}
 
+	cancelActivityStateMachine struct {
+		*commandStateMachineBase
+		attributes *commandpb.RequestCancelActivityTaskCommandAttributes
+	}
+
 	timerCommandStateMachine struct {
 		*commandStateMachineBase
 		attributes *commandpb.StartTimerCommandAttributes
-		canceled   bool
+	}
+
+	cancelTimerCommandStateMachine struct {
+		*commandStateMachineBase
+		attributes *commandpb.CancelTimerCommandAttributes
 	}
 
 	childWorkflowCommandStateMachine struct {
@@ -121,10 +131,12 @@ type (
 		orderedCommands    *list.List
 		commands           map[commandID]*list.Element
 
-		scheduledEventIDToActivityID     map[int64]string
-		scheduledEventIDToCancellationID map[int64]string
-		scheduledEventIDToSignalID       map[int64]string
-		versionMarkerLookup              map[int64]string
+		scheduledEventIDToActivityID          map[int64]string
+		scheduledEventIDToCancellationID      map[int64]string
+		scheduledEventIDToSignalID            map[int64]string
+		versionMarkerLookup                   map[int64]string
+		commandsCancelledDuringWFCancellation int64
+		workflowExecutionIsCancelling         bool
 	}
 
 	// panic when command state machine is in illegal state
@@ -144,28 +156,33 @@ const (
 	commandStateCancellationCommandSent               commandState = 7
 	commandStateCompletedAfterCancellationCommandSent commandState = 8
 	commandStateCompleted                             commandState = 9
+	commandStateCanceledBeforeSent                    commandState = 10
+	commandStateCancellationCommandAccepted           commandState = 11
 )
 
 const (
-	commandTypeActivity               commandType = 0
-	commandTypeChildWorkflow          commandType = 1
-	commandTypeCancellation           commandType = 2
-	commandTypeMarker                 commandType = 3
-	commandTypeTimer                  commandType = 4
-	commandTypeSignal                 commandType = 5
-	commandTypeUpsertSearchAttributes commandType = 6
+	commandTypeActivity                  commandType = 0
+	commandTypeChildWorkflow             commandType = 1
+	commandTypeCancellation              commandType = 2
+	commandTypeMarker                    commandType = 3
+	commandTypeTimer                     commandType = 4
+	commandTypeSignal                    commandType = 5
+	commandTypeUpsertSearchAttributes    commandType = 6
+	commandTypeCancelTimer               commandType = 7
+	commandTypeRequestCancelActivityTask commandType = 8
 )
 
 const (
-	eventCancel           = "cancel"
-	eventCommandSent      = "handleCommandSent"
-	eventInitiated        = "handleInitiatedEvent"
-	eventInitiationFailed = "handleInitiationFailedEvent"
-	eventStarted          = "handleStartedEvent"
-	eventCompletion       = "handleCompletionEvent"
-	eventCancelInitiated  = "handleCancelInitiatedEvent"
-	eventCancelFailed     = "handleCancelFailedEvent"
-	eventCanceled         = "handleCanceledEvent"
+	eventCancel                                   = "cancel"
+	eventCommandSent                              = "handleCommandSent"
+	eventInitiated                                = "handleInitiatedEvent"
+	eventInitiationFailed                         = "handleInitiationFailedEvent"
+	eventStarted                                  = "handleStartedEvent"
+	eventCompletion                               = "handleCompletionEvent"
+	eventCancelInitiated                          = "handleCancelInitiatedEvent"
+	eventCancelFailed                             = "handleCancelFailedEvent"
+	eventCanceled                                 = "handleCanceledEvent"
+	eventExternalWorkflowExecutionCancelRequested = "handleExternalWorkflowExecutionCancelRequested"
 )
 
 const (
@@ -174,12 +191,12 @@ const (
 	localActivityMarkerName     = "LocalActivity"
 	mutableSideEffectMarkerName = "MutableSideEffect"
 
-	sideEffectMarkerIDName               = "side-effect-id"
-	sideEffectMarkerDataName             = "data"
-	versionMarkerChangeIDName            = "change-id"
-	versionMarkerDataName                = "version"
-	localActivityMarkerDataDetailsName   = "data"
-	localActivityMarkerResultDetailsName = "result"
+	sideEffectMarkerIDName      = "side-effect-id"
+	sideEffectMarkerDataName    = "data"
+	versionMarkerChangeIDName   = "change-id"
+	versionMarkerDataName       = "version"
+	localActivityMarkerDataName = "data"
+	localActivityResultName     = "result"
 )
 
 func (d commandState) String() string {
@@ -204,8 +221,12 @@ func (d commandState) String() string {
 		return "CompletedAfterCancellationCommandSent"
 	case commandStateCompleted:
 		return "Completed"
+	case commandStateCanceledBeforeSent:
+		return "CanceledBeforeSent"
+	case commandStateCancellationCommandAccepted:
+		return "CancellationCommandAccepted"
 	default:
-		return "Unknown"
+		return fmt.Sprintf("Unknown: %d", int32(d))
 	}
 }
 
@@ -223,6 +244,10 @@ func (d commandType) String() string {
 		return "Timer"
 	case commandTypeSignal:
 		return "Signal"
+	case commandTypeCancelTimer:
+		return "CancelTimer"
+	case commandTypeRequestCancelActivityTask:
+		return "RequestCancelActivityTask"
 	default:
 		return "Unknown"
 	}
@@ -257,9 +282,25 @@ func (h *commandsHelper) newActivityCommandStateMachine(
 	}
 }
 
+func (h *commandsHelper) newCancelActivityStateMachine(attributes *commandpb.RequestCancelActivityTaskCommandAttributes) *cancelActivityStateMachine {
+	base := h.newCommandStateMachineBase(commandTypeRequestCancelActivityTask, strconv.FormatInt(attributes.GetScheduledEventId(), 10))
+	return &cancelActivityStateMachine{
+		commandStateMachineBase: base,
+		attributes:              attributes,
+	}
+}
+
 func (h *commandsHelper) newTimerCommandStateMachine(attributes *commandpb.StartTimerCommandAttributes) *timerCommandStateMachine {
 	base := h.newCommandStateMachineBase(commandTypeTimer, attributes.GetTimerId())
 	return &timerCommandStateMachine{
+		commandStateMachineBase: base,
+		attributes:              attributes,
+	}
+}
+
+func (h *commandsHelper) newCancelTimerCommandStateMachine(attributes *commandpb.CancelTimerCommandAttributes) *cancelTimerCommandStateMachine {
+	base := h.newCommandStateMachineBase(commandTypeCancelTimer, attributes.GetTimerId())
+	return &cancelTimerCommandStateMachine{
 		commandStateMachineBase: base,
 		attributes:              attributes,
 	}
@@ -371,14 +412,14 @@ func (d *commandStateMachineBase) cancel() {
 	case commandStateCompleted, commandStateCompletedAfterCancellationCommandSent:
 		// No op. This is legit. People could cancel context after timer/activity is done.
 	case commandStateCreated:
-		d.moveState(commandStateCompleted, eventCancel)
+		d.moveState(commandStateCanceledBeforeSent, eventCancel)
 	case commandStateCommandSent:
-		d.moveState(commandStateCanceledBeforeInitiated, eventCancel)
+		d.moveState(commandStateCancellationCommandSent, eventCancel)
 	case commandStateInitiated:
+		if d.helper.workflowExecutionIsCancelling {
+			d.helper.commandsCancelledDuringWFCancellation++
+		}
 		d.moveState(commandStateCanceledAfterInitiated, eventCancel)
-		// cancel doesn't add new command, therefore addCommand is not called.
-		// But *CancelRequested event is still being added to the history, therefore counter needs to be incremented.
-		d.helper.incrementNextCommandEventID()
 	default:
 		d.failStateTransition(eventCancel)
 	}
@@ -388,7 +429,7 @@ func (d *commandStateMachineBase) handleInitiatedEvent() {
 	switch d.state {
 	case commandStateCommandSent:
 		d.moveState(commandStateInitiated, eventInitiated)
-	case commandStateCanceledBeforeInitiated:
+	case commandStateCanceledBeforeInitiated, commandStateCanceledBeforeSent, commandStateCancellationCommandSent:
 		d.moveState(commandStateCanceledAfterInitiated, eventInitiated)
 	default:
 		d.failStateTransition(eventInitiated)
@@ -397,7 +438,7 @@ func (d *commandStateMachineBase) handleInitiatedEvent() {
 
 func (d *commandStateMachineBase) handleInitiationFailedEvent() {
 	switch d.state {
-	case commandStateInitiated, commandStateCommandSent, commandStateCanceledBeforeInitiated:
+	case commandStateInitiated, commandStateCommandSent, commandStateCanceledBeforeInitiated, commandStateCancellationCommandSent:
 		d.moveState(commandStateCompleted, eventInitiationFailed)
 	default:
 		d.failStateTransition(eventInitiationFailed)
@@ -422,7 +463,7 @@ func (d *commandStateMachineBase) handleCompletionEvent() {
 func (d *commandStateMachineBase) handleCancelInitiatedEvent() {
 	d.history = append(d.history, eventCancelInitiated)
 	switch d.state {
-	case commandStateCancellationCommandSent:
+	case commandStateCancellationCommandSent, commandStateCanceledAfterInitiated:
 	// No state change
 	default:
 		d.failStateTransition(eventCancelInitiated)
@@ -440,7 +481,7 @@ func (d *commandStateMachineBase) handleCancelFailedEvent() {
 
 func (d *commandStateMachineBase) handleCanceledEvent() {
 	switch d.state {
-	case commandStateCancellationCommandSent:
+	case commandStateCancellationCommandSent, commandStateCanceledAfterInitiated, commandStateCancellationCommandAccepted:
 		d.moveState(commandStateCompleted, eventCanceled)
 	default:
 		d.failStateTransition(eventCanceled)
@@ -454,15 +495,9 @@ func (d *commandStateMachineBase) String() string {
 
 func (d *activityCommandStateMachine) getCommand() *commandpb.Command {
 	switch d.state {
-	case commandStateCreated:
+	case commandStateCreated, commandStateCanceledBeforeSent:
 		command := createNewCommand(enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK)
 		command.Attributes = &commandpb.Command_ScheduleActivityTaskCommandAttributes{ScheduleActivityTaskCommandAttributes: d.attributes}
-		return command
-	case commandStateCanceledAfterInitiated:
-		command := createNewCommand(enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK)
-		command.Attributes = &commandpb.Command_RequestCancelActivityTaskCommandAttributes{RequestCancelActivityTaskCommandAttributes: &commandpb.RequestCancelActivityTaskCommandAttributes{
-			ScheduledEventId: d.scheduleID,
-		}}
 		return command
 	default:
 		return nil
@@ -485,13 +520,34 @@ func (d *activityCommandStateMachine) handleCancelFailedEvent() {
 	d.failStateTransition(eventCancelFailed)
 }
 
+func (d *activityCommandStateMachine) cancel() {
+	switch d.state {
+	case commandStateCreated, commandStateCommandSent, commandStateInitiated:
+		attribs := &commandpb.RequestCancelActivityTaskCommandAttributes{
+			ScheduledEventId: d.scheduleID,
+		}
+		cancelCmd := d.helper.newCancelActivityStateMachine(attribs)
+		d.helper.addCommand(cancelCmd)
+	}
+
+	d.commandStateMachineBase.cancel()
+}
+
 func (d *timerCommandStateMachine) cancel() {
-	d.canceled = true
+	switch d.state {
+	case commandStateCreated, commandStateCommandSent, commandStateInitiated:
+		attribs := &commandpb.CancelTimerCommandAttributes{
+			TimerId: d.attributes.TimerId,
+		}
+		cancelCmd := d.helper.newCancelTimerCommandStateMachine(attribs)
+		d.helper.addCommand(cancelCmd)
+	}
+
 	d.commandStateMachineBase.cancel()
 }
 
 func (d *timerCommandStateMachine) isDone() bool {
-	return d.state == commandStateCompleted || d.canceled
+	return d.state == commandStateCompleted
 }
 
 func (d *timerCommandStateMachine) handleCommandSent() {
@@ -503,17 +559,33 @@ func (d *timerCommandStateMachine) handleCommandSent() {
 	}
 }
 
-func (d *timerCommandStateMachine) getCommand() *commandpb.Command {
+func (d *cancelActivityStateMachine) getCommand() *commandpb.Command {
 	switch d.state {
 	case commandStateCreated:
+		command := createNewCommand(enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK)
+		command.Attributes = &commandpb.Command_RequestCancelActivityTaskCommandAttributes{RequestCancelActivityTaskCommandAttributes: d.attributes}
+		return command
+	default:
+		return nil
+	}
+}
+
+func (d *timerCommandStateMachine) getCommand() *commandpb.Command {
+	switch d.state {
+	case commandStateCreated, commandStateCanceledBeforeSent:
 		command := createNewCommand(enumspb.COMMAND_TYPE_START_TIMER)
 		command.Attributes = &commandpb.Command_StartTimerCommandAttributes{StartTimerCommandAttributes: d.attributes}
 		return command
-	case commandStateCanceledAfterInitiated:
+	default:
+		return nil
+	}
+}
+
+func (d *cancelTimerCommandStateMachine) getCommand() *commandpb.Command {
+	switch d.state {
+	case commandStateCreated:
 		command := createNewCommand(enumspb.COMMAND_TYPE_CANCEL_TIMER)
-		command.Attributes = &commandpb.Command_CancelTimerCommandAttributes{CancelTimerCommandAttributes: &commandpb.CancelTimerCommandAttributes{
-			TimerId: d.attributes.TimerId,
-		}}
+		command.Attributes = &commandpb.Command_CancelTimerCommandAttributes{CancelTimerCommandAttributes: d.attributes}
 		return command
 	default:
 		return nil
@@ -559,6 +631,15 @@ func (d *childWorkflowCommandStateMachine) handleStartedEvent() {
 	}
 }
 
+func (d *childWorkflowCommandStateMachine) handleInitiatedEvent() {
+	switch d.state {
+	case commandStateCancellationCommandSent:
+		d.failStateTransition(eventInitiated)
+	default:
+		d.commandStateMachineBase.handleInitiatedEvent()
+	}
+}
+
 func (d *childWorkflowCommandStateMachine) handleCancelFailedEvent() {
 	switch d.state {
 	case commandStateCancellationCommandSent:
@@ -582,6 +663,10 @@ func (d *childWorkflowCommandStateMachine) handleCanceledEvent() {
 	switch d.state {
 	case commandStateStarted:
 		d.moveState(commandStateCompleted, eventCanceled)
+	case commandStateCancellationCommandSent:
+		// We've sent the command but haven't seen the server accept the cancellation. We must ensure this command hangs
+		// around, because it is possible for the child workflow to be canceled before we've seen the event.
+		d.moveState(commandStateCompletedAfterCancellationCommandSent, eventCanceled)
 	default:
 		d.commandStateMachineBase.handleCanceledEvent()
 	}
@@ -589,10 +674,21 @@ func (d *childWorkflowCommandStateMachine) handleCanceledEvent() {
 
 func (d *childWorkflowCommandStateMachine) handleCompletionEvent() {
 	switch d.state {
-	case commandStateStarted, commandStateCanceledAfterStarted:
+	case commandStateStarted, commandStateCanceledAfterStarted,
+		commandStateCompletedAfterCancellationCommandSent, commandStateCancellationCommandAccepted:
 		d.moveState(commandStateCompleted, eventCompletion)
 	default:
 		d.commandStateMachineBase.handleCompletionEvent()
+	}
+}
+
+func (d *childWorkflowCommandStateMachine) handleExternalWorkflowExecutionCancelRequested() {
+	if d.getState() == commandStateCompletedAfterCancellationCommandSent {
+		// Now we're really done.
+		d.handleCompletionEvent()
+	} else {
+		// We should be in the cancellation command sent stage - new state to indicate we have seen the cancel accepted
+		d.moveState(commandStateCancellationCommandAccepted, eventExternalWorkflowExecutionCancelRequested)
 	}
 }
 
@@ -698,10 +794,11 @@ func newCommandsHelper() *commandsHelper {
 		orderedCommands: list.New(),
 		commands:        make(map[commandID]*list.Element),
 
-		scheduledEventIDToActivityID:     make(map[int64]string),
-		scheduledEventIDToCancellationID: make(map[int64]string),
-		scheduledEventIDToSignalID:       make(map[int64]string),
-		versionMarkerLookup:              make(map[int64]string),
+		scheduledEventIDToActivityID:          make(map[int64]string),
+		scheduledEventIDToCancellationID:      make(map[int64]string),
+		scheduledEventIDToSignalID:            make(map[int64]string),
+		versionMarkerLookup:                   make(map[int64]string),
+		commandsCancelledDuringWFCancellation: 0,
 	}
 }
 
@@ -710,16 +807,26 @@ func (h *commandsHelper) incrementNextCommandEventID() {
 }
 
 func (h *commandsHelper) setCurrentWorkflowTaskStartedEventID(workflowTaskStartedEventID int64) {
-	// Server always processes the commands in the same order it is generated by client and each command results
-	// in coresponding history event after procesing. So we can use workflow task started event id + 2
-	// as the offset as workflow task completed event is always the first event in the workflow task followed by
-	// events generated from commands. This allows client sdk to deterministically predict history event ids
-	// generated by processing of the command.
-	h.nextCommandEventID = workflowTaskStartedEventID + 2
+	// Server always processes the commands in the same order it is generated by client and each command results in
+	// corresponding history event after processing. So we can use workflow task started event id + 2 as the offset as
+	// workflow task completed event is always the first event in the workflow task followed by events generated from
+	// commands. This allows client sdk to deterministically predict history event ids generated by processing of the
+	// command. We must also add the number of cancel commands that were spawned during cancellation of the workflow
+	// execution as those canceled command events will show up *after* the workflow task completed event.
+	h.nextCommandEventID = workflowTaskStartedEventID + 2 + h.commandsCancelledDuringWFCancellation
+	h.commandsCancelledDuringWFCancellation = 0
 }
 
 func (h *commandsHelper) getNextID() int64 {
 	// First check if we have a GetVersion marker in the lookup map
+	h.incrementNextCommandEventIDIfVersionMarker()
+	if h.nextCommandEventID == 0 {
+		panic("Attempt to generate a command before processing WorkflowTaskStarted event")
+	}
+	return h.nextCommandEventID
+}
+
+func (h *commandsHelper) incrementNextCommandEventIDIfVersionMarker() {
 	if _, ok := h.versionMarkerLookup[h.nextCommandEventID]; ok {
 		// Remove the marker from the lookup map and increment nextCommandEventID by 2 because call to GetVersion
 		// results in 2 events in the history.  One is GetVersion marker event for changeID and change version, other
@@ -728,10 +835,6 @@ func (h *commandsHelper) getNextID() int64 {
 		h.incrementNextCommandEventID()
 		h.incrementNextCommandEventID()
 	}
-	if h.nextCommandEventID == 0 {
-		panic("Attempt to generate a command before processing WorkflowTaskStarted event")
-	}
-	return h.nextCommandEventID
 }
 
 func (h *commandsHelper) getCommand(id commandID) commandStateMachine {
@@ -741,9 +844,6 @@ func (h *commandsHelper) getCommand(id commandID) commandStateMachine {
 			" or incompatible change in the workflow definition", id)
 		panicIllegalState(panicMsg)
 	}
-	// Move the last update command state machine to the back of the list.
-	// Otherwise commands (like timer cancellations) can end up out of order.
-	h.orderedCommands.MoveToBack(command)
 	return command.Value.(commandStateMachine)
 }
 
@@ -756,6 +856,7 @@ func (h *commandsHelper) addCommand(command commandStateMachine) {
 	h.commands[command.getID()] = element
 
 	// Every time new command is added increment the counter used for generating ID
+	h.incrementNextCommandEventIDIfVersionMarker()
 	h.incrementNextCommandEventID()
 }
 
@@ -1008,7 +1109,8 @@ func (h *commandsHelper) handleExternalWorkflowExecutionCancelRequested(initiate
 	cancellationID, isExternal := h.scheduledEventIDToCancellationID[initiatedeventID]
 	if !isExternal {
 		command = h.getCommand(makeCommandID(commandTypeChildWorkflow, workflowID))
-		// no state change for child workflow, it is still in CancellationCommandSent
+		asChildWfCmd := command.(*childWorkflowCommandStateMachine)
+		asChildWfCmd.handleExternalWorkflowExecutionCancelRequested()
 	} else {
 		// this is cancellation for external workflow
 		command = h.getCommand(makeCommandID(commandTypeCancellation, cancellationID))
@@ -1093,6 +1195,7 @@ func (h *commandsHelper) startTimer(attributes *commandpb.StartTimerCommandAttri
 func (h *commandsHelper) cancelTimer(timerID TimerID) commandStateMachine {
 	command := h.getCommand(makeCommandID(commandTypeTimer, timerID.id))
 	command.cancel()
+
 	return command
 }
 

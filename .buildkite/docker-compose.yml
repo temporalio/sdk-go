@@ -27,64 +27,43 @@ services:
         aliases:
           - temporal
 
-  integ-test-sticky-off:
+  build:
     build:
-      context: ../../
-      dockerfile: ./docker/buildkite/Dockerfile
-    command:
-      - /bin/sh
-      - -e
-      - -c
-      - |
-        make integ_test_sticky_off
+      context: ../
+      dockerfile: ./.buildkite/Dockerfile
     environment:
-      - "SERVICE_ADDR=temporal:7233"
       - "GO111MODULE=on"
-    depends_on:
-      - temporal
     volumes:
-      - ../../:/go/src/go.temporal.io/sdk
+      - ../:/go/src/go.temporal.io/sdk
     networks:
       services-network:
         aliases:
-          - integ-test-sticky-off
+          - build
 
-  integ-test-sticky-on:
+  integ-test:
     build:
-      context: ../../
-      dockerfile: ./docker/buildkite/Dockerfile
-    command:
-      - /bin/sh
-      - -e
-      - -c
-      - |
-        make integ_test_sticky_on
+      context: ../
+      dockerfile: ./.buildkite/Dockerfile
     environment:
       - "SERVICE_ADDR=temporal:7233"
       - "GO111MODULE=on"
     depends_on:
       - temporal
     volumes:
-      - ../../:/go/src/go.temporal.io/sdk
+      - ../:/go/src/go.temporal.io/sdk
     networks:
       services-network:
         aliases:
-          - integ-test-sticky-on
+          - integ-test
 
   unit-test:
     build:
-      context: ../../
-      dockerfile: ./docker/buildkite/Dockerfile
-    command:
-      - /bin/sh
-      - -e
-      - -c
-      - |
-        make unit_test
+      context: ../
+      dockerfile: ./.buildkite/Dockerfile
     environment:
       - "GO111MODULE=on"
     volumes:
-      - ../../:/go/src/go.temporal.io/sdk
+      - ../:/go/src/go.temporal.io/sdk
     networks:
       services-network:
         aliases:
@@ -92,18 +71,31 @@ services:
 
   coverage-report:
     build:
-      context: ../../
-      dockerfile: ./docker/buildkite/Dockerfile
-    command:
-      - /bin/sh
-      - -e
-      - -c
-      - |
-        make .build/coverage/cover.out
+      context: ../
+      dockerfile: ./.buildkite/Dockerfile
     environment:
+      - CI
+      - BUILDKITE
+      - BUILDKITE_AGENT_ACCESS_TOKEN
+      - BUILDKITE_JOB_ID
+      - BUILDKITE_BUILD_ID
+      - BUILDKITE_BUILD_NUMBER
+      - BUILDKITE_BRANCH
+      - BUILDKITE_BUILD_URL
+      - BUILDKITE_PROJECT_SLUG
+      - BUILDKITE_COMMIT
+      - BUILDKITE_PULL_REQUEST
+      - BUILDKITE_TAG
+      - BUILDKITE_REPO
+      - BUILDKITE_BUILD_CREATOR
+      - BUILDKITE_BUILD_CREATOR_EMAIL
+      - BUILDKITE_BUILD_CREATOR_TEAMS
+      - BUILDKITE_PULL_REQUEST_REPO
+      - COVERALLS_TOKEN
       - "GO111MODULE=on"
     volumes:
-      - ../../:/go/src/go.temporal.io/sdk
+      - ../:/go/src/go.temporal.io/sdk
+      - /usr/bin/buildkite-agent:/usr/bin/buildkite-agent
 
 networks:
   services-network:

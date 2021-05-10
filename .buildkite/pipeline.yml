@@ -7,7 +7,7 @@ steps:
     plugins:
       - docker-compose#v3.1.0:
           run: build
-          config: docker/buildkite/docker-compose.yml
+          config: ./.buildkite/docker-compose.yml
 
   - label: ":golang: unit-test"
     agents:
@@ -19,13 +19,13 @@ steps:
     plugins:
       - docker-compose#v3.1.0:
           run: unit-test
-          config: docker/buildkite/docker-compose.yml
+          config: ./.buildkite/docker-compose.yml
 
-  - label: ":golang: integration-test-sticky-off"
+  - label: ":golang: integration-test-zero-cache"
     agents:
       queue: "default"
       docker: "*"
-    command: "make integration-test-sticky-off"
+    command: "make integration-test-zero-cache"
     artifact_paths:
       - ".build/coverage/*.out"
     retry:
@@ -34,13 +34,13 @@ steps:
     plugins:
       - docker-compose#v3.1.0:
           run: integ-test
-          config: docker/buildkite/docker-compose.yml
+          config: ./.buildkite/docker-compose.yml
 
-  - label: ":golang: integration-test-sticky-on"
+  - label: ":golang: integration-test-normal-cache"
     agents:
       queue: "default"
       docker: "*"
-    command: "make integration-test-sticky-on"
+    command: "make integration-test-normal-cache"
     artifact_paths:
       - ".build/coverage/*.out"
     retry:
@@ -49,7 +49,7 @@ steps:
     plugins:
       - docker-compose#v3.1.0:
           run: integ-test
-          config: docker/buildkite/docker-compose.yml
+          config: ./.buildkite/docker-compose.yml
 
   - wait
 
@@ -61,4 +61,4 @@ steps:
     plugins:
       - docker-compose#v3.1.0:
           run: coverage-report
-          config: docker/buildkite/docker-compose.yml
+          config: ./.buildkite/docker-compose.yml

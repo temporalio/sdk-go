@@ -153,7 +153,7 @@ func (ts *AsyncBindingsTestSuite) SetupTest() {
 	ts.seq++
 	ts.taskQueueName = fmt.Sprintf("tq-%v-%s", ts.seq, ts.T().Name())
 	options := worker.Options{
-		DisableStickyExecution: ts.config.IsStickyOff,
+		DisableStickyExecution: ts.config.maxWorkflowCacheSize <= 0,
 	}
 	ts.worker = worker.New(ts.client, ts.taskQueueName, options)
 	ts.worker.RegisterWorkflow(SimplestWorkflow)
@@ -184,7 +184,8 @@ func (ts *AsyncBindingsTestSuite) TestSingleActivityWorkflowDefinition() {
 		workflow.RegisterOptions{Name: name},
 	)
 	ts.worker.RegisterWorkflow(ChildWorkflow)
-	ts.worker.RegisterActivity(SingleActivity)
+	ts.worker.RegisterActivity(Activity1)
+	ts.worker.RegisterActivity(ActivityThatFails)
 	ts.NoError(ts.worker.Start())
 	wr, err := ts.client.ExecuteWorkflow(context.Background(), client.StartWorkflowOptions{TaskQueue: ts.taskQueueName}, name)
 	ts.NoError(err)

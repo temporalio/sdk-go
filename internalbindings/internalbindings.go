@@ -31,7 +31,12 @@
 // Always talk to Temporal team before building anything on top of them.
 package internalbindings
 
-import "go.temporal.io/sdk/internal"
+import (
+	commonpb "go.temporal.io/api/common/v1"
+	failurepb "go.temporal.io/api/failure/v1"
+	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal"
+)
 
 type (
 	// WorkflowType information
@@ -60,10 +65,31 @@ type (
 	LocalActivityID = internal.LocalActivityID
 	// ExecuteLocalActivityOptions options for executing a local activity
 	ExecuteLocalActivityOptions = internal.ExecuteLocalActivityOptions
+	// LocalActivityResultHandler that returns local activity result
+	LocalActivityResultHandler = internal.LocalActivityResultHandler
+	// LocalActivityResultWrapper contains result of a local activity
+	LocalActivityResultWrapper = internal.LocalActivityResultWrapper
 	// ActivityType type of activity
 	ActivityType = internal.ActivityType
 	// ResultHandler result handler function
 	ResultHandler = internal.ResultHandler
 	// TimerID uniquely identifies timer
 	TimerID = internal.TimerID
+	// ContinueAsNewError used by a workflow to request continue as new
+	ContinueAsNewError = internal.ContinueAsNewError
 )
+
+// ConvertErrorToFailure converts Go error to the correspondent Failure protobuf.
+func ConvertErrorToFailure(err error, dc converter.DataConverter) *failurepb.Failure {
+	return internal.ConvertErrorToFailure(err, dc)
+}
+
+// ConvertFailureToError converts Failure protobuf to the correspondent Go error.
+func ConvertFailureToError(failure *failurepb.Failure, dc converter.DataConverter) error {
+	return internal.ConvertFailureToError(failure, dc)
+}
+
+// GetLastCompletionResult returns last completion result from workflow.
+func GetLastCompletionResult(env WorkflowEnvironment) *commonpb.Payloads {
+	return internal.GetLastCompletionResultFromWorkflowInfo(env.WorkflowInfo())
+}

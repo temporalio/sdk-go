@@ -29,6 +29,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -445,11 +446,11 @@ func (s *WorkflowUnitTest) Test_ContinueAsNewWorkflow() {
 	err = errors.Unwrap(workflowErr)
 	var resultErr *ContinueAsNewError
 	s.True(errors.As(err, &resultErr))
-	s.EqualValues("continueAsNewWorkflowTest", resultErr.params.WorkflowType.Name)
-	s.EqualValues(100*time.Second, resultErr.params.WorkflowExecutionTimeout)
-	s.EqualValues(50*time.Second, resultErr.params.WorkflowRunTimeout)
-	s.EqualValues(5*time.Second, resultErr.params.WorkflowTaskTimeout)
-	s.EqualValues("default-test-taskqueue", resultErr.params.TaskQueueName)
+	s.EqualValues("continueAsNewWorkflowTest", resultErr.WorkflowType.Name)
+	s.EqualValues(100*time.Second, resultErr.WorkflowExecutionTimeout)
+	s.EqualValues(50*time.Second, resultErr.WorkflowRunTimeout)
+	s.EqualValues(5*time.Second, resultErr.WorkflowTaskTimeout)
+	s.EqualValues("default-test-taskqueue", resultErr.TaskQueueName)
 }
 
 func cancelWorkflowTest(ctx Context) (string, error) {
@@ -843,6 +844,35 @@ func (s *WorkflowUnitTest) Test_CloseChannelInSelectWorkflow() {
 	s.NoError(env.GetWorkflowError())
 }
 
+var selectDoesntLoopForeverCounter uint64
+
+func (s *WorkflowUnitTest) selectDoesntLoopForever(ctx Context) error {
+	cancelCtx, cancelFunc := WithCancel(ctx)
+	selector := NewSelector(ctx)
+
+	cancelFunc()
+	selector.AddReceive(cancelCtx.Done(), func(c ReceiveChannel, more bool) {
+		res := c.Receive(ctx, nil)
+		s.Assert().Equal(false, res)
+		s.Assert().Equal(false, more)
+	})
+
+	for {
+		selector.Select(ctx)
+		atomic.AddUint64(&selectDoesntLoopForeverCounter, 1)
+	}
+}
+
+func (s *WorkflowUnitTest) Test_SelectDoesntLoopForever() {
+	env := s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(s.selectDoesntLoopForever)
+	s.True(env.IsWorkflowCompleted())
+	// Hits workflow timeout, since it blocked "forever"
+	s.Error(env.GetWorkflowError())
+	// The loop over the select should have blocked
+	s.Equal(uint64(1), selectDoesntLoopForeverCounter)
+}
+
 func bufferedChanWorkflowTest(ctx Context, bufferSize int) error {
 	bufferedCh := NewBufferedChannel(ctx, bufferSize)
 
@@ -903,7 +933,13 @@ func bufferedChanWithSelectorWorkflowTest(ctx Context, bufferSize int) error {
 	selector.AddSend(selectedCh, dummy, func() {})
 	selector.AddSend(bufferedCh, dummy, func() {})
 	// 2. When select is called, callback for the second send will be added to bufferedCh's blockedSends
+	if selector.HasPending() {
+		panic("HasPending should be true")
+	}
 	selector.Select(ctx)
+	if selector.HasPending() {
+		panic("HasPending should be true")
+	}
 
 	// Make sure no coroutine blocks
 	done.Receive(ctx, nil)

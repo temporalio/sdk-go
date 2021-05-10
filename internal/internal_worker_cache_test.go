@@ -22,25 +22,42 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package converter
+package internal
 
-var (
-	defaultDataConverter = NewCompositeDataConverter(
-		NewNilPayloadConverter(),
-		NewByteSlicePayloadConverter(),
+import (
+	"sync"
+	"testing"
 
-		// Order is important here. Both ProtoJsonPayload and ProtoPayload converters check for the same proto.Message
-		// interface. The first match (ProtoJsonPayload in this case) will always be used for serialization.
-		// Deserialization is controlled by metadata, therefore both converters can deserialize corresponding data format
-		// (JSON or binary proto).
-		NewProtoJSONPayloadConverter(),
-		NewProtoPayloadConverter(),
-
-		NewJSONPayloadConverter(),
-	)
+	"github.com/stretchr/testify/suite"
 )
 
-// GetDefaultDataConverter returns default data converter used by Temporal worker.
-func GetDefaultDataConverter() DataConverter {
-	return defaultDataConverter
+type (
+	WorkerCacheSuite struct {
+		suite.Suite
+	}
+)
+
+func TestWorkerCacheTestSuite(t *testing.T) {
+	suite.Run(t, new(WorkerCacheSuite))
+}
+
+func (s *WorkerCacheSuite) TestCreateAndFree() {
+	cachePtr := &sharedWorkerCache{}
+	var lock sync.Mutex
+
+	cache := newWorkerCache(cachePtr, &lock, 10)
+	s.NotNil(cache)
+	s.NotNil(cachePtr)
+	s.NotNil(cachePtr.workflowCache)
+	s.Equal(cachePtr.workerRefcount, 1)
+	cache2 := newWorkerCache(cachePtr, &lock, 10)
+	s.NotNil(cache2)
+	s.NotNil(cachePtr.workflowCache)
+	s.Equal(cachePtr.workerRefcount, 2)
+	cache.close(&lock)
+	s.Equal(cachePtr.workerRefcount, 1)
+	s.NotNil(cachePtr.workflowCache)
+	cache2.close(&lock)
+	s.Equal(cachePtr.workerRefcount, 0)
+	s.Nil(cachePtr.workflowCache)
 }

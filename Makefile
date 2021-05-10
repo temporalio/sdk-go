@@ -12,8 +12,8 @@ TEST_ARG ?= -race -v -timeout $(TEST_TIMEOUT)
 INTEG_TEST_ROOT := ./test
 COVER_ROOT := $(BUILD)/coverage
 UT_COVER_FILE := $(COVER_ROOT)/unit_test_cover.out
-INTEG_STICKY_OFF_COVER_FILE := $(COVER_ROOT)/integ_test_sticky_off_cover.out
-INTEG_STICKY_ON_COVER_FILE := $(COVER_ROOT)/integ_test_sticky_on_cover.out
+INTEG_ZERO_CACHE_COVER_FILE := $(COVER_ROOT)/integ_test_zero_cache_cover.out
+INTEG_NORMAL_CACHE_COVER_FILE := $(COVER_ROOT)/integ_test_normal_cache_cover.out
 
 # Automatically gather all srcs
 ALL_SRC :=  $(shell find . -name "*.go")
@@ -45,25 +45,25 @@ unit-test: $(BUILD)/dummy
 		cat $(COVER_ROOT)/"$$dir"/cover.out | grep -v "mode: atomic" >> $(UT_COVER_FILE); \
 	done;
 
-integration-test-sticky-off: $(BUILD)/dummy
+integration-test-zero-cache: $(BUILD)/dummy
 	@mkdir -p $(COVER_ROOT)
 	@for dir in $(INTEG_TEST_DIRS); do \
-		STICKY_OFF=true go test $(TEST_ARG) "$$dir" -coverprofile=$(INTEG_STICKY_OFF_COVER_FILE) -coverpkg=./... || exit 1; \
+		WORKFLOW_CACHE_SIZE=0 go test $(TEST_ARG) "$$dir" -coverprofile=$(INTEG_ZERO_CACHE_COVER_FILE) -coverpkg=./... || exit 1; \
 	done;
 
-integration-test-sticky-on: $(BUILD)/dummy
+integration-test-normal-cache: $(BUILD)/dummy
 	@mkdir -p $(COVER_ROOT)
 	@for dir in $(INTEG_TEST_DIRS); do \
-		STICKY_OFF=false go test $(TEST_ARG) "$$dir" -coverprofile=$(INTEG_STICKY_ON_COVER_FILE) -coverpkg=./... || exit 1; \
+		go test $(TEST_ARG) "$$dir" -coverprofile=$(INTEG_NORMAL_CACHE_COVER_FILE) -coverpkg=./... || exit 1; \
 	done;
 
-test: unit-test integration-test-sticky-off integration-test-sticky-on
+test: unit-test integration-test-zero-cache integration-test-normal-cache
 
-$(COVER_ROOT)/cover.out: $(UT_COVER_FILE) $(INTEG_STICKY_OFF_COVER_FILE) $(INTEG_STICKY_ON_COVER_FILE)
+$(COVER_ROOT)/cover.out: $(UT_COVER_FILE) $(INTEG_ZERO_CACHE_COVER_FILE) $(INTEG_NORMAL_CACHE_COVER_FILE)
 	@echo "mode: atomic" > $(COVER_ROOT)/cover.out
 	cat $(UT_COVER_FILE) | grep -v "^mode: \w\+" | grep -v ".gen" >> $(COVER_ROOT)/cover.out
-	cat $(INTEG_STICKY_OFF_COVER_FILE) | grep -v "^mode: \w\+" | grep -v ".gen" >> $(COVER_ROOT)/cover.out
-	cat $(INTEG_STICKY_ON_COVER_FILE) | grep -v "^mode: \w\+" | grep -v ".gen" >> $(COVER_ROOT)/cover.out
+	cat $(INTEG_ZERO_CACHE_COVER_FILE) | grep -v "^mode: \w\+" | grep -v ".gen" >> $(COVER_ROOT)/cover.out
+	cat $(INTEG_NORMAL_CACHE_COVER_FILE) | grep -v "^mode: \w\+" | grep -v ".gen" >> $(COVER_ROOT)/cover.out
 
 cover: $(COVER_ROOT)/cover.out
 	go tool cover -html=$(COVER_ROOT)/cover.out;

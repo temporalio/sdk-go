@@ -118,7 +118,6 @@ type (
 		// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
 		// This method panics if activityFunc doesn't comply with the expected format or an activity with the same
 		// type name is registered more than once.
-		// For global registration consider activity.Register
 		RegisterActivity(a interface{})
 
 		// RegisterActivityWithOptions registers the activity function or struct pointer with options.
@@ -229,14 +228,17 @@ func EnableVerboseLogging(enable bool) {
 }
 
 // SetStickyWorkflowCacheSize sets the cache size for sticky workflow cache. Sticky workflow execution is the affinity
-// between workflow tasks of a specific workflow execution to a specific worker. The affinity is set if sticky execution
-// is enabled via Worker.Options (It is enabled by default unless disabled explicitly). The benefit of sticky execution
-// is that workflow does not have to reconstruct the state by replaying from beginning of history events. But the cost
-// is it consumes more memory as it rely on caching workflow execution's running state on the worker. The cache is shared
-// between workers running within same process. This must be called before any worker is started. If not called, the
-// default size of 10K (might change in future) will be used.
+// between workflow tasks of a specific workflow execution to a specific worker. The benefit of sticky execution is that
+// the workflow does not have to reconstruct state by replaying history from the beginning. The cache is shared between
+// workers running within same process. This must be called before any worker is started. If not called, the default
+// size of 10K (which may change) will be used.
 func SetStickyWorkflowCacheSize(cacheSize int) {
 	internal.SetStickyWorkflowCacheSize(cacheSize)
+}
+
+// PurgeStickyWorkflowCache resets the sticky workflow cache. This must be called only when all workers are stopped.
+func PurgeStickyWorkflowCache() {
+	internal.PurgeStickyWorkflowCache()
 }
 
 // SetBinaryChecksum sets the identifier of the binary(aka BinaryChecksum).

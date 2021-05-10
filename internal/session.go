@@ -424,7 +424,7 @@ func sessionCreationActivity(ctx context.Context, sessionID string) error {
 				// since the heartbeat interval is controlled by the session framework, we don't need to worry about
 				// calling heartbeat too frequently and causing trouble for the sever. (note the min heartbeat timeout
 				// is 1 sec.)
-				return activityEnv.serviceInvoker.Heartbeat(nil, true)
+				return activityEnv.serviceInvoker.Heartbeat(ctx, nil, true)
 			}
 			isRetryable := func(_ error) bool {
 				// there will be two types of error here:

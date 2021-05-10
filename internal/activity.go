@@ -35,7 +35,6 @@ import (
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
-	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
 )
 
@@ -68,6 +67,10 @@ type (
 		// this Name as a prefix + activity function name.
 		Name                          string
 		DisableAlreadyRegisteredCheck bool
+
+		// When registering a struct with activities, skip functions that are not valid activities. If false,
+		// registration panics.
+		SkipInvalidStructFunctions bool
 	}
 
 	// ActivityOptions stores all activity-specific parameters that will be stored inside of a context.
@@ -78,22 +81,33 @@ type (
 		// optional: The default task queue with the same name as the workflow task queue.
 		TaskQueue string
 
-		// ScheduleToCloseTimeout - The end to end timeout for the activity needed.
+		// ScheduleToCloseTimeout - Total time that a workflow is willing to wait for Activity to complete.
+		// ScheduleToCloseTimeout limits the total time of an Activity's execution including retries
+		// 		(use StartToCloseTimeout to limit the time of a single attempt).
 		// The zero value of this uses default value.
-		// Optional: The default value is the sum of ScheduleToStartTimeout and StartToCloseTimeout
+		// Either this option or StartToClose is required: Defaults to unlimited.
 		ScheduleToCloseTimeout time.Duration
 
-		// ScheduleToStartTimeout - The queue timeout before the activity starts executed.
-		// Mandatory: No default.
+		// ScheduleToStartTimeout - Time that the Activity Task can stay in the Task Queue before it is picked up by
+		// a Worker. Do not specify this timeout unless using host specific Task Queues for Activity Tasks are being
+		// used for routing. In almost all situations that don't involve routing activities to specific hosts it is
+		// better to rely on the default value.
+		// ScheduleToStartTimeout is always non-retryable. Retrying after this timeout doesn't make sense as it would
+		// just put the Activity Task back into the same Task Queue.
+		// If ScheduleToClose is not provided then this timeout is required.
+		// Optional: Defaults to unlimited.
 		ScheduleToStartTimeout time.Duration
 
-		// StartToCloseTimeout - The timeout from the start of execution to end of it.
-		// Mandatory: No default.
+		// StartToCloseTimeout - Maximum time of a single Activity execution attempt.
+		// Note that the Temporal Server doesn't detect Worker process failures directly. It relies on this timeout
+		// to detect that an Activity that didn't complete on time. So this timeout should be as short as the longest
+		// possible execution of the Activity body. Potentially long running Activities must specify HeartbeatTimeout
+		// and call Activity.RecordHeartbeat(ctx, "my-heartbeat") periodically for timely failure detection.
+		// If ScheduleToClose is not provided then this timeout is required: Defaults to the ScheduleToCloseTimeout value.
 		StartToCloseTimeout time.Duration
 
-		// HeartbeatTimeout - The periodic timeout while the activity is in execution. This is
-		// the max interval the server needs to hear at-least one ping from the activity.
-		// Optional: Default zero, means no heart beating is needed.
+		// HeartbeatTimeout - Heartbeat interval. Activity must call Activity.RecordHeartbeat(ctx, "my-heartbeat")
+		// before this interval passes after the last heartbeat or the Activity starts.
 		HeartbeatTimeout time.Duration
 
 		// WaitForCancellation - Whether to wait for canceled activity to be completed(
@@ -219,7 +233,7 @@ func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 		}
 	}
 
-	err = env.serviceInvoker.Heartbeat(data, false)
+	err = env.serviceInvoker.Heartbeat(ctx, data, false)
 	if err != nil {
 		log := GetActivityLogger(ctx)
 		log.Debug("RecordActivityHeartbeat with error", tagError, err)
@@ -230,8 +244,8 @@ func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 // Implement to unit test activities.
 type ServiceInvoker interface {
 	// Returns ActivityTaskCanceledError if activity is canceled
-	Heartbeat(details *commonpb.Payloads, skipBatching bool) error
-	Close(flushBufferedHeartbeat bool)
+	Heartbeat(ctx context.Context, details *commonpb.Payloads, skipBatching bool) error
+	Close(ctx context.Context, flushBufferedHeartbeat bool)
 	GetClient(options ClientOptions) Client
 }
 
@@ -255,19 +269,25 @@ func WithActivityTask(
 	scheduleToCloseTimeout := common.DurationValue(task.GetScheduleToCloseTimeout())
 	startToCloseTimeout := common.DurationValue(task.GetStartToCloseTimeout())
 	heartbeatTimeout := common.DurationValue(task.GetHeartbeatTimeout())
-	scheduleToCloseDeadline := scheduled.Add(scheduleToCloseTimeout)
+
 	startToCloseDeadline := started.Add(startToCloseTimeout)
-	// Minimum of the two deadlines.
-	if scheduleToCloseDeadline.Before(startToCloseDeadline) {
-		deadline = scheduleToCloseDeadline
+	if scheduleToCloseTimeout > 0 {
+		scheduleToCloseDeadline := scheduled.Add(scheduleToCloseTimeout)
+		// Minimum of the two deadlines.
+		if scheduleToCloseDeadline.Before(startToCloseDeadline) {
+			deadline = scheduleToCloseDeadline
+		} else {
+			deadline = startToCloseDeadline
+		}
 	} else {
 		deadline = startToCloseDeadline
 	}
 
-	logger = ilog.With(logger,
+	logger = log.With(logger,
 		tagActivityID, task.ActivityId,
-		tagActivityType, task.ActivityType.Name,
-		tagWorkflowType, task.WorkflowType.Name,
+		tagActivityType, task.ActivityType.GetName(),
+		tagAttempt, task.Attempt,
+		tagWorkflowType, task.WorkflowType.GetName(),
 		tagWorkflowID, task.WorkflowExecution.WorkflowId,
 		tagRunID, task.WorkflowExecution.RunId,
 	)
@@ -275,7 +295,7 @@ func WithActivityTask(
 	return context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
 		taskToken:      task.TaskToken,
 		serviceInvoker: invoker,
-		activityType:   ActivityType{Name: task.ActivityType.Name},
+		activityType:   ActivityType{Name: task.ActivityType.GetName()},
 		activityID:     task.ActivityId,
 		workflowExecution: WorkflowExecution{
 			RunID: task.WorkflowExecution.RunId,
@@ -291,7 +311,7 @@ func WithActivityTask(
 		attempt:          task.GetAttempt(),
 		heartbeatDetails: task.HeartbeatDetails,
 		workflowType: &WorkflowType{
-			Name: task.WorkflowType.Name,
+			Name: task.WorkflowType.GetName(),
 		},
 		workflowNamespace:  task.WorkflowNamespace,
 		workerStopChannel:  workerStopChannel,
