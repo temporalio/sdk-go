@@ -1671,7 +1671,7 @@ func (m *mockWrapper) getMockFn(mockRet mock.Arguments) interface{} {
 	mockFnType := reflect.TypeOf(mockFn)
 	if mockFnType != nil && mockFnType.Kind() == reflect.Func {
 		if mockFnType != fnType {
-			fnName := getFunctionName(m.fn)
+			fnName, _ := getFunctionName(m.fn)
 			// mockDummyActivity is used to register mocks by name
 			if fnName != "mockDummyActivity" {
 				panic(fmt.Sprintf("mock of %v has incorrect return function, expected %v, but actual is %v",
