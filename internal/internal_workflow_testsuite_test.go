@@ -1790,7 +1790,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityFullyQualifiedName() {
 	workflowFn := func(ctx Context) error {
 		ctx = WithActivityOptions(ctx, s.activityOptions)
 		var result string
-		fut := ExecuteActivity(ctx, getFunctionName(testActivityHello), "friendly_name")
+		name, _ := getFunctionName(testActivityHello)
+		fut := ExecuteActivity(ctx, name, "friendly_name")
 		err := fut.Get(ctx, &result)
 		return err
 	}
@@ -1809,8 +1810,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowUnknownName() {
 		}
 	}()
 	env := s.NewTestWorkflowEnvironment()
-
-	env.ExecuteWorkflow(getFunctionName(testWorkflowHello))
+	name, _ := getFunctionName(testWorkflowHello)
+	env.ExecuteWorkflow(name)
 	s.Fail("Should have panic'ed at ExecuteWorkflow")
 }
 

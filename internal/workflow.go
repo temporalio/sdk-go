@@ -263,13 +263,18 @@ type (
 		// Default is Terminate (if onboarded to this feature)
 		ParentClosePolicy enumspb.ParentClosePolicy
 	}
-)
 
-// RegisterWorkflowOptions consists of options for registering a workflow
-type RegisterWorkflowOptions struct {
-	Name                          string
-	DisableAlreadyRegisteredCheck bool
-}
+	// RegisterWorkflowOptions consists of options for registering a workflow
+	RegisterWorkflowOptions struct {
+		Name                          string
+		DisableAlreadyRegisteredCheck bool
+	}
+
+	localActivityContext struct {
+		fn       interface{}
+		isMethod bool
+	}
+)
 
 // Await blocks the calling thread until condition() returns true
 // Returns CanceledError if the ctx is canceled.
@@ -543,8 +548,21 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future {
 	i := getWorkflowOutboundCallsInterceptor(ctx)
 	env := getWorkflowEnvironment(ctx)
-	activityType := getActivityFunctionName(env.GetRegistry(), activity)
-	ctx = WithValue(ctx, localActivityFnContextKey, activity)
+	activityType, isMethod := getFunctionName(activity)
+	if alias, ok := env.GetRegistry().getActivityAlias(activityType); ok {
+		activityType = alias
+	}
+	var fn interface{}
+	if _, ok := activity.(string); ok {
+		fn = nil
+	} else {
+		fn = activity
+	}
+	localCtx := &localActivityContext{
+		fn:       fn,
+		isMethod: isMethod,
+	}
+	ctx = WithValue(ctx, localActivityFnContextKey, localCtx)
 	return i.ExecuteLocalActivity(ctx, activityType, args...)
 }
 
@@ -553,33 +571,46 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 	future, settable := newDecodeFuture(ctx, typeName)
 
 	var activityFn interface{}
-	activityFnOrName := ctx.Value(localActivityFnContextKey)
-	if activityFnOrName == nil {
+	localCtx := ctx.Value(localActivityFnContextKey).(*localActivityContext)
+	if localCtx == nil {
 		panic("ExecuteLocalActivity: Expected context key " + localActivityFnContextKey + " is missing")
 	}
 
-	if activityName, ok := activityFnOrName.(string); ok {
+	if localCtx.isMethod {
+		registry := getRegistryFromWorkflowContext(ctx)
+		activity, ok := registry.GetActivity(typeName)
+		// Uses registered function if found as the registration is required with a nil receiver.
+		// Calls function directly if not registered. It is to support legacy applications
+		// that called local activities using non nil receiver.
+		if ok {
+			activityFn = activity.GetFunction()
+		} else {
+			if err := validateFunctionArgs(localCtx.fn, args, false); err != nil {
+				settable.Set(nil, err)
+				return future
+			}
+			activityFn = localCtx.fn
+		}
+	} else if localCtx.fn == nil {
 		registry := getRegistryFromWorkflowContext(ctx)
 		activityType, err := getValidatedActivityFunction(typeName, args, registry)
 		if err != nil {
 			settable.Set(nil, err)
 			return future
 		}
-
-		activity, ok := registry.GetActivity(activityName)
+		activity, ok := registry.GetActivity(activityType.Name)
 		if !ok {
 			settable.Set(nil, fmt.Errorf("local activity %s is not registered by the worker", activityType.Name))
 			return future
 		}
-
 		activityFn = activity.GetFunction()
 	} else {
-		if err := validateFunctionArgs(activityFnOrName, args, false); err != nil {
+		if err := validateFunctionArgs(localCtx.fn, args, false); err != nil {
 			settable.Set(nil, err)
 			return future
 		}
 
-		activityFn = activityFnOrName
+		activityFn = localCtx.fn
 	}
 
 	options, err := getValidatedLocalActivityOptions(ctx)
