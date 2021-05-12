@@ -516,7 +516,6 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 // * Local activity is scheduled and run by the workflow worker locally.
 // * Local activity does not need Temporal server to schedule activity task and does not rely on activity worker.
 // * No need to register local activity.
-// * The parameter activity to ExecuteLocalActivity() must be a function.
 // * Local activity is for short living activities (usually finishes within seconds).
 // * Local activity cannot heartbeat.
 //
