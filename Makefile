@@ -131,5 +131,3 @@ fossa-analyze:
 fossa-test:
 	fossa test --timeout 1800 --no-ansi
 
-build-fossa: bins fossa-init fossa-analyze fossa-test
-
