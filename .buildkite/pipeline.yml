@@ -58,7 +58,7 @@ steps:
     command: "make fossa-init fossa-analyze"
     plugins:
       - docker-compose#v3.1.0:
-          run: build
+          run: fossa
           config: ./.buildkite/docker-compose.yml
 
   - wait
