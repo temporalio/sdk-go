@@ -51,7 +51,7 @@ steps:
           run: integ-test
           config: ./.buildkite/docker-compose.yml
 
-  - label: ":golang: fossa"
+  - label: ":alien: fossa"
     agents:
       queue: "default"
       docker: "*"
