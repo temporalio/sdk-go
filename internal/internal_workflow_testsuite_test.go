@@ -2692,7 +2692,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetry_MaxAttempts_Respecte
 
 	timesRan := 0
 	localActivityFn := func(ctx context.Context) (int32, error) {
-		timesRan += 1
+		timesRan++
 		return int32(-1), NewApplicationError("i always fail", "", false, nil)
 	}
 
