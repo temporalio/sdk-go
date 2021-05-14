@@ -19,3 +19,4 @@ test.log
 .bins
 .DS_Store
 .gobincache
+.fossa.yml
