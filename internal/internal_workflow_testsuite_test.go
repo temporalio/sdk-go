@@ -1984,12 +1984,14 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivity() {
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListeners() {
 	var localActivityFnCanceled atomic.Bool
 	var startedCount, completedCount, canceledCount atomic.Int32
+	env := s.NewTestWorkflowEnvironment()
 
 	localActivityFn := func(_ context.Context, _ string) (string, error) {
 		panic("this won't be called because it is mocked")
 	}
 
 	canceledLocalActivityFn := func(ctx context.Context) error {
+		env.SignalWorkflow("la-started", nil)
 		<-ctx.Done()
 		localActivityFnCanceled.Store(true)
 		return nil
@@ -2007,6 +2009,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		if err != nil {
 			return "", err
 		}
+		// We must ensure the LA we are about to cancel actually got a chance to start, or we could race and finish the
+		// whole workflow before it even begins.
+		GetSignalChannel(ctx, "la-started").Receive(ctx, nil)
 		cancel()
 
 		err2 := f2.Get(ctx, nil)
@@ -2019,7 +2024,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		return result, err3
 	}
 
-	env := s.NewTestWorkflowEnvironment()
 	env.RegisterWorkflow(workflowFn)
 	env.OnActivity(localActivityFn, mock.Anything, "local_activity").Return("hello mock", nil).Once()
 	env.SetOnLocalActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args []interface{}) {
