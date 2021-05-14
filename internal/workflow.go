@@ -627,6 +627,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 		DataConverter:               getDataConverterFromWorkflowContext(ctx),
 		ScheduledTime:               Now(ctx), // initial scheduled time
 		Header:                      header,
+		Attempt:                     1, // Attempts always start at one
 	}
 
 	Go(ctx, func(ctx Context) {

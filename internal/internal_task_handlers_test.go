@@ -1226,7 +1226,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 }
 
 func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail() {
-	backoffInterval := 1 * time.Second
+	backoffInterval := 50 * time.Millisecond
 	workflowComplete := false
 
 	retryLocalActivityWorkflowFunc := func(ctx Context, input []byte) error {
@@ -1255,10 +1255,12 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 	workflowTaskStartedEvent := createTestEventWorkflowTaskStarted(3)
 	now := time.Now()
 	workflowTaskStartedEvent.EventTime = &now
+	// WFT timeout must be larger than the local activity backoff or the local activity is not retried
+	wftTimeout := 500 * time.Millisecond
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			// make sure the timeout is same as the backoff interval
-			WorkflowTaskTimeout: &backoffInterval,
+			WorkflowTaskTimeout: &wftTimeout,
 			TaskQueue:           &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}},
 		),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
@@ -1300,7 +1302,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 			laResultCh: laResultCh,
 		},
 		func(response interface{}, startTime time.Time) (*workflowTask, error) {
-			return nil, serviceerror.NewNotFound("Workflow task not found.")
+			return nil, serviceerror.NewNotFound("Intentional wft heartbeat error")
 		})
 	t.Nil(response)
 	t.Error(err)

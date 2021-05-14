@@ -1984,12 +1984,14 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivity() {
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListeners() {
 	var localActivityFnCanceled atomic.Bool
 	var startedCount, completedCount, canceledCount atomic.Int32
+	env := s.NewTestWorkflowEnvironment()
 
 	localActivityFn := func(_ context.Context, _ string) (string, error) {
 		panic("this won't be called because it is mocked")
 	}
 
 	canceledLocalActivityFn := func(ctx context.Context) error {
+		env.SignalWorkflow("la-started", nil)
 		<-ctx.Done()
 		localActivityFnCanceled.Store(true)
 		return nil
@@ -2007,6 +2009,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		if err != nil {
 			return "", err
 		}
+		// We must ensure the LA we are about to cancel actually got a chance to start, or we could race and finish the
+		// whole workflow before it even begins.
+		GetSignalChannel(ctx, "la-started").Receive(ctx, nil)
 		cancel()
 
 		err2 := f2.Get(ctx, nil)
@@ -2019,7 +2024,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		return result, err3
 	}
 
-	env := s.NewTestWorkflowEnvironment()
 	env.RegisterWorkflow(workflowFn)
 	env.OnActivity(localActivityFn, mock.Anything, "local_activity").Return("hello mock", nil).Once()
 	env.SetOnLocalActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args []interface{}) {
@@ -2687,6 +2691,46 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetry() {
 	s.Equal(int32(3), result)
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetry_MaxAttempts_Respected() {
+	const maxAttempts = 5
+
+	timesRan := 0
+	localActivityFn := func(ctx context.Context) (int32, error) {
+		timesRan++
+		return int32(-1), NewApplicationError("i always fail", "", false, nil)
+	}
+
+	workflowFn := func(ctx Context) (int32, error) {
+		lao := LocalActivityOptions{
+			ScheduleToCloseTimeout: time.Minute,
+			RetryPolicy: &RetryPolicy{
+				MaximumAttempts:    maxAttempts,
+				InitialInterval:    time.Second,
+				MaximumInterval:    time.Second * 10,
+				BackoffCoefficient: 2,
+			},
+		}
+		ctx = WithLocalActivityOptions(ctx, lao)
+
+		var result int32
+		err := ExecuteLocalActivity(ctx, localActivityFn).Get(ctx, &result)
+		if err != nil {
+			return int32(-1), err
+		}
+		return result, nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(workflowFn)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.Error(env.GetWorkflowError())
+	var result int32
+	s.Error(env.GetWorkflowResult(&result))
+	s.Equal(maxAttempts, timesRan)
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetryOnCancel() {
 	attempts := 1
 	localActivityFn := func(ctx context.Context) (int32, error) {
@@ -3294,7 +3338,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	err = timeoutErr.LastHeartbeatDetails(&details)
 	s.NoError(err)
 	s.Equal(testErrorDetails1, details)
-	s.Equal(4, count)
+	s.Equal(3, count)
 
 	activityEnv := s.NewTestActivityEnvironment()
 	activityEnv.RegisterActivity(timeoutFn)
