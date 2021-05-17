@@ -732,7 +732,7 @@ func (e *TestWorkflowEnvironment) QueryWorkflowByID(workflowID, queryType string
 // signal or workflow cancellation) at desired time.
 //
 // Use 0 delayDuration to send a signal to simulate SignalWithStart. Note that a 0 duration delay will *not* work with
-// Queries.
+// Queries, as the workflow will not have had a chance to register any query handlers.
 func (e *TestWorkflowEnvironment) RegisterDelayedCallback(callback func(), delayDuration time.Duration) {
 	e.impl.registerDelayedCallback(callback, delayDuration)
 }
