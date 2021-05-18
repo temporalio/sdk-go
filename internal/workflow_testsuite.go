@@ -730,7 +730,9 @@ func (e *TestWorkflowEnvironment) QueryWorkflowByID(workflowID, queryType string
 // the timer fires, the callback will be called. By default, this test suite uses mock clock which automatically move
 // forward to fire next timer when workflow is blocked. Use this API to make some event (like activity completion,
 // signal or workflow cancellation) at desired time.
-// Use 0 delayDuration to send a signal to simulate SignalWithStart.
+//
+// Use 0 delayDuration to send a signal to simulate SignalWithStart. Note that a 0 duration delay will *not* work with
+// Queries, as the workflow will not have had a chance to register any query handlers.
 func (e *TestWorkflowEnvironment) RegisterDelayedCallback(callback func(), delayDuration time.Duration) {
 	e.impl.registerDelayedCallback(callback, delayDuration)
 }
