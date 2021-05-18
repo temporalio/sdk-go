@@ -2551,6 +2551,46 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 	s.Equal(4, attempt2Count)
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry_NoInitialInterval() {
+	var attempts = 0
+
+	activityFn := func(ctx context.Context) (bool, error) {
+		info := GetActivityInfo(ctx)
+		if info.Attempt < 2 {
+			attempts++
+			return false, errors.New("first attempt fails")
+		}
+		attempts++
+		return true, nil
+	}
+
+	workflowFn := func(ctx Context) (bool, error) {
+		ctx = WithActivityOptions(
+			ctx,
+			ActivityOptions{
+				StartToCloseTimeout:    10 * time.Second,
+				ScheduleToCloseTimeout: 10 * time.Second,
+				RetryPolicy: &RetryPolicy{
+					BackoffCoefficient: 2,
+					MaximumAttempts:    3,
+				},
+			})
+		activityExecution := ExecuteActivity(ctx, activityFn)
+		var result bool
+		err := activityExecution.Get(ctx, &result)
+		println(result)
+		return result, err
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(activityFn)
+	env.ExecuteWorkflow(workflowFn)
+	s.NoError(env.GetWorkflowError())
+	s.True(env.IsWorkflowCompleted())
+	s.Equal(2, attempts)
+
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry_NoRetries() {
 	maxRetryAttempts := int32(1)
 	fakeError := fmt.Errorf("fake network error")
