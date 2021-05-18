@@ -1234,8 +1234,10 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 	if parameters.ScheduleToCloseTimeout > 0 {
 		expireTime = env.Now().Add(parameters.ScheduleToCloseTimeout)
 	}
-	if *parameters.RetryPolicy.InitialInterval == 0 {
-		*parameters.RetryPolicy.InitialInterval = time.Second
+	if parameters.RetryPolicy != nil {
+		if *parameters.RetryPolicy.InitialInterval == 0 {
+			*parameters.RetryPolicy.InitialInterval = time.Second
+		}
 	}
 
 	for {
