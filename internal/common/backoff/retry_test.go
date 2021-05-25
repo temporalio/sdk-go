@@ -93,8 +93,7 @@ func TestRetryFailed(t *testing.T) {
 		i++
 
 		if i == 6 {
-			// Should never be called because retry is set to 5 attempts.
-			return nil
+			assert.Fail(t, "Should never be called because retry is set to 5 attempts")
 		}
 
 		return &someError{}
