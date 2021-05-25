@@ -30,9 +30,14 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"go.temporal.io/api/serviceerror"
 )
 
 type someError struct{}
+
+func (e *someError) Error() string {
+	return "Some Error"
+}
 
 func TestRetrySuccess(t *testing.T) {
 	t.Parallel()
@@ -87,7 +92,8 @@ func TestRetryFailed(t *testing.T) {
 	op := func() error {
 		i++
 
-		if i == 7 {
+		if i == 6 {
+			// Should never be called because retry is set to 5 attempts.
 			return nil
 		}
 
@@ -100,6 +106,7 @@ func TestRetryFailed(t *testing.T) {
 
 	err := Retry(context.Background(), op, policy, nil)
 	assert.Error(t, err)
+	assert.Equal(t, 5, i)
 }
 
 func TestIsRetryableSuccess(t *testing.T) {
@@ -201,6 +208,37 @@ func TestConcurrentRetrier(t *testing.T) {
 	}
 }
 
-func (e *someError) Error() string {
-	return "Some Error"
+func TestRetryDeadlineExceeded(t *testing.T) {
+	t.Parallel()
+	attempt := 0
+	actualError := &someError{}
+	op := func() error {
+		attempt++
+		if attempt == 3 {
+			// Last attempt returns DeadlineExceeded but Retry should return actualError.
+			return context.DeadlineExceeded
+		}
+		return actualError
+	}
+
+	policy := NewExponentialRetryPolicy(1 * time.Millisecond)
+	policy.SetBackoffCoefficient(1)
+	policy.SetMaximumAttempts(3)
+
+	err := Retry(context.Background(), op, policy, nil)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, actualError)
+
+	attempt = 0
+	op = func() error {
+		attempt++
+		if attempt == 3 {
+			// Last attempt returns DeadlineExceeded but Retry should return actualError.
+			return serviceerror.NewDeadlineExceeded("deadline exceeded")
+		}
+		return actualError
+	}
+	err = Retry(context.Background(), op, policy, nil)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, actualError)
 }

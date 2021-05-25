@@ -138,7 +138,7 @@ func (p *ExponentialRetryPolicy) SetMaximumAttempts(maximumAttempts int) {
 // ComputeNextDelay returns the next delay interval.  This is used by Retrier to delay calling the operation again
 func (p *ExponentialRetryPolicy) ComputeNextDelay(elapsedTime time.Duration, numAttempts int) time.Duration {
 	// Check to see if we ran out of maximum number of attempts
-	if p.maximumAttempts != noMaximumAttempts && numAttempts > p.maximumAttempts {
+	if p.maximumAttempts != noMaximumAttempts && numAttempts >= p.maximumAttempts {
 		return done
 	}
 

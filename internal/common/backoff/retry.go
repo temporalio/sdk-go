@@ -111,8 +111,7 @@ func Retry(ctx context.Context, operation Operation, policy RetryPolicy, isRetry
 		// Therefore, update lastErr only if it is not set (first attempt) or opErr is not a DeadlineExceeded error.
 		// This lastErr is returned if retry attempts are exhausted.
 		var errDeadlineExceeded *serviceerror.DeadlineExceeded
-		if lastErr == nil ||
-			!(errors.Is(opErr, context.DeadlineExceeded) || errors.As(opErr, &errDeadlineExceeded)) {
+		if lastErr == nil || !(errors.Is(opErr, context.DeadlineExceeded) || errors.As(opErr, &errDeadlineExceeded)) {
 			lastErr = opErr
 		}
 
