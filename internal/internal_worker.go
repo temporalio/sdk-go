@@ -890,6 +890,7 @@ func (aw *AggregatedWorker) RegisterActivityWithOptions(a interface{}, options R
 
 // Start the worker in a non-blocking fashion.
 func (aw *AggregatedWorker) Start() error {
+	aw.assertNotStopped()
 	if err := initBinaryChecksum(); err != nil {
 		return fmt.Errorf("failed to get executable checksum: %v", err)
 	}
@@ -932,6 +933,18 @@ func (aw *AggregatedWorker) Start() error {
 	}
 	aw.logger.Info("Started Worker")
 	return nil
+}
+
+func (aw *AggregatedWorker) assertNotStopped() {
+	stopped := true
+	select {
+	case <-aw.stopC:
+	default:
+		stopped = false
+	}
+	if stopped {
+		panic("attempted to start a worker that has been stopped before")
+	}
 }
 
 var binaryChecksum string

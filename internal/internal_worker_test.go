@@ -1556,6 +1556,26 @@ func (s *internalWorkerTestSuite) TestWorkerStartFailsWithInvalidNamespace() {
 	}
 }
 
+func (s *internalWorkerTestSuite) TestStartWorkerAfterStopped() {
+	defer func() {
+		if r := recover(); r == nil {
+			assert.Fail(s.T(), "calling start after stop must result in panic")
+		}
+	}()
+	worker := createWorkerWithThrottle(s.service, 500.0, nil)
+	worker.RegisterActivity(testActivityNoResult)
+	worker.RegisterWorkflow(testWorkflowReturnStruct)
+	err := worker.Start()
+	require.NoError(s.T(), err)
+	time.Sleep(time.Millisecond * 200)
+	assert.True(s.T(), worker.activityWorker.worker.isWorkerStarted)
+	assert.True(s.T(), worker.workflowWorker.worker.isWorkerStarted)
+	worker.Stop()
+	assert.False(s.T(), worker.activityWorker.worker.isWorkerStarted)
+	assert.False(s.T(), worker.workflowWorker.worker.isWorkerStarted)
+	_ = worker.Start() // must panic
+}
+
 func ofPollActivityTaskQueueRequest(tps float64) gomock.Matcher {
 	return &mockPollActivityTaskQueueRequest{tps: tps}
 }
