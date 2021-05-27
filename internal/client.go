@@ -36,6 +36,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/internal/common/backoff"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
@@ -57,8 +58,9 @@ const (
 	// sessions in the workflow. The result will be a list of SessionInfo encoded in the EncodedValue.
 	QueryTypeOpenSessions string = "__open_sessions"
 
-	healthCheckServiceName    = "temporal.api.workflowservice.v1.WorkflowService"
-	defaultHealthCheckTimeout = 5 * time.Second
+	healthCheckServiceName     = "temporal.api.workflowservice.v1.WorkflowService"
+	defaultHealthCheckTimeout  = 5 * time.Second
+	defaultHealthCheckRetryFor = 10 * time.Second
 )
 
 type (
@@ -423,6 +425,10 @@ type (
 		// Default: 5s.
 		HealthCheckTimeout time.Duration
 
+		// HealthCheckRetryFor defines maximum amount of time that health check should be retried for.
+		// Defaults to 10s, once this timeout is reached error will be propagated to the client.
+		HealthCheckRetryFor time.Duration
+
 		// Enables keep alive ping from client to the server, which can help detect abruptly closed connections faster.
 		EnableKeepAliveCheck bool
 
@@ -732,17 +738,23 @@ func checkHealth(connection grpc.ClientConnInterface, options ConnectionOptions)
 	if healthCheckTimeout == 0 {
 		healthCheckTimeout = defaultHealthCheckTimeout
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), healthCheckTimeout)
+	retryFor := options.HealthCheckRetryFor
+	if retryFor == 0 {
+		retryFor = defaultHealthCheckRetryFor
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), retryFor)
 	defer cancel()
-	resp, err := healthClient.Check(ctx, request)
-	if err != nil {
-		return fmt.Errorf("health check error: %w", err)
-	}
-
-	if resp.Status != healthpb.HealthCheckResponse_SERVING {
-		return fmt.Errorf("health check returned unhealthy status: %v", resp.Status)
-	}
-
-	return nil
+	policy := createDynamicServiceRetryPolicy(ctx)
+	return backoff.Retry(ctx, func() error {
+		healthCheckCtx, cancel := context.WithTimeout(context.Background(), healthCheckTimeout)
+		defer cancel()
+		resp, err := healthClient.Check(healthCheckCtx, request)
+		if err != nil {
+			return fmt.Errorf("health check error: %w", err)
+		}
+		if resp.Status != healthpb.HealthCheckResponse_SERVING {
+			return fmt.Errorf("health check returned unhealthy status: %v", resp.Status)
+		}
+		return nil
+	}, policy, nil)
 }
