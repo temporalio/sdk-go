@@ -1754,7 +1754,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 
 	workflowType := t.WorkflowType.GetName()
 	activityType := t.ActivityType.GetName()
-	activityMetricsScope := metrics.GetMetricsScopeForActivity(ath.metricsScope, workflowType, activityType)
+	activityMetricsScope := metrics.GetMetricsScopeForRPC(ath.metricsScope, workflowType, activityType, taskQueue)
 	ctx := WithActivityTask(canCtx, t, taskQueue, invoker, ath.logger, activityMetricsScope, ath.dataConverter, ath.workerStopCh, ath.contextPropagators, ath.tracer)
 
 	defer func() {
