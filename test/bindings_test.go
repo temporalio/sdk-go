@@ -64,7 +64,6 @@ func TestAsyncBindingsTestSuite(t *testing.T) {
 func (ts *AsyncBindingsTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
 	ts.config = NewConfig()
-	ts.NoError(WaitForTCP(time.Minute, ts.config.ServiceAddr))
 	var err error
 	ts.client, err = client.NewClient(client.Options{
 		HostPort:  ts.config.ServiceAddr,
