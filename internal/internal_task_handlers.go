@@ -1670,7 +1670,7 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	err := recordActivityHeartbeat(ctx, i.service, i.metricsScope, i.identity, i.taskToken, details)
+	err := recordActivityHeartbeat(ctx, i.service, i.identity, i.taskToken, details)
 
 	switch err.(type) {
 	case *CanceledError:
@@ -1678,7 +1678,7 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 		i.cancelHandler()
 		isActivityCanceled = true
 
-	case *serviceerror.NotFound, *serviceerror.NamespaceNotActive:
+	case *serviceerror.NotFound, *serviceerror.NamespaceNotActive, *serviceerror.Unavailable:
 		// We will pass these through as cancellation for now but something we can change
 		// later when we have setter on cancel handler.
 		i.cancelHandler()
@@ -1854,14 +1854,7 @@ func createNewCommand(commandType enumspb.CommandType) *commandpb.Command {
 	}
 }
 
-func recordActivityHeartbeat(
-	ctx context.Context,
-	service workflowservice.WorkflowServiceClient,
-	metricsScope tally.Scope,
-	identity string,
-	taskToken []byte,
-	details *commonpb.Payloads,
-) error {
+func recordActivityHeartbeat(ctx context.Context, service workflowservice.WorkflowServiceClient, identity string, taskToken []byte, details *commonpb.Payloads) error {
 
 	namespace := getNamespaceFromActivityCtx(ctx)
 	request := &workflowservice.RecordActivityTaskHeartbeatRequest{
@@ -1889,14 +1882,7 @@ func recordActivityHeartbeat(
 	return heartbeatErr
 }
 
-func recordActivityHeartbeatByID(
-	ctx context.Context,
-	service workflowservice.WorkflowServiceClient,
-	metricsScope tally.Scope,
-	identity string,
-	namespace, workflowID, runID, activityID string,
-	details *commonpb.Payloads,
-) error {
+func recordActivityHeartbeatByID(ctx context.Context, service workflowservice.WorkflowServiceClient, identity, namespace, workflowID, runID, activityID string, details *commonpb.Payloads) error {
 	request := &workflowservice.RecordActivityTaskHeartbeatByIdRequest{
 		Namespace:  namespace,
 		WorkflowId: workflowID,
