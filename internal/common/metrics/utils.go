@@ -62,9 +62,9 @@ func GetWorkerScope(ts tally.Scope, workerType string) tally.Scope {
 }
 
 // GetMetricsScopeForActivity return properly tagged tally scope for activity
-func GetMetricsScopeForActivity(ts tally.Scope, workflowType, activityType string) tally.Scope {
+func GetMetricsScopeForActivity(ts tally.Scope, workflowType, activityType, taskQueueName string) tally.Scope {
 	return TagScope(ts, WorkflowTypeNameTagName, workflowType, ActivityTypeNameTagName,
-		activityType)
+		activityType, TaskQueueTagName, taskQueueName)
 }
 
 // GetMetricsScopeForLocalActivity return properly tagged tally scope for local activity
@@ -79,9 +79,9 @@ func GetMetricsScopeForWorkflow(ts tally.Scope, workflowType string) tally.Scope
 }
 
 // GetMetricsScopeForRPC return properly tagged tally scope for workflow execution
-func GetMetricsScopeForRPC(ts tally.Scope, workflowType, activityType, taskqueueName string) tally.Scope {
+func GetMetricsScopeForRPC(ts tally.Scope, workflowType, activityType, taskQueueName string) tally.Scope {
 	return TagScope(ts, WorkflowTypeNameTagName, workflowType, ActivityTypeNameTagName,
-		activityType, TaskQueueTagName, taskqueueName)
+		activityType, TaskQueueTagName, taskQueueName)
 }
 
 // getMetricsScopeForOperation return properly tagged tally scope for rpc operation

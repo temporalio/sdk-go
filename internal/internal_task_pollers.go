@@ -846,7 +846,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 
 	workflowType := response.WorkflowType.GetName()
 	activityType := response.ActivityType.GetName()
-	activityMetricsScope := metrics.GetMetricsScopeForRPC(atp.metricsScope, workflowType, activityType, atp.taskQueueName)
+	activityMetricsScope := metrics.GetMetricsScopeForActivity(atp.metricsScope, workflowType, activityType, atp.taskQueueName)
 
 	scheduleToStartLatency := common.TimeValue(response.GetStartedTime()).Sub(common.TimeValue(response.GetCurrentAttemptScheduledTime()))
 	activityMetricsScope.Timer(metrics.ActivityScheduleToStartLatency).Record(scheduleToStartLatency)
@@ -881,7 +881,7 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 
 	workflowType := activityTask.task.WorkflowType.GetName()
 	activityType := activityTask.task.ActivityType.GetName()
-	activityMetricsScope := metrics.GetMetricsScopeForRPC(atp.metricsScope, workflowType, activityType, atp.taskQueueName)
+	activityMetricsScope := metrics.GetMetricsScopeForActivity(atp.metricsScope, workflowType, activityType, atp.taskQueueName)
 
 	executionStartTime := time.Now()
 	// Process the activity task.
