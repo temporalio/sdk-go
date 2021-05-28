@@ -58,9 +58,9 @@ const (
 	// sessions in the workflow. The result will be a list of SessionInfo encoded in the EncodedValue.
 	QueryTypeOpenSessions string = "__open_sessions"
 
-	healthCheckServiceName     = "temporal.api.workflowservice.v1.WorkflowService"
-	defaultHealthCheckTimeout  = 5 * time.Second
-	defaultHealthCheckRetryFor = 10 * time.Second
+	healthCheckServiceName           = "temporal.api.workflowservice.v1.WorkflowService"
+	defaultHealthCheckAttemptTimeout = 5 * time.Second
+	defaultHealthCheckTimeout        = 10 * time.Second
 )
 
 type (
@@ -421,13 +421,13 @@ type (
 		// Set DisableHealthCheck to true to disable it.
 		DisableHealthCheck bool
 
-		// HealthCheckTimeout specifies how to long to wait while checking server connection when creating new client.
+		// HealthCheckAttemptTimeout specifies how to long to wait for service response on each health check attempt.
 		// Default: 5s.
-		HealthCheckTimeout time.Duration
+		HealthCheckAttemptTimeout time.Duration
 
-		// HealthCheckRetryFor defines maximum amount of time that health check should be retried for.
-		// Defaults to 10s, once this timeout is reached error will be propagated to the client.
-		HealthCheckRetryFor time.Duration
+		// HealthCheckTimeout defines how long client should be sending health check requests to the server before concluding
+		// that it is unavailable. Defaults to 10s, once this timeout is reached error will be propagated to the client.
+		HealthCheckTimeout time.Duration
 
 		// Enables keep alive ping from client to the server, which can help detect abruptly closed connections faster.
 		EnableKeepAliveCheck bool
@@ -734,19 +734,19 @@ func checkHealth(connection grpc.ClientConnInterface, options ConnectionOptions)
 		Service: healthCheckServiceName,
 	}
 
-	healthCheckTimeout := options.HealthCheckTimeout
-	if healthCheckTimeout == 0 {
-		healthCheckTimeout = defaultHealthCheckTimeout
+	attemptTimeout := options.HealthCheckAttemptTimeout
+	if attemptTimeout == 0 {
+		attemptTimeout = defaultHealthCheckAttemptTimeout
 	}
-	retryFor := options.HealthCheckRetryFor
-	if retryFor == 0 {
-		retryFor = defaultHealthCheckRetryFor
+	timeout := options.HealthCheckTimeout
+	if timeout == 0 {
+		timeout = defaultHealthCheckTimeout
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), retryFor)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	policy := createDynamicServiceRetryPolicy(ctx)
 	return backoff.Retry(ctx, func() error {
-		healthCheckCtx, cancel := context.WithTimeout(context.Background(), healthCheckTimeout)
+		healthCheckCtx, cancel := context.WithTimeout(context.Background(), attemptTimeout)
 		defer cancel()
 		resp, err := healthClient.Check(healthCheckCtx, request)
 		if err != nil {
