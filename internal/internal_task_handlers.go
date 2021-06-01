@@ -1678,15 +1678,24 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 		i.cancelHandler()
 		isActivityCanceled = true
 
-	case *serviceerror.NotFound, *serviceerror.NamespaceNotActive, *serviceerror.Unavailable:
+	case *serviceerror.NotFound, *serviceerror.NamespaceNotActive:
 		// We will pass these through as cancellation for now but something we can change
 		// later when we have setter on cancel handler.
 		i.cancelHandler()
 		isActivityCanceled = true
+	case nil:
+		// No error, do nothing.
+	default:
+		// Transient errors are getting retried for the duration of the heartbeat timeout.
+		// The fact that error has been returned means that activity should now be timed out, hence we should
+		// propagate cancellation to the handler.
+		if isServiceTransientError(err) {
+			i.cancelHandler()
+			isActivityCanceled = true
+		}
 	}
 
-	// We don't want to bubble temporary errors to the user.
-	// This error won't be return to user check RecordActivityHeartbeat().
+	// This error won't be returned to user check RecordActivityHeartbeat().
 	return isActivityCanceled, err
 }
 
