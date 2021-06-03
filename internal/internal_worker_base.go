@@ -37,6 +37,7 @@ import (
 	"github.com/uber-go/tally"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/serviceerror"
+	"go.temporal.io/sdk/internal/common/retry"
 	"golang.org/x/time/rate"
 
 	"go.temporal.io/sdk/converter"
@@ -166,7 +167,7 @@ func createPollRetryPolicy() backoff.RetryPolicy {
 	// We use it to calculate next backoff. We have additional layer that is built on poller
 	// in the worker layer for to add some middleware for any poll retry that includes
 	// (a) rate limiting across pollers (b) back-off across pollers when server is busy
-	policy.SetExpirationInterval(backoff.NoInterval) // We don't ever expire
+	policy.SetExpirationInterval(retry.NoInterval) // We don't ever expire
 	return policy
 }
 

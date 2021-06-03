@@ -108,10 +108,10 @@ func TestHeadersProvider_Error(t *testing.T) {
 
 func TestHeadersProvider_NotIncludedWhenNil(t *testing.T) {
 	interceptors := requiredInterceptors(nil, nil)
-	require.Equal(t, 2, len(interceptors))
+	require.Equal(t, 5, len(interceptors))
 }
 
 func TestHeadersProvider_IncludedWithHeadersProvider(t *testing.T) {
 	interceptors := requiredInterceptors(nil, authHeadersProvider{token: "test-auth-token"})
-	require.Equal(t, 3, len(interceptors))
+	require.Equal(t, 6, len(interceptors))
 }

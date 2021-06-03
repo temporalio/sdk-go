@@ -254,6 +254,7 @@ func verifyNamespaceExist(client workflowservice.WorkflowServiceClient, metricsS
 		return errors.New("namespace cannot be empty")
 	}
 
+	// TODO: refactor using grpc retry interceptor, requires custom error processing, in order to ignore NotFound/InvalidArgument errors that are normally not retried.
 	// exponential backoff retry for upto a minute
 	return backoff.Retry(ctx, descNamespaceOp, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
 }

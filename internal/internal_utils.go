@@ -110,6 +110,12 @@ func grpcLongPoll(isLongPoll bool) func(builder *grpcContextBuilder) {
 	}
 }
 
+func grpcContextValue(key interface{}, val interface{}) func(builder *grpcContextBuilder) {
+	return func(b *grpcContextBuilder) {
+		b.ParentContext = context.WithValue(b.ParentContext, key, val)
+	}
+}
+
 // newGRPCContext - Get context for gRPC calls.
 func newGRPCContext(ctx context.Context, options ...func(builder *grpcContextBuilder)) (context.Context, context.CancelFunc) {
 	rpcTimeout := defaultRPCTimeout

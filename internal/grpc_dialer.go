@@ -29,8 +29,10 @@ import (
 	"time"
 
 	"github.com/gogo/status"
+	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"github.com/uber-go/tally"
 	"go.temporal.io/api/serviceerror"
+	"go.temporal.io/sdk/internal/common/retry"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
@@ -109,7 +111,18 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 }
 
 func requiredInterceptors(metricScope tally.Scope, headersProvider HeadersProvider) []grpc.UnaryClientInterceptor {
-	interceptors := []grpc.UnaryClientInterceptor{metrics.NewScopeInterceptor(metricScope), errorInterceptor}
+	interceptors := []grpc.UnaryClientInterceptor{
+		errorInterceptor,
+		// Report aggregated metrics for the call, this is done outside of the retry loop.
+		metrics.NewRPCMetricsInterceptor(metricScope, "_total"),
+		// By default the grpc retry interceptor *is disabled*, preventing accidental use of retries.
+		// We add call options for retry configuration based on the values present in the context.
+		retry.NewRetryOptionsInterceptor(),
+		// Performs retries *IF* retry options are set for the call.
+		grpc_retry.UnaryClientInterceptor(),
+		// Report metrics for every call made to the server.
+		metrics.NewRPCMetricsInterceptor(metricScope, ""),
+	}
 	if headersProvider != nil {
 		interceptors = append(interceptors, headersProviderInterceptor(headersProvider))
 	}

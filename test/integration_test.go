@@ -235,8 +235,10 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
 
 	ts.assertMetricsCounters(
 		"temporal_request", 7,
+		"temporal_request_total", 7,
 		"temporal_workflow_task_queue_poll_succeed", 1,
 		"temporal_long_request", 8,
+		"temporal_long_request_total", 8,
 	)
 }
 

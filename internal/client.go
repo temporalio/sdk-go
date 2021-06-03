@@ -745,6 +745,7 @@ func checkHealth(connection grpc.ClientConnInterface, options ConnectionOptions)
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	policy := createDynamicServiceRetryPolicy(ctx)
+	// TODO: refactor using grpc retry interceptor
 	return backoff.Retry(ctx, func() error {
 		healthCheckCtx, cancel := context.WithTimeout(context.Background(), attemptTimeout)
 		defer cancel()
