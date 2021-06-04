@@ -40,7 +40,7 @@ type (
 	// RetryPolicy is the API which needs to be implemented by various retry policy implementations
 	RetryPolicy interface {
 		ComputeNextDelay(elapsedTime time.Duration, attempt int) time.Duration
-		IntoGrpcRetryConfig() *retry.GrpcRetryConfig
+		GrpcRetryConfig() *retry.GrpcRetryConfig
 	}
 
 	// Retrier manages the state of retry operation
@@ -132,12 +132,12 @@ func (p *ExponentialRetryPolicy) SetMaximumAttempts(maximumAttempts int) {
 // ComputeNextDelay returns the next delay interval.  This is used by Retrier to delay calling the operation again
 func (p *ExponentialRetryPolicy) ComputeNextDelay(elapsedTime time.Duration, attempt int) time.Duration {
 	// Check to see if we ran out of maximum number of attempts
-	if p.maximumAttempts != retry.NoMaximumAttempts && attempt >= p.maximumAttempts {
+	if p.maximumAttempts != retry.UnlimitedMaximumAttempts && attempt >= p.maximumAttempts {
 		return done
 	}
 
 	// Stop retrying after expiration interval is elapsed
-	if p.expirationInterval != retry.NoInterval && elapsedTime > p.expirationInterval {
+	if p.expirationInterval != retry.UnlimitedInterval && elapsedTime > p.expirationInterval {
 		return done
 	}
 
@@ -146,11 +146,11 @@ func (p *ExponentialRetryPolicy) ComputeNextDelay(elapsedTime time.Duration, att
 	if nextInterval <= 0 {
 		return done
 	}
-	if p.maximumInterval != retry.NoInterval {
+	if p.maximumInterval != retry.UnlimitedInterval {
 		nextInterval = math.Min(nextInterval, float64(p.maximumInterval))
 	}
 
-	if p.expirationInterval != retry.NoInterval {
+	if p.expirationInterval != retry.UnlimitedInterval {
 		remainingTime := math.Max(0, float64(p.expirationInterval-elapsedTime))
 		nextInterval = math.Min(remainingTime, nextInterval)
 	}
@@ -172,8 +172,8 @@ func (p *ExponentialRetryPolicy) ComputeNextDelay(elapsedTime time.Duration, att
 	return time.Duration(nextInterval)
 }
 
-// IntoGrpcRetryConfig converts retry policy into retry config.
-func (p *ExponentialRetryPolicy) IntoGrpcRetryConfig() *retry.GrpcRetryConfig {
+// GrpcRetryConfig converts retry policy into retry config.
+func (p *ExponentialRetryPolicy) GrpcRetryConfig() *retry.GrpcRetryConfig {
 	retryConfig := retry.NewGrpcRetryConfig(p.initialInterval)
 	retryConfig.SetBackoffCoefficient(p.backoffCoefficient)
 	retryConfig.SetExpirationInterval(p.expirationInterval)

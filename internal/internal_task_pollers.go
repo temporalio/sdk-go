@@ -42,8 +42,6 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
-	"go.temporal.io/sdk/internal/common/retry"
-
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -371,7 +369,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(
 		metrics.GetMetricsScopeForRPC(wtp.metricsScope, task.GetWorkflowType().GetName(),
 			metrics.NoneTagValue, metrics.NoneTagValue)),
-		grpcContextValue(retry.ConfigKey, createDynamicServiceRetryPolicy(ctx).IntoGrpcRetryConfig()))
+		defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	switch request := completedRequest.(type) {
 	case *workflowservice.RespondWorkflowTaskFailedRequest:
@@ -758,7 +756,7 @@ func newGetHistoryPageFunc(
 		var resp *workflowservice.GetWorkflowExecutionHistoryResponse
 		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(
 			metrics.GetMetricsScopeForRPC(metricsScope, metrics.NoneTagValue, metrics.NoneTagValue, taskQueue)),
-			grpcContextValue(retry.ConfigKey, createDynamicServiceRetryPolicy(ctx).IntoGrpcRetryConfig()))
+			defaultGrpcRetryParameters(ctx))
 		defer cancel()
 
 		resp, err := service.GetWorkflowExecutionHistory(grpcCtx, &workflowservice.GetWorkflowExecutionHistoryRequest{
@@ -915,19 +913,18 @@ func reportActivityComplete(ctx context.Context, service workflowservice.Workflo
 	switch request := request.(type) {
 	case *workflowservice.RespondActivityTaskCanceledRequest:
 		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope),
-			grpcContextValue(retry.ConfigKey, createDynamicServiceRetryPolicy(ctx).IntoGrpcRetryConfig()))
+			defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		_, err := service.RespondActivityTaskCanceled(grpcCtx, request)
 		reportErr = err
 	case *workflowservice.RespondActivityTaskFailedRequest:
-		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope),
-			grpcContextValue(retry.ConfigKey, createDynamicServiceRetryPolicy(ctx).IntoGrpcRetryConfig()))
+		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope), defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		_, err := service.RespondActivityTaskFailed(grpcCtx, request)
 		reportErr = err
 	case *workflowservice.RespondActivityTaskCompletedRequest:
 		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope),
-			grpcContextValue(retry.ConfigKey, createDynamicServiceRetryPolicy(ctx).IntoGrpcRetryConfig()))
+			defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		_, err := service.RespondActivityTaskCompleted(grpcCtx, request)
 		reportErr = err
@@ -945,19 +942,19 @@ func reportActivityCompleteByID(ctx context.Context, service workflowservice.Wor
 	switch request := request.(type) {
 	case *workflowservice.RespondActivityTaskCanceledByIdRequest:
 		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope),
-			grpcContextValue(retry.ConfigKey, createDynamicServiceRetryPolicy(ctx).IntoGrpcRetryConfig()))
+			defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		_, err := service.RespondActivityTaskCanceledById(grpcCtx, request)
 		reportErr = err
 	case *workflowservice.RespondActivityTaskFailedByIdRequest:
 		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope),
-			grpcContextValue(retry.ConfigKey, createDynamicServiceRetryPolicy(ctx).IntoGrpcRetryConfig()))
+			defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		_, err := service.RespondActivityTaskFailedById(grpcCtx, request)
 		reportErr = err
 	case *workflowservice.RespondActivityTaskCompletedByIdRequest:
 		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope),
-			grpcContextValue(retry.ConfigKey, createDynamicServiceRetryPolicy(ctx).IntoGrpcRetryConfig()))
+			defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		_, err := service.RespondActivityTaskCompletedById(grpcCtx, request)
 		reportErr = err

@@ -400,11 +400,22 @@ type (
 		// Optional: HeadersProvider will be invoked on every outgoing gRPC request and gives user ability to
 		// set custom request headers. This can be used to set auth headers for example.
 		HeadersProvider HeadersProvider
+
+		// Optional parameter that is designed to be used *in tests*. It gets invoked last in
+		// the gRPC interceptor chain and can be used to induce artificial failures in test scenarios.
+		TrafficController TrafficController
 	}
 
 	// HeadersProvider returns a map of gRPC headers that should be used on every request.
 	HeadersProvider interface {
 		GetHeaders(ctx context.Context) (map[string]string, error)
+	}
+
+	// TrafficController is getting called in the interceptor chain with API invocation parameters.
+	// Result is either nil if API call is allowed or an error, in which case request would be interrupted and
+	// the error will be propagated back through the interceptor chain.
+	TrafficController interface {
+		CheckCallAllowed(ctx context.Context, method string, req, reply interface{}) error
 	}
 
 	// ConnectionOptions is provided by SDK consumers to control optional connection params.
@@ -622,7 +633,7 @@ func newDialParameters(options *ClientOptions) dialParameters {
 	return dialParameters{
 		UserConnectionOptions: options.ConnectionOptions,
 		HostPort:              options.HostPort,
-		RequiredInterceptors:  requiredInterceptors(options.MetricsScope, options.HeadersProvider),
+		RequiredInterceptors:  requiredInterceptors(options.MetricsScope, options.HeadersProvider, options.TrafficController),
 		DefaultServiceConfig:  defaultServiceConfig,
 	}
 }

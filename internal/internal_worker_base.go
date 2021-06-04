@@ -167,7 +167,7 @@ func createPollRetryPolicy() backoff.RetryPolicy {
 	// We use it to calculate next backoff. We have additional layer that is built on poller
 	// in the worker layer for to add some middleware for any poll retry that includes
 	// (a) rate limiting across pollers (b) back-off across pollers when server is busy
-	policy.SetExpirationInterval(retry.NoInterval) // We don't ever expire
+	policy.SetExpirationInterval(retry.UnlimitedInterval) // We don't ever expire
 	return policy
 }
 

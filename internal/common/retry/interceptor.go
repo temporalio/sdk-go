@@ -36,10 +36,11 @@ import (
 )
 
 const (
-	// NoMaximumAttempts is a value that maximumAttempts can be set to if total number of attempts should be unlimited.
-	NoMaximumAttempts = 0
-	// NoInterval is a value that maximumInterval can be set to if there should be no upper bound on individual retry attempt delay.
-	NoInterval = 0
+	// UnlimitedMaximumAttempts when maximum attempts is set to this special value, then the number of attempts is unlimited.
+	UnlimitedMaximumAttempts = 0
+	// UnlimitedInterval when maximum interval is set to this special value, then there is no upper bound on the retry delay.
+	// Should not be used together with unlimited attempts as resulting retry interval can grow to unreasonable values.
+	UnlimitedInterval = 0
 	// DefaultBackoffCoefficient is default backOffCoefficient for retryPolicy
 	DefaultBackoffCoefficient = 2.0
 	// DefaultMaximumInterval is default maximum amount of time for an individual retry.
@@ -47,7 +48,7 @@ const (
 	// DefaultExpirationInterval is default expiration time for all retry attempts.
 	DefaultExpirationInterval = time.Minute
 	// DefaultMaximumAttempts is default maximum number of attempts.
-	DefaultMaximumAttempts = NoMaximumAttempts
+	DefaultMaximumAttempts = UnlimitedMaximumAttempts
 	// DefaultJitter is a default jitter applied on the backoff interval for delay randomization.
 	DefaultJitter = 0.2
 )
@@ -65,6 +66,10 @@ type (
 
 	contextKey string
 )
+
+func (ck contextKey) String() string {
+	return string(ck)
+}
 
 // SetBackoffCoefficient sets rate at which backoff coefficient will change.
 func (g *GrpcRetryConfig) SetBackoffCoefficient(backoffCoefficient float64) {
@@ -114,29 +119,34 @@ const (
 // provided in the context.
 func NewRetryOptionsInterceptor() grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		if rc, ok := ctx.Value(ConfigKey).(GrpcRetryConfig); ok {
+		if rc, ok := ctx.Value(ConfigKey).(*GrpcRetryConfig); ok {
 			if _, ok := ctx.Deadline(); !ok {
 				deadlineCtx, cancel := context.WithDeadline(ctx, time.Now().Add(rc.expirationInterval))
 				defer cancel()
 				ctx = deadlineCtx
 			}
+			// Populate backoff function, which provides retrier with the delay for each attempt.
 			opts = append(opts, grpc_retry.WithBackoff(func(attempt uint) time.Duration {
 				next := float64(rc.initialInterval) * math.Pow(rc.backoffCoefficient, float64(attempt))
-				if rc.maximumInterval != NoInterval {
+				if rc.maximumInterval != UnlimitedInterval {
 					next = math.Min(next, float64(rc.maximumInterval))
 				}
 				return backoffutils.JitterUp(time.Duration(next), rc.jitter)
 			}))
-			if rc.maximumAttempts != NoMaximumAttempts {
-				grpc_retry.WithMax(uint(rc.maximumAttempts))
+			// Max attempts is a required parameter in grpc retry interceptor,
+			// if it's set to zero then no retries will be made.
+			if rc.maximumAttempts != UnlimitedMaximumAttempts {
+				opts = append(opts, grpc_retry.WithMax(uint(rc.maximumAttempts)))
+			} else {
+				opts = append(opts, grpc_retry.WithMax(math.MaxUint32))
 			}
 			// We have to deal with plain gRPC error codes instead of service errors here as actual error translation
 			// happens after invoker is called below and invoker must have correct retry options right away in order to
 			// supply them to the gRPC retrier.
 			// Retrying only transient error codes, following statuses are excluded: Ok, AlreadyExists, FailedPrecondition,
 			// InvalidArgument, NotFound, PermissionDenied, Unauthenticated, Unimplemented.
-			grpc_retry.WithCodes(codes.Aborted, codes.Canceled, codes.DataLoss, codes.DeadlineExceeded, codes.Internal,
-				codes.OutOfRange, codes.ResourceExhausted, codes.Unavailable, codes.Unknown)
+			opts = append(opts, grpc_retry.WithCodes(codes.Aborted, codes.Canceled, codes.DataLoss, codes.DeadlineExceeded, codes.Internal,
+				codes.OutOfRange, codes.ResourceExhausted, codes.Unavailable, codes.Unknown))
 		} else {
 			// Do not retry if retry config is not set.
 			opts = append(opts, grpc_retry.Disable())

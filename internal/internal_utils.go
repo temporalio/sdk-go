@@ -36,6 +36,7 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
+	"go.temporal.io/sdk/internal/common/retry"
 	"google.golang.org/grpc/metadata"
 
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -114,6 +115,10 @@ func grpcContextValue(key interface{}, val interface{}) func(builder *grpcContex
 	return func(b *grpcContextBuilder) {
 		b.ParentContext = context.WithValue(b.ParentContext, key, val)
 	}
+}
+
+func defaultGrpcRetryParameters(ctx context.Context) func(builder *grpcContextBuilder) {
+	return grpcContextValue(retry.ConfigKey, createDynamicServiceRetryPolicy(ctx).GrpcRetryConfig())
 }
 
 // newGRPCContext - Get context for gRPC calls.

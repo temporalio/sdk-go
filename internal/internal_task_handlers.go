@@ -47,7 +47,6 @@ import (
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
-	"go.temporal.io/sdk/internal/common/retry"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
@@ -1876,7 +1875,7 @@ func recordActivityHeartbeat(ctx context.Context, service workflowservice.Workfl
 	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatResponse
 	grpcCtx, cancel := newGRPCContext(ctx,
 		grpcMetricsScope(metricsScope),
-		grpcContextValue(retry.ConfigKey, createDynamicServiceRetryPolicy(ctx).IntoGrpcRetryConfig()))
+		defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	heartbeatResponse, err := service.RecordActivityTaskHeartbeat(grpcCtx, request)
@@ -1898,7 +1897,7 @@ func recordActivityHeartbeatByID(ctx context.Context, service workflowservice.Wo
 	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatByIdResponse
 	grpcCtx, cancel := newGRPCContext(ctx,
 		grpcMetricsScope(metricsScope),
-		grpcContextValue(retry.ConfigKey, createDynamicServiceRetryPolicy(ctx).IntoGrpcRetryConfig()))
+		defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	heartbeatResponse, err := service.RecordActivityTaskHeartbeatById(grpcCtx, request)

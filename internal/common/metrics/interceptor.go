@@ -31,8 +31,8 @@ import (
 	"google.golang.org/grpc"
 )
 
-// NewRPCMetricsInterceptor creates new metrics scope interceptor.
-func NewRPCMetricsInterceptor(defaultScope tally.Scope, metricSuffix string) grpc.UnaryClientInterceptor {
+// NewGRPCMetricsInterceptor creates new metrics scope interceptor.
+func NewGRPCMetricsInterceptor(defaultScope tally.Scope, metricSuffix string) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		scope, ok := ctx.Value(ScopeContextKey).(tally.Scope)
 		if !ok || scope == nil {

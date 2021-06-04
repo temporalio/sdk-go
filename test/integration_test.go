@@ -44,6 +44,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/log"
 	"go.uber.org/goleak"
 
 	"go.temporal.io/sdk/client"
@@ -67,6 +68,7 @@ type IntegrationTestSuite struct {
 	seq                int64
 	taskQueueName      string
 	tracer             *tracingInterceptor
+	trafficController  *simpleTrafficController
 	metricsScopeCloser io.Closer
 	metricsReporter    *metrics.CapturingStatsReporter
 }
@@ -120,11 +122,59 @@ func (ts *IntegrationTestSuite) TearDownSuite() {
 	}
 }
 
+type simpleTrafficController struct {
+	totalCalls   map[string]int
+	allowedCalls map[string]int
+	failAttempts map[string]map[int]error // maps operation to individual attempts and corresponding errors
+	logger       log.Logger
+	lock         sync.RWMutex
+}
+
+func newSimpleTrafficController() *simpleTrafficController {
+	return &simpleTrafficController{
+		totalCalls:   make(map[string]int),
+		allowedCalls: make(map[string]int),
+		failAttempts: make(map[string]map[int]error),
+		lock:         sync.RWMutex{},
+		logger:       ilog.NewDefaultLogger(),
+	}
+}
+
+func (tc *simpleTrafficController) CheckCallAllowed(ctx context.Context, method string, req, reply interface{}) error {
+	// Name of the API being called
+	operation := metrics.ConvertMethodToScope(method)
+	tc.lock.Lock()
+	defer tc.lock.Unlock()
+	var err error
+	attempt := tc.totalCalls[operation]
+	if _, ok := tc.failAttempts[operation]; ok && tc.failAttempts[operation][attempt] != nil {
+		err = tc.failAttempts[operation][attempt]
+		tc.logger.Debug("Failing API call for", "operation:", operation, "attempt:", attempt)
+	}
+	tc.totalCalls[operation]++
+	if err == nil {
+		tc.allowedCalls[operation]++
+	}
+	return err
+}
+
+func (tc *simpleTrafficController) addError(operation string, err error, failAttempts ...int) {
+	tc.lock.Lock()
+	defer tc.lock.Unlock()
+	if _, ok := tc.failAttempts[operation]; !ok {
+		tc.failAttempts[operation] = make(map[int]error)
+		for _, attempt := range failAttempts {
+			tc.failAttempts[operation][attempt] = err
+		}
+	}
+}
+
 func (ts *IntegrationTestSuite) SetupTest() {
 	var metricsScope tally.Scope
 	metricsScope, ts.metricsScopeCloser, ts.metricsReporter = metrics.NewTaggedMetricsScope()
 
 	var err error
+	trafficController := newSimpleTrafficController()
 	ts.client, err = client.NewClient(client.Options{
 		HostPort:  ts.config.ServiceAddr,
 		Namespace: namespace,
@@ -133,10 +183,12 @@ func (ts *IntegrationTestSuite) SetupTest() {
 			NewKeysPropagator([]string{testContextKey1}),
 			NewKeysPropagator([]string{testContextKey2}),
 		},
-		MetricsScope: metricsScope,
+		MetricsScope:      metricsScope,
+		TrafficController: trafficController,
 	})
 	ts.NoError(err)
 
+	ts.trafficController = trafficController
 	ts.seq++
 	ts.activities.clearInvoked()
 	ts.taskQueueName = fmt.Sprintf("tq-%v-%s", ts.seq, ts.T().Name())
@@ -235,10 +287,10 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
 
 	ts.assertMetricsCounters(
 		"temporal_request", 7,
-		"temporal_request_total", 7,
+		"temporal_request_attempt", 7,
 		"temporal_workflow_task_queue_poll_succeed", 1,
 		"temporal_long_request", 8,
-		"temporal_long_request_total", 8,
+		"temporal_long_request_attempt", 8,
 	)
 }
 
@@ -279,6 +331,22 @@ func (ts *IntegrationTestSuite) TestLongRunningActivityWithHB() {
 	err := ts.executeWorkflow("test-long-running-activity-with-hb", ts.workflows.LongRunningActivityWithHB, &expected)
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
+}
+
+func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndGrpcRetries() {
+	var expected []string
+	ts.trafficController.addError("RecordActivityTaskHeartbeat", errors.New("call not allowed"), 1, 2, 3)
+	err := ts.executeWorkflow("test-long-running-activity-with-hb", ts.workflows.LongRunningActivityWithHB, &expected)
+	ts.NoError(err)
+	ts.EqualValues(expected, ts.activities.invoked())
+	// we induce 3 failures, but they all should be retried
+	ts.assertReportedOperationCount("temporal_request_failure", "RecordActivityTaskHeartbeat", 0)
+	// expect 3 retry attempts
+	ts.assertReportedOperationCount("temporal_request_failure_attempt", "RecordActivityTaskHeartbeat", 3)
+	// save number of heartbeats sent to the server
+	totalHeartbeats := ts.getReportedOperationCount("temporal_request", "RecordActivityTaskHeartbeat")
+	// and make sure that number of reported attempts is 3 more, because of retries.
+	ts.assertReportedOperationCount("temporal_request_attempt", "RecordActivityTaskHeartbeat", int(totalHeartbeats+3))
 }
 
 func (ts *IntegrationTestSuite) TestContinueAsNew() {
@@ -1066,4 +1134,22 @@ func (ts *IntegrationTestSuite) assertMetricsCounters(keyValuePairs ...interface
 		ts.True(counterExists, fmt.Sprintf("Counter %v was expected but doesn't exist", expectedCounterName))
 		ts.EqualValues(expectedCounterValue, actualCounterValue, fmt.Sprintf("Expected value doesn't match actual value for counter %v", expectedCounterName))
 	}
+}
+
+func (ts *IntegrationTestSuite) assertReportedOperationCount(metricName string, operation string, expectedCount int) {
+	count := ts.getReportedOperationCount(metricName, operation)
+	ts.EqualValues(expectedCount, count, fmt.Sprintf("Metric %v for operation %v has been reported unexpected number of times", metricName, operation))
+}
+
+func (ts *IntegrationTestSuite) getReportedOperationCount(metricName string, operation string) int64 {
+	count := int64(0)
+	for _, counter := range ts.metricsReporter.Counts() {
+		if counter.Name() != metricName {
+			continue
+		}
+		if op, ok := counter.Tags()[metrics.OperationTagName]; ok && op == operation {
+			count += counter.Value()
+		}
+	}
+	return count
 }

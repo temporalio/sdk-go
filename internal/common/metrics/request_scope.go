@@ -48,7 +48,7 @@ type (
 // newRequestScope creates metric scope for a specified operation, defined by gRPC method string, isLongPoll flag and
 // metric suffix. Suffix should be an empty string for individual calls and should have non-empty value for aggregated values.
 func newRequestScope(scope tally.Scope, method string, isLongPoll bool, suffix string) *requestScope {
-	operation := convertMethodToScope(method)
+	operation := ConvertMethodToScope(method)
 	subScope := getMetricsScopeForOperation(scope, operation)
 
 	return &requestScope{
@@ -88,7 +88,8 @@ func (rs *requestScope) recordEnd(err error) {
 	}
 }
 
-func convertMethodToScope(method string) string {
+// ConvertMethodToScope extracts API name from the method string by truncating the prefix
+func ConvertMethodToScope(method string) string {
 	// method is something like "/temporal.api.workflowservice.v1.WorkflowService/RegisterNamespace"
 	methodStart := strings.LastIndex(method, "/") + 1
 	return method[methodStart:]
