@@ -140,7 +140,7 @@ func newSimpleTrafficController() *simpleTrafficController {
 	}
 }
 
-func (tc *simpleTrafficController) CheckCallAllowed(ctx context.Context, method string, req, reply interface{}) error {
+func (tc *simpleTrafficController) CheckCallAllowed(_ context.Context, method string, _, _ interface{}) error {
 	// Name of the API being called
 	operation := metrics.ConvertMethodToScope(method)
 	tc.lock.Lock()
