@@ -1670,7 +1670,7 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	err := recordActivityHeartbeat(ctx, i.service, i.metricsScope, i.identity, i.taskToken, details)
+	err := recordActivityHeartbeat(ctx, i.service, i.identity, i.taskToken, details)
 
 	switch err.(type) {
 	case *CanceledError:
@@ -1683,10 +1683,19 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 		// later when we have setter on cancel handler.
 		i.cancelHandler()
 		isActivityCanceled = true
+	case nil:
+		// No error, do nothing.
+	default:
+		// Transient errors are getting retried for the duration of the heartbeat timeout.
+		// The fact that error has been returned means that activity should now be timed out, hence we should
+		// propagate cancellation to the handler.
+		if isServiceTransientError(err) {
+			i.cancelHandler()
+			isActivityCanceled = true
+		}
 	}
 
-	// We don't want to bubble temporary errors to the user.
-	// This error won't be return to user check RecordActivityHeartbeat().
+	// This error won't be returned to user check RecordActivityHeartbeat().
 	return isActivityCanceled, err
 }
 
@@ -1854,14 +1863,7 @@ func createNewCommand(commandType enumspb.CommandType) *commandpb.Command {
 	}
 }
 
-func recordActivityHeartbeat(
-	ctx context.Context,
-	service workflowservice.WorkflowServiceClient,
-	metricsScope tally.Scope,
-	identity string,
-	taskToken []byte,
-	details *commonpb.Payloads,
-) error {
+func recordActivityHeartbeat(ctx context.Context, service workflowservice.WorkflowServiceClient, identity string, taskToken []byte, details *commonpb.Payloads) error {
 
 	namespace := getNamespaceFromActivityCtx(ctx)
 	request := &workflowservice.RecordActivityTaskHeartbeatRequest{
@@ -1889,14 +1891,7 @@ func recordActivityHeartbeat(
 	return heartbeatErr
 }
 
-func recordActivityHeartbeatByID(
-	ctx context.Context,
-	service workflowservice.WorkflowServiceClient,
-	metricsScope tally.Scope,
-	identity string,
-	namespace, workflowID, runID, activityID string,
-	details *commonpb.Payloads,
-) error {
+func recordActivityHeartbeatByID(ctx context.Context, service workflowservice.WorkflowServiceClient, identity, namespace, workflowID, runID, activityID string, details *commonpb.Payloads) error {
 	request := &workflowservice.RecordActivityTaskHeartbeatByIdRequest{
 		Namespace:  namespace,
 		WorkflowId: workflowID,
