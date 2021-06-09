@@ -618,7 +618,7 @@ func (wc *WorkflowClient) RecordActivityHeartbeat(ctx context.Context, taskToken
 	if err != nil {
 		return err
 	}
-	return recordActivityHeartbeat(ctx, wc.workflowService, wc.identity, taskToken, data)
+	return recordActivityHeartbeat(ctx, wc.workflowService, wc.metricsScope, wc.identity, taskToken, data)
 }
 
 // RecordActivityHeartbeatByID records heartbeat for an activity.
@@ -628,7 +628,7 @@ func (wc *WorkflowClient) RecordActivityHeartbeatByID(ctx context.Context,
 	if err != nil {
 		return err
 	}
-	return recordActivityHeartbeatByID(ctx, wc.workflowService, wc.identity, namespace, workflowID, runID, activityID, data)
+	return recordActivityHeartbeatByID(ctx, wc.workflowService, wc.metricsScope, wc.identity, namespace, workflowID, runID, activityID, data)
 }
 
 // ListClosedWorkflow gets closed workflow executions based on request filters
