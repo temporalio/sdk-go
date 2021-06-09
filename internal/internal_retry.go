@@ -30,8 +30,6 @@ import (
 	"context"
 	"time"
 
-	"go.temporal.io/api/serviceerror"
-
 	"go.temporal.io/sdk/internal/common/backoff"
 )
 
@@ -64,21 +62,4 @@ func createDynamicServiceRetryPolicy(ctx context.Context) backoff.RetryPolicy {
 	policy.SetMaximumInterval(maximumInterval)
 	policy.SetExpirationInterval(timeout)
 	return policy
-}
-
-func isServiceTransientError(err error) bool {
-	// Retrying by default so it covers all transport errors.
-	switch err.(type) {
-	case *serviceerror.InvalidArgument,
-		*serviceerror.NotFound,
-		*serviceerror.WorkflowExecutionAlreadyStarted,
-		*serviceerror.NamespaceAlreadyExists,
-		*serviceerror.QueryFailed,
-		*serviceerror.NamespaceNotActive,
-		*serviceerror.CancellationAlreadyRequested,
-		*serviceerror.ClientVersionNotSupported,
-		*serviceerror.PermissionDenied:
-		return false
-	}
-	return err != errStop
 }

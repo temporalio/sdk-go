@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"go.temporal.io/sdk/internal/common/retry"
 )
 
 type TestClock struct {
@@ -207,9 +208,9 @@ func (c *TestClock) moveClock(duration time.Duration) {
 func createPolicy(initialInterval time.Duration) *ExponentialRetryPolicy {
 	policy := NewExponentialRetryPolicy(initialInterval)
 	policy.SetBackoffCoefficient(2)
-	policy.SetMaximumInterval(NoInterval)
-	policy.SetExpirationInterval(NoInterval)
-	policy.SetMaximumAttempts(noMaximumAttempts)
+	policy.SetMaximumInterval(retry.UnlimitedInterval)
+	policy.SetExpirationInterval(retry.UnlimitedInterval)
+	policy.SetMaximumAttempts(retry.UnlimitedMaximumAttempts)
 
 	return policy
 }

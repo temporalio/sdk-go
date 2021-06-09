@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/gogo/status"
 	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally"
 	commandpb "go.temporal.io/api/command/v1"
@@ -47,10 +48,10 @@ import (
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/internal/common/retry"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
-	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/util"
 	"go.temporal.io/sdk/log"
@@ -1670,7 +1671,7 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	err := recordActivityHeartbeat(ctx, i.service, i.identity, i.taskToken, details)
+	err := recordActivityHeartbeat(ctx, i.service, i.metricsScope, i.identity, i.taskToken, details)
 
 	switch err.(type) {
 	case *CanceledError:
@@ -1689,7 +1690,8 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 		// Transient errors are getting retried for the duration of the heartbeat timeout.
 		// The fact that error has been returned means that activity should now be timed out, hence we should
 		// propagate cancellation to the handler.
-		if isServiceTransientError(err) {
+		err, _ := status.FromError(err)
+		if retry.IsStatusCodeRetryable(err) {
 			i.cancelHandler()
 			isActivityCanceled = true
 		}
@@ -1863,8 +1865,8 @@ func createNewCommand(commandType enumspb.CommandType) *commandpb.Command {
 	}
 }
 
-func recordActivityHeartbeat(ctx context.Context, service workflowservice.WorkflowServiceClient, identity string, taskToken []byte, details *commonpb.Payloads) error {
-
+func recordActivityHeartbeat(ctx context.Context, service workflowservice.WorkflowServiceClient, metricsScope tally.Scope,
+	identity string, taskToken []byte, details *commonpb.Payloads) error {
 	namespace := getNamespaceFromActivityCtx(ctx)
 	request := &workflowservice.RecordActivityTaskHeartbeatRequest{
 		TaskToken: taskToken,
@@ -1874,24 +1876,20 @@ func recordActivityHeartbeat(ctx context.Context, service workflowservice.Workfl
 	}
 
 	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatResponse
-	heartbeatErr := backoff.Retry(ctx,
-		func() error {
-			grpcCtx, cancel := newGRPCContext(ctx)
-			defer cancel()
+	grpcCtx, cancel := newGRPCContext(ctx,
+		grpcMetricsScope(metricsScope),
+		defaultGrpcRetryParameters(ctx))
+	defer cancel()
 
-			var err error
-			heartbeatResponse, err = service.RecordActivityTaskHeartbeat(grpcCtx, request)
-			return err
-		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
-
-	if heartbeatErr == nil && heartbeatResponse != nil && heartbeatResponse.GetCancelRequested() {
+	heartbeatResponse, err := service.RecordActivityTaskHeartbeat(grpcCtx, request)
+	if err == nil && heartbeatResponse != nil && heartbeatResponse.GetCancelRequested() {
 		return NewCanceledError()
 	}
-
-	return heartbeatErr
+	return err
 }
 
-func recordActivityHeartbeatByID(ctx context.Context, service workflowservice.WorkflowServiceClient, identity, namespace, workflowID, runID, activityID string, details *commonpb.Payloads) error {
+func recordActivityHeartbeatByID(ctx context.Context, service workflowservice.WorkflowServiceClient, metricsScope tally.Scope,
+	identity, namespace, workflowID, runID, activityID string, details *commonpb.Payloads) error {
 	request := &workflowservice.RecordActivityTaskHeartbeatByIdRequest{
 		Namespace:  namespace,
 		WorkflowId: workflowID,
@@ -1901,21 +1899,16 @@ func recordActivityHeartbeatByID(ctx context.Context, service workflowservice.Wo
 		Identity:   identity}
 
 	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatByIdResponse
-	heartbeatErr := backoff.Retry(ctx,
-		func() error {
-			grpcCtx, cancel := newGRPCContext(ctx)
-			defer cancel()
+	grpcCtx, cancel := newGRPCContext(ctx,
+		grpcMetricsScope(metricsScope),
+		defaultGrpcRetryParameters(ctx))
+	defer cancel()
 
-			var err error
-			heartbeatResponse, err = service.RecordActivityTaskHeartbeatById(grpcCtx, request)
-			return err
-		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
-
-	if heartbeatErr == nil && heartbeatResponse != nil && heartbeatResponse.GetCancelRequested() {
+	heartbeatResponse, err := service.RecordActivityTaskHeartbeatById(grpcCtx, request)
+	if err == nil && heartbeatResponse != nil && heartbeatResponse.GetCancelRequested() {
 		return NewCanceledError()
 	}
-
-	return heartbeatErr
+	return err
 }
 
 // This enables verbose logging in the client library.

@@ -44,6 +44,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/test"
 	"go.uber.org/goleak"
 
 	"go.temporal.io/sdk/client"
@@ -67,6 +68,7 @@ type IntegrationTestSuite struct {
 	seq                int64
 	taskQueueName      string
 	tracer             *tracingInterceptor
+	trafficController  *test.SimpleTrafficController
 	metricsScopeCloser io.Closer
 	metricsReporter    *metrics.CapturingStatsReporter
 }
@@ -125,6 +127,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	metricsScope, ts.metricsScopeCloser, ts.metricsReporter = metrics.NewTaggedMetricsScope()
 
 	var err error
+	trafficController := test.NewSimpleTrafficController()
 	ts.client, err = client.NewClient(client.Options{
 		HostPort:  ts.config.ServiceAddr,
 		Namespace: namespace,
@@ -133,10 +136,12 @@ func (ts *IntegrationTestSuite) SetupTest() {
 			NewKeysPropagator([]string{testContextKey1}),
 			NewKeysPropagator([]string{testContextKey2}),
 		},
-		MetricsScope: metricsScope,
+		MetricsScope:      metricsScope,
+		TrafficController: trafficController,
 	})
 	ts.NoError(err)
 
+	ts.trafficController = trafficController
 	ts.seq++
 	ts.activities.clearInvoked()
 	ts.taskQueueName = fmt.Sprintf("tq-%v-%s", ts.seq, ts.T().Name())
@@ -235,8 +240,10 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
 
 	ts.assertMetricsCounters(
 		"temporal_request", 7,
+		"temporal_request_attempt", 7,
 		"temporal_workflow_task_queue_poll_succeed", 1,
 		"temporal_long_request", 8,
+		"temporal_long_request_attempt", 8,
 	)
 }
 
@@ -277,6 +284,22 @@ func (ts *IntegrationTestSuite) TestLongRunningActivityWithHB() {
 	err := ts.executeWorkflow("test-long-running-activity-with-hb", ts.workflows.LongRunningActivityWithHB, &expected)
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
+}
+
+func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndGrpcRetries() {
+	var expected []string
+	ts.trafficController.AddError("RecordActivityTaskHeartbeat", errors.New("call not allowed"), 1, 2, 3)
+	err := ts.executeWorkflow("test-long-running-activity-with-hb", ts.workflows.LongRunningActivityWithHB, &expected)
+	ts.NoError(err)
+	ts.EqualValues(expected, ts.activities.invoked())
+	// we induce 3 failures, but they all should be retried
+	ts.assertReportedOperationCount("temporal_request_failure", "RecordActivityTaskHeartbeat", 0)
+	// expect 3 retry attempts
+	ts.assertReportedOperationCount("temporal_request_failure_attempt", "RecordActivityTaskHeartbeat", 3)
+	// save number of heartbeats sent to the server
+	totalHeartbeats := ts.getReportedOperationCount("temporal_request", "RecordActivityTaskHeartbeat")
+	// and make sure that number of reported attempts is 3 more, because of retries.
+	ts.assertReportedOperationCount("temporal_request_attempt", "RecordActivityTaskHeartbeat", int(totalHeartbeats+3))
 }
 
 func (ts *IntegrationTestSuite) TestContinueAsNew() {
@@ -400,6 +423,19 @@ func (ts *IntegrationTestSuite) TestSignalWorkflow() {
 	err = run.Get(ctx, &protoValue)
 	ts.NoError(err)
 	ts.Equal(commonpb.WorkflowType{Name: "string-value"}, *protoValue)
+}
+
+func (ts *IntegrationTestSuite) TestSignalWorkflowWithStubbornGrpcError() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	ts.trafficController.AddError("SignalWorkflowExecution", serviceerror.NewInternal("server failure"), test.FailAllAttempts)
+	wfOpts := ts.startWorkflowOptions("test-signal-workflow")
+	run, err := ts.client.ExecuteWorkflow(ctx, wfOpts, ts.workflows.SignalWorkflow)
+	ts.Nil(err)
+	err = ts.client.SignalWorkflow(ctx, "test-signal-workflow", run.GetRunID(), "string-signal", "string-value")
+	ts.Error(err)
+	ts.Equal("context deadline exceeded", err.Error())
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicateNoChildWorkflow() {
@@ -1064,4 +1100,22 @@ func (ts *IntegrationTestSuite) assertMetricsCounters(keyValuePairs ...interface
 		ts.True(counterExists, fmt.Sprintf("Counter %v was expected but doesn't exist", expectedCounterName))
 		ts.EqualValues(expectedCounterValue, actualCounterValue, fmt.Sprintf("Expected value doesn't match actual value for counter %v", expectedCounterName))
 	}
+}
+
+func (ts *IntegrationTestSuite) assertReportedOperationCount(metricName string, operation string, expectedCount int) {
+	count := ts.getReportedOperationCount(metricName, operation)
+	ts.EqualValues(expectedCount, count, fmt.Sprintf("Metric %v for operation %v has been reported unexpected number of times", metricName, operation))
+}
+
+func (ts *IntegrationTestSuite) getReportedOperationCount(metricName string, operation string) int64 {
+	count := int64(0)
+	for _, counter := range ts.metricsReporter.Counts() {
+		if counter.Name() != metricName {
+			continue
+		}
+		if op, ok := counter.Tags()[metrics.OperationTagName]; ok && op == operation {
+			count += counter.Value()
+		}
+	}
+	return count
 }

@@ -78,7 +78,7 @@ func TestMetricsInterceptor(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			scope, closer, reporter := NewMetricsScope(&isReplay)
-			interceptor := NewScopeInterceptor(scope)
+			interceptor := NewGRPCMetricsInterceptor(scope, "")
 
 			invoker := func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
 				return tc.err
@@ -104,7 +104,7 @@ func TestMetricsInterceptor(t *testing.T) {
 		t.Run(tc.name+"_Prometheus", func(t *testing.T) {
 			t.Parallel()
 			scope, closer, reporter := newPrometheusScope(&isReplay)
-			interceptor := NewScopeInterceptor(scope)
+			interceptor := NewGRPCMetricsInterceptor(scope, "")
 
 			invoker := func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
 				return tc.err

@@ -33,48 +33,63 @@ import (
 
 type (
 	requestScope struct {
-		scope      tally.Scope
-		startTime  time.Time
-		isLongPoll bool
+		scope                        tally.Scope
+		startTime                    time.Time
+		isLongPoll                   bool
+		longPollRequestCountMetric   string
+		requestCountMetric           string
+		longPollRequestLatencyMetric string
+		requestLatencyMetric         string
+		longPollRequestFailureMetric string
+		requestFailureMetric         string
 	}
 )
 
-func newRequestScope(scope tally.Scope, method string, isLongPoll bool) *requestScope {
-	scopeName := convertMethodToScope(method)
-	subScope := getMetricsScopeForOperation(scope, scopeName)
+// newRequestScope creates metric scope for a specified operation, defined by gRPC method string, isLongPoll flag and
+// metric suffix. Suffix should be an empty string for individual calls and should have non-empty value for aggregated values.
+func newRequestScope(scope tally.Scope, method string, isLongPoll bool, suffix string) *requestScope {
+	operation := ConvertMethodToScope(method)
+	subScope := getMetricsScopeForOperation(scope, operation)
 
 	return &requestScope{
-		scope:      subScope,
-		startTime:  time.Now(),
-		isLongPoll: isLongPoll,
+		scope:                        subScope,
+		startTime:                    time.Now(),
+		isLongPoll:                   isLongPoll,
+		longPollRequestCountMetric:   TemporalLongRequest + suffix,
+		requestCountMetric:           TemporalRequest + suffix,
+		longPollRequestLatencyMetric: TemporalLongRequestLatency + suffix,
+		requestLatencyMetric:         TemporalRequestLatency + suffix,
+		longPollRequestFailureMetric: TemporalLongRequestFailure + suffix,
+		requestFailureMetric:         TemporalRequestFailure + suffix,
 	}
 }
 
 func (rs *requestScope) recordStart() {
 	if rs.isLongPoll {
-		rs.scope.Counter(TemporalLongRequest).Inc(1)
+		rs.scope.Counter(rs.longPollRequestCountMetric).Inc(1)
 	} else {
-		rs.scope.Counter(TemporalRequest).Inc(1)
+		rs.scope.Counter(rs.requestCountMetric).Inc(1)
 	}
 }
 
 func (rs *requestScope) recordEnd(err error) {
 	if rs.isLongPoll {
-		rs.scope.Timer(TemporalLongRequestLatency).Record(time.Since(rs.startTime))
+		rs.scope.Timer(rs.longPollRequestLatencyMetric).Record(time.Since(rs.startTime))
 	} else {
-		rs.scope.Timer(TemporalRequestLatency).Record(time.Since(rs.startTime))
+		rs.scope.Timer(rs.requestLatencyMetric).Record(time.Since(rs.startTime))
 	}
 
 	if err != nil {
 		if rs.isLongPoll {
-			rs.scope.Counter(TemporalLongRequestFailure).Inc(1)
+			rs.scope.Counter(rs.longPollRequestFailureMetric).Inc(1)
 		} else {
-			rs.scope.Counter(TemporalRequestFailure).Inc(1)
+			rs.scope.Counter(rs.requestFailureMetric).Inc(1)
 		}
 	}
 }
 
-func convertMethodToScope(method string) string {
+// ConvertMethodToScope extracts API name from the method string by truncating the prefix
+func ConvertMethodToScope(method string) string {
 	// method is something like "/temporal.api.workflowservice.v1.WorkflowService/RegisterNamespace"
 	methodStart := strings.LastIndex(method, "/") + 1
 	return method[methodStart:]
