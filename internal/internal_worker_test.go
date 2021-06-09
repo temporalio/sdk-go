@@ -1507,55 +1507,6 @@ func (s *internalWorkerTestSuite) TestNoActivitiesOrWorkflows() {
 	assert.False(t, w.workflowWorker.worker.isWorkerStarted)
 }
 
-func (s *internalWorkerTestSuite) TestWorkerStartFailsWithInvalidNamespace() {
-	t := s.T()
-	testCases := []struct {
-		namespaceErr error
-		isErrFatal   bool
-	}{
-		{serviceerror.NewNotFound(""), true},
-		{serviceerror.NewInvalidArgument(""), true},
-		{serviceerror.NewInternal(""), false},
-		{errors.New("unknown"), false},
-	}
-
-	mockCtrl := gomock.NewController(t)
-
-	for _, tc := range testCases {
-		service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
-		service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, tc.namespaceErr).Do(
-			func(ctx context.Context, request *workflowservice.DescribeNamespaceRequest, opts ...grpc.CallOption) {
-				// log
-			}).Times(2)
-
-		worker := createWorker(service)
-		worker.RegisterActivity(testActivityNoResult)
-		worker.RegisterWorkflow(testWorkflowReturnStruct)
-		if tc.isErrFatal {
-			err := worker.Start()
-			assert.Error(t, err, "worker.start() MUST fail when namespace is invalid")
-			errC := make(chan error)
-			go func() { errC <- worker.Run(InterruptCh()) }()
-			select {
-			case e := <-errC:
-				assert.Error(t, e, "worker.Run() MUST fail when namespace is invalid")
-			case <-time.After(time.Second):
-				assert.Fail(t, "worker.Run() MUST fail when namespace is invalid")
-			}
-			assert.False(t, worker.activityWorker.worker.isWorkerStarted)
-			assert.False(t, worker.workflowWorker.worker.isWorkerStarted)
-			continue
-		}
-		err := worker.Start()
-		assert.NoError(t, err, "worker.Start() failed unexpectedly")
-		assert.True(t, worker.activityWorker.worker.isWorkerStarted)
-		assert.True(t, worker.workflowWorker.worker.isWorkerStarted)
-		worker.Stop()
-		assert.False(t, worker.activityWorker.worker.isWorkerStarted)
-		assert.False(t, worker.workflowWorker.worker.isWorkerStarted)
-	}
-}
-
 func (s *internalWorkerTestSuite) TestStartWorkerAfterStopped() {
 	defer func() {
 		if r := recover(); r == nil {

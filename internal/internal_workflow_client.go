@@ -44,7 +44,6 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/common/util"
@@ -526,40 +525,7 @@ func (wc *WorkflowClient) getWorkflowHistory(
 		var err error
 	Loop:
 		for {
-			// TODO: refactor using grpc retry interceptor
-			err = backoff.Retry(ctx,
-				func() error {
-					var err1 error
-					grpcCtx, cancel := newGRPCContext(ctx,
-						grpcMetricsScope(rpcMetricsScope),
-						grpcLongPoll(isLongPoll),
-						func(builder *grpcContextBuilder) {
-							if isLongPoll {
-								builder.Timeout = defaultGetHistoryTimeout
-							}
-						})
-					defer cancel()
-					response, err1 = wc.workflowService.GetWorkflowExecutionHistory(grpcCtx, request)
-
-					if err1 != nil {
-						return err1
-					}
-
-					if response.RawHistory != nil {
-						history, err := serializer.DeserializeBlobDataToHistoryEvents(response.RawHistory, filterType)
-						if err != nil {
-							return err
-						}
-						response.History = history
-					}
-					return err1
-				},
-				createDynamicServiceRetryPolicy(ctx),
-				func(err error) bool {
-					return isServiceTransientError(err) || isEntityNotFoundFromPassive(err)
-				},
-			)
-
+			response, err = wc.foo(ctx, rpcMetricsScope, isLongPoll, request, filterType)
 			if err != nil {
 				return nil, err
 			}
@@ -577,14 +543,29 @@ func (wc *WorkflowClient) getWorkflowHistory(
 	}
 }
 
-func isEntityNotFoundFromPassive(err error) bool {
-	if notFoundError, ok := err.(*serviceerror.NotFound); ok {
-		return notFoundError.ActiveCluster != "" &&
-			notFoundError.CurrentCluster != "" &&
-			notFoundError.ActiveCluster != notFoundError.CurrentCluster
+func (wc *WorkflowClient) foo(ctx context.Context, rpcMetricsScope tally.Scope, isLongPoll bool,
+	request *workflowservice.GetWorkflowExecutionHistoryRequest, filterType enumspb.HistoryEventFilterType) (*workflowservice.GetWorkflowExecutionHistoryResponse, error) {
+	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcMetricsScope), grpcLongPoll(isLongPoll), defaultGrpcRetryParameters(ctx), func(builder *grpcContextBuilder) {
+		if isLongPoll {
+			builder.Timeout = defaultGetHistoryTimeout
+		}
+	})
+
+	defer cancel()
+	response, err := wc.workflowService.GetWorkflowExecutionHistory(grpcCtx, request)
+
+	if err != nil {
+		return nil, err
 	}
 
-	return false
+	if response.RawHistory != nil {
+		history, err := serializer.DeserializeBlobDataToHistoryEvents(response.RawHistory, filterType)
+		if err != nil {
+			return nil, err
+		}
+		response.History = history
+	}
+	return response, err
 }
 
 // CompleteActivity reports activity completed. activity Execute method can return activity.ErrResultPending to

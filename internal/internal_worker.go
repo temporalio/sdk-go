@@ -51,12 +51,10 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
-	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/common/util"
 	ilog "go.temporal.io/sdk/internal/log"
@@ -227,36 +225,15 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 }
 
 // verifyNamespaceExist does a DescribeNamespace operation on the specified namespace with backoff/retry
-// It returns an error, if the server returns an EntityNotExist or BadRequest error
-// On any other transient error, this method will just return success
 func verifyNamespaceExist(client workflowservice.WorkflowServiceClient, metricsScope tally.Scope, namespace string, logger log.Logger) error {
 	ctx := context.Background()
-	descNamespaceOp := func() error {
-		grpcCtx, cancel := newGRPCContext(ctx)
-		defer cancel()
-		_, err := client.DescribeNamespace(grpcCtx, &workflowservice.DescribeNamespaceRequest{Namespace: namespace})
-		if err != nil {
-			switch err.(type) {
-			case *serviceerror.NotFound:
-				logger.Error("namespace does not exist", tagNamespace, namespace, tagError, err)
-				return err
-			case *serviceerror.InvalidArgument:
-				logger.Error("namespace does not exist", tagNamespace, namespace, tagError, err)
-				return err
-			}
-			// on any other error, just return true
-			logger.Warn("unable to verify if namespace exist", tagNamespace, namespace, tagError, err)
-		}
-		return nil
-	}
-
 	if namespace == "" {
 		return errors.New("namespace cannot be empty")
 	}
-
-	// TODO: refactor using grpc retry interceptor, requires custom error processing, in order to ignore NotFound/InvalidArgument errors that are normally not retried.
-	// exponential backoff retry for upto a minute
-	return backoff.Retry(ctx, descNamespaceOp, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
+	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metricsScope), defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	_, err := client.DescribeNamespace(grpcCtx, &workflowservice.DescribeNamespaceRequest{Namespace: namespace})
+	return err
 }
 
 func newWorkflowWorkerInternal(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, ppMgr pressurePointMgr, overrides *workerOverrides, registry *registry) *workflowWorker {

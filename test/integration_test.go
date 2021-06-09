@@ -44,7 +44,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
-	"go.temporal.io/sdk/log"
+	"go.temporal.io/sdk/test"
 	"go.uber.org/goleak"
 
 	"go.temporal.io/sdk/client"
@@ -68,7 +68,7 @@ type IntegrationTestSuite struct {
 	seq                int64
 	taskQueueName      string
 	tracer             *tracingInterceptor
-	trafficController  *simpleTrafficController
+	trafficController  *test.SimpleTrafficController
 	metricsScopeCloser io.Closer
 	metricsReporter    *metrics.CapturingStatsReporter
 }
@@ -122,59 +122,12 @@ func (ts *IntegrationTestSuite) TearDownSuite() {
 	}
 }
 
-type simpleTrafficController struct {
-	totalCalls   map[string]int
-	allowedCalls map[string]int
-	failAttempts map[string]map[int]error // maps operation to individual attempts and corresponding errors
-	logger       log.Logger
-	lock         sync.RWMutex
-}
-
-func newSimpleTrafficController() *simpleTrafficController {
-	return &simpleTrafficController{
-		totalCalls:   make(map[string]int),
-		allowedCalls: make(map[string]int),
-		failAttempts: make(map[string]map[int]error),
-		lock:         sync.RWMutex{},
-		logger:       ilog.NewDefaultLogger(),
-	}
-}
-
-func (tc *simpleTrafficController) CheckCallAllowed(_ context.Context, method string, _, _ interface{}) error {
-	// Name of the API being called
-	operation := metrics.ConvertMethodToScope(method)
-	tc.lock.Lock()
-	defer tc.lock.Unlock()
-	var err error
-	attempt := tc.totalCalls[operation]
-	if _, ok := tc.failAttempts[operation]; ok && tc.failAttempts[operation][attempt] != nil {
-		err = tc.failAttempts[operation][attempt]
-		tc.logger.Debug("Failing API call for", "operation:", operation, "attempt:", attempt)
-	}
-	tc.totalCalls[operation]++
-	if err == nil {
-		tc.allowedCalls[operation]++
-	}
-	return err
-}
-
-func (tc *simpleTrafficController) addError(operation string, err error, failAttempts ...int) {
-	tc.lock.Lock()
-	defer tc.lock.Unlock()
-	if _, ok := tc.failAttempts[operation]; !ok {
-		tc.failAttempts[operation] = make(map[int]error)
-		for _, attempt := range failAttempts {
-			tc.failAttempts[operation][attempt] = err
-		}
-	}
-}
-
 func (ts *IntegrationTestSuite) SetupTest() {
 	var metricsScope tally.Scope
 	metricsScope, ts.metricsScopeCloser, ts.metricsReporter = metrics.NewTaggedMetricsScope()
 
 	var err error
-	trafficController := newSimpleTrafficController()
+	trafficController := test.NewSimpleTrafficController()
 	ts.client, err = client.NewClient(client.Options{
 		HostPort:  ts.config.ServiceAddr,
 		Namespace: namespace,
@@ -335,7 +288,7 @@ func (ts *IntegrationTestSuite) TestLongRunningActivityWithHB() {
 
 func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndGrpcRetries() {
 	var expected []string
-	ts.trafficController.addError("RecordActivityTaskHeartbeat", errors.New("call not allowed"), 1, 2, 3)
+	ts.trafficController.AddError("RecordActivityTaskHeartbeat", errors.New("call not allowed"), 1, 2, 3)
 	err := ts.executeWorkflow("test-long-running-activity-with-hb", ts.workflows.LongRunningActivityWithHB, &expected)
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
@@ -470,6 +423,19 @@ func (ts *IntegrationTestSuite) TestSignalWorkflow() {
 	err = run.Get(ctx, &protoValue)
 	ts.NoError(err)
 	ts.Equal(commonpb.WorkflowType{Name: "string-value"}, *protoValue)
+}
+
+func (ts *IntegrationTestSuite) TestSignalWorkflowWithStubbornGrpcError() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	ts.trafficController.AddError("SignalWorkflowExecution", serviceerror.NewInternal("server failure"), test.FailAllAttempts)
+	wfOpts := ts.startWorkflowOptions("test-signal-workflow")
+	run, err := ts.client.ExecuteWorkflow(ctx, wfOpts, ts.workflows.SignalWorkflow)
+	ts.Nil(err)
+	err = ts.client.SignalWorkflow(ctx, "test-signal-workflow", run.GetRunID(), "string-signal", "string-value")
+	ts.Error(err)
+	ts.Equal("context deadline exceeded", err.Error())
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicateNoChildWorkflow() {
