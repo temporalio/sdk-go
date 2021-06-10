@@ -525,7 +525,7 @@ func (wc *WorkflowClient) getWorkflowHistory(
 		var err error
 	Loop:
 		for {
-			response, err = wc.foo(ctx, rpcMetricsScope, isLongPoll, request, filterType)
+			response, err = wc.getWorkflowExecutionHistory(ctx, rpcMetricsScope, isLongPoll, request, filterType)
 			if err != nil {
 				return nil, err
 			}
@@ -543,7 +543,7 @@ func (wc *WorkflowClient) getWorkflowHistory(
 	}
 }
 
-func (wc *WorkflowClient) foo(ctx context.Context, rpcMetricsScope tally.Scope, isLongPoll bool,
+func (wc *WorkflowClient) getWorkflowExecutionHistory(ctx context.Context, rpcMetricsScope tally.Scope, isLongPoll bool,
 	request *workflowservice.GetWorkflowExecutionHistoryRequest, filterType enumspb.HistoryEventFilterType) (*workflowservice.GetWorkflowExecutionHistoryResponse, error) {
 	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcMetricsScope), grpcLongPoll(isLongPoll), defaultGrpcRetryParameters(ctx), func(builder *grpcContextBuilder) {
 		if isLongPoll {
