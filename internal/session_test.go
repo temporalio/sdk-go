@@ -610,7 +610,8 @@ func (s *SessionTestSuite) TestCompletionFailed() {
 	env.SetWorkerOptions(WorkerOptions{EnableSessionWorker: true})
 	env.RegisterWorkflow(workflowFn)
 	env.OnActivity(sessionCreationActivityName, mock.Anything, mock.Anything).Return(sessionCreationActivity).Once()
-	env.OnActivity(sessionCompletionActivityName, mock.Anything, mock.Anything).Return(errors.New("some random error")).Once()
+	// fail the activity and return non retryable error to avoid retry.
+	env.OnActivity(sessionCompletionActivityName, mock.Anything, mock.Anything).Return(NewApplicationError("some error", "", true, nil)).Once()
 	env.ExecuteWorkflow(workflowFn)
 
 	s.True(env.IsWorkflowCompleted())

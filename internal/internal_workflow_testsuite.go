@@ -67,6 +67,8 @@ const (
 	reservedTaskQueuePrefix = "/__temporal_sys/"
 	maxIDLengthLimit        = 1000
 	maxWorkflowTimeout      = 24 * time.Hour * 365 * 10
+
+	defaultMaximumAttemptsForUnitTest = 10
 )
 
 type (
@@ -1298,11 +1300,7 @@ func getRetryBackoffFromProtoRetryPolicy(prp *commonpb.RetryPolicy, attempt int3
 func ensureDefaultRetryPolicy(parameters *ExecuteActivityParams) {
 	// ensure default retry policy
 	if parameters.RetryPolicy == nil {
-		parameters.RetryPolicy = &commonpb.RetryPolicy{
-			InitialInterval:    common.DurationPtr(time.Second),
-			MaximumInterval:    common.DurationPtr(100 * time.Second),
-			BackoffCoefficient: 2,
-		}
+		parameters.RetryPolicy = &commonpb.RetryPolicy{}
 	}
 	if *parameters.RetryPolicy.InitialInterval == 0 {
 		parameters.RetryPolicy.InitialInterval = common.DurationPtr(time.Second)
@@ -1312,6 +1310,13 @@ func ensureDefaultRetryPolicy(parameters *ExecuteActivityParams) {
 	}
 	if parameters.RetryPolicy.BackoffCoefficient == 0 {
 		parameters.RetryPolicy.BackoffCoefficient = 2
+	}
+
+	// NOTE: the default MaximumAttempts for retry policy set by server is 0 which means unlimited retries.
+	// However, unlimited retry with automatic fast forward clock in test framework will cause the CPU to spin and test
+	// to go forever. So we need to set a reasonable default max attempts for unit test.
+	if parameters.RetryPolicy.MaximumAttempts == 0 {
+		parameters.RetryPolicy.MaximumAttempts = defaultMaximumAttemptsForUnitTest
 	}
 }
 
