@@ -2551,6 +2551,74 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 	s.Equal(4, attempt2Count)
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry_DefaultRetry() {
+	attemptCount1 := 0
+	activityFn := func(ctx context.Context) (string, error) {
+		attemptCount1++
+		info := GetActivityInfo(ctx)
+		fmt.Printf("attempt %d\n", info.Attempt)
+		if info.Attempt <= 2 {
+			return "", NewApplicationError("bad-luck", "", false, nil)
+		}
+		return "done1", nil
+	}
+	attemptCount2 := 0
+	activityFn2 := func(ctx context.Context) (string, error) {
+		attemptCount2++
+		info := GetActivityInfo(ctx)
+		fmt.Printf("attempt %d\n", info.Attempt)
+		if info.Attempt <= 2 {
+			return "", errors.New("some error")
+		}
+		return "done2", nil
+	}
+
+	workflowFn := func(ctx Context) (string, error) {
+		ao := ActivityOptions{
+			ScheduleToStartTimeout: time.Minute,
+			StartToCloseTimeout:    time.Minute,
+			// no retry policy, will use default one.
+		}
+		ctx = WithActivityOptions(ctx, ao)
+
+		var result string
+		err := ExecuteActivity(ctx, activityFn).Get(ctx, &result)
+		if err != nil {
+			return "", err
+		}
+
+		var result2 string
+		ao2 := ActivityOptions{
+			ScheduleToStartTimeout: time.Minute,
+			StartToCloseTimeout:    time.Minute,
+			RetryPolicy:            &RetryPolicy{}, // empty retry policy, will use default values
+		}
+		ctx = WithActivityOptions(ctx, ao2)
+		err = ExecuteActivity(ctx, activityFn2).Get(ctx, &result2)
+		if err != nil {
+			return "", err
+		}
+
+		return result + result2, nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(workflowFn)
+	env.RegisterActivity(activityFn)
+	env.RegisterActivity(activityFn2)
+
+	env.SetWorkflowRunTimeout(10 * time.Minute)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var result string
+	s.NoError(env.GetWorkflowResult(&result))
+	s.Equal("done1done2", result)
+	s.Equal(3, attemptCount1)
+	s.Equal(3, attemptCount2)
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry_NoInitialInterval() {
 	var attempts = 0
 
