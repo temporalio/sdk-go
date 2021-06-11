@@ -538,10 +538,10 @@ type (
 	// history only when the activity completes or "finally" timeouts/fails. And the started event only records the last
 	// started time. Because of that, to check an activity has started or not, you cannot rely on history events. Instead,
 	// you can use CLI to describe the workflow to see the status of the activity:
-	//     temporal --do <namespace> wf desc -w <wf-id>
+	//     tctl --ns <namespace> wf desc -w <wf-id>
 	RetryPolicy struct {
 		// Backoff interval for the first retry. If BackoffCoefficient is 1.0 then it is used for all retries.
-		// Required, no default value.
+		// If not set or set to 0, a default internal of 1s will be used.
 		InitialInterval time.Duration
 
 		// Coefficient used to calculate the next retry backoff interval.

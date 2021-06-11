@@ -28,6 +28,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -256,6 +257,10 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		workerStopChannel: make(chan struct{}),
 		dataConverter:     converter.GetDefaultDataConverter(),
 		runTimeout:        maxWorkflowTimeout,
+	}
+
+	if os.Getenv("TEMPORAL_DEBUG") != "" {
+		env.testTimeout = time.Hour * 24
 	}
 
 	// move forward the mock clock to start time.
@@ -985,8 +990,8 @@ func (env *testWorkflowEnvironmentImpl) GetContextPropagators() []ContextPropaga
 }
 
 func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityParams, callback ResultHandler) ActivityID {
+	ensureDefaultRetryPolicy(&parameters)
 	scheduleTaskAttr := &commandpb.ScheduleActivityTaskCommandAttributes{}
-
 	scheduleID := env.nextID()
 	if parameters.ActivityID == "" {
 		scheduleTaskAttr.ActivityId = getStringID(scheduleID)
@@ -1055,13 +1060,6 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 	attributes *commandpb.ScheduleActivityTaskCommandAttributes,
 	runTimeout time.Duration,
 ) error {
-
-	// if err := v.validateCrossNamespaceCall(
-	//	namespaceID,
-	//	targetNamespaceID,
-	// ); err != nil {
-	//	return err
-	// }
 
 	if attributes == nil {
 		return serviceerror.NewInvalidArgument("ScheduleActivityTaskCommandAttributes is not set on command.")
@@ -1234,11 +1232,6 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 	if parameters.ScheduleToCloseTimeout > 0 {
 		expireTime = env.Now().Add(parameters.ScheduleToCloseTimeout)
 	}
-	if parameters.RetryPolicy != nil {
-		if *parameters.RetryPolicy.InitialInterval == 0 {
-			*parameters.RetryPolicy.InitialInterval = time.Second
-		}
-	}
 
 	for {
 		var err error
@@ -1300,6 +1293,26 @@ func getRetryBackoffFromProtoRetryPolicy(prp *commonpb.RetryPolicy, attempt int3
 
 	p := fromProtoRetryPolicy(prp)
 	return getRetryBackoffWithNowTime(p, attempt, err, now, expireTime)
+}
+
+func ensureDefaultRetryPolicy(parameters *ExecuteActivityParams) {
+	// ensure default retry policy
+	if parameters.RetryPolicy == nil {
+		parameters.RetryPolicy = &commonpb.RetryPolicy{
+			InitialInterval:    common.DurationPtr(time.Second),
+			MaximumInterval:    common.DurationPtr(100 * time.Second),
+			BackoffCoefficient: 2,
+		}
+	}
+	if *parameters.RetryPolicy.InitialInterval == 0 {
+		parameters.RetryPolicy.InitialInterval = common.DurationPtr(time.Second)
+	}
+	if *parameters.RetryPolicy.MaximumInterval == 0 {
+		parameters.RetryPolicy.MaximumInterval = common.DurationPtr(*parameters.RetryPolicy.InitialInterval)
+	}
+	if parameters.RetryPolicy.BackoffCoefficient == 0 {
+		parameters.RetryPolicy.BackoffCoefficient = 2
+	}
 }
 
 func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LocalActivityResultHandler) LocalActivityID {
