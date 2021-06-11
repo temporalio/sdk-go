@@ -541,7 +541,7 @@ type (
 	//     tctl --ns <namespace> wf desc -w <wf-id>
 	RetryPolicy struct {
 		// Backoff interval for the first retry. If BackoffCoefficient is 1.0 then it is used for all retries.
-		// If not set or set to 0, a default internal of 1s will be used.
+		// If not set or set to 0, a default interval of 1s will be used.
 		InitialInterval time.Duration
 
 		// Coefficient used to calculate the next retry backoff interval.
