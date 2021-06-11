@@ -1302,10 +1302,11 @@ func ensureDefaultRetryPolicy(parameters *ExecuteActivityParams) {
 	if parameters.RetryPolicy == nil {
 		parameters.RetryPolicy = &commonpb.RetryPolicy{}
 	}
-	if *parameters.RetryPolicy.InitialInterval == 0 {
+
+	if parameters.RetryPolicy.InitialInterval == nil || *parameters.RetryPolicy.InitialInterval == 0 {
 		parameters.RetryPolicy.InitialInterval = common.DurationPtr(time.Second)
 	}
-	if *parameters.RetryPolicy.MaximumInterval == 0 {
+	if parameters.RetryPolicy.MaximumInterval == nil || *parameters.RetryPolicy.MaximumInterval == 0 {
 		parameters.RetryPolicy.MaximumInterval = common.DurationPtr(*parameters.RetryPolicy.InitialInterval)
 	}
 	if parameters.RetryPolicy.BackoffCoefficient == 0 {
