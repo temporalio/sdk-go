@@ -1777,10 +1777,9 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	if activityImplementation == nil {
 		// In case if activity is not registered we should report a failure to the server to allow activity retry
 		// instead of making it stuck on the same attempt.
-		supported := strings.Join(ath.getRegisteredActivityNames(), ", ")
 		activityMetricsScope.Counter(metrics.UnregisteredActivityInvocationCounter).Inc(1)
 		return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil,
-			NewActivityNotRegisteredError(activityType, supported),
+			NewActivityNotRegisteredError(activityType, ath.getRegisteredActivityNames()),
 			ath.dataConverter, ath.namespace), nil
 	}
 
