@@ -1421,20 +1421,22 @@ type deadlineTest struct {
 	ScheduleDuration time.Duration
 	StartTS          time.Time
 	StartDuration    time.Duration
+	ActivityType     string
 	err              error
 }
 
 func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 	deadlineTests := []deadlineTest{
-		{0, time.Now(), 3 * time.Second, time.Now(), 3 * time.Second, nil},
-		{0, time.Now(), 4 * time.Second, time.Now(), 3 * time.Second, nil},
-		{0, time.Now(), 3 * time.Second, time.Now(), 4 * time.Second, nil},
-		{0, time.Now().Add(-1 * time.Second), 1 * time.Second, time.Now(), 1 * time.Second, context.DeadlineExceeded},
-		{0, time.Now(), 1 * time.Second, time.Now().Add(-1 * time.Second), 1 * time.Second, context.DeadlineExceeded},
-		{0, time.Now().Add(-1 * time.Second), 1, time.Now().Add(-1 * time.Second), 1 * time.Second, context.DeadlineExceeded},
-		{1 * time.Second, time.Now(), 1 * time.Second, time.Now(), 1 * time.Second, context.DeadlineExceeded},
-		{1 * time.Second, time.Now(), 2 * time.Second, time.Now(), 1 * time.Second, context.DeadlineExceeded},
-		{1 * time.Second, time.Now(), 1 * time.Second, time.Now(), 2 * time.Second, context.DeadlineExceeded},
+		{0, time.Now(), 3 * time.Second, time.Now(), 3 * time.Second, "test", nil},
+		{0, time.Now(), 4 * time.Second, time.Now(), 3 * time.Second, "test", nil},
+		{0, time.Now(), 3 * time.Second, time.Now(), 4 * time.Second, "test", nil},
+		{0, time.Now(), 3 * time.Second, time.Now(), 4 * time.Second, "unknown", nil},
+		{0, time.Now().Add(-1 * time.Second), 1 * time.Second, time.Now(), 1 * time.Second, "test", context.DeadlineExceeded},
+		{0, time.Now(), 1 * time.Second, time.Now().Add(-1 * time.Second), 1 * time.Second, "test", context.DeadlineExceeded},
+		{0, time.Now().Add(-1 * time.Second), 1, time.Now().Add(-1 * time.Second), 1 * time.Second, "test", context.DeadlineExceeded},
+		{1 * time.Second, time.Now(), 1 * time.Second, time.Now(), 1 * time.Second, "test", context.DeadlineExceeded},
+		{1 * time.Second, time.Now(), 2 * time.Second, time.Now(), 1 * time.Second, "test", context.DeadlineExceeded},
+		{1 * time.Second, time.Now(), 1 * time.Second, time.Now(), 2 * time.Second, "test", context.DeadlineExceeded},
 	}
 	a := &testActivityDeadline{logger: t.logger}
 	registry := t.registry
@@ -1453,7 +1455,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 			WorkflowExecution: &commonpb.WorkflowExecution{
 				WorkflowId: "wID",
 				RunId:      "rID"},
-			ActivityType:           &commonpb.ActivityType{Name: "test"},
+			ActivityType:           &commonpb.ActivityType{Name: d.ActivityType},
 			ActivityId:             uuid.New(),
 			ScheduledTime:          &d.ScheduleTS,
 			ScheduleToCloseTimeout: &d.ScheduleDuration,

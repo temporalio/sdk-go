@@ -247,6 +247,17 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
 	)
 }
 
+func (ts *IntegrationTestSuite) TestActivityNotRegisteredRetry() {
+	var expected string
+	err := ts.executeWorkflow("test-activity-retry-on-error", ts.workflows.CallUnregisteredActivityRetry, &expected)
+	ts.NoError(err)
+	ts.EqualValues(expected, "done")
+
+	ts.assertMetricsCounters(
+		"temporal_unregistered_activity_invocation", 2,
+	)
+}
+
 func (ts *IntegrationTestSuite) TestActivityRetryOnTimeoutStableError() {
 	var expected []string
 	err := ts.executeWorkflow("test-activity-retry-on-timeout-stable-error", ts.workflows.RetryTimeoutStableErrorWorkflow, &expected)

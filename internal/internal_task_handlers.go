@@ -1775,9 +1775,13 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 
 	activityImplementation := ath.getActivity(activityType)
 	if activityImplementation == nil {
-		// Couldn't find the activity implementation.
+		// In case if activity is not registered we should report a failure to the server to allow activity retry
+		// instead of making it stuck on the same attempt.
 		supported := strings.Join(ath.getRegisteredActivityNames(), ", ")
-		return nil, fmt.Errorf("unable to find activityType=%v. Supported types: [%v]", activityType, supported)
+		activityMetricsScope.Counter(metrics.UnregisteredActivityInvocationCounter).Inc(1)
+		return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil,
+			NewActivityNotRegisteredError(activityType, supported),
+			ath.dataConverter, ath.namespace), nil
 	}
 
 	// panic handler

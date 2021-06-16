@@ -222,6 +222,12 @@ type (
 		cause        error
 	}
 
+	// ActivityNotRegisteredError is returned if worker doesn't support activity type.
+	ActivityNotRegisteredError struct {
+		activityType   string
+		supportedTypes string
+	}
+
 	temporalError struct {
 		messenger
 		originalFailure *failurepb.Failure
@@ -421,6 +427,11 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) er
 		WorkflowRunTimeout:       options.WorkflowRunTimeout,
 		WorkflowTaskTimeout:      options.WorkflowTaskTimeout,
 	}
+}
+
+// NewActivityNotRegisteredError creates a new ActivityNotRegisteredError.
+func NewActivityNotRegisteredError(activityType string, supportedTypes string) error {
+	return &ActivityNotRegisteredError{activityType: activityType, supportedTypes: supportedTypes}
 }
 
 // Error from error interface.
@@ -654,6 +665,10 @@ func (e *WorkflowExecutionError) Error() string {
 
 func (e *WorkflowExecutionError) Unwrap() error {
 	return e.cause
+}
+
+func (e *ActivityNotRegisteredError) Error() string {
+	return fmt.Sprintf("unable to find activityType=%v. Supported types: [%v]", e.activityType, e.supportedTypes)
 }
 
 func convertErrDetailsToPayloads(details converter.EncodedValues, dc converter.DataConverter) *commonpb.Payloads {
