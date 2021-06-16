@@ -457,6 +457,9 @@ type (
 		// when there are no active RPCs, Time and Timeout will be ignored and no
 		// keepalive pings will be sent.
 		KeepAlivePermitWithoutStream bool
+
+		// MaxPayloadSize is a number of bytes that gRPC would allow to travel to and from server. Defaults to 64 MB.
+		MaxPayloadSize int
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
