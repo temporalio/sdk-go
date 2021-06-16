@@ -66,8 +66,8 @@ const (
 	attemptSuffix = "_attempt"
 	// mb is a number of bytes in a megabyte
 	mb = 1024 * 1024
-	// maxPayloadSize is a maximum size of the payload that grpc client would allow.
-	maxPayloadSize = 64 * mb
+	// defaultMaxPayloadSize is a maximum size of the payload that grpc client would allow.
+	defaultMaxPayloadSize = 64 * mb
 )
 
 func dial(params dialParameters) (*grpc.ClientConn, error) {
@@ -81,6 +81,11 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 			grpc.WithInsecure(),
 			grpc.WithAuthority(params.UserConnectionOptions.Authority),
 		}
+	}
+
+	maxPayloadSize := defaultMaxPayloadSize
+	if params.UserConnectionOptions.MaxPayloadSize != 0 {
+		maxPayloadSize = params.UserConnectionOptions.MaxPayloadSize
 	}
 
 	// gRPC maintains connection pool inside grpc.ClientConn.
