@@ -64,6 +64,10 @@ const (
 
 	// attemptSuffix is a suffix added to the metric name for individual call attempts made to the server, which includes retries.
 	attemptSuffix = "_attempt"
+	// mb is a number of bytes in a megabyte
+	mb = 1024 * 1024
+	// defaultMaxPayloadSize is a maximum size of the payload that grpc client would allow.
+	defaultMaxPayloadSize = 64 * mb
 )
 
 func dial(params dialParameters) (*grpc.ClientConn, error) {
@@ -77,6 +81,11 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 			grpc.WithInsecure(),
 			grpc.WithAuthority(params.UserConnectionOptions.Authority),
 		}
+	}
+
+	maxPayloadSize := defaultMaxPayloadSize
+	if params.UserConnectionOptions.MaxPayloadSize != 0 {
+		maxPayloadSize = params.UserConnectionOptions.MaxPayloadSize
 	}
 
 	// gRPC maintains connection pool inside grpc.ClientConn.
@@ -98,6 +107,8 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 	}
 
 	opts = append(opts, securityOptions...)
+	opts = append(opts, grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(maxPayloadSize)))
+	opts = append(opts, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxPayloadSize)))
 
 	if params.UserConnectionOptions.EnableKeepAliveCheck {
 		// gRPC utilizes keep alive mechanism to detect dead connections in case if server didn't close them
