@@ -670,12 +670,12 @@ func (e *TestWorkflowEnvironment) SetOnLocalActivityCanceledListener(
 
 // IsWorkflowCompleted check if test is completed or not
 func (e *TestWorkflowEnvironment) IsWorkflowCompleted() bool {
-	return e.impl.isTestCompleted
+	return e.impl.isWorkflowCompleted
 }
 
 // GetWorkflowResult extracts the encoded result from test workflow, it returns error if the extraction failed.
 func (e *TestWorkflowEnvironment) GetWorkflowResult(valuePtr interface{}) error {
-	if !e.impl.isTestCompleted {
+	if !e.impl.isWorkflowCompleted {
 		panic("workflow is not completed")
 	}
 	if e.impl.testError != nil || e.impl.testResult == nil || valuePtr == nil {
