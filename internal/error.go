@@ -28,6 +28,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
@@ -220,6 +221,12 @@ type (
 		runID        string
 		workflowType string
 		cause        error
+	}
+
+	// ActivityNotRegisteredError is returned if worker doesn't support activity type.
+	ActivityNotRegisteredError struct {
+		activityType   string
+		supportedTypes []string
 	}
 
 	temporalError struct {
@@ -421,6 +428,11 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) er
 		WorkflowRunTimeout:       options.WorkflowRunTimeout,
 		WorkflowTaskTimeout:      options.WorkflowTaskTimeout,
 	}
+}
+
+// NewActivityNotRegisteredError creates a new ActivityNotRegisteredError.
+func NewActivityNotRegisteredError(activityType string, supportedTypes []string) error {
+	return &ActivityNotRegisteredError{activityType: activityType, supportedTypes: supportedTypes}
 }
 
 // Error from error interface.
@@ -654,6 +666,11 @@ func (e *WorkflowExecutionError) Error() string {
 
 func (e *WorkflowExecutionError) Unwrap() error {
 	return e.cause
+}
+
+func (e *ActivityNotRegisteredError) Error() string {
+	supported := strings.Join(e.supportedTypes, ", ")
+	return fmt.Sprintf("unable to find activityType=%v. Supported types: [%v]", e.activityType, supported)
 }
 
 func convertErrDetailsToPayloads(details converter.EncodedValues, dc converter.DataConverter) *commonpb.Payloads {

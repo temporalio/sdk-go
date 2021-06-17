@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"math/rand"
 	"strconv"
+	"strings"
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
@@ -117,6 +118,30 @@ func (w *Workflows) ActivityRetryOnError(ctx workflow.Context) ([]string, error)
 	}
 
 	return []string{"fail", "fail", "fail"}, nil
+}
+
+func (w *Workflows) CallUnregisteredActivityRetry(ctx workflow.Context) (string, error) {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptionsWithRetry())
+	startTime := workflow.Now(ctx)
+	err := workflow.ExecuteActivity(ctx, "Unknown").Get(ctx, nil)
+	if err == nil {
+		return "", fmt.Errorf("expected activity to fail but succeeded")
+	}
+
+	elapsed := workflow.Now(ctx).Sub(startTime)
+	if elapsed < 2*time.Second {
+		return "", fmt.Errorf("expected activity to be retried on failure, but it was not")
+	}
+
+	var applicationErr *temporal.ApplicationError
+	ok := errors.As(err, &applicationErr)
+	if !ok {
+		return "", fmt.Errorf("activity failed with unexpected error: %v", err)
+	}
+	if !strings.HasPrefix(applicationErr.Error(), "unable to find activityType=Unknown") {
+		return "", fmt.Errorf("unexpected error type")
+	}
+	return "done", nil
 }
 
 func (w *Workflows) ActivityRetryOptionsChange(ctx workflow.Context) ([]string, error) {
@@ -1140,6 +1165,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
 	worker.RegisterWorkflow(w.ActivityRetryOnError)
+	worker.RegisterWorkflow(w.CallUnregisteredActivityRetry)
 	worker.RegisterWorkflow(w.ActivityRetryOnHBTimeout)
 	worker.RegisterWorkflow(w.ActivityRetryOnTimeout)
 	worker.RegisterWorkflow(w.ActivityRetryOptionsChange)

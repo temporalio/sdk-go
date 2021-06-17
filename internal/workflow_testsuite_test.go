@@ -123,7 +123,7 @@ func TestUnregisteredActivity(t *testing.T) {
 	require.True(t, errors.As(err, &activityErr))
 
 	err = errors.Unwrap(activityErr)
-	var err1 *PanicError
+	var err1 *ApplicationError
 	require.True(t, errors.As(err, &err1))
 
 	require.True(t, strings.HasPrefix(err1.Error(), "unable to find activityType=unregistered"), err1.Error())
