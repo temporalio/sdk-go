@@ -916,16 +916,21 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 		}
 	}
 
-	// cancel child workflows if their ParentClosePolicy request so.
-	env.maybeCancelChildWorkflows()
+	// properly handle child workflows based on their ParentClosePolicy
+	env.handleParentClosePolicy()
 }
 
-func (env *testWorkflowEnvironmentImpl) maybeCancelChildWorkflows() {
+func (env *testWorkflowEnvironmentImpl) handleParentClosePolicy() {
 	for _, handle := range env.runningWorkflows {
 		if handle.env.parentEnv != nil &&
 			env.workflowInfo.WorkflowExecution.ID == handle.env.parentEnv.workflowInfo.WorkflowExecution.ID {
-			// current env is parent workflow of handle's workflow
-			if handle.params.ParentClosePolicy == enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL {
+
+			switch handle.params.ParentClosePolicy {
+			case enumspb.PARENT_CLOSE_POLICY_ABANDON:
+				// noop
+			case enumspb.PARENT_CLOSE_POLICY_TERMINATE:
+				handle.env.Complete(nil, newTerminatedError())
+			case enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL:
 				handle.env.cancelWorkflow(func(result *commonpb.Payloads, err error) {})
 			}
 		}
