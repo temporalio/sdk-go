@@ -993,6 +993,93 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Clock() {
 	s.Equal(expected, history)
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Abandon() {
+	helloActivityFn := func(ctx context.Context, name string) (string, error) {
+		return "Hello " + name + " from activity!", nil
+	}
+
+	childWorkflowFn := func(ctx Context, name string) (string, error) {
+		ao := ActivityOptions{StartToCloseTimeout: time.Minute}
+		ctx = WithActivityOptions(ctx, ao)
+		var activityResult string
+		if err := ExecuteActivity(ctx, helloActivityFn, name).Get(ctx, &activityResult); err != nil {
+			return "", err
+		}
+		return "Child workflow: " + activityResult, nil
+	}
+
+	parentWorkflowFn := func(ctx Context) error {
+		logger := GetLogger(ctx)
+
+		cwo := ChildWorkflowOptions{
+			ParentClosePolicy: enumspb.PARENT_CLOSE_POLICY_ABANDON,
+		}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+
+		childFuture := ExecuteChildWorkflow(ctx, childWorkflowFn, "World")
+		var childWE WorkflowExecution
+		err := childFuture.GetChildWorkflowExecution().Get(ctx, &childWE)
+		if err != nil {
+			logger.Error("Parent execution received child start failure.", "Error", err)
+			return err
+		}
+
+		logger.Info("Parent execution completed.", "Result", childWE)
+		// return before child workflow complete
+		return nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(helloActivityFn)
+	env.RegisterWorkflow(childWorkflowFn)
+	env.RegisterWorkflow(parentWorkflowFn)
+
+	env.OnActivity(helloActivityFn, mock.Anything, mock.Anything).Return("hello mock", nil)
+	env.ExecuteWorkflow(parentWorkflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	// verify that the mock is called once
+	env.AssertExpectations(s.T())
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_RequestCancel() {
+	var childResult error
+	childWorkflowFn := func(ctx Context) error {
+		// this would return cancelError if workflow is requested to cancel.
+		childResult = Sleep(ctx, time.Second)
+		return childResult
+	}
+
+	parentWorkflowFn := func(ctx Context) error {
+		cwo := ChildWorkflowOptions{
+			ParentClosePolicy: enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL,
+		}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		err := ExecuteChildWorkflow(ctx, childWorkflowFn).GetChildWorkflowExecution().Get(ctx, nil)
+		if err != nil {
+			return err
+		}
+		// return before child workflow complete
+		return nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(childWorkflowFn)
+	env.RegisterWorkflow(parentWorkflowFn)
+
+	env.ExecuteWorkflow(parentWorkflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	// verify child workflow is cancelled
+	s.True(IsCanceledError(childResult))
+
+	env.AssertExpectations(s.T())
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_MockActivityWait() {
 	workflowFn := func(ctx Context) error {
 		t1 := NewTimer(ctx, time.Hour)

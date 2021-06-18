@@ -190,13 +190,14 @@ type (
 		queryHandler          func(string, *commonpb.Payloads) (*commonpb.Payloads, error)
 		startedHandler        func(r WorkflowExecution, e error)
 
-		isTestCompleted bool
-		testResult      converter.EncodedValue
-		testError       error
-		doneChannel     chan struct{}
-		workerOptions   WorkerOptions
-		dataConverter   converter.DataConverter
-		runTimeout      time.Duration
+		isWorkflowCompleted bool
+		testResult          converter.EncodedValue
+		testError           error
+		doneChannel         chan struct{}
+		doneChannelClosed   bool
+		workerOptions       WorkerOptions
+		dataConverter       converter.DataConverter
+		runTimeout          time.Duration
 
 		heartbeatDetails *commonpb.Payloads
 
@@ -492,7 +493,7 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 	if env.runTimeout > 0 {
 		timeoutDuration := env.runTimeout + delayStart
 		env.registerDelayedCallback(func() {
-			if !env.isTestCompleted {
+			if !env.isWorkflowCompleted {
 				env.Complete(nil, ErrDeadlineExceeded)
 			}
 		}, timeoutDuration)
@@ -633,7 +634,7 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 }
 
 func (env *testWorkflowEnvironmentImpl) startWorkflowTask() {
-	if !env.isTestCompleted {
+	if !env.isWorkflowCompleted {
 		env.workflowDef.OnWorkflowTaskStarted()
 	}
 }
@@ -649,7 +650,7 @@ func (env *testWorkflowEnvironmentImpl) startMainLoop() {
 		return
 	}
 
-	for !env.isTestCompleted {
+	for !env.shouldStopEventLoop() {
 		// use non-blocking-select to check if there is anything pending in the main thread.
 		select {
 		case c := <-env.callbackChannel:
@@ -658,7 +659,7 @@ func (env *testWorkflowEnvironmentImpl) startMainLoop() {
 		default:
 			// nothing to process, main thread is blocked at this moment, now check if we should auto fire next timer
 			if !env.autoFireNextTimer() {
-				if env.isTestCompleted {
+				if env.shouldStopEventLoop() {
 					return
 				}
 
@@ -675,7 +676,24 @@ func (env *testWorkflowEnvironmentImpl) startMainLoop() {
 				}
 			}
 		}
+		env.maybeStopEventLoop()
 	}
+}
+
+func (env *testWorkflowEnvironmentImpl) shouldStopEventLoop() bool {
+	for _, handle := range env.runningWorkflows {
+		if env.workflowInfo.WorkflowExecution.ID == handle.env.workflowInfo.WorkflowExecution.ID {
+			// ignore root workflow
+			continue
+		}
+
+		if !handle.handled && (handle.params.ParentClosePolicy == enumspb.PARENT_CLOSE_POLICY_ABANDON ||
+			handle.params.ParentClosePolicy == enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL) {
+			return false
+		}
+	}
+
+	return env.isWorkflowCompleted
 }
 
 func (env *testWorkflowEnvironmentImpl) registerDelayedCallback(f func(), delayDuration time.Duration) {
@@ -812,8 +830,19 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelTimer(timerID TimerID) {
 	}, true)
 }
 
+func (env *testWorkflowEnvironmentImpl) maybeStopEventLoop() {
+	if !env.shouldStopEventLoop() {
+		return
+	}
+
+	if !env.doneChannelClosed {
+		close(env.doneChannel)
+		env.doneChannelClosed = true
+	}
+}
+
 func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err error) {
-	if env.isTestCompleted {
+	if env.isWorkflowCompleted {
 		env.logger.Debug("Workflow already completed.")
 		return
 	}
@@ -823,7 +852,7 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 	}
 
 	dc := env.GetDataConverter()
-	env.isTestCompleted = true
+	env.isWorkflowCompleted = true
 
 	if err != nil {
 		var continueAsNewErr *ContinueAsNewError
@@ -850,8 +879,6 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 	} else {
 		env.testResult = newEncodedValue(result, dc)
 	}
-
-	close(env.doneChannel)
 
 	if env.isChildWorkflow() {
 		// this is completion of child workflow
@@ -886,6 +913,21 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 					env.onChildWorkflowCompletedListener(env.workflowInfo, env.testResult, childWorkflowHandle.err)
 				}
 			}, true /* true to trigger parent workflow to resume to handle child workflow's result */)
+		}
+	}
+
+	// cancel child workflows if their ParentClosePolicy request so.
+	env.maybeCancelChildWorkflows()
+}
+
+func (env *testWorkflowEnvironmentImpl) maybeCancelChildWorkflows() {
+	for _, handle := range env.runningWorkflows {
+		if handle.env.parentEnv != nil &&
+			env.workflowInfo.WorkflowExecution.ID == handle.env.parentEnv.workflowInfo.WorkflowExecution.ID {
+			// current env is parent workflow of handle's workflow
+			if handle.params.ParentClosePolicy == enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL {
+				handle.env.cancelWorkflow(func(result *commonpb.Payloads, err error) {})
+			}
 		}
 	}
 }
@@ -2017,7 +2059,7 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(namespace, workfl
 	if childHandle, ok := env.runningWorkflows[workflowID]; ok {
 		// target workflow is a child
 		childEnv := childHandle.env
-		if childEnv.isTestCompleted {
+		if childEnv.isWorkflowCompleted {
 			// child already completed (NOTE: we have only one failed cause now)
 			err := newUnknownExternalWorkflowExecutionError()
 			callback(nil, err)
