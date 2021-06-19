@@ -194,7 +194,6 @@ type (
 		testResult          converter.EncodedValue
 		testError           error
 		doneChannel         chan struct{}
-		doneChannelClosed   bool
 		workerOptions       WorkerOptions
 		dataConverter       converter.DataConverter
 		runTimeout          time.Duration
@@ -650,6 +649,9 @@ func (env *testWorkflowEnvironmentImpl) startMainLoop() {
 		return
 	}
 
+	// notify all child workflows to exit their main loop
+	defer close(env.doneChannel)
+
 	for !env.shouldStopEventLoop() {
 		// use non-blocking-select to check if there is anything pending in the main thread.
 		select {
@@ -676,7 +678,6 @@ func (env *testWorkflowEnvironmentImpl) startMainLoop() {
 				}
 			}
 		}
-		env.maybeStopEventLoop()
 	}
 }
 
@@ -828,17 +829,6 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelTimer(timerID TimerID) {
 			timerHandle.env.onTimerCanceledListener(timerID.id)
 		}
 	}, true)
-}
-
-func (env *testWorkflowEnvironmentImpl) maybeStopEventLoop() {
-	if !env.shouldStopEventLoop() {
-		return
-	}
-
-	if !env.doneChannelClosed {
-		close(env.doneChannel)
-		env.doneChannelClosed = true
-	}
 }
 
 func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err error) {

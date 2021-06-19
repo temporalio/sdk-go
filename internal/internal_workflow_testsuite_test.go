@@ -1110,11 +1110,17 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Terminated() {
 		}
 		ctx = WithChildWorkflowOptions(ctx, cwo)
 		childFuture := ExecuteChildWorkflow(ctx, childWorkflowFn)
-		childFuture.GetChildWorkflowExecution().Get(ctx, nil)
-		childFuture.Get(ctx, nil) //wait until child workflow completed
+		err := childFuture.GetChildWorkflowExecution().Get(ctx, nil)
+		if err != nil {
+			return err
+		}
+		err = childFuture.Get(ctx, nil) //wait until child workflow completed
+		if err != nil {
+			return err
+		}
 
-		err := Sleep(ctx, time.Minute) // sleep longer than childOfChildWorkflowFn
-		return err                     // would expect this to be nil
+		err = Sleep(ctx, time.Minute) // sleep longer than childOfChildWorkflowFn
+		return err                    // would expect this to be nil
 	}
 
 	env := s.NewTestWorkflowEnvironment()
