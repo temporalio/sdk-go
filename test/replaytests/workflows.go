@@ -93,6 +93,10 @@ func Workflow2(ctx workflow.Context, name string) error {
 
 	_ = workflow.UpsertSearchAttributes(ctx, map[string]interface{}{"CustomKeywordField": "testkey"})
 
+	workflow.GetVersion(ctx, "test-change-2", workflow.DefaultVersion, 1)
+
+	workflow.GetVersion(ctx, "test-change-3", workflow.DefaultVersion, 1)
+
 	err := workflow.ExecuteActivity(ctx, helloworldActivity, name).Get(ctx, &helloworldResult)
 	if err != nil {
 		logger.Error("Activity failed.", "Error", err)

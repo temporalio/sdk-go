@@ -827,13 +827,15 @@ func (h *commandsHelper) getNextID() int64 {
 }
 
 func (h *commandsHelper) incrementNextCommandEventIDIfVersionMarker() {
-	if _, ok := h.versionMarkerLookup[h.nextCommandEventID]; ok {
+	_, ok := h.versionMarkerLookup[h.nextCommandEventID]
+	for ok {
 		// Remove the marker from the lookup map and increment nextCommandEventID by 2 because call to GetVersion
 		// results in 2 events in the history.  One is GetVersion marker event for changeID and change version, other
 		// is UpsertSearchableAttributes to keep track of executions using particular version of code.
 		delete(h.versionMarkerLookup, h.nextCommandEventID)
 		h.incrementNextCommandEventID()
 		h.incrementNextCommandEventID()
+		_, ok = h.versionMarkerLookup[h.nextCommandEventID]
 	}
 }
 
