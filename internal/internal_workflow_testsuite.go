@@ -194,7 +194,6 @@ type (
 		testResult          converter.EncodedValue
 		testError           error
 		doneChannel         chan struct{}
-		doneChannelClosed   bool
 		workerOptions       WorkerOptions
 		dataConverter       converter.DataConverter
 		runTimeout          time.Duration
@@ -650,6 +649,9 @@ func (env *testWorkflowEnvironmentImpl) startMainLoop() {
 		return
 	}
 
+	// notify all child workflows to exit their main loop
+	defer close(env.doneChannel)
+
 	for !env.shouldStopEventLoop() {
 		// use non-blocking-select to check if there is anything pending in the main thread.
 		select {
@@ -676,7 +678,6 @@ func (env *testWorkflowEnvironmentImpl) startMainLoop() {
 				}
 			}
 		}
-		env.maybeStopEventLoop()
 	}
 }
 
@@ -830,17 +831,6 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelTimer(timerID TimerID) {
 	}, true)
 }
 
-func (env *testWorkflowEnvironmentImpl) maybeStopEventLoop() {
-	if !env.shouldStopEventLoop() {
-		return
-	}
-
-	if !env.doneChannelClosed {
-		close(env.doneChannel)
-		env.doneChannelClosed = true
-	}
-}
-
 func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err error) {
 	if env.isWorkflowCompleted {
 		env.logger.Debug("Workflow already completed.")
@@ -916,16 +906,21 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 		}
 	}
 
-	// cancel child workflows if their ParentClosePolicy request so.
-	env.maybeCancelChildWorkflows()
+	// properly handle child workflows based on their ParentClosePolicy
+	env.handleParentClosePolicy()
 }
 
-func (env *testWorkflowEnvironmentImpl) maybeCancelChildWorkflows() {
+func (env *testWorkflowEnvironmentImpl) handleParentClosePolicy() {
 	for _, handle := range env.runningWorkflows {
 		if handle.env.parentEnv != nil &&
 			env.workflowInfo.WorkflowExecution.ID == handle.env.parentEnv.workflowInfo.WorkflowExecution.ID {
-			// current env is parent workflow of handle's workflow
-			if handle.params.ParentClosePolicy == enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL {
+
+			switch handle.params.ParentClosePolicy {
+			case enumspb.PARENT_CLOSE_POLICY_ABANDON:
+				// noop
+			case enumspb.PARENT_CLOSE_POLICY_TERMINATE:
+				handle.env.Complete(nil, newTerminatedError())
+			case enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL:
 				handle.env.cancelWorkflow(func(result *commonpb.Payloads, err error) {})
 			}
 		}

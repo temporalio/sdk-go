@@ -37,6 +37,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 
+	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/log"
 )
@@ -684,9 +685,31 @@ func (e *TestWorkflowEnvironment) GetWorkflowResult(valuePtr interface{}) error 
 	return e.impl.testResult.Get(valuePtr)
 }
 
+// GetWorkflowResultByID extracts the encoded result from workflow by ID, it returns error if the extraction failed.
+func (e *TestWorkflowEnvironment) GetWorkflowResultByID(workflowID string, valuePtr interface{}) error {
+	if workflowHandle, ok := e.impl.runningWorkflows[workflowID]; ok {
+		if !workflowHandle.env.isWorkflowCompleted {
+			panic("workflow is not completed")
+		}
+		if workflowHandle.env.testError != nil || workflowHandle.env.testResult == nil || valuePtr == nil {
+			return e.impl.testError
+		}
+		return e.impl.testResult.Get(valuePtr)
+	}
+	return serviceerror.NewNotFound(fmt.Sprintf("Workflow %v not exists", workflowID))
+}
+
 // GetWorkflowError return the error from test workflow
 func (e *TestWorkflowEnvironment) GetWorkflowError() error {
 	return e.impl.testError
+}
+
+// GetWorkflowErrorByID return the error from test workflow
+func (e *TestWorkflowEnvironment) GetWorkflowErrorByID(workflowID string) error {
+	if workflowHandle, ok := e.impl.runningWorkflows[workflowID]; ok {
+		return workflowHandle.env.testError
+	}
+	return serviceerror.NewNotFound(fmt.Sprintf("Workflow %v not exists", workflowID))
 }
 
 // CompleteActivity complete an activity that had returned activity.ErrResultPending error

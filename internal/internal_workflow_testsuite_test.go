@@ -1080,6 +1080,67 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_RequestCancel() {
 	env.AssertExpectations(s.T())
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Terminated() {
+	var checkedError error
+	childOfChildWorkflowFn := func(ctx Context) error {
+		// this will not return as we expect this workflow to be terminated, checkedError would be nil
+		checkedError = Sleep(ctx, time.Second)
+		return checkedError
+	}
+
+	childOfChildWorkflowID := "CHILD-OF-CHILD-ID"
+	childWorkflowFn := func(ctx Context) error {
+		cwo := ChildWorkflowOptions{
+			WorkflowID:        childOfChildWorkflowID,
+			ParentClosePolicy: enumspb.PARENT_CLOSE_POLICY_TERMINATE,
+		}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		err := ExecuteChildWorkflow(ctx, childOfChildWorkflowFn).GetChildWorkflowExecution().Get(ctx, nil)
+		if err != nil {
+			return err
+		}
+		// return before child workflow complete
+		return nil
+	}
+
+	childWorkflowID := "CHILD-WORKFLOW-ID"
+	rootWorkflowFn := func(ctx Context) error {
+		cwo := ChildWorkflowOptions{
+			WorkflowID: childWorkflowID,
+		}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		childFuture := ExecuteChildWorkflow(ctx, childWorkflowFn)
+		err := childFuture.GetChildWorkflowExecution().Get(ctx, nil)
+		if err != nil {
+			return err
+		}
+		err = childFuture.Get(ctx, nil) //wait until child workflow completed
+		if err != nil {
+			return err
+		}
+
+		err = Sleep(ctx, time.Minute) // sleep longer than childOfChildWorkflowFn
+		return err                    // would expect this to be nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(childOfChildWorkflowFn)
+	env.RegisterWorkflow(childWorkflowFn)
+	env.RegisterWorkflow(rootWorkflowFn)
+
+	env.ExecuteWorkflow(rootWorkflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	// root workflow no error
+	s.NoError(env.GetWorkflowError())
+	// child workflow no error
+	s.NoError(env.GetWorkflowErrorByID(childWorkflowID))
+	// verify childOfChild workflow is terminated
+	s.IsType(&TerminatedError{}, env.GetWorkflowErrorByID(childOfChildWorkflowID))
+	// verify checkedError is nil, because workflow is terminated so worker won't see the last workflow task.
+	s.Nil(checkedError)
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_MockActivityWait() {
 	workflowFn := func(ctx Context) error {
 		t1 := NewTimer(ctx, time.Hour)
