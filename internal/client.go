@@ -382,7 +382,7 @@ type (
 		Identity string
 
 		// Optional: Sets DataConverter to customize serialization/deserialization of arguments in Temporal
-		// default: defaultDataConverter, an combination of thriftEncoder and jsonEncoder
+		// default: defaultDataConverter, an combination of google protobuf converter, gogo protobuf converter and json converter
 		DataConverter converter.DataConverter
 
 		// Optional: Sets opentracing Tracer that is to be used to emit tracing information
