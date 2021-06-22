@@ -83,7 +83,7 @@ type (
 	dispatcher interface {
 		// ExecuteUntilAllBlocked executes coroutines one by one in deterministic order
 		// until all of them are completed or blocked on Channel or Selector or timeout is reached.
-		ExecuteUntilAllBlocked(timeout time.Duration) (err error)
+		ExecuteUntilAllBlocked(deadlockDetectionTimeout time.Duration) (err error)
 		// IsDone returns true when all of coroutines are completed
 		IsDone() bool
 		IsExecuting() bool
@@ -535,8 +535,8 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 	})
 }
 
-func (d *syncWorkflowDefinition) OnWorkflowTaskStarted(timeout time.Duration) {
-	executeDispatcher(d.rootCtx, d.dispatcher, timeout)
+func (d *syncWorkflowDefinition) OnWorkflowTaskStarted(deadlockDetectionTimeout time.Duration) {
+	executeDispatcher(d.rootCtx, d.dispatcher, deadlockDetectionTimeout)
 }
 
 func (d *syncWorkflowDefinition) StackTrace() string {
@@ -943,7 +943,7 @@ func (d *dispatcherImpl) newState(name string) *coroutineState {
 	return c
 }
 
-func (d *dispatcherImpl) ExecuteUntilAllBlocked(timeout time.Duration) (err error) {
+func (d *dispatcherImpl) ExecuteUntilAllBlocked(deadlockDetectionTimeout time.Duration) (err error) {
 	d.mutex.Lock()
 	if d.closed {
 		panic("dispatcher is closed")
@@ -965,7 +965,7 @@ func (d *dispatcherImpl) ExecuteUntilAllBlocked(timeout time.Duration) (err erro
 			if !c.closed.Load() {
 				// TODO: Support handling of panic in a coroutine by dispatcher.
 				// TODO: Dump all outstanding coroutines if one of them panics
-				c.call(timeout)
+				c.call(deadlockDetectionTimeout)
 			}
 			// c.call() can close the context so check again
 			if c.closed.Load() {
