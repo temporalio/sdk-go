@@ -116,7 +116,7 @@ type (
 		// Application level code must be executed from this function only.
 		// Execute call as well as callbacks called from WorkflowEnvironment functions can only schedule callbacks
 		// which can be executed from OnWorkflowTaskStarted().
-		OnWorkflowTaskStarted()
+		OnWorkflowTaskStarted(timeout time.Duration)
 		// StackTrace of all coroutines owned by the Dispatcher instance.
 		StackTrace() string
 		Close()

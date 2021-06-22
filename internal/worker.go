@@ -156,6 +156,9 @@ type (
 		// Optional: If set overwrites the client level Identify value.
 		// default: client identity
 		Identity string
+
+		// Optional: If set defines maximum amount of time that workflow task will be allowed to run. Defaults to 1 sec.
+		DeadlockDetectionTimeout time.Duration
 	}
 )
 
