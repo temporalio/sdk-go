@@ -622,6 +622,21 @@ func (s *WorkflowTestSuiteUnitTest) Test_SideEffect() {
 	s.Nil(env.GetWorkflowError())
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_LongRunningSideEffect() {
+	workflowFn := func(ctx Context) error {
+		// Sleep for 2 seconds would trigger deadlock detection timeout if we wouldn't override it below.
+		time.Sleep(2 * time.Second)
+		return nil
+	}
+	env := s.NewTestWorkflowEnvironment()
+	// Override deadlock detection timeout to allow 2 second sleep.
+	env.SetWorkerOptions(WorkerOptions{DeadlockDetectionTimeout: 3 * time.Second})
+	env.RegisterWorkflow(workflowFn)
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.Nil(env.GetWorkflowError())
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_SideEffect_WithVersion() {
 	workflowFn := func(ctx Context) error {
 		ctx = WithActivityOptions(ctx, s.activityOptions)
