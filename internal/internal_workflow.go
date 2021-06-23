@@ -29,8 +29,6 @@ package internal
 import (
 	"errors"
 	"fmt"
-	"math"
-	"os"
 	"reflect"
 	"runtime"
 	"strings"
@@ -84,8 +82,8 @@ type (
 	// Dispatcher is a container of a set of coroutines.
 	dispatcher interface {
 		// ExecuteUntilAllBlocked executes coroutines one by one in deterministic order
-		// until all of them are completed or blocked on Channel or Selector
-		ExecuteUntilAllBlocked() (err error)
+		// until all of them are completed or blocked on Channel or Selector or timeout is reached.
+		ExecuteUntilAllBlocked(deadlockDetectionTimeout time.Duration) (err error)
 		// IsDone returns true when all of coroutines are completed
 		IsDone() bool
 		IsExecuting() bool
@@ -262,7 +260,6 @@ var _ WaitGroup = (*waitGroupImpl)(nil)
 var _ dispatcher = (*dispatcherImpl)(nil)
 
 var stackBuf [100000]byte
-var debugMode = os.Getenv("TEMPORAL_DEBUG") != ""
 
 // Pointer to pointer to workflow result
 func getWorkflowResultPointerPointer(ctx Context) **workflowResult {
@@ -538,8 +535,8 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 	})
 }
 
-func (d *syncWorkflowDefinition) OnWorkflowTaskStarted() {
-	executeDispatcher(d.rootCtx, d.dispatcher)
+func (d *syncWorkflowDefinition) OnWorkflowTaskStarted(deadlockDetectionTimeout time.Duration) {
+	executeDispatcher(d.rootCtx, d.dispatcher, deadlockDetectionTimeout)
 }
 
 func (d *syncWorkflowDefinition) StackTrace() string {
@@ -564,9 +561,9 @@ func newDispatcher(rootCtx Context, interceptor *workflowEnvironmentInterceptor,
 
 // executeDispatcher executed coroutines in the calling thread and calls workflow completion callbacks
 // if root workflow function returned
-func executeDispatcher(ctx Context, dispatcher dispatcher) {
+func executeDispatcher(ctx Context, dispatcher dispatcher, timeout time.Duration) {
 	env := getWorkflowEnvironment(ctx)
-	panicErr := dispatcher.ExecuteUntilAllBlocked()
+	panicErr := dispatcher.ExecuteUntilAllBlocked(timeout)
 	if panicErr != nil {
 		env.Complete(nil, panicErr)
 		return
@@ -862,16 +859,21 @@ func (s *coroutineState) unblocked() {
 	s.keptBlocked = false
 }
 
-func (s *coroutineState) call() {
+func (s *coroutineState) call(timeout time.Duration) {
 	s.unblock <- func(status string, stackDepth int) bool {
 		return false // unblock
 	}
 
-	deadlockDetectorTimeout := time.Second
-	if debugMode {
-		deadlockDetectorTimeout = math.MaxInt64
+	// Defaults are populated in the worker options during worker startup, but test environment
+	// may have no default value for the deadlock detection timeout, so we also need to set it here for
+	// backwards compatibility.
+	if timeout == 0 {
+		timeout = defaultDeadlockDetectionTimeout
+		if debugMode {
+			timeout = unlimitedDeadlockDetectionTimeout
+		}
 	}
-	deadlockTimer := time.NewTimer(deadlockDetectorTimeout)
+	deadlockTimer := time.NewTimer(timeout)
 	defer func() { deadlockTimer.Stop() }()
 
 	select {
@@ -941,7 +943,7 @@ func (d *dispatcherImpl) newState(name string) *coroutineState {
 	return c
 }
 
-func (d *dispatcherImpl) ExecuteUntilAllBlocked() (err error) {
+func (d *dispatcherImpl) ExecuteUntilAllBlocked(deadlockDetectionTimeout time.Duration) (err error) {
 	d.mutex.Lock()
 	if d.closed {
 		panic("dispatcher is closed")
@@ -963,7 +965,7 @@ func (d *dispatcherImpl) ExecuteUntilAllBlocked() (err error) {
 			if !c.closed.Load() {
 				// TODO: Support handling of panic in a coroutine by dispatcher.
 				// TODO: Dump all outstanding coroutines if one of them panics
-				c.call()
+				c.call(deadlockDetectionTimeout)
 			}
 			// c.call() can close the context so check again
 			if c.closed.Load() {

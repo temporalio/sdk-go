@@ -263,6 +263,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 
 	if os.Getenv("TEMPORAL_DEBUG") != "" {
 		env.testTimeout = time.Hour * 24
+		env.workerOptions.DeadlockDetectionTimeout = unlimitedDeadlockDetectionTimeout
 	}
 
 	// move forward the mock clock to start time.
@@ -634,7 +635,7 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 
 func (env *testWorkflowEnvironmentImpl) startWorkflowTask() {
 	if !env.isWorkflowCompleted {
-		env.workflowDef.OnWorkflowTaskStarted()
+		env.workflowDef.OnWorkflowTaskStarted(env.workerOptions.DeadlockDetectionTimeout)
 	}
 }
 
