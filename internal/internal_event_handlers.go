@@ -128,11 +128,12 @@ type (
 		isReplay              bool // flag to indicate if workflow is in replay mode
 		enableLoggingInReplay bool // flag to indicate if workflow should enable logging in replay mode
 
-		metricsScope       tally.Scope
-		registry           *registry
-		dataConverter      converter.DataConverter
-		contextPropagators []ContextPropagator
-		tracer             opentracing.Tracer
+		metricsScope             tally.Scope
+		registry                 *registry
+		dataConverter            converter.DataConverter
+		contextPropagators       []ContextPropagator
+		tracer                   opentracing.Tracer
+		deadlockDetectionTimeout time.Duration
 	}
 
 	localActivityTask struct {
@@ -178,22 +179,24 @@ func newWorkflowExecutionEventHandler(
 	dataConverter converter.DataConverter,
 	contextPropagators []ContextPropagator,
 	tracer opentracing.Tracer,
+	deadlockDetectionTimeout time.Duration,
 ) workflowExecutionEventHandler {
 	context := &workflowEnvironmentImpl{
-		workflowInfo:          workflowInfo,
-		commandsHelper:        newCommandsHelper(),
-		sideEffectResult:      make(map[int64]*commonpb.Payloads),
-		mutableSideEffect:     make(map[string]*commonpb.Payloads),
-		changeVersions:        make(map[string]Version),
-		pendingLaTasks:        make(map[string]*localActivityTask),
-		unstartedLaTasks:      make(map[string]struct{}),
-		openSessions:          make(map[string]*SessionInfo),
-		completeHandler:       completeHandler,
-		enableLoggingInReplay: enableLoggingInReplay,
-		registry:              registry,
-		dataConverter:         dataConverter,
-		contextPropagators:    contextPropagators,
-		tracer:                tracer,
+		workflowInfo:             workflowInfo,
+		commandsHelper:           newCommandsHelper(),
+		sideEffectResult:         make(map[int64]*commonpb.Payloads),
+		mutableSideEffect:        make(map[string]*commonpb.Payloads),
+		changeVersions:           make(map[string]Version),
+		pendingLaTasks:           make(map[string]*localActivityTask),
+		unstartedLaTasks:         make(map[string]struct{}),
+		openSessions:             make(map[string]*SessionInfo),
+		completeHandler:          completeHandler,
+		enableLoggingInReplay:    enableLoggingInReplay,
+		registry:                 registry,
+		dataConverter:            dataConverter,
+		contextPropagators:       contextPropagators,
+		tracer:                   tracer,
+		deadlockDetectionTimeout: deadlockDetectionTimeout,
 	}
 	context.logger = ilog.NewReplayLogger(
 		log.With(logger,
@@ -801,7 +804,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		weh.SetCurrentReplayTime(common.TimeValue(event.GetEventTime()))
 		// Reset the counter on command helper used for generating ID for commands
 		weh.commandsHelper.setCurrentWorkflowTaskStartedEventID(event.GetEventId())
-		weh.workflowDefinition.OnWorkflowTaskStarted()
+		weh.workflowDefinition.OnWorkflowTaskStarted(weh.deadlockDetectionTimeout)
 
 	case enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT:
 		// No Operation
@@ -918,7 +921,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	// workflow task started. So always call OnWorkflowTaskStarted on the last event.
 	// Don't call for EventType_WorkflowTaskStarted as it was already called when handling it.
 	if isLast && event.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED {
-		weh.workflowDefinition.OnWorkflowTaskStarted()
+		weh.workflowDefinition.OnWorkflowTaskStarted(weh.deadlockDetectionTimeout)
 	}
 
 	return nil
@@ -1175,7 +1178,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 		weh.SetCurrentReplayTime(lamd.ReplayTime)
 
 		// resume workflow execution after apply local activity result
-		weh.workflowDefinition.OnWorkflowTaskStarted()
+		weh.workflowDefinition.OnWorkflowTaskStarted(weh.deadlockDetectionTimeout)
 	}
 
 	return nil

@@ -81,6 +81,11 @@ const (
 
 	defaultMaxConcurrentSessionExecutionSize = 1000 // Large concurrent session execution size (1k)
 
+	defaultDeadlockDetectionTimeout = time.Second // By default kill workflow tasks that are running more than 1 sec.
+	// Unlimited deadlock detection timeout is used when we want to allow workflow tasks to run indefinitely, such
+	// as during debugging.
+	unlimitedDeadlockDetectionTimeout = math.MaxInt64
+
 	testTagsContextKey = "temporal-testTags"
 )
 
@@ -195,10 +200,15 @@ type (
 
 		Tracer opentracing.Tracer
 
+		// DeadlockDetectionTimeout specifies workflow task timeout.
+		DeadlockDetectionTimeout time.Duration
+
 		// Pointer to the shared worker cache
 		cache *WorkerCache
 	}
 )
+
+var debugMode = os.Getenv("TEMPORAL_DEBUG") != ""
 
 // newWorkflowWorker returns an instance of the workflow worker.
 func newWorkflowWorker(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, ppMgr pressurePointMgr, registry *registry) *workflowWorker {
@@ -1281,6 +1291,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		WorkerStopTimeout:                     options.WorkerStopTimeout,
 		ContextPropagators:                    client.contextPropagators,
 		Tracer:                                client.tracer,
+		DeadlockDetectionTimeout:              options.DeadlockDetectionTimeout,
 		cache:                                 cache,
 	}
 
@@ -1455,6 +1466,12 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 	}
 	if options.MaxConcurrentSessionExecutionSize == 0 {
 		options.MaxConcurrentSessionExecutionSize = defaultMaxConcurrentSessionExecutionSize
+	}
+	if options.DeadlockDetectionTimeout == 0 {
+		if debugMode {
+			options.DeadlockDetectionTimeout = unlimitedDeadlockDetectionTimeout
+		}
+		options.DeadlockDetectionTimeout = defaultDeadlockDetectionTimeout
 	}
 }
 
