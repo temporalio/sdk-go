@@ -873,9 +873,14 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 	executionStartTime := time.Now()
 	// Process the activity task.
 	request, err := atp.taskHandler.Execute(atp.taskQueueName, activityTask.task)
+	// err is returned in case of internal failure, such as unable to propagate context or context timeout.
 	if err != nil {
 		activityMetricsScope.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
 		return err
+	}
+	// in case if activity execution failed, request should be of type RespondActivityTaskFailedRequest
+	if _, ok := request.(*workflowservice.RespondActivityTaskFailedRequest); ok {
+		activityMetricsScope.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
 	}
 	activityMetricsScope.Timer(metrics.ActivityExecutionLatency).Record(time.Since(executionStartTime))
 
