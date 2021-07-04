@@ -228,6 +228,10 @@ func (c *lru) putInternal(key string, value interface{}, allowUpdate bool) (inte
 	if len(c.byKey) == c.maxSize {
 		oldest := c.byAccess.Back().Value.(*cacheEntry)
 
+		if oldest == entry {
+			return nil, nil
+		}
+
 		if oldest.refCount > 0 {
 			// Cache is full with pinned elements
 			// revert the insert and return

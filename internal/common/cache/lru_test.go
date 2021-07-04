@@ -66,6 +66,14 @@ func TestLRU(t *testing.T) {
 	assert.Nil(t, cache.Get("A"))
 }
 
+func TestLRUSingle(t *testing.T) {
+	cache := NewLRU(1)
+
+	cache.Put("A", "Foo")
+	assert.Equal(t, "Foo", cache.Get("A"))
+	assert.Equal(t, 1, cache.Size())
+}
+
 func TestLRUWithTTL(t *testing.T) {
 	cache := New(5, &Options{
 		TTL: time.Millisecond * 100,
