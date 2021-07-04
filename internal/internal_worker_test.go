@@ -2444,3 +2444,127 @@ func TestIsNonRetriableError(t *testing.T) {
 		require.Equal(t, test.expected, isNonRetriableError(test.err))
 	}
 }
+
+func testRepro(ctx Context) error {
+	Sleep(ctx, time.Second)
+
+	encodedRandom := SideEffect(ctx, func(ctx Context) interface{} {
+		return 100
+	})
+
+	var random int
+	encodedRandom.Get(&random)
+	if random == 100 {
+		ao := ActivityOptions{
+			ScheduleToStartTimeout: time.Second,
+			StartToCloseTimeout:    time.Second,
+		}
+		ctx = WithActivityOptions(ctx, ao)
+
+		a1F := ExecuteActivity(ctx, "A1", "first")
+		a2F := ExecuteActivity(ctx, "A2", "second")
+		a3F := ExecuteActivity(ctx, "A3", "third")
+
+		var A1Result string
+		a1F.Get(ctx, &A1Result)
+
+		err := a3F.Get(ctx, nil)
+		if err == nil {
+			getLogger().Info("activity A3 completed.")
+		}
+
+		err = a2F.Get(ctx, nil)
+		if err != nil {
+			getLogger().Info("activity A2 completed.")
+		}
+
+	}
+
+	getLogger().Info("workflow completed.")
+	return nil
+}
+
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_SideEffect() {
+	taskQueue := "taskQueue1"
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &commonpb.WorkflowType{Name: "testRepro"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
+		}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
+		createTestEventTimerStarted(5, 5),
+		createTestEventTimerFired(6, 5),
+		createTestEventWorkflowTaskScheduled(7, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(8),
+		createTestEventWorkflowTaskCompleted(9, &historypb.WorkflowTaskCompletedEventAttributes{}),
+		createTestEventSideEffectMarker(10, 9, 1, 100),
+
+		createTestEventActivityTaskScheduled(11, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "11",
+			ActivityType: &commonpb.ActivityType{Name: "A1"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+		}),
+		createTestEventActivityTaskScheduled(12, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "12",
+			ActivityType: &commonpb.ActivityType{Name: "A2"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+		}),
+		createTestEventActivityTaskScheduled(13, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "13",
+			ActivityType: &commonpb.ActivityType{Name: "A3"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+		}),
+		createTestEventActivityTaskStarted(14, &historypb.ActivityTaskStartedEventAttributes{
+			ScheduledEventId: 11,
+		}),
+		createTestEventActivityTaskCompleted(15, &historypb.ActivityTaskCompletedEventAttributes{
+			ScheduledEventId: 11,
+			StartedEventId:   14,
+		}),
+		createTestEventWorkflowTaskScheduled(16, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(17),
+		createTestEventWorkflowTaskCompleted(18, &historypb.WorkflowTaskCompletedEventAttributes{
+			ScheduledEventId: 16,
+			StartedEventId:   17,
+		}),
+		createTestEventActivityTaskStarted(19, &historypb.ActivityTaskStartedEventAttributes{
+			ScheduledEventId: 13,
+		}),
+		createTestEventActivityTaskCompleted(20, &historypb.ActivityTaskCompletedEventAttributes{
+			ScheduledEventId: 13,
+			StartedEventId:   19,
+		}),
+		createTestEventWorkflowTaskScheduled(21, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventActivityTaskStarted(22, &historypb.ActivityTaskStartedEventAttributes{
+			ScheduledEventId: 12,
+		}),
+		createTestEventActivityTaskCompleted(23, &historypb.ActivityTaskCompletedEventAttributes{
+			ScheduledEventId: 12,
+			StartedEventId:   22,
+		}),
+		createTestEventWorkflowTaskTimedOut(24, &historypb.WorkflowTaskTimedOutEventAttributes{
+			ScheduledEventId: 21,
+			StartedEventId:   0,
+			TimeoutType:      enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START,
+		}),
+		createTestEventWorkflowTaskScheduled(25, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(26),
+		createTestEventWorkflowTaskCompleted(27, &historypb.WorkflowTaskCompletedEventAttributes{
+			ScheduledEventId: 25,
+			StartedEventId:   26,
+		}),
+		createTestEventWorkflowExecutionCompleted(28, &historypb.WorkflowExecutionCompletedEventAttributes{
+			WorkflowTaskCompletedEventId: 27,
+		}),
+	}
+
+	history := &historypb.History{Events: testEvents}
+	logger := getLogger()
+	replayer := NewWorkflowReplayer()
+	replayer.RegisterWorkflow(testRepro)
+	err := replayer.ReplayWorkflowHistory(logger, history)
+	require.NoError(s.T(), err)
+}

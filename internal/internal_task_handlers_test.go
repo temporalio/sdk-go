@@ -241,6 +241,13 @@ func createTestEventWorkflowTaskFailed(eventID int64, attr *historypb.WorkflowTa
 		Attributes: &historypb.HistoryEvent_WorkflowTaskFailedEventAttributes{WorkflowTaskFailedEventAttributes: attr}}
 }
 
+func createTestEventWorkflowTaskTimedOut(eventID int64, attr *historypb.WorkflowTaskTimedOutEventAttributes) *historypb.HistoryEvent {
+	return &historypb.HistoryEvent{
+		EventId:    eventID,
+		EventType:  enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT,
+		Attributes: &historypb.HistoryEvent_WorkflowTaskTimedOutEventAttributes{WorkflowTaskTimedOutEventAttributes: attr}}
+}
+
 func createTestEventSignalExternalWorkflowExecutionFailed(eventID int64, attr *historypb.SignalExternalWorkflowExecutionFailedEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
@@ -317,6 +324,33 @@ func createTestEventVersionMarker(eventID int64, workflowTaskCompletedID int64, 
 				Details: map[string]*commonpb.Payloads{
 					versionMarkerChangeIDName: changeIDPayload,
 					versionMarkerDataName:     versionPayload,
+				},
+				WorkflowTaskCompletedEventId: workflowTaskCompletedID,
+			},
+		},
+	}
+}
+
+func createTestEventSideEffectMarker(eventID int64, workflowTaskCompletedID int64, sideEffectID int64, result int) *historypb.HistoryEvent {
+	sideEffectIDPayload, err := converter.GetDefaultDataConverter().ToPayloads(sideEffectID)
+	if err != nil {
+		panic(err)
+	}
+
+	resultPayload, err := converter.GetDefaultDataConverter().ToPayloads(result)
+	if err != nil {
+		panic(err)
+	}
+
+	return &historypb.HistoryEvent{
+		EventId:   eventID,
+		EventType: enumspb.EVENT_TYPE_MARKER_RECORDED,
+		Attributes: &historypb.HistoryEvent_MarkerRecordedEventAttributes{
+			MarkerRecordedEventAttributes: &historypb.MarkerRecordedEventAttributes{
+				MarkerName: sideEffectMarkerName,
+				Details: map[string]*commonpb.Payloads{
+					sideEffectMarkerIDName:   sideEffectIDPayload,
+					sideEffectMarkerDataName: resultPayload,
 				},
 				WorkflowTaskCompletedEventId: workflowTaskCompletedID,
 			},
