@@ -648,6 +648,24 @@ func (ts *IntegrationTestSuite) TestCancelChildWorkflow() {
 	ts.EqualValues(expected, ts.activities.invoked())
 }
 
+func (ts *IntegrationTestSuite) TestCantStartChildAfterBeingCancelled() {
+	const wfID = "test-cant-start-child-after-cancel"
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions(wfID), ts.workflows.StartingChildAfterBeingCanceled)
+	ts.NotNil(run)
+	ts.NoError(err)
+
+	ts.Nil(ts.client.CancelWorkflow(ctx, wfID, ""))
+
+	err = run.Get(ctx, nil)
+	ts.Error(err)
+	var canceledErr *temporal.CanceledError
+	ts.True(errors.As(err, &canceledErr))
+}
+
 func (ts *IntegrationTestSuite) TestCancelChildWorkflowUnusualTransitions() {
 	wfid := "test-cancel-child-workflow-unusual-transitions"
 	run, err := ts.client.ExecuteWorkflow(context.Background(),
