@@ -360,6 +360,14 @@ func (ts *IntegrationTestSuite) TestCascadingCancellation() {
 	ts.NotNil(run)
 	ts.NoError(err)
 
+	// Need to give workflow time to start its child
+	for {
+		_, err := ts.client.DescribeWorkflowExecution(ctx, childWorkflowID, "")
+		if err == nil {
+			break
+		}
+	}
+
 	ts.Nil(ts.client.CancelWorkflow(ctx, workflowID, ""))
 	err = run.Get(ctx, nil)
 	ts.Error(err)
