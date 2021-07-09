@@ -735,8 +735,8 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		executionFuture:  executionFuture.(*futureImpl),
 	}
 
-	// Immediately return if the context is already cancelled without spawning the child workflow
-	if ctx.Err() == ErrCanceled {
+	// Immediately return if the context has an error without spawning the child workflow
+	if ctx.Err() != nil {
 		executionSettable.Set(nil, ctx.Err())
 		mainSettable.Set(nil, ctx.Err())
 		return result
