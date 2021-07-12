@@ -734,6 +734,14 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		decodeFutureImpl: mainFuture.(*decodeFutureImpl),
 		executionFuture:  executionFuture.(*futureImpl),
 	}
+
+	// Immediately return if the context has an error without spawning the child workflow
+	if ctx.Err() != nil {
+		executionSettable.Set(nil, ctx.Err())
+		mainSettable.Set(nil, ctx.Err())
+		return result
+	}
+
 	workflowOptionsFromCtx := getWorkflowEnvOptions(ctx)
 	dc := WithWorkflowContext(ctx, workflowOptionsFromCtx.DataConverter)
 	env := getWorkflowEnvironment(ctx)

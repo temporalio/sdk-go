@@ -360,6 +360,24 @@ func (ts *IntegrationTestSuite) TestCascadingCancellation() {
 	ts.NotNil(run)
 	ts.NoError(err)
 
+	// Need to give workflow time to start its child
+	started := make(chan bool, 1)
+	go func() {
+		for {
+			_, err := ts.client.DescribeWorkflowExecution(ctx, childWorkflowID, "")
+			if err == nil {
+				break
+			}
+		}
+		started <- true
+	}()
+	select {
+	case <-started:
+		// Nothing to do
+	case <-time.After(5 * time.Second):
+		ts.Fail("Timed out waiting for child workflow to start")
+	}
+
 	ts.Nil(ts.client.CancelWorkflow(ctx, workflowID, ""))
 	err = run.Get(ctx, nil)
 	ts.Error(err)
@@ -646,6 +664,24 @@ func (ts *IntegrationTestSuite) TestCancelChildWorkflow() {
 	err := ts.executeWorkflow("test-cancel-child-workflow", ts.workflows.CancelChildWorkflow, &expected)
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
+}
+
+func (ts *IntegrationTestSuite) TestCantStartChildAfterBeingCancelled() {
+	const wfID = "test-cant-start-child-after-cancel"
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions(wfID), ts.workflows.StartingChildAfterBeingCanceled)
+	ts.NotNil(run)
+	ts.NoError(err)
+
+	ts.Nil(ts.client.CancelWorkflow(ctx, wfID, ""))
+
+	err = run.Get(ctx, nil)
+	ts.Error(err)
+	var canceledErr *temporal.CanceledError
+	ts.True(errors.As(err, &canceledErr))
 }
 
 func (ts *IntegrationTestSuite) TestCancelChildWorkflowUnusualTransitions() {

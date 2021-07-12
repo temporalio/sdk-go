@@ -596,6 +596,21 @@ func (w *Workflows) CancelChildWorkflow(ctx workflow.Context) ([]string, error) 
 	return []string{"sleep", "toUpper"}, nil
 }
 
+func (w *Workflows) StartingChildAfterBeingCanceled(ctx workflow.Context) (bool, error) {
+	// schedule a timer, which will be cancelled, but ignore that cancel
+	_ = workflow.Sleep(ctx, 5*time.Minute)
+
+	ctx = workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
+		WorkflowExecutionTimeout: time.Second * 30,
+	})
+	childErr := workflow.ExecuteChildWorkflow(ctx, w.sleep, time.Second).Get(ctx, nil)
+	if childErr != nil {
+		return false, childErr
+	}
+
+	return true, nil
+}
+
 func (w *Workflows) CancelActivityImmediately(ctx workflow.Context) ([]string, error) {
 	activityCtx1, cancelFunc1 := workflow.WithCancel(ctx)
 	activityCtx1 = workflow.WithActivityOptions(activityCtx1, workflow.ActivityOptions{
@@ -1177,6 +1192,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.CancelActivity)
 	worker.RegisterWorkflow(w.CancelActivityImmediately)
 	worker.RegisterWorkflow(w.CancelChildWorkflow)
+	worker.RegisterWorkflow(w.StartingChildAfterBeingCanceled)
 	worker.RegisterWorkflow(w.CancelTimer)
 	worker.RegisterWorkflow(w.CancelTimerAfterActivity)
 	worker.RegisterWorkflow(w.CascadingCancellation)
