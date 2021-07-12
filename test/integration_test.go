@@ -361,11 +361,21 @@ func (ts *IntegrationTestSuite) TestCascadingCancellation() {
 	ts.NoError(err)
 
 	// Need to give workflow time to start its child
-	for {
-		_, err := ts.client.DescribeWorkflowExecution(ctx, childWorkflowID, "")
-		if err == nil {
-			break
+	started := make(chan bool, 1)
+	go func() {
+		for {
+			_, err := ts.client.DescribeWorkflowExecution(ctx, childWorkflowID, "")
+			if err == nil {
+				break
+			}
 		}
+		started <- true
+	}()
+	select {
+	case _ = <-started:
+		// Nothing to do
+	case <-time.After(5 * time.Second):
+		ts.Fail("Timed out waiting for child workflow to start")
 	}
 
 	ts.Nil(ts.client.CancelWorkflow(ctx, workflowID, ""))
