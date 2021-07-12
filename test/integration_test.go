@@ -372,7 +372,7 @@ func (ts *IntegrationTestSuite) TestCascadingCancellation() {
 		started <- true
 	}()
 	select {
-	case _ = <-started:
+	case <-started:
 		// Nothing to do
 	case <-time.After(5 * time.Second):
 		ts.Fail("Timed out waiting for child workflow to start")
