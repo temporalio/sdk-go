@@ -910,7 +910,7 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 		return reportErr
 	}
 
-	activityMetricsScope.Timer(metrics.ActivityEndToEndLatency).Record(time.Since(activityTask.pollStartTime))
+	activityMetricsScope.Timer(metrics.ActivityEndToEndLatency).Record(time.Since(common.TimeValue(activityTask.task.GetScheduledTime())))
 	return nil
 }
 
