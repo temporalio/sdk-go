@@ -457,6 +457,13 @@ func (c *MockCallWrapper) Never() *MockCallWrapper {
 	return c
 }
 
+// Maybe indicates that the mock call is optional. Not calling an optional method
+// will not cause an error while asserting expectations.
+func (c *MockCallWrapper) Maybe() *MockCallWrapper {
+	c.call.Maybe()
+	return c
+}
+
 // Run sets a handler to be called before returning. It can be used when mocking a method such as unmarshalers that
 // takes a pointer to a struct and sets properties in such struct.
 func (c *MockCallWrapper) Run(fn func(args mock.Arguments)) *MockCallWrapper {
