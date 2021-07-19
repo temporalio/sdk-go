@@ -11,7 +11,7 @@ services:
           - cassandra
 
   temporal:
-    image: temporalio/auto-setup:latest
+    image: temporaliotest/auto-setup:latest
     ports:
       - "7233:7233"
       - "7234:7234"
