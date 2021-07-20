@@ -70,7 +70,7 @@ func valueToString(v reflect.Value) string {
 		return valueToString(v.Elem())
 	case reflect.Struct:
 		if v.CanInterface() {
-			anyToString(v.Interface())
+			return anyToString(v.Interface())
 		}
 	case reflect.Invalid:
 		return ""
