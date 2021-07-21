@@ -953,7 +953,11 @@ func (d *dispatcherImpl) ExecuteUntilAllBlocked(deadlockDetectionTimeout time.Du
 	}
 	d.executing = true
 	d.mutex.Unlock()
-	defer func() { d.executing = false }()
+	defer func() {
+		d.mutex.Lock()
+		d.executing = false
+		d.mutex.Unlock()
+	}()
 	allBlocked := false
 	// Keep executing until at least one goroutine made some progress
 	for !allBlocked {
@@ -992,10 +996,14 @@ func (d *dispatcherImpl) ExecuteUntilAllBlocked(deadlockDetectionTimeout time.Du
 }
 
 func (d *dispatcherImpl) IsDone() bool {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
 	return len(d.coroutines) == 0
 }
 
 func (d *dispatcherImpl) IsExecuting() bool {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
 	return d.executing
 }
 
