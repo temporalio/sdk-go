@@ -1082,21 +1082,21 @@ func (aw *WorkflowReplayer) ReplayWorkflowHistoryFromJSONFile(logger log.Logger,
 // lastEventID(inclusive).
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
-func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(loger log.Logger, jsonfileName string, lastEventID int64) error {
+func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(logger log.Logger, jsonfileName string, lastEventID int64) error {
 	history, err := extractHistoryFromFile(jsonfileName, lastEventID)
 
 	if err != nil {
 		return err
 	}
 
-	if loger == nil {
-		loger = ilog.NewDefaultLogger()
+	if logger == nil {
+		logger = ilog.NewDefaultLogger()
 	}
 
-	controller := gomock.NewController(ilog.NewTestReporter(loger))
+	controller := gomock.NewController(ilog.NewTestReporter(logger))
 	service := workflowservicemock.NewMockWorkflowServiceClient(controller)
 
-	return aw.replayWorkflowHistory(loger, service, ReplayNamespace, history)
+	return aw.replayWorkflowHistory(logger, service, ReplayNamespace, history)
 }
 
 // ReplayWorkflowExecution replays workflow execution loading it from Temporal service.
@@ -1130,7 +1130,7 @@ func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service
 	return aw.replayWorkflowHistory(logger, service, namespace, hResponse.History)
 }
 
-func (aw *WorkflowReplayer) replayWorkflowHistory(loger log.Logger, service workflowservice.WorkflowServiceClient, namespace string, history *historypb.History) error {
+func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service workflowservice.WorkflowServiceClient, namespace string, history *historypb.History) error {
 	taskQueue := "ReplayTaskQueue"
 	events := history.Events
 	if events == nil {
@@ -1181,7 +1181,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(loger log.Logger, service work
 		Namespace: namespace,
 		TaskQueue: taskQueue,
 		Identity:  "replayID",
-		Logger:    loger,
+		Logger:    logger,
 		cache:     cache,
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
