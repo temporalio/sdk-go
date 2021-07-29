@@ -463,27 +463,15 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 	activityMetricsScope.Counter(metrics.LocalActivityTotalCounter).Inc(1)
 
 	ae := activityExecutor{name: activityType, fn: task.params.ActivityFn}
-
-	rootCtx := lath.userContext
-	if rootCtx == nil {
-		rootCtx = context.Background()
-	}
-
-	workflowTypeLocal := task.params.WorkflowInfo.WorkflowType
-
-	ctx := context.WithValue(rootCtx, activityEnvContextKey, &activityEnvironment{
-		workflowType:      &workflowTypeLocal,
-		workflowNamespace: task.params.WorkflowInfo.Namespace,
-		taskQueue:         task.params.WorkflowInfo.TaskQueueName,
-		activityType:      ActivityType{Name: activityType},
-		activityID:        fmt.Sprintf("%v", task.activityID),
-		workflowExecution: task.params.WorkflowInfo.WorkflowExecution,
-		logger:            lath.logger,
-		metricsScope:      lath.metricsScope, // Use base scope to make sure down stream callers does not have unexpected tags
-		isLocalActivity:   true,
-		dataConverter:     lath.dataConverter,
-		attempt:           task.attempt,
+	traceLog(func() {
+		lath.logger.Debug("Processing new local activity task",
+			tagWorkflowID, task.params.WorkflowInfo.WorkflowExecution.ID,
+			tagRunID, task.params.WorkflowInfo.WorkflowExecution.RunID,
+			tagActivityType, activityType,
+			tagAttempt, task.attempt,
+		)
 	})
+	ctx := WithLocalActivityTask(lath.userContext, task, lath.logger, lath.metricsScope, lath.dataConverter)
 
 	// propagate context information into the local activity activity context from the headers
 	for _, ctxProp := range lath.contextPropagators {
