@@ -113,3 +113,12 @@ func helloworldActivity(ctx context.Context, name string) (string, error) {
 	logger.Info("helloworld activity started")
 	return "Hello " + name + "!", nil
 }
+
+func TimerWf(ctx workflow.Context) error {
+	defer func() {
+		// Produce another timer after being cancelled
+		newCtx, _ := workflow.NewDisconnectedContext(ctx)
+		_ = workflow.NewTimer(newCtx, 10*time.Minute).Get(ctx, nil)
+	}()
+	return workflow.NewTimer(ctx, time.Minute*10).Get(ctx, nil)
+}
