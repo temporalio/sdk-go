@@ -862,6 +862,25 @@ func (h *commandsHelper) addCommand(command commandStateMachine) {
 	h.incrementNextCommandEventID()
 }
 
+// This really should not exist, but is unavoidable without totally redesigning the Go SDK to avoid
+// doing event number counting. EX: Because a workflow execution cancel requested event calls a callback
+// on timers that immediately cancels them, we will queue up a cancel timer command even though that timer firing
+// might be in the same workflow task. In practice this only seems to happen during unhandled command events.
+func (h *commandsHelper) removeCommand(commandId commandID) {
+	// This is also wrong, the problem this solves could technically happen to anything that becomes
+	// cancelled as a result of workflow execution cancellation, where there is also an event resolving
+	// that thing in the same logical WFT.
+	if commandId.commandType != commandTypeCancelTimer {
+		panic("remove command should only be called for cancel timer")
+	}
+	orderedCmdEl, ok := h.commands[commandId]
+	if ok {
+		delete(h.commands, commandId)
+		h.orderedCommands.Remove(orderedCmdEl)
+		h.commandsCancelledDuringWFCancellation--
+	}
+}
+
 func (h *commandsHelper) scheduleActivityTask(
 	scheduleID int64,
 	attributes *commandpb.ScheduleActivityTaskCommandAttributes,
@@ -1203,6 +1222,10 @@ func (h *commandsHelper) cancelTimer(timerID TimerID) commandStateMachine {
 
 func (h *commandsHelper) handleTimerClosed(timerID string) commandStateMachine {
 	command := h.getCommand(makeCommandID(commandTypeTimer, timerID))
+	// If, for whatever reason, we were going to send a timer cancel command, don't do that anymore
+	// since we already know the timer is resolved.
+	possibleCancelId := makeCommandID(commandTypeCancelTimer, timerID)
+	h.removeCommand(possibleCancelId)
 	command.handleCompletionEvent()
 	return command
 }

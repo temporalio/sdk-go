@@ -1,0 +1,240 @@
+{
+ "events": [
+  {
+   "eventId": "1",
+   "eventTime": "2021-07-30T22:03:05.112492265Z",
+   "eventType": "WorkflowExecutionStarted",
+   "taskId": "1048580",
+   "workflowExecutionStartedEventAttributes": {
+    "workflowType": {
+     "name": "TimerWf"
+    },
+    "taskQueue": {
+     "name": "tq-1-TestIntegrationSuite/TestWorkflowCancelledDuringTimer",
+     "kind": "Normal"
+    },
+    "input": {
+     "payloads": [
+      {
+       "metadata": {
+        "encoding": "anNvbi9wbGFpbg=="
+       },
+       "data": "NjAwMDAwMDAwMDAw"
+      }
+     ]
+    },
+    "workflowExecutionTimeout": "15s",
+    "workflowRunTimeout": "15s",
+    "workflowTaskTimeout": "1s",
+    "originalExecutionRunId": "d092d6cb-78a2-4d76-840b-6013be8e2ebe",
+    "identity": "286715@monolith-linux@",
+    "firstExecutionRunId": "d092d6cb-78a2-4d76-840b-6013be8e2ebe",
+    "attempt": 1,
+    "workflowExecutionExpirationTime": "2021-07-30T22:03:20.112Z",
+    "firstWorkflowTaskBackoff": "0s",
+    "header": {
+
+    }
+   }
+  },
+  {
+   "eventId": "2",
+   "eventTime": "2021-07-30T22:03:05.112508754Z",
+   "eventType": "WorkflowTaskScheduled",
+   "taskId": "1048581",
+   "workflowTaskScheduledEventAttributes": {
+    "taskQueue": {
+     "name": "tq-1-TestIntegrationSuite/TestWorkflowCancelledDuringTimer",
+     "kind": "Normal"
+    },
+    "startToCloseTimeout": "1s",
+    "attempt": 1
+   }
+  },
+  {
+   "eventId": "3",
+   "eventTime": "2021-07-30T22:03:05.132403406Z",
+   "eventType": "WorkflowTaskStarted",
+   "taskId": "1048586",
+   "workflowTaskStartedEventAttributes": {
+    "scheduledEventId": "2",
+    "identity": "286715@monolith-linux@",
+    "requestId": "c5a5db09-b934-44e3-8c2a-29bff38e3696"
+   }
+  },
+  {
+   "eventId": "4",
+   "eventTime": "2021-07-30T22:03:05.144908289Z",
+   "eventType": "WorkflowTaskCompleted",
+   "taskId": "1048589",
+   "workflowTaskCompletedEventAttributes": {
+    "scheduledEventId": "2",
+    "startedEventId": "3",
+    "identity": "286715@monolith-linux@",
+    "binaryChecksum": "6d97883f1b4aa5a6aa03d913195a257b"
+   }
+  },
+  {
+   "eventId": "5",
+   "eventTime": "2021-07-30T22:03:05.144927472Z",
+   "eventType": "TimerStarted",
+   "taskId": "1048590",
+   "timerStartedEventAttributes": {
+    "timerId": "5",
+    "startToFireTimeout": "600s",
+    "workflowTaskCompletedEventId": "4"
+   }
+  },
+  {
+   "eventId": "6",
+   "eventTime": "2021-07-30T22:03:06.123384405Z",
+   "eventType": "WorkflowExecutionCancelRequested",
+   "taskId": "1048592",
+   "workflowExecutionCancelRequestedEventAttributes": {
+    "identity": "286715@monolith-linux@"
+   }
+  },
+  {
+   "eventId": "7",
+   "eventTime": "2021-07-30T22:03:06.123391665Z",
+   "eventType": "WorkflowTaskScheduled",
+   "taskId": "1048593",
+   "workflowTaskScheduledEventAttributes": {
+    "taskQueue": {
+     "name": "monolith-linux:30502cad-17ae-4044-9b76-78583778f9ed",
+     "kind": "Sticky"
+    },
+    "startToCloseTimeout": "1s",
+    "attempt": 1
+   }
+  },
+  {
+   "eventId": "8",
+   "eventTime": "2021-07-30T22:03:06.127836827Z",
+   "eventType": "WorkflowTaskStarted",
+   "taskId": "1048597",
+   "workflowTaskStartedEventAttributes": {
+    "scheduledEventId": "7",
+    "identity": "286715@monolith-linux@",
+    "requestId": "e1241eda-84e0-44f0-b0c4-47fca91b7cc3"
+   }
+  },
+  {
+   "eventId": "9",
+   "eventTime": "2021-07-30T22:03:06.134087067Z",
+   "eventType": "WorkflowTaskFailed",
+   "taskId": "1048600",
+   "workflowTaskFailedEventAttributes": {
+    "scheduledEventId": "7",
+    "startedEventId": "8",
+    "cause": "UnhandledCommand",
+    "failure": {
+     "message": "UnhandledCommand",
+     "source": "",
+     "stackTrace": "",
+     "serverFailureInfo": {
+      "nonRetryable": true
+     }
+    },
+    "identity": "1@atlas-golang-worker-agent-canary-d577e8f-688cd788f-zjgwm@",
+    "baseRunId": "",
+    "newRunId": "",
+    "forkEventVersion": "0",
+    "binaryChecksum": "e430dbe928d10946286c34f5fe299b3b"
+   }
+  },
+  {
+   "eventId": "10",
+   "eventTime": "2021-07-30T22:03:06.2Z",
+   "eventType": "WorkflowTaskScheduled",
+   "taskId": "1048593",
+   "workflowTaskScheduledEventAttributes": {
+    "taskQueue": {
+     "name": "monolith-linux:30502cad-17ae-4044-9b76-78583778f9ed",
+     "kind": "Sticky"
+    },
+    "startToCloseTimeout": "1s",
+    "attempt": 1
+   }
+  },
+  {
+   "eventId": "11",
+   "eventTime": "2021-07-30T22:03:06.3Z",
+   "eventType": "WorkflowTaskStarted",
+   "taskId": "1048597",
+   "workflowTaskStartedEventAttributes": {
+    "scheduledEventId": "10",
+    "identity": "286715@monolith-linux@",
+    "requestId": "e1241eda-84e0-44f0-b0c4-47fca91b7cc3"
+   }
+  },
+  {
+   "eventId": "12",
+   "eventTime": "2021-07-30T22:03:05.4Z",
+   "eventType": "WorkflowTaskTimedOut",
+   "taskId": "1048589",
+   "workflowTaskTimedOutEventAttributes": {
+    "scheduledEventId": "10",
+    "startedEventId": "11"
+   }
+  },
+  {
+   "eventId": "13",
+   "eventTime": "2021-07-30T22:03:05.5Z",
+   "eventType": "TimerFired",
+   "taskId": "1048590",
+   "timerFiredEventAttributes": {
+    "timerId": "5",
+    "startedEventId": "5"
+   }
+  },
+  {
+   "eventId": "14",
+   "eventTime": "2021-07-30T22:03:05.6Z",
+   "eventType": "WorkflowTaskScheduled",
+   "taskId": "1048581",
+   "workflowTaskScheduledEventAttributes": {
+    "taskQueue": {
+     "name": "tq-1-TestIntegrationSuite/TestWorkflowCancelledDuringTimer",
+     "kind": "Normal"
+    },
+    "startToCloseTimeout": "1s",
+    "attempt": 1
+   }
+  },
+  {
+   "eventId": "15",
+   "eventTime": "2021-07-30T22:03:05.7Z",
+   "eventType": "WorkflowTaskStarted",
+   "taskId": "1048586",
+   "workflowTaskStartedEventAttributes": {
+    "scheduledEventId": "14",
+    "identity": "286715@monolith-linux@",
+    "requestId": "c5a5db09-b934-44e3-8c2a-29bff38e3696"
+   }
+  },
+  {
+   "eventId": "16",
+   "eventTime": "2021-07-30T22:03:05.7Z",
+   "eventType": "WorkflowTaskCompleted",
+   "taskId": "1048589",
+   "workflowTaskCompletedEventAttributes": {
+    "scheduledEventId": "14",
+    "startedEventId": "15",
+    "identity": "286715@monolith-linux@",
+    "binaryChecksum": "6d97883f1b4aa5a6aa03d913195a257b"
+   }
+  },
+  {
+   "eventId": "17",
+   "eventTime": "2021-07-30T22:03:05.8Z",
+   "eventType": "TimerStarted",
+   "taskId": "1048590",
+   "timerStartedEventAttributes": {
+    "timerId": "17",
+    "startToFireTimeout": "600s",
+    "workflowTaskCompletedEventId": "16"
+   }
+  }
+ ]
+}
