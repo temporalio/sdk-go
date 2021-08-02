@@ -58,7 +58,7 @@ steps:
     command: "make fossa-init fossa-analyze fossa-test"
     retry:
       automatic:
-        limit: 1
+        limit: 2
     plugins:
       - docker-compose#v3.1.0:
           run: fossa
