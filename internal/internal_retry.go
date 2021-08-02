@@ -34,7 +34,7 @@ import (
 )
 
 const (
-	retryServiceOperationInitialInterval    = 100 * time.Millisecond
+	retryServiceOperationInitialInterval    = 200 * time.Millisecond
 	retryServiceOperationExpirationInterval = 60 * time.Second
 	retryServiceOperationBackoff            = 2
 )
