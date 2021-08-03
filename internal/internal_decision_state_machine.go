@@ -866,16 +866,16 @@ func (h *commandsHelper) addCommand(command commandStateMachine) {
 // doing event number counting. EX: Because a workflow execution cancel requested event calls a callback
 // on timers that immediately cancels them, we will queue up a cancel timer command even though that timer firing
 // might be in the same workflow task. In practice this only seems to happen during unhandled command events.
-func (h *commandsHelper) removeCommand(commandId commandID) {
+func (h *commandsHelper) removeCommand(commandID commandID) {
 	// This is also wrong, the problem this solves could technically happen to anything that becomes
 	// cancelled as a result of workflow execution cancellation, where there is also an event resolving
 	// that thing in the same logical WFT.
-	if commandId.commandType != commandTypeCancelTimer {
+	if commandID.commandType != commandTypeCancelTimer {
 		panic("remove command should only be called for cancel timer")
 	}
-	orderedCmdEl, ok := h.commands[commandId]
+	orderedCmdEl, ok := h.commands[commandID]
 	if ok {
-		delete(h.commands, commandId)
+		delete(h.commands, commandID)
 		h.orderedCommands.Remove(orderedCmdEl)
 		h.commandsCancelledDuringWFCancellation--
 	}
@@ -1224,8 +1224,8 @@ func (h *commandsHelper) handleTimerClosed(timerID string) commandStateMachine {
 	command := h.getCommand(makeCommandID(commandTypeTimer, timerID))
 	// If, for whatever reason, we were going to send a timer cancel command, don't do that anymore
 	// since we already know the timer is resolved.
-	possibleCancelId := makeCommandID(commandTypeCancelTimer, timerID)
-	h.removeCommand(possibleCancelId)
+	possibleCancelID := makeCommandID(commandTypeCancelTimer, timerID)
+	h.removeCommand(possibleCancelID)
 	command.handleCompletionEvent()
 	return command
 }
