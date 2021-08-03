@@ -34,6 +34,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 type testStruct struct {
@@ -364,7 +365,19 @@ func TestProtoJsonPayloadConverter_FromPayload_Errors(t *testing.T) {
 	var wt7 interface{}
 	err = pc.FromPayload(payload, &wt7)
 	require.Error(t, err)
-	assert.Equal(t, "type: <nil>: type doesn't implement proto.Message", err.Error())
+	assert.Equal(t, "value type: interface {}: must be a concrete type, not interface", err.Error())
+	assert.True(t, errors.Is(err, ErrValuePtrMustConcreteType))
+
+	var wt8 proto.Message
+	err = pc.FromPayload(payload, &wt8)
+	require.Error(t, err)
+	assert.Equal(t, "value type: protoreflect.ProtoMessage: must be a concrete type, not interface", err.Error())
+	assert.True(t, errors.Is(err, ErrValuePtrMustConcreteType))
+
+	var wt9 string
+	err = pc.FromPayload(payload, &wt9)
+	require.Error(t, err)
+	assert.Equal(t, "type: *string: type doesn't implement proto.Message", err.Error())
 	assert.True(t, errors.Is(err, ErrTypeNotImplementProtoMessage))
 }
 
