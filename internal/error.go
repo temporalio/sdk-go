@@ -636,6 +636,30 @@ func (e *ActivityError) Unwrap() error {
 	return e.cause
 }
 
+func (e *ActivityError) ScheduledEventID() int64 {
+	return e.scheduledEventID
+}
+
+func (e *ActivityError) StartedEventID() int64 {
+	return e.startedEventID
+}
+
+func (e *ActivityError) Identity() string {
+	return e.identity
+}
+
+func (e *ActivityError) ActivityType() *commonpb.ActivityType {
+	return e.activityType
+}
+
+func (e *ActivityError) ActivityID() string {
+	return e.activityID
+}
+
+func (e *ActivityError) RetryState() enumspb.RetryState {
+	return e.retryState
+}
+
 // Error from error interface
 func (e *ChildWorkflowExecutionError) Error() string {
 	msg := fmt.Sprintf("%s (type: %s, workflowID: %s, runID: %s, initiatedEventID: %d, startedEventID: %d)",
