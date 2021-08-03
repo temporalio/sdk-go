@@ -34,9 +34,9 @@ import (
 )
 
 const (
-	retryServiceOperationInitialInterval    = 20 * time.Millisecond
+	retryServiceOperationInitialInterval    = 200 * time.Millisecond
 	retryServiceOperationExpirationInterval = 60 * time.Second
-	retryServiceOperationBackoff            = 1.2
+	retryServiceOperationBackoff            = 2
 )
 
 // Creates a retry policy which allows appropriate retries for the deadline passed in as context.
