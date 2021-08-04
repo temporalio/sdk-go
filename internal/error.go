@@ -636,6 +636,36 @@ func (e *ActivityError) Unwrap() error {
 	return e.cause
 }
 
+// ScheduledEventID returns event id of the scheduled workflow task corresponding to the activity.
+func (e *ActivityError) ScheduledEventID() int64 {
+	return e.scheduledEventID
+}
+
+// StartedEventID returns event id of the started workflow task corresponding to the activity.
+func (e *ActivityError) StartedEventID() int64 {
+	return e.startedEventID
+}
+
+// Identity returns identity of the worker that attempted activity execution.
+func (e *ActivityError) Identity() string {
+	return e.identity
+}
+
+// ActivityType returns declared type of the activity.
+func (e *ActivityError) ActivityType() *commonpb.ActivityType {
+	return e.activityType
+}
+
+// ActivityID return assigned identifier for the activity.
+func (e *ActivityError) ActivityID() string {
+	return e.activityID
+}
+
+// RetryState returns details on why activity failed.
+func (e *ActivityError) RetryState() enumspb.RetryState {
+	return e.retryState
+}
+
 // Error from error interface
 func (e *ChildWorkflowExecutionError) Error() string {
 	msg := fmt.Sprintf("%s (type: %s, workflowID: %s, runID: %s, initiatedEventID: %d, startedEventID: %d)",
