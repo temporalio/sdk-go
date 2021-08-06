@@ -866,12 +866,10 @@ func (h *commandsHelper) addCommand(command commandStateMachine) {
 // doing event number counting. EX: Because a workflow execution cancel requested event calls a callback
 // on timers that immediately cancels them, we will queue up a cancel timer command even though that timer firing
 // might be in the same workflow task. In practice this only seems to happen during unhandled command events.
-func (h *commandsHelper) removeCommand(commandID commandID) {
-	// This is also wrong, the problem this solves could technically happen to anything that becomes
-	// cancelled as a result of workflow execution cancellation, where there is also an event resolving
-	// that thing in the same logical WFT.
-	if commandID.commandType != commandTypeCancelTimer {
-		panic("remove command should only be called for cancel timer")
+func (h *commandsHelper) removeCancelOfResolvedCommand(commandID commandID) {
+	// Ensure this isn't misused for non-cancel commands
+	if commandID.commandType != commandTypeCancelTimer && commandID.commandType != commandTypeRequestCancelActivityTask {
+		panic("removeCancelOfResolvedCommand should only be called for cancel timer / activity")
 	}
 	orderedCmdEl, ok := h.commands[commandID]
 	if ok {
@@ -900,6 +898,10 @@ func (h *commandsHelper) requestCancelActivityTask(activityID string) commandSta
 
 func (h *commandsHelper) handleActivityTaskClosed(activityID string, scheduledEventID int64) commandStateMachine {
 	command := h.getCommand(makeCommandID(commandTypeActivity, activityID))
+	// If, for whatever reason, we were going to send an activity cancel request, don't do that anymore
+	// since we already know the activity is resolved.
+	possibleCancelID := makeCommandID(commandTypeRequestCancelActivityTask, activityID)
+	h.removeCancelOfResolvedCommand(possibleCancelID)
 	command.handleCompletionEvent()
 	delete(h.scheduledEventIDToActivityID, scheduledEventID)
 	return command
@@ -1225,7 +1227,7 @@ func (h *commandsHelper) handleTimerClosed(timerID string) commandStateMachine {
 	// If, for whatever reason, we were going to send a timer cancel command, don't do that anymore
 	// since we already know the timer is resolved.
 	possibleCancelID := makeCommandID(commandTypeCancelTimer, timerID)
-	h.removeCommand(possibleCancelID)
+	h.removeCancelOfResolvedCommand(possibleCancelID)
 	command.handleCompletionEvent()
 	return command
 }
