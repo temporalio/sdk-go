@@ -98,7 +98,7 @@ func (c *ProtoPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr 
 	}
 
 	value := originalValue
-	// In case if original value is of value type (i.e. commonpb.WorkflowType), create a pointer to it.
+	// If original value is of value type (i.e. commonpb.WorkflowType), create a pointer to it.
 	if originalValue.Kind() != reflect.Ptr {
 		value = pointerTo(originalValue.Interface())
 	}
@@ -110,7 +110,7 @@ func (c *ProtoPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr 
 		return fmt.Errorf("type: %T: %w", protoValue, ErrTypeNotImplementProtoMessage)
 	}
 
-	// In case if original value is nil, create new instance.
+	// If original value is nil, create new instance.
 	if originalValue.Kind() == reflect.Ptr && originalValue.IsNil() {
 		value = newOfSameType(originalValue)
 		protoValue = value.Interface()
