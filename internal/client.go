@@ -36,6 +36,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/internal/common/backoff"
 	"google.golang.org/grpc"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
@@ -57,8 +58,9 @@ const (
 	// sessions in the workflow. The result will be a list of SessionInfo encoded in the EncodedValue.
 	QueryTypeOpenSessions string = "__open_sessions"
 
-	healthCheckServiceName    = "temporal.api.workflowservice.v1.WorkflowService"
-	defaultHealthCheckTimeout = 5 * time.Second
+	healthCheckServiceName           = "temporal.api.workflowservice.v1.WorkflowService"
+	defaultHealthCheckAttemptTimeout = 5 * time.Second
+	defaultHealthCheckTimeout        = 10 * time.Second
 )
 
 type (
@@ -380,7 +382,7 @@ type (
 		Identity string
 
 		// Optional: Sets DataConverter to customize serialization/deserialization of arguments in Temporal
-		// default: defaultDataConverter, an combination of thriftEncoder and jsonEncoder
+		// default: defaultDataConverter, an combination of google protobuf converter, gogo protobuf converter and json converter
 		DataConverter converter.DataConverter
 
 		// Optional: Sets opentracing Tracer that is to be used to emit tracing information
@@ -398,11 +400,22 @@ type (
 		// Optional: HeadersProvider will be invoked on every outgoing gRPC request and gives user ability to
 		// set custom request headers. This can be used to set auth headers for example.
 		HeadersProvider HeadersProvider
+
+		// Optional parameter that is designed to be used *in tests*. It gets invoked last in
+		// the gRPC interceptor chain and can be used to induce artificial failures in test scenarios.
+		TrafficController TrafficController
 	}
 
 	// HeadersProvider returns a map of gRPC headers that should be used on every request.
 	HeadersProvider interface {
 		GetHeaders(ctx context.Context) (map[string]string, error)
+	}
+
+	// TrafficController is getting called in the interceptor chain with API invocation parameters.
+	// Result is either nil if API call is allowed or an error, in which case request would be interrupted and
+	// the error will be propagated back through the interceptor chain.
+	TrafficController interface {
+		CheckCallAllowed(ctx context.Context, method string, req, reply interface{}) error
 	}
 
 	// ConnectionOptions is provided by SDK consumers to control optional connection params.
@@ -419,8 +432,12 @@ type (
 		// Set DisableHealthCheck to true to disable it.
 		DisableHealthCheck bool
 
-		// HealthCheckTimeout specifies how to long to wait while checking server connection when creating new client.
+		// HealthCheckAttemptTimeout specifies how to long to wait for service response on each health check attempt.
 		// Default: 5s.
+		HealthCheckAttemptTimeout time.Duration
+
+		// HealthCheckTimeout defines how long client should be sending health check requests to the server before concluding
+		// that it is unavailable. Defaults to 10s, once this timeout is reached error will be propagated to the client.
 		HealthCheckTimeout time.Duration
 
 		// Enables keep alive ping from client to the server, which can help detect abruptly closed connections faster.
@@ -440,6 +457,9 @@ type (
 		// when there are no active RPCs, Time and Timeout will be ignored and no
 		// keepalive pings will be sent.
 		KeepAlivePermitWithoutStream bool
+
+		// MaxPayloadSize is a number of bytes that gRPC would allow to travel to and from server. Defaults to 64 MB.
+		MaxPayloadSize int
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
@@ -521,10 +541,10 @@ type (
 	// history only when the activity completes or "finally" timeouts/fails. And the started event only records the last
 	// started time. Because of that, to check an activity has started or not, you cannot rely on history events. Instead,
 	// you can use CLI to describe the workflow to see the status of the activity:
-	//     temporal --do <namespace> wf desc -w <wf-id>
+	//     tctl --ns <namespace> wf desc -w <wf-id>
 	RetryPolicy struct {
 		// Backoff interval for the first retry. If BackoffCoefficient is 1.0 then it is used for all retries.
-		// Required, no default value.
+		// If not set or set to 0, a default interval of 1s will be used.
 		InitialInterval time.Duration
 
 		// Coefficient used to calculate the next retry backoff interval.
@@ -616,7 +636,7 @@ func newDialParameters(options *ClientOptions) dialParameters {
 	return dialParameters{
 		UserConnectionOptions: options.ConnectionOptions,
 		HostPort:              options.HostPort,
-		RequiredInterceptors:  requiredInterceptors(options.MetricsScope, options.HeadersProvider),
+		RequiredInterceptors:  requiredInterceptors(options.MetricsScope, options.HeadersProvider, options.TrafficController),
 		DefaultServiceConfig:  defaultServiceConfig,
 	}
 }
@@ -728,21 +748,28 @@ func checkHealth(connection grpc.ClientConnInterface, options ConnectionOptions)
 		Service: healthCheckServiceName,
 	}
 
-	healthCheckTimeout := options.HealthCheckTimeout
-	if healthCheckTimeout == 0 {
-		healthCheckTimeout = defaultHealthCheckTimeout
+	attemptTimeout := options.HealthCheckAttemptTimeout
+	if attemptTimeout == 0 {
+		attemptTimeout = defaultHealthCheckAttemptTimeout
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), healthCheckTimeout)
+	timeout := options.HealthCheckTimeout
+	if timeout == 0 {
+		timeout = defaultHealthCheckTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	resp, err := healthClient.Check(ctx, request)
-	if err != nil {
-		return fmt.Errorf("health check error: %w", err)
-	}
-
-	if resp.Status != healthpb.HealthCheckResponse_SERVING {
-		return fmt.Errorf("health check returned unhealthy status: %v", resp.Status)
-	}
-
-	return nil
+	policy := createDynamicServiceRetryPolicy(ctx)
+	// TODO: refactor using grpc retry interceptor
+	return backoff.Retry(ctx, func() error {
+		healthCheckCtx, cancel := context.WithTimeout(context.Background(), attemptTimeout)
+		defer cancel()
+		resp, err := healthClient.Check(healthCheckCtx, request)
+		if err != nil {
+			return fmt.Errorf("health check error: %w", err)
+		}
+		if resp.Status != healthpb.HealthCheckResponse_SERVING {
+			return fmt.Errorf("health check returned unhealthy status: %v", resp.Status)
+		}
+		return nil
+	}, policy, nil)
 }

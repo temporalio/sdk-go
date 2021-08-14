@@ -26,6 +26,7 @@ package internal
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/opentracing/opentracing-go"
@@ -318,4 +319,36 @@ func WithActivityTask(
 		contextPropagators: contextPropagators,
 		tracer:             tracer,
 	})
+}
+
+// WithLocalActivityTask adds local activity specific information into context.
+func WithLocalActivityTask(ctx context.Context, task *localActivityTask, logger log.Logger, scope tally.Scope, dataConverter converter.DataConverter) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	workflowTypeLocal := task.params.WorkflowInfo.WorkflowType
+	workflowType := task.params.WorkflowInfo.WorkflowType.Name
+	activityType := task.params.ActivityType
+	logger = log.With(logger,
+		tagActivityID, task.activityID,
+		tagActivityType, activityType,
+		tagAttempt, task.attempt,
+		tagWorkflowType, workflowType,
+		tagWorkflowID, task.params.WorkflowInfo.WorkflowExecution.ID,
+		tagRunID, task.params.WorkflowInfo.WorkflowExecution.RunID,
+	)
+	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
+		workflowType:      &workflowTypeLocal,
+		workflowNamespace: task.params.WorkflowInfo.Namespace,
+		taskQueue:         task.params.WorkflowInfo.TaskQueueName,
+		activityType:      ActivityType{Name: activityType},
+		activityID:        fmt.Sprintf("%v", task.activityID),
+		workflowExecution: task.params.WorkflowInfo.WorkflowExecution,
+		logger:            logger,
+		metricsScope:      scope,
+		isLocalActivity:   true,
+		dataConverter:     dataConverter,
+		attempt:           task.attempt,
+	})
+	return ctx
 }

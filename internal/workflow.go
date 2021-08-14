@@ -516,7 +516,6 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 // * Local activity is scheduled and run by the workflow worker locally.
 // * Local activity does not need Temporal server to schedule activity task and does not rely on activity worker.
 // * No need to register local activity.
-// * The parameter activity to ExecuteLocalActivity() must be a function.
 // * Local activity is for short living activities (usually finishes within seconds).
 // * Local activity cannot heartbeat.
 //
@@ -628,6 +627,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 		DataConverter:               getDataConverterFromWorkflowContext(ctx),
 		ScheduledTime:               Now(ctx), // initial scheduled time
 		Header:                      header,
+		Attempt:                     1, // Attempts always start at one
 	}
 
 	Go(ctx, func(ctx Context) {
@@ -734,6 +734,14 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		decodeFutureImpl: mainFuture.(*decodeFutureImpl),
 		executionFuture:  executionFuture.(*futureImpl),
 	}
+
+	// Immediately return if the context has an error without spawning the child workflow
+	if ctx.Err() != nil {
+		executionSettable.Set(nil, ctx.Err())
+		mainSettable.Set(nil, ctx.Err())
+		return result
+	}
+
 	workflowOptionsFromCtx := getWorkflowEnvOptions(ctx)
 	dc := WithWorkflowContext(ctx, workflowOptionsFromCtx.DataConverter)
 	env := getWorkflowEnvironment(ctx)

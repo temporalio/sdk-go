@@ -42,10 +42,8 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
-
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
-	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/log"
@@ -368,58 +366,52 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}, task *workflowservice.PollWorkflowTaskQueueResponse) (response *workflowservice.RespondWorkflowTaskCompletedResponse, err error) {
 	ctx := context.Background()
 	// Respond task completion.
-	err = backoff.Retry(ctx,
-		func() error {
-			grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(
-				metrics.GetMetricsScopeForRPC(wtp.metricsScope, task.GetWorkflowType().GetName(),
-					metrics.NoneTagValue, metrics.NoneTagValue)))
-			defer cancel()
-			var err1 error
-			switch request := completedRequest.(type) {
-			case *workflowservice.RespondWorkflowTaskFailedRequest:
-				// Only fail workflow task on first attempt, subsequent failure on the same workflow task will timeout.
-				// This is to avoid spin on the failed workflow task. Checking Attempt not nil for older server.
-				if task.GetAttempt() == 1 {
-					_, err1 = wtp.service.RespondWorkflowTaskFailed(grpcCtx, request)
-					if err1 != nil {
-						traceLog(func() {
-							wtp.logger.Debug("RespondWorkflowTaskFailed failed.", tagError, err1)
-						})
-					}
-				}
-			case *workflowservice.RespondWorkflowTaskCompletedRequest:
-				if request.StickyAttributes == nil && wtp.stickyCacheSize > 0 {
-					request.StickyAttributes = &taskqueuepb.StickyExecutionAttributes{
-						WorkerTaskQueue: &taskqueuepb.TaskQueue{
-							Name: getWorkerTaskQueue(wtp.stickyUUID),
-							Kind: enumspb.TASK_QUEUE_KIND_STICKY,
-						},
-						ScheduleToStartTimeout: &wtp.StickyScheduleToStartTimeout,
-					}
-				} else {
-					request.ReturnNewWorkflowTask = false
-				}
-				response, err1 = wtp.service.RespondWorkflowTaskCompleted(grpcCtx, request)
-				if err1 != nil {
-					traceLog(func() {
-						wtp.logger.Debug("RespondWorkflowTaskCompleted failed.", tagError, err1)
-					})
-				}
-			case *workflowservice.RespondQueryTaskCompletedRequest:
-				_, err1 = wtp.service.RespondQueryTaskCompleted(grpcCtx, request)
-				if err1 != nil {
-					traceLog(func() {
-						wtp.logger.Debug("RespondQueryTaskCompleted failed.", tagError, err1)
-					})
-				}
-			default:
-				// should not happen
-				panic("unknown request type from ProcessWorkflowTask()")
+	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(
+		metrics.GetMetricsScopeForRPC(wtp.metricsScope, task.GetWorkflowType().GetName(),
+			metrics.NoneTagValue, metrics.NoneTagValue)),
+		defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	switch request := completedRequest.(type) {
+	case *workflowservice.RespondWorkflowTaskFailedRequest:
+		// Only fail workflow task on first attempt, subsequent failure on the same workflow task will timeout.
+		// This is to avoid spin on the failed workflow task. Checking Attempt not nil for older server.
+		if task.GetAttempt() == 1 {
+			_, err = wtp.service.RespondWorkflowTaskFailed(grpcCtx, request)
+			if err != nil {
+				traceLog(func() {
+					wtp.logger.Debug("RespondWorkflowTaskFailed failed.", tagError, err)
+				})
 			}
-
-			return err1
-		}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
-
+		}
+	case *workflowservice.RespondWorkflowTaskCompletedRequest:
+		if request.StickyAttributes == nil && wtp.stickyCacheSize > 0 {
+			request.StickyAttributes = &taskqueuepb.StickyExecutionAttributes{
+				WorkerTaskQueue: &taskqueuepb.TaskQueue{
+					Name: getWorkerTaskQueue(wtp.stickyUUID),
+					Kind: enumspb.TASK_QUEUE_KIND_STICKY,
+				},
+				ScheduleToStartTimeout: &wtp.StickyScheduleToStartTimeout,
+			}
+		} else {
+			request.ReturnNewWorkflowTask = false
+		}
+		response, err = wtp.service.RespondWorkflowTaskCompleted(grpcCtx, request)
+		if err != nil {
+			traceLog(func() {
+				wtp.logger.Debug("RespondWorkflowTaskCompleted failed.", tagError, err)
+			})
+		}
+	case *workflowservice.RespondQueryTaskCompletedRequest:
+		_, err = wtp.service.RespondQueryTaskCompleted(grpcCtx, request)
+		if err != nil {
+			traceLog(func() {
+				wtp.logger.Debug("RespondQueryTaskCompleted failed.", tagError, err)
+			})
+		}
+	default:
+		// should not happen
+		panic("unknown request type from ProcessWorkflowTask()")
+	}
 	return
 }
 
@@ -471,27 +463,15 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 	activityMetricsScope.Counter(metrics.LocalActivityTotalCounter).Inc(1)
 
 	ae := activityExecutor{name: activityType, fn: task.params.ActivityFn}
-
-	rootCtx := lath.userContext
-	if rootCtx == nil {
-		rootCtx = context.Background()
-	}
-
-	workflowTypeLocal := task.params.WorkflowInfo.WorkflowType
-
-	ctx := context.WithValue(rootCtx, activityEnvContextKey, &activityEnvironment{
-		workflowType:      &workflowTypeLocal,
-		workflowNamespace: task.params.WorkflowInfo.Namespace,
-		taskQueue:         task.params.WorkflowInfo.TaskQueueName,
-		activityType:      ActivityType{Name: activityType},
-		activityID:        fmt.Sprintf("%v", task.activityID),
-		workflowExecution: task.params.WorkflowInfo.WorkflowExecution,
-		logger:            lath.logger,
-		metricsScope:      lath.metricsScope, // Use base scope to make sure down stream callers does not have unexpected tags
-		isLocalActivity:   true,
-		dataConverter:     lath.dataConverter,
-		attempt:           task.attempt,
+	traceLog(func() {
+		lath.logger.Debug("Processing new local activity task",
+			tagWorkflowID, task.params.WorkflowInfo.WorkflowExecution.ID,
+			tagRunID, task.params.WorkflowInfo.WorkflowExecution.RunID,
+			tagActivityType, activityType,
+			tagAttempt, task.attempt,
+		)
 	})
+	ctx := WithLocalActivityTask(lath.userContext, task, lath.logger, lath.metricsScope, lath.dataConverter)
 
 	// propagate context information into the local activity activity context from the headers
 	for _, ctxProp := range lath.contextPropagators {
@@ -762,20 +742,16 @@ func newGetHistoryPageFunc(
 ) func(nextPageToken []byte) (*historypb.History, []byte, error) {
 	return func(nextPageToken []byte) (*historypb.History, []byte, error) {
 		var resp *workflowservice.GetWorkflowExecutionHistoryResponse
-		err := backoff.Retry(ctx,
-			func() error {
-				grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(
-					metrics.GetMetricsScopeForRPC(metricsScope, metrics.NoneTagValue, metrics.NoneTagValue, taskQueue)))
-				defer cancel()
+		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(
+			metrics.GetMetricsScopeForRPC(metricsScope, metrics.NoneTagValue, metrics.NoneTagValue, taskQueue)),
+			defaultGrpcRetryParameters(ctx))
+		defer cancel()
 
-				var err1 error
-				resp, err1 = service.GetWorkflowExecutionHistory(grpcCtx, &workflowservice.GetWorkflowExecutionHistoryRequest{
-					Namespace:     namespace,
-					Execution:     execution,
-					NextPageToken: nextPageToken,
-				})
-				return err1
-			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
+		resp, err := service.GetWorkflowExecutionHistory(grpcCtx, &workflowservice.GetWorkflowExecutionHistoryRequest{
+			Namespace:     namespace,
+			Execution:     execution,
+			NextPageToken: nextPageToken,
+		})
 		if err != nil {
 			return nil, nil, err
 		}
@@ -783,9 +759,8 @@ func newGetHistoryPageFunc(
 		var h *historypb.History
 
 		if resp.RawHistory != nil {
-			var err1 error
-			h, err1 = serializer.DeserializeBlobDataToHistoryEvents(resp.RawHistory, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-			if err1 != nil {
+			h, err = serializer.DeserializeBlobDataToHistoryEvents(resp.RawHistory, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+			if err != nil {
 				return nil, nil, nil
 			}
 		} else {
@@ -846,7 +821,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 
 	workflowType := response.WorkflowType.GetName()
 	activityType := response.ActivityType.GetName()
-	activityMetricsScope := metrics.GetMetricsScopeForActivity(atp.metricsScope, workflowType, activityType)
+	activityMetricsScope := metrics.GetMetricsScopeForActivity(atp.metricsScope, workflowType, activityType, atp.taskQueueName)
 
 	scheduleToStartLatency := common.TimeValue(response.GetStartedTime()).Sub(common.TimeValue(response.GetCurrentAttemptScheduledTime()))
 	activityMetricsScope.Timer(metrics.ActivityScheduleToStartLatency).Record(scheduleToStartLatency)
@@ -881,14 +856,19 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 
 	workflowType := activityTask.task.WorkflowType.GetName()
 	activityType := activityTask.task.ActivityType.GetName()
-	activityMetricsScope := metrics.GetMetricsScopeForActivity(atp.metricsScope, workflowType, activityType)
+	activityMetricsScope := metrics.GetMetricsScopeForActivity(atp.metricsScope, workflowType, activityType, atp.taskQueueName)
 
 	executionStartTime := time.Now()
 	// Process the activity task.
 	request, err := atp.taskHandler.Execute(atp.taskQueueName, activityTask.task)
+	// err is returned in case of internal failure, such as unable to propagate context or context timeout.
 	if err != nil {
 		activityMetricsScope.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
 		return err
+	}
+	// in case if activity execution failed, request should be of type RespondActivityTaskFailedRequest
+	if _, ok := request.(*workflowservice.RespondActivityTaskFailedRequest); ok {
+		activityMetricsScope.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
 	}
 	activityMetricsScope.Timer(metrics.ActivityExecutionLatency).Record(time.Since(executionStartTime))
 
@@ -925,32 +905,22 @@ func reportActivityComplete(ctx context.Context, service workflowservice.Workflo
 	var reportErr error
 	switch request := request.(type) {
 	case *workflowservice.RespondActivityTaskCanceledRequest:
-		reportErr = backoff.Retry(ctx,
-			func() error {
-				grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope))
-				defer cancel()
-
-				_, err := service.RespondActivityTaskCanceled(grpcCtx, request)
-				return err
-			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
+		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope),
+			defaultGrpcRetryParameters(ctx))
+		defer cancel()
+		_, err := service.RespondActivityTaskCanceled(grpcCtx, request)
+		reportErr = err
 	case *workflowservice.RespondActivityTaskFailedRequest:
-		reportErr = backoff.Retry(ctx,
-			func() error {
-				grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope))
-				defer cancel()
-
-				_, err := service.RespondActivityTaskFailed(grpcCtx, request)
-				return err
-			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
+		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope), defaultGrpcRetryParameters(ctx))
+		defer cancel()
+		_, err := service.RespondActivityTaskFailed(grpcCtx, request)
+		reportErr = err
 	case *workflowservice.RespondActivityTaskCompletedRequest:
-		reportErr = backoff.Retry(ctx,
-			func() error {
-				grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope))
-				defer cancel()
-
-				_, err := service.RespondActivityTaskCompleted(grpcCtx, request)
-				return err
-			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
+		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope),
+			defaultGrpcRetryParameters(ctx))
+		defer cancel()
+		_, err := service.RespondActivityTaskCompleted(grpcCtx, request)
+		reportErr = err
 	}
 	return reportErr
 }
@@ -964,32 +934,23 @@ func reportActivityCompleteByID(ctx context.Context, service workflowservice.Wor
 	var reportErr error
 	switch request := request.(type) {
 	case *workflowservice.RespondActivityTaskCanceledByIdRequest:
-		reportErr = backoff.Retry(ctx,
-			func() error {
-				grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope))
-				defer cancel()
-
-				_, err := service.RespondActivityTaskCanceledById(grpcCtx, request)
-				return err
-			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
+		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope),
+			defaultGrpcRetryParameters(ctx))
+		defer cancel()
+		_, err := service.RespondActivityTaskCanceledById(grpcCtx, request)
+		reportErr = err
 	case *workflowservice.RespondActivityTaskFailedByIdRequest:
-		reportErr = backoff.Retry(ctx,
-			func() error {
-				grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope))
-				defer cancel()
-
-				_, err := service.RespondActivityTaskFailedById(grpcCtx, request)
-				return err
-			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
+		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope),
+			defaultGrpcRetryParameters(ctx))
+		defer cancel()
+		_, err := service.RespondActivityTaskFailedById(grpcCtx, request)
+		reportErr = err
 	case *workflowservice.RespondActivityTaskCompletedByIdRequest:
-		reportErr = backoff.Retry(ctx,
-			func() error {
-				grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope))
-				defer cancel()
-
-				_, err := service.RespondActivityTaskCompletedById(grpcCtx, request)
-				return err
-			}, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
+		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope),
+			defaultGrpcRetryParameters(ctx))
+		defer cancel()
+		_, err := service.RespondActivityTaskCompletedById(grpcCtx, request)
+		reportErr = err
 	}
 	return reportErr
 }

@@ -622,6 +622,21 @@ func (s *WorkflowTestSuiteUnitTest) Test_SideEffect() {
 	s.Nil(env.GetWorkflowError())
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_LongRunningSideEffect() {
+	workflowFn := func(ctx Context) error {
+		// Sleep for 2 seconds would trigger deadlock detection timeout if we wouldn't override it below.
+		time.Sleep(2 * time.Second)
+		return nil
+	}
+	env := s.NewTestWorkflowEnvironment()
+	// Override deadlock detection timeout to allow 2 second sleep.
+	env.SetWorkerOptions(WorkerOptions{DeadlockDetectionTimeout: 3 * time.Second})
+	env.RegisterWorkflow(workflowFn)
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.Nil(env.GetWorkflowError())
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_SideEffect_WithVersion() {
 	workflowFn := func(ctx Context) error {
 		ctx = WithActivityOptions(ctx, s.activityOptions)
@@ -991,6 +1006,154 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Clock() {
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 	s.Equal(expected, history)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Abandon() {
+	helloActivityFn := func(ctx context.Context, name string) (string, error) {
+		return "Hello " + name + " from activity!", nil
+	}
+
+	childWorkflowFn := func(ctx Context, name string) (string, error) {
+		ao := ActivityOptions{StartToCloseTimeout: time.Minute}
+		ctx = WithActivityOptions(ctx, ao)
+		var activityResult string
+		if err := ExecuteActivity(ctx, helloActivityFn, name).Get(ctx, &activityResult); err != nil {
+			return "", err
+		}
+		return "Child workflow: " + activityResult, nil
+	}
+
+	parentWorkflowFn := func(ctx Context) error {
+		logger := GetLogger(ctx)
+
+		cwo := ChildWorkflowOptions{
+			ParentClosePolicy: enumspb.PARENT_CLOSE_POLICY_ABANDON,
+		}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+
+		childFuture := ExecuteChildWorkflow(ctx, childWorkflowFn, "World")
+		var childWE WorkflowExecution
+		err := childFuture.GetChildWorkflowExecution().Get(ctx, &childWE)
+		if err != nil {
+			logger.Error("Parent execution received child start failure.", "Error", err)
+			return err
+		}
+
+		logger.Info("Parent execution completed.", "Result", childWE)
+		// return before child workflow complete
+		return nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(helloActivityFn)
+	env.RegisterWorkflow(childWorkflowFn)
+	env.RegisterWorkflow(parentWorkflowFn)
+
+	env.OnActivity(helloActivityFn, mock.Anything, mock.Anything).Return("hello mock", nil)
+	env.ExecuteWorkflow(parentWorkflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	// verify that the mock is called once
+	env.AssertExpectations(s.T())
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_RequestCancel() {
+	var childResult error
+	childWorkflowFn := func(ctx Context) error {
+		// this would return cancelError if workflow is requested to cancel.
+		childResult = Sleep(ctx, time.Second)
+		return childResult
+	}
+
+	parentWorkflowFn := func(ctx Context) error {
+		cwo := ChildWorkflowOptions{
+			ParentClosePolicy: enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL,
+		}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		err := ExecuteChildWorkflow(ctx, childWorkflowFn).GetChildWorkflowExecution().Get(ctx, nil)
+		if err != nil {
+			return err
+		}
+		// return before child workflow complete
+		return nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(childWorkflowFn)
+	env.RegisterWorkflow(parentWorkflowFn)
+
+	env.ExecuteWorkflow(parentWorkflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	// verify child workflow is cancelled
+	s.True(IsCanceledError(childResult))
+
+	env.AssertExpectations(s.T())
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Terminated() {
+	var checkedError error
+	childOfChildWorkflowFn := func(ctx Context) error {
+		// this will not return as we expect this workflow to be terminated, checkedError would be nil
+		checkedError = Sleep(ctx, time.Second)
+		return checkedError
+	}
+
+	childOfChildWorkflowID := "CHILD-OF-CHILD-ID"
+	childWorkflowFn := func(ctx Context) error {
+		cwo := ChildWorkflowOptions{
+			WorkflowID:        childOfChildWorkflowID,
+			ParentClosePolicy: enumspb.PARENT_CLOSE_POLICY_TERMINATE,
+		}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		err := ExecuteChildWorkflow(ctx, childOfChildWorkflowFn).GetChildWorkflowExecution().Get(ctx, nil)
+		if err != nil {
+			return err
+		}
+		// return before child workflow complete
+		return nil
+	}
+
+	childWorkflowID := "CHILD-WORKFLOW-ID"
+	rootWorkflowFn := func(ctx Context) error {
+		cwo := ChildWorkflowOptions{
+			WorkflowID: childWorkflowID,
+		}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		childFuture := ExecuteChildWorkflow(ctx, childWorkflowFn)
+		err := childFuture.GetChildWorkflowExecution().Get(ctx, nil)
+		if err != nil {
+			return err
+		}
+		err = childFuture.Get(ctx, nil) //wait until child workflow completed
+		if err != nil {
+			return err
+		}
+
+		err = Sleep(ctx, time.Minute) // sleep longer than childOfChildWorkflowFn
+		return err                    // would expect this to be nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(childOfChildWorkflowFn)
+	env.RegisterWorkflow(childWorkflowFn)
+	env.RegisterWorkflow(rootWorkflowFn)
+
+	env.ExecuteWorkflow(rootWorkflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	// root workflow no error
+	s.NoError(env.GetWorkflowError())
+	// child workflow no error
+	s.NoError(env.GetWorkflowErrorByID(childWorkflowID))
+	// verify childOfChild workflow is terminated
+	s.IsType(&TerminatedError{}, env.GetWorkflowErrorByID(childOfChildWorkflowID))
+	// verify checkedError is nil, because workflow is terminated so worker won't see the last workflow task.
+	s.Nil(checkedError)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_MockActivityWait() {
@@ -1984,12 +2147,14 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivity() {
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListeners() {
 	var localActivityFnCanceled atomic.Bool
 	var startedCount, completedCount, canceledCount atomic.Int32
+	env := s.NewTestWorkflowEnvironment()
 
 	localActivityFn := func(_ context.Context, _ string) (string, error) {
 		panic("this won't be called because it is mocked")
 	}
 
 	canceledLocalActivityFn := func(ctx context.Context) error {
+		env.SignalWorkflow("la-started", nil)
 		<-ctx.Done()
 		localActivityFnCanceled.Store(true)
 		return nil
@@ -2007,6 +2172,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		if err != nil {
 			return "", err
 		}
+		// We must ensure the LA we are about to cancel actually got a chance to start, or we could race and finish the
+		// whole workflow before it even begins.
+		GetSignalChannel(ctx, "la-started").Receive(ctx, nil)
 		cancel()
 
 		err2 := f2.Get(ctx, nil)
@@ -2019,7 +2187,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		return result, err3
 	}
 
-	env := s.NewTestWorkflowEnvironment()
 	env.RegisterWorkflow(workflowFn)
 	env.OnActivity(localActivityFn, mock.Anything, "local_activity").Return("hello mock", nil).Once()
 	env.SetOnLocalActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args []interface{}) {
@@ -2547,6 +2714,114 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry() {
 	s.Equal(4, attempt2Count)
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry_DefaultRetry() {
+	attemptCount1 := 0
+	activityFn := func(ctx context.Context) (string, error) {
+		attemptCount1++
+		info := GetActivityInfo(ctx)
+		fmt.Printf("attempt %d\n", info.Attempt)
+		if info.Attempt <= 2 {
+			return "", NewApplicationError("bad-luck", "", false, nil)
+		}
+		return "done1", nil
+	}
+	attemptCount2 := 0
+	activityFn2 := func(ctx context.Context) (string, error) {
+		attemptCount2++
+		info := GetActivityInfo(ctx)
+		fmt.Printf("attempt %d\n", info.Attempt)
+		if info.Attempt <= 2 {
+			return "", errors.New("some error")
+		}
+		return "done2", nil
+	}
+
+	workflowFn := func(ctx Context) (string, error) {
+		ao := ActivityOptions{
+			ScheduleToStartTimeout: time.Minute,
+			StartToCloseTimeout:    time.Minute,
+			// no retry policy, will use default one.
+		}
+		ctx = WithActivityOptions(ctx, ao)
+
+		var result string
+		err := ExecuteActivity(ctx, activityFn).Get(ctx, &result)
+		if err != nil {
+			return "", err
+		}
+
+		var result2 string
+		ao2 := ActivityOptions{
+			ScheduleToStartTimeout: time.Minute,
+			StartToCloseTimeout:    time.Minute,
+			RetryPolicy:            &RetryPolicy{}, // empty retry policy, will use default values
+		}
+		ctx = WithActivityOptions(ctx, ao2)
+		err = ExecuteActivity(ctx, activityFn2).Get(ctx, &result2)
+		if err != nil {
+			return "", err
+		}
+
+		return result + result2, nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(workflowFn)
+	env.RegisterActivity(activityFn)
+	env.RegisterActivity(activityFn2)
+
+	env.SetWorkflowRunTimeout(10 * time.Minute)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var result string
+	s.NoError(env.GetWorkflowResult(&result))
+	s.Equal("done1done2", result)
+	s.Equal(3, attemptCount1)
+	s.Equal(3, attemptCount2)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry_NoInitialInterval() {
+	var attempts = 0
+
+	activityFn := func(ctx context.Context) (bool, error) {
+		info := GetActivityInfo(ctx)
+		if info.Attempt < 2 {
+			attempts++
+			return false, errors.New("first attempt fails")
+		}
+		attempts++
+		return true, nil
+	}
+
+	workflowFn := func(ctx Context) (bool, error) {
+		ctx = WithActivityOptions(
+			ctx,
+			ActivityOptions{
+				StartToCloseTimeout:    10 * time.Second,
+				ScheduleToCloseTimeout: 10 * time.Second,
+				RetryPolicy: &RetryPolicy{
+					BackoffCoefficient: 2,
+					MaximumAttempts:    3,
+				},
+			})
+		activityExecution := ExecuteActivity(ctx, activityFn)
+		var result bool
+		err := activityExecution.Get(ctx, &result)
+		println(result)
+		return result, err
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(activityFn)
+	env.ExecuteWorkflow(workflowFn)
+	s.NoError(env.GetWorkflowError())
+	s.True(env.IsWorkflowCompleted())
+	s.Equal(2, attempts)
+
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry_NoRetries() {
 	maxRetryAttempts := int32(1)
 	fakeError := fmt.Errorf("fake network error")
@@ -2685,6 +2960,46 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetry() {
 	var result int32
 	s.NoError(env.GetWorkflowResult(&result))
 	s.Equal(int32(3), result)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetry_MaxAttempts_Respected() {
+	const maxAttempts = 5
+
+	timesRan := 0
+	localActivityFn := func(ctx context.Context) (int32, error) {
+		timesRan++
+		return int32(-1), NewApplicationError("i always fail", "", false, nil)
+	}
+
+	workflowFn := func(ctx Context) (int32, error) {
+		lao := LocalActivityOptions{
+			ScheduleToCloseTimeout: time.Minute,
+			RetryPolicy: &RetryPolicy{
+				MaximumAttempts:    maxAttempts,
+				InitialInterval:    time.Second,
+				MaximumInterval:    time.Second * 10,
+				BackoffCoefficient: 2,
+			},
+		}
+		ctx = WithLocalActivityOptions(ctx, lao)
+
+		var result int32
+		err := ExecuteLocalActivity(ctx, localActivityFn).Get(ctx, &result)
+		if err != nil {
+			return int32(-1), err
+		}
+		return result, nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(workflowFn)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.Error(env.GetWorkflowError())
+	var result int32
+	s.Error(env.GetWorkflowResult(&result))
+	s.Equal(maxAttempts, timesRan)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetryOnCancel() {
@@ -3294,7 +3609,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	err = timeoutErr.LastHeartbeatDetails(&details)
 	s.NoError(err)
 	s.Equal(testErrorDetails1, details)
-	s.Equal(4, count)
+	s.Equal(3, count)
 
 	activityEnv := s.NewTestActivityEnvironment()
 	activityEnv.RegisterActivity(timeoutFn)

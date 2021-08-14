@@ -37,6 +37,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 
+	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/log"
 )
@@ -456,6 +457,13 @@ func (c *MockCallWrapper) Never() *MockCallWrapper {
 	return c
 }
 
+// Maybe indicates that the mock call is optional. Not calling an optional method
+// will not cause an error while asserting expectations.
+func (c *MockCallWrapper) Maybe() *MockCallWrapper {
+	c.call.Maybe()
+	return c
+}
+
 // Run sets a handler to be called before returning. It can be used when mocking a method such as unmarshalers that
 // takes a pointer to a struct and sets properties in such struct.
 func (c *MockCallWrapper) Run(fn func(args mock.Arguments)) *MockCallWrapper {
@@ -670,12 +678,12 @@ func (e *TestWorkflowEnvironment) SetOnLocalActivityCanceledListener(
 
 // IsWorkflowCompleted check if test is completed or not
 func (e *TestWorkflowEnvironment) IsWorkflowCompleted() bool {
-	return e.impl.isTestCompleted
+	return e.impl.isWorkflowCompleted
 }
 
 // GetWorkflowResult extracts the encoded result from test workflow, it returns error if the extraction failed.
 func (e *TestWorkflowEnvironment) GetWorkflowResult(valuePtr interface{}) error {
-	if !e.impl.isTestCompleted {
+	if !e.impl.isWorkflowCompleted {
 		panic("workflow is not completed")
 	}
 	if e.impl.testError != nil || e.impl.testResult == nil || valuePtr == nil {
@@ -684,9 +692,31 @@ func (e *TestWorkflowEnvironment) GetWorkflowResult(valuePtr interface{}) error 
 	return e.impl.testResult.Get(valuePtr)
 }
 
+// GetWorkflowResultByID extracts the encoded result from workflow by ID, it returns error if the extraction failed.
+func (e *TestWorkflowEnvironment) GetWorkflowResultByID(workflowID string, valuePtr interface{}) error {
+	if workflowHandle, ok := e.impl.runningWorkflows[workflowID]; ok {
+		if !workflowHandle.env.isWorkflowCompleted {
+			panic("workflow is not completed")
+		}
+		if workflowHandle.env.testError != nil || workflowHandle.env.testResult == nil || valuePtr == nil {
+			return e.impl.testError
+		}
+		return e.impl.testResult.Get(valuePtr)
+	}
+	return serviceerror.NewNotFound(fmt.Sprintf("Workflow %v not exists", workflowID))
+}
+
 // GetWorkflowError return the error from test workflow
 func (e *TestWorkflowEnvironment) GetWorkflowError() error {
 	return e.impl.testError
+}
+
+// GetWorkflowErrorByID return the error from test workflow
+func (e *TestWorkflowEnvironment) GetWorkflowErrorByID(workflowID string) error {
+	if workflowHandle, ok := e.impl.runningWorkflows[workflowID]; ok {
+		return workflowHandle.env.testError
+	}
+	return serviceerror.NewNotFound(fmt.Sprintf("Workflow %v not exists", workflowID))
 }
 
 // CompleteActivity complete an activity that had returned activity.ErrResultPending error
@@ -730,7 +760,9 @@ func (e *TestWorkflowEnvironment) QueryWorkflowByID(workflowID, queryType string
 // the timer fires, the callback will be called. By default, this test suite uses mock clock which automatically move
 // forward to fire next timer when workflow is blocked. Use this API to make some event (like activity completion,
 // signal or workflow cancellation) at desired time.
-// Use 0 delayDuration to send a signal to simulate SignalWithStart.
+//
+// Use 0 delayDuration to send a signal to simulate SignalWithStart. Note that a 0 duration delay will *not* work with
+// Queries, as the workflow will not have had a chance to register any query handlers.
 func (e *TestWorkflowEnvironment) RegisterDelayedCallback(callback func(), delayDuration time.Duration) {
 	e.impl.registerDelayedCallback(callback, delayDuration)
 }

@@ -440,6 +440,7 @@ func sessionCreationActivity(ctx context.Context, sessionID string) error {
 					return true
 				}
 			}
+			// TODO refactor using grpc-retry, add support for custom handling for error codes.
 			err := backoff.Retry(ctx, heartbeatOp, heartbeatRetryPolicy, isRetryable)
 			if err != nil {
 				GetActivityLogger(ctx).Info("session heartbeat failed", tagError, err, "sessionID", sessionID)

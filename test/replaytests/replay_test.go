@@ -118,3 +118,11 @@ func (s *replayTestSuite) TestReplayBadWorkflowHistoryFromFile() {
 	require.Error(s.T(), err)
 	require.True(s.T(), strings.Contains(err.Error(), "nondeterministic workflow definition"))
 }
+
+func (s *replayTestSuite) TestReplayUnhandledTimerFiredWithCancel() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(TimerWf)
+
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "unhandled_cmd_timer_cancel.json")
+	require.NoError(s.T(), err)
+}

@@ -506,6 +506,34 @@ func (s *WorkflowUnitTest) Test_CancelWorkflowAfterActivity() {
 	s.True(env.IsWorkflowCompleted())
 }
 
+func cancelledWorkflowStartingChildWorkflow(ctx Context) (bool, error) {
+	// schedule a timer, which will be cancelled
+	_ = Sleep(ctx, 5*time.Minute)
+
+	ctx = WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
+		WorkflowExecutionTimeout: time.Second * 30,
+	})
+	childErr := ExecuteChildWorkflow(ctx, sleepWorkflow, time.Second).Get(ctx, nil)
+	if childErr != nil {
+		return false, childErr
+	}
+
+	return true, nil
+}
+
+func (s *WorkflowUnitTest) Test_CancelledWorkflowCantStartChild() {
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(sleepWorkflow)
+	env.RegisterDelayedCallback(func() {
+		env.CancelWorkflow()
+	}, time.Minute)
+	env.ExecuteWorkflow(cancelledWorkflowStartingChildWorkflow)
+	err := env.GetWorkflowError()
+	s.Error(err)
+	var cancelErr *CanceledError
+	s.True(errors.As(err, &cancelErr))
+}
+
 func signalWorkflowTest(ctx Context) ([]byte, error) {
 	// read multiple times.
 	var result string

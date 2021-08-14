@@ -51,12 +51,10 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
-	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/common/util"
 	ilog "go.temporal.io/sdk/internal/log"
@@ -82,6 +80,11 @@ const (
 	defaultPollerRate = 1000
 
 	defaultMaxConcurrentSessionExecutionSize = 1000 // Large concurrent session execution size (1k)
+
+	defaultDeadlockDetectionTimeout = time.Second // By default kill workflow tasks that are running more than 1 sec.
+	// Unlimited deadlock detection timeout is used when we want to allow workflow tasks to run indefinitely, such
+	// as during debugging.
+	unlimitedDeadlockDetectionTimeout = math.MaxInt64
 
 	testTagsContextKey = "temporal-testTags"
 )
@@ -197,10 +200,15 @@ type (
 
 		Tracer opentracing.Tracer
 
+		// DeadlockDetectionTimeout specifies workflow task timeout.
+		DeadlockDetectionTimeout time.Duration
+
 		// Pointer to the shared worker cache
 		cache *WorkerCache
 	}
 )
+
+var debugMode = os.Getenv("TEMPORAL_DEBUG") != ""
 
 // newWorkflowWorker returns an instance of the workflow worker.
 func newWorkflowWorker(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, ppMgr pressurePointMgr, registry *registry) *workflowWorker {
@@ -227,35 +235,15 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 }
 
 // verifyNamespaceExist does a DescribeNamespace operation on the specified namespace with backoff/retry
-// It returns an error, if the server returns an EntityNotExist or BadRequest error
-// On any other transient error, this method will just return success
 func verifyNamespaceExist(client workflowservice.WorkflowServiceClient, metricsScope tally.Scope, namespace string, logger log.Logger) error {
 	ctx := context.Background()
-	descNamespaceOp := func() error {
-		grpcCtx, cancel := newGRPCContext(ctx)
-		defer cancel()
-		_, err := client.DescribeNamespace(grpcCtx, &workflowservice.DescribeNamespaceRequest{Namespace: namespace})
-		if err != nil {
-			switch err.(type) {
-			case *serviceerror.NotFound:
-				logger.Error("namespace does not exist", tagNamespace, namespace, tagError, err)
-				return err
-			case *serviceerror.InvalidArgument:
-				logger.Error("namespace does not exist", tagNamespace, namespace, tagError, err)
-				return err
-			}
-			// on any other error, just return true
-			logger.Warn("unable to verify if namespace exist", tagNamespace, namespace, tagError, err)
-		}
-		return nil
-	}
-
 	if namespace == "" {
 		return errors.New("namespace cannot be empty")
 	}
-
-	// exponential backoff retry for upto a minute
-	return backoff.Retry(ctx, descNamespaceOp, createDynamicServiceRetryPolicy(ctx), isServiceTransientError)
+	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metricsScope), defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	_, err := client.DescribeNamespace(grpcCtx, &workflowservice.DescribeNamespaceRequest{Namespace: namespace})
+	return err
 }
 
 func newWorkflowWorkerInternal(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, ppMgr pressurePointMgr, overrides *workerOverrides, registry *registry) *workflowWorker {
@@ -890,6 +878,7 @@ func (aw *AggregatedWorker) RegisterActivityWithOptions(a interface{}, options R
 
 // Start the worker in a non-blocking fashion.
 func (aw *AggregatedWorker) Start() error {
+	aw.assertNotStopped()
 	if err := initBinaryChecksum(); err != nil {
 		return fmt.Errorf("failed to get executable checksum: %v", err)
 	}
@@ -932,6 +921,18 @@ func (aw *AggregatedWorker) Start() error {
 	}
 	aw.logger.Info("Started Worker")
 	return nil
+}
+
+func (aw *AggregatedWorker) assertNotStopped() {
+	stopped := true
+	select {
+	case <-aw.stopC:
+	default:
+		stopped = false
+	}
+	if stopped {
+		panic("attempted to start a worker that has been stopped before")
+	}
 }
 
 var binaryChecksum string
@@ -1290,6 +1291,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		WorkerStopTimeout:                     options.WorkerStopTimeout,
 		ContextPropagators:                    client.contextPropagators,
 		Tracer:                                client.tracer,
+		DeadlockDetectionTimeout:              options.DeadlockDetectionTimeout,
 		cache:                                 cache,
 	}
 
@@ -1464,6 +1466,12 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 	}
 	if options.MaxConcurrentSessionExecutionSize == 0 {
 		options.MaxConcurrentSessionExecutionSize = defaultMaxConcurrentSessionExecutionSize
+	}
+	if options.DeadlockDetectionTimeout == 0 {
+		if debugMode {
+			options.DeadlockDetectionTimeout = unlimitedDeadlockDetectionTimeout
+		}
+		options.DeadlockDetectionTimeout = defaultDeadlockDetectionTimeout
 	}
 }
 

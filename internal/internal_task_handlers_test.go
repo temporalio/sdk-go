@@ -1226,7 +1226,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 }
 
 func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail() {
-	backoffInterval := 1 * time.Second
+	backoffInterval := 50 * time.Millisecond
 	workflowComplete := false
 
 	retryLocalActivityWorkflowFunc := func(ctx Context, input []byte) error {
@@ -1255,10 +1255,12 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 	workflowTaskStartedEvent := createTestEventWorkflowTaskStarted(3)
 	now := time.Now()
 	workflowTaskStartedEvent.EventTime = &now
+	// WFT timeout must be larger than the local activity backoff or the local activity is not retried
+	wftTimeout := 500 * time.Millisecond
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			// make sure the timeout is same as the backoff interval
-			WorkflowTaskTimeout: &backoffInterval,
+			WorkflowTaskTimeout: &wftTimeout,
 			TaskQueue:           &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}},
 		),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
@@ -1300,7 +1302,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 			laResultCh: laResultCh,
 		},
 		func(response interface{}, startTime time.Time) (*workflowTask, error) {
-			return nil, serviceerror.NewNotFound("Workflow task not found.")
+			return nil, serviceerror.NewNotFound("Intentional wft heartbeat error")
 		})
 	t.Nil(response)
 	t.Error(err)
@@ -1419,20 +1421,22 @@ type deadlineTest struct {
 	ScheduleDuration time.Duration
 	StartTS          time.Time
 	StartDuration    time.Duration
+	ActivityType     string
 	err              error
 }
 
 func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 	deadlineTests := []deadlineTest{
-		{0, time.Now(), 3 * time.Second, time.Now(), 3 * time.Second, nil},
-		{0, time.Now(), 4 * time.Second, time.Now(), 3 * time.Second, nil},
-		{0, time.Now(), 3 * time.Second, time.Now(), 4 * time.Second, nil},
-		{0, time.Now().Add(-1 * time.Second), 1 * time.Second, time.Now(), 1 * time.Second, context.DeadlineExceeded},
-		{0, time.Now(), 1 * time.Second, time.Now().Add(-1 * time.Second), 1 * time.Second, context.DeadlineExceeded},
-		{0, time.Now().Add(-1 * time.Second), 1, time.Now().Add(-1 * time.Second), 1 * time.Second, context.DeadlineExceeded},
-		{1 * time.Second, time.Now(), 1 * time.Second, time.Now(), 1 * time.Second, context.DeadlineExceeded},
-		{1 * time.Second, time.Now(), 2 * time.Second, time.Now(), 1 * time.Second, context.DeadlineExceeded},
-		{1 * time.Second, time.Now(), 1 * time.Second, time.Now(), 2 * time.Second, context.DeadlineExceeded},
+		{0, time.Now(), 3 * time.Second, time.Now(), 3 * time.Second, "test", nil},
+		{0, time.Now(), 4 * time.Second, time.Now(), 3 * time.Second, "test", nil},
+		{0, time.Now(), 3 * time.Second, time.Now(), 4 * time.Second, "test", nil},
+		{0, time.Now(), 3 * time.Second, time.Now(), 4 * time.Second, "unknown", nil},
+		{0, time.Now().Add(-1 * time.Second), 1 * time.Second, time.Now(), 1 * time.Second, "test", context.DeadlineExceeded},
+		{0, time.Now(), 1 * time.Second, time.Now().Add(-1 * time.Second), 1 * time.Second, "test", context.DeadlineExceeded},
+		{0, time.Now().Add(-1 * time.Second), 1, time.Now().Add(-1 * time.Second), 1 * time.Second, "test", context.DeadlineExceeded},
+		{1 * time.Second, time.Now(), 1 * time.Second, time.Now(), 1 * time.Second, "test", context.DeadlineExceeded},
+		{1 * time.Second, time.Now(), 2 * time.Second, time.Now(), 1 * time.Second, "test", context.DeadlineExceeded},
+		{1 * time.Second, time.Now(), 1 * time.Second, time.Now(), 2 * time.Second, "test", context.DeadlineExceeded},
 	}
 	a := &testActivityDeadline{logger: t.logger}
 	registry := t.registry
@@ -1451,7 +1455,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 			WorkflowExecution: &commonpb.WorkflowExecution{
 				WorkflowId: "wID",
 				RunId:      "rID"},
-			ActivityType:           &commonpb.ActivityType{Name: "test"},
+			ActivityType:           &commonpb.ActivityType{Name: d.ActivityType},
 			ActivityId:             uuid.New(),
 			ScheduledTime:          &d.ScheduleTS,
 			ScheduleToCloseTimeout: &d.ScheduleDuration,

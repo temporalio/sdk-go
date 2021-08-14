@@ -11,7 +11,7 @@ services:
           - cassandra
 
   temporal:
-    image: temporalio/auto-setup:latest
+    image: temporaliotest/auto-setup:latest
     ports:
       - "7233:7233"
       - "7234:7234"
@@ -96,6 +96,17 @@ services:
     volumes:
       - ../:/go/src/go.temporal.io/sdk
       - /usr/bin/buildkite-agent:/usr/bin/buildkite-agent
+
+  fossa:
+    build:
+      context: ../
+      dockerfile: ./.buildkite/Dockerfile
+    environment:
+      - "GO111MODULE=on"
+      - BUILDKITE_BRANCH
+      - FOSSA_API_KEY
+    volumes:
+      - ../:/go/src/go.temporal.io/sdk
 
 networks:
   services-network:

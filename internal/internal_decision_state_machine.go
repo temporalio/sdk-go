@@ -827,13 +827,15 @@ func (h *commandsHelper) getNextID() int64 {
 }
 
 func (h *commandsHelper) incrementNextCommandEventIDIfVersionMarker() {
-	if _, ok := h.versionMarkerLookup[h.nextCommandEventID]; ok {
+	_, ok := h.versionMarkerLookup[h.nextCommandEventID]
+	for ok {
 		// Remove the marker from the lookup map and increment nextCommandEventID by 2 because call to GetVersion
 		// results in 2 events in the history.  One is GetVersion marker event for changeID and change version, other
 		// is UpsertSearchableAttributes to keep track of executions using particular version of code.
 		delete(h.versionMarkerLookup, h.nextCommandEventID)
 		h.incrementNextCommandEventID()
 		h.incrementNextCommandEventID()
+		_, ok = h.versionMarkerLookup[h.nextCommandEventID]
 	}
 }
 
@@ -860,6 +862,23 @@ func (h *commandsHelper) addCommand(command commandStateMachine) {
 	h.incrementNextCommandEventID()
 }
 
+// This really should not exist, but is unavoidable without totally redesigning the Go SDK to avoid
+// doing event number counting. EX: Because a workflow execution cancel requested event calls a callback
+// on timers that immediately cancels them, we will queue up a cancel timer command even though that timer firing
+// might be in the same workflow task. In practice this only seems to happen during unhandled command events.
+func (h *commandsHelper) removeCancelOfResolvedCommand(commandID commandID) {
+	// Ensure this isn't misused for non-cancel commands
+	if commandID.commandType != commandTypeCancelTimer && commandID.commandType != commandTypeRequestCancelActivityTask {
+		panic("removeCancelOfResolvedCommand should only be called for cancel timer / activity")
+	}
+	orderedCmdEl, ok := h.commands[commandID]
+	if ok {
+		delete(h.commands, commandID)
+		h.orderedCommands.Remove(orderedCmdEl)
+		h.commandsCancelledDuringWFCancellation--
+	}
+}
+
 func (h *commandsHelper) scheduleActivityTask(
 	scheduleID int64,
 	attributes *commandpb.ScheduleActivityTaskCommandAttributes,
@@ -879,6 +898,10 @@ func (h *commandsHelper) requestCancelActivityTask(activityID string) commandSta
 
 func (h *commandsHelper) handleActivityTaskClosed(activityID string, scheduledEventID int64) commandStateMachine {
 	command := h.getCommand(makeCommandID(commandTypeActivity, activityID))
+	// If, for whatever reason, we were going to send an activity cancel request, don't do that anymore
+	// since we already know the activity is resolved.
+	possibleCancelID := makeCommandID(commandTypeRequestCancelActivityTask, activityID)
+	h.removeCancelOfResolvedCommand(possibleCancelID)
 	command.handleCompletionEvent()
 	delete(h.scheduledEventIDToActivityID, scheduledEventID)
 	return command
@@ -1201,6 +1224,10 @@ func (h *commandsHelper) cancelTimer(timerID TimerID) commandStateMachine {
 
 func (h *commandsHelper) handleTimerClosed(timerID string) commandStateMachine {
 	command := h.getCommand(makeCommandID(commandTypeTimer, timerID))
+	// If, for whatever reason, we were going to send a timer cancel command, don't do that anymore
+	// since we already know the timer is resolved.
+	possibleCancelID := makeCommandID(commandTypeCancelTimer, timerID)
+	h.removeCancelOfResolvedCommand(possibleCancelID)
 	command.handleCompletionEvent()
 	return command
 }

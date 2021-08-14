@@ -28,6 +28,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
@@ -220,6 +221,12 @@ type (
 		runID        string
 		workflowType string
 		cause        error
+	}
+
+	// ActivityNotRegisteredError is returned if worker doesn't support activity type.
+	ActivityNotRegisteredError struct {
+		activityType   string
+		supportedTypes []string
 	}
 
 	temporalError struct {
@@ -423,6 +430,11 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) er
 	}
 }
 
+// NewActivityNotRegisteredError creates a new ActivityNotRegisteredError.
+func NewActivityNotRegisteredError(activityType string, supportedTypes []string) error {
+	return &ActivityNotRegisteredError{activityType: activityType, supportedTypes: supportedTypes}
+}
+
 // Error from error interface.
 func (e *ApplicationError) Error() string {
 	msg := e.message()
@@ -624,6 +636,36 @@ func (e *ActivityError) Unwrap() error {
 	return e.cause
 }
 
+// ScheduledEventID returns event id of the scheduled workflow task corresponding to the activity.
+func (e *ActivityError) ScheduledEventID() int64 {
+	return e.scheduledEventID
+}
+
+// StartedEventID returns event id of the started workflow task corresponding to the activity.
+func (e *ActivityError) StartedEventID() int64 {
+	return e.startedEventID
+}
+
+// Identity returns identity of the worker that attempted activity execution.
+func (e *ActivityError) Identity() string {
+	return e.identity
+}
+
+// ActivityType returns declared type of the activity.
+func (e *ActivityError) ActivityType() *commonpb.ActivityType {
+	return e.activityType
+}
+
+// ActivityID return assigned identifier for the activity.
+func (e *ActivityError) ActivityID() string {
+	return e.activityID
+}
+
+// RetryState returns details on why activity failed.
+func (e *ActivityError) RetryState() enumspb.RetryState {
+	return e.retryState
+}
+
 // Error from error interface
 func (e *ChildWorkflowExecutionError) Error() string {
 	msg := fmt.Sprintf("%s (type: %s, workflowID: %s, runID: %s, initiatedEventID: %d, startedEventID: %d)",
@@ -654,6 +696,11 @@ func (e *WorkflowExecutionError) Error() string {
 
 func (e *WorkflowExecutionError) Unwrap() error {
 	return e.cause
+}
+
+func (e *ActivityNotRegisteredError) Error() string {
+	supported := strings.Join(e.supportedTypes, ", ")
+	return fmt.Sprintf("unable to find activityType=%v. Supported types: [%v]", e.activityType, supported)
 }
 
 func convertErrDetailsToPayloads(details converter.EncodedValues, dc converter.DataConverter) *commonpb.Payloads {

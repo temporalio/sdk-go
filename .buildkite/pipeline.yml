@@ -51,6 +51,19 @@ steps:
           run: integ-test
           config: ./.buildkite/docker-compose.yml
 
+  - label: ":alien: fossa"
+    agents:
+      queue: "default"
+      docker: "*"
+    command: "make fossa-init fossa-analyze fossa-test"
+    retry:
+      automatic:
+        limit: 2
+    plugins:
+      - docker-compose#v3.1.0:
+          run: fossa
+          config: ./.buildkite/docker-compose.yml
+
   - wait
 
   - label: ":golang: code-coverage"

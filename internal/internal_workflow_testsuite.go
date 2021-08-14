@@ -28,6 +28,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -66,6 +67,8 @@ const (
 	reservedTaskQueuePrefix = "/__temporal_sys/"
 	maxIDLengthLimit        = 1000
 	maxWorkflowTimeout      = 24 * time.Hour * 365 * 10
+
+	defaultMaximumAttemptsForUnitTest = 10
 )
 
 type (
@@ -187,13 +190,13 @@ type (
 		queryHandler          func(string, *commonpb.Payloads) (*commonpb.Payloads, error)
 		startedHandler        func(r WorkflowExecution, e error)
 
-		isTestCompleted bool
-		testResult      converter.EncodedValue
-		testError       error
-		doneChannel     chan struct{}
-		workerOptions   WorkerOptions
-		dataConverter   converter.DataConverter
-		runTimeout      time.Duration
+		isWorkflowCompleted bool
+		testResult          converter.EncodedValue
+		testError           error
+		doneChannel         chan struct{}
+		workerOptions       WorkerOptions
+		dataConverter       converter.DataConverter
+		runTimeout          time.Duration
 
 		heartbeatDetails *commonpb.Payloads
 
@@ -256,6 +259,11 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		workerStopChannel: make(chan struct{}),
 		dataConverter:     converter.GetDefaultDataConverter(),
 		runTimeout:        maxWorkflowTimeout,
+	}
+
+	if os.Getenv("TEMPORAL_DEBUG") != "" {
+		env.testTimeout = time.Hour * 24
+		env.workerOptions.DeadlockDetectionTimeout = unlimitedDeadlockDetectionTimeout
 	}
 
 	// move forward the mock clock to start time.
@@ -485,7 +493,7 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 	if env.runTimeout > 0 {
 		timeoutDuration := env.runTimeout + delayStart
 		env.registerDelayedCallback(func() {
-			if !env.isTestCompleted {
+			if !env.isWorkflowCompleted {
 				env.Complete(nil, ErrDeadlineExceeded)
 			}
 		}, timeoutDuration)
@@ -626,8 +634,8 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 }
 
 func (env *testWorkflowEnvironmentImpl) startWorkflowTask() {
-	if !env.isTestCompleted {
-		env.workflowDef.OnWorkflowTaskStarted()
+	if !env.isWorkflowCompleted {
+		env.workflowDef.OnWorkflowTaskStarted(env.workerOptions.DeadlockDetectionTimeout)
 	}
 }
 
@@ -642,7 +650,10 @@ func (env *testWorkflowEnvironmentImpl) startMainLoop() {
 		return
 	}
 
-	for !env.isTestCompleted {
+	// notify all child workflows to exit their main loop
+	defer close(env.doneChannel)
+
+	for !env.shouldStopEventLoop() {
 		// use non-blocking-select to check if there is anything pending in the main thread.
 		select {
 		case c := <-env.callbackChannel:
@@ -651,7 +662,7 @@ func (env *testWorkflowEnvironmentImpl) startMainLoop() {
 		default:
 			// nothing to process, main thread is blocked at this moment, now check if we should auto fire next timer
 			if !env.autoFireNextTimer() {
-				if env.isTestCompleted {
+				if env.shouldStopEventLoop() {
 					return
 				}
 
@@ -669,6 +680,22 @@ func (env *testWorkflowEnvironmentImpl) startMainLoop() {
 			}
 		}
 	}
+}
+
+func (env *testWorkflowEnvironmentImpl) shouldStopEventLoop() bool {
+	for _, handle := range env.runningWorkflows {
+		if env.workflowInfo.WorkflowExecution.ID == handle.env.workflowInfo.WorkflowExecution.ID {
+			// ignore root workflow
+			continue
+		}
+
+		if !handle.handled && (handle.params.ParentClosePolicy == enumspb.PARENT_CLOSE_POLICY_ABANDON ||
+			handle.params.ParentClosePolicy == enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL) {
+			return false
+		}
+	}
+
+	return env.isWorkflowCompleted
 }
 
 func (env *testWorkflowEnvironmentImpl) registerDelayedCallback(f func(), delayDuration time.Duration) {
@@ -806,7 +833,7 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelTimer(timerID TimerID) {
 }
 
 func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err error) {
-	if env.isTestCompleted {
+	if env.isWorkflowCompleted {
 		env.logger.Debug("Workflow already completed.")
 		return
 	}
@@ -816,7 +843,7 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 	}
 
 	dc := env.GetDataConverter()
-	env.isTestCompleted = true
+	env.isWorkflowCompleted = true
 
 	if err != nil {
 		var continueAsNewErr *ContinueAsNewError
@@ -843,8 +870,6 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 	} else {
 		env.testResult = newEncodedValue(result, dc)
 	}
-
-	close(env.doneChannel)
 
 	if env.isChildWorkflow() {
 		// this is completion of child workflow
@@ -879,6 +904,26 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 					env.onChildWorkflowCompletedListener(env.workflowInfo, env.testResult, childWorkflowHandle.err)
 				}
 			}, true /* true to trigger parent workflow to resume to handle child workflow's result */)
+		}
+	}
+
+	// properly handle child workflows based on their ParentClosePolicy
+	env.handleParentClosePolicy()
+}
+
+func (env *testWorkflowEnvironmentImpl) handleParentClosePolicy() {
+	for _, handle := range env.runningWorkflows {
+		if handle.env.parentEnv != nil &&
+			env.workflowInfo.WorkflowExecution.ID == handle.env.parentEnv.workflowInfo.WorkflowExecution.ID {
+
+			switch handle.params.ParentClosePolicy {
+			case enumspb.PARENT_CLOSE_POLICY_ABANDON:
+				// noop
+			case enumspb.PARENT_CLOSE_POLICY_TERMINATE:
+				handle.env.Complete(nil, newTerminatedError())
+			case enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL:
+				handle.env.cancelWorkflow(func(result *commonpb.Payloads, err error) {})
+			}
 		}
 	}
 }
@@ -985,8 +1030,8 @@ func (env *testWorkflowEnvironmentImpl) GetContextPropagators() []ContextPropaga
 }
 
 func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityParams, callback ResultHandler) ActivityID {
+	ensureDefaultRetryPolicy(&parameters)
 	scheduleTaskAttr := &commandpb.ScheduleActivityTaskCommandAttributes{}
-
 	scheduleID := env.nextID()
 	if parameters.ActivityID == "" {
 		scheduleTaskAttr.ActivityId = getStringID(scheduleID)
@@ -1055,13 +1100,6 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 	attributes *commandpb.ScheduleActivityTaskCommandAttributes,
 	runTimeout time.Duration,
 ) error {
-
-	// if err := v.validateCrossNamespaceCall(
-	//	namespaceID,
-	//	targetNamespaceID,
-	// ); err != nil {
-	//	return err
-	// }
 
 	if attributes == nil {
 		return serviceerror.NewInvalidArgument("ScheduleActivityTaskCommandAttributes is not set on command.")
@@ -1295,6 +1333,30 @@ func getRetryBackoffFromProtoRetryPolicy(prp *commonpb.RetryPolicy, attempt int3
 
 	p := fromProtoRetryPolicy(prp)
 	return getRetryBackoffWithNowTime(p, attempt, err, now, expireTime)
+}
+
+func ensureDefaultRetryPolicy(parameters *ExecuteActivityParams) {
+	// ensure default retry policy
+	if parameters.RetryPolicy == nil {
+		parameters.RetryPolicy = &commonpb.RetryPolicy{}
+	}
+
+	if parameters.RetryPolicy.InitialInterval == nil || *parameters.RetryPolicy.InitialInterval == 0 {
+		parameters.RetryPolicy.InitialInterval = common.DurationPtr(time.Second)
+	}
+	if parameters.RetryPolicy.MaximumInterval == nil || *parameters.RetryPolicy.MaximumInterval == 0 {
+		parameters.RetryPolicy.MaximumInterval = common.DurationPtr(*parameters.RetryPolicy.InitialInterval)
+	}
+	if parameters.RetryPolicy.BackoffCoefficient == 0 {
+		parameters.RetryPolicy.BackoffCoefficient = 2
+	}
+
+	// NOTE: the default MaximumAttempts for retry policy set by server is 0 which means unlimited retries.
+	// However, unlimited retry with automatic fast forward clock in test framework will cause the CPU to spin and test
+	// to go forever. So we need to set a reasonable default max attempts for unit test.
+	if parameters.RetryPolicy.MaximumAttempts == 0 {
+		parameters.RetryPolicy.MaximumAttempts = defaultMaximumAttemptsForUnitTest
+	}
 }
 
 func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LocalActivityResultHandler) LocalActivityID {
@@ -1993,7 +2055,7 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(namespace, workfl
 	if childHandle, ok := env.runningWorkflows[workflowID]; ok {
 		// target workflow is a child
 		childEnv := childHandle.env
-		if childEnv.isTestCompleted {
+		if childEnv.isWorkflowCompleted {
 			// child already completed (NOTE: we have only one failed cause now)
 			err := newUnknownExternalWorkflowExecutionError()
 			callback(nil, err)

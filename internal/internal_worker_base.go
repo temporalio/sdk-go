@@ -37,6 +37,7 @@ import (
 	"github.com/uber-go/tally"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/serviceerror"
+	"go.temporal.io/sdk/internal/common/retry"
 	"golang.org/x/time/rate"
 
 	"go.temporal.io/sdk/converter"
@@ -46,7 +47,7 @@ import (
 )
 
 const (
-	retryPollOperationInitialInterval = 20 * time.Millisecond
+	retryPollOperationInitialInterval = 200 * time.Millisecond
 	retryPollOperationMaxInterval     = 10 * time.Second
 )
 
@@ -115,7 +116,7 @@ type (
 		// Application level code must be executed from this function only.
 		// Execute call as well as callbacks called from WorkflowEnvironment functions can only schedule callbacks
 		// which can be executed from OnWorkflowTaskStarted().
-		OnWorkflowTaskStarted()
+		OnWorkflowTaskStarted(deadlockDetectionTimeout time.Duration)
 		// StackTrace of all coroutines owned by the Dispatcher instance.
 		StackTrace() string
 		Close()
@@ -166,7 +167,7 @@ func createPollRetryPolicy() backoff.RetryPolicy {
 	// We use it to calculate next backoff. We have additional layer that is built on poller
 	// in the worker layer for to add some middleware for any poll retry that includes
 	// (a) rate limiting across pollers (b) back-off across pollers when server is busy
-	policy.SetExpirationInterval(backoff.NoInterval) // We don't ever expire
+	policy.SetExpirationInterval(retry.UnlimitedInterval) // We don't ever expire
 	return policy
 }
 
