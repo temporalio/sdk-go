@@ -1018,20 +1018,58 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflow() {
 		WorkflowTaskTimeout:      timeoutInSeconds,
 	}
 
-	createResponse := &workflowservice.SignalWithStartWorkflowExecutionResponse{
+	startResponse := &workflowservice.SignalWithStartWorkflowExecutionResponse{
 		RunId: runID,
 	}
-	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil).Times(2)
+	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResponse, nil).Times(2)
 
 	resp, err := s.client.SignalWithStartWorkflow(context.Background(), workflowID, signalName, signalInput,
 		options, workflowType)
 	s.Nil(err)
-	s.Equal(createResponse.GetRunId(), resp.GetRunID())
+	s.Equal(startResponse.GetRunId(), resp.GetRunID())
 
 	resp, err = s.client.SignalWithStartWorkflow(context.Background(), "", signalName, signalInput,
 		options, workflowType)
 	s.Nil(err)
-	s.Equal(createResponse.GetRunId(), resp.GetRunID())
+	s.Equal(startResponse.GetRunId(), resp.GetRunID())
+}
+
+func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithContextAwareDataConverter() {
+	dc := NewContextAwareDataConverter(converter.GetDefaultDataConverter())
+	s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+	client, ok := s.client.(*WorkflowClient)
+	s.True(ok)
+
+	input := "test"
+
+	signalName := "my signal"
+	signalInput := "my signal input"
+	options := StartWorkflowOptions{
+		ID:                       workflowID,
+		TaskQueue:                taskqueue,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
+	}
+
+	startResponse := &workflowservice.SignalWithStartWorkflowExecutionResponse{
+		RunId: runID,
+	}
+	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResponse, nil).
+		Do(func(_ interface{}, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...interface{}) {
+			dc := client.dataConverter
+			inputs := dc.ToStrings(req.Input)
+			s.Equal("\"te?t\"", inputs[0])
+			signalInputs := dc.ToStrings(req.SignalInput)
+			s.Equal("\"my ?ignal input\"", signalInputs[0])
+		})
+
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, ContextAwareDataConverterContextKey, "s")
+
+	resp, err := s.client.SignalWithStartWorkflow(ctx, workflowID, signalName, signalInput,
+		options, workflowType, input)
+	s.Nil(err)
+	s.Equal(startResponse.GetRunId(), resp.GetRunID())
 }
 
 func (s *workflowClientTestSuite) TestStartWorkflow() {
@@ -1093,7 +1131,41 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithDataConverter() {
 	s.Equal(createResponse.GetRunId(), resp.RunID)
 }
 
-func (s *workflowClientTestSuite) TestStartWorkflow_WithMemoAndSearchAttr() {
+func (s *workflowClientTestSuite) TestStartWorkflowWithContextAwareDataConverter() {
+	dc := NewContextAwareDataConverter(converter.GetDefaultDataConverter())
+	s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+	client, ok := s.client.(*WorkflowClient)
+	s.True(ok)
+	options := StartWorkflowOptions{
+		ID:                       workflowID,
+		TaskQueue:                taskqueue,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
+	}
+	f1 := func(ctx Context, s string) string {
+		panic("this is just a stub")
+	}
+	input := "test"
+
+	createResponse := &workflowservice.StartWorkflowExecutionResponse{
+		RunId: runID,
+	}
+	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil).
+		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
+			dc := client.dataConverter
+			inputs := dc.ToStrings(req.Input)
+			s.Equal("\"t?st\"", inputs[0])
+		})
+
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, ContextAwareDataConverterContextKey, "e")
+
+	resp, err := client.StartWorkflow(ctx, options, f1, input)
+	s.Nil(err)
+	s.Equal(createResponse.GetRunId(), resp.RunID)
+}
+
+func (s *workflowClientTestSuite) TestStartWorkflowWithMemoAndSearchAttr() {
 	memo := map[string]interface{}{
 		"testMemo": "memo value",
 	}
@@ -1127,7 +1199,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow_WithMemoAndSearchAttr() {
 	_, _ = s.client.ExecuteWorkflow(context.Background(), options, wf)
 }
 
-func (s *workflowClientTestSuite) SignalWithStartWorkflowWithMemoAndSearchAttr() {
+func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithMemoAndSearchAttr() {
 	memo := map[string]interface{}{
 		"testMemo": "memo value",
 	}
@@ -1145,10 +1217,9 @@ func (s *workflowClientTestSuite) SignalWithStartWorkflowWithMemoAndSearchAttr()
 	wf := func(ctx Context) string {
 		panic("this is just a stub")
 	}
-	startResp := &workflowservice.StartWorkflowExecutionResponse{}
+	startResp := &workflowservice.SignalWithStartWorkflowExecutionResponse{}
 
-	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any(),
-		gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
+	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
 		Do(func(_ interface{}, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...interface{}) {
 			var resultMemo, resultAttr string
 			err := converter.GetDefaultDataConverter().FromPayload(req.Memo.Fields["testMemo"], &resultMemo)
