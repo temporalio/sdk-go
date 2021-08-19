@@ -1646,6 +1646,25 @@ func (s *internalWorkerTestSuite) TestCompleteActivityWithDataConverter() {
 	s.testCompleteActivityHelper(opt)
 }
 
+func (s *internalWorkerTestSuite) TestCompleteActivityWithContextAwareDataConverter() {
+	dc := NewContextAwareDataConverter(converter.GetDefaultDataConverter())
+	client := NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, ContextAwareDataConverterContextKey, "e")
+
+	response := &workflowservice.RespondActivityTaskCompletedResponse{}
+
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
+		Do(func(_ interface{}, req *workflowservice.RespondActivityTaskCompletedRequest, _ ...interface{}) {
+			dc := client.dataConverter
+			results := dc.ToStrings(req.Result)
+			s.Equal("\"t?st\"", results[0])
+		})
+
+	_ = client.CompleteActivity(ctx, []byte("task-token"), "test", nil)
+}
+
 func (s *internalWorkerTestSuite) TestCompleteActivityById() {
 	t := s.T()
 	mockService := s.service
@@ -1676,6 +1695,25 @@ func (s *internalWorkerTestSuite) TestCompleteActivityById() {
 
 	_ = wfClient.CompleteActivityByID(context.Background(), DefaultNamespace, workflowID, runID, activityID, nil, errors.New(""))
 	require.NotNil(t, failedRequest)
+}
+
+func (s *internalWorkerTestSuite) TestCompleteActivityByIDWithContextAwareDataConverter() {
+	dc := NewContextAwareDataConverter(converter.GetDefaultDataConverter())
+	client := NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, ContextAwareDataConverterContextKey, "e")
+
+	response := &workflowservice.RespondActivityTaskCompletedByIdResponse{}
+
+	s.service.EXPECT().RespondActivityTaskCompletedById(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
+		Do(func(_ interface{}, req *workflowservice.RespondActivityTaskCompletedByIdRequest, _ ...interface{}) {
+			dc := client.dataConverter
+			results := dc.ToStrings(req.Result)
+			s.Equal("\"t?st\"", results[0])
+		})
+
+	_ = client.CompleteActivityByID(ctx, DefaultNamespace, "wid", "", "aid", "test", nil)
 }
 
 func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat() {

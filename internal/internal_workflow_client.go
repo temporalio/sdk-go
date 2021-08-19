@@ -332,7 +332,8 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 
 // SignalWorkflow signals a workflow in execution.
 func (wc *WorkflowClient) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error {
-	input, err := encodeArg(wc.dataConverter, arg)
+	dataConverter := WithContext(ctx, wc.dataConverter)
+	input, err := encodeArg(dataConverter, arg)
 	if err != nil {
 		return err
 	}
@@ -359,7 +360,8 @@ func (wc *WorkflowClient) SignalWorkflow(ctx context.Context, workflowID string,
 func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
 	options StartWorkflowOptions, workflowFunc interface{}, workflowArgs ...interface{}) (WorkflowRun, error) {
 
-	signalInput, err := encodeArg(wc.dataConverter, signalArg)
+	dataConverter := WithContext(ctx, wc.dataConverter)
+	signalInput, err := encodeArg(dataConverter, signalArg)
 	if err != nil {
 		return nil, err
 	}
@@ -373,7 +375,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	taskTimeout := options.WorkflowTaskTimeout
 
 	// Validate type and its arguments.
-	workflowType, input, err := getValidatedWorkflowFunction(workflowFunc, workflowArgs, wc.dataConverter, wc.registry)
+	workflowType, input, err := getValidatedWorkflowFunction(workflowFunc, workflowArgs, dataConverter, wc.registry)
 	if err != nil {
 		return nil, err
 	}
@@ -578,10 +580,11 @@ func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 		return errors.New("invalid task token provided")
 	}
 
+	dataConverter := WithContext(ctx, wc.dataConverter)
 	var data *commonpb.Payloads
 	if result != nil {
 		var err0 error
-		data, err0 = encodeArg(wc.dataConverter, result)
+		data, err0 = encodeArg(dataConverter, result)
 		if err0 != nil {
 			return err0
 		}
@@ -599,10 +602,11 @@ func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, namespace, w
 		return errors.New("empty activity or workflow id or namespace")
 	}
 
+	dataConverter := WithContext(ctx, wc.dataConverter)
 	var data *commonpb.Payloads
 	if result != nil {
 		var err0 error
-		data, err0 = encodeArg(wc.dataConverter, result)
+		data, err0 = encodeArg(dataConverter, result)
 		if err0 != nil {
 			return err0
 		}
@@ -614,7 +618,8 @@ func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, namespace, w
 
 // RecordActivityHeartbeat records heartbeat for an activity.
 func (wc *WorkflowClient) RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...interface{}) error {
-	data, err := encodeArgs(wc.dataConverter, details)
+	dataConverter := WithContext(ctx, wc.dataConverter)
+	data, err := encodeArgs(dataConverter, details)
 	if err != nil {
 		return err
 	}
@@ -624,7 +629,8 @@ func (wc *WorkflowClient) RecordActivityHeartbeat(ctx context.Context, taskToken
 // RecordActivityHeartbeatByID records heartbeat for an activity.
 func (wc *WorkflowClient) RecordActivityHeartbeatByID(ctx context.Context,
 	namespace, workflowID, runID, activityID string, details ...interface{}) error {
-	data, err := encodeArgs(wc.dataConverter, details)
+	dataConverter := WithContext(ctx, wc.dataConverter)
+	data, err := encodeArgs(dataConverter, details)
 	if err != nil {
 		return err
 	}
