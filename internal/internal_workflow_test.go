@@ -1289,6 +1289,47 @@ func (s *WorkflowUnitTest) Test_WaitGroupWorkflowTest() {
 	s.Equal(n, total)
 }
 
+func (s *WorkflowUnitTest) Test_StaleGoroutinesAreShutDown() {
+	env := s.NewTestWorkflowEnvironment()
+	deferred := make(chan struct{})
+	after := make(chan struct{})
+	wf := func(ctx Context) error {
+		Go(ctx, func(ctx Context) {
+			defer func() { close(deferred) }()
+			_ = Sleep(ctx, time.Hour) // outlive the workflow
+			close(after)
+		})
+		_ = Sleep(ctx, time.Minute)
+		return nil
+	}
+	env.RegisterWorkflow(wf)
+
+	env.ExecuteWorkflow(wf)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	// goroutines are shut down async at the moment, so wait with a timeout.
+	// give it up to 1s total.
+
+	started := time.Now()
+	maxWait := time.NewTimer(time.Second)
+	defer maxWait.Stop()
+	select {
+	case <-deferred:
+		s.T().Logf("deferred callback executed after %v", time.Now().Sub(started))
+	case <-maxWait.C:
+		s.Fail("deferred func should have been called within 1 second")
+	}
+	// if deferred code has run, this has already occurred-or-not.
+	// if it timed out waiting for the deferred code, it has waited long enough, and this is mostly a curiosity.
+	select {
+	case <-after:
+		s.Fail("code after sleep should not have run")
+	default:
+		s.T().Log("code after sleep correctly not executed")
+	}
+}
+
 var _ WorkflowInterceptor = (*tracingWorkflowInterceptor)(nil)
 var _ WorkflowOutboundCallsInterceptor = (*tracingOutboundCallsInterceptor)(nil)
 
