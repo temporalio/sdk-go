@@ -1316,7 +1316,7 @@ func (s *WorkflowUnitTest) Test_StaleGoroutinesAreShutDown() {
 	defer maxWait.Stop()
 	select {
 	case <-deferred:
-		s.T().Logf("deferred callback executed after %v", time.Now().Sub(started))
+		s.T().Logf("deferred callback executed after %v", time.Since(started))
 	case <-maxWait.C:
 		s.Fail("deferred func should have been called within 1 second")
 	}
