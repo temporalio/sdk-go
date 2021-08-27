@@ -433,6 +433,8 @@ func (ts *IntegrationTestSuite) TestConsistentQuery() {
 	var queryResult string
 	ts.Nil(value.QueryResult.Get(&queryResult))
 	ts.Equal("signal-input", queryResult)
+	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ProcessSignal", "Go", "ExecuteWorkflow end", "HandleQuery begin", "HandleQuery end"},
+		ts.tracer.GetTrace("ConsistentQueryWorkflow"))
 }
 
 func (ts *IntegrationTestSuite) TestSignalWorkflow() {
@@ -453,6 +455,8 @@ func (ts *IntegrationTestSuite) TestSignalWorkflow() {
 	err = run.Get(ctx, &protoValue)
 	ts.NoError(err)
 	ts.Equal(commonpb.WorkflowType{Name: "string-value"}, *protoValue)
+	ts.Equal([]string{"Go", "ProcessSignal", "ExecuteWorkflow begin", "ProcessSignal", "ExecuteWorkflow end"},
+		ts.tracer.GetTrace("SignalWorkflow"))
 }
 
 func (ts *IntegrationTestSuite) TestSignalWorkflowWithStubbornGrpcError() {
@@ -859,7 +863,7 @@ func (ts *IntegrationTestSuite) TestBasicSession() {
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
 	// createSession activity, actual activity, completeSession activity.
-	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteActivity", "Go", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
+	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteActivity", "ProcessSignal", "Go", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
 		ts.tracer.GetTrace("BasicSession"))
 }
 
@@ -1132,6 +1136,19 @@ func (t *tracingInboundCallsInterceptor) ExecuteWorkflow(ctx workflow.Context, w
 	result := t.Next.ExecuteWorkflow(ctx, workflowType, args...)
 	t.trace = append(t.trace, "ExecuteWorkflow end")
 	return result
+}
+
+func (t *tracingInboundCallsInterceptor) ProcessSignal(ctx workflow.Context, signalName string, arg interface{}) {
+	t.trace = append(t.trace, "ProcessSignal")
+	t.Next.ProcessSignal(ctx, signalName, arg)
+}
+
+func (t *tracingInboundCallsInterceptor) HandleQuery(ctx workflow.Context, queryType string, args *commonpb.Payloads,
+	handler func(*commonpb.Payloads) (*commonpb.Payloads, error)) (*commonpb.Payloads, error) {
+	t.trace = append(t.trace, "HandleQuery begin")
+	result, err := t.Next.HandleQuery(ctx, queryType, args, handler)
+	t.trace = append(t.trace, "HandleQuery end")
+	return result, err
 }
 
 func (ts *IntegrationTestSuite) assertMetricsCounters(keyValuePairs ...interface{}) {

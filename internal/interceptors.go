@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/uber-go/tally"
+	commonpb "go.temporal.io/api/common/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/log"
@@ -54,7 +55,14 @@ type WorkflowInboundCallsInterceptor interface {
 	// WorkflowType argument is for information purposes only and should not be mutated.
 	ExecuteWorkflow(ctx Context, workflowType string, args ...interface{}) []interface{}
 
-	//TODO(maxim): ProcessSignal(ctx Context, signalName string, arg interface{}) error
+	// ProcessSignal is called before signal is passed to the workflow implementation, note that this function does NOT
+	// have any flow control and can not modify the signal or prevent it from being passed to the workflow.
+	ProcessSignal(ctx Context, signalName string, arg interface{})
+
+	// HandleQuery is invoked when query request is received, this function HAS flow control and can alter parameters
+	// or values returned by the query. Handler that is passed as a parameter MUST be called in order to execute the query.
+	HandleQuery(ctx Context, queryType string, args *commonpb.Payloads,
+		handler func(*commonpb.Payloads) (*commonpb.Payloads, error)) (*commonpb.Payloads, error)
 }
 
 // WorkflowOutboundCallsInterceptor is an interface that can be implemented to intercept calls to the SDK APIs done
@@ -106,6 +114,17 @@ func (w WorkflowInboundCallsInterceptorBase) Init(outbound WorkflowOutboundCalls
 // ExecuteWorkflow intercepts invocation of the workflow function
 func (w WorkflowInboundCallsInterceptorBase) ExecuteWorkflow(ctx Context, workflowType string, args ...interface{}) []interface{} {
 	return w.Next.ExecuteWorkflow(ctx, workflowType, args...)
+}
+
+// ProcessSignal process inbound signal notification
+func (w WorkflowInboundCallsInterceptorBase) ProcessSignal(ctx Context, signalName string, arg interface{}) {
+	w.Next.ProcessSignal(ctx, signalName, arg)
+}
+
+// HandleQuery handles inbound query request
+func (w WorkflowInboundCallsInterceptorBase) HandleQuery(ctx Context, queryType string, args *commonpb.Payloads,
+	handler func(*commonpb.Payloads) (*commonpb.Payloads, error)) (*commonpb.Payloads, error) {
+	return w.Next.HandleQuery(ctx, queryType, args, handler)
 }
 
 // WorkflowOutboundCallsInterceptorBase is a noop implementation of WorkflowOutboundCallsInterceptor that just forwards requests
