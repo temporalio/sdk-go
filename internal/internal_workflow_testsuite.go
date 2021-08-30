@@ -837,6 +837,7 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 		env.logger.Debug("Workflow already completed.")
 		return
 	}
+	env.workflowDef.Close()
 	var canceledErr *CanceledError
 	if errors.As(err, &canceledErr) && env.workflowCancelHandler != nil {
 		env.workflowCancelHandler()
