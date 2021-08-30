@@ -55,7 +55,7 @@ type WorkflowInboundCallsInterceptor interface {
 	// WorkflowType argument is for information purposes only and should not be mutated.
 	ExecuteWorkflow(ctx Context, workflowType string, args ...interface{}) []interface{}
 
-	// ProcessSignal is called before signal is passed to the workflow implementation, note that this function does NOT
+	// ProcessSignal is called before the signal is passed to the workflow implementation, note that this function does NOT
 	// have any flow control and can not modify the signal or prevent it from being passed to the workflow.
 	ProcessSignal(ctx Context, signalName string, arg interface{})
 
