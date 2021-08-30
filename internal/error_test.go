@@ -441,6 +441,102 @@ func Test_CanceledError(t *testing.T) {
 	require.Equal(t, testErrorDetails3, b3)
 }
 
+// TestCanceledErrorIs tests whether
+// the errors.Is() method operates as
+// expected.
+func TestCanceledErrorIs(t *testing.T) {
+	workflowErr := NewCanceledError()
+	require.True(t, errors.Is(workflowErr, &CanceledError{}), workflowErr)
+}
+
+// TestPanicErrorIs tests whether
+// the errors.Is() method operates as
+// expected.
+func TestPanicErrorIs(t *testing.T) {
+	workflowErr := newPanicError("test value", "stacktrace")
+	require.True(t, errors.Is(workflowErr, &PanicError{}), workflowErr)
+}
+
+// TestApplicationErrorIs tests whether
+// the errors.Is() method operates as
+// expected.
+func TestApplicationErrorIs(t *testing.T) {
+	workflowErr := NewApplicationError("test value", "errType", false, errors.New("error"))
+	require.True(t, errors.Is(workflowErr, &ApplicationError{}), workflowErr)
+}
+
+// TestTimeoutErrorIs tests whether
+// the errors.Is() method operates as
+// expected.
+func TestTimeoutErrorIs(t *testing.T) {
+	workflowErr := NewTimeoutError("timeout", enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil)
+	require.True(t, errors.Is(workflowErr, &TimeoutError{}), workflowErr)
+}
+
+// TestWorkflowPanicErrorIs tests whether
+// the errors.Is() method operates as
+// expected.
+func TestWorkflowPanicErrorIs(t *testing.T) {
+	workflowErr := newWorkflowPanicError("", "")
+	require.True(t, errors.Is(workflowErr, &workflowPanicError{}), workflowErr)
+}
+
+// TestTeminatedErrorIs tests whether
+// the errors.Is() method operates as
+// expected.
+func TestTeminatedErrorIs(t *testing.T) {
+	workflowErr := newTerminatedError()
+	require.True(t, errors.Is(workflowErr, &TerminatedError{}), workflowErr)
+}
+
+// TestUnknownExternalWorkflowExecutionErrorIs tests whether
+// the errors.Is() method operates as expected.
+func TestUnknownExternalWorkflowExecutionErrorIs(t *testing.T) {
+	workflowErr := newUnknownExternalWorkflowExecutionError()
+	require.True(t, errors.Is(workflowErr, &UnknownExternalWorkflowExecutionError{}), workflowErr)
+}
+
+// TestServerErrorIs tests whether
+// the errors.Is() method operates as
+// expected.
+func TestServerErrorIs(t *testing.T) {
+	workflowErr := NewServerError("msg", false, errors.New("error"))
+	require.True(t, errors.Is(workflowErr, &ServerError{}), workflowErr)
+}
+
+// TestActivityErrorIs tests whether
+// the errors.Is() method operates as
+// expected.
+func TestActivityErrorIs(t *testing.T) {
+	var applicationErr *ApplicationError
+	workflowErr := NewActivityError(8, 22, "alex", &commonpb.ActivityType{Name: "activityType"}, "32283", enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, applicationErr)
+	require.True(t, errors.Is(workflowErr, &ActivityError{}), workflowErr)
+}
+
+// TestChildWorkflowExecutionErrorIs tests whether
+// the errors.Is() method operates as
+// expected.
+func TestChildWorkflowExecutionErrorIs(t *testing.T) {
+	applicationErr := NewApplicationError("app err", "", true, nil)
+	workflowErr := NewChildWorkflowExecutionError("namespace", "wID", "rID", "wfType", 8, 22, enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, applicationErr)
+	require.True(t, errors.Is(workflowErr, &ChildWorkflowExecutionError{}), workflowErr)
+}
+
+// TestWorkflowExecutionErrorIs tests whether
+// the errors.Is() method operates as
+// expected.
+func TestWorkflowExecutionErrorIs(t *testing.T) {
+	workflowErr := NewWorkflowExecutionError("42", "51", "alex", errors.New("error"))
+	require.True(t, errors.Is(workflowErr, &WorkflowExecutionError{}), workflowErr)
+}
+
+// TestActivityNotRegisteredErrorIs tests whether
+// the errors.Is() method operates as expected.
+func TestActivityNotRegisteredErrorIs(t *testing.T) {
+	workflowErr := NewActivityNotRegisteredError("42", []string{})
+	require.True(t, errors.Is(workflowErr, &ActivityNotRegisteredError{}), workflowErr)
+}
+
 func Test_IsCanceledError(t *testing.T) {
 
 	tests := []struct {
@@ -554,6 +650,8 @@ func Test_ContinueAsNewError(t *testing.T) {
 	err = errors.Unwrap(workflowErr)
 	var continueAsNewErr *ContinueAsNewError
 	require.True(t, errors.As(err, &continueAsNewErr))
+	require.True(t, errors.Is(workflowErr, continueAsNewErr), workflowErr)
+
 	require.Equal(t, continueAsNewWfName, continueAsNewErr.WorkflowType.Name)
 
 	input := continueAsNewErr.Input
