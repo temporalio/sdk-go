@@ -435,6 +435,7 @@ func NewActivityNotRegisteredError(activityType string, supportedTypes []string)
 	return &ActivityNotRegisteredError{activityType: activityType, supportedTypes: supportedTypes}
 }
 
+// Is satisfies the errors interface.
 func (e *ApplicationError) Is(target error) bool {
 	if _, ok := target.(*ApplicationError); !ok {
 		return false
@@ -488,6 +489,7 @@ func (e *ApplicationError) Unwrap() error {
 	return e.cause
 }
 
+// Is satisfies the errors interface.
 func (e *TimeoutError) Is(target error) bool {
 	if _, ok := target.(*TimeoutError); !ok {
 		return false
@@ -530,6 +532,7 @@ func (e *TimeoutError) LastHeartbeatDetails(d ...interface{}) error {
 	return e.lastHeartbeatDetails.Get(d...)
 }
 
+// Is satisfies the errors interface.
 func (e *CanceledError) Is(target error) bool {
 	if _, ok := target.(*CanceledError); !ok {
 		return false
@@ -567,6 +570,7 @@ func newWorkflowPanicError(value interface{}, stackTrace string) error {
 	return &workflowPanicError{value: value, stackTrace: stackTrace}
 }
 
+// Is satisfies the errors interface.
 func (e *PanicError) Is(target error) bool {
 	if _, ok := target.(*PanicError); !ok {
 		return false
@@ -588,6 +592,7 @@ func (e *PanicError) StackTrace() string {
 	return e.stackTrace
 }
 
+// Is satisfies the errors interface.
 func (e *workflowPanicError) Is(target error) bool {
 	if _, ok := target.(*workflowPanicError); !ok {
 		return false
@@ -605,6 +610,7 @@ func (e *workflowPanicError) StackTrace() string {
 	return e.stackTrace
 }
 
+// Is satisfies the errors interface.
 func (e *ContinueAsNewError) Is(target error) bool {
 	if _, ok := target.(*ContinueAsNewError); !ok {
 		return false
@@ -626,6 +632,7 @@ func newTerminatedError() *TerminatedError {
 	return &TerminatedError{}
 }
 
+// Is satisfies the errors interface.
 func (e *TerminatedError) Is(target error) bool {
 	if _, ok := target.(*TerminatedError); !ok {
 		return false
@@ -647,6 +654,7 @@ func newUnknownExternalWorkflowExecutionError() *UnknownExternalWorkflowExecutio
 	return &UnknownExternalWorkflowExecutionError{}
 }
 
+// Is satisfies the errors interface.
 func (e *UnknownExternalWorkflowExecutionError) Is(target error) bool {
 	if _, ok := target.(*UnknownExternalWorkflowExecutionError); !ok {
 		return false
@@ -659,6 +667,7 @@ func (e *UnknownExternalWorkflowExecutionError) Error() string {
 	return "unknown external workflow execution"
 }
 
+// Is satisfies the errors interface.
 func (e *ServerError) Is(target error) bool {
 	if _, ok := target.(*ServerError); !ok {
 		return false
@@ -683,6 +692,7 @@ func (e *ServerError) Unwrap() error {
 	return e.cause
 }
 
+// Is satisfies the errors interface.
 func (e *ActivityError) Is(target error) bool {
 	if _, ok := target.(*ActivityError); !ok {
 		return false
@@ -736,6 +746,7 @@ func (e *ActivityError) RetryState() enumspb.RetryState {
 	return e.retryState
 }
 
+// Is satisfies the errors interface.
 func (e *ChildWorkflowExecutionError) Is(target error) bool {
 	if _, ok := target.(*ChildWorkflowExecutionError); !ok {
 		return false
@@ -761,6 +772,7 @@ func (e *ChildWorkflowExecutionError) Unwrap() error {
 	return e.cause
 }
 
+// Is satisfies the errors interface.
 func (e *WorkflowExecutionError) Is(target error) bool {
 	if _, ok := target.(*WorkflowExecutionError); !ok {
 		return false
@@ -782,6 +794,7 @@ func (e *WorkflowExecutionError) Unwrap() error {
 	return e.cause
 }
 
+// Is satisfies the errors interface.
 func (e *ActivityNotRegisteredError) Is(target error) bool {
 	if _, ok := target.(*ActivityNotRegisteredError); !ok {
 		return false

@@ -446,7 +446,7 @@ func Test_CanceledError(t *testing.T) {
 // expected.
 func TestCanceledErrorIs(t *testing.T) {
 	workflowErr := NewCanceledError()
-	require.True(t, errors.Is(workflowErr, &CanceledError{}), workflowErr)
+	require.ErrorIs(t, workflowErr, &CanceledError{})
 }
 
 // TestPanicErrorIs tests whether
@@ -454,7 +454,7 @@ func TestCanceledErrorIs(t *testing.T) {
 // expected.
 func TestPanicErrorIs(t *testing.T) {
 	workflowErr := newPanicError("test value", "stacktrace")
-	require.True(t, errors.Is(workflowErr, &PanicError{}), workflowErr)
+	require.ErrorIs(t, workflowErr, &PanicError{})
 }
 
 // TestApplicationErrorIs tests whether
@@ -462,7 +462,7 @@ func TestPanicErrorIs(t *testing.T) {
 // expected.
 func TestApplicationErrorIs(t *testing.T) {
 	workflowErr := NewApplicationError("test value", "errType", false, errors.New("error"))
-	require.True(t, errors.Is(workflowErr, &ApplicationError{}), workflowErr)
+	require.ErrorIs(t, workflowErr, &ApplicationError{})
 }
 
 // TestTimeoutErrorIs tests whether
@@ -470,7 +470,7 @@ func TestApplicationErrorIs(t *testing.T) {
 // expected.
 func TestTimeoutErrorIs(t *testing.T) {
 	workflowErr := NewTimeoutError("timeout", enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil)
-	require.True(t, errors.Is(workflowErr, &TimeoutError{}), workflowErr)
+	require.ErrorIs(t, workflowErr, &TimeoutError{})
 }
 
 // TestWorkflowPanicErrorIs tests whether
@@ -478,7 +478,7 @@ func TestTimeoutErrorIs(t *testing.T) {
 // expected.
 func TestWorkflowPanicErrorIs(t *testing.T) {
 	workflowErr := newWorkflowPanicError("", "")
-	require.True(t, errors.Is(workflowErr, &workflowPanicError{}), workflowErr)
+	require.ErrorIs(t, workflowErr, &workflowPanicError{})
 }
 
 // TestTeminatedErrorIs tests whether
@@ -486,14 +486,14 @@ func TestWorkflowPanicErrorIs(t *testing.T) {
 // expected.
 func TestTeminatedErrorIs(t *testing.T) {
 	workflowErr := newTerminatedError()
-	require.True(t, errors.Is(workflowErr, &TerminatedError{}), workflowErr)
+	require.ErrorIs(t, workflowErr, &TerminatedError{})
 }
 
 // TestUnknownExternalWorkflowExecutionErrorIs tests whether
 // the errors.Is() method operates as expected.
 func TestUnknownExternalWorkflowExecutionErrorIs(t *testing.T) {
 	workflowErr := newUnknownExternalWorkflowExecutionError()
-	require.True(t, errors.Is(workflowErr, &UnknownExternalWorkflowExecutionError{}), workflowErr)
+	require.ErrorIs(t, workflowErr, &UnknownExternalWorkflowExecutionError{})
 }
 
 // TestServerErrorIs tests whether
@@ -501,7 +501,7 @@ func TestUnknownExternalWorkflowExecutionErrorIs(t *testing.T) {
 // expected.
 func TestServerErrorIs(t *testing.T) {
 	workflowErr := NewServerError("msg", false, errors.New("error"))
-	require.True(t, errors.Is(workflowErr, &ServerError{}), workflowErr)
+	require.ErrorIs(t, workflowErr, &ServerError{})
 }
 
 // TestActivityErrorIs tests whether
@@ -510,7 +510,7 @@ func TestServerErrorIs(t *testing.T) {
 func TestActivityErrorIs(t *testing.T) {
 	var applicationErr *ApplicationError
 	workflowErr := NewActivityError(8, 22, "alex", &commonpb.ActivityType{Name: "activityType"}, "32283", enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, applicationErr)
-	require.True(t, errors.Is(workflowErr, &ActivityError{}), workflowErr)
+	require.ErrorIs(t, workflowErr, &ActivityError{})
 }
 
 // TestChildWorkflowExecutionErrorIs tests whether
@@ -519,7 +519,7 @@ func TestActivityErrorIs(t *testing.T) {
 func TestChildWorkflowExecutionErrorIs(t *testing.T) {
 	applicationErr := NewApplicationError("app err", "", true, nil)
 	workflowErr := NewChildWorkflowExecutionError("namespace", "wID", "rID", "wfType", 8, 22, enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, applicationErr)
-	require.True(t, errors.Is(workflowErr, &ChildWorkflowExecutionError{}), workflowErr)
+	require.ErrorIs(t, workflowErr, &ChildWorkflowExecutionError{})
 }
 
 // TestWorkflowExecutionErrorIs tests whether
@@ -527,14 +527,14 @@ func TestChildWorkflowExecutionErrorIs(t *testing.T) {
 // expected.
 func TestWorkflowExecutionErrorIs(t *testing.T) {
 	workflowErr := NewWorkflowExecutionError("42", "51", "alex", errors.New("error"))
-	require.True(t, errors.Is(workflowErr, &WorkflowExecutionError{}), workflowErr)
+	require.ErrorIs(t, workflowErr, &WorkflowExecutionError{})
 }
 
 // TestActivityNotRegisteredErrorIs tests whether
 // the errors.Is() method operates as expected.
 func TestActivityNotRegisteredErrorIs(t *testing.T) {
 	workflowErr := NewActivityNotRegisteredError("42", []string{})
-	require.True(t, errors.Is(workflowErr, &ActivityNotRegisteredError{}), workflowErr)
+	require.ErrorIs(t, workflowErr, &ActivityNotRegisteredError{})
 }
 
 func Test_IsCanceledError(t *testing.T) {
