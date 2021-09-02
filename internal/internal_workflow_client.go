@@ -1072,6 +1072,11 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 	switch closeEvent.GetEventType() {
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED:
 		attributes := closeEvent.GetWorkflowExecutionCompletedEventAttributes()
+		if attributes.NewExecutionRunId != "" {
+			curRunID := util.PopulatedOnceCell(attributes.NewExecutionRunId)
+			workflowRun.currentRunID = &curRunID
+			return workflowRun.Get(ctx, valuePtr)
+		}
 		if valuePtr == nil || attributes.Result == nil {
 			return nil
 		}
@@ -1082,6 +1087,11 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 		return workflowRun.dataConverter.FromPayloads(attributes.Result, valuePtr)
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED:
 		attributes := closeEvent.GetWorkflowExecutionFailedEventAttributes()
+		if attributes.NewExecutionRunId != "" {
+			curRunID := util.PopulatedOnceCell(attributes.NewExecutionRunId)
+			workflowRun.currentRunID = &curRunID
+			return workflowRun.Get(ctx, valuePtr)
+		}
 		err = ConvertFailureToError(attributes.GetFailure(), workflowRun.dataConverter)
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED:
 		attributes := closeEvent.GetWorkflowExecutionCanceledEventAttributes()
@@ -1090,6 +1100,12 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TERMINATED:
 		err = newTerminatedError()
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
+		attributes := closeEvent.GetWorkflowExecutionTimedOutEventAttributes()
+		if attributes.NewExecutionRunId != "" {
+			curRunID := util.PopulatedOnceCell(attributes.NewExecutionRunId)
+			workflowRun.currentRunID = &curRunID
+			return workflowRun.Get(ctx, valuePtr)
+		}
 		err = NewTimeoutError("Workflow timeout", enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil)
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW:
 		attributes := closeEvent.GetWorkflowExecutionContinuedAsNewEventAttributes()
