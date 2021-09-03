@@ -1072,6 +1072,9 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 	switch closeEvent.GetEventType() {
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED:
 		attributes := closeEvent.GetWorkflowExecutionCompletedEventAttributes()
+		if attributes.NewExecutionRunId != "" {
+			return workflowRun.follow(ctx, valuePtr, attributes.NewExecutionRunId)
+		}
 		if valuePtr == nil || attributes.Result == nil {
 			return nil
 		}
@@ -1082,6 +1085,9 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 		return workflowRun.dataConverter.FromPayloads(attributes.Result, valuePtr)
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED:
 		attributes := closeEvent.GetWorkflowExecutionFailedEventAttributes()
+		if attributes.NewExecutionRunId != "" {
+			return workflowRun.follow(ctx, valuePtr, attributes.NewExecutionRunId)
+		}
 		err = ConvertFailureToError(attributes.GetFailure(), workflowRun.dataConverter)
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED:
 		attributes := closeEvent.GetWorkflowExecutionCanceledEventAttributes()
@@ -1090,12 +1096,14 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TERMINATED:
 		err = newTerminatedError()
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
+		attributes := closeEvent.GetWorkflowExecutionTimedOutEventAttributes()
+		if attributes.NewExecutionRunId != "" {
+			return workflowRun.follow(ctx, valuePtr, attributes.NewExecutionRunId)
+		}
 		err = NewTimeoutError("Workflow timeout", enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil)
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW:
 		attributes := closeEvent.GetWorkflowExecutionContinuedAsNewEventAttributes()
-		curRunID := util.PopulatedOnceCell(attributes.GetNewExecutionRunId())
-		workflowRun.currentRunID = &curRunID
-		return workflowRun.Get(ctx, valuePtr)
+		return workflowRun.follow(ctx, valuePtr, attributes.NewExecutionRunId)
 	default:
 		return fmt.Errorf("unexpected event type %s when handling workflow execution result", closeEvent.GetEventType())
 	}
@@ -1108,6 +1116,16 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 		err)
 
 	return err
+}
+
+// follow is used by Get to follow a chain of executions linked by NewExecutionRunId, so that Get
+// doesn't return until the chain finishes. These can be ContinuedAsNew events, Completed events
+// (for workflows with a cron schedule), or Failed or TimedOut events (for workflows with a retry
+// policy or cron schedule).
+func (workflowRun *workflowRunImpl) follow(ctx context.Context, valuePtr interface{}, newRunID string) error {
+	curRunID := util.PopulatedOnceCell(newRunID)
+	workflowRun.currentRunID = &curRunID
+	return workflowRun.Get(ctx, valuePtr)
 }
 
 func getWorkflowMemo(input map[string]interface{}, dc converter.DataConverter) (*commonpb.Memo, error) {
