@@ -435,6 +435,14 @@ func NewActivityNotRegisteredError(activityType string, supportedTypes []string)
 	return &ActivityNotRegisteredError{activityType: activityType, supportedTypes: supportedTypes}
 }
 
+// Is satisfies the errors interface.
+func (e *ApplicationError) Is(target error) bool {
+	if _, ok := target.(*ApplicationError); !ok {
+		return false
+	}
+	return true
+}
+
 // Error from error interface.
 func (e *ApplicationError) Error() string {
 	msg := e.message()
@@ -481,6 +489,14 @@ func (e *ApplicationError) Unwrap() error {
 	return e.cause
 }
 
+// Is satisfies the errors interface.
+func (e *TimeoutError) Is(target error) bool {
+	if _, ok := target.(*TimeoutError); !ok {
+		return false
+	}
+	return true
+}
+
 // Error from error interface
 func (e *TimeoutError) Error() string {
 	msg := fmt.Sprintf("%s (type: %v)", e.message(), e.timeoutType)
@@ -516,6 +532,14 @@ func (e *TimeoutError) LastHeartbeatDetails(d ...interface{}) error {
 	return e.lastHeartbeatDetails.Get(d...)
 }
 
+// Is satisfies the errors interface.
+func (e *CanceledError) Is(target error) bool {
+	if _, ok := target.(*CanceledError); !ok {
+		return false
+	}
+	return true
+}
+
 // Error from error interface
 func (e *CanceledError) Error() string {
 	return e.message()
@@ -546,6 +570,14 @@ func newWorkflowPanicError(value interface{}, stackTrace string) error {
 	return &workflowPanicError{value: value, stackTrace: stackTrace}
 }
 
+// Is satisfies the errors interface.
+func (e *PanicError) Is(target error) bool {
+	if _, ok := target.(*PanicError); !ok {
+		return false
+	}
+	return true
+}
+
 // Error from error interface
 func (e *PanicError) Error() string {
 	return e.message()
@@ -560,6 +592,14 @@ func (e *PanicError) StackTrace() string {
 	return e.stackTrace
 }
 
+// Is satisfies the errors interface.
+func (e *workflowPanicError) Is(target error) bool {
+	if _, ok := target.(*workflowPanicError); !ok {
+		return false
+	}
+	return true
+}
+
 // Error from error interface
 func (e *workflowPanicError) Error() string {
 	return fmt.Sprintf("%v", e.value)
@@ -568,6 +608,14 @@ func (e *workflowPanicError) Error() string {
 // StackTrace return stack trace of the panic
 func (e *workflowPanicError) StackTrace() string {
 	return e.stackTrace
+}
+
+// Is satisfies the errors interface.
+func (e *ContinueAsNewError) Is(target error) bool {
+	if _, ok := target.(*ContinueAsNewError); !ok {
+		return false
+	}
+	return true
 }
 
 // Error from error interface
@@ -584,6 +632,14 @@ func newTerminatedError() *TerminatedError {
 	return &TerminatedError{}
 }
 
+// Is satisfies the errors interface.
+func (e *TerminatedError) Is(target error) bool {
+	if _, ok := target.(*TerminatedError); !ok {
+		return false
+	}
+	return true
+}
+
 // Error from error interface
 func (e *TerminatedError) Error() string {
 	return e.message()
@@ -598,9 +654,25 @@ func newUnknownExternalWorkflowExecutionError() *UnknownExternalWorkflowExecutio
 	return &UnknownExternalWorkflowExecutionError{}
 }
 
+// Is satisfies the errors interface.
+func (e *UnknownExternalWorkflowExecutionError) Is(target error) bool {
+	if _, ok := target.(*UnknownExternalWorkflowExecutionError); !ok {
+		return false
+	}
+	return true
+}
+
 // Error from error interface
 func (e *UnknownExternalWorkflowExecutionError) Error() string {
 	return "unknown external workflow execution"
+}
+
+// Is satisfies the errors interface.
+func (e *ServerError) Is(target error) bool {
+	if _, ok := target.(*ServerError); !ok {
+		return false
+	}
+	return true
 }
 
 // Error from error interface
@@ -618,6 +690,14 @@ func (e *ServerError) message() string {
 
 func (e *ServerError) Unwrap() error {
 	return e.cause
+}
+
+// Is satisfies the errors interface.
+func (e *ActivityError) Is(target error) bool {
+	if _, ok := target.(*ActivityError); !ok {
+		return false
+	}
+	return true
 }
 
 func (e *ActivityError) Error() string {
@@ -666,6 +746,14 @@ func (e *ActivityError) RetryState() enumspb.RetryState {
 	return e.retryState
 }
 
+// Is satisfies the errors interface.
+func (e *ChildWorkflowExecutionError) Is(target error) bool {
+	if _, ok := target.(*ChildWorkflowExecutionError); !ok {
+		return false
+	}
+	return true
+}
+
 // Error from error interface
 func (e *ChildWorkflowExecutionError) Error() string {
 	msg := fmt.Sprintf("%s (type: %s, workflowID: %s, runID: %s, initiatedEventID: %d, startedEventID: %d)",
@@ -684,6 +772,14 @@ func (e *ChildWorkflowExecutionError) Unwrap() error {
 	return e.cause
 }
 
+// Is satisfies the errors interface.
+func (e *WorkflowExecutionError) Is(target error) bool {
+	if _, ok := target.(*WorkflowExecutionError); !ok {
+		return false
+	}
+	return true
+}
+
 // Error from error interface
 func (e *WorkflowExecutionError) Error() string {
 	msg := fmt.Sprintf("workflow execution error (type: %s, workflowID: %s, runID: %s)",
@@ -696,6 +792,14 @@ func (e *WorkflowExecutionError) Error() string {
 
 func (e *WorkflowExecutionError) Unwrap() error {
 	return e.cause
+}
+
+// Is satisfies the errors interface.
+func (e *ActivityNotRegisteredError) Is(target error) bool {
+	if _, ok := target.(*ActivityNotRegisteredError); !ok {
+		return false
+	}
+	return true
 }
 
 func (e *ActivityNotRegisteredError) Error() string {
