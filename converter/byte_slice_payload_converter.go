@@ -52,10 +52,11 @@ func (c *ByteSlicePayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 
 // FromPayload converts single []byte value from payload.
 func (c *ByteSlicePayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
-	v := reflect.ValueOf(valuePtr).Elem()
-	if !v.CanSet() {
+	rv := reflect.ValueOf(valuePtr)
+	if rv.Kind() != reflect.Ptr || rv.IsNil() {
 		return fmt.Errorf("type: %T: %w", valuePtr, ErrValuePtrIsNotPointer)
 	}
+	v := rv.Elem()
 	value := payload.Data
 	if v.Kind() == reflect.Interface {
 		v.Set(reflect.ValueOf(value))
