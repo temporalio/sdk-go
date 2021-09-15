@@ -60,7 +60,7 @@ func (c *ByteSlicePayloadConverter) FromPayload(payload *commonpb.Payload, value
 	if v.Kind() == reflect.Interface {
 		v.Set(reflect.ValueOf(value))
 	} else if v.Kind() == reflect.Slice && v.Type().Elem().Kind() == reflect.Uint8 {
-		// must be a byte slice
+		// Must be a []byte.
 		v.SetBytes(value)
 	} else {
 		return fmt.Errorf("invalid type %T: %w", valuePtr, ErrUnableToSetValue)
