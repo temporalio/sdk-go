@@ -54,7 +54,7 @@ func (c *ByteSlicePayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 func (c *ByteSlicePayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
 	v := reflect.ValueOf(valuePtr).Elem()
 	if !v.CanSet() {
-		return fmt.Errorf("pointer type needed but got type %T: %w", valuePtr, ErrUnableToSetValue)
+		return fmt.Errorf("type: %T: %w", valuePtr, ErrValuePtrIsNotPointer)
 	}
 	value := payload.Data
 	if v.Kind() == reflect.Interface {
