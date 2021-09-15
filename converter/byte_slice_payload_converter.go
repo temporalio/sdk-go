@@ -63,7 +63,7 @@ func (c *ByteSlicePayloadConverter) FromPayload(payload *commonpb.Payload, value
 		// Must be a []byte.
 		v.SetBytes(value)
 	} else {
-		return fmt.Errorf("invalid type %T: %w", valuePtr, ErrUnableToSetValue)
+		return fmt.Errorf("type %T: %w", valuePtr, ErrTypeIsNotByteSlice)
 	}
 	return nil
 }
