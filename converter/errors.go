@@ -2,8 +2,6 @@
 //
 // Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
 //
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
 // in the Software without restriction, including without limitation the rights
@@ -49,4 +47,6 @@ var (
 	ErrValuePtrIsNotPointer = errors.New("not a pointer type")
 	// ErrValuePtrMustConcreteType is returned when proto value is of interface type.
 	ErrValuePtrMustConcreteType = errors.New("must be a concrete type, not interface")
+	// ErrTypeIsNotByteSlice is returned when value is not of *[]byte type.
+	ErrTypeIsNotByteSlice = errors.New("type is not *[]byte")
 )
