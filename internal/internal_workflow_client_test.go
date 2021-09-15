@@ -32,6 +32,7 @@ import (
 	"time"
 
 	workflowpb "go.temporal.io/api/workflow/v1"
+	"google.golang.org/grpc"
 
 	ilog "go.temporal.io/sdk/internal/log"
 
@@ -512,9 +513,9 @@ func (s *workflowRunSuite) alreadyStartedErrTest(dc converter.DataConverter, raw
 		}
 	}
 
-	getHistory := s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any()).
+	getHistory := s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(getResponse, nil).Times(1)
-	getHistory.Do(func(ctx interface{}, getRequest *workflowservice.GetWorkflowExecutionHistoryRequest) {
+	getHistory.Do(func(ctx interface{}, getRequest *workflowservice.GetWorkflowExecutionHistoryRequest, opts ...grpc.CallOption) {
 		workflowID := getRequest.Execution.WorkflowId
 		s.NotNil(workflowID)
 		s.NotEmpty(workflowID)
@@ -564,8 +565,8 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoIdInOptions() {
 		NextPageToken: nil,
 	}
 	var wid string
-	getHistory := s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any()).Return(getResponse, nil).Times(1)
-	getHistory.Do(func(ctx interface{}, getRequest *workflowservice.GetWorkflowExecutionHistoryRequest) {
+	getHistory := s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any(), gomock.Any()).Return(getResponse, nil).Times(1)
+	getHistory.Do(func(ctx interface{}, getRequest *workflowservice.GetWorkflowExecutionHistoryRequest, opts ...grpc.CallOption) {
 		wid = getRequest.Execution.WorkflowId
 		s.NotEmpty(wid)
 	})
@@ -616,8 +617,8 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoIdInOptions_RawHistory() {
 	}
 
 	var wid string
-	getHistory := s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any()).Return(getResponse, nil).Times(1)
-	getHistory.Do(func(ctx interface{}, getRequest *workflowservice.GetWorkflowExecutionHistoryRequest) {
+	getHistory := s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any(), gomock.Any()).Return(getResponse, nil).Times(1)
+	getHistory.Do(func(ctx interface{}, getRequest *workflowservice.GetWorkflowExecutionHistoryRequest, opts ...grpc.CallOption) {
 		wid = getRequest.Execution.WorkflowId
 		s.NotNil(wid)
 		s.NotEmpty(wid)
