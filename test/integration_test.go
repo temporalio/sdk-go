@@ -444,6 +444,8 @@ func (ts *IntegrationTestSuite) TestSignalWorkflow() {
 	wfOpts := ts.startWorkflowOptions("test-signal-workflow")
 	run, err := ts.client.ExecuteWorkflow(ctx, wfOpts, ts.workflows.SignalWorkflow)
 	ts.Nil(err)
+	// Let workflow task run and send signal after to ensure correct order.
+	<-time.After(time.Second)
 	err = ts.client.SignalWorkflow(ctx, "test-signal-workflow", run.GetRunID(), "string-signal", "string-value")
 	ts.NoError(err)
 
@@ -455,7 +457,7 @@ func (ts *IntegrationTestSuite) TestSignalWorkflow() {
 	err = run.Get(ctx, &protoValue)
 	ts.NoError(err)
 	ts.Equal(commonpb.WorkflowType{Name: "string-value"}, *protoValue)
-	ts.Equal([]string{"Go", "ProcessSignal", "ExecuteWorkflow begin", "ProcessSignal", "ExecuteWorkflow end"},
+	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ProcessSignal", "ProcessSignal", "ExecuteWorkflow end"},
 		ts.tracer.GetTrace("SignalWorkflow"))
 }
 
