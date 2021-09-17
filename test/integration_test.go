@@ -47,6 +47,8 @@ import (
 	"go.temporal.io/sdk/test"
 	"go.uber.org/goleak"
 
+	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/interceptors"
 	"go.temporal.io/sdk/internal/common"
@@ -187,6 +189,96 @@ func (ts *IntegrationTestSuite) TestBasic() {
 		"temporal_workflow_task_queue_poll_succeed", 1,
 		"temporal_long_request", 7,
 	)
+}
+
+// TestLocalActivityRetryBehavior verifies local activity retry behaviors:
+// 1) local activity retry with local timer backoff when backoff duration is less than or equal to workflow task timeout
+// 2) workflow task heartbeat is happening when local activity takes longer than workflow task timeout
+// 3) server side timer is created when backoff is longer than workflow task timeout
+func (ts *IntegrationTestSuite) TestLocalActivityRetryBehavior() {
+	attempt := 0
+	localActivityFn := func(ctx context.Context) error {
+		attempt++
+		info := activity.GetInfo(ctx)
+		if info.Attempt <= 3 {
+			return temporal.NewApplicationError("retry me", "MyApplicationError")
+		}
+		return nil
+	}
+
+	workflowFn := func(ctx workflow.Context) error {
+		ao := workflow.LocalActivityOptions{
+			ScheduleToCloseTimeout: 10 * time.Second,
+			RetryPolicy: &temporal.RetryPolicy{
+				// 1st attempt executes immediately
+				// 2nd attempt backoff 1s -- this will wait locally
+				// 3rd attempt backoff 2s -- this will wait locally
+				// 4th attempt backoff 4s -- this will wait on server timer
+				InitialInterval:    time.Second,
+				MaximumInterval:    4 * time.Second,
+				BackoffCoefficient: 2,
+			},
+		}
+		ctx1 := workflow.WithLocalActivityOptions(ctx, ao)
+		f1 := workflow.ExecuteLocalActivity(ctx1, localActivityFn)
+		err1 := f1.Get(ctx1, nil)
+		return err1
+	}
+
+	ts.worker.RegisterWorkflowWithOptions(workflowFn, workflow.RegisterOptions{Name: "heartbeat-workflow"})
+	id := "integration-test-workflow-heartbeat"
+	startOptions := client.StartWorkflowOptions{
+		ID:                  id,
+		TaskQueue:           ts.taskQueueName,
+		WorkflowRunTimeout:  20 * time.Second,
+		WorkflowTaskTimeout: 3 * time.Second,
+	}
+	err := ts.executeWorkflowWithOption(startOptions, workflowFn, nil)
+	ts.NoError(err)
+
+	ts.Equal(4, attempt) // verify local activity executes 4 times
+
+	history, err := ts.getHistory(id, "")
+	ts.NoError(err)
+
+	expectedEvents := []string{
+		"WorkflowExecutionStarted",
+		"WorkflowTaskScheduled",
+		"WorkflowTaskStarted",
+		"WorkflowTaskCompleted", // workflow task heartbeat at 80% of workflow task timeout (2.4s)
+		"WorkflowTaskScheduled",
+		"WorkflowTaskStarted",
+		"WorkflowTaskCompleted", // completed and schedule timer for retry backoff
+		"MarkerRecorded",        // record local activity error and used attempt count
+		"TimerStarted",
+		"TimerFired",
+		"WorkflowTaskScheduled",
+		"WorkflowTaskStarted",
+		"WorkflowTaskCompleted",
+		"MarkerRecorded", // record local activity success result
+		"WorkflowExecutionCompleted",
+	}
+	var actualEvents []string
+	for _, e := range history.Events {
+		actualEvents = append(actualEvents, e.EventType.String())
+	}
+	ts.Equal(expectedEvents, actualEvents)
+}
+
+func (ts *IntegrationTestSuite) getHistory(workflowID string, runID string) (*historypb.History, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	var events []*historypb.HistoryEvent
+	iter := ts.client.GetWorkflowHistory(ctx, workflowID, runID, false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for iter.HasNext() {
+		event, err1 := iter.Next()
+		if err1 != nil {
+			return nil, err1
+		}
+		events = append(events, event)
+	}
+
+	return &historypb.History{Events: events}, nil
 }
 
 func (ts *IntegrationTestSuite) TestPanicFailWorkflow() {
