@@ -159,7 +159,7 @@ func (s *CacheEvictionSuite) TestResetStickyOnEviction() {
 	s.service.EXPECT().ResetStickyTaskQueue(gomock.Any(), gomock.Any()).DoAndReturn(mockResetStickyTaskQueue).Times(1)
 
 	client := internal.NewServiceClient(s.service, nil, internal.ClientOptions{})
-	workflowWorker := internal.NewAggregatedWorker(client, "taskqueue", worker.Options{})
+	workflowWorker := internal.NewAggregatedWorker(client, "taskqueue", worker.Options{LocalActivityWorkerOnly: true})
 	// this is an arbitrary workflow we use for this test
 	// NOTE: a simple helloworld that doesn't execute an activity
 	// won't work because the workflow will simply just complete
