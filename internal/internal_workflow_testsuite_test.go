@@ -2967,7 +2967,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetry() {
 	var result int32
 	s.NoError(env.GetWorkflowResult(&result))
 	s.Equal(int32(3), result)
-	s.Equal(3 * time.Second, localActivityDuration)
+	s.Equal(3*time.Second, localActivityDuration)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetry_MaxAttempts_Respected() {
