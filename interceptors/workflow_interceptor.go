@@ -56,4 +56,19 @@ type (
 	// WorkflowOutboundCallsInterceptorBase is a noop implementation of WorkflowOutboundCallsInterceptor that just forwards requests
 	// to the next link in an interceptor chain. To be used as base implementation of interceptors.
 	WorkflowOutboundCallsInterceptorBase = internal.WorkflowOutboundCallsInterceptorBase
+
+	ServiceInterceptor = internal.ServiceInterceptor
+	InterceptorEncoder = internal.InterceptorEncoder
+
+	BaseRequestResponseInterceptor = internal.BaseRequestResponseInterceptor
+	BaseCommandInterceptor         = internal.BaseCommandInterceptor
+	BaseEventInterceptor           = internal.BaseEventInterceptor
 )
+
+func NewInputsResultsServiceInterceptor(encoder InterceptorEncoder) ServiceInterceptor {
+	return internal.NewInputsResultsServiceInterceptor(encoder)
+}
+
+func NewHeartbeatDetailsServiceInterceptor(encoder InterceptorEncoder) ServiceInterceptor {
+	return internal.NewHeartbeatDetailsServiceInterceptor(encoder)
+}

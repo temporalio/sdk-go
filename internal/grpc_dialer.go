@@ -124,7 +124,7 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 	return grpc.Dial(params.HostPort, opts...)
 }
 
-func requiredInterceptors(metricScope tally.Scope, headersProvider HeadersProvider, controller TrafficController) []grpc.UnaryClientInterceptor {
+func requiredInterceptors(metricScope tally.Scope, headersProvider HeadersProvider, controller TrafficController, serviceInterceptors []ServiceInterceptor) []grpc.UnaryClientInterceptor {
 	interceptors := []grpc.UnaryClientInterceptor{
 		errorInterceptor,
 		// Report aggregated metrics for the call, this is done outside of the retry loop.
@@ -143,6 +143,12 @@ func requiredInterceptors(metricScope tally.Scope, headersProvider HeadersProvid
 	if controller != nil {
 		interceptors = append(interceptors, trafficControllerInterceptor(controller))
 	}
+	if len(serviceInterceptors) > 0 {
+		for _, interceptor := range serviceInterceptors {
+			interceptors = append(interceptors, NewServiceInterceptor(interceptor))
+		}
+	}
+
 	return interceptors
 }
 

@@ -366,6 +366,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}, task *workflowservice.PollWorkflowTaskQueueResponse) (response *workflowservice.RespondWorkflowTaskCompletedResponse, err error) {
 	ctx := context.Background()
 	// Respond task completion.
+	// This has to have ContextPropogation and/or the header available
 	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(
 		metrics.GetMetricsScopeForRPC(wtp.metricsScope, task.GetWorkflowType().GetName(),
 			metrics.NoneTagValue, metrics.NoneTagValue)),

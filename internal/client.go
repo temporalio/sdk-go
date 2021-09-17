@@ -404,6 +404,10 @@ type (
 		// Optional parameter that is designed to be used *in tests*. It gets invoked last in
 		// the gRPC interceptor chain and can be used to induce artificial failures in test scenarios.
 		TrafficController TrafficController
+
+		// Optional: Sets service interceptors to allow operations on the gRPC request/responses.
+		// This can be used to encrypt or compress of payloads for example.
+		ServiceInterceptors []ServiceInterceptor
 	}
 
 	// HeadersProvider returns a map of gRPC headers that should be used on every request.
@@ -636,7 +640,7 @@ func newDialParameters(options *ClientOptions) dialParameters {
 	return dialParameters{
 		UserConnectionOptions: options.ConnectionOptions,
 		HostPort:              options.HostPort,
-		RequiredInterceptors:  requiredInterceptors(options.MetricsScope, options.HeadersProvider, options.TrafficController),
+		RequiredInterceptors:  requiredInterceptors(options.MetricsScope, options.HeadersProvider, options.TrafficController, options.ServiceInterceptors),
 		DefaultServiceConfig:  defaultServiceConfig,
 	}
 }
