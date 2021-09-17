@@ -2930,6 +2930,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetry() {
 		return info.Attempt, nil
 	}
 
+	var localActivityDuration time.Duration
 	workflowFn := func(ctx Context) (int32, error) {
 		lao := LocalActivityOptions{
 			ScheduleToCloseTimeout: time.Minute,
@@ -2944,7 +2945,13 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetry() {
 		ctx = WithLocalActivityOptions(ctx, lao)
 
 		var result int32
+		startTime := Now(ctx)
 		err := ExecuteLocalActivity(ctx, localActivityFn).Get(ctx, &result)
+		// local activity completes in 3 attempts
+		// 1st attempt executes immediately
+		// 2nd attempt backoff by 1s (InitialInterval)
+		// 3rd attempt backoff by 2s (BackoffCoefficient: 2)
+		localActivityDuration = Now(ctx).Sub(startTime)
 		if err != nil {
 			return int32(-1), err
 		}
@@ -2960,6 +2967,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetry() {
 	var result int32
 	s.NoError(env.GetWorkflowResult(&result))
 	s.Equal(int32(3), result)
+	s.Equal(3 * time.Second, localActivityDuration)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityRetry_MaxAttempts_Respected() {
