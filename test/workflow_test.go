@@ -216,18 +216,17 @@ func (w *Workflows) ActivityRetryOnHBTimeout(ctx workflow.Context) ([]string, er
 		ScheduleToStartTimeout: 10 * time.Second,
 		ScheduleToCloseTimeout: 10 * time.Second,
 		StartToCloseTimeout:    3 * time.Second,
-		HeartbeatTimeout:       time.Second,
+		HeartbeatTimeout:       300 * time.Millisecond,
 		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval:    time.Second,
+			InitialInterval:    500 * time.Millisecond,
 			BackoffCoefficient: 1.0,
 			MaximumAttempts:    3,
 		},
 	}
-	opts.HeartbeatTimeout = time.Second
 	ctx = workflow.WithActivityOptions(ctx, opts)
 
 	var result int
-	err := workflow.ExecuteActivity(ctx, "HeartbeatAndSleep", 0, 3*time.Second).Get(ctx, &result)
+	err := workflow.ExecuteActivity(ctx, "HeartbeatAndSleep", 0, 2*time.Second).Get(ctx, &result)
 	if err == nil {
 		return nil, fmt.Errorf("expected activity to fail but succeeded")
 	}
