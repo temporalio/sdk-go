@@ -195,7 +195,7 @@ func (w *Workflows) ActivityRetryOnTimeout(ctx workflow.Context, timeoutType enu
 
 func (w *Workflows) LongRunningActivityWithHB(ctx workflow.Context) ([]string, error) {
 	opts := w.defaultActivityOptionsWithRetry()
-	opts.HeartbeatTimeout = 3 * time.Second
+	opts.HeartbeatTimeout = 2 * time.Second
 	opts.ScheduleToCloseTimeout = time.Second * 12
 	opts.StartToCloseTimeout = time.Second * 12
 	opts.RetryPolicy = &internal.RetryPolicy{
@@ -203,7 +203,7 @@ func (w *Workflows) LongRunningActivityWithHB(ctx workflow.Context) ([]string, e
 	}
 	ctx = workflow.WithActivityOptions(ctx, opts)
 
-	err := workflow.ExecuteActivity(ctx, "LongRunningHeartbeat", 8*time.Second, 300*time.Millisecond).Get(ctx, nil)
+	err := workflow.ExecuteActivity(ctx, "LongRunningHeartbeat", 8*time.Second, 200*time.Millisecond).Get(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("expected activity to succeed but it failed: %v", err)
 	}
@@ -216,7 +216,7 @@ func (w *Workflows) ActivityRetryOnHBTimeout(ctx workflow.Context) ([]string, er
 		ScheduleToStartTimeout: 10 * time.Second,
 		ScheduleToCloseTimeout: 10 * time.Second,
 		StartToCloseTimeout:    3 * time.Second,
-		HeartbeatTimeout:       300 * time.Millisecond,
+		HeartbeatTimeout:       time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    500 * time.Millisecond,
 			BackoffCoefficient: 1.0,

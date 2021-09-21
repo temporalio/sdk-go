@@ -26,6 +26,7 @@ package test_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -92,6 +93,9 @@ func (a *Activities) LongRunningHeartbeat(ctx context.Context, delay time.Durati
 	endTime := time.Now().Add(delay)
 	for time.Now().Before(endTime) {
 		activity.RecordHeartbeat(ctx)
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return ctx.Err()
+		}
 		time.Sleep(recordHeartbeatDelay)
 	}
 
