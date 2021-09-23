@@ -213,12 +213,12 @@ func (w *Workflows) LongRunningActivityWithHB(ctx workflow.Context) ([]string, e
 
 func (w *Workflows) ActivityRetryOnHBTimeout(ctx workflow.Context) ([]string, error) {
 	opts := workflow.ActivityOptions{
-		ScheduleToStartTimeout: 10 * time.Second,
-		ScheduleToCloseTimeout: 10 * time.Second,
-		StartToCloseTimeout:    3 * time.Second,
-		HeartbeatTimeout:       time.Second,
+		ScheduleToStartTimeout: 5 * time.Second,
+		ScheduleToCloseTimeout: 15 * time.Second,
+		StartToCloseTimeout:    5 * time.Second,
+		HeartbeatTimeout:       3 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval:    500 * time.Millisecond,
+			InitialInterval:    time.Second,
 			BackoffCoefficient: 1.0,
 			MaximumAttempts:    3,
 		},
@@ -226,7 +226,19 @@ func (w *Workflows) ActivityRetryOnHBTimeout(ctx workflow.Context) ([]string, er
 	ctx = workflow.WithActivityOptions(ctx, opts)
 
 	var result int
-	err := workflow.ExecuteActivity(ctx, "HeartbeatAndSleep", 0, 2*time.Second).Get(ctx, &result)
+	// Activity "HeartbeatAndSleep" will heartbeat once and then sleep 5s. The first heartbeat will be reported
+	// immediately without delay/buffer. With the settings we have, below is timeline:
+	// 0s  activity starts (attempt 1).
+	// 0s  activity reports heartbeat.
+	// 3s  activity timeout due to missing heartbeat.
+	// 4s  activity retry attempt 2.
+	// 4s  activity reports heartbeat.
+	// 7s  activity timeout due to missing heartbeat.
+	// 8s  activity retry attempt 3.
+	// 8s  activity reports heartbeat.
+	// 11s activity timeout due to missing heartbeat.
+	// 11s activity close with heartbeat timeout error.
+	err := workflow.ExecuteActivity(ctx, "HeartbeatAndSleep", 0, 5*time.Second).Get(ctx, &result)
 	if err == nil {
 		return nil, fmt.Errorf("expected activity to fail but succeeded")
 	}
