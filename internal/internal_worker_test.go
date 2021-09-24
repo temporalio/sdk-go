@@ -1503,8 +1503,8 @@ func (s *internalWorkerTestSuite) TestNoActivitiesOrWorkflows() {
 	assert.Empty(t, w.registry.getRegisteredActivities())
 	assert.Empty(t, w.registry.getRegisteredWorkflowTypes())
 	assert.NoError(t, w.Start())
-	assert.False(t, w.activityWorker.worker.isWorkerStarted)
-	assert.False(t, w.workflowWorker.worker.isWorkerStarted)
+	assert.True(t, w.activityWorker.worker.isWorkerStarted)
+	assert.True(t, w.workflowWorker.worker.isWorkerStarted)
 }
 
 func (s *internalWorkerTestSuite) TestStartWorkerAfterStopped() {
