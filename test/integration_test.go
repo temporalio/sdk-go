@@ -59,6 +59,15 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
+const (
+	ctxTimeout                    = 15 * time.Second
+	namespace                     = "integration-test-namespace"
+	namespaceCacheRefreshInterval = 20 * time.Second
+	testContextKey1               = "test-context-key1"
+	testContextKey2               = "test-context-key2"
+	testContextKey3               = "test-context-key3"
+)
+
 type IntegrationTestSuite struct {
 	*require.Assertions
 	suite.Suite
@@ -74,15 +83,6 @@ type IntegrationTestSuite struct {
 	metricsScopeCloser io.Closer
 	metricsReporter    *metrics.CapturingStatsReporter
 }
-
-const (
-	ctxTimeout                    = 15 * time.Second
-	namespace                     = "integration-test-namespace"
-	namespaceCacheRefreshInterval = 20 * time.Second
-	testContextKey1               = "test-context-key1"
-	testContextKey2               = "test-context-key2"
-	testContextKey3               = "test-context-key3"
-)
 
 func TestIntegrationSuite(t *testing.T) {
 	suite.Run(t, new(IntegrationTestSuite))
@@ -161,6 +161,10 @@ func (ts *IntegrationTestSuite) SetupTest() {
 
 	if strings.Contains(ts.T().Name(), "LocalActivityWorkerOnly") {
 		options.LocalActivityWorkerOnly = true
+	}
+
+	if strings.Contains(ts.T().Name(), "CancelTimerViaDeferAfterWFTFailure") {
+		options.WorkflowPanicPolicy = worker.BlockWorkflow
 	}
 
 	ts.worker = worker.New(ts.client, ts.taskQueueName, options)
@@ -751,6 +755,12 @@ func (ts *IntegrationTestSuite) TestCancelTimerAfterActivity() {
 	ts.EqualValues("HELLO", wfResult)
 }
 
+func (ts *IntegrationTestSuite) TestCancelTimerViaDeferAfterWFTFailure() {
+	// NOTE: Uses test name to adjust worker options to make panic fail WFT
+	err := ts.executeWorkflow("test-cancel-timer-via-defer", ts.workflows.CancelTimerViaDeferAfterWFTFailure, nil)
+	ts.NoError(err)
+}
+
 func (ts *IntegrationTestSuite) TestCancelTimerAfterActivity_Replay() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflowWithOptions(ts.workflows.CancelTimerAfterActivity, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
@@ -938,7 +948,7 @@ func (ts *IntegrationTestSuite) TestInspectActivityInfo() {
 }
 
 func (ts *IntegrationTestSuite) TestInspectActivityInfoLocalActivityWorkerOnly() {
-	err := ts.executeWorkflow("test-activity-info", ts.workflows.InspectActivityInfo, nil)
+	err := ts.executeWorkflow("test-activity-info-local-worker-only", ts.workflows.InspectActivityInfo, nil)
 	ts.Error(err)
 }
 
