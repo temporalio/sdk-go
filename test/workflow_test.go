@@ -586,6 +586,23 @@ func (w *Workflows) CancelTimerAfterActivity(ctx workflow.Context) (string, erro
 	return res, err
 }
 
+var didPanicOnce = false
+
+func (w *Workflows) CancelTimerViaDeferAfterWFTFailure(ctx workflow.Context) error {
+	timerCtx, canceller := workflow.WithCancel(ctx)
+	defer func() {
+		if !didPanicOnce {
+			didPanicOnce = true
+			panic("Intentional panic to trigger WFT failure")
+		}
+		canceller()
+	}()
+
+	_ = workflow.NewTimer(timerCtx, time.Second).Get(timerCtx, nil)
+
+	return nil
+}
+
 func (w *Workflows) CancelChildWorkflow(ctx workflow.Context) ([]string, error) {
 	childCtx1, cancelFunc1 := workflow.WithCancel(ctx)
 	opts := workflow.ChildWorkflowOptions{
@@ -1206,6 +1223,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.StartingChildAfterBeingCanceled)
 	worker.RegisterWorkflow(w.CancelTimer)
 	worker.RegisterWorkflow(w.CancelTimerAfterActivity)
+	worker.RegisterWorkflow(w.CancelTimerViaDeferAfterWFTFailure)
 	worker.RegisterWorkflow(w.CascadingCancellation)
 	worker.RegisterWorkflow(w.ChildWorkflowRetryOnError)
 	worker.RegisterWorkflow(w.ChildWorkflowRetryOnTimeout)
