@@ -1475,7 +1475,7 @@ func (s *internalWorkerTestSuite) TestCreateWorkerWithDataConverter() {
 }
 
 func (s *internalWorkerTestSuite) TestCreateWorkerRun() {
-	// Windows doesn't support signalling interrupt
+	// Windows doesn't support signalling interrupt.
 	if runtime.GOOS == "windows" {
 		s.T().Skip("Not supported on windows")
 	}
