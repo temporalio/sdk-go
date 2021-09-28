@@ -383,8 +383,8 @@ func NewFuture(ctx Context) (Future, Settable) {
 	return impl, impl
 }
 
-func (wc *workflowEnvironmentInterceptor) ProcessSignal(Context, string, interface{}) {
-	// no op
+func (wc *workflowEnvironmentInterceptor) ProcessSignal(Context, string, interface{}) error {
+	return nil
 }
 
 func (wc *workflowEnvironmentInterceptor) HandleQuery(_ Context, _ string, args *commonpb.Payloads,

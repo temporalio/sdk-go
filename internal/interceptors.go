@@ -57,7 +57,7 @@ type WorkflowInboundCallsInterceptor interface {
 
 	// ProcessSignal is called before the signal is passed to the workflow implementation, note that this function does NOT
 	// have any flow control and can not modify the signal or prevent it from being passed to the workflow.
-	ProcessSignal(ctx Context, signalName string, arg interface{})
+	ProcessSignal(ctx Context, signalName string, arg interface{}) error
 
 	// HandleQuery is invoked when query request is received, this function HAS flow control and can alter parameters
 	// or values returned by the query. Handler that is passed as a parameter MUST be called in order to execute the query.
@@ -117,8 +117,8 @@ func (w WorkflowInboundCallsInterceptorBase) ExecuteWorkflow(ctx Context, workfl
 }
 
 // ProcessSignal process inbound signal notification
-func (w WorkflowInboundCallsInterceptorBase) ProcessSignal(ctx Context, signalName string, arg interface{}) {
-	w.Next.ProcessSignal(ctx, signalName, arg)
+func (w WorkflowInboundCallsInterceptorBase) ProcessSignal(ctx Context, signalName string, arg interface{}) error {
+	return w.Next.ProcessSignal(ctx, signalName, arg)
 }
 
 // HandleQuery handles inbound query request

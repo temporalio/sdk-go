@@ -119,9 +119,9 @@ type (
 		currentReplayTime time.Time // Indicates current replay time of the command.
 		currentLocalTime  time.Time // Local time when currentReplayTime was updated.
 
-		completeHandler completionHandler                           // events completion handler
-		cancelHandler   func()                                      // A cancel handler to be invoked on a cancel notification
-		signalHandler   func(name string, input *commonpb.Payloads) // A signal handler to be invoked on a signal event
+		completeHandler completionHandler                                 // events completion handler
+		cancelHandler   func()                                            // A cancel handler to be invoked on a cancel notification
+		signalHandler   func(name string, input *commonpb.Payloads) error // A signal handler to be invoked on a signal event
 		queryHandler    func(queryType string, queryArgs *commonpb.Payloads) (*commonpb.Payloads, error)
 
 		logger                log.Logger
@@ -420,7 +420,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 		tagWorkflowType, params.WorkflowType.Name)
 }
 
-func (wc *workflowEnvironmentImpl) RegisterSignalHandler(handler func(name string, input *commonpb.Payloads)) {
+func (wc *workflowEnvironmentImpl) RegisterSignalHandler(handler func(name string, input *commonpb.Payloads) error) {
 	wc.signalHandler = handler
 }
 
@@ -863,7 +863,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		// No Operation.
 
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED:
-		weh.handleWorkflowExecutionSignaled(event.GetWorkflowExecutionSignaledEventAttributes())
+		err = weh.handleWorkflowExecutionSignaled(event.GetWorkflowExecutionSignaledEventAttributes())
 
 	case enumspb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED:
 		signalID := event.GetSignalExternalWorkflowExecutionInitiatedEventAttributes().Control
@@ -1222,8 +1222,8 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionSignaled(
-	attributes *historypb.WorkflowExecutionSignaledEventAttributes) {
-	weh.signalHandler(attributes.GetSignalName(), attributes.Input)
+	attributes *historypb.WorkflowExecutionSignaledEventAttributes) error {
+	return weh.signalHandler(attributes.GetSignalName(), attributes.Input)
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionFailed(event *historypb.HistoryEvent) error {

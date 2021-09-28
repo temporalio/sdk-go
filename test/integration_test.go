@@ -1332,9 +1332,9 @@ func (t *tracingInboundCallsInterceptor) ExecuteWorkflow(ctx workflow.Context, w
 	return result
 }
 
-func (t *tracingInboundCallsInterceptor) ProcessSignal(ctx workflow.Context, signalName string, arg interface{}) {
+func (t *tracingInboundCallsInterceptor) ProcessSignal(ctx workflow.Context, signalName string, arg interface{}) error {
 	t.trace = append(t.trace, "ProcessSignal")
-	t.Next.ProcessSignal(ctx, signalName, arg)
+	return t.Next.ProcessSignal(ctx, signalName, arg)
 }
 
 func (t *tracingInboundCallsInterceptor) HandleQuery(ctx workflow.Context, queryType string, args *commonpb.Payloads,
