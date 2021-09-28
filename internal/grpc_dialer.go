@@ -30,7 +30,7 @@ import (
 
 	"github.com/gogo/status"
 	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
-	"github.com/uber-go/tally"
+	"github.com/uber-go/tally/v4"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/internal/common/retry"
 	"google.golang.org/grpc"

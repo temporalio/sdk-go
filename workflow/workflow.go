@@ -27,7 +27,7 @@ package workflow
 import (
 	"errors"
 
-	"github.com/uber-go/tally"
+	"github.com/uber-go/tally/v4"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
