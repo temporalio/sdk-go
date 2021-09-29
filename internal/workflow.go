@@ -1530,11 +1530,11 @@ func WithLocalActivityOptions(ctx Context, options LocalActivityOptions) Context
 
 	opts.ScheduleToCloseTimeout = options.ScheduleToCloseTimeout
 	opts.StartToCloseTimeout = options.StartToCloseTimeout
-	opts.RetryPolicy = applyRetryPolicyDefaultsForLocalActivity(options.RetryPolicy, opts.ScheduleToCloseTimeout)
+	opts.RetryPolicy = applyRetryPolicyDefaultsForLocalActivity(options.RetryPolicy)
 	return ctx1
 }
 
-func applyRetryPolicyDefaultsForLocalActivity(policy *RetryPolicy, timeout time.Duration) *RetryPolicy {
+func applyRetryPolicyDefaultsForLocalActivity(policy *RetryPolicy) *RetryPolicy {
 	if policy == nil {
 		policy = &RetryPolicy{}
 	}
@@ -1543,9 +1543,6 @@ func applyRetryPolicyDefaultsForLocalActivity(policy *RetryPolicy, timeout time.
 	}
 	if policy.InitialInterval == 0 {
 		policy.InitialInterval = 50 * time.Millisecond
-	}
-	if policy.MaximumInterval == 0 {
-		policy.MaximumInterval = timeout
 	}
 	return policy
 }
