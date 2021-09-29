@@ -71,17 +71,18 @@ const (
 type IntegrationTestSuite struct {
 	*require.Assertions
 	suite.Suite
-	config             Config
-	client             client.Client
-	activities         *Activities
-	workflows          *Workflows
-	worker             worker.Worker
-	seq                int64
-	taskQueueName      string
-	tracer             *tracingInterceptor
-	trafficController  *test.SimpleTrafficController
-	metricsScopeCloser io.Closer
-	metricsReporter    *metrics.CapturingStatsReporter
+	config                   Config
+	client                   client.Client
+	activities               *Activities
+	workflows                *Workflows
+	worker                   worker.Worker
+	seq                      int64
+	taskQueueName            string
+	tracer                   *tracingInterceptor
+	inboundSignalInterceptor *signalInterceptor
+	trafficController        *test.SimpleTrafficController
+	metricsScopeCloser       io.Closer
+	metricsReporter          *metrics.CapturingStatsReporter
 }
 
 func TestIntegrationSuite(t *testing.T) {
@@ -148,8 +149,10 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.activities.clearInvoked()
 	ts.taskQueueName = fmt.Sprintf("tq-%v-%s", ts.seq, ts.T().Name())
 	ts.tracer = newTracingInterceptor()
+	ts.inboundSignalInterceptor = newSignalInterceptor()
+	workflowInterceptors := []interceptors.WorkflowInterceptor{ts.tracer, ts.inboundSignalInterceptor}
 	options := worker.Options{
-		WorkflowInterceptorChainFactories: []interceptors.WorkflowInterceptor{ts.tracer},
+		WorkflowInterceptorChainFactories: workflowInterceptors,
 		WorkflowPanicPolicy:               worker.FailWorkflow,
 	}
 
@@ -562,15 +565,39 @@ func (ts *IntegrationTestSuite) TestSignalWorkflow() {
 		ts.tracer.GetTrace("SignalWorkflow"))
 }
 
+func (ts *IntegrationTestSuite) TestSignalWorkflowWithInterceptorError() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	// Return error 3 times from the interceptor
+	ts.inboundSignalInterceptor.returnErrorTimes = 3
+	wfOpts := ts.startWorkflowOptions("test-signal-workflow-interceptor-error")
+	run, err := ts.client.ExecuteWorkflow(ctx, wfOpts, ts.workflows.SignalWorkflow)
+	ts.Nil(err)
+	// Let workflow task run and send signal after to ensure correct order.
+	<-time.After(time.Second)
+	err = ts.client.SignalWorkflow(ctx, "test-signal-workflow-interceptor-error", run.GetRunID(), "string-signal", "string-value")
+	ts.NoError(err)
+
+	wt := &commonpb.WorkflowType{Name: "workflow-type"}
+	err = ts.client.SignalWorkflow(ctx, "test-signal-workflow-interceptor-error", run.GetRunID(), "proto-signal", wt)
+	ts.NoError(err)
+
+	var protoValue *commonpb.WorkflowType
+	err = run.Get(ctx, &protoValue)
+	// Workflow should succeed after retries upon an error in the signal interceptor
+	ts.NoError(err)
+}
+
 func (ts *IntegrationTestSuite) TestSignalWorkflowWithStubbornGrpcError() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
 	ts.trafficController.AddError("SignalWorkflowExecution", serviceerror.NewInternal("server failure"), test.FailAllAttempts)
-	wfOpts := ts.startWorkflowOptions("test-signal-workflow")
+	wfOpts := ts.startWorkflowOptions("test-signal-workflow-grpc-error")
 	run, err := ts.client.ExecuteWorkflow(ctx, wfOpts, ts.workflows.SignalWorkflow)
 	ts.Nil(err)
-	err = ts.client.SignalWorkflow(ctx, "test-signal-workflow", run.GetRunID(), "string-signal", "string-value")
+	err = ts.client.SignalWorkflow(ctx, "test-signal-workflow-grpc-error", run.GetRunID(), "string-signal", "string-value")
 	ts.Error(err)
 	ts.Equal("context deadline exceeded", err.Error())
 }
@@ -1343,6 +1370,44 @@ func (t *tracingInboundCallsInterceptor) HandleQuery(ctx workflow.Context, query
 	result, err := t.Next.HandleQuery(ctx, queryType, args, handler)
 	t.trace = append(t.trace, "HandleQuery end")
 	return result, err
+}
+
+var _ interceptors.WorkflowInterceptor = (*signalInterceptor)(nil)
+var _ interceptors.WorkflowInboundCallsInterceptor = (*signalInboundCallsInterceptor)(nil)
+var _ interceptors.WorkflowOutboundCallsInterceptor = (*signalOutboundCallsInterceptor)(nil)
+
+type signalInterceptor struct {
+	returnErrorTimes int
+}
+
+func newSignalInterceptor() *signalInterceptor {
+	return &signalInterceptor{}
+}
+
+type signalInboundCallsInterceptor struct {
+	interceptors.WorkflowInboundCallsInterceptorBase
+	err error
+}
+
+func (t *signalInboundCallsInterceptor) ProcessSignal(ctx workflow.Context, signalName string, arg interface{}) error {
+	if t.err != nil {
+		return t.err
+	}
+	return t.Next.ProcessSignal(ctx, signalName, arg)
+}
+
+type signalOutboundCallsInterceptor struct {
+	interceptors.WorkflowOutboundCallsInterceptorBase
+}
+
+func (t *signalInterceptor) InterceptWorkflow(_ *workflow.Info, next interceptors.WorkflowInboundCallsInterceptor) interceptors.WorkflowInboundCallsInterceptor {
+	result := &signalInboundCallsInterceptor{}
+	result.Next = next
+	if t.returnErrorTimes > 0 {
+		t.returnErrorTimes--
+		result.err = errors.New("signal interceptor injected a failure")
+	}
+	return result
 }
 
 func (ts *IntegrationTestSuite) metricCount(name string, tagFilterKeyValue ...string) (total int64) {
