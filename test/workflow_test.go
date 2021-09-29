@@ -968,9 +968,7 @@ func (w *Workflows) WorkflowWithLocalActivityRetries(ctx workflow.Context) error
 
 func (w *Workflows) WorkflowWithLocalActivityRetriesAndDefaultRetryPolicy(ctx workflow.Context) error {
 	laOpts := w.defaultLocalActivityOptions()
-	laOpts.RetryPolicy = &internal.RetryPolicy{
-		MaximumAttempts: 3,
-	}
+	// Don't set any retry policy
 	ctx = workflow.WithLocalActivityOptions(ctx, laOpts)
 	var activities *Activities
 
@@ -991,7 +989,10 @@ func (w *Workflows) WorkflowWithLocalActivityRetriesAndDefaultRetryPolicy(ctx wo
 
 func (w *Workflows) WorkflowWithLocalActivityRetriesAndPartialRetryPolicy(ctx workflow.Context) error {
 	laOpts := w.defaultLocalActivityOptions()
-	// Don't set any retry policy
+	// Set only max attempts and use defaults for other parameters.
+	laOpts.RetryPolicy = &internal.RetryPolicy{
+		MaximumAttempts: 3,
+	}
 	ctx = workflow.WithLocalActivityOptions(ctx, laOpts)
 	var activities *Activities
 
