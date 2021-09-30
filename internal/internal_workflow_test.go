@@ -126,7 +126,7 @@ type FailNTimesAct struct {
 func (a *FailNTimesAct) run(_ context.Context) error {
 	a.timesExecuted++
 	if a.timesExecuted <= a.timesToFail {
-		return errors.New(fmt.Sprintf("simulated activity failure on attempt %v", a.timesExecuted))
+		return fmt.Errorf("simulated activity failure on attempt %v", a.timesExecuted)
 	}
 	return nil
 }

@@ -146,7 +146,7 @@ type (
 
 		// RetryPolicy specify how to retry activity if error happens.
 		// Optional: default is to retry according to the default retry policy up to ScheduleToCloseTimeout
-		// with 50ms initial delay between retries and 2x backoff.
+		// with 1sec initial delay between retries and 2x backoff.
 		RetryPolicy *RetryPolicy
 	}
 )

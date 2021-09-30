@@ -1542,7 +1542,7 @@ func applyRetryPolicyDefaultsForLocalActivity(policy *RetryPolicy) *RetryPolicy 
 		policy.BackoffCoefficient = 2
 	}
 	if policy.InitialInterval == 0 {
-		policy.InitialInterval = 50 * time.Millisecond
+		policy.InitialInterval = 1 * time.Second
 	}
 	if policy.MaximumInterval == 0 {
 		policy.MaximumInterval = policy.InitialInterval * 100
