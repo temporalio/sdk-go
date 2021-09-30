@@ -1492,7 +1492,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	}
 
 	if closeCommand != nil {
-		commands = append(commands, closeCommand)
+		commands = append(filterCommandsWhenClose(commands), closeCommand)
 		elapsed := time.Since(workflowContext.workflowInfo.WorkflowStartTime)
 		metricsScope.Timer(metrics.WorkflowEndToEndLatency).Record(elapsed)
 		forceNewWorkflowTask = false
@@ -1527,6 +1527,39 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		QueryResults:               queryResults,
 		Namespace:                  wth.namespace,
 	}
+}
+
+func filterCommandsWhenClose(commands []*commandpb.Command) []*commandpb.Command {
+	var filteredCommands []*commandpb.Command
+	// It does not make sense to schedule an activity if we are closing workflow.
+	// Only 2 commands allowed when closing workflow:
+	//   * RecordMarker does not require further processing.
+	//   * UpsertSearchAttributes does not require workflow to be running.
+	for _, c := range commands {
+		switch c.GetCommandType() {
+		case
+			enumspb.COMMAND_TYPE_RECORD_MARKER,
+			enumspb.COMMAND_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES:
+			filteredCommands = append(filteredCommands, c)
+		case
+			enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK,
+			enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK,
+			enumspb.COMMAND_TYPE_START_TIMER,
+			enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION,
+			enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION,
+			enumspb.COMMAND_TYPE_CANCEL_TIMER,
+			enumspb.COMMAND_TYPE_CANCEL_WORKFLOW_EXECUTION,
+			enumspb.COMMAND_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION,
+			enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION,
+			enumspb.COMMAND_TYPE_START_CHILD_WORKFLOW_EXECUTION,
+			enumspb.COMMAND_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION:
+			// ignore them
+		default:
+			// if you reach here, you need to add the new command type accordingly to above cases.
+			panic(fmt.Sprintf("unexpected Command type %v", c.GetCommandType().String()))
+		}
+	}
+	return filteredCommands
 }
 
 func errorToFailWorkflowTask(taskToken []byte, err error, identity string, dataConverter converter.DataConverter,

@@ -195,6 +195,53 @@ func (ts *IntegrationTestSuite) TestBasic() {
 	)
 }
 
+func (ts *IntegrationTestSuite) TestExtraCommandsAfterClose() {
+	localActivityFn := func(ctx context.Context) (string, error) {
+		return "local-activity-done", nil
+	}
+
+	workflowFn := func(ctx workflow.Context) error {
+		defer func() {
+			workflow.NewTimer(ctx, time.Second) // this timer command would be ignored.
+		}()
+		ao := workflow.LocalActivityOptions{
+			ScheduleToCloseTimeout: 10 * time.Second,
+		}
+		ctx1 := workflow.WithLocalActivityOptions(ctx, ao)
+		f1 := workflow.ExecuteLocalActivity(ctx1, localActivityFn)
+		err1 := f1.Get(ctx1, nil)
+		return err1
+	}
+
+	ts.worker.RegisterWorkflowWithOptions(workflowFn, workflow.RegisterOptions{Name: "extra-commands-ignored"})
+	id := "integration-test-workflow-extra-commands-after-close"
+	startOptions := client.StartWorkflowOptions{
+		ID:                  id,
+		TaskQueue:           ts.taskQueueName,
+		WorkflowRunTimeout:  20 * time.Second,
+		WorkflowTaskTimeout: 3 * time.Second,
+	}
+	err := ts.executeWorkflowWithOption(startOptions, workflowFn, nil)
+	ts.NoError(err)
+
+	history, err := ts.getHistory(id, "")
+	ts.NoError(err)
+
+	expectedEvents := []string{
+		"WorkflowExecutionStarted",
+		"WorkflowTaskScheduled",
+		"WorkflowTaskStarted",
+		"WorkflowTaskCompleted",
+		"MarkerRecorded", // local activity result
+		"WorkflowExecutionCompleted",
+	}
+	var actualEvents []string
+	for _, e := range history.Events {
+		actualEvents = append(actualEvents, e.EventType.String())
+	}
+	ts.Equal(expectedEvents, actualEvents)
+}
+
 // TestLocalActivityRetryBehavior verifies local activity retry behaviors:
 // 1) local activity retry with local timer backoff when backoff duration is less than or equal to workflow task timeout
 // 2) workflow task heartbeat is happening when local activity takes longer than workflow task timeout
