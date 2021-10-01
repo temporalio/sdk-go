@@ -966,6 +966,51 @@ func (w *Workflows) WorkflowWithLocalActivityRetries(ctx workflow.Context) error
 	return nil
 }
 
+func (w *Workflows) WorkflowWithLocalActivityRetriesAndDefaultRetryPolicy(ctx workflow.Context) error {
+	laOpts := w.defaultLocalActivityOptions()
+	// Don't set any retry policy
+	ctx = workflow.WithLocalActivityOptions(ctx, laOpts)
+	var activities *Activities
+
+	var futures []workflow.Future
+	for i := 1; i <= 10; i++ {
+		la := workflow.ExecuteLocalActivity(ctx, activities.failNTimes, 2, i)
+		futures = append(futures, la)
+	}
+
+	for _, fut := range futures {
+		err := fut.Get(ctx, nil)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (w *Workflows) WorkflowWithLocalActivityRetriesAndPartialRetryPolicy(ctx workflow.Context) error {
+	laOpts := w.defaultLocalActivityOptions()
+	// Set only max attempts and use defaults for other parameters.
+	laOpts.RetryPolicy = &internal.RetryPolicy{
+		MaximumAttempts: 3,
+	}
+	ctx = workflow.WithLocalActivityOptions(ctx, laOpts)
+	var activities *Activities
+
+	var futures []workflow.Future
+	for i := 1; i <= 10; i++ {
+		la := workflow.ExecuteLocalActivity(ctx, activities.failNTimes, 2, i)
+		futures = append(futures, la)
+	}
+
+	for _, fut := range futures {
+		err := fut.Get(ctx, nil)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (w *Workflows) WorkflowWithParallelSideEffects(ctx workflow.Context) (string, error) {
 	var futures []workflow.Future
 
@@ -1245,6 +1290,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityCtxPropagation)
 	worker.RegisterWorkflow(w.WorkflowWithParallelLongLocalActivityAndHeartbeat)
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityRetries)
+	worker.RegisterWorkflow(w.WorkflowWithLocalActivityRetriesAndDefaultRetryPolicy)
+	worker.RegisterWorkflow(w.WorkflowWithLocalActivityRetriesAndPartialRetryPolicy)
 	worker.RegisterWorkflow(w.WorkflowWithParallelLocalActivities)
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityStartWhenTimerCancel)
 	worker.RegisterWorkflow(w.WorkflowWithParallelSideEffects)

@@ -71,6 +71,66 @@ func (s *WorkflowUnitTest) Test_WorldWorkflow() {
 	s.NoError(env.GetWorkflowError())
 }
 
+func (s *WorkflowUnitTest) Test_WorkflowWithLocalActivityDefaultRetryPolicy() {
+	env := s.NewTestWorkflowEnvironment()
+	laOpts := LocalActivityOptions{
+		ScheduleToCloseTimeout: 5 * time.Second,
+	}
+	env.ExecuteWorkflow(workflowWithFailingLocalActivity, laOpts, 2)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+}
+
+func (s *WorkflowUnitTest) Test_WorkflowWithLocalActivityWithMaxAttempts() {
+	env := s.NewTestWorkflowEnvironment()
+	laOpts := LocalActivityOptions{
+		ScheduleToCloseTimeout: 5 * time.Second,
+		RetryPolicy: &RetryPolicy{
+			MaximumAttempts: 3,
+		},
+	}
+	env.ExecuteWorkflow(workflowWithFailingLocalActivity, laOpts, 2)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+}
+
+func (s *WorkflowUnitTest) Test_WorkflowWithLocalActivityWithMaxAttemptsExceeded() {
+	env := s.NewTestWorkflowEnvironment()
+	laOpts := LocalActivityOptions{
+		ScheduleToCloseTimeout: 5 * time.Second,
+		RetryPolicy: &RetryPolicy{
+			MaximumAttempts: 3,
+		},
+	}
+	env.ExecuteWorkflow(workflowWithFailingLocalActivity, laOpts, 5)
+	s.True(env.IsWorkflowCompleted())
+	s.Error(env.GetWorkflowError())
+}
+
+func workflowWithFailingLocalActivity(ctx Context, laOpts LocalActivityOptions, laTimesToFail int) error {
+	ctx = WithLocalActivityOptions(ctx, laOpts)
+	activity := &FailNTimesAct{timesToFail: laTimesToFail}
+	f := ExecuteLocalActivity(ctx, activity.run)
+	err := f.Get(ctx, nil)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+type FailNTimesAct struct {
+	timesExecuted int
+	timesToFail   int
+}
+
+func (a *FailNTimesAct) run(_ context.Context) error {
+	a.timesExecuted++
+	if a.timesExecuted <= a.timesToFail {
+		return fmt.Errorf("simulated activity failure on attempt %v", a.timesExecuted)
+	}
+	return nil
+}
+
 func helloWorldAct(ctx context.Context) (string, error) {
 	s := ctx.Value(unitTestKey).(*WorkflowUnitTest)
 	info := GetActivityInfo(ctx)

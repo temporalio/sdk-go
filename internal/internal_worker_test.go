@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -1474,6 +1475,10 @@ func (s *internalWorkerTestSuite) TestCreateWorkerWithDataConverter() {
 }
 
 func (s *internalWorkerTestSuite) TestCreateWorkerRun() {
+	// Windows doesn't support signalling interrupt.
+	if runtime.GOOS == "windows" {
+		s.T().Skip("Not supported on windows")
+	}
 	// Create service endpoint
 	mockCtrl := gomock.NewController(s.T())
 	service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
