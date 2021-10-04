@@ -136,6 +136,7 @@ type (
 		startedTime        time.Time
 		taskQueue          string
 		dataConverter      converter.DataConverter
+		interceptors       []ActivityInterceptor
 		attempt            int32 // starts from 1.
 		heartbeatDetails   *commonpb.Payloads
 		workflowType       *WorkflowType
@@ -302,7 +303,7 @@ func isActivityContext(inType reflect.Type) bool {
 	return inType != nil && inType.Implements(contextElem)
 }
 
-func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataConverter converter.DataConverter) (*commonpb.Payloads, error) {
+func validateFunctionAndGetResults(f interface{}, values []interface{}, dataConverter converter.DataConverter) (*commonpb.Payloads, error) {
 	resultSize := len(values)
 
 	if resultSize < 1 || resultSize > 2 {
@@ -319,10 +320,10 @@ func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataCo
 		retValue := values[0]
 
 		var ok bool
-		if result, ok = retValue.Interface().(*commonpb.Payloads); !ok {
-			if retValue.Kind() != reflect.Ptr || !retValue.IsNil() {
+		if result, ok = retValue.(*commonpb.Payloads); !ok {
+			if retValue != nil {
 				var err error
-				if result, err = encodeArg(dataConverter, retValue.Interface()); err != nil {
+				if result, err = encodeArg(dataConverter, retValue); err != nil {
 					return nil, err
 				}
 			}
@@ -331,10 +332,10 @@ func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataCo
 
 	// Parse error.
 	errValue := values[resultSize-1]
-	if errValue.IsNil() {
+	if errValue == nil {
 		return result, nil
 	}
-	errInterface, ok := errValue.Interface().(error)
+	errInterface, ok := errValue.(error)
 	if !ok {
 		return nil, fmt.Errorf(
 			"failed to parse error result as it is not of error interface: %v",
@@ -396,4 +397,38 @@ func setLocalActivityParametersIfNotExist(ctx Context) Context {
 		newParams = *params
 	}
 	return WithValue(ctx, localActivityOptionsContextKey, &newParams)
+}
+
+type activityReflectInterceptor struct{ fn interface{} }
+
+var _ ActivityInboundCallsInterceptor = (*activityReflectInterceptor)(nil)
+
+func (*activityReflectInterceptor) Init(context.Context) error { return nil }
+
+func (a *activityReflectInterceptor) ExecuteActivity(
+	ctx context.Context,
+	activityType string,
+	inputArgs ...interface{},
+) (results []interface{}) {
+	args := make([]reflect.Value, 0, len(inputArgs)+1)
+	// Activity may not take context
+	fnType := reflect.TypeOf(a.fn)
+	if fnType.NumIn() > 0 && isActivityContext(fnType.In(0)) {
+		args = append(args, reflect.ValueOf(ctx))
+	}
+	for _, arg := range inputArgs {
+		// []byte arguments are not serialized
+		switch arg.(type) {
+		case []byte:
+			args = append(args, reflect.ValueOf(arg))
+		default:
+			args = append(args, reflect.ValueOf(arg).Elem())
+		}
+	}
+	fnValue := reflect.ValueOf(a.fn)
+	retValues := fnValue.Call(args)
+	for _, r := range retValues {
+		results = append(results, r.Interface())
+	}
+	return
 }

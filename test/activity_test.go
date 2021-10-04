@@ -225,6 +225,23 @@ func (a *Activities) PropagateActivity(ctx context.Context) ([]string, error) {
 	return result, nil
 }
 
+func (*Activities) BasicWithArguments(
+	ctx context.Context,
+	stringVal string,
+	bytesVal []byte,
+	intVal int,
+	argVal workflowAdvancedArg,
+	argValPtr *workflowAdvancedArg,
+) (workflowAdvancedArg, error) {
+	return workflowAdvancedArg{
+		StringVal:  stringVal,
+		BytesVal:   bytesVal,
+		IntVal:     intVal,
+		ArgValPtr1: &argVal,
+		ArgValPtr2: argValPtr,
+	}, nil
+}
+
 func (a *Activities) register(worker worker.Worker) {
 	worker.RegisterActivity(a)
 	// Check reregistration

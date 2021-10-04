@@ -1374,7 +1374,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocal
 		return aew.ExecuteWithActualArgs(ctx, params.InputArgs)
 	}
 
-	task := newLocalActivityTask(params, callback, activityID)
+	task := newLocalActivityTask(params, callback, activityID, env.registry.activityInterceptors)
 	taskHandler := localActivityTaskHandler{
 		userContext:        env.workerOptions.BackgroundActivityContext,
 		metricsScope:       env.metricsScope,
@@ -2159,12 +2159,12 @@ func (env *testWorkflowEnvironmentImpl) getMockedVersion(mockedChangeID, changeI
 	m := &mockWrapper{name: mockMethodForGetVersion, fn: mockFnGetVersion, interceptors: env.registry.WorkflowInterceptors()}
 	if mockFn := m.getMockFn(mockRet); mockFn != nil {
 		executor := &activityExecutor{name: mockMethodForGetVersion, fn: mockFn}
-		reflectValues := executor.executeWithActualArgsWithoutParseResult(context.TODO(), args)
-		if len(reflectValues) != 1 || !reflect.TypeOf(reflectValues[0].Interface()).AssignableTo(reflect.TypeOf(DefaultVersion)) {
+		results := executor.executeWithActualArgsWithoutParseResult(context.TODO(), args)
+		if len(results) != 1 || !reflect.TypeOf(results[0]).AssignableTo(reflect.TypeOf(DefaultVersion)) {
 			panic(fmt.Sprintf("mock of GetVersion has incorrect return type, expected workflow.Version, but actual is %T (%v)",
-				reflectValues[0].Interface(), reflectValues[0].Interface()))
+				results[0], results[0]))
 		}
-		return reflectValues[0].Interface().(Version), true
+		return results[0].(Version), true
 	}
 
 	if len(mockRet) != 1 || !reflect.TypeOf(mockRet[0]).AssignableTo(reflect.TypeOf(DefaultVersion)) {

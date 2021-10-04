@@ -66,6 +66,33 @@ func (w *Workflows) Basic(ctx workflow.Context) ([]string, error) {
 	return []string{"toUpperWithDelay", "toUpper"}, nil
 }
 
+type workflowAdvancedArg struct {
+	StringVal  string
+	BytesVal   []byte
+	IntVal     int
+	ArgValPtr1 *workflowAdvancedArg
+	ArgValPtr2 *workflowAdvancedArg
+}
+
+func (w *Workflows) BasicWithArguments(
+	ctx workflow.Context,
+	stringVal string,
+	bytesVal []byte,
+	intVal int,
+	argVal workflowAdvancedArg,
+	argValPtr *workflowAdvancedArg,
+) (workflowAdvancedArg, error) {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
+	var ret workflowAdvancedArg
+	// Execute a non-local and local activity
+	workflow.ExecuteActivity(ctx, "BasicWithArguments",
+		stringVal, bytesVal, intVal, argVal, argValPtr).Get(ctx, &ret)
+	err := workflow.ExecuteLocalActivity(ctx, new(Activities).BasicWithArguments,
+		stringVal, bytesVal, intVal, argVal, argValPtr).Get(ctx, &ret)
+	return ret, err
+}
+
 func (w *Workflows) Deadlocked(ctx workflow.Context) ([]string, error) {
 	// Simulates deadlock. Never call time.Sleep in production code!
 	time.Sleep(2 * time.Second)
@@ -1258,6 +1285,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityRetryOnTimeout)
 	worker.RegisterWorkflow(w.ActivityRetryOptionsChange)
 	worker.RegisterWorkflow(w.Basic)
+	worker.RegisterWorkflow(w.BasicWithArguments)
 	worker.RegisterWorkflow(w.Deadlocked)
 	worker.RegisterWorkflow(w.DeadlockedWithLocalActivity)
 	worker.RegisterWorkflow(w.Panicked)

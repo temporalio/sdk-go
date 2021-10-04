@@ -1769,7 +1769,19 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	workflowType := t.WorkflowType.GetName()
 	activityType := t.ActivityType.GetName()
 	activityMetricsScope := metrics.GetMetricsScopeForActivity(ath.metricsScope, workflowType, activityType, ath.taskQueueName)
-	ctx := WithActivityTask(canCtx, t, taskQueue, invoker, ath.logger, activityMetricsScope, ath.dataConverter, ath.workerStopCh, ath.contextPropagators, ath.tracer)
+	ctx := WithActivityTask(
+		canCtx,
+		t,
+		taskQueue,
+		invoker,
+		ath.logger,
+		activityMetricsScope,
+		ath.dataConverter,
+		ath.registry.activityInterceptors,
+		ath.workerStopCh,
+		ath.contextPropagators,
+		ath.tracer,
+	)
 
 	defer func() {
 		_, activityCompleted := result.(*workflowservice.RespondActivityTaskCompletedRequest)

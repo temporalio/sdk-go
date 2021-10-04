@@ -150,6 +150,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.tracer = newTracingInterceptor()
 	options := worker.Options{
 		WorkflowInterceptorChainFactories: []interceptors.WorkflowInterceptor{ts.tracer},
+		ActivityInterceptorChainFactories: []interceptors.ActivityInterceptor{ts.tracer},
 		WorkflowPanicPolicy:               worker.FailWorkflow,
 	}
 
@@ -1101,6 +1102,77 @@ func (ts *IntegrationTestSuite) TestResetWorkflowExecution() {
 	ts.Equal(originalResult, newResult)
 }
 
+func (ts *IntegrationTestSuite) TestExecutionInterpreters() {
+	// Add callbacks to collect info
+	ifaceTypes := func(ifaces []interface{}) (types []string) {
+		for _, iface := range ifaces {
+			types = append(types, fmt.Sprintf("%T", iface))
+		}
+		return
+	}
+	var actualWorkflowType string
+	var actualWorkflowArgTypes, actualWorkflowResultTypes []string
+	ts.tracer.executeWorkflowCallback = func(
+		next interceptors.WorkflowInboundCallsInterceptor,
+		ctx workflow.Context,
+		workflowType string,
+		args ...interface{},
+	) []interface{} {
+		actualWorkflowType = workflowType
+		actualWorkflowArgTypes = ifaceTypes(args)
+		results := next.ExecuteWorkflow(ctx, workflowType, args...)
+		actualWorkflowResultTypes = ifaceTypes(results)
+		return results
+	}
+	// Using the presence of a task token to check if local
+	var actualActivityIsLocal []bool
+	var actualActivityTypes []string
+	var actualActivityArgTypes, actualActivityResultTypes [][]string
+	ts.tracer.executeActivityCallback = func(
+		next interceptors.ActivityInboundCallsInterceptor,
+		ctx context.Context,
+		activityType string,
+		args ...interface{},
+	) []interface{} {
+		fmt.Printf("INFO: %#v\n", activity.GetInfo(ctx))
+		actualActivityIsLocal = append(actualActivityIsLocal, len(activity.GetInfo(ctx).TaskToken) == 0)
+		actualActivityTypes = append(actualActivityTypes, activityType)
+		actualActivityArgTypes = append(actualActivityArgTypes, ifaceTypes(args))
+		results := next.ExecuteActivity(ctx, activityType, args...)
+		actualActivityResultTypes = append(actualActivityResultTypes, ifaceTypes(results))
+		return results
+	}
+	// Run
+	var ignore workflowAdvancedArg
+	err := ts.executeWorkflow("test-execution-interpreters", ts.workflows.BasicWithArguments, &ignore,
+		"strval", []byte("bytesval"), 123,
+		workflowAdvancedArg{StringVal: "strval"}, &workflowAdvancedArg{BytesVal: []byte("bytesval")})
+	ts.NoError(err)
+	// Confirm workflow interceptor expectations
+	expectedType := "BasicWithArguments"
+	expectedArgTypes := []string{
+		"*string", "*[]uint8", "*int", "*test_test.workflowAdvancedArg", "**test_test.workflowAdvancedArg"}
+	expectedResultTypes := []string{"test_test.workflowAdvancedArg", "<nil>"}
+	ts.Equal(expectedType, actualWorkflowType)
+	ts.Equal(expectedArgTypes, actualWorkflowArgTypes)
+	ts.Equal(expectedResultTypes, actualWorkflowResultTypes)
+	// Confirm activity interceptor expectations of calling the non-local one
+	// first then the local one
+	ts.False(actualActivityIsLocal[0])
+	ts.Equal(expectedType, actualActivityTypes[0])
+	ts.Equal(expectedArgTypes, actualActivityArgTypes[0])
+	ts.Equal(expectedResultTypes, actualActivityResultTypes[0])
+	ts.True(actualActivityIsLocal[1])
+	ts.Equal(expectedType, actualActivityTypes[1])
+	ts.Equal(expectedArgTypes, actualActivityArgTypes[1])
+	ts.Equal(expectedResultTypes, actualActivityResultTypes[1])
+}
+
+// TODO(cretz): Test interceptor init error
+// TODO(cretz): Test execute workflow/activity error result
+// TODO(cretz): Test local activity interceptors
+// TODO(cretz): Test activity interceptors when activity doesn't take context
+
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{HostPort: ts.config.ServiceAddr})
 	ts.NoError(err)
@@ -1190,17 +1262,27 @@ var _ interceptors.WorkflowOutboundCallsInterceptor = (*tracingOutboundCallsInte
 type tracingInterceptor struct {
 	sync.Mutex
 	// key is workflow id
-	instances map[string]*tracingInboundCallsInterceptor
+	instances               map[string]*tracingInboundCallsInterceptor
+	executeWorkflowCallback func(interceptors.WorkflowInboundCallsInterceptor, workflow.Context, string, ...interface{}) []interface{}
+	activityInstances       map[string]*tracingActivityInboundCallsInterceptor
+	executeActivityCallback func(interceptors.ActivityInboundCallsInterceptor, context.Context, string, ...interface{}) []interface{}
 }
 
 type tracingInboundCallsInterceptor struct {
-	Next  interceptors.WorkflowInboundCallsInterceptor
-	trace []string
+	Next                    interceptors.WorkflowInboundCallsInterceptor
+	trace                   []string
+	executeWorkflowCallback func(interceptors.WorkflowInboundCallsInterceptor, workflow.Context, string, ...interface{}) []interface{}
 }
 
 type tracingOutboundCallsInterceptor struct {
 	interceptors.WorkflowOutboundCallsInterceptorBase
 	inbound *tracingInboundCallsInterceptor
+}
+
+type tracingActivityInboundCallsInterceptor struct {
+	Next                    interceptors.ActivityInboundCallsInterceptor
+	trace                   []string
+	executeActivityCallback func(interceptors.ActivityInboundCallsInterceptor, context.Context, string, ...interface{}) []interface{}
 }
 
 func (t *tracingOutboundCallsInterceptor) Go(ctx workflow.Context, name string, f func(ctx workflow.Context)) workflow.Context {
@@ -1209,14 +1291,34 @@ func (t *tracingOutboundCallsInterceptor) Go(ctx workflow.Context, name string, 
 }
 
 func newTracingInterceptor() *tracingInterceptor {
-	return &tracingInterceptor{instances: make(map[string]*tracingInboundCallsInterceptor)}
+	return &tracingInterceptor{
+		instances:         make(map[string]*tracingInboundCallsInterceptor),
+		activityInstances: make(map[string]*tracingActivityInboundCallsInterceptor),
+	}
 }
 
 func (t *tracingInterceptor) InterceptWorkflow(info *workflow.Info, next interceptors.WorkflowInboundCallsInterceptor) interceptors.WorkflowInboundCallsInterceptor {
 	t.Mutex.Lock()
 	defer t.Mutex.Unlock()
-	result := &tracingInboundCallsInterceptor{next, nil}
+	result := &tracingInboundCallsInterceptor{
+		Next:                    next,
+		executeWorkflowCallback: t.executeWorkflowCallback,
+	}
 	t.instances[info.WorkflowType.Name] = result
+	return result
+}
+
+func (t *tracingInterceptor) InterceptActivity(
+	ctx context.Context,
+	next interceptors.ActivityInboundCallsInterceptor,
+) interceptors.ActivityInboundCallsInterceptor {
+	t.Mutex.Lock()
+	defer t.Mutex.Unlock()
+	result := &tracingActivityInboundCallsInterceptor{
+		Next:                    next,
+		executeActivityCallback: t.executeActivityCallback,
+	}
+	t.activityInstances[activity.GetInfo(ctx).ActivityType.Name] = result
 	return result
 }
 
@@ -1246,6 +1348,9 @@ func (t *tracingOutboundCallsInterceptor) ExecuteChildWorkflow(ctx workflow.Cont
 
 func (t *tracingInboundCallsInterceptor) ExecuteWorkflow(ctx workflow.Context, workflowType string, args ...interface{}) []interface{} {
 	t.trace = append(t.trace, "ExecuteWorkflow begin")
+	if t.executeWorkflowCallback != nil {
+		return t.executeWorkflowCallback(t.Next, ctx, workflowType, args...)
+	}
 	result := t.Next.ExecuteWorkflow(ctx, workflowType, args...)
 	t.trace = append(t.trace, "ExecuteWorkflow end")
 	return result
@@ -1296,4 +1401,19 @@ func (ts *IntegrationTestSuite) getReportedOperationCount(metricName string, ope
 		}
 	}
 	return count
+}
+
+func (t *tracingActivityInboundCallsInterceptor) Init(ctx context.Context) error {
+	return t.Next.Init(ctx)
+}
+
+func (t *tracingActivityInboundCallsInterceptor) ExecuteActivity(
+	ctx context.Context,
+	activityType string,
+	args ...interface{},
+) []interface{} {
+	if t.executeActivityCallback != nil {
+		return t.executeActivityCallback(t.Next, ctx, activityType, args...)
+	}
+	return t.Next.ExecuteActivity(ctx, activityType, args...)
 }

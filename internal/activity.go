@@ -261,6 +261,7 @@ func WithActivityTask(
 	logger log.Logger,
 	scope tally.Scope,
 	dataConverter converter.DataConverter,
+	interceptors []ActivityInterceptor,
 	workerStopChannel <-chan struct{},
 	contextPropagators []ContextPropagator,
 	tracer opentracing.Tracer,
@@ -319,11 +320,19 @@ func WithActivityTask(
 		workerStopChannel:  workerStopChannel,
 		contextPropagators: contextPropagators,
 		tracer:             tracer,
+		interceptors:       interceptors,
 	})
 }
 
 // WithLocalActivityTask adds local activity specific information into context.
-func WithLocalActivityTask(ctx context.Context, task *localActivityTask, logger log.Logger, scope tally.Scope, dataConverter converter.DataConverter) context.Context {
+func WithLocalActivityTask(
+	ctx context.Context,
+	task *localActivityTask,
+	logger log.Logger,
+	scope tally.Scope,
+	dataConverter converter.DataConverter,
+	interceptors []ActivityInterceptor,
+) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -350,6 +359,7 @@ func WithLocalActivityTask(ctx context.Context, task *localActivityTask, logger 
 		isLocalActivity:   true,
 		dataConverter:     dataConverter,
 		attempt:           task.attempt,
+		interceptors:      interceptors,
 	})
 	return ctx
 }

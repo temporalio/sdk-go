@@ -471,7 +471,14 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 			tagAttempt, task.attempt,
 		)
 	})
-	ctx := WithLocalActivityTask(lath.userContext, task, lath.logger, lath.metricsScope, lath.dataConverter)
+	ctx := WithLocalActivityTask(
+		lath.userContext,
+		task,
+		lath.logger,
+		lath.metricsScope,
+		lath.dataConverter,
+		task.interceptors,
+	)
 
 	// propagate context information into the local activity activity context from the headers
 	for _, ctxProp := range lath.contextPropagators {

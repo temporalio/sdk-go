@@ -446,6 +446,7 @@ type registry struct {
 	activityFuncMap      map[string]activity
 	activityAliasMap     map[string]string
 	workflowInterceptors []WorkflowInterceptor
+	activityInterceptors []ActivityInterceptor
 }
 
 func (r *registry) WorkflowInterceptors() []WorkflowInterceptor {
@@ -454,6 +455,14 @@ func (r *registry) WorkflowInterceptors() []WorkflowInterceptor {
 
 func (r *registry) SetWorkflowInterceptors(workflowInterceptors []WorkflowInterceptor) {
 	r.workflowInterceptors = workflowInterceptors
+}
+
+func (r *registry) ActivityInterceptors() []ActivityInterceptor {
+	return r.activityInterceptors
+}
+
+func (r *registry) SetActivityInterceptors(activityInterceptors []ActivityInterceptor) {
+	r.activityInterceptors = activityInterceptors
 }
 
 func (r *registry) RegisterWorkflow(af interface{}) {
@@ -765,58 +774,68 @@ func (ae *activityExecutor) GetFunction() interface{} {
 	return ae.fn
 }
 
+func (ae *activityExecutor) initializedActivityInterceptor(ctx context.Context) (ActivityInboundCallsInterceptor, error) {
+	// Initial interceptor is the one that reflectively calls the function
+	var interceptor ActivityInboundCallsInterceptor = &activityReflectInterceptor{fn: ae.fn}
+	// Chain interceptors in reverse order
+	interceptors := getInterceptorsFromActivityCtx(ctx)
+	for i := len(interceptors) - 1; i >= 0; i-- {
+		interceptor = interceptors[i].InterceptActivity(ctx, interceptor)
+	}
+	// Initialize interceptor
+	return interceptor, interceptor.Init(ctx)
+}
+
 func (ae *activityExecutor) Execute(ctx context.Context, input *commonpb.Payloads) (*commonpb.Payloads, error) {
-	fnType := reflect.TypeOf(ae.fn)
-	var args []reflect.Value
 	dataConverter := getDataConverterFromActivityCtx(ctx)
 
-	// activities optionally might not take context.
-	if fnType.NumIn() > 0 && isActivityContext(fnType.In(0)) {
-		args = append(args, reflect.ValueOf(ctx))
+	// Prepare interceptor, panicking on error
+	// TODO(cretz): Panicking acceptable? This is what workflow interceptors do.
+	interceptor, err := ae.initializedActivityInterceptor(ctx)
+	if err != nil {
+		panic(err)
 	}
 
-	decoded, err := decodeArgs(dataConverter, fnType, input)
+	decoded, err := decodeArgsToValues(dataConverter, reflect.TypeOf(ae.fn), input)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"unable to decode the activity function input payload with error: %w for function name: %v",
 			err, ae.name)
 	}
-	args = append(args, decoded...)
 
-	fnValue := reflect.ValueOf(ae.fn)
-	retValues := fnValue.Call(args)
-	return validateFunctionAndGetResults(ae.fn, retValues, dataConverter)
+	// TODO(cretz): Make sure getActivityEnvironmentFromCtx(ctx).activityType.Name == ae.name
+	// TODO(cretz): Acceptable to only use string name like workflow interceptors instead of ActivityType struct?
+	ret := interceptor.ExecuteActivity(ctx, ae.name, decoded...)
+	return validateFunctionAndGetResults(ae.fn, ret, dataConverter)
 }
 
 func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, actualArgs []interface{}) (*commonpb.Payloads, error) {
-	retValues := ae.executeWithActualArgsWithoutParseResult(ctx, actualArgs)
+	ret := ae.executeWithActualArgsWithoutParseResult(ctx, actualArgs)
 	dataConverter := getDataConverterFromActivityCtx(ctx)
 
-	return validateFunctionAndGetResults(ae.fn, retValues, dataConverter)
+	return validateFunctionAndGetResults(ae.fn, ret, dataConverter)
 }
 
-func (ae *activityExecutor) executeWithActualArgsWithoutParseResult(ctx context.Context, actualArgs []interface{}) []reflect.Value {
-	fnType := reflect.TypeOf(ae.fn)
-	var args []reflect.Value
-
-	// activities optionally might not take context.
-	argsOffeset := 0
-	if fnType.NumIn() > 0 && isActivityContext(fnType.In(0)) {
-		args = append(args, reflect.ValueOf(ctx))
-		argsOffeset = 1
+func (ae *activityExecutor) executeWithActualArgsWithoutParseResult(ctx context.Context, actualArgs []interface{}) []interface{} {
+	// Prepare interceptor, panicking on error
+	interceptor, err := ae.initializedActivityInterceptor(ctx)
+	if err != nil {
+		panic(err)
 	}
 
-	for i, arg := range actualArgs {
-		if arg == nil {
-			args = append(args, reflect.New(fnType.In(i+argsOffeset)).Elem())
-		} else {
-			args = append(args, reflect.ValueOf(arg))
-		}
+	args := make([]interface{}, len(actualArgs))
+	for i, actualArg := range actualArgs {
+		// Have to have stable pointer to underlying type to match interceptor use
+		// for non-local activities
+		// TODO(cretz): Better algorithm for this?
+		// TODO(cretz): Previous algorithm used zero value when arg was nil, why? Do I need to do that?
+		actualArg := actualArg
+		newPtr := reflect.New(reflect.TypeOf(actualArg))
+		newPtr.Elem().Set(reflect.ValueOf(actualArg))
+		args[i] = newPtr.Interface()
 	}
 
-	fnValue := reflect.ValueOf(ae.fn)
-	retValues := fnValue.Call(args)
-	return retValues
+	return interceptor.ExecuteActivity(ctx, ae.name, args...)
 }
 
 func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverter {
@@ -829,6 +848,14 @@ func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverte
 		dataConverter = converter.GetDefaultDataConverter()
 	}
 	return WithContext(ctx, dataConverter)
+}
+
+func getInterceptorsFromActivityCtx(ctx context.Context) []ActivityInterceptor {
+	env := getActivityEnvironmentFromCtx(ctx)
+	if env != nil {
+		return env.interceptors
+	}
+	return nil
 }
 
 func getNamespaceFromActivityCtx(ctx context.Context) string {
@@ -1303,6 +1330,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	// worker specific registry
 	registry := newRegistry()
 	registry.SetWorkflowInterceptors(options.WorkflowInterceptorChainFactories)
+	registry.SetActivityInterceptors(options.ActivityInterceptorChainFactories)
 
 	// workflow factory.
 	var workflowWorker *workflowWorker

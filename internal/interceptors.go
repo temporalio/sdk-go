@@ -25,6 +25,7 @@
 package internal
 
 import (
+	"context"
 	"time"
 
 	"github.com/uber-go/tally"
@@ -97,8 +98,19 @@ type WorkflowOutboundCallsInterceptor interface {
 	GetLastError(ctx Context) error
 }
 
+type ActivityInterceptor interface {
+	InterceptActivity(ctx context.Context, next ActivityInboundCallsInterceptor) ActivityInboundCallsInterceptor
+}
+
+type ActivityInboundCallsInterceptor interface {
+	Init(ctx context.Context) error
+
+	ExecuteActivity(ctx context.Context, activityType string, args ...interface{}) []interface{}
+}
+
 var _ WorkflowOutboundCallsInterceptor = (*WorkflowOutboundCallsInterceptorBase)(nil)
 var _ WorkflowInboundCallsInterceptor = (*WorkflowInboundCallsInterceptorBase)(nil)
+var _ ActivityInboundCallsInterceptor = (*ActivityInboundCallsInterceptorBase)(nil)
 
 // WorkflowInboundCallsInterceptorBase is a noop implementation of WorkflowInboundCallsInterceptor that just forwards requests
 // to the next link in an interceptor chain. To be used as base implementation of interceptors.
@@ -241,4 +253,20 @@ func (t *WorkflowOutboundCallsInterceptorBase) GetLastCompletionResult(ctx Conte
 // GetLastError forwards to t.Next
 func (t *WorkflowOutboundCallsInterceptorBase) GetLastError(ctx Context) error {
 	return t.Next.GetLastError(ctx)
+}
+
+type ActivityInboundCallsInterceptorBase struct {
+	Next ActivityInboundCallsInterceptor
+}
+
+func (a ActivityInboundCallsInterceptorBase) Init(ctx context.Context) error {
+	return a.Next.Init(ctx)
+}
+
+func (a ActivityInboundCallsInterceptorBase) ExecuteActivity(
+	ctx context.Context,
+	activityType string,
+	args ...interface{},
+) []interface{} {
+	return a.Next.ExecuteActivity(ctx, activityType, args...)
 }

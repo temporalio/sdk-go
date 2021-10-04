@@ -149,6 +149,7 @@ type (
 		retryPolicy  *RetryPolicy
 		expireTime   time.Time
 		header       *commonpb.Header
+		interceptors []ActivityInterceptor
 	}
 
 	localActivityMarkerData struct {
@@ -511,20 +512,26 @@ func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID ActivityID) 
 
 func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LocalActivityResultHandler) LocalActivityID {
 	activityID := wc.getNextLocalActivityID()
-	task := newLocalActivityTask(params, callback, activityID)
+	task := newLocalActivityTask(params, callback, activityID, wc.registry.activityInterceptors)
 	wc.pendingLaTasks[activityID] = task
 	wc.unstartedLaTasks[activityID] = struct{}{}
 	return LocalActivityID{id: activityID}
 }
 
-func newLocalActivityTask(params ExecuteLocalActivityParams, callback LocalActivityResultHandler, activityID string) *localActivityTask {
+func newLocalActivityTask(
+	params ExecuteLocalActivityParams,
+	callback LocalActivityResultHandler,
+	activityID string,
+	interceptors []ActivityInterceptor,
+) *localActivityTask {
 	task := &localActivityTask{
-		activityID:  activityID,
-		params:      &params,
-		callback:    callback,
-		retryPolicy: params.RetryPolicy,
-		attempt:     params.Attempt,
-		header:      params.Header,
+		activityID:   activityID,
+		params:       &params,
+		callback:     callback,
+		retryPolicy:  params.RetryPolicy,
+		attempt:      params.Attempt,
+		header:       params.Header,
+		interceptors: interceptors,
 	}
 
 	if params.ScheduleToCloseTimeout > 0 {

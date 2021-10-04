@@ -151,6 +151,8 @@ type (
 		// The chain is instantiated per each replay of a workflow execution
 		WorkflowInterceptorChainFactories []WorkflowInterceptor
 
+		ActivityInterceptorChainFactories []ActivityInterceptor
+
 		// Optional: If set to true worker would only handle workflow tasks and local activities.
 		// Non-local activities will not be executed by this worker.
 		// default: false
