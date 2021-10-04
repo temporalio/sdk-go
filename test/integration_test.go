@@ -188,11 +188,13 @@ func (ts *IntegrationTestSuite) TestBasic() {
 	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
 		ts.tracer.GetTrace("Basic"))
 
-	ts.assertMetricsCounters(
-		"temporal_request", 5,
-		"temporal_workflow_task_queue_poll_succeed", 1,
-		"temporal_long_request", 7,
-	)
+	// Check metrics (some may be called a non-deterministic number of times
+	// based on server speed)
+	ts.assertMetricCount("temporal_request", 1, "operation", "StartWorkflowExecution")
+	ts.assertMetricCountAtLeast("temporal_request", 1, "operation", "RespondWorkflowTaskCompleted")
+	ts.assertMetricCountAtLeast("temporal_workflow_task_queue_poll_succeed", 1)
+	ts.assertMetricCountAtLeast("temporal_long_request", 3, "operation", "PollActivityTaskQueue")
+	ts.assertMetricCountAtLeast("temporal_long_request", 3, "operation", "PollWorkflowTaskQueue")
 }
 
 // TestLocalActivityRetryBehavior verifies local activity retry behaviors:
@@ -334,14 +336,16 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
 
-	ts.assertMetricsCounters(
-		"temporal_request", 7,
-		"temporal_request_attempt", 7,
-		"temporal_activity_execution_failed", 2,
-		"temporal_workflow_task_queue_poll_succeed", 1,
-		"temporal_long_request", 8,
-		"temporal_long_request_attempt", 8,
-	)
+	// Check metrics (some may be called a non-deterministic number of times
+	// based on server speed)
+	ts.assertMetricCount("temporal_request", 1, "operation", "StartWorkflowExecution")
+	ts.assertMetricCountAtLeast("temporal_request", 1, "operation", "RespondWorkflowTaskCompleted")
+	ts.Equal(ts.metricCount("temporal_request"), ts.metricCount("temporal_request_attempt"))
+	ts.assertMetricCountAtLeast("temporal_activity_execution_failed", 2)
+	ts.assertMetricCountAtLeast("temporal_workflow_task_queue_poll_succeed", 1)
+	ts.assertMetricCountAtLeast("temporal_long_request", 4, "operation", "PollActivityTaskQueue")
+	ts.assertMetricCountAtLeast("temporal_long_request", 3, "operation", "PollWorkflowTaskQueue")
+	ts.Equal(ts.metricCount("temporal_long_request"), ts.metricCount("temporal_long_request_attempt"))
 }
 
 func (ts *IntegrationTestSuite) TestActivityNotRegisteredRetry() {
@@ -350,9 +354,9 @@ func (ts *IntegrationTestSuite) TestActivityNotRegisteredRetry() {
 	ts.NoError(err)
 	ts.EqualValues(expected, "done")
 
-	ts.assertMetricsCounters(
-		"temporal_unregistered_activity_invocation", 2,
-	)
+	// Check metric (may be called a non-deterministic number of times based on
+	// server speed)
+	ts.assertMetricCountAtLeast("temporal_unregistered_activity_invocation", 2)
 }
 
 func (ts *IntegrationTestSuite) TestActivityRetryOnTimeoutStableError() {
@@ -1264,20 +1268,32 @@ func (t *tracingInboundCallsInterceptor) HandleQuery(ctx workflow.Context, query
 	return result, err
 }
 
-func (ts *IntegrationTestSuite) assertMetricsCounters(keyValuePairs ...interface{}) {
-	counters := make(map[string]int64, len(ts.metricsReporter.Counts()))
+func (ts *IntegrationTestSuite) metricCount(name string, tagFilterKeyValue ...string) (total int64) {
 	for _, counter := range ts.metricsReporter.Counts() {
-		counters[counter.Name()] += counter.Value()
+		if counter.Name() != name {
+			continue
+		}
+		// Check that it matches tag filter
+		validCounter := true
+		for i := 0; i < len(tagFilterKeyValue); i += 2 {
+			if counter.Tags()[tagFilterKeyValue[i]] != tagFilterKeyValue[i+1] {
+				validCounter = false
+				break
+			}
+		}
+		if validCounter {
+			total += counter.Value()
+		}
 	}
+	return
+}
 
-	for i := 0; i < len(keyValuePairs); i += 2 {
-		expectedCounterName := keyValuePairs[i]
-		expectedCounterValue := keyValuePairs[i+1]
+func (ts *IntegrationTestSuite) assertMetricCount(name string, value int64, tagFilterKeyValue ...string) {
+	ts.Equal(value, ts.metricCount(name, tagFilterKeyValue...))
+}
 
-		actualCounterValue, counterExists := counters[expectedCounterName.(string)]
-		ts.True(counterExists, fmt.Sprintf("Counter %v was expected but doesn't exist", expectedCounterName))
-		ts.EqualValues(expectedCounterValue, actualCounterValue, fmt.Sprintf("Expected value doesn't match actual value for counter %v", expectedCounterName))
-	}
+func (ts *IntegrationTestSuite) assertMetricCountAtLeast(name string, value int64, tagFilterKeyValue ...string) {
+	ts.GreaterOrEqual(ts.metricCount(name, tagFilterKeyValue...), value)
 }
 
 func (ts *IntegrationTestSuite) assertReportedOperationCount(metricName string, operation string, expectedCount int) {
