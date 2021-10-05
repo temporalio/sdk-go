@@ -242,6 +242,28 @@ func (*Activities) BasicWithArguments(
 	}, nil
 }
 
+func (*Activities) BasicAffectReturn(
+	ctx context.Context,
+	retVal *workflowAdvancedArg,
+	errStr string,
+) (*workflowAdvancedArg, error) {
+	if errStr != "" {
+		return nil, errors.New(errStr)
+	}
+	return retVal, nil
+}
+
+func (*Activities) OnlyErrorNoContext(errStr string) error {
+	if errStr != "" {
+		return errors.New(errStr)
+	}
+	return nil
+}
+
+func (*Activities) DynamicResponse(args []interface{}) ([]interface{}, error) {
+	return args, nil
+}
+
 func (a *Activities) register(worker worker.Worker) {
 	worker.RegisterActivity(a)
 	// Check reregistration

@@ -428,7 +428,11 @@ func (a *activityReflectInterceptor) ExecuteActivity(
 	fnValue := reflect.ValueOf(a.fn)
 	retValues := fnValue.Call(args)
 	for _, r := range retValues {
-		results = append(results, r.Interface())
+		if r.Kind() == reflect.Ptr && r.IsNil() {
+			results = append(results, nil)
+		} else {
+			results = append(results, r.Interface())
+		}
 	}
 	return
 }

@@ -74,7 +74,6 @@ type (
 		//	func sampleWorkflow(ctx workflow.Context) (result []byte, err error)
 		//	func sampleWorkflow(ctx workflow.Context, arg1 int) (result string, err error)
 		// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
-		// For global registration consider workflow.Register
 		// This method panics if workflowFunc doesn't comply with the expected format or tries to register the same workflow
 		RegisterWorkflow(w interface{})
 

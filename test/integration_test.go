@@ -1102,7 +1102,7 @@ func (ts *IntegrationTestSuite) TestResetWorkflowExecution() {
 	ts.Equal(originalResult, newResult)
 }
 
-func (ts *IntegrationTestSuite) TestExecutionInterpreters() {
+func (ts *IntegrationTestSuite) TestExecuteInterpreters() {
 	// Add callbacks to collect info
 	ifaceTypes := func(ifaces []interface{}) (types []string) {
 		for _, iface := range ifaces {
@@ -1134,7 +1134,6 @@ func (ts *IntegrationTestSuite) TestExecutionInterpreters() {
 		activityType string,
 		args ...interface{},
 	) []interface{} {
-		fmt.Printf("INFO: %#v\n", activity.GetInfo(ctx))
 		actualActivityIsLocal = append(actualActivityIsLocal, len(activity.GetInfo(ctx).TaskToken) == 0)
 		actualActivityTypes = append(actualActivityTypes, activityType)
 		actualActivityArgTypes = append(actualActivityArgTypes, ifaceTypes(args))
@@ -1142,12 +1141,20 @@ func (ts *IntegrationTestSuite) TestExecutionInterpreters() {
 		actualActivityResultTypes = append(actualActivityResultTypes, ifaceTypes(results))
 		return results
 	}
+
 	// Run
-	var ignore workflowAdvancedArg
-	err := ts.executeWorkflow("test-execution-interpreters", ts.workflows.BasicWithArguments, &ignore,
-		"strval", []byte("bytesval"), 123,
-		workflowAdvancedArg{StringVal: "strval"}, &workflowAdvancedArg{BytesVal: []byte("bytesval")})
+	input := workflowAdvancedArg{
+		StringVal:  "strval",
+		BytesVal:   []byte("bytesval"),
+		IntVal:     123,
+		ArgValPtr1: &workflowAdvancedArg{StringVal: "strval"},
+		ArgValPtr2: &workflowAdvancedArg{BytesVal: []byte("bytesval")},
+	}
+	var actualOutput workflowAdvancedArg
+	err := ts.executeWorkflow("test-execution-interpreters", ts.workflows.BasicWithArguments, &actualOutput,
+		input.StringVal, input.BytesVal, input.IntVal, *input.ArgValPtr1, input.ArgValPtr2)
 	ts.NoError(err)
+
 	// Confirm workflow interceptor expectations
 	expectedType := "BasicWithArguments"
 	expectedArgTypes := []string{
@@ -1156,6 +1163,7 @@ func (ts *IntegrationTestSuite) TestExecutionInterpreters() {
 	ts.Equal(expectedType, actualWorkflowType)
 	ts.Equal(expectedArgTypes, actualWorkflowArgTypes)
 	ts.Equal(expectedResultTypes, actualWorkflowResultTypes)
+
 	// Confirm activity interceptor expectations of calling the non-local one
 	// first then the local one
 	ts.False(actualActivityIsLocal[0])
@@ -1166,12 +1174,91 @@ func (ts *IntegrationTestSuite) TestExecutionInterpreters() {
 	ts.Equal(expectedType, actualActivityTypes[1])
 	ts.Equal(expectedArgTypes, actualActivityArgTypes[1])
 	ts.Equal(expectedResultTypes, actualActivityResultTypes[1])
+
+	// Confirm result which has the two pointers set as regular and local activity
+	// responses
+	expectedOutput := &workflowAdvancedArg{
+		StringVal:  input.StringVal,
+		BytesVal:   input.BytesVal,
+		IntVal:     input.IntVal,
+		ArgValPtr1: input.ArgValPtr1,
+		ArgValPtr2: input.ArgValPtr2,
+	}
+	expectedOutput = &workflowAdvancedArg{
+		ArgValPtr1: expectedOutput,
+		ArgValPtr2: expectedOutput,
+	}
+	ts.Equal(expectedOutput, &actualOutput)
+
+	// Also try with empty/nil params
+	actualOutput = workflowAdvancedArg{}
+	actualActivityIsLocal = nil
+	actualActivityTypes = nil
+	actualActivityArgTypes = nil
+	actualActivityResultTypes = nil
+	err = ts.executeWorkflow("test-execution-interpreters", ts.workflows.BasicWithArguments, &actualOutput,
+		"", nil, 123, workflowAdvancedArg{}, nil)
+	ts.NoError(err)
+	ts.False(actualActivityIsLocal[0])
+	ts.Equal(expectedType, actualActivityTypes[0])
+	ts.Equal(expectedArgTypes, actualActivityArgTypes[0])
+	ts.Equal(expectedResultTypes, actualActivityResultTypes[0])
+	ts.True(actualActivityIsLocal[1])
+	ts.Equal(expectedType, actualActivityTypes[1])
+	ts.Equal(expectedArgTypes, actualActivityArgTypes[1])
+	ts.Equal(expectedResultTypes, actualActivityResultTypes[1])
 }
 
-// TODO(cretz): Test interceptor init error
-// TODO(cretz): Test execute workflow/activity error result
-// TODO(cretz): Test local activity interceptors
-// TODO(cretz): Test activity interceptors when activity doesn't take context
+func (ts *IntegrationTestSuite) TestReturn() {
+	// Test all permutations
+	for _, retVal := range []*workflowAdvancedArg{nil, {StringVal: "some string"}} {
+		for _, errStr := range []string{"", "some error"} {
+			for _, useLocal := range []bool{true, false} {
+				var ret *workflowAdvancedArg
+				err := ts.executeWorkflow("test-execution-return", ts.workflows.BasicAffectReturn,
+					&ret, retVal, errStr, useLocal)
+				// Check error or return value
+				if errStr != "" {
+					ts.Error(err)
+					ts.True(strings.HasSuffix(err.Error(), errStr))
+				} else {
+					ts.NoError(err)
+					ts.Equal(retVal, ret)
+				}
+			}
+		}
+	}
+}
+
+func (ts *IntegrationTestSuite) TestActivityOnlyErrorNoContext() {
+	err := ts.executeWorkflow("test-activity-only-error-no-context",
+		ts.workflows.DynamicActivity, nil, "OnlyErrorNoContext", []interface{}{""})
+	ts.NoError(err)
+	err = ts.executeWorkflow("test-activity-only-error-no-context",
+		ts.workflows.DynamicActivity, nil, "OnlyErrorNoContext", []interface{}{"some error"})
+	ts.Error(err)
+	ts.True(strings.HasSuffix(err.Error(), "some error"))
+}
+
+func (ts *IntegrationTestSuite) TestDynamicParams() {
+	input := []interface{}{"foo", 123, []byte("test"), nil, &workflowAdvancedArg{StringVal: "some string"}}
+	var actualOutput []interface{}
+	// TODO(cretz): Ok that we don't spread variadic arguments when calling ExecuteActivity?
+	err := ts.executeWorkflow("test-dynamic-params",
+		ts.workflows.DynamicActivity, &actualOutput, "DynamicResponse", []interface{}{input})
+	ts.NoError(err)
+	expectedOutput := []interface{}{
+		"foo",
+		// Since JSON is used for serialization, this is a float
+		123.0,
+		// JSON encodes this as base64 and doesn't know it was a byte slice
+		"dGVzdA==",
+		nil,
+		// JSON encodes the structure but doesn't know the struct type
+		map[string]interface{}{"StringVal": "some string"},
+	}
+	ts.Equal(expectedOutput, actualOutput)
+}
 
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{HostPort: ts.config.ServiceAddr})
@@ -1281,7 +1368,6 @@ type tracingOutboundCallsInterceptor struct {
 
 type tracingActivityInboundCallsInterceptor struct {
 	Next                    interceptors.ActivityInboundCallsInterceptor
-	trace                   []string
 	executeActivityCallback func(interceptors.ActivityInboundCallsInterceptor, context.Context, string, ...interface{}) []interface{}
 }
 

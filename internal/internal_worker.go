@@ -823,6 +823,7 @@ func (ae *activityExecutor) executeWithActualArgsWithoutParseResult(ctx context.
 		panic(err)
 	}
 
+	fnType := reflect.TypeOf(ae.fn)
 	args := make([]interface{}, len(actualArgs))
 	for i, actualArg := range actualArgs {
 		// Have to have stable pointer to underlying type to match interceptor use
@@ -831,6 +832,10 @@ func (ae *activityExecutor) executeWithActualArgsWithoutParseResult(ctx context.
 		// TODO(cretz): Previous algorithm used zero value when arg was nil, why? Do I need to do that?
 		actualArg := actualArg
 		newPtr := reflect.New(reflect.TypeOf(actualArg))
+		// Use zero value when actual value is nil
+		if actualArg == nil {
+			actualArg = reflect.New(fnType.In(i)).Elem()
+		}
 		newPtr.Elem().Set(reflect.ValueOf(actualArg))
 		args[i] = newPtr.Interface()
 	}

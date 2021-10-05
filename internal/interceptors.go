@@ -49,11 +49,14 @@ type WorkflowInterceptor interface {
 // that apply to the workflow code should be obeyed by the interceptor implementation.
 // Use workflow.IsReplaying(ctx) to filter out duplicated calls.
 type WorkflowInboundCallsInterceptor interface {
+	// Init initializes the interceptor before other calls are made. If an error
+	// is returned, a panic occurs in runtime code.
 	Init(outbound WorkflowOutboundCallsInterceptor) error
 
 	// ExecuteWorkflow intercepts workflow function invocation. As calls to other intercepted functions are done from
-	// a workflow function this function is the first to be called and completes workflow as soon as it returns.
-	// WorkflowType argument is for information purposes only and should not be mutated.
+	// a workflow function this function is the first to be called and completes workflow as soon as it returns. The args
+	// are pointers to the actual workflow arguments after the context. The resulting slice is expected to match the
+	// result types of the workflow function.
 	ExecuteWorkflow(ctx Context, workflowType string, args ...interface{}) []interface{}
 
 	// ProcessSignal is called before the signal is passed to the workflow implementation, note that this function does NOT
@@ -98,13 +101,37 @@ type WorkflowOutboundCallsInterceptor interface {
 	GetLastError(ctx Context) error
 }
 
+// ActivityInterceptor is used to create a single link in the interceptor chain.
 type ActivityInterceptor interface {
+	// InterceptActivity creates an interceptor instance. The created instance
+	// should delegate every call to the next parameter for activity code function
+	// correctly.
 	InterceptActivity(ctx context.Context, next ActivityInboundCallsInterceptor) ActivityInboundCallsInterceptor
 }
 
+// ActivityInboundCallsInterceptor is an interface that can be implemented to
+// intercept calls to activities from the workflow. Use
+// ActivityInboundCallsInterceptorBase as a base struct for implementations
+// that do not want to implement every method. Interceptor implementation should
+// forward calls to the next in the interceptor chain. All code in the
+// interceptor is executed with the context given to an activity. Therefore,
+// calls such as activity.GetInfo will work properly.
 type ActivityInboundCallsInterceptor interface {
+	// Init initializes the interceptor before other calls are made. If an error
+	// is returned, a panic occurs in runtime code.
 	Init(ctx context.Context) error
 
+	// ExecuteActivity intercepts activity function invocation. This call is
+	// invoked at the lowest level to actually perform the activity call and the
+	// results from this function are used as the activity results. The args are
+	// pointers to the actual activity arguments after the context. The resulting
+	// slice is expected to match the result types of the workflow function.
+	//
+	// To perform the normal activity invocation, call ExecuteActivity on the next
+	// interceptor provided in ActivityInterceptor.InterceptActivity. The
+	// arguments and results can be mutated as necessary. The entire invocation
+	// may even be skipped and the response returned from this interceptor if
+	// desired.
 	ExecuteActivity(ctx context.Context, activityType string, args ...interface{}) []interface{}
 }
 
@@ -255,14 +282,19 @@ func (t *WorkflowOutboundCallsInterceptorBase) GetLastError(ctx Context) error {
 	return t.Next.GetLastError(ctx)
 }
 
+// ActivityInboundCallsInterceptorBase is a noop implementation of
+// ActivityInboundCallsInterceptor that just forwards requests to the next link
+// in an interceptor chain. To be used as base implementation of interceptors.
 type ActivityInboundCallsInterceptorBase struct {
 	Next ActivityInboundCallsInterceptor
 }
 
+// Init forwards to a.Next.
 func (a ActivityInboundCallsInterceptorBase) Init(ctx context.Context) error {
 	return a.Next.Init(ctx)
 }
 
+// ExecuteActivity forwards to a.Next.
 func (a ActivityInboundCallsInterceptorBase) ExecuteActivity(
 	ctx context.Context,
 	activityType string,

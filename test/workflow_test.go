@@ -66,33 +66,6 @@ func (w *Workflows) Basic(ctx workflow.Context) ([]string, error) {
 	return []string{"toUpperWithDelay", "toUpper"}, nil
 }
 
-type workflowAdvancedArg struct {
-	StringVal  string
-	BytesVal   []byte
-	IntVal     int
-	ArgValPtr1 *workflowAdvancedArg
-	ArgValPtr2 *workflowAdvancedArg
-}
-
-func (w *Workflows) BasicWithArguments(
-	ctx workflow.Context,
-	stringVal string,
-	bytesVal []byte,
-	intVal int,
-	argVal workflowAdvancedArg,
-	argValPtr *workflowAdvancedArg,
-) (workflowAdvancedArg, error) {
-	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
-	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
-	var ret workflowAdvancedArg
-	// Execute a non-local and local activity
-	workflow.ExecuteActivity(ctx, "BasicWithArguments",
-		stringVal, bytesVal, intVal, argVal, argValPtr).Get(ctx, &ret)
-	err := workflow.ExecuteLocalActivity(ctx, new(Activities).BasicWithArguments,
-		stringVal, bytesVal, intVal, argVal, argValPtr).Get(ctx, &ret)
-	return ret, err
-}
-
 func (w *Workflows) Deadlocked(ctx workflow.Context) ([]string, error) {
 	// Simulates deadlock. Never call time.Sleep in production code!
 	time.Sleep(2 * time.Second)
@@ -1276,6 +1249,61 @@ func (w *Workflows) CancelTimerConcurrentWithOtherCommandWorkflow(ctx workflow.C
 	return result, nil
 }
 
+type workflowAdvancedArg struct {
+	StringVal  string               `json:",omitempty"`
+	BytesVal   []byte               `json:",omitempty"`
+	IntVal     int                  `json:",omitempty"`
+	ArgValPtr1 *workflowAdvancedArg `json:",omitempty"`
+	ArgValPtr2 *workflowAdvancedArg `json:",omitempty"`
+}
+
+func (w *Workflows) BasicWithArguments(
+	ctx workflow.Context,
+	stringVal string,
+	bytesVal []byte,
+	intVal int,
+	argVal workflowAdvancedArg,
+	argValPtr *workflowAdvancedArg,
+) (workflowAdvancedArg, error) {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
+	// Execute a non-local and local activity and pass both results back
+	var ret1, ret2 workflowAdvancedArg
+	err := workflow.ExecuteActivity(ctx, "BasicWithArguments",
+		stringVal, bytesVal, intVal, argVal, argValPtr).Get(ctx, &ret1)
+	if err == nil {
+		err = workflow.ExecuteLocalActivity(ctx, new(Activities).BasicWithArguments,
+			stringVal, bytesVal, intVal, argVal, argValPtr).Get(ctx, &ret2)
+	}
+	return workflowAdvancedArg{ArgValPtr1: &ret1, ArgValPtr2: &ret2}, err
+}
+
+func (w *Workflows) BasicAffectReturn(
+	ctx workflow.Context,
+	retVal *workflowAdvancedArg,
+	errStr string,
+	useLocal bool,
+) (*workflowAdvancedArg, error) {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
+	var fut workflow.Future
+	if useLocal {
+		fut = workflow.ExecuteLocalActivity(ctx, new(Activities).BasicAffectReturn, retVal, errStr)
+	} else {
+		fut = workflow.ExecuteActivity(ctx, "BasicAffectReturn", retVal, errStr)
+	}
+	var ret *workflowAdvancedArg
+	err := fut.Get(ctx, &ret)
+	return ret, err
+}
+
+func (w *Workflows) DynamicActivity(ctx workflow.Context, activity string, args []interface{}) (interface{}, error) {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	var ret interface{}
+	err := workflow.ExecuteActivity(ctx, activity, args...).Get(ctx, &ret)
+	return ret, err
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -1285,6 +1313,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityRetryOnTimeout)
 	worker.RegisterWorkflow(w.ActivityRetryOptionsChange)
 	worker.RegisterWorkflow(w.Basic)
+	worker.RegisterWorkflow(w.BasicAffectReturn)
 	worker.RegisterWorkflow(w.BasicWithArguments)
 	worker.RegisterWorkflow(w.Deadlocked)
 	worker.RegisterWorkflow(w.DeadlockedWithLocalActivity)
@@ -1308,6 +1337,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ContextPropagator)
 	worker.RegisterWorkflow(w.ContinueAsNew)
 	worker.RegisterWorkflow(w.ContinueAsNewWithOptions)
+	worker.RegisterWorkflow(w.DynamicActivity)
 	worker.RegisterWorkflow(w.IDReusePolicy)
 	worker.RegisterWorkflow(w.InspectActivityInfo)
 	worker.RegisterWorkflow(w.InspectLocalActivityInfo)
