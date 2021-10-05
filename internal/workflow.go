@@ -1530,8 +1530,24 @@ func WithLocalActivityOptions(ctx Context, options LocalActivityOptions) Context
 
 	opts.ScheduleToCloseTimeout = options.ScheduleToCloseTimeout
 	opts.StartToCloseTimeout = options.StartToCloseTimeout
-	opts.RetryPolicy = options.RetryPolicy
+	opts.RetryPolicy = applyRetryPolicyDefaultsForLocalActivity(options.RetryPolicy)
 	return ctx1
+}
+
+func applyRetryPolicyDefaultsForLocalActivity(policy *RetryPolicy) *RetryPolicy {
+	if policy == nil {
+		policy = &RetryPolicy{}
+	}
+	if policy.BackoffCoefficient == 0 {
+		policy.BackoffCoefficient = 2
+	}
+	if policy.InitialInterval == 0 {
+		policy.InitialInterval = 1 * time.Second
+	}
+	if policy.MaximumInterval == 0 {
+		policy.MaximumInterval = policy.InitialInterval * 100
+	}
+	return policy
 }
 
 // WithTaskQueue adds a task queue to the copy of the context.
