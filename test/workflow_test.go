@@ -1249,6 +1249,19 @@ func (w *Workflows) CancelTimerConcurrentWithOtherCommandWorkflow(ctx workflow.C
 	return result, nil
 }
 
+func (w *Workflows) WaitSignalReturnParam(ctx workflow.Context, v interface{}) (interface{}, error) {
+	// Wait for signal before returning
+	s := workflow.NewSelector(ctx)
+	signalCh := workflow.GetSignalChannel(ctx, "done-signal")
+	s.AddReceive(signalCh, func(c workflow.ReceiveChannel, more bool) {
+		var ignore bool
+		c.Receive(ctx, &ignore)
+		workflow.GetLogger(ctx).Info("Received signal")
+	})
+	s.Select(ctx)
+	return v, nil
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -1287,6 +1300,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.LongRunningActivityWithHB)
 	worker.RegisterWorkflow(w.RetryTimeoutStableErrorWorkflow)
 	worker.RegisterWorkflow(w.SimplestWorkflow)
+	worker.RegisterWorkflow(w.WaitSignalReturnParam)
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityCtxPropagation)
 	worker.RegisterWorkflow(w.WorkflowWithParallelLongLocalActivityAndHeartbeat)
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityRetries)

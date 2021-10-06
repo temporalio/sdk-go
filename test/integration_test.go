@@ -670,6 +670,45 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicate() {
 	ts.Equal("HELLOWORLD", result)
 }
 
+func (ts *IntegrationTestSuite) TestWorkflowIDReuseIgnoreDuplicateWhileRunning() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start two workflows with the same ID but different params
+	opts := ts.startWorkflowOptions("test-workflow-id-reuse-ignore-dupes-" + uuid.New())
+	run1, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.WaitSignalReturnParam, "run1")
+	ts.NoError(err)
+	run2, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.WaitSignalReturnParam, "run2")
+	ts.NoError(err)
+
+	// Confirm both runs have the same ID and run ID since the first one wasn't
+	// done when we tried the second
+	ts.Equal(run1.GetID(), run2.GetID())
+	ts.Equal(run1.GetRunID(), run2.GetRunID())
+
+	// Send signal to each (though in practice they both have the same ID and run
+	// ID, so it's really just two signals)
+	err = ts.client.SignalWorkflow(ctx, run1.GetID(), run1.GetRunID(), "done-signal", true)
+	ts.NoError(err)
+	err = ts.client.SignalWorkflow(ctx, run2.GetID(), run2.GetRunID(), "done-signal", true)
+	ts.NoError(err)
+
+	// Wait for responses and confirm they are the same "run1" which is the first
+	// param
+	var result string
+	ts.NoError(run1.Get(ctx, &result))
+	ts.Equal("run1", result)
+	ts.NoError(run2.Get(ctx, &result))
+	ts.Equal("run1", result)
+
+	// Now start a third and confirm it is a new run ID because the other two are
+	// done
+	run3, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.WaitSignalReturnParam, "run1")
+	ts.NoError(err)
+	ts.Equal(run1.GetID(), run3.GetID())
+	ts.NotEqual(run1.GetRunID(), run3.GetRunID())
+}
+
 func (ts *IntegrationTestSuite) TestChildWFRetryOnError() {
 	err := ts.executeWorkflow("test-childwf-retry-on-error", ts.workflows.ChildWorkflowRetryOnError, nil)
 	ts.Error(err)
