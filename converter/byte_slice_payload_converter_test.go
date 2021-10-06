@@ -22,18 +22,52 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package internal
+package converter
 
-// Below are the metadata which will be embedded as part of headers in every RPC call made by this client to Temporal server.
-// Update to the metadata below is typically done by the Temporal team as part of a major feature or behavior change.
+import (
+	"testing"
 
-const (
-	// SDKVersion is a semver (https://semver.org/) that represents the version of this Temporal GoSDK.
-	// Server validates if SDKVersion fits its supported range and rejects request if it doesn't.
-	SDKVersion = "1.10.0"
-
-	// SupportedServerVersions is a semver rages (https://github.com/blang/semver#ranges) of server versions that
-	// are supported by this Temporal SDK.
-	// Server validates if its version fits into SupportedServerVersions range and rejects request if it doesn't.
-	SupportedServerVersions = ">=1.0.0 <2.0.0"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestByteSliceConverter(t *testing.T) {
+	bc := NewByteSlicePayloadConverter()
+
+	assert.Equal(t, bc.Encoding(), MetadataEncodingBinary)
+	payload, err := bc.ToPayload(nil)
+	assert.Nil(t, err)
+	assert.Nil(t, payload)
+
+	b := []byte("hello world")
+	payload, err = bc.ToPayload(b)
+	require.NoError(t, err)
+	assert.Equal(t, string(payload.Metadata[MetadataEncoding]), MetadataEncodingBinary)
+	assert.Equal(t, payload.Data, b)
+
+	var gotBytes []byte
+	var gotInterface interface{}
+
+	err = bc.FromPayload(payload, &gotBytes)
+	require.NoError(t, err)
+	assert.Equal(t, b, gotBytes)
+
+	err = bc.FromPayload(payload, &gotInterface)
+	require.NoError(t, err)
+	assert.Equal(t, b, gotInterface)
+
+	gotString := bc.ToString(payload)
+	// base64 unpadded encodeing of "hello world"
+	assert.Equal(t, "aGVsbG8gd29ybGQ", gotString)
+
+	// error branches
+	err = bc.FromPayload(payload, nil)
+	assert.ErrorIs(t, err, ErrValuePtrIsNotPointer)
+
+	var s string
+	err = bc.FromPayload(payload, s)
+	assert.ErrorIs(t, err, ErrValuePtrIsNotPointer)
+
+	err = bc.FromPayload(payload, &s)
+	assert.ErrorIs(t, err, ErrTypeIsNotByteSlice)
+}

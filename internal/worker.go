@@ -114,8 +114,11 @@ type (
 		// default: 5s
 		StickyScheduleToStartTimeout time.Duration
 
-		// Optional: sets context for activity. The context can be used to pass any configuration to activity
-		// like common logger for all activities.
+		// Optional: sets root context for all activities. The context can be used to pass external dependencies
+		// like DB connections to activity functions.
+		// Note that this method of passing dependencies is not recommended anymore.
+		// Instead, use a structure with fields that contain dependencies and activities
+		// as the structure member functions. Then pass all the dependencies on the structure initialization.
 		BackgroundActivityContext context.Context
 
 		// Optional: Sets how workflow worker deals with non-deterministic history events

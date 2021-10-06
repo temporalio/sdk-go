@@ -383,6 +383,15 @@ func NewFuture(ctx Context) (Future, Settable) {
 	return impl, impl
 }
 
+func (wc *workflowEnvironmentInterceptor) ProcessSignal(Context, string, interface{}) {
+	// no op
+}
+
+func (wc *workflowEnvironmentInterceptor) HandleQuery(_ Context, _ string, args *commonpb.Payloads,
+	handler func(*commonpb.Payloads) (*commonpb.Payloads, error)) (*commonpb.Payloads, error) {
+	return handler(args)
+}
+
 func (wc *workflowEnvironmentInterceptor) ExecuteWorkflow(ctx Context, workflowType string, inputArgs ...interface{}) (results []interface{}) {
 	args := []reflect.Value{reflect.ValueOf(ctx)}
 	for _, arg := range inputArgs {
@@ -1521,8 +1530,24 @@ func WithLocalActivityOptions(ctx Context, options LocalActivityOptions) Context
 
 	opts.ScheduleToCloseTimeout = options.ScheduleToCloseTimeout
 	opts.StartToCloseTimeout = options.StartToCloseTimeout
-	opts.RetryPolicy = options.RetryPolicy
+	opts.RetryPolicy = applyRetryPolicyDefaultsForLocalActivity(options.RetryPolicy)
 	return ctx1
+}
+
+func applyRetryPolicyDefaultsForLocalActivity(policy *RetryPolicy) *RetryPolicy {
+	if policy == nil {
+		policy = &RetryPolicy{}
+	}
+	if policy.BackoffCoefficient == 0 {
+		policy.BackoffCoefficient = 2
+	}
+	if policy.InitialInterval == 0 {
+		policy.InitialInterval = 1 * time.Second
+	}
+	if policy.MaximumInterval == 0 {
+		policy.MaximumInterval = policy.InitialInterval * 100
+	}
+	return policy
 }
 
 // WithTaskQueue adds a task queue to the copy of the context.

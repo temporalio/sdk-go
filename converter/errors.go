@@ -47,4 +47,8 @@ var (
 	ErrTypeNotImplementProtoMessage = errors.New("type doesn't implement proto.Message")
 	// ErrValuePtrIsNotPointer is returned when proto value is not a pointer.
 	ErrValuePtrIsNotPointer = errors.New("not a pointer type")
+	// ErrValuePtrMustConcreteType is returned when proto value is of interface type.
+	ErrValuePtrMustConcreteType = errors.New("must be a concrete type, not interface")
+	// ErrTypeIsNotByteSlice is returned when value is not of *[]byte type.
+	ErrTypeIsNotByteSlice = errors.New("type is not *[]byte")
 )

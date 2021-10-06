@@ -195,7 +195,7 @@ func (w *Workflows) ActivityRetryOnTimeout(ctx workflow.Context, timeoutType enu
 
 func (w *Workflows) LongRunningActivityWithHB(ctx workflow.Context) ([]string, error) {
 	opts := w.defaultActivityOptionsWithRetry()
-	opts.HeartbeatTimeout = 3 * time.Second
+	opts.HeartbeatTimeout = 2 * time.Second
 	opts.ScheduleToCloseTimeout = time.Second * 12
 	opts.StartToCloseTimeout = time.Second * 12
 	opts.RetryPolicy = &internal.RetryPolicy{
@@ -203,7 +203,7 @@ func (w *Workflows) LongRunningActivityWithHB(ctx workflow.Context) ([]string, e
 	}
 	ctx = workflow.WithActivityOptions(ctx, opts)
 
-	err := workflow.ExecuteActivity(ctx, "LongRunningHeartbeat", 8*time.Second, 300*time.Millisecond).Get(ctx, nil)
+	err := workflow.ExecuteActivity(ctx, "LongRunningHeartbeat", 8*time.Second, 200*time.Millisecond).Get(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("expected activity to succeed but it failed: %v", err)
 	}
@@ -213,21 +213,32 @@ func (w *Workflows) LongRunningActivityWithHB(ctx workflow.Context) ([]string, e
 
 func (w *Workflows) ActivityRetryOnHBTimeout(ctx workflow.Context) ([]string, error) {
 	opts := workflow.ActivityOptions{
-		ScheduleToStartTimeout: 10 * time.Second,
-		ScheduleToCloseTimeout: 10 * time.Second,
-		StartToCloseTimeout:    3 * time.Second,
-		HeartbeatTimeout:       time.Second,
+		ScheduleToStartTimeout: 5 * time.Second,
+		ScheduleToCloseTimeout: 15 * time.Second,
+		StartToCloseTimeout:    5 * time.Second,
+		HeartbeatTimeout:       3 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    time.Second,
 			BackoffCoefficient: 1.0,
 			MaximumAttempts:    3,
 		},
 	}
-	opts.HeartbeatTimeout = time.Second
 	ctx = workflow.WithActivityOptions(ctx, opts)
 
 	var result int
-	err := workflow.ExecuteActivity(ctx, "HeartbeatAndSleep", 0, 3*time.Second).Get(ctx, &result)
+	// Activity "HeartbeatAndSleep" will heartbeat once and then sleep 5s. The first heartbeat will be reported
+	// immediately without delay/buffer. With the settings we have, below is timeline:
+	// 0s  activity starts (attempt 1).
+	// 0s  activity reports heartbeat.
+	// 3s  activity timeout due to missing heartbeat.
+	// 4s  activity retry attempt 2.
+	// 4s  activity reports heartbeat.
+	// 7s  activity timeout due to missing heartbeat.
+	// 8s  activity retry attempt 3.
+	// 8s  activity reports heartbeat.
+	// 11s activity timeout due to missing heartbeat.
+	// 11s activity close with heartbeat timeout error.
+	err := workflow.ExecuteActivity(ctx, "HeartbeatAndSleep", 0, 5*time.Second).Get(ctx, &result)
 	if err == nil {
 		return nil, fmt.Errorf("expected activity to fail but succeeded")
 	}
@@ -573,6 +584,23 @@ func (w *Workflows) CancelTimerAfterActivity(ctx workflow.Context) (string, erro
 
 	err := fut.Get(activityCtx2, &res)
 	return res, err
+}
+
+var didPanicOnce = false
+
+func (w *Workflows) CancelTimerViaDeferAfterWFTFailure(ctx workflow.Context) error {
+	timerCtx, canceller := workflow.WithCancel(ctx)
+	defer func() {
+		if !didPanicOnce {
+			didPanicOnce = true
+			panic("Intentional panic to trigger WFT failure")
+		}
+		canceller()
+	}()
+
+	_ = workflow.NewTimer(timerCtx, time.Second).Get(timerCtx, nil)
+
+	return nil
 }
 
 func (w *Workflows) CancelChildWorkflow(ctx workflow.Context) ([]string, error) {
@@ -938,6 +966,51 @@ func (w *Workflows) WorkflowWithLocalActivityRetries(ctx workflow.Context) error
 	return nil
 }
 
+func (w *Workflows) WorkflowWithLocalActivityRetriesAndDefaultRetryPolicy(ctx workflow.Context) error {
+	laOpts := w.defaultLocalActivityOptions()
+	// Don't set any retry policy
+	ctx = workflow.WithLocalActivityOptions(ctx, laOpts)
+	var activities *Activities
+
+	var futures []workflow.Future
+	for i := 1; i <= 10; i++ {
+		la := workflow.ExecuteLocalActivity(ctx, activities.failNTimes, 2, i)
+		futures = append(futures, la)
+	}
+
+	for _, fut := range futures {
+		err := fut.Get(ctx, nil)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (w *Workflows) WorkflowWithLocalActivityRetriesAndPartialRetryPolicy(ctx workflow.Context) error {
+	laOpts := w.defaultLocalActivityOptions()
+	// Set only max attempts and use defaults for other parameters.
+	laOpts.RetryPolicy = &internal.RetryPolicy{
+		MaximumAttempts: 3,
+	}
+	ctx = workflow.WithLocalActivityOptions(ctx, laOpts)
+	var activities *Activities
+
+	var futures []workflow.Future
+	for i := 1; i <= 10; i++ {
+		la := workflow.ExecuteLocalActivity(ctx, activities.failNTimes, 2, i)
+		futures = append(futures, la)
+	}
+
+	for _, fut := range futures {
+		err := fut.Get(ctx, nil)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (w *Workflows) WorkflowWithParallelSideEffects(ctx workflow.Context) (string, error) {
 	var futures []workflow.Future
 
@@ -1195,6 +1268,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.StartingChildAfterBeingCanceled)
 	worker.RegisterWorkflow(w.CancelTimer)
 	worker.RegisterWorkflow(w.CancelTimerAfterActivity)
+	worker.RegisterWorkflow(w.CancelTimerViaDeferAfterWFTFailure)
 	worker.RegisterWorkflow(w.CascadingCancellation)
 	worker.RegisterWorkflow(w.ChildWorkflowRetryOnError)
 	worker.RegisterWorkflow(w.ChildWorkflowRetryOnTimeout)
@@ -1216,6 +1290,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityCtxPropagation)
 	worker.RegisterWorkflow(w.WorkflowWithParallelLongLocalActivityAndHeartbeat)
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityRetries)
+	worker.RegisterWorkflow(w.WorkflowWithLocalActivityRetriesAndDefaultRetryPolicy)
+	worker.RegisterWorkflow(w.WorkflowWithLocalActivityRetriesAndPartialRetryPolicy)
 	worker.RegisterWorkflow(w.WorkflowWithParallelLocalActivities)
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityStartWhenTimerCancel)
 	worker.RegisterWorkflow(w.WorkflowWithParallelSideEffects)

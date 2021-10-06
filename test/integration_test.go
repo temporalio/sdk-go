@@ -47,6 +47,8 @@ import (
 	"go.temporal.io/sdk/test"
 	"go.uber.org/goleak"
 
+	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/interceptors"
 	"go.temporal.io/sdk/internal/common"
@@ -55,6 +57,15 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
+)
+
+const (
+	ctxTimeout                    = 15 * time.Second
+	namespace                     = "integration-test-namespace"
+	namespaceCacheRefreshInterval = 20 * time.Second
+	testContextKey1               = "test-context-key1"
+	testContextKey2               = "test-context-key2"
+	testContextKey3               = "test-context-key3"
 )
 
 type IntegrationTestSuite struct {
@@ -72,15 +83,6 @@ type IntegrationTestSuite struct {
 	metricsScopeCloser io.Closer
 	metricsReporter    *metrics.CapturingStatsReporter
 }
-
-const (
-	ctxTimeout                    = 15 * time.Second
-	namespace                     = "integration-test-namespace"
-	namespaceCacheRefreshInterval = 20 * time.Second
-	testContextKey1               = "test-context-key1"
-	testContextKey2               = "test-context-key2"
-	testContextKey3               = "test-context-key3"
-)
 
 func TestIntegrationSuite(t *testing.T) {
 	suite.Run(t, new(IntegrationTestSuite))
@@ -161,6 +163,10 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.LocalActivityWorkerOnly = true
 	}
 
+	if strings.Contains(ts.T().Name(), "CancelTimerViaDeferAfterWFTFailure") {
+		options.WorkflowPanicPolicy = worker.BlockWorkflow
+	}
+
 	ts.worker = worker.New(ts.client, ts.taskQueueName, options)
 	ts.registerWorkflowsAndActivities(ts.worker)
 	ts.Nil(ts.worker.Start())
@@ -182,11 +188,103 @@ func (ts *IntegrationTestSuite) TestBasic() {
 	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
 		ts.tracer.GetTrace("Basic"))
 
-	ts.assertMetricsCounters(
-		"temporal_request", 5,
-		"temporal_workflow_task_queue_poll_succeed", 1,
-		"temporal_long_request", 7,
-	)
+	// Check metrics (some may be called a non-deterministic number of times
+	// based on server speed)
+	ts.assertMetricCount("temporal_request", 1, "operation", "StartWorkflowExecution")
+	ts.assertMetricCountAtLeast("temporal_request", 1, "operation", "RespondWorkflowTaskCompleted")
+	ts.assertMetricCountAtLeast("temporal_workflow_task_queue_poll_succeed", 1)
+	ts.assertMetricCountAtLeast("temporal_long_request", 3, "operation", "PollActivityTaskQueue")
+	ts.assertMetricCountAtLeast("temporal_long_request", 3, "operation", "PollWorkflowTaskQueue")
+}
+
+// TestLocalActivityRetryBehavior verifies local activity retry behaviors:
+// 1) local activity retry with local timer backoff when backoff duration is less than or equal to workflow task timeout
+// 2) workflow task heartbeat is happening when local activity takes longer than workflow task timeout
+// 3) server side timer is created when backoff is longer than workflow task timeout
+func (ts *IntegrationTestSuite) TestLocalActivityRetryBehavior() {
+	attempt := 0
+	localActivityFn := func(ctx context.Context) error {
+		attempt++
+		info := activity.GetInfo(ctx)
+		if info.Attempt <= 3 {
+			return temporal.NewApplicationError("retry me", "MyApplicationError")
+		}
+		return nil
+	}
+
+	workflowFn := func(ctx workflow.Context) error {
+		ao := workflow.LocalActivityOptions{
+			ScheduleToCloseTimeout: 10 * time.Second,
+			RetryPolicy: &temporal.RetryPolicy{
+				// 1st attempt executes immediately
+				// 2nd attempt backoff 1s -- this will wait locally
+				// 3rd attempt backoff 2s -- this will wait locally
+				// 4th attempt backoff 4s -- this will wait on server timer
+				InitialInterval:    time.Second,
+				MaximumInterval:    4 * time.Second,
+				BackoffCoefficient: 2,
+			},
+		}
+		ctx1 := workflow.WithLocalActivityOptions(ctx, ao)
+		f1 := workflow.ExecuteLocalActivity(ctx1, localActivityFn)
+		err1 := f1.Get(ctx1, nil)
+		return err1
+	}
+
+	ts.worker.RegisterWorkflowWithOptions(workflowFn, workflow.RegisterOptions{Name: "heartbeat-workflow"})
+	id := "integration-test-workflow-heartbeat"
+	startOptions := client.StartWorkflowOptions{
+		ID:                  id,
+		TaskQueue:           ts.taskQueueName,
+		WorkflowRunTimeout:  20 * time.Second,
+		WorkflowTaskTimeout: 3 * time.Second,
+	}
+	err := ts.executeWorkflowWithOption(startOptions, workflowFn, nil)
+	ts.NoError(err)
+
+	ts.Equal(4, attempt) // verify local activity executes 4 times
+
+	history, err := ts.getHistory(id, "")
+	ts.NoError(err)
+
+	expectedEvents := []string{
+		"WorkflowExecutionStarted",
+		"WorkflowTaskScheduled",
+		"WorkflowTaskStarted",
+		"WorkflowTaskCompleted", // workflow task heartbeat at 80% of workflow task timeout (2.4s)
+		"WorkflowTaskScheduled",
+		"WorkflowTaskStarted",
+		"WorkflowTaskCompleted", // completed and schedule timer for retry backoff
+		"MarkerRecorded",        // record local activity error and used attempt count
+		"TimerStarted",
+		"TimerFired",
+		"WorkflowTaskScheduled",
+		"WorkflowTaskStarted",
+		"WorkflowTaskCompleted",
+		"MarkerRecorded", // record local activity success result
+		"WorkflowExecutionCompleted",
+	}
+	var actualEvents []string
+	for _, e := range history.Events {
+		actualEvents = append(actualEvents, e.EventType.String())
+	}
+	ts.Equal(expectedEvents, actualEvents)
+}
+
+func (ts *IntegrationTestSuite) getHistory(workflowID string, runID string) (*historypb.History, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	var events []*historypb.HistoryEvent
+	iter := ts.client.GetWorkflowHistory(ctx, workflowID, runID, false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for iter.HasNext() {
+		event, err1 := iter.Next()
+		if err1 != nil {
+			return nil, err1
+		}
+		events = append(events, event)
+	}
+
+	return &historypb.History{Events: events}, nil
 }
 
 func (ts *IntegrationTestSuite) TestPanicFailWorkflow() {
@@ -238,14 +336,16 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
 
-	ts.assertMetricsCounters(
-		"temporal_request", 7,
-		"temporal_request_attempt", 7,
-		"temporal_activity_execution_failed", 2,
-		"temporal_workflow_task_queue_poll_succeed", 1,
-		"temporal_long_request", 8,
-		"temporal_long_request_attempt", 8,
-	)
+	// Check metrics (some may be called a non-deterministic number of times
+	// based on server speed)
+	ts.assertMetricCount("temporal_request", 1, "operation", "StartWorkflowExecution")
+	ts.assertMetricCountAtLeast("temporal_request", 1, "operation", "RespondWorkflowTaskCompleted")
+	ts.Equal(ts.metricCount("temporal_request"), ts.metricCount("temporal_request_attempt"))
+	ts.assertMetricCountAtLeast("temporal_activity_execution_failed", 2)
+	ts.assertMetricCountAtLeast("temporal_workflow_task_queue_poll_succeed", 1)
+	ts.assertMetricCountAtLeast("temporal_long_request", 4, "operation", "PollActivityTaskQueue")
+	ts.assertMetricCountAtLeast("temporal_long_request", 3, "operation", "PollWorkflowTaskQueue")
+	ts.Equal(ts.metricCount("temporal_long_request"), ts.metricCount("temporal_long_request_attempt"))
 }
 
 func (ts *IntegrationTestSuite) TestActivityNotRegisteredRetry() {
@@ -254,9 +354,9 @@ func (ts *IntegrationTestSuite) TestActivityNotRegisteredRetry() {
 	ts.NoError(err)
 	ts.EqualValues(expected, "done")
 
-	ts.assertMetricsCounters(
-		"temporal_unregistered_activity_invocation", 2,
-	)
+	// Check metric (may be called a non-deterministic number of times based on
+	// server speed)
+	ts.assertMetricCountAtLeast("temporal_unregistered_activity_invocation", 2)
 }
 
 func (ts *IntegrationTestSuite) TestActivityRetryOnTimeoutStableError() {
@@ -300,7 +400,8 @@ func (ts *IntegrationTestSuite) TestLongRunningActivityWithHB() {
 
 func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndGrpcRetries() {
 	var expected []string
-	ts.trafficController.AddError("RecordActivityTaskHeartbeat", errors.New("call not allowed"), 1, 2, 3)
+	// Fail every other HB attempt, otherwise it's too easy to exceed the HB timeout
+	ts.trafficController.AddError("RecordActivityTaskHeartbeat", errors.New("call not allowed"), 1, 3, 5)
 	err := ts.executeWorkflow("test-long-running-activity-with-hb", ts.workflows.LongRunningActivityWithHB, &expected)
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
@@ -433,6 +534,8 @@ func (ts *IntegrationTestSuite) TestConsistentQuery() {
 	var queryResult string
 	ts.Nil(value.QueryResult.Get(&queryResult))
 	ts.Equal("signal-input", queryResult)
+	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ProcessSignal", "Go", "ExecuteWorkflow end", "HandleQuery begin", "HandleQuery end"},
+		ts.tracer.GetTrace("ConsistentQueryWorkflow"))
 }
 
 func (ts *IntegrationTestSuite) TestSignalWorkflow() {
@@ -442,6 +545,8 @@ func (ts *IntegrationTestSuite) TestSignalWorkflow() {
 	wfOpts := ts.startWorkflowOptions("test-signal-workflow")
 	run, err := ts.client.ExecuteWorkflow(ctx, wfOpts, ts.workflows.SignalWorkflow)
 	ts.Nil(err)
+	// Let workflow task run and send signal after to ensure correct order.
+	<-time.After(time.Second)
 	err = ts.client.SignalWorkflow(ctx, "test-signal-workflow", run.GetRunID(), "string-signal", "string-value")
 	ts.NoError(err)
 
@@ -453,6 +558,8 @@ func (ts *IntegrationTestSuite) TestSignalWorkflow() {
 	err = run.Get(ctx, &protoValue)
 	ts.NoError(err)
 	ts.Equal(commonpb.WorkflowType{Name: "string-value"}, *protoValue)
+	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ProcessSignal", "ProcessSignal", "ExecuteWorkflow end"},
+		ts.tracer.GetTrace("SignalWorkflow"))
 }
 
 func (ts *IntegrationTestSuite) TestSignalWorkflowWithStubbornGrpcError() {
@@ -652,6 +759,12 @@ func (ts *IntegrationTestSuite) TestCancelTimerAfterActivity() {
 	ts.EqualValues("HELLO", wfResult)
 }
 
+func (ts *IntegrationTestSuite) TestCancelTimerViaDeferAfterWFTFailure() {
+	// NOTE: Uses test name to adjust worker options to make panic fail WFT
+	err := ts.executeWorkflow("test-cancel-timer-via-defer", ts.workflows.CancelTimerViaDeferAfterWFTFailure, nil)
+	ts.NoError(err)
+}
+
 func (ts *IntegrationTestSuite) TestCancelTimerAfterActivity_Replay() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflowWithOptions(ts.workflows.CancelTimerAfterActivity, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
@@ -798,6 +911,14 @@ func (ts *IntegrationTestSuite) TestWorkflowWithLocalActivityRetries() {
 	ts.NoError(ts.executeWorkflow("test-wf-local-activity-retries", ts.workflows.WorkflowWithLocalActivityRetries, nil))
 }
 
+func (ts *IntegrationTestSuite) TestWorkflowWithLocalActivityRetriesDefaultRetryPolicy() {
+	ts.NoError(ts.executeWorkflow("test-wf-local-activity-retries-default-policy", ts.workflows.WorkflowWithLocalActivityRetriesAndDefaultRetryPolicy, nil))
+}
+
+func (ts *IntegrationTestSuite) TestWorkflowWithLocalActivityRetriesPartialPolicy() {
+	ts.NoError(ts.executeWorkflow("test-wf-local-activity-retries-partial-policy", ts.workflows.WorkflowWithLocalActivityRetriesAndPartialRetryPolicy, nil))
+}
+
 func (ts *IntegrationTestSuite) TestWorkflowWithParallelLongLocalActivityAndHeartbeat() {
 	if ts.config.maxWorkflowCacheSize > 0 {
 		ts.NoError(ts.executeWorkflow("test-wf-parallel-long-local-activities-and-heartbeat", ts.workflows.WorkflowWithParallelLongLocalActivityAndHeartbeat, nil))
@@ -839,7 +960,7 @@ func (ts *IntegrationTestSuite) TestInspectActivityInfo() {
 }
 
 func (ts *IntegrationTestSuite) TestInspectActivityInfoLocalActivityWorkerOnly() {
-	err := ts.executeWorkflow("test-activity-info", ts.workflows.InspectActivityInfo, nil)
+	err := ts.executeWorkflow("test-activity-info-local-worker-only", ts.workflows.InspectActivityInfo, nil)
 	ts.Error(err)
 }
 
@@ -859,7 +980,7 @@ func (ts *IntegrationTestSuite) TestBasicSession() {
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
 	// createSession activity, actual activity, completeSession activity.
-	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteActivity", "Go", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
+	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteActivity", "ProcessSignal", "Go", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
 		ts.tracer.GetTrace("BasicSession"))
 }
 
@@ -1134,20 +1255,45 @@ func (t *tracingInboundCallsInterceptor) ExecuteWorkflow(ctx workflow.Context, w
 	return result
 }
 
-func (ts *IntegrationTestSuite) assertMetricsCounters(keyValuePairs ...interface{}) {
-	counters := make(map[string]int64, len(ts.metricsReporter.Counts()))
+func (t *tracingInboundCallsInterceptor) ProcessSignal(ctx workflow.Context, signalName string, arg interface{}) {
+	t.trace = append(t.trace, "ProcessSignal")
+	t.Next.ProcessSignal(ctx, signalName, arg)
+}
+
+func (t *tracingInboundCallsInterceptor) HandleQuery(ctx workflow.Context, queryType string, args *commonpb.Payloads,
+	handler func(*commonpb.Payloads) (*commonpb.Payloads, error)) (*commonpb.Payloads, error) {
+	t.trace = append(t.trace, "HandleQuery begin")
+	result, err := t.Next.HandleQuery(ctx, queryType, args, handler)
+	t.trace = append(t.trace, "HandleQuery end")
+	return result, err
+}
+
+func (ts *IntegrationTestSuite) metricCount(name string, tagFilterKeyValue ...string) (total int64) {
 	for _, counter := range ts.metricsReporter.Counts() {
-		counters[counter.Name()] += counter.Value()
+		if counter.Name() != name {
+			continue
+		}
+		// Check that it matches tag filter
+		validCounter := true
+		for i := 0; i < len(tagFilterKeyValue); i += 2 {
+			if counter.Tags()[tagFilterKeyValue[i]] != tagFilterKeyValue[i+1] {
+				validCounter = false
+				break
+			}
+		}
+		if validCounter {
+			total += counter.Value()
+		}
 	}
+	return
+}
 
-	for i := 0; i < len(keyValuePairs); i += 2 {
-		expectedCounterName := keyValuePairs[i]
-		expectedCounterValue := keyValuePairs[i+1]
+func (ts *IntegrationTestSuite) assertMetricCount(name string, value int64, tagFilterKeyValue ...string) {
+	ts.Equal(value, ts.metricCount(name, tagFilterKeyValue...))
+}
 
-		actualCounterValue, counterExists := counters[expectedCounterName.(string)]
-		ts.True(counterExists, fmt.Sprintf("Counter %v was expected but doesn't exist", expectedCounterName))
-		ts.EqualValues(expectedCounterValue, actualCounterValue, fmt.Sprintf("Expected value doesn't match actual value for counter %v", expectedCounterName))
-	}
+func (ts *IntegrationTestSuite) assertMetricCountAtLeast(name string, value int64, tagFilterKeyValue ...string) {
+	ts.GreaterOrEqual(ts.metricCount(name, tagFilterKeyValue...), value)
 }
 
 func (ts *IntegrationTestSuite) assertReportedOperationCount(metricName string, operation string, expectedCount int) {

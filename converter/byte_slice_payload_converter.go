@@ -52,11 +52,20 @@ func (c *ByteSlicePayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 
 // FromPayload converts single []byte value from payload.
 func (c *ByteSlicePayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
-	valueBytes := reflect.ValueOf(valuePtr).Elem()
-	if !valueBytes.CanSet() {
-		return fmt.Errorf("type: %T: %w", valuePtr, ErrUnableToSetValue)
+	rv := reflect.ValueOf(valuePtr)
+	if rv.Kind() != reflect.Ptr || rv.IsNil() {
+		return fmt.Errorf("type: %T: %w", valuePtr, ErrValuePtrIsNotPointer)
 	}
-	valueBytes.SetBytes(payload.GetData())
+	v := rv.Elem()
+	value := payload.Data
+	if v.Kind() == reflect.Interface {
+		v.Set(reflect.ValueOf(value))
+	} else if v.Kind() == reflect.Slice && v.Type().Elem().Kind() == reflect.Uint8 {
+		// Must be a []byte.
+		v.SetBytes(value)
+	} else {
+		return fmt.Errorf("type %T: %w", valuePtr, ErrTypeIsNotByteSlice)
+	}
 	return nil
 }
 

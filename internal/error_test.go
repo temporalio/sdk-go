@@ -102,6 +102,22 @@ func Test_GenericGoError(t *testing.T) {
 	require.Equal(t, "workflow error", err.Error())
 }
 
+func Test_ActivityErrorAccessors(t *testing.T) {
+	require := require.New(t)
+	err := NewApplicationError("app err", "", true, nil)
+	var applicationErr *ApplicationError
+	require.True(errors.As(err, &applicationErr))
+	err = NewActivityError(8, 22, "alex", &commonpb.ActivityType{Name: "activityType"}, "32283", enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, applicationErr)
+	var activityErr *ActivityError
+	require.True(errors.As(err, &activityErr))
+	require.Equal("32283", activityErr.ActivityID())
+	require.Equal(&commonpb.ActivityType{Name: "activityType"}, activityErr.ActivityType())
+	require.Equal(enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, activityErr.RetryState())
+	require.Equal("alex", activityErr.Identity())
+	require.Equal(int64(8), activityErr.ScheduledEventID())
+	require.Equal(int64(22), activityErr.StartedEventID())
+}
+
 func Test_ActivityNotRegistered(t *testing.T) {
 	registeredActivityFn, unregisteredActivitFn := "RegisteredActivity", "UnregisteredActivityFn"
 	s := &WorkflowTestSuite{}

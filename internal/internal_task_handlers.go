@@ -1023,8 +1023,8 @@ func getRetryBackoffWithNowTime(p *RetryPolicy, attempt int32, err error, now, e
 	if p.MaximumAttempts > 0 && attempt >= p.MaximumAttempts {
 		return noRetryBackoff // max attempt reached
 	}
-
-	backoffInterval := time.Duration(float64(p.InitialInterval) * math.Pow(p.BackoffCoefficient, float64(attempt)))
+	// attempt starts from 1
+	backoffInterval := time.Duration(float64(p.InitialInterval) * math.Pow(p.BackoffCoefficient, float64(attempt-1)))
 	if backoffInterval <= 0 {
 		// math.Pow() could overflow
 		if p.MaximumInterval > 0 {

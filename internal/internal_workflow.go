@@ -511,11 +511,14 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 		d.cancel()
 	})
 
-	getWorkflowEnvironment(d.rootCtx).RegisterSignalHandler(func(name string, result *commonpb.Payloads) {
+	getWorkflowEnvironment(d.rootCtx).RegisterSignalHandler(func(name string, input *commonpb.Payloads) {
 		eo := getWorkflowEnvOptions(d.rootCtx)
+		// Notify interceptor, note that because channel send operation below is non-blocking, we can not pass a full closure
+		// that would encapsulate signal processing. Hence this call is just a "forked" notification that signal has been received.
+		envInterceptor.inboundInterceptor.ProcessSignal(d.rootCtx, name, input)
 		// We don't want this code to be blocked ever, using sendAsync().
 		ch := eo.getSignalChannel(d.rootCtx, name).(*channelImpl)
-		ok := ch.SendAsync(result)
+		ok := ch.SendAsync(input)
 		if !ok {
 			panic(fmt.Sprintf("Exceeded channel buffer size for signal: %v", name))
 		}
@@ -531,7 +534,7 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 			}
 			return nil, fmt.Errorf("unknown queryType %v. KnownQueryTypes=%v", queryType, keys)
 		}
-		return handler(queryArgs)
+		return envInterceptor.inboundInterceptor.HandleQuery(d.rootCtx, queryType, queryArgs, handler)
 	})
 }
 
