@@ -574,8 +574,6 @@ func (ts *IntegrationTestSuite) TestSignalWorkflowWithInterceptorError() {
 	wfOpts := ts.startWorkflowOptions("test-signal-workflow-interceptor-error")
 	run, err := ts.client.ExecuteWorkflow(ctx, wfOpts, ts.workflows.SignalWorkflow)
 	ts.Nil(err)
-	// Let workflow task run and send signal after to ensure correct order.
-	<-time.After(time.Second)
 	err = ts.client.SignalWorkflow(ctx, "test-signal-workflow-interceptor-error", run.GetRunID(), "string-signal", "string-value")
 	ts.NoError(err)
 
