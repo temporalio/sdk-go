@@ -1144,6 +1144,44 @@ func (ts *IntegrationTestSuite) TestResetWorkflowExecution() {
 	ts.Equal(originalResult, newResult)
 }
 
+func (ts *IntegrationTestSuite) TestEndToEndLatencyMetrics() {
+	fetchMetrics := func() (localMetric, nonLocalMetric *metrics.CapturedTimer) {
+		for _, timer := range ts.metricsReporter.Timers() {
+			timer := timer
+			if timer.Name() == "temporal_activity_succeed_endtoend_latency" {
+				nonLocalMetric = &timer
+			} else if timer.Name() == "temporal_local_activity_succeed_endtoend_latency" {
+				localMetric = &timer
+			}
+		}
+		return
+	}
+
+	// Confirm no metrics to start
+	local, nonLocal := fetchMetrics()
+	ts.Nil(local)
+	ts.Nil(nonLocal)
+
+	// Run regular activity and confirm non-local metric
+	err := ts.executeWorkflow("test-end-to-end-metrics-1", ts.workflows.InspectActivityInfo, nil)
+	ts.NoError(err)
+	local, nonLocal = fetchMetrics()
+	ts.Nil(local)
+	ts.NotNil(nonLocal)
+	ts.NotZero(nonLocal.Value())
+	prevNonLocalValue := nonLocal.Value()
+
+	// Run local activity and confirm local metric (and that non-local didn't
+	// change)
+	err = ts.executeWorkflow("test-end-to-end-metrics-2", ts.workflows.InspectLocalActivityInfo, nil)
+	ts.NoError(err)
+	local, nonLocal = fetchMetrics()
+	ts.NotNil(local)
+	ts.NotZero(nonLocal.Value())
+	ts.NotNil(nonLocal)
+	ts.Equal(prevNonLocalValue, nonLocal.Value())
+}
+
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{HostPort: ts.config.ServiceAddr})
 	ts.NoError(err)

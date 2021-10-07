@@ -47,14 +47,15 @@ const (
 	ActivityExecutionFailedCounter        = TemporalMetricsPrefix + "activity_execution_failed"
 	UnregisteredActivityInvocationCounter = TemporalMetricsPrefix + "unregistered_activity_invocation"
 	ActivityExecutionLatency              = TemporalMetricsPrefix + "activity_execution_latency"
-	ActivityEndToEndLatency               = TemporalMetricsPrefix + "activity_endtoend_latency"
+	ActivitySucceedEndToEndLatency        = TemporalMetricsPrefix + "activity_succeed_endtoend_latency"
 	ActivityTaskErrorCounter              = TemporalMetricsPrefix + "activity_task_error"
 
-	LocalActivityTotalCounter     = TemporalMetricsPrefix + "local_activity_total"
-	LocalActivityCanceledCounter  = TemporalMetricsPrefix + "local_activity_canceled"
-	LocalActivityFailedCounter    = TemporalMetricsPrefix + "local_activity_failed"
-	LocalActivityErrorCounter     = TemporalMetricsPrefix + "local_activity_error"
-	LocalActivityExecutionLatency = TemporalMetricsPrefix + "local_activity_execution_latency"
+	LocalActivityTotalCounter           = TemporalMetricsPrefix + "local_activity_total"
+	LocalActivityCanceledCounter        = TemporalMetricsPrefix + "local_activity_canceled"
+	LocalActivityFailedCounter          = TemporalMetricsPrefix + "local_activity_failed"
+	LocalActivityErrorCounter           = TemporalMetricsPrefix + "local_activity_error"
+	LocalActivityExecutionLatency       = TemporalMetricsPrefix + "local_activity_execution_latency"
+	LocalActivitySucceedEndToEndLatency = TemporalMetricsPrefix + "local_activity_succeed_endtoend_latency"
 
 	CorruptedSignalsCounter = TemporalMetricsPrefix + "corrupted_signals"
 

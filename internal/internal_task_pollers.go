@@ -579,6 +579,11 @@ WaitResult:
 		// local activity completed
 	}
 
+	if err == nil {
+		activityMetricsScope.
+			Timer(metrics.LocalActivitySucceedEndToEndLatency).
+			Record(time.Since(task.params.ScheduledTime))
+	}
 	return &localActivityResult{result: laResult, err: err, task: task}
 }
 
@@ -891,8 +896,8 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 	}
 
 	activityMetricsScope.
-		Timer(metrics.ActivityEndToEndLatency).
-		Record(time.Since(common.TimeValue(activityTask.task.GetStartedTime())))
+		Timer(metrics.ActivitySucceedEndToEndLatency).
+		Record(time.Since(common.TimeValue(activityTask.task.GetScheduledTime())))
 	return nil
 }
 
