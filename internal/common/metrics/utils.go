@@ -25,7 +25,7 @@
 package metrics
 
 import (
-	"github.com/uber-go/tally"
+	"github.com/uber-go/tally/v4"
 )
 
 // TagScope return a scope with one or multiple tags,

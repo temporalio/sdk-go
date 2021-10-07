@@ -35,7 +35,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/uber-go/tally"
+	"github.com/uber-go/tally/v4"
 	"go.temporal.io/sdk/internal/common/retry"
 	"google.golang.org/grpc/metadata"
 
