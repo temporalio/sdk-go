@@ -102,6 +102,32 @@ func (a *Activities) LongRunningHeartbeat(ctx context.Context, delay time.Durati
 	return nil
 }
 
+func (a *Activities) HeartbeatTwiceAndFailNTimes(
+	ctx context.Context,
+	times int,
+	id string,
+) (heartbeatCounts int, err error) {
+	// Get details
+	if activity.HasHeartbeatDetails(ctx) {
+		if err = activity.GetHeartbeatDetails(ctx, &heartbeatCounts); err != nil {
+			return
+		}
+	}
+
+	// Heartbeat twice, incrementing before each
+	heartbeatCounts++
+	activity.RecordHeartbeat(ctx, heartbeatCounts)
+	heartbeatCounts++
+	activity.RecordHeartbeat(ctx, heartbeatCounts)
+
+	// Set error if haven't reached enough times
+	a.append(id)
+	if a.invokedCount(id) <= times {
+		err = errFailOnPurpose
+	}
+	return
+}
+
 func (a *Activities) fail(_ context.Context) error {
 	a.append("fail")
 	return errFailOnPurpose
