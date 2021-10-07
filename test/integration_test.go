@@ -570,7 +570,7 @@ func (ts *IntegrationTestSuite) TestSignalWorkflowWithInterceptorError() {
 	defer cancel()
 
 	// Return error 3 times from the interceptor
-	ts.inboundSignalInterceptor.returnErrorTimes = 3
+	ts.inboundSignalInterceptor.ReturnErrorTimes = 3
 	wfOpts := ts.startWorkflowOptions("test-signal-workflow-interceptor-error")
 	run, err := ts.client.ExecuteWorkflow(ctx, wfOpts, ts.workflows.SignalWorkflow)
 	ts.Nil(err)
@@ -585,6 +585,8 @@ func (ts *IntegrationTestSuite) TestSignalWorkflowWithInterceptorError() {
 	err = run.Get(ctx, &protoValue)
 	// Workflow should succeed after retries upon an error in the signal interceptor
 	ts.NoError(err)
+	// Expect that interceptors were called as many times as 2 signals plus the number of times error was induced into the chain.
+	ts.Equal(2+ts.inboundSignalInterceptor.ReturnErrorTimes, ts.inboundSignalInterceptor.TimesInvoked)
 }
 
 func (ts *IntegrationTestSuite) TestSignalWorkflowWithStubbornGrpcError() {
@@ -1375,7 +1377,8 @@ var _ interceptors.WorkflowInboundCallsInterceptor = (*signalInboundCallsInterce
 var _ interceptors.WorkflowOutboundCallsInterceptor = (*signalOutboundCallsInterceptor)(nil)
 
 type signalInterceptor struct {
-	returnErrorTimes int
+	ReturnErrorTimes int
+	TimesInvoked     int
 }
 
 func newSignalInterceptor() *signalInterceptor {
@@ -1384,12 +1387,13 @@ func newSignalInterceptor() *signalInterceptor {
 
 type signalInboundCallsInterceptor struct {
 	interceptors.WorkflowInboundCallsInterceptorBase
-	err error
+	control *signalInterceptor
 }
 
 func (t *signalInboundCallsInterceptor) ProcessSignal(ctx workflow.Context, signalName string, arg interface{}) error {
-	if t.err != nil {
-		return t.err
+	t.control.TimesInvoked++
+	if t.control.TimesInvoked <= t.control.ReturnErrorTimes {
+		return fmt.Errorf("interceptor induced failure while processing signal %v", signalName)
 	}
 	return t.Next.ProcessSignal(ctx, signalName, arg)
 }
@@ -1401,10 +1405,7 @@ type signalOutboundCallsInterceptor struct {
 func (t *signalInterceptor) InterceptWorkflow(_ *workflow.Info, next interceptors.WorkflowInboundCallsInterceptor) interceptors.WorkflowInboundCallsInterceptor {
 	result := &signalInboundCallsInterceptor{}
 	result.Next = next
-	if t.returnErrorTimes > 0 {
-		t.returnErrorTimes--
-		result.err = errors.New("signal interceptor injected a failure")
-	}
+	result.control = t
 	return result
 }
 
