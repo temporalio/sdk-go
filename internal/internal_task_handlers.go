@@ -1771,10 +1771,12 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	activityMetricsScope := metrics.GetMetricsScopeForActivity(ath.metricsScope, workflowType, activityType, ath.taskQueueName)
 	ctx := WithActivityTask(canCtx, t, taskQueue, invoker, ath.logger, activityMetricsScope, ath.dataConverter, ath.workerStopCh, ath.contextPropagators, ath.tracer)
 
-	defer func() {
+	// We must capture the context here because it is changed later to one that is
+	// cancelled when the activity is done
+	defer func(ctx context.Context) {
 		_, activityCompleted := result.(*workflowservice.RespondActivityTaskCompletedRequest)
 		invoker.Close(ctx, !activityCompleted) // flush buffered heartbeat if activity was not successfully completed.
-	}()
+	}(ctx)
 
 	activityImplementation := ath.getActivity(activityType)
 	if activityImplementation == nil {
