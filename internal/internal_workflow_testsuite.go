@@ -186,7 +186,7 @@ type (
 		openSessions   map[string]*SessionInfo
 
 		workflowCancelHandler func()
-		signalHandler         func(name string, input *commonpb.Payloads)
+		signalHandler         func(name string, input *commonpb.Payloads) error
 		queryHandler          func(string, *commonpb.Payloads) (*commonpb.Payloads, error)
 		startedHandler        func(r WorkflowExecution, e error)
 
@@ -1982,7 +1982,7 @@ func (env *testWorkflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
 	env.workflowCancelHandler = handler
 }
 
-func (env *testWorkflowEnvironmentImpl) RegisterSignalHandler(handler func(name string, input *commonpb.Payloads)) {
+func (env *testWorkflowEnvironmentImpl) RegisterSignalHandler(handler func(name string, input *commonpb.Payloads) error) {
 	env.signalHandler = handler
 }
 
@@ -2061,8 +2061,8 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(namespace, workfl
 			err := newUnknownExternalWorkflowExecutionError()
 			callback(nil, err)
 		} else {
-			childEnv.signalHandler(signalName, input)
-			callback(nil, nil)
+			err := childEnv.signalHandler(signalName, input)
+			callback(nil, err)
 		}
 		childEnv.postCallback(func() {}, true) // resume child workflow since a signal is sent.
 		return
@@ -2249,7 +2249,7 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflow(name string, input interf
 		panic(err)
 	}
 	env.postCallback(func() {
-		env.signalHandler(name, data)
+		_ = env.signalHandler(name, data)
 	}, startWorkflowTask)
 }
 
@@ -2264,7 +2264,7 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflowByID(workflowID, signalNam
 			return serviceerror.NewNotFound(fmt.Sprintf("Workflow %v already completed", workflowID))
 		}
 		workflowHandle.env.postCallback(func() {
-			workflowHandle.env.signalHandler(signalName, data)
+			_ = workflowHandle.env.signalHandler(signalName, data)
 		}, true)
 		return nil
 	}

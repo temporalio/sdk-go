@@ -88,7 +88,7 @@ type (
 		GetLogger() log.Logger
 		GetMetricsScope() tally.Scope
 		// Must be called before WorkflowDefinition.Execute returns
-		RegisterSignalHandler(handler func(name string, input *commonpb.Payloads))
+		RegisterSignalHandler(handler func(name string, input *commonpb.Payloads) error)
 		SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input *commonpb.Payloads, arg interface{}, childWorkflowOnly bool, callback ResultHandler)
 		RegisterQueryHandler(handler func(queryType string, queryArgs *commonpb.Payloads) (*commonpb.Payloads, error))
 		IsReplaying() bool
