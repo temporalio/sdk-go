@@ -881,11 +881,6 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 		return nil
 	}
 
-	// if worker is stopping, don't bother reporting activity completion
-	if atp.stopping() {
-		return errStop
-	}
-
 	rpcScope := metrics.GetMetricsScopeForRPC(atp.metricsScope, workflowType, activityType, metrics.NoneTagValue)
 	reportErr := reportActivityComplete(context.Background(), atp.service, request, rpcScope)
 	if reportErr != nil {

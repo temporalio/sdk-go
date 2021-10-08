@@ -50,12 +50,13 @@ type (
 	}
 )
 
-// Throttle Sleep if there were failures since the last success call.
-func (c *ConcurrentRetrier) Throttle() {
-	c.throttleInternal()
+// Throttle Sleep if there were failures since the last success call. The
+// provided done channel provides a way to exit early.
+func (c *ConcurrentRetrier) Throttle(doneCh <-chan struct{}) {
+	c.throttleInternal(doneCh)
 }
 
-func (c *ConcurrentRetrier) throttleInternal() time.Duration {
+func (c *ConcurrentRetrier) throttleInternal(doneCh <-chan struct{}) time.Duration {
 	next := done
 
 	// Check if we have failure count.
@@ -66,7 +67,10 @@ func (c *ConcurrentRetrier) throttleInternal() time.Duration {
 	c.Unlock()
 
 	if next != done {
-		time.Sleep(next)
+		select {
+		case <-doneCh:
+		case <-time.After(next):
+		}
 	}
 
 	return next

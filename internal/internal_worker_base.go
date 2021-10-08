@@ -275,7 +275,7 @@ func (bw *baseWorker) runTaskDispatcher() {
 func (bw *baseWorker) pollTask() {
 	var err error
 	var task interface{}
-	bw.retrier.Throttle()
+	bw.retrier.Throttle(bw.stopCh)
 	if bw.pollLimiter == nil || bw.pollLimiter.Wait(bw.limiterContext) == nil {
 		task, err = bw.options.taskWorker.PollTask()
 		if err != nil && enableVerboseLogging {

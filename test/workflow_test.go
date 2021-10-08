@@ -1262,6 +1262,13 @@ func (w *Workflows) WaitSignalReturnParam(ctx workflow.Context, v interface{}) (
 	return v, nil
 }
 
+func (w *Workflows) ActivityWaitForWorkerStop(ctx workflow.Context, timeout time.Duration) (string, error) {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	var s string
+	err := workflow.ExecuteActivity(ctx, "WaitForWorkerStop", timeout).Get(ctx, &s)
+	return s, err
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -1270,6 +1277,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityRetryOnHBTimeout)
 	worker.RegisterWorkflow(w.ActivityRetryOnTimeout)
 	worker.RegisterWorkflow(w.ActivityRetryOptionsChange)
+	worker.RegisterWorkflow(w.ActivityWaitForWorkerStop)
 	worker.RegisterWorkflow(w.Basic)
 	worker.RegisterWorkflow(w.Deadlocked)
 	worker.RegisterWorkflow(w.DeadlockedWithLocalActivity)
