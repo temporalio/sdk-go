@@ -38,6 +38,8 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/resolver"
+	"google.golang.org/grpc/resolver/manual"
 
 	"go.temporal.io/sdk/internal/common/metrics"
 )
@@ -45,7 +47,7 @@ import (
 type (
 	// dialParameters are passed to GRPCDialer and must be used to create gRPC connection.
 	dialParameters struct {
-		HostPort              string
+		HostPorts             []string
 		UserConnectionOptions ConnectionOptions
 		RequiredInterceptors  []grpc.UnaryClientInterceptor
 		DefaultServiceConfig  string
@@ -121,7 +123,22 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 		}
 		opts = append(opts, grpc.WithKeepaliveParams(kap))
 	}
-	return grpc.Dial(params.HostPort, opts...)
+
+	// If there are multiple addresses, we must create a custom resolver that will
+	// return them
+	hostPort := params.HostPorts[0]
+	if len(params.HostPorts) > 0 {
+		hostPort = "temporal-manual:///manual"
+		builder := manual.NewBuilderWithScheme("temporal-manual")
+		state := resolver.State{Addresses: make([]resolver.Address, len(params.HostPorts))}
+		for i, addr := range params.HostPorts {
+			state.Addresses[i] = resolver.Address{Addr: addr}
+		}
+		builder.InitialState(state)
+		opts = append(opts, grpc.WithResolvers(builder))
+	}
+
+	return grpc.Dial(hostPort, opts...)
 }
 
 func requiredInterceptors(metricScope tally.Scope, headersProvider HeadersProvider, controller TrafficController) []grpc.UnaryClientInterceptor {

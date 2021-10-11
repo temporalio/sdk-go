@@ -335,6 +335,14 @@ type (
 		// default: localhost:7233
 		HostPort string
 
+		// Optional: Additional host:port pairs for this client to connect to. The
+		// HostPort option should still be set or it will still default. Hosts from
+		// HostPort and this setting will be combined to make a set of addresses
+		// that gRPC will round-robin requests to. Neither HostPort nor this setting
+		// should have any "dns:///" prefixed addresses.
+		// default: no additional hosts (only single HostPort)
+		AdditionalHostPorts []string
+
 		// Optional: To set the namespace name for this client to work with.
 		// default: default
 		Namespace string
@@ -635,7 +643,7 @@ func NewClient(options ClientOptions) (Client, error) {
 func newDialParameters(options *ClientOptions) dialParameters {
 	return dialParameters{
 		UserConnectionOptions: options.ConnectionOptions,
-		HostPort:              options.HostPort,
+		HostPorts:             append([]string{options.HostPort}, options.AdditionalHostPorts...),
 		RequiredInterceptors:  requiredInterceptors(options.MetricsScope, options.HeadersProvider, options.TrafficController),
 		DefaultServiceConfig:  defaultServiceConfig,
 	}
