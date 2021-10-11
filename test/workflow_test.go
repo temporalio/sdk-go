@@ -268,6 +268,18 @@ func (w *Workflows) ActivityRetryOnHBTimeout(ctx workflow.Context) ([]string, er
 	return []string{"heartbeatAndSleep", "heartbeatAndSleep", "heartbeatAndSleep"}, nil
 }
 
+func (w *Workflows) ActivityHeartbeatWithRetry(ctx workflow.Context) (heartbeatCounts int, err error) {
+	// Make retries fast
+	opts := w.defaultActivityOptions()
+	opts.RetryPolicy = &temporal.RetryPolicy{InitialInterval: 5 * time.Millisecond, BackoffCoefficient: 1}
+	ctx = workflow.WithActivityOptions(ctx, opts)
+
+	// Fail twice then succeed
+	err = workflow.ExecuteActivity(ctx, "HeartbeatTwiceAndFailNTimes", 2,
+		"activity-heartbeat-"+workflow.GetInfo(ctx).WorkflowExecution.ID).Get(ctx, &heartbeatCounts)
+	return
+}
+
 func (w *Workflows) ContinueAsNew(ctx workflow.Context, count int, taskQueue string) (int, error) {
 	tq := workflow.GetInfo(ctx).TaskQueueName
 	if tq != taskQueue {
@@ -1269,6 +1281,7 @@ func (w *Workflows) WaitSignalReturnParam(ctx workflow.Context, v interface{}) (
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
+	worker.RegisterWorkflow(w.ActivityHeartbeatWithRetry)
 	worker.RegisterWorkflow(w.ActivityRetryOnError)
 	worker.RegisterWorkflow(w.CallUnregisteredActivityRetry)
 	worker.RegisterWorkflow(w.ActivityRetryOnHBTimeout)
