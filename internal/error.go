@@ -214,6 +214,11 @@ type (
 		cause            error
 	}
 
+	// ChildWorkflowExecutionAlreadyStartedError is set as the cause of
+	// ChildWorkflowExecutionError when failure is due the child workflow having
+	// already started.
+	ChildWorkflowExecutionAlreadyStartedError struct{}
+
 	// WorkflowExecutionError is returned from workflow.
 	// Unwrap this error to get actual cause.
 	WorkflowExecutionError struct {
@@ -682,6 +687,11 @@ func (e *ChildWorkflowExecutionError) message() string {
 
 func (e *ChildWorkflowExecutionError) Unwrap() error {
 	return e.cause
+}
+
+// Error from error interface
+func (*ChildWorkflowExecutionAlreadyStartedError) Error() string {
+	return "child workflow execution already started"
 }
 
 // Error from error interface

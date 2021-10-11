@@ -973,7 +973,8 @@ func testReplayFailedToStartChildWorkflow(ctx Context) error {
 	ctx = WithChildWorkflowOptions(ctx, opts)
 	err := ExecuteChildWorkflow(ctx, "testWorkflow").GetChildWorkflowExecution().Get(ctx, nil)
 	if err != nil {
-		if strings.HasSuffix(err.Error(), "workflow execution already started") {
+		var childErr *ChildWorkflowExecutionAlreadyStartedError
+		if errors.As(err, &childErr) {
 			return nil
 		}
 		return err

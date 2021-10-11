@@ -338,7 +338,11 @@ func (w *Workflows) IDReusePolicy(
 
 	var ans2 string
 	if err := workflow.ExecuteChildWorkflow(ctx, w.child, "world", false).Get(ctx, &ans2); err != nil {
-		return "", err
+		// Expect it is a execution-already-started
+		if temporal.IsWorkflowExecutionAlreadyStartedError(err) {
+			return "", err
+		}
+		return "", fmt.Errorf("unexpected child workflow error: %w", err)
 	}
 
 	if parallel {
