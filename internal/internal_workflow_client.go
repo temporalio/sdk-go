@@ -126,9 +126,10 @@ type (
 		HasNext() bool
 		// Next returns the next history events and error
 		// The errors it can return:
-		//	- EntityNotExistsError
-		//	- BadRequestError
-		//	- InternalServiceError
+		//	- serviceerror.NotFound
+		//	- serviceerror.InvalidArgument
+		//	- serviceerror.Internal
+		//	- serviceerror.Unavailable
 		Next() (*historypb.HistoryEvent, error)
 	}
 
@@ -639,9 +640,10 @@ func (wc *WorkflowClient) RecordActivityHeartbeatByID(ctx context.Context,
 
 // ListClosedWorkflow gets closed workflow executions based on request filters
 // The errors it can throw:
-//  - BadRequestError
-//  - InternalServiceError
-//  - EntityNotExistError
+//  - serviceerror.InvalidArgument
+//  - serviceerror.Internal
+//  - serviceerror.Unavailable
+//  - serviceerror.NotFound
 func (wc *WorkflowClient) ListClosedWorkflow(ctx context.Context, request *workflowservice.ListClosedWorkflowExecutionsRequest) (*workflowservice.ListClosedWorkflowExecutionsResponse, error) {
 	if request.GetNamespace() == "" {
 		request.Namespace = wc.namespace
@@ -657,9 +659,10 @@ func (wc *WorkflowClient) ListClosedWorkflow(ctx context.Context, request *workf
 
 // ListOpenWorkflow gets open workflow executions based on request filters
 // The errors it can throw:
-//  - BadRequestError
-//  - InternalServiceError
-//  - EntityNotExistError
+//  - serviceerror.InvalidArgument
+//  - serviceerror.Internal
+//  - serviceerror.Unavailable
+//  - serviceerror.NotFound
 func (wc *WorkflowClient) ListOpenWorkflow(ctx context.Context, request *workflowservice.ListOpenWorkflowExecutionsRequest) (*workflowservice.ListOpenWorkflowExecutionsResponse, error) {
 	if request.GetNamespace() == "" {
 		request.Namespace = wc.namespace
@@ -754,9 +757,10 @@ func (wc *WorkflowClient) GetSearchAttributes(ctx context.Context) (*workflowser
 
 // DescribeWorkflowExecution returns information about the specified workflow execution.
 // The errors it can return:
-//  - BadRequestError
-//  - InternalServiceError
-//  - EntityNotExistError
+//  - serviceerror.InvalidArgument
+//  - serviceerror.Internal
+//  - serviceerror.Unavailable
+//  - serviceerror.NotFound
 func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
 	request := &workflowservice.DescribeWorkflowExecutionRequest{
 		Namespace: wc.namespace,
@@ -782,10 +786,11 @@ func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflo
 // - queryType is the type of the query.
 // - args... are the optional query parameters.
 // The errors it can return:
-//  - BadRequestError
-//  - InternalServiceError
-//  - EntityNotExistError
-//  - QueryFailError
+//  - serviceerror.InvalidArgument
+//  - serviceerror.Internal
+//  - serviceerror.Unavailable
+//  - serviceerror.NotFound
+//  - serviceerror.QueryFailed
 func (wc *WorkflowClient) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.EncodedValue, error) {
 	queryWorkflowWithOptionsRequest := &QueryWorkflowWithOptionsRequest{
 		WorkflowID: workflowID,
@@ -838,10 +843,11 @@ type QueryWorkflowWithOptionsResponse struct {
 // QueryWorkflowWithOptions queries a given workflow execution and returns the query result synchronously.
 // See QueryWorkflowWithOptionsRequest and QueryWorkflowWithOptionsResult for more information.
 // The errors it can return:
-//  - BadRequestError
-//  - InternalServiceError
-//  - EntityNotExistError
-//  - QueryFailError
+//  - serviceerror.InvalidArgument
+//  - serviceerror.Internal
+//  - serviceerror.Unavailable
+//  - serviceerror.NotFound
+//  - serviceerror.QueryFailed
 func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request *QueryWorkflowWithOptionsRequest) (*QueryWorkflowWithOptionsResponse, error) {
 	var input *commonpb.Payloads
 	if len(request.Args) > 0 {
@@ -887,9 +893,10 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 // - taskqueue name of taskqueue
 // - taskqueueType type of taskqueue, can be workflow or activity
 // The errors it can return:
-//  - BadRequestError
-//  - InternalServiceError
-//  - EntityNotExistError
+//  - serviceerror.InvalidArgument
+//  - serviceerror.Internal
+//  - serviceerror.Unavailable
+//  - serviceerror.NotFound
 func (wc *WorkflowClient) DescribeTaskQueue(ctx context.Context, taskQueue string, taskQueueType enumspb.TaskQueueType) (*workflowservice.DescribeTaskQueueResponse, error) {
 	request := &workflowservice.DescribeTaskQueueRequest{
 		Namespace:     wc.namespace,
@@ -949,8 +956,9 @@ func (wc *WorkflowClient) getWorkflowHeader(ctx context.Context) *commonpb.Heade
 // Register a namespace with temporal server
 // The errors it can throw:
 //	- NamespaceAlreadyExistsError
-//	- BadRequestError
-//	- InternalServiceError
+//	- serviceerror.InvalidArgument
+//	- serviceerror.Internal
+//	- serviceerror.Unavailable
 func (nc *namespaceClient) Register(ctx context.Context, request *workflowservice.RegisterNamespaceRequest) error {
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
@@ -964,9 +972,10 @@ func (nc *namespaceClient) Register(ctx context.Context, request *workflowservic
 // NamespaceConfiguration - Configuration like Workflow Execution Retention Period In Days, Whether to emit metrics.
 // ReplicationConfiguration - replication config like clusters and active cluster name
 // The errors it can throw:
-//	- EntityNotExistsError
-//	- BadRequestError
-//	- InternalServiceError
+//	- serviceerror.NotFound
+//	- serviceerror.InvalidArgument
+//	- serviceerror.Internal
+//	- serviceerror.Unavailable
 func (nc *namespaceClient) Describe(ctx context.Context, namespace string) (*workflowservice.DescribeNamespaceResponse, error) {
 	request := &workflowservice.DescribeNamespaceRequest{
 		Namespace: namespace,
@@ -983,9 +992,10 @@ func (nc *namespaceClient) Describe(ctx context.Context, namespace string) (*wor
 
 // Update a namespace.
 // The errors it can throw:
-//	- EntityNotExistsError
-//	- BadRequestError
-//	- InternalServiceError
+//	- serviceerror.NotFound
+//	- serviceerror.InvalidArgument
+//	- serviceerror.Internal
+//	- serviceerror.Unavailable
 func (nc *namespaceClient) Update(ctx context.Context, request *workflowservice.UpdateNamespaceRequest) error {
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
