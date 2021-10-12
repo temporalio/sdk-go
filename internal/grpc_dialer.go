@@ -26,6 +26,8 @@ package internal
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gogo/status"
@@ -126,12 +128,19 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 
 	// If there are multiple addresses, we must create a custom resolver that will
 	// return them
+	if len(params.HostPorts) == 0 {
+		// Should never happen since caller defaults this value
+		return nil, fmt.Errorf("must have at least one host port")
+	}
 	hostPort := params.HostPorts[0]
-	if len(params.HostPorts) > 0 {
+	if len(params.HostPorts) > 1 {
 		hostPort = "temporal-manual:///manual"
 		builder := manual.NewBuilderWithScheme("temporal-manual")
 		state := resolver.State{Addresses: make([]resolver.Address, len(params.HostPorts))}
 		for i, addr := range params.HostPorts {
+			if strings.Contains(addr, ":///") {
+				return nil, fmt.Errorf("cannot have resolver-prefixed address when using multiple addresses")
+			}
 			state.Addresses[i] = resolver.Address{Addr: addr}
 		}
 		builder.InitialState(state)

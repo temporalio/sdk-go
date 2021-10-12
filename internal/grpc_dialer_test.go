@@ -121,7 +121,15 @@ func TestHeadersProvider_IncludedWithHeadersProvider(t *testing.T) {
 	require.Equal(t, 6, len(interceptors))
 }
 
-func TestGRPCAdditionalHostPorts(t *testing.T) {
+func TestAdditionalHostPorts_BadPrefix(t *testing.T) {
+	_, err := NewClient(ClientOptions{
+		HostPort:            "127.0.0.1:1234",
+		AdditionalHostPorts: []string{"myresolver:///127.0.0.1:2345"},
+	})
+	require.EqualError(t, err, "cannot have resolver-prefixed address when using multiple addresses")
+}
+
+func TestAdditionalHostPorts(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// Create two gRPC servers
@@ -142,14 +150,10 @@ func TestGRPCAdditionalHostPorts(t *testing.T) {
 
 	// Confirm round robin'd
 	require.NoError(t, client.SignalWorkflow(ctx, "workflowid", "runid", "signalname", nil))
-	require.Equal(t, 1, s1.signalWorkflowInvokeCount)
-	require.Equal(t, 0, s2.signalWorkflowInvokeCount)
 	require.NoError(t, client.SignalWorkflow(ctx, "workflowid", "runid", "signalname", nil))
 	require.Equal(t, 1, s1.signalWorkflowInvokeCount)
 	require.Equal(t, 1, s2.signalWorkflowInvokeCount)
 	require.NoError(t, client.SignalWorkflow(ctx, "workflowid", "runid", "signalname", nil))
-	require.Equal(t, 2, s1.signalWorkflowInvokeCount)
-	require.Equal(t, 1, s2.signalWorkflowInvokeCount)
 	require.NoError(t, client.SignalWorkflow(ctx, "workflowid", "runid", "signalname", nil))
 	require.Equal(t, 2, s1.signalWorkflowInvokeCount)
 	require.Equal(t, 2, s2.signalWorkflowInvokeCount)

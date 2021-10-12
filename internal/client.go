@@ -339,7 +339,7 @@ type (
 		// HostPort option should still be set or it will still default. Hosts from
 		// HostPort and this setting will be combined to make a set of addresses
 		// that gRPC will round-robin requests to. Neither HostPort nor this setting
-		// should have any "dns:///" prefixed addresses.
+		// can have any "<resolver>:///" prefixed addresses.
 		// default: no additional hosts (only single HostPort)
 		AdditionalHostPorts []string
 
