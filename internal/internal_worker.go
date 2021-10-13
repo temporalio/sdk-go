@@ -1037,7 +1037,8 @@ type WorkflowReplayer struct {
 
 // WorkflowReplayerOptions are options for creating a workflow replayer.
 type WorkflowReplayerOptions struct {
-	// Optional custom data converter to provide for replay.
+	// Optional custom data converter to provide for replay. If not set, the
+	// default converter is used.
 	DataConverter converter.DataConverter
 }
 
