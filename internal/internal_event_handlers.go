@@ -1244,7 +1244,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionF
 			attributes.GetInitiatedEventId(),
 			0,
 			enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE,
-			errors.New("workflow execution already started"),
+			&ChildWorkflowExecutionAlreadyStartedError{},
 		)
 		childWorkflow.handleFailedToStart(nil, err)
 		return nil
