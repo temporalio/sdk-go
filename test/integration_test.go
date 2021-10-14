@@ -656,7 +656,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicate() {
 	var applicationErr *temporal.ApplicationError
 	ok := errors.As(err, &applicationErr)
 	ts.True(ok)
-	ts.Equal("workflow execution already started", applicationErr.Error())
+	ts.True(strings.HasPrefix(applicationErr.Error(), "child workflow execution already started"))
 	ts.False(applicationErr.NonRetryable())
 }
 
@@ -675,7 +675,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly1() {
 	var applicationErr *temporal.ApplicationError
 	ok := errors.As(err, &applicationErr)
 	ts.True(ok)
-	ts.Equal("workflow execution already started", applicationErr.Error())
+	ts.True(strings.HasPrefix(applicationErr.Error(), "child workflow execution already started"))
 	ts.False(applicationErr.NonRetryable())
 }
 
