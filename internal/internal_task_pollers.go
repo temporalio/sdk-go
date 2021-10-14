@@ -392,7 +392,11 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 				},
 				ScheduleToStartTimeout: &wtp.StickyScheduleToStartTimeout,
 			}
-		} else {
+		} else if !request.ForceCreateNewWorkflowTask {
+			// If we are forcing creation of a new workflow task because we have a long running local activity,
+			// it's desirable to also ensure we	get that new task returned to ourselves immediately, otherwise
+			// if we aren't caching the workflow we can end up forgetting the number of attempts on said local
+			// activity.
 			request.ReturnNewWorkflowTask = false
 		}
 		response, err = wtp.service.RespondWorkflowTaskCompleted(grpcCtx, request)
