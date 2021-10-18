@@ -174,6 +174,18 @@ func (a *Activities) Echo(ctx context.Context, delayInSeconds int, value int) (i
 	return value, nil
 }
 
+func (a *Activities) WaitForWorkerStop(ctx context.Context, timeout time.Duration) (string, error) {
+	stopCh := activity.GetWorkerStopChannel(ctx)
+	// Mark activity as invoked then wait for it to be stopped
+	a.append("wait-for-worker-stop")
+	select {
+	case <-stopCh:
+		return "stopped", nil
+	case <-time.After(timeout):
+		return "timeout", nil
+	}
+}
+
 func (a *Activities) append(name string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
