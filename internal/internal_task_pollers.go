@@ -392,8 +392,6 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 				},
 				ScheduleToStartTimeout: &wtp.StickyScheduleToStartTimeout,
 			}
-		} else {
-			request.ReturnNewWorkflowTask = false
 		}
 		response, err = wtp.service.RespondWorkflowTaskCompleted(grpcCtx, request)
 		if err != nil {
