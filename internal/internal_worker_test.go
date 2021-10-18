@@ -1509,9 +1509,10 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_SideEffect() {
 
 	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
-	replayer := NewWorkflowReplayer()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflowSideEffect)
-	err := replayer.ReplayWorkflowHistory(logger, history)
+	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
 }
 
