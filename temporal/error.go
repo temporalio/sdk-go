@@ -129,6 +129,11 @@ type (
 	// ChildWorkflowExecutionError returned from workflow when child workflow returned an error.
 	ChildWorkflowExecutionError = internal.ChildWorkflowExecutionError
 
+	// ChildWorkflowExecutionAlreadyStartedError is set as the cause of
+	// ChildWorkflowExecutionError when failure is due the child workflow having
+	// already started.
+	ChildWorkflowExecutionAlreadyStartedError = internal.ChildWorkflowExecutionAlreadyStartedError
+
 	// WorkflowExecutionError returned from workflow.
 	WorkflowExecutionError = internal.WorkflowExecutionError
 
@@ -184,10 +189,15 @@ func IsApplicationError(err error) bool {
 	return errors.As(err, &applicationError)
 }
 
-// IsWorkflowExecutionAlreadyStartedError return if the err is a WorkflowExecutionAlreadyStartedError
+// IsWorkflowExecutionAlreadyStartedError return if the err is a
+// WorkflowExecutionAlreadyStartedError or if an error in the chain is a
+// ChildWorkflowExecutionAlreadyStartedError.
 func IsWorkflowExecutionAlreadyStartedError(err error) bool {
-	_, ok := err.(*serviceerror.WorkflowExecutionAlreadyStarted)
-	return ok
+	if _, ok := err.(*serviceerror.WorkflowExecutionAlreadyStarted); ok {
+		return ok
+	}
+	var childError *ChildWorkflowExecutionAlreadyStartedError
+	return errors.As(err, &childError)
 }
 
 // IsCanceledError return if the err is a CanceledError
