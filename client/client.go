@@ -87,9 +87,10 @@ type (
 		//     or
 		//     ExecuteWorkflow(ctx, options, workflowExecuteFn, arg1, arg2, arg3)
 		// The errors it can return:
-		//	- EntityNotExistsError, if namespace does not exists
-		//	- BadRequestError
-		//	- InternalServiceError
+		//	- serviceerror.NotFound, if namespace does not exists
+		//	- serviceerror.InvalidArgument
+		//	- serviceerror.Internal
+		//	- serviceerror.Unavailable
 		//
 		// WorkflowRun has 3 methods:
 		//  - GetWorkflowID() string: which return the started workflow ID
@@ -115,7 +116,7 @@ type (
 		//  - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
 		//    execution result to valuePtr, if workflow execution is a success, or return corresponding
 		//    error. This is a blocking API.
-		// If workflow not found, the Get() will return EntityNotExistsError.
+		// If workflow not found, the Get() will return serviceerror.NotFound.
 		// NOTE: if the started workflow return ContinueAsNewError during the workflow execution, the
 		// return result of GetRunID() will be the started workflow run ID, not the new run ID caused by ContinueAsNewError,
 		// however, Get(ctx context.Context, valuePtr interface{}) will return result from the run which did not return ContinueAsNewError.
@@ -129,8 +130,9 @@ type (
 		// - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
 		// - signalName name to identify the signal.
 		// The errors it can return:
-		//	- EntityNotExistsError
-		//	- InternalServiceError
+		//	- serviceerror.NotFound
+		//	- serviceerror.Internal
+		//	- serviceerror.Unavailable
 		SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error
 
 		// SignalWithStartWorkflow sends a signal to a running workflow.
@@ -139,9 +141,10 @@ type (
 		// - options, workflow, workflowArgs are same as StartWorkflow's parameters
 		// Note: options.WorkflowIDReusePolicy is default to AllowDuplicate in this API.
 		// The errors it can return:
-		//  - EntityNotExistsError, if namespace does not exist
-		//  - BadRequestError
-		//	- InternalServiceError
+		//  - serviceerror.NotFound, if namespace does not exist
+		//  - serviceerror.InvalidArgument
+		//	- serviceerror.Internal
+		//	- serviceerror.Unavailable
 		SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
 			options StartWorkflowOptions, workflow interface{}, workflowArgs ...interface{}) (WorkflowRun, error)
 
@@ -150,9 +153,10 @@ type (
 		// - workflow ID of the workflow.
 		// - runID can be default(empty string). if empty string then it will pick the currently running execution of that workflow ID.
 		// The errors it can return:
-		//	- EntityNotExistsError
-		//	- BadRequestError
-		//	- InternalServiceError
+		//	- serviceerror.NotFound
+		//	- serviceerror.InvalidArgument
+		//	- serviceerror.Internal
+		//	- serviceerror.Unavailable
 		CancelWorkflow(ctx context.Context, workflowID string, runID string) error
 
 		// TerminateWorkflow terminates a workflow execution. Terminate stops a workflow execution immediately without
@@ -161,9 +165,10 @@ type (
 		// - workflow ID of the workflow.
 		// - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
 		// The errors it can return:
-		//	- EntityNotExistsError
-		//	- BadRequestError
-		//	- InternalServiceError
+		//	- serviceerror.NotFound
+		//	- serviceerror.InvalidArgument
+		//	- serviceerror.Internal
+		//	- serviceerror.Unavailable
 		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error
 
 		// GetWorkflowHistory gets history events of a particular workflow
@@ -198,7 +203,7 @@ type (
 		//  	CompleteActivity(token, "Done", nil)
 		//	To fail the activity with an error.
 		//      CompleteActivity(token, nil, temporal.NewApplicationError("reason", details)
-		// The activity can fail with below errors ErrorWithDetails, TimeoutError, CanceledError.
+		// The activity can fail with below errors ApplicationError, TimeoutError, CanceledError.
 		CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error
 
 		// CompleteActivityByID reports activity completed.
@@ -211,7 +216,7 @@ type (
 		// An activity implementation should use activityID provided in ActivityOption to use for completion.
 		// namespace name, workflowID, activityID are required, runID is optional.
 		// The errors it can return:
-		//  - ErrorWithDetails
+		//  - ApplicationError
 		//  - TimeoutError
 		//  - CanceledError
 		CompleteActivityByID(ctx context.Context, namespace, workflowID, runID, activityID string, result interface{}, err error) error
@@ -220,37 +225,41 @@ type (
 		// taskToken - is the value of the binary "TaskToken" field of the "ActivityInfo" struct retrieved inside the activity.
 		// details - is the progress you want to record along with heart beat for this activity.
 		// The errors it can return:
-		//	- EntityNotExistsError
-		//	- InternalServiceError
+		//	- serviceerror.NotFound
+		//	- serviceerror.Internal
+		//	- serviceerror.Unavailable
 		RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...interface{}) error
 
 		// RecordActivityHeartbeatByID records heartbeat for an activity.
 		// details - is the progress you want to record along with heart beat for this activity.
 		// The errors it can return:
-		//	- EntityNotExistsError
-		//	- InternalServiceError
+		//	- serviceerror.NotFound
+		//	- serviceerror.Internal
+		//	- serviceerror.Unavailable
 		RecordActivityHeartbeatByID(ctx context.Context, namespace, workflowID, runID, activityID string, details ...interface{}) error
 
 		// ListClosedWorkflow gets closed workflow executions based on request filters.
 		// Retrieved workflow executions are sorted by close time in descending order.
 		// Note: heavy usage of this API may cause huge persistence pressure.
 		// The errors it can return:
-		//  - BadRequestError
-		//  - InternalServiceError
-		//  - EntityNotExistError
+		//  - serviceerror.InvalidArgument
+		//	- serviceerror.Internal
+		//	- serviceerror.Unavailable
+		//  - serviceerror.NotFound
 		ListClosedWorkflow(ctx context.Context, request *workflowservice.ListClosedWorkflowExecutionsRequest) (*workflowservice.ListClosedWorkflowExecutionsResponse, error)
 
 		// ListOpenWorkflow gets open workflow executions based on request filters.
 		// Retrieved workflow executions are sorted by start time in descending order.
 		// Note: heavy usage of this API may cause huge persistence pressure.
 		// The errors it can return:
-		//  - BadRequestError
-		//  - InternalServiceError
-		//  - EntityNotExistError
+		//  - serviceerror.InvalidArgument
+		//	- serviceerror.Internal
+		//	- serviceerror.Unavailable
+		//  - serviceerror.NotFound
 		ListOpenWorkflow(ctx context.Context, request *workflowservice.ListOpenWorkflowExecutionsRequest) (*workflowservice.ListOpenWorkflowExecutionsResponse, error)
 
 		// ListWorkflow gets workflow executions based on query. This API only works with ElasticSearch,
-		// and will return BadRequestError when using Cassandra or MySQL. The query is basically the SQL WHERE clause,
+		// and will return serviceerror.InvalidArgument when using Cassandra or MySQL. The query is basically the SQL WHERE clause,
 		// examples:
 		//  - "(WorkflowID = 'wid1' or (WorkflowType = 'type2' and WorkflowID = 'wid2'))".
 		//  - "CloseTime between '2019-08-27T15:04:05+00:00' and '2019-08-28T15:04:05+00:00'".
@@ -258,8 +267,9 @@ type (
 		// Retrieved workflow executions are sorted by StartTime in descending order when list open workflow,
 		// and sorted by CloseTime in descending order for other queries.
 		// The errors it can return:
-		//  - BadRequestError
-		//  - InternalServiceError
+		//  - serviceerror.InvalidArgument
+		//	- serviceerror.Internal
+		//	- serviceerror.Unavailable
 		ListWorkflow(ctx context.Context, request *workflowservice.ListWorkflowExecutionsRequest) (*workflowservice.ListWorkflowExecutionsResponse, error)
 
 		// ListArchivedWorkflow gets archived workflow executions based on query. This API will return BadRequest if Temporal
@@ -267,27 +277,30 @@ type (
 		// However, different visibility archivers have different limitations on the query. Please check the documentation of the visibility archiver used
 		// by your namespace to see what kind of queries are accept and whether retrieved workflow executions are ordered or not.
 		// The errors it can return:
-		//  - BadRequestError
-		//  - InternalServiceError
+		//  - serviceerror.InvalidArgument
+		//	- serviceerror.Internal
+		//	- serviceerror.Unavailable
 		ListArchivedWorkflow(ctx context.Context, request *workflowservice.ListArchivedWorkflowExecutionsRequest) (*workflowservice.ListArchivedWorkflowExecutionsResponse, error)
 
 		// ScanWorkflow gets workflow executions based on query. This API only works with ElasticSearch,
-		// and will return BadRequestError when using Cassandra or MySQL. The query is basically the SQL WHERE clause
+		// and will return serviceerror.InvalidArgument when using Cassandra or MySQL. The query is basically the SQL WHERE clause
 		// (see ListWorkflow for query examples).
 		// ScanWorkflow should be used when retrieving large amount of workflows and order is not needed.
 		// It will use more ElasticSearch resources than ListWorkflow, but will be several times faster
 		// when retrieving millions of workflows.
 		// The errors it can return:
-		//  - BadRequestError
-		//  - InternalServiceError
+		//  - serviceerror.InvalidArgument
+		//	- serviceerror.Internal
+		//	- serviceerror.Unavailable
 		ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error)
 
 		// CountWorkflow gets number of workflow executions based on query. This API only works with ElasticSearch,
-		// and will return BadRequestError when using Cassandra or MySQL. The query is basically the SQL WHERE clause
+		// and will return serviceerror.InvalidArgument when using Cassandra or MySQL. The query is basically the SQL WHERE clause
 		// (see ListWorkflow for query examples).
 		// The errors it can return:
-		//  - BadRequestError
-		//  - InternalServiceError
+		//  - serviceerror.InvalidArgument
+		//	- serviceerror.Internal
+		//	- serviceerror.Unavailable
 		CountWorkflow(ctx context.Context, request *workflowservice.CountWorkflowExecutionsRequest) (*workflowservice.CountWorkflowExecutionsResponse, error)
 
 		// GetSearchAttributes returns valid search attributes keys and value types.
@@ -309,36 +322,40 @@ type (
 		// - queryType is the type of the query.
 		// - args... are the optional query parameters.
 		// The errors it can return:
-		//  - BadRequestError
-		//  - InternalServiceError
-		//  - EntityNotExistError
-		//  - QueryFailError
+		//  - serviceerror.InvalidArgument
+		//	- serviceerror.Internal
+		//	- serviceerror.Unavailable
+		//  - serviceerror.NotFound
+		//  - serviceerror.QueryFailed
 		QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.EncodedValue, error)
 
 		// QueryWorkflowWithOptions queries a given workflow execution and returns the query result synchronously.
 		// See QueryWorkflowWithOptionsRequest and QueryWorkflowWithOptionsResponse for more information.
 		// The errors it can return:
-		//  - BadRequestError
-		//  - InternalServiceError
-		//  - EntityNotExistError
-		//  - QueryFailError
+		//  - serviceerror.InvalidArgument
+		//	- serviceerror.Internal
+		//	- serviceerror.Unavailable
+		//  - serviceerror.NotFound
+		//  - serviceerror.QueryFailed
 		QueryWorkflowWithOptions(ctx context.Context, request *QueryWorkflowWithOptionsRequest) (*QueryWorkflowWithOptionsResponse, error)
 
 		// DescribeWorkflowExecution returns information about the specified workflow execution.
 		// - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
 		//
 		// The errors it can return:
-		//  - BadRequestError
-		//  - InternalServiceError
-		//  - EntityNotExistError
+		//  - serviceerror.InvalidArgument
+		//	- serviceerror.Internal
+		//	- serviceerror.Unavailable
+		//  - serviceerror.NotFound
 		DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error)
 
 		// DescribeTaskQueue returns information about the target taskqueue, right now this API returns the
 		// pollers which polled this taskqueue in last few minutes.
 		// The errors it can return:
-		//  - BadRequestError
-		//  - InternalServiceError
-		//  - EntityNotExistError
+		//  - serviceerror.InvalidArgument
+		//	- serviceerror.Internal
+		//	- serviceerror.Unavailable
+		//  - serviceerror.NotFound
 		DescribeTaskQueue(ctx context.Context, taskqueue string, taskqueueType enumspb.TaskQueueType) (*workflowservice.DescribeTaskQueueResponse, error)
 
 		// ResetWorkflowExecution reset an existing workflow execution to WorkflowTaskFinishEventId(exclusive).
@@ -356,8 +373,9 @@ type (
 		// Register a namespace with temporal server
 		// The errors it can throw:
 		//	- NamespaceAlreadyExistsError
-		//	- BadRequestError
-		//	- InternalServiceError
+		//	- serviceerror.InvalidArgument
+		//	- serviceerror.Internal
+		//	- serviceerror.Unavailable
 		Register(ctx context.Context, request *workflowservice.RegisterNamespaceRequest) error
 
 		// Describe a namespace. The namespace has 3 part of information
@@ -365,16 +383,18 @@ type (
 		// NamespaceConfiguration - Configuration like Workflow Execution Retention Period In Days, Whether to emit metrics.
 		// ReplicationConfiguration - replication config like clusters and active cluster name
 		// The errors it can throw:
-		//	- EntityNotExistsError
-		//	- BadRequestError
-		//	- InternalServiceError
+		//	- serviceerror.NotFound
+		//	- serviceerror.InvalidArgument
+		//	- serviceerror.Internal
+		//	- serviceerror.Unavailable
 		Describe(ctx context.Context, name string) (*workflowservice.DescribeNamespaceResponse, error)
 
 		// Update a namespace.
 		// The errors it can throw:
-		//	- EntityNotExistsError
-		//	- BadRequestError
-		//	- InternalServiceError
+		//	- serviceerror.NotFound
+		//	- serviceerror.InvalidArgument
+		//	- serviceerror.Internal
+		//	- serviceerror.Unavailable
 		Update(ctx context.Context, request *workflowservice.UpdateNamespaceRequest) error
 
 		// Close client and clean up underlying resources.

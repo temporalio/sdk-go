@@ -428,6 +428,18 @@ func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndGrpcRetries() {
 	ts.assertReportedOperationCount("temporal_request_attempt", "RecordActivityTaskHeartbeat", int(totalHeartbeats+3))
 }
 
+func (ts *IntegrationTestSuite) TestHeartbeatOnActivityFailure() {
+	var heartbeatCounts int
+	err := ts.executeWorkflow("test-heartbeat-on-activity-failure",
+		ts.workflows.ActivityHeartbeatWithRetry, &heartbeatCounts)
+	ts.NoError(err)
+	// Final count should be 6 because the activity is called 3 times (first 2
+	// fail) and each activity heartbeats twice. Before fixing a bug where the
+	// gRPC call wasn't made on activity failure, this was 4 because the first 2
+	// failing activities didn't have their second heartbeats recorded.
+	ts.Equal(6, heartbeatCounts)
+}
+
 func (ts *IntegrationTestSuite) TestContinueAsNew() {
 	var result int
 	err := ts.executeWorkflow("test-continueasnew", ts.workflows.ContinueAsNew, &result, 4, ts.taskQueueName)
@@ -654,7 +666,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicate() {
 	var applicationErr *temporal.ApplicationError
 	ok := errors.As(err, &applicationErr)
 	ts.True(ok)
-	ts.Equal("workflow execution already started", applicationErr.Error())
+	ts.True(strings.HasPrefix(applicationErr.Error(), "child workflow execution already started"))
 	ts.False(applicationErr.NonRetryable())
 }
 
@@ -673,7 +685,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly1() {
 	var applicationErr *temporal.ApplicationError
 	ok := errors.As(err, &applicationErr)
 	ts.True(ok)
-	ts.Equal("workflow execution already started", applicationErr.Error())
+	ts.True(strings.HasPrefix(applicationErr.Error(), "child workflow execution already started"))
 	ts.False(applicationErr.NonRetryable())
 }
 
