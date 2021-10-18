@@ -348,8 +348,23 @@ type (
 	// ClientOptions are optional parameters for Client creation.
 	ClientOptions struct {
 		// Optional: To set the host:port for this client to connect to.
-		// Use "dns:///" prefix to enable DNS based round-robin.
 		// default: localhost:7233
+		//
+		// This is a gRPC address and therefore can also support a special-formatted address of "<resolver>:///<value>" that
+		// will use a registered resolver. By default all hosts returned from the resolver will be used in a round-robin
+		// fashion.
+		//
+		// The "dns" resolver is registered by default. Using a "dns:///" prefixed address will periodically resolve all IPs
+		// for DNS address given and round robin amongst them.
+		//
+		// A custom resolver can be created to provide multiple hosts in other ways. For example, to manually provide
+		// multiple IPs to round-robin across, a google.golang.org/grpc/resolver/manual resolver can be created and
+		// registered with google.golang.org/grpc/resolver with a custom scheme:
+		//		builder := manual.NewBuilderWithScheme("myresolver")
+		//		builder.InitialState(resolver.State{Addresses: []resolver.Address{{Addr: "1.2.3.4:1234"}, {Addr: "2.3.4.5:2345"}}})
+		//		resolver.Register(builder)
+		//		c, err := client.NewClient(client.Options{HostPort: "myresolver:///ignoredvalue"})
+		// Other more advanced resolvers can also be registered.
 		HostPort string
 
 		// Optional: To set the namespace name for this client to work with.
