@@ -30,6 +30,7 @@ import (
 	"math/rand"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
@@ -602,13 +603,12 @@ func (w *Workflows) CancelTimerAfterActivity(ctx workflow.Context) (string, erro
 	return res, err
 }
 
-var didPanicOnce = false
+var cancelTimerDeferCount uint32
 
 func (w *Workflows) CancelTimerViaDeferAfterWFTFailure(ctx workflow.Context) error {
 	timerCtx, canceller := workflow.WithCancel(ctx)
 	defer func() {
-		if !didPanicOnce {
-			didPanicOnce = true
+		if atomic.AddUint32(&cancelTimerDeferCount, 1) == 1 {
 			panic("Intentional panic to trigger WFT failure")
 		}
 		canceller()
