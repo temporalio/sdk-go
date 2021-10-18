@@ -304,9 +304,10 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 
 	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
-	replayer := NewWorkflowReplayer()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflow)
-	err := replayer.ReplayWorkflowHistory(logger, history)
+	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
 }
 
@@ -340,9 +341,10 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
 
 	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
-	replayer := NewWorkflowReplayer()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflowLocalActivity)
-	err := replayer.ReplayWorkflowHistory(logger, history)
+	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
 }
 
@@ -379,9 +381,10 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_GetVersion() {
 	testEvents := createHistoryForGetVersionTests("testReplayWorkflowGetVersion")
 	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
-	replayer := NewWorkflowReplayer()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflowGetVersion)
-	err := replayer.ReplayWorkflowHistory(logger, history)
+	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
 }
 
@@ -485,9 +488,10 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalAndRemoteActivi
 
 	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
-	replayer := NewWorkflowReplayer()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflowLocalAndRemoteActivity)
-	err := replayer.ReplayWorkflowHistory(logger, history)
+	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
 }
 
@@ -524,9 +528,10 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_GetVersion_ReplacedC
 	testEvents := createHistoryForGetVersionTests("testReplayWorkflowGetVersionReplacedChangeID")
 	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
-	replayer := NewWorkflowReplayer()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflowGetVersionReplacedChangeID)
-	err := replayer.ReplayWorkflowHistory(logger, history)
+	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
 }
 
@@ -558,9 +563,10 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_GetVersionRemoved() 
 	testEvents := createHistoryForGetVersionTests("testReplayWorkflowGetVersionRemoved")
 	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
-	replayer := NewWorkflowReplayer()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflowGetVersionRemoved)
-	err := replayer.ReplayWorkflowHistory(logger, history)
+	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
 }
 
@@ -602,9 +608,10 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_GetVersion_AddNewBef
 	testEvents := createHistoryForGetVersionTests("testReplayWorkflowGetVersionAddNewBefore")
 	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
-	replayer := NewWorkflowReplayer()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflowGetVersionAddNewBefore)
-	err := replayer.ReplayWorkflowHistory(logger, history)
+	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
 }
 
@@ -749,9 +756,10 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_GetVersionWithSideEf
 	}
 	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
-	replayer := NewWorkflowReplayer()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflowGetVersionWithSideEffect)
-	err := replayer.ReplayWorkflowHistory(logger, history)
+	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
 }
 
@@ -779,9 +787,10 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_CancelActivity() {
 	testEvents := createHistoryForCancelActivityTests("testReplayWorkflowCancelActivity")
 	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
-	replayer := NewWorkflowReplayer()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflowCancelActivity)
-	err := replayer.ReplayWorkflowHistory(logger, history)
+	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
 }
 
@@ -856,9 +865,10 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_CancelTimer() {
 	testEvents := createHistoryForCancelTimerTests("testReplayWorkflowCancelTimer")
 	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
-	replayer := NewWorkflowReplayer()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflowCancelTimer)
-	err := replayer.ReplayWorkflowHistory(logger, history)
+	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
 }
 
@@ -920,9 +930,10 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowCancelTimerAfterActivity() {
 	testEvents := createHistoryForCancelTimerAfterActivity("cancelTimerAfterActivityWorkflow")
 	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
-	replayer := NewWorkflowReplayer()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(cancelTimerAfterActivityWorkflow)
-	err := replayer.ReplayWorkflowHistory(logger, history)
+	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
 }
 
@@ -986,9 +997,10 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_FailedToStartChildWo
 	testEvents := createHistoryForFailedToStartChildWorkflow("testReplayFailedToStartChildWorkflow")
 	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
-	replayer := NewWorkflowReplayer()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayFailedToStartChildWorkflow)
-	err := replayer.ReplayWorkflowHistory(logger, history)
+	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
 }
 
@@ -1048,9 +1060,10 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_CancelChildWorkflow(
 	testEvents := createHistoryForCancelChildWorkflowTests("testReplayWorkflowCancelChildWorkflow")
 	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
-	replayer := NewWorkflowReplayer()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflowCancelChildWorkflow)
-	err := replayer.ReplayWorkflowHistory(logger, history)
+	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
 }
 
@@ -1217,9 +1230,10 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_ChildWorkflowCancell
 
 	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
-	replayer := NewWorkflowReplayer()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflowCancelChildWorkflowUnusualOrdering)
-	err := replayer.ReplayWorkflowHistory(logger, history)
+	err = replayer.ReplayWorkflowHistory(logger, history)
 	if err != nil {
 		fmt.Printf("replay failed.  Error: %v", err.Error())
 	}
@@ -1284,9 +1298,10 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_CancelWorkflowWhileS
 
 	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
-	replayer := NewWorkflowReplayer()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflowCancelWorkflowWhileSleepingWithActivities)
-	err := replayer.ReplayWorkflowHistory(logger, history)
+	err = replayer.ReplayWorkflowHistory(logger, history)
 	if err != nil {
 		fmt.Printf("replay failed.  Error: %v", err.Error())
 	}
@@ -1325,9 +1340,10 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result
 
 	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
-	replayer := NewWorkflowReplayer()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflowLocalActivity)
-	err := replayer.ReplayWorkflowHistory(logger, history)
+	err = replayer.ReplayWorkflowHistory(logger, history)
 	if err != nil {
 		fmt.Printf("replay failed.  Error: %v", err.Error())
 	}
@@ -1362,9 +1378,10 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Activi
 
 	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
-	replayer := NewWorkflowReplayer()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflow)
-	err := replayer.ReplayWorkflowHistory(logger, history)
+	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.Error(s.T(), err)
 }
 
@@ -1492,25 +1509,28 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_SideEffect() {
 
 	history := &historypb.History{Events: testEvents}
 	logger := getLogger()
-	replayer := NewWorkflowReplayer()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflowSideEffect)
-	err := replayer.ReplayWorkflowHistory(logger, history)
+	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistoryFromFileParent() {
 	logger := getLogger()
-	replayer := NewWorkflowReplayer()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflowFromFileParent)
-	err := replayer.ReplayWorkflowHistoryFromJSONFile(logger, "testdata/parentWF.json")
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(logger, "testdata/parentWF.json")
 	require.NoError(s.T(), err)
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistoryFromFile() {
 	logger := getLogger()
-	replayer := NewWorkflowReplayer()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflowFromFile)
-	err := replayer.ReplayWorkflowHistoryFromJSONFile(logger, "testdata/sampleHistory.json")
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(logger, "testdata/sampleHistory.json")
 	require.NoError(s.T(), err)
 }
 

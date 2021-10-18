@@ -1031,12 +1031,23 @@ func (aw *AggregatedWorker) Stop() {
 
 // WorkflowReplayer is used to replay workflow code from an event history
 type WorkflowReplayer struct {
-	registry *registry
+	registry      *registry
+	dataConverter converter.DataConverter
 }
 
-// NewWorkflowReplayer creates an instance of the WorkflowReplayer
-func NewWorkflowReplayer() *WorkflowReplayer {
-	return &WorkflowReplayer{registry: newRegistry()}
+// WorkflowReplayerOptions are options for creating a workflow replayer.
+type WorkflowReplayerOptions struct {
+	// Optional custom data converter to provide for replay. If not set, the
+	// default converter is used.
+	DataConverter converter.DataConverter
+}
+
+// NewWorkflowReplayer creates an instance of the WorkflowReplayer.
+func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, error) {
+	return &WorkflowReplayer{
+		registry:      newRegistry(),
+		dataConverter: options.DataConverter,
+	}, nil
 }
 
 // RegisterWorkflow registers workflow function to replay
@@ -1170,11 +1181,12 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 	}
 	cache := NewWorkerCache()
 	params := workerExecutionParameters{
-		Namespace: namespace,
-		TaskQueue: taskQueue,
-		Identity:  "replayID",
-		Logger:    logger,
-		cache:     cache,
+		Namespace:     namespace,
+		TaskQueue:     taskQueue,
+		Identity:      "replayID",
+		Logger:        logger,
+		cache:         cache,
+		DataConverter: aw.dataConverter,
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
 	resp, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, nil)
