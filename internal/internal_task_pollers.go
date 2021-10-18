@@ -392,8 +392,6 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 				},
 				ScheduleToStartTimeout: &wtp.StickyScheduleToStartTimeout,
 			}
-		} else {
-			request.ReturnNewWorkflowTask = false
 		}
 		response, err = wtp.service.RespondWorkflowTaskCompleted(grpcCtx, request)
 		if err != nil {
@@ -879,11 +877,6 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 
 	if request == ErrActivityResultPending {
 		return nil
-	}
-
-	// if worker is stopping, don't bother reporting activity completion
-	if atp.stopping() {
-		return errStop
 	}
 
 	rpcScope := metrics.GetMetricsScopeForRPC(atp.metricsScope, workflowType, activityType, metrics.NoneTagValue)

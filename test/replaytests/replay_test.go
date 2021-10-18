@@ -26,15 +26,17 @@ package replaytests
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
-
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/converter"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/worker"
 )
@@ -125,4 +127,49 @@ func (s *replayTestSuite) TestReplayUnhandledTimerFiredWithCancel() {
 
 	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "unhandled_cmd_timer_cancel.json")
 	require.NoError(s.T(), err)
+}
+
+func TestReplayCustomConverter(t *testing.T) {
+	conv := &captureConverter{DataConverter: converter.GetDefaultDataConverter()}
+	replayer, err := worker.NewWorkflowReplayerWithOptions(worker.WorkflowReplayerOptions{
+		DataConverter: conv,
+	})
+	require.NoError(t, err)
+	replayer.RegisterWorkflow(Workflow1)
+	replayer.RegisterWorkflow(Workflow2)
+
+	// Run workflow 1
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "workflow1.json")
+	require.NoError(t, err)
+	// Confirm 3 activity inputs and outputs
+	require.Subset(t, conv.toPayloads, []string{"Workflow1", "Workflow1", "Workflow1"})
+	require.Subset(t, conv.fromPayloads, []string{"Hello Workflow1!", "Hello Workflow1!", "Hello Workflow1!"})
+
+	// Run workflow 2
+	conv.toPayloads, conv.fromPayloads = nil, nil
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "workflow2.json")
+	require.NoError(t, err)
+	// Confirm 1 activity input and output
+	require.Contains(t, conv.toPayloads, "Workflow2")
+	require.Contains(t, conv.fromPayloads, "Hello Workflow2!")
+}
+
+type captureConverter struct {
+	converter.DataConverter
+	toPayloads   []interface{}
+	fromPayloads []interface{}
+}
+
+func (c *captureConverter) ToPayloads(value ...interface{}) (*commonpb.Payloads, error) {
+	c.toPayloads = append(c.toPayloads, value...)
+	return c.DataConverter.ToPayloads(value...)
+}
+
+func (c *captureConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
+	// Call then get pointers
+	err := c.DataConverter.FromPayloads(payloads, valuePtrs...)
+	for _, v := range valuePtrs {
+		c.fromPayloads = append(c.fromPayloads, reflect.ValueOf(v).Elem().Interface())
+	}
+	return err
 }
