@@ -225,7 +225,8 @@ func (c *lru) putInternal(key string, value interface{}, allowUpdate bool) (inte
 	}
 
 	c.byKey[key] = c.byAccess.PushFront(entry)
-	if len(c.byKey) == c.maxSize {
+	// Only trigger eviction when we have exceeded the max
+	if len(c.byKey) > c.maxSize {
 		oldest := c.byAccess.Back().Value.(*cacheEntry)
 
 		if oldest.refCount > 0 {
