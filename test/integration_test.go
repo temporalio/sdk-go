@@ -51,7 +51,7 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/interceptors"
+	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
@@ -152,10 +152,10 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.taskQueueName = fmt.Sprintf("tq-%v-%s", ts.seq, ts.T().Name())
 	ts.tracer = newTracingInterceptor()
 	ts.inboundSignalInterceptor = newSignalInterceptor()
-	workflowInterceptors := []interceptors.WorkflowInterceptor{ts.tracer, ts.inboundSignalInterceptor}
+	workerInterceptors := []interceptor.WorkerInterceptor{ts.tracer, ts.inboundSignalInterceptor}
 	options := worker.Options{
-		WorkflowInterceptorChainFactories: workflowInterceptors,
-		WorkflowPanicPolicy:               worker.FailWorkflow,
+		Interceptors:        workerInterceptors,
+		WorkflowPanicPolicy: worker.FailWorkflow,
 	}
 
 	worker.SetStickyWorkflowCacheSize(ts.config.maxWorkflowCacheSize)
@@ -559,7 +559,7 @@ func (ts *IntegrationTestSuite) TestConsistentQuery() {
 	var queryResult string
 	ts.Nil(value.QueryResult.Get(&queryResult))
 	ts.Equal("signal-input", queryResult)
-	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ProcessSignal", "Go", "ExecuteWorkflow end", "HandleQuery begin", "HandleQuery end"},
+	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "HandleSignal", "Go", "ExecuteWorkflow end", "HandleQuery begin", "HandleQuery end"},
 		ts.tracer.GetTrace("ConsistentQueryWorkflow"))
 }
 
@@ -583,7 +583,7 @@ func (ts *IntegrationTestSuite) TestSignalWorkflow() {
 	err = run.Get(ctx, &protoValue)
 	ts.NoError(err)
 	ts.Equal(commonpb.WorkflowType{Name: "string-value"}, *protoValue)
-	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ProcessSignal", "ProcessSignal", "ExecuteWorkflow end"},
+	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "HandleSignal", "HandleSignal", "ExecuteWorkflow end"},
 		ts.tracer.GetTrace("SignalWorkflow"))
 }
 
@@ -1068,7 +1068,7 @@ func (ts *IntegrationTestSuite) TestBasicSession() {
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
 	// createSession activity, actual activity, completeSession activity.
-	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteActivity", "ProcessSignal", "Go", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
+	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteActivity", "HandleSignal", "Go", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
 		ts.tracer.GetTrace("BasicSession"))
 }
 
@@ -1354,41 +1354,43 @@ func (ts *IntegrationTestSuite) registerWorkflowsAndActivities(w worker.Worker) 
 	ts.activities.register(w)
 }
 
-var _ interceptors.WorkflowInterceptor = (*tracingInterceptor)(nil)
-var _ interceptors.WorkflowInboundCallsInterceptor = (*tracingInboundCallsInterceptor)(nil)
-var _ interceptors.WorkflowOutboundCallsInterceptor = (*tracingOutboundCallsInterceptor)(nil)
+var _ interceptor.WorkerInterceptor = (*tracingInterceptor)(nil)
+var _ interceptor.WorkflowInboundInterceptor = (*tracingWorkflowInboundInterceptor)(nil)
+var _ interceptor.WorkflowOutboundInterceptor = (*tracingWorkflowOutboundInterceptor)(nil)
 
 type tracingInterceptor struct {
+	interceptor.WorkerInterceptorBase
 	sync.Mutex
 	// key is workflow id
-	instances map[string]*tracingInboundCallsInterceptor
+	instances map[string]*tracingWorkflowInboundInterceptor
 }
 
-type tracingInboundCallsInterceptor struct {
-	Next  interceptors.WorkflowInboundCallsInterceptor
+type tracingWorkflowInboundInterceptor struct {
+	interceptor.WorkflowInboundInterceptorBase
 	trace []string
 }
 
-type tracingOutboundCallsInterceptor struct {
-	interceptors.WorkflowOutboundCallsInterceptorBase
-	inbound *tracingInboundCallsInterceptor
+type tracingWorkflowOutboundInterceptor struct {
+	interceptor.WorkflowOutboundInterceptorBase
+	inbound *tracingWorkflowInboundInterceptor
 }
 
-func (t *tracingOutboundCallsInterceptor) Go(ctx workflow.Context, name string, f func(ctx workflow.Context)) workflow.Context {
+func (t *tracingWorkflowOutboundInterceptor) Go(ctx workflow.Context, name string, f func(ctx workflow.Context)) workflow.Context {
 	t.inbound.trace = append(t.inbound.trace, "Go")
 	return t.Next.Go(ctx, name, f)
 }
 
 func newTracingInterceptor() *tracingInterceptor {
-	return &tracingInterceptor{instances: make(map[string]*tracingInboundCallsInterceptor)}
+	return &tracingInterceptor{instances: make(map[string]*tracingWorkflowInboundInterceptor)}
 }
 
-func (t *tracingInterceptor) InterceptWorkflow(info *workflow.Info, next interceptors.WorkflowInboundCallsInterceptor) interceptors.WorkflowInboundCallsInterceptor {
+func (t *tracingInterceptor) InterceptWorkflow(ctx workflow.Context, next interceptor.WorkflowInboundInterceptor) interceptor.WorkflowInboundInterceptor {
 	t.Mutex.Lock()
 	defer t.Mutex.Unlock()
-	result := &tracingInboundCallsInterceptor{next, nil}
-	t.instances[info.WorkflowType.Name] = result
-	return result
+	var result tracingWorkflowInboundInterceptor
+	result.Next = next
+	t.instances[workflow.GetInfo(ctx).WorkflowType.Name] = &result
+	return &result
 }
 
 func (t *tracingInterceptor) GetTrace(workflowType string) []string {
@@ -1400,46 +1402,45 @@ func (t *tracingInterceptor) GetTrace(workflowType string) []string {
 	panic(fmt.Sprintf("Unknown workflowType %v, known types: %v", workflowType, t.instances))
 }
 
-func (t *tracingInboundCallsInterceptor) Init(outbound interceptors.WorkflowOutboundCallsInterceptor) error {
-	return t.Next.Init(&tracingOutboundCallsInterceptor{
-		interceptors.WorkflowOutboundCallsInterceptorBase{Next: outbound}, t})
+func (t *tracingWorkflowInboundInterceptor) Init(outbound interceptor.WorkflowOutboundInterceptor) error {
+	return t.Next.Init(&tracingWorkflowOutboundInterceptor{
+		interceptor.WorkflowOutboundInterceptorBase{Next: outbound}, t})
 }
 
-func (t *tracingOutboundCallsInterceptor) ExecuteActivity(ctx workflow.Context, activityType string, args ...interface{}) workflow.Future {
+func (t *tracingWorkflowOutboundInterceptor) ExecuteActivity(ctx workflow.Context, activityType string, args ...interface{}) workflow.Future {
 	t.inbound.trace = append(t.inbound.trace, "ExecuteActivity")
 	return t.Next.ExecuteActivity(ctx, activityType, args...)
 }
 
-func (t *tracingOutboundCallsInterceptor) ExecuteChildWorkflow(ctx workflow.Context, childWorkflowType string, args ...interface{}) workflow.ChildWorkflowFuture {
+func (t *tracingWorkflowOutboundInterceptor) ExecuteChildWorkflow(ctx workflow.Context, childWorkflowType string, args ...interface{}) workflow.ChildWorkflowFuture {
 	t.inbound.trace = append(t.inbound.trace, "ExecuteChildWorkflow")
 	return t.Next.ExecuteChildWorkflow(ctx, childWorkflowType, args...)
 }
 
-func (t *tracingInboundCallsInterceptor) ExecuteWorkflow(ctx workflow.Context, workflowType string, args ...interface{}) []interface{} {
+func (t *tracingWorkflowInboundInterceptor) ExecuteWorkflow(ctx workflow.Context, in *interceptor.ExecuteWorkflowInput) (interface{}, error) {
 	t.trace = append(t.trace, "ExecuteWorkflow begin")
-	result := t.Next.ExecuteWorkflow(ctx, workflowType, args...)
+	result, err := t.Next.ExecuteWorkflow(ctx, in)
 	t.trace = append(t.trace, "ExecuteWorkflow end")
-	return result
+	return result, err
 }
 
-func (t *tracingInboundCallsInterceptor) ProcessSignal(ctx workflow.Context, signalName string, arg interface{}) error {
-	t.trace = append(t.trace, "ProcessSignal")
-	return t.Next.ProcessSignal(ctx, signalName, arg)
+func (t *tracingWorkflowInboundInterceptor) HandleSignal(ctx workflow.Context, in *interceptor.HandleSignalInput) error {
+	t.trace = append(t.trace, "HandleSignal")
+	return t.Next.HandleSignal(ctx, in)
 }
 
-func (t *tracingInboundCallsInterceptor) HandleQuery(ctx workflow.Context, queryType string, args *commonpb.Payloads,
-	handler func(*commonpb.Payloads) (*commonpb.Payloads, error)) (*commonpb.Payloads, error) {
+func (t *tracingWorkflowInboundInterceptor) HandleQuery(ctx workflow.Context, in *interceptor.HandleQueryInput) (interface{}, error) {
 	t.trace = append(t.trace, "HandleQuery begin")
-	result, err := t.Next.HandleQuery(ctx, queryType, args, handler)
+	result, err := t.Next.HandleQuery(ctx, in)
 	t.trace = append(t.trace, "HandleQuery end")
 	return result, err
 }
 
-var _ interceptors.WorkflowInterceptor = (*signalInterceptor)(nil)
-var _ interceptors.WorkflowInboundCallsInterceptor = (*signalInboundCallsInterceptor)(nil)
-var _ interceptors.WorkflowOutboundCallsInterceptor = (*signalOutboundCallsInterceptor)(nil)
+var _ interceptor.WorkerInterceptor = (*signalInterceptor)(nil)
+var _ interceptor.WorkflowInboundInterceptor = (*signalWorkflowInboundInterceptor)(nil)
 
 type signalInterceptor struct {
+	interceptor.WorkerInterceptorBase
 	ReturnErrorTimes int
 	TimesInvoked     int
 }
@@ -1448,25 +1449,21 @@ func newSignalInterceptor() *signalInterceptor {
 	return &signalInterceptor{}
 }
 
-type signalInboundCallsInterceptor struct {
-	interceptors.WorkflowInboundCallsInterceptorBase
+type signalWorkflowInboundInterceptor struct {
+	interceptor.WorkflowInboundInterceptorBase
 	control *signalInterceptor
 }
 
-func (t *signalInboundCallsInterceptor) ProcessSignal(ctx workflow.Context, signalName string, arg interface{}) error {
+func (t *signalWorkflowInboundInterceptor) HandleSignal(ctx workflow.Context, in *interceptor.HandleSignalInput) error {
 	t.control.TimesInvoked++
 	if t.control.TimesInvoked <= t.control.ReturnErrorTimes {
-		return fmt.Errorf("interceptor induced failure while processing signal %v", signalName)
+		return fmt.Errorf("interceptor induced failure while processing signal %v", in.SignalName)
 	}
-	return t.Next.ProcessSignal(ctx, signalName, arg)
+	return t.Next.HandleSignal(ctx, in)
 }
 
-type signalOutboundCallsInterceptor struct {
-	interceptors.WorkflowOutboundCallsInterceptorBase
-}
-
-func (t *signalInterceptor) InterceptWorkflow(_ *workflow.Info, next interceptors.WorkflowInboundCallsInterceptor) interceptors.WorkflowInboundCallsInterceptor {
-	result := &signalInboundCallsInterceptor{}
+func (t *signalInterceptor) InterceptWorkflow(ctx workflow.Context, next interceptor.WorkflowInboundInterceptor) interceptor.WorkflowInboundInterceptor {
+	result := &signalWorkflowInboundInterceptor{}
 	result.Next = next
 	result.control = t
 	return result

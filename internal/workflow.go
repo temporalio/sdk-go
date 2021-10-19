@@ -383,18 +383,33 @@ func NewFuture(ctx Context) (Future, Settable) {
 	return impl, impl
 }
 
-func (wc *workflowEnvironmentInterceptor) ProcessSignal(Context, string, interface{}) error {
+func (wc *workflowEnvironmentInterceptor) HandleSignal(ctx Context, in *HandleSignalInput) error {
+	eo := getWorkflowEnvOptions(ctx)
+	// We don't want this code to be blocked ever, using sendAsync().
+	ch := eo.getSignalChannel(ctx, in.SignalName).(*channelImpl)
+	if !ch.SendAsync(in.Arg) {
+		return fmt.Errorf("exceeded channel buffer size for signal: %v", in.SignalName)
+	}
 	return nil
 }
 
-func (wc *workflowEnvironmentInterceptor) HandleQuery(_ Context, _ string, args *commonpb.Payloads,
-	handler func(*commonpb.Payloads) (*commonpb.Payloads, error)) (*commonpb.Payloads, error) {
-	return handler(args)
+func (wc *workflowEnvironmentInterceptor) HandleQuery(ctx Context, in *HandleQueryInput) (interface{}, error) {
+	eo := getWorkflowEnvOptions(ctx)
+	handler, ok := eo.queryHandlers[in.QueryType]
+	// Should never happen because its presence is checked before this call too
+	if !ok {
+		keys := []string{QueryTypeStackTrace, QueryTypeOpenSessions}
+		for k := range eo.queryHandlers {
+			keys = append(keys, k)
+		}
+		return nil, fmt.Errorf("unknown queryType %v. KnownQueryTypes=%v", in.QueryType, keys)
+	}
+	return handler.execute(in.Args)
 }
 
-func (wc *workflowEnvironmentInterceptor) ExecuteWorkflow(ctx Context, workflowType string, inputArgs ...interface{}) (results []interface{}) {
+func (wc *workflowEnvironmentInterceptor) ExecuteWorkflow(ctx Context, in *ExecuteWorkflowInput) (interface{}, error) {
 	args := []reflect.Value{reflect.ValueOf(ctx)}
-	for _, arg := range inputArgs {
+	for _, arg := range in.Args {
 		// []byte arguments are not serialized
 		switch arg.(type) {
 		case []byte:
@@ -405,13 +420,33 @@ func (wc *workflowEnvironmentInterceptor) ExecuteWorkflow(ctx Context, workflowT
 	}
 	fnValue := reflect.ValueOf(wc.fn)
 	retValues := fnValue.Call(args)
-	for _, r := range retValues {
-		results = append(results, r.Interface())
+
+	// Expect either error or (result, error)
+	if len(retValues) == 0 || len(retValues) > 2 {
+		fnName, _ := getFunctionName(wc.fn)
+		return nil, fmt.Errorf(
+			"the function: %v signature returns %d results, it is expecting to return either error or (result, error)",
+			fnName, len(retValues))
 	}
-	return
+	// Convert error
+	var err error
+	if errResult := retValues[len(retValues)-1].Interface(); errResult != nil {
+		var ok bool
+		if err, ok = errResult.(error); !ok {
+			return nil, fmt.Errorf(
+				"failed to serialize error result as it is not of error interface: %v",
+				errResult)
+		}
+	}
+	// If there are two results, convert the first
+	var res interface{}
+	if len(retValues) > 1 {
+		res = retValues[0].Interface()
+	}
+	return res, err
 }
 
-func (wc *workflowEnvironmentInterceptor) Init(outbound WorkflowOutboundCallsInterceptor) error {
+func (wc *workflowEnvironmentInterceptor) Init(outbound WorkflowOutboundInterceptor) error {
 	wc.outboundInterceptor = outbound
 	return nil
 }
@@ -443,7 +478,7 @@ func (wc *workflowEnvironmentInterceptor) Init(outbound WorkflowOutboundCallsInt
 //
 // ExecuteActivity returns Future with activity result or failure.
 func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
-	i := getWorkflowOutboundCallsInterceptor(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
 	registry := getRegistryFromWorkflowContext(ctx)
 	activityType := getActivityFunctionName(registry, activity)
 	return i.ExecuteActivity(ctx, activityType, args...)
@@ -554,7 +589,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 //
 // ExecuteLocalActivity returns Future with local activity result or failure.
 func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future {
-	i := getWorkflowOutboundCallsInterceptor(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
 	env := getWorkflowEnvironment(ctx)
 	activityType, isMethod := getFunctionName(activity)
 	if alias, ok := env.GetRegistry().getActivityAlias(activityType); ok {
@@ -727,7 +762,7 @@ func (wc *workflowEnvironmentInterceptor) scheduleLocalActivity(ctx Context, par
 //
 // ExecuteChildWorkflow returns ChildWorkflowFuture.
 func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interface{}) ChildWorkflowFuture {
-	i := getWorkflowOutboundCallsInterceptor(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
 	env := getWorkflowEnvironment(ctx)
 	workflowType, err := getWorkflowFunctionName(env.GetRegistry(), childWorkflow)
 	if err != nil {
@@ -855,17 +890,17 @@ func (wInfo *WorkflowInfo) GetBinaryChecksum() string {
 
 // GetWorkflowInfo extracts info of a current workflow from a context.
 func GetWorkflowInfo(ctx Context) *WorkflowInfo {
-	i := getWorkflowOutboundCallsInterceptor(ctx)
-	return i.GetWorkflowInfo(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
+	return i.GetInfo(ctx)
 }
 
-func (wc *workflowEnvironmentInterceptor) GetWorkflowInfo(ctx Context) *WorkflowInfo {
+func (wc *workflowEnvironmentInterceptor) GetInfo(ctx Context) *WorkflowInfo {
 	return wc.env.WorkflowInfo()
 }
 
 // GetLogger returns a logger to be used in workflow's context
 func GetLogger(ctx Context) log.Logger {
-	i := getWorkflowOutboundCallsInterceptor(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
 	return i.GetLogger(ctx)
 }
 
@@ -875,7 +910,7 @@ func (wc *workflowEnvironmentInterceptor) GetLogger(ctx Context) log.Logger {
 
 // GetMetricsScope returns a metrics scope to be used in workflow's context
 func GetMetricsScope(ctx Context) tally.Scope {
-	i := getWorkflowOutboundCallsInterceptor(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
 	return i.GetMetricsScope(ctx)
 }
 
@@ -886,7 +921,7 @@ func (wc *workflowEnvironmentInterceptor) GetMetricsScope(ctx Context) tally.Sco
 // Now returns the current time in UTC. It corresponds to the time when the workflow task is started or replayed.
 // Workflow needs to use this method to get the wall clock time instead of the one from the golang library.
 func Now(ctx Context) time.Time {
-	i := getWorkflowOutboundCallsInterceptor(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
 	return i.Now(ctx).UTC()
 }
 
@@ -901,7 +936,7 @@ func (wc *workflowEnvironmentInterceptor) Now(ctx Context) time.Time {
 // The current timer resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
 func NewTimer(ctx Context, d time.Duration) Future {
-	i := getWorkflowOutboundCallsInterceptor(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
 	return i.NewTimer(ctx, d)
 }
 
@@ -946,7 +981,7 @@ func (wc *workflowEnvironmentInterceptor) NewTimer(ctx Context, d time.Duration)
 // The current timer resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
 func Sleep(ctx Context, d time.Duration) (err error) {
-	i := getWorkflowOutboundCallsInterceptor(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
 	return i.Sleep(ctx, d)
 }
 
@@ -965,7 +1000,7 @@ func (wc *workflowEnvironmentInterceptor) Sleep(ctx Context, d time.Duration) (e
 //	ctx := WithWorkflowNamespace(ctx, "namespace")
 // RequestCancelExternalWorkflow return Future with failure or empty success result.
 func RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future {
-	i := getWorkflowOutboundCallsInterceptor(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
 	return i.RequestCancelExternalWorkflow(ctx, workflowID, runID)
 }
 
@@ -1002,7 +1037,7 @@ func (wc *workflowEnvironmentInterceptor) RequestCancelExternalWorkflow(ctx Cont
 //	ctx := WithWorkflowNamespace(ctx, "namespace")
 // SignalExternalWorkflow return Future with failure or empty success result.
 func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future {
-	i := getWorkflowOutboundCallsInterceptor(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
 	return i.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
 }
 
@@ -1072,7 +1107,7 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 //   }
 // This is only supported when using ElasticSearch.
 func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error {
-	i := getWorkflowOutboundCallsInterceptor(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
 	return i.UpsertSearchAttributes(ctx, attributes)
 }
 
@@ -1194,7 +1229,7 @@ func withContextPropagators(ctx Context, contextPropagators []ContextPropagator)
 
 // GetSignalChannel returns channel corresponding to the signal name.
 func GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
-	i := getWorkflowOutboundCallsInterceptor(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
 	return i.GetSignalChannel(ctx, signalName)
 }
 
@@ -1259,7 +1294,7 @@ func (b EncodedValue) HasValue() bool {
 //         ....
 //  }
 func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedValue {
-	i := getWorkflowOutboundCallsInterceptor(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
 	return i.SideEffect(ctx, f)
 }
 
@@ -1297,7 +1332,7 @@ func (wc *workflowEnvironmentInterceptor) SideEffect(ctx Context, f func(ctx Con
 //
 // One good use case of MutableSideEffect() is to access dynamically changing config without breaking determinism.
 func MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
-	i := getWorkflowOutboundCallsInterceptor(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
 	return i.MutableSideEffect(ctx, id, f, equals)
 }
 
@@ -1372,7 +1407,7 @@ const TemporalChangeVersion = "TemporalChangeVersion"
 //    err = workflow.ExecuteActivity(ctx, qux, data).Get(ctx, nil)
 //  }
 func GetVersion(ctx Context, changeID string, minSupported, maxSupported Version) Version {
-	i := getWorkflowOutboundCallsInterceptor(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
 	return i.GetVersion(ctx, changeID, minSupported, maxSupported)
 }
 
@@ -1419,7 +1454,7 @@ func (wc *workflowEnvironmentInterceptor) GetVersion(ctx Context, changeID strin
 //    return nil
 //  }
 func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
-	i := getWorkflowOutboundCallsInterceptor(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
 	return i.SetQueryHandler(ctx, queryType, handler)
 }
 
@@ -1444,7 +1479,7 @@ func (wc *workflowEnvironmentInterceptor) SetQueryHandler(ctx Context, queryType
 // want to make sure it proceed only when that action succeed then it should panic on that failure. Panic raised from a
 // workflow causes workflow task to fail and temporal server will rescheduled later to retry.
 func IsReplaying(ctx Context) bool {
-	i := getWorkflowOutboundCallsInterceptor(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
 	return i.IsReplaying(ctx)
 }
 
@@ -1458,12 +1493,12 @@ func (wc *workflowEnvironmentInterceptor) IsReplaying(ctx Context) bool {
 // available when next run starts.
 // This HasLastCompletionResult() checks if there is such data available passing down from previous successful run.
 func HasLastCompletionResult(ctx Context) bool {
-	i := getWorkflowOutboundCallsInterceptor(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
 	return i.HasLastCompletionResult(ctx)
 }
 
 func (wc *workflowEnvironmentInterceptor) HasLastCompletionResult(ctx Context) bool {
-	info := wc.GetWorkflowInfo(ctx)
+	info := wc.GetInfo(ctx)
 	return info.lastCompletionResult != nil
 }
 
@@ -1473,12 +1508,12 @@ func (wc *workflowEnvironmentInterceptor) HasLastCompletionResult(ctx Context) b
 // available when next run starts.
 // This GetLastCompletionResult() extract the data into expected data structure.
 func GetLastCompletionResult(ctx Context, d ...interface{}) error {
-	i := getWorkflowOutboundCallsInterceptor(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
 	return i.GetLastCompletionResult(ctx, d...)
 }
 
 func (wc *workflowEnvironmentInterceptor) GetLastCompletionResult(ctx Context, d ...interface{}) error {
-	info := wc.GetWorkflowInfo(ctx)
+	info := wc.GetInfo(ctx)
 	if info.lastCompletionResult == nil {
 		return ErrNoData
 	}
@@ -1492,14 +1527,20 @@ func (wc *workflowEnvironmentInterceptor) GetLastCompletionResult(ctx Context, d
 //
 // See TestWorkflowEnvironment.SetLastError() for unit test support.
 func GetLastError(ctx Context) error {
-	i := getWorkflowOutboundCallsInterceptor(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
 	return i.GetLastError(ctx)
 }
 
 func (wc *workflowEnvironmentInterceptor) GetLastError(ctx Context) error {
-	info := wc.GetWorkflowInfo(ctx)
+	info := wc.GetInfo(ctx)
 	return ConvertFailureToError(info.lastFailure, wc.env.GetDataConverter())
 }
+
+// Needed so this can properly be considered an inbound interceptor
+func (*workflowEnvironmentInterceptor) mustEmbedWorkflowInboundInterceptorBase() {}
+
+// Needed so this can properly be considered an outbound interceptor
+func (*workflowEnvironmentInterceptor) mustEmbedWorkflowOutboundInterceptorBase() {}
 
 // WithActivityOptions adds all options to the copy of the context.
 // The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is

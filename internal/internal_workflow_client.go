@@ -75,6 +75,7 @@ type (
 		dataConverter      converter.DataConverter
 		contextPropagators []ContextPropagator
 		tracer             opentracing.Tracer
+		workerInterceptors []WorkerInterceptor
 	}
 
 	// namespaceClient is the client for managing namespaces.
@@ -952,6 +953,9 @@ func (wc *WorkflowClient) getWorkflowHeader(ctx context.Context) *commonpb.Heade
 	}
 	return header
 }
+
+// Allows WorkflowClient to implement ClientOutboundInterceptor
+func (*WorkflowClient) mustEmbedClientOutboundInterceptorBase() {}
 
 // Register a namespace with temporal server
 // The errors it can throw:

@@ -436,6 +436,11 @@ type (
 		// Optional parameter that is designed to be used *in tests*. It gets invoked last in
 		// the gRPC interceptor chain and can be used to induce artificial failures in test scenarios.
 		TrafficController TrafficController
+
+		// Interceptors to apply to the client. Any interceptors that also implement Interceptor (meaning they implement
+		// WorkerInterceptor in addition to ClientInterceptor) will be used for worker interception as well.  When worker
+		// interceptors are here and in worker options, the ones here wrap the ones in worker options.
+		Interceptors []ClientInterceptor
 	}
 
 	// HeadersProvider returns a map of gRPC headers that should be used on every request.
@@ -664,7 +669,20 @@ func NewClient(options ClientOptions) (Client, error) {
 		return nil, err
 	}
 
-	return NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
+	// Create a wrapped client. We wrap it and preserve the root *WorkflowClient
+	// since it is needed by NewWorker.
+	root := NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options)
+	client := &wrappedClient{ClientOutboundInterceptor: root, root: root}
+	// Wrap the client in interceptors (working backwards)
+	for i := len(options.Interceptors) - 1; i >= 0; i-- {
+		client.ClientOutboundInterceptor = options.Interceptors[i].InterceptClient(client.ClientOutboundInterceptor)
+	}
+	return client, nil
+}
+
+type wrappedClient struct {
+	ClientOutboundInterceptor
+	root *WorkflowClient
 }
 
 func newDialParameters(options *ClientOptions) dialParameters {
@@ -697,6 +715,14 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		options.Tracer = opentracing.NoopTracer{}
 	}
 
+	// Collect set of applicable worker interceptors
+	var workerInterceptors []WorkerInterceptor
+	for _, interceptor := range options.Interceptors {
+		if workerInterceptor, _ := interceptor.(WorkerInterceptor); workerInterceptor != nil {
+			workerInterceptors = append(workerInterceptors, workerInterceptor)
+		}
+	}
+
 	return &WorkflowClient{
 		workflowService:    workflowServiceClient,
 		connectionCloser:   connectionCloser,
@@ -708,6 +734,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		dataConverter:      options.DataConverter,
 		contextPropagators: options.ContextPropagators,
 		tracer:             options.Tracer,
+		workerInterceptors: workerInterceptors,
 	}
 }
 

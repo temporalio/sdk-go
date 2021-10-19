@@ -343,39 +343,6 @@ func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataCo
 	return result, errInterface
 }
 
-func serializeResults(f interface{}, results []interface{}, dataConverter converter.DataConverter) (result *commonpb.Payloads, err error) {
-	// results contain all results including error
-	resultSize := len(results)
-
-	if resultSize < 1 || resultSize > 2 {
-		fnName, _ := getFunctionName(f)
-		err = fmt.Errorf(
-			"the function: %v signature returns %d results, it is expecting to return either error or (result, error)",
-			fnName, resultSize)
-		return
-	}
-	if resultSize > 1 {
-		retValue := results[0]
-		if retValue != nil {
-			result, err = encodeArg(dataConverter, retValue)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-	errResult := results[resultSize-1]
-	if errResult != nil {
-		var ok bool
-		err, ok = errResult.(error)
-		if !ok {
-			err = fmt.Errorf(
-				"failed to serialize error result as it is not of error interface: %v",
-				errResult)
-		}
-	}
-	return
-}
-
 func setActivityParametersIfNotExist(ctx Context) Context {
 	params := getActivityOptions(ctx)
 	var newParams ExecuteActivityOptions

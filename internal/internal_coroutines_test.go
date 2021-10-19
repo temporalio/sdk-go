@@ -40,11 +40,11 @@ import (
 
 func createRootTestContext() (interceptor *workflowEnvironmentInterceptor, ctx Context) {
 	env := new(WorkflowUnitTest).NewTestWorkflowEnvironment()
-	envInterceptor, err := newWorkflowInterceptors(env.impl, env.impl.GetRegistry().getInterceptors())
+	envInterceptor, ctx, err := newWorkflowContext(env.impl, env.impl.GetRegistry().interceptors)
 	if err != nil {
 		panic(err)
 	}
-	return envInterceptor, newWorkflowContext(env.impl, envInterceptor.outboundInterceptor, envInterceptor)
+	return envInterceptor, ctx
 }
 
 func createNewDispatcher(f func(ctx Context)) dispatcher {

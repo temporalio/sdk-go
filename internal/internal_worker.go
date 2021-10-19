@@ -441,19 +441,11 @@ func (aw *activityWorker) Stop() {
 
 type registry struct {
 	sync.Mutex
-	workflowFuncMap      map[string]interface{}
-	workflowAliasMap     map[string]string
-	activityFuncMap      map[string]activity
-	activityAliasMap     map[string]string
-	workflowInterceptors []WorkflowInterceptor
-}
-
-func (r *registry) WorkflowInterceptors() []WorkflowInterceptor {
-	return r.workflowInterceptors
-}
-
-func (r *registry) SetWorkflowInterceptors(workflowInterceptors []WorkflowInterceptor) {
-	r.workflowInterceptors = workflowInterceptors
+	workflowFuncMap  map[string]interface{}
+	workflowAliasMap map[string]string
+	activityFuncMap  map[string]activity
+	activityAliasMap map[string]string
+	interceptors     []WorkerInterceptor
 }
 
 func (r *registry) RegisterWorkflow(af interface{}) {
@@ -669,12 +661,8 @@ func (r *registry) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, e
 	if ok {
 		return wdf.NewWorkflowDefinition(), nil
 	}
-	executor := &workflowExecutor{workflowType: lookup, fn: wf, interceptors: r.getInterceptors()}
+	executor := &workflowExecutor{workflowType: lookup, fn: wf, interceptors: r.interceptors}
 	return newSyncWorkflowDefinition(executor), nil
-}
-
-func (r *registry) getInterceptors() []WorkflowInterceptor {
-	return r.workflowInterceptors
 }
 
 // Validate function parameters.
@@ -729,7 +717,7 @@ func newRegistry() *registry {
 type workflowExecutor struct {
 	workflowType string
 	fn           interface{}
-	interceptors []WorkflowInterceptor
+	interceptors []WorkerInterceptor
 }
 
 func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*commonpb.Payloads, error) {
@@ -747,8 +735,14 @@ func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*com
 
 	envInterceptor := getWorkflowEnvironmentInterceptor(ctx)
 	envInterceptor.fn = we.fn
-	results := envInterceptor.inboundInterceptor.ExecuteWorkflow(ctx, we.workflowType, args...)
-	return serializeResults(we.fn, results, dataConverter)
+
+	// Execute and serialize result
+	result, err := envInterceptor.inboundInterceptor.ExecuteWorkflow(ctx, &ExecuteWorkflowInput{Args: args})
+	var serializedResult *commonpb.Payloads
+	if err == nil && result != nil {
+		serializedResult, err = encodeArg(dataConverter, result)
+	}
+	return serializedResult, err
 }
 
 // Wrapper to execute activity functions.
@@ -1314,7 +1308,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 
 	// worker specific registry
 	registry := newRegistry()
-	registry.SetWorkflowInterceptors(options.WorkflowInterceptorChainFactories)
+	// Build set of interceptors using the applicable client ones first (being
+	// careful not to append to the existing slice)
+	registry.interceptors = make([]WorkerInterceptor, 0, len(client.workerInterceptors)+len(options.Interceptors))
+	registry.interceptors = append(append(registry.interceptors, client.workerInterceptors...), options.Interceptors...)
 
 	// workflow factory.
 	var workflowWorker *workflowWorker
