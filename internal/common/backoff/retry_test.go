@@ -173,7 +173,7 @@ func TestConcurrentRetrier(t *testing.T) {
 	a.Equal(int64(1), retrier.failureCount)
 	retrier.Succeeded()
 	a.Equal(int64(0), retrier.failureCount)
-	sleepDuration := retrier.throttleInternal()
+	sleepDuration := retrier.throttleInternal(nil)
 	a.Equal(done, sleepDuration)
 
 	// Multiple count check.
@@ -184,7 +184,7 @@ func TestConcurrentRetrier(t *testing.T) {
 	ch := make(chan time.Duration, 3)
 	go func() {
 		for i := 0; i < 3; i++ {
-			ch <- retrier.throttleInternal()
+			ch <- retrier.throttleInternal(nil)
 		}
 	}()
 	for i := 0; i < 3; i++ {
@@ -197,7 +197,7 @@ func TestConcurrentRetrier(t *testing.T) {
 	// Verify we don't have any sleep times.
 	go func() {
 		for i := 0; i < 3; i++ {
-			ch <- retrier.throttleInternal()
+			ch <- retrier.throttleInternal(nil)
 		}
 	}()
 	for i := 0; i < 3; i++ {
