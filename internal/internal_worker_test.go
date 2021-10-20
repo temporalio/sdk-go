@@ -2323,7 +2323,7 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 
 func TestActivityErrorWithDetailsWithDataConverter(t *testing.T) {
 	dc := iconverter.NewTestDataConverter()
-	ctx := context.WithValue(context.Background(), activityEnvContextKey, &activityEnvironment{dataConverter: dc})
+	ctx, _ := newActivityContext(context.Background(), nil, &activityEnvironment{dataConverter: dc})
 	testActivityErrorWithDetailsHelper(ctx, t, dc)
 }
 
@@ -2386,7 +2386,7 @@ func testActivityCanceledErrorHelper(ctx context.Context, t *testing.T, dataConv
 
 func TestActivityCanceledErrorWithDataConverter(t *testing.T) {
 	dc := iconverter.NewTestDataConverter()
-	ctx := context.WithValue(context.Background(), activityEnvContextKey, &activityEnvironment{dataConverter: dc})
+	ctx, _ := newActivityContext(context.Background(), nil, &activityEnvironment{dataConverter: dc})
 	testActivityCanceledErrorHelper(ctx, t, dc)
 }
 
@@ -2415,7 +2415,7 @@ func testActivityExecutionVariousTypesHelper(ctx context.Context, t *testing.T, 
 
 func TestActivityExecutionVariousTypesWithDataConverter(t *testing.T) {
 	dc := iconverter.NewTestDataConverter()
-	ctx := context.WithValue(context.Background(), activityEnvContextKey, &activityEnvironment{
+	ctx, _ := newActivityContext(context.Background(), nil, &activityEnvironment{
 		dataConverter: dc,
 	})
 	testActivityExecutionVariousTypesHelper(ctx, t, dc)

@@ -245,7 +245,7 @@ type (
 
 const (
 	workflowEnvironmentContextKey    = "workflowEnv"
-	workflowInterceptorsContextKey   = "workflowInterceptor"
+	workflowInterceptorContextKey    = "workflowInterceptor"
 	localActivityFnContextKey        = "localActivityFn"
 	workflowEnvInterceptorContextKey = "envInterceptor"
 	workflowResultContextKey         = "workflowResult"
@@ -299,7 +299,7 @@ func (wc *workflowEnvironmentInterceptor) Go(ctx Context, name string, f func(ct
 }
 
 func getWorkflowOutboundInterceptor(ctx Context) WorkflowOutboundInterceptor {
-	wc := ctx.Value(workflowInterceptorsContextKey)
+	wc := ctx.Value(workflowInterceptorContextKey)
 	if wc == nil {
 		panic("getWorkflowOutboundInterceptor: Not a workflow context")
 	}
@@ -458,7 +458,7 @@ func newWorkflowContext(
 	envInterceptor.inboundInterceptor = envInterceptor
 	envInterceptor.outboundInterceptor = envInterceptor
 	ctx = WithValue(ctx, workflowEnvInterceptorContextKey, envInterceptor)
-	ctx = WithValue(ctx, workflowInterceptorsContextKey, envInterceptor.outboundInterceptor)
+	ctx = WithValue(ctx, workflowInterceptorContextKey, envInterceptor.outboundInterceptor)
 
 	// Intercept, run init, and put the new outbound interceptor on the context
 	for i := len(interceptors) - 1; i >= 0; i-- {
@@ -468,7 +468,7 @@ func newWorkflowContext(
 	if err != nil {
 		return nil, nil, err
 	}
-	ctx = WithValue(ctx, workflowInterceptorsContextKey, envInterceptor.outboundInterceptor)
+	ctx = WithValue(ctx, workflowInterceptorContextKey, envInterceptor.outboundInterceptor)
 
 	return envInterceptor, ctx, nil
 }
@@ -536,13 +536,9 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 		}
 
 		// Decode the arguments
-		reflectArgs, err := decodeArgs(handler.dataConverter, reflect.TypeOf(handler.fn), queryArgs)
+		args, err := decodeArgsToRawValues(handler.dataConverter, reflect.TypeOf(handler.fn), queryArgs)
 		if err != nil {
 			return nil, fmt.Errorf("unable to decode the input for queryType: %v, with error: %w", handler.queryType, err)
-		}
-		args := make([]interface{}, len(reflectArgs))
-		for i, reflectArg := range reflectArgs {
-			args[i] = reflectArg.Interface()
 		}
 
 		// Invoke
@@ -1413,27 +1409,8 @@ func (h *queryHandler) execute(input []interface{}) (result interface{}, err err
 		}
 	}()
 
-	args := make([]reflect.Value, len(input))
-	for i, input := range input {
-		args[i] = reflect.ValueOf(input)
-	}
-
-	// invoke the query handler with arguments.
-	fnValue := reflect.ValueOf(h.fn)
-	retValues := fnValue.Call(args)
-
 	// we already verified (in validateHandlerFn()) that the query handler returns 2 values
-	result = retValues[0].Interface()
-
-	errValue := retValues[1]
-	if errValue.IsNil() {
-		return result, nil
-	}
-	err, ok := errValue.Interface().(error)
-	if !ok {
-		return nil, fmt.Errorf("failed to parse error result as it is not of error interface: %v", errValue)
-	}
-	return result, err
+	return executeFunction(h.fn, input)
 }
 
 // Add adds delta, which may be negative, to the WaitGroup counter.

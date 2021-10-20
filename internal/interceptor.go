@@ -39,7 +39,7 @@ type Interceptor interface {
 }
 
 type WorkerInterceptor interface {
-	InterceptActivity(ctx Context, next ActivityInboundInterceptor) ActivityInboundInterceptor
+	InterceptActivity(ctx context.Context, next ActivityInboundInterceptor) ActivityInboundInterceptor
 
 	InterceptWorkflow(ctx Context, next WorkflowInboundInterceptor) WorkflowInboundInterceptor
 

@@ -1769,7 +1769,11 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	workflowType := t.WorkflowType.GetName()
 	activityType := t.ActivityType.GetName()
 	activityMetricsScope := metrics.GetMetricsScopeForActivity(ath.metricsScope, workflowType, activityType, ath.taskQueueName)
-	ctx := WithActivityTask(canCtx, t, taskQueue, invoker, ath.logger, activityMetricsScope, ath.dataConverter, ath.workerStopCh, ath.contextPropagators, ath.tracer)
+	ctx, err := WithActivityTask(canCtx, t, taskQueue, invoker, ath.logger, activityMetricsScope,
+		ath.dataConverter, ath.workerStopCh, ath.contextPropagators, ath.tracer, ath.registry.interceptors)
+	if err != nil {
+		return nil, err
+	}
 
 	// We must capture the context here because it is changed later to one that is
 	// cancelled when the activity is done
@@ -1815,7 +1819,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		}
 	}
 
-	info := ctx.Value(activityEnvContextKey).(*activityEnvironment)
+	info := getActivityEnv(ctx)
 	ctx, dlCancelFunc := context.WithDeadline(ctx, info.deadline)
 	defer dlCancelFunc()
 

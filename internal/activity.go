@@ -153,27 +153,12 @@ type (
 
 // GetActivityInfo returns information about currently executing activity.
 func GetActivityInfo(ctx context.Context) ActivityInfo {
-	env := getActivityEnv(ctx)
-	return ActivityInfo{
-		ActivityID:        env.activityID,
-		ActivityType:      env.activityType,
-		TaskToken:         env.taskToken,
-		WorkflowExecution: env.workflowExecution,
-		HeartbeatTimeout:  env.heartbeatTimeout,
-		Deadline:          env.deadline,
-		ScheduledTime:     env.scheduledTime,
-		StartedTime:       env.startedTime,
-		TaskQueue:         env.taskQueue,
-		Attempt:           env.attempt,
-		WorkflowType:      env.workflowType,
-		WorkflowNamespace: env.workflowNamespace,
-	}
+	return getActivityOutboundInterceptor(ctx).GetInfo(ctx)
 }
 
 // HasHeartbeatDetails checks if there is heartbeat details from last attempt.
 func HasHeartbeatDetails(ctx context.Context) bool {
-	env := getActivityEnv(ctx)
-	return env.heartbeatDetails != nil
+	return getActivityOutboundInterceptor(ctx).HasHeartbeatDetails(ctx)
 }
 
 // GetHeartbeatDetails extract heartbeat details from last failed attempt. This is used in combination with retry policy.
@@ -182,24 +167,17 @@ func HasHeartbeatDetails(ctx context.Context) bool {
 // details reported by activity from the failed attempt, the details would be delivered along with the activity task for
 // retry attempt. Activity could extract the details by GetHeartbeatDetails() and resume from the progress.
 func GetHeartbeatDetails(ctx context.Context, d ...interface{}) error {
-	env := getActivityEnv(ctx)
-	if env.heartbeatDetails == nil {
-		return ErrNoData
-	}
-	encoded := newEncodedValues(env.heartbeatDetails, env.dataConverter)
-	return encoded.Get(d...)
+	return getActivityOutboundInterceptor(ctx).GetHeartbeatDetails(ctx, d...)
 }
 
 // GetActivityLogger returns a logger that can be used in activity
 func GetActivityLogger(ctx context.Context) log.Logger {
-	env := getActivityEnv(ctx)
-	return env.logger
+	return getActivityOutboundInterceptor(ctx).GetLogger(ctx)
 }
 
 // GetActivityMetricsScope returns a metrics scope that can be used in activity
 func GetActivityMetricsScope(ctx context.Context) tally.Scope {
-	env := getActivityEnv(ctx)
-	return env.metricsScope
+	return getActivityOutboundInterceptor(ctx).GetMetricsScope(ctx)
 }
 
 // GetWorkerStopChannel returns a read-only channel. The closure of this channel indicates the activity worker is stopping.
@@ -207,8 +185,7 @@ func GetActivityMetricsScope(ctx context.Context) tally.Scope {
 // hit, the worker will cancel the activity context and then exit. The timeout can be defined by worker option: WorkerStopTimeout.
 // Use this channel to handle activity graceful exit when the activity worker stops.
 func GetWorkerStopChannel(ctx context.Context) <-chan struct{} {
-	env := getActivityEnv(ctx)
-	return env.workerStopChannel
+	return getActivityOutboundInterceptor(ctx).GetWorkerStopChannel(ctx)
 }
 
 // RecordActivityHeartbeat sends heartbeat for the currently executing activity
@@ -220,26 +197,7 @@ func GetWorkerStopChannel(ctx context.Context) <-chan struct{} {
 // details - the details that you provided here can be seen in the worflow when it receives TimeoutError, you
 // can check error TimeoutType()/Details().
 func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
-	env := getActivityEnv(ctx)
-	if env.isLocalActivity {
-		// no-op for local activity
-		return
-	}
-	var data *commonpb.Payloads
-	var err error
-	// We would like to be a able to pass in "nil" as part of details(that is no progress to report to)
-	if len(details) > 1 || (len(details) == 1 && details[0] != nil) {
-		data, err = encodeArgs(getDataConverterFromActivityCtx(ctx), details)
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	err = env.serviceInvoker.Heartbeat(ctx, data, false)
-	if err != nil {
-		log := GetActivityLogger(ctx)
-		log.Debug("RecordActivityHeartbeat with error", tagError, err)
-	}
+	getActivityOutboundInterceptor(ctx).RecordHeartbeat(ctx, details...)
 }
 
 // ServiceInvoker abstracts calls to the Temporal service from an activity implementation.
@@ -264,7 +222,8 @@ func WithActivityTask(
 	workerStopChannel <-chan struct{},
 	contextPropagators []ContextPropagator,
 	tracer opentracing.Tracer,
-) context.Context {
+	interceptors []WorkerInterceptor,
+) (context.Context, error) {
 	var deadline time.Time
 	scheduled := common.TimeValue(task.GetScheduledTime())
 	started := common.TimeValue(task.GetStartedTime())
@@ -294,7 +253,7 @@ func WithActivityTask(
 		tagRunID, task.WorkflowExecution.RunId,
 	)
 
-	return context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
+	return newActivityContext(ctx, interceptors, &activityEnvironment{
 		taskToken:      task.TaskToken,
 		serviceInvoker: invoker,
 		activityType:   ActivityType{Name: task.ActivityType.GetName()},
@@ -323,7 +282,14 @@ func WithActivityTask(
 }
 
 // WithLocalActivityTask adds local activity specific information into context.
-func WithLocalActivityTask(ctx context.Context, task *localActivityTask, logger log.Logger, scope tally.Scope, dataConverter converter.DataConverter) context.Context {
+func WithLocalActivityTask(
+	ctx context.Context,
+	task *localActivityTask,
+	logger log.Logger,
+	scope tally.Scope,
+	dataConverter converter.DataConverter,
+	interceptors []WorkerInterceptor,
+) (context.Context, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -338,7 +304,7 @@ func WithLocalActivityTask(ctx context.Context, task *localActivityTask, logger 
 		tagWorkflowID, task.params.WorkflowInfo.WorkflowExecution.ID,
 		tagRunID, task.params.WorkflowInfo.WorkflowExecution.RunID,
 	)
-	ctx = context.WithValue(ctx, activityEnvContextKey, &activityEnvironment{
+	return newActivityContext(ctx, interceptors, &activityEnvironment{
 		workflowType:      &workflowTypeLocal,
 		workflowNamespace: task.params.WorkflowInfo.Namespace,
 		taskQueue:         task.params.WorkflowInfo.TaskQueueName,
@@ -351,5 +317,32 @@ func WithLocalActivityTask(ctx context.Context, task *localActivityTask, logger 
 		dataConverter:     dataConverter,
 		attempt:           task.attempt,
 	})
-	return ctx
+}
+
+func newActivityContext(
+	ctx context.Context,
+	interceptors []WorkerInterceptor,
+	env *activityEnvironment,
+) (context.Context, error) {
+	ctx = context.WithValue(ctx, activityEnvContextKey, env)
+
+	// Create interceptor with default inbound and outbound values and put on
+	// context
+	envInterceptor := &activityEnvironmentInterceptor{env: env}
+	envInterceptor.inboundInterceptor = envInterceptor
+	envInterceptor.outboundInterceptor = envInterceptor
+	ctx = context.WithValue(ctx, activityEnvInterceptorContextKey, envInterceptor)
+	ctx = context.WithValue(ctx, activityInterceptorContextKey, envInterceptor.outboundInterceptor)
+
+	// Intercept, run init, and put the new outbound interceptor on the context
+	for i := len(interceptors) - 1; i >= 0; i-- {
+		envInterceptor.inboundInterceptor = interceptors[i].InterceptActivity(ctx, envInterceptor.inboundInterceptor)
+	}
+	err := envInterceptor.inboundInterceptor.Init(envInterceptor)
+	if err != nil {
+		return nil, err
+	}
+	ctx = context.WithValue(ctx, activityInterceptorContextKey, envInterceptor.outboundInterceptor)
+
+	return ctx, nil
 }

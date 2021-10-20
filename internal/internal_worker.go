@@ -257,10 +257,16 @@ func newWorkflowWorkerInternal(service workflowservice.WorkflowServiceClient, pa
 	} else {
 		taskHandler = newWorkflowTaskHandler(params, ppMgr, registry)
 	}
-	return newWorkflowTaskWorkerInternal(taskHandler, service, params, workerStopChannel)
+	return newWorkflowTaskWorkerInternal(taskHandler, service, params, workerStopChannel, registry.interceptors)
 }
 
-func newWorkflowTaskWorkerInternal(taskHandler WorkflowTaskHandler, service workflowservice.WorkflowServiceClient, params workerExecutionParameters, stopC chan struct{}) *workflowWorker {
+func newWorkflowTaskWorkerInternal(
+	taskHandler WorkflowTaskHandler,
+	service workflowservice.WorkflowServiceClient,
+	params workerExecutionParameters,
+	stopC chan struct{},
+	interceptors []WorkerInterceptor,
+) *workflowWorker {
 	ensureRequiredParams(&params)
 	poller := newWorkflowTaskPoller(taskHandler, service, params)
 	worker := newBaseWorker(baseWorkerOptions{
@@ -286,7 +292,7 @@ func newWorkflowTaskWorkerInternal(taskHandler WorkflowTaskHandler, service work
 	}
 
 	// 2) local activity task poller will poll from laTunnel, and result will be pushed to laTunnel
-	localActivityTaskPoller := newLocalActivityPoller(params, laTunnel)
+	localActivityTaskPoller := newLocalActivityPoller(params, laTunnel, interceptors)
 	localActivityWorker := newBaseWorker(baseWorkerOptions{
 		pollerCount:       1, // 1 poller (from local channel) is enough for local activity
 		maxConcurrentTask: params.ConcurrentLocalActivityExecutionSize,
@@ -721,17 +727,15 @@ type workflowExecutor struct {
 }
 
 func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*commonpb.Payloads, error) {
-	var args []interface{}
 	dataConverter := WithWorkflowContext(ctx, getWorkflowEnvOptions(ctx).DataConverter)
 	fnType := reflect.TypeOf(we.fn)
 
-	decoded, err := decodeArgsToValues(dataConverter, fnType, input)
+	args, err := decodeArgsToRawValues(dataConverter, fnType, input)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"unable to decode the workflow function input payload with error: %w, function name: %v",
 			err, we.workflowType)
 	}
-	args = append(args, decoded...)
 
 	envInterceptor := getWorkflowEnvironmentInterceptor(ctx)
 	envInterceptor.fn = we.fn
@@ -761,56 +765,38 @@ func (ae *activityExecutor) GetFunction() interface{} {
 
 func (ae *activityExecutor) Execute(ctx context.Context, input *commonpb.Payloads) (*commonpb.Payloads, error) {
 	fnType := reflect.TypeOf(ae.fn)
-	var args []reflect.Value
 	dataConverter := getDataConverterFromActivityCtx(ctx)
 
-	// activities optionally might not take context.
-	if fnType.NumIn() > 0 && isActivityContext(fnType.In(0)) {
-		args = append(args, reflect.ValueOf(ctx))
-	}
-
-	decoded, err := decodeArgs(dataConverter, fnType, input)
+	args, err := decodeArgsToRawValues(dataConverter, fnType, input)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"unable to decode the activity function input payload with error: %w for function name: %v",
 			err, ae.name)
 	}
-	args = append(args, decoded...)
 
-	fnValue := reflect.ValueOf(ae.fn)
-	retValues := fnValue.Call(args)
-	return validateFunctionAndGetResults(ae.fn, retValues, dataConverter)
+	return ae.ExecuteWithActualArgs(ctx, args)
 }
 
-func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, actualArgs []interface{}) (*commonpb.Payloads, error) {
-	retValues := ae.executeWithActualArgsWithoutParseResult(ctx, actualArgs)
+func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, args []interface{}) (*commonpb.Payloads, error) {
 	dataConverter := getDataConverterFromActivityCtx(ctx)
 
-	return validateFunctionAndGetResults(ae.fn, retValues, dataConverter)
-}
+	envInterceptor := getActivityEnvironmentInterceptor(ctx)
+	envInterceptor.fn = ae.fn
 
-func (ae *activityExecutor) executeWithActualArgsWithoutParseResult(ctx context.Context, actualArgs []interface{}) []reflect.Value {
-	fnType := reflect.TypeOf(ae.fn)
-	var args []reflect.Value
-
-	// activities optionally might not take context.
-	argsOffeset := 0
-	if fnType.NumIn() > 0 && isActivityContext(fnType.In(0)) {
-		args = append(args, reflect.ValueOf(ctx))
-		argsOffeset = 1
-	}
-
-	for i, arg := range actualArgs {
-		if arg == nil {
-			args = append(args, reflect.New(fnType.In(i+argsOffeset)).Elem())
-		} else {
-			args = append(args, reflect.ValueOf(arg))
+	// Execute and serialize result
+	result, resultErr := envInterceptor.inboundInterceptor.ExecuteActivity(ctx, &ExecuteActivityInput{Args: args})
+	var serializedResult *commonpb.Payloads
+	if result != nil {
+		// As a special case, if the result is already a payload, just use it
+		var ok bool
+		if serializedResult, ok = result.(*commonpb.Payloads); !ok {
+			var err error
+			if serializedResult, err = encodeArg(dataConverter, result); err != nil {
+				return nil, err
+			}
 		}
 	}
-
-	fnValue := reflect.ValueOf(ae.fn)
-	retValues := fnValue.Call(args)
-	return retValues
+	return serializedResult, resultErr
 }
 
 func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverter {
@@ -1501,4 +1487,48 @@ func getTestTags(ctx context.Context) map[string]map[string]string {
 		}
 	}
 	return nil
+}
+
+// Same as executeFunction but injects the context as the first parameter if the
+// function takes it (regardless of existing parameters).
+func executeFunctionWithContext(ctx context.Context, fn interface{}, args []interface{}) (interface{}, error) {
+	if fnType := reflect.TypeOf(fn); fnType.NumIn() > 0 && isActivityContext(fnType.In(0)) {
+		args = append([]interface{}{ctx}, args...)
+	}
+	return executeFunction(fn, args)
+}
+
+// Executes function and ensures that there is always 1 or 2 results and second
+// result is error.
+func executeFunction(fn interface{}, args []interface{}) (interface{}, error) {
+	reflectArgs := make([]reflect.Value, len(args))
+	for i, arg := range args {
+		reflectArgs[i] = reflect.ValueOf(arg)
+	}
+	fnValue := reflect.ValueOf(fn)
+	retValues := fnValue.Call(reflectArgs)
+
+	// Expect either error or (result, error)
+	if len(retValues) == 0 || len(retValues) > 2 {
+		fnName, _ := getFunctionName(fn)
+		return nil, fmt.Errorf(
+			"the function: %v signature returns %d results, it is expecting to return either error or (result, error)",
+			fnName, len(retValues))
+	}
+	// Convert error
+	var err error
+	if errResult := retValues[len(retValues)-1].Interface(); errResult != nil {
+		var ok bool
+		if err, ok = errResult.(error); !ok {
+			return nil, fmt.Errorf(
+				"failed to serialize error result as it is not of error interface: %v",
+				errResult)
+		}
+	}
+	// If there are two results, convert the first only if it's not a nil pointer
+	var res interface{}
+	if len(retValues) > 1 && (retValues[0].Kind() != reflect.Ptr || !retValues[0].IsNil()) {
+		res = retValues[0].Interface()
+	}
+	return res, err
 }

@@ -133,6 +133,7 @@ type (
 		dataConverter      converter.DataConverter
 		contextPropagators []ContextPropagator
 		tracer             opentracing.Tracer
+		interceptors       []WorkerInterceptor
 	}
 
 	localActivityResult struct {
@@ -413,7 +414,11 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 	return
 }
 
-func newLocalActivityPoller(params workerExecutionParameters, laTunnel *localActivityTunnel) *localActivityTaskPoller {
+func newLocalActivityPoller(
+	params workerExecutionParameters,
+	laTunnel *localActivityTunnel,
+	interceptors []WorkerInterceptor,
+) *localActivityTaskPoller {
 	handler := &localActivityTaskHandler{
 		userContext:        params.UserContext,
 		metricsScope:       params.MetricsScope,
@@ -421,6 +426,7 @@ func newLocalActivityPoller(params workerExecutionParameters, laTunnel *localAct
 		dataConverter:      params.DataConverter,
 		contextPropagators: params.ContextPropagators,
 		tracer:             params.Tracer,
+		interceptors:       interceptors,
 	}
 	return &localActivityTaskPoller{
 		basePoller: basePoller{metricsScope: params.MetricsScope, stopC: params.WorkerStopChannel},
@@ -469,7 +475,11 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 			tagAttempt, task.attempt,
 		)
 	})
-	ctx := WithLocalActivityTask(lath.userContext, task, lath.logger, lath.metricsScope, lath.dataConverter)
+	ctx, err := WithLocalActivityTask(lath.userContext, task, lath.logger, lath.metricsScope,
+		lath.dataConverter, lath.interceptors)
+	if err != nil {
+		return &localActivityResult{task: task, err: fmt.Errorf("failed building context: %w", err)}
+	}
 
 	// propagate context information into the local activity activity context from the headers
 	for _, ctxProp := range lath.contextPropagators {
@@ -532,7 +542,6 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 	task.Unlock()
 
 	var laResult *commonpb.Payloads
-	var err error
 	doneCh := make(chan struct{})
 	go func(ch chan struct{}) {
 		laStartTime := time.Now()

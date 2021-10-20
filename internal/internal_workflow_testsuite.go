@@ -622,6 +622,7 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 		metricsScope: env.metricsScope,
 		logger:       env.logger,
 		tracer:       opentracing.NoopTracer{},
+		interceptors: env.registry.interceptors,
 	}
 
 	result := taskHandler.executeLocalActivityTask(task)
@@ -1381,6 +1382,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocal
 		dataConverter:      env.dataConverter,
 		tracer:             env.tracer,
 		contextPropagators: env.contextPropagators,
+		interceptors:       env.registry.interceptors,
 	}
 
 	env.localActivities[activityID] = task
@@ -1607,7 +1609,12 @@ func (a *activityExecutorWrapper) ExecuteWithActualArgs(ctx context.Context, inp
 
 	m := &mockWrapper{env: a.env, name: a.name, fn: a.fn, isWorkflow: false}
 	if mockRet := m.getMockReturnWithActualArgs(ctx, inputArgs); mockRet != nil {
-		return m.executeMockWithActualArgs(ctx, inputArgs, mockRet)
+		// check if mock returns function which must match to the actual function.
+		if mockFn := m.getMockFn(mockRet); mockFn != nil {
+			executor := &activityExecutor{name: m.name, fn: mockFn}
+			return executor.ExecuteWithActualArgs(ctx, inputArgs)
+		}
+		return m.getMockValue(mockRet)
 	}
 
 	return a.activityExecutor.ExecuteWithActualArgs(ctx, inputArgs)
@@ -1825,17 +1832,6 @@ func (m *mockWrapper) executeMock(ctx interface{}, input *commonpb.Payloads, moc
 	return m.getMockValue(mockRet)
 }
 
-func (m *mockWrapper) executeMockWithActualArgs(ctx interface{}, inputArgs []interface{}, mockRet mock.Arguments) (*commonpb.Payloads, error) {
-	fnName := m.name
-	// check if mock returns function which must match to the actual function.
-	if mockFn := m.getMockFn(mockRet); mockFn != nil {
-		executor := &activityExecutor{name: fnName, fn: mockFn}
-		return executor.ExecuteWithActualArgs(ctx.(context.Context), inputArgs)
-	}
-
-	return m.getMockValue(mockRet)
-}
-
 func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskQueue string, dataConverter converter.DataConverter) ActivityTaskHandler {
 	setWorkerOptionsDefaults(&env.workerOptions)
 	params := workerExecutionParameters{
@@ -2035,8 +2031,7 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace,
 		m := &mockWrapper{name: mockMethodForRequestCancelExternalWorkflow, fn: mockFnRequestCancelExternalWorkflow}
 		var err error
 		if mockFn := m.getMockFn(mockRet); mockFn != nil {
-			executor := &activityExecutor{name: mockMethodForRequestCancelExternalWorkflow, fn: mockFn}
-			_, err = executor.ExecuteWithActualArgs(context.TODO(), args)
+			_, err = executeFunctionWithContext(context.TODO(), mockFn, args)
 		} else {
 			_, err = m.getMockValue(mockRet)
 		}
@@ -2087,8 +2082,7 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(namespace, workfl
 		m := &mockWrapper{name: mockMethodForSignalExternalWorkflow, fn: mockFnSignalExternalWorkflow}
 		var err error
 		if mockFn := m.getMockFn(mockRet); mockFn != nil {
-			executor := &activityExecutor{name: mockMethodForSignalExternalWorkflow, fn: mockFn}
-			_, err = executor.ExecuteWithActualArgs(context.TODO(), args)
+			_, err = executeFunctionWithContext(context.TODO(), mockFn, args)
 		} else {
 			_, err = m.getMockValue(mockRet)
 		}
@@ -2159,8 +2153,15 @@ func (env *testWorkflowEnvironmentImpl) getMockedVersion(mockedChangeID, changeI
 	mockRet := env.mock.MethodCalled(mockMethod, args...)
 	m := &mockWrapper{name: mockMethodForGetVersion, fn: mockFnGetVersion}
 	if mockFn := m.getMockFn(mockRet); mockFn != nil {
-		executor := &activityExecutor{name: mockMethodForGetVersion, fn: mockFn}
-		reflectValues := executor.executeWithActualArgsWithoutParseResult(context.TODO(), args)
+		var reflectArgs []reflect.Value
+		// Add context if first param
+		if fnType := reflect.TypeOf(mockFn); fnType.NumIn() > 0 && isActivityContext(fnType.In(0)) {
+			reflectArgs = append(reflectArgs, reflect.ValueOf(context.TODO()))
+		}
+		for _, arg := range args {
+			reflectArgs = append(reflectArgs, reflect.ValueOf(arg))
+		}
+		reflectValues := reflect.ValueOf(mockFn).Call(reflectArgs)
 		if len(reflectValues) != 1 || !reflect.TypeOf(reflectValues[0].Interface()).AssignableTo(reflect.TypeOf(DefaultVersion)) {
 			panic(fmt.Sprintf("mock of GetVersion has incorrect return type, expected workflow.Version, but actual is %T (%v)",
 				reflectValues[0].Interface(), reflectValues[0].Interface()))

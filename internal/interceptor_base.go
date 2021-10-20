@@ -43,7 +43,7 @@ type WorkerInterceptorBase struct{}
 var _ WorkerInterceptor = &WorkerInterceptorBase{}
 
 func (*WorkerInterceptorBase) InterceptActivity(
-	ctx Context,
+	ctx context.Context,
 	next ActivityInboundInterceptor,
 ) ActivityInboundInterceptor {
 	return &ActivityInboundInterceptorBase{Next: next}

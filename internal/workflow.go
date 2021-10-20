@@ -27,7 +27,6 @@ package internal
 import (
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 	"time"
 
@@ -408,42 +407,9 @@ func (wc *workflowEnvironmentInterceptor) HandleQuery(ctx Context, in *HandleQue
 }
 
 func (wc *workflowEnvironmentInterceptor) ExecuteWorkflow(ctx Context, in *ExecuteWorkflowInput) (interface{}, error) {
-	args := []reflect.Value{reflect.ValueOf(ctx)}
-	for _, arg := range in.Args {
-		// []byte arguments are not serialized
-		switch arg.(type) {
-		case []byte:
-			args = append(args, reflect.ValueOf(arg))
-		default:
-			args = append(args, reflect.ValueOf(arg).Elem())
-		}
-	}
-	fnValue := reflect.ValueOf(wc.fn)
-	retValues := fnValue.Call(args)
-
-	// Expect either error or (result, error)
-	if len(retValues) == 0 || len(retValues) > 2 {
-		fnName, _ := getFunctionName(wc.fn)
-		return nil, fmt.Errorf(
-			"the function: %v signature returns %d results, it is expecting to return either error or (result, error)",
-			fnName, len(retValues))
-	}
-	// Convert error
-	var err error
-	if errResult := retValues[len(retValues)-1].Interface(); errResult != nil {
-		var ok bool
-		if err, ok = errResult.(error); !ok {
-			return nil, fmt.Errorf(
-				"failed to serialize error result as it is not of error interface: %v",
-				errResult)
-		}
-	}
-	// If there are two results, convert the first
-	var res interface{}
-	if len(retValues) > 1 {
-		res = retValues[0].Interface()
-	}
-	return res, err
+	// Always put the context first
+	args := append([]interface{}{ctx}, in.Args...)
+	return executeFunction(wc.fn, args)
 }
 
 func (wc *workflowEnvironmentInterceptor) Init(outbound WorkflowOutboundInterceptor) error {
