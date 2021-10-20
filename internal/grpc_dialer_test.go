@@ -27,15 +27,23 @@ package internal
 import (
 	"context"
 	"errors"
+	"log"
+	"net"
 	"testing"
 
 	"github.com/gogo/status"
+	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/api/errordetails/v1"
 	"go.temporal.io/api/serviceerror"
+	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/resolver"
+	"google.golang.org/grpc/resolver/manual"
 )
 
 func TestErrorWrapper_SimpleError(t *testing.T) {
@@ -114,4 +122,77 @@ func TestHeadersProvider_NotIncludedWhenNil(t *testing.T) {
 func TestHeadersProvider_IncludedWithHeadersProvider(t *testing.T) {
 	interceptors := requiredInterceptors(nil, authHeadersProvider{token: "test-auth-token"}, nil)
 	require.Equal(t, 6, len(interceptors))
+}
+
+func TestCustomResolver(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Create two gRPC servers
+	s1, err := startAdditionalHostPortsGRPCServer()
+	require.NoError(t, err)
+	defer s1.Stop()
+	s2, err := startAdditionalHostPortsGRPCServer()
+	require.NoError(t, err)
+	defer s2.Stop()
+
+	// Register resolver for both IPs and create client using it
+	scheme := "test-resolve-" + uuid.New()
+	builder := manual.NewBuilderWithScheme(scheme)
+	builder.InitialState(resolver.State{Addresses: []resolver.Address{{Addr: s1.addr}, {Addr: s2.addr}}})
+	resolver.Register(builder)
+	client, err := NewClient(ClientOptions{HostPort: scheme + ":///whatever"})
+	require.NoError(t, err)
+	defer client.Close()
+
+	// Confirm round robin'd
+	require.NoError(t, client.SignalWorkflow(ctx, "workflowid", "runid", "signalname", nil))
+	require.NoError(t, client.SignalWorkflow(ctx, "workflowid", "runid", "signalname", nil))
+	require.Equal(t, 1, s1.signalWorkflowInvokeCount)
+	require.Equal(t, 1, s2.signalWorkflowInvokeCount)
+	require.NoError(t, client.SignalWorkflow(ctx, "workflowid", "runid", "signalname", nil))
+	require.NoError(t, client.SignalWorkflow(ctx, "workflowid", "runid", "signalname", nil))
+	require.Equal(t, 2, s1.signalWorkflowInvokeCount)
+	require.Equal(t, 2, s2.signalWorkflowInvokeCount)
+
+	// Now shutdown the first one and confirm second now receives requests
+	s1.Stop()
+	require.NoError(t, client.SignalWorkflow(ctx, "workflowid", "runid", "signalname", nil))
+	require.Equal(t, 2, s1.signalWorkflowInvokeCount)
+	require.Equal(t, 3, s2.signalWorkflowInvokeCount)
+	require.NoError(t, client.SignalWorkflow(ctx, "workflowid", "runid", "signalname", nil))
+	require.Equal(t, 2, s1.signalWorkflowInvokeCount)
+	require.Equal(t, 4, s2.signalWorkflowInvokeCount)
+}
+
+type customResolverGRPCServer struct {
+	workflowservice.UnimplementedWorkflowServiceServer
+	*grpc.Server
+	addr                      string
+	signalWorkflowInvokeCount int
+}
+
+func startAdditionalHostPortsGRPCServer() (*customResolverGRPCServer, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, err
+	}
+	s := &customResolverGRPCServer{Server: grpc.NewServer(), addr: l.Addr().String()}
+	workflowservice.RegisterWorkflowServiceServer(s.Server, s)
+	healthServer := health.NewServer()
+	healthServer.SetServingStatus(healthCheckServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
+	grpc_health_v1.RegisterHealthServer(s.Server, healthServer)
+	go func() {
+		if err := s.Serve(l); err != nil {
+			log.Fatal(err)
+		}
+	}()
+	return s, nil
+}
+
+func (c *customResolverGRPCServer) SignalWorkflowExecution(
+	context.Context,
+	*workflowservice.SignalWorkflowExecutionRequest,
+) (*workflowservice.SignalWorkflowExecutionResponse, error) {
+	c.signalWorkflowInvokeCount++
+	return &workflowservice.SignalWorkflowExecutionResponse{}, nil
 }

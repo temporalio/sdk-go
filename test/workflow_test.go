@@ -30,6 +30,7 @@ import (
 	"math/rand"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
@@ -602,13 +603,12 @@ func (w *Workflows) CancelTimerAfterActivity(ctx workflow.Context) (string, erro
 	return res, err
 }
 
-var didPanicOnce = false
+var cancelTimerDeferCount uint32
 
 func (w *Workflows) CancelTimerViaDeferAfterWFTFailure(ctx workflow.Context) error {
 	timerCtx, canceller := workflow.WithCancel(ctx)
 	defer func() {
-		if !didPanicOnce {
-			didPanicOnce = true
+		if atomic.AddUint32(&cancelTimerDeferCount, 1) == 1 {
 			panic("Intentional panic to trigger WFT failure")
 		}
 		canceller()
@@ -1278,6 +1278,13 @@ func (w *Workflows) WaitSignalReturnParam(ctx workflow.Context, v interface{}) (
 	return v, nil
 }
 
+func (w *Workflows) ActivityWaitForWorkerStop(ctx workflow.Context, timeout time.Duration) (string, error) {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	var s string
+	err := workflow.ExecuteActivity(ctx, "WaitForWorkerStop", timeout).Get(ctx, &s)
+	return s, err
+}
+
 func (w *Workflows) CancelChildAndExecuteActivityRace(ctx workflow.Context) error {
 	// This workflow replicates an issue where cancel was reported out of order
 	// with when it occurs. Specifically, this workflow creates a long-running
@@ -1324,6 +1331,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityRetryOnHBTimeout)
 	worker.RegisterWorkflow(w.ActivityRetryOnTimeout)
 	worker.RegisterWorkflow(w.ActivityRetryOptionsChange)
+	worker.RegisterWorkflow(w.ActivityWaitForWorkerStop)
 	worker.RegisterWorkflow(w.Basic)
 	worker.RegisterWorkflow(w.Deadlocked)
 	worker.RegisterWorkflow(w.DeadlockedWithLocalActivity)

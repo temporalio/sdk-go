@@ -44,6 +44,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/test"
 	"go.uber.org/goleak"
 
@@ -76,6 +77,7 @@ type IntegrationTestSuite struct {
 	activities               *Activities
 	workflows                *Workflows
 	worker                   worker.Worker
+	workerStopped            bool
 	seq                      int64
 	taskQueueName            string
 	tracer                   *tracingInterceptor
@@ -170,7 +172,12 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.WorkflowPanicPolicy = worker.BlockWorkflow
 	}
 
+	if strings.Contains(ts.T().Name(), "GracefulActivityCompletion") {
+		options.WorkerStopTimeout = 10 * time.Second
+	}
+
 	ts.worker = worker.New(ts.client, ts.taskQueueName, options)
+	ts.workerStopped = false
 	ts.registerWorkflowsAndActivities(ts.worker)
 	ts.Nil(ts.worker.Start())
 }
@@ -178,7 +185,10 @@ func (ts *IntegrationTestSuite) SetupTest() {
 func (ts *IntegrationTestSuite) TearDownTest() {
 	_ = ts.metricsScopeCloser.Close()
 	ts.client.Close()
-	ts.worker.Stop()
+	if !ts.workerStopped {
+		ts.worker.Stop()
+		ts.workerStopped = true
+	}
 }
 
 func (ts *IntegrationTestSuite) TestBasic() {
@@ -1219,6 +1229,46 @@ func (ts *IntegrationTestSuite) TestEndToEndLatencyMetrics() {
 	ts.NotZero(nonLocal.Value())
 	ts.NotNil(nonLocal)
 	ts.Equal(prevNonLocalValue, nonLocal.Value())
+}
+func (ts *IntegrationTestSuite) TestGracefulActivityCompletion() {
+	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start workflow
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-graceful-activity-completion-"+uuid.New()),
+		ts.workflows.ActivityWaitForWorkerStop, 10*time.Second)
+	ts.NoError(err)
+
+	// Wait for activity to report started
+	for ts.activities.invokedCount("wait-for-worker-stop") == 0 && ctx.Err() == nil {
+		time.Sleep(100 * time.Millisecond)
+	}
+	ts.NoError(ctx.Err())
+
+	// Stop the worker
+	ts.worker.Stop()
+	ts.workerStopped = true
+
+	// Look for activity completed from the history
+	var completed *historypb.ActivityTaskCompletedEventAttributes
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(),
+		false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for completed == nil && iter.HasNext() {
+		event, err := iter.Next()
+		ts.NoError(err)
+		if event.EventType == enumspb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED {
+			completed = event.GetActivityTaskCompletedEventAttributes()
+		}
+	}
+
+	// Confirm it stored "stopped"
+	ts.NotNil(completed)
+	ts.Len(completed.GetResult().GetPayloads(), 1)
+	var s string
+	ts.NoError(converter.GetDefaultDataConverter().FromPayload(completed.Result.Payloads[0], &s))
+	ts.Equal("stopped", s)
 }
 
 func (ts *IntegrationTestSuite) TestCancelChildAndExecuteActivityRace() {
