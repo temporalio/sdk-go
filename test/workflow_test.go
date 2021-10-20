@@ -1285,6 +1285,43 @@ func (w *Workflows) ActivityWaitForWorkerStop(ctx workflow.Context, timeout time
 	return s, err
 }
 
+func (w *Workflows) CancelChildAndExecuteActivityRace(ctx workflow.Context) error {
+	// This workflow replicates an issue where cancel was reported out of order
+	// with when it occurs. Specifically, this workflow creates a long-running
+	// child then signals its cancellation from a simulated goroutine and
+	// immediately starts an activity. Previously, the SDK would put the cancel
+	// command before the execute command since the child workflow started first.
+
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{StartToCloseTimeout: 2 * time.Minute})
+
+	// Start long-running child workflow
+	childCtx, childCancel := workflow.WithCancel(ctx)
+	childCtx = workflow.WithChildOptions(childCtx, workflow.ChildWorkflowOptions{WaitForCancellation: true})
+	child := workflow.ExecuteChildWorkflow(childCtx, w.SleepForDuration, 3*time.Minute)
+	if err := child.GetChildWorkflowExecution().Get(ctx, nil); err != nil {
+		return err
+	}
+
+	// Start "goroutine" to send to channel and immediately start activity
+	ch := workflow.NewChannel(ctx)
+	workflow.Go(ctx, func(ctx workflow.Context) {
+		ch.Send(ctx, nil)
+		if err := workflow.ExecuteActivity(ctx, new(Activities).Sleep, 1*time.Millisecond).Get(ctx, nil); err != nil {
+			panic(err)
+		}
+	})
+
+	// Wait for channel and cancel child
+	ch.Receive(ctx, nil)
+	childCancel()
+	_ = child.Get(ctx, nil)
+	return nil
+}
+
+func (w *Workflows) SleepForDuration(ctx workflow.Context, d time.Duration) error {
+	return workflow.Sleep(ctx, d)
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -1339,6 +1376,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.CronWorkflow)
 	worker.RegisterWorkflow(w.CancelTimerConcurrentWithOtherCommandWorkflow)
 	worker.RegisterWorkflow(w.CancelMultipleCommandsOverMultipleTasks)
+	worker.RegisterWorkflow(w.CancelChildAndExecuteActivityRace)
+	worker.RegisterWorkflow(w.SleepForDuration)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)

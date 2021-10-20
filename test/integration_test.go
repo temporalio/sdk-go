@@ -1230,7 +1230,6 @@ func (ts *IntegrationTestSuite) TestEndToEndLatencyMetrics() {
 	ts.NotNil(nonLocal)
 	ts.Equal(prevNonLocalValue, nonLocal.Value())
 }
-
 func (ts *IntegrationTestSuite) TestGracefulActivityCompletion() {
 	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1270,6 +1269,11 @@ func (ts *IntegrationTestSuite) TestGracefulActivityCompletion() {
 	var s string
 	ts.NoError(converter.GetDefaultDataConverter().FromPayload(completed.Result.Payloads[0], &s))
 	ts.Equal("stopped", s)
+}
+
+func (ts *IntegrationTestSuite) TestCancelChildAndExecuteActivityRace() {
+	err := ts.executeWorkflow("cancel-child-and-execute-act-race", ts.workflows.CancelChildAndExecuteActivityRace, nil)
+	ts.NoError(err)
 }
 
 func (ts *IntegrationTestSuite) registerNamespace() {

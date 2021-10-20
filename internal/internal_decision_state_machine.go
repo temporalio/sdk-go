@@ -653,6 +653,12 @@ func (d *childWorkflowCommandStateMachine) cancel() {
 	switch d.state {
 	case commandStateStarted:
 		d.moveState(commandStateCanceledAfterStarted, eventCancel)
+		// A child workflow may be canceled _after_ something like an activity start
+		// happens inside a simulated goroutine. However, since the state of the
+		// entire child workflow is recorded based on when it started not when it
+		// was canceled, we have to move it to the end once canceled to keep the
+		// expected commands in order of when they actually occurred.
+		d.helper.moveCommandToBack(d)
 		d.helper.incrementNextCommandEventID()
 	default:
 		d.commandStateMachineBase.cancel()
@@ -877,6 +883,15 @@ func (h *commandsHelper) removeCancelOfResolvedCommand(commandID commandID) {
 		h.orderedCommands.Remove(orderedCmdEl)
 		h.commandsCancelledDuringWFCancellation--
 	}
+}
+
+func (h *commandsHelper) moveCommandToBack(command commandStateMachine) {
+	elem := h.commands[command.getID()]
+	if elem == nil {
+		panicIllegalState(fmt.Sprintf("moving command not present %v", command))
+	}
+	h.orderedCommands.Remove(elem)
+	h.commands[command.getID()] = h.orderedCommands.PushBack(command)
 }
 
 func (h *commandsHelper) scheduleActivityTask(
