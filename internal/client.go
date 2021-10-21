@@ -437,9 +437,11 @@ type (
 		// the gRPC interceptor chain and can be used to induce artificial failures in test scenarios.
 		TrafficController TrafficController
 
-		// Interceptors to apply to the client. Any interceptors that also implement Interceptor (meaning they implement
-		// WorkerInterceptor in addition to ClientInterceptor) will be used for worker interception as well.  When worker
-		// interceptors are here and in worker options, the ones here wrap the ones in worker options.
+		// Interceptors to apply to some calls of the client. Any interceptors that
+		// also implement Interceptor (meaning they implement WorkerInterceptor in
+		// addition to ClientInterceptor) will be used for worker interception as
+		// well. When worker interceptors are here and in worker options, the ones
+		// here wrap the ones in worker options.
 		Interceptors []ClientInterceptor
 	}
 
@@ -669,20 +671,7 @@ func NewClient(options ClientOptions) (Client, error) {
 		return nil, err
 	}
 
-	// Create a wrapped client. We wrap it and preserve the root *WorkflowClient
-	// since it is needed by NewWorker.
-	root := NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options)
-	client := &wrappedClient{ClientOutboundInterceptor: root, root: root}
-	// Wrap the client in interceptors (working backwards)
-	for i := len(options.Interceptors) - 1; i >= 0; i-- {
-		client.ClientOutboundInterceptor = options.Interceptors[i].InterceptClient(client.ClientOutboundInterceptor)
-	}
-	return client, nil
-}
-
-type wrappedClient struct {
-	ClientOutboundInterceptor
-	root *WorkflowClient
+	return NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
 }
 
 func newDialParameters(options *ClientOptions) dialParameters {
@@ -723,7 +712,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		}
 	}
 
-	return &WorkflowClient{
+	client := &WorkflowClient{
 		workflowService:    workflowServiceClient,
 		connectionCloser:   connectionCloser,
 		namespace:          options.Namespace,
@@ -736,6 +725,14 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		tracer:             options.Tracer,
 		workerInterceptors: workerInterceptors,
 	}
+
+	// Create outbound interceptor by wrapping backwards through chain
+	client.interceptor = &workflowClientInterceptor{client: client}
+	for i := len(options.Interceptors) - 1; i >= 0; i-- {
+		client.interceptor = options.Interceptors[i].InterceptClient(client.interceptor)
+	}
+
+	return client
 }
 
 // NewNamespaceClient creates an instance of a namespace client, to manager lifecycle of namespaces.

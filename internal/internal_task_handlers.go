@@ -1812,11 +1812,9 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	}()
 
 	// propagate context information into the activity context from the headers
-	for _, ctxProp := range ath.contextPropagators {
-		var err error
-		if ctx, err = ctxProp.Extract(ctx, NewHeaderReader(t.Header)); err != nil {
-			return nil, fmt.Errorf("unable to propagate context: %w", err)
-		}
+	ctx, err = contextWithHeaderPropagated(ctx, t.Header, ath.contextPropagators)
+	if err != nil {
+		return nil, err
 	}
 
 	info := getActivityEnv(ctx)

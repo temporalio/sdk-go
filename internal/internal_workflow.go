@@ -497,11 +497,9 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 		})
 
 	// set the information from the headers that is to be propagated in the workflow context
-	for _, ctxProp := range env.GetContextPropagators() {
-		var err error
-		if rootCtx, err = ctxProp.ExtractToWorkflow(rootCtx, NewHeaderReader(header)); err != nil {
-			panic(fmt.Sprintf("Unable to propagate context: %v", err))
-		}
+	rootCtx, err = workflowContextWithHeaderPropagated(rootCtx, header, env.GetContextPropagators())
+	if err != nil {
+		panic(err)
 	}
 
 	d.rootCtx, d.cancel = WithCancel(rootCtx)
@@ -1283,22 +1281,6 @@ func getDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 func getRegistryFromWorkflowContext(ctx Context) *registry {
 	env := getWorkflowEnvironment(ctx)
 	return env.GetRegistry()
-}
-
-func getContextPropagatorsFromWorkflowContext(ctx Context) []ContextPropagator {
-	options := getWorkflowEnvOptions(ctx)
-	return options.ContextPropagators
-}
-
-func getHeadersFromContext(ctx Context) *commonpb.Header {
-	header := &commonpb.Header{
-		Fields: make(map[string]*commonpb.Payload),
-	}
-	contextPropagators := getContextPropagatorsFromWorkflowContext(ctx)
-	for _, ctxProp := range contextPropagators {
-		_ = ctxProp.InjectFromWorkflow(ctx, NewHeaderWriter(header))
-	}
-	return header
 }
 
 // getSignalChannel finds the associated channel for the signal.

@@ -23,7 +23,11 @@
 package interceptor
 
 import (
+	"context"
+
+	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/sdk/internal"
+	"go.temporal.io/sdk/workflow"
 )
 
 type Interceptor = internal.Interceptor
@@ -53,3 +57,17 @@ type ClientInterceptorBase = internal.ClientInterceptorBase
 
 type ClientOutboundInterceptor = internal.ClientOutboundInterceptor
 type ClientOutboundInterceptorBase = internal.ClientOutboundInterceptorBase
+type ClientExecuteWorkflowInput = internal.ClientExecuteWorkflowInput
+type ClientSignalWorkflowInput = internal.ClientSignalWorkflowInput
+type ClientSignalWithStartWorkflowInput = internal.ClientSignalWithStartWorkflowInput
+type ClientCancelWorkflowInput = internal.ClientCancelWorkflowInput
+type ClientTerminateWorkflowInput = internal.ClientTerminateWorkflowInput
+type ClientQueryWorkflowInput = internal.ClientQueryWorkflowInput
+
+func Header(ctx context.Context) map[string]*commonpb.Payload {
+	return internal.Header(ctx)
+}
+
+func WorkflowHeader(ctx workflow.Context) map[string]*commonpb.Payload {
+	return internal.WorkflowHeader(ctx)
+}

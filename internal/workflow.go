@@ -407,6 +407,9 @@ func (wc *workflowEnvironmentInterceptor) HandleQuery(ctx Context, in *HandleQue
 }
 
 func (wc *workflowEnvironmentInterceptor) ExecuteWorkflow(ctx Context, in *ExecuteWorkflowInput) (interface{}, error) {
+	// Remove header from the context
+	ctx = workflowContextWithoutHeader(ctx)
+
 	// Always put the context first
 	args := append([]interface{}{ctx}, in.Args...)
 	return executeFunction(wc.fn, args)
@@ -447,6 +450,8 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 	i := getWorkflowOutboundInterceptor(ctx)
 	registry := getRegistryFromWorkflowContext(ctx)
 	activityType := getActivityFunctionName(registry, activity)
+	// Put header on context before executing
+	ctx = workflowContextWithNewHeader(ctx)
 	return i.ExecuteActivity(ctx, activityType, args...)
 }
 
@@ -481,7 +486,12 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 	}
 
 	// Retrieve headers from context to pass them on
-	header := getHeadersFromContext(ctx)
+	envOptions := getWorkflowEnvOptions(ctx)
+	header, err := workflowHeaderPropagated(ctx, envOptions.ContextPropagators)
+	if err != nil {
+		settable.Set(nil, err)
+		return future
+	}
 
 	input, err := encodeArgs(dataConverter, args)
 	if err != nil {
@@ -572,12 +582,20 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 		isMethod: isMethod,
 	}
 	ctx = WithValue(ctx, localActivityFnContextKey, localCtx)
+	// Put header on context before executing
+	ctx = workflowContextWithNewHeader(ctx)
 	return i.ExecuteLocalActivity(ctx, activityType, args...)
 }
 
 func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, typeName string, args ...interface{}) Future {
-	header := getHeadersFromContext(ctx)
 	future, settable := newDecodeFuture(ctx, typeName)
+
+	envOptions := getWorkflowEnvOptions(ctx)
+	header, err := workflowHeaderPropagated(ctx, envOptions.ContextPropagators)
+	if err != nil {
+		settable.Set(nil, err)
+		return future
+	}
 
 	var activityFn interface{}
 	localCtx := ctx.Value(localActivityFnContextKey).(*localActivityContext)
@@ -734,6 +752,8 @@ func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interf
 	if err != nil {
 		panic(err)
 	}
+	// Put header on context before executing
+	ctx = workflowContextWithNewHeader(ctx)
 	return i.ExecuteChildWorkflow(ctx, workflowType, args...)
 }
 
@@ -768,11 +788,18 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 	options.Memo = workflowOptionsFromCtx.Memo
 	options.SearchAttributes = workflowOptionsFromCtx.SearchAttributes
 
+	header, err := workflowHeaderPropagated(ctx, options.ContextPropagators)
+	if err != nil {
+		executionSettable.Set(nil, err)
+		mainSettable.Set(nil, err)
+		return result
+	}
+
 	params := ExecuteWorkflowParams{
 		WorkflowOptions: *options,
 		Input:           input,
 		WorkflowType:    wfType,
-		Header:          getWorkflowHeader(ctx, options.ContextPropagators),
+		Header:          header,
 		scheduledTime:   Now(ctx), /* this is needed for test framework, and is not send to server */
 		attempt:         1,
 	}
@@ -809,17 +836,6 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 	})
 
 	return result
-}
-
-func getWorkflowHeader(ctx Context, ctxProps []ContextPropagator) *commonpb.Header {
-	header := &commonpb.Header{
-		Fields: make(map[string]*commonpb.Payload),
-	}
-	writer := NewHeaderWriter(header)
-	for _, ctxProp := range ctxProps {
-		_ = ctxProp.InjectFromWorkflow(ctx, writer)
-	}
-	return header
 }
 
 // WorkflowInfo information about currently executing workflow

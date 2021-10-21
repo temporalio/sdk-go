@@ -27,8 +27,6 @@ import (
 	"time"
 
 	"github.com/uber-go/tally/v4"
-	enumspb "go.temporal.io/api/enums/v1"
-	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/log"
 )
@@ -49,6 +47,7 @@ type WorkerInterceptor interface {
 type ActivityInboundInterceptor interface {
 	Init(outbound ActivityOutboundInterceptor) error
 
+	// Context has header
 	ExecuteActivity(ctx context.Context, in *ExecuteActivityInput) (interface{}, error)
 
 	mustEmbedActivityInboundInterceptorBase()
@@ -79,6 +78,7 @@ type ActivityOutboundInterceptor interface {
 type WorkflowInboundInterceptor interface {
 	Init(outbound WorkflowOutboundInterceptor) error
 
+	// Context has header
 	ExecuteWorkflow(ctx Context, in *ExecuteWorkflowInput) (interface{}, error)
 
 	HandleSignal(ctx Context, in *HandleSignalInput) error
@@ -105,10 +105,13 @@ type HandleQueryInput struct {
 type WorkflowOutboundInterceptor interface {
 	Go(ctx Context, name string, f func(ctx Context)) Context
 
+	// Context has header
 	ExecuteActivity(ctx Context, activityType string, args ...interface{}) Future
 
+	// Context has header
 	ExecuteLocalActivity(ctx Context, activityType string, args ...interface{}) Future
 
+	// Context has header
 	ExecuteChildWorkflow(ctx Context, childWorkflowType string, args ...interface{}) ChildWorkflowFuture
 
 	GetInfo(ctx Context) *WorkflowInfo
@@ -152,140 +155,74 @@ type WorkflowOutboundInterceptor interface {
 
 	GetLastError(ctx Context) error
 
+	// Context has header
+	NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) error
+
 	mustEmbedWorkflowOutboundInterceptorBase()
 }
 
 type ClientInterceptor interface {
-	// This is called on client creation if set via client options, or worker
-	// creation if set via workers
+	// This is called on client creation if set via client options
 	InterceptClient(next ClientOutboundInterceptor) ClientOutboundInterceptor
 
 	mustEmbedClientInterceptorBase()
 }
 
+// Note, this only intercepts a specific subset of client calls by intention
 type ClientOutboundInterceptor interface {
-	ExecuteWorkflow(
-		ctx context.Context,
-		options StartWorkflowOptions,
-		workflow interface{},
-		args ...interface{},
-	) (WorkflowRun, error)
+	// Context has header
+	ExecuteWorkflow(context.Context, *ClientExecuteWorkflowInput) (WorkflowRun, error)
 
-	GetWorkflow(ctx context.Context, workflowID string, runID string) WorkflowRun
+	SignalWorkflow(context.Context, *ClientSignalWorkflowInput) error
 
-	SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error
+	// Context has header
+	SignalWithStartWorkflow(context.Context, *ClientSignalWithStartWorkflowInput) (WorkflowRun, error)
 
-	SignalWithStartWorkflow(
-		ctx context.Context,
-		workflowID string,
-		signalName string,
-		signalArg interface{},
-		options StartWorkflowOptions,
-		workflow interface{},
-		workflowArgs ...interface{},
-	) (WorkflowRun, error)
+	CancelWorkflow(context.Context, *ClientCancelWorkflowInput) error
 
-	CancelWorkflow(ctx context.Context, workflowID string, runID string) error
+	TerminateWorkflow(context.Context, *ClientTerminateWorkflowInput) error
 
-	TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error
-
-	GetWorkflowHistory(
-		ctx context.Context,
-		workflowID string,
-		runID string,
-		isLongPoll bool,
-		filterType enumspb.HistoryEventFilterType,
-	) HistoryEventIterator
-
-	CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error
-
-	CompleteActivityByID(
-		ctx context.Context,
-		namespace string,
-		workflowID string,
-		runID string,
-		activityID string,
-		result interface{},
-		err error,
-	) error
-
-	RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...interface{}) error
-
-	RecordActivityHeartbeatByID(
-		ctx context.Context,
-		namespace string,
-		workflowID string,
-		runID string,
-		activityID string,
-		details ...interface{},
-	) error
-
-	ListClosedWorkflow(
-		ctx context.Context,
-		request *workflowservice.ListClosedWorkflowExecutionsRequest,
-	) (*workflowservice.ListClosedWorkflowExecutionsResponse, error)
-
-	ListOpenWorkflow(
-		ctx context.Context,
-		request *workflowservice.ListOpenWorkflowExecutionsRequest,
-	) (*workflowservice.ListOpenWorkflowExecutionsResponse, error)
-
-	ListWorkflow(
-		ctx context.Context,
-		request *workflowservice.ListWorkflowExecutionsRequest,
-	) (*workflowservice.ListWorkflowExecutionsResponse, error)
-
-	ListArchivedWorkflow(
-		ctx context.Context,
-		request *workflowservice.ListArchivedWorkflowExecutionsRequest,
-	) (*workflowservice.ListArchivedWorkflowExecutionsResponse, error)
-
-	ScanWorkflow(
-		ctx context.Context,
-		request *workflowservice.ScanWorkflowExecutionsRequest,
-	) (*workflowservice.ScanWorkflowExecutionsResponse, error)
-
-	CountWorkflow(
-		ctx context.Context,
-		request *workflowservice.CountWorkflowExecutionsRequest,
-	) (*workflowservice.CountWorkflowExecutionsResponse, error)
-
-	GetSearchAttributes(ctx context.Context) (*workflowservice.GetSearchAttributesResponse, error)
-
-	QueryWorkflow(
-		ctx context.Context,
-		workflowID string,
-		runID string,
-		queryType string,
-		args ...interface{},
-	) (converter.EncodedValue, error)
-
-	QueryWorkflowWithOptions(
-		ctx context.Context,
-		request *QueryWorkflowWithOptionsRequest,
-	) (*QueryWorkflowWithOptionsResponse, error)
-
-	DescribeWorkflowExecution(
-		ctx context.Context,
-		workflowID string,
-		runID string,
-	) (*workflowservice.DescribeWorkflowExecutionResponse, error)
-
-	DescribeTaskQueue(
-		ctx context.Context,
-		taskqueue string,
-		taskqueueType enumspb.TaskQueueType,
-	) (*workflowservice.DescribeTaskQueueResponse, error)
-
-	ResetWorkflowExecution(
-		ctx context.Context,
-		request *workflowservice.ResetWorkflowExecutionRequest,
-	) (*workflowservice.ResetWorkflowExecutionResponse, error)
-
-	Close()
+	QueryWorkflow(context.Context, *ClientQueryWorkflowInput) (converter.EncodedValue, error)
 
 	mustEmbedClientOutboundInterceptorBase()
 }
 
-// ClientOutboundInterceptor must match Client
-var _ Client = (ClientOutboundInterceptor)(nil)
+type ClientExecuteWorkflowInput struct {
+	Options      *StartWorkflowOptions
+	WorkflowType string
+	Args         []interface{}
+}
+
+type ClientSignalWorkflowInput struct {
+	WorkflowID string
+	RunID      string
+	SignalName string
+	Arg        interface{}
+}
+
+type ClientSignalWithStartWorkflowInput struct {
+	SignalName   string
+	SignalArg    interface{}
+	Options      *StartWorkflowOptions
+	WorkflowType string
+	Args         []interface{}
+}
+
+type ClientCancelWorkflowInput struct {
+	WorkflowID string
+	RunID      string
+}
+
+type ClientTerminateWorkflowInput struct {
+	WorkflowID string
+	RunID      string
+	Reason     string
+	Details    []interface{}
+}
+
+type ClientQueryWorkflowInput struct {
+	WorkflowID string
+	RunID      string
+	QueryType  string
+	Args       []interface{}
+}

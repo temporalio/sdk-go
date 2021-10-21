@@ -27,8 +27,6 @@ import (
 	"time"
 
 	"github.com/uber-go/tally/v4"
-	enumspb "go.temporal.io/api/enums/v1"
-	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/log"
 )
@@ -250,13 +248,23 @@ func (w *WorkflowOutboundInterceptorBase) GetLastError(ctx Context) error {
 	return w.Next.GetLastError(ctx)
 }
 
+func (w *WorkflowOutboundInterceptorBase) NewContinueAsNewError(
+	ctx Context,
+	wfn interface{},
+	args ...interface{},
+) error {
+	return w.Next.NewContinueAsNewError(ctx, wfn, args...)
+}
+
 func (*WorkflowOutboundInterceptorBase) mustEmbedWorkflowOutboundInterceptorBase() {}
 
 type ClientInterceptorBase struct{}
 
 var _ ClientInterceptor = &ClientInterceptorBase{}
 
-func (*ClientInterceptorBase) InterceptClient(next ClientOutboundInterceptor) ClientOutboundInterceptor {
+func (*ClientInterceptorBase) InterceptClient(
+	next ClientOutboundInterceptor,
+) ClientOutboundInterceptor {
 	return &ClientOutboundInterceptorBase{Next: next}
 }
 
@@ -270,184 +278,35 @@ var _ ClientOutboundInterceptor = &ClientOutboundInterceptorBase{}
 
 func (c *ClientOutboundInterceptorBase) ExecuteWorkflow(
 	ctx context.Context,
-	options StartWorkflowOptions,
-	workflow interface{},
-	args ...interface{},
+	in *ClientExecuteWorkflowInput,
 ) (WorkflowRun, error) {
-	return c.Next.ExecuteWorkflow(ctx, options, workflow, args...)
+	return c.Next.ExecuteWorkflow(ctx, in)
 }
 
-func (c *ClientOutboundInterceptorBase) GetWorkflow(ctx context.Context, workflowID string, runID string) WorkflowRun {
-	return c.Next.GetWorkflow(ctx, workflowID, runID)
-}
-
-func (c *ClientOutboundInterceptorBase) SignalWorkflow(
-	ctx context.Context,
-	workflowID string,
-	runID string,
-	signalName string,
-	arg interface{},
-) error {
-	return c.Next.SignalWorkflow(ctx, workflowID, runID, signalName, arg)
+func (c *ClientOutboundInterceptorBase) SignalWorkflow(ctx context.Context, in *ClientSignalWorkflowInput) error {
+	return c.Next.SignalWorkflow(ctx, in)
 }
 
 func (c *ClientOutboundInterceptorBase) SignalWithStartWorkflow(
 	ctx context.Context,
-	workflowID string,
-	signalName string,
-	signalArg interface{},
-	options StartWorkflowOptions,
-	workflow interface{},
-	workflowArgs ...interface{},
+	in *ClientSignalWithStartWorkflowInput,
 ) (WorkflowRun, error) {
-	return c.Next.SignalWithStartWorkflow(ctx, workflowID, signalName, signalArg, options, workflow, workflowArgs...)
+	return c.Next.SignalWithStartWorkflow(ctx, in)
 }
 
-func (c *ClientOutboundInterceptorBase) CancelWorkflow(ctx context.Context, workflowID string, runID string) error {
-	return c.Next.CancelWorkflow(ctx, workflowID, runID)
+func (c *ClientOutboundInterceptorBase) CancelWorkflow(ctx context.Context, in *ClientCancelWorkflowInput) error {
+	return c.Next.CancelWorkflow(ctx, in)
 }
 
-func (c *ClientOutboundInterceptorBase) TerminateWorkflow(
-	ctx context.Context,
-	workflowID string,
-	runID string,
-	reason string,
-	details ...interface{},
-) error {
-	return c.Next.TerminateWorkflow(ctx, workflowID, runID, reason, details...)
-}
-
-func (c *ClientOutboundInterceptorBase) GetWorkflowHistory(
-	ctx context.Context,
-	workflowID string,
-	runID string,
-	isLongPoll bool,
-	filterType enumspb.HistoryEventFilterType,
-) HistoryEventIterator {
-	return c.Next.GetWorkflowHistory(ctx, workflowID, runID, isLongPoll, filterType)
-}
-
-func (c *ClientOutboundInterceptorBase) CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error {
-	return c.Next.CompleteActivity(ctx, taskToken, result, err)
-}
-
-func (c *ClientOutboundInterceptorBase) CompleteActivityByID(
-	ctx context.Context,
-	namespace string,
-	workflowID string,
-	runID string,
-	activityID string,
-	result interface{},
-	err error,
-) error {
-	return c.Next.CompleteActivityByID(ctx, namespace, workflowID, runID, activityID, result, err)
-}
-
-func (c *ClientOutboundInterceptorBase) RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...interface{}) error {
-	return c.Next.RecordActivityHeartbeat(ctx, taskToken, details...)
-}
-
-func (c *ClientOutboundInterceptorBase) RecordActivityHeartbeatByID(
-	ctx context.Context,
-	namespace string,
-	workflowID string,
-	runID string,
-	activityID string,
-	details ...interface{},
-) error {
-	return c.Next.RecordActivityHeartbeatByID(ctx, namespace, workflowID, runID, activityID, details...)
-}
-
-func (c *ClientOutboundInterceptorBase) ListClosedWorkflow(
-	ctx context.Context,
-	request *workflowservice.ListClosedWorkflowExecutionsRequest,
-) (*workflowservice.ListClosedWorkflowExecutionsResponse, error) {
-	return c.Next.ListClosedWorkflow(ctx, request)
-}
-
-func (c *ClientOutboundInterceptorBase) ListOpenWorkflow(
-	ctx context.Context,
-	request *workflowservice.ListOpenWorkflowExecutionsRequest,
-) (*workflowservice.ListOpenWorkflowExecutionsResponse, error) {
-	return c.Next.ListOpenWorkflow(ctx, request)
-}
-
-func (c *ClientOutboundInterceptorBase) ListWorkflow(
-	ctx context.Context,
-	request *workflowservice.ListWorkflowExecutionsRequest,
-) (*workflowservice.ListWorkflowExecutionsResponse, error) {
-	return c.Next.ListWorkflow(ctx, request)
-}
-
-func (c *ClientOutboundInterceptorBase) ListArchivedWorkflow(
-	ctx context.Context,
-	request *workflowservice.ListArchivedWorkflowExecutionsRequest,
-) (*workflowservice.ListArchivedWorkflowExecutionsResponse, error) {
-	return c.Next.ListArchivedWorkflow(ctx, request)
-}
-
-func (c *ClientOutboundInterceptorBase) ScanWorkflow(
-	ctx context.Context,
-	request *workflowservice.ScanWorkflowExecutionsRequest,
-) (*workflowservice.ScanWorkflowExecutionsResponse, error) {
-	return c.Next.ScanWorkflow(ctx, request)
-}
-
-func (c *ClientOutboundInterceptorBase) CountWorkflow(
-	ctx context.Context,
-	request *workflowservice.CountWorkflowExecutionsRequest,
-) (*workflowservice.CountWorkflowExecutionsResponse, error) {
-	return c.Next.CountWorkflow(ctx, request)
-}
-
-func (c *ClientOutboundInterceptorBase) GetSearchAttributes(
-	ctx context.Context,
-) (*workflowservice.GetSearchAttributesResponse, error) {
-	return c.Next.GetSearchAttributes(ctx)
+func (c *ClientOutboundInterceptorBase) TerminateWorkflow(ctx context.Context, in *ClientTerminateWorkflowInput) error {
+	return c.Next.TerminateWorkflow(ctx, in)
 }
 
 func (c *ClientOutboundInterceptorBase) QueryWorkflow(
 	ctx context.Context,
-	workflowID string,
-	runID string,
-	queryType string,
-	args ...interface{},
+	in *ClientQueryWorkflowInput,
 ) (converter.EncodedValue, error) {
-	return c.Next.QueryWorkflow(ctx, workflowID, runID, queryType, args...)
-}
-
-func (c *ClientOutboundInterceptorBase) QueryWorkflowWithOptions(
-	ctx context.Context,
-	request *QueryWorkflowWithOptionsRequest,
-) (*QueryWorkflowWithOptionsResponse, error) {
-	return c.Next.QueryWorkflowWithOptions(ctx, request)
-}
-
-func (c *ClientOutboundInterceptorBase) DescribeWorkflowExecution(
-	ctx context.Context,
-	workflowID string,
-	runID string,
-) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
-	return c.Next.DescribeWorkflowExecution(ctx, workflowID, runID)
-}
-
-func (c *ClientOutboundInterceptorBase) DescribeTaskQueue(
-	ctx context.Context,
-	taskqueue string,
-	taskqueueType enumspb.TaskQueueType,
-) (*workflowservice.DescribeTaskQueueResponse, error) {
-	return c.Next.DescribeTaskQueue(ctx, taskqueue, taskqueueType)
-}
-
-func (c *ClientOutboundInterceptorBase) ResetWorkflowExecution(
-	ctx context.Context,
-	request *workflowservice.ResetWorkflowExecutionRequest,
-) (*workflowservice.ResetWorkflowExecutionResponse, error) {
-	return c.Next.ResetWorkflowExecution(ctx, request)
-}
-
-func (c *ClientOutboundInterceptorBase) Close() {
-	c.Next.Close()
+	return c.Next.QueryWorkflow(ctx, in)
 }
 
 func (*ClientOutboundInterceptorBase) mustEmbedClientOutboundInterceptorBase() {}

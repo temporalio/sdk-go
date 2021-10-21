@@ -358,6 +358,9 @@ func (a *activityEnvironmentInterceptor) ExecuteActivity(
 	ctx context.Context,
 	in *ExecuteActivityInput,
 ) (interface{}, error) {
+	// Remove header from context
+	ctx = contextWithoutHeader(ctx)
+
 	return executeFunctionWithContext(ctx, a.fn, in.Args)
 }
 

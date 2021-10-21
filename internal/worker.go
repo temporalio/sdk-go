@@ -201,9 +201,9 @@ func NewWorker(
 	taskQueue string,
 	options WorkerOptions,
 ) *AggregatedWorker {
-	workflowClient, ok := client.(*wrappedClient)
+	workflowClient, ok := client.(*WorkflowClient)
 	if !ok {
 		panic("Client must be created with client.NewClient()")
 	}
-	return NewAggregatedWorker(workflowClient.root, taskQueue, options)
+	return NewAggregatedWorker(workflowClient, taskQueue, options)
 }
