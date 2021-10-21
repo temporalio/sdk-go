@@ -14,7 +14,7 @@ import (
 // IODataConverterOptions are options for NewIODataConverter.
 type IODataConverterOptions struct {
 
-	// Algorithm is the algorithm for raw IO conversation. All fields must be set.
+	// Algorithm is the algorithm for raw IO conversion. All fields must be set.
 	// ZlibAlgorithm can be used for compression.
 	Algorithm IODataConverterAlgorithm
 
