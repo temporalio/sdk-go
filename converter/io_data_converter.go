@@ -7,8 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 
-	"github.com/golang/protobuf/proto"
-	"go.temporal.io/api/common/v1"
+	"github.com/gogo/protobuf/proto"
 	commonpb "go.temporal.io/api/common/v1"
 )
 
@@ -118,7 +117,7 @@ func (i *IODataConverter) toPayload(payload *commonpb.Payload) (*commonpb.Payloa
 	if err != nil {
 		return nil, err
 	}
-	return &common.Payload{
+	return &commonpb.Payload{
 		Metadata: map[string][]byte{MetadataEncoding: []byte(i.options.Algorithm.Encoding)},
 		Data:     b,
 	}, nil
