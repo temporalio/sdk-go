@@ -19,10 +19,6 @@ type IODataConverterOptions struct {
 	// ZlibAlgorithm can be used for compression.
 	Algorithm IODataConverterAlgorithm
 
-	// If this is greater than zero, this converter will not apply when converting
-	// to payload unless the payload is at least this size. If this is zero, the
-	// converter will always apply.
-
 	// MinSize is the size the payload must reach in bytes before the converter is
 	// applied when converting to a payload. If the payload in bytes is smaller
 	// than this amount, it is not converted, just the underlying payload is
@@ -130,7 +126,6 @@ func (i *IODataConverter) toPayload(payload *commonpb.Payload) (*commonpb.Payloa
 
 func (i *IODataConverter) write(b []byte) ([]byte, error) {
 	// Create writer for use
-	// TODO(cretz): Have a reuseable buffer pool?
 	var buf bytes.Buffer
 	w, err := i.options.Algorithm.NewWriter(&buf)
 	if err != nil {
