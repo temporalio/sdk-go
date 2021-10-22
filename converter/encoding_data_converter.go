@@ -100,9 +100,11 @@ func (*zlibEncoder) Decode(p *commonpb.Payload) error {
 	if err != nil {
 		return err
 	}
-	defer r.Close()
 	// Read all and unmarshal
 	b, err := ioutil.ReadAll(r)
+	if closeErr := r.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
 	if err != nil {
 		return err
 	}
