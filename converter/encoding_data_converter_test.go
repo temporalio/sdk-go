@@ -30,6 +30,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/require"
+	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/sdk/converter"
 )
 
@@ -141,4 +142,31 @@ func assertEncodingDataConverter(t *testing.T, data interface{}) {
 	compUnderMinPayload, err := zlibIgnoreMinConv.ToPayload(data)
 	require.NoError(t, err)
 	require.True(t, proto.Equal(uncompPayload, compUnderMinPayload))
+}
+
+func TestEncodingDataConverterClone(t *testing.T) {
+	captureConv := &captureToPayloadDataConverter{DataConverter: converter.GetDefaultDataConverter()}
+	zlibConv := converter.NewEncodingDataConverter(
+		captureConv,
+		// Always encode
+		converter.NewZlibEncoder(converter.ZlibEncoderOptions{AlwaysEncode: true}),
+	)
+	// Convert simple payload and confirm the result of capture conv was not
+	// mutated by zlib conv
+	p, err := zlibConv.ToPayload("some string")
+	require.NoError(t, err)
+	require.NotNil(t, captureConv.lastToPayloadResult)
+	require.NotEqual(t, captureConv.lastToPayloadResult.Data, p.Data)
+	require.NotEqual(t, captureConv.lastToPayloadResult.Metadata, p.Metadata)
+}
+
+type captureToPayloadDataConverter struct {
+	converter.DataConverter
+	lastToPayloadResult *commonpb.Payload
+}
+
+func (c *captureToPayloadDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+	p, err := c.DataConverter.ToPayload(value)
+	c.lastToPayloadResult = p
+	return p, err
 }
