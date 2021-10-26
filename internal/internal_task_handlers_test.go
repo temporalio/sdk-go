@@ -35,7 +35,6 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/mock/gomock"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -468,7 +467,6 @@ func (t *TaskHandlersTestSuite) getTestWorkerExecutionParams() workerExecutionPa
 		Identity:  "test-id-1",
 		Logger:    t.logger,
 		cache:     cache,
-		Tracer:    opentracing.NoopTracer{},
 	}
 }
 

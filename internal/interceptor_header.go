@@ -37,7 +37,6 @@ func contextWithHeaderPropagated(
 	for _, ctxProp := range ctxProps {
 		var err error
 		if ctx, err = ctxProp.Extract(ctx, reader); err != nil {
-			panic("OH NO! " + err.Error())
 			return nil, fmt.Errorf("failed propagating header: %w", err)
 		}
 	}
@@ -52,7 +51,6 @@ func headerPropagated(ctx context.Context, ctxProps []ContextPropagator) (*commo
 	writer := NewHeaderWriter(header)
 	for _, ctxProp := range ctxProps {
 		if err := ctxProp.Inject(ctx, writer); err != nil {
-			panic("OH NO! " + err.Error())
 			return nil, fmt.Errorf("failed propagating header: %w", err)
 		}
 	}
@@ -87,7 +85,6 @@ func workflowContextWithHeaderPropagated(
 	for _, ctxProp := range ctxProps {
 		var err error
 		if ctx, err = ctxProp.ExtractToWorkflow(ctx, reader); err != nil {
-			panic("OH NO! " + err.Error())
 			return nil, fmt.Errorf("failed propagating header: %w", err)
 		}
 	}
@@ -102,7 +99,6 @@ func workflowHeaderPropagated(ctx Context, ctxProps []ContextPropagator) (*commo
 	writer := NewHeaderWriter(header)
 	for _, ctxProp := range ctxProps {
 		if err := ctxProp.InjectFromWorkflow(ctx, writer); err != nil {
-			panic("OH NO! " + err.Error())
 			return nil, fmt.Errorf("failed propagating header: %w", err)
 		}
 	}

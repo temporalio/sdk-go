@@ -29,7 +29,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -221,7 +220,6 @@ func WithActivityTask(
 	dataConverter converter.DataConverter,
 	workerStopChannel <-chan struct{},
 	contextPropagators []ContextPropagator,
-	tracer opentracing.Tracer,
 	interceptors []WorkerInterceptor,
 ) (context.Context, error) {
 	var deadline time.Time
@@ -277,7 +275,6 @@ func WithActivityTask(
 		workflowNamespace:  task.WorkflowNamespace,
 		workerStopChannel:  workerStopChannel,
 		contextPropagators: contextPropagators,
-		tracer:             tracer,
 	})
 }
 

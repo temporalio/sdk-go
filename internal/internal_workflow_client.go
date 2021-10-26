@@ -32,7 +32,6 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
@@ -74,7 +73,6 @@ type (
 		identity           string
 		dataConverter      converter.DataConverter
 		contextPropagators []ContextPropagator
-		tracer             opentracing.Tracer
 		workerInterceptors []WorkerInterceptor
 
 		interceptor ClientOutboundInterceptor

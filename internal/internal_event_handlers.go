@@ -34,7 +34,6 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally/v4"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
@@ -132,7 +131,6 @@ type (
 		registry                 *registry
 		dataConverter            converter.DataConverter
 		contextPropagators       []ContextPropagator
-		tracer                   opentracing.Tracer
 		deadlockDetectionTimeout time.Duration
 	}
 
@@ -178,7 +176,6 @@ func newWorkflowExecutionEventHandler(
 	registry *registry,
 	dataConverter converter.DataConverter,
 	contextPropagators []ContextPropagator,
-	tracer opentracing.Tracer,
 	deadlockDetectionTimeout time.Duration,
 ) workflowExecutionEventHandler {
 	context := &workflowEnvironmentImpl{
@@ -195,7 +192,6 @@ func newWorkflowExecutionEventHandler(
 		registry:                 registry,
 		dataConverter:            dataConverter,
 		contextPropagators:       contextPropagators,
-		tracer:                   tracer,
 		deadlockDetectionTimeout: deadlockDetectionTimeout,
 	}
 	context.logger = ilog.NewReplayLogger(

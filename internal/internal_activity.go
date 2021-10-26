@@ -33,7 +33,6 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
 
@@ -142,7 +141,6 @@ type (
 		workflowNamespace  string
 		workerStopChannel  <-chan struct{}
 		contextPropagators []ContextPropagator
-		tracer             opentracing.Tracer
 	}
 
 	// context.WithValue need this type instead of basic type string to avoid lint error

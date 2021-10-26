@@ -45,7 +45,6 @@ import (
 	"github.com/gogo/protobuf/jsonpb"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/mock/gomock"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
@@ -197,8 +196,6 @@ type (
 		SessionResourceID string
 
 		ContextPropagators []ContextPropagator
-
-		Tracer opentracing.Tracer
 
 		// DeadlockDetectionTimeout specifies workflow task timeout.
 		DeadlockDetectionTimeout time.Duration
@@ -541,7 +538,7 @@ func (r *registry) RegisterActivityWithOptions(
 			panic(fmt.Sprintf("activity type \"%v\" is already registered", registerName))
 		}
 	}
-	r.activityFuncMap[registerName] = &activityExecutor{registerName, af}
+	r.activityFuncMap[registerName] = &activityExecutor{name: registerName, fn: af}
 	if len(alias) > 0 {
 		r.activityAliasMap[fnName] = alias
 	}
@@ -575,7 +572,7 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 				return fmt.Errorf("activity type \"%v\" is already registered", registerName)
 			}
 		}
-		r.activityFuncMap[registerName] = &activityExecutor{registerName, methodValue.Interface()}
+		r.activityFuncMap[registerName] = &activityExecutor{name: registerName, fn: methodValue.Interface()}
 		count++
 	}
 	if count == 0 {
@@ -751,8 +748,9 @@ func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*com
 
 // Wrapper to execute activity functions.
 type activityExecutor struct {
-	name string
-	fn   interface{}
+	name             string
+	fn               interface{}
+	skipInterceptors bool
 }
 
 func (ae *activityExecutor) ActivityType() ActivityType {
@@ -784,7 +782,11 @@ func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, args []in
 	envInterceptor.fn = ae.fn
 
 	// Execute and serialize result
-	result, resultErr := envInterceptor.inboundInterceptor.ExecuteActivity(ctx, &ExecuteActivityInput{Args: args})
+	interceptor := envInterceptor.inboundInterceptor
+	if ae.skipInterceptors {
+		interceptor = envInterceptor
+	}
+	result, resultErr := interceptor.ExecuteActivity(ctx, &ExecuteActivityInput{Args: args})
 	var serializedResult *commonpb.Payloads
 	if result != nil {
 		// As a special case, if the result is already a payload, just use it
@@ -1274,7 +1276,6 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		DataConverter:                         client.dataConverter,
 		WorkerStopTimeout:                     options.WorkerStopTimeout,
 		ContextPropagators:                    client.contextPropagators,
-		Tracer:                                client.tracer,
 		DeadlockDetectionTimeout:              options.DeadlockDetectionTimeout,
 		cache:                                 cache,
 	}
@@ -1469,9 +1470,6 @@ func setClientDefaults(client *WorkflowClient) {
 	}
 	if client.namespace == "" {
 		client.namespace = DefaultNamespace
-	}
-	if client.tracer == nil {
-		client.tracer = opentracing.NoopTracer{}
 	}
 	if client.metricsScope == nil {
 		client.metricsScope = tally.NoopScope

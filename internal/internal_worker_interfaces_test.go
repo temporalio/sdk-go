@@ -31,7 +31,6 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
-	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -186,7 +185,6 @@ func (s *InterfacesTestSuite) TestInterface() {
 		MaxConcurrentActivityTaskQueuePollers: 4,
 		MaxConcurrentWorkflowTaskQueuePollers: 4,
 		Logger:                                ilog.NewDefaultLogger(),
-		Tracer:                                opentracing.NoopTracer{},
 	}
 
 	namespaceState := enumspb.NAMESPACE_STATE_REGISTERED
@@ -217,7 +215,6 @@ func (s *InterfacesTestSuite) TestInterface() {
 		MaxConcurrentActivityTaskQueuePollers: 10,
 		MaxConcurrentWorkflowTaskQueuePollers: 10,
 		Logger:                                ilog.NewDefaultLogger(),
-		Tracer:                                opentracing.NoopTracer{},
 	}
 
 	// Register activity instances and launch the worker.

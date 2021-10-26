@@ -31,7 +31,6 @@ import (
 	"io"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -417,10 +416,6 @@ type (
 		// default: defaultDataConverter, an combination of google protobuf converter, gogo protobuf converter and json converter
 		DataConverter converter.DataConverter
 
-		// Optional: Sets opentracing Tracer that is to be used to emit tracing information
-		// default: no tracer - opentracing.NoopTracer
-		Tracer opentracing.Tracer
-
 		// Optional: Sets ContextPropagators that allows users to control the context information passed through a workflow
 		// default: nil
 		ContextPropagators []ContextPropagator
@@ -698,12 +693,6 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		options.DataConverter = converter.GetDefaultDataConverter()
 	}
 
-	if options.Tracer != nil {
-		options.ContextPropagators = append(options.ContextPropagators, NewTracingContextPropagator(options.Logger, options.Tracer))
-	} else {
-		options.Tracer = opentracing.NoopTracer{}
-	}
-
 	// Collect set of applicable worker interceptors
 	var workerInterceptors []WorkerInterceptor
 	for _, interceptor := range options.Interceptors {
@@ -722,7 +711,6 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		identity:           options.Identity,
 		dataConverter:      options.DataConverter,
 		contextPropagators: options.ContextPropagators,
-		tracer:             options.Tracer,
 		workerInterceptors: workerInterceptors,
 	}
 

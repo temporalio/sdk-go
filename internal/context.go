@@ -28,11 +28,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
 	enumspb "go.temporal.io/api/enums/v1"
 )
-
-const activeSpanContextKey contextKey = "activeSpanContextKey"
 
 // Context is a clone of context.Context with Done() returning Channel instead
 // of native channel.
@@ -431,16 +428,4 @@ func (c *valueCtx) Value(key interface{}) interface{} {
 		return c.val
 	}
 	return c.Context.Value(key)
-}
-
-func spanFromContext(ctx Context) opentracing.SpanContext {
-	val := ctx.Value(activeSpanContextKey)
-	if sp, ok := val.(opentracing.SpanContext); ok {
-		return sp
-	}
-	return nil
-}
-
-func contextWithSpan(ctx Context, spanContext opentracing.SpanContext) Context {
-	return WithValue(ctx, activeSpanContextKey, spanContext)
 }

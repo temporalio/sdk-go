@@ -36,7 +36,6 @@ import (
 
 	"github.com/facebookgo/clock"
 	"github.com/golang/mock/gomock"
-	"github.com/opentracing/opentracing-go"
 	"github.com/robfig/cron"
 	"github.com/stretchr/testify/mock"
 	"github.com/uber-go/tally/v4"
@@ -139,7 +138,6 @@ type (
 		metricsScope       tally.Scope
 		contextPropagators []ContextPropagator
 		identity           string
-		tracer             opentracing.Tracer
 
 		mockClock *clock.Mock
 		wallClock clock.Clock
@@ -224,7 +222,6 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 
 			logger:            s.logger,
 			metricsScope:      s.scope,
-			tracer:            opentracing.NoopTracer{},
 			mockClock:         clock.NewMock(),
 			wallClock:         clock.New(),
 			timers:            make(map[string]*testTimerHandle),
@@ -410,10 +407,6 @@ func (env *testWorkflowEnvironmentImpl) setDataConverter(dataConverter converter
 
 func (env *testWorkflowEnvironmentImpl) setContextPropagators(contextPropagators []ContextPropagator) {
 	env.contextPropagators = contextPropagators
-}
-
-func (env *testWorkflowEnvironmentImpl) setTracer(tracer opentracing.Tracer) {
-	env.tracer = tracer
 }
 
 func (env *testWorkflowEnvironmentImpl) setWorkerStopChannel(c chan struct{}) {
@@ -621,7 +614,6 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 		userContext:  env.workerOptions.BackgroundActivityContext,
 		metricsScope: env.metricsScope,
 		logger:       env.logger,
-		tracer:       opentracing.NoopTracer{},
 		interceptors: env.registry.interceptors,
 	}
 
@@ -1367,6 +1359,10 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocal
 		// local activity could be registered, if so use the registered name. This name is only used to find a mock.
 		ae.name = at.Name
 	}
+	// We have to skip the interceptors on the first call because
+	// ExecuteWithActualArgs is actually invoked twice to support a mock activity
+	// function result
+	ae.skipInterceptors = true
 	aew := &activityExecutorWrapper{activityExecutor: ae, env: env}
 
 	// substitute the local activity function so we could replace with mock if it is supplied.
@@ -1380,7 +1376,6 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocal
 		metricsScope:       env.metricsScope,
 		logger:             env.logger,
 		dataConverter:      env.dataConverter,
-		tracer:             env.tracer,
 		contextPropagators: env.contextPropagators,
 		interceptors:       env.registry.interceptors,
 	}
@@ -1843,7 +1838,6 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskQueue str
 		DataConverter:      dataConverter,
 		WorkerStopChannel:  env.workerStopChannel,
 		ContextPropagators: env.contextPropagators,
-		Tracer:             env.tracer,
 	}
 	ensureRequiredParams(&params)
 	if params.UserContext == nil {

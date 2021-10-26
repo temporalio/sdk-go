@@ -37,7 +37,6 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
-	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -2469,7 +2468,6 @@ func TestWorkerOptionDefaults(t *testing.T) {
 		WorkerLocalActivitiesPerSecond:        defaultWorkerLocalActivitiesPerSecond,
 		StickyScheduleToStartTimeout:          stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second,
 		DataConverter:                         converter.GetDefaultDataConverter(),
-		Tracer:                                opentracing.NoopTracer{},
 		Logger:                                workflowWorker.executionParameters.Logger,
 		MetricsScope:                          workflowWorker.executionParameters.MetricsScope,
 		Identity:                              workflowWorker.executionParameters.Identity,
@@ -2497,7 +2495,6 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		identity:           "143@worker-options-test-1",
 		dataConverter:      &converter.CompositeDataConverter{},
 		contextPropagators: nil,
-		tracer:             nil,
 		logger:             ilog.NewNopLogger(),
 	}
 
@@ -2532,7 +2529,6 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		WorkerLocalActivitiesPerSecond:        options.WorkerLocalActivitiesPerSecond,
 		StickyScheduleToStartTimeout:          options.StickyScheduleToStartTimeout,
 		DataConverter:                         client.dataConverter,
-		Tracer:                                client.tracer,
 		Logger:                                client.logger,
 		MetricsScope:                          client.metricsScope,
 		Identity:                              client.identity,
@@ -2569,7 +2565,6 @@ func TestLocalActivityWorkerOnly(t *testing.T) {
 		WorkerLocalActivitiesPerSecond:        defaultWorkerLocalActivitiesPerSecond,
 		StickyScheduleToStartTimeout:          stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second,
 		DataConverter:                         converter.GetDefaultDataConverter(),
-		Tracer:                                opentracing.NoopTracer{},
 		Logger:                                workflowWorker.executionParameters.Logger,
 		MetricsScope:                          workflowWorker.executionParameters.MetricsScope,
 		Identity:                              workflowWorker.executionParameters.Identity,
@@ -2588,7 +2583,6 @@ func assertWorkerExecutionParamsEqual(t *testing.T, paramsA workerExecutionParam
 	require.Equal(t, paramsA.TaskQueue, paramsA.TaskQueue)
 	require.Equal(t, paramsA.Identity, paramsB.Identity)
 	require.Equal(t, paramsA.DataConverter, paramsB.DataConverter)
-	require.Equal(t, paramsA.Tracer, paramsB.Tracer)
 	require.Equal(t, paramsA.ConcurrentLocalActivityExecutionSize, paramsB.ConcurrentLocalActivityExecutionSize)
 	require.Equal(t, paramsA.ConcurrentActivityExecutionSize, paramsB.ConcurrentActivityExecutionSize)
 	require.Equal(t, paramsA.ConcurrentWorkflowTaskExecutionSize, paramsB.ConcurrentWorkflowTaskExecutionSize)

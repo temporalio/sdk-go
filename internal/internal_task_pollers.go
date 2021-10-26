@@ -34,7 +34,6 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/types"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
@@ -132,7 +131,6 @@ type (
 		logger             log.Logger
 		dataConverter      converter.DataConverter
 		contextPropagators []ContextPropagator
-		tracer             opentracing.Tracer
 		interceptors       []WorkerInterceptor
 	}
 
@@ -425,7 +423,6 @@ func newLocalActivityPoller(
 		logger:             params.Logger,
 		dataConverter:      params.DataConverter,
 		contextPropagators: params.ContextPropagators,
-		tracer:             params.Tracer,
 		interceptors:       interceptors,
 	}
 	return &localActivityTaskPoller{
@@ -482,16 +479,9 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 	}
 
 	// propagate context information into the local activity activity context from the headers
-	for _, ctxProp := range lath.contextPropagators {
-		var err error
-		if ctx, err = ctxProp.Extract(ctx, NewHeaderReader(task.header)); err != nil {
-			result = &localActivityResult{
-				task:   task,
-				result: nil,
-				err:    fmt.Errorf("unable to propagate context: %w", err),
-			}
-			return result
-		}
+	ctx, err = contextWithHeaderPropagated(ctx, task.header, lath.contextPropagators)
+	if err != nil {
+		return &localActivityResult{task: task, err: err}
 	}
 
 	// panic handler
@@ -545,8 +535,6 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 	doneCh := make(chan struct{})
 	go func(ch chan struct{}) {
 		laStartTime := time.Now()
-		ctx, span := createOpenTracingActivitySpan(ctx, lath.tracer, time.Now(), task.params.ActivityType, task.params.WorkflowInfo.WorkflowExecution.ID, task.params.WorkflowInfo.WorkflowExecution.RunID)
-		defer span.Finish()
 		laResult, err = ae.ExecuteWithActualArgs(ctx, task.params.InputArgs)
 		executionLatency := time.Since(laStartTime)
 		close(ch)
