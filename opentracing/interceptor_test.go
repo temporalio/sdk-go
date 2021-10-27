@@ -23,9 +23,9 @@ func TestSpanPropagation(t *testing.T) {
 
 	// Create tracer
 	tracer := mocktracer.New()
-	env.SetWorkerOptions(worker.Options{
-		Interceptors: []interceptor.WorkerInterceptor{opentracing.NewInterceptor(tracer)},
-	})
+	intercept, err := opentracing.NewInterceptor(opentracing.TracerOptions{Tracer: tracer})
+	require.NoError(t, err)
+	env.SetWorkerOptions(worker.Options{Interceptors: []interceptor.WorkerInterceptor{intercept}})
 
 	// Exec
 	env.ExecuteWorkflow(Workflow)
