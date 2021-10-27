@@ -569,7 +569,7 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 				continue
 			}
 
-			return fmt.Errorf("method %v of %v: %e", name, structType.Name(), err)
+			return fmt.Errorf("method %s of %s: %w", name, structType.Name(), err)
 		}
 		registerName := options.Name + name
 		if !options.DisableAlreadyRegisteredCheck {
