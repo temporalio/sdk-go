@@ -54,6 +54,7 @@ import (
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/internal/interceptortest"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
@@ -85,6 +86,7 @@ type IntegrationTestSuite struct {
 	trafficController        *test.SimpleTrafficController
 	metricsScopeCloser       io.Closer
 	metricsReporter          *metrics.CapturingStatsReporter
+	interceptorCallRecorder  *interceptortest.CallRecordingInvoker
 }
 
 func TestIntegrationSuite(t *testing.T) {
@@ -131,6 +133,13 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	var metricsScope tally.Scope
 	metricsScope, ts.metricsScopeCloser, ts.metricsReporter = metrics.NewTaggedMetricsScope()
 
+	var clientInterceptors []interceptor.ClientInterceptor
+	// Record calls for interceptor test
+	if strings.Contains(ts.T().Name(), "InterceptorCalls") {
+		ts.interceptorCallRecorder = &interceptortest.CallRecordingInvoker{}
+		clientInterceptors = append(clientInterceptors, interceptortest.NewProxy(ts.interceptorCallRecorder))
+	}
+
 	var err error
 	trafficController := test.NewSimpleTrafficController()
 	ts.client, err = client.NewClient(client.Options{
@@ -143,6 +152,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		},
 		MetricsScope:      metricsScope,
 		TrafficController: trafficController,
+		Interceptors:      clientInterceptors,
 	})
 	ts.NoError(err)
 
@@ -1270,6 +1280,153 @@ func (ts *IntegrationTestSuite) TestGracefulActivityCompletion() {
 	var s string
 	ts.NoError(converter.GetDefaultDataConverter().FromPayload(completed.Result.Payloads[0], &s))
 	ts.Equal("stopped", s)
+}
+
+func (ts *IntegrationTestSuite) TestInterceptorCalls() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start workflow
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-interceptor-calls"),
+		ts.workflows.InterceptorCalls, "root")
+	ts.NoError(err)
+
+	// Query
+	queryVal, err := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "query", "queryarg")
+	ts.NoError(err)
+	var queryRes string
+	ts.NoError(queryVal.Get(&queryRes))
+	ts.Equal("queryresult(queryarg)", queryRes)
+
+	// Send signal
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
+
+	// Confirm response
+	var resStr string
+	ts.NoError(run.Get(ctx, &resStr))
+	ts.Equal("finished(activity(workflow(root)))", resStr)
+
+	// Make other client calls we know will fail
+	_, _ = ts.client.SignalWithStartWorkflow(ctx, "badid", "badsignal", nil, client.StartWorkflowOptions{}, "badworkflow")
+	_ = ts.client.CancelWorkflow(ctx, "badid", "badrunid")
+	_ = ts.client.TerminateWorkflow(ctx, "badid", "badrunid", "")
+
+	// Prepare call checks
+	type check func(call *interceptortest.RecordedCall)
+	arg := func(index int, cb func(interface{})) check {
+		return func(call *interceptortest.RecordedCall) { cb(call.Args[index].Interface()) }
+	}
+	result := func(index int, cb func(interface{})) check {
+		return func(call *interceptortest.RecordedCall) { cb(call.Results[index].Interface()) }
+	}
+	callChecks := map[string][]check{
+		// ClientOutboundInterceptor
+		"ClientOutboundInterceptor.ExecuteWorkflow": {
+			arg(1, func(i interface{}) {
+				ts.Equal("InterceptorCalls", i.(*interceptor.ClientExecuteWorkflowInput).WorkflowType)
+			}),
+		},
+		// WorkflowInboundInterceptor
+		"WorkflowInboundInterceptor.Init": {},
+		"WorkflowInboundInterceptor.ExecuteWorkflow": {
+			arg(1, func(i interface{}) {
+				ts.Equal("root", i.(*interceptor.ExecuteWorkflowInput).Args[0])
+			}),
+		},
+		"WorkflowInboundInterceptor.HandleSignal": {
+			arg(1, func(i interface{}) {
+				in := i.(*interceptor.HandleSignalInput)
+				ts.Equal("finish", in.SignalName)
+				// TODO(cretz): Argument is actually a payload
+				// ts.Equal("finished", in.Arg)
+			}),
+		},
+		"WorkflowInboundInterceptor.HandleQuery": {
+			arg(1, func(i interface{}) {
+				in := i.(*interceptor.HandleQueryInput)
+				ts.Equal("query", in.QueryType)
+				ts.Equal("queryarg", in.Args[0])
+			}),
+			result(0, func(i interface{}) {
+				ts.Equal("queryresult(queryarg)", i)
+			}),
+		},
+		// WorkflowOutboundInterceptor
+		"WorkflowOutboundInterceptor.Go": {},
+		"WorkflowOutboundInterceptor.ExecuteActivity": {
+			arg(1, func(i interface{}) {
+				ts.Equal("InterceptorCalls", i)
+			}),
+		},
+		"WorkflowOutboundInterceptor.ExecuteLocalActivity": {
+			arg(1, func(i interface{}) {
+				ts.Equal("Echo", i)
+			}),
+		},
+		"WorkflowOutboundInterceptor.ExecuteChildWorkflow": {},
+		"WorkflowOutboundInterceptor.GetInfo": {
+			result(0, func(i interface{}) {
+				ts.Equal("InterceptorCalls", i.(*workflow.Info).WorkflowType.Name)
+			}),
+		},
+		"WorkflowOutboundInterceptor.GetLogger":                     {},
+		"WorkflowOutboundInterceptor.GetMetricsScope":               {},
+		"WorkflowOutboundInterceptor.Now":                           {},
+		"WorkflowOutboundInterceptor.NewTimer":                      {},
+		"WorkflowOutboundInterceptor.Sleep":                         {},
+		"WorkflowOutboundInterceptor.RequestCancelExternalWorkflow": {},
+		"WorkflowOutboundInterceptor.SignalExternalWorkflow":        {},
+		"WorkflowOutboundInterceptor.UpsertSearchAttributes":        {},
+		"WorkflowOutboundInterceptor.GetSignalChannel":              {},
+		"WorkflowOutboundInterceptor.SideEffect":                    {},
+		"WorkflowOutboundInterceptor.MutableSideEffect":             {},
+		"WorkflowOutboundInterceptor.GetVersion":                    {},
+		"WorkflowOutboundInterceptor.SetQueryHandler":               {},
+		"WorkflowOutboundInterceptor.IsReplaying":                   {},
+		"WorkflowOutboundInterceptor.HasLastCompletionResult":       {},
+		"WorkflowOutboundInterceptor.GetLastCompletionResult":       {},
+		"WorkflowOutboundInterceptor.GetLastError":                  {},
+		"WorkflowOutboundInterceptor.NewContinueAsNewError":         {},
+		// ActivityInboundInterceptor
+		"ActivityInboundInterceptor.Init": {},
+		"ActivityInboundInterceptor.ExecuteActivity": {
+			arg(1, func(i interface{}) {
+				ts.Equal("workflow(root)", i.(*interceptor.ExecuteActivityInput).Args[0])
+			}),
+			result(0, func(i interface{}) {
+				ts.Equal("activity(workflow(root))", i)
+			}),
+		},
+		// ActivityOutboundInterceptor
+		"ActivityOutboundInterceptor.GetInfo": {
+			result(0, func(i interface{}) {
+				ts.Equal("InterceptorCalls", i.(activity.Info).ActivityType.Name)
+			}),
+		},
+		"ActivityOutboundInterceptor.GetLogger":            {},
+		"ActivityOutboundInterceptor.GetMetricsScope":      {},
+		"ActivityOutboundInterceptor.RecordHeartbeat":      {},
+		"ActivityOutboundInterceptor.HasHeartbeatDetails":  {},
+		"ActivityOutboundInterceptor.GetHeartbeatDetails":  {},
+		"ActivityOutboundInterceptor.GetWorkerStopChannel": {},
+	}
+
+	// Do call checks
+	for qualifiedName, checks := range callChecks {
+		// Find call
+		var call *interceptortest.RecordedCall
+		for _, maybeCall := range ts.interceptorCallRecorder.Calls() {
+			if maybeCall.Interface.Name()+"."+maybeCall.Method.Name == qualifiedName {
+				call = maybeCall
+				break
+			}
+		}
+		ts.NotNilf(call, "Can't find call for %v", qualifiedName)
+		// Do checks
+		for _, check := range checks {
+			check(call)
+		}
+	}
 }
 
 func (ts *IntegrationTestSuite) registerNamespace() {
