@@ -40,7 +40,7 @@ type TracerStartSpanOptions struct {
 }
 
 type TracerFinishSpanOptions struct {
-	Error bool
+	Error error
 }
 
 type TracerSpanRef interface{}
@@ -106,7 +106,7 @@ func (t *tracingClientOutboundInterceptor) ExecuteWorkflow(
 	defer span.Finish(&finishOpts)
 
 	run, err := t.Next.ExecuteWorkflow(ctx, in)
-	finishOpts.Error = err != nil
+	finishOpts.Error = err
 	return run, err
 }
 
@@ -128,7 +128,7 @@ func (t *tracingClientOutboundInterceptor) SignalWithStartWorkflow(
 	defer span.Finish(&finishOpts)
 
 	run, err := t.Next.SignalWithStartWorkflow(ctx, in)
-	finishOpts.Error = err != nil
+	finishOpts.Error = err
 	return run, err
 }
 
@@ -160,7 +160,7 @@ func (t *tracingActivityInboundInterceptor) ExecuteActivity(
 	defer span.Finish(&finishOpts)
 
 	ret, err := t.Next.ExecuteActivity(ctx, in)
-	finishOpts.Error = err != nil
+	finishOpts.Error = err
 	return ret, err
 }
 
@@ -197,7 +197,7 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteWorkflow(
 	defer span.Finish(&finishOpts)
 
 	ret, err := t.Next.ExecuteWorkflow(ctx, in)
-	finishOpts.Error = err != nil
+	finishOpts.Error = err
 	return ret, err
 }
 

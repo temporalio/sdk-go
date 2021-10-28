@@ -19,9 +19,7 @@ type spanContextKey struct{}
 
 const defaultHeaderKey = "_tracer-data"
 
-type tracer struct {
-	options *TracerOptions
-}
+type tracer struct{ options *TracerOptions }
 
 func NewTracer(options TracerOptions) (interceptor.Tracer, error) {
 	if options.Tracer == nil {
@@ -78,7 +76,7 @@ func (t *tracer) SpanFromContext(ctx context.Context) interceptor.TracerSpan {
 	if span == nil {
 		return nil
 	}
-	return &tracerSpan{span}
+	return &tracerSpan{Span: span}
 }
 
 func (t *tracer) ContextWithSpan(ctx context.Context, span interceptor.TracerSpan) context.Context {
@@ -107,6 +105,8 @@ func (t *tracer) StartSpan(opts *interceptor.TracerStartSpanOptions) (intercepto
 			startOpts = append(startOpts, opentracing.FollowsFrom(parent))
 		}
 	}
+
+	// Set tags
 	if len(opts.Tags) > 0 {
 		tags := make(opentracing.Tags, len(opts.Tags))
 		for k, v := range opts.Tags {
@@ -116,7 +116,7 @@ func (t *tracer) StartSpan(opts *interceptor.TracerStartSpanOptions) (intercepto
 	}
 
 	// Start
-	return &tracerSpan{t.options.SpanStarter(t.options.Tracer, opts.Operation+":"+opts.Name, startOpts...)}, nil
+	return &tracerSpan{Span: t.options.SpanStarter(t.options.Tracer, opts.Operation+":"+opts.Name, startOpts...)}, nil
 }
 
 type tracerSpanRef struct{ opentracing.SpanContext }
@@ -124,7 +124,7 @@ type tracerSpanRef struct{ opentracing.SpanContext }
 type tracerSpan struct{ opentracing.Span }
 
 func (t *tracerSpan) Finish(opts *interceptor.TracerFinishSpanOptions) {
-	if opts.Error {
+	if opts.Error != nil {
 		// Standard tag that can be bridged to OpenTelemetry
 		t.SetTag("error", "true")
 	}
