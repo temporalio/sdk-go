@@ -78,7 +78,7 @@ func createOpenTracingSpan(
 	var parent opentracing.SpanContext
 	if parentSpan := opentracing.SpanFromContext(ctx); parentSpan != nil {
 		parent = parentSpan.Context()
-	} else if spanCtx, ok := ctx.Value(activeSpanContextKey).(opentracing.SpanContext); ok {
+	} else if spanCtx, ok := ctx.Value(ActiveSpanContextKey).(opentracing.SpanContext); ok {
 		parent = spanCtx
 	}
 

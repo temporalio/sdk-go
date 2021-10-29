@@ -26,6 +26,9 @@ package workflow
 
 import "go.temporal.io/sdk/internal"
 
+// ActiveSpanContextKey is the key used to set SpanContext in context
+const ActiveSpanContextKey = internal.ActiveSpanContextKey
+
 type (
 	// HeaderReader is an interface to read information from temporal headers
 	HeaderReader = internal.HeaderReader

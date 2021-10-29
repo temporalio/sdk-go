@@ -58,7 +58,7 @@ func TestTracingContextPropagator(t *testing.T) {
 	returnCtx, err = ctxProp.Extract(returnCtx, NewHeaderReader(header))
 	require.NoError(t, err)
 
-	spanCtx := returnCtx.Value(activeSpanContextKey)
+	spanCtx := returnCtx.Value(ActiveSpanContextKey)
 	assert.NotNil(t, spanCtx)
 }
 

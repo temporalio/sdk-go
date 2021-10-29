@@ -32,7 +32,8 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 )
 
-const activeSpanContextKey contextKey = "activeSpanContextKey"
+// ActiveSpanContextKey is the key used to set SpanContext in context
+const ActiveSpanContextKey contextKey = "activeSpanContextKey"
 
 // Context is a clone of context.Context with Done() returning Channel instead
 // of native channel.
@@ -434,7 +435,7 @@ func (c *valueCtx) Value(key interface{}) interface{} {
 }
 
 func spanFromContext(ctx Context) opentracing.SpanContext {
-	val := ctx.Value(activeSpanContextKey)
+	val := ctx.Value(ActiveSpanContextKey)
 	if sp, ok := val.(opentracing.SpanContext); ok {
 		return sp
 	}
@@ -442,5 +443,5 @@ func spanFromContext(ctx Context) opentracing.SpanContext {
 }
 
 func contextWithSpan(ctx Context, spanContext opentracing.SpanContext) Context {
-	return WithValue(ctx, activeSpanContextKey, spanContext)
+	return WithValue(ctx, ActiveSpanContextKey, spanContext)
 }

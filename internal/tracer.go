@@ -115,7 +115,7 @@ func (t *tracingContextPropagator) Extract(
 	if spanContext == nil {
 		return ctx, nil
 	}
-	return context.WithValue(ctx, activeSpanContextKey, spanContext), nil
+	return context.WithValue(ctx, ActiveSpanContextKey, spanContext), nil
 }
 
 func (t *tracingContextPropagator) InjectFromWorkflow(
