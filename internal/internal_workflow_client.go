@@ -367,6 +367,12 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 		return nil, err
 	}
 
+	// Due to the ambiguous way to provide workflow IDs, if options contains an
+	// ID, it must match the parameter
+	if options.ID != "" && options.ID != workflowID {
+		return nil, fmt.Errorf("workflow ID from options not used, must be unset or match workflow ID parameter")
+	}
+
 	if workflowID == "" {
 		workflowID = uuid.NewRandom().String()
 	}
