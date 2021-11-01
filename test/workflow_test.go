@@ -1341,6 +1341,12 @@ func (w *Workflows) InterceptorCalls(ctx workflow.Context, someVal string) (stri
 	return someVal, nil
 }
 
+func (w *Workflows) WaitSignalToStart(ctx workflow.Context) (string, error) {
+	var value string
+	workflow.GetSignalChannel(ctx, "start-signal").Receive(ctx, &value)
+	return value, nil
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -1396,6 +1402,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.CancelTimerConcurrentWithOtherCommandWorkflow)
 	worker.RegisterWorkflow(w.CancelMultipleCommandsOverMultipleTasks)
 	worker.RegisterWorkflow(w.InterceptorCalls)
+	worker.RegisterWorkflow(w.WaitSignalToStart)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)

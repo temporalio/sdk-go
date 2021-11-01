@@ -20,6 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+// Package interceptortest contains internal utilities for testing interceptors.
 package interceptortest
 
 import (
@@ -39,6 +40,7 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
+// ProxyCall represents a call made to the proxy interceptor.
 type ProxyCall struct {
 	Interface reflect.Type
 	Next      reflect.Value
@@ -46,6 +48,7 @@ type ProxyCall struct {
 	Args      []reflect.Value
 }
 
+// Call invokes this proxied call.
 func (p *ProxyCall) Call() []reflect.Value {
 	// Put receiver before args
 	args := append([]reflect.Value{p.Next}, p.Args...)
@@ -56,15 +59,19 @@ func (p *ProxyCall) Call() []reflect.Value {
 	return p.Method.Func.Call(args)
 }
 
+// Invoker is an interface that is called for every intercepted call by a proxy.
 type Invoker interface {
-	// Unlike normal reflect.Method, the Func will have its receiver already set
+	// Invoke is called for every intercepted call. This may be called
+	// concurrently from separate goroutines.
 	Invoke(*ProxyCall) []reflect.Value
 }
 
+// InvokerFunc implements Invoker for a single function.
 type InvokerFunc func(*ProxyCall) []reflect.Value
 
 var _ Invoker = (InvokerFunc)(nil)
 
+// InvokerFunc implements Invoker.Invoke.
 func (i InvokerFunc) Invoke(p *ProxyCall) []reflect.Value { return i(p) }
 
 type proxy struct {
@@ -72,16 +79,19 @@ type proxy struct {
 	nextProxy
 }
 
-// Invoker may be called on multiple threads
+// NewProxy creates a proxy interceptor that calls the given invoker.
 func NewProxy(invoker Invoker) interceptor.Interceptor {
 	return &proxy{nextProxy: nextProxy{invoker: invoker}}
 }
 
+// CallRecordingInvoker is an Invoker that records all calls made to it before
+// continuing normal invocation.
 type CallRecordingInvoker struct {
 	calls     []*RecordedCall
 	callsLock sync.RWMutex
 }
 
+// Calls provides a copy of the currently recorded calls.
 func (c *CallRecordingInvoker) Calls() []*RecordedCall {
 	c.callsLock.RLock()
 	defer c.callsLock.RUnlock()
@@ -90,6 +100,7 @@ func (c *CallRecordingInvoker) Calls() []*RecordedCall {
 	return ret
 }
 
+// Invoke implements Invoker.Invoke to record calls.
 func (c *CallRecordingInvoker) Invoke(p *ProxyCall) []reflect.Value {
 	call := &RecordedCall{ProxyCall: p}
 	c.callsLock.Lock()
@@ -99,9 +110,11 @@ func (c *CallRecordingInvoker) Invoke(p *ProxyCall) []reflect.Value {
 	return call.Results
 }
 
+// RecordedCall is a ProxyCall that also has results.
 type RecordedCall struct {
 	*ProxyCall
-	// May be set later in non-thread-safe way if still running
+	// Results of the call. This will not be set if still running and may be set
+	// asynchronously in a non-concurrency-safe way once the call completes.
 	Results []reflect.Value
 }
 

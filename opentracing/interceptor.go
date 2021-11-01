@@ -20,6 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+// Package opentracing provides OpenTracing utilities.
 package opentracing
 
 import (
@@ -30,11 +31,23 @@ import (
 	"go.temporal.io/sdk/interceptor"
 )
 
+// TracerOptions are options provided to NewInterceptor or NewTracer.
 type TracerOptions struct {
-	Tracer         opentracing.Tracer
+	// Tracer is the tracer to use. If not set, the global one is used.
+	Tracer opentracing.Tracer
+
+	// SpanContextKey is the context key used for internal span tracking (not to
+	// be confused with the context key OpenTracing uses internally). If not set,
+	// this defaults to an internal key (recommended).
 	SpanContextKey interface{}
-	HeaderKey      string
-	SpanStarter    func(t opentracing.Tracer, operationName string, opts ...opentracing.StartSpanOption) opentracing.Span
+
+	// HeaderKey is the Temporal header field key used to serialize spans. If
+	// empty, this defaults to the one used by all SDKs (recommended).
+	HeaderKey string
+
+	// SpanStarter is a callback to create spans. If not set, this creates normal
+	// OpenTracing spans calling Tracer.StartSpan.
+	SpanStarter func(t opentracing.Tracer, operationName string, opts ...opentracing.StartSpanOption) opentracing.Span
 }
 
 type spanContextKey struct{}
@@ -43,6 +56,8 @@ const defaultHeaderKey = "_tracer-data"
 
 type tracer struct{ options *TracerOptions }
 
+// NewTracer creates a tracer with the given options. Most callers should use
+// NewInterceptor instead.
 func NewTracer(options TracerOptions) (interceptor.Tracer, error) {
 	if options.Tracer == nil {
 		options.Tracer = opentracing.GlobalTracer()
@@ -65,6 +80,8 @@ func NewTracer(options TracerOptions) (interceptor.Tracer, error) {
 	return &tracer{&options}, nil
 }
 
+// NewTracingInterceptor creates an interceptor for setting on client options
+// that implements OpenTracing tracing for workflows.
 func NewInterceptor(options TracerOptions) (interceptor.Interceptor, error) {
 	t, err := NewTracer(options)
 	if err != nil {

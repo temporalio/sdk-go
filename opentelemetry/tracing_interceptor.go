@@ -20,6 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+// Package opentelemetry provides OpenTelemetry utilities.
 package opentelemetry
 
 import (
@@ -34,21 +35,37 @@ import (
 	"go.temporal.io/sdk/interceptor"
 )
 
+// DefaultTextMapPropagator is the default OpenTelemetry TextMapPropagator used
+// by this implementation if not otherwise set in TracerOptions.
 var DefaultTextMapPropagator = propagation.NewCompositeTextMapPropagator(
 	propagation.TraceContext{},
 	propagation.Baggage{},
 )
 
+// TracerOptions are options provided to NewTracingInterceptor or NewTracer.
 type TracerOptions struct {
-	// If not set, the global provider is used to obtain one
+	// Tracer is the tracer to use. If not set, one is obtained from the global
+	// tracer provider using the name "temporal-sdk-go".
 	Tracer trace.Tracer
 
-	// If not set, DefaultTextMapPropagator is used, *not* the global one
+	// TextMapPropagator is the propagator to use for serializing spans. If not
+	// set, this uses DefaultTextMapPropagator, not the OpenTelemetry global one.
+	// To use the OpenTelemetry global one, set this value to the result of the
+	// global call.
 	TextMapPropagator propagation.TextMapPropagator
 
+	// SpanContextKey is the context key used for internal span tracking (not to
+	// be confused with the context key OpenTelemetry uses internally). If not
+	// set, this defaults to an internal key (recommended).
 	SpanContextKey interface{}
-	HeaderKey      string
-	SpanStarter    func(ctx context.Context, t trace.Tracer, spanName string, opts ...trace.SpanStartOption) trace.Span
+
+	// HeaderKey is the Temporal header field key used to serialize spans. If
+	// empty, this defaults to the one used by all SDKs (recommended).
+	HeaderKey string
+
+	// SpanStarter is a callback to create spans. If not set, this creates normal
+	// OpenTelemetry spans calling Tracer.Start.
+	SpanStarter func(ctx context.Context, t trace.Tracer, spanName string, opts ...trace.SpanStartOption) trace.Span
 }
 
 type spanContextKey struct{}
@@ -57,6 +74,8 @@ const defaultHeaderKey = "_tracer-data"
 
 type tracer struct{ options *TracerOptions }
 
+// NewTracer creates a tracer with the given options. Most callers should use
+// NewTracingInterceptor instead.
 func NewTracer(options TracerOptions) (interceptor.Tracer, error) {
 	if options.Tracer == nil {
 		options.Tracer = otel.GetTracerProvider().Tracer("temporal-sdk-go")
@@ -84,7 +103,9 @@ func NewTracer(options TracerOptions) (interceptor.Tracer, error) {
 	return &tracer{&options}, nil
 }
 
-func NewInterceptor(options TracerOptions) (interceptor.Interceptor, error) {
+// NewTracingInterceptor creates an interceptor for setting on client options
+// that implements OpenTelemetry tracing for workflows.
+func NewTracingInterceptor(options TracerOptions) (interceptor.Interceptor, error) {
 	t, err := NewTracer(options)
 	if err != nil {
 		return nil, err

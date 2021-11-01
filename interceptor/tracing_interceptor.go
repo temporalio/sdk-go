@@ -38,38 +38,78 @@ const (
 	runIDTagKey      = "temporalRunID"
 )
 
+// Tracer is an interface for tracing implementations as used by
+// NewTracingInterceptor. Most callers do not use this directly, but rather use
+// the opentracing or opentelemetry packages.
 type Tracer interface {
+	// SpanContextKey provides a key to put a span on a context unrelated to how a
+	// span might otherwise be put on a context by ContextWithSpan. This should
+	// never be nil.
 	SpanContextKey() interface{}
+
+	// HeaderKey is the key name on the Temporal header to serialize the span to.
 	HeaderKey() string
+
+	// UnmarshalSpan unmarshals the given map into a span reference.
 	UnmarshalSpan(map[string]string) (TracerSpanRef, error)
+
+	// MarshalSpan marshals the given span into a map.
 	MarshalSpan(TracerSpan) (map[string]string, error)
+
+	// SpanFromContext returns the span from the general Go context or nil if not
+	// present.
 	SpanFromContext(context.Context) TracerSpan
+
+	// ContextWithSpan creates a general Go context with the given span set.
 	ContextWithSpan(context.Context, TracerSpan) context.Context
+
+	// StartSpan starts and returns a span with the given options.
 	StartSpan(*TracerStartSpanOptions) (TracerSpan, error)
 }
 
+// TracerStartSpanOptions are options for Tracer.StartSpan.
 type TracerStartSpanOptions struct {
-	Parent    TracerSpanRef
+	// Parent is the optional parent reference of the span.
+	Parent TracerSpanRef
+	// Operation is the general operation name without the specific name.
 	Operation string
-	Name      string
-	// True if the parent depends on this span, false if it just is related to the
-	// parent. In OpenTracing terms, this is true for "ChildOf" reference types
-	// and false for "FollowsFrom" reference types.
+
+	// Name is the specific activity, workflow, etc for the operation.
+	Name string
+
+	// DependedOn is true if the parent depends on this span or false if it just
+	// is related to the parent. In OpenTracing terms, this is true for "ChildOf"
+	// reference types and false for "FollowsFrom" reference types.
 	DependedOn bool
-	Tags       map[string]string
+
+	// Tags are a set of span tags.
+	Tags map[string]string
+
+	// FromHeader is used internally, not by tracer implementations, to determine
+	// whether the parent span can be retrieved from the Temporal header.
 	FromHeader bool
-	ToHeader   bool
+
+	// ToHeader is used internally, not by tracer implementations, to determine
+	// whether the span should be placed on the Temporal header.
+	ToHeader bool
 }
 
-type TracerFinishSpanOptions struct {
-	Error error
-}
-
+// TracerSpanRef represents a span reference such as a parent.
 type TracerSpanRef interface{}
 
+// TracerSpan represents a span.
 type TracerSpan interface {
 	TracerSpanRef
+
+	// Finish is called when the span is complete.
 	Finish(*TracerFinishSpanOptions)
+}
+
+// TracerFinishSpanOptions are options for TracerSpan.Finish.
+type TracerFinishSpanOptions struct {
+	// Error is present if there was an error in the code traced by this specific
+	// span.
+	Error error
 }
 
 type tracingInterceptor struct {
@@ -77,6 +117,9 @@ type tracingInterceptor struct {
 	tracer Tracer
 }
 
+// NewTracingInterceptor creates a new interceptor for the given tracer. Most
+// callers do not use this directly, but rather use the opentracing or
+// opentelemetry packages.
 func NewTracingInterceptor(tracer Tracer) Interceptor {
 	return &tracingInterceptor{tracer: tracer}
 }

@@ -135,7 +135,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 
 	var clientInterceptors []interceptor.ClientInterceptor
 	// Record calls for interceptor test
-	if strings.Contains(ts.T().Name(), "InterceptorCalls") {
+	if strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestInterceptor") {
 		ts.interceptorCallRecorder = &interceptortest.CallRecordingInvoker{}
 		clientInterceptors = append(clientInterceptors, interceptortest.NewProxy(ts.interceptorCallRecorder))
 	}
@@ -1427,6 +1427,29 @@ func (ts *IntegrationTestSuite) TestInterceptorCalls() {
 			check(call)
 		}
 	}
+}
+
+func (ts *IntegrationTestSuite) TestInterceptorStartWithSignal() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Signal with start
+	run, err := ts.client.SignalWithStartWorkflow(ctx, "test-interceptor-start-with-signal", "start-signal",
+		"signal-value", ts.startWorkflowOptions("test-interceptor-start-with-signal"), ts.workflows.WaitSignalToStart)
+	ts.NoError(err)
+	var result string
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal("signal-value", result)
+
+	// Check that handle signal was called
+	foundHandleSignal := false
+	for _, call := range ts.interceptorCallRecorder.Calls() {
+		foundHandleSignal = call.Interface.Name()+"."+call.Method.Name == "WorkflowInboundInterceptor.HandleSignal"
+		if foundHandleSignal {
+			break
+		}
+	}
+	ts.True(foundHandleSignal)
 }
 
 func (ts *IntegrationTestSuite) registerNamespace() {

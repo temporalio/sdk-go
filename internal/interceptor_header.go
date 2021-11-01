@@ -31,6 +31,9 @@ import (
 
 type headerKey struct{}
 
+// Header provides Temporal header information from the context for reading or
+// writing during specific interceptor calls. See documentation in the
+// interceptor package for more details.
 func Header(ctx context.Context) map[string]*commonpb.Payload {
 	m, _ := ctx.Value(headerKey{}).(map[string]*commonpb.Payload)
 	return m
@@ -79,6 +82,9 @@ func headerPropagated(ctx context.Context, ctxProps []ContextPropagator) (*commo
 	return header, nil
 }
 
+// WorkflowHeader provides Temporal header information from the workflow context
+// for reading or writing during specific interceptor calls. See documentation
+// in the interceptor package for more details.
 func WorkflowHeader(ctx Context) map[string]*commonpb.Payload {
 	m, _ := ctx.Value(headerKey{}).(map[string]*commonpb.Payload)
 	return m
