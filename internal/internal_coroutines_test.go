@@ -1334,3 +1334,28 @@ func TestChainedFuture(t *testing.T) {
 	require.NoError(t, env.GetWorkflowResult(&out))
 	require.Equal(t, 5, out)
 }
+
+func TestFutureUnmarshalPointerToPointer(t *testing.T) {
+	// Standard futures and decode futures should both be able to unmarshal into
+	// a pointer even if they already are a pointer.
+	d := createNewDispatcher(func(ctx Context) {
+		type MyStruct struct{ Value string }
+		toSet := &MyStruct{Value: "MyValue"}
+		toSetPayload, err := converter.GetDefaultDataConverter().ToPayloads(toSet)
+		require.NoError(t, err)
+		var toGet1, toGet2 MyStruct
+
+		fut1, set1 := newDecodeFuture(ctx, nil)
+		set1.SetValue(toSetPayload)
+		require.NoError(t, fut1.Get(ctx, &toGet1))
+		require.Equal(t, "MyValue", toGet1.Value)
+
+		fut2, set2 := NewFuture(ctx)
+		set2.SetValue(toSet)
+		require.NoError(t, fut2.Get(ctx, &toGet2))
+		require.Equal(t, "MyValue", toGet2.Value)
+	})
+	defer d.Close()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+	require.True(t, d.IsDone())
+}

@@ -332,7 +332,12 @@ func (f *futureImpl) Get(ctx Context, valuePtr interface{}) error {
 	}
 
 	fv := reflect.ValueOf(f.value)
-	if fv.IsValid() {
+	// If the value set was a pointer and is the same type as the wanted result,
+	// instead of panicking because it is not a pointer to a pointer, we will just
+	// set the pointer
+	if fv.Kind() == reflect.Ptr && fv.Type() == rf.Type() {
+		rf.Elem().Set(fv.Elem())
+	} else {
 		rf.Elem().Set(fv)
 	}
 	return f.err
