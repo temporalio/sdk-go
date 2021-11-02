@@ -1029,6 +1029,7 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflow() {
 	s.Nil(err)
 	s.Equal(startResponse.GetRunId(), resp.GetRunID())
 
+	options.ID = ""
 	resp, err = s.client.SignalWithStartWorkflow(context.Background(), "", signalName, signalInput,
 		options, workflowType)
 	s.Nil(err)
@@ -1215,7 +1216,7 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithMemoAndSearchAt
 		"testAttr": "attr value",
 	}
 	options := StartWorkflowOptions{
-		ID:                       workflowID,
+		ID:                       "wid",
 		TaskQueue:                taskqueue,
 		WorkflowExecutionTimeout: timeoutInSeconds,
 		WorkflowTaskTimeout:      timeoutInSeconds,
