@@ -33,7 +33,7 @@ import (
 )
 
 func TestLRU(t *testing.T) {
-	cache := NewLRU(5)
+	cache := NewLRU(4)
 
 	cache.Put("A", "Foo")
 	assert.Equal(t, "Foo", cache.Get("A"))
@@ -182,4 +182,17 @@ func TestClear(t *testing.T) {
 	case <-timeout.C:
 		t.Error("Clear did not send true on channel ch")
 	}
+}
+
+func TestLRUMax(t *testing.T) {
+	cache := NewLRU(1)
+
+	cache.Put("A", "Foo")
+	assert.Equal(t, "Foo", cache.Get("A"))
+	assert.Equal(t, 1, cache.Size())
+
+	cache.Put("B", "Bar")
+	assert.Nil(t, cache.Get("A"))
+	assert.Equal(t, "Bar", cache.Get("B"))
+	assert.Equal(t, 1, cache.Size())
 }
