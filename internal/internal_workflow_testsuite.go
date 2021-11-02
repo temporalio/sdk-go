@@ -919,7 +919,11 @@ func (env *testWorkflowEnvironmentImpl) handleParentClosePolicy() {
 
 			switch handle.params.ParentClosePolicy {
 			case enumspb.PARENT_CLOSE_POLICY_ABANDON:
-				// noop
+				// If the policy is to abandon, the child workflow would run forever on CronSchedule even after the
+				// parent workflow finishes execution. So we force the child workflow to complete with the parent.
+				if handle.params.CronSchedule != "" {
+					handle.env.Complete(nil, newTerminatedError())
+				}
 			case enumspb.PARENT_CLOSE_POLICY_TERMINATE:
 				handle.env.Complete(nil, newTerminatedError())
 			case enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL:
