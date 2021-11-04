@@ -433,9 +433,10 @@ func (f *childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName st
 		return f.GetChildWorkflowExecution()
 	}
 
-	const childWorkflowOnly = true // this means we are targeting child workflow
-	// below we use empty run ID indicating the current running one, in case child do continue-as-new
-	return signalExternalWorkflow(ctx, childExec.ID, "", signalName, data, childWorkflowOnly)
+	i := getWorkflowOutboundInterceptor(ctx)
+	// Put header on context before executing
+	ctx = workflowContextWithNewHeader(ctx)
+	return i.SignalChildWorkflow(ctx, childExec.ID, signalName, data)
 }
 
 func newWorkflowContext(
@@ -517,46 +518,62 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 		d.cancel()
 	})
 
-	getWorkflowEnvironment(d.rootCtx).RegisterSignalHandler(func(name string, input *commonpb.Payloads) error {
-		// TODO(cretz): We decode ahead of time for HandleQuery but we don't here. Is
-		// this inconsistency acceptable? Is it ok to pretend that "Arg" is
-		// interface{} when we know it will always be *commonpb.Payloads?
-		// See https://github.com/temporalio/proposals/pull/45/files#r732871182
-		return envInterceptor.inboundInterceptor.HandleSignal(d.rootCtx, &HandleSignalInput{SignalName: name, Arg: input})
-	})
-
-	getWorkflowEnvironment(d.rootCtx).RegisterQueryHandler(func(queryType string, queryArgs *commonpb.Payloads) (*commonpb.Payloads, error) {
-		eo := getWorkflowEnvOptions(d.rootCtx)
-		// A handler must be present since it is needed for argument decoding, even
-		// if the interceptor intercepts query handling
-		handler, ok := eo.queryHandlers[queryType]
-		if !ok {
-			keys := []string{QueryTypeStackTrace, QueryTypeOpenSessions}
-			for k := range eo.queryHandlers {
-				keys = append(keys, k)
+	getWorkflowEnvironment(d.rootCtx).RegisterSignalHandler(
+		func(name string, input *commonpb.Payloads, header *commonpb.Header) error {
+			// Put the header on context
+			rootCtx, err = workflowContextWithHeaderPropagated(d.rootCtx, header, env.GetContextPropagators())
+			if err != nil {
+				return err
 			}
-			return nil, fmt.Errorf("unknown queryType %v. KnownQueryTypes=%v", queryType, keys)
-		}
 
-		// Decode the arguments
-		args, err := decodeArgsToRawValues(handler.dataConverter, reflect.TypeOf(handler.fn), queryArgs)
-		if err != nil {
-			return nil, fmt.Errorf("unable to decode the input for queryType: %v, with error: %w", handler.queryType, err)
-		}
+			// TODO(cretz): We decode ahead of time for HandleQuery but we don't here. Is
+			// this inconsistency acceptable? Is it ok to pretend that "Arg" is
+			// interface{} when we know it will always be *commonpb.Payloads?
+			// See https://github.com/temporalio/proposals/pull/45/files#r732871182
+			return envInterceptor.inboundInterceptor.HandleSignal(rootCtx, &HandleSignalInput{SignalName: name, Arg: input})
+		},
+	)
 
-		// Invoke
-		result, err := envInterceptor.inboundInterceptor.HandleQuery(
-			d.rootCtx,
-			&HandleQueryInput{QueryType: queryType, Args: args},
-		)
+	getWorkflowEnvironment(d.rootCtx).RegisterQueryHandler(
+		func(queryType string, queryArgs *commonpb.Payloads, header *commonpb.Header) (*commonpb.Payloads, error) {
+			// Put the header on context
+			rootCtx, err = workflowContextWithHeaderPropagated(d.rootCtx, header, env.GetContextPropagators())
+			if err != nil {
+				return nil, err
+			}
 
-		// Encode the result
-		var serializedResult *commonpb.Payloads
-		if err == nil && result != nil {
-			serializedResult, err = encodeArg(handler.dataConverter, result)
-		}
-		return serializedResult, err
-	})
+			eo := getWorkflowEnvOptions(rootCtx)
+			// A handler must be present since it is needed for argument decoding, even
+			// if the interceptor intercepts query handling
+			handler, ok := eo.queryHandlers[queryType]
+			if !ok {
+				keys := []string{QueryTypeStackTrace, QueryTypeOpenSessions}
+				for k := range eo.queryHandlers {
+					keys = append(keys, k)
+				}
+				return nil, fmt.Errorf("unknown queryType %v. KnownQueryTypes=%v", queryType, keys)
+			}
+
+			// Decode the arguments
+			args, err := decodeArgsToRawValues(handler.dataConverter, reflect.TypeOf(handler.fn), queryArgs)
+			if err != nil {
+				return nil, fmt.Errorf("unable to decode the input for queryType: %v, with error: %w", handler.queryType, err)
+			}
+
+			// Invoke
+			result, err := envInterceptor.inboundInterceptor.HandleQuery(
+				rootCtx,
+				&HandleQueryInput{QueryType: queryType, Args: args},
+			)
+
+			// Encode the result
+			var serializedResult *commonpb.Payloads
+			if err == nil && result != nil {
+				serializedResult, err = encodeArg(handler.dataConverter, result)
+			}
+			return serializedResult, err
+		},
+	)
 }
 
 func (d *syncWorkflowDefinition) OnWorkflowTaskStarted(deadlockDetectionTimeout time.Duration) {

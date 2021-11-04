@@ -71,7 +71,7 @@ type (
 		// Return List of commands made, any error.
 		ProcessEvent(event *historypb.HistoryEvent, isReplay bool, isLast bool) error
 		// ProcessQuery process a query request.
-		ProcessQuery(queryType string, queryArgs *commonpb.Payloads) (*commonpb.Payloads, error)
+		ProcessQuery(queryType string, queryArgs *commonpb.Payloads, header *commonpb.Header) (*commonpb.Payloads, error)
 		StackTrace() string
 		// Close for cleaning up resources on this event handler
 		Close()
@@ -1430,7 +1430,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			return queryCompletedRequest
 		}
 
-		result, err := eventHandler.ProcessQuery(task.Query.GetQueryType(), task.Query.QueryArgs)
+		result, err := eventHandler.ProcessQuery(task.Query.GetQueryType(), task.Query.QueryArgs, task.Query.Header)
 		if err != nil {
 			queryCompletedRequest.CompletedType = enumspb.QUERY_RESULT_TYPE_FAILED
 			queryCompletedRequest.ErrorMessage = err.Error()
@@ -1497,7 +1497,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	if len(task.Queries) != 0 {
 		queryResults = make(map[string]*querypb.WorkflowQueryResult)
 		for queryID, query := range task.Queries {
-			result, err := eventHandler.ProcessQuery(query.GetQueryType(), query.QueryArgs)
+			result, err := eventHandler.ProcessQuery(query.GetQueryType(), query.QueryArgs, query.Header)
 			if err != nil {
 				queryResults[queryID] = &querypb.WorkflowQueryResult{
 					ResultType:   enumspb.QUERY_RESULT_TYPE_FAILED,

@@ -88,9 +88,23 @@ type (
 		GetLogger() log.Logger
 		GetMetricsScope() tally.Scope
 		// Must be called before WorkflowDefinition.Execute returns
-		RegisterSignalHandler(handler func(name string, input *commonpb.Payloads) error)
-		SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input *commonpb.Payloads, arg interface{}, childWorkflowOnly bool, callback ResultHandler)
-		RegisterQueryHandler(handler func(queryType string, queryArgs *commonpb.Payloads) (*commonpb.Payloads, error))
+		RegisterSignalHandler(
+			handler func(name string, input *commonpb.Payloads, header *commonpb.Header) error,
+		)
+		SignalExternalWorkflow(
+			namespace string,
+			workflowID string,
+			runID string,
+			signalName string,
+			input *commonpb.Payloads,
+			arg interface{},
+			header *commonpb.Header,
+			childWorkflowOnly bool,
+			callback ResultHandler,
+		)
+		RegisterQueryHandler(
+			handler func(queryType string, queryArgs *commonpb.Payloads, header *commonpb.Header) (*commonpb.Payloads, error),
+		)
 		IsReplaying() bool
 		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) converter.EncodedValue
 		GetDataConverter() converter.DataConverter
