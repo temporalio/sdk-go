@@ -159,8 +159,12 @@ type (
 		// Optional: If set defines maximum amount of time that workflow task will be allowed to run. Defaults to 1 sec.
 		DeadlockDetectionTimeout time.Duration
 
-		// Interceptors to apply to the worker. When worker interceptors are here and in client options, the ones in client
-		// options wrap the ones here.
+		// Interceptors to apply to the worker. Earlier interceptors wrap later
+		// interceptors.
+		//
+		// When worker interceptors are here and in client options, the ones in
+		// client options wrap the ones here. The same interceptor should not be set
+		// here and in client options.
 		Interceptors []WorkerInterceptor
 	}
 )

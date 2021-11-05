@@ -432,11 +432,14 @@ type (
 		// the gRPC interceptor chain and can be used to induce artificial failures in test scenarios.
 		TrafficController TrafficController
 
-		// Interceptors to apply to some calls of the client. Any interceptors that
-		// also implement Interceptor (meaning they implement WorkerInterceptor in
-		// addition to ClientInterceptor) will be used for worker interception as
-		// well. When worker interceptors are here and in worker options, the ones
-		// here wrap the ones in worker options.
+		// Interceptors to apply to some calls of the client. Earlier interceptors
+		// wrap later interceptors.
+		//
+		// Any interceptors that also implement Interceptor (meaning they implement
+		// WorkerInterceptor in addition to ClientInterceptor) will be used for
+		// worker interception as well. When worker interceptors are here and in
+		// worker options, the ones here wrap the ones in worker options. The same
+		// interceptor should not be set here and in worker options.
 		Interceptors []ClientInterceptor
 	}
 

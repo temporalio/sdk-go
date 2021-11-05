@@ -363,7 +363,6 @@ func (a *activityEnvironmentInterceptor) ExecuteActivity(
 }
 
 func (a *activityEnvironmentInterceptor) GetInfo(ctx context.Context) ActivityInfo {
-	// TODO(cretz): Accept the costs of copying everytime? See https://github.com/temporalio/proposals/pull/45/files#r732945623
 	return ActivityInfo{
 		ActivityID:        a.env.activityID,
 		ActivityType:      a.env.activityType,
