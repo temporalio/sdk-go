@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/uber-go/tally/v4"
+	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/log"
 )
@@ -67,7 +68,7 @@ type ActivityInboundInterceptor interface {
 	mustEmbedActivityInboundInterceptorBase()
 }
 
-// ExecuteActivityInput is input for ActivityInboundInterceptor.ExecuteActivity.
+// ExecuteActivityInput is the input to ActivityInboundInterceptor.ExecuteActivity.
 type ExecuteActivityInput struct {
 	Args []interface{}
 }
@@ -121,18 +122,21 @@ type WorkflowInboundInterceptor interface {
 	mustEmbedWorkflowInboundInterceptorBase()
 }
 
-// ExecuteWorkflowInput is input for WorkflowInboundInterceptor.ExecuteWorkflow.
+// ExecuteWorkflowInput is the input to
+// WorkflowInboundInterceptor.ExecuteWorkflow.
 type ExecuteWorkflowInput struct {
 	Args []interface{}
 }
 
-// HandleSignalInput is input for WorkflowInboundInterceptor.HandleSignal.
+// HandleSignalInput is the input to WorkflowInboundInterceptor.HandleSignal.
 type HandleSignalInput struct {
 	SignalName string
-	Arg        interface{}
+	// Arg is the signal argument. It is presented as a primitive payload since
+	// the type needed for decode is not available at the time of interception.
+	Arg *commonpb.Payloads
 }
 
-// HandleQueryInput is input for WorkflowInboundInterceptor.HandleQuery.
+// HandleQueryInput is the input to WorkflowInboundInterceptor.HandleQuery.
 type HandleQueryInput struct {
 	QueryType string
 	Args      []interface{}
@@ -261,7 +265,7 @@ type ClientOutboundInterceptor interface {
 	mustEmbedClientOutboundInterceptorBase()
 }
 
-// ClientExecuteWorkflowInput is input for
+// ClientExecuteWorkflowInput is the input to
 // ClientOutboundInterceptor.ExecuteWorkflow.
 type ClientExecuteWorkflowInput struct {
 	Options      *StartWorkflowOptions
@@ -269,7 +273,7 @@ type ClientExecuteWorkflowInput struct {
 	Args         []interface{}
 }
 
-// ClientSignalWorkflowInput is input for
+// ClientSignalWorkflowInput is the input to
 // ClientOutboundInterceptor.SignalWorkflow.
 type ClientSignalWorkflowInput struct {
 	WorkflowID string
@@ -278,7 +282,7 @@ type ClientSignalWorkflowInput struct {
 	Arg        interface{}
 }
 
-// ClientSignalWithStartWorkflowInput is input for
+// ClientSignalWithStartWorkflowInput is the input to
 // ClientOutboundInterceptor.SignalWithStartWorkflow.
 type ClientSignalWithStartWorkflowInput struct {
 	SignalName   string
@@ -288,14 +292,14 @@ type ClientSignalWithStartWorkflowInput struct {
 	Args         []interface{}
 }
 
-// ClientCancelWorkflowInput is input for
+// ClientCancelWorkflowInput is the input to
 // ClientOutboundInterceptor.CancelWorkflow.
 type ClientCancelWorkflowInput struct {
 	WorkflowID string
 	RunID      string
 }
 
-// ClientTerminateWorkflowInput is input for
+// ClientTerminateWorkflowInput is the input to
 // ClientOutboundInterceptor.TerminateWorkflow.
 type ClientTerminateWorkflowInput struct {
 	WorkflowID string
@@ -304,7 +308,7 @@ type ClientTerminateWorkflowInput struct {
 	Details    []interface{}
 }
 
-// ClientQueryWorkflowInput is input for
+// ClientQueryWorkflowInput is the input to
 // ClientOutboundInterceptor.QueryWorkflow.
 type ClientQueryWorkflowInput struct {
 	WorkflowID string

@@ -90,9 +90,12 @@ func NewInterceptor(options TracerOptions) (interceptor.Interceptor, error) {
 	return interceptor.NewTracingInterceptor(t), nil
 }
 
-func (t *tracer) SpanContextKey() interface{} { return t.options.SpanContextKey }
-
-func (t *tracer) HeaderKey() string { return t.options.HeaderKey }
+func (t *tracer) Options() interceptor.TracerOptions {
+	return interceptor.TracerOptions{
+		SpanContextKey: t.options.SpanContextKey,
+		HeaderKey:      t.options.HeaderKey,
+	}
+}
 
 func (t *tracer) UnmarshalSpan(m map[string]string) (interceptor.TracerSpanRef, error) {
 	ctx, err := t.options.Tracer.Extract(opentracing.TextMap, opentracing.TextMapCarrier(m))

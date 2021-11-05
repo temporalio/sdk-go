@@ -42,13 +42,9 @@ const (
 // NewTracingInterceptor. Most callers do not use this directly, but rather use
 // the opentracing or opentelemetry packages.
 type Tracer interface {
-	// SpanContextKey provides a key to put a span on a context unrelated to how a
-	// span might otherwise be put on a context by ContextWithSpan. This should
-	// never be nil.
-	SpanContextKey() interface{}
-
-	// HeaderKey is the key name on the Temporal header to serialize the span to.
-	HeaderKey() string
+	// Options returns the options for the tracer. This is only called once on
+	// initialization.
+	Options() TracerOptions
 
 	// UnmarshalSpan unmarshals the given map into a span reference.
 	UnmarshalSpan(map[string]string) (TracerSpanRef, error)
@@ -65,6 +61,21 @@ type Tracer interface {
 
 	// StartSpan starts and returns a span with the given options.
 	StartSpan(*TracerStartSpanOptions) (TracerSpan, error)
+}
+
+// TracerOptions are options returned from Tracer.Options.
+type TracerOptions struct {
+	// SpanContextKey provides a key to put a span on a context unrelated to how a
+	// span might otherwise be put on a context by ContextWithSpan. This should
+	// never be nil.
+	//
+	// This is used internally to set the span on contexts not natively supported
+	// by tracing systems such as workflow.Context.
+	SpanContextKey interface{}
+
+	// HeaderKey is the key name on the Temporal header to serialize the span to.
+	// This should never be empty.
+	HeaderKey string
 }
 
 // TracerStartSpanOptions are options for Tracer.StartSpan.
@@ -114,18 +125,25 @@ type TracerFinishSpanOptions struct {
 
 type tracingInterceptor struct {
 	InterceptorBase
-	tracer Tracer
+	tracer  Tracer
+	options TracerOptions
 }
 
 // NewTracingInterceptor creates a new interceptor for the given tracer. Most
 // callers do not use this directly, but rather use the opentracing or
-// opentelemetry packages.
+// opentelemetry packages. This panics if options are not set as expected.
 func NewTracingInterceptor(tracer Tracer) Interceptor {
-	return &tracingInterceptor{tracer: tracer}
+	options := tracer.Options()
+	if options.SpanContextKey == nil {
+		panic("missing span context key")
+	} else if options.HeaderKey == "" {
+		panic("missing header key")
+	}
+	return &tracingInterceptor{tracer: tracer, options: options}
 }
 
 func (t *tracingInterceptor) InterceptClient(next ClientOutboundInterceptor) ClientOutboundInterceptor {
-	i := &tracingClientOutboundInterceptor{tracer: t.tracer}
+	i := &tracingClientOutboundInterceptor{root: t}
 	i.Next = next
 	return i
 }
@@ -134,7 +152,7 @@ func (t *tracingInterceptor) InterceptActivity(
 	ctx context.Context,
 	next ActivityInboundInterceptor,
 ) ActivityInboundInterceptor {
-	i := &tracingActivityInboundInterceptor{tracer: t.tracer}
+	i := &tracingActivityInboundInterceptor{root: t}
 	i.Next = next
 	return i
 }
@@ -143,14 +161,14 @@ func (t *tracingInterceptor) InterceptWorkflow(
 	ctx workflow.Context,
 	next WorkflowInboundInterceptor,
 ) WorkflowInboundInterceptor {
-	i := &tracingWorkflowInboundInterceptor{tracer: t.tracer}
+	i := &tracingWorkflowInboundInterceptor{root: t}
 	i.Next = next
 	return i
 }
 
 type tracingClientOutboundInterceptor struct {
 	ClientOutboundInterceptorBase
-	tracer Tracer
+	root *tracingInterceptor
 }
 
 func (t *tracingClientOutboundInterceptor) ExecuteWorkflow(
@@ -158,7 +176,7 @@ func (t *tracingClientOutboundInterceptor) ExecuteWorkflow(
 	in *ClientExecuteWorkflowInput,
 ) (client.WorkflowRun, error) {
 	// Start span and write to header
-	span, ctx, err := startSpanFromContext(ctx, t.tracer, &TracerStartSpanOptions{
+	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
 		Operation: "StartWorkflow",
 		Name:      in.WorkflowType,
 		Tags:      map[string]string{workflowIDTagKey: in.Options.ID},
@@ -180,7 +198,7 @@ func (t *tracingClientOutboundInterceptor) SignalWithStartWorkflow(
 	in *ClientSignalWithStartWorkflowInput,
 ) (client.WorkflowRun, error) {
 	// Start span and write to header
-	span, ctx, err := startSpanFromContext(ctx, t.tracer, &TracerStartSpanOptions{
+	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
 		Operation: "SignalWithStartWorkflow",
 		Name:      in.WorkflowType,
 		Tags:      map[string]string{workflowIDTagKey: in.Options.ID},
@@ -199,7 +217,7 @@ func (t *tracingClientOutboundInterceptor) SignalWithStartWorkflow(
 
 type tracingActivityInboundInterceptor struct {
 	ActivityInboundInterceptorBase
-	tracer Tracer
+	root *tracingInterceptor
 }
 
 func (t *tracingActivityInboundInterceptor) ExecuteActivity(
@@ -208,7 +226,7 @@ func (t *tracingActivityInboundInterceptor) ExecuteActivity(
 ) (interface{}, error) {
 	// Start span reading from header
 	info := activity.GetInfo(ctx)
-	span, ctx, err := startSpanFromContext(ctx, t.tracer, &TracerStartSpanOptions{
+	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
 		Operation:  "RunActivity",
 		Name:       info.ActivityType.Name,
 		DependedOn: true,
@@ -231,11 +249,11 @@ func (t *tracingActivityInboundInterceptor) ExecuteActivity(
 
 type tracingWorkflowInboundInterceptor struct {
 	WorkflowInboundInterceptorBase
-	tracer Tracer
+	root *tracingInterceptor
 }
 
 func (t *tracingWorkflowInboundInterceptor) Init(outbound WorkflowOutboundInterceptor) error {
-	i := &tracingWorkflowOutboundInterceptor{tracer: t.tracer}
+	i := &tracingWorkflowOutboundInterceptor{root: t.root}
 	i.Next = outbound
 	return t.Next.Init(i)
 }
@@ -246,7 +264,7 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteWorkflow(
 ) (interface{}, error) {
 	// Start span reading from header
 	info := workflow.GetInfo(ctx)
-	span, ctx, err := startSpanFromWorkflowContext(ctx, t.tracer, &TracerStartSpanOptions{
+	span, ctx, err := t.root.startSpanFromWorkflowContext(ctx, &TracerStartSpanOptions{
 		Operation: "RunWorkflow",
 		Name:      info.WorkflowType.Name,
 		Tags: map[string]string{
@@ -268,7 +286,7 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteWorkflow(
 
 type tracingWorkflowOutboundInterceptor struct {
 	WorkflowOutboundInterceptorBase
-	tracer Tracer
+	root *tracingInterceptor
 }
 
 func (t *tracingWorkflowOutboundInterceptor) ExecuteActivity(
@@ -325,8 +343,8 @@ func (t *tracingWorkflowOutboundInterceptor) NewContinueAsNewError(
 	if !workflow.IsReplaying(ctx) {
 		if contErr, _ := err.(*workflow.ContinueAsNewError); contErr != nil {
 			// Get the current span and write header
-			if span, _ := ctx.Value(t.tracer.SpanContextKey()).(TracerSpan); span != nil {
-				if writeErr := writeSpanToHeader(t.tracer, span, WorkflowHeader(ctx)); writeErr != nil {
+			if span, _ := ctx.Value(t.root.options.SpanContextKey).(TracerSpan); span != nil {
+				if writeErr := t.root.writeSpanToHeader(span, WorkflowHeader(ctx)); writeErr != nil {
 					return fmt.Errorf("failed writing span when creating continue as new error: %w", writeErr)
 				}
 			}
@@ -351,7 +369,7 @@ func (t *tracingWorkflowOutboundInterceptor) startNonReplaySpan(
 		return nopSpan{}, ctx, nil
 	}
 	info := workflow.GetInfo(ctx)
-	span, newCtx, err := startSpanFromWorkflowContext(ctx, t.tracer, &TracerStartSpanOptions{
+	span, newCtx, err := t.root.startSpanFromWorkflowContext(ctx, &TracerStartSpanOptions{
 		Operation:  operation,
 		Name:       name,
 		DependedOn: dependedOn,
@@ -367,43 +385,40 @@ func (t *tracingWorkflowOutboundInterceptor) startNonReplaySpan(
 	return span, newCtx, nil
 }
 
-func startSpanFromContext(
+func (t *tracingInterceptor) startSpanFromContext(
 	ctx context.Context,
-	tracer Tracer,
 	options *TracerStartSpanOptions,
 ) (TracerSpan, context.Context, error) {
 	// Try to get parent from context
-	options.Parent = tracer.SpanFromContext(ctx)
-	span, err := startSpan(ctx, tracer, Header(ctx), options)
+	options.Parent = t.tracer.SpanFromContext(ctx)
+	span, err := t.startSpan(ctx, Header(ctx), options)
 	if err != nil {
 		return nil, nil, err
 	}
-	return span, tracer.ContextWithSpan(context.WithValue(ctx, tracer.SpanContextKey(), span), span), nil
+	return span, t.tracer.ContextWithSpan(context.WithValue(ctx, t.options.SpanContextKey, span), span), nil
 }
 
-func startSpanFromWorkflowContext(
+func (t *tracingInterceptor) startSpanFromWorkflowContext(
 	ctx workflow.Context,
-	tracer Tracer,
 	options *TracerStartSpanOptions,
 ) (TracerSpan, workflow.Context, error) {
-	span, err := startSpan(ctx, tracer, WorkflowHeader(ctx), options)
+	span, err := t.startSpan(ctx, WorkflowHeader(ctx), options)
 	if err != nil {
 		return nil, nil, err
 	}
-	return span, workflow.WithValue(ctx, tracer.SpanContextKey(), span), nil
+	return span, workflow.WithValue(ctx, t.options.SpanContextKey, span), nil
 }
 
 // Note, this does not put the span on the context
-func startSpan(
+func (t *tracingInterceptor) startSpan(
 	ctx interface{ Value(interface{}) interface{} },
-	tracer Tracer,
 	header map[string]*commonpb.Payload,
 	options *TracerStartSpanOptions,
 ) (TracerSpan, error) {
 
 	// Get parent span from header if not already present and allowed
 	if options.Parent == nil && options.FromHeader {
-		if span, err := readSpanFromHeader(tracer, header); err != nil {
+		if span, err := t.readSpanFromHeader(header); err != nil {
 			return nil, err
 		} else if span != nil {
 			options.Parent = span
@@ -412,27 +427,27 @@ func startSpan(
 
 	// If no parent span, try to get from context
 	if options.Parent == nil {
-		options.Parent, _ = ctx.Value(tracer.SpanContextKey()).(TracerSpan)
+		options.Parent, _ = ctx.Value(t.options.SpanContextKey).(TracerSpan)
 	}
 
 	// Start the span
-	span, err := tracer.StartSpan(options)
+	span, err := t.tracer.StartSpan(options)
 	if err != nil {
 		return nil, err
 	}
 
 	// Put span in header if wanted
 	if options.ToHeader && header != nil {
-		if err := writeSpanToHeader(tracer, span, header); err != nil {
+		if err := t.writeSpanToHeader(span, header); err != nil {
 			return nil, err
 		}
 	}
 	return span, nil
 }
 
-func readSpanFromHeader(tracer Tracer, header map[string]*commonpb.Payload) (TracerSpanRef, error) {
+func (t *tracingInterceptor) readSpanFromHeader(header map[string]*commonpb.Payload) (TracerSpanRef, error) {
 	// Get from map
-	payload := header[tracer.HeaderKey()]
+	payload := header[t.options.HeaderKey]
 	if payload == nil {
 		return nil, nil
 	}
@@ -442,12 +457,12 @@ func readSpanFromHeader(tracer Tracer, header map[string]*commonpb.Payload) (Tra
 		return nil, err
 	}
 	// Unmarshal
-	return tracer.UnmarshalSpan(data)
+	return t.tracer.UnmarshalSpan(data)
 }
 
-func writeSpanToHeader(tracer Tracer, span TracerSpan, header map[string]*commonpb.Payload) error {
+func (t *tracingInterceptor) writeSpanToHeader(span TracerSpan, header map[string]*commonpb.Payload) error {
 	// Serialize span to map
-	data, err := tracer.MarshalSpan(span)
+	data, err := t.tracer.MarshalSpan(span)
 	if err != nil {
 		return err
 	}
@@ -457,7 +472,7 @@ func writeSpanToHeader(tracer Tracer, span TracerSpan, header map[string]*common
 		return err
 	}
 	// Put on header
-	header[tracer.HeaderKey()] = payload
+	header[t.options.HeaderKey] = payload
 	return nil
 }
 
