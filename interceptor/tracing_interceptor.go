@@ -129,7 +129,7 @@ type tracingInterceptor struct {
 	options TracerOptions
 }
 
-// NewTracingInterceptor creates a new interceptor for the given tracer. Most
+// NewTracingInterceptor creates a new interceptor using the given tracer. Most
 // callers do not use this directly, but rather use the opentracing or
 // opentelemetry packages. This panics if options are not set as expected.
 func NewTracingInterceptor(tracer Tracer) Interceptor {

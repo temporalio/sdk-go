@@ -138,7 +138,7 @@ func (t *tracer) StartSpan(opts *interceptor.TracerStartSpanOptions) (intercepto
 	case *tracerSpanRef:
 		parent = optParent.SpanContext
 	default:
-		panic(fmt.Sprintf("unrecognized parent type %T", optParent))
+		return nil, fmt.Errorf("unrecognized parent type %T", optParent)
 	}
 	if parent != nil {
 		if opts.DependedOn {
