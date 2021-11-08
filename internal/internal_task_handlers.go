@@ -133,6 +133,7 @@ type (
 		contextPropagators       []ContextPropagator
 		cache                    *WorkerCache
 		deadlockDetectionTimeout time.Duration
+		capabilities             *ServerCapabilities
 	}
 
 	activityProvider func(name string) activity
@@ -395,6 +396,7 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		contextPropagators:       params.ContextPropagators,
 		cache:                    params.cache,
 		deadlockDetectionTimeout: params.DeadlockDetectionTimeout,
+		capabilities:             params.capabilities,
 	}
 }
 
@@ -518,6 +520,7 @@ func (w *workflowExecutionContextImpl) createEventHandler() {
 		w.wth.dataConverter,
 		w.wth.contextPropagators,
 		w.wth.deadlockDetectionTimeout,
+		w.wth.capabilities,
 	)
 
 	w.eventHandler = &eventHandler

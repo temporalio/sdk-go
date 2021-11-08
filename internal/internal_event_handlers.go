@@ -132,6 +132,7 @@ type (
 		dataConverter            converter.DataConverter
 		contextPropagators       []ContextPropagator
 		deadlockDetectionTimeout time.Duration
+		capabilities             *ServerCapabilities
 	}
 
 	localActivityTask struct {
@@ -177,6 +178,7 @@ func newWorkflowExecutionEventHandler(
 	dataConverter converter.DataConverter,
 	contextPropagators []ContextPropagator,
 	deadlockDetectionTimeout time.Duration,
+	capabilities *ServerCapabilities,
 ) workflowExecutionEventHandler {
 	context := &workflowEnvironmentImpl{
 		workflowInfo:             workflowInfo,
@@ -193,6 +195,7 @@ func newWorkflowExecutionEventHandler(
 		dataConverter:            dataConverter,
 		contextPropagators:       contextPropagators,
 		deadlockDetectionTimeout: deadlockDetectionTimeout,
+		capabilities:             capabilities,
 	}
 	context.logger = ilog.NewReplayLogger(
 		log.With(logger,
@@ -771,6 +774,11 @@ func (wc *workflowEnvironmentImpl) getOpenSessions() []*SessionInfo {
 
 func (wc *workflowEnvironmentImpl) GetRegistry() *registry {
 	return wc.registry
+}
+
+func (wc *workflowEnvironmentImpl) GetCapabilities() *ServerCapabilities {
+	// Should never be nil
+	return wc.capabilities
 }
 
 func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(

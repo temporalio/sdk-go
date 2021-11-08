@@ -1023,8 +1023,10 @@ func (wc *workflowEnvironmentInterceptor) RequestCancelExternalWorkflow(ctx Cont
 // SignalExternalWorkflow return Future with failure or empty success result.
 func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future {
 	i := getWorkflowOutboundInterceptor(ctx)
-	// Put header on context before executing
-	ctx = workflowContextWithNewHeader(ctx)
+	// Put header on context before executing if server supports it
+	if getWorkflowEnvironment(ctx).GetCapabilities().SignalHeader {
+		ctx = workflowContextWithNewHeader(ctx)
+	}
 	return i.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
 }
 
@@ -1056,11 +1058,14 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 		return future
 	}
 
-	// Get header
-	header, err := workflowHeaderPropagated(ctx, options.ContextPropagators)
-	if err != nil {
-		settable.Set(nil, err)
-		return future
+	// Get header if supported on server
+	var header *commonpb.Header
+	if env.GetCapabilities().SignalHeader {
+		header, err = workflowHeaderPropagated(ctx, options.ContextPropagators)
+		if err != nil {
+			settable.Set(nil, err)
+			return future
+		}
 	}
 
 	resultCallback := func(result *commonpb.Payloads, err error) {

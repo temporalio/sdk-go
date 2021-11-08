@@ -114,11 +114,13 @@ type WorkflowInboundInterceptor interface {
 	ExecuteWorkflow(ctx Context, in *ExecuteWorkflowInput) (interface{}, error)
 
 	// HandleSignal is called when a signal is sent to a workflow on this worker.
-	// interceptor.WorkflowHeader will return a non-nil map for this context.
+	// interceptor.WorkflowHeader will return a non-nil map for this context if
+	// the server supports headers on signals.
 	HandleSignal(ctx Context, in *HandleSignalInput) error
 
 	// HandleQuery is called when a query is sent to a workflow on this worker.
-	// interceptor.WorkflowHeader will return a non-nil map for this context.
+	// interceptor.WorkflowHeader will return a non-nil map for this context if
+	// the server supports headers on queries.
 	HandleQuery(ctx Context, in *HandleQueryInput) (interface{}, error)
 
 	mustEmbedWorkflowInboundInterceptorBase()
@@ -186,12 +188,14 @@ type WorkflowOutboundInterceptor interface {
 	RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future
 
 	// SignalExternalWorkflow intercepts workflow.SignalExternalWorkflow.
-	// interceptor.WorkflowHeader will return a non-nil map for this context.
+	// interceptor.WorkflowHeader will return a non-nil map for this context if
+	// the server supports headers on signals.
 	SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future
 
 	// SignalChildWorkflow intercepts
 	// workflow.ChildWorkflowFuture.SignalChildWorkflow.
-	// interceptor.WorkflowHeader will return a non-nil map for this context.
+	// interceptor.WorkflowHeader will return a non-nil map for this context if
+	// the server supports headers on signals.
 	SignalChildWorkflow(ctx Context, workflowID, signalName string, arg interface{}) Future
 
 	// UpsertSearchAttributes intercepts workflow.UpsertSearchAttributes.
@@ -255,7 +259,8 @@ type ClientOutboundInterceptor interface {
 	ExecuteWorkflow(context.Context, *ClientExecuteWorkflowInput) (WorkflowRun, error)
 
 	// SignalWorkflow intercepts client.Client.SignalWorkflow.
-	// interceptor.Header will return a non-nil map for this context.
+	// interceptor.Header will return a non-nil map for this context if the server
+	// supports headers on signals.
 	SignalWorkflow(context.Context, *ClientSignalWorkflowInput) error
 
 	// SignalWithStartWorkflow intercepts client.Client.SignalWithStartWorkflow.
@@ -269,7 +274,8 @@ type ClientOutboundInterceptor interface {
 	TerminateWorkflow(context.Context, *ClientTerminateWorkflowInput) error
 
 	// QueryWorkflow intercepts client.Client.QueryWorkflow.
-	// interceptor.Header will return a non-nil map for this context.
+	// interceptor.Header will return a non-nil map for this context if the server
+	// supports headers on queries.
 	QueryWorkflow(context.Context, *ClientQueryWorkflowInput) (converter.EncodedValue, error)
 
 	mustEmbedClientOutboundInterceptorBase()

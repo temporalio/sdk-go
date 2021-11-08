@@ -74,6 +74,7 @@ type (
 		dataConverter      converter.DataConverter
 		contextPropagators []ContextPropagator
 		workerInterceptors []WorkerInterceptor
+		capabilities       ServerCapabilities
 
 		interceptor ClientOutboundInterceptor
 	}
@@ -229,8 +230,10 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 
 // SignalWorkflow signals a workflow in execution.
 func (wc *WorkflowClient) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error {
-	// Set header before interceptor run
-	ctx = contextWithNewHeader(ctx)
+	// Set header before interceptor run if server supports it
+	if wc.capabilities.SignalHeader {
+		ctx = contextWithNewHeader(ctx)
+	}
 
 	return wc.interceptor.SignalWorkflow(ctx, &ClientSignalWorkflowInput{
 		WorkflowID: workflowID,
@@ -592,8 +595,10 @@ func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflo
 //  - serviceerror.NotFound
 //  - serviceerror.QueryFailed
 func (wc *WorkflowClient) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.EncodedValue, error) {
-	// Set header before interceptor run
-	ctx = contextWithNewHeader(ctx)
+	// Set header before interceptor run if server supports it
+	if wc.capabilities.QueryHeader {
+		ctx = contextWithNewHeader(ctx)
+	}
 
 	return wc.interceptor.QueryWorkflow(ctx, &ClientQueryWorkflowInput{
 		WorkflowID: workflowID,
@@ -1069,10 +1074,13 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 		return err
 	}
 
-	// get workflow headers from the context
-	header, err := headerPropagated(ctx, w.client.contextPropagators)
-	if err != nil {
-		return err
+	// Get workflow headers from the context if server supports it
+	var header *commonpb.Header
+	if w.client.capabilities.SignalHeader {
+		header, err = headerPropagated(ctx, w.client.contextPropagators)
+		if err != nil {
+			return err
+		}
 	}
 
 	request := &workflowservice.SignalWorkflowExecutionRequest{
@@ -1223,10 +1231,14 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 	ctx context.Context,
 	in *ClientQueryWorkflowInput,
 ) (converter.EncodedValue, error) {
-	// get workflow headers from the context
-	header, err := headerPropagated(ctx, w.client.contextPropagators)
-	if err != nil {
-		return nil, err
+	// Get workflow headers from the context if server supports it
+	var header *commonpb.Header
+	if w.client.capabilities.QueryHeader {
+		var err error
+		header, err = headerPropagated(ctx, w.client.contextPropagators)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	result, err := w.client.QueryWorkflowWithOptions(ctx, &QueryWorkflowWithOptionsRequest{

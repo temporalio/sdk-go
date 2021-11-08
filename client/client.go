@@ -62,6 +62,11 @@ type (
 	// ConnectionOptions are optional parameters that can be specified in ClientOptions
 	ConnectionOptions = internal.ConnectionOptions
 
+	// ServerCapabilities are capabilities that the server supports. These are
+	// obtained during initial client connection unless ServerCapabilitiesOverride
+	// is set in client options.
+	ServerCapabilities = internal.ServerCapabilities
+
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
 	StartWorkflowOptions = internal.StartWorkflowOptions
 

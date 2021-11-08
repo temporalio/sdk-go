@@ -434,8 +434,10 @@ func (f *childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName st
 	}
 
 	i := getWorkflowOutboundInterceptor(ctx)
-	// Put header on context before executing
-	ctx = workflowContextWithNewHeader(ctx)
+	// Put header on context before executing if server supports it
+	if getWorkflowEnvironment(ctx).GetCapabilities().SignalHeader {
+		ctx = workflowContextWithNewHeader(ctx)
+	}
 	return i.SignalChildWorkflow(ctx, childExec.ID, signalName, data)
 }
 
@@ -512,18 +514,21 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 	d.dispatcher = dispatcher
 	envInterceptor.dispatcher = dispatcher
 
-	getWorkflowEnvironment(d.rootCtx).RegisterCancelHandler(func() {
+	env.RegisterCancelHandler(func() {
 		// It is ok to call this method multiple times.
 		// it doesn't do anything new, the context remains canceled.
 		d.cancel()
 	})
 
-	getWorkflowEnvironment(d.rootCtx).RegisterSignalHandler(
+	env.RegisterSignalHandler(
 		func(name string, input *commonpb.Payloads, header *commonpb.Header) error {
-			// Put the header on context
-			rootCtx, err = workflowContextWithHeaderPropagated(d.rootCtx, header, env.GetContextPropagators())
-			if err != nil {
-				return err
+			// Put the header on context if server supports it
+			rootCtx := d.rootCtx
+			if env.GetCapabilities().SignalHeader {
+				rootCtx, err = workflowContextWithHeaderPropagated(d.rootCtx, header, env.GetContextPropagators())
+				if err != nil {
+					return err
+				}
 			}
 
 			// TODO(cretz): We decode ahead of time for HandleQuery but we don't here. Is
@@ -534,12 +539,15 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 		},
 	)
 
-	getWorkflowEnvironment(d.rootCtx).RegisterQueryHandler(
+	env.RegisterQueryHandler(
 		func(queryType string, queryArgs *commonpb.Payloads, header *commonpb.Header) (*commonpb.Payloads, error) {
-			// Put the header on context
-			rootCtx, err = workflowContextWithHeaderPropagated(d.rootCtx, header, env.GetContextPropagators())
-			if err != nil {
-				return nil, err
+			// Put the header on context if server supports it
+			rootCtx := d.rootCtx
+			if env.GetCapabilities().QueryHeader {
+				rootCtx, err = workflowContextWithHeaderPropagated(d.rootCtx, header, env.GetContextPropagators())
+				if err != nil {
+					return nil, err
+				}
 			}
 
 			eo := getWorkflowEnvOptions(rootCtx)
