@@ -29,8 +29,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/uber-go/tally/v4"
@@ -62,7 +60,6 @@ const (
 	healthCheckServiceName           = "temporal.api.workflowservice.v1.WorkflowService"
 	defaultHealthCheckAttemptTimeout = 5 * time.Second
 	defaultHealthCheckTimeout        = 10 * time.Second
-	defaultCapabilityLoadTimeout     = 10 * time.Second
 )
 
 type (
@@ -444,10 +441,6 @@ type (
 		// worker options, the ones here wrap the ones in worker options. The same
 		// interceptor should not be set here and in worker options.
 		Interceptors []ClientInterceptor
-
-		// ServerCapabilitiesOverride, if non-nil, uses the given set of
-		// capabilities instead of making a server call to get them.
-		ServerCapabilitiesOverride *ServerCapabilities
 	}
 
 	// HeadersProvider returns a map of gRPC headers that should be used on every request.
@@ -504,17 +497,6 @@ type (
 
 		// MaxPayloadSize is a number of bytes that gRPC would allow to travel to and from server. Defaults to 64 MB.
 		MaxPayloadSize int
-	}
-
-	// ServerCapabilities are capabilities that the server supports. These are
-	// obtained during initial client connection unless ServerCapabilitiesOverride
-	// is set in client options.
-	ServerCapabilities struct {
-		// SignalHeader is true when the server supports setting headers on signals.
-		SignalHeader bool
-
-		// QueryHeader is true when the server supports setting headers on queries.
-		QueryHeader bool
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
@@ -687,20 +669,7 @@ func NewClient(options ClientOptions) (Client, error) {
 		return nil, err
 	}
 
-	service := workflowservice.NewWorkflowServiceClient(connection)
-
-	// If server capabilities are not already set, get them from the server. While
-	// we could use the capability fetching at the same time as a health check
-	// (this only succeeds when healthy), to preserve the usefulness of
-	// DisableHealthCheck option, we make this separate.
-	if options.ServerCapabilitiesOverride == nil {
-		var err error
-		if options.ServerCapabilitiesOverride, err = loadServerCapabilities(service); err != nil {
-			return nil, fmt.Errorf("failed getting server capabilities: %w", err)
-		}
-	}
-
-	return NewServiceClient(service, connection, options), nil
+	return NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
 }
 
 func newDialParameters(options *ClientOptions) dialParameters {
@@ -746,9 +715,6 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		dataConverter:      options.DataConverter,
 		contextPropagators: options.ContextPropagators,
 		workerInterceptors: workerInterceptors,
-	}
-	if options.ServerCapabilitiesOverride != nil {
-		client.capabilities = *options.ServerCapabilitiesOverride
 	}
 
 	// Create outbound interceptor by wrapping backwards through chain
@@ -856,78 +822,4 @@ func checkHealth(connection grpc.ClientConnInterface, options ConnectionOptions)
 		}
 		return nil
 	}, policy, nil)
-}
-
-// Headers on signals and queries are not implemented until after v1.14.0
-var noHeaderVer = semVer{major: 1, minor: 14}
-
-func loadServerCapabilities(service workflowservice.WorkflowServiceClient) (*ServerCapabilities, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), defaultCapabilityLoadTimeout)
-	defer cancel()
-
-	resp, err := service.GetClusterInfo(ctx, &workflowservice.GetClusterInfoRequest{})
-	if err != nil {
-		return nil, fmt.Errorf("failed getting cluster info: %w", err)
-	}
-
-	// For now, the way we determine capabilities is to parse the server's
-	// semantic version.
-	serverVer, err := parseSemVer(resp.ServerVersion)
-	if err != nil {
-		return nil, fmt.Errorf("bad server version of %q: %w", resp.ServerVersion, err)
-	}
-
-	// Headers on signals and queries are not implemented until after v1.14.0
-	headerSupported := compareSemVer(serverVer, &noHeaderVer) > 0
-	return &ServerCapabilities{
-		SignalHeader: headerSupported,
-		QueryHeader:  headerSupported,
-	}, nil
-}
-
-type semVer struct{ major, minor, patch int }
-
-func parseSemVer(str string) (*semVer, error) {
-	var ver semVer
-	// Split into 3
-	pieces := strings.SplitN(str, ".", 3)
-	if len(pieces) != 3 {
-		return nil, fmt.Errorf("not at least 3 pieces")
-	}
-	// Parse major sans possible "v" prefix
-	var err error
-	if ver.major, err = strconv.Atoi(strings.TrimPrefix(pieces[0], "v")); err != nil {
-		return nil, fmt.Errorf("bad major: %v", err)
-	}
-	// Parse minor
-	if ver.minor, err = strconv.Atoi(pieces[1]); err != nil {
-		return nil, fmt.Errorf("bad minor: %v", err)
-	}
-	// Take off anything after "-" or "+" from patch
-	if i := strings.IndexAny(pieces[2], "-+"); i >= 0 {
-		pieces[2] = pieces[2][:i]
-	}
-	if ver.patch, err = strconv.Atoi(pieces[2]); err != nil {
-		return nil, fmt.Errorf("bad patch: %w", err)
-	}
-	return &ver, nil
-}
-
-func compareSemVer(a, b *semVer) int {
-	switch {
-	case a.major < b.major:
-		return -1
-	case a.major > b.major:
-		return 1
-	case a.minor < b.minor:
-		return -1
-	case a.minor > b.minor:
-		return 1
-	case a.patch < b.patch:
-		return -1
-	case a.patch > b.patch:
-		return 1
-	default:
-		return 0
-	}
 }

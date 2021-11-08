@@ -24,6 +24,7 @@ package interceptortest
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -76,6 +77,13 @@ func AssertSpanPropagation(t *testing.T, tracer TestTracer) {
 	require.NoError(t, env.GetWorkflowResult(&result))
 	require.Equal(t, []string{"work", "act", "act-local", "work-child", "act", "act-local"}, result)
 
+	// Query workflow
+	val, err := env.QueryWorkflow("my-query", nil)
+	require.NoError(t, err)
+	var queryResp string
+	require.NoError(t, val.Get(&queryResp))
+	require.Equal(t, "query-response", queryResp)
+
 	// Check span tree
 	require.Equal(t, []*SpanInfo{
 		Span("RunWorkflow:testWorkflow",
@@ -88,30 +96,52 @@ func AssertSpanPropagation(t *testing.T, tracer TestTracer) {
 					Span("StartActivity:testActivity",
 						Span("RunActivity:testActivity")),
 					Span("StartActivity:testActivityLocal",
-						Span("RunActivity:testActivityLocal"))))),
+						Span("RunActivity:testActivityLocal")))),
+			Span("SignalChildWorkflow:my-signal",
+				Span("HandleSignal:my-signal"))),
+		Span("HandleQuery:my-query"),
 	}, tracer.FinishedSpans())
 }
 
 func testWorkflow(ctx workflow.Context) ([]string, error) {
 	// Run code
-	ret, err := workflowInternal(ctx)
+	ret, err := workflowInternal(ctx, false)
+	if err != nil {
+		return nil, err
+	}
 
 	// Run child
 	if err == nil {
 		var temp []string
-		err = workflow.ExecuteChildWorkflow(ctx, testWorkflowChild).Get(ctx, &temp)
+		fut := workflow.ExecuteChildWorkflow(ctx, testWorkflowChild)
+		// Signal and get result
+		if err := fut.SignalChildWorkflow(ctx, "my-signal", nil).Get(ctx, nil); err != nil {
+			return nil, fmt.Errorf("failed signaling child: %w", err)
+		}
+		if err := fut.Get(ctx, &temp); err != nil {
+			return nil, fmt.Errorf("failed running child: %w", err)
+		}
 		ret = append(ret, temp...)
 	}
 
-	return append([]string{"work"}, ret...), err
+	return append([]string{"work"}, ret...), nil
 }
 
 func testWorkflowChild(ctx workflow.Context) (ret []string, err error) {
-	ret, err = workflowInternal(ctx)
+	ret, err = workflowInternal(ctx, true)
 	return append([]string{"work-child"}, ret...), err
 }
 
-func workflowInternal(ctx workflow.Context) (ret []string, err error) {
+func workflowInternal(ctx workflow.Context, waitSignal bool) (ret []string, err error) {
+	// Add signal and query handling
+	if waitSignal {
+		workflow.GetSignalChannel(ctx, "my-signal").Receive(ctx, nil)
+	}
+	err = workflow.SetQueryHandler(ctx, "my-query", func() (string, error) { return "query-response", nil })
+	if err != nil {
+		return
+	}
+
 	// Exec normal activity
 	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{StartToCloseTimeout: 10 * time.Second})
 	var temp []string

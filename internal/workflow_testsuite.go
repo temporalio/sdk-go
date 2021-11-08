@@ -57,7 +57,6 @@ type (
 		scope              tally.Scope
 		contextPropagators []ContextPropagator
 		header             *commonpb.Header
-		capabilities       *ServerCapabilities
 	}
 
 	// TestWorkflowEnvironment is the environment that you use to test workflow
@@ -159,11 +158,6 @@ func (s *WorkflowTestSuite) SetContextPropagators(ctxProps []ContextPropagator) 
 // the workflow
 func (s *WorkflowTestSuite) SetHeader(header *commonpb.Header) {
 	s.header = header
-}
-
-// SetCapabilities sets the server capabilities for this WorkflowTestSuite.
-func (s *WorkflowTestSuite) SetCapabilities(capabilities *ServerCapabilities) {
-	s.capabilities = capabilities
 }
 
 // RegisterActivity registers activity implementation with TestWorkflowEnvironment

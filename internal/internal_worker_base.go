@@ -113,7 +113,6 @@ type (
 		GetContextPropagators() []ContextPropagator
 		UpsertSearchAttributes(attributes map[string]interface{}) error
 		GetRegistry() *registry
-		GetCapabilities() *ServerCapabilities
 	}
 
 	// WorkflowDefinitionFactory factory for creating WorkflowDefinition instances.

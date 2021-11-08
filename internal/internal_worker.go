@@ -202,9 +202,6 @@ type (
 
 		// Pointer to the shared worker cache
 		cache *WorkerCache
-
-		// Pointer to shared set of server capabilities
-		capabilities *ServerCapabilities
 	}
 )
 
@@ -231,10 +228,6 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 	if params.DataConverter == nil {
 		params.DataConverter = converter.GetDefaultDataConverter()
 		params.Logger.Info("No DataConverter configured for temporal worker. Use default one.")
-	}
-	if params.capabilities == nil {
-		params.capabilities = &ServerCapabilities{}
-		params.Logger.Info("No server capabilities found for temporal worker. Use default one.")
 	}
 }
 
@@ -1022,7 +1015,6 @@ func (aw *AggregatedWorker) Stop() {
 type WorkflowReplayer struct {
 	registry      *registry
 	dataConverter converter.DataConverter
-	capabilities  *ServerCapabilities
 }
 
 // WorkflowReplayerOptions are options for creating a workflow replayer.
@@ -1030,20 +1022,13 @@ type WorkflowReplayerOptions struct {
 	// Optional custom data converter to provide for replay. If not set, the
 	// default converter is used.
 	DataConverter converter.DataConverter
-
-	// Optional set of server capabilities used during replay.
-	Capabilities *ServerCapabilities
 }
 
 // NewWorkflowReplayer creates an instance of the WorkflowReplayer.
 func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, error) {
-	if options.Capabilities == nil {
-		options.Capabilities = &ServerCapabilities{}
-	}
 	return &WorkflowReplayer{
 		registry:      newRegistry(),
 		dataConverter: options.DataConverter,
-		capabilities:  options.Capabilities,
 	}, nil
 }
 
@@ -1184,7 +1169,6 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 		Logger:        logger,
 		cache:         cache,
 		DataConverter: aw.dataConverter,
-		capabilities:  aw.capabilities,
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
 	resp, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, nil)
@@ -1294,7 +1278,6 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		ContextPropagators:                    client.contextPropagators,
 		DeadlockDetectionTimeout:              options.DeadlockDetectionTimeout,
 		cache:                                 cache,
-		capabilities:                          &client.capabilities,
 	}
 
 	if options.Identity != "" {

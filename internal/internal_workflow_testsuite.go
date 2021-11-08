@@ -138,7 +138,6 @@ type (
 		metricsScope       tally.Scope
 		contextPropagators []ContextPropagator
 		identity           string
-		capabilities       *ServerCapabilities
 
 		mockClock *clock.Mock
 		wallClock clock.Clock
@@ -223,7 +222,6 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 
 			logger:            s.logger,
 			metricsScope:      s.scope,
-			capabilities:      s.capabilities,
 			mockClock:         clock.NewMock(),
 			wallClock:         clock.New(),
 			timers:            make(map[string]*testTimerHandle),
@@ -2347,13 +2345,6 @@ func (env *testWorkflowEnvironmentImpl) setHeartbeatDetails(details interface{})
 
 func (env *testWorkflowEnvironmentImpl) GetRegistry() *registry {
 	return env.registry
-}
-
-func (env *testWorkflowEnvironmentImpl) GetCapabilities() *ServerCapabilities {
-	if env.capabilities == nil {
-		return &ServerCapabilities{}
-	}
-	return env.capabilities
 }
 
 func (env *testWorkflowEnvironmentImpl) setStartWorkflowOptions(options StartWorkflowOptions) {

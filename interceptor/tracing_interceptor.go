@@ -200,8 +200,8 @@ func (t *tracingClientOutboundInterceptor) ExecuteWorkflow(
 }
 
 func (t *tracingClientOutboundInterceptor) SignalWorkflow(ctx context.Context, in *ClientSignalWorkflowInput) error {
-	// Only add tracing if enabled and there is a header
-	if t.root.options.DisableSignalTracing || Header(ctx) == nil {
+	// Only add tracing if enabled
+	if t.root.options.DisableSignalTracing {
 		return t.Next.SignalWorkflow(ctx, in)
 	}
 	// Start span and write to header
@@ -248,8 +248,8 @@ func (t *tracingClientOutboundInterceptor) QueryWorkflow(
 	ctx context.Context,
 	in *ClientQueryWorkflowInput,
 ) (converter.EncodedValue, error) {
-	// Only add tracing if enabled and there is a header
-	if t.root.options.DisableQueryTracing || Header(ctx) == nil {
+	// Only add tracing if enabled
+	if t.root.options.DisableQueryTracing {
 		return t.Next.QueryWorkflow(ctx, in)
 	}
 	// Start span and write to header
@@ -340,8 +340,8 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteWorkflow(
 }
 
 func (t *tracingWorkflowInboundInterceptor) HandleSignal(ctx workflow.Context, in *HandleSignalInput) error {
-	// Only add tracing if enabled and there is a header
-	if t.root.options.DisableSignalTracing || WorkflowHeader(ctx) == nil {
+	// Only add tracing if enabled
+	if t.root.options.DisableSignalTracing {
 		return t.Next.HandleSignal(ctx, in)
 	}
 	// Start span reading from header
@@ -370,8 +370,8 @@ func (t *tracingWorkflowInboundInterceptor) HandleQuery(
 	ctx workflow.Context,
 	in *HandleQueryInput,
 ) (interface{}, error) {
-	// Only add tracing if enabled there is a header
-	if t.root.options.DisableQueryTracing || WorkflowHeader(ctx) == nil {
+	// Only add tracing if enabled
+	if t.root.options.DisableQueryTracing {
 		return t.Next.HandleQuery(ctx, in)
 	}
 	// Start span reading from header
@@ -453,8 +453,8 @@ func (t *tracingWorkflowOutboundInterceptor) SignalExternalWorkflow(
 	signalName string,
 	arg interface{},
 ) workflow.Future {
-	// Start span writing to header if enabled and header present
-	if !t.root.options.DisableSignalTracing && WorkflowHeader(ctx) != nil {
+	// Start span writing to header if enabled
+	if !t.root.options.DisableSignalTracing {
 		var span TracerSpan
 		var futErr workflow.ChildWorkflowFuture
 		span, ctx, futErr = t.startNonReplaySpan(ctx, "SignalExternalWorkflow", signalName, false)
@@ -473,8 +473,8 @@ func (t *tracingWorkflowOutboundInterceptor) SignalChildWorkflow(
 	signalName string,
 	arg interface{},
 ) workflow.Future {
-	// Start span writing to header if enabled and header present
-	if !t.root.options.DisableSignalTracing && WorkflowHeader(ctx) != nil {
+	// Start span writing to header if enabled
+	if !t.root.options.DisableSignalTracing {
 		var span TracerSpan
 		var futErr workflow.ChildWorkflowFuture
 		span, ctx, futErr = t.startNonReplaySpan(ctx, "SignalChildWorkflow", signalName, false)
