@@ -186,6 +186,17 @@ func (a *Activities) WaitForWorkerStop(ctx context.Context, timeout time.Duratio
 	}
 }
 
+func (a *Activities) HeartbeatUntilCanceled(ctx context.Context, heartbeatFreq time.Duration) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(heartbeatFreq):
+			activity.RecordHeartbeat(ctx)
+		}
+	}
+}
+
 func (a *Activities) append(name string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

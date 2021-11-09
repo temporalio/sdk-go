@@ -1276,6 +1276,39 @@ func (ts *IntegrationTestSuite) TestCancelChildAndExecuteActivityRace() {
 	ts.NoError(err)
 }
 
+func (ts *IntegrationTestSuite) TestAdvancedCancellation() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Start workflow
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-advanced-cancellation-"+uuid.New()),
+		ts.workflows.AdvancedCancellation)
+	ts.NoError(err)
+
+	// Poll to check if waiting for cancel
+	var waitingForCancel bool
+	for i := 0; !waitingForCancel && i < 20; i++ {
+		time.Sleep(100 * time.Millisecond)
+		val, err := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "waiting-for-cancel")
+		// Ignore query failed because it means query may not be registered yet
+		var queryFailed *serviceerror.QueryFailed
+		if errors.As(err, &queryFailed) {
+			continue
+		}
+		ts.NoError(err)
+		ts.NoError(val.Get(&waitingForCancel))
+	}
+	ts.True(waitingForCancel)
+
+	// Now cancel it
+	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+
+	// Now retrieve the results
+	var completedActivities []string
+	ts.NoError(run.Get(ctx, &completedActivities))
+	ts.Equal([]string{"to-cancel", "cleanup"}, completedActivities)
+}
+
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{HostPort: ts.config.ServiceAddr})
 	ts.NoError(err)
