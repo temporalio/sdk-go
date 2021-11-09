@@ -186,6 +186,10 @@ func (a *Activities) WaitForWorkerStop(ctx context.Context, timeout time.Duratio
 	}
 }
 
+func (a *Activities) Panicked(ctx context.Context) ([]string, error) {
+	panic(fmt.Sprintf("simulated panic on attempt %v", activity.GetInfo(ctx).Attempt))
+}
+
 func (a *Activities) append(name string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
