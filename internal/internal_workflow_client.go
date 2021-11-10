@@ -74,8 +74,7 @@ type (
 		dataConverter      converter.DataConverter
 		contextPropagators []ContextPropagator
 		workerInterceptors []WorkerInterceptor
-
-		interceptor ClientOutboundInterceptor
+		interceptor        ClientOutboundInterceptor
 	}
 
 	// namespaceClient is the client for managing namespaces.

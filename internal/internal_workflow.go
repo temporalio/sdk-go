@@ -1396,7 +1396,6 @@ func (h *queryHandler) execute(input []interface{}) (result interface{}, err err
 		}
 	}()
 
-	// we already verified (in validateHandlerFn()) that the query handler returns 2 values
 	return executeFunction(h.fn, input)
 }
 

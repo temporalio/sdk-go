@@ -123,7 +123,7 @@ func (t *tracer) Options() interceptor.TracerOptions {
 func (t *tracer) UnmarshalSpan(m map[string]string) (interceptor.TracerSpanRef, error) {
 	ctx := trace.SpanContextFromContext(t.options.TextMapPropagator.Extract(context.Background(), textMapCarrier(m)))
 	if !ctx.IsValid() {
-		return nil, nil
+		return nil, fmt.Errorf("failed extracting OpenTelemetry span from map")
 	}
 	return &tracerSpanRef{SpanContext: ctx}, nil
 }
