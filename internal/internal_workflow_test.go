@@ -1435,3 +1435,13 @@ func (t *tracingOutboundCallsInterceptor) ExecuteActivity(ctx Context, activityT
 	t.inbound.trace = append(t.inbound.trace, "ExecuteActivity "+activityType)
 	return t.Next.ExecuteActivity(ctx, activityType, args...)
 }
+
+func TestStackTraceInvalidDepthBounded(t *testing.T) {
+	// Confirm at 2 depth there are 3 lines (1 for header, 2 for fn and path)
+	lines := strings.Split(getStackTrace("mycoroutine", "success", 2), "\n")
+	require.Len(t, lines, 3)
+	// But at invalid 100 depth, there are more than three lines but less than 100
+	// because we show the full trace when bounds are wrong
+	lines = strings.Split(getStackTrace("mycoroutine", "success", 100), "\n")
+	require.True(t, len(lines) > 3 && len(lines) < 100)
+}
