@@ -1322,13 +1322,13 @@ func (w *Workflows) SleepForDuration(ctx workflow.Context, d time.Duration) erro
 	return workflow.Sleep(ctx, d)
 }
 
-func (w *Workflows) AdvancedCancellation(ctx workflow.Context) (completedActivities []string, err error) {
+func (w *Workflows) ActivityPostCancellation(ctx workflow.Context) error {
 	waitingForCancel := false
-	err = workflow.SetQueryHandler(ctx, "waiting-for-cancel", func() (bool, error) {
+	err := workflow.SetQueryHandler(ctx, "waiting-for-cancel", func() (bool, error) {
 		return waitingForCancel, nil
 	})
 	if err != nil {
-		return
+		return err
 	}
 
 	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
@@ -1337,33 +1337,38 @@ func (w *Workflows) AdvancedCancellation(ctx workflow.Context) (completedActivit
 		WaitForCancellation: true,
 	})
 	var a *Activities
-	defer func() {
-		if !errors.Is(ctx.Err(), workflow.ErrCanceled) {
-			return
-		}
-		// Run cleanup activity with disconnected context
-		newCtx, _ := workflow.NewDisconnectedContext(ctx)
-		err = workflow.ExecuteActivity(newCtx, a.Sleep, 1*time.Millisecond).Get(ctx, nil)
-		if err == nil {
-			completedActivities = append(completedActivities, "cleanup")
-		}
-	}()
 
 	// Run activity to cancel
 	fut := workflow.ExecuteActivity(ctx, a.HeartbeatUntilCanceled, 1*time.Second)
 	waitingForCancel = true
-	err = fut.Get(ctx, nil)
-	if err == nil {
-		completedActivities = append(completedActivities, "to-cancel")
-
-		// Run activity to skip
-		err = workflow.ExecuteActivity(ctx, a.Sleep, 1*time.Millisecond).Get(ctx, nil)
-		if err == nil {
-			completedActivities = append(completedActivities, "to-skip")
-		}
+	if err := fut.Get(ctx, nil); err != nil {
+		return fmt.Errorf("activity did not gracefully cancel: %w", err)
 	}
 
-	return
+	// Run another activity after cancel
+	ctx, _ = workflow.NewDisconnectedContext(ctx)
+	return workflow.ExecuteActivity(ctx, a.Sleep, 1*time.Millisecond).Get(ctx, nil)
+}
+
+func (w *Workflows) TimerPostCancellation(ctx workflow.Context) error {
+	waitingForCancel := false
+	err := workflow.SetQueryHandler(ctx, "waiting-for-cancel", func() (bool, error) {
+		return waitingForCancel, nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// Run timer to cancel
+	fut := workflow.NewTimer(ctx, 10*time.Minute)
+	waitingForCancel = true
+	if err := fut.Get(ctx, nil); !temporal.IsCanceledError(err) {
+		return fmt.Errorf("timer did not get canceled error, got: %w", err)
+	}
+
+	// Run another timer after cancel
+	ctx, _ = workflow.NewDisconnectedContext(ctx)
+	return workflow.NewTimer(ctx, 1*time.Millisecond).Get(ctx, nil)
 }
 
 func (w *Workflows) register(worker worker.Worker) {
@@ -1422,7 +1427,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.CancelMultipleCommandsOverMultipleTasks)
 	worker.RegisterWorkflow(w.CancelChildAndExecuteActivityRace)
 	worker.RegisterWorkflow(w.SleepForDuration)
-	worker.RegisterWorkflow(w.AdvancedCancellation)
+	worker.RegisterWorkflow(w.ActivityPostCancellation)
+	worker.RegisterWorkflow(w.TimerPostCancellation)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)

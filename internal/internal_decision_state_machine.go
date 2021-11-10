@@ -874,8 +874,8 @@ func (h *commandsHelper) addCommand(command commandStateMachine) {
 // might be in the same workflow task. In practice this only seems to happen during unhandled command events.
 func (h *commandsHelper) removeCancelOfResolvedCommand(commandID commandID) {
 	// Ensure this isn't misused for non-cancel commands
-	if commandID.commandType != commandTypeCancelTimer && commandID.commandType != commandTypeRequestCancelActivityTask {
-		panic("removeCancelOfResolvedCommand should only be called for cancel timer / activity")
+	if commandID.commandType != commandTypeCancelTimer {
+		panic("removeCancelOfResolvedCommand should only be called for cancel timer")
 	}
 	orderedCmdEl, ok := h.commands[commandID]
 	if ok {
@@ -913,10 +913,6 @@ func (h *commandsHelper) requestCancelActivityTask(activityID string) commandSta
 
 func (h *commandsHelper) handleActivityTaskClosed(activityID string, scheduledEventID int64) commandStateMachine {
 	command := h.getCommand(makeCommandID(commandTypeActivity, activityID))
-	// If, for whatever reason, we were going to send an activity cancel request, don't do that anymore
-	// since we already know the activity is resolved.
-	// possibleCancelID := makeCommandID(commandTypeRequestCancelActivityTask, activityID)
-	// h.removeCancelOfResolvedCommand(possibleCancelID)
 	command.handleCompletionEvent()
 	delete(h.scheduledEventIDToActivityID, scheduledEventID)
 	return command
