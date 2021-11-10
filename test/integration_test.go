@@ -313,6 +313,18 @@ func (ts *IntegrationTestSuite) TestPanicFailWorkflow() {
 	ts.True(strings.Contains(applicationErr.Error(), "simulated"))
 }
 
+func (ts *IntegrationTestSuite) TestPanicActivityWorkflow() {
+	var res []string
+	// Retry once on each activity
+	const maxAttempts int32 = 2
+	err := ts.executeWorkflow("test-panic-activity", ts.workflows.PanickedActivity, &res, maxAttempts)
+	ts.NoError(err)
+	ts.Equal([]string{
+		fmt.Sprintf("act err: simulated panic on attempt %v", maxAttempts),
+		fmt.Sprintf("local act err: simulated panic on attempt %v", maxAttempts),
+	}, res)
+}
+
 func (ts *IntegrationTestSuite) TestDeadlockDetection() {
 	var expected []string
 	wfOpts := ts.startWorkflowOptions("test-deadlock")

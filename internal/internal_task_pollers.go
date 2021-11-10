@@ -484,31 +484,6 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 		}
 	}
 
-	// panic handler
-	defer func() {
-		if p := recover(); p != nil {
-			topLine := fmt.Sprintf("local activity for %s [panic]:", activityType)
-			st := getStackTraceRaw(topLine, 7, 0)
-			lath.logger.Error("LocalActivity panic.",
-				tagWorkflowID, task.params.WorkflowInfo.WorkflowExecution.ID,
-				tagRunID, task.params.WorkflowInfo.WorkflowExecution.RunID,
-				tagActivityType, activityType,
-				tagAttempt, task.attempt,
-				tagPanicError, fmt.Sprintf("%v", p),
-				tagPanicStack, st)
-			activityMetricsScope.Counter(metrics.LocalActivityErrorCounter).Inc(1)
-			panicErr := newPanicError(p, st)
-			result = &localActivityResult{
-				task:   task,
-				result: nil,
-				err:    panicErr,
-			}
-		}
-		if result.err != nil {
-			activityMetricsScope.Counter(metrics.LocalActivityFailedCounter).Inc(1)
-		}
-	}()
-
 	timeout := task.params.ScheduleToCloseTimeout
 	if task.params.StartToCloseTimeout != 0 && task.params.StartToCloseTimeout < timeout {
 		timeout = task.params.StartToCloseTimeout
@@ -538,9 +513,30 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 		laStartTime := time.Now()
 		ctx, span := createOpenTracingActivitySpan(ctx, lath.tracer, time.Now(), task.params.ActivityType, task.params.WorkflowInfo.WorkflowExecution.ID, task.params.WorkflowInfo.WorkflowExecution.RunID)
 		defer span.Finish()
+		defer close(ch)
+
+		// panic handler
+		defer func() {
+			if p := recover(); p != nil {
+				topLine := fmt.Sprintf("local activity for %s [panic]:", activityType)
+				st := getStackTraceRaw(topLine, 7, 0)
+				lath.logger.Error("LocalActivity panic.",
+					tagWorkflowID, task.params.WorkflowInfo.WorkflowExecution.ID,
+					tagRunID, task.params.WorkflowInfo.WorkflowExecution.RunID,
+					tagActivityType, activityType,
+					tagAttempt, task.attempt,
+					tagPanicError, fmt.Sprintf("%v", p),
+					tagPanicStack, st)
+				activityMetricsScope.Counter(metrics.LocalActivityErrorCounter).Inc(1)
+				err = newPanicError(p, st)
+			}
+			if err != nil {
+				activityMetricsScope.Counter(metrics.LocalActivityFailedCounter).Inc(1)
+			}
+		}()
+
 		laResult, err = ae.ExecuteWithActualArgs(ctx, task.params.InputArgs)
 		executionLatency := time.Since(laStartTime)
-		close(ch)
 		activityMetricsScope.Timer(metrics.LocalActivityExecutionLatency).Record(executionLatency)
 		if executionLatency > timeoutDuration {
 			// If local activity takes longer than expected timeout, the context would already be DeadlineExceeded and

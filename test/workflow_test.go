@@ -96,6 +96,40 @@ func (w *Workflows) Panicked(ctx workflow.Context) ([]string, error) {
 	panic("simulated")
 }
 
+func (w *Workflows) PanickedActivity(ctx workflow.Context, maxAttempts int32) (ret []string, err error) {
+	// Only retry limited number of times on activities
+	oneRetry := &temporal.RetryPolicy{InitialInterval: 1 * time.Nanosecond, MaximumAttempts: maxAttempts}
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 5 * time.Second,
+		RetryPolicy:         oneRetry,
+	})
+	ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+		StartToCloseTimeout: 5 * time.Second,
+		RetryPolicy:         oneRetry,
+	})
+
+	var a Activities
+
+	// Panic activity
+	err = workflow.ExecuteActivity(ctx, a.Panicked).Get(ctx, nil)
+	var actPanicErr *temporal.PanicError
+	if !errors.As(err, &actPanicErr) {
+		return nil, fmt.Errorf("no activity panic error, got: %v", err)
+	}
+
+	// Panic local activity
+	err = workflow.ExecuteLocalActivity(ctx, a.Panicked).Get(ctx, nil)
+	var localActPanicErr *temporal.PanicError
+	if !errors.As(err, &localActPanicErr) {
+		return nil, fmt.Errorf("no local activity error, got: %v", err)
+	}
+
+	return []string{
+		"act err: " + actPanicErr.Error(),
+		"local act err: " + localActPanicErr.Error(),
+	}, nil
+}
+
 func (w *Workflows) ActivityRetryOnError(ctx workflow.Context) ([]string, error) {
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptionsWithRetry())
 	startTime := workflow.Now(ctx)
@@ -1385,6 +1419,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.Deadlocked)
 	worker.RegisterWorkflow(w.DeadlockedWithLocalActivity)
 	worker.RegisterWorkflow(w.Panicked)
+	worker.RegisterWorkflow(w.PanickedActivity)
 	worker.RegisterWorkflow(w.BasicSession)
 	worker.RegisterWorkflow(w.CancelActivity)
 	worker.RegisterWorkflow(w.CancelActivityImmediately)
