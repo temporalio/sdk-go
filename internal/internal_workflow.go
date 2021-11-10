@@ -860,7 +860,12 @@ func getStackTraceRaw(top string, omitTop, omitBottom int) string {
 		return rawStack
 	}
 	lines := strings.Split(rawStack, "\n")
-	lines = lines[omitTop : len(lines)-omitBottom]
+	// If the top is after the end, set as same
+	omitEnd := len(lines) - omitBottom
+	if omitTop > omitEnd {
+		omitTop = omitEnd
+	}
+	lines = lines[omitTop:omitEnd]
 	lines = append([]string{top}, lines...)
 	return strings.Join(lines, "\n")
 }
