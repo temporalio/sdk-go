@@ -860,7 +860,13 @@ func getStackTraceRaw(top string, omitTop, omitBottom int) string {
 		return rawStack
 	}
 	lines := strings.Split(rawStack, "\n")
-	lines = lines[omitTop : len(lines)-omitBottom]
+	omitEnd := len(lines) - omitBottom
+	// If the start is after the end, the depth was invalid originally so return
+	// the entire raw stack
+	if omitTop > omitEnd {
+		return rawStack
+	}
+	lines = lines[omitTop:omitEnd]
 	lines = append([]string{top}, lines...)
 	return strings.Join(lines, "\n")
 }
