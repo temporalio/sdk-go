@@ -1356,6 +1356,67 @@ func (w *Workflows) SleepForDuration(ctx workflow.Context, d time.Duration) erro
 	return workflow.Sleep(ctx, d)
 }
 
+type AdvancedPostCancellationInput struct {
+	PreCancelActivity  bool
+	PostCancelActivity bool
+	PreCancelTimer     bool
+	PostCancelTimer    bool
+}
+
+func (w *Workflows) AdvancedPostCancellation(ctx workflow.Context, in *AdvancedPostCancellationInput) error {
+	// Setup query to tell caller we're waiting for cancel
+	waitingForCancel := false
+	err := workflow.SetQueryHandler(ctx, "waiting-for-cancel", func() (bool, error) {
+		return waitingForCancel, nil
+	})
+	if err != nil {
+		return err
+	}
+
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 5 * time.Minute,
+		HeartbeatTimeout:    5 * time.Second,
+		WaitForCancellation: true,
+	})
+	var a *Activities
+
+	// Start pre-cancel pieces
+	var actFut, timerFut workflow.Future
+	if in.PreCancelActivity {
+		actFut = workflow.ExecuteActivity(ctx, a.HeartbeatUntilCanceled, 1*time.Second)
+	}
+	if in.PreCancelTimer {
+		timerFut = workflow.NewTimer(ctx, 10*time.Minute)
+	}
+
+	// Set as waiting and wait for futures
+	waitingForCancel = true
+	if actFut != nil {
+		if err := actFut.Get(ctx, nil); err != nil {
+			return fmt.Errorf("activity did not gracefully cancel: %w", err)
+		}
+	}
+	if timerFut != nil {
+		if err := timerFut.Get(ctx, nil); !temporal.IsCanceledError(err) {
+			return fmt.Errorf("timer did not get canceled error, got: %w", err)
+		}
+	}
+
+	// Run post-cancel pieces with context not considered cancel
+	ctx, _ = workflow.NewDisconnectedContext(ctx)
+	if in.PostCancelActivity {
+		if err := workflow.ExecuteActivity(ctx, a.Sleep, 1*time.Millisecond).Get(ctx, nil); err != nil {
+			return fmt.Errorf("failed post-cancel activity: %w", err)
+		}
+	}
+	if in.PostCancelTimer {
+		if err := workflow.NewTimer(ctx, 1*time.Millisecond).Get(ctx, nil); err != nil {
+			return fmt.Errorf("failed post-cancel timer: %w", err)
+		}
+	}
+	return nil
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -1413,6 +1474,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.CancelMultipleCommandsOverMultipleTasks)
 	worker.RegisterWorkflow(w.CancelChildAndExecuteActivityRace)
 	worker.RegisterWorkflow(w.SleepForDuration)
+	worker.RegisterWorkflow(w.AdvancedPostCancellation)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
