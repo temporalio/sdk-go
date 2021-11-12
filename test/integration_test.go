@@ -1468,6 +1468,65 @@ func (ts *IntegrationTestSuite) TestInterceptorStartWithSignal() {
 	ts.True(foundHandleSignal)
 }
 
+func (ts *IntegrationTestSuite) TestAdvancedPostCancellation() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	assertPostCancellation := func(in *AdvancedPostCancellationInput) {
+		// Start workflow
+		run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-advanced-post-cancellation-"+uuid.New()),
+			ts.workflows.AdvancedPostCancellation, in)
+		ts.NoError(err)
+
+		// Poll to check if waiting for cancel
+		var waitingForCancel bool
+		for i := 0; !waitingForCancel && i < 30; i++ {
+			time.Sleep(50 * time.Millisecond)
+			val, err := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "waiting-for-cancel")
+			// Ignore query failed because it means query may not be registered yet
+			var queryFailed *serviceerror.QueryFailed
+			if errors.As(err, &queryFailed) {
+				continue
+			}
+			ts.NoError(err)
+			ts.NoError(val.Get(&waitingForCancel))
+		}
+		ts.True(waitingForCancel)
+
+		// Now cancel it
+		ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+
+		// Confirm no error
+		ts.NoError(run.Get(ctx, nil))
+	}
+
+	// Check just activity and timer
+	assertPostCancellation(&AdvancedPostCancellationInput{
+		PreCancelActivity:  true,
+		PostCancelActivity: true,
+	})
+	assertPostCancellation(&AdvancedPostCancellationInput{
+		PreCancelTimer:  true,
+		PostCancelTimer: true,
+	})
+	// Check mixed
+	assertPostCancellation(&AdvancedPostCancellationInput{
+		PreCancelActivity: true,
+		PostCancelTimer:   true,
+	})
+	assertPostCancellation(&AdvancedPostCancellationInput{
+		PreCancelTimer:     true,
+		PostCancelActivity: true,
+	})
+	// Check all
+	assertPostCancellation(&AdvancedPostCancellationInput{
+		PreCancelActivity:  true,
+		PreCancelTimer:     true,
+		PostCancelActivity: true,
+		PostCancelTimer:    true,
+	})
+}
+
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{HostPort: ts.config.ServiceAddr})
 	ts.NoError(err)
