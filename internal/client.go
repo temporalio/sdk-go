@@ -125,6 +125,7 @@ type (
 		// If the workflow is not running or not found, it starts the workflow and then sends the signal in transaction.
 		// - workflowID, signalName, signalArg are same as SignalWorkflow's parameters
 		// - options, workflow, workflowArgs are same as StartWorkflow's parameters
+		// - the workflowID parameter is used instead of options.ID. If the latter is present, it must match the workflowID.
 		// Note: options.WorkflowIDReusePolicy is default to AllowDuplicate.
 		// The errors it can return:
 		//  - serviceerror.NotFound, if namespace does not exist
