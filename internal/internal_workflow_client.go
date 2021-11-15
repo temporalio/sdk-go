@@ -250,7 +250,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	// Default workflow ID to UUID
 	options.ID = workflowID
 	if options.ID == "" {
-		options.ID = uuid.NewRandom().String()
+		options.ID = uuid.New()
 	}
 
 	// Validate function and get name
