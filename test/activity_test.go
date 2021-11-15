@@ -34,11 +34,13 @@ import (
 	"time"
 
 	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 )
 
 type Activities struct {
+	client      client.Client
 	mu          sync.Mutex
 	invocations []string
 	activities2 *Activities2
@@ -289,6 +291,34 @@ func (a *Activities) InterceptorCalls(ctx context.Context, someVal string) (stri
 	_ = activity.GetHeartbeatDetails(ctx)
 	activity.GetWorkerStopChannel(ctx)
 	return someVal, nil
+}
+
+func (a *Activities) ExternalSignalsAndQueries(ctx context.Context) error {
+	// Signal with start
+	workflowOpts := client.StartWorkflowOptions{TaskQueue: activity.GetInfo(ctx).TaskQueue}
+	run, err := a.client.SignalWithStartWorkflow(ctx, "test-external-signals-and-queries", "start-signal",
+		"signal-value", workflowOpts, new(Workflows).SignalsAndQueries, false, false)
+	if err != nil {
+		return err
+	}
+
+	// Query
+	val, err := a.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "workflow-query", nil)
+	if err != nil {
+		return err
+	}
+	var queryResp string
+	if err := val.Get(&queryResp); err != nil {
+		return err
+	} else if queryResp != "query-response" {
+		return fmt.Errorf("bad query response")
+	}
+
+	// Finish signal
+	if err := a.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish-signal", nil); err != nil {
+		return err
+	}
+	return run.Get(ctx, nil)
 }
 
 func (a *Activities) register(worker worker.Worker) {

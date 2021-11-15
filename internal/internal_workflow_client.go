@@ -228,6 +228,9 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 
 // SignalWorkflow signals a workflow in execution.
 func (wc *WorkflowClient) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error {
+	// Set header before interceptor run
+	ctx = contextWithNewHeader(ctx)
+
 	return wc.interceptor.SignalWorkflow(ctx, &ClientSignalWorkflowInput{
 		WorkflowID: workflowID,
 		RunID:      runID,
@@ -588,6 +591,9 @@ func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflo
 //  - serviceerror.NotFound
 //  - serviceerror.QueryFailed
 func (wc *WorkflowClient) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.EncodedValue, error) {
+	// Set header before interceptor run
+	ctx = contextWithNewHeader(ctx)
+
 	return wc.interceptor.QueryWorkflow(ctx, &ClientQueryWorkflowInput{
 		WorkflowID: workflowID,
 		RunID:      runID,
@@ -619,6 +625,9 @@ type QueryWorkflowWithOptionsRequest struct {
 	// QUERY_REJECT_CONDITION_NOT_OPEN indicates that query should be rejected if workflow is not open.
 	// QUERY_REJECT_CONDITION_NOT_COMPLETED_CLEANLY indicates that query should be rejected if workflow did not complete cleanly (e.g. terminated, canceled timeout etc...).
 	QueryRejectCondition enumspb.QueryRejectCondition
+
+	// Header is an optional header to include with the query.
+	Header *commonpb.Header
 }
 
 // QueryWorkflowWithOptionsResponse is the response to QueryWorkflowWithOptions
@@ -656,6 +665,7 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 		Query: &querypb.WorkflowQuery{
 			QueryType: request.QueryType,
 			QueryArgs: input,
+			Header:    request.Header,
 		},
 		QueryRejectCondition: request.QueryRejectCondition,
 	}
@@ -1058,6 +1068,12 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 		return err
 	}
 
+	// get workflow headers from the context
+	header, err := headerPropagated(ctx, w.client.contextPropagators)
+	if err != nil {
+		return err
+	}
+
 	request := &workflowservice.SignalWorkflowExecutionRequest{
 		Namespace: w.client.namespace,
 		WorkflowExecution: &commonpb.WorkflowExecution{
@@ -1067,6 +1083,7 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 		SignalName: in.SignalName,
 		Input:      input,
 		Identity:   w.client.identity,
+		Header:     header,
 	}
 
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
@@ -1205,11 +1222,18 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 	ctx context.Context,
 	in *ClientQueryWorkflowInput,
 ) (converter.EncodedValue, error) {
+	// get workflow headers from the context
+	header, err := headerPropagated(ctx, w.client.contextPropagators)
+	if err != nil {
+		return nil, err
+	}
+
 	result, err := w.client.QueryWorkflowWithOptions(ctx, &QueryWorkflowWithOptionsRequest{
 		WorkflowID: in.WorkflowID,
 		RunID:      in.RunID,
 		QueryType:  in.QueryType,
 		Args:       in.Args,
+		Header:     header,
 	})
 	if err != nil {
 		return nil, err

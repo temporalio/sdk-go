@@ -1168,7 +1168,16 @@ func (h *commandsHelper) handleRequestCancelExternalWorkflowExecutionFailed(init
 	return isExternal, command
 }
 
-func (h *commandsHelper) signalExternalWorkflowExecution(namespace, workflowID, runID, signalName string, input *commonpb.Payloads, signalID string, childWorkflowOnly bool) commandStateMachine {
+func (h *commandsHelper) signalExternalWorkflowExecution(
+	namespace string,
+	workflowID string,
+	runID string,
+	signalName string,
+	input *commonpb.Payloads,
+	header *commonpb.Header,
+	signalID string,
+	childWorkflowOnly bool,
+) commandStateMachine {
 	attributes := &commandpb.SignalExternalWorkflowExecutionCommandAttributes{
 		Namespace: namespace,
 		Execution: &commonpb.WorkflowExecution{
@@ -1179,6 +1188,7 @@ func (h *commandsHelper) signalExternalWorkflowExecution(namespace, workflowID, 
 		Input:             input,
 		Control:           signalID,
 		ChildWorkflowOnly: childWorkflowOnly,
+		Header:            header,
 	}
 	command := h.newSignalExternalWorkflowStateMachine(attributes, signalID)
 	h.addCommand(command)

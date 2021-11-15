@@ -1418,6 +1418,42 @@ func (w *Workflows) WaitSignalToStart(ctx workflow.Context) (string, error) {
 	return value, nil
 }
 
+func (w *Workflows) SignalsAndQueries(ctx workflow.Context, execChild, execActivity bool) error {
+	// Add query handler
+	err := workflow.SetQueryHandler(ctx, "workflow-query", func() (string, error) { return "query-response", nil })
+	if err != nil {
+		return err
+	}
+
+	// Wait for signal on start
+	workflow.GetSignalChannel(ctx, "start-signal").Receive(ctx, nil)
+
+	// Run child if requested
+	if execChild {
+		fut := workflow.ExecuteChildWorkflow(ctx, w.SignalsAndQueries, false, true)
+		// Signal child twice
+		if err := fut.SignalChildWorkflow(ctx, "start-signal", nil).Get(ctx, nil); err != nil {
+			return err
+		} else if err = fut.SignalChildWorkflow(ctx, "finish-signal", nil).Get(ctx, nil); err != nil {
+			return err
+		}
+		// Wait for done
+	}
+
+	// Run activity if requested
+	if execActivity {
+		ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+		var a Activities
+		if err := workflow.ExecuteActivity(ctx, a.ExternalSignalsAndQueries).Get(ctx, nil); err != nil {
+			return err
+		}
+	}
+
+	// Wait for finish signal
+	workflow.GetSignalChannel(ctx, "finish-signal").Receive(ctx, nil)
+	return nil
+}
+
 type AdvancedPostCancellationInput struct {
 	PreCancelActivity  bool
 	PostCancelActivity bool
@@ -1538,6 +1574,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.SleepForDuration)
 	worker.RegisterWorkflow(w.InterceptorCalls)
 	worker.RegisterWorkflow(w.WaitSignalToStart)
+	worker.RegisterWorkflow(w.SignalsAndQueries)
 	worker.RegisterWorkflow(w.AdvancedPostCancellation)
 
 	worker.RegisterWorkflow(w.child)
