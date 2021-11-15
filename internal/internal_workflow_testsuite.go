@@ -36,7 +36,6 @@ import (
 
 	"github.com/facebookgo/clock"
 	"github.com/golang/mock/gomock"
-	"github.com/opentracing/opentracing-go"
 	"github.com/robfig/cron"
 	"github.com/stretchr/testify/mock"
 	"github.com/uber-go/tally/v4"
@@ -119,7 +118,6 @@ type (
 		fn            interface{}
 		isWorkflow    bool
 		dataConverter converter.DataConverter
-		interceptors  []WorkflowInterceptor
 	}
 
 	taskQueueSpecificActivity struct {
@@ -140,7 +138,6 @@ type (
 		metricsScope       tally.Scope
 		contextPropagators []ContextPropagator
 		identity           string
-		tracer             opentracing.Tracer
 
 		mockClock *clock.Mock
 		wallClock clock.Clock
@@ -225,7 +222,6 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 
 			logger:            s.logger,
 			metricsScope:      s.scope,
-			tracer:            opentracing.NoopTracer{},
 			mockClock:         clock.NewMock(),
 			wallClock:         clock.New(),
 			timers:            make(map[string]*testTimerHandle),
@@ -388,7 +384,7 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 
 func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) {
 	env.workerOptions = options
-	env.registry.SetWorkflowInterceptors(options.WorkflowInterceptorChainFactories)
+	env.registry.interceptors = options.Interceptors
 	if env.workerOptions.EnableSessionWorker && env.sessionEnvironment == nil {
 		env.registry.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
 			Name:                          sessionCreationActivityName,
@@ -411,10 +407,6 @@ func (env *testWorkflowEnvironmentImpl) setDataConverter(dataConverter converter
 
 func (env *testWorkflowEnvironmentImpl) setContextPropagators(contextPropagators []ContextPropagator) {
 	env.contextPropagators = contextPropagators
-}
-
-func (env *testWorkflowEnvironmentImpl) setTracer(tracer opentracing.Tracer) {
-	env.tracer = tracer
 }
 
 func (env *testWorkflowEnvironmentImpl) setWorkerStopChannel(c chan struct{}) {
@@ -508,7 +500,7 @@ func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (
 		return nil, fmt.Errorf("unable to find workflow type: %v. Supported types: [%v]", wt.Name, supported)
 	}
 	wd := &workflowExecutorWrapper{
-		workflowExecutor: &workflowExecutor{workflowType: wt.Name, fn: wf, interceptors: env.registry.WorkflowInterceptors()},
+		workflowExecutor: &workflowExecutor{workflowType: wt.Name, fn: wf, interceptors: env.registry.interceptors},
 		env:              env,
 	}
 	return newSyncWorkflowDefinition(wd), nil
@@ -622,7 +614,7 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 		userContext:  env.workerOptions.BackgroundActivityContext,
 		metricsScope: env.metricsScope,
 		logger:       env.logger,
-		tracer:       opentracing.NoopTracer{},
+		interceptors: env.registry.interceptors,
 	}
 
 	result := taskHandler.executeLocalActivityTask(task)
@@ -1367,6 +1359,10 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocal
 		// local activity could be registered, if so use the registered name. This name is only used to find a mock.
 		ae.name = at.Name
 	}
+	// We have to skip the interceptors on the first call because
+	// ExecuteWithActualArgs is actually invoked twice to support a mock activity
+	// function result
+	ae.skipInterceptors = true
 	aew := &activityExecutorWrapper{activityExecutor: ae, env: env}
 
 	// substitute the local activity function so we could replace with mock if it is supplied.
@@ -1380,8 +1376,8 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocal
 		metricsScope:       env.metricsScope,
 		logger:             env.logger,
 		dataConverter:      env.dataConverter,
-		tracer:             env.tracer,
 		contextPropagators: env.contextPropagators,
+		interceptors:       env.registry.interceptors,
 	}
 
 	env.localActivities[activityID] = task
@@ -1608,7 +1604,12 @@ func (a *activityExecutorWrapper) ExecuteWithActualArgs(ctx context.Context, inp
 
 	m := &mockWrapper{env: a.env, name: a.name, fn: a.fn, isWorkflow: false}
 	if mockRet := m.getMockReturnWithActualArgs(ctx, inputArgs); mockRet != nil {
-		return m.executeMockWithActualArgs(ctx, inputArgs, mockRet)
+		// check if mock returns function which must match to the actual function.
+		if mockFn := m.getMockFn(mockRet); mockFn != nil {
+			executor := &activityExecutor{name: m.name, fn: mockFn}
+			return executor.ExecuteWithActualArgs(ctx, inputArgs)
+		}
+		return m.getMockValue(mockRet)
 	}
 
 	return a.activityExecutor.ExecuteWithActualArgs(ctx, inputArgs)
@@ -1628,14 +1629,16 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input *commonpb.Payloads)
 		env.runningCount++
 	}
 
-	m := &mockWrapper{env: env, name: w.workflowType, fn: w.fn, isWorkflow: true,
-		dataConverter: env.GetDataConverter(), interceptors: env.GetRegistry().WorkflowInterceptors()}
+	m := &mockWrapper{env: env, name: w.workflowType, fn: w.fn, isWorkflow: true, dataConverter: env.GetDataConverter()}
 	// This method is called by workflow's dispatcher. In this test suite, it is run in the main loop. We cannot block
 	// the main loop, but the mock could block if it is configured to wait. So we need to use a separate goroutinue to
 	// run the mock, and resume after mock call returns.
 	mockReadyChannel := NewChannel(ctx)
 	// make a copy of the context for getMockReturn() call to avoid race condition
-	ctxCopy := newWorkflowContext(w.env, nil, nil)
+	_, ctxCopy, err := newWorkflowContext(w.env, nil)
+	if err != nil {
+		return nil, err
+	}
 	go func() {
 		// getMockReturn could block if mock is configured to wait. The returned mockRet is what has been configured
 		// for the mock by using MockCallWrapper.Return(). The mockRet could be mock values or mock function. We process
@@ -1824,17 +1827,6 @@ func (m *mockWrapper) executeMock(ctx interface{}, input *commonpb.Payloads, moc
 	return m.getMockValue(mockRet)
 }
 
-func (m *mockWrapper) executeMockWithActualArgs(ctx interface{}, inputArgs []interface{}, mockRet mock.Arguments) (*commonpb.Payloads, error) {
-	fnName := m.name
-	// check if mock returns function which must match to the actual function.
-	if mockFn := m.getMockFn(mockRet); mockFn != nil {
-		executor := &activityExecutor{name: fnName, fn: mockFn}
-		return executor.ExecuteWithActualArgs(ctx.(context.Context), inputArgs)
-	}
-
-	return m.getMockValue(mockRet)
-}
-
 func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskQueue string, dataConverter converter.DataConverter) ActivityTaskHandler {
 	setWorkerOptionsDefaults(&env.workerOptions)
 	params := workerExecutionParameters{
@@ -1846,7 +1838,6 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskQueue str
 		DataConverter:      dataConverter,
 		WorkerStopChannel:  env.workerStopChannel,
 		ContextPropagators: env.contextPropagators,
-		Tracer:             env.tracer,
 	}
 	ensureRequiredParams(&params)
 	if params.UserContext == nil {
@@ -2034,8 +2025,7 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace,
 		m := &mockWrapper{name: mockMethodForRequestCancelExternalWorkflow, fn: mockFnRequestCancelExternalWorkflow}
 		var err error
 		if mockFn := m.getMockFn(mockRet); mockFn != nil {
-			executor := &activityExecutor{name: mockMethodForRequestCancelExternalWorkflow, fn: mockFn}
-			_, err = executor.ExecuteWithActualArgs(context.TODO(), args)
+			_, err = executeFunctionWithContext(context.TODO(), mockFn, args)
 		} else {
 			_, err = m.getMockValue(mockRet)
 		}
@@ -2086,8 +2076,7 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(namespace, workfl
 		m := &mockWrapper{name: mockMethodForSignalExternalWorkflow, fn: mockFnSignalExternalWorkflow}
 		var err error
 		if mockFn := m.getMockFn(mockRet); mockFn != nil {
-			executor := &activityExecutor{name: mockMethodForSignalExternalWorkflow, fn: mockFn}
-			_, err = executor.ExecuteWithActualArgs(context.TODO(), args)
+			_, err = executeFunctionWithContext(context.TODO(), mockFn, args)
 		} else {
 			_, err = m.getMockValue(mockRet)
 		}
@@ -2156,10 +2145,17 @@ func (env *testWorkflowEnvironmentImpl) getMockedVersion(mockedChangeID, changeI
 	args := []interface{}{changeID, minSupported, maxSupported}
 	// below call will panic if mock is not properly setup.
 	mockRet := env.mock.MethodCalled(mockMethod, args...)
-	m := &mockWrapper{name: mockMethodForGetVersion, fn: mockFnGetVersion, interceptors: env.registry.WorkflowInterceptors()}
+	m := &mockWrapper{name: mockMethodForGetVersion, fn: mockFnGetVersion}
 	if mockFn := m.getMockFn(mockRet); mockFn != nil {
-		executor := &activityExecutor{name: mockMethodForGetVersion, fn: mockFn}
-		reflectValues := executor.executeWithActualArgsWithoutParseResult(context.TODO(), args)
+		var reflectArgs []reflect.Value
+		// Add context if first param
+		if fnType := reflect.TypeOf(mockFn); fnType.NumIn() > 0 && isActivityContext(fnType.In(0)) {
+			reflectArgs = append(reflectArgs, reflect.ValueOf(context.TODO()))
+		}
+		for _, arg := range args {
+			reflectArgs = append(reflectArgs, reflect.ValueOf(arg))
+		}
+		reflectValues := reflect.ValueOf(mockFn).Call(reflectArgs)
 		if len(reflectValues) != 1 || !reflect.TypeOf(reflectValues[0].Interface()).AssignableTo(reflect.TypeOf(DefaultVersion)) {
 			panic(fmt.Sprintf("mock of GetVersion has incorrect return type, expected workflow.Version, but actual is %T (%v)",
 				reflectValues[0].Interface(), reflectValues[0].Interface()))

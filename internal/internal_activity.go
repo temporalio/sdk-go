@@ -33,7 +33,6 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
 
@@ -142,7 +141,6 @@ type (
 		workflowNamespace  string
 		workerStopChannel  <-chan struct{}
 		contextPropagators []ContextPropagator
-		tracer             opentracing.Tracer
 	}
 
 	// context.WithValue need this type instead of basic type string to avoid lint error
@@ -150,9 +148,11 @@ type (
 )
 
 const (
-	activityEnvContextKey          contextKey = "activityEnv"
-	activityOptionsContextKey      contextKey = "activityOptions"
-	localActivityOptionsContextKey contextKey = "localActivityOptions"
+	activityEnvContextKey            contextKey = "activityEnv"
+	activityOptionsContextKey        contextKey = "activityOptions"
+	localActivityOptionsContextKey   contextKey = "localActivityOptions"
+	activityInterceptorContextKey    contextKey = "activityInterceptor"
+	activityEnvInterceptorContextKey contextKey = "activityEnvInterceptor"
 )
 
 func (i ActivityID) String() string {
@@ -302,80 +302,6 @@ func isActivityContext(inType reflect.Type) bool {
 	return inType != nil && inType.Implements(contextElem)
 }
 
-func validateFunctionAndGetResults(f interface{}, values []reflect.Value, dataConverter converter.DataConverter) (*commonpb.Payloads, error) {
-	resultSize := len(values)
-
-	if resultSize < 1 || resultSize > 2 {
-		fnName, _ := getFunctionName(f)
-		return nil, fmt.Errorf(
-			"the function: %v signature returns %d results, it is expecting to return either error or (result, error)",
-			fnName, resultSize)
-	}
-
-	var result *commonpb.Payloads
-
-	// Parse result
-	if resultSize > 1 {
-		retValue := values[0]
-
-		var ok bool
-		if result, ok = retValue.Interface().(*commonpb.Payloads); !ok {
-			if retValue.Kind() != reflect.Ptr || !retValue.IsNil() {
-				var err error
-				if result, err = encodeArg(dataConverter, retValue.Interface()); err != nil {
-					return nil, err
-				}
-			}
-		}
-	}
-
-	// Parse error.
-	errValue := values[resultSize-1]
-	if errValue.IsNil() {
-		return result, nil
-	}
-	errInterface, ok := errValue.Interface().(error)
-	if !ok {
-		return nil, fmt.Errorf(
-			"failed to parse error result as it is not of error interface: %v",
-			errValue)
-	}
-	return result, errInterface
-}
-
-func serializeResults(f interface{}, results []interface{}, dataConverter converter.DataConverter) (result *commonpb.Payloads, err error) {
-	// results contain all results including error
-	resultSize := len(results)
-
-	if resultSize < 1 || resultSize > 2 {
-		fnName, _ := getFunctionName(f)
-		err = fmt.Errorf(
-			"the function: %v signature returns %d results, it is expecting to return either error or (result, error)",
-			fnName, resultSize)
-		return
-	}
-	if resultSize > 1 {
-		retValue := results[0]
-		if retValue != nil {
-			result, err = encodeArg(dataConverter, retValue)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-	errResult := results[resultSize-1]
-	if errResult != nil {
-		var ok bool
-		err, ok = errResult.(error)
-		if !ok {
-			err = fmt.Errorf(
-				"failed to serialize error result as it is not of error interface: %v",
-				errResult)
-		}
-	}
-	return
-}
-
 func setActivityParametersIfNotExist(ctx Context) Context {
 	params := getActivityOptions(ctx)
 	var newParams ExecuteActivityOptions
@@ -397,3 +323,110 @@ func setLocalActivityParametersIfNotExist(ctx Context) Context {
 	}
 	return WithValue(ctx, localActivityOptionsContextKey, &newParams)
 }
+
+type activityEnvironmentInterceptor struct {
+	env                 *activityEnvironment
+	inboundInterceptor  ActivityInboundInterceptor
+	outboundInterceptor ActivityOutboundInterceptor
+	fn                  interface{}
+}
+
+func getActivityEnvironmentInterceptor(ctx context.Context) *activityEnvironmentInterceptor {
+	a := ctx.Value(activityEnvInterceptorContextKey)
+	if a == nil {
+		panic("getActivityEnvironmentInterceptor: Not an activity context")
+	}
+	return a.(*activityEnvironmentInterceptor)
+}
+
+func getActivityOutboundInterceptor(ctx context.Context) ActivityOutboundInterceptor {
+	a := ctx.Value(activityInterceptorContextKey)
+	if a == nil {
+		panic("getActivityOutboundInterceptor: Not an activity context")
+	}
+	return a.(ActivityOutboundInterceptor)
+}
+
+func (a *activityEnvironmentInterceptor) Init(outbound ActivityOutboundInterceptor) error {
+	a.outboundInterceptor = outbound
+	return nil
+}
+
+func (a *activityEnvironmentInterceptor) ExecuteActivity(
+	ctx context.Context,
+	in *ExecuteActivityInput,
+) (interface{}, error) {
+	// Remove header from context
+	ctx = contextWithoutHeader(ctx)
+
+	return executeFunctionWithContext(ctx, a.fn, in.Args)
+}
+
+func (a *activityEnvironmentInterceptor) GetInfo(ctx context.Context) ActivityInfo {
+	return ActivityInfo{
+		ActivityID:        a.env.activityID,
+		ActivityType:      a.env.activityType,
+		TaskToken:         a.env.taskToken,
+		WorkflowExecution: a.env.workflowExecution,
+		HeartbeatTimeout:  a.env.heartbeatTimeout,
+		Deadline:          a.env.deadline,
+		ScheduledTime:     a.env.scheduledTime,
+		StartedTime:       a.env.startedTime,
+		TaskQueue:         a.env.taskQueue,
+		Attempt:           a.env.attempt,
+		WorkflowType:      a.env.workflowType,
+		WorkflowNamespace: a.env.workflowNamespace,
+	}
+}
+
+func (a *activityEnvironmentInterceptor) GetLogger(ctx context.Context) log.Logger {
+	return a.env.logger
+}
+
+func (a *activityEnvironmentInterceptor) GetMetricsScope(ctx context.Context) tally.Scope {
+	return a.env.metricsScope
+}
+
+func (a *activityEnvironmentInterceptor) RecordHeartbeat(ctx context.Context, details ...interface{}) {
+	if a.env.isLocalActivity {
+		// no-op for local activity
+		return
+	}
+	var data *commonpb.Payloads
+	var err error
+	// We would like to be a able to pass in "nil" as part of details(that is no progress to report to)
+	if len(details) > 1 || (len(details) == 1 && details[0] != nil) {
+		data, err = encodeArgs(getDataConverterFromActivityCtx(ctx), details)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	err = a.env.serviceInvoker.Heartbeat(ctx, data, false)
+	if err != nil {
+		log := GetActivityLogger(ctx)
+		log.Debug("RecordActivityHeartbeat with error", tagError, err)
+	}
+}
+
+func (a *activityEnvironmentInterceptor) HasHeartbeatDetails(ctx context.Context) bool {
+	return a.env.heartbeatDetails != nil
+}
+
+func (a *activityEnvironmentInterceptor) GetHeartbeatDetails(ctx context.Context, d ...interface{}) error {
+	if a.env.heartbeatDetails == nil {
+		return ErrNoData
+	}
+	encoded := newEncodedValues(a.env.heartbeatDetails, a.env.dataConverter)
+	return encoded.Get(d...)
+}
+
+func (a *activityEnvironmentInterceptor) GetWorkerStopChannel(ctx context.Context) <-chan struct{} {
+	return a.env.workerStopChannel
+}
+
+// Needed so this can properly be considered an inbound interceptor
+func (a *activityEnvironmentInterceptor) mustEmbedActivityInboundInterceptorBase() {}
+
+// Needed so this can properly be considered an outbound interceptor
+func (a *activityEnvironmentInterceptor) mustEmbedActivityOutboundInterceptorBase() {}

@@ -28,6 +28,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -1356,6 +1357,67 @@ func (w *Workflows) SleepForDuration(ctx workflow.Context, d time.Duration) erro
 	return workflow.Sleep(ctx, d)
 }
 
+func (w *Workflows) InterceptorCalls(ctx workflow.Context, someVal string) (string, error) {
+	someVal = "workflow(" + someVal + ")"
+
+	// Handle queries
+	err := workflow.SetQueryHandler(ctx, "query", func(arg string) (string, error) {
+		return "queryresult(" + arg + ")", nil
+	})
+	if err != nil {
+		return "", err
+	}
+
+	// Exec activity
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	var a Activities
+	if err := workflow.ExecuteActivity(ctx, a.InterceptorCalls, someVal).Get(ctx, &someVal); err != nil {
+		return "", err
+	}
+
+	// Exec local activity
+	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
+	if err := workflow.ExecuteLocalActivity(ctx, a.Echo, 0, 0).Get(ctx, nil); err != nil {
+		return "", err
+	}
+
+	// Do a bunch of other calls ignoring failure
+	workflow.Go(ctx, func(workflow.Context) {})
+	workflow.ExecuteChildWorkflow(ctx, "badworkflow")
+	workflow.GetInfo(ctx)
+	workflow.GetLogger(ctx)
+	workflow.GetMetricsScope(ctx)
+	workflow.Now(ctx)
+	workflow.NewTimer(ctx, 1*time.Millisecond)
+	_ = workflow.Sleep(ctx, 1*time.Millisecond)
+	_ = workflow.RequestCancelExternalWorkflow(ctx, "badid", "").Get(ctx, nil)
+	_ = workflow.SignalExternalWorkflow(ctx, "badid", "", "badsignal", nil).Get(ctx, nil)
+	_ = workflow.UpsertSearchAttributes(ctx, nil)
+	workflow.SideEffect(ctx, func(workflow.Context) interface{} { return "sideeffect" })
+	workflow.MutableSideEffect(ctx, "badid",
+		func(workflow.Context) interface{} { return "mutablesideeffect" }, reflect.DeepEqual)
+	workflow.GetVersion(ctx, "badchangeid", 2, 3)
+	workflow.IsReplaying(ctx)
+	workflow.HasLastCompletionResult(ctx)
+	_ = workflow.GetLastCompletionResult(ctx)
+	_ = workflow.GetLastError(ctx)
+	_ = workflow.NewContinueAsNewError(ctx, "badworkflow")
+
+	// Wait for signal
+	finishCh := workflow.GetSignalChannel(ctx, "finish")
+	var finishStr string
+	finishCh.Receive(ctx, &finishStr)
+	someVal = finishStr + "(" + someVal + ")"
+
+	return someVal, nil
+}
+
+func (w *Workflows) WaitSignalToStart(ctx workflow.Context) (string, error) {
+	var value string
+	workflow.GetSignalChannel(ctx, "start-signal").Receive(ctx, &value)
+	return value, nil
+}
+
 type AdvancedPostCancellationInput struct {
 	PreCancelActivity  bool
 	PostCancelActivity bool
@@ -1474,6 +1536,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.CancelMultipleCommandsOverMultipleTasks)
 	worker.RegisterWorkflow(w.CancelChildAndExecuteActivityRace)
 	worker.RegisterWorkflow(w.SleepForDuration)
+	worker.RegisterWorkflow(w.InterceptorCalls)
+	worker.RegisterWorkflow(w.WaitSignalToStart)
 	worker.RegisterWorkflow(w.AdvancedPostCancellation)
 
 	worker.RegisterWorkflow(w.child)

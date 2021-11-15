@@ -278,6 +278,19 @@ func (a *Activities) PropagateActivity(ctx context.Context) ([]string, error) {
 	return result, nil
 }
 
+func (a *Activities) InterceptorCalls(ctx context.Context, someVal string) (string, error) {
+	someVal = "activity(" + someVal + ")"
+	// Make some calls
+	activity.GetInfo(ctx)
+	activity.GetLogger(ctx)
+	activity.GetMetricsScope(ctx)
+	activity.RecordHeartbeat(ctx, "details")
+	activity.HasHeartbeatDetails(ctx)
+	_ = activity.GetHeartbeatDetails(ctx)
+	activity.GetWorkerStopChannel(ctx)
+	return someVal, nil
+}
+
 func (a *Activities) register(worker worker.Worker) {
 	worker.RegisterActivity(a)
 	// Check reregistration

@@ -115,7 +115,9 @@ fmt:
 clean:
 	rm -rf $(BUILD)
 
-check: lint vet errcheck staticcheck copyright bins
+# golint is intentionally not included in the standard check since it is
+# deprecated and inflexible, but it remains available as a utility
+check: vet errcheck staticcheck copyright bins
 
 
 ##### Fossa #####
