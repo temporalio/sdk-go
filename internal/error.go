@@ -413,6 +413,17 @@ func IsCanceledError(err error) bool {
 //  args - arguments for the new workflow.
 //
 func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) error {
+	i := getWorkflowOutboundInterceptor(ctx)
+	// Put header on context before executing
+	ctx = workflowContextWithNewHeader(ctx)
+	return i.NewContinueAsNewError(ctx, wfn, args...)
+}
+
+func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
+	ctx Context,
+	wfn interface{},
+	args ...interface{},
+) error {
 	// Validate type and its arguments.
 	options := getWorkflowEnvOptions(ctx)
 	if options == nil {
@@ -424,10 +435,15 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) er
 		panic(err)
 	}
 
+	header, err := workflowHeaderPropagated(ctx, options.ContextPropagators)
+	if err != nil {
+		return err
+	}
+
 	return &ContinueAsNewError{
 		WorkflowType:             workflowType,
 		Input:                    input,
-		Header:                   getWorkflowHeader(ctx, options.ContextPropagators),
+		Header:                   header,
 		TaskQueueName:            options.TaskQueueName,
 		WorkflowExecutionTimeout: options.WorkflowExecutionTimeout,
 		WorkflowRunTimeout:       options.WorkflowRunTimeout,

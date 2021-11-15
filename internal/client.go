@@ -31,7 +31,6 @@ import (
 	"io"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -418,10 +417,6 @@ type (
 		// default: defaultDataConverter, an combination of google protobuf converter, gogo protobuf converter and json converter
 		DataConverter converter.DataConverter
 
-		// Optional: Sets opentracing Tracer that is to be used to emit tracing information
-		// default: no tracer - opentracing.NoopTracer
-		Tracer opentracing.Tracer
-
 		// Optional: Sets ContextPropagators that allows users to control the context information passed through a workflow
 		// default: nil
 		ContextPropagators []ContextPropagator
@@ -437,6 +432,16 @@ type (
 		// Optional parameter that is designed to be used *in tests*. It gets invoked last in
 		// the gRPC interceptor chain and can be used to induce artificial failures in test scenarios.
 		TrafficController TrafficController
+
+		// Interceptors to apply to some calls of the client. Earlier interceptors
+		// wrap later interceptors.
+		//
+		// Any interceptors that also implement Interceptor (meaning they implement
+		// WorkerInterceptor in addition to ClientInterceptor) will be used for
+		// worker interception as well. When worker interceptors are here and in
+		// worker options, the ones here wrap the ones in worker options. The same
+		// interceptor should not be set here and in worker options.
+		Interceptors []ClientInterceptor
 	}
 
 	// HeadersProvider returns a map of gRPC headers that should be used on every request.
@@ -692,13 +697,15 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		options.DataConverter = converter.GetDefaultDataConverter()
 	}
 
-	if options.Tracer != nil {
-		options.ContextPropagators = append(options.ContextPropagators, NewTracingContextPropagator(options.Logger, options.Tracer))
-	} else {
-		options.Tracer = opentracing.NoopTracer{}
+	// Collect set of applicable worker interceptors
+	var workerInterceptors []WorkerInterceptor
+	for _, interceptor := range options.Interceptors {
+		if workerInterceptor, _ := interceptor.(WorkerInterceptor); workerInterceptor != nil {
+			workerInterceptors = append(workerInterceptors, workerInterceptor)
+		}
 	}
 
-	return &WorkflowClient{
+	client := &WorkflowClient{
 		workflowService:    workflowServiceClient,
 		connectionCloser:   connectionCloser,
 		namespace:          options.Namespace,
@@ -708,8 +715,16 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		identity:           options.Identity,
 		dataConverter:      options.DataConverter,
 		contextPropagators: options.ContextPropagators,
-		tracer:             options.Tracer,
+		workerInterceptors: workerInterceptors,
 	}
+
+	// Create outbound interceptor by wrapping backwards through chain
+	client.interceptor = &workflowClientInterceptor{client: client}
+	for i := len(options.Interceptors) - 1; i >= 0; i-- {
+		client.interceptor = options.Interceptors[i].InterceptClient(client.interceptor)
+	}
+
+	return client
 }
 
 // NewNamespaceClient creates an instance of a namespace client, to manager lifecycle of namespaces.

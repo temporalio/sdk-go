@@ -147,10 +147,6 @@ type (
 		// default: 1000
 		MaxConcurrentSessionExecutionSize int
 
-		// Optional: Specifies factories used to instantiate workflow interceptor chain
-		// The chain is instantiated per each replay of a workflow execution
-		WorkflowInterceptorChainFactories []WorkflowInterceptor
-
 		// Optional: If set to true worker would only handle workflow tasks and local activities.
 		// Non-local activities will not be executed by this worker.
 		// default: false
@@ -162,6 +158,14 @@ type (
 
 		// Optional: If set defines maximum amount of time that workflow task will be allowed to run. Defaults to 1 sec.
 		DeadlockDetectionTimeout time.Duration
+
+		// Interceptors to apply to the worker. Earlier interceptors wrap later
+		// interceptors.
+		//
+		// When worker interceptors are here and in client options, the ones in
+		// client options wrap the ones here. The same interceptor should not be set
+		// here and in client options.
+		Interceptors []WorkerInterceptor
 	}
 )
 
@@ -201,7 +205,6 @@ func NewWorker(
 	taskQueue string,
 	options WorkerOptions,
 ) *AggregatedWorker {
-	// TODO: refactor and remove this downcast: https://github.com/temporalio/go-sdk/issues/70
 	workflowClient, ok := client.(*WorkflowClient)
 	if !ok {
 		panic("Client must be created with client.NewClient()")

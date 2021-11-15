@@ -38,7 +38,6 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
-	"github.com/opentracing/opentracing-go"
 	"github.com/uber-go/tally/v4"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
@@ -132,7 +131,6 @@ type (
 		workflowPanicPolicy      WorkflowPanicPolicy
 		dataConverter            converter.DataConverter
 		contextPropagators       []ContextPropagator
-		tracer                   opentracing.Tracer
 		cache                    *WorkerCache
 		deadlockDetectionTimeout time.Duration
 	}
@@ -152,7 +150,6 @@ type (
 		dataConverter      converter.DataConverter
 		workerStopCh       <-chan struct{}
 		contextPropagators []ContextPropagator
-		tracer             opentracing.Tracer
 		namespace          string
 	}
 
@@ -396,7 +393,6 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		workflowPanicPolicy:      params.WorkflowPanicPolicy,
 		dataConverter:            params.DataConverter,
 		contextPropagators:       params.ContextPropagators,
-		tracer:                   params.Tracer,
 		cache:                    params.cache,
 		deadlockDetectionTimeout: params.DeadlockDetectionTimeout,
 	}
@@ -521,7 +517,6 @@ func (w *workflowExecutionContextImpl) createEventHandler() {
 		w.wth.registry,
 		w.wth.dataConverter,
 		w.wth.contextPropagators,
-		w.wth.tracer,
 		w.wth.deadlockDetectionTimeout,
 	)
 
@@ -1583,7 +1578,6 @@ func newActivityTaskHandlerWithCustomProvider(
 		dataConverter:      params.DataConverter,
 		workerStopCh:       params.WorkerStopChannel,
 		contextPropagators: params.ContextPropagators,
-		tracer:             params.Tracer,
 		namespace:          params.Namespace,
 	}
 }
@@ -1769,7 +1763,11 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	workflowType := t.WorkflowType.GetName()
 	activityType := t.ActivityType.GetName()
 	activityMetricsScope := metrics.GetMetricsScopeForActivity(ath.metricsScope, workflowType, activityType, ath.taskQueueName)
-	ctx := WithActivityTask(canCtx, t, taskQueue, invoker, ath.logger, activityMetricsScope, ath.dataConverter, ath.workerStopCh, ath.contextPropagators, ath.tracer)
+	ctx, err := WithActivityTask(canCtx, t, taskQueue, invoker, ath.logger, activityMetricsScope,
+		ath.dataConverter, ath.workerStopCh, ath.contextPropagators, ath.registry.interceptors)
+	if err != nil {
+		return nil, err
+	}
 
 	// We must capture the context here because it is changed later to one that is
 	// cancelled when the activity is done
@@ -1808,19 +1806,15 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	}()
 
 	// propagate context information into the activity context from the headers
-	for _, ctxProp := range ath.contextPropagators {
-		var err error
-		if ctx, err = ctxProp.Extract(ctx, NewHeaderReader(t.Header)); err != nil {
-			return nil, fmt.Errorf("unable to propagate context: %w", err)
-		}
+	ctx, err = contextWithHeaderPropagated(ctx, t.Header, ath.contextPropagators)
+	if err != nil {
+		return nil, err
 	}
 
-	info := ctx.Value(activityEnvContextKey).(*activityEnvironment)
+	info := getActivityEnv(ctx)
 	ctx, dlCancelFunc := context.WithDeadline(ctx, info.deadline)
 	defer dlCancelFunc()
 
-	ctx, span := createOpenTracingActivitySpan(ctx, ath.tracer, time.Now(), activityType, t.WorkflowExecution.GetWorkflowId(), t.WorkflowExecution.GetRunId())
-	defer span.Finish()
 	output, err := activityImplementation.Execute(ctx, t.Input)
 
 	dlCancelFunc()

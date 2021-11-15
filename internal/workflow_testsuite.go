@@ -31,7 +31,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/mock"
 	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
@@ -201,12 +200,6 @@ func (t *TestActivityEnvironment) SetDataConverter(dataConverter converter.DataC
 // SetIdentity sets identity.
 func (t *TestActivityEnvironment) SetIdentity(identity string) *TestActivityEnvironment {
 	t.impl.setIdentity(identity)
-	return t
-}
-
-// SetTracer sets tracer.
-func (t *TestActivityEnvironment) SetTracer(tracer opentracing.Tracer) *TestActivityEnvironment {
-	t.impl.setTracer(tracer)
 	return t
 }
 
@@ -543,12 +536,6 @@ func (e *TestWorkflowEnvironment) SetHeader(header *commonpb.Header) {
 // SetIdentity sets identity.
 func (e *TestWorkflowEnvironment) SetIdentity(identity string) *TestWorkflowEnvironment {
 	e.impl.setIdentity(identity)
-	return e
-}
-
-// SetTracer sets tracer.
-func (e *TestWorkflowEnvironment) SetTracer(tracer opentracing.Tracer) *TestWorkflowEnvironment {
-	e.impl.setTracer(tracer)
 	return e
 }
 

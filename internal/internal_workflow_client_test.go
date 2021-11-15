@@ -1099,13 +1099,13 @@ func (s *workflowClientTestSuite) TestStartWorkflow() {
 	}
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
 
-	resp, err := client.StartWorkflow(context.Background(), options, f1, []byte("test"))
+	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, []byte("test"))
 	s.Equal(converter.GetDefaultDataConverter(), client.dataConverter)
 	s.Nil(err)
-	s.Equal(createResponse.GetRunId(), resp.RunID)
+	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 }
 
-func (s *workflowClientTestSuite) TestStartWorkflowWithDataConverter() {
+func (s *workflowClientTestSuite) TestExecuteWorkflowWithDataConverter() {
 	dc := iconverter.NewTestDataConverter()
 	s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
 	client, ok := s.client.(*WorkflowClient)
@@ -1134,13 +1134,13 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithDataConverter() {
 			s.Equal(input, decodedArg)
 		})
 
-	resp, err := client.StartWorkflow(context.Background(), options, f1, input)
+	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, input)
 	s.Equal(iconverter.NewTestDataConverter(), client.dataConverter)
 	s.Nil(err)
-	s.Equal(createResponse.GetRunId(), resp.RunID)
+	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 }
 
-func (s *workflowClientTestSuite) TestStartWorkflowWithContextAwareDataConverter() {
+func (s *workflowClientTestSuite) TestExecuteWorkflowWithContextAwareDataConverter() {
 	dc := NewContextAwareDataConverter(converter.GetDefaultDataConverter())
 	s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
 	client, ok := s.client.(*WorkflowClient)
@@ -1169,9 +1169,9 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithContextAwareDataConverter
 	ctx := context.Background()
 	ctx = context.WithValue(ctx, ContextAwareDataConverterContextKey, "e")
 
-	resp, err := client.StartWorkflow(ctx, options, f1, input)
+	resp, err := client.ExecuteWorkflow(ctx, options, f1, input)
 	s.Nil(err)
-	s.Equal(createResponse.GetRunId(), resp.RunID)
+	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 }
 
 func (s *workflowClientTestSuite) TestStartWorkflowWithMemoAndSearchAttr() {

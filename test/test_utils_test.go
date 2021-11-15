@@ -123,7 +123,7 @@ func (s *keysPropagator) Inject(ctx context.Context, writer workflow.HeaderWrite
 	for _, key := range s.keys {
 		value, ok := ctx.Value(contextKey(key)).(string)
 		if !ok {
-			return fmt.Errorf("unable to extract key from context %v", key)
+			continue
 		}
 		encodedValue, err := converter.GetDefaultDataConverter().ToPayload(value)
 		if err != nil {
@@ -139,7 +139,7 @@ func (s *keysPropagator) InjectFromWorkflow(ctx workflow.Context, writer workflo
 	for _, key := range s.keys {
 		value, ok := ctx.Value(contextKey(key)).(string)
 		if !ok {
-			return fmt.Errorf("unable to extract key from context %v", key)
+			continue
 		}
 		encodedValue, err := converter.GetDefaultDataConverter().ToPayload(value)
 		if err != nil {
