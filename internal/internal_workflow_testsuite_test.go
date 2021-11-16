@@ -3687,3 +3687,68 @@ func (s *WorkflowTestSuiteUnitTest) Test_AwaitWithTimeoutTimeout() {
 	_ = env.GetWorkflowResult(&result)
 	s.False(result)
 }
+
+func (s *WorkflowTestSuiteUnitTest) Test_DetachedChildWait() {
+	failedCount, successCount, lastCompletionResult := 0, 0, 0
+	cronWorkflow := func(ctx Context) (int, error) {
+		info := GetWorkflowInfo(ctx)
+		var result int
+		if HasLastCompletionResult(ctx) {
+			_ = GetLastCompletionResult(ctx, &result)
+		}
+		_ = Sleep(ctx, time.Second*3)
+		if info.Attempt == 1 {
+			failedCount++
+			return 0, errors.New("please-retry")
+		}
+
+		successCount++
+		result++
+		lastCompletionResult = result
+		return result, nil
+	}
+
+	testWorkflow := func(ctx Context) error {
+		ctx1 := WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
+			WorkflowRunTimeout: time.Minute * 10,
+			RetryPolicy: &RetryPolicy{
+				MaximumAttempts:        5,
+				InitialInterval:        time.Second,
+				MaximumInterval:        time.Second * 10,
+				BackoffCoefficient:     2,
+				NonRetryableErrorTypes: []string{"bad-bug"},
+			},
+			ParentClosePolicy: enumspb.PARENT_CLOSE_POLICY_ABANDON,
+			// Hourly
+			CronSchedule: "0 * * * *",
+		})
+
+		// Cron never stops, so future will not return
+		cronFuture := ExecuteChildWorkflow(ctx1, cronWorkflow)
+
+		timeoutTimer := NewTimer(ctx, time.Hour*3)
+		selector := NewSelector(ctx)
+		var err error
+		selector.AddFuture(cronFuture, func(f Future) {
+			err = errors.New("cron workflow returns, this is not expected")
+		}).AddFuture(timeoutTimer, func(f Future) {
+			// err will be nil
+		}).Select(ctx)
+
+		return err
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	// Without this, "ExecuteWorkflow" would run forever
+	env.SetDetachedChildWait(false)
+	env.RegisterWorkflow(cronWorkflow)
+	env.RegisterWorkflow(testWorkflow)
+	env.ExecuteWorkflow(testWorkflow)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	s.Equal(4, failedCount)
+	s.Equal(4, successCount)
+	s.Equal(4, lastCompletionResult)
+}

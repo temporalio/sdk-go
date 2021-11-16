@@ -539,6 +539,19 @@ func (e *TestWorkflowEnvironment) SetIdentity(identity string) *TestWorkflowEnvi
 	return e
 }
 
+// SetDetachedChildWait, if true, will make ExecuteWorkflow wait on all child
+// workflows to complete even if their close policy is set to abandon or request
+// cancel. If false, ExecuteWorkflow will wait on all children to complete
+// regardless of detached child. In situations with interminable cron-based
+// child workflows, setting this to false will allow the child to run once but
+// not continuously.
+//
+// Default is true.
+func (e *TestWorkflowEnvironment) SetDetachedChildWait(detachedChildWait bool) *TestWorkflowEnvironment {
+	e.impl.setDetachedChildWaitDisabled(!detachedChildWait)
+	return e
+}
+
 // SetWorkerStopChannel sets the activity worker stop channel to be returned from activity.GetWorkerStopChannel(context)
 // You can use this function to set the activity worker stop channel and use close(channel) to test your activity execution
 // from workflow execution.
