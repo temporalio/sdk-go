@@ -1060,6 +1060,7 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 
 	request := &workflowservice.SignalWorkflowExecutionRequest{
 		Namespace: w.client.namespace,
+		RequestId: uuid.New(),
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: in.WorkflowID,
 			RunId:      in.RunID,
@@ -1166,6 +1167,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 func (w *workflowClientInterceptor) CancelWorkflow(ctx context.Context, in *ClientCancelWorkflowInput) error {
 	request := &workflowservice.RequestCancelWorkflowExecutionRequest{
 		Namespace: w.client.namespace,
+		RequestId: uuid.New(),
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: in.WorkflowID,
 			RunId:      in.RunID,
