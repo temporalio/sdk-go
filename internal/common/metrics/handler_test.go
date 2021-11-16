@@ -1,8 +1,6 @@
 // The MIT License
 //
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
+// Copyright (c) 2021 Temporal Technologies Inc.  All rights reserved.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -22,30 +20,10 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package metrics
+package metrics_test
 
-import (
-	"context"
+import "testing"
 
-	"github.com/uber-go/tally/v4"
-	"google.golang.org/grpc"
-)
-
-// NewGRPCMetricsInterceptor creates new metrics scope interceptor.
-func NewGRPCMetricsInterceptor(defaultScope tally.Scope, metricSuffix string) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		scope, ok := ctx.Value(ScopeContextKey).(tally.Scope)
-		if !ok || scope == nil {
-			scope = defaultScope
-		}
-		isLongPoll, ok := ctx.Value(LongPollContextKey).(bool)
-		if !ok {
-			isLongPoll = false
-		}
-		rs := newRequestScope(scope, method, isLongPoll, metricSuffix)
-		rs.recordStart()
-		err := invoker(ctx, method, req, reply, cc, opts...)
-		rs.recordEnd(err)
-		return err
-	}
+func TestReplayAwareHandler(t *testing.T) {
+	panic("TODO")
 }

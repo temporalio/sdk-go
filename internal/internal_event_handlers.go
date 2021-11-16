@@ -34,14 +34,12 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/uber-go/tally/v4"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 	historypb "go.temporal.io/api/history/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
-
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -127,7 +125,7 @@ type (
 		isReplay              bool // flag to indicate if workflow is in replay mode
 		enableLoggingInReplay bool // flag to indicate if workflow should enable logging in replay mode
 
-		metricsScope             tally.Scope
+		metricsHandler           metrics.Handler
 		registry                 *registry
 		dataConverter            converter.DataConverter
 		contextPropagators       []ContextPropagator
@@ -172,7 +170,7 @@ func newWorkflowExecutionEventHandler(
 	completeHandler completionHandler,
 	logger log.Logger,
 	enableLoggingInReplay bool,
-	scope tally.Scope,
+	metricsHandler metrics.Handler,
 	registry *registry,
 	dataConverter converter.DataConverter,
 	contextPropagators []ContextPropagator,
@@ -204,9 +202,9 @@ func newWorkflowExecutionEventHandler(
 		&context.isReplay,
 		&context.enableLoggingInReplay)
 
-	if scope != nil {
-		replayAwareScope := metrics.WrapScope(&context.isReplay, scope, context)
-		context.metricsScope = metrics.GetMetricsScopeForWorkflow(replayAwareScope, workflowInfo.WorkflowType.Name)
+	if metricsHandler != nil {
+		context.metricsHandler = metrics.NewReplayAwareHandler(&context.isReplay, metricsHandler).
+			WithTags(metrics.WorkflowTags(workflowInfo.WorkflowType.Name))
 	}
 
 	return &workflowExecutionEventHandlerImpl{context, nil}
@@ -428,8 +426,8 @@ func (wc *workflowEnvironmentImpl) GetLogger() log.Logger {
 	return wc.logger
 }
 
-func (wc *workflowEnvironmentImpl) GetMetricsScope() tally.Scope {
-	return wc.metricsScope
+func (wc *workflowEnvironmentImpl) GetMetricsHandler() metrics.Handler {
+	return wc.metricsHandler
 }
 
 func (wc *workflowEnvironmentImpl) GetDataConverter() converter.DataConverter {
@@ -769,7 +767,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	}
 	defer func() {
 		if p := recover(); p != nil {
-			weh.metricsScope.Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
+			weh.metricsHandler.Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
 			topLine := fmt.Sprintf("process event for %s [panic]:", weh.workflowInfo.TaskQueueName)
 			st := getStackTraceRaw(topLine, 7, 0)
 			weh.Complete(nil, newWorkflowPanicError(p, st))

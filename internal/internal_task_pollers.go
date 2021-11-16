@@ -35,7 +35,6 @@ import (
 
 	"github.com/gogo/protobuf/types"
 	"github.com/pborman/uuid"
-	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
@@ -70,8 +69,8 @@ type (
 
 	// basePoller is the base class for all poller implementations
 	basePoller struct {
-		metricsScope tally.Scope // base metric scope used for rpc calls
-		stopC        <-chan struct{}
+		metricsHandler metrics.Handler // base metric handler used for rpc calls
+		stopC          <-chan struct{}
 	}
 
 	// workflowTaskPoller implements polling/processing a workflow task
@@ -108,14 +107,14 @@ type (
 	}
 
 	historyIteratorImpl struct {
-		iteratorFunc  func(nextPageToken []byte) (*historypb.History, []byte, error)
-		execution     *commonpb.WorkflowExecution
-		nextPageToken []byte
-		namespace     string
-		service       workflowservice.WorkflowServiceClient
-		maxEventID    int64
-		metricsScope  tally.Scope
-		taskQueue     string
+		iteratorFunc   func(nextPageToken []byte) (*historypb.History, []byte, error)
+		execution      *commonpb.WorkflowExecution
+		nextPageToken  []byte
+		namespace      string
+		service        workflowservice.WorkflowServiceClient
+		maxEventID     int64
+		metricsHandler metrics.Handler
+		taskQueue      string
 	}
 
 	localActivityTaskPoller struct {
@@ -127,7 +126,7 @@ type (
 
 	localActivityTaskHandler struct {
 		userContext        context.Context
-		metricsScope       tally.Scope
+		metricsHandler     metrics.Handler
 		logger             log.Logger
 		dataConverter      converter.DataConverter
 		contextPropagators []ContextPropagator
@@ -220,7 +219,7 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (interface{}, er
 // newWorkflowTaskPoller creates a new workflow task poller which must have a one to one relationship to workflow worker
 func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service workflowservice.WorkflowServiceClient, params workerExecutionParameters) *workflowTaskPoller {
 	return &workflowTaskPoller{
-		basePoller:                   basePoller{metricsScope: params.MetricsScope, stopC: params.WorkerStopChannel},
+		basePoller:                   basePoller{metricsHandler: params.MetricsHandler, stopC: params.WorkerStopChannel},
 		service:                      service,
 		namespace:                    params.Namespace,
 		taskQueueName:                params.TaskQueue,
@@ -324,7 +323,7 @@ func (wtp *workflowTaskPoller) processResetStickinessTask(rst *resetStickinessTa
 	grpcCtx, cancel := newGRPCContext(context.Background())
 	defer cancel()
 	// WorkflowType information is not available on reset sticky task.  Emit using base scope.
-	wtp.metricsScope.Counter(metrics.StickyCacheTotalForcedEviction).Inc(1)
+	wtp.metricsHandler.Counter(metrics.StickyCacheTotalForcedEviction).Inc(1)
 	if _, err := wtp.service.ResetStickyTaskQueue(grpcCtx, rst.task); err != nil {
 		wtp.logger.Warn("ResetStickyTaskQueue failed",
 			tagWorkflowID, rst.task.Execution.GetWorkflowId(),
@@ -343,9 +342,9 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 	startTime time.Time,
 ) (response *workflowservice.RespondWorkflowTaskCompletedResponse, err error) {
 
-	workflowMetricsScope := metrics.GetMetricsScopeForWorkflow(wtp.metricsScope, task.WorkflowType.GetName())
+	metricsHandler := wtp.metricsHandler.WithTags(metrics.WorkflowTags(task.WorkflowType.GetName()))
 	if taskErr != nil {
-		workflowMetricsScope.Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
+		metricsHandler.Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
 		wtp.logger.Warn("Failed to process workflow task.",
 			tagWorkflowType, task.WorkflowType.GetName(),
 			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
@@ -356,7 +355,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 		completedRequest = errorToFailWorkflowTask(task.TaskToken, taskErr, wtp.identity, wtp.dataConverter, wtp.namespace)
 	}
 
-	workflowMetricsScope.Timer(metrics.WorkflowTaskExecutionLatency).Record(time.Since(startTime))
+	metricsHandler.Timer(metrics.WorkflowTaskExecutionLatency).Record(time.Since(startTime))
 
 	response, err = wtp.RespondTaskCompleted(completedRequest, task)
 	return
@@ -365,9 +364,9 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}, task *workflowservice.PollWorkflowTaskQueueResponse) (response *workflowservice.RespondWorkflowTaskCompletedResponse, err error) {
 	ctx := context.Background()
 	// Respond task completion.
-	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(
-		metrics.GetMetricsScopeForRPC(wtp.metricsScope, task.GetWorkflowType().GetName(),
-			metrics.NoneTagValue, metrics.NoneTagValue)),
+	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(
+		wtp.metricsHandler.WithTags(metrics.RPCTags(task.GetWorkflowType().GetName(),
+			metrics.NoneTagValue, metrics.NoneTagValue))),
 		defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	switch request := completedRequest.(type) {
@@ -419,14 +418,14 @@ func newLocalActivityPoller(
 ) *localActivityTaskPoller {
 	handler := &localActivityTaskHandler{
 		userContext:        params.UserContext,
-		metricsScope:       params.MetricsScope,
+		metricsHandler:     params.MetricsHandler,
 		logger:             params.Logger,
 		dataConverter:      params.DataConverter,
 		contextPropagators: params.ContextPropagators,
 		interceptors:       interceptors,
 	}
 	return &localActivityTaskPoller{
-		basePoller: basePoller{metricsScope: params.MetricsScope, stopC: params.WorkerStopChannel},
+		basePoller: basePoller{metricsHandler: params.MetricsHandler, stopC: params.WorkerStopChannel},
 		handler:    handler,
 		logger:     params.Logger,
 		laTunnel:   laTunnel,
@@ -459,9 +458,9 @@ func (latp *localActivityTaskPoller) ProcessTask(task interface{}) error {
 func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivityTask) (result *localActivityResult) {
 	workflowType := task.params.WorkflowInfo.WorkflowType.Name
 	activityType := task.params.ActivityType
-	activityMetricsScope := metrics.GetMetricsScopeForLocalActivity(lath.metricsScope, workflowType, activityType)
+	metricsHandler := lath.metricsHandler.WithTags(metrics.LocalActivityTags(workflowType, activityType))
 
-	activityMetricsScope.Counter(metrics.LocalActivityTotalCounter).Inc(1)
+	metricsHandler.Counter(metrics.LocalActivityTotalCounter).Inc(1)
 
 	ae := activityExecutor{name: activityType, fn: task.params.ActivityFn}
 	traceLog(func() {
@@ -472,7 +471,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 			tagAttempt, task.attempt,
 		)
 	})
-	ctx, err := WithLocalActivityTask(lath.userContext, task, lath.logger, lath.metricsScope,
+	ctx, err := WithLocalActivityTask(lath.userContext, task, lath.logger, lath.metricsHandler,
 		lath.dataConverter, lath.interceptors)
 	if err != nil {
 		return &localActivityResult{task: task, err: fmt.Errorf("failed building context: %w", err)}
@@ -524,17 +523,17 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 					tagAttempt, task.attempt,
 					tagPanicError, fmt.Sprintf("%v", p),
 					tagPanicStack, st)
-				activityMetricsScope.Counter(metrics.LocalActivityErrorCounter).Inc(1)
+				metricsHandler.Counter(metrics.LocalActivityErrorCounter).Inc(1)
 				err = newPanicError(p, st)
 			}
 			if err != nil {
-				activityMetricsScope.Counter(metrics.LocalActivityFailedCounter).Inc(1)
+				metricsHandler.Counter(metrics.LocalActivityFailedCounter).Inc(1)
 			}
 		}()
 
 		laResult, err = ae.ExecuteWithActualArgs(ctx, task.params.InputArgs)
 		executionLatency := time.Since(laStartTime)
-		activityMetricsScope.Timer(metrics.LocalActivityExecutionLatency).Record(executionLatency)
+		metricsHandler.Timer(metrics.LocalActivityExecutionLatency).Record(executionLatency)
 		if executionLatency > timeoutDuration {
 			// If local activity takes longer than expected timeout, the context would already be DeadlineExceeded and
 			// the result would be discarded. Print a warning in this case.
@@ -558,7 +557,7 @@ WaitResult:
 
 		// context is done
 		if ctx.Err() == context.Canceled {
-			activityMetricsScope.Counter(metrics.LocalActivityCanceledCounter).Inc(1)
+			metricsHandler.Counter(metrics.LocalActivityCanceledCounter).Inc(1)
 			return &localActivityResult{err: ErrCanceled, task: task}
 		} else if ctx.Err() == context.DeadlineExceeded {
 			return &localActivityResult{err: ErrDeadlineExceeded, task: task}
@@ -571,7 +570,7 @@ WaitResult:
 	}
 
 	if err == nil {
-		activityMetricsScope.
+		metricsHandler.
 			Timer(metrics.LocalActivitySucceedEndToEndLatency).
 			Record(time.Since(task.params.ScheduledTime))
 	}
@@ -653,7 +652,7 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 
 	if response == nil || len(response.TaskToken) == 0 {
 		// Emit using base scope as no workflow type information is available in the case of empty poll
-		wtp.metricsScope.Counter(metrics.WorkflowTaskQueuePollEmptyCounter).Inc(1)
+		wtp.metricsHandler.Counter(metrics.WorkflowTaskQueuePollEmptyCounter).Inc(1)
 		wtp.updateBacklog(request.TaskQueue.GetKind(), 0)
 		return &workflowTask{}, nil
 	}
@@ -673,23 +672,23 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 			"IsQueryTask", response.Query != nil)
 	})
 
-	workflowMetricsScope := metrics.GetMetricsScopeForWorkflow(wtp.metricsScope, response.WorkflowType.GetName())
-	workflowMetricsScope.Counter(metrics.WorkflowTaskQueuePollSucceedCounter).Inc(1)
+	metricsHandler := wtp.metricsHandler.WithTags(metrics.WorkflowTags(response.WorkflowType.GetName()))
+	metricsHandler.Counter(metrics.WorkflowTaskQueuePollSucceedCounter).Inc(1)
 
 	scheduleToStartLatency := common.TimeValue(response.GetStartedTime()).Sub(common.TimeValue(response.GetScheduledTime()))
-	workflowMetricsScope.Timer(metrics.WorkflowTaskScheduleToStartLatency).Record(scheduleToStartLatency)
+	metricsHandler.Timer(metrics.WorkflowTaskScheduleToStartLatency).Record(scheduleToStartLatency)
 	return task, nil
 }
 
 func (wtp *workflowTaskPoller) toWorkflowTask(response *workflowservice.PollWorkflowTaskQueueResponse) *workflowTask {
 	historyIterator := &historyIteratorImpl{
-		execution:     response.WorkflowExecution,
-		nextPageToken: response.NextPageToken,
-		namespace:     wtp.namespace,
-		service:       wtp.service,
-		maxEventID:    response.GetStartedEventId(),
-		metricsScope:  wtp.metricsScope,
-		taskQueue:     wtp.taskQueueName,
+		execution:      response.WorkflowExecution,
+		nextPageToken:  response.NextPageToken,
+		namespace:      wtp.namespace,
+		service:        wtp.service,
+		maxEventID:     response.GetStartedEventId(),
+		metricsHandler: wtp.metricsHandler,
+		taskQueue:      wtp.taskQueueName,
 	}
 	task := &workflowTask{
 		task:            response,
@@ -706,7 +705,7 @@ func (h *historyIteratorImpl) GetNextPage() (*historypb.History, error) {
 			h.namespace,
 			h.execution,
 			h.maxEventID,
-			h.metricsScope,
+			h.metricsHandler,
 			h.taskQueue,
 		)
 	}
@@ -733,13 +732,13 @@ func newGetHistoryPageFunc(
 	namespace string,
 	execution *commonpb.WorkflowExecution,
 	atWorkflowTaskCompletedEventID int64,
-	metricsScope tally.Scope,
+	metricsHandler metrics.Handler,
 	taskQueue string,
 ) func(nextPageToken []byte) (*historypb.History, []byte, error) {
 	return func(nextPageToken []byte) (*historypb.History, []byte, error) {
 		var resp *workflowservice.GetWorkflowExecutionHistoryResponse
-		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(
-			metrics.GetMetricsScopeForRPC(metricsScope, metrics.NoneTagValue, metrics.NoneTagValue, taskQueue)),
+		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(
+			metricsHandler.WithTags(metrics.RPCTags(metrics.NoneTagValue, metrics.NoneTagValue, taskQueue))),
 			defaultGrpcRetryParameters(ctx))
 		defer cancel()
 
@@ -780,7 +779,7 @@ func newGetHistoryPageFunc(
 
 func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowservice.WorkflowServiceClient, params workerExecutionParameters) *activityTaskPoller {
 	return &activityTaskPoller{
-		basePoller:          basePoller{metricsScope: params.MetricsScope, stopC: params.WorkerStopChannel},
+		basePoller:          basePoller{metricsHandler: params.MetricsHandler, stopC: params.WorkerStopChannel},
 		taskHandler:         taskHandler,
 		service:             service,
 		namespace:           params.Namespace,
@@ -811,16 +810,16 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	}
 	if response == nil || len(response.TaskToken) == 0 {
 		// No activity info is available on empty poll.  Emit using base scope.
-		atp.metricsScope.Counter(metrics.ActivityPollNoTaskCounter).Inc(1)
+		atp.metricsHandler.Counter(metrics.ActivityPollNoTaskCounter).Inc(1)
 		return &activityTask{}, nil
 	}
 
 	workflowType := response.WorkflowType.GetName()
 	activityType := response.ActivityType.GetName()
-	activityMetricsScope := metrics.GetMetricsScopeForActivity(atp.metricsScope, workflowType, activityType, atp.taskQueueName)
+	metricsHandler := atp.metricsHandler.WithTags(metrics.ActivityTags(workflowType, activityType, atp.taskQueueName))
 
 	scheduleToStartLatency := common.TimeValue(response.GetStartedTime()).Sub(common.TimeValue(response.GetCurrentAttemptScheduledTime()))
-	activityMetricsScope.Timer(metrics.ActivityScheduleToStartLatency).Record(scheduleToStartLatency)
+	metricsHandler.Timer(metrics.ActivityScheduleToStartLatency).Record(scheduleToStartLatency)
 
 	return &activityTask{task: response, pollStartTime: startTime}, nil
 }
@@ -852,28 +851,28 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 
 	workflowType := activityTask.task.WorkflowType.GetName()
 	activityType := activityTask.task.ActivityType.GetName()
-	activityMetricsScope := metrics.GetMetricsScopeForActivity(atp.metricsScope, workflowType, activityType, atp.taskQueueName)
+	activityMetricsHandler := atp.metricsHandler.WithTags(metrics.ActivityTags(workflowType, activityType, atp.taskQueueName))
 
 	executionStartTime := time.Now()
 	// Process the activity task.
 	request, err := atp.taskHandler.Execute(atp.taskQueueName, activityTask.task)
 	// err is returned in case of internal failure, such as unable to propagate context or context timeout.
 	if err != nil {
-		activityMetricsScope.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
+		activityMetricsHandler.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
 		return err
 	}
 	// in case if activity execution failed, request should be of type RespondActivityTaskFailedRequest
 	if _, ok := request.(*workflowservice.RespondActivityTaskFailedRequest); ok {
-		activityMetricsScope.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
+		activityMetricsHandler.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
 	}
-	activityMetricsScope.Timer(metrics.ActivityExecutionLatency).Record(time.Since(executionStartTime))
+	activityMetricsHandler.Timer(metrics.ActivityExecutionLatency).Record(time.Since(executionStartTime))
 
 	if request == ErrActivityResultPending {
 		return nil
 	}
 
-	rpcScope := metrics.GetMetricsScopeForRPC(atp.metricsScope, workflowType, activityType, metrics.NoneTagValue)
-	reportErr := reportActivityComplete(context.Background(), atp.service, request, rpcScope)
+	rpcMetricsHandler := atp.metricsHandler.WithTags(metrics.RPCTags(workflowType, activityType, metrics.NoneTagValue))
+	reportErr := reportActivityComplete(context.Background(), atp.service, request, rpcMetricsHandler)
 	if reportErr != nil {
 		traceLog(func() {
 			atp.logger.Debug("reportActivityComplete failed", tagError, reportErr)
@@ -881,13 +880,18 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 		return reportErr
 	}
 
-	activityMetricsScope.
+	activityMetricsHandler.
 		Timer(metrics.ActivitySucceedEndToEndLatency).
 		Record(time.Since(common.TimeValue(activityTask.task.GetScheduledTime())))
 	return nil
 }
 
-func reportActivityComplete(ctx context.Context, service workflowservice.WorkflowServiceClient, request interface{}, rpcScope tally.Scope) error {
+func reportActivityComplete(
+	ctx context.Context,
+	service workflowservice.WorkflowServiceClient,
+	request interface{},
+	rpcMetricsHandler metrics.Handler,
+) error {
 	if request == nil {
 		// nothing to report
 		return nil
@@ -896,18 +900,18 @@ func reportActivityComplete(ctx context.Context, service workflowservice.Workflo
 	var reportErr error
 	switch request := request.(type) {
 	case *workflowservice.RespondActivityTaskCanceledRequest:
-		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope),
+		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler),
 			defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		_, err := service.RespondActivityTaskCanceled(grpcCtx, request)
 		reportErr = err
 	case *workflowservice.RespondActivityTaskFailedRequest:
-		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope), defaultGrpcRetryParameters(ctx))
+		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler), defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		_, err := service.RespondActivityTaskFailed(grpcCtx, request)
 		reportErr = err
 	case *workflowservice.RespondActivityTaskCompletedRequest:
-		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope),
+		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler),
 			defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		_, err := service.RespondActivityTaskCompleted(grpcCtx, request)
@@ -916,7 +920,12 @@ func reportActivityComplete(ctx context.Context, service workflowservice.Workflo
 	return reportErr
 }
 
-func reportActivityCompleteByID(ctx context.Context, service workflowservice.WorkflowServiceClient, request interface{}, rpcScope tally.Scope) error {
+func reportActivityCompleteByID(
+	ctx context.Context,
+	service workflowservice.WorkflowServiceClient,
+	request interface{},
+	rpcMetricsHandler metrics.Handler,
+) error {
 	if request == nil {
 		// nothing to report
 		return nil
@@ -925,19 +934,19 @@ func reportActivityCompleteByID(ctx context.Context, service workflowservice.Wor
 	var reportErr error
 	switch request := request.(type) {
 	case *workflowservice.RespondActivityTaskCanceledByIdRequest:
-		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope),
+		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler),
 			defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		_, err := service.RespondActivityTaskCanceledById(grpcCtx, request)
 		reportErr = err
 	case *workflowservice.RespondActivityTaskFailedByIdRequest:
-		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope),
+		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler),
 			defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		_, err := service.RespondActivityTaskFailedById(grpcCtx, request)
 		reportErr = err
 	case *workflowservice.RespondActivityTaskCompletedByIdRequest:
-		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcScope),
+		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler),
 			defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		_, err := service.RespondActivityTaskCompletedById(grpcCtx, request)

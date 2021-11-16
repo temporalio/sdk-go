@@ -37,6 +37,7 @@ import (
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
+	"go.temporal.io/sdk/internal/common/metrics"
 )
 
 const (
@@ -402,6 +403,13 @@ type (
 		Close()
 	}
 )
+
+type MetricsHandler = metrics.Handler
+type MetricsCounter = metrics.Counter
+type MetricsGauge = metrics.Gauge
+type MetricsTimer = metrics.Timer
+
+var MetricsNopHandler = metrics.NopHandler
 
 // NewClient creates an instance of a workflow client
 func NewClient(options Options) (Client, error) {

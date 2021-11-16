@@ -38,7 +38,6 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"github.com/uber-go/tally/v4"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -51,6 +50,7 @@ import (
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
+	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
 )
@@ -1395,7 +1395,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewNotFound(""))
 
 	temporalInvoker := newServiceInvoker(
-		nil, "Test_Temporal_Invoker", mockService, tally.NoopScope, func() {}, 0,
+		nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, func() {}, 0,
 		make(chan struct{}), t.namespace)
 
 	heartbeatErr := temporalInvoker.Heartbeat(context.Background(), nil, false)
@@ -1413,7 +1413,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithNamespaceNotActiveE
 	cancelHandler := func() { called = true }
 
 	temporalInvoker := newServiceInvoker(
-		nil, "Test_Temporal_Invoker", mockService, tally.NoopScope, cancelHandler,
+		nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, cancelHandler,
 		0, make(chan struct{}), t.namespace)
 
 	heartbeatErr := temporalInvoker.Heartbeat(context.Background(), nil, false)

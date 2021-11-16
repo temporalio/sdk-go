@@ -27,10 +27,9 @@ package workflow
 import (
 	"errors"
 
-	"github.com/uber-go/tally/v4"
-
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 )
 
@@ -190,9 +189,9 @@ func GetLogger(ctx Context) log.Logger {
 	return internal.GetLogger(ctx)
 }
 
-// GetMetricsScope returns a metrics scope to be used in workflow's context
-func GetMetricsScope(ctx Context) tally.Scope {
-	return internal.GetMetricsScope(ctx)
+// GetMetricsHandler returns a metrics handler to be used in workflow's context
+func GetMetricsHandler(ctx Context) metrics.Handler {
+	return internal.GetMetricsHandler(ctx)
 }
 
 // RequestCancelExternalWorkflow can be used to request cancellation of an external workflow.

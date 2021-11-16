@@ -26,9 +26,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 )
 
@@ -83,8 +83,8 @@ type ActivityOutboundInterceptor interface {
 	// GetLogger intercepts activity.GetLogger.
 	GetLogger(ctx context.Context) log.Logger
 
-	// GetMetricsScope intercepts activity.GetMetricsScope.
-	GetMetricsScope(ctx context.Context) tally.Scope
+	// GetMetricsHandler intercepts activity.GetMetricsHandler.
+	GetMetricsHandler(ctx context.Context) metrics.Handler
 
 	// RecordHeartbeat intercepts activity.RecordHeartbeat.
 	RecordHeartbeat(ctx context.Context, details ...interface{})
@@ -167,8 +167,8 @@ type WorkflowOutboundInterceptor interface {
 	// GetLogger intercepts workflow.GetLogger.
 	GetLogger(ctx Context) log.Logger
 
-	// GetMetricsScope intercepts workflow.GetMetricsScope.
-	GetMetricsScope(ctx Context) tally.Scope
+	// GetMetricsHandler intercepts workflow.GetMetricsHandler.
+	GetMetricsHandler(ctx Context) metrics.Handler
 
 	// Now intercepts workflow.Now.
 	Now(ctx Context) time.Time

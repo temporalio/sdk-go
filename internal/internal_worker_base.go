@@ -34,7 +34,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/internal/common/retry"
@@ -86,7 +85,7 @@ type (
 		RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback ResultHandler)
 		ExecuteChildWorkflow(params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error))
 		GetLogger() log.Logger
-		GetMetricsScope() tally.Scope
+		GetMetricsHandler() metrics.Handler
 		// Must be called before WorkflowDefinition.Execute returns
 		RegisterSignalHandler(handler func(name string, input *commonpb.Payloads) error)
 		SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input *commonpb.Payloads, arg interface{}, childWorkflowOnly bool, callback ResultHandler)
@@ -147,7 +146,7 @@ type (
 		limiterContextCancel func()
 		retrier              *backoff.ConcurrentRetrier // Service errors back off retrier
 		logger               log.Logger
-		metricsScope         tally.Scope
+		metricsHandler       metrics.Handler
 
 		pollerRequestCh    chan struct{}
 		taskQueueCh        chan interface{}
@@ -171,7 +170,12 @@ func createPollRetryPolicy() backoff.RetryPolicy {
 	return policy
 }
 
-func newBaseWorker(options baseWorkerOptions, logger log.Logger, metricsScope tally.Scope, sessionTokenBucket *sessionTokenBucket) *baseWorker {
+func newBaseWorker(
+	options baseWorkerOptions,
+	logger log.Logger,
+	metricsHandler metrics.Handler,
+	sessionTokenBucket *sessionTokenBucket,
+) *baseWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 	bw := &baseWorker{
 		options:         options,
@@ -179,7 +183,7 @@ func newBaseWorker(options baseWorkerOptions, logger log.Logger, metricsScope ta
 		taskLimiter:     rate.NewLimiter(rate.Limit(options.maxTaskPerSecond), 1),
 		retrier:         backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
 		logger:          log.With(logger, tagWorkerType, options.workerType),
-		metricsScope:    metrics.GetWorkerScope(metricsScope, options.workerType),
+		metricsHandler:  metricsHandler.WithTags(metrics.WorkerTags(options.workerType)),
 		pollerRequestCh: make(chan struct{}, options.maxConcurrentTask),
 		taskQueueCh:     make(chan interface{}), // no buffer, so poller only able to poll new task after previous is dispatched.
 
@@ -200,7 +204,7 @@ func (bw *baseWorker) Start() {
 		return
 	}
 
-	bw.metricsScope.Counter(metrics.WorkerStartCounter).Inc(1)
+	bw.metricsHandler.Counter(metrics.WorkerStartCounter).Inc(1)
 
 	for i := 0; i < bw.options.pollerCount; i++ {
 		bw.stopWG.Add(1)
@@ -231,7 +235,7 @@ func (bw *baseWorker) isStop() bool {
 
 func (bw *baseWorker) runPoller() {
 	defer bw.stopWG.Done()
-	bw.metricsScope.Counter(metrics.PollerStartCounter).Inc(1)
+	bw.metricsHandler.Counter(metrics.PollerStartCounter).Inc(1)
 
 	for {
 		select {
