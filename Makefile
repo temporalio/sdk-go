@@ -102,7 +102,7 @@ vet: $(ALL_SRC)
 	go vet ./...
 
 staticcheck: $(ALL_SRC)
-	GO111MODULE=off go get -u honnef.co/go/tools/cmd/staticcheck
+	go install honnef.co/go/tools/cmd/staticcheck@latest
 	staticcheck ./...
 
 errcheck: $(ALL_SRC)

@@ -244,7 +244,14 @@ func (wc *WorkflowClient) SignalWorkflow(ctx context.Context, workflowID string,
 func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
 	options StartWorkflowOptions, workflowFunc interface{}, workflowArgs ...interface{}) (WorkflowRun, error) {
 
-	// Default workflow ID
+	// Due to the ambiguous way to provide workflow IDs, if options contains an
+	// ID, it must match the parameter
+	if options.ID != "" && options.ID != workflowID {
+		return nil, fmt.Errorf("workflow ID from options not used, must be unset or match workflow ID parameter")
+	}
+
+	// Default workflow ID to UUID
+	options.ID = workflowID
 	if options.ID == "" {
 		options.ID = uuid.New()
 	}
