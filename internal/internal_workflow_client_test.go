@@ -1029,6 +1029,7 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflow() {
 	s.Nil(err)
 	s.Equal(startResponse.GetRunId(), resp.GetRunID())
 
+	options.ID = ""
 	resp, err = s.client.SignalWithStartWorkflow(context.Background(), "", signalName, signalInput,
 		options, workflowType)
 	s.Nil(err)
@@ -1073,7 +1074,14 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithContextAwareDat
 	s.Equal(startResponse.GetRunId(), resp.GetRunID())
 }
 
-func (s *workflowClientTestSuite) TestExecuteWorkflow() {
+func (s *workflowClientTestSuite) TestSignalWithStartWorkflowAmbiguousID() {
+	_, err := s.client.SignalWithStartWorkflow(context.Background(), "workflow-id-1", "my-signal", "my-signal-value",
+		StartWorkflowOptions{ID: "workflow-id-2"}, workflowType)
+	s.Error(err)
+	s.Contains(err.Error(), "workflow ID from options not used")
+}
+
+func (s *workflowClientTestSuite) TestStartWorkflow() {
 	client, ok := s.client.(*WorkflowClient)
 	s.True(ok)
 	options := StartWorkflowOptions{
@@ -1208,7 +1216,7 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithMemoAndSearchAt
 		"testAttr": "attr value",
 	}
 	options := StartWorkflowOptions{
-		ID:                       workflowID,
+		ID:                       "wid",
 		TaskQueue:                taskqueue,
 		WorkflowExecutionTimeout: timeoutInSeconds,
 		WorkflowTaskTimeout:      timeoutInSeconds,
