@@ -541,10 +541,10 @@ func (e *TestWorkflowEnvironment) SetIdentity(identity string) *TestWorkflowEnvi
 
 // SetDetachedChildWait, if true, will make ExecuteWorkflow wait on all child
 // workflows to complete even if their close policy is set to abandon or request
-// cancel. If false, ExecuteWorkflow will wait on all children to complete
-// regardless of detached child. In situations with interminable cron-based
-// child workflows, setting this to false will allow the child to run once but
-// not continuously.
+// cancel, meaning they are "detached". If false, ExecuteWorkflow will block
+// until only all attached child workflows have completed. This is useful when
+// testing endless detached child workflows, as without it ExecuteWorkflow may
+// not return while detached children are still running.
 //
 // Default is true.
 func (e *TestWorkflowEnvironment) SetDetachedChildWait(detachedChildWait bool) *TestWorkflowEnvironment {
