@@ -59,8 +59,9 @@ const (
 
 	CorruptedSignalsCounter = TemporalMetricsPrefix + "corrupted_signals"
 
-	WorkerStartCounter = TemporalMetricsPrefix + "worker_start"
-	PollerStartCounter = TemporalMetricsPrefix + "poller_start"
+	WorkerStartCounter       = TemporalMetricsPrefix + "worker_start"
+	WorkerTaskSlotsAvailable = TemporalMetricsPrefix + "worker_task_slots_available"
+	PollerStartCounter       = TemporalMetricsPrefix + "poller_start"
 
 	TemporalRequest            = TemporalMetricsPrefix + "request"
 	TemporalRequestFailure     = TemporalRequest + "_failure"

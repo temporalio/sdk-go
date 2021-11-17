@@ -1527,6 +1527,56 @@ func (ts *IntegrationTestSuite) TestAdvancedPostCancellation() {
 	})
 }
 
+func (ts *IntegrationTestSuite) TestSlotsAvailableCounter() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	assertActivitySlotsAvailableEventually := func(expected float64, tags ...string) {
+		// Try for two seconds
+		var lastCount float64
+		for start := time.Now(); time.Since(start) <= 2*time.Second; {
+			lastCount = ts.metricGauge(metrics.WorkerTaskSlotsAvailable, "worker_type", "ActivityWorker")
+			if lastCount == expected {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		// Will fail
+		ts.Equal(expected, lastCount)
+	}
+
+	// Confirm all available to start
+	assertActivitySlotsAvailableEventually(1000)
+
+	// Start workflow and confirm reduced by one
+	run1, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-slots-available-counter-1"),
+		ts.workflows.ActivityHeartbeatUntilSignal)
+	ts.NoError(err)
+	assertActivitySlotsAvailableEventually(999)
+
+	// Start two more and confirm reduced by two
+	run2, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-slots-available-counter-2"),
+		ts.workflows.ActivityHeartbeatUntilSignal)
+	ts.NoError(err)
+	run3, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-slots-available-counter-3"),
+		ts.workflows.ActivityHeartbeatUntilSignal)
+	ts.NoError(err)
+	assertActivitySlotsAvailableEventually(997)
+
+	// Signal the first and last to close and confirm increased by two
+	time.Sleep(2 * time.Second)
+	ts.NoError(ts.client.SignalWorkflow(ctx, run1.GetID(), run1.GetRunID(), "cancel", nil))
+	ts.NoError(ts.client.SignalWorkflow(ctx, run3.GetID(), run3.GetRunID(), "cancel", nil))
+	ts.NoError(run1.Get(ctx, nil))
+	ts.NoError(run3.Get(ctx, nil))
+	assertActivitySlotsAvailableEventually(999)
+
+	// Signal the middle to close and confirm increased by one
+	ts.NoError(ts.client.SignalWorkflow(ctx, run2.GetID(), run2.GetRunID(), "cancel", nil))
+	ts.NoError(run2.Get(ctx, nil))
+	assertActivitySlotsAvailableEventually(1000)
+}
+
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{HostPort: ts.config.ServiceAddr})
 	ts.NoError(err)
@@ -1739,6 +1789,26 @@ func (ts *IntegrationTestSuite) metricCount(name string, tagFilterKeyValue ...st
 		}
 		if validCounter {
 			total += counter.Value()
+		}
+	}
+	return
+}
+
+func (ts *IntegrationTestSuite) metricGauge(name string, tagFilterKeyValue ...string) (final float64) {
+	for _, gauge := range ts.metricsReporter.Gauges() {
+		if gauge.Name() != name {
+			continue
+		}
+		// Check that it matches tag filter
+		validCounter := true
+		for i := 0; i < len(tagFilterKeyValue); i += 2 {
+			if gauge.Tags()[tagFilterKeyValue[i]] != tagFilterKeyValue[i+1] {
+				validCounter = false
+				break
+			}
+		}
+		if validCounter {
+			final = gauge.Value()
 		}
 	}
 	return

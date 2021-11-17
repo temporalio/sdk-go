@@ -38,7 +38,7 @@ import (
 func NewMetricsScope(isReplay *bool) (tally.Scope, io.Closer, *CapturingStatsReporter) {
 	reporter := &CapturingStatsReporter{}
 	opts := tally.ScopeOptions{Reporter: reporter}
-	scope, closer := tally.NewRootScope(opts, time.Second)
+	scope, closer := tally.NewRootScope(opts, 100*time.Millisecond)
 	return WrapScope(isReplay, scope, &realClock{}), closer, reporter
 }
 
