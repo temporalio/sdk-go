@@ -38,11 +38,10 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
-	"go.uber.org/atomic"
-
 	"go.temporal.io/sdk/converter"
 	iconverter "go.temporal.io/sdk/internal/converter"
 	ilog "go.temporal.io/sdk/internal/log"
+	uberatomic "go.uber.org/atomic"
 )
 
 type WorkflowTestSuiteUnitTest struct {
@@ -2145,8 +2144,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivity() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListeners() {
-	var localActivityFnCanceled atomic.Bool
-	var startedCount, completedCount, canceledCount atomic.Int32
+	var localActivityFnCanceled uberatomic.Bool
+	var startedCount, completedCount, canceledCount uberatomic.Int32
 	env := s.NewTestWorkflowEnvironment()
 
 	localActivityFn := func(_ context.Context, _ string) (string, error) {
@@ -3686,4 +3685,49 @@ func (s *WorkflowTestSuiteUnitTest) Test_AwaitWithTimeoutTimeout() {
 	result := true
 	_ = env.GetWorkflowResult(&result)
 	s.False(result)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_NoDetachedChildWait() {
+	// One cron+abandon and one request-cancel
+	childOptionSet := []ChildWorkflowOptions{
+		{
+			WorkflowRunTimeout: time.Minute * 10,
+			ParentClosePolicy:  enumspb.PARENT_CLOSE_POLICY_ABANDON,
+			CronSchedule:       "0 * * * *",
+		},
+		{
+			WorkflowRunTimeout: time.Minute * 10,
+			ParentClosePolicy:  enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL,
+		},
+	}
+	for _, childOptions := range childOptionSet {
+		var childCalledCount int
+		childWorkflow := func(ctx Context) error {
+			childCalledCount++
+			return Sleep(ctx, 1000*time.Hour)
+		}
+
+		workflow := func(ctx Context) error {
+			childFut := ExecuteChildWorkflow(WithChildWorkflowOptions(ctx, childOptions), childWorkflow)
+			// Since the child future is _in front_ of the timer future, the child
+			// will be called once
+			NewSelector(ctx).
+				AddFuture(childFut, func(Future) {}).
+				AddFuture(NewTimer(ctx, time.Hour*3), func(Future) {}).
+				Select(ctx)
+			return nil
+		}
+
+		env := s.NewTestWorkflowEnvironment()
+		// Without this, "ExecuteWorkflow" would run a long time
+		env.SetDetachedChildWait(false)
+		env.RegisterWorkflow(workflow)
+		env.RegisterWorkflow(childWorkflow)
+		env.ExecuteWorkflow(workflow)
+
+		s.True(env.IsWorkflowCompleted())
+		s.NoError(env.GetWorkflowError())
+
+		s.GreaterOrEqual(childCalledCount, 1)
+	}
 }

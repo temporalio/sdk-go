@@ -1577,6 +1577,14 @@ func (ts *IntegrationTestSuite) TestSlotsAvailableCounter() {
 	assertActivitySlotsAvailableEventually(1000)
 }
 
+func (ts *IntegrationTestSuite) TestTooFewParams() {
+	var res ParamsValue
+	// Only give first param
+	ts.NoError(ts.executeWorkflow("test-too-few-params", "TooFewParams", &res, "first param"))
+	// Confirm workflow and activity were called with zero values
+	ts.Equal(ParamsValue{Param1: "first param", Child: &ParamsValue{Param1: "first param"}}, res)
+}
+
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{HostPort: ts.config.ServiceAddr})
 	ts.NoError(err)
