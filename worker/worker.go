@@ -22,7 +22,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-// Package worker contains functions to manage lifecycle of a Temporal client side worker.
+// Package worker contains APIs to manage the lifecycle of Temporal Client-side Worker Entities.
 package worker
 
 import (
@@ -39,22 +39,23 @@ import (
 )
 
 type (
-	// Worker hosts workflow and activity implementations.
-	// Use worker.New(...) to create an instance.
+	// Worker is the entity that hosts and executes Workflow Tasks and Activity Tasks.
+	// Use worker.New(...) to create a new instance.
 	Worker interface {
 		Registry
 
-		// Start the worker in a non-blocking fashion.
+		// Start the Worker in a non-blocking fashion.
 		Start() error
 
-		// Run the worker in a blocking fashion. Stop the worker when interruptCh receives signal.
-		// Pass worker.InterruptCh() to stop the worker with SIGINT or SIGTERM.
-		// Pass nil to stop the worker with external Stop() call.
-		// Pass any other `<-chan interface{}` and Run will wait for signal from that channel.
-		// Returns error only if worker fails to start.
+		// Run the Worker in a blocking fashion.
+		// The Worker stops when interruptCh receives a signal.
+		// Pass worker.InterruptCh() to stop the Worker with SIGINT or SIGTERM.
+		// Pass nil to stop the Worker with an external Stop() call.
+		// Pass any other `<-chan interface{}` and Run will wait for a signal from that channel.
+		// Returns error only if the Worker fails to start.
 		Run(interruptCh <-chan interface{}) error
 
-		// Stop the worker.
+		// Stop the Worker.
 		Stop()
 	}
 

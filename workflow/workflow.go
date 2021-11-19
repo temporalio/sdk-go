@@ -224,42 +224,11 @@ func GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
 	return internal.GetSignalChannel(ctx, signalName)
 }
 
-// SideEffect executes the provided function once, records its result into the workflow history. The recorded result on
-// history will be returned without executing the provided function during replay. This guarantees the deterministic
-// requirement for workflow as the exact same result will be returned in replay.
-// Common use case is to run some short non-deterministic code in workflow, like getting random number or new UUID.
-// The only way to fail SideEffect is to panic which causes workflow task failure. The workflow task after timeout is
-// rescheduled and re-executed giving SideEffect another chance to succeed.
+// SideEffect executes the provided function once and records the result in the Workflow Execution Event History.
 //
-// Caution: do not use SideEffect to modify closures. Always retrieve result from SideEffect's encoded return value.
-// For example this code is BROKEN:
-//  // Bad example:
-//  var random int
-//  workflow.SideEffect(func(ctx workflow.Context) interface{} {
-//         random = rand.Intn(100)
-//         return nil
-//  })
-//  // random will always be 0 in replay, thus this code is non-deterministic
-//  if random < 50 {
-//         ....
-//  } else {
-//         ....
-//  }
-// On replay the provided function is not executed, the random will always be 0, and the workflow could takes a
-// different path breaking the determinism.
+// What is a Side Effect: https://docs.temporal.io/docs/content/what-is-a-side-effect
 //
-// Here is the correct way to use SideEffect:
-//  // Good example:
-//  encodedRandom := SideEffect(func(ctx workflow.Context) interface{} {
-//        return rand.Intn(100)
-//  })
-//  var random int
-//  encodedRandom.Get(&random)
-//  if random < 50 {
-//         ....
-//  } else {
-//         ....
-//  }
+// How to execute a Side Effect in Go: https://docs.temporal.io/docs/content/how-to-execute-a-side-effect-in-go
 func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedValue {
 	return internal.SideEffect(ctx, f)
 }

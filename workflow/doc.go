@@ -23,9 +23,17 @@
 // THE SOFTWARE.
 
 /*
+Temporal term definitions and Go SDK developer guides are published on Temporal's Documentation website:
+
+- What is a Temporal Workflow: https://docs.temporal.io/docs/content/what-is-a-workflow/
+
+- How to write a Workflow Definition in Go: https://docs.temporal.io/docs/go/how-to-develop-a-workflow-definition-in-go/
+
+- How to execute a Side Effect in Go: https://docs.temporal.io/docs/go/how-to-execute-a-side-effect-in-go/
+
 Package workflow contains functions and types used to implement Temporal workflows.
 
-A workflow is an implementation of coordination logic. The Temporal programming framework (aka SDK) allows
+A Workflow is an implementation of coordination logic. The Temporal programming framework (aka SDK) allows
 you to write the workflow coordination logic as simple procedural code that uses standard Go data modeling. The client
 library takes care of the communication between the worker service and the Temporal service, and ensures state
 persistence between events even in case of worker failures. Any particular execution is not tied to a
@@ -383,31 +391,6 @@ workflow function should terminate by returning the special ContinueAsNewError e
 	}
 
 For a complete example implementing this pattern please refer to the Cron example.
-
-SideEffect API
-
-workflow.SideEffect executes the provided function once, records its result into the workflow history, and doesn't
-re-execute upon replay. Instead, it returns the recorded result. Use it only for short, nondeterministic code snippets,
-like getting a random value or generating a UUID. It can be seen as an "inline" activity. However, one thing to note
-about workflow.SideEffect is that whereas for activities Temporal guarantees "at-most-once" execution, no such guarantee
-exists for workflow.SideEffect. Under certain failure conditions, workflow.SideEffect can end up executing the function
-more than once.
-
-The only way to fail SideEffect is to panic, which causes workflow task failure. The workflow task after timeout is
-rescheduled and re-executed giving SideEffect another chance to succeed. Be careful to not return any data from the
-SideEffect function any other way than through its recorded return value.
-
-	encodedRandom := SideEffect(func(ctx workflow.Context) interface{} {
-		return rand.Intn(100)
-	})
-
-	var random int
-	encodedRandom.Get(&random)
-	if random < 50 {
-		....
-	} else {
-		....
-	}
 
 Query API
 
