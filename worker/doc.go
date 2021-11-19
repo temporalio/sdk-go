@@ -23,6 +23,8 @@
 // THE SOFTWARE.
 
 /*
+Package worker contains functions and types used to implement Temporal Workers.
+
 Temporal term definitions and Go SDK developer guides are published on Temporal's Documentation website:
 
 What is a Temporal Worker: https://docs.temporal.io/docs/content/what-is-a-worker

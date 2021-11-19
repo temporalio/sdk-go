@@ -23,6 +23,8 @@
 // THE SOFTWARE.
 
 /*
+Package workflow contains functions and types used to implement Temporal Workflows.
+
 Temporal term definitions and Go SDK developer guides are published on Temporal's Documentation website:
 
 - What is a Temporal Workflow: https://docs.temporal.io/docs/content/what-is-a-workflow/
@@ -30,8 +32,6 @@ Temporal term definitions and Go SDK developer guides are published on Temporal'
 - How to write a Workflow Definition in Go: https://docs.temporal.io/docs/go/how-to-develop-a-workflow-definition-in-go/
 
 - How to execute a Side Effect in Go: https://docs.temporal.io/docs/go/how-to-execute-a-side-effect-in-go/
-
-Package workflow contains functions and types used to implement Temporal workflows.
 
 A Workflow is an implementation of coordination logic. The Temporal programming framework (aka SDK) allows
 you to write the workflow coordination logic as simple procedural code that uses standard Go data modeling. The client
