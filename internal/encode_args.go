@@ -41,7 +41,7 @@ func encodeArgs(dc converter.DataConverter, args []interface{}) (*commonpb.Paylo
 
 // decode multiple arguments(arguments to a function).
 func decodeArgs(dc converter.DataConverter, fnType reflect.Type, data *commonpb.Payloads) (result []reflect.Value, err error) {
-	r, err := decodeArgsToValues(dc, fnType, data)
+	r, err := decodeArgsToPointerValues(dc, fnType, data)
 	if err != nil {
 		return
 	}
@@ -51,7 +51,7 @@ func decodeArgs(dc converter.DataConverter, fnType reflect.Type, data *commonpb.
 	return
 }
 
-func decodeArgsToValues(dc converter.DataConverter, fnType reflect.Type, data *commonpb.Payloads) (result []interface{}, err error) {
+func decodeArgsToPointerValues(dc converter.DataConverter, fnType reflect.Type, data *commonpb.Payloads) (result []interface{}, err error) {
 argsLoop:
 	for i := 0; i < fnType.NumIn(); i++ {
 		argT := fnType.In(i)
@@ -66,6 +66,35 @@ argsLoop:
 		return
 	}
 	return
+}
+
+func decodeArgsToRawValues(dc converter.DataConverter, fnType reflect.Type, data *commonpb.Payloads) ([]interface{}, error) {
+	// Build pointers to results
+	var pointers []interface{}
+	for i := 0; i < fnType.NumIn(); i++ {
+		argT := fnType.In(i)
+		if i == 0 && (isActivityContext(argT) || isWorkflowContext(argT)) {
+			continue
+		}
+		pointers = append(pointers, reflect.New(argT).Interface())
+	}
+
+	// Unmarshal
+	if err := dc.FromPayloads(data, pointers...); err != nil {
+		return nil, err
+	}
+
+	// Convert results back to non-pointer versions
+	results := make([]interface{}, len(pointers))
+	for i, pointer := range pointers {
+		result := reflect.ValueOf(pointer).Elem()
+		// Do not set nil pointers
+		if result.Kind() != reflect.Ptr || !result.IsNil() {
+			results[i] = result.Interface()
+		}
+	}
+
+	return results, nil
 }
 
 // encode single value(like return parameter).

@@ -51,9 +51,10 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/interceptors"
+	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/internal/interceptortest"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
@@ -85,6 +86,7 @@ type IntegrationTestSuite struct {
 	trafficController        *test.SimpleTrafficController
 	metricsScopeCloser       io.Closer
 	metricsReporter          *metrics.CapturingStatsReporter
+	interceptorCallRecorder  *interceptortest.CallRecordingInvoker
 }
 
 func TestIntegrationSuite(t *testing.T) {
@@ -131,6 +133,13 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	var metricsScope tally.Scope
 	metricsScope, ts.metricsScopeCloser, ts.metricsReporter = metrics.NewTaggedMetricsScope()
 
+	var clientInterceptors []interceptor.ClientInterceptor
+	// Record calls for interceptor test
+	if strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestInterceptor") {
+		ts.interceptorCallRecorder = &interceptortest.CallRecordingInvoker{}
+		clientInterceptors = append(clientInterceptors, interceptortest.NewProxy(ts.interceptorCallRecorder))
+	}
+
 	var err error
 	trafficController := test.NewSimpleTrafficController()
 	ts.client, err = client.NewClient(client.Options{
@@ -143,6 +152,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		},
 		MetricsScope:      metricsScope,
 		TrafficController: trafficController,
+		Interceptors:      clientInterceptors,
 	})
 	ts.NoError(err)
 
@@ -152,10 +162,10 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.taskQueueName = fmt.Sprintf("tq-%v-%s", ts.seq, ts.T().Name())
 	ts.tracer = newTracingInterceptor()
 	ts.inboundSignalInterceptor = newSignalInterceptor()
-	workflowInterceptors := []interceptors.WorkflowInterceptor{ts.tracer, ts.inboundSignalInterceptor}
+	workerInterceptors := []interceptor.WorkerInterceptor{ts.tracer, ts.inboundSignalInterceptor}
 	options := worker.Options{
-		WorkflowInterceptorChainFactories: workflowInterceptors,
-		WorkflowPanicPolicy:               worker.FailWorkflow,
+		Interceptors:        workerInterceptors,
+		WorkflowPanicPolicy: worker.FailWorkflow,
 	}
 
 	worker.SetStickyWorkflowCacheSize(ts.config.maxWorkflowCacheSize)
@@ -311,6 +321,18 @@ func (ts *IntegrationTestSuite) TestPanicFailWorkflow() {
 	ok := errors.As(err, &applicationErr)
 	ts.True(ok)
 	ts.True(strings.Contains(applicationErr.Error(), "simulated"))
+}
+
+func (ts *IntegrationTestSuite) TestPanicActivityWorkflow() {
+	var res []string
+	// Retry once on each activity
+	const maxAttempts int32 = 2
+	err := ts.executeWorkflow("test-panic-activity", ts.workflows.PanickedActivity, &res, maxAttempts)
+	ts.NoError(err)
+	ts.Equal([]string{
+		fmt.Sprintf("act err: simulated panic on attempt %v", maxAttempts),
+		fmt.Sprintf("local act err: simulated panic on attempt %v", maxAttempts),
+	}, res)
 }
 
 func (ts *IntegrationTestSuite) TestDeadlockDetection() {
@@ -559,7 +581,7 @@ func (ts *IntegrationTestSuite) TestConsistentQuery() {
 	var queryResult string
 	ts.Nil(value.QueryResult.Get(&queryResult))
 	ts.Equal("signal-input", queryResult)
-	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ProcessSignal", "Go", "ExecuteWorkflow end", "HandleQuery begin", "HandleQuery end"},
+	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "HandleSignal", "Go", "ExecuteWorkflow end", "HandleQuery begin", "HandleQuery end"},
 		ts.tracer.GetTrace("ConsistentQueryWorkflow"))
 }
 
@@ -583,7 +605,7 @@ func (ts *IntegrationTestSuite) TestSignalWorkflow() {
 	err = run.Get(ctx, &protoValue)
 	ts.NoError(err)
 	ts.Equal(commonpb.WorkflowType{Name: "string-value"}, *protoValue)
-	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ProcessSignal", "ProcessSignal", "ExecuteWorkflow end"},
+	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "HandleSignal", "HandleSignal", "ExecuteWorkflow end"},
 		ts.tracer.GetTrace("SignalWorkflow"))
 }
 
@@ -1068,7 +1090,7 @@ func (ts *IntegrationTestSuite) TestBasicSession() {
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
 	// createSession activity, actual activity, completeSession activity.
-	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteActivity", "ProcessSignal", "Go", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
+	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteActivity", "HandleSignal", "Go", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
 		ts.tracer.GetTrace("BasicSession"))
 }
 
@@ -1276,6 +1298,243 @@ func (ts *IntegrationTestSuite) TestCancelChildAndExecuteActivityRace() {
 	ts.NoError(err)
 }
 
+func (ts *IntegrationTestSuite) TestInterceptorCalls() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start workflow
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-interceptor-calls"),
+		ts.workflows.InterceptorCalls, "root")
+	ts.NoError(err)
+
+	// Query
+	queryVal, err := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "query", "queryarg")
+	ts.NoError(err)
+	var queryRes string
+	ts.NoError(queryVal.Get(&queryRes))
+	ts.Equal("queryresult(queryarg)", queryRes)
+
+	// Send signal
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
+
+	// Confirm response
+	var resStr string
+	ts.NoError(run.Get(ctx, &resStr))
+	ts.Equal("finished(activity(workflow(root)))", resStr)
+
+	// Make other client calls we know will fail
+	_, _ = ts.client.SignalWithStartWorkflow(ctx, "badid", "badsignal", nil, client.StartWorkflowOptions{}, "badworkflow")
+	_ = ts.client.CancelWorkflow(ctx, "badid", "badrunid")
+	_ = ts.client.TerminateWorkflow(ctx, "badid", "badrunid", "")
+
+	// Prepare call checks
+	type check func(call *interceptortest.RecordedCall)
+	arg := func(index int, cb func(interface{})) check {
+		return func(call *interceptortest.RecordedCall) { cb(call.Args[index].Interface()) }
+	}
+	result := func(index int, cb func(interface{})) check {
+		return func(call *interceptortest.RecordedCall) { cb(call.Results[index].Interface()) }
+	}
+	callChecks := map[string][]check{
+		// ClientOutboundInterceptor
+		"ClientOutboundInterceptor.ExecuteWorkflow": {
+			arg(1, func(i interface{}) {
+				ts.Equal("InterceptorCalls", i.(*interceptor.ClientExecuteWorkflowInput).WorkflowType)
+			}),
+		},
+		// WorkflowInboundInterceptor
+		"WorkflowInboundInterceptor.Init": {},
+		"WorkflowInboundInterceptor.ExecuteWorkflow": {
+			arg(1, func(i interface{}) {
+				ts.Equal("root", i.(*interceptor.ExecuteWorkflowInput).Args[0])
+			}),
+		},
+		"WorkflowInboundInterceptor.HandleSignal": {
+			arg(1, func(i interface{}) {
+				in := i.(*interceptor.HandleSignalInput)
+				ts.Equal("finish", in.SignalName)
+				// TODO(cretz): Argument is actually a payload
+				// ts.Equal("finished", in.Arg)
+			}),
+		},
+		"WorkflowInboundInterceptor.HandleQuery": {
+			arg(1, func(i interface{}) {
+				in := i.(*interceptor.HandleQueryInput)
+				ts.Equal("query", in.QueryType)
+				ts.Equal("queryarg", in.Args[0])
+			}),
+			result(0, func(i interface{}) {
+				ts.Equal("queryresult(queryarg)", i)
+			}),
+		},
+		// WorkflowOutboundInterceptor
+		"WorkflowOutboundInterceptor.Go": {},
+		"WorkflowOutboundInterceptor.ExecuteActivity": {
+			arg(1, func(i interface{}) {
+				ts.Equal("InterceptorCalls", i)
+			}),
+		},
+		"WorkflowOutboundInterceptor.ExecuteLocalActivity": {
+			arg(1, func(i interface{}) {
+				ts.Equal("Echo", i)
+			}),
+		},
+		"WorkflowOutboundInterceptor.ExecuteChildWorkflow": {},
+		"WorkflowOutboundInterceptor.GetInfo": {
+			result(0, func(i interface{}) {
+				ts.Equal("InterceptorCalls", i.(*workflow.Info).WorkflowType.Name)
+			}),
+		},
+		"WorkflowOutboundInterceptor.GetLogger":                     {},
+		"WorkflowOutboundInterceptor.GetMetricsScope":               {},
+		"WorkflowOutboundInterceptor.Now":                           {},
+		"WorkflowOutboundInterceptor.NewTimer":                      {},
+		"WorkflowOutboundInterceptor.Sleep":                         {},
+		"WorkflowOutboundInterceptor.RequestCancelExternalWorkflow": {},
+		"WorkflowOutboundInterceptor.SignalExternalWorkflow":        {},
+		"WorkflowOutboundInterceptor.UpsertSearchAttributes":        {},
+		"WorkflowOutboundInterceptor.GetSignalChannel":              {},
+		"WorkflowOutboundInterceptor.SideEffect":                    {},
+		"WorkflowOutboundInterceptor.MutableSideEffect":             {},
+		"WorkflowOutboundInterceptor.GetVersion":                    {},
+		"WorkflowOutboundInterceptor.SetQueryHandler":               {},
+		"WorkflowOutboundInterceptor.IsReplaying":                   {},
+		"WorkflowOutboundInterceptor.HasLastCompletionResult":       {},
+		"WorkflowOutboundInterceptor.GetLastCompletionResult":       {},
+		"WorkflowOutboundInterceptor.GetLastError":                  {},
+		"WorkflowOutboundInterceptor.NewContinueAsNewError":         {},
+		// ActivityInboundInterceptor
+		"ActivityInboundInterceptor.Init": {},
+		"ActivityInboundInterceptor.ExecuteActivity": {
+			arg(1, func(i interface{}) {
+				ts.Equal("workflow(root)", i.(*interceptor.ExecuteActivityInput).Args[0])
+			}),
+			result(0, func(i interface{}) {
+				ts.Equal("activity(workflow(root))", i)
+			}),
+		},
+		// ActivityOutboundInterceptor
+		"ActivityOutboundInterceptor.GetInfo": {
+			result(0, func(i interface{}) {
+				ts.Equal("InterceptorCalls", i.(activity.Info).ActivityType.Name)
+			}),
+		},
+		"ActivityOutboundInterceptor.GetLogger":            {},
+		"ActivityOutboundInterceptor.GetMetricsScope":      {},
+		"ActivityOutboundInterceptor.RecordHeartbeat":      {},
+		"ActivityOutboundInterceptor.HasHeartbeatDetails":  {},
+		"ActivityOutboundInterceptor.GetHeartbeatDetails":  {},
+		"ActivityOutboundInterceptor.GetWorkerStopChannel": {},
+	}
+
+	// Do call checks
+	for qualifiedName, checks := range callChecks {
+		// Find call
+		var call *interceptortest.RecordedCall
+		for _, maybeCall := range ts.interceptorCallRecorder.Calls() {
+			if maybeCall.Interface.Name()+"."+maybeCall.Method.Name == qualifiedName {
+				call = maybeCall
+				break
+			}
+		}
+		ts.NotNilf(call, "Can't find call for %v", qualifiedName)
+		// Do checks
+		for _, check := range checks {
+			check(call)
+		}
+	}
+}
+
+func (ts *IntegrationTestSuite) TestInterceptorStartWithSignal() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Signal with start
+	run, err := ts.client.SignalWithStartWorkflow(ctx, "test-interceptor-start-with-signal", "start-signal",
+		"signal-value", ts.startWorkflowOptions("test-interceptor-start-with-signal"), ts.workflows.WaitSignalToStart)
+	ts.NoError(err)
+	var result string
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal("signal-value", result)
+
+	// Check that handle signal was called
+	foundHandleSignal := false
+	for _, call := range ts.interceptorCallRecorder.Calls() {
+		foundHandleSignal = call.Interface.Name()+"."+call.Method.Name == "WorkflowInboundInterceptor.HandleSignal"
+		if foundHandleSignal {
+			break
+		}
+	}
+	ts.True(foundHandleSignal)
+}
+
+func (ts *IntegrationTestSuite) TestAdvancedPostCancellation() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	assertPostCancellation := func(in *AdvancedPostCancellationInput) {
+		// Start workflow
+		run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-advanced-post-cancellation-"+uuid.New()),
+			ts.workflows.AdvancedPostCancellation, in)
+		ts.NoError(err)
+
+		// Poll to check if waiting for cancel
+		var waitingForCancel bool
+		for i := 0; !waitingForCancel && i < 30; i++ {
+			time.Sleep(50 * time.Millisecond)
+			val, err := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "waiting-for-cancel")
+			// Ignore query failed because it means query may not be registered yet
+			var queryFailed *serviceerror.QueryFailed
+			if errors.As(err, &queryFailed) {
+				continue
+			}
+			ts.NoError(err)
+			ts.NoError(val.Get(&waitingForCancel))
+		}
+		ts.True(waitingForCancel)
+
+		// Now cancel it
+		ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+
+		// Confirm no error
+		ts.NoError(run.Get(ctx, nil))
+	}
+
+	// Check just activity and timer
+	assertPostCancellation(&AdvancedPostCancellationInput{
+		PreCancelActivity:  true,
+		PostCancelActivity: true,
+	})
+	assertPostCancellation(&AdvancedPostCancellationInput{
+		PreCancelTimer:  true,
+		PostCancelTimer: true,
+	})
+	// Check mixed
+	assertPostCancellation(&AdvancedPostCancellationInput{
+		PreCancelActivity: true,
+		PostCancelTimer:   true,
+	})
+	assertPostCancellation(&AdvancedPostCancellationInput{
+		PreCancelTimer:     true,
+		PostCancelActivity: true,
+	})
+	// Check all
+	assertPostCancellation(&AdvancedPostCancellationInput{
+		PreCancelActivity:  true,
+		PreCancelTimer:     true,
+		PostCancelActivity: true,
+		PostCancelTimer:    true,
+	})
+}
+
+func (ts *IntegrationTestSuite) TestTooFewParams() {
+	var res ParamsValue
+	// Only give first param
+	ts.NoError(ts.executeWorkflow("test-too-few-params", "TooFewParams", &res, "first param"))
+	// Confirm workflow and activity were called with zero values
+	ts.Equal(ParamsValue{Param1: "first param", Child: &ParamsValue{Param1: "first param"}}, res)
+}
+
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{HostPort: ts.config.ServiceAddr})
 	ts.NoError(err)
@@ -1358,41 +1617,43 @@ func (ts *IntegrationTestSuite) registerWorkflowsAndActivities(w worker.Worker) 
 	ts.activities.register(w)
 }
 
-var _ interceptors.WorkflowInterceptor = (*tracingInterceptor)(nil)
-var _ interceptors.WorkflowInboundCallsInterceptor = (*tracingInboundCallsInterceptor)(nil)
-var _ interceptors.WorkflowOutboundCallsInterceptor = (*tracingOutboundCallsInterceptor)(nil)
+var _ interceptor.WorkerInterceptor = (*tracingInterceptor)(nil)
+var _ interceptor.WorkflowInboundInterceptor = (*tracingWorkflowInboundInterceptor)(nil)
+var _ interceptor.WorkflowOutboundInterceptor = (*tracingWorkflowOutboundInterceptor)(nil)
 
 type tracingInterceptor struct {
+	interceptor.WorkerInterceptorBase
 	sync.Mutex
 	// key is workflow id
-	instances map[string]*tracingInboundCallsInterceptor
+	instances map[string]*tracingWorkflowInboundInterceptor
 }
 
-type tracingInboundCallsInterceptor struct {
-	Next  interceptors.WorkflowInboundCallsInterceptor
+type tracingWorkflowInboundInterceptor struct {
+	interceptor.WorkflowInboundInterceptorBase
 	trace []string
 }
 
-type tracingOutboundCallsInterceptor struct {
-	interceptors.WorkflowOutboundCallsInterceptorBase
-	inbound *tracingInboundCallsInterceptor
+type tracingWorkflowOutboundInterceptor struct {
+	interceptor.WorkflowOutboundInterceptorBase
+	inbound *tracingWorkflowInboundInterceptor
 }
 
-func (t *tracingOutboundCallsInterceptor) Go(ctx workflow.Context, name string, f func(ctx workflow.Context)) workflow.Context {
+func (t *tracingWorkflowOutboundInterceptor) Go(ctx workflow.Context, name string, f func(ctx workflow.Context)) workflow.Context {
 	t.inbound.trace = append(t.inbound.trace, "Go")
 	return t.Next.Go(ctx, name, f)
 }
 
 func newTracingInterceptor() *tracingInterceptor {
-	return &tracingInterceptor{instances: make(map[string]*tracingInboundCallsInterceptor)}
+	return &tracingInterceptor{instances: make(map[string]*tracingWorkflowInboundInterceptor)}
 }
 
-func (t *tracingInterceptor) InterceptWorkflow(info *workflow.Info, next interceptors.WorkflowInboundCallsInterceptor) interceptors.WorkflowInboundCallsInterceptor {
+func (t *tracingInterceptor) InterceptWorkflow(ctx workflow.Context, next interceptor.WorkflowInboundInterceptor) interceptor.WorkflowInboundInterceptor {
 	t.Mutex.Lock()
 	defer t.Mutex.Unlock()
-	result := &tracingInboundCallsInterceptor{next, nil}
-	t.instances[info.WorkflowType.Name] = result
-	return result
+	var result tracingWorkflowInboundInterceptor
+	result.Next = next
+	t.instances[workflow.GetInfo(ctx).WorkflowType.Name] = &result
+	return &result
 }
 
 func (t *tracingInterceptor) GetTrace(workflowType string) []string {
@@ -1404,46 +1665,45 @@ func (t *tracingInterceptor) GetTrace(workflowType string) []string {
 	panic(fmt.Sprintf("Unknown workflowType %v, known types: %v", workflowType, t.instances))
 }
 
-func (t *tracingInboundCallsInterceptor) Init(outbound interceptors.WorkflowOutboundCallsInterceptor) error {
-	return t.Next.Init(&tracingOutboundCallsInterceptor{
-		interceptors.WorkflowOutboundCallsInterceptorBase{Next: outbound}, t})
+func (t *tracingWorkflowInboundInterceptor) Init(outbound interceptor.WorkflowOutboundInterceptor) error {
+	return t.Next.Init(&tracingWorkflowOutboundInterceptor{
+		interceptor.WorkflowOutboundInterceptorBase{Next: outbound}, t})
 }
 
-func (t *tracingOutboundCallsInterceptor) ExecuteActivity(ctx workflow.Context, activityType string, args ...interface{}) workflow.Future {
+func (t *tracingWorkflowOutboundInterceptor) ExecuteActivity(ctx workflow.Context, activityType string, args ...interface{}) workflow.Future {
 	t.inbound.trace = append(t.inbound.trace, "ExecuteActivity")
 	return t.Next.ExecuteActivity(ctx, activityType, args...)
 }
 
-func (t *tracingOutboundCallsInterceptor) ExecuteChildWorkflow(ctx workflow.Context, childWorkflowType string, args ...interface{}) workflow.ChildWorkflowFuture {
+func (t *tracingWorkflowOutboundInterceptor) ExecuteChildWorkflow(ctx workflow.Context, childWorkflowType string, args ...interface{}) workflow.ChildWorkflowFuture {
 	t.inbound.trace = append(t.inbound.trace, "ExecuteChildWorkflow")
 	return t.Next.ExecuteChildWorkflow(ctx, childWorkflowType, args...)
 }
 
-func (t *tracingInboundCallsInterceptor) ExecuteWorkflow(ctx workflow.Context, workflowType string, args ...interface{}) []interface{} {
+func (t *tracingWorkflowInboundInterceptor) ExecuteWorkflow(ctx workflow.Context, in *interceptor.ExecuteWorkflowInput) (interface{}, error) {
 	t.trace = append(t.trace, "ExecuteWorkflow begin")
-	result := t.Next.ExecuteWorkflow(ctx, workflowType, args...)
+	result, err := t.Next.ExecuteWorkflow(ctx, in)
 	t.trace = append(t.trace, "ExecuteWorkflow end")
-	return result
+	return result, err
 }
 
-func (t *tracingInboundCallsInterceptor) ProcessSignal(ctx workflow.Context, signalName string, arg interface{}) error {
-	t.trace = append(t.trace, "ProcessSignal")
-	return t.Next.ProcessSignal(ctx, signalName, arg)
+func (t *tracingWorkflowInboundInterceptor) HandleSignal(ctx workflow.Context, in *interceptor.HandleSignalInput) error {
+	t.trace = append(t.trace, "HandleSignal")
+	return t.Next.HandleSignal(ctx, in)
 }
 
-func (t *tracingInboundCallsInterceptor) HandleQuery(ctx workflow.Context, queryType string, args *commonpb.Payloads,
-	handler func(*commonpb.Payloads) (*commonpb.Payloads, error)) (*commonpb.Payloads, error) {
+func (t *tracingWorkflowInboundInterceptor) HandleQuery(ctx workflow.Context, in *interceptor.HandleQueryInput) (interface{}, error) {
 	t.trace = append(t.trace, "HandleQuery begin")
-	result, err := t.Next.HandleQuery(ctx, queryType, args, handler)
+	result, err := t.Next.HandleQuery(ctx, in)
 	t.trace = append(t.trace, "HandleQuery end")
 	return result, err
 }
 
-var _ interceptors.WorkflowInterceptor = (*signalInterceptor)(nil)
-var _ interceptors.WorkflowInboundCallsInterceptor = (*signalInboundCallsInterceptor)(nil)
-var _ interceptors.WorkflowOutboundCallsInterceptor = (*signalOutboundCallsInterceptor)(nil)
+var _ interceptor.WorkerInterceptor = (*signalInterceptor)(nil)
+var _ interceptor.WorkflowInboundInterceptor = (*signalWorkflowInboundInterceptor)(nil)
 
 type signalInterceptor struct {
+	interceptor.WorkerInterceptorBase
 	ReturnErrorTimes int
 	TimesInvoked     int
 }
@@ -1452,25 +1712,21 @@ func newSignalInterceptor() *signalInterceptor {
 	return &signalInterceptor{}
 }
 
-type signalInboundCallsInterceptor struct {
-	interceptors.WorkflowInboundCallsInterceptorBase
+type signalWorkflowInboundInterceptor struct {
+	interceptor.WorkflowInboundInterceptorBase
 	control *signalInterceptor
 }
 
-func (t *signalInboundCallsInterceptor) ProcessSignal(ctx workflow.Context, signalName string, arg interface{}) error {
+func (t *signalWorkflowInboundInterceptor) HandleSignal(ctx workflow.Context, in *interceptor.HandleSignalInput) error {
 	t.control.TimesInvoked++
 	if t.control.TimesInvoked <= t.control.ReturnErrorTimes {
-		return fmt.Errorf("interceptor induced failure while processing signal %v", signalName)
+		return fmt.Errorf("interceptor induced failure while processing signal %v", in.SignalName)
 	}
-	return t.Next.ProcessSignal(ctx, signalName, arg)
+	return t.Next.HandleSignal(ctx, in)
 }
 
-type signalOutboundCallsInterceptor struct {
-	interceptors.WorkflowOutboundCallsInterceptorBase
-}
-
-func (t *signalInterceptor) InterceptWorkflow(_ *workflow.Info, next interceptors.WorkflowInboundCallsInterceptor) interceptors.WorkflowInboundCallsInterceptor {
-	result := &signalInboundCallsInterceptor{}
+func (t *signalInterceptor) InterceptWorkflow(ctx workflow.Context, next interceptor.WorkflowInboundInterceptor) interceptor.WorkflowInboundInterceptor {
+	result := &signalWorkflowInboundInterceptor{}
 	result.Next = next
 	result.control = t
 	return result

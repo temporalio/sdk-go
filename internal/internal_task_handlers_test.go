@@ -35,7 +35,6 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/mock/gomock"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -468,7 +467,6 @@ func (t *TaskHandlersTestSuite) getTestWorkerExecutionParams() workerExecutionPa
 		Identity:  "test-id-1",
 		Logger:    t.logger,
 		cache:     cache,
-		Tracer:    opentracing.NoopTracer{},
 	}
 }
 
@@ -706,7 +704,7 @@ func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
 	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 	// will fail as it can't find laTunnel in newWorkerCache().
-	newWorkflowTaskWorkerInternal(taskHandler, t.service, params, make(chan struct{}))
+	newWorkflowTaskWorkerInternal(taskHandler, t.service, params, make(chan struct{}), nil)
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 
 	t.Error(err)
@@ -734,7 +732,7 @@ func (t *TaskHandlersTestSuite) TestWithMissingHistoryEvents() {
 		task := createWorkflowTask(testEvents, startEventID, "HelloWorld_Workflow")
 		// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 		// will fail as it can't find laTunnel in newWorkerCache().
-		newWorkflowTaskWorkerInternal(taskHandler, t.service, params, make(chan struct{}))
+		newWorkflowTaskWorkerInternal(taskHandler, t.service, params, make(chan struct{}), nil)
 		request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 
 		t.Error(err)
@@ -785,7 +783,7 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 		task.StartedEventId = tc.startedEventID
 		// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 		// will fail as it can't find laTunnel in newWorkerCache().
-		newWorkflowTaskWorkerInternal(taskHandler, t.service, params, make(chan struct{}))
+		newWorkflowTaskWorkerInternal(taskHandler, t.service, params, make(chan struct{}), nil)
 		request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 
 		if tc.isResultErr {
@@ -888,7 +886,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	task = createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 	// will fail as it can't find laTunnel in newWorkerCache().
-	newWorkflowTaskWorkerInternal(taskHandler, t.service, params, stopC)
+	newWorkflowTaskWorkerInternal(taskHandler, t.service, params, stopC, nil)
 	request, err = taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 	t.Error(err)
 	t.Nil(request)
@@ -1034,7 +1032,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_InvalidQueryTask() {
 	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	task.Query = &querypb.WorkflowQuery{}
 	task.Queries = map[string]*querypb.WorkflowQuery{"query_id": {}}
-	newWorkflowTaskWorkerInternal(taskHandler, t.service, params, make(chan struct{}))
+	newWorkflowTaskWorkerInternal(taskHandler, t.service, params, make(chan struct{}), nil)
 	// query and queries are both specified so this is an invalid task
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 
@@ -1231,7 +1229,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 	t.True(ok)
 	taskHandlerImpl.laTunnel = laTunnel
 
-	laTaskPoller := newLocalActivityPoller(params, laTunnel)
+	laTaskPoller := newLocalActivityPoller(params, laTunnel, nil)
 	go func() {
 		for {
 			task, _ := laTaskPoller.PollTask()
@@ -1313,7 +1311,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 	t.True(ok)
 	taskHandlerImpl.laTunnel = laTunnel
 
-	laTaskPoller := newLocalActivityPoller(params, laTunnel)
+	laTaskPoller := newLocalActivityPoller(params, laTunnel, nil)
 	doneCh := make(chan struct{})
 	go func() {
 		// laTaskPoller needs to poll the local activity and process it

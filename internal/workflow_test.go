@@ -108,13 +108,17 @@ func TestConvertRetryPolicy(t *testing.T) {
 }
 
 func newTestWorkflowContext() Context {
-	return newWorkflowContext(&workflowEnvironmentImpl{
+	_, ctx, err := newWorkflowContext(&workflowEnvironmentImpl{
 		dataConverter: converter.GetDefaultDataConverter(),
 		workflowInfo: &WorkflowInfo{
 			Namespace:     "default",
 			TaskQueueName: "default",
 		},
-	}, nil, nil)
+	}, nil)
+	if err != nil {
+		panic(err)
+	}
+	return ctx
 }
 
 func newTestRetryPolicy() *RetryPolicy {

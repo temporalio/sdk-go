@@ -102,7 +102,7 @@ vet: $(ALL_SRC)
 	go vet ./...
 
 staticcheck: $(ALL_SRC)
-	GO111MODULE=off go get -u honnef.co/go/tools/cmd/staticcheck
+	go install honnef.co/go/tools/cmd/staticcheck@latest
 	staticcheck ./...
 
 errcheck: $(ALL_SRC)
@@ -115,7 +115,9 @@ fmt:
 clean:
 	rm -rf $(BUILD)
 
-check: lint vet errcheck staticcheck copyright bins
+# golint is intentionally not included in the standard check since it is
+# deprecated and inflexible, but it remains available as a utility
+check: vet errcheck staticcheck copyright bins
 
 
 ##### Fossa #####

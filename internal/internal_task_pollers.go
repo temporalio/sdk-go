@@ -34,7 +34,6 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/types"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
@@ -132,7 +131,7 @@ type (
 		logger             log.Logger
 		dataConverter      converter.DataConverter
 		contextPropagators []ContextPropagator
-		tracer             opentracing.Tracer
+		interceptors       []WorkerInterceptor
 	}
 
 	localActivityResult struct {
@@ -413,14 +412,18 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 	return
 }
 
-func newLocalActivityPoller(params workerExecutionParameters, laTunnel *localActivityTunnel) *localActivityTaskPoller {
+func newLocalActivityPoller(
+	params workerExecutionParameters,
+	laTunnel *localActivityTunnel,
+	interceptors []WorkerInterceptor,
+) *localActivityTaskPoller {
 	handler := &localActivityTaskHandler{
 		userContext:        params.UserContext,
 		metricsScope:       params.MetricsScope,
 		logger:             params.Logger,
 		dataConverter:      params.DataConverter,
 		contextPropagators: params.ContextPropagators,
-		tracer:             params.Tracer,
+		interceptors:       interceptors,
 	}
 	return &localActivityTaskPoller{
 		basePoller: basePoller{metricsScope: params.MetricsScope, stopC: params.WorkerStopChannel},
@@ -469,45 +472,17 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 			tagAttempt, task.attempt,
 		)
 	})
-	ctx := WithLocalActivityTask(lath.userContext, task, lath.logger, lath.metricsScope, lath.dataConverter)
-
-	// propagate context information into the local activity activity context from the headers
-	for _, ctxProp := range lath.contextPropagators {
-		var err error
-		if ctx, err = ctxProp.Extract(ctx, NewHeaderReader(task.header)); err != nil {
-			result = &localActivityResult{
-				task:   task,
-				result: nil,
-				err:    fmt.Errorf("unable to propagate context: %w", err),
-			}
-			return result
-		}
+	ctx, err := WithLocalActivityTask(lath.userContext, task, lath.logger, lath.metricsScope,
+		lath.dataConverter, lath.interceptors)
+	if err != nil {
+		return &localActivityResult{task: task, err: fmt.Errorf("failed building context: %w", err)}
 	}
 
-	// panic handler
-	defer func() {
-		if p := recover(); p != nil {
-			topLine := fmt.Sprintf("local activity for %s [panic]:", activityType)
-			st := getStackTraceRaw(topLine, 7, 0)
-			lath.logger.Error("LocalActivity panic.",
-				tagWorkflowID, task.params.WorkflowInfo.WorkflowExecution.ID,
-				tagRunID, task.params.WorkflowInfo.WorkflowExecution.RunID,
-				tagActivityType, activityType,
-				tagAttempt, task.attempt,
-				tagPanicError, fmt.Sprintf("%v", p),
-				tagPanicStack, st)
-			activityMetricsScope.Counter(metrics.LocalActivityErrorCounter).Inc(1)
-			panicErr := newPanicError(p, st)
-			result = &localActivityResult{
-				task:   task,
-				result: nil,
-				err:    panicErr,
-			}
-		}
-		if result.err != nil {
-			activityMetricsScope.Counter(metrics.LocalActivityFailedCounter).Inc(1)
-		}
-	}()
+	// propagate context information into the local activity activity context from the headers
+	ctx, err = contextWithHeaderPropagated(ctx, task.header, lath.contextPropagators)
+	if err != nil {
+		return &localActivityResult{task: task, err: err}
+	}
 
 	timeout := task.params.ScheduleToCloseTimeout
 	if task.params.StartToCloseTimeout != 0 && task.params.StartToCloseTimeout < timeout {
@@ -532,15 +507,33 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 	task.Unlock()
 
 	var laResult *commonpb.Payloads
-	var err error
 	doneCh := make(chan struct{})
 	go func(ch chan struct{}) {
 		laStartTime := time.Now()
-		ctx, span := createOpenTracingActivitySpan(ctx, lath.tracer, time.Now(), task.params.ActivityType, task.params.WorkflowInfo.WorkflowExecution.ID, task.params.WorkflowInfo.WorkflowExecution.RunID)
-		defer span.Finish()
+		defer close(ch)
+
+		// panic handler
+		defer func() {
+			if p := recover(); p != nil {
+				topLine := fmt.Sprintf("local activity for %s [panic]:", activityType)
+				st := getStackTraceRaw(topLine, 7, 0)
+				lath.logger.Error("LocalActivity panic.",
+					tagWorkflowID, task.params.WorkflowInfo.WorkflowExecution.ID,
+					tagRunID, task.params.WorkflowInfo.WorkflowExecution.RunID,
+					tagActivityType, activityType,
+					tagAttempt, task.attempt,
+					tagPanicError, fmt.Sprintf("%v", p),
+					tagPanicStack, st)
+				activityMetricsScope.Counter(metrics.LocalActivityErrorCounter).Inc(1)
+				err = newPanicError(p, st)
+			}
+			if err != nil {
+				activityMetricsScope.Counter(metrics.LocalActivityFailedCounter).Inc(1)
+			}
+		}()
+
 		laResult, err = ae.ExecuteWithActualArgs(ctx, task.params.InputArgs)
 		executionLatency := time.Since(laStartTime)
-		close(ch)
 		activityMetricsScope.Timer(metrics.LocalActivityExecutionLatency).Record(executionLatency)
 		if executionLatency > timeoutDuration {
 			// If local activity takes longer than expected timeout, the context would already be DeadlineExceeded and
