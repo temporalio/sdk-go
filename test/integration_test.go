@@ -1478,20 +1478,8 @@ func (ts *IntegrationTestSuite) TestAdvancedPostCancellation() {
 			ts.workflows.AdvancedPostCancellation, in)
 		ts.NoError(err)
 
-		// Poll to check if waiting for cancel
-		var waitingForCancel bool
-		for i := 0; !waitingForCancel && i < 30; i++ {
-			time.Sleep(50 * time.Millisecond)
-			val, err := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "waiting-for-cancel")
-			// Ignore query failed because it means query may not be registered yet
-			var queryFailed *serviceerror.QueryFailed
-			if errors.As(err, &queryFailed) {
-				continue
-			}
-			ts.NoError(err)
-			ts.NoError(val.Get(&waitingForCancel))
-		}
-		ts.True(waitingForCancel)
+		// Wait for cancel
+		ts.waitForQueryTrue(run, "waiting-for-cancel")
 
 		// Now cancel it
 		ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
@@ -1525,6 +1513,41 @@ func (ts *IntegrationTestSuite) TestAdvancedPostCancellation() {
 		PostCancelActivity: true,
 		PostCancelTimer:    true,
 	})
+}
+
+func (ts *IntegrationTestSuite) TestAdvancedPostCancellationChildWithDone() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Start workflow
+	startOpts := ts.startWorkflowOptions("test-advanced-post-cancellation-child-with-done-" + uuid.New())
+	run, err := ts.client.ExecuteWorkflow(ctx, startOpts, ts.workflows.AdvancedPostCancellationChildWithDone)
+	ts.NoError(err)
+
+	// Wait for cancel
+	ts.waitForQueryTrue(run, "waiting-for-cancel")
+
+	// Now cancel it
+	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+
+	// Confirm no error
+	ts.NoError(run.Get(ctx, nil))
+}
+
+func (ts *IntegrationTestSuite) waitForQueryTrue(run client.WorkflowRun, query string) {
+	var result bool
+	for i := 0; !result && i < 30; i++ {
+		time.Sleep(50 * time.Millisecond)
+		val, err := ts.client.QueryWorkflow(context.Background(), run.GetID(), run.GetRunID(), query)
+		// Ignore query failed because it means query may not be registered yet
+		var queryFailed *serviceerror.QueryFailed
+		if errors.As(err, &queryFailed) {
+			continue
+		}
+		ts.NoError(err)
+		ts.NoError(val.Get(&result))
+	}
+	ts.True(result, "query didn't return true in reasonable amount of time")
 }
 
 func (ts *IntegrationTestSuite) TestTooFewParams() {
