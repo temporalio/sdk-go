@@ -321,6 +321,18 @@ func (a *Activities) ExternalSignalsAndQueries(ctx context.Context) error {
 	return run.Get(ctx, nil)
 }
 
+func (*Activities) TooFewParams(
+	ctx context.Context,
+	param1 string,
+	param2 int,
+	param3 bool,
+	param4 struct{ SomeField string },
+	param5 *ParamsValue,
+	param6 []byte,
+) (*ParamsValue, error) {
+	return &ParamsValue{Param1: param1, Param2: param2, Param3: param3, Param4: param4, Param5: param5, Param6: param6}, nil
+}
+
 func (a *Activities) register(worker worker.Worker) {
 	worker.RegisterActivity(a)
 	// Check reregistration
