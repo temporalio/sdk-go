@@ -1499,11 +1499,16 @@ func executeFunctionWithContext(ctx context.Context, fn interface{}, args []inte
 // Executes function and ensures that there is always 1 or 2 results and second
 // result is error.
 func executeFunction(fn interface{}, args []interface{}) (interface{}, error) {
+	fnValue := reflect.ValueOf(fn)
 	reflectArgs := make([]reflect.Value, len(args))
 	for i, arg := range args {
-		reflectArgs[i] = reflect.ValueOf(arg)
+		// If the argument is nil, use zero value
+		if arg == nil {
+			reflectArgs[i] = reflect.New(fnValue.Type().In(i)).Elem()
+		} else {
+			reflectArgs[i] = reflect.ValueOf(arg)
+		}
 	}
-	fnValue := reflect.ValueOf(fn)
 	retValues := fnValue.Call(reflectArgs)
 
 	// Expect either error or (result, error)
