@@ -18,7 +18,7 @@ require (
 	github.com/stretchr/objx v0.3.0 // indirect
 	github.com/stretchr/testify v1.7.0
 	github.com/twmb/murmur3 v1.1.6 // indirect
-	github.com/uber-go/tally/v4 v4.0.1
+	github.com/uber-go/tally/v4 v4.1.0
 	go.opentelemetry.io/otel v1.1.0
 	go.opentelemetry.io/otel/sdk v1.1.0
 	go.opentelemetry.io/otel/trace v1.1.0
