@@ -38,7 +38,7 @@ import (
 func NewMetricsScope(isReplay *bool) (tally.Scope, io.Closer, *CapturingStatsReporter) {
 	reporter := &CapturingStatsReporter{}
 	opts := tally.ScopeOptions{Reporter: reporter}
-	scope, closer := tally.NewRootScope(opts, time.Second)
+	scope, closer := tally.NewRootScope(opts, 100*time.Millisecond)
 	return WrapScope(isReplay, scope, &realClock{}), closer, reporter
 }
 
@@ -58,7 +58,7 @@ func (c *realClock) Now() time.Time {
 
 // CapturingStatsReporter is a reporter used by tests to capture the metric so we can verify our tests.
 type CapturingStatsReporter struct {
-	sync.Mutex
+	sync.RWMutex
 	counts                   []CapturedCount
 	gauges                   []CapturedGauge
 	timers                   []CapturedTimer
@@ -70,26 +70,36 @@ type CapturingStatsReporter struct {
 
 // HistogramDurationSamples return HistogramDurationSamples
 func (c *CapturingStatsReporter) HistogramDurationSamples() []CapturedHistogramDurationSamples {
+	c.RLock()
+	defer c.RUnlock()
 	return c.histogramDurationSamples
 }
 
 // HistogramValueSamples return HistogramValueSamples
 func (c *CapturingStatsReporter) HistogramValueSamples() []CapturedHistogramValueSamples {
+	c.RLock()
+	defer c.RUnlock()
 	return c.histogramValueSamples
 }
 
 // Timers return Timers
 func (c *CapturingStatsReporter) Timers() []CapturedTimer {
+	c.RLock()
+	defer c.RUnlock()
 	return c.timers
 }
 
 // Gauges return Gauges
 func (c *CapturingStatsReporter) Gauges() []CapturedGauge {
+	c.RLock()
+	defer c.RUnlock()
 	return c.gauges
 }
 
 // Counts return Counts
 func (c *CapturingStatsReporter) Counts() []CapturedCount {
+	c.RLock()
+	defer c.RUnlock()
 	return c.counts
 }
 
