@@ -1422,7 +1422,7 @@ func (w *Workflows) SignalsAndQueries(ctx workflow.Context, execChild, execActiv
 	// Add query handler
 	err := workflow.SetQueryHandler(ctx, "workflow-query", func() (string, error) { return "query-response", nil })
 	if err != nil {
-		return err
+		return fmt.Errorf("failed setting query handler: %w", err)
 	}
 
 	// Wait for signal on start
@@ -1433,11 +1433,14 @@ func (w *Workflows) SignalsAndQueries(ctx workflow.Context, execChild, execActiv
 		fut := workflow.ExecuteChildWorkflow(ctx, w.SignalsAndQueries, false, true)
 		// Signal child twice
 		if err := fut.SignalChildWorkflow(ctx, "start-signal", nil).Get(ctx, nil); err != nil {
-			return err
+			return fmt.Errorf("failed signaling child with start: %w", err)
 		} else if err = fut.SignalChildWorkflow(ctx, "finish-signal", nil).Get(ctx, nil); err != nil {
-			return err
+			return fmt.Errorf("failed signaling child with finish: %w", err)
 		}
 		// Wait for done
+		if err := fut.Get(ctx, nil); err != nil {
+			return fmt.Errorf("child failed: %w", err)
+		}
 	}
 
 	// Run activity if requested
@@ -1445,7 +1448,7 @@ func (w *Workflows) SignalsAndQueries(ctx workflow.Context, execChild, execActiv
 		ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 		var a Activities
 		if err := workflow.ExecuteActivity(ctx, a.ExternalSignalsAndQueries).Get(ctx, nil); err != nil {
-			return err
+			return fmt.Errorf("activity failed: %w", err)
 		}
 	}
 

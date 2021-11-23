@@ -340,8 +340,8 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteWorkflow(
 }
 
 func (t *tracingWorkflowInboundInterceptor) HandleSignal(ctx workflow.Context, in *HandleSignalInput) error {
-	// Only add tracing if enabled
-	if t.root.options.DisableSignalTracing {
+	// Only add tracing if enabled and not replaying
+	if t.root.options.DisableSignalTracing || workflow.IsReplaying(ctx) {
 		return t.Next.HandleSignal(ctx, in)
 	}
 	// Start span reading from header
@@ -370,8 +370,8 @@ func (t *tracingWorkflowInboundInterceptor) HandleQuery(
 	ctx workflow.Context,
 	in *HandleQueryInput,
 ) (interface{}, error) {
-	// Only add tracing if enabled
-	if t.root.options.DisableQueryTracing {
+	// Only add tracing if enabled and not replaying
+	if t.root.options.DisableQueryTracing || workflow.IsReplaying(ctx) {
 		return t.Next.HandleQuery(ctx, in)
 	}
 	// Start span reading from header

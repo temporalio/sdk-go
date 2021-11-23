@@ -1545,7 +1545,7 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withSignalAndQueryHeade
 	}
 
 	// Confirm expected
-	actual := interceptortest.Span("root-span", openTelemetrySpanChildren(spans, rootSpan.SpanContext().SpanID())...)
+	actual := interceptortest.Span("root-span", ts.openTelemetrySpanChildren(spans, rootSpan.SpanContext().SpanID())...)
 	expected := span("root-span",
 		span("SignalWithStartWorkflow:SignalsAndQueries",
 			span("HandleSignal:start-signal"),
@@ -1606,10 +1606,25 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withSignalAndQueryHeade
 	ts.Equal(expected, actual)
 }
 
-func openTelemetrySpanChildren(spans []sdktrace.ReadOnlySpan, parentID trace.SpanID) (ret []*interceptortest.SpanInfo) {
+func (ts *IntegrationTestSuite) openTelemetrySpanChildren(
+	spans []sdktrace.ReadOnlySpan,
+	parentID trace.SpanID,
+) (ret []*interceptortest.SpanInfo) {
+	var lastSpan *interceptortest.SpanInfo
 	for _, s := range spans {
 		if s.Parent().SpanID() == parentID {
-			ret = append(ret, interceptortest.Span(s.Name(), openTelemetrySpanChildren(spans, s.SpanContext().SpanID())...))
+			// In cases where we have disabled the cache, the same interceptors get
+			// called many times with replayed values which create replayed spans. We
+			// can't disable  spans during replay because they are sometimes the ones
+			// that code paths continue on so they need spans. So in this case we will
+			// reuse adjacent spans of the same name.
+			children := ts.openTelemetrySpanChildren(spans, s.SpanContext().SpanID())
+			if ts.config.maxWorkflowCacheSize == 0 && lastSpan != nil && lastSpan.Name == s.Name() {
+				lastSpan.Children = append(lastSpan.Children, children...)
+			} else {
+				lastSpan = interceptortest.Span(s.Name(), children...)
+				ret = append(ret, lastSpan)
+			}
 		}
 	}
 	return
