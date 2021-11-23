@@ -1320,6 +1320,23 @@ func (w *Workflows) ActivityWaitForWorkerStop(ctx workflow.Context, timeout time
 	return s, err
 }
 
+func (w *Workflows) ActivityHeartbeatUntilSignal(ctx workflow.Context) error {
+	ch := workflow.GetSignalChannel(ctx, "cancel")
+	actCtx, actCancel := workflow.WithCancel(workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 5 * time.Hour,
+		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+		WaitForCancellation: true,
+		HeartbeatTimeout:    1 * time.Second,
+	}))
+	var a *Activities
+	actFut := workflow.ExecuteActivity(actCtx, a.HeartbeatUntilCanceled, 100*time.Millisecond)
+
+	// Wait for signal then cancel
+	ch.Receive(ctx, nil)
+	actCancel()
+	return actFut.Get(ctx, nil)
+}
+
 func (w *Workflows) CancelChildAndExecuteActivityRace(ctx workflow.Context) error {
 	// This workflow replicates an issue where cancel was reported out of order
 	// with when it occurs. Specifically, this workflow creates a long-running
@@ -1515,6 +1532,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityRetryOnTimeout)
 	worker.RegisterWorkflow(w.ActivityRetryOptionsChange)
 	worker.RegisterWorkflow(w.ActivityWaitForWorkerStop)
+	worker.RegisterWorkflow(w.ActivityHeartbeatUntilSignal)
 	worker.RegisterWorkflow(w.Basic)
 	worker.RegisterWorkflow(w.Deadlocked)
 	worker.RegisterWorkflow(w.DeadlockedWithLocalActivity)
