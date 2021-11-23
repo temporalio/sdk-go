@@ -135,7 +135,7 @@ func TestDialOptions(t *testing.T) {
 	healthServer.SetServingStatus(healthCheckServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
 	grpc_health_v1.RegisterHealthServer(srv, healthServer)
 	defer srv.Stop()
-	go srv.Serve(l)
+	go func() { _ = srv.Serve(l) }()
 
 	// Connect with unary outer and unary inner interceptors
 	var trace []string
@@ -169,7 +169,8 @@ func TestDialOptions(t *testing.T) {
 	defer client.Close()
 
 	// Make call we know will error (ignore error)
-	client.WorkflowService().SignalWorkflowExecution(context.TODO(), &workflowservice.SignalWorkflowExecutionRequest{})
+	_, _ = client.WorkflowService().SignalWorkflowExecution(context.TODO(),
+		&workflowservice.SignalWorkflowExecutionRequest{})
 
 	// Confirm trace
 	expected := []string{"begin outer", "begin inner1", "begin inner2", "end inner2", "end inner1", "end outer"}
