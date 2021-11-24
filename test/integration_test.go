@@ -1381,7 +1381,7 @@ func (ts *IntegrationTestSuite) TestInterceptorCalls() {
 			}),
 		},
 		"WorkflowOutboundInterceptor.GetLogger":                     {},
-		"WorkflowOutboundInterceptor.GetMetricsScope":               {},
+		"WorkflowOutboundInterceptor.GetMetricsHandler":             {},
 		"WorkflowOutboundInterceptor.Now":                           {},
 		"WorkflowOutboundInterceptor.NewTimer":                      {},
 		"WorkflowOutboundInterceptor.Sleep":                         {},
@@ -1415,7 +1415,7 @@ func (ts *IntegrationTestSuite) TestInterceptorCalls() {
 			}),
 		},
 		"ActivityOutboundInterceptor.GetLogger":            {},
-		"ActivityOutboundInterceptor.GetMetricsScope":      {},
+		"ActivityOutboundInterceptor.GetMetricsHandler":    {},
 		"ActivityOutboundInterceptor.RecordHeartbeat":      {},
 		"ActivityOutboundInterceptor.HasHeartbeatDetails":  {},
 		"ActivityOutboundInterceptor.GetHeartbeatDetails":  {},
@@ -1798,14 +1798,14 @@ func (ts *IntegrationTestSuite) metricCount(name string, tagFilterKeyValue ...st
 }
 
 func (ts *IntegrationTestSuite) metricGauge(name string, tagFilterKeyValue ...string) (final float64) {
-	for _, gauge := range ts.metricsReporter.Gauges() {
-		if gauge.Name() != name {
+	for _, gauge := range ts.metricsHandler.Gauges() {
+		if gauge.Name != name {
 			continue
 		}
 		// Check that it matches tag filter
 		validCounter := true
 		for i := 0; i < len(tagFilterKeyValue); i += 2 {
-			if gauge.Tags()[tagFilterKeyValue[i]] != tagFilterKeyValue[i+1] {
+			if gauge.Tags[tagFilterKeyValue[i]] != tagFilterKeyValue[i+1] {
 				validCounter = false
 				break
 			}

@@ -24,32 +24,65 @@ package metrics
 
 import "time"
 
+// Handler is a handler for metrics emitted by the SDK. This interface is
+// intentionally limited to only what the SDK needs to emit metrics and is not
+// built to be a general purpose metrics abstraction for all uses.
+//
+// A common implementation is at
+// go.temporal.io/sdk/contrib/tally.NewMetricsHandler. The NopHandler is an
+// noop handler.
 type Handler interface {
+	// WithTags returns a new handler with the given tags set for each metric
+	// created from it.
 	WithTags(map[string]string) Handler
 
+	// Counter obtains a counter for the given name.
 	Counter(name string) Counter
+
+	// Gauge obtains a gauge for the given name.
 	Gauge(name string) Gauge
+
+	// Timer obtains a timer for the given name.
 	Timer(name string) Timer
 }
 
-type Counter interface{ Inc(int64) }
+// Counter is an ever-increasing counter.
+type Counter interface {
+	// Inc increments the counter value.
+	Inc(int64)
+}
 
+// CounterFunc implements Counter with a single function.
 type CounterFunc func(int64)
 
+// Inc implements Counter.Inc.
 func (c CounterFunc) Inc(d int64) { c(d) }
 
-type Gauge interface{ Update(float64) }
+// Gauge can be set to any float.
+type Gauge interface {
+	// Update updates the gauge value.
+	Update(float64)
+}
 
+// GaugeFunc implements Gauge with a single function.
 type GaugeFunc func(float64)
 
+// Update implements Gauge.Update.
 func (g GaugeFunc) Update(d float64) { g(d) }
 
-type Timer interface{ Record(time.Duration) }
+// Timer records time durations.
+type Timer interface {
+	// Record sets the timer value.
+	Record(time.Duration)
+}
 
+// TimerFunc implements Timer with a single function.
 type TimerFunc func(time.Duration)
 
+// Record implements Timer.Record.
 func (t TimerFunc) Record(d time.Duration) { t(d) }
 
+// NopHandler is a noop handler that does nothing with the metrics.
 var NopHandler Handler = nopHandler{}
 
 type nopHandler struct{}
@@ -67,6 +100,8 @@ type replayAwareHandler struct {
 	underlying Handler
 }
 
+// NewReplayAwareHandler is a handler that will not record any metrics if the
+// boolean pointed to by "replay" is true.
 func NewReplayAwareHandler(replay *bool, underlying Handler) Handler {
 	return &replayAwareHandler{replay, underlying}
 }

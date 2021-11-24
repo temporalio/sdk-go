@@ -30,10 +30,15 @@ import (
 	"google.golang.org/grpc"
 )
 
+// HandlerContextKey is the context key for a MetricHandler value.
 type HandlerContextKey struct{}
+
+// LongPollContextKey is the context key for a boolean stating whether the gRPC
+// call is a long poll.
 type LongPollContextKey struct{}
 
-func NewGRPCInterceptor(handler Handler, suffix string) grpc.UnaryClientInterceptor {
+// NewGRPCInterceptor creates a new gRPC unary interceptor to record metrics.
+func NewGRPCInterceptor(defaultHandler Handler, suffix string) grpc.UnaryClientInterceptor {
 	return func(
 		ctx context.Context,
 		method string,
@@ -45,7 +50,7 @@ func NewGRPCInterceptor(handler Handler, suffix string) grpc.UnaryClientIntercep
 	) error {
 		handler, _ := ctx.Value(HandlerContextKey{}).(Handler)
 		if handler == nil {
-			handler = NopHandler
+			handler = defaultHandler
 		}
 		longPoll, ok := ctx.Value(LongPollContextKey{}).(bool)
 		if !ok {
@@ -85,10 +90,12 @@ func recordRequestEnd(handler Handler, longPoll bool, suffix string, start time.
 	handler.Timer(timerMetric).Record(time.Since(start))
 
 	// Count failure
-	failureMetric := TemporalRequestFailure
-	if longPoll {
-		failureMetric = TemporalLongRequestFailure
+	if err != nil {
+		failureMetric := TemporalRequestFailure
+		if longPoll {
+			failureMetric = TemporalLongRequestFailure
+		}
+		failureMetric += suffix
+		handler.Counter(failureMetric).Inc(1)
 	}
-	failureMetric += suffix
-	handler.Counter(failureMetric).Inc(1)
 }

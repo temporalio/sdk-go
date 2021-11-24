@@ -22,6 +22,7 @@
 
 package metrics
 
+// RootTags returns a set of base tags for all metrics.
 func RootTags(namespace string) map[string]string {
 	return map[string]string{
 		NamespaceTagName:        namespace,
@@ -33,6 +34,7 @@ func RootTags(namespace string) map[string]string {
 	}
 }
 
+// RPCTags returns a set of tags for RPC calls.
 func RPCTags(workflowType, activityType, taskQueueName string) map[string]string {
 	return map[string]string{
 		WorkflowTypeNameTagName: workflowType,
@@ -41,12 +43,14 @@ func RPCTags(workflowType, activityType, taskQueueName string) map[string]string
 	}
 }
 
+// WorkflowTags returns a set of tags for workflows.
 func WorkflowTags(workflowType string) map[string]string {
 	return map[string]string{
 		WorkflowTypeNameTagName: workflowType,
 	}
 }
 
+// ActivityTags returns a set of tags for activities.
 func ActivityTags(workflowType, activityType, taskQueueName string) map[string]string {
 	return map[string]string{
 		WorkflowTypeNameTagName: workflowType,
@@ -55,6 +59,7 @@ func ActivityTags(workflowType, activityType, taskQueueName string) map[string]s
 	}
 }
 
+// LocalActivityTags returns a set of tags for local activities.
 func LocalActivityTags(workflowType, activityType string) map[string]string {
 	return map[string]string{
 		WorkflowTypeNameTagName: workflowType,
@@ -62,6 +67,7 @@ func LocalActivityTags(workflowType, activityType string) map[string]string {
 	}
 }
 
+// WorkerTags returns a set of tags for workers.
 func WorkerTags(workerType string) map[string]string {
 	return map[string]string{
 		WorkerTypeTagName: workerType,

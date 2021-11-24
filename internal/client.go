@@ -374,6 +374,8 @@ type (
 		// default: default logger provided.
 		Logger log.Logger
 
+		// Optional: Metrics handler for reporting metrics.
+		// default: no metrics.
 		MetricsHandler metrics.Handler
 
 		// Optional: Sets an identify that can be used to track this host for debugging.
