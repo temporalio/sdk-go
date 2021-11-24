@@ -132,12 +132,13 @@ type (
 
 		taskQueueSpecificActivities map[string]*taskQueueSpecificActivity
 
-		mock               *mock.Mock
-		service            workflowservice.WorkflowServiceClient
-		logger             log.Logger
-		metricsHandler     metrics.Handler
-		contextPropagators []ContextPropagator
-		identity           string
+		mock                      *mock.Mock
+		service                   workflowservice.WorkflowServiceClient
+		logger                    log.Logger
+		metricsHandler            metrics.Handler
+		contextPropagators        []ContextPropagator
+		identity                  string
+		detachedChildWaitDisabled bool
 
 		mockClock *clock.Mock
 		wallClock clock.Clock
@@ -337,6 +338,7 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	childEnv.workerOptions = env.workerOptions
 	childEnv.dataConverter = params.DataConverter
 	childEnv.registry = env.registry
+	childEnv.detachedChildWaitDisabled = env.detachedChildWaitDisabled
 
 	if params.TaskQueueName == "" {
 		return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Empty task queue name", "", "")
@@ -411,6 +413,10 @@ func (env *testWorkflowEnvironmentImpl) setContextPropagators(contextPropagators
 
 func (env *testWorkflowEnvironmentImpl) setWorkerStopChannel(c chan struct{}) {
 	env.workerStopChannel = c
+}
+
+func (env *testWorkflowEnvironmentImpl) setDetachedChildWaitDisabled(detachedChildWaitDisabled bool) {
+	env.detachedChildWaitDisabled = detachedChildWaitDisabled
 }
 
 func (env *testWorkflowEnvironmentImpl) setActivityTaskQueue(taskqueue string, activityFns ...interface{}) {
@@ -675,15 +681,18 @@ func (env *testWorkflowEnvironmentImpl) startMainLoop() {
 }
 
 func (env *testWorkflowEnvironmentImpl) shouldStopEventLoop() bool {
-	for _, handle := range env.runningWorkflows {
-		if env.workflowInfo.WorkflowExecution.ID == handle.env.workflowInfo.WorkflowExecution.ID {
-			// ignore root workflow
-			continue
-		}
+	// Check if any detached children are still running if not disabled.
+	if !env.detachedChildWaitDisabled {
+		for _, handle := range env.runningWorkflows {
+			if env.workflowInfo.WorkflowExecution.ID == handle.env.workflowInfo.WorkflowExecution.ID {
+				// ignore root workflow
+				continue
+			}
 
-		if !handle.handled && (handle.params.ParentClosePolicy == enumspb.PARENT_CLOSE_POLICY_ABANDON ||
-			handle.params.ParentClosePolicy == enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL) {
-			return false
+			if !handle.handled && (handle.params.ParentClosePolicy == enumspb.PARENT_CLOSE_POLICY_ABANDON ||
+				handle.params.ParentClosePolicy == enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL) {
+				return false
+			}
 		}
 	}
 

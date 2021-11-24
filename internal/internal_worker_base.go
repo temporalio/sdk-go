@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
@@ -148,6 +149,10 @@ type (
 		logger               log.Logger
 		metricsHandler       metrics.Handler
 
+		// Must be atomically accessed
+		taskSlotsAvailable      int32
+		taskSlotsAvailableGauge metrics.Gauge
+
 		pollerRequestCh    chan struct{}
 		taskQueueCh        chan interface{}
 		sessionTokenBucket *sessionTokenBucket
@@ -178,19 +183,22 @@ func newBaseWorker(
 ) *baseWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 	bw := &baseWorker{
-		options:         options,
-		stopCh:          make(chan struct{}),
-		taskLimiter:     rate.NewLimiter(rate.Limit(options.maxTaskPerSecond), 1),
-		retrier:         backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
-		logger:          log.With(logger, tagWorkerType, options.workerType),
-		metricsHandler:  metricsHandler.WithTags(metrics.WorkerTags(options.workerType)),
-		pollerRequestCh: make(chan struct{}, options.maxConcurrentTask),
-		taskQueueCh:     make(chan interface{}), // no buffer, so poller only able to poll new task after previous is dispatched.
+		options:            options,
+		stopCh:             make(chan struct{}),
+		taskLimiter:        rate.NewLimiter(rate.Limit(options.maxTaskPerSecond), 1),
+		retrier:            backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
+		logger:             log.With(logger, tagWorkerType, options.workerType),
+		metricsHandler:     metricsHandler.WithTags(metrics.WorkerTags(options.workerType)),
+		taskSlotsAvailable: int32(options.maxConcurrentTask),
+		pollerRequestCh:    make(chan struct{}, options.maxConcurrentTask),
+		taskQueueCh:        make(chan interface{}), // no buffer, so poller only able to poll new task after previous is dispatched.
 
 		limiterContext:       ctx,
 		limiterContextCancel: cancel,
 		sessionTokenBucket:   sessionTokenBucket,
 	}
+	bw.taskSlotsAvailableGauge = bw.metricsHandler.Gauge(metrics.WorkerTaskSlotsAvailable)
+	bw.taskSlotsAvailableGauge.Update(float64(bw.taskSlotsAvailable))
 	if options.pollerRate > 0 {
 		bw.pollLimiter = rate.NewLimiter(rate.Limit(options.pollerRate), 1)
 	}
@@ -325,6 +333,13 @@ func isNonRetriableError(err error) bool {
 
 func (bw *baseWorker) processTask(task interface{}) {
 	defer bw.stopWG.Done()
+
+	// Update availability metric
+	bw.taskSlotsAvailableGauge.Update(float64(atomic.AddInt32(&bw.taskSlotsAvailable, -1)))
+	defer func() {
+		bw.taskSlotsAvailableGauge.Update(float64(atomic.AddInt32(&bw.taskSlotsAvailable, 1)))
+	}()
+
 	// If the task is from poller, after processing it we would need to request a new poll. Otherwise, the task is from
 	// local activity worker, we don't need a new poll from server.
 	polledTask, isPolledTask := task.(*polledTask)

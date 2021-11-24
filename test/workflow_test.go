@@ -1320,6 +1320,23 @@ func (w *Workflows) ActivityWaitForWorkerStop(ctx workflow.Context, timeout time
 	return s, err
 }
 
+func (w *Workflows) ActivityHeartbeatUntilSignal(ctx workflow.Context) error {
+	ch := workflow.GetSignalChannel(ctx, "cancel")
+	actCtx, actCancel := workflow.WithCancel(workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 5 * time.Hour,
+		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+		WaitForCancellation: true,
+		HeartbeatTimeout:    1 * time.Second,
+	}))
+	var a *Activities
+	actFut := workflow.ExecuteActivity(actCtx, a.HeartbeatUntilCanceled, 100*time.Millisecond)
+
+	// Wait for signal then cancel
+	ch.Receive(ctx, nil)
+	actCancel()
+	return actFut.Get(ctx, nil)
+}
+
 func (w *Workflows) CancelChildAndExecuteActivityRace(ctx workflow.Context) error {
 	// This workflow replicates an issue where cancel was reported out of order
 	// with when it occurs. Specifically, this workflow creates a long-running
@@ -1479,6 +1496,32 @@ func (w *Workflows) AdvancedPostCancellation(ctx workflow.Context, in *AdvancedP
 	return nil
 }
 
+type ParamsValue struct {
+	Param1 string
+	Param2 int
+	Param3 bool
+	Param4 struct{ SomeField string }
+	Param5 *ParamsValue
+	Param6 []byte
+	Child  *ParamsValue
+}
+
+func (w *Workflows) TooFewParams(
+	ctx workflow.Context,
+	param1 string,
+	param2 int,
+	param3 bool,
+	param4 struct{ SomeField string },
+	param5 *ParamsValue,
+	param6 []byte,
+) (*ParamsValue, error) {
+	ret := &ParamsValue{Param1: param1, Param2: param2, Param3: param3, Param4: param4, Param5: param5, Param6: param6}
+	// Execute activity with only the first param
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{ScheduleToCloseTimeout: 1 * time.Minute})
+	var a *Activities
+	return ret, workflow.ExecuteActivity(ctx, a.TooFewParams, param1).Get(ctx, &ret.Child)
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -1489,6 +1532,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityRetryOnTimeout)
 	worker.RegisterWorkflow(w.ActivityRetryOptionsChange)
 	worker.RegisterWorkflow(w.ActivityWaitForWorkerStop)
+	worker.RegisterWorkflow(w.ActivityHeartbeatUntilSignal)
 	worker.RegisterWorkflow(w.Basic)
 	worker.RegisterWorkflow(w.Deadlocked)
 	worker.RegisterWorkflow(w.DeadlockedWithLocalActivity)
@@ -1539,6 +1583,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.InterceptorCalls)
 	worker.RegisterWorkflow(w.WaitSignalToStart)
 	worker.RegisterWorkflow(w.AdvancedPostCancellation)
+	worker.RegisterWorkflow(w.TooFewParams)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
