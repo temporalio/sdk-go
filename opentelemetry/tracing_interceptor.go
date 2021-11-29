@@ -72,7 +72,10 @@ type spanContextKey struct{}
 
 const defaultHeaderKey = "_tracer-data"
 
-type tracer struct{ options *TracerOptions }
+type tracer struct {
+	interceptor.BaseTracer
+	options *TracerOptions
+}
 
 // NewTracer creates a tracer with the given options. Most callers should use
 // NewTracingInterceptor instead.
@@ -100,7 +103,7 @@ func NewTracer(options TracerOptions) (interceptor.Tracer, error) {
 			return span
 		}
 	}
-	return &tracer{&options}, nil
+	return &tracer{options: &options}, nil
 }
 
 // NewTracingInterceptor creates an interceptor for setting on client options
