@@ -403,7 +403,7 @@ func (a *activityEnvironmentInterceptor) RecordHeartbeat(ctx context.Context, de
 	}
 
 	// Heartbeat error is logged inside ServiceInvoker.internalHeartBeat
-	a.env.serviceInvoker.Heartbeat(ctx, data, false)
+	_ = a.env.serviceInvoker.Heartbeat(ctx, data, false)
 }
 
 func (a *activityEnvironmentInterceptor) HasHeartbeatDetails(ctx context.Context) bool {
