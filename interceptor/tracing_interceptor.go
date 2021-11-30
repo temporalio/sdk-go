@@ -80,6 +80,7 @@ func (BaseTracer) GetLogger(logger log.Logger, ref TracerSpanRef) log.Logger {
 	return logger
 }
 
+//lint:ignore U1000 Ignore unused method; it is only required to implement the Tracer interface but will never be called.
 func (BaseTracer) mustEmbedBaseTracer() {}
 
 // TracerOptions are options returned from Tracer.Options.
