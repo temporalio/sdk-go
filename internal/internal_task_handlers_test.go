@@ -1396,7 +1396,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 
 	temporalInvoker := newServiceInvoker(
 		nil, "Test_Temporal_Invoker", mockService, tally.NoopScope, func() {}, 0,
-		make(chan struct{}), t.namespace, t.logger)
+		make(chan struct{}), t.namespace)
 
 	heartbeatErr := temporalInvoker.Heartbeat(context.Background(), nil, false)
 	t.NotNil(heartbeatErr)
@@ -1414,7 +1414,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithNamespaceNotActiveE
 
 	temporalInvoker := newServiceInvoker(
 		nil, "Test_Temporal_Invoker", mockService, tally.NoopScope, cancelHandler,
-		0, make(chan struct{}), t.namespace, t.logger)
+		0, make(chan struct{}), t.namespace)
 
 	heartbeatErr := temporalInvoker.Heartbeat(context.Background(), nil, false)
 	t.NotNil(heartbeatErr)

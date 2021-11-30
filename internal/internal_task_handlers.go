@@ -1595,7 +1595,6 @@ type temporalInvoker struct {
 	closeCh             chan struct{}
 	workerStopChannel   <-chan struct{}
 	namespace           string
-	logger              log.Logger
 }
 
 func (i *temporalInvoker) Heartbeat(ctx context.Context, details *commonpb.Payloads, skipBatching bool) error {
@@ -1696,7 +1695,8 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 	}
 
 	if err != nil {
-		i.logger.Debug("RecordActivityHeartbeat with error", tagError, err)
+		logger := GetActivityLogger(ctx)
+		logger.Debug("RecordActivityHeartbeat with error", tagError, err)
 	}
 
 	// This error won't be returned to user check RecordActivityHeartbeat().
@@ -1729,7 +1729,6 @@ func newServiceInvoker(
 	heartBeatTimeout time.Duration,
 	workerStopChannel <-chan struct{},
 	namespace string,
-	logger log.Logger,
 ) ServiceInvoker {
 	return &temporalInvoker{
 		taskToken:         taskToken,
@@ -1741,7 +1740,6 @@ func newServiceInvoker(
 		closeCh:           make(chan struct{}),
 		workerStopChannel: workerStopChannel,
 		namespace:         namespace,
-		logger:            logger,
 	}
 }
 
@@ -1765,7 +1763,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 
 	invoker := newServiceInvoker(
 		t.TaskToken, ath.identity, ath.service, ath.metricsScope, cancel, common.DurationValue(t.GetHeartbeatTimeout()),
-		ath.workerStopCh, ath.namespace, ath.logger)
+		ath.workerStopCh, ath.namespace)
 
 	workflowType := t.WorkflowType.GetName()
 	activityType := t.ActivityType.GetName()
