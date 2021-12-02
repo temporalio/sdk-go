@@ -193,7 +193,7 @@ func GetWorkerStopChannel(ctx context.Context) <-chan struct{} {
 //  TODO: we don't have a way to distinguish between the two cases when context is canceled because
 //  context doesn't support overriding value of ctx.Error.
 //  TODO: Implement automatic heartbeating with cancellation through ctx.
-// details - the details that you provided here can be seen in the worflow when it receives TimeoutError, you
+// details - the details that you provided here can be seen in the workflow when it receives TimeoutError, you
 // can check error TimeoutType()/Details().
 func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 	getActivityOutboundInterceptor(ctx).RecordHeartbeat(ctx, details...)
