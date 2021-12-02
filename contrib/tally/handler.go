@@ -69,6 +69,36 @@ func NewMetricsHandler(scope tally.Scope) client.MetricsHandler {
 	return metricsHandler{scope}
 }
 
+// ScopeFromHandler returns the underlying scope of the handler. Callers may
+// need to check workflow.IsReplaying(ctx) to avoid recording metrics during
+// replay. If this handler was not created via this package, tally.NoopScope is
+// returned.
+//
+// Raw use of the scope is discouraged but may be used for Histograms or other
+// advanced features. This scope does not skip metrics during replay like the
+// metrics handler does. Therefore the caller should check replay state, for
+// example:
+// 	scope := tally.NoopScope
+// 	if !workflow.IsReplaying(ctx) {
+// 		scope = ScopeFromHandler(workflow.GetMetricsHandler(ctx))
+// 	}
+// 	scope.Histogram("my_histogram", nil).RecordDuration(5 * time.Second)
+func ScopeFromHandler(handler client.MetricsHandler) tally.Scope {
+	// Continually unwrap until we find an instance of our own handler
+	for {
+		tallyHandler, ok := handler.(metricsHandler)
+		if ok {
+			return tallyHandler.scope
+		}
+		// If unwrappable, do so, otherwise return noop
+		unwrappable, _ := handler.(interface{ Unwrap() client.MetricsHandler })
+		if unwrappable == nil {
+			return tally.NoopScope
+		}
+		handler = unwrappable.Unwrap()
+	}
+}
+
 func (m metricsHandler) WithTags(tags map[string]string) client.MetricsHandler {
 	return metricsHandler{m.scope.Tagged(tags)}
 }

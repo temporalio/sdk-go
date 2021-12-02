@@ -189,7 +189,8 @@ func GetLogger(ctx Context) log.Logger {
 	return internal.GetLogger(ctx)
 }
 
-// GetMetricsHandler returns a metrics handler to be used in workflow's context
+// GetMetricsHandler returns a metrics handler to be used in workflow's context.
+// This handler does not record metrics during replay.
 func GetMetricsHandler(ctx Context) metrics.Handler {
 	return internal.GetMetricsHandler(ctx)
 }

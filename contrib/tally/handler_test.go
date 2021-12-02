@@ -36,6 +36,8 @@ import (
 func TestTally(t *testing.T) {
 	scope := tally.NewTestScope("", nil)
 	handler := contribtally.NewMetricsHandler(scope)
+	// Confirm scope is the same
+	require.Equal(t, scope, contribtally.ScopeFromHandler(handler))
 
 	handler.Counter("counter_foo").Inc(1)
 	handler.Gauge("gauge_foo").Update(2.0)

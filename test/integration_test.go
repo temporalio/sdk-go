@@ -37,6 +37,7 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
@@ -49,6 +50,7 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
+	contribtally "go.temporal.io/sdk/contrib/tally"
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -83,6 +85,7 @@ type IntegrationTestSuite struct {
 	inboundSignalInterceptor *signalInterceptor
 	trafficController        *test.SimpleTrafficController
 	metricsHandler           *metrics.CapturingHandler
+	tallyScope               tally.TestScope
 	interceptorCallRecorder  *interceptortest.CallRecordingInvoker
 }
 
@@ -128,6 +131,12 @@ func (ts *IntegrationTestSuite) TearDownSuite() {
 
 func (ts *IntegrationTestSuite) SetupTest() {
 	ts.metricsHandler = metrics.NewCapturingHandler()
+	var metricsHandler client.MetricsHandler = ts.metricsHandler
+	// Use Tally handler for Tally test
+	if strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestTallyScopeAccess") {
+		ts.tallyScope = tally.NewTestScope("", nil)
+		metricsHandler = contribtally.NewMetricsHandler(ts.tallyScope)
+	}
 
 	var clientInterceptors []interceptor.ClientInterceptor
 	// Record calls for interceptor test
@@ -146,7 +155,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 			NewKeysPropagator([]string{testContextKey1}),
 			NewKeysPropagator([]string{testContextKey2}),
 		},
-		MetricsHandler:    ts.metricsHandler,
+		MetricsHandler:    metricsHandler,
 		TrafficController: trafficController,
 		Interceptors:      clientInterceptors,
 	})
@@ -1601,6 +1610,41 @@ func (ts *IntegrationTestSuite) TestTooFewParams() {
 	ts.NoError(ts.executeWorkflow("test-too-few-params", "TooFewParams", &res, "first param"))
 	// Confirm workflow and activity were called with zero values
 	ts.Equal(ParamsValue{Param1: "first param", Child: &ParamsValue{Param1: "first param"}}, res)
+}
+
+func (ts *IntegrationTestSuite) TestTallyScopeAccess() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tallyScopeAccessWorkflow := func(ctx workflow.Context) error {
+		hist := contribtally.ScopeFromHandler(workflow.GetMetricsHandler(ctx)).Histogram("some_histogram", nil)
+		// This records even during replay
+		hist.RecordDuration(5 * time.Second)
+		return workflow.SetQueryHandler(ctx, "some-query", func() (string, error) { return "ok", nil })
+	}
+
+	ts.worker.RegisterWorkflow(tallyScopeAccessWorkflow)
+	run, err := ts.client.ExecuteWorkflow(context.TODO(),
+		ts.startWorkflowOptions("tally-scope-access-"+uuid.New()), tallyScopeAccessWorkflow)
+	ts.NoError(err)
+	ts.NoError(run.Get(context.TODO(), nil))
+
+	assertHistDuration := func(name string, d time.Duration, expected int64) {
+		for _, hist := range ts.tallyScope.Snapshot().Histograms() {
+			if hist.Name() == name {
+				ts.Equal(expected, hist.Durations()[d])
+				return
+			}
+		}
+		ts.Fail("no histogram")
+	}
+	// Confirm hit once
+	assertHistDuration("some_histogram", 5*time.Second, 1)
+
+	// Query the workflow and confirm hit during replay
+	_, err = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "some-query")
+	ts.NoError(err)
+	assertHistDuration("some_histogram", 5*time.Second, 2)
 }
 
 func (ts *IntegrationTestSuite) registerNamespace() {

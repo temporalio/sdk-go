@@ -415,7 +415,8 @@ type (
 //
 // A common implementation is at
 // go.temporal.io/sdk/contrib/tally.NewMetricsHandler. The MetricsNopHandler is
-// a noop handler.
+// a noop handler. A handler may implement "Unwrap() client.MetricsHandler" if
+// it wraps a handler.
 type MetricsHandler = metrics.Handler
 
 // MetricsCounter is an ever-increasing counter.
