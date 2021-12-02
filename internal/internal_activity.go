@@ -394,7 +394,7 @@ func (a *activityEnvironmentInterceptor) RecordHeartbeat(ctx context.Context, de
 	}
 	var data *commonpb.Payloads
 	var err error
-	// We would like to be a able to pass in "nil" as part of details(that is no progress to report to)
+	// We would like to be able to pass in "nil" as part of details(that is no progress to report to)
 	if len(details) > 1 || (len(details) == 1 && details[0] != nil) {
 		data, err = encodeArgs(getDataConverterFromActivityCtx(ctx), details)
 		if err != nil {
@@ -402,11 +402,8 @@ func (a *activityEnvironmentInterceptor) RecordHeartbeat(ctx context.Context, de
 		}
 	}
 
-	err = a.env.serviceInvoker.Heartbeat(ctx, data, false)
-	if err != nil {
-		log := GetActivityLogger(ctx)
-		log.Debug("RecordActivityHeartbeat with error", tagError, err)
-	}
+	// Heartbeat error is logged inside ServiceInvoker.internalHeartBeat
+	_ = a.env.serviceInvoker.Heartbeat(ctx, data, false)
 }
 
 func (a *activityEnvironmentInterceptor) HasHeartbeatDetails(ctx context.Context) bool {
