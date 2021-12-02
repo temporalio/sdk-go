@@ -1399,7 +1399,10 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 		nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, func() {}, 0,
 		make(chan struct{}), t.namespace)
 
-	heartbeatErr := temporalInvoker.Heartbeat(context.Background(), nil, false)
+	ctx, err := newActivityContext(context.Background(), nil, &activityEnvironment{serviceInvoker: temporalInvoker, logger: t.logger})
+	t.NoError(err)
+
+	heartbeatErr := temporalInvoker.Heartbeat(ctx, nil, false)
 	t.NotNil(heartbeatErr)
 	t.IsType(&serviceerror.NotFound{}, heartbeatErr, "heartbeatErr must be of type NotFound.")
 }
@@ -1417,7 +1420,10 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithNamespaceNotActiveE
 		nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, cancelHandler,
 		0, make(chan struct{}), t.namespace)
 
-	heartbeatErr := temporalInvoker.Heartbeat(context.Background(), nil, false)
+	ctx, err := newActivityContext(context.Background(), nil, &activityEnvironment{serviceInvoker: temporalInvoker, logger: t.logger})
+	t.NoError(err)
+
+	heartbeatErr := temporalInvoker.Heartbeat(ctx, nil, false)
 	t.NotNil(heartbeatErr)
 	t.IsType(&serviceerror.NamespaceNotActive{}, heartbeatErr, "heartbeatErr must be of type NamespaceNotActive.")
 	t.True(called)

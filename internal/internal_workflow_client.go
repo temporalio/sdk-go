@@ -729,6 +729,11 @@ func (wc *WorkflowClient) ResetWorkflowExecution(ctx context.Context, request *w
 	return resp, nil
 }
 
+// WorkflowService implements Client.WorkflowService.
+func (wc *WorkflowClient) WorkflowService() workflowservice.WorkflowServiceClient {
+	return wc.workflowService
+}
+
 // Close client and clean up underlying resources.
 func (wc *WorkflowClient) Close() {
 	if wc.connectionCloser == nil {
