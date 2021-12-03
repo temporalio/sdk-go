@@ -106,7 +106,9 @@ type (
 // *ApplicationError, *TimeoutError, *CanceledError, or *PanicError.
 //
 // You can cancel the pending activity using context(workflow.WithCancel(ctx)) and that will fail the activity with
-// *CanceledError set as cause for *ActivityError.
+// *CanceledError set as cause for *ActivityError. The context in the activity only becomes aware of the cancellation
+// when a heartbeat is sent to the server. Since heartbeats may be batched internally, this could take up to the
+// HeartbeatTimeout to appear or several minutes by default if that value is not set.
 //
 // ExecuteActivity immediately returns a Future that can be used to block waiting for activity result or failure.
 func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
