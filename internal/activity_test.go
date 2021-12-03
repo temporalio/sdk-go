@@ -140,10 +140,10 @@ func (s *activityTestSuite) TestActivityHeartbeat_SuppressContinousInvokes() {
 	RecordActivityHeartbeat(ctx, "testDetails")
 	invoker.Close(ctx, false)
 
-	// No HB timeout configured.
+	// High HB timeout configured.
 	service2 := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
 	invoker2 := newServiceInvoker([]byte("task-token"), "identity", service2, tally.NoopScope, cancel,
-		0, make(chan struct{}), s.namespace)
+		20*time.Second, make(chan struct{}), s.namespace)
 	ctx, _ = newActivityContext(ctx, nil, &activityEnvironment{
 		serviceInvoker: invoker2,
 		logger:         getLogger()})
