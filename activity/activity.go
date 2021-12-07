@@ -27,9 +27,8 @@ package activity
 import (
 	"context"
 
-	"github.com/uber-go/tally/v4"
-
 	"go.temporal.io/sdk/internal"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 )
 
@@ -61,9 +60,9 @@ func GetLogger(ctx context.Context) log.Logger {
 	return internal.GetActivityLogger(ctx)
 }
 
-// GetMetricsScope returns a metrics scope that can be used in activity
-func GetMetricsScope(ctx context.Context) tally.Scope {
-	return internal.GetActivityMetricsScope(ctx)
+// GetMetricsHandler returns a metrics handler that can be used in activity
+func GetMetricsHandler(ctx context.Context) metrics.Handler {
+	return internal.GetActivityMetricsHandler(ctx)
 }
 
 // RecordHeartbeat sends heartbeat for the currently executing activity

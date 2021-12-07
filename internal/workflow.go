@@ -30,12 +30,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 )
 
@@ -890,14 +890,14 @@ func (wc *workflowEnvironmentInterceptor) GetLogger(ctx Context) log.Logger {
 	return wc.env.GetLogger()
 }
 
-// GetMetricsScope returns a metrics scope to be used in workflow's context
-func GetMetricsScope(ctx Context) tally.Scope {
+// GetMetricsHandler returns a metrics handler to be used in workflow's context
+func GetMetricsHandler(ctx Context) metrics.Handler {
 	i := getWorkflowOutboundInterceptor(ctx)
-	return i.GetMetricsScope(ctx)
+	return i.GetMetricsHandler(ctx)
 }
 
-func (wc *workflowEnvironmentInterceptor) GetMetricsScope(ctx Context) tally.Scope {
-	return wc.env.GetMetricsScope()
+func (wc *workflowEnvironmentInterceptor) GetMetricsHandler(ctx Context) metrics.Handler {
+	return wc.env.GetMetricsHandler()
 }
 
 // Now returns the current time in UTC. It corresponds to the time when the workflow task is started or replayed.
@@ -1453,8 +1453,9 @@ func (wc *workflowEnvironmentInterceptor) SetQueryHandler(ctx Context, queryType
 // this flag as it is going to break workflow determinism requirement.
 // The only reasonable use case for this flag is to avoid some external actions during replay, like custom logging or
 // metric reporting. Please note that Temporal already provide standard logging/metric via workflow.GetLogger(ctx) and
-// workflow.GetMetricsScope(ctx), and those standard mechanism are replay-aware and it will automatically suppress during
-// replay. Only use this flag if you need custom logging/metrics reporting, for example if you want to log to kafka.
+// workflow.GetMetricsHandler(ctx), and those standard mechanism are replay-aware and it will automatically suppress
+// during replay. Only use this flag if you need custom logging/metrics reporting, for example if you want to log to
+// kafka.
 //
 // Warning! Any action protected by this flag should not fail or if it does fail should ignore that failure or panic
 // on the failure. If workflow don't want to be blocked on those failure, it should ignore those failure; if workflow do

@@ -31,7 +31,6 @@ import (
 	"io"
 	"time"
 
-	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -380,39 +379,9 @@ type (
 		// default: default logger provided.
 		Logger log.Logger
 
-		// Optional: Metrics to be reported.
-		// Default metrics are Prometheus compatible but default separator (.) should be replaced with some other character:
-		// opts := tally.ScopeOptions{
-		//   Separator: "_",
-		// }
-		// scope, _ := tally.NewRootScope(opts, time.Second)
-		//
-		// If you have custom metrics make sure they are compatible with Prometheus or create tally scope with sanitizer options set:
-		// var (
-		//   safeCharacters = []rune{'_'}
-		//   sanitizeOptions = tally.SanitizeOptions{
-		// 		NameCharacters: tally.ValidCharacters{
-		// 			Ranges:     tally.AlphanumericRange,
-		// 			Characters: _safeCharacters,
-		// 		},
-		// 		KeyCharacters: tally.ValidCharacters{
-		// 			Ranges:     tally.AlphanumericRange,
-		// 			Characters: _safeCharacters,
-		// 		},
-		// 		ValueCharacters: tally.ValidCharacters{
-		// 			Ranges:     tally.AlphanumericRange,
-		// 			Characters: _safeCharacters,
-		// 		},
-		// 		ReplacementCharacter: tally.DefaultReplacementCharacter,
-		// 	}
-		// )
-		// opts := tally.ScopeOptions{
-		// 	 SanitizeOptions: &sanitizeOptions,
-		//   Separator: "_",
-		// }
-		// scope, _ := tally.NewRootScope(opts, time.Second)
+		// Optional: Metrics handler for reporting metrics.
 		// default: no metrics.
-		MetricsScope tally.Scope
+		MetricsHandler metrics.Handler
 
 		// Optional: Sets an identify that can be used to track this host for debugging.
 		// default: default identity that include hostname, groupName and process ID.
@@ -661,8 +630,11 @@ func NewClient(options ClientOptions) (Client, error) {
 		options.Namespace = DefaultNamespace
 	}
 
-	// Initializes the root metric scope.  These tags are included on each metric which creates a child scope from it.
-	options.MetricsScope = metrics.GetRootScope(options.MetricsScope, options.Namespace)
+	// Initialize root tags
+	if options.MetricsHandler == nil {
+		options.MetricsHandler = metrics.NopHandler
+	}
+	options.MetricsHandler = options.MetricsHandler.WithTags(metrics.RootTags(options.Namespace))
 
 	if options.HostPort == "" {
 		options.HostPort = LocalHostPort
@@ -692,7 +664,7 @@ func newDialParameters(options *ClientOptions) dialParameters {
 	return dialParameters{
 		UserConnectionOptions: options.ConnectionOptions,
 		HostPort:              options.HostPort,
-		RequiredInterceptors:  requiredInterceptors(options.MetricsScope, options.HeadersProvider, options.TrafficController),
+		RequiredInterceptors:  requiredInterceptors(options.MetricsHandler, options.HeadersProvider, options.TrafficController),
 		DefaultServiceConfig:  defaultServiceConfig,
 	}
 }
@@ -712,6 +684,10 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		options.DataConverter = converter.GetDefaultDataConverter()
 	}
 
+	if options.MetricsHandler == nil {
+		options.MetricsHandler = metrics.NopHandler
+	}
+
 	// Collect set of applicable worker interceptors
 	var workerInterceptors []WorkerInterceptor
 	for _, interceptor := range options.Interceptors {
@@ -725,7 +701,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		connectionCloser:   connectionCloser,
 		namespace:          options.Namespace,
 		registry:           newRegistry(),
-		metricsScope:       options.MetricsScope,
+		metricsHandler:     options.MetricsHandler,
 		logger:             options.Logger,
 		identity:           options.Identity,
 		dataConverter:      options.DataConverter,
@@ -744,8 +720,11 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 
 // NewNamespaceClient creates an instance of a namespace client, to manager lifecycle of namespaces.
 func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
-	// Initializes the root metric scope.  These tags are included on each metric which creates a child scope from it.
-	options.MetricsScope = metrics.GetRootScope(options.MetricsScope, metrics.NoneTagValue)
+	// Initialize root tags
+	if options.MetricsHandler == nil {
+		options.MetricsHandler = metrics.NopHandler
+	}
+	options.MetricsHandler = options.MetricsHandler.WithTags(metrics.RootTags(metrics.NoneTagValue))
 
 	if options.HostPort == "" {
 		options.HostPort = LocalHostPort
@@ -774,7 +753,7 @@ func newNamespaceServiceClient(workflowServiceClient workflowservice.WorkflowSer
 	return &namespaceClient{
 		workflowService:  workflowServiceClient,
 		connectionCloser: clientConn,
-		metricsScope:     options.MetricsScope,
+		metricsHandler:   options.MetricsHandler,
 		logger:           options.Logger,
 		identity:         options.Identity,
 	}

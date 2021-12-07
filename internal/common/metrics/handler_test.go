@@ -20,43 +20,42 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package opentelemetry_test
+package metrics_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/sdk/trace/tracetest"
-	"go.opentelemetry.io/otel/trace"
-	"go.temporal.io/sdk/interceptor"
-	"go.temporal.io/sdk/internal/interceptortest"
-	"go.temporal.io/sdk/opentelemetry"
+	"go.temporal.io/sdk/internal/common/metrics"
 )
 
-func TestSpanPropagation(t *testing.T) {
-	var rec tracetest.SpanRecorder
-	tracer, err := opentelemetry.NewTracer(opentelemetry.TracerOptions{
-		Tracer: sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(&rec)).Tracer(""),
-	})
-	require.NoError(t, err)
-	interceptortest.AssertSpanPropagation(t, &testTracer{Tracer: tracer, rec: &rec})
-}
+func TestReplayAwareHandler(t *testing.T) {
+	var replaying bool
+	capture := metrics.NewCapturingHandler()
+	handler := metrics.NewReplayAwareHandler(&replaying, capture)
 
-type testTracer struct {
-	interceptor.Tracer
-	rec *tracetest.SpanRecorder
-}
+	// As replaying
+	replaying = true
+	handler.Counter("counter1").Inc(1)
+	handler.Gauge("gauge1").Update(2.0)
+	handler.Timer("timer1").Record(3 * time.Second)
+	require.Len(t, capture.Counters(), 1)
+	require.Equal(t, int64(0), capture.Counters()[0].Value())
+	require.Len(t, capture.Gauges(), 1)
+	require.Equal(t, 0.0, capture.Gauges()[0].Value())
+	require.Len(t, capture.Timers(), 1)
+	require.Equal(t, 0*time.Second, capture.Timers()[0].Value())
 
-func (t *testTracer) FinishedSpans() []*interceptortest.SpanInfo {
-	return spanChildren(t.rec.Ended(), trace.SpanID{})
-}
-
-func spanChildren(spans []sdktrace.ReadOnlySpan, parentID trace.SpanID) (ret []*interceptortest.SpanInfo) {
-	for _, s := range spans {
-		if s.Parent().SpanID() == parentID {
-			ret = append(ret, interceptortest.Span(s.Name(), spanChildren(spans, s.SpanContext().SpanID())...))
-		}
-	}
-	return
+	// As not replaying
+	replaying = false
+	handler.Counter("counter1").Inc(4)
+	handler.Gauge("gauge1").Update(5.0)
+	handler.Timer("timer1").Record(6 * time.Second)
+	require.Len(t, capture.Counters(), 1)
+	require.Equal(t, int64(4), capture.Counters()[0].Value())
+	require.Len(t, capture.Gauges(), 1)
+	require.Equal(t, 5.0, capture.Gauges()[0].Value())
+	require.Len(t, capture.Timers(), 1)
+	require.Equal(t, 6*time.Second, capture.Timers()[0].Value())
 }

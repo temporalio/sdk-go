@@ -29,12 +29,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 )
 
@@ -174,9 +174,9 @@ func GetActivityLogger(ctx context.Context) log.Logger {
 	return getActivityOutboundInterceptor(ctx).GetLogger(ctx)
 }
 
-// GetActivityMetricsScope returns a metrics scope that can be used in activity
-func GetActivityMetricsScope(ctx context.Context) tally.Scope {
-	return getActivityOutboundInterceptor(ctx).GetMetricsScope(ctx)
+// GetActivityMetricsHandler returns a metrics handler that can be used in activity
+func GetActivityMetricsHandler(ctx context.Context) metrics.Handler {
+	return getActivityOutboundInterceptor(ctx).GetMetricsHandler(ctx)
 }
 
 // GetWorkerStopChannel returns a read-only channel. The closure of this channel indicates the activity worker is stopping.
@@ -216,7 +216,7 @@ func WithActivityTask(
 	taskQueue string,
 	invoker ServiceInvoker,
 	logger log.Logger,
-	scope tally.Scope,
+	metricsHandler metrics.Handler,
 	dataConverter converter.DataConverter,
 	workerStopChannel <-chan struct{},
 	contextPropagators []ContextPropagator,
@@ -260,7 +260,7 @@ func WithActivityTask(
 			RunID: task.WorkflowExecution.RunId,
 			ID:    task.WorkflowExecution.WorkflowId},
 		logger:           logger,
-		metricsScope:     scope,
+		metricsHandler:   metricsHandler,
 		deadline:         deadline,
 		heartbeatTimeout: heartbeatTimeout,
 		scheduledTime:    scheduled,
@@ -283,7 +283,7 @@ func WithLocalActivityTask(
 	ctx context.Context,
 	task *localActivityTask,
 	logger log.Logger,
-	scope tally.Scope,
+	metricsHandler metrics.Handler,
 	dataConverter converter.DataConverter,
 	interceptors []WorkerInterceptor,
 ) (context.Context, error) {
@@ -309,7 +309,7 @@ func WithLocalActivityTask(
 		activityID:        fmt.Sprintf("%v", task.activityID),
 		workflowExecution: task.params.WorkflowInfo.WorkflowExecution,
 		logger:            logger,
-		metricsScope:      scope,
+		metricsHandler:    metricsHandler,
 		isLocalActivity:   true,
 		dataConverter:     dataConverter,
 		attempt:           task.attempt,

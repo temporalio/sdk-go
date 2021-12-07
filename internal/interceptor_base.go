@@ -26,8 +26,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/uber-go/tally/v4"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 )
 
@@ -105,9 +105,9 @@ func (a *ActivityOutboundInterceptorBase) GetLogger(ctx context.Context) log.Log
 	return a.Next.GetLogger(ctx)
 }
 
-// GetMetricsScope implements ActivityOutboundInterceptor.GetMetricsScope.
-func (a *ActivityOutboundInterceptorBase) GetMetricsScope(ctx context.Context) tally.Scope {
-	return a.Next.GetMetricsScope(ctx)
+// GetMetricsHandler implements ActivityOutboundInterceptor.GetMetricsHandler.
+func (a *ActivityOutboundInterceptorBase) GetMetricsHandler(ctx context.Context) metrics.Handler {
+	return a.Next.GetMetricsHandler(ctx)
 }
 
 // RecordHeartbeat implements ActivityOutboundInterceptor.RecordHeartbeat.
@@ -213,9 +213,9 @@ func (w *WorkflowOutboundInterceptorBase) GetLogger(ctx Context) log.Logger {
 	return w.Next.GetLogger(ctx)
 }
 
-// GetMetricsScope implements WorkflowOutboundInterceptor.GetMetricsScope.
-func (w *WorkflowOutboundInterceptorBase) GetMetricsScope(ctx Context) tally.Scope {
-	return w.Next.GetMetricsScope(ctx)
+// GetMetricsHandler implements WorkflowOutboundInterceptor.GetMetricsHandler.
+func (w *WorkflowOutboundInterceptorBase) GetMetricsHandler(ctx Context) metrics.Handler {
+	return w.Next.GetMetricsHandler(ctx)
 }
 
 // Now implements WorkflowOutboundInterceptor.Now.

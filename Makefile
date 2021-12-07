@@ -10,7 +10,7 @@ TEST_TIMEOUT := 3m
 TEST_ARG ?= -race -v -timeout $(TEST_TIMEOUT)
 
 INTEG_TEST_ROOT := ./test
-COVER_ROOT := $(BUILD)/coverage
+COVER_ROOT := $(abspath $(BUILD)/coverage)
 UT_COVER_FILE := $(COVER_ROOT)/unit_test_cover.out
 INTEG_ZERO_CACHE_COVER_FILE := $(COVER_ROOT)/integ_test_zero_cache_cover.out
 INTEG_NORMAL_CACHE_COVER_FILE := $(COVER_ROOT)/integ_test_normal_cache_cover.out
@@ -18,11 +18,9 @@ INTEG_NORMAL_CACHE_COVER_FILE := $(COVER_ROOT)/integ_test_normal_cache_cover.out
 # Automatically gather all srcs
 ALL_SRC :=  $(shell find . -name "*.go")
 
+MOD_DIRS := $(sort $(dir $(shell find . -name go.mod)))
 UT_DIRS := $(filter-out $(INTEG_TEST_ROOT)%, $(sort $(dir $(filter %_test.go,$(ALL_SRC)))))
 INTEG_TEST_DIRS := $(sort $(dir $(shell find $(INTEG_TEST_ROOT) -name *_test.go)))
-
-# Files that needs to run lint. Excludes testify mocks.
-LINT_SRC := $(filter-out ./mocks/%,$(ALL_SRC))
 
 # `make copyright` or depend on "copyright" to force-run licensegen,
 # or depend on $(BUILD)/copyright to let it run as needed.
@@ -41,20 +39,20 @@ unit-test: $(BUILD)/dummy
 	@echo "mode: atomic" > $(UT_COVER_FILE)
 	@for dir in $(UT_DIRS); do \
 		mkdir -p $(COVER_ROOT)/"$$dir"; \
-		go test "$$dir" $(TEST_ARG) -coverprofile=$(COVER_ROOT)/"$$dir"/cover.out || exit 1; \
+		(cd "$$dir" && go test . $(TEST_ARG) -coverprofile=$(COVER_ROOT)/"$$dir"/cover.out) || exit 1; \
 		cat $(COVER_ROOT)/"$$dir"/cover.out | grep -v "mode: atomic" >> $(UT_COVER_FILE); \
 	done;
 
 integration-test-zero-cache: $(BUILD)/dummy
 	@mkdir -p $(COVER_ROOT)
 	@for dir in $(INTEG_TEST_DIRS); do \
-		WORKFLOW_CACHE_SIZE=0 go test $(TEST_ARG) "$$dir" -coverprofile=$(INTEG_ZERO_CACHE_COVER_FILE) -coverpkg=./... || exit 1; \
+		(cd "$$dir" &&WORKFLOW_CACHE_SIZE=0 go test $(TEST_ARG) . -coverprofile=$(INTEG_ZERO_CACHE_COVER_FILE) -coverpkg=./...) || exit 1; \
 	done;
 
 integration-test-normal-cache: $(BUILD)/dummy
 	@mkdir -p $(COVER_ROOT)
 	@for dir in $(INTEG_TEST_DIRS); do \
-		go test $(TEST_ARG) "$$dir" -coverprofile=$(INTEG_NORMAL_CACHE_COVER_FILE) -coverpkg=./... || exit 1; \
+		(cd "$$dir" && go test $(TEST_ARG) . -coverprofile=$(INTEG_NORMAL_CACHE_COVER_FILE) -coverpkg=./...) || exit 1; \
 	done;
 
 test: unit-test integration-test-zero-cache integration-test-normal-cache
@@ -71,43 +69,22 @@ cover: $(COVER_ROOT)/cover.out
 cover_ci: $(COVER_ROOT)/cover.out
 	goveralls -coverprofile=$(COVER_ROOT)/cover.out -service=buildkite || echo -e "\x1b[31mCoveralls failed\x1b[m";
 
-# golint fails to report many lint failures if it is only given a single file
-# to work on at a time, and it can't handle multiple packages at once, *and*
-# we can't exclude files from its checks, so for best results we need to give
-# it a whitelist of every file in every package that we want linted, per package.
-#
-# so lint + this golint func works like:
-# - iterate over all lintable dirs (outputs "./folder/")
-# - find .go files in a dir (via wildcard, so not recursively)
-# - filter to only files in LINT_SRC
-# - if it's not empty, run golint against the list
-define lint_if_present
-test -n "$1" && golint -set_exit_status $1
-endef
-
-lint: $(ALL_SRC)
-	GO111MODULE=off go get -u golang.org/x/lint/golint
-	@$(foreach pkg,\
-		$(sort $(dir $(LINT_SRC))), \
-		$(call lint_if_present,$(filter $(wildcard $(pkg)*.go),$(LINT_SRC))) || ERR=1; \
-	) test -z "$$ERR" || exit 1
-	@OUTPUT=`gofmt -l $(ALL_SRC) 2>&1`; \
-	if [ "$$OUTPUT" ]; then \
-		echo "Run 'make fmt'. gofmt must be run on the following files:"; \
-		echo "$$OUTPUT"; \
-		exit 1; \
-	fi
-
 vet: $(ALL_SRC)
-	go vet ./...
+	@for dir in $(MOD_DIRS); do \
+		(cd "$$dir" && go vet ./...) || exit 1; \
+	done;
 
 staticcheck: $(ALL_SRC)
 	go install honnef.co/go/tools/cmd/staticcheck@latest
-	staticcheck ./...
+	@for dir in $(MOD_DIRS); do \
+		(cd "$$dir" && staticcheck ./...) || exit 1; \
+	done;
 
 errcheck: $(ALL_SRC)
 	GO111MODULE=off go get -u github.com/kisielk/errcheck
-	errcheck ./...
+	@for dir in $(MOD_DIRS); do \
+		(cd "$$dir" && errcheck ./...) || exit 1; \
+	done;
 
 fmt:
 	@gofmt -w $(ALL_SRC)
@@ -115,10 +92,7 @@ fmt:
 clean:
 	rm -rf $(BUILD)
 
-# golint is intentionally not included in the standard check since it is
-# deprecated and inflexible, but it remains available as a utility
 check: vet errcheck staticcheck copyright bins
-
 
 ##### Fossa #####
 fossa-install: 

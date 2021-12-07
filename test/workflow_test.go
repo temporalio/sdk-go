@@ -1403,7 +1403,7 @@ func (w *Workflows) InterceptorCalls(ctx workflow.Context, someVal string) (stri
 	workflow.ExecuteChildWorkflow(ctx, "badworkflow")
 	workflow.GetInfo(ctx)
 	workflow.GetLogger(ctx)
-	workflow.GetMetricsScope(ctx)
+	workflow.GetMetricsHandler(ctx)
 	workflow.Now(ctx)
 	workflow.NewTimer(ctx, 1*time.Millisecond)
 	_ = workflow.Sleep(ctx, 1*time.Millisecond)

@@ -38,7 +38,6 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
-	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
@@ -47,6 +46,7 @@ import (
 	"go.temporal.io/api/workflowservicemock/v1"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
 	iconverter "go.temporal.io/sdk/internal/converter"
 )
@@ -336,11 +336,10 @@ func (s *workflowRunSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
 	s.workflowServiceClient = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
 
-	metricsScope := tally.NoopScope
 	options := ClientOptions{
-		MetricsScope: metricsScope,
-		Identity:     identity,
-		Logger:       ilog.NewNopLogger(),
+		MetricsHandler: metrics.NopHandler,
+		Identity:       identity,
+		Logger:         ilog.NewNopLogger(),
 	}
 	s.workflowClient = NewServiceClient(s.workflowServiceClient, nil, options)
 	s.dataConverter = converter.GetDefaultDataConverter()
