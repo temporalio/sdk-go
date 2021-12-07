@@ -285,7 +285,7 @@ func (a *Activities) InterceptorCalls(ctx context.Context, someVal string) (stri
 	// Make some calls
 	activity.GetInfo(ctx)
 	activity.GetLogger(ctx)
-	activity.GetMetricsScope(ctx)
+	activity.GetMetricsHandler(ctx)
 	activity.RecordHeartbeat(ctx, "details")
 	activity.HasHeartbeatDetails(ctx)
 	_ = activity.GetHeartbeatDetails(ctx)

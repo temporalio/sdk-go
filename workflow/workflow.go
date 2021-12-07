@@ -27,10 +27,9 @@ package workflow
 import (
 	"errors"
 
-	"github.com/uber-go/tally/v4"
-
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 )
 
@@ -106,7 +105,9 @@ type (
 // *ApplicationError, *TimeoutError, *CanceledError, or *PanicError.
 //
 // You can cancel the pending activity using context(workflow.WithCancel(ctx)) and that will fail the activity with
-// *CanceledError set as cause for *ActivityError.
+// *CanceledError set as cause for *ActivityError. The context in the activity only becomes aware of the cancellation
+// when a heartbeat is sent to the server. Since heartbeats may be batched internally, this could take up to the
+// HeartbeatTimeout to appear or several minutes by default if that value is not set.
 //
 // ExecuteActivity immediately returns a Future that can be used to block waiting for activity result or failure.
 func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
@@ -190,9 +191,10 @@ func GetLogger(ctx Context) log.Logger {
 	return internal.GetLogger(ctx)
 }
 
-// GetMetricsScope returns a metrics scope to be used in workflow's context
-func GetMetricsScope(ctx Context) tally.Scope {
-	return internal.GetMetricsScope(ctx)
+// GetMetricsHandler returns a metrics handler to be used in workflow's context.
+// This handler does not record metrics during replay.
+func GetMetricsHandler(ctx Context) metrics.Handler {
+	return internal.GetMetricsHandler(ctx)
 }
 
 // RequestCancelExternalWorkflow can be used to request cancellation of an external workflow.
@@ -395,8 +397,9 @@ func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 // this flag as it is going to break workflow determinism requirement.
 // The only reasonable use case for this flag is to avoid some external actions during replay, like custom logging or
 // metric reporting. Please note that Temporal already provide standard logging/metric via workflow.GetLogger(ctx) and
-// workflow.GetMetricsScope(ctx), and those standard mechanism are replay-aware and it will automatically suppress during
-// replay. Only use this flag if you need custom logging/metrics reporting, for example if you want to log to kafka.
+// workflow.GetMetricsHandler(ctx), and those standard mechanism are replay-aware and it will automatically suppress
+// during replay. Only use this flag if you need custom logging/metrics reporting, for example if you want to log to
+// kafka.
 //
 // Warning! Any action protected by this flag should not fail or if it does fail should ignore that failure or panic
 // on the failure. If workflow don't want to be blocked on those failure, it should ignore those failure; if workflow do

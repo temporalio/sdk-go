@@ -33,10 +33,10 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 )
 
@@ -127,7 +127,7 @@ type (
 		activityType       ActivityType
 		serviceInvoker     ServiceInvoker
 		logger             log.Logger
-		metricsScope       tally.Scope
+		metricsHandler     metrics.Handler
 		isLocalActivity    bool
 		heartbeatTimeout   time.Duration
 		deadline           time.Time
@@ -383,8 +383,8 @@ func (a *activityEnvironmentInterceptor) GetLogger(ctx context.Context) log.Logg
 	return a.env.logger
 }
 
-func (a *activityEnvironmentInterceptor) GetMetricsScope(ctx context.Context) tally.Scope {
-	return a.env.metricsScope
+func (a *activityEnvironmentInterceptor) GetMetricsHandler(ctx context.Context) metrics.Handler {
+	return a.env.metricsHandler
 }
 
 func (a *activityEnvironmentInterceptor) RecordHeartbeat(ctx context.Context, details ...interface{}) {
@@ -394,7 +394,7 @@ func (a *activityEnvironmentInterceptor) RecordHeartbeat(ctx context.Context, de
 	}
 	var data *commonpb.Payloads
 	var err error
-	// We would like to be a able to pass in "nil" as part of details(that is no progress to report to)
+	// We would like to be able to pass in "nil" as part of details(that is no progress to report to)
 	if len(details) > 1 || (len(details) == 1 && details[0] != nil) {
 		data, err = encodeArgs(getDataConverterFromActivityCtx(ctx), details)
 		if err != nil {
@@ -402,11 +402,8 @@ func (a *activityEnvironmentInterceptor) RecordHeartbeat(ctx context.Context, de
 		}
 	}
 
-	err = a.env.serviceInvoker.Heartbeat(ctx, data, false)
-	if err != nil {
-		log := GetActivityLogger(ctx)
-		log.Debug("RecordActivityHeartbeat with error", tagError, err)
-	}
+	// Heartbeat error is logged inside ServiceInvoker.internalHeartBeat
+	_ = a.env.serviceInvoker.Heartbeat(ctx, data, false)
 }
 
 func (a *activityEnvironmentInterceptor) HasHeartbeatDetails(ctx context.Context) bool {

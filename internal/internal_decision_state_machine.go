@@ -652,6 +652,9 @@ func (d *childWorkflowCommandStateMachine) handleCancelFailedEvent() {
 func (d *childWorkflowCommandStateMachine) cancel() {
 	switch d.state {
 	case commandStateStarted:
+		if d.helper.workflowExecutionIsCancelling {
+			d.helper.commandsCancelledDuringWFCancellation++
+		}
 		d.moveState(commandStateCanceledAfterStarted, eventCancel)
 		// A child workflow may be canceled _after_ something like an activity start
 		// happens inside a simulated goroutine. However, since the state of the

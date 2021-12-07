@@ -31,11 +31,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/uber-go/tally/v4"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/interceptor"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/workflow"
 )
@@ -225,8 +225,8 @@ func (p *proxyActivityOutbound) GetLogger(ctx context.Context) (ret log.Logger) 
 	return
 }
 
-func (p *proxyActivityOutbound) GetMetricsScope(ctx context.Context) (ret tally.Scope) {
-	ret, _ = p.invoke(ctx)[0].Interface().(tally.Scope)
+func (p *proxyActivityOutbound) GetMetricsHandler(ctx context.Context) (ret metrics.Handler) {
+	ret, _ = p.invoke(ctx)[0].Interface().(metrics.Handler)
 	return
 }
 
@@ -338,8 +338,8 @@ func (p *proxyWorkflowOutbound) GetLogger(ctx workflow.Context) (ret log.Logger)
 	return
 }
 
-func (p *proxyWorkflowOutbound) GetMetricsScope(ctx workflow.Context) (ret tally.Scope) {
-	ret, _ = p.invoke(ctx)[0].Interface().(tally.Scope)
+func (p *proxyWorkflowOutbound) GetMetricsHandler(ctx workflow.Context) (ret metrics.Handler) {
+	ret, _ = p.invoke(ctx)[0].Interface().(metrics.Handler)
 	return
 }
 

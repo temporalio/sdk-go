@@ -30,6 +30,7 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -41,6 +42,9 @@ const (
 // Tracer is an interface for tracing implementations as used by
 // NewTracingInterceptor. Most callers do not use this directly, but rather use
 // the opentracing or opentelemetry packages.
+//
+// All implementations must embed BaseTracer to safely
+// handle future changes.
 type Tracer interface {
 	// Options returns the options for the tracer. This is only called once on
 	// initialization.
@@ -61,7 +65,23 @@ type Tracer interface {
 
 	// StartSpan starts and returns a span with the given options.
 	StartSpan(*TracerStartSpanOptions) (TracerSpan, error)
+
+	// GetLogger returns a log.Logger which may include additional fields in its
+	// output in order to support correlation of tracing and log data.
+	GetLogger(log.Logger, TracerSpanRef) log.Logger
+
+	mustEmbedBaseTracer()
 }
+
+// BaseTracer is a default implementation of Tracer meant for embedding.
+type BaseTracer struct{}
+
+func (BaseTracer) GetLogger(logger log.Logger, ref TracerSpanRef) log.Logger {
+	return logger
+}
+
+//lint:ignore U1000 Ignore unused method; it is only required to implement the Tracer interface but will never be called.
+func (BaseTracer) mustEmbedBaseTracer() {}
 
 // TracerOptions are options returned from Tracer.Options.
 type TracerOptions struct {
@@ -429,6 +449,13 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteLocalActivity(
 	defer span.Finish(&TracerFinishSpanOptions{})
 
 	return t.Next.ExecuteLocalActivity(ctx, activityType, args...)
+}
+
+func (t *tracingWorkflowOutboundInterceptor) GetLogger(ctx workflow.Context) log.Logger {
+	if span, _ := ctx.Value(t.root.options.SpanContextKey).(TracerSpan); span != nil {
+		t.root.tracer.GetLogger(t.Next.GetLogger(ctx), span)
+	}
+	return t.Next.GetLogger(ctx)
 }
 
 func (t *tracingWorkflowOutboundInterceptor) ExecuteChildWorkflow(
