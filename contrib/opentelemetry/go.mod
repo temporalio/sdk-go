@@ -7,7 +7,7 @@ require (
 	go.opentelemetry.io/otel v1.2.0
 	go.opentelemetry.io/otel/sdk v1.2.0
 	go.opentelemetry.io/otel/trace v1.2.0
-	go.temporal.io/sdk v1.11.1
+	go.temporal.io/sdk v1.12.0
 )
 
 replace go.temporal.io/sdk => ../../
