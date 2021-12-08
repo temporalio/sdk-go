@@ -8,7 +8,7 @@ require (
 	github.com/stretchr/testify v1.7.0
 	github.com/uber-go/tally/v4 v4.1.1
 	go.temporal.io/api v1.5.0
-	go.temporal.io/sdk v1.11.1
+	go.temporal.io/sdk v1.12.0
 	go.temporal.io/sdk/contrib/tally v0.1.0
 	go.uber.org/goleak v1.1.11
 )
