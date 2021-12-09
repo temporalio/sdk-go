@@ -38,7 +38,6 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/robfig/cron"
 	"github.com/stretchr/testify/mock"
-	"github.com/uber-go/tally/v4"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -50,6 +49,7 @@ import (
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
+	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
 )
@@ -135,7 +135,7 @@ type (
 		mock                      *mock.Mock
 		service                   workflowservice.WorkflowServiceClient
 		logger                    log.Logger
-		metricsScope              tally.Scope
+		metricsHandler            metrics.Handler
 		contextPropagators        []ContextPropagator
 		identity                  string
 		detachedChildWaitDisabled bool
@@ -222,7 +222,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 			taskQueueSpecificActivities: make(map[string]*taskQueueSpecificActivity),
 
 			logger:            s.logger,
-			metricsScope:      s.scope,
+			metricsHandler:    s.metricsHandler,
 			mockClock:         clock.NewMock(),
 			wallClock:         clock.New(),
 			timers:            make(map[string]*testTimerHandle),
@@ -272,8 +272,8 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 	if env.logger == nil {
 		env.logger = ilog.NewDefaultLogger()
 	}
-	if env.metricsScope == nil {
-		env.metricsScope = tally.NoopScope
+	if env.metricsHandler == nil {
+		env.metricsHandler = metrics.NopHandler
 	}
 	env.contextPropagators = s.contextPropagators
 	env.header = s.header
@@ -617,10 +617,10 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 		attempt: 1,
 	}
 	taskHandler := localActivityTaskHandler{
-		userContext:  env.workerOptions.BackgroundActivityContext,
-		metricsScope: env.metricsScope,
-		logger:       env.logger,
-		interceptors: env.registry.interceptors,
+		userContext:    env.workerOptions.BackgroundActivityContext,
+		metricsHandler: env.metricsHandler,
+		logger:         env.logger,
+		interceptors:   env.registry.interceptors,
 	}
 
 	result := taskHandler.executeLocalActivityTask(task)
@@ -1019,8 +1019,8 @@ func (env *testWorkflowEnvironmentImpl) GetLogger() log.Logger {
 	return env.logger
 }
 
-func (env *testWorkflowEnvironmentImpl) GetMetricsScope() tally.Scope {
-	return env.metricsScope
+func (env *testWorkflowEnvironmentImpl) GetMetricsHandler() metrics.Handler {
+	return env.metricsHandler
 }
 
 func (env *testWorkflowEnvironmentImpl) GetDataConverter() converter.DataConverter {
@@ -1382,7 +1382,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocal
 	task := newLocalActivityTask(params, callback, activityID)
 	taskHandler := localActivityTaskHandler{
 		userContext:        env.workerOptions.BackgroundActivityContext,
-		metricsScope:       env.metricsScope,
+		metricsHandler:     env.metricsHandler,
 		logger:             env.logger,
 		dataConverter:      env.dataConverter,
 		contextPropagators: env.contextPropagators,
@@ -1841,7 +1841,7 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskQueue str
 	params := workerExecutionParameters{
 		TaskQueue:          taskQueue,
 		Identity:           env.identity,
-		MetricsScope:       env.metricsScope,
+		MetricsHandler:     env.metricsHandler,
 		Logger:             env.logger,
 		UserContext:        env.workerOptions.BackgroundActivityContext,
 		DataConverter:      dataConverter,

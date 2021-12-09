@@ -26,9 +26,9 @@ package test
 
 import (
 	"context"
+	"strings"
 	"sync"
 
-	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
 )
@@ -55,7 +55,7 @@ func NewSimpleTrafficController() *SimpleTrafficController {
 
 func (tc *SimpleTrafficController) CheckCallAllowed(_ context.Context, method string, _, _ interface{}) error {
 	// Name of the API being called
-	operation := metrics.ConvertMethodToScope(method)
+	operation := method[strings.LastIndex(method, "/")+1:]
 	tc.lock.Lock()
 	defer tc.lock.Unlock()
 	var err error

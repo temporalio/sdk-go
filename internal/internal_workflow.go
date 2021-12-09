@@ -829,7 +829,7 @@ func (c *channelImpl) assignValue(from interface{}, to interface{}) error {
 	// add to metrics
 	if err != nil {
 		c.env.GetLogger().Error(fmt.Sprintf("Deserialization error. Corrupted signal received on channel %s.", c.name), tagError, err)
-		c.env.GetMetricsScope().Counter(metrics.CorruptedSignalsCounter).Inc(1)
+		c.env.GetMetricsHandler().Counter(metrics.CorruptedSignalsCounter).Inc(1)
 	}
 	return err
 }

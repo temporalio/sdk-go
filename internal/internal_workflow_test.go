@@ -765,8 +765,8 @@ func receiveAsyncCorruptSignalWorkflowTest(ctx Context) ([]message, error) {
 }
 
 func (s *WorkflowUnitTest) Test_CorruptedSignalWorkflow_ShouldLogMetricsAndNotPanic() {
-	scope, closer, reporter := metrics.NewTaggedMetricsScope()
-	s.SetMetricsScope(scope)
+	metricsHandler := metrics.NewCapturingHandler()
+	s.SetMetricsHandler(metricsHandler)
 	env := s.NewTestWorkflowEnvironment()
 
 	// Setup signals.
@@ -790,16 +790,15 @@ func (s *WorkflowUnitTest) Test_CorruptedSignalWorkflow_ShouldLogMetricsAndNotPa
 	s.EqualValues(1, len(result))
 	s.EqualValues("the right interface", result[0].Value)
 
-	_ = closer.Close()
-	counts := reporter.Counts()
-	s.EqualValues(1, len(counts))
-	s.EqualValues(metrics.CorruptedSignalsCounter, counts[0].Name())
-	s.EqualValues(1, counts[0].Value())
+	counters := metricsHandler.Counters()
+	s.EqualValues(1, len(counters))
+	s.EqualValues(metrics.CorruptedSignalsCounter, counters[0].Name)
+	s.EqualValues(1, counters[0].Value())
 }
 
 func (s *WorkflowUnitTest) Test_CorruptedSignalWorkflow_OnSelectorRead_ShouldLogMetricsAndNotPanic() {
-	scope, closer, reporter := metrics.NewTaggedMetricsScope()
-	s.SetMetricsScope(scope)
+	metricsHandler := metrics.NewCapturingHandler()
+	s.SetMetricsHandler(metricsHandler)
 	env := s.NewTestWorkflowEnvironment()
 
 	// Setup signals.
@@ -823,16 +822,15 @@ func (s *WorkflowUnitTest) Test_CorruptedSignalWorkflow_OnSelectorRead_ShouldLog
 	s.EqualValues(1, len(result))
 	s.EqualValues("the right interface", result[0].Value)
 
-	_ = closer.Close()
-	counts := reporter.Counts()
-	s.EqualValues(1, len(counts))
-	s.EqualValues(metrics.CorruptedSignalsCounter, counts[0].Name())
-	s.EqualValues(1, counts[0].Value())
+	counters := metricsHandler.Counters()
+	s.EqualValues(1, len(counters))
+	s.EqualValues(metrics.CorruptedSignalsCounter, counters[0].Name)
+	s.EqualValues(1, counters[0].Value())
 }
 
 func (s *WorkflowUnitTest) Test_CorruptedSignalWorkflow_ReceiveAsync_ShouldLogMetricsAndNotPanic() {
-	scope, closer, reporter := metrics.NewTaggedMetricsScope()
-	s.SetMetricsScope(scope)
+	metricsHandler := metrics.NewCapturingHandler()
+	s.SetMetricsHandler(metricsHandler)
 	env := s.NewTestWorkflowEnvironment()
 
 	env.ExecuteWorkflow(receiveAsyncCorruptSignalWorkflowTest)
@@ -844,11 +842,10 @@ func (s *WorkflowUnitTest) Test_CorruptedSignalWorkflow_ReceiveAsync_ShouldLogMe
 	s.EqualValues(1, len(result))
 	s.EqualValues("the right interface", result[0].Value)
 
-	_ = closer.Close()
-	counts := reporter.Counts()
-	s.EqualValues(1, len(counts))
-	s.EqualValues(metrics.CorruptedSignalsCounter, counts[0].Name())
-	s.EqualValues(2, counts[0].Value())
+	counters := metricsHandler.Counters()
+	s.EqualValues(1, len(counters))
+	s.EqualValues(metrics.CorruptedSignalsCounter, counters[0].Name)
+	s.EqualValues(2, counters[0].Value())
 }
 
 func (s *WorkflowUnitTest) Test_CorruptedSignalOnClosedChannelWorkflow_ReceiveAsync_ShouldComplete() {

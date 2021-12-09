@@ -31,6 +31,7 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gogo/status"
 	"github.com/pborman/uuid"
@@ -187,6 +188,8 @@ func TestCustomResolver(t *testing.T) {
 	s2, err := startAdditionalHostPortsGRPCServer()
 	require.NoError(t, err)
 	defer s2.Stop()
+	// Wait a bit to ensure they are serving
+	time.Sleep(100 * time.Millisecond)
 
 	// Register resolver for both IPs and create client using it
 	scheme := "test-resolve-" + uuid.New()

@@ -37,6 +37,7 @@ import (
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
+	"go.temporal.io/sdk/internal/common/metrics"
 )
 
 const (
@@ -407,6 +408,28 @@ type (
 		Close()
 	}
 )
+
+// MetricsHandler is a handler for metrics emitted by the SDK. This interface is
+// intentionally limited to only what the SDK needs to emit metrics and is not
+// built to be a general purpose metrics abstraction for all uses.
+//
+// A common implementation is at
+// go.temporal.io/sdk/contrib/tally.NewMetricsHandler. The MetricsNopHandler is
+// a noop handler. A handler may implement "Unwrap() client.MetricsHandler" if
+// it wraps a handler.
+type MetricsHandler = metrics.Handler
+
+// MetricsCounter is an ever-increasing counter.
+type MetricsCounter = metrics.Counter
+
+// MetricsGauge can be set to any float.
+type MetricsGauge = metrics.Gauge
+
+// MetricsTimer records time durations.
+type MetricsTimer = metrics.Timer
+
+// MetricsNopHandler is a noop handler that does nothing with the metrics.
+var MetricsNopHandler = metrics.NopHandler
 
 // NewClient creates an instance of a workflow client
 func NewClient(options Options) (Client, error) {

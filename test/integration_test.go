@@ -28,7 +28,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"sync"
@@ -51,6 +50,7 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
+	contribtally "go.temporal.io/sdk/contrib/tally"
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -84,8 +84,8 @@ type IntegrationTestSuite struct {
 	tracer                   *tracingInterceptor
 	inboundSignalInterceptor *signalInterceptor
 	trafficController        *test.SimpleTrafficController
-	metricsScopeCloser       io.Closer
-	metricsReporter          *metrics.CapturingStatsReporter
+	metricsHandler           *metrics.CapturingHandler
+	tallyScope               tally.TestScope
 	interceptorCallRecorder  *interceptortest.CallRecordingInvoker
 }
 
@@ -130,8 +130,13 @@ func (ts *IntegrationTestSuite) TearDownSuite() {
 }
 
 func (ts *IntegrationTestSuite) SetupTest() {
-	var metricsScope tally.Scope
-	metricsScope, ts.metricsScopeCloser, ts.metricsReporter = metrics.NewTaggedMetricsScope()
+	ts.metricsHandler = metrics.NewCapturingHandler()
+	var metricsHandler client.MetricsHandler = ts.metricsHandler
+	// Use Tally handler for Tally test
+	if strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestTallyScopeAccess") {
+		ts.tallyScope = tally.NewTestScope("", nil)
+		metricsHandler = contribtally.NewMetricsHandler(ts.tallyScope)
+	}
 
 	var clientInterceptors []interceptor.ClientInterceptor
 	// Record calls for interceptor test
@@ -150,7 +155,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 			NewKeysPropagator([]string{testContextKey1}),
 			NewKeysPropagator([]string{testContextKey2}),
 		},
-		MetricsScope:      metricsScope,
+		MetricsHandler:    metricsHandler,
 		TrafficController: trafficController,
 		Interceptors:      clientInterceptors,
 	})
@@ -193,7 +198,6 @@ func (ts *IntegrationTestSuite) SetupTest() {
 }
 
 func (ts *IntegrationTestSuite) TearDownTest() {
-	_ = ts.metricsScopeCloser.Close()
 	ts.client.Close()
 	if !ts.workerStopped {
 		ts.worker.Stop()
@@ -1217,12 +1221,12 @@ func (ts *IntegrationTestSuite) TestResetWorkflowExecution() {
 
 func (ts *IntegrationTestSuite) TestEndToEndLatencyMetrics() {
 	fetchMetrics := func() (localMetric, nonLocalMetric *metrics.CapturedTimer) {
-		for _, timer := range ts.metricsReporter.Timers() {
+		for _, timer := range ts.metricsHandler.Timers() {
 			timer := timer
-			if timer.Name() == "temporal_activity_succeed_endtoend_latency" {
-				nonLocalMetric = &timer
-			} else if timer.Name() == "temporal_local_activity_succeed_endtoend_latency" {
-				localMetric = &timer
+			if timer.Name == "temporal_activity_succeed_endtoend_latency" {
+				nonLocalMetric = timer
+			} else if timer.Name == "temporal_local_activity_succeed_endtoend_latency" {
+				localMetric = timer
 			}
 		}
 		return
@@ -1386,7 +1390,7 @@ func (ts *IntegrationTestSuite) TestInterceptorCalls() {
 			}),
 		},
 		"WorkflowOutboundInterceptor.GetLogger":                     {},
-		"WorkflowOutboundInterceptor.GetMetricsScope":               {},
+		"WorkflowOutboundInterceptor.GetMetricsHandler":             {},
 		"WorkflowOutboundInterceptor.Now":                           {},
 		"WorkflowOutboundInterceptor.NewTimer":                      {},
 		"WorkflowOutboundInterceptor.Sleep":                         {},
@@ -1420,7 +1424,7 @@ func (ts *IntegrationTestSuite) TestInterceptorCalls() {
 			}),
 		},
 		"ActivityOutboundInterceptor.GetLogger":            {},
-		"ActivityOutboundInterceptor.GetMetricsScope":      {},
+		"ActivityOutboundInterceptor.GetMetricsHandler":    {},
 		"ActivityOutboundInterceptor.RecordHeartbeat":      {},
 		"ActivityOutboundInterceptor.HasHeartbeatDetails":  {},
 		"ActivityOutboundInterceptor.GetHeartbeatDetails":  {},
@@ -1606,6 +1610,41 @@ func (ts *IntegrationTestSuite) TestTooFewParams() {
 	ts.NoError(ts.executeWorkflow("test-too-few-params", "TooFewParams", &res, "first param"))
 	// Confirm workflow and activity were called with zero values
 	ts.Equal(ParamsValue{Param1: "first param", Child: &ParamsValue{Param1: "first param"}}, res)
+}
+
+func (ts *IntegrationTestSuite) TestTallyScopeAccess() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tallyScopeAccessWorkflow := func(ctx workflow.Context) error {
+		hist := contribtally.ScopeFromHandler(workflow.GetMetricsHandler(ctx)).Histogram("some_histogram", nil)
+		// This records even during replay
+		hist.RecordDuration(5 * time.Second)
+		return workflow.SetQueryHandler(ctx, "some-query", func() (string, error) { return "ok", nil })
+	}
+
+	ts.worker.RegisterWorkflow(tallyScopeAccessWorkflow)
+	run, err := ts.client.ExecuteWorkflow(context.TODO(),
+		ts.startWorkflowOptions("tally-scope-access-"+uuid.New()), tallyScopeAccessWorkflow)
+	ts.NoError(err)
+	ts.NoError(run.Get(context.TODO(), nil))
+
+	assertHistDuration := func(name string, d time.Duration, expected int64) {
+		for _, hist := range ts.tallyScope.Snapshot().Histograms() {
+			if hist.Name() == name {
+				ts.Equal(expected, hist.Durations()[d])
+				return
+			}
+		}
+		ts.Fail("no histogram")
+	}
+	// Confirm hit once
+	assertHistDuration("some_histogram", 5*time.Second, 1)
+
+	// Query the workflow and confirm hit during replay
+	_, err = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "some-query")
+	ts.NoError(err)
+	assertHistDuration("some_histogram", 5*time.Second, 2)
 }
 
 func (ts *IntegrationTestSuite) registerNamespace() {
@@ -1806,14 +1845,14 @@ func (t *signalInterceptor) InterceptWorkflow(ctx workflow.Context, next interce
 }
 
 func (ts *IntegrationTestSuite) metricCount(name string, tagFilterKeyValue ...string) (total int64) {
-	for _, counter := range ts.metricsReporter.Counts() {
-		if counter.Name() != name {
+	for _, counter := range ts.metricsHandler.Counters() {
+		if counter.Name != name {
 			continue
 		}
 		// Check that it matches tag filter
 		validCounter := true
 		for i := 0; i < len(tagFilterKeyValue); i += 2 {
-			if counter.Tags()[tagFilterKeyValue[i]] != tagFilterKeyValue[i+1] {
+			if counter.Tags[tagFilterKeyValue[i]] != tagFilterKeyValue[i+1] {
 				validCounter = false
 				break
 			}
@@ -1826,14 +1865,14 @@ func (ts *IntegrationTestSuite) metricCount(name string, tagFilterKeyValue ...st
 }
 
 func (ts *IntegrationTestSuite) metricGauge(name string, tagFilterKeyValue ...string) (final float64) {
-	for _, gauge := range ts.metricsReporter.Gauges() {
-		if gauge.Name() != name {
+	for _, gauge := range ts.metricsHandler.Gauges() {
+		if gauge.Name != name {
 			continue
 		}
 		// Check that it matches tag filter
 		validCounter := true
 		for i := 0; i < len(tagFilterKeyValue); i += 2 {
-			if gauge.Tags()[tagFilterKeyValue[i]] != tagFilterKeyValue[i+1] {
+			if gauge.Tags[tagFilterKeyValue[i]] != tagFilterKeyValue[i+1] {
 				validCounter = false
 				break
 			}
@@ -1860,11 +1899,11 @@ func (ts *IntegrationTestSuite) assertReportedOperationCount(metricName string, 
 
 func (ts *IntegrationTestSuite) getReportedOperationCount(metricName string, operation string) int64 {
 	count := int64(0)
-	for _, counter := range ts.metricsReporter.Counts() {
-		if counter.Name() != metricName {
+	for _, counter := range ts.metricsHandler.Counters() {
+		if counter.Name != metricName {
 			continue
 		}
-		if op, ok := counter.Tags()[metrics.OperationTagName]; ok && op == operation {
+		if op, ok := counter.Tags[metrics.OperationTagName]; ok && op == operation {
 			count += counter.Value()
 		}
 	}
