@@ -1862,8 +1862,8 @@ func (ath *activityTaskHandlerImpl) getRegisteredActivityNames() (activityNames 
 }
 
 func (ath *activityTaskHandlerImpl) getHeartbeatThrottleInterval(heartbeatTimeout time.Duration) time.Duration {
-	// Build the heartbeat throttle interval as 80% of timeout if timeout present
-	// or use default if not
+	// Set interval as 80% of timeout if present, or the configured default if
+	// present, or the system default otherwise
 	var heartbeatThrottleInterval time.Duration
 	if heartbeatTimeout > 0 {
 		heartbeatThrottleInterval = time.Duration(0.8 * float64(heartbeatTimeout))
@@ -1872,13 +1872,17 @@ func (ath *activityTaskHandlerImpl) getHeartbeatThrottleInterval(heartbeatTimeou
 	} else {
 		heartbeatThrottleInterval = defaultDefaultHeartbeatThrottleInterval
 	}
-	// Limit interval to a max
-	if ath.maxHeartbeatThrottleInterval > 0 && heartbeatThrottleInterval > ath.maxHeartbeatThrottleInterval {
-		heartbeatThrottleInterval = ath.maxHeartbeatThrottleInterval
-	} else if ath.maxHeartbeatThrottleInterval == 0 && heartbeatThrottleInterval > defaultMaxHeartbeatThrottleInterval {
-		heartbeatThrottleInterval = defaultMaxHeartbeatThrottleInterval
+
+	// Use the configured max if present, or the system default otherwise
+	maxHeartbeatThrottleInterval := ath.maxHeartbeatThrottleInterval
+	if maxHeartbeatThrottleInterval == 0 {
+		maxHeartbeatThrottleInterval = defaultMaxHeartbeatThrottleInterval
 	}
 
+	// Limit interval to a max
+	if heartbeatThrottleInterval > maxHeartbeatThrottleInterval {
+		heartbeatThrottleInterval = maxHeartbeatThrottleInterval
+	}
 	return heartbeatThrottleInterval
 }
 
