@@ -25,6 +25,7 @@
 package log
 
 import (
+	"context"
 	"fmt"
 	golog "log"
 	"os"
@@ -86,4 +87,8 @@ func (l *DefaultLogger) With(keyvals ...interface{}) log.Logger {
 	logger.globalKeyvals += strings.TrimSuffix(fmt.Sprintln(keyvals...), "\n")
 
 	return logger
+}
+
+func (l *DefaultLogger) Context(_ context.Context) log.Logger {
+	return l
 }

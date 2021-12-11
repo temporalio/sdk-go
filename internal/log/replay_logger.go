@@ -25,6 +25,7 @@
 package log
 
 import (
+	"context"
 	"go.temporal.io/sdk/log"
 )
 
@@ -33,6 +34,7 @@ type ReplayLogger struct {
 	logger                log.Logger
 	isReplay              *bool // pointer to bool that indicate if it is in replay mode
 	enableLoggingInReplay *bool // pointer to bool that indicate if logging is enabled in replay mode
+	ctx                   context.Context
 }
 
 // NewReplayLogger crates new instance of ReplayLogger.
@@ -79,4 +81,9 @@ func (l *ReplayLogger) Error(msg string, keyvals ...interface{}) {
 // With returns new logger the prepend every log entry with keyvals.
 func (l *ReplayLogger) With(keyvals ...interface{}) log.Logger {
 	return NewReplayLogger(log.With(l.logger, keyvals...), l.isReplay, l.enableLoggingInReplay)
+}
+
+func (l *ReplayLogger) Context(ctx context.Context) log.Logger {
+	l.ctx = ctx
+	return l
 }

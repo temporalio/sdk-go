@@ -25,6 +25,7 @@
 package log
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -87,6 +88,10 @@ func (l *MemoryLogger) With(keyvals ...interface{}) log.Logger {
 	logger.globalKeyvals += strings.TrimSuffix(fmt.Sprintln(keyvals...), "\n")
 
 	return logger
+}
+
+func (l *MemoryLogger) Context(_ context.Context) log.Logger {
+	return l
 }
 
 // Lines returns written log lines.

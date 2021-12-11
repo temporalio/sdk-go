@@ -24,6 +24,8 @@
 
 package log
 
+import "context"
+
 // WithLogger is an interface that prepend every log entry with keyvals.
 type WithLogger interface {
 	With(keyvals ...interface{}) Logger
@@ -69,4 +71,8 @@ func (l *withLogger) Warn(msg string, keyvals ...interface{}) {
 // Error writes message to the log.
 func (l *withLogger) Error(msg string, keyvals ...interface{}) {
 	l.logger.Error(msg, l.prependKeyvals(keyvals)...)
+}
+
+func (l *withLogger) Context(_ context.Context) Logger {
+	return l
 }

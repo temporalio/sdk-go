@@ -25,6 +25,7 @@
 package log
 
 import (
+	"context"
 	"go.temporal.io/sdk/log"
 )
 
@@ -52,4 +53,8 @@ func (l *NoopLogger) Error(string, ...interface{}) {}
 // With returns new NoopLogger.
 func (l *NoopLogger) With(...interface{}) log.Logger {
 	return NewNopLogger()
+}
+
+func (l *NoopLogger) Context(ctx context.Context) log.Logger {
+	return l
 }

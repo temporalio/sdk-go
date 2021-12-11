@@ -24,6 +24,8 @@
 
 package log
 
+import "context"
+
 type (
 	// Logger is an interface that can be passed to ClientOptions.Logger.
 	Logger interface {
@@ -31,5 +33,6 @@ type (
 		Info(msg string, keyvals ...interface{})
 		Warn(msg string, keyvals ...interface{})
 		Error(msg string, keyvals ...interface{})
+		Context(ctx context.Context) Logger
 	}
 )
