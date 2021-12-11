@@ -7,7 +7,7 @@ default: check test
 BUILD := .build
 
 TEST_TIMEOUT := 3m
-TEST_ARG ?= -timeout $(TEST_TIMEOUT)
+TEST_ARG ?= -race -v -timeout $(TEST_TIMEOUT)
 
 INTEG_TEST_ROOT := ./test
 COVER_ROOT := $(abspath $(BUILD)/coverage)
