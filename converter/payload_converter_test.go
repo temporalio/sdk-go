@@ -73,6 +73,35 @@ func TestProtoJsonPayloadConverter_Gogo(t *testing.T) {
 	assert.Equal(t, `{"eventId":"1978","eventType":"WorkflowTaskTimedOut","workflowTaskTimedOutEventAttributes":{"scheduledEventId":"2","timeoutType":"ScheduleToStart"}}`, s)
 }
 
+func TestProtoJsonPayloadConverter_Gogo_Custom(t *testing.T) {
+	pc := NewProtoJSONPayloadConverter()
+	pc.GogoMarshaler.EmitDefaults = true
+	pc.GogoUnmarshaler.AllowUnknownFields = true
+
+	wt := &historypb.HistoryEvent{
+		EventId:   1978,
+		EventType: enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT,
+		Attributes: &historypb.HistoryEvent_WorkflowTaskTimedOutEventAttributes{WorkflowTaskTimedOutEventAttributes: &historypb.WorkflowTaskTimedOutEventAttributes{
+			ScheduledEventId: 2,
+			TimeoutType:      enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START,
+		}}}
+
+	payload, err := pc.ToPayload(wt)
+	require.NoError(t, err)
+
+	s := pc.ToString(payload)
+	assert.Equal(t, `{"eventId":"1978","eventTime":null,"eventType":"WorkflowTaskTimedOut","version":"0","taskId":"0","workflowTaskTimedOutEventAttributes":{"scheduledEventId":"2","startedEventId":"0","timeoutType":"ScheduleToStart"}}`, s)
+
+	payload2 := &commonpb.Payload{
+		Data: []byte(`{"eventId":"1978", "unknown_field": "yes" }`),
+	}
+
+	var wt2 historypb.HistoryEvent
+	err = pc.FromPayload(payload2, &wt2)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1978), wt2.EventId)
+}
+
 func TestProtoJsonPayloadConverter_Google(t *testing.T) {
 	pc := NewProtoJSONPayloadConverter()
 
@@ -104,6 +133,33 @@ func TestProtoJsonPayloadConverter_Google(t *testing.T) {
 
 	s := pc.ToString(payload)
 	assert.Equal(t, `{"name":"qwe","birthDay":"12","type":"TYPEV2_R","valueS":"asd"}`, strings.Replace(s, " ", "", -1))
+}
+
+func TestProtoJsonPayloadConverter_Google_Custom(t *testing.T) {
+	pc := NewProtoJSONPayloadConverter()
+	pc.ProtoJSONMarshaler.EmitUnpopulated = true
+	pc.ProtoJSONUnmarshaler.DiscardUnknown = true
+
+	wt := &GoV2{
+		Name:     "qwe",
+		BirthDay: 12,
+		Type:     TypeV2_TYPEV2_R,
+		Values:   &GoV2_ValueS{ValueS: "asd"},
+	}
+	payload, err := pc.ToPayload(wt)
+	require.NoError(t, err)
+
+	s := pc.ToString(payload)
+	assert.Equal(t, `{"name":"qwe","birthDay":"12","phone":"","siblings":0,"spouse":false,"money":0,"type":"TYPEV2_R","valueS":"asd"}`, strings.Replace(s, " ", "", -1))
+
+	payload2 := &commonpb.Payload{
+		Data: []byte(`{"name":"qwe", "unknown_field": "yes" }`),
+	}
+
+	var wt2 GoV2
+	err = pc.FromPayload(payload2, &wt2)
+	require.NoError(t, err)
+	assert.Equal(t, "qwe", wt2.Name)
 }
 
 func TestProtoPayloadConverter_Gogo(t *testing.T) {

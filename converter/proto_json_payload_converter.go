@@ -39,8 +39,10 @@ import (
 
 // ProtoJSONPayloadConverter converts proto objects to/from JSON.
 type ProtoJSONPayloadConverter struct {
-	gogoMarshaler   gogojsonpb.Marshaler
-	gogoUnmarshaler gogojsonpb.Unmarshaler
+	GogoMarshaler        gogojsonpb.Marshaler
+	GogoUnmarshaler      gogojsonpb.Unmarshaler
+	ProtoJSONMarshaler   protojson.MarshalOptions
+	ProtoJSONUnmarshaler protojson.UnmarshalOptions
 }
 
 var (
@@ -50,8 +52,10 @@ var (
 // NewProtoJSONPayloadConverter creates new instance of ProtoJSONPayloadConverter.
 func NewProtoJSONPayloadConverter() *ProtoJSONPayloadConverter {
 	return &ProtoJSONPayloadConverter{
-		gogoMarshaler:   gogojsonpb.Marshaler{},
-		gogoUnmarshaler: gogojsonpb.Unmarshaler{},
+		GogoMarshaler:        gogojsonpb.Marshaler{},
+		GogoUnmarshaler:      gogojsonpb.Unmarshaler{},
+		ProtoJSONMarshaler:   protojson.MarshalOptions{},
+		ProtoJSONUnmarshaler: protojson.UnmarshalOptions{},
 	}
 }
 
@@ -74,7 +78,7 @@ func (c *ProtoJSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 	builtPointer := false
 	for {
 		if valueProto, ok := value.(proto.Message); ok {
-			byteSlice, err := protojson.Marshal(valueProto)
+			byteSlice, err := c.ProtoJSONMarshaler.Marshal(valueProto)
 			if err != nil {
 				return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
 			}
@@ -82,7 +86,7 @@ func (c *ProtoJSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 		}
 		if valueGogoProto, ok := value.(gogoproto.Message); ok {
 			var buf bytes.Buffer
-			err := c.gogoMarshaler.Marshal(&buf, valueGogoProto)
+			err := c.GogoMarshaler.Marshal(&buf, valueGogoProto)
 			if err != nil {
 				return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
 			}
@@ -145,9 +149,9 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 
 	var err error
 	if isProtoMessage {
-		err = protojson.Unmarshal(payload.GetData(), protoMessage)
+		err = c.ProtoJSONUnmarshaler.Unmarshal(payload.GetData(), protoMessage)
 	} else if isGogoProtoMessage {
-		err = c.gogoUnmarshaler.Unmarshal(bytes.NewReader(payload.GetData()), gogoProtoMessage)
+		err = c.GogoUnmarshaler.Unmarshal(bytes.NewReader(payload.GetData()), gogoProtoMessage)
 	}
 	// If original value wasn't a pointer then set value back to where valuePtr points to.
 	if originalValue.Kind() != reflect.Ptr {
