@@ -116,10 +116,10 @@ type (
 		currentReplayTime time.Time // Indicates current replay time of the command.
 		currentLocalTime  time.Time // Local time when currentReplayTime was updated.
 
-		completeHandler completionHandler                                 // events completion handler
-		cancelHandler   func()                                            // A cancel handler to be invoked on a cancel notification
-		signalHandler   func(name string, input *commonpb.Payloads) error // A signal handler to be invoked on a signal event
-		queryHandler    func(queryType string, queryArgs *commonpb.Payloads) (*commonpb.Payloads, error)
+		completeHandler completionHandler                                                          // events completion handler
+		cancelHandler   func()                                                                     // A cancel handler to be invoked on a cancel notification
+		signalHandler   func(name string, input *commonpb.Payloads, header *commonpb.Header) error // A signal handler to be invoked on a signal event
+		queryHandler    func(queryType string, queryArgs *commonpb.Payloads, header *commonpb.Header) (*commonpb.Payloads, error)
 
 		logger                log.Logger
 		isReplay              bool // flag to indicate if workflow is in replay mode
@@ -298,11 +298,21 @@ func (wc *workflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace, work
 	command.setData(&scheduledCancellation{callback: callback})
 }
 
-func (wc *workflowEnvironmentImpl) SignalExternalWorkflow(namespace, workflowID, runID, signalName string,
-	input *commonpb.Payloads, _ /* THIS IS FOR TEST FRAMEWORK. DO NOT USE HERE. */ interface{}, childWorkflowOnly bool, callback ResultHandler) {
+func (wc *workflowEnvironmentImpl) SignalExternalWorkflow(
+	namespace string,
+	workflowID string,
+	runID string,
+	signalName string,
+	input *commonpb.Payloads,
+	_ /* THIS IS FOR TEST FRAMEWORK. DO NOT USE HERE. */ interface{},
+	header *commonpb.Header,
+	childWorkflowOnly bool,
+	callback ResultHandler,
+) {
 
 	signalID := wc.GenerateSequenceID()
-	command := wc.commandsHelper.signalExternalWorkflowExecution(namespace, workflowID, runID, signalName, input, signalID, childWorkflowOnly)
+	command := wc.commandsHelper.signalExternalWorkflowExecution(namespace, workflowID, runID, signalName, input,
+		header, signalID, childWorkflowOnly)
 	command.setData(&scheduledSignal{callback: callback})
 }
 
@@ -414,11 +424,15 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 		tagWorkflowType, params.WorkflowType.Name)
 }
 
-func (wc *workflowEnvironmentImpl) RegisterSignalHandler(handler func(name string, input *commonpb.Payloads) error) {
+func (wc *workflowEnvironmentImpl) RegisterSignalHandler(
+	handler func(name string, input *commonpb.Payloads, header *commonpb.Header) error,
+) {
 	wc.signalHandler = handler
 }
 
-func (wc *workflowEnvironmentImpl) RegisterQueryHandler(handler func(string, *commonpb.Payloads) (*commonpb.Payloads, error)) {
+func (wc *workflowEnvironmentImpl) RegisterQueryHandler(
+	handler func(string, *commonpb.Payloads, *commonpb.Header) (*commonpb.Payloads, error),
+) {
 	wc.queryHandler = handler
 }
 
@@ -921,14 +935,18 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) ProcessQuery(queryType string, queryArgs *commonpb.Payloads) (*commonpb.Payloads, error) {
+func (weh *workflowExecutionEventHandlerImpl) ProcessQuery(
+	queryType string,
+	queryArgs *commonpb.Payloads,
+	header *commonpb.Header,
+) (*commonpb.Payloads, error) {
 	switch queryType {
 	case QueryTypeStackTrace:
 		return weh.encodeArg(weh.StackTrace())
 	case QueryTypeOpenSessions:
 		return weh.encodeArg(weh.getOpenSessions())
 	default:
-		result, err := weh.queryHandler(queryType, queryArgs)
+		result, err := weh.queryHandler(queryType, queryArgs, header)
 		if err != nil {
 			return nil, err
 		}
@@ -1217,7 +1235,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 
 func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionSignaled(
 	attributes *historypb.WorkflowExecutionSignaledEventAttributes) error {
-	return weh.signalHandler(attributes.GetSignalName(), attributes.Input)
+	return weh.signalHandler(attributes.GetSignalName(), attributes.Input, attributes.Header)
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionFailed(event *historypb.HistoryEvent) error {

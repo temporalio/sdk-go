@@ -255,6 +255,17 @@ func (w *WorkflowOutboundInterceptorBase) SignalExternalWorkflow(
 	return w.Next.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
 }
 
+// SignalChildWorkflow implements
+// WorkflowOutboundInterceptor.SignalChildWorkflow.
+func (w *WorkflowOutboundInterceptorBase) SignalChildWorkflow(
+	ctx Context,
+	workflowID string,
+	signalName string,
+	arg interface{},
+) Future {
+	return w.Next.SignalChildWorkflow(ctx, workflowID, signalName, arg)
+}
+
 // UpsertSearchAttributes implements
 // WorkflowOutboundInterceptor.UpsertSearchAttributes.
 func (w *WorkflowOutboundInterceptorBase) UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error {

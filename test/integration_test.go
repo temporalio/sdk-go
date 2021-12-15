@@ -38,11 +38,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"github.com/uber-go/tally/v4"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/contrib/opentelemetry"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/test"
 	"go.uber.org/goleak"
@@ -73,20 +77,22 @@ const (
 type IntegrationTestSuite struct {
 	*require.Assertions
 	suite.Suite
-	config                   Config
-	client                   client.Client
-	activities               *Activities
-	workflows                *Workflows
-	worker                   worker.Worker
-	workerStopped            bool
-	seq                      int64
-	taskQueueName            string
-	tracer                   *tracingInterceptor
-	inboundSignalInterceptor *signalInterceptor
-	trafficController        *test.SimpleTrafficController
-	metricsHandler           *metrics.CapturingHandler
-	tallyScope               tally.TestScope
-	interceptorCallRecorder  *interceptortest.CallRecordingInvoker
+	config                    Config
+	client                    client.Client
+	activities                *Activities
+	workflows                 *Workflows
+	worker                    worker.Worker
+	workerStopped             bool
+	seq                       int64
+	taskQueueName             string
+	tracer                    *tracingInterceptor
+	inboundSignalInterceptor  *signalInterceptor
+	trafficController         *test.SimpleTrafficController
+	metricsHandler            *metrics.CapturingHandler
+	tallyScope                tally.TestScope
+	interceptorCallRecorder   *interceptortest.CallRecordingInvoker
+	openTelemetryTracer       trace.Tracer
+	openTelemetrySpanRecorder *tracetest.SpanRecorder
 }
 
 func TestIntegrationSuite(t *testing.T) {
@@ -145,6 +151,20 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		clientInterceptors = append(clientInterceptors, interceptortest.NewProxy(ts.interceptorCallRecorder))
 	}
 
+	// Record spans for tracing test
+	if strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestOpenTelemetryTracing") {
+		ts.openTelemetrySpanRecorder = tracetest.NewSpanRecorder()
+		ts.openTelemetryTracer = sdktrace.NewTracerProvider(
+			sdktrace.WithSpanProcessor(ts.openTelemetrySpanRecorder)).Tracer("")
+		interceptor, err := opentelemetry.NewTracingInterceptor(opentelemetry.TracerOptions{
+			Tracer:               ts.openTelemetryTracer,
+			DisableSignalTracing: strings.HasSuffix(ts.T().Name(), "WithoutSignalsAndQueries"),
+			DisableQueryTracing:  strings.HasSuffix(ts.T().Name(), "WithoutSignalsAndQueries"),
+		})
+		ts.NoError(err)
+		clientInterceptors = append(clientInterceptors, interceptor)
+	}
+
 	var err error
 	trafficController := test.NewSimpleTrafficController()
 	ts.client, err = client.NewClient(client.Options{
@@ -164,6 +184,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.trafficController = trafficController
 	ts.seq++
 	ts.activities.clearInvoked()
+	ts.activities.client = ts.client
 	ts.taskQueueName = fmt.Sprintf("tq-%v-%s", ts.seq, ts.T().Name())
 	ts.tracer = newTracingInterceptor()
 	ts.inboundSignalInterceptor = newSignalInterceptor()
@@ -1470,6 +1491,147 @@ func (ts *IntegrationTestSuite) TestInterceptorStartWithSignal() {
 		}
 	}
 	ts.True(foundHandleSignal)
+}
+
+func (ts *IntegrationTestSuite) TestOpenTelemetryTracing() {
+	ts.testOpenTelemetryTracing(true)
+}
+
+func (ts *IntegrationTestSuite) TestOpenTelemetryTracingWithoutSignalsAndQueries() {
+	ts.testOpenTelemetryTracing(false)
+}
+
+func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withSignalAndQueryHeaders bool) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Start a top-level span
+	ctx, rootSpan := ts.openTelemetryTracer.Start(ctx, "root-span")
+
+	// Signal with start
+	run, err := ts.client.SignalWithStartWorkflow(ctx, "test-interceptor-open-telemetry", "start-signal",
+		nil, ts.startWorkflowOptions("test-interceptor-open-telemetry"), ts.workflows.SignalsAndQueries, true, true)
+	ts.NoError(err)
+
+	// Query
+	val, err := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "workflow-query", nil)
+	ts.NoError(err)
+	var queryResp string
+	ts.NoError(val.Get(&queryResp))
+	ts.Equal("query-response", queryResp)
+
+	// Finish signal
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish-signal", nil))
+	ts.NoError(run.Get(ctx, nil))
+
+	// Finish span and collect
+	rootSpan.End()
+	spans := ts.openTelemetrySpanRecorder.Ended()
+
+	// Span builder
+	span := func(name string, children ...*interceptortest.SpanInfo) *interceptortest.SpanInfo {
+		// If without signal-and-query headers, filter out those children in place
+		if !withSignalAndQueryHeaders {
+			n := 0
+			for _, child := range children {
+				isSignalOrQuery := strings.HasPrefix(child.Name, "SignalWorkflow:") ||
+					strings.HasPrefix(child.Name, "SignalChildWorkflow:") ||
+					strings.HasPrefix(child.Name, "HandleSignal:") ||
+					strings.HasPrefix(child.Name, "QueryWorkflow:") ||
+					strings.HasPrefix(child.Name, "HandleQuery:")
+				if !isSignalOrQuery {
+					children[n] = child
+					n++
+				}
+			}
+			children = children[:n]
+		}
+		return interceptortest.Span(name, children...)
+	}
+
+	// Confirm expected
+	actual := interceptortest.Span("root-span", ts.openTelemetrySpanChildren(spans, rootSpan.SpanContext().SpanID())...)
+	expected := span("root-span",
+		span("SignalWithStartWorkflow:SignalsAndQueries",
+			span("HandleSignal:start-signal"),
+			span("RunWorkflow:SignalsAndQueries",
+				// Child workflow exec
+				span("StartChildWorkflow:SignalsAndQueries",
+					span("RunWorkflow:SignalsAndQueries",
+						// Activity inside child workflow
+						span("StartActivity:ExternalSignalsAndQueries",
+							span("RunActivity:ExternalSignalsAndQueries",
+								// Signal and query inside activity
+								span("SignalWithStartWorkflow:SignalsAndQueries",
+									span("HandleSignal:start-signal"),
+									span("RunWorkflow:SignalsAndQueries"),
+								),
+								span("QueryWorkflow:workflow-query",
+									span("HandleQuery:workflow-query"),
+								),
+								span("SignalWorkflow:finish-signal",
+									span("HandleSignal:finish-signal"),
+								),
+							),
+						),
+					),
+				),
+				span("SignalChildWorkflow:start-signal",
+					span("HandleSignal:start-signal"),
+				),
+				span("SignalChildWorkflow:finish-signal",
+					span("HandleSignal:finish-signal"),
+				),
+				// Activity in top-level
+				span("StartActivity:ExternalSignalsAndQueries",
+					span("RunActivity:ExternalSignalsAndQueries",
+						span("SignalWithStartWorkflow:SignalsAndQueries",
+							span("HandleSignal:start-signal"),
+							span("RunWorkflow:SignalsAndQueries"),
+						),
+						span("QueryWorkflow:workflow-query",
+							span("HandleQuery:workflow-query"),
+						),
+						span("SignalWorkflow:finish-signal",
+							span("HandleSignal:finish-signal"),
+						),
+					),
+				),
+			),
+		),
+		// Top-level query and signal
+		span("QueryWorkflow:workflow-query",
+			span("HandleQuery:workflow-query"),
+		),
+		span("SignalWorkflow:finish-signal",
+			span("HandleSignal:finish-signal"),
+		),
+	)
+
+	ts.Equal(expected, actual)
+}
+
+func (ts *IntegrationTestSuite) openTelemetrySpanChildren(
+	spans []sdktrace.ReadOnlySpan,
+	parentID trace.SpanID,
+) (ret []*interceptortest.SpanInfo) {
+	var lastSpan *interceptortest.SpanInfo
+	for _, s := range spans {
+		if s.Parent().SpanID() == parentID {
+			// In cases where we have disabled the cache, the same interceptors get
+			// called many times with replayed values which create replayed spans. We
+			// can't disable  spans during replay because they are sometimes the ones
+			// that code paths continue on so they need spans. So in this case we will
+			// reuse adjacent spans of the same name.
+			children := ts.openTelemetrySpanChildren(spans, s.SpanContext().SpanID())
+			if ts.config.maxWorkflowCacheSize == 0 && lastSpan != nil && lastSpan.Name == s.Name() {
+				lastSpan.Children = append(lastSpan.Children, children...)
+			} else {
+				lastSpan = interceptortest.Span(s.Name(), children...)
+				ret = append(ret, lastSpan)
+			}
+		}
+	}
+	return
 }
 
 func (ts *IntegrationTestSuite) TestAdvancedPostCancellation() {

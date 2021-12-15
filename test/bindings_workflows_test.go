@@ -77,7 +77,7 @@ type SingleActivityWorkflowDefinition struct {
 
 func (d *SingleActivityWorkflowDefinition) Execute(env bindings.WorkflowEnvironment, header *commonpb.Header, input *commonpb.Payloads) {
 	var signalInput string
-	env.RegisterSignalHandler(func(name string, input *commonpb.Payloads) error {
+	env.RegisterSignalHandler(func(name string, input *commonpb.Payloads, header *commonpb.Header) error {
 		return converter.GetDefaultDataConverter().FromPayloads(input, &signalInput)
 	})
 	d.callbacks = append(d.callbacks, func() {

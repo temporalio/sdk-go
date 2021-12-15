@@ -184,8 +184,8 @@ type (
 		openSessions   map[string]*SessionInfo
 
 		workflowCancelHandler func()
-		signalHandler         func(name string, input *commonpb.Payloads) error
-		queryHandler          func(string, *commonpb.Payloads) (*commonpb.Payloads, error)
+		signalHandler         func(name string, input *commonpb.Payloads, header *commonpb.Header) error
+		queryHandler          func(string, *commonpb.Payloads, *commonpb.Header) (*commonpb.Payloads, error)
 		startedHandler        func(r WorkflowExecution, e error)
 
 		isWorkflowCompleted bool
@@ -1982,11 +1982,15 @@ func (env *testWorkflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
 	env.workflowCancelHandler = handler
 }
 
-func (env *testWorkflowEnvironmentImpl) RegisterSignalHandler(handler func(name string, input *commonpb.Payloads) error) {
+func (env *testWorkflowEnvironmentImpl) RegisterSignalHandler(
+	handler func(name string, input *commonpb.Payloads, header *commonpb.Header) error,
+) {
 	env.signalHandler = handler
 }
 
-func (env *testWorkflowEnvironmentImpl) RegisterQueryHandler(handler func(string, *commonpb.Payloads) (*commonpb.Payloads, error)) {
+func (env *testWorkflowEnvironmentImpl) RegisterQueryHandler(
+	handler func(string, *commonpb.Payloads, *commonpb.Header) (*commonpb.Payloads, error),
+) {
 	env.queryHandler = handler
 }
 
@@ -2050,7 +2054,17 @@ func (env *testWorkflowEnvironmentImpl) IsReplaying() bool {
 	return false
 }
 
-func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input *commonpb.Payloads, arg interface{}, childWorkflowOnly bool, callback ResultHandler) {
+func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(
+	namespace string,
+	workflowID string,
+	runID string,
+	signalName string,
+	input *commonpb.Payloads,
+	arg interface{},
+	header *commonpb.Header,
+	childWorkflowOnly bool,
+	callback ResultHandler,
+) {
 	// check if target workflow is a known workflow
 	if childHandle, ok := env.runningWorkflows[workflowID]; ok {
 		// target workflow is a child
@@ -2060,7 +2074,7 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(namespace, workfl
 			err := newUnknownExternalWorkflowExecutionError()
 			callback(nil, err)
 		} else {
-			err := childEnv.signalHandler(signalName, input)
+			err := childEnv.signalHandler(signalName, input, header)
 			callback(nil, err)
 		}
 		childEnv.postCallback(func() {}, true) // resume child workflow since a signal is sent.
@@ -2254,7 +2268,8 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflow(name string, input interf
 		panic(err)
 	}
 	env.postCallback(func() {
-		_ = env.signalHandler(name, data)
+		// Do not send any headers on test invocations
+		_ = env.signalHandler(name, data, nil)
 	}, startWorkflowTask)
 }
 
@@ -2269,7 +2284,8 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflowByID(workflowID, signalNam
 			return serviceerror.NewNotFound(fmt.Sprintf("Workflow %v already completed", workflowID))
 		}
 		workflowHandle.env.postCallback(func() {
-			_ = workflowHandle.env.signalHandler(signalName, data)
+			// Do not send any headers on test invocations
+			_ = workflowHandle.env.signalHandler(signalName, data, nil)
 		}, true)
 		return nil
 	}
@@ -2282,7 +2298,8 @@ func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...
 	if err != nil {
 		return nil, err
 	}
-	blob, err := env.queryHandler(queryType, data)
+	// Do not send any headers on test invocations
+	blob, err := env.queryHandler(queryType, data, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2295,7 +2312,8 @@ func (env *testWorkflowEnvironmentImpl) queryWorkflowByID(workflowID, queryType 
 		if err != nil {
 			return nil, err
 		}
-		blob, err := workflowHandle.env.queryHandler(queryType, data)
+		// Do not send any headers on test invocations
+		blob, err := workflowHandle.env.queryHandler(queryType, data, nil)
 		if err != nil {
 			return nil, err
 		}

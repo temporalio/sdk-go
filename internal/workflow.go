@@ -383,6 +383,9 @@ func NewFuture(ctx Context) (Future, Settable) {
 }
 
 func (wc *workflowEnvironmentInterceptor) HandleSignal(ctx Context, in *HandleSignalInput) error {
+	// Remove header from the context
+	ctx = workflowContextWithoutHeader(ctx)
+
 	eo := getWorkflowEnvOptions(ctx)
 	// We don't want this code to be blocked ever, using sendAsync().
 	ch := eo.getSignalChannel(ctx, in.SignalName).(*channelImpl)
@@ -1020,12 +1023,20 @@ func (wc *workflowEnvironmentInterceptor) RequestCancelExternalWorkflow(ctx Cont
 // SignalExternalWorkflow return Future with failure or empty success result.
 func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future {
 	i := getWorkflowOutboundInterceptor(ctx)
+	// Put header on context before executing
+	ctx = workflowContextWithNewHeader(ctx)
 	return i.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
 }
 
 func (wc *workflowEnvironmentInterceptor) SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future {
 	const childWorkflowOnly = false // this means we are not limited to child workflow
 	return signalExternalWorkflow(ctx, workflowID, runID, signalName, arg, childWorkflowOnly)
+}
+
+func (wc *workflowEnvironmentInterceptor) SignalChildWorkflow(ctx Context, workflowID, signalName string, arg interface{}) Future {
+	const childWorkflowOnly = true // this means we are limited to child workflow
+	// Empty run ID to indicate current one
+	return signalExternalWorkflow(ctx, workflowID, "", signalName, arg, childWorkflowOnly)
 }
 
 func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}, childWorkflowOnly bool) Future {
@@ -1045,6 +1056,13 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 		return future
 	}
 
+	// Get header
+	header, err := workflowHeaderPropagated(ctx, options.ContextPropagators)
+	if err != nil {
+		settable.Set(nil, err)
+		return future
+	}
+
 	resultCallback := func(result *commonpb.Payloads, err error) {
 		settable.Set(result, err)
 	}
@@ -1055,6 +1073,7 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 		signalName,
 		input,
 		arg,
+		header,
 		childWorkflowOnly,
 		resultCallback,
 	)
