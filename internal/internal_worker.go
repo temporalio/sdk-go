@@ -200,6 +200,10 @@ type (
 		// DeadlockDetectionTimeout specifies workflow task timeout.
 		DeadlockDetectionTimeout time.Duration
 
+		DefaultHeartbeatThrottleInterval time.Duration
+
+		MaxHeartbeatThrottleInterval time.Duration
+
 		// Pointer to the shared worker cache
 		cache *WorkerCache
 	}
@@ -1281,6 +1285,8 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		WorkerStopTimeout:                     options.WorkerStopTimeout,
 		ContextPropagators:                    client.contextPropagators,
 		DeadlockDetectionTimeout:              options.DeadlockDetectionTimeout,
+		DefaultHeartbeatThrottleInterval:      options.DefaultHeartbeatThrottleInterval,
+		MaxHeartbeatThrottleInterval:          options.MaxHeartbeatThrottleInterval,
 		cache:                                 cache,
 	}
 
@@ -1464,6 +1470,12 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 			options.DeadlockDetectionTimeout = unlimitedDeadlockDetectionTimeout
 		}
 		options.DeadlockDetectionTimeout = defaultDeadlockDetectionTimeout
+	}
+	if options.DefaultHeartbeatThrottleInterval == 0 {
+		options.DefaultHeartbeatThrottleInterval = defaultDefaultHeartbeatThrottleInterval
+	}
+	if options.MaxHeartbeatThrottleInterval == 0 {
+		options.MaxHeartbeatThrottleInterval = defaultMaxHeartbeatThrottleInterval
 	}
 }
 

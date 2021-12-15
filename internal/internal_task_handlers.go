@@ -56,11 +56,12 @@ import (
 )
 
 const (
-	defaultHeartBeatInterval = 10 * 60 * time.Second
-
 	defaultStickyCacheSize = 10000
 
 	noRetryBackoff = time.Duration(-1)
+
+	defaultDefaultHeartbeatThrottleInterval = 30 * time.Second
+	defaultMaxHeartbeatThrottleInterval     = 60 * time.Second
 )
 
 type (
@@ -138,18 +139,20 @@ type (
 
 	// activityTaskHandlerImpl is the implementation of ActivityTaskHandler
 	activityTaskHandlerImpl struct {
-		taskQueueName      string
-		identity           string
-		service            workflowservice.WorkflowServiceClient
-		metricsHandler     metrics.Handler
-		logger             log.Logger
-		userContext        context.Context
-		registry           *registry
-		activityProvider   activityProvider
-		dataConverter      converter.DataConverter
-		workerStopCh       <-chan struct{}
-		contextPropagators []ContextPropagator
-		namespace          string
+		taskQueueName                    string
+		identity                         string
+		service                          workflowservice.WorkflowServiceClient
+		metricsHandler                   metrics.Handler
+		logger                           log.Logger
+		userContext                      context.Context
+		registry                         *registry
+		activityProvider                 activityProvider
+		dataConverter                    converter.DataConverter
+		workerStopCh                     <-chan struct{}
+		contextPropagators               []ContextPropagator
+		namespace                        string
+		defaultHeartbeatThrottleInterval time.Duration
+		maxHeartbeatThrottleInterval     time.Duration
 	}
 
 	// history wrapper method to help information about events.
@@ -1570,34 +1573,37 @@ func newActivityTaskHandlerWithCustomProvider(
 	activityProvider activityProvider,
 ) ActivityTaskHandler {
 	return &activityTaskHandlerImpl{
-		taskQueueName:      params.TaskQueue,
-		identity:           params.Identity,
-		service:            service,
-		logger:             params.Logger,
-		metricsHandler:     params.MetricsHandler,
-		userContext:        params.UserContext,
-		registry:           registry,
-		activityProvider:   activityProvider,
-		dataConverter:      params.DataConverter,
-		workerStopCh:       params.WorkerStopChannel,
-		contextPropagators: params.ContextPropagators,
-		namespace:          params.Namespace,
+		taskQueueName:                    params.TaskQueue,
+		identity:                         params.Identity,
+		service:                          service,
+		logger:                           params.Logger,
+		metricsHandler:                   params.MetricsHandler,
+		userContext:                      params.UserContext,
+		registry:                         registry,
+		activityProvider:                 activityProvider,
+		dataConverter:                    params.DataConverter,
+		workerStopCh:                     params.WorkerStopChannel,
+		contextPropagators:               params.ContextPropagators,
+		namespace:                        params.Namespace,
+		defaultHeartbeatThrottleInterval: params.DefaultHeartbeatThrottleInterval,
+		maxHeartbeatThrottleInterval:     params.MaxHeartbeatThrottleInterval,
 	}
 }
 
 type temporalInvoker struct {
 	sync.Mutex
-	identity            string
-	service             workflowservice.WorkflowServiceClient
-	metricsHandler      metrics.Handler
-	taskToken           []byte
-	cancelHandler       func()
-	heartBeatTimeout    time.Duration // The heart beat interval configured for this activity.
-	hbBatchEndTimer     *time.Timer   // Whether we started a batch of operations that need to be reported in the cycle. This gets started on a user call.
-	lastDetailsToReport **commonpb.Payloads
-	closeCh             chan struct{}
-	workerStopChannel   <-chan struct{}
-	namespace           string
+	identity       string
+	service        workflowservice.WorkflowServiceClient
+	metricsHandler metrics.Handler
+	taskToken      []byte
+	cancelHandler  func()
+	// Amount of time to wait between each pending heartbeat send
+	heartbeatThrottleInterval time.Duration
+	hbBatchEndTimer           *time.Timer // Whether we started a batch of operations that need to be reported in the cycle. This gets started on a user call.
+	lastDetailsToReport       **commonpb.Payloads
+	closeCh                   chan struct{}
+	workerStopChannel         <-chan struct{}
+	namespace                 string
 }
 
 func (i *temporalInvoker) Heartbeat(ctx context.Context, details *commonpb.Payloads, skipBatching bool) error {
@@ -1619,15 +1625,7 @@ func (i *temporalInvoker) Heartbeat(ctx context.Context, details *commonpb.Paylo
 		i.lastDetailsToReport = nil
 
 		// Create timer to fire before the threshold to report.
-		deadlineToTrigger := i.heartBeatTimeout
-		if deadlineToTrigger <= 0 {
-			// If we don't have any heartbeat timeout configured.
-			deadlineToTrigger = defaultHeartBeatInterval
-		}
-
-		// We set a deadline at 80% of the timeout.
-		duration := time.Duration(0.8 * float64(deadlineToTrigger))
-		i.hbBatchEndTimer = time.NewTimer(duration)
+		i.hbBatchEndTimer = time.NewTimer(i.heartbeatThrottleInterval)
 
 		go func() {
 			select {
@@ -1664,11 +1662,7 @@ func (i *temporalInvoker) Heartbeat(ctx context.Context, details *commonpb.Paylo
 
 func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *commonpb.Payloads) (bool, error) {
 	isActivityCanceled := false
-	timeout := i.heartBeatTimeout
-	if timeout <= 0 {
-		timeout = defaultHeartBeatInterval
-	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := context.WithTimeout(ctx, i.heartbeatThrottleInterval)
 	defer cancel()
 
 	err := recordActivityHeartbeat(ctx, i.service, i.metricsHandler, i.identity, i.taskToken, details)
@@ -1729,20 +1723,20 @@ func newServiceInvoker(
 	service workflowservice.WorkflowServiceClient,
 	metricsHandler metrics.Handler,
 	cancelHandler func(),
-	heartBeatTimeout time.Duration,
+	heartbeatThrottleInterval time.Duration,
 	workerStopChannel <-chan struct{},
 	namespace string,
 ) ServiceInvoker {
 	return &temporalInvoker{
-		taskToken:         taskToken,
-		identity:          identity,
-		service:           service,
-		metricsHandler:    metricsHandler,
-		cancelHandler:     cancelHandler,
-		heartBeatTimeout:  heartBeatTimeout,
-		closeCh:           make(chan struct{}),
-		workerStopChannel: workerStopChannel,
-		namespace:         namespace,
+		taskToken:                 taskToken,
+		identity:                  identity,
+		service:                   service,
+		metricsHandler:            metricsHandler,
+		cancelHandler:             cancelHandler,
+		heartbeatThrottleInterval: heartbeatThrottleInterval,
+		closeCh:                   make(chan struct{}),
+		workerStopChannel:         workerStopChannel,
+		namespace:                 namespace,
 	}
 }
 
@@ -1764,8 +1758,9 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	canCtx, cancel := context.WithCancel(rootCtx)
 	defer cancel()
 
+	heartbeatThrottleInterval := ath.getHeartbeatThrottleInterval(common.DurationValue(t.GetHeartbeatTimeout()))
 	invoker := newServiceInvoker(
-		t.TaskToken, ath.identity, ath.service, ath.metricsHandler, cancel, common.DurationValue(t.GetHeartbeatTimeout()),
+		t.TaskToken, ath.identity, ath.service, ath.metricsHandler, cancel, heartbeatThrottleInterval,
 		ath.workerStopCh, ath.namespace)
 
 	workflowType := t.WorkflowType.GetName()
@@ -1867,6 +1862,31 @@ func (ath *activityTaskHandlerImpl) getRegisteredActivityNames() (activityNames 
 		activityNames = append(activityNames, a.ActivityType().Name)
 	}
 	return
+}
+
+func (ath *activityTaskHandlerImpl) getHeartbeatThrottleInterval(heartbeatTimeout time.Duration) time.Duration {
+	// Set interval as 80% of timeout if present, or the configured default if
+	// present, or the system default otherwise
+	var heartbeatThrottleInterval time.Duration
+	if heartbeatTimeout > 0 {
+		heartbeatThrottleInterval = time.Duration(0.8 * float64(heartbeatTimeout))
+	} else if ath.defaultHeartbeatThrottleInterval > 0 {
+		heartbeatThrottleInterval = ath.defaultHeartbeatThrottleInterval
+	} else {
+		heartbeatThrottleInterval = defaultDefaultHeartbeatThrottleInterval
+	}
+
+	// Use the configured max if present, or the system default otherwise
+	maxHeartbeatThrottleInterval := ath.maxHeartbeatThrottleInterval
+	if maxHeartbeatThrottleInterval == 0 {
+		maxHeartbeatThrottleInterval = defaultMaxHeartbeatThrottleInterval
+	}
+
+	// Limit interval to a max
+	if heartbeatThrottleInterval > maxHeartbeatThrottleInterval {
+		heartbeatThrottleInterval = maxHeartbeatThrottleInterval
+	}
+	return heartbeatThrottleInterval
 }
 
 func createNewCommand(commandType enumspb.CommandType) *commandpb.Command {

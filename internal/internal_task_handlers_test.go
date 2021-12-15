@@ -1358,10 +1358,10 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 		Times(2)
 
 	temporalInvoker := &temporalInvoker{
-		identity:         "Test_Temporal_Invoker",
-		service:          mockService,
-		taskToken:        nil,
-		heartBeatTimeout: time.Second,
+		identity:                  "Test_Temporal_Invoker",
+		service:                   mockService,
+		taskToken:                 nil,
+		heartbeatThrottleInterval: time.Second,
 	}
 
 	heartbeatErr := temporalInvoker.Heartbeat(context.Background(), nil, false)
@@ -1740,4 +1740,26 @@ func Test_IsSearchAttributesMatched(t *testing.T) {
 			require.Equal(t, testCase.expected, isSearchAttributesMatched(testCase.lhs, testCase.rhs))
 		})
 	}
+}
+
+func TestHeartbeatThrottleInterval(t *testing.T) {
+	assertInterval := func(timeoutSec, defaultIntervalSec, maxIntervalSec, expectedSec int) {
+		a := &activityTaskHandlerImpl{
+			defaultHeartbeatThrottleInterval: time.Duration(defaultIntervalSec) * time.Second,
+			maxHeartbeatThrottleInterval:     time.Duration(maxIntervalSec) * time.Second,
+		}
+		require.Equal(t, time.Duration(expectedSec)*time.Second,
+			a.getHeartbeatThrottleInterval(time.Duration(timeoutSec)*time.Second))
+	}
+
+	// Use 80% of timeout
+	assertInterval(5, 2, 10, 4)
+	// Use default if no timeout
+	assertInterval(0, 2, 10, 2)
+	// Use default of 30s if no timeout or default
+	assertInterval(0, 0, 50, 30)
+	// Use max if 80% of timeout is too large
+	assertInterval(14, 2, 10, 10)
+	// Default max to 60 if not set
+	assertInterval(5000, 2, 0, 60)
 }
