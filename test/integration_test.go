@@ -1493,11 +1493,9 @@ func (ts *IntegrationTestSuite) TestInterceptorStartWithSignal() {
 	ts.True(foundHandleSignal)
 }
 
-// TODO(cretz): Re-enable when https://github.com/temporalio/temporal/pull/2149
-// is tagged and the CI is set to use the newest docker image
-// func (ts *IntegrationTestSuite) TestOpenTelemetryTracing() {
-// 	ts.testOpenTelemetryTracing(true)
-// }
+func (ts *IntegrationTestSuite) TestOpenTelemetryTracing() {
+	ts.testOpenTelemetryTracing(true)
+}
 
 func (ts *IntegrationTestSuite) TestOpenTelemetryTracingWithoutSignalsAndQueries() {
 	ts.testOpenTelemetryTracing(false)
