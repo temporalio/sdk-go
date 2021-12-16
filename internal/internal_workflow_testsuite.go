@@ -2367,6 +2367,9 @@ func (env *testWorkflowEnvironmentImpl) setStartWorkflowOptions(options StartWor
 	if options.WorkflowTaskTimeout > 0 {
 		wf.WorkflowTaskTimeout = options.WorkflowTaskTimeout
 	}
+	if len(options.ID) > 0 {
+		wf.WorkflowExecution.ID = options.ID
+	}
 	if len(options.TaskQueue) > 0 {
 		wf.TaskQueueName = options.TaskQueue
 	}
