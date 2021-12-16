@@ -129,7 +129,7 @@ func decodeAndAssignValue(dc converter.DataConverter, from interface{}, toValueP
 		} else {
 			assignable := fromType.AssignableTo(toType)
 			if !assignable {
-				return fmt.Errorf("%s is not assignable to  %s", fromType.Name(), toType.Name())
+				return fmt.Errorf("%s is not assignable to %s", fromType.Name(), toType.Name())
 			}
 			reflect.ValueOf(toValuePtr).Elem().Set(fv)
 		}
