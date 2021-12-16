@@ -736,6 +736,27 @@ func TestPanic(t *testing.T) {
 	require.Contains(t, panicError.StackTrace(), "go.temporal.io/sdk/internal.TestPanic")
 }
 
+func TestChannelReceivePointer(t *testing.T) {
+	// This confirms that a sent pointer can be received as a pointer
+	d := createNewDispatcher(func(ctx Context) {
+		type MyStruct struct{ Foo string }
+		// Create channel and a non-pointer and a pointer in
+		c := NewBufferedChannel(ctx, 2)
+		c.Send(ctx, MyStruct{Foo: "1"})
+		c.Send(ctx, &MyStruct{Foo: "2"})
+
+		// Confirm they both can be received as pointers
+		var val MyStruct
+		c.Receive(ctx, &val)
+		require.Equal(t, "1", val.Foo)
+		c.Receive(ctx, &val)
+		require.Equal(t, "2", val.Foo)
+	})
+	defer d.Close()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+	require.True(t, d.IsDone())
+}
+
 func TestAwait(t *testing.T) {
 	flag := false
 	d := createNewDispatcher(func(ctx Context) {
