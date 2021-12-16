@@ -121,11 +121,18 @@ func decodeAndAssignValue(dc converter.DataConverter, from interface{}, toValueP
 	} else if fv := reflect.ValueOf(from); fv.IsValid() {
 		fromType := fv.Type()
 		toType := reflect.TypeOf(toValuePtr).Elem()
-		assignable := fromType.AssignableTo(toType)
-		if !assignable {
-			return fmt.Errorf("%s is not assignable to  %s", fromType.Name(), toType.Name())
+		// If the value set was a pointer and is the same type as the wanted result,
+		// instead of panicking because it is not a pointer to a pointer, we will
+		// just set the pointer
+		if fv.Kind() == reflect.Ptr && fromType.Elem() == toType {
+			reflect.ValueOf(toValuePtr).Elem().Set(fv.Elem())
+		} else {
+			assignable := fromType.AssignableTo(toType)
+			if !assignable {
+				return fmt.Errorf("%s is not assignable to  %s", fromType.Name(), toType.Name())
+			}
+			reflect.ValueOf(toValuePtr).Elem().Set(fv)
 		}
-		reflect.ValueOf(toValuePtr).Elem().Set(fv)
 	}
 	return nil
 }
