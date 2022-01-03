@@ -27,6 +27,7 @@ package internal
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"strings"
@@ -179,7 +180,7 @@ func TestDialOptions(t *testing.T) {
 }
 
 func TestCustomResolver(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	// Create two gRPC servers
 	s1, err := startAdditionalHostPortsGRPCServer()
@@ -188,8 +189,6 @@ func TestCustomResolver(t *testing.T) {
 	s2, err := startAdditionalHostPortsGRPCServer()
 	require.NoError(t, err)
 	defer s2.Stop()
-	// Wait a bit to ensure they are serving
-	time.Sleep(100 * time.Millisecond)
 
 	// Register resolver for both IPs and create client using it
 	scheme := "test-resolve-" + uuid.New()
@@ -242,7 +241,34 @@ func startAdditionalHostPortsGRPCServer() (*customResolverGRPCServer, error) {
 			log.Fatal(err)
 		}
 	}()
-	return s, nil
+
+	// Wait until health reports serving
+	return s, s.waitUntilServing()
+}
+
+func (c *customResolverGRPCServer) waitUntilServing() error {
+	// Try 20 times, waiting 100ms between
+	var lastErr error
+	for i := 0; i < 20; i++ {
+		conn, err := grpc.Dial(c.addr, grpc.WithInsecure())
+		if err != nil {
+			lastErr = err
+		} else {
+			resp, err := grpc_health_v1.NewHealthClient(conn).Check(context.Background(), &grpc_health_v1.HealthCheckRequest{
+				Service: healthCheckServiceName,
+			})
+			_ = conn.Close()
+			if err != nil {
+				lastErr = err
+			} else if resp.Status != grpc_health_v1.HealthCheckResponse_SERVING {
+				lastErr = fmt.Errorf("last status: %v", resp.Status)
+			} else {
+				return nil
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("failed waiting, last error: %w", lastErr)
 }
 
 func (c *customResolverGRPCServer) SignalWorkflowExecution(
