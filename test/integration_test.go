@@ -1614,21 +1614,22 @@ func (ts *IntegrationTestSuite) openTelemetrySpanChildren(
 	spans []sdktrace.ReadOnlySpan,
 	parentID trace.SpanID,
 ) (ret []*interceptortest.SpanInfo) {
-	var lastSpan *interceptortest.SpanInfo
+	seenSpans := map[string]*interceptortest.SpanInfo{}
 	for _, s := range spans {
 		if s.Parent().SpanID() == parentID {
 			// In cases where we have disabled the cache, the same interceptors get
 			// called many times with replayed values which create replayed spans. We
-			// can't disable  spans during replay because they are sometimes the ones
-			// that code paths continue on so they need spans. So in this case we will
-			// reuse adjacent spans of the same name.
-			children := ts.openTelemetrySpanChildren(spans, s.SpanContext().SpanID())
-			if ts.config.maxWorkflowCacheSize == 0 && lastSpan != nil && lastSpan.Name == s.Name() {
-				lastSpan.Children = append(lastSpan.Children, children...)
-			} else {
-				lastSpan = interceptortest.Span(s.Name(), children...)
-				ret = append(ret, lastSpan)
+			// can't disable spans during replay because they are sometimes the ones
+			// that code paths continue on so they need spans. Since the tests don't
+			// expect any spans of the same name at the same level, we will just reuse
+			// spans we find with the same name to prevent this.
+			span := seenSpans[s.Name()]
+			if span == nil {
+				span = interceptortest.Span(s.Name())
+				ret = append(ret, span)
+				seenSpans[s.Name()] = span
 			}
+			span.Children = append(span.Children, ts.openTelemetrySpanChildren(spans, s.SpanContext().SpanID())...)
 		}
 	}
 	return
