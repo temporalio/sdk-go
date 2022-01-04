@@ -28,7 +28,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -258,7 +257,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		runTimeout:        maxWorkflowTimeout,
 	}
 
-	if os.Getenv("TEMPORAL_DEBUG") != "" {
+	if debugMode {
 		env.testTimeout = time.Hour * 24
 		env.workerOptions.DeadlockDetectionTimeout = unlimitedDeadlockDetectionTimeout
 	}

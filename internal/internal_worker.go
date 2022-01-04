@@ -1468,8 +1468,9 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 	if options.DeadlockDetectionTimeout == 0 {
 		if debugMode {
 			options.DeadlockDetectionTimeout = unlimitedDeadlockDetectionTimeout
+		} else {
+			options.DeadlockDetectionTimeout = defaultDeadlockDetectionTimeout
 		}
-		options.DeadlockDetectionTimeout = defaultDeadlockDetectionTimeout
 	}
 	if options.DefaultHeartbeatThrottleInterval == 0 {
 		options.DefaultHeartbeatThrottleInterval = defaultDefaultHeartbeatThrottleInterval
