@@ -25,6 +25,7 @@
 package test_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -1591,6 +1592,51 @@ func (w *Workflows) TooFewParams(
 	return ret, workflow.ExecuteActivity(ctx, a.TooFewParams, param1).Get(ctx, &ret.Child)
 }
 
+func (w *Workflows) ReturnCancelError(
+	ctx workflow.Context,
+	fromActivity bool,
+	rawActivityError bool,
+	waitForCancel bool,
+	goCancelError bool,
+) error {
+	// Use activity if requested
+	if fromActivity {
+		actCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+			ScheduleToCloseTimeout: 5 * time.Second,
+			// No retry
+			RetryPolicy: &temporal.RetryPolicy{MaximumAttempts: 1},
+		})
+		actCtx, actCancel := workflow.WithCancel(actCtx)
+		var a *Activities
+		actFut := workflow.ExecuteActivity(actCtx, a.ReturnCancelError, waitForCancel, goCancelError)
+		// If waiting for cancel, sleep a bit then cancel
+		if waitForCancel {
+			workflow.Sleep(ctx, 100*time.Millisecond)
+			actCancel()
+		}
+		if err := actFut.Get(ctx, nil); err != nil {
+			// If requested, we use the raw activity error. Otherwise we just use the
+			// string.
+			if rawActivityError {
+				return err
+			}
+			return errors.New(err.Error())
+		}
+		return nil
+	}
+
+	// Wait for cancel if requested
+	if waitForCancel {
+		ctx.Done().Receive(ctx, nil)
+	}
+
+	// Return canceled
+	if goCancelError {
+		return context.Canceled
+	}
+	return temporal.NewCanceledError("some details")
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -1655,6 +1701,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.AdvancedPostCancellation)
 	worker.RegisterWorkflow(w.AdvancedPostCancellationChildWithDone)
 	worker.RegisterWorkflow(w.TooFewParams)
+	worker.RegisterWorkflow(w.ReturnCancelError)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
