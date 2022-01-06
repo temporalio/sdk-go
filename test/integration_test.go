@@ -1819,6 +1819,24 @@ func (ts *IntegrationTestSuite) TestTallyScopeAccess() {
 	assertHistDuration("some_histogram", 5*time.Second, 2)
 }
 
+func (ts *IntegrationTestSuite) TestActivityOnlyWorker() {
+	// Start worker
+	taskQueue := "test-activity-only-queue-" + uuid.New()
+	activityOnlyWorker := worker.New(ts.client, taskQueue, worker.Options{DisableWorkflowWorker: true})
+	a := newActivities()
+	activityOnlyWorker.RegisterActivity(a.activities2.ToUpper)
+	ts.NoError(activityOnlyWorker.Start())
+	defer activityOnlyWorker.Stop()
+
+	// Exec workflow on primary worker, confirm activity executed
+	var result string
+	err := ts.executeWorkflow("test-activity-only-worker", ts.workflows.ExecuteRemoteActivityToUpper, &result,
+		taskQueue, "fOobAr")
+	ts.NoError(err)
+	ts.Equal("FOOBAR", result)
+	ts.Equal(1, a.invokedCount("toUpper"))
+}
+
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{HostPort: ts.config.ServiceAddr})
 	ts.NoError(err)

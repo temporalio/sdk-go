@@ -1591,6 +1591,16 @@ func (w *Workflows) TooFewParams(
 	return ret, workflow.ExecuteActivity(ctx, a.TooFewParams, param1).Get(ctx, &ret.Child)
 }
 
+func (w *Workflows) ExecuteRemoteActivityToUpper(ctx workflow.Context, taskQueue, str string) (string, error) {
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		TaskQueue:              taskQueue,
+		ScheduleToCloseTimeout: 5 * time.Second,
+	})
+	var resp string
+	err := workflow.ExecuteActivity(ctx, (*Activities2).ToUpper, str).Get(ctx, &resp)
+	return resp, err
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -1655,6 +1665,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.AdvancedPostCancellation)
 	worker.RegisterWorkflow(w.AdvancedPostCancellationChildWithDone)
 	worker.RegisterWorkflow(w.TooFewParams)
+	worker.RegisterWorkflow(w.ExecuteRemoteActivityToUpper)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
