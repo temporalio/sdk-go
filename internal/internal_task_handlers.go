@@ -1693,7 +1693,7 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 
 	if err != nil {
 		logger := GetActivityLogger(ctx)
-		logger.Debug("RecordActivityHeartbeat with error", tagError, err)
+		logger.Warn("RecordActivityHeartbeat with error", tagError, err)
 	}
 
 	// This error won't be returned to user check RecordActivityHeartbeat().
