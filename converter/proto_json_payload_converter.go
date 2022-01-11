@@ -91,7 +91,7 @@ func (c *ProtoJSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 			if err != nil {
 				return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
 			}
-			return newProtoPayload(byteSlice, c, string(valueProto.ProtoReflect().Descriptor().FullName())), nil
+			return newProtoPayload(byteSlice, c, GetProtoMessageName(&valueProto)), nil
 		}
 		if valueGogoProto, ok := value.(gogoproto.Message); ok {
 			var buf bytes.Buffer
@@ -159,8 +159,10 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 	var err error
 	if isProtoMessage {
 		err = protojson.Unmarshal(payload.GetData(), protoMessage)
+		CheckProtoMessageType(payload, &protoMessage)
 	} else if isGogoProtoMessage {
 		err = c.gogoUnmarshaler.Unmarshal(bytes.NewReader(payload.GetData()), gogoProtoMessage)
+		CheckGogoprotoMessageType(payload, &gogoProtoMessage)
 	}
 	// If original value wasn't a pointer then set value back to where valuePtr points to.
 	if originalValue.Kind() != reflect.Ptr {
@@ -183,7 +185,6 @@ func (c *ProtoJSONPayloadConverter) ToString(payload *commonpb.Payload) string {
 func (c *ProtoJSONPayloadConverter) Encoding() string {
 	return MetadataEncodingProtoJSON
 }
-
 
 func (c *ProtoJSONPayloadConverter) ExcludeProtobufMessageTypes() bool {
 	return c.options.excludeProtobufMessageTypes

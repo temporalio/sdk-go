@@ -73,7 +73,7 @@ func (c *ProtoPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload,
 			if err != nil {
 				return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
 			}
-			return newProtoPayload(byteSlice, c, string(valueProto.ProtoReflect().Descriptor().FullName())), nil
+			return newProtoPayload(byteSlice, c, GetProtoMessageName(&valueProto)), nil
 		}
 		if valueGogoProto, ok := value.(gogoproto.Message); ok {
 			data, err := gogoproto.Marshal(valueGogoProto)
@@ -135,8 +135,10 @@ func (c *ProtoPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr 
 	var err error
 	if isProtoMessage {
 		err = proto.Unmarshal(payload.GetData(), protoMessage)
+		CheckProtoMessageType(payload, &protoMessage)
 	} else if isGogoProtoMessage {
 		err = gogoproto.Unmarshal(payload.GetData(), gogoProtoMessage)
+		CheckGogoprotoMessageType(payload, &gogoProtoMessage)
 	}
 	// If original value wasn't a pointer then set value back to where valuePtr points to.
 	if originalValue.Kind() != reflect.Ptr {

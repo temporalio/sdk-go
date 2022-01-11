@@ -33,7 +33,7 @@ import (
 	"go.temporal.io/sdk/log"
 )
 
-// DefaultLogger is Logger implementation on top of standart log.Logger. It is used if logger is not specified.
+// DefaultLogger is Logger implementation on top of standard log.Logger. It is used if logger is not specified.
 type DefaultLogger struct {
 	logger        *golog.Logger
 	globalKeyvals string
