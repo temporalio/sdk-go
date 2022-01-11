@@ -27,6 +27,8 @@ package converter
 const (
 	// MetadataEncoding is "encoding"
 	MetadataEncoding = "encoding"
+	// MetadataMessageType is "messageType"
+	MetadataMessageType = "messageType"
 	// MetadataEncodingBinary is "binary/plain"
 	MetadataEncodingBinary = "binary/plain"
 	// MetadataEncodingJSON is "json/plain"
