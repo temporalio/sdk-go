@@ -311,7 +311,7 @@ func TestNilPayloadConverter(t *testing.T) {
 }
 
 func TestProtoPayloadConverter_WithOptions(t *testing.T) {
-	pc := NewProtoPayloadConverterWithOptions(ProtoPayloadConverterOptions{excludeProtobufMessageTypes: true})
+	pc := NewProtoPayloadConverterWithOptions(ProtoPayloadConverterOptions{ExcludeProtobufMessageTypes: true})
 
 	wt := commonpb.WorkflowType{Name: "qwe"}
 	payload, err := pc.ToPayload(wt)
@@ -322,7 +322,7 @@ func TestProtoPayloadConverter_WithOptions(t *testing.T) {
 }
 
 func TestProtoJSONPayloadConverter_WithOptions(t *testing.T) {
-	pc := NewProtoJSONPayloadConverterWithOptions(ProtoJSONPayloadConverterOptions{excludeProtobufMessageTypes: true})
+	pc := NewProtoJSONPayloadConverterWithOptions(ProtoJSONPayloadConverterOptions{ExcludeProtobufMessageTypes: true})
 
 	wt := commonpb.WorkflowType{Name: "qwe"}
 	payload, err := pc.ToPayload(wt)

@@ -42,7 +42,7 @@ type PayloadConverter interface {
 	Encoding() string
 }
 
-type ProtoPayloadConverterInterface interface {
+type protoPayloadConverterInterface interface {
 	PayloadConverter
 	ExcludeProtobufMessageTypes() bool
 }
@@ -56,7 +56,7 @@ func newPayload(data []byte, c PayloadConverter) *commonpb.Payload {
 	}
 }
 
-func newProtoPayload(data []byte, c ProtoPayloadConverterInterface, messageType string) *commonpb.Payload {
+func newProtoPayload(data []byte, c protoPayloadConverterInterface, messageType string) *commonpb.Payload {
 	if !c.ExcludeProtobufMessageTypes() {
 		return &commonpb.Payload{
 			Metadata: map[string][]byte{

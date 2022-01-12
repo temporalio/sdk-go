@@ -39,15 +39,19 @@ type ProtoPayloadConverter struct {
 	options ProtoPayloadConverterOptions
 }
 
+// ProtoPayloadConverterOptions represents options for `NewProtoPayloadConverterWithOptions`.
 type ProtoPayloadConverterOptions struct {
-	excludeProtobufMessageTypes bool
+	// ExcludeProtobufMessageTypes prevents the message type (`my.package.MyMessage`)
+	// from being included in the Payload.
+	ExcludeProtobufMessageTypes bool
 }
 
-// NewProtoPayloadConverter creates new instance of ProtoPayloadConverter.
+// NewProtoPayloadConverter creates new instance of `ProtoPayloadConverter``.
 func NewProtoPayloadConverter() *ProtoPayloadConverter {
 	return &ProtoPayloadConverter{}
 }
 
+// NewProtoPayloadConverterWithOptions creates new instance of `ProtoPayloadConverter` with the provided options.
 func NewProtoPayloadConverterWithOptions(options ProtoPayloadConverterOptions) *ProtoPayloadConverter {
 	return &ProtoPayloadConverter{
 		options: options,
@@ -162,5 +166,5 @@ func (c *ProtoPayloadConverter) Encoding() string {
 }
 
 func (c *ProtoPayloadConverter) ExcludeProtobufMessageTypes() bool {
-	return c.options.excludeProtobufMessageTypes
+	return c.options.ExcludeProtobufMessageTypes
 }

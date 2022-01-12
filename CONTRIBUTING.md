@@ -10,11 +10,11 @@ This doc is intended for contributors to Go SDK (hopefully that's you!)
   - Ubuntu: `sudo apt install golang`.
   - OS X: `brew install go` and add this to your `.bashrc`:
 
-```
-export GOPATH=$HOME/go
-export GOROOT="$(brew --prefix go)/libexec"
-export PATH="$PATH:${GOPATH}/bin:${GOROOT}/bin"
-```
+        ```
+        export GOPATH=$HOME/go
+        export GOROOT="$(brew --prefix go)/libexec"
+        export PATH="$PATH:${GOPATH}/bin:${GOROOT}/bin"
+        ```
 
 ## Checking out the code
 

@@ -44,15 +44,18 @@ type ProtoJSONPayloadConverter struct {
 	options         ProtoJSONPayloadConverterOptions
 }
 
+// ProtoJSONPayloadConverterOptions represents options for `NewProtoJSONPayloadConverterWithOptions`.
 type ProtoJSONPayloadConverterOptions struct {
-	excludeProtobufMessageTypes bool
+	// ExcludeProtobufMessageTypes prevents the message type (`my.package.MyMessage`)
+	// from being included in the Payload.
+	ExcludeProtobufMessageTypes bool
 }
 
 var (
 	jsonNil, _ = json.Marshal(nil)
 )
 
-// NewProtoJSONPayloadConverter creates new instance of ProtoJSONPayloadConverter.
+// NewProtoJSONPayloadConverter creates new instance of `ProtoJSONPayloadConverter`.
 func NewProtoJSONPayloadConverter() *ProtoJSONPayloadConverter {
 	return &ProtoJSONPayloadConverter{
 		gogoMarshaler:   gogojsonpb.Marshaler{},
@@ -60,6 +63,7 @@ func NewProtoJSONPayloadConverter() *ProtoJSONPayloadConverter {
 	}
 }
 
+// NewProtoJSONPayloadConverterWithOptions creates new instance of `ProtoJSONPayloadConverter` with the provided options.
 func NewProtoJSONPayloadConverterWithOptions(options ProtoJSONPayloadConverterOptions) *ProtoJSONPayloadConverter {
 	return &ProtoJSONPayloadConverter{
 		gogoMarshaler:   gogojsonpb.Marshaler{},
@@ -186,5 +190,5 @@ func (c *ProtoJSONPayloadConverter) Encoding() string {
 
 
 func (c *ProtoJSONPayloadConverter) ExcludeProtobufMessageTypes() bool {
-	return c.options.excludeProtobufMessageTypes
+	return c.options.ExcludeProtobufMessageTypes
 }
