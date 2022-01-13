@@ -862,6 +862,7 @@ type WorkflowInfo struct {
 	ParentWorkflowExecution *WorkflowExecution
 	Memo                    *commonpb.Memo             // Value can be decoded using data converter (defaultDataConverter, or custom one if set).
 	SearchAttributes        *commonpb.SearchAttributes // Value can be decoded using defaultDataConverter.
+	RetryPolicy             *RetryPolicy
 	BinaryChecksum          string
 }
 

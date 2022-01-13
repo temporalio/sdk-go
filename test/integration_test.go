@@ -504,9 +504,12 @@ func (ts *IntegrationTestSuite) TestContinueAsNewCarryOver() {
 	startOptions.SearchAttributes = map[string]interface{}{
 		"CustomKeywordField": "searchAttr",
 	}
+	startOptions.RetryPolicy = &temporal.RetryPolicy{
+		MaximumAttempts: 123,
+	}
 	err := ts.executeWorkflowWithOption(startOptions, ts.workflows.ContinueAsNewWithOptions, &result, 4, ts.taskQueueName)
 	ts.NoError(err)
-	ts.Equal("memoVal,searchAttr", result)
+	ts.Equal("memoVal,searchAttr,123", result)
 }
 
 func (ts *IntegrationTestSuite) TestCancellation() {

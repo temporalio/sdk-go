@@ -335,8 +335,8 @@ func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, ta
 		return "", fmt.Errorf("invalid taskQueueName name, expected=%v, got=%v", taskQueue, tq)
 	}
 
-	if info.Memo == nil || info.SearchAttributes == nil {
-		return "", errors.New("memo or search attributes are not carried over")
+	if info.Memo == nil || info.SearchAttributes == nil || info.RetryPolicy == nil {
+		return "", errors.New("memo, search attributes, and/or retry policy are not carried over")
 	}
 	var memoVal string
 	err := converter.GetDefaultDataConverter().FromPayload(info.Memo.Fields["memoKey"], &memoVal)
@@ -351,7 +351,7 @@ func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, ta
 	}
 
 	if count == 0 {
-		return memoVal + "," + searchAttrVal, nil
+		return fmt.Sprintf("%v,%v,%v", memoVal, searchAttrVal, info.RetryPolicy.MaximumAttempts), nil
 	}
 	ctx = workflow.WithTaskQueue(ctx, taskQueue)
 
