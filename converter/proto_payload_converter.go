@@ -36,11 +36,26 @@ import (
 
 // ProtoPayloadConverter converts proto objects to protobuf binary format.
 type ProtoPayloadConverter struct {
+	options ProtoPayloadConverterOptions
 }
 
-// NewProtoPayloadConverter creates new instance of ProtoPayloadConverter.
+// ProtoPayloadConverterOptions represents options for `NewProtoPayloadConverterWithOptions`.
+type ProtoPayloadConverterOptions struct {
+	// ExcludeProtobufMessageTypes prevents the message type (`my.package.MyMessage`)
+	// from being included in the Payload.
+	ExcludeProtobufMessageTypes bool
+}
+
+// NewProtoPayloadConverter creates new instance of `ProtoPayloadConverter``.
 func NewProtoPayloadConverter() *ProtoPayloadConverter {
 	return &ProtoPayloadConverter{}
+}
+
+// NewProtoPayloadConverterWithOptions creates new instance of `ProtoPayloadConverter` with the provided options.
+func NewProtoPayloadConverterWithOptions(options ProtoPayloadConverterOptions) *ProtoPayloadConverter {
+	return &ProtoPayloadConverter{
+		options: options,
+	}
 }
 
 // ToPayload converts single proto value to payload.
@@ -62,14 +77,14 @@ func (c *ProtoPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload,
 			if err != nil {
 				return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
 			}
-			return newPayload(byteSlice, c), nil
+			return newProtoPayload(byteSlice, c, string(valueProto.ProtoReflect().Descriptor().FullName())), nil
 		}
 		if valueGogoProto, ok := value.(gogoproto.Message); ok {
 			data, err := gogoproto.Marshal(valueGogoProto)
 			if err != nil {
 				return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
 			}
-			return newPayload(data, c), nil
+			return newProtoPayload(data, c, gogoproto.MessageName(valueGogoProto)), nil
 		}
 		if builtPointer {
 			break
@@ -148,4 +163,8 @@ func (c *ProtoPayloadConverter) ToString(payload *commonpb.Payload) string {
 // Encoding returns MetadataEncodingProto.
 func (c *ProtoPayloadConverter) Encoding() string {
 	return MetadataEncodingProto
+}
+
+func (c *ProtoPayloadConverter) ExcludeProtobufMessageTypes() bool {
+	return c.options.ExcludeProtobufMessageTypes
 }

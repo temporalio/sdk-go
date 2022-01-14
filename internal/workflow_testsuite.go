@@ -278,6 +278,11 @@ func (e *TestWorkflowEnvironment) SetStartTime(startTime time.Time) {
 //   })
 // OR return mock values with same types as activity function's return types:
 //   t.OnActivity(MyActivity, mock.Anything, mock.Anything).Return("mock_result", nil)
+//
+// Note, when using a method reference with a receiver as an activity, the receiver must be an instance the same as if
+// it was being using in RegisterActivity so the parameter types are accurate. In Go, a method reference of
+// (*MyStruct).MyFunc makes the first parameter *MyStruct which will not work, whereas a method reference of
+// new(MyStruct).MyFunc will.
 func (e *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...interface{}) *MockCallWrapper {
 	fType := reflect.TypeOf(activity)
 	var call *mock.Call
