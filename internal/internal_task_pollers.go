@@ -955,8 +955,15 @@ func reportActivityCompleteByID(
 	return reportErr
 }
 
-func convertActivityResultToRespondRequest(identity string, taskToken []byte, result *commonpb.Payloads, err error,
-	dataConverter converter.DataConverter, namespace string) interface{} {
+func convertActivityResultToRespondRequest(
+	identity string,
+	taskToken []byte,
+	result *commonpb.Payloads,
+	err error,
+	dataConverter converter.DataConverter,
+	namespace string,
+	cancelAllowed bool,
+) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
 		// nothing to report at this point
@@ -971,19 +978,28 @@ func convertActivityResultToRespondRequest(identity string, taskToken []byte, re
 			Namespace: namespace}
 	}
 
-	var canceledErr *CanceledError
-	if errors.As(err, &canceledErr) {
-		return &workflowservice.RespondActivityTaskCanceledRequest{
-			TaskToken: taskToken,
-			Details:   convertErrDetailsToPayloads(canceledErr.details, dataConverter),
-			Identity:  identity,
-			Namespace: namespace}
+	// Only respond with canceled if allowed
+	if cancelAllowed {
+		var canceledErr *CanceledError
+		if errors.As(err, &canceledErr) {
+			return &workflowservice.RespondActivityTaskCanceledRequest{
+				TaskToken: taskToken,
+				Details:   convertErrDetailsToPayloads(canceledErr.details, dataConverter),
+				Identity:  identity,
+				Namespace: namespace}
+		}
+		if errors.Is(err, context.Canceled) {
+			return &workflowservice.RespondActivityTaskCanceledRequest{
+				TaskToken: taskToken,
+				Identity:  identity,
+				Namespace: namespace}
+		}
 	}
-	if errors.Is(err, context.Canceled) {
-		return &workflowservice.RespondActivityTaskCanceledRequest{
-			TaskToken: taskToken,
-			Identity:  identity,
-			Namespace: namespace}
+
+	// If a canceled error is returned but it wasn't allowed, we have to wrap in
+	// an unexpected-cancel application error
+	if _, isCanceledErr := err.(*CanceledError); isCanceledErr {
+		err = fmt.Errorf("unexpected activity cancel error: %w", err)
 	}
 
 	return &workflowservice.RespondActivityTaskFailedRequest{
@@ -993,8 +1009,17 @@ func convertActivityResultToRespondRequest(identity string, taskToken []byte, re
 		Namespace: namespace}
 }
 
-func convertActivityResultToRespondRequestByID(identity, namespace, workflowID, runID, activityID string,
-	result *commonpb.Payloads, err error, dataConverter converter.DataConverter) interface{} {
+func convertActivityResultToRespondRequestByID(
+	identity string,
+	namespace string,
+	workflowID string,
+	runID string,
+	activityID string,
+	result *commonpb.Payloads,
+	err error,
+	dataConverter converter.DataConverter,
+	cancelAllowed bool,
+) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
 		// nothing to report at this point
@@ -1011,24 +1036,32 @@ func convertActivityResultToRespondRequestByID(identity, namespace, workflowID, 
 			Identity:   identity}
 	}
 
-	var canceledErr *CanceledError
-	if errors.As(err, &canceledErr) {
-		return &workflowservice.RespondActivityTaskCanceledByIdRequest{
-			Namespace:  namespace,
-			WorkflowId: workflowID,
-			RunId:      runID,
-			ActivityId: activityID,
-			Details:    convertErrDetailsToPayloads(canceledErr.details, dataConverter),
-			Identity:   identity}
+	// Only respond with canceled if allowed
+	if cancelAllowed {
+		var canceledErr *CanceledError
+		if errors.As(err, &canceledErr) {
+			return &workflowservice.RespondActivityTaskCanceledByIdRequest{
+				Namespace:  namespace,
+				WorkflowId: workflowID,
+				RunId:      runID,
+				ActivityId: activityID,
+				Details:    convertErrDetailsToPayloads(canceledErr.details, dataConverter),
+				Identity:   identity}
+		}
+		if errors.Is(err, context.Canceled) {
+			return &workflowservice.RespondActivityTaskCanceledByIdRequest{
+				Namespace:  namespace,
+				WorkflowId: workflowID,
+				RunId:      runID,
+				ActivityId: activityID,
+				Identity:   identity}
+		}
 	}
 
-	if errors.Is(err, context.Canceled) {
-		return &workflowservice.RespondActivityTaskCanceledByIdRequest{
-			Namespace:  namespace,
-			WorkflowId: workflowID,
-			RunId:      runID,
-			ActivityId: activityID,
-			Identity:   identity}
+	// If a canceled error is returned but it wasn't allowed, we have to wrap in
+	// an unexpected-cancel application error
+	if _, isCanceledErr := err.(*CanceledError); isCanceledErr {
+		err = fmt.Errorf("unexpected activity cancel error: %w", err)
 	}
 
 	return &workflowservice.RespondActivityTaskFailedByIdRequest{
