@@ -1866,6 +1866,7 @@ func (ts *IntegrationTestSuite) TestReturnCancelError() {
 		fromActivity, rawActivityError, waitForCancel, goCancelError)
 	ts.Error(err)
 	ts.NotContains(err.Error(), "context canceled")
+	ts.NotContains(err.Error(), "unexpected")
 	ts.Contains(err.Error(), "canceled")
 
 	// Workflow using temporal canceled error when not canceled will consider the
