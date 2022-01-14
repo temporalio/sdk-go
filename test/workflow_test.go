@@ -1611,7 +1611,7 @@ func (w *Workflows) ReturnCancelError(
 		actFut := workflow.ExecuteActivity(actCtx, a.ReturnCancelError, waitForCancel, goCancelError)
 		// If waiting for cancel, sleep a bit then cancel
 		if waitForCancel {
-			workflow.Sleep(ctx, 100*time.Millisecond)
+			_ = workflow.Sleep(ctx, 100*time.Millisecond)
 			actCancel()
 		}
 		if err := actFut.Get(ctx, nil); err != nil {
