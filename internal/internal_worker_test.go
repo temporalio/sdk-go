@@ -2632,3 +2632,14 @@ func TestIsNonRetriableError(t *testing.T) {
 		require.Equal(t, test.expected, isNonRetriableError(test.err))
 	}
 }
+
+func TestWorkerRegisterDisabledWorkflow(t *testing.T) {
+	// Expect panic
+	var recovered interface{}
+	func() {
+		defer func() { recovered = recover() }()
+		worker := NewAggregatedWorker(&WorkflowClient{}, "some-task-queue", WorkerOptions{DisableWorkflowWorker: true})
+		worker.RegisterWorkflow(testReplayWorkflow)
+	}()
+	require.Equal(t, "workflow worker disabled, cannot register workflow", recovered)
+}

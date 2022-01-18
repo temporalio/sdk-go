@@ -849,11 +849,17 @@ type AggregatedWorker struct {
 
 // RegisterWorkflow registers workflow implementation with the AggregatedWorker
 func (aw *AggregatedWorker) RegisterWorkflow(w interface{}) {
+	if aw.workflowWorker == nil {
+		panic("workflow worker disabled, cannot register workflow")
+	}
 	aw.registry.RegisterWorkflow(w)
 }
 
 // RegisterWorkflowWithOptions registers workflow implementation with the AggregatedWorker
 func (aw *AggregatedWorker) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
+	if aw.workflowWorker == nil {
+		panic("workflow worker disabled, cannot register workflow")
+	}
 	aw.registry.RegisterWorkflowWithOptions(w, options)
 }
 
@@ -882,8 +888,10 @@ func (aw *AggregatedWorker) Start() error {
 	if !util.IsInterfaceNil(aw.activityWorker) {
 		if err := aw.activityWorker.Start(); err != nil {
 			// stop workflow worker.
-			if aw.workflowWorker.worker.isWorkerStarted {
-				aw.workflowWorker.Stop()
+			if !util.IsInterfaceNil(aw.workflowWorker) {
+				if aw.workflowWorker.worker.isWorkerStarted {
+					aw.workflowWorker.Stop()
+				}
 			}
 			return err
 		}
@@ -893,11 +901,15 @@ func (aw *AggregatedWorker) Start() error {
 		aw.logger.Info("Starting session worker")
 		if err := aw.sessionWorker.Start(); err != nil {
 			// stop workflow worker and activity worker.
-			if aw.workflowWorker.worker.isWorkerStarted {
-				aw.workflowWorker.Stop()
+			if !util.IsInterfaceNil(aw.workflowWorker) {
+				if aw.workflowWorker.worker.isWorkerStarted {
+					aw.workflowWorker.Stop()
+				}
 			}
-			if aw.activityWorker.worker.isWorkerStarted {
-				aw.activityWorker.Stop()
+			if !util.IsInterfaceNil(aw.activityWorker) {
+				if aw.activityWorker.worker.isWorkerStarted {
+					aw.activityWorker.Stop()
+				}
 			}
 			return err
 		}
@@ -1312,11 +1324,13 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 
 	// workflow factory.
 	var workflowWorker *workflowWorker
-	testTags := getTestTags(options.BackgroundActivityContext)
-	if len(testTags) > 0 {
-		workflowWorker = newWorkflowWorkerWithPressurePoints(client.workflowService, workerParams, testTags, registry)
-	} else {
-		workflowWorker = newWorkflowWorker(client.workflowService, workerParams, nil, registry)
+	if !options.DisableWorkflowWorker {
+		testTags := getTestTags(options.BackgroundActivityContext)
+		if len(testTags) > 0 {
+			workflowWorker = newWorkflowWorkerWithPressurePoints(client.workflowService, workerParams, testTags, registry)
+		} else {
+			workflowWorker = newWorkflowWorker(client.workflowService, workerParams, nil, registry)
+		}
 	}
 
 	// activity types.
