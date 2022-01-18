@@ -148,7 +148,8 @@ type (
 		MaxConcurrentSessionExecutionSize int
 
 		// Optional: If set to true, a workflow worker is not started for this
-		// worker and workflows cannot be registered with this worker.
+		// worker and workflows cannot be registered with this worker. Use this if
+		// you only want your worker to execute activities.
 		// default: false
 		DisableWorkflowWorker bool
 
