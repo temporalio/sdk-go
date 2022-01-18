@@ -135,6 +135,7 @@ func TestProtoPayloadConverter_Gogo(t *testing.T) {
 
 	s := pc.ToString(payload)
 	assert.Equal(t, "CLoPGAhqBAgCGAI", s)
+	assert.Equal(t, "temporal.api.history.v1.HistoryEvent", string(payload.Metadata[MetadataMessageType]))
 }
 
 func TestProtoPayloadConverter_Google(t *testing.T) {
@@ -165,7 +166,9 @@ func TestProtoPayloadConverter_Google(t *testing.T) {
 
 	s := pc.ToString(payload)
 	assert.Equal(t, "CgNxd2UQDDgBQgNhc2Q", s)
+	assert.Equal(t, "protobench.GoV2", string(payload.Metadata[MetadataMessageType]))
 }
+
 
 func TestJsonPayloadConverter(t *testing.T) {
 	pc := NewJSONPayloadConverter()
@@ -305,6 +308,28 @@ func TestNilPayloadConverter(t *testing.T) {
 	err = pc.FromPayload(payload, &wt4)
 	require.NoError(t, err)
 	assert.Nil(t, wt4)
+}
+
+func TestProtoPayloadConverter_WithOptions(t *testing.T) {
+	pc := NewProtoPayloadConverterWithOptions(ProtoPayloadConverterOptions{ExcludeProtobufMessageTypes: true})
+
+	wt := commonpb.WorkflowType{Name: "qwe"}
+	payload, err := pc.ToPayload(wt)
+	require.NoError(t, err)
+
+	_, ok := payload.Metadata[MetadataMessageType]
+	assert.False(t, ok)
+}
+
+func TestProtoJSONPayloadConverter_WithOptions(t *testing.T) {
+	pc := NewProtoJSONPayloadConverterWithOptions(ProtoJSONPayloadConverterOptions{ExcludeProtobufMessageTypes: true})
+
+	wt := commonpb.WorkflowType{Name: "qwe"}
+	payload, err := pc.ToPayload(wt)
+	require.NoError(t, err)
+
+	_, ok := payload.Metadata[MetadataMessageType]
+	assert.False(t, ok)
 }
 
 func TestProtoJsonPayloadConverter_FromPayload_Errors(t *testing.T) {

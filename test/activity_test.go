@@ -333,6 +333,26 @@ func (*Activities) TooFewParams(
 	return &ParamsValue{Param1: param1, Param2: param2, Param3: param3, Param4: param4, Param5: param5, Param6: param6}, nil
 }
 
+func (*Activities) ReturnCancelError(ctx context.Context, waitForCancel, goCancelError bool) error {
+	// If waiting for cancel, heartbeat every 100ms until cancelled
+	if waitForCancel {
+		t := time.NewTicker(100 * time.Millisecond)
+		defer t.Stop()
+		for ctx.Err() == nil {
+			select {
+			case <-ctx.Done():
+			case <-t.C:
+			}
+		}
+	}
+
+	// Return canceled
+	if goCancelError {
+		return context.Canceled
+	}
+	return temporal.NewCanceledError("some details")
+}
+
 func (a *Activities) register(worker worker.Worker) {
 	worker.RegisterActivity(a)
 	// Check reregistration
