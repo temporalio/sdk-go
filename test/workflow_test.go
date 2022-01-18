@@ -25,6 +25,7 @@
 package test_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math/rand"
@@ -335,8 +336,8 @@ func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, ta
 		return "", fmt.Errorf("invalid taskQueueName name, expected=%v, got=%v", taskQueue, tq)
 	}
 
-	if info.Memo == nil || info.SearchAttributes == nil {
-		return "", errors.New("memo or search attributes are not carried over")
+	if info.Memo == nil || info.SearchAttributes == nil || info.RetryPolicy == nil {
+		return "", errors.New("memo, search attributes, and/or retry policy are not carried over")
 	}
 	var memoVal string
 	err := converter.GetDefaultDataConverter().FromPayload(info.Memo.Fields["memoKey"], &memoVal)
@@ -351,7 +352,7 @@ func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, ta
 	}
 
 	if count == 0 {
-		return memoVal + "," + searchAttrVal, nil
+		return fmt.Sprintf("%v,%v,%v", memoVal, searchAttrVal, info.RetryPolicy.MaximumAttempts), nil
 	}
 	ctx = workflow.WithTaskQueue(ctx, taskQueue)
 
@@ -1601,6 +1602,51 @@ func (w *Workflows) ExecuteRemoteActivityToUpper(ctx workflow.Context, taskQueue
 	return resp, err
 }
 
+func (w *Workflows) ReturnCancelError(
+	ctx workflow.Context,
+	fromActivity bool,
+	rawActivityError bool,
+	waitForCancel bool,
+	goCancelError bool,
+) error {
+	// Use activity if requested
+	if fromActivity {
+		actCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+			ScheduleToCloseTimeout: 5 * time.Second,
+			// No retry
+			RetryPolicy: &temporal.RetryPolicy{MaximumAttempts: 1},
+		})
+		actCtx, actCancel := workflow.WithCancel(actCtx)
+		var a *Activities
+		actFut := workflow.ExecuteActivity(actCtx, a.ReturnCancelError, waitForCancel, goCancelError)
+		// If waiting for cancel, sleep a bit then cancel
+		if waitForCancel {
+			_ = workflow.Sleep(ctx, 100*time.Millisecond)
+			actCancel()
+		}
+		if err := actFut.Get(ctx, nil); err != nil {
+			// If requested, we use the raw activity error. Otherwise we just use the
+			// string.
+			if rawActivityError {
+				return err
+			}
+			return errors.New(err.Error())
+		}
+		return nil
+	}
+
+	// Wait for cancel if requested
+	if waitForCancel {
+		ctx.Done().Receive(ctx, nil)
+	}
+
+	// Return canceled
+	if goCancelError {
+		return context.Canceled
+	}
+	return temporal.NewCanceledError("some details")
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -1666,6 +1712,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.AdvancedPostCancellationChildWithDone)
 	worker.RegisterWorkflow(w.TooFewParams)
 	worker.RegisterWorkflow(w.ExecuteRemoteActivityToUpper)
+	worker.RegisterWorkflow(w.ReturnCancelError)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)

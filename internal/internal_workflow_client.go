@@ -395,7 +395,11 @@ func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 			return err0
 		}
 	}
-	request := convertActivityResultToRespondRequest(wc.identity, taskToken, data, err, wc.dataConverter, wc.namespace)
+
+	// We do allow canceled error to be passed here
+	cancelAllowed := true
+	request := convertActivityResultToRespondRequest(wc.identity, taskToken,
+		data, err, wc.dataConverter, wc.namespace, cancelAllowed)
 	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
@@ -418,7 +422,10 @@ func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, namespace, w
 		}
 	}
 
-	request := convertActivityResultToRespondRequestByID(wc.identity, namespace, workflowID, runID, activityID, data, err, wc.dataConverter)
+	// We do allow canceled error to be passed here
+	cancelAllowed := true
+	request := convertActivityResultToRespondRequestByID(wc.identity, namespace, workflowID, runID, activityID,
+		data, err, wc.dataConverter, cancelAllowed)
 	return reportActivityCompleteByID(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 

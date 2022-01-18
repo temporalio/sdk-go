@@ -579,6 +579,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		ParentWorkflowExecution:  parentWorkflowExecution,
 		Memo:                     attributes.Memo,
 		SearchAttributes:         attributes.SearchAttributes,
+		RetryPolicy:              convertFromPBRetryPolicy(attributes.RetryPolicy),
 	}
 
 	return newWorkflowExecutionContext(workflowInfo, wth), nil
@@ -1474,6 +1475,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			Header:              contErr.Header,
 			Memo:                workflowContext.workflowInfo.Memo,
 			SearchAttributes:    workflowContext.workflowInfo.SearchAttributes,
+			RetryPolicy:         convertToPBRetryPolicy(workflowContext.workflowInfo.RetryPolicy),
 		}}
 	} else if workflowContext.err != nil {
 		// Workflow failures
@@ -1693,7 +1695,7 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 
 	if err != nil {
 		logger := GetActivityLogger(ctx)
-		logger.Debug("RecordActivityHeartbeat with error", tagError, err)
+		logger.Warn("RecordActivityHeartbeat with error", tagError, err)
 	}
 
 	// This error won't be returned to user check RecordActivityHeartbeat().
@@ -1786,7 +1788,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		metricsHandler.Counter(metrics.UnregisteredActivityInvocationCounter).Inc(1)
 		return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil,
 			NewActivityNotRegisteredError(activityType, ath.getRegisteredActivityNames()),
-			ath.dataConverter, ath.namespace), nil
+			ath.dataConverter, ath.namespace, false), nil
 	}
 
 	// panic handler
@@ -1804,7 +1806,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			metricsHandler.Counter(metrics.ActivityTaskErrorCounter).Inc(1)
 			panicErr := newPanicError(p, st)
 			result = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr,
-				ath.dataConverter, ath.namespace)
+				ath.dataConverter, ath.namespace, false)
 		}
 	}()
 
@@ -1819,6 +1821,8 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	defer dlCancelFunc()
 
 	output, err := activityImplementation.Execute(ctx, t.Input)
+	// Check if context canceled at a higher level before we cancel it ourselves
+	isActivityCancel := ctx.Err() == context.Canceled
 
 	dlCancelFunc()
 	if <-ctx.Done(); ctx.Err() == context.DeadlineExceeded {
@@ -1842,7 +1846,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		)
 	}
 	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err,
-		ath.dataConverter, ath.namespace), nil
+		ath.dataConverter, ath.namespace, isActivityCancel), nil
 }
 
 func (ath *activityTaskHandlerImpl) getActivity(name string) activity {
