@@ -1822,6 +1822,83 @@ func (ts *IntegrationTestSuite) TestTallyScopeAccess() {
 	assertHistDuration("some_histogram", 5*time.Second, 2)
 }
 
+func (ts *IntegrationTestSuite) TestReturnCancelError() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	wfIDPrefix := "test-return-cancel-error-"
+
+	// For most tests we don't return the raw error since it loses context
+	rawActivityError := false
+
+	// Activity using temporal canceled error when not canceled should return
+	// "unexpected activity cancel error"
+	fromActivity, waitForCancel, goCancelError := true, false, false
+	err := ts.executeWorkflow(wfIDPrefix+"1", ts.workflows.ReturnCancelError, nil,
+		fromActivity, rawActivityError, waitForCancel, goCancelError)
+	ts.Error(err)
+	ts.Contains(err.Error(), "unexpected activity cancel error")
+
+	// Activity using Go canceled error when not canceled should return a context
+	// canceled error
+	fromActivity, waitForCancel, goCancelError = true, false, true
+	err = ts.executeWorkflow(wfIDPrefix+"2", ts.workflows.ReturnCancelError, nil,
+		fromActivity, rawActivityError, waitForCancel, goCancelError)
+	ts.Error(err)
+	ts.Contains(err.Error(), "context canceled")
+
+	// Activity using temporal canceled error after cancel should return normal
+	// cancel error
+	fromActivity, waitForCancel, goCancelError = true, true, false
+	err = ts.executeWorkflow(wfIDPrefix+"3", ts.workflows.ReturnCancelError, nil,
+		fromActivity, rawActivityError, waitForCancel, goCancelError)
+	ts.Error(err)
+	ts.NotContains(err.Error(), "unexpected")
+	ts.Contains(err.Error(), "canceled")
+	// We also check that, since rawActivityError is false, this is _not_ a
+	// canceled workflow since just the error string is used. This assertion is
+	// only made here to show it's the opposite of the raw one later.
+	ts.False(temporal.IsCanceledError(err))
+	resp, err := ts.client.DescribeWorkflowExecution(ctx, wfIDPrefix+"3", "")
+	ts.NoError(err)
+	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_FAILED, resp.GetWorkflowExecutionInfo().GetStatus())
+
+	// Activity using Go canceled error after cancel should return normal cancel
+	// error
+	fromActivity, waitForCancel, goCancelError = true, true, true
+	err = ts.executeWorkflow(wfIDPrefix+"4", ts.workflows.ReturnCancelError, nil,
+		fromActivity, rawActivityError, waitForCancel, goCancelError)
+	ts.Error(err)
+	ts.NotContains(err.Error(), "context canceled")
+	ts.NotContains(err.Error(), "unexpected")
+	ts.Contains(err.Error(), "canceled")
+
+	// Workflow using temporal canceled error when not canceled will consider the
+	// workflow canceled
+	// TODO(cretz): Note, this is observed behavior, not necessarily desired
+	// behavior
+	fromActivity, waitForCancel, goCancelError = false, false, false
+	err = ts.executeWorkflow(wfIDPrefix+"5", ts.workflows.ReturnCancelError, nil,
+		fromActivity, rawActivityError, waitForCancel, goCancelError)
+	ts.Error(err)
+	ts.True(temporal.IsCanceledError(err))
+	resp, err = ts.client.DescribeWorkflowExecution(ctx, wfIDPrefix+"5", "")
+	ts.NoError(err)
+	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_CANCELED, resp.GetWorkflowExecutionInfo().GetStatus())
+
+	// Workflow just returning the raw activity cancel itself appears canceled
+	// TODO(cretz): Note, this is observed behavior, not necessarily desired
+	// behavior
+	rawActivityError = true
+	fromActivity, waitForCancel, goCancelError = true, true, false
+	err = ts.executeWorkflow(wfIDPrefix+"6", ts.workflows.ReturnCancelError, nil,
+		fromActivity, rawActivityError, waitForCancel, goCancelError)
+	ts.Error(err)
+	ts.True(temporal.IsCanceledError(err))
+	resp, err = ts.client.DescribeWorkflowExecution(ctx, wfIDPrefix+"6", "")
+	ts.NoError(err)
+	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_CANCELED, resp.GetWorkflowExecutionInfo().GetStatus())
+}
+
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{HostPort: ts.config.ServiceAddr})
 	ts.NoError(err)
