@@ -579,6 +579,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		ParentWorkflowExecution:  parentWorkflowExecution,
 		Memo:                     attributes.Memo,
 		SearchAttributes:         attributes.SearchAttributes,
+		RetryPolicy:              convertFromPBRetryPolicy(attributes.RetryPolicy),
 	}
 
 	return newWorkflowExecutionContext(workflowInfo, wth), nil
@@ -1474,6 +1475,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			Header:              contErr.Header,
 			Memo:                workflowContext.workflowInfo.Memo,
 			SearchAttributes:    workflowContext.workflowInfo.SearchAttributes,
+			RetryPolicy:         convertToPBRetryPolicy(workflowContext.workflowInfo.RetryPolicy),
 		}}
 	} else if workflowContext.err != nil {
 		// Workflow failures
