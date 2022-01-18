@@ -159,6 +159,17 @@ type (
 		// Optional: If set defines maximum amount of time that workflow task will be allowed to run. Defaults to 1 sec.
 		DeadlockDetectionTimeout time.Duration
 
+		// Optional: The maximum amount of time between sending each pending heartbeat to the server. Regardless of
+		// heartbeat timeout, no pending heartbeat will wait longer than this amount of time to send.
+		// default: 60 seconds
+		MaxHeartbeatThrottleInterval time.Duration
+
+		// Optional: The default amount of time between sending each pending heartbeat to the server. This is used if the
+		// ActivityOptions do not provide a HeartbeatTimeout. Otherwise, the interval becomes a value a bit smaller than the
+		// given HeartbeatTimeout.
+		// default: 30 seconds
+		DefaultHeartbeatThrottleInterval time.Duration
+
 		// Interceptors to apply to the worker. Earlier interceptors wrap later
 		// interceptors.
 		//

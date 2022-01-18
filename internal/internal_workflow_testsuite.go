@@ -28,7 +28,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -38,7 +37,6 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/robfig/cron"
 	"github.com/stretchr/testify/mock"
-	"github.com/uber-go/tally/v4"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -50,6 +48,7 @@ import (
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
+	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
 )
@@ -132,12 +131,13 @@ type (
 
 		taskQueueSpecificActivities map[string]*taskQueueSpecificActivity
 
-		mock               *mock.Mock
-		service            workflowservice.WorkflowServiceClient
-		logger             log.Logger
-		metricsScope       tally.Scope
-		contextPropagators []ContextPropagator
-		identity           string
+		mock                      *mock.Mock
+		service                   workflowservice.WorkflowServiceClient
+		logger                    log.Logger
+		metricsHandler            metrics.Handler
+		contextPropagators        []ContextPropagator
+		identity                  string
+		detachedChildWaitDisabled bool
 
 		mockClock *clock.Mock
 		wallClock clock.Clock
@@ -183,8 +183,8 @@ type (
 		openSessions   map[string]*SessionInfo
 
 		workflowCancelHandler func()
-		signalHandler         func(name string, input *commonpb.Payloads) error
-		queryHandler          func(string, *commonpb.Payloads) (*commonpb.Payloads, error)
+		signalHandler         func(name string, input *commonpb.Payloads, header *commonpb.Header) error
+		queryHandler          func(string, *commonpb.Payloads, *commonpb.Header) (*commonpb.Payloads, error)
 		startedHandler        func(r WorkflowExecution, e error)
 
 		isWorkflowCompleted bool
@@ -221,7 +221,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 			taskQueueSpecificActivities: make(map[string]*taskQueueSpecificActivity),
 
 			logger:            s.logger,
-			metricsScope:      s.scope,
+			metricsHandler:    s.metricsHandler,
 			mockClock:         clock.NewMock(),
 			wallClock:         clock.New(),
 			timers:            make(map[string]*testTimerHandle),
@@ -257,7 +257,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		runTimeout:        maxWorkflowTimeout,
 	}
 
-	if os.Getenv("TEMPORAL_DEBUG") != "" {
+	if debugMode {
 		env.testTimeout = time.Hour * 24
 		env.workerOptions.DeadlockDetectionTimeout = unlimitedDeadlockDetectionTimeout
 	}
@@ -271,8 +271,8 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 	if env.logger == nil {
 		env.logger = ilog.NewDefaultLogger()
 	}
-	if env.metricsScope == nil {
-		env.metricsScope = tally.NoopScope
+	if env.metricsHandler == nil {
+		env.metricsHandler = metrics.NopHandler
 	}
 	env.contextPropagators = s.contextPropagators
 	env.header = s.header
@@ -337,6 +337,7 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	childEnv.workerOptions = env.workerOptions
 	childEnv.dataConverter = params.DataConverter
 	childEnv.registry = env.registry
+	childEnv.detachedChildWaitDisabled = env.detachedChildWaitDisabled
 
 	if params.TaskQueueName == "" {
 		return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Empty task queue name", "", "")
@@ -411,6 +412,10 @@ func (env *testWorkflowEnvironmentImpl) setContextPropagators(contextPropagators
 
 func (env *testWorkflowEnvironmentImpl) setWorkerStopChannel(c chan struct{}) {
 	env.workerStopChannel = c
+}
+
+func (env *testWorkflowEnvironmentImpl) setDetachedChildWaitDisabled(detachedChildWaitDisabled bool) {
+	env.detachedChildWaitDisabled = detachedChildWaitDisabled
 }
 
 func (env *testWorkflowEnvironmentImpl) setActivityTaskQueue(taskqueue string, activityFns ...interface{}) {
@@ -611,10 +616,10 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 		attempt: 1,
 	}
 	taskHandler := localActivityTaskHandler{
-		userContext:  env.workerOptions.BackgroundActivityContext,
-		metricsScope: env.metricsScope,
-		logger:       env.logger,
-		interceptors: env.registry.interceptors,
+		userContext:    env.workerOptions.BackgroundActivityContext,
+		metricsHandler: env.metricsHandler,
+		logger:         env.logger,
+		interceptors:   env.registry.interceptors,
 	}
 
 	result := taskHandler.executeLocalActivityTask(task)
@@ -675,15 +680,18 @@ func (env *testWorkflowEnvironmentImpl) startMainLoop() {
 }
 
 func (env *testWorkflowEnvironmentImpl) shouldStopEventLoop() bool {
-	for _, handle := range env.runningWorkflows {
-		if env.workflowInfo.WorkflowExecution.ID == handle.env.workflowInfo.WorkflowExecution.ID {
-			// ignore root workflow
-			continue
-		}
+	// Check if any detached children are still running if not disabled.
+	if !env.detachedChildWaitDisabled {
+		for _, handle := range env.runningWorkflows {
+			if env.workflowInfo.WorkflowExecution.ID == handle.env.workflowInfo.WorkflowExecution.ID {
+				// ignore root workflow
+				continue
+			}
 
-		if !handle.handled && (handle.params.ParentClosePolicy == enumspb.PARENT_CLOSE_POLICY_ABANDON ||
-			handle.params.ParentClosePolicy == enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL) {
-			return false
+			if !handle.handled && (handle.params.ParentClosePolicy == enumspb.PARENT_CLOSE_POLICY_ABANDON ||
+				handle.params.ParentClosePolicy == enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL) {
+				return false
+			}
 		}
 	}
 
@@ -998,8 +1006,10 @@ func (env *testWorkflowEnvironmentImpl) CompleteActivity(taskToken []byte, resul
 				tagActivityID, activityID)
 			return
 		}
+		// We do allow canceled error to be passed here
+		cancelAllowed := true
 		request := convertActivityResultToRespondRequest("test-identity", taskToken, data, err,
-			env.GetDataConverter(), defaultTestNamespace)
+			env.GetDataConverter(), defaultTestNamespace, cancelAllowed)
 		env.handleActivityResult(activityID, request, activityHandle.activityType, env.GetDataConverter())
 	}, false /* do not auto schedule workflow task, because activity might be still pending */)
 
@@ -1010,8 +1020,8 @@ func (env *testWorkflowEnvironmentImpl) GetLogger() log.Logger {
 	return env.logger
 }
 
-func (env *testWorkflowEnvironmentImpl) GetMetricsScope() tally.Scope {
-	return env.metricsScope
+func (env *testWorkflowEnvironmentImpl) GetMetricsHandler() metrics.Handler {
+	return env.metricsHandler
 }
 
 func (env *testWorkflowEnvironmentImpl) GetDataConverter() converter.DataConverter {
@@ -1373,7 +1383,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocal
 	task := newLocalActivityTask(params, callback, activityID)
 	taskHandler := localActivityTaskHandler{
 		userContext:        env.workerOptions.BackgroundActivityContext,
-		metricsScope:       env.metricsScope,
+		metricsHandler:     env.metricsHandler,
 		logger:             env.logger,
 		dataConverter:      env.dataConverter,
 		contextPropagators: env.contextPropagators,
@@ -1832,7 +1842,7 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskQueue str
 	params := workerExecutionParameters{
 		TaskQueue:          taskQueue,
 		Identity:           env.identity,
-		MetricsScope:       env.metricsScope,
+		MetricsHandler:     env.metricsHandler,
 		Logger:             env.logger,
 		UserContext:        env.workerOptions.BackgroundActivityContext,
 		DataConverter:      dataConverter,
@@ -1973,11 +1983,15 @@ func (env *testWorkflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
 	env.workflowCancelHandler = handler
 }
 
-func (env *testWorkflowEnvironmentImpl) RegisterSignalHandler(handler func(name string, input *commonpb.Payloads) error) {
+func (env *testWorkflowEnvironmentImpl) RegisterSignalHandler(
+	handler func(name string, input *commonpb.Payloads, header *commonpb.Header) error,
+) {
 	env.signalHandler = handler
 }
 
-func (env *testWorkflowEnvironmentImpl) RegisterQueryHandler(handler func(string, *commonpb.Payloads) (*commonpb.Payloads, error)) {
+func (env *testWorkflowEnvironmentImpl) RegisterQueryHandler(
+	handler func(string, *commonpb.Payloads, *commonpb.Header) (*commonpb.Payloads, error),
+) {
 	env.queryHandler = handler
 }
 
@@ -2041,7 +2055,17 @@ func (env *testWorkflowEnvironmentImpl) IsReplaying() bool {
 	return false
 }
 
-func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input *commonpb.Payloads, arg interface{}, childWorkflowOnly bool, callback ResultHandler) {
+func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(
+	namespace string,
+	workflowID string,
+	runID string,
+	signalName string,
+	input *commonpb.Payloads,
+	arg interface{},
+	header *commonpb.Header,
+	childWorkflowOnly bool,
+	callback ResultHandler,
+) {
 	// check if target workflow is a known workflow
 	if childHandle, ok := env.runningWorkflows[workflowID]; ok {
 		// target workflow is a child
@@ -2051,7 +2075,7 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(namespace, workfl
 			err := newUnknownExternalWorkflowExecutionError()
 			callback(nil, err)
 		} else {
-			err := childEnv.signalHandler(signalName, input)
+			err := childEnv.signalHandler(signalName, input, header)
 			callback(nil, err)
 		}
 		childEnv.postCallback(func() {}, true) // resume child workflow since a signal is sent.
@@ -2245,7 +2269,8 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflow(name string, input interf
 		panic(err)
 	}
 	env.postCallback(func() {
-		_ = env.signalHandler(name, data)
+		// Do not send any headers on test invocations
+		_ = env.signalHandler(name, data, nil)
 	}, startWorkflowTask)
 }
 
@@ -2260,7 +2285,8 @@ func (env *testWorkflowEnvironmentImpl) signalWorkflowByID(workflowID, signalNam
 			return serviceerror.NewNotFound(fmt.Sprintf("Workflow %v already completed", workflowID))
 		}
 		workflowHandle.env.postCallback(func() {
-			_ = workflowHandle.env.signalHandler(signalName, data)
+			// Do not send any headers on test invocations
+			_ = workflowHandle.env.signalHandler(signalName, data, nil)
 		}, true)
 		return nil
 	}
@@ -2273,7 +2299,8 @@ func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...
 	if err != nil {
 		return nil, err
 	}
-	blob, err := env.queryHandler(queryType, data)
+	// Do not send any headers on test invocations
+	blob, err := env.queryHandler(queryType, data, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2286,7 +2313,8 @@ func (env *testWorkflowEnvironmentImpl) queryWorkflowByID(workflowID, queryType 
 		if err != nil {
 			return nil, err
 		}
-		blob, err := workflowHandle.env.queryHandler(queryType, data)
+		// Do not send any headers on test invocations
+		blob, err := workflowHandle.env.queryHandler(queryType, data, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -2339,6 +2367,9 @@ func (env *testWorkflowEnvironmentImpl) setStartWorkflowOptions(options StartWor
 	}
 	if options.WorkflowTaskTimeout > 0 {
 		wf.WorkflowTaskTimeout = options.WorkflowTaskTimeout
+	}
+	if len(options.ID) > 0 {
+		wf.WorkflowExecution.ID = options.ID
 	}
 	if len(options.TaskQueue) > 0 {
 		wf.TaskQueueName = options.TaskQueue

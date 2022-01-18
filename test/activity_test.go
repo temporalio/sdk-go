@@ -34,11 +34,13 @@ import (
 	"time"
 
 	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 )
 
 type Activities struct {
+	client      client.Client
 	mu          sync.Mutex
 	invocations []string
 	activities2 *Activities2
@@ -283,12 +285,40 @@ func (a *Activities) InterceptorCalls(ctx context.Context, someVal string) (stri
 	// Make some calls
 	activity.GetInfo(ctx)
 	activity.GetLogger(ctx)
-	activity.GetMetricsScope(ctx)
+	activity.GetMetricsHandler(ctx)
 	activity.RecordHeartbeat(ctx, "details")
 	activity.HasHeartbeatDetails(ctx)
 	_ = activity.GetHeartbeatDetails(ctx)
 	activity.GetWorkerStopChannel(ctx)
 	return someVal, nil
+}
+
+func (a *Activities) ExternalSignalsAndQueries(ctx context.Context) error {
+	// Signal with start
+	workflowOpts := client.StartWorkflowOptions{TaskQueue: activity.GetInfo(ctx).TaskQueue}
+	run, err := a.client.SignalWithStartWorkflow(ctx, "test-external-signals-and-queries", "start-signal",
+		"signal-value", workflowOpts, new(Workflows).SignalsAndQueries, false, false)
+	if err != nil {
+		return err
+	}
+
+	// Query
+	val, err := a.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "workflow-query", nil)
+	if err != nil {
+		return err
+	}
+	var queryResp string
+	if err := val.Get(&queryResp); err != nil {
+		return err
+	} else if queryResp != "query-response" {
+		return fmt.Errorf("bad query response")
+	}
+
+	// Finish signal
+	if err := a.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish-signal", nil); err != nil {
+		return err
+	}
+	return run.Get(ctx, nil)
 }
 
 func (*Activities) TooFewParams(
@@ -301,6 +331,26 @@ func (*Activities) TooFewParams(
 	param6 []byte,
 ) (*ParamsValue, error) {
 	return &ParamsValue{Param1: param1, Param2: param2, Param3: param3, Param4: param4, Param5: param5, Param6: param6}, nil
+}
+
+func (*Activities) ReturnCancelError(ctx context.Context, waitForCancel, goCancelError bool) error {
+	// If waiting for cancel, heartbeat every 100ms until cancelled
+	if waitForCancel {
+		t := time.NewTicker(100 * time.Millisecond)
+		defer t.Stop()
+		for ctx.Err() == nil {
+			select {
+			case <-ctx.Done():
+			case <-t.C:
+			}
+		}
+	}
+
+	// Return canceled
+	if goCancelError {
+		return context.Canceled
+	}
+	return temporal.NewCanceledError("some details")
 }
 
 func (a *Activities) register(worker worker.Worker) {

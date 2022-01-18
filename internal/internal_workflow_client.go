@@ -33,7 +33,6 @@ import (
 	"time"
 
 	"github.com/pborman/uuid"
-	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
@@ -69,7 +68,7 @@ type (
 		namespace          string
 		registry           *registry
 		logger             log.Logger
-		metricsScope       tally.Scope
+		metricsHandler     metrics.Handler
 		identity           string
 		dataConverter      converter.DataConverter
 		contextPropagators []ContextPropagator
@@ -81,7 +80,7 @@ type (
 	namespaceClient struct {
 		workflowService  workflowservice.WorkflowServiceClient
 		connectionCloser io.Closer
-		metricsScope     tally.Scope
+		metricsHandler   metrics.Handler
 		logger           log.Logger
 		identity         string
 	}
@@ -228,6 +227,9 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 
 // SignalWorkflow signals a workflow in execution.
 func (wc *WorkflowClient) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error {
+	// Set header before interceptor run
+	ctx = contextWithNewHeader(ctx)
+
 	return wc.interceptor.SignalWorkflow(ctx, &ClientSignalWorkflowInput{
 		WorkflowID: workflowID,
 		RunID:      runID,
@@ -302,7 +304,7 @@ func (wc *WorkflowClient) GetWorkflowHistory(
 	isLongPoll bool,
 	filterType enumspb.HistoryEventFilterType,
 ) HistoryEventIterator {
-	return wc.getWorkflowHistory(ctx, workflowID, runID, isLongPoll, filterType, wc.metricsScope)
+	return wc.getWorkflowHistory(ctx, workflowID, runID, isLongPoll, filterType, wc.metricsHandler)
 }
 
 func (wc *WorkflowClient) getWorkflowHistory(
@@ -311,7 +313,7 @@ func (wc *WorkflowClient) getWorkflowHistory(
 	runID string,
 	isLongPoll bool,
 	filterType enumspb.HistoryEventFilterType,
-	rpcMetricsScope tally.Scope,
+	rpcMetricsHandler metrics.Handler,
 ) HistoryEventIterator {
 	namespace := wc.namespace
 	paginate := func(nextToken []byte) (*workflowservice.GetWorkflowExecutionHistoryResponse, error) {
@@ -331,7 +333,7 @@ func (wc *WorkflowClient) getWorkflowHistory(
 		var err error
 	Loop:
 		for {
-			response, err = wc.getWorkflowExecutionHistory(ctx, rpcMetricsScope, isLongPoll, request, filterType)
+			response, err = wc.getWorkflowExecutionHistory(ctx, rpcMetricsHandler, isLongPoll, request, filterType)
 			if err != nil {
 				return nil, err
 			}
@@ -349,9 +351,9 @@ func (wc *WorkflowClient) getWorkflowHistory(
 	}
 }
 
-func (wc *WorkflowClient) getWorkflowExecutionHistory(ctx context.Context, rpcMetricsScope tally.Scope, isLongPoll bool,
+func (wc *WorkflowClient) getWorkflowExecutionHistory(ctx context.Context, rpcMetricsHandler metrics.Handler, isLongPoll bool,
 	request *workflowservice.GetWorkflowExecutionHistoryRequest, filterType enumspb.HistoryEventFilterType) (*workflowservice.GetWorkflowExecutionHistoryResponse, error) {
-	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(rpcMetricsScope), grpcLongPoll(isLongPoll), defaultGrpcRetryParameters(ctx), func(builder *grpcContextBuilder) {
+	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler), grpcLongPoll(isLongPoll), defaultGrpcRetryParameters(ctx), func(builder *grpcContextBuilder) {
 		if isLongPoll {
 			builder.Timeout = defaultGetHistoryTimeout
 		}
@@ -393,8 +395,12 @@ func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 			return err0
 		}
 	}
-	request := convertActivityResultToRespondRequest(wc.identity, taskToken, data, err, wc.dataConverter, wc.namespace)
-	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsScope)
+
+	// We do allow canceled error to be passed here
+	cancelAllowed := true
+	request := convertActivityResultToRespondRequest(wc.identity, taskToken,
+		data, err, wc.dataConverter, wc.namespace, cancelAllowed)
+	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
 // CompleteActivityByID reports activity completed. Similar to CompleteActivity
@@ -416,8 +422,11 @@ func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, namespace, w
 		}
 	}
 
-	request := convertActivityResultToRespondRequestByID(wc.identity, namespace, workflowID, runID, activityID, data, err, wc.dataConverter)
-	return reportActivityCompleteByID(ctx, wc.workflowService, request, wc.metricsScope)
+	// We do allow canceled error to be passed here
+	cancelAllowed := true
+	request := convertActivityResultToRespondRequestByID(wc.identity, namespace, workflowID, runID, activityID,
+		data, err, wc.dataConverter, cancelAllowed)
+	return reportActivityCompleteByID(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
 // RecordActivityHeartbeat records heartbeat for an activity.
@@ -427,7 +436,7 @@ func (wc *WorkflowClient) RecordActivityHeartbeat(ctx context.Context, taskToken
 	if err != nil {
 		return err
 	}
-	return recordActivityHeartbeat(ctx, wc.workflowService, wc.metricsScope, wc.identity, taskToken, data)
+	return recordActivityHeartbeat(ctx, wc.workflowService, wc.metricsHandler, wc.identity, taskToken, data)
 }
 
 // RecordActivityHeartbeatByID records heartbeat for an activity.
@@ -438,7 +447,7 @@ func (wc *WorkflowClient) RecordActivityHeartbeatByID(ctx context.Context,
 	if err != nil {
 		return err
 	}
-	return recordActivityHeartbeatByID(ctx, wc.workflowService, wc.metricsScope, wc.identity, namespace, workflowID, runID, activityID, data)
+	return recordActivityHeartbeatByID(ctx, wc.workflowService, wc.metricsHandler, wc.identity, namespace, workflowID, runID, activityID, data)
 }
 
 // ListClosedWorkflow gets closed workflow executions based on request filters
@@ -595,6 +604,9 @@ func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflo
 //  - serviceerror.NotFound
 //  - serviceerror.QueryFailed
 func (wc *WorkflowClient) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.EncodedValue, error) {
+	// Set header before interceptor run
+	ctx = contextWithNewHeader(ctx)
+
 	return wc.interceptor.QueryWorkflow(ctx, &ClientQueryWorkflowInput{
 		WorkflowID: workflowID,
 		RunID:      runID,
@@ -626,6 +638,9 @@ type QueryWorkflowWithOptionsRequest struct {
 	// QUERY_REJECT_CONDITION_NOT_OPEN indicates that query should be rejected if workflow is not open.
 	// QUERY_REJECT_CONDITION_NOT_COMPLETED_CLEANLY indicates that query should be rejected if workflow did not complete cleanly (e.g. terminated, canceled timeout etc...).
 	QueryRejectCondition enumspb.QueryRejectCondition
+
+	// Header is an optional header to include with the query.
+	Header *commonpb.Header
 }
 
 // QueryWorkflowWithOptionsResponse is the response to QueryWorkflowWithOptions
@@ -663,6 +678,7 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 		Query: &querypb.WorkflowQuery{
 			QueryType: request.QueryType,
 			QueryArgs: input,
+			Header:    request.Header,
 		},
 		QueryRejectCondition: request.QueryRejectCondition,
 	}
@@ -728,6 +744,11 @@ func (wc *WorkflowClient) ResetWorkflowExecution(ctx context.Context, request *w
 	}
 
 	return resp, nil
+}
+
+// WorkflowService implements Client.WorkflowService.
+func (wc *WorkflowClient) WorkflowService() workflowservice.WorkflowServiceClient {
+	return wc.workflowService
 }
 
 // Close client and clean up underlying resources.
@@ -1022,8 +1043,8 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 
 	var response *workflowservice.StartWorkflowExecutionResponse
 
-	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(
-		metrics.GetMetricsScopeForRPC(w.client.metricsScope, in.WorkflowType, metrics.NoneTagValue, in.Options.TaskQueue)),
+	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(
+		w.client.metricsHandler.WithTags(metrics.RPCTags(in.WorkflowType, metrics.NoneTagValue, in.Options.TaskQueue))),
 		defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
@@ -1040,10 +1061,10 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 	}
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
-		rpcScope := metrics.GetMetricsScopeForRPC(w.client.metricsScope, in.WorkflowType,
-			metrics.NoneTagValue, in.Options.TaskQueue)
+		metricsHandler := w.client.metricsHandler.WithTags(metrics.RPCTags(in.WorkflowType,
+			metrics.NoneTagValue, in.Options.TaskQueue))
 		return w.client.getWorkflowHistory(fnCtx, workflowID, fnRunID, true,
-			enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, rpcScope)
+			enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, metricsHandler)
 	}
 
 	curRunIDCell := util.PopulatedOnceCell(runID)
@@ -1065,6 +1086,12 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 		return err
 	}
 
+	// get workflow headers from the context
+	header, err := headerPropagated(ctx, w.client.contextPropagators)
+	if err != nil {
+		return err
+	}
+
 	request := &workflowservice.SignalWorkflowExecutionRequest{
 		Namespace: w.client.namespace,
 		RequestId: uuid.New(),
@@ -1075,6 +1102,7 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 		SignalName: in.SignalName,
 		Input:      input,
 		Identity:   w.client.identity,
+		Header:     header,
 	}
 
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
@@ -1153,10 +1181,10 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 	}
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
-		rpcScope := metrics.GetMetricsScopeForRPC(w.client.metricsScope, in.WorkflowType,
-			metrics.NoneTagValue, in.Options.TaskQueue)
+		metricsHandler := w.client.metricsHandler.WithTags(metrics.RPCTags(in.WorkflowType,
+			metrics.NoneTagValue, in.Options.TaskQueue))
 		return w.client.getWorkflowHistory(fnCtx, in.Options.ID, fnRunID, true,
-			enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, rpcScope)
+			enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, metricsHandler)
 	}
 
 	curRunIDCell := util.PopulatedOnceCell(response.GetRunId())
@@ -1214,11 +1242,18 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 	ctx context.Context,
 	in *ClientQueryWorkflowInput,
 ) (converter.EncodedValue, error) {
+	// get workflow headers from the context
+	header, err := headerPropagated(ctx, w.client.contextPropagators)
+	if err != nil {
+		return nil, err
+	}
+
 	result, err := w.client.QueryWorkflowWithOptions(ctx, &QueryWorkflowWithOptionsRequest{
 		WorkflowID: in.WorkflowID,
 		RunID:      in.RunID,
 		QueryType:  in.QueryType,
 		Args:       in.Args,
+		Header:     header,
 	})
 	if err != nil {
 		return nil, err

@@ -46,7 +46,6 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/mock/gomock"
 	"github.com/pborman/uuid"
-	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
@@ -54,6 +53,7 @@ import (
 	"go.temporal.io/api/workflowservicemock/v1"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/common/util"
 	ilog "go.temporal.io/sdk/internal/log"
@@ -163,7 +163,7 @@ type (
 		// a default option.
 		Identity string
 
-		MetricsScope tally.Scope
+		MetricsHandler metrics.Handler
 
 		Logger log.Logger
 
@@ -200,6 +200,10 @@ type (
 		// DeadlockDetectionTimeout specifies workflow task timeout.
 		DeadlockDetectionTimeout time.Duration
 
+		DefaultHeartbeatThrottleInterval time.Duration
+
+		MaxHeartbeatThrottleInterval time.Duration
+
 		// Pointer to the shared worker cache
 		cache *WorkerCache
 	}
@@ -221,9 +225,9 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 		params.Logger = ilog.NewDefaultLogger()
 		params.Logger.Info("No logger configured for temporal worker. Created default one.")
 	}
-	if params.MetricsScope == nil {
-		params.MetricsScope = tally.NoopScope
-		params.Logger.Info("No metrics scope configured for temporal worker. Use NoopScope as default.")
+	if params.MetricsHandler == nil {
+		params.MetricsHandler = metrics.NopHandler
+		params.Logger.Info("No metrics handler configured for temporal worker. Use NopHandler as default.")
 	}
 	if params.DataConverter == nil {
 		params.DataConverter = converter.GetDefaultDataConverter()
@@ -232,12 +236,17 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 }
 
 // verifyNamespaceExist does a DescribeNamespace operation on the specified namespace with backoff/retry
-func verifyNamespaceExist(client workflowservice.WorkflowServiceClient, metricsScope tally.Scope, namespace string, logger log.Logger) error {
+func verifyNamespaceExist(
+	client workflowservice.WorkflowServiceClient,
+	metricsHandler metrics.Handler,
+	namespace string,
+	logger log.Logger,
+) error {
 	ctx := context.Background()
 	if namespace == "" {
 		return errors.New("namespace cannot be empty")
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsScope(metricsScope), defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(metricsHandler), defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	_, err := client.DescribeNamespace(grpcCtx, &workflowservice.DescribeNamespaceRequest{Namespace: namespace})
 	return err
@@ -276,7 +285,7 @@ func newWorkflowTaskWorkerInternal(
 		workerType:        "WorkflowWorker",
 		stopTimeout:       params.WorkerStopTimeout},
 		params.Logger,
-		params.MetricsScope,
+		params.MetricsHandler,
 		nil,
 	)
 
@@ -299,7 +308,7 @@ func newWorkflowTaskWorkerInternal(
 		workerType:        "LocalActivityWorker",
 		stopTimeout:       params.WorkerStopTimeout},
 		params.Logger,
-		params.MetricsScope,
+		params.MetricsHandler,
 		nil,
 	)
 
@@ -319,7 +328,7 @@ func newWorkflowTaskWorkerInternal(
 
 // Start the worker.
 func (ww *workflowWorker) Start() error {
-	err := verifyNamespaceExist(ww.workflowService, ww.executionParameters.MetricsScope, ww.executionParameters.Namespace, ww.worker.logger)
+	err := verifyNamespaceExist(ww.workflowService, ww.executionParameters.MetricsHandler, ww.executionParameters.Namespace, ww.worker.logger)
 	if err != nil {
 		return err
 	}
@@ -412,7 +421,7 @@ func newActivityTaskWorker(taskHandler ActivityTaskHandler, service workflowserv
 			stopTimeout:       workerParams.WorkerStopTimeout,
 			userContextCancel: workerParams.UserContextCancel},
 		workerParams.Logger,
-		workerParams.MetricsScope,
+		workerParams.MetricsHandler,
 		sessionTokenBucket,
 	)
 
@@ -428,7 +437,7 @@ func newActivityTaskWorker(taskHandler ActivityTaskHandler, service workflowserv
 
 // Start the worker.
 func (aw *activityWorker) Start() error {
-	err := verifyNamespaceExist(aw.workflowService, aw.executionParameters.MetricsScope, aw.executionParameters.Namespace, aw.worker.logger)
+	err := verifyNamespaceExist(aw.workflowService, aw.executionParameters.MetricsHandler, aw.executionParameters.Namespace, aw.worker.logger)
 	if err != nil {
 		return err
 	}
@@ -1158,7 +1167,6 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 		namespace:     ReplayNamespace,
 		service:       service,
 		maxEventID:    task.GetStartedEventId(),
-		metricsScope:  nil,
 		taskQueue:     taskQueue,
 	}
 	cache := NewWorkerCache()
@@ -1265,7 +1273,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		ConcurrentWorkflowTaskExecutionSize:   options.MaxConcurrentWorkflowTaskExecutionSize,
 		MaxConcurrentWorkflowTaskQueuePollers: options.MaxConcurrentWorkflowTaskPollers,
 		Identity:                              client.identity,
-		MetricsScope:                          client.metricsScope,
+		MetricsHandler:                        client.metricsHandler,
 		Logger:                                client.logger,
 		EnableLoggingInReplay:                 options.EnableLoggingInReplay,
 		UserContext:                           backgroundActivityContext,
@@ -1277,6 +1285,8 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		WorkerStopTimeout:                     options.WorkerStopTimeout,
 		ContextPropagators:                    client.contextPropagators,
 		DeadlockDetectionTimeout:              options.DeadlockDetectionTimeout,
+		DefaultHeartbeatThrottleInterval:      options.DefaultHeartbeatThrottleInterval,
+		MaxHeartbeatThrottleInterval:          options.MaxHeartbeatThrottleInterval,
 		cache:                                 cache,
 	}
 
@@ -1458,8 +1468,15 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 	if options.DeadlockDetectionTimeout == 0 {
 		if debugMode {
 			options.DeadlockDetectionTimeout = unlimitedDeadlockDetectionTimeout
+		} else {
+			options.DeadlockDetectionTimeout = defaultDeadlockDetectionTimeout
 		}
-		options.DeadlockDetectionTimeout = defaultDeadlockDetectionTimeout
+	}
+	if options.DefaultHeartbeatThrottleInterval == 0 {
+		options.DefaultHeartbeatThrottleInterval = defaultDefaultHeartbeatThrottleInterval
+	}
+	if options.MaxHeartbeatThrottleInterval == 0 {
+		options.MaxHeartbeatThrottleInterval = defaultMaxHeartbeatThrottleInterval
 	}
 }
 
@@ -1471,8 +1488,8 @@ func setClientDefaults(client *WorkflowClient) {
 	if client.namespace == "" {
 		client.namespace = DefaultNamespace
 	}
-	if client.metricsScope == nil {
-		client.metricsScope = tally.NoopScope
+	if client.metricsHandler == nil {
+		client.metricsHandler = metrics.NopHandler
 	}
 }
 

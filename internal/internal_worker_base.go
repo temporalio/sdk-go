@@ -32,9 +32,9 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/internal/common/retry"
@@ -86,11 +86,25 @@ type (
 		RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback ResultHandler)
 		ExecuteChildWorkflow(params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error))
 		GetLogger() log.Logger
-		GetMetricsScope() tally.Scope
+		GetMetricsHandler() metrics.Handler
 		// Must be called before WorkflowDefinition.Execute returns
-		RegisterSignalHandler(handler func(name string, input *commonpb.Payloads) error)
-		SignalExternalWorkflow(namespace, workflowID, runID, signalName string, input *commonpb.Payloads, arg interface{}, childWorkflowOnly bool, callback ResultHandler)
-		RegisterQueryHandler(handler func(queryType string, queryArgs *commonpb.Payloads) (*commonpb.Payloads, error))
+		RegisterSignalHandler(
+			handler func(name string, input *commonpb.Payloads, header *commonpb.Header) error,
+		)
+		SignalExternalWorkflow(
+			namespace string,
+			workflowID string,
+			runID string,
+			signalName string,
+			input *commonpb.Payloads,
+			arg interface{},
+			header *commonpb.Header,
+			childWorkflowOnly bool,
+			callback ResultHandler,
+		)
+		RegisterQueryHandler(
+			handler func(queryType string, queryArgs *commonpb.Payloads, header *commonpb.Header) (*commonpb.Payloads, error),
+		)
 		IsReplaying() bool
 		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) converter.EncodedValue
 		GetDataConverter() converter.DataConverter
@@ -147,7 +161,11 @@ type (
 		limiterContextCancel func()
 		retrier              *backoff.ConcurrentRetrier // Service errors back off retrier
 		logger               log.Logger
-		metricsScope         tally.Scope
+		metricsHandler       metrics.Handler
+
+		// Must be atomically accessed
+		taskSlotsAvailable      int32
+		taskSlotsAvailableGauge metrics.Gauge
 
 		pollerRequestCh    chan struct{}
 		taskQueueCh        chan interface{}
@@ -171,22 +189,30 @@ func createPollRetryPolicy() backoff.RetryPolicy {
 	return policy
 }
 
-func newBaseWorker(options baseWorkerOptions, logger log.Logger, metricsScope tally.Scope, sessionTokenBucket *sessionTokenBucket) *baseWorker {
+func newBaseWorker(
+	options baseWorkerOptions,
+	logger log.Logger,
+	metricsHandler metrics.Handler,
+	sessionTokenBucket *sessionTokenBucket,
+) *baseWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 	bw := &baseWorker{
-		options:         options,
-		stopCh:          make(chan struct{}),
-		taskLimiter:     rate.NewLimiter(rate.Limit(options.maxTaskPerSecond), 1),
-		retrier:         backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
-		logger:          log.With(logger, tagWorkerType, options.workerType),
-		metricsScope:    metrics.GetWorkerScope(metricsScope, options.workerType),
-		pollerRequestCh: make(chan struct{}, options.maxConcurrentTask),
-		taskQueueCh:     make(chan interface{}), // no buffer, so poller only able to poll new task after previous is dispatched.
+		options:            options,
+		stopCh:             make(chan struct{}),
+		taskLimiter:        rate.NewLimiter(rate.Limit(options.maxTaskPerSecond), 1),
+		retrier:            backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
+		logger:             log.With(logger, tagWorkerType, options.workerType),
+		metricsHandler:     metricsHandler.WithTags(metrics.WorkerTags(options.workerType)),
+		taskSlotsAvailable: int32(options.maxConcurrentTask),
+		pollerRequestCh:    make(chan struct{}, options.maxConcurrentTask),
+		taskQueueCh:        make(chan interface{}), // no buffer, so poller only able to poll new task after previous is dispatched.
 
 		limiterContext:       ctx,
 		limiterContextCancel: cancel,
 		sessionTokenBucket:   sessionTokenBucket,
 	}
+	bw.taskSlotsAvailableGauge = bw.metricsHandler.Gauge(metrics.WorkerTaskSlotsAvailable)
+	bw.taskSlotsAvailableGauge.Update(float64(bw.taskSlotsAvailable))
 	if options.pollerRate > 0 {
 		bw.pollLimiter = rate.NewLimiter(rate.Limit(options.pollerRate), 1)
 	}
@@ -200,7 +226,7 @@ func (bw *baseWorker) Start() {
 		return
 	}
 
-	bw.metricsScope.Counter(metrics.WorkerStartCounter).Inc(1)
+	bw.metricsHandler.Counter(metrics.WorkerStartCounter).Inc(1)
 
 	for i := 0; i < bw.options.pollerCount; i++ {
 		bw.stopWG.Add(1)
@@ -231,7 +257,7 @@ func (bw *baseWorker) isStop() bool {
 
 func (bw *baseWorker) runPoller() {
 	defer bw.stopWG.Done()
-	bw.metricsScope.Counter(metrics.PollerStartCounter).Inc(1)
+	bw.metricsHandler.Counter(metrics.PollerStartCounter).Inc(1)
 
 	for {
 		select {
@@ -321,6 +347,13 @@ func isNonRetriableError(err error) bool {
 
 func (bw *baseWorker) processTask(task interface{}) {
 	defer bw.stopWG.Done()
+
+	// Update availability metric
+	bw.taskSlotsAvailableGauge.Update(float64(atomic.AddInt32(&bw.taskSlotsAvailable, -1)))
+	defer func() {
+		bw.taskSlotsAvailableGauge.Update(float64(atomic.AddInt32(&bw.taskSlotsAvailable, 1)))
+	}()
+
 	// If the task is from poller, after processing it we would need to request a new poll. Otherwise, the task is from
 	// local activity worker, we don't need a new poll from server.
 	polledTask, isPolledTask := task.(*polledTask)

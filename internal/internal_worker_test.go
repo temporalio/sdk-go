@@ -2452,7 +2452,7 @@ func TestWorkerOptionDefaults(t *testing.T) {
 	workflowWorker := aggWorker.workflowWorker
 	require.True(t, workflowWorker.executionParameters.Identity != "")
 	require.NotNil(t, workflowWorker.executionParameters.Logger)
-	require.NotNil(t, workflowWorker.executionParameters.MetricsScope)
+	require.NotNil(t, workflowWorker.executionParameters.MetricsHandler)
 	require.Nil(t, workflowWorker.executionParameters.ContextPropagators)
 
 	expected := workerExecutionParameters{
@@ -2469,7 +2469,7 @@ func TestWorkerOptionDefaults(t *testing.T) {
 		StickyScheduleToStartTimeout:          stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second,
 		DataConverter:                         converter.GetDefaultDataConverter(),
 		Logger:                                workflowWorker.executionParameters.Logger,
-		MetricsScope:                          workflowWorker.executionParameters.MetricsScope,
+		MetricsHandler:                        workflowWorker.executionParameters.MetricsHandler,
 		Identity:                              workflowWorker.executionParameters.Identity,
 		UserContext:                           workflowWorker.executionParameters.UserContext,
 	}
@@ -2479,7 +2479,7 @@ func TestWorkerOptionDefaults(t *testing.T) {
 	activityWorker := aggWorker.activityWorker
 	require.True(t, activityWorker.executionParameters.Identity != "")
 	require.NotNil(t, activityWorker.executionParameters.Logger)
-	require.NotNil(t, activityWorker.executionParameters.MetricsScope)
+	require.NotNil(t, activityWorker.executionParameters.MetricsHandler)
 	require.Nil(t, activityWorker.executionParameters.ContextPropagators)
 	assertWorkerExecutionParamsEqual(t, expected, activityWorker.executionParameters)
 }
@@ -2530,7 +2530,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		StickyScheduleToStartTimeout:          options.StickyScheduleToStartTimeout,
 		DataConverter:                         client.dataConverter,
 		Logger:                                client.logger,
-		MetricsScope:                          client.metricsScope,
+		MetricsHandler:                        client.metricsHandler,
 		Identity:                              client.identity,
 	}
 
@@ -2549,7 +2549,7 @@ func TestLocalActivityWorkerOnly(t *testing.T) {
 	workflowWorker := aggWorker.workflowWorker
 	require.True(t, workflowWorker.executionParameters.Identity != "")
 	require.NotNil(t, workflowWorker.executionParameters.Logger)
-	require.NotNil(t, workflowWorker.executionParameters.MetricsScope)
+	require.NotNil(t, workflowWorker.executionParameters.MetricsHandler)
 	require.Nil(t, workflowWorker.executionParameters.ContextPropagators)
 
 	expected := workerExecutionParameters{
@@ -2566,7 +2566,7 @@ func TestLocalActivityWorkerOnly(t *testing.T) {
 		StickyScheduleToStartTimeout:          stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second,
 		DataConverter:                         converter.GetDefaultDataConverter(),
 		Logger:                                workflowWorker.executionParameters.Logger,
-		MetricsScope:                          workflowWorker.executionParameters.MetricsScope,
+		MetricsHandler:                        workflowWorker.executionParameters.MetricsHandler,
 		Identity:                              workflowWorker.executionParameters.Identity,
 		UserContext:                           workflowWorker.executionParameters.UserContext,
 	}

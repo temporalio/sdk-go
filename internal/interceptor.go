@@ -26,9 +26,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 )
 
@@ -83,8 +83,8 @@ type ActivityOutboundInterceptor interface {
 	// GetLogger intercepts activity.GetLogger.
 	GetLogger(ctx context.Context) log.Logger
 
-	// GetMetricsScope intercepts activity.GetMetricsScope.
-	GetMetricsScope(ctx context.Context) tally.Scope
+	// GetMetricsHandler intercepts activity.GetMetricsHandler.
+	GetMetricsHandler(ctx context.Context) metrics.Handler
 
 	// RecordHeartbeat intercepts activity.RecordHeartbeat.
 	RecordHeartbeat(ctx context.Context, details ...interface{})
@@ -114,9 +114,11 @@ type WorkflowInboundInterceptor interface {
 	ExecuteWorkflow(ctx Context, in *ExecuteWorkflowInput) (interface{}, error)
 
 	// HandleSignal is called when a signal is sent to a workflow on this worker.
+	// interceptor.WorkflowHeader will return a non-nil map for this context.
 	HandleSignal(ctx Context, in *HandleSignalInput) error
 
 	// HandleQuery is called when a query is sent to a workflow on this worker.
+	// interceptor.WorkflowHeader will return a non-nil map for this context.
 	HandleQuery(ctx Context, in *HandleQueryInput) (interface{}, error)
 
 	mustEmbedWorkflowInboundInterceptorBase()
@@ -167,8 +169,8 @@ type WorkflowOutboundInterceptor interface {
 	// GetLogger intercepts workflow.GetLogger.
 	GetLogger(ctx Context) log.Logger
 
-	// GetMetricsScope intercepts workflow.GetMetricsScope.
-	GetMetricsScope(ctx Context) tally.Scope
+	// GetMetricsHandler intercepts workflow.GetMetricsHandler.
+	GetMetricsHandler(ctx Context) metrics.Handler
 
 	// Now intercepts workflow.Now.
 	Now(ctx Context) time.Time
@@ -184,7 +186,13 @@ type WorkflowOutboundInterceptor interface {
 	RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future
 
 	// SignalExternalWorkflow intercepts workflow.SignalExternalWorkflow.
+	// interceptor.WorkflowHeader will return a non-nil map for this context.
 	SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future
+
+	// SignalChildWorkflow intercepts
+	// workflow.ChildWorkflowFuture.SignalChildWorkflow.
+	// interceptor.WorkflowHeader will return a non-nil map for this context.
+	SignalChildWorkflow(ctx Context, workflowID, signalName string, arg interface{}) Future
 
 	// UpsertSearchAttributes intercepts workflow.UpsertSearchAttributes.
 	UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error
@@ -247,6 +255,7 @@ type ClientOutboundInterceptor interface {
 	ExecuteWorkflow(context.Context, *ClientExecuteWorkflowInput) (WorkflowRun, error)
 
 	// SignalWorkflow intercepts client.Client.SignalWorkflow.
+	// interceptor.Header will return a non-nil map for this context.
 	SignalWorkflow(context.Context, *ClientSignalWorkflowInput) error
 
 	// SignalWithStartWorkflow intercepts client.Client.SignalWithStartWorkflow.
@@ -260,6 +269,7 @@ type ClientOutboundInterceptor interface {
 	TerminateWorkflow(context.Context, *ClientTerminateWorkflowInput) error
 
 	// QueryWorkflow intercepts client.Client.QueryWorkflow.
+	// interceptor.Header will return a non-nil map for this context.
 	QueryWorkflow(context.Context, *ClientQueryWorkflowInput) (converter.EncodedValue, error)
 
 	mustEmbedClientOutboundInterceptorBase()

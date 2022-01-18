@@ -207,7 +207,7 @@ const (
 )
 
 // New creates an instance of worker for managing workflow and activity executions.
-//    namespace   - the name of the temporal namespace
+//    client    - the client for use by the worker
 //    taskQueue - is the task queue name you use to identify your client worker, also
 //               identifies group of workflow and activity implementations that are
 //               hosted by a single worker process

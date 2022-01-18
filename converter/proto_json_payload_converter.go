@@ -41,17 +41,34 @@ import (
 type ProtoJSONPayloadConverter struct {
 	gogoMarshaler   gogojsonpb.Marshaler
 	gogoUnmarshaler gogojsonpb.Unmarshaler
+	options         ProtoJSONPayloadConverterOptions
+}
+
+// ProtoJSONPayloadConverterOptions represents options for `NewProtoJSONPayloadConverterWithOptions`.
+type ProtoJSONPayloadConverterOptions struct {
+	// ExcludeProtobufMessageTypes prevents the message type (`my.package.MyMessage`)
+	// from being included in the Payload.
+	ExcludeProtobufMessageTypes bool
 }
 
 var (
 	jsonNil, _ = json.Marshal(nil)
 )
 
-// NewProtoJSONPayloadConverter creates new instance of ProtoJSONPayloadConverter.
+// NewProtoJSONPayloadConverter creates new instance of `ProtoJSONPayloadConverter`.
 func NewProtoJSONPayloadConverter() *ProtoJSONPayloadConverter {
 	return &ProtoJSONPayloadConverter{
 		gogoMarshaler:   gogojsonpb.Marshaler{},
 		gogoUnmarshaler: gogojsonpb.Unmarshaler{},
+	}
+}
+
+// NewProtoJSONPayloadConverterWithOptions creates new instance of `ProtoJSONPayloadConverter` with the provided options.
+func NewProtoJSONPayloadConverterWithOptions(options ProtoJSONPayloadConverterOptions) *ProtoJSONPayloadConverter {
+	return &ProtoJSONPayloadConverter{
+		gogoMarshaler:   gogojsonpb.Marshaler{},
+		gogoUnmarshaler: gogojsonpb.Unmarshaler{},
+		options:         options,
 	}
 }
 
@@ -65,7 +82,7 @@ func (c *ProtoJSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 	// Case 1 is not supported.
 	// Cases 2 and 3 implements proto.Message and are the same in this context.
 	// Case 4 implements gogoproto.Message.
-	// It is important to check for proto.Message first because cases 2 and 3 also implements gogoproto.Message.
+	// It is important to check for proto.Message first because cases 2 and 3 also implement gogoproto.Message.
 
 	if isInterfaceNil(value) {
 		return newPayload(jsonNil, c), nil
@@ -78,7 +95,7 @@ func (c *ProtoJSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 			if err != nil {
 				return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
 			}
-			return newPayload(byteSlice, c), nil
+			return newProtoPayload(byteSlice, c, string(valueProto.ProtoReflect().Descriptor().FullName())), nil
 		}
 		if valueGogoProto, ok := value.(gogoproto.Message); ok {
 			var buf bytes.Buffer
@@ -86,7 +103,7 @@ func (c *ProtoJSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 			if err != nil {
 				return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
 			}
-			return newPayload(buf.Bytes(), c), nil
+			return newProtoPayload(buf.Bytes(), c, gogoproto.MessageName(valueGogoProto)), nil
 		}
 		if builtPointer {
 			break
@@ -169,4 +186,9 @@ func (c *ProtoJSONPayloadConverter) ToString(payload *commonpb.Payload) string {
 // Encoding returns MetadataEncodingProtoJSON.
 func (c *ProtoJSONPayloadConverter) Encoding() string {
 	return MetadataEncodingProtoJSON
+}
+
+
+func (c *ProtoJSONPayloadConverter) ExcludeProtobufMessageTypes() bool {
+	return c.options.ExcludeProtobufMessageTypes
 }

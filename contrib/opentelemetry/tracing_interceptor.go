@@ -48,6 +48,12 @@ type TracerOptions struct {
 	// tracer provider using the name "temporal-sdk-go".
 	Tracer trace.Tracer
 
+	// DisableSignalTracing can be set to disable signal tracing.
+	DisableSignalTracing bool
+
+	// DisableQueryTracing can be set to disable query tracing.
+	DisableQueryTracing bool
+
 	// TextMapPropagator is the propagator to use for serializing spans. If not
 	// set, this uses DefaultTextMapPropagator, not the OpenTelemetry global one.
 	// To use the OpenTelemetry global one, set this value to the result of the
@@ -72,7 +78,10 @@ type spanContextKey struct{}
 
 const defaultHeaderKey = "_tracer-data"
 
-type tracer struct{ options *TracerOptions }
+type tracer struct {
+	interceptor.BaseTracer
+	options *TracerOptions
+}
 
 // NewTracer creates a tracer with the given options. Most callers should use
 // NewTracingInterceptor instead.
@@ -100,7 +109,7 @@ func NewTracer(options TracerOptions) (interceptor.Tracer, error) {
 			return span
 		}
 	}
-	return &tracer{&options}, nil
+	return &tracer{options: &options}, nil
 }
 
 // NewTracingInterceptor creates an interceptor for setting on client options
@@ -115,8 +124,10 @@ func NewTracingInterceptor(options TracerOptions) (interceptor.Interceptor, erro
 
 func (t *tracer) Options() interceptor.TracerOptions {
 	return interceptor.TracerOptions{
-		SpanContextKey: t.options.SpanContextKey,
-		HeaderKey:      t.options.HeaderKey,
+		SpanContextKey:       t.options.SpanContextKey,
+		HeaderKey:            t.options.HeaderKey,
+		DisableSignalTracing: t.options.DisableSignalTracing,
+		DisableQueryTracing:  t.options.DisableQueryTracing,
 	}
 }
 

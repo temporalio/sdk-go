@@ -36,6 +36,12 @@ type TracerOptions struct {
 	// Tracer is the tracer to use. If not set, the global one is used.
 	Tracer opentracing.Tracer
 
+	// DisableSignalTracing can be set to disable signal tracing.
+	DisableSignalTracing bool
+
+	// DisableQueryTracing can be set to disable query tracing.
+	DisableQueryTracing bool
+
 	// SpanContextKey is the context key used for internal span tracking (not to
 	// be confused with the context key OpenTracing uses internally). If not set,
 	// this defaults to an internal key (recommended).
@@ -54,7 +60,10 @@ type spanContextKey struct{}
 
 const defaultHeaderKey = "_tracer-data"
 
-type tracer struct{ options *TracerOptions }
+type tracer struct {
+	interceptor.BaseTracer
+	options *TracerOptions
+}
 
 // NewTracer creates a tracer with the given options. Most callers should use
 // NewInterceptor instead.
@@ -77,7 +86,7 @@ func NewTracer(options TracerOptions) (interceptor.Tracer, error) {
 			return t.StartSpan(operationName, opts...)
 		}
 	}
-	return &tracer{&options}, nil
+	return &tracer{options: &options}, nil
 }
 
 // NewTracingInterceptor creates an interceptor for setting on client options
@@ -92,8 +101,10 @@ func NewInterceptor(options TracerOptions) (interceptor.Interceptor, error) {
 
 func (t *tracer) Options() interceptor.TracerOptions {
 	return interceptor.TracerOptions{
-		SpanContextKey: t.options.SpanContextKey,
-		HeaderKey:      t.options.HeaderKey,
+		SpanContextKey:       t.options.SpanContextKey,
+		HeaderKey:            t.options.HeaderKey,
+		DisableSignalTracing: t.options.DisableSignalTracing,
+		DisableQueryTracing:  t.options.DisableQueryTracing,
 	}
 }
 

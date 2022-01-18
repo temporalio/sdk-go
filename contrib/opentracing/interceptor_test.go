@@ -1,8 +1,6 @@
 // The MIT License
 //
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
+// Copyright (c) 2021 Temporal Technologies Inc.  All rights reserved.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -22,30 +20,39 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package metrics
+package opentracing_test
 
 import (
-	"context"
+	"testing"
 
-	"github.com/uber-go/tally/v4"
-	"google.golang.org/grpc"
+	"github.com/opentracing/opentracing-go/mocktracer"
+	"github.com/stretchr/testify/require"
+	"go.temporal.io/sdk/contrib/opentracing"
+	"go.temporal.io/sdk/interceptor"
+	"go.temporal.io/sdk/internal/interceptortest"
 )
 
-// NewGRPCMetricsInterceptor creates new metrics scope interceptor.
-func NewGRPCMetricsInterceptor(defaultScope tally.Scope, metricSuffix string) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		scope, ok := ctx.Value(ScopeContextKey).(tally.Scope)
-		if !ok || scope == nil {
-			scope = defaultScope
+func TestSpanPropagation(t *testing.T) {
+	mock := mocktracer.New()
+	tracer, err := opentracing.NewTracer(opentracing.TracerOptions{Tracer: mock})
+	require.NoError(t, err)
+	interceptortest.AssertSpanPropagation(t, &testTracer{Tracer: tracer, mock: mock})
+}
+
+type testTracer struct {
+	interceptor.Tracer
+	mock *mocktracer.MockTracer
+}
+
+func (t *testTracer) FinishedSpans() []*interceptortest.SpanInfo {
+	return spanChildren(t.mock.FinishedSpans(), 0)
+}
+
+func spanChildren(spans []*mocktracer.MockSpan, parentID int) (ret []*interceptortest.SpanInfo) {
+	for _, s := range spans {
+		if s.ParentID == parentID {
+			ret = append(ret, interceptortest.Span(s.OperationName, spanChildren(spans, s.SpanContext.SpanID)...))
 		}
-		isLongPoll, ok := ctx.Value(LongPollContextKey).(bool)
-		if !ok {
-			isLongPoll = false
-		}
-		rs := newRequestScope(scope, method, isLongPoll, metricSuffix)
-		rs.recordStart()
-		err := invoker(ctx, method, req, reply, cc, opts...)
-		rs.recordEnd(err)
-		return err
 	}
+	return
 }

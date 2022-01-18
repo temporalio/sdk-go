@@ -35,11 +35,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/uber-go/tally/v4"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/retry"
 	"google.golang.org/grpc/metadata"
-
-	"go.temporal.io/sdk/internal/common/metrics"
 )
 
 const (
@@ -66,7 +64,7 @@ type grpcContextBuilder struct {
 	//   - context fields, accessible via `ctx.Value(key)`
 	ParentContext context.Context
 
-	MetricsScope tally.Scope
+	MetricsHandler metrics.Handler
 
 	Headers metadata.MD
 
@@ -81,10 +79,10 @@ func (cb *grpcContextBuilder) Build() (context.Context, context.CancelFunc) {
 	if cb.Headers != nil {
 		ctx = metadata.NewOutgoingContext(ctx, cb.Headers)
 	}
-	if cb.MetricsScope != nil {
-		ctx = context.WithValue(ctx, metrics.ScopeContextKey, cb.MetricsScope)
+	if cb.MetricsHandler != nil {
+		ctx = context.WithValue(ctx, metrics.HandlerContextKey{}, cb.MetricsHandler)
 	}
-	ctx = context.WithValue(ctx, metrics.LongPollContextKey, cb.IsLongPoll)
+	ctx = context.WithValue(ctx, metrics.LongPollContextKey{}, cb.IsLongPoll)
 	var cancel context.CancelFunc
 	if cb.Timeout != time.Duration(0) {
 		ctx, cancel = context.WithTimeout(ctx, cb.Timeout)
@@ -99,9 +97,9 @@ func grpcTimeout(timeout time.Duration) func(builder *grpcContextBuilder) {
 	}
 }
 
-func grpcMetricsScope(metricsScope tally.Scope) func(builder *grpcContextBuilder) {
+func grpcMetricsHandler(metricsHandler metrics.Handler) func(builder *grpcContextBuilder) {
 	return func(b *grpcContextBuilder) {
-		b.MetricsScope = metricsScope
+		b.MetricsHandler = metricsHandler
 	}
 }
 

@@ -32,12 +32,12 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/mock"
-	"github.com/uber-go/tally/v4"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 )
 
@@ -54,7 +54,7 @@ type (
 	// WorkflowTestSuite is the test suite to run unit tests for workflow/activity.
 	WorkflowTestSuite struct {
 		logger             log.Logger
-		scope              tally.Scope
+		metricsHandler     metrics.Handler
 		contextPropagators []ContextPropagator
 		header             *commonpb.Header
 	}
@@ -142,10 +142,10 @@ func (s *WorkflowTestSuite) GetLogger() log.Logger {
 	return s.logger
 }
 
-// SetMetricsScope sets the metrics scope for this WorkflowTestSuite. If you don't set scope, test suite will use
-// tally.NoopScope
-func (s *WorkflowTestSuite) SetMetricsScope(scope tally.Scope) {
-	s.scope = scope
+// SetMetricsHandler sets the metrics handler for this WorkflowTestSuite. If you don't set handler, test suite will use
+// a noop handler.
+func (s *WorkflowTestSuite) SetMetricsHandler(metricsHandler metrics.Handler) {
+	s.metricsHandler = metricsHandler
 }
 
 // SetContextPropagators sets the context propagators for this WorkflowTestSuite. If you don't set context propagators,
@@ -278,6 +278,11 @@ func (e *TestWorkflowEnvironment) SetStartTime(startTime time.Time) {
 //   })
 // OR return mock values with same types as activity function's return types:
 //   t.OnActivity(MyActivity, mock.Anything, mock.Anything).Return("mock_result", nil)
+//
+// Note, when using a method reference with a receiver as an activity, the receiver must be an instance the same as if
+// it was being using in RegisterActivity so the parameter types are accurate. In Go, a method reference of
+// (*MyStruct).MyFunc makes the first parameter *MyStruct which will not work, whereas a method reference of
+// new(MyStruct).MyFunc will.
 func (e *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...interface{}) *MockCallWrapper {
 	fType := reflect.TypeOf(activity)
 	var call *mock.Call
@@ -536,6 +541,19 @@ func (e *TestWorkflowEnvironment) SetHeader(header *commonpb.Header) {
 // SetIdentity sets identity.
 func (e *TestWorkflowEnvironment) SetIdentity(identity string) *TestWorkflowEnvironment {
 	e.impl.setIdentity(identity)
+	return e
+}
+
+// SetDetachedChildWait, if true, will make ExecuteWorkflow wait on all child
+// workflows to complete even if their close policy is set to abandon or request
+// cancel, meaning they are "detached". If false, ExecuteWorkflow will block
+// until only all attached child workflows have completed. This is useful when
+// testing endless detached child workflows, as without it ExecuteWorkflow may
+// not return while detached children are still running.
+//
+// Default is true.
+func (e *TestWorkflowEnvironment) SetDetachedChildWait(detachedChildWait bool) *TestWorkflowEnvironment {
+	e.impl.setDetachedChildWaitDisabled(!detachedChildWait)
 	return e
 }
 

@@ -38,7 +38,6 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"github.com/uber-go/tally/v4"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -51,6 +50,7 @@ import (
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
+	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
 )
@@ -462,11 +462,12 @@ var testWorkflowTaskTaskqueue = "tq1"
 func (t *TaskHandlersTestSuite) getTestWorkerExecutionParams() workerExecutionParameters {
 	cache := NewWorkerCache()
 	return workerExecutionParameters{
-		TaskQueue: testWorkflowTaskTaskqueue,
-		Namespace: testNamespace,
-		Identity:  "test-id-1",
-		Logger:    t.logger,
-		cache:     cache,
+		TaskQueue:      testWorkflowTaskTaskqueue,
+		Namespace:      testNamespace,
+		Identity:       "test-id-1",
+		MetricsHandler: metrics.NopHandler,
+		Logger:         t.logger,
+		cache:          cache,
 	}
 }
 
@@ -1357,10 +1358,10 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 		Times(2)
 
 	temporalInvoker := &temporalInvoker{
-		identity:         "Test_Temporal_Invoker",
-		service:          mockService,
-		taskToken:        nil,
-		heartBeatTimeout: time.Second,
+		identity:                  "Test_Temporal_Invoker",
+		service:                   mockService,
+		taskToken:                 nil,
+		heartbeatThrottleInterval: time.Second,
 	}
 
 	heartbeatErr := temporalInvoker.Heartbeat(context.Background(), nil, false)
@@ -1395,10 +1396,13 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewNotFound(""))
 
 	temporalInvoker := newServiceInvoker(
-		nil, "Test_Temporal_Invoker", mockService, tally.NoopScope, func() {}, 0,
+		nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, func() {}, 0,
 		make(chan struct{}), t.namespace)
 
-	heartbeatErr := temporalInvoker.Heartbeat(context.Background(), nil, false)
+	ctx, err := newActivityContext(context.Background(), nil, &activityEnvironment{serviceInvoker: temporalInvoker, logger: t.logger})
+	t.NoError(err)
+
+	heartbeatErr := temporalInvoker.Heartbeat(ctx, nil, false)
 	t.NotNil(heartbeatErr)
 	t.IsType(&serviceerror.NotFound{}, heartbeatErr, "heartbeatErr must be of type NotFound.")
 }
@@ -1413,10 +1417,13 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithNamespaceNotActiveE
 	cancelHandler := func() { called = true }
 
 	temporalInvoker := newServiceInvoker(
-		nil, "Test_Temporal_Invoker", mockService, tally.NoopScope, cancelHandler,
+		nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, cancelHandler,
 		0, make(chan struct{}), t.namespace)
 
-	heartbeatErr := temporalInvoker.Heartbeat(context.Background(), nil, false)
+	ctx, err := newActivityContext(context.Background(), nil, &activityEnvironment{serviceInvoker: temporalInvoker, logger: t.logger})
+	t.NoError(err)
+
+	heartbeatErr := temporalInvoker.Heartbeat(ctx, nil, false)
 	t.NotNil(heartbeatErr)
 	t.IsType(&serviceerror.NamespaceNotActive{}, heartbeatErr, "heartbeatErr must be of type NamespaceNotActive.")
 	t.True(called)
@@ -1733,4 +1740,26 @@ func Test_IsSearchAttributesMatched(t *testing.T) {
 			require.Equal(t, testCase.expected, isSearchAttributesMatched(testCase.lhs, testCase.rhs))
 		})
 	}
+}
+
+func TestHeartbeatThrottleInterval(t *testing.T) {
+	assertInterval := func(timeoutSec, defaultIntervalSec, maxIntervalSec, expectedSec int) {
+		a := &activityTaskHandlerImpl{
+			defaultHeartbeatThrottleInterval: time.Duration(defaultIntervalSec) * time.Second,
+			maxHeartbeatThrottleInterval:     time.Duration(maxIntervalSec) * time.Second,
+		}
+		require.Equal(t, time.Duration(expectedSec)*time.Second,
+			a.getHeartbeatThrottleInterval(time.Duration(timeoutSec)*time.Second))
+	}
+
+	// Use 80% of timeout
+	assertInterval(5, 2, 10, 4)
+	// Use default if no timeout
+	assertInterval(0, 2, 10, 2)
+	// Use default of 30s if no timeout or default
+	assertInterval(0, 0, 50, 30)
+	// Use max if 80% of timeout is too large
+	assertInterval(14, 2, 10, 10)
+	// Default max to 60 if not set
+	assertInterval(5000, 2, 0, 60)
 }

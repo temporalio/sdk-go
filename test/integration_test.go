@@ -28,10 +28,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -39,11 +39,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"github.com/uber-go/tally/v4"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/contrib/opentelemetry"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/test"
 	"go.uber.org/goleak"
@@ -51,6 +55,7 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
+	contribtally "go.temporal.io/sdk/contrib/tally"
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -73,20 +78,22 @@ const (
 type IntegrationTestSuite struct {
 	*require.Assertions
 	suite.Suite
-	config                   Config
-	client                   client.Client
-	activities               *Activities
-	workflows                *Workflows
-	worker                   worker.Worker
-	workerStopped            bool
-	seq                      int64
-	taskQueueName            string
-	tracer                   *tracingInterceptor
-	inboundSignalInterceptor *signalInterceptor
-	trafficController        *test.SimpleTrafficController
-	metricsScopeCloser       io.Closer
-	metricsReporter          *metrics.CapturingStatsReporter
-	interceptorCallRecorder  *interceptortest.CallRecordingInvoker
+	config                    Config
+	client                    client.Client
+	activities                *Activities
+	workflows                 *Workflows
+	worker                    worker.Worker
+	workerStopped             bool
+	seq                       int64
+	taskQueueName             string
+	tracer                    *tracingInterceptor
+	inboundSignalInterceptor  *signalInterceptor
+	trafficController         *test.SimpleTrafficController
+	metricsHandler            *metrics.CapturingHandler
+	tallyScope                tally.TestScope
+	interceptorCallRecorder   *interceptortest.CallRecordingInvoker
+	openTelemetryTracer       trace.Tracer
+	openTelemetrySpanRecorder *tracetest.SpanRecorder
 }
 
 func TestIntegrationSuite(t *testing.T) {
@@ -130,14 +137,33 @@ func (ts *IntegrationTestSuite) TearDownSuite() {
 }
 
 func (ts *IntegrationTestSuite) SetupTest() {
-	var metricsScope tally.Scope
-	metricsScope, ts.metricsScopeCloser, ts.metricsReporter = metrics.NewTaggedMetricsScope()
+	ts.metricsHandler = metrics.NewCapturingHandler()
+	var metricsHandler client.MetricsHandler = ts.metricsHandler
+	// Use Tally handler for Tally test
+	if strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestTallyScopeAccess") {
+		ts.tallyScope = tally.NewTestScope("", nil)
+		metricsHandler = contribtally.NewMetricsHandler(ts.tallyScope)
+	}
 
 	var clientInterceptors []interceptor.ClientInterceptor
 	// Record calls for interceptor test
 	if strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestInterceptor") {
 		ts.interceptorCallRecorder = &interceptortest.CallRecordingInvoker{}
 		clientInterceptors = append(clientInterceptors, interceptortest.NewProxy(ts.interceptorCallRecorder))
+	}
+
+	// Record spans for tracing test
+	if strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestOpenTelemetryTracing") {
+		ts.openTelemetrySpanRecorder = tracetest.NewSpanRecorder()
+		ts.openTelemetryTracer = sdktrace.NewTracerProvider(
+			sdktrace.WithSpanProcessor(ts.openTelemetrySpanRecorder)).Tracer("")
+		interceptor, err := opentelemetry.NewTracingInterceptor(opentelemetry.TracerOptions{
+			Tracer:               ts.openTelemetryTracer,
+			DisableSignalTracing: strings.HasSuffix(ts.T().Name(), "WithoutSignalsAndQueries"),
+			DisableQueryTracing:  strings.HasSuffix(ts.T().Name(), "WithoutSignalsAndQueries"),
+		})
+		ts.NoError(err)
+		clientInterceptors = append(clientInterceptors, interceptor)
 	}
 
 	var err error
@@ -150,7 +176,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 			NewKeysPropagator([]string{testContextKey1}),
 			NewKeysPropagator([]string{testContextKey2}),
 		},
-		MetricsScope:      metricsScope,
+		MetricsHandler:    metricsHandler,
 		TrafficController: trafficController,
 		Interceptors:      clientInterceptors,
 	})
@@ -159,6 +185,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.trafficController = trafficController
 	ts.seq++
 	ts.activities.clearInvoked()
+	ts.activities.client = ts.client
 	ts.taskQueueName = fmt.Sprintf("tq-%v-%s", ts.seq, ts.T().Name())
 	ts.tracer = newTracingInterceptor()
 	ts.inboundSignalInterceptor = newSignalInterceptor()
@@ -193,7 +220,6 @@ func (ts *IntegrationTestSuite) SetupTest() {
 }
 
 func (ts *IntegrationTestSuite) TearDownTest() {
-	_ = ts.metricsScopeCloser.Close()
 	ts.client.Close()
 	if !ts.workerStopped {
 		ts.worker.Stop()
@@ -1217,12 +1243,12 @@ func (ts *IntegrationTestSuite) TestResetWorkflowExecution() {
 
 func (ts *IntegrationTestSuite) TestEndToEndLatencyMetrics() {
 	fetchMetrics := func() (localMetric, nonLocalMetric *metrics.CapturedTimer) {
-		for _, timer := range ts.metricsReporter.Timers() {
+		for _, timer := range ts.metricsHandler.Timers() {
 			timer := timer
-			if timer.Name() == "temporal_activity_succeed_endtoend_latency" {
-				nonLocalMetric = &timer
-			} else if timer.Name() == "temporal_local_activity_succeed_endtoend_latency" {
-				localMetric = &timer
+			if timer.Name == "temporal_activity_succeed_endtoend_latency" {
+				nonLocalMetric = timer
+			} else if timer.Name == "temporal_local_activity_succeed_endtoend_latency" {
+				localMetric = timer
 			}
 		}
 		return
@@ -1386,7 +1412,7 @@ func (ts *IntegrationTestSuite) TestInterceptorCalls() {
 			}),
 		},
 		"WorkflowOutboundInterceptor.GetLogger":                     {},
-		"WorkflowOutboundInterceptor.GetMetricsScope":               {},
+		"WorkflowOutboundInterceptor.GetMetricsHandler":             {},
 		"WorkflowOutboundInterceptor.Now":                           {},
 		"WorkflowOutboundInterceptor.NewTimer":                      {},
 		"WorkflowOutboundInterceptor.Sleep":                         {},
@@ -1420,7 +1446,7 @@ func (ts *IntegrationTestSuite) TestInterceptorCalls() {
 			}),
 		},
 		"ActivityOutboundInterceptor.GetLogger":            {},
-		"ActivityOutboundInterceptor.GetMetricsScope":      {},
+		"ActivityOutboundInterceptor.GetMetricsHandler":    {},
 		"ActivityOutboundInterceptor.RecordHeartbeat":      {},
 		"ActivityOutboundInterceptor.HasHeartbeatDetails":  {},
 		"ActivityOutboundInterceptor.GetHeartbeatDetails":  {},
@@ -1468,6 +1494,156 @@ func (ts *IntegrationTestSuite) TestInterceptorStartWithSignal() {
 	ts.True(foundHandleSignal)
 }
 
+func (ts *IntegrationTestSuite) TestOpenTelemetryTracing() {
+	ts.testOpenTelemetryTracing(true)
+}
+
+func (ts *IntegrationTestSuite) TestOpenTelemetryTracingWithoutSignalsAndQueries() {
+	ts.testOpenTelemetryTracing(false)
+}
+
+func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withSignalAndQueryHeaders bool) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Start a top-level span
+	ctx, rootSpan := ts.openTelemetryTracer.Start(ctx, "root-span")
+
+	// Signal with start
+	run, err := ts.client.SignalWithStartWorkflow(ctx, "test-interceptor-open-telemetry", "start-signal",
+		nil, ts.startWorkflowOptions("test-interceptor-open-telemetry"), ts.workflows.SignalsAndQueries, true, true)
+	ts.NoError(err)
+
+	// Query
+	val, err := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "workflow-query", nil)
+	ts.NoError(err)
+	var queryResp string
+	ts.NoError(val.Get(&queryResp))
+	ts.Equal("query-response", queryResp)
+
+	// Finish signal
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish-signal", nil))
+	ts.NoError(run.Get(ctx, nil))
+
+	// Finish span and collect
+	rootSpan.End()
+	spans := ts.openTelemetrySpanRecorder.Ended()
+
+	// Span builder
+	span := func(name string, children ...*interceptortest.SpanInfo) *interceptortest.SpanInfo {
+		// If without signal-and-query headers, filter out those children in place
+		if !withSignalAndQueryHeaders {
+			n := 0
+			for _, child := range children {
+				isSignalOrQuery := strings.HasPrefix(child.Name, "SignalWorkflow:") ||
+					strings.HasPrefix(child.Name, "SignalChildWorkflow:") ||
+					strings.HasPrefix(child.Name, "HandleSignal:") ||
+					strings.HasPrefix(child.Name, "QueryWorkflow:") ||
+					strings.HasPrefix(child.Name, "HandleQuery:")
+				if !isSignalOrQuery {
+					children[n] = child
+					n++
+				}
+			}
+			children = children[:n]
+		}
+		return interceptortest.Span(name, children...)
+	}
+
+	// Confirm expected
+	actual := interceptortest.Span("root-span")
+	ts.addOpenTelemetryChildren(rootSpan.SpanContext().SpanID(), actual, spans)
+	expected := span("root-span",
+		span("SignalWithStartWorkflow:SignalsAndQueries",
+			span("HandleSignal:start-signal"),
+			span("RunWorkflow:SignalsAndQueries",
+				// Child workflow exec
+				span("StartChildWorkflow:SignalsAndQueries",
+					span("RunWorkflow:SignalsAndQueries",
+						// Activity inside child workflow
+						span("StartActivity:ExternalSignalsAndQueries",
+							span("RunActivity:ExternalSignalsAndQueries",
+								// Signal and query inside activity
+								span("SignalWithStartWorkflow:SignalsAndQueries",
+									span("HandleSignal:start-signal"),
+									span("RunWorkflow:SignalsAndQueries"),
+								),
+								span("QueryWorkflow:workflow-query",
+									span("HandleQuery:workflow-query"),
+								),
+								span("SignalWorkflow:finish-signal",
+									span("HandleSignal:finish-signal"),
+								),
+							),
+						),
+					),
+				),
+				span("SignalChildWorkflow:start-signal",
+					span("HandleSignal:start-signal"),
+				),
+				span("SignalChildWorkflow:finish-signal",
+					span("HandleSignal:finish-signal"),
+				),
+				// Activity in top-level
+				span("StartActivity:ExternalSignalsAndQueries",
+					span("RunActivity:ExternalSignalsAndQueries",
+						span("SignalWithStartWorkflow:SignalsAndQueries",
+							span("HandleSignal:start-signal"),
+							span("RunWorkflow:SignalsAndQueries"),
+						),
+						span("QueryWorkflow:workflow-query",
+							span("HandleQuery:workflow-query"),
+						),
+						span("SignalWorkflow:finish-signal",
+							span("HandleSignal:finish-signal"),
+						),
+					),
+				),
+			),
+		),
+		// Top-level query and signal
+		span("QueryWorkflow:workflow-query",
+			span("HandleQuery:workflow-query"),
+		),
+		span("SignalWorkflow:finish-signal",
+			span("HandleSignal:finish-signal"),
+		),
+	)
+
+	ts.Equal(expected, actual)
+}
+
+func (ts *IntegrationTestSuite) addOpenTelemetryChildren(
+	parentID trace.SpanID,
+	parentSpan *interceptortest.SpanInfo,
+	spans []sdktrace.ReadOnlySpan,
+) {
+	// Add any children that are not already present. We have to dedupe children
+	// recursively like this because, in cases where we have disabled the cache,
+	// the same interceptor may be called many times in duplicated ways but we
+	// only want the unique set based on name.
+	for _, s := range spans {
+		// Must be same parent
+		if s.Parent().SpanID() != parentID {
+			continue
+		}
+		// Try to find child that already exists by name
+		var child *interceptortest.SpanInfo
+		for _, maybeChild := range parentSpan.Children {
+			if maybeChild.Name == s.Name() {
+				child = maybeChild
+				break
+			}
+		}
+		// Add child if not there
+		if child == nil {
+			child = interceptortest.Span(s.Name())
+			parentSpan.Children = append(parentSpan.Children, child)
+		}
+		// Collect grandchildren
+		ts.addOpenTelemetryChildren(s.SpanContext().SpanID(), child, spans)
+	}
+}
+
 func (ts *IntegrationTestSuite) TestAdvancedPostCancellation() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -1478,20 +1654,8 @@ func (ts *IntegrationTestSuite) TestAdvancedPostCancellation() {
 			ts.workflows.AdvancedPostCancellation, in)
 		ts.NoError(err)
 
-		// Poll to check if waiting for cancel
-		var waitingForCancel bool
-		for i := 0; !waitingForCancel && i < 30; i++ {
-			time.Sleep(50 * time.Millisecond)
-			val, err := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "waiting-for-cancel")
-			// Ignore query failed because it means query may not be registered yet
-			var queryFailed *serviceerror.QueryFailed
-			if errors.As(err, &queryFailed) {
-				continue
-			}
-			ts.NoError(err)
-			ts.NoError(val.Get(&waitingForCancel))
-		}
-		ts.True(waitingForCancel)
+		// Wait for cancel
+		ts.waitForQueryTrue(run, "waiting-for-cancel")
 
 		// Now cancel it
 		ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
@@ -1527,12 +1691,209 @@ func (ts *IntegrationTestSuite) TestAdvancedPostCancellation() {
 	})
 }
 
+func (ts *IntegrationTestSuite) TestAdvancedPostCancellationChildWithDone() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Start workflow
+	startOpts := ts.startWorkflowOptions("test-advanced-post-cancellation-child-with-done-" + uuid.New())
+	run, err := ts.client.ExecuteWorkflow(ctx, startOpts, ts.workflows.AdvancedPostCancellationChildWithDone)
+	ts.NoError(err)
+
+	// Wait for cancel
+	ts.waitForQueryTrue(run, "waiting-for-cancel")
+
+	// Now cancel it
+	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+
+	// Confirm no error
+	ts.NoError(run.Get(ctx, nil))
+}
+
+func (ts *IntegrationTestSuite) waitForQueryTrue(run client.WorkflowRun, query string) {
+	var result bool
+	for i := 0; !result && i < 30; i++ {
+		time.Sleep(50 * time.Millisecond)
+		val, err := ts.client.QueryWorkflow(context.Background(), run.GetID(), run.GetRunID(), query)
+		// Ignore query failed because it means query may not be registered yet
+		var queryFailed *serviceerror.QueryFailed
+		if errors.As(err, &queryFailed) {
+			continue
+		}
+		ts.NoError(err)
+		ts.NoError(val.Get(&result))
+	}
+	ts.True(result, "query didn't return true in reasonable amount of time")
+}
+
+func (ts *IntegrationTestSuite) TestSlotsAvailableCounter() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	assertActivitySlotsAvailableEventually := func(expected float64, tags ...string) {
+		// Try for two seconds
+		var lastCount float64
+		for start := time.Now(); time.Since(start) <= 2*time.Second; {
+			lastCount = ts.metricGauge(metrics.WorkerTaskSlotsAvailable, "worker_type", "ActivityWorker")
+			if lastCount == expected {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		// Will fail
+		ts.Equal(expected, lastCount)
+	}
+
+	// Confirm all available to start
+	assertActivitySlotsAvailableEventually(1000)
+
+	// Start workflow and confirm reduced by one
+	run1, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-slots-available-counter-1"),
+		ts.workflows.ActivityHeartbeatUntilSignal)
+	ts.NoError(err)
+	assertActivitySlotsAvailableEventually(999)
+
+	// Start two more and confirm reduced by two
+	run2, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-slots-available-counter-2"),
+		ts.workflows.ActivityHeartbeatUntilSignal)
+	ts.NoError(err)
+	run3, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-slots-available-counter-3"),
+		ts.workflows.ActivityHeartbeatUntilSignal)
+	ts.NoError(err)
+	assertActivitySlotsAvailableEventually(997)
+
+	// Signal the first and last to close and confirm increased by two
+	time.Sleep(2 * time.Second)
+	ts.NoError(ts.client.SignalWorkflow(ctx, run1.GetID(), run1.GetRunID(), "cancel", nil))
+	ts.NoError(ts.client.SignalWorkflow(ctx, run3.GetID(), run3.GetRunID(), "cancel", nil))
+	ts.NoError(run1.Get(ctx, nil))
+	ts.NoError(run3.Get(ctx, nil))
+	assertActivitySlotsAvailableEventually(999)
+
+	// Signal the middle to close and confirm increased by one
+	ts.NoError(ts.client.SignalWorkflow(ctx, run2.GetID(), run2.GetRunID(), "cancel", nil))
+	ts.NoError(run2.Get(ctx, nil))
+	assertActivitySlotsAvailableEventually(1000)
+}
+
 func (ts *IntegrationTestSuite) TestTooFewParams() {
 	var res ParamsValue
 	// Only give first param
 	ts.NoError(ts.executeWorkflow("test-too-few-params", "TooFewParams", &res, "first param"))
 	// Confirm workflow and activity were called with zero values
 	ts.Equal(ParamsValue{Param1: "first param", Child: &ParamsValue{Param1: "first param"}}, res)
+}
+
+func (ts *IntegrationTestSuite) TestTallyScopeAccess() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	tallyScopeAccessWorkflow := func(ctx workflow.Context) error {
+		hist := contribtally.ScopeFromHandler(workflow.GetMetricsHandler(ctx)).Histogram("some_histogram", nil)
+		// This records even during replay
+		hist.RecordDuration(5 * time.Second)
+		return workflow.SetQueryHandler(ctx, "some-query", func() (string, error) { return "ok", nil })
+	}
+
+	ts.worker.RegisterWorkflow(tallyScopeAccessWorkflow)
+	run, err := ts.client.ExecuteWorkflow(context.TODO(),
+		ts.startWorkflowOptions("tally-scope-access-"+uuid.New()), tallyScopeAccessWorkflow)
+	ts.NoError(err)
+	ts.NoError(run.Get(context.TODO(), nil))
+
+	assertHistDuration := func(name string, d time.Duration, expected int64) {
+		for _, hist := range ts.tallyScope.Snapshot().Histograms() {
+			if hist.Name() == name {
+				ts.Equal(expected, hist.Durations()[d])
+				return
+			}
+		}
+		ts.Fail("no histogram")
+	}
+	// Confirm hit once
+	assertHistDuration("some_histogram", 5*time.Second, 1)
+
+	// Query the workflow and confirm hit during replay
+	_, err = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "some-query")
+	ts.NoError(err)
+	assertHistDuration("some_histogram", 5*time.Second, 2)
+}
+
+func (ts *IntegrationTestSuite) TestReturnCancelError() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	wfIDPrefix := "test-return-cancel-error-"
+
+	// For most tests we don't return the raw error since it loses context
+	rawActivityError := false
+
+	// Activity using temporal canceled error when not canceled should return
+	// "unexpected activity cancel error"
+	fromActivity, waitForCancel, goCancelError := true, false, false
+	err := ts.executeWorkflow(wfIDPrefix+"1", ts.workflows.ReturnCancelError, nil,
+		fromActivity, rawActivityError, waitForCancel, goCancelError)
+	ts.Error(err)
+	ts.Contains(err.Error(), "unexpected activity cancel error")
+
+	// Activity using Go canceled error when not canceled should return a context
+	// canceled error
+	fromActivity, waitForCancel, goCancelError = true, false, true
+	err = ts.executeWorkflow(wfIDPrefix+"2", ts.workflows.ReturnCancelError, nil,
+		fromActivity, rawActivityError, waitForCancel, goCancelError)
+	ts.Error(err)
+	ts.Contains(err.Error(), "context canceled")
+
+	// Activity using temporal canceled error after cancel should return normal
+	// cancel error
+	fromActivity, waitForCancel, goCancelError = true, true, false
+	err = ts.executeWorkflow(wfIDPrefix+"3", ts.workflows.ReturnCancelError, nil,
+		fromActivity, rawActivityError, waitForCancel, goCancelError)
+	ts.Error(err)
+	ts.NotContains(err.Error(), "unexpected")
+	ts.Contains(err.Error(), "canceled")
+	// We also check that, since rawActivityError is false, this is _not_ a
+	// canceled workflow since just the error string is used. This assertion is
+	// only made here to show it's the opposite of the raw one later.
+	ts.False(temporal.IsCanceledError(err))
+	resp, err := ts.client.DescribeWorkflowExecution(ctx, wfIDPrefix+"3", "")
+	ts.NoError(err)
+	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_FAILED, resp.GetWorkflowExecutionInfo().GetStatus())
+
+	// Activity using Go canceled error after cancel should return normal cancel
+	// error
+	fromActivity, waitForCancel, goCancelError = true, true, true
+	err = ts.executeWorkflow(wfIDPrefix+"4", ts.workflows.ReturnCancelError, nil,
+		fromActivity, rawActivityError, waitForCancel, goCancelError)
+	ts.Error(err)
+	ts.NotContains(err.Error(), "context canceled")
+	ts.NotContains(err.Error(), "unexpected")
+	ts.Contains(err.Error(), "canceled")
+
+	// Workflow using temporal canceled error when not canceled will consider the
+	// workflow canceled
+	// TODO(cretz): Note, this is observed behavior, not necessarily desired
+	// behavior
+	fromActivity, waitForCancel, goCancelError = false, false, false
+	err = ts.executeWorkflow(wfIDPrefix+"5", ts.workflows.ReturnCancelError, nil,
+		fromActivity, rawActivityError, waitForCancel, goCancelError)
+	ts.Error(err)
+	ts.True(temporal.IsCanceledError(err))
+	resp, err = ts.client.DescribeWorkflowExecution(ctx, wfIDPrefix+"5", "")
+	ts.NoError(err)
+	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_CANCELED, resp.GetWorkflowExecutionInfo().GetStatus())
+
+	// Workflow just returning the raw activity cancel itself appears canceled
+	// TODO(cretz): Note, this is observed behavior, not necessarily desired
+	// behavior
+	rawActivityError = true
+	fromActivity, waitForCancel, goCancelError = true, true, false
+	err = ts.executeWorkflow(wfIDPrefix+"6", ts.workflows.ReturnCancelError, nil,
+		fromActivity, rawActivityError, waitForCancel, goCancelError)
+	ts.Error(err)
+	ts.True(temporal.IsCanceledError(err))
+	resp, err = ts.client.DescribeWorkflowExecution(ctx, wfIDPrefix+"6", "")
+	ts.NoError(err)
+	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_CANCELED, resp.GetWorkflowExecutionInfo().GetStatus())
 }
 
 func (ts *IntegrationTestSuite) registerNamespace() {
@@ -1704,8 +2065,8 @@ var _ interceptor.WorkflowInboundInterceptor = (*signalWorkflowInboundIntercepto
 
 type signalInterceptor struct {
 	interceptor.WorkerInterceptorBase
-	ReturnErrorTimes int
-	TimesInvoked     int
+	ReturnErrorTimes uint32
+	TimesInvoked     uint32
 }
 
 func newSignalInterceptor() *signalInterceptor {
@@ -1718,8 +2079,8 @@ type signalWorkflowInboundInterceptor struct {
 }
 
 func (t *signalWorkflowInboundInterceptor) HandleSignal(ctx workflow.Context, in *interceptor.HandleSignalInput) error {
-	t.control.TimesInvoked++
-	if t.control.TimesInvoked <= t.control.ReturnErrorTimes {
+	timesInvoked := atomic.AddUint32(&t.control.TimesInvoked, 1)
+	if timesInvoked <= t.control.ReturnErrorTimes {
 		return fmt.Errorf("interceptor induced failure while processing signal %v", in.SignalName)
 	}
 	return t.Next.HandleSignal(ctx, in)
@@ -1733,20 +2094,40 @@ func (t *signalInterceptor) InterceptWorkflow(ctx workflow.Context, next interce
 }
 
 func (ts *IntegrationTestSuite) metricCount(name string, tagFilterKeyValue ...string) (total int64) {
-	for _, counter := range ts.metricsReporter.Counts() {
-		if counter.Name() != name {
+	for _, counter := range ts.metricsHandler.Counters() {
+		if counter.Name != name {
 			continue
 		}
 		// Check that it matches tag filter
 		validCounter := true
 		for i := 0; i < len(tagFilterKeyValue); i += 2 {
-			if counter.Tags()[tagFilterKeyValue[i]] != tagFilterKeyValue[i+1] {
+			if counter.Tags[tagFilterKeyValue[i]] != tagFilterKeyValue[i+1] {
 				validCounter = false
 				break
 			}
 		}
 		if validCounter {
 			total += counter.Value()
+		}
+	}
+	return
+}
+
+func (ts *IntegrationTestSuite) metricGauge(name string, tagFilterKeyValue ...string) (final float64) {
+	for _, gauge := range ts.metricsHandler.Gauges() {
+		if gauge.Name != name {
+			continue
+		}
+		// Check that it matches tag filter
+		validCounter := true
+		for i := 0; i < len(tagFilterKeyValue); i += 2 {
+			if gauge.Tags[tagFilterKeyValue[i]] != tagFilterKeyValue[i+1] {
+				validCounter = false
+				break
+			}
+		}
+		if validCounter {
+			final = gauge.Value()
 		}
 	}
 	return
@@ -1767,11 +2148,11 @@ func (ts *IntegrationTestSuite) assertReportedOperationCount(metricName string, 
 
 func (ts *IntegrationTestSuite) getReportedOperationCount(metricName string, operation string) int64 {
 	count := int64(0)
-	for _, counter := range ts.metricsReporter.Counts() {
-		if counter.Name() != metricName {
+	for _, counter := range ts.metricsHandler.Counters() {
+		if counter.Name != metricName {
 			continue
 		}
-		if op, ok := counter.Tags()[metrics.OperationTagName]; ok && op == operation {
+		if op, ok := counter.Tags[metrics.OperationTagName]; ok && op == operation {
 			count += counter.Value()
 		}
 	}

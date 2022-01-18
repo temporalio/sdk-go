@@ -201,3 +201,26 @@ func TestLocalActivityExecutionByActivityNameAliasMissingRegistration(t *testing
 	}, "Hello")
 	require.NotNil(t, env.GetWorkflowError())
 }
+
+func TestWorkflowIDInsideTestWorkflow(t *testing.T) {
+	var suite WorkflowTestSuite
+	// Default ID
+	env := suite.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(func(ctx Context) (string, error) {
+		return "id is: " + GetWorkflowInfo(ctx).WorkflowExecution.ID, nil
+	})
+	require.NoError(t, env.GetWorkflowError())
+	var str string
+	require.NoError(t, env.GetWorkflowResult(&str))
+	require.Equal(t, "id is: "+defaultTestWorkflowID, str)
+
+	// Custom ID
+	env = suite.NewTestWorkflowEnvironment()
+	env.SetStartWorkflowOptions(StartWorkflowOptions{ID: "my-workflow-id"})
+	env.ExecuteWorkflow(func(ctx Context) (string, error) {
+		return "id is: " + GetWorkflowInfo(ctx).WorkflowExecution.ID, nil
+	})
+	require.NoError(t, env.GetWorkflowError())
+	require.NoError(t, env.GetWorkflowResult(&str))
+	require.Equal(t, "id is: my-workflow-id", str)
+}
