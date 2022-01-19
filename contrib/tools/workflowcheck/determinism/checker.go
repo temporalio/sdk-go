@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/types/typeutil"
@@ -104,6 +105,7 @@ func (c *Checker) findNonDeterminisms(pass *analysis.Pass, res *Result) {
 	// Collect all top-level func decls and their types. Also mark var decls as
 	// non-deterministic if pattern matches.
 	funcDecls := map[*types.Func]*ast.FuncDecl{}
+	ignoreMap := map[ast.Node]struct{}{}
 	for _, file := range pass.Files {
 		// Skip this file if it matches any regex
 		fileName := filepath.ToSlash(pass.Fset.File(file.Package).Name())
@@ -116,6 +118,9 @@ func (c *Checker) findNonDeterminisms(pass *analysis.Pass, res *Result) {
 		if skipFile {
 			continue
 		}
+
+		// Update ignore map
+		updateIgnoreMap(pass.Fset, file, ignoreMap)
 
 		// Collect the decls to check
 		for _, decl := range file.Decls {
@@ -148,7 +153,7 @@ func (c *Checker) findNonDeterminisms(pass *analysis.Pass, res *Result) {
 	// Walk the decls capturing non-deterministic ones
 	parents := map[*types.Func]bool{}
 	for funcType := range funcDecls {
-		c.applyNonDeterminisms(pass, funcType, funcDecls, parents, res.Funcs)
+		c.applyNonDeterminisms(pass, funcType, funcDecls, ignoreMap, parents, res.Funcs)
 	}
 	// Set non-empty non-determinisms as facts
 	for funcType, nonDet := range res.Funcs {
@@ -165,6 +170,7 @@ func (c *Checker) applyNonDeterminisms(
 	pass *analysis.Pass,
 	fn *types.Func,
 	packageDecls map[*types.Func]*ast.FuncDecl,
+	ignoreMap map[ast.Node]struct{},
 	parents map[*types.Func]bool,
 	results map[*types.Func]NonDeterminisms,
 ) NonDeterminisms {
@@ -193,13 +199,18 @@ func (c *Checker) applyNonDeterminisms(
 	// for non-determinism
 	if !skip && packageDecls[fn] != nil {
 		ast.Inspect(packageDecls[fn], func(n ast.Node) bool {
+			// Go no deeper if ignoring
+			if _, ignored := ignoreMap[n]; ignored {
+				return false
+			}
+
 			switch n := n.(type) {
 			case *ast.CallExpr:
 				// Check if the call is on a non-deterministic
 				if callee, _ := typeutil.Callee(pass.TypesInfo, n).(*types.Func); callee != nil {
 					// Put self on parents, then remove
 					parents[fn] = true
-					calleeNonDet := c.applyNonDeterminisms(pass, callee, packageDecls, parents, results)
+					calleeNonDet := c.applyNonDeterminisms(pass, callee, packageDecls, ignoreMap, parents, results)
 					delete(parents, fn)
 					// If the callee is non-deterministic, mark this as such
 					if len(calleeNonDet) > 0 {
@@ -264,4 +275,22 @@ func (c *Checker) applyNonDeterminisms(
 	// Put the reasons fact on the func, even if it is empty
 	results[fn] = reasons
 	return reasons
+}
+
+func updateIgnoreMap(fset *token.FileSet, f *ast.File, m map[ast.Node]struct{}) {
+	// Collect only the ignore comments
+	var comments []*ast.CommentGroup
+	for _, group := range f.Comments {
+		if len(group.List) == 1 && strings.HasPrefix(group.List[0].Text, "//workflowcheck:ignore") {
+			comments = append(comments, group)
+		}
+	}
+	// Bail if no comments
+	if len(comments) == 0 {
+		return
+	}
+	// Add all present in comment map to ignore map
+	for k := range ast.NewCommentMap(fset, f, comments) {
+		m[k] = struct{}{}
+	}
 }

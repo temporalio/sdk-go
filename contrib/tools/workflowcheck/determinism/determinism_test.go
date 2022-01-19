@@ -19,10 +19,7 @@ func Test(t *testing.T) {
 		analysistest.TestData(),
 		determinism.NewChecker(determinism.Config{
 			IdentRefs: identRefs,
-			SkipFiles: []*regexp.Regexp{
-				regexp.MustCompile(`.*/should_skip\.go`),
-			},
-			Debug: true,
+			SkipFiles: []*regexp.Regexp{regexp.MustCompile(`.*/should_skip\.go`)},
 		}).NewAnalyzer(),
 		"a",
 	)
