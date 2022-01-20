@@ -12,27 +12,21 @@ func Test(t *testing.T) {
 	identRefs := determinism.DefaultIdentRefs.Clone()
 	identRefs["a.BadCall"] = true
 	identRefs["a.BadVar"] = true
+	identRefs["(a.SomeInterface).BadCall"] = true
 	identRefs["a.IgnoredCall"] = false
 	identRefs["os.Stderr"] = false
-	results := analysistest.Run(
+	analysistest.Run(
 		t,
 		analysistest.TestData(),
 		determinism.NewChecker(determinism.Config{
-			IdentRefs: identRefs,
-			SkipFiles: []*regexp.Regexp{regexp.MustCompile(`.*/should_skip\.go`)},
+			IdentRefs:         identRefs,
+			SkipFiles:         []*regexp.Regexp{regexp.MustCompile(`.*/should_skip\.go`)},
+			Debug:             true,
+			DebugfFunc:        t.Logf,
+			EnableObjectFacts: true,
 		}).NewAnalyzer(),
 		"a",
 	)
-	if testing.Verbose() {
-		// Dump the tree of the "a" package
-		for _, result := range results {
-			if result.Pass.Pkg.Name() == "a" {
-				if res, _ := result.Result.(*determinism.Result); res != nil {
-					for _, line := range res.Dump(false) {
-						t.Log(line)
-					}
-				}
-			}
-		}
-	}
+
+	// TODO(cretz): Method and interface receivers
 }

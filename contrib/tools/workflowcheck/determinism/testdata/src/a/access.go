@@ -1,4 +1,4 @@
-package a
+package a //want package:"\\d+ non-deterministic vars/funcs"
 
 import (
 	"crypto/rand"

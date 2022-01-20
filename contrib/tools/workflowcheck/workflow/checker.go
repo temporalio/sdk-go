@@ -38,6 +38,8 @@ type Config struct {
 	DeterminismDebug bool
 	// If set, the file and line/col position is present on nested errors.
 	IncludePosOnMessage bool
+	// If set, the determinism checker will include facts per object
+	EnableObjectFacts bool
 }
 
 // Checker checks if functions passed RegisterWorkflow are non-deterministic
@@ -66,9 +68,10 @@ func NewChecker(config Config) *Checker {
 		Debug:               config.Debug,
 		IncludePosOnMessage: config.IncludePosOnMessage,
 		Determinism: determinism.NewChecker(determinism.Config{
-			IdentRefs:  config.IdentRefs,
-			DebugfFunc: config.DebugfFunc,
-			Debug:      config.DeterminismDebug,
+			IdentRefs:         config.IdentRefs,
+			DebugfFunc:        config.DebugfFunc,
+			Debug:             config.DeterminismDebug,
+			EnableObjectFacts: config.EnableObjectFacts,
 		}),
 	}
 }
@@ -90,7 +93,7 @@ func (c *Checker) NewAnalyzer() *analysis.Analyzer {
 		Name:      "workflow",
 		Doc:       "Analyzes all RegisterWorkflow functions for non-determinism",
 		Run:       func(p *analysis.Pass) (interface{}, error) { return nil, c.Run(p) },
-		FactTypes: []analysis.Fact{&determinism.NonDeterminisms{}},
+		FactTypes: []analysis.Fact{&determinism.PackageNonDeterminisms{}, &determinism.NonDeterminisms{}},
 	}
 	// Set flags
 	a.Flags.Var(configFileFlag{c.Determinism}, "config", "configuration file")
@@ -108,6 +111,8 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 		return err
 	}
 	c.debugf("Checking package %v", pass.Pkg.Path())
+	lookupCache := determinism.NewPackageLookupCache(pass)
+	packageNonDeterminisms := lookupCache.PackageNonDeterminisms(pass.Pkg)
 	// Check every register workflow invocation
 	for _, file := range pass.Files {
 		ast.Inspect(file, func(n ast.Node) bool {
@@ -138,13 +143,11 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 				return true
 			}
 			c.debugf("Checking workflow function %v", fn.FullName())
-			// If there are any non-determinisms, we need to mark the diagnostics
-			var reasons determinism.NonDeterminisms
-			if pass.ImportObjectFact(fn, &reasons) && len(reasons) > 0 {
+			if nonDeterminisms := packageNonDeterminisms[fn.FullName()]; len(nonDeterminisms) > 0 {
 				// One report per reason
-				for _, reason := range reasons {
+				for _, reason := range nonDeterminisms {
 					lines := determinism.NonDeterminisms{reason}.AppendChildReasonLines(
-						fn.FullName(), nil, 0, c.IncludePosOnMessage)
+						fn.FullName(), nil, 0, c.IncludePosOnMessage, pass.Pkg, lookupCache)
 					pass.Report(analysis.Diagnostic{Pos: callExpr.Pos(), Message: strings.Join(lines, "\n")})
 				}
 			}

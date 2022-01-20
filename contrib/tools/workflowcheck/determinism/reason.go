@@ -1,15 +1,32 @@
 package determinism
 
 import (
+	"encoding/gob"
 	"fmt"
 	"go/token"
 	"go/types"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
-// NonDeterminisms is a set of reasons why a function is non-deterministic.
+// PackageNonDeterminisms contains func/var non-determinisms keyed by name.
+type PackageNonDeterminisms map[string]NonDeterminisms
+
+// AFact is for implementing golang.org/x/tools/go/analysis.Fact.
+func (*PackageNonDeterminisms) AFact() {}
+
+func (n *PackageNonDeterminisms) String() string {
+	if n == nil || len(*n) == 0 {
+		return "0 non-deterministic vars/funcs"
+	} else if len(*n) == 1 {
+		return "1 non-deterministic var/func"
+	}
+	return strconv.Itoa(len(*n)) + " non-deterministic vars/funcs"
+}
+
+// NonDeterminisms is a set of reasons why a function/var is non-deterministic.
 type NonDeterminisms []Reason
 
 // AFact is for implementing golang.org/x/tools/go/analysis.Fact.
@@ -37,6 +54,8 @@ func (n NonDeterminisms) AppendChildReasonLines(
 	s []string,
 	depth int,
 	includePos bool,
+	pkg *types.Package,
+	lookupCache *PackageLookupCache,
 ) []string {
 	for _, reason := range n {
 		reasonStr := reason.String()
@@ -54,7 +73,10 @@ func (n NonDeterminisms) AppendChildReasonLines(
 		s = append(s, fmt.Sprintf("%v is non-deterministic, reason: %v", strings.Repeat("  ", depth)+subject, reasonStr))
 		// Recurse if func call
 		if funcCall, _ := reason.(*ReasonFuncCall); funcCall != nil {
-			s = funcCall.Child.AppendChildReasonLines(funcCall.Func.FullName(), s, depth+1, includePos)
+			childPkg, childPkgNonDet := lookupCache.PackageNonDeterminismsFromName(pkg, funcCall.PackageName())
+			if childNonDet := childPkgNonDet[funcCall.FuncName]; len(childNonDet) > 0 {
+				s = childNonDet.AppendChildReasonLines(funcCall.FuncName, s, depth+1, includePos, childPkg, lookupCache)
+			}
 		}
 	}
 	return s
@@ -67,17 +89,14 @@ type Reason interface {
 	String() string
 }
 
-type reasonBase struct {
-	pos *token.Position
-}
-
-func (r *reasonBase) Pos() *token.Position { return r.pos }
-
 // ReasonDecl represents a function or var that was explicitly marked
 // non-deterministic via config.
 type ReasonDecl struct {
-	reasonBase
+	SourcePos *token.Position
 }
+
+// Pos returns the source position.
+func (r *ReasonDecl) Pos() *token.Position { return r.SourcePos }
 
 // String returns the reason.
 func (r *ReasonDecl) String() string {
@@ -86,32 +105,56 @@ func (r *ReasonDecl) String() string {
 
 // ReasonFuncCall represents a call to a non-deterministic function.
 type ReasonFuncCall struct {
-	reasonBase
-	Func  *types.Func
-	Child NonDeterminisms
+	SourcePos *token.Position
+	// Fully qualified name
+	FuncName string
 }
+
+// Pos returns the source position.
+func (r *ReasonFuncCall) Pos() *token.Position { return r.SourcePos }
 
 // String returns the reason.
 func (r *ReasonFuncCall) String() string {
-	return "calls non-deterministic function " + r.Func.FullName()
+	return "calls non-deterministic function " + r.FuncName
+}
+
+func (r *ReasonFuncCall) PackageName() string {
+	pkgPrefixedName := r.FuncName
+	// If there is a ending paren it's a method, take the receiver as the name
+	if endParen := strings.Index(r.FuncName, ")"); endParen >= 0 {
+		pkgPrefixedName = strings.TrimLeft(r.FuncName[:endParen], "(*")
+	}
+	// Take up until the last dot as the package name
+	lastDot := strings.LastIndex(pkgPrefixedName, ".")
+	if lastDot == -1 {
+		return pkgPrefixedName
+	}
+	return pkgPrefixedName[:lastDot]
 }
 
 // ReasonVarAccess represents accessing a non-deterministic global variable.
 type ReasonVarAccess struct {
-	reasonBase
-	Var *types.Var
+	SourcePos *token.Position
+	// Fully qualified name
+	VarName string
 }
+
+// Pos returns the source position.
+func (r *ReasonVarAccess) Pos() *token.Position { return r.SourcePos }
 
 // String returns the reason.
 func (r *ReasonVarAccess) String() string {
-	return "accesses non-deterministic var " + r.Var.Pkg().Path() + "." + r.Var.Name()
+	return "accesses non-deterministic var " + r.VarName
 }
 
 // ReasonConcurrency represents a non-deterministic concurrency construct.
 type ReasonConcurrency struct {
-	reasonBase
-	Kind ConcurrencyKind
+	SourcePos *token.Position
+	Kind      ConcurrencyKind
 }
+
+// Pos returns the source position.
+func (r *ReasonConcurrency) Pos() *token.Position { return r.SourcePos }
 
 // String returns the reason.
 func (r *ReasonConcurrency) String() string {
@@ -142,10 +185,22 @@ const (
 
 // ReasonMapRange represents iterating over a map via range.
 type ReasonMapRange struct {
-	reasonBase
+	SourcePos *token.Position
 }
+
+// Pos returns the source position.
+func (r *ReasonMapRange) Pos() *token.Position { return r.SourcePos }
 
 // String returns the reason.
 func (r *ReasonMapRange) String() string {
 	return "iterates over map"
+}
+
+func init() {
+	// Needed for go vet usage
+	gob.Register(&ReasonDecl{})
+	gob.Register(&ReasonFuncCall{})
+	gob.Register(&ReasonVarAccess{})
+	gob.Register(&ReasonConcurrency{})
+	gob.Register(&ReasonMapRange{})
 }

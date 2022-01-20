@@ -13,7 +13,9 @@ func Test(t *testing.T) {
 	analysistest.Run(
 		t,
 		analysistest.TestData(),
-		workflow.NewChecker(workflow.Config{}).NewAnalyzer(),
+		workflow.NewChecker(workflow.Config{
+			EnableObjectFacts: true,
+		}).NewAnalyzer(),
 		"a",
 	)
 }

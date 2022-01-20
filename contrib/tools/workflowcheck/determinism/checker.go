@@ -8,8 +8,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
-	"sort"
+	"runtime"
 	"strings"
+	"sync"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/types/typeutil"
@@ -25,6 +26,8 @@ type Config struct {
 	DebugfFunc func(string, ...interface{})
 	// Must be set to true to see advanced debug logs.
 	Debug bool
+	// Whether to export a *NonDeterminisms fact per object.
+	EnableObjectFacts bool
 }
 
 // Checker is a checker that can run analysis passes to check for
@@ -46,27 +49,6 @@ func NewChecker(config Config) *Checker {
 	return &Checker{config}
 }
 
-// Result is the result from Run and the result on the Analyzer.
-type Result struct {
-	// Only includes top-level functions
-	Funcs map[*types.Func]NonDeterminisms
-}
-
-// Dump returns the result as a set of lines.
-func (r *Result) Dump(includePos bool) (lines []string) {
-	// Get func types and sort first for determinism
-	funcTypes := make([]*types.Func, 0, len(r.Funcs))
-	for funcType := range r.Funcs {
-		funcTypes = append(funcTypes, funcType)
-	}
-	sort.Slice(funcTypes, func(i, j int) bool { return funcTypes[i].FullName() < funcTypes[j].FullName() })
-	// Build lines
-	for _, funcType := range funcTypes {
-		lines = r.Funcs[funcType].AppendChildReasonLines(funcType.FullName(), lines, 0, includePos)
-	}
-	return
-}
-
 // NewAnalyzer creates a Go analysis analyzer that can be used in existing
 // tools. There is a -set-decl flag for adding ident refs overrides and a
 // -determinism-debug flag for enabling debug logs. The result is Result and the
@@ -76,8 +58,8 @@ func (c *Checker) NewAnalyzer() *analysis.Analyzer {
 		Name:       "determinism",
 		Doc:        "Analyzes all functions and marks whether they are deterministic",
 		Run:        func(p *analysis.Pass) (interface{}, error) { return c.Run(p) },
-		ResultType: reflect.TypeOf((*Result)(nil)),
-		FactTypes:  []analysis.Fact{&NonDeterminisms{}},
+		ResultType: reflect.TypeOf(PackageNonDeterminisms{}),
+		FactTypes:  []analysis.Fact{&PackageNonDeterminisms{}, &NonDeterminisms{}},
 	}
 	// Set flags
 	a.Flags.Var(NewIdentRefsFlag(c.IdentRefs), "set-decl",
@@ -92,20 +74,21 @@ func (c *Checker) debugf(f string, v ...interface{}) {
 	}
 }
 
-// Run executes this checker for the given pass and returns the result.
-func (c *Checker) Run(pass *analysis.Pass) (*Result, error) {
+// Run executes this checker for the given pass and stores the fact.
+func (c *Checker) Run(pass *analysis.Pass) (PackageNonDeterminisms, error) {
 	c.debugf("Checking package %v", pass.Pkg.Path())
-	// Collect all non-determinisms in the package
-	res := &Result{Funcs: map[*types.Func]NonDeterminisms{}}
-	c.findNonDeterminisms(pass, res)
-	return res, nil
-}
 
-func (c *Checker) findNonDeterminisms(pass *analysis.Pass, res *Result) {
 	// Collect all top-level func decls and their types. Also mark var decls as
 	// non-deterministic if pattern matches.
 	funcDecls := map[*types.Func]*ast.FuncDecl{}
-	ignoreMap := map[ast.Node]struct{}{}
+	coll := &collector{
+		checker:     c,
+		pass:        pass,
+		lookupCache: NewPackageLookupCache(pass),
+		nonDetVars:  map[*types.Var]NonDeterminisms{},
+		ignoreMap:   map[ast.Node]struct{}{},
+		funcInfos:   map[*types.Func]*funcInfo{},
+	}
 	for _, file := range pass.Files {
 		// Skip this file if it matches any regex
 		fileName := filepath.ToSlash(pass.Fset.File(file.Package).Name())
@@ -120,9 +103,9 @@ func (c *Checker) findNonDeterminisms(pass *analysis.Pass, res *Result) {
 		}
 
 		// Update ignore map
-		updateIgnoreMap(pass.Fset, file, ignoreMap)
+		updateIgnoreMap(pass.Fset, file, coll.ignoreMap)
 
-		// Collect the decls to check
+		// Collect the decls to check and check vars/iface patterns
 		for _, decl := range file.Decls {
 			switch decl := decl.(type) {
 			case *ast.FuncDecl:
@@ -133,15 +116,29 @@ func (c *Checker) findNonDeterminisms(pass *analysis.Pass, res *Result) {
 			case *ast.GenDecl:
 				// Set top-level vars that match pattern as non-deterministic
 				for _, spec := range decl.Specs {
-					if valueSpec, _ := spec.(*ast.ValueSpec); valueSpec != nil {
-						for _, varName := range valueSpec.Names {
+					switch spec := spec.(type) {
+					// See if the top-level vars match patterns
+					case *ast.ValueSpec:
+						for _, varName := range spec.Names {
 							if varType, _ := pass.TypesInfo.ObjectOf(varName).(*types.Var); varType != nil && varType.Pkg() != nil {
 								fullName := varType.Pkg().Path() + "." + varType.Name()
 								if c.IdentRefs[fullName] {
 									c.debugf("Marking %v as non-deterministic because it matched a pattern", fullName)
 									pos := pass.Fset.Position(varType.Pos())
-									reasons := NonDeterminisms{&ReasonDecl{reasonBase: reasonBase{&pos}}}
-									pass.ExportObjectFact(varType, &reasons)
+									coll.nonDetVars[varType] = NonDeterminisms{&ReasonDecl{SourcePos: &pos}}
+								}
+							}
+						}
+					// See if any interface funcs match patterns
+					case *ast.TypeSpec:
+						if iface, _ := pass.TypesInfo.TypeOf(spec.Type).(*types.Interface); iface != nil {
+							// Only need to match explicitly defined methods
+							for i := 0; i < iface.NumExplicitMethods(); i++ {
+								info := coll.funcInfo(iface.ExplicitMethod(i))
+								if c.IdentRefs[info.fn.FullName()] {
+									c.debugf("Marking %v as non-deterministic because it matched a pattern", info.fn.FullName())
+									pos := pass.Fset.Position(spec.Pos())
+									info.reasons = append(info.reasons, &ReasonDecl{SourcePos: &pos})
 								}
 							}
 						}
@@ -150,131 +147,34 @@ func (c *Checker) findNonDeterminisms(pass *analysis.Pass, res *Result) {
 			}
 		}
 	}
-	// Walk the decls capturing non-deterministic ones
-	parents := map[*types.Func]bool{}
-	for funcType := range funcDecls {
-		c.applyNonDeterminisms(pass, funcType, funcDecls, ignoreMap, parents, res.Funcs)
+
+	// Build collector and do initial pass for each function async
+
+	// Parallelize to the number of CPUs
+	maxAtOnce := runtime.NumCPU()
+	if maxAtOnce < 1 {
+		maxAtOnce = 1
 	}
-	// Set non-empty non-determinisms as facts
-	for funcType, nonDet := range res.Funcs {
-		nonDet := nonDet
-		if len(nonDet) > 0 {
-			pass.ExportObjectFact(funcType, &nonDet)
+	doneCh := make(chan struct{}, maxAtOnce)
+	var running int
+	for fn, decl := range funcDecls {
+		// If we've filled the channel, wait
+		if running == cap(doneCh) {
+			<-doneCh
+		} else {
+			running++
 		}
+		go func(fn *types.Func, decl *ast.FuncDecl) {
+			coll.collectFuncInfo(fn, decl)
+			doneCh <- struct{}{}
+		}(fn, decl)
 	}
-}
-
-// Returns true if non-deterministic, false otherwise. Parents must be non-nil
-// and all values must be true.
-func (c *Checker) applyNonDeterminisms(
-	pass *analysis.Pass,
-	fn *types.Func,
-	packageDecls map[*types.Func]*ast.FuncDecl,
-	ignoreMap map[ast.Node]struct{},
-	parents map[*types.Func]bool,
-	results map[*types.Func]NonDeterminisms,
-) NonDeterminisms {
-	// Check to make sure not recursive
-	if parents[fn] {
-		// Recursive call is not marked non-deterministic
-		return nil
+	// Wait for the rest to finish
+	for i := 0; i < running; i++ {
+		<-doneCh
 	}
-	// Check if determinisms already set or it's in a different package (which
-	// means we can't re-set later)
-	reasons, alreadySet := results[fn]
-	if alreadySet || pass.ImportObjectFact(fn, &reasons) || fn.Pkg() != pass.Pkg {
-		return reasons
-	}
-	// Check if matches pattern
-	var skip bool
-	if match, ok := c.IdentRefs[fn.FullName()]; match {
-		c.debugf("Marking %v as non-deterministic because it matched a pattern", fn.FullName())
-		pos := pass.Fset.Position(fn.Pos())
-		reasons = append(reasons, &ReasonDecl{reasonBase: reasonBase{&pos}})
-	} else if ok && !match {
-		c.debugf("Skipping %v because it matched a pattern", fn.FullName())
-		skip = true
-	}
-	// If not skipped and has top-level decl, walk the declaration body checking
-	// for non-determinism
-	if !skip && packageDecls[fn] != nil {
-		ast.Inspect(packageDecls[fn], func(n ast.Node) bool {
-			// Go no deeper if ignoring
-			if _, ignored := ignoreMap[n]; ignored {
-				return false
-			}
-
-			switch n := n.(type) {
-			case *ast.CallExpr:
-				// Check if the call is on a non-deterministic
-				if callee, _ := typeutil.Callee(pass.TypesInfo, n).(*types.Func); callee != nil {
-					// Put self on parents, then remove
-					parents[fn] = true
-					calleeNonDet := c.applyNonDeterminisms(pass, callee, packageDecls, ignoreMap, parents, results)
-					delete(parents, fn)
-					// If the callee is non-deterministic, mark this as such
-					if len(calleeNonDet) > 0 {
-						c.debugf("Marking %v as non-deterministic because it calls %v", fn.FullName(), callee.FullName())
-						pos := pass.Fset.Position(n.Pos())
-						reasons = append(reasons, &ReasonFuncCall{reasonBase: reasonBase{&pos}, Func: callee, Child: calleeNonDet})
-					}
-				}
-			case *ast.GoStmt:
-				// Any go statement is non-deterministic
-				c.debugf("Marking %v as non-deterministic because it starts a goroutine", fn.FullName())
-				pos := pass.Fset.Position(n.Pos())
-				reasons = append(reasons, &ReasonConcurrency{reasonBase: reasonBase{&pos}, Kind: ConcurrencyKindGo})
-			case *ast.Ident:
-				// Check if ident is for a non-deterministic var
-				if varType, _ := pass.TypesInfo.ObjectOf(n).(*types.Var); varType != nil {
-					var ignore NonDeterminisms
-					if pass.ImportObjectFact(varType, &ignore) {
-						c.debugf("Marking %v as non-deterministic because it accesses %v.%v",
-							fn.FullName(), varType.Pkg().Path(), varType.Name())
-						pos := pass.Fset.Position(n.Pos())
-						reasons = append(reasons, &ReasonVarAccess{reasonBase: reasonBase{&pos}, Var: varType})
-					}
-				}
-			case *ast.RangeStmt:
-				// Map and chan ranges are non-deterministic
-				rangeType := pass.TypesInfo.TypeOf(n.X)
-				// Unwrap named type
-				for {
-					if namedType, _ := rangeType.(*types.Named); namedType != nil {
-						rangeType = namedType.Underlying()
-					} else {
-						break
-					}
-				}
-				switch rangeType.(type) {
-				case *types.Map:
-					c.debugf("Marking %v as non-deterministic because it iterates over a map", fn.FullName())
-					pos := pass.Fset.Position(n.Pos())
-					reasons = append(reasons, &ReasonMapRange{reasonBase: reasonBase{&pos}})
-				case *types.Chan:
-					c.debugf("Marking %v as non-deterministic because it iterates over a channel", fn.FullName())
-					pos := pass.Fset.Position(n.Pos())
-					reasons = append(reasons, &ReasonConcurrency{reasonBase: reasonBase{&pos}, Kind: ConcurrencyKindRange})
-				}
-			case *ast.SendStmt:
-				// Any send statement is non-deterministic
-				c.debugf("Marking %v as non-deterministic because it sends to a channel", fn.FullName())
-				pos := pass.Fset.Position(n.Pos())
-				reasons = append(reasons, &ReasonConcurrency{reasonBase: reasonBase{&pos}, Kind: ConcurrencyKindSend})
-			case *ast.UnaryExpr:
-				// If the operator is a receive, it is non-deterministic
-				if n.Op == token.ARROW {
-					c.debugf("Marking %v as non-deterministic because it receives from a channel", fn.FullName())
-					pos := pass.Fset.Position(n.Pos())
-					reasons = append(reasons, &ReasonConcurrency{reasonBase: reasonBase{&pos}, Kind: ConcurrencyKindRecv})
-				}
-			}
-			return true
-		})
-	}
-	// Put the reasons fact on the func, even if it is empty
-	results[fn] = reasons
-	return reasons
+	// Build facts in second pass
+	return coll.applyFacts(), nil
 }
 
 func updateIgnoreMap(fset *token.FileSet, f *ast.File, m map[ast.Node]struct{}) {
@@ -293,4 +193,266 @@ func updateIgnoreMap(fset *token.FileSet, f *ast.File, m map[ast.Node]struct{}) 
 	for k := range ast.NewCommentMap(fset, f, comments) {
 		m[k] = struct{}{}
 	}
+}
+
+type collector struct {
+	// Concurrency-safe/immutable fields
+	checker     *Checker
+	pass        *analysis.Pass
+	lookupCache *PackageLookupCache
+	nonDetVars  map[*types.Var]NonDeterminisms
+	ignoreMap   map[ast.Node]struct{}
+
+	funcInfos     map[*types.Func]*funcInfo
+	funcInfosLock sync.Mutex
+}
+
+type funcInfo struct {
+	fn                   *types.Func
+	reasons              NonDeterminisms
+	samePackageCalls     map[*funcInfo]token.Pos
+	samePackageCallsLock sync.Mutex
+	factsApplied         bool
+}
+
+// Concurrency safe
+func (f *funcInfo) addSamePackageCall(callee *funcInfo, pos token.Pos) {
+	// Ignore direct recursive calls
+	if f == callee {
+		return
+	}
+	f.samePackageCallsLock.Lock()
+	defer f.samePackageCallsLock.Unlock()
+	// Only if not already there so we can capture the first token
+	if _, ok := f.samePackageCalls[callee]; !ok {
+		f.samePackageCalls[callee] = pos
+	}
+}
+
+func (c *collector) funcInfo(fn *types.Func) *funcInfo {
+	c.funcInfosLock.Lock()
+	defer c.funcInfosLock.Unlock()
+	info := c.funcInfos[fn]
+	if info == nil {
+		info = &funcInfo{fn: fn, samePackageCalls: map[*funcInfo]token.Pos{}}
+		c.funcInfos[fn] = info
+	}
+	return info
+}
+
+func (c *collector) externalFuncNonDeterminisms(fn *types.Func) NonDeterminisms {
+	return c.lookupCache.PackageNonDeterminisms(fn.Pkg())[fn.FullName()]
+}
+
+func (c *collector) externalVarNonDeterminisms(v *types.Var) NonDeterminisms {
+	return c.lookupCache.PackageNonDeterminisms(v.Pkg())[v.Name()]
+}
+
+func (c *collector) collectFuncInfo(fn *types.Func, decl *ast.FuncDecl) {
+	info := c.funcInfo(fn)
+
+	// If matches a pattern, can eagerly stop here
+	match, ok := c.checker.IdentRefs[fn.FullName()]
+	if ok {
+		if match {
+			c.checker.debugf("Marking %v as non-deterministic because it matched a pattern", fn.FullName())
+			pos := c.pass.Fset.Position(fn.Pos())
+			info.reasons = append(info.reasons, &ReasonDecl{SourcePos: &pos})
+		} else {
+			c.checker.debugf("Skipping %v because it matched a pattern", fn.FullName())
+		}
+		return
+	}
+
+	// Walk
+	ast.Inspect(decl, func(n ast.Node) bool {
+		// Go no deeper if ignoring
+		if _, ignored := c.ignoreMap[n]; ignored {
+			return false
+		}
+
+		switch n := n.(type) {
+		case *ast.CallExpr:
+			// Get the callee
+			if callee, _ := typeutil.Callee(c.pass.TypesInfo, n).(*types.Func); callee != nil {
+				// If it's in a different package, check externals
+				if c.pass.Pkg != callee.Pkg() {
+					calleeReasons := c.externalFuncNonDeterminisms(callee)
+					if len(calleeReasons) > 0 {
+						c.checker.debugf("Marking %v as non-deterministic because it calls %v", fn.FullName(), callee.FullName())
+						pos := c.pass.Fset.Position(n.Pos())
+						info.reasons = append(info.reasons, &ReasonFuncCall{
+							SourcePos: &pos,
+							FuncName:  callee.FullName(),
+						})
+					}
+				} else {
+					// Otherwise, we simply add as a same-package call
+					info.addSamePackageCall(c.funcInfo(callee), n.Pos())
+				}
+			}
+		case *ast.GoStmt:
+			// Any go statement is non-deterministic
+			c.checker.debugf("Marking %v as non-deterministic because it starts a goroutine", fn.FullName())
+			pos := c.pass.Fset.Position(n.Pos())
+			info.reasons = append(info.reasons, &ReasonConcurrency{SourcePos: &pos, Kind: ConcurrencyKindGo})
+		case *ast.Ident:
+			// Check if ident is for a non-deterministic var
+			if varType, _ := c.pass.TypesInfo.ObjectOf(n).(*types.Var); varType != nil {
+				// If it's in a different package, check for external non-determinisms.
+				// Otherwise check local.
+				var nonDetVar NonDeterminisms
+				if c.pass.Pkg != varType.Pkg() {
+					nonDetVar = c.externalVarNonDeterminisms(varType)
+				} else {
+					nonDetVar = c.nonDetVars[varType]
+				}
+				if len(nonDetVar) > 0 {
+					c.checker.debugf("Marking %v as non-deterministic because it accesses %v.%v",
+						fn.FullName(), varType.Pkg().Path(), varType.Name())
+					pos := c.pass.Fset.Position(n.Pos())
+					info.reasons = append(info.reasons, &ReasonVarAccess{
+						SourcePos: &pos,
+						VarName:   varType.Pkg().Path() + "." + varType.Name(),
+					})
+				}
+			}
+		case *ast.RangeStmt:
+			// Map and chan ranges are non-deterministic
+			rangeType := c.pass.TypesInfo.TypeOf(n.X)
+			// Unwrap named type
+			for {
+				if namedType, _ := rangeType.(*types.Named); namedType != nil {
+					rangeType = namedType.Underlying()
+				} else {
+					break
+				}
+			}
+			switch rangeType.(type) {
+			case *types.Map:
+				c.checker.debugf("Marking %v as non-deterministic because it iterates over a map", fn.FullName())
+				pos := c.pass.Fset.Position(n.Pos())
+				info.reasons = append(info.reasons, &ReasonMapRange{SourcePos: &pos})
+			case *types.Chan:
+				c.checker.debugf("Marking %v as non-deterministic because it iterates over a channel", fn.FullName())
+				pos := c.pass.Fset.Position(n.Pos())
+				info.reasons = append(info.reasons, &ReasonConcurrency{SourcePos: &pos, Kind: ConcurrencyKindRange})
+			}
+		case *ast.SendStmt:
+			// Any send statement is non-deterministic
+			c.checker.debugf("Marking %v as non-deterministic because it sends to a channel", fn.FullName())
+			pos := c.pass.Fset.Position(n.Pos())
+			info.reasons = append(info.reasons, &ReasonConcurrency{SourcePos: &pos, Kind: ConcurrencyKindSend})
+		case *ast.UnaryExpr:
+			// If the operator is a receive, it is non-deterministic
+			if n.Op == token.ARROW {
+				c.checker.debugf("Marking %v as non-deterministic because it receives from a channel", fn.FullName())
+				pos := c.pass.Fset.Position(n.Pos())
+				info.reasons = append(info.reasons, &ReasonConcurrency{SourcePos: &pos, Kind: ConcurrencyKindRecv})
+			}
+		}
+		return true
+	})
+}
+
+// Expects to be called as second pass after all func infos collected.
+func (c *collector) applyFacts() PackageNonDeterminisms {
+	p := PackageNonDeterminisms{}
+	// Just run for each. Even though recursive, likely no benefit from
+	// parallelizing.
+	for _, info := range c.funcInfos {
+		c.applyFuncNonDeterminisms(info, p)
+		// Export fact if requested
+		if c.checker.EnableObjectFacts && len(info.reasons) > 0 {
+			c.pass.ExportObjectFact(info.fn, &info.reasons)
+		}
+	}
+
+	// Add non-deterministic exported vars to the result set too
+	for v := range c.nonDetVars {
+		if v.Exported() {
+			pos := c.pass.Fset.Position(v.Pos())
+			det := NonDeterminisms{&ReasonDecl{SourcePos: &pos}}
+			p[v.Name()] = det
+			// Export fact if requested
+			if c.checker.EnableObjectFacts {
+				c.pass.ExportObjectFact(v, &det)
+			}
+		}
+	}
+
+	// Export package fact
+	c.pass.ExportPackageFact(&p)
+	return p
+}
+
+func (c *collector) applyFuncNonDeterminisms(f *funcInfo, p PackageNonDeterminisms) {
+	if f.factsApplied {
+		return
+	}
+	f.factsApplied = true
+	// Recursively call for same-package calls and then see if they have reasons
+	// for non-determinism
+	for child, pos := range f.samePackageCalls {
+		c.applyFuncNonDeterminisms(child, p)
+		if len(child.reasons) > 0 {
+			c.checker.debugf("Marking %v as non-deterministic because it calls %v", f.fn.FullName(), child.fn.FullName())
+			pos := c.pass.Fset.Position(pos)
+			f.reasons = append(f.reasons, &ReasonFuncCall{
+				SourcePos: &pos,
+				FuncName:  child.fn.FullName(),
+			})
+		}
+	}
+	// If we have reasons and the function is exported, place on package non-det
+	if len(f.reasons) > 0 && f.fn.Exported() {
+		p[f.fn.FullName()] = f.reasons
+	}
+}
+
+// PackageLookupCache TODO
+type PackageLookupCache struct {
+	pass                       *analysis.Pass
+	packageNonDeterminisms     map[*types.Package]PackageNonDeterminisms
+	packageNonDeterminismsLock sync.Mutex
+}
+
+func NewPackageLookupCache(pass *analysis.Pass) *PackageLookupCache {
+	return &PackageLookupCache{pass: pass, packageNonDeterminisms: map[*types.Package]PackageNonDeterminisms{}}
+}
+
+func (p *PackageLookupCache) PackageNonDeterminisms(pkg *types.Package) PackageNonDeterminisms {
+	if pkg == nil {
+		return nil
+	}
+	// The import has to be done under lock too since it's not concurrency safe
+	p.packageNonDeterminismsLock.Lock()
+	defer p.packageNonDeterminismsLock.Unlock()
+	ret, exists := p.packageNonDeterminisms[pkg]
+	if !exists {
+		// We don't care whether it can be imported, we store in the map either way
+		// to save future lookups
+		p.pass.ImportPackageFact(pkg, &ret)
+		p.packageNonDeterminisms[pkg] = ret
+	}
+	return ret
+}
+
+func (p *PackageLookupCache) PackageNonDeterminismsFromName(
+	pkgInScope *types.Package,
+	importedPkg string,
+) (*types.Package, PackageNonDeterminisms) {
+	// Package must be imported from the one in scope or be the one in scope
+	var pkg *types.Package
+	if pkgInScope.Name() == importedPkg {
+		pkg = pkgInScope
+	} else {
+		for _, maybePkg := range pkgInScope.Imports() {
+			if maybePkg.Name() == importedPkg {
+				pkg = maybePkg
+				break
+			}
+		}
+	}
+	return pkg, p.PackageNonDeterminisms(pkg)
 }
