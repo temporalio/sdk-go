@@ -40,6 +40,8 @@ type Config struct {
 	IncludePosOnMessage bool
 	// If set, the determinism checker will include facts per object
 	EnableObjectFacts bool
+	// If set, the output uses "->" instead of "\n" as the hierarchy separator.
+	SingleLine bool
 }
 
 // Checker checks if functions passed RegisterWorkflow are non-deterministic
@@ -49,6 +51,7 @@ type Checker struct {
 	Debug               bool
 	IncludePosOnMessage bool
 	Determinism         *determinism.Checker
+	SingleLine          bool
 }
 
 // NewChecker creates a Checker for the given config.
@@ -101,11 +104,18 @@ func (c *Checker) NewAnalyzer() *analysis.Analyzer {
 	a.Flags.BoolVar(&c.Determinism.Debug, "determinism-debug", c.Determinism.Debug, "show determinism debug output")
 	a.Flags.BoolVar(&c.IncludePosOnMessage, "show-pos", c.IncludePosOnMessage,
 		"show file positions on determinism messages")
+	a.Flags.BoolVar(&c.SingleLine, "single-line", c.SingleLine,
+		"use '->' instead of newline between hierarchies of non-determinism")
 	return a
 }
 
 // Run executes this checker for the given pass.
 func (c *Checker) Run(pass *analysis.Pass) error {
+	hierarchySeparator, depthRepeat := "\n", "  "
+	if c.SingleLine {
+		hierarchySeparator, depthRepeat = " -> ", ""
+	}
+
 	// Run determinism pass
 	if _, err := c.Determinism.Run(pass); err != nil {
 		return err
@@ -147,8 +157,8 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 				// One report per reason
 				for _, reason := range nonDeterminisms {
 					lines := determinism.NonDeterminisms{reason}.AppendChildReasonLines(
-						fn.FullName(), nil, 0, c.IncludePosOnMessage, pass.Pkg, lookupCache)
-					pass.Report(analysis.Diagnostic{Pos: callExpr.Pos(), Message: strings.Join(lines, "\n")})
+						fn.FullName(), nil, 0, depthRepeat, c.IncludePosOnMessage, pass.Pkg, lookupCache)
+					pass.Report(analysis.Diagnostic{Pos: callExpr.Pos(), Message: strings.Join(lines, hierarchySeparator)})
 				}
 			}
 			return true

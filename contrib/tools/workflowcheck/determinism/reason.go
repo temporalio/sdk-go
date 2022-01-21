@@ -53,6 +53,7 @@ func (n NonDeterminisms) AppendChildReasonLines(
 	subject string,
 	s []string,
 	depth int,
+	depthRepeat string,
 	includePos bool,
 	pkg *types.Package,
 	lookupCache *PackageLookupCache,
@@ -70,12 +71,14 @@ func (n NonDeterminisms) AppendChildReasonLines(
 			}
 			reasonStr += fmt.Sprintf(" at %v:%v:%v", filename, pos.Line, pos.Column)
 		}
-		s = append(s, fmt.Sprintf("%v is non-deterministic, reason: %v", strings.Repeat("  ", depth)+subject, reasonStr))
+		s = append(s, fmt.Sprintf("%v is non-deterministic, reason: %v",
+			strings.Repeat(depthRepeat, depth)+subject, reasonStr))
 		// Recurse if func call
 		if funcCall, _ := reason.(*ReasonFuncCall); funcCall != nil {
 			childPkg, childPkgNonDet := lookupCache.PackageNonDeterminismsFromName(pkg, funcCall.PackageName())
 			if childNonDet := childPkgNonDet[funcCall.FuncName]; len(childNonDet) > 0 {
-				s = childNonDet.AppendChildReasonLines(funcCall.FuncName, s, depth+1, includePos, childPkg, lookupCache)
+				s = childNonDet.AppendChildReasonLines(funcCall.FuncName, s, depth+1,
+					depthRepeat, includePos, childPkg, lookupCache)
 			}
 		}
 	}
