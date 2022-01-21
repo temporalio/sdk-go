@@ -115,7 +115,7 @@ func (c *Checker) debugf(f string, v ...interface{}) {
 // facts as the determinism analyzer (*determinism.NonDeterminisms).
 func (c *Checker) NewAnalyzer() *analysis.Analyzer {
 	a := &analysis.Analyzer{
-		Name:      "workflow",
+		Name:      "workflowcheck",
 		Doc:       "Analyzes all RegisterWorkflow functions for non-determinism",
 		Run:       func(p *analysis.Pass) (interface{}, error) { return nil, c.Run(p) },
 		FactTypes: []analysis.Fact{&determinism.PackageNonDeterminisms{}, &determinism.NonDeterminisms{}},
@@ -144,7 +144,6 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 	}
 	c.debugf("Checking package %v", pass.Pkg.Path())
 	lookupCache := determinism.NewPackageLookupCache(pass)
-	packageNonDeterminisms := lookupCache.PackageNonDeterminisms(pass.Pkg)
 	// Check every register workflow invocation
 	for _, file := range pass.Files {
 		ast.Inspect(file, func(n ast.Node) bool {
@@ -175,6 +174,8 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 				return true
 			}
 			c.debugf("Checking workflow function %v", fn.FullName())
+			// Get non-determinisms of that package and check
+			packageNonDeterminisms := lookupCache.PackageNonDeterminisms(fn.Pkg())
 			if nonDeterminisms := packageNonDeterminisms[fn.FullName()]; len(nonDeterminisms) > 0 {
 				// One report per reason
 				for _, reason := range nonDeterminisms {

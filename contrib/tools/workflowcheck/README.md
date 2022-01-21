@@ -10,8 +10,6 @@ developers should still scrutinize workflow code for other non-determinisms.**
 
 ## Installing
 
-Build like a normal Go app. With this repository cloned and [Go](https://golang.org/) installed and on the `PATH`, run:
-
 To install with [Go](https://golang.org/) installed and on the `PATH`, run:
 
     go install go.temporal.io/sdk/contrib/tools/workflowcheck
@@ -83,12 +81,12 @@ decls:
   fmt.Printf: false
 ```
 
-Then running `workflowcheck -config workflowcheck.config.yaml .` Would not only show the `time.Now` error. See the
+Then running `workflowcheck -config workflowcheck.config.yaml .` would only show the `time.Now` error. See the
 "Configuration" section below for more details on configuration.
 
 If, say, we wanted that specific `time.Now` call to be allowed, we could add the `//workflowcheck:ignore` comment right
 above or on the right-hand side of the line that calls it. Then the next `workflowcheck` call would no longer report it
-as non-deterministic.
+as non-deterministic. See "Inline Ignoring" below.
 
 ## `go vet` and VisualStudio Code Usage
 
@@ -102,7 +100,7 @@ To add to Visual Studio Code, add the following to your settings:
 
 ```jsonc
   // If using Windows, be sure to escape backslashes
-  "go.vetFlags": ["-vettool", "c:\\work\\tem\\static-analysis\\temporal-sdk-go\\contrib\\tools\\workflowcheck\\workflowcheck.exe"],
+  "go.vetFlags": ["-vettool", "/path/to/workflowcheck"],
   // Diagnostics have to be disabled for "go vet" to run
   "go.languageServerExperimentalFeatures": {
     "diagnostics": false
