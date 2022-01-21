@@ -390,16 +390,14 @@ func (c *collector) applyFacts() PackageNonDeterminisms {
 		}
 	}
 
-	// Add non-deterministic exported vars to the result set too
+	// Add non-deterministic vars to the result set too
 	for v := range c.nonDetVars {
-		if v.Exported() {
-			pos := c.pass.Fset.Position(v.Pos())
-			det := NonDeterminisms{&ReasonDecl{SourcePos: &pos}}
-			p[v.Name()] = det
-			// Export fact if requested
-			if c.checker.EnableObjectFacts {
-				c.pass.ExportObjectFact(v, &det)
-			}
+		pos := c.pass.Fset.Position(v.Pos())
+		det := NonDeterminisms{&ReasonDecl{SourcePos: &pos}}
+		p[v.Name()] = det
+		// Export fact if requested
+		if c.checker.EnableObjectFacts {
+			c.pass.ExportObjectFact(v, &det)
 		}
 	}
 
@@ -426,8 +424,8 @@ func (c *collector) applyFuncNonDeterminisms(f *funcInfo, p PackageNonDeterminis
 			})
 		}
 	}
-	// If we have reasons and the function is exported, place on package non-det
-	if len(f.reasons) > 0 && f.fn.Exported() {
+	// If we have reasons, place on package non-det
+	if len(f.reasons) > 0 {
 		p[f.fn.FullName()] = f.reasons
 	}
 }
@@ -473,11 +471,11 @@ func (p *PackageLookupCache) PackageNonDeterminismsFromName(
 ) (*types.Package, PackageNonDeterminisms) {
 	// Package must be imported from the one in scope or be the one in scope
 	var pkg *types.Package
-	if pkgInScope.Name() == importedPkg {
+	if pkgInScope.Path() == importedPkg {
 		pkg = pkgInScope
 	} else {
 		for _, maybePkg := range pkgInScope.Imports() {
-			if maybePkg.Name() == importedPkg {
+			if maybePkg.Path() == importedPkg {
 				pkg = maybePkg
 				break
 			}
