@@ -44,6 +44,7 @@ import (
 	"go.temporal.io/sdk/internal/common/retry"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/resolver/manual"
@@ -143,7 +144,7 @@ func TestMissingGetServerInfo(t *testing.T) {
 	var lastErr error
 	for i := 0; i < 20; i++ {
 		lastErr = nil
-		conn, err := grpc.Dial(l.Addr().String(), grpc.WithInsecure())
+		conn, err := grpc.Dial(l.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			lastErr = err
 		} else {
@@ -330,7 +331,7 @@ func (t *testGRPCServer) waitUntilServing() error {
 	// Try 20 times, waiting 100ms between
 	var lastErr error
 	for i := 0; i < 20; i++ {
-		conn, err := grpc.Dial(t.addr, grpc.WithInsecure())
+		conn, err := grpc.Dial(t.addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			lastErr = err
 		} else {
