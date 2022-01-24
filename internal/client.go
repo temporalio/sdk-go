@@ -33,10 +33,9 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
-	"go.temporal.io/sdk/internal/common/backoff"
 	"google.golang.org/grpc"
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -56,9 +55,7 @@ const (
 	// sessions in the workflow. The result will be a list of SessionInfo encoded in the EncodedValue.
 	QueryTypeOpenSessions string = "__open_sessions"
 
-	healthCheckServiceName           = "temporal.api.workflowservice.v1.WorkflowService"
-	defaultHealthCheckAttemptTimeout = 5 * time.Second
-	defaultHealthCheckTimeout        = 10 * time.Second
+	getSystemInfoTimeout = 5 * time.Second
 )
 
 type (
@@ -439,19 +436,6 @@ type (
 		// This value only used when TLS is nil.
 		Authority string
 
-		// By default, after gRPC connection to the Server is created, client will make a request to
-		// health check endpoint to make sure that the Server is accessible.
-		// Set DisableHealthCheck to true to disable it.
-		DisableHealthCheck bool
-
-		// HealthCheckAttemptTimeout specifies how to long to wait for service response on each health check attempt.
-		// Default: 5s.
-		HealthCheckAttemptTimeout time.Duration
-
-		// HealthCheckTimeout defines how long client should be sending health check requests to the server before concluding
-		// that it is unavailable. Defaults to 10s, once this timeout is reached error will be propagated to the client.
-		HealthCheckTimeout time.Duration
-
 		// Enables keep alive ping from client to the server, which can help detect abruptly closed connections faster.
 		EnableKeepAliveCheck bool
 
@@ -650,14 +634,16 @@ func NewClient(options ClientOptions) (Client, error) {
 		return nil, err
 	}
 
-	if err = checkHealth(connection, options.ConnectionOptions); err != nil {
-		if err := connection.Close(); err != nil {
-			options.Logger.Warn("Unable to close connection on health check failure.", "error", err)
-		}
+	client := NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options)
+
+	// Get server capabilities eagerly. This has replaced health checking and we
+	// have accepted that this forces an eager connection with the server.
+	client.capabilities, err = getServerCapabilities(client.workflowService)
+	if err != nil {
+		client.Close()
 		return nil, err
 	}
-
-	return NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
+	return client, nil
 }
 
 func newDialParameters(options *ClientOptions) dialParameters {
@@ -735,13 +721,6 @@ func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
 		return nil, err
 	}
 
-	if err = checkHealth(connection, options.ConnectionOptions); err != nil {
-		if err := connection.Close(); err != nil {
-			options.Logger.Warn("Unable to close connection on health check failure.", "error", err)
-		}
-		return nil, err
-	}
-
 	return newNamespaceServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options), nil
 }
 
@@ -780,41 +759,18 @@ func NewValues(data *commonpb.Payloads) converter.EncodedValues {
 	return newEncodedValues(data, nil)
 }
 
-// checkHealth checks service health using gRPC health check:
-// https://github.com/grpc/grpc/blob/master/doc/health-checking.md
-func checkHealth(connection grpc.ClientConnInterface, options ConnectionOptions) error {
-	if options.DisableHealthCheck {
-		return nil
-	}
-
-	healthClient := healthpb.NewHealthClient(connection)
-
-	request := &healthpb.HealthCheckRequest{
-		Service: healthCheckServiceName,
-	}
-
-	attemptTimeout := options.HealthCheckAttemptTimeout
-	if attemptTimeout == 0 {
-		attemptTimeout = defaultHealthCheckAttemptTimeout
-	}
-	timeout := options.HealthCheckTimeout
-	if timeout == 0 {
-		timeout = defaultHealthCheckTimeout
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+func getServerCapabilities(
+	client workflowservice.WorkflowServiceClient,
+) (cap workflowservice.GetSystemInfoResponse_Capabilities, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), getSystemInfoTimeout)
 	defer cancel()
-	policy := createDynamicServiceRetryPolicy(ctx)
-	// TODO: refactor using grpc retry interceptor
-	return backoff.Retry(ctx, func() error {
-		healthCheckCtx, cancel := context.WithTimeout(context.Background(), attemptTimeout)
-		defer cancel()
-		resp, err := healthClient.Check(healthCheckCtx, request)
-		if err != nil {
-			return fmt.Errorf("health check error: %w", err)
-		}
-		if resp.Status != healthpb.HealthCheckResponse_SERVING {
-			return fmt.Errorf("health check returned unhealthy status: %v", resp.Status)
-		}
-		return nil
-	}, policy, nil)
+	resp, err := client.GetSystemInfo(ctx, &workflowservice.GetSystemInfoRequest{})
+	// We ignore unimplemented
+	if _, isUnimplemented := err.(*serviceerror.Unimplemented); err != nil && !isUnimplemented {
+		return cap, fmt.Errorf("get system info failed: %w - %T", err, err)
+	}
+	if resp != nil && resp.Capabilities != nil {
+		cap = *resp.Capabilities
+	}
+	return cap, nil
 }

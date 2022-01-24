@@ -431,12 +431,17 @@ type MetricsTimer = metrics.Timer
 // MetricsNopHandler is a noop handler that does nothing with the metrics.
 var MetricsNopHandler = metrics.NopHandler
 
-// NewClient creates an instance of a workflow client
+// NewClient creates an instance of a workflow client. This will attempt to
+// connect to the server eagerly and will return an error if the server is not
+// available.
 func NewClient(options Options) (Client, error) {
 	return internal.NewClient(options)
 }
 
-// NewNamespaceClient creates an instance of a namespace client, to manage lifecycle of namespaces.
+// NewNamespaceClient creates an instance of a namespace client, to manage
+// lifecycle of namespaces. This will not attempt to connect to the server
+// eagerly and therefore may not fail for an unreachable server until a call is
+// made.
 func NewNamespaceClient(options Options) (NamespaceClient, error) {
 	return internal.NewNamespaceClient(options)
 }
