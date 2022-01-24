@@ -35,6 +35,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
+	uberatomic "go.uber.org/atomic"
 	"google.golang.org/grpc"
 
 	"go.temporal.io/sdk/converter"
@@ -629,7 +630,8 @@ func NewClient(options ClientOptions) (Client, error) {
 		options.Logger.Info("No logger configured for temporal client. Created default one.")
 	}
 
-	connection, err := dial(newDialParameters(&options))
+	var excludeInternalFromRetry uberatomic.Bool
+	connection, err := dial(newDialParameters(&options, &excludeInternalFromRetry))
 	if err != nil {
 		return nil, err
 	}
@@ -643,15 +645,21 @@ func NewClient(options ClientOptions) (Client, error) {
 		client.Close()
 		return nil, err
 	}
+	excludeInternalFromRetry.Store(client.capabilities.InternalErrorDifferentiation)
 	return client, nil
 }
 
-func newDialParameters(options *ClientOptions) dialParameters {
+func newDialParameters(options *ClientOptions, excludeInternalFromRetry *uberatomic.Bool) dialParameters {
 	return dialParameters{
 		UserConnectionOptions: options.ConnectionOptions,
 		HostPort:              options.HostPort,
-		RequiredInterceptors:  requiredInterceptors(options.MetricsHandler, options.HeadersProvider, options.TrafficController),
-		DefaultServiceConfig:  defaultServiceConfig,
+		RequiredInterceptors: requiredInterceptors(
+			options.MetricsHandler,
+			options.HeadersProvider,
+			options.TrafficController,
+			excludeInternalFromRetry,
+		),
+		DefaultServiceConfig: defaultServiceConfig,
 	}
 }
 
@@ -716,7 +724,7 @@ func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
 		options.HostPort = LocalHostPort
 	}
 
-	connection, err := dial(newDialParameters(&options))
+	connection, err := dial(newDialParameters(&options, nil))
 	if err != nil {
 		return nil, err
 	}

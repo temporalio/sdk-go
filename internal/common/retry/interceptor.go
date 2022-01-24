@@ -32,6 +32,7 @@ import (
 	"github.com/gogo/status"
 	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"github.com/grpc-ecosystem/go-grpc-middleware/util/backoffutils"
+	uberatomic "go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 )
@@ -119,11 +120,14 @@ var (
 	//    INVALID_ARGUMENT, NOT_FOUND, ALREADY_EXISTS, FAILED_PRECONDITION, ABORTED, OUT_OF_RANGE, DATA_LOSS
 	retryableCodes = []codes.Code{codes.Aborted, codes.DeadlineExceeded, codes.Internal,
 		codes.ResourceExhausted, codes.Unavailable, codes.Unknown}
+	retryableCodesWithoutInternal = []codes.Code{codes.Aborted, codes.DeadlineExceeded,
+		codes.ResourceExhausted, codes.Unavailable, codes.Unknown}
 )
 
 // NewRetryOptionsInterceptor creates a new gRPC interceptor that populates retry options for each call based on values
-// provided in the context.
-func NewRetryOptionsInterceptor() grpc.UnaryClientInterceptor {
+// provided in the context. The atomic bool is checked each call to determine whether internals are included in retry.
+// If not present or false, internals are assumed to be included.
+func NewRetryOptionsInterceptor(excludeInternal *uberatomic.Bool) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		if rc, ok := ctx.Value(ConfigKey).(*GrpcRetryConfig); ok {
 			if _, ok := ctx.Deadline(); !ok {
@@ -149,7 +153,11 @@ func NewRetryOptionsInterceptor() grpc.UnaryClientInterceptor {
 			// We have to deal with plain gRPC error codes instead of service errors here as actual error translation
 			// happens after invoker is called below and invoker must have correct retry options right away in order to
 			// supply them to the gRPC retrier.
-			opts = append(opts, grpc_retry.WithCodes(retryableCodes...))
+			if excludeInternal != nil && excludeInternal.Load() {
+				opts = append(opts, grpc_retry.WithCodes(retryableCodesWithoutInternal...))
+			} else {
+				opts = append(opts, grpc_retry.WithCodes(retryableCodes...))
+			}
 		} else {
 			// Do not retry if retry config is not set.
 			opts = append(opts, grpc_retry.Disable())
