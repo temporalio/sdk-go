@@ -49,6 +49,4 @@ func Test(t *testing.T) {
 		}).NewAnalyzer(),
 		"a",
 	)
-
-	// TODO(cretz): Method and interface receivers
 }

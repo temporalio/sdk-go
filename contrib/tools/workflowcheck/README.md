@@ -1,12 +1,12 @@
 # Temporal Workflow Check
 
 Temporal Workflow Check is a tool that statically analyzes
-[Temporal Go workflows](https://docs.temporal.io/docs/go/workflows/) (i.e. functions passed to
-`worker.RegisterWorkflow`) to check for non-deterministic code either directly in the function or in a function called
-by the workflow. It is highly optimized to scan large codebases quickly.
+Temporal [Workflow Definitions written in Go](https://docs.temporal.io/docs/go/how-to-write-a-workflow-definition-in-go)
+(i.e. functions passed to `worker.RegisterWorkflow`) to check for non-deterministic code either directly in the function
+or in a function called by the Workflow. It is highly optimized to scan large codebases quickly.
 
 **NOTE: This will not catch all cases of non-determinism such as global var mutation. This is just a helper and
-developers should still scrutinize workflow code for other non-determinisms.**
+developers should still scrutinize Workflow code for other non-determinisms.**
 
 ## Installing
 
@@ -27,10 +27,10 @@ the `PATH`, run:
 
     workflowcheck ./...
 
-For each workflow passed to `RegisterWorkflow` that is considered non-deterministic, this will output the reasons why.
-There is no output if all workflows are properly deterministic.
+For each Workflow Definition registered with `RegisterWorkflow` that is considered non-deterministic, this will output
+the reasons why. There is no output if all Workflow Definitions are properly deterministic.
 
-The output is hierarchical if the reason occurs in code that the workflow calls. For example, if a workflow X calls Y
+The output is hierarchical if the reason occurs in code that the Workflow calls. For example, if a Workflow X calls Y
 which calls Z that iterates over a map, the result will show X calling Y calling Z and why Z itself was
 non-deterministic. This helps for debugging and disabling false positives.
 
@@ -74,7 +74,7 @@ If `workflowcheck .` is run, the following output will appear:
 ```
 
 The `-show-pos` argument can be provided to see exactly where each offending call happens. If we wanted to allow
-`fmt.Printf` to be used in all workflows, we could have the config `workflowcheck.config.yaml`:
+`fmt.Printf` to be used in all Workflows, we could have the config `workflowcheck.config.yaml`:
 
 ```yaml
 decls:
@@ -185,7 +185,7 @@ skip:
   - 'some/package/[^/]*\.go'
 ```
 
-For example, say this function was called from a workflow:
+For example, say this function was called from a Workflow:
 
 ```go
 func MetricSum(metrics map[string]*Metric) (count int) {
