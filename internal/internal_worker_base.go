@@ -170,6 +170,9 @@ type (
 		pollerRequestCh    chan struct{}
 		taskQueueCh        chan interface{}
 		sessionTokenBucket *sessionTokenBucket
+
+		// Only used during in pollTask to keep from spamming logs
+		lastPollTaskErrMessage string
 	}
 
 	polledTask struct {
@@ -304,10 +307,13 @@ func (bw *baseWorker) pollTask() {
 	bw.retrier.Throttle(bw.stopCh)
 	if bw.pollLimiter == nil || bw.pollLimiter.Wait(bw.limiterContext) == nil {
 		task, err = bw.options.taskWorker.PollTask()
-		if err != nil && enableVerboseLogging {
-			bw.logger.Debug("Failed to poll for task.", tagError, err)
-		}
 		if err != nil {
+			// Log the error as warn if it doesn't match the last error seen
+			if err.Error() != bw.lastPollTaskErrMessage {
+				bw.logger.Warn("Failed to poll for task.", tagError, err)
+				bw.lastPollTaskErrMessage = err.Error()
+			}
+
 			if isNonRetriableError(err) {
 				bw.logger.Error("Worker received non-retriable error. Shutting down.", tagError, err)
 				if p, err := os.FindProcess(os.Getpid()); err != nil {
@@ -320,6 +326,7 @@ func (bw *baseWorker) pollTask() {
 			bw.retrier.Failed()
 		} else {
 			bw.retrier.Succeeded()
+			bw.lastPollTaskErrMessage = ""
 		}
 	}
 
