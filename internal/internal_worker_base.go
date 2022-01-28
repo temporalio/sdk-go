@@ -49,6 +49,8 @@ import (
 const (
 	retryPollOperationInitialInterval = 200 * time.Millisecond
 	retryPollOperationMaxInterval     = 10 * time.Second
+	// How long the same poll task error can remain suppressed
+	lastPollTaskErrSuppressTime = 1 * time.Minute
 )
 
 var (
@@ -171,8 +173,9 @@ type (
 		taskQueueCh        chan interface{}
 		sessionTokenBucket *sessionTokenBucket
 
-		// Only used during in pollTask to keep from spamming logs
 		lastPollTaskErrMessage string
+		lastPollTaskErrStarted time.Time
+		lastPollTaskErrLock    sync.Mutex
 	}
 
 	polledTask struct {
@@ -307,13 +310,8 @@ func (bw *baseWorker) pollTask() {
 	bw.retrier.Throttle(bw.stopCh)
 	if bw.pollLimiter == nil || bw.pollLimiter.Wait(bw.limiterContext) == nil {
 		task, err = bw.options.taskWorker.PollTask()
+		bw.logPollTaskError(err)
 		if err != nil {
-			// Log the error as warn if it doesn't match the last error seen
-			if err.Error() != bw.lastPollTaskErrMessage {
-				bw.logger.Warn("Failed to poll for task.", tagError, err)
-				bw.lastPollTaskErrMessage = err.Error()
-			}
-
 			if isNonRetriableError(err) {
 				bw.logger.Error("Worker received non-retriable error. Shutting down.", tagError, err)
 				if p, err := os.FindProcess(os.Getpid()); err != nil {
@@ -326,7 +324,6 @@ func (bw *baseWorker) pollTask() {
 			bw.retrier.Failed()
 		} else {
 			bw.retrier.Succeeded()
-			bw.lastPollTaskErrMessage = ""
 		}
 	}
 
@@ -337,6 +334,24 @@ func (bw *baseWorker) pollTask() {
 		}
 	} else {
 		bw.pollerRequestCh <- struct{}{} // poll failed, trigger a new poll
+	}
+}
+
+func (bw *baseWorker) logPollTaskError(err error) {
+	bw.lastPollTaskErrLock.Lock()
+	defer bw.lastPollTaskErrLock.Unlock()
+	// No error means reset the message and time
+	if err == nil {
+		bw.lastPollTaskErrMessage = ""
+		bw.lastPollTaskErrStarted = time.Now()
+		return
+	}
+	// Log the error as warn if it doesn't match the last error seen or its over
+	// the time since
+	if err.Error() != bw.lastPollTaskErrMessage || time.Since(bw.lastPollTaskErrStarted) > lastPollTaskErrSuppressTime {
+		bw.logger.Warn("Failed to poll for task.", tagError, err)
+		bw.lastPollTaskErrMessage = err.Error()
+		bw.lastPollTaskErrStarted = time.Now()
 	}
 }
 
