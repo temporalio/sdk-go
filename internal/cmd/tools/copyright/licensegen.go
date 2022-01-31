@@ -57,7 +57,11 @@ const licenseHeaderPrefix = "// The MIT License"
 
 var (
 	// directories to be excluded
-	dirDenylist = []string{".gen/", ".git/", ".vscode/", ".idea/"}
+	dirDenylist = []string{
+		".gen/", ".git/", ".vscode/", ".idea/",
+		"contrib/tools/workflowcheck/determinism/testdata/",
+		"contrib/tools/workflowcheck/workflow/testdata/",
+	}
 	// default perms for the newly created files
 	defaultFilePerms = os.FileMode(0644)
 )
