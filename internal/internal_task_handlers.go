@@ -579,6 +579,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		ParentWorkflowExecution:  parentWorkflowExecution,
 		Memo:                     attributes.Memo,
 		SearchAttributes:         attributes.SearchAttributes,
+		RetryPolicy:              convertFromPBRetryPolicy(attributes.RetryPolicy),
 	}
 
 	return newWorkflowExecutionContext(workflowInfo, wth), nil
@@ -1474,6 +1475,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			Header:              contErr.Header,
 			Memo:                workflowContext.workflowInfo.Memo,
 			SearchAttributes:    workflowContext.workflowInfo.SearchAttributes,
+			RetryPolicy:         convertToPBRetryPolicy(workflowContext.workflowInfo.RetryPolicy),
 		}}
 	} else if workflowContext.err != nil {
 		// Workflow failures
@@ -1693,7 +1695,7 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 
 	if err != nil {
 		logger := GetActivityLogger(ctx)
-		logger.Debug("RecordActivityHeartbeat with error", tagError, err)
+		logger.Warn("RecordActivityHeartbeat with error", tagError, err)
 	}
 
 	// This error won't be returned to user check RecordActivityHeartbeat().

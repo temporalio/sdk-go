@@ -336,8 +336,8 @@ func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, ta
 		return "", fmt.Errorf("invalid taskQueueName name, expected=%v, got=%v", taskQueue, tq)
 	}
 
-	if info.Memo == nil || info.SearchAttributes == nil {
-		return "", errors.New("memo or search attributes are not carried over")
+	if info.Memo == nil || info.SearchAttributes == nil || info.RetryPolicy == nil {
+		return "", errors.New("memo, search attributes, and/or retry policy are not carried over")
 	}
 	var memoVal string
 	err := converter.GetDefaultDataConverter().FromPayload(info.Memo.Fields["memoKey"], &memoVal)
@@ -352,7 +352,7 @@ func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, ta
 	}
 
 	if count == 0 {
-		return memoVal + "," + searchAttrVal, nil
+		return fmt.Sprintf("%v,%v,%v", memoVal, searchAttrVal, info.RetryPolicy.MaximumAttempts), nil
 	}
 	ctx = workflow.WithTaskQueue(ctx, taskQueue)
 
@@ -1592,6 +1592,16 @@ func (w *Workflows) TooFewParams(
 	return ret, workflow.ExecuteActivity(ctx, a.TooFewParams, param1).Get(ctx, &ret.Child)
 }
 
+func (w *Workflows) ExecuteRemoteActivityToUpper(ctx workflow.Context, taskQueue, str string) (string, error) {
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		TaskQueue:              taskQueue,
+		ScheduleToCloseTimeout: 5 * time.Second,
+	})
+	var resp string
+	err := workflow.ExecuteActivity(ctx, (*Activities2).ToUpper, str).Get(ctx, &resp)
+	return resp, err
+}
+
 func (w *Workflows) ReturnCancelError(
 	ctx workflow.Context,
 	fromActivity bool,
@@ -1701,6 +1711,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.AdvancedPostCancellation)
 	worker.RegisterWorkflow(w.AdvancedPostCancellationChildWithDone)
 	worker.RegisterWorkflow(w.TooFewParams)
+	worker.RegisterWorkflow(w.ExecuteRemoteActivityToUpper)
 	worker.RegisterWorkflow(w.ReturnCancelError)
 
 	worker.RegisterWorkflow(w.child)

@@ -1,8 +1,6 @@
 // The MIT License
 //
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
+// Copyright (c) 2022 Temporal Technologies Inc.  All rights reserved.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -22,18 +20,24 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package internal
+package workflow_test
 
-// Below are the metadata which will be embedded as part of headers in every RPC call made by this client to Temporal server.
-// Update to the metadata below is typically done by the Temporal team as part of a major feature or behavior change.
+import (
+	"testing"
 
-const (
-	// SDKVersion is a semver (https://semver.org/) that represents the version of this Temporal GoSDK.
-	// Server validates if SDKVersion fits its supported range and rejects request if it doesn't.
-	SDKVersion = "1.13.0"
-
-	// SupportedServerVersions is a semver rages (https://github.com/blang/semver#ranges) of server versions that
-	// are supported by this Temporal SDK.
-	// Server validates if its version fits into SupportedServerVersions range and rejects request if it doesn't.
-	SupportedServerVersions = ">=1.0.0 <2.0.0"
+	"go.temporal.io/sdk/contrib/tools/workflowcheck/workflow"
+	"golang.org/x/tools/go/analysis/analysistest"
 )
+
+func Test(t *testing.T) {
+	// This intentionally only does a few tests. Most of the tests for
+	// non-determinism are in ../determinism/determinism_test.go.
+	analysistest.Run(
+		t,
+		analysistest.TestData(),
+		workflow.NewChecker(workflow.Config{
+			EnableObjectFacts: true,
+		}).NewAnalyzer(),
+		"a",
+	)
+}

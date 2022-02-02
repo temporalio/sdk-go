@@ -36,9 +36,13 @@ import (
 // Context's methods may be called by multiple goroutines simultaneously.
 type Context = internal.Context
 
-// ContextAware is an optional interface that can be implemented alongside DataConverter.
-// This interface allows Temporal to pass Workflow/Activity contexts to the DataConverter
-// so that it may tailor it's behaviour.
+// ContextAware is an optional interface that can be implemented alongside
+// DataConverter. This interface allows Temporal to pass Workflow/Activity
+// contexts to the DataConverter so that it may tailor it's behaviour.
+//
+// Note that data converters may be called in non-context-aware situations to
+// convert payloads that may not be customized per context. Data converter
+// implementers should not expect or require contextual data be present.
 type ContextAware = internal.ContextAware
 
 // ErrCanceled is the error returned by Context.Err when the context is canceled.
