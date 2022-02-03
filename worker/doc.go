@@ -29,6 +29,8 @@ Temporal term definitions and Go SDK developer guides are published on Temporal'
 
 What is a Temporal Worker: https://docs.temporal.io/docs/content/what-is-a-worker
 
+How to develop a Worker Program: https://docs.temporal.io/docs/go/how-to-develop-a-worker-program-in-go
+
 How to set Options for the Worker: https://docs.temporal.io/docs/go/how-to-set-workeroptions-in-go
 */
 package worker

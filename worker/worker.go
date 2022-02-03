@@ -22,7 +22,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-// Package worker contains APIs to manage the lifecycle of Temporal Client-side Worker Entities.
 package worker
 
 import (
@@ -47,11 +46,10 @@ type (
 		// Start the Worker in a non-blocking fashion.
 		Start() error
 
-		// Run the Worker in a blocking fashion.
-		// The Worker stops when interruptCh receives a signal.
-		// Pass worker.InterruptCh() to stop the Worker with SIGINT or SIGTERM.
-		// Pass nil to stop the Worker with an external Stop() call.
-		// Pass any other `<-chan interface{}` and Run will wait for a signal from that channel.
+		// Run the Worker in a blocking fashion. The Worker stops when interruptCh
+		// receives a signal. Pass worker.InterruptCh() to stop the Worker with
+		// SIGINT or SIGTERM, or use the Stop() call. Pass any other
+		// `<-chan interface{}` and Run waits for a signal from that channel.
 		// Returns error only if the Worker fails to start.
 		Run(interruptCh <-chan interface{}) error
 
