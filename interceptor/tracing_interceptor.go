@@ -25,8 +25,10 @@ package interceptor
 import (
 	"context"
 	"fmt"
+	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
+
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
@@ -113,6 +115,12 @@ type TracerStartSpanOptions struct {
 
 	// Name is the specific activity, workflow, etc for the operation.
 	Name string
+
+	// Time indicates the start time of the span.
+	//
+	// For RunWorkflow and RunActivity operation types, this will match workflow.Info.WorkflowStartTime and
+	// activity.Info.StartedTime respectively. All other operations use time.Now().
+	Time time.Time
 
 	// DependedOn is true if the parent depends on this span or false if it just
 	// is related to the parent. In OpenTracing terms, this is true for "ChildOf"
@@ -207,6 +215,7 @@ func (t *tracingClientOutboundInterceptor) ExecuteWorkflow(
 		Name:      in.WorkflowType,
 		Tags:      map[string]string{workflowIDTagKey: in.Options.ID},
 		ToHeader:  true,
+		Time:      time.Now(),
 	})
 	if err != nil {
 		return nil, err
@@ -230,6 +239,7 @@ func (t *tracingClientOutboundInterceptor) SignalWorkflow(ctx context.Context, i
 		Name:      in.SignalName,
 		Tags:      map[string]string{workflowIDTagKey: in.WorkflowID},
 		ToHeader:  true,
+		Time:      time.Now(),
 	})
 	if err != nil {
 		return err
@@ -278,6 +288,7 @@ func (t *tracingClientOutboundInterceptor) QueryWorkflow(
 		Name:      in.QueryType,
 		Tags:      map[string]string{workflowIDTagKey: in.WorkflowID},
 		ToHeader:  true,
+		Time:      time.Now(),
 	})
 	if err != nil {
 		return nil, err
@@ -310,6 +321,7 @@ func (t *tracingActivityInboundInterceptor) ExecuteActivity(
 			runIDTagKey:      info.WorkflowExecution.RunID,
 		},
 		FromHeader: true,
+		Time:       info.StartedTime,
 	})
 	if err != nil {
 		return nil, err
@@ -347,6 +359,7 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteWorkflow(
 			runIDTagKey:      info.WorkflowExecution.RunID,
 		},
 		FromHeader: true,
+		Time:       info.WorkflowStartTime,
 	})
 	if err != nil {
 		return nil, err
@@ -374,6 +387,7 @@ func (t *tracingWorkflowInboundInterceptor) HandleSignal(ctx workflow.Context, i
 			runIDTagKey:      info.WorkflowExecution.RunID,
 		},
 		FromHeader: true,
+		Time:       time.Now(),
 	})
 	if err != nil {
 		return err
@@ -404,6 +418,7 @@ func (t *tracingWorkflowInboundInterceptor) HandleQuery(
 			runIDTagKey:      info.WorkflowExecution.RunID,
 		},
 		FromHeader: true,
+		Time:       time.Now(),
 	})
 	if err != nil {
 		return nil, err
@@ -558,6 +573,7 @@ func (t *tracingWorkflowOutboundInterceptor) startNonReplaySpan(
 			runIDTagKey:      info.WorkflowExecution.RunID,
 		},
 		ToHeader: true,
+		Time:     time.Now(),
 	})
 	if err != nil {
 		return nopSpan{}, ctx, newErrFut(ctx, err)
