@@ -27,6 +27,7 @@ import (
 	"fmt"
 
 	commonpb "go.temporal.io/api/common/v1"
+
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
@@ -453,7 +454,7 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteLocalActivity(
 
 func (t *tracingWorkflowOutboundInterceptor) GetLogger(ctx workflow.Context) log.Logger {
 	if span, _ := ctx.Value(t.root.options.SpanContextKey).(TracerSpan); span != nil {
-		t.root.tracer.GetLogger(t.Next.GetLogger(ctx), span)
+		return t.root.tracer.GetLogger(t.Next.GetLogger(ctx), span)
 	}
 	return t.Next.GetLogger(ctx)
 }
