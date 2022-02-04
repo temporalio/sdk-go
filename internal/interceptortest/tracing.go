@@ -29,11 +29,14 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
+
+var testWorkflowStartTime = time.Date(1969, 7, 20, 20, 17, 0, 0, time.UTC)
 
 // TestTracer is an interceptor.Tracer that returns finished spans.
 type TestTracer interface {
@@ -52,9 +55,8 @@ func Span(name string, children ...*SpanInfo) *SpanInfo {
 	return &SpanInfo{Name: name, Children: children}
 }
 
-// AssertSpanPropagation runs a test tracer and asserts that it properly
-// propagates spans.
-func AssertSpanPropagation(t *testing.T, tracer TestTracer) {
+// RunTestWorkflow executes a test workflow with a tracing interceptor.
+func RunTestWorkflow(t *testing.T, tracer interceptor.Tracer) {
 	var suite testsuite.WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
 	env.RegisterActivity(testActivity)
@@ -66,6 +68,8 @@ func AssertSpanPropagation(t *testing.T, tracer TestTracer) {
 	env.SetWorkerOptions(worker.Options{
 		Interceptors: []interceptor.WorkerInterceptor{interceptor.NewTracingInterceptor(tracer)},
 	})
+
+	env.SetStartTime(testWorkflowStartTime)
 
 	// Exec
 	env.ExecuteWorkflow(testWorkflow)
@@ -83,7 +87,9 @@ func AssertSpanPropagation(t *testing.T, tracer TestTracer) {
 	var queryResp string
 	require.NoError(t, val.Get(&queryResp))
 	require.Equal(t, "query-response", queryResp)
+}
 
+func AssertSpanPropagation(t *testing.T, tracer TestTracer) {
 	// Check span tree
 	require.Equal(t, []*SpanInfo{
 		Span("RunWorkflow:testWorkflow",
