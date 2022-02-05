@@ -69,7 +69,7 @@ func (rdc *remotePayloadConverter) sendHTTP(endpoint string, p *commonpb.Payload
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode == 200 {
 		err = jsonpb.Unmarshal(response.Body, p)
