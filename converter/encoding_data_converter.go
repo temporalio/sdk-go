@@ -25,8 +25,12 @@ package converter
 import (
 	"bytes"
 	"compress/zlib"
+	"encoding/json"
 	"io/ioutil"
+	"net/http"
+	"strings"
 
+	"github.com/gogo/protobuf/jsonpb"
 	"github.com/gogo/protobuf/proto"
 	commonpb "go.temporal.io/api/common/v1"
 )
@@ -243,4 +247,63 @@ func partiallyClonePayload(p *commonpb.Payload) *commonpb.Payload {
 		ret.Metadata[k] = v
 	}
 	return ret
+}
+
+type encoderHTTPHandler struct {
+	encoder PayloadEncoder
+}
+
+func (e *encoderHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.NotFound(w, r)
+		return
+	}
+
+	if !strings.HasSuffix(r.URL.Path, "/encode") &&
+		!strings.HasSuffix(r.URL.Path, "/decode") {
+		http.NotFound(w, r)
+		return
+	}
+
+	var p commonpb.Payload
+
+	if r.Body == nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+
+	err := jsonpb.Unmarshal(r.Body, &p)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	switch {
+	case strings.HasSuffix(r.URL.Path, "/encode"):
+		err = e.encoder.Encode(&p)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	case strings.HasSuffix(r.URL.Path, "/decode"):
+		err = e.encoder.Decode(&p)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	default:
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	err = json.NewEncoder(w).Encode(p)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+}
+
+func NewPayloadEncoderHTTPHandler(e PayloadEncoder) http.Handler {
+	return &encoderHTTPHandler{e}
 }
