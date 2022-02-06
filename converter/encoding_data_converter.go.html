@@ -1,0 +1,30 @@
+<html>
+    <head>
+        <script>
+            window.addEventListener("message", async (event) => {
+                if (event.origin != "{{.Frontend}}") {
+                    return
+                }
+
+                switch (event.data.type) {
+                    case "encode":
+                    response = await fetch("{{.BasePath}}/encode", { method: "POST", body: JSON.stringify(event.data.payload) })
+                    event.source.postMessage(
+                        { requestId: event.data.requestId, type: "encoded", payload: await response.json()},
+                        { targetOrigin: "{{.Frontend}}" }
+                    )
+                    break;
+                    case "decode":
+                    response = await fetch("{{.BasePath}}/decode", { method: "POST", body: JSON.stringify(event.data.payload) })
+                    event.source.postMessage(
+                        { requestId: event.data.requestId, type: "decoded", payload: await response.json() },
+                        { targetOrigin: "{{.Frontend}}" }
+                    )
+                    break;
+                }
+            })
+
+            window.parent.postMessage({ type: "data_encoder_ready" }, "{{.Frontend}}")
+        </script>
+    </head>
+</html>
