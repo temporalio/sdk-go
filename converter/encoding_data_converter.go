@@ -25,10 +25,12 @@ package converter
 import (
 	"bytes"
 	"compress/zlib"
+	_ "embed"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
 	"strings"
+	"text/template"
 
 	"github.com/gogo/protobuf/jsonpb"
 	"github.com/gogo/protobuf/proto"
@@ -250,17 +252,43 @@ func partiallyClonePayload(p *commonpb.Payload) *commonpb.Payload {
 }
 
 type encoderHTTPHandler struct {
-	encoder PayloadEncoder
+	frontendURL string
+	encoder     PayloadEncoder
 }
 
+//go:embed encoding_data_converter.go.html
+var encodingDataConverterHTML string
+var encodingDataConverterHTMLTemplate = template.Must(template.New("html").Parse(encodingDataConverterHTML))
+
 func (e *encoderHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
+	method := r.Method
+	path := r.URL.Path
+
+	if method == "GET" && strings.HasSuffix(path, "/js") {
+		if e.frontendURL == "" {
+			http.Error(w, "frontend URL must be configured for Web UI support", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/html")
+
+		err := encodingDataConverterHTMLTemplate.Execute(w, map[string]string{
+			"BasePath": path[0 : len(path)-3],
+			"Frontend": e.frontendURL,
+		})
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	if method != "POST" {
 		http.NotFound(w, r)
 		return
 	}
 
-	if !strings.HasSuffix(r.URL.Path, "/encode") &&
-		!strings.HasSuffix(r.URL.Path, "/decode") {
+	if !strings.HasSuffix(path, "/encode") &&
+		!strings.HasSuffix(path, "/decode") {
 		http.NotFound(w, r)
 		return
 	}
@@ -279,13 +307,13 @@ func (e *encoderHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
-	case strings.HasSuffix(r.URL.Path, "/encode"):
+	case strings.HasSuffix(path, "/encode"):
 		err = e.encoder.Encode(&p)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-	case strings.HasSuffix(r.URL.Path, "/decode"):
+	case strings.HasSuffix(path, "/decode"):
 		err = e.encoder.Decode(&p)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -304,6 +332,6 @@ func (e *encoderHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func NewPayloadEncoderHTTPHandler(e PayloadEncoder) http.Handler {
-	return &encoderHTTPHandler{e}
+func NewPayloadEncoderHTTPHandler(e PayloadEncoder, frontendURL string) http.Handler {
+	return &encoderHTTPHandler{encoder: e, frontendURL: frontendURL}
 }

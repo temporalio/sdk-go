@@ -178,7 +178,7 @@ func (c *captureToPayloadDataConverter) ToPayload(value interface{}) (*commonpb.
 func TestPayloadEncoderHTTPHandler(t *testing.T) {
 	defaultConv := converter.GetDefaultDataConverter()
 	encoder := converter.NewZlibEncoder(converter.ZlibEncoderOptions{AlwaysEncode: true})
-	handler := converter.NewPayloadEncoderHTTPHandler(encoder)
+	handler := converter.NewPayloadEncoderHTTPHandler(encoder, "")
 
 	req, err := http.NewRequest("GET", "/encode", nil)
 	if err != nil {
@@ -207,6 +207,8 @@ func TestPayloadEncoderHTTPHandler(t *testing.T) {
 
 	payload, _ := defaultConv.ToPayload("test")
 	payloadJSON, _ := json.Marshal(payload)
+
+	fmt.Printf("%s", payloadJSON)
 
 	req, err = http.NewRequest("POST", "/encode", bytes.NewReader(payloadJSON))
 	if err != nil {
