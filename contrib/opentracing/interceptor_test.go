@@ -27,6 +27,7 @@ import (
 
 	"github.com/opentracing/opentracing-go/mocktracer"
 	"github.com/stretchr/testify/require"
+
 	"go.temporal.io/sdk/contrib/opentracing"
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/interceptortest"
@@ -36,7 +37,10 @@ func TestSpanPropagation(t *testing.T) {
 	mock := mocktracer.New()
 	tracer, err := opentracing.NewTracer(opentracing.TracerOptions{Tracer: mock})
 	require.NoError(t, err)
-	interceptortest.AssertSpanPropagation(t, &testTracer{Tracer: tracer, mock: mock})
+
+	testTracer := &testTracer{Tracer: tracer, mock: mock}
+	interceptortest.RunTestWorkflow(t, testTracer)
+	interceptortest.AssertSpanPropagation(t, testTracer)
 }
 
 type testTracer struct {
