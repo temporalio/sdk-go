@@ -254,6 +254,7 @@ type encoderHTTPHandler struct {
 	encoder PayloadEncoder
 }
 
+// ServeHTTP implements the http.Handler interface.
 func (e *encoderHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		http.NotFound(w, r)
@@ -307,6 +308,8 @@ func (e *encoderHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// NewPayloadEncoderHTTPHandler creates a http.Handler for a PayloadEncoder.
+// This can be used to provide a remote data converter.
 func NewPayloadEncoderHTTPHandler(e PayloadEncoder) http.Handler {
 	return &encoderHTTPHandler{encoder: e}
 }
