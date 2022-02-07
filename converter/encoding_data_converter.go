@@ -251,8 +251,7 @@ func partiallyClonePayload(p *commonpb.Payload) *commonpb.Payload {
 }
 
 type encoderHTTPHandler struct {
-	frontendURL string
-	encoder     PayloadEncoder
+	encoder PayloadEncoder
 }
 
 func (e *encoderHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -308,6 +307,6 @@ func (e *encoderHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func NewPayloadEncoderHTTPHandler(e PayloadEncoder, frontendURL string) http.Handler {
-	return &encoderHTTPHandler{encoder: e, frontendURL: frontendURL}
+func NewPayloadEncoderHTTPHandler(e PayloadEncoder) http.Handler {
+	return &encoderHTTPHandler{encoder: e}
 }
