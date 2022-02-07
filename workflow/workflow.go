@@ -230,7 +230,7 @@ func GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
 //
 // What is a Side Effect: https://docs.temporal.io/docs/content/what-is-a-side-effect
 //
-// How to execute a Side Effect in Go: https://docs.temporal.io/docs/content/how-to-execute-a-side-effect-in-go
+// How to execute a Side Effect in Go: https://docs.temporal.io/docs/go/how-to-execute-a-side-effect-in-go
 func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedValue {
 	return internal.SideEffect(ctx, f)
 }

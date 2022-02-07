@@ -38,7 +38,6 @@ The [Temporal Go SDK API reference](https://pkg.go.dev/go.temporal.io/sdk) is pu
 - [How to spawn a Workflow Execution](https://docs.temporal.io/docs/go/how-to-spawn-a-workflow-execution-in-go)
 - [How to spawn an Activity Execution](https://docs.temporal.io/docs/go/how-to-spawn-an-activity-execution-in-go)
 - [How to spawn a Child Workflow Execution](https://docs.temporal.io/docs/go/how-to-spawn-a-child-workflow-execution-in-go)
-- [How to execute a Side Effect](https://docs.temporal.io/docs/go/how-to-execute-a-side-effect-in-go)
 - [How to get the result of a Workflow Execution](https://docs.temporal.io/docs/go/how-to-get-the-result-of-a-workflow-execution-in-go)
 - [How to get the result of an Activity Execution](https://docs.temporal.io/docs/go/how-to-get-the-result-of-an-activity-execution-in-go)
 - [How to send a Signal to a Workflow Execution](https://docs.temporal.io/docs/go/how-to-send-a-signal-to-a-workflow-execution-in-go)
