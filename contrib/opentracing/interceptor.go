@@ -28,6 +28,7 @@ import (
 	"fmt"
 
 	"github.com/opentracing/opentracing-go"
+
 	"go.temporal.io/sdk/interceptor"
 )
 
@@ -138,7 +139,9 @@ func (t *tracer) ContextWithSpan(ctx context.Context, span interceptor.TracerSpa
 
 func (t *tracer) StartSpan(opts *interceptor.TracerStartSpanOptions) (interceptor.TracerSpan, error) {
 	// Build start options
-	var startOpts []opentracing.StartSpanOption
+	startOpts := []opentracing.StartSpanOption{
+		opentracing.StartTime(opts.Time),
+	}
 
 	// Link parent
 	var parent opentracing.SpanContext
