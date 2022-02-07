@@ -27,8 +27,11 @@ import (
 	"compress/zlib"
 	_ "embed"
 	"encoding/json"
+	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
+	"path"
 	"strings"
 
 	"github.com/gogo/protobuf/jsonpb"
@@ -250,6 +253,9 @@ func partiallyClonePayload(p *commonpb.Payload) *commonpb.Payload {
 	return ret
 }
 
+const remotePayloadEncoderEncodePath = "/encode"
+const remotePayloadEncoderDecodePath = "/decode"
+
 type encoderHTTPHandler struct {
 	encoder PayloadEncoder
 }
@@ -263,8 +269,8 @@ func (e *encoderHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	path := r.URL.Path
 
-	if !strings.HasSuffix(path, "/encode") &&
-		!strings.HasSuffix(path, "/decode") {
+	if !strings.HasSuffix(path, remotePayloadEncoderEncodePath) &&
+		!strings.HasSuffix(path, remotePayloadEncoderDecodePath) {
 		http.NotFound(w, r)
 		return
 	}
@@ -283,13 +289,13 @@ func (e *encoderHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
-	case strings.HasSuffix(path, "/encode"):
+	case strings.HasSuffix(path, remotePayloadEncoderEncodePath):
 		err = e.encoder.Encode(&p)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-	case strings.HasSuffix(path, "/decode"):
+	case strings.HasSuffix(path, remotePayloadEncoderDecodePath):
 		err = e.encoder.Decode(&p)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -312,4 +318,61 @@ func (e *encoderHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // This can be used to provide a remote data converter.
 func NewPayloadEncoderHTTPHandler(e PayloadEncoder) http.Handler {
 	return &encoderHTTPHandler{encoder: e}
+}
+
+// RemotePayloadEncoderOptions are options for NewRemotePayloadEncoder.
+// Client is optional.
+type RemotePayloadEncoderOptions struct {
+	Endpoint string
+	Client   http.Client
+}
+
+type remotePayloadEncoder struct {
+	options RemotePayloadEncoderOptions
+}
+
+// NewRemotePayloadEncoder creates a PayloadEncoder that uses a remote endpoint to encode/decode.
+func NewRemotePayloadEncoder(options RemotePayloadEncoderOptions) PayloadEncoder {
+	return &remotePayloadEncoder{options}
+}
+
+func (rdc *remotePayloadEncoder) sendHTTP(endpoint string, p *commonpb.Payload) error {
+	payload, err := json.Marshal(p)
+	if err != nil {
+		return fmt.Errorf("unable to marshal payload: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("unable to build request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	response, err := rdc.options.Client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode == 200 {
+		err = jsonpb.Unmarshal(response.Body, p)
+		if err != nil {
+			return fmt.Errorf("unable to unmarshal payload: %w", err)
+		}
+		return nil
+	}
+
+	message, _ := io.ReadAll(response.Body)
+	return fmt.Errorf("%s: %s", http.StatusText(response.StatusCode), message)
+}
+
+// Encode sends a payload to remote payload encoder and returns the encoded payload.
+func (rdc *remotePayloadEncoder) Encode(p *commonpb.Payload) error {
+	return rdc.sendHTTP(path.Join(rdc.options.Endpoint, remotePayloadEncoderEncodePath), p)
+}
+
+// Decode sends a payload to a remote payload encoder and returns the decoded payload.
+func (rdc *remotePayloadEncoder) Decode(p *commonpb.Payload) error {
+	return rdc.sendHTTP(path.Join(rdc.options.Endpoint, remotePayloadEncoderDecodePath), p)
 }
