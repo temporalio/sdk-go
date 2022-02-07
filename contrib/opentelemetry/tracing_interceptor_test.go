@@ -29,6 +29,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
+
 	"go.temporal.io/sdk/contrib/opentelemetry"
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/interceptortest"
@@ -40,7 +41,10 @@ func TestSpanPropagation(t *testing.T) {
 		Tracer: sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(&rec)).Tracer(""),
 	})
 	require.NoError(t, err)
-	interceptortest.AssertSpanPropagation(t, &testTracer{Tracer: tracer, rec: &rec})
+
+	testTracer := &testTracer{Tracer: tracer, rec: &rec}
+	interceptortest.RunTestWorkflow(t, testTracer)
+	interceptortest.AssertSpanPropagation(t, testTracer)
 }
 
 type testTracer struct {
