@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 
 	"github.com/gogo/protobuf/jsonpb"
 	commonpb "go.temporal.io/api/common/v1"
@@ -36,17 +37,29 @@ import (
 const ENCODE_PATH = "/encode"
 const DECODE_PATH = "/decode"
 
+// RemoteEncoderDataConverterOptions are options for NewRemoteEncoderDataConverter.
+// Client and Converter are optional and default to http.Client{} and the default SDK data converter.
 type RemoteEncoderDataConverterOptions struct {
-	Endpoint string
+	Endpoint  string
+	Client    http.Client
+	Converter *DataConverter
 }
 
 type remotePayloadConverter struct {
 	options RemoteEncoderDataConverterOptions
 }
 
+// NewRemoteEncoderDataConverter creates a DataConverter that uses a remote endpoint to encode/decode.
+// The encoded/decoded payloads are (de)serialized by the Converter provided in the options, or
+// the default SDK data converter if the option is not set.
 func NewRemoteEncoderDataConverter(options RemoteEncoderDataConverterOptions) *EncodingDataConverter {
+	converter := options.Converter
+	if converter == nil {
+		converter = &defaultDataConverter
+	}
+
 	return NewEncodingDataConverter(
-		defaultDataConverter,
+		*converter,
 		&remotePayloadConverter{options},
 	)
 }
@@ -64,8 +77,7 @@ func (rdc *remotePayloadConverter) sendHTTP(endpoint string, p *commonpb.Payload
 
 	req.Header.Set("Content-Type", "application/json")
 
-	client := http.Client{}
-	response, err := client.Do(req)
+	response, err := rdc.options.Client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -83,10 +95,12 @@ func (rdc *remotePayloadConverter) sendHTTP(endpoint string, p *commonpb.Payload
 	return fmt.Errorf("%s: %s", http.StatusText(response.StatusCode), message)
 }
 
+// Encode sends a payload to remote data converter server and returns the encoded payload.
 func (rdc *remotePayloadConverter) Encode(p *commonpb.Payload) error {
-	return rdc.sendHTTP(rdc.options.Endpoint+ENCODE_PATH, p)
+	return rdc.sendHTTP(path.Join(rdc.options.Endpoint, ENCODE_PATH), p)
 }
 
+// Decode sends a payload to a remote data converter server and returns the decoded payload.
 func (rdc *remotePayloadConverter) Decode(p *commonpb.Payload) error {
-	return rdc.sendHTTP(rdc.options.Endpoint+DECODE_PATH, p)
+	return rdc.sendHTTP(path.Join(rdc.options.Endpoint, DECODE_PATH), p)
 }
