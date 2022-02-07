@@ -30,7 +30,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strings"
-	"text/template"
 
 	"github.com/gogo/protobuf/jsonpb"
 	"github.com/gogo/protobuf/proto"
@@ -256,36 +255,13 @@ type encoderHTTPHandler struct {
 	encoder     PayloadEncoder
 }
 
-//go:embed encoding_data_converter.go.html
-var encodingDataConverterHTML string
-var encodingDataConverterHTMLTemplate = template.Must(template.New("html").Parse(encodingDataConverterHTML))
-
 func (e *encoderHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	method := r.Method
-	path := r.URL.Path
-
-	if method == "GET" && strings.HasSuffix(path, "/js") {
-		if e.frontendURL == "" {
-			http.Error(w, "frontend URL must be configured for Web UI support", http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", "text/html")
-
-		err := encodingDataConverterHTMLTemplate.Execute(w, map[string]string{
-			"BasePath": path[0 : len(path)-3],
-			"Frontend": e.frontendURL,
-		})
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
-		return
-	}
-
-	if method != "POST" {
+	if r.Method != "POST" {
 		http.NotFound(w, r)
 		return
 	}
+
+	path := r.URL.Path
 
 	if !strings.HasSuffix(path, "/encode") &&
 		!strings.HasSuffix(path, "/decode") {
