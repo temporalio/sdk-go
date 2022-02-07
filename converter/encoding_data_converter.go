@@ -25,7 +25,6 @@ package converter
 import (
 	"bytes"
 	"compress/zlib"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
