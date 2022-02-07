@@ -28,6 +28,7 @@ import (
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
+
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
@@ -301,9 +302,27 @@ func (t *tracingClientOutboundInterceptor) QueryWorkflow(
 	return val, err
 }
 
+type tracingActivityOutboundInterceptor struct {
+	ActivityOutboundInterceptorBase
+	root *tracingInterceptor
+}
+
+func (t *tracingActivityOutboundInterceptor) GetLogger(ctx context.Context) log.Logger {
+	if span := t.root.tracer.SpanFromContext(ctx); span != nil {
+		return t.root.tracer.GetLogger(t.Next.GetLogger(ctx), span)
+	}
+	return t.Next.GetLogger(ctx)
+}
+
 type tracingActivityInboundInterceptor struct {
 	ActivityInboundInterceptorBase
 	root *tracingInterceptor
+}
+
+func (t *tracingActivityInboundInterceptor) Init(outbound ActivityOutboundInterceptor) error {
+	i := &tracingActivityOutboundInterceptor{root: t.root}
+	i.Next = outbound
+	return t.Next.Init(i)
 }
 
 func (t *tracingActivityInboundInterceptor) ExecuteActivity(
@@ -469,7 +488,7 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteLocalActivity(
 
 func (t *tracingWorkflowOutboundInterceptor) GetLogger(ctx workflow.Context) log.Logger {
 	if span, _ := ctx.Value(t.root.options.SpanContextKey).(TracerSpan); span != nil {
-		t.root.tracer.GetLogger(t.Next.GetLogger(ctx), span)
+		return t.root.tracer.GetLogger(t.Next.GetLogger(ctx), span)
 	}
 	return t.Next.GetLogger(ctx)
 }
