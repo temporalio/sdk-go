@@ -1380,3 +1380,54 @@ func TestFutureUnmarshalPointerToPointer(t *testing.T) {
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
 	require.True(t, d.IsDone())
 }
+
+// Mostly from https://github.com/uber-go/cadence-client/pull/1124
+func TestContextCancelRace(t *testing.T) {
+	var suite WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	wf := func(ctx Context) error {
+		ctx, cancel := WithCancel(ctx)
+		racyCancel := func(ctx Context) {
+			defer cancel() // defer is necessary as Sleep will never return due to Goexit
+			_ = Sleep(ctx, time.Hour)
+		}
+		// start a handful to increase odds of a race being detected
+		for i := 0; i < 10; i++ {
+			Go(ctx, racyCancel)
+		}
+
+		_ = Sleep(ctx, time.Minute) // die early
+		return nil
+	}
+	env.RegisterWorkflow(wf)
+	env.ExecuteWorkflow(wf)
+	assert.NoError(t, env.GetWorkflowError())
+}
+
+// Mostly from https://github.com/uber-go/cadence-client/pull/1141
+func TestContextChildCancelRace(t *testing.T) {
+	var suite WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	wf := func(ctx Context) error {
+		ctx, cancel := WithCancel(ctx)
+		racyCancel := func(ctx Context) {
+			defer cancel() // defer is necessary as Sleep will never return due to Goexit
+			defer func() {
+				_, ccancel := WithCancel(ctx)
+				cancel()
+				ccancel()
+			}()
+			_ = Sleep(ctx, time.Hour)
+		}
+		// start a handful to increase odds of a race being detected
+		for i := 0; i < 10; i++ {
+			Go(ctx, racyCancel)
+		}
+
+		_ = Sleep(ctx, time.Minute) // die early
+		return nil
+	}
+	env.RegisterWorkflow(wf)
+	env.ExecuteWorkflow(wf)
+	require.NoError(t, env.GetWorkflowError())
+}
