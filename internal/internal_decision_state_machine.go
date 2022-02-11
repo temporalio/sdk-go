@@ -75,6 +75,10 @@ type (
 		history []string
 		data    interface{}
 		helper  *commandsHelper
+
+		// The commandsHelper.nextCommandEventIDResetCounter when this command
+		// incremented commandsHelper.commandsCancelledDuringWFCancellation.
+		cancelledOnEventIDResetCounter uint64
 	}
 
 	activityCommandStateMachine struct {
@@ -137,6 +141,12 @@ type (
 		versionMarkerLookup                   map[int64]string
 		commandsCancelledDuringWFCancellation int64
 		workflowExecutionIsCancelling         bool
+
+		// Incremented everytime nextCommandEventID and
+		// commandsCancelledDuringWFCancellation is reset (i.e. on new workflow
+		// task). Won't ever happen, but technically the way this value is compared
+		// is safe for overflow wrap around.
+		nextCommandEventIDResetCounter uint64
 	}
 
 	// panic when command state machine is in illegal state
@@ -418,6 +428,10 @@ func (d *commandStateMachineBase) cancel() {
 	case commandStateInitiated:
 		if d.helper.workflowExecutionIsCancelling {
 			d.helper.commandsCancelledDuringWFCancellation++
+			// We must mark the event ID reset counter for when we performed this
+			// increment so a potential decrement can only decrement if it wasn't
+			// reset
+			d.cancelledOnEventIDResetCounter = d.helper.nextCommandEventIDResetCounter
 		}
 		d.moveState(commandStateCanceledAfterInitiated, eventCancel)
 	default:
@@ -654,6 +668,7 @@ func (d *childWorkflowCommandStateMachine) cancel() {
 	case commandStateStarted:
 		if d.helper.workflowExecutionIsCancelling {
 			d.helper.commandsCancelledDuringWFCancellation++
+			d.cancelledOnEventIDResetCounter = d.helper.nextCommandEventIDResetCounter
 		}
 		d.moveState(commandStateCanceledAfterStarted, eventCancel)
 		// A child workflow may be canceled _after_ something like an activity start
@@ -824,6 +839,9 @@ func (h *commandsHelper) setCurrentWorkflowTaskStartedEventID(workflowTaskStarte
 	// execution as those canceled command events will show up *after* the workflow task completed event.
 	h.nextCommandEventID = workflowTaskStartedEventID + 2 + h.commandsCancelledDuringWFCancellation
 	h.commandsCancelledDuringWFCancellation = 0
+	// We must change the counter here so that others who mutate
+	// commandsCancelledDuringWFCancellation know it has since been reset
+	h.nextCommandEventIDResetCounter++
 }
 
 func (h *commandsHelper) getNextID() int64 {
@@ -877,14 +895,26 @@ func (h *commandsHelper) addCommand(command commandStateMachine) {
 // might be in the same workflow task. In practice this only seems to happen during unhandled command events.
 func (h *commandsHelper) removeCancelOfResolvedCommand(commandID commandID) {
 	// Ensure this isn't misused for non-cancel commands
-	if commandID.commandType != commandTypeCancelTimer {
-		panic("removeCancelOfResolvedCommand should only be called for cancel timer")
+	if commandID.commandType != commandTypeCancelTimer && commandID.commandType != commandTypeRequestCancelActivityTask {
+		panic("removeCancelOfResolvedCommand should only be called for cancel timer / activity")
 	}
 	orderedCmdEl, ok := h.commands[commandID]
 	if ok {
 		delete(h.commands, commandID)
-		h.orderedCommands.Remove(orderedCmdEl)
-		h.commandsCancelledDuringWFCancellation--
+		command := h.orderedCommands.Remove(orderedCmdEl)
+		// Sometimes commandsCancelledDuringWFCancellation was incremented before
+		// it was reset and sometimes not. We use the reset counter to see if we're
+		// still on the same iteration where we may have incremented it before.
+		switch command := command.(type) {
+		case *cancelActivityStateMachine:
+			if command.cancelledOnEventIDResetCounter == h.nextCommandEventIDResetCounter {
+				h.commandsCancelledDuringWFCancellation--
+			}
+		case *cancelTimerCommandStateMachine:
+			if command.cancelledOnEventIDResetCounter == h.nextCommandEventIDResetCounter {
+				h.commandsCancelledDuringWFCancellation--
+			}
+		}
 	}
 }
 
@@ -916,6 +946,10 @@ func (h *commandsHelper) requestCancelActivityTask(activityID string) commandSta
 
 func (h *commandsHelper) handleActivityTaskClosed(activityID string, scheduledEventID int64) commandStateMachine {
 	command := h.getCommand(makeCommandID(commandTypeActivity, activityID))
+	// If, for whatever reason, we were going to send an activity cancel request, don't do that anymore
+	// since we already know the activity is resolved.
+	possibleCancelID := makeCommandID(commandTypeRequestCancelActivityTask, activityID)
+	h.removeCancelOfResolvedCommand(possibleCancelID)
 	command.handleCompletionEvent()
 	delete(h.scheduledEventIDToActivityID, scheduledEventID)
 	return command
