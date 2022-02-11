@@ -31,12 +31,14 @@ import (
 	"log"
 	"net"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/gogo/status"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
+	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/errordetails/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
@@ -45,6 +47,7 @@ import (
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/resolver/manual"
 )
@@ -199,31 +202,59 @@ func TestCustomResolver(t *testing.T) {
 	require.NoError(t, err)
 	defer client.Close()
 
+	// Round-robin appears to apply to transport _connections_ rather than just
+	// addresses. As such we spin here until we have round-tripped an RPC to
+	// both servers to guarantee that connections to both have been established.
+	// This test can fail spuriously without this section as the calls to
+	// SignalWorkflow below will race with grpc-go's connection establishment.
+	// This technique is consistent with the approach used in the grpc-go
+	// codebase itself:
+	// https://github.com/grpc/grpc-go/blob/bd7076973b45b81e37a45eb761efb789e2001618/balancer/roundrobin/roundrobin_test.go#L196-L212
+	connected := map[net.Addr]struct{}{}
+	req := workflowservice.SignalWorkflowExecutionRequest{
+		WorkflowExecution: &common.WorkflowExecution{WorkflowId: "workflowid", RunId: "runid"},
+		SignalName:        "signal",
+		Namespace:         DefaultNamespace,
+		Identity:          t.Name(),
+	}
+	var peerOut peer.Peer
+	for len(connected) < 2 {
+		req.RequestId = uuid.New()
+		_, err := client.WorkflowService().SignalWorkflowExecution(context.Background(), &req, grpc.Peer(&peerOut))
+		if err == nil {
+			connected[peerOut.Addr] = struct{}{}
+		}
+	}
+
+	// reset invocation counts to initial state
+	s1.resetSignalWorkflowInvokeCount()
+	s2.resetSignalWorkflowInvokeCount()
+
 	// Confirm round robin'd
 	require.NoError(t, client.SignalWorkflow(ctx, "workflowid", "runid", "signalname", nil))
 	require.NoError(t, client.SignalWorkflow(ctx, "workflowid", "runid", "signalname", nil))
-	require.Equal(t, 1, s1.signalWorkflowInvokeCount)
-	require.Equal(t, 1, s2.signalWorkflowInvokeCount)
+	require.Equal(t, 1, s1.signalWorkflowInvokeCount())
+	require.Equal(t, 1, s2.signalWorkflowInvokeCount())
 	require.NoError(t, client.SignalWorkflow(ctx, "workflowid", "runid", "signalname", nil))
 	require.NoError(t, client.SignalWorkflow(ctx, "workflowid", "runid", "signalname", nil))
-	require.Equal(t, 2, s1.signalWorkflowInvokeCount)
-	require.Equal(t, 2, s2.signalWorkflowInvokeCount)
+	require.Equal(t, 2, s1.signalWorkflowInvokeCount())
+	require.Equal(t, 2, s2.signalWorkflowInvokeCount())
 
 	// Now shutdown the first one and confirm second now receives requests
 	s1.Stop()
 	require.NoError(t, client.SignalWorkflow(ctx, "workflowid", "runid", "signalname", nil))
-	require.Equal(t, 2, s1.signalWorkflowInvokeCount)
-	require.Equal(t, 3, s2.signalWorkflowInvokeCount)
+	require.Equal(t, 2, s1.signalWorkflowInvokeCount())
+	require.Equal(t, 3, s2.signalWorkflowInvokeCount())
 	require.NoError(t, client.SignalWorkflow(ctx, "workflowid", "runid", "signalname", nil))
-	require.Equal(t, 2, s1.signalWorkflowInvokeCount)
-	require.Equal(t, 4, s2.signalWorkflowInvokeCount)
+	require.Equal(t, 2, s1.signalWorkflowInvokeCount())
+	require.Equal(t, 4, s2.signalWorkflowInvokeCount())
 }
 
 type customResolverGRPCServer struct {
 	workflowservice.UnimplementedWorkflowServiceServer
 	*grpc.Server
-	addr                      string
-	signalWorkflowInvokeCount int
+	addr       string
+	sigWfCount int32
 }
 
 func startAdditionalHostPortsGRPCServer() (*customResolverGRPCServer, error) {
@@ -275,6 +306,14 @@ func (c *customResolverGRPCServer) SignalWorkflowExecution(
 	context.Context,
 	*workflowservice.SignalWorkflowExecutionRequest,
 ) (*workflowservice.SignalWorkflowExecutionResponse, error) {
-	c.signalWorkflowInvokeCount++
+	atomic.AddInt32(&c.sigWfCount, 1)
 	return &workflowservice.SignalWorkflowExecutionResponse{}, nil
+}
+
+func (c *customResolverGRPCServer) signalWorkflowInvokeCount() int {
+	return int(atomic.LoadInt32(&c.sigWfCount))
+}
+
+func (c *customResolverGRPCServer) resetSignalWorkflowInvokeCount() {
+	atomic.StoreInt32(&c.sigWfCount, 0)
 }
