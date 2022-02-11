@@ -75,10 +75,6 @@ type (
 		history []string
 		data    interface{}
 		helper  *commandsHelper
-
-		// The commandsHelper.nextCommandEventIDResetCounter when this command
-		// incremented commandsHelper.commandsCancelledDuringWFCancellation.
-		cancelledOnEventIDResetCounter uint64
 	}
 
 	activityCommandStateMachine struct {
@@ -90,6 +86,10 @@ type (
 	cancelActivityStateMachine struct {
 		*commandStateMachineBase
 		attributes *commandpb.RequestCancelActivityTaskCommandAttributes
+
+		// The commandsHelper.nextCommandEventIDResetCounter when this command
+		// incremented commandsHelper.commandsCancelledDuringWFCancellation.
+		cancelledOnEventIDResetCounter uint64
 	}
 
 	timerCommandStateMachine struct {
@@ -100,6 +100,10 @@ type (
 	cancelTimerCommandStateMachine struct {
 		*commandStateMachineBase
 		attributes *commandpb.CancelTimerCommandAttributes
+
+		// The commandsHelper.nextCommandEventIDResetCounter when this command
+		// incremented commandsHelper.commandsCancelledDuringWFCancellation.
+		cancelledOnEventIDResetCounter uint64
 	}
 
 	childWorkflowCommandStateMachine struct {
@@ -428,10 +432,6 @@ func (d *commandStateMachineBase) cancel() {
 	case commandStateInitiated:
 		if d.helper.workflowExecutionIsCancelling {
 			d.helper.commandsCancelledDuringWFCancellation++
-			// We must mark the event ID reset counter for when we performed this
-			// increment so a potential decrement can only decrement if it wasn't
-			// reset
-			d.cancelledOnEventIDResetCounter = d.helper.nextCommandEventIDResetCounter
 		}
 		d.moveState(commandStateCanceledAfterInitiated, eventCancel)
 	default:
@@ -542,6 +542,10 @@ func (d *activityCommandStateMachine) cancel() {
 		}
 		cancelCmd := d.helper.newCancelActivityStateMachine(attribs)
 		d.helper.addCommand(cancelCmd)
+		// We must mark the event ID reset counter for when we performed this
+		// increment so a potential decrement can only decrement if it wasn't
+		// reset
+		cancelCmd.cancelledOnEventIDResetCounter = d.helper.nextCommandEventIDResetCounter
 	}
 
 	d.commandStateMachineBase.cancel()
@@ -555,6 +559,10 @@ func (d *timerCommandStateMachine) cancel() {
 		}
 		cancelCmd := d.helper.newCancelTimerCommandStateMachine(attribs)
 		d.helper.addCommand(cancelCmd)
+		// We must mark the event ID reset counter for when we performed this
+		// increment so a potential decrement can only decrement if it wasn't
+		// reset
+		cancelCmd.cancelledOnEventIDResetCounter = d.helper.nextCommandEventIDResetCounter
 	}
 
 	d.commandStateMachineBase.cancel()
@@ -668,7 +676,6 @@ func (d *childWorkflowCommandStateMachine) cancel() {
 	case commandStateStarted:
 		if d.helper.workflowExecutionIsCancelling {
 			d.helper.commandsCancelledDuringWFCancellation++
-			d.cancelledOnEventIDResetCounter = d.helper.nextCommandEventIDResetCounter
 		}
 		d.moveState(commandStateCanceledAfterStarted, eventCancel)
 		// A child workflow may be canceled _after_ something like an activity start
