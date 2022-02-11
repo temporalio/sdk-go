@@ -220,8 +220,10 @@ func TestCustomResolver(t *testing.T) {
 	var peerOut peer.Peer
 	for len(connected) < 2 {
 		req.RequestId = uuid.New()
-		client.WorkflowService().SignalWorkflowExecution(context.Background(), &req, grpc.Peer(&peerOut))
-		connected[peerOut.Addr] = struct{}{}
+		_, err := client.WorkflowService().SignalWorkflowExecution(context.Background(), &req, grpc.Peer(&peerOut))
+		if err == nil {
+			connected[peerOut.Addr] = struct{}{}
+		}
 	}
 
 	// reset invocation counts to initial state
