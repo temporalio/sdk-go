@@ -26,6 +26,7 @@ package internal
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	enumspb "go.temporal.io/api/enums/v1"
@@ -223,14 +224,16 @@ func propagateCancel(parent Context, child canceler) {
 		return // parent is never canceled
 	}
 	if p, ok := parentCancelCtx(parent); ok {
-		if p.err != nil {
+		if parentErr := p.Err(); parentErr != nil {
 			// parent has already been canceled
-			child.cancel(false, p.err)
+			child.cancel(false, parentErr)
 		} else {
+			p.childrenLock.Lock()
 			if p.children == nil {
 				p.children = make(map[canceler]bool)
 			}
 			p.children[child] = true
+			p.childrenLock.Unlock()
 		}
 	} else {
 		go func() {
@@ -269,9 +272,11 @@ func removeChild(parent Context, child canceler) {
 	if !ok {
 		return
 	}
+	p.childrenLock.Lock()
 	if p.children != nil {
 		delete(p.children, child)
 	}
+	p.childrenLock.Unlock()
 }
 
 // A canceler is a context type that can be canceled directly.  The
@@ -288,8 +293,10 @@ type cancelCtx struct {
 
 	done Channel // closed by the first cancel call.
 
-	children map[canceler]bool // set to nil by the first cancel call
-	err      error             // set to non-nil by the first cancel call
+	children     map[canceler]bool // set to nil by the first cancel call
+	childrenLock sync.Mutex
+	err          error // set to non-nil by the first cancel call
+	errLock      sync.RWMutex
 }
 
 func (c *cancelCtx) Done() Channel {
@@ -297,6 +304,8 @@ func (c *cancelCtx) Done() Channel {
 }
 
 func (c *cancelCtx) Err() error {
+	c.errLock.RLock()
+	defer c.errLock.RUnlock()
 	return c.err
 }
 
@@ -310,16 +319,26 @@ func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 	if err == nil {
 		panic("context: internal error: missing cancel error")
 	}
-	if c.err != nil {
-		return // already canceled
+	// This can be called from separate goroutines concurrently, so we use the
+	// presence of the error under lock to prevent duplicate calls
+	c.errLock.Lock()
+	alreadyCancelled := c.err != nil
+	if !alreadyCancelled {
+		c.err = err
 	}
-	c.err = err
+	c.errLock.Unlock()
+	if alreadyCancelled {
+		return
+	}
 	c.done.Close()
-	for child := range c.children {
+	c.childrenLock.Lock()
+	children := c.children
+	c.children = nil
+	c.childrenLock.Unlock()
+	for child := range children {
 		// NOTE: acquiring the child's lock while holding parent's lock.
 		child.cancel(false, err)
 	}
-	c.children = nil
 
 	if removeFromParent {
 		removeChild(c.Context, c)
