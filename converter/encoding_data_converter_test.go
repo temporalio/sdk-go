@@ -205,12 +205,12 @@ func TestPayloadEncoderHTTPHandler(t *testing.T) {
 
 	require.Equal(t, http.StatusBadRequest, rr.Code)
 
-	payload, _ := defaultConv.ToPayload("test")
-	payloadJSON, _ := json.Marshal(payload)
+	payloads, _ := defaultConv.ToPayloads("test")
+	payloadsJSON, _ := json.Marshal(payloads)
 
-	fmt.Printf("%s", payloadJSON)
+	fmt.Printf("%s", payloadsJSON)
 
-	req, err = http.NewRequest("POST", "/encode", bytes.NewReader(payloadJSON))
+	req, err = http.NewRequest("POST", "/encode", bytes.NewReader(payloadsJSON))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,10 +218,10 @@ func TestPayloadEncoderHTTPHandler(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
-	encodedPayloadJSON := strings.TrimSpace(rr.Body.String())
-	require.NotEqual(t, payloadJSON, encodedPayloadJSON)
+	encodedPayloadsJSON := strings.TrimSpace(rr.Body.String())
+	require.NotEqual(t, payloadsJSON, encodedPayloadsJSON)
 
-	req, err = http.NewRequest("POST", "/decode", strings.NewReader(encodedPayloadJSON))
+	req, err = http.NewRequest("POST", "/decode", strings.NewReader(encodedPayloadsJSON))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,6 +229,6 @@ func TestPayloadEncoderHTTPHandler(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
-	decodedPayloadJSON := strings.TrimSpace(rr.Body.String())
-	require.Equal(t, string(payloadJSON), decodedPayloadJSON)
+	decodedPayloadsJSON := strings.TrimSpace(rr.Body.String())
+	require.Equal(t, string(payloadsJSON), decodedPayloadsJSON)
 }

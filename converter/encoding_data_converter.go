@@ -274,14 +274,14 @@ func (e *encoderHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var p commonpb.Payload
+	var payloads commonpb.Payloads
 
 	if r.Body == nil {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 
-	err := jsonpb.Unmarshal(r.Body, &p)
+	err := jsonpb.Unmarshal(r.Body, &payloads)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -289,16 +289,20 @@ func (e *encoderHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case strings.HasSuffix(path, remotePayloadEncoderEncodePath):
-		err = e.encoder.Encode(&p)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
+		for _, payload := range payloads.Payloads {
+			err = e.encoder.Encode(payload)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 		}
 	case strings.HasSuffix(path, remotePayloadEncoderDecodePath):
-		err = e.encoder.Decode(&p)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
+		for _, payload := range payloads.Payloads {
+			err = e.encoder.Decode(payload)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 		}
 	default:
 		http.NotFound(w, r)
@@ -306,7 +310,7 @@ func (e *encoderHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	err = json.NewEncoder(w).Encode(p)
+	err = json.NewEncoder(w).Encode(payloads)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -336,12 +340,13 @@ func NewRemotePayloadEncoder(options RemotePayloadEncoderOptions) PayloadEncoder
 }
 
 func (rdc *remotePayloadEncoder) sendHTTP(endpoint string, p *commonpb.Payload) error {
-	payload, err := json.Marshal(p)
+	payloads := commonpb.Payloads{Payloads: []*commonpb.Payload{p}}
+	requestPayloads, err := json.Marshal(payloads)
 	if err != nil {
-		return fmt.Errorf("unable to marshal payload: %w", err)
+		return fmt.Errorf("unable to marshal payloads: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(payload))
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(requestPayloads))
 	if err != nil {
 		return fmt.Errorf("unable to build request: %w", err)
 	}
@@ -355,10 +360,16 @@ func (rdc *remotePayloadEncoder) sendHTTP(endpoint string, p *commonpb.Payload) 
 	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode == 200 {
-		err = jsonpb.Unmarshal(response.Body, p)
+		var responsePayloads commonpb.Payloads
+		err = jsonpb.Unmarshal(response.Body, &responsePayloads)
 		if err != nil {
-			return fmt.Errorf("unable to unmarshal payload: %w", err)
+			return fmt.Errorf("unable to unmarshal payloads: %w", err)
 		}
+		if len(responsePayloads.Payloads) != 1 {
+			return fmt.Errorf("expected exactly one payload returned: %w", err)
+		}
+
+		*p = *responsePayloads.Payloads[0]
 		return nil
 	}
 
