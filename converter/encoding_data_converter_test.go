@@ -23,7 +23,11 @@
 package converter_test
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -169,4 +173,62 @@ func (c *captureToPayloadDataConverter) ToPayload(value interface{}) (*commonpb.
 	p, err := c.DataConverter.ToPayload(value)
 	c.lastToPayloadResult = p
 	return p, err
+}
+
+func TestPayloadEncoderHTTPHandler(t *testing.T) {
+	defaultConv := converter.GetDefaultDataConverter()
+	encoder := converter.NewZlibEncoder(converter.ZlibEncoderOptions{AlwaysEncode: true})
+	handler := converter.NewPayloadEncoderHTTPHandler(encoder)
+
+	req, err := http.NewRequest("GET", "/encode", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusNotFound, rr.Code)
+
+	req, err = http.NewRequest("POST", "/missing", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	req, err = http.NewRequest("POST", "/encode", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+
+	payload, _ := defaultConv.ToPayload("test")
+	payloadJSON, _ := json.Marshal(payload)
+
+	fmt.Printf("%s", payloadJSON)
+
+	req, err = http.NewRequest("POST", "/encode", bytes.NewReader(payloadJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	encodedPayloadJSON := strings.TrimSpace(rr.Body.String())
+	require.NotEqual(t, payloadJSON, encodedPayloadJSON)
+
+	req, err = http.NewRequest("POST", "/decode", strings.NewReader(encodedPayloadJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr = httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	decodedPayloadJSON := strings.TrimSpace(rr.Body.String())
+	require.Equal(t, string(payloadJSON), decodedPayloadJSON)
 }
