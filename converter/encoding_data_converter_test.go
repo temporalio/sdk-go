@@ -232,3 +232,44 @@ func TestPayloadEncoderHTTPHandler(t *testing.T) {
 	decodedPayloadsJSON := strings.TrimSpace(rr.Body.String())
 	require.Equal(t, string(payloadsJSON), decodedPayloadsJSON)
 }
+
+func TestRemoteDataConverter(t *testing.T) {
+	defaultConv := converter.GetDefaultDataConverter()
+	encoder := converter.NewZlibEncoder(converter.ZlibEncoderOptions{AlwaysEncode: true})
+	handler := converter.NewPayloadEncoderHTTPHandler(encoder)
+
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	localConverter := converter.NewEncodingDataConverter(
+		defaultConv,
+		encoder,
+	)
+
+	remoteConverter := converter.NewRemoteDataConverter(
+		defaultConv,
+		converter.RemoteDataConverterOptions{Endpoint: server.URL},
+	)
+
+	unencodedPayloads, err := defaultConv.ToPayloads("test", "payloads")
+	require.NoError(t, err)
+
+	localEncodedPayloads, err := localConverter.ToPayloads("test", "payloads")
+	require.NoError(t, err)
+	remoteEncodedPayloads, err := remoteConverter.ToPayloads("test", "payloads")
+	require.NoError(t, err)
+
+	require.NotEqual(t, unencodedPayloads, localEncodedPayloads)
+	require.Equal(t, localEncodedPayloads, remoteEncodedPayloads)
+
+	unencodedPayload, err := defaultConv.ToPayload("test")
+	require.NoError(t, err)
+
+	localEncodedPayload, err := localConverter.ToPayload("test")
+	require.NoError(t, err)
+	remoteEncodedPayload, err := remoteConverter.ToPayload("test")
+	require.NoError(t, err)
+
+	require.NotEqual(t, unencodedPayload, localEncodedPayload)
+	require.Equal(t, localEncodedPayload, remoteEncodedPayload)
+}

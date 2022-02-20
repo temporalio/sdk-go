@@ -30,7 +30,6 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-	"path"
 	"strings"
 
 	"github.com/gogo/protobuf/jsonpb"
@@ -252,14 +251,6 @@ func partiallyClonePayload(p *commonpb.Payload) *commonpb.Payload {
 	return ret
 }
 
-func partiallyClonePayloads(p *commonpb.Payloads) *commonpb.Payloads {
-	ret := &commonpb.Payloads{Payloads: make([]*commonpb.Payload, len(p.Payloads))}
-	for i, payload := range p.Payloads {
-		ret.Payloads[i] = partiallyClonePayload(payload)
-	}
-	return ret
-}
-
 const remotePayloadEncoderEncodePath = "/encode"
 const remotePayloadEncoderDecodePath = "/decode"
 
@@ -350,6 +341,8 @@ var _ DataConverter = &remoteDataConverter{}
 // NewRemoteDataConverter wraps the given parent DataConverter and performs
 // encoding/decoding on the payload via the remote endpoint.
 func NewRemoteDataConverter(parent DataConverter, options RemoteDataConverterOptions) DataConverter {
+	options.Endpoint = strings.TrimSuffix(options.Endpoint, "/")
+
 	return &remoteDataConverter{parent, options}
 }
 
@@ -378,11 +371,11 @@ func (rdc *remoteDataConverter) ToPayloads(value ...interface{}) (*commonpb.Payl
 // FromPayload implements DataConverter.FromPayload performing remote decoding on the
 // given payload before sending to the parent FromPayload.
 func (rdc *remoteDataConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
-	payload = partiallyClonePayload(payload)
 	err := rdc.decodePayload(payload)
 	if err != nil {
 		return err
 	}
+
 	return rdc.parent.FromPayload(payload, valuePtr)
 }
 
@@ -393,7 +386,7 @@ func (rdc *remoteDataConverter) FromPayloads(payloads *commonpb.Payloads, valueP
 		return rdc.parent.FromPayloads(payloads, valuePtrs...)
 	}
 
-	newPayloads := partiallyClonePayloads(payloads)
+	newPayloads := &commonpb.Payloads{Payloads: payloads.Payloads}
 	err := rdc.decodePayloads(newPayloads)
 	if err != nil {
 		return err
@@ -405,7 +398,6 @@ func (rdc *remoteDataConverter) FromPayloads(payloads *commonpb.Payloads, valueP
 // ToString implements DataConverter.ToString performing remote decoding on the given
 // payload before sending to the parent ToString.
 func (rdc *remoteDataConverter) ToString(payload *commonpb.Payload) string {
-	payload = partiallyClonePayload(payload)
 	err := rdc.decodePayload(payload)
 	if err != nil {
 		return err.Error()
@@ -433,25 +425,32 @@ func NewRemotePayloadEncoder(parent DataConverter, options RemoteDataConverterOp
 }
 
 func (rdc *remoteDataConverter) encodePayload(payload *commonpb.Payload) error {
-	return rdc.encodeOrDecodePayload(path.Join(rdc.options.Endpoint, remotePayloadEncoderEncodePath), payload)
+	return rdc.encodeOrDecodePayload(rdc.options.Endpoint+remotePayloadEncoderEncodePath, payload)
 }
 
 func (rdc *remoteDataConverter) decodePayload(payload *commonpb.Payload) error {
-	return rdc.encodeOrDecodePayload(path.Join(rdc.options.Endpoint, remotePayloadEncoderDecodePath), payload)
+	return rdc.encodeOrDecodePayload(rdc.options.Endpoint+remotePayloadEncoderDecodePath, payload)
 }
 
 func (rdc *remoteDataConverter) encodeOrDecodePayload(endpoint string, payload *commonpb.Payload) error {
-	payloads := commonpb.Payloads{Payloads: []*commonpb.Payload{payload}}
+	payloads := &commonpb.Payloads{Payloads: []*commonpb.Payload{payload}}
 
-	return rdc.encodeOrDecodePayloads(endpoint, &payloads)
+	err := rdc.encodeOrDecodePayloads(endpoint, payloads)
+	if err != nil {
+		return err
+	}
+
+	*payload = *payloads.Payloads[0]
+
+	return nil
 }
 
 func (rdc *remoteDataConverter) encodePayloads(payloads *commonpb.Payloads) error {
-	return rdc.encodeOrDecodePayloads(path.Join(rdc.options.Endpoint, remotePayloadEncoderEncodePath), payloads)
+	return rdc.encodeOrDecodePayloads(rdc.options.Endpoint+remotePayloadEncoderEncodePath, payloads)
 }
 
 func (rdc *remoteDataConverter) decodePayloads(payloads *commonpb.Payloads) error {
-	return rdc.encodeOrDecodePayloads(path.Join(rdc.options.Endpoint, remotePayloadEncoderDecodePath), payloads)
+	return rdc.encodeOrDecodePayloads(rdc.options.Endpoint+remotePayloadEncoderDecodePath, payloads)
 }
 
 func (rdc *remoteDataConverter) encodeOrDecodePayloads(endpoint string, payloads *commonpb.Payloads) error {
