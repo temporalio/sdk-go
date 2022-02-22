@@ -418,12 +418,6 @@ func (rdc *remoteDataConverter) ToStrings(payloads *commonpb.Payloads) []string 
 	return strs
 }
 
-// NewRemoteDataConverter creates a DataConverter that wraps an underlying data
-// converter with a remote encoder.
-func NewRemotePayloadEncoder(parent DataConverter, options RemoteDataConverterOptions) DataConverter {
-	return &remoteDataConverter{parent, options}
-}
-
 func (rdc *remoteDataConverter) encodePayload(payload *commonpb.Payload) error {
 	return rdc.encodeOrDecodePayload(rdc.options.Endpoint+remotePayloadEncoderEncodePath, payload)
 }
