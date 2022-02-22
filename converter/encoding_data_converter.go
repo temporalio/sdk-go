@@ -255,7 +255,7 @@ const remotePayloadEncoderEncodePath = "/encode"
 const remotePayloadEncoderDecodePath = "/decode"
 
 type encoderHTTPHandler struct {
-	encoder PayloadEncoder
+	encoders []PayloadEncoder
 }
 
 // ServeHTTP implements the http.Handler interface.
@@ -289,18 +289,20 @@ func (e *encoderHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.HasSuffix(path, remotePayloadEncoderEncodePath):
 		for _, payload := range payloads.Payloads {
-			err = e.encoder.Encode(payload)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
+			for i := len(e.encoders) - 1; i >= 0; i-- {
+				if err := e.encoders[i].Encode(payload); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
 			}
 		}
 	case strings.HasSuffix(path, remotePayloadEncoderDecodePath):
 		for _, payload := range payloads.Payloads {
-			err = e.encoder.Decode(payload)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
+			for _, encoder := range e.encoders {
+				if err := encoder.Decode(payload); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
 			}
 		}
 	default:
@@ -318,8 +320,8 @@ func (e *encoderHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // NewPayloadEncoderHTTPHandler creates a http.Handler for a PayloadEncoder.
 // This can be used to provide a remote data converter.
-func NewPayloadEncoderHTTPHandler(e PayloadEncoder) http.Handler {
-	return &encoderHTTPHandler{encoder: e}
+func NewPayloadEncoderHTTPHandler(e ...PayloadEncoder) http.Handler {
+	return &encoderHTTPHandler{encoders: e}
 }
 
 // RemoteDataConverterOptions are options for NewRemoteDataConverter.
