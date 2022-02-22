@@ -203,8 +203,12 @@ func updateIgnoreMap(fset *token.FileSet, f *ast.File, m map[ast.Node]struct{}) 
 	// Collect only the ignore comments
 	var comments []*ast.CommentGroup
 	for _, group := range f.Comments {
-		if len(group.List) == 1 && strings.HasPrefix(group.List[0].Text, "//workflowcheck:ignore") {
-			comments = append(comments, group)
+		// Check each comment in list so Godoc and others can be in any order
+		for _, comment := range group.List {
+			if strings.HasPrefix(comment.Text, "//workflowcheck:ignore") {
+				comments = append(comments, group)
+				break
+			}
 		}
 	}
 	// Bail if no comments
