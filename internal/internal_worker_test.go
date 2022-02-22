@@ -2444,6 +2444,12 @@ func TestActivityNilArgs(t *testing.T) {
 	require.Equal(t, nilErr, reflectResults[0].Interface())
 }
 
+func TestWorkerOptionInvalid(t *testing.T) {
+	require.Panics(t, func() {
+		NewAggregatedWorker(&WorkflowClient{}, "worker-options-tq", WorkerOptions{MaxConcurrentWorkflowTaskPollers: 1})
+	})
+}
+
 func TestWorkerOptionDefaults(t *testing.T) {
 	client := &WorkflowClient{}
 	taskQueue := "worker-options-tq"
