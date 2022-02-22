@@ -325,7 +325,7 @@ func (env *testWorkflowEnvironmentImpl) setStartTime(startTime time.Time) {
 		startTime = env.wallClock.Now()
 	}
 	env.mockClock.Add(startTime.Sub(env.mockClock.Now()))
-
+	env.workflowInfo.WorkflowStartTime = env.mockClock.Now()
 }
 
 func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(params *ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) (*testWorkflowEnvironmentImpl, error) {
