@@ -56,7 +56,8 @@ type Tracer interface {
 	// UnmarshalSpan unmarshals the given map into a span reference.
 	UnmarshalSpan(map[string]string) (TracerSpanRef, error)
 
-	// MarshalSpan marshals the given span into a map.
+	// MarshalSpan marshals the given span into a map. If the map is empty with no
+	// error, the span is simply not set.
 	MarshalSpan(TracerSpan) (map[string]string, error)
 
 	// SpanFromContext returns the span from the general Go context or nil if not
@@ -679,7 +680,7 @@ func (t *tracingInterceptor) readSpanFromHeader(header map[string]*commonpb.Payl
 func (t *tracingInterceptor) writeSpanToHeader(span TracerSpan, header map[string]*commonpb.Payload) error {
 	// Serialize span to map
 	data, err := t.tracer.MarshalSpan(span)
-	if err != nil {
+	if err != nil || len(data) == 0 {
 		return err
 	}
 	// Convert to payload
