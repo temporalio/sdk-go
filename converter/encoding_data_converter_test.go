@@ -233,17 +233,50 @@ func TestPayloadEncoderHTTPHandler(t *testing.T) {
 	require.Equal(t, string(payloadsJSON), decodedPayloadsJSON)
 }
 
+type testEncoder struct {
+	encoding   string
+	encodeFrom string
+}
+
+func (e *testEncoder) Encode(p *commonpb.Payload) error {
+	if string(p.Metadata[converter.MetadataEncoding]) != e.encodeFrom {
+		return fmt.Errorf("unexpected encoding: %s", p.Metadata[converter.MetadataEncoding])
+	}
+
+	b, err := proto.Marshal(p)
+	if err != nil {
+		return err
+	}
+
+	p.Metadata = map[string][]byte{converter.MetadataEncoding: []byte(e.encoding)}
+	p.Data = b
+
+	return nil
+}
+
+func (e *testEncoder) Decode(p *commonpb.Payload) error {
+	if string(p.Metadata[converter.MetadataEncoding]) != e.encoding {
+		return fmt.Errorf("unexpected encoding: %s", p.Metadata[converter.MetadataEncoding])
+	}
+
+	p.Reset()
+	return proto.Unmarshal(p.Data, p)
+}
+
 func TestRemoteDataConverter(t *testing.T) {
 	defaultConv := converter.GetDefaultDataConverter()
-	encoder := converter.NewZlibEncoder(converter.ZlibEncoderOptions{AlwaysEncode: true})
-	handler := converter.NewPayloadEncoderHTTPHandler(encoder)
+	encoders := []converter.PayloadEncoder{
+		&testEncoder{encoding: "encrypted", encodeFrom: "compressed"},
+		&testEncoder{encoding: "compressed", encodeFrom: "json/plain"},
+	}
+	handler := converter.NewPayloadEncoderHTTPHandler(encoders...)
 
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	localConverter := converter.NewEncodingDataConverter(
 		defaultConv,
-		encoder,
+		encoders...,
 	)
 
 	remoteConverter := converter.NewRemoteDataConverter(
