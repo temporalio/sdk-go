@@ -205,12 +205,12 @@ func TestPayloadEncoderHTTPHandler(t *testing.T) {
 
 	require.Equal(t, http.StatusBadRequest, rr.Code)
 
-	payload, _ := defaultConv.ToPayload("test")
-	payloadJSON, _ := json.Marshal(payload)
+	payloads, _ := defaultConv.ToPayloads("test")
+	payloadsJSON, _ := json.Marshal(payloads)
 
-	fmt.Printf("%s", payloadJSON)
+	fmt.Printf("%s", payloadsJSON)
 
-	req, err = http.NewRequest("POST", "/encode", bytes.NewReader(payloadJSON))
+	req, err = http.NewRequest("POST", "/encode", bytes.NewReader(payloadsJSON))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,10 +218,10 @@ func TestPayloadEncoderHTTPHandler(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
-	encodedPayloadJSON := strings.TrimSpace(rr.Body.String())
-	require.NotEqual(t, payloadJSON, encodedPayloadJSON)
+	encodedPayloadsJSON := strings.TrimSpace(rr.Body.String())
+	require.NotEqual(t, payloadsJSON, encodedPayloadsJSON)
 
-	req, err = http.NewRequest("POST", "/decode", strings.NewReader(encodedPayloadJSON))
+	req, err = http.NewRequest("POST", "/decode", strings.NewReader(encodedPayloadsJSON))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,6 +229,80 @@ func TestPayloadEncoderHTTPHandler(t *testing.T) {
 	handler.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusOK, rr.Code)
-	decodedPayloadJSON := strings.TrimSpace(rr.Body.String())
-	require.Equal(t, string(payloadJSON), decodedPayloadJSON)
+	decodedPayloadsJSON := strings.TrimSpace(rr.Body.String())
+	require.Equal(t, string(payloadsJSON), decodedPayloadsJSON)
+}
+
+type testEncoder struct {
+	encoding   string
+	encodeFrom string
+}
+
+func (e *testEncoder) Encode(p *commonpb.Payload) error {
+	if string(p.Metadata[converter.MetadataEncoding]) != e.encodeFrom {
+		return fmt.Errorf("unexpected encoding: %s", p.Metadata[converter.MetadataEncoding])
+	}
+
+	b, err := proto.Marshal(p)
+	if err != nil {
+		return err
+	}
+
+	p.Metadata = map[string][]byte{converter.MetadataEncoding: []byte(e.encoding)}
+	p.Data = b
+
+	return nil
+}
+
+func (e *testEncoder) Decode(p *commonpb.Payload) error {
+	if string(p.Metadata[converter.MetadataEncoding]) != e.encoding {
+		return fmt.Errorf("unexpected encoding: %s", p.Metadata[converter.MetadataEncoding])
+	}
+
+	p.Reset()
+	return proto.Unmarshal(p.Data, p)
+}
+
+func TestRemoteDataConverter(t *testing.T) {
+	defaultConv := converter.GetDefaultDataConverter()
+	encoders := []converter.PayloadEncoder{
+		&testEncoder{encoding: "encrypted", encodeFrom: "compressed"},
+		&testEncoder{encoding: "compressed", encodeFrom: "json/plain"},
+	}
+	handler := converter.NewPayloadEncoderHTTPHandler(encoders...)
+
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	localConverter := converter.NewEncodingDataConverter(
+		defaultConv,
+		encoders...,
+	)
+
+	remoteConverter := converter.NewRemoteDataConverter(
+		defaultConv,
+		converter.RemoteDataConverterOptions{Endpoint: server.URL},
+	)
+
+	unencodedPayloads, err := defaultConv.ToPayloads("test", "payloads")
+	require.NoError(t, err)
+
+	localEncodedPayloads, err := localConverter.ToPayloads("test", "payloads")
+	require.NoError(t, err)
+	remoteEncodedPayloads, err := remoteConverter.ToPayloads("test", "payloads")
+	require.NoError(t, err)
+
+	require.NotEqual(t, unencodedPayloads, localEncodedPayloads)
+	require.Equal(t, localEncodedPayloads, remoteEncodedPayloads)
+
+	unencodedPayload, err := defaultConv.ToPayload("test")
+	require.NoError(t, err)
+
+	localEncodedPayload, err := localConverter.ToPayload("test")
+	require.NoError(t, err)
+	remoteEncodedPayload, err := remoteConverter.ToPayload("test")
+	require.NoError(t, err)
+
+	require.NotEqual(t, unencodedPayload, localEncodedPayload)
+	require.Equal(t, localEncodedPayload, remoteEncodedPayload)
 }
