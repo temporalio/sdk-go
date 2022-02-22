@@ -338,8 +338,6 @@ type remoteDataConverter struct {
 	options RemoteDataConverterOptions
 }
 
-var _ DataConverter = &remoteDataConverter{}
-
 // NewRemoteDataConverter wraps the given parent DataConverter and performs
 // encoding/decoding on the payload via the remote endpoint.
 func NewRemoteDataConverter(parent DataConverter, options RemoteDataConverterOptions) DataConverter {
