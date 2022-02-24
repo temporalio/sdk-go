@@ -286,7 +286,6 @@ func newWorkflowTaskWorkerInternal(
 		stopTimeout:       params.WorkerStopTimeout},
 		params.Logger,
 		params.MetricsHandler,
-		nil,
 	)
 
 	// laTunnel is the glue that hookup 3 parts
@@ -309,7 +308,6 @@ func newWorkflowTaskWorkerInternal(
 		stopTimeout:       params.WorkerStopTimeout},
 		params.Logger,
 		params.MetricsHandler,
-		nil,
 	)
 
 	// 3) the result pushed to laTunnel will be send as task to workflow worker to process.
@@ -358,11 +356,14 @@ func newSessionWorker(service workflowservice.WorkflowServiceClient, params work
 	creationTaskqueue := getCreationTaskqueue(params.TaskQueue)
 	params.UserContext = context.WithValue(params.UserContext, sessionEnvironmentContextKey, sessionEnvironment)
 	params.TaskQueue = sessionEnvironment.GetResourceSpecificTaskqueue()
-	activityWorker := newActivityWorker(service, params, overrides, env, nil)
+	activityWorker := newActivityWorker(service, params, overrides, env)
 
 	params.MaxConcurrentActivityTaskQueuePollers = 1
 	params.TaskQueue = creationTaskqueue
-	creationWorker := newActivityWorker(service, params, overrides, env, sessionEnvironment.GetTokenBucket())
+	// This limits the number of concurrent sessions because session creation
+	// activities don't complete until the session does
+	params.ConcurrentActivityExecutionSize = maxConcurrentSessionExecutionSize
+	creationWorker := newActivityWorker(service, params, overrides, env)
 
 	return &sessionWorker{
 		creationWorker: creationWorker,
@@ -389,7 +390,7 @@ func (sw *sessionWorker) Stop() {
 	sw.activityWorker.Stop()
 }
 
-func newActivityWorker(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, overrides *workerOverrides, env *registry, sessionTokenBucket *sessionTokenBucket) *activityWorker {
+func newActivityWorker(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, overrides *workerOverrides, env *registry) *activityWorker {
 	workerStopChannel := make(chan struct{}, 1)
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
 	ensureRequiredParams(&params)
@@ -401,10 +402,10 @@ func newActivityWorker(service workflowservice.WorkflowServiceClient, params wor
 	} else {
 		taskHandler = newActivityTaskHandler(service, params, env)
 	}
-	return newActivityTaskWorker(taskHandler, service, params, sessionTokenBucket, workerStopChannel)
+	return newActivityTaskWorker(taskHandler, service, params, workerStopChannel)
 }
 
-func newActivityTaskWorker(taskHandler ActivityTaskHandler, service workflowservice.WorkflowServiceClient, workerParams workerExecutionParameters, sessionTokenBucket *sessionTokenBucket, stopC chan struct{}) (worker *activityWorker) {
+func newActivityTaskWorker(taskHandler ActivityTaskHandler, service workflowservice.WorkflowServiceClient, workerParams workerExecutionParameters, stopC chan struct{}) (worker *activityWorker) {
 	ensureRequiredParams(&workerParams)
 
 	poller := newActivityTaskPoller(taskHandler, service, workerParams)
@@ -422,7 +423,6 @@ func newActivityTaskWorker(taskHandler ActivityTaskHandler, service workflowserv
 			userContextCancel: workerParams.UserContextCancel},
 		workerParams.Logger,
 		workerParams.MetricsHandler,
-		sessionTokenBucket,
 	)
 
 	return &activityWorker{
@@ -1343,7 +1343,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	// activity types.
 	var activityWorker *activityWorker
 	if !options.LocalActivityWorkerOnly {
-		activityWorker = newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
+		activityWorker = newActivityWorker(client.workflowService, workerParams, nil, registry)
 	}
 
 	var sessionWorker *sessionWorker

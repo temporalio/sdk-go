@@ -73,18 +73,11 @@ type (
 
 	sessionState int
 
-	sessionTokenBucket struct {
-		*sync.Cond
-		availableToken int
-	}
-
 	sessionEnvironment interface {
 		CreateSession(ctx context.Context, sessionID string) (<-chan struct{}, error)
 		CompleteSession(sessionID string)
-		AddSessionToken()
 		SignalCreationResponse(ctx context.Context, sessionID string) error
 		GetResourceSpecificTaskqueue() string
-		GetTokenBucket() *sessionTokenBucket
 	}
 
 	sessionEnvironmentImpl struct {
@@ -92,7 +85,6 @@ type (
 		doneChanMap               map[string]chan struct{}
 		resourceID                string
 		resourceSpecificTaskqueue string
-		sessionTokenBucket        *sessionTokenBucket
 	}
 
 	sessionCreationResponse struct {
@@ -115,8 +107,6 @@ const (
 
 	sessionCreationActivityName   string = "internalSessionCreationActivity"
 	sessionCompletionActivityName string = "internalSessionCompletionActivity"
-
-	errTooManySessionsMsg string = "too many outstanding sessions"
 
 	defaultSessionHeartbeatTimeout = time.Second * 20
 	maxSessionHeartbeatInterval    = time.Second * 10
@@ -186,7 +176,7 @@ func CreateSession(ctx Context, sessionOptions *SessionOptions) (Context, error)
 	if baseTaskqueue == "" {
 		baseTaskqueue = options.OriginalTaskQueueName
 	}
-	return createSession(ctx, getCreationTaskqueue(baseTaskqueue), sessionOptions, true)
+	return createSession(ctx, getCreationTaskqueue(baseTaskqueue), sessionOptions)
 }
 
 // RecreateSession recreate a session based on the sessionInfo passed in. Activities executed within
@@ -202,7 +192,7 @@ func RecreateSession(ctx Context, recreateToken []byte, sessionOptions *SessionO
 	if err != nil {
 		return nil, fmt.Errorf("failed to deserilalize recreate token: %v", err)
 	}
-	return createSession(ctx, recreateParams.Taskqueue, sessionOptions, true)
+	return createSession(ctx, recreateParams.Taskqueue, sessionOptions)
 }
 
 // CompleteSession completes a session. It releases worker resources, so other sessions can be created.
@@ -276,7 +266,7 @@ func setSessionInfo(ctx Context, sessionInfo *SessionInfo) Context {
 	return WithValue(ctx, sessionInfoContextKey, sessionInfo)
 }
 
-func createSession(ctx Context, creationTaskqueue string, options *SessionOptions, retryable bool) (Context, error) {
+func createSession(ctx Context, creationTaskqueue string, options *SessionOptions) (Context, error) {
 	logger := GetLogger(ctx)
 	logger.Debug("Start creating session")
 	if prevSessionInfo := getSessionInfo(ctx); prevSessionInfo != nil && prevSessionInfo.sessionState == sessionStateOpen {
@@ -288,13 +278,6 @@ func createSession(ctx Context, creationTaskqueue string, options *SessionOption
 	}
 
 	taskqueueChan := GetSignalChannel(ctx, sessionID) // use sessionID as channel name
-	// Retry is only needed when creating new session and the error returned is NewApplicationError(errTooManySessionsMsg)
-	retryPolicy := &RetryPolicy{
-		InitialInterval:    time.Second,
-		BackoffCoefficient: 1.1,
-		MaximumInterval:    time.Second * 10,
-		MaximumAttempts:    0,
-	}
 
 	heartbeatTimeout := defaultSessionHeartbeatTimeout
 	if options.HeartbeatTimeout != 0 {
@@ -305,9 +288,15 @@ func createSession(ctx Context, creationTaskqueue string, options *SessionOption
 		ScheduleToStartTimeout: options.CreationTimeout,
 		StartToCloseTimeout:    options.ExecutionTimeout,
 		HeartbeatTimeout:       heartbeatTimeout,
-	}
-	if retryable {
-		ao.RetryPolicy = retryPolicy
+		// Session creation is never retryable. Previously, session creation was
+		// retryable only when there were too many sessions but was configured to be
+		// non-retryable under all other errors (including timeouts). When the
+		// ability to set timeouts as being non-retryable was removed, this
+		// inadvertently broke sessions on worker stop/crash. We have now changed
+		// the logic to use activity worker execution size as the max-sessions limit
+		// which has many benefits including no backoff and no polling until there
+		// is room.
+		RetryPolicy: &RetryPolicy{MaximumAttempts: 1},
 	}
 
 	sessionInfo := &SessionInfo{
@@ -394,8 +383,6 @@ func sessionCreationActivity(ctx context.Context, sessionID string) error {
 		return err
 	}
 
-	defer sessionEnv.AddSessionToken()
-
 	if err := sessionEnv.SignalCreationResponse(ctx, sessionID); err != nil {
 		return err
 	}
@@ -479,62 +466,21 @@ func deserializeRecreateToken(token []byte) (*recreateSessionParams, error) {
 	return &recreateParams, err
 }
 
-func newSessionTokenBucket(concurrentSessionExecutionSize int) *sessionTokenBucket {
-	return &sessionTokenBucket{
-		Cond:           sync.NewCond(&sync.Mutex{}),
-		availableToken: concurrentSessionExecutionSize,
-	}
-}
-
-func (t *sessionTokenBucket) waitForAvailableToken() {
-	t.L.Lock()
-	defer t.L.Unlock()
-	for t.availableToken == 0 {
-		t.Wait()
-	}
-}
-
-func (t *sessionTokenBucket) addToken() {
-	t.L.Lock()
-	t.availableToken++
-	t.L.Unlock()
-	t.Signal()
-}
-
-func (t *sessionTokenBucket) getToken() bool {
-	t.L.Lock()
-	defer t.L.Unlock()
-	if t.availableToken == 0 {
-		return false
-	}
-	t.availableToken--
-	return true
-}
-
 func newSessionEnvironment(resourceID string, concurrentSessionExecutionSize int) sessionEnvironment {
 	return &sessionEnvironmentImpl{
 		Mutex:                     &sync.Mutex{},
 		doneChanMap:               make(map[string]chan struct{}),
 		resourceID:                resourceID,
 		resourceSpecificTaskqueue: getResourceSpecificTaskqueue(resourceID),
-		sessionTokenBucket:        newSessionTokenBucket(concurrentSessionExecutionSize),
 	}
 }
 
 func (env *sessionEnvironmentImpl) CreateSession(_ context.Context, sessionID string) (<-chan struct{}, error) {
-	if !env.sessionTokenBucket.getToken() {
-		return nil, NewApplicationError(errTooManySessionsMsg, "", true, nil)
-	}
-
 	env.Lock()
 	defer env.Unlock()
 	doneCh := make(chan struct{})
 	env.doneChanMap[sessionID] = doneCh
 	return doneCh, nil
-}
-
-func (env *sessionEnvironmentImpl) AddSessionToken() {
-	env.sessionTokenBucket.addToken()
 }
 
 func (env *sessionEnvironmentImpl) SignalCreationResponse(ctx context.Context, sessionID string) error {
@@ -566,10 +512,6 @@ func (env *sessionEnvironmentImpl) GetResourceSpecificTaskqueue() string {
 	return env.resourceSpecificTaskqueue
 }
 
-func (env *sessionEnvironmentImpl) GetTokenBucket() *sessionTokenBucket {
-	return env.sessionTokenBucket
-}
-
 // The following two implemention is for testsuite only. The only difference is that
 // the creation activity is not long running, otherwise it will block timers from auto firing.
 func sessionCreationActivityForTest(ctx context.Context, sessionID string) error {
@@ -587,7 +529,5 @@ func sessionCompletionActivityForTest(ctx context.Context, sessionID string) err
 
 	sessionEnv.CompleteSession(sessionID)
 
-	// Add session token in the completion activity.
-	sessionEnv.AddSessionToken()
 	return nil
 }

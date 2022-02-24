@@ -208,6 +208,16 @@ func (ts *IntegrationTestSuite) SetupTest() {
 
 	if strings.Contains(ts.T().Name(), "Session") {
 		options.EnableSessionWorker = true
+		// Limit the session execution size
+		if strings.Contains(ts.T().Name(), "TestMaxConcurrentSessionExecutionSize") {
+			options.MaxConcurrentSessionExecutionSize = 3
+		}
+	}
+
+	if strings.Contains(ts.T().Name(), "TestSessionOnWorkerFailure") {
+		// We disable sticky execution here since we kill the worker and restart it
+		// and sticky execution adds a 5s penalty
+		worker.SetStickyWorkflowCacheSize(0)
 	}
 
 	if strings.Contains(ts.T().Name(), "LocalActivityWorkerOnly") {
@@ -1934,6 +1944,71 @@ func (ts *IntegrationTestSuite) TestReturnCancelError() {
 	resp, err = ts.client.DescribeWorkflowExecution(ctx, wfIDPrefix+"6", "")
 	ts.NoError(err)
 	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_CANCELED, resp.GetWorkflowExecutionInfo().GetStatus())
+}
+
+func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	ts.activities.manualStopContext = ctx
+	// We want to start a single long-running activity in a session
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-session-worker-failure"),
+		ts.workflows.AdvancedSession,
+		&AdvancedSessionParams{
+			SessionCount:            1,
+			SessionCreationTimeout:  10 * time.Second,
+			ActivityCountPerSession: 1,
+		})
+	ts.NoError(err)
+
+	// Wait until sessions started
+	ts.waitForQueryTrue(run, "sessions-started")
+
+	// Kill the worker
+	ts.worker.Stop()
+	ts.workerStopped = true
+
+	// Now create a new worker on that same task queue to resume the work of the
+	// workflow
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{DisableStickyExecution: true})
+	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.NoError(nextWorker.Start())
+	defer nextWorker.Stop()
+
+	// Get the result of the workflow run now
+	err = run.Get(ctx, nil)
+	// We expect the activity to be cancelled. Before the issue that was fixed
+	// when this test was written, this would hang because sessions would
+	// inadvertently retry.
+	ts.Error(err)
+	ts.Truef(strings.HasSuffix(err.Error(), "activity 0 on session 0 failed: canceled"), "wrong error, got: %v", err)
+}
+
+func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSize() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	ts.activities.manualStopContext = ctx
+	// Since the test setup set the max execution size to 3, we want to try to
+	// create 4 sessions with a creation timeout of 2s (which is basically
+	// schedule-to-start of the session creation worker)
+	// We want to start a single long-running activity in a session
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-max-concurrent-session-execution-size"),
+		ts.workflows.AdvancedSession,
+		&AdvancedSessionParams{
+			SessionCount:            4,
+			SessionCreationTimeout:  2 * time.Second,
+			ActivityCountPerSession: 1,
+		})
+	ts.NoError(err)
+
+	// Wait at most 5s to get the run result
+	runCtx, runCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer runCancel()
+	err = run.Get(runCtx, nil)
+	// Confirm it failed on the 4th session (index 3)
+	ts.Error(err)
+	ts.Truef(strings.Contains(err.Error(), "failed creating session 3"), "wrong error, got: %v", err)
 }
 
 func (ts *IntegrationTestSuite) registerNamespace() {

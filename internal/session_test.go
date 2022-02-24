@@ -309,96 +309,6 @@ func (s *SessionTestSuite) TestRecreation() {
 	env.AssertExpectations(s.T())
 }
 
-func (s *SessionTestSuite) TestMaxConcurrentSession_CreationOnly() {
-	maxConcurrentSessionExecutionSize := 3
-	workflowFn := func(ctx Context) error {
-		ao := ActivityOptions{
-			ScheduleToStartTimeout: time.Minute,
-			StartToCloseTimeout:    time.Minute,
-			HeartbeatTimeout:       time.Second * 20,
-		}
-		ctx = WithActivityOptions(ctx, ao)
-		for i := 0; i != maxConcurrentSessionExecutionSize+1; i++ {
-			if _, err := s.createSessionWithoutRetry(ctx); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-
-	env := s.NewTestWorkflowEnvironment()
-	env.RegisterWorkflow(workflowFn)
-	env.SetWorkerOptions(WorkerOptions{
-		MaxConcurrentSessionExecutionSize: maxConcurrentSessionExecutionSize,
-		EnableSessionWorker:               true,
-	})
-	env.ExecuteWorkflow(workflowFn)
-
-	s.True(env.IsWorkflowCompleted())
-	err := env.GetWorkflowError()
-	var workflowErr *WorkflowExecutionError
-	s.True(errors.As(err, &workflowErr))
-
-	err = errors.Unwrap(workflowErr)
-	var err1 *ApplicationError
-	s.True(errors.As(err, &err1))
-	s.Equal(errTooManySessionsMsg, err1.Error())
-}
-
-func (s *SessionTestSuite) TestMaxConcurrentSession_WithRecreation() {
-	maxConcurrentSessionExecutionSize := 3
-	workflowFn := func(ctx Context) error {
-		ao := ActivityOptions{
-			ScheduleToStartTimeout: time.Minute,
-			StartToCloseTimeout:    time.Minute,
-			HeartbeatTimeout:       time.Second * 20,
-		}
-		ctx = WithActivityOptions(ctx, ao)
-		sessionCtx, err := CreateSession(ctx, s.sessionOptions)
-		if err != nil {
-			return err
-		}
-		sessionInfo := GetSessionInfo(sessionCtx)
-		if sessionInfo == nil {
-			return errors.New("returned session info should not be nil")
-		}
-
-		for i := 0; i != maxConcurrentSessionExecutionSize; i++ {
-			if i%2 == 0 {
-				_, err = s.createSessionWithoutRetry(ctx)
-			} else {
-				_, err = RecreateSession(ctx, sessionInfo.GetRecreateToken(), s.sessionOptions)
-			}
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-
-	env := s.NewTestWorkflowEnvironment()
-	env.RegisterWorkflow(workflowFn)
-	env.SetWorkerOptions(WorkerOptions{
-		MaxConcurrentSessionExecutionSize: maxConcurrentSessionExecutionSize,
-		EnableSessionWorker:               true,
-	})
-	env.OnActivity(sessionCreationActivityName, mock.Anything, mock.Anything).Return(sessionCreationActivity)
-	env.ExecuteWorkflow(workflowFn)
-
-	s.True(env.IsWorkflowCompleted())
-	err := env.GetWorkflowError()
-	s.Error(err)
-	var workflowErr *WorkflowExecutionError
-	s.True(errors.As(err, &workflowErr))
-
-	err = errors.Unwrap(workflowErr)
-	var err1 *ApplicationError
-	s.True(errors.As(err, &err1))
-
-	s.Equal(errTooManySessionsMsg, err1.Error())
-	env.AssertExpectations(s.T())
-}
-
 func (s *SessionTestSuite) TestSessionTaskQueue() {
 	numActivities := 3
 	workflowFn := func(ctx Context) error {
@@ -681,15 +591,6 @@ func (s *SessionTestSuite) TestActivityRetryWithinSession() {
 	env.AssertExpectations(s.T())
 	s.True(env.IsWorkflowCompleted())
 	s.Error(env.GetWorkflowError())
-}
-
-func (s *SessionTestSuite) createSessionWithoutRetry(ctx Context) (Context, error) {
-	options := getActivityOptions(ctx)
-	baseTaskqueue := options.TaskQueueName
-	if baseTaskqueue == "" {
-		baseTaskqueue = options.OriginalTaskQueueName
-	}
-	return createSession(ctx, getCreationTaskqueue(baseTaskqueue), s.sessionOptions, false)
 }
 
 func testSessionActivity(_ context.Context, name string) (string, error) {

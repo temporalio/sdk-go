@@ -128,7 +128,7 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	a := &greeterActivity{}
 	registry := newRegistry()
 	registry.addActivityWithLock(a.ActivityType().Name, a)
-	activityWorker := newActivityWorker(s.service, executionParameters, overrides, registry, nil)
+	activityWorker := newActivityWorker(s.service, executionParameters, overrides, registry)
 	_ = activityWorker.Start()
 	activityWorker.Stop()
 }
@@ -176,7 +176,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	a := &greeterActivity{}
 	registry := newRegistry()
 	registry.addActivityWithLock(a.ActivityType().Name, a)
-	worker := newActivityWorker(s.service, executionParameters, overrides, registry, nil)
+	worker := newActivityWorker(s.service, executionParameters, overrides, registry)
 	_ = worker.Start()
 	_ = activityTaskHandler.BlockedOnExecuteCalled()
 	go worker.Stop()

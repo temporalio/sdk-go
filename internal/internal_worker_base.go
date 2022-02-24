@@ -169,9 +169,8 @@ type (
 		taskSlotsAvailable      int32
 		taskSlotsAvailableGauge metrics.Gauge
 
-		pollerRequestCh    chan struct{}
-		taskQueueCh        chan interface{}
-		sessionTokenBucket *sessionTokenBucket
+		pollerRequestCh chan struct{}
+		taskQueueCh     chan interface{}
 
 		lastPollTaskErrMessage string
 		lastPollTaskErrStarted time.Time
@@ -199,7 +198,6 @@ func newBaseWorker(
 	options baseWorkerOptions,
 	logger log.Logger,
 	metricsHandler metrics.Handler,
-	sessionTokenBucket *sessionTokenBucket,
 ) *baseWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 	bw := &baseWorker{
@@ -215,7 +213,6 @@ func newBaseWorker(
 
 		limiterContext:       ctx,
 		limiterContextCancel: cancel,
-		sessionTokenBucket:   sessionTokenBucket,
 	}
 	bw.taskSlotsAvailableGauge = bw.metricsHandler.Gauge(metrics.WorkerTaskSlotsAvailable)
 	bw.taskSlotsAvailableGauge.Update(float64(bw.taskSlotsAvailable))
@@ -270,9 +267,6 @@ func (bw *baseWorker) runPoller() {
 		case <-bw.stopCh:
 			return
 		case <-bw.pollerRequestCh:
-			if bw.sessionTokenBucket != nil {
-				bw.sessionTokenBucket.waitForAvailableToken()
-			}
 			bw.pollTask()
 		}
 	}

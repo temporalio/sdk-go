@@ -1159,6 +1159,68 @@ func (w *Workflows) BasicSession(ctx workflow.Context) ([]string, error) {
 	return []string{"toUpper"}, nil
 }
 
+type AdvancedSessionParams struct {
+	SessionCount            int
+	SessionCreationTimeout  time.Duration
+	ActivityCountPerSession int
+}
+
+func (w Workflows) AdvancedSession(ctx workflow.Context, params *AdvancedSessionParams) error {
+	// Create a query to know sessions started
+	sessionsStarted := false
+	err := workflow.SetQueryHandler(ctx, "sessions-started", func() (bool, error) { return sessionsStarted, nil })
+	if err != nil {
+		return err
+	}
+
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: time.Minute,
+		// No retry on activities
+		RetryPolicy: &temporal.RetryPolicy{MaximumAttempts: 1},
+	})
+
+	// Create the sessions and their activities
+	sel := workflow.NewSelector(ctx)
+	var actErr error
+	var act Activities
+	for i := 0; i < params.SessionCount; i++ {
+		sessionCtx, err := workflow.CreateSession(ctx, &workflow.SessionOptions{
+			CreationTimeout:  params.SessionCreationTimeout,
+			ExecutionTimeout: 20 * time.Second,
+			HeartbeatTimeout: 2 * time.Second,
+		})
+		if err != nil {
+			// We use the error message instead of wrapping the error itself
+			// because unfortunately the error converter unwraps some like
+			// cancellation
+			return fmt.Errorf("failed creating session %v: %v", i, err.Error())
+		}
+		defer workflow.CompleteSession(sessionCtx)
+		for j := 0; j < params.ActivityCountPerSession; j++ {
+			i, j := i, j
+			fut := workflow.ExecuteActivity(sessionCtx, act.WaitForManualStop)
+			sel.AddFuture(fut, func(f workflow.Future) {
+				if err := f.Get(sessionCtx, nil); err != nil {
+					// We use the error message instead of wrapping the error itself
+					// because unfortunately the error converter unwraps some like
+					// cancellation
+					actErr = fmt.Errorf("activity %v on session %v failed: %v", j, i, err.Error())
+				}
+			})
+		}
+	}
+	sessionsStarted = true
+
+	// Wait for all
+	for i := 0; i < params.SessionCount*params.ActivityCountPerSession; i++ {
+		sel.Select(ctx)
+		if actErr != nil {
+			return actErr
+		}
+	}
+	return nil
+}
+
 func (w *Workflows) ActivityCompletionUsingID(ctx workflow.Context) ([]string, error) {
 	activityAOptions := workflow.ActivityOptions{
 		ActivityID:             "A",
@@ -1664,6 +1726,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.Panicked)
 	worker.RegisterWorkflow(w.PanickedActivity)
 	worker.RegisterWorkflow(w.BasicSession)
+	worker.RegisterWorkflow(w.AdvancedSession)
 	worker.RegisterWorkflow(w.CancelActivity)
 	worker.RegisterWorkflow(w.CancelActivityImmediately)
 	worker.RegisterWorkflow(w.CancelChildWorkflow)
