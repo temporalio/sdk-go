@@ -1199,7 +1199,9 @@ func (w Workflows) AdvancedSession(ctx workflow.Context, params *AdvancedSession
 		verb := "creating"
 		if params.UseRecreationFrom == 0 || i < params.UseRecreationFrom {
 			sessionCtx, err = workflow.CreateSession(ctx, opts)
-			lastCreatedSessionInfo = workflow.GetSessionInfo(sessionCtx)
+			if err == nil {
+				lastCreatedSessionInfo = workflow.GetSessionInfo(sessionCtx)
+			}
 		} else {
 			sessionCtx, err = workflow.RecreateSession(ctx, lastCreatedSessionInfo.GetRecreateToken(), opts)
 			verb = "recreating"
