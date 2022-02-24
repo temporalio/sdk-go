@@ -713,37 +713,224 @@ func (*baseEventInterceptor) ChildWorkflowExecutionTerminated(attrs *historypb.C
 	return nil
 }
 
-func processCommands(commandInterceptor commandInterceptor, commands []*command.Command) error {
+func (s *serviceInterceptor) processRequest(req interface{}) error {
+	var err error
+
+	switch r := req.(type) {
+	case *workflowservice.RegisterNamespaceRequest:
+		err = s.RequestResponse.RegisterNamespaceRequest(r)
+	case *workflowservice.ListNamespacesRequest:
+		err = s.RequestResponse.ListNamespacesRequest(r)
+	case *workflowservice.DescribeNamespaceRequest:
+		err = s.RequestResponse.DescribeNamespaceRequest(r)
+	case *workflowservice.UpdateNamespaceRequest:
+		err = s.RequestResponse.UpdateNamespaceRequest(r)
+	case *workflowservice.DeprecateNamespaceRequest:
+		err = s.RequestResponse.DeprecateNamespaceRequest(r)
+	case *workflowservice.StartWorkflowExecutionRequest:
+		err = s.RequestResponse.StartWorkflowExecutionRequest(r)
+	case *workflowservice.GetWorkflowExecutionHistoryRequest:
+		err = s.RequestResponse.GetWorkflowExecutionHistoryRequest(r)
+	case *workflowservice.PollWorkflowTaskQueueRequest:
+		err = s.RequestResponse.PollWorkflowTaskQueueRequest(r)
+	case *workflowservice.RespondWorkflowTaskCompletedRequest:
+		err = s.RequestResponse.RespondWorkflowTaskCompletedRequest(r)
+		if err != nil {
+			return err
+		}
+		err = s.processCommands(r.Commands)
+	case *workflowservice.RespondWorkflowTaskFailedRequest:
+		err = s.RequestResponse.RespondWorkflowTaskFailedRequest(r)
+	case *workflowservice.PollActivityTaskQueueRequest:
+		err = s.RequestResponse.PollActivityTaskQueueRequest(r)
+	case *workflowservice.RecordActivityTaskHeartbeatRequest:
+		err = s.RequestResponse.RecordActivityTaskHeartbeatRequest(r)
+	case *workflowservice.RecordActivityTaskHeartbeatByIdRequest:
+		err = s.RequestResponse.RecordActivityTaskHeartbeatByIdRequest(r)
+	case *workflowservice.RespondActivityTaskCompletedRequest:
+		err = s.RequestResponse.RespondActivityTaskCompletedRequest(r)
+	case *workflowservice.RespondActivityTaskCompletedByIdRequest:
+		err = s.RequestResponse.RespondActivityTaskCompletedByIdRequest(r)
+	case *workflowservice.RespondActivityTaskFailedRequest:
+		err = s.RequestResponse.RespondActivityTaskFailedRequest(r)
+	case *workflowservice.RespondActivityTaskFailedByIdRequest:
+		err = s.RequestResponse.RespondActivityTaskFailedByIdRequest(r)
+	case *workflowservice.RespondActivityTaskCanceledRequest:
+		err = s.RequestResponse.RespondActivityTaskCanceledRequest(r)
+	case *workflowservice.RespondActivityTaskCanceledByIdRequest:
+		err = s.RequestResponse.RespondActivityTaskCanceledByIdRequest(r)
+	case *workflowservice.RequestCancelWorkflowExecutionRequest:
+		err = s.RequestResponse.RequestCancelWorkflowExecutionRequest(r)
+	case *workflowservice.SignalWorkflowExecutionRequest:
+		err = s.RequestResponse.SignalWorkflowExecutionRequest(r)
+	case *workflowservice.SignalWithStartWorkflowExecutionRequest:
+		err = s.RequestResponse.SignalWithStartWorkflowExecutionRequest(r)
+	case *workflowservice.ResetWorkflowExecutionRequest:
+		err = s.RequestResponse.ResetWorkflowExecutionRequest(r)
+	case *workflowservice.TerminateWorkflowExecutionRequest:
+		err = s.RequestResponse.TerminateWorkflowExecutionRequest(r)
+	case *workflowservice.ListOpenWorkflowExecutionsRequest:
+		err = s.RequestResponse.ListOpenWorkflowExecutionsRequest(r)
+	case *workflowservice.ListClosedWorkflowExecutionsRequest:
+		err = s.RequestResponse.ListClosedWorkflowExecutionsRequest(r)
+	case *workflowservice.ListWorkflowExecutionsRequest:
+		err = s.RequestResponse.ListWorkflowExecutionsRequest(r)
+	case *workflowservice.ListArchivedWorkflowExecutionsRequest:
+		err = s.RequestResponse.ListArchivedWorkflowExecutionsRequest(r)
+	case *workflowservice.ScanWorkflowExecutionsRequest:
+		err = s.RequestResponse.ScanWorkflowExecutionsRequest(r)
+	case *workflowservice.CountWorkflowExecutionsRequest:
+		err = s.RequestResponse.CountWorkflowExecutionsRequest(r)
+	case *workflowservice.GetSearchAttributesRequest:
+		err = s.RequestResponse.GetSearchAttributesRequest(r)
+	case *workflowservice.RespondQueryTaskCompletedRequest:
+		err = s.RequestResponse.RespondQueryTaskCompletedRequest(r)
+	case *workflowservice.ResetStickyTaskQueueRequest:
+		err = s.RequestResponse.ResetStickyTaskQueueRequest(r)
+	case *workflowservice.QueryWorkflowRequest:
+		err = s.RequestResponse.QueryWorkflowRequest(r)
+	case *workflowservice.DescribeWorkflowExecutionRequest:
+		err = s.RequestResponse.DescribeWorkflowExecutionRequest(r)
+	case *workflowservice.DescribeTaskQueueRequest:
+		err = s.RequestResponse.DescribeTaskQueueRequest(r)
+	case *workflowservice.GetClusterInfoRequest:
+		err = s.RequestResponse.GetClusterInfoRequest(r)
+	case *workflowservice.ListTaskQueuePartitionsRequest:
+		err = s.RequestResponse.ListTaskQueuePartitionsRequest(r)
+	}
+
+	return err
+}
+
+func (s *serviceInterceptor) processResponse(response interface{}) error {
+	var err error
+
+	switch r := response.(type) {
+	case *workflowservice.RegisterNamespaceResponse:
+		err = s.RequestResponse.RegisterNamespaceResponse(r)
+	case *workflowservice.ListNamespacesResponse:
+		err = s.RequestResponse.ListNamespacesResponse(r)
+	case *workflowservice.DescribeNamespaceResponse:
+		err = s.RequestResponse.DescribeNamespaceResponse(r)
+	case *workflowservice.UpdateNamespaceResponse:
+		err = s.RequestResponse.UpdateNamespaceResponse(r)
+	case *workflowservice.DeprecateNamespaceResponse:
+		err = s.RequestResponse.DeprecateNamespaceResponse(r)
+	case *workflowservice.StartWorkflowExecutionResponse:
+		err = s.RequestResponse.StartWorkflowExecutionResponse(r)
+	case *workflowservice.GetWorkflowExecutionHistoryResponse:
+		err = s.RequestResponse.GetWorkflowExecutionHistoryResponse(r)
+		if err != nil {
+			return err
+		}
+
+		err = s.processEvents(r.History.Events)
+	case *workflowservice.PollWorkflowTaskQueueResponse:
+		if r.WorkflowType != nil {
+			err = s.RequestResponse.PollWorkflowTaskQueueResponse(r)
+			if err != nil {
+				return err
+			}
+			err = s.processEvents(r.History.Events)
+		}
+	case *workflowservice.RespondWorkflowTaskCompletedResponse:
+		err = s.RequestResponse.RespondWorkflowTaskCompletedResponse(r)
+	case *workflowservice.RespondWorkflowTaskFailedResponse:
+		err = s.RequestResponse.RespondWorkflowTaskFailedResponse(r)
+	case *workflowservice.PollActivityTaskQueueResponse:
+		if r.ActivityType != nil {
+			err = s.RequestResponse.PollActivityTaskQueueResponse(r)
+		}
+	case *workflowservice.RecordActivityTaskHeartbeatResponse:
+		err = s.RequestResponse.RecordActivityTaskHeartbeatResponse(r)
+	case *workflowservice.RecordActivityTaskHeartbeatByIdResponse:
+		err = s.RequestResponse.RecordActivityTaskHeartbeatByIdResponse(r)
+	case *workflowservice.RespondActivityTaskCompletedResponse:
+		err = s.RequestResponse.RespondActivityTaskCompletedResponse(r)
+	case *workflowservice.RespondActivityTaskCompletedByIdResponse:
+		err = s.RequestResponse.RespondActivityTaskCompletedByIdResponse(r)
+	case *workflowservice.RespondActivityTaskFailedResponse:
+		err = s.RequestResponse.RespondActivityTaskFailedResponse(r)
+	case *workflowservice.RespondActivityTaskFailedByIdResponse:
+		err = s.RequestResponse.RespondActivityTaskFailedByIdResponse(r)
+	case *workflowservice.RespondActivityTaskCanceledResponse:
+		err = s.RequestResponse.RespondActivityTaskCanceledResponse(r)
+	case *workflowservice.RespondActivityTaskCanceledByIdResponse:
+		err = s.RequestResponse.RespondActivityTaskCanceledByIdResponse(r)
+	case *workflowservice.RequestCancelWorkflowExecutionResponse:
+		err = s.RequestResponse.RequestCancelWorkflowExecutionResponse(r)
+	case *workflowservice.SignalWorkflowExecutionResponse:
+		err = s.RequestResponse.SignalWorkflowExecutionResponse(r)
+	case *workflowservice.SignalWithStartWorkflowExecutionResponse:
+		err = s.RequestResponse.SignalWithStartWorkflowExecutionResponse(r)
+	case *workflowservice.ResetWorkflowExecutionResponse:
+		err = s.RequestResponse.ResetWorkflowExecutionResponse(r)
+	case *workflowservice.TerminateWorkflowExecutionResponse:
+		err = s.RequestResponse.TerminateWorkflowExecutionResponse(r)
+	case *workflowservice.ListOpenWorkflowExecutionsResponse:
+		err = s.RequestResponse.ListOpenWorkflowExecutionsResponse(r)
+	case *workflowservice.ListClosedWorkflowExecutionsResponse:
+		err = s.RequestResponse.ListClosedWorkflowExecutionsResponse(r)
+	case *workflowservice.ListWorkflowExecutionsResponse:
+		err = s.RequestResponse.ListWorkflowExecutionsResponse(r)
+	case *workflowservice.ListArchivedWorkflowExecutionsResponse:
+		err = s.RequestResponse.ListArchivedWorkflowExecutionsResponse(r)
+	case *workflowservice.ScanWorkflowExecutionsResponse:
+		err = s.RequestResponse.ScanWorkflowExecutionsResponse(r)
+	case *workflowservice.CountWorkflowExecutionsResponse:
+		err = s.RequestResponse.CountWorkflowExecutionsResponse(r)
+	case *workflowservice.GetSearchAttributesResponse:
+		err = s.RequestResponse.GetSearchAttributesResponse(r)
+	case *workflowservice.RespondQueryTaskCompletedResponse:
+		err = s.RequestResponse.RespondQueryTaskCompletedResponse(r)
+	case *workflowservice.ResetStickyTaskQueueResponse:
+		err = s.RequestResponse.ResetStickyTaskQueueResponse(r)
+	case *workflowservice.QueryWorkflowResponse:
+		err = s.RequestResponse.QueryWorkflowResponse(r)
+	case *workflowservice.DescribeWorkflowExecutionResponse:
+		err = s.RequestResponse.DescribeWorkflowExecutionResponse(r)
+	case *workflowservice.DescribeTaskQueueResponse:
+		err = s.RequestResponse.DescribeTaskQueueResponse(r)
+	case *workflowservice.GetClusterInfoResponse:
+		err = s.RequestResponse.GetClusterInfoResponse(r)
+	case *workflowservice.ListTaskQueuePartitionsResponse:
+		err = s.RequestResponse.ListTaskQueuePartitionsResponse(r)
+	}
+
+	return err
+}
+
+func (s *serviceInterceptor) processCommands(commands []*command.Command) error {
 	var err error
 
 	for _, c := range commands {
 		switch c.CommandType {
 		case enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK:
-			err = commandInterceptor.ScheduleActivityTask(c.GetScheduleActivityTaskCommandAttributes())
+			err = s.Command.ScheduleActivityTask(c.GetScheduleActivityTaskCommandAttributes())
 		case enumspb.COMMAND_TYPE_REQUEST_CANCEL_ACTIVITY_TASK:
-			err = commandInterceptor.RequestCancelActivityTask(c.GetRequestCancelActivityTaskCommandAttributes())
+			err = s.Command.RequestCancelActivityTask(c.GetRequestCancelActivityTaskCommandAttributes())
 		case enumspb.COMMAND_TYPE_START_TIMER:
-			err = commandInterceptor.StartTimer(c.GetStartTimerCommandAttributes())
+			err = s.Command.StartTimer(c.GetStartTimerCommandAttributes())
 		case enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION:
-			err = commandInterceptor.CompleteWorkflowExecution(c.GetCompleteWorkflowExecutionCommandAttributes())
+			err = s.Command.CompleteWorkflowExecution(c.GetCompleteWorkflowExecutionCommandAttributes())
 		case enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION:
-			err = commandInterceptor.FailWorkflowExecution(c.GetFailWorkflowExecutionCommandAttributes())
+			err = s.Command.FailWorkflowExecution(c.GetFailWorkflowExecutionCommandAttributes())
 		case enumspb.COMMAND_TYPE_CANCEL_TIMER:
-			err = commandInterceptor.CancelTimer(c.GetCancelTimerCommandAttributes())
+			err = s.Command.CancelTimer(c.GetCancelTimerCommandAttributes())
 		case enumspb.COMMAND_TYPE_CANCEL_WORKFLOW_EXECUTION:
-			err = commandInterceptor.CancelWorkflowExecution(c.GetCancelWorkflowExecutionCommandAttributes())
+			err = s.Command.CancelWorkflowExecution(c.GetCancelWorkflowExecutionCommandAttributes())
 		case enumspb.COMMAND_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION:
-			err = commandInterceptor.RequestCancelExternalWorkflowExecution(c.GetRequestCancelExternalWorkflowExecutionCommandAttributes())
+			err = s.Command.RequestCancelExternalWorkflowExecution(c.GetRequestCancelExternalWorkflowExecutionCommandAttributes())
 		case enumspb.COMMAND_TYPE_RECORD_MARKER:
-			err = commandInterceptor.RecordMarker(c.GetRecordMarkerCommandAttributes())
+			err = s.Command.RecordMarker(c.GetRecordMarkerCommandAttributes())
 		case enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION:
-			err = commandInterceptor.ContinueAsNewWorkflowExecution(c.GetContinueAsNewWorkflowExecutionCommandAttributes())
+			err = s.Command.ContinueAsNewWorkflowExecution(c.GetContinueAsNewWorkflowExecutionCommandAttributes())
 		case enumspb.COMMAND_TYPE_START_CHILD_WORKFLOW_EXECUTION:
-			err = commandInterceptor.StartChildWorkflowExecution(c.GetStartChildWorkflowExecutionCommandAttributes())
+			err = s.Command.StartChildWorkflowExecution(c.GetStartChildWorkflowExecutionCommandAttributes())
 		case enumspb.COMMAND_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION:
-			err = commandInterceptor.SignalExternalWorkflowExecution(c.GetSignalExternalWorkflowExecutionCommandAttributes())
+			err = s.Command.SignalExternalWorkflowExecution(c.GetSignalExternalWorkflowExecutionCommandAttributes())
 		case enumspb.COMMAND_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES:
-			err = commandInterceptor.UpsertWorkflowSearchAttributes(c.GetUpsertWorkflowSearchAttributesCommandAttributes())
+			err = s.Command.UpsertWorkflowSearchAttributes(c.GetUpsertWorkflowSearchAttributesCommandAttributes())
 		}
 		if err != nil {
 			return err
@@ -753,91 +940,95 @@ func processCommands(commandInterceptor commandInterceptor, commands []*command.
 	return nil
 }
 
-func processEvents(eventInterceptor eventInterceptor, events []*historypb.HistoryEvent) error {
+func (s *serviceInterceptor) processEvents(events []*historypb.HistoryEvent) error {
+	if s.Event == nil {
+		return nil
+	}
+
 	var err error
 
 	for _, e := range events {
 		switch e.EventType {
 		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED:
-			err = eventInterceptor.WorkflowExecutionStarted(e.GetWorkflowExecutionStartedEventAttributes())
+			err = s.Event.WorkflowExecutionStarted(e.GetWorkflowExecutionStartedEventAttributes())
 		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED:
-			err = eventInterceptor.WorkflowExecutionCompleted(e.GetWorkflowExecutionCompletedEventAttributes())
+			err = s.Event.WorkflowExecutionCompleted(e.GetWorkflowExecutionCompletedEventAttributes())
 		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED:
-			err = eventInterceptor.WorkflowExecutionFailed(e.GetWorkflowExecutionFailedEventAttributes())
+			err = s.Event.WorkflowExecutionFailed(e.GetWorkflowExecutionFailedEventAttributes())
 		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
-			err = eventInterceptor.WorkflowExecutionTimedOut(e.GetWorkflowExecutionTimedOutEventAttributes())
+			err = s.Event.WorkflowExecutionTimedOut(e.GetWorkflowExecutionTimedOutEventAttributes())
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED:
-			err = eventInterceptor.WorkflowTaskScheduled(e.GetWorkflowTaskScheduledEventAttributes())
+			err = s.Event.WorkflowTaskScheduled(e.GetWorkflowTaskScheduledEventAttributes())
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
-			err = eventInterceptor.WorkflowTaskStarted(e.GetWorkflowTaskStartedEventAttributes())
+			err = s.Event.WorkflowTaskStarted(e.GetWorkflowTaskStartedEventAttributes())
 		case enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED:
-			err = eventInterceptor.ActivityTaskScheduled(e.GetActivityTaskScheduledEventAttributes())
+			err = s.Event.ActivityTaskScheduled(e.GetActivityTaskScheduledEventAttributes())
 		case enumspb.EVENT_TYPE_TIMER_STARTED:
-			err = eventInterceptor.TimerStarted(e.GetTimerStartedEventAttributes())
+			err = s.Event.TimerStarted(e.GetTimerStartedEventAttributes())
 		case enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES:
-			err = eventInterceptor.UpsertWorkflowSearchAttributes(e.GetUpsertWorkflowSearchAttributesEventAttributes())
+			err = s.Event.UpsertWorkflowSearchAttributes(e.GetUpsertWorkflowSearchAttributesEventAttributes())
 		case enumspb.EVENT_TYPE_MARKER_RECORDED:
-			err = eventInterceptor.MarkerRecorded(e.GetMarkerRecordedEventAttributes())
+			err = s.Event.MarkerRecorded(e.GetMarkerRecordedEventAttributes())
 		case enumspb.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED:
-			err = eventInterceptor.StartChildWorkflowExecutionInitiated(e.GetStartChildWorkflowExecutionInitiatedEventAttributes())
+			err = s.Event.StartChildWorkflowExecutionInitiated(e.GetStartChildWorkflowExecutionInitiatedEventAttributes())
 		case enumspb.EVENT_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED:
-			err = eventInterceptor.RequestCancelExternalWorkflowExecutionInitiated(e.GetRequestCancelExternalWorkflowExecutionInitiatedEventAttributes())
+			err = s.Event.RequestCancelExternalWorkflowExecutionInitiated(e.GetRequestCancelExternalWorkflowExecutionInitiatedEventAttributes())
 		case enumspb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED:
-			err = eventInterceptor.SignalExternalWorkflowExecutionInitiated(e.GetSignalExternalWorkflowExecutionInitiatedEventAttributes())
+			err = s.Event.SignalExternalWorkflowExecutionInitiated(e.GetSignalExternalWorkflowExecutionInitiatedEventAttributes())
 		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED:
-			err = eventInterceptor.WorkflowExecutionCanceled(e.GetWorkflowExecutionCanceledEventAttributes())
+			err = s.Event.WorkflowExecutionCanceled(e.GetWorkflowExecutionCanceledEventAttributes())
 		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW:
-			err = eventInterceptor.WorkflowExecutionContinuedAsNew(e.GetWorkflowExecutionContinuedAsNewEventAttributes())
+			err = s.Event.WorkflowExecutionContinuedAsNew(e.GetWorkflowExecutionContinuedAsNewEventAttributes())
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED:
-			err = eventInterceptor.WorkflowTaskCompleted(e.GetWorkflowTaskCompletedEventAttributes())
+			err = s.Event.WorkflowTaskCompleted(e.GetWorkflowTaskCompletedEventAttributes())
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT:
-			err = eventInterceptor.WorkflowTaskTimedOut(e.GetWorkflowTaskTimedOutEventAttributes())
+			err = s.Event.WorkflowTaskTimedOut(e.GetWorkflowTaskTimedOutEventAttributes())
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED:
-			err = eventInterceptor.WorkflowTaskFailed(e.GetWorkflowTaskFailedEventAttributes())
+			err = s.Event.WorkflowTaskFailed(e.GetWorkflowTaskFailedEventAttributes())
 		case enumspb.EVENT_TYPE_ACTIVITY_TASK_STARTED:
-			err = eventInterceptor.ActivityTaskStarted(e.GetActivityTaskStartedEventAttributes())
+			err = s.Event.ActivityTaskStarted(e.GetActivityTaskStartedEventAttributes())
 		case enumspb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED:
-			err = eventInterceptor.ActivityTaskCompleted(e.GetActivityTaskCompletedEventAttributes())
+			err = s.Event.ActivityTaskCompleted(e.GetActivityTaskCompletedEventAttributes())
 		case enumspb.EVENT_TYPE_ACTIVITY_TASK_FAILED:
-			err = eventInterceptor.ActivityTaskFailed(e.GetActivityTaskFailedEventAttributes())
+			err = s.Event.ActivityTaskFailed(e.GetActivityTaskFailedEventAttributes())
 		case enumspb.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT:
-			err = eventInterceptor.ActivityTaskTimedOut(e.GetActivityTaskTimedOutEventAttributes())
+			err = s.Event.ActivityTaskTimedOut(e.GetActivityTaskTimedOutEventAttributes())
 		case enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCEL_REQUESTED:
-			err = eventInterceptor.ActivityTaskCancelRequested(e.GetActivityTaskCancelRequestedEventAttributes())
+			err = s.Event.ActivityTaskCancelRequested(e.GetActivityTaskCancelRequestedEventAttributes())
 		case enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCELED:
-			err = eventInterceptor.ActivityTaskCanceled(e.GetActivityTaskCanceledEventAttributes())
+			err = s.Event.ActivityTaskCanceled(e.GetActivityTaskCanceledEventAttributes())
 		case enumspb.EVENT_TYPE_TIMER_FIRED:
-			err = eventInterceptor.TimerFired(e.GetTimerFiredEventAttributes())
+			err = s.Event.TimerFired(e.GetTimerFiredEventAttributes())
 		case enumspb.EVENT_TYPE_TIMER_CANCELED:
-			err = eventInterceptor.TimerCanceled(e.GetTimerCanceledEventAttributes())
+			err = s.Event.TimerCanceled(e.GetTimerCanceledEventAttributes())
 		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCEL_REQUESTED:
-			err = eventInterceptor.WorkflowExecutionCancelRequested(e.GetWorkflowExecutionCancelRequestedEventAttributes())
+			err = s.Event.WorkflowExecutionCancelRequested(e.GetWorkflowExecutionCancelRequestedEventAttributes())
 		case enumspb.EVENT_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION_FAILED:
-			err = eventInterceptor.RequestCancelExternalWorkflowExecutionFailed(e.GetRequestCancelExternalWorkflowExecutionFailedEventAttributes())
+			err = s.Event.RequestCancelExternalWorkflowExecutionFailed(e.GetRequestCancelExternalWorkflowExecutionFailedEventAttributes())
 		case enumspb.EVENT_TYPE_EXTERNAL_WORKFLOW_EXECUTION_CANCEL_REQUESTED:
-			err = eventInterceptor.ExternalWorkflowExecutionCancelRequested(e.GetExternalWorkflowExecutionCancelRequestedEventAttributes())
+			err = s.Event.ExternalWorkflowExecutionCancelRequested(e.GetExternalWorkflowExecutionCancelRequestedEventAttributes())
 		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED:
-			err = eventInterceptor.WorkflowExecutionSignaled(e.GetWorkflowExecutionSignaledEventAttributes())
+			err = s.Event.WorkflowExecutionSignaled(e.GetWorkflowExecutionSignaledEventAttributes())
 		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TERMINATED:
-			err = eventInterceptor.WorkflowExecutionTerminated(e.GetWorkflowExecutionTerminatedEventAttributes())
+			err = s.Event.WorkflowExecutionTerminated(e.GetWorkflowExecutionTerminatedEventAttributes())
 		case enumspb.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_FAILED:
-			err = eventInterceptor.StartChildWorkflowExecutionFailed(e.GetStartChildWorkflowExecutionFailedEventAttributes())
+			err = s.Event.StartChildWorkflowExecutionFailed(e.GetStartChildWorkflowExecutionFailedEventAttributes())
 		case enumspb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_STARTED:
-			err = eventInterceptor.ChildWorkflowExecutionStarted(e.GetChildWorkflowExecutionStartedEventAttributes())
+			err = s.Event.ChildWorkflowExecutionStarted(e.GetChildWorkflowExecutionStartedEventAttributes())
 		case enumspb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_COMPLETED:
-			err = eventInterceptor.ChildWorkflowExecutionCompleted(e.GetChildWorkflowExecutionCompletedEventAttributes())
+			err = s.Event.ChildWorkflowExecutionCompleted(e.GetChildWorkflowExecutionCompletedEventAttributes())
 		case enumspb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_FAILED:
-			err = eventInterceptor.ChildWorkflowExecutionFailed(e.GetChildWorkflowExecutionFailedEventAttributes())
+			err = s.Event.ChildWorkflowExecutionFailed(e.GetChildWorkflowExecutionFailedEventAttributes())
 		case enumspb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_CANCELED:
-			err = eventInterceptor.ChildWorkflowExecutionCanceled(e.GetChildWorkflowExecutionCanceledEventAttributes())
+			err = s.Event.ChildWorkflowExecutionCanceled(e.GetChildWorkflowExecutionCanceledEventAttributes())
 		case enumspb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_TIMED_OUT:
-			err = eventInterceptor.ChildWorkflowExecutionTimedOut(e.GetChildWorkflowExecutionTimedOutEventAttributes())
+			err = s.Event.ChildWorkflowExecutionTimedOut(e.GetChildWorkflowExecutionTimedOutEventAttributes())
 		case enumspb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_TERMINATED:
-			err = eventInterceptor.ChildWorkflowExecutionTerminated(e.GetChildWorkflowExecutionTerminatedEventAttributes())
+			err = s.Event.ChildWorkflowExecutionTerminated(e.GetChildWorkflowExecutionTerminatedEventAttributes())
 		case enumspb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_FAILED:
-			err = eventInterceptor.SignalExternalWorkflowExecutionFailed(e.GetSignalExternalWorkflowExecutionFailedEventAttributes())
+			err = s.Event.SignalExternalWorkflowExecutionFailed(e.GetSignalExternalWorkflowExecutionFailedEventAttributes())
 		case enumspb.EVENT_TYPE_EXTERNAL_WORKFLOW_EXECUTION_SIGNALED:
-			err = eventInterceptor.ExternalWorkflowExecutionSignaled(e.GetExternalWorkflowExecutionSignaledEventAttributes())
+			err = s.Event.ExternalWorkflowExecutionSignaled(e.GetExternalWorkflowExecutionSignaledEventAttributes())
 		}
 		if err != nil {
 			return err
@@ -845,212 +1036,6 @@ func processEvents(eventInterceptor eventInterceptor, events []*historypb.Histor
 	}
 
 	return nil
-}
-
-func newServiceInterceptor(serviceInterceptor serviceInterceptor) grpc.UnaryClientInterceptor {
-	requestResponseIntr := serviceInterceptor.RequestResponse
-	if requestResponseIntr == nil {
-		requestResponseIntr = &baseRequestResponseInterceptor{}
-	}
-	commandIntr := serviceInterceptor.Command
-	if commandIntr == nil {
-		commandIntr = &baseCommandInterceptor{}
-	}
-	eventIntr := serviceInterceptor.Event
-	if eventIntr == nil {
-		eventIntr = &baseEventInterceptor{}
-	}
-
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		var err error
-
-		switch r := req.(type) {
-		case *workflowservice.RegisterNamespaceRequest:
-			err = requestResponseIntr.RegisterNamespaceRequest(r)
-		case *workflowservice.ListNamespacesRequest:
-			err = requestResponseIntr.ListNamespacesRequest(r)
-		case *workflowservice.DescribeNamespaceRequest:
-			err = requestResponseIntr.DescribeNamespaceRequest(r)
-		case *workflowservice.UpdateNamespaceRequest:
-			err = requestResponseIntr.UpdateNamespaceRequest(r)
-		case *workflowservice.DeprecateNamespaceRequest:
-			err = requestResponseIntr.DeprecateNamespaceRequest(r)
-		case *workflowservice.StartWorkflowExecutionRequest:
-			err = requestResponseIntr.StartWorkflowExecutionRequest(r)
-		case *workflowservice.GetWorkflowExecutionHistoryRequest:
-			err = requestResponseIntr.GetWorkflowExecutionHistoryRequest(r)
-		case *workflowservice.PollWorkflowTaskQueueRequest:
-			err = requestResponseIntr.PollWorkflowTaskQueueRequest(r)
-		case *workflowservice.RespondWorkflowTaskCompletedRequest:
-			err = requestResponseIntr.RespondWorkflowTaskCompletedRequest(r)
-			if err != nil {
-				return err
-			}
-			err = processCommands(commandIntr, r.Commands)
-		case *workflowservice.RespondWorkflowTaskFailedRequest:
-			err = requestResponseIntr.RespondWorkflowTaskFailedRequest(r)
-		case *workflowservice.PollActivityTaskQueueRequest:
-			err = requestResponseIntr.PollActivityTaskQueueRequest(r)
-		case *workflowservice.RecordActivityTaskHeartbeatRequest:
-			err = requestResponseIntr.RecordActivityTaskHeartbeatRequest(r)
-		case *workflowservice.RecordActivityTaskHeartbeatByIdRequest:
-			err = requestResponseIntr.RecordActivityTaskHeartbeatByIdRequest(r)
-		case *workflowservice.RespondActivityTaskCompletedRequest:
-			err = requestResponseIntr.RespondActivityTaskCompletedRequest(r)
-		case *workflowservice.RespondActivityTaskCompletedByIdRequest:
-			err = requestResponseIntr.RespondActivityTaskCompletedByIdRequest(r)
-		case *workflowservice.RespondActivityTaskFailedRequest:
-			err = requestResponseIntr.RespondActivityTaskFailedRequest(r)
-		case *workflowservice.RespondActivityTaskFailedByIdRequest:
-			err = requestResponseIntr.RespondActivityTaskFailedByIdRequest(r)
-		case *workflowservice.RespondActivityTaskCanceledRequest:
-			err = requestResponseIntr.RespondActivityTaskCanceledRequest(r)
-		case *workflowservice.RespondActivityTaskCanceledByIdRequest:
-			err = requestResponseIntr.RespondActivityTaskCanceledByIdRequest(r)
-		case *workflowservice.RequestCancelWorkflowExecutionRequest:
-			err = requestResponseIntr.RequestCancelWorkflowExecutionRequest(r)
-		case *workflowservice.SignalWorkflowExecutionRequest:
-			err = requestResponseIntr.SignalWorkflowExecutionRequest(r)
-		case *workflowservice.SignalWithStartWorkflowExecutionRequest:
-			err = requestResponseIntr.SignalWithStartWorkflowExecutionRequest(r)
-		case *workflowservice.ResetWorkflowExecutionRequest:
-			err = requestResponseIntr.ResetWorkflowExecutionRequest(r)
-		case *workflowservice.TerminateWorkflowExecutionRequest:
-			err = requestResponseIntr.TerminateWorkflowExecutionRequest(r)
-		case *workflowservice.ListOpenWorkflowExecutionsRequest:
-			err = requestResponseIntr.ListOpenWorkflowExecutionsRequest(r)
-		case *workflowservice.ListClosedWorkflowExecutionsRequest:
-			err = requestResponseIntr.ListClosedWorkflowExecutionsRequest(r)
-		case *workflowservice.ListWorkflowExecutionsRequest:
-			err = requestResponseIntr.ListWorkflowExecutionsRequest(r)
-		case *workflowservice.ListArchivedWorkflowExecutionsRequest:
-			err = requestResponseIntr.ListArchivedWorkflowExecutionsRequest(r)
-		case *workflowservice.ScanWorkflowExecutionsRequest:
-			err = requestResponseIntr.ScanWorkflowExecutionsRequest(r)
-		case *workflowservice.CountWorkflowExecutionsRequest:
-			err = requestResponseIntr.CountWorkflowExecutionsRequest(r)
-		case *workflowservice.GetSearchAttributesRequest:
-			err = requestResponseIntr.GetSearchAttributesRequest(r)
-		case *workflowservice.RespondQueryTaskCompletedRequest:
-			err = requestResponseIntr.RespondQueryTaskCompletedRequest(r)
-		case *workflowservice.ResetStickyTaskQueueRequest:
-			err = requestResponseIntr.ResetStickyTaskQueueRequest(r)
-		case *workflowservice.QueryWorkflowRequest:
-			err = requestResponseIntr.QueryWorkflowRequest(r)
-		case *workflowservice.DescribeWorkflowExecutionRequest:
-			err = requestResponseIntr.DescribeWorkflowExecutionRequest(r)
-		case *workflowservice.DescribeTaskQueueRequest:
-			err = requestResponseIntr.DescribeTaskQueueRequest(r)
-		case *workflowservice.GetClusterInfoRequest:
-			err = requestResponseIntr.GetClusterInfoRequest(r)
-		case *workflowservice.ListTaskQueuePartitionsRequest:
-			err = requestResponseIntr.ListTaskQueuePartitionsRequest(r)
-		}
-
-		if err != nil {
-			return err
-		}
-
-		err = invoker(ctx, method, req, reply, cc, opts...)
-
-		if err != nil {
-			return err
-		}
-
-		switch r := reply.(type) {
-		case *workflowservice.RegisterNamespaceResponse:
-			err = requestResponseIntr.RegisterNamespaceResponse(r)
-		case *workflowservice.ListNamespacesResponse:
-			err = requestResponseIntr.ListNamespacesResponse(r)
-		case *workflowservice.DescribeNamespaceResponse:
-			err = requestResponseIntr.DescribeNamespaceResponse(r)
-		case *workflowservice.UpdateNamespaceResponse:
-			err = requestResponseIntr.UpdateNamespaceResponse(r)
-		case *workflowservice.DeprecateNamespaceResponse:
-			err = requestResponseIntr.DeprecateNamespaceResponse(r)
-		case *workflowservice.StartWorkflowExecutionResponse:
-			err = requestResponseIntr.StartWorkflowExecutionResponse(r)
-		case *workflowservice.GetWorkflowExecutionHistoryResponse:
-			err = requestResponseIntr.GetWorkflowExecutionHistoryResponse(r)
-			if err != nil {
-				return err
-			}
-
-			err = processEvents(eventIntr, r.History.Events)
-		case *workflowservice.PollWorkflowTaskQueueResponse:
-			if r.WorkflowType != nil {
-				err = requestResponseIntr.PollWorkflowTaskQueueResponse(r)
-				if err != nil {
-					return err
-				}
-				err = processEvents(eventIntr, r.History.Events)
-			}
-		case *workflowservice.RespondWorkflowTaskCompletedResponse:
-			err = requestResponseIntr.RespondWorkflowTaskCompletedResponse(r)
-		case *workflowservice.RespondWorkflowTaskFailedResponse:
-			err = requestResponseIntr.RespondWorkflowTaskFailedResponse(r)
-		case *workflowservice.PollActivityTaskQueueResponse:
-			if r.ActivityType != nil {
-				err = requestResponseIntr.PollActivityTaskQueueResponse(r)
-			}
-		case *workflowservice.RecordActivityTaskHeartbeatResponse:
-			err = requestResponseIntr.RecordActivityTaskHeartbeatResponse(r)
-		case *workflowservice.RecordActivityTaskHeartbeatByIdResponse:
-			err = requestResponseIntr.RecordActivityTaskHeartbeatByIdResponse(r)
-		case *workflowservice.RespondActivityTaskCompletedResponse:
-			err = requestResponseIntr.RespondActivityTaskCompletedResponse(r)
-		case *workflowservice.RespondActivityTaskCompletedByIdResponse:
-			err = requestResponseIntr.RespondActivityTaskCompletedByIdResponse(r)
-		case *workflowservice.RespondActivityTaskFailedResponse:
-			err = requestResponseIntr.RespondActivityTaskFailedResponse(r)
-		case *workflowservice.RespondActivityTaskFailedByIdResponse:
-			err = requestResponseIntr.RespondActivityTaskFailedByIdResponse(r)
-		case *workflowservice.RespondActivityTaskCanceledResponse:
-			err = requestResponseIntr.RespondActivityTaskCanceledResponse(r)
-		case *workflowservice.RespondActivityTaskCanceledByIdResponse:
-			err = requestResponseIntr.RespondActivityTaskCanceledByIdResponse(r)
-		case *workflowservice.RequestCancelWorkflowExecutionResponse:
-			err = requestResponseIntr.RequestCancelWorkflowExecutionResponse(r)
-		case *workflowservice.SignalWorkflowExecutionResponse:
-			err = requestResponseIntr.SignalWorkflowExecutionResponse(r)
-		case *workflowservice.SignalWithStartWorkflowExecutionResponse:
-			err = requestResponseIntr.SignalWithStartWorkflowExecutionResponse(r)
-		case *workflowservice.ResetWorkflowExecutionResponse:
-			err = requestResponseIntr.ResetWorkflowExecutionResponse(r)
-		case *workflowservice.TerminateWorkflowExecutionResponse:
-			err = requestResponseIntr.TerminateWorkflowExecutionResponse(r)
-		case *workflowservice.ListOpenWorkflowExecutionsResponse:
-			err = requestResponseIntr.ListOpenWorkflowExecutionsResponse(r)
-		case *workflowservice.ListClosedWorkflowExecutionsResponse:
-			err = requestResponseIntr.ListClosedWorkflowExecutionsResponse(r)
-		case *workflowservice.ListWorkflowExecutionsResponse:
-			err = requestResponseIntr.ListWorkflowExecutionsResponse(r)
-		case *workflowservice.ListArchivedWorkflowExecutionsResponse:
-			err = requestResponseIntr.ListArchivedWorkflowExecutionsResponse(r)
-		case *workflowservice.ScanWorkflowExecutionsResponse:
-			err = requestResponseIntr.ScanWorkflowExecutionsResponse(r)
-		case *workflowservice.CountWorkflowExecutionsResponse:
-			err = requestResponseIntr.CountWorkflowExecutionsResponse(r)
-		case *workflowservice.GetSearchAttributesResponse:
-			err = requestResponseIntr.GetSearchAttributesResponse(r)
-		case *workflowservice.RespondQueryTaskCompletedResponse:
-			err = requestResponseIntr.RespondQueryTaskCompletedResponse(r)
-		case *workflowservice.ResetStickyTaskQueueResponse:
-			err = requestResponseIntr.ResetStickyTaskQueueResponse(r)
-		case *workflowservice.QueryWorkflowResponse:
-			err = requestResponseIntr.QueryWorkflowResponse(r)
-		case *workflowservice.DescribeWorkflowExecutionResponse:
-			err = requestResponseIntr.DescribeWorkflowExecutionResponse(r)
-		case *workflowservice.DescribeTaskQueueResponse:
-			err = requestResponseIntr.DescribeTaskQueueResponse(r)
-		case *workflowservice.GetClusterInfoResponse:
-			err = requestResponseIntr.GetClusterInfoResponse(r)
-		case *workflowservice.ListTaskQueuePartitionsResponse:
-			err = requestResponseIntr.ListTaskQueuePartitionsResponse(r)
-		}
-
-		return err
-	}
 }
 
 type (
@@ -1070,18 +1055,56 @@ type (
 	}
 )
 
-// NewPayloadEncoderInterceptor returns a GRPC Client Interceptor that will mimic the encoding
+// NewPayloadEncoderGRPCServerInterceptor returns a GRPC Server Interceptor that will mimic the encoding
 // that the SDK system would perform when configured with a matching EncodingDataConverter.
 // Note: This approach does not support use cases that rely on the ContextAware DataConverter interface as
 // workflow context is not available at the GRPC level.
-func NewPayloadEncoderInterceptor(encoders ...converter.PayloadEncoder) grpc.UnaryClientInterceptor {
-	return newServiceInterceptor(
-		serviceInterceptor{
-			RequestResponse: &payloadEncoderRequestResponseInterceptor{encoders: encoders},
-			Command:         &payloadEncoderCommandInterceptor{encoders: encoders},
-			Event:           &payloadEncoderEventInterceptor{encoders: encoders},
-		},
-	)
+func NewPayloadEncoderGRPCServerInterceptor(encoders ...converter.PayloadEncoder) grpc.UnaryServerInterceptor {
+	s := serviceInterceptor{
+		RequestResponse: &payloadEncoderRequestResponseInterceptor{encoders: encoders},
+		Command:         &payloadEncoderCommandInterceptor{encoders: encoders},
+		Event:           &payloadEncoderEventInterceptor{encoders: encoders},
+	}
+
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		err := s.processRequest(req)
+		if err != nil {
+			return nil, err
+		}
+
+		resp, err := handler(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+
+		return s.processResponse(resp), err
+	}
+}
+
+// NewPayloadEncoderGRPCClientInterceptor returns a GRPC Client Interceptor that will mimic the encoding
+// that the SDK system would perform when configured with a matching EncodingDataConverter.
+// Note: This approach does not support use cases that rely on the ContextAware DataConverter interface as
+// workflow context is not available at the GRPC level.
+func NewPayloadEncoderGRPCClientInterceptor(encoders ...converter.PayloadEncoder) grpc.UnaryClientInterceptor {
+	s := serviceInterceptor{
+		RequestResponse: &payloadEncoderRequestResponseInterceptor{encoders: encoders},
+		Command:         &payloadEncoderCommandInterceptor{encoders: encoders},
+		Event:           &payloadEncoderEventInterceptor{encoders: encoders},
+	}
+
+	return func(ctx context.Context, method string, req, response interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		err := s.processRequest(req)
+		if err != nil {
+			return err
+		}
+
+		err = invoker(ctx, method, req, response, cc, opts...)
+		if err != nil {
+			return err
+		}
+
+		return s.processResponse(response)
+	}
 }
 
 func encodePayloads(payloads *commonpb.Payloads, encoders ...converter.PayloadEncoder) error {
