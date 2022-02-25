@@ -40,7 +40,7 @@ type serviceInterceptor struct {
 }
 
 func (s *serviceInterceptor) encodePayloads(payloads *commonpb.Payloads) error {
-	for _, payload := range payloads.Payloads {
+	for _, payload := range payloads.GetPayloads() {
 		for i := len(s.encoders) - 1; i >= 0; i-- {
 			if err := s.encoders[i].Encode(payload); err != nil {
 				return err
@@ -52,7 +52,7 @@ func (s *serviceInterceptor) encodePayloads(payloads *commonpb.Payloads) error {
 }
 
 func (s *serviceInterceptor) decodePayloads(payloads *commonpb.Payloads) error {
-	for _, payload := range payloads.Payloads {
+	for _, payload := range payloads.GetPayloads() {
 		for _, encoder := range s.encoders {
 			if err := encoder.Decode(payload); err != nil {
 				return err
