@@ -109,7 +109,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	err = os.WriteFile("proxy.go", src, 0666)
+	err = os.WriteFile("service_proxy.go", src, 0666)
 	if err != nil {
 		log.Fatal(err)
 	}
