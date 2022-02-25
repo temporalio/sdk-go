@@ -22,7 +22,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package convertergrpc
+package converter
 
 import (
 	"context"
@@ -32,12 +32,11 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/workflowservice/v1"
-	"go.temporal.io/sdk/converter"
 	"google.golang.org/grpc"
 )
 
 type serviceInterceptor struct {
-	encoders []converter.PayloadEncoder
+	encoders []PayloadEncoder
 }
 
 func (s *serviceInterceptor) processRequest(req interface{}) error {
@@ -151,7 +150,7 @@ func (s *serviceInterceptor) processEvents(events []*historypb.HistoryEvent) err
 // that the SDK system would perform when configured with a matching EncodingDataConverter.
 // Note: This approach does not support use cases that rely on the ContextAware DataConverter interface as
 // workflow context is not available at the GRPC level.
-func NewPayloadEncoderGRPCServerInterceptor(encoders ...converter.PayloadEncoder) grpc.UnaryServerInterceptor {
+func NewPayloadEncoderGRPCServerInterceptor(encoders ...PayloadEncoder) grpc.UnaryServerInterceptor {
 	s := serviceInterceptor{encoders: encoders}
 
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
@@ -173,7 +172,7 @@ func NewPayloadEncoderGRPCServerInterceptor(encoders ...converter.PayloadEncoder
 // that the SDK system would perform when configured with a matching EncodingDataConverter.
 // Note: This approach does not support use cases that rely on the ContextAware DataConverter interface as
 // workflow context is not available at the GRPC level.
-func NewPayloadEncoderGRPCClientInterceptor(encoders ...converter.PayloadEncoder) grpc.UnaryClientInterceptor {
+func NewPayloadEncoderGRPCClientInterceptor(encoders ...PayloadEncoder) grpc.UnaryClientInterceptor {
 	s := serviceInterceptor{encoders: encoders}
 
 	return func(ctx context.Context, method string, req, response interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
@@ -191,7 +190,7 @@ func NewPayloadEncoderGRPCClientInterceptor(encoders ...converter.PayloadEncoder
 	}
 }
 
-func encodePayloads(payloads *commonpb.Payloads, encoders ...converter.PayloadEncoder) error {
+func encodePayloads(payloads *commonpb.Payloads, encoders ...PayloadEncoder) error {
 	for _, payload := range payloads.Payloads {
 		for i := len(encoders) - 1; i >= 0; i-- {
 			if err := encoders[i].Encode(payload); err != nil {
@@ -203,7 +202,7 @@ func encodePayloads(payloads *commonpb.Payloads, encoders ...converter.PayloadEn
 	return nil
 }
 
-func decodePayloads(payloads *commonpb.Payloads, encoders ...converter.PayloadEncoder) error {
+func decodePayloads(payloads *commonpb.Payloads, encoders ...PayloadEncoder) error {
 	for _, payload := range payloads.Payloads {
 		for _, encoder := range encoders {
 			if err := encoder.Decode(payload); err != nil {
