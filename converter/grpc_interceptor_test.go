@@ -33,6 +33,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	commandpb "go.temporal.io/api/command/v1"
+	commonpb "go.temporal.io/api/common/v1"
+	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -42,6 +45,96 @@ var zlibDataConverter = NewEncodingDataConverter(
 	defaultDataConverter,
 	NewZlibEncoder(ZlibEncoderOptions{AlwaysEncode: true}),
 )
+
+func payloadEncoding(payloads *commonpb.Payloads) string {
+	return string(payloads.Payloads[0].Metadata[MetadataEncoding])
+}
+
+func TestServiceInterceptorRequests(t *testing.T) {
+	require := require.New(t)
+
+	s := serviceInterceptor{
+		encoders: []PayloadEncoder{NewZlibEncoder(ZlibEncoderOptions{AlwaysEncode: true})},
+	}
+	unencodedPayloads, err := defaultDataConverter.ToPayloads("test")
+	require.NoError(err)
+
+	startReq := &workflowservice.StartWorkflowExecutionRequest{
+		Input: unencodedPayloads,
+	}
+	err = s.processRequest(startReq)
+	require.NoError(err)
+
+	require.Equal("binary/zlib", payloadEncoding(startReq.Input))
+
+	signalReq := &workflowservice.StartWorkflowExecutionRequest{
+		Input: unencodedPayloads,
+	}
+	err = s.processRequest(signalReq)
+	require.NoError(err)
+
+	require.Equal("binary/zlib", payloadEncoding(signalReq.Input))
+
+	signalWithStartReq := &workflowservice.SignalWithStartWorkflowExecutionRequest{
+		Input:       unencodedPayloads,
+		SignalInput: unencodedPayloads,
+	}
+	err = s.processRequest(signalWithStartReq)
+	require.NoError(err)
+
+	require.Equal("binary/zlib", payloadEncoding(signalWithStartReq.Input))
+	require.Equal("binary/zlib", payloadEncoding(signalWithStartReq.SignalInput))
+
+	respondActivityCompletedReq := &workflowservice.RespondActivityTaskCompletedRequest{
+		Result: unencodedPayloads,
+	}
+	err = s.processRequest(respondActivityCompletedReq)
+	require.NoError(err)
+
+	require.Equal("binary/zlib", payloadEncoding(respondActivityCompletedReq.Result))
+
+	respondActivityCompletedByIdReq := &workflowservice.RespondActivityTaskCompletedByIdRequest{
+		Result: unencodedPayloads,
+	}
+	err = s.processRequest(respondActivityCompletedByIdReq)
+	require.NoError(err)
+
+	require.Equal("binary/zlib", payloadEncoding(respondActivityCompletedByIdReq.Result))
+
+	respondWorkflowTaskCompletedReq := &workflowservice.RespondWorkflowTaskCompletedRequest{
+		Commands: []*commandpb.Command{
+			{
+				CommandType: enums.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION,
+				Attributes: &commandpb.Command_CompleteWorkflowExecutionCommandAttributes{
+					CompleteWorkflowExecutionCommandAttributes: &commandpb.CompleteWorkflowExecutionCommandAttributes{
+						Result: unencodedPayloads,
+					},
+				},
+			},
+		},
+	}
+	err = s.processRequest(respondWorkflowTaskCompletedReq)
+	require.NoError(err)
+
+	result := respondWorkflowTaskCompletedReq.Commands[0].GetCompleteWorkflowExecutionCommandAttributes().Result
+	require.Equal("binary/zlib", payloadEncoding(result))
+
+	recordActivityTaskHeartbeatReq := &workflowservice.RecordActivityTaskHeartbeatRequest{
+		Details: unencodedPayloads,
+	}
+	err = s.processRequest(recordActivityTaskHeartbeatReq)
+	require.NoError(err)
+
+	require.Equal("binary/zlib", payloadEncoding(recordActivityTaskHeartbeatReq.Details))
+
+	recordActivityTaskHeartbeatByIdReq := &workflowservice.RecordActivityTaskHeartbeatByIdRequest{
+		Details: unencodedPayloads,
+	}
+	err = s.processRequest(recordActivityTaskHeartbeatByIdReq)
+	require.NoError(err)
+
+	require.Equal("binary/zlib", payloadEncoding(recordActivityTaskHeartbeatByIdReq.Details))
+}
 
 func TestClientInterceptor(t *testing.T) {
 	require := require.New(t)
