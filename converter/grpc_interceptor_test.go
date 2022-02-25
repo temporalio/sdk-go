@@ -36,6 +36,7 @@ import (
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/history/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -134,6 +135,72 @@ func TestServiceInterceptorRequests(t *testing.T) {
 	require.NoError(err)
 
 	require.Equal("binary/zlib", payloadEncoding(recordActivityTaskHeartbeatByIdReq.Details))
+}
+
+func TestServiceInterceptorResponses(t *testing.T) {
+	require := require.New(t)
+
+	s := serviceInterceptor{
+		encoders: []PayloadEncoder{NewZlibEncoder(ZlibEncoderOptions{AlwaysEncode: true})},
+	}
+	encodedPayloads, err := zlibDataConverter.ToPayloads("test")
+	require.NoError(err)
+
+	historyRes := &workflowservice.GetWorkflowExecutionHistoryResponse{
+		History: &history.History{
+			Events: []*history.HistoryEvent{
+				{
+					EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+					Attributes: &history.HistoryEvent_WorkflowExecutionStartedEventAttributes{
+						WorkflowExecutionStartedEventAttributes: &history.WorkflowExecutionStartedEventAttributes{
+							Input: encodedPayloads,
+						},
+					},
+				},
+			},
+		},
+	}
+	err = s.processResponse(historyRes)
+	require.NoError(err)
+
+	input := historyRes.History.Events[0].GetWorkflowExecutionStartedEventAttributes().Input
+
+	require.Equal("json/plain", payloadEncoding(input))
+
+	pollWorkflowRes := &workflowservice.PollWorkflowTaskQueueResponse{
+		History: &history.History{
+			Events: []*history.HistoryEvent{
+				{
+					EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+					Attributes: &history.HistoryEvent_WorkflowExecutionStartedEventAttributes{
+						WorkflowExecutionStartedEventAttributes: &history.WorkflowExecutionStartedEventAttributes{
+							Input: encodedPayloads,
+						},
+					},
+				},
+			},
+		},
+	}
+	err = s.processResponse(pollWorkflowRes)
+	require.NoError(err)
+
+	input = pollWorkflowRes.History.Events[0].GetWorkflowExecutionStartedEventAttributes().Input
+
+	require.Equal("json/plain", payloadEncoding(input))
+
+	pollActivityRes := &workflowservice.PollActivityTaskQueueResponse{
+		Input:            encodedPayloads,
+		HeartbeatDetails: encodedPayloads,
+	}
+	err = s.processResponse(pollActivityRes)
+	require.NoError(err)
+
+	require.Equal("json/plain", payloadEncoding(pollActivityRes.Input))
+	require.Equal("json/plain", payloadEncoding(pollActivityRes.HeartbeatDetails))
+
+	emptyPollActivityRes := &workflowservice.PollActivityTaskQueueResponse{}
+	err = s.processResponse(emptyPollActivityRes)
+	require.NoError(err)
 }
 
 func TestClientInterceptor(t *testing.T) {
