@@ -39,29 +39,53 @@ type serviceInterceptor struct {
 	encoders []PayloadEncoder
 }
 
+func (s *serviceInterceptor) encodePayloads(payloads *commonpb.Payloads) error {
+	for _, payload := range payloads.Payloads {
+		for i := len(s.encoders) - 1; i >= 0; i-- {
+			if err := s.encoders[i].Encode(payload); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (s *serviceInterceptor) decodePayloads(payloads *commonpb.Payloads) error {
+	for _, payload := range payloads.Payloads {
+		for _, encoder := range s.encoders {
+			if err := encoder.Decode(payload); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 func (s *serviceInterceptor) processRequest(req interface{}) error {
 	switch r := req.(type) {
 	case *workflowservice.StartWorkflowExecutionRequest:
-		return encodePayloads(r.Input, s.encoders...)
+		return s.encodePayloads(r.Input)
 	case *workflowservice.SignalWorkflowExecutionRequest:
-		return encodePayloads(r.Input, s.encoders...)
+		return s.encodePayloads(r.Input)
 	case *workflowservice.SignalWithStartWorkflowExecutionRequest:
-		err := encodePayloads(r.Input, s.encoders...)
+		err := s.encodePayloads(r.Input)
 		if err != nil {
 			return err
 		}
 
-		return encodePayloads(r.SignalInput, s.encoders...)
+		return s.encodePayloads(r.SignalInput)
 	case *workflowservice.RespondActivityTaskCompletedRequest:
-		return encodePayloads(r.Result, s.encoders...)
+		return s.encodePayloads(r.Result)
 	case *workflowservice.RespondActivityTaskCompletedByIdRequest:
-		return encodePayloads(r.Result, s.encoders...)
+		return s.encodePayloads(r.Result)
 	case *workflowservice.RespondWorkflowTaskCompletedRequest:
 		return s.processCommands(r.Commands)
 	case *workflowservice.RecordActivityTaskHeartbeatRequest:
-		return encodePayloads(r.Details, s.encoders...)
+		return s.encodePayloads(r.Details)
 	case *workflowservice.RecordActivityTaskHeartbeatByIdRequest:
-		return encodePayloads(r.Details, s.encoders...)
+		return s.encodePayloads(r.Details)
 	}
 
 	return nil
@@ -77,14 +101,14 @@ func (s *serviceInterceptor) processResponse(response interface{}) error {
 		}
 	case *workflowservice.PollActivityTaskQueueResponse:
 		if r.Input != nil {
-			err := decodePayloads(r.Input, s.encoders...)
+			err := s.decodePayloads(r.Input)
 			if err != nil {
 				return err
 			}
 		}
 
 		if r.HeartbeatDetails != nil {
-			return decodePayloads(r.HeartbeatDetails, s.encoders...)
+			return s.decodePayloads(r.HeartbeatDetails)
 		}
 	}
 
@@ -96,15 +120,15 @@ func (s *serviceInterceptor) processCommands(commands []*command.Command) error 
 	for _, c := range commands {
 		switch c.CommandType {
 		case enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK:
-			err = encodePayloads(c.GetScheduleActivityTaskCommandAttributes().Input, s.encoders...)
+			err = s.encodePayloads(c.GetScheduleActivityTaskCommandAttributes().Input)
 		case enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION:
-			err = encodePayloads(c.GetCompleteWorkflowExecutionCommandAttributes().Result, s.encoders...)
+			err = s.encodePayloads(c.GetCompleteWorkflowExecutionCommandAttributes().Result)
 		case enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION:
-			err = encodePayloads(c.GetContinueAsNewWorkflowExecutionCommandAttributes().Input, s.encoders...)
+			err = s.encodePayloads(c.GetContinueAsNewWorkflowExecutionCommandAttributes().Input)
 		case enumspb.COMMAND_TYPE_START_CHILD_WORKFLOW_EXECUTION:
-			err = encodePayloads(c.GetStartChildWorkflowExecutionCommandAttributes().Input, s.encoders...)
+			err = s.encodePayloads(c.GetStartChildWorkflowExecutionCommandAttributes().Input)
 		case enumspb.COMMAND_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION:
-			err = encodePayloads(c.GetSignalExternalWorkflowExecutionCommandAttributes().Input, s.encoders...)
+			err = s.encodePayloads(c.GetSignalExternalWorkflowExecutionCommandAttributes().Input)
 		}
 		if err != nil {
 			return err
@@ -120,23 +144,23 @@ func (s *serviceInterceptor) processEvents(events []*historypb.HistoryEvent) err
 	for _, e := range events {
 		switch e.EventType {
 		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED:
-			err = decodePayloads(e.GetWorkflowExecutionStartedEventAttributes().Input, s.encoders...)
+			err = s.decodePayloads(e.GetWorkflowExecutionStartedEventAttributes().Input)
 		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED:
-			err = decodePayloads(e.GetWorkflowExecutionCompletedEventAttributes().Result, s.encoders...)
+			err = s.decodePayloads(e.GetWorkflowExecutionCompletedEventAttributes().Result)
 		case enumspb.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED:
-			err = decodePayloads(e.GetStartChildWorkflowExecutionInitiatedEventAttributes().Input, s.encoders...)
+			err = s.decodePayloads(e.GetStartChildWorkflowExecutionInitiatedEventAttributes().Input)
 		case enumspb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED:
-			err = decodePayloads(e.GetSignalExternalWorkflowExecutionInitiatedEventAttributes().Input, s.encoders...)
+			err = s.decodePayloads(e.GetSignalExternalWorkflowExecutionInitiatedEventAttributes().Input)
 		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW:
-			err = decodePayloads(e.GetWorkflowExecutionContinuedAsNewEventAttributes().Input, s.encoders...)
+			err = s.decodePayloads(e.GetWorkflowExecutionContinuedAsNewEventAttributes().Input)
 		case enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED:
-			err = decodePayloads(e.GetActivityTaskScheduledEventAttributes().Input, s.encoders...)
+			err = s.decodePayloads(e.GetActivityTaskScheduledEventAttributes().Input)
 		case enumspb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED:
-			err = decodePayloads(e.GetActivityTaskCompletedEventAttributes().Result, s.encoders...)
+			err = s.decodePayloads(e.GetActivityTaskCompletedEventAttributes().Result)
 		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED:
-			err = decodePayloads(e.GetWorkflowExecutionSignaledEventAttributes().Input, s.encoders...)
+			err = s.decodePayloads(e.GetWorkflowExecutionSignaledEventAttributes().Input)
 		case enumspb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_COMPLETED:
-			err = decodePayloads(e.GetChildWorkflowExecutionCompletedEventAttributes().Result, s.encoders...)
+			err = s.decodePayloads(e.GetChildWorkflowExecutionCompletedEventAttributes().Result)
 		}
 		if err != nil {
 			return err
@@ -188,28 +212,4 @@ func NewPayloadEncoderGRPCClientInterceptor(encoders ...PayloadEncoder) grpc.Una
 
 		return s.processResponse(response)
 	}
-}
-
-func encodePayloads(payloads *commonpb.Payloads, encoders ...PayloadEncoder) error {
-	for _, payload := range payloads.Payloads {
-		for i := len(encoders) - 1; i >= 0; i-- {
-			if err := encoders[i].Encode(payload); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-func decodePayloads(payloads *commonpb.Payloads, encoders ...PayloadEncoder) error {
-	for _, payload := range payloads.Payloads {
-		for _, encoder := range encoders {
-			if err := encoder.Decode(payload); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
 }
