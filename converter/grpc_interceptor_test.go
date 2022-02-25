@@ -38,6 +38,11 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+var zlibDataConverter = NewEncodingDataConverter(
+	defaultDataConverter,
+	NewZlibEncoder(ZlibEncoderOptions{AlwaysEncode: true}),
+)
+
 func TestClientInterceptor(t *testing.T) {
 	require := require.New(t)
 
@@ -59,7 +64,7 @@ func TestClientInterceptor(t *testing.T) {
 	require.NoError(err)
 
 	client := workflowservice.NewWorkflowServiceClient(c)
-	input, err := GetDefaultDataConverter().ToPayloads("test")
+	input, err := defaultDataConverter.ToPayloads("test")
 	require.NoError(err)
 
 	_, err = client.StartWorkflowExecution(
@@ -74,26 +79,23 @@ func TestClientInterceptor(t *testing.T) {
 
 	require.Equal("binary/zlib", string(payloads[0].Metadata[MetadataEncoding]))
 
-	_, err = client.SignalWorkflowExecution(
+	response, err := client.PollActivityTaskQueue(
 		context.Background(),
-		&workflowservice.SignalWorkflowExecutionRequest{
-			Input: input,
-		},
+		&workflowservice.PollActivityTaskQueueRequest{},
 	)
 	require.NoError(err)
 
-	payloads = server.signalWorkflowExecutionRequest.Input.Payloads
+	payloads = response.Input.Payloads
 
-	require.Equal("binary/zlib", string(payloads[0].Metadata[MetadataEncoding]))
+	require.Equal("json/plain", string(payloads[0].Metadata[MetadataEncoding]))
 
 }
 
 type testGRPCServer struct {
 	workflowservice.UnimplementedWorkflowServiceServer
 	*grpc.Server
-	addr                           string
-	startWorkflowExecutionRequest  *workflowservice.StartWorkflowExecutionRequest
-	signalWorkflowExecutionRequest *workflowservice.SignalWorkflowExecutionRequest
+	addr                          string
+	startWorkflowExecutionRequest *workflowservice.StartWorkflowExecutionRequest
 }
 
 func startTestGRPCServer() (*testGRPCServer, error) {
@@ -152,10 +154,16 @@ func (t *testGRPCServer) StartWorkflowExecution(
 	return &workflowservice.StartWorkflowExecutionResponse{}, nil
 }
 
-func (t *testGRPCServer) SignalWorkflowExecution(
+func (t *testGRPCServer) PollActivityTaskQueue(
 	ctx context.Context,
-	req *workflowservice.SignalWorkflowExecutionRequest,
-) (*workflowservice.SignalWorkflowExecutionResponse, error) {
-	t.signalWorkflowExecutionRequest = req
-	return &workflowservice.SignalWorkflowExecutionResponse{}, nil
+	req *workflowservice.PollActivityTaskQueueRequest,
+) (*workflowservice.PollActivityTaskQueueResponse, error) {
+	input, err := zlibDataConverter.ToPayloads("test")
+	if err != nil {
+		return nil, err
+	}
+
+	return &workflowservice.PollActivityTaskQueueResponse{
+		Input: input,
+	}, nil
 }
