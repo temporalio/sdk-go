@@ -57,7 +57,7 @@ type workflowServiceProxyServer struct {
 	client workflowservice.WorkflowServiceClient
 }
 
-func NewWorfklowServiceProxyServer(options WorkflowServiceProxyOptions) (workflowservice.WorkflowServiceServer, error) {
+func NewWorkflowServiceProxyServer(options WorkflowServiceProxyOptions) (workflowservice.WorkflowServiceServer, error) {
 	return &workflowServiceProxyServer{
 		client: options.Client,
 	}, nil
