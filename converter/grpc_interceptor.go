@@ -170,12 +170,16 @@ func (s *serviceInterceptor) processEvents(events []*historypb.HistoryEvent) err
 	return nil
 }
 
+type PayloadEncoderGRPCServerInterceptorOptions struct {
+	Encoders []PayloadEncoder
+}
+
 // NewPayloadEncoderGRPCServerInterceptor returns a GRPC Server Interceptor that will mimic the encoding
 // that the SDK system would perform when configured with a matching EncodingDataConverter.
 // Note: This approach does not support use cases that rely on the ContextAware DataConverter interface as
 // workflow context is not available at the GRPC level.
-func NewPayloadEncoderGRPCServerInterceptor(encoders ...PayloadEncoder) grpc.UnaryServerInterceptor {
-	s := serviceInterceptor{encoders: encoders}
+func NewPayloadEncoderGRPCServerInterceptor(options PayloadEncoderGRPCServerInterceptorOptions) (grpc.UnaryServerInterceptor, error) {
+	s := serviceInterceptor{encoders: options.Encoders}
 
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 		err := s.processRequest(req)
@@ -189,15 +193,19 @@ func NewPayloadEncoderGRPCServerInterceptor(encoders ...PayloadEncoder) grpc.Una
 		}
 
 		return s.processResponse(resp), err
-	}
+	}, nil
+}
+
+type PayloadEncoderGRPCClientInterceptorOptions struct {
+	Encoders []PayloadEncoder
 }
 
 // NewPayloadEncoderGRPCClientInterceptor returns a GRPC Client Interceptor that will mimic the encoding
 // that the SDK system would perform when configured with a matching EncodingDataConverter.
 // Note: This approach does not support use cases that rely on the ContextAware DataConverter interface as
 // workflow context is not available at the GRPC level.
-func NewPayloadEncoderGRPCClientInterceptor(encoders ...PayloadEncoder) grpc.UnaryClientInterceptor {
-	s := serviceInterceptor{encoders: encoders}
+func NewPayloadEncoderGRPCClientInterceptor(options PayloadEncoderGRPCClientInterceptorOptions) (grpc.UnaryClientInterceptor, error) {
+	s := serviceInterceptor{encoders: options.Encoders}
 
 	return func(ctx context.Context, method string, req, response interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		err := s.processRequest(req)
@@ -211,5 +219,5 @@ func NewPayloadEncoderGRPCClientInterceptor(encoders ...PayloadEncoder) grpc.Una
 		}
 
 		return s.processResponse(response)
-	}
+	}, nil
 }
