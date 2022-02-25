@@ -23,7 +23,7 @@
 // THE SOFTWARE.
 
 //go:generate mockgen -copyright_file ../LICENSE -package client -source client.go -destination client_mock.go
-//go:generate generate_proxy.go
+//go:generate go run ../internal/cmd/generate_proxy.go
 
 // Package client is used by external programs to communicate with Temporal service.
 // NOTE: DO NOT USE THIS API INSIDE OF ANY WORKFLOW CODE!!!
