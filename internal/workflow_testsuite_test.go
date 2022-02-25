@@ -224,3 +224,15 @@ func TestWorkflowIDInsideTestWorkflow(t *testing.T) {
 	require.NoError(t, env.GetWorkflowResult(&str))
 	require.Equal(t, "id is: my-workflow-id", str)
 }
+
+func TestWorkflowStartTimeInsideTestWorkflow(t *testing.T) {
+	var suite WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(func(ctx Context) (int64, error) {
+		return GetWorkflowInfo(ctx).WorkflowStartTime.Unix(), nil
+	})
+	require.NoError(t, env.GetWorkflowError())
+	var timestamp int64
+	require.NoError(t, env.GetWorkflowResult(&timestamp))
+	require.Equal(t, env.Now().Unix(), timestamp)
+}

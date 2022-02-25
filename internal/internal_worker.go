@@ -1273,6 +1273,13 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 	backgroundActivityContext, backgroundActivityContextCancel := context.WithCancel(ctx)
 
+	// If max-concurrent workflow pollers is 1, the worker will only do
+	// sticky-queue requests and never regular-queue requests. We disallow the
+	// value of 1 here.
+	if options.MaxConcurrentWorkflowTaskPollers == 1 {
+		panic("cannot set MaxConcurrentWorkflowTaskPollers to 1")
+	}
+
 	cache := NewWorkerCache()
 	workerParams := workerExecutionParameters{
 		Namespace:                             client.namespace,

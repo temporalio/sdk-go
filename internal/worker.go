@@ -85,7 +85,9 @@ type (
 
 		// Optional: Sets the maximum number of goroutines that will concurrently poll the
 		// temporal-server to retrieve workflow tasks. Changing this value will affect the
-		// rate at which the worker is able to consume tasks from a task queue.
+		// rate at which the worker is able to consume tasks from a task queue. Due to
+		// internal logic where pollers alternate between stick and non-sticky queues, this
+		// value cannot be 1 and will panic if set to that value.
 		// default: 2
 		MaxConcurrentWorkflowTaskPollers int
 

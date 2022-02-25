@@ -35,6 +35,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -48,6 +49,7 @@ import (
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/contrib/opentelemetry"
+	sdkopentracing "go.temporal.io/sdk/contrib/opentracing"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/test"
 	"go.uber.org/goleak"
@@ -94,6 +96,7 @@ type IntegrationTestSuite struct {
 	interceptorCallRecorder   *interceptortest.CallRecordingInvoker
 	openTelemetryTracer       trace.Tracer
 	openTelemetrySpanRecorder *tracetest.SpanRecorder
+	openTracingTracer         opentracing.Tracer
 }
 
 func TestIntegrationSuite(t *testing.T) {
@@ -146,6 +149,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	}
 
 	var clientInterceptors []interceptor.ClientInterceptor
+	var workerInterceptors []interceptor.WorkerInterceptor
 	// Record calls for interceptor test
 	if strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestInterceptor") {
 		ts.interceptorCallRecorder = &interceptortest.CallRecordingInvoker{}
@@ -162,6 +166,11 @@ func (ts *IntegrationTestSuite) SetupTest() {
 			DisableSignalTracing: strings.HasSuffix(ts.T().Name(), "WithoutSignalsAndQueries"),
 			DisableQueryTracing:  strings.HasSuffix(ts.T().Name(), "WithoutSignalsAndQueries"),
 		})
+		ts.NoError(err)
+		clientInterceptors = append(clientInterceptors, interceptor)
+	} else if strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestOpenTracingNoopTracer") {
+		ts.openTracingTracer = opentracing.NoopTracer{}
+		interceptor, err := sdkopentracing.NewInterceptor(sdkopentracing.TracerOptions{Tracer: ts.openTracingTracer})
 		ts.NoError(err)
 		clientInterceptors = append(clientInterceptors, interceptor)
 	}
@@ -189,7 +198,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.taskQueueName = fmt.Sprintf("tq-%v-%s", ts.seq, ts.T().Name())
 	ts.tracer = newTracingInterceptor()
 	ts.inboundSignalInterceptor = newSignalInterceptor()
-	workerInterceptors := []interceptor.WorkerInterceptor{ts.tracer, ts.inboundSignalInterceptor}
+	workerInterceptors = append(workerInterceptors, ts.tracer, ts.inboundSignalInterceptor)
 	options := worker.Options{
 		Interceptors:        workerInterceptors,
 		WorkflowPanicPolicy: worker.FailWorkflow,
@@ -1645,6 +1654,16 @@ func (ts *IntegrationTestSuite) addOpenTelemetryChildren(
 		// Collect grandchildren
 		ts.addOpenTelemetryChildren(s.SpanContext().SpanID(), child, spans)
 	}
+}
+
+func (ts *IntegrationTestSuite) TestOpenTracingNoopTracer() {
+	// The setup of the test already puts a noop tracer on the client. In past
+	// versions, this would break due to tracer.Extract returning an error every
+	// time.
+	ts.NotNil(ts.openTracingTracer)
+	var ret string
+	ts.NoError(ts.executeWorkflow("test-open-tracing-worker-no-client", ts.workflows.SimplestWorkflow, &ret))
+	ts.Equal("hello", ret)
 }
 
 func (ts *IntegrationTestSuite) TestAdvancedPostCancellation() {
