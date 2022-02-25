@@ -193,7 +193,7 @@ func TestInternalErrorRetry(t *testing.T) {
 	// Confirm it made 3 calls
 	_, isInternalError := err.(*serviceerror.Internal)
 	require.True(t, isInternalError)
-	require.Equal(t, 3, srv.signalWorkflowInvokeCount)
+	require.Equal(t, 3, srv.signalWorkflowInvokeCount())
 
 	// Now make a server that does not retry internal errors
 	srv, err = startTestGRPCServer()
@@ -214,7 +214,7 @@ func TestInternalErrorRetry(t *testing.T) {
 	// Confirm it only made 1 call because it doesn't retry internal
 	_, isInternalError = err.(*serviceerror.Internal)
 	require.True(t, isInternalError)
-	require.Equal(t, 1, srv.signalWorkflowInvokeCount)
+	require.Equal(t, 1, srv.signalWorkflowInvokeCount())
 }
 
 func TestDialOptions(t *testing.T) {

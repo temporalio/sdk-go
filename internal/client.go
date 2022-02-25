@@ -640,7 +640,7 @@ func NewClient(options ClientOptions) (Client, error) {
 
 	// Get server capabilities eagerly. This has replaced health checking and we
 	// have accepted that this forces an eager connection with the server.
-	client.capabilities, err = getServerCapabilities(options.Namespace, client.workflowService)
+	client.capabilities, err = getServerCapabilities(client.workflowService)
 	if err != nil {
 		client.Close()
 		return nil, err
@@ -768,12 +768,11 @@ func NewValues(data *commonpb.Payloads) converter.EncodedValues {
 }
 
 func getServerCapabilities(
-	namespace string,
 	client workflowservice.WorkflowServiceClient,
 ) (cap workflowservice.GetSystemInfoResponse_Capabilities, err error) {
 	ctx, cancel := context.WithTimeout(context.Background(), getSystemInfoTimeout)
 	defer cancel()
-	resp, err := client.GetSystemInfo(ctx, &workflowservice.GetSystemInfoRequest{Namespace: namespace})
+	resp, err := client.GetSystemInfo(ctx, &workflowservice.GetSystemInfoRequest{})
 	// We ignore unimplemented
 	if _, isUnimplemented := err.(*serviceerror.Unimplemented); err != nil && !isUnimplemented {
 		return cap, fmt.Errorf("get system info failed: %w - %T", err, err)

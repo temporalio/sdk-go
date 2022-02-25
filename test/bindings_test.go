@@ -64,7 +64,6 @@ func TestAsyncBindingsTestSuite(t *testing.T) {
 func (ts *AsyncBindingsTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
 	ts.config = NewConfig()
-	ts.registerNamespace()
 	var err error
 	ts.client, err = client.NewClient(client.Options{
 		HostPort:  ts.config.ServiceAddr,
@@ -72,6 +71,7 @@ func (ts *AsyncBindingsTestSuite) SetupSuite() {
 		Logger:    ilog.NewDefaultLogger(),
 	})
 	ts.NoError(err)
+	ts.registerNamespace()
 }
 
 func (ts *AsyncBindingsTestSuite) registerNamespace() {

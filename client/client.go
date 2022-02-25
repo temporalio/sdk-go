@@ -441,7 +441,8 @@ func NewClient(options Options) (Client, error) {
 // NewNamespaceClient creates an instance of a namespace client, to manage
 // lifecycle of namespaces. This will not attempt to connect to the server
 // eagerly and therefore may not fail for an unreachable server until a call is
-// made.
+// made. grpc.WithBlock can be passed as a gRPC dial option to connection
+// options to eagerly connect.
 func NewNamespaceClient(options Options) (NamespaceClient, error) {
 	return internal.NewNamespaceClient(options)
 }
