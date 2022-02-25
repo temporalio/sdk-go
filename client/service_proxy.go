@@ -16,8 +16,6 @@ type workflowServiceProxyServer struct {
 	client workflowservice.WorkflowServiceClient
 }
 
-var _ workflowservice.WorkflowServiceServer = &workflowServiceProxyServer{}
-
 func NewWorfklowServiceProxyServer(options WorkflowServiceProxyOptions) (workflowservice.WorkflowServiceServer, error) {
 	return &workflowServiceProxyServer{
 		client: options.Client,
