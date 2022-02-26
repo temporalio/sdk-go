@@ -35,7 +35,6 @@ import (
 	"github.com/stretchr/testify/require"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
-	"go.temporal.io/api/enums/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/history/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -114,7 +113,7 @@ func TestServiceInterceptorRequests(t *testing.T) {
 	respondWorkflowTaskCompletedReq := &workflowservice.RespondWorkflowTaskCompletedRequest{
 		Commands: []*commandpb.Command{
 			{
-				CommandType: enums.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION,
+				CommandType: enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION,
 				Attributes: &commandpb.Command_CompleteWorkflowExecutionCommandAttributes{
 					CompleteWorkflowExecutionCommandAttributes: &commandpb.CompleteWorkflowExecutionCommandAttributes{
 						Result: unencodedPayloads(),
@@ -157,7 +156,7 @@ func TestServiceInterceptorResponses(t *testing.T) {
 		History: &history.History{
 			Events: []*history.HistoryEvent{
 				{
-					EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+					EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
 					Attributes: &history.HistoryEvent_WorkflowExecutionStartedEventAttributes{
 						WorkflowExecutionStartedEventAttributes: &history.WorkflowExecutionStartedEventAttributes{
 							Input: encodedPayloads(),
@@ -178,7 +177,7 @@ func TestServiceInterceptorResponses(t *testing.T) {
 		History: &history.History{
 			Events: []*history.HistoryEvent{
 				{
-					EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+					EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
 					Attributes: &history.HistoryEvent_WorkflowExecutionStartedEventAttributes{
 						WorkflowExecutionStartedEventAttributes: &history.WorkflowExecutionStartedEventAttributes{
 							Input: encodedPayloads(),
@@ -219,7 +218,7 @@ func TestServiceInterceptorCommands(t *testing.T) {
 
 	commands := []*commandpb.Command{
 		{
-			CommandType: enums.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK,
+			CommandType: enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK,
 			Attributes: &commandpb.Command_ScheduleActivityTaskCommandAttributes{
 				ScheduleActivityTaskCommandAttributes: &commandpb.ScheduleActivityTaskCommandAttributes{
 					Input: unencodedPayloads(),
@@ -227,7 +226,7 @@ func TestServiceInterceptorCommands(t *testing.T) {
 			},
 		},
 		{
-			CommandType: enums.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION,
+			CommandType: enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION,
 			Attributes: &commandpb.Command_CompleteWorkflowExecutionCommandAttributes{
 				CompleteWorkflowExecutionCommandAttributes: &commandpb.CompleteWorkflowExecutionCommandAttributes{
 					Result: unencodedPayloads(),
@@ -235,7 +234,7 @@ func TestServiceInterceptorCommands(t *testing.T) {
 			},
 		},
 		{
-			CommandType: enums.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION,
+			CommandType: enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION,
 			Attributes: &commandpb.Command_ContinueAsNewWorkflowExecutionCommandAttributes{
 				ContinueAsNewWorkflowExecutionCommandAttributes: &commandpb.ContinueAsNewWorkflowExecutionCommandAttributes{
 					Input:                unencodedPayloads(),
@@ -244,7 +243,7 @@ func TestServiceInterceptorCommands(t *testing.T) {
 			},
 		},
 		{
-			CommandType: enums.COMMAND_TYPE_START_CHILD_WORKFLOW_EXECUTION,
+			CommandType: enumspb.COMMAND_TYPE_START_CHILD_WORKFLOW_EXECUTION,
 			Attributes: &commandpb.Command_StartChildWorkflowExecutionCommandAttributes{
 				StartChildWorkflowExecutionCommandAttributes: &commandpb.StartChildWorkflowExecutionCommandAttributes{
 					Input: unencodedPayloads(),
@@ -252,7 +251,7 @@ func TestServiceInterceptorCommands(t *testing.T) {
 			},
 		},
 		{
-			CommandType: enums.COMMAND_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION,
+			CommandType: enumspb.COMMAND_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION,
 			Attributes: &commandpb.Command_SignalExternalWorkflowExecutionCommandAttributes{
 				SignalExternalWorkflowExecutionCommandAttributes: &commandpb.SignalExternalWorkflowExecutionCommandAttributes{
 					Input: unencodedPayloads(),
@@ -280,7 +279,7 @@ func TestServiceInterceptorEvents(t *testing.T) {
 
 	events := []*history.HistoryEvent{
 		{
-			EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
 			Attributes: &history.HistoryEvent_WorkflowExecutionStartedEventAttributes{
 				WorkflowExecutionStartedEventAttributes: &history.WorkflowExecutionStartedEventAttributes{
 					Input: encodedPayloads(),
