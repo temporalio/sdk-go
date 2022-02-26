@@ -94,22 +94,16 @@ func (s *serviceInterceptor) processRequest(req interface{}) error {
 func (s *serviceInterceptor) processResponse(response interface{}) error {
 	switch r := response.(type) {
 	case *workflowservice.GetWorkflowExecutionHistoryResponse:
-		return s.processEvents(r.History.Events)
+		return s.processEvents(r.History.GetEvents())
 	case *workflowservice.PollWorkflowTaskQueueResponse:
-		if r.WorkflowType != nil {
-			return s.processEvents(r.History.Events)
-		}
+		return s.processEvents(r.History.GetEvents())
 	case *workflowservice.PollActivityTaskQueueResponse:
-		if r.Input != nil {
-			err := s.decodePayloads(r.Input)
-			if err != nil {
-				return err
-			}
+		err := s.decodePayloads(r.GetInput())
+		if err != nil {
+			return err
 		}
 
-		if r.HeartbeatDetails != nil {
-			return s.decodePayloads(r.HeartbeatDetails)
-		}
+		return s.decodePayloads(r.GetHeartbeatDetails())
 	}
 
 	return nil
@@ -125,6 +119,10 @@ func (s *serviceInterceptor) processCommands(commands []*command.Command) error 
 			err = s.encodePayloads(c.GetCompleteWorkflowExecutionCommandAttributes().Result)
 		case enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION:
 			err = s.encodePayloads(c.GetContinueAsNewWorkflowExecutionCommandAttributes().Input)
+			if err != nil {
+				return err
+			}
+			err = s.encodePayloads(c.GetContinueAsNewWorkflowExecutionCommandAttributes().LastCompletionResult)
 		case enumspb.COMMAND_TYPE_START_CHILD_WORKFLOW_EXECUTION:
 			err = s.encodePayloads(c.GetStartChildWorkflowExecutionCommandAttributes().Input)
 		case enumspb.COMMAND_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION:
@@ -153,6 +151,11 @@ func (s *serviceInterceptor) processEvents(events []*historypb.HistoryEvent) err
 			err = s.decodePayloads(e.GetSignalExternalWorkflowExecutionInitiatedEventAttributes().Input)
 		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW:
 			err = s.decodePayloads(e.GetWorkflowExecutionContinuedAsNewEventAttributes().Input)
+			if err != nil {
+				return err
+			}
+
+			err = s.decodePayloads(e.GetWorkflowExecutionContinuedAsNewEventAttributes().LastCompletionResult)
 		case enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED:
 			err = s.decodePayloads(e.GetActivityTaskScheduledEventAttributes().Input)
 		case enumspb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED:

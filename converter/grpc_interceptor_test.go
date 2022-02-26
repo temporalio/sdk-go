@@ -36,6 +36,7 @@ import (
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/history/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
@@ -47,6 +48,16 @@ var zlibDataConverter = NewEncodingDataConverter(
 	NewZlibEncoder(ZlibEncoderOptions{AlwaysEncode: true}),
 )
 
+func unencodedPayloads() *commonpb.Payloads {
+	p, _ := defaultDataConverter.ToPayloads("test")
+	return p
+}
+
+func encodedPayloads() *commonpb.Payloads {
+	p, _ := zlibDataConverter.ToPayloads("test")
+	return p
+}
+
 func payloadEncoding(payloads *commonpb.Payloads) string {
 	return string(payloads.Payloads[0].Metadata[MetadataEncoding])
 }
@@ -57,19 +68,17 @@ func TestServiceInterceptorRequests(t *testing.T) {
 	s := serviceInterceptor{
 		encoders: []PayloadEncoder{NewZlibEncoder(ZlibEncoderOptions{AlwaysEncode: true})},
 	}
-	unencodedPayloads, err := defaultDataConverter.ToPayloads("test")
-	require.NoError(err)
 
 	startReq := &workflowservice.StartWorkflowExecutionRequest{
-		Input: unencodedPayloads,
+		Input: unencodedPayloads(),
 	}
-	err = s.processRequest(startReq)
+	err := s.processRequest(startReq)
 	require.NoError(err)
 
 	require.Equal("binary/zlib", payloadEncoding(startReq.Input))
 
 	signalReq := &workflowservice.StartWorkflowExecutionRequest{
-		Input: unencodedPayloads,
+		Input: unencodedPayloads(),
 	}
 	err = s.processRequest(signalReq)
 	require.NoError(err)
@@ -77,8 +86,8 @@ func TestServiceInterceptorRequests(t *testing.T) {
 	require.Equal("binary/zlib", payloadEncoding(signalReq.Input))
 
 	signalWithStartReq := &workflowservice.SignalWithStartWorkflowExecutionRequest{
-		Input:       unencodedPayloads,
-		SignalInput: unencodedPayloads,
+		Input:       unencodedPayloads(),
+		SignalInput: unencodedPayloads(),
 	}
 	err = s.processRequest(signalWithStartReq)
 	require.NoError(err)
@@ -87,7 +96,7 @@ func TestServiceInterceptorRequests(t *testing.T) {
 	require.Equal("binary/zlib", payloadEncoding(signalWithStartReq.SignalInput))
 
 	respondActivityCompletedReq := &workflowservice.RespondActivityTaskCompletedRequest{
-		Result: unencodedPayloads,
+		Result: unencodedPayloads(),
 	}
 	err = s.processRequest(respondActivityCompletedReq)
 	require.NoError(err)
@@ -95,7 +104,7 @@ func TestServiceInterceptorRequests(t *testing.T) {
 	require.Equal("binary/zlib", payloadEncoding(respondActivityCompletedReq.Result))
 
 	respondActivityCompletedByIdReq := &workflowservice.RespondActivityTaskCompletedByIdRequest{
-		Result: unencodedPayloads,
+		Result: unencodedPayloads(),
 	}
 	err = s.processRequest(respondActivityCompletedByIdReq)
 	require.NoError(err)
@@ -108,7 +117,7 @@ func TestServiceInterceptorRequests(t *testing.T) {
 				CommandType: enums.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION,
 				Attributes: &commandpb.Command_CompleteWorkflowExecutionCommandAttributes{
 					CompleteWorkflowExecutionCommandAttributes: &commandpb.CompleteWorkflowExecutionCommandAttributes{
-						Result: unencodedPayloads,
+						Result: unencodedPayloads(),
 					},
 				},
 			},
@@ -121,7 +130,7 @@ func TestServiceInterceptorRequests(t *testing.T) {
 	require.Equal("binary/zlib", payloadEncoding(result))
 
 	recordActivityTaskHeartbeatReq := &workflowservice.RecordActivityTaskHeartbeatRequest{
-		Details: unencodedPayloads,
+		Details: unencodedPayloads(),
 	}
 	err = s.processRequest(recordActivityTaskHeartbeatReq)
 	require.NoError(err)
@@ -129,7 +138,7 @@ func TestServiceInterceptorRequests(t *testing.T) {
 	require.Equal("binary/zlib", payloadEncoding(recordActivityTaskHeartbeatReq.Details))
 
 	recordActivityTaskHeartbeatByIdReq := &workflowservice.RecordActivityTaskHeartbeatByIdRequest{
-		Details: unencodedPayloads,
+		Details: unencodedPayloads(),
 	}
 	err = s.processRequest(recordActivityTaskHeartbeatByIdReq)
 	require.NoError(err)
@@ -143,8 +152,6 @@ func TestServiceInterceptorResponses(t *testing.T) {
 	s := serviceInterceptor{
 		encoders: []PayloadEncoder{NewZlibEncoder(ZlibEncoderOptions{AlwaysEncode: true})},
 	}
-	encodedPayloads, err := zlibDataConverter.ToPayloads("test")
-	require.NoError(err)
 
 	historyRes := &workflowservice.GetWorkflowExecutionHistoryResponse{
 		History: &history.History{
@@ -153,14 +160,14 @@ func TestServiceInterceptorResponses(t *testing.T) {
 					EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
 					Attributes: &history.HistoryEvent_WorkflowExecutionStartedEventAttributes{
 						WorkflowExecutionStartedEventAttributes: &history.WorkflowExecutionStartedEventAttributes{
-							Input: encodedPayloads,
+							Input: encodedPayloads(),
 						},
 					},
 				},
 			},
 		},
 	}
-	err = s.processResponse(historyRes)
+	err := s.processResponse(historyRes)
 	require.NoError(err)
 
 	input := historyRes.History.Events[0].GetWorkflowExecutionStartedEventAttributes().Input
@@ -174,7 +181,7 @@ func TestServiceInterceptorResponses(t *testing.T) {
 					EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
 					Attributes: &history.HistoryEvent_WorkflowExecutionStartedEventAttributes{
 						WorkflowExecutionStartedEventAttributes: &history.WorkflowExecutionStartedEventAttributes{
-							Input: encodedPayloads,
+							Input: encodedPayloads(),
 						},
 					},
 				},
@@ -189,8 +196,8 @@ func TestServiceInterceptorResponses(t *testing.T) {
 	require.Equal("json/plain", payloadEncoding(input))
 
 	pollActivityRes := &workflowservice.PollActivityTaskQueueResponse{
-		Input:            encodedPayloads,
-		HeartbeatDetails: encodedPayloads,
+		Input:            encodedPayloads(),
+		HeartbeatDetails: encodedPayloads(),
 	}
 	err = s.processResponse(pollActivityRes)
 	require.NoError(err)
@@ -201,6 +208,165 @@ func TestServiceInterceptorResponses(t *testing.T) {
 	emptyPollActivityRes := &workflowservice.PollActivityTaskQueueResponse{}
 	err = s.processResponse(emptyPollActivityRes)
 	require.NoError(err)
+}
+
+func TestServiceInterceptorCommands(t *testing.T) {
+	require := require.New(t)
+
+	s := serviceInterceptor{
+		encoders: []PayloadEncoder{NewZlibEncoder(ZlibEncoderOptions{AlwaysEncode: true})},
+	}
+
+	commands := []*commandpb.Command{
+		{
+			CommandType: enums.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK,
+			Attributes: &commandpb.Command_ScheduleActivityTaskCommandAttributes{
+				ScheduleActivityTaskCommandAttributes: &commandpb.ScheduleActivityTaskCommandAttributes{
+					Input: unencodedPayloads(),
+				},
+			},
+		},
+		{
+			CommandType: enums.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION,
+			Attributes: &commandpb.Command_CompleteWorkflowExecutionCommandAttributes{
+				CompleteWorkflowExecutionCommandAttributes: &commandpb.CompleteWorkflowExecutionCommandAttributes{
+					Result: unencodedPayloads(),
+				},
+			},
+		},
+		{
+			CommandType: enums.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION,
+			Attributes: &commandpb.Command_ContinueAsNewWorkflowExecutionCommandAttributes{
+				ContinueAsNewWorkflowExecutionCommandAttributes: &commandpb.ContinueAsNewWorkflowExecutionCommandAttributes{
+					Input:                unencodedPayloads(),
+					LastCompletionResult: unencodedPayloads(),
+				},
+			},
+		},
+		{
+			CommandType: enums.COMMAND_TYPE_START_CHILD_WORKFLOW_EXECUTION,
+			Attributes: &commandpb.Command_StartChildWorkflowExecutionCommandAttributes{
+				StartChildWorkflowExecutionCommandAttributes: &commandpb.StartChildWorkflowExecutionCommandAttributes{
+					Input: unencodedPayloads(),
+				},
+			},
+		},
+		{
+			CommandType: enums.COMMAND_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION,
+			Attributes: &commandpb.Command_SignalExternalWorkflowExecutionCommandAttributes{
+				SignalExternalWorkflowExecutionCommandAttributes: &commandpb.SignalExternalWorkflowExecutionCommandAttributes{
+					Input: unencodedPayloads(),
+				},
+			},
+		},
+	}
+	err := s.processCommands(commands)
+	require.NoError(err)
+
+	require.Equal("binary/zlib", payloadEncoding(commands[0].GetScheduleActivityTaskCommandAttributes().Input))
+	require.Equal("binary/zlib", payloadEncoding(commands[1].GetCompleteWorkflowExecutionCommandAttributes().Result))
+	require.Equal("binary/zlib", payloadEncoding(commands[2].GetContinueAsNewWorkflowExecutionCommandAttributes().Input))
+	require.Equal("binary/zlib", payloadEncoding(commands[2].GetContinueAsNewWorkflowExecutionCommandAttributes().LastCompletionResult))
+	require.Equal("binary/zlib", payloadEncoding(commands[3].GetStartChildWorkflowExecutionCommandAttributes().Input))
+	require.Equal("binary/zlib", payloadEncoding(commands[4].GetSignalExternalWorkflowExecutionCommandAttributes().Input))
+}
+
+func TestServiceInterceptorEvents(t *testing.T) {
+	require := require.New(t)
+
+	s := serviceInterceptor{
+		encoders: []PayloadEncoder{NewZlibEncoder(ZlibEncoderOptions{AlwaysEncode: true})},
+	}
+
+	events := []*history.HistoryEvent{
+		{
+			EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+			Attributes: &history.HistoryEvent_WorkflowExecutionStartedEventAttributes{
+				WorkflowExecutionStartedEventAttributes: &history.WorkflowExecutionStartedEventAttributes{
+					Input: encodedPayloads(),
+				},
+			},
+		},
+		{
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED,
+			Attributes: &history.HistoryEvent_WorkflowExecutionCompletedEventAttributes{
+				WorkflowExecutionCompletedEventAttributes: &history.WorkflowExecutionCompletedEventAttributes{
+					Result: encodedPayloads(),
+				},
+			},
+		},
+		{
+			EventType: enumspb.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED,
+			Attributes: &history.HistoryEvent_StartChildWorkflowExecutionInitiatedEventAttributes{
+				StartChildWorkflowExecutionInitiatedEventAttributes: &history.StartChildWorkflowExecutionInitiatedEventAttributes{
+					Input: encodedPayloads(),
+				},
+			},
+		},
+		{
+			EventType: enumspb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED,
+			Attributes: &history.HistoryEvent_SignalExternalWorkflowExecutionInitiatedEventAttributes{
+				SignalExternalWorkflowExecutionInitiatedEventAttributes: &history.SignalExternalWorkflowExecutionInitiatedEventAttributes{
+					Input: encodedPayloads(),
+				},
+			},
+		},
+		{
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW,
+			Attributes: &history.HistoryEvent_WorkflowExecutionContinuedAsNewEventAttributes{
+				WorkflowExecutionContinuedAsNewEventAttributes: &history.WorkflowExecutionContinuedAsNewEventAttributes{
+					Input:                encodedPayloads(),
+					LastCompletionResult: encodedPayloads(),
+				},
+			},
+		},
+		{
+			EventType: enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED,
+			Attributes: &history.HistoryEvent_ActivityTaskScheduledEventAttributes{
+				ActivityTaskScheduledEventAttributes: &history.ActivityTaskScheduledEventAttributes{
+					Input: encodedPayloads(),
+				},
+			},
+		},
+		{
+			EventType: enumspb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED,
+			Attributes: &history.HistoryEvent_ActivityTaskCompletedEventAttributes{
+				ActivityTaskCompletedEventAttributes: &history.ActivityTaskCompletedEventAttributes{
+					Result: encodedPayloads(),
+				},
+			},
+		},
+		{
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED,
+			Attributes: &history.HistoryEvent_WorkflowExecutionSignaledEventAttributes{
+				WorkflowExecutionSignaledEventAttributes: &history.WorkflowExecutionSignaledEventAttributes{
+					Input: encodedPayloads(),
+				},
+			},
+		},
+		{
+			EventType: enumspb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_COMPLETED,
+			Attributes: &history.HistoryEvent_ChildWorkflowExecutionCompletedEventAttributes{
+				ChildWorkflowExecutionCompletedEventAttributes: &history.ChildWorkflowExecutionCompletedEventAttributes{
+					Result: encodedPayloads(),
+				},
+			},
+		},
+	}
+
+	err := s.processEvents(events)
+	require.NoError(err)
+
+	require.Equal("json/plain", payloadEncoding(events[0].GetWorkflowExecutionStartedEventAttributes().Input))
+	require.Equal("json/plain", payloadEncoding(events[1].GetWorkflowExecutionCompletedEventAttributes().Result))
+	require.Equal("json/plain", payloadEncoding(events[2].GetStartChildWorkflowExecutionInitiatedEventAttributes().Input))
+	require.Equal("json/plain", payloadEncoding(events[3].GetSignalExternalWorkflowExecutionInitiatedEventAttributes().Input))
+	require.Equal("json/plain", payloadEncoding(events[4].GetWorkflowExecutionContinuedAsNewEventAttributes().Input))
+	require.Equal("json/plain", payloadEncoding(events[4].GetWorkflowExecutionContinuedAsNewEventAttributes().LastCompletionResult))
+	require.Equal("json/plain", payloadEncoding(events[5].GetActivityTaskScheduledEventAttributes().Input))
+	require.Equal("json/plain", payloadEncoding(events[6].GetActivityTaskCompletedEventAttributes().Result))
+	require.Equal("json/plain", payloadEncoding(events[7].GetWorkflowExecutionSignaledEventAttributes().Input))
+	require.Equal("json/plain", payloadEncoding(events[8].GetChildWorkflowExecutionCompletedEventAttributes().Result))
 }
 
 func TestClientInterceptor(t *testing.T) {
@@ -224,20 +390,16 @@ func TestClientInterceptor(t *testing.T) {
 	require.NoError(err)
 
 	client := workflowservice.NewWorkflowServiceClient(c)
-	input, err := defaultDataConverter.ToPayloads("test")
-	require.NoError(err)
 
 	_, err = client.StartWorkflowExecution(
 		context.Background(),
 		&workflowservice.StartWorkflowExecutionRequest{
-			Input: input,
+			Input: unencodedPayloads(),
 		},
 	)
 	require.NoError(err)
 
-	payloads := server.startWorkflowExecutionRequest.Input.Payloads
-
-	require.Equal("binary/zlib", string(payloads[0].Metadata[MetadataEncoding]))
+	require.Equal("binary/zlib", payloadEncoding(server.startWorkflowExecutionRequest.Input))
 
 	response, err := client.PollActivityTaskQueue(
 		context.Background(),
@@ -245,9 +407,7 @@ func TestClientInterceptor(t *testing.T) {
 	)
 	require.NoError(err)
 
-	payloads = response.Input.Payloads
-
-	require.Equal("json/plain", string(payloads[0].Metadata[MetadataEncoding]))
+	require.Equal("json/plain", payloadEncoding(response.Input))
 
 }
 
@@ -318,12 +478,7 @@ func (t *testGRPCServer) PollActivityTaskQueue(
 	ctx context.Context,
 	req *workflowservice.PollActivityTaskQueueRequest,
 ) (*workflowservice.PollActivityTaskQueueResponse, error) {
-	input, err := zlibDataConverter.ToPayloads("test")
-	if err != nil {
-		return nil, err
-	}
-
 	return &workflowservice.PollActivityTaskQueueResponse{
-		Input: input,
+		Input: encodedPayloads(),
 	}, nil
 }
