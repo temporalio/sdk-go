@@ -30,6 +30,7 @@ import (
 	"go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/failure/v1"
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
@@ -39,11 +40,13 @@ type serviceInterceptor struct {
 	encoders []PayloadEncoder
 }
 
-func (s *serviceInterceptor) encodePayloads(payloads *commonpb.Payloads) error {
-	for _, payload := range payloads.GetPayloads() {
-		for i := len(s.encoders) - 1; i >= 0; i-- {
-			if err := s.encoders[i].Encode(payload); err != nil {
-				return err
+func (s *serviceInterceptor) encodePayloads(payloads ...*commonpb.Payloads) error {
+	for _, p := range payloads {
+		for _, payload := range p.GetPayloads() {
+			for i := len(s.encoders) - 1; i >= 0; i-- {
+				if err := s.encoders[i].Encode(payload); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -51,11 +54,13 @@ func (s *serviceInterceptor) encodePayloads(payloads *commonpb.Payloads) error {
 	return nil
 }
 
-func (s *serviceInterceptor) decodePayloads(payloads *commonpb.Payloads) error {
-	for _, payload := range payloads.GetPayloads() {
-		for _, encoder := range s.encoders {
-			if err := encoder.Decode(payload); err != nil {
-				return err
+func (s *serviceInterceptor) decodePayloads(payloads ...*commonpb.Payloads) error {
+	for _, p := range payloads {
+		for _, payload := range p.GetPayloads() {
+			for _, encoder := range s.encoders {
+				if err := encoder.Decode(payload); err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -70,18 +75,25 @@ func (s *serviceInterceptor) processRequest(req interface{}) error {
 	case *workflowservice.SignalWorkflowExecutionRequest:
 		return s.encodePayloads(r.Input)
 	case *workflowservice.SignalWithStartWorkflowExecutionRequest:
-		err := s.encodePayloads(r.Input)
-		if err != nil {
-			return err
-		}
-
-		return s.encodePayloads(r.SignalInput)
+		return s.encodePayloads(r.Input, r.SignalInput)
+	case *workflowservice.TerminateWorkflowExecutionRequest:
+		return s.encodePayloads(r.Details)
 	case *workflowservice.RespondActivityTaskCompletedRequest:
 		return s.encodePayloads(r.Result)
 	case *workflowservice.RespondActivityTaskCompletedByIdRequest:
 		return s.encodePayloads(r.Result)
+	case *workflowservice.RespondActivityTaskCanceledRequest:
+		return s.encodePayloads(r.Details)
+	case *workflowservice.RespondActivityTaskCanceledByIdRequest:
+		return s.encodePayloads(r.Details)
+	case *workflowservice.RespondActivityTaskFailedRequest:
+		return s.encodeFailure(r.Failure)
+	case *workflowservice.RespondActivityTaskFailedByIdRequest:
+		return s.encodeFailure(r.Failure)
 	case *workflowservice.RespondWorkflowTaskCompletedRequest:
 		return s.processCommands(r.Commands)
+	case *workflowservice.RespondWorkflowTaskFailedRequest:
+		return s.encodeFailure(r.Failure)
 	case *workflowservice.RecordActivityTaskHeartbeatRequest:
 		return s.encodePayloads(r.Details)
 	case *workflowservice.RecordActivityTaskHeartbeatByIdRequest:
@@ -98,15 +110,44 @@ func (s *serviceInterceptor) processResponse(response interface{}) error {
 	case *workflowservice.PollWorkflowTaskQueueResponse:
 		return s.processEvents(r.History.GetEvents())
 	case *workflowservice.PollActivityTaskQueueResponse:
-		err := s.decodePayloads(r.GetInput())
-		if err != nil {
-			return err
-		}
-
-		return s.decodePayloads(r.GetHeartbeatDetails())
+		return s.decodePayloads(r.Input, r.HeartbeatDetails)
 	}
 
 	return nil
+}
+
+func (s *serviceInterceptor) encodeFailure(failure *failure.Failure) error {
+	if failure == nil {
+		return nil
+	}
+
+	err := s.encodePayloads(
+		failure.GetApplicationFailureInfo().GetDetails(),
+		failure.GetCanceledFailureInfo().GetDetails(),
+		failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails(),
+	)
+	if err != nil {
+		return err
+	}
+
+	return s.encodeFailure(failure.GetCause())
+}
+
+func (s *serviceInterceptor) decodeFailure(failure *failure.Failure) error {
+	if failure == nil {
+		return nil
+	}
+
+	err := s.decodePayloads(
+		failure.GetApplicationFailureInfo().GetDetails(),
+		failure.GetCanceledFailureInfo().GetDetails(),
+		failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails(),
+	)
+	if err != nil {
+		return err
+	}
+
+	return s.encodeFailure(failure.GetCause())
 }
 
 func (s *serviceInterceptor) processCommands(commands []*command.Command) error {
@@ -118,11 +159,8 @@ func (s *serviceInterceptor) processCommands(commands []*command.Command) error 
 		case enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION:
 			err = s.encodePayloads(c.GetCompleteWorkflowExecutionCommandAttributes().Result)
 		case enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION:
-			err = s.encodePayloads(c.GetContinueAsNewWorkflowExecutionCommandAttributes().Input)
-			if err != nil {
-				return err
-			}
-			err = s.encodePayloads(c.GetContinueAsNewWorkflowExecutionCommandAttributes().LastCompletionResult)
+			attrs := c.GetContinueAsNewWorkflowExecutionCommandAttributes()
+			err = s.encodePayloads(attrs.Input, attrs.LastCompletionResult)
 		case enumspb.COMMAND_TYPE_START_CHILD_WORKFLOW_EXECUTION:
 			err = s.encodePayloads(c.GetStartChildWorkflowExecutionCommandAttributes().Input)
 		case enumspb.COMMAND_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION:
@@ -142,7 +180,15 @@ func (s *serviceInterceptor) processEvents(events []*historypb.HistoryEvent) err
 	for _, e := range events {
 		switch e.EventType {
 		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED:
-			err = s.decodePayloads(e.GetWorkflowExecutionStartedEventAttributes().Input)
+			attrs := e.GetWorkflowExecutionStartedEventAttributes()
+			err = s.decodePayloads(attrs.Input, attrs.LastCompletionResult)
+			if err != nil {
+				return err
+			}
+
+			err = s.decodeFailure(attrs.ContinuedFailure)
+		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED:
+			err = s.decodeFailure(e.GetWorkflowExecutionFailedEventAttributes().Failure)
 		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED:
 			err = s.decodePayloads(e.GetWorkflowExecutionCompletedEventAttributes().Result)
 		case enumspb.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED:
@@ -150,12 +196,8 @@ func (s *serviceInterceptor) processEvents(events []*historypb.HistoryEvent) err
 		case enumspb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED:
 			err = s.decodePayloads(e.GetSignalExternalWorkflowExecutionInitiatedEventAttributes().Input)
 		case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW:
-			err = s.decodePayloads(e.GetWorkflowExecutionContinuedAsNewEventAttributes().Input)
-			if err != nil {
-				return err
-			}
-
-			err = s.decodePayloads(e.GetWorkflowExecutionContinuedAsNewEventAttributes().LastCompletionResult)
+			attrs := e.GetWorkflowExecutionContinuedAsNewEventAttributes()
+			err = s.decodePayloads(attrs.Input, attrs.LastCompletionResult)
 		case enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED:
 			err = s.decodePayloads(e.GetActivityTaskScheduledEventAttributes().Input)
 		case enumspb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED:

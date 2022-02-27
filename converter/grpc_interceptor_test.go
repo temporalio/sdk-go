@@ -36,6 +36,7 @@ import (
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/failure/v1"
 	"go.temporal.io/api/history/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
@@ -143,6 +144,72 @@ func TestServiceInterceptorRequests(t *testing.T) {
 	require.NoError(err)
 
 	require.Equal("binary/zlib", payloadEncoding(recordActivityTaskHeartbeatByIdReq.Details))
+
+	respondActivityTaskCanceledReq := &workflowservice.RespondActivityTaskCanceledRequest{
+		Details: unencodedPayloads(),
+	}
+	err = s.processRequest(respondActivityTaskCanceledReq)
+	require.NoError(err)
+
+	require.Equal("binary/zlib", payloadEncoding(respondActivityTaskCanceledReq.Details))
+
+	respondActivityTaskCanceledByIdReq := &workflowservice.RespondActivityTaskCanceledByIdRequest{
+		Details: unencodedPayloads(),
+	}
+	err = s.processRequest(respondActivityTaskCanceledByIdReq)
+	require.NoError(err)
+
+	require.Equal("binary/zlib", payloadEncoding(respondActivityTaskCanceledByIdReq.Details))
+
+	terminateWorkflowExecutionReq := &workflowservice.TerminateWorkflowExecutionRequest{
+		Details: unencodedPayloads(),
+	}
+	err = s.processRequest(terminateWorkflowExecutionReq)
+	require.NoError(err)
+
+	require.Equal("binary/zlib", payloadEncoding(terminateWorkflowExecutionReq.Details))
+
+	respondActivityTaskFailedReq := &workflowservice.RespondActivityTaskFailedRequest{
+		Failure: &failure.Failure{
+			FailureInfo: &failure.Failure_ApplicationFailureInfo{
+				ApplicationFailureInfo: &failure.ApplicationFailureInfo{
+					Details: unencodedPayloads(),
+				},
+			},
+		},
+	}
+	err = s.processRequest(respondActivityTaskFailedReq)
+	require.NoError(err)
+
+	require.Equal("binary/zlib", payloadEncoding(respondActivityTaskFailedReq.Failure.GetApplicationFailureInfo().Details))
+
+	respondActivityTaskFailedByIdReq := &workflowservice.RespondActivityTaskFailedByIdRequest{
+		Failure: &failure.Failure{
+			FailureInfo: &failure.Failure_ApplicationFailureInfo{
+				ApplicationFailureInfo: &failure.ApplicationFailureInfo{
+					Details: unencodedPayloads(),
+				},
+			},
+		},
+	}
+	err = s.processRequest(respondActivityTaskFailedByIdReq)
+	require.NoError(err)
+
+	require.Equal("binary/zlib", payloadEncoding(respondActivityTaskFailedByIdReq.Failure.GetApplicationFailureInfo().Details))
+
+	respondWorkflowTaskFailedReq := &workflowservice.RespondWorkflowTaskFailedRequest{
+		Failure: &failure.Failure{
+			FailureInfo: &failure.Failure_ApplicationFailureInfo{
+				ApplicationFailureInfo: &failure.ApplicationFailureInfo{
+					Details: unencodedPayloads(),
+				},
+			},
+		},
+	}
+	err = s.processRequest(respondWorkflowTaskFailedReq)
+	require.NoError(err)
+
+	require.Equal("binary/zlib", payloadEncoding(respondWorkflowTaskFailedReq.Failure.GetApplicationFailureInfo().Details))
 }
 
 func TestServiceInterceptorResponses(t *testing.T) {
@@ -282,7 +349,15 @@ func TestServiceInterceptorEvents(t *testing.T) {
 			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
 			Attributes: &history.HistoryEvent_WorkflowExecutionStartedEventAttributes{
 				WorkflowExecutionStartedEventAttributes: &history.WorkflowExecutionStartedEventAttributes{
-					Input: encodedPayloads(),
+					Input:                encodedPayloads(),
+					LastCompletionResult: encodedPayloads(),
+					ContinuedFailure: &failure.Failure{
+						FailureInfo: &failure.Failure_ApplicationFailureInfo{
+							ApplicationFailureInfo: &failure.ApplicationFailureInfo{
+								Details: encodedPayloads(),
+							},
+						},
+					},
 				},
 			},
 		},
@@ -351,12 +426,28 @@ func TestServiceInterceptorEvents(t *testing.T) {
 				},
 			},
 		},
+		{
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED,
+			Attributes: &history.HistoryEvent_WorkflowExecutionFailedEventAttributes{
+				WorkflowExecutionFailedEventAttributes: &history.WorkflowExecutionFailedEventAttributes{
+					Failure: &failure.Failure{
+						FailureInfo: &failure.Failure_ApplicationFailureInfo{
+							ApplicationFailureInfo: &failure.ApplicationFailureInfo{
+								Details: encodedPayloads(),
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	err := s.processEvents(events)
 	require.NoError(err)
 
 	require.Equal("json/plain", payloadEncoding(events[0].GetWorkflowExecutionStartedEventAttributes().Input))
+	require.Equal("json/plain", payloadEncoding(events[0].GetWorkflowExecutionStartedEventAttributes().LastCompletionResult))
+	require.Equal("json/plain", payloadEncoding(events[0].GetWorkflowExecutionStartedEventAttributes().ContinuedFailure.GetApplicationFailureInfo().Details))
 	require.Equal("json/plain", payloadEncoding(events[1].GetWorkflowExecutionCompletedEventAttributes().Result))
 	require.Equal("json/plain", payloadEncoding(events[2].GetStartChildWorkflowExecutionInitiatedEventAttributes().Input))
 	require.Equal("json/plain", payloadEncoding(events[3].GetSignalExternalWorkflowExecutionInitiatedEventAttributes().Input))
@@ -366,6 +457,7 @@ func TestServiceInterceptorEvents(t *testing.T) {
 	require.Equal("json/plain", payloadEncoding(events[6].GetActivityTaskCompletedEventAttributes().Result))
 	require.Equal("json/plain", payloadEncoding(events[7].GetWorkflowExecutionSignaledEventAttributes().Input))
 	require.Equal("json/plain", payloadEncoding(events[8].GetChildWorkflowExecutionCompletedEventAttributes().Result))
+	require.Equal("json/plain", payloadEncoding(events[9].GetWorkflowExecutionFailedEventAttributes().Failure.GetApplicationFailureInfo().Details))
 }
 
 func TestClientInterceptor(t *testing.T) {
