@@ -1936,6 +1936,33 @@ func (ts *IntegrationTestSuite) TestReturnCancelError() {
 	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_CANCELED, resp.GetWorkflowExecutionInfo().GetStatus())
 }
 
+func (ts *IntegrationTestSuite) TestLocalActivityStringNameReplay() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Run the workflow
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-local-activity-string-name-replay"), ts.workflows.LocalActivityByStringName)
+	ts.NotNil(run)
+	ts.NoError(err)
+	ts.NoError(run.Get(ctx, nil))
+
+	// Obtain history
+	var history historypb.History
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false,
+		enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		ts.NoError(err)
+		history.Events = append(history.Events, event)
+	}
+
+	// Run in replayer
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(ts.workflows.LocalActivityByStringName)
+	ts.NoError(replayer.ReplayWorkflowHistory(nil, &history))
+}
+
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{HostPort: ts.config.ServiceAddr})
 	ts.NoError(err)
