@@ -9,7 +9,7 @@ type (
 	SagaOptions = internal.SagaOptions
 
 	// CompensationError implements the error interface and aggregates
-	// the compensation errors that occur during execution
+	// the compensation errors that occur during execution.
 	CompensationError = internal.CompensationError
 
 	// Saga implements the logic to execute compensation operations

@@ -86,6 +86,9 @@ func (s *SagaTestSuite) Test_SagaWorkflow_Failure() {
 		ContinueOnError:      false,
 	})
 
+	s.True(env.IsWorkflowCompleted())
+	s.EqualError(env.GetWorkflowError(), "workflow execution error (type: run, workflowID: default-test-workflow-id, runID: default-test-run-id): activity error (type: add, scheduledEventID: 0, startedEventID: 0, identity: ): Test Compensation")
+
 	result, err := env.QueryWorkflow("count")
 	s.NoError(err)
 
@@ -101,9 +104,6 @@ func (s *SagaTestSuite) Test_SagaWorkflow_Failure() {
 	err = result.Get(&compensationOrder)
 	s.NoError(err)
 	s.Equal([]int{20, 10}, compensationOrder)
-
-	s.True(env.IsWorkflowCompleted())
-	s.EqualError(env.GetWorkflowError(), "workflow execution error (type: run, workflowID: default-test-workflow-id, runID: default-test-run-id): activity error (type: add, scheduledEventID: 0, startedEventID: 0, identity: ): Test Compensation")
 
 	env.AssertExpectations(s.T())
 }
@@ -127,6 +127,9 @@ func (s *SagaTestSuite) Test_SagaWorkflow_Failure_SagaCancel() {
 		RunCancelFunction:    true,
 	})
 
+	s.True(env.IsWorkflowCompleted())
+	s.EqualError(env.GetWorkflowError(), "workflow execution error (type: run, workflowID: default-test-workflow-id, runID: default-test-run-id): activity error (type: add, scheduledEventID: 0, startedEventID: 0, identity: ): Test Compensation")
+
 	result, err := env.QueryWorkflow("count")
 	s.NoError(err)
 
@@ -142,9 +145,6 @@ func (s *SagaTestSuite) Test_SagaWorkflow_Failure_SagaCancel() {
 	err = result.Get(&compensationOrder)
 	s.NoError(err)
 	s.Equal([]int{}, compensationOrder)
-
-	s.True(env.IsWorkflowCompleted())
-	s.EqualError(env.GetWorkflowError(), "workflow execution error (type: run, workflowID: default-test-workflow-id, runID: default-test-run-id): activity error (type: add, scheduledEventID: 0, startedEventID: 0, identity: ): Test Compensation")
 
 	env.AssertExpectations(s.T())
 }
@@ -295,6 +295,9 @@ func (s *SagaTestSuite) Test_SagaWorkflow_Parallel() {
 		ContinueOnError:      false,
 	})
 
+	s.True(env.IsWorkflowCompleted())
+	s.EqualError(env.GetWorkflowError(), "workflow execution error (type: run, workflowID: default-test-workflow-id, runID: default-test-run-id): activity error (type: add, scheduledEventID: 0, startedEventID: 0, identity: ): Test Compensation")
+
 	result, err := env.QueryWorkflow("count")
 	s.NoError(err)
 
@@ -310,9 +313,6 @@ func (s *SagaTestSuite) Test_SagaWorkflow_Parallel() {
 	err = result.Get(&compensationOrder)
 	s.NoError(err)
 	s.Len(compensationOrder, 2)
-
-	s.True(env.IsWorkflowCompleted())
-	s.EqualError(env.GetWorkflowError(), "workflow execution error (type: run, workflowID: default-test-workflow-id, runID: default-test-run-id): activity error (type: add, scheduledEventID: 0, startedEventID: 0, identity: ): Test Compensation")
 
 	env.AssertExpectations(s.T())
 }
@@ -338,6 +338,9 @@ func (s *SagaTestSuite) Test_SagaWorkflow_ParallelFailure() {
 		ContinueOnError:      false,
 	})
 
+	s.True(env.IsWorkflowCompleted())
+	s.EqualError(env.GetWorkflowError(), "workflow execution error (type: run, workflowID: default-test-workflow-id, runID: default-test-run-id): activity error (type: add, scheduledEventID: 0, startedEventID: 0, identity: ): Test Compensation")
+
 	result, err := env.QueryWorkflow("count")
 	s.NoError(err)
 
@@ -345,9 +348,6 @@ func (s *SagaTestSuite) Test_SagaWorkflow_ParallelFailure() {
 	err = result.Get(&count)
 	s.NoError(err)
 	s.Equal(10, count)
-
-	s.True(env.IsWorkflowCompleted())
-	s.EqualError(env.GetWorkflowError(), "workflow execution error (type: run, workflowID: default-test-workflow-id, runID: default-test-run-id): activity error (type: add, scheduledEventID: 0, startedEventID: 0, identity: ): Test Compensation")
 
 	env.AssertExpectations(s.T())
 }
@@ -429,6 +429,7 @@ func (w *testSagaWorkflow) add(ctx context.Context, n int) error {
 func (w *testSagaWorkflow) minus(ctx context.Context, n int) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+
 	w.Count -= n
 	w.CompensationOrder = append(w.CompensationOrder, n)
 	return nil
