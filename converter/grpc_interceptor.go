@@ -1008,6 +1008,8 @@ func (s *serviceInterceptor) decode(objs ...interface{}) error {
 	return s.process(false, objs...)
 }
 
+// PayloadEncoderGRPCClientInterceptorOptions holds interceptor options.
+// Currently this is just the list of encoders to use.
 type PayloadEncoderGRPCClientInterceptorOptions struct {
 	Encoders []PayloadEncoder
 }
