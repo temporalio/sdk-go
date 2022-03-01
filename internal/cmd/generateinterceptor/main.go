@@ -95,32 +95,12 @@ func (s *serviceInterceptor) encodePayload(payload *commonpb.Payload) error {
 	return nil
 }
 
-func (s *serviceInterceptor) encodePayloads(payloads *commonpb.Payloads) error {
-	for _, payload := range payloads.GetPayloads() {
-		if err := s.encodePayload(payload); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 func (s *serviceInterceptor) decodePayload(payload *commonpb.Payload) error {
 	for _, encoder := range s.encoders {
 		if err := encoder.Decode(payload); err != nil {
 			return err
 		}
 	}
-	return nil
-}
-
-func (s *serviceInterceptor) decodePayloads(payloads *commonpb.Payloads) error {
-	for _, payload := range payloads.GetPayloads() {
-		if err := s.decodePayload(payload); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -134,11 +114,7 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 					if err := s.decodePayload(o); err != nil { return err }
 				}
 			case *commonpb.Payloads:
-				if encode {
-					if err := s.encodePayloads(o); err != nil { return err }
-				} else {
-					if err := s.decodePayloads(o); err != nil { return err }
-				}
+				for _, x := range o.GetPayloads() { if err := s.process(encode, x); err != nil { return err } }
 			case map[string]*commonpb.Payload:
 				for _, x := range o { if err := s.process(encode, x); err != nil { return err } }
 {{range $type, $record := .}}

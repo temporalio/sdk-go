@@ -96,12 +96,8 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 				}
 			}
 		case *commonpb.Payloads:
-			if encode {
-				if err := s.encodePayloads(o); err != nil {
-					return err
-				}
-			} else {
-				if err := s.decodePayloads(o); err != nil {
+			for _, x := range o.GetPayloads() {
+				if err := s.process(encode, x); err != nil {
 					return err
 				}
 			}
