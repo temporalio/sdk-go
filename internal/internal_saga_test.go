@@ -383,7 +383,7 @@ func (w *testSagaWorkflow) run(ctx Context, opts sagaTestOptions) (res int, err 
 			saga.Cancel()
 		}
 		if err != nil {
-			saga.Compensate()
+			_ = saga.Compensate()
 		}
 	}()
 
