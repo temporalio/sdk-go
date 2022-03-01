@@ -2034,9 +2034,10 @@ func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
 
 	// Get the result of the workflow run now
 	err = run.Get(ctx, nil)
-	// We expect the activity to be cancelled. Before the issue that was fixed
-	// when this test was written, this would hang because sessions would
-	// inadvertently retry.
+	// We expect the activity to timeout (which shows as cancelled in Go) since
+	// the original worker is no longer present that was running the activity.
+	// Before the issue that was fixed when this test was written, this would hang
+	// because sessions would inadvertently retry.
 	ts.Error(err)
 	ts.Truef(strings.HasSuffix(err.Error(), "activity on session #1 failed: canceled"), "wrong error, got: %v", err)
 }
