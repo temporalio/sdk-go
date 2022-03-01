@@ -72,7 +72,7 @@ func TestServiceInterceptorRequests(t *testing.T) {
 	startReq := &workflowservice.StartWorkflowExecutionRequest{
 		Input: unencodedPayloads(),
 	}
-	err := s.encode(startReq)
+	err := s.process(true, startReq)
 	require.NoError(err)
 
 	require.Equal("binary/zlib", payloadEncoding(startReq.Input))
@@ -80,7 +80,7 @@ func TestServiceInterceptorRequests(t *testing.T) {
 	signalReq := &workflowservice.StartWorkflowExecutionRequest{
 		Input: unencodedPayloads(),
 	}
-	err = s.encode(signalReq)
+	err = s.process(true, signalReq)
 	require.NoError(err)
 
 	require.Equal("binary/zlib", payloadEncoding(signalReq.Input))
@@ -89,7 +89,7 @@ func TestServiceInterceptorRequests(t *testing.T) {
 		Input:       unencodedPayloads(),
 		SignalInput: unencodedPayloads(),
 	}
-	err = s.encode(signalWithStartReq)
+	err = s.process(true, signalWithStartReq)
 	require.NoError(err)
 
 	require.Equal("binary/zlib", payloadEncoding(signalWithStartReq.Input))
@@ -98,7 +98,7 @@ func TestServiceInterceptorRequests(t *testing.T) {
 	respondActivityCompletedReq := &workflowservice.RespondActivityTaskCompletedRequest{
 		Result: unencodedPayloads(),
 	}
-	err = s.encode(respondActivityCompletedReq)
+	err = s.process(true, respondActivityCompletedReq)
 	require.NoError(err)
 
 	require.Equal("binary/zlib", payloadEncoding(respondActivityCompletedReq.Result))
@@ -106,7 +106,7 @@ func TestServiceInterceptorRequests(t *testing.T) {
 	respondActivityCompletedByIdReq := &workflowservice.RespondActivityTaskCompletedByIdRequest{
 		Result: unencodedPayloads(),
 	}
-	err = s.encode(respondActivityCompletedByIdReq)
+	err = s.process(true, respondActivityCompletedByIdReq)
 	require.NoError(err)
 
 	require.Equal("binary/zlib", payloadEncoding(respondActivityCompletedByIdReq.Result))
@@ -123,7 +123,7 @@ func TestServiceInterceptorRequests(t *testing.T) {
 			},
 		},
 	}
-	err = s.encode(respondWorkflowTaskCompletedReq)
+	err = s.process(true, respondWorkflowTaskCompletedReq)
 	require.NoError(err)
 
 	result := respondWorkflowTaskCompletedReq.Commands[0].GetCompleteWorkflowExecutionCommandAttributes().Result
@@ -132,7 +132,7 @@ func TestServiceInterceptorRequests(t *testing.T) {
 	recordActivityTaskHeartbeatReq := &workflowservice.RecordActivityTaskHeartbeatRequest{
 		Details: unencodedPayloads(),
 	}
-	err = s.encode(recordActivityTaskHeartbeatReq)
+	err = s.process(true, recordActivityTaskHeartbeatReq)
 	require.NoError(err)
 
 	require.Equal("binary/zlib", payloadEncoding(recordActivityTaskHeartbeatReq.Details))
@@ -140,7 +140,7 @@ func TestServiceInterceptorRequests(t *testing.T) {
 	recordActivityTaskHeartbeatByIdReq := &workflowservice.RecordActivityTaskHeartbeatByIdRequest{
 		Details: unencodedPayloads(),
 	}
-	err = s.encode(recordActivityTaskHeartbeatByIdReq)
+	err = s.process(true, recordActivityTaskHeartbeatByIdReq)
 	require.NoError(err)
 
 	require.Equal("binary/zlib", payloadEncoding(recordActivityTaskHeartbeatByIdReq.Details))
@@ -148,7 +148,7 @@ func TestServiceInterceptorRequests(t *testing.T) {
 	respondActivityTaskCanceledReq := &workflowservice.RespondActivityTaskCanceledRequest{
 		Details: unencodedPayloads(),
 	}
-	err = s.encode(respondActivityTaskCanceledReq)
+	err = s.process(true, respondActivityTaskCanceledReq)
 	require.NoError(err)
 
 	require.Equal("binary/zlib", payloadEncoding(respondActivityTaskCanceledReq.Details))
@@ -156,7 +156,7 @@ func TestServiceInterceptorRequests(t *testing.T) {
 	respondActivityTaskCanceledByIdReq := &workflowservice.RespondActivityTaskCanceledByIdRequest{
 		Details: unencodedPayloads(),
 	}
-	err = s.encode(respondActivityTaskCanceledByIdReq)
+	err = s.process(true, respondActivityTaskCanceledByIdReq)
 	require.NoError(err)
 
 	require.Equal("binary/zlib", payloadEncoding(respondActivityTaskCanceledByIdReq.Details))
@@ -164,7 +164,7 @@ func TestServiceInterceptorRequests(t *testing.T) {
 	terminateWorkflowExecutionReq := &workflowservice.TerminateWorkflowExecutionRequest{
 		Details: unencodedPayloads(),
 	}
-	err = s.encode(terminateWorkflowExecutionReq)
+	err = s.process(true, terminateWorkflowExecutionReq)
 	require.NoError(err)
 
 	require.Equal("binary/zlib", payloadEncoding(terminateWorkflowExecutionReq.Details))
@@ -178,7 +178,7 @@ func TestServiceInterceptorRequests(t *testing.T) {
 			},
 		},
 	}
-	err = s.encode(respondActivityTaskFailedReq)
+	err = s.process(true, respondActivityTaskFailedReq)
 	require.NoError(err)
 
 	require.Equal("binary/zlib", payloadEncoding(respondActivityTaskFailedReq.Failure.GetApplicationFailureInfo().Details))
@@ -192,7 +192,7 @@ func TestServiceInterceptorRequests(t *testing.T) {
 			},
 		},
 	}
-	err = s.encode(respondActivityTaskFailedByIdReq)
+	err = s.process(true, respondActivityTaskFailedByIdReq)
 	require.NoError(err)
 
 	require.Equal("binary/zlib", payloadEncoding(respondActivityTaskFailedByIdReq.Failure.GetApplicationFailureInfo().Details))
@@ -206,7 +206,7 @@ func TestServiceInterceptorRequests(t *testing.T) {
 			},
 		},
 	}
-	err = s.encode(respondWorkflowTaskFailedReq)
+	err = s.process(true, respondWorkflowTaskFailedReq)
 	require.NoError(err)
 
 	require.Equal("binary/zlib", payloadEncoding(respondWorkflowTaskFailedReq.Failure.GetApplicationFailureInfo().Details))
@@ -233,7 +233,7 @@ func TestServiceInterceptorResponses(t *testing.T) {
 			},
 		},
 	}
-	err := s.decode(historyRes)
+	err := s.process(false, historyRes)
 	require.NoError(err)
 
 	input := historyRes.History.Events[0].GetWorkflowExecutionStartedEventAttributes().Input
@@ -254,7 +254,7 @@ func TestServiceInterceptorResponses(t *testing.T) {
 			},
 		},
 	}
-	err = s.decode(pollWorkflowRes)
+	err = s.process(false, pollWorkflowRes)
 	require.NoError(err)
 
 	input = pollWorkflowRes.History.Events[0].GetWorkflowExecutionStartedEventAttributes().Input
@@ -265,14 +265,14 @@ func TestServiceInterceptorResponses(t *testing.T) {
 		Input:            encodedPayloads(),
 		HeartbeatDetails: encodedPayloads(),
 	}
-	err = s.decode(pollActivityRes)
+	err = s.process(false, pollActivityRes)
 	require.NoError(err)
 
 	require.Equal("json/plain", payloadEncoding(pollActivityRes.Input))
 	require.Equal("json/plain", payloadEncoding(pollActivityRes.HeartbeatDetails))
 
 	emptyPollActivityRes := &workflowservice.PollActivityTaskQueueResponse{}
-	err = s.decode(emptyPollActivityRes)
+	err = s.process(false, emptyPollActivityRes)
 	require.NoError(err)
 }
 
@@ -326,7 +326,7 @@ func TestServiceInterceptorCommands(t *testing.T) {
 			},
 		},
 	}
-	err := s.encode(commands)
+	err := s.process(true, commands)
 	require.NoError(err)
 
 	require.Equal("binary/zlib", payloadEncoding(commands[0].GetScheduleActivityTaskCommandAttributes().Input))
@@ -442,7 +442,7 @@ func TestServiceInterceptorEvents(t *testing.T) {
 		},
 	}
 
-	err := s.decode(events)
+	err := s.process(false, events)
 	require.NoError(err)
 
 	require.Equal("json/plain", payloadEncoding(events[0].GetWorkflowExecutionStartedEventAttributes().Input))

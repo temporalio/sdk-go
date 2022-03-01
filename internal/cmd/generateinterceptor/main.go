@@ -96,7 +96,7 @@ func NewPayloadEncoderGRPCClientInterceptor(options PayloadEncoderGRPCClientInte
 	s := serviceInterceptor{encoders: options.Encoders}
 
 	return func(ctx context.Context, method string, req, response interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		err := s.encode(req)
+		err := s.process(true, req)
 		if err != nil {
 			return err
 		}
@@ -106,7 +106,7 @@ func NewPayloadEncoderGRPCClientInterceptor(options PayloadEncoderGRPCClientInte
 			return err
 		}
 
-		return s.decode(response)
+		return s.process(false, response)
 	}, nil
 }
 
@@ -167,14 +167,6 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 	}
 
 	return nil
-}
-
-func (s *serviceInterceptor) encode(objs ...interface{}) error {
-	return s.process(true, objs...)
-}
-
-func (s *serviceInterceptor) decode(objs ...interface{}) error {
-	return s.process(false, objs...)
 }
 
 `
