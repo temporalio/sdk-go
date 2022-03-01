@@ -25,6 +25,7 @@
 package internal
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -629,11 +630,16 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 			return future
 		}
 		activity, ok := registry.GetActivity(activityType.Name)
-		if !ok {
+		if ok {
+			activityFn = activity.GetFunction()
+		} else if IsReplayNamespace(GetWorkflowInfo(ctx).Namespace) {
+			// When running the replayer (but not necessarily during all replays), we
+			// don't require the activities to be registered, so use a dummy function
+			activityFn = func(context.Context) error { panic("dummy replayer function") }
+		} else {
 			settable.Set(nil, fmt.Errorf("local activity %s is not registered by the worker", activityType.Name))
 			return future
 		}
-		activityFn = activity.GetFunction()
 	} else {
 		if err := validateFunctionArgs(localCtx.fn, args, false); err != nil {
 			settable.Set(nil, err)
