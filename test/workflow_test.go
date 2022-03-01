@@ -1724,6 +1724,11 @@ func (w *Workflows) ReturnCancelError(
 	return temporal.NewCanceledError("some details")
 }
 
+func (w *Workflows) LocalActivityByStringName(ctx workflow.Context) error {
+	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
+	return workflow.ExecuteLocalActivity(ctx, "Prefix_ToUpper", "somestring").Get(ctx, nil)
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -1791,6 +1796,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.TooFewParams)
 	worker.RegisterWorkflow(w.ExecuteRemoteActivityToUpper)
 	worker.RegisterWorkflow(w.ReturnCancelError)
+	worker.RegisterWorkflow(w.LocalActivityByStringName)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
