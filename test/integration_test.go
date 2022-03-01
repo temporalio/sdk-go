@@ -208,6 +208,10 @@ func (ts *IntegrationTestSuite) SetupTest() {
 
 	if strings.Contains(ts.T().Name(), "Session") {
 		options.EnableSessionWorker = true
+		// Limit the session execution size
+		if strings.Contains(ts.T().Name(), "TestMaxConcurrentSessionExecutionSize") {
+			options.MaxConcurrentSessionExecutionSize = 3
+		}
 	}
 
 	if strings.Contains(ts.T().Name(), "LocalActivityWorkerOnly") {
@@ -1934,6 +1938,37 @@ func (ts *IntegrationTestSuite) TestReturnCancelError() {
 	resp, err = ts.client.DescribeWorkflowExecution(ctx, wfIDPrefix+"6", "")
 	ts.NoError(err)
 	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_CANCELED, resp.GetWorkflowExecutionInfo().GetStatus())
+}
+
+func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSize() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	ts.activities.manualStopContext = ctx
+	// Since the test setup set the max execution size to 3, we want to try to
+	// create 4 sessions with a creation timeout of 2s (which is basically
+	// schedule-to-start of the session creation worker)
+	err := ts.executeWorkflow("test-max-concurrent-session-execution-size", ts.workflows.AdvancedSession, nil,
+		&AdvancedSessionParams{SessionCount: 4, SessionCreationTimeout: 2 * time.Second})
+	// Confirm it failed on the 4th session
+	ts.Error(err)
+	ts.Truef(strings.Contains(err.Error(), "failed creating session #4"), "wrong error, got: %v", err)
+}
+
+func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSizeForRecreation() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	ts.activities.manualStopContext = ctx
+	// Same as TestMaxConcurrentSessionExecutionSize above, but we want to start
+	// recreating at session 2 (index 1)
+	err := ts.executeWorkflow("test-max-concurrent-session-execution-size-recreate", ts.workflows.AdvancedSession, nil,
+		&AdvancedSessionParams{
+			SessionCount:           4,
+			SessionCreationTimeout: 2 * time.Second,
+			UseRecreationFrom:      1,
+		})
+	// Confirm it failed on the 4th session
+	ts.Error(err)
+	ts.Truef(strings.Contains(err.Error(), "failed recreating session #4"), "wrong error, got: %v", err)
 }
 
 func (ts *IntegrationTestSuite) registerNamespace() {
