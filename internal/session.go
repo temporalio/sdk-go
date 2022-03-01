@@ -290,10 +290,11 @@ func createSession(ctx Context, creationTaskqueue string, options *SessionOption
 	taskqueueChan := GetSignalChannel(ctx, sessionID) // use sessionID as channel name
 	// Retry is only needed when creating new session and the error returned is NewApplicationError(errTooManySessionsMsg)
 	retryPolicy := &RetryPolicy{
-		InitialInterval:    time.Second,
-		BackoffCoefficient: 1.1,
-		MaximumInterval:    time.Second * 10,
-		MaximumAttempts:    0,
+		InitialInterval:        time.Second,
+		BackoffCoefficient:     1.1,
+		MaximumInterval:        time.Second * 10,
+		MaximumAttempts:        0,
+		NonRetryableErrorTypes: []string{"TemporalTimeout:StartToClose", "TemporalTimeout:Heartbeat"},
 	}
 
 	heartbeatTimeout := defaultSessionHeartbeatTimeout

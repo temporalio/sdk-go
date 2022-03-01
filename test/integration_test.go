@@ -214,6 +214,12 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		}
 	}
 
+	if strings.Contains(ts.T().Name(), "TestSessionOnWorkerFailure") {
+		// We disable sticky execution here since we kill the worker and restart it
+		// and sticky execution adds a 5s penalty
+		worker.SetStickyWorkflowCacheSize(0)
+	}
+
 	if strings.Contains(ts.T().Name(), "LocalActivityWorkerOnly") {
 		options.LocalActivityWorkerOnly = true
 	}
@@ -1969,6 +1975,43 @@ func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSizeForRecreati
 	// Confirm it failed on the 4th session
 	ts.Error(err)
 	ts.Truef(strings.Contains(err.Error(), "failed recreating session #4"), "wrong error, got: %v", err)
+}
+
+func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	ts.activities.manualStopContext = ctx
+	// We want to start a single long-running activity in a session
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-session-worker-failure"),
+		ts.workflows.AdvancedSession,
+		&AdvancedSessionParams{
+			SessionCount:           1,
+			SessionCreationTimeout: 10 * time.Second,
+		})
+	ts.NoError(err)
+
+	// Wait until sessions started
+	ts.waitForQueryTrue(run, "sessions-started")
+
+	// Kill the worker
+	ts.worker.Stop()
+	ts.workerStopped = true
+
+	// Now create a new worker on that same task queue to resume the work of the
+	// workflow
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{DisableStickyExecution: true})
+	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.NoError(nextWorker.Start())
+	defer nextWorker.Stop()
+
+	// Get the result of the workflow run now
+	err = run.Get(ctx, nil)
+	// We expect the activity to be cancelled. Before the issue that was fixed
+	// when this test was written, this would hang because sessions would
+	// inadvertently retry.
+	ts.Error(err)
+	ts.Truef(strings.HasSuffix(err.Error(), "activity on session #1 failed: canceled"), "wrong error, got: %v", err)
 }
 
 func (ts *IntegrationTestSuite) registerNamespace() {
