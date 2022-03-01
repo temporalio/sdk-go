@@ -35,6 +35,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
@@ -42,10 +43,10 @@ import (
 	"go.temporal.io/api/errordetails/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/internal/common/retry"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/health"
-	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/resolver"
@@ -121,26 +122,106 @@ func TestHeadersProvider_Error(t *testing.T) {
 }
 
 func TestHeadersProvider_NotIncludedWhenNil(t *testing.T) {
-	interceptors := requiredInterceptors(nil, nil, nil)
+	interceptors := requiredInterceptors(nil, nil, nil, nil)
 	require.Equal(t, 5, len(interceptors))
 }
 
 func TestHeadersProvider_IncludedWithHeadersProvider(t *testing.T) {
-	interceptors := requiredInterceptors(nil, authHeadersProvider{token: "test-auth-token"}, nil)
+	interceptors := requiredInterceptors(nil,
+		authHeadersProvider{token: "test-auth-token"}, nil, nil)
 	require.Equal(t, 6, len(interceptors))
+}
+
+func TestMissingGetServerInfo(t *testing.T) {
+	// Make a gRPC server that has everything unimplemented
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	srv := grpc.NewServer()
+	go func() {
+		if err := srv.Serve(l); err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	// Wait until it is responding with a 404
+	var lastErr error
+	for i := 0; i < 20; i++ {
+		lastErr = nil
+		conn, err := grpc.Dial(l.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			lastErr = err
+		} else {
+			_, err := workflowservice.NewWorkflowServiceClient(conn).GetSystemInfo(
+				context.Background(),
+				&workflowservice.GetSystemInfoRequest{},
+			)
+			_ = conn.Close()
+			if status.Code(err) != codes.Unimplemented {
+				lastErr = fmt.Errorf("expected unimplemented, got: %w", err)
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	require.NoError(t, lastErr)
+
+	// Create a new client and confirm client has empty capabilities set
+	client, err := NewClient(ClientOptions{HostPort: l.Addr().String()})
+	require.NoError(t, err)
+	workflowClient := client.(*WorkflowClient)
+	require.True(t, proto.Equal(&workflowservice.GetSystemInfoResponse_Capabilities{}, &workflowClient.capabilities))
+}
+
+func TestInternalErrorRetry(t *testing.T) {
+	// Build a common retry policy that will retry 2 times (so 3 attempts total)
+	retryConfig := retry.NewGrpcRetryConfig(10 * time.Nanosecond)
+	retryConfig.SetMaximumAttempts(3)
+	ctx := context.WithValue(context.Background(), retry.ConfigKey, retryConfig)
+
+	// Start a server that wants you to retry internal errors (the default)
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+
+	// Set it to return an internal error on signal workflow
+	srv.signalWorkflowExecutionResponseError = status.Error(codes.Internal, "oh no, an internal error")
+
+	// Create client and make call
+	client, err := NewClient(ClientOptions{HostPort: srv.addr})
+	require.NoError(t, err)
+	defer client.Close()
+	_, err = client.WorkflowService().SignalWorkflowExecution(ctx, &workflowservice.SignalWorkflowExecutionRequest{})
+	// Confirm it made 3 calls
+	_, isInternalError := err.(*serviceerror.Internal)
+	require.True(t, isInternalError)
+	require.Equal(t, 3, srv.signalWorkflowInvokeCount())
+
+	// Now make a server that does not retry internal errors
+	srv, err = startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+	srv.getSystemInfoResponse.Capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{
+		InternalErrorDifferentiation: true,
+	}
+
+	// Set it to return an internal error on signal workflow
+	srv.signalWorkflowExecutionResponseError = status.Error(codes.Internal, "oh no, an internal error")
+
+	// Create client and make call
+	client, err = NewClient(ClientOptions{HostPort: srv.addr})
+	require.NoError(t, err)
+	defer client.Close()
+	_, err = client.WorkflowService().SignalWorkflowExecution(ctx, &workflowservice.SignalWorkflowExecutionRequest{})
+	// Confirm it only made 1 call because it doesn't retry internal
+	_, isInternalError = err.(*serviceerror.Internal)
+	require.True(t, isInternalError)
+	require.Equal(t, 1, srv.signalWorkflowInvokeCount())
 }
 
 func TestDialOptions(t *testing.T) {
 	// Start an unimplemented gRPC server
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+	srv, err := startTestGRPCServer()
 	require.NoError(t, err)
-	srv := grpc.NewServer()
-	workflowservice.RegisterWorkflowServiceServer(srv, &workflowservice.UnimplementedWorkflowServiceServer{})
-	healthServer := health.NewServer()
-	healthServer.SetServingStatus(healthCheckServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
-	grpc_health_v1.RegisterHealthServer(srv, healthServer)
 	defer srv.Stop()
-	go func() { _ = srv.Serve(l) }()
 
 	// Connect with unary outer and unary inner interceptors
 	var trace []string
@@ -162,7 +243,7 @@ func TestDialOptions(t *testing.T) {
 		}
 	}
 	client, err := NewClient(ClientOptions{
-		HostPort: l.Addr().String(),
+		HostPort: srv.addr,
 		ConnectionOptions: ConnectionOptions{
 			DialOptions: []grpc.DialOption{
 				grpc.WithUnaryInterceptor(tracer("outer")),
@@ -186,10 +267,10 @@ func TestCustomResolver(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	// Create two gRPC servers
-	s1, err := startAdditionalHostPortsGRPCServer()
+	s1, err := startTestGRPCServer()
 	require.NoError(t, err)
 	defer s1.Stop()
-	s2, err := startAdditionalHostPortsGRPCServer()
+	s2, err := startTestGRPCServer()
 	require.NoError(t, err)
 	defer s2.Stop()
 
@@ -250,49 +331,48 @@ func TestCustomResolver(t *testing.T) {
 	require.Equal(t, 4, s2.signalWorkflowInvokeCount())
 }
 
-type customResolverGRPCServer struct {
+type testGRPCServer struct {
 	workflowservice.UnimplementedWorkflowServiceServer
 	*grpc.Server
-	addr       string
-	sigWfCount int32
+	addr                                 string
+	sigWfCount                           int32
+	getSystemInfoResponse                workflowservice.GetSystemInfoResponse
+	signalWorkflowExecutionResponse      workflowservice.SignalWorkflowExecutionResponse
+	signalWorkflowExecutionResponseError error
 }
 
-func startAdditionalHostPortsGRPCServer() (*customResolverGRPCServer, error) {
+func startTestGRPCServer() (*testGRPCServer, error) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
 	}
-	s := &customResolverGRPCServer{Server: grpc.NewServer(), addr: l.Addr().String()}
-	workflowservice.RegisterWorkflowServiceServer(s.Server, s)
-	healthServer := health.NewServer()
-	healthServer.SetServingStatus(healthCheckServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
-	grpc_health_v1.RegisterHealthServer(s.Server, healthServer)
+	t := &testGRPCServer{Server: grpc.NewServer(), addr: l.Addr().String()}
+	workflowservice.RegisterWorkflowServiceServer(t.Server, t)
 	go func() {
-		if err := s.Serve(l); err != nil {
+		if err := t.Serve(l); err != nil {
 			log.Fatal(err)
 		}
 	}()
 
-	// Wait until health reports serving
-	return s, s.waitUntilServing()
+	// Wait until get-system-info reports serving
+	return t, t.waitUntilServing()
 }
 
-func (c *customResolverGRPCServer) waitUntilServing() error {
+func (t *testGRPCServer) waitUntilServing() error {
 	// Try 20 times, waiting 100ms between
 	var lastErr error
 	for i := 0; i < 20; i++ {
-		conn, err := grpc.Dial(c.addr, grpc.WithInsecure())
+		conn, err := grpc.Dial(t.addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			lastErr = err
 		} else {
-			resp, err := grpc_health_v1.NewHealthClient(conn).Check(context.Background(), &grpc_health_v1.HealthCheckRequest{
-				Service: healthCheckServiceName,
-			})
+			_, err := workflowservice.NewWorkflowServiceClient(conn).GetSystemInfo(
+				context.Background(),
+				&workflowservice.GetSystemInfoRequest{},
+			)
 			_ = conn.Close()
 			if err != nil {
 				lastErr = err
-			} else if resp.Status != grpc_health_v1.HealthCheckResponse_SERVING {
-				lastErr = fmt.Errorf("last status: %v", resp.Status)
 			} else {
 				return nil
 			}
@@ -302,18 +382,25 @@ func (c *customResolverGRPCServer) waitUntilServing() error {
 	return fmt.Errorf("failed waiting, last error: %w", lastErr)
 }
 
-func (c *customResolverGRPCServer) SignalWorkflowExecution(
+func (t *testGRPCServer) GetSystemInfo(
+	ctx context.Context,
+	req *workflowservice.GetSystemInfoRequest,
+) (*workflowservice.GetSystemInfoResponse, error) {
+	return &t.getSystemInfoResponse, nil
+}
+
+func (t *testGRPCServer) SignalWorkflowExecution(
 	context.Context,
 	*workflowservice.SignalWorkflowExecutionRequest,
 ) (*workflowservice.SignalWorkflowExecutionResponse, error) {
-	atomic.AddInt32(&c.sigWfCount, 1)
-	return &workflowservice.SignalWorkflowExecutionResponse{}, nil
+	atomic.AddInt32(&t.sigWfCount, 1)
+	return &t.signalWorkflowExecutionResponse, t.signalWorkflowExecutionResponseError
 }
 
-func (c *customResolverGRPCServer) signalWorkflowInvokeCount() int {
-	return int(atomic.LoadInt32(&c.sigWfCount))
+func (t *testGRPCServer) signalWorkflowInvokeCount() int {
+	return int(atomic.LoadInt32(&t.sigWfCount))
 }
 
-func (c *customResolverGRPCServer) resetSignalWorkflowInvokeCount() {
-	atomic.StoreInt32(&c.sigWfCount, 0)
+func (t *testGRPCServer) resetSignalWorkflowInvokeCount() {
+	atomic.StoreInt32(&t.sigWfCount, 0)
 }

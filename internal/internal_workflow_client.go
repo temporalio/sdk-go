@@ -74,6 +74,7 @@ type (
 		contextPropagators []ContextPropagator
 		workerInterceptors []WorkerInterceptor
 		interceptor        ClientOutboundInterceptor
+		capabilities       workflowservice.GetSystemInfoResponse_Capabilities
 	}
 
 	// namespaceClient is the client for managing namespaces.

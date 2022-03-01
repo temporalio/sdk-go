@@ -31,6 +31,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 )
@@ -50,7 +51,7 @@ func TestGRPCInterceptor(t *testing.T) {
 	// Create client with interceptor
 	handler := metrics.NewCapturingHandler()
 	cc, err := grpc.Dial(l.Addr().String(),
-		grpc.WithInsecure(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithUnaryInterceptor(metrics.NewGRPCInterceptor(handler, "_my_suffix")))
 	require.NoError(t, err)
 	defer func() { _ = cc.Close() }()
