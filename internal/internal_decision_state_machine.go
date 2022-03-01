@@ -910,16 +910,20 @@ func (h *commandsHelper) removeCancelOfResolvedCommand(commandID commandID) {
 		delete(h.commands, commandID)
 		command := h.orderedCommands.Remove(orderedCmdEl)
 		// Sometimes commandsCancelledDuringWFCancellation was incremented before
-		// it was reset and sometimes not. We use the reset counter to see if we're
-		// still on the same iteration where we may have incremented it before.
-		switch command := command.(type) {
-		case *cancelActivityStateMachine:
-			if command.cancelledOnEventIDResetCounter == h.nextCommandEventIDResetCounter {
-				h.commandsCancelledDuringWFCancellation--
-			}
-		case *cancelTimerCommandStateMachine:
-			if command.cancelledOnEventIDResetCounter == h.nextCommandEventIDResetCounter {
-				h.commandsCancelledDuringWFCancellation--
+		// it was reset and sometimes not. We make sure the workflow execution is
+		// actually cancelling since that's the only time we increment the counter
+		// in the first place. Also, we use the reset counter to see if we're still
+		// on the same iteration where we may have incremented it before.
+		if h.workflowExecutionIsCancelling {
+			switch command := command.(type) {
+			case *cancelActivityStateMachine:
+				if command.cancelledOnEventIDResetCounter == h.nextCommandEventIDResetCounter {
+					h.commandsCancelledDuringWFCancellation--
+				}
+			case *cancelTimerCommandStateMachine:
+				if command.cancelledOnEventIDResetCounter == h.nextCommandEventIDResetCounter {
+					h.commandsCancelledDuringWFCancellation--
+				}
 			}
 		}
 	}
