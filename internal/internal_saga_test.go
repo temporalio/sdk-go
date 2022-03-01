@@ -388,6 +388,8 @@ func (w *testSagaWorkflow) run(ctx Context, opts sagaTestOptions) (res int, err 
 	}()
 
 	err = SetQueryHandler(ctx, "count", func(input []byte) (int, error) {
+		w.mu.Lock()
+		defer w.mu.Unlock()
 		return w.Count, nil
 	})
 	if err != nil {
@@ -395,6 +397,8 @@ func (w *testSagaWorkflow) run(ctx Context, opts sagaTestOptions) (res int, err 
 	}
 
 	err = SetQueryHandler(ctx, "compensationOrder", func(input []byte) ([]int, error) {
+		w.mu.Lock()
+		defer w.mu.Unlock()
 		return w.CompensationOrder, nil
 	})
 	if err != nil {

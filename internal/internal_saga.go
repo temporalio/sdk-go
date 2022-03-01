@@ -29,7 +29,6 @@ package internal
 import (
 	"fmt"
 	"strings"
-	"sync"
 )
 
 const sagaOptionsContextKey = "sagaOptions"
@@ -64,19 +63,15 @@ type Saga struct {
 	ctx               Context
 	options           *SagaOptions
 	compensationStack []*compensationOp
-	once              sync.Once
 	cancelFunc        CancelFunc
 
-	// since the cancelFunc is non-blocking, we use a canceled flag and lock
-	// to ensure compensation steps aren't run after the cancelFunc is called.
+	// since the cancelFunc is non-blocking, we use a canceled to ensure
+	// compensation steps aren't run after the cancelFunc is called.
 	canceled bool
-	lock     sync.RWMutex
 }
 
 // Cancel cancels the current Saga.
 func (s *Saga) Cancel() {
-	s.lock.Lock()
-	defer s.lock.Unlock()
 	s.cancelFunc()
 	s.canceled = true
 }
@@ -89,17 +84,11 @@ func (s *Saga) AddCompensation(activity interface{}, args ...interface{}) {
 	})
 }
 
-func (s *Saga) isCanceled() bool {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-	return s.canceled
-}
-
 // Compensate executes all the compensation operations in the stack.
 // After the first call, subsequent calls to a Compensate do nothing.
 func (s *Saga) Compensate() error {
 	// first check if Cancel was called to prevent compensation race.
-	if s.isCanceled() {
+	if s.canceled {
 		return ErrCanceled
 	}
 
@@ -108,12 +97,7 @@ func (s *Saga) Compensate() error {
 		compensationFn = s.compensateParallel
 	}
 
-	var err error
-	s.once.Do(func() {
-		err = compensationFn()
-	})
-
-	return err
+	return compensationFn()
 }
 
 func (s *Saga) compensateParallel() error {
