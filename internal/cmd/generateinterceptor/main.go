@@ -28,6 +28,8 @@ package main
 
 import (
 	"bytes"
+	"flag"
+	"fmt"
 	"go/format"
 	"go/types"
 	"log"
@@ -323,7 +325,16 @@ func walk(desired []types.Type, skip []types.Type, typ types.Type) bool {
 	return record.Matches
 }
 
+type config struct {
+	verifyOnly bool
+}
+
 func main() {
+	var cfg config
+	flag.BoolVar(&cfg.verifyOnly, "verifyOnly", false,
+		"don't automatically write interceptor, just verify it has not changed")
+	flag.Parse()
+
 	conf := &packages.Config{Mode: packages.NeedImports | packages.NeedTypes | packages.NeedTypesInfo}
 	pkgs, err := packages.Load(conf, "go.temporal.io/api/workflowservice/v1")
 	if err != nil {
@@ -372,6 +383,19 @@ func main() {
 	src, err := format.Source(buf.Bytes())
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	if cfg.verifyOnly {
+		currentSrc, err := os.ReadFile("grpc_interceptor.go")
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if bytes.Compare(src, currentSrc) != 0 {
+			log.Fatal(fmt.Errorf("generated file does not match existing file"))
+		}
+
+		return
 	}
 
 	err = os.WriteFile("grpc_interceptor.go", src, 0666)
