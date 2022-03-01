@@ -328,7 +328,7 @@ func walk(desired []types.Type, skip []types.Type, typ types.Type) bool {
 
 		methodName := meth.Obj().Name()
 		// The protobuf types have a Get.. method for every protobuf they refer to
-		// We only walk these methods to avoid cycles or other nasty issues
+		// We walk only these methods to avoid cycles or other nasty issues
 		if !strings.HasPrefix(methodName, "Get") {
 			continue
 		}
