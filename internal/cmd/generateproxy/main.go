@@ -28,6 +28,7 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"go/format"
 	"go/types"
@@ -38,6 +39,8 @@ import (
 	"golang.org/x/tools/go/packages"
 	"golang.org/x/tools/go/types/typeutil"
 )
+
+const generatedFile = "service_proxy.go"
 
 const Header = `// The MIT License
 //
@@ -94,7 +97,16 @@ func NewWorkflowServiceProxyServer(options WorkflowServiceProxyOptions) (workflo
 }
 `
 
+type config struct {
+	verifyOnly bool
+}
+
 func main() {
+	var cfg config
+	flag.BoolVar(&cfg.verifyOnly, "verifyOnly", false,
+		"don't automatically write interceptor, just verify it has not changed")
+	flag.Parse()
+
 	buf := &bytes.Buffer{}
 
 	fmt.Fprint(buf, Header)
@@ -137,7 +149,20 @@ func main() {
 		log.Fatal(err)
 	}
 
-	err = os.WriteFile("service_proxy.go", src, 0666)
+	if cfg.verifyOnly {
+		currentSrc, err := os.ReadFile(generatedFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if bytes.Compare(src, currentSrc) != 0 {
+			log.Fatal(fmt.Errorf("generated file does not match existing file"))
+		}
+
+		return
+	}
+
+	err = os.WriteFile(generatedFile, src, 0666)
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -29,6 +29,11 @@ copyright $(BUILD)/copyright:
 	@mkdir -p $(BUILD)
 	@touch $(BUILD)/copyright
 
+# Ensure generated code dependent on the API is not stale
+generatorcheck:
+	(cd converter && go run ../internal/cmd/generateinterceptor/main.go -verifyOnly)
+	(cd client && go run ../internal/cmd/generateproxy/main.go -verifyOnly)
+
 $(BUILD)/dummy:
 	go build -o $@ internal/cmd/dummy/dummy.go
 
@@ -92,12 +97,7 @@ fmt:
 clean:
 	rm -rf $(BUILD)
 
-check: vet errcheck staticcheck copyright bins ensure-no-changes
-
-ensure-no-changes:
-	@echo "Check for local changes..."
-	@echo "========================================================================"
-	@git diff --name-status --exit-code || (echo "========================================================================"; echo "Above files are not regenerated properly. Regenerate them and try again."; exit 1)
+check: vet errcheck staticcheck copyright generatorcheck bins
 
 ##### Fossa #####
 fossa-install: 

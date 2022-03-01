@@ -41,6 +41,8 @@ import (
 	"golang.org/x/tools/go/types/typeutil"
 )
 
+const generatedFile = "grpc_interceptor.go"
+
 const codeTemplateText = `
 // The MIT License
 //
@@ -386,7 +388,7 @@ func main() {
 	}
 
 	if cfg.verifyOnly {
-		currentSrc, err := os.ReadFile("grpc_interceptor.go")
+		currentSrc, err := os.ReadFile(generatedFile)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -398,7 +400,7 @@ func main() {
 		return
 	}
 
-	err = os.WriteFile("grpc_interceptor.go", src, 0666)
+	err = os.WriteFile(generatedFile, src, 0666)
 	if err != nil {
 		log.Fatal(err)
 	}
