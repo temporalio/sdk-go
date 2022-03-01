@@ -144,7 +144,6 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 				o.GetScheduleActivityTaskCommandAttributes(),
 				o.GetSignalExternalWorkflowExecutionCommandAttributes(),
 				o.GetStartChildWorkflowExecutionCommandAttributes(),
-				o.GetUpsertWorkflowSearchAttributesCommandAttributes(),
 			); err != nil {
 				return err
 			}
@@ -171,7 +170,6 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 				o.GetInput(),
 				o.GetLastCompletionResult(),
 				o.GetMemo(),
-				o.GetSearchAttributes(),
 			); err != nil {
 				return err
 			}
@@ -233,18 +231,6 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 				o.GetHeader(),
 				o.GetInput(),
 				o.GetMemo(),
-				o.GetSearchAttributes(),
-			); err != nil {
-				return err
-			}
-
-		case *commandpb.UpsertWorkflowSearchAttributesCommandAttributes:
-			if o == nil {
-				continue
-			}
-			if err := s.process(
-				encode,
-				o.GetSearchAttributes(),
 			); err != nil {
 				return err
 			}
@@ -267,17 +253,6 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 			if err := s.process(
 				encode,
 				o.GetFields(),
-			); err != nil {
-				return err
-			}
-
-		case *commonpb.SearchAttributes:
-			if o == nil {
-				continue
-			}
-			if err := s.process(
-				encode,
-				o.GetIndexedFields(),
 			); err != nil {
 				return err
 			}
@@ -489,7 +464,6 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 				o.GetMarkerRecordedEventAttributes(),
 				o.GetSignalExternalWorkflowExecutionInitiatedEventAttributes(),
 				o.GetStartChildWorkflowExecutionInitiatedEventAttributes(),
-				o.GetUpsertWorkflowSearchAttributesEventAttributes(),
 				o.GetWorkflowExecutionCanceledEventAttributes(),
 				o.GetWorkflowExecutionCompletedEventAttributes(),
 				o.GetWorkflowExecutionContinuedAsNewEventAttributes(),
@@ -536,18 +510,6 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 				o.GetHeader(),
 				o.GetInput(),
 				o.GetMemo(),
-				o.GetSearchAttributes(),
-			); err != nil {
-				return err
-			}
-
-		case *historypb.UpsertWorkflowSearchAttributesEventAttributes:
-			if o == nil {
-				continue
-			}
-			if err := s.process(
-				encode,
-				o.GetSearchAttributes(),
 			); err != nil {
 				return err
 			}
@@ -585,7 +547,6 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 				o.GetInput(),
 				o.GetLastCompletionResult(),
 				o.GetMemo(),
-				o.GetSearchAttributes(),
 			); err != nil {
 				return err
 			}
@@ -624,7 +585,6 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 				o.GetInput(),
 				o.GetLastCompletionResult(),
 				o.GetMemo(),
-				o.GetSearchAttributes(),
 			); err != nil {
 				return err
 			}
@@ -721,7 +681,6 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 			if err := s.process(
 				encode,
 				o.GetMemo(),
-				o.GetSearchAttributes(),
 			); err != nil {
 				return err
 			}
@@ -994,7 +953,6 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 				o.GetHeader(),
 				o.GetInput(),
 				o.GetMemo(),
-				o.GetSearchAttributes(),
 				o.GetSignalInput(),
 			); err != nil {
 				return err
@@ -1021,7 +979,6 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 				o.GetHeader(),
 				o.GetInput(),
 				o.GetMemo(),
-				o.GetSearchAttributes(),
 			); err != nil {
 				return err
 			}

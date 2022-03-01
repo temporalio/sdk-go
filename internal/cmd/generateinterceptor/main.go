@@ -291,10 +291,10 @@ func pruneRecords(input map[string]*TypeRecord) map[string]*TypeRecord {
 
 // walk iterates the methods on a type and returns whether any of them can eventually lead to Payload(s)
 // The return type for each method on this type is walked recursively to decide which methods can lead to Payload(s)
-func walk(desired []types.Type, typ types.Type) bool {
+func walk(desired []types.Type, skip []types.Type, typ types.Type) bool {
 	// If this type is a slice then walk the underlying type and then make a note we need to encode slices of this type
 	if isSlice(typ) {
-		result := walk(desired, elemType(typ))
+		result := walk(desired, skip, elemType(typ))
 		record := records[typeName(typ)]
 		record.Slice = true
 		return result
@@ -302,7 +302,7 @@ func walk(desired []types.Type, typ types.Type) bool {
 
 	// If this type is a map then walk the underlying type and then make a note we need to encode maps with values of this type
 	if isMap(typ) {
-		result := walk(desired, elemType(typ))
+		result := walk(desired, skip, elemType(typ))
 		record := records[typeName(typ)]
 		record.Map = true
 		return result
@@ -335,8 +335,13 @@ func walk(desired []types.Type, typ types.Type) bool {
 		// All the Get... methods return the relevant protobuf as the first result
 		resultType := sig.Results().At(0).Type()
 
+		// Skip this method if it returns a type we want to skip
+		if typeMatches(resultType, skip...) {
+			continue
+		}
+
 		// Check if this method returns a Payload(s) or if it leads (eventually) to a Type which refers to a Payload(s)
-		if typeMatches(resultType, desired...) || walk(desired, resultType) {
+		if typeMatches(resultType, desired...) || walk(desired, skip, resultType) {
 			record.Matches = true
 			record.Methods = append(record.Methods, methodName)
 		}
@@ -367,6 +372,9 @@ func main() {
 		scope.Lookup("Payloads").Type(),
 		scope.Lookup("Payload").Type(),
 	}
+	skipTypes := []types.Type{
+		scope.Lookup("SearchAttributes").Type(),
+	}
 
 	scope = servicePkg.Types.Scope()
 	// UnimplementedWorkflowServiceServer is auto-generated via our API package
@@ -379,8 +387,8 @@ func main() {
 			}
 
 			sig := meth.Obj().Type().(*types.Signature)
-			walk(payloadTypes, sig.Params().At(1).Type())
-			walk(payloadTypes, sig.Results().At(0).Type())
+			walk(payloadTypes, skipTypes, sig.Params().At(1).Type())
+			walk(payloadTypes, skipTypes, sig.Results().At(0).Type())
 		}
 	}
 
