@@ -40,10 +40,11 @@ import (
 )
 
 type Activities struct {
-	client      client.Client
-	mu          sync.Mutex
-	invocations []string
-	activities2 *Activities2
+	client            client.Client
+	mu                sync.Mutex
+	invocations       []string
+	activities2       *Activities2
+	manualStopContext context.Context
 }
 
 type Activities2 struct {
@@ -186,6 +187,14 @@ func (a *Activities) WaitForWorkerStop(ctx context.Context, timeout time.Duratio
 	case <-time.After(timeout):
 		return "timeout", nil
 	}
+}
+
+func (a *Activities) WaitForManualStop(context.Context) error {
+	if a.manualStopContext == nil {
+		return fmt.Errorf("no manual context set")
+	}
+	<-a.manualStopContext.Done()
+	return nil
 }
 
 func (a *Activities) HeartbeatUntilCanceled(ctx context.Context, heartbeatFreq time.Duration) error {

@@ -1159,6 +1159,83 @@ func (w *Workflows) BasicSession(ctx workflow.Context) ([]string, error) {
 	return []string{"toUpper"}, nil
 }
 
+type AdvancedSessionParams struct {
+	SessionCount           int
+	SessionCreationTimeout time.Duration
+	// What session index at which to start using as recreation sessions of the
+	// last one instead of regular creation. Ignored if 0.
+	UseRecreationFrom int
+}
+
+func (w Workflows) AdvancedSession(ctx workflow.Context, params *AdvancedSessionParams) error {
+	// Create a query to know sessions started
+	sessionsStarted := false
+	err := workflow.SetQueryHandler(ctx, "sessions-started", func() (bool, error) { return sessionsStarted, nil })
+	if err != nil {
+		return err
+	}
+
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: time.Minute,
+		// No retry on activities
+		RetryPolicy: &temporal.RetryPolicy{MaximumAttempts: 1},
+	})
+
+	// Create the sessions and their activities
+	sel := workflow.NewSelector(ctx)
+	var actErr error
+	var act Activities
+	var lastCreatedSessionInfo *workflow.SessionInfo
+	for i := 0; i < params.SessionCount; i++ {
+		i := i
+		var sessionCtx workflow.Context
+		var err error
+		opts := &workflow.SessionOptions{
+			CreationTimeout:  params.SessionCreationTimeout,
+			ExecutionTimeout: 20 * time.Second,
+			HeartbeatTimeout: 2 * time.Second,
+		}
+		// Do a create unless at recreate index
+		verb := "creating"
+		if params.UseRecreationFrom == 0 || i < params.UseRecreationFrom {
+			sessionCtx, err = workflow.CreateSession(ctx, opts)
+			if err == nil {
+				lastCreatedSessionInfo = workflow.GetSessionInfo(sessionCtx)
+			}
+		} else {
+			sessionCtx, err = workflow.RecreateSession(ctx, lastCreatedSessionInfo.GetRecreateToken(), opts)
+			verb = "recreating"
+		}
+		if err != nil {
+			// We use the error message instead of wrapping the error itself
+			// because unfortunately the error converter unwraps some like
+			// cancellation
+			return fmt.Errorf("failed %v session #%v: %v", verb, i+1, err.Error())
+		}
+		defer workflow.CompleteSession(sessionCtx)
+
+		// Run activity in session
+		sel.AddFuture(workflow.ExecuteActivity(sessionCtx, act.WaitForManualStop), func(f workflow.Future) {
+			if err := f.Get(sessionCtx, nil); err != nil {
+				// We use the error message instead of wrapping the error itself
+				// because unfortunately the error converter unwraps some like
+				// cancellation
+				actErr = fmt.Errorf("activity on session #%v failed: %v", i+1, err.Error())
+			}
+		})
+	}
+	sessionsStarted = true
+
+	// Wait for all
+	for i := 0; i < params.SessionCount; i++ {
+		sel.Select(ctx)
+		if actErr != nil {
+			return actErr
+		}
+	}
+	return nil
+}
+
 func (w *Workflows) ActivityCompletionUsingID(ctx workflow.Context) ([]string, error) {
 	activityAOptions := workflow.ActivityOptions{
 		ActivityID:             "A",
@@ -1669,6 +1746,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.Panicked)
 	worker.RegisterWorkflow(w.PanickedActivity)
 	worker.RegisterWorkflow(w.BasicSession)
+	worker.RegisterWorkflow(w.AdvancedSession)
 	worker.RegisterWorkflow(w.CancelActivity)
 	worker.RegisterWorkflow(w.CancelActivityImmediately)
 	worker.RegisterWorkflow(w.CancelChildWorkflow)
