@@ -82,6 +82,34 @@ import (
 	querypb "go.temporal.io/api/query/v1"
 )
 
+// PayloadEncoderGRPCClientInterceptorOptions holds interceptor options.
+// Currently this is just the list of encoders to use.
+type PayloadEncoderGRPCClientInterceptorOptions struct {
+	Encoders []PayloadEncoder
+}
+
+// NewPayloadEncoderGRPCClientInterceptor returns a GRPC Client Interceptor that will mimic the encoding
+// that the SDK system would perform when configured with a matching EncodingDataConverter.
+// Note: This approach does not support use cases that rely on the ContextAware DataConverter interface as
+// workflow context is not available at the GRPC level.
+func NewPayloadEncoderGRPCClientInterceptor(options PayloadEncoderGRPCClientInterceptorOptions) (grpc.UnaryClientInterceptor, error) {
+	s := serviceInterceptor{encoders: options.Encoders}
+
+	return func(ctx context.Context, method string, req, response interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		err := s.encode(req)
+		if err != nil {
+			return err
+		}
+
+		err = invoker(ctx, method, req, response, cc, opts...)
+		if err != nil {
+			return err
+		}
+
+		return s.decode(response)
+	}, nil
+}
+
 type serviceInterceptor struct {
 	encoders []PayloadEncoder
 }
@@ -149,33 +177,6 @@ func (s *serviceInterceptor) decode(objs ...interface{}) error {
 	return s.process(false, objs...)
 }
 
-// PayloadEncoderGRPCClientInterceptorOptions holds interceptor options.
-// Currently this is just the list of encoders to use.
-type PayloadEncoderGRPCClientInterceptorOptions struct {
-	Encoders []PayloadEncoder
-}
-
-// NewPayloadEncoderGRPCClientInterceptor returns a GRPC Client Interceptor that will mimic the encoding
-// that the SDK system would perform when configured with a matching EncodingDataConverter.
-// Note: This approach does not support use cases that rely on the ContextAware DataConverter interface as
-// workflow context is not available at the GRPC level.
-func NewPayloadEncoderGRPCClientInterceptor(options PayloadEncoderGRPCClientInterceptorOptions) (grpc.UnaryClientInterceptor, error) {
-	s := serviceInterceptor{encoders: options.Encoders}
-
-	return func(ctx context.Context, method string, req, response interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		err := s.encode(req)
-		if err != nil {
-			return err
-		}
-
-		err = invoker(ctx, method, req, response, cc, opts...)
-		if err != nil {
-			return err
-		}
-
-		return s.decode(response)
-	}, nil
-}
 `
 
 var codeTemplate = template.Must(template.New("process").Parse(codeTemplateText))
