@@ -92,7 +92,12 @@ fmt:
 clean:
 	rm -rf $(BUILD)
 
-check: vet errcheck staticcheck copyright bins
+check: vet errcheck staticcheck copyright bins ensure-no-changes
+
+ensure-no-changes:
+	@echo "Check for local changes..."
+	@echo "========================================================================"
+	@git diff --name-status --exit-code || (echo "========================================================================"; echo "Above files are not regenerated properly. Regenerate them and try again."; exit 1)
 
 ##### Fossa #####
 fossa-install: 
