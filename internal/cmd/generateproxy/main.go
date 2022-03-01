@@ -156,7 +156,7 @@ func main() {
 		}
 
 		if bytes.Compare(src, currentSrc) != 0 {
-			log.Fatal(fmt.Errorf("generated file does not match existing file"))
+			log.Fatal(fmt.Errorf("generated file does not match existing file: %s", generatedFile))
 		}
 
 		return
