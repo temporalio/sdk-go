@@ -126,6 +126,9 @@ func RecreateSession(ctx Context, recreateToken []byte, sessionOptions *SessionO
 // After a session has completed, user can continue to use the context, but the activities will be scheduled
 // on the normal taskQueue (as user specified in ActivityOptions) and may be picked up by another worker since
 // it's not in a session.
+//
+// Due to internal logic, this call must be made in the same coroutine CreateSession/RecreateSession were
+// called in.
 func CompleteSession(ctx Context) {
 	internal.CompleteSession(ctx)
 }
