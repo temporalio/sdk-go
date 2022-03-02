@@ -2621,7 +2621,7 @@ func TestIsNonRetriableError(t *testing.T) {
 			expected: false,
 		},
 		{
-			err:      serviceerror.NewResourceExhausted(""),
+			err:      serviceerror.NewResourceExhausted(enumspb.RESOURCE_EXHAUSTED_CAUSE_CONCURRENT_LIMIT, ""),
 			expected: false,
 		},
 		{

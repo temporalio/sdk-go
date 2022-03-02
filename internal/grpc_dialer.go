@@ -33,9 +33,11 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/retry"
+	uberatomic "go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 )
@@ -76,7 +78,7 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 		}
 	} else {
 		securityOptions = []grpc.DialOption{
-			grpc.WithInsecure(),
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
 			grpc.WithAuthority(params.UserConnectionOptions.Authority),
 		}
 	}
@@ -130,6 +132,7 @@ func requiredInterceptors(
 	metricsHandler metrics.Handler,
 	headersProvider HeadersProvider,
 	controller TrafficController,
+	excludeInternalFromRetry *uberatomic.Bool,
 ) []grpc.UnaryClientInterceptor {
 	interceptors := []grpc.UnaryClientInterceptor{
 		errorInterceptor,
@@ -137,7 +140,7 @@ func requiredInterceptors(
 		metrics.NewGRPCInterceptor(metricsHandler, ""),
 		// By default the grpc retry interceptor *is disabled*, preventing accidental use of retries.
 		// We add call options for retry configuration based on the values present in the context.
-		retry.NewRetryOptionsInterceptor(),
+		retry.NewRetryOptionsInterceptor(excludeInternalFromRetry),
 		// Performs retries *IF* retry options are set for the call.
 		grpc_retry.UnaryClientInterceptor(),
 		// Report metrics for every call made to the server.
