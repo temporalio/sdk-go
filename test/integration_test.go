@@ -1742,11 +1742,11 @@ func (ts *IntegrationTestSuite) TestAdvancedPostCancellationChildWithDone() {
 	ts.NoError(run.Get(ctx, nil))
 }
 
-func (ts *IntegrationTestSuite) waitForQueryTrue(run client.WorkflowRun, query string) {
+func (ts *IntegrationTestSuite) waitForQueryTrue(run client.WorkflowRun, query string, args ...interface{}) {
 	var result bool
 	for i := 0; !result && i < 30; i++ {
 		time.Sleep(50 * time.Millisecond)
-		val, err := ts.client.QueryWorkflow(context.Background(), run.GetID(), run.GetRunID(), query)
+		val, err := ts.client.QueryWorkflow(context.Background(), run.GetID(), run.GetRunID(), query, args...)
 		// Ignore query failed because it means query may not be registered yet
 		var queryFailed *serviceerror.QueryFailed
 		if errors.As(err, &queryFailed) {
@@ -1993,21 +1993,38 @@ func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSizeWithRecreat
 	defer cancel()
 	var manualCancel context.CancelFunc
 	ts.activities.manualStopContext, manualCancel = context.WithCancel(ctx)
-	// Similar to TestMaxConcurrentSessionExecutionSize above, but one of the
-	// sessions is a recreation, and we perform the manual stop to make room. This
-	// test confirms that the create session will retry.
-	run, err := ts.client.ExecuteWorkflow(ctx,
-		ts.startWorkflowOptions("test-max-concurrent-session-execution-size-recreate"),
+	// Create 2 workflows each wanting to create 2 sessions (second session on
+	// each is recreation to ensure counter works). This will hang with one
+	// creating 2 and another creating 1 and waiting. Then when we send the signal
+	// that was done creating sessions, they will complete theirs allowing the
+	// other pending creation to complete.
+	run1, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-max-concurrent-session-execution-size-recreate-1"),
 		ts.workflows.AdvancedSession, &AdvancedSessionParams{
-			SessionCount:           4,
+			SessionCount:           2,
 			SessionCreationTimeout: 40 * time.Second,
 			RecreateAtIndex:        1,
 		})
 	ts.NoError(err)
-	// Now complete the activities so the next session can get created
+	// Wait until sessions created
+	ts.waitForQueryTrue(run1, "sessions-created-equals", 2)
+
+	// Now create second and wait until create pending after 1
+	run2, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-max-concurrent-session-execution-size-recreate-2"),
+		ts.workflows.AdvancedSession, &AdvancedSessionParams{
+			SessionCount:           2,
+			SessionCreationTimeout: 40 * time.Second,
+			RecreateAtIndex:        1,
+		})
+	ts.NoError(err)
+	// Wait until sessions created
+	ts.waitForQueryTrue(run2, "sessions-created-equals-and-pending", 1)
+
+	// Now let the activities complete which lets run1 complete and free up
+	// sessions for run2
 	manualCancel()
-	// Confirm completed without error
-	ts.NoError(run.Get(ctx, nil))
+	ts.NoError(run2.Get(ctx, nil))
 }
 
 func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
@@ -2025,7 +2042,7 @@ func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
 	ts.NoError(err)
 
 	// Wait until sessions started
-	ts.waitForQueryTrue(run, "sessions-started")
+	ts.waitForQueryTrue(run, "sessions-created-equals", 1)
 
 	// Kill the worker
 	ts.worker.Stop()
