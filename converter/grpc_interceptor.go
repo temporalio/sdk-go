@@ -712,6 +712,17 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 				return err
 			}
 
+		case *workflowservicepb.GetWorkflowExecutionHistoryReverseResponse:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetHistory(),
+			); err != nil {
+				return err
+			}
+
 		case *workflowservicepb.ListArchivedWorkflowExecutionsResponse:
 			if o == nil {
 				continue

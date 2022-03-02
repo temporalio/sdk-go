@@ -189,7 +189,7 @@ func TestClientInterceptor(t *testing.T) {
 
 	c, err := grpc.Dial(
 		server.addr,
-		grpc.WithInsecure(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithChainUnaryInterceptor(interceptor),
 	)
 	require.NoError(err)

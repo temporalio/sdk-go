@@ -80,8 +80,16 @@ func (wh *workflowServiceProxyServer) GetSearchAttributes(ctx context.Context, r
 	return wh.client.GetSearchAttributes(ctx, req)
 }
 
+func (wh *workflowServiceProxyServer) GetSystemInfo(ctx context.Context, req *workflowservice.GetSystemInfoRequest) (*workflowservice.GetSystemInfoResponse, error) {
+	return wh.client.GetSystemInfo(ctx, req)
+}
+
 func (wh *workflowServiceProxyServer) GetWorkflowExecutionHistory(ctx context.Context, req *workflowservice.GetWorkflowExecutionHistoryRequest) (*workflowservice.GetWorkflowExecutionHistoryResponse, error) {
 	return wh.client.GetWorkflowExecutionHistory(ctx, req)
+}
+
+func (wh *workflowServiceProxyServer) GetWorkflowExecutionHistoryReverse(ctx context.Context, req *workflowservice.GetWorkflowExecutionHistoryReverseRequest) (*workflowservice.GetWorkflowExecutionHistoryReverseResponse, error) {
+	return wh.client.GetWorkflowExecutionHistoryReverse(ctx, req)
 }
 
 func (wh *workflowServiceProxyServer) ListArchivedWorkflowExecutions(ctx context.Context, req *workflowservice.ListArchivedWorkflowExecutionsRequest) (*workflowservice.ListArchivedWorkflowExecutionsResponse, error) {
