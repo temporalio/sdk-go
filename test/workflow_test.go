@@ -1162,9 +1162,8 @@ func (w *Workflows) BasicSession(ctx workflow.Context) ([]string, error) {
 type AdvancedSessionParams struct {
 	SessionCount           int
 	SessionCreationTimeout time.Duration
-	// What session index at which to start using as recreation sessions of the
-	// last one instead of regular creation. Ignored if 0.
-	UseRecreationFrom int
+	// Just a single index to do recreation. Ignored if 0.
+	RecreateAtIndex int
 }
 
 func (w Workflows) AdvancedSession(ctx workflow.Context, params *AdvancedSessionParams) error {
@@ -1185,7 +1184,7 @@ func (w Workflows) AdvancedSession(ctx workflow.Context, params *AdvancedSession
 	sel := workflow.NewSelector(ctx)
 	var actErr error
 	var act Activities
-	var lastCreatedSessionInfo *workflow.SessionInfo
+	var sessionCtxs []workflow.Context
 	for i := 0; i < params.SessionCount; i++ {
 		i := i
 		var sessionCtx workflow.Context
@@ -1197,14 +1196,12 @@ func (w Workflows) AdvancedSession(ctx workflow.Context, params *AdvancedSession
 		}
 		// Do a create unless at recreate index
 		verb := "creating"
-		if params.UseRecreationFrom == 0 || i < params.UseRecreationFrom {
-			sessionCtx, err = workflow.CreateSession(ctx, opts)
-			if err == nil {
-				lastCreatedSessionInfo = workflow.GetSessionInfo(sessionCtx)
-			}
-		} else {
-			sessionCtx, err = workflow.RecreateSession(ctx, lastCreatedSessionInfo.GetRecreateToken(), opts)
+		if params.RecreateAtIndex > 0 && i == params.RecreateAtIndex {
+			sessionCtx, err = workflow.RecreateSession(ctx,
+				workflow.GetSessionInfo(sessionCtxs[len(sessionCtxs)-1]).GetRecreateToken(), opts)
 			verb = "recreating"
+		} else {
+			sessionCtx, err = workflow.CreateSession(ctx, opts)
 		}
 		if err != nil {
 			// We use the error message instead of wrapping the error itself
@@ -1212,7 +1209,7 @@ func (w Workflows) AdvancedSession(ctx workflow.Context, params *AdvancedSession
 			// cancellation
 			return fmt.Errorf("failed %v session #%v: %v", verb, i+1, err.Error())
 		}
-		defer workflow.CompleteSession(sessionCtx)
+		sessionCtxs = append(sessionCtxs, sessionCtx)
 
 		// Run activity in session
 		sel.AddFuture(workflow.ExecuteActivity(sessionCtx, act.WaitForManualStop), func(f workflow.Future) {
@@ -1222,6 +1219,7 @@ func (w Workflows) AdvancedSession(ctx workflow.Context, params *AdvancedSession
 				// cancellation
 				actErr = fmt.Errorf("activity on session #%v failed: %v", i+1, err.Error())
 			}
+			workflow.CompleteSession(sessionCtx)
 		})
 	}
 	sessionsStarted = true

@@ -1973,7 +1973,7 @@ func (ts *IntegrationTestSuite) TestLocalActivityStringNameReplay() {
 	ts.NoError(replayer.ReplayWorkflowHistory(nil, &history))
 }
 
-func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSize() {
+func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSizeNoWait() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	ts.activities.manualStopContext = ctx
@@ -1982,26 +1982,32 @@ func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSize() {
 	// schedule-to-start of the session creation worker)
 	err := ts.executeWorkflow("test-max-concurrent-session-execution-size", ts.workflows.AdvancedSession, nil,
 		&AdvancedSessionParams{SessionCount: 4, SessionCreationTimeout: 2 * time.Second})
-	// Confirm it failed on the 4th session
+	// Confirm it failed on the 4th session because it took to long to create
 	ts.Error(err)
 	ts.Truef(strings.Contains(err.Error(), "failed creating session #4"), "wrong error, got: %v", err)
+	ts.Truef(strings.Contains(err.Error(), "activity ScheduleToStart timeout"), "wrong error, got: %v", err)
 }
 
-func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSizeForRecreation() {
+func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSizeWithRecreationAndWait() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	ts.activities.manualStopContext = ctx
-	// Same as TestMaxConcurrentSessionExecutionSize above, but we want to start
-	// recreating at session 2 (index 1)
-	err := ts.executeWorkflow("test-max-concurrent-session-execution-size-recreate", ts.workflows.AdvancedSession, nil,
-		&AdvancedSessionParams{
+	var manualCancel context.CancelFunc
+	ts.activities.manualStopContext, manualCancel = context.WithCancel(ctx)
+	// Similar to TestMaxConcurrentSessionExecutionSize above, but one of the
+	// sessions is a recreation, and we perform the manual stop to make room. This
+	// test confirms that the create session will retry.
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-max-concurrent-session-execution-size-recreate"),
+		ts.workflows.AdvancedSession, &AdvancedSessionParams{
 			SessionCount:           4,
-			SessionCreationTimeout: 2 * time.Second,
-			UseRecreationFrom:      1,
+			SessionCreationTimeout: 40 * time.Second,
+			RecreateAtIndex:        1,
 		})
-	// Confirm it failed on the 4th session
-	ts.Error(err)
-	ts.Truef(strings.Contains(err.Error(), "failed recreating session #4"), "wrong error, got: %v", err)
+	ts.NoError(err)
+	// Now complete the activities so the next session can get created
+	manualCancel()
+	// Confirm completed without error
+	ts.NoError(run.Get(ctx, nil))
 }
 
 func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
