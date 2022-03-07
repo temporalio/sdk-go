@@ -2024,6 +2024,7 @@ func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSizeWithRecreat
 	// Now let the activities complete which lets run1 complete and free up
 	// sessions for run2
 	manualCancel()
+	ts.NoError(run1.Get(ctx, nil))
 	ts.NoError(run2.Get(ctx, nil))
 }
 

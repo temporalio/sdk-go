@@ -100,7 +100,8 @@ var ErrSessionFailed = internal.ErrSessionFailed
 //    }
 //    ... // execute more activities using sessionCtx
 //
-// NOTE: Sessions may not work properly across worker fail/crash before Temporal server version v1.15.1.
+// NOTE: Session recreation via RecreateSession may not work properly across worker fail/crash before Temporal server
+// version v1.15.1.
 func CreateSession(ctx Context, sessionOptions *SessionOptions) (Context, error) {
 	return internal.CreateSession(ctx, sessionOptions)
 }
@@ -114,7 +115,8 @@ func CreateSession(ctx Context, sessionOptions *SessionOptions) (Context, error)
 // one run, complete the current session, get recreateToken from sessionInfo by calling SessionInfo.GetRecreateToken()
 // and pass the token to the next run. In the new run, session can be recreated using that token.
 //
-// NOTE: Sessions may not work properly across worker fail/crash before Temporal server version v1.15.1.
+// NOTE: Session recreation via RecreateSession may not work properly across worker fail/crash before Temporal server
+// version v1.15.1.
 func RecreateSession(ctx Context, recreateToken []byte, sessionOptions *SessionOptions) (Context, error) {
 	return internal.RecreateSession(ctx, recreateToken, sessionOptions)
 }
