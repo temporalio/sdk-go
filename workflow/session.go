@@ -99,6 +99,9 @@ var ErrSessionFailed = internal.ErrSessionFailed
 //        // Handle activity error
 //    }
 //    ... // execute more activities using sessionCtx
+//
+// NOTE: Session recreation via RecreateSession may not work properly across worker fail/crash before Temporal server
+// version v1.15.1.
 func CreateSession(ctx Context, sessionOptions *SessionOptions) (Context, error) {
 	return internal.CreateSession(ctx, sessionOptions)
 }
@@ -111,6 +114,9 @@ func CreateSession(ctx Context, sessionOptions *SessionOptions) (Context, error)
 // The main usage of RecreateSession is for long sessions that are splited into multiple runs. At the end of
 // one run, complete the current session, get recreateToken from sessionInfo by calling SessionInfo.GetRecreateToken()
 // and pass the token to the next run. In the new run, session can be recreated using that token.
+//
+// NOTE: Session recreation via RecreateSession may not work properly across worker fail/crash before Temporal server
+// version v1.15.1.
 func RecreateSession(ctx Context, recreateToken []byte, sessionOptions *SessionOptions) (Context, error) {
 	return internal.RecreateSession(ctx, recreateToken, sessionOptions)
 }
@@ -122,6 +128,9 @@ func RecreateSession(ctx Context, recreateToken []byte, sessionOptions *SessionO
 // After a session has completed, user can continue to use the context, but the activities will be scheduled
 // on the normal taskQueue (as user specified in ActivityOptions) and may be picked up by another worker since
 // it's not in a session.
+//
+// Due to internal logic, this call must be made in the same coroutine CreateSession/RecreateSession were
+// called in.
 func CompleteSession(ctx Context) {
 	internal.CompleteSession(ctx)
 }

@@ -288,12 +288,16 @@ func createSession(ctx Context, creationTaskqueue string, options *SessionOption
 	}
 
 	taskqueueChan := GetSignalChannel(ctx, sessionID) // use sessionID as channel name
-	// Retry is only needed when creating new session and the error returned is NewApplicationError(errTooManySessionsMsg)
+	// Retry is only needed when creating new session and the error returned is
+	// NewApplicationError(errTooManySessionsMsg). Therefore we make sure to
+	// disable retrying for start-to-close and heartbeat timeouts which can occur
+	// when attempting to retry a create-session on a different worker.
 	retryPolicy := &RetryPolicy{
-		InitialInterval:    time.Second,
-		BackoffCoefficient: 1.1,
-		MaximumInterval:    time.Second * 10,
-		MaximumAttempts:    0,
+		InitialInterval:        time.Second,
+		BackoffCoefficient:     1.1,
+		MaximumInterval:        time.Second * 10,
+		MaximumAttempts:        0,
+		NonRetryableErrorTypes: []string{"TemporalTimeout:StartToClose", "TemporalTimeout:Heartbeat"},
 	}
 
 	heartbeatTimeout := defaultSessionHeartbeatTimeout
@@ -523,7 +527,8 @@ func newSessionEnvironment(resourceID string, concurrentSessionExecutionSize int
 
 func (env *sessionEnvironmentImpl) CreateSession(_ context.Context, sessionID string) (<-chan struct{}, error) {
 	if !env.sessionTokenBucket.getToken() {
-		return nil, NewApplicationError(errTooManySessionsMsg, "", true, nil)
+		// This error must be retryable so sessions can keep trying to be created
+		return nil, NewApplicationError(errTooManySessionsMsg, "", false, nil)
 	}
 
 	env.Lock()

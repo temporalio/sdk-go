@@ -214,6 +214,12 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		}
 	}
 
+	if strings.Contains(ts.T().Name(), "TestSessionOnWorkerFailure") {
+		// We disable sticky execution here since we kill the worker and restart it
+		// and sticky execution adds a 5s penalty
+		worker.SetStickyWorkflowCacheSize(0)
+	}
+
 	if strings.Contains(ts.T().Name(), "LocalActivityWorkerOnly") {
 		options.LocalActivityWorkerOnly = true
 	}
@@ -1736,11 +1742,11 @@ func (ts *IntegrationTestSuite) TestAdvancedPostCancellationChildWithDone() {
 	ts.NoError(run.Get(ctx, nil))
 }
 
-func (ts *IntegrationTestSuite) waitForQueryTrue(run client.WorkflowRun, query string) {
+func (ts *IntegrationTestSuite) waitForQueryTrue(run client.WorkflowRun, query string, args ...interface{}) {
 	var result bool
 	for i := 0; !result && i < 30; i++ {
 		time.Sleep(50 * time.Millisecond)
-		val, err := ts.client.QueryWorkflow(context.Background(), run.GetID(), run.GetRunID(), query)
+		val, err := ts.client.QueryWorkflow(context.Background(), run.GetID(), run.GetRunID(), query, args...)
 		// Ignore query failed because it means query may not be registered yet
 		var queryFailed *serviceerror.QueryFailed
 		if errors.As(err, &queryFailed) {
@@ -1967,7 +1973,7 @@ func (ts *IntegrationTestSuite) TestLocalActivityStringNameReplay() {
 	ts.NoError(replayer.ReplayWorkflowHistory(nil, &history))
 }
 
-func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSize() {
+func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSizeNoWait() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	ts.activities.manualStopContext = ctx
@@ -1976,26 +1982,88 @@ func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSize() {
 	// schedule-to-start of the session creation worker)
 	err := ts.executeWorkflow("test-max-concurrent-session-execution-size", ts.workflows.AdvancedSession, nil,
 		&AdvancedSessionParams{SessionCount: 4, SessionCreationTimeout: 2 * time.Second})
-	// Confirm it failed on the 4th session
+	// Confirm it failed on the 4th session because it took to long to create
 	ts.Error(err)
 	ts.Truef(strings.Contains(err.Error(), "failed creating session #4"), "wrong error, got: %v", err)
+	ts.Truef(strings.Contains(err.Error(), "activity ScheduleToStart timeout"), "wrong error, got: %v", err)
 }
 
-func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSizeForRecreation() {
+func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSizeWithRecreationAndWait() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	var manualCancel context.CancelFunc
+	ts.activities.manualStopContext, manualCancel = context.WithCancel(ctx)
+	// Create 2 workflows each wanting to create 2 sessions (second session on
+	// each is recreation to ensure counter works). This will hang with one
+	// creating 2 and another creating 1 and waiting. Then when we send the signal
+	// that was done creating sessions, they will complete theirs allowing the
+	// other pending creation to complete.
+	run1, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-max-concurrent-session-execution-size-recreate-1"),
+		ts.workflows.AdvancedSession, &AdvancedSessionParams{
+			SessionCount:           2,
+			SessionCreationTimeout: 40 * time.Second,
+			RecreateAtIndex:        1,
+		})
+	ts.NoError(err)
+	// Wait until sessions created
+	ts.waitForQueryTrue(run1, "sessions-created-equals", 2)
+
+	// Now create second and wait until create pending after 1
+	run2, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-max-concurrent-session-execution-size-recreate-2"),
+		ts.workflows.AdvancedSession, &AdvancedSessionParams{
+			SessionCount:           2,
+			SessionCreationTimeout: 40 * time.Second,
+			RecreateAtIndex:        1,
+		})
+	ts.NoError(err)
+	// Wait until sessions created
+	ts.waitForQueryTrue(run2, "sessions-created-equals-and-pending", 1)
+
+	// Now let the activities complete which lets run1 complete and free up
+	// sessions for run2
+	manualCancel()
+	ts.NoError(run1.Get(ctx, nil))
+	ts.NoError(run2.Get(ctx, nil))
+}
+
+func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	ts.activities.manualStopContext = ctx
-	// Same as TestMaxConcurrentSessionExecutionSize above, but we want to start
-	// recreating at session 2 (index 1)
-	err := ts.executeWorkflow("test-max-concurrent-session-execution-size-recreate", ts.workflows.AdvancedSession, nil,
+	// We want to start a single long-running activity in a session
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-session-worker-failure"),
+		ts.workflows.AdvancedSession,
 		&AdvancedSessionParams{
-			SessionCount:           4,
-			SessionCreationTimeout: 2 * time.Second,
-			UseRecreationFrom:      1,
+			SessionCount:           1,
+			SessionCreationTimeout: 10 * time.Second,
 		})
-	// Confirm it failed on the 4th session
+	ts.NoError(err)
+
+	// Wait until sessions started
+	ts.waitForQueryTrue(run, "sessions-created-equals", 1)
+
+	// Kill the worker
+	ts.worker.Stop()
+	ts.workerStopped = true
+
+	// Now create a new worker on that same task queue to resume the work of the
+	// workflow
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{DisableStickyExecution: true})
+	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.NoError(nextWorker.Start())
+	defer nextWorker.Stop()
+
+	// Get the result of the workflow run now
+	err = run.Get(ctx, nil)
+	// We expect the activity to timeout (which shows as cancelled in Go) since
+	// the original worker is no longer present that was running the activity.
+	// Before the issue that was fixed when this test was written, this would hang
+	// because sessions would inadvertently retry.
 	ts.Error(err)
-	ts.Truef(strings.Contains(err.Error(), "failed recreating session #4"), "wrong error, got: %v", err)
+	ts.Truef(strings.HasSuffix(err.Error(), "activity on session #1 failed: canceled"), "wrong error, got: %v", err)
 }
 
 func (ts *IntegrationTestSuite) registerNamespace() {

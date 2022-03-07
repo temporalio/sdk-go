@@ -1162,30 +1162,38 @@ func (w *Workflows) BasicSession(ctx workflow.Context) ([]string, error) {
 type AdvancedSessionParams struct {
 	SessionCount           int
 	SessionCreationTimeout time.Duration
-	// What session index at which to start using as recreation sessions of the
-	// last one instead of regular creation. Ignored if 0.
-	UseRecreationFrom int
+	// Just a single index to do recreation. Ignored if 0.
+	RecreateAtIndex int
 }
 
 func (w Workflows) AdvancedSession(ctx workflow.Context, params *AdvancedSessionParams) error {
-	// Create a query to know sessions started
-	sessionsStarted := false
-	err := workflow.SetQueryHandler(ctx, "sessions-started", func() (bool, error) { return sessionsStarted, nil })
-	if err != nil {
-		return err
-	}
-
 	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: time.Minute,
 		// No retry on activities
 		RetryPolicy: &temporal.RetryPolicy{MaximumAttempts: 1},
 	})
 
-	// Create the sessions and their activities
+	// Create a query to know sessions pending or started
+	var sessionCreatePending bool
+	var sessionsCreated int
+	err := workflow.SetQueryHandler(ctx, "sessions-created-equals", func(expected int) (bool, error) {
+		return sessionsCreated == expected, nil
+	})
+	if err != nil {
+		return err
+	}
+	err = workflow.SetQueryHandler(ctx, "sessions-created-equals-and-pending", func(expected int) (bool, error) {
+		return sessionsCreated == expected && sessionCreatePending, nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// Create the sessions
 	sel := workflow.NewSelector(ctx)
 	var actErr error
 	var act Activities
-	var lastCreatedSessionInfo *workflow.SessionInfo
+	var lastSessionCtx workflow.Context
 	for i := 0; i < params.SessionCount; i++ {
 		i := i
 		var sessionCtx workflow.Context
@@ -1197,22 +1205,23 @@ func (w Workflows) AdvancedSession(ctx workflow.Context, params *AdvancedSession
 		}
 		// Do a create unless at recreate index
 		verb := "creating"
-		if params.UseRecreationFrom == 0 || i < params.UseRecreationFrom {
-			sessionCtx, err = workflow.CreateSession(ctx, opts)
-			if err == nil {
-				lastCreatedSessionInfo = workflow.GetSessionInfo(sessionCtx)
-			}
-		} else {
-			sessionCtx, err = workflow.RecreateSession(ctx, lastCreatedSessionInfo.GetRecreateToken(), opts)
+		sessionCreatePending = true
+		if params.RecreateAtIndex > 0 && i == params.RecreateAtIndex {
+			sessionCtx, err = workflow.RecreateSession(ctx, workflow.GetSessionInfo(lastSessionCtx).GetRecreateToken(), opts)
 			verb = "recreating"
+		} else {
+			sessionCtx, err = workflow.CreateSession(ctx, opts)
 		}
+		sessionCreatePending = false
 		if err != nil {
 			// We use the error message instead of wrapping the error itself
 			// because unfortunately the error converter unwraps some like
 			// cancellation
 			return fmt.Errorf("failed %v session #%v: %v", verb, i+1, err.Error())
 		}
+		sessionsCreated++
 		defer workflow.CompleteSession(sessionCtx)
+		lastSessionCtx = sessionCtx
 
 		// Run activity in session
 		sel.AddFuture(workflow.ExecuteActivity(sessionCtx, act.WaitForManualStop), func(f workflow.Future) {
@@ -1224,9 +1233,8 @@ func (w Workflows) AdvancedSession(ctx workflow.Context, params *AdvancedSession
 			}
 		})
 	}
-	sessionsStarted = true
 
-	// Wait for all
+	// Wait for all activities
 	for i := 0; i < params.SessionCount; i++ {
 		sel.Select(ctx)
 		if actErr != nil {

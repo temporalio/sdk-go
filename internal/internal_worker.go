@@ -362,6 +362,9 @@ func newSessionWorker(service workflowservice.WorkflowServiceClient, params work
 
 	params.MaxConcurrentActivityTaskQueuePollers = 1
 	params.TaskQueue = creationTaskqueue
+	// Although we have session token bucket to limit session size across creation
+	// and recreation, we also limit it here for creation only
+	params.ConcurrentActivityExecutionSize = maxConcurrentSessionExecutionSize
 	creationWorker := newActivityWorker(service, params, overrides, env, sessionEnvironment.GetTokenBucket())
 
 	return &sessionWorker{
