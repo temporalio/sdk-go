@@ -31,6 +31,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -235,4 +236,58 @@ func TestWorkflowStartTimeInsideTestWorkflow(t *testing.T) {
 	var timestamp int64
 	require.NoError(t, env.GetWorkflowResult(&timestamp))
 	require.Equal(t, env.Now().Unix(), timestamp)
+}
+
+func TestActivityAssertCalled(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+
+	env.RegisterActivity(namedActivity)
+	env.OnActivity(namedActivity, mock.Anything, mock.Anything).Return("Mock!", nil)
+
+	env.ExecuteWorkflow(func(ctx Context, arg1 string) (string, error) {
+		ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{
+			ScheduleToCloseTimeout: time.Hour,
+			StartToCloseTimeout:    time.Hour,
+		})
+		var result string
+		err := ExecuteLocalActivity(ctx, "namedActivity", arg1).Get(ctx, &result)
+		if err != nil {
+			return "", err
+		}
+		return result, nil
+	}, "Hello")
+
+	require.NoError(t, env.GetWorkflowError())
+	var result string
+	err := env.GetWorkflowResult(&result)
+	require.NoError(t, err)
+
+	require.Equal(t, "Mock!", result)
+	env.AssertCalled(t, "namedActivity", mock.Anything, "Hello")
+	env.AssertNotCalled(t, "namedActivity", mock.Anything, "Bye")
+}
+
+func TestActivityAssertNumberOfCalls(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+
+	env.RegisterActivity(namedActivity)
+	env.OnActivity(namedActivity, mock.Anything, mock.Anything).Return("Mock!", nil)
+
+	env.ExecuteWorkflow(func(ctx Context, arg1 string) (string, error) {
+		ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{
+			ScheduleToCloseTimeout: time.Hour,
+			StartToCloseTimeout:    time.Hour,
+		})
+		var result string
+		_ = ExecuteLocalActivity(ctx, "namedActivity", arg1).Get(ctx, &result)
+		_ = ExecuteLocalActivity(ctx, "namedActivity", arg1).Get(ctx, &result)
+		_ = ExecuteLocalActivity(ctx, "namedActivity", arg1).Get(ctx, &result)
+		return result, nil
+	}, "Hello")
+
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertNumberOfCalls(t, "namedActivity", 3)
+	env.AssertNumberOfCalls(t, "otherActivity", 0)
 }

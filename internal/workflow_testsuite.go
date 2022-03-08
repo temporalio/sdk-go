@@ -814,3 +814,15 @@ func (e *TestWorkflowEnvironment) SetSearchAttributesOnStart(searchAttributes ma
 func (e *TestWorkflowEnvironment) AssertExpectations(t mock.TestingT) bool {
 	return e.mock.AssertExpectations(t)
 }
+
+func (e *TestWorkflowEnvironment) AssertCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {
+	return e.mock.AssertCalled(t, methodName, arguments...)
+}
+
+func (e *TestWorkflowEnvironment) AssertNotCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {
+	return e.mock.AssertNotCalled(t, methodName, arguments...)
+}
+
+func (e *TestWorkflowEnvironment) AssertNumberOfCalls(t mock.TestingT, methodName string, expectedCalls int) bool {
+	return e.mock.AssertNumberOfCalls(t, methodName, expectedCalls)
+}
