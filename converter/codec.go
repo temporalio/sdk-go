@@ -46,17 +46,15 @@ import (
 // These can be used (and even chained) in NewCodecDataConverter.
 type PayloadCodec interface {
 	// Encode optionally encodes the given payloads which are guaranteed to never
-	// be nil. The byte slices of the payload's metadata or data should never be
-	// mutated directly, but they can be referenced or replaced.
-	Encode([]*commonpb.Payload) error
+	// be nil. The parameters must not be mutated.
+	Encode([]*commonpb.Payload) ([]*commonpb.Payload, error)
 
 	// Decode optionally decodes the given payloads which are guaranteed to never
-	// be nil. The byte slices of the payload's metadata or data should never be
-	// mutated directly, but they can be referenced or replaced.
+	// be nil. The parameters must not be mutated.
 	//
 	// For compatibility reasons, implementers should take care not to decode
 	// payloads that were not previously encoded.
-	Decode([]*commonpb.Payload) error
+	Decode([]*commonpb.Payload) ([]*commonpb.Payload, error)
 }
 
 // ZlibCodecOptions are options for NewZlibCodec. All fields are optional.
@@ -76,12 +74,13 @@ type zlibCodec struct{ options ZlibCodecOptions }
 // may prefer alternative compression algorithms for lots of small payloads.
 func NewZlibCodec(options ZlibCodecOptions) PayloadCodec { return &zlibCodec{options} }
 
-func (z *zlibCodec) Encode(ps []*commonpb.Payload) error {
-	for _, p := range ps {
+func (z *zlibCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	result := make([]*commonpb.Payload, len(payloads))
+	for i, p := range payloads {
 		// Marshal and write
 		b, err := proto.Marshal(p)
 		if err != nil {
-			return err
+			return payloads, err
 		}
 		var buf bytes.Buffer
 		w := zlib.NewWriter(&buf)
@@ -90,26 +89,32 @@ func (z *zlibCodec) Encode(ps []*commonpb.Payload) error {
 			err = closeErr
 		}
 		if err != nil {
-			return err
+			return payloads, err
 		}
 		// Only set if smaller than original amount or has option to always encode
 		if buf.Len() < len(b) || z.options.AlwaysEncode {
-			p.Metadata = map[string][]byte{MetadataEncoding: []byte("binary/zlib")}
-			p.Data = buf.Bytes()
+			result[i] = &commonpb.Payload{
+				Metadata: map[string][]byte{MetadataEncoding: []byte("binary/zlib")},
+				Data:     buf.Bytes(),
+			}
+		} else {
+			result[i] = p
 		}
 	}
-	return nil
+	return result, nil
 }
 
-func (*zlibCodec) Decode(ps []*commonpb.Payload) error {
-	for _, p := range ps {
+func (*zlibCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	result := make([]*commonpb.Payload, len(payloads))
+	for i, p := range payloads {
 		// Only if it's our encoding
 		if string(p.Metadata[MetadataEncoding]) != "binary/zlib" {
+			result[i] = p
 			continue
 		}
 		r, err := zlib.NewReader(bytes.NewReader(p.Data))
 		if err != nil {
-			return err
+			return payloads, err
 		}
 		// Read all and unmarshal
 		b, err := ioutil.ReadAll(r)
@@ -117,15 +122,15 @@ func (*zlibCodec) Decode(ps []*commonpb.Payload) error {
 			err = closeErr
 		}
 		if err != nil {
-			return err
+			return payloads, err
 		}
-		p.Reset()
-		err = proto.Unmarshal(b, p)
+		result[i] = &commonpb.Payload{}
+		err = proto.Unmarshal(b, result[i])
 		if err != nil {
-			return err
+			return payloads, err
 		}
 	}
-	return nil
+	return result, nil
 }
 
 // CodecDataConverter is a DataConverter that wraps an underlying data
@@ -145,24 +150,26 @@ func NewCodecDataConverter(parent DataConverter, codecs ...PayloadCodec) DataCon
 	return &CodecDataConverter{parent, codecs}
 }
 
-func (e *CodecDataConverter) encode(payloads []*commonpb.Payload) error {
+func (e *CodecDataConverter) encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	var err error
 	// Iterate backwards encoding
 	for i := len(e.codecs) - 1; i >= 0; i-- {
-		if err := e.codecs[i].Encode(payloads); err != nil {
-			return err
+		if payloads, err = e.codecs[i].Encode(payloads); err != nil {
+			return payloads, err
 		}
 	}
-	return nil
+	return payloads, nil
 }
 
-func (e *CodecDataConverter) decode(payloads []*commonpb.Payload) error {
+func (e *CodecDataConverter) decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	var err error
 	// Iterate forwards decoding
 	for _, codec := range e.codecs {
-		if err := codec.Decode(payloads); err != nil {
-			return err
+		if payloads, err = codec.Decode(payloads); err != nil {
+			return payloads, err
 		}
 	}
-	return nil
+	return payloads, nil
 }
 
 // ToPayload implements DataConverter.ToPayload performing encoding on the
@@ -172,8 +179,15 @@ func (e *CodecDataConverter) ToPayload(value interface{}) (*commonpb.Payload, er
 	if payload == nil || err != nil {
 		return payload, err
 	}
-	err = e.encode([]*commonpb.Payload{payload})
-	return payload, err
+
+	encodedPayloads, err := e.encode([]*commonpb.Payload{payload})
+	if err != nil {
+		return payload, nil
+	}
+	if len(encodedPayloads) != 1 {
+		return payload, fmt.Errorf("received %d payloads from codec, expected 1", len(encodedPayloads))
+	}
+	return encodedPayloads[0], err
 }
 
 // ToPayloads implements DataConverter.ToPayloads performing encoding on the
@@ -183,8 +197,8 @@ func (e *CodecDataConverter) ToPayloads(value ...interface{}) (*commonpb.Payload
 	if payloads == nil || err != nil {
 		return payloads, err
 	}
-	err = e.encode(payloads.Payloads)
-	return payloads, err
+	encodedPayloads, err := e.encode(payloads.Payloads)
+	return &commonpb.Payloads{Payloads: encodedPayloads}, err
 }
 
 // FromPayload implements DataConverter.FromPayload performing decoding on the
@@ -193,13 +207,15 @@ func (e *CodecDataConverter) FromPayload(payload *commonpb.Payload, valuePtr int
 	if payload == nil {
 		return nil
 	}
-	// Clone to not affect caller
-	payload = partiallyClonePayload(payload)
-	err := e.decode([]*commonpb.Payload{payload})
+	decodedPayloads, err := e.decode([]*commonpb.Payload{payload})
 	if err != nil {
 		return err
 	}
-	return e.parent.FromPayload(payload, valuePtr)
+	if len(decodedPayloads) != 1 {
+		return fmt.Errorf("received %d payloads from codec, expected 1", len(decodedPayloads))
+	}
+
+	return e.parent.FromPayload(decodedPayloads[0], valuePtr)
 }
 
 // FromPayloads implements DataConverter.FromPayloads performing decoding on the
@@ -208,25 +224,24 @@ func (e *CodecDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs
 	if payloads == nil {
 		return e.parent.FromPayloads(payloads, valuePtrs...)
 	}
-	// Clone to not affect caller
-	newPayloads := partiallyClonePayloads(payloads.Payloads)
-	err := e.decode(newPayloads)
+	decodedPayloads, err := e.decode(payloads.Payloads)
 	if err != nil {
 		return err
 	}
-	return e.parent.FromPayloads(&commonpb.Payloads{Payloads: newPayloads}, valuePtrs...)
+	return e.parent.FromPayloads(&commonpb.Payloads{Payloads: decodedPayloads}, valuePtrs...)
 }
 
 // ToString implements DataConverter.ToString performing decoding on the given
 // payload before sending to the parent ToString.
 func (e *CodecDataConverter) ToString(payload *commonpb.Payload) string {
-	// Clone to not affect caller
-	payload = partiallyClonePayload(payload)
-	err := e.decode([]*commonpb.Payload{payload})
+	decodedPayloads, err := e.decode([]*commonpb.Payload{payload})
 	if err != nil {
 		return err.Error()
 	}
-	return e.parent.ToString(payload)
+	if len(decodedPayloads) != 1 {
+		return fmt.Errorf("received %d payloads from codec, expected 1", len(decodedPayloads)).Error()
+	}
+	return e.parent.ToString(decodedPayloads[0])
 }
 
 // ToStrings implements DataConverter.ToStrings using ToString for each value.
@@ -242,23 +257,6 @@ func (e *CodecDataConverter) ToStrings(payloads *commonpb.Payloads) []string {
 	return strs
 }
 
-// Only copies metadata in shallow way, not byte slice
-func partiallyClonePayload(p *commonpb.Payload) *commonpb.Payload {
-	ret := &commonpb.Payload{Metadata: make(map[string][]byte, len(p.Metadata)), Data: p.Data}
-	for k, v := range p.Metadata {
-		ret.Metadata[k] = v
-	}
-	return ret
-}
-
-func partiallyClonePayloads(payloads []*commonpb.Payload) []*commonpb.Payload {
-	newPayloads := make([]*commonpb.Payload, len(payloads))
-	for i, payload := range payloads {
-		newPayloads[i] = partiallyClonePayload(payload)
-	}
-	return newPayloads
-}
-
 const remotePayloadCodecEncodePath = "/encode"
 const remotePayloadCodecDecodePath = "/decode"
 
@@ -266,22 +264,24 @@ type codecHTTPHandler struct {
 	codecs []PayloadCodec
 }
 
-func (e *codecHTTPHandler) encode(payloads []*commonpb.Payload) error {
+func (e *codecHTTPHandler) encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	var err error
 	for i := len(e.codecs) - 1; i >= 0; i-- {
-		if err := e.codecs[i].Encode(payloads); err != nil {
-			return err
+		if payloads, err = e.codecs[i].Encode(payloads); err != nil {
+			return payloads, err
 		}
 	}
-	return nil
+	return payloads, nil
 }
 
-func (e *codecHTTPHandler) decode(payloads []*commonpb.Payload) error {
+func (e *codecHTTPHandler) decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	var err error
 	for _, codec := range e.codecs {
-		if err := codec.Decode(payloads); err != nil {
-			return err
+		if payloads, err = codec.Decode(payloads); err != nil {
+			return payloads, err
 		}
 	}
-	return nil
+	return payloads, nil
 }
 
 // ServeHTTP implements the http.Handler interface.
@@ -299,27 +299,30 @@ func (e *codecHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var payloads commonpb.Payloads
+	var payloadspb commonpb.Payloads
+	var err error
 
 	if r.Body == nil {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
 
-	err := jsonpb.Unmarshal(r.Body, &payloads)
+	err = jsonpb.Unmarshal(r.Body, &payloadspb)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
+	payloads := payloadspb.Payloads
+
 	switch {
 	case strings.HasSuffix(path, remotePayloadCodecEncodePath):
-		if err := e.encode(payloads.Payloads); err != nil {
+		if payloads, err = e.encode(payloads); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 	case strings.HasSuffix(path, remotePayloadCodecDecodePath):
-		if err := e.decode(payloads.Payloads); err != nil {
+		if payloads, err = e.decode(payloads); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -329,7 +332,7 @@ func (e *codecHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	err = json.NewEncoder(w).Encode(payloads)
+	err = json.NewEncoder(w).Encode(commonpb.Payloads{Payloads: payloads})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

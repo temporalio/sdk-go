@@ -28,6 +28,7 @@ package converter
 
 import (
 	"context"
+	"fmt"
 
 	"google.golang.org/grpc"
 
@@ -72,21 +73,57 @@ type serviceInterceptor struct {
 	codecs []PayloadCodec
 }
 
-func (s *serviceInterceptor) encodePayloads(payloads []*commonpb.Payload) error {
+func (s *serviceInterceptor) encodePayload(payload *commonpb.Payload) error {
+	var err error
+	payloads := []*commonpb.Payload{payload}
 	for i := len(s.codecs) - 1; i >= 0; i-- {
-		if err := s.codecs[i].Encode(payloads); err != nil {
+		if payloads, err = s.codecs[i].Encode(payloads); err != nil {
 			return err
 		}
 	}
+	if len(payloads) != 1 {
+		return fmt.Errorf("received %d payloads from codec, expected 1", len(payloads))
+	}
+	*payload = *payloads[0]
 	return nil
 }
 
-func (s *serviceInterceptor) decodePayloads(payloads []*commonpb.Payload) error {
-	for _, codec := range s.codecs {
-		if err := codec.Decode(payloads); err != nil {
+func (s *serviceInterceptor) encodePayloads(payloadspb *commonpb.Payloads) error {
+	var err error
+	payloads := payloadspb.Payloads
+	for i := len(s.codecs) - 1; i >= 0; i-- {
+		if payloads, err = s.codecs[i].Encode(payloads); err != nil {
 			return err
 		}
 	}
+	payloadspb.Payloads = payloads
+	return nil
+}
+
+func (s *serviceInterceptor) decodePayload(payload *commonpb.Payload) error {
+	var err error
+	payloads := []*commonpb.Payload{payload}
+	for _, codec := range s.codecs {
+		if payloads, err = codec.Decode(payloads); err != nil {
+			return err
+		}
+	}
+	if len(payloads) != 1 {
+		return fmt.Errorf("received %d payloads from codec, expected 1", len(payloads))
+	}
+	*payload = *payloads[0]
+	return nil
+}
+
+func (s *serviceInterceptor) decodePayloads(payloadspb *commonpb.Payloads) error {
+	var err error
+	payloads := payloadspb.Payloads
+	for _, codec := range s.codecs {
+		if payloads, err = codec.Decode(payloads); err != nil {
+			return err
+		}
+	}
+	payloadspb.Payloads = payloads
 	return nil
 }
 
@@ -94,22 +131,28 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 	for _, obj := range objs {
 		switch o := obj.(type) {
 		case *commonpb.Payload:
+			if o == nil {
+				continue
+			}
 			if encode {
-				if err := s.encodePayloads([]*commonpb.Payload{o}); err != nil {
+				if err := s.encodePayload(o); err != nil {
 					return err
 				}
 			} else {
-				if err := s.decodePayloads([]*commonpb.Payload{o}); err != nil {
+				if err := s.decodePayload(o); err != nil {
 					return err
 				}
 			}
 		case *commonpb.Payloads:
+			if o == nil {
+				continue
+			}
 			if encode {
-				if err := s.encodePayloads(o.GetPayloads()); err != nil {
+				if err := s.encodePayloads(o); err != nil {
 					return err
 				}
 			} else {
-				if err := s.decodePayloads(o.GetPayloads()); err != nil {
+				if err := s.decodePayloads(o); err != nil {
 					return err
 				}
 			}

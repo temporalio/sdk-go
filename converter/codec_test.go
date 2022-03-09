@@ -211,37 +211,41 @@ type testCodec struct {
 	encodeFrom string
 }
 
-func (e *testCodec) Encode(payloads []*commonpb.Payload) error {
-	for _, p := range payloads {
+func (e *testCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	result := make([]*commonpb.Payload, len(payloads))
+	for i, p := range payloads {
 		if string(p.Metadata[converter.MetadataEncoding]) != e.encodeFrom {
-			return fmt.Errorf("unexpected encoding: %s", p.Metadata[converter.MetadataEncoding])
+			return payloads, fmt.Errorf("unexpected encoding: %s", p.Metadata[converter.MetadataEncoding])
 		}
 
 		b, err := proto.Marshal(p)
 		if err != nil {
-			return err
+			return payloads, err
 		}
 
-		p.Metadata = map[string][]byte{converter.MetadataEncoding: []byte(e.encoding)}
-		p.Data = b
+		result[i] = &commonpb.Payload{
+			Metadata: map[string][]byte{converter.MetadataEncoding: []byte(e.encoding)},
+			Data:     b,
+		}
 	}
 
-	return nil
+	return result, nil
 }
 
-func (e *testCodec) Decode(payloads []*commonpb.Payload) error {
-	for _, p := range payloads {
+func (e *testCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	result := make([]*commonpb.Payload, len(payloads))
+	for i, p := range payloads {
 		if string(p.Metadata[converter.MetadataEncoding]) != e.encoding {
-			return fmt.Errorf("unexpected encoding: %s", p.Metadata[converter.MetadataEncoding])
+			return payloads, fmt.Errorf("unexpected encoding: %s", p.Metadata[converter.MetadataEncoding])
 		}
 
-		p.Reset()
-		err := proto.Unmarshal(p.Data, p)
+		result[i] = &commonpb.Payload{}
+		err := proto.Unmarshal(p.Data, result[i])
 		if err != nil {
-			return err
+			return payloads, err
 		}
 	}
-	return nil
+	return result, nil
 }
 
 func TestRemoteDataConverter(t *testing.T) {
