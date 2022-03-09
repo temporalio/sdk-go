@@ -43,9 +43,9 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-var zlibDataConverter = NewEncodingDataConverter(
+var zlibDataConverter = NewCodecDataConverter(
 	defaultDataConverter,
-	NewZlibEncoder(ZlibEncoderOptions{AlwaysEncode: true}),
+	NewZlibCodec(ZlibCodecOptions{AlwaysEncode: true}),
 )
 
 func unencodedPayloads() *commonpb.Payloads {
@@ -66,7 +66,7 @@ func TestServiceInterceptorRequests(t *testing.T) {
 	require := require.New(t)
 
 	s := serviceInterceptor{
-		encoders: []PayloadEncoder{NewZlibEncoder(ZlibEncoderOptions{AlwaysEncode: true})},
+		codecs: []PayloadCodec{NewZlibCodec(ZlibCodecOptions{AlwaysEncode: true})},
 	}
 
 	startReq := &workflowservice.StartWorkflowExecutionRequest{
@@ -114,7 +114,7 @@ func TestServiceInterceptorResponses(t *testing.T) {
 	require := require.New(t)
 
 	s := serviceInterceptor{
-		encoders: []PayloadEncoder{NewZlibEncoder(ZlibEncoderOptions{AlwaysEncode: true})},
+		codecs: []PayloadCodec{NewZlibCodec(ZlibCodecOptions{AlwaysEncode: true})},
 	}
 
 	historyRes := &workflowservice.GetWorkflowExecutionHistoryResponse{
@@ -180,9 +180,9 @@ func TestClientInterceptor(t *testing.T) {
 	server, err := startTestGRPCServer()
 	require.NoError(err)
 
-	interceptor, err := NewPayloadEncoderGRPCClientInterceptor(
-		PayloadEncoderGRPCClientInterceptorOptions{
-			Encoders: []PayloadEncoder{NewZlibEncoder(ZlibEncoderOptions{AlwaysEncode: true})},
+	interceptor, err := NewPayloadCodecGRPCClientInterceptor(
+		PayloadCodecGRPCClientInterceptorOptions{
+			Codecs: []PayloadCodec{NewZlibCodec(ZlibCodecOptions{AlwaysEncode: true})},
 		},
 	)
 	require.NoError(err)

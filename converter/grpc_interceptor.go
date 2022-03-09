@@ -40,18 +40,18 @@ import (
 	workflowservicepb "go.temporal.io/api/workflowservice/v1"
 )
 
-// PayloadEncoderGRPCClientInterceptorOptions holds interceptor options.
-// Currently this is just the list of encoders to use.
-type PayloadEncoderGRPCClientInterceptorOptions struct {
-	Encoders []PayloadEncoder
+// PayloadCodecGRPCClientInterceptorOptions holds interceptor options.
+// Currently this is just the list of codecs to use.
+type PayloadCodecGRPCClientInterceptorOptions struct {
+	Codecs []PayloadCodec
 }
 
-// NewPayloadEncoderGRPCClientInterceptor returns a GRPC Client Interceptor that will mimic the encoding
+// NewPayloadCodecGRPCClientInterceptor returns a GRPC Client Interceptor that will mimic the encoding
 // that the SDK system would perform when configured with a matching EncodingDataConverter.
 // Note: This approach does not support use cases that rely on the ContextAware DataConverter interface as
 // workflow context is not available at the GRPC level.
-func NewPayloadEncoderGRPCClientInterceptor(options PayloadEncoderGRPCClientInterceptorOptions) (grpc.UnaryClientInterceptor, error) {
-	s := serviceInterceptor{encoders: options.Encoders}
+func NewPayloadCodecGRPCClientInterceptor(options PayloadCodecGRPCClientInterceptorOptions) (grpc.UnaryClientInterceptor, error) {
+	s := serviceInterceptor{codecs: options.Codecs}
 
 	return func(ctx context.Context, method string, req, response interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		err := s.process(true, req)
@@ -69,21 +69,21 @@ func NewPayloadEncoderGRPCClientInterceptor(options PayloadEncoderGRPCClientInte
 }
 
 type serviceInterceptor struct {
-	encoders []PayloadEncoder
+	codecs []PayloadCodec
 }
 
-func (s *serviceInterceptor) encodePayload(payload *commonpb.Payload) error {
-	for i := len(s.encoders) - 1; i >= 0; i-- {
-		if err := s.encoders[i].Encode(payload); err != nil {
+func (s *serviceInterceptor) encodePayloads(payloads []*commonpb.Payload) error {
+	for i := len(s.codecs) - 1; i >= 0; i-- {
+		if err := s.codecs[i].Encode(payloads); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *serviceInterceptor) decodePayload(payload *commonpb.Payload) error {
-	for _, encoder := range s.encoders {
-		if err := encoder.Decode(payload); err != nil {
+func (s *serviceInterceptor) decodePayloads(payloads []*commonpb.Payload) error {
+	for _, codec := range s.codecs {
+		if err := codec.Decode(payloads); err != nil {
 			return err
 		}
 	}
@@ -95,17 +95,21 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 		switch o := obj.(type) {
 		case *commonpb.Payload:
 			if encode {
-				if err := s.encodePayload(o); err != nil {
+				if err := s.encodePayloads([]*commonpb.Payload{o}); err != nil {
 					return err
 				}
 			} else {
-				if err := s.decodePayload(o); err != nil {
+				if err := s.decodePayloads([]*commonpb.Payload{o}); err != nil {
 					return err
 				}
 			}
 		case *commonpb.Payloads:
-			for _, x := range o.GetPayloads() {
-				if err := s.process(encode, x); err != nil {
+			if encode {
+				if err := s.encodePayloads(o.GetPayloads()); err != nil {
+					return err
+				}
+			} else {
+				if err := s.decodePayloads(o.GetPayloads()); err != nil {
 					return err
 				}
 			}
