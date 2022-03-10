@@ -814,3 +814,27 @@ func (e *TestWorkflowEnvironment) SetSearchAttributesOnStart(searchAttributes ma
 func (e *TestWorkflowEnvironment) AssertExpectations(t mock.TestingT) bool {
 	return e.mock.AssertExpectations(t)
 }
+
+// AssertCalled asserts that the method was called with the supplied arguments.
+// Useful to assert that an Activity was called from within a workflow with the expected arguments.
+// Since the first argument is a context, consider using mock.Anything for that argument.
+//
+//   env.OnActivity(namedActivity, mock.Anything, mock.Anything).Return("mock_result", nil)
+//   env.ExecuteWorkflow(workflowThatCallsActivityWithItsArgument, "Hello")
+//   env.AssertCalled(t, "namedActivity", mock.Anything, "Hello")
+//
+// It can produce a false result when an argument is a pointer type and the underlying value changed after calling the mocked method.
+func (e *TestWorkflowEnvironment) AssertCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {
+	return e.mock.AssertCalled(t, methodName, arguments...)
+}
+
+// AssertNotCalled asserts that the method was not called with the given arguments.
+// See AssertCalled for more info.
+func (e *TestWorkflowEnvironment) AssertNotCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {
+	return e.mock.AssertNotCalled(t, methodName, arguments...)
+}
+
+// AssertNumberOfCalls asserts that a method was called expectedCalls times.
+func (e *TestWorkflowEnvironment) AssertNumberOfCalls(t mock.TestingT, methodName string, expectedCalls int) bool {
+	return e.mock.AssertNumberOfCalls(t, methodName, expectedCalls)
+}
