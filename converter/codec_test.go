@@ -38,12 +38,12 @@ import (
 	"go.temporal.io/sdk/converter"
 )
 
-func ExampleEncodingDataConverter_compression() {
+func ExampleCodecDataConverter_compression() {
 	defaultConv := converter.GetDefaultDataConverter()
 	// Create Zlib compression converter
-	zlibConv := converter.NewEncodingDataConverter(
+	zlibConv := converter.NewCodecDataConverter(
 		defaultConv,
-		converter.NewZlibEncoder(converter.ZlibEncoderOptions{}),
+		converter.NewZlibCodec(converter.ZlibCodecOptions{}),
 	)
 
 	// Create payloads with both
@@ -84,10 +84,10 @@ func TestEncodingDataConverter(t *testing.T) {
 
 func assertEncodingDataConverter(t *testing.T, data interface{}) {
 	defaultConv := converter.GetDefaultDataConverter()
-	zlibConv := converter.NewEncodingDataConverter(
+	zlibConv := converter.NewCodecDataConverter(
 		defaultConv,
 		// Always encode
-		converter.NewZlibEncoder(converter.ZlibEncoderOptions{AlwaysEncode: true}),
+		converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}),
 	)
 
 	// To/FromPayload
@@ -138,9 +138,9 @@ func assertEncodingDataConverter(t *testing.T, data interface{}) {
 	}
 
 	// Check that it's ignored if too small (which all params given are)
-	zlibIgnoreMinConv := converter.NewEncodingDataConverter(
+	zlibIgnoreMinConv := converter.NewCodecDataConverter(
 		defaultConv,
-		converter.NewZlibEncoder(converter.ZlibEncoderOptions{}),
+		converter.NewZlibCodec(converter.ZlibCodecOptions{}),
 	)
 	require.NoError(t, err)
 	compUnderMinPayload, err := zlibIgnoreMinConv.ToPayload(data)
@@ -148,37 +148,10 @@ func assertEncodingDataConverter(t *testing.T, data interface{}) {
 	require.True(t, proto.Equal(uncompPayload, compUnderMinPayload))
 }
 
-func TestEncodingDataConverterClone(t *testing.T) {
-	captureConv := &captureToPayloadDataConverter{DataConverter: converter.GetDefaultDataConverter()}
-	zlibConv := converter.NewEncodingDataConverter(
-		captureConv,
-		// Always encode
-		converter.NewZlibEncoder(converter.ZlibEncoderOptions{AlwaysEncode: true}),
-	)
-	// Convert simple payload and confirm the result of capture conv was not
-	// mutated by zlib conv
-	p, err := zlibConv.ToPayload("some string")
-	require.NoError(t, err)
-	require.NotNil(t, captureConv.lastToPayloadResult)
-	require.NotEqual(t, captureConv.lastToPayloadResult.Data, p.Data)
-	require.NotEqual(t, captureConv.lastToPayloadResult.Metadata, p.Metadata)
-}
-
-type captureToPayloadDataConverter struct {
-	converter.DataConverter
-	lastToPayloadResult *commonpb.Payload
-}
-
-func (c *captureToPayloadDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
-	p, err := c.DataConverter.ToPayload(value)
-	c.lastToPayloadResult = p
-	return p, err
-}
-
-func TestPayloadEncoderHTTPHandler(t *testing.T) {
+func TestPayloadCodecHTTPHandler(t *testing.T) {
 	defaultConv := converter.GetDefaultDataConverter()
-	encoder := converter.NewZlibEncoder(converter.ZlibEncoderOptions{AlwaysEncode: true})
-	handler := converter.NewPayloadEncoderHTTPHandler(encoder)
+	codec := converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true})
+	handler := converter.NewPayloadCodecHTTPHandler(codec)
 
 	req, err := http.NewRequest("GET", "/encode", nil)
 	if err != nil {
@@ -233,50 +206,62 @@ func TestPayloadEncoderHTTPHandler(t *testing.T) {
 	require.Equal(t, string(payloadsJSON), decodedPayloadsJSON)
 }
 
-type testEncoder struct {
+type testCodec struct {
 	encoding   string
 	encodeFrom string
 }
 
-func (e *testEncoder) Encode(p *commonpb.Payload) error {
-	if string(p.Metadata[converter.MetadataEncoding]) != e.encodeFrom {
-		return fmt.Errorf("unexpected encoding: %s", p.Metadata[converter.MetadataEncoding])
+func (e *testCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	result := make([]*commonpb.Payload, len(payloads))
+	for i, p := range payloads {
+		if string(p.Metadata[converter.MetadataEncoding]) != e.encodeFrom {
+			return payloads, fmt.Errorf("unexpected encoding: %s", p.Metadata[converter.MetadataEncoding])
+		}
+
+		b, err := proto.Marshal(p)
+		if err != nil {
+			return payloads, err
+		}
+
+		result[i] = &commonpb.Payload{
+			Metadata: map[string][]byte{converter.MetadataEncoding: []byte(e.encoding)},
+			Data:     b,
+		}
 	}
 
-	b, err := proto.Marshal(p)
-	if err != nil {
-		return err
-	}
-
-	p.Metadata = map[string][]byte{converter.MetadataEncoding: []byte(e.encoding)}
-	p.Data = b
-
-	return nil
+	return result, nil
 }
 
-func (e *testEncoder) Decode(p *commonpb.Payload) error {
-	if string(p.Metadata[converter.MetadataEncoding]) != e.encoding {
-		return fmt.Errorf("unexpected encoding: %s", p.Metadata[converter.MetadataEncoding])
-	}
+func (e *testCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	result := make([]*commonpb.Payload, len(payloads))
+	for i, p := range payloads {
+		if string(p.Metadata[converter.MetadataEncoding]) != e.encoding {
+			return payloads, fmt.Errorf("unexpected encoding: %s", p.Metadata[converter.MetadataEncoding])
+		}
 
-	p.Reset()
-	return proto.Unmarshal(p.Data, p)
+		result[i] = &commonpb.Payload{}
+		err := proto.Unmarshal(p.Data, result[i])
+		if err != nil {
+			return payloads, err
+		}
+	}
+	return result, nil
 }
 
 func TestRemoteDataConverter(t *testing.T) {
 	defaultConv := converter.GetDefaultDataConverter()
-	encoders := []converter.PayloadEncoder{
-		&testEncoder{encoding: "encrypted", encodeFrom: "compressed"},
-		&testEncoder{encoding: "compressed", encodeFrom: "json/plain"},
+	codecs := []converter.PayloadCodec{
+		&testCodec{encoding: "encrypted", encodeFrom: "compressed"},
+		&testCodec{encoding: "compressed", encodeFrom: "json/plain"},
 	}
-	handler := converter.NewPayloadEncoderHTTPHandler(encoders...)
+	handler := converter.NewPayloadCodecHTTPHandler(codecs...)
 
 	server := httptest.NewServer(handler)
 	defer server.Close()
 
-	localConverter := converter.NewEncodingDataConverter(
+	localConverter := converter.NewCodecDataConverter(
 		defaultConv,
-		encoders...,
+		codecs...,
 	)
 
 	remoteConverter := converter.NewRemoteDataConverter(
