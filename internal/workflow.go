@@ -159,7 +159,7 @@ type (
 		// get the WorkflowExecution of the child workflow from the future. Then you can use Workflow ID and RunID of
 		// child workflow to cancel or send signal to child workflow.
 		//  childWorkflowFuture := workflow.ExecuteChildWorkflow(ctx, child, ...)
-		//  var childWE WorkflowExecution
+		//  var childWE workflow.Execution
 		//  if err := childWorkflowFuture.GetChildWorkflowExecution().Get(ctx, &childWE); err == nil {
 		//      // child workflow started, you can use childWE to get the WorkflowID and RunID of child workflow
 		//  }
