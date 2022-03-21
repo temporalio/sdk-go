@@ -33,38 +33,15 @@ type metricsHandler struct{ scope tally.Scope }
 // NewMetricsHandler returns a MetricsHandler that is backed by the given Tally
 // scope.
 //
-// Default metrics are Prometheus compatible but default separator (.) should be
-// replaced with some other character:
+// Default metrics are Prometheus compatible, but they should be sanitized and
+// use the Prometheus naming scope so they are cross-SDK compatible with
+// OpenMetrics naming conventions:
 // 	opts := tally.ScopeOptions{
+// 		SanitizeOptions: &contribtally.PrometheusSanitizeOptions,
 // 		Separator: "_",
 // 	}
 // 	scope, _ := tally.NewRootScope(opts, time.Second)
-//
-// If you have custom metrics make sure they are compatible with Prometheus or
-// create tally scope with sanitizer options set:
-// 	var (
-// 		safeCharacters = []rune{'_'}
-// 		sanitizeOptions = tally.SanitizeOptions{
-// 			NameCharacters: tally.ValidCharacters{
-// 				Ranges:     tally.AlphanumericRange,
-// 				Characters: safeCharacters,
-// 			},
-// 			KeyCharacters: tally.ValidCharacters{
-// 				Ranges:     tally.AlphanumericRange,
-// 				Characters: safeCharacters,
-// 			},
-// 			ValueCharacters: tally.ValidCharacters{
-// 				Ranges:     tally.AlphanumericRange,
-// 				Characters: safeCharacters,
-// 			},
-// 			ReplacementCharacter: tally.DefaultReplacementCharacter,
-// 		}
-// 	)
-// 	opts := tally.ScopeOptions{
-// 		SanitizeOptions: &sanitizeOptions,
-// 		Separator: "_",
-// 	}
-// 	scope, _ := tally.NewRootScope(opts, time.Second)
+// 	scope = contribtally.NewPrometheusNamingScope(scope)
 func NewMetricsHandler(scope tally.Scope) client.MetricsHandler {
 	return metricsHandler{scope}
 }
