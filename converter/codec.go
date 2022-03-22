@@ -348,8 +348,9 @@ func NewPayloadCodecHTTPHandler(e ...PayloadCodec) http.Handler {
 // RemoteDataConverterOptions are options for NewRemoteDataConverter.
 // Client is optional.
 type RemoteDataConverterOptions struct {
-	Endpoint string
-	Client   http.Client
+	Endpoint      string
+	ModifyRequest func(*http.Request) error
+	Client        http.Client
 }
 
 // remoteDataConverter is a DataConverter that wraps an underlying data
@@ -464,6 +465,13 @@ func (rdc *remoteDataConverter) encodeOrDecodePayloads(endpoint string, payloads
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+
+	if rdc.options.ModifyRequest != nil {
+		err = rdc.options.ModifyRequest(req)
+		if err != nil {
+			return payloads, err
+		}
+	}
 
 	response, err := rdc.options.Client.Do(req)
 	if err != nil {
