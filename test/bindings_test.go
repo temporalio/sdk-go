@@ -50,7 +50,6 @@ type AsyncBindingsTestSuite struct {
 	client        client.Client
 	worker        worker.Worker
 	taskQueueName string
-	seq           int64
 }
 
 func SimplestWorkflow(ctx workflow.Context) error {
@@ -66,21 +65,27 @@ func (ts *AsyncBindingsTestSuite) SetupSuite() {
 	ts.config = NewConfig()
 	var err error
 	ts.client, err = client.NewClient(client.Options{
-		HostPort:  ts.config.ServiceAddr,
-		Namespace: namespace,
-		Logger:    ilog.NewDefaultLogger(),
+		HostPort:          ts.config.ServiceAddr,
+		Namespace:         ts.config.Namespace,
+		Logger:            ilog.NewDefaultLogger(),
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
 	})
 	ts.NoError(err)
-	ts.registerNamespace()
+	if ts.config.ShouldRegisterNamespace {
+		ts.registerNamespace()
+	}
 }
 
 func (ts *AsyncBindingsTestSuite) registerNamespace() {
-	client, err := client.NewNamespaceClient(client.Options{HostPort: ts.config.ServiceAddr})
+	client, err := client.NewNamespaceClient(client.Options{
+		HostPort:          ts.config.ServiceAddr,
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+	})
 	ts.NoError(err)
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	err = client.Register(ctx, &workflowservice.RegisterNamespaceRequest{
-		Namespace:                        namespace,
+		Namespace:                        ts.config.Namespace,
 		WorkflowExecutionRetentionPeriod: common.DurationPtr(1 * 24 * time.Hour),
 	})
 	defer client.Close()
@@ -149,8 +154,7 @@ func (ts *AsyncBindingsTestSuite) TearDownSuite() {
 }
 
 func (ts *AsyncBindingsTestSuite) SetupTest() {
-	ts.seq++
-	ts.taskQueueName = fmt.Sprintf("tq-%v-%s", ts.seq, ts.T().Name())
+	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
 	options := worker.Options{
 		DisableStickyExecution: ts.config.maxWorkflowCacheSize <= 0,
 	}
