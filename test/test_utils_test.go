@@ -26,13 +26,16 @@ package test_test
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/pborman/uuid"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/workflow"
@@ -41,19 +44,26 @@ import (
 type (
 	// Config contains the integration test configuration
 	Config struct {
-		ServiceAddr          string
-		maxWorkflowCacheSize int
-		Debug                bool
+		ServiceAddr             string
+		maxWorkflowCacheSize    int
+		Debug                   bool
+		Namespace               string
+		ShouldRegisterNamespace bool
+		TLS                     *tls.Config
 	}
 	// context.WithValue need this type instead of basic type string to avoid lint error
 	contextKey string
 )
 
+var taskQueuePrefix = "tq-" + uuid.New()
+
 // NewConfig creates new Config instance
 func NewConfig() Config {
 	cfg := Config{
-		ServiceAddr:          client.DefaultHostPort,
-		maxWorkflowCacheSize: 10000,
+		ServiceAddr:             client.DefaultHostPort,
+		maxWorkflowCacheSize:    10000,
+		Namespace:               "integration-test-namespace",
+		ShouldRegisterNamespace: true,
 	}
 	if addr := getEnvServiceAddr(); addr != "" {
 		cfg.ServiceAddr = addr
@@ -67,6 +77,18 @@ func NewConfig() Config {
 	}
 	if debug := getDebug(); debug != "" {
 		cfg.Debug = debug == "true"
+	}
+	if os.Getenv("TEMPORAL_NAMESPACE") != "" {
+		cfg.Namespace = os.Getenv("TEMPORAL_NAMESPACE")
+		cfg.ShouldRegisterNamespace = false
+	}
+	if os.Getenv("TEMPORAL_CLIENT_CERT") != "" || os.Getenv("TEMPORAL_CLIENT_KEY") != "" {
+		log.Print("Using custom client certificate")
+		cert, err := tls.X509KeyPair([]byte(os.Getenv("TEMPORAL_CLIENT_CERT")), []byte(os.Getenv("TEMPORAL_CLIENT_KEY")))
+		if err != nil {
+			panic(fmt.Sprintf("Failed loading client cert: %v", err))
+		}
+		cfg.TLS = &tls.Config{Certificates: []tls.Certificate{cert}}
 	}
 	return cfg
 }

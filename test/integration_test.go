@@ -70,7 +70,6 @@ import (
 
 const (
 	ctxTimeout                    = 15 * time.Second
-	namespace                     = "integration-test-namespace"
 	namespaceCacheRefreshInterval = 20 * time.Second
 	testContextKey1               = "test-context-key1"
 	testContextKey2               = "test-context-key2"
@@ -86,7 +85,6 @@ type IntegrationTestSuite struct {
 	workflows                 *Workflows
 	worker                    worker.Worker
 	workerStopped             bool
-	seq                       int64
 	taskQueueName             string
 	tracer                    *tracingInterceptor
 	inboundSignalInterceptor  *signalInterceptor
@@ -109,7 +107,9 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.activities = newActivities()
 	ts.workflows = &Workflows{}
 	ts.NoError(WaitForTCP(time.Minute, ts.config.ServiceAddr))
-	ts.registerNamespace()
+	if ts.config.ShouldRegisterNamespace {
+		ts.registerNamespace()
+	}
 }
 
 func (ts *IntegrationTestSuite) TearDownSuite() {
@@ -179,7 +179,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	trafficController := test.NewSimpleTrafficController()
 	ts.client, err = client.NewClient(client.Options{
 		HostPort:  ts.config.ServiceAddr,
-		Namespace: namespace,
+		Namespace: ts.config.Namespace,
 		Logger:    ilog.NewDefaultLogger(),
 		ContextPropagators: []workflow.ContextPropagator{
 			NewKeysPropagator([]string{testContextKey1}),
@@ -188,14 +188,14 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		MetricsHandler:    metricsHandler,
 		TrafficController: trafficController,
 		Interceptors:      clientInterceptors,
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
 	})
 	ts.NoError(err)
 
 	ts.trafficController = trafficController
-	ts.seq++
 	ts.activities.clearInvoked()
 	ts.activities.client = ts.client
-	ts.taskQueueName = fmt.Sprintf("tq-%v-%s", ts.seq, ts.T().Name())
+	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
 	ts.tracer = newTracingInterceptor()
 	ts.inboundSignalInterceptor = newSignalInterceptor()
 	workerInterceptors = append(workerInterceptors, ts.tracer, ts.inboundSignalInterceptor)
@@ -1179,11 +1179,13 @@ func (ts *IntegrationTestSuite) TestAsyncActivityCompletion() {
 	ts.EqualValues([]string{"asyncComplete", "asyncComplete"}, ts.activities.invoked())
 
 	// Complete first activity using ID
-	err = ts.client.CompleteActivityByID(ctx, namespace, workflowRun.GetID(), workflowRun.GetRunID(), "A", "activityA completed", nil)
+	err = ts.client.CompleteActivityByID(ctx, ts.config.Namespace,
+		workflowRun.GetID(), workflowRun.GetRunID(), "A", "activityA completed", nil)
 	ts.Nil(err)
 
 	// Complete second activity using ID
-	err = ts.client.CompleteActivityByID(ctx, namespace, workflowRun.GetID(), workflowRun.GetRunID(), "B", "activityB completed", nil)
+	err = ts.client.CompleteActivityByID(ctx, ts.config.Namespace,
+		workflowRun.GetID(), workflowRun.GetRunID(), "B", "activityB completed", nil)
 	ts.Nil(err)
 
 	// Now wait for workflow to complete
@@ -1246,7 +1248,7 @@ func (ts *IntegrationTestSuite) TestResetWorkflowExecution() {
 	err := ts.executeWorkflow("basic-reset-workflow-execution", ts.workflows.Basic, &originalResult)
 	ts.NoError(err)
 	resp, err := ts.client.ResetWorkflowExecution(context.Background(), &workflowservice.ResetWorkflowExecutionRequest{
-		Namespace: namespace,
+		Namespace: ts.config.Namespace,
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: "basic-reset-workflow-execution",
 		},
@@ -2067,13 +2069,16 @@ func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
 }
 
 func (ts *IntegrationTestSuite) registerNamespace() {
-	client, err := client.NewNamespaceClient(client.Options{HostPort: ts.config.ServiceAddr})
+	client, err := client.NewNamespaceClient(client.Options{
+		HostPort:          ts.config.ServiceAddr,
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+	})
 	ts.NoError(err)
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	retention := 1 * time.Hour * 24
 	err = client.Register(ctx, &workflowservice.RegisterNamespaceRequest{
-		Namespace:                        namespace,
+		Namespace:                        ts.config.Namespace,
 		WorkflowExecutionRetentionPeriod: &retention,
 	})
 	client.Close()
