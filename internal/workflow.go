@@ -31,6 +31,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
@@ -1727,4 +1728,17 @@ func convertFromPBRetryPolicy(retryPolicy *commonpb.RetryPolicy) *RetryPolicy {
 // GetLastCompletionResultFromWorkflowInfo returns value of last completion result.
 func GetLastCompletionResultFromWorkflowInfo(info *WorkflowInfo) *commonpb.Payloads {
 	return info.lastCompletionResult
+}
+
+// NewUUID is a shortcut for:
+// 	workflow.SideEffect(ctx, func(workflow.Context) interface{} {
+// 		return uuid.NewString()
+// 	})
+func NewUUID(ctx Context) string {
+	var res string
+	err := SideEffect(ctx, func(Context) interface{} { return uuid.NewString() }).Get(&res)
+	if err != nil {
+		panic(fmt.Sprintf("unexpected error converting UUID: %v", err))
+	}
+	return res
 }

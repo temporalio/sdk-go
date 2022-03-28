@@ -487,3 +487,11 @@ func IsContinueAsNewError(err error) bool {
 	var continueAsNewErr *ContinueAsNewError
 	return errors.As(err, &continueAsNewErr)
 }
+
+// NewUUID is a shortcut for:
+// 	workflow.SideEffect(ctx, func(workflow.Context) interface{} {
+// 		return uuid.NewString()
+// 	})
+func NewUUID(ctx Context) string {
+	return internal.NewUUID(ctx)
+}

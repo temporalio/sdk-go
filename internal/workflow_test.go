@@ -30,7 +30,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
 
@@ -161,4 +163,15 @@ func _assertNonZero(t *testing.T, i interface{}, prefix string) {
 			t.Errorf("%s: value of type %T must be non-zero", prefix, i)
 		}
 	}
+}
+
+func TestNewUUID(t *testing.T) {
+	workflow := func(ctx Context) (string, error) { return NewUUID(ctx), nil }
+	var suite WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(workflow)
+	var res string
+	require.NoError(t, env.GetWorkflowResult(&res))
+	_, err := uuid.Parse(res)
+	require.NoError(t, err)
 }
