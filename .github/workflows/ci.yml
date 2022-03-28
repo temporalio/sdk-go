@@ -1,0 +1,55 @@
+name: Continuous Integration
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print build information
+        run: "echo head_ref: ${{ github.head_ref }}, ref: ${{ github.ref }}"
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+      - uses: actions/setup-go@v2
+        with:
+          go-version: "1.17"
+      - name: Check and unit test
+        run: make check unit-test
+      - name: Clone Temporal Docker compose
+        uses: actions/checkout@v2
+        with:
+          repository: temporalio/docker-compose
+          path: ./docker-compose
+      - name: Start Temporal server
+        run: |
+          docker-compose --project-directory ./docker-compose up &
+          go run ./.github/workflows/wait_for_server.go
+      - name: Integration tests (without cache)
+        run: make integration-test-zero-cache
+      - name: Integration tests (with cache)
+        run: make integration-test-normal-cache
+
+  cloud-test:
+    runs-on: ubuntu-latest
+    env:
+      SERVICE_ADDR: tinycicd.sdk.tmprl.cloud:7233
+      TEMPORAL_NAMESPACE: tinycicd.sdk
+      TEMPORAL_CLIENT_CERT: ${{ secrets.TEMPORAL_CLIENT_CERT }}
+      TEMPORAL_CLIENT_KEY: ${{ secrets.TEMPORAL_CLIENT_KEY }}
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+        if: ${{ env.TEMPORAL_CLIENT_CERT != '' }}
+      - uses: actions/setup-go@v2
+        with:
+          go-version: "1.17"
+        if: ${{ env.TEMPORAL_CLIENT_CERT != '' }}
+      - name: Single integration test against cloud
+        run: 'go test -v --count 1 -p 1 . -run "TestIntegrationSuite/TestBasic$"'
+        working-directory: test
+        if: ${{ env.TEMPORAL_CLIENT_CERT != '' }}
