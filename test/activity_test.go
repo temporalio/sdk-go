@@ -234,9 +234,7 @@ func (a *Activities) invoked() []string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	result := make([]string, len(a.invocations))
-	for i := range a.invocations {
-		result[i] = a.invocations[i]
-	}
+	copy(result, a.invocations)
 	return result
 }
 

@@ -116,7 +116,7 @@ func (b ErrorDetailsValues) Get(valuePtr ...interface{}) error {
 
 // HasValues return whether there are values.
 func (b ErrorDetailsValues) HasValues() bool {
-	return b != nil && len(b) != 0
+	return len(b) != 0
 }
 
 // NewTestWorkflowEnvironment creates a new instance of TestWorkflowEnvironment. Use the returned TestWorkflowEnvironment

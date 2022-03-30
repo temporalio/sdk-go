@@ -472,6 +472,11 @@ func (e *ApplicationError) message() string {
 	return e.msg
 }
 
+// Message contains just the message string without extras added by Error().
+func (e *ApplicationError) Message() string {
+	return e.msg
+}
+
 // Type returns error type represented as string.
 // This type can be passed explicitly to ApplicationError constructor.
 // Also any other Go error is converted to ApplicationError and type is set automatically using reflection.
@@ -512,6 +517,11 @@ func (e *TimeoutError) Error() string {
 }
 
 func (e *TimeoutError) message() string {
+	return e.msg
+}
+
+// Message contains just the message string without extras added by Error().
+func (e *TimeoutError) Message() string {
 	return e.msg
 }
 
@@ -634,6 +644,11 @@ func (e *ServerError) Error() string {
 }
 
 func (e *ServerError) message() string {
+	return e.msg
+}
+
+// Message contains just the message string without extras added by Error().
+func (e *ServerError) Message() string {
 	return e.msg
 }
 
