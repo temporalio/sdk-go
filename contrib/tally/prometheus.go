@@ -63,7 +63,7 @@ func (p *prometheusNamingScope) Timer(name string) tally.Timer {
 }
 
 func (p *prometheusNamingScope) Histogram(name string, buckets tally.Buckets) tally.Histogram {
-	if strings.HasSuffix(name, "_seconds") {
+	if !strings.HasSuffix(name, "_seconds") {
 		name += "_seconds"
 	}
 	return p.scope.Histogram(name, buckets)
