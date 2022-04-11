@@ -242,6 +242,7 @@ func (t *TestActivityEnvironment) SetWorkerStopChannel(c chan struct{}) {
 // Note: Due to internal caching by the activity system, this may not get called
 // for every heartbeat recorded. This is only called when the heartbeat would be
 // sent to the server (periodic batch and at the end only on failure).
+// Interceptors can be used to intercept/check every heartbeat call.
 func (t *TestActivityEnvironment) SetOnActivityHeartbeatListener(
 	listener func(activityInfo *ActivityInfo, details converter.EncodedValues)) *TestActivityEnvironment {
 	t.impl.onActivityHeartbeatListener = listener
@@ -627,6 +628,7 @@ func (e *TestWorkflowEnvironment) SetOnActivityCanceledListener(
 // Note: Due to internal caching by the activity system, this may not get called
 // for every heartbeat recorded. This is only called when the heartbeat would be
 // sent to the server (periodic batch and at the end only on failure).
+// Interceptors can be used to intercept/check every heartbeat call.
 func (e *TestWorkflowEnvironment) SetOnActivityHeartbeatListener(
 	listener func(activityInfo *ActivityInfo, details converter.EncodedValues)) *TestWorkflowEnvironment {
 	e.impl.onActivityHeartbeatListener = listener
