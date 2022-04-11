@@ -169,6 +169,7 @@ type (
 		mutex            sync.Mutex // used to synchronize executing
 		closed           bool
 		interceptor      WorkflowOutboundInterceptor
+		deadlockDetector *deadlockDetector
 	}
 
 	// WorkflowOptions options passed to the workflow function
@@ -589,7 +590,10 @@ func (d *syncWorkflowDefinition) Close() {
 // Context passed to the root function is child of the passed rootCtx.
 // This way rootCtx can be used to pass values to the coroutine code.
 func newDispatcher(rootCtx Context, interceptor *workflowEnvironmentInterceptor, root func(ctx Context)) (*dispatcherImpl, Context) {
-	result := &dispatcherImpl{interceptor: interceptor.outboundInterceptor}
+	result := &dispatcherImpl{
+		interceptor:      interceptor.outboundInterceptor,
+		deadlockDetector: newDeadlockDetector(),
+	}
 	interceptor.dispatcher = result
 	ctxWithState := result.interceptor.Go(rootCtx, "root", root)
 	return result, ctxWithState
@@ -631,6 +635,21 @@ func getState(ctx Context) *coroutineState {
 	state := s.(*coroutineState)
 	if !state.dispatcher.IsExecuting() {
 		panic(panicIllegalAccessCoroutinueState)
+	}
+	return state
+}
+
+func getStateIfRunning(ctx Context) *coroutineState {
+	if ctx == nil {
+		return nil
+	}
+	s := ctx.Value(coroutinesContextKey)
+	if s == nil {
+		return nil
+	}
+	state := s.(*coroutineState)
+	if !state.dispatcher.IsExecuting() {
+		return nil
 	}
 	return state
 }
@@ -915,12 +934,12 @@ func (s *coroutineState) call(timeout time.Duration) {
 			timeout = unlimitedDeadlockDetectionTimeout
 		}
 	}
-	deadlockTimer := time.NewTimer(timeout)
-	defer func() { deadlockTimer.Stop() }()
+	deadlockTicker := s.dispatcher.deadlockDetector.begin(timeout)
+	defer deadlockTicker.end()
 
 	select {
 	case <-s.aboutToBlock:
-	case <-deadlockTimer.C:
+	case <-deadlockTicker.reached():
 		s.closed.Store(true)
 		panic(fmt.Sprintf("Potential deadlock detected: "+
 			"workflow goroutine %q didn't yield for over a second", s.name))

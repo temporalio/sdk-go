@@ -1057,7 +1057,8 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 		return future
 	}
 
-	input, err := encodeArg(options.DataConverter, arg)
+	dataConverter := getDataConverterFromWorkflowContext(ctx)
+	input, err := encodeArg(dataConverter, arg)
 	if err != nil {
 		settable.Set(nil, err)
 		return future
