@@ -472,6 +472,90 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityReturnsErrActivityResultPending
 	s.Equal(ErrActivityResultPending, err)
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityHeartbeatMock() {
+	shouldErrorActivity := false
+	activityFn := func(ctx context.Context) error {
+		RecordActivityHeartbeat(ctx, "some detail1")
+		RecordActivityHeartbeat(ctx, "some detail2")
+		RecordActivityHeartbeat(ctx, "some detail3")
+		if shouldErrorActivity {
+			return fmt.Errorf("error!")
+		}
+		return nil
+	}
+	var calls []string
+	heartbeatFn := func(info *ActivityInfo, details converter.EncodedValues) {
+		var detail string
+		if err := details.Get(&detail); err != nil {
+			panic(err)
+		}
+		calls = append(calls, detail)
+	}
+	// Test that without activity erroring, only the first heartbeat recorded
+	env := s.NewTestActivityEnvironment()
+	env.RegisterActivity(activityFn)
+	env.SetOnActivityHeartbeatListener(heartbeatFn)
+	_, err := env.ExecuteActivity(activityFn)
+	s.NoError(err)
+	s.Equal(calls, []string{"some detail1"})
+	// Test that with activity erroring, first and last heartbeat recorded
+	calls, shouldErrorActivity = nil, true
+	env = s.NewTestActivityEnvironment()
+	env.RegisterActivity(activityFn)
+	env.SetOnActivityHeartbeatListener(heartbeatFn)
+	_, err = env.ExecuteActivity(activityFn)
+	s.Error(err)
+	s.Equal(calls, []string{"some detail1", "some detail3"})
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_WorkflowHeartbeatMock() {
+	shouldErrorActivity := false
+	activityFn := func(ctx context.Context) error {
+		RecordActivityHeartbeat(ctx, "some detail1")
+		RecordActivityHeartbeat(ctx, "some detail2")
+		RecordActivityHeartbeat(ctx, "some detail3")
+		if shouldErrorActivity {
+			return fmt.Errorf("error!")
+		}
+		return nil
+	}
+	var calls []string
+	heartbeatFn := func(info *ActivityInfo, details converter.EncodedValues) {
+		var detail string
+		if err := details.Get(&detail); err != nil {
+			panic(err)
+		}
+		calls = append(calls, detail)
+	}
+	workflowFn := func(ctx Context) error {
+		ctx = WithActivityOptions(ctx, ActivityOptions{
+			ScheduleToCloseTimeout: 10 * time.Second,
+			RetryPolicy:            &RetryPolicy{MaximumAttempts: 1},
+		})
+		f := ExecuteActivity(ctx, activityFn)
+		return f.Get(ctx, nil)
+	}
+	// Test that without activity erroring, only the first heartbeat recorded
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(workflowFn)
+	env.RegisterActivity(activityFn)
+	env.SetOnActivityHeartbeatListener(heartbeatFn)
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	s.Equal(calls, []string{"some detail1"})
+	// Test that with activity erroring, first and last heartbeat recorded
+	calls, shouldErrorActivity = nil, true
+	env = s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(workflowFn)
+	env.RegisterActivity(activityFn)
+	env.SetOnActivityHeartbeatListener(heartbeatFn)
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.Error(env.GetWorkflowError())
+	s.Equal(calls, []string{"some detail1", "some detail3"})
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowCancellation() {
 	workflowFn := func(ctx Context) error {
 		ctx = WithActivityOptions(ctx, s.activityOptions)
