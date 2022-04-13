@@ -784,7 +784,7 @@ func TestDeadlockDetectorAndAwaitRace(t *testing.T) {
 	}()
 	d := createNewDispatcher(func(ctx Context) {
 		_ = Await(ctx, func() bool {
-			time.Sleep(defaultDeadlockDetectionTimeout)
+			time.Sleep(defaultDeadlockDetectionTimeout + (100 * time.Millisecond))
 			return false
 		})
 	})
