@@ -82,6 +82,12 @@ func TestDataConverterWithoutDeadlockDetection(t *testing.T) {
 	// Run with that same payload converter without deadlock detection
 	conv = DataConverterWithoutDeadlockDetection(conv)
 	require.NotPanics(t, runWorkflow)
+
+	// Also confirm outside of workflow, pause/resume is noop
+	_, err := conv.ToPayload("foo")
+	require.NoError(t, err)
+	_, err = conv.(ContextAware).WithWorkflowContext(Background()).ToPayload("foo")
+	require.NoError(t, err)
 }
 
 type slowToPayloadsConverter struct{ converter.DataConverter }
