@@ -35,6 +35,9 @@ type (
 	// To override DataConverter for specific activity or child workflow use workflow.WithDataConverter to create new Context,
 	// and pass that context to ExecuteActivity/ExecuteChildWorkflow calls.
 	// Temporal support using different DataConverters for different activity/childWorkflow in same workflow.
+	// For advanced data converters that may exceed the deadlock detection timeout
+	// for a workflow, such as ones making remote calls, use
+	// workflow.DataConverterWithoutDeadlockDetection.
 	DataConverter interface {
 		// ToPayload converts single value to payload.
 		ToPayload(value interface{}) (*commonpb.Payload, error)

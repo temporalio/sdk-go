@@ -487,3 +487,12 @@ func IsContinueAsNewError(err error) bool {
 	var continueAsNewErr *ContinueAsNewError
 	return errors.As(err, &continueAsNewErr)
 }
+
+// DataConverterWithoutDeadlockDetection returns a data converter that disables
+// workflow deadlock detection for each call on the data converter. This should
+// be used for advanced data converters that may perform remote calls or
+// otherwise intentionally execute longer than the default deadlock detection
+// timeout.
+func DataConverterWithoutDeadlockDetection(c converter.DataConverter) converter.DataConverter {
+	return internal.DataConverterWithoutDeadlockDetection(c)
+}
