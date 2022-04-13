@@ -199,6 +199,9 @@ type (
 
 		workerStopChannel  chan struct{}
 		sessionEnvironment *testSessionEnvironmentImpl
+
+		// True if this was created only for testing activities not workflows.
+		activityEnvOnly bool
 	}
 
 	testSessionEnvironmentImpl struct {
@@ -293,11 +296,17 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		}
 		activityHandle.heartbeatDetails = r.Details
 		activityInfo := env.getActivityInfo(activityID, activityHandle.activityType)
-		env.postCallback(func() {
-			if env.onActivityHeartbeatListener != nil {
+		if env.onActivityHeartbeatListener != nil {
+			// If we're only in an activity environment, posted callbacks are not
+			// invoked
+			if env.activityEnvOnly {
 				env.onActivityHeartbeatListener(activityInfo, newEncodedValues(r.Details, env.GetDataConverter()))
+			} else {
+				env.postCallback(func() {
+					env.onActivityHeartbeatListener(activityInfo, newEncodedValues(r.Details, env.GetDataConverter()))
+				}, false)
 			}
-		}, false)
+		}
 
 		env.logger.Debug("RecordActivityTaskHeartbeat", tagActivityID, activityID)
 		return nil

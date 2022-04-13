@@ -128,7 +128,9 @@ func (s *WorkflowTestSuite) NewTestWorkflowEnvironment() *TestWorkflowEnvironmen
 // NewTestActivityEnvironment creates a new instance of TestActivityEnvironment. Use the returned TestActivityEnvironment
 // to run your activity in the test environment.
 func (s *WorkflowTestSuite) NewTestActivityEnvironment() *TestActivityEnvironment {
-	return &TestActivityEnvironment{impl: newTestWorkflowEnvironmentImpl(s, nil)}
+	t := &TestActivityEnvironment{impl: newTestWorkflowEnvironmentImpl(s, nil)}
+	t.impl.activityEnvOnly = true
+	return t
 }
 
 // SetLogger sets the logger for this WorkflowTestSuite. If you don't set logger, test suite will create a default logger
@@ -231,6 +233,20 @@ func (t *TestActivityEnvironment) SetHeartbeatDetails(details interface{}) {
 // Then call close(channel) to test the activity worker stop logic.
 func (t *TestActivityEnvironment) SetWorkerStopChannel(c chan struct{}) {
 	t.impl.setWorkerStopChannel(c)
+}
+
+// SetOnActivityHeartbeatListener sets a listener that will be called when
+// activity heartbeat is called. ActivityInfo is defined in internal package,
+// use public type activity.Info instead.
+//
+// Note: Due to internal caching by the activity system, this may not get called
+// for every heartbeat recorded. This is only called when the heartbeat would be
+// sent to the server (periodic batch and at the end only on failure).
+// Interceptors can be used to intercept/check every heartbeat call.
+func (t *TestActivityEnvironment) SetOnActivityHeartbeatListener(
+	listener func(activityInfo *ActivityInfo, details converter.EncodedValues)) *TestActivityEnvironment {
+	t.impl.onActivityHeartbeatListener = listener
+	return t
 }
 
 // RegisterWorkflow registers workflow implementation with the TestWorkflowEnvironment
@@ -608,6 +624,11 @@ func (e *TestWorkflowEnvironment) SetOnActivityCanceledListener(
 
 // SetOnActivityHeartbeatListener sets a listener that will be called when activity heartbeat.
 // Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
+//
+// Note: Due to internal caching by the activity system, this may not get called
+// for every heartbeat recorded. This is only called when the heartbeat would be
+// sent to the server (periodic batch and at the end only on failure).
+// Interceptors can be used to intercept/check every heartbeat call.
 func (e *TestWorkflowEnvironment) SetOnActivityHeartbeatListener(
 	listener func(activityInfo *ActivityInfo, details converter.EncodedValues)) *TestWorkflowEnvironment {
 	e.impl.onActivityHeartbeatListener = listener
