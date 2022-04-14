@@ -2068,6 +2068,52 @@ func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
 	ts.Truef(strings.HasSuffix(err.Error(), "activity on session #1 failed: canceled"), "wrong error, got: %v", err)
 }
 
+func (ts *IntegrationTestSuite) TestQueryOnlyCoroutineUsage() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Start the workflow that should run forever, send 5 signals, and wait until
+	// all received
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-query-only-coroutine-"+uuid.New()),
+		ts.workflows.SignalCounter,
+	)
+	ts.NoError(err)
+	for i := 0; i < 5; i++ {
+		ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "signal", nil))
+	}
+	ts.waitForQueryTrue(run, "has-signal-count", 5)
+
+	// Now stop the worker and reset sticky on the workflow so it'll quickly
+	// failover to our new worker
+	ts.worker.Stop()
+	ts.workerStopped = true
+	_, err = ts.client.WorkflowService().ResetStickyTaskQueue(ctx, &workflowservice.ResetStickyTaskQueueRequest{
+		Namespace: ts.config.Namespace,
+		Execution: &commonpb.WorkflowExecution{WorkflowId: run.GetID(), RunId: run.GetRunID()},
+	})
+	ts.NoError(err)
+
+	// Start a new worker with a counting interceptor
+	counter := &coroutineCountingInterceptor{}
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		Interceptors: []interceptor.WorkerInterceptor{counter},
+	})
+	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.NoError(nextWorker.Start())
+	defer nextWorker.Stop()
+
+	// Now issue 20 queries
+	for i := 0; i < 20; i++ {
+		_, err := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "has-signal-count", 5)
+		ts.NoError(err)
+	}
+
+	// Check coroutines are cleaned up. Before the fix accompanying this test, the
+	// count was the same as the number of queries issued.
+	ts.Equal(0, counter.count())
+}
+
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{
 		HostPort:          ts.config.ServiceAddr,
@@ -2332,4 +2378,51 @@ func (ts *IntegrationTestSuite) getReportedOperationCount(metricName string, ope
 		}
 	}
 	return count
+}
+
+type coroutineCountingInterceptor struct {
+	interceptor.WorkerInterceptorBase
+	// Access via count()
+	_count int32
+}
+
+type coroutineCountingWorkflowInboundInterceptor struct {
+	interceptor.WorkflowInboundInterceptorBase
+	root *coroutineCountingInterceptor
+}
+
+type coroutineCountingWorkflowOutboundInterceptor struct {
+	interceptor.WorkflowOutboundInterceptorBase
+	root *coroutineCountingInterceptor
+}
+
+func (c *coroutineCountingInterceptor) count() int {
+	return int(atomic.LoadInt32(&c._count))
+}
+
+func (c *coroutineCountingInterceptor) InterceptWorkflow(
+	ctx workflow.Context,
+	next interceptor.WorkflowInboundInterceptor,
+) interceptor.WorkflowInboundInterceptor {
+	var ret coroutineCountingWorkflowInboundInterceptor
+	ret.Next = next
+	ret.root = c
+	return &ret
+}
+
+func (c *coroutineCountingWorkflowInboundInterceptor) Init(outbound interceptor.WorkflowOutboundInterceptor) error {
+	return c.Next.Init(&coroutineCountingWorkflowOutboundInterceptor{
+		interceptor.WorkflowOutboundInterceptorBase{Next: outbound}, c.root})
+}
+
+func (c *coroutineCountingWorkflowOutboundInterceptor) Go(
+	ctx workflow.Context,
+	name string,
+	f func(ctx workflow.Context),
+) workflow.Context {
+	atomic.AddInt32(&c.root._count, 1)
+	return c.Next.Go(ctx, name, func(ctx workflow.Context) {
+		defer atomic.AddInt32(&c.root._count, -1)
+		f(ctx)
+	})
 }
