@@ -1,6 +1,7 @@
 package a //want package:"\\d+ non-deterministic vars/funcs"
 
 import (
+	"text/template"
 	"time"
 
 	"go.temporal.io/sdk/worker"
@@ -13,6 +14,7 @@ func PrepWorkflow() {
 	wrk.RegisterWorkflow(WorkflowCallTime)             // want "a.WorkflowCallTime is non-deterministic, reason: calls non-deterministic function time.Now"
 	wrk.RegisterWorkflow(WorkflowCallTimeTransitively) // want "a.WorkflowCallTimeTransitively is non-deterministic, reason: calls non-deterministic function a.SomeTimeCall"
 	wrk.RegisterWorkflow(WorkflowIterateMap)           // want "a.WorkflowIterateMap is non-deterministic, reason: iterates over map"
+	wrk.RegisterWorkflow(WorkflowWithTemplate)         // want "a.WorkflowWithTemplate is non-deterministic, reason: calls non-deterministic function \\(\\*text/template\\.Template\\)\\.Execute.*"
 }
 
 func WorkflowNop(ctx workflow.Context) error {
@@ -38,4 +40,8 @@ func WorkflowIterateMap(ctx workflow.Context) error { // want WorkflowIterateMap
 	for range m {
 	}
 	return nil
+}
+
+func WorkflowWithTemplate(ctx workflow.Context) error { // want WorkflowWithTemplate:"calls non-deterministic function \\(\\*text/template\\.Template\\)\\.Execute.*"
+	return template.New("mytmpl").Execute(nil, nil)
 }
