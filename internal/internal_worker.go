@@ -1122,21 +1122,29 @@ func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service
 		Namespace: namespace,
 		Execution: sharedExecution,
 	}
-	hResponse, err := service.GetWorkflowExecutionHistory(ctx, request)
-	if err != nil {
-		return err
-	}
-
-	if hResponse.RawHistory != nil {
-		history, err := serializer.DeserializeBlobDataToHistoryEvents(hResponse.RawHistory, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	var history historypb.History
+	for {
+		resp, err := service.GetWorkflowExecutionHistory(ctx, request)
 		if err != nil {
 			return err
 		}
-
-		hResponse.History = history
+		currHistory := resp.History
+		if resp.RawHistory != nil {
+			currHistory, err = serializer.DeserializeBlobDataToHistoryEvents(resp.RawHistory, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+			if err != nil {
+				return err
+			}
+		}
+		if currHistory == nil {
+			break
+		}
+		history.Events = append(history.Events, currHistory.Events...)
+		if len(resp.NextPageToken) == 0 {
+			break
+		}
+		request.NextPageToken = resp.NextPageToken
 	}
-
-	return aw.replayWorkflowHistory(logger, service, namespace, hResponse.History)
+	return aw.replayWorkflowHistory(logger, service, namespace, &history)
 }
 
 func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service workflowservice.WorkflowServiceClient, namespace string, history *historypb.History) error {
