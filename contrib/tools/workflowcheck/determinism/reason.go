@@ -79,28 +79,32 @@ func (n NonDeterminisms) AppendChildReasonLines(
 	includePos bool,
 	pkg *types.Package,
 	lookupCache *PackageLookupCache,
+	seenPos map[string]bool,
 ) []string {
 	for _, reason := range n {
 		reasonStr := reason.String()
-		if includePos {
-			// Relativize path if it at least starts with working dir
-			pos := reason.Pos()
-			filename := pos.Filename
-			if wd, err := os.Getwd(); err == nil && strings.HasPrefix(filename, wd) {
-				if relFilename, err := filepath.Rel(wd, filename); err == nil {
-					filename = relFilename
-				}
+		// Relativize path if it at least starts with working dir
+		pos := reason.Pos()
+		filename := pos.Filename
+		if wd, err := os.Getwd(); err == nil && strings.HasPrefix(filename, wd) {
+			if relFilename, err := filepath.Rel(wd, filename); err == nil {
+				filename = relFilename
 			}
-			reasonStr += fmt.Sprintf(" at %v:%v:%v", filename, pos.Line, pos.Column)
+		}
+		posStr := fmt.Sprintf("%v:%v:%v", filename, pos.Line, pos.Column)
+		if includePos {
+			reasonStr += " at " + posStr
 		}
 		s = append(s, fmt.Sprintf("%v is non-deterministic, reason: %v",
 			strings.Repeat(depthRepeat, depth)+subject, reasonStr))
-		// Recurse if func call
-		if funcCall, _ := reason.(*ReasonFuncCall); funcCall != nil {
+		// Recurse if func call and we haven't seen this pos str before
+		seen := seenPos[posStr]
+		seenPos[posStr] = true
+		if funcCall, _ := reason.(*ReasonFuncCall); funcCall != nil && !seen {
 			childPkg, childPkgNonDet := lookupCache.PackageNonDeterminismsFromName(pkg, funcCall.PackageName())
 			if childNonDet := childPkgNonDet[funcCall.FuncName]; len(childNonDet) > 0 {
 				s = childNonDet.AppendChildReasonLines(funcCall.FuncName, s, depth+1,
-					depthRepeat, includePos, childPkg, lookupCache)
+					depthRepeat, includePos, childPkg, lookupCache, seenPos)
 			}
 		}
 	}
