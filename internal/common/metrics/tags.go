@@ -68,8 +68,9 @@ func LocalActivityTags(workflowType, activityType string) map[string]string {
 }
 
 // WorkerTags returns a set of tags for workers.
-func WorkerTags(workerType string) map[string]string {
+func WorkerTags(workerType, taskQueue string) map[string]string {
 	return map[string]string{
 		WorkerTypeTagName: workerType,
+		TaskQueueTagName:  taskQueue,
 	}
 }
