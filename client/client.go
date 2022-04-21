@@ -261,12 +261,11 @@ type (
 		//  - serviceerror.NotFound
 		ListOpenWorkflow(ctx context.Context, request *workflowservice.ListOpenWorkflowExecutionsRequest) (*workflowservice.ListOpenWorkflowExecutionsResponse, error)
 
-		// ListWorkflow gets workflow executions based on query. This API only works with ElasticSearch,
-		// and will return serviceerror.InvalidArgument when using Cassandra or MySQL. The query is basically the SQL WHERE clause,
-		// examples:
+		// ListWorkflow gets workflow executions based on query. The query is basically the SQL WHERE clause, examples:
 		//  - "(WorkflowID = 'wid1' or (WorkflowType = 'type2' and WorkflowID = 'wid2'))".
 		//  - "CloseTime between '2019-08-27T15:04:05+00:00' and '2019-08-28T15:04:05+00:00'".
 		//  - to list only open workflow use "CloseTime = missing"
+		// Advanced queries require ElasticSearch, but simple queries do not.
 		// Retrieved workflow executions are sorted by StartTime in descending order when list open workflow,
 		// and sorted by CloseTime in descending order for other queries.
 		// The errors it can return:
