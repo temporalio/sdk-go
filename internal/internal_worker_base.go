@@ -147,7 +147,6 @@ type (
 		taskWorker        taskPoller
 		identity          string
 		workerType        string
-		taskQueue         string
 		stopTimeout       time.Duration
 		userContextCancel context.CancelFunc
 	}
@@ -209,7 +208,7 @@ func newBaseWorker(
 		taskLimiter:        rate.NewLimiter(rate.Limit(options.maxTaskPerSecond), 1),
 		retrier:            backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
 		logger:             log.With(logger, tagWorkerType, options.workerType),
-		metricsHandler:     metricsHandler.WithTags(metrics.WorkerTags(options.workerType, options.taskQueue)),
+		metricsHandler:     metricsHandler.WithTags(metrics.WorkerTags(options.workerType)),
 		taskSlotsAvailable: int32(options.maxConcurrentTask),
 		pollerRequestCh:    make(chan struct{}, options.maxConcurrentTask),
 		taskQueueCh:        make(chan interface{}), // no buffer, so poller only able to poll new task after previous is dispatched.
