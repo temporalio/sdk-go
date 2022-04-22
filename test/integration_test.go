@@ -2114,6 +2114,40 @@ func (ts *IntegrationTestSuite) TestQueryOnlyCoroutineUsage() {
 	ts.Equal(0, counter.count())
 }
 
+func (ts *IntegrationTestSuite) TestLargeHistoryReplay() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Start workflow
+	run, err := ts.client.ExecuteWorkflow(
+		ctx,
+		ts.startWorkflowOptions("test-large-history-replay"),
+		ts.workflows.PanicOnSignal,
+	)
+	ts.NoError(err)
+
+	// Send 300 signals to go over page limit
+	for i := 0; i < 300; i++ {
+		ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "unhandled-signal", "some-arg"))
+	}
+
+	// Now cause panic and confirm error
+	var ret string
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "panic-signal", nil))
+	err = run.Get(ctx, &ret)
+	ts.Error(err)
+	ts.Contains(err.Error(), "intentional panic")
+
+	// Try to replay from just service and confirm panic which means it reached
+	// last signal
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(ts.workflows.PanicOnSignal)
+	err = replayer.ReplayWorkflowExecution(ctx, ts.client.WorkflowService(), nil,
+		ts.config.Namespace, workflow.Execution{ID: run.GetID(), RunID: run.GetRunID()})
+	ts.Error(err)
+	ts.Contains(err.Error(), "intentional panic")
+}
+
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{
 		HostPort:          ts.config.ServiceAddr,

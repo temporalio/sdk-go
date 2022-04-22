@@ -1752,6 +1752,12 @@ func (w *Workflows) SignalCounter(ctx workflow.Context) error {
 	}
 }
 
+func (w *Workflows) PanicOnSignal(ctx workflow.Context) error {
+	// Wait for signal then panic
+	workflow.GetSignalChannel(ctx, "panic-signal").Receive(ctx, nil)
+	panic("intentional panic")
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -1821,6 +1827,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ReturnCancelError)
 	worker.RegisterWorkflow(w.LocalActivityByStringName)
 	worker.RegisterWorkflow(w.SignalCounter)
+	worker.RegisterWorkflow(w.PanicOnSignal)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
