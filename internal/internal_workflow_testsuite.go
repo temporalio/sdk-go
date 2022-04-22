@@ -1147,10 +1147,6 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 		return serviceerror.NewInvalidArgument("ActivityType exceeds length limit.")
 	}
 
-	if len(attributes.GetNamespace()) > maxIDLengthLimit {
-		return serviceerror.NewInvalidArgument("Namespace exceeds length limit.")
-	}
-
 	// Only attempt to deduce and fill in unspecified timeouts only when all timeouts are non-negative.
 	if common.DurationValue(attributes.GetScheduleToCloseTimeout()) < 0 || common.DurationValue(attributes.GetScheduleToStartTimeout()) < 0 ||
 		common.DurationValue(attributes.GetStartToCloseTimeout()) < 0 || common.DurationValue(attributes.GetHeartbeatTimeout()) < 0 {

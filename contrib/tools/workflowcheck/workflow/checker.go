@@ -180,7 +180,7 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 				// One report per reason
 				for _, reason := range nonDeterminisms {
 					lines := determinism.NonDeterminisms{reason}.AppendChildReasonLines(
-						fn.FullName(), nil, 0, depthRepeat, c.IncludePosOnMessage, fn.Pkg(), lookupCache)
+						fn.FullName(), nil, 0, depthRepeat, c.IncludePosOnMessage, fn.Pkg(), lookupCache, map[string]bool{})
 					pass.Report(analysis.Diagnostic{Pos: callExpr.Pos(), Message: strings.Join(lines, hierarchySeparator)})
 				}
 			}
