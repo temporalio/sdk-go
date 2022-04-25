@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -3814,4 +3815,105 @@ func (s *WorkflowTestSuiteUnitTest) Test_NoDetachedChildWait() {
 
 		s.GreaterOrEqual(childCalledCount, 1)
 	}
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowActivityInfo() {
+	type res struct {
+		ParentWorkflowID     string
+		ChildWorkflowID      string
+		WorkflowIDInActivity string
+	}
+	activityFn := func(ctx context.Context) (res, error) {
+		return res{WorkflowIDInActivity: GetActivityInfo(ctx).WorkflowExecution.ID}, nil
+	}
+	childWorkflowFn := func(ctx Context) (res res, err error) {
+		err = ExecuteActivity(WithActivityOptions(ctx, s.activityOptions), activityFn).Get(ctx, &res)
+		res.ChildWorkflowID = GetWorkflowInfo(ctx).WorkflowExecution.ID
+		return
+	}
+	parentWorkflowFn := func(ctx Context) (res res, err error) {
+		err = ExecuteChildWorkflow(ctx, childWorkflowFn).Get(ctx, &res)
+		res.ParentWorkflowID = GetWorkflowInfo(ctx).WorkflowExecution.ID
+		return
+	}
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(childWorkflowFn)
+	env.RegisterWorkflow(parentWorkflowFn)
+	env.RegisterActivity(activityFn)
+	env.ExecuteWorkflow(parentWorkflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var wfRes res
+	s.NoError(env.GetWorkflowResult(&wfRes))
+	s.NotEmpty(wfRes.ParentWorkflowID)
+	s.NotEmpty(wfRes.ChildWorkflowID)
+	s.NotEmpty(wfRes.WorkflowIDInActivity)
+	s.NotEqual(wfRes.ParentWorkflowID, wfRes.ChildWorkflowID)
+	s.Equal(wfRes.ChildWorkflowID, wfRes.WorkflowIDInActivity)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityHeartbeatCancel() {
+	var activityCallCount uint32
+	env := s.NewTestWorkflowEnvironment()
+	activityFn := func(ctx context.Context) error {
+		atomic.AddUint32(&activityCallCount, 1)
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(200 * time.Millisecond):
+				RecordActivityHeartbeat(ctx)
+				env.CancelWorkflow()
+			}
+		}
+	}
+	workflowFn := func(ctx Context) error {
+		// Call activity function twice, second one will be with cancelled context
+		ctx = WithActivityOptions(ctx, ActivityOptions{
+			RetryPolicy:            &RetryPolicy{MaximumAttempts: 1},
+			ScheduleToCloseTimeout: 5 * time.Second,
+			HeartbeatTimeout:       1 * time.Second,
+			WaitForCancellation:    true,
+		})
+		_ = ExecuteActivity(ctx, activityFn).Get(ctx, nil)
+		return fmt.Errorf("activity error: %w", ExecuteActivity(ctx, activityFn).Get(ctx, nil))
+	}
+	env.RegisterWorkflow(workflowFn)
+	env.RegisterActivity(activityFn)
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.Error(env.GetWorkflowError())
+	s.Contains(env.GetWorkflowError().Error(), "activity error: canceled")
+	s.Equal(1, int(atomic.LoadUint32(&activityCallCount)))
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityOnCancelledContext() {
+	var activityCallCount uint32
+	activityFn := func(ctx context.Context) error {
+		atomic.AddUint32(&activityCallCount, 1)
+		return nil
+	}
+	workflowFn := func(ctx Context) error {
+		// Call activity function twice after cancel, neither should execute
+		ctx = WithActivityOptions(ctx, ActivityOptions{
+			RetryPolicy:            &RetryPolicy{MaximumAttempts: 1},
+			ScheduleToCloseTimeout: 5 * time.Second,
+			HeartbeatTimeout:       1 * time.Second,
+			WaitForCancellation:    true,
+		})
+		ctx.Done().Receive(ctx, nil)
+		_ = ExecuteActivity(ctx, activityFn).Get(ctx, nil)
+		return fmt.Errorf("activity error: %w", ExecuteActivity(ctx, activityFn).Get(ctx, nil))
+	}
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(workflowFn)
+	env.RegisterActivity(activityFn)
+	env.RegisterDelayedCallback(func() {
+		env.CancelWorkflow()
+	}, 10*time.Minute)
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.Error(env.GetWorkflowError())
+	s.Contains(env.GetWorkflowError().Error(), "activity error: canceled")
+	s.Equal(0, int(atomic.LoadUint32(&activityCallCount)))
 }

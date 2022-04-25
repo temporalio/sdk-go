@@ -43,7 +43,7 @@ func Test(t *testing.T) {
 		determinism.NewChecker(determinism.Config{
 			IdentRefs:         identRefs,
 			SkipFiles:         []*regexp.Regexp{regexp.MustCompile(`.*/should_skip\.go`)},
-			Debug:             true,
+			Debug:             false, // Set to true to see details
 			DebugfFunc:        t.Logf,
 			EnableObjectFacts: true,
 		}).NewAnalyzer(),
