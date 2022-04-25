@@ -2106,6 +2106,33 @@ func (ts *IntegrationTestSuite) TestLargeHistoryReplay() {
 	ts.Contains(err.Error(), "intentional panic")
 }
 
+func (ts *IntegrationTestSuite) TestClientGetNotFollowingRuns() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Start workflow that does a continue as new
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-client-get-not-following-runs"),
+		ts.workflows.ContinueAsNew, 1, ts.taskQueueName)
+	ts.NoError(err)
+
+	// Do the regular get which returns the final value and a different run ID
+	origRunID := run.GetRunID()
+	var val int
+	ts.NoError(run.Get(ctx, &val))
+	ts.Equal(999, val)
+	ts.NotEqual(origRunID, run.GetRunID())
+
+	// Get the run with the original ID and fetch without following runs
+	run = ts.client.GetWorkflow(ctx, run.GetID(), origRunID)
+	err = run.GetWithOptions(ctx, nil, client.WorkflowRunGetOptions{DisableFollowingRuns: true})
+	ts.Error(err)
+	contErr := err.(*workflow.ContinueAsNewError)
+	ts.Equal("ContinueAsNew", contErr.WorkflowType.Name)
+	ts.Equal("0", string(contErr.Input.Payloads[0].Data))
+	ts.Equal("\""+ts.taskQueueName+"\"", string(contErr.Input.Payloads[1].Data))
+	ts.Equal(ts.taskQueueName, contErr.TaskQueueName)
+}
+
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{
 		HostPort:          ts.config.ServiceAddr,
