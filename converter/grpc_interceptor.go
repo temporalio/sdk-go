@@ -330,6 +330,13 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 				return err
 			}
 
+		case []*failurepb.Failure:
+			for _, x := range o {
+				if err := s.process(encode, x); err != nil {
+					return err
+				}
+			}
+
 		case *failurepb.Failure:
 			if o == nil {
 				continue
@@ -814,6 +821,13 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 				return err
 			}
 
+		case []*workflowservicepb.PollActivityTaskQueueResponse:
+			for _, x := range o {
+				if err := s.process(encode, x); err != nil {
+					return err
+				}
+			}
+
 		case *workflowservicepb.PollActivityTaskQueueResponse:
 			if o == nil {
 				continue
@@ -935,6 +949,18 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 			if err := s.process(
 				encode,
 				o.GetFailure(),
+				o.GetLastHeartbeatDetails(),
+			); err != nil {
+				return err
+			}
+
+		case *workflowservicepb.RespondActivityTaskFailedByIdResponse:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetFailures(),
 			); err != nil {
 				return err
 			}
@@ -946,6 +972,18 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 			if err := s.process(
 				encode,
 				o.GetFailure(),
+				o.GetLastHeartbeatDetails(),
+			); err != nil {
+				return err
+			}
+
+		case *workflowservicepb.RespondActivityTaskFailedResponse:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetFailures(),
 			); err != nil {
 				return err
 			}
@@ -979,6 +1017,7 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 			}
 			if err := s.process(
 				encode,
+				o.GetActivityTasks(),
 				o.GetWorkflowTask(),
 			); err != nil {
 				return err
