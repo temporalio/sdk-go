@@ -1303,7 +1303,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		ConcurrentWorkflowTaskExecutionSize:   options.MaxConcurrentWorkflowTaskExecutionSize,
 		MaxConcurrentWorkflowTaskQueuePollers: options.MaxConcurrentWorkflowTaskPollers,
 		Identity:                              client.identity,
-		MetricsHandler:                        client.metricsHandler,
+		MetricsHandler:                        client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue)),
 		Logger:                                client.logger,
 		EnableLoggingInReplay:                 options.EnableLoggingInReplay,
 		UserContext:                           backgroundActivityContext,
