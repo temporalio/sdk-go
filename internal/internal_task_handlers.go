@@ -116,6 +116,7 @@ type (
 		newCommands         []*commandpb.Command
 		currentWorkflowTask *workflowservice.PollWorkflowTaskQueueResponse
 		laTunnel            *localActivityTunnel
+		cached              bool
 	}
 
 	// workflowTaskHandlerImpl is the implementation of WorkflowTaskHandler
@@ -416,7 +417,7 @@ func (w *workflowExecutionContextImpl) Lock() {
 	w.mutex.Lock()
 }
 
-func (w *workflowExecutionContextImpl) Unlock(contextCached bool, err error) {
+func (w *workflowExecutionContextImpl) Unlock(err error) {
 	if err != nil || w.err != nil || w.isWorkflowCompleted ||
 		(w.wth.cache.MaxWorkflowCacheSize() <= 0 && !w.hasPendingLocalActivityWork()) {
 		// TODO: in case of closed, it asumes the close command always succeed. need server side change to return
@@ -424,11 +425,12 @@ func (w *workflowExecutionContextImpl) Unlock(contextCached bool, err error) {
 		// if the close command failed, the next command will have to rebuild the state.
 		if w.wth.cache.getWorkflowCache().Exist(w.workflowInfo.WorkflowExecution.RunID) {
 			w.wth.cache.removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID)
+			w.cached = false
 		} else {
 			// sticky is disabled, manually clear the workflow state.
 			w.clearState()
 		}
-	} else if !contextCached {
+	} else if !w.cached {
 		// Clear the state if we never cached the workflow so coroutines can be
 		// exited
 		w.clearState()
@@ -592,7 +594,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
 	task *workflowservice.PollWorkflowTaskQueueResponse,
 	historyIterator HistoryIterator,
-) (cached bool, workflowContext *workflowExecutionContextImpl, err error) {
+) (workflowContext *workflowExecutionContextImpl, err error) {
 	metricsHandler := wth.metricsHandler.WithTags(metrics.WorkflowTags(task.WorkflowType.GetName()))
 	defer func() {
 		if err == nil && workflowContext != nil && workflowContext.laTunnel == nil {
@@ -612,7 +614,6 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
 	}
 
 	if workflowContext != nil {
-		cached = true
 		workflowContext.Lock()
 		if task.Query != nil && !isFullHistory {
 			// query task and we have a valid cached state
@@ -640,14 +641,16 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
 
 		if wth.cache.MaxWorkflowCacheSize() > 0 && task.Query == nil {
 			workflowContext, _ = wth.cache.putWorkflowContext(runID, workflowContext)
-			cached = true
+			workflowContext.Lock()
+			workflowContext.cached = true
+		} else {
+			workflowContext.Lock()
 		}
-		workflowContext.Lock()
 	}
 
 	err = workflowContext.resetStateIfDestroyed(task, historyIterator)
 	if err != nil {
-		workflowContext.Unlock(cached, err)
+		workflowContext.Unlock(err)
 	}
 
 	return
@@ -709,13 +712,13 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 			tagPreviousStartedEventID, task.GetPreviousStartedEventId())
 	})
 
-	contextCached, workflowContext, err := wth.getOrCreateWorkflowContext(task, workflowTask.historyIterator)
+	workflowContext, err := wth.getOrCreateWorkflowContext(task, workflowTask.historyIterator)
 	if err != nil {
 		return nil, err
 	}
 
 	defer func() {
-		workflowContext.Unlock(contextCached, errRet)
+		workflowContext.Unlock(errRet)
 	}()
 
 	var response interface{}
