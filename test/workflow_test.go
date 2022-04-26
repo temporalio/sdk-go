@@ -1737,6 +1737,21 @@ func (w *Workflows) LocalActivityByStringName(ctx workflow.Context) error {
 	return workflow.ExecuteLocalActivity(ctx, "Prefix_ToUpper", "somestring").Get(ctx, nil)
 }
 
+func (w *Workflows) SignalCounter(ctx workflow.Context) error {
+	var signalCount int
+	err := workflow.SetQueryHandler(ctx, "has-signal-count", func(expected int) (bool, error) {
+		return signalCount == expected, nil
+	})
+	if err != nil {
+		return err
+	}
+	signalCh := workflow.GetSignalChannel(ctx, "signal")
+	for {
+		signalCh.Receive(ctx, nil)
+		signalCount++
+	}
+}
+
 func (w *Workflows) PanicOnSignal(ctx workflow.Context) error {
 	// Wait for signal then panic
 	workflow.GetSignalChannel(ctx, "panic-signal").Receive(ctx, nil)
@@ -1811,6 +1826,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ExecuteRemoteActivityToUpper)
 	worker.RegisterWorkflow(w.ReturnCancelError)
 	worker.RegisterWorkflow(w.LocalActivityByStringName)
+	worker.RegisterWorkflow(w.SignalCounter)
 	worker.RegisterWorkflow(w.PanicOnSignal)
 
 	worker.RegisterWorkflow(w.child)
