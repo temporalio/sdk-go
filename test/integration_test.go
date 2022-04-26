@@ -1768,7 +1768,11 @@ func (ts *IntegrationTestSuite) TestSlotsAvailableCounter() {
 		// Try for two seconds
 		var lastCount float64
 		for start := time.Now(); time.Since(start) <= 2*time.Second; {
-			lastCount = ts.metricGauge(metrics.WorkerTaskSlotsAvailable, "worker_type", "ActivityWorker")
+			lastCount = ts.metricGauge(
+				metrics.WorkerTaskSlotsAvailable,
+				"worker_type", "ActivityWorker",
+				"task_queue", ts.taskQueueName,
+			)
 			if lastCount == expected {
 				return
 			}
