@@ -42,6 +42,8 @@ import (
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	uberatomic "go.uber.org/atomic"
+	"google.golang.org/grpc"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -68,7 +70,7 @@ type (
 	// WorkflowClient is the client for starting a workflow execution.
 	WorkflowClient struct {
 		workflowService          workflowservice.WorkflowServiceClient
-		connectionCloser         io.Closer
+		conn                     *grpc.ClientConn
 		namespace                string
 		registry                 *registry
 		logger                   log.Logger
@@ -839,6 +841,31 @@ func (wc *WorkflowClient) ResetWorkflowExecution(ctx context.Context, request *w
 	return resp, nil
 }
 
+// CheckHealthRequest is a request for Client.CheckHealth.
+type CheckHealthRequest struct{}
+
+// CheckHealthResponse is a response for Client.CheckHealth.
+type CheckHealthResponse struct{}
+
+// CheckHealth performs a server health check using the gRPC health check
+// API. If the check fails, an error is returned.
+func (wc *WorkflowClient) CheckHealth(ctx context.Context, request *CheckHealthRequest) (*CheckHealthResponse, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
+	// Ignore request/response for now, they are empty
+	resp, err := healthpb.NewHealthClient(wc.conn).Check(ctx, &healthpb.HealthCheckRequest{
+		Service: "temporal.api.workflowservice.v1.WorkflowService",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("health check error: %w", err)
+	} else if resp.Status != healthpb.HealthCheckResponse_SERVING {
+		return nil, fmt.Errorf("health check returned unhealthy status: %v", resp.Status)
+	}
+	return &CheckHealthResponse{}, nil
+}
+
 // WorkflowService implements Client.WorkflowService.
 func (wc *WorkflowClient) WorkflowService() workflowservice.WorkflowServiceClient {
 	return wc.workflowService
@@ -890,10 +917,10 @@ func (wc *WorkflowClient) ensureInitialized() error {
 
 // Close client and clean up underlying resources.
 func (wc *WorkflowClient) Close() {
-	if wc.connectionCloser == nil {
+	if wc.conn == nil {
 		return
 	}
-	if err := wc.connectionCloser.Close(); err != nil {
+	if err := wc.conn.Close(); err != nil {
 		wc.logger.Warn("unable to close connection", tagError, err)
 	}
 }

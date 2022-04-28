@@ -177,7 +177,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 
 	var err error
 	trafficController := test.NewSimpleTrafficController()
-	ts.client, err = client.NewClient(client.Options{
+	ts.client, err = client.Dial(client.Options{
 		HostPort:  ts.config.ServiceAddr,
 		Namespace: ts.config.Namespace,
 		Logger:    ilog.NewDefaultLogger(),

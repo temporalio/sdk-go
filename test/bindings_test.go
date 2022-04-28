@@ -64,7 +64,7 @@ func (ts *AsyncBindingsTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
 	ts.config = NewConfig()
 	var err error
-	ts.client, err = client.NewClient(client.Options{
+	ts.client, err = client.Dial(client.Options{
 		HostPort:          ts.config.ServiceAddr,
 		Namespace:         ts.config.Namespace,
 		Logger:            ilog.NewDefaultLogger(),

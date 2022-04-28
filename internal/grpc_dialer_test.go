@@ -47,6 +47,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/resolver"
@@ -251,6 +253,40 @@ func TestEagerAndLazyClient(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestCheckHealth(t *testing.T) {
+	// Start a gRPC server and lazy client
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+	c, err := NewLazyClient(ClientOptions{HostPort: srv.addr})
+	require.NoError(t, err)
+	defer c.Close()
+
+	// Confirm fail if can't init
+	srv.getSystemInfoResponseError = fmt.Errorf("some server failure")
+	_, err = c.CheckHealth(context.Background(), nil)
+	require.EqualError(t, err, "failed reaching server: some server failure")
+
+	// Now if it can init, but health not registered
+	srv.getSystemInfoResponseError = nil
+	_, err = c.CheckHealth(context.Background(), nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "health check error")
+
+	// Now register the service but set it as bad
+	srv.healthServer.SetServingStatus("temporal.api.workflowservice.v1.WorkflowService",
+		grpc_health_v1.HealthCheckResponse_NOT_SERVING)
+	_, err = c.CheckHealth(context.Background(), nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "NOT_SERVING")
+
+	// Now set as serving and succeed
+	srv.healthServer.SetServingStatus("temporal.api.workflowservice.v1.WorkflowService",
+		grpc_health_v1.HealthCheckResponse_SERVING)
+	_, err = c.CheckHealth(context.Background(), nil)
+	require.NoError(t, err)
+}
+
 func TestDialOptions(t *testing.T) {
 	// Start an unimplemented gRPC server
 	srv, err := startTestGRPCServer()
@@ -369,6 +405,7 @@ type testGRPCServer struct {
 	workflowservice.UnimplementedWorkflowServiceServer
 	*grpc.Server
 	addr                                 string
+	healthServer                         *health.Server
 	sigWfCount                           int32
 	getSystemInfoResponse                workflowservice.GetSystemInfoResponse
 	getSystemInfoResponseError           error
@@ -381,8 +418,13 @@ func startTestGRPCServer() (*testGRPCServer, error) {
 	if err != nil {
 		return nil, err
 	}
-	t := &testGRPCServer{Server: grpc.NewServer(), addr: l.Addr().String()}
+	t := &testGRPCServer{
+		Server:       grpc.NewServer(),
+		addr:         l.Addr().String(),
+		healthServer: health.NewServer(),
+	}
 	workflowservice.RegisterWorkflowServiceServer(t.Server, t)
+	grpc_health_v1.RegisterHealthServer(t.Server, t.healthServer)
 	go func() {
 		if err := t.Serve(l); err != nil {
 			log.Fatal(err)

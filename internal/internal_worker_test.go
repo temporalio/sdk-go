@@ -2497,7 +2497,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 
 	client := &WorkflowClient{
 		workflowService:    nil,
-		connectionCloser:   nil,
+		conn:               nil,
 		namespace:          "worker-options-test",
 		registry:           nil,
 		identity:           "143@worker-options-test-1",
