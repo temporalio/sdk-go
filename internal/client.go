@@ -455,7 +455,7 @@ type (
 		// keepalive pings will be sent.
 		KeepAlivePermitWithoutStream bool
 
-		// MaxPayloadSize is a number of bytes that gRPC would allow to travel to and from server. Defaults to 64 MB.
+		// MaxPayloadSize is a number of bytes that gRPC would allow to travel to and from server. Defaults to 128 MB.
 		MaxPayloadSize int
 
 		// Advanced dial options for gRPC connections. These are applied after the internal default dial options are
