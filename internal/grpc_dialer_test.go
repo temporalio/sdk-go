@@ -168,7 +168,7 @@ func TestMissingGetServerInfo(t *testing.T) {
 	client, err := NewClient(ClientOptions{HostPort: l.Addr().String()})
 	require.NoError(t, err)
 	workflowClient := client.(*WorkflowClient)
-	require.True(t, proto.Equal(&workflowservice.GetSystemInfoResponse_Capabilities{}, &workflowClient.capabilities))
+	require.True(t, proto.Equal(&workflowservice.GetSystemInfoResponse_Capabilities{}, workflowClient.capabilities))
 }
 
 func TestInternalErrorRetry(t *testing.T) {
@@ -215,6 +215,40 @@ func TestInternalErrorRetry(t *testing.T) {
 	_, isInternalError = err.(*serviceerror.Internal)
 	require.True(t, isInternalError)
 	require.Equal(t, 1, srv.signalWorkflowInvokeCount())
+}
+
+func TestEagerAndLazyClient(t *testing.T) {
+	// Start a server that always returns an error on get system info
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+	srv.getSystemInfoResponseError = fmt.Errorf("some server failure")
+
+	// Confirm eager dial fails
+	_, err = DialClient(ClientOptions{HostPort: srv.addr})
+	require.EqualError(t, err, "failed reaching server: some server failure")
+
+	// Confirm lazy dial succeeds but fails signal workflow
+	c, err := NewLazyClient(ClientOptions{HostPort: srv.addr})
+	require.NoError(t, err)
+	defer c.Close()
+	err = c.SignalWorkflow(context.Background(), "workflow1", "", "my-signal", nil)
+	require.EqualError(t, err, "failed reaching server: some server failure")
+
+	// But if we call again without a sys info response error, it will succeed
+	srv.getSystemInfoResponseError = nil
+	err = c.SignalWorkflow(context.Background(), "workflow1", "", "my-signal", nil)
+	require.NoError(t, err)
+
+	// Now that there's no sys info response error, eager should succeed
+	c, err = DialClient(ClientOptions{HostPort: srv.addr})
+	require.NoError(t, err)
+	defer c.Close()
+
+	// And even if it starts erroring, the success was memoized so calls succeed
+	srv.getSystemInfoResponseError = fmt.Errorf("some server failure")
+	err = c.SignalWorkflow(context.Background(), "workflow1", "", "my-signal", nil)
+	require.NoError(t, err)
 }
 
 func TestDialOptions(t *testing.T) {
@@ -337,6 +371,7 @@ type testGRPCServer struct {
 	addr                                 string
 	sigWfCount                           int32
 	getSystemInfoResponse                workflowservice.GetSystemInfoResponse
+	getSystemInfoResponseError           error
 	signalWorkflowExecutionResponse      workflowservice.SignalWorkflowExecutionResponse
 	signalWorkflowExecutionResponseError error
 }
@@ -386,7 +421,7 @@ func (t *testGRPCServer) GetSystemInfo(
 	ctx context.Context,
 	req *workflowservice.GetSystemInfoRequest,
 ) (*workflowservice.GetSystemInfoResponse, error) {
-	return &t.getSystemInfoResponse, nil
+	return &t.getSystemInfoResponse, t.getSystemInfoResponseError
 }
 
 func (t *testGRPCServer) SignalWorkflowExecution(

@@ -431,9 +431,24 @@ type MetricsTimer = metrics.Timer
 // MetricsNopHandler is a noop handler that does nothing with the metrics.
 var MetricsNopHandler = metrics.NopHandler
 
+// Dial creates an instance of a workflow client. This will attempt to connect
+// to the server eagerly and will return an error if the server is not
+// available.
+func Dial(options Options) (Client, error) {
+	return internal.DialClient(options)
+}
+
+// NewLazyClient creates an instance of a workflow client. Unlike Dial, this
+// will not eagerly connect to the server.
+func NewLazyClient(options Options) (Client, error) {
+	return internal.NewLazyClient(options)
+}
+
 // NewClient creates an instance of a workflow client. This will attempt to
 // connect to the server eagerly and will return an error if the server is not
 // available.
+//
+// Deprecated: Use Dial or NewLazyClient instead.
 func NewClient(options Options) (Client, error) {
 	return internal.NewClient(options)
 }

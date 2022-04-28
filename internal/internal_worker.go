@@ -842,6 +842,7 @@ func getActivityEnvironmentFromCtx(ctx context.Context) *activityEnvironment {
 
 // AggregatedWorker combines management of both workflowWorker and activityWorker worker lifecycle.
 type AggregatedWorker struct {
+	client         *WorkflowClient
 	workflowWorker *workflowWorker
 	activityWorker *activityWorker
 	sessionWorker  *sessionWorker
@@ -881,6 +882,8 @@ func (aw *AggregatedWorker) Start() error {
 	aw.assertNotStopped()
 	if err := initBinaryChecksum(); err != nil {
 		return fmt.Errorf("failed to get executable checksum: %v", err)
+	} else if err = aw.client.ensureInitialized(); err != nil {
+		return err
 	}
 
 	if !util.IsInterfaceNil(aw.workflowWorker) {
@@ -1369,6 +1372,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	return &AggregatedWorker{
+		client:         client,
 		workflowWorker: workflowWorker,
 		activityWorker: activityWorker,
 		sessionWorker:  sessionWorker,

@@ -27,13 +27,11 @@ package internal
 import (
 	"context"
 	"crypto/tls"
-	"fmt"
 	"io"
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
-	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	uberatomic "go.uber.org/atomic"
 	"google.golang.org/grpc"
@@ -55,8 +53,6 @@ const (
 	// QueryTypeOpenSessions is the build in query type for Client.QueryWorkflow() call. Use this query type to get all open
 	// sessions in the workflow. The result will be a list of SessionInfo encoded in the EncodedValue.
 	QueryTypeOpenSessions string = "__open_sessions"
-
-	getSystemInfoTimeout = 5 * time.Second
 )
 
 type (
@@ -467,6 +463,12 @@ type (
 		// grpc.WithUnaryInterceptor option can be added since grpc.WithUnaryInterceptor is prepended to chains set with
 		// grpc.WithChainUnaryInterceptor.
 		DialOptions []grpc.DialOption
+
+		// Hidden for use by client overloads.
+		disableEagerConnection bool
+
+		// If not present, created during service client creation.
+		excludeInternalFromRetry *uberatomic.Bool
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
@@ -609,7 +611,21 @@ type (
 	}
 )
 
+// DialClient creates a client and attempts to connect to the server.
+func DialClient(options ClientOptions) (Client, error) {
+	options.ConnectionOptions.disableEagerConnection = false
+	return NewClient(options)
+}
+
+// NewLazyClient creates a client and does not attempt to connect to the server.
+func NewLazyClient(options ClientOptions) (Client, error) {
+	options.ConnectionOptions.disableEagerConnection = true
+	return NewClient(options)
+}
+
 // NewClient creates an instance of a workflow client
+//
+// Deprecated: Use DialClient or NewLazyClient instead.
 func NewClient(options ClientOptions) (Client, error) {
 	if options.Namespace == "" {
 		options.Namespace = DefaultNamespace
@@ -630,22 +646,22 @@ func NewClient(options ClientOptions) (Client, error) {
 		options.Logger.Info("No logger configured for temporal client. Created default one.")
 	}
 
-	var excludeInternalFromRetry uberatomic.Bool
-	connection, err := dial(newDialParameters(&options, &excludeInternalFromRetry))
+	options.ConnectionOptions.excludeInternalFromRetry = uberatomic.NewBool(false)
+	connection, err := dial(newDialParameters(&options, options.ConnectionOptions.excludeInternalFromRetry))
 	if err != nil {
 		return nil, err
 	}
 
 	client := NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options)
 
-	// Get server capabilities eagerly. This has replaced health checking and we
-	// have accepted that this forces an eager connection with the server.
-	client.capabilities, err = getServerCapabilities(client.workflowService)
-	if err != nil {
-		client.Close()
-		return nil, err
+	// Load server capabilities eagerly if not disabled
+	if !options.ConnectionOptions.disableEagerConnection {
+		if _, err := client.loadCapabilities(); err != nil {
+			client.Close()
+			return nil, err
+		}
 	}
-	excludeInternalFromRetry.Store(client.capabilities.InternalErrorDifferentiation)
+
 	return client, nil
 }
 
@@ -682,6 +698,10 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		options.MetricsHandler = metrics.NopHandler
 	}
 
+	if options.ConnectionOptions.excludeInternalFromRetry == nil {
+		options.ConnectionOptions.excludeInternalFromRetry = uberatomic.NewBool(false)
+	}
+
 	// Collect set of applicable worker interceptors
 	var workerInterceptors []WorkerInterceptor
 	for _, interceptor := range options.Interceptors {
@@ -691,16 +711,17 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	}
 
 	client := &WorkflowClient{
-		workflowService:    workflowServiceClient,
-		connectionCloser:   connectionCloser,
-		namespace:          options.Namespace,
-		registry:           newRegistry(),
-		metricsHandler:     options.MetricsHandler,
-		logger:             options.Logger,
-		identity:           options.Identity,
-		dataConverter:      options.DataConverter,
-		contextPropagators: options.ContextPropagators,
-		workerInterceptors: workerInterceptors,
+		workflowService:          workflowServiceClient,
+		connectionCloser:         connectionCloser,
+		namespace:                options.Namespace,
+		registry:                 newRegistry(),
+		metricsHandler:           options.MetricsHandler,
+		logger:                   options.Logger,
+		identity:                 options.Identity,
+		dataConverter:            options.DataConverter,
+		contextPropagators:       options.ContextPropagators,
+		workerInterceptors:       workerInterceptors,
+		excludeInternalFromRetry: options.ConnectionOptions.excludeInternalFromRetry,
 	}
 
 	// Create outbound interceptor by wrapping backwards through chain
@@ -765,20 +786,4 @@ func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 //   NewValues(data).Get(&result1, &result2)
 func NewValues(data *commonpb.Payloads) converter.EncodedValues {
 	return newEncodedValues(data, nil)
-}
-
-func getServerCapabilities(
-	client workflowservice.WorkflowServiceClient,
-) (cap workflowservice.GetSystemInfoResponse_Capabilities, err error) {
-	ctx, cancel := context.WithTimeout(context.Background(), getSystemInfoTimeout)
-	defer cancel()
-	resp, err := client.GetSystemInfo(ctx, &workflowservice.GetSystemInfoRequest{})
-	// We ignore unimplemented
-	if _, isUnimplemented := err.(*serviceerror.Unimplemented); err != nil && !isUnimplemented {
-		return cap, fmt.Errorf("get system info failed: %w - %T", err, err)
-	}
-	if resp != nil && resp.Capabilities != nil {
-		cap = *resp.Capabilities
-	}
-	return cap, nil
 }

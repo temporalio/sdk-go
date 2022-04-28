@@ -154,6 +154,7 @@ func TestInternalWorkerTestSuite(t *testing.T) {
 func (s *internalWorkerTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
 	s.service = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	s.service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
 }
 
 func (s *internalWorkerTestSuite) TearDownTest() {
@@ -1632,6 +1633,7 @@ func (s *internalWorkerTestSuite) TestCreateWorkerRun() {
 	// Create service endpoint
 	mockCtrl := gomock.NewController(s.T())
 	service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
 
 	worker := createWorker(service)
 	worker.RegisterActivity(testActivityNoResult)
