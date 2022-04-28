@@ -470,7 +470,10 @@ type (
 		// Hidden for use by client overloads.
 		disableEagerConnection bool
 
-		// If not present, created during service client creation.
+		// Internal atomic that, when true, will not retry internal errors like
+		// other gRPC errors. If not present during service client creation, it will
+		// be created as false. This is set to true when server capabilities are
+		// fetched.
 		excludeInternalFromRetry *uberatomic.Bool
 	}
 
