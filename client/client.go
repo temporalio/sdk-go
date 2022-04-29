@@ -89,7 +89,7 @@ type (
 		//     or
 		//     ExecuteWorkflow(ctx, options, workflowExecuteFn, arg1, arg2, arg3)
 		// The errors it can return:
-		//	- serviceerror.NotFound, if namespace does not exists
+		//	- serviceerror.NamespaceNotFound, if namespace does not exist
 		//	- serviceerror.InvalidArgument
 		//	- serviceerror.Internal
 		//	- serviceerror.Unavailable
@@ -132,7 +132,7 @@ type (
 		// - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
 		// - signalName name to identify the signal.
 		// The errors it can return:
-		//	- serviceerror.NotFound
+		//  - serviceerror.NotFound
 		//	- serviceerror.Internal
 		//	- serviceerror.Unavailable
 		SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error
@@ -144,7 +144,7 @@ type (
 		// - the workflowID parameter is used instead of options.ID. If the latter is present, it must match the workflowID.
 		// Note: options.WorkflowIDReusePolicy is default to AllowDuplicate in this API.
 		// The errors it can return:
-		//  - serviceerror.NotFound, if namespace does not exist
+		//  - serviceerror.NotFound
 		//  - serviceerror.InvalidArgument
 		//	- serviceerror.Internal
 		//	- serviceerror.Unavailable
@@ -248,7 +248,7 @@ type (
 		//  - serviceerror.InvalidArgument
 		//	- serviceerror.Internal
 		//	- serviceerror.Unavailable
-		//  - serviceerror.NotFound
+		//  - serviceerror.NamespaceNotFound
 		ListClosedWorkflow(ctx context.Context, request *workflowservice.ListClosedWorkflowExecutionsRequest) (*workflowservice.ListClosedWorkflowExecutionsResponse, error)
 
 		// ListOpenWorkflow gets open workflow executions based on request filters.
@@ -258,7 +258,7 @@ type (
 		//  - serviceerror.InvalidArgument
 		//	- serviceerror.Internal
 		//	- serviceerror.Unavailable
-		//  - serviceerror.NotFound
+		//  - serviceerror.NamespaceNotFound
 		ListOpenWorkflow(ctx context.Context, request *workflowservice.ListOpenWorkflowExecutionsRequest) (*workflowservice.ListOpenWorkflowExecutionsResponse, error)
 
 		// ListWorkflow gets workflow executions based on query. The query is basically the SQL WHERE clause, examples:
@@ -390,7 +390,7 @@ type (
 		// NamespaceConfiguration - Configuration like Workflow Execution Retention Period In Days, Whether to emit metrics.
 		// ReplicationConfiguration - replication config like clusters and active cluster name
 		// The errors it can throw:
-		//	- serviceerror.NotFound
+		//	- serviceerror.NamespaceNotFound
 		//	- serviceerror.InvalidArgument
 		//	- serviceerror.Internal
 		//	- serviceerror.Unavailable
@@ -398,7 +398,7 @@ type (
 
 		// Update a namespace.
 		// The errors it can throw:
-		//	- serviceerror.NotFound
+		//	- serviceerror.NamespaceNotFound
 		//	- serviceerror.InvalidArgument
 		//	- serviceerror.Internal
 		//	- serviceerror.Unavailable

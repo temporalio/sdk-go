@@ -16,7 +16,7 @@ require (
 	github.com/robfig/cron v1.2.0
 	github.com/stretchr/objx v0.3.0 // indirect
 	github.com/stretchr/testify v1.7.0
-	go.temporal.io/api v1.7.1-0.20220422204533-60b4e0146b1c
+	go.temporal.io/api v1.7.1-0.20220429205751-8a73b1f896d0
 	go.uber.org/atomic v1.9.0
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac
 	golang.org/x/tools v0.1.10
