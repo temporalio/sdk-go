@@ -171,6 +171,10 @@ type (
 	workflowTaskHeartbeatError struct {
 		Message string
 	}
+
+	historyMismatchError struct {
+		message string
+	}
 )
 
 func newHistory(task *workflowTask, eventsHandler *workflowExecutionEventHandlerImpl) *history {
@@ -189,6 +193,14 @@ func newHistory(task *workflowTask, eventsHandler *workflowExecutionEventHandler
 
 func (e workflowTaskHeartbeatError) Error() string {
 	return e.Message
+}
+
+func historyMismatchErrorf(f string, v ...interface{}) historyMismatchError {
+	return historyMismatchError{message: fmt.Sprintf(f, v...)}
+}
+
+func (h historyMismatchError) Error() string {
+	return h.message
 }
 
 // Get workflow start event.
@@ -1205,15 +1217,15 @@ matchLoop:
 		}
 
 		if d == nil {
-			return fmt.Errorf("nondeterministic workflow: missing replay command for %s", util.HistoryEventToString(e))
+			return historyMismatchErrorf("nondeterministic workflow: missing replay command for %s", util.HistoryEventToString(e))
 		}
 
 		if e == nil {
-			return fmt.Errorf("nondeterministic workflow: extra replay command for %s", util.CommandToString(d))
+			return historyMismatchErrorf("nondeterministic workflow: extra replay command for %s", util.CommandToString(d))
 		}
 
 		if !isCommandMatchEvent(d, e, false) {
-			return fmt.Errorf("nondeterministic workflow: history event is %s, replay command is %s",
+			return historyMismatchErrorf("nondeterministic workflow: history event is %s, replay command is %s",
 				util.HistoryEventToString(e), util.CommandToString(d))
 		}
 
@@ -1543,9 +1555,21 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 
 func errorToFailWorkflowTask(taskToken []byte, err error, identity string, dataConverter converter.DataConverter,
 	namespace string) *workflowservice.RespondWorkflowTaskFailedRequest {
+
+	cause := enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
+	// If it was a panic due to a bad state machine or if it was a history
+	// mismatch error, mark as non-deterministic
+	if panicErr, _ := err.(*workflowPanicError); panicErr != nil {
+		if _, badStateMachine := panicErr.value.(stateMachineIllegalStatePanic); badStateMachine {
+			cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
+		}
+	} else if _, mismatch := err.(historyMismatchError); mismatch {
+		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
+	}
+
 	return &workflowservice.RespondWorkflowTaskFailedRequest{
 		TaskToken:      taskToken,
-		Cause:          enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE,
+		Cause:          cause,
 		Failure:        ConvertErrorToFailure(err, dataConverter),
 		Identity:       identity,
 		BinaryChecksum: getBinaryChecksum(),
