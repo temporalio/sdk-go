@@ -37,8 +37,9 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/serviceerror"
-	"go.temporal.io/sdk/internal/common/retry"
 	"golang.org/x/time/rate"
+
+	"go.temporal.io/sdk/internal/common/retry"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/backoff"
@@ -361,6 +362,7 @@ func isNonRetriableError(err error) bool {
 	}
 	switch err.(type) {
 	case *serviceerror.InvalidArgument,
+		*serviceerror.NamespaceNotFound,
 		*serviceerror.ClientVersionNotSupported:
 		return true
 	}

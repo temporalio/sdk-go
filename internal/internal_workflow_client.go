@@ -473,7 +473,7 @@ func (wc *WorkflowClient) RecordActivityHeartbeatByID(ctx context.Context,
 //  - serviceerror.InvalidArgument
 //  - serviceerror.Internal
 //  - serviceerror.Unavailable
-//  - serviceerror.NotFound
+//  - serviceerror.NamespaceNotFound
 func (wc *WorkflowClient) ListClosedWorkflow(ctx context.Context, request *workflowservice.ListClosedWorkflowExecutionsRequest) (*workflowservice.ListClosedWorkflowExecutionsResponse, error) {
 	if request.GetNamespace() == "" {
 		request.Namespace = wc.namespace
@@ -492,7 +492,7 @@ func (wc *WorkflowClient) ListClosedWorkflow(ctx context.Context, request *workf
 //  - serviceerror.InvalidArgument
 //  - serviceerror.Internal
 //  - serviceerror.Unavailable
-//  - serviceerror.NotFound
+//  - serviceerror.NamespaceNotFound
 func (wc *WorkflowClient) ListOpenWorkflow(ctx context.Context, request *workflowservice.ListOpenWorkflowExecutionsRequest) (*workflowservice.ListOpenWorkflowExecutionsResponse, error) {
 	if request.GetNamespace() == "" {
 		request.Namespace = wc.namespace
@@ -798,7 +798,7 @@ func (nc *namespaceClient) Register(ctx context.Context, request *workflowservic
 // NamespaceConfiguration - Configuration like Workflow Execution Retention Period In Days, Whether to emit metrics.
 // ReplicationConfiguration - replication config like clusters and active cluster name
 // The errors it can throw:
-//	- serviceerror.NotFound
+//	- serviceerror.NamespaceNotFound
 //	- serviceerror.InvalidArgument
 //	- serviceerror.Internal
 //	- serviceerror.Unavailable
@@ -818,7 +818,7 @@ func (nc *namespaceClient) Describe(ctx context.Context, namespace string) (*wor
 
 // Update a namespace.
 // The errors it can throw:
-//	- serviceerror.NotFound
+//	- serviceerror.NamespaceNotFound
 //	- serviceerror.InvalidArgument
 //	- serviceerror.Internal
 //	- serviceerror.Unavailable
