@@ -185,6 +185,10 @@ type (
 		// client options wrap the ones here. The same interceptor should not be set
 		// here and in client options.
 		Interceptors []WorkerInterceptor
+
+		// Optional: Callback invoked on fatal error. Immediately after this
+		// returns, Worker.Stop() will be called.
+		OnFatalError func(error)
 	}
 )
 

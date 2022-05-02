@@ -30,7 +30,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -149,6 +148,7 @@ type (
 		identity          string
 		workerType        string
 		stopTimeout       time.Duration
+		fatalErrCh        chan<- error
 		userContextCancel context.CancelFunc
 	}
 
@@ -172,6 +172,7 @@ type (
 
 		pollerRequestCh    chan struct{}
 		taskQueueCh        chan interface{}
+		fatalErrCh         chan<- error
 		sessionTokenBucket *sessionTokenBucket
 
 		lastPollTaskErrMessage string
@@ -213,6 +214,7 @@ func newBaseWorker(
 		taskSlotsAvailable: int32(options.maxConcurrentTask),
 		pollerRequestCh:    make(chan struct{}, options.maxConcurrentTask),
 		taskQueueCh:        make(chan interface{}), // no buffer, so poller only able to poll new task after previous is dispatched.
+		fatalErrCh:         options.fatalErrCh,
 
 		limiterContext:       ctx,
 		limiterContextCancel: cancel,
@@ -315,10 +317,10 @@ func (bw *baseWorker) pollTask() {
 		if err != nil {
 			if isNonRetriableError(err) {
 				bw.logger.Error("Worker received non-retriable error. Shutting down.", tagError, err)
-				if p, err := os.FindProcess(os.Getpid()); err != nil {
-					bw.logger.Error("Unable to find current process.", "pid", os.Getpid(), tagError, err)
-				} else {
-					_ = p.Signal(os.Interrupt)
+				// Set the error and assume it is buffered with room
+				select {
+				case bw.fatalErrCh <- err:
+				default:
 				}
 				return
 			}
