@@ -48,13 +48,15 @@ import (
 	"go.temporal.io/api/serviceerror"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.uber.org/goleak"
+
 	"go.temporal.io/sdk/contrib/opentelemetry"
 	sdkopentracing "go.temporal.io/sdk/contrib/opentracing"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/test"
-	"go.uber.org/goleak"
 
 	historypb "go.temporal.io/api/history/v1"
+
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	contribtally "go.temporal.io/sdk/contrib/tally"
@@ -2216,6 +2218,33 @@ func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch b
 	ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR, taskFailed.Cause)
 }
 
+func (ts *IntegrationTestSuite) TestClientGetNotFollowingRuns() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Start workflow that does a continue as new
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-client-get-not-following-runs"),
+		ts.workflows.ContinueAsNew, 1, ts.taskQueueName)
+	ts.NoError(err)
+
+	// Do the regular get which returns the final value and a different run ID
+	origRunID := run.GetRunID()
+	var val int
+	ts.NoError(run.Get(ctx, &val))
+	ts.Equal(999, val)
+	ts.NotEqual(origRunID, run.GetRunID())
+
+	// Get the run with the original ID and fetch without following runs
+	run = ts.client.GetWorkflow(ctx, run.GetID(), origRunID)
+	err = run.GetWithOptions(ctx, nil, client.WorkflowRunGetOptions{DisableFollowingRuns: true})
+	ts.Error(err)
+	contErr := err.(*workflow.ContinueAsNewError)
+	ts.Equal("ContinueAsNew", contErr.WorkflowType.Name)
+	ts.Equal("0", string(contErr.Input.Payloads[0].Data))
+	ts.Equal("\""+ts.taskQueueName+"\"", string(contErr.Input.Payloads[1].Data))
+	ts.Equal(ts.taskQueueName, contErr.TaskQueueName)
+}
+
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{
 		HostPort:          ts.config.ServiceAddr,
@@ -2240,7 +2269,7 @@ func (ts *IntegrationTestSuite) registerNamespace() {
 	err = ts.executeWorkflow("test-namespace-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
 	numOfRetry := 20
 	for err != nil && numOfRetry >= 0 {
-		if _, ok := err.(*serviceerror.NotFound); ok {
+		if _, ok := err.(*serviceerror.NamespaceNotFound); ok {
 			time.Sleep(namespaceCacheRefreshInterval)
 			err = ts.executeWorkflow("test-namespace-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
 		} else {

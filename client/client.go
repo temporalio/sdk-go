@@ -73,6 +73,9 @@ type (
 	// WorkflowRun represents a started non child workflow.
 	WorkflowRun = internal.WorkflowRun
 
+	// WorkflowRunGetOptions are options for WorkflowRun.GetWithOptions.
+	WorkflowRunGetOptions = internal.WorkflowRunGetOptions
+
 	// QueryWorkflowWithOptionsRequest defines the request to QueryWorkflowWithOptions.
 	QueryWorkflowWithOptionsRequest = internal.QueryWorkflowWithOptionsRequest
 
@@ -89,10 +92,10 @@ type (
 		//     or
 		//     ExecuteWorkflow(ctx, options, workflowExecuteFn, arg1, arg2, arg3)
 		// The errors it can return:
-		//	- serviceerror.NotFound, if namespace does not exists
-		//	- serviceerror.InvalidArgument
-		//	- serviceerror.Internal
-		//	- serviceerror.Unavailable
+		//  - serviceerror.NamespaceNotFound, if namespace does not exist
+		//  - serviceerror.InvalidArgument
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
 		//
 		// WorkflowRun has 3 methods:
 		//  - GetWorkflowID() string: which return the started workflow ID
@@ -132,9 +135,9 @@ type (
 		// - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
 		// - signalName name to identify the signal.
 		// The errors it can return:
-		//	- serviceerror.NotFound
-		//	- serviceerror.Internal
-		//	- serviceerror.Unavailable
+		//  - serviceerror.NotFound
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
 		SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error
 
 		// SignalWithStartWorkflow sends a signal to a running workflow.
@@ -144,10 +147,10 @@ type (
 		// - the workflowID parameter is used instead of options.ID. If the latter is present, it must match the workflowID.
 		// Note: options.WorkflowIDReusePolicy is default to AllowDuplicate in this API.
 		// The errors it can return:
-		//  - serviceerror.NotFound, if namespace does not exist
+		//  - serviceerror.NotFound
 		//  - serviceerror.InvalidArgument
-		//	- serviceerror.Internal
-		//	- serviceerror.Unavailable
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
 		SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
 			options StartWorkflowOptions, workflow interface{}, workflowArgs ...interface{}) (WorkflowRun, error)
 
@@ -156,10 +159,10 @@ type (
 		// - workflow ID of the workflow.
 		// - runID can be default(empty string). if empty string then it will pick the currently running execution of that workflow ID.
 		// The errors it can return:
-		//	- serviceerror.NotFound
-		//	- serviceerror.InvalidArgument
-		//	- serviceerror.Internal
-		//	- serviceerror.Unavailable
+		//  - serviceerror.NotFound
+		//  - serviceerror.InvalidArgument
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
 		CancelWorkflow(ctx context.Context, workflowID string, runID string) error
 
 		// TerminateWorkflow terminates a workflow execution. Terminate stops a workflow execution immediately without
@@ -168,30 +171,30 @@ type (
 		// - workflow ID of the workflow.
 		// - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
 		// The errors it can return:
-		//	- serviceerror.NotFound
-		//	- serviceerror.InvalidArgument
-		//	- serviceerror.Internal
-		//	- serviceerror.Unavailable
+		//  - serviceerror.NotFound
+		//  - serviceerror.InvalidArgument
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
 		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error
 
 		// GetWorkflowHistory gets history events of a particular workflow
 		// - workflow ID of the workflow.
 		// - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
 		// - whether use long poll for tracking new events: when the workflow is running, there can be new events generated during iteration
-		// 	 of HistoryEventIterator, if isLongPoll == true, then iterator will do long poll, tracking new history event, i.e. the iteration
+		//    of HistoryEventIterator, if isLongPoll == true, then iterator will do long poll, tracking new history event, i.e. the iteration
 		//   will not be finished until workflow is finished; if isLongPoll == false, then iterator will only return current history events.
 		// - whether return all history events or just the last event, which contains the workflow execution end result
 		// Example:-
-		//	To iterate all events,
-		// 		iter := GetWorkflowHistory(ctx, workflowID, runID, isLongPoll, filterType)
-		//		events := []*shared.HistoryEvent{}
-		//		for iter.HasNext() {
-		//			event, err := iter.Next()
-		//			if err != nil {
-		//				return err
-		//			}
-		//			events = append(events, event)
-		//		}
+		//  To iterate all events,
+		//     iter := GetWorkflowHistory(ctx, workflowID, runID, isLongPoll, filterType)
+		//    events := []*shared.HistoryEvent{}
+		//    for iter.HasNext() {
+		//      event, err := iter.Next()
+		//      if err != nil {
+		//        return err
+		//      }
+		//      events = append(events, event)
+		//    }
 		GetWorkflowHistory(ctx context.Context, workflowID string, runID string, isLongPoll bool, filterType enumspb.HistoryEventFilterType) HistoryEventIterator
 
 		// CompleteActivity reports activity completed.
@@ -202,9 +205,9 @@ type (
 		// activity task failed event will be reported.
 		// An activity implementation should use GetActivityInfo(ctx).TaskToken function to get task token to use for completion.
 		// Example:-
-		//	To complete with a result.
-		//  	CompleteActivity(token, "Done", nil)
-		//	To fail the activity with an error.
+		//  To complete with a result.
+		//    CompleteActivity(token, "Done", nil)
+		//  To fail the activity with an error.
 		//      CompleteActivity(token, nil, temporal.NewApplicationError("reason", details)
 		// The activity can fail with below errors ApplicationError, TimeoutError, CanceledError.
 		CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error
@@ -228,17 +231,17 @@ type (
 		// taskToken - is the value of the binary "TaskToken" field of the "ActivityInfo" struct retrieved inside the activity.
 		// details - is the progress you want to record along with heart beat for this activity.
 		// The errors it can return:
-		//	- serviceerror.NotFound
-		//	- serviceerror.Internal
-		//	- serviceerror.Unavailable
+		//  - serviceerror.NotFound
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
 		RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...interface{}) error
 
 		// RecordActivityHeartbeatByID records heartbeat for an activity.
 		// details - is the progress you want to record along with heart beat for this activity.
 		// The errors it can return:
-		//	- serviceerror.NotFound
-		//	- serviceerror.Internal
-		//	- serviceerror.Unavailable
+		//  - serviceerror.NotFound
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
 		RecordActivityHeartbeatByID(ctx context.Context, namespace, workflowID, runID, activityID string, details ...interface{}) error
 
 		// ListClosedWorkflow gets closed workflow executions based on request filters.
@@ -246,9 +249,9 @@ type (
 		// Note: heavy usage of this API may cause huge persistence pressure.
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
-		//	- serviceerror.Internal
-		//	- serviceerror.Unavailable
-		//  - serviceerror.NotFound
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
+		//  - serviceerror.NamespaceNotFound
 		ListClosedWorkflow(ctx context.Context, request *workflowservice.ListClosedWorkflowExecutionsRequest) (*workflowservice.ListClosedWorkflowExecutionsResponse, error)
 
 		// ListOpenWorkflow gets open workflow executions based on request filters.
@@ -256,9 +259,9 @@ type (
 		// Note: heavy usage of this API may cause huge persistence pressure.
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
-		//	- serviceerror.Internal
-		//	- serviceerror.Unavailable
-		//  - serviceerror.NotFound
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
+		//  - serviceerror.NamespaceNotFound
 		ListOpenWorkflow(ctx context.Context, request *workflowservice.ListOpenWorkflowExecutionsRequest) (*workflowservice.ListOpenWorkflowExecutionsResponse, error)
 
 		// ListWorkflow gets workflow executions based on query. The query is basically the SQL WHERE clause, examples:
@@ -270,8 +273,8 @@ type (
 		// and sorted by CloseTime in descending order for other queries.
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
-		//	- serviceerror.Internal
-		//	- serviceerror.Unavailable
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
 		ListWorkflow(ctx context.Context, request *workflowservice.ListWorkflowExecutionsRequest) (*workflowservice.ListWorkflowExecutionsResponse, error)
 
 		// ListArchivedWorkflow gets archived workflow executions based on query. This API will return BadRequest if Temporal
@@ -280,8 +283,8 @@ type (
 		// by your namespace to see what kind of queries are accept and whether retrieved workflow executions are ordered or not.
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
-		//	- serviceerror.Internal
-		//	- serviceerror.Unavailable
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
 		ListArchivedWorkflow(ctx context.Context, request *workflowservice.ListArchivedWorkflowExecutionsRequest) (*workflowservice.ListArchivedWorkflowExecutionsResponse, error)
 
 		// ScanWorkflow gets workflow executions based on query. This API only works with ElasticSearch,
@@ -292,8 +295,8 @@ type (
 		// when retrieving millions of workflows.
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
-		//	- serviceerror.Internal
-		//	- serviceerror.Unavailable
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
 		ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error)
 
 		// CountWorkflow gets number of workflow executions based on query. This API only works with ElasticSearch,
@@ -301,8 +304,8 @@ type (
 		// (see ListWorkflow for query examples).
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
-		//	- serviceerror.Internal
-		//	- serviceerror.Unavailable
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
 		CountWorkflow(ctx context.Context, request *workflowservice.CountWorkflowExecutionsRequest) (*workflowservice.CountWorkflowExecutionsResponse, error)
 
 		// GetSearchAttributes returns valid search attributes keys and value types.
@@ -325,8 +328,8 @@ type (
 		// - args... are the optional query parameters.
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
-		//	- serviceerror.Internal
-		//	- serviceerror.Unavailable
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
 		//  - serviceerror.NotFound
 		//  - serviceerror.QueryFailed
 		QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.EncodedValue, error)
@@ -335,8 +338,8 @@ type (
 		// See QueryWorkflowWithOptionsRequest and QueryWorkflowWithOptionsResponse for more information.
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
-		//	- serviceerror.Internal
-		//	- serviceerror.Unavailable
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
 		//  - serviceerror.NotFound
 		//  - serviceerror.QueryFailed
 		QueryWorkflowWithOptions(ctx context.Context, request *QueryWorkflowWithOptionsRequest) (*QueryWorkflowWithOptionsResponse, error)
@@ -346,8 +349,8 @@ type (
 		//
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
-		//	- serviceerror.Internal
-		//	- serviceerror.Unavailable
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
 		//  - serviceerror.NotFound
 		DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error)
 
@@ -355,8 +358,8 @@ type (
 		// pollers which polled this taskqueue in last few minutes.
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
-		//	- serviceerror.Internal
-		//	- serviceerror.Unavailable
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
 		//  - serviceerror.NotFound
 		DescribeTaskQueue(ctx context.Context, taskqueue string, taskqueueType enumspb.TaskQueueType) (*workflowservice.DescribeTaskQueueResponse, error)
 
@@ -379,10 +382,10 @@ type (
 	NamespaceClient interface {
 		// Register a namespace with temporal server
 		// The errors it can throw:
-		//	- NamespaceAlreadyExistsError
-		//	- serviceerror.InvalidArgument
-		//	- serviceerror.Internal
-		//	- serviceerror.Unavailable
+		//  - NamespaceAlreadyExistsError
+		//  - serviceerror.InvalidArgument
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
 		Register(ctx context.Context, request *workflowservice.RegisterNamespaceRequest) error
 
 		// Describe a namespace. The namespace has 3 part of information
@@ -390,18 +393,18 @@ type (
 		// NamespaceConfiguration - Configuration like Workflow Execution Retention Period In Days, Whether to emit metrics.
 		// ReplicationConfiguration - replication config like clusters and active cluster name
 		// The errors it can throw:
-		//	- serviceerror.NotFound
-		//	- serviceerror.InvalidArgument
-		//	- serviceerror.Internal
-		//	- serviceerror.Unavailable
+		//  - serviceerror.NamespaceNotFound
+		//  - serviceerror.InvalidArgument
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
 		Describe(ctx context.Context, name string) (*workflowservice.DescribeNamespaceResponse, error)
 
 		// Update a namespace.
 		// The errors it can throw:
-		//	- serviceerror.NotFound
-		//	- serviceerror.InvalidArgument
-		//	- serviceerror.Internal
-		//	- serviceerror.Unavailable
+		//  - serviceerror.NamespaceNotFound
+		//  - serviceerror.InvalidArgument
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
 		Update(ctx context.Context, request *workflowservice.UpdateNamespaceRequest) error
 
 		// Close client and clean up underlying resources.

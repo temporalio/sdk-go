@@ -46,6 +46,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
+
 	"go.temporal.io/sdk/internal/common/retry"
 
 	"go.temporal.io/sdk/converter"
@@ -1709,7 +1710,7 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 		i.cancelHandler()
 		isActivityCanceled = true
 
-	case *serviceerror.NotFound, *serviceerror.NamespaceNotActive:
+	case *serviceerror.NotFound, *serviceerror.NamespaceNotActive, *serviceerror.NamespaceNotFound:
 		// We will pass these through as cancellation for now but something we can change
 		// later when we have setter on cancel handler.
 		i.cancelHandler()
