@@ -943,6 +943,7 @@ ProcessEvents:
 		// check if commands from reply matches to the history events
 		if err := matchReplayWithHistory(replayCommands, respondEvents); err != nil {
 			workflowError = err
+			w.err = err
 		}
 	}
 

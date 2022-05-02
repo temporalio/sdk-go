@@ -214,7 +214,8 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		}
 	}
 
-	if strings.Contains(ts.T().Name(), "TestSessionOnWorkerFailure") {
+	if strings.Contains(ts.T().Name(), "TestSessionOnWorkerFailure") ||
+		strings.Contains(ts.T().Name(), "TestNonDeterminismFailureCause") {
 		// We disable sticky execution here since we kill the worker and restart it
 		// and sticky execution adds a 5s penalty
 		worker.SetStickyWorkflowCacheSize(0)
@@ -2153,9 +2154,11 @@ func (ts *IntegrationTestSuite) TestLargeHistoryReplay() {
 	ts.Contains(err.Error(), "intentional panic")
 }
 
-func (ts *IntegrationTestSuite) TestNonDeterminismFailureCause() {
-	// One for bad state machine, another for history mismatch
+func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseBadStateMachine() {
 	ts.testNonDeterminismFailureCause(false)
+}
+
+func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseHistoryMismatch() {
 	ts.testNonDeterminismFailureCause(true)
 }
 
@@ -2179,8 +2182,13 @@ func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch b
 	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "tick", nil))
 	ts.waitForQueryTrue(run, "is-wait-tick-count", 2)
 
-	// Now, let's purge it from cache
-	worker.PurgeStickyWorkflowCache()
+	// Now, stop the worker and start a new one
+	ts.worker.Stop()
+	ts.workerStopped = true
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{DisableStickyExecution: true})
+	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.NoError(nextWorker.Start())
+	defer nextWorker.Stop()
 
 	// Increase the determinism counter and send a tick to trigger replay
 	// non-determinism
@@ -2201,7 +2209,7 @@ func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch b
 			}
 		}
 		return false
-	}, 5*time.Second, 200*time.Millisecond)
+	}, 10*time.Second, 300*time.Millisecond)
 
 	// Check the task has the expected cause
 	ts.NoError(histErr)
