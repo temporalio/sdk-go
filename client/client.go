@@ -73,6 +73,9 @@ type (
 	// WorkflowRun represents a started non child workflow.
 	WorkflowRun = internal.WorkflowRun
 
+	// WorkflowRunGetOptions are options for WorkflowRun.GetWithOptions.
+	WorkflowRunGetOptions = internal.WorkflowRunGetOptions
+
 	// QueryWorkflowWithOptionsRequest defines the request to QueryWorkflowWithOptions.
 	QueryWorkflowWithOptionsRequest = internal.QueryWorkflowWithOptionsRequest
 
