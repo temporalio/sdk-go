@@ -1024,7 +1024,7 @@ func (aw *AggregatedWorker) Run(interruptCh <-chan interface{}) error {
 		aw.logger.Info("Worker has been stopped.", "Signal", s)
 		aw.Stop()
 	case err := <-aw.fatalErrCh:
-		// Fatal error is logged where it is set
+		// Fatal error will already have been logged where it is set
 		if aw.fatalErrCb != nil {
 			aw.fatalErrCb(err)
 		}
