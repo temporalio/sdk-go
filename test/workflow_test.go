@@ -1758,6 +1758,33 @@ func (w *Workflows) PanicOnSignal(ctx workflow.Context) error {
 	panic("intentional panic")
 }
 
+var forcedNonDeterminismCounter int
+
+func (w *Workflows) ForcedNonDeterminism(ctx workflow.Context, sameCommandButDiffName bool) (err error) {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	var a Activities
+	var waitTickCount int
+	tickCh := workflow.GetSignalChannel(ctx, "tick")
+	err = workflow.SetQueryHandler(
+		ctx,
+		"is-wait-tick-count",
+		func(v int) (bool, error) { return waitTickCount == v, nil },
+	)
+	for err == nil {
+		waitTickCount++
+		tickCh.Receive(ctx, nil)
+		// Exec activity at first, then either exec diff activity or timer next
+		if forcedNonDeterminismCounter == 0 {
+			err = workflow.ExecuteActivity(ctx, a.Sleep, 1*time.Millisecond).Get(ctx, nil)
+		} else if sameCommandButDiffName {
+			err = workflow.ExecuteActivity(ctx, a.Echo, 1, 1).Get(ctx, nil)
+		} else {
+			err = workflow.Sleep(ctx, 1*time.Millisecond)
+		}
+	}
+	return
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -1828,6 +1855,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.LocalActivityByStringName)
 	worker.RegisterWorkflow(w.SignalCounter)
 	worker.RegisterWorkflow(w.PanicOnSignal)
+	worker.RegisterWorkflow(w.ForcedNonDeterminism)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)

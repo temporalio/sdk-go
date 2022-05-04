@@ -167,13 +167,16 @@ type (
 	// ContinueAsNewError contains information about how to continue the workflow as new.
 	ContinueAsNewError struct {
 		//params *ExecuteWorkflowParams
-		WorkflowType             *WorkflowType
-		Input                    *commonpb.Payloads
-		Header                   *commonpb.Header
-		TaskQueueName            string
+		WorkflowType        *WorkflowType
+		Input               *commonpb.Payloads
+		Header              *commonpb.Header
+		TaskQueueName       string
+		WorkflowRunTimeout  time.Duration
+		WorkflowTaskTimeout time.Duration
+
+		// Deprecated: WorkflowExecutionTimeout is deprecated and is never set or
+		// used internally.
 		WorkflowExecutionTimeout time.Duration
-		WorkflowRunTimeout       time.Duration
-		WorkflowTaskTimeout      time.Duration
 	}
 
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
