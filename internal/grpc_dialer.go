@@ -67,7 +67,7 @@ const (
 	// mb is a number of bytes in a megabyte
 	mb = 1024 * 1024
 	// defaultMaxPayloadSize is a maximum size of the payload that grpc client would allow.
-	defaultMaxPayloadSize = 64 * mb
+	defaultMaxPayloadSize = 128 * mb
 )
 
 func dial(params dialParameters) (*grpc.ClientConn, error) {
