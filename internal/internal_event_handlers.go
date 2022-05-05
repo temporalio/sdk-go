@@ -40,6 +40,7 @@ import (
 	failurepb "go.temporal.io/api/failure/v1"
 	historypb "go.temporal.io/api/history/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
+
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -1247,22 +1248,28 @@ func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionF
 		return nil
 	}
 
-	if attributes.GetCause() == enumspb.START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_WORKFLOW_ALREADY_EXISTS {
-		err := NewChildWorkflowExecutionError(
-			attributes.GetNamespace(),
-			attributes.GetWorkflowId(),
-			"",
-			attributes.GetWorkflowType().GetName(),
-			attributes.GetInitiatedEventId(),
-			0,
-			enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE,
-			&ChildWorkflowExecutionAlreadyStartedError{},
-		)
-		childWorkflow.handleFailedToStart(nil, err)
-		return nil
+	var causeErr error
+	switch attributes.GetCause() {
+	case enumspb.START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_WORKFLOW_ALREADY_EXISTS:
+		causeErr = &ChildWorkflowExecutionAlreadyStartedError{}
+	case enumspb.START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_NAMESPACE_NOT_FOUND:
+		causeErr = &NamespaceNotFoundError{}
+	default:
+		causeErr = fmt.Errorf("unable to start child workflow for unknown cause: %v", attributes.GetCause())
 	}
 
-	return fmt.Errorf("unknown cause: %v", attributes.GetCause())
+	err := NewChildWorkflowExecutionError(
+		attributes.GetNamespace(),
+		attributes.GetWorkflowId(),
+		"",
+		attributes.GetWorkflowType().GetName(),
+		attributes.GetInitiatedEventId(),
+		0,
+		enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE,
+		causeErr,
+	)
+	childWorkflow.handleFailedToStart(nil, err)
+	return nil
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionStarted(event *historypb.HistoryEvent) error {
@@ -1434,7 +1441,16 @@ func (weh *workflowExecutionEventHandlerImpl) handleRequestCancelExternalWorkflo
 		if cancellation.handled {
 			return nil
 		}
-		err := fmt.Errorf("cancel external workflow failed, %v", attributes.GetCause())
+
+		var err error
+		switch attributes.GetCause() {
+		case enumspb.CANCEL_EXTERNAL_WORKFLOW_EXECUTION_FAILED_CAUSE_EXTERNAL_WORKFLOW_EXECUTION_NOT_FOUND:
+			err = newUnknownExternalWorkflowExecutionError()
+		case enumspb.CANCEL_EXTERNAL_WORKFLOW_EXECUTION_FAILED_CAUSE_NAMESPACE_NOT_FOUND:
+			err = &NamespaceNotFoundError{}
+		default:
+			err = fmt.Errorf("unable to cancel external workflow for unknown cause: %v", attributes.GetCause())
+		}
 		cancellation.handle(nil, err)
 	}
 
@@ -1465,8 +1481,10 @@ func (weh *workflowExecutionEventHandlerImpl) handleSignalExternalWorkflowExecut
 	switch attributes.GetCause() {
 	case enumspb.SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_FAILED_CAUSE_EXTERNAL_WORKFLOW_EXECUTION_NOT_FOUND:
 		err = newUnknownExternalWorkflowExecutionError()
+	case enumspb.SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_FAILED_CAUSE_NAMESPACE_NOT_FOUND:
+		err = &NamespaceNotFoundError{}
 	default:
-		err = fmt.Errorf("signal external workflow failed, %v", attributes.GetCause())
+		err = fmt.Errorf("unable to signal external workflow for unknown cause: %v", attributes.GetCause())
 	}
 
 	signal.handle(nil, err)
