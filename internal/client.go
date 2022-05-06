@@ -364,7 +364,7 @@ type (
 		//    builder := manual.NewBuilderWithScheme("myresolver")
 		//    builder.InitialState(resolver.State{Addresses: []resolver.Address{{Addr: "1.2.3.4:1234"}, {Addr: "2.3.4.5:2345"}}})
 		//    resolver.Register(builder)
-		//    c, err := client.NewClient(client.Options{HostPort: "myresolver:///ignoredvalue"})
+		//    c, err := client.Dial(client.Options{HostPort: "myresolver:///ignoredvalue"})
 		// Other more advanced resolvers can also be registered.
 		HostPort string
 

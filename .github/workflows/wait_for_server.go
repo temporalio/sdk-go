@@ -34,7 +34,7 @@ func main() {
 	log.Print("Waiting for server availability")
 	var lastErr error
 	for start := time.Now(); time.Since(start) < 5*time.Minute; time.Sleep(2 * time.Second) {
-		_, lastErr = client.NewClient(client.Options{})
+		_, lastErr = client.Dial(client.Options{})
 		if lastErr == nil {
 			log.Print("Connected to server")
 			return

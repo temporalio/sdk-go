@@ -167,7 +167,7 @@ func TestMissingGetServerInfo(t *testing.T) {
 	require.NoError(t, lastErr)
 
 	// Create a new client and confirm client has empty capabilities set
-	client, err := NewClient(ClientOptions{HostPort: l.Addr().String()})
+	client, err := DialClient(ClientOptions{HostPort: l.Addr().String()})
 	require.NoError(t, err)
 	workflowClient := client.(*WorkflowClient)
 	require.True(t, proto.Equal(&workflowservice.GetSystemInfoResponse_Capabilities{}, workflowClient.capabilities))
@@ -188,7 +188,7 @@ func TestInternalErrorRetry(t *testing.T) {
 	srv.signalWorkflowExecutionResponseError = status.Error(codes.Internal, "oh no, an internal error")
 
 	// Create client and make call
-	client, err := NewClient(ClientOptions{HostPort: srv.addr})
+	client, err := DialClient(ClientOptions{HostPort: srv.addr})
 	require.NoError(t, err)
 	defer client.Close()
 	_, err = client.WorkflowService().SignalWorkflowExecution(ctx, &workflowservice.SignalWorkflowExecutionRequest{})
@@ -209,7 +209,7 @@ func TestInternalErrorRetry(t *testing.T) {
 	srv.signalWorkflowExecutionResponseError = status.Error(codes.Internal, "oh no, an internal error")
 
 	// Create client and make call
-	client, err = NewClient(ClientOptions{HostPort: srv.addr})
+	client, err = DialClient(ClientOptions{HostPort: srv.addr})
 	require.NoError(t, err)
 	defer client.Close()
 	_, err = client.WorkflowService().SignalWorkflowExecution(ctx, &workflowservice.SignalWorkflowExecutionRequest{})
@@ -312,7 +312,7 @@ func TestDialOptions(t *testing.T) {
 			return invoker(ctx, method, req, reply, cc, opts...)
 		}
 	}
-	client, err := NewClient(ClientOptions{
+	client, err := DialClient(ClientOptions{
 		HostPort: srv.addr,
 		ConnectionOptions: ConnectionOptions{
 			DialOptions: []grpc.DialOption{
@@ -349,7 +349,7 @@ func TestCustomResolver(t *testing.T) {
 	builder := manual.NewBuilderWithScheme(scheme)
 	builder.InitialState(resolver.State{Addresses: []resolver.Address{{Addr: s1.addr}, {Addr: s2.addr}}})
 	resolver.Register(builder)
-	client, err := NewClient(ClientOptions{HostPort: scheme + ":///whatever"})
+	client, err := DialClient(ClientOptions{HostPort: scheme + ":///whatever"})
 	require.NoError(t, err)
 	defer client.Close()
 
