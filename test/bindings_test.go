@@ -99,7 +99,7 @@ func (ts *AsyncBindingsTestSuite) registerNamespace() {
 	err = ts.executeWorkflow("test-namespace-exist", SimplestWorkflow, &dummyReturn)
 	numOfRetry := 20
 	for err != nil && numOfRetry >= 0 {
-		if _, ok := err.(*serviceerror.NotFound); ok {
+		if _, ok := err.(*serviceerror.NamespaceNotFound); ok {
 			time.Sleep(namespaceCacheRefreshInterval)
 			err = ts.executeWorkflow("test-namespace-exist", SimplestWorkflow, &dummyReturn)
 		} else {

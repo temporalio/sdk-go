@@ -45,13 +45,17 @@ type (
 		Registry
 
 		// Start the worker in a non-blocking fashion.
+		//
+		// Note, this will only return errors on start. To catch errors during run,
+		// use Run() instead or set Options.OnFatalError.
 		Start() error
 
 		// Run the worker in a blocking fashion. Stop the worker when interruptCh receives signal.
 		// Pass worker.InterruptCh() to stop the worker with SIGINT or SIGTERM.
 		// Pass nil to stop the worker with external Stop() call.
 		// Pass any other `<-chan interface{}` and Run will wait for signal from that channel.
-		// Returns error only if worker fails to start.
+		// Returns error if the worker fails to start or there is a fatal error
+		// during execution.
 		Run(interruptCh <-chan interface{}) error
 
 		// Stop the worker.

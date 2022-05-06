@@ -99,21 +99,38 @@ type (
 		// GetID return workflow ID, which will be same as StartWorkflowOptions.ID if provided.
 		GetID() string
 
-		// GetRunID return the first started workflow run ID (please see below) - empty string if no such run
+		// GetRunID return the first started workflow run ID (please see below) -
+		// empty string if no such run. Note, this value may change after Get is
+		// called if there was a later run for this run.
 		GetRunID() string
 
-		// Get will fill the workflow execution result to valuePtr,
-		// if workflow execution is a success, or return corresponding,
-		// error. This is a blocking API.
+		// Get will fill the workflow execution result to valuePtr, if workflow
+		// execution is a success, or return corresponding error. This is a blocking
+		// API.
+		//
+		// This call will follow execution runs to the latest result for this run
+		// instead of strictly returning this run's result. This means that if the
+		// workflow returned ContinueAsNewError, has a more recent cron execution,
+		// or has a new run ID on failure (i.e. a retry), this will wait and return
+		// the result for the latest run in the chain. To strictly get the result
+		// for this run without following to the latest, use GetWithOptions and set
+		// the DisableFollowingRuns option to true.
 		Get(ctx context.Context, valuePtr interface{}) error
 
-		// NOTE: if the started workflow return ContinueAsNewError during the workflow execution, the
-		// return result of GetRunID() will be the started workflow run ID, not the new run ID caused by ContinueAsNewError,
-		// however, Get(ctx context.Context, valuePtr interface{}) will return result from the run which did not return ContinueAsNewError.
-		// Say ExecuteWorkflow started a workflow, in its first run, has run ID "run ID 1", and returned ContinueAsNewError,
-		// the second run has run ID "run ID 2" and return some result other than ContinueAsNewError:
-		// GetRunID() will always return "run ID 1" and  Get(ctx context.Context, valuePtr interface{}) will return the result of second run.
-		// NOTE: DO NOT USE client.ExecuteWorkflow API INSIDE A WORKFLOW, USE workflow.ExecuteChildWorkflow instead
+		// GetWithOptions will fill the workflow execution result to valuePtr, if
+		// workflow execution is a success, or return corresponding error. This is a
+		// blocking API.
+		GetWithOptions(ctx context.Context, valuePtr interface{}, options WorkflowRunGetOptions) error
+	}
+
+	// WorkflowRunGetOptions are options for WorkflowRun.GetWithOptions.
+	WorkflowRunGetOptions struct {
+		// DisableFollowingRuns, if true, will not follow execution chains to the
+		// latest run. By default when this is false, getting the result of a
+		// workflow may not use the literal run ID but instead follow to later runs
+		// if the workflow returned a ContinueAsNewError, has a later cron, or is
+		// retried on failure.
+		DisableFollowingRuns bool
 	}
 
 	// workflowRunImpl is an implementation of WorkflowRun
@@ -502,7 +519,7 @@ func (wc *WorkflowClient) RecordActivityHeartbeatByID(ctx context.Context,
 //  - serviceerror.InvalidArgument
 //  - serviceerror.Internal
 //  - serviceerror.Unavailable
-//  - serviceerror.NotFound
+//  - serviceerror.NamespaceNotFound
 func (wc *WorkflowClient) ListClosedWorkflow(ctx context.Context, request *workflowservice.ListClosedWorkflowExecutionsRequest) (*workflowservice.ListClosedWorkflowExecutionsResponse, error) {
 	if err := wc.ensureInitialized(); err != nil {
 		return nil, err
@@ -525,7 +542,7 @@ func (wc *WorkflowClient) ListClosedWorkflow(ctx context.Context, request *workf
 //  - serviceerror.InvalidArgument
 //  - serviceerror.Internal
 //  - serviceerror.Unavailable
-//  - serviceerror.NotFound
+//  - serviceerror.NamespaceNotFound
 func (wc *WorkflowClient) ListOpenWorkflow(ctx context.Context, request *workflowservice.ListOpenWorkflowExecutionsRequest) (*workflowservice.ListOpenWorkflowExecutionsResponse, error) {
 	if err := wc.ensureInitialized(); err != nil {
 		return nil, err
@@ -944,7 +961,7 @@ func (nc *namespaceClient) Register(ctx context.Context, request *workflowservic
 // NamespaceConfiguration - Configuration like Workflow Execution Retention Period In Days, Whether to emit metrics.
 // ReplicationConfiguration - replication config like clusters and active cluster name
 // The errors it can throw:
-//	- serviceerror.NotFound
+//	- serviceerror.NamespaceNotFound
 //	- serviceerror.InvalidArgument
 //	- serviceerror.Internal
 //	- serviceerror.Unavailable
@@ -964,7 +981,7 @@ func (nc *namespaceClient) Describe(ctx context.Context, namespace string) (*wor
 
 // Update a namespace.
 // The errors it can throw:
-//	- serviceerror.NotFound
+//	- serviceerror.NamespaceNotFound
 //	- serviceerror.InvalidArgument
 //	- serviceerror.Internal
 //	- serviceerror.Unavailable
@@ -1041,6 +1058,14 @@ func (workflowRun *workflowRunImpl) GetID() string {
 }
 
 func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{}) error {
+	return workflowRun.GetWithOptions(ctx, valuePtr, WorkflowRunGetOptions{})
+}
+
+func (workflowRun *workflowRunImpl) GetWithOptions(
+	ctx context.Context,
+	valuePtr interface{},
+	options WorkflowRunGetOptions,
+) error {
 
 	iter := workflowRun.iterFn(ctx, workflowRun.currentRunID.Get())
 	if !iter.HasNext() {
@@ -1054,8 +1079,8 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 	switch closeEvent.GetEventType() {
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED:
 		attributes := closeEvent.GetWorkflowExecutionCompletedEventAttributes()
-		if attributes.NewExecutionRunId != "" {
-			return workflowRun.follow(ctx, valuePtr, attributes.NewExecutionRunId)
+		if !options.DisableFollowingRuns && attributes.NewExecutionRunId != "" {
+			return workflowRun.follow(ctx, valuePtr, attributes.NewExecutionRunId, options)
 		}
 		if valuePtr == nil || attributes.Result == nil {
 			return nil
@@ -1067,8 +1092,8 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 		return workflowRun.dataConverter.FromPayloads(attributes.Result, valuePtr)
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED:
 		attributes := closeEvent.GetWorkflowExecutionFailedEventAttributes()
-		if attributes.NewExecutionRunId != "" {
-			return workflowRun.follow(ctx, valuePtr, attributes.NewExecutionRunId)
+		if !options.DisableFollowingRuns && attributes.NewExecutionRunId != "" {
+			return workflowRun.follow(ctx, valuePtr, attributes.NewExecutionRunId, options)
 		}
 		err = ConvertFailureToError(attributes.GetFailure(), workflowRun.dataConverter)
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED:
@@ -1079,13 +1104,28 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 		err = newTerminatedError()
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
 		attributes := closeEvent.GetWorkflowExecutionTimedOutEventAttributes()
-		if attributes.NewExecutionRunId != "" {
-			return workflowRun.follow(ctx, valuePtr, attributes.NewExecutionRunId)
+		if !options.DisableFollowingRuns && attributes.NewExecutionRunId != "" {
+			return workflowRun.follow(ctx, valuePtr, attributes.NewExecutionRunId, options)
 		}
 		err = NewTimeoutError("Workflow timeout", enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil)
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW:
 		attributes := closeEvent.GetWorkflowExecutionContinuedAsNewEventAttributes()
-		return workflowRun.follow(ctx, valuePtr, attributes.NewExecutionRunId)
+		if !options.DisableFollowingRuns {
+			return workflowRun.follow(ctx, valuePtr, attributes.NewExecutionRunId, options)
+		}
+		err := &ContinueAsNewError{
+			WorkflowType:  &WorkflowType{Name: attributes.GetWorkflowType().GetName()},
+			Input:         attributes.Input,
+			Header:        attributes.Header,
+			TaskQueueName: attributes.GetTaskQueue().GetName(),
+		}
+		if attributes.WorkflowRunTimeout != nil {
+			err.WorkflowRunTimeout = *attributes.WorkflowRunTimeout
+		}
+		if attributes.WorkflowTaskTimeout != nil {
+			err.WorkflowTaskTimeout = *attributes.WorkflowTaskTimeout
+		}
+		return err
 	default:
 		return fmt.Errorf("unexpected event type %s when handling workflow execution result", closeEvent.GetEventType())
 	}
@@ -1103,10 +1143,15 @@ func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{
 // doesn't return until the chain finishes. These can be ContinuedAsNew events, Completed events
 // (for workflows with a cron schedule), or Failed or TimedOut events (for workflows with a retry
 // policy or cron schedule).
-func (workflowRun *workflowRunImpl) follow(ctx context.Context, valuePtr interface{}, newRunID string) error {
+func (workflowRun *workflowRunImpl) follow(
+	ctx context.Context,
+	valuePtr interface{},
+	newRunID string,
+	options WorkflowRunGetOptions,
+) error {
 	curRunID := util.PopulatedOnceCell(newRunID)
 	workflowRun.currentRunID = &curRunID
-	return workflowRun.Get(ctx, valuePtr)
+	return workflowRun.GetWithOptions(ctx, valuePtr, options)
 }
 
 func getWorkflowMemo(input map[string]interface{}, dc converter.DataConverter) (*commonpb.Memo, error) {

@@ -2634,6 +2634,14 @@ func TestIsNonRetriableError(t *testing.T) {
 			err:      serviceerror.NewClientVersionNotSupported("", "", ""),
 			expected: true,
 		},
+		{
+			err:      serviceerror.NewNamespaceNotFound("missing-namespace"),
+			expected: true,
+		},
+		{
+			err:      serviceerror.NewNamespaceInvalidState("namespace", enumspb.NAMESPACE_STATE_DELETED, []enumspb.NamespaceState{enumspb.NAMESPACE_STATE_REGISTERED}),
+			expected: false,
+		},
 	}
 
 	for _, test := range tests {

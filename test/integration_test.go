@@ -48,13 +48,16 @@ import (
 	"go.temporal.io/api/serviceerror"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.uber.org/goleak"
+	"google.golang.org/grpc"
+
 	"go.temporal.io/sdk/contrib/opentelemetry"
 	sdkopentracing "go.temporal.io/sdk/contrib/opentracing"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/test"
-	"go.uber.org/goleak"
 
 	historypb "go.temporal.io/api/history/v1"
+
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	contribtally "go.temporal.io/sdk/contrib/tally"
@@ -214,7 +217,8 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		}
 	}
 
-	if strings.Contains(ts.T().Name(), "TestSessionOnWorkerFailure") {
+	if strings.Contains(ts.T().Name(), "TestSessionOnWorkerFailure") ||
+		strings.Contains(ts.T().Name(), "TestNonDeterminismFailureCause") {
 		// We disable sticky execution here since we kill the worker and restart it
 		// and sticky execution adds a 5s penalty
 		worker.SetStickyWorkflowCacheSize(0)
@@ -224,7 +228,8 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.LocalActivityWorkerOnly = true
 	}
 
-	if strings.Contains(ts.T().Name(), "CancelTimerViaDeferAfterWFTFailure") {
+	if strings.Contains(ts.T().Name(), "CancelTimerViaDeferAfterWFTFailure") ||
+		strings.Contains(ts.T().Name(), "TestNonDeterminismFailureCause") {
 		options.WorkflowPanicPolicy = worker.BlockWorkflow
 	}
 
@@ -2152,6 +2157,142 @@ func (ts *IntegrationTestSuite) TestLargeHistoryReplay() {
 	ts.Contains(err.Error(), "intentional panic")
 }
 
+func (ts *IntegrationTestSuite) TestWorkerFatalError() {
+	// Make a new client that will fail a poll with a namespace not found
+	c, err := client.NewClient(client.Options{
+		HostPort:  ts.config.ServiceAddr,
+		Namespace: ts.config.Namespace,
+		ConnectionOptions: client.ConnectionOptions{
+			TLS: ts.config.TLS,
+			DialOptions: []grpc.DialOption{
+				grpc.WithUnaryInterceptor(func(
+					ctx context.Context,
+					method string,
+					req interface{},
+					reply interface{},
+					cc *grpc.ClientConn,
+					invoker grpc.UnaryInvoker,
+					opts ...grpc.CallOption,
+				) error {
+					if method == "/temporal.api.workflowservice.v1.WorkflowService/PollWorkflowTaskQueue" {
+						return serviceerror.NewNamespaceNotFound(ts.config.Namespace)
+					}
+					return invoker(ctx, method, req, reply, cc, opts...)
+				}),
+			},
+		},
+	})
+	ts.NoError(err)
+	defer c.Close()
+
+	// Create a worker that uses that client
+	var lastErr error
+	w := worker.New(c, "ignored-task-queue", worker.Options{OnFatalError: func(err error) { lastErr = err }})
+	runErrCh := make(chan error, 1)
+
+	// Run it and confirm it fails
+	go func() { runErrCh <- w.Run(nil) }()
+	var runErr error
+	select {
+	case <-time.After(10 * time.Second):
+		ts.Fail("timeout")
+	case runErr = <-runErrCh:
+	}
+	ts.Error(lastErr)
+	ts.Error(runErr)
+	ts.Equal(lastErr, runErr)
+	ts.IsType(&serviceerror.NamespaceNotFound{}, runErr)
+}
+
+func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseBadStateMachine() {
+	ts.testNonDeterminismFailureCause(false)
+}
+
+func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseHistoryMismatch() {
+	ts.testNonDeterminismFailureCause(true)
+}
+
+func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Start workflow
+	forcedNonDeterminismCounter = 0
+	run, err := ts.client.ExecuteWorkflow(
+		ctx,
+		ts.startWorkflowOptions("test-non-determinism-failure-cause-"+uuid.New()),
+		ts.workflows.ForcedNonDeterminism,
+		historyMismatch,
+	)
+	ts.NoError(err)
+	defer func() { _ = ts.client.TerminateWorkflow(ctx, run.GetID(), run.GetRunID(), "", nil) }()
+
+	// Wait for tick count as 1, send tick to do an action, then wait for 2
+	ts.waitForQueryTrue(run, "is-wait-tick-count", 1)
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "tick", nil))
+	ts.waitForQueryTrue(run, "is-wait-tick-count", 2)
+
+	// Now, stop the worker and start a new one
+	ts.worker.Stop()
+	ts.workerStopped = true
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{DisableStickyExecution: true})
+	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.NoError(nextWorker.Start())
+	defer nextWorker.Stop()
+
+	// Increase the determinism counter and send a tick to trigger replay
+	// non-determinism
+	forcedNonDeterminismCounter++
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "tick", nil))
+
+	// Now let's try to get history until we see a task failure
+	var histErr error
+	var taskFailed *historypb.WorkflowTaskFailedEventAttributes
+	ts.Eventually(func() bool {
+		iter := ts.client.GetWorkflowHistory(
+			ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		for iter.HasNext() {
+			event, err := iter.Next()
+			taskFailed, histErr = event.GetWorkflowTaskFailedEventAttributes(), err
+			if taskFailed != nil || histErr != nil {
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 300*time.Millisecond)
+
+	// Check the task has the expected cause
+	ts.NoError(histErr)
+	ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR, taskFailed.Cause)
+}
+
+func (ts *IntegrationTestSuite) TestClientGetNotFollowingRuns() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Start workflow that does a continue as new
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-client-get-not-following-runs"),
+		ts.workflows.ContinueAsNew, 1, ts.taskQueueName)
+	ts.NoError(err)
+
+	// Do the regular get which returns the final value and a different run ID
+	origRunID := run.GetRunID()
+	var val int
+	ts.NoError(run.Get(ctx, &val))
+	ts.Equal(999, val)
+	ts.NotEqual(origRunID, run.GetRunID())
+
+	// Get the run with the original ID and fetch without following runs
+	run = ts.client.GetWorkflow(ctx, run.GetID(), origRunID)
+	err = run.GetWithOptions(ctx, nil, client.WorkflowRunGetOptions{DisableFollowingRuns: true})
+	ts.Error(err)
+	contErr := err.(*workflow.ContinueAsNewError)
+	ts.Equal("ContinueAsNew", contErr.WorkflowType.Name)
+	ts.Equal("0", string(contErr.Input.Payloads[0].Data))
+	ts.Equal("\""+ts.taskQueueName+"\"", string(contErr.Input.Payloads[1].Data))
+	ts.Equal(ts.taskQueueName, contErr.TaskQueueName)
+}
+
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{
 		HostPort:          ts.config.ServiceAddr,
@@ -2176,7 +2317,7 @@ func (ts *IntegrationTestSuite) registerNamespace() {
 	err = ts.executeWorkflow("test-namespace-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
 	numOfRetry := 20
 	for err != nil && numOfRetry >= 0 {
-		if _, ok := err.(*serviceerror.NotFound); ok {
+		if _, ok := err.(*serviceerror.NamespaceNotFound); ok {
 			time.Sleep(namespaceCacheRefreshInterval)
 			err = ts.executeWorkflow("test-namespace-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
 		} else {
