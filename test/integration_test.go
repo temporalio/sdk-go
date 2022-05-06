@@ -49,6 +49,7 @@ import (
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.uber.org/goleak"
+	"google.golang.org/grpc"
 
 	"go.temporal.io/sdk/contrib/opentelemetry"
 	sdkopentracing "go.temporal.io/sdk/contrib/opentracing"
@@ -2154,6 +2155,53 @@ func (ts *IntegrationTestSuite) TestLargeHistoryReplay() {
 		ts.config.Namespace, workflow.Execution{ID: run.GetID(), RunID: run.GetRunID()})
 	ts.Error(err)
 	ts.Contains(err.Error(), "intentional panic")
+}
+
+func (ts *IntegrationTestSuite) TestWorkerFatalError() {
+	// Make a new client that will fail a poll with a namespace not found
+	c, err := client.NewClient(client.Options{
+		HostPort:  ts.config.ServiceAddr,
+		Namespace: ts.config.Namespace,
+		ConnectionOptions: client.ConnectionOptions{
+			TLS: ts.config.TLS,
+			DialOptions: []grpc.DialOption{
+				grpc.WithUnaryInterceptor(func(
+					ctx context.Context,
+					method string,
+					req interface{},
+					reply interface{},
+					cc *grpc.ClientConn,
+					invoker grpc.UnaryInvoker,
+					opts ...grpc.CallOption,
+				) error {
+					if method == "/temporal.api.workflowservice.v1.WorkflowService/PollWorkflowTaskQueue" {
+						return serviceerror.NewNamespaceNotFound(ts.config.Namespace)
+					}
+					return invoker(ctx, method, req, reply, cc, opts...)
+				}),
+			},
+		},
+	})
+	ts.NoError(err)
+	defer c.Close()
+
+	// Create a worker that uses that client
+	var lastErr error
+	w := worker.New(c, "ignored-task-queue", worker.Options{OnFatalError: func(err error) { lastErr = err }})
+	runErrCh := make(chan error, 1)
+
+	// Run it and confirm it fails
+	go func() { runErrCh <- w.Run(nil) }()
+	var runErr error
+	select {
+	case <-time.After(10 * time.Second):
+		ts.Fail("timeout")
+	case runErr = <-runErrCh:
+	}
+	ts.Error(lastErr)
+	ts.Error(runErr)
+	ts.Equal(lastErr, runErr)
+	ts.IsType(&serviceerror.NamespaceNotFound{}, runErr)
 }
 
 func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseBadStateMachine() {
