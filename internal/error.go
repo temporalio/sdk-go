@@ -166,7 +166,7 @@ type (
 
 	// ContinueAsNewError contains information about how to continue the workflow as new.
 	ContinueAsNewError struct {
-		//params *ExecuteWorkflowParams
+		// params *ExecuteWorkflowParams
 		WorkflowType        *WorkflowType
 		Input               *commonpb.Payloads
 		Header              *commonpb.Header
@@ -221,6 +221,9 @@ type (
 	// ChildWorkflowExecutionError when failure is due the child workflow having
 	// already started.
 	ChildWorkflowExecutionAlreadyStartedError struct{}
+
+	// NamespaceNotFoundError is set as the cause when failure is due namespace not found.
+	NamespaceNotFoundError struct{}
 
 	// WorkflowExecutionError is returned from workflow.
 	// Unwrap this error to get actual cause.
@@ -721,6 +724,11 @@ func (e *ChildWorkflowExecutionError) message() string {
 
 func (e *ChildWorkflowExecutionError) Unwrap() error {
 	return e.cause
+}
+
+// Error from error interface
+func (*NamespaceNotFoundError) Error() string {
+	return "namespace not found"
 }
 
 // Error from error interface

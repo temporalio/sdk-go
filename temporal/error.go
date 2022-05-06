@@ -134,6 +134,9 @@ type (
 	// already started.
 	ChildWorkflowExecutionAlreadyStartedError = internal.ChildWorkflowExecutionAlreadyStartedError
 
+	// NamespaceNotFoundError is set as the cause when failure is due namespace not found.
+	NamespaceNotFoundError = internal.NamespaceNotFoundError
+
 	// WorkflowExecutionError returned from workflow.
 	WorkflowExecutionError = internal.WorkflowExecutionError
 
