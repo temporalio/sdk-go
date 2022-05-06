@@ -518,6 +518,29 @@ func (_m *Client) TerminateWorkflow(ctx context.Context, workflowID string, runI
 	return r0
 }
 
+// CheckHealth provides a mock function with given fields: ctx, request
+func (_m *Client) CheckHealth(ctx context.Context, request *client.CheckHealthRequest) (*client.CheckHealthResponse, error) {
+	ret := _m.Called(ctx, request)
+
+	var r0 *client.CheckHealthResponse
+	if rf, ok := ret.Get(0).(func(context.Context, *client.CheckHealthRequest) *client.CheckHealthResponse); ok {
+		r0 = rf(ctx, request)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*client.CheckHealthResponse)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, *client.CheckHealthRequest) error); ok {
+		r1 = rf(ctx, request)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // WorkflowService provides a mock function with given fields:
 func (_m *Client) WorkflowService() workflowservice.WorkflowServiceClient {
 	ret := _m.Called()

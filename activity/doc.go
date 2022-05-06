@@ -99,7 +99,7 @@ returned from the workflow.ExecuteActivity function as the details field of Time
 It is also possible to heartbeat an Activity from an external source:
 
     // instantiate a Temporal service Client
-    client.Client client = client.NewClient(...)
+    client.Client client = client.Dial(...)
 
     // record heartbeat
     err := client.RecordActivityHeartbeat(ctx, taskToken, details)
@@ -181,7 +181,7 @@ In order to for some Workflow execution to be able to invoke an Activity type, t
 all the implementations it has access to. To do that, create a Worker and register the Activity like so:
 
 ```
-  c, err := client.NewClient(client.Options{})
+  c, err := client.Dial(client.Options{})
   if err != nil {
     log.Fatalln("unable to create Temporal client", err)
   }

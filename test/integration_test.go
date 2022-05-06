@@ -180,7 +180,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 
 	var err error
 	trafficController := test.NewSimpleTrafficController()
-	ts.client, err = client.NewClient(client.Options{
+	ts.client, err = client.Dial(client.Options{
 		HostPort:  ts.config.ServiceAddr,
 		Namespace: ts.config.Namespace,
 		Logger:    ilog.NewDefaultLogger(),
@@ -2159,7 +2159,7 @@ func (ts *IntegrationTestSuite) TestLargeHistoryReplay() {
 
 func (ts *IntegrationTestSuite) TestWorkerFatalError() {
 	// Make a new client that will fail a poll with a namespace not found
-	c, err := client.NewClient(client.Options{
+	c, err := client.Dial(client.Options{
 		HostPort:  ts.config.ServiceAddr,
 		Namespace: ts.config.Namespace,
 		ConnectionOptions: client.ConnectionOptions{

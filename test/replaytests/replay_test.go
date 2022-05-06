@@ -63,7 +63,7 @@ func (s *replayTestSuite) TearDownTest() {
 
 func (s *replayTestSuite) TestGenerateWorkflowHistory() {
 	s.T().Skip("Remove this Skip to regenerate the history.")
-	c, _ := client.NewClient(client.Options{
+	c, _ := client.Dial(client.Options{
 		Logger: ilog.NewDefaultLogger(),
 	})
 	defer c.Close()
