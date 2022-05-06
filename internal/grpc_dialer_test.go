@@ -47,6 +47,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/resolver"
@@ -165,10 +167,10 @@ func TestMissingGetServerInfo(t *testing.T) {
 	require.NoError(t, lastErr)
 
 	// Create a new client and confirm client has empty capabilities set
-	client, err := NewClient(ClientOptions{HostPort: l.Addr().String()})
+	client, err := DialClient(ClientOptions{HostPort: l.Addr().String()})
 	require.NoError(t, err)
 	workflowClient := client.(*WorkflowClient)
-	require.True(t, proto.Equal(&workflowservice.GetSystemInfoResponse_Capabilities{}, &workflowClient.capabilities))
+	require.True(t, proto.Equal(&workflowservice.GetSystemInfoResponse_Capabilities{}, workflowClient.capabilities))
 }
 
 func TestInternalErrorRetry(t *testing.T) {
@@ -186,7 +188,7 @@ func TestInternalErrorRetry(t *testing.T) {
 	srv.signalWorkflowExecutionResponseError = status.Error(codes.Internal, "oh no, an internal error")
 
 	// Create client and make call
-	client, err := NewClient(ClientOptions{HostPort: srv.addr})
+	client, err := DialClient(ClientOptions{HostPort: srv.addr})
 	require.NoError(t, err)
 	defer client.Close()
 	_, err = client.WorkflowService().SignalWorkflowExecution(ctx, &workflowservice.SignalWorkflowExecutionRequest{})
@@ -207,7 +209,7 @@ func TestInternalErrorRetry(t *testing.T) {
 	srv.signalWorkflowExecutionResponseError = status.Error(codes.Internal, "oh no, an internal error")
 
 	// Create client and make call
-	client, err = NewClient(ClientOptions{HostPort: srv.addr})
+	client, err = DialClient(ClientOptions{HostPort: srv.addr})
 	require.NoError(t, err)
 	defer client.Close()
 	_, err = client.WorkflowService().SignalWorkflowExecution(ctx, &workflowservice.SignalWorkflowExecutionRequest{})
@@ -215,6 +217,74 @@ func TestInternalErrorRetry(t *testing.T) {
 	_, isInternalError = err.(*serviceerror.Internal)
 	require.True(t, isInternalError)
 	require.Equal(t, 1, srv.signalWorkflowInvokeCount())
+}
+
+func TestEagerAndLazyClient(t *testing.T) {
+	// Start a server that always returns an error on get system info
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+	srv.getSystemInfoResponseError = fmt.Errorf("some server failure")
+
+	// Confirm eager dial fails
+	_, err = DialClient(ClientOptions{HostPort: srv.addr})
+	require.EqualError(t, err, "failed reaching server: some server failure")
+
+	// Confirm lazy dial succeeds but fails signal workflow
+	c, err := NewLazyClient(ClientOptions{HostPort: srv.addr})
+	require.NoError(t, err)
+	defer c.Close()
+	err = c.SignalWorkflow(context.Background(), "workflow1", "", "my-signal", nil)
+	require.EqualError(t, err, "failed reaching server: some server failure")
+
+	// But if we call again without a sys info response error, it will succeed
+	srv.getSystemInfoResponseError = nil
+	err = c.SignalWorkflow(context.Background(), "workflow1", "", "my-signal", nil)
+	require.NoError(t, err)
+
+	// Now that there's no sys info response error, eager should succeed
+	c, err = DialClient(ClientOptions{HostPort: srv.addr})
+	require.NoError(t, err)
+	defer c.Close()
+
+	// And even if it starts erroring, the success was memoized so calls succeed
+	srv.getSystemInfoResponseError = fmt.Errorf("some server failure")
+	err = c.SignalWorkflow(context.Background(), "workflow1", "", "my-signal", nil)
+	require.NoError(t, err)
+}
+
+func TestCheckHealth(t *testing.T) {
+	// Start a gRPC server and lazy client
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+	c, err := NewLazyClient(ClientOptions{HostPort: srv.addr})
+	require.NoError(t, err)
+	defer c.Close()
+
+	// Confirm fail if can't init
+	srv.getSystemInfoResponseError = fmt.Errorf("some server failure")
+	_, err = c.CheckHealth(context.Background(), nil)
+	require.EqualError(t, err, "failed reaching server: some server failure")
+
+	// Now if it can init, but health not registered
+	srv.getSystemInfoResponseError = nil
+	_, err = c.CheckHealth(context.Background(), nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "health check error")
+
+	// Now register the service but set it as bad
+	srv.healthServer.SetServingStatus("temporal.api.workflowservice.v1.WorkflowService",
+		grpc_health_v1.HealthCheckResponse_NOT_SERVING)
+	_, err = c.CheckHealth(context.Background(), nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "NOT_SERVING")
+
+	// Now set as serving and succeed
+	srv.healthServer.SetServingStatus("temporal.api.workflowservice.v1.WorkflowService",
+		grpc_health_v1.HealthCheckResponse_SERVING)
+	_, err = c.CheckHealth(context.Background(), nil)
+	require.NoError(t, err)
 }
 
 func TestDialOptions(t *testing.T) {
@@ -242,7 +312,7 @@ func TestDialOptions(t *testing.T) {
 			return invoker(ctx, method, req, reply, cc, opts...)
 		}
 	}
-	client, err := NewClient(ClientOptions{
+	client, err := DialClient(ClientOptions{
 		HostPort: srv.addr,
 		ConnectionOptions: ConnectionOptions{
 			DialOptions: []grpc.DialOption{
@@ -279,7 +349,7 @@ func TestCustomResolver(t *testing.T) {
 	builder := manual.NewBuilderWithScheme(scheme)
 	builder.InitialState(resolver.State{Addresses: []resolver.Address{{Addr: s1.addr}, {Addr: s2.addr}}})
 	resolver.Register(builder)
-	client, err := NewClient(ClientOptions{HostPort: scheme + ":///whatever"})
+	client, err := DialClient(ClientOptions{HostPort: scheme + ":///whatever"})
 	require.NoError(t, err)
 	defer client.Close()
 
@@ -335,8 +405,10 @@ type testGRPCServer struct {
 	workflowservice.UnimplementedWorkflowServiceServer
 	*grpc.Server
 	addr                                 string
+	healthServer                         *health.Server
 	sigWfCount                           int32
 	getSystemInfoResponse                workflowservice.GetSystemInfoResponse
+	getSystemInfoResponseError           error
 	signalWorkflowExecutionResponse      workflowservice.SignalWorkflowExecutionResponse
 	signalWorkflowExecutionResponseError error
 }
@@ -346,8 +418,13 @@ func startTestGRPCServer() (*testGRPCServer, error) {
 	if err != nil {
 		return nil, err
 	}
-	t := &testGRPCServer{Server: grpc.NewServer(), addr: l.Addr().String()}
+	t := &testGRPCServer{
+		Server:       grpc.NewServer(),
+		addr:         l.Addr().String(),
+		healthServer: health.NewServer(),
+	}
 	workflowservice.RegisterWorkflowServiceServer(t.Server, t)
+	grpc_health_v1.RegisterHealthServer(t.Server, t.healthServer)
 	go func() {
 		if err := t.Serve(l); err != nil {
 			log.Fatal(err)
@@ -386,7 +463,7 @@ func (t *testGRPCServer) GetSystemInfo(
 	ctx context.Context,
 	req *workflowservice.GetSystemInfoRequest,
 ) (*workflowservice.GetSystemInfoResponse, error) {
-	return &t.getSystemInfoResponse, nil
+	return &t.getSystemInfoResponse, t.getSystemInfoResponseError
 }
 
 func (t *testGRPCServer) SignalWorkflowExecution(

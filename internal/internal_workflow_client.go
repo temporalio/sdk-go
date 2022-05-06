@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"sync"
 	"time"
 
 	"github.com/pborman/uuid"
@@ -40,6 +41,9 @@ import (
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	uberatomic "go.uber.org/atomic"
+	"google.golang.org/grpc"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -54,6 +58,8 @@ var _ NamespaceClient = (*namespaceClient)(nil)
 
 const (
 	defaultGetHistoryTimeout = 65 * time.Second
+
+	getSystemInfoTimeout = 5 * time.Second
 )
 
 var (
@@ -63,18 +69,20 @@ var (
 type (
 	// WorkflowClient is the client for starting a workflow execution.
 	WorkflowClient struct {
-		workflowService    workflowservice.WorkflowServiceClient
-		connectionCloser   io.Closer
-		namespace          string
-		registry           *registry
-		logger             log.Logger
-		metricsHandler     metrics.Handler
-		identity           string
-		dataConverter      converter.DataConverter
-		contextPropagators []ContextPropagator
-		workerInterceptors []WorkerInterceptor
-		interceptor        ClientOutboundInterceptor
-		capabilities       workflowservice.GetSystemInfoResponse_Capabilities
+		workflowService          workflowservice.WorkflowServiceClient
+		conn                     *grpc.ClientConn
+		namespace                string
+		registry                 *registry
+		logger                   log.Logger
+		metricsHandler           metrics.Handler
+		identity                 string
+		dataConverter            converter.DataConverter
+		contextPropagators       []ContextPropagator
+		workerInterceptors       []WorkerInterceptor
+		interceptor              ClientOutboundInterceptor
+		excludeInternalFromRetry *uberatomic.Bool
+		capabilities             *workflowservice.GetSystemInfoResponse_Capabilities
+		capabilitiesLock         sync.RWMutex
 	}
 
 	// namespaceClient is the client for managing namespaces.
@@ -177,6 +185,10 @@ type (
 // subjected to change in the future.
 // NOTE: the context.Context should have a fairly large timeout, since workflow execution may take a while to be finished
 func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
 	// Default workflow ID
 	if options.ID == "" {
 		options.ID = uuid.New()
@@ -207,6 +219,9 @@ func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 // The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
 func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, runID string) WorkflowRun {
+	// We intentionally don't "ensureIntialized" here because there is no direct
+	// error return path. Rather we let GetWorkflowHistory do it.
+
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
 		return wc.GetWorkflowHistory(fnCtx, workflowID, fnRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT)
 	}
@@ -245,6 +260,10 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 
 // SignalWorkflow signals a workflow in execution.
 func (wc *WorkflowClient) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error {
+	if err := wc.ensureInitialized(); err != nil {
+		return err
+	}
+
 	// Set header before interceptor run
 	ctx = contextWithNewHeader(ctx)
 
@@ -260,6 +279,9 @@ func (wc *WorkflowClient) SignalWorkflow(ctx context.Context, workflowID string,
 // If the workflow is not running or not found, it starts the workflow and then sends the signal in transaction.
 func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
 	options StartWorkflowOptions, workflowFunc interface{}, workflowArgs ...interface{}) (WorkflowRun, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
 
 	// Due to the ambiguous way to provide workflow IDs, if options contains an
 	// ID, it must match the parameter
@@ -299,6 +321,10 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 // workflowID is required, other parameters are optional.
 // If runID is omit, it will terminate currently running workflow (if there is one) based on the workflowID.
 func (wc *WorkflowClient) CancelWorkflow(ctx context.Context, workflowID string, runID string) error {
+	if err := wc.ensureInitialized(); err != nil {
+		return err
+	}
+
 	return wc.interceptor.CancelWorkflow(ctx, &ClientCancelWorkflowInput{WorkflowID: workflowID, RunID: runID})
 }
 
@@ -306,6 +332,10 @@ func (wc *WorkflowClient) CancelWorkflow(ctx context.Context, workflowID string,
 // workflowID is required, other parameters are optional.
 // If runID is omit, it will terminate currently running workflow (if there is one) based on the workflowID.
 func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error {
+	if err := wc.ensureInitialized(); err != nil {
+		return err
+	}
+
 	return wc.interceptor.TerminateWorkflow(ctx, &ClientTerminateWorkflowInput{
 		WorkflowID: workflowID,
 		RunID:      runID,
@@ -371,6 +401,10 @@ func (wc *WorkflowClient) getWorkflowHistory(
 
 func (wc *WorkflowClient) getWorkflowExecutionHistory(ctx context.Context, rpcMetricsHandler metrics.Handler, isLongPoll bool,
 	request *workflowservice.GetWorkflowExecutionHistoryRequest, filterType enumspb.HistoryEventFilterType) (*workflowservice.GetWorkflowExecutionHistoryResponse, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
 	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler), grpcLongPoll(isLongPoll), defaultGrpcRetryParameters(ctx), func(builder *grpcContextBuilder) {
 		if isLongPoll {
 			builder.Timeout = defaultGetHistoryTimeout
@@ -400,6 +434,10 @@ func (wc *WorkflowClient) getWorkflowExecutionHistory(ctx context.Context, rpcMe
 // completed event will be reported; if err is CanceledError, activity task canceled event will be reported; otherwise,
 // activity task failed event will be reported.
 func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error {
+	if err := wc.ensureInitialized(); err != nil {
+		return err
+	}
+
 	if taskToken == nil {
 		return errors.New("invalid task token provided")
 	}
@@ -449,6 +487,10 @@ func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, namespace, w
 
 // RecordActivityHeartbeat records heartbeat for an activity.
 func (wc *WorkflowClient) RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...interface{}) error {
+	if err := wc.ensureInitialized(); err != nil {
+		return err
+	}
+
 	dataConverter := WithContext(ctx, wc.dataConverter)
 	data, err := encodeArgs(dataConverter, details)
 	if err != nil {
@@ -460,6 +502,10 @@ func (wc *WorkflowClient) RecordActivityHeartbeat(ctx context.Context, taskToken
 // RecordActivityHeartbeatByID records heartbeat for an activity.
 func (wc *WorkflowClient) RecordActivityHeartbeatByID(ctx context.Context,
 	namespace, workflowID, runID, activityID string, details ...interface{}) error {
+	if err := wc.ensureInitialized(); err != nil {
+		return err
+	}
+
 	dataConverter := WithContext(ctx, wc.dataConverter)
 	data, err := encodeArgs(dataConverter, details)
 	if err != nil {
@@ -475,6 +521,10 @@ func (wc *WorkflowClient) RecordActivityHeartbeatByID(ctx context.Context,
 //  - serviceerror.Unavailable
 //  - serviceerror.NamespaceNotFound
 func (wc *WorkflowClient) ListClosedWorkflow(ctx context.Context, request *workflowservice.ListClosedWorkflowExecutionsRequest) (*workflowservice.ListClosedWorkflowExecutionsResponse, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
 	if request.GetNamespace() == "" {
 		request.Namespace = wc.namespace
 	}
@@ -494,6 +544,10 @@ func (wc *WorkflowClient) ListClosedWorkflow(ctx context.Context, request *workf
 //  - serviceerror.Unavailable
 //  - serviceerror.NamespaceNotFound
 func (wc *WorkflowClient) ListOpenWorkflow(ctx context.Context, request *workflowservice.ListOpenWorkflowExecutionsRequest) (*workflowservice.ListOpenWorkflowExecutionsResponse, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
 	if request.GetNamespace() == "" {
 		request.Namespace = wc.namespace
 	}
@@ -508,6 +562,10 @@ func (wc *WorkflowClient) ListOpenWorkflow(ctx context.Context, request *workflo
 
 // ListWorkflow implementation
 func (wc *WorkflowClient) ListWorkflow(ctx context.Context, request *workflowservice.ListWorkflowExecutionsRequest) (*workflowservice.ListWorkflowExecutionsResponse, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
 	if request.GetNamespace() == "" {
 		request.Namespace = wc.namespace
 	}
@@ -522,6 +580,10 @@ func (wc *WorkflowClient) ListWorkflow(ctx context.Context, request *workflowser
 
 // ListArchivedWorkflow implementation
 func (wc *WorkflowClient) ListArchivedWorkflow(ctx context.Context, request *workflowservice.ListArchivedWorkflowExecutionsRequest) (*workflowservice.ListArchivedWorkflowExecutionsResponse, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
 	if request.GetNamespace() == "" {
 		request.Namespace = wc.namespace
 	}
@@ -548,6 +610,10 @@ func (wc *WorkflowClient) ListArchivedWorkflow(ctx context.Context, request *wor
 
 // ScanWorkflow implementation
 func (wc *WorkflowClient) ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
 	if request.GetNamespace() == "" {
 		request.Namespace = wc.namespace
 	}
@@ -562,6 +628,10 @@ func (wc *WorkflowClient) ScanWorkflow(ctx context.Context, request *workflowser
 
 // CountWorkflow implementation
 func (wc *WorkflowClient) CountWorkflow(ctx context.Context, request *workflowservice.CountWorkflowExecutionsRequest) (*workflowservice.CountWorkflowExecutionsResponse, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
 	if request.GetNamespace() == "" {
 		request.Namespace = wc.namespace
 	}
@@ -576,6 +646,10 @@ func (wc *WorkflowClient) CountWorkflow(ctx context.Context, request *workflowse
 
 // GetSearchAttributes implementation
 func (wc *WorkflowClient) GetSearchAttributes(ctx context.Context) (*workflowservice.GetSearchAttributesResponse, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	response, err := wc.workflowService.GetSearchAttributes(grpcCtx, &workflowservice.GetSearchAttributesRequest{})
@@ -592,6 +666,10 @@ func (wc *WorkflowClient) GetSearchAttributes(ctx context.Context) (*workflowser
 //  - serviceerror.Unavailable
 //  - serviceerror.NotFound
 func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
 	request := &workflowservice.DescribeWorkflowExecutionRequest{
 		Namespace: wc.namespace,
 		Execution: &commonpb.WorkflowExecution{
@@ -622,6 +700,10 @@ func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflo
 //  - serviceerror.NotFound
 //  - serviceerror.QueryFailed
 func (wc *WorkflowClient) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.EncodedValue, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
 	// Set header before interceptor run
 	ctx = contextWithNewHeader(ctx)
 
@@ -680,6 +762,10 @@ type QueryWorkflowWithOptionsResponse struct {
 //  - serviceerror.NotFound
 //  - serviceerror.QueryFailed
 func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request *QueryWorkflowWithOptionsRequest) (*QueryWorkflowWithOptionsResponse, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
 	var input *commonpb.Payloads
 	if len(request.Args) > 0 {
 		var err error
@@ -730,6 +816,10 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 //  - serviceerror.Unavailable
 //  - serviceerror.NotFound
 func (wc *WorkflowClient) DescribeTaskQueue(ctx context.Context, taskQueue string, taskQueueType enumspb.TaskQueueType) (*workflowservice.DescribeTaskQueueResponse, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
 	request := &workflowservice.DescribeTaskQueueRequest{
 		Namespace:     wc.namespace,
 		TaskQueue:     &taskqueuepb.TaskQueue{Name: taskQueue, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
@@ -750,6 +840,10 @@ func (wc *WorkflowClient) DescribeTaskQueue(ctx context.Context, taskQueue strin
 // And it will immediately terminating the current execution instance.
 // RequestId is used to deduplicate requests. It will be autogenerated if not set.
 func (wc *WorkflowClient) ResetWorkflowExecution(ctx context.Context, request *workflowservice.ResetWorkflowExecutionRequest) (*workflowservice.ResetWorkflowExecutionResponse, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
 	if request != nil && request.GetRequestId() == "" {
 		request.RequestId = uuid.New()
 	}
@@ -764,17 +858,86 @@ func (wc *WorkflowClient) ResetWorkflowExecution(ctx context.Context, request *w
 	return resp, nil
 }
 
+// CheckHealthRequest is a request for Client.CheckHealth.
+type CheckHealthRequest struct{}
+
+// CheckHealthResponse is a response for Client.CheckHealth.
+type CheckHealthResponse struct{}
+
+// CheckHealth performs a server health check using the gRPC health check
+// API. If the check fails, an error is returned.
+func (wc *WorkflowClient) CheckHealth(ctx context.Context, request *CheckHealthRequest) (*CheckHealthResponse, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
+	// Ignore request/response for now, they are empty
+	resp, err := healthpb.NewHealthClient(wc.conn).Check(ctx, &healthpb.HealthCheckRequest{
+		Service: "temporal.api.workflowservice.v1.WorkflowService",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("health check error: %w", err)
+	} else if resp.Status != healthpb.HealthCheckResponse_SERVING {
+		return nil, fmt.Errorf("health check returned unhealthy status: %v", resp.Status)
+	}
+	return &CheckHealthResponse{}, nil
+}
+
 // WorkflowService implements Client.WorkflowService.
 func (wc *WorkflowClient) WorkflowService() workflowservice.WorkflowServiceClient {
 	return wc.workflowService
 }
 
+// Get capabilities, lazily fetching from server if not already obtained.
+func (wc *WorkflowClient) loadCapabilities() (*workflowservice.GetSystemInfoResponse_Capabilities, error) {
+	// While we want to memoize the result here, we take care not to lock during
+	// the call. This means that in racy situations where this is called multiple
+	// times at once, it may result in multiple calls. This is far more preferable
+	// than locking on the call itself.
+
+	wc.capabilitiesLock.RLock()
+	capabilities := wc.capabilities
+	wc.capabilitiesLock.RUnlock()
+	if capabilities != nil {
+		return capabilities, nil
+	}
+
+	// Fetch the capabilities
+	ctx, cancel := context.WithTimeout(context.Background(), getSystemInfoTimeout)
+	defer cancel()
+	resp, err := wc.workflowService.GetSystemInfo(ctx, &workflowservice.GetSystemInfoRequest{})
+	// We ignore unimplemented
+	if _, isUnimplemented := err.(*serviceerror.Unimplemented); err != nil && !isUnimplemented {
+		return nil, fmt.Errorf("failed reaching server: %w", err)
+	}
+	if resp != nil && resp.Capabilities != nil {
+		capabilities = resp.Capabilities
+	} else {
+		capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+	}
+
+	// Store and return. We intentionally don't check if we're overwriting as we
+	// accept last-success-wins.
+	wc.capabilitiesLock.Lock()
+	wc.capabilities = capabilities
+	// Also set whether we exclude internal from retry
+	wc.excludeInternalFromRetry.Store(capabilities.InternalErrorDifferentiation)
+	wc.capabilitiesLock.Unlock()
+	return capabilities, nil
+}
+
+func (wc *WorkflowClient) ensureInitialized() error {
+	// Just loading the capabilities is enough
+	_, err := wc.loadCapabilities()
+	return err
+}
+
 // Close client and clean up underlying resources.
 func (wc *WorkflowClient) Close() {
-	if wc.connectionCloser == nil {
+	if wc.conn == nil {
 		return
 	}
-	if err := wc.connectionCloser.Close(); err != nil {
+	if err := wc.conn.Close(); err != nil {
 		wc.logger.Warn("unable to close connection", tagError, err)
 	}
 }

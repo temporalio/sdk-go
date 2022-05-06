@@ -32,6 +32,7 @@ import (
 	"time"
 
 	workflowpb "go.temporal.io/api/workflow/v1"
+	uberatomic "go.uber.org/atomic"
 	"google.golang.org/grpc"
 
 	ilog "go.temporal.io/sdk/internal/log"
@@ -162,10 +163,12 @@ func (s *historyEventIteratorSuite) SetupTest() {
 	// Create service endpoint
 	s.mockCtrl = gomock.NewController(s.T())
 	s.workflowServiceClient = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	s.workflowServiceClient.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
 
 	s.wfClient = &WorkflowClient{
-		workflowService: s.workflowServiceClient,
-		namespace:       DefaultNamespace,
+		workflowService:          s.workflowServiceClient,
+		namespace:                DefaultNamespace,
+		excludeInternalFromRetry: uberatomic.NewBool(false),
 	}
 }
 
@@ -335,6 +338,7 @@ func (s *workflowRunSuite) SetupTest() {
 	// Create service endpoint
 	s.mockCtrl = gomock.NewController(s.T())
 	s.workflowServiceClient = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	s.workflowServiceClient.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
 
 	options := ClientOptions{
 		MetricsHandler: metrics.NopHandler,
@@ -1000,6 +1004,7 @@ func TestWorkflowClientSuite(t *testing.T) {
 func (s *workflowClientTestSuite) SetupTest() {
 	s.mockCtrl = gomock.NewController(s.T())
 	s.service = workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	s.service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
 	s.client = NewServiceClient(s.service, nil, ClientOptions{})
 	s.dataConverter = converter.GetDefaultDataConverter()
 }

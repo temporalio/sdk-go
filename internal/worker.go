@@ -185,6 +185,10 @@ type (
 		// client options wrap the ones here. The same interceptor should not be set
 		// here and in client options.
 		Interceptors []WorkerInterceptor
+
+		// Optional: Callback invoked on fatal error. Immediately after this
+		// returns, Worker.Stop() will be called.
+		OnFatalError func(error)
 	}
 )
 
@@ -215,7 +219,7 @@ func IsReplayNamespace(dn string) bool {
 }
 
 // NewWorker creates an instance of worker for managing workflow and activity executions.
-// client   - client created with client.NewClient().
+// client   - client created with client.Dial() or client.NewLazyClient().
 // taskQueue - is the task queue name you use to identify your client worker, also
 //            identifies group of workflow and activity implementations that are hosted by a single worker process.
 // options 	- configure any worker specific options.
@@ -226,7 +230,7 @@ func NewWorker(
 ) *AggregatedWorker {
 	workflowClient, ok := client.(*WorkflowClient)
 	if !ok {
-		panic("Client must be created with client.NewClient()")
+		panic("Client must be created with client.Dial() or client.NewLazyClient()")
 	}
 	return NewAggregatedWorker(workflowClient, taskQueue, options)
 }
