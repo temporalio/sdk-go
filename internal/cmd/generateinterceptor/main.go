@@ -83,6 +83,7 @@ import (
 	failurepb "go.temporal.io/api/failure/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	querypb "go.temporal.io/api/query/v1"
+	schedulepb "go.temporal.io/api/schedule/v1"
 )
 
 // PayloadCodecGRPCClientInterceptorOptions holds interceptor options.

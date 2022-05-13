@@ -37,6 +37,7 @@ import (
 	failurepb "go.temporal.io/api/failure/v1"
 	historypb "go.temporal.io/api/history/v1"
 	querypb "go.temporal.io/api/query/v1"
+	schedulepb "go.temporal.io/api/schedule/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	workflowservicepb "go.temporal.io/api/workflowservice/v1"
 )
@@ -706,6 +707,59 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 				return err
 			}
 
+		case *schedulepb.Schedule:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetAction(),
+			); err != nil {
+				return err
+			}
+
+		case *schedulepb.ScheduleAction:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetStartWorkflow(),
+			); err != nil {
+				return err
+			}
+
+		case []*schedulepb.ScheduleListEntry:
+			for _, x := range o {
+				if err := s.process(encode, x); err != nil {
+					return err
+				}
+			}
+
+		case *schedulepb.ScheduleListEntry:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetMemo(),
+			); err != nil {
+				return err
+			}
+
+		case *workflowpb.NewWorkflowExecutionInfo:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetHeader(),
+				o.GetInput(),
+				o.GetMemo(),
+			); err != nil {
+				return err
+			}
+
 		case []*workflowpb.PendingActivityInfo:
 			for _, x := range o {
 				if err := s.process(encode, x); err != nil {
@@ -739,6 +793,30 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 			if err := s.process(
 				encode,
 				o.GetMemo(),
+			); err != nil {
+				return err
+			}
+
+		case *workflowservicepb.CreateScheduleRequest:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetMemo(),
+				o.GetSchedule(),
+			); err != nil {
+				return err
+			}
+
+		case *workflowservicepb.DescribeScheduleResponse:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetMemo(),
+				o.GetSchedule(),
 			); err != nil {
 				return err
 			}
@@ -806,6 +884,17 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 			if err := s.process(
 				encode,
 				o.GetExecutions(),
+			); err != nil {
+				return err
+			}
+
+		case *workflowservicepb.ListSchedulesResponse:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetSchedules(),
 			); err != nil {
 				return err
 			}
@@ -1091,6 +1180,17 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 			if err := s.process(
 				encode,
 				o.GetDetails(),
+			); err != nil {
+				return err
+			}
+
+		case *workflowservicepb.UpdateScheduleRequest:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetSchedule(),
 			); err != nil {
 				return err
 			}
