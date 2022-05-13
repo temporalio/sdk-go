@@ -56,12 +56,24 @@ func (wh *workflowServiceProxyServer) CountWorkflowExecutions(ctx context.Contex
 	return wh.client.CountWorkflowExecutions(ctx, req)
 }
 
+func (wh *workflowServiceProxyServer) CreateSchedule(ctx context.Context, req *workflowservice.CreateScheduleRequest) (*workflowservice.CreateScheduleResponse, error) {
+	return wh.client.CreateSchedule(ctx, req)
+}
+
+func (wh *workflowServiceProxyServer) DeleteSchedule(ctx context.Context, req *workflowservice.DeleteScheduleRequest) (*workflowservice.DeleteScheduleResponse, error) {
+	return wh.client.DeleteSchedule(ctx, req)
+}
+
 func (wh *workflowServiceProxyServer) DeprecateNamespace(ctx context.Context, req *workflowservice.DeprecateNamespaceRequest) (*workflowservice.DeprecateNamespaceResponse, error) {
 	return wh.client.DeprecateNamespace(ctx, req)
 }
 
 func (wh *workflowServiceProxyServer) DescribeNamespace(ctx context.Context, req *workflowservice.DescribeNamespaceRequest) (*workflowservice.DescribeNamespaceResponse, error) {
 	return wh.client.DescribeNamespace(ctx, req)
+}
+
+func (wh *workflowServiceProxyServer) DescribeSchedule(ctx context.Context, req *workflowservice.DescribeScheduleRequest) (*workflowservice.DescribeScheduleResponse, error) {
+	return wh.client.DescribeSchedule(ctx, req)
 }
 
 func (wh *workflowServiceProxyServer) DescribeTaskQueue(ctx context.Context, req *workflowservice.DescribeTaskQueueRequest) (*workflowservice.DescribeTaskQueueResponse, error) {
@@ -108,12 +120,24 @@ func (wh *workflowServiceProxyServer) ListOpenWorkflowExecutions(ctx context.Con
 	return wh.client.ListOpenWorkflowExecutions(ctx, req)
 }
 
+func (wh *workflowServiceProxyServer) ListScheduleMatchingTimes(ctx context.Context, req *workflowservice.ListScheduleMatchingTimesRequest) (*workflowservice.ListScheduleMatchingTimesResponse, error) {
+	return wh.client.ListScheduleMatchingTimes(ctx, req)
+}
+
+func (wh *workflowServiceProxyServer) ListSchedules(ctx context.Context, req *workflowservice.ListSchedulesRequest) (*workflowservice.ListSchedulesResponse, error) {
+	return wh.client.ListSchedules(ctx, req)
+}
+
 func (wh *workflowServiceProxyServer) ListTaskQueuePartitions(ctx context.Context, req *workflowservice.ListTaskQueuePartitionsRequest) (*workflowservice.ListTaskQueuePartitionsResponse, error) {
 	return wh.client.ListTaskQueuePartitions(ctx, req)
 }
 
 func (wh *workflowServiceProxyServer) ListWorkflowExecutions(ctx context.Context, req *workflowservice.ListWorkflowExecutionsRequest) (*workflowservice.ListWorkflowExecutionsResponse, error) {
 	return wh.client.ListWorkflowExecutions(ctx, req)
+}
+
+func (wh *workflowServiceProxyServer) PatchSchedule(ctx context.Context, req *workflowservice.PatchScheduleRequest) (*workflowservice.PatchScheduleResponse, error) {
+	return wh.client.PatchSchedule(ctx, req)
 }
 
 func (wh *workflowServiceProxyServer) PollActivityTaskQueue(ctx context.Context, req *workflowservice.PollActivityTaskQueueRequest) (*workflowservice.PollActivityTaskQueueResponse, error) {
@@ -210,4 +234,8 @@ func (wh *workflowServiceProxyServer) TerminateWorkflowExecution(ctx context.Con
 
 func (wh *workflowServiceProxyServer) UpdateNamespace(ctx context.Context, req *workflowservice.UpdateNamespaceRequest) (*workflowservice.UpdateNamespaceResponse, error) {
 	return wh.client.UpdateNamespace(ctx, req)
+}
+
+func (wh *workflowServiceProxyServer) UpdateSchedule(ctx context.Context, req *workflowservice.UpdateScheduleRequest) (*workflowservice.UpdateScheduleResponse, error) {
+	return wh.client.UpdateSchedule(ctx, req)
 }
