@@ -76,19 +76,24 @@ cover_ci: $(COVER_ROOT)/cover.out
 
 vet: $(ALL_SRC)
 	@for dir in $(MOD_DIRS); do \
-		(cd "$$dir" && go vet ./...) || exit 1; \
+		(cd "$$dir" && echo "In $$dir" && go vet ./...) || exit 1; \
 	done;
 
 staticcheck: $(ALL_SRC)
 	go install honnef.co/go/tools/cmd/staticcheck@latest
 	@for dir in $(MOD_DIRS); do \
-		(cd "$$dir" && staticcheck ./...) || exit 1; \
+		(cd "$$dir" && echo "In $$dir" && staticcheck ./...) || exit 1; \
 	done;
 
 errcheck: $(ALL_SRC)
 	GO111MODULE=off go get -u github.com/kisielk/errcheck
 	@for dir in $(MOD_DIRS); do \
-		(cd "$$dir" && errcheck ./...) || exit 1; \
+		(cd "$$dir" && echo "In $$dir" && errcheck ./...) || exit 1; \
+	done;
+
+update-go-sum: $(ALL_SRC)
+	@for dir in $(MOD_DIRS); do \
+		(cd "$$dir" && echo "In $$dir" && go get ./...) || exit 1; \
 	done;
 
 fmt:
