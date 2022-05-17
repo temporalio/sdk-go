@@ -1785,6 +1785,34 @@ func (w *Workflows) ForcedNonDeterminism(ctx workflow.Context, sameCommandButDif
 	return
 }
 
+func (w *Workflows) MutableSideEffect(ctx workflow.Context, startVal int) (currVal int, err error) {
+	// Make some mutable side effect calls with timers in between
+	sideEffector := func(retVal int) (newVal int, err error) {
+		err = workflow.MutableSideEffect(
+			ctx,
+			"side-effect-1",
+			func(ctx workflow.Context) interface{} { return retVal },
+			func(a, b interface{}) bool { return a.(int) == b.(int) },
+		).Get(&newVal)
+		return
+	}
+	// Make two mutable calls (second one no-op), then an actual change and do
+	// timers in between
+	if currVal, err = sideEffector(startVal); err != nil {
+		panic(err)
+	} else if err = workflow.Sleep(ctx, 1*time.Millisecond); err != nil {
+		panic(err)
+	} else if currVal, err = sideEffector(currVal); err != nil {
+		panic(err)
+	} else if err = workflow.Sleep(ctx, 1*time.Millisecond); err != nil {
+		panic(err)
+	} else if currVal, err = sideEffector(currVal + 1); err != nil {
+		panic(err)
+	}
+	err = workflow.Sleep(ctx, 1*time.Millisecond)
+	return
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -1856,6 +1884,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.SignalCounter)
 	worker.RegisterWorkflow(w.PanicOnSignal)
 	worker.RegisterWorkflow(w.ForcedNonDeterminism)
+	worker.RegisterWorkflow(w.MutableSideEffect)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)

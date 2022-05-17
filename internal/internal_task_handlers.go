@@ -289,7 +289,6 @@ func (eh *history) NextCommandEvents() (result []*historypb.HistoryEvent, marker
 	}
 	return result, markers, checksum, err
 }
-
 func (eh *history) hasMoreEvents() bool {
 	historyIterator := eh.workflowTask.historyIterator
 	return historyIterator != nil && historyIterator.HasNextPage()
@@ -860,6 +859,8 @@ ProcessEvents:
 		} else {
 			w.workflowInfo.BinaryChecksum = binaryChecksum
 		}
+		// Reset the mutable side effect markers recorded
+		eventHandler.mutableSideEffectsRecorded = nil
 		// Markers are from the events that are produced from the current workflow task.
 		for _, m := range markers {
 			if m.GetMarkerRecordedEventAttributes().GetMarkerName() != localActivityMarkerName {
