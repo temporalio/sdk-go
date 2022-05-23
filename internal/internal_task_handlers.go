@@ -289,6 +289,7 @@ func (eh *history) NextCommandEvents() (result []*historypb.HistoryEvent, marker
 	}
 	return result, markers, checksum, err
 }
+
 func (eh *history) hasMoreEvents() bool {
 	historyIterator := eh.workflowTask.historyIterator
 	return historyIterator != nil && historyIterator.HasNextPage()
