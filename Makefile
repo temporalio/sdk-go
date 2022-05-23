@@ -72,7 +72,8 @@ cover: $(COVER_ROOT)/cover.out
 	go tool cover -html=$(COVER_ROOT)/cover.out;
 
 cover_ci: $(COVER_ROOT)/cover.out
-	goveralls -coverprofile=$(COVER_ROOT)/cover.out -service=buildkite || echo -e "\x1b[31mCoveralls failed\x1b[m";
+	go install github.com/mattn/goveralls@latest
+	goveralls -coverprofile=$(COVER_ROOT)/cover.out -service=github
 
 vet: $(ALL_SRC)
 	@for dir in $(MOD_DIRS); do \

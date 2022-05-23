@@ -32,6 +32,10 @@ jobs:
         run: make integration-test-zero-cache
       - name: Integration tests (with cache)
         run: make integration-test-normal-cache
+      - name: Upload coverage
+        env:
+          COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make cover_ci
 
   cloud-test:
     runs-on: ubuntu-latest
