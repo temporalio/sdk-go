@@ -1092,6 +1092,9 @@ func (h *commandsHelper) recordLocalActivityMarker(activityID string, details ma
 }
 
 func (h *commandsHelper) recordMutableSideEffectMarker(mutableSideEffectID string, data *commonpb.Payloads, dc converter.DataConverter) commandStateMachine {
+	// In order to avoid duplicate marker IDs, we must append the counter to the
+	// user-provided ID
+	mutableSideEffectID = fmt.Sprintf("%v_%v", mutableSideEffectID, h.nextCommandEventID)
 	markerID := fmt.Sprintf("%v_%v", mutableSideEffectMarkerName, mutableSideEffectID)
 
 	mutableSideEffectIDPayload, err := dc.ToPayloads(mutableSideEffectID)

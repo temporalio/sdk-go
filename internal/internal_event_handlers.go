@@ -108,7 +108,8 @@ type (
 		openSessions      map[string]*SessionInfo
 
 		// Set of mutable side effect IDs that are recorded on the next task for use
-		// during replay to determine whether a command should be created
+		// during replay to determine whether a command should be created. The keys
+		// are the user-provided IDs + "_" + the command counter.
 		mutableSideEffectsRecorded map[string]bool
 
 		// LocalActivities have a separate, individual counter instead of relying on actual commandEventIDs.
@@ -695,8 +696,9 @@ func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interfa
 		encodedResult := newEncodedValue(result, wc.GetDataConverter())
 		if wc.isReplay {
 			// During replay, we only generate a command if there was a known marker
-			// recorded on the next task
-			if wc.mutableSideEffectsRecorded[id] {
+			// recorded on the next task. We have to append the current command
+			// counter to the user-provided ID to avoid duplicates.
+			if wc.mutableSideEffectsRecorded[fmt.Sprintf("%v_%v", id, wc.commandsHelper.nextCommandEventID)] {
 				return wc.recordMutableSideEffect(id, result)
 			}
 			return encodedResult
@@ -1141,8 +1143,8 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 		case localActivityMarkerName:
 			err = weh.handleLocalActivityMarker(attributes.GetDetails(), attributes.GetFailure())
 		case mutableSideEffectMarkerName:
-			var sideEffectIDPayload, sideEffectDataPayload *commonpb.Payloads
-			if sideEffectIDPayload = attributes.GetDetails()[sideEffectMarkerIDName]; sideEffectIDPayload == nil {
+			var sideEffectIDWithCounterPayload, sideEffectDataPayload *commonpb.Payloads
+			if sideEffectIDWithCounterPayload = attributes.GetDetails()[sideEffectMarkerIDName]; sideEffectIDWithCounterPayload == nil {
 				err = fmt.Errorf("key %q: %w", sideEffectMarkerIDName, ErrMissingMarkerDataKey)
 			}
 			if err == nil {
@@ -1150,27 +1152,25 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 					err = fmt.Errorf("key %q: %w", sideEffectMarkerDataName, ErrMissingMarkerDataKey)
 				}
 			}
-			var sideEffectID, sideEffectDataID string
+			var sideEffectIDWithCounter, sideEffectDataID string
 			var sideEffectDataContents commonpb.Payloads
 			if err == nil {
-				err = weh.dataConverter.FromPayloads(sideEffectIDPayload, &sideEffectID)
+				err = weh.dataConverter.FromPayloads(sideEffectIDWithCounterPayload, &sideEffectIDWithCounter)
 			}
 			// Side effect data is actually a wrapper of ID + data, so we need to
 			// extract the second value as the actual data
 			if err == nil {
 				err = weh.dataConverter.FromPayloads(sideEffectDataPayload, &sideEffectDataID, &sideEffectDataContents)
 			}
-			if err == nil && sideEffectID != sideEffectDataID {
-				err = fmt.Errorf("mutable side effect ID does not match embedded ID")
-			}
 			if err == nil {
-				weh.mutableSideEffect[sideEffectID] = &sideEffectDataContents
+				weh.mutableSideEffect[sideEffectDataID] = &sideEffectDataContents
 				// We must mark that it is recorded so we can know whether a command
 				// needs to be generated during replay
 				if weh.mutableSideEffectsRecorded == nil {
 					weh.mutableSideEffectsRecorded = map[string]bool{}
 				}
-				weh.mutableSideEffectsRecorded[sideEffectID] = true
+				// This must be stored with the counter
+				weh.mutableSideEffectsRecorded[sideEffectIDWithCounter] = true
 			}
 		default:
 			err = ErrUnknownMarkerName

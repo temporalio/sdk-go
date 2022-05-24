@@ -1796,13 +1796,26 @@ func (w *Workflows) MutableSideEffect(ctx workflow.Context, startVal int) (currV
 		).Get(&newVal)
 		return
 	}
-	// Make two mutable calls (second one no-op), then an actual change and do
-	// timers in between
+	// Make several mutable side effect calls, some that change the data, some
+	// that don't. And then sleep and do again. This checks that multiple
+	// mutable side effects of the same ID can happen at the same time, and that
+	// replay properly distinguishes between which ones were recorded and which
+	// weren't for command counting purposes
 	if currVal, err = sideEffector(startVal); err != nil {
+		panic(err)
+	} else if currVal, err = sideEffector(currVal); err != nil {
+		panic(err)
+	} else if currVal, err = sideEffector(currVal + 1); err != nil {
+		panic(err)
+	} else if currVal, err = sideEffector(currVal); err != nil {
 		panic(err)
 	} else if err = workflow.Sleep(ctx, 1*time.Millisecond); err != nil {
 		panic(err)
 	} else if currVal, err = sideEffector(currVal); err != nil {
+		panic(err)
+	} else if currVal, err = sideEffector(currVal); err != nil {
+		panic(err)
+	} else if currVal, err = sideEffector(currVal + 1); err != nil {
 		panic(err)
 	} else if err = workflow.Sleep(ctx, 1*time.Millisecond); err != nil {
 		panic(err)

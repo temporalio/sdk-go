@@ -2303,7 +2303,7 @@ func (ts *IntegrationTestSuite) TestMutableSideEffects() {
 	ts.NoError(err)
 	var val int
 	ts.NoError(run.Get(ctx, &val))
-	ts.Equal(43, val)
+	ts.Equal(45, val)
 
 	// Now replay it
 	replayer := worker.NewWorkflowReplayer()
