@@ -2293,6 +2293,25 @@ func (ts *IntegrationTestSuite) TestClientGetNotFollowingRuns() {
 	ts.Equal(ts.taskQueueName, contErr.TaskQueueName)
 }
 
+func (ts *IntegrationTestSuite) TestMutableSideEffects() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Run workflow that does side effects to add 1 to our number
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-mutable-side-effects"),
+		ts.workflows.MutableSideEffect, 42)
+	ts.NoError(err)
+	var val int
+	ts.NoError(run.Get(ctx, &val))
+	ts.Equal(45, val)
+
+	// Now replay it
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(ts.workflows.MutableSideEffect)
+	ts.NoError(replayer.ReplayWorkflowExecution(ctx, ts.client.WorkflowService(), nil, ts.config.Namespace,
+		workflow.Execution{ID: run.GetID(), RunID: run.GetRunID()}))
+}
+
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{
 		HostPort:          ts.config.ServiceAddr,

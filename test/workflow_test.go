@@ -1785,6 +1785,47 @@ func (w *Workflows) ForcedNonDeterminism(ctx workflow.Context, sameCommandButDif
 	return
 }
 
+func (w *Workflows) MutableSideEffect(ctx workflow.Context, startVal int) (currVal int, err error) {
+	// Make some mutable side effect calls with timers in between
+	sideEffector := func(retVal int) (newVal int, err error) {
+		err = workflow.MutableSideEffect(
+			ctx,
+			"side-effect-1",
+			func(ctx workflow.Context) interface{} { return retVal },
+			func(a, b interface{}) bool { return a.(int) == b.(int) },
+		).Get(&newVal)
+		return
+	}
+	// Make several mutable side effect calls, some that change the data, some
+	// that don't. And then sleep and do again. This checks that multiple
+	// mutable side effects of the same ID can happen at the same time, and that
+	// replay properly distinguishes between which ones were recorded and which
+	// weren't for command counting purposes
+	if currVal, err = sideEffector(startVal); err != nil {
+		panic(err)
+	} else if currVal, err = sideEffector(currVal); err != nil {
+		panic(err)
+	} else if currVal, err = sideEffector(currVal + 1); err != nil {
+		panic(err)
+	} else if currVal, err = sideEffector(currVal); err != nil {
+		panic(err)
+	} else if err = workflow.Sleep(ctx, 1*time.Millisecond); err != nil {
+		panic(err)
+	} else if currVal, err = sideEffector(currVal); err != nil {
+		panic(err)
+	} else if currVal, err = sideEffector(currVal); err != nil {
+		panic(err)
+	} else if currVal, err = sideEffector(currVal + 1); err != nil {
+		panic(err)
+	} else if err = workflow.Sleep(ctx, 1*time.Millisecond); err != nil {
+		panic(err)
+	} else if currVal, err = sideEffector(currVal + 1); err != nil {
+		panic(err)
+	}
+	err = workflow.Sleep(ctx, 1*time.Millisecond)
+	return
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -1856,6 +1897,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.SignalCounter)
 	worker.RegisterWorkflow(w.PanicOnSignal)
 	worker.RegisterWorkflow(w.ForcedNonDeterminism)
+	worker.RegisterWorkflow(w.MutableSideEffect)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)

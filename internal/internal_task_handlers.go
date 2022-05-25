@@ -860,6 +860,8 @@ ProcessEvents:
 		} else {
 			w.workflowInfo.BinaryChecksum = binaryChecksum
 		}
+		// Reset the mutable side effect markers recorded
+		eventHandler.mutableSideEffectsRecorded = nil
 		// Markers are from the events that are produced from the current workflow task.
 		for _, m := range markers {
 			if m.GetMarkerRecordedEventAttributes().GetMarkerName() != localActivityMarkerName {
