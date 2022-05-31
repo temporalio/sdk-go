@@ -15,6 +15,7 @@ func PrepWorkflow() {
 	wrk.RegisterWorkflow(WorkflowCallTimeTransitively) // want "a.WorkflowCallTimeTransitively is non-deterministic, reason: calls non-deterministic function a.SomeTimeCall"
 	wrk.RegisterWorkflow(WorkflowIterateMap)           // want "a.WorkflowIterateMap is non-deterministic, reason: iterates over map"
 	wrk.RegisterWorkflow(WorkflowWithTemplate)         // want "a.WorkflowWithTemplate is non-deterministic, reason: calls non-deterministic function \\(\\*text/template\\.Template\\)\\.Execute.*"
+	wrk.RegisterWorkflow(WorkflowWithAwait)
 }
 
 func WorkflowNop(ctx workflow.Context) error {
@@ -44,4 +45,10 @@ func WorkflowIterateMap(ctx workflow.Context) error { // want WorkflowIterateMap
 
 func WorkflowWithTemplate(ctx workflow.Context) error { // want WorkflowWithTemplate:"calls non-deterministic function \\(\\*text/template\\.Template\\)\\.Execute.*"
 	return template.New("mytmpl").Execute(nil, nil)
+}
+
+func WorkflowWithAwait(ctx workflow.Context) error {
+	// We do not expect this to fail
+	_, err := workflow.AwaitWithTimeout(ctx, 5*time.Second, func() bool { return true })
+	return err
 }
