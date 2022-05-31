@@ -879,6 +879,9 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	case enumspb.EVENT_TYPE_EXTERNAL_WORKFLOW_EXECUTION_CANCEL_REQUESTED:
 		_ = weh.handleExternalWorkflowExecutionCancelRequested(event)
 
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TERMINATED:
+		// No Operation
+
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW:
 		// No Operation.
 
