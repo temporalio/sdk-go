@@ -138,6 +138,12 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 		hierarchySeparator, depthRepeat = " -> ", ""
 	}
 
+	// If it's the workflow package, we assume the entire package is deterministic
+	// so we don't run a pass on it
+	if pass.Pkg.Path() == "go.temporal.io/sdk/workflow" {
+		return nil
+	}
+
 	// Run determinism pass
 	if _, err := c.Determinism.Run(pass); err != nil {
 		return err
