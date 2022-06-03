@@ -2157,7 +2157,15 @@ func (ts *IntegrationTestSuite) TestLargeHistoryReplay() {
 	ts.Contains(err.Error(), "intentional panic")
 }
 
-func (ts *IntegrationTestSuite) TestWorkerFatalError() {
+func (ts *IntegrationTestSuite) TestWorkerFatalErrorOnRun() {
+	ts.testWorkerFatalError(true)
+}
+
+func (ts *IntegrationTestSuite) TestWorkerFatalErrorOnStart() {
+	ts.testWorkerFatalError(false)
+}
+
+func (ts *IntegrationTestSuite) testWorkerFatalError(useWorkerRun bool) {
 	// Make a new client that will fail a poll with a namespace not found
 	c, err := client.Dial(client.Options{
 		HostPort:  ts.config.ServiceAddr,
@@ -2175,6 +2183,8 @@ func (ts *IntegrationTestSuite) TestWorkerFatalError() {
 					opts ...grpc.CallOption,
 				) error {
 					if method == "/temporal.api.workflowservice.v1.WorkflowService/PollWorkflowTaskQueue" {
+						// We sleep a bit to let all internal workers start
+						time.Sleep(1 * time.Second)
 						return serviceerror.NewNamespaceNotFound(ts.config.Namespace)
 					}
 					return invoker(ctx, method, req, reply, cc, opts...)
@@ -2186,22 +2196,33 @@ func (ts *IntegrationTestSuite) TestWorkerFatalError() {
 	defer c.Close()
 
 	// Create a worker that uses that client
-	var lastErr error
-	w := worker.New(c, "ignored-task-queue", worker.Options{OnFatalError: func(err error) { lastErr = err }})
-	runErrCh := make(chan error, 1)
+	callbackErrCh := make(chan error, 1)
+	w := worker.New(c, "ignored-task-queue", worker.Options{OnFatalError: func(err error) { callbackErrCh <- err }})
 
-	// Run it and confirm it fails
-	go func() { runErrCh <- w.Run(nil) }()
-	var runErr error
-	select {
-	case <-time.After(10 * time.Second):
-		ts.Fail("timeout")
-	case runErr = <-runErrCh:
+	// Do run-based or start-based worker
+	runErrCh := make(chan error, 1)
+	if useWorkerRun {
+		go func() { runErrCh <- w.Run(nil) }()
+	} else {
+		ts.NoError(w.Start())
 	}
-	ts.Error(lastErr)
-	ts.Error(runErr)
-	ts.Equal(lastErr, runErr)
-	ts.IsType(&serviceerror.NamespaceNotFound{}, runErr)
+
+	// Wait for done
+	var callbackErr, runErr error
+	for callbackErr == nil || (useWorkerRun && runErr == nil) {
+		select {
+		case <-time.After(10 * time.Second):
+			ts.Fail("timeout")
+		case callbackErr = <-callbackErrCh:
+		case runErr = <-runErrCh:
+		}
+	}
+
+	// Check error
+	ts.IsType(&serviceerror.NamespaceNotFound{}, callbackErr)
+	if runErr != nil {
+		ts.Equal(callbackErr, runErr)
+	}
 }
 
 func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseBadStateMachine() {

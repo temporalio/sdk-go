@@ -148,7 +148,7 @@ type (
 		identity          string
 		workerType        string
 		stopTimeout       time.Duration
-		fatalErrCh        chan<- error
+		fatalErrCb        func(error)
 		userContextCancel context.CancelFunc
 	}
 
@@ -172,7 +172,7 @@ type (
 
 		pollerRequestCh    chan struct{}
 		taskQueueCh        chan interface{}
-		fatalErrCh         chan<- error
+		fatalErrCb         func(error)
 		sessionTokenBucket *sessionTokenBucket
 
 		lastPollTaskErrMessage string
@@ -214,7 +214,7 @@ func newBaseWorker(
 		taskSlotsAvailable: int32(options.maxConcurrentTask),
 		pollerRequestCh:    make(chan struct{}, options.maxConcurrentTask),
 		taskQueueCh:        make(chan interface{}), // no buffer, so poller only able to poll new task after previous is dispatched.
-		fatalErrCh:         options.fatalErrCh,
+		fatalErrCb:         options.fatalErrCb,
 
 		limiterContext:       ctx,
 		limiterContextCancel: cancel,
@@ -317,10 +317,8 @@ func (bw *baseWorker) pollTask() {
 		if err != nil {
 			if isNonRetriableError(err) {
 				bw.logger.Error("Worker received non-retriable error. Shutting down.", tagError, err)
-				// Set the error and assume it is buffered with room
-				select {
-				case bw.fatalErrCh <- err:
-				default:
+				if bw.fatalErrCb != nil {
+					bw.fatalErrCb(err)
 				}
 				return
 			}
