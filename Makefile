@@ -104,17 +104,3 @@ clean:
 	rm -rf $(BUILD)
 
 check: vet errcheck staticcheck copyright generatorcheck bins
-
-##### Fossa #####
-fossa-install: 
-	curl -H 'Cache-Control: no-cache' https://raw.githubusercontent.com/fossas/fossa-cli/master/install.sh | bash
-
-fossa-init:
-	fossa init --include-all --no-ansi
-
-fossa-analyze:
-	fossa analyze --no-ansi -b $${BUILDKITE_BRANCH:-$$(git branch --show-current)}	
-
-fossa-test:
-	fossa test --timeout 1800 --no-ansi
-
