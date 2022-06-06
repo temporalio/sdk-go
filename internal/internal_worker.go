@@ -192,9 +192,9 @@ type (
 		// WorkerStopChannel is a read only channel listen on worker close. The worker will close the channel before exit.
 		WorkerStopChannel <-chan struct{}
 
-		// WorkerFatalErrorChannel is a channel for fatal errors that should stop
-		// the worker. This is sent to asynchronously, so it should be buffered.
-		WorkerFatalErrorChannel chan<- error
+		// WorkerFatalErrorCallback is a callback for fatal errors that should stop
+		// the worker.
+		WorkerFatalErrorCallback func(error)
 
 		// SessionResourceID is a unique identifier of the resource the session will consume
 		SessionResourceID string
@@ -288,7 +288,7 @@ func newWorkflowTaskWorkerInternal(
 		identity:          params.Identity,
 		workerType:        "WorkflowWorker",
 		stopTimeout:       params.WorkerStopTimeout,
-		fatalErrCh:        params.WorkerFatalErrorChannel},
+		fatalErrCb:        params.WorkerFatalErrorCallback},
 		params.Logger,
 		params.MetricsHandler,
 		nil,
@@ -312,7 +312,7 @@ func newWorkflowTaskWorkerInternal(
 		identity:          params.Identity,
 		workerType:        "LocalActivityWorker",
 		stopTimeout:       params.WorkerStopTimeout,
-		fatalErrCh:        params.WorkerFatalErrorChannel},
+		fatalErrCb:        params.WorkerFatalErrorCallback},
 		params.Logger,
 		params.MetricsHandler,
 		nil,
@@ -428,7 +428,7 @@ func newActivityTaskWorker(taskHandler ActivityTaskHandler, service workflowserv
 			identity:          workerParams.Identity,
 			workerType:        "ActivityWorker",
 			stopTimeout:       workerParams.WorkerStopTimeout,
-			fatalErrCh:        workerParams.WorkerFatalErrorChannel,
+			fatalErrCb:        workerParams.WorkerFatalErrorCallback,
 			userContextCancel: workerParams.UserContextCancel},
 		workerParams.Logger,
 		workerParams.MetricsHandler,
@@ -856,8 +856,8 @@ type AggregatedWorker struct {
 	logger         log.Logger
 	registry       *registry
 	stopC          chan struct{}
-	fatalErrCh     chan error
-	fatalErrCb     func(error)
+	fatalErr       error
+	fatalErrLock   sync.Mutex
 }
 
 // RegisterWorkflow registers workflow implementation with the AggregatedWorker
@@ -1026,14 +1026,11 @@ func (aw *AggregatedWorker) Run(interruptCh <-chan interface{}) error {
 	case s := <-interruptCh:
 		aw.logger.Info("Worker has been stopped.", "Signal", s)
 		aw.Stop()
-	case err := <-aw.fatalErrCh:
-		// Fatal error will already have been logged where it is set
-		if aw.fatalErrCb != nil {
-			aw.fatalErrCb(err)
-		}
-		aw.Stop()
-		return err
 	case <-aw.stopC:
+		aw.fatalErrLock.Lock()
+		defer aw.fatalErrLock.Unlock()
+		// This may be nil if this wasn't stopped due to fatal error
+		return aw.fatalErr
 	}
 	return nil
 }
@@ -1311,9 +1308,30 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("cannot set MaxConcurrentWorkflowTaskPollers to 1")
 	}
 
-	// We need this buffered since the sender will be sending async and we only
-	// need the first fatal error
-	fatalErrCh := make(chan error, 1)
+	// Need reference to result for fatal error handler
+	var aw *AggregatedWorker
+	fatalErrorCallback := func(err error) {
+		// Set the fatal error if not already set
+		aw.fatalErrLock.Lock()
+		alreadySet := aw.fatalErr != nil
+		if !alreadySet {
+			aw.fatalErr = err
+		}
+		aw.fatalErrLock.Unlock()
+		// Only do the rest if not already set
+		if !alreadySet {
+			// Invoke the callback if present
+			if options.OnFatalError != nil {
+				options.OnFatalError(err)
+			}
+			// Stop the worker if not already stopped
+			select {
+			case <-aw.stopC:
+			default:
+				aw.Stop()
+			}
+		}
+	}
 
 	cache := NewWorkerCache()
 	workerParams := workerExecutionParameters{
@@ -1337,7 +1355,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		WorkflowPanicPolicy:                   options.WorkflowPanicPolicy,
 		DataConverter:                         client.dataConverter,
 		WorkerStopTimeout:                     options.WorkerStopTimeout,
-		WorkerFatalErrorChannel:               fatalErrCh,
+		WorkerFatalErrorCallback:              fatalErrorCallback,
 		ContextPropagators:                    client.contextPropagators,
 		DeadlockDetectionTimeout:              options.DeadlockDetectionTimeout,
 		DefaultHeartbeatThrottleInterval:      options.DefaultHeartbeatThrottleInterval,
@@ -1393,7 +1411,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		})
 	}
 
-	return &AggregatedWorker{
+	aw = &AggregatedWorker{
 		client:         client,
 		workflowWorker: workflowWorker,
 		activityWorker: activityWorker,
@@ -1401,9 +1419,8 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		logger:         workerParams.Logger,
 		registry:       registry,
 		stopC:          make(chan struct{}),
-		fatalErrCh:     fatalErrCh,
-		fatalErrCb:     options.OnFatalError,
 	}
+	return aw
 }
 
 func processTestTags(wOptions *WorkerOptions, ep *workerExecutionParameters) {
