@@ -3,10 +3,9 @@ module go.temporal.io/sdk
 go 1.16
 
 require (
-	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a
 	github.com/gogo/protobuf v1.3.2
-	github.com/gogo/status v1.1.0
+	github.com/gogo/status v1.1.1
 	github.com/golang/mock v1.6.0
 	github.com/golang/protobuf v1.5.2
 	github.com/google/uuid v1.3.0 // indirect
@@ -16,8 +15,8 @@ require (
 	github.com/pborman/uuid v1.2.1
 	github.com/robfig/cron v1.2.0
 	github.com/stretchr/objx v0.3.0 // indirect
-	github.com/stretchr/testify v1.7.1
-	go.temporal.io/api v1.8.0
+	github.com/stretchr/testify v1.7.2
+	go.temporal.io/api v1.9.0
 	go.uber.org/atomic v1.9.0
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac
 	golang.org/x/tools v0.1.10

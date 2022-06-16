@@ -4,7 +4,7 @@ go 1.16
 
 require (
 	github.com/opentracing/opentracing-go v1.2.0
-	github.com/stretchr/testify v1.7.1
+	github.com/stretchr/testify v1.7.2
 	go.temporal.io/sdk v1.12.0
 )
 

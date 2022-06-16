@@ -96,6 +96,10 @@ func (wh *workflowServiceProxyServer) GetSystemInfo(ctx context.Context, req *wo
 	return wh.client.GetSystemInfo(ctx, req)
 }
 
+func (wh *workflowServiceProxyServer) GetWorkerBuildIdOrdering(ctx context.Context, req *workflowservice.GetWorkerBuildIdOrderingRequest) (*workflowservice.GetWorkerBuildIdOrderingResponse, error) {
+	return wh.client.GetWorkerBuildIdOrdering(ctx, req)
+}
+
 func (wh *workflowServiceProxyServer) GetWorkflowExecutionHistory(ctx context.Context, req *workflowservice.GetWorkflowExecutionHistoryRequest) (*workflowservice.GetWorkflowExecutionHistoryResponse, error) {
 	return wh.client.GetWorkflowExecutionHistory(ctx, req)
 }
@@ -238,4 +242,8 @@ func (wh *workflowServiceProxyServer) UpdateNamespace(ctx context.Context, req *
 
 func (wh *workflowServiceProxyServer) UpdateSchedule(ctx context.Context, req *workflowservice.UpdateScheduleRequest) (*workflowservice.UpdateScheduleResponse, error) {
 	return wh.client.UpdateSchedule(ctx, req)
+}
+
+func (wh *workflowServiceProxyServer) UpdateWorkerBuildIdOrdering(ctx context.Context, req *workflowservice.UpdateWorkerBuildIdOrderingRequest) (*workflowservice.UpdateWorkerBuildIdOrderingResponse, error) {
+	return wh.client.UpdateWorkerBuildIdOrdering(ctx, req)
 }
