@@ -131,6 +131,11 @@ type (
 		// To disable retries set MaximumAttempts to 1.
 		// The default RetryPolicy provided by the server can be overridden by the dynamic config.
 		RetryPolicy *RetryPolicy
+
+		// If true, will not request eager execution regardless of worker settings.
+		// If false, eager execution may still be disabled at the worker level or
+		// eager execution may not be requested due to lack of available slots.
+		DisableEagerExecution bool
 	}
 
 	// LocalActivityOptions stores local activity specific parameters that will be stored inside of a context.

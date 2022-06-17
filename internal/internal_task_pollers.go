@@ -217,7 +217,11 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (interface{}, er
 }
 
 // newWorkflowTaskPoller creates a new workflow task poller which must have a one to one relationship to workflow worker
-func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service workflowservice.WorkflowServiceClient, params workerExecutionParameters) *workflowTaskPoller {
+func newWorkflowTaskPoller(
+	taskHandler WorkflowTaskHandler,
+	service workflowservice.WorkflowServiceClient,
+	params workerExecutionParameters,
+) *workflowTaskPoller {
 	return &workflowTaskPoller{
 		basePoller:                   basePoller{metricsHandler: params.MetricsHandler, stopC: params.WorkerStopChannel},
 		service:                      service,
@@ -292,7 +296,7 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 				if heartbeatResponse == nil || heartbeatResponse.WorkflowTask == nil {
 					return nil, nil
 				}
-				task := wtp.toWorkflowTask(heartbeatResponse.WorkflowTask)
+				task := wtp.toWorkflowTask(heartbeatResponse.WorkflowTask, heartbeatResponse.ActivityTasks)
 				task.doneCh = doneCh
 				task.laResultCh = laResultCh
 				task.laRetryCh = laRetryCh
@@ -315,7 +319,7 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 		}
 
 		// we are getting new workflow task, so reset the workflowTask and continue process the new one
-		task = wtp.toWorkflowTask(response.WorkflowTask)
+		task = wtp.toWorkflowTask(response.WorkflowTask, response.ActivityTasks)
 	}
 }
 
@@ -659,7 +663,7 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 
 	wtp.updateBacklog(request.TaskQueue.GetKind(), response.GetBacklogCountHint())
 
-	task := wtp.toWorkflowTask(response)
+	task := wtp.toWorkflowTask(response, nil)
 	traceLog(func() {
 		var firstEventID int64 = -1
 		if response.History != nil && len(response.History.Events) > 0 {
@@ -680,7 +684,10 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	return task, nil
 }
 
-func (wtp *workflowTaskPoller) toWorkflowTask(response *workflowservice.PollWorkflowTaskQueueResponse) *workflowTask {
+func (wtp *workflowTaskPoller) toWorkflowTask(
+	response *workflowservice.PollWorkflowTaskQueueResponse,
+	eagerActivities []*workflowservice.PollActivityTaskQueueResponse,
+) *workflowTask {
 	historyIterator := &historyIteratorImpl{
 		execution:      response.WorkflowExecution,
 		nextPageToken:  response.NextPageToken,
@@ -693,6 +700,7 @@ func (wtp *workflowTaskPoller) toWorkflowTask(response *workflowservice.PollWork
 	task := &workflowTask{
 		task:            response,
 		historyIterator: historyIterator,
+		eagerActivities: eagerActivities,
 	}
 	return task
 }
@@ -792,8 +800,6 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 
 // Poll for a single activity task from the service
 func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
-	startTime := time.Now()
-
 	traceLog(func() {
 		atp.logger.Debug("activityTaskPoller::Poll")
 	})
@@ -821,7 +827,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	scheduleToStartLatency := common.TimeValue(response.GetStartedTime()).Sub(common.TimeValue(response.GetCurrentAttemptScheduledTime()))
 	metricsHandler.Timer(metrics.ActivityScheduleToStartLatency).Record(scheduleToStartLatency)
 
-	return &activityTask{task: response, pollStartTime: startTime}, nil
+	return &activityTask{task: response}, nil
 }
 
 // PollTask polls a new task

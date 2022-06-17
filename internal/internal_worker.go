@@ -210,6 +210,8 @@ type (
 
 		// Pointer to the shared worker cache
 		cache *WorkerCache
+
+		eagerActivityExecutor *eagerActivityExecutor
 	}
 )
 
@@ -1361,6 +1363,11 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		DefaultHeartbeatThrottleInterval:      options.DefaultHeartbeatThrottleInterval,
 		MaxHeartbeatThrottleInterval:          options.MaxHeartbeatThrottleInterval,
 		cache:                                 cache,
+		eagerActivityExecutor: newEagerActivityExecutor(eagerActivityExecutorOptions{
+			disabled:      options.DisableEagerActivities,
+			taskQueue:     taskQueue,
+			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
+		}),
 	}
 
 	if options.Identity != "" {
@@ -1398,6 +1405,8 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	var activityWorker *activityWorker
 	if !options.LocalActivityWorkerOnly {
 		activityWorker = newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
+		// Set the activity worker on the eager executor
+		workerParams.eagerActivityExecutor.activityWorker = activityWorker
 	}
 
 	var sessionWorker *sessionWorker

@@ -1569,6 +1569,7 @@ func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	eap.WaitForCancellation = options.WaitForCancellation
 	eap.ActivityID = options.ActivityID
 	eap.RetryPolicy = convertToPBRetryPolicy(options.RetryPolicy)
+	eap.DisableEagerExecution = options.DisableEagerExecution
 	return ctx1
 }
 

@@ -136,6 +136,7 @@ type (
 		dataConverter            converter.DataConverter
 		contextPropagators       []ContextPropagator
 		deadlockDetectionTimeout time.Duration
+		eagerActivityExecutor    *workflowEagerActivityExecutor
 	}
 
 	localActivityTask struct {
@@ -181,6 +182,7 @@ func newWorkflowExecutionEventHandler(
 	dataConverter converter.DataConverter,
 	contextPropagators []ContextPropagator,
 	deadlockDetectionTimeout time.Duration,
+	eagerActivityExecutor *workflowEagerActivityExecutor,
 ) workflowExecutionEventHandler {
 	context := &workflowEnvironmentImpl{
 		workflowInfo:             workflowInfo,
@@ -197,6 +199,7 @@ func newWorkflowExecutionEventHandler(
 		dataConverter:            dataConverter,
 		contextPropagators:       contextPropagators,
 		deadlockDetectionTimeout: deadlockDetectionTimeout,
+		eagerActivityExecutor:    eagerActivityExecutor,
 	}
 	context.logger = ilog.NewReplayLogger(
 		log.With(logger,
@@ -494,6 +497,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	scheduleTaskAttr.HeartbeatTimeout = &parameters.HeartbeatTimeout
 	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
 	scheduleTaskAttr.Header = parameters.Header
+	scheduleTaskAttr.RequestEagerExecution = wc.eagerActivityExecutor.acquire(&parameters.ExecuteActivityOptions)
 
 	command := wc.commandsHelper.scheduleActivityTask(scheduleID, scheduleTaskAttr)
 	command.setData(&scheduledActivity{
