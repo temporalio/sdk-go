@@ -86,8 +86,7 @@ type (
 		laResultCh      chan *localActivityResult
 		// This channel must be initialized with a one-size buffer and is used to indicate when
 		// it is time for a local activity to be retried
-		laRetryCh       chan *localActivityTask
-		eagerActivities []*workflowservice.PollActivityTaskQueueResponse
+		laRetryCh chan *localActivityTask
 	}
 
 	// activityTask wraps a activity task.
@@ -114,11 +113,10 @@ type (
 
 		previousStartedEventID int64
 
-		newCommands           []*commandpb.Command
-		currentWorkflowTask   *workflowservice.PollWorkflowTaskQueueResponse
-		laTunnel              *localActivityTunnel
-		cached                bool
-		eagerActivityExecutor *workflowEagerActivityExecutor
+		newCommands         []*commandpb.Command
+		currentWorkflowTask *workflowservice.PollWorkflowTaskQueueResponse
+		laTunnel            *localActivityTunnel
+		cached              bool
 	}
 
 	// workflowTaskHandlerImpl is the implementation of WorkflowTaskHandler
@@ -136,7 +134,6 @@ type (
 		contextPropagators       []ContextPropagator
 		cache                    *WorkerCache
 		deadlockDetectionTimeout time.Duration
-		eagerActivityExecutor    *eagerActivityExecutor
 	}
 
 	activityProvider func(name string) activity
@@ -413,7 +410,6 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		contextPropagators:       params.ContextPropagators,
 		cache:                    params.cache,
 		deadlockDetectionTimeout: params.DeadlockDetectionTimeout,
-		eagerActivityExecutor:    params.eagerActivityExecutor,
 	}
 }
 
@@ -422,9 +418,8 @@ func newWorkflowExecutionContext(
 	taskHandler *workflowTaskHandlerImpl,
 ) *workflowExecutionContextImpl {
 	workflowContext := &workflowExecutionContextImpl{
-		workflowInfo:          workflowInfo,
-		wth:                   taskHandler,
-		eagerActivityExecutor: taskHandler.eagerActivityExecutor.newWorkflowEagerActivityExecutor(),
+		workflowInfo: workflowInfo,
+		wth:          taskHandler,
 	}
 	workflowContext.createEventHandler()
 	return workflowContext
@@ -543,7 +538,6 @@ func (w *workflowExecutionContextImpl) createEventHandler() {
 		w.wth.dataConverter,
 		w.wth.contextPropagators,
 		w.wth.deadlockDetectionTimeout,
-		w.eagerActivityExecutor,
 	)
 
 	w.eventHandler = &eventHandler
@@ -830,12 +824,6 @@ processWorkflowLoop:
 }
 
 func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflowTask) (interface{}, error) {
-	// Before processing the workflow task, execute any eager activities. It is
-	// important that we always call this, even if there are no eager activities,
-	// so that any reserved slots can get returned to the pool.
-	w.eagerActivityExecutor.releaseAndExecute(workflowTask.eagerActivities)
-	workflowTask.eagerActivities = nil
-
 	task := workflowTask.task
 	historyIterator := workflowTask.historyIterator
 	if err := w.ResetIfStale(task, historyIterator); err != nil {

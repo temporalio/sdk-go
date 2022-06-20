@@ -92,6 +92,7 @@ type (
 		stickyBacklog           int64
 		requestLock             sync.Mutex
 		stickyCacheSize         int
+		eagerActivityExecutor   *eagerActivityExecutor
 	}
 
 	// activityTaskPoller implements polling/processing a workflow task
@@ -234,6 +235,7 @@ func newWorkflowTaskPoller(
 		stickyUUID:                   uuid.New(),
 		StickyScheduleToStartTimeout: params.StickyScheduleToStartTimeout,
 		stickyCacheSize:              params.cache.MaxWorkflowCacheSize(),
+		eagerActivityExecutor:        params.eagerActivityExecutor,
 	}
 }
 
@@ -296,7 +298,7 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 				if heartbeatResponse == nil || heartbeatResponse.WorkflowTask == nil {
 					return nil, nil
 				}
-				task := wtp.toWorkflowTask(heartbeatResponse.WorkflowTask, heartbeatResponse.ActivityTasks)
+				task := wtp.toWorkflowTask(heartbeatResponse.WorkflowTask)
 				task.doneCh = doneCh
 				task.laResultCh = laResultCh
 				task.laRetryCh = laRetryCh
@@ -319,7 +321,7 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 		}
 
 		// we are getting new workflow task, so reset the workflowTask and continue process the new one
-		task = wtp.toWorkflowTask(response.WorkflowTask, response.ActivityTasks)
+		task = wtp.toWorkflowTask(response.WorkflowTask)
 	}
 }
 
@@ -395,12 +397,14 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 				ScheduleToStartTimeout: &wtp.StickyScheduleToStartTimeout,
 			}
 		}
+		eagerReserved := wtp.eagerActivityExecutor.applyToRequest(request)
 		response, err = wtp.service.RespondWorkflowTaskCompleted(grpcCtx, request)
 		if err != nil {
 			traceLog(func() {
 				wtp.logger.Debug("RespondWorkflowTaskCompleted failed.", tagError, err)
 			})
 		}
+		wtp.eagerActivityExecutor.handleResponse(response, eagerReserved)
 	case *workflowservice.RespondQueryTaskCompletedRequest:
 		_, err = wtp.service.RespondQueryTaskCompleted(grpcCtx, request)
 		if err != nil {
@@ -663,7 +667,7 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 
 	wtp.updateBacklog(request.TaskQueue.GetKind(), response.GetBacklogCountHint())
 
-	task := wtp.toWorkflowTask(response, nil)
+	task := wtp.toWorkflowTask(response)
 	traceLog(func() {
 		var firstEventID int64 = -1
 		if response.History != nil && len(response.History.Events) > 0 {
@@ -684,10 +688,7 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	return task, nil
 }
 
-func (wtp *workflowTaskPoller) toWorkflowTask(
-	response *workflowservice.PollWorkflowTaskQueueResponse,
-	eagerActivities []*workflowservice.PollActivityTaskQueueResponse,
-) *workflowTask {
+func (wtp *workflowTaskPoller) toWorkflowTask(response *workflowservice.PollWorkflowTaskQueueResponse) *workflowTask {
 	historyIterator := &historyIteratorImpl{
 		execution:      response.WorkflowExecution,
 		nextPageToken:  response.NextPageToken,
@@ -700,7 +701,6 @@ func (wtp *workflowTaskPoller) toWorkflowTask(
 	task := &workflowTask{
 		task:            response,
 		historyIterator: historyIterator,
-		eagerActivities: eagerActivities,
 	}
 	return task
 }
