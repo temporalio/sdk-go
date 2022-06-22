@@ -564,7 +564,7 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 
 			// Encode the result
 			var serializedResult *commonpb.Payloads
-			if err == nil && result != nil {
+			if err == nil {
 				serializedResult, err = encodeArg(handler.dataConverter, result)
 			}
 			return serializedResult, err
