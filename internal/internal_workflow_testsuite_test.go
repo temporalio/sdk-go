@@ -39,10 +39,11 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
+	uberatomic "go.uber.org/atomic"
+
 	"go.temporal.io/sdk/converter"
 	iconverter "go.temporal.io/sdk/internal/converter"
 	ilog "go.temporal.io/sdk/internal/log"
-	uberatomic "go.uber.org/atomic"
 )
 
 type WorkflowTestSuiteUnitTest struct {
@@ -1213,7 +1214,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Terminated() {
 		if err != nil {
 			return err
 		}
-		err = childFuture.Get(ctx, nil) //wait until child workflow completed
+		err = childFuture.Get(ctx, nil) // wait until child workflow completed
 		if err != nil {
 			return err
 		}
@@ -2115,6 +2116,35 @@ func (s *WorkflowTestSuiteUnitTest) Test_QueryWorkflow() {
 	s.NoError(env.GetWorkflowError())
 	env.AssertExpectations(s.T())
 	verifyStateWithQuery(stateDone)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_QueryWorkflow_NilArgsAndResult() {
+	workflowFn := func(ctx Context) error {
+		err := SetQueryHandler(ctx, "nil_response", func(queryInput *string) (*string, error) {
+			s.Nil(queryInput)
+			return nil, nil
+		})
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(workflowFn)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
+
+	encodedResp, err := env.QueryWorkflow("nil_response", nil)
+	s.NoError(err)
+	s.NotNil(encodedResp)
+	var resp *string
+	err = encodedResp.Get(&resp)
+	s.NoError(err)
+	s.Nil(resp)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_QueryChildWorkflow() {
