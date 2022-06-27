@@ -75,6 +75,7 @@ func TestGetActivityOptions(t *testing.T) {
 		WaitForCancellation:    true,
 		ActivityID:             "bar",
 		RetryPolicy:            newTestRetryPolicy(),
+		DisableEagerExecution:  true,
 	}
 
 	assertNonZero(t, opts)

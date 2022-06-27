@@ -1624,6 +1624,7 @@ func GetActivityOptions(ctx Context) ActivityOptions {
 		WaitForCancellation:    opts.WaitForCancellation,
 		ActivityID:             opts.ActivityID,
 		RetryPolicy:            convertFromPBRetryPolicy(opts.RetryPolicy),
+		DisableEagerExecution:  opts.DisableEagerExecution,
 	}
 }
 

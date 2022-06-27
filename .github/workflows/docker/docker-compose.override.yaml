@@ -1,0 +1,4 @@
+services:
+  temporal:
+    environment:
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/dynamic-config-custom.yaml
