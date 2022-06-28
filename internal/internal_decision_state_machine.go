@@ -546,6 +546,14 @@ func (d *activityCommandStateMachine) cancel() {
 		// increment so a potential decrement can only decrement if it wasn't
 		// reset
 		cancelCmd.cancelledOnEventIDResetCounter = d.helper.nextCommandEventIDResetCounter
+		// We also mark the schedule command as not eager if we haven't sent it yet.
+		// Server behavior differs on eager vs non-eager when scheduling and
+		// cancelling during the same task completion. If it has not been sent this
+		// means we are cancelling at the same time as scheduling which is not
+		// properly supported for eager activities.
+		if d.state != commandStateCommandSent {
+			d.attributes.RequestEagerExecution = false
+		}
 	}
 
 	d.commandStateMachineBase.cancel()
