@@ -237,6 +237,10 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.WorkerStopTimeout = 10 * time.Second
 	}
 
+	if strings.Contains(ts.T().Name(), "ReplayerWithInterceptor") {
+		options.Interceptors = append(options.Interceptors, &localActivityInterceptor{})
+	}
+
 	ts.worker = worker.New(ts.client, ts.taskQueueName, options)
 	ts.workerStopped = false
 	ts.registerWorkflowsAndActivities(ts.worker)
@@ -2329,6 +2333,59 @@ func (ts *IntegrationTestSuite) TestMutableSideEffects() {
 	// Now replay it
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflow(ts.workflows.MutableSideEffect)
+	ts.NoError(replayer.ReplayWorkflowExecution(ctx, ts.client.WorkflowService(), nil, ts.config.Namespace,
+		workflow.Execution{ID: run.GetID(), RunID: run.GetRunID()}))
+}
+
+type localActivityInterceptor struct{ interceptor.InterceptorBase }
+
+type localActivityWorkflowInterceptor struct {
+	interceptor.WorkflowInboundInterceptorBase
+}
+
+func (l *localActivityInterceptor) InterceptWorkflow(
+	ctx workflow.Context,
+	next interceptor.WorkflowInboundInterceptor,
+) interceptor.WorkflowInboundInterceptor {
+	var ret localActivityWorkflowInterceptor
+	ret.Next = next
+	return &ret
+}
+
+func (l *localActivityWorkflowInterceptor) ExecuteWorkflow(
+	ctx workflow.Context,
+	in *interceptor.ExecuteWorkflowInput,
+) (interface{}, error) {
+	// Execute local activity before running workflow
+	var res int
+	var a Activities
+	actCtx := workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{ScheduleToCloseTimeout: time.Second})
+	if err := workflow.ExecuteLocalActivity(actCtx, a.Echo, 0, 123).Get(ctx, &res); err != nil {
+		return nil, err
+	} else if res != 123 {
+		return nil, fmt.Errorf("expected 123, got %v", res)
+	}
+	return l.Next.ExecuteWorkflow(ctx, in)
+}
+
+func (ts *IntegrationTestSuite) TestReplayerWithInterceptor() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Do basic test
+	var expected []string
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-replayer-interceptor-"+uuid.New()),
+		ts.workflows.Basic)
+	ts.NoError(err)
+	ts.NoError(run.Get(ctx, &expected))
+	ts.EqualValues(expected, ts.activities.invoked())
+
+	// Now replay it with the interceptor
+	replayer, err := worker.NewWorkflowReplayerWithOptions(worker.WorkflowReplayerOptions{
+		Interceptors: []interceptor.WorkerInterceptor{&localActivityInterceptor{}},
+	})
+	ts.NoError(err)
+	replayer.RegisterWorkflow(ts.workflows.Basic)
 	ts.NoError(replayer.ReplayWorkflowExecution(ctx, ts.client.WorkflowService(), nil, ts.config.Namespace,
 		workflow.Execution{ID: run.GetID(), RunID: run.GetRunID()}))
 }
