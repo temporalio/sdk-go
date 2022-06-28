@@ -31,9 +31,11 @@ package client
 
 import (
 	"context"
+	"io"
 
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/converter"
@@ -500,4 +502,16 @@ func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 //   NewValues(data).Get(&result1, &result2)
 func NewValues(data *commonpb.Payloads) converter.EncodedValues {
 	return internal.NewValues(data)
+}
+
+// HistoryJSONOptions are options for HistoryFromJSON.
+type HistoryJSONOptions struct {
+	// LastEventID, if set, will only load history up to this ID (inclusive).
+	LastEventID int64
+}
+
+// HistoryFromJSON deserializes history from a reader of JSON bytes. This does
+// not close the reader if it is closeable.
+func HistoryFromJSON(r io.Reader, options HistoryJSONOptions) (*historypb.History, error) {
+	return internal.HistoryFromJSON(r, options.LastEventID)
 }
