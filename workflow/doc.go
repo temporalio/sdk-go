@@ -89,7 +89,7 @@ A workflow can have one or more such parameters. All parameters to an workflow f
 essentially means that params can’t be channels, functions, variadic, or unsafe pointer.
 
 Since it only declares error as the return value it means that the workflow does not return a value. The error return
-value is used to indicate an error was encountered during execution and the workflow should be terminated.
+value is used to indicate an error was encountered during execution and the workflow should be failed.
 
 Implementation
 
