@@ -193,6 +193,10 @@ type (
 		// Optional: Disable eager activities. If set to true, activities will not
 		// be requested to execute eagerly from the same workflow regardless of
 		// MaxConcurrentEagerActivityExecutionSize.
+		//
+		// Eager activity execution means the server returns requested eager
+		// activities directly from the workflow task back to this worker which is
+		// faster than non-eager which may be dispatched to a separate worker.
 		DisableEagerActivities bool
 
 		// Optional: Maximum number of eager activities that can be running.
@@ -206,6 +210,8 @@ type (
 		//
 		// The default of 0 means unlimited and therefore only bound by
 		// MaxConcurrentActivityExecutionSize.
+		//
+		// See DisableEagerActivities for a description of eager activity execution.
 		MaxConcurrentEagerActivityExecutionSize int
 	}
 )

@@ -35,8 +35,7 @@ type eagerActivityExecutor struct {
 	eagerActivityExecutorOptions
 
 	activityWorker *activityWorker
-	pendingCount   int // Only access under countLock
-	executingCount int // Only access under countLock
+	heldSlotCount  int
 	countLock      sync.Mutex
 }
 
@@ -56,7 +55,7 @@ func newEagerActivityExecutor(options eagerActivityExecutorOptions) *eagerActivi
 
 func (e *eagerActivityExecutor) applyToRequest(
 	req *workflowservice.RespondWorkflowTaskCompletedRequest,
-) (amountReserved int) {
+) (amountActivitySlotsReserved int) {
 	// Go over every command checking for activities that can be eagerly executed
 	for _, command := range req.Commands {
 		if attrs := command.GetScheduleActivityTaskCommandAttributes(); attrs != nil {
@@ -68,7 +67,7 @@ func (e *eagerActivityExecutor) applyToRequest(
 				// If it has been requested, attempt to reserve one pending
 				attrs.RequestEagerExecution = e.reserveOnePendingSlot()
 				if attrs.RequestEagerExecution {
-					amountReserved++
+					amountActivitySlotsReserved++
 				}
 			}
 		}
@@ -81,8 +80,8 @@ func (e *eagerActivityExecutor) reserveOnePendingSlot() bool {
 	// receive to serve a slot.
 	e.countLock.Lock()
 	defer e.countLock.Unlock()
-	// Confirm that, if we have a max, pending + executing isn't already there
-	if e.maxConcurrent > 0 && e.executingCount+e.pendingCount >= e.maxConcurrent {
+	// Confirm that, if we have a max, held count isn't already there
+	if e.maxConcurrent > 0 && e.heldSlotCount >= e.maxConcurrent {
 		// No more room
 		return false
 	}
@@ -94,31 +93,28 @@ func (e *eagerActivityExecutor) reserveOnePendingSlot() bool {
 		return false
 	}
 
-	// We can request, so increase the pending count
-	e.pendingCount++
+	// We can request, so increase the held count
+	e.heldSlotCount++
 	return true
 }
 
 func (e *eagerActivityExecutor) handleResponse(
 	resp *workflowservice.RespondWorkflowTaskCompletedResponse,
-	amountReserved int,
+	amountActivitySlotsReserved int,
 ) {
 	// Ignore disabled or none present
-	if e == nil || e.activityWorker == nil || e.disabled || (len(resp.ActivityTasks) == 0 && amountReserved == 0) {
+	if e == nil || e.activityWorker == nil || e.disabled || (len(resp.ActivityTasks) == 0 && amountActivitySlotsReserved == 0) {
 		return
-	} else if len(resp.ActivityTasks) > amountReserved {
+	} else if len(resp.ActivityTasks) > amountActivitySlotsReserved {
 		panic(fmt.Sprintf("Unexpectedly received %v eager activities though we only requested %v",
-			len(resp.ActivityTasks), amountReserved))
+			len(resp.ActivityTasks), amountActivitySlotsReserved))
 	}
 
 	// Update counts under lock
 	e.countLock.Lock()
-	// Record the number of unfulfilled slots we have to give back
-	unfulfilledSlots := amountReserved - len(resp.ActivityTasks)
-	// Remove all pending from worker-scope pending
-	e.pendingCount -= amountReserved
-	// Add the activity count to the executing count
-	e.executingCount += len(resp.ActivityTasks)
+	// Give back unfulfilled slots and record for later use
+	unfulfilledSlots := amountActivitySlotsReserved - len(resp.ActivityTasks)
+	e.heldSlotCount -= unfulfilledSlots
 	e.countLock.Unlock()
 
 	// Put every unfulfilled slot back on the poller channel
@@ -144,7 +140,7 @@ func (e *eagerActivityExecutor) handleResponse(
 				e.activityWorker.worker.pollerRequestCh <- struct{}{}
 				// Decrement executing count
 				e.countLock.Lock()
-				e.executingCount--
+				e.heldSlotCount--
 				e.countLock.Unlock()
 			}()
 

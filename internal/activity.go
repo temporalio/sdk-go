@@ -135,6 +135,10 @@ type (
 		// If true, will not request eager execution regardless of worker settings.
 		// If false, eager execution may still be disabled at the worker level or
 		// eager execution may not be requested due to lack of available slots.
+		//
+		// Eager activity execution means the server returns requested eager
+		// activities directly from the workflow task back to this worker which is
+		// faster than non-eager which may be dispatched to a separate worker.
 		DisableEagerExecution bool
 	}
 

@@ -112,8 +112,7 @@ func TestEagerActivityCounts(t *testing.T) {
 	require.False(t, req.Commands[6].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
 
 	// Confirm counts
-	require.Equal(t, 3, exec.pendingCount)
-	require.Equal(t, 0, exec.executingCount)
+	require.Equal(t, 3, exec.heldSlotCount)
 	require.Equal(t, 2, len(slotsCh))
 
 	// Pretend server only returned 2 eager activities
@@ -131,8 +130,7 @@ func TestEagerActivityCounts(t *testing.T) {
 	}, 2*time.Second, 100*time.Millisecond)
 
 	// Confirm counts
-	require.Equal(t, 0, exec.pendingCount)
-	require.Equal(t, 2, exec.executingCount)
+	require.Equal(t, 2, exec.heldSlotCount)
 	require.Equal(t, 3, len(slotsCh))
 
 	// Try a request with two more eager and confirm only room for one
@@ -142,14 +140,12 @@ func TestEagerActivityCounts(t *testing.T) {
 	require.Equal(t, 1, exec.applyToRequest(req))
 	require.True(t, req.Commands[0].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
 	require.False(t, req.Commands[1].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
-	require.Equal(t, 1, exec.pendingCount)
-	require.Equal(t, 2, exec.executingCount)
+	require.Equal(t, 3, exec.heldSlotCount)
 	require.Equal(t, 2, len(slotsCh))
 
 	// Resolve that saying none came back
 	exec.handleResponse(&workflowservice.RespondWorkflowTaskCompletedResponse{}, 1)
-	require.Equal(t, 0, exec.pendingCount)
-	require.Equal(t, 2, exec.executingCount)
+	require.Equal(t, 2, exec.heldSlotCount)
 	require.Equal(t, 3, len(slotsCh))
 
 	// Now fill up all remaining slots from the activity side and confirm we can't
@@ -161,8 +157,7 @@ func TestEagerActivityCounts(t *testing.T) {
 	addScheduleTaskCommand(req, "task-queue1")
 	require.Equal(t, 0, exec.applyToRequest(req))
 	require.False(t, req.Commands[0].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
-	require.Equal(t, 0, exec.pendingCount)
-	require.Equal(t, 2, exec.executingCount)
+	require.Equal(t, 2, exec.heldSlotCount)
 	require.Equal(t, 0, len(slotsCh))
 
 	// Complete eager two and confirm counts get back right
@@ -171,7 +166,7 @@ func TestEagerActivityCounts(t *testing.T) {
 	require.Eventually(t, func() bool {
 		exec.countLock.Lock()
 		defer exec.countLock.Unlock()
-		return exec.pendingCount == 0 && exec.executingCount == 0 && len(slotsCh) == 2
+		return exec.heldSlotCount == 0 && len(slotsCh) == 2
 	}, 2*time.Second, 100*time.Millisecond)
 }
 
