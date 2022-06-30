@@ -189,6 +189,30 @@ type (
 		// Optional: Callback invoked on fatal error. Immediately after this
 		// returns, Worker.Stop() will be called.
 		OnFatalError func(error)
+
+		// Optional: Disable eager activities. If set to true, activities will not
+		// be requested to execute eagerly from the same workflow regardless of
+		// MaxConcurrentEagerActivityExecutionSize.
+		//
+		// Eager activity execution means the server returns requested eager
+		// activities directly from the workflow task back to this worker which is
+		// faster than non-eager which may be dispatched to a separate worker.
+		DisableEagerActivities bool
+
+		// Optional: Maximum number of eager activities that can be running.
+		//
+		// When non-zero, eager activity execution will not be requested for
+		// activities schedule by the workflow if it would cause the total number of
+		// running eager activities to exceed this value. For example, if this is
+		// set to 1000 and there are already 998 eager activities executing and a
+		// workflow task schedules 3 more, only the first 2 will request eager
+		// execution.
+		//
+		// The default of 0 means unlimited and therefore only bound by
+		// MaxConcurrentActivityExecutionSize.
+		//
+		// See DisableEagerActivities for a description of eager activity execution.
+		MaxConcurrentEagerActivityExecutionSize int
 	}
 )
 

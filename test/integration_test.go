@@ -270,7 +270,8 @@ func (ts *IntegrationTestSuite) TestBasic() {
 	ts.assertMetricCount("temporal_request", 1, "operation", "StartWorkflowExecution")
 	ts.assertMetricCountAtLeast("temporal_request", 1, "operation", "RespondWorkflowTaskCompleted")
 	ts.assertMetricCountAtLeast("temporal_workflow_task_queue_poll_succeed", 1)
-	ts.assertMetricCountAtLeast("temporal_long_request", 3, "operation", "PollActivityTaskQueue")
+	// We cannot check PollActivityTaskQueue metric because eager activities
+	// affect poll count
 	ts.assertMetricCountAtLeast("temporal_long_request", 3, "operation", "PollWorkflowTaskQueue")
 }
 

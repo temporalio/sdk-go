@@ -494,6 +494,10 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	scheduleTaskAttr.HeartbeatTimeout = &parameters.HeartbeatTimeout
 	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
 	scheduleTaskAttr.Header = parameters.Header
+	// We set this as true if not disabled on the params knowing it will be set as
+	// false just before request by the eager activity executor if eager activity
+	// execution is otherwise disallowed
+	scheduleTaskAttr.RequestEagerExecution = !parameters.DisableEagerExecution
 
 	command := wc.commandsHelper.scheduleActivityTask(scheduleID, scheduleTaskAttr)
 	command.setData(&scheduledActivity{
