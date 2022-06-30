@@ -1063,12 +1063,18 @@ type WorkflowReplayerOptions struct {
 	// Optional custom data converter to provide for replay. If not set, the
 	// default converter is used.
 	DataConverter converter.DataConverter
+
+	// Interceptors to apply to the worker. Earlier interceptors wrap later
+	// interceptors.
+	Interceptors []WorkerInterceptor
 }
 
 // NewWorkflowReplayer creates an instance of the WorkflowReplayer.
 func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, error) {
+	registry := newRegistry()
+	registry.interceptors = options.Interceptors
 	return &WorkflowReplayer{
-		registry:      newRegistry(),
+		registry:      registry,
 		dataConverter: options.DataConverter,
 	}, nil
 }
