@@ -1271,30 +1271,31 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*historypb.
 	if err != nil {
 		return nil, err
 	}
+	hist, err := HistoryFromJSON(reader, lastEventID)
+	if closeErr := reader.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
+	return hist, err
+}
 
-	var deserializedHistory historypb.History
-	err = jsonpb.Unmarshal(reader, &deserializedHistory)
-
-	if err != nil {
+// HistoryFromJSON deserializes history from a reader of JSON bytes. This does
+// not close the reader if it is closeable.
+func HistoryFromJSON(r io.Reader, lastEventID int64) (*historypb.History, error) {
+	var hist historypb.History
+	if err := jsonpb.Unmarshal(r, &hist); err != nil {
 		return nil, err
 	}
-
-	if lastEventID <= 0 {
-		return &deserializedHistory, nil
-	}
-
-	// Caller is potentially asking for subset of history instead of all history events
-	var events []*historypb.HistoryEvent
-	for _, event := range deserializedHistory.Events {
-		events = append(events, event)
-		if event.GetEventId() == lastEventID {
-			// Copy history up to last event (inclusive)
-			break
+	// If there is a last event ID, slice the rest off
+	if lastEventID > 0 {
+		for i, event := range hist.Events {
+			if event.EventId == lastEventID {
+				// Inclusive
+				hist.Events = hist.Events[:i+1]
+				break
+			}
 		}
 	}
-	history := &historypb.History{Events: events}
-
-	return history, nil
+	return &hist, nil
 }
 
 // NewAggregatedWorker returns an instance to manage both activity and workflow workers
