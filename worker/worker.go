@@ -160,6 +160,8 @@ type (
 		// ReplayWorkflowHistory executes a single workflow task for the given json history file.
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 		// The logger is an optional parameter. Defaults to the noop logger.
+		//
+		// History can be loaded from a reader with client.HistoryFromJSON.
 		ReplayWorkflowHistory(logger log.Logger, history *historypb.History) error
 
 		// ReplayWorkflowHistoryFromJSONFile executes a single workflow task for the json history file downloaded from the cli.
