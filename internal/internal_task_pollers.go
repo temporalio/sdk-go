@@ -92,6 +92,7 @@ type (
 		stickyBacklog           int64
 		requestLock             sync.Mutex
 		stickyCacheSize         int
+		eagerActivityExecutor   *eagerActivityExecutor
 	}
 
 	// activityTaskPoller implements polling/processing a workflow task
@@ -217,7 +218,11 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (interface{}, er
 }
 
 // newWorkflowTaskPoller creates a new workflow task poller which must have a one to one relationship to workflow worker
-func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service workflowservice.WorkflowServiceClient, params workerExecutionParameters) *workflowTaskPoller {
+func newWorkflowTaskPoller(
+	taskHandler WorkflowTaskHandler,
+	service workflowservice.WorkflowServiceClient,
+	params workerExecutionParameters,
+) *workflowTaskPoller {
 	return &workflowTaskPoller{
 		basePoller:                   basePoller{metricsHandler: params.MetricsHandler, stopC: params.WorkerStopChannel},
 		service:                      service,
@@ -230,6 +235,7 @@ func newWorkflowTaskPoller(taskHandler WorkflowTaskHandler, service workflowserv
 		stickyUUID:                   uuid.New(),
 		StickyScheduleToStartTimeout: params.StickyScheduleToStartTimeout,
 		stickyCacheSize:              params.cache.MaxWorkflowCacheSize(),
+		eagerActivityExecutor:        params.eagerActivityExecutor,
 	}
 }
 
@@ -391,12 +397,14 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 				ScheduleToStartTimeout: &wtp.StickyScheduleToStartTimeout,
 			}
 		}
+		eagerReserved := wtp.eagerActivityExecutor.applyToRequest(request)
 		response, err = wtp.service.RespondWorkflowTaskCompleted(grpcCtx, request)
 		if err != nil {
 			traceLog(func() {
 				wtp.logger.Debug("RespondWorkflowTaskCompleted failed.", tagError, err)
 			})
 		}
+		wtp.eagerActivityExecutor.handleResponse(response, eagerReserved)
 	case *workflowservice.RespondQueryTaskCompletedRequest:
 		_, err = wtp.service.RespondQueryTaskCompleted(grpcCtx, request)
 		if err != nil {
@@ -792,8 +800,6 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 
 // Poll for a single activity task from the service
 func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
-	startTime := time.Now()
-
 	traceLog(func() {
 		atp.logger.Debug("activityTaskPoller::Poll")
 	})
@@ -821,7 +827,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	scheduleToStartLatency := common.TimeValue(response.GetStartedTime()).Sub(common.TimeValue(response.GetCurrentAttemptScheduledTime()))
 	metricsHandler.Timer(metrics.ActivityScheduleToStartLatency).Record(scheduleToStartLatency)
 
-	return &activityTask{task: response, pollStartTime: startTime}, nil
+	return &activityTask{task: response}, nil
 }
 
 // PollTask polls a new task

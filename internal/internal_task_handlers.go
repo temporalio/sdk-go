@@ -91,8 +91,7 @@ type (
 
 	// activityTask wraps a activity task.
 	activityTask struct {
-		task          *workflowservice.PollActivityTaskQueueResponse
-		pollStartTime time.Time
+		task *workflowservice.PollActivityTaskQueueResponse
 	}
 
 	// resetStickinessTask wraps a ResetStickyTaskQueueRequest.

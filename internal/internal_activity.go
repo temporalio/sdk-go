@@ -69,6 +69,7 @@ type (
 		WaitForCancellation    bool
 		OriginalTaskQueueName  string
 		RetryPolicy            *commonpb.RetryPolicy
+		DisableEagerExecution  bool
 	}
 
 	// ExecuteLocalActivityOptions options for executing a local activity
