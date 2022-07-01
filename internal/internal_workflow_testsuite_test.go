@@ -1721,6 +1721,11 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 		err = UpsertSearchAttributes(ctx, attr)
 		s.NoError(err)
 
+		// Falls back to the mock.Anything mock
+		attr["CustomIntField2"] = 2
+		err = UpsertSearchAttributes(ctx, attr)
+		s.NoError(err)
+
 		wfInfo = GetWorkflowInfo(ctx)
 		s.NotNil(wfInfo.SearchAttributes)
 		valBytes := wfInfo.SearchAttributes.IndexedFields["CustomIntField"]
@@ -1744,6 +1749,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 	env = s.NewTestWorkflowEnvironment()
 	env.OnUpsertSearchAttributes(map[string]interface{}{}).Return(errors.New("empty")).Once()
 	env.OnUpsertSearchAttributes(map[string]interface{}{"CustomIntField": 1}).Return(nil).Once()
+	env.OnUpsertSearchAttributes(mock.Anything).Return(nil).Once()
 
 	env.ExecuteWorkflow(workflowFn)
 	s.True(env.IsWorkflowCompleted())
