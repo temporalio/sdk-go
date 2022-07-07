@@ -115,11 +115,19 @@ type (
 		// the result for the latest run in the chain. To strictly get the result
 		// for this run without following to the latest, use GetWithOptions and set
 		// the DisableFollowingRuns option to true.
+		//
+		// Note, values should not be reused for extraction here because merging on
+		// top of existing values may result in unexpected behavior similar to
+		// json.Unmarshal.
 		Get(ctx context.Context, valuePtr interface{}) error
 
 		// GetWithOptions will fill the workflow execution result to valuePtr, if
 		// workflow execution is a success, or return corresponding error. This is a
 		// blocking API.
+		//
+		// Note, values should not be reused for extraction here because merging on
+		// top of existing values may result in unexpected behavior similar to
+		// json.Unmarshal.
 		GetWithOptions(ctx context.Context, valuePtr interface{}, options WorkflowRunGetOptions) error
 	}
 

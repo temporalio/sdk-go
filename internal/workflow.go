@@ -66,14 +66,26 @@ type (
 		// Parameter valuePtr is a pointer to the expected data structure to be received. For example:
 		//  var v string
 		//  c.Receive(ctx, &v)
+		//
+		// Note, values should not be reused for extraction here because merging on
+		// top of existing values may result in unexpected behavior similar to
+		// json.Unmarshal.
 		Receive(ctx Context, valuePtr interface{}) (more bool)
 
 		// ReceiveAsync try to receive from Channel without blocking. If there is data available from the Channel, it
 		// assign the data to valuePtr and returns true. Otherwise, it returns false immediately.
+		//
+		// Note, values should not be reused for extraction here because merging on
+		// top of existing values may result in unexpected behavior similar to
+		// json.Unmarshal.
 		ReceiveAsync(valuePtr interface{}) (ok bool)
 
 		// ReceiveAsyncWithMoreFlag is same as ReceiveAsync with extra return value more to indicate if there could be
 		// more value from the Channel. The more is false when Channel is closed.
+		//
+		// Note, values should not be reused for extraction here because merging on
+		// top of existing values may result in unexpected behavior similar to
+		// json.Unmarshal.
 		ReceiveAsyncWithMoreFlag(valuePtr interface{}) (ok bool, more bool)
 	}
 
@@ -137,6 +149,10 @@ type (
 		// The valuePtr parameter can be nil when the encoded result value is not needed.
 		// Example:
 		//  err = f.Get(ctx, nil)
+		//
+		// Note, values should not be reused for extraction here because merging on
+		// top of existing values may result in unexpected behavior similar to
+		// json.Unmarshal.
 		Get(ctx Context, valuePtr interface{}) error
 
 		// When true Get is guaranteed to not block
@@ -1517,6 +1533,10 @@ func (wc *workflowEnvironmentInterceptor) HasLastCompletionResult(ctx Context) b
 // If a cron workflow wants to pass some data to next schedule, it can return any data and that data will become
 // available when next run starts.
 // This GetLastCompletionResult() extract the data into expected data structure.
+//
+// Note, values should not be reused for extraction here because merging on top
+// of existing values may result in unexpected behavior similar to
+// json.Unmarshal.
 func GetLastCompletionResult(ctx Context, d ...interface{}) error {
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.GetLastCompletionResult(ctx, d...)

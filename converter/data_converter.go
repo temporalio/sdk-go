@@ -42,12 +42,20 @@ type (
 		// ToPayload converts single value to payload.
 		ToPayload(value interface{}) (*commonpb.Payload, error)
 		// FromPayload converts single value from payload.
+		//
+		// Note, values should not be reused for extraction here because merging on
+		// top of existing values may result in unexpected behavior similar to
+		// json.Unmarshal.
 		FromPayload(payload *commonpb.Payload, valuePtr interface{}) error
 
 		// ToPayloads converts a list of values.
 		ToPayloads(value ...interface{}) (*commonpb.Payloads, error)
 		// FromPayloads converts to a list of values of different types.
 		// Useful for deserializing arguments of function invocations.
+		//
+		// Note, values should not be reused for extraction here because merging on
+		// top of existing values may result in unexpected behavior similar to
+		// json.Unmarshal.
 		FromPayloads(payloads *commonpb.Payloads, valuePtrs ...interface{}) error
 
 		// ToString converts payload object into human readable string.

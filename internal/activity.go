@@ -174,6 +174,10 @@ func HasHeartbeatDetails(ctx context.Context) bool {
 // would attempt to dispatch another activity task to retry according to the retry policy. If there was heartbeat
 // details reported by activity from the failed attempt, the details would be delivered along with the activity task for
 // retry attempt. Activity could extract the details by GetHeartbeatDetails() and resume from the progress.
+//
+// Note, values should not be reused for extraction here because merging on top
+// of existing values may result in unexpected behavior similar to
+// json.Unmarshal.
 func GetHeartbeatDetails(ctx context.Context, d ...interface{}) error {
 	return getActivityOutboundInterceptor(ctx).GetHeartbeatDetails(ctx, d...)
 }
