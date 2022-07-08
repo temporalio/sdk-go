@@ -299,6 +299,9 @@ func (e *TestWorkflowEnvironment) SetStartTime(startTime time.Time) {
 // it was being using in RegisterActivity so the parameter types are accurate. In Go, a method reference of
 // (*MyStruct).MyFunc makes the first parameter *MyStruct which will not work, whereas a method reference of
 // new(MyStruct).MyFunc will.
+//
+// Mock callbacks here are run on a separate goroutine than the workflow and
+// therefore are not concurrency-safe with workflow code.
 func (e *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...interface{}) *MockCallWrapper {
 	fType := reflect.TypeOf(activity)
 	var call *mock.Call
@@ -347,6 +350,9 @@ var ErrMockStartChildWorkflowFailed = fmt.Errorf("start child workflow failed: %
 //   t.OnWorkflow(MyChildWorkflow, mock.Anything, mock.Anything).Return("mock_result", nil)
 // You could also setup mock to simulate start child workflow failure case by returning ErrMockStartChildWorkflowFailed
 // as error.
+//
+// Mock callbacks here are run on a separate goroutine than the workflow and
+// therefore are not concurrency-safe with workflow code.
 func (e *TestWorkflowEnvironment) OnWorkflow(workflow interface{}, args ...interface{}) *MockCallWrapper {
 	fType := reflect.TypeOf(workflow)
 	var call *mock.Call
@@ -394,6 +400,9 @@ const mockMethodForUpsertSearchAttributes = "workflow.UpsertSearchAttributes"
 //       // you can do differently based on the parameters
 //       return nil
 //     })
+//
+// Mock callbacks here are run on a separate goroutine than the workflow and
+// therefore are not concurrency-safe with workflow code.
 func (e *TestWorkflowEnvironment) OnSignalExternalWorkflow(namespace, workflowID, runID, signalName, arg interface{}) *MockCallWrapper {
 	call := e.mock.On(mockMethodForSignalExternalWorkflow, namespace, workflowID, runID, signalName, arg)
 	return e.wrapCall(call)
@@ -418,6 +427,9 @@ func (e *TestWorkflowEnvironment) OnSignalExternalWorkflow(namespace, workflowID
 //       // you can do differently based on the parameters
 //       return nil
 //     })
+//
+// Mock callbacks here are run on a separate goroutine than the workflow and
+// therefore are not concurrency-safe with workflow code.
 func (e *TestWorkflowEnvironment) OnRequestCancelExternalWorkflow(namespace, workflowID, runID string) *MockCallWrapper {
 	call := e.mock.On(mockMethodForRequestCancelExternalWorkflow, namespace, workflowID, runID)
 	return e.wrapCall(call)

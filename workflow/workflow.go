@@ -424,6 +424,10 @@ func HasLastCompletionResult(ctx Context) bool {
 // available when next run starts. This will contain the last successful result even if the most recent run failed.
 // This GetLastCompletionResult() extract the data into expected data structure.
 // See TestWorkflowEnvironment.SetLastCompletionResult() for unit test support.
+//
+// Note, values should not be reused for extraction here because merging on top
+// of existing values may result in unexpected behavior similar to
+// json.Unmarshal.
 func GetLastCompletionResult(ctx Context, d ...interface{}) error {
 	return internal.GetLastCompletionResult(ctx, d...)
 }
