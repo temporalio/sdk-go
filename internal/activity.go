@@ -65,6 +65,11 @@ type (
 		// When an activity is a function the name is an actual activity type name.
 		// When an activity is part of a structure then each member of the structure becomes an activity with
 		// this Name as a prefix + activity function name.
+		//
+		// If this is set, users are strongly recommended to set
+		// worker.Options.DisableRegistrationAliasing at the worker level to prevent
+		// ambiguity between string names and function references. Also users should
+		// always use this string name when executing this activity.
 		Name                          string
 		DisableAlreadyRegisteredCheck bool
 

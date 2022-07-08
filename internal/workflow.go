@@ -282,6 +282,13 @@ type (
 
 	// RegisterWorkflowOptions consists of options for registering a workflow
 	RegisterWorkflowOptions struct {
+		// Custom name for this workflow instead of the function name.
+		//
+		// If this is set, users are strongly recommended to set
+		// worker.Options.DisableRegistrationAliasing at the worker level to prevent
+		// ambiguity between string names and function references. Also users should
+		// always use this string name when executing this workflow from a client or
+		// inside a workflow as a child workflow.
 		Name                          string
 		DisableAlreadyRegisteredCheck bool
 	}
