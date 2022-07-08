@@ -281,6 +281,12 @@ func (e *TestWorkflowEnvironment) SetStartTime(startTime time.Time) {
 	e.impl.setStartTime(startTime)
 }
 
+// SetCurrentHistoryLength sets the value that is returned from
+// GetInfo(ctx).GetCurrentHistoryLength().
+func (e *TestWorkflowEnvironment) SetCurrentHistoryLength(length int) {
+	e.impl.setCurrentHistoryLength(length)
+}
+
 // OnActivity setup a mock call for activity. Parameter activity must be activity function (func) or activity name (string).
 // You must call Return() with appropriate parameters on the returned *MockCallWrapper instance. The supplied parameters to
 // the Return() call should either be a function that has exact same signature as the mocked activity, or it should be
