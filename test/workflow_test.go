@@ -1828,14 +1828,17 @@ func (w *Workflows) MutableSideEffect(ctx workflow.Context, startVal int) (currV
 
 func (w *Workflows) HistoryLengths(ctx workflow.Context, activityCount int) (lengths []int, err error) {
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
 	var a Activities
-	for i := 0; i < activityCount; i++ {
+	for i := 0; i < activityCount && err == nil; i++ {
+		// Every other one we'll do local activities
 		lengths = append(lengths, workflow.GetInfo(ctx).GetCurrentHistoryLength())
-		if err = workflow.ExecuteActivity(ctx, a.Sleep, 1*time.Millisecond).Get(ctx, nil); err != nil {
-			break
+		if i%2 == 0 {
+			err = workflow.ExecuteActivity(ctx, a.Sleep, 1*time.Millisecond).Get(ctx, nil)
+		} else {
+			err = workflow.ExecuteLocalActivity(ctx, a.Sleep, 1*time.Millisecond).Get(ctx, nil)
 		}
 	}
-	lengths = append(lengths, workflow.GetInfo(ctx).GetCurrentHistoryLength())
 	return
 }
 
