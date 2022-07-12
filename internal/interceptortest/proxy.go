@@ -386,6 +386,14 @@ func (p *proxyWorkflowOutbound) UpsertSearchAttributes(
 	return
 }
 
+func (p *proxyWorkflowOutbound) UpsertMemo(
+	ctx workflow.Context,
+	memo map[string]interface{},
+) (err error) {
+	err, _ = p.invoke(ctx, memo)[0].Interface().(error)
+	return
+}
+
 func (p *proxyWorkflowOutbound) GetSignalChannel(
 	ctx workflow.Context,
 	signalName string,

@@ -1453,6 +1453,7 @@ func (ts *IntegrationTestSuite) TestInterceptorCalls() {
 		"WorkflowOutboundInterceptor.RequestCancelExternalWorkflow": {},
 		"WorkflowOutboundInterceptor.SignalExternalWorkflow":        {},
 		"WorkflowOutboundInterceptor.UpsertSearchAttributes":        {},
+		"WorkflowOutboundInterceptor.UpsertMemo":                    {},
 		"WorkflowOutboundInterceptor.GetSignalChannel":              {},
 		"WorkflowOutboundInterceptor.SideEffect":                    {},
 		"WorkflowOutboundInterceptor.MutableSideEffect":             {},

@@ -1759,6 +1759,57 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 	// mix no-mock and mock is not support
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertMemo() {
+	workflowFn := func(ctx Context) error {
+		memo := map[string]interface{}{}
+		err := UpsertMemo(ctx, memo)
+		s.Error(err)
+
+		wfInfo := GetWorkflowInfo(ctx)
+		s.Nil(wfInfo.Memo)
+
+		memo["CustomIntField"] = 1
+		err = UpsertMemo(ctx, memo)
+		s.NoError(err)
+
+		// Falls back to the mock.Anything mock
+		memo["CustomIntField2"] = 2
+		err = UpsertMemo(ctx, memo)
+		s.NoError(err)
+
+		wfInfo = GetWorkflowInfo(ctx)
+		s.NotNil(wfInfo.Memo)
+		valBytes := wfInfo.Memo.Fields["CustomIntField"]
+		var result int
+		_ = converter.GetDefaultDataConverter().FromPayload(valBytes, &result)
+		s.Equal(1, result)
+
+		return nil
+	}
+
+	// no mock
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(workflowFn)
+
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.Nil(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
+
+	// has mock
+	env = s.NewTestWorkflowEnvironment()
+	env.OnUpsertMemo(map[string]interface{}{}).Return(errors.New("empty")).Once()
+	env.OnUpsertMemo(map[string]interface{}{"CustomIntField": 1}).Return(nil).Once()
+	env.OnUpsertMemo(mock.Anything).Return(nil).Once()
+
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.Nil(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
+
+	// mix no-mock and mock is not support
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithPointerTypes() {
 	var actualValues []string
 	retVal := "retVal"

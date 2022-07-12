@@ -470,6 +470,10 @@ func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) erro
 	return internal.UpsertSearchAttributes(ctx, attributes)
 }
 
+func UpsertMemo(ctx Context, memo map[string]interface{}) error {
+	return internal.UpsertMemo(ctx, memo)
+}
+
 // NewContinueAsNewError creates ContinueAsNewError instance
 // If the workflow main function returns this error then the current execution is ended and
 // the new execution with same workflow ID is started automatically with options

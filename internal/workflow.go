@@ -44,6 +44,7 @@ var (
 	errWorkflowIDNotSet              = errors.New("workflowId is not set")
 	errLocalActivityParamsBadRequest = errors.New("missing local activity parameters through context, check LocalActivityOptions")
 	errSearchAttributesNotSet        = errors.New("search attributes is empty")
+	errMemoNotSet                    = errors.New("memo is empty")
 )
 
 type (
@@ -1199,6 +1200,15 @@ func (wc *workflowEnvironmentInterceptor) UpsertSearchAttributes(ctx Context, at
 		return errors.New("TemporalChangeVersion is a reserved key that cannot be set, please use other key")
 	}
 	return wc.env.UpsertSearchAttributes(attributes)
+}
+
+func UpsertMemo(ctx Context, memo map[string]interface{}) error {
+	i := getWorkflowOutboundInterceptor(ctx)
+	return i.UpsertMemo(ctx, memo)
+}
+
+func (wc *workflowEnvironmentInterceptor) UpsertMemo(ctx Context, memo map[string]interface{}) error {
+	return wc.env.UpsertMemo(memo)
 }
 
 // WithChildWorkflowOptions adds all workflow options to the context.

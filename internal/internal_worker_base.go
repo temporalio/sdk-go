@@ -132,6 +132,7 @@ type (
 		RemoveSession(sessionID string)
 		GetContextPropagators() []ContextPropagator
 		UpsertSearchAttributes(attributes map[string]interface{}) error
+		UpsertMemo(memoMap map[string]interface{}) error
 		GetRegistry() *registry
 	}
 

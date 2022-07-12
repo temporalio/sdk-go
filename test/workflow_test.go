@@ -1496,6 +1496,7 @@ func (w *Workflows) InterceptorCalls(ctx workflow.Context, someVal string) (stri
 	_ = workflow.RequestCancelExternalWorkflow(ctx, "badid", "").Get(ctx, nil)
 	_ = workflow.SignalExternalWorkflow(ctx, "badid", "", "badsignal", nil).Get(ctx, nil)
 	_ = workflow.UpsertSearchAttributes(ctx, nil)
+	_ = workflow.UpsertMemo(ctx, nil)
 	workflow.SideEffect(ctx, func(workflow.Context) interface{} { return "sideeffect" })
 	workflow.MutableSideEffect(ctx, "badid",
 		func(workflow.Context) interface{} { return "mutablesideeffect" }, reflect.DeepEqual)

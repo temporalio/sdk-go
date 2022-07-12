@@ -596,6 +596,20 @@ func Test_UpsertSearchAttributesCommandStateMachine(t *testing.T) {
 	require.Equal(t, enumspb.COMMAND_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES, commands[0].GetCommandType())
 }
 
+func Test_ModifyPropertiesCommandStateMachine(t *testing.T) {
+	t.Parallel()
+	h := newCommandsHelper()
+
+	memo := &commonpb.Memo{}
+	d := h.modifyProperties("1", memo)
+	require.Equal(t, commandStateCreated, d.getState())
+
+	commands := h.getCommands(true)
+	require.Equal(t, commandStateCompleted, d.getState())
+	require.Equal(t, 1, len(commands))
+	require.Equal(t, enumspb.COMMAND_TYPE_MODIFY_WORKFLOW_PROPERTIES, commands[0].GetCommandType())
+}
+
 func Test_CancelExternalWorkflowStateMachine_Succeed(t *testing.T) {
 	t.Parallel()
 	namespace := "test-namespace"

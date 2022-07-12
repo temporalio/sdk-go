@@ -136,6 +136,10 @@ type (
 		*naiveCommandStateMachine
 	}
 
+	modifyPropertiesCommandStateMachine struct {
+		*naiveCommandStateMachine
+	}
+
 	commandsHelper struct {
 		nextCommandEventID int64
 		orderedCommands    *list.List
@@ -188,6 +192,7 @@ const (
 	commandTypeRequestCancelActivityTask commandType = 8
 	commandTypeAcceptWorkflowUpdate      commandType = 9
 	commandTypeCompleteWorkflowUpdate    commandType = 10
+	commandTypeModifyProperties          commandType = 11
 )
 
 const (
@@ -436,6 +441,23 @@ func (h *commandsHelper) newUpsertSearchAttributesStateMachine(attributes *comma
 	d.Attributes = &commandpb.Command_UpsertWorkflowSearchAttributesCommandAttributes{UpsertWorkflowSearchAttributesCommandAttributes: attributes}
 	return &completeOnSendStateMachine{
 		naiveCommandStateMachine: h.newNaiveCommandStateMachine(commandTypeUpsertSearchAttributes, upsertID, d),
+	}
+}
+
+func (h *commandsHelper) newModifyPropertiesStateMachine(
+	attributes *commandpb.ModifyWorkflowPropertiesCommandAttributes,
+	changeID string,
+) *modifyPropertiesCommandStateMachine {
+	d := createNewCommand(enumspb.COMMAND_TYPE_MODIFY_WORKFLOW_PROPERTIES)
+	d.Attributes = &commandpb.Command_ModifyWorkflowPropertiesCommandAttributes{
+		ModifyWorkflowPropertiesCommandAttributes: attributes,
+	}
+	return &modifyPropertiesCommandStateMachine{
+		naiveCommandStateMachine: h.newNaiveCommandStateMachine(
+			commandTypeModifyProperties,
+			changeID,
+			d,
+		),
 	}
 }
 
@@ -899,6 +921,14 @@ func (d *completeOnSendStateMachine) handleCommandSent() {
 	}
 }
 
+func (d *modifyPropertiesCommandStateMachine) handleCommandSent() {
+	// This command is considered as completed once command is sent.
+	switch d.state {
+	case commandStateCreated:
+		d.moveState(commandStateCompleted, eventCommandSent)
+	}
+}
+
 func newCommandsHelper() *commandsHelper {
 	return &commandsHelper{
 		orderedCommands: list.New(),
@@ -1330,6 +1360,15 @@ func (h *commandsHelper) upsertSearchAttributes(upsertID string, searchAttr *com
 		SearchAttributes: searchAttr,
 	}
 	command := h.newUpsertSearchAttributesStateMachine(attributes, upsertID)
+	h.addCommand(command)
+	return command
+}
+
+func (h *commandsHelper) modifyProperties(changeID string, memo *commonpb.Memo) commandStateMachine {
+	attributes := &commandpb.ModifyWorkflowPropertiesCommandAttributes{
+		UpsertedMemo: memo,
+	}
+	command := h.newModifyPropertiesStateMachine(attributes, changeID)
 	h.addCommand(command)
 	return command
 }
