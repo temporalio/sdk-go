@@ -3953,3 +3953,25 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityOnCancelledContext() {
 	s.Contains(env.GetWorkflowError().Error(), "activity error: canceled")
 	s.Equal(0, int(atomic.LoadUint32(&activityCallCount)))
 }
+
+func (s *WorkflowTestSuiteUnitTest) Test_WorkflowGetCurrentHistoryLength() {
+	env := s.NewTestWorkflowEnvironment()
+	env.SetCurrentHistoryLength(7)
+	env.OnActivity(testActivityContext, mock.Anything).Return(func(ctx context.Context) (string, error) {
+		env.SetCurrentHistoryLength(10)
+		return "", nil
+	})
+	workflowFn := func(ctx Context) (int, error) {
+		firstLen := GetWorkflowInfo(ctx).GetCurrentHistoryLength()
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+		if err := ExecuteActivity(ctx, testActivityContext).Get(ctx, nil); err != nil {
+			return 0, err
+		}
+		return firstLen + GetWorkflowInfo(ctx).GetCurrentHistoryLength(), nil
+	}
+	env.ExecuteWorkflow(workflowFn)
+	s.NoError(env.GetWorkflowError())
+	var result int
+	s.NoError(env.GetWorkflowResult(&result))
+	s.Equal(17, result)
+}

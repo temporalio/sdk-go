@@ -886,6 +886,8 @@ type WorkflowInfo struct {
 	SearchAttributes        *commonpb.SearchAttributes // Value can be decoded using defaultDataConverter.
 	RetryPolicy             *RetryPolicy
 	BinaryChecksum          string
+
+	currentHistoryLength int
 }
 
 // GetBinaryChecksum return binary checksum.
@@ -894,6 +896,12 @@ func (wInfo *WorkflowInfo) GetBinaryChecksum() string {
 		return getBinaryChecksum()
 	}
 	return wInfo.BinaryChecksum
+}
+
+// GetCurrentHistoryLength returns the current length of history when called.
+// This value may change throughout the life of the workflow.
+func (wInfo *WorkflowInfo) GetCurrentHistoryLength() int {
+	return wInfo.currentHistoryLength
 }
 
 // GetWorkflowInfo extracts info of a current workflow from a context.
