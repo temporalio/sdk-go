@@ -1572,7 +1572,7 @@ func Test_NonDeterministicCheck(t *testing.T) {
 	commandTypes := enumspb.CommandType_name
 	delete(commandTypes, 0) // Ignore "Unspecified".
 
-	require.Equal(t, 13, len(commandTypes), "If you see this error, you are adding new command type. "+
+	require.Equal(t, 15, len(commandTypes), "If you see this error, you are adding new command type. "+
 		"Before updating the number to make this test pass, please make sure you update isCommandMatchEvent() method "+
 		"to check the new command type. Otherwise the replay will fail on the new command event.")
 
