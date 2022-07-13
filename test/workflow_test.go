@@ -1826,6 +1826,22 @@ func (w *Workflows) MutableSideEffect(ctx workflow.Context, startVal int) (currV
 	return
 }
 
+func (w *Workflows) HistoryLengths(ctx workflow.Context, activityCount int) (lengths []int, err error) {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
+	var a Activities
+	for i := 0; i < activityCount && err == nil; i++ {
+		// Every other one we'll do local activities
+		lengths = append(lengths, workflow.GetInfo(ctx).GetCurrentHistoryLength())
+		if i%2 == 0 {
+			err = workflow.ExecuteActivity(ctx, a.Sleep, 1*time.Millisecond).Get(ctx, nil)
+		} else {
+			err = workflow.ExecuteLocalActivity(ctx, a.Sleep, 1*time.Millisecond).Get(ctx, nil)
+		}
+	}
+	return
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -1898,6 +1914,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.PanicOnSignal)
 	worker.RegisterWorkflow(w.ForcedNonDeterminism)
 	worker.RegisterWorkflow(w.MutableSideEffect)
+	worker.RegisterWorkflow(w.HistoryLengths)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)

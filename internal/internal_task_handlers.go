@@ -264,7 +264,9 @@ func isCommandEvent(eventType enumspb.EventType) bool {
 		enumspb.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED,
 		enumspb.EVENT_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED,
 		enumspb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED,
-		enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES:
+		enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES,
+		enumspb.EVENT_TYPE_WORKFLOW_UPDATE_ACCEPTED,
+		enumspb.EVENT_TYPE_WORKFLOW_UPDATE_COMPLETED:
 		return true
 	default:
 		return false
@@ -1415,6 +1417,28 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, strict
 		commandAttributes := d.GetUpsertWorkflowSearchAttributesCommandAttributes()
 		if strictMode && !isSearchAttributesMatched(eventAttributes.SearchAttributes, commandAttributes.SearchAttributes) {
 			return false
+		}
+		return true
+
+	case enumspb.COMMAND_TYPE_ACCEPT_WORKFLOW_UPDATE:
+		if e.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_UPDATE_ACCEPTED {
+			return false
+		}
+		return true
+
+	case enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE:
+		if e.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_UPDATE_COMPLETED {
+			return false
+		}
+
+		if strictMode {
+			eventAttributes := e.GetUpdateWorkflowCompletedEventAttributes()
+			commandAttributes := d.GetCompleteWorkflowUpdateCommandAttributes()
+
+			if !proto.Equal(eventAttributes.GetSuccess(), commandAttributes.GetSuccess()) ||
+				!proto.Equal(eventAttributes.GetFailure(), commandAttributes.GetFailure()) {
+				return false
+			}
 		}
 		return true
 	}

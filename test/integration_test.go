@@ -2425,6 +2425,37 @@ func (ts *IntegrationTestSuite) registerNamespace() {
 	}
 }
 
+// We count on the no-cache test to test replay conditions here
+func (ts *IntegrationTestSuite) TestHistoryLength() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Run workflow with 3 activities and check history lengths given
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-history-length"),
+		ts.workflows.HistoryLengths, 6)
+	ts.NoError(err)
+	var actual, expected []int
+	ts.NoError(run.Get(ctx, &actual))
+
+	// Get history and record expected length each activity schedule
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(),
+		false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	var lastStartID int
+	for iter.HasNext() {
+		event, err := iter.Next()
+		ts.NoError(err)
+		if event.GetWorkflowTaskStartedEventAttributes() != nil {
+			lastStartID = int(event.EventId)
+		} else if event.GetActivityTaskScheduledEventAttributes() != nil ||
+			event.GetMarkerRecordedEventAttributes().GetMarkerName() == "LocalActivity" {
+			expected = append(expected, lastStartID)
+		}
+	}
+
+	// Compare
+	ts.Equal(expected, actual)
+}
+
 // executeWorkflow executes a given workflow and waits for the result
 func (ts *IntegrationTestSuite) executeWorkflow(
 	wfID string, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
