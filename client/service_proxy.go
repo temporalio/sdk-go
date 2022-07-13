@@ -40,6 +40,7 @@ type WorkflowServiceProxyOptions struct {
 }
 
 type workflowServiceProxyServer struct {
+	workflowservice.UnimplementedWorkflowServiceServer
 	client workflowservice.WorkflowServiceClient
 }
 
