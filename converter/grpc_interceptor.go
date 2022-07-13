@@ -38,6 +38,7 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	querypb "go.temporal.io/api/query/v1"
 	schedulepb "go.temporal.io/api/schedule/v1"
+	updatepb "go.temporal.io/api/update/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	workflowservicepb "go.temporal.io/api/workflowservice/v1"
 )
@@ -190,6 +191,7 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 				encode,
 				o.GetCancelWorkflowExecutionCommandAttributes(),
 				o.GetCompleteWorkflowExecutionCommandAttributes(),
+				o.GetCompleteWorkflowUpdateCommandAttributes(),
 				o.GetContinueAsNewWorkflowExecutionCommandAttributes(),
 				o.GetFailWorkflowExecutionCommandAttributes(),
 				o.GetRecordMarkerCommandAttributes(),
@@ -207,6 +209,18 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 			if err := s.process(
 				encode,
 				o.GetResult(),
+			); err != nil {
+				return err
+			}
+
+		case *commandpb.CompleteWorkflowUpdateCommandAttributes:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetFailure(),
+				o.GetSuccess(),
 			); err != nil {
 				return err
 			}
@@ -523,6 +537,9 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 				o.GetMarkerRecordedEventAttributes(),
 				o.GetSignalExternalWorkflowExecutionInitiatedEventAttributes(),
 				o.GetStartChildWorkflowExecutionInitiatedEventAttributes(),
+				o.GetUpdateWorkflowAcceptedEventAttributes(),
+				o.GetUpdateWorkflowCompletedEventAttributes(),
+				o.GetUpdateWorkflowRequestedEventAttributes(),
 				o.GetWorkflowExecutionCanceledEventAttributes(),
 				o.GetWorkflowExecutionCompletedEventAttributes(),
 				o.GetWorkflowExecutionContinuedAsNewEventAttributes(),
@@ -569,6 +586,42 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 				o.GetHeader(),
 				o.GetInput(),
 				o.GetMemo(),
+			); err != nil {
+				return err
+			}
+
+		case *historypb.UpdateWorkflowAcceptedEventAttributes:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetHeader(),
+			); err != nil {
+				return err
+			}
+
+		case *historypb.UpdateWorkflowCompletedEventAttributes:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetFailure(),
+				o.GetHeader(),
+				o.GetSuccess(),
+			); err != nil {
+				return err
+			}
+
+		case *historypb.UpdateWorkflowRequestedEventAttributes:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetHeader(),
+				o.GetUpdate(),
 			); err != nil {
 				return err
 			}
@@ -743,6 +796,18 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 			if err := s.process(
 				encode,
 				o.GetMemo(),
+			); err != nil {
+				return err
+			}
+
+		case *updatepb.WorkflowUpdate:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetArgs(),
+				o.GetHeader(),
 			); err != nil {
 				return err
 			}
@@ -1191,6 +1256,29 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 			if err := s.process(
 				encode,
 				o.GetSchedule(),
+			); err != nil {
+				return err
+			}
+
+		case *workflowservicepb.UpdateWorkflowRequest:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetUpdate(),
+			); err != nil {
+				return err
+			}
+
+		case *workflowservicepb.UpdateWorkflowResponse:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetFailure(),
+				o.GetSuccess(),
 			); err != nil {
 				return err
 			}
