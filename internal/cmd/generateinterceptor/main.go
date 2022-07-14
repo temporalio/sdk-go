@@ -81,6 +81,7 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	commandpb "go.temporal.io/api/command/v1"
 	failurepb "go.temporal.io/api/failure/v1"
+	updatepb "go.temporal.io/api/update/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	querypb "go.temporal.io/api/query/v1"
 	schedulepb "go.temporal.io/api/schedule/v1"

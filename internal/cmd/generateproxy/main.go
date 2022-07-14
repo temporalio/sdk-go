@@ -22,6 +22,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+//go:build ignore
 // +build ignore
 
 package main
@@ -84,6 +85,7 @@ type WorkflowServiceProxyOptions struct {
 }
 
 type workflowServiceProxyServer struct {
+	workflowservice.UnimplementedWorkflowServiceServer
 	client workflowservice.WorkflowServiceClient
 }
 

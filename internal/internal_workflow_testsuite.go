@@ -338,6 +338,10 @@ func (env *testWorkflowEnvironmentImpl) setStartTime(startTime time.Time) {
 	env.workflowInfo.WorkflowStartTime = env.mockClock.Now()
 }
 
+func (env *testWorkflowEnvironmentImpl) setCurrentHistoryLength(length int) {
+	env.workflowInfo.currentHistoryLength = length
+}
+
 func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(params *ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) (*testWorkflowEnvironmentImpl, error) {
 	// create a new test env
 	childEnv := newTestWorkflowEnvironmentImpl(env.testSuite, env.registry)

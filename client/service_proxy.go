@@ -40,6 +40,7 @@ type WorkflowServiceProxyOptions struct {
 }
 
 type workflowServiceProxyServer struct {
+	workflowservice.UnimplementedWorkflowServiceServer
 	client workflowservice.WorkflowServiceClient
 }
 
@@ -246,4 +247,8 @@ func (wh *workflowServiceProxyServer) UpdateSchedule(ctx context.Context, req *w
 
 func (wh *workflowServiceProxyServer) UpdateWorkerBuildIdOrdering(ctx context.Context, req *workflowservice.UpdateWorkerBuildIdOrderingRequest) (*workflowservice.UpdateWorkerBuildIdOrderingResponse, error) {
 	return wh.client.UpdateWorkerBuildIdOrdering(ctx, req)
+}
+
+func (wh *workflowServiceProxyServer) UpdateWorkflow(ctx context.Context, req *workflowservice.UpdateWorkflowRequest) (*workflowservice.UpdateWorkflowResponse, error) {
+	return wh.client.UpdateWorkflow(ctx, req)
 }
