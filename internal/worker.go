@@ -213,6 +213,17 @@ type (
 		//
 		// See DisableEagerActivities for a description of eager activity execution.
 		MaxConcurrentEagerActivityExecutionSize int
+
+		// Optional: Disable allowing workflow and activity functions that are
+		// registered with custom names from being able to be called with their
+		// function references.
+		//
+		// Users are strongly recommended to set this as true if they register any
+		// workflow or activity functions with custom names. By leaving this as
+		// false, the historical default, ambiguity can occur between function names
+		// and aliased names when not using string names when executing child
+		// workflow or activities.
+		DisableRegistrationAliasing bool
 	}
 )
 

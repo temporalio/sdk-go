@@ -2677,3 +2677,61 @@ func TestHistoryFromJSON(t *testing.T) {
 	require.NoError(t, r.Close())
 	require.Len(t, hist.Events, 5)
 }
+
+func aliasNameClash1(context.Context) (string, error) { return "func1", nil }
+func aliasNameClash2(context.Context) (string, error) { return "func2", nil }
+
+type aliasNameClashStruct struct{}
+
+func (aliasNameClashStruct) aliasNameClash1(context.Context) (string, error) { return "func3", nil }
+
+func TestAliasStringNameClash(t *testing.T) {
+	execByNameWorkflow := func(ctx Context) (ret string, err error) {
+		ctx = WithActivityOptions(ctx, ActivityOptions{ScheduleToCloseTimeout: 5 * time.Second})
+		err = ExecuteActivity(ctx, "aliasNameClash1").Get(ctx, &ret)
+		return
+	}
+
+	executeWorkflow := func(disableAlias bool) (result string) {
+		var suite WorkflowTestSuite
+		suite.SetDisableRegistrationAliasing(disableAlias)
+		env := suite.NewTestWorkflowEnvironment()
+		env.RegisterActivityWithOptions(aliasNameClash1, RegisterActivityOptions{Name: "NEVER CALL ME!"})
+		env.RegisterActivityWithOptions(aliasNameClash2, RegisterActivityOptions{Name: "aliasNameClash1"})
+		env.ExecuteWorkflow(execByNameWorkflow)
+		require.NoError(t, env.GetWorkflowResult(&result))
+		return
+	}
+
+	// Without disabling alias registration, the alias will choose the function we
+	// never want called. But with disabling alias, no problem.
+	require.Equal(t, "func1", executeWorkflow(false))
+	require.Equal(t, "func2", executeWorkflow(true))
+}
+
+func TestAliasUnqualifiedNameClash(t *testing.T) {
+	execByFuncWorkflow := func(ctx Context) (ret string, err error) {
+		ctx = WithActivityOptions(ctx, ActivityOptions{ScheduleToCloseTimeout: 5 * time.Second})
+		err = ExecuteActivity(ctx, aliasNameClash1).Get(ctx, &ret)
+		return
+	}
+
+	executeWorkflow := func(disableAlias bool) (result string) {
+		var suite WorkflowTestSuite
+		suite.SetDisableRegistrationAliasing(disableAlias)
+		env := suite.NewTestWorkflowEnvironment()
+		env.RegisterActivity(aliasNameClash1)
+		env.RegisterActivityWithOptions(
+			(aliasNameClashStruct{}).aliasNameClash1,
+			RegisterActivityOptions{Name: "NEVER CALL ME!"},
+		)
+		env.ExecuteWorkflow(execByFuncWorkflow)
+		require.NoError(t, env.GetWorkflowResult(&result))
+		return
+	}
+
+	// Without disabling alias registration, the alias will choose the function we
+	// never want called. But with disabling alias, no problem.
+	require.Equal(t, "func3", executeWorkflow(false))
+	require.Equal(t, "func1", executeWorkflow(true))
+}
