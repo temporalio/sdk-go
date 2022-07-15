@@ -9,13 +9,7 @@
 Clone this repo into the preferred location.
 
 ```bash
-git clone git@github.com:temporalio/sdk-go.git
-```
-
-or
-
-```bash
-go get -u go.temporal.io/sdk
+git clone https://github.com/temporalio/sdk-go.git
 ```
 
 See [samples](https://github.com/temporalio/samples-go) to get started.
