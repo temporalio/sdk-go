@@ -2391,10 +2391,6 @@ func (ts *IntegrationTestSuite) TestReplayerWithInterceptor() {
 		workflow.Execution{ID: run.GetID(), RunID: run.GetRunID()}))
 }
 func (ts *IntegrationTestSuite) TestClientHostAddressAndPort() {
-	ts.metricsHandler = metrics.NewCapturingHandler()
-	//var metricsHandler client.MetricsHandler = ts.metricsHandler
-	//var error error
-
 	ts.config.ServiceAddr = "localhost:"
 	cli, error := client.Dial(client.Options{
 		HostPort:  ts.config.ServiceAddr,
