@@ -2390,6 +2390,34 @@ func (ts *IntegrationTestSuite) TestReplayerWithInterceptor() {
 	ts.NoError(replayer.ReplayWorkflowExecution(ctx, ts.client.WorkflowService(), nil, ts.config.Namespace,
 		workflow.Execution{ID: run.GetID(), RunID: run.GetRunID()}))
 }
+func (ts *IntegrationTestSuite) TestClientHostAddressAndPort() {
+	ts.metricsHandler = metrics.NewCapturingHandler()
+	//var metricsHandler client.MetricsHandler = ts.metricsHandler
+	//var error error
+
+	ts.config.ServiceAddr = "localhost:"
+	cli, error := client.Dial(client.Options{
+		HostPort:  ts.config.ServiceAddr,
+		Namespace: ts.config.Namespace,
+	})
+
+	if cli != nil {
+		defer cli.Close()
+	}
+	ts.Error(error)
+
+	ts.config.ServiceAddr = "localhost"
+	cli, error = client.Dial(client.Options{
+		HostPort:  ts.config.ServiceAddr,
+		Namespace: ts.config.Namespace,
+	})
+
+	if cli != nil {
+		defer cli.Close()
+	}
+	ts.Error(error)
+
+}
 
 func (ts *IntegrationTestSuite) registerNamespace() {
 	client, err := client.NewNamespaceClient(client.Options{

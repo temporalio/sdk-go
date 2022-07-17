@@ -27,6 +27,9 @@ package internal
 import (
 	"context"
 	"crypto/tls"
+	"errors"
+	"strconv"
+	"strings"
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
@@ -645,6 +648,13 @@ func NewClient(options ClientOptions) (Client, error) {
 
 	if options.HostPort == "" {
 		options.HostPort = LocalHostPort
+	} else {
+		hostStrArr := strings.Split(options.HostPort, ":")
+		if len(hostStrArr) != 2 {
+			return nil, errors.New("Invalid HostAddress")
+		} else if _, err := strconv.Atoi(hostStrArr[1]); err != nil {
+			return nil, errors.New("Invalid HostPort")
+		}
 	}
 
 	if options.Logger == nil {
