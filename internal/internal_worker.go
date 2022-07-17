@@ -472,6 +472,10 @@ type registry struct {
 	interceptors     []WorkerInterceptor
 }
 
+type registryOptions struct {
+	disableAliasing bool
+}
+
 func (r *registry) RegisterWorkflow(af interface{}) {
 	r.RegisterWorkflowWithOptions(af, RegisterWorkflowOptions{})
 }
@@ -510,7 +514,7 @@ func (r *registry) RegisterWorkflowWithOptions(
 		}
 	}
 	r.workflowFuncMap[registerName] = wf
-	if len(alias) > 0 {
+	if len(alias) > 0 && r.workflowAliasMap != nil {
 		r.workflowAliasMap[fnName] = alias
 	}
 }
@@ -560,7 +564,7 @@ func (r *registry) RegisterActivityWithOptions(
 		}
 	}
 	r.activityFuncMap[registerName] = &activityExecutor{name: registerName, fn: af}
-	if len(alias) > 0 {
+	if len(alias) > 0 && r.activityAliasMap != nil {
 		r.activityAliasMap[fnName] = alias
 	}
 }
@@ -728,13 +732,18 @@ func validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
 	return nil
 }
 
-func newRegistry() *registry {
-	return &registry{
-		workflowFuncMap:  make(map[string]interface{}),
-		workflowAliasMap: make(map[string]string),
-		activityFuncMap:  make(map[string]activity),
-		activityAliasMap: make(map[string]string),
+func newRegistry() *registry { return newRegistryWithOptions(registryOptions{}) }
+
+func newRegistryWithOptions(options registryOptions) *registry {
+	r := &registry{
+		workflowFuncMap: make(map[string]interface{}),
+		activityFuncMap: make(map[string]activity),
 	}
+	if !options.disableAliasing {
+		r.workflowAliasMap = make(map[string]string)
+		r.activityAliasMap = make(map[string]string)
+	}
+	return r
 }
 
 // Wrapper to execute workflow functions.
@@ -1069,11 +1078,16 @@ type WorkflowReplayerOptions struct {
 	// Interceptors to apply to the worker. Earlier interceptors wrap later
 	// interceptors.
 	Interceptors []WorkerInterceptor
+
+	// Disable aliasing during registration. This should be set if it was set on
+	// worker.Options.DisableRegistrationAliasing when originally run. See
+	// documentation for that field for more information.
+	DisableRegistrationAliasing bool
 }
 
 // NewWorkflowReplayer creates an instance of the WorkflowReplayer.
 func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, error) {
-	registry := newRegistry()
+	registry := newRegistryWithOptions(registryOptions{disableAliasing: options.DisableRegistrationAliasing})
 	registry.interceptors = options.Interceptors
 	return &WorkflowReplayer{
 		registry:      registry,
@@ -1391,7 +1405,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	processTestTags(&options, &workerParams)
 
 	// worker specific registry
-	registry := newRegistry()
+	registry := newRegistryWithOptions(registryOptions{disableAliasing: options.DisableRegistrationAliasing})
 	// Build set of interceptors using the applicable client ones first (being
 	// careful not to append to the existing slice)
 	registry.interceptors = make([]WorkerInterceptor, 0, len(client.workerInterceptors)+len(options.Interceptors))

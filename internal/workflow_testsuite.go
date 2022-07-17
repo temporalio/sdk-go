@@ -53,10 +53,11 @@ type (
 
 	// WorkflowTestSuite is the test suite to run unit tests for workflow/activity.
 	WorkflowTestSuite struct {
-		logger             log.Logger
-		metricsHandler     metrics.Handler
-		contextPropagators []ContextPropagator
-		header             *commonpb.Header
+		logger                      log.Logger
+		metricsHandler              metrics.Handler
+		contextPropagators          []ContextPropagator
+		header                      *commonpb.Header
+		disableRegistrationAliasing bool
 	}
 
 	// TestWorkflowEnvironment is the environment that you use to test workflow
@@ -160,6 +161,18 @@ func (s *WorkflowTestSuite) SetContextPropagators(ctxProps []ContextPropagator) 
 // the workflow
 func (s *WorkflowTestSuite) SetHeader(header *commonpb.Header) {
 	s.header = header
+}
+
+// SetDisableRegistrationAliasing disables registration aliasing the same way it
+// is disabled when set for worker.Options.DisableRegistrationAliasing. This
+// value should be set to true if it is expected to be set on the worker when
+// running (which is strongly recommended for custom-named workflows and
+// activities). See the documentation on
+// worker.Options.DisableRegistrationAliasing for more details.
+//
+// This must be set before obtaining new test workflow or activity environments.
+func (s *WorkflowTestSuite) SetDisableRegistrationAliasing(disableRegistrationAliasing bool) {
+	s.disableRegistrationAliasing = disableRegistrationAliasing
 }
 
 // RegisterActivity registers activity implementation with TestWorkflowEnvironment
