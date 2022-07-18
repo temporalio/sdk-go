@@ -808,6 +808,10 @@ func (e *TestWorkflowEnvironment) QueryWorkflow(queryType string, args ...interf
 	return e.impl.queryWorkflow(queryType, args...)
 }
 
+func (e *TestWorkflowEnvironment) UpdateWorkflow(name string, uc UpdateCallbacks, args ...interface{}) {
+	e.impl.updateWorkflow(name, uc, args...)
+}
+
 // QueryWorkflowByID queries a child workflow by its ID and returns the result synchronously
 func (e *TestWorkflowEnvironment) QueryWorkflowByID(workflowID, queryType string, args ...interface{}) (converter.EncodedValue, error) {
 	return e.impl.queryWorkflowByID(workflowID, queryType, args...)

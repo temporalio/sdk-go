@@ -25,10 +25,12 @@
 package internal
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 
 	"go.temporal.io/sdk/converter"
 	iconverter "go.temporal.io/sdk/internal/converter"
@@ -291,4 +293,76 @@ func Test_CreateSearchAttributesForChangeVersion(t *testing.T) {
 	val, ok := result["TemporalChangeVersion"]
 	require.True(t, ok, "Remember to update related key on server side")
 	require.Equal(t, []string{"cid-1"}, val)
+}
+
+func TestUpdateCommandAdapter(t *testing.T) {
+	t.Parallel()
+	cmdHelper := newCommandsHelper()
+	dc := converter.GetDefaultDataConverter()
+	updateCallbacks := &updateCommandCallbacks{
+		updateID: t.Name(),
+		dc:       dc,
+		commands: cmdHelper,
+	}
+	t.Run("reject", func(t *testing.T) {
+		wantErr := errors.New(t.Name())
+		updateCallbacks.Reject(wantErr)
+		cmds := cmdHelper.getCommands(true)
+		require.Len(t, cmds, 1)
+		cmd, attrs := cmds[0], cmds[0].GetCompleteWorkflowUpdateCommandAttributes()
+		require.Equal(t, enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE, cmd.GetCommandType())
+		require.Equal(t,
+			enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_BYPASS,
+			attrs.GetDurabilityPreference())
+		require.NotNil(t, attrs.GetFailure())
+		require.Equal(t, wantErr.Error(), attrs.GetFailure().GetMessage())
+	})
+	t.Run("accept", func(t *testing.T) {
+		updateCallbacks.Accept()
+		cmds := cmdHelper.getCommands(true)
+		require.Len(t, cmds, 1)
+		require.Equal(t, enumspb.COMMAND_TYPE_ACCEPT_WORKFLOW_UPDATE, cmds[0].GetCommandType())
+	})
+	t.Run("complete with error", func(t *testing.T) {
+		wantErr := errors.New(t.Name())
+		updateCallbacks.Complete(nil, wantErr)
+		cmds := cmdHelper.getCommands(true)
+		require.Len(t, cmds, 1)
+		cmd, attrs := cmds[0], cmds[0].GetCompleteWorkflowUpdateCommandAttributes()
+		require.Equal(t, enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE, cmd.GetCommandType())
+		require.Equal(t,
+			enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_UNSPECIFIED,
+			attrs.GetDurabilityPreference())
+		require.NotNil(t, attrs.GetFailure())
+		require.Equal(t, wantErr.Error(), attrs.GetFailure().GetMessage())
+	})
+	t.Run("complete successfully", func(t *testing.T) {
+		wantSuccess := "success!"
+		updateCallbacks.Complete(wantSuccess, nil)
+		cmds := cmdHelper.getCommands(true)
+		require.Len(t, cmds, 1)
+		cmd, attrs := cmds[0], cmds[0].GetCompleteWorkflowUpdateCommandAttributes()
+		require.Equal(t, enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE, cmd.GetCommandType())
+		require.Equal(t,
+			enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_UNSPECIFIED,
+			attrs.GetDurabilityPreference())
+		require.Nil(t, attrs.GetFailure())
+		require.NotNil(t, attrs.GetSuccess())
+
+		deserializedSuccess := ""
+		err := dc.FromPayloads(attrs.GetSuccess(), &deserializedSuccess)
+		require.NoError(t, err)
+		require.Equal(t, wantSuccess, deserializedSuccess)
+	})
+	t.Run("complete successfully with invalid payload", func(*testing.T) {
+		updateCallbacks.Complete(make(chan int), nil) // dataconverter cannot serialize a chan
+		cmds := cmdHelper.getCommands(true)
+		require.Len(t, cmds, 1)
+		cmd, attrs := cmds[0], cmds[0].GetCompleteWorkflowUpdateCommandAttributes()
+		require.Equal(t, enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE, cmd.GetCommandType())
+		require.Equal(t,
+			enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_UNSPECIFIED,
+			attrs.GetDurabilityPreference())
+		require.NotNil(t, attrs.GetFailure())
+	})
 }

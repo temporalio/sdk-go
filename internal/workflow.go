@@ -297,6 +297,17 @@ type (
 		fn       interface{}
 		isMethod bool
 	}
+
+	// UpdateOptions consists of options for executing a named workflow update.
+	UpdateOptions struct {
+		// Validator is an optional (i.e. can be left nil) func with exactly the
+		// same type signature as the required update handler func but returning
+		// only a single value of type error. The implementation of this
+		// function MUST be safe and MUST NOT alter workflow state in any way.
+		// A panic from this function will be treated as equivalent to returning
+		// an error.
+		Validator interface{}
+	}
 )
 
 // Await blocks the calling thread until condition() returns true
@@ -417,6 +428,34 @@ func (wc *workflowEnvironmentInterceptor) HandleSignal(ctx Context, in *HandleSi
 		return fmt.Errorf("exceeded channel buffer size for signal: %v", in.SignalName)
 	}
 	return nil
+}
+
+func (wc *workflowEnvironmentInterceptor) ValidateUpdate(ctx Context, in *UpdateInput) error {
+	eo := getWorkflowEnvOptions(ctx)
+
+	handler, ok := eo.updateHandlers[in.Name]
+	if !ok {
+		keys := make([]string, 0, len(eo.updateHandlers))
+		for k := range eo.updateHandlers {
+			keys = append(keys, k)
+		}
+		return fmt.Errorf("unknown update %v. KnownUpdates=%v", in.Name, keys)
+	}
+	return handler.validate(ctx, in.Args)
+}
+
+func (wc *workflowEnvironmentInterceptor) ExecuteUpdate(ctx Context, in *UpdateInput) (interface{}, error) {
+	eo := getWorkflowEnvOptions(ctx)
+
+	handler, ok := eo.updateHandlers[in.Name]
+	if !ok {
+		keys := make([]string, 0, len(eo.updateHandlers))
+		for k := range eo.updateHandlers {
+			keys = append(keys, k)
+		}
+		return nil, fmt.Errorf("unknown update %v. KnownUpdates=%v", in.Name, keys)
+	}
+	return handler.execute(ctx, in.Args)
 }
 
 func (wc *workflowEnvironmentInterceptor) HandleQuery(ctx Context, in *HandleQueryInput) (interface{}, error) {
@@ -1498,11 +1537,23 @@ func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 	return i.SetQueryHandler(ctx, queryType, handler)
 }
 
+func SetUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateOptions) error {
+	i := getWorkflowOutboundInterceptor(ctx)
+	return i.SetUpdateHandler(ctx, updateName, handler, opts)
+}
+
 func (wc *workflowEnvironmentInterceptor) SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 	if strings.HasPrefix(queryType, "__") {
 		return errors.New("queryType starts with '__' is reserved for internal use")
 	}
 	return setQueryHandler(ctx, queryType, handler)
+}
+
+func (wc *workflowEnvironmentInterceptor) SetUpdateHandler(ctx Context, name string, handler interface{}, opts UpdateOptions) error {
+	if strings.HasPrefix(name, "__") {
+		return errors.New("update names starting with '__' are reserved for internal use")
+	}
+	return setUpdateHandler(ctx, name, handler, opts)
 }
 
 // IsReplaying returns whether the current workflow code is replaying.

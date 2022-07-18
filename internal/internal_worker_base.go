@@ -73,6 +73,12 @@ type (
 		Backoff time.Duration
 	}
 
+	UpdateCallbacks interface {
+		Accept()
+		Reject(err error)
+		Complete(success interface{}, err error)
+	}
+
 	// WorkflowEnvironment Represents the environment for workflow.
 	// Should only be used within the scope of workflow definition.
 	WorkflowEnvironment interface {
@@ -106,6 +112,9 @@ type (
 		)
 		RegisterQueryHandler(
 			handler func(queryType string, queryArgs *commonpb.Payloads, header *commonpb.Header) (*commonpb.Payloads, error),
+		)
+		RegisterUpdateHandler(
+			handler func(string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks),
 		)
 		IsReplaying() bool
 		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) converter.EncodedValue

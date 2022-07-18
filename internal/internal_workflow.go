@@ -193,6 +193,7 @@ type (
 		ParentClosePolicy        enumspb.ParentClosePolicy
 		signalChannels           map[string]Channel
 		queryHandlers            map[string]*queryHandler
+		updateHandlers           map[string]*updateHandler
 	}
 
 	// ExecuteWorkflowParams parameters of the workflow invocation
@@ -240,6 +241,13 @@ type (
 	queryHandler struct {
 		fn            interface{}
 		queryType     string
+		dataConverter converter.DataConverter
+	}
+
+	updateHandler struct {
+		fn            interface{}
+		validateFn    interface{}
+		name          string
 		dataConverter converter.DataConverter
 	}
 )
@@ -480,6 +488,50 @@ func newWorkflowContext(
 	return envInterceptor, ctx, nil
 }
 
+func defaultUpdateHandler(
+	rootCtx Context,
+	name string,
+	serializedArgs *commonpb.Payloads,
+	header *commonpb.Header,
+	callbacks UpdateCallbacks,
+	goNamed func(Context, string, func(Context)),
+) {
+	env := getWorkflowEnvironment(rootCtx)
+	ctx, err := workflowContextWithHeaderPropagated(rootCtx, header, env.GetContextPropagators())
+	if err != nil {
+		callbacks.Reject(err)
+		return
+	}
+	eo := getWorkflowEnvOptions(ctx)
+	handler, ok := eo.updateHandlers[name]
+	if !ok {
+		keys := make([]string, 0, len(eo.updateHandlers))
+		for k := range eo.updateHandlers {
+			keys = append(keys, k)
+		}
+		callbacks.Reject(fmt.Errorf("unknown update %v. KnownUpdates=%v", name, keys))
+		return
+	}
+
+	args, err := decodeArgsToRawValues(handler.dataConverter, reflect.TypeOf(handler.fn), serializedArgs)
+	if err != nil {
+		callbacks.Reject(fmt.Errorf("unable to decode the input for update %q: %w", name, err))
+		return
+	}
+	input := UpdateInput{Name: name, Args: args}
+
+	goNamed(ctx, name, func(ctx Context) {
+		envInterceptor := getWorkflowEnvironmentInterceptor(ctx)
+		if err := envInterceptor.inboundInterceptor.ValidateUpdate(ctx, &input); err != nil {
+			callbacks.Reject(err)
+			return
+		}
+		callbacks.Accept()
+		success, err := envInterceptor.inboundInterceptor.ExecuteUpdate(ctx, &input)
+		callbacks.Complete(success, err)
+	})
+}
+
 func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *commonpb.Header, input *commonpb.Payloads) {
 	envInterceptor, rootCtx, err := newWorkflowContext(env, env.GetRegistry().interceptors)
 	if err != nil {
@@ -529,6 +581,11 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 			return envInterceptor.inboundInterceptor.HandleSignal(rootCtx, &HandleSignalInput{SignalName: name, Arg: input})
 		},
 	)
+
+	getWorkflowEnvironment(d.rootCtx).RegisterUpdateHandler(
+		func(name string, serializedArgs *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks) {
+			defaultUpdateHandler(d.rootCtx, name, serializedArgs, header, callbacks, GoNamed)
+		})
 
 	getWorkflowEnvironment(d.rootCtx).RegisterQueryHandler(
 		func(queryType string, queryArgs *commonpb.Payloads, header *commonpb.Header) (*commonpb.Payloads, error) {
@@ -1299,6 +1356,7 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 	} else {
 		newOptions.signalChannels = make(map[string]Channel)
 		newOptions.queryHandlers = make(map[string]*queryHandler)
+		newOptions.updateHandlers = make(map[string]*updateHandler)
 	}
 	if newOptions.DataConverter == nil {
 		newOptions.DataConverter = converter.GetDefaultDataConverter()
@@ -1383,7 +1441,7 @@ func newDecodeFuture(ctx Context, fn interface{}) (Future, Settable) {
 // setQueryHandler sets query handler for given queryType.
 func setQueryHandler(ctx Context, queryType string, handler interface{}) error {
 	qh := &queryHandler{fn: handler, queryType: queryType, dataConverter: getDataConverterFromWorkflowContext(ctx)}
-	err := qh.validateHandlerFn()
+	err := validateQueryHandlerFn(qh.fn)
 	if err != nil {
 		return err
 	}
@@ -1392,26 +1450,119 @@ func setQueryHandler(ctx Context, queryType string, handler interface{}) error {
 	return nil
 }
 
-func (h *queryHandler) validateHandlerFn() error {
-	fnType := reflect.TypeOf(h.fn)
+// setUpdateHandler sets update handler for a given update name.
+func setUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateOptions) error {
+	if err := validateUpdateHandlerFn(handler); err != nil {
+		return err
+	}
+	var validateFn interface{} = func(...interface{}) error { return nil }
+	if opts.Validator != nil {
+		if err := validateValidatorFn(opts.Validator); err != nil {
+			return err
+		}
+		if err := validateSameParams(handler, opts.Validator); err != nil {
+			return err
+		}
+		validateFn = opts.Validator
+	}
+	getWorkflowEnvOptions(ctx).updateHandlers[updateName] = &updateHandler{
+		fn:            handler,
+		validateFn:    validateFn,
+		name:          updateName,
+		dataConverter: getDataConverterFromWorkflowContext(ctx),
+	}
+	return nil
+}
+
+func validateSameParams(fn1, fn2 interface{}) error {
+	fn1Type := reflect.TypeOf(fn1)
+	fn2Type := reflect.TypeOf(fn2)
+
+	if fn1Type.Kind() != reflect.Func {
+		return fmt.Errorf("type must be function but was %s", fn1Type.Kind())
+	}
+
+	if fn2Type.Kind() != reflect.Func {
+		return fmt.Errorf("type must be function but was %s", fn1Type.Kind())
+	}
+
+	if fn1Type.NumIn() != fn2Type.NumIn() {
+		return errors.New("functions have different numbers of parameters")
+	}
+
+	for i := 0; i < fn1Type.NumIn(); i++ {
+		fn1ParamType := fn1Type.In(i)
+		fn2ParamType := fn2Type.In(i)
+		if fn1ParamType != fn2ParamType {
+			return fmt.Errorf("functions differ at parameter %v; %v != %v", i, fn1ParamType, fn2ParamType)
+		}
+	}
+	return nil
+}
+
+func validateValidatorFn(fn interface{}) error {
+	fnType := reflect.TypeOf(fn)
 	if fnType.Kind() != reflect.Func {
-		return fmt.Errorf("query handler must be function but was %s", fnType.Kind())
+		return fmt.Errorf("validator must be function but was %s", fnType.Kind())
+	}
+
+	if fnType.NumOut() != 1 {
+		return fmt.Errorf(
+			"validator must return exactly 1 value (an error), but found %d return values", fnType.NumOut(),
+		)
+	}
+
+	if !isError(fnType.Out(0)) {
+		return fmt.Errorf(
+			"return value of validator must be error but found %v", fnType.Out(fnType.NumOut()-1).Kind(),
+		)
+	}
+	return nil
+}
+
+func validateUpdateHandlerFn(fn interface{}) error {
+	fnType := reflect.TypeOf(fn)
+	if fnType.Kind() != reflect.Func {
+		return fmt.Errorf("handler must be function but was %s", fnType.Kind())
+	}
+	switch fnType.NumOut() {
+	case 1:
+		if !isError(fnType.Out(0)) {
+			return fmt.Errorf("last return value of handler must be error but found %v", fnType.Out(0).Kind())
+		}
+	case 2:
+		if !isValidResultType(fnType.Out(0)) {
+			return fmt.Errorf("first return value of handler must be serializable but found: %v", fnType.Out(0).Kind())
+		}
+		if !isError(fnType.Out(1)) {
+			return fmt.Errorf("last return value of handler must be error but found %v", fnType.Out(1).Kind())
+		}
+	default:
+		return errors.New("update handler return signature must be a single error or a serializable result and error")
+	}
+	return nil
+}
+
+func validateQueryHandlerFn(fn interface{}) error {
+	fnType := reflect.TypeOf(fn)
+	if fnType.Kind() != reflect.Func {
+		return fmt.Errorf("handler must be function but was %s", fnType.Kind())
 	}
 
 	if fnType.NumOut() != 2 {
 		return fmt.Errorf(
-			"query handler must return 2 values (serializable result and error), but found %d return values", fnType.NumOut(),
+			"handler must return 2 values (serializable result and error), but found %d return values", fnType.NumOut(),
 		)
 	}
 
 	if !isValidResultType(fnType.Out(0)) {
 		return fmt.Errorf(
-			"first return value of query handler must be serializable but found: %v", fnType.Out(0).Kind(),
+			"first return value of handler must be serializable but found: %v", fnType.Out(0).Kind(),
 		)
 	}
 	if !isError(fnType.Out(1)) {
 		return fmt.Errorf(
-			"second return value of query handler must be error but found %v", fnType.Out(fnType.NumOut()-1).Kind(),
+			"second return value of handler must be error but found %v", fnType.Out(fnType.NumOut()-1).Kind(),
 		)
 	}
 	return nil
@@ -1434,6 +1585,29 @@ func (h *queryHandler) execute(input []interface{}) (result interface{}, err err
 	}()
 
 	return executeFunction(h.fn, input)
+}
+
+func (h *updateHandler) validate(ctx Context, input []interface{}) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			st := getStackTraceRaw("update validator [panic]:", 7, 0)
+			err = newPanicError(fmt.Sprintf("update validator panic: %v", p), st)
+		}
+	}()
+	_, err = executeFunctionWithWorkflowContext(ctx, h.validateFn, input)
+	return err
+}
+
+func (h *updateHandler) execute(ctx Context, input []interface{}) (result interface{}, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			result = nil
+			st := getStackTraceRaw("update handler [panic]:", 7, 0)
+			err = newPanicError(fmt.Sprintf("update validator panic: %v", p), st)
+		}
+	}()
+
+	return executeFunctionWithWorkflowContext(ctx, h.fn, input)
 }
 
 // Add adds delta, which may be negative, to the WaitGroup counter.
