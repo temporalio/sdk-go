@@ -25,10 +25,13 @@
 package internal
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
+	historypb "go.temporal.io/api/history/v1"
 
 	"go.temporal.io/sdk/converter"
 	iconverter "go.temporal.io/sdk/internal/converter"
@@ -291,4 +294,112 @@ func Test_CreateSearchAttributesForChangeVersion(t *testing.T) {
 	val, ok := result["TemporalChangeVersion"]
 	require.True(t, ok, "Remember to update related key on server side")
 	require.Equal(t, []string{"cid-1"}, val)
+}
+
+func TestUpdateCompletion(t *testing.T) {
+	t.Parallel()
+	cmdHelper := newCommandsHelper()
+	t.Run("complete successfully", func(t *testing.T) {
+		completer := newUpdateCompleter(
+			t.Name(),
+			converter.GetDefaultDataConverter(),
+			cmdHelper)
+		completer("success!", nil)
+
+		cmds := cmdHelper.getCommands(true)
+		require.Len(t, cmds, 1)
+		cmd, attrs := cmds[0], cmds[0].GetCompleteWorkflowUpdateCommandAttributes()
+		require.Equal(t, enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE, cmd.CommandType)
+		require.Nil(t, attrs.GetFailure())
+		require.Equal(
+			t,
+			enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_UNSPECIFIED,
+			attrs.GetDurabilityPreference())
+
+		deserStr := ""
+		err := converter.GetDefaultDataConverter().FromPayloads(attrs.GetSuccess(), &deserStr)
+		require.NoError(t, err)
+		require.Equal(t, "success!", deserStr)
+	})
+	t.Run("complete with error", func(t *testing.T) {
+		completer := newUpdateCompleter(
+			t.Name(),
+			converter.GetDefaultDataConverter(),
+			cmdHelper)
+		completer(nil, errors.New("rekt"))
+
+		cmds := cmdHelper.getCommands(true)
+		require.Len(t, cmds, 1)
+		cmd, attrs := cmds[0], cmds[0].GetCompleteWorkflowUpdateCommandAttributes()
+		require.Equal(t, enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE, cmd.CommandType)
+		require.Nil(t, attrs.GetSuccess())
+		require.Equal(
+			t,
+			enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_UNSPECIFIED,
+			attrs.GetDurabilityPreference())
+		require.NotNil(t, attrs.GetFailure())
+		require.Equal(t, "rekt", attrs.GetFailure().GetMessage())
+	})
+	t.Run("complete with unserializable value", func(t *testing.T) {
+		completer := newUpdateCompleter(
+			t.Name(),
+			converter.GetDefaultDataConverter(),
+			cmdHelper)
+		completer(make(chan struct{}), nil)
+
+		cmds := cmdHelper.getCommands(true)
+		require.Len(t, cmds, 1)
+		cmd, attrs := cmds[0], cmds[0].GetCompleteWorkflowUpdateCommandAttributes()
+		require.Equal(t, enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE, cmd.CommandType)
+		require.Nil(t, attrs.GetSuccess())
+		require.Equal(
+			t,
+			enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_UNSPECIFIED,
+			attrs.GetDurabilityPreference())
+		require.NotNil(t, attrs.GetFailure())
+		require.Contains(t, attrs.GetFailure().GetMessage(), "encode")
+	})
+}
+
+func TestUpdateEventHandler(t *testing.T) {
+	env := workflowEnvironmentImpl{
+		dataConverter:  converter.GetDefaultDataConverter(),
+		commandsHelper: newCommandsHelper(),
+	}
+	weh := workflowExecutionEventHandlerImpl{&env, nil}
+	event := &historypb.HistoryEvent{
+		EventType: enumspb.EVENT_TYPE_WORKFLOW_UPDATE_REQUESTED,
+		Attributes: &historypb.HistoryEvent_UpdateWorkflowRequestedEventAttributes{
+			UpdateWorkflowRequestedEventAttributes: &historypb.UpdateWorkflowRequestedEventAttributes{
+				UpdateId: t.Name(),
+			},
+		},
+	}
+
+	const markCommandsAsSent = true
+	t.Run("reject", func(t *testing.T) {
+		wantErr := errors.New(t.Name())
+		weh.updateHandler = func(string, *commonpb.Payloads, *commonpb.Header, UpdateCompleter) error {
+			return wantErr
+		}
+		err := weh.ProcessEvent(event, false, false)
+		require.NoError(t, err)
+		cmds := env.commandsHelper.getCommands(markCommandsAsSent)
+		require.Len(t, cmds, 1)
+		cmd, attrs := cmds[0], cmds[0].GetCompleteWorkflowUpdateCommandAttributes()
+		require.Equal(t, enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE, cmd.GetCommandType())
+		require.Equal(t, enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_BYPASS, attrs.GetDurabilityPreference())
+		require.NotNil(t, attrs.GetFailure())
+		require.Equal(t, attrs.GetFailure().GetMessage(), wantErr.Error())
+	})
+	t.Run("accepted", func(t *testing.T) {
+		weh.updateHandler = func(string, *commonpb.Payloads, *commonpb.Header, UpdateCompleter) error {
+			return nil
+		}
+		err := weh.ProcessEvent(event, false, false)
+		require.NoError(t, err)
+		cmds := env.commandsHelper.getCommands(markCommandsAsSent)
+		require.Len(t, cmds, 1)
+		require.Equal(t, enumspb.COMMAND_TYPE_ACCEPT_WORKFLOW_UPDATE, cmds[0].GetCommandType())
+	})
 }

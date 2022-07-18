@@ -28,6 +28,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -1384,6 +1386,138 @@ func (s *WorkflowUnitTest) Test_StaleGoroutinesAreShutDown() {
 		s.Fail("code after sleep should not have run")
 	default:
 		s.T().Log("code after sleep correctly not executed")
+	}
+}
+
+func TestUpdateHandler(t *testing.T) {
+	const (
+		errorInput = -1
+		panicInput = -2
+	)
+	updateState := 0
+	expectedErr := errors.New(t.Name())
+	uh := &updateHandler{
+		fn: func(i int) (int, error) {
+			if i == errorInput {
+				return 0, expectedErr
+			}
+			if i == panicInput {
+				panic(t.Name())
+			}
+			updateState += i
+			return updateState, nil
+		},
+
+		validateFn: func(i int) error {
+			if i == errorInput {
+				return expectedErr
+			}
+			if i == panicInput {
+				panic(t.Name())
+			}
+			return nil
+		},
+	}
+
+	require.NoError(t, uh.validate([]interface{}{1}))
+	require.Equal(t, 0, updateState)
+	require.ErrorIs(t, uh.validate([]interface{}{errorInput}), expectedErr)
+
+	err := uh.validate([]interface{}{panicInput})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "panic")
+
+	result, err := uh.execute([]interface{}{1})
+	require.NoError(t, err)
+	require.Equal(t, 1, updateState)
+	require.Equal(t, updateState, result)
+
+	_, err = uh.execute([]interface{}{errorInput})
+	require.ErrorIs(t, err, expectedErr)
+
+	_, err = uh.execute([]interface{}{panicInput})
+	require.Error(t, err)
+	require.ErrorContains(t, err, "panic")
+}
+
+func TestFunctionValidators(t *testing.T) {
+	for _, tc := range [...]struct {
+		validatorTest func(require.TestingT, error, ...interface{})
+		handlerTest   func(require.TestingT, error, ...interface{})
+		fn            interface{}
+	}{
+		{require.Error, require.Error, func() {}},
+		{require.NoError, require.Error, func() error { return nil }},
+		{require.NoError, require.Error, func(int) error { return nil }},
+		{require.Error, require.NoError, func(int) (int, error) { return 0, nil }},
+	} {
+		t.Run(reflect.TypeOf(tc.fn).String(), func(t *testing.T) {
+			tc.validatorTest(t, validateValidatorFn(tc.fn))
+			tc.handlerTest(t, validateHandlerFn(tc.fn))
+		})
+	}
+}
+
+func TestParamValidator(t *testing.T) {
+	for i, tc := range [...]struct {
+		Fn0   interface{}
+		Fn1   interface{}
+		Check func(require.TestingT, error, ...interface{})
+	}{
+		{
+			Fn0:   func() {},
+			Fn1:   func() {},
+			Check: require.NoError,
+		},
+		{
+			Fn0:   func(int) {},
+			Fn1:   func(int) {},
+			Check: require.NoError,
+		},
+		{
+			Fn0:   func(int) {},
+			Fn1:   func(int, ...struct{}) {},
+			Check: require.Error,
+		},
+		{
+			Fn0:   func(error) {},
+			Fn1:   func(error) {},
+			Check: require.NoError,
+		},
+		{
+			Fn0:   func(int) {},
+			Fn1:   func(string) {},
+			Check: require.Error,
+		},
+		{
+			Fn0:   func(int) {},
+			Fn1:   func(int, string) {},
+			Check: require.Error,
+		},
+		{
+			Fn0:   func(int, chan struct{}, int) {},
+			Fn1:   func(int, string, int) {},
+			Check: require.Error,
+		},
+		{
+			Fn0:   func(int) {},
+			Fn1:   func(interface{}) {},
+			Check: require.Error,
+		},
+		{
+			Fn0:   func(int) {},
+			Fn1:   "",
+			Check: require.Error,
+		},
+		{
+			Fn0:   "",
+			Fn1:   func(int) {},
+			Check: require.Error,
+		},
+	} {
+		t.Run(strconv.FormatInt(int64(i), 10), func(t *testing.T) {
+			tc.Check(t, validateSameParams(tc.Fn0, tc.Fn1))
+		})
 	}
 }
 

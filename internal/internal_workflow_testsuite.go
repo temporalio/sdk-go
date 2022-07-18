@@ -185,6 +185,7 @@ type (
 		workflowCancelHandler func()
 		signalHandler         func(name string, input *commonpb.Payloads, header *commonpb.Header) error
 		queryHandler          func(string, *commonpb.Payloads, *commonpb.Header) (*commonpb.Payloads, error)
+		updateHandler         func(name string, input *commonpb.Payloads, header *commonpb.Header, resp UpdateCompleter) error
 		startedHandler        func(r WorkflowExecution, e error)
 
 		isWorkflowCompleted bool
@@ -2010,6 +2011,12 @@ func (env *testWorkflowEnvironmentImpl) RegisterSignalHandler(
 	handler func(name string, input *commonpb.Payloads, header *commonpb.Header) error,
 ) {
 	env.signalHandler = handler
+}
+
+func (env *testWorkflowEnvironmentImpl) RegisterUpdateHandler(
+	handler func(name string, input *commonpb.Payloads, header *commonpb.Header, resp UpdateCompleter) error,
+) {
+	env.updateHandler = handler
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterQueryHandler(

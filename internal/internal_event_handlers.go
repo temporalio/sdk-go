@@ -127,6 +127,10 @@ type (
 		signalHandler   func(name string, input *commonpb.Payloads, header *commonpb.Header) error // A signal handler to be invoked on a signal event
 		queryHandler    func(queryType string, queryArgs *commonpb.Payloads, header *commonpb.Header) (*commonpb.Payloads, error)
 
+		// consider using completionHandler here but it's strange that it mixes
+		// encoded data (Payloads) with unencoded (a Go error)
+		updateHandler func(name string, args *commonpb.Payloads, header *commonpb.Header, completer UpdateCompleter) error
+
 		logger                log.Logger
 		isReplay              bool // flag to indicate if workflow is in replay mode
 		enableLoggingInReplay bool // flag to indicate if workflow should enable logging in replay mode
@@ -137,6 +141,8 @@ type (
 		contextPropagators       []ContextPropagator
 		deadlockDetectionTimeout time.Duration
 	}
+
+	UpdateCompleter func(success interface{}, err error)
 
 	localActivityTask struct {
 		sync.Mutex
@@ -440,6 +446,12 @@ func (wc *workflowEnvironmentImpl) RegisterQueryHandler(
 	handler func(string, *commonpb.Payloads, *commonpb.Header) (*commonpb.Payloads, error),
 ) {
 	wc.queryHandler = handler
+}
+
+func (wc *workflowEnvironmentImpl) RegisterUpdateHandler(
+	handler func(string, *commonpb.Payloads, *commonpb.Header, UpdateCompleter) error,
+) {
+	wc.updateHandler = handler
 }
 
 func (wc *workflowEnvironmentImpl) GetLogger() log.Logger {
@@ -934,6 +946,15 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 
 	case enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES:
 		weh.handleUpsertWorkflowSearchAttributes(event)
+
+	case enumspb.EVENT_TYPE_WORKFLOW_UPDATE_REQUESTED:
+		weh.handleWorkflowUpdateRequested(event.GetUpdateWorkflowRequestedEventAttributes())
+
+	case enumspb.EVENT_TYPE_WORKFLOW_UPDATE_ACCEPTED:
+		// No Operation
+
+	case enumspb.EVENT_TYPE_WORKFLOW_UPDATE_COMPLETED:
+		// No Operation
 
 	default:
 		weh.logger.Error("unknown event type",
@@ -1433,6 +1454,80 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTermin
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
 	return nil
+}
+
+func (weh *workflowExecutionEventHandlerImpl) handleWorkflowUpdateRequested(
+	attributes *historypb.UpdateWorkflowRequestedEventAttributes) {
+
+	update := attributes.GetUpdate()
+	err := weh.updateHandler(
+		update.GetName(),
+		update.GetArgs(),
+		update.GetHeader(),
+		newUpdateCompleter(
+			attributes.GetUpdateId(),
+			weh.dataConverter,
+			weh.commandsHelper,
+		),
+	)
+
+	// An error returned synchronously from the handler indicates an update
+	// validation error
+	if err != nil {
+		weh.commandsHelper.completeWorkflowUpdate(
+			attributes.UpdateId,
+			nil,
+			ConvertErrorToFailure(err, weh.dataConverter),
+			enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_BYPASS,
+		)
+		return
+	}
+
+	// The update has passed the validation phase without an error so accept it.
+	// Actual execution of the update will occur asynchronously and will issue
+	// completion commands via the UpdateCompleter passed in the updateHandler
+	// invocation above.
+	weh.commandsHelper.acceptWorkflowUpdate(attributes.UpdateId)
+}
+
+func newUpdateCompleter(
+	updateID string,
+	dc converter.DataConverter,
+	cmds *commandsHelper,
+) UpdateCompleter {
+	return func(success interface{}, err error) {
+		// Updates execute asynchronously in a coroutine, this is the callback
+		// for when update execution has completed either as an error or with a
+		// successful value.
+		if err != nil {
+			cmds.completeWorkflowUpdate(
+				updateID,
+				nil,
+				ConvertErrorToFailure(err, dc),
+				enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_UNSPECIFIED,
+			)
+			return
+		}
+
+		serializedResult, err := dc.ToPayloads(success)
+		if err != nil {
+			// Update ran to completion but result cannot be converted to a
+			// Payload
+			cmds.completeWorkflowUpdate(
+				updateID,
+				nil,
+				ConvertErrorToFailure(err, dc),
+				enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_UNSPECIFIED,
+			)
+			return
+		}
+		cmds.completeWorkflowUpdate(
+			updateID,
+			serializedResult,
+			nil,
+			enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_UNSPECIFIED,
+		)
+	}
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleUpsertWorkflowSearchAttributes(event *historypb.HistoryEvent) {
