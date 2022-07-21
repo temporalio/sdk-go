@@ -1724,7 +1724,16 @@ func (i *temporalInvoker) Heartbeat(ctx context.Context, details *commonpb.Paylo
 
 func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *commonpb.Payloads) (bool, error) {
 	isActivityCanceled := false
-	ctx, cancel := context.WithTimeout(ctx, i.heartbeatThrottleInterval)
+	// We don't want the recording of the heartbeat to keep retrying the RPC
+	// longer than the throttle interval. However, sometimes the interval is so
+	// small that the context is cancelled before it even starts the call.
+	// Therefore, we'll make sure not to timeout the context faster than the
+	// minimum RPC timeout.
+	recordTimeout := i.heartbeatThrottleInterval
+	// if recordTimeout < minRPCTimeout {
+	// 	recordTimeout = minRPCTimeout
+	// }
+	ctx, cancel := context.WithTimeout(ctx, recordTimeout)
 	defer cancel()
 
 	err := recordActivityHeartbeat(ctx, i.service, i.metricsHandler, i.identity, i.taskToken, details)
