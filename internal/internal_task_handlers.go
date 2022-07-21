@@ -1730,9 +1730,9 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 	// Therefore, we'll make sure not to timeout the context faster than the
 	// minimum RPC timeout.
 	recordTimeout := i.heartbeatThrottleInterval
-	// if recordTimeout < minRPCTimeout {
-	// 	recordTimeout = minRPCTimeout
-	// }
+	if recordTimeout < minRPCTimeout {
+		recordTimeout = minRPCTimeout
+	}
 	ctx, cancel := context.WithTimeout(ctx, recordTimeout)
 	defer cancel()
 

@@ -2481,7 +2481,8 @@ func (ts *IntegrationTestSuite) TestHeartbeatThrottleDisabled() {
 		100*time.Millisecond, 4))
 
 	// Now that heartbeat throttling was disabled, it should have sent all 4 times
-	ts.assertReportedOperationCount("temporal_request_attempt", "RecordActivityTaskHeartbeat", 4)
+	ts.assertReportedOperationCount("temporal_request", "RecordActivityTaskHeartbeat", 4)
+	ts.assertReportedOperationCount("temporal_request_failure", "RecordActivityTaskHeartbeat", 0)
 }
 
 // executeWorkflow executes a given workflow and waits for the result
