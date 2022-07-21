@@ -103,17 +103,17 @@ func (e *eagerActivityExecutor) handleResponse(
 	amountActivitySlotsReserved int,
 ) {
 	// Ignore disabled or none present
-	if e == nil || e.activityWorker == nil || e.disabled || (len(resp.ActivityTasks) == 0 && amountActivitySlotsReserved == 0) {
+	if e == nil || e.activityWorker == nil || e.disabled || (len(resp.GetActivityTasks()) == 0 && amountActivitySlotsReserved == 0) {
 		return
-	} else if len(resp.ActivityTasks) > amountActivitySlotsReserved {
+	} else if len(resp.GetActivityTasks()) > amountActivitySlotsReserved {
 		panic(fmt.Sprintf("Unexpectedly received %v eager activities though we only requested %v",
-			len(resp.ActivityTasks), amountActivitySlotsReserved))
+			len(resp.GetActivityTasks()), amountActivitySlotsReserved))
 	}
 
 	// Update counts under lock
 	e.countLock.Lock()
 	// Give back unfulfilled slots and record for later use
-	unfulfilledSlots := amountActivitySlotsReserved - len(resp.ActivityTasks)
+	unfulfilledSlots := amountActivitySlotsReserved - len(resp.GetActivityTasks())
 	e.heldSlotCount -= unfulfilledSlots
 	e.countLock.Unlock()
 
@@ -125,7 +125,7 @@ func (e *eagerActivityExecutor) handleResponse(
 	}
 
 	// Start each activity asynchronously
-	for _, activity := range resp.ActivityTasks {
+	for _, activity := range resp.GetActivityTasks() {
 		// Before starting the goroutine we have to increase the wait group counter
 		// that the poller would have otherwise increased
 		e.activityWorker.worker.stopWG.Add(1)
