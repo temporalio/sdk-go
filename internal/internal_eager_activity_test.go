@@ -144,7 +144,7 @@ func TestEagerActivityCounts(t *testing.T) {
 	require.Equal(t, 2, len(slotsCh))
 
 	// Resolve that saying none came back
-	exec.handleResponse(&workflowservice.RespondWorkflowTaskCompletedResponse{}, 1)
+	exec.handleResponse(nil, 1)
 	require.Equal(t, 2, exec.heldSlotCount)
 	require.Equal(t, 3, len(slotsCh))
 
