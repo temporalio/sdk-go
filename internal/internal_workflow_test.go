@@ -1390,6 +1390,36 @@ func (s *WorkflowUnitTest) Test_StaleGoroutinesAreShutDown() {
 	}
 }
 
+func TestUpdateHandlerPanicSafety(t *testing.T) {
+	t.Parallel()
+
+	env := &workflowEnvironmentImpl{
+		dataConverter: converter.GetDefaultDataConverter(),
+		workflowInfo: &WorkflowInfo{
+			Namespace:     "namespace:" + t.Name(),
+			TaskQueueName: "taskqueue:" + t.Name(),
+		},
+	}
+	interceptor, ctx, err := newWorkflowContext(env, nil)
+	require.NoError(t, err)
+
+	panicFunc := func() error { panic("intentional") }
+	err = SetUpdateHandler(ctx, t.Name(), panicFunc, UpdateOptions{Validator: panicFunc})
+	require.NoError(t, err)
+	in := UpdateInput{Name: t.Name(), Args: []interface{}{}}
+
+	t.Run("ValidateUpdate", func(t *testing.T) {
+		err := interceptor.inboundInterceptor.ValidateUpdate(ctx, &in)
+		var panicErr *PanicError
+		require.ErrorAs(t, err, &panicErr)
+	})
+	t.Run("ExecuteUpdate", func(t *testing.T) {
+		_, err := interceptor.inboundInterceptor.ExecuteUpdate(ctx, &in)
+		var panicErr *PanicError
+		require.ErrorAs(t, err, &panicErr)
+	})
+}
+
 type testUpdateCallbacks struct {
 	AcceptImpl   func()
 	RejectImpl   func(err error)
