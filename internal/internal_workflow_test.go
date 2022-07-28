@@ -1390,6 +1390,17 @@ func (s *WorkflowUnitTest) Test_StaleGoroutinesAreShutDown() {
 	}
 }
 
+func MustSetUpdateHandler(
+	t *testing.T,
+	ctx Context,
+	name string,
+	handler interface{},
+	opts UpdateOptions,
+) {
+	err := SetUpdateHandler(ctx, name, handler, opts)
+	require.NoError(t, err)
+}
+
 func TestUpdateHandlerPanicSafety(t *testing.T) {
 	t.Parallel()
 
@@ -1404,8 +1415,7 @@ func TestUpdateHandlerPanicSafety(t *testing.T) {
 	require.NoError(t, err)
 
 	panicFunc := func() error { panic("intentional") }
-	err = SetUpdateHandler(ctx, t.Name(), panicFunc, UpdateOptions{Validator: panicFunc})
-	require.NoError(t, err)
+	MustSetUpdateHandler(t, ctx, t.Name(), panicFunc, UpdateOptions{Validator: panicFunc})
 	in := UpdateInput{Name: t.Name(), Args: []interface{}{}}
 
 	t.Run("ValidateUpdate", func(t *testing.T) {
@@ -1453,8 +1463,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	runOnCallingThread := func(ctx Context, _ string, f func(Context)) { f(ctx) }
 
 	t.Run("no handler registered", func(t *testing.T) {
-		err := SetUpdateHandler(ctx, "unused_handler", func() error { panic("not called") }, UpdateOptions{})
-		require.NoError(t, err)
+		MustSetUpdateHandler(t, ctx, "unused_handler", func() error { panic("not called") }, UpdateOptions{})
 		var rejectErr error
 		defaultUpdateHandler(ctx, "will_not_be_found", args, hdr, &testUpdateCallbacks{
 			RejectImpl: func(err error) { rejectErr = err },
@@ -1464,9 +1473,8 @@ func TestDefaultUpdateHandler(t *testing.T) {
 			"handler not found error should include a list of the registered handlers")
 	})
 
-	t.Run("invalid serialized input", func(t *testing.T) {
-		err := SetUpdateHandler(ctx, t.Name(), func(Context, int) error { return nil }, UpdateOptions{})
-		require.NoError(t, err)
+	t.Run("malformed serialized input", func(t *testing.T) {
+		MustSetUpdateHandler(t, ctx, t.Name(), func(Context, int) error { return nil }, UpdateOptions{})
 		junkArgs := &commonpb.Payloads{Payloads: []*commonpb.Payload{&commonpb.Payload{}}}
 		var rejectErr error
 		defaultUpdateHandler(ctx, t.Name(), junkArgs, hdr, &testUpdateCallbacks{
@@ -1478,8 +1486,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	t.Run("reject from validator", func(t *testing.T) {
 		updateFunc := func(Context, string) error { panic("should not get called") }
 		validatorFunc := func(Context, string) error { return errors.New("expected") }
-		err := SetUpdateHandler(ctx, t.Name(), updateFunc, UpdateOptions{Validator: validatorFunc})
-		require.NoError(t, err)
+		MustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateOptions{Validator: validatorFunc})
 		var rejectErr error
 		defaultUpdateHandler(ctx, t.Name(), args, hdr, &testUpdateCallbacks{
 			RejectImpl: func(err error) { rejectErr = err },
@@ -1489,9 +1496,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 
 	t.Run("error from update func", func(t *testing.T) {
 		updateFunc := func(Context, string) error { return errors.New("expected") }
-		err := SetUpdateHandler(ctx, t.Name(), updateFunc, UpdateOptions{})
-		require.NoError(t, err)
-
+		MustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateOptions{})
 		var (
 			resultErr error
 			accepted  bool
@@ -1511,8 +1516,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 
 	t.Run("update success", func(t *testing.T) {
 		updateFunc := func(ctx Context, s string) (string, error) { return s + " success!", nil }
-		err := SetUpdateHandler(ctx, t.Name(), updateFunc, UpdateOptions{})
-		require.NoError(t, err)
+		MustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateOptions{})
 		var (
 			resultErr error
 			accepted  bool
