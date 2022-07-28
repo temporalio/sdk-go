@@ -1453,11 +1453,15 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	runOnCallingThread := func(ctx Context, _ string, f func(Context)) { f(ctx) }
 
 	t.Run("no handler registered", func(t *testing.T) {
+		err := SetUpdateHandler(ctx, "unused_handler", func() error { panic("not called") }, UpdateOptions{})
+		require.NoError(t, err)
 		var rejectErr error
 		defaultUpdateHandler(ctx, "will_not_be_found", args, hdr, &testUpdateCallbacks{
 			RejectImpl: func(err error) { rejectErr = err },
 		}, runOnCallingThread)
 		require.ErrorContains(t, rejectErr, "unknown update")
+		require.ErrorContains(t, rejectErr, "unused_handler",
+			"handler not found error should include a list of the registered handlers")
 	})
 
 	t.Run("invalid serialized input", func(t *testing.T) {
