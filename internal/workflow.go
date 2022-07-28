@@ -303,9 +303,13 @@ type (
 		// Validator is an optional (i.e. can be left nil) func with exactly the
 		// same type signature as the required update handler func but returning
 		// only a single value of type error. The implementation of this
-		// function MUST be safe and MUST NOT alter workflow state in any way.
-		// A panic from this function will be treated as equivalent to returning
-		// an error.
+		// function MUST NOT alter workflow state in any way however it need not
+		// be pure - it is permissible to observe workflow state without
+		// mutating it as part of performing validation. The prohibition against
+		// mutating workflow state includes normal variable mutation/assignment
+		// as well as workflow actions such as scheduling activities and
+		// performing side-effects. A panic from this function will be treated
+		// as equivalent to returning an error.
 		Validator interface{}
 	}
 )
@@ -1537,6 +1541,15 @@ func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 	return i.SetQueryHandler(ctx, queryType, handler)
 }
 
+// SetUpdateHandler sets the update callback function and (optionally) an update
+// validtor function for a given name. The handler must be a func that takes any
+// number of values and returns either a single error or a serializable result
+// and an error. The validator func (if specified) takes the exact same
+// parameters as the handler and returns a single error. Both the handler and
+// the validator can optionally take a workflow.Context as their first
+// parameter. The validator function MUST NOT mutate workflow state in any way,
+// much like a query handler function. The update handler function however is
+// free to do anything that normal workflow code would do.
 func SetUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateOptions) error {
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.SetUpdateHandler(ctx, updateName, handler, opts)

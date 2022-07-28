@@ -123,13 +123,15 @@ type WorkflowInboundInterceptor interface {
 
 	// ValidateUpdate is always called prior to executing an update, even if the
 	// update handler for in.Name was not registered with a validation function
-	// as part of its optional configuration. Errors returned from this function
-	// are processed according to the rules for UpdateOptions.Validator.
+	// as part of its optional configuration. The same prohibition against
+	// mutating workflow state that is demanded of UpdateOptions.Validator
+	// functions also applies to this function.
 	ValidateUpdate(ctx Context, in *UpdateInput) error
 
 	// ExecuteUpdate is called after ValidateUpdate if and only if the latter
 	// returns nil. interceptor.WorkflowHeader will return a non-nil map for
-	// this context.
+	// this context. ExecuteUpdate is allwed to mutate workflow state and
+	// perform workflow actions such as scheduling activities, timers, etc.
 	ExecuteUpdate(ctx Context, in *UpdateInput) (interface{}, error)
 
 	mustEmbedWorkflowInboundInterceptorBase()
