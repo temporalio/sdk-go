@@ -28,9 +28,12 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	historypb "go.temporal.io/api/history/v1"
+	updatepb "go.temporal.io/api/update/v1"
 
 	"go.temporal.io/sdk/converter"
 	iconverter "go.temporal.io/sdk/internal/converter"
@@ -293,6 +296,63 @@ func Test_CreateSearchAttributesForChangeVersion(t *testing.T) {
 	val, ok := result["TemporalChangeVersion"]
 	require.True(t, ok, "Remember to update related key on server side")
 	require.Equal(t, []string{"cid-1"}, val)
+}
+
+func TestUpdateEvents(t *testing.T) {
+	mustPayload := func(i interface{}) *commonpb.Payload {
+		t.Helper()
+		p, err := converter.NewJSONPayloadConverter().ToPayload(i)
+		if err != nil {
+			t.FailNow()
+		}
+		return p
+	}
+
+	var (
+		gotName   string
+		gotArgs   *commonpb.Payloads
+		gotHeader *commonpb.Header
+	)
+
+	weh := &workflowExecutionEventHandlerImpl{
+		workflowEnvironmentImpl: &workflowEnvironmentImpl{
+			updateHandler: func(name string, args *commonpb.Payloads, header *commonpb.Header, cb UpdateCallbacks) {
+				gotName = name
+				gotArgs = args
+				gotHeader = header
+			},
+		},
+	}
+
+	updateAttrs := &historypb.UpdateWorkflowRequestedEventAttributes{
+		Header: &commonpb.Header{Fields: map[string]*commonpb.Payload{"hello": mustPayload("world")}},
+		Update: &updatepb.WorkflowUpdate{
+			Header: &commonpb.Header{Fields: map[string]*commonpb.Payload{"a": mustPayload("b")}},
+			Name:   t.Name(),
+			Args:   &commonpb.Payloads{Payloads: []*commonpb.Payload{mustPayload("arg0")}},
+		},
+	}
+
+	event := &historypb.HistoryEvent{
+		EventType: enumspb.EVENT_TYPE_WORKFLOW_UPDATE_REQUESTED,
+		Attributes: &historypb.HistoryEvent_UpdateWorkflowRequestedEventAttributes{
+			UpdateWorkflowRequestedEventAttributes: updateAttrs,
+		},
+	}
+	err := weh.ProcessEvent(event, false, false)
+	require.NoError(t, err)
+
+	require.Equal(t, updateAttrs.Update.Name, gotName)
+	require.True(t, proto.Equal(updateAttrs.Update.Header, gotHeader))
+	require.True(t, proto.Equal(updateAttrs.Update.Args, gotArgs))
+
+	// UPDATE_ACCEPTED and UPDATE_COMPLETED are noops for the worker
+	for _, evtype := range [...]enumspb.EventType{
+		enumspb.EVENT_TYPE_WORKFLOW_UPDATE_ACCEPTED,
+		enumspb.EVENT_TYPE_WORKFLOW_UPDATE_COMPLETED,
+	} {
+		require.NoError(t, weh.ProcessEvent(&historypb.HistoryEvent{EventType: evtype}, false, false))
+	}
 }
 
 func TestUpdateCommandAdapter(t *testing.T) {
