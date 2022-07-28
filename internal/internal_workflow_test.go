@@ -1397,8 +1397,8 @@ func MustSetUpdateHandler(
 	handler interface{},
 	opts UpdateOptions,
 ) {
-	err := SetUpdateHandler(ctx, name, handler, opts)
-	require.NoError(t, err)
+	t.Helper()
+	require.NoError(t, SetUpdateHandler(ctx, name, handler, opts))
 }
 
 func TestUpdateHandlerPanicSafety(t *testing.T) {
