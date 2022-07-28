@@ -139,6 +139,9 @@ type (
 		deadlockDetectionTimeout time.Duration
 	}
 
+	// updateCommandCallbacks is an implementation of the UpdateCallbacks
+	// interface that translates function calls on that interface into temporal
+	// server commands.
 	updateCommandCallbacks struct {
 		updateID string
 		dc       converter.DataConverter

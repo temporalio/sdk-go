@@ -293,11 +293,15 @@ func (h *commandsHelper) newCommandStateMachineBase(commandType commandType, id 
 	}
 }
 
+// acceptWorkflowUpdate arranges for an AcceptWorkflowUpdate command to be added
+// to the current batch of outgoing commands.
 func (h *commandsHelper) acceptWorkflowUpdate(updateID string) {
 	sm := h.newAcceptWorkflowUpdateStateMachine(updateID)
 	h.addCommand(sm)
 }
 
+// acceptWorkflowUpdate arranges for an CompleteWorkflowUpdate command to be added
+// to the current batch of outgoing commands.
 func (h *commandsHelper) completeWorkflowUpdate(
 	updateID string,
 	success *commonpb.Payloads,

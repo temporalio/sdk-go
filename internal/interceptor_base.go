@@ -159,10 +159,12 @@ func (w *WorkflowInboundInterceptorBase) HandleSignal(ctx Context, in *HandleSig
 	return w.Next.HandleSignal(ctx, in)
 }
 
+// ExecuteUpdate implements WorkflowInboundInterceptor.ExecuteUpdate.
 func (w *WorkflowInboundInterceptorBase) ExecuteUpdate(ctx Context, in *UpdateInput) (interface{}, error) {
 	return w.Next.ExecuteUpdate(ctx, in)
 }
 
+// ExecuteUpdate implements WorkflowInboundInterceptor.ValidateUpdate.
 func (w *WorkflowInboundInterceptorBase) ValidateUpdate(ctx Context, in *UpdateInput) error {
 	return w.Next.ValidateUpdate(ctx, in)
 }
@@ -318,6 +320,7 @@ func (w *WorkflowOutboundInterceptorBase) SetQueryHandler(ctx Context, queryType
 	return w.Next.SetQueryHandler(ctx, queryType, handler)
 }
 
+// SetUpdateHandler implements WorkflowOutboundInterceptor.SetUpdateHandler.
 func (w *WorkflowOutboundInterceptorBase) SetUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateOptions) error {
 	return w.Next.SetUpdateHandler(ctx, updateName, handler, opts)
 }

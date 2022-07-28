@@ -121,9 +121,9 @@ type WorkflowInboundInterceptor interface {
 	// interceptor.WorkflowHeader will return a non-nil map for this context.
 	HandleQuery(ctx Context, in *HandleQueryInput) (interface{}, error)
 
-	// ValidateUpdate is called prior to executing an update if and only if the
-	// update handler for in.Name was registered with a validation function as
-	// part of its optional configuration. Errors returned from this function
+	// ValidateUpdate is always called prior to executing an update, even if the
+	// update handler for in.Name was not registered with a validation function
+	// as part of its optional configuration. Errors returned from this function
 	// are processed according to the rules for UpdateOptions.Validator.
 	ValidateUpdate(ctx Context, in *UpdateInput) error
 
@@ -149,6 +149,7 @@ type HandleSignalInput struct {
 	Arg *commonpb.Payloads
 }
 
+// UpdateInput carries the name and arguments of a workflow update invocation.
 type UpdateInput struct {
 	Name string
 	Args []interface{}
