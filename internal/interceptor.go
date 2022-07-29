@@ -130,7 +130,7 @@ type WorkflowInboundInterceptor interface {
 
 	// ExecuteUpdate is called after ValidateUpdate if and only if the latter
 	// returns nil. interceptor.WorkflowHeader will return a non-nil map for
-	// this context. ExecuteUpdate is allwed to mutate workflow state and
+	// this context. ExecuteUpdate is allowed to mutate workflow state and
 	// perform workflow actions such as scheduling activities, timers, etc.
 	ExecuteUpdate(ctx Context, in *UpdateInput) (interface{}, error)
 
