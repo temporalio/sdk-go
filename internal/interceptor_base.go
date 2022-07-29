@@ -164,7 +164,7 @@ func (w *WorkflowInboundInterceptorBase) ExecuteUpdate(ctx Context, in *UpdateIn
 	return w.Next.ExecuteUpdate(ctx, in)
 }
 
-// ExecuteUpdate implements WorkflowInboundInterceptor.ValidateUpdate.
+// ValidateUpdate implements WorkflowInboundInterceptor.ValidateUpdate.
 func (w *WorkflowInboundInterceptorBase) ValidateUpdate(ctx Context, in *UpdateInput) error {
 	return w.Next.ValidateUpdate(ctx, in)
 }
