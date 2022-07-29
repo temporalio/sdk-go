@@ -1542,7 +1542,7 @@ func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 }
 
 // SetUpdateHandler sets the update callback function and (optionally) an update
-// validtor function for a given name. The handler must be a func that takes any
+// validator function for a given name. The handler must be a func that takes any
 // number of values and returns either a single error or a serializable result
 // and an error. The validator func (if specified) takes the exact same
 // parameters as the handler and returns a single error. Both the handler and
