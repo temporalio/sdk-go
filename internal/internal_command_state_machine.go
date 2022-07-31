@@ -129,13 +129,12 @@ type (
 		*naiveCommandStateMachine
 	}
 
+	// completeOnSendStateMachine is a generic state machine that transition
+	// into a comleted state immediately upon a command being sent (i.e. upon
+	// handleCommandSent() being called).
 	completeOnSendStateMachine struct {
 		*naiveCommandStateMachine
 	}
-
-	completeWorkflowUpdateCommandStateMachine = completeOnSendStateMachine
-	acceptWorkflowUpdateCommandStateMachine   = completeOnSendStateMachine
-	upsertSearchAttributesCommandStateMachine = completeOnSendStateMachine
 
 	commandsHelper struct {
 		nextCommandEventID int64
@@ -333,7 +332,7 @@ func (h *commandsHelper) newCompleteWorkflowUpdateStateMachine(
 			Success: success,
 		}
 	}
-	return &completeWorkflowUpdateCommandStateMachine{
+	return &completeOnSendStateMachine{
 		h.newNaiveCommandStateMachine(commandTypeCompleteWorkflowUpdate, updateID, &commandpb.Command{
 			CommandType: enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE,
 			Attributes:  attrs,
@@ -344,7 +343,7 @@ func (h *commandsHelper) newCompleteWorkflowUpdateStateMachine(
 func (h *commandsHelper) newAcceptWorkflowUpdateStateMachine(
 	updateID string,
 ) commandStateMachine {
-	return &acceptWorkflowUpdateCommandStateMachine{
+	return &completeOnSendStateMachine{
 		h.newNaiveCommandStateMachine(commandTypeAcceptWorkflowUpdate, updateID, &commandpb.Command{
 			CommandType: enumspb.COMMAND_TYPE_ACCEPT_WORKFLOW_UPDATE,
 			Attributes: &commandpb.Command_AcceptWorkflowUpdateCommandAttributes{
@@ -432,10 +431,10 @@ func (h *commandsHelper) newSignalExternalWorkflowStateMachine(attributes *comma
 	}
 }
 
-func (h *commandsHelper) newUpsertSearchAttributesStateMachine(attributes *commandpb.UpsertWorkflowSearchAttributesCommandAttributes, upsertID string) *upsertSearchAttributesCommandStateMachine {
+func (h *commandsHelper) newUpsertSearchAttributesStateMachine(attributes *commandpb.UpsertWorkflowSearchAttributesCommandAttributes, upsertID string) *completeOnSendStateMachine {
 	d := createNewCommand(enumspb.COMMAND_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES)
 	d.Attributes = &commandpb.Command_UpsertWorkflowSearchAttributesCommandAttributes{UpsertWorkflowSearchAttributesCommandAttributes: attributes}
-	return &upsertSearchAttributesCommandStateMachine{
+	return &completeOnSendStateMachine{
 		naiveCommandStateMachine: h.newNaiveCommandStateMachine(commandTypeUpsertSearchAttributes, upsertID, d),
 	}
 }
