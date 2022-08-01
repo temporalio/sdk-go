@@ -126,6 +126,7 @@ type (
 		cancelHandler   func()                                                                     // A cancel handler to be invoked on a cancel notification
 		signalHandler   func(name string, input *commonpb.Payloads, header *commonpb.Header) error // A signal handler to be invoked on a signal event
 		queryHandler    func(queryType string, queryArgs *commonpb.Payloads, header *commonpb.Header) (*commonpb.Payloads, error)
+		updateHandler   func(name string, args *commonpb.Payloads, header *commonpb.Header, update UpdateCallbacks)
 
 		logger                log.Logger
 		isReplay              bool // flag to indicate if workflow is in replay mode
@@ -136,6 +137,15 @@ type (
 		dataConverter            converter.DataConverter
 		contextPropagators       []ContextPropagator
 		deadlockDetectionTimeout time.Duration
+	}
+
+	// updateCommandCallbacks is an implementation of the UpdateCallbacks
+	// interface that translates function calls on that interface into temporal
+	// server commands.
+	updateCommandCallbacks struct {
+		updateID string
+		dc       converter.DataConverter
+		commands *commandsHelper
 	}
 
 	localActivityTask struct {
@@ -440,6 +450,12 @@ func (wc *workflowEnvironmentImpl) RegisterQueryHandler(
 	handler func(string, *commonpb.Payloads, *commonpb.Header) (*commonpb.Payloads, error),
 ) {
 	wc.queryHandler = handler
+}
+
+func (wc *workflowEnvironmentImpl) RegisterUpdateHandler(
+	handler func(string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks),
+) {
+	wc.updateHandler = handler
 }
 
 func (wc *workflowEnvironmentImpl) GetLogger() log.Logger {
@@ -934,6 +950,15 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 
 	case enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES:
 		weh.handleUpsertWorkflowSearchAttributes(event)
+
+	case enumspb.EVENT_TYPE_WORKFLOW_UPDATE_REQUESTED:
+		weh.handleWorkflowUpdateRequested(event.GetUpdateWorkflowRequestedEventAttributes())
+
+	case enumspb.EVENT_TYPE_WORKFLOW_UPDATE_ACCEPTED:
+		// No Operation
+
+	case enumspb.EVENT_TYPE_WORKFLOW_UPDATE_COMPLETED:
+		// No Operation
 
 	default:
 		weh.logger.Error("unknown event type",
@@ -1433,6 +1458,65 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTermin
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
 	return nil
+}
+
+func (weh *workflowExecutionEventHandlerImpl) handleWorkflowUpdateRequested(
+	attributes *historypb.UpdateWorkflowRequestedEventAttributes,
+) {
+	weh.updateHandler(
+		attributes.GetUpdate().GetName(),
+		attributes.GetUpdate().GetArgs(),
+		attributes.GetUpdate().GetHeader(),
+		&updateCommandCallbacks{
+			updateID: attributes.GetUpdateId(),
+			dc:       weh.dataConverter,
+			commands: weh.commandsHelper,
+		},
+	)
+}
+
+func (ucc *updateCommandCallbacks) Accept() {
+	ucc.commands.acceptWorkflowUpdate(ucc.updateID)
+}
+
+func (ucc *updateCommandCallbacks) Reject(err error) {
+	ucc.commands.completeWorkflowUpdate(
+		ucc.updateID,
+		nil,
+		ConvertErrorToFailure(err, ucc.dc),
+		enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_BYPASS,
+	)
+}
+
+func (ucc *updateCommandCallbacks) Complete(success interface{}, err error) {
+	if err != nil {
+		ucc.commands.completeWorkflowUpdate(
+			ucc.updateID,
+			nil,
+			ConvertErrorToFailure(err, ucc.dc),
+			enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_UNSPECIFIED,
+		)
+		return
+	}
+
+	serializedResult, err := ucc.dc.ToPayloads(success)
+	if err != nil {
+		// Update ran to completion but result cannot be converted to a
+		// Payload
+		ucc.commands.completeWorkflowUpdate(
+			ucc.updateID,
+			nil,
+			ConvertErrorToFailure(err, ucc.dc),
+			enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_UNSPECIFIED,
+		)
+		return
+	}
+	ucc.commands.completeWorkflowUpdate(
+		ucc.updateID,
+		serializedResult,
+		nil,
+		enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_UNSPECIFIED,
+	)
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleUpsertWorkflowSearchAttributes(event *historypb.HistoryEvent) {

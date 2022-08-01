@@ -28,6 +28,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -37,6 +39,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
+	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
@@ -1384,6 +1387,278 @@ func (s *WorkflowUnitTest) Test_StaleGoroutinesAreShutDown() {
 		s.Fail("code after sleep should not have run")
 	default:
 		s.T().Log("code after sleep correctly not executed")
+	}
+}
+
+func MustSetUpdateHandler(
+	t *testing.T,
+	ctx Context,
+	name string,
+	handler interface{},
+	opts UpdateOptions,
+) {
+	t.Helper()
+	require.NoError(t, SetUpdateHandler(ctx, name, handler, opts))
+}
+
+func TestUpdateHandlerPanicSafety(t *testing.T) {
+	t.Parallel()
+
+	env := &workflowEnvironmentImpl{
+		dataConverter: converter.GetDefaultDataConverter(),
+		workflowInfo: &WorkflowInfo{
+			Namespace:     "namespace:" + t.Name(),
+			TaskQueueName: "taskqueue:" + t.Name(),
+		},
+	}
+	interceptor, ctx, err := newWorkflowContext(env, nil)
+	require.NoError(t, err)
+
+	panicFunc := func() error { panic("intentional") }
+	MustSetUpdateHandler(t, ctx, t.Name(), panicFunc, UpdateOptions{Validator: panicFunc})
+	in := UpdateInput{Name: t.Name(), Args: []interface{}{}}
+
+	t.Run("ValidateUpdate", func(t *testing.T) {
+		err := interceptor.inboundInterceptor.ValidateUpdate(ctx, &in)
+		var panicErr *PanicError
+		require.ErrorAs(t, err, &panicErr)
+	})
+	t.Run("ExecuteUpdate", func(t *testing.T) {
+		_, err := interceptor.inboundInterceptor.ExecuteUpdate(ctx, &in)
+		var panicErr *PanicError
+		require.ErrorAs(t, err, &panicErr)
+	})
+}
+
+type testUpdateCallbacks struct {
+	AcceptImpl   func()
+	RejectImpl   func(err error)
+	CompleteImpl func(success interface{}, err error)
+}
+
+func (tuc *testUpdateCallbacks) Accept()          { tuc.AcceptImpl() }
+func (tuc *testUpdateCallbacks) Reject(err error) { tuc.RejectImpl(err) }
+func (tuc *testUpdateCallbacks) Complete(success interface{}, err error) {
+	tuc.CompleteImpl(success, err)
+}
+
+func TestDefaultUpdateHandler(t *testing.T) {
+	t.Parallel()
+	dc := converter.GetDefaultDataConverter()
+	env := &workflowEnvironmentImpl{
+		dataConverter: dc,
+		workflowInfo: &WorkflowInfo{
+			Namespace:     "namespace:" + t.Name(),
+			TaskQueueName: "taskqueue:" + t.Name(),
+		},
+	}
+	_, ctx, err := newWorkflowContext(env, nil)
+	require.NoError(t, err)
+
+	hdr := &commonpb.Header{Fields: map[string]*commonpb.Payload{}}
+	argStr := t.Name()
+	args, err := dc.ToPayloads(argStr)
+	require.NoError(t, err)
+
+	runOnCallingThread := func(ctx Context, _ string, f func(Context)) { f(ctx) }
+
+	t.Run("no handler registered", func(t *testing.T) {
+		MustSetUpdateHandler(t, ctx, "unused_handler", func() error { panic("not called") }, UpdateOptions{})
+		var rejectErr error
+		defaultUpdateHandler(ctx, "will_not_be_found", args, hdr, &testUpdateCallbacks{
+			RejectImpl: func(err error) { rejectErr = err },
+		}, runOnCallingThread)
+		require.ErrorContains(t, rejectErr, "unknown update")
+		require.ErrorContains(t, rejectErr, "unused_handler",
+			"handler not found error should include a list of the registered handlers")
+	})
+
+	t.Run("malformed serialized input", func(t *testing.T) {
+		MustSetUpdateHandler(t, ctx, t.Name(), func(Context, int) error { return nil }, UpdateOptions{})
+		junkArgs := &commonpb.Payloads{Payloads: []*commonpb.Payload{&commonpb.Payload{}}}
+		var rejectErr error
+		defaultUpdateHandler(ctx, t.Name(), junkArgs, hdr, &testUpdateCallbacks{
+			RejectImpl: func(err error) { rejectErr = err },
+		}, runOnCallingThread)
+		require.ErrorContains(t, rejectErr, "unable to decode")
+	})
+
+	t.Run("reject from validator", func(t *testing.T) {
+		updateFunc := func(Context, string) error { panic("should not get called") }
+		validatorFunc := func(Context, string) error { return errors.New("expected") }
+		MustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateOptions{Validator: validatorFunc})
+		var rejectErr error
+		defaultUpdateHandler(ctx, t.Name(), args, hdr, &testUpdateCallbacks{
+			RejectImpl: func(err error) { rejectErr = err },
+		}, runOnCallingThread)
+		require.Equal(t, validatorFunc(ctx, argStr), rejectErr)
+	})
+
+	t.Run("error from update func", func(t *testing.T) {
+		updateFunc := func(Context, string) error { return errors.New("expected") }
+		MustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateOptions{})
+		var (
+			resultErr error
+			accepted  bool
+			result    interface{}
+		)
+		defaultUpdateHandler(ctx, t.Name(), args, hdr, &testUpdateCallbacks{
+			AcceptImpl: func() { accepted = true },
+			CompleteImpl: func(success interface{}, err error) {
+				resultErr = err
+				result = success
+			},
+		}, runOnCallingThread)
+		require.True(t, accepted)
+		require.Equal(t, updateFunc(ctx, argStr), resultErr)
+		require.Nil(t, result)
+	})
+
+	t.Run("update success", func(t *testing.T) {
+		updateFunc := func(ctx Context, s string) (string, error) { return s + " success!", nil }
+		MustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateOptions{})
+		var (
+			resultErr error
+			accepted  bool
+			result    interface{}
+		)
+		defaultUpdateHandler(ctx, t.Name(), args, hdr, &testUpdateCallbacks{
+			AcceptImpl: func() { accepted = true },
+			CompleteImpl: func(success interface{}, err error) {
+				resultErr = err
+				result = success
+			},
+		}, runOnCallingThread)
+		require.True(t, accepted)
+		require.Nil(t, resultErr)
+
+		expectedResult, _ := updateFunc(ctx, argStr)
+		require.Equal(t, expectedResult, result)
+	})
+}
+
+func TestUpdateHandlerFnValidation(t *testing.T) {
+	for _, tc := range [...]struct {
+		check func(require.TestingT, error, ...interface{})
+		fn    interface{}
+	}{
+		{require.Error, "not a function"},
+		{require.Error, func() {}},
+		{require.Error, func() int { return 0 }},
+		{require.Error, func(Context, int) (int, int, error) { return 0, 0, nil }},
+		{require.Error, func(int) (chan int, error) { return nil, nil }},
+		{require.NoError, func() error { return nil }},
+		{require.NoError, func(Context) error { return nil }},
+		{require.NoError, func(int) error { return nil }},
+		{require.NoError, func(int, int, string) error { return nil }},
+		{require.NoError, func(Context, int, int, string) error { return nil }},
+	} {
+		t.Run(reflect.TypeOf(tc.fn).String(), func(t *testing.T) {
+			tc.check(t, validateUpdateHandlerFn(tc.fn))
+		})
+	}
+}
+
+func TestUpdateValidatorFnValidation(t *testing.T) {
+	for _, tc := range [...]struct {
+		check func(require.TestingT, error, ...interface{})
+		fn    interface{}
+	}{
+		{require.Error, "not a function"},
+		{require.Error, func() {}},
+		{require.Error, func(int) (int, error) { return 0, nil }},
+		{require.Error, func(int, int, string) (int, error) { return 0, nil }},
+		{require.Error, func(int) (chan int, error) { return nil, nil }},
+		{require.NoError, func(int, int, string) error { return nil }},
+		{require.NoError, func() error { return nil }},
+		{require.NoError, func(int) error { return nil }},
+	} {
+		t.Run(reflect.TypeOf(tc.fn).String(), func(t *testing.T) {
+			tc.check(t, validateValidatorFn(tc.fn))
+		})
+	}
+}
+
+func TestQueryFnValidation(t *testing.T) {
+	for _, tc := range [...]struct {
+		check func(require.TestingT, error, ...interface{})
+		fn    interface{}
+	}{
+		{require.Error, "not a function"},
+		{require.Error, func() {}},
+		{require.Error, func() error { return nil }},
+		{require.Error, func(int) error { return nil }},
+		{require.Error, func(int, int, string) error { return nil }},
+		{require.Error, func(int) (chan int, error) { return nil, nil }},
+		{require.NoError, func(int) (int, error) { return 0, nil }},
+		{require.NoError, func(int, int, string) (int, error) { return 0, nil }},
+	} {
+		t.Run(reflect.TypeOf(tc.fn).String(), func(t *testing.T) {
+			tc.check(t, validateQueryHandlerFn(tc.fn))
+		})
+	}
+}
+
+func TestParamValidator(t *testing.T) {
+	for i, tc := range [...]struct {
+		Fn0   interface{}
+		Fn1   interface{}
+		Check func(require.TestingT, error, ...interface{})
+	}{
+		{
+			Fn0:   func() {},
+			Fn1:   func() {},
+			Check: require.NoError,
+		},
+		{
+			Fn0:   func(int) {},
+			Fn1:   func(int) {},
+			Check: require.NoError,
+		},
+		{
+			Fn0:   func(int) {},
+			Fn1:   func(int, ...struct{}) {},
+			Check: require.Error,
+		},
+		{
+			Fn0:   func(error) {},
+			Fn1:   func(error) {},
+			Check: require.NoError,
+		},
+		{
+			Fn0:   func(int) {},
+			Fn1:   func(string) {},
+			Check: require.Error,
+		},
+		{
+			Fn0:   func(int) {},
+			Fn1:   func(int, string) {},
+			Check: require.Error,
+		},
+		{
+			Fn0:   func(int, chan struct{}, int) {},
+			Fn1:   func(int, string, int) {},
+			Check: require.Error,
+		},
+		{
+			Fn0:   func(int) {},
+			Fn1:   func(interface{}) {},
+			Check: require.Error,
+		},
+		{
+			Fn0:   func(int) {},
+			Fn1:   "",
+			Check: require.Error,
+		},
+		{
+			Fn0:   "",
+			Fn1:   func(int) {},
+			Check: require.Error,
+		},
+	} {
+		t.Run(strconv.FormatInt(int64(i), 10), func(t *testing.T) {
+			tc.Check(t, validateSameParams(tc.Fn0, tc.Fn1))
+		})
 	}
 }
 

@@ -185,6 +185,7 @@ type (
 		workflowCancelHandler func()
 		signalHandler         func(name string, input *commonpb.Payloads, header *commonpb.Header) error
 		queryHandler          func(string, *commonpb.Payloads, *commonpb.Header) (*commonpb.Payloads, error)
+		updateHandler         func(name string, input *commonpb.Payloads, header *commonpb.Header, resp UpdateCallbacks)
 		startedHandler        func(r WorkflowExecution, e error)
 
 		isWorkflowCompleted bool
@@ -2012,6 +2013,12 @@ func (env *testWorkflowEnvironmentImpl) RegisterSignalHandler(
 	env.signalHandler = handler
 }
 
+func (env *testWorkflowEnvironmentImpl) RegisterUpdateHandler(
+	handler func(name string, input *commonpb.Payloads, header *commonpb.Header, resp UpdateCallbacks),
+) {
+	env.updateHandler = handler
+}
+
 func (env *testWorkflowEnvironmentImpl) RegisterQueryHandler(
 	handler func(string, *commonpb.Payloads, *commonpb.Header) (*commonpb.Payloads, error),
 ) {
@@ -2328,6 +2335,14 @@ func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...
 		return nil, err
 	}
 	return newEncodedValue(blob, env.GetDataConverter()), nil
+}
+
+func (env *testWorkflowEnvironmentImpl) updateWorkflow(name string, uc UpdateCallbacks, args ...interface{}) {
+	data, err := encodeArgs(env.GetDataConverter(), args)
+	if err != nil {
+		panic(err)
+	}
+	env.updateHandler(name, data, nil, uc)
 }
 
 func (env *testWorkflowEnvironmentImpl) queryWorkflowByID(workflowID, queryType string, args ...interface{}) (converter.EncodedValue, error) {
