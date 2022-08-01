@@ -1432,7 +1432,7 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, strict
 		}
 
 		if strictMode {
-			eventAttributes := e.GetUpdateWorkflowCompletedEventAttributes()
+			eventAttributes := e.GetWorkflowUpdateCompletedEventAttributes()
 			commandAttributes := d.GetCompleteWorkflowUpdateCommandAttributes()
 
 			if !proto.Equal(eventAttributes.GetSuccess(), commandAttributes.GetSuccess()) ||
