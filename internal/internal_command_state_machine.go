@@ -305,7 +305,7 @@ func (h *commandsHelper) completeWorkflowUpdate(
 	updateID string,
 	success *commonpb.Payloads,
 	failure *failurepb.Failure,
-	durabilityPref enumspb.UpdateWorkflowRejectionDurabilityPreference,
+	durabilityPref enumspb.WorkflowUpdateDurabilityPreference,
 ) {
 	sm := h.newCompleteWorkflowUpdateStateMachine(updateID, success, failure, durabilityPref)
 	h.addCommand(sm)
@@ -315,11 +315,11 @@ func (h *commandsHelper) newCompleteWorkflowUpdateStateMachine(
 	updateID string,
 	success *commonpb.Payloads,
 	failure *failurepb.Failure,
-	durabilityPref enumspb.UpdateWorkflowRejectionDurabilityPreference,
+	durabilityPref enumspb.WorkflowUpdateDurabilityPreference,
 ) commandStateMachine {
 	attrs := &commandpb.Command_CompleteWorkflowUpdateCommandAttributes{
 		CompleteWorkflowUpdateCommandAttributes: &commandpb.CompleteWorkflowUpdateCommandAttributes{
-			UpdateToken:          []byte(updateID), // todo: this will change to UpdateId
+			UpdateId:             updateID,
 			DurabilityPreference: durabilityPref,
 		},
 	}
@@ -348,7 +348,7 @@ func (h *commandsHelper) newAcceptWorkflowUpdateStateMachine(
 			CommandType: enumspb.COMMAND_TYPE_ACCEPT_WORKFLOW_UPDATE,
 			Attributes: &commandpb.Command_AcceptWorkflowUpdateCommandAttributes{
 				AcceptWorkflowUpdateCommandAttributes: &commandpb.AcceptWorkflowUpdateCommandAttributes{
-					UpdateToken: []byte(updateID), // todo: this will change to UpdateId
+					UpdateId: updateID,
 				},
 			},
 		}),

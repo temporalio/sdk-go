@@ -952,7 +952,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		weh.handleUpsertWorkflowSearchAttributes(event)
 
 	case enumspb.EVENT_TYPE_WORKFLOW_UPDATE_REQUESTED:
-		weh.handleWorkflowUpdateRequested(event.GetUpdateWorkflowRequestedEventAttributes())
+		weh.handleWorkflowUpdateRequested(event.GetWorkflowUpdateRequestedEventAttributes())
 
 	case enumspb.EVENT_TYPE_WORKFLOW_UPDATE_ACCEPTED:
 		// No Operation
@@ -1461,7 +1461,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTermin
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleWorkflowUpdateRequested(
-	attributes *historypb.UpdateWorkflowRequestedEventAttributes,
+	attributes *historypb.WorkflowUpdateRequestedEventAttributes,
 ) {
 	weh.updateHandler(
 		attributes.GetUpdate().GetName(),
@@ -1484,7 +1484,7 @@ func (ucc *updateCommandCallbacks) Reject(err error) {
 		ucc.updateID,
 		nil,
 		ConvertErrorToFailure(err, ucc.dc),
-		enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_BYPASS,
+		enumspb.WORKFLOW_UPDATE_DURABILITY_PREFERENCE_BYPASS,
 	)
 }
 
@@ -1494,7 +1494,7 @@ func (ucc *updateCommandCallbacks) Complete(success interface{}, err error) {
 			ucc.updateID,
 			nil,
 			ConvertErrorToFailure(err, ucc.dc),
-			enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_UNSPECIFIED,
+			enumspb.WORKFLOW_UPDATE_DURABILITY_PREFERENCE_UNSPECIFIED,
 		)
 		return
 	}
@@ -1507,7 +1507,7 @@ func (ucc *updateCommandCallbacks) Complete(success interface{}, err error) {
 			ucc.updateID,
 			nil,
 			ConvertErrorToFailure(err, ucc.dc),
-			enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_UNSPECIFIED,
+			enumspb.WORKFLOW_UPDATE_DURABILITY_PREFERENCE_UNSPECIFIED,
 		)
 		return
 	}
@@ -1515,7 +1515,7 @@ func (ucc *updateCommandCallbacks) Complete(success interface{}, err error) {
 		ucc.updateID,
 		serializedResult,
 		nil,
-		enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_UNSPECIFIED,
+		enumspb.WORKFLOW_UPDATE_DURABILITY_PREFERENCE_UNSPECIFIED,
 	)
 }
 

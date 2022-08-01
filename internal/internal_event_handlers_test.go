@@ -324,7 +324,7 @@ func TestUpdateEvents(t *testing.T) {
 		},
 	}
 
-	updateAttrs := &historypb.UpdateWorkflowRequestedEventAttributes{
+	updateAttrs := &historypb.WorkflowUpdateRequestedEventAttributes{
 		Header: &commonpb.Header{Fields: map[string]*commonpb.Payload{"hello": mustPayload("world")}},
 		Update: &updatepb.WorkflowUpdate{
 			Header: &commonpb.Header{Fields: map[string]*commonpb.Payload{"a": mustPayload("b")}},
@@ -335,8 +335,8 @@ func TestUpdateEvents(t *testing.T) {
 
 	event := &historypb.HistoryEvent{
 		EventType: enumspb.EVENT_TYPE_WORKFLOW_UPDATE_REQUESTED,
-		Attributes: &historypb.HistoryEvent_UpdateWorkflowRequestedEventAttributes{
-			UpdateWorkflowRequestedEventAttributes: updateAttrs,
+		Attributes: &historypb.HistoryEvent_WorkflowUpdateRequestedEventAttributes{
+			WorkflowUpdateRequestedEventAttributes: updateAttrs,
 		},
 	}
 	err := weh.ProcessEvent(event, false, false)
@@ -372,7 +372,7 @@ func TestUpdateCommandAdapter(t *testing.T) {
 		cmd, attrs := cmds[0], cmds[0].GetCompleteWorkflowUpdateCommandAttributes()
 		require.Equal(t, enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE, cmd.GetCommandType())
 		require.Equal(t,
-			enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_BYPASS,
+			enumspb.WORKFLOW_UPDATE_DURABILITY_PREFERENCE_BYPASS,
 			attrs.GetDurabilityPreference())
 		require.NotNil(t, attrs.GetFailure())
 		require.Equal(t, wantErr.Error(), attrs.GetFailure().GetMessage())
@@ -391,7 +391,7 @@ func TestUpdateCommandAdapter(t *testing.T) {
 		cmd, attrs := cmds[0], cmds[0].GetCompleteWorkflowUpdateCommandAttributes()
 		require.Equal(t, enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE, cmd.GetCommandType())
 		require.Equal(t,
-			enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_UNSPECIFIED,
+			enumspb.WORKFLOW_UPDATE_DURABILITY_PREFERENCE_UNSPECIFIED,
 			attrs.GetDurabilityPreference())
 		require.NotNil(t, attrs.GetFailure())
 		require.Equal(t, wantErr.Error(), attrs.GetFailure().GetMessage())
@@ -404,7 +404,7 @@ func TestUpdateCommandAdapter(t *testing.T) {
 		cmd, attrs := cmds[0], cmds[0].GetCompleteWorkflowUpdateCommandAttributes()
 		require.Equal(t, enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE, cmd.GetCommandType())
 		require.Equal(t,
-			enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_UNSPECIFIED,
+			enumspb.WORKFLOW_UPDATE_DURABILITY_PREFERENCE_UNSPECIFIED,
 			attrs.GetDurabilityPreference())
 		require.Nil(t, attrs.GetFailure())
 		require.NotNil(t, attrs.GetSuccess())
@@ -421,7 +421,7 @@ func TestUpdateCommandAdapter(t *testing.T) {
 		cmd, attrs := cmds[0], cmds[0].GetCompleteWorkflowUpdateCommandAttributes()
 		require.Equal(t, enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE, cmd.GetCommandType())
 		require.Equal(t,
-			enumspb.UPDATE_WORKFLOW_REJECTION_DURABILITY_PREFERENCE_UNSPECIFIED,
+			enumspb.WORKFLOW_UPDATE_DURABILITY_PREFERENCE_UNSPECIFIED,
 			attrs.GetDurabilityPreference())
 		require.NotNil(t, attrs.GetFailure())
 	})
