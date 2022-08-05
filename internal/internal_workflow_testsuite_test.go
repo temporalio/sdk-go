@@ -2978,9 +2978,14 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityRetry_NoRetries() {
 	s.True(env.IsWorkflowCompleted())
 	err := env.GetWorkflowError()
 	s.Error(err)
+
 	var workflowErr *WorkflowExecutionError
-	s.True(errors.As(err, &workflowErr))
-	s.True(errors.As(err, &fakeError))
+	s.ErrorAs(err, &workflowErr)
+
+	var appErr *ApplicationError
+	s.ErrorAs(err, &appErr)
+
+	s.ErrorContains(err, fakeError.Error())
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityHeartbeatRetry() {
