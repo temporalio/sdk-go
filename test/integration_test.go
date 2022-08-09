@@ -2486,6 +2486,35 @@ func (ts *IntegrationTestSuite) TestMultiNamespaceClient() {
 		metrics.NamespaceTagName, "some-other-namespace")
 }
 
+func (ts *IntegrationTestSuite) TestHeartbeatThrottleDisabled() {
+	// Heartbeat 4 times, 100ms apart
+	ts.NoError(ts.executeWorkflow("test-heartbeat-throttle-disabled-1", ts.workflows.HeartbeatSpecificCount, nil,
+		100*time.Millisecond, 4))
+
+	// That short of time by default on non-failure would only record the first
+	// one
+	ts.assertReportedOperationCount("temporal_request_attempt", "RecordActivityTaskHeartbeat", 1)
+
+	// Restart worker with heartbeat throttling effectively disabled
+	ts.worker.Stop()
+	ts.workerStopped = true
+	newWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		MaxHeartbeatThrottleInterval: 1 * time.Nanosecond,
+	})
+	ts.registerWorkflowsAndActivities(newWorker)
+	ts.NoError(newWorker.Start())
+	defer newWorker.Stop()
+
+	// Try that again
+	ts.metricsHandler.Clear()
+	ts.NoError(ts.executeWorkflow("test-heartbeat-throttle-disabled-2", ts.workflows.HeartbeatSpecificCount, nil,
+		100*time.Millisecond, 4))
+
+	// Now that heartbeat throttling was disabled, it should have sent all 4 times
+	ts.assertReportedOperationCount("temporal_request", "RecordActivityTaskHeartbeat", 4)
+	ts.assertReportedOperationCount("temporal_request_failure", "RecordActivityTaskHeartbeat", 0)
+}
+
 // executeWorkflow executes a given workflow and waits for the result
 func (ts *IntegrationTestSuite) executeWorkflow(
 	wfID string, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {

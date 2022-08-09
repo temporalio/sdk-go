@@ -1611,6 +1611,15 @@ func getTestTags(ctx context.Context) map[string]map[string]string {
 	return nil
 }
 
+// Same as executeFunction but injects the workflow context as the first
+// parameter if the function takes it (regardless of existing parameters).
+func executeFunctionWithWorkflowContext(ctx Context, fn interface{}, args []interface{}) (interface{}, error) {
+	if fnType := reflect.TypeOf(fn); fnType.NumIn() > 0 && isWorkflowContext(fnType.In(0)) {
+		args = append([]interface{}{ctx}, args...)
+	}
+	return executeFunction(fn, args)
+}
+
 // Same as executeFunction but injects the context as the first parameter if the
 // function takes it (regardless of existing parameters).
 func executeFunctionWithContext(ctx context.Context, fn interface{}, args []interface{}) (interface{}, error) {

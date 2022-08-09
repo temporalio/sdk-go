@@ -168,7 +168,8 @@ type (
 		DeadlockDetectionTimeout time.Duration
 
 		// Optional: The maximum amount of time between sending each pending heartbeat to the server. Regardless of
-		// heartbeat timeout, no pending heartbeat will wait longer than this amount of time to send.
+		// heartbeat timeout, no pending heartbeat will wait longer than this amount of time to send. To effectively disable
+		// heartbeat throttling, this can be set to something like 1 nanosecond, but it is not recommended.
 		// default: 60 seconds
 		MaxHeartbeatThrottleInterval time.Duration
 

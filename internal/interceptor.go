@@ -121,6 +121,19 @@ type WorkflowInboundInterceptor interface {
 	// interceptor.WorkflowHeader will return a non-nil map for this context.
 	HandleQuery(ctx Context, in *HandleQueryInput) (interface{}, error)
 
+	// ValidateUpdate is always called prior to executing an update, even if the
+	// update handler for in.Name was not registered with a validation function
+	// as part of its optional configuration. The same prohibition against
+	// mutating workflow state that is demanded of UpdateOptions.Validator
+	// functions also applies to this function.
+	ValidateUpdate(ctx Context, in *UpdateInput) error
+
+	// ExecuteUpdate is called after ValidateUpdate if and only if the latter
+	// returns nil. interceptor.WorkflowHeader will return a non-nil map for
+	// this context. ExecuteUpdate is allowed to mutate workflow state and
+	// perform workflow actions such as scheduling activities, timers, etc.
+	ExecuteUpdate(ctx Context, in *UpdateInput) (interface{}, error)
+
 	mustEmbedWorkflowInboundInterceptorBase()
 }
 
@@ -136,6 +149,12 @@ type HandleSignalInput struct {
 	// Arg is the signal argument. It is presented as a primitive payload since
 	// the type needed for decode is not available at the time of interception.
 	Arg *commonpb.Payloads
+}
+
+// UpdateInput carries the name and arguments of a workflow update invocation.
+type UpdateInput struct {
+	Name string
+	Args []interface{}
 }
 
 // HandleQueryInput is the input to WorkflowInboundInterceptor.HandleQuery.
@@ -216,6 +235,8 @@ type WorkflowOutboundInterceptor interface {
 
 	// SetQueryHandler intercepts workflow.SetQueryHandler.
 	SetQueryHandler(ctx Context, queryType string, handler interface{}) error
+
+	SetUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateOptions) error
 
 	// IsReplaying intercepts workflow.IsReplaying.
 	IsReplaying(ctx Context) bool

@@ -64,7 +64,6 @@ type (
 		handleInitiatedEvent()
 
 		handleCommandSent()
-
 		setData(data interface{})
 		getData() interface{}
 	}
@@ -130,7 +129,10 @@ type (
 		*naiveCommandStateMachine
 	}
 
-	upsertSearchAttributesCommandStateMachine struct {
+	// completeOnSendStateMachine is a generic state machine that transition
+	// into a comleted state immediately upon a command being sent (i.e. upon
+	// handleCommandSent() being called).
+	completeOnSendStateMachine struct {
 		*naiveCommandStateMachine
 	}
 
@@ -184,6 +186,8 @@ const (
 	commandTypeUpsertSearchAttributes    commandType = 6
 	commandTypeCancelTimer               commandType = 7
 	commandTypeRequestCancelActivityTask commandType = 8
+	commandTypeAcceptWorkflowUpdate      commandType = 9
+	commandTypeCompleteWorkflowUpdate    commandType = 10
 )
 
 const (
@@ -262,6 +266,10 @@ func (d commandType) String() string {
 		return "CancelTimer"
 	case commandTypeRequestCancelActivityTask:
 		return "RequestCancelActivityTask"
+	case commandTypeAcceptWorkflowUpdate:
+		return "AcceptWorkflowUpdate"
+	case commandTypeCompleteWorkflowUpdate:
+		return "CompleteWorkflowUpdate"
 	default:
 		return "Unknown"
 	}
@@ -281,6 +289,69 @@ func (h *commandsHelper) newCommandStateMachineBase(commandType commandType, id 
 		state:   commandStateCreated,
 		history: []string{commandStateCreated.String()},
 		helper:  h,
+	}
+}
+
+// acceptWorkflowUpdate arranges for an AcceptWorkflowUpdate command to be added
+// to the current batch of outgoing commands.
+func (h *commandsHelper) acceptWorkflowUpdate(updateID string) {
+	sm := h.newAcceptWorkflowUpdateStateMachine(updateID)
+	h.addCommand(sm)
+}
+
+// acceptWorkflowUpdate arranges for an CompleteWorkflowUpdate command to be added
+// to the current batch of outgoing commands.
+func (h *commandsHelper) completeWorkflowUpdate(
+	updateID string,
+	success *commonpb.Payloads,
+	failure *failurepb.Failure,
+	durabilityPref enumspb.WorkflowUpdateDurabilityPreference,
+) {
+	sm := h.newCompleteWorkflowUpdateStateMachine(updateID, success, failure, durabilityPref)
+	h.addCommand(sm)
+}
+
+func (h *commandsHelper) newCompleteWorkflowUpdateStateMachine(
+	updateID string,
+	success *commonpb.Payloads,
+	failure *failurepb.Failure,
+	durabilityPref enumspb.WorkflowUpdateDurabilityPreference,
+) commandStateMachine {
+	attrs := &commandpb.Command_CompleteWorkflowUpdateCommandAttributes{
+		CompleteWorkflowUpdateCommandAttributes: &commandpb.CompleteWorkflowUpdateCommandAttributes{
+			UpdateId:             updateID,
+			DurabilityPreference: durabilityPref,
+		},
+	}
+	if failure != nil {
+		attrs.CompleteWorkflowUpdateCommandAttributes.Result = &commandpb.CompleteWorkflowUpdateCommandAttributes_Failure{
+			Failure: failure,
+		}
+	} else {
+		attrs.CompleteWorkflowUpdateCommandAttributes.Result = &commandpb.CompleteWorkflowUpdateCommandAttributes_Success{
+			Success: success,
+		}
+	}
+	return &completeOnSendStateMachine{
+		h.newNaiveCommandStateMachine(commandTypeCompleteWorkflowUpdate, updateID, &commandpb.Command{
+			CommandType: enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE,
+			Attributes:  attrs,
+		}),
+	}
+}
+
+func (h *commandsHelper) newAcceptWorkflowUpdateStateMachine(
+	updateID string,
+) commandStateMachine {
+	return &completeOnSendStateMachine{
+		h.newNaiveCommandStateMachine(commandTypeAcceptWorkflowUpdate, updateID, &commandpb.Command{
+			CommandType: enumspb.COMMAND_TYPE_ACCEPT_WORKFLOW_UPDATE,
+			Attributes: &commandpb.Command_AcceptWorkflowUpdateCommandAttributes{
+				AcceptWorkflowUpdateCommandAttributes: &commandpb.AcceptWorkflowUpdateCommandAttributes{
+					UpdateId: updateID,
+				},
+			},
+		}),
 	}
 }
 
@@ -360,10 +431,10 @@ func (h *commandsHelper) newSignalExternalWorkflowStateMachine(attributes *comma
 	}
 }
 
-func (h *commandsHelper) newUpsertSearchAttributesStateMachine(attributes *commandpb.UpsertWorkflowSearchAttributesCommandAttributes, upsertID string) *upsertSearchAttributesCommandStateMachine {
+func (h *commandsHelper) newUpsertSearchAttributesStateMachine(attributes *commandpb.UpsertWorkflowSearchAttributesCommandAttributes, upsertID string) *completeOnSendStateMachine {
 	d := createNewCommand(enumspb.COMMAND_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES)
 	d.Attributes = &commandpb.Command_UpsertWorkflowSearchAttributesCommandAttributes{UpsertWorkflowSearchAttributesCommandAttributes: attributes}
-	return &upsertSearchAttributesCommandStateMachine{
+	return &completeOnSendStateMachine{
 		naiveCommandStateMachine: h.newNaiveCommandStateMachine(commandTypeUpsertSearchAttributes, upsertID, d),
 	}
 }
@@ -820,7 +891,7 @@ func (d *markerCommandStateMachine) handleCommandSent() {
 	}
 }
 
-func (d *upsertSearchAttributesCommandStateMachine) handleCommandSent() {
+func (d *completeOnSendStateMachine) handleCommandSent() {
 	// This command is considered as completed once command is sent.
 	switch d.state {
 	case commandStateCreated:
