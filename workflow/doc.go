@@ -282,52 +282,11 @@ pattern, extra care needs to be taken to ensure the child workflow is started be
 
 Error Handling
 
-Activities and child workflows can fail. You could handle errors differently based on different error cases. If the
-activity returns an error as errors.New() or fmt.Errorf(), those errors will be converted to error.GenericError. If the
-activity returns an error as error.NewCustomError("err-reason", details), that error will be converted to
-*error.CustomError. There are other types of errors like error.TimeoutError, error.CanceledError and error.PanicError.
-So the error handling code would look like:
+Activities and child workflows can fail. Activity errors are *temporal.ActivityError and errors during child workflow
+execution are *temporal.ChildWorkflowExecutionError. The cause of the errors may be types like
+*temporal.ApplicationError, *temporal.TimeoutError, *temporal.CanceledError, and *temporal.PanicError.
 
-	err := workflow.ExecuteActivity(ctx, YourActivityFunc).Get(ctx, nil)
-	switch err := err.(type) {
-	case *error.CustomError:
-		switch err.Reason() {
-		case "err-reason-a":
-			// handle error-reason-a
-			var details YourErrorDetailsType
-			err.Details(&details)
-			// deal with details
-		case "err-reason-b":
-			// handle error-reason-b
-		default:
-			// handle all other error reasons
-		}
-	case *error.GenericError:
-		switch err.Error() {
-		case "err-msg-1":
-			// handle error with message "err-msg-1"
-		case "err-msg-2":
-			// handle error with message "err-msg-2"
-		default:
-			// handle all other generic errors
-		}
-	case *error.TimeoutError:
-		switch err.TimeoutType() {
-		case shared.TimeoutTypeScheduleToStart:
-			// handle ScheduleToStart timeout
-		case shared.TimeoutTypeStartToClose:
-			// handle StartToClose timeout
-		case shared.TimeoutTypeHeartbeat:
-			// handle heartbeat timeout
-		default:
-		}
-	case *error.PanicError:
-		 // handle panic error
-	case *error.CanceledError:
-		// handle canceled error
-	default:
-		// all other cases (ideally, this should not happen)
-	}
+See ExecuteActivity() and ExecuteChildWorkflow() for details.
 
 Signals
 
