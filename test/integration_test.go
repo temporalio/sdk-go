@@ -2456,6 +2456,36 @@ func (ts *IntegrationTestSuite) TestHistoryLength() {
 	ts.Equal(expected, actual)
 }
 
+func (ts *IntegrationTestSuite) TestMultiNamespaceClient() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Make simple call to describe an execution
+	_, _ = ts.client.DescribeWorkflowExecution(ctx, "id-that-does-not-exist", "")
+
+	// Confirm count on our namespace but not on the other
+	ts.assertMetricCount(metrics.TemporalRequest, 1,
+		metrics.OperationTagName, "DescribeWorkflowExecution",
+		metrics.NamespaceTagName, ts.config.Namespace)
+	ts.assertMetricCount(metrics.TemporalRequest, 0,
+		metrics.OperationTagName, "DescribeWorkflowExecution",
+		metrics.NamespaceTagName, "some-other-namespace")
+
+	// Make a new client with a different namespace and run again
+	newClient, err := client.NewClientFromExisting(ts.client, client.Options{Namespace: "some-other-namespace"})
+	ts.NoError(err)
+	_, _ = newClient.DescribeWorkflowExecution(ctx, "id-that-does-not-exist", "")
+
+	// Confirm there was no count change to other namespace but there is now a
+	// request for this one
+	ts.assertMetricCount(metrics.TemporalRequest, 1,
+		metrics.OperationTagName, "DescribeWorkflowExecution",
+		metrics.NamespaceTagName, ts.config.Namespace)
+	ts.assertMetricCount(metrics.TemporalRequest, 1,
+		metrics.OperationTagName, "DescribeWorkflowExecution",
+		metrics.NamespaceTagName, "some-other-namespace")
+}
+
 // executeWorkflow executes a given workflow and waits for the result
 func (ts *IntegrationTestSuite) executeWorkflow(
 	wfID string, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
