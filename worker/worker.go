@@ -56,9 +56,16 @@ type (
 		// Pass any other `<-chan interface{}` and Run will wait for signal from that channel.
 		// Returns error if the worker fails to start or there is a fatal error
 		// during execution.
+		//
+		// Users are encouraged to use Start() instead of this call if they plan to
+		// manually Stop(). Otherwise a race can occur if shutdown occurs before the
+		// worker is started. This Run() call is only best if shutdown is initiated
+		// via the interrupt channel.
 		Run(interruptCh <-chan interface{}) error
 
 		// Stop the worker.
+		//
+		// This may panic if called a second time.
 		Stop()
 	}
 
