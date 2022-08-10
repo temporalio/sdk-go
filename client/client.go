@@ -468,6 +468,16 @@ func NewClient(options Options) (Client, error) {
 	return internal.NewClient(options)
 }
 
+// NewClientFromExisting creates a new client using the same connection as the
+// existing client. This means all options.ConnectionOptions are ignored and
+// options.HostPort is ignored. The existing client must have been created from
+// this package and cannot be wrapped. Currently, this always attempts an eager
+// connection even if the existing client was created with NewLazyClient and has
+// not made any calls yet.
+func NewClientFromExisting(existingClient Client, options Options) (Client, error) {
+	return internal.NewClientFromExisting(existingClient, options)
+}
+
 // NewNamespaceClient creates an instance of a namespace client, to manage
 // lifecycle of namespaces. This will not attempt to connect to the server
 // eagerly and therefore may not fail for an unreachable server until a call is

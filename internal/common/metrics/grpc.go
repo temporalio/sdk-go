@@ -59,9 +59,17 @@ func NewGRPCInterceptor(defaultHandler Handler, suffix string) grpc.UnaryClientI
 
 		// Only take method name after the last slash
 		operation := method[strings.LastIndex(method, "/")+1:]
-		handler = handler.WithTags(map[string]string{OperationTagName: operation})
+		tags := map[string]string{OperationTagName: operation}
+
+		// Since this interceptor can be used for clients of different name, we
+		// attempt to extract the namespace out of the request. All namespace-based
+		// requests have been confirmed to have a top-level namespace field.
+		if nsReq, _ := req.(interface{ GetNamespace() string }); nsReq != nil {
+			tags[NamespaceTagName] = nsReq.GetNamespace()
+		}
 
 		// Capture time, record start, run, and record end
+		handler = handler.WithTags(tags)
 		start := time.Now()
 		recordRequestStart(handler, longPoll, suffix)
 		err := invoker(ctx, method, req, reply, cc, opts...)
