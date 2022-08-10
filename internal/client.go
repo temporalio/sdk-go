@@ -27,6 +27,7 @@ package internal
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
@@ -633,6 +634,20 @@ func NewLazyClient(options ClientOptions) (Client, error) {
 //
 // Deprecated: Use DialClient or NewLazyClient instead.
 func NewClient(options ClientOptions) (Client, error) {
+	return newClient(options, nil)
+}
+
+// NewClientFromExisting creates a new client using the same connection as the
+// existing client.
+func NewClientFromExisting(existingClient Client, options ClientOptions) (Client, error) {
+	existing, _ := existingClient.(*WorkflowClient)
+	if existing == nil {
+		return nil, fmt.Errorf("existing client must have been created directly from a client package call")
+	}
+	return newClient(options, existing)
+}
+
+func newClient(options ClientOptions, existing *WorkflowClient) (Client, error) {
 	if options.Namespace == "" {
 		options.Namespace = DefaultNamespace
 	}
@@ -652,16 +667,29 @@ func NewClient(options ClientOptions) (Client, error) {
 		options.Logger.Info("No logger configured for temporal client. Created default one.")
 	}
 
-	options.ConnectionOptions.excludeInternalFromRetry = uberatomic.NewBool(false)
-	connection, err := dial(newDialParameters(&options, options.ConnectionOptions.excludeInternalFromRetry))
-	if err != nil {
-		return nil, err
+	// Dial or use existing connection
+	var connection *grpc.ClientConn
+	var err error
+	if existing == nil {
+		options.ConnectionOptions.excludeInternalFromRetry = uberatomic.NewBool(false)
+		connection, err = dial(newDialParameters(&options, options.ConnectionOptions.excludeInternalFromRetry))
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		connection = existing.conn
 	}
 
 	client := NewServiceClient(workflowservice.NewWorkflowServiceClient(connection), connection, options)
 
-	// Load server capabilities eagerly if not disabled
-	if !options.ConnectionOptions.disableEagerConnection {
+	// If using existing connection, always load its capabilities and use them for
+	// the new connection. Otherwise, only load server capabilities eagerly if not
+	// disabled.
+	if existing != nil {
+		if client.capabilities, err = existing.loadCapabilities(); err != nil {
+			return nil, err
+		}
+	} else if !options.ConnectionOptions.disableEagerConnection {
 		if _, err := client.loadCapabilities(); err != nil {
 			client.Close()
 			return nil, err
