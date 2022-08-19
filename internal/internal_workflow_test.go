@@ -1460,7 +1460,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	args, err := dc.ToPayloads(argStr)
 	require.NoError(t, err)
 
-	runOnCallingThread := func(ctx Context, _ string, f func(Context)) { f(ctx) }
+	runOnCallingThread := func(ctx Context, _ string, f func(Context)) Context { f(ctx); return ctx }
 
 	t.Run("no handler registered", func(t *testing.T) {
 		MustSetUpdateHandler(t, ctx, "unused_handler", func() error { panic("not called") }, UpdateOptions{})
