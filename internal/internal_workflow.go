@@ -494,7 +494,7 @@ func defaultUpdateHandler(
 	serializedArgs *commonpb.Payloads,
 	header *commonpb.Header,
 	callbacks UpdateCallbacks,
-	goNamed func(Context, string, func(Context)),
+	spawn func(Context, string, func(Context)) Context,
 ) {
 	env := getWorkflowEnvironment(rootCtx)
 	ctx, err := workflowContextWithHeaderPropagated(rootCtx, header, env.GetContextPropagators())
@@ -520,7 +520,7 @@ func defaultUpdateHandler(
 	}
 	input := UpdateInput{Name: name, Args: args}
 
-	goNamed(ctx, name, func(ctx Context) {
+	spawn(ctx, name, func(ctx Context) {
 		envInterceptor := getWorkflowEnvironmentInterceptor(ctx)
 		if err := envInterceptor.inboundInterceptor.ValidateUpdate(ctx, &input); err != nil {
 			callbacks.Reject(err)
@@ -584,7 +584,7 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 
 	getWorkflowEnvironment(d.rootCtx).RegisterUpdateHandler(
 		func(name string, serializedArgs *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks) {
-			defaultUpdateHandler(d.rootCtx, name, serializedArgs, header, callbacks, GoNamed)
+			defaultUpdateHandler(d.rootCtx, name, serializedArgs, header, callbacks, d.dispatcher.NewCoroutine)
 		})
 
 	getWorkflowEnvironment(d.rootCtx).RegisterQueryHandler(
