@@ -938,6 +938,56 @@ func (wc *WorkflowClient) ResetWorkflowExecution(ctx context.Context, request *w
 	return resp, nil
 }
 
+// UpdateWorkerBuildIdOrdering allows you to update the worker-build-id based version graph for a particular
+// task queue. This is used in conjunction with workers who specify their build id and thus opt into the
+// feature. For more, see: <doc link>
+//   - workerBuildId is required and indicates the build id being added to the version graph.
+//   - previousCompatible may be empty, and if set, indicates an existing version the new id should be considered
+//     compatible with.
+//   - If becomeDefault is true, this new id will become the default version for new workflow executions.
+func (wc *WorkflowClient) UpdateWorkerBuildIdOrdering(ctx context.Context, taskQueue string, workerBuildId string, previousCompatible string, becomeDefault bool) (*workflowservice.UpdateWorkerBuildIdOrderingResponse, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
+	var previousCompatibleId *taskqueuepb.VersionId
+	if previousCompatible != "" {
+		previousCompatibleId = &taskqueuepb.VersionId{WorkerBuildId: previousCompatible}
+	}
+	request := &workflowservice.UpdateWorkerBuildIdOrderingRequest{
+		Namespace:          wc.namespace,
+		TaskQueue:          taskQueue,
+		VersionId:          &taskqueuepb.VersionId{WorkerBuildId: workerBuildId},
+		PreviousCompatible: previousCompatibleId,
+		BecomeDefault:      becomeDefault,
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	resp, err := wc.workflowService.UpdateWorkerBuildIdOrdering(grpcCtx, request)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+// GetWorkerBuildIdOrdering returns the worker-build-id based version graph for a particular task queue.
+func (wc *WorkflowClient) GetWorkerBuildIdOrdering(ctx context.Context, request *workflowservice.GetWorkerBuildIdOrderingRequest) (*workflowservice.GetWorkerBuildIdOrderingResponse, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	resp, err := wc.workflowService.GetWorkerBuildIdOrdering(grpcCtx, request)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
 func (wc *WorkflowClient) UpdateWorkflowWithOptions(
 	ctx context.Context,
 	req *UpdateWorkflowWithOptionsRequest,
