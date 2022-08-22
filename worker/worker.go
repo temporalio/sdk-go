@@ -219,11 +219,12 @@ const (
 )
 
 // New creates an instance of worker for managing workflow and activity executions.
-//    client    - the client for use by the worker
-//    taskQueue - is the task queue name you use to identify your client worker, also
-//               identifies group of workflow and activity implementations that are
-//               hosted by a single worker process
-//    options  - configure any worker specific options like logger, metrics, identity
+//
+//	client    - the client for use by the worker
+//	taskQueue - is the task queue name you use to identify your client worker, also
+//	           identifies group of workflow and activity implementations that are
+//	           hosted by a single worker process
+//	options  - configure any worker specific options like logger, metrics, identity
 func New(
 	client client.Client,
 	taskQueue string,
@@ -276,6 +277,15 @@ func PurgeStickyWorkflowCache() {
 // On another hand, once the binary is marked as bad, the bad binary cannot poll workflow queue and make any progress any more.
 func SetBinaryChecksum(checksum string) {
 	internal.SetBinaryChecksum(checksum)
+}
+
+// SetWorkerBuildId enables usage of the worker-build-id based versioning feature, and specifies the version of this
+// worker. The id should represent the set of workflow, activity, data converter, and interceptor code that this worker
+// uses.
+//
+// If this is called, but SetBinaryChecksum is not, this id will also be used as the binary checksum.
+func SetWorkerBuildId(buildId string) {
+	// TODO
 }
 
 // InterruptCh returns channel which will get data when system receives interrupt signal from OS. Pass it to worker.Run() func to stop worker with Ctrl+C.

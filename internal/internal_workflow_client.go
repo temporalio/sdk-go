@@ -193,9 +193,11 @@ type (
 // reaches the end state, such as workflow finished successfully or timeout.
 // The user can use this to start using a functor like below and get the workflow execution result, as EncodedValue
 // Either by
-//     ExecuteWorkflow(options, "workflowTypeName", arg1, arg2, arg3)
-//     or
-//     ExecuteWorkflow(options, workflowExecuteFn, arg1, arg2, arg3)
+//
+//	ExecuteWorkflow(options, "workflowTypeName", arg1, arg2, arg3)
+//	or
+//	ExecuteWorkflow(options, workflowExecuteFn, arg1, arg2, arg3)
+//
 // The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
 // NOTE: the context.Context should have a fairly large timeout, since workflow execution may take a while to be finished
@@ -531,10 +533,10 @@ func (wc *WorkflowClient) RecordActivityHeartbeatByID(ctx context.Context,
 
 // ListClosedWorkflow gets closed workflow executions based on request filters
 // The errors it can throw:
-//  - serviceerror.InvalidArgument
-//  - serviceerror.Internal
-//  - serviceerror.Unavailable
-//  - serviceerror.NamespaceNotFound
+//   - serviceerror.InvalidArgument
+//   - serviceerror.Internal
+//   - serviceerror.Unavailable
+//   - serviceerror.NamespaceNotFound
 func (wc *WorkflowClient) ListClosedWorkflow(ctx context.Context, request *workflowservice.ListClosedWorkflowExecutionsRequest) (*workflowservice.ListClosedWorkflowExecutionsResponse, error) {
 	if err := wc.ensureInitialized(); err != nil {
 		return nil, err
@@ -554,10 +556,10 @@ func (wc *WorkflowClient) ListClosedWorkflow(ctx context.Context, request *workf
 
 // ListOpenWorkflow gets open workflow executions based on request filters
 // The errors it can throw:
-//  - serviceerror.InvalidArgument
-//  - serviceerror.Internal
-//  - serviceerror.Unavailable
-//  - serviceerror.NamespaceNotFound
+//   - serviceerror.InvalidArgument
+//   - serviceerror.Internal
+//   - serviceerror.Unavailable
+//   - serviceerror.NamespaceNotFound
 func (wc *WorkflowClient) ListOpenWorkflow(ctx context.Context, request *workflowservice.ListOpenWorkflowExecutionsRequest) (*workflowservice.ListOpenWorkflowExecutionsResponse, error) {
 	if err := wc.ensureInitialized(); err != nil {
 		return nil, err
@@ -676,10 +678,10 @@ func (wc *WorkflowClient) GetSearchAttributes(ctx context.Context) (*workflowser
 
 // DescribeWorkflowExecution returns information about the specified workflow execution.
 // The errors it can return:
-//  - serviceerror.InvalidArgument
-//  - serviceerror.Internal
-//  - serviceerror.Unavailable
-//  - serviceerror.NotFound
+//   - serviceerror.InvalidArgument
+//   - serviceerror.Internal
+//   - serviceerror.Unavailable
+//   - serviceerror.NotFound
 func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
 	if err := wc.ensureInitialized(); err != nil {
 		return nil, err
@@ -709,11 +711,11 @@ func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflo
 // - queryType is the type of the query.
 // - args... are the optional query parameters.
 // The errors it can return:
-//  - serviceerror.InvalidArgument
-//  - serviceerror.Internal
-//  - serviceerror.Unavailable
-//  - serviceerror.NotFound
-//  - serviceerror.QueryFailed
+//   - serviceerror.InvalidArgument
+//   - serviceerror.Internal
+//   - serviceerror.Unavailable
+//   - serviceerror.NotFound
+//   - serviceerror.QueryFailed
 func (wc *WorkflowClient) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.EncodedValue, error) {
 	if err := wc.ensureInitialized(); err != nil {
 		return nil, err
@@ -771,11 +773,11 @@ type QueryWorkflowWithOptionsResponse struct {
 // QueryWorkflowWithOptions queries a given workflow execution and returns the query result synchronously.
 // See QueryWorkflowWithOptionsRequest and QueryWorkflowWithOptionsResult for more information.
 // The errors it can return:
-//  - serviceerror.InvalidArgument
-//  - serviceerror.Internal
-//  - serviceerror.Unavailable
-//  - serviceerror.NotFound
-//  - serviceerror.QueryFailed
+//   - serviceerror.InvalidArgument
+//   - serviceerror.Internal
+//   - serviceerror.Unavailable
+//   - serviceerror.NotFound
+//   - serviceerror.QueryFailed
 func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request *QueryWorkflowWithOptionsRequest) (*QueryWorkflowWithOptionsResponse, error) {
 	if err := wc.ensureInitialized(); err != nil {
 		return nil, err
@@ -826,10 +828,10 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 // - taskqueue name of taskqueue
 // - taskqueueType type of taskqueue, can be workflow or activity
 // The errors it can return:
-//  - serviceerror.InvalidArgument
-//  - serviceerror.Internal
-//  - serviceerror.Unavailable
-//  - serviceerror.NotFound
+//   - serviceerror.InvalidArgument
+//   - serviceerror.Internal
+//   - serviceerror.Unavailable
+//   - serviceerror.NotFound
 func (wc *WorkflowClient) DescribeTaskQueue(ctx context.Context, taskQueue string, taskQueueType enumspb.TaskQueueType) (*workflowservice.DescribeTaskQueueResponse, error) {
 	if err := wc.ensureInitialized(); err != nil {
 		return nil, err
@@ -866,6 +868,56 @@ func (wc *WorkflowClient) ResetWorkflowExecution(ctx context.Context, request *w
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	resp, err := wc.workflowService.ResetWorkflowExecution(grpcCtx, request)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+// UpdateWorkerBuildIdOrdering allows you to update the worker-build-id based version graph for a particular
+// task queue. This is used in conjunction with workers who specify their build id and thus opt into the
+// feature. For more, see: <doc link>
+//   - workerBuildId is required and indicates the build id being added to the version graph.
+//   - previousCompatible may be empty, and if set, indicates an existing version the new id should be considered
+//     compatible with.
+//   - If becomeDefault is true, this new id will become the default version for new workflow executions.
+func (wc *WorkflowClient) UpdateWorkerBuildIdOrdering(ctx context.Context, taskQueue string, workerBuildId string, previousCompatible string, becomeDefault bool) (*workflowservice.UpdateWorkerBuildIdOrderingResponse, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
+	var previousCompatibleId *taskqueuepb.VersionId
+	if previousCompatible != "" {
+		previousCompatibleId = &taskqueuepb.VersionId{WorkerBuildId: previousCompatible}
+	}
+	request := &workflowservice.UpdateWorkerBuildIdOrderingRequest{
+		Namespace:          wc.namespace,
+		TaskQueue:          taskQueue,
+		VersionId:          &taskqueuepb.VersionId{WorkerBuildId: workerBuildId},
+		PreviousCompatible: previousCompatibleId,
+		BecomeDefault:      becomeDefault,
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	resp, err := wc.workflowService.UpdateWorkerBuildIdOrdering(grpcCtx, request)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+// GetWorkerBuildIdOrdering returns the worker-build-id based version graph for a particular task queue.
+func (wc *WorkflowClient) GetWorkerBuildIdOrdering(ctx context.Context, request *workflowservice.GetWorkerBuildIdOrderingRequest) (*workflowservice.GetWorkerBuildIdOrderingResponse, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	resp, err := wc.workflowService.GetWorkerBuildIdOrdering(grpcCtx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -978,10 +1030,10 @@ func (wc *WorkflowClient) Close() {
 
 // Register a namespace with temporal server
 // The errors it can throw:
-//	- NamespaceAlreadyExistsError
-//	- serviceerror.InvalidArgument
-//	- serviceerror.Internal
-//	- serviceerror.Unavailable
+//   - NamespaceAlreadyExistsError
+//   - serviceerror.InvalidArgument
+//   - serviceerror.Internal
+//   - serviceerror.Unavailable
 func (nc *namespaceClient) Register(ctx context.Context, request *workflowservice.RegisterNamespaceRequest) error {
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
@@ -995,10 +1047,10 @@ func (nc *namespaceClient) Register(ctx context.Context, request *workflowservic
 // NamespaceConfiguration - Configuration like Workflow Execution Retention Period In Days, Whether to emit metrics.
 // ReplicationConfiguration - replication config like clusters and active cluster name
 // The errors it can throw:
-//	- serviceerror.NamespaceNotFound
-//	- serviceerror.InvalidArgument
-//	- serviceerror.Internal
-//	- serviceerror.Unavailable
+//   - serviceerror.NamespaceNotFound
+//   - serviceerror.InvalidArgument
+//   - serviceerror.Internal
+//   - serviceerror.Unavailable
 func (nc *namespaceClient) Describe(ctx context.Context, namespace string) (*workflowservice.DescribeNamespaceResponse, error) {
 	request := &workflowservice.DescribeNamespaceRequest{
 		Namespace: namespace,
@@ -1015,10 +1067,10 @@ func (nc *namespaceClient) Describe(ctx context.Context, namespace string) (*wor
 
 // Update a namespace.
 // The errors it can throw:
-//	- serviceerror.NamespaceNotFound
-//	- serviceerror.InvalidArgument
-//	- serviceerror.Internal
-//	- serviceerror.Unavailable
+//   - serviceerror.NamespaceNotFound
+//   - serviceerror.InvalidArgument
+//   - serviceerror.Internal
+//   - serviceerror.Unavailable
 func (nc *namespaceClient) Update(ctx context.Context, request *workflowservice.UpdateNamespaceRequest) error {
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
