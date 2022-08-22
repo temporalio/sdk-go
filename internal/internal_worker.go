@@ -163,6 +163,9 @@ type (
 		// a default option.
 		Identity string
 
+		// The worker's build ID used for versioning, if one was set.
+		WorkerBuildID string
+
 		MetricsHandler metrics.Handler
 
 		Logger log.Logger
@@ -1368,6 +1371,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		ConcurrentWorkflowTaskExecutionSize:   options.MaxConcurrentWorkflowTaskExecutionSize,
 		MaxConcurrentWorkflowTaskQueuePollers: options.MaxConcurrentWorkflowTaskPollers,
 		Identity:                              client.identity,
+		WorkerBuildID:                         options.BuildIDForVersioning,
 		MetricsHandler:                        client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue)),
 		Logger:                                client.logger,
 		EnableLoggingInReplay:                 options.EnableLoggingInReplay,

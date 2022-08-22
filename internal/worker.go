@@ -225,6 +225,13 @@ type (
 		// and aliased names when not using string names when executing child
 		// workflow or activities.
 		DisableRegistrationAliasing bool
+
+		// **IN DEVELOPMENT**
+		// Optional: If set, opts this worker into the worker build id based versioning
+		// feature. It will only operate on workflows it claims to be compatible with.
+		// Additionally, if this is set it will serve as the binary checksum for the worker.
+		// For more, see: <doc link>
+		BuildIDForVersioning string
 	}
 )
 
@@ -257,7 +264,9 @@ func IsReplayNamespace(dn string) bool {
 // NewWorker creates an instance of worker for managing workflow and activity executions.
 // client   - client created with client.Dial() or client.NewLazyClient().
 // taskQueue - is the task queue name you use to identify your client worker, also
-//            identifies group of workflow and activity implementations that are hosted by a single worker process.
+//
+//	identifies group of workflow and activity implementations that are hosted by a single worker process.
+//
 // options 	- configure any worker specific options.
 func NewWorker(
 	client Client,

@@ -126,6 +126,7 @@ type (
 		ppMgr                    pressurePointMgr
 		logger                   log.Logger
 		identity                 string
+		workerBuildID            string
 		enableLoggingInReplay    bool
 		registry                 *registry
 		laTunnel                 *localActivityTunnel
@@ -405,6 +406,7 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		ppMgr:                    ppMgr,
 		metricsHandler:           params.MetricsHandler,
 		identity:                 params.Identity,
+		workerBuildID:            params.WorkerBuildID,
 		enableLoggingInReplay:    params.EnableLoggingInReplay,
 		registry:                 registry,
 		workflowPanicPolicy:      params.WorkflowPanicPolicy,
@@ -857,7 +859,7 @@ ProcessEvents:
 			break ProcessEvents
 		}
 		if binaryChecksum == "" {
-			w.workflowInfo.BinaryChecksum = getBinaryChecksum()
+			w.workflowInfo.BinaryChecksum = w.wth.getBuildID()
 		} else {
 			w.workflowInfo.BinaryChecksum = binaryChecksum
 		}
@@ -1454,9 +1456,10 @@ func isSearchAttributesMatched(attrFromEvent, attrFromCommand *commonpb.SearchAt
 }
 
 // return true if the check fails:
-//    namespace is not empty in command
-//    and namespace is not replayNamespace
-//    and namespaces unmatch in command and events
+//
+//	namespace is not empty in command
+//	and namespace is not replayNamespace
+//	and namespaces unmatch in command and events
 func checkNamespacesInCommandAndEvent(eventNamespace, commandNamespace string) bool {
 	if commandNamespace == "" || IsReplayNamespace(commandNamespace) {
 		return false
@@ -1574,33 +1577,9 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		Identity:                   wth.identity,
 		ReturnNewWorkflowTask:      true,
 		ForceCreateNewWorkflowTask: forceNewWorkflowTask,
-		BinaryChecksum:             getBinaryChecksum(),
+		BinaryChecksum:             wth.getBuildID(),
 		QueryResults:               queryResults,
 		Namespace:                  wth.namespace,
-	}
-}
-
-func errorToFailWorkflowTask(taskToken []byte, err error, identity string, dataConverter converter.DataConverter,
-	namespace string) *workflowservice.RespondWorkflowTaskFailedRequest {
-
-	cause := enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
-	// If it was a panic due to a bad state machine or if it was a history
-	// mismatch error, mark as non-deterministic
-	if panicErr, _ := err.(*workflowPanicError); panicErr != nil {
-		if _, badStateMachine := panicErr.value.(stateMachineIllegalStatePanic); badStateMachine {
-			cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
-		}
-	} else if _, mismatch := err.(historyMismatchError); mismatch {
-		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
-	}
-
-	return &workflowservice.RespondWorkflowTaskFailedRequest{
-		TaskToken:      taskToken,
-		Cause:          cause,
-		Failure:        ConvertErrorToFailure(err, dataConverter),
-		Identity:       identity,
-		BinaryChecksum: getBinaryChecksum(),
-		Namespace:      namespace,
 	}
 }
 
@@ -1618,6 +1597,13 @@ func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *historypb.Hi
 		}
 	}
 	return nil
+}
+
+func (wth *workflowTaskHandlerImpl) getBuildID() string {
+	if wth.workerBuildID != "" {
+		return wth.workerBuildID
+	}
+	return getBinaryChecksum()
 }
 
 func newActivityTaskHandler(

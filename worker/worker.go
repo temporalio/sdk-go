@@ -279,15 +279,6 @@ func SetBinaryChecksum(checksum string) {
 	internal.SetBinaryChecksum(checksum)
 }
 
-// SetWorkerBuildId enables usage of the worker-build-id based versioning feature, and specifies the version of this
-// worker. The id should represent the set of workflow, activity, data converter, and interceptor code that this worker
-// uses.
-//
-// If this is called, but SetBinaryChecksum is not, this id will also be used as the binary checksum.
-func SetWorkerBuildId(buildId string) {
-	// TODO
-}
-
 // InterruptCh returns channel which will get data when system receives interrupt signal from OS. Pass it to worker.Run() func to stop worker with Ctrl+C.
 func InterruptCh() <-chan interface{} {
 	return internal.InterruptCh()

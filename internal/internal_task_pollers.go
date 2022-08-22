@@ -79,6 +79,7 @@ type (
 		namespace     string
 		taskQueueName string
 		identity      string
+		workerBulidId string
 		service       workflowservice.WorkflowServiceClient
 		taskHandler   WorkflowTaskHandler
 		logger        log.Logger
@@ -358,7 +359,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 			tagAttempt, task.Attempt,
 			tagError, taskErr)
 		// convert err to WorkflowTaskFailed
-		completedRequest = errorToFailWorkflowTask(task.TaskToken, taskErr, wtp.identity, wtp.dataConverter, wtp.namespace)
+		completedRequest = wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)
 	}
 
 	metricsHandler.Timer(metrics.WorkflowTaskExecutionLatency).Record(time.Since(startTime))
@@ -417,6 +418,35 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 		panic("unknown request type from ProcessWorkflowTask()")
 	}
 	return
+}
+
+func (wtp *workflowTaskPoller) errorToFailWorkflowTask(taskToken []byte, err error) *workflowservice.RespondWorkflowTaskFailedRequest {
+	cause := enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
+	// If it was a panic due to a bad state machine or if it was a history
+	// mismatch error, mark as non-deterministic
+	if panicErr, _ := err.(*workflowPanicError); panicErr != nil {
+		if _, badStateMachine := panicErr.value.(stateMachineIllegalStatePanic); badStateMachine {
+			cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
+		}
+	} else if _, mismatch := err.(historyMismatchError); mismatch {
+		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
+	}
+
+	return &workflowservice.RespondWorkflowTaskFailedRequest{
+		TaskToken:      taskToken,
+		Cause:          cause,
+		Failure:        ConvertErrorToFailure(err, wtp.dataConverter),
+		Identity:       wtp.identity,
+		BinaryChecksum: wtp.getBuildId(),
+		Namespace:      wtp.namespace,
+	}
+}
+
+func (wtp *workflowTaskPoller) getBuildId() string {
+	if wtp.workerBulidId == "" {
+		return getBinaryChecksum()
+	}
+	return wtp.workerBulidId
 }
 
 func newLocalActivityPoller(
@@ -611,10 +641,11 @@ func (wtp *workflowTaskPoller) updateBacklog(taskQueueKind enumspb.TaskQueueKind
 
 // getNextPollRequest returns appropriate next poll request based on poller configuration.
 // Simple rules:
-// 1) if sticky execution is disabled, always poll for regular task queue
-// 2) otherwise:
-//   2.1) if sticky task queue has backlog, always prefer to process sticky task first
-//   2.2) poll from the task queue that has less pending requests (prefer sticky when they are the same).
+//  1. if sticky execution is disabled, always poll for regular task queue
+//  2. otherwise:
+//     2.1) if sticky task queue has backlog, always prefer to process sticky task first
+//     2.2) poll from the task queue that has less pending requests (prefer sticky when they are the same).
+//
 // TODO: make this more smart to auto adjust based on poll latency
 func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.PollWorkflowTaskQueueRequest) {
 	taskQueueName := wtp.taskQueueName
@@ -639,7 +670,7 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		Namespace:      wtp.namespace,
 		TaskQueue:      taskQueue,
 		Identity:       wtp.identity,
-		BinaryChecksum: getBinaryChecksum(),
+		BinaryChecksum: wtp.getBuildId(),
 	}
 }
 
