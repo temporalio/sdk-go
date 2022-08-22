@@ -542,6 +542,52 @@ func (_m *Client) CheckHealth(ctx context.Context, request *client.CheckHealthRe
 	return r0, r1
 }
 
+// UpdateWorkerBuildIdOrdering provides a mock function with given fields: ctx, taskQueue, workerBuildId, previousCompatible, becomeDefault
+func (_m *Client) UpdateWorkerBuildIdOrdering(ctx context.Context, taskQueue string, workerBuildId string, previousCompatible string, becomeDefault bool) (*workflowservice.UpdateWorkerBuildIdOrderingResponse, error) {
+	ret := _m.Called(ctx, taskQueue, workerBuildId, previousCompatible, becomeDefault)
+
+	var r0 *workflowservice.UpdateWorkerBuildIdOrderingResponse
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, bool) *workflowservice.UpdateWorkerBuildIdOrderingResponse); ok {
+		r0 = rf(ctx, taskQueue, workerBuildId, previousCompatible, becomeDefault)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*workflowservice.UpdateWorkerBuildIdOrderingResponse)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, string, string, string, bool) error); ok {
+		r1 = rf(ctx, taskQueue, workerBuildId, previousCompatible, becomeDefault)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// GetWorkerBuildIdOrdering provides a mock function with given fields: ctx, request
+func (_m *Client) GetWorkerBuildIdOrdering(ctx context.Context, request *workflowservice.GetWorkerBuildIdOrderingRequest) (*workflowservice.GetWorkerBuildIdOrderingResponse, error) {
+	ret := _m.Called(ctx, request)
+
+	var r0 *workflowservice.GetWorkerBuildIdOrderingResponse
+	if rf, ok := ret.Get(0).(func(context.Context, *workflowservice.GetWorkerBuildIdOrderingRequest) *workflowservice.GetWorkerBuildIdOrderingResponse); ok {
+		r0 = rf(ctx, request)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*workflowservice.GetWorkerBuildIdOrderingResponse)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, *workflowservice.GetWorkerBuildIdOrderingRequest) error); ok {
+		r1 = rf(ctx, request)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 func (_m *Client) UpdateWorkflow(ctx context.Context, workflowID string, workflowRunID, updateName string, args ...interface{}) (client.WorkflowUpdateHandle, error) {
 	ret := _m.Called(ctx, workflowID, updateName, args)
 

@@ -126,6 +126,7 @@ type (
 		ppMgr                    pressurePointMgr
 		logger                   log.Logger
 		identity                 string
+		workerBuildID            string
 		enableLoggingInReplay    bool
 		registry                 *registry
 		laTunnel                 *localActivityTunnel
@@ -416,6 +417,7 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		ppMgr:                    ppMgr,
 		metricsHandler:           params.MetricsHandler,
 		identity:                 params.Identity,
+		workerBuildID:            params.WorkerBuildID,
 		enableLoggingInReplay:    params.EnableLoggingInReplay,
 		registry:                 registry,
 		workflowPanicPolicy:      params.WorkflowPanicPolicy,
@@ -874,7 +876,7 @@ ProcessEvents:
 			break ProcessEvents
 		}
 		if binaryChecksum == "" {
-			w.workflowInfo.BinaryChecksum = getBinaryChecksum()
+			w.workflowInfo.BinaryChecksum = w.wth.getBuildID()
 		} else {
 			w.workflowInfo.BinaryChecksum = binaryChecksum
 		}
@@ -1606,7 +1608,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		Identity:                   wth.identity,
 		ReturnNewWorkflowTask:      true,
 		ForceCreateNewWorkflowTask: forceNewWorkflowTask,
-		BinaryChecksum:             getBinaryChecksum(),
+		BinaryChecksum:             wth.getBuildID(),
 		QueryResults:               queryResults,
 		Namespace:                  wth.namespace,
 		MeteringMetadata:           &commonpb.MeteringMetadata{NonfirstLocalActivityExecutionAttempts: nonfirstLAAttempts},
@@ -1654,6 +1656,13 @@ func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *historypb.Hi
 		}
 	}
 	return nil
+}
+
+func (wth *workflowTaskHandlerImpl) getBuildID() string {
+	if wth.workerBuildID != "" {
+		return wth.workerBuildID
+	}
+	return getBinaryChecksum()
 }
 
 func newActivityTaskHandler(

@@ -86,6 +86,7 @@ type (
 		namespace        string
 		taskQueueName    string
 		identity         string
+		workerBulidId string
 		service          workflowservice.WorkflowServiceClient
 		taskHandler      WorkflowTaskHandler
 		logger           log.Logger
@@ -439,6 +440,35 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 	return
 }
 
+func (wtp *workflowTaskPoller) errorToFailWorkflowTask(taskToken []byte, err error) *workflowservice.RespondWorkflowTaskFailedRequest {
+	cause := enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
+	// If it was a panic due to a bad state machine or if it was a history
+	// mismatch error, mark as non-deterministic
+	if panicErr, _ := err.(*workflowPanicError); panicErr != nil {
+		if _, badStateMachine := panicErr.value.(stateMachineIllegalStatePanic); badStateMachine {
+			cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
+		}
+	} else if _, mismatch := err.(historyMismatchError); mismatch {
+		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
+	}
+
+	return &workflowservice.RespondWorkflowTaskFailedRequest{
+		TaskToken:      taskToken,
+		Cause:          cause,
+		Failure:        ConvertErrorToFailure(err, wtp.dataConverter),
+		Identity:       wtp.identity,
+		BinaryChecksum: wtp.getBuildId(),
+		Namespace:      wtp.namespace,
+	}
+}
+
+func (wtp *workflowTaskPoller) getBuildId() string {
+	if wtp.workerBulidId == "" {
+		return getBinaryChecksum()
+	}
+	return wtp.workerBulidId
+}
+
 func newLocalActivityPoller(
 	params workerExecutionParameters,
 	laTunnel *localActivityTunnel,
@@ -663,7 +693,7 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		Namespace:      wtp.namespace,
 		TaskQueue:      taskQueue,
 		Identity:       wtp.identity,
-		BinaryChecksum: getBinaryChecksum(),
+		BinaryChecksum: wtp.getBuildId(),
 	}
 }
 
