@@ -69,6 +69,10 @@ func (wh *workflowServiceProxyServer) DeprecateNamespace(ctx context.Context, re
 	return wh.client.DeprecateNamespace(ctx, req)
 }
 
+func (wh *workflowServiceProxyServer) DescribeBatchOperation(ctx context.Context, req *workflowservice.DescribeBatchOperationRequest) (*workflowservice.DescribeBatchOperationResponse, error) {
+	return wh.client.DescribeBatchOperation(ctx, req)
+}
+
 func (wh *workflowServiceProxyServer) DescribeNamespace(ctx context.Context, req *workflowservice.DescribeNamespaceRequest) (*workflowservice.DescribeNamespaceResponse, error) {
 	return wh.client.DescribeNamespace(ctx, req)
 }
@@ -111,6 +115,10 @@ func (wh *workflowServiceProxyServer) GetWorkflowExecutionHistoryReverse(ctx con
 
 func (wh *workflowServiceProxyServer) ListArchivedWorkflowExecutions(ctx context.Context, req *workflowservice.ListArchivedWorkflowExecutionsRequest) (*workflowservice.ListArchivedWorkflowExecutionsResponse, error) {
 	return wh.client.ListArchivedWorkflowExecutions(ctx, req)
+}
+
+func (wh *workflowServiceProxyServer) ListBatchOperations(ctx context.Context, req *workflowservice.ListBatchOperationsRequest) (*workflowservice.ListBatchOperationsResponse, error) {
+	return wh.client.ListBatchOperations(ctx, req)
 }
 
 func (wh *workflowServiceProxyServer) ListClosedWorkflowExecutions(ctx context.Context, req *workflowservice.ListClosedWorkflowExecutionsRequest) (*workflowservice.ListClosedWorkflowExecutionsResponse, error) {
@@ -229,8 +237,16 @@ func (wh *workflowServiceProxyServer) SignalWorkflowExecution(ctx context.Contex
 	return wh.client.SignalWorkflowExecution(ctx, req)
 }
 
+func (wh *workflowServiceProxyServer) StartBatchOperation(ctx context.Context, req *workflowservice.StartBatchOperationRequest) (*workflowservice.StartBatchOperationResponse, error) {
+	return wh.client.StartBatchOperation(ctx, req)
+}
+
 func (wh *workflowServiceProxyServer) StartWorkflowExecution(ctx context.Context, req *workflowservice.StartWorkflowExecutionRequest) (*workflowservice.StartWorkflowExecutionResponse, error) {
 	return wh.client.StartWorkflowExecution(ctx, req)
+}
+
+func (wh *workflowServiceProxyServer) StopBatchOperation(ctx context.Context, req *workflowservice.StopBatchOperationRequest) (*workflowservice.StopBatchOperationResponse, error) {
+	return wh.client.StopBatchOperation(ctx, req)
 }
 
 func (wh *workflowServiceProxyServer) TerminateWorkflowExecution(ctx context.Context, req *workflowservice.TerminateWorkflowExecutionRequest) (*workflowservice.TerminateWorkflowExecutionResponse, error) {

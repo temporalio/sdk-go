@@ -76,7 +76,7 @@ import (
 
 	"google.golang.org/grpc"
 	
-	workflowservicepb "go.temporal.io/api/workflowservice/v1"
+	batchpb "go.temporal.io/api/batch/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	historypb "go.temporal.io/api/history/v1"
 	commandpb "go.temporal.io/api/command/v1"
@@ -85,6 +85,7 @@ import (
 	workflowpb "go.temporal.io/api/workflow/v1"
 	querypb "go.temporal.io/api/query/v1"
 	schedulepb "go.temporal.io/api/schedule/v1"
+	workflowservicepb "go.temporal.io/api/workflowservice/v1"
 )
 
 // PayloadCodecGRPCClientInterceptorOptions holds interceptor options.
