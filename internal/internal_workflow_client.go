@@ -875,16 +875,16 @@ func (wc *WorkflowClient) ResetWorkflowExecution(ctx context.Context, request *w
 	return resp, nil
 }
 
-// UpdateWorkerBuildIdOrdering allows you to update the worker-build-id based version graph for a particular
+// UpdateWorkerBuildIDOrdering allows you to update the worker-build-id based version graph for a particular
 // task queue. This is used in conjunction with workers who specify their build id and thus opt into the
 // feature. For more, see: <doc link>
 //   - workerBuildId is required and indicates the build id being added to the version graph.
 //   - previousCompatible may be empty, and if set, indicates an existing version the new id should be considered
 //     compatible with.
 //   - If becomeDefault is true, this new id will become the default version for new workflow executions.
-func (wc *WorkflowClient) UpdateWorkerBuildIdOrdering(ctx context.Context, taskQueue string, workerBuildId string, previousCompatible string, becomeDefault bool) (*workflowservice.UpdateWorkerBuildIdOrderingResponse, error) {
+func (wc *WorkflowClient) UpdateWorkerBuildIDOrdering(ctx context.Context, taskQueue string, workerBuildId string, previousCompatible string, becomeDefault bool) error {
 	if err := wc.ensureInitialized(); err != nil {
-		return nil, err
+		return err
 	}
 
 	var previousCompatibleId *taskqueuepb.VersionId
@@ -901,28 +901,37 @@ func (wc *WorkflowClient) UpdateWorkerBuildIdOrdering(ctx context.Context, taskQ
 
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
-	resp, err := wc.workflowService.UpdateWorkerBuildIdOrdering(grpcCtx, request)
+	_, err := wc.workflowService.UpdateWorkerBuildIdOrdering(grpcCtx, request)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return resp, nil
+	return nil
 }
 
-// GetWorkerBuildIdOrdering returns the worker-build-id based version graph for a particular task queue.
-func (wc *WorkflowClient) GetWorkerBuildIdOrdering(ctx context.Context, request *workflowservice.GetWorkerBuildIdOrderingRequest) (*workflowservice.GetWorkerBuildIdOrderingResponse, error) {
+// GetWorkerBuildIDOrdering returns the worker-build-id based version graph for a particular task queue.
+func (wc *WorkflowClient) GetWorkerBuildIDOrdering(ctx context.Context, taskQueue string, maxDepth int) (*WorkerBuildIDVersionGraph, error) {
+	if maxDepth < 0 {
+		return nil, errors.New("maxDepth must be >= 0")
+	}
 	if err := wc.ensureInitialized(); err != nil {
 		return nil, err
 	}
 
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
+
+	request := &workflowservice.GetWorkerBuildIdOrderingRequest{
+		Namespace: wc.namespace,
+		TaskQueue: taskQueue,
+		MaxDepth:  int32(maxDepth),
+	}
 	resp, err := wc.workflowService.GetWorkerBuildIdOrdering(grpcCtx, request)
 	if err != nil {
 		return nil, err
 	}
-
-	return resp, nil
+	converted := fromProtoResponse(resp)
+	return converted, nil
 }
 
 // CheckHealthRequest is a request for Client.CheckHealth.
