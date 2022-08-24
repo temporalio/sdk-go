@@ -237,7 +237,7 @@ func GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
 // For example this code is BROKEN:
 //  // Bad example:
 //  var random int
-//  workflow.SideEffect(func(ctx workflow.Context) interface{} {
+//  workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
 //         random = rand.Intn(100)
 //         return nil
 //  })
@@ -252,7 +252,7 @@ func GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
 //
 // Here is the correct way to use SideEffect:
 //  // Good example:
-//  encodedRandom := SideEffect(func(ctx workflow.Context) interface{} {
+//  encodedRandom := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
 //        return rand.Intn(100)
 //  })
 //  var random int
