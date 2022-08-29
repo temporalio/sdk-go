@@ -763,6 +763,23 @@ func (c *channelImpl) Receive(ctx Context, valuePtr interface{}) (more bool) {
 
 }
 
+func (c *channelImpl) ReceiveWithTimeout(ctx Context, timeout time.Duration, valuePtr interface{}) (more bool, timedOut bool) {
+	// Channel operations are not interrupted by cancellation
+	dCtx, _ := NewDisconnectedContext(ctx)
+	okAwait, err := AwaitWithTimeout(dCtx, timeout, func() bool { return !c.Empty() })
+	if err != nil {
+		panic(fmt.Sprintf("unexpected error: %v", err))
+	}
+	if !okAwait { // timed out
+		return c.closed, true
+	}
+	ok, more := c.ReceiveAsyncWithMoreFlag(valuePtr)
+	if !ok {
+		panic("unexpected empty channel")
+	}
+	return more, false
+}
+
 func (c *channelImpl) ReceiveAsync(valuePtr interface{}) (ok bool) {
 	ok, _ = c.ReceiveAsyncWithMoreFlag(valuePtr)
 	return ok
@@ -782,6 +799,10 @@ func (c *channelImpl) ReceiveAsyncWithMoreFlag(valuePtr interface{}) (ok bool, m
 		}
 		return ok, more
 	}
+}
+
+func (c *channelImpl) Empty() bool {
+	return c.closed || (len(c.buffer) == 0 && len(c.blockedSends) == 0 && c.recValue == nil)
 }
 
 // ok = true means that value was received

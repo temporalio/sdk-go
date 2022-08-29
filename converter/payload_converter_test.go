@@ -169,7 +169,6 @@ func TestProtoPayloadConverter_Google(t *testing.T) {
 	assert.Equal(t, "protobench.GoV2", string(payload.Metadata[MetadataMessageType]))
 }
 
-
 func TestJsonPayloadConverter(t *testing.T) {
 	pc := NewJSONPayloadConverter()
 

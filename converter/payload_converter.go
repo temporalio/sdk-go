@@ -60,7 +60,7 @@ func newProtoPayload(data []byte, c protoPayloadConverterInterface, messageType 
 	if !c.ExcludeProtobufMessageTypes() {
 		return &commonpb.Payload{
 			Metadata: map[string][]byte{
-				MetadataEncoding: []byte(c.Encoding()),
+				MetadataEncoding:    []byte(c.Encoding()),
 				MetadataMessageType: []byte(messageType),
 			},
 			Data: data,

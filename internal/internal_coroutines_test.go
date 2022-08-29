@@ -121,6 +121,71 @@ func TestNonbufferedChannel(t *testing.T) {
 
 }
 
+func TestBufferedChannelReceiveWithTimeout(t *testing.T) {
+	var suite WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	wf := func(ctx Context) error {
+		c := NewBufferedChannel(ctx, 1)
+		require.True(t, c.Empty())
+		{
+			start := Now(ctx)
+			var v int
+			more, timedOut := c.ReceiveWithTimeout(ctx, time.Minute, &v)
+			require.True(t, more)
+			require.True(t, timedOut)
+			require.True(t, Now(ctx).Sub(start) >= time.Minute)
+		}
+		{
+			c.Send(ctx, 10)
+			require.False(t, c.Empty())
+			start := Now(ctx)
+			var v int
+			more, timedOut := c.ReceiveWithTimeout(ctx, time.Minute, &v)
+			require.True(t, more)
+			require.False(t, timedOut)
+			require.True(t, Now(ctx).Sub(start) < time.Second)
+			require.Equal(t, 10, v)
+		}
+		return nil
+	}
+	env.RegisterWorkflow(wf)
+	env.ExecuteWorkflow(wf)
+	assert.NoError(t, env.GetWorkflowError())
+}
+
+func TestUnbufferedChannelReceiveWithTimeout(t *testing.T) {
+	var suite WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	wf := func(ctx Context) error {
+		c := NewChannel(ctx)
+		require.True(t, c.Empty())
+		{
+			start := Now(ctx)
+			var v int
+			more, timedOut := c.ReceiveWithTimeout(ctx, time.Minute, &v)
+			require.True(t, more)
+			require.True(t, timedOut)
+			require.True(t, Now(ctx).Sub(start) >= time.Minute)
+		}
+		{
+			Go(ctx, func(ctx Context) {
+				c.Send(ctx, 10)
+			})
+			start := Now(ctx)
+			var v int
+			more, timedOut := c.ReceiveWithTimeout(ctx, time.Minute, &v)
+			require.True(t, more)
+			require.False(t, timedOut)
+			require.True(t, Now(ctx).Sub(start) < time.Second)
+			require.Equal(t, 10, v)
+		}
+		return nil
+	}
+	env.RegisterWorkflow(wf)
+	env.ExecuteWorkflow(wf)
+	assert.NoError(t, env.GetWorkflowError())
+}
+
 func TestNonbufferedChannelBlockedReceive(t *testing.T) {
 	var history []string
 	var c2 Channel
@@ -305,7 +370,10 @@ func TestBlockingSelect(t *testing.T) {
 	var history []string
 	d := createNewDispatcher(func(ctx Context) {
 		c1 := NewChannel(ctx)
+		require.True(t, c1.Empty())
 		c2 := NewChannel(ctx)
+		require.True(t, c2.Empty())
+
 		Go(ctx, func(ctx Context) {
 			history = append(history, "add-one")
 			c1.Send(ctx, "one")
@@ -314,6 +382,7 @@ func TestBlockingSelect(t *testing.T) {
 		})
 		Go(ctx, func(ctx Context) {
 			history = append(history, "add-two")
+			require.True(t, c2.Empty())
 			c2.Send(ctx, "two")
 			history = append(history, "add-two-done")
 		})
@@ -322,8 +391,11 @@ func TestBlockingSelect(t *testing.T) {
 		s.
 			AddReceive(c1, func(c ReceiveChannel, more bool) {
 				require.True(t, more)
+				require.True(t, !c.Empty())
 				var v string
 				c.Receive(ctx, &v)
+				require.True(t, c.Empty())
+
 				history = append(history, fmt.Sprintf("c1-%v", v))
 			}).
 			AddReceive(c2, func(c ReceiveChannel, more bool) {
