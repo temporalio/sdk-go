@@ -26,19 +26,11 @@ package test_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	enumspb "go.temporal.io/api/enums/v1"
-	"go.temporal.io/api/serviceerror"
-	"go.temporal.io/api/workflowservice/v1"
-
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/internal/common"
-	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
@@ -46,14 +38,9 @@ import (
 type AsyncBindingsTestSuite struct {
 	*require.Assertions
 	suite.Suite
-	config        Config
-	client        client.Client
+	ConfigAndClientSuiteBase
 	worker        worker.Worker
 	taskQueueName string
-}
-
-func SimplestWorkflow(ctx workflow.Context) error {
-	return nil
 }
 
 func TestAsyncBindingsTestSuite(t *testing.T) {
@@ -62,90 +49,7 @@ func TestAsyncBindingsTestSuite(t *testing.T) {
 
 func (ts *AsyncBindingsTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
-	ts.config = NewConfig()
-	var err error
-	ts.client, err = client.Dial(client.Options{
-		HostPort:          ts.config.ServiceAddr,
-		Namespace:         ts.config.Namespace,
-		Logger:            ilog.NewDefaultLogger(),
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
-	})
-	ts.NoError(err)
-	if ts.config.ShouldRegisterNamespace {
-		ts.registerNamespace()
-	}
-}
-
-func (ts *AsyncBindingsTestSuite) registerNamespace() {
-	client, err := client.NewNamespaceClient(client.Options{
-		HostPort:          ts.config.ServiceAddr,
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
-	})
-	ts.NoError(err)
-	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
-	defer cancel()
-	err = client.Register(ctx, &workflowservice.RegisterNamespaceRequest{
-		Namespace:                        ts.config.Namespace,
-		WorkflowExecutionRetentionPeriod: common.DurationPtr(1 * 24 * time.Hour),
-	})
-	defer client.Close()
-	if _, ok := err.(*serviceerror.NamespaceAlreadyExists); ok {
-		return
-	}
-	ts.NoError(err)
-	time.Sleep(namespaceCacheRefreshInterval) // wait for namespace cache refresh on temporal-server
-	// bellow is used to guarantee namespace is ready
-	var dummyReturn string
-	err = ts.executeWorkflow("test-namespace-exist", SimplestWorkflow, &dummyReturn)
-	numOfRetry := 20
-	for err != nil && numOfRetry >= 0 {
-		if _, ok := err.(*serviceerror.NamespaceNotFound); ok {
-			time.Sleep(namespaceCacheRefreshInterval)
-			err = ts.executeWorkflow("test-namespace-exist", SimplestWorkflow, &dummyReturn)
-		} else {
-			break
-		}
-		numOfRetry--
-	}
-}
-
-// executeWorkflow executes a given workflow and waits for the result
-func (ts *AsyncBindingsTestSuite) executeWorkflow(
-	wfID string, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
-	options := ts.startWorkflowOptions(wfID)
-	return ts.executeWorkflowWithOption(options, wfFunc, retValPtr, args...)
-}
-
-func (ts *AsyncBindingsTestSuite) executeWorkflowWithOption(
-	options client.StartWorkflowOptions, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
-	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
-	defer cancel()
-	run, err := ts.client.ExecuteWorkflow(ctx, options, wfFunc, args...)
-	if err != nil {
-		return err
-	}
-	err = run.Get(ctx, retValPtr)
-	if ts.config.Debug {
-		iter := ts.client.GetWorkflowHistory(ctx, options.ID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-		for iter.HasNext() {
-			event, err1 := iter.Next()
-			if err1 != nil {
-				break
-			}
-			fmt.Println(event.String())
-		}
-	}
-	return err
-}
-
-func (ts *AsyncBindingsTestSuite) startWorkflowOptions(wfID string) client.StartWorkflowOptions {
-	return client.StartWorkflowOptions{
-		ID:                       wfID,
-		TaskQueue:                ts.taskQueueName,
-		WorkflowExecutionTimeout: 15 * time.Second,
-		WorkflowTaskTimeout:      time.Second,
-		WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
-	}
+	ts.NoError(ts.InitConfigAndClient())
 }
 
 func (ts *AsyncBindingsTestSuite) TearDownSuite() {

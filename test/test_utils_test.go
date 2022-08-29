@@ -36,8 +36,13 @@ import (
 	"time"
 
 	"github.com/pborman/uuid"
+	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/serviceerror"
+	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/common"
+	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -52,7 +57,12 @@ type (
 		TLS                     *tls.Config
 	}
 	// context.WithValue need this type instead of basic type string to avoid lint error
-	contextKey string
+	contextKey               string
+	ConfigAndClientSuiteBase struct {
+		config        Config
+		client        client.Client
+		taskQueueName string
+	}
 )
 
 var taskQueuePrefix = "tq-" + uuid.New()
@@ -206,4 +216,118 @@ func (s *keysPropagator) ExtractToWorkflow(ctx workflow.Context, reader workflow
 		ctx = workflow.WithValue(ctx, contextKey(key), decodedValue)
 	}
 	return ctx, nil
+}
+
+func (ts *ConfigAndClientSuiteBase) InitConfigAndClient() error {
+	ts.config = NewConfig()
+	var err error
+	err = WaitForTCP(time.Minute, ts.config.ServiceAddr)
+	if err != nil {
+		return err
+	}
+	ts.client, err = client.Dial(client.Options{
+		HostPort:          ts.config.ServiceAddr,
+		Namespace:         ts.config.Namespace,
+		Logger:            ilog.NewDefaultLogger(),
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+	})
+	if err != nil {
+		return err
+	}
+	if ts.config.ShouldRegisterNamespace {
+		err = ts.registerNamespace()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func SimplestWorkflow(_ workflow.Context) error {
+	return nil
+}
+
+func (ts *ConfigAndClientSuiteBase) registerNamespace() error {
+	client, err := client.NewNamespaceClient(client.Options{
+		HostPort:          ts.config.ServiceAddr,
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+	})
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	err = client.Register(ctx, &workflowservice.RegisterNamespaceRequest{
+		Namespace:                        ts.config.Namespace,
+		WorkflowExecutionRetentionPeriod: common.DurationPtr(1 * 24 * time.Hour),
+	})
+	defer client.Close()
+	if _, ok := err.(*serviceerror.NamespaceAlreadyExists); ok {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	time.Sleep(namespaceCacheRefreshInterval) // wait for namespace cache refresh on temporal-server
+	// bellow is used to guarantee namespace is ready
+	var dummyReturn string
+	err = ts.executeWorkflow("test-namespace-exist", SimplestWorkflow, &dummyReturn)
+	numOfRetry := 20
+	for err != nil && numOfRetry >= 0 {
+		if _, ok := err.(*serviceerror.NamespaceNotFound); ok {
+			time.Sleep(namespaceCacheRefreshInterval)
+			err = ts.executeWorkflow("test-namespace-exist", SimplestWorkflow, &dummyReturn)
+		} else {
+			break
+		}
+		numOfRetry--
+	}
+	return nil
+}
+
+// executeWorkflow executes a given workflow and waits for the result
+func (ts *ConfigAndClientSuiteBase) executeWorkflow(
+	wfID string, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
+	return ts.executeWorkflowWithOption(ts.startWorkflowOptions(wfID), wfFunc, retValPtr, args...)
+}
+
+func (ts *ConfigAndClientSuiteBase) executeWorkflowWithOption(
+	options client.StartWorkflowOptions, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
+	return ts.executeWorkflowWithContextAndOption(context.Background(), options, wfFunc, retValPtr, args...)
+}
+
+func (ts *ConfigAndClientSuiteBase) executeWorkflowWithContextAndOption(
+	ctx context.Context, options client.StartWorkflowOptions, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
+	ctx, cancel := context.WithTimeout(ctx, ctxTimeout)
+	defer cancel()
+	run, err := ts.client.ExecuteWorkflow(ctx, options, wfFunc, args...)
+	if err != nil {
+		return err
+	}
+	err = run.Get(ctx, retValPtr)
+	if ts.config.Debug {
+		iter := ts.client.GetWorkflowHistory(ctx, options.ID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		for iter.HasNext() {
+			event, err1 := iter.Next()
+			if err1 != nil {
+				break
+			}
+			fmt.Println(event.String())
+		}
+	}
+	return err
+}
+
+func (ts *ConfigAndClientSuiteBase) startWorkflowOptions(wfID string) client.StartWorkflowOptions {
+	var wfOptions = client.StartWorkflowOptions{
+		ID:                       wfID,
+		TaskQueue:                ts.taskQueueName,
+		WorkflowExecutionTimeout: 15 * time.Second,
+		WorkflowTaskTimeout:      time.Second,
+		WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
+	}
+	if wfID == CronWorkflowID {
+		wfOptions.CronSchedule = "@every 1s"
+	}
+	return wfOptions
 }

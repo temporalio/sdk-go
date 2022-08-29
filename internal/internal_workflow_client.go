@@ -947,15 +947,15 @@ func (wc *WorkflowClient) UpdateWorkerBuildIDOrdering(ctx context.Context, optio
 	}
 
 	var previousCompatibleID *taskqueuepb.VersionId
-	if options.previousCompatible != "" {
-		previousCompatibleID = &taskqueuepb.VersionId{WorkerBuildId: options.previousCompatible}
+	if options.PreviousCompatible != "" {
+		previousCompatibleID = &taskqueuepb.VersionId{WorkerBuildId: options.PreviousCompatible}
 	}
 	request := &workflowservice.UpdateWorkerBuildIdOrderingRequest{
 		Namespace:          wc.namespace,
-		TaskQueue:          options.taskQueue,
-		VersionId:          &taskqueuepb.VersionId{WorkerBuildId: options.workerBuildID},
+		TaskQueue:          options.TaskQueue,
+		VersionId:          &taskqueuepb.VersionId{WorkerBuildId: options.WorkerBuildID},
 		PreviousCompatible: previousCompatibleID,
-		BecomeDefault:      options.becomeDefault,
+		BecomeDefault:      options.BecomeDefault,
 	}
 
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
@@ -966,7 +966,7 @@ func (wc *WorkflowClient) UpdateWorkerBuildIDOrdering(ctx context.Context, optio
 
 // GetWorkerBuildIDOrdering returns the worker-build-id based version graph for a particular task queue.
 func (wc *WorkflowClient) GetWorkerBuildIDOrdering(ctx context.Context, options *GetWorkerBuildIDOrderingOptions) (*WorkerBuildIDVersionGraph, error) {
-	if options.maxDepth < 0 {
+	if options.MaxDepth < 0 {
 		return nil, errors.New("maxDepth must be >= 0")
 	}
 	if err := wc.ensureInitialized(); err != nil {
@@ -978,8 +978,8 @@ func (wc *WorkflowClient) GetWorkerBuildIDOrdering(ctx context.Context, options 
 
 	request := &workflowservice.GetWorkerBuildIdOrderingRequest{
 		Namespace: wc.namespace,
-		TaskQueue: options.taskQueue,
-		MaxDepth:  int32(options.maxDepth),
+		TaskQueue: options.TaskQueue,
+		MaxDepth:  int32(options.MaxDepth),
 	}
 	resp, err := wc.workflowService.GetWorkerBuildIdOrdering(grpcCtx, request)
 	if err != nil {

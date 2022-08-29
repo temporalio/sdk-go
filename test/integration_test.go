@@ -83,13 +83,11 @@ const (
 type IntegrationTestSuite struct {
 	*require.Assertions
 	suite.Suite
-	config                    Config
-	client                    client.Client
+	ConfigAndClientSuiteBase
 	activities                *Activities
 	workflows                 *Workflows
 	worker                    worker.Worker
 	workerStopped             bool
-	taskQueueName             string
 	tracer                    *tracingInterceptor
 	inboundSignalInterceptor  *signalInterceptor
 	trafficController         *test.SimpleTrafficController
@@ -107,13 +105,9 @@ func TestIntegrationSuite(t *testing.T) {
 
 func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
-	ts.config = NewConfig()
 	ts.activities = newActivities()
 	ts.workflows = &Workflows{}
-	ts.NoError(WaitForTCP(time.Minute, ts.config.ServiceAddr))
-	if ts.config.ShouldRegisterNamespace {
-		ts.registerNamespace()
-	}
+	ts.NoError(ts.InitConfigAndClient())
 }
 
 func (ts *IntegrationTestSuite) TearDownSuite() {
@@ -2575,40 +2569,6 @@ func (ts *IntegrationTestSuite) TestReplayerWithInterceptor() {
 	replayer.RegisterWorkflow(ts.workflows.Basic)
 	ts.NoError(replayer.ReplayWorkflowExecution(ctx, ts.client.WorkflowService(), nil, ts.config.Namespace,
 		workflow.Execution{ID: run.GetID(), RunID: run.GetRunID()}))
-}
-
-func (ts *IntegrationTestSuite) registerNamespace() {
-	client, err := client.NewNamespaceClient(client.Options{
-		HostPort:          ts.config.ServiceAddr,
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
-	})
-	ts.NoError(err)
-	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
-	defer cancel()
-	retention := 1 * time.Hour * 24
-	err = client.Register(ctx, &workflowservice.RegisterNamespaceRequest{
-		Namespace:                        ts.config.Namespace,
-		WorkflowExecutionRetentionPeriod: &retention,
-	})
-	client.Close()
-	if _, ok := err.(*serviceerror.NamespaceAlreadyExists); ok {
-		return
-	}
-	ts.NoError(err)
-	time.Sleep(namespaceCacheRefreshInterval) // wait for namespace cache refresh on temporal-server
-	// bellow is used to guarantee namespace is ready
-	var dummyReturn string
-	err = ts.executeWorkflow("test-namespace-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
-	numOfRetry := 20
-	for err != nil && numOfRetry >= 0 {
-		if _, ok := err.(*serviceerror.NamespaceNotFound); ok {
-			time.Sleep(namespaceCacheRefreshInterval)
-			err = ts.executeWorkflow("test-namespace-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
-		} else {
-			break
-		}
-		numOfRetry--
-	}
 }
 
 // We count on the no-cache test to test replay conditions here
