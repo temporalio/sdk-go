@@ -46,7 +46,7 @@ func Test_WorkerVersionGraph_fromProtoResponse(t *testing.T) {
 				},
 			},
 			want: &WorkerBuildIDVersionGraph{
-				CurrentDefault: &WorkerVersionIDNode{
+				Default: &WorkerVersionIDNode{
 					WorkerBuildID: "2.0",
 					PreviousIncompatible: &WorkerVersionIDNode{
 						WorkerBuildID: "1.0",
@@ -65,7 +65,7 @@ func Test_WorkerVersionGraph_fromProtoResponse(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equalf(t, tt.want, fromProtoResponse(tt.response), "fromProtoResponse(%v)", tt.response)
+			assert.Equalf(t, tt.want, workerVersionGraphFromProtoResponse(tt.response), "workerVersionGraphFromProtoResponse(%v)", tt.response)
 		})
 	}
 }

@@ -27,14 +27,33 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 )
 
+// UpdateWorkerBuildIDOrderingOptions is the input to Client.UpdateWorkerBuildIDOrdering.
+type UpdateWorkerBuildIDOrderingOptions struct {
+	// The task queue to update the version graph of.
+	taskQueue string
+	// Required, indicates the build id being added (or changed) to/in the graph.
+	workerBuildID string
+	// May be empty, and if set, indicates an existing version the new id should be considered compatible with.
+	previousCompatible string
+	// If true, this new id will become the default version for new workflow executions.
+	becomeDefault bool
+}
+
+type GetWorkerBuildIDOrderingOptions struct {
+	taskQueue string
+	maxDepth  int
+}
+
 // WorkerBuildIDVersionGraph is the response for Client.GetWorkerBuildIdOrdering and represents the graph
 // of worker build id based versions.
 type WorkerBuildIDVersionGraph struct {
 	// The currently established default version
-	CurrentDefault *WorkerVersionIDNode
+	Default *WorkerVersionIDNode
 	// Other current latest-compatible versions which are not the overall default
 	CompatibleLeaves []*WorkerVersionIDNode
 }
+
+// WorkerVersionIDNode is a single node in a worker version graph.
 type WorkerVersionIDNode struct {
 	WorkerBuildID string
 	// A pointer to the previous version this version is considered to be compatible with
@@ -43,34 +62,34 @@ type WorkerVersionIDNode struct {
 	PreviousIncompatible *WorkerVersionIDNode
 }
 
-func fromProtoResponse(response *workflowservice.GetWorkerBuildIdOrderingResponse) *WorkerBuildIDVersionGraph {
+func workerVersionGraphFromProtoResponse(response *workflowservice.GetWorkerBuildIdOrderingResponse) *WorkerBuildIDVersionGraph {
 	if response == nil {
 		return nil
 	}
 	return &WorkerBuildIDVersionGraph{
-		CurrentDefault:   fromProtoNode(response.CurrentDefault),
-		CompatibleLeaves: fromProtoNodes(response.CompatibleLeaves),
+		Default:          workerVersionNodeFromProto(response.CurrentDefault),
+		CompatibleLeaves: workerVersionNodesFromProto(response.CompatibleLeaves),
 	}
 }
 
-func fromProtoNode(node *taskqueuepb.VersionIdNode) *WorkerVersionIDNode {
+func workerVersionNodeFromProto(node *taskqueuepb.VersionIdNode) *WorkerVersionIDNode {
 	if node == nil {
 		return nil
 	}
 	return &WorkerVersionIDNode{
 		WorkerBuildID:        node.GetVersion().GetWorkerBuildId(),
-		PreviousCompatible:   fromProtoNode(node.PreviousCompatible),
-		PreviousIncompatible: fromProtoNode(node.PreviousIncompatible),
+		PreviousCompatible:   workerVersionNodeFromProto(node.PreviousCompatible),
+		PreviousIncompatible: workerVersionNodeFromProto(node.PreviousIncompatible),
 	}
 }
 
-func fromProtoNodes(nodes []*taskqueuepb.VersionIdNode) []*WorkerVersionIDNode {
-	if nodes == nil {
+func workerVersionNodesFromProto(nodes []*taskqueuepb.VersionIdNode) []*WorkerVersionIDNode {
+	if len(nodes) == 0 {
 		return nil
 	}
 	result := make([]*WorkerVersionIDNode, len(nodes))
 	for i, node := range nodes {
-		result[i] = fromProtoNode(node)
+		result[i] = workerVersionNodeFromProto(node)
 	}
 	return result
 }
