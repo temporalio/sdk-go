@@ -91,6 +91,12 @@ type (
 	// CheckHealthResponse is a response for Client.CheckHealth.
 	CheckHealthResponse = internal.CheckHealthResponse
 
+	// UpdateWorkerBuildIDOrderingOptions is the input to Client.UpdateWorkerBuildIDOrdering.
+	UpdateWorkerBuildIDOrderingOptions = internal.UpdateWorkerBuildIDOrderingOptions
+
+	// GetWorkerBuildIDOrderingOptions is the input to Client.GetWorkerBuildIDOrdering.
+	GetWorkerBuildIDOrderingOptions = internal.GetWorkerBuildIDOrderingOptions
+
 	// WorkerBuildIDVersionGraph is the response for Client.GetWorkerBuildIdOrdering
 	WorkerBuildIDVersionGraph = internal.WorkerBuildIDVersionGraph
 
@@ -386,17 +392,11 @@ type (
 		// UpdateWorkerBuildIDOrdering **IN DEVELOPMENT**
 		// Allows you to update the worker-build-id based version graph for a particular task queue. This is used in
 		// conjunction with workers who specify their build id and thus opt into the feature. For more, see: <doc link>
-		//  - workerBuildId is required and indicates the build id being added to the version graph.
-		//  - previousCompatible may be empty, and if set, indicates an existing version the new id should be considered
-		//   compatible with.
-		//  - If becomeDefault is true, this new id will become the default version for new workflow executions.
-		UpdateWorkerBuildIDOrdering(ctx context.Context, taskQueue string, workerBuildId string, previousCompatible string, becomeDefault bool) error
+		UpdateWorkerBuildIDOrdering(ctx context.Context, options *UpdateWorkerBuildIDOrderingOptions) error
 
 		// GetWorkerBuildIDOrdering **IN DEVELOPMENT**
 		// Returns the worker-build-id based version graph for a particular task queue.
-		//   - maxDepth may be set to 0 to return the complete depth, but if positive limits the depth of each
-		//     branch of compatible versions and the list of default incompatible versions to that number of nodes.
-		GetWorkerBuildIDOrdering(ctx context.Context, taskQueue string, maxDepth int) (*WorkerBuildIDVersionGraph, error)
+		GetWorkerBuildIDOrdering(ctx context.Context, options *GetWorkerBuildIDOrderingOptions) (*WorkerBuildIDVersionGraph, error)
 
 		// CheckHealth performs a server health check using the gRPC health check
 		// API. If the check fails, an error is returned.

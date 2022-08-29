@@ -544,12 +544,12 @@ func (_m *Client) CheckHealth(ctx context.Context, request *client.CheckHealthRe
 }
 
 // UpdateWorkerBuildIDOrdering provides a mock function with given fields: ctx, taskQueue, workerBuildId, previousCompatible, becomeDefault
-func (_m *Client) UpdateWorkerBuildIDOrdering(ctx context.Context, taskQueue string, workerBuildId string, previousCompatible string, becomeDefault bool) error {
-	ret := _m.Called(ctx, taskQueue, workerBuildId, previousCompatible, becomeDefault)
+func (_m *Client) UpdateWorkerBuildIDOrdering(ctx context.Context, options *client.UpdateWorkerBuildIDOrderingOptions) error {
+	ret := _m.Called(ctx, options)
 
 	var r0 error
-	if rf, ok := ret.Get(1).(func(context.Context, string, string, string, bool) error); ok {
-		r0 = rf(ctx, taskQueue, workerBuildId, previousCompatible, becomeDefault)
+	if rf, ok := ret.Get(1).(func(context.Context, *client.UpdateWorkerBuildIDOrderingOptions) error); ok {
+		r0 = rf(ctx, options)
 	} else {
 		r0 = ret.Error(1)
 	}
@@ -558,12 +558,12 @@ func (_m *Client) UpdateWorkerBuildIDOrdering(ctx context.Context, taskQueue str
 }
 
 // GetWorkerBuildIDOrdering provides a mock function with given fields: ctx, request
-func (_m *Client) GetWorkerBuildIDOrdering(ctx context.Context, taskQueue string, maxDepth int) (*internal.WorkerBuildIDVersionGraph, error) {
-	ret := _m.Called(ctx, taskQueue, maxDepth)
+func (_m *Client) GetWorkerBuildIDOrdering(ctx context.Context, options *client.GetWorkerBuildIDOrderingOptions) (*client.WorkerBuildIDVersionGraph, error) {
+	ret := _m.Called(ctx, options)
 
 	var r0 *internal.WorkerBuildIDVersionGraph
-	if rf, ok := ret.Get(0).(func(context.Context, string, int) *internal.WorkerBuildIDVersionGraph); ok {
-		r0 = rf(ctx, taskQueue, maxDepth)
+	if rf, ok := ret.Get(0).(func(context.Context, *client.GetWorkerBuildIDOrderingOptions) *client.WorkerBuildIDVersionGraph); ok {
+		r0 = rf(ctx, options)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*internal.WorkerBuildIDVersionGraph)
@@ -571,8 +571,8 @@ func (_m *Client) GetWorkerBuildIDOrdering(ctx context.Context, taskQueue string
 	}
 
 	var r1 error
-	if rf, ok := ret.Get(1).(func(context.Context, string, int) error); ok {
-		r1 = rf(ctx, taskQueue, maxDepth)
+	if rf, ok := ret.Get(1).(func(context.Context, *client.GetWorkerBuildIDOrderingOptions) error); ok {
+		r1 = rf(ctx, options)
 	} else {
 		r1 = ret.Error(1)
 	}

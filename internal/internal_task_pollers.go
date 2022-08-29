@@ -79,7 +79,7 @@ type (
 		namespace     string
 		taskQueueName string
 		identity      string
-		workerBulidId string
+		workerBuildID string
 		service       workflowservice.WorkflowServiceClient
 		taskHandler   WorkflowTaskHandler
 		logger        log.Logger
@@ -437,16 +437,16 @@ func (wtp *workflowTaskPoller) errorToFailWorkflowTask(taskToken []byte, err err
 		Cause:          cause,
 		Failure:        ConvertErrorToFailure(err, wtp.dataConverter),
 		Identity:       wtp.identity,
-		BinaryChecksum: wtp.getBuildId(),
+		BinaryChecksum: wtp.getBuildID(),
 		Namespace:      wtp.namespace,
 	}
 }
 
-func (wtp *workflowTaskPoller) getBuildId() string {
-	if wtp.workerBulidId == "" {
+func (wtp *workflowTaskPoller) getBuildID() string {
+	if wtp.workerBuildID == "" {
 		return getBinaryChecksum()
 	}
-	return wtp.workerBulidId
+	return wtp.workerBuildID
 }
 
 func newLocalActivityPoller(
@@ -670,7 +670,7 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		Namespace:      wtp.namespace,
 		TaskQueue:      taskQueue,
 		Identity:       wtp.identity,
-		BinaryChecksum: wtp.getBuildId(),
+		BinaryChecksum: wtp.getBuildID(),
 	}
 }
 

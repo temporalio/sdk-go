@@ -339,14 +339,10 @@ type (
 		// UpdateWorkerBuildIDOrdering allows you to update the worker-build-id based version graph for a particular
 		// task queue. This is used in conjunction with workers who specify their build id and thus opt into the
 		// feature. For more, see: <doc link>
-		// - workerBuildId is required and indicates the build id being added to the version graph.
-		// - previousCompatible may be empty, and if set, indicates an existing version the new id should be considered
-		//   compatible with.
-		// - If becomeDefault is true, this new id will become the default version for new workflow executions.
-		UpdateWorkerBuildIDOrdering(ctx context.Context, taskQueue string, workerBuildId string, previousCompatible string, becomeDefault bool) error
+		UpdateWorkerBuildIDOrdering(ctx context.Context, options *UpdateWorkerBuildIDOrderingOptions) error
 
 		// GetWorkerBuildIDOrdering returns the worker-build-id based version graph for a particular task queue.
-		GetWorkerBuildIDOrdering(ctx context.Context, taskQueue string, maxDepth int) (*WorkerBuildIDVersionGraph, error)
+		GetWorkerBuildIDOrdering(ctx context.Context, options *GetWorkerBuildIDOrderingOptions) (*WorkerBuildIDVersionGraph, error)
 
 		// CheckHealth performs a server health check using the gRPC health check
 		// API. If the check fails, an error is returned.
