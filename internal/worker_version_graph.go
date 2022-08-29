@@ -30,18 +30,18 @@ import (
 // UpdateWorkerBuildIDOrderingOptions is the input to Client.UpdateWorkerBuildIDOrdering.
 type UpdateWorkerBuildIDOrderingOptions struct {
 	// The task queue to update the version graph of.
-	taskQueue string
+	TaskQueue string
 	// Required, indicates the build id being added (or changed) to/in the graph.
-	workerBuildID string
+	WorkerBuildID string
 	// May be empty, and if set, indicates an existing version the new id should be considered compatible with.
-	previousCompatible string
+	PreviousCompatible string
 	// If true, this new id will become the default version for new workflow executions.
-	becomeDefault bool
+	BecomeDefault bool
 }
 
 type GetWorkerBuildIDOrderingOptions struct {
-	taskQueue string
-	maxDepth  int
+	TaskQueue string
+	MaxDepth  int
 }
 
 // WorkerBuildIDVersionGraph is the response for Client.GetWorkerBuildIdOrdering and represents the graph

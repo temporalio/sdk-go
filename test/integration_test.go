@@ -82,13 +82,11 @@ const (
 type IntegrationTestSuite struct {
 	*require.Assertions
 	suite.Suite
-	config                    Config
-	client                    client.Client
+	ConfigAndClientSuiteBase
 	activities                *Activities
 	workflows                 *Workflows
 	worker                    worker.Worker
 	workerStopped             bool
-	taskQueueName             string
 	tracer                    *tracingInterceptor
 	inboundSignalInterceptor  *signalInterceptor
 	trafficController         *test.SimpleTrafficController
@@ -106,13 +104,9 @@ func TestIntegrationSuite(t *testing.T) {
 
 func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
-	ts.config = NewConfig()
 	ts.activities = newActivities()
 	ts.workflows = &Workflows{}
-	ts.NoError(WaitForTCP(time.Minute, ts.config.ServiceAddr))
-	if ts.config.ShouldRegisterNamespace {
-		ts.registerNamespace()
-	}
+	ts.NoError(ts.InitConfigAndClient())
 }
 
 func (ts *IntegrationTestSuite) TearDownSuite() {
@@ -2391,40 +2385,6 @@ func (ts *IntegrationTestSuite) TestReplayerWithInterceptor() {
 		workflow.Execution{ID: run.GetID(), RunID: run.GetRunID()}))
 }
 
-func (ts *IntegrationTestSuite) registerNamespace() {
-	client, err := client.NewNamespaceClient(client.Options{
-		HostPort:          ts.config.ServiceAddr,
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
-	})
-	ts.NoError(err)
-	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
-	defer cancel()
-	retention := 1 * time.Hour * 24
-	err = client.Register(ctx, &workflowservice.RegisterNamespaceRequest{
-		Namespace:                        ts.config.Namespace,
-		WorkflowExecutionRetentionPeriod: &retention,
-	})
-	client.Close()
-	if _, ok := err.(*serviceerror.NamespaceAlreadyExists); ok {
-		return
-	}
-	ts.NoError(err)
-	time.Sleep(namespaceCacheRefreshInterval) // wait for namespace cache refresh on temporal-server
-	// bellow is used to guarantee namespace is ready
-	var dummyReturn string
-	err = ts.executeWorkflow("test-namespace-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
-	numOfRetry := 20
-	for err != nil && numOfRetry >= 0 {
-		if _, ok := err.(*serviceerror.NamespaceNotFound); ok {
-			time.Sleep(namespaceCacheRefreshInterval)
-			err = ts.executeWorkflow("test-namespace-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
-		} else {
-			break
-		}
-		numOfRetry--
-	}
-}
-
 // We count on the no-cache test to test replay conditions here
 func (ts *IntegrationTestSuite) TestHistoryLength() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -2514,52 +2474,6 @@ func (ts *IntegrationTestSuite) TestHeartbeatThrottleDisabled() {
 	// Now that heartbeat throttling was disabled, it should have sent all 4 times
 	ts.assertReportedOperationCount("temporal_request", "RecordActivityTaskHeartbeat", 4)
 	ts.assertReportedOperationCount("temporal_request_failure", "RecordActivityTaskHeartbeat", 0)
-}
-
-// executeWorkflow executes a given workflow and waits for the result
-func (ts *IntegrationTestSuite) executeWorkflow(
-	wfID string, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
-	return ts.executeWorkflowWithOption(ts.startWorkflowOptions(wfID), wfFunc, retValPtr, args...)
-}
-func (ts *IntegrationTestSuite) executeWorkflowWithOption(
-	options client.StartWorkflowOptions, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
-	return ts.executeWorkflowWithContextAndOption(context.Background(), options, wfFunc, retValPtr, args...)
-}
-
-func (ts *IntegrationTestSuite) executeWorkflowWithContextAndOption(
-	ctx context.Context, options client.StartWorkflowOptions, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
-	ctx, cancel := context.WithTimeout(ctx, ctxTimeout)
-	defer cancel()
-	run, err := ts.client.ExecuteWorkflow(ctx, options, wfFunc, args...)
-	if err != nil {
-		return err
-	}
-	err = run.Get(ctx, retValPtr)
-	if ts.config.Debug {
-		iter := ts.client.GetWorkflowHistory(ctx, options.ID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-		for iter.HasNext() {
-			event, err1 := iter.Next()
-			if err1 != nil {
-				break
-			}
-			fmt.Println(event.String())
-		}
-	}
-	return err
-}
-
-func (ts *IntegrationTestSuite) startWorkflowOptions(wfID string) client.StartWorkflowOptions {
-	var wfOptions = client.StartWorkflowOptions{
-		ID:                       wfID,
-		TaskQueue:                ts.taskQueueName,
-		WorkflowExecutionTimeout: 15 * time.Second,
-		WorkflowTaskTimeout:      time.Second,
-		WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
-	}
-	if wfID == CronWorkflowID {
-		wfOptions.CronSchedule = "@every 1s"
-	}
-	return wfOptions
 }
 
 func (ts *IntegrationTestSuite) registerWorkflowsAndActivities(w worker.Worker) {
