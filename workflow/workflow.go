@@ -237,7 +237,7 @@ func GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
 // For example this code is BROKEN:
 //  // Bad example:
 //  var random int
-//  workflow.SideEffect(func(ctx workflow.Context) interface{} {
+//  workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
 //         random = rand.Intn(100)
 //         return nil
 //  })
@@ -252,7 +252,7 @@ func GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
 //
 // Here is the correct way to use SideEffect:
 //  // Good example:
-//  encodedRandom := SideEffect(func(ctx workflow.Context) interface{} {
+//  encodedRandom := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
 //        return rand.Intn(100)
 //  })
 //  var random int
@@ -268,9 +268,9 @@ func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedV
 
 // MutableSideEffect executes the provided function once, then it looks up the history for the value with the given id.
 // If there is no existing value, then it records the function result as a value with the given id on history;
-// otherwise, it compares whether the existing value from history has changed from the new function result by calling the
-// provided equals function. If they are equal, it returns the value without recording a new one in history;
-//   otherwise, it records the new value with the same id on history.
+// otherwise, it compares whether the existing value from history has changed from the new function result by calling
+// the provided equals function. If they are equal, it returns the value without recording a new one in history;
+// otherwise, it records the new value with the same id on history.
 //
 // Caution: do not use MutableSideEffect to modify closures. Always retrieve result from MutableSideEffect's encoded
 // return value.
