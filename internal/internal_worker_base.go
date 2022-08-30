@@ -357,6 +357,13 @@ func (bw *baseWorker) pollTask() {
 }
 
 func (bw *baseWorker) logPollTaskError(err error) {
+	// We do not want to log any errors after we were explicitly stopped
+	select {
+	case <-bw.stopCh:
+		return
+	default:
+	}
+
 	bw.lastPollTaskErrLock.Lock()
 	defer bw.lastPollTaskErrLock.Unlock()
 	// No error means reset the message and time
