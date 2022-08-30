@@ -772,11 +772,8 @@ func (c *channelImpl) ReceiveWithTimeout(ctx Context, timeout time.Duration, val
 	if !okAwait { // timed out
 		return !c.closed, NewTimeoutError("ReceiveWithTimeout", enumspb.TIMEOUT_TYPE_UNSPECIFIED, nil)
 	}
-	ok, more := c.ReceiveAsyncWithMoreFlag(valuePtr)
-	if !ok {
-		panic("unexpected empty channel")
-	}
-	return more, nil
+	more, err = c.receive(ctx, valuePtr)
+	return more, err
 }
 
 func (c *channelImpl) ReceiveAsync(valuePtr interface{}) (ok bool) {
