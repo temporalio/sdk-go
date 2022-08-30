@@ -771,7 +771,7 @@ func (c *channelImpl) ReceiveWithTimeout(ctx Context, timeout time.Duration, val
 		panic(fmt.Sprintf("unexpected error: %v", err))
 	}
 	if !okAwait { // timed out
-		return c.closed, true
+		return !c.closed, true
 	}
 	ok, more := c.ReceiveAsyncWithMoreFlag(valuePtr)
 	if !ok {
