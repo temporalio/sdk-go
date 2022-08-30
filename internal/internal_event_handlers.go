@@ -402,7 +402,7 @@ func (wc *workflowEnvironmentImpl) updateWorkflowInfoWithProperties(memo *common
 }
 
 func mergeMemo(current, upsert *commonpb.Memo) *commonpb.Memo {
-	if current == nil {
+	if current == nil || len(current.Fields) == 0 {
 		if upsert == nil || len(upsert.Fields) == 0 {
 			return nil
 		}
@@ -413,7 +413,11 @@ func mergeMemo(current, upsert *commonpb.Memo) *commonpb.Memo {
 
 	fields := current.Fields
 	for k, v := range upsert.Fields {
-		fields[k] = v
+		if v.Data == nil {
+			delete(fields, k)
+		} else {
+			fields[k] = v
+		}
 	}
 	return current
 }
