@@ -106,7 +106,7 @@ func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
 	ts.activities = newActivities()
 	ts.workflows = &Workflows{}
-	ts.NoError(ts.InitConfigAndClient())
+	ts.NoError(ts.InitConfigAndNamespace())
 }
 
 func (ts *IntegrationTestSuite) TearDownSuite() {

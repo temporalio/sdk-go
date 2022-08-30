@@ -49,7 +49,8 @@ func TestAsyncBindingsTestSuite(t *testing.T) {
 
 func (ts *AsyncBindingsTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
-	ts.NoError(ts.InitConfigAndClient())
+	ts.NoError(ts.InitConfigAndNamespace())
+	ts.NoError(ts.InitClient())
 }
 
 func (ts *AsyncBindingsTestSuite) TearDownSuite() {
