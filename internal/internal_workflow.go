@@ -720,6 +720,16 @@ func (c *channelImpl) CanSendWithoutBlocking() bool {
 }
 
 func (c *channelImpl) Receive(ctx Context, valuePtr interface{}) (more bool) {
+	for {
+		more, err := c.receive(ctx, valuePtr)
+		if !more || err == nil {
+			return more
+		}
+		// corrupt signal. Drop and reset process
+	}
+}
+
+func (c *channelImpl) receive(ctx Context, valuePtr interface{}) (more bool, err error) {
 	state := getState(ctx)
 	hasResult := false
 	var result interface{}
@@ -732,52 +742,41 @@ func (c *channelImpl) Receive(ctx Context, valuePtr interface{}) (more bool) {
 		},
 	}
 
-	for {
-		hasResult = false
-		v, ok, m := c.receiveAsyncImpl(callback)
+	hasResult = false
+	v, ok, m := c.receiveAsyncImpl(callback)
 
-		if !ok && !m { // channel closed and empty
-			return m
-		}
-
-		if ok || !m {
-			err := c.assignValue(v, valuePtr)
-			if err == nil {
-				state.unblocked()
-				return m
-			}
-			continue // corrupt signal. Drop and reset process
-		}
-		for {
-			if hasResult {
-				err := c.assignValue(result, valuePtr)
-				if err == nil {
-					state.unblocked()
-					return more
-				}
-				break // Corrupt signal. Drop and reset process.
-			}
-			state.yield(fmt.Sprintf("blocked on %s.Receive", c.name))
-		}
+	if !ok && !m { // channel closed and empty
+		return m, nil
 	}
 
+	if ok || !m {
+		err := c.assignValue(v, valuePtr)
+		state.unblocked()
+		return m, err
+	}
+	for {
+		if hasResult {
+			err := c.assignValue(result, valuePtr)
+			state.unblocked()
+			return more, err
+		}
+		state.yield(fmt.Sprintf("blocked on %s.Receive", c.name))
+	}
 }
 
-func (c *channelImpl) ReceiveWithTimeout(ctx Context, timeout time.Duration, valuePtr interface{}) (more bool, timedOut bool) {
-	// Channel operations are not interrupted by cancellation
-	dCtx, _ := NewDisconnectedContext(ctx)
-	okAwait, err := AwaitWithTimeout(dCtx, timeout, func() bool { return !c.Empty() })
+func (c *channelImpl) ReceiveWithTimeout(ctx Context, timeout time.Duration, valuePtr interface{}) (more bool, err error) {
+	okAwait, err := AwaitWithTimeout(ctx, timeout, func() bool { return c.Len() > 0 })
 	if err != nil {
-		panic(fmt.Sprintf("unexpected error: %v", err))
+		return true, err
 	}
 	if !okAwait { // timed out
-		return !c.closed, true
+		return !c.closed, NewTimeoutError("ReceiveWithTimeout", enumspb.TIMEOUT_TYPE_UNSPECIFIED, nil)
 	}
 	ok, more := c.ReceiveAsyncWithMoreFlag(valuePtr)
 	if !ok {
 		panic("unexpected empty channel")
 	}
-	return more, false
+	return more, nil
 }
 
 func (c *channelImpl) ReceiveAsync(valuePtr interface{}) (ok bool) {
@@ -801,8 +800,12 @@ func (c *channelImpl) ReceiveAsyncWithMoreFlag(valuePtr interface{}) (ok bool, m
 	}
 }
 
-func (c *channelImpl) Empty() bool {
-	return c.closed || (len(c.buffer) == 0 && len(c.blockedSends) == 0 && c.recValue == nil)
+func (c *channelImpl) Len() int {
+	result := len(c.buffer) + len(c.blockedSends)
+	if c.recValue != nil {
+		result = result + 1
+	}
+	return result
 }
 
 // ok = true means that value was received

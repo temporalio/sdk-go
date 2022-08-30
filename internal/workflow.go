@@ -75,7 +75,8 @@ type (
 		// ReceiveWithTimeout blocks up to timeout until it receives a value, and then assigns the received value to the
 		// provided pointer.
 		// Returns more value of false when Channel is closed.
-		// Returns timedOut value of true when no value was found in the channel for the duration of timeout.
+		// Returns CanceledError if the ctx is canceled.
+		// Returns TimeoutError when no value was found in the channel for the duration of timeout.
 		// The valuePtr is not modified if timed out.
 		// Parameter valuePtr is a pointer to the expected data structure to be received. For example:
 		//  var v string
@@ -84,7 +85,7 @@ type (
 		// Note, values should not be reused for extraction here because merging on
 		// top of existing values may result in unexpected behavior similar to
 		// json.Unmarshal.
-		ReceiveWithTimeout(ctx Context, timeout time.Duration, valuePtr interface{}) (more bool, timedOut bool)
+		ReceiveWithTimeout(ctx Context, timeout time.Duration, valuePtr interface{}) (more bool, err error)
 
 		// ReceiveAsync try to receive from Channel without blocking. If there is data available from the Channel, it
 		// assign the data to valuePtr and returns true. Otherwise, it returns false immediately.
@@ -102,8 +103,9 @@ type (
 		// json.Unmarshal.
 		ReceiveAsyncWithMoreFlag(valuePtr interface{}) (ok bool, more bool)
 
-		// Empty returns false if channel has a message to deliver.
-		Empty() bool
+		// Len returns the number of messages ready to be delivered
+		// For unbuffered channels it shows the number of blocked Send calls.
+		Len() int
 	}
 
 	// Channel must be used instead of native go channel by workflow code.
