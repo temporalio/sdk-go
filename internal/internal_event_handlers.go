@@ -393,11 +393,11 @@ func (wc *workflowEnvironmentImpl) UpsertMemo(memoMap map[string]interface{}) er
 
 	changeID := wc.GenerateSequenceID()
 	wc.commandsHelper.modifyProperties(changeID, memo)
-	wc.updateWorkflowInfoWithProperties(memo) // this is for getInfo correctness
+	wc.updateWorkflowInfoWithMemo(memo) // this is for getInfo correctness
 	return nil
 }
 
-func (wc *workflowEnvironmentImpl) updateWorkflowInfoWithProperties(memo *commonpb.Memo) {
+func (wc *workflowEnvironmentImpl) updateWorkflowInfoWithMemo(memo *commonpb.Memo) {
 	wc.workflowInfo.Memo = mergeMemo(wc.workflowInfo.Memo, memo)
 }
 
@@ -1579,7 +1579,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleWorkflowPropertiesModified(
 	event *historypb.HistoryEvent,
 ) {
 	attributes := event.GetWorkflowPropertiesModifiedEventAttributes()
-	weh.updateWorkflowInfoWithProperties(attributes.UpsertedMemo)
+	weh.updateWorkflowInfoWithMemo(attributes.UpsertedMemo)
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleRequestCancelExternalWorkflowExecutionInitiated(event *historypb.HistoryEvent) error {
