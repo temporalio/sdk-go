@@ -218,19 +218,10 @@ func (s *keysPropagator) ExtractToWorkflow(ctx workflow.Context, reader workflow
 	return ctx, nil
 }
 
-func (ts *ConfigAndClientSuiteBase) InitConfigAndClient() error {
+func (ts *ConfigAndClientSuiteBase) InitConfigAndNamespace() error {
 	ts.config = NewConfig()
 	var err error
 	err = WaitForTCP(time.Minute, ts.config.ServiceAddr)
-	if err != nil {
-		return err
-	}
-	ts.client, err = client.Dial(client.Options{
-		HostPort:          ts.config.ServiceAddr,
-		Namespace:         ts.config.Namespace,
-		Logger:            ilog.NewDefaultLogger(),
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
-	})
 	if err != nil {
 		return err
 	}
@@ -241,6 +232,17 @@ func (ts *ConfigAndClientSuiteBase) InitConfigAndClient() error {
 		}
 	}
 	return nil
+}
+
+func (ts *ConfigAndClientSuiteBase) InitClient() error {
+	var err error
+	ts.client, err = client.Dial(client.Options{
+		HostPort:          ts.config.ServiceAddr,
+		Namespace:         ts.config.Namespace,
+		Logger:            ilog.NewDefaultLogger(),
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+	})
+	return err
 }
 
 func SimplestWorkflow(_ workflow.Context) error {
@@ -269,7 +271,7 @@ func (ts *ConfigAndClientSuiteBase) registerNamespace() error {
 		return err
 	}
 	time.Sleep(namespaceCacheRefreshInterval) // wait for namespace cache refresh on temporal-server
-	// bellow is used to guarantee namespace is ready
+	// below is used to guarantee namespace is ready
 	var dummyReturn string
 	err = ts.executeWorkflow("test-namespace-exist", SimplestWorkflow, &dummyReturn)
 	numOfRetry := 20

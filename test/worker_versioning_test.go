@@ -43,7 +43,8 @@ func TestWorkerVersioningTestSuite(t *testing.T) {
 
 func (ts *WorkerVersioningTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
-	ts.NoError(ts.InitConfigAndClient())
+	ts.NoError(ts.InitConfigAndNamespace())
+	ts.NoError(ts.InitClient())
 }
 
 func (ts *WorkerVersioningTestSuite) TearDownSuite() {
