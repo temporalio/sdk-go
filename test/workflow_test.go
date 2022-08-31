@@ -1850,7 +1850,6 @@ func (w *Workflows) HeartbeatSpecificCount(ctx workflow.Context, interval time.D
 }
 
 func (w *Workflows) UpsertMemo(ctx workflow.Context, memo map[string]interface{}) (*commonpb.Memo, error) {
-	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 	err := workflow.UpsertMemo(ctx, memo)
 	if err != nil {
 		return nil, err;

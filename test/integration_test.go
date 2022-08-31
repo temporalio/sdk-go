@@ -2519,6 +2519,8 @@ func (ts *IntegrationTestSuite) TestHeartbeatThrottleDisabled() {
 }
 
 func (ts *IntegrationTestSuite) TestUpsertMemoFromNil() {
+	// TODO(rodrigozhou): unskip after UpsertMemo is released
+	ts.T().Skip("Not implemented in server yet")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -2570,6 +2572,8 @@ func (ts *IntegrationTestSuite) TestUpsertMemoFromNil() {
 }
 
 func (ts *IntegrationTestSuite) TestUpsertMemoFromEmptyMap() {
+	// TODO(rodrigozhou): unskip after UpsertMemo is released
+	ts.T().Skip("Not implemented in server yet")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -2622,6 +2626,8 @@ func (ts *IntegrationTestSuite) TestUpsertMemoFromEmptyMap() {
 }
 
 func (ts *IntegrationTestSuite) TestUpsertMemoWithExistingMemo() {
+	// TODO(rodrigozhou): unskip after UpsertMemo is released
+	ts.T().Skip("Not implemented in server yet")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
