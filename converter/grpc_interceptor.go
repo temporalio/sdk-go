@@ -32,6 +32,7 @@ import (
 
 	"google.golang.org/grpc"
 
+	batchpb "go.temporal.io/api/batch/v1"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	failurepb "go.temporal.io/api/failure/v1"
@@ -163,6 +164,29 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 				if err := s.process(encode, x); err != nil {
 					return err
 				}
+			}
+
+		case *batchpb.BatchOperationSignal:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetHeader(),
+				o.GetInput(),
+			); err != nil {
+				return err
+			}
+
+		case *batchpb.BatchOperationTermination:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetDetails(),
+			); err != nil {
+				return err
 			}
 
 		case *commandpb.CancelWorkflowExecutionCommandAttributes:
@@ -1234,6 +1258,18 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 				encode,
 				o.GetHeader(),
 				o.GetInput(),
+			); err != nil {
+				return err
+			}
+
+		case *workflowservicepb.StartBatchOperationRequest:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetSignalOperation(),
+				o.GetTerminationOperation(),
 			); err != nil {
 				return err
 			}
