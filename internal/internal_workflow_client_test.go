@@ -28,6 +28,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1415,16 +1416,16 @@ func TestClientCloseCount(t *testing.T) {
 	workflowClient := client.(*WorkflowClient)
 
 	// Confirm there is 1 unclosed client
-	require.EqualValues(t, 1, *workflowClient.unclosedClients)
+	require.EqualValues(t, 1, atomic.LoadInt32(workflowClient.unclosedClients))
 
 	// Create two more and confirm counts
 	client2, err := NewClientFromExisting(client, ClientOptions{})
 	require.NoError(t, err)
-	require.EqualValues(t, 2, *workflowClient.unclosedClients)
+	require.EqualValues(t, 2, atomic.LoadInt32(workflowClient.unclosedClients))
 	require.Same(t, workflowClient.unclosedClients, client2.(*WorkflowClient).unclosedClients)
 	client3, err := NewClientFromExisting(client, ClientOptions{})
 	require.NoError(t, err)
-	require.EqualValues(t, 3, *workflowClient.unclosedClients)
+	require.EqualValues(t, 3, atomic.LoadInt32(workflowClient.unclosedClients))
 	require.Same(t, workflowClient.unclosedClients, client3.(*WorkflowClient).unclosedClients)
 
 	// Close the third one 3 times and confirm counts and that connection not
@@ -1432,13 +1433,13 @@ func TestClientCloseCount(t *testing.T) {
 	client3.Close()
 	client3.Close()
 	client3.Close()
-	require.EqualValues(t, 2, *workflowClient.unclosedClients)
+	require.EqualValues(t, 2, atomic.LoadInt32(workflowClient.unclosedClients))
 	require.NotSame(t, workflowClient.unclosedClients, client3.(*WorkflowClient).unclosedClients)
 	require.Less(t, workflowClient.conn.GetState(), connectivity.Shutdown)
 
 	// Close the primary one and confirm not closed
 	client.Close()
-	require.EqualValues(t, 1, *client2.(*WorkflowClient).unclosedClients)
+	require.EqualValues(t, 1, atomic.LoadInt32(client2.(*WorkflowClient).unclosedClients))
 	require.NotSame(t, workflowClient.unclosedClients, client2.(*WorkflowClient).unclosedClients)
 	require.Less(t, workflowClient.conn.GetState(), connectivity.Shutdown)
 
