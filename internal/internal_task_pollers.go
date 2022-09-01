@@ -71,6 +71,8 @@ type (
 	basePoller struct {
 		metricsHandler metrics.Handler // base metric handler used for rpc calls
 		stopC          <-chan struct{}
+		// Is set if this worker has opted in to build-id based versioning
+		workerBuildID string
 	}
 
 	// numPollerMetric tracks the number of active pollers and publishes a metric on it.
@@ -86,7 +88,6 @@ type (
 		namespace        string
 		taskQueueName    string
 		identity         string
-		workerBuildID string
 		service          workflowservice.WorkflowServiceClient
 		taskHandler      WorkflowTaskHandler
 		logger           log.Logger
@@ -257,7 +258,11 @@ func newWorkflowTaskPoller(
 	params workerExecutionParameters,
 ) *workflowTaskPoller {
 	return &workflowTaskPoller{
-		basePoller:                   basePoller{metricsHandler: params.MetricsHandler, stopC: params.WorkerStopChannel},
+		basePoller: basePoller{
+			metricsHandler: params.MetricsHandler,
+			stopC:          params.WorkerStopChannel,
+			workerBuildID:  params.WorkerBuildID,
+		},
 		service:                      service,
 		namespace:                    params.Namespace,
 		taskQueueName:                params.TaskQueue,
@@ -462,11 +467,11 @@ func (wtp *workflowTaskPoller) errorToFailWorkflowTask(taskToken []byte, err err
 	}
 }
 
-func (wtp *workflowTaskPoller) getBuildID() string {
-	if wtp.workerBuildID == "" {
+func (bp *basePoller) getBuildID() string {
+	if bp.workerBuildID == "" {
 		return getBinaryChecksum()
 	}
-	return wtp.workerBuildID
+	return bp.workerBuildID
 }
 
 func newLocalActivityPoller(
@@ -689,12 +694,16 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		Name: taskQueueName,
 		Kind: taskQueueKind,
 	}
-	return &workflowservice.PollWorkflowTaskQueueRequest{
+	builtRequest := &workflowservice.PollWorkflowTaskQueueRequest{
 		Namespace:      wtp.namespace,
 		TaskQueue:      taskQueue,
 		Identity:       wtp.identity,
 		BinaryChecksum: wtp.getBuildID(),
 	}
+	if wtp.workerBuildID != "" {
+		builtRequest.WorkerVersioningId = &taskqueuepb.VersionId{WorkerBuildId: wtp.workerBuildID}
+	}
+	return builtRequest
 }
 
 // Poll the workflow task queue and update the num_poller metric
@@ -854,7 +863,11 @@ func newGetHistoryPageFunc(
 
 func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowservice.WorkflowServiceClient, params workerExecutionParameters) *activityTaskPoller {
 	return &activityTaskPoller{
-		basePoller:          basePoller{metricsHandler: params.MetricsHandler, stopC: params.WorkerStopChannel},
+		basePoller: basePoller{
+			metricsHandler: params.MetricsHandler,
+			stopC:          params.WorkerStopChannel,
+			workerBuildID:  params.WorkerBuildID,
+		},
 		taskHandler:         taskHandler,
 		service:             service,
 		namespace:           params.Namespace,
@@ -884,6 +897,9 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 		TaskQueue:         &taskqueuepb.TaskQueue{Name: atp.taskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
 		Identity:          atp.identity,
 		TaskQueueMetadata: &taskqueuepb.TaskQueueMetadata{MaxTasksPerSecond: &types.DoubleValue{Value: atp.activitiesPerSecond}},
+	}
+	if atp.workerBuildID != "" {
+		request.WorkerVersioningId = &taskqueuepb.VersionId{WorkerBuildId: atp.workerBuildID}
 	}
 
 	response, err := atp.pollActivityTaskQueue(ctx, request)

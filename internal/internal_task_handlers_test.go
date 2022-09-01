@@ -560,6 +560,25 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 	t.Equal(getBinaryChecksum(), checksums[2])
 }
 
+func (t *TaskHandlersTestSuite) TestRespondsToWFTWithWorkerBinaryID() {
+	taskQueue := "tq1"
+	workerBuildID := "yaaaay"
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskStarted(3),
+	}
+	task := createWorkflowTask(testEvents, 0, "HelloWorld_Workflow")
+	params := t.getTestWorkerExecutionParams()
+	params.WorkerBuildID = workerBuildID
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
+	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	t.NoError(err)
+	t.NotNil(response)
+	t.Equal(workerBuildID, response.WorkerVersioningId.GetWorkerBuildId())
+}
+
 func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 	// Schedule an activity and see if we complete workflow.
 	taskQueue := "tq1"

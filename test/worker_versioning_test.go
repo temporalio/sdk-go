@@ -29,12 +29,14 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/worker"
 )
 
 type WorkerVersioningTestSuite struct {
 	*require.Assertions
 	suite.Suite
 	ConfigAndClientSuiteBase
+	workflows *Workflows
 }
 
 func TestWorkerVersioningTestSuite(t *testing.T) {
@@ -43,6 +45,7 @@ func TestWorkerVersioningTestSuite(t *testing.T) {
 
 func (ts *WorkerVersioningTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
+	ts.workflows = &Workflows{}
 	ts.NoError(ts.InitConfigAndNamespace())
 	ts.NoError(ts.InitClient())
 }
@@ -85,4 +88,57 @@ func (ts *WorkerVersioningTestSuite) TestManipulateVersionGraph() {
 	ts.Equal("2.0", res.Default.WorkerBuildID)
 	ts.Equal("1.1", res.CompatibleLeaves[0].WorkerBuildID)
 	ts.Equal("1.0", res.CompatibleLeaves[0].PreviousCompatible.WorkerBuildID)
+}
+
+func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	err := ts.client.UpdateWorkerBuildIDOrdering(ctx, &client.UpdateWorkerBuildIDOrderingOptions{
+		TaskQueue:     ts.taskQueueName,
+		WorkerBuildID: "1.0",
+		BecomeDefault: true,
+	})
+	ts.NoError(err)
+
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildIDForVersioning: "1.0"})
+	ts.workflows.register(worker1)
+	ts.NoError(worker1.Start())
+	defer worker1.Stop()
+	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildIDForVersioning: "2.0"})
+	ts.workflows.register(worker2)
+	ts.NoError(worker2.Start())
+	defer worker2.Stop()
+
+	// Start some workflows targeting 1.0
+	handle11, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("1-1"), ts.workflows.WaitSignalToStart)
+	ts.NoError(err)
+	handle12, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("1-2"), ts.workflows.WaitSignalToStart)
+	ts.NoError(err)
+
+	// Now add the 2.0 version
+	err = ts.client.UpdateWorkerBuildIDOrdering(ctx, &client.UpdateWorkerBuildIDOrderingOptions{
+		TaskQueue:     ts.taskQueueName,
+		WorkerBuildID: "2.0",
+		BecomeDefault: true,
+	})
+	ts.NoError(err)
+
+	// 2.0 workflows
+	handle21, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("2-1"), ts.workflows.WaitSignalToStart)
+	ts.NoError(err)
+	handle22, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("2-2"), ts.workflows.WaitSignalToStart)
+	ts.NoError(err)
+
+	// finish them all
+	ts.NoError(ts.client.SignalWorkflow(ctx, handle11.GetID(), handle11.GetRunID(), "start-signal", ""))
+	ts.NoError(ts.client.SignalWorkflow(ctx, handle12.GetID(), handle12.GetRunID(), "start-signal", ""))
+	ts.NoError(ts.client.SignalWorkflow(ctx, handle21.GetID(), handle21.GetRunID(), "start-signal", ""))
+	ts.NoError(ts.client.SignalWorkflow(ctx, handle22.GetID(), handle22.GetRunID(), "start-signal", ""))
+
+	// Wait for all wfs to finish
+	ts.NoError(handle11.Get(ctx, nil))
+	ts.NoError(handle12.Get(ctx, nil))
+	ts.NoError(handle21.Get(ctx, nil))
+	ts.NoError(handle22.Get(ctx, nil))
 }
