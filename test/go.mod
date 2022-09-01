@@ -10,13 +10,13 @@ require (
 	github.com/uber-go/tally/v4 v4.1.1
 	go.opentelemetry.io/otel/sdk v1.2.0
 	go.opentelemetry.io/otel/trace v1.2.0
-	go.temporal.io/api v1.11.1-0.20220804232755-77e12eef4f2d
+	go.temporal.io/api v1.11.1-0.20220831180542-6f80d13fa7fe
 	go.temporal.io/sdk v1.12.0
 	go.temporal.io/sdk/contrib/opentelemetry v0.1.0
 	go.temporal.io/sdk/contrib/opentracing v0.0.0-00010101000000-000000000000
 	go.temporal.io/sdk/contrib/tally v0.1.0
 	go.uber.org/goleak v1.1.11
-	google.golang.org/grpc v1.48.0
+	google.golang.org/grpc v1.49.0
 )
 
 replace (

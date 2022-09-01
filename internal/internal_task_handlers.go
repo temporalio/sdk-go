@@ -1571,7 +1571,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		}
 	}
 
-	return &workflowservice.RespondWorkflowTaskCompletedRequest{
+	builtRequest := &workflowservice.RespondWorkflowTaskCompletedRequest{
 		TaskToken:                  task.TaskToken,
 		Commands:                   commands,
 		Identity:                   wth.identity,
@@ -1581,6 +1581,10 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		QueryResults:               queryResults,
 		Namespace:                  wth.namespace,
 	}
+	if wth.workerBuildID != "" {
+		builtRequest.WorkerVersioningId = &taskqueuepb.VersionId{WorkerBuildId: wth.workerBuildID}
+	}
+	return builtRequest
 }
 
 func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *historypb.HistoryEvent, isInReplay bool) error {
