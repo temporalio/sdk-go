@@ -33,6 +33,7 @@ import (
 
 	"github.com/stretchr/testify/mock"
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
@@ -551,6 +552,22 @@ func (_m *Client) WorkflowService() workflowservice.WorkflowServiceClient {
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(workflowservice.WorkflowServiceClient)
+		}
+	}
+
+	return r0
+}
+
+// OperatorService provides a mock function with given fields:
+func (_m *Client) OperatorService() operatorservice.OperatorServiceClient {
+	ret := _m.Called()
+
+	var r0 operatorservice.OperatorServiceClient
+	if rf, ok := ret.Get(0).(func() operatorservice.OperatorServiceClient); ok {
+		r0 = rf()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(operatorservice.OperatorServiceClient)
 		}
 	}
 

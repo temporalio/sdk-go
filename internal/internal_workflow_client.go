@@ -39,6 +39,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/operatorservice/v1"
 	querypb "go.temporal.io/api/query/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
@@ -900,6 +901,11 @@ func (wc *WorkflowClient) CheckHealth(ctx context.Context, request *CheckHealthR
 // WorkflowService implements Client.WorkflowService.
 func (wc *WorkflowClient) WorkflowService() workflowservice.WorkflowServiceClient {
 	return wc.workflowService
+}
+
+// OperatorService implements Client.OperatorService.
+func (wc *WorkflowClient) OperatorService() operatorservice.OperatorServiceClient {
+	return operatorservice.NewOperatorServiceClient(wc.conn)
 }
 
 // Get capabilities, lazily fetching from server if not already obtained.
