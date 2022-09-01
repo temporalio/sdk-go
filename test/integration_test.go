@@ -2474,6 +2474,7 @@ func (ts *IntegrationTestSuite) TestMultiNamespaceClient() {
 	// Make a new client with a different namespace and run again
 	newClient, err := client.NewClientFromExisting(ts.client, client.Options{Namespace: "some-other-namespace"})
 	ts.NoError(err)
+	defer newClient.Close()
 	_, _ = newClient.DescribeWorkflowExecution(ctx, "id-that-does-not-exist", "")
 
 	// Confirm there was no count change to other namespace but there is now a

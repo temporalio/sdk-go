@@ -29,8 +29,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pborman/uuid"
@@ -83,6 +85,10 @@ type (
 		excludeInternalFromRetry *uberatomic.Bool
 		capabilities             *workflowservice.GetSystemInfoResponse_Capabilities
 		capabilitiesLock         sync.RWMutex
+
+		// The pointer value is shared across multiple clients. If non-nil, only
+		// access/mutate atomically.
+		unclosedClients *int32
 	}
 
 	// namespaceClient is the client for managing namespaces.
@@ -942,11 +948,25 @@ func (wc *WorkflowClient) ensureInitialized() error {
 
 // Close client and clean up underlying resources.
 func (wc *WorkflowClient) Close() {
-	if wc.conn == nil {
-		return
+	// If there's a set of unclosed clients, we have to decrement it and then
+	// set it to a new pointer of max to prevent decrementing on repeated Close
+	// calls to this client. If the count has not reached zero, this close call is
+	// ignored.
+	if wc.unclosedClients != nil {
+		remainingUnclosedClients := atomic.AddInt32(wc.unclosedClients, -1)
+		// Set the unclosed clients to max value so we never try this again
+		var maxUnclosedClients int32 = math.MaxInt32
+		wc.unclosedClients = &maxUnclosedClients
+		// If there are any remaining, do not close
+		if remainingUnclosedClients > 0 {
+			return
+		}
 	}
-	if err := wc.conn.Close(); err != nil {
-		wc.logger.Warn("unable to close connection", tagError, err)
+
+	if wc.conn != nil {
+		if err := wc.conn.Close(); err != nil {
+			wc.logger.Warn("unable to close connection", tagError, err)
+		}
 	}
 }
 

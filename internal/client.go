@@ -28,6 +28,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
@@ -689,12 +690,18 @@ func newClient(options ClientOptions, existing *WorkflowClient) (Client, error) 
 		if client.capabilities, err = existing.loadCapabilities(); err != nil {
 			return nil, err
 		}
-	} else if !options.ConnectionOptions.disableEagerConnection {
-		if _, err := client.loadCapabilities(); err != nil {
-			client.Close()
-			return nil, err
+		client.unclosedClients = existing.unclosedClients
+	} else {
+		if !options.ConnectionOptions.disableEagerConnection {
+			if _, err := client.loadCapabilities(); err != nil {
+				client.Close()
+				return nil, err
+			}
 		}
+		var unclosedClients int32
+		client.unclosedClients = &unclosedClients
 	}
+	atomic.AddInt32(client.unclosedClients, 1)
 
 	return client, nil
 }
