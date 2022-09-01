@@ -33,6 +33,7 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	uberatomic "go.uber.org/atomic"
 	"google.golang.org/grpc"
@@ -343,6 +344,9 @@ type (
 		// that cannot be accomplished via other Client methods. Unlike calls to other Client methods, calls directly to the
 		// service are not configured with internal semantics such as automatic retries.
 		WorkflowService() workflowservice.WorkflowServiceClient
+
+		// OperatorService creates a new operator service client with the same gRPC connection as this client.
+		OperatorService() operatorservice.OperatorServiceClient
 
 		// Close client and clean up underlying resources.
 		Close()
