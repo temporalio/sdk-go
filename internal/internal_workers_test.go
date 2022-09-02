@@ -475,6 +475,19 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 	s.Equal(2, localActivityCalledCount)
 }
 
+func (s *WorkersTestSuite) TestWorkerMultipleStop() {
+	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.PollWorkflowTaskQueueResponse{}, nil).AnyTimes()
+	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.PollActivityTaskQueueResponse{}, nil).AnyTimes()
+	client := NewServiceClient(s.service, nil, ClientOptions{Identity: "multi-stop-identity"})
+	worker := NewAggregatedWorker(client, "multi-stop-tq", WorkerOptions{})
+	s.NoError(worker.Start())
+	worker.Stop()
+	worker.Stop()
+}
+
 func (s *WorkersTestSuite) createLocalActivityMarkerDataForTest(activityID string) map[string]*commonpb.Payloads {
 	lamd := localActivityMarkerData{
 		ActivityID: activityID,
