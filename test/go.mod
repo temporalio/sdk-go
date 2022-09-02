@@ -2,8 +2,6 @@ module go.temporal.io/sdk/test
 
 go 1.16
 
-replace go.temporal.io/api v1.11.0 => ../temporal-api-go
-
 require (
 	github.com/golang/mock v1.6.0
 	github.com/opentracing/opentracing-go v1.2.0
