@@ -1048,7 +1048,13 @@ func (aw *AggregatedWorker) Run(interruptCh <-chan interface{}) error {
 
 // Stop the worker.
 func (aw *AggregatedWorker) Stop() {
-	close(aw.stopC)
+	// Only attempt stop if we haven't attempted before
+	select {
+	case <-aw.stopC:
+		return
+	default:
+		close(aw.stopC)
+	}
 
 	if !util.IsInterfaceNil(aw.workflowWorker) {
 		aw.workflowWorker.Stop()
