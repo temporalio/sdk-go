@@ -426,11 +426,7 @@ func validateAndSerializeMemo(memoMap map[string]interface{}, dc converter.DataC
 	if len(memoMap) == 0 {
 		return nil, errMemoNotSet
 	}
-	memo, err := getWorkflowMemo(memoMap, dc)
-	if err != nil {
-		return nil, err
-	}
-	return memo, nil
+	return getWorkflowMemo(memoMap, dc)
 }
 
 func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
