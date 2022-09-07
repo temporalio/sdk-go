@@ -801,8 +801,12 @@ func (c *channelImpl) ReceiveAsyncWithMoreFlag(valuePtr interface{}) (ok bool, m
 	}
 }
 
-func (c *channelImpl) Empty() bool {
-	return c.closed || (len(c.buffer) == 0 && len(c.blockedSends) == 0 && c.recValue == nil)
+func (c *channelImpl) Len() int {
+	result := len(c.buffer) + len(c.blockedSends)
+	if c.recValue != nil {
+		result = result + 1
+	}
+	return result
 }
 
 // ok = true means that value was received
