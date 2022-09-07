@@ -2519,10 +2519,17 @@ func (ts *IntegrationTestSuite) TestHeartbeatThrottleDisabled() {
 }
 
 func (ts *IntegrationTestSuite) TestUpsertMemoFromNil() {
-	// TODO(rodrigozhou): unskip after UpsertMemo is released
-	ts.T().Skip("Not implemented in server yet")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	systemInfo, err := ts.client.WorkflowService().GetSystemInfo(
+		ctx,
+		&workflowservice.GetSystemInfoRequest{},
+	)
+	ts.NoError(err)
+	if !systemInfo.GetCapabilities().GetUpsertMemo() {
+		ts.T().Skip("UpsertMemo not implemented in server yet")
+	}
 
 	upsertMemo := map[string]interface{}{
 		"key_1": "new_value_1",
@@ -2572,10 +2579,17 @@ func (ts *IntegrationTestSuite) TestUpsertMemoFromNil() {
 }
 
 func (ts *IntegrationTestSuite) TestUpsertMemoFromEmptyMap() {
-	// TODO(rodrigozhou): unskip after UpsertMemo is released
-	ts.T().Skip("Not implemented in server yet")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	systemInfo, err := ts.client.WorkflowService().GetSystemInfo(
+		ctx,
+		&workflowservice.GetSystemInfoRequest{},
+	)
+	ts.NoError(err)
+	if !systemInfo.GetCapabilities().GetUpsertMemo() {
+		ts.T().Skip("UpsertMemo not implemented in server yet")
+	}
 
 	upsertMemo := map[string]interface{}{
 		"key_1": "new_value_1",
@@ -2626,10 +2640,17 @@ func (ts *IntegrationTestSuite) TestUpsertMemoFromEmptyMap() {
 }
 
 func (ts *IntegrationTestSuite) TestUpsertMemoWithExistingMemo() {
-	// TODO(rodrigozhou): unskip after UpsertMemo is released
-	ts.T().Skip("Not implemented in server yet")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	systemInfo, err := ts.client.WorkflowService().GetSystemInfo(
+		ctx,
+		&workflowservice.GetSystemInfoRequest{},
+	)
+	ts.NoError(err)
+	if !systemInfo.GetCapabilities().GetUpsertMemo() {
+		ts.T().Skip("UpsertMemo not implemented in server yet")
+	}
 
 	upsertMemo := map[string]interface{}{
 		"key_1": "new_value_1",
