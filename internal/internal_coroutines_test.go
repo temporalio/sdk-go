@@ -126,25 +126,23 @@ func TestBufferedChannelReceiveWithTimeout(t *testing.T) {
 	env := suite.NewTestWorkflowEnvironment()
 	wf := func(ctx Context) error {
 		c := NewBufferedChannel(ctx, 1)
-		require.True(t, c.Len() == 0)
+		require.True(t, c.Empty())
 		{
 			start := Now(ctx)
 			var v int
-			more, err := c.ReceiveWithTimeout(ctx, time.Minute, &v)
+			more, timedOut := c.ReceiveWithTimeout(ctx, time.Minute, &v)
 			require.True(t, more)
-			_, ok := err.(*TimeoutError)
-			require.True(t, ok)
+			require.True(t, timedOut)
 			require.True(t, Now(ctx).Sub(start) >= time.Minute)
 		}
 		{
 			c.Send(ctx, 10)
-
+			require.False(t, c.Empty())
 			start := Now(ctx)
 			var v int
-			more, err := c.ReceiveWithTimeout(ctx, time.Minute, &v)
+			more, timedOut := c.ReceiveWithTimeout(ctx, time.Minute, &v)
 			require.True(t, more)
-			_, ok := err.(*TimeoutError)
-			require.False(t, ok)
+			require.False(t, timedOut)
 			require.True(t, Now(ctx).Sub(start) < time.Second)
 			require.Equal(t, 10, v)
 		}
@@ -160,14 +158,13 @@ func TestUnbufferedChannelReceiveWithTimeout(t *testing.T) {
 	env := suite.NewTestWorkflowEnvironment()
 	wf := func(ctx Context) error {
 		c := NewChannel(ctx)
-		require.True(t, c.Len() == 0)
+		require.True(t, c.Empty())
 		{
 			start := Now(ctx)
 			var v int
-			more, err := c.ReceiveWithTimeout(ctx, time.Minute, &v)
+			more, timedOut := c.ReceiveWithTimeout(ctx, time.Minute, &v)
 			require.True(t, more)
-			_, ok := err.(*TimeoutError)
-			require.True(t, ok)
+			require.True(t, timedOut)
 			require.True(t, Now(ctx).Sub(start) >= time.Minute)
 		}
 		{
@@ -176,10 +173,9 @@ func TestUnbufferedChannelReceiveWithTimeout(t *testing.T) {
 			})
 			start := Now(ctx)
 			var v int
-			more, err := c.ReceiveWithTimeout(ctx, time.Minute, &v)
+			more, timedOut := c.ReceiveWithTimeout(ctx, time.Minute, &v)
 			require.True(t, more)
-			_, ok := err.(*TimeoutError)
-			require.False(t, ok)
+			require.False(t, timedOut)
 			require.True(t, Now(ctx).Sub(start) < time.Second)
 			require.Equal(t, 10, v)
 		}
@@ -374,9 +370,9 @@ func TestBlockingSelect(t *testing.T) {
 	var history []string
 	d := createNewDispatcher(func(ctx Context) {
 		c1 := NewChannel(ctx)
-		require.True(t, c1.Len() == 0)
+		require.True(t, c1.Empty())
 		c2 := NewChannel(ctx)
-		require.True(t, c2.Len() == 0)
+		require.True(t, c2.Empty())
 
 		Go(ctx, func(ctx Context) {
 			history = append(history, "add-one")
@@ -386,7 +382,7 @@ func TestBlockingSelect(t *testing.T) {
 		})
 		Go(ctx, func(ctx Context) {
 			history = append(history, "add-two")
-			require.True(t, c2.Len() == 0)
+			require.True(t, c2.Empty())
 			c2.Send(ctx, "two")
 			history = append(history, "add-two-done")
 		})
@@ -395,10 +391,10 @@ func TestBlockingSelect(t *testing.T) {
 		s.
 			AddReceive(c1, func(c ReceiveChannel, more bool) {
 				require.True(t, more)
-				require.True(t, c.Len() > 0)
+				require.True(t, !c.Empty())
 				var v string
 				c.Receive(ctx, &v)
-				require.True(t, c.Len() == 0)
+				require.True(t, c.Empty())
 
 				history = append(history, fmt.Sprintf("c1-%v", v))
 			}).
@@ -767,7 +763,7 @@ func TestDispatchClose(t *testing.T) {
 	require.False(t, d.IsDone())
 	stack := d.StackTrace()
 	// 11 coroutines (3 lines each) + 10 nl
-	require.EqualValues(t, 11*5+10, len(strings.Split(stack, "\n")), stack)
+	require.EqualValues(t, 11*3+10, len(strings.Split(stack, "\n")), stack)
 	require.Contains(t, stack, "coroutine root [blocked on forever_blocked.Receive]:")
 	for i := 0; i < 10; i++ {
 		require.Contains(t, stack, fmt.Sprintf("coroutine c-%v [blocked on forever_blocked.Receive]:", i))
