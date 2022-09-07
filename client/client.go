@@ -36,6 +36,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/converter"
@@ -385,7 +386,15 @@ type (
 		// service are not configured with internal semantics such as automatic retries.
 		WorkflowService() workflowservice.WorkflowServiceClient
 
+		// OperatorService creates a new operator service client with the same gRPC connection as this client.
+		OperatorService() operatorservice.OperatorServiceClient
+
 		// Close client and clean up underlying resources.
+		//
+		// If this client was created via NewClientFromExisting or this client has
+		// been used in that call, Close() on may not necessarily close the
+		// underlying connection. Only the final close of all existing clients will
+		// close the underlying connection.
 		Close()
 	}
 
@@ -474,6 +483,11 @@ func NewClient(options Options) (Client, error) {
 // this package and cannot be wrapped. Currently, this always attempts an eager
 // connection even if the existing client was created with NewLazyClient and has
 // not made any calls yet.
+//
+// Close() on the resulting client may not necessarily close the underlying
+// connection if there are any other clients using the connection. All clients
+// associated with the existing client must call Close() and only the last one
+// actually performs the connection close.
 func NewClientFromExisting(existingClient Client, options Options) (Client, error) {
 	return internal.NewClientFromExisting(existingClient, options)
 }

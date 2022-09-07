@@ -28,10 +28,12 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	uberatomic "go.uber.org/atomic"
 	"google.golang.org/grpc"
@@ -342,6 +344,9 @@ type (
 		// that cannot be accomplished via other Client methods. Unlike calls to other Client methods, calls directly to the
 		// service are not configured with internal semantics such as automatic retries.
 		WorkflowService() workflowservice.WorkflowServiceClient
+
+		// OperatorService creates a new operator service client with the same gRPC connection as this client.
+		OperatorService() operatorservice.OperatorServiceClient
 
 		// Close client and clean up underlying resources.
 		Close()
@@ -689,12 +694,18 @@ func newClient(options ClientOptions, existing *WorkflowClient) (Client, error) 
 		if client.capabilities, err = existing.loadCapabilities(); err != nil {
 			return nil, err
 		}
-	} else if !options.ConnectionOptions.disableEagerConnection {
-		if _, err := client.loadCapabilities(); err != nil {
-			client.Close()
-			return nil, err
+		client.unclosedClients = existing.unclosedClients
+	} else {
+		if !options.ConnectionOptions.disableEagerConnection {
+			if _, err := client.loadCapabilities(); err != nil {
+				client.Close()
+				return nil, err
+			}
 		}
+		var unclosedClients int32
+		client.unclosedClients = &unclosedClients
 	}
+	atomic.AddInt32(client.unclosedClients, 1)
 
 	return client, nil
 }
