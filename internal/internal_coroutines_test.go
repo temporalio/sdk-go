@@ -126,7 +126,7 @@ func TestBufferedChannelReceiveWithTimeout(t *testing.T) {
 	env := suite.NewTestWorkflowEnvironment()
 	wf := func(ctx Context) error {
 		c := NewBufferedChannel(ctx, 1)
-		require.True(t, c.Empty())
+		require.True(t, c.Len() == 0)
 		{
 			start := Now(ctx)
 			var v int
@@ -137,7 +137,7 @@ func TestBufferedChannelReceiveWithTimeout(t *testing.T) {
 		}
 		{
 			c.Send(ctx, 10)
-			require.False(t, c.Empty())
+
 			start := Now(ctx)
 			var v int
 			more, timedOut := c.ReceiveWithTimeout(ctx, time.Minute, &v)
@@ -158,7 +158,7 @@ func TestUnbufferedChannelReceiveWithTimeout(t *testing.T) {
 	env := suite.NewTestWorkflowEnvironment()
 	wf := func(ctx Context) error {
 		c := NewChannel(ctx)
-		require.True(t, c.Empty())
+		require.True(t, c.Len() == 0)
 		{
 			start := Now(ctx)
 			var v int
@@ -370,9 +370,9 @@ func TestBlockingSelect(t *testing.T) {
 	var history []string
 	d := createNewDispatcher(func(ctx Context) {
 		c1 := NewChannel(ctx)
-		require.True(t, c1.Empty())
+		require.True(t, c1.Len() == 0)
 		c2 := NewChannel(ctx)
-		require.True(t, c2.Empty())
+		require.True(t, c2.Len() == 0)
 
 		Go(ctx, func(ctx Context) {
 			history = append(history, "add-one")
@@ -382,7 +382,7 @@ func TestBlockingSelect(t *testing.T) {
 		})
 		Go(ctx, func(ctx Context) {
 			history = append(history, "add-two")
-			require.True(t, c2.Empty())
+			require.True(t, c2.Len() == 0)
 			c2.Send(ctx, "two")
 			history = append(history, "add-two-done")
 		})
@@ -391,10 +391,10 @@ func TestBlockingSelect(t *testing.T) {
 		s.
 			AddReceive(c1, func(c ReceiveChannel, more bool) {
 				require.True(t, more)
-				require.True(t, !c.Empty())
+				require.True(t, c.Len() > 0)
 				var v string
 				c.Receive(ctx, &v)
-				require.True(t, c.Empty())
+				require.True(t, c.Len() == 0)
 
 				history = append(history, fmt.Sprintf("c1-%v", v))
 			}).

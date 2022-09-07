@@ -102,8 +102,8 @@ type (
 		// json.Unmarshal.
 		ReceiveAsyncWithMoreFlag(valuePtr interface{}) (ok bool, more bool)
 
-		// Empty returns false if channel has a message to deliver.
-		Empty() bool
+		// Len returns the number of buffered messages plus the number of blocked Send calls.
+		Len() int
 	}
 
 	// Channel must be used instead of native go channel by workflow code.
