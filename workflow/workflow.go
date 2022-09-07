@@ -494,6 +494,8 @@ func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) erro
 //		"Key2": true,
 //		"Key3": "seattle",
 //	}
+//
+// This is only supported with Temporal Server 1.18+
 func UpsertMemo(ctx Context, memo map[string]interface{}) error {
 	return internal.UpsertMemo(ctx, memo)
 }

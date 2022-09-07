@@ -1226,6 +1226,8 @@ func (wc *workflowEnvironmentInterceptor) UpsertSearchAttributes(ctx Context, at
 //		"Key2": true,
 //		"Key3": "seattle",
 //	}
+//
+// This is only supported with Temporal Server 1.18+
 func UpsertMemo(ctx Context, memo map[string]interface{}) error {
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.UpsertMemo(ctx, memo)

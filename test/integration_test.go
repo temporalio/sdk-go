@@ -2561,20 +2561,12 @@ func (ts *IntegrationTestSuite) TestUpsertMemoFromNil() {
 	time.Sleep(2 * time.Second)
 
 	// Query ES for memo
-	var nextPageToken []byte
-	resp, err := ts.client.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
-		Namespace:     ts.config.Namespace,
-		PageSize:      10,
-		NextPageToken: nextPageToken,
-		Query:         fmt.Sprintf("WorkflowId = '%s'", wfid),
-	})
+	resp, err := ts.client.DescribeWorkflowExecution(ctx, wfid, "")
 	ts.NoError(err)
 	ts.NotNil(resp)
 
-	ts.Greater(len(resp.Executions), 0)
-	wfExecutionInfo := resp.Executions[0]
 	// workflow execution info matches memo in ES and correct
-	ts.Equal(wfExecutionInfo.Memo, memo)
+	ts.Equal(resp.WorkflowExecutionInfo.Memo, memo)
 	ts.Equal(expectedMemo, memo)
 }
 
@@ -2622,20 +2614,12 @@ func (ts *IntegrationTestSuite) TestUpsertMemoFromEmptyMap() {
 	time.Sleep(2 * time.Second)
 
 	// Query ES for memo
-	var nextPageToken []byte
-	resp, err := ts.client.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
-		Namespace:     ts.config.Namespace,
-		PageSize:      10,
-		NextPageToken: nextPageToken,
-		Query:         fmt.Sprintf("WorkflowId = '%s'", wfid),
-	})
+	resp, err := ts.client.DescribeWorkflowExecution(ctx, wfid, "")
 	ts.NoError(err)
 	ts.NotNil(resp)
 
-	ts.Greater(len(resp.Executions), 0)
-	wfExecutionInfo := resp.Executions[0]
 	// workflow execution info matches memo in ES and correct
-	ts.Equal(wfExecutionInfo.Memo, memo)
+	ts.Equal(resp.WorkflowExecutionInfo.Memo, memo)
 	ts.Equal(expectedMemo, memo)
 }
 
@@ -2686,20 +2670,12 @@ func (ts *IntegrationTestSuite) TestUpsertMemoWithExistingMemo() {
 	time.Sleep(2 * time.Second)
 
 	// Query ES for memo
-	var nextPageToken []byte
-	resp, err := ts.client.ListWorkflow(ctx, &workflowservice.ListWorkflowExecutionsRequest{
-		Namespace:     ts.config.Namespace,
-		PageSize:      10,
-		NextPageToken: nextPageToken,
-		Query:         fmt.Sprintf("WorkflowId = '%s'", wfid),
-	})
+	resp, err := ts.client.DescribeWorkflowExecution(ctx, wfid, "")
 	ts.NoError(err)
 	ts.NotNil(resp)
 
-	ts.Greater(len(resp.Executions), 0)
-	wfExecutionInfo := resp.Executions[0]
 	// workflow execution info matches memo in ES and correct
-	ts.Equal(wfExecutionInfo.Memo, memo)
+	ts.Equal(resp.WorkflowExecutionInfo.Memo, memo)
 	ts.Equal(expectedMemo, memo)
 }
 
