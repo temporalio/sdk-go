@@ -2245,6 +2245,23 @@ func (env *testWorkflowEnvironmentImpl) UpsertSearchAttributes(attributes map[st
 	return err
 }
 
+func (env *testWorkflowEnvironmentImpl) UpsertMemo(memoMap map[string]interface{}) error {
+	memo, err := validateAndSerializeMemo(memoMap, env.dataConverter)
+
+	env.workflowInfo.Memo = mergeMemo(env.workflowInfo.Memo, memo)
+
+	mockMethod := mockMethodForUpsertMemo
+	if _, ok := env.expectedMockCalls[mockMethod]; !ok {
+		// mock not found
+		return err
+	}
+
+	args := []interface{}{memoMap}
+	env.mock.MethodCalled(mockMethod, args...)
+
+	return err
+}
+
 func (env *testWorkflowEnvironmentImpl) MutableSideEffect(_ string, f func() interface{}, _ func(a, b interface{}) bool) converter.EncodedValue {
 	return newEncodedValue(env.encodeValue(f()), env.GetDataConverter())
 }

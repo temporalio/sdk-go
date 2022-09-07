@@ -1312,6 +1312,7 @@ func (ts *IntegrationTestSuite) TestEndToEndLatencyMetrics() {
 	ts.NotNil(nonLocal)
 	ts.Equal(prevNonLocalValue, nonLocal.Value())
 }
+
 func (ts *IntegrationTestSuite) TestGracefulActivityCompletion() {
 	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1453,6 +1454,7 @@ func (ts *IntegrationTestSuite) TestInterceptorCalls() {
 		"WorkflowOutboundInterceptor.RequestCancelExternalWorkflow": {},
 		"WorkflowOutboundInterceptor.SignalExternalWorkflow":        {},
 		"WorkflowOutboundInterceptor.UpsertSearchAttributes":        {},
+		"WorkflowOutboundInterceptor.UpsertMemo":                    {},
 		"WorkflowOutboundInterceptor.GetSignalChannel":              {},
 		"WorkflowOutboundInterceptor.SideEffect":                    {},
 		"WorkflowOutboundInterceptor.MutableSideEffect":             {},
@@ -2514,6 +2516,167 @@ func (ts *IntegrationTestSuite) TestHeartbeatThrottleDisabled() {
 	// Now that heartbeat throttling was disabled, it should have sent all 4 times
 	ts.assertReportedOperationCount("temporal_request", "RecordActivityTaskHeartbeat", 4)
 	ts.assertReportedOperationCount("temporal_request_failure", "RecordActivityTaskHeartbeat", 0)
+}
+
+func (ts *IntegrationTestSuite) TestUpsertMemoFromNil() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	systemInfo, err := ts.client.WorkflowService().GetSystemInfo(
+		ctx,
+		&workflowservice.GetSystemInfoRequest{},
+	)
+	ts.NoError(err)
+	if !systemInfo.GetCapabilities().GetUpsertMemo() {
+		ts.T().Skip("UpsertMemo not implemented in server yet")
+	}
+
+	upsertMemo := map[string]interface{}{
+		"key_1": "new_value_1",
+		"key_2": nil,
+		"key_3": 123,
+	}
+
+	expectedKey1Value, _ := converter.GetDefaultDataConverter().ToPayload("new_value_1")
+	expectedKey3Value, _ := converter.GetDefaultDataConverter().ToPayload(123)
+	expectedMemo := &commonpb.Memo{
+		Fields: map[string]*commonpb.Payload{
+			"key_1": expectedKey1Value,
+			"key_3": expectedKey3Value,
+		},
+	}
+
+	// Start workflow
+	wfid := "test-upsert-memo-from-nil"
+	wfOptions := ts.startWorkflowOptions(wfid)
+	run, err := ts.client.ExecuteWorkflow(ctx, wfOptions, ts.workflows.UpsertMemo, upsertMemo)
+	ts.NoError(err)
+	ts.NotNil(run)
+
+	var memo *commonpb.Memo
+	err = run.Get(ctx, &memo)
+	ts.NoError(err)
+
+	// Wait a little bit for ES to update
+	time.Sleep(2 * time.Second)
+
+	// Query ES for memo
+	resp, err := ts.client.DescribeWorkflowExecution(ctx, wfid, "")
+	ts.NoError(err)
+	ts.NotNil(resp)
+
+	// workflow execution info matches memo in ES and correct
+	ts.Equal(resp.WorkflowExecutionInfo.Memo, memo)
+	ts.Equal(expectedMemo, memo)
+}
+
+func (ts *IntegrationTestSuite) TestUpsertMemoFromEmptyMap() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	systemInfo, err := ts.client.WorkflowService().GetSystemInfo(
+		ctx,
+		&workflowservice.GetSystemInfoRequest{},
+	)
+	ts.NoError(err)
+	if !systemInfo.GetCapabilities().GetUpsertMemo() {
+		ts.T().Skip("UpsertMemo not implemented in server yet")
+	}
+
+	upsertMemo := map[string]interface{}{
+		"key_1": "new_value_1",
+		"key_2": nil,
+		"key_3": 123,
+	}
+
+	expectedKey1Value, _ := converter.GetDefaultDataConverter().ToPayload("new_value_1")
+	expectedKey3Value, _ := converter.GetDefaultDataConverter().ToPayload(123)
+	expectedMemo := &commonpb.Memo{
+		Fields: map[string]*commonpb.Payload{
+			"key_1": expectedKey1Value,
+			"key_3": expectedKey3Value,
+		},
+	}
+
+	// Start workflow
+	wfid := "test-upsert-memo-from-empty-map"
+	wfOptions := ts.startWorkflowOptions(wfid)
+	wfOptions.Memo = map[string]interface{}{}
+	run, err := ts.client.ExecuteWorkflow(ctx, wfOptions, ts.workflows.UpsertMemo, upsertMemo)
+	ts.NoError(err)
+	ts.NotNil(run)
+
+	var memo *commonpb.Memo
+	err = run.Get(ctx, &memo)
+	ts.NoError(err)
+
+	// Wait a little bit for ES to update
+	time.Sleep(2 * time.Second)
+
+	// Query ES for memo
+	resp, err := ts.client.DescribeWorkflowExecution(ctx, wfid, "")
+	ts.NoError(err)
+	ts.NotNil(resp)
+
+	// workflow execution info matches memo in ES and correct
+	ts.Equal(resp.WorkflowExecutionInfo.Memo, memo)
+	ts.Equal(expectedMemo, memo)
+}
+
+func (ts *IntegrationTestSuite) TestUpsertMemoWithExistingMemo() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	systemInfo, err := ts.client.WorkflowService().GetSystemInfo(
+		ctx,
+		&workflowservice.GetSystemInfoRequest{},
+	)
+	ts.NoError(err)
+	if !systemInfo.GetCapabilities().GetUpsertMemo() {
+		ts.T().Skip("UpsertMemo not implemented in server yet")
+	}
+
+	upsertMemo := map[string]interface{}{
+		"key_1": "new_value_1",
+		"key_2": nil,
+		"key_3": 123,
+	}
+
+	expectedKey1Value, _ := converter.GetDefaultDataConverter().ToPayload("new_value_1")
+	expectedKey3Value, _ := converter.GetDefaultDataConverter().ToPayload(123)
+	expectedMemo := &commonpb.Memo{
+		Fields: map[string]*commonpb.Payload{
+			"key_1": expectedKey1Value,
+			"key_3": expectedKey3Value,
+		},
+	}
+
+	// Start workflow
+	wfid := "test-upsert-memo-with-existing-memo"
+	wfOptions := ts.startWorkflowOptions(wfid)
+	wfOptions.Memo = map[string]interface{}{
+		"key_1": "value_1",
+		"key_2": "value_2",
+	}
+	run, err := ts.client.ExecuteWorkflow(ctx, wfOptions, ts.workflows.UpsertMemo, upsertMemo)
+	ts.NoError(err)
+	ts.NotNil(run)
+
+	var memo *commonpb.Memo
+	err = run.Get(ctx, &memo)
+	ts.NoError(err)
+
+	// Wait a little bit for ES to update
+	time.Sleep(2 * time.Second)
+
+	// Query ES for memo
+	resp, err := ts.client.DescribeWorkflowExecution(ctx, wfid, "")
+	ts.NoError(err)
+	ts.NotNil(resp)
+
+	// workflow execution info matches memo in ES and correct
+	ts.Equal(resp.WorkflowExecutionInfo.Memo, memo)
+	ts.Equal(expectedMemo, memo)
 }
 
 // executeWorkflow executes a given workflow and waits for the result

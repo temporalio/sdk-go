@@ -218,6 +218,7 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 				o.GetCompleteWorkflowUpdateCommandAttributes(),
 				o.GetContinueAsNewWorkflowExecutionCommandAttributes(),
 				o.GetFailWorkflowExecutionCommandAttributes(),
+				o.GetModifyWorkflowPropertiesCommandAttributes(),
 				o.GetRecordMarkerCommandAttributes(),
 				o.GetScheduleActivityTaskCommandAttributes(),
 				o.GetSignalExternalWorkflowExecutionCommandAttributes(),
@@ -271,6 +272,17 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 			if err := s.process(
 				encode,
 				o.GetFailure(),
+			); err != nil {
+				return err
+			}
+
+		case *commandpb.ModifyWorkflowPropertiesCommandAttributes:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetUpsertedMemo(),
 			); err != nil {
 				return err
 			}
@@ -569,6 +581,7 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 				o.GetWorkflowExecutionSignaledEventAttributes(),
 				o.GetWorkflowExecutionStartedEventAttributes(),
 				o.GetWorkflowExecutionTerminatedEventAttributes(),
+				o.GetWorkflowPropertiesModifiedEventAttributes(),
 				o.GetWorkflowPropertiesModifiedExternallyEventAttributes(),
 				o.GetWorkflowTaskFailedEventAttributes(),
 				o.GetWorkflowUpdateAcceptedEventAttributes(),
@@ -698,6 +711,17 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 			if err := s.process(
 				encode,
 				o.GetDetails(),
+			); err != nil {
+				return err
+			}
+
+		case *historypb.WorkflowPropertiesModifiedEventAttributes:
+			if o == nil {
+				continue
+			}
+			if err := s.process(
+				encode,
+				o.GetUpsertedMemo(),
 			); err != nil {
 				return err
 			}
