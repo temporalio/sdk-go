@@ -130,9 +130,9 @@ func TestBufferedChannelReceiveWithTimeout(t *testing.T) {
 		{
 			start := Now(ctx)
 			var v int
-			more, timedOut := c.ReceiveWithTimeout(ctx, time.Minute, &v)
+			ok, more := c.ReceiveWithTimeout(ctx, time.Minute, &v)
 			require.True(t, more)
-			require.True(t, timedOut)
+			require.False(t, ok)
 			require.True(t, Now(ctx).Sub(start) >= time.Minute)
 		}
 		{
@@ -140,9 +140,9 @@ func TestBufferedChannelReceiveWithTimeout(t *testing.T) {
 
 			start := Now(ctx)
 			var v int
-			more, timedOut := c.ReceiveWithTimeout(ctx, time.Minute, &v)
+			ok, more := c.ReceiveWithTimeout(ctx, time.Minute, &v)
 			require.True(t, more)
-			require.False(t, timedOut)
+			require.True(t, ok)
 			require.True(t, Now(ctx).Sub(start) < time.Second)
 			require.Equal(t, 10, v)
 		}
@@ -162,9 +162,9 @@ func TestUnbufferedChannelReceiveWithTimeout(t *testing.T) {
 		{
 			start := Now(ctx)
 			var v int
-			more, timedOut := c.ReceiveWithTimeout(ctx, time.Minute, &v)
+			ok, more := c.ReceiveWithTimeout(ctx, time.Minute, &v)
 			require.True(t, more)
-			require.True(t, timedOut)
+			require.False(t, ok)
 			require.True(t, Now(ctx).Sub(start) >= time.Minute)
 		}
 		{
@@ -173,9 +173,9 @@ func TestUnbufferedChannelReceiveWithTimeout(t *testing.T) {
 			})
 			start := Now(ctx)
 			var v int
-			more, timedOut := c.ReceiveWithTimeout(ctx, time.Minute, &v)
+			ok, more := c.ReceiveWithTimeout(ctx, time.Minute, &v)
 			require.True(t, more)
-			require.False(t, timedOut)
+			require.True(t, ok)
 			require.True(t, Now(ctx).Sub(start) < time.Second)
 			require.Equal(t, 10, v)
 		}
