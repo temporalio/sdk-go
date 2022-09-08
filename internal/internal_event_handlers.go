@@ -384,6 +384,51 @@ func validateAndSerializeSearchAttributes(attributes map[string]interface{}) (*c
 	return attr, nil
 }
 
+func (wc *workflowEnvironmentImpl) UpsertMemo(memoMap map[string]interface{}) error {
+	// This has to be used in WorkflowEnvironment implementations instead of in Workflow for testsuite mock purpose.
+	memo, err := validateAndSerializeMemo(memoMap, wc.dataConverter)
+	if err != nil {
+		return err
+	}
+
+	changeID := wc.GenerateSequenceID()
+	wc.commandsHelper.modifyProperties(changeID, memo)
+	wc.updateWorkflowInfoWithMemo(memo) // this is for getInfo correctness
+	return nil
+}
+
+func (wc *workflowEnvironmentImpl) updateWorkflowInfoWithMemo(memo *commonpb.Memo) {
+	wc.workflowInfo.Memo = mergeMemo(wc.workflowInfo.Memo, memo)
+}
+
+func mergeMemo(current, upsert *commonpb.Memo) *commonpb.Memo {
+	if current == nil || len(current.Fields) == 0 {
+		if upsert == nil || len(upsert.Fields) == 0 {
+			return nil
+		}
+		current = &commonpb.Memo{
+			Fields: make(map[string]*commonpb.Payload),
+		}
+	}
+
+	fields := current.Fields
+	for k, v := range upsert.Fields {
+		if v.Data == nil {
+			delete(fields, k)
+		} else {
+			fields[k] = v
+		}
+	}
+	return current
+}
+
+func validateAndSerializeMemo(memoMap map[string]interface{}, dc converter.DataConverter) (*commonpb.Memo, error) {
+	if len(memoMap) == 0 {
+		return nil, errMemoNotSet
+	}
+	return getWorkflowMemo(memoMap, dc)
+}
+
 func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
 	wrappedHandler := func() {
 		wc.commandsHelper.workflowExecutionIsCancelling = true
@@ -960,6 +1005,9 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	case enumspb.EVENT_TYPE_WORKFLOW_UPDATE_COMPLETED:
 		// No Operation
 
+	case enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED:
+		weh.handleWorkflowPropertiesModified(event)
+
 	default:
 		weh.logger.Error("unknown event type",
 			tagEventID, event.GetEventId(),
@@ -1521,6 +1569,13 @@ func (ucc *updateCommandCallbacks) Complete(success interface{}, err error) {
 
 func (weh *workflowExecutionEventHandlerImpl) handleUpsertWorkflowSearchAttributes(event *historypb.HistoryEvent) {
 	weh.updateWorkflowInfoWithSearchAttributes(event.GetUpsertWorkflowSearchAttributesEventAttributes().SearchAttributes)
+}
+
+func (weh *workflowExecutionEventHandlerImpl) handleWorkflowPropertiesModified(
+	event *historypb.HistoryEvent,
+) {
+	attributes := event.GetWorkflowPropertiesModifiedEventAttributes()
+	weh.updateWorkflowInfoWithMemo(attributes.UpsertedMemo)
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleRequestCancelExternalWorkflowExecutionInitiated(event *historypb.HistoryEvent) error {

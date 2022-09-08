@@ -266,7 +266,8 @@ func isCommandEvent(eventType enumspb.EventType) bool {
 		enumspb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED,
 		enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES,
 		enumspb.EVENT_TYPE_WORKFLOW_UPDATE_ACCEPTED,
-		enumspb.EVENT_TYPE_WORKFLOW_UPDATE_COMPLETED:
+		enumspb.EVENT_TYPE_WORKFLOW_UPDATE_COMPLETED,
+		enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED:
 		return true
 	default:
 		return false
@@ -1441,6 +1442,17 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, strict
 			}
 		}
 		return true
+
+	case enumspb.COMMAND_TYPE_MODIFY_WORKFLOW_PROPERTIES:
+		if e.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED {
+			return false
+		}
+		eventAttributes := e.GetWorkflowPropertiesModifiedEventAttributes()
+		commandAttributes := d.GetModifyWorkflowPropertiesCommandAttributes()
+		if strictMode && !isMemoMatched(eventAttributes.UpsertedMemo, commandAttributes.UpsertedMemo) {
+			return false
+		}
+		return true
 	}
 
 	return false
@@ -1453,10 +1465,18 @@ func isSearchAttributesMatched(attrFromEvent, attrFromCommand *commonpb.SearchAt
 	return attrFromEvent == nil && attrFromCommand == nil
 }
 
+func isMemoMatched(attrFromEvent, attrFromCommand *commonpb.Memo) bool {
+	if attrFromEvent != nil && attrFromCommand != nil {
+		return reflect.DeepEqual(attrFromEvent.Fields, attrFromCommand.Fields)
+	}
+	return attrFromEvent == nil && attrFromCommand == nil
+}
+
 // return true if the check fails:
-//    namespace is not empty in command
-//    and namespace is not replayNamespace
-//    and namespaces unmatch in command and events
+//
+//	namespace is not empty in command
+//	and namespace is not replayNamespace
+//	and namespaces unmatch in command and events
 func checkNamespacesInCommandAndEvent(eventNamespace, commandNamespace string) bool {
 	if commandNamespace == "" || IsReplayNamespace(commandNamespace) {
 		return false

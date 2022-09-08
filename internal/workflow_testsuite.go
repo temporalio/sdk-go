@@ -399,6 +399,7 @@ const mockMethodForSignalExternalWorkflow = "workflow.SignalExternalWorkflow"
 const mockMethodForRequestCancelExternalWorkflow = "workflow.RequestCancelExternalWorkflow"
 const mockMethodForGetVersion = "workflow.GetVersion"
 const mockMethodForUpsertSearchAttributes = "workflow.UpsertSearchAttributes"
+const mockMethodForUpsertMemo = "workflow.UpsertMemo"
 
 // OnSignalExternalWorkflow setup a mock for sending signal to external workflow.
 // This TestWorkflowEnvironment handles sending signals between the workflows that are started from the root workflow.
@@ -470,6 +471,14 @@ func (e *TestWorkflowEnvironment) OnGetVersion(changeID string, minSupported, ma
 // If mock is setup, all UpsertSearchAttributes calls in workflow have to be mocked.
 func (e *TestWorkflowEnvironment) OnUpsertSearchAttributes(attributes interface{}) *MockCallWrapper {
 	call := e.mock.On(mockMethodForUpsertSearchAttributes, attributes)
+	return e.wrapCall(call)
+}
+
+// OnUpsertMemo setup a mock for workflow.UpsertMemo call.
+// If mock is not setup, the UpsertMemo call will only validate input attributes.
+// If mock is setup, all UpsertMemo calls in workflow have to be mocked.
+func (e *TestWorkflowEnvironment) OnUpsertMemo(attributes interface{}) *MockCallWrapper {
+	call := e.mock.On(mockMethodForUpsertMemo, attributes)
 	return e.wrapCall(call)
 }
 

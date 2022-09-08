@@ -1496,6 +1496,7 @@ func (w *Workflows) InterceptorCalls(ctx workflow.Context, someVal string) (stri
 	_ = workflow.RequestCancelExternalWorkflow(ctx, "badid", "").Get(ctx, nil)
 	_ = workflow.SignalExternalWorkflow(ctx, "badid", "", "badsignal", nil).Get(ctx, nil)
 	_ = workflow.UpsertSearchAttributes(ctx, nil)
+	_ = workflow.UpsertMemo(ctx, nil)
 	workflow.SideEffect(ctx, func(workflow.Context) interface{} { return "sideeffect" })
 	workflow.MutableSideEffect(ctx, "badid",
 		func(workflow.Context) interface{} { return "mutablesideeffect" }, reflect.DeepEqual)
@@ -1848,6 +1849,14 @@ func (w *Workflows) HeartbeatSpecificCount(ctx workflow.Context, interval time.D
 	return workflow.ExecuteActivity(ctx, activities.HeartbeatSpecificCount, interval, count).Get(ctx, nil)
 }
 
+func (w *Workflows) UpsertMemo(ctx workflow.Context, memo map[string]interface{}) (*commonpb.Memo, error) {
+	err := workflow.UpsertMemo(ctx, memo)
+	if err != nil {
+		return nil, err;
+	}
+	return workflow.GetInfo(ctx).Memo, nil
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -1922,6 +1931,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.MutableSideEffect)
 	worker.RegisterWorkflow(w.HistoryLengths)
 	worker.RegisterWorkflow(w.HeartbeatSpecificCount)
+	worker.RegisterWorkflow(w.UpsertMemo)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)

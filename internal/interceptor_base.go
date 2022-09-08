@@ -282,6 +282,12 @@ func (w *WorkflowOutboundInterceptorBase) UpsertSearchAttributes(ctx Context, at
 	return w.Next.UpsertSearchAttributes(ctx, attributes)
 }
 
+// UpsertMemo implements
+// WorkflowOutboundInterceptor.UpsertMemo.
+func (w *WorkflowOutboundInterceptorBase) UpsertMemo(ctx Context, memo map[string]interface{}) error {
+	return w.Next.UpsertMemo(ctx, memo)
+}
+
 // GetSignalChannel implements WorkflowOutboundInterceptor.GetSignalChannel.
 func (w *WorkflowOutboundInterceptorBase) GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
 	return w.Next.GetSignalChannel(ctx, signalName)

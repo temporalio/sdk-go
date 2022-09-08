@@ -470,6 +470,36 @@ func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) erro
 	return internal.UpsertSearchAttributes(ctx, attributes)
 }
 
+// UpsertMemo is used to add or update workflow memo.
+// UpsertMemo will merge keys to the existing map in workflow. For example:
+//
+//	func MyWorkflow(ctx workflow.Context, input string) error {
+//		memo1 := map[string]interface{}{
+//			"Key1": 1,
+//			"Key2": true,
+//		}
+//		workflow.UpsertMemo(ctx, memo1)
+//
+//		memo2 := map[string]interface{}{
+//			"Key1": 2,
+//			"Key3": "seattle",
+//		}
+//		workflow.UpsertMemo(ctx, memo2)
+//	}
+//
+// The workflow memo will eventually be:
+//
+//	map[string]interface{}{
+//		"Key1": 2,
+//		"Key2": true,
+//		"Key3": "seattle",
+//	}
+//
+// This is only supported with Temporal Server 1.18+
+func UpsertMemo(ctx Context, memo map[string]interface{}) error {
+	return internal.UpsertMemo(ctx, memo)
+}
+
 // NewContinueAsNewError creates ContinueAsNewError instance
 // If the workflow main function returns this error then the current execution is ended and
 // the new execution with same workflow ID is started automatically with options

@@ -216,6 +216,9 @@ type WorkflowOutboundInterceptor interface {
 	// UpsertSearchAttributes intercepts workflow.UpsertSearchAttributes.
 	UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error
 
+	// UpsertMemo intercepts workflow.UpsertMemo.
+	UpsertMemo(ctx Context, memo map[string]interface{}) error
+
 	// GetSignalChannel intercepts workflow.GetSignalChannel.
 	GetSignalChannel(ctx Context, signalName string) ReceiveChannel
 

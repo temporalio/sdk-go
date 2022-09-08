@@ -223,6 +223,114 @@ func Test_MergeSearchAttributes(t *testing.T) {
 	}
 }
 
+func Test_ValidateAndSerializeMemo(t *testing.T) {
+	t.Parallel()
+	_, err := validateAndSerializeMemo(nil, nil)
+	require.EqualError(t, err, "memo is empty")
+
+	attr := map[string]interface{}{
+		"JustKey": make(chan int),
+	}
+	_, err = validateAndSerializeMemo(attr, nil)
+	require.EqualError(
+		t,
+		err,
+		"encode workflow memo error: unable to encode: json: unsupported type: chan int",
+	)
+
+	attr = map[string]interface{}{
+		"key": 1,
+	}
+	memo, err := validateAndSerializeMemo(attr, nil)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(memo.Fields))
+	var resp int
+	_ = converter.GetDefaultDataConverter().FromPayload(memo.Fields["key"], &resp)
+	require.Equal(t, 1, resp)
+}
+
+func Test_UpsertMemo(t *testing.T) {
+	t.Parallel()
+	helper := newCommandsHelper()
+	_, ctx := createRootTestContext()
+	env := &workflowEnvironmentImpl{
+		commandsHelper: helper,
+		workflowInfo:   GetWorkflowInfo(ctx),
+	}
+	helper.setCurrentWorkflowTaskStartedEventID(4)
+	err := env.UpsertMemo(nil)
+	require.Error(t, err)
+
+	err = env.UpsertMemo(map[string]interface{}{"key": 1})
+	require.NoError(t, err)
+	_, ok := env.commandsHelper.commands[makeCommandID(commandTypeModifyProperties, "6")]
+	require.True(t, ok)
+	require.Equal(t, int64(7), env.GenerateSequence())
+}
+
+func Test_MergeMemo(t *testing.T) {
+	t.Parallel()
+
+	encodeString := func(str string) *commonpb.Payload {
+		payload, _ := converter.GetDefaultDataConverter().ToPayload(str)
+		return payload
+	}
+
+	tests := []struct {
+		name     string
+		current  *commonpb.Memo
+		upsert   *commonpb.Memo
+		expected *commonpb.Memo
+	}{
+		{
+			name:     "currentIsNil",
+			current:  nil,
+			upsert:   &commonpb.Memo{},
+			expected: nil,
+		},
+		{
+			name:     "currentIsEmpty",
+			current:  &commonpb.Memo{Fields: make(map[string]*commonpb.Payload)},
+			upsert:   &commonpb.Memo{},
+			expected: nil,
+		},
+		{
+			name: "normalMerge",
+			current: &commonpb.Memo{
+				Fields: map[string]*commonpb.Payload{
+					"CustomIntField":     encodeString(`1`),
+					"CustomKeywordField": encodeString(`keyword`),
+				},
+			},
+			upsert: &commonpb.Memo{
+				Fields: map[string]*commonpb.Payload{
+					"CustomIntField":  encodeString(`2`),
+					"CustomBoolField": encodeString(`true`),
+				},
+			},
+			expected: &commonpb.Memo{
+				Fields: map[string]*commonpb.Payload{
+					"CustomIntField":     encodeString(`2`),
+					"CustomKeywordField": encodeString(`keyword`),
+					"CustomBoolField":    encodeString(`true`),
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(
+			test.name,
+			func(t *testing.T) {
+				t.Parallel()
+				result := mergeMemo(test.current, test.upsert)
+				require.Equal(t, test.expected, result)
+			},
+		)
+	}
+}
+
 func Test_GetChangeVersion(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

@@ -1572,7 +1572,7 @@ func Test_NonDeterministicCheck(t *testing.T) {
 	commandTypes := enumspb.CommandType_name
 	delete(commandTypes, 0) // Ignore "Unspecified".
 
-	require.Equal(t, 15, len(commandTypes), "If you see this error, you are adding new command type. "+
+	require.Equal(t, 16, len(commandTypes), "If you see this error, you are adding new command type. "+
 		"Before updating the number to make this test pass, please make sure you update isCommandMatchEvent() method "+
 		"to check the new command type. Otherwise the replay will fail on the new command event.")
 
@@ -1739,6 +1739,194 @@ func Test_IsSearchAttributesMatched(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			require.Equal(t, testCase.expected, isSearchAttributesMatched(testCase.lhs, testCase.rhs))
 		})
+	}
+}
+
+func Test_IsCommandMatchEvent_ModifyWorkflowProperties(t *testing.T) {
+	diType := enumspb.COMMAND_TYPE_MODIFY_WORKFLOW_PROPERTIES
+	eType := enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED
+	strictMode := false
+
+	testCases := []struct {
+		name     string
+		command  *commandpb.Command
+		event    *historypb.HistoryEvent
+		expected bool
+	}{
+		{
+			name: "event type not match",
+			command: &commandpb.Command{
+				CommandType: diType,
+				Attributes: &commandpb.Command_ModifyWorkflowPropertiesCommandAttributes{
+					ModifyWorkflowPropertiesCommandAttributes: &commandpb.ModifyWorkflowPropertiesCommandAttributes{
+						UpsertedMemo: &commonpb.Memo{},
+					},
+				},
+			},
+			event:    &historypb.HistoryEvent{},
+			expected: false,
+		},
+		{
+			name: "attributes not match",
+			command: &commandpb.Command{
+				CommandType: diType,
+				Attributes: &commandpb.Command_ModifyWorkflowPropertiesCommandAttributes{
+					ModifyWorkflowPropertiesCommandAttributes: &commandpb.ModifyWorkflowPropertiesCommandAttributes{
+						UpsertedMemo: &commonpb.Memo{},
+					},
+				},
+			},
+			event: &historypb.HistoryEvent{
+				EventType: eType,
+				Attributes: &historypb.HistoryEvent_WorkflowPropertiesModifiedEventAttributes{
+					WorkflowPropertiesModifiedEventAttributes: &historypb.WorkflowPropertiesModifiedEventAttributes{},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "attributes match",
+			command: &commandpb.Command{
+				CommandType: diType,
+				Attributes: &commandpb.Command_ModifyWorkflowPropertiesCommandAttributes{
+					ModifyWorkflowPropertiesCommandAttributes: &commandpb.ModifyWorkflowPropertiesCommandAttributes{
+						UpsertedMemo: &commonpb.Memo{},
+					},
+				},
+			},
+			event: &historypb.HistoryEvent{
+				EventType: eType,
+				Attributes: &historypb.HistoryEvent_WorkflowPropertiesModifiedEventAttributes{
+					WorkflowPropertiesModifiedEventAttributes: &historypb.WorkflowPropertiesModifiedEventAttributes{
+						UpsertedMemo: &commonpb.Memo{},
+					},
+				},
+			},
+			expected: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(
+			testCase.name,
+			func(t *testing.T) {
+				require.Equal(
+					t,
+					testCase.expected,
+					isCommandMatchEvent(testCase.command, testCase.event, strictMode),
+				)
+			},
+		)
+	}
+
+	strictMode = true
+
+	testCases = []struct {
+		name     string
+		command  *commandpb.Command
+		event    *historypb.HistoryEvent
+		expected bool
+	}{
+		{
+			name: "attributes not match",
+			command: &commandpb.Command{
+				CommandType: diType,
+				Attributes: &commandpb.Command_ModifyWorkflowPropertiesCommandAttributes{
+					ModifyWorkflowPropertiesCommandAttributes: &commandpb.ModifyWorkflowPropertiesCommandAttributes{
+						UpsertedMemo: &commonpb.Memo{},
+					},
+				},
+			},
+			event: &historypb.HistoryEvent{
+				EventType: eType,
+				Attributes: &historypb.HistoryEvent_WorkflowPropertiesModifiedEventAttributes{
+					WorkflowPropertiesModifiedEventAttributes: &historypb.WorkflowPropertiesModifiedEventAttributes{},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(
+			testCase.name,
+			func(t *testing.T) {
+				require.Equal(
+					t,
+					testCase.expected,
+					isCommandMatchEvent(testCase.command, testCase.event, strictMode),
+				)
+			},
+		)
+	}
+}
+
+func Test_IsMemoMatched(t *testing.T) {
+	encodeString := func(str string) *commonpb.Payload {
+		payload, _ := converter.GetDefaultDataConverter().ToPayload(str)
+		return payload
+	}
+
+	testCases := []struct {
+		name     string
+		lhs      *commonpb.Memo
+		rhs      *commonpb.Memo
+		expected bool
+	}{
+		{
+			name:     "both nil",
+			lhs:      nil,
+			rhs:      nil,
+			expected: true,
+		},
+		{
+			name:     "left nil",
+			lhs:      nil,
+			rhs:      &commonpb.Memo{},
+			expected: false,
+		},
+		{
+			name:     "right nil",
+			lhs:      &commonpb.Memo{},
+			rhs:      nil,
+			expected: false,
+		},
+		{
+			name: "not match",
+			lhs: &commonpb.Memo{
+				Fields: map[string]*commonpb.Payload{
+					"key1": encodeString("1"),
+					"key2": encodeString("abc"),
+				},
+			},
+			rhs:      &commonpb.Memo{},
+			expected: false,
+		},
+		{
+			name: "match",
+			lhs: &commonpb.Memo{
+				Fields: map[string]*commonpb.Payload{
+					"key1": encodeString("1"),
+					"key2": encodeString("abc"),
+				},
+			},
+			rhs: &commonpb.Memo{
+				Fields: map[string]*commonpb.Payload{
+					"key2": encodeString("abc"),
+					"key1": encodeString("1"),
+				},
+			},
+			expected: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(
+			testCase.name,
+			func(t *testing.T) {
+				require.Equal(t, testCase.expected, isMemoMatched(testCase.lhs, testCase.rhs))
+			},
+		)
 	}
 }
 
