@@ -188,7 +188,6 @@ func (c *ProtoJSONPayloadConverter) Encoding() string {
 	return MetadataEncodingProtoJSON
 }
 
-
 func (c *ProtoJSONPayloadConverter) ExcludeProtobufMessageTypes() bool {
 	return c.options.ExcludeProtobufMessageTypes
 }
