@@ -25,6 +25,7 @@ Although the Go SDK does not support most third-party logging solutions natively
 package main
 import (
 	"github.com/sirupsen/logrus"
+	"go.temporal.io/sdk/client"
 	logrusadapter "logur.dev/adapter/logrus"
 	"logur.dev/logur"
 )
@@ -32,6 +33,11 @@ import (
 func main() {
 	// feed this logger into Temporal
 	logger := logur.LoggerToKV(logrusadapter.New(logrus.New()))
+	clientOptions := client.Options{
+		Logger: logger,
+	}
+	temporalClient, err := client.Dial(clientOptions)
+	// ...
 }
 ```
 
