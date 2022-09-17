@@ -1214,11 +1214,17 @@ func serializeSearchAttributes(input map[string]interface{}) (*commonpb.SearchAt
 
 	attr := make(map[string]*commonpb.Payload)
 	for k, v := range input {
-		attrBytes, err := converter.GetDefaultDataConverter().ToPayload(v)
+		// If search attribute value is already of Payload type, then use it directly.
+		// This allows to copy search attributes from workflow info to child workflow options.
+		if vp, ok := v.(*commonpb.Payload); ok {
+			attr[k] = vp
+			continue
+		}
+		var err error
+		attr[k], err = converter.GetDefaultDataConverter().ToPayload(v)
 		if err != nil {
 			return nil, fmt.Errorf("encode search attribute [%s] error: %v", k, err)
 		}
-		attr[k] = attrBytes
 	}
 	return &commonpb.SearchAttributes{IndexedFields: attr}, nil
 }
