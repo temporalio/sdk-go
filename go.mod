@@ -2,13 +2,14 @@ module go.temporal.io/sdk
 
 go 1.16
 
+replace go.temporal.io/api => ../temporal-api-go
+
 require (
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a
 	github.com/gogo/protobuf v1.3.2
 	github.com/gogo/status v1.1.1
 	github.com/golang/mock v1.6.0
 	github.com/golang/protobuf v1.5.2
-	github.com/google/uuid v1.3.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/kr/text v0.2.0 // indirect
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect

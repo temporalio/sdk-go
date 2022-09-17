@@ -297,69 +297,6 @@ func (h *commandsHelper) newCommandStateMachineBase(commandType commandType, id 
 	}
 }
 
-// acceptWorkflowUpdate arranges for an AcceptWorkflowUpdate command to be added
-// to the current batch of outgoing commands.
-func (h *commandsHelper) acceptWorkflowUpdate(updateID string) {
-	sm := h.newAcceptWorkflowUpdateStateMachine(updateID)
-	h.addCommand(sm)
-}
-
-// acceptWorkflowUpdate arranges for an CompleteWorkflowUpdate command to be added
-// to the current batch of outgoing commands.
-func (h *commandsHelper) completeWorkflowUpdate(
-	updateID string,
-	success *commonpb.Payloads,
-	failure *failurepb.Failure,
-	durabilityPref enumspb.WorkflowUpdateDurabilityPreference,
-) {
-	sm := h.newCompleteWorkflowUpdateStateMachine(updateID, success, failure, durabilityPref)
-	h.addCommand(sm)
-}
-
-func (h *commandsHelper) newCompleteWorkflowUpdateStateMachine(
-	updateID string,
-	success *commonpb.Payloads,
-	failure *failurepb.Failure,
-	durabilityPref enumspb.WorkflowUpdateDurabilityPreference,
-) commandStateMachine {
-	attrs := &commandpb.Command_CompleteWorkflowUpdateCommandAttributes{
-		CompleteWorkflowUpdateCommandAttributes: &commandpb.CompleteWorkflowUpdateCommandAttributes{
-			UpdateId:             updateID,
-			DurabilityPreference: durabilityPref,
-		},
-	}
-	if failure != nil {
-		attrs.CompleteWorkflowUpdateCommandAttributes.Result = &commandpb.CompleteWorkflowUpdateCommandAttributes_Failure{
-			Failure: failure,
-		}
-	} else {
-		attrs.CompleteWorkflowUpdateCommandAttributes.Result = &commandpb.CompleteWorkflowUpdateCommandAttributes_Success{
-			Success: success,
-		}
-	}
-	return &completeOnSendStateMachine{
-		h.newNaiveCommandStateMachine(commandTypeCompleteWorkflowUpdate, updateID, &commandpb.Command{
-			CommandType: enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE,
-			Attributes:  attrs,
-		}),
-	}
-}
-
-func (h *commandsHelper) newAcceptWorkflowUpdateStateMachine(
-	updateID string,
-) commandStateMachine {
-	return &completeOnSendStateMachine{
-		h.newNaiveCommandStateMachine(commandTypeAcceptWorkflowUpdate, updateID, &commandpb.Command{
-			CommandType: enumspb.COMMAND_TYPE_ACCEPT_WORKFLOW_UPDATE,
-			Attributes: &commandpb.Command_AcceptWorkflowUpdateCommandAttributes{
-				AcceptWorkflowUpdateCommandAttributes: &commandpb.AcceptWorkflowUpdateCommandAttributes{
-					UpdateId: updateID,
-				},
-			},
-		}),
-	}
-}
-
 func (h *commandsHelper) newActivityCommandStateMachine(
 	scheduleID int64,
 	attributes *commandpb.ScheduleActivityTaskCommandAttributes,

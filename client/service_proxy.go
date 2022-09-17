@@ -65,10 +65,6 @@ func (wh *workflowServiceProxyServer) DeleteSchedule(ctx context.Context, req *w
 	return wh.client.DeleteSchedule(ctx, req)
 }
 
-func (wh *workflowServiceProxyServer) DeleteWorkflowExecution(ctx context.Context, req *workflowservice.DeleteWorkflowExecutionRequest) (*workflowservice.DeleteWorkflowExecutionResponse, error) {
-	return wh.client.DeleteWorkflowExecution(ctx, req)
-}
-
 func (wh *workflowServiceProxyServer) DeprecateNamespace(ctx context.Context, req *workflowservice.DeprecateNamespaceRequest) (*workflowservice.DeprecateNamespaceResponse, error) {
 	return wh.client.DeprecateNamespace(ctx, req)
 }

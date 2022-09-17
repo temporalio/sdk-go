@@ -1400,22 +1400,6 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, strict
 		}
 		return true
 
-	case enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE:
-		if e.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_UPDATE_COMPLETED {
-			return false
-		}
-
-		if strictMode {
-			eventAttributes := e.GetWorkflowUpdateCompletedEventAttributes()
-			commandAttributes := d.GetCompleteWorkflowUpdateCommandAttributes()
-
-			if !proto.Equal(eventAttributes.GetSuccess(), commandAttributes.GetSuccess()) ||
-				!proto.Equal(eventAttributes.GetFailure(), commandAttributes.GetFailure()) {
-				return false
-			}
-		}
-		return true
-
 	case enumspb.COMMAND_TYPE_MODIFY_WORKFLOW_PROPERTIES:
 		if e.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED {
 			return false

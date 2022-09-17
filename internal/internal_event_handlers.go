@@ -1004,9 +1004,6 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	case enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES:
 		weh.handleUpsertWorkflowSearchAttributes(event)
 
-	case enumspb.EVENT_TYPE_WORKFLOW_UPDATE_REQUESTED:
-		weh.handleWorkflowUpdateRequested(event.GetWorkflowUpdateRequestedEventAttributes())
-
 	case enumspb.EVENT_TYPE_WORKFLOW_UPDATE_ACCEPTED:
 		// No Operation
 
@@ -1514,66 +1511,6 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTermin
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
 	return nil
-}
-
-func (weh *workflowExecutionEventHandlerImpl) handleWorkflowUpdateRequested(
-	attributes *historypb.WorkflowUpdateRequestedEventAttributes,
-) {
-	weh.updateHandler(
-		attributes.GetUpdate().GetName(),
-		attributes.GetUpdate().GetArgs(),
-		attributes.GetUpdate().GetHeader(),
-		&updateCommandCallbacks{
-			updateID: attributes.GetUpdateId(),
-			dc:       weh.dataConverter,
-			fc:       weh.failureConverter,
-			commands: weh.commandsHelper,
-		},
-	)
-}
-
-func (ucc *updateCommandCallbacks) Accept() {
-	ucc.commands.acceptWorkflowUpdate(ucc.updateID)
-}
-
-func (ucc *updateCommandCallbacks) Reject(err error) {
-	ucc.commands.completeWorkflowUpdate(
-		ucc.updateID,
-		nil,
-		ucc.fc.ErrorToFailure(err),
-		enumspb.WORKFLOW_UPDATE_DURABILITY_PREFERENCE_BYPASS,
-	)
-}
-
-func (ucc *updateCommandCallbacks) Complete(success interface{}, err error) {
-	if err != nil {
-		ucc.commands.completeWorkflowUpdate(
-			ucc.updateID,
-			nil,
-			ucc.fc.ErrorToFailure(err),
-			enumspb.WORKFLOW_UPDATE_DURABILITY_PREFERENCE_UNSPECIFIED,
-		)
-		return
-	}
-
-	serializedResult, err := ucc.dc.ToPayloads(success)
-	if err != nil {
-		// Update ran to completion but result cannot be converted to a
-		// Payload
-		ucc.commands.completeWorkflowUpdate(
-			ucc.updateID,
-			nil,
-			ucc.fc.ErrorToFailure(err),
-			enumspb.WORKFLOW_UPDATE_DURABILITY_PREFERENCE_UNSPECIFIED,
-		)
-		return
-	}
-	ucc.commands.completeWorkflowUpdate(
-		ucc.updateID,
-		serializedResult,
-		nil,
-		enumspb.WORKFLOW_UPDATE_DURABILITY_PREFERENCE_UNSPECIFIED,
-	)
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleUpsertWorkflowSearchAttributes(event *historypb.HistoryEvent) {
