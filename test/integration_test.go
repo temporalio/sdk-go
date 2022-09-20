@@ -2519,6 +2519,7 @@ func (ts *IntegrationTestSuite) TestHeartbeatThrottleDisabled() {
 }
 
 func (ts *IntegrationTestSuite) TestUpsertMemoFromNil() {
+	ts.T().Skip("temporal server 1.18.0 has a bug")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -2571,6 +2572,7 @@ func (ts *IntegrationTestSuite) TestUpsertMemoFromNil() {
 }
 
 func (ts *IntegrationTestSuite) TestUpsertMemoFromEmptyMap() {
+	ts.T().Skip("temporal server 1.18.0 has a bug")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -2624,6 +2626,7 @@ func (ts *IntegrationTestSuite) TestUpsertMemoFromEmptyMap() {
 }
 
 func (ts *IntegrationTestSuite) TestUpsertMemoWithExistingMemo() {
+	ts.T().Skip("temporal server 1.18.0 has a bug")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
