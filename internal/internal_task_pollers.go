@@ -259,8 +259,6 @@ func (wtp *workflowTaskPoller) ProcessTask(task interface{}) error {
 	switch task := task.(type) {
 	case *workflowTask:
 		return wtp.processWorkflowTask(task)
-	case *resetStickinessTask:
-		return wtp.processResetStickinessTask(task)
 	default:
 		panic("unknown task type.")
 	}
@@ -323,22 +321,6 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 		// we are getting new workflow task, so reset the workflowTask and continue process the new one
 		task = wtp.toWorkflowTask(response.WorkflowTask)
 	}
-}
-
-func (wtp *workflowTaskPoller) processResetStickinessTask(rst *resetStickinessTask) error {
-	grpcCtx, cancel := newGRPCContext(context.Background())
-	defer cancel()
-	// WorkflowType information is not available on reset sticky task.  Emit using base scope.
-	wtp.metricsHandler.Counter(metrics.StickyCacheTotalForcedEviction).Inc(1)
-	if _, err := wtp.service.ResetStickyTaskQueue(grpcCtx, rst.task); err != nil {
-		wtp.logger.Warn("ResetStickyTaskQueue failed",
-			tagWorkflowID, rst.task.Execution.GetWorkflowId(),
-			tagRunID, rst.task.Execution.GetRunId(),
-			tagError, err)
-		return err
-	}
-
-	return nil
 }
 
 func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(

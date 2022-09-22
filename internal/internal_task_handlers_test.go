@@ -1321,10 +1321,6 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 		err = laTaskPoller.ProcessTask(task)
 		t.NoError(err)
 
-		// before clearing workflow state, a reset sticky task will be sent to this chan,
-		// drain the chan so that workflow state can be cleared
-		<-laTunnel.resultCh
-
 		close(doneCh)
 	}()
 

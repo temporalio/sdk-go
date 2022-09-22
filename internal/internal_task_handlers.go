@@ -94,11 +94,6 @@ type (
 		task *workflowservice.PollActivityTaskQueueResponse
 	}
 
-	// resetStickinessTask wraps a ResetStickyTaskQueueRequest.
-	resetStickinessTask struct {
-		task *workflowservice.ResetStickyTaskQueueRequest
-	}
-
 	// workflowExecutionContextImpl is the cached workflow state for sticky execution
 	workflowExecutionContextImpl struct {
 		mutex        sync.Mutex
@@ -467,25 +462,15 @@ func (w *workflowExecutionContextImpl) completeWorkflow(result *commonpb.Payload
 	w.err = err
 }
 
-func (w *workflowExecutionContextImpl) shouldResetStickyOnEviction() bool {
-	// Not all evictions from the cache warrant a call to the server
-	// to reset stickiness.
-	// Cases when this is redundant or unnecessary include
-	// when an error was encountered during execution
-	// or workflow simply completed successfully.
-	return w.err == nil && !w.isWorkflowCompleted
-}
-
 func (w *workflowExecutionContextImpl) onEviction() {
 	// onEviction is run by LRU cache's removeFunc in separate goroutinue
 	w.mutex.Lock()
 
-	// Queue a ResetStickiness request *BEFORE* calling clearState
-	// because once destroyed, no sensible information
-	// may be ascertained about the execution context's state,
-	// nor should any of its methods be invoked.
-	if w.shouldResetStickyOnEviction() {
-		w.queueResetStickinessTask()
+	// Emit force eviction metrics.
+	// This metrics indicates too many concurrent running workflows to fit in sticky cache.
+	// Eviction on error or on workflow complete is normal and expected.
+	if w.err == nil && !w.isWorkflowCompleted {
+		w.wth.metricsHandler.Counter(metrics.StickyCacheTotalForcedEviction).Inc(1)
 	}
 
 	w.clearState()
@@ -494,22 +479,6 @@ func (w *workflowExecutionContextImpl) onEviction() {
 
 func (w *workflowExecutionContextImpl) IsDestroyed() bool {
 	return w.getEventHandler() == nil
-}
-
-func (w *workflowExecutionContextImpl) queueResetStickinessTask() {
-	var task resetStickinessTask
-	task.task = &workflowservice.ResetStickyTaskQueueRequest{
-		Namespace: w.workflowInfo.Namespace,
-		Execution: &commonpb.WorkflowExecution{
-			WorkflowId: w.workflowInfo.WorkflowExecution.ID,
-			RunId:      w.workflowInfo.WorkflowExecution.RunID,
-		},
-	}
-	// w.laTunnel could be nil for worker.ReplayHistory() because there is no worker started, in that case we don't
-	// care about resetStickinessTask.
-	if w.laTunnel != nil && w.laTunnel.resultCh != nil {
-		w.laTunnel.resultCh <- &task
-	}
 }
 
 func (w *workflowExecutionContextImpl) clearState() {
