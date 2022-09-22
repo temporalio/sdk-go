@@ -47,14 +47,17 @@ import (
 )
 
 const (
-	retryPollOperationInitialInterval = 200 * time.Millisecond
-	retryPollOperationMaxInterval     = 10 * time.Second
+	retryPollOperationInitialInterval         = 200 * time.Millisecond
+	retryPollOperationMaxInterval             = 10 * time.Second
+	retryPollResourceExhaustedInitialInterval = time.Second
+	retryPollResourceExhaustedMaxInterval     = 10 * time.Second
 	// How long the same poll task error can remain suppressed
 	lastPollTaskErrSuppressTime = 1 * time.Minute
 )
 
 var (
-	pollOperationRetryPolicy = createPollRetryPolicy()
+	pollOperationRetryPolicy         = createPollRetryPolicy()
+	pollResourceExhaustedRetryPolicy = createPollResourceExhaustedRetryPolicy()
 )
 
 var errStop = errors.New("worker stopping")
@@ -216,6 +219,13 @@ func createPollRetryPolicy() backoff.RetryPolicy {
 	return policy
 }
 
+func createPollResourceExhaustedRetryPolicy() backoff.RetryPolicy {
+	policy := backoff.NewExponentialRetryPolicy(retryPollResourceExhaustedInitialInterval)
+	policy.SetMaximumInterval(retryPollResourceExhaustedMaxInterval)
+	policy.SetExpirationInterval(retry.UnlimitedInterval)
+	return policy
+}
+
 func newBaseWorker(
 	options baseWorkerOptions,
 	logger log.Logger,
@@ -239,6 +249,8 @@ func newBaseWorker(
 		limiterContextCancel: cancel,
 		sessionTokenBucket:   sessionTokenBucket,
 	}
+	// Set secondary retrier as resource exhausted
+	bw.retrier.SetSecondaryRetryPolicy(pollResourceExhaustedRetryPolicy)
 	bw.taskSlotsAvailableGauge = bw.metricsHandler.Gauge(metrics.WorkerTaskSlotsAvailable)
 	bw.taskSlotsAvailableGauge.Update(float64(bw.taskSlotsAvailable))
 	if options.pollerRate > 0 {
@@ -341,7 +353,9 @@ func (bw *baseWorker) pollTask() {
 				}
 				return
 			}
-			bw.retrier.Failed()
+			// We use the secondary retrier on resource exhausted
+			_, resourceExhausted := err.(*serviceerror.ResourceExhausted)
+			bw.retrier.Failed(resourceExhausted)
 		} else {
 			bw.retrier.Succeeded()
 		}

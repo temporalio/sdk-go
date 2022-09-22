@@ -45,8 +45,10 @@ type (
 	// requests due to out-of-quota or server busy errors.
 	ConcurrentRetrier struct {
 		sync.Mutex
-		retrier      Retrier // Backoff retrier
-		failureCount int64   // Number of consecutive failures seen
+		retrier                 Retrier // Backoff retrier
+		secondaryRetrier        Retrier
+		failureCount            int64 // Number of consecutive failures seen
+		includeSecondaryRetrier bool
 	}
 )
 
@@ -63,6 +65,16 @@ func (c *ConcurrentRetrier) throttleInternal(doneCh <-chan struct{}) time.Durati
 	c.Lock()
 	if c.failureCount > 0 {
 		next = c.retrier.NextBackOff()
+		// If secondary is included, use the greatest of the two (which also means
+		// if one is "done", which is -1, the one that's not done is chosen)
+		if c.includeSecondaryRetrier {
+			c.includeSecondaryRetrier = false
+			if c.secondaryRetrier != nil {
+				if secNext := c.secondaryRetrier.NextBackOff(); secNext > next {
+					next = secNext
+				}
+			}
+		}
 	}
 	c.Unlock()
 
@@ -81,14 +93,33 @@ func (c *ConcurrentRetrier) Succeeded() {
 	defer c.Unlock()
 	c.Lock()
 	c.failureCount = 0
+	c.includeSecondaryRetrier = false
 	c.retrier.Reset()
+	if c.secondaryRetrier != nil {
+		c.secondaryRetrier.Reset()
+	}
 }
 
-// Failed marks client request failed because backend is busy.
-func (c *ConcurrentRetrier) Failed() {
+// Failed marks client request failed because backend is busy. If
+// includeSecondaryRetryPolicy is true, see SetSecondaryRetryPolicy for effects.
+func (c *ConcurrentRetrier) Failed(includeSecondaryRetryPolicy bool) {
 	defer c.Unlock()
 	c.Lock()
 	c.failureCount++
+	c.includeSecondaryRetrier = includeSecondaryRetryPolicy
+}
+
+// SetSecondaryRetryPolicy sets a secondary retry policy that, if Failed is
+// called with true, will trigger the secondary retry policy in addition to the
+// primary and will use the result of the secondary if longer than the primary.
+func (c *ConcurrentRetrier) SetSecondaryRetryPolicy(retryPolicy RetryPolicy) {
+	c.Lock()
+	defer c.Unlock()
+	if retryPolicy == nil {
+		c.secondaryRetrier = nil
+	} else {
+		c.secondaryRetrier = NewRetrier(retryPolicy, SystemClock)
+	}
 }
 
 // NewConcurrentRetrier returns an instance of concurrent backoff retrier.

@@ -31,6 +31,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"go.temporal.io/api/serviceerror"
+	"go.temporal.io/sdk/internal/common/retry"
 )
 
 type someError struct{}
@@ -169,7 +170,7 @@ func TestConcurrentRetrier(t *testing.T) {
 
 	// Basic checks
 	retrier := NewConcurrentRetrier(policy)
-	retrier.Failed()
+	retrier.Failed(false)
 	a.Equal(int64(1), retrier.failureCount)
 	retrier.Succeeded()
 	a.Equal(int64(0), retrier.failureCount)
@@ -177,8 +178,8 @@ func TestConcurrentRetrier(t *testing.T) {
 	a.Equal(done, sleepDuration)
 
 	// Multiple count check.
-	retrier.Failed()
-	retrier.Failed()
+	retrier.Failed(false)
+	retrier.Failed(false)
 	a.Equal(int64(2), retrier.failureCount)
 	// Verify valid sleep times.
 	ch := make(chan time.Duration, 3)
@@ -205,6 +206,15 @@ func TestConcurrentRetrier(t *testing.T) {
 		t.Logf("Duration: %d\n", val)
 		a.Equal(done, val)
 	}
+
+	// Secondary retrier check
+	secPolicy := NewExponentialRetryPolicy(20 * time.Millisecond)
+	retrier.SetSecondaryRetryPolicy(secPolicy)
+	retrier.Failed(false)
+	a.InDelta(1*time.Millisecond, retrier.throttleInternal(nil), float64(1*time.Millisecond)*retry.DefaultJitter)
+	retrier.Failed(true)
+	a.InDelta(20*time.Millisecond, retrier.throttleInternal(nil), float64(20*time.Millisecond)*retry.DefaultJitter)
+	retrier.Succeeded()
 }
 
 func TestRetryDeadlineExceeded(t *testing.T) {
