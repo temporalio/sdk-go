@@ -21,3 +21,5 @@ require (
 	google.golang.org/protobuf v1.28.1
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
 )
+
+replace go.temporal.io/api => /mnt/chonky/dev/temporal/api-go
