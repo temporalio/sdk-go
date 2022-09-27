@@ -342,7 +342,7 @@ type (
 		UpdateWorkerBuildIDOrdering(ctx context.Context, options *UpdateWorkerBuildIDOrderingOptions) error
 
 		// GetWorkerBuildIDOrdering returns the worker-build-id based version graph for a particular task queue.
-		GetWorkerBuildIDOrdering(ctx context.Context, options *GetWorkerBuildIDOrderingOptions) (*WorkerBuildIDVersionGraph, error)
+		GetWorkerBuildIDOrdering(ctx context.Context, options *GetWorkerBuildIDOrderingOptions) (*WorkerBuildIDVersionSets, error)
 
 		// CheckHealth performs a server health check using the gRPC health check
 		// API. If the check fails, an error is returned.

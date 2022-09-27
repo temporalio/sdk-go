@@ -203,11 +203,8 @@ type (
 	// GetWorkerBuildIDOrderingOptions is the input to Client.GetWorkerBuildIDOrdering.
 	GetWorkerBuildIDOrderingOptions = internal.GetWorkerBuildIDOrderingOptions
 
-	// WorkerBuildIDVersionGraph is the response for Client.GetWorkerBuildIdOrdering
-	WorkerBuildIDVersionGraph = internal.WorkerBuildIDVersionGraph
-
-	// WorkerVersionIDNode represents a node in the WorkerBuildIDVersionGraph
-	WorkerVersionIDNode = internal.WorkerVersionIDNode
+	// WorkerBuildIDVersionSets is the response for Client.GetWorkerBuildIDOrdering.
+	WorkerBuildIDVersionSets = internal.WorkerBuildIDVersionSets
 
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
@@ -496,13 +493,13 @@ type (
 		ResetWorkflowExecution(ctx context.Context, request *workflowservice.ResetWorkflowExecutionRequest) (*workflowservice.ResetWorkflowExecutionResponse, error)
 
 		// UpdateWorkerBuildIDOrdering **IN DEVELOPMENT**
-		// Allows you to update the worker-build-id based version graph for a particular task queue. This is used in
+		// Allows you to update the worker-build-id based version sets for a particular task queue. This is used in
 		// conjunction with workers who specify their build id and thus opt into the feature. For more, see: <doc link>
 		UpdateWorkerBuildIDOrdering(ctx context.Context, options *UpdateWorkerBuildIDOrderingOptions) error
 
 		// GetWorkerBuildIDOrdering **IN DEVELOPMENT**
-		// Returns the worker-build-id based version graph for a particular task queue.
-		GetWorkerBuildIDOrdering(ctx context.Context, options *GetWorkerBuildIDOrderingOptions) (*WorkerBuildIDVersionGraph, error)
+		// Returns the worker-build-id based version sets for a particular task queue.
+		GetWorkerBuildIDOrdering(ctx context.Context, options *GetWorkerBuildIDOrderingOptions) (*WorkerBuildIDVersionSets, error)
 
 		// CheckHealth performs a server health check using the gRPC health check
 		// API. If the check fails, an error is returned.

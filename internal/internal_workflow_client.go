@@ -946,27 +946,21 @@ func (wc *WorkflowClient) UpdateWorkerBuildIDOrdering(ctx context.Context, optio
 		return err
 	}
 
-	var previousCompatibleID *taskqueuepb.VersionId
-	if options.PreviousCompatible != "" {
-		previousCompatibleID = &taskqueuepb.VersionId{WorkerBuildId: options.PreviousCompatible}
+	request, err := options.validateAndConvertToProto()
+	if err != nil {
+		return err
 	}
-	request := &workflowservice.UpdateWorkerBuildIdOrderingRequest{
-		Namespace:          wc.namespace,
-		TaskQueue:          options.TaskQueue,
-		VersionId:          &taskqueuepb.VersionId{WorkerBuildId: options.WorkerBuildID},
-		PreviousCompatible: previousCompatibleID,
-		BecomeDefault:      options.BecomeDefault,
-	}
+	request.Namespace = wc.namespace
 
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
-	_, err := wc.workflowService.UpdateWorkerBuildIdOrdering(grpcCtx, request)
+	_, err = wc.workflowService.UpdateWorkerBuildIdOrdering(grpcCtx, request)
 	return err
 }
 
 // GetWorkerBuildIDOrdering returns the worker-build-id based version graph for a particular task queue.
-func (wc *WorkflowClient) GetWorkerBuildIDOrdering(ctx context.Context, options *GetWorkerBuildIDOrderingOptions) (*WorkerBuildIDVersionGraph, error) {
-	if options.MaxDepth < 0 {
+func (wc *WorkflowClient) GetWorkerBuildIDOrdering(ctx context.Context, options *GetWorkerBuildIDOrderingOptions) (*WorkerBuildIDVersionSets, error) {
+	if options.MaxSets < 0 {
 		return nil, errors.New("maxDepth must be >= 0")
 	}
 	if err := wc.ensureInitialized(); err != nil {
@@ -979,13 +973,13 @@ func (wc *WorkflowClient) GetWorkerBuildIDOrdering(ctx context.Context, options 
 	request := &workflowservice.GetWorkerBuildIdOrderingRequest{
 		Namespace: wc.namespace,
 		TaskQueue: options.TaskQueue,
-		MaxDepth:  int32(options.MaxDepth),
+		MaxSets:   int32(options.MaxSets),
 	}
 	resp, err := wc.workflowService.GetWorkerBuildIdOrdering(grpcCtx, request)
 	if err != nil {
 		return nil, err
 	}
-	converted := workerVersionGraphFromProtoResponse(resp)
+	converted := workerVersionSetsFromProtoResponse(resp)
 	return converted, nil
 }
 

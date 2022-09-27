@@ -701,7 +701,9 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		BinaryChecksum: wtp.getBuildID(),
 	}
 	if wtp.workerBuildID != "" {
-		builtRequest.WorkerVersioningId = &taskqueuepb.VersionId{WorkerBuildId: wtp.workerBuildID}
+		builtRequest.WorkerVersionCapabilities = &commonpb.WorkerVersionCapabilities{
+			BuildId: wtp.workerBuildID,
+		}
 	}
 	return builtRequest
 }
@@ -899,7 +901,9 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 		TaskQueueMetadata: &taskqueuepb.TaskQueueMetadata{MaxTasksPerSecond: &types.DoubleValue{Value: atp.activitiesPerSecond}},
 	}
 	if atp.workerBuildID != "" {
-		request.WorkerVersioningId = &taskqueuepb.VersionId{WorkerBuildId: atp.workerBuildID}
+		request.WorkerVersionCapabilities = &commonpb.WorkerVersionCapabilities{
+			BuildId: atp.workerBuildID,
+		}
 	}
 
 	response, err := atp.pollActivityTaskQueue(ctx, request)

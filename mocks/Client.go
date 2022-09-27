@@ -558,15 +558,15 @@ func (_m *Client) UpdateWorkerBuildIDOrdering(ctx context.Context, options *clie
 }
 
 // GetWorkerBuildIDOrdering provides a mock function with given fields: ctx, request
-func (_m *Client) GetWorkerBuildIDOrdering(ctx context.Context, options *client.GetWorkerBuildIDOrderingOptions) (*client.WorkerBuildIDVersionGraph, error) {
+func (_m *Client) GetWorkerBuildIDOrdering(ctx context.Context, options *client.GetWorkerBuildIDOrderingOptions) (*client.WorkerBuildIDVersionSets, error) {
 	ret := _m.Called(ctx, options)
 
-	var r0 *internal.WorkerBuildIDVersionGraph
-	if rf, ok := ret.Get(0).(func(context.Context, *client.GetWorkerBuildIDOrderingOptions) *client.WorkerBuildIDVersionGraph); ok {
+	var r0 *internal.WorkerBuildIDVersionSets
+	if rf, ok := ret.Get(0).(func(context.Context, *client.GetWorkerBuildIDOrderingOptions) *client.WorkerBuildIDVersionSets); ok {
 		r0 = rf(ctx, options)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*internal.WorkerBuildIDVersionGraph)
+			r0 = ret.Get(0).(*internal.WorkerBuildIDVersionSets)
 		}
 	}
 

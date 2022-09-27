@@ -30,11 +30,11 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 )
 
-func Test_WorkerVersionGraph_fromProtoResponse(t *testing.T) {
+func Test_WorkerVersionSets_fromProtoResponse(t *testing.T) {
 	tests := []struct {
 		name     string
 		response *workflowservice.GetWorkerBuildIdOrderingResponse
-		want     *WorkerBuildIDVersionGraph
+		want     *WorkerBuildIDVersionSets
 	}{
 		{
 			name:     "nil response",
@@ -42,52 +42,24 @@ func Test_WorkerVersionGraph_fromProtoResponse(t *testing.T) {
 			want:     nil,
 		},
 		{
-			name: "normal graph",
+			name: "normal sets",
 			response: &workflowservice.GetWorkerBuildIdOrderingResponse{
-				CurrentDefault: &taskqueuepb.VersionIdNode{
-					Version: &taskqueuepb.VersionId{
-						WorkerBuildId: "2.0",
-					},
-					PreviousIncompatible: &taskqueuepb.VersionIdNode{
-						Version: &taskqueuepb.VersionId{
-							WorkerBuildId: "1.0",
-						},
-					},
-				},
-				CompatibleLeaves: []*taskqueuepb.VersionIdNode{
-					{
-						Version: &taskqueuepb.VersionId{
-							WorkerBuildId: "1.1",
-						},
-						PreviousCompatible: &taskqueuepb.VersionIdNode{
-							Version: &taskqueuepb.VersionId{
-								WorkerBuildId: "1.0",
-							},
-						},
-					},
+				MajorVersionSets: []*taskqueuepb.CompatibleVersionSet{
+					{Versions: []string{"1.0", "1.1"}, Id: "1"},
+					{Versions: []string{"2.0"}, Id: "2"},
 				},
 			},
-			want: &WorkerBuildIDVersionGraph{
-				Default: &WorkerVersionIDNode{
-					WorkerBuildID: "2.0",
-					PreviousIncompatible: &WorkerVersionIDNode{
-						WorkerBuildID: "1.0",
-					},
-				},
-				CompatibleLeaves: []*WorkerVersionIDNode{
-					{
-						WorkerBuildID: "1.1",
-						PreviousCompatible: &WorkerVersionIDNode{
-							WorkerBuildID: "1.0",
-						},
-					},
+			want: &WorkerBuildIDVersionSets{
+				Sets: []*CompatibleVersionSet{
+					{Versions: []string{"1.0", "1.1"}, id: "1"},
+					{Versions: []string{"2.0"}, id: "2"},
 				},
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equalf(t, tt.want, workerVersionGraphFromProtoResponse(tt.response), "workerVersionGraphFromProtoResponse(%v)", tt.response)
+			assert.Equalf(t, tt.want, workerVersionSetsFromProtoResponse(tt.response), "workerVersionSetsFromProtoResponse(%v)", tt.response)
 		})
 	}
 }

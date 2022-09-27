@@ -576,7 +576,7 @@ func (t *TaskHandlersTestSuite) TestRespondsToWFTWithWorkerBinaryID() {
 	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
-	t.Equal(workerBuildID, response.WorkerVersioningId.GetWorkerBuildId())
+	t.Equal(workerBuildID, response.GetWorkerVersionsStamp().GetBuildId())
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {

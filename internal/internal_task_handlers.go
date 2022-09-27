@@ -1645,7 +1645,9 @@ func errorToFailWorkflowTask(taskToken []byte, err error, identity string, dataC
 		Namespace:      namespace,
 	}
 	if wth.workerBuildID != "" {
-		builtRequest.WorkerVersioningId = &taskqueuepb.VersionId{WorkerBuildId: wth.workerBuildID}
+		builtRequest.WorkerVersionStamp = &commonpb.WorkerVersionStamp{
+			BuildId: wth.workerBuildID,
+		}
 	}
 	return builtRequest
 }
