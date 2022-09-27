@@ -1,4 +1,4 @@
-package datadog
+package tracing
 
 import (
 	"context"
