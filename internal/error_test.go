@@ -155,8 +155,9 @@ func Test_TimeoutError_WithDetails(t *testing.T) {
 
 func testTimeoutErrorDetails(t *testing.T, timeoutType enumspb.TimeoutType) {
 	context := &workflowEnvironmentImpl{
-		commandsHelper: newCommandsHelper(),
-		dataConverter:  converter.GetDefaultDataConverter(),
+		commandsHelper:   newCommandsHelper(),
+		dataConverter:    converter.GetDefaultDataConverter(),
+		failureConverter: GetDefaultFailureConverter(),
 	}
 	h := newCommandsHelper()
 	var actualErr error
@@ -442,7 +443,6 @@ func Test_CanceledError(t *testing.T) {
 }
 
 func Test_IsCanceledError(t *testing.T) {
-
 	tests := []struct {
 		name     string
 		err      error
@@ -521,8 +521,8 @@ func Test_SignalExternalWorkflowExecutionFailedError(t *testing.T) {
 }
 
 func Test_ContinueAsNewError(t *testing.T) {
-	var a1 = 1234
-	var a2 = "some random input"
+	a1 := 1234
+	a2 := "some random input"
 
 	continueAsNewWfName := "continueAsNewWorkflowFn"
 	continueAsNewWorkflowFn := func(ctx Context, testInt int, testString string) error {
@@ -614,9 +614,10 @@ func Test_IsRetryable(t *testing.T) {
 
 func Test_convertErrorToFailure_ApplicationError(t *testing.T) {
 	require := require.New(t)
+	fc := GetDefaultFailureConverter()
 
 	err := NewApplicationError("message", "customType", true, errors.New("cause error"), "details", 2208)
-	f := ConvertErrorToFailure(err, converter.GetDefaultDataConverter())
+	f := fc.ErrorToFailure(err)
 	require.Equal("message", f.GetMessage())
 	require.Equal("customType", f.GetApplicationFailureInfo().GetType())
 	require.Equal(true, f.GetApplicationFailureInfo().GetNonRetryable())
@@ -626,7 +627,7 @@ func Test_convertErrorToFailure_ApplicationError(t *testing.T) {
 	require.Equal("", f.GetCause().GetApplicationFailureInfo().GetType())
 	require.Nil(f.GetCause().GetCause())
 
-	err2 := ConvertFailureToError(f, converter.GetDefaultDataConverter())
+	err2 := fc.FailureToError(f)
 	var applicationErr *ApplicationError
 	require.True(errors.As(err2, &applicationErr))
 	require.Equal("message (type: customType, retryable: false): cause error", applicationErr.Error())
@@ -636,48 +637,116 @@ func Test_convertErrorToFailure_ApplicationError(t *testing.T) {
 	require.Equal("cause error", applicationErr.Error())
 }
 
-func Test_convertErrorToFailure_CanceledError(t *testing.T) {
+func Test_convertErrorToFailure_EncodeMessage(t *testing.T) {
 	require := require.New(t)
 
+	fc := NewDefaultFailureConverter(DefaultFailureConverterOptions{
+		DataConverter:          converter.GetDefaultDataConverter(),
+		EncodeCommonAttributes: true,
+	})
+
+	err := NewApplicationError("message", "customType", true, errors.New("cause error"), "details", 2208)
+	f := fc.ErrorToFailure(err)
+	require.Equal("Encoded failure", f.GetMessage())
+	require.Equal("", f.GetStackTrace())
+	require.Equal("customType", f.GetApplicationFailureInfo().GetType())
+	require.Equal(true, f.GetApplicationFailureInfo().GetNonRetryable())
+	require.Equal([]byte(`"details"`), f.GetApplicationFailureInfo().GetDetails().GetPayloads()[0].GetData())
+	require.Equal([]byte(`2208`), f.GetApplicationFailureInfo().GetDetails().GetPayloads()[1].GetData())
+	require.Equal("cause error", f.GetCause().GetMessage())
+	require.Equal("", f.GetCause().GetApplicationFailureInfo().GetType())
+	require.Nil(f.GetCause().GetCause())
+
+	err2 := fc.FailureToError(f)
+	var applicationErr *ApplicationError
+	require.True(errors.As(err2, &applicationErr))
+	require.Equal("message (type: customType, retryable: false): cause error", applicationErr.Error())
+
+	err2 = errors.Unwrap(err2)
+	require.True(errors.As(err2, &applicationErr))
+	require.Equal("cause error", applicationErr.Error())
+}
+
+func Test_convertErrorToFailure_EncodeStackTrace(t *testing.T) {
+	require := require.New(t)
+	fc := NewDefaultFailureConverter(DefaultFailureConverterOptions{
+		DataConverter:          converter.GetDefaultDataConverter(),
+		EncodeCommonAttributes: true,
+	})
+
+	err := newPanicError("panic message", "long call stack")
+	var panicErr *PanicError
+	require.True(errors.As(err, &panicErr))
+	f := fc.ErrorToFailure(err)
+	require.Equal("Encoded failure", f.GetMessage())
+	require.Equal("", f.GetStackTrace())
+	require.Equal("PanicError", f.GetApplicationFailureInfo().GetType())
+	require.Equal(false, f.GetApplicationFailureInfo().GetNonRetryable())
+	require.Nil(f.GetCause())
+
+	err2 := fc.FailureToError(f)
+	var panicErr2 *PanicError
+	require.True(errors.As(err2, &panicErr2))
+	require.Equal(panicErr.Error(), panicErr2.Error())
+	require.Equal(panicErr.StackTrace(), panicErr2.StackTrace())
+
+	f = fc.ErrorToFailure(newWorkflowPanicError("panic message", "long call stack"))
+	require.Equal("Encoded failure", f.GetMessage())
+	require.Equal("", f.GetStackTrace())
+	require.Equal("PanicError", f.GetApplicationFailureInfo().GetType())
+	require.Equal(true, f.GetApplicationFailureInfo().GetNonRetryable())
+	require.Nil(f.GetCause())
+
+	err2 = fc.FailureToError(f)
+	require.True(errors.As(err2, &panicErr2))
+	require.Equal(panicErr.Error(), panicErr2.Error())
+	require.Equal(panicErr.StackTrace(), panicErr2.StackTrace())
+}
+
+func Test_convertErrorToFailure_CanceledError(t *testing.T) {
+	require := require.New(t)
+	fc := GetDefaultFailureConverter()
+
 	err := NewCanceledError("details", 2208)
-	f := ConvertErrorToFailure(err, converter.GetDefaultDataConverter())
+	f := fc.ErrorToFailure(err)
 	require.Equal("canceled", f.GetMessage())
 	require.Equal([]byte(`"details"`), f.GetCanceledFailureInfo().GetDetails().GetPayloads()[0].GetData())
 	require.Equal([]byte(`2208`), f.GetCanceledFailureInfo().GetDetails().GetPayloads()[1].GetData())
 	require.Nil(f.GetCause())
 
-	err2 := ConvertFailureToError(f, converter.GetDefaultDataConverter())
+	err2 := fc.FailureToError(f)
 	var canceledErr *CanceledError
 	require.True(errors.As(err2, &canceledErr))
 }
 
 func Test_convertErrorToFailure_PanicError(t *testing.T) {
 	require := require.New(t)
+	fc := GetDefaultFailureConverter()
 
 	err := newPanicError("panic message", "long call stack")
 	var panicErr *PanicError
 	require.True(errors.As(err, &panicErr))
-	f := ConvertErrorToFailure(err, converter.GetDefaultDataConverter())
+	f := fc.ErrorToFailure(err)
 	require.Equal("panic message", f.GetMessage())
 	require.Equal("PanicError", f.GetApplicationFailureInfo().GetType())
 	require.Equal(false, f.GetApplicationFailureInfo().GetNonRetryable())
 	require.Equal("long call stack", f.GetStackTrace())
 	require.Nil(f.GetCause())
 
-	err2 := ConvertFailureToError(f, converter.GetDefaultDataConverter())
+	err2 := fc.FailureToError(f)
 	var panicErr2 *PanicError
 	require.True(errors.As(err2, &panicErr2))
 	require.Equal(panicErr.Error(), panicErr2.Error())
 	require.Equal(panicErr.StackTrace(), panicErr2.StackTrace())
 
-	f = ConvertErrorToFailure(newWorkflowPanicError("panic message", "long call stack"), converter.GetDefaultDataConverter())
+	f = fc.ErrorToFailure(newWorkflowPanicError("panic message", "long call stack"))
 	require.Equal("panic message", f.GetMessage())
 	require.Equal("PanicError", f.GetApplicationFailureInfo().GetType())
 	require.Equal(true, f.GetApplicationFailureInfo().GetNonRetryable())
 	require.Equal("long call stack", f.GetStackTrace())
 	require.Nil(f.GetCause())
 
-	err2 = ConvertFailureToError(f, converter.GetDefaultDataConverter())
+	err2 = fc.FailureToError(f)
 	require.True(errors.As(err2, &panicErr2))
 	require.Equal(panicErr.Error(), panicErr2.Error())
 	require.Equal(panicErr.StackTrace(), panicErr2.StackTrace())
@@ -685,17 +754,18 @@ func Test_convertErrorToFailure_PanicError(t *testing.T) {
 
 func Test_convertErrorToFailure_TimeoutError(t *testing.T) {
 	require := require.New(t)
+	fc := GetDefaultFailureConverter()
 
 	err := NewTimeoutError("timeout", enumspb.TIMEOUT_TYPE_HEARTBEAT, &coolError{})
 	var timeoutErr *TimeoutError
 	require.True(errors.As(err, &timeoutErr))
-	f := ConvertErrorToFailure(err, converter.GetDefaultDataConverter())
+	f := fc.ErrorToFailure(err)
 	require.Equal("timeout", f.GetMessage())
 	require.Equal(enumspb.TIMEOUT_TYPE_HEARTBEAT, f.GetTimeoutFailureInfo().GetTimeoutType())
-	require.Equal(ConvertErrorToFailure(&coolError{}, converter.GetDefaultDataConverter()), f.GetCause())
-	require.Equal(f.GetCause(), ConvertErrorToFailure(&coolError{}, converter.GetDefaultDataConverter()))
+	require.Equal(fc.ErrorToFailure(&coolError{}), f.GetCause())
+	require.Equal(f.GetCause(), fc.ErrorToFailure(&coolError{}))
 
-	err2 := ConvertFailureToError(f, converter.GetDefaultDataConverter())
+	err2 := fc.FailureToError(f)
 	var timeoutErr2 *TimeoutError
 	require.True(errors.As(err2, &timeoutErr2))
 	require.Equal("timeout (type: Heartbeat): cool error (type: coolError, retryable: true)", timeoutErr2.Error())
@@ -704,29 +774,31 @@ func Test_convertErrorToFailure_TimeoutError(t *testing.T) {
 
 func Test_convertErrorToFailure_TerminateError(t *testing.T) {
 	require := require.New(t)
+	fc := GetDefaultFailureConverter()
 
 	err := newTerminatedError()
-	f := ConvertErrorToFailure(err, converter.GetDefaultDataConverter())
+	f := fc.ErrorToFailure(err)
 	require.Equal("terminated", f.GetMessage())
 	require.Nil(f.GetCause())
 
-	err2 := ConvertFailureToError(f, converter.GetDefaultDataConverter())
+	err2 := fc.FailureToError(f)
 	var terminateErr *TerminatedError
 	require.True(errors.As(err2, &terminateErr))
 }
 
 func Test_convertErrorToFailure_ServerError(t *testing.T) {
 	require := require.New(t)
+	fc := GetDefaultFailureConverter()
 
 	err := NewServerError("message", true, &coolError{})
 	var serverErr *ServerError
 	require.True(errors.As(err, &serverErr))
-	f := ConvertErrorToFailure(err, converter.GetDefaultDataConverter())
+	f := fc.ErrorToFailure(err)
 	require.Equal("message", f.GetMessage())
 	require.Equal(true, f.GetServerFailureInfo().GetNonRetryable())
-	require.Equal(ConvertErrorToFailure(&coolError{}, converter.GetDefaultDataConverter()), f.GetCause())
+	require.Equal(fc.ErrorToFailure(&coolError{}), f.GetCause())
 
-	err2 := ConvertFailureToError(f, converter.GetDefaultDataConverter())
+	err2 := fc.FailureToError(f)
 	var serverErr2 *ServerError
 	require.True(errors.As(err2, &serverErr2))
 	require.Equal("message: cool error (type: coolError, retryable: true)", serverErr2.Error())
@@ -735,6 +807,7 @@ func Test_convertErrorToFailure_ServerError(t *testing.T) {
 
 func Test_convertErrorToFailure_ActivityError(t *testing.T) {
 	require := require.New(t)
+	fc := GetDefaultFailureConverter()
 
 	err := NewApplicationError("app err", "", true, nil)
 	var applicationErr *ApplicationError
@@ -742,7 +815,7 @@ func Test_convertErrorToFailure_ActivityError(t *testing.T) {
 	err = NewActivityError(8, 22, "alex", &commonpb.ActivityType{Name: "activityType"}, "32283", enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, applicationErr)
 	var activityErr *ActivityError
 	require.True(errors.As(err, &activityErr))
-	f := ConvertErrorToFailure(err, converter.GetDefaultDataConverter())
+	f := fc.ErrorToFailure(err)
 	require.Equal("activity error", f.GetMessage())
 	require.Equal(int64(8), f.GetActivityFailureInfo().GetScheduledEventId())
 	require.Equal(int64(22), f.GetActivityFailureInfo().GetStartedEventId())
@@ -750,9 +823,9 @@ func Test_convertErrorToFailure_ActivityError(t *testing.T) {
 	require.Equal("activityType", f.GetActivityFailureInfo().GetActivityType().GetName())
 	require.Equal("32283", f.GetActivityFailureInfo().GetActivityId())
 	require.Equal(enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, f.GetActivityFailureInfo().GetRetryState())
-	require.Equal(ConvertErrorToFailure(applicationErr, converter.GetDefaultDataConverter()), f.GetCause())
+	require.Equal(fc.ErrorToFailure(applicationErr), f.GetCause())
 
-	err2 := ConvertFailureToError(f, converter.GetDefaultDataConverter())
+	err2 := fc.FailureToError(f)
 	var activityTaskErr *ActivityError
 	require.True(errors.As(err2, &activityTaskErr))
 	require.Equal(activityErr.Error(), activityTaskErr.Error())
@@ -766,18 +839,19 @@ func Test_convertErrorToFailure_ActivityError(t *testing.T) {
 
 func Test_convertErrorToFailure_ChildWorkflowExecutionError(t *testing.T) {
 	require := require.New(t)
+	fc := GetDefaultFailureConverter()
 
 	applicationErr := NewApplicationError("app err", "", true, nil)
 	err := NewChildWorkflowExecutionError("namespace", "wID", "rID", "wfType", 8, 22, enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, applicationErr)
-	f := ConvertErrorToFailure(err, converter.GetDefaultDataConverter())
+	f := fc.ErrorToFailure(err)
 	require.Equal("child workflow execution error", f.GetMessage())
 	require.Equal(int64(8), f.GetChildWorkflowExecutionFailureInfo().GetInitiatedEventId())
 	require.Equal(int64(22), f.GetChildWorkflowExecutionFailureInfo().GetStartedEventId())
 	require.Equal("namespace", f.GetChildWorkflowExecutionFailureInfo().GetNamespace())
 	require.Equal(enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, f.GetChildWorkflowExecutionFailureInfo().GetRetryState())
-	require.Equal(ConvertErrorToFailure(applicationErr, converter.GetDefaultDataConverter()), f.GetCause())
+	require.Equal(fc.ErrorToFailure(applicationErr), f.GetCause())
 
-	err2 := ConvertFailureToError(f, converter.GetDefaultDataConverter())
+	err2 := fc.FailureToError(f)
 	var childWorkflowExecutionErr *ChildWorkflowExecutionError
 	require.True(errors.As(err2, &childWorkflowExecutionErr))
 	require.Equal(err.Error(), childWorkflowExecutionErr.Error())
@@ -786,14 +860,16 @@ func Test_convertErrorToFailure_ChildWorkflowExecutionError(t *testing.T) {
 
 func Test_convertErrorToFailure_UnknowError(t *testing.T) {
 	require := require.New(t)
+	fc := GetDefaultFailureConverter()
+
 	err := &coolError{}
-	f := ConvertErrorToFailure(err, converter.GetDefaultDataConverter())
+	f := fc.ErrorToFailure(err)
 	require.Equal("cool error", f.GetMessage())
 	require.Equal("coolError", f.GetApplicationFailureInfo().GetType())
 	require.Equal(false, f.GetApplicationFailureInfo().GetNonRetryable())
 	require.Nil(f.GetCause())
 
-	err2 := ConvertFailureToError(f, converter.GetDefaultDataConverter())
+	err2 := fc.FailureToError(f)
 	var coolErr *ApplicationError
 	require.True(errors.As(err2, &coolErr))
 	require.Equal("cool error (type: coolError, retryable: true)", coolErr.Error())
@@ -802,6 +878,7 @@ func Test_convertErrorToFailure_UnknowError(t *testing.T) {
 
 func Test_convertErrorToFailure_SavedFailure(t *testing.T) {
 	require := require.New(t)
+	fc := GetDefaultFailureConverter()
 	err := NewApplicationError("message that will be ignored", "type nobody cares", false, nil)
 	var applicationErr *ApplicationError
 	require.True(errors.As(err, &applicationErr))
@@ -813,8 +890,9 @@ func Test_convertErrorToFailure_SavedFailure(t *testing.T) {
 		FailureInfo: &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{
 			Type:         "SomeJavaException",
 			NonRetryable: true,
-		}}}
-	f := ConvertErrorToFailure(err, converter.GetDefaultDataConverter())
+		}},
+	}
+	f := fc.ErrorToFailure(err)
 	require.Equal("actual message", f.GetMessage())
 	require.Equal("JavaSDK", f.GetSource())
 	require.Equal("some stack trace", f.GetStackTrace())
@@ -825,6 +903,7 @@ func Test_convertErrorToFailure_SavedFailure(t *testing.T) {
 
 func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 	require := require.New(t)
+	fc := GetDefaultFailureConverter()
 	details, err := converter.GetDefaultDataConverter().ToPayloads("details", 22)
 	assert.NoError(t, err)
 
@@ -844,7 +923,7 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 		},
 	}
 
-	err = ConvertFailureToError(f, converter.GetDefaultDataConverter())
+	err = fc.FailureToError(f)
 	var applicationErr *ApplicationError
 	require.True(errors.As(err, &applicationErr))
 	require.Equal("message (type: MyCoolType, retryable: false): cause message (type: UnknownType, retryable: true)", applicationErr.Error())
@@ -870,7 +949,7 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 		}},
 	}
 
-	err = ConvertFailureToError(f, converter.GetDefaultDataConverter())
+	err = fc.FailureToError(f)
 	var panicErr *PanicError
 	require.True(errors.As(err, &panicErr))
 	require.Equal("message", panicErr.Error())
@@ -884,7 +963,7 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 		}},
 	}
 
-	err = ConvertFailureToError(f, converter.GetDefaultDataConverter())
+	err = fc.FailureToError(f)
 	var coolErr *ApplicationError
 	require.True(errors.As(err, &coolErr))
 	require.Equal("message (type: CoolError, retryable: true)", coolErr.Error())
@@ -894,6 +973,7 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 
 func Test_convertFailureToError_CanceledFailure(t *testing.T) {
 	require := require.New(t)
+	fc := GetDefaultFailureConverter()
 
 	details, err := converter.GetDefaultDataConverter().ToPayloads("details", 22)
 	assert.NoError(t, err)
@@ -904,7 +984,7 @@ func Test_convertFailureToError_CanceledFailure(t *testing.T) {
 		}},
 	}
 
-	err = ConvertFailureToError(f, converter.GetDefaultDataConverter())
+	err = fc.FailureToError(f)
 	var canceledErr *CanceledError
 	require.True(errors.As(err, &canceledErr))
 	var str string
@@ -916,6 +996,7 @@ func Test_convertFailureToError_CanceledFailure(t *testing.T) {
 
 func Test_convertFailureToError_TimeoutFailure(t *testing.T) {
 	require := require.New(t)
+	fc := GetDefaultFailureConverter()
 	f := &failurepb.Failure{
 		Message: "timeout",
 		FailureInfo: &failurepb.Failure_TimeoutFailureInfo{TimeoutFailureInfo: &failurepb.TimeoutFailureInfo{
@@ -924,7 +1005,7 @@ func Test_convertFailureToError_TimeoutFailure(t *testing.T) {
 		}},
 	}
 
-	err := ConvertFailureToError(f, converter.GetDefaultDataConverter())
+	err := fc.FailureToError(f)
 	var timeoutErr *TimeoutError
 	require.True(errors.As(err, &timeoutErr))
 	require.Equal("timeout (type: StartToClose)", timeoutErr.Error())
@@ -933,6 +1014,7 @@ func Test_convertFailureToError_TimeoutFailure(t *testing.T) {
 
 func Test_convertFailureToError_ServerFailure(t *testing.T) {
 	require := require.New(t)
+	fc := GetDefaultFailureConverter()
 	f := &failurepb.Failure{
 		Message: "message",
 		FailureInfo: &failurepb.Failure_ServerFailureInfo{ServerFailureInfo: &failurepb.ServerFailureInfo{
@@ -940,7 +1022,7 @@ func Test_convertFailureToError_ServerFailure(t *testing.T) {
 		}},
 	}
 
-	err := ConvertFailureToError(f, converter.GetDefaultDataConverter())
+	err := fc.FailureToError(f)
 	var serverErr *ServerError
 	require.True(errors.As(err, &serverErr))
 	require.Equal("message", serverErr.Error())
@@ -949,7 +1031,7 @@ func Test_convertFailureToError_ServerFailure(t *testing.T) {
 
 func Test_convertFailureToError_SaveFailure(t *testing.T) {
 	require := require.New(t)
-
+	fc := GetDefaultFailureConverter()
 	f := &failurepb.Failure{
 		Message:    "message",
 		StackTrace: "long stack trace",
@@ -970,7 +1052,7 @@ func Test_convertFailureToError_SaveFailure(t *testing.T) {
 		}},
 	}
 
-	err := ConvertFailureToError(f, converter.GetDefaultDataConverter())
+	err := fc.FailureToError(f)
 
 	var applicationErr *ApplicationError
 	require.True(errors.As(err, &applicationErr))
@@ -986,7 +1068,7 @@ func Test_convertFailureToError_SaveFailure(t *testing.T) {
 	activityErr.scheduledEventID = 22
 	activityErr.identity = "bob"
 
-	f2 := ConvertErrorToFailure(err, converter.GetDefaultDataConverter())
+	f2 := fc.ErrorToFailure(err)
 	require.Equal("message", f2.GetMessage())
 	require.Equal("long stack trace", f2.GetStackTrace())
 	require.Equal("JavaSDK", f2.GetSource())

@@ -131,6 +131,7 @@ type (
 		IsReplaying() bool
 		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) converter.EncodedValue
 		GetDataConverter() converter.DataConverter
+		GetFailureConverter() converter.FailureConverter
 		AddSession(sessionInfo *SessionInfo)
 		RemoveSession(sessionID string)
 		GetContextPropagators() []ContextPropagator

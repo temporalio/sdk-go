@@ -135,6 +135,7 @@ type (
 		metricsHandler           metrics.Handler
 		registry                 *registry
 		dataConverter            converter.DataConverter
+		failureConverter         converter.FailureConverter
 		contextPropagators       []ContextPropagator
 		deadlockDetectionTimeout time.Duration
 	}
@@ -145,6 +146,7 @@ type (
 	updateCommandCallbacks struct {
 		updateID string
 		dc       converter.DataConverter
+		fc       converter.FailureConverter
 		commands *commandsHelper
 	}
 
@@ -189,6 +191,7 @@ func newWorkflowExecutionEventHandler(
 	metricsHandler metrics.Handler,
 	registry *registry,
 	dataConverter converter.DataConverter,
+	failureConverter converter.FailureConverter,
 	contextPropagators []ContextPropagator,
 	deadlockDetectionTimeout time.Duration,
 ) workflowExecutionEventHandler {
@@ -205,6 +208,7 @@ func newWorkflowExecutionEventHandler(
 		enableLoggingInReplay:    enableLoggingInReplay,
 		registry:                 registry,
 		dataConverter:            dataConverter,
+		failureConverter:         failureConverter,
 		contextPropagators:       contextPropagators,
 		deadlockDetectionTimeout: deadlockDetectionTimeout,
 	}
@@ -513,6 +517,10 @@ func (wc *workflowEnvironmentImpl) GetMetricsHandler() metrics.Handler {
 
 func (wc *workflowEnvironmentImpl) GetDataConverter() converter.DataConverter {
 	return wc.dataConverter
+}
+
+func (wc *workflowEnvironmentImpl) GetFailureConverter() converter.FailureConverter {
+	return wc.failureConverter
 }
 
 func (wc *workflowEnvironmentImpl) GetContextPropagators() []ContextPropagator {
@@ -1109,7 +1117,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(event *hi
 		&commonpb.ActivityType{Name: activity.activityType.Name},
 		activityID,
 		attributes.GetRetryState(),
-		ConvertFailureToError(attributes.GetFailure(), weh.GetDataConverter()),
+		weh.GetFailureConverter().FailureToError(attributes.GetFailure()),
 	)
 
 	activity.handle(nil, activityTaskErr)
@@ -1125,7 +1133,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *
 	}
 
 	attributes := event.GetActivityTaskTimedOutEventAttributes()
-	timeoutError := ConvertFailureToError(attributes.GetFailure(), weh.GetDataConverter())
+	timeoutError := weh.GetFailureConverter().FailureToError(attributes.GetFailure())
 
 	activityTaskErr := NewActivityError(
 		attributes.GetScheduledEventId(),
@@ -1291,7 +1299,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 		if failure != nil {
 			lar.Attempt = lamd.Attempt
 			lar.Backoff = lamd.Backoff
-			lar.Err = ConvertFailureToError(failure, weh.GetDataConverter())
+			lar.Err = weh.GetFailureConverter().FailureToError(failure)
 		} else {
 			// Result might not be there if local activity doesn't have return value.
 			lar.Result = details[localActivityResultName]
@@ -1336,7 +1344,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 		EventType: enumspb.EVENT_TYPE_MARKER_RECORDED,
 		Attributes: &historypb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &historypb.MarkerRecordedEventAttributes{
 			MarkerName: localActivityMarkerName,
-			Failure:    ConvertErrorToFailure(lar.err, weh.GetDataConverter()),
+			Failure:    weh.GetFailureConverter().ErrorToFailure(lar.err),
 			Details:    details,
 		}},
 	}
@@ -1432,7 +1440,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionFailed
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
 		attributes.GetRetryState(),
-		ConvertFailureToError(attributes.GetFailure(), weh.GetDataConverter()),
+		weh.GetFailureConverter().FailureToError(attributes.GetFailure()),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
 	return nil
@@ -1518,6 +1526,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleWorkflowUpdateRequested(
 		&updateCommandCallbacks{
 			updateID: attributes.GetUpdateId(),
 			dc:       weh.dataConverter,
+			fc:       weh.failureConverter,
 			commands: weh.commandsHelper,
 		},
 	)
@@ -1531,7 +1540,7 @@ func (ucc *updateCommandCallbacks) Reject(err error) {
 	ucc.commands.completeWorkflowUpdate(
 		ucc.updateID,
 		nil,
-		ConvertErrorToFailure(err, ucc.dc),
+		ucc.fc.ErrorToFailure(err),
 		enumspb.WORKFLOW_UPDATE_DURABILITY_PREFERENCE_BYPASS,
 	)
 }
@@ -1541,7 +1550,7 @@ func (ucc *updateCommandCallbacks) Complete(success interface{}, err error) {
 		ucc.commands.completeWorkflowUpdate(
 			ucc.updateID,
 			nil,
-			ConvertErrorToFailure(err, ucc.dc),
+			ucc.fc.ErrorToFailure(err),
 			enumspb.WORKFLOW_UPDATE_DURABILITY_PREFERENCE_UNSPECIFIED,
 		)
 		return
@@ -1554,7 +1563,7 @@ func (ucc *updateCommandCallbacks) Complete(success interface{}, err error) {
 		ucc.commands.completeWorkflowUpdate(
 			ucc.updateID,
 			nil,
-			ConvertErrorToFailure(err, ucc.dc),
+			ucc.fc.ErrorToFailure(err),
 			enumspb.WORKFLOW_UPDATE_DURABILITY_PREFERENCE_UNSPECIFIED,
 		)
 		return

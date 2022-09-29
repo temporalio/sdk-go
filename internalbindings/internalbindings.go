@@ -79,14 +79,14 @@ type (
 	ContinueAsNewError = internal.ContinueAsNewError
 )
 
-// ConvertErrorToFailure converts Go error to the correspondent Failure protobuf.
-func ConvertErrorToFailure(err error, dc converter.DataConverter) *failurepb.Failure {
-	return internal.ConvertErrorToFailure(err, dc)
+// ErrorToFailure converts Go error to the correspondent Failure protobuf.
+func ErrorToFailure(err error, fc converter.FailureConverter) *failurepb.Failure {
+	return fc.ErrorToFailure(err)
 }
 
-// ConvertFailureToError converts Failure protobuf to the correspondent Go error.
-func ConvertFailureToError(failure *failurepb.Failure, dc converter.DataConverter) error {
-	return internal.ConvertFailureToError(failure, dc)
+// FailureToError converts Failure protobuf to the correspondent Go error.
+func FailureToError(failure *failurepb.Failure, fc converter.FailureConverter) error {
+	return fc.FailureToError(failure)
 }
 
 // GetLastCompletionResult returns last completion result from workflow.

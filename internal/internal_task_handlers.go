@@ -126,6 +126,7 @@ type (
 		laTunnel                 *localActivityTunnel
 		workflowPanicPolicy      WorkflowPanicPolicy
 		dataConverter            converter.DataConverter
+		failureConverter         converter.FailureConverter
 		contextPropagators       []ContextPropagator
 		cache                    *WorkerCache
 		deadlockDetectionTimeout time.Duration
@@ -144,6 +145,7 @@ type (
 		registry                         *registry
 		activityProvider                 activityProvider
 		dataConverter                    converter.DataConverter
+		failureConverter                 converter.FailureConverter
 		workerStopCh                     <-chan struct{}
 		contextPropagators               []ContextPropagator
 		namespace                        string
@@ -405,6 +407,7 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		registry:                 registry,
 		workflowPanicPolicy:      params.WorkflowPanicPolicy,
 		dataConverter:            params.DataConverter,
+		failureConverter:         params.FailureConverter,
 		contextPropagators:       params.ContextPropagators,
 		cache:                    params.cache,
 		deadlockDetectionTimeout: params.DeadlockDetectionTimeout,
@@ -508,6 +511,7 @@ func (w *workflowExecutionContextImpl) createEventHandler() {
 		w.wth.metricsHandler,
 		w.wth.registry,
 		w.wth.dataConverter,
+		w.wth.failureConverter,
 		w.wth.contextPropagators,
 		w.wth.deadlockDetectionTimeout,
 	)
@@ -1518,7 +1522,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		// Workflow failures
 		metricsHandler.Counter(metrics.WorkflowFailedCounter).Inc(1)
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION)
-		failure := ConvertErrorToFailure(workflowContext.err, wth.dataConverter)
+		failure := wth.failureConverter.ErrorToFailure(workflowContext.err)
 		closeCommand.Attributes = &commandpb.Command_FailWorkflowExecutionCommandAttributes{FailWorkflowExecutionCommandAttributes: &commandpb.FailWorkflowExecutionCommandAttributes{
 			Failure: failure,
 		}}
@@ -1570,7 +1574,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 }
 
 func errorToFailWorkflowTask(taskToken []byte, err error, identity string, dataConverter converter.DataConverter,
-	namespace string) *workflowservice.RespondWorkflowTaskFailedRequest {
+	failureConverter converter.FailureConverter, namespace string) *workflowservice.RespondWorkflowTaskFailedRequest {
 
 	cause := enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
 	// If it was a panic due to a bad state machine or if it was a history
@@ -1586,7 +1590,7 @@ func errorToFailWorkflowTask(taskToken []byte, err error, identity string, dataC
 	return &workflowservice.RespondWorkflowTaskFailedRequest{
 		TaskToken:      taskToken,
 		Cause:          cause,
-		Failure:        ConvertErrorToFailure(err, dataConverter),
+		Failure:        failureConverter.ErrorToFailure(err),
 		Identity:       identity,
 		BinaryChecksum: getBinaryChecksum(),
 		Namespace:      namespace,
@@ -1633,6 +1637,7 @@ func newActivityTaskHandlerWithCustomProvider(
 		registry:                         registry,
 		activityProvider:                 activityProvider,
 		dataConverter:                    params.DataConverter,
+		failureConverter:                 params.FailureConverter,
 		workerStopCh:                     params.WorkerStopChannel,
 		contextPropagators:               params.ContextPropagators,
 		namespace:                        params.Namespace,
@@ -1846,7 +1851,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		metricsHandler.Counter(metrics.UnregisteredActivityInvocationCounter).Inc(1)
 		return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil,
 			NewActivityNotRegisteredError(activityType, ath.getRegisteredActivityNames()),
-			ath.dataConverter, ath.namespace, false), nil
+			ath.dataConverter, ath.failureConverter, ath.namespace, false), nil
 	}
 
 	// panic handler
@@ -1864,7 +1869,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			metricsHandler.Counter(metrics.ActivityTaskErrorCounter).Inc(1)
 			panicErr := newPanicError(p, st)
 			result = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr,
-				ath.dataConverter, ath.namespace, false)
+				ath.dataConverter, ath.failureConverter, ath.namespace, false)
 		}
 	}()
 
@@ -1904,7 +1909,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		)
 	}
 	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err,
-		ath.dataConverter, ath.namespace, isActivityCancel), nil
+		ath.dataConverter, ath.failureConverter, ath.namespace, isActivityCancel), nil
 }
 
 func (ath *activityTaskHandlerImpl) getActivity(name string) activity {

@@ -194,6 +194,7 @@ type (
 		doneChannel         chan struct{}
 		workerOptions       WorkerOptions
 		dataConverter       converter.DataConverter
+		failureConverter    converter.FailureConverter
 		runTimeout          time.Duration
 
 		heartbeatDetails *commonpb.Payloads
@@ -258,6 +259,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		doneChannel:       make(chan struct{}),
 		workerStopChannel: make(chan struct{}),
 		dataConverter:     converter.GetDefaultDataConverter(),
+		failureConverter:  GetDefaultFailureConverter(),
 		runTimeout:        maxWorkflowTimeout,
 	}
 
@@ -606,7 +608,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 		details := newEncodedValues(request.Details, env.GetDataConverter())
 		return nil, env.wrapActivityError(activityID, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, NewCanceledError(details))
 	case *workflowservice.RespondActivityTaskFailedRequest:
-		return nil, env.wrapActivityError(activityID, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATE_UNSPECIFIED, ConvertFailureToError(request.GetFailure(), env.GetDataConverter()))
+		return nil, env.wrapActivityError(activityID, scheduleTaskAttr.ActivityType.Name, enumspb.RETRY_STATE_UNSPECIFIED, env.GetFailureConverter().FailureToError(request.GetFailure()))
 	case *workflowservice.RespondActivityTaskCompletedRequest:
 		return newEncodedValue(request.Result, env.GetDataConverter()), nil
 	default:
@@ -875,8 +877,8 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 		} else if errors.As(err, &workflowPanicErr) {
 			env.testError = newPanicError(workflowPanicErr.value, workflowPanicErr.stackTrace)
 		} else {
-			failure := ConvertErrorToFailure(err, dc)
-			env.testError = ConvertFailureToError(failure, dc)
+			failure := env.failureConverter.ErrorToFailure(err)
+			env.testError = env.failureConverter.FailureToError(failure)
 		}
 
 		if !env.isChildWorkflow() {
@@ -1028,7 +1030,7 @@ func (env *testWorkflowEnvironmentImpl) CompleteActivity(taskToken []byte, resul
 		// We do allow canceled error to be passed here
 		cancelAllowed := true
 		request := convertActivityResultToRespondRequest("test-identity", taskToken, data, err,
-			env.GetDataConverter(), defaultTestNamespace, cancelAllowed)
+			env.GetDataConverter(), env.GetFailureConverter(), defaultTestNamespace, cancelAllowed)
 		env.handleActivityResult(activityID, request, activityHandle.activityType, env.GetDataConverter())
 	}, false /* do not auto schedule workflow task, because activity might be still pending */)
 
@@ -1045,6 +1047,10 @@ func (env *testWorkflowEnvironmentImpl) GetMetricsHandler() metrics.Handler {
 
 func (env *testWorkflowEnvironmentImpl) GetDataConverter() converter.DataConverter {
 	return env.dataConverter
+}
+
+func (env *testWorkflowEnvironmentImpl) GetFailureConverter() converter.FailureConverter {
+	return env.failureConverter
 }
 
 func (env *testWorkflowEnvironmentImpl) GetContextPropagators() []ContextPropagator {
@@ -1097,12 +1103,12 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 			if result == nil && panicErr == nil {
 				failureErr := errors.New("activity called runtime.Goexit")
 				result = &workflowservice.RespondActivityTaskFailedRequest{
-					Failure: ConvertErrorToFailure(failureErr, env.GetDataConverter()),
+					Failure: env.failureConverter.ErrorToFailure(failureErr),
 				}
 			} else if panicErr != nil {
 				failureErr := newPanicError(fmt.Sprintf("%v", panicErr), "")
 				result = &workflowservice.RespondActivityTaskFailedRequest{
-					Failure: ConvertErrorToFailure(failureErr, env.GetDataConverter()),
+					Failure: env.failureConverter.ErrorToFailure(failureErr),
 				}
 			}
 			// post activity result to workflow dispatcher
@@ -1304,7 +1310,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 		// check if a retry is needed
 		if request, ok := result.(*workflowservice.RespondActivityTaskFailedRequest); ok && parameters.RetryPolicy != nil {
 			p := fromProtoRetryPolicy(parameters.RetryPolicy)
-			backoff := getRetryBackoffWithNowTime(p, task.GetAttempt(), ConvertFailureToError(request.GetFailure(), env.GetDataConverter()), env.Now(), expireTime)
+			backoff := getRetryBackoffWithNowTime(p, task.GetAttempt(), env.failureConverter.FailureToError(request.GetFailure()), env.Now(), expireTime)
 			if backoff > 0 {
 				// need a retry
 				waitCh := make(chan struct{})
@@ -1471,7 +1477,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID Activity
 			activityID,
 			activityType,
 			enumspb.RETRY_STATE_UNSPECIFIED,
-			ConvertFailureToError(request.GetFailure(), dataConverter),
+			env.failureConverter.FailureToError(request.GetFailure()),
 		)
 		activityHandle.callback(nil, err)
 	case *workflowservice.RespondActivityTaskCompletedRequest:
@@ -2397,7 +2403,7 @@ func (env *testWorkflowEnvironmentImpl) setLastCompletionResult(result interface
 }
 
 func (env *testWorkflowEnvironmentImpl) setLastError(err error) {
-	env.workflowInfo.lastFailure = ConvertErrorToFailure(err, env.dataConverter)
+	env.workflowInfo.lastFailure = env.failureConverter.ErrorToFailure(err)
 }
 
 func (env *testWorkflowEnvironmentImpl) setHeartbeatDetails(details interface{}) {

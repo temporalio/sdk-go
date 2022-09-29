@@ -467,9 +467,11 @@ func TestUpdateCommandAdapter(t *testing.T) {
 	t.Parallel()
 	cmdHelper := newCommandsHelper()
 	dc := converter.GetDefaultDataConverter()
+	fc := GetDefaultFailureConverter()
 	updateCallbacks := &updateCommandCallbacks{
 		updateID: t.Name(),
 		dc:       dc,
+		fc:       fc,
 		commands: cmdHelper,
 	}
 	t.Run("reject", func(t *testing.T) {
