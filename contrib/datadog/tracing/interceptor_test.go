@@ -39,3 +39,32 @@ func TestSpanPropagation(t *testing.T) {
 	interceptortest.RunTestWorkflow(t, testTracer)
 	interceptortest.AssertSpanPropagation(t, testTracer)
 }
+
+func Test_tracerImpl_genSpanID(t1 *testing.T) {
+	tests := []struct {
+		name  string
+		runId string
+		want  uint64
+	}{
+		{
+			name:  "Test always the same",
+			runId: "afd160fc-2591-42fa-ad33-3c8f80084961",
+			want:  279256908952477392,
+		},
+		{
+			name:  "Different runId",
+			runId: "0",
+			want:  13822530076732356516,
+		},
+	}
+	for _, tt := range tests {
+		t1.Run(tt.name, func(t1 *testing.T) {
+			if first := genSpanID(tt.runId); first != tt.want {
+				t1.Errorf("genSpanID() = %v, want %v", first, tt.want)
+				if second := genSpanID(tt.runId); second != first {
+					t1.Errorf("first genSpanID() = %v, second genSpanID() = %v. Subsequent invocations MUST return the same result", first, second)
+				}
+			}
+		})
+	}
+}

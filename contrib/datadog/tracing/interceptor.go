@@ -79,7 +79,14 @@ func (tracerImpl) ContextWithSpan(ctx context.Context, span interceptor.TracerSp
 	return tracer.ContextWithSpan(ctx, span.(*tracerSpan).Span)
 }
 
-func (tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (interceptor.TracerSpan, error) {
+func genSpanID(runId string) uint64 {
+	h := fnv.New64()
+	// Write() always writes all bytes and never fails; the count and error result are for implementing io.Writer.
+	_, _ = h.Write([]byte(fmt.Sprintf("workflow:%s", runId)))
+	return h.Sum64()
+}
+
+func (t tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (interceptor.TracerSpan, error) {
 	startOpts := []tracer.StartSpanOption{
 		tracer.ResourceName(options.Name),
 		tracer.StartTime(options.Time),
@@ -91,10 +98,7 @@ func (tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (interc
 		if !ok {
 			return nil, fmt.Errorf("missing required tag `temporalRunID` on `RunWorkflow` span")
 		}
-		h := fnv.New64()
-		// Write() always writes all bytes and never fails; the count and error result are for implementing io.Writer.
-		_, _ = h.Write([]byte(fmt.Sprintf("workflow:%s", rid)))
-		startOpts = append(startOpts, tracer.WithSpanID(h.Sum64()))
+		startOpts = append(startOpts, tracer.WithSpanID(genSpanID(rid)))
 	}
 
 	// Add parent span to start options
