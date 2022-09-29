@@ -109,8 +109,9 @@ func (tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (interc
 		return nil, fmt.Errorf("unrecognized parent type %T", opParent)
 	}
 	if parent != nil {
-		// Convert the parent context into a full trace (required, otherwise
-		// the implementation of StartSpan() will NOT respect ChildOf()
+		// Convert the parent context into a full trace.
+		// This is required, otherwise the implementation of StartSpan()
+		// will NOT respect ChildOf().
 		// The runtime type of parentTrace will be tracer.spanContext (note the
 		// starting lowercase on "spanContext", that's an internal struct)
 		parentTrace, err := tracer.Extract(newSpanContextReader(parent))
