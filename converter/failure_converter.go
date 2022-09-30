@@ -24,12 +24,13 @@ package converter
 
 import failurepb "go.temporal.io/api/failure/v1"
 
-type (
-	FailureConverter interface {
-		// ErrorToFailure converts a error to a Failure proto message.
-		ErrorToFailure(err error) *failurepb.Failure
+// FailureConverter is used by the sdk to serialize/deserialize errors
+// that need to be sent over the wire.
+// To use a custom FailureConverter, set FailureConverter in client, through client.Options.
+type FailureConverter interface {
+	// ErrorToFailure converts a error to a Failure proto message.
+	ErrorToFailure(err error) *failurepb.Failure
 
-		// FailureToError converts a Failure proto message to a Go Error.
-		FailureToError(failure *failurepb.Failure) error
-	}
-)
+	// FailureToError converts a Failure proto message to a Go Error.
+	FailureToError(failure *failurepb.Failure) error
+}

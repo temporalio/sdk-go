@@ -395,7 +395,7 @@ type (
 		DataConverter converter.DataConverter
 
 		// Optional: Sets FailureConverter to customize serialization/deserialization of errors.
-		// default: defaultFailureConverter, does not encode any fields of the error. See `temporal/default_failure_converter` for
+		// default: temporal.DefaultFailureConverter, does not encode any fields of the error. Use temporal.NewDefaultFailureConverter		
 		// options to configure or create a custom converter.
 		FailureConverter converter.FailureConverter
 

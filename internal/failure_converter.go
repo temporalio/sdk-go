@@ -30,9 +30,48 @@ import (
 	"go.temporal.io/sdk/converter"
 )
 
-// InternalErrorToFailure convers an Error to a Failure using the provided data converter
-// exposed to help users create custom FailureConverters
-func InternalErrorToFailure(err error, dc converter.DataConverter) *failurepb.Failure {
+var defaultFailureConverter = NewDefaultFailureConverter(DefaultFailureConverterOptions{})
+
+// GetDefaultFailureConverter returns the default failure converter used by Temporal.
+func GetDefaultFailureConverter() converter.FailureConverter {
+	return defaultFailureConverter
+}
+
+// DefaultFailureConverterOptions are optional parameters for DefaultFailureConverter creation.
+type DefaultFailureConverterOptions struct {
+	// Optional: Sets DataConverter to customize serialization/deserialization of fields.
+	// default: Default data converter
+	DataConverter converter.DataConverter
+
+	// Optional: Whether to encode error messages and stack traces.
+	// default: false
+	EncodeCommonAttributes bool
+}
+
+type encodedFailure struct {
+	Message    string `json:"message"`
+	StackTrace string `json:"stack_trace"`
+}
+
+// DefaultFailureConverter seralizes errors with the option to encode common parameters under Failure.EncodedAttributes
+type DefaultFailureConverter struct {
+	dataConverter          converter.DataConverter
+	encodeCommonAttributes bool
+}
+
+// NewDefaultFailureConverter creates new instance of DefaultFailureConverter.
+func NewDefaultFailureConverter(opt DefaultFailureConverterOptions) *DefaultFailureConverter {
+	if opt.DataConverter == nil {
+		opt.DataConverter = converter.GetDefaultDataConverter()
+	}
+	return &DefaultFailureConverter{
+		dataConverter:          opt.DataConverter,
+		encodeCommonAttributes: opt.EncodeCommonAttributes,
+	}
+}
+
+// ErrorToFailure converts an error to a Failure
+func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure {
 	if err == nil {
 		return nil
 	}
@@ -58,12 +97,12 @@ func InternalErrorToFailure(err error, dc converter.DataConverter) *failurepb.Fa
 		failureInfo := &failurepb.ApplicationFailureInfo{
 			Type:         err.errType,
 			NonRetryable: err.nonRetryable,
-			Details:      convertErrDetailsToPayloads(err.details, dc),
+			Details:      convertErrDetailsToPayloads(err.details, dfc.dataConverter),
 		}
 		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: failureInfo}
 	case *CanceledError:
 		failureInfo := &failurepb.CanceledFailureInfo{
-			Details: convertErrDetailsToPayloads(err.details, dc),
+			Details: convertErrDetailsToPayloads(err.details, dfc.dataConverter),
 		}
 		failure.FailureInfo = &failurepb.Failure_CanceledFailureInfo{CanceledFailureInfo: failureInfo}
 	case *PanicError:
@@ -82,7 +121,7 @@ func InternalErrorToFailure(err error, dc converter.DataConverter) *failurepb.Fa
 	case *TimeoutError:
 		failureInfo := &failurepb.TimeoutFailureInfo{
 			TimeoutType:          err.timeoutType,
-			LastHeartbeatDetails: convertErrDetailsToPayloads(err.lastHeartbeatDetails, dc),
+			LastHeartbeatDetails: convertErrDetailsToPayloads(err.lastHeartbeatDetails, dfc.dataConverter),
 		}
 		failure.FailureInfo = &failurepb.Failure_TimeoutFailureInfo{TimeoutFailureInfo: failureInfo}
 	case *TerminatedError:
@@ -124,125 +163,10 @@ func InternalErrorToFailure(err error, dc converter.DataConverter) *failurepb.Fa
 		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: failureInfo}
 	}
 
-	failure.Cause = InternalErrorToFailure(errors.Unwrap(err), dc)
+	failure.Cause = dfc.ErrorToFailure(errors.Unwrap(err))
 
-	return failure
-}
-
-// InternalFailureToError convers an Failure to go Errros using the provided data converter
-// exposed to help users create custom FailureConverters
-func InternalFailureToError(failure *failurepb.Failure, dc converter.DataConverter) error {
-	if failure == nil {
-		return nil
-	}
-
-	message := failure.GetMessage()
-	stackTrace := failure.GetStackTrace()
-	var err error
-
-	if failure.GetApplicationFailureInfo() != nil {
-		applicationFailureInfo := failure.GetApplicationFailureInfo()
-		details := newEncodedValues(applicationFailureInfo.GetDetails(), dc)
-		switch applicationFailureInfo.GetType() {
-		case getErrType(&PanicError{}):
-			err = newPanicError(message, stackTrace)
-		default:
-			err = NewApplicationError(
-				message,
-				applicationFailureInfo.GetType(),
-				applicationFailureInfo.GetNonRetryable(),
-				InternalFailureToError(failure.GetCause(), dc),
-				details)
-		}
-	} else if failure.GetCanceledFailureInfo() != nil {
-		details := newEncodedValues(failure.GetCanceledFailureInfo().GetDetails(), dc)
-		err = NewCanceledError(details)
-	} else if failure.GetTimeoutFailureInfo() != nil {
-		timeoutFailureInfo := failure.GetTimeoutFailureInfo()
-		lastHeartbeatDetails := newEncodedValues(timeoutFailureInfo.GetLastHeartbeatDetails(), dc)
-		err = NewTimeoutError(
-			message,
-			timeoutFailureInfo.GetTimeoutType(),
-			InternalFailureToError(failure.GetCause(), dc),
-			lastHeartbeatDetails)
-	} else if failure.GetTerminatedFailureInfo() != nil {
-		err = newTerminatedError()
-	} else if failure.GetServerFailureInfo() != nil {
-		err = NewServerError(message, failure.GetServerFailureInfo().GetNonRetryable(), InternalFailureToError(failure.GetCause(), dc))
-	} else if failure.GetResetWorkflowFailureInfo() != nil {
-		err = NewApplicationError(message, "", true, InternalFailureToError(failure.GetCause(), dc), failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails())
-	} else if failure.GetActivityFailureInfo() != nil {
-		activityTaskInfoFailure := failure.GetActivityFailureInfo()
-		err = NewActivityError(
-			activityTaskInfoFailure.GetScheduledEventId(),
-			activityTaskInfoFailure.GetStartedEventId(),
-			activityTaskInfoFailure.GetIdentity(),
-			activityTaskInfoFailure.GetActivityType(),
-			activityTaskInfoFailure.GetActivityId(),
-			activityTaskInfoFailure.GetRetryState(),
-			InternalFailureToError(failure.GetCause(), dc),
-		)
-	} else if failure.GetChildWorkflowExecutionFailureInfo() != nil {
-		childWorkflowExecutionFailureInfo := failure.GetChildWorkflowExecutionFailureInfo()
-		err = NewChildWorkflowExecutionError(
-			childWorkflowExecutionFailureInfo.GetNamespace(),
-			childWorkflowExecutionFailureInfo.GetWorkflowExecution().GetWorkflowId(),
-			childWorkflowExecutionFailureInfo.GetWorkflowExecution().GetRunId(),
-			childWorkflowExecutionFailureInfo.GetWorkflowType().GetName(),
-			childWorkflowExecutionFailureInfo.GetInitiatedEventId(),
-			childWorkflowExecutionFailureInfo.GetStartedEventId(),
-			childWorkflowExecutionFailureInfo.GetRetryState(),
-			InternalFailureToError(failure.GetCause(), dc),
-		)
-	}
-
-	if err == nil {
-		// All unknown types are considered to be retryable ApplicationError.
-		err = NewApplicationError(message, "", false, InternalFailureToError(failure.GetCause(), dc))
-	}
-
-	if fh, ok := err.(failureHolder); ok {
-		fh.setFailure(failure)
-	}
-
-	return err
-}
-
-type DefaultFailureConverterOptions struct {
-	// Optional: Sets DataConverter to customize serialization/deserialization of fields.
-	// default: Default data converter
-	DataConverter converter.DataConverter
-
-	// Optional: Whether to encode error messages and stack traces.
-	// default: false
-	EncodeCommonAttributes bool
-}
-
-type EncodedFailure struct {
-	Message    string `json:"message"`
-	StackTrace string `json:"stack_trace"`
-}
-
-type DefaultFailureConverter struct {
-	dataConverter          converter.DataConverter
-	encodeCommonAttributes bool
-}
-
-// NewDefaultFailureConverter creates new instance of DefaultFailureConverter.
-func NewDefaultFailureConverter(opt DefaultFailureConverterOptions) *DefaultFailureConverter {
-	if opt.DataConverter == nil {
-		opt.DataConverter = converter.GetDefaultDataConverter()
-	}
-	return &DefaultFailureConverter{
-		dataConverter:          opt.DataConverter,
-		encodeCommonAttributes: opt.EncodeCommonAttributes,
-	}
-}
-
-func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure {
-	failure := InternalErrorToFailure(err, dfc.dataConverter)
 	if dfc.encodeCommonAttributes {
-		failure.EncodedAttributes, err = dfc.dataConverter.ToPayload(EncodedFailure{
+		failure.EncodedAttributes, err = dfc.dataConverter.ToPayload(encodedFailure{
 			Message:    failure.Message,
 			StackTrace: failure.StackTrace,
 		})
@@ -255,15 +179,88 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 	return failure
 }
 
+// FailureToError converts an Failure to an error
 func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) error {
-	if failure.GetEncodedAttributes() != nil {
-		var ea EncodedFailure
-		err := dfc.dataConverter.FromPayload(failure.GetEncodedAttributes(), &ea)
-		if err != nil {
-			return nil
-		}
-		failure.Message = ea.Message
-		failure.StackTrace = ea.StackTrace
+	if failure == nil {
+		return nil
 	}
-	return InternalFailureToError(failure, dfc.dataConverter)
+
+	if failure.GetEncodedAttributes() != nil {
+		var ea encodedFailure
+		if dfc.dataConverter.FromPayload(failure.GetEncodedAttributes(), &ea) == nil {
+			failure.Message = ea.Message
+			failure.StackTrace = ea.StackTrace
+		}
+	}
+
+	message := failure.GetMessage()
+	stackTrace := failure.GetStackTrace()
+	var err error
+
+	if failure.GetApplicationFailureInfo() != nil {
+		applicationFailureInfo := failure.GetApplicationFailureInfo()
+		details := newEncodedValues(applicationFailureInfo.GetDetails(), dfc.dataConverter)
+		switch applicationFailureInfo.GetType() {
+		case getErrType(&PanicError{}):
+			err = newPanicError(message, stackTrace)
+		default:
+			err = NewApplicationError(
+				message,
+				applicationFailureInfo.GetType(),
+				applicationFailureInfo.GetNonRetryable(),
+				dfc.FailureToError(failure.GetCause()),
+				details)
+		}
+	} else if failure.GetCanceledFailureInfo() != nil {
+		details := newEncodedValues(failure.GetCanceledFailureInfo().GetDetails(), dfc.dataConverter)
+		err = NewCanceledError(details)
+	} else if failure.GetTimeoutFailureInfo() != nil {
+		timeoutFailureInfo := failure.GetTimeoutFailureInfo()
+		lastHeartbeatDetails := newEncodedValues(timeoutFailureInfo.GetLastHeartbeatDetails(), dfc.dataConverter)
+		err = NewTimeoutError(
+			message,
+			timeoutFailureInfo.GetTimeoutType(),
+			dfc.FailureToError(failure.GetCause()),
+			lastHeartbeatDetails)
+	} else if failure.GetTerminatedFailureInfo() != nil {
+		err = newTerminatedError()
+	} else if failure.GetServerFailureInfo() != nil {
+		err = NewServerError(message, failure.GetServerFailureInfo().GetNonRetryable(), dfc.FailureToError(failure.GetCause()))
+	} else if failure.GetResetWorkflowFailureInfo() != nil {
+		err = NewApplicationError(message, "", true, dfc.FailureToError(failure.GetCause()), failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails())
+	} else if failure.GetActivityFailureInfo() != nil {
+		activityTaskInfoFailure := failure.GetActivityFailureInfo()
+		err = NewActivityError(
+			activityTaskInfoFailure.GetScheduledEventId(),
+			activityTaskInfoFailure.GetStartedEventId(),
+			activityTaskInfoFailure.GetIdentity(),
+			activityTaskInfoFailure.GetActivityType(),
+			activityTaskInfoFailure.GetActivityId(),
+			activityTaskInfoFailure.GetRetryState(),
+			dfc.FailureToError(failure.GetCause()),
+		)
+	} else if failure.GetChildWorkflowExecutionFailureInfo() != nil {
+		childWorkflowExecutionFailureInfo := failure.GetChildWorkflowExecutionFailureInfo()
+		err = NewChildWorkflowExecutionError(
+			childWorkflowExecutionFailureInfo.GetNamespace(),
+			childWorkflowExecutionFailureInfo.GetWorkflowExecution().GetWorkflowId(),
+			childWorkflowExecutionFailureInfo.GetWorkflowExecution().GetRunId(),
+			childWorkflowExecutionFailureInfo.GetWorkflowType().GetName(),
+			childWorkflowExecutionFailureInfo.GetInitiatedEventId(),
+			childWorkflowExecutionFailureInfo.GetStartedEventId(),
+			childWorkflowExecutionFailureInfo.GetRetryState(),
+			dfc.FailureToError(failure.GetCause()),
+		)
+	}
+
+	if err == nil {
+		// All unknown types are considered to be retryable ApplicationError.
+		err = NewApplicationError(message, "", false, dfc.FailureToError(failure.GetCause()))
+	}
+
+	if fh, ok := err.(failureHolder); ok {
+		fh.setFailure(failure)
+	}
+
+	return err
 }

@@ -110,7 +110,7 @@ func (d *SingleActivityWorkflowDefinition) Execute(env bindings.WorkflowEnvironm
 						env.Complete(nil, errors.New("error expected"))
 						return
 					}
-					failure := bindings.ErrorToFailure(err, internal.GetDefaultFailureConverter())
+					failure := internal.GetDefaultFailureConverter().ErrorToFailure(err)
 					if failure == nil {
 						env.Complete(nil, errors.New("failure expected"))
 						return

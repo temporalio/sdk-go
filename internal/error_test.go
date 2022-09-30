@@ -653,7 +653,7 @@ func Test_convertErrorToFailure_EncodeMessage(t *testing.T) {
 	require.Equal(true, f.GetApplicationFailureInfo().GetNonRetryable())
 	require.Equal([]byte(`"details"`), f.GetApplicationFailureInfo().GetDetails().GetPayloads()[0].GetData())
 	require.Equal([]byte(`2208`), f.GetApplicationFailureInfo().GetDetails().GetPayloads()[1].GetData())
-	require.Equal("cause error", f.GetCause().GetMessage())
+	require.Equal("Encoded failure", f.GetCause().GetMessage())
 	require.Equal("", f.GetCause().GetApplicationFailureInfo().GetType())
 	require.Nil(f.GetCause().GetCause())
 

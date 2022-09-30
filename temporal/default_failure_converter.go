@@ -28,10 +28,14 @@ import (
 )
 
 type (
+	// DefaultFailureConverterOptions are optional parameters for DefaultFailureConverter creation.
 	DefaultFailureConverterOptions = internal.DefaultFailureConverterOptions
+
+	// DefaultFailureConverter seralizes errors with the option to encode common parameters under Failure.EncodedAttributes.
 	DefaultFailureConverter        = internal.DefaultFailureConverter
 )
 
+// NewDefaultFailureConverter creates new instance of DefaultFailureConverter.
 func NewDefaultFailureConverter(opt DefaultFailureConverterOptions) *DefaultFailureConverter {
 	return internal.NewDefaultFailureConverter(opt)
 }

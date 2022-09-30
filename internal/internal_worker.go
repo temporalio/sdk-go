@@ -243,7 +243,6 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 	}
 	if params.FailureConverter == nil {
 		params.FailureConverter = GetDefaultFailureConverter()
-		params.Logger.Info("No FailureConverter configured for temporal worker. Use default one.")
 	}
 }
 
