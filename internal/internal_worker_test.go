@@ -2502,6 +2502,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		registry:           nil,
 		identity:           "143@worker-options-test-1",
 		dataConverter:      &converter.CompositeDataConverter{},
+		failureConverter:   GetDefaultFailureConverter(),
 		contextPropagators: nil,
 		logger:             ilog.NewNopLogger(),
 	}
@@ -2537,6 +2538,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		WorkerLocalActivitiesPerSecond:        options.WorkerLocalActivitiesPerSecond,
 		StickyScheduleToStartTimeout:          options.StickyScheduleToStartTimeout,
 		DataConverter:                         client.dataConverter,
+		FailureConverter:                      client.failureConverter,
 		Logger:                                client.logger,
 		MetricsHandler:                        client.metricsHandler,
 		Identity:                              client.identity,
@@ -2573,6 +2575,7 @@ func TestLocalActivityWorkerOnly(t *testing.T) {
 		WorkerLocalActivitiesPerSecond:        defaultWorkerLocalActivitiesPerSecond,
 		StickyScheduleToStartTimeout:          stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second,
 		DataConverter:                         converter.GetDefaultDataConverter(),
+		FailureConverter:                      GetDefaultFailureConverter(),
 		Logger:                                workflowWorker.executionParameters.Logger,
 		MetricsHandler:                        workflowWorker.executionParameters.MetricsHandler,
 		Identity:                              workflowWorker.executionParameters.Identity,

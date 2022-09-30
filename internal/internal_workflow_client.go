@@ -80,6 +80,7 @@ type (
 		metricsHandler           metrics.Handler
 		identity                 string
 		dataConverter            converter.DataConverter
+		failureConverter         converter.FailureConverter
 		contextPropagators       []ContextPropagator
 		workerInterceptors       []WorkerInterceptor
 		interceptor              ClientOutboundInterceptor
@@ -150,13 +151,14 @@ type (
 
 	// workflowRunImpl is an implementation of WorkflowRun
 	workflowRunImpl struct {
-		workflowType  string
-		workflowID    string
-		firstRunID    string
-		currentRunID  *util.OnceCell
-		iterFn        func(ctx context.Context, runID string) HistoryEventIterator
-		dataConverter converter.DataConverter
-		registry      *registry
+		workflowType     string
+		workflowID       string
+		firstRunID       string
+		currentRunID     *util.OnceCell
+		iterFn           func(ctx context.Context, runID string) HistoryEventIterator
+		dataConverter    converter.DataConverter
+		failureConverter converter.FailureConverter
+		registry         *registry
 	}
 
 	// HistoryEventIterator represents the interface for
@@ -470,7 +472,7 @@ func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 	// We do allow canceled error to be passed here
 	cancelAllowed := true
 	request := convertActivityResultToRespondRequest(wc.identity, taskToken,
-		data, err, wc.dataConverter, wc.namespace, cancelAllowed)
+		data, err, wc.dataConverter, wc.failureConverter, wc.namespace, cancelAllowed)
 	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
@@ -496,7 +498,7 @@ func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, namespace, w
 	// We do allow canceled error to be passed here
 	cancelAllowed := true
 	request := convertActivityResultToRespondRequestByID(wc.identity, namespace, workflowID, runID, activityID,
-		data, err, wc.dataConverter, cancelAllowed)
+		data, err, wc.dataConverter, wc.failureConverter, cancelAllowed)
 	return reportActivityCompleteByID(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
@@ -1129,7 +1131,7 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 		if !options.DisableFollowingRuns && attributes.NewExecutionRunId != "" {
 			return workflowRun.follow(ctx, valuePtr, attributes.NewExecutionRunId, options)
 		}
-		err = ConvertFailureToError(attributes.GetFailure(), workflowRun.dataConverter)
+		err = workflowRun.failureConverter.FailureToError(attributes.GetFailure())
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED:
 		attributes := closeEvent.GetWorkflowExecutionCanceledEventAttributes()
 		details := newEncodedValues(attributes.Details, workflowRun.dataConverter)
@@ -1312,13 +1314,14 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 
 	curRunIDCell := util.PopulatedOnceCell(runID)
 	return &workflowRunImpl{
-		workflowType:  in.WorkflowType,
-		workflowID:    workflowID,
-		firstRunID:    runID,
-		currentRunID:  &curRunIDCell,
-		iterFn:        iterFn,
-		dataConverter: w.client.dataConverter,
-		registry:      w.client.registry,
+		workflowType:     in.WorkflowType,
+		workflowID:       workflowID,
+		firstRunID:       runID,
+		currentRunID:     &curRunIDCell,
+		iterFn:           iterFn,
+		dataConverter:    w.client.dataConverter,
+		failureConverter: w.client.failureConverter,
+		registry:         w.client.registry,
 	}, nil
 }
 

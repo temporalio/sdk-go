@@ -35,8 +35,6 @@ import (
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
-
-	"go.temporal.io/sdk/converter"
 )
 
 type (
@@ -75,8 +73,9 @@ func newSampleActivityTaskHandler() *sampleActivityTaskHandler {
 func (ath sampleActivityTaskHandler) Execute(_ string, task *workflowservice.PollActivityTaskQueueResponse) (interface{}, error) {
 	activityImplementation := &greeterActivity{}
 	result, err := activityImplementation.Execute(context.Background(), task.Input)
+	fc := GetDefaultFailureConverter()
 	if err != nil {
-		failure := ConvertErrorToFailure(NewApplicationError(err.Error(), getErrType(err), false, nil), converter.GetDefaultDataConverter())
+		failure := fc.ErrorToFailure(NewApplicationError(err.Error(), getErrType(err), false, nil))
 		return &workflowservice.RespondActivityTaskFailedRequest{
 			TaskToken: task.TaskToken,
 			Failure:   failure,

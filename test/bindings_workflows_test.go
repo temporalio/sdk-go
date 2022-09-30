@@ -33,6 +33,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal"
 	bindings "go.temporal.io/sdk/internalbindings"
 	"go.temporal.io/sdk/workflow"
 )
@@ -109,7 +110,7 @@ func (d *SingleActivityWorkflowDefinition) Execute(env bindings.WorkflowEnvironm
 						env.Complete(nil, errors.New("error expected"))
 						return
 					}
-					failure := bindings.ConvertErrorToFailure(err, converter.GetDefaultDataConverter())
+					failure := internal.GetDefaultFailureConverter().ErrorToFailure(err)
 					if failure == nil {
 						env.Complete(nil, errors.New("failure expected"))
 						return

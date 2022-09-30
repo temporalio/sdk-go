@@ -462,12 +462,13 @@ var testWorkflowTaskTaskqueue = "tq1"
 func (t *TaskHandlersTestSuite) getTestWorkerExecutionParams() workerExecutionParameters {
 	cache := NewWorkerCache()
 	return workerExecutionParameters{
-		TaskQueue:      testWorkflowTaskTaskqueue,
-		Namespace:      testNamespace,
-		Identity:       "test-id-1",
-		MetricsHandler: metrics.NopHandler,
-		Logger:         t.logger,
-		cache:          cache,
+		TaskQueue:        testWorkflowTaskTaskqueue,
+		Namespace:        testNamespace,
+		Identity:         "test-id-1",
+		MetricsHandler:   metrics.NopHandler,
+		Logger:           t.logger,
+		FailureConverter: GetDefaultFailureConverter(),
+		cache:            cache,
 	}
 }
 
