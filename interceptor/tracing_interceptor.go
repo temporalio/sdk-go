@@ -149,6 +149,9 @@ type TracerStartSpanOptions struct {
 	//
 	// IdempotencyKey is not guaranteed to be set for all operations; Tracer
 	// implementations MUST therefore ignore zero values for this field.
+	//
+	// IdempotencyKey should be treated as opaque data by Tracer implementations.
+	// Do not attempt to parse it, as the format is subject to change.
 	IdempotencyKey string
 }
 
