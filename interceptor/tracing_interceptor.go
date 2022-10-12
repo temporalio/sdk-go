@@ -139,6 +139,20 @@ type TracerStartSpanOptions struct {
 	// ToHeader is used internally, not by tracer implementations, to determine
 	// whether the span should be placed on the Temporal header.
 	ToHeader bool
+
+	// IdempotencyKey may optionally be used by tracing implementations to generate
+	// deterministic span IDs.
+	//
+	// This is useful in workflow contexts where spans may need to be "resumed" before
+	// ultimately being reported. Generating a deterministic span ID ensures that any
+	// child spans created before the parent span is resumed do not become orphaned.
+	//
+	// IdempotencyKey is not guaranteed to be set for all operations; Tracer
+	// implementations MUST therefore ignore zero values for this field.
+	//
+	// IdempotencyKey should be treated as opaque data by Tracer implementations.
+	// Do not attempt to parse it, as the format is subject to change.
+	IdempotencyKey string
 }
 
 // TracerSpanRef represents a span reference such as a parent.
@@ -197,7 +211,7 @@ func (t *tracingInterceptor) InterceptWorkflow(
 	ctx workflow.Context,
 	next WorkflowInboundInterceptor,
 ) WorkflowInboundInterceptor {
-	i := &tracingWorkflowInboundInterceptor{root: t}
+	i := &tracingWorkflowInboundInterceptor{root: t, info: workflow.GetInfo(ctx)}
 	i.Next = next
 	return i
 }
@@ -357,7 +371,20 @@ func (t *tracingActivityInboundInterceptor) ExecuteActivity(
 
 type tracingWorkflowInboundInterceptor struct {
 	WorkflowInboundInterceptorBase
-	root *tracingInterceptor
+	root        *tracingInterceptor
+	spanCounter uint16
+	info        *workflow.Info
+}
+
+// newIdempotencyKey returns a new idempotency key by incrementing the span counter and interpolating
+// this new value into a string that includes the workflow namespace/id/run id and the interceptor type.
+func (t *tracingWorkflowInboundInterceptor) newIdempotencyKey() string {
+	t.spanCounter++
+	return fmt.Sprintf("WorkflowInboundInterceptor:%s:%s:%s:%d",
+		t.info.Namespace,
+		t.info.WorkflowExecution.ID,
+		t.info.WorkflowExecution.RunID,
+		t.spanCounter)
 }
 
 func (t *tracingWorkflowInboundInterceptor) Init(outbound WorkflowOutboundInterceptor) error {
@@ -371,16 +398,16 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteWorkflow(
 	in *ExecuteWorkflowInput,
 ) (interface{}, error) {
 	// Start span reading from header
-	info := workflow.GetInfo(ctx)
 	span, ctx, err := t.root.startSpanFromWorkflowContext(ctx, &TracerStartSpanOptions{
 		Operation: "RunWorkflow",
-		Name:      info.WorkflowType.Name,
+		Name:      t.info.WorkflowType.Name,
 		Tags: map[string]string{
-			workflowIDTagKey: info.WorkflowExecution.ID,
-			runIDTagKey:      info.WorkflowExecution.RunID,
+			workflowIDTagKey: t.info.WorkflowExecution.ID,
+			runIDTagKey:      t.info.WorkflowExecution.RunID,
 		},
-		FromHeader: true,
-		Time:       info.WorkflowStartTime,
+		FromHeader:     true,
+		Time:           t.info.WorkflowStartTime,
+		IdempotencyKey: t.newIdempotencyKey(),
 	})
 	if err != nil {
 		return nil, err
@@ -407,8 +434,9 @@ func (t *tracingWorkflowInboundInterceptor) HandleSignal(ctx workflow.Context, i
 			workflowIDTagKey: info.WorkflowExecution.ID,
 			runIDTagKey:      info.WorkflowExecution.RunID,
 		},
-		FromHeader: true,
-		Time:       time.Now(),
+		FromHeader:     true,
+		Time:           time.Now(),
+		IdempotencyKey: t.newIdempotencyKey(),
 	})
 	if err != nil {
 		return err
@@ -438,8 +466,9 @@ func (t *tracingWorkflowInboundInterceptor) HandleQuery(
 			workflowIDTagKey: info.WorkflowExecution.ID,
 			runIDTagKey:      info.WorkflowExecution.RunID,
 		},
-		FromHeader: true,
-		Time:       time.Now(),
+		FromHeader:     true,
+		Time:           time.Now(),
+		IdempotencyKey: t.newIdempotencyKey(),
 	})
 	if err != nil {
 		return nil, err
