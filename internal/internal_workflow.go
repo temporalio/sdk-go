@@ -551,6 +551,7 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 
 			// TODO: @shreyassrivatsan - add workflow trace span here
 			r.workflowResult, r.error = d.workflow.Execute(d.rootCtx, input)
+			fmt.Printf("HERE %+v\n", r.error)
 			rpp := getWorkflowResultPointerPointer(ctx)
 			*rpp = r
 		})
@@ -677,6 +678,7 @@ func executeDispatcher(ctx Context, dispatcher dispatcher, timeout time.Duration
 		env.GetLogger().Info("Workflow has unhandled signals", "SignalNames", us)
 	}
 
+	fmt.Printf("XXX %+v\n", rp.error)
 	env.Complete(rp.workflowResult, rp.error)
 }
 
