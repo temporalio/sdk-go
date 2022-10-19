@@ -49,12 +49,12 @@ func Test_tracerImpl_genSpanID(t1 *testing.T) {
 		{
 			name:  "Test always the same",
 			runId: "afd160fc-2591-42fa-ad33-3c8f80084961",
-			want:  279256908952477392,
+			want:  11306945927996332141,
 		},
 		{
 			name:  "Different runId",
 			runId: "0",
-			want:  13822530076732356516,
+			want:  12638153115695167471,
 		},
 	}
 	for _, tt := range tests {

@@ -79,10 +79,10 @@ func (tracerImpl) ContextWithSpan(ctx context.Context, span interceptor.TracerSp
 	return tracer.ContextWithSpan(ctx, span.(*tracerSpan).Span)
 }
 
-func genSpanID(runId string) uint64 {
+func genSpanID(idempotencyKey string) uint64 {
 	h := fnv.New64()
 	// Write() always writes all bytes and never fails; the count and error result are for implementing io.Writer.
-	_, _ = h.Write([]byte(fmt.Sprintf("workflow:%s", runId)))
+	_, _ = h.Write([]byte(fmt.Sprintf("%s", idempotencyKey)))
 	return h.Sum64()
 }
 
@@ -91,14 +91,9 @@ func (t tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (inte
 		tracer.ResourceName(options.Name),
 		tracer.StartTime(options.Time),
 	}
-
 	// Set a deterministic span ID for workflows which are long-running and cross process boundaries
 	if options.Operation == "RunWorkflow" {
-		rid, ok := options.Tags["temporalRunID"]
-		if !ok {
-			return nil, fmt.Errorf("missing required tag `temporalRunID` on `RunWorkflow` span")
-		}
-		startOpts = append(startOpts, tracer.WithSpanID(genSpanID(rid)))
+		startOpts = append(startOpts, tracer.WithSpanID(genSpanID(options.IdempotencyKey)))
 	}
 
 	// Add parent span to start options
