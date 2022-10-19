@@ -1696,7 +1696,7 @@ func GetLastError(ctx Context) error {
 
 func (wc *workflowEnvironmentInterceptor) GetLastError(ctx Context) error {
 	info := wc.GetInfo(ctx)
-	return ConvertFailureToError(info.lastFailure, wc.env.GetDataConverter())
+	return wc.env.GetFailureConverter().FailureToError(info.lastFailure)
 }
 
 // Needed so this can properly be considered an inbound interceptor

@@ -186,6 +186,8 @@ type (
 
 		DataConverter converter.DataConverter
 
+		FailureConverter converter.FailureConverter
+
 		// WorkerStopTimeout is the time delay before hard terminate worker
 		WorkerStopTimeout time.Duration
 
@@ -238,6 +240,9 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 	if params.DataConverter == nil {
 		params.DataConverter = converter.GetDefaultDataConverter()
 		params.Logger.Info("No DataConverter configured for temporal worker. Use default one.")
+	}
+	if params.FailureConverter == nil {
+		params.FailureConverter = GetDefaultFailureConverter()
 	}
 }
 
@@ -1071,8 +1076,9 @@ func (aw *AggregatedWorker) Stop() {
 
 // WorkflowReplayer is used to replay workflow code from an event history
 type WorkflowReplayer struct {
-	registry      *registry
-	dataConverter converter.DataConverter
+	registry         *registry
+	dataConverter    converter.DataConverter
+	failureConverter converter.FailureConverter
 }
 
 // WorkflowReplayerOptions are options for creating a workflow replayer.
@@ -1080,6 +1086,8 @@ type WorkflowReplayerOptions struct {
 	// Optional custom data converter to provide for replay. If not set, the
 	// default converter is used.
 	DataConverter converter.DataConverter
+
+	FailureConverter converter.FailureConverter
 
 	// Interceptors to apply to the worker. Earlier interceptors wrap later
 	// interceptors.
@@ -1096,8 +1104,9 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 	registry := newRegistryWithOptions(registryOptions{disableAliasing: options.DisableRegistrationAliasing})
 	registry.interceptors = options.Interceptors
 	return &WorkflowReplayer{
-		registry:      registry,
-		dataConverter: options.DataConverter,
+		registry:         registry,
+		dataConverter:    options.DataConverter,
+		failureConverter: options.FailureConverter,
 	}, nil
 }
 
@@ -1239,12 +1248,13 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 	}
 	cache := NewWorkerCache()
 	params := workerExecutionParameters{
-		Namespace:     namespace,
-		TaskQueue:     taskQueue,
-		Identity:      "replayID",
-		Logger:        logger,
-		cache:         cache,
-		DataConverter: aw.dataConverter,
+		Namespace:        namespace,
+		TaskQueue:        taskQueue,
+		Identity:         "replayID",
+		Logger:           logger,
+		cache:            cache,
+		DataConverter:    aw.dataConverter,
+		FailureConverter: aw.failureConverter,
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
 	resp, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, nil)
@@ -1383,6 +1393,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		TaskQueueActivitiesPerSecond:          options.TaskQueueActivitiesPerSecond,
 		WorkflowPanicPolicy:                   options.WorkflowPanicPolicy,
 		DataConverter:                         client.dataConverter,
+		FailureConverter:                      client.failureConverter,
 		WorkerStopTimeout:                     options.WorkerStopTimeout,
 		WorkerFatalErrorCallback:              fatalErrorCallback,
 		ContextPropagators:                    client.contextPropagators,

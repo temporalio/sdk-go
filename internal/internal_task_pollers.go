@@ -76,13 +76,14 @@ type (
 	// workflowTaskPoller implements polling/processing a workflow task
 	workflowTaskPoller struct {
 		basePoller
-		namespace     string
-		taskQueueName string
-		identity      string
-		service       workflowservice.WorkflowServiceClient
-		taskHandler   WorkflowTaskHandler
-		logger        log.Logger
-		dataConverter converter.DataConverter
+		namespace        string
+		taskQueueName    string
+		identity         string
+		service          workflowservice.WorkflowServiceClient
+		taskHandler      WorkflowTaskHandler
+		logger           log.Logger
+		dataConverter    converter.DataConverter
+		failureConverter converter.FailureConverter
 
 		stickyUUID                   string
 		StickyScheduleToStartTimeout time.Duration
@@ -232,6 +233,7 @@ func newWorkflowTaskPoller(
 		taskHandler:                  taskHandler,
 		logger:                       params.Logger,
 		dataConverter:                params.DataConverter,
+		failureConverter:             params.FailureConverter,
 		stickyUUID:                   uuid.New(),
 		StickyScheduleToStartTimeout: params.StickyScheduleToStartTimeout,
 		stickyCacheSize:              params.cache.MaxWorkflowCacheSize(),
@@ -340,7 +342,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 			tagAttempt, task.Attempt,
 			tagError, taskErr)
 		// convert err to WorkflowTaskFailed
-		completedRequest = errorToFailWorkflowTask(task.TaskToken, taskErr, wtp.identity, wtp.dataConverter, wtp.namespace)
+		completedRequest = errorToFailWorkflowTask(task.TaskToken, taskErr, wtp.identity, wtp.dataConverter, wtp.failureConverter, wtp.namespace)
 	}
 
 	metricsHandler.Timer(metrics.WorkflowTaskExecutionLatency).Record(time.Since(startTime))
@@ -949,6 +951,7 @@ func convertActivityResultToRespondRequest(
 	result *commonpb.Payloads,
 	err error,
 	dataConverter converter.DataConverter,
+	failureConverter converter.FailureConverter,
 	namespace string,
 	cancelAllowed bool,
 ) interface{} {
@@ -992,7 +995,7 @@ func convertActivityResultToRespondRequest(
 
 	return &workflowservice.RespondActivityTaskFailedRequest{
 		TaskToken: taskToken,
-		Failure:   ConvertErrorToFailure(err, dataConverter),
+		Failure:   failureConverter.ErrorToFailure(err),
 		Identity:  identity,
 		Namespace: namespace}
 }
@@ -1006,6 +1009,7 @@ func convertActivityResultToRespondRequestByID(
 	result *commonpb.Payloads,
 	err error,
 	dataConverter converter.DataConverter,
+	failureConverter converter.FailureConverter,
 	cancelAllowed bool,
 ) interface{} {
 	if err == ErrActivityResultPending {
@@ -1057,6 +1061,6 @@ func convertActivityResultToRespondRequestByID(
 		WorkflowId: workflowID,
 		RunId:      runID,
 		ActivityId: activityID,
-		Failure:    ConvertErrorToFailure(err, dataConverter),
+		Failure:    failureConverter.ErrorToFailure(err),
 		Identity:   identity}
 }

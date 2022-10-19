@@ -80,55 +80,58 @@ func TestNewValue(t *testing.T) {
 	require.Equal(t, res, heartbeatDetail)
 }
 
-func TestConvertFailureToError_ApplicationError(t *testing.T) {
+func TestFailureToError_ApplicationError(t *testing.T) {
 	t.Parallel()
 	dc := converter.GetDefaultDataConverter()
+	fc := GetDefaultFailureConverter()
 	details, err := dc.ToPayloads("error details")
 	require.NoError(t, err)
 
 	val := newEncodedValues(details, dc).(*EncodedValues)
 	applicationErr1 := NewApplicationError(applicationErrReasonA, "", false, nil, val)
-	failure := ConvertErrorToFailure(applicationErr1, dc)
+	failure := fc.ErrorToFailure(applicationErr1)
 	require.Equal(t, applicationErrReasonA, failure.GetMessage())
 	require.Equal(t, val.values, failure.GetApplicationFailureInfo().GetDetails())
 
 	applicationErr2 := NewApplicationError(applicationErrReasonA, "", false, nil, testErrorDetails1)
 	val2, err := encodeArgs(dc, []interface{}{testErrorDetails1})
 	require.NoError(t, err)
-	failure = ConvertErrorToFailure(applicationErr2, dc)
+	failure = fc.ErrorToFailure(applicationErr2)
 	require.Equal(t, applicationErrReasonA, failure.GetMessage())
 	require.Equal(t, val2, failure.GetApplicationFailureInfo().GetDetails())
 }
 
-func TestConvertFailureToError_CancelError(t *testing.T) {
+func TestFailureToError_CancelError(t *testing.T) {
 	t.Parallel()
 	dc := converter.GetDefaultDataConverter()
+	fc := GetDefaultFailureConverter()
 	details, err := dc.ToPayloads("error details")
 	require.NoError(t, err)
 
 	val := newEncodedValues(details, dc).(*EncodedValues)
 	canceledErr1 := NewCanceledError(val)
-	failure := ConvertErrorToFailure(canceledErr1, dc)
+	failure := fc.ErrorToFailure(canceledErr1)
 	require.NotNil(t, failure.GetCanceledFailureInfo())
 	require.Equal(t, val.values, failure.GetCanceledFailureInfo().GetDetails())
 
 	canceledErr2 := NewCanceledError(testErrorDetails1)
 	val2, err := encodeArgs(dc, []interface{}{testErrorDetails1})
 	require.NoError(t, err)
-	failure = ConvertErrorToFailure(canceledErr2, dc)
+	failure = fc.ErrorToFailure(canceledErr2)
 	require.NotNil(t, failure.GetCanceledFailureInfo())
 	require.Equal(t, val2, failure.GetCanceledFailureInfo().GetDetails())
 }
 
-func TestConvertErrorToFailure_TimeoutError(t *testing.T) {
+func TestErrorToFailure_TimeoutError(t *testing.T) {
 	t.Parallel()
 	dc := converter.GetDefaultDataConverter()
+	fc := GetDefaultFailureConverter()
 	details, err := dc.ToPayloads("error details")
 	require.NoError(t, err)
 
 	val := newEncodedValues(details, dc).(*EncodedValues)
 	timeoutErr1 := NewTimeoutError("timeout", enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, nil, val)
-	failure := ConvertErrorToFailure(timeoutErr1, dc)
+	failure := fc.ErrorToFailure(timeoutErr1)
 	require.NotNil(t, failure.GetTimeoutFailureInfo())
 	require.Equal(t, enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, failure.GetTimeoutFailureInfo().GetTimeoutType())
 	require.Equal(t, val.values, failure.GetTimeoutFailureInfo().GetLastHeartbeatDetails())
@@ -136,15 +139,16 @@ func TestConvertErrorToFailure_TimeoutError(t *testing.T) {
 	timeoutErr2 := NewTimeoutError("timeout", enumspb.TIMEOUT_TYPE_HEARTBEAT, nil, testErrorDetails4)
 	val2, err := encodeArgs(dc, []interface{}{testErrorDetails4})
 	require.NoError(t, err)
-	failure = ConvertErrorToFailure(timeoutErr2, dc)
+	failure = fc.ErrorToFailure(timeoutErr2)
 	require.NotNil(t, failure.GetTimeoutFailureInfo())
 	require.Equal(t, enumspb.TIMEOUT_TYPE_HEARTBEAT, failure.GetTimeoutFailureInfo().GetTimeoutType())
 	require.Equal(t, val2, failure.GetTimeoutFailureInfo().GetLastHeartbeatDetails())
 }
 
-func TestConvertFailureToError_TimeoutError(t *testing.T) {
+func TestFailureToError_TimeoutError(t *testing.T) {
 	t.Parallel()
 	dc := converter.GetDefaultDataConverter()
+	fc := GetDefaultFailureConverter()
 	details, err := dc.ToPayloads(testErrorDetails1)
 	require.NoError(t, err)
 
@@ -154,7 +158,7 @@ func TestConvertFailureToError_TimeoutError(t *testing.T) {
 			LastHeartbeatDetails: details,
 		}},
 	}
-	constructedErr := ConvertFailureToError(failure, dc)
+	constructedErr := fc.FailureToError(failure)
 	timeoutErr, ok := constructedErr.(*TimeoutError)
 	require.True(t, ok)
 	require.True(t, timeoutErr.HasLastHeartbeatDetails())
