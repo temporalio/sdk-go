@@ -128,7 +128,7 @@ func (t tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (inte
 	}
 
 	// Start and return span
-	s := tracer.StartSpan("temporal."+options.Operation, startOpts...)
+	s := tracer.StartSpan(options.Operation+":"+options.Name, startOpts...)
 	return &tracerSpan{Span: s}, nil
 }
 
