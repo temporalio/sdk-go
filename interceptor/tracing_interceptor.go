@@ -466,9 +466,12 @@ func (t *tracingWorkflowInboundInterceptor) HandleQuery(
 			workflowIDTagKey: info.WorkflowExecution.ID,
 			runIDTagKey:      info.WorkflowExecution.RunID,
 		},
-		FromHeader:     true,
-		Time:           time.Now(),
-		IdempotencyKey: t.newIdempotencyKey(),
+		FromHeader: true,
+		Time:       time.Now(),
+		// We intentionally do not set IdempotencyKey here because queries are not recorded in
+		// workflow history. When the tracing interceptor's span counter is reset between workflow
+		// replays, old queries will not be processed which could result in idempotency key
+		// collisions with other queries or signals.
 	})
 	if err != nil {
 		return nil, err
