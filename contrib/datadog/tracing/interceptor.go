@@ -82,7 +82,7 @@ func (tracerImpl) ContextWithSpan(ctx context.Context, span interceptor.TracerSp
 func genSpanID(idempotencyKey string) uint64 {
 	h := fnv.New64()
 	// Write() always writes all bytes and never fails; the count and error result are for implementing io.Writer.
-	_, _ = h.Write([]byte(fmt.Sprintf("%s", idempotencyKey)))
+	_, _ = h.Write([]byte(idempotencyKey))
 	return h.Sum64()
 }
 
