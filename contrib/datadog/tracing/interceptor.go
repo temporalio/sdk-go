@@ -39,10 +39,27 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
+// InterceptorOptions are options provided to NewInterceptor
+type InterceptorOptions struct {
+	// DisableSignalTracing can be set to disable signal tracing.
+	DisableSignalTracing bool
+
+	// DisableQueryTracing can be set to disable query tracing.
+	DisableQueryTracing bool
+
+	// DisableLogTraceLinking can be set to disable the automatic addition of "dd.trace_id" and "dd.span_id" fields to the logger
+	// provided by this interceptor.
+	DisableLogTraceLinking bool
+}
+
 // NewInterceptor creates an interceptor for setting on client options
 // that implements Datadog tracing for workflows.
-func NewInterceptor() interceptor.Tracer {
-	return tracerImpl{}
+func NewInterceptor(opts InterceptorOptions) interceptor.Tracer {
+	return tracerImpl{
+		DisableLogTraceLinking: opts.DisableLogTraceLinking,
+		DisableQueryTracing:    opts.DisableQueryTracing,
+		DisableSignalTracing:   opts.DisableSignalTracing,
+	}
 }
 
 type contextKey string
@@ -54,16 +71,25 @@ const (
 
 type tracerImpl struct {
 	interceptor.BaseTracer
+	// DisableSignalTracing can be set to disable signal tracing.
+	DisableQueryTracing bool
+	// DisableQueryTracing can be set to disable query tracing.
+	DisableSignalTracing bool
+	// DisableLogTraceLinking can be set to disable the automatic addition of "dd.trace_id" and "dd.span_id" fields to the logger
+	// provided by this interceptor
+	DisableLogTraceLinking bool
 }
 
-func (tracerImpl) Options() interceptor.TracerOptions {
+func (t tracerImpl) Options() interceptor.TracerOptions {
 	return interceptor.TracerOptions{
-		SpanContextKey: activeSpanContextKey,
-		HeaderKey:      headerKey,
+		SpanContextKey:       activeSpanContextKey,
+		HeaderKey:            headerKey,
+		DisableSignalTracing: t.DisableSignalTracing,
+		DisableQueryTracing:  t.DisableQueryTracing,
 	}
 }
 
-func (tracerImpl) UnmarshalSpan(m map[string]string) (interceptor.TracerSpanRef, error) {
+func (t tracerImpl) UnmarshalSpan(m map[string]string) (interceptor.TracerSpanRef, error) {
 	var carrier tracer.TextMapCarrier = m
 	ctx, err := tracer.Extract(carrier)
 	if err != nil {
@@ -77,7 +103,7 @@ func (tracerImpl) UnmarshalSpan(m map[string]string) (interceptor.TracerSpanRef,
 	return &tracerSpanCtx{ctx}, nil
 }
 
-func (tracerImpl) MarshalSpan(span interceptor.TracerSpan) (map[string]string, error) {
+func (t tracerImpl) MarshalSpan(span interceptor.TracerSpan) (map[string]string, error) {
 	carrier := tracer.TextMapCarrier{}
 	if err := tracer.Inject(span.(*tracerSpan).Context(), carrier); err != nil {
 		return nil, err
@@ -85,7 +111,7 @@ func (tracerImpl) MarshalSpan(span interceptor.TracerSpan) (map[string]string, e
 	return carrier, nil
 }
 
-func (tracerImpl) SpanFromContext(ctx context.Context) interceptor.TracerSpan {
+func (t tracerImpl) SpanFromContext(ctx context.Context) interceptor.TracerSpan {
 	span, ok := tracer.SpanFromContext(ctx)
 	if !ok {
 		return nil
@@ -93,7 +119,7 @@ func (tracerImpl) SpanFromContext(ctx context.Context) interceptor.TracerSpan {
 	return &tracerSpan{Span: span}
 }
 
-func (tracerImpl) ContextWithSpan(ctx context.Context, span interceptor.TracerSpan) context.Context {
+func (t tracerImpl) ContextWithSpan(ctx context.Context, span interceptor.TracerSpan) context.Context {
 	return tracer.ContextWithSpan(ctx, span.(*tracerSpan).Span)
 }
 
@@ -110,7 +136,9 @@ func (t tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (inte
 		tracer.StartTime(options.Time),
 	}
 	// Set a deterministic span ID for workflows which are long-running and cross process boundaries
-	startOpts = append(startOpts, tracer.WithSpanID(genSpanID(options.IdempotencyKey)))
+	if options.Operation == "RunWorkflow" {
+		startOpts = append(startOpts, tracer.WithSpanID(genSpanID(options.IdempotencyKey)))
+	}
 
 	// Add parent span to start options
 	var parent ddtrace.SpanContext
@@ -148,7 +176,10 @@ func (t tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (inte
 	return &tracerSpan{Span: s}, nil
 }
 
-func (tracerImpl) GetLogger(logger log.Logger, ref interceptor.TracerSpanRef) log.Logger {
+func (t tracerImpl) GetLogger(logger log.Logger, ref interceptor.TracerSpanRef) log.Logger {
+	if t.DisableLogTraceLinking {
+		return logger
+	}
 	spanRef, ok := ref.(*tracerSpan)
 	if !ok {
 		logger.Error(fmt.Sprintf("Error injecting TraceID in GetLogger: TracerSpanRef is type %T, expected *tracerSpan", ref))
