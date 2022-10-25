@@ -50,15 +50,33 @@ type InterceptorOptions struct {
 	// DisableLogTraceLinking can be set to disable the automatic addition of "dd.trace_id" and "dd.span_id" fields to the logger
 	// provided by this interceptor.
 	DisableLogTraceLinking bool
+
+	// SpanContextKey is the context key used for internal span tracking. If not
+	// set, this defaults to an internal key (recommended).
+	SpanContextKey interface{}
+
+	// HeaderKey is the Temporal header field key used to serialize spans. If
+	// empty, this defaults to the one used by all SDKs (recommended).
+	HeaderKey string
 }
 
 // NewInterceptor creates an interceptor for setting on client options
 // that implements Datadog tracing for workflows.
 func NewInterceptor(opts InterceptorOptions) interceptor.Tracer {
+	hKey := headerKey
+	if opts.HeaderKey != "" {
+		hKey = opts.HeaderKey
+	}
+	var scKey interface{} = activeSpanContextKey
+	if opts.SpanContextKey != nil {
+		scKey = opts.SpanContextKey
+	}
 	return tracerImpl{
 		DisableLogTraceLinking: opts.DisableLogTraceLinking,
 		DisableQueryTracing:    opts.DisableQueryTracing,
 		DisableSignalTracing:   opts.DisableSignalTracing,
+		HeaderKey:              hKey,
+		SpanContextKey:         scKey,
 	}
 }
 
@@ -78,12 +96,18 @@ type tracerImpl struct {
 	// DisableLogTraceLinking can be set to disable the automatic addition of "dd.trace_id" and "dd.span_id" fields to the logger
 	// provided by this interceptor
 	DisableLogTraceLinking bool
+	// HeaderKey is the Temporal header field key used to serialize spans. If
+	// empty, this defaults to the one used by all SDKs (recommended).
+	HeaderKey string
+	// SpanContextKey is the context key used for internal span tracking. If not
+	// set, this defaults to an internal key (recommended).
+	SpanContextKey interface{}
 }
 
 func (t tracerImpl) Options() interceptor.TracerOptions {
 	return interceptor.TracerOptions{
-		SpanContextKey:       activeSpanContextKey,
-		HeaderKey:            headerKey,
+		SpanContextKey:       t.SpanContextKey,
+		HeaderKey:            t.HeaderKey,
 		DisableSignalTracing: t.DisableSignalTracing,
 		DisableQueryTracing:  t.DisableQueryTracing,
 	}

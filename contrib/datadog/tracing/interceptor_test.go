@@ -26,16 +26,17 @@ import (
 
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 
+	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/interceptortest"
 )
 
 type testTracer struct {
-	tracerImpl
-	mocktracer.Tracer
+	interceptor.Tracer
+	mt mocktracer.Tracer
 }
 
 func (t testTracer) FinishedSpans() []*interceptortest.SpanInfo {
-	return spanChildren(t.Tracer.FinishedSpans(), 0)
+	return spanChildren(t.mt.FinishedSpans(), 0)
 }
 
 func spanChildren(spans []mocktracer.Span, parentId uint64) (ret []*interceptortest.SpanInfo) {
@@ -52,10 +53,10 @@ func TestSpanPropagation(t *testing.T) {
 	// Start the mock tracer.
 	mt := mocktracer.Start()
 	defer mt.Stop()
-
+	impl := NewInterceptor(InterceptorOptions{})
 	testTracer := testTracer{
-		tracerImpl: tracerImpl{},
-		Tracer:     mt,
+		Tracer: impl,
+		mt:     mt,
 	}
 	interceptortest.RunTestWorkflow(t, testTracer)
 	interceptortest.AssertSpanPropagation(t, testTracer)
