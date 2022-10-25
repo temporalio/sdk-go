@@ -16,11 +16,6 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-var (
-	_ interceptor.Tracer     = tracerImpl{}
-	_ interceptor.TracerSpan = &tracerSpan{}
-)
-
 // NewInterceptor creates an interceptor for setting on client options
 // that implements Datadog tracing for workflows.
 func NewInterceptor() interceptor.Tracer {
@@ -92,9 +87,7 @@ func (t tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (inte
 		tracer.StartTime(options.Time),
 	}
 	// Set a deterministic span ID for workflows which are long-running and cross process boundaries
-	if options.Operation == "RunWorkflow" {
-		startOpts = append(startOpts, tracer.WithSpanID(genSpanID(options.IdempotencyKey)))
-	}
+	startOpts = append(startOpts, tracer.WithSpanID(genSpanID(options.IdempotencyKey)))
 
 	// Add parent span to start options
 	var parent ddtrace.SpanContext
