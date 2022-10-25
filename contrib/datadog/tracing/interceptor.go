@@ -71,12 +71,14 @@ func NewInterceptor(opts InterceptorOptions) interceptor.Tracer {
 	if opts.SpanContextKey != nil {
 		scKey = opts.SpanContextKey
 	}
-	return tracerImpl{
-		DisableLogTraceLinking: opts.DisableLogTraceLinking,
-		DisableQueryTracing:    opts.DisableQueryTracing,
-		DisableSignalTracing:   opts.DisableSignalTracing,
-		HeaderKey:              hKey,
-		SpanContextKey:         scKey,
+	return &tracerImpl{
+		opts: InterceptorOptions{
+			DisableSignalTracing:   opts.DisableSignalTracing,
+			DisableQueryTracing:    opts.DisableQueryTracing,
+			DisableLogTraceLinking: opts.DisableLogTraceLinking,
+			SpanContextKey:         scKey,
+			HeaderKey:              hKey,
+		},
 	}
 }
 
@@ -90,30 +92,19 @@ const (
 type tracerImpl struct {
 	interceptor.BaseTracer
 	// DisableSignalTracing can be set to disable signal tracing.
-	DisableQueryTracing bool
-	// DisableQueryTracing can be set to disable query tracing.
-	DisableSignalTracing bool
-	// DisableLogTraceLinking can be set to disable the automatic addition of "dd.trace_id" and "dd.span_id" fields to the logger
-	// provided by this interceptor
-	DisableLogTraceLinking bool
-	// HeaderKey is the Temporal header field key used to serialize spans. If
-	// empty, this defaults to the one used by all SDKs (recommended).
-	HeaderKey string
-	// SpanContextKey is the context key used for internal span tracking. If not
-	// set, this defaults to an internal key (recommended).
-	SpanContextKey interface{}
+	opts InterceptorOptions
 }
 
-func (t tracerImpl) Options() interceptor.TracerOptions {
+func (t *tracerImpl) Options() interceptor.TracerOptions {
 	return interceptor.TracerOptions{
-		SpanContextKey:       t.SpanContextKey,
-		HeaderKey:            t.HeaderKey,
-		DisableSignalTracing: t.DisableSignalTracing,
-		DisableQueryTracing:  t.DisableQueryTracing,
+		SpanContextKey:       t.opts.SpanContextKey,
+		HeaderKey:            t.opts.HeaderKey,
+		DisableSignalTracing: t.opts.DisableSignalTracing,
+		DisableQueryTracing:  t.opts.DisableQueryTracing,
 	}
 }
 
-func (t tracerImpl) UnmarshalSpan(m map[string]string) (interceptor.TracerSpanRef, error) {
+func (t *tracerImpl) UnmarshalSpan(m map[string]string) (interceptor.TracerSpanRef, error) {
 	var carrier tracer.TextMapCarrier = m
 	ctx, err := tracer.Extract(carrier)
 	if err != nil {
@@ -127,7 +118,7 @@ func (t tracerImpl) UnmarshalSpan(m map[string]string) (interceptor.TracerSpanRe
 	return &tracerSpanCtx{ctx}, nil
 }
 
-func (t tracerImpl) MarshalSpan(span interceptor.TracerSpan) (map[string]string, error) {
+func (t *tracerImpl) MarshalSpan(span interceptor.TracerSpan) (map[string]string, error) {
 	carrier := tracer.TextMapCarrier{}
 	if err := tracer.Inject(span.(*tracerSpan).Context(), carrier); err != nil {
 		return nil, err
@@ -135,7 +126,7 @@ func (t tracerImpl) MarshalSpan(span interceptor.TracerSpan) (map[string]string,
 	return carrier, nil
 }
 
-func (t tracerImpl) SpanFromContext(ctx context.Context) interceptor.TracerSpan {
+func (t *tracerImpl) SpanFromContext(ctx context.Context) interceptor.TracerSpan {
 	span, ok := tracer.SpanFromContext(ctx)
 	if !ok {
 		return nil
@@ -143,7 +134,7 @@ func (t tracerImpl) SpanFromContext(ctx context.Context) interceptor.TracerSpan 
 	return &tracerSpan{Span: span}
 }
 
-func (t tracerImpl) ContextWithSpan(ctx context.Context, span interceptor.TracerSpan) context.Context {
+func (t *tracerImpl) ContextWithSpan(ctx context.Context, span interceptor.TracerSpan) context.Context {
 	return tracer.ContextWithSpan(ctx, span.(*tracerSpan).Span)
 }
 
@@ -201,7 +192,7 @@ func (t tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (inte
 }
 
 func (t tracerImpl) GetLogger(logger log.Logger, ref interceptor.TracerSpanRef) log.Logger {
-	if t.DisableLogTraceLinking {
+	if t.opts.DisableLogTraceLinking {
 		return logger
 	}
 	spanRef, ok := ref.(*tracerSpan)
