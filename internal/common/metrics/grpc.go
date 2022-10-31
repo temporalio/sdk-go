@@ -27,7 +27,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gogo/status"
+	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/serviceerror"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 )
 
 // HandlerContextKey is the context key for a MetricHandler value.
@@ -105,5 +109,18 @@ func recordRequestEnd(handler Handler, longPoll bool, suffix string, start time.
 		}
 		failureMetric += suffix
 		handler.Counter(failureMetric).Inc(1)
+
+		// If it's a resource exhausted, extract cause if present and increment
+		if s := status.Convert(err); s.Code() == codes.ResourceExhausted {
+			resMetric := TemporalRequestResourceExhausted
+			if longPoll {
+				resMetric = TemporalLongRequestResourceExhausted
+			}
+			var cause enumspb.ResourceExhaustedCause
+			if resErr, _ := serviceerror.FromStatus(s).(*serviceerror.ResourceExhausted); resErr != nil {
+				cause = resErr.Cause
+			}
+			handler.WithTags(map[string]string{CauseTagName: cause.String()}).Counter(resMetric).Inc(1)
+		}
 	}
 }
