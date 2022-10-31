@@ -1288,17 +1288,33 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	s.NotNil(result2)
 	s.Equal(0, len(result2.IndexedFields))
 
-	input1["t1"] = "v1"
+	input1 = map[string]interface{}{
+		"t1": "v1",
+	}
 	result3, err := serializeSearchAttributes(input1)
 	s.NoError(err)
 	s.NotNil(result3)
 	s.Equal(1, len(result3.IndexedFields))
 	var resultString string
-
 	_ = converter.GetDefaultDataConverter().FromPayload(result3.IndexedFields["t1"], &resultString)
 	s.Equal("v1", resultString)
 
-	input1["non-serializable"] = make(chan int)
+	// *Payload type goes through.
+	p, err := converter.GetDefaultDataConverter().ToPayload("5eaf00d")
+	s.NoError(err)
+	input1 = map[string]interface{}{
+		"payload": p,
+	}
+	result4, err := serializeSearchAttributes(input1)
+	s.NoError(err)
+	s.NotNil(result3)
+	s.Equal(1, len(result3.IndexedFields))
+	_ = converter.GetDefaultDataConverter().FromPayload(result4.IndexedFields["payload"], &resultString)
+	s.Equal("5eaf00d", resultString)
+
+	input1 = map[string]interface{}{
+		"non-serializable": make(chan int),
+	}
 	_, err = serializeSearchAttributes(input1)
 	s.Error(err)
 }
