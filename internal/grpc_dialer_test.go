@@ -40,9 +40,11 @@ import (
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/api/common/v1"
+	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/errordetails/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/retry"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -399,6 +401,39 @@ func TestCustomResolver(t *testing.T) {
 	require.NoError(t, client.SignalWorkflow(ctx, "workflowid", "runid", "signalname", nil))
 	require.Equal(t, 2, s1.signalWorkflowInvokeCount())
 	require.Equal(t, 4, s2.signalWorkflowInvokeCount())
+}
+
+func TestResourceExhaustedCause(t *testing.T) {
+	// Start gRPC server
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+	handler := metrics.NewCapturingHandler()
+
+	// Attempt dial with a resource exhausted cause
+	s, _ := status.New(codes.ResourceExhausted, "some resource exhausted").WithDetails(&errordetails.ResourceExhaustedFailure{
+		Cause: enums.RESOURCE_EXHAUSTED_CAUSE_CONCURRENT_LIMIT,
+	})
+	srv.getSystemInfoResponseError = s.Err()
+	_, err = DialClient(ClientOptions{HostPort: srv.addr, MetricsHandler: handler})
+	require.Error(t, err)
+
+	// Attempt dial with a cause-less resource exhausted
+	srv.getSystemInfoResponseError = status.New(codes.ResourceExhausted, "some resource exhausted").Err()
+	_, err = DialClient(ClientOptions{HostPort: srv.addr, MetricsHandler: handler})
+	require.Error(t, err)
+
+	// Make sure we have 1 metric with cause and 1 without
+	var foundWithCause, foundWithoutCause bool
+	for _, counter := range handler.Counters() {
+		if counter.Tags["operation"] == "GetSystemInfo" && counter.Tags["cause"] == "ConcurrentLimit" {
+			foundWithCause = true
+		} else if counter.Tags["operation"] == "GetSystemInfo" && counter.Tags["cause"] == "Unspecified" {
+			foundWithoutCause = true
+		}
+	}
+	require.True(t, foundWithCause)
+	require.True(t, foundWithoutCause)
 }
 
 type testGRPCServer struct {

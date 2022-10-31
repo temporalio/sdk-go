@@ -63,12 +63,14 @@ const (
 	WorkerTaskSlotsAvailable = TemporalMetricsPrefix + "worker_task_slots_available"
 	PollerStartCounter       = TemporalMetricsPrefix + "poller_start"
 
-	TemporalRequest            = TemporalMetricsPrefix + "request"
-	TemporalRequestFailure     = TemporalRequest + "_failure"
-	TemporalRequestLatency     = TemporalRequest + "_latency"
-	TemporalLongRequest        = TemporalMetricsPrefix + "long_request"
-	TemporalLongRequestFailure = TemporalLongRequest + "_failure"
-	TemporalLongRequestLatency = TemporalLongRequest + "_latency"
+	TemporalRequest                      = TemporalMetricsPrefix + "request"
+	TemporalRequestFailure               = TemporalRequest + "_failure"
+	TemporalRequestLatency               = TemporalRequest + "_latency"
+	TemporalLongRequest                  = TemporalMetricsPrefix + "long_request"
+	TemporalLongRequestFailure           = TemporalLongRequest + "_failure"
+	TemporalLongRequestLatency           = TemporalLongRequest + "_latency"
+	TemporalRequestResourceExhausted     = TemporalRequest + "_resource_exhausted"
+	TemporalLongRequestResourceExhausted = TemporalLongRequest + "_resource_exhausted"
 
 	StickyCacheHit                 = TemporalMetricsPrefix + "sticky_cache_hit"
 	StickyCacheMiss                = TemporalMetricsPrefix + "sticky_cache_miss"
@@ -87,6 +89,7 @@ const (
 	ActivityTypeNameTagName = "activity_type"
 	TaskQueueTagName        = "task_queue"
 	OperationTagName        = "operation"
+	CauseTagName            = "cause"
 )
 
 // Metric tag values
