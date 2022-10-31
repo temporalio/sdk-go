@@ -607,7 +607,6 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 				o.GetWorkflowPropertiesModifiedEventAttributes(),
 				o.GetWorkflowPropertiesModifiedExternallyEventAttributes(),
 				o.GetWorkflowTaskFailedEventAttributes(),
-				o.GetWorkflowTaskStartedEventAttributes(),
 				o.GetWorkflowUpdateAcceptedEventAttributes(),
 				o.GetWorkflowUpdateCompletedEventAttributes(),
 				o.GetWorkflowUpdateRejectedEventAttributes(),
@@ -768,17 +767,6 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 			if err := s.process(
 				encode,
 				o.GetFailure(),
-			); err != nil {
-				return err
-			}
-
-		case *historypb.WorkflowTaskStartedEventAttributes:
-			if o == nil {
-				continue
-			}
-			if err := s.process(
-				encode,
-				o.GetInvocations(),
 			); err != nil {
 				return err
 			}
@@ -1126,6 +1114,7 @@ func (s *serviceInterceptor) process(encode bool, objs ...interface{}) error {
 			if err := s.process(
 				encode,
 				o.GetHistory(),
+				o.GetInteractions(),
 				o.GetQueries(),
 				o.GetQuery(),
 			); err != nil {
