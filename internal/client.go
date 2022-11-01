@@ -34,6 +34,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/operatorservice/v1"
+	schedulepb "go.temporal.io/api/schedule/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	uberatomic "go.uber.org/atomic"
 	"google.golang.org/grpc"
@@ -348,6 +349,9 @@ type (
 		// OperatorService creates a new operator service client with the same gRPC connection as this client.
 		OperatorService() operatorservice.OperatorServiceClient
 
+		// Schedule creates a new shedule client with the same gRPC connection as this client.
+		Schedule() ScheduleClient
+
 		// Close client and clean up underlying resources.
 		Close()
 	}
@@ -395,7 +399,7 @@ type (
 		DataConverter converter.DataConverter
 
 		// Optional: Sets FailureConverter to customize serialization/deserialization of errors.
-		// default: temporal.DefaultFailureConverter, does not encode any fields of the error. Use temporal.NewDefaultFailureConverter		
+		// default: temporal.DefaultFailureConverter, does not encode any fields of the error. Use temporal.NewDefaultFailureConverter
 		// options to configure or create a custom converter.
 		FailureConverter converter.FailureConverter
 
@@ -626,6 +630,515 @@ type (
 		// Close client and clean up underlying resources.
 		Close()
 	}
+
+	// ScheduleRange represents a set of integer values, used to match fields of a calendar
+	// time in StructuredCalendarSpec. If end < start, then end is interpreted as
+	// equal to start. This means you can use a Range with start set to a value, and
+	// end and step unset (defaulting to 0) to represent a single value.
+	ScheduleRange = schedulepb.Range
+
+	// ScheduleRanges represents a list of ScheduleRange.
+	ScheduleRanges = []*ScheduleRange
+
+	// ScheduleCalendarSpec is an event specification relative to the calendar, similar to a traditional cron specification.
+	// A timestamp matches if at least one range of each field matches the
+	// corresponding fields of the timestamp, except for year: if year is missing,
+	// that means all years match. For all fields besides year, at least one Range
+	ScheduleCalendarSpec struct {
+		// Second range to match (0-59).
+		Second ScheduleRanges
+
+		// Minute range to match (0-59).
+		Minute ScheduleRanges
+
+		// Hour range to match (0-23).
+		Hour ScheduleRanges
+
+		// DayOfMonth range to match (1-31)
+		DayOfMonth ScheduleRanges
+
+		// Month range to match (1-12)
+		Month ScheduleRanges
+
+		// Year range to match.
+		// Optional: Defaulted to "*"
+		Year ScheduleRanges
+
+		// DayOfWeek range to match (0-6; 0 is Sunday)
+		DayOfWeek ScheduleRanges
+
+		// Comment - Description of the intention of this schedule.
+		Comment string
+	}
+
+	// ScheduleBackfill desribes a time periods and policy and takes Actions as if that time passed by right now, all at once.
+	ScheduleBackfill struct {
+		// Start - start of the range to evaluate schedule in.
+		Start time.Time
+
+		// End - end of the range to evaluate schedule in.
+		End time.Time
+
+		// Overlap - Override the Overlap Policy for this request.
+		Overlap enumspb.ScheduleOverlapPolicy
+	}
+
+	// ScheduleIntervalSpec - matches times that can be expressed as:
+	//
+	// 	Epoch + (n * every) + offset
+	//
+	// 	where n is all integers ≥ 0.
+	//
+	// For example, an `every` of 1 hour with `offset` of zero would match every hour, on the hour. The same `every` but an `offset`
+	// of 19 minutes would match every `xx:19:00`. An `every` of 28 days with `offset` zero would match `2022-02-17T00:00:00Z`
+	// (among other times). The same `every` with `offset` of 3 days, 5 hours, and 23 minutes would match `2022-02-20T05:23:00Z`
+	// instead.
+	ScheduleIntervalSpec struct {
+		// Every - describes the period to repeat the interval.
+		Every time.Duration
+
+		// Offset - is a fixed offset added to the intervals period.
+		// Optional: Defaulted to 0
+		Offset time.Duration
+	}
+
+	// ScheduleSpec is a complete description of a set of absolute times (possibly infinite) that a action should occur at.
+	// The times are the union of Calendars, Intervals, and CronExpressions, minus the Skip times. These times
+	// never change, except that the definition of a time zone can change over time (most commonly, when daylight saving
+	// time policy changes for an area). To create a totally self-contained ScheduleSpec, use UTC.
+	ScheduleSpec struct {
+		// Calendars - Calendar-based specifications of times
+		Calendars []ScheduleCalendarSpec
+
+		// Intervals - Interval-based specifications of times.
+		Intervals []ScheduleIntervalSpec
+
+		// CronExpressions -  CronExpressions-based specifications of times. CronExpressions is provided for easy migration from legacy Cron Workflows. For new
+		// use cases, we recommend using ScheduleSpec.Calendars or ScheduleSpec.Intervals for readability and maintainability. Once a schedule is created all
+		// expressions in CronExpressions will be translated to ScheduleSpec.Calendars on the server.
+		//
+		// For example, `0 12 * * MON-WED,FRI` is every M/Tu/W/F at noon, and is equivalent to this ScheduleCalendarSpec:
+		//
+		// client.ScheduleCalendarSpec{
+		// 		Second: client.ScheduleRanges{{}},
+		// 		Minute: client.ScheduleRanges{{}},
+		// 		Hour: client.ScheduleRanges{{
+		// 			Start: 12,
+		// 		}},
+		// 		DayOfMonth: client.ScheduleRanges{
+		// 			{
+		// 				Start: 1,
+		// 				End:   31,
+		// 			},
+		// 		},
+		// 		Month: client.ScheduleRanges{
+		// 			{
+		// 				Start: 1,
+		// 				End:   12,
+		// 			},
+		// 		},
+		// 		DayOfWeek: client.ScheduleRanges{
+		// 			{
+		// 				Start: 1,
+		//				End: 3,
+		// 			},
+		// 			{
+		// 				Start: 5,
+		// 			},
+		// 		},
+		// 	}
+		//
+		//
+		// The string can have 5, 6, or 7 fields, separated by spaces, and they are interpreted in the
+		// same way as a ScheduleCalendarSpec:
+		//	- 5 fields:         Minute, Hour, DayOfMonth, Month, DayOfWeek
+		//	- 6 fields:         Minute, Hour, DayOfMonth, Month, DayOfWeek, Year
+		//	- 7 fields: Second, Minute, Hour, DayOfMonth, Month, DayOfWeek, Year
+		//
+		// Notes:
+		//	- If Year is not given, it defaults to *.
+		//	- If Second is not given, it defaults to 0.
+		//	- Shorthands @yearly, @monthly, @weekly, @daily, and @hourly are also
+		//		accepted instead of the 5-7 time fields.
+		//	- @every <interval>[/<phase>] is accepted and gets compiled into an
+		//		IntervalSpec instead. <interval> and <phase> should be a decimal integer
+		//		with a unit suffix s, m, h, or d.
+		//	- Optionally, the string can be preceded by CRON_TZ=<timezone name> or
+		//		TZ=<timezone name>, which will get copied to ScheduleSpec.TimeZone. (In which case the ScheduleSpec.TimeZone field should be left empty.)
+		//	- Optionally, "#" followed by a comment can appear at the end of the string.
+		//	- Note that the special case that some cron implementations have for
+		//		treating DayOfMonth and DayOfWeek as "or" instead of "and" when both
+		//		are set is not implemented.
+		CronExpressions []string
+
+		// Skip - Any matching times will be skipped.
+		//
+		// All aspects of the schedulepb.ScheduleCalendarSpec—including seconds—must match a time for the time to be skipped.
+		Skip []ScheduleCalendarSpec
+
+		// StartAt - Any times before `startAt` will be skipped. Together, `startAt` and `endAt` make an inclusive interval.
+		// Optional: Defaulted to the beginning of time
+		StartAt *time.Time
+
+		// EndAt - Any times after `endAt` will be skipped.
+		// Optional: Defaulted to the end of time
+		EndAt *time.Time
+
+		// Jitter - All times will be incremented by a random value from 0 to this amount of jitter.
+		// Optional: Defaulted to 0
+		Jitter time.Duration
+
+		// Timezone - IANA timezone name, for example `US/Pacific`.
+		// Optional: Defaulted to UTC
+		Timezone time.Location
+	}
+
+	// ScheduleAction represents an action a schedule can take.
+	ScheduleAction interface {
+		isScheduleAction()
+	}
+
+	// ScheduleWorkflowAction implements ScheduleAction to launch a workflow.
+	ScheduleWorkflowAction struct {
+		// Workflow - What workflow to run.
+		Workflow interface{}
+
+		// Args - Arguments to pass to the workflow.
+		Args []interface{}
+
+		// WorkflowOptions - Options to use when launching the workflow.
+		WorkflowOptions StartWorkflowOptions
+	}
+
+	// ScheduleWorkflowActionDescription implements ScheduleAction to launch a workflow.
+	ScheduleWorkflowActionDescription struct {
+		// Workflow - The business identifier of the workflow execution.
+		WorkflowID string
+
+		// WorkflowType - The type of the wokrflow.
+		WorkflowType WorkflowType
+
+		// Args - Arguments of the workflow
+		Args *commonpb.Payloads
+
+		// TaskQueueName -The workflow tasks of the workflow are scheduled on the queue with this name.
+		// This is also the name of the activity task queue on which activities are scheduled.
+		TaskQueueName string
+
+		// WorkflowExecutionTimeout - The timeout for duration of workflow execution.
+		WorkflowExecutionTimeout time.Duration
+
+		// WorkflowRunTimeout - The timeout for duration of a single workflow run.
+		WorkflowRunTimeout time.Duration
+
+		// WorkflowTaskTimeout - The timeout for processing workflow task from the time the worker
+		// pulled this task.
+		WorkflowTaskTimeout time.Duration
+
+		// WorkflowIdReusePolicy -  Whether server allow reuse of workflow ID, can be useful
+		// for dedupe logic if set to RejectDuplicate.
+		WorkflowIDReusePolicy enumspb.WorkflowIdReusePolicy
+
+		// RetryPolicy - retry policy for workflow. If a retry policy is specified, in case of workflow failure
+		// server will start new workflow execution if needed based on the retry policy.
+		RetryPolicy *RetryPolicy
+
+		// Memo - Non-indexed user supplied information.
+		Memo *commonpb.Memo
+
+		// SearchAttributes - Indexed info that can be used in query of List schedules APIs (only
+		// supported when Temporal server is using ElasticSearch). The key and value type must be registered on Temporal server side.
+		// Use GetSearchAttributes API to get valid key and corresponding value type.
+		SearchAttributes *commonpb.SearchAttributes
+	}
+
+	// ScheduleOptions configure the parameters for creating a schedule.
+	ScheduleOptions struct {
+		// ScheduleID - The business identifier of the schedule.
+		// Optional: defaulted to a uuid.
+		ScheduleID string
+
+		// Schedule - Describes when Actions should be taken.
+		Spec ScheduleSpec
+
+		// Action - Which Action to take.
+		Action ScheduleAction
+
+		// Overlap - Controls what happens when an Action would be started by a Schedule at the same time that an older Action is still
+		// running. This can be changed after a Schedule has taken some Actions, and some changes might produce
+		// unintuitive results. In general, the later policy overrides the earlier policy.
+		//
+		// Optional: defaulted to SCHEDULE_OVERLAP_POLICY_SKIP
+		Overlap enumspb.ScheduleOverlapPolicy
+
+		// CatchupWindow - The Temporal Server might be down or unavailable at the time when a Schedule should take an Action.
+		// Optional: defaulted to 1 minute
+		CatchupWindow time.Duration
+
+		// PauseOnFailure - When an Action times out or reaches the end of its Retry Policy.
+		// Optional: defaulted to false
+		PauseOnFailure bool
+
+		// Note - Informative human-readable message with contextual notes, e.g. the reason
+		// a Schedule is paused. The system may overwrite this message on certain
+		// conditions, e.g. when pause-on-failure happens.
+		Note string
+
+		// Paused - Start in paused state.
+		// Optional: defaulted to false
+		Paused bool
+
+		// RemainingActions - limit the number of Actions to take.
+		//
+		// This number is decremented after each Action is taken, and Actions are not
+		// taken when the number is `0` (unless {@link ScheduleHandle.trigger} is called).
+		//
+		// Optional: defaulted to zero
+		RemainingActions int64
+
+		// TriggerImmediately - Trigger one Action immediately.
+		// Optional: defaulted to false
+		TriggerImmediately bool
+
+		// ScheduleBackfill - Runs though the specified time periods and takes Actions as if that time passed by right now, all at once. The
+		// overlap policy can be overridden for the scope of the ScheduleBackfill.
+		ScheduleBackfill []ScheduleBackfill
+
+		// Memo - Optional non-indexed info that will be shown in list schedules.
+		Memo map[string]interface{}
+
+		// SearchAttributes - Optional indexed info that can be used in query of List schedules APIs (only
+		// supported when Temporal server is using ElasticSearch). The key and value type must be registered on Temporal server side.
+		// Use GetSearchAttributes API to get valid key and corresponding value type.
+		SearchAttributes map[string]interface{}
+	}
+
+	// ScheduleWorkflowExecution contains details on a workflows execution stared by a schedule.
+	ScheduleWorkflowExecution struct {
+		// WorkflowID - The ID of the workflow execution
+		WorkflowID string
+
+		// FirstExecutionRunID - The Run Id of the original execution that was started by the Schedule. If the Workflow retried, did
+		// Continue-As-New, or was Reset, the following runs would have different Run Ids.
+		FirstExecutionRunID string
+	}
+
+	// ScheduleInfo describes other information about a schedule.
+	ScheduleInfo struct {
+		// NumActions - Which Action to take
+		NumActions int64
+
+		// NumActionsMissedCatchupWindow - Number of times a scheduled Action was skipped due to missing the catchup window.
+		NumActionsMissedCatchupWindow int64
+
+		// NumActionsSkippedOverlap - Number of Actions skipped due to overlap.
+		NumActionsSkippedOverlap int64
+
+		// RunningWorkflows - Currently-running workflows started by this schedule. (There might be
+		// more than one if the overlap policy allows overlaps.)
+		RunningWorkflows []ScheduleWorkflowExecution
+
+		// RecentActions- Most recent 10 Actions started (including manual triggers).
+		//
+		// Sorted from older start time to newer.
+		RecentActions []ScheduleActionResult
+
+		// NextActionTimes - Next 10 scheduled Action times.
+		NextActionTimes []time.Time
+
+		// CreatedAt -  When the schedule was created
+		CreatedAt time.Time
+
+		// LastUpdateAt - When a schedule was last updated
+		LastUpdateAt time.Time
+	}
+
+	// ScheduleDescribeResponse describes the current Schedule details from ScheduleHandle.Describe.
+	ScheduleDescribeResponse struct {
+		// Schedule - Describes the modifiable fields of a schedule.
+		Schedule Schedule
+
+		// Info - Extra information about the schedule.
+		Info ScheduleInfo
+
+		// Memo - Non-indexed user supplied information.
+		Memo *commonpb.Memo
+
+		// SearchAttributes - Indexed info that can be used in query of List schedules APIs (only
+		// supported when Temporal server is using ElasticSearch). The key and value type must be registered on Temporal server side.
+		// Use GetSearchAttributes API to get valid key and corresponding value type.
+		SearchAttributes *commonpb.SearchAttributes
+	}
+
+	// SchedulePolicies describes the current polcies of a schedule.
+	SchedulePolicies struct {
+		// Overlap - Controls what happens when an Action would be started by a Schedule at the same time that an older Action is still
+		// running.
+		Overlap enumspb.ScheduleOverlapPolicy
+
+		// CatchupWindow - The Temporal Server might be down or unavailable at the time when a Schedule should take an Action. When the Server
+		// comes back up, CatchupWindow controls which missed Actions should be taken at that point.
+		CatchupWindow time.Duration
+
+		// PauseOnFailure - When an Action times out or reaches the end of its Retry Policy.
+		PauseOnFailure bool
+	}
+
+	// ScheduleState describes the current state of a schedule.
+	ScheduleState struct {
+		// Note - Informative human-readable message with contextual notes, e.g. the reason
+		// a Schedule is paused. The system may overwrite this message on certain
+		// conditions, e.g. when pause-on-failure happens.
+		Note string
+
+		// Paused - True if the schedule is paused.
+		Paused bool
+
+		// LimitedActions - While true RemainingActions will be decremented for each action taken.
+		// Skipped actions (due to overlap policy) do not count against remaining actions.
+		LimitedActions bool
+
+		// RemainingActions - The Actions remaining in this Schedule. Once this number hits 0, no further Actions are taken.
+		// manual actions through backfill or ScheduleHandle.Trigger still run.
+		RemainingActions int64
+	}
+
+	// Schedule describes a created schedule.
+	Schedule struct {
+		// Action - Which Action to take
+		Action ScheduleAction
+
+		// Schedule - Describes when Actions should be taken.
+		Spec *ScheduleSpec
+
+		// SchedulePolicies - this schedules policies
+		Policy *SchedulePolicies
+
+		// State - this schedules state
+		State *ScheduleState
+	}
+
+	// ScheduleUpdate describes the desired new schedule from ScheduleHandle.Update.
+	ScheduleUpdate struct {
+		// Schedule - New schedule to replace the existing schedule with
+		Schedule *Schedule
+	}
+
+	// ScheduleUpdateOptions configure the parameters for updating a schedule.
+	ScheduleUpdateOptions struct{}
+
+	// ScheduleHandle represents a created schedule.
+	ScheduleHandle interface {
+		// GetID returns the schedule ID asssociated with this handle.
+		GetID() string
+
+		// Delete the Schedul
+		Delete(ctx context.Context) error
+
+		// Update the Schedule. fn takes a description of the schedule and returns the new desired schedule.
+		// If update returns a nil response then no update will occur.
+		//
+		// NOTE: If two Update calls are made in parallel to the same Schedule there is the potential
+		// for a race condition.
+		Update(ctx context.Context, fn func(*ScheduleDescribeResponse) *ScheduleUpdate, options ScheduleUpdateOptions) error
+
+		// Describe fetches the Schedule's description from the Server
+		Describe(ctx context.Context) (*ScheduleDescribeResponse, error)
+
+		// Trigger an Action to be taken immediately. Will override the schedules default policy
+		// with the one specified here.
+		Trigger(ctx context.Context, overlap enumspb.ScheduleOverlapPolicy) error
+
+		// Pause the Schedule will also overwrite the Schedules current note with the new note.
+		// If an empty note is passed the Schedules note will be set to 'Paused via Go SDK'.
+		Pause(ctx context.Context, note string) error
+
+		// Unpause the Schedule will also overwrite the Schedules current note with the new note.
+		// If an empty note is passed the Schedules note will be set to 'Unpaused via Go SDK'.
+		Unpause(ctx context.Context, note string) error
+	}
+
+	// ScheduleActionResult describes when a schedule action took place
+	ScheduleActionResult struct {
+		// ScheduleTime - Time that the Action was scheduled for, including jitter.
+		ScheduleTime time.Time
+
+		// ActualTime - Time that the Action was actually taken.
+		ActualTime time.Time
+
+		// StartWorkflowResult - If action was ScheduleWorkflowAction, returns the
+		// ID of the workflow.
+		StartWorkflowResult ScheduleWorkflowExecution
+	}
+
+	// ScheduleListEntry
+	ScheduleListEntry struct {
+		// ScheduleID - The business identifier of the schedule.
+		ScheduleID string
+
+		// Spec - Describes when Actions should be taken.
+		Spec *ScheduleSpec
+
+		// Note - Informative human-readable message with contextual notes, e.g. the reason
+		// a Schedule is paused. The system may overwrite this message on certain
+		// conditions, e.g. when pause-on-failure happens.
+		Note string
+
+		// Paused - True if the schedule is paused.
+		Paused bool
+
+		// WorkflowType - If the schedule action is a Wokrflow then
+		// describes what workflow is run.
+		WorkflowType WorkflowType
+
+		// RecentActions- Most recent 10 Actions started (including manual triggers).
+		//
+		// Sorted from older start time to newer.
+		RecentActions []ScheduleActionResult
+
+		// NextActionTimes - Next 10 scheduled Action times.
+		NextActionTimes []time.Time
+
+		// Memo - Non-indexed user supplied information.
+		Memo *commonpb.Memo
+
+		// SearchAttributes - Indexed info that can be used in query of List schedules APIs (only
+		// supported when Temporal server is using ElasticSearch). The key and value type must be registered on Temporal server side.
+		// Use GetSearchAttributes API to get valid key and corresponding value type.
+		SearchAttributes *commonpb.SearchAttributes
+	}
+
+	// ScheduleListOptions are the parameters for configuring listing schedules
+	ScheduleListOptions struct {
+		// PageSize - How many results to fetch from the Server at a time.
+		// Optional: defaulted to 1000
+		PageSize int32
+	}
+
+	// ScheduleListIterator represents the interface for
+	// schedule iterator
+	ScheduleListIterator interface {
+		// HasNext return whether this iterator has next value
+		HasNext() bool
+
+		// Next returns the next schedule and error
+		Next() (*ScheduleListEntry, error)
+	}
+
+	// Client for creating Schedules and creating Schedule handles
+	ScheduleClient interface {
+		// CreateSchedule Creates a new Schedule.
+		CreateSchedule(ctx context.Context, options ScheduleOptions) (ScheduleHandle, error)
+
+		// ListSchedules returns an interator to list all schedules
+		ListSchedules(ctx context.Context, options ScheduleListOptions) (ScheduleListIterator, error)
+
+		// GetHandle returns a handle to a Schedule
+		//
+		// This method does not validate scheduleID. If there is no Schedule with the given scheduleID, handle
+		// methods like ScheduleHandle.Describe() will return an error.
+		GetScheduleHandle(ctx context.Context, scheduleID string) ScheduleHandle
+	}
 )
 
 // DialClient creates a client and attempts to connect to the server.
@@ -785,6 +1298,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		client.interceptor = options.Interceptors[i].InterceptClient(client.interceptor)
 	}
 
+	client.scheduleInterceptor = &scheduleClientInterceptor{client: client}
 	return client
 }
 
@@ -841,4 +1355,10 @@ func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 //   NewValues(data).Get(&result1, &result2)
 func NewValues(data *commonpb.Payloads) converter.EncodedValues {
 	return newEncodedValues(data, nil)
+}
+
+func (ScheduleWorkflowAction) isScheduleAction() {
+}
+
+func (ScheduleWorkflowActionDescription) isScheduleAction() {
 }

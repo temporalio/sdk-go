@@ -156,6 +156,9 @@ type (
 var (
 	// ErrNoData is returned when trying to extract strong typed data while there is no data available.
 	ErrNoData = internal.ErrNoData
+
+	// ErrScheduleAlreadyRunning can be returned when a schedule ID is reused
+	ErrScheduleAlreadyRunning = internal.ErrScheduleAlreadyRunning
 )
 
 // NewApplicationError creates new instance of retryable *ApplicationError with message, type, and optional details.

@@ -32,6 +32,7 @@ import (
 	"testing"
 	"time"
 
+	schedulepb "go.temporal.io/api/schedule/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	uberatomic "go.uber.org/atomic"
 	"google.golang.org/grpc"
@@ -64,6 +65,7 @@ const (
 	timeoutInSeconds      = 20
 	workflowIDReusePolicy = enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY
 	testHeader            = "test-header"
+	scheduleID            = "some random schedule ID"
 )
 
 // historyEventIteratorSuite
@@ -1462,4 +1464,210 @@ func TestClientCloseCount(t *testing.T) {
 	// Now close the last one (the second) and confirm it actually gets closed
 	client2.Close()
 	require.Equal(t, connectivity.Shutdown, workflowClient.conn.GetState())
+}
+
+func (s *workflowClientTestSuite) TestCreateSchedule() {
+	workflowOptions := StartWorkflowOptions{
+		ID:                       workflowID,
+		TaskQueue:                taskqueue,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
+	}
+	wf := func(ctx Context) string {
+		panic("this is just a stub")
+	}
+	options := ScheduleOptions{
+		ScheduleID: scheduleID,
+		Spec: ScheduleSpec{
+			CronExpressions: []string{"*"},
+		},
+		Action: ScheduleWorkflowAction{
+			Workflow:        wf,
+			WorkflowOptions: workflowOptions,
+		},
+	}
+
+	createResp := &workflowservice.CreateScheduleResponse{}
+
+	s.service.EXPECT().CreateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResp, nil).Times(1)
+
+	scheduleHandle, err := s.client.Schedule().CreateSchedule(context.Background(), options)
+	s.Nil(err)
+	s.Equal(scheduleHandle.GetID(), scheduleID)
+}
+
+func (s *workflowClientTestSuite) TestCreateScheduleWithMemoAndSearchAttr() {
+	memo := map[string]interface{}{
+		"testMemo": "memo value",
+	}
+	searchAttributes := map[string]interface{}{
+		"testAttr": "attr value",
+	}
+	workflowOptions := StartWorkflowOptions{
+		ID:                       "wid",
+		TaskQueue:                taskqueue,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
+	}
+	wf := func(ctx Context) string {
+		panic("this is just a stub")
+	}
+
+	options := ScheduleOptions{
+		ScheduleID: scheduleID,
+		Spec: ScheduleSpec{
+			CronExpressions: []string{"*"},
+		},
+		Action: ScheduleWorkflowAction{
+			Workflow:        wf,
+			WorkflowOptions: workflowOptions,
+		},
+		Memo:             memo,
+		SearchAttributes: searchAttributes,
+	}
+	createResp := &workflowservice.CreateScheduleResponse{}
+
+	s.service.EXPECT().CreateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResp, nil).
+		Do(func(_ interface{}, req *workflowservice.CreateScheduleRequest, _ ...interface{}) {
+			var resultMemo, resultAttr string
+			// verify the schedules memo and search attributes
+			err := converter.GetDefaultDataConverter().FromPayload(req.Memo.Fields["testMemo"], &resultMemo)
+			s.NoError(err)
+			s.Equal("memo value", resultMemo)
+
+			err = converter.GetDefaultDataConverter().FromPayload(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
+			s.NoError(err)
+			s.Equal("attr value", resultAttr)
+		})
+	_, _ = s.client.Schedule().CreateSchedule(context.Background(), options)
+}
+
+func getListSchedulesRequest() *workflowservice.ListSchedulesRequest {
+	request := &workflowservice.ListSchedulesRequest{
+		Namespace:       DefaultNamespace,
+		MaximumPageSize: 1000,
+	}
+
+	return request
+}
+
+// ScheduleIterator
+
+func (s *workflowClientTestSuite) TestScheduleIterator_NoError() {
+	request1 := getListSchedulesRequest()
+	response1 := &workflowservice.ListSchedulesResponse{
+		Schedules: []*schedulepb.ScheduleListEntry{
+			{
+				ScheduleId: "",
+			},
+		},
+		NextPageToken: []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+	}
+	request2 := getListSchedulesRequest()
+	request2.NextPageToken = response1.NextPageToken
+	response2 := &workflowservice.ListSchedulesResponse{
+		Schedules: []*schedulepb.ScheduleListEntry{
+			{
+				ScheduleId: "",
+			},
+		},
+		NextPageToken: []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+	}
+
+	request3 := getListSchedulesRequest()
+	request3.NextPageToken = response2.NextPageToken
+	response3 := &workflowservice.ListSchedulesResponse{
+		Schedules: []*schedulepb.ScheduleListEntry{
+			{
+				ScheduleId: "",
+			},
+		},
+		NextPageToken: nil,
+	}
+
+	s.service.EXPECT().ListSchedules(gomock.Any(), request1, gomock.Any()).Return(response1, nil).Times(1)
+	s.service.EXPECT().ListSchedules(gomock.Any(), request2, gomock.Any()).Return(response2, nil).Times(1)
+	s.service.EXPECT().ListSchedules(gomock.Any(), request3, gomock.Any()).Return(response3, nil).Times(1)
+
+	var events []*ScheduleListEntry
+	iter, _ := s.client.Schedule().ListSchedules(context.Background(), ScheduleListOptions{})
+	for iter.HasNext() {
+		event, err := iter.Next()
+		s.Nil(err)
+		events = append(events, event)
+	}
+	s.Equal(3, len(events))
+}
+
+func (s *workflowClientTestSuite) TestIterator_NoError_EmptyPage() {
+	request1 := getListSchedulesRequest()
+	response1 := &workflowservice.ListSchedulesResponse{
+		Schedules:     []*schedulepb.ScheduleListEntry{},
+		NextPageToken: []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+	}
+	request2 := getListSchedulesRequest()
+	request2.NextPageToken = response1.NextPageToken
+	response2 := &workflowservice.ListSchedulesResponse{
+		Schedules: []*schedulepb.ScheduleListEntry{
+			{
+				ScheduleId: "",
+			},
+		},
+		NextPageToken: []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+	}
+
+	request3 := getListSchedulesRequest()
+	request3.NextPageToken = response2.NextPageToken
+	response3 := &workflowservice.ListSchedulesResponse{
+		Schedules: []*schedulepb.ScheduleListEntry{
+			{
+				ScheduleId: "",
+			},
+		},
+		NextPageToken: nil,
+	}
+
+	s.service.EXPECT().ListSchedules(gomock.Any(), request1, gomock.Any()).Return(response1, nil).Times(1)
+	s.service.EXPECT().ListSchedules(gomock.Any(), request2, gomock.Any()).Return(response2, nil).Times(1)
+	s.service.EXPECT().ListSchedules(gomock.Any(), request3, gomock.Any()).Return(response3, nil).Times(1)
+
+	var events []*ScheduleListEntry
+	iter, _ := s.client.Schedule().ListSchedules(context.Background(), ScheduleListOptions{})
+
+	for iter.HasNext() {
+		event, err := iter.Next()
+		s.Nil(err)
+		events = append(events, event)
+	}
+	s.Equal(2, len(events))
+}
+
+func (s *workflowClientTestSuite) TestIteratorError() {
+	request1 := getListSchedulesRequest()
+	response1 := &workflowservice.ListSchedulesResponse{
+		Schedules: []*schedulepb.ScheduleListEntry{
+			{
+				ScheduleId: "",
+			},
+		},
+		NextPageToken: []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+	}
+	request2 := getListSchedulesRequest()
+	request2.NextPageToken = response1.NextPageToken
+
+	s.service.EXPECT().ListSchedules(gomock.Any(), request1, gomock.Any()).Return(response1, nil).Times(1)
+
+	iter, _ := s.client.Schedule().ListSchedules(context.Background(), ScheduleListOptions{})
+
+	s.True(iter.HasNext())
+	event, err := iter.Next()
+	s.NotNil(event)
+	s.Nil(err)
+
+	s.service.EXPECT().ListSchedules(gomock.Any(), request2, gomock.Any()).Return(nil, serviceerror.NewNotFound("")).Times(1)
+
+	s.True(iter.HasNext())
+	event, err = iter.Next()
+	s.Nil(event)
+	s.NotNil(err)
 }

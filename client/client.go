@@ -91,6 +91,90 @@ type (
 	// CheckHealthResponse is a response for Client.CheckHealth.
 	CheckHealthResponse = internal.CheckHealthResponse
 
+	// ScheduleRange represents a set of integer values.
+	// NOTE: Experimental
+	ScheduleRange = internal.ScheduleRange
+
+	// ScheduleRanges represents a list of ScheduleRange.
+	// NOTE: Experimental
+	ScheduleRanges = internal.ScheduleRanges
+
+	// ScheduleCalendarSpec is an event specification relative to the calendar.
+	// NOTE: Experimental
+	ScheduleCalendarSpec = internal.ScheduleCalendarSpec
+
+	// ScheduleIntervalSpec describes periods a schedules action should occur.
+	// NOTE: Experimental
+	ScheduleIntervalSpec = internal.ScheduleIntervalSpec
+
+	// ScheduleSpec describes when a schedules action should occur.
+	// NOTE: Experimental
+	ScheduleSpec = internal.ScheduleSpec
+
+	// ScheduleBackfill desribes a time periods and policy and takes Actions as if that time passed by right now, all at once.
+	// NOTE: Experimental
+	ScheduleBackfill = internal.ScheduleBackfill
+
+	// ScheduleAction is the interface for all actions a schedule can take.
+	// NOTE: Experimental
+	ScheduleAction = internal.ScheduleAction
+
+	// ScheduleWorkflowAction is the implementation of ScheduleAction to start a workflow.
+	// NOTE: Experimental
+	ScheduleWorkflowAction = internal.ScheduleWorkflowAction
+
+	// ScheduleWorkflowActionDescription is the implementation of ScheduleAction to describe a workflow.
+	// NOTE: Experimental
+	ScheduleWorkflowActionDescription = internal.ScheduleWorkflowActionDescription
+
+	// ScheduleOptions configuration parameters for creating a schedule.
+	// NOTE: Experimental
+	ScheduleOptions = internal.ScheduleOptions
+
+	// ScheduleClient is the interface with the server to create and get handles to schedules.
+	// NOTE: Experimental
+	ScheduleClient = internal.ScheduleClient
+
+	// ScheduleListOptions are configuration parameters for listing schedules.
+	// NOTE: Experimental
+	ScheduleListOptions = internal.ScheduleListOptions
+
+	// ScheduleListIterator is a iterator which can return created schedules.
+	// NOTE: Experimental
+	ScheduleListIterator = internal.ScheduleListIterator
+
+	// ScheduleListEntry is a result from ScheduleListEntry.
+	// NOTE: Experimental
+	ScheduleListEntry = internal.ScheduleListEntry
+
+	// ScheduleUpdateOptions are configuration parameters for updating a schedule.
+	// NOTE: Experimental
+	ScheduleUpdateOptions = internal.ScheduleUpdateOptions
+
+	// ScheduleHandle represents a created schedule.
+	// NOTE: Experimental
+	ScheduleHandle = internal.ScheduleHandle
+
+	// ScheduleActionResult describes when a schedule action took place.
+	// NOTE: Experimental
+	ScheduleActionResult = internal.ScheduleActionResult
+
+	// ScheduleWorkflowExecution contains details on a workflows execution stared by a schedule.
+	// NOTE: Experimental
+	ScheduleWorkflowExecution = internal.ScheduleWorkflowExecution
+
+	// ScheduleDescribeResponse describes the current Schedule details from ScheduleHandle.Describe.
+	// NOTE: Experimental
+	ScheduleDescribeResponse = internal.ScheduleDescribeResponse
+
+	// Schedule describes a created schedule.
+	// NOTE: Experimental
+	Schedule = internal.Schedule
+
+	// ScheduleUpdate describes the desired new schedule from ScheduleHandle.Update.
+	// NOTE: Experimental
+	ScheduleUpdate = internal.ScheduleUpdate
+
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
 	Client interface {
@@ -388,6 +472,10 @@ type (
 
 		// OperatorService creates a new operator service client with the same gRPC connection as this client.
 		OperatorService() operatorservice.OperatorServiceClient
+
+		// Schedule creates a new shedule client with the same gRPC connection as this client.
+		// NOTE: Experimental
+		Schedule() ScheduleClient
 
 		// Close client and clean up underlying resources.
 		//
