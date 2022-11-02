@@ -2696,7 +2696,7 @@ func (ts *IntegrationTestSuite) TestScheduleCreate() {
 		ScheduleID: "test-schedule-create-schedule",
 		Spec:       client.ScheduleSpec{},
 		Action: client.ScheduleWorkflowAction{
-			Workflow:        ts.workflows.Basic,
+			Workflow:        ts.workflows.SimplestWorkflow,
 			WorkflowOptions: workflowOptions,
 		},
 	})
@@ -2724,7 +2724,7 @@ func (ts *IntegrationTestSuite) TestScheduleCreateDuplicate() {
 		ScheduleID: "test-schedule-create-duplicate-schedule",
 		Spec:       client.ScheduleSpec{},
 		Action: client.ScheduleWorkflowAction{
-			Workflow:        ts.workflows.Basic,
+			Workflow:        ts.workflows.SimplestWorkflow,
 			WorkflowOptions: workflowOptions,
 		},
 	}
@@ -2818,7 +2818,7 @@ func (ts *IntegrationTestSuite) TestScheduleDescribeSpec() {
 			},
 		},
 		Action: client.ScheduleWorkflowAction{
-			Workflow:        ts.workflows.Basic,
+			Workflow:        ts.workflows.SimplestWorkflow,
 			WorkflowOptions: workflowOptions,
 		},
 	})
@@ -2916,7 +2916,7 @@ func (ts *IntegrationTestSuite) TestScheduleDescribeSpecCron() {
 			},
 		},
 		Action: client.ScheduleWorkflowAction{
-			Workflow:        ts.workflows.Basic,
+			Workflow:        ts.workflows.SimplestWorkflow,
 			WorkflowOptions: workflowOptions,
 		},
 	})
@@ -2973,7 +2973,7 @@ func (ts *IntegrationTestSuite) TestScheduleDescribeState() {
 		ScheduleID: "test-schedule-describe-state-schedule",
 		Spec:       client.ScheduleSpec{},
 		Action: client.ScheduleWorkflowAction{
-			Workflow:        ts.workflows.Basic,
+			Workflow:        ts.workflows.SimplestWorkflow,
 			WorkflowOptions: workflowOptions,
 		},
 		Overlap:          enumspb.SCHEDULE_OVERLAP_POLICY_SKIP,
@@ -3028,7 +3028,7 @@ func (ts *IntegrationTestSuite) TestSchedulePause() {
 		ScheduleID: "test-schedule-pause-schedule",
 		Spec:       client.ScheduleSpec{},
 		Action: client.ScheduleWorkflowAction{
-			Workflow:        ts.workflows.Basic,
+			Workflow:        ts.workflows.SimplestWorkflow,
 			WorkflowOptions: workflowOptions,
 		},
 		Paused: true,
@@ -3077,7 +3077,7 @@ func (ts *IntegrationTestSuite) TestScheduleTrigger() {
 		ScheduleID: "test-schedule-trigger-schedule",
 		Spec:       client.ScheduleSpec{},
 		Action: client.ScheduleWorkflowAction{
-			Workflow:        ts.workflows.Basic,
+			Workflow:        ts.workflows.SimplestWorkflow,
 			WorkflowOptions: workflowOptions,
 		},
 		Paused:  true,
@@ -3224,7 +3224,7 @@ func (ts *IntegrationTestSuite) TestScheduleList() {
 			ScheduleID: scheduleID,
 			Spec:       client.ScheduleSpec{},
 			Action: client.ScheduleWorkflowAction{
-				Workflow:        ts.workflows.Basic,
+				Workflow:        ts.workflows.SimplestWorkflow,
 				WorkflowOptions: workflowOptions,
 			},
 		})
@@ -3259,7 +3259,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 		ScheduleID: "test-schedule-update-schedule",
 		Spec:       client.ScheduleSpec{},
 		Action: client.ScheduleWorkflowAction{
-			Workflow:        ts.workflows.Basic,
+			Workflow:        ts.workflows.SimplestWorkflow,
 			WorkflowOptions: workflowOptions,
 		},
 		Paused: true,
@@ -3300,7 +3300,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateNilNoUpdate() {
 		ScheduleID: "test-schedule-update-nil-no-update-schedule",
 		Spec:       client.ScheduleSpec{},
 		Action: client.ScheduleWorkflowAction{
-			Workflow:        ts.workflows.Basic,
+			Workflow:        ts.workflows.SimplestWorkflow,
 			WorkflowOptions: workflowOptions,
 		},
 		Paused: true,
@@ -3339,7 +3339,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateNewAction() {
 		ScheduleID: "test-schedule-update-new-action-schedule",
 		Spec:       client.ScheduleSpec{},
 		Action: client.ScheduleWorkflowAction{
-			Workflow:        ts.workflows.Basic,
+			Workflow:        ts.workflows.SimplestWorkflow,
 			WorkflowOptions: workflowOptions,
 		},
 		Paused: true,
@@ -3353,7 +3353,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateNewAction() {
 	// change workflow type
 	updateFunc := func(description *client.ScheduleDescribeResponse) *client.ScheduleUpdate {
 		description.Schedule.Action = client.ScheduleWorkflowAction{
-			Workflow:        ts.workflows.SimplestWorkflow,
+			Workflow:        ts.workflows.Basic,
 			WorkflowOptions: workflowOptions,
 		}
 		return &client.ScheduleUpdate{
@@ -3366,7 +3366,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateNewAction() {
 	ts.NoError(err)
 	switch action := description.Schedule.Action.(type) {
 	case client.ScheduleWorkflowActionDescription:
-		ts.Equal("SimplestWorkflow", action.WorkflowType.Name)
+		ts.Equal("Basic", action.WorkflowType.Name)
 	default:
 		ts.Fail("schedule action wrong type")
 	}
@@ -3386,7 +3386,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateAction() {
 		ScheduleID: "test-schedule-update-action-schedule",
 		Spec:       client.ScheduleSpec{},
 		Action: client.ScheduleWorkflowAction{
-			Workflow:        ts.workflows.Basic,
+			Workflow:        ts.workflows.SimplestWorkflow,
 			WorkflowOptions: workflowOptions,
 		},
 		Paused: true,
