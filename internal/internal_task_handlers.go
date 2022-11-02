@@ -42,6 +42,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	interactionpb "go.temporal.io/api/interaction/v1"
 	querypb "go.temporal.io/api/query/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
@@ -71,6 +72,8 @@ type (
 		// Process a single event and return the assosciated commands.
 		// Return List of commands made, any error.
 		ProcessEvent(event *historypb.HistoryEvent, isReplay bool, isLast bool) error
+		// ProcessInteraction processes interaction inputs
+		ProcessInteraction(meta *interactionpb.Meta, input *interactionpb.Input, isReplay bool, isLast bool) error
 		// ProcessQuery process a query request.
 		ProcessQuery(queryType string, queryArgs *commonpb.Payloads, header *commonpb.Header) (*commonpb.Payloads, error)
 		StackTrace() string
@@ -263,6 +266,7 @@ func isCommandEvent(eventType enumspb.EventType) bool {
 		enumspb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED,
 		enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES,
 		enumspb.EVENT_TYPE_WORKFLOW_UPDATE_ACCEPTED,
+		enumspb.EVENT_TYPE_WORKFLOW_UPDATE_REJECTED,
 		enumspb.EVENT_TYPE_WORKFLOW_UPDATE_COMPLETED,
 		enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED:
 		return true
@@ -671,9 +675,9 @@ func (w *workflowExecutionContextImpl) resetStateIfDestroyed(task *workflowservi
 func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	workflowTask *workflowTask,
 	heartbeatFunc workflowTaskHeartbeatFunc,
-) (completeRequest interface{}, errRet error) {
+) (completeRequest interface{}, resetter EventLevelResetter, errRet error) {
 	if workflowTask == nil || workflowTask.task == nil {
-		return nil, errors.New("nil workflow task provided")
+		return nil, nil, errors.New("nil workflow task provided")
 	}
 	task := workflowTask.task
 	if task.History == nil || len(task.History.Events) == 0 {
@@ -682,11 +686,11 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 		}
 	}
 	if task.Query == nil && len(task.History.Events) == 0 {
-		return nil, errors.New("nil or empty history")
+		return nil, nil, errors.New("nil or empty history")
 	}
 
 	if task.Query != nil && len(task.Queries) != 0 {
-		return nil, errors.New("invalid query workflow task")
+		return nil, nil, errors.New("invalid query workflow task")
 	}
 
 	runID := task.WorkflowExecution.GetRunId()
@@ -702,7 +706,7 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 
 	workflowContext, err := wth.getOrCreateWorkflowContext(task, workflowTask.historyIterator)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	defer func() {
@@ -796,7 +800,25 @@ processWorkflowLoop:
 	}
 	errRet = err
 	completeRequest = response
+	resetter = workflowContext.SetPreviousStartedEventID
 	return
+}
+
+// indexInvocations builds a map of the interaction invocations contained in a
+// workflow task where the index is the interaction's event level (i.e. the
+// event after which the interaction can execute) and the value is the
+// invocation itself. This function may return an empty map but it will not
+// return nil.
+func indexInvocations(workflowTask *workflowTask) map[int64][]*interactionpb.Invocation {
+	out := map[int64][]*interactionpb.Invocation{}
+	for _, ev := range workflowTask.task.GetHistory().GetEvents() {
+		if ev.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED {
+			for _, inter := range workflowTask.task.Interactions {
+				out[inter.GetMeta().GetEventId()] = append(out[inter.GetMeta().GetEventId()], inter)
+			}
+		}
+	}
+	return out
 }
 
 func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflowTask) (interface{}, error) {
@@ -811,6 +833,8 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 	reorderedHistory := newHistory(workflowTask, eventHandler)
 	var replayCommands []*commandpb.Command
 	var respondEvents []*historypb.HistoryEvent
+
+	invocations := indexInvocations(workflowTask)
 
 	skipReplayCheck := w.skipReplayCheck()
 
@@ -878,6 +902,14 @@ ProcessEvents:
 			if err != nil {
 				return nil, err
 			}
+
+			for _, inv := range invocations[event.GetEventId()] {
+				err := eventHandler.ProcessInteraction(inv.GetMeta(), inv.GetInput(), isInReplay, isLast)
+				if err != nil {
+					return nil, err
+				}
+			}
+
 			if w.isWorkflowCompleted {
 				break ProcessEvents
 			}
@@ -1115,6 +1147,10 @@ func (w *workflowExecutionContextImpl) SetCurrentTask(task *workflowservice.Poll
 	}
 }
 
+func (w *workflowExecutionContextImpl) SetPreviousStartedEventID(eventID int64) {
+	w.previousStartedEventID = eventID
+}
+
 func (w *workflowExecutionContextImpl) ResetIfStale(task *workflowservice.PollWorkflowTaskQueueResponse, historyIterator HistoryIterator) error {
 	if len(task.History.Events) > 0 && task.History.Events[0].GetEventId() != w.previousStartedEventID+1 {
 		w.wth.logger.Debug("Cached state staled, new task has unexpected events",
@@ -1133,21 +1169,28 @@ func (w *workflowExecutionContextImpl) ResetIfStale(task *workflowservice.PollWo
 }
 
 func skipDeterministicCheckForCommand(d *commandpb.Command) bool {
-	if d.GetCommandType() == enumspb.COMMAND_TYPE_RECORD_MARKER {
+	switch d.GetCommandType() {
+	case enumspb.COMMAND_TYPE_RECORD_MARKER:
 		markerName := d.GetRecordMarkerCommandAttributes().GetMarkerName()
 		if markerName == versionMarkerName || markerName == mutableSideEffectMarkerName {
 			return true
 		}
+	case enumspb.COMMAND_TYPE_ACCEPT_WORKFLOW_UPDATE,
+		enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION:
+		return true
 	}
 	return false
 }
 
 func skipDeterministicCheckForEvent(e *historypb.HistoryEvent) bool {
-	if e.GetEventType() == enumspb.EVENT_TYPE_MARKER_RECORDED {
+	switch e.GetEventType() {
+	case enumspb.EVENT_TYPE_MARKER_RECORDED:
 		markerName := e.GetMarkerRecordedEventAttributes().GetMarkerName()
 		if markerName == versionMarkerName || markerName == mutableSideEffectMarkerName {
 			return true
 		}
+		//case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
+		//	return true
 	}
 	return false
 }
@@ -1409,8 +1452,8 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, strict
 			eventAttributes := e.GetWorkflowUpdateCompletedEventAttributes()
 			commandAttributes := d.GetCompleteWorkflowUpdateCommandAttributes()
 
-			if !proto.Equal(eventAttributes.GetSuccess(), commandAttributes.GetSuccess()) ||
-				!proto.Equal(eventAttributes.GetFailure(), commandAttributes.GetFailure()) {
+			if !proto.Equal(eventAttributes.GetOutput().GetSuccess(), commandAttributes.GetOutput().GetSuccess()) ||
+				!proto.Equal(eventAttributes.GetOutput().GetFailure(), commandAttributes.GetOutput().GetFailure()) {
 				return false
 			}
 		}
