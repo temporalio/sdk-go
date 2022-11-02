@@ -784,13 +784,14 @@ type (
 		// Optional: Defaulted to the end of time
 		EndAt *time.Time
 
-		// Jitter - All times will be incremented by a random value from 0 to this amount of jitter.
+		// Jitter - All times will be incremented by a random value from 0 to this amount of jitter, capped
+		// by the time until the next schedule. 
 		// Optional: Defaulted to 0
 		Jitter time.Duration
 
-		// Timezone - IANA timezone name, for example `US/Pacific`.
+		// Timezone - timezone to interpret all ScheduleCalendarSpec in.
 		// Optional: Defaulted to UTC
-		Timezone time.Location
+		Timezone *time.Location
 	}
 
 	// ScheduleAction represents an action a schedule can take.
@@ -847,7 +848,7 @@ type (
 		Memo *commonpb.Memo
 
 		// SearchAttributes - Indexed info that can be used in query of List schedules APIs (only
-		// supported when Temporal server is using ElasticSearch). The key and value type must be registered on Temporal server side.
+		// supported when Temporal server is using advanced visibility). The key and value type must be registered on Temporal server side.
 		// Use GetSearchAttributes API to get valid key and corresponding value type.
 		SearchAttributes *commonpb.SearchAttributes
 	}
@@ -872,10 +873,18 @@ type (
 		Overlap enumspb.ScheduleOverlapPolicy
 
 		// CatchupWindow - The Temporal Server might be down or unavailable at the time when a Schedule should take an Action.
+		// When the Server comes back up, CatchupWindow controls which missed Actions should be taken at that point. The default is one
+   		// minute, which means that the Schedule attempts to take any Actions that wouldn't be more than one minute late. It
+   		// takes those Actions according to the Overlap. An outage that lasts longer than the Catchup
+   		// Window could lead to missed Actions.
 		// Optional: defaulted to 1 minute
 		CatchupWindow time.Duration
 
-		// PauseOnFailure - When an Action times out or reaches the end of its Retry Policy.
+		// PauseOnFailure - When an Action times out or reaches the end of its Retry Policy the Schedule will pause.
+		//
+		// With SCHEDULE_OVERLAP_POLICY_ALLOW_ALL, this pause might not apply to the next Action, because the next Action
+   		// might have already started previous to the failed one finishing. Pausing applies only to Actions that are scheduled
+   		// to start after the failed one finishes.
 		// Optional: defaulted to false
 		PauseOnFailure bool
 
@@ -896,7 +905,7 @@ type (
 		// Optional: defaulted to zero
 		RemainingActions int64
 
-		// TriggerImmediately - Trigger one Action immediately.
+		// TriggerImmediately - Trigger one Action immediately on creating the schedule.
 		// Optional: defaulted to false
 		TriggerImmediately bool
 
@@ -908,7 +917,7 @@ type (
 		Memo map[string]interface{}
 
 		// SearchAttributes - Optional indexed info that can be used in query of List schedules APIs (only
-		// supported when Temporal server is using ElasticSearch). The key and value type must be registered on Temporal server side.
+		// supported when Temporal server is using advanced visibility). The key and value type must be registered on Temporal server side.
 		// Use GetSearchAttributes API to get valid key and corresponding value type.
 		SearchAttributes map[string]interface{}
 	}
@@ -925,7 +934,7 @@ type (
 
 	// ScheduleInfo describes other information about a schedule.
 	ScheduleInfo struct {
-		// NumActions - Which Action to take
+		// NumActions - Number of actions taken by this schedule.
 		NumActions int64
 
 		// NumActionsMissedCatchupWindow - Number of times a scheduled Action was skipped due to missing the catchup window.
@@ -965,7 +974,7 @@ type (
 		Memo *commonpb.Memo
 
 		// SearchAttributes - Indexed info that can be used in query of List schedules APIs (only
-		// supported when Temporal server is using ElasticSearch). The key and value type must be registered on Temporal server side.
+		// supported when Temporal server is using advanced visibility). The key and value type must be registered on Temporal server side.
 		// Use GetSearchAttributes API to get valid key and corresponding value type.
 		SearchAttributes *commonpb.SearchAttributes
 	}
@@ -1032,8 +1041,11 @@ type (
 		// GetID returns the schedule ID asssociated with this handle.
 		GetID() string
 
-		// Delete the Schedul
+		// Delete the Schedule 
 		Delete(ctx context.Context) error
+
+		// Backfill the schedule by going though the specified time periods and taking Actions as if that time passed by right now, all at once.
+		Backfill(ctx context.Context, backfill []ScheduleBackfill) error
 
 		// Update the Schedule. fn takes a description of the schedule and returns the new desired schedule.
 		// If update returns a nil response then no update will occur.
@@ -1046,7 +1058,8 @@ type (
 		Describe(ctx context.Context) (*ScheduleDescribeResponse, error)
 
 		// Trigger an Action to be taken immediately. Will override the schedules default policy
-		// with the one specified here.
+		// with the one specified here. If overlap is SCHEDULE_OVERLAP_POLICY_UNSPECIFIED the schedule
+		// policy will be used.
 		Trigger(ctx context.Context, overlap enumspb.ScheduleOverlapPolicy) error
 
 		// Pause the Schedule will also overwrite the Schedules current note with the new note.
@@ -1103,7 +1116,7 @@ type (
 		Memo *commonpb.Memo
 
 		// SearchAttributes - Indexed info that can be used in query of List schedules APIs (only
-		// supported when Temporal server is using ElasticSearch). The key and value type must be registered on Temporal server side.
+		// supported when Temporal server is using advanced visibility). The key and value type must be registered on Temporal server side.
 		// Use GetSearchAttributes API to get valid key and corresponding value type.
 		SearchAttributes *commonpb.SearchAttributes
 	}

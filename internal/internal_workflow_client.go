@@ -1579,14 +1579,7 @@ func (s *scheduleClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 		}
 	}
 
-	backfillRequests := make([]*schedulepb.BackfillRequest, len(in.Options.ScheduleBackfill))
-	for i, b := range in.Options.ScheduleBackfill {
-		backfillRequests[i] = &schedulepb.BackfillRequest{
-			StartTime:     &b.Start,
-			EndTime:       &b.End,
-			OverlapPolicy: b.Overlap,
-		}
-	}
+	backfillRequests := convertToPBBackfillList(in.Options.ScheduleBackfill)
 
 	// run propagators to extract information about tracing and other stuff, store in headers field
 	startRequest := &workflowservice.CreateScheduleRequest{
@@ -1754,6 +1747,22 @@ func (scheduleHandle *scheduleHandleImpl) Delete(ctx context.Context) error {
 	return err
 }
 
+func (scheduleHandle *scheduleHandleImpl) Backfill(ctx context.Context, backfill []ScheduleBackfill) error {
+	request := &workflowservice.PatchScheduleRequest{
+		Namespace:  scheduleHandle.client.namespace,
+		ScheduleId: scheduleHandle.scheduleID,
+		Patch: &schedulepb.SchedulePatch{
+			BackfillRequest: convertToPBBackfillList(backfill),
+		},
+		Identity:  scheduleHandle.client.identity,
+		RequestId: uuid.New(),
+	}
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	_, err := scheduleHandle.client.workflowService.PatchSchedule(grpcCtx, request)
+	return err
+}
+
 func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, update func(*ScheduleDescribeResponse) *ScheduleUpdate, options ScheduleUpdateOptions) error {
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
@@ -1904,6 +1913,11 @@ func convertToPBScheduleSpec(scheduleSpec *ScheduleSpec) *schedulepb.ScheduleSpe
 		}
 	}
 
+	timezone := time.UTC
+	if scheduleSpec.Timezone != nil {
+		timezone = scheduleSpec.Timezone
+	}
+ 
 	return &schedulepb.ScheduleSpec{
 		StructuredCalendar:        calendar,
 		Interval:                  intervals,
@@ -1913,7 +1927,7 @@ func convertToPBScheduleSpec(scheduleSpec *ScheduleSpec) *schedulepb.ScheduleSpe
 		EndTime:                   scheduleSpec.EndAt,
 		Jitter:                    &scheduleSpec.Jitter,
 		// TODO support custom timezone data
-		TimezoneName: scheduleSpec.Timezone.String(),
+		TimezoneName: timezone.String(),
 	}
 }
 
@@ -1968,7 +1982,7 @@ func convertFromPBScheduleSpec(scheduleSpec *schedulepb.ScheduleSpec) *ScheduleS
 		StartAt:   scheduleSpec.GetStartTime(),
 		EndAt:     scheduleSpec.GetEndTime(),
 		Jitter:    common.DurationValue(scheduleSpec.GetJitter()),
-		Timezone:  *timezone,
+		Timezone:  timezone,
 	}
 }
 
@@ -2212,4 +2226,17 @@ func convertFromPBScheduleAction(action *schedulepb.ScheduleAction) (ScheduleAct
 		// TODO maybe just panic instead?
 		return nil, fmt.Errorf("could not parse ScheduleAction")
 	}
+}
+
+func convertToPBBackfillList(backfillRequests []ScheduleBackfill) []*schedulepb.BackfillRequest {
+	backfillRequestsPB := make([]*schedulepb.BackfillRequest, len(backfillRequests))
+	for i, b := range backfillRequests {
+		backfill := b
+		backfillRequestsPB[i] = &schedulepb.BackfillRequest{
+			StartTime:     &backfill.Start,
+			EndTime:       &backfill.End,
+			OverlapPolicy: backfill.Overlap,
+		}
+	}
+	return backfillRequestsPB
 }

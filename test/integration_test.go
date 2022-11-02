@@ -3098,20 +3098,21 @@ func (ts *IntegrationTestSuite) TestScheduleTrigger() {
 	ts.EqualValues(5, description.Info.NumActions)
 }
 
-func (ts *IntegrationTestSuite) TestScheduleBackfill() {
+func (ts *IntegrationTestSuite) TestScheduleBackfillCreate() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	workflowOptions := client.StartWorkflowOptions{
-		ID:                       "test-schedule-backfill-workflow",
+		ID:                       "test-schedule-backfill-create-workflow",
 		TaskQueue:                ts.taskQueueName,
 		WorkflowExecutionTimeout: 15 * time.Second,
 		WorkflowTaskTimeout:      time.Second,
 	}
 	// Create a paused workflow
-	startTime := time.Now().Add(-time.Hour)
-	endTime := time.Now()
+	now := time.Now()
+	startTime := now.Add(-time.Hour)
+	endTime := now
 	handle, err := ts.client.Schedule().CreateSchedule(ctx, client.ScheduleOptions{
-		ScheduleID: "test-schedule-backfill-schedule",
+		ScheduleID: "test-schedule-backfill-create-schedule",
 		Spec: client.ScheduleSpec{
 			Intervals: []client.ScheduleIntervalSpec{
 				{
@@ -3127,10 +3128,55 @@ func (ts *IntegrationTestSuite) TestScheduleBackfill() {
 		},
 		ScheduleBackfill: []client.ScheduleBackfill{
 			{
-				Start:   time.Now().UTC().Add(-time.Hour),
-				End:     time.Now().UTC(),
+				Start:   now.Add(-time.Hour),
+				End:     now.Add(-30*time.Minute),
 				Overlap: enumspb.SCHEDULE_OVERLAP_POLICY_ALLOW_ALL,
 			},
+			{
+				Start:   now.Add(-30*time.Minute),
+				End:     now,
+				Overlap: enumspb.SCHEDULE_OVERLAP_POLICY_ALLOW_ALL,
+			},
+		},
+	})
+	ts.NoError(err)
+	ts.EqualValues("test-schedule-backfill-create-schedule", handle.GetID())
+	defer func() {
+		ts.NoError(handle.Delete(ctx))
+	}()
+	time.Sleep(10 * time.Second)
+	description, err := handle.Describe(ctx)
+	ts.NoError(err)
+	ts.EqualValues(60, description.Info.NumActions)
+}
+
+func (ts *IntegrationTestSuite) TestScheduleBackfill() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	workflowOptions := client.StartWorkflowOptions{
+		ID:                       "test-schedule-backfill-workflow",
+		TaskQueue:                ts.taskQueueName,
+		WorkflowExecutionTimeout: 15 * time.Second,
+		WorkflowTaskTimeout:      time.Second,
+	}
+	// Create a paused workflow
+	now := time.Now()
+	startTime := now.Add(-time.Hour)
+	endTime := now
+	handle, err := ts.client.Schedule().CreateSchedule(ctx, client.ScheduleOptions{
+		ScheduleID: "test-schedule-backfill-schedule",
+		Spec: client.ScheduleSpec{
+			Intervals: []client.ScheduleIntervalSpec{
+				{
+					Every: time.Minute,
+				},
+			},
+			StartAt: &startTime,
+			EndAt:   &endTime,
+		},
+		Action: client.ScheduleWorkflowAction{
+			Workflow:        ts.workflows.SimplestWorkflow,
+			WorkflowOptions: workflowOptions,
 		},
 	})
 	ts.NoError(err)
@@ -3140,6 +3186,23 @@ func (ts *IntegrationTestSuite) TestScheduleBackfill() {
 	}()
 	time.Sleep(10 * time.Second)
 	description, err := handle.Describe(ctx)
+	ts.NoError(err)
+	ts.EqualValues(0, description.Info.NumActions)
+	err = handle.Backfill(ctx, []client.ScheduleBackfill{
+		{
+			Start:   now.Add(-time.Hour),
+			End:     now.Add(-30*time.Minute),
+			Overlap: enumspb.SCHEDULE_OVERLAP_POLICY_ALLOW_ALL,
+		},
+		{
+			Start:   now.Add(-30*time.Minute),
+			End:     now,
+			Overlap: enumspb.SCHEDULE_OVERLAP_POLICY_ALLOW_ALL,
+		},
+	})
+	ts.NoError(err)
+	time.Sleep(10*time.Second)
+	description, err = handle.Describe(ctx)
 	ts.NoError(err)
 	ts.EqualValues(60, description.Info.NumActions)
 }
