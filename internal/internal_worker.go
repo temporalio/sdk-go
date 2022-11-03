@@ -65,8 +65,9 @@ const (
 	// center. And the poll API latency is about 5ms. With 2 poller, we could achieve around 300~400 RPS.
 	defaultConcurrentPollRoutineSize = 2
 
-	defaultMaxConcurrentActivityExecutionSize = 1000   // Large concurrent activity execution size (1k)
-	defaultWorkerActivitiesPerSecond          = 100000 // Large activity executions/sec (unlimited)
+	defaultMaxConcurrentActivityExecutionSize      = 1000 // Large concurrent activity execution size (1k)
+	defaultMaxConcurrentEagerActivityExecutionSize = 3
+	defaultWorkerActivitiesPerSecond               = 100000 // Large activity executions/sec (unlimited)
 
 	defaultMaxConcurrentLocalActivityExecutionSize = 1000   // Large concurrent activity execution size (1k)
 	defaultWorkerLocalActivitiesPerSecond          = 100000 // Large activity executions/sec (unlimited)
@@ -1601,6 +1602,9 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 	}
 	if options.MaxHeartbeatThrottleInterval == 0 {
 		options.MaxHeartbeatThrottleInterval = defaultMaxHeartbeatThrottleInterval
+	}
+	if options.MaxConcurrentEagerActivityExecutionSize == 0 {
+		options.MaxConcurrentEagerActivityExecutionSize = defaultMaxConcurrentEagerActivityExecutionSize
 	}
 }
 

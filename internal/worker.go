@@ -209,7 +209,8 @@ type (
 		// workflow task schedules 3 more, only the first 2 will request eager
 		// execution.
 		//
-		// The default of 0 means unlimited and therefore only bound by
+		// If unset/0, this defaults to 3. Users wanting effectively unlimited can
+		// set this to a high value. This is still bounded by
 		// MaxConcurrentActivityExecutionSize.
 		//
 		// See DisableEagerActivities for a description of eager activity execution.
@@ -256,8 +257,10 @@ func IsReplayNamespace(dn string) bool {
 
 // NewWorker creates an instance of worker for managing workflow and activity executions.
 // client   - client created with client.Dial() or client.NewLazyClient().
-// taskQueue - is the task queue name you use to identify your client worker, also
-//            identifies group of workflow and activity implementations that are hosted by a single worker process.
+// taskQueue - is the task queue name you use to identify your client worker,
+// also identifies group of workflow and activity implementations that are
+// hosted by a single worker process.
+//
 // options 	- configure any worker specific options.
 func NewWorker(
 	client Client,
