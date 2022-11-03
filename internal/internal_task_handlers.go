@@ -811,12 +811,8 @@ processWorkflowLoop:
 // return nil.
 func indexInvocations(workflowTask *workflowTask) map[int64][]*interactionpb.Invocation {
 	out := map[int64][]*interactionpb.Invocation{}
-	for _, ev := range workflowTask.task.GetHistory().GetEvents() {
-		if ev.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED {
-			for _, inter := range workflowTask.task.Interactions {
-				out[inter.GetMeta().GetEventId()] = append(out[inter.GetMeta().GetEventId()], inter)
-			}
-		}
+	for _, inter := range workflowTask.task.GetInteractions() {
+		out[inter.GetMeta().GetEventId()] = append(out[inter.GetMeta().GetEventId()], inter)
 	}
 	return out
 }

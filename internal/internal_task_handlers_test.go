@@ -42,6 +42,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	interactionpb "go.temporal.io/api/interaction/v1"
 	querypb "go.temporal.io/api/query/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
@@ -1925,6 +1926,37 @@ func Test_IsMemoMatched(t *testing.T) {
 			},
 		)
 	}
+}
+
+func TestInvocationIndexing(t *testing.T) {
+	wft := &workflowTask{
+		task: &workflowservice.PollWorkflowTaskQueueResponse{
+			Interactions: []*interactionpb.Invocation{
+				&interactionpb.Invocation{
+					Meta: &interactionpb.Meta{Id: "ID.1", EventId: 3},
+				},
+				&interactionpb.Invocation{
+					Meta: &interactionpb.Meta{Id: "ID.2", EventId: 5},
+				},
+				&interactionpb.Invocation{
+					Meta: &interactionpb.Meta{Id: "ID.3", EventId: 3},
+				},
+			},
+		},
+	}
+	index := indexInvocations(wft)
+
+	event3Interactions := index[3]
+	event4Interactions := index[4]
+	event5Interactions := index[5]
+
+	require.Len(t, event3Interactions, 2)
+	require.Len(t, event4Interactions, 0)
+	require.Len(t, event5Interactions, 1)
+
+	require.Equal(t, event3Interactions[0].Meta.Id, "ID.1")
+	require.Equal(t, event3Interactions[1].Meta.Id, "ID.3")
+	require.Equal(t, event5Interactions[0].Meta.Id, "ID.2")
 }
 
 func TestHeartbeatThrottleInterval(t *testing.T) {
