@@ -1257,7 +1257,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 		FailureConverter: aw.failureConverter,
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
-	resp, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, nil)
+	resp, _, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, nil)
 	if err != nil {
 		return err
 	}

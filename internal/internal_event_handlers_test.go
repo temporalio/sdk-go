@@ -27,17 +27,27 @@ package internal
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
-	updatepb "go.temporal.io/api/update/v1"
+	interactionpb "go.temporal.io/api/interaction/v1"
 
 	"go.temporal.io/sdk/converter"
 	iconverter "go.temporal.io/sdk/internal/converter"
 )
+
+type mockWorkflowDefinition struct {
+	WorkflowDefinition
+	OnWorkflowTaskStartedFunc func(time.Duration)
+}
+
+func (m *mockWorkflowDefinition) OnWorkflowTaskStarted(d time.Duration) {
+	m.OnWorkflowTaskStartedFunc(d)
+}
 
 func testDecodeValueHelper(t *testing.T, env *workflowEnvironmentImpl) {
 	equals := func(a, b interface{}) bool {
@@ -430,29 +440,30 @@ func TestUpdateEvents(t *testing.T) {
 				gotHeader = header
 			},
 		},
-	}
-
-	updateAttrs := &historypb.WorkflowUpdateRequestedEventAttributes{
-		Header: &commonpb.Header{Fields: map[string]*commonpb.Payload{"hello": mustPayload("world")}},
-		Update: &updatepb.WorkflowUpdate{
-			Header: &commonpb.Header{Fields: map[string]*commonpb.Payload{"a": mustPayload("b")}},
-			Name:   t.Name(),
-			Args:   &commonpb.Payloads{Payloads: []*commonpb.Payload{mustPayload("arg0")}},
+		workflowDefinition: &mockWorkflowDefinition{
+			OnWorkflowTaskStartedFunc: func(time.Duration) {},
 		},
 	}
 
-	event := &historypb.HistoryEvent{
-		EventType: enumspb.EVENT_TYPE_WORKFLOW_UPDATE_REQUESTED,
-		Attributes: &historypb.HistoryEvent_WorkflowUpdateRequestedEventAttributes{
-			WorkflowUpdateRequestedEventAttributes: updateAttrs,
-		},
+	meta := &interactionpb.Meta{
+		Id:              t.Name() + "-id",
+		EventId:         1,
+		InteractionType: enumspb.INTERACTION_TYPE_WORKFLOW_UPDATE,
+		Identity:        t.Name() + "-identity",
+		RequestId:       t.Name() + "-request_id",
 	}
-	err := weh.ProcessEvent(event, false, false)
+	input := &interactionpb.Input{
+		Header: &commonpb.Header{Fields: map[string]*commonpb.Payload{"a": mustPayload("b")}},
+		Name:   t.Name(),
+		Args:   &commonpb.Payloads{Payloads: []*commonpb.Payload{mustPayload("arg0")}},
+	}
+
+	err := weh.ProcessInteraction(meta, input, false, false)
 	require.NoError(t, err)
 
-	require.Equal(t, updateAttrs.Update.Name, gotName)
-	require.True(t, proto.Equal(updateAttrs.Update.Header, gotHeader))
-	require.True(t, proto.Equal(updateAttrs.Update.Args, gotArgs))
+	require.Equal(t, input.Name, gotName)
+	require.True(t, proto.Equal(input.Header, gotHeader))
+	require.True(t, proto.Equal(input.Args, gotArgs))
 
 	// UPDATE_ACCEPTED and UPDATE_COMPLETED are noops for the worker
 	for _, evtype := range [...]enumspb.EventType{
@@ -467,11 +478,10 @@ func TestUpdateCommandAdapter(t *testing.T) {
 	t.Parallel()
 	cmdHelper := newCommandsHelper()
 	dc := converter.GetDefaultDataConverter()
-	fc := GetDefaultFailureConverter()
 	updateCallbacks := &updateCommandCallbacks{
-		updateID: t.Name(),
+		meta:     &interactionpb.Meta{Id: t.Name() + "-id"},
 		dc:       dc,
-		fc:       fc,
+		fc:       defaultFailureConverter,
 		commands: cmdHelper,
 	}
 	t.Run("reject", func(t *testing.T) {
@@ -479,11 +489,8 @@ func TestUpdateCommandAdapter(t *testing.T) {
 		updateCallbacks.Reject(wantErr)
 		cmds := cmdHelper.getCommands(true)
 		require.Len(t, cmds, 1)
-		cmd, attrs := cmds[0], cmds[0].GetCompleteWorkflowUpdateCommandAttributes()
-		require.Equal(t, enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE, cmd.GetCommandType())
-		require.Equal(t,
-			enumspb.WORKFLOW_UPDATE_DURABILITY_PREFERENCE_BYPASS,
-			attrs.GetDurabilityPreference())
+		cmd, attrs := cmds[0], cmds[0].GetRejectWorkflowUpdateCommandAttributes()
+		require.Equal(t, enumspb.COMMAND_TYPE_REJECT_WORKFLOW_UPDATE, cmd.GetCommandType())
 		require.NotNil(t, attrs.GetFailure())
 		require.Equal(t, wantErr.Error(), attrs.GetFailure().GetMessage())
 	})
@@ -500,11 +507,8 @@ func TestUpdateCommandAdapter(t *testing.T) {
 		require.Len(t, cmds, 1)
 		cmd, attrs := cmds[0], cmds[0].GetCompleteWorkflowUpdateCommandAttributes()
 		require.Equal(t, enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE, cmd.GetCommandType())
-		require.Equal(t,
-			enumspb.WORKFLOW_UPDATE_DURABILITY_PREFERENCE_UNSPECIFIED,
-			attrs.GetDurabilityPreference())
-		require.NotNil(t, attrs.GetFailure())
-		require.Equal(t, wantErr.Error(), attrs.GetFailure().GetMessage())
+		require.NotNil(t, attrs.Output.GetFailure())
+		require.Equal(t, wantErr.Error(), attrs.Output.GetFailure().GetMessage())
 	})
 	t.Run("complete successfully", func(t *testing.T) {
 		wantSuccess := "success!"
@@ -513,14 +517,11 @@ func TestUpdateCommandAdapter(t *testing.T) {
 		require.Len(t, cmds, 1)
 		cmd, attrs := cmds[0], cmds[0].GetCompleteWorkflowUpdateCommandAttributes()
 		require.Equal(t, enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE, cmd.GetCommandType())
-		require.Equal(t,
-			enumspb.WORKFLOW_UPDATE_DURABILITY_PREFERENCE_UNSPECIFIED,
-			attrs.GetDurabilityPreference())
-		require.Nil(t, attrs.GetFailure())
-		require.NotNil(t, attrs.GetSuccess())
+		require.Nil(t, attrs.Output.GetFailure())
+		require.NotNil(t, attrs.Output.GetSuccess())
 
 		deserializedSuccess := ""
-		err := dc.FromPayloads(attrs.GetSuccess(), &deserializedSuccess)
+		err := dc.FromPayloads(attrs.Output.GetSuccess(), &deserializedSuccess)
 		require.NoError(t, err)
 		require.Equal(t, wantSuccess, deserializedSuccess)
 	})
@@ -530,9 +531,6 @@ func TestUpdateCommandAdapter(t *testing.T) {
 		require.Len(t, cmds, 1)
 		cmd, attrs := cmds[0], cmds[0].GetCompleteWorkflowUpdateCommandAttributes()
 		require.Equal(t, enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE, cmd.GetCommandType())
-		require.Equal(t,
-			enumspb.WORKFLOW_UPDATE_DURABILITY_PREFERENCE_UNSPECIFIED,
-			attrs.GetDurabilityPreference())
-		require.NotNil(t, attrs.GetFailure())
+		require.NotNil(t, attrs.Output.GetFailure())
 	})
 }
