@@ -95,10 +95,6 @@ type (
 	// NOTE: Experimental
 	ScheduleRange = internal.ScheduleRange
 
-	// ScheduleRanges represents a list of ScheduleRange.
-	// NOTE: Experimental
-	ScheduleRanges = internal.ScheduleRanges
-
 	// ScheduleCalendarSpec is an event specification relative to the calendar.
 	// NOTE: Experimental
 	ScheduleCalendarSpec = internal.ScheduleCalendarSpec
@@ -163,9 +159,9 @@ type (
 	// NOTE: Experimental
 	ScheduleWorkflowExecution = internal.ScheduleWorkflowExecution
 
-	// ScheduleDescribeResponse describes the current Schedule details from ScheduleHandle.Describe.
+	// ScheduleDescription describes the current Schedule details from ScheduleHandle.Describe.
 	// NOTE: Experimental
-	ScheduleDescribeResponse = internal.ScheduleDescribeResponse
+	ScheduleDescription = internal.ScheduleDescription 
 
 	// Schedule describes a created schedule.
 	// NOTE: Experimental
@@ -174,6 +170,22 @@ type (
 	// ScheduleUpdate describes the desired new schedule from ScheduleHandle.Update.
 	// NOTE: Experimental
 	ScheduleUpdate = internal.ScheduleUpdate
+
+	// ScheduleTriggerOptions configure the parameters for triggering a schedule.
+	// NOTE: Experimental
+	ScheduleTriggerOptions = internal.ScheduleTriggerOptions
+
+	// SchedulePauseOptions configure the parameters for pausing a schedule.
+	// NOTE: Experimental
+	SchedulePauseOptions = internal.SchedulePauseOptions
+
+	// ScheduleUnpauseOptions configure the parameters for unpausing a schedule.
+	// NOTE: Experimental
+	ScheduleUnpauseOptions = internal.ScheduleUnpauseOptions
+
+	// ScheduleBackfillOptions configure the parameters for backfilling a schedule.
+	// NOTE: Experimental
+	ScheduleBackfillOptions = internal.ScheduleBackfillOptions
 
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
@@ -475,7 +487,7 @@ type (
 
 		// Schedule creates a new shedule client with the same gRPC connection as this client.
 		// NOTE: Experimental
-		Schedule() ScheduleClient
+		ScheduleClient() ScheduleClient
 
 		// Close client and clean up underlying resources.
 		//

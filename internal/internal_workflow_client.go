@@ -106,7 +106,7 @@ type (
 	}
 
 	scheduleHandleImpl struct {
-		scheduleID string
+		ID string
 		client     *WorkflowClient
 	}
 
@@ -198,8 +198,8 @@ type (
 		paginate func(nexttoken []byte) (*workflowservice.GetWorkflowExecutionHistoryResponse, error)
 	}
 
-	// ScheduleListIteratorImpl is the implementation of ScheduleListIterator
-	ScheduleListIteratorImpl struct {
+	// scheduleListIteratorImpl is the implementation of ScheduleListIterator
+	scheduleListIteratorImpl struct {
 		// whether this iterator is initialized
 		initialized bool
 		// local cached history events and corresponding consuming index
@@ -977,7 +977,7 @@ func (wc *WorkflowClient) ensureInitialized() error {
 	return err
 }
 
-func (wc *WorkflowClient) Schedule() ScheduleClient {
+func (wc *WorkflowClient) ScheduleClient() ScheduleClient {
 	return wc
 }
 
@@ -1547,8 +1547,8 @@ type scheduleClientInterceptor struct{ client *WorkflowClient }
 
 func (s *scheduleClientInterceptor) CreateSchedule(ctx context.Context, in *ScheduleClientCreateInput) (ScheduleHandle, error) {
 	// This is always set before interceptor is invoked
-	ScheduleID := in.Options.ScheduleID
-	if ScheduleID == "" {
+	ID := in.Options.ID
+	if ID == "" {
 		return nil, fmt.Errorf("no schedule ID in options")
 	}
 
@@ -1584,7 +1584,7 @@ func (s *scheduleClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 	// run propagators to extract information about tracing and other stuff, store in headers field
 	startRequest := &workflowservice.CreateScheduleRequest{
 		Namespace:  s.client.namespace,
-		ScheduleId: ScheduleID,
+		ScheduleId: ID,
 		RequestId:  uuid.New(),
 		Schedule: &schedulepb.Schedule{
 			Spec:   convertToPBScheduleSpec(&in.Options.Spec),
@@ -1622,14 +1622,14 @@ func (s *scheduleClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 	}
 
 	return &scheduleHandleImpl{
-		scheduleID: ScheduleID,
+		ID: ID,
 		client:     s.client,
 	}, nil
 }
 
 func (s *scheduleClientInterceptor) mustEmbedScheduleClientInterceptor() {}
 
-func (wc *WorkflowClient) CreateSchedule(ctx context.Context, options ScheduleOptions) (ScheduleHandle, error) {
+func (wc *WorkflowClient) Create(ctx context.Context, options ScheduleOptions) (ScheduleHandle, error) {
 	if err := wc.ensureInitialized(); err != nil {
 		return nil, err
 	}
@@ -1643,17 +1643,20 @@ func (wc *WorkflowClient) CreateSchedule(ctx context.Context, options ScheduleOp
 	})
 }
 
-func (wc *WorkflowClient) ListSchedules(ctx context.Context, options ScheduleListOptions) (ScheduleListIterator, error) {
-	pageSize := options.PageSize
-	if options.PageSize <= 0 {
-		pageSize = 1000
+func (wc *WorkflowClient) GetHandle(ctx context.Context, scheduleID string) ScheduleHandle {
+	return &scheduleHandleImpl{
+		ID: scheduleID,
+		client:     wc,
 	}
+}
+
+func (wc *WorkflowClient) List(ctx context.Context, options ScheduleListOptions) (ScheduleListIterator, error) {
 	paginate := func(nextToken []byte) (*workflowservice.ListSchedulesResponse, error) {
 		grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		request := &workflowservice.ListSchedulesRequest{
 			Namespace:       wc.namespace,
-			MaximumPageSize: pageSize,
+			MaximumPageSize: options.PageSize,
 			NextPageToken:   nextToken,
 		}
 		var response *workflowservice.ListSchedulesResponse
@@ -1672,12 +1675,12 @@ func (wc *WorkflowClient) ListSchedules(ctx context.Context, options ScheduleLis
 		return response, nil
 	}
 
-	return &ScheduleListIteratorImpl{
+	return &scheduleListIteratorImpl{
 		paginate: paginate,
 	}, nil
 }
 
-func (iter *ScheduleListIteratorImpl) HasNext() bool {
+func (iter *scheduleListIteratorImpl) HasNext() bool {
 	if iter.nextScheduleIndex < len(iter.schedules) || iter.err != nil {
 		return true
 	} else if !iter.initialized || len(iter.nextToken) != 0 {
@@ -1703,7 +1706,7 @@ func (iter *ScheduleListIteratorImpl) HasNext() bool {
 	return false
 }
 
-func (iter *ScheduleListIteratorImpl) Next() (*ScheduleListEntry, error) {
+func (iter *scheduleListIteratorImpl) Next() (*ScheduleListEntry, error) {
 	// if caller call the Next() when iteration is over, just return nil, nil
 	if !iter.HasNext() {
 		panic("ScheduleListIterator Next() called without checking HasNext()")
@@ -1724,21 +1727,14 @@ func (iter *ScheduleListIteratorImpl) Next() (*ScheduleListEntry, error) {
 	panic("ScheduleListIterator Next() should return either a schedule or a err")
 }
 
-func (wc *WorkflowClient) GetScheduleHandle(ctx context.Context, scheduleID string) ScheduleHandle {
-	return &scheduleHandleImpl{
-		scheduleID: scheduleID,
-		client:     wc,
-	}
-}
-
 func (scheduleHandle *scheduleHandleImpl) GetID() string {
-	return scheduleHandle.scheduleID
+	return scheduleHandle.ID
 }
 
 func (scheduleHandle *scheduleHandleImpl) Delete(ctx context.Context) error {
 	request := &workflowservice.DeleteScheduleRequest{
 		Namespace:  scheduleHandle.client.namespace,
-		ScheduleId: scheduleHandle.scheduleID,
+		ScheduleId: scheduleHandle.ID,
 		Identity:   scheduleHandle.client.identity,
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
@@ -1747,12 +1743,12 @@ func (scheduleHandle *scheduleHandleImpl) Delete(ctx context.Context) error {
 	return err
 }
 
-func (scheduleHandle *scheduleHandleImpl) Backfill(ctx context.Context, backfill []ScheduleBackfill) error {
+func (scheduleHandle *scheduleHandleImpl) Backfill(ctx context.Context, options ScheduleBackfillOptions) error {
 	request := &workflowservice.PatchScheduleRequest{
 		Namespace:  scheduleHandle.client.namespace,
-		ScheduleId: scheduleHandle.scheduleID,
+		ScheduleId: scheduleHandle.ID,
 		Patch: &schedulepb.SchedulePatch{
-			BackfillRequest: convertToPBBackfillList(backfill),
+			BackfillRequest: convertToPBBackfillList(options.Backfill),
 		},
 		Identity:  scheduleHandle.client.identity,
 		RequestId: uuid.New(),
@@ -1763,20 +1759,20 @@ func (scheduleHandle *scheduleHandleImpl) Backfill(ctx context.Context, backfill
 	return err
 }
 
-func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, update func(*ScheduleDescribeResponse) *ScheduleUpdate, options ScheduleUpdateOptions) error {
+func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, update func(*ScheduleDescription) *ScheduleUpdate, options ScheduleUpdateOptions) error {
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	ctx = contextWithNewHeader(ctx)
 
 	describeRequest := &workflowservice.DescribeScheduleRequest{
 		Namespace:  scheduleHandle.client.namespace,
-		ScheduleId: scheduleHandle.scheduleID,
+		ScheduleId: scheduleHandle.ID,
 	}
 	describeResponse, err := scheduleHandle.client.workflowService.DescribeSchedule(grpcCtx, describeRequest)
 	if err != nil {
 		return err
 	}
-	scheduleDescription, err := ScheduleDescriptionFromPB(describeResponse)
+	scheduleDescription, err := scheduleDescriptionFromPB(describeResponse)
 	if err != nil {
 		return err
 	}
@@ -1790,7 +1786,7 @@ func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, update fun
 	}
 	_, err = scheduleHandle.client.workflowService.UpdateSchedule(grpcCtx, &workflowservice.UpdateScheduleRequest{
 		Namespace:     scheduleHandle.client.namespace,
-		ScheduleId:    scheduleHandle.scheduleID,
+		ScheduleId:    scheduleHandle.ID,
 		Schedule:      newSchedulePB,
 		ConflictToken: nil,
 		Identity:      scheduleHandle.client.identity,
@@ -1799,10 +1795,10 @@ func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, update fun
 	return err
 }
 
-func (scheduleHandle *scheduleHandleImpl) Describe(ctx context.Context) (*ScheduleDescribeResponse, error) {
+func (scheduleHandle *scheduleHandleImpl) Describe(ctx context.Context) (*ScheduleDescription, error) {
 	request := &workflowservice.DescribeScheduleRequest{
 		Namespace:  scheduleHandle.client.namespace,
-		ScheduleId: scheduleHandle.scheduleID,
+		ScheduleId: scheduleHandle.ID,
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
@@ -1810,16 +1806,16 @@ func (scheduleHandle *scheduleHandleImpl) Describe(ctx context.Context) (*Schedu
 	if err != nil {
 		return nil, err
 	}
-	return ScheduleDescriptionFromPB(describeResponse)
+	return scheduleDescriptionFromPB(describeResponse)
 }
 
-func (scheduleHandle *scheduleHandleImpl) Trigger(ctx context.Context, overlap enumspb.ScheduleOverlapPolicy) error {
+func (scheduleHandle *scheduleHandleImpl) Trigger(ctx context.Context, options ScheduleTriggerOptions) error {
 	request := &workflowservice.PatchScheduleRequest{
 		Namespace:  scheduleHandle.client.namespace,
-		ScheduleId: scheduleHandle.scheduleID,
+		ScheduleId: scheduleHandle.ID,
 		Patch: &schedulepb.SchedulePatch{
 			TriggerImmediately: &schedulepb.TriggerImmediatelyRequest{
-				OverlapPolicy: overlap,
+				OverlapPolicy: options.Overlap,
 			},
 		},
 		Identity:  scheduleHandle.client.identity,
@@ -1831,14 +1827,14 @@ func (scheduleHandle *scheduleHandleImpl) Trigger(ctx context.Context, overlap e
 	return err
 }
 
-func (scheduleHandle *scheduleHandleImpl) Pause(ctx context.Context, note string) error {
+func (scheduleHandle *scheduleHandleImpl) Pause(ctx context.Context, options SchedulePauseOptions) error {
 	pauseNote := "Paused via Go SDK"
-	if note != "" {
-		pauseNote = note
+	if options.Note != "" {
+		pauseNote = options.Note
 	}
 	request := &workflowservice.PatchScheduleRequest{
 		Namespace:  scheduleHandle.client.namespace,
-		ScheduleId: scheduleHandle.scheduleID,
+		ScheduleId: scheduleHandle.ID,
 		Patch: &schedulepb.SchedulePatch{
 			Pause: pauseNote,
 		},
@@ -1851,14 +1847,14 @@ func (scheduleHandle *scheduleHandleImpl) Pause(ctx context.Context, note string
 	return err
 }
 
-func (scheduleHandle *scheduleHandleImpl) Unpause(ctx context.Context, note string) error {
+func (scheduleHandle *scheduleHandleImpl) Unpause(ctx context.Context, options ScheduleUnpauseOptions) error {
 	unpauseNote := "Unpaused via Go SDK"
-	if note != "" {
-		unpauseNote = note
+	if options.Note != "" {
+		unpauseNote = options.Note
 	}
 	request := &workflowservice.PatchScheduleRequest{
 		Namespace:  scheduleHandle.client.namespace,
-		ScheduleId: scheduleHandle.scheduleID,
+		ScheduleId: scheduleHandle.ID,
 		Patch: &schedulepb.SchedulePatch{
 			Unpause: unpauseNote,
 		},
@@ -1876,19 +1872,7 @@ func convertToPBScheduleSpec(scheduleSpec *ScheduleSpec) *schedulepb.ScheduleSpe
 		return nil
 	}
 
-	calendar := make([]*schedulepb.StructuredCalendarSpec, len(scheduleSpec.Calendars))
-	for i, c := range scheduleSpec.Calendars {
-		calendar[i] = &schedulepb.StructuredCalendarSpec{
-			Second:     c.Second,
-			Minute:     c.Minute,
-			Hour:       c.Hour,
-			DayOfMonth: c.DayOfMonth,
-			Month:      c.Month,
-			Year:       c.Year,
-			DayOfWeek:  c.DayOfWeek,
-			Comment:    c.Comment,
-		}
-	}
+	calendar := convertToPBScheduleCalendarSpecList(scheduleSpec.Calendars)
 
 	intervals := make([]*schedulepb.IntervalSpec, len(scheduleSpec.Intervals))
 	for i, interval := range scheduleSpec.Intervals {
@@ -1899,35 +1883,28 @@ func convertToPBScheduleSpec(scheduleSpec *ScheduleSpec) *schedulepb.ScheduleSpe
 		}
 	}
 
-	skip := make([]*schedulepb.StructuredCalendarSpec, len(scheduleSpec.Skip))
-	for i, s := range scheduleSpec.Skip {
-		skip[i] = &schedulepb.StructuredCalendarSpec{
-			Second:     s.Second,
-			Minute:     s.Minute,
-			Hour:       s.Hour,
-			DayOfMonth: s.DayOfMonth,
-			Month:      s.Month,
-			Year:       s.Year,
-			DayOfWeek:  s.DayOfWeek,
-			Comment:    s.Comment,
-		}
+	skip := convertToPBScheduleCalendarSpecList(scheduleSpec.Skip)
+
+	var startTime *time.Time
+	if !scheduleSpec.StartAt.IsZero() {
+		startTime = &scheduleSpec.StartAt
 	}
 
-	timezone := time.UTC
-	if scheduleSpec.Timezone != nil {
-		timezone = scheduleSpec.Timezone
+	var endTime *time.Time
+	if !scheduleSpec.EndAt.IsZero(){
+		endTime = &scheduleSpec.EndAt
 	}
- 
+
 	return &schedulepb.ScheduleSpec{
 		StructuredCalendar:        calendar,
 		Interval:                  intervals,
 		CronString:                scheduleSpec.CronExpressions,
 		ExcludeStructuredCalendar: skip,
-		StartTime:                 scheduleSpec.StartAt,
-		EndTime:                   scheduleSpec.EndAt,
+		StartTime:                 startTime,
+		EndTime:                   endTime,
 		Jitter:                    &scheduleSpec.Jitter,
-		// TODO support custom timezone data
-		TimezoneName: timezone.String(),
+		// TODO support custom time zone data
+		TimezoneName: scheduleSpec.TimeZoneName,
 	}
 }
 
@@ -1935,24 +1912,9 @@ func convertFromPBScheduleSpec(scheduleSpec *schedulepb.ScheduleSpec) *ScheduleS
 	if scheduleSpec == nil {
 		return nil
 	}
-	timezone, err := time.LoadLocation(scheduleSpec.GetTimezoneName())
-	if err != nil {
-		return nil
-	}
+	
+	calendars := convertFromPBScheduleCalendarSpecList(scheduleSpec.GetStructuredCalendar())
 
-	calendars := make([]ScheduleCalendarSpec, len(scheduleSpec.GetStructuredCalendar()))
-	for i, c := range scheduleSpec.GetStructuredCalendar() {
-		calendars[i] = ScheduleCalendarSpec{
-			Second:     c.Second,
-			Minute:     c.Minute,
-			Hour:       c.Hour,
-			DayOfMonth: c.DayOfMonth,
-			Month:      c.Month,
-			Year:       c.Year,
-			DayOfWeek:  c.DayOfWeek,
-			Comment:    c.Comment,
-		}
-	}
 	intervals := make([]ScheduleIntervalSpec, len(scheduleSpec.GetInterval()))
 	for i, s := range scheduleSpec.GetInterval() {
 		intervals[i] = ScheduleIntervalSpec{
@@ -1961,32 +1923,30 @@ func convertFromPBScheduleSpec(scheduleSpec *schedulepb.ScheduleSpec) *ScheduleS
 		}
 	}
 
-	skip := make([]ScheduleCalendarSpec, len(scheduleSpec.GetExcludeStructuredCalendar()))
-	for i, e := range scheduleSpec.GetExcludeStructuredCalendar() {
-		skip[i] = ScheduleCalendarSpec{
-			Second:     e.Second,
-			Minute:     e.Minute,
-			Hour:       e.Hour,
-			DayOfMonth: e.DayOfMonth,
-			Month:      e.Month,
-			Year:       e.Year,
-			DayOfWeek:  e.DayOfWeek,
-			Comment:    e.Comment,
-		}
+	skip := convertFromPBScheduleCalendarSpecList(scheduleSpec.GetExcludeStructuredCalendar())
+
+	startAt := time.Time{}
+	if scheduleSpec.GetStartTime() != nil {
+		startAt = *scheduleSpec.GetStartTime()
+	}
+
+	endAt := time.Time{}
+	if scheduleSpec.GetEndTime() != nil {
+		endAt = *scheduleSpec.GetEndTime()
 	}
 
 	return &ScheduleSpec{
 		Calendars: calendars,
 		Intervals: intervals,
 		Skip:      skip,
-		StartAt:   scheduleSpec.GetStartTime(),
-		EndAt:     scheduleSpec.GetEndTime(),
+		StartAt:   startAt,
+		EndAt:     endAt,
 		Jitter:    common.DurationValue(scheduleSpec.GetJitter()),
-		Timezone:  timezone,
+		TimeZoneName:  scheduleSpec.GetTimezoneName(),
 	}
 }
 
-func ScheduleDescriptionFromPB(describeResponse *workflowservice.DescribeScheduleResponse) (*ScheduleDescribeResponse, error) {
+func scheduleDescriptionFromPB(describeResponse *workflowservice.DescribeScheduleResponse) (*ScheduleDescription, error) {
 	if describeResponse == nil {
 		return nil, nil
 	}
@@ -1999,17 +1959,7 @@ func ScheduleDescriptionFromPB(describeResponse *workflowservice.DescribeSchedul
 		}
 	}
 
-	recentActions := make([]ScheduleActionResult, len(describeResponse.Info.GetRecentActions()))
-	for i, a := range describeResponse.Info.RecentActions {
-		recentActions[i] = ScheduleActionResult{
-			ScheduleTime: common.TimeValue(a.GetScheduleTime()),
-			ActualTime:   common.TimeValue(a.GetActualTime()),
-			StartWorkflowResult: ScheduleWorkflowExecution{
-				WorkflowID:          a.GetStartWorkflowResult().GetWorkflowId(),
-				FirstExecutionRunID: a.GetStartWorkflowResult().GetRunId(),
-			},
-		}
-	}
+	recentActions := convertFromPBScheduleActionResultList(describeResponse.Info.GetRecentActions())
 
 	nextActionTimes := make([]time.Time, len(describeResponse.Info.GetFutureActionTimes()))
 	for i, t := range describeResponse.Info.GetFutureActionTimes() {
@@ -2021,7 +1971,7 @@ func ScheduleDescriptionFromPB(describeResponse *workflowservice.DescribeSchedul
 		return nil, err
 	}
 
-	return &ScheduleDescribeResponse{
+	return &ScheduleDescription{
 		Schedule: Schedule{
 			Action: actionDescription,
 			Spec:   convertFromPBScheduleSpec(describeResponse.Schedule.Spec),
@@ -2079,18 +2029,8 @@ func convertToPBSchedule(ctx context.Context, client *WorkflowClient, schedule *
 
 func convertFromPBScheduleListEntry(schedule *schedulepb.ScheduleListEntry) *ScheduleListEntry {
 	scheduleInfo := schedule.GetInfo()
-
-	recentActions := make([]ScheduleActionResult, len(scheduleInfo.GetRecentActions()))
-	for i, a := range scheduleInfo.GetRecentActions() {
-		recentActions[i] = ScheduleActionResult{
-			ScheduleTime: common.TimeValue(a.GetScheduleTime()),
-			ActualTime:   common.TimeValue(a.GetActualTime()),
-			StartWorkflowResult: ScheduleWorkflowExecution{
-				WorkflowID:          a.GetStartWorkflowResult().GetWorkflowId(),
-				FirstExecutionRunID: a.GetStartWorkflowResult().GetRunId(),
-			},
-		}
-	}
+	
+	recentActions := convertFromPBScheduleActionResultList(scheduleInfo.GetRecentActions())
 
 	nextActionTimes := make([]time.Time, len(schedule.Info.GetFutureActionTimes()))
 	for i, t := range schedule.Info.GetFutureActionTimes() {
@@ -2098,7 +2038,7 @@ func convertFromPBScheduleListEntry(schedule *schedulepb.ScheduleListEntry) *Sch
 	}
 
 	return &ScheduleListEntry{
-		ScheduleID: schedule.ScheduleId,
+		ID: schedule.ScheduleId,
 		Spec:       convertFromPBScheduleSpec(scheduleInfo.GetSpec()),
 		Note:       scheduleInfo.GetNotes(),
 		Paused:     scheduleInfo.GetPaused(),
@@ -2184,7 +2124,7 @@ func convertToPBScheduleAction(ctx context.Context, client *WorkflowClient, sche
 				StartWorkflow: &workflowpb.NewWorkflowExecutionInfo{
 					WorkflowId:               action.WorkflowID,
 					WorkflowType:             &commonpb.WorkflowType{Name: action.WorkflowType.Name},
-					TaskQueue:                &taskqueuepb.TaskQueue{Name: action.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
+					TaskQueue:                &taskqueuepb.TaskQueue{Name: action.TaskQueue, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
 					Input:                    action.Args,
 					WorkflowExecutionTimeout: &action.WorkflowExecutionTimeout,
 					WorkflowRunTimeout:       &action.WorkflowRunTimeout,
@@ -2213,7 +2153,7 @@ func convertFromPBScheduleAction(action *schedulepb.ScheduleAction) (ScheduleAct
 				Name: workflow.WorkflowType.GetName(),
 			},
 			Args:                     workflow.Input,
-			TaskQueueName:            workflow.TaskQueue.GetName(),
+			TaskQueue:                workflow.TaskQueue.GetName(),
 			WorkflowExecutionTimeout: common.DurationValue(workflow.GetWorkflowExecutionTimeout()),
 			WorkflowRunTimeout:       common.DurationValue(workflow.GetWorkflowRunTimeout()),
 			WorkflowTaskTimeout:      common.DurationValue(workflow.GetWorkflowTaskTimeout()),
@@ -2239,4 +2179,84 @@ func convertToPBBackfillList(backfillRequests []ScheduleBackfill) []*schedulepb.
 		}
 	}
 	return backfillRequestsPB
+}
+
+func convertToPBRangeList(scheduleRange []ScheduleRange) []*schedulepb.Range {
+	rangesPB := make([]*schedulepb.Range, len(scheduleRange))
+	for i, r := range scheduleRange {
+		 rangesPB[i] = &schedulepb.Range{
+			Start: int32(r.Start),
+			End:   int32(r.End),
+			Step:  int32(r.Step),
+		}
+	}
+	return rangesPB
+}
+
+func convertFromPBRangeList(scheduleRangePB  []*schedulepb.Range) []ScheduleRange {
+	scheduleRange := make([]ScheduleRange, len(scheduleRangePB))
+	for i, r := range scheduleRangePB {
+		if r == nil {
+			continue
+		}
+		scheduleRange[i] = ScheduleRange{
+			Start: int(r.Start),
+			End:   int(r.End),
+			Step:  int(r.Step),
+		}
+	}
+	return scheduleRange
+}
+
+func convertFromPBScheduleCalendarSpecList(calendarSpecPB []*schedulepb.StructuredCalendarSpec) []ScheduleCalendarSpec {
+	calendarSpec := make([]ScheduleCalendarSpec, len(calendarSpecPB))
+	for i, e := range calendarSpecPB {
+		calendarSpec[i] = ScheduleCalendarSpec{
+			Second:     convertFromPBRangeList(e.Second),
+			Minute:     convertFromPBRangeList(e.Minute),
+			Hour:       convertFromPBRangeList(e.Hour),
+			DayOfMonth: convertFromPBRangeList(e.DayOfMonth),
+			Month:      convertFromPBRangeList(e.Month),
+			Year:       convertFromPBRangeList(e.Year),
+			DayOfWeek:  convertFromPBRangeList(e.DayOfWeek),
+			Comment:    e.Comment,
+		}
+	}
+	return calendarSpec
+}
+
+func convertToPBScheduleCalendarSpecList(calendarSpec []ScheduleCalendarSpec) []*schedulepb.StructuredCalendarSpec{
+	calendarSpecPB := make([]*schedulepb.StructuredCalendarSpec, len(calendarSpec))
+	for i, e := range calendarSpec {
+		calendarSpecPB[i] = &schedulepb.StructuredCalendarSpec{
+			Second:     convertToPBRangeList(e.Second),
+			Minute:     convertToPBRangeList(e.Minute),
+			Hour:       convertToPBRangeList(e.Hour),
+			DayOfMonth: convertToPBRangeList(e.DayOfMonth),
+			Month:      convertToPBRangeList(e.Month),
+			Year:       convertToPBRangeList(e.Year),
+			DayOfWeek:  convertToPBRangeList(e.DayOfWeek),
+			Comment:    e.Comment,
+		}
+	}
+	return calendarSpecPB
+}
+
+func convertFromPBScheduleActionResultList(aa []*schedulepb.ScheduleActionResult) []ScheduleActionResult {
+	recentActions := make([]ScheduleActionResult, len(aa))
+	for i, a := range aa {
+		var workflowExecution *ScheduleWorkflowExecution
+		if a.GetStartWorkflowResult() != nil {
+			workflowExecution = &ScheduleWorkflowExecution{
+				WorkflowID:          a.GetStartWorkflowResult().GetWorkflowId(),
+				FirstExecutionRunID: a.GetStartWorkflowResult().GetRunId(),
+			}
+		}
+		recentActions[i] = ScheduleActionResult{
+			ScheduleTime: common.TimeValue(a.GetScheduleTime()),
+			ActualTime:   common.TimeValue(a.GetActualTime()),
+			StartWorkflowResult: workflowExecution,
+		}
+	}
+	return recentActions
 }

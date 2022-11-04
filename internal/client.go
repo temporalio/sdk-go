@@ -34,7 +34,6 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/operatorservice/v1"
-	schedulepb "go.temporal.io/api/schedule/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	uberatomic "go.uber.org/atomic"
 	"google.golang.org/grpc"
@@ -350,7 +349,7 @@ type (
 		OperatorService() operatorservice.OperatorServiceClient
 
 		// Schedule creates a new shedule client with the same gRPC connection as this client.
-		Schedule() ScheduleClient
+		ScheduleClient() ScheduleClient
 
 		// Close client and clean up underlying resources.
 		Close()
@@ -635,10 +634,18 @@ type (
 	// time in StructuredCalendarSpec. If end < start, then end is interpreted as
 	// equal to start. This means you can use a Range with start set to a value, and
 	// end and step unset (defaulting to 0) to represent a single value.
-	ScheduleRange = schedulepb.Range
+	ScheduleRange struct {
+		// Start of the range (inclusive)
+		Start int
 
-	// ScheduleRanges represents a list of ScheduleRange.
-	ScheduleRanges = []*ScheduleRange
+		// End of the range (inclusive)
+		// Optional: defaulted to Start
+		End int
+
+		// Step to be take between each value
+		// Optional: defaulted to 1
+		Step int
+	}
 
 	// ScheduleCalendarSpec is an event specification relative to the calendar, similar to a traditional cron specification.
 	// A timestamp matches if at least one range of each field matches the
@@ -646,26 +653,26 @@ type (
 	// that means all years match. For all fields besides year, at least one Range
 	ScheduleCalendarSpec struct {
 		// Second range to match (0-59).
-		Second ScheduleRanges
+		Second []ScheduleRange
 
 		// Minute range to match (0-59).
-		Minute ScheduleRanges
+		Minute []ScheduleRange
 
 		// Hour range to match (0-23).
-		Hour ScheduleRanges
+		Hour []ScheduleRange
 
 		// DayOfMonth range to match (1-31)
-		DayOfMonth ScheduleRanges
+		DayOfMonth []ScheduleRange
 
 		// Month range to match (1-12)
-		Month ScheduleRanges
+		Month []ScheduleRange
 
 		// Year range to match.
 		// Optional: Defaulted to "*"
-		Year ScheduleRanges
+		Year []ScheduleRange
 
 		// DayOfWeek range to match (0-6; 0 is Sunday)
-		DayOfWeek ScheduleRanges
+		DayOfWeek []ScheduleRange
 
 		// Comment - Description of the intention of this schedule.
 		Comment string
@@ -720,24 +727,24 @@ type (
 		// For example, `0 12 * * MON-WED,FRI` is every M/Tu/W/F at noon, and is equivalent to this ScheduleCalendarSpec:
 		//
 		// client.ScheduleCalendarSpec{
-		// 		Second: client.ScheduleRanges{{}},
-		// 		Minute: client.ScheduleRanges{{}},
-		// 		Hour: client.ScheduleRanges{{
+		// 		Second: []ScheduleRange{{}},
+		// 		Minute: []ScheduleRanges{{}},
+		// 		Hour: []ScheduleRange{{
 		// 			Start: 12,
 		// 		}},
-		// 		DayOfMonth: client.ScheduleRanges{
+		// 		DayOfMonth: []ScheduleRange{
 		// 			{
 		// 				Start: 1,
 		// 				End:   31,
 		// 			},
 		// 		},
-		// 		Month: client.ScheduleRanges{
+		// 		Month: []ScheduleRange{
 		// 			{
 		// 				Start: 1,
 		// 				End:   12,
 		// 			},
 		// 		},
-		// 		DayOfWeek: client.ScheduleRanges{
+		// 		DayOfWeek: []ScheduleRange{
 		// 			{
 		// 				Start: 1,
 		//				End: 3,
@@ -763,8 +770,8 @@ type (
 		//	- @every <interval>[/<phase>] is accepted and gets compiled into an
 		//		IntervalSpec instead. <interval> and <phase> should be a decimal integer
 		//		with a unit suffix s, m, h, or d.
-		//	- Optionally, the string can be preceded by CRON_TZ=<timezone name> or
-		//		TZ=<timezone name>, which will get copied to ScheduleSpec.TimeZone. (In which case the ScheduleSpec.TimeZone field should be left empty.)
+		//	- Optionally, the string can be preceded by CRON_TZ=<time zone name> or
+		//		TZ=<time zone name>, which will get copied to ScheduleSpec.TimeZoneName. (In which case the ScheduleSpec.TimeZone field should be left empty.)
 		//	- Optionally, "#" followed by a comment can appear at the end of the string.
 		//	- Note that the special case that some cron implementations have for
 		//		treating DayOfMonth and DayOfWeek as "or" instead of "and" when both
@@ -778,20 +785,30 @@ type (
 
 		// StartAt - Any times before `startAt` will be skipped. Together, `startAt` and `endAt` make an inclusive interval.
 		// Optional: Defaulted to the beginning of time
-		StartAt *time.Time
+		StartAt time.Time
 
 		// EndAt - Any times after `endAt` will be skipped.
 		// Optional: Defaulted to the end of time
-		EndAt *time.Time
+		EndAt time.Time
 
 		// Jitter - All times will be incremented by a random value from 0 to this amount of jitter, capped
 		// by the time until the next schedule. 
 		// Optional: Defaulted to 0
 		Jitter time.Duration
 
-		// Timezone - timezone to interpret all ScheduleCalendarSpec in.
+		// TimeZoneName - IANA time zone name, for example `US/Pacific`.
+		//
+		// The definition will be loaded by Temporal Server from the environment it runs in.
+		//
+		// Calendar spec matching is based on literal matching of the clock time
+		// with no special handling of DST: if you write a calendar spec that fires
+		// at 2:30am and specify a time zone that follows DST, that action will not
+		// be triggered on the day that has no 2:30am. Similarly, an action that
+		// fires at 1:30am will be triggered twice on the day that has two 1:30s.
+		//
+		// Note: No actions are taken on leap-seconds (e.g. 23:59:60 UTC).
 		// Optional: Defaulted to UTC
-		Timezone *time.Location
+		TimeZoneName string
 	}
 
 	// ScheduleAction represents an action a schedule can take.
@@ -822,9 +839,9 @@ type (
 		// Args - Arguments of the workflow
 		Args *commonpb.Payloads
 
-		// TaskQueueName -The workflow tasks of the workflow are scheduled on the queue with this name.
+		// TaskQueue - The workflow tasks of the workflow are scheduled on the queue with this name.
 		// This is also the name of the activity task queue on which activities are scheduled.
-		TaskQueueName string
+		TaskQueue string
 
 		// WorkflowExecutionTimeout - The timeout for duration of workflow execution.
 		WorkflowExecutionTimeout time.Duration
@@ -836,11 +853,11 @@ type (
 		// pulled this task.
 		WorkflowTaskTimeout time.Duration
 
-		// WorkflowIdReusePolicy -  Whether server allow reuse of workflow ID, can be useful
+		// WorkflowIdReusePolicy - Whether server allow reuse of workflow ID, can be useful
 		// for dedupe logic if set to RejectDuplicate.
 		WorkflowIDReusePolicy enumspb.WorkflowIdReusePolicy
 
-		// RetryPolicy - retry policy for workflow. If a retry policy is specified, in case of workflow failure
+		// RetryPolicy - Retry policy for workflow. If a retry policy is specified, in case of workflow failure
 		// server will start new workflow execution if needed based on the retry policy.
 		RetryPolicy *RetryPolicy
 
@@ -855,9 +872,9 @@ type (
 
 	// ScheduleOptions configure the parameters for creating a schedule.
 	ScheduleOptions struct {
-		// ScheduleID - The business identifier of the schedule.
+		// ID - The business identifier of the schedule.
 		// Optional: defaulted to a uuid.
-		ScheduleID string
+		ID string
 
 		// Schedule - Describes when Actions should be taken.
 		Spec ScheduleSpec
@@ -900,7 +917,7 @@ type (
 		// RemainingActions - limit the number of Actions to take.
 		//
 		// This number is decremented after each Action is taken, and Actions are not
-		// taken when the number is `0` (unless {@link ScheduleHandle.trigger} is called).
+		// taken when the number is `0` (unless ScheduleHandle.Trigger is called).
 		//
 		// Optional: defaulted to zero
 		RemainingActions int64
@@ -962,8 +979,8 @@ type (
 		LastUpdateAt time.Time
 	}
 
-	// ScheduleDescribeResponse describes the current Schedule details from ScheduleHandle.Describe.
-	ScheduleDescribeResponse struct {
+	// ScheduleDescription describes the current Schedule details from ScheduleHandle.Describe.
+	ScheduleDescription struct {
 		// Schedule - Describes the modifiable fields of a schedule.
 		Schedule Schedule
 
@@ -1036,6 +1053,32 @@ type (
 	// ScheduleUpdateOptions configure the parameters for updating a schedule.
 	ScheduleUpdateOptions struct{}
 
+	// ScheduleTriggerOptions configure the parameters for triggering a schedule.
+	ScheduleTriggerOptions struct{
+		// Overlap - If specified, policy to override the schedules default overlap policy.
+		Overlap enumspb.ScheduleOverlapPolicy
+	}
+
+	// SchedulePauseOptions configure the parameters for pausing a schedule.
+	SchedulePauseOptions struct{
+		// Note - Informative human-readable message with contextual notes.
+		// Optional: defaulted to 'Paused via Go SDK'
+		Note string
+	}
+
+	// ScheduleUnpauseOptions configure the parameters for unpausing a schedule.
+	ScheduleUnpauseOptions struct{
+		// Note - Informative human-readable message with contextual notes.
+		// Optional: defaulted to 'Unpaused via Go SDK'
+		Note string
+	}
+
+	// ScheduleBackfillOptions configure the parameters for backfilling a schedule.
+	ScheduleBackfillOptions struct{
+		// Backfill  - Time periods to backfill the schedule.
+		Backfill []ScheduleBackfill
+	}
+
 	// ScheduleHandle represents a created schedule.
 	ScheduleHandle interface {
 		// GetID returns the schedule ID asssociated with this handle.
@@ -1045,30 +1088,28 @@ type (
 		Delete(ctx context.Context) error
 
 		// Backfill the schedule by going though the specified time periods and taking Actions as if that time passed by right now, all at once.
-		Backfill(ctx context.Context, backfill []ScheduleBackfill) error
+		Backfill(ctx context.Context, options ScheduleBackfillOptions) error
 
 		// Update the Schedule. fn takes a description of the schedule and returns the new desired schedule.
 		// If update returns a nil response then no update will occur.
 		//
 		// NOTE: If two Update calls are made in parallel to the same Schedule there is the potential
 		// for a race condition.
-		Update(ctx context.Context, fn func(*ScheduleDescribeResponse) *ScheduleUpdate, options ScheduleUpdateOptions) error
+		Update(ctx context.Context, fn func(*ScheduleDescription) *ScheduleUpdate, options ScheduleUpdateOptions) error
 
 		// Describe fetches the Schedule's description from the Server
-		Describe(ctx context.Context) (*ScheduleDescribeResponse, error)
+		Describe(ctx context.Context) (*ScheduleDescription, error)
 
 		// Trigger an Action to be taken immediately. Will override the schedules default policy
 		// with the one specified here. If overlap is SCHEDULE_OVERLAP_POLICY_UNSPECIFIED the schedule
 		// policy will be used.
-		Trigger(ctx context.Context, overlap enumspb.ScheduleOverlapPolicy) error
+		Trigger(ctx context.Context, options ScheduleTriggerOptions) error
 
 		// Pause the Schedule will also overwrite the Schedules current note with the new note.
-		// If an empty note is passed the Schedules note will be set to 'Paused via Go SDK'.
-		Pause(ctx context.Context, note string) error
+		Pause(ctx context.Context, options SchedulePauseOptions) error
 
 		// Unpause the Schedule will also overwrite the Schedules current note with the new note.
-		// If an empty note is passed the Schedules note will be set to 'Unpaused via Go SDK'.
-		Unpause(ctx context.Context, note string) error
+		Unpause(ctx context.Context, options ScheduleUnpauseOptions) error
 	}
 
 	// ScheduleActionResult describes when a schedule action took place
@@ -1081,13 +1122,13 @@ type (
 
 		// StartWorkflowResult - If action was ScheduleWorkflowAction, returns the
 		// ID of the workflow.
-		StartWorkflowResult ScheduleWorkflowExecution
+		StartWorkflowResult *ScheduleWorkflowExecution
 	}
 
 	// ScheduleListEntry
 	ScheduleListEntry struct {
-		// ScheduleID - The business identifier of the schedule.
-		ScheduleID string
+		// ID - The business identifier of the schedule.
+		ID string
 
 		// Spec - Describes when Actions should be taken.
 		Spec *ScheduleSpec
@@ -1140,17 +1181,17 @@ type (
 
 	// Client for creating Schedules and creating Schedule handles
 	ScheduleClient interface {
-		// CreateSchedule Creates a new Schedule.
-		CreateSchedule(ctx context.Context, options ScheduleOptions) (ScheduleHandle, error)
+		// Create a new Schedule.
+		Create(ctx context.Context, options ScheduleOptions) (ScheduleHandle, error)
 
-		// ListSchedules returns an interator to list all schedules
-		ListSchedules(ctx context.Context, options ScheduleListOptions) (ScheduleListIterator, error)
+		// List returns an interator to list all schedules
+		List(ctx context.Context, options ScheduleListOptions) (ScheduleListIterator, error)
 
 		// GetHandle returns a handle to a Schedule
 		//
 		// This method does not validate scheduleID. If there is no Schedule with the given scheduleID, handle
 		// methods like ScheduleHandle.Describe() will return an error.
-		GetScheduleHandle(ctx context.Context, scheduleID string) ScheduleHandle
+		GetHandle(ctx context.Context, scheduleID string) ScheduleHandle
 	}
 )
 

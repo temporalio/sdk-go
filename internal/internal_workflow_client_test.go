@@ -1466,7 +1466,7 @@ func TestClientCloseCount(t *testing.T) {
 	require.Equal(t, connectivity.Shutdown, workflowClient.conn.GetState())
 }
 
-func (s *workflowClientTestSuite) TestCreateSchedule() {
+func (s *workflowClientTestSuite) TestCreateScheduleClient() {
 	workflowOptions := StartWorkflowOptions{
 		ID:                       workflowID,
 		TaskQueue:                taskqueue,
@@ -1477,7 +1477,7 @@ func (s *workflowClientTestSuite) TestCreateSchedule() {
 		panic("this is just a stub")
 	}
 	options := ScheduleOptions{
-		ScheduleID: scheduleID,
+		ID: scheduleID,
 		Spec: ScheduleSpec{
 			CronExpressions: []string{"*"},
 		},
@@ -1491,7 +1491,7 @@ func (s *workflowClientTestSuite) TestCreateSchedule() {
 
 	s.service.EXPECT().CreateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResp, nil).Times(1)
 
-	scheduleHandle, err := s.client.Schedule().CreateSchedule(context.Background(), options)
+	scheduleHandle, err := s.client.ScheduleClient().Create(context.Background(), options)
 	s.Nil(err)
 	s.Equal(scheduleHandle.GetID(), scheduleID)
 }
@@ -1514,7 +1514,7 @@ func (s *workflowClientTestSuite) TestCreateScheduleWithMemoAndSearchAttr() {
 	}
 
 	options := ScheduleOptions{
-		ScheduleID: scheduleID,
+		ID: scheduleID,
 		Spec: ScheduleSpec{
 			CronExpressions: []string{"*"},
 		},
@@ -1539,7 +1539,7 @@ func (s *workflowClientTestSuite) TestCreateScheduleWithMemoAndSearchAttr() {
 			s.NoError(err)
 			s.Equal("attr value", resultAttr)
 		})
-	_, _ = s.client.Schedule().CreateSchedule(context.Background(), options)
+	_, _ = s.client.ScheduleClient().Create(context.Background(), options)
 }
 
 func getListSchedulesRequest() *workflowservice.ListSchedulesRequest {
@@ -1590,7 +1590,7 @@ func (s *workflowClientTestSuite) TestScheduleIterator_NoError() {
 	s.service.EXPECT().ListSchedules(gomock.Any(), request3, gomock.Any()).Return(response3, nil).Times(1)
 
 	var events []*ScheduleListEntry
-	iter, _ := s.client.Schedule().ListSchedules(context.Background(), ScheduleListOptions{})
+	iter, _ := s.client.ScheduleClient().List(context.Background(), ScheduleListOptions{})
 	for iter.HasNext() {
 		event, err := iter.Next()
 		s.Nil(err)
@@ -1632,7 +1632,7 @@ func (s *workflowClientTestSuite) TestIterator_NoError_EmptyPage() {
 	s.service.EXPECT().ListSchedules(gomock.Any(), request3, gomock.Any()).Return(response3, nil).Times(1)
 
 	var events []*ScheduleListEntry
-	iter, _ := s.client.Schedule().ListSchedules(context.Background(), ScheduleListOptions{})
+	iter, _ := s.client.ScheduleClient().List(context.Background(), ScheduleListOptions{})
 
 	for iter.HasNext() {
 		event, err := iter.Next()
@@ -1657,7 +1657,7 @@ func (s *workflowClientTestSuite) TestIteratorError() {
 
 	s.service.EXPECT().ListSchedules(gomock.Any(), request1, gomock.Any()).Return(response1, nil).Times(1)
 
-	iter, _ := s.client.Schedule().ListSchedules(context.Background(), ScheduleListOptions{})
+	iter, _ := s.client.ScheduleClient().List(context.Background(), ScheduleListOptions{})
 
 	s.True(iter.HasNext())
 	event, err := iter.Next()
