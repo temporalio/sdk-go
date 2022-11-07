@@ -46,10 +46,6 @@ type InterceptorOptions struct {
 
 	// DisableQueryTracing can be set to disable query tracing.
 	DisableQueryTracing bool
-
-	// DisableLogTraceLinking can be set to disable the automatic addition of "dd.trace_id" and "dd.span_id" fields to the logger
-	// provided by this interceptor.
-	DisableLogTraceLinking bool
 }
 
 // NewInterceptor creates an interceptor for setting on client options
@@ -58,9 +54,8 @@ func NewInterceptor(opts InterceptorOptions) interceptor.Tracer {
 
 	return &tracerImpl{
 		opts: InterceptorOptions{
-			DisableSignalTracing:   opts.DisableSignalTracing,
-			DisableQueryTracing:    opts.DisableQueryTracing,
-			DisableLogTraceLinking: opts.DisableLogTraceLinking,
+			DisableSignalTracing: opts.DisableSignalTracing,
+			DisableQueryTracing:  opts.DisableQueryTracing,
 		},
 	}
 }
@@ -175,9 +170,6 @@ func (t *tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (int
 }
 
 func (t *tracerImpl) GetLogger(logger log.Logger, ref interceptor.TracerSpanRef) log.Logger {
-	if t.opts.DisableLogTraceLinking {
-		return logger
-	}
 	spanRef, ok := ref.(*tracerSpan)
 	if !ok {
 		logger.Error(fmt.Sprintf("Error injecting TraceID in GetLogger: TracerSpanRef is type %T, expected *tracerSpan", ref))
