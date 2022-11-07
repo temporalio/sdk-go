@@ -20,7 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-// Package tracing provides DataDog tracing utilities
+// Package tracing provides Datadog tracing utilities
 package tracing
 
 import (
