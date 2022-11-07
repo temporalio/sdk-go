@@ -50,34 +50,17 @@ type InterceptorOptions struct {
 	// DisableLogTraceLinking can be set to disable the automatic addition of "dd.trace_id" and "dd.span_id" fields to the logger
 	// provided by this interceptor.
 	DisableLogTraceLinking bool
-
-	// SpanContextKey is the context key used for internal span tracking. If not
-	// set, this defaults to an internal key (recommended).
-	SpanContextKey interface{}
-
-	// HeaderKey is the Temporal header field key used to serialize spans. If
-	// empty, this defaults to the one used by all SDKs (recommended).
-	HeaderKey string
 }
 
 // NewInterceptor creates an interceptor for setting on client options
 // that implements Datadog tracing for workflows.
 func NewInterceptor(opts InterceptorOptions) interceptor.Tracer {
-	hKey := headerKey
-	if opts.HeaderKey != "" {
-		hKey = opts.HeaderKey
-	}
-	var scKey interface{} = activeSpanContextKey
-	if opts.SpanContextKey != nil {
-		scKey = opts.SpanContextKey
-	}
+
 	return &tracerImpl{
 		opts: InterceptorOptions{
 			DisableSignalTracing:   opts.DisableSignalTracing,
 			DisableQueryTracing:    opts.DisableQueryTracing,
 			DisableLogTraceLinking: opts.DisableLogTraceLinking,
-			SpanContextKey:         scKey,
-			HeaderKey:              hKey,
 		},
 	}
 }
@@ -97,8 +80,8 @@ type tracerImpl struct {
 
 func (t *tracerImpl) Options() interceptor.TracerOptions {
 	return interceptor.TracerOptions{
-		SpanContextKey:       t.opts.SpanContextKey,
-		HeaderKey:            t.opts.HeaderKey,
+		SpanContextKey:       activeSpanContextKey,
+		HeaderKey:            headerKey,
 		DisableSignalTracing: t.opts.DisableSignalTracing,
 		DisableQueryTracing:  t.opts.DisableQueryTracing,
 	}
@@ -145,7 +128,7 @@ func genSpanID(idempotencyKey string) uint64 {
 	return h.Sum64()
 }
 
-func (t tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (interceptor.TracerSpan, error) {
+func (t *tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (interceptor.TracerSpan, error) {
 	startOpts := []tracer.StartSpanOption{
 		tracer.ResourceName(options.Name),
 		tracer.StartTime(options.Time),
@@ -191,7 +174,7 @@ func (t tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (inte
 	return &tracerSpan{Span: s}, nil
 }
 
-func (t tracerImpl) GetLogger(logger log.Logger, ref interceptor.TracerSpanRef) log.Logger {
+func (t *tracerImpl) GetLogger(logger log.Logger, ref interceptor.TracerSpanRef) log.Logger {
 	if t.opts.DisableLogTraceLinking {
 		return logger
 	}
