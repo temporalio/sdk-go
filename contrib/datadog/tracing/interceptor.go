@@ -39,8 +39,8 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-// InterceptorOptions are options provided to NewInterceptor
-type InterceptorOptions struct {
+// TracerOptions are options provided to NewInterceptor
+type TracerOptions struct {
 	// DisableSignalTracing can be set to disable signal tracing.
 	DisableSignalTracing bool
 
@@ -50,10 +50,10 @@ type InterceptorOptions struct {
 
 // NewInterceptor creates an interceptor for setting on client options
 // that implements Datadog tracing for workflows.
-func NewInterceptor(opts InterceptorOptions) interceptor.Tracer {
+func NewInterceptor(opts TracerOptions) interceptor.Tracer {
 
 	return &tracerImpl{
-		opts: InterceptorOptions{
+		opts: TracerOptions{
 			DisableSignalTracing: opts.DisableSignalTracing,
 			DisableQueryTracing:  opts.DisableQueryTracing,
 		},
@@ -70,7 +70,7 @@ const (
 type tracerImpl struct {
 	interceptor.BaseTracer
 	// DisableSignalTracing can be set to disable signal tracing.
-	opts InterceptorOptions
+	opts TracerOptions
 }
 
 func (t *tracerImpl) Options() interceptor.TracerOptions {
