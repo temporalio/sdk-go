@@ -221,6 +221,25 @@ type tracingClientOutboundInterceptor struct {
 	root *tracingInterceptor
 }
 
+func (t *tracingClientOutboundInterceptor) CreateSchedule(ctx context.Context, in *ScheduleClientCreateInput) (client.ScheduleHandle, error) {
+	// Start span and write to header
+	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
+		Operation: "CreateSchedule",
+		Name:      in.Options.ID,
+		ToHeader:  true,
+		Time:      time.Now(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	var finishOpts TracerFinishSpanOptions
+	defer span.Finish(&finishOpts)
+
+	run, err := t.Next.CreateSchedule(ctx, in)
+	finishOpts.Error = err
+	return run, err
+}
+
 func (t *tracingClientOutboundInterceptor) ExecuteWorkflow(
 	ctx context.Context,
 	in *ClientExecuteWorkflowInput,

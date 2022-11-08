@@ -119,10 +119,6 @@ type (
 	// NOTE: Experimental
 	ScheduleWorkflowAction = internal.ScheduleWorkflowAction
 
-	// ScheduleWorkflowActionDescription is the implementation of ScheduleAction to describe a workflow.
-	// NOTE: Experimental
-	ScheduleWorkflowActionDescription = internal.ScheduleWorkflowActionDescription
-
 	// ScheduleOptions configuration parameters for creating a schedule.
 	// NOTE: Experimental
 	ScheduleOptions = internal.ScheduleOptions
@@ -170,6 +166,10 @@ type (
 	// ScheduleUpdate describes the desired new schedule from ScheduleHandle.Update.
 	// NOTE: Experimental
 	ScheduleUpdate = internal.ScheduleUpdate
+
+	// ScheduleUpdateInput describes the current state of the schedule to be updated.
+	// NOTE: Experimental
+	ScheduleUpdateInput = internal.ScheduleUpdateInput
 
 	// ScheduleTriggerOptions configure the parameters for triggering a schedule.
 	// NOTE: Experimental

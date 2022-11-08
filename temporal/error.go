@@ -159,6 +159,9 @@ var (
 
 	// ErrScheduleAlreadyRunning can be returned when a schedule ID is reused
 	ErrScheduleAlreadyRunning = internal.ErrScheduleAlreadyRunning
+
+	// ErrSkipScheduleUpdate is used by a user if they want to skip updating a schedule.
+	ErrSkipScheduleUpdate = internal.ErrSkipScheduleUpdate
 )
 
 // NewApplicationError creates new instance of retryable *ApplicationError with message, type, and optional details.

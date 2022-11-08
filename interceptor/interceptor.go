@@ -196,11 +196,6 @@ type ClientTerminateWorkflowInput = internal.ClientTerminateWorkflowInput
 // ClientOutboundInterceptor.QueryWorkflow.
 type ClientQueryWorkflowInput = internal.ClientQueryWorkflowInput
 
-// ScheduleClientInterceptor provides a way to intercept
-// certain schedule-specific client calls from the SDK. See documentation in the
-// interceptor package for more details.
-type ScheduleClientInterceptor = internal.ScheduleClientInterceptor
-
 // ScheduleClientCreateInput is input for
 // ScheduleClientInterceptor.CreateSchedule.
 type ScheduleClientCreateInput = internal.ScheduleClientCreateInput

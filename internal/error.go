@@ -274,6 +274,9 @@ var (
 
 	// ErrScheduleAlreadyRunning is returned if there's already a running (not deleted) Schedule with the same ID
 	ErrScheduleAlreadyRunning = errors.New("schedule with this ID is already registered")
+
+	// ErrSkipScheduleUpdate is used by a user if they want to skip updating a schedule.
+	ErrSkipScheduleUpdate = errors.New("skip schedule update")
 )
 
 // NewApplicationError create new instance of *ApplicationError with message, type, and optional details.

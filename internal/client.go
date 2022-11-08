@@ -788,7 +788,6 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		client.interceptor = options.Interceptors[i].InterceptClient(client.interceptor)
 	}
 
-	client.scheduleInterceptor = &scheduleClientInterceptor{client: client}
 	return client
 }
 

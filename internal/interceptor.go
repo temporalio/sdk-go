@@ -278,6 +278,9 @@ type ClientOutboundInterceptor interface {
 	// interceptor.Header will return a non-nil map for this context.
 	ExecuteWorkflow(context.Context, *ClientExecuteWorkflowInput) (WorkflowRun, error)
 
+	// CreateSchedule - Intercept a service call to CreateSchedule
+	CreateSchedule(ctx context.Context, options *ScheduleClientCreateInput) (ScheduleHandle, error)
+
 	// SignalWorkflow intercepts client.Client.SignalWorkflow.
 	// interceptor.Header will return a non-nil map for this context.
 	SignalWorkflow(context.Context, *ClientSignalWorkflowInput) error
@@ -299,18 +302,8 @@ type ClientOutboundInterceptor interface {
 	mustEmbedClientOutboundInterceptorBase()
 }
 
-// ScheduleClientInterceptor provides a way to intercept
-// certain schedule-specific client calls from the SDK. See documentation in the
-// interceptor package for more details.
-type ScheduleClientInterceptor interface {
-	// CreateSchedule - Intercept a service call to CreateSchedule
-	CreateSchedule(ctx context.Context, options *ScheduleClientCreateInput) (ScheduleHandle, error)
-
-	mustEmbedScheduleClientInterceptor()
-}
-
 // ScheduleClientCreateInput is the input to
-// ScheduleClientInterceptor.CreateSchedule.
+// ClientOutboundInterceptor.CreateSchedule.
 type ScheduleClientCreateInput struct {
 	Options *ScheduleOptions
 }

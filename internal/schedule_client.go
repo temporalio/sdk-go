@@ -219,26 +219,17 @@ type (
 
 	// ScheduleWorkflowAction implements ScheduleAction to launch a workflow.
 	ScheduleWorkflowAction struct {
+		// ID - The business identifier of the workflow execution.
+		ID string
+
 		// Workflow - What workflow to run.
+		// Workflow can either be the function or workflow type name as a string.
+		// On ScheduleHandle.Describe() or ScheduleHandle.Update() it will be the workflow type name.
 		Workflow interface{}
 
 		// Args - Arguments to pass to the workflow.
+		// On ScheduleHandle.Describe() or ScheduleHandle.Update() Args will be returned as *commonpb.Payload.
 		Args []interface{}
-
-		// WorkflowOptions - Options to use when launching the workflow.
-		WorkflowOptions StartWorkflowOptions
-	}
-
-	// ScheduleWorkflowActionDescription implements ScheduleAction to launch a workflow.
-	ScheduleWorkflowActionDescription struct {
-		// Workflow - The business identifier of the workflow execution.
-		WorkflowID string
-
-		// WorkflowType - The type of the wokrflow.
-		WorkflowType WorkflowType
-
-		// Args - Arguments of the workflow
-		Args *commonpb.Payloads
 
 		// TaskQueue - The workflow tasks of the workflow are scheduled on the queue with this name.
 		// This is also the name of the activity task queue on which activities are scheduled.
@@ -262,13 +253,15 @@ type (
 		// server will start new workflow execution if needed based on the retry policy.
 		RetryPolicy *RetryPolicy
 
-		// Memo - Non-indexed user supplied information.
-		Memo *commonpb.Memo
+		// Memo - Optional non-indexed info that will be shown in list workflow.
+		// On ScheduleHandle.Describe() or ScheduleHandle.Update() Memo will be returned as *commonpb.Payload.
+		Memo map[string]interface{}
 
-		// SearchAttributes - Indexed info that can be used in query of List schedules APIs (only
-		// supported when Temporal server is using advanced visibility). The key and value type must be registered on Temporal server side.
+		// SearchAttributes - Optional indexed info that can be used in query of List/Scan/Count workflow APIs (only
+		// supported when Temporal server is using advanced visiblity). The key and value type must be registered on Temporal server side.
 		// Use GetSearchAttributes API to get valid key and corresponding value type.
-		SearchAttributes *commonpb.SearchAttributes
+		// On ScheduleHandle.Describe() or ScheduleHandle.Update() SearchAttributes will be returned as *commonpb.Payload.
+		SearchAttributes map[string]interface{}
 	}
 
 	// ScheduleOptions configure the parameters for creating a schedule.
@@ -353,13 +346,13 @@ type (
 	// ScheduleInfo describes other information about a schedule.
 	ScheduleInfo struct {
 		// NumActions - Number of actions taken by this schedule.
-		NumActions int64
+		NumActions int
 
 		// NumActionsMissedCatchupWindow - Number of times a scheduled Action was skipped due to missing the catchup window.
-		NumActionsMissedCatchupWindow int64
+		NumActionsMissedCatchupWindow int
 
 		// NumActionsSkippedOverlap - Number of Actions skipped due to overlap.
-		NumActionsSkippedOverlap int64
+		NumActionsSkippedOverlap int
 
 		// RunningWorkflows - Currently-running workflows started by this schedule. (There might be
 		// more than one if the overlap policy allows overlaps.)
@@ -427,7 +420,7 @@ type (
 
 		// RemainingActions - The Actions remaining in this Schedule. Once this number hits 0, no further Actions are taken.
 		// manual actions through backfill or ScheduleHandle.Trigger still run.
-		RemainingActions int64
+		RemainingActions int
 	}
 
 	// Schedule describes a created schedule.
@@ -451,8 +444,19 @@ type (
 		Schedule *Schedule
 	}
 
+	// ScheduleUpdateInput describes the current state of the schedule to be updated.
+	ScheduleUpdateInput struct {
+		// Description - current description of the schedule
+		Description ScheduleDescription
+	}
+
 	// ScheduleUpdateOptions configure the parameters for updating a schedule.
-	ScheduleUpdateOptions struct{}
+	ScheduleUpdateOptions struct{
+		// DoUpdate - Takes a description of the schedule and returns the new desired schedule.
+		// If update returns ErrSkipScheduleUpdate response and no update will occur.
+		// Any other error will be passed through.
+		DoUpdate func(ScheduleUpdateInput) (*ScheduleUpdate, error)
+	}
 
 	// ScheduleTriggerOptions configure the parameters for triggering a schedule.
 	ScheduleTriggerOptions struct{
@@ -491,12 +495,11 @@ type (
 		// Backfill the schedule by going though the specified time periods and taking Actions as if that time passed by right now, all at once.
 		Backfill(ctx context.Context, options ScheduleBackfillOptions) error
 
-		// Update the Schedule. fn takes a description of the schedule and returns the new desired schedule.
-		// If update returns a nil response then no update will occur.
+		// Update the Schedule.
 		//
 		// NOTE: If two Update calls are made in parallel to the same Schedule there is the potential
 		// for a race condition.
-		Update(ctx context.Context, fn func(*ScheduleDescription) *ScheduleUpdate, options ScheduleUpdateOptions) error
+		Update(ctx context.Context, options ScheduleUpdateOptions) error
 
 		// Describe fetches the Schedule's description from the Server
 		Describe(ctx context.Context) (*ScheduleDescription, error)
@@ -567,7 +570,7 @@ type (
 	ScheduleListOptions struct {
 		// PageSize - How many results to fetch from the Server at a time.
 		// Optional: defaulted to 1000
-		PageSize int32
+		PageSize int
 	}
 
 	// ScheduleListIterator represents the interface for
@@ -598,7 +601,4 @@ type (
 )
 
 func (ScheduleWorkflowAction) isScheduleAction() {
-}
-
-func (ScheduleWorkflowActionDescription) isScheduleAction() {
 }

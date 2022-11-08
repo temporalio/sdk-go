@@ -83,7 +83,6 @@ type (
 		contextPropagators       []ContextPropagator
 		workerInterceptors       []WorkerInterceptor
 		interceptor              ClientOutboundInterceptor
-		scheduleInterceptor      ScheduleClientInterceptor
 		excludeInternalFromRetry *uberatomic.Bool
 		capabilities             *workflowservice.GetSystemInfoResponse_Capabilities
 		capabilitiesLock         sync.RWMutex
@@ -955,7 +954,9 @@ func (wc *WorkflowClient) ensureInitialized() error {
 }
 
 func (wc *WorkflowClient) ScheduleClient() ScheduleClient {
-	return wc
+	return &scheduleClient {
+		workflowClient: wc,
+	}
 }
 
 // Close client and clean up underlying resources.
@@ -1516,3 +1517,6 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 	}
 	return result.QueryResult, nil
 }
+
+// Required to implement ClientOutboundInterceptor
+func (*workflowClientInterceptor) mustEmbedClientOutboundInterceptorBase() {}
