@@ -53,7 +53,7 @@ func TestSpanPropagation(t *testing.T) {
 	// Start the mock tracer.
 	mt := mocktracer.Start()
 	defer mt.Stop()
-	impl := NewInterceptor(TracerOptions{})
+	impl := NewTracer(TracerOptions{})
 	testTracer := testTracer{
 		Tracer: impl,
 		mt:     mt,

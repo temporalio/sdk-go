@@ -48,10 +48,15 @@ type TracerOptions struct {
 	DisableQueryTracing bool
 }
 
-// NewInterceptor creates an interceptor for setting on client options
-// that implements Datadog tracing for workflows.
-func NewInterceptor(opts TracerOptions) interceptor.Tracer {
+// NewTracingInterceptor convenience method that wraps a NeTracer() with a tracing interceptor
+func NewTracingInterceptor(opts TracerOptions) interceptor.Interceptor {
+	return interceptor.NewTracingInterceptor(NewTracer(opts))
 
+}
+
+// NewTracer creates an interceptor for setting on client options
+// that implements Datadog tracing for workflows.
+func NewTracer(opts TracerOptions) interceptor.Tracer {
 	return &tracerImpl{
 		opts: TracerOptions{
 			DisableSignalTracing: opts.DisableSignalTracing,
