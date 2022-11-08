@@ -35,6 +35,10 @@ import (
 	"go.temporal.io/sdk/converter"
 )
 
+const (
+	scheduleID            = "some random schedule ID"
+)
+
 // schedule client test suite
 type (
 	scheduleClientTestSuite struct {

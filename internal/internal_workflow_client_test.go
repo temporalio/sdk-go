@@ -64,7 +64,6 @@ const (
 	timeoutInSeconds      = 20
 	workflowIDReusePolicy = enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY
 	testHeader            = "test-header"
-	scheduleID            = "some random schedule ID"
 )
 
 // historyEventIteratorSuite

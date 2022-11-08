@@ -55,16 +55,16 @@ type (
 
 	// scheduleListIteratorImpl is the implementation of ScheduleListIterator
 	scheduleListIteratorImpl struct {
-		// nextScheduleIndex local cached schedules events and corresponding consuming index
+		// nextScheduleIndex - Local cached schedules events and corresponding consuming index
 		nextScheduleIndex int
 
-		// err from getting the latest page of schedules
+		// err - From getting the latest page of schedules
 		err error
 
-		// response from getting the latest page of schedules
+		// response - From getting the latest page of schedules
 		response *workflowservice.ListSchedulesResponse
 
-		// paginate - func which use a next token to get next page of schedules events
+		// paginate - Function which use a next token to get next page of schedules events
 		paginate func(nexttoken []byte) (*workflowservice.ListSchedulesResponse, error)
 	}
 )

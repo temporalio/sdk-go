@@ -429,7 +429,7 @@ func (c *ClientOutboundInterceptorBase) QueryWorkflow(
 	return c.Next.QueryWorkflow(ctx, in)
 }
 
-// ExecuteWorkflow implements ClientOutboundInterceptor.ExecuteWorkflow.
+// ExecuteWorkflow implements ClientOutboundInterceptor.CreateSchedule.
 func (c *ClientOutboundInterceptorBase) CreateSchedule(ctx context.Context, in *ScheduleClientCreateInput) (ScheduleHandle, error) {
 	return c.Next.CreateSchedule(ctx, in)
 }

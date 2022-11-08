@@ -953,6 +953,7 @@ func (wc *WorkflowClient) ensureInitialized() error {
 	return err
 }
 
+// ScheduleClient implements Client.ScheduleClient.
 func (wc *WorkflowClient) ScheduleClient() ScheduleClient {
 	return &scheduleClient {
 		workflowClient: wc,
