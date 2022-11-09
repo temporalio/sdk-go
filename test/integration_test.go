@@ -2682,6 +2682,850 @@ func (ts *IntegrationTestSuite) TestUpsertMemoWithExistingMemo() {
 	ts.Equal(expectedMemo, memo)
 }
 
+func (ts *IntegrationTestSuite) createBasicScheduleWorkflowAction(ID string) client.ScheduleWorkflowAction {
+	return client.ScheduleWorkflowAction{
+		Workflow:                 ts.workflows.SimplestWorkflow,
+		ID:                       ID,
+		TaskQueue:                ts.taskQueueName,
+		WorkflowExecutionTimeout: 15 * time.Second,
+		WorkflowTaskTimeout:      time.Second,
+	}
+}
+
+func (ts *IntegrationTestSuite) TestScheduleCreate() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:     "test-schedule-create-schedule",
+		Spec:   client.ScheduleSpec{},
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-create-workflow"),
+	})
+	ts.NoError(err)
+	ts.EqualValues("test-schedule-create-schedule", handle.GetID())
+
+	err = handle.Delete(ctx)
+	ts.NoError(err)
+
+	description, err := handle.Describe(ctx)
+	ts.IsType(&serviceerror.NotFound{}, err)
+	ts.Nil(description)
+}
+
+func (ts *IntegrationTestSuite) TestScheduleCreateDuplicate() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	scheduleOptions := client.ScheduleOptions{
+		ID:     "test-schedule-create-duplicate-schedule",
+		Spec:   client.ScheduleSpec{},
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-create-duplicate-workflow"),
+	}
+
+	handle, err := ts.client.ScheduleClient().Create(ctx, scheduleOptions)
+	ts.NoError(err)
+	ts.EqualValues("test-schedule-create-duplicate-schedule", handle.GetID())
+	defer func() {
+		ts.NoError(handle.Delete(ctx))
+	}()
+
+	handle2, err := ts.client.ScheduleClient().Create(ctx, scheduleOptions)
+	ts.ErrorIs(temporal.ErrScheduleAlreadyRunning, err)
+	ts.Nil(handle2)
+}
+
+func (ts *IntegrationTestSuite) TestScheduleDescribeSpec() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID: "test-schedule-describe-spec-schedule",
+		Spec: client.ScheduleSpec{
+			Calendars: []client.ScheduleCalendarSpec{
+				{
+					Second: []client.ScheduleRange{{}},
+					Minute: []client.ScheduleRange{{}},
+					Hour: []client.ScheduleRange{{
+						Start: 12,
+					}},
+					DayOfMonth: []client.ScheduleRange{
+						{
+							Start: 1,
+							End:   31,
+						},
+					},
+					Month: []client.ScheduleRange{
+						{
+							Start: 1,
+							End:   12,
+						},
+					},
+					DayOfWeek: []client.ScheduleRange{
+						{
+							Start: 1,
+						},
+					},
+				},
+			},
+			Intervals: []client.ScheduleIntervalSpec{
+				{
+					Every:  time.Hour,
+					Offset: time.Minute,
+				},
+				{
+					Every: 30 * time.Minute,
+				},
+			},
+			Skip: []client.ScheduleCalendarSpec{
+				{
+					Second: []client.ScheduleRange{{}},
+					Minute: []client.ScheduleRange{{}},
+					Hour: []client.ScheduleRange{{
+						Start: 12,
+					}},
+					DayOfMonth: []client.ScheduleRange{
+						{
+							Start: 1,
+							End:   31,
+						},
+					},
+					Month: []client.ScheduleRange{
+						{
+							Start: 1,
+							End:   12,
+						},
+					},
+					DayOfWeek: []client.ScheduleRange{
+						{
+							Start: 1,
+						},
+					},
+				},
+			},
+		},
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-describe-spec-workflow"),
+	})
+	ts.NoError(err)
+	ts.EqualValues("test-schedule-describe-spec-schedule", handle.GetID())
+
+	defer func() {
+		ts.NoError(handle.Delete(ctx))
+	}()
+
+	description, err := handle.Describe(ctx)
+	ts.NoError(err)
+	// test spec
+	ts.Equal([]client.ScheduleCalendarSpec{
+		{
+			Second: []client.ScheduleRange{{}},
+			Minute: []client.ScheduleRange{{}},
+			Hour: []client.ScheduleRange{{
+				Start: 12,
+			}},
+			DayOfMonth: []client.ScheduleRange{
+				{
+					Start: 1,
+					End:   31,
+				},
+			},
+			Month: []client.ScheduleRange{
+				{
+					Start: 1,
+					End:   12,
+				},
+			},
+			Year: []client.ScheduleRange{},
+			DayOfWeek: []client.ScheduleRange{
+				{
+					Start: 1,
+				},
+			},
+		},
+	}, description.Schedule.Spec.Calendars)
+
+	ts.Equal([]client.ScheduleIntervalSpec{
+		{
+			Every:  time.Hour,
+			Offset: time.Minute,
+		},
+		{
+			Every: 30 * time.Minute,
+		},
+	}, description.Schedule.Spec.Intervals)
+
+	ts.Equal([]client.ScheduleCalendarSpec{
+		{
+			Second: []client.ScheduleRange{{}},
+			Minute: []client.ScheduleRange{{}},
+			Hour: []client.ScheduleRange{{
+				Start: 12,
+			}},
+			DayOfMonth: []client.ScheduleRange{
+				{
+					Start: 1,
+					End:   31,
+				},
+			},
+			Month: []client.ScheduleRange{
+				{
+					Start: 1,
+					End:   12,
+				},
+			},
+			Year: []client.ScheduleRange{},
+			DayOfWeek: []client.ScheduleRange{
+				{
+					Start: 1,
+				},
+			},
+		},
+	}, description.Schedule.Spec.Skip)
+}
+
+func (ts *IntegrationTestSuite) TestScheduleDescribeSpecCron() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID: "test-schedule-describe-spec-cron-schedule",
+		Spec: client.ScheduleSpec{
+			CronExpressions: []string{
+				"0 12 * * MON",
+			},
+		},
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-describe-spec-cron-workflow"),
+	})
+	ts.NoError(err)
+	ts.EqualValues("test-schedule-describe-spec-cron-schedule", handle.GetID())
+
+	defer func() {
+		ts.NoError(handle.Delete(ctx))
+	}()
+
+	description, err := handle.Describe(ctx)
+	ts.NoError(err)
+	// test spec
+	ts.Equal([]client.ScheduleCalendarSpec{
+		{
+			Second: []client.ScheduleRange{{}},
+			Minute: []client.ScheduleRange{{}},
+			Hour: []client.ScheduleRange{{
+				Start: 12,
+			}},
+			DayOfMonth: []client.ScheduleRange{
+				{
+					Start: 1,
+					End:   31,
+				},
+			},
+			Month: []client.ScheduleRange{
+				{
+					Start: 1,
+					End:   12,
+				},
+			},
+			Year: []client.ScheduleRange{},
+			DayOfWeek: []client.ScheduleRange{
+				{
+					Start: 1,
+				},
+			},
+		},
+	}, description.Schedule.Spec.Calendars)
+}
+
+func (ts *IntegrationTestSuite) TestScheduleDescribeState() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	testNote := "test note"
+	scheduleMemo := map[string]interface{}{
+		"key_1": "new_value_1",
+		"key_2": 123,
+	}
+
+	expectedKey1Value, _ := converter.GetDefaultDataConverter().ToPayload("new_value_1")
+	expectedKey2Value, _ := converter.GetDefaultDataConverter().ToPayload(123)
+	expectedMemo := &commonpb.Memo{
+		Fields: map[string]*commonpb.Payload{
+			"key_1": expectedKey1Value,
+			"key_2": expectedKey2Value,
+		},
+	}
+
+	expectedArg1Value, _ := converter.GetDefaultDataConverter().ToPayload("Test Arg 1")
+	expectedArg2Value, _ := converter.GetDefaultDataConverter().ToPayload("Test Arg 2")
+
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:   "test-schedule-describe-state-schedule",
+		Spec: client.ScheduleSpec{},
+		Action: client.ScheduleWorkflowAction{
+			Workflow:                 ts.workflows.TwoParameterWorkflow,
+			Args:                     []interface{}{"Test Arg 1", "Test Arg 2"},
+			ID:                       "test-schedule-describe-state-workflow",
+			TaskQueue:                ts.taskQueueName,
+			WorkflowExecutionTimeout: 15 * time.Second,
+			WorkflowTaskTimeout:      time.Second,
+		},
+		Overlap:          enumspb.SCHEDULE_OVERLAP_POLICY_SKIP,
+		CatchupWindow:    time.Minute,
+		PauseOnFailure:   true,
+		Note:             testNote,
+		Paused:           true,
+		RemainingActions: 10,
+		Memo:             scheduleMemo,
+	})
+	ts.NoError(err)
+	ts.EqualValues("test-schedule-describe-state-schedule", handle.GetID())
+
+	defer func() {
+		ts.NoError(handle.Delete(ctx))
+	}()
+
+	description, err := handle.Describe(ctx)
+	ts.NoError(err)
+	ts.Equal(expectedMemo, description.Memo)
+	// test policy
+	ts.Equal(time.Minute, description.Schedule.Policy.CatchupWindow)
+	ts.Equal(true, description.Schedule.Policy.PauseOnFailure)
+	ts.Equal(enumspb.SCHEDULE_OVERLAP_POLICY_SKIP, description.Schedule.Policy.Overlap)
+	// test state
+	ts.EqualValues(10, description.Schedule.State.RemainingActions)
+	ts.Equal(true, description.Schedule.State.LimitedActions)
+	ts.Equal(true, description.Schedule.State.Paused)
+	ts.Equal(testNote, description.Schedule.State.Note)
+	// test action
+	switch action := description.Schedule.Action.(type) {
+	case client.ScheduleWorkflowAction:
+		ts.Equal("TwoParameterWorkflow", action.Workflow)
+		ts.Equal(expectedArg1Value, action.Args[0])
+		ts.Equal(expectedArg2Value, action.Args[1])
+	default:
+		ts.Fail("schedule action wrong type")
+	}
+}
+
+func (ts *IntegrationTestSuite) TestSchedulePause() {
+	verifyState := func(ctx context.Context, handle client.ScheduleHandle, paused bool, note string) {
+		description, err := handle.Describe(ctx)
+		ts.NoError(err)
+		ts.Equal(paused, description.Schedule.State.Paused)
+		if paused {
+			ts.Equal(note, description.Schedule.State.Note)
+		} else {
+			ts.Equal(note, description.Schedule.State.Note)
+		}
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Create a paused workflow
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:     "test-schedule-pause-schedule",
+		Spec:   client.ScheduleSpec{},
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-pause-workflow"),
+		Paused: true,
+	})
+	ts.NoError(err)
+	ts.EqualValues("test-schedule-pause-schedule", handle.GetID())
+	defer func() {
+		ts.NoError(handle.Delete(ctx))
+	}()
+	// Workflow should start paused
+	verifyState(ctx, handle, true, "")
+	// Pausing a paused workflow should be a no-op
+	ts.NoError(handle.Pause(ctx, client.SchedulePauseOptions{}))
+	verifyState(ctx, handle, true, "Paused via Go SDK")
+	// Unpause workflow
+	ts.NoError(handle.Unpause(ctx, client.ScheduleUnpauseOptions{}))
+	verifyState(ctx, handle, false, "Unpaused via Go SDK")
+	// Unpausing a paused workflow should be a no-op
+	ts.NoError(handle.Unpause(ctx, client.ScheduleUnpauseOptions{}))
+	verifyState(ctx, handle, false, "Unpaused via Go SDK")
+	// Pause workflow again
+	ts.NoError(handle.Pause(ctx, client.SchedulePauseOptions{}))
+	verifyState(ctx, handle, true, "Paused via Go SDK")
+	// Verify pausing sets the note
+	ts.NoError(handle.Pause(ctx, client.SchedulePauseOptions{
+		Note: "test pause note",
+	}))
+	verifyState(ctx, handle, true, "test pause note")
+	// Pausing again overrides the note
+	ts.NoError(handle.Pause(ctx, client.SchedulePauseOptions{
+		Note: "test another pause note",
+	}))
+	verifyState(ctx, handle, true, "test another pause note")
+	// Verify unpausing sets the note
+	ts.NoError(handle.Unpause(ctx, client.ScheduleUnpauseOptions{
+		Note: "test unpause note",
+	}))
+	verifyState(ctx, handle, false, "test unpause note")
+}
+
+func (ts *IntegrationTestSuite) TestScheduleTrigger() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Create a paused workflow
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:      "test-schedule-trigger-schedule",
+		Spec:    client.ScheduleSpec{},
+		Action:  ts.createBasicScheduleWorkflowAction("test-schedule-trigger-workflow"),
+		Paused:  true,
+		Overlap: enumspb.SCHEDULE_OVERLAP_POLICY_ALLOW_ALL,
+	})
+	ts.NoError(err)
+	ts.EqualValues("test-schedule-trigger-schedule", handle.GetID())
+	defer func() {
+		ts.NoError(handle.Delete(ctx))
+	}()
+	for i := 0; i < 5; i++ {
+		ts.NoError(handle.Trigger(ctx, client.ScheduleTriggerOptions{
+			Overlap: enumspb.SCHEDULE_OVERLAP_POLICY_ALLOW_ALL,
+		}))
+		// schedule actions can only trigger once per second
+		time.Sleep(2 * time.Second)
+	}
+	description, err := handle.Describe(ctx)
+	ts.NoError(err)
+	ts.EqualValues(5, description.Info.NumActions)
+	ts.EqualValues(5, len(description.Info.RecentActions))
+	for _, wf := range description.Info.RecentActions {
+		wfRun := ts.client.GetWorkflow(ctx, wf.StartWorkflowResult.WorkflowID, wf.StartWorkflowResult.FirstExecutionRunID)
+		var result string
+		ts.NoError(wfRun.Get(ctx, &result))
+		ts.Equal("hello", result)
+	}
+
+}
+
+func (ts *IntegrationTestSuite) TestScheduleBackfillCreate() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Create a paused workflow
+	now := time.Now()
+	endTime := now
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID: "test-schedule-backfill-create-schedule",
+		Spec: client.ScheduleSpec{
+			Intervals: []client.ScheduleIntervalSpec{
+				{
+					Every: time.Minute,
+				},
+			},
+			EndAt: endTime,
+		},
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-backfill-create-workflow"),
+		ScheduleBackfill: []client.ScheduleBackfill{
+			{
+				Start:   now.Add(-time.Hour),
+				End:     now.Add(-30 * time.Minute),
+				Overlap: enumspb.SCHEDULE_OVERLAP_POLICY_ALLOW_ALL,
+			},
+			{
+				Start:   now.Add(-30 * time.Minute),
+				End:     now,
+				Overlap: enumspb.SCHEDULE_OVERLAP_POLICY_ALLOW_ALL,
+			},
+		},
+	})
+	ts.NoError(err)
+	ts.EqualValues("test-schedule-backfill-create-schedule", handle.GetID())
+	defer func() {
+		ts.NoError(handle.Delete(ctx))
+	}()
+	time.Sleep(5 * time.Second)
+	description, err := handle.Describe(ctx)
+	ts.NoError(err)
+	ts.EqualValues(60, description.Info.NumActions)
+}
+
+func (ts *IntegrationTestSuite) TestScheduleBackfill() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Create a paused workflow
+	now := time.Now()
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID: "test-schedule-backfill-schedule",
+		Spec: client.ScheduleSpec{
+			Intervals: []client.ScheduleIntervalSpec{
+				{
+					Every: time.Minute,
+				},
+			},
+		},
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-backfill-workflow"),
+		Paused: true,
+	})
+	ts.NoError(err)
+	ts.EqualValues("test-schedule-backfill-schedule", handle.GetID())
+	defer func() {
+		ts.NoError(handle.Delete(ctx))
+	}()
+	description, err := handle.Describe(ctx)
+	ts.NoError(err)
+	ts.EqualValues(0, description.Info.NumActions)
+	err = handle.Backfill(ctx, client.ScheduleBackfillOptions{
+		Backfill: []client.ScheduleBackfill{
+			{
+				Start:   now.Add(-4 * time.Minute),
+				End:     now.Add(-2 * time.Minute),
+				Overlap: enumspb.SCHEDULE_OVERLAP_POLICY_ALLOW_ALL,
+			},
+			{
+				Start:   now.Add(-2 * time.Minute),
+				End:     now,
+				Overlap: enumspb.SCHEDULE_OVERLAP_POLICY_ALLOW_ALL,
+			},
+		},
+	})
+	ts.NoError(err)
+	time.Sleep(5 * time.Second)
+	description, err = handle.Describe(ctx)
+	ts.NoError(err)
+	ts.EqualValues(4, description.Info.NumActions)
+}
+
+func (ts *IntegrationTestSuite) TestScheduleList() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	for i := 0; i < 5; i++ {
+		scheduleID := fmt.Sprintf("test-schedule-list-schedule-%d", i)
+		workflowID := fmt.Sprintf("test-schedule-list-workflow-%d", i)
+		// Create a paused workflow
+		handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+			ID:   scheduleID,
+			Spec: client.ScheduleSpec{},
+			Action: client.ScheduleWorkflowAction{
+				Workflow:                 ts.workflows.SimplestWorkflow,
+				ID:                       workflowID,
+				TaskQueue:                ts.taskQueueName,
+				WorkflowExecutionTimeout: 15 * time.Second,
+				WorkflowTaskTimeout:      time.Second,
+			},
+		})
+		ts.NoError(err)
+		ts.EqualValues(scheduleID, handle.GetID())
+		defer func() {
+			ts.NoError(handle.Delete(ctx))
+		}()
+	}
+	iter, err := ts.client.ScheduleClient().List(ctx, client.ScheduleListOptions{
+		PageSize: 1,
+	})
+	var events []*client.ScheduleListEntry
+	for iter.HasNext() {
+		event, err := iter.Next()
+		ts.Nil(err)
+		events = append(events, event)
+	}
+	ts.GreaterOrEqual(5, len(events))
+	ts.NoError(err)
+}
+
+func (ts *IntegrationTestSuite) TestScheduleUpdate() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Create a paused workflow
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:     "test-schedule-update-schedule",
+		Spec:   client.ScheduleSpec{},
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-update-workflow"),
+		Paused: true,
+	})
+	ts.NoError(err)
+	ts.EqualValues("test-schedule-update-schedule", handle.GetID())
+	defer func() {
+		err = handle.Delete(ctx)
+		ts.NoError(err)
+	}()
+	updateFunc := func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+		return &client.ScheduleUpdate{
+			Schedule: &input.Description.Schedule,
+		}, nil
+	}
+	description, err := handle.Describe(ctx)
+	ts.NoError(err)
+
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: updateFunc,
+	})
+	ts.NoError(err)
+
+	description2, err := handle.Describe(ctx)
+	ts.NoError(err)
+	ts.Equal(description.Schedule, description2.Schedule)
+}
+
+func (ts *IntegrationTestSuite) TestScheduleUpdateCancelUpdate() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Create a paused workflow
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:     "test-schedule-update-schedule",
+		Spec:   client.ScheduleSpec{},
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-update-workflow"),
+		Paused: true,
+	})
+	ts.NoError(err)
+	ts.EqualValues("test-schedule-update-schedule", handle.GetID())
+	defer func() {
+		err = handle.Delete(ctx)
+		ts.NoError(err)
+	}()
+	updateFunc := func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+		switch action := input.Description.Schedule.Action.(type) {
+		case client.ScheduleWorkflowAction:
+			action.ID = "new-workflow-id"
+			input.Description.Schedule.Action = action
+			return &client.ScheduleUpdate{
+				Schedule: &input.Description.Schedule,
+			}, temporal.ErrSkipScheduleUpdate
+		default:
+			ts.Fail("schedule action wrong type")
+			return nil, nil
+		}
+	}
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: updateFunc,
+	})
+	ts.NoError(err)
+	description, err := handle.Describe(ctx)
+	ts.NoError(err)
+	switch action := description.Schedule.Action.(type) {
+	case client.ScheduleWorkflowAction:
+		ts.Equal("test-schedule-update-workflow", action.ID)
+	default:
+		ts.Fail("schedule action wrong type")
+	}
+}
+
+func (ts *IntegrationTestSuite) TestScheduleUpdateError() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Create a paused workflow
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:     "test-schedule-update-schedule",
+		Spec:   client.ScheduleSpec{},
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-update-workflow"),
+		Paused: true,
+	})
+	ts.NoError(err)
+	ts.EqualValues("test-schedule-update-schedule", handle.GetID())
+	defer func() {
+		err = handle.Delete(ctx)
+		ts.NoError(err)
+	}()
+	updateFunc := func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+		return nil, errors.New("test failure")
+	}
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: updateFunc,
+	})
+	ts.EqualError(err,"test failure")
+}
+
+func (ts *IntegrationTestSuite) TestScheduleUpdateNewAction() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Create a paused workflow
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:     "test-schedule-update-new-action-schedule",
+		Spec:   client.ScheduleSpec{},
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-update-new-action-workflow"),
+		Paused: true,
+	})
+	ts.NoError(err)
+	ts.EqualValues("test-schedule-update-new-action-schedule", handle.GetID())
+	defer func() {
+		err = handle.Delete(ctx)
+		ts.NoError(err)
+	}()
+	// change workflow type
+	updateFunc := func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+		input.Description.Schedule.Action = client.ScheduleWorkflowAction{
+			Workflow:                 ts.workflows.Basic,
+			ID:                       "test-schedule-update-new-action-workflow",
+			TaskQueue:                ts.taskQueueName,
+			WorkflowExecutionTimeout: 15 * time.Second,
+			WorkflowTaskTimeout:      time.Second,
+		}
+		return &client.ScheduleUpdate{
+			Schedule: &input.Description.Schedule,
+		}, nil
+	}
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: updateFunc,
+	})
+	ts.NoError(err)
+	description, err := handle.Describe(ctx)
+	ts.NoError(err)
+	switch action := description.Schedule.Action.(type) {
+	case client.ScheduleWorkflowAction:
+		ts.Equal("Basic", action.Workflow)
+	default:
+		ts.Fail("schedule action wrong type")
+	}
+}
+
+func (ts *IntegrationTestSuite) TestScheduleUpdateAction() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Create a paused workflow
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:     "test-schedule-update-action-schedule",
+		Spec:   client.ScheduleSpec{},
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-update-action-workflow"),
+		Paused: true,
+	})
+	ts.NoError(err)
+	ts.EqualValues("test-schedule-update-action-schedule", handle.GetID())
+	defer func() {
+		err = handle.Delete(ctx)
+		ts.NoError(err)
+	}()
+	updateFunc := func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+		switch action := input.Description.Schedule.Action.(type) {
+		case client.ScheduleWorkflowAction:
+			action.ID = "new-workflow-id"
+			input.Description.Schedule.Action = action
+			return &client.ScheduleUpdate{
+				Schedule: &input.Description.Schedule,
+			}, nil
+		default:
+			ts.Fail("schedule action wrong type")
+			return nil, nil
+		}
+	}
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: updateFunc,
+	})
+	ts.NoError(err)
+	description, err := handle.Describe(ctx)
+	ts.NoError(err)
+	switch action := description.Schedule.Action.(type) {
+	case client.ScheduleWorkflowAction:
+		ts.Equal("new-workflow-id", action.ID)
+	default:
+		ts.Fail("schedule action wrong type")
+	}
+}
+
+func (ts *IntegrationTestSuite) TestScheduleUpdateActionParameter() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	expectedArg1Value, _ := converter.GetDefaultDataConverter().ToPayload("Test Arg 1")
+	expectedArg2Value, _ := converter.GetDefaultDataConverter().ToPayload("Test Arg 2")
+	expectedArg3Value, _ := converter.GetDefaultDataConverter().ToPayload("Test Arg 3")
+	// Create a paused workflow
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:   "test-schedule-update-action-parameter-schedule",
+		Spec: client.ScheduleSpec{},
+		Action: client.ScheduleWorkflowAction{
+			Workflow:                 ts.workflows.TwoParameterWorkflow,
+			Args:                     []interface{}{"arg 1", "arg 2"},
+			ID:                       "test-schedule-update-action-parameter-workflow",
+			TaskQueue:                ts.taskQueueName,
+			WorkflowExecutionTimeout: 15 * time.Second,
+			WorkflowTaskTimeout:      time.Second,
+		},
+		Paused: true,
+	})
+	ts.NoError(err)
+	ts.EqualValues("test-schedule-update-action-parameter-schedule", handle.GetID())
+	defer func() {
+		err = handle.Delete(ctx)
+		ts.NoError(err)
+	}()
+	updateFunc := func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+		switch action := input.Description.Schedule.Action.(type) {
+		case client.ScheduleWorkflowAction:
+			action.Workflow = ts.workflows.ThreeParameterWorkflow
+			action.Args = []interface{}{"Test Arg 1", "Test Arg 2", "Test Arg 3"}
+			input.Description.Schedule.Action = action
+			return &client.ScheduleUpdate{
+				Schedule: &input.Description.Schedule,
+			}, nil
+		default:
+			ts.Fail("schedule action wrong type")
+			return nil, nil
+		}
+	}
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: updateFunc,
+	})
+	ts.NoError(err)
+	description, err := handle.Describe(ctx)
+	ts.NoError(err)
+	switch action := description.Schedule.Action.(type) {
+	case client.ScheduleWorkflowAction:
+		ts.Equal("ThreeParameterWorkflow", action.Workflow)
+		ts.Equal(expectedArg1Value, action.Args[0])
+		ts.Equal(expectedArg2Value, action.Args[1])
+		ts.Equal(expectedArg3Value, action.Args[2])
+	default:
+		ts.Fail("schedule action wrong type")
+	}
+}
+
+func (ts *IntegrationTestSuite) TestScheduleUpdateWorkflowActionMemo() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	expectedKey1Value, _ := converter.GetDefaultDataConverter().ToPayload("value")
+	expectedKey2Value, _ := converter.GetDefaultDataConverter().ToPayload(123)
+	expectedKey3Value, _ := converter.GetDefaultDataConverter().ToPayload("other value")
+	expectedMemo := map[string]interface{}{
+		"key_1": expectedKey1Value,
+		"key_2": expectedKey2Value,
+		"key_3": expectedKey3Value,
+	}
+
+	// Create a paused workflow
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:   "test-schedule-update-action-memo-schedule",
+		Spec: client.ScheduleSpec{},
+		Action: client.ScheduleWorkflowAction{
+			Workflow:                 ts.workflows.SimplestWorkflow,
+			ID:                       "test-schedule-update-action-memo-workflow",
+			TaskQueue:                ts.taskQueueName,
+			WorkflowExecutionTimeout: 15 * time.Second,
+			WorkflowTaskTimeout:      time.Second,
+			Memo: map[string]interface{}{
+				"key_1": "value",
+			},
+		},
+		Paused: true,
+	})
+	ts.NoError(err)
+	ts.EqualValues("test-schedule-update-action-memo-schedule", handle.GetID())
+	defer func() {
+		err = handle.Delete(ctx)
+		ts.NoError(err)
+	}()
+	updateFunc := func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+		switch action := input.Description.Schedule.Action.(type) {
+		case client.ScheduleWorkflowAction:
+			key2Value, _ := converter.GetDefaultDataConverter().ToPayload(123)
+			action.Memo["key_2"] = key2Value
+			action.Memo["key_3"] = "other value"
+			return &client.ScheduleUpdate{
+				Schedule: &input.Description.Schedule,
+			}, nil
+		default:
+			ts.Fail("schedule action wrong type")
+			return nil, nil
+		}
+	}
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: updateFunc,
+	})
+	ts.NoError(err)
+	description, err := handle.Describe(ctx)
+	ts.NoError(err)
+	switch action := description.Schedule.Action.(type) {
+	case client.ScheduleWorkflowAction:
+		ts.EqualValues(expectedMemo, action.Memo)
+	default:
+		ts.Fail("schedule action wrong type")
+	}
+}
+
 // executeWorkflow executes a given workflow and waits for the result
 func (ts *IntegrationTestSuite) executeWorkflow(
 	wfID string, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {

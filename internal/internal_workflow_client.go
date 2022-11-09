@@ -44,15 +44,14 @@ import (
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
-	uberatomic "go.uber.org/atomic"
-	"google.golang.org/grpc"
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/common/util"
 	"go.temporal.io/sdk/log"
+	uberatomic "go.uber.org/atomic"
+	"google.golang.org/grpc"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 // Assert that structs do indeed implement the interfaces
@@ -952,6 +951,13 @@ func (wc *WorkflowClient) ensureInitialized() error {
 	// Just loading the capabilities is enough
 	_, err := wc.loadCapabilities()
 	return err
+}
+
+// ScheduleClient implements Client.ScheduleClient.
+func (wc *WorkflowClient) ScheduleClient() ScheduleClient {
+	return &scheduleClient {
+		workflowClient: wc,
+	}
 }
 
 // Close client and clean up underlying resources.

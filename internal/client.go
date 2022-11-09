@@ -348,6 +348,9 @@ type (
 		// OperatorService creates a new operator service client with the same gRPC connection as this client.
 		OperatorService() operatorservice.OperatorServiceClient
 
+		// Schedule creates a new shedule client with the same gRPC connection as this client.
+		ScheduleClient() ScheduleClient
+
 		// Close client and clean up underlying resources.
 		Close()
 	}
@@ -395,7 +398,7 @@ type (
 		DataConverter converter.DataConverter
 
 		// Optional: Sets FailureConverter to customize serialization/deserialization of errors.
-		// default: temporal.DefaultFailureConverter, does not encode any fields of the error. Use temporal.NewDefaultFailureConverter		
+		// default: temporal.DefaultFailureConverter, does not encode any fields of the error. Use temporal.NewDefaultFailureConverter
 		// options to configure or create a custom converter.
 		FailureConverter converter.FailureConverter
 

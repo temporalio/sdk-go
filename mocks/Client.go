@@ -573,3 +573,19 @@ func (_m *Client) OperatorService() operatorservice.OperatorServiceClient {
 
 	return r0
 }
+
+// Schedule provides a mock function with given fields:
+func (_m *Client) ScheduleClient() client.ScheduleClient {
+	ret := _m.Called()
+
+	var r0 client.ScheduleClient
+	if rf, ok := ret.Get(0).(func() client.ScheduleClient); ok {
+		r0 = rf()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(client.ScheduleClient)
+		}
+	}
+
+	return r0
+}

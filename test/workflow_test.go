@@ -752,6 +752,14 @@ func (w *Workflows) SimplestWorkflow(_ workflow.Context) (string, error) {
 	return "hello", nil
 }
 
+func (w *Workflows) TwoParameterWorkflow(_ workflow.Context, _ string, _ string) (string, error) {
+	return "TwoParameterWorkflow", nil
+}
+
+func (w *Workflows) ThreeParameterWorkflow(_ workflow.Context, _ string, _ string, _ string) (string, error) {
+	return "ThreeParameterWorkflow", nil
+}
+
 func (w *Workflows) LargeQueryResultWorkflow(ctx workflow.Context) (string, error) {
 	err := workflow.SetQueryHandler(ctx, "large_query", func() ([]byte, error) {
 		result := make([]byte, 3000000)
@@ -1900,6 +1908,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.LongRunningActivityWithHB)
 	worker.RegisterWorkflow(w.RetryTimeoutStableErrorWorkflow)
 	worker.RegisterWorkflow(w.SimplestWorkflow)
+	worker.RegisterWorkflow(w.TwoParameterWorkflow)
+	worker.RegisterWorkflow(w.ThreeParameterWorkflow)
 	worker.RegisterWorkflow(w.WaitSignalReturnParam)
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityCtxPropagation)
 	worker.RegisterWorkflow(w.WorkflowWithParallelLongLocalActivityAndHeartbeat)
