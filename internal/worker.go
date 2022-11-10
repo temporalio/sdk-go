@@ -209,8 +209,7 @@ type (
 		// workflow task schedules 3 more, only the first 2 will request eager
 		// execution.
 		//
-		// If unset/0, this defaults to 3. Users wanting effectively unlimited can
-		// set this to a high value. This is still bounded by
+		// The default of 0 means unlimited and therefore only bound by
 		// MaxConcurrentActivityExecutionSize.
 		//
 		// See DisableEagerActivities for a description of eager activity execution.
