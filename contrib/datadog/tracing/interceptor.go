@@ -164,6 +164,7 @@ func (t *tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (int
 
 	// Add tags to start options
 	for k, v := range options.Tags {
+		// TODO when custom span support is added we might have to revisit this
 		// Display Temporal tags in a nested group in Datadog APM
 		tagKey := "temporal." + strings.TrimPrefix(k, "temporal")
 		startOpts = append(startOpts, tracer.Tag(tagKey, v))
