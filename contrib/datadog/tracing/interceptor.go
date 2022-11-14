@@ -147,7 +147,9 @@ func (t *tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (int
 	case *tracerSpanCtx:
 		parent = opParent
 	default:
-		return nil, fmt.Errorf("unrecognized parent type %T", opParent)
+		// This should be considered an error, because something unexpected is
+		// in the place where only a parent trace should be. In this case, we don't
+		// set up the parent, so we will be creating a new top-level span
 	}
 	if parent != nil {
 		// Convert the parent context into a full trace.
