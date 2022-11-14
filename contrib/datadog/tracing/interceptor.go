@@ -134,7 +134,7 @@ func (t *tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (int
 		tracer.StartTime(options.Time),
 	}
 	// Set a deterministic span ID for workflows which are long-running and cross process boundaries
-	if options.Operation == "RunWorkflow" {
+	if options.IdempotencyKey != "" {
 		startOpts = append(startOpts, tracer.WithSpanID(genSpanID(options.IdempotencyKey)))
 	}
 
