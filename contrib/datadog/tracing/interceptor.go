@@ -173,7 +173,8 @@ func (t *tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (int
 	}
 
 	// Start and return span
-	s := tracer.StartSpan(options.Operation+":"+options.Name, startOpts...)
+
+	s := tracer.StartSpan(t.SpanName(options), startOpts...)
 	return &tracerSpan{Span: s}, nil
 }
 
@@ -184,6 +185,11 @@ func (t *tracerImpl) GetLogger(logger log.Logger, ref interceptor.TracerSpanRef)
 		return logger
 	}
 	return log.With(logger, "dd.trace_id", spanRef.TraceID(), "dd.span_id", spanRef.SpanID())
+}
+
+// SpanName Implements interceptortest.TestTracerCustomNaming
+func (t *tracerImpl) SpanName(options *interceptor.TracerStartSpanOptions) string {
+	return fmt.Sprintf("temporal.%s", options.Name)
 }
 
 func newSpanContextReader(parent ddtrace.SpanContext) spanContextReader {
