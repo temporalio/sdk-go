@@ -2682,8 +2682,8 @@ func (ts *IntegrationTestSuite) TestUpsertMemoWithExistingMemo() {
 	ts.Equal(expectedMemo, memo)
 }
 
-func (ts *IntegrationTestSuite) createBasicScheduleWorkflowAction(ID string) client.ScheduleWorkflowAction {
-	return client.ScheduleWorkflowAction{
+func (ts *IntegrationTestSuite) createBasicScheduleWorkflowAction(ID string) client.ScheduleAction {
+	return &client.ScheduleWorkflowAction{
 		Workflow:                 ts.workflows.SimplestWorkflow,
 		ID:                       ID,
 		TaskQueue:                ts.taskQueueName,
@@ -2956,7 +2956,7 @@ func (ts *IntegrationTestSuite) TestScheduleDescribeState() {
 	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
 		ID:   "test-schedule-describe-state-schedule",
 		Spec: client.ScheduleSpec{},
-		Action: client.ScheduleWorkflowAction{
+		Action: &client.ScheduleWorkflowAction{
 			Workflow:                 ts.workflows.TwoParameterWorkflow,
 			Args:                     []interface{}{"Test Arg 1", "Test Arg 2"},
 			ID:                       "test-schedule-describe-state-workflow",
@@ -2993,7 +2993,7 @@ func (ts *IntegrationTestSuite) TestScheduleDescribeState() {
 	ts.Equal(testNote, description.Schedule.State.Note)
 	// test action
 	switch action := description.Schedule.Action.(type) {
-	case client.ScheduleWorkflowAction:
+	case *client.ScheduleWorkflowAction:
 		ts.Equal("TwoParameterWorkflow", action.Workflow)
 		ts.Equal(expectedArg1Value, action.Args[0])
 		ts.Equal(expectedArg2Value, action.Args[1])
@@ -3092,7 +3092,6 @@ func (ts *IntegrationTestSuite) TestScheduleTrigger() {
 		ts.NoError(wfRun.Get(ctx, &result))
 		ts.Equal("hello", result)
 	}
-
 }
 
 func (ts *IntegrationTestSuite) TestScheduleBackfillCreate() {
@@ -3192,7 +3191,7 @@ func (ts *IntegrationTestSuite) TestScheduleList() {
 		handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
 			ID:   scheduleID,
 			Spec: client.ScheduleSpec{},
-			Action: client.ScheduleWorkflowAction{
+			Action: &client.ScheduleWorkflowAction{
 				Workflow:                 ts.workflows.SimplestWorkflow,
 				ID:                       workflowID,
 				TaskQueue:                ts.taskQueueName,
@@ -3271,7 +3270,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateCancelUpdate() {
 	}()
 	updateFunc := func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
 		switch action := input.Description.Schedule.Action.(type) {
-		case client.ScheduleWorkflowAction:
+		case *client.ScheduleWorkflowAction:
 			action.ID = "new-workflow-id"
 			input.Description.Schedule.Action = action
 			return &client.ScheduleUpdate{
@@ -3289,7 +3288,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateCancelUpdate() {
 	description, err := handle.Describe(ctx)
 	ts.NoError(err)
 	switch action := description.Schedule.Action.(type) {
-	case client.ScheduleWorkflowAction:
+	case *client.ScheduleWorkflowAction:
 		ts.Equal("test-schedule-update-workflow", action.ID)
 	default:
 		ts.Fail("schedule action wrong type")
@@ -3318,7 +3317,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateError() {
 	err = handle.Update(ctx, client.ScheduleUpdateOptions{
 		DoUpdate: updateFunc,
 	})
-	ts.EqualError(err,"test failure")
+	ts.EqualError(err, "test failure")
 }
 
 func (ts *IntegrationTestSuite) TestScheduleUpdateNewAction() {
@@ -3339,7 +3338,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateNewAction() {
 	}()
 	// change workflow type
 	updateFunc := func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
-		input.Description.Schedule.Action = client.ScheduleWorkflowAction{
+		input.Description.Schedule.Action = &client.ScheduleWorkflowAction{
 			Workflow:                 ts.workflows.Basic,
 			ID:                       "test-schedule-update-new-action-workflow",
 			TaskQueue:                ts.taskQueueName,
@@ -3357,7 +3356,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateNewAction() {
 	description, err := handle.Describe(ctx)
 	ts.NoError(err)
 	switch action := description.Schedule.Action.(type) {
-	case client.ScheduleWorkflowAction:
+	case *client.ScheduleWorkflowAction:
 		ts.Equal("Basic", action.Workflow)
 	default:
 		ts.Fail("schedule action wrong type")
@@ -3382,7 +3381,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateAction() {
 	}()
 	updateFunc := func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
 		switch action := input.Description.Schedule.Action.(type) {
-		case client.ScheduleWorkflowAction:
+		case *client.ScheduleWorkflowAction:
 			action.ID = "new-workflow-id"
 			input.Description.Schedule.Action = action
 			return &client.ScheduleUpdate{
@@ -3400,7 +3399,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateAction() {
 	description, err := handle.Describe(ctx)
 	ts.NoError(err)
 	switch action := description.Schedule.Action.(type) {
-	case client.ScheduleWorkflowAction:
+	case *client.ScheduleWorkflowAction:
 		ts.Equal("new-workflow-id", action.ID)
 	default:
 		ts.Fail("schedule action wrong type")
@@ -3417,7 +3416,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateActionParameter() {
 	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
 		ID:   "test-schedule-update-action-parameter-schedule",
 		Spec: client.ScheduleSpec{},
-		Action: client.ScheduleWorkflowAction{
+		Action: &client.ScheduleWorkflowAction{
 			Workflow:                 ts.workflows.TwoParameterWorkflow,
 			Args:                     []interface{}{"arg 1", "arg 2"},
 			ID:                       "test-schedule-update-action-parameter-workflow",
@@ -3435,7 +3434,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateActionParameter() {
 	}()
 	updateFunc := func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
 		switch action := input.Description.Schedule.Action.(type) {
-		case client.ScheduleWorkflowAction:
+		case *client.ScheduleWorkflowAction:
 			action.Workflow = ts.workflows.ThreeParameterWorkflow
 			action.Args = []interface{}{"Test Arg 1", "Test Arg 2", "Test Arg 3"}
 			input.Description.Schedule.Action = action
@@ -3454,7 +3453,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateActionParameter() {
 	description, err := handle.Describe(ctx)
 	ts.NoError(err)
 	switch action := description.Schedule.Action.(type) {
-	case client.ScheduleWorkflowAction:
+	case *client.ScheduleWorkflowAction:
 		ts.Equal("ThreeParameterWorkflow", action.Workflow)
 		ts.Equal(expectedArg1Value, action.Args[0])
 		ts.Equal(expectedArg2Value, action.Args[1])
@@ -3480,7 +3479,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateWorkflowActionMemo() {
 	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
 		ID:   "test-schedule-update-action-memo-schedule",
 		Spec: client.ScheduleSpec{},
-		Action: client.ScheduleWorkflowAction{
+		Action: &client.ScheduleWorkflowAction{
 			Workflow:                 ts.workflows.SimplestWorkflow,
 			ID:                       "test-schedule-update-action-memo-workflow",
 			TaskQueue:                ts.taskQueueName,
@@ -3500,7 +3499,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateWorkflowActionMemo() {
 	}()
 	updateFunc := func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
 		switch action := input.Description.Schedule.Action.(type) {
-		case client.ScheduleWorkflowAction:
+		case *client.ScheduleWorkflowAction:
 			key2Value, _ := converter.GetDefaultDataConverter().ToPayload(123)
 			action.Memo["key_2"] = key2Value
 			action.Memo["key_3"] = "other value"
@@ -3519,7 +3518,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateWorkflowActionMemo() {
 	description, err := handle.Describe(ctx)
 	ts.NoError(err)
 	switch action := description.Schedule.Action.(type) {
-	case client.ScheduleWorkflowAction:
+	case *client.ScheduleWorkflowAction:
 		ts.EqualValues(expectedMemo, action.Memo)
 	default:
 		ts.Fail("schedule action wrong type")
@@ -3528,16 +3527,20 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateWorkflowActionMemo() {
 
 // executeWorkflow executes a given workflow and waits for the result
 func (ts *IntegrationTestSuite) executeWorkflow(
-	wfID string, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
+	wfID string, wfFunc interface{}, retValPtr interface{}, args ...interface{},
+) error {
 	return ts.executeWorkflowWithOption(ts.startWorkflowOptions(wfID), wfFunc, retValPtr, args...)
 }
+
 func (ts *IntegrationTestSuite) executeWorkflowWithOption(
-	options client.StartWorkflowOptions, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
+	options client.StartWorkflowOptions, wfFunc interface{}, retValPtr interface{}, args ...interface{},
+) error {
 	return ts.executeWorkflowWithContextAndOption(context.Background(), options, wfFunc, retValPtr, args...)
 }
 
 func (ts *IntegrationTestSuite) executeWorkflowWithContextAndOption(
-	ctx context.Context, options client.StartWorkflowOptions, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
+	ctx context.Context, options client.StartWorkflowOptions, wfFunc interface{}, retValPtr interface{}, args ...interface{},
+) error {
 	ctx, cancel := context.WithTimeout(ctx, ctxTimeout)
 	defer cancel()
 	run, err := ts.client.ExecuteWorkflow(ctx, options, wfFunc, args...)
@@ -3559,7 +3562,7 @@ func (ts *IntegrationTestSuite) executeWorkflowWithContextAndOption(
 }
 
 func (ts *IntegrationTestSuite) startWorkflowOptions(wfID string) client.StartWorkflowOptions {
-	var wfOptions = client.StartWorkflowOptions{
+	wfOptions := client.StartWorkflowOptions{
 		ID:                       wfID,
 		TaskQueue:                ts.taskQueueName,
 		WorkflowExecutionTimeout: 15 * time.Second,
@@ -3577,9 +3580,11 @@ func (ts *IntegrationTestSuite) registerWorkflowsAndActivities(w worker.Worker) 
 	ts.activities.register(w)
 }
 
-var _ interceptor.WorkerInterceptor = (*tracingInterceptor)(nil)
-var _ interceptor.WorkflowInboundInterceptor = (*tracingWorkflowInboundInterceptor)(nil)
-var _ interceptor.WorkflowOutboundInterceptor = (*tracingWorkflowOutboundInterceptor)(nil)
+var (
+	_ interceptor.WorkerInterceptor           = (*tracingInterceptor)(nil)
+	_ interceptor.WorkflowInboundInterceptor  = (*tracingWorkflowInboundInterceptor)(nil)
+	_ interceptor.WorkflowOutboundInterceptor = (*tracingWorkflowOutboundInterceptor)(nil)
+)
 
 type tracingInterceptor struct {
 	interceptor.WorkerInterceptorBase
@@ -3627,7 +3632,8 @@ func (t *tracingInterceptor) GetTrace(workflowType string) []string {
 
 func (t *tracingWorkflowInboundInterceptor) Init(outbound interceptor.WorkflowOutboundInterceptor) error {
 	return t.Next.Init(&tracingWorkflowOutboundInterceptor{
-		interceptor.WorkflowOutboundInterceptorBase{Next: outbound}, t})
+		interceptor.WorkflowOutboundInterceptorBase{Next: outbound}, t,
+	})
 }
 
 func (t *tracingWorkflowOutboundInterceptor) ExecuteActivity(ctx workflow.Context, activityType string, args ...interface{}) workflow.Future {
@@ -3659,8 +3665,10 @@ func (t *tracingWorkflowInboundInterceptor) HandleQuery(ctx workflow.Context, in
 	return result, err
 }
 
-var _ interceptor.WorkerInterceptor = (*signalInterceptor)(nil)
-var _ interceptor.WorkflowInboundInterceptor = (*signalWorkflowInboundInterceptor)(nil)
+var (
+	_ interceptor.WorkerInterceptor          = (*signalInterceptor)(nil)
+	_ interceptor.WorkflowInboundInterceptor = (*signalWorkflowInboundInterceptor)(nil)
+)
 
 type signalInterceptor struct {
 	interceptor.WorkerInterceptorBase
@@ -3790,7 +3798,8 @@ func (c *coroutineCountingInterceptor) InterceptWorkflow(
 
 func (c *coroutineCountingWorkflowInboundInterceptor) Init(outbound interceptor.WorkflowOutboundInterceptor) error {
 	return c.Next.Init(&coroutineCountingWorkflowOutboundInterceptor{
-		interceptor.WorkflowOutboundInterceptorBase{Next: outbound}, c.root})
+		interceptor.WorkflowOutboundInterceptorBase{Next: outbound}, c.root,
+	})
 }
 
 func (c *coroutineCountingWorkflowOutboundInterceptor) Go(

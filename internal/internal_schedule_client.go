@@ -553,7 +553,7 @@ func convertFromPBScheduleListEntry(schedule *schedulepb.ScheduleListEntry) *Sch
 
 func convertToPBScheduleAction(ctx context.Context, client *WorkflowClient, scheduleAction ScheduleAction) (*schedulepb.ScheduleAction, error) {
 	switch action := scheduleAction.(type) {
-	case ScheduleWorkflowAction:
+	case *ScheduleWorkflowAction:
 		// Set header before interceptor run
 		dataConverter := WithContext(ctx, client.dataConverter)
 
@@ -636,7 +636,7 @@ func convertFromPBScheduleAction(action *schedulepb.ScheduleAction) (ScheduleAct
 			searchAttributes[key] = element
 		}
 
-		return ScheduleWorkflowAction{
+		return &ScheduleWorkflowAction{
 			ID:                       workflow.GetWorkflowId(),
 			Workflow:                 workflow.WorkflowType.GetName(),
 			Args:                     args,
@@ -761,7 +761,6 @@ func encodeScheduleWorklowArgs(dc converter.DataConverter, args []interface{}) (
 			}
 			payloads[i] = payload
 		}
-
 	}
 	return &commonpb.Payloads{
 		Payloads: payloads,

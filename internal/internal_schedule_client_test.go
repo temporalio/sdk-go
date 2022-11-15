@@ -36,7 +36,7 @@ import (
 )
 
 const (
-	scheduleID            = "some random schedule ID"
+	scheduleID = "some random schedule ID"
 )
 
 // schedule client test suite
@@ -66,7 +66,6 @@ func (s *scheduleClientTestSuite) TearDownTest() {
 	s.mockCtrl.Finish() // assert mock’s expectations
 }
 
-
 func (s *scheduleClientTestSuite) TestCreateScheduleClient() {
 	wf := func(ctx Context) string {
 		panic("this is just a stub")
@@ -76,8 +75,8 @@ func (s *scheduleClientTestSuite) TestCreateScheduleClient() {
 		Spec: ScheduleSpec{
 			CronExpressions: []string{"*"},
 		},
-		Action: ScheduleWorkflowAction{
-			Workflow:        wf,
+		Action: &ScheduleWorkflowAction{
+			Workflow:                 wf,
 			ID:                       workflowID,
 			TaskQueue:                taskqueue,
 			WorkflowExecutionTimeout: timeoutInSeconds,
@@ -90,6 +89,27 @@ func (s *scheduleClientTestSuite) TestCreateScheduleClient() {
 	scheduleHandle, err := s.client.ScheduleClient().Create(context.Background(), options)
 	s.Nil(err)
 	s.Equal(scheduleHandle.GetID(), scheduleID)
+}
+
+func (s *scheduleClientTestSuite) TestCreateScheduleNoID() {
+	wf := func(ctx Context) string {
+		panic("this is just a stub")
+	}
+	options := ScheduleOptions{
+		Spec: ScheduleSpec{
+			CronExpressions: []string{"*"},
+		},
+		Action: &ScheduleWorkflowAction{
+			Workflow:                 wf,
+			ID:                       workflowID,
+			TaskQueue:                taskqueue,
+			WorkflowExecutionTimeout: timeoutInSeconds,
+			WorkflowTaskTimeout:      timeoutInSeconds,
+		},
+	}
+
+	_, err := s.client.ScheduleClient().Create(context.Background(), options)
+	s.NotNil(err)
 }
 
 func (s *scheduleClientTestSuite) TestCreateScheduleWithMemoAndSearchAttr() {
@@ -109,8 +129,8 @@ func (s *scheduleClientTestSuite) TestCreateScheduleWithMemoAndSearchAttr() {
 		Spec: ScheduleSpec{
 			CronExpressions: []string{"*"},
 		},
-		Action: ScheduleWorkflowAction{
-			Workflow:        		  wf,
+		Action: &ScheduleWorkflowAction{
+			Workflow:                 wf,
 			ID:                       "wid",
 			TaskQueue:                taskqueue,
 			WorkflowExecutionTimeout: timeoutInSeconds,
@@ -138,7 +158,7 @@ func (s *scheduleClientTestSuite) TestCreateScheduleWithMemoAndSearchAttr() {
 
 func getListSchedulesRequest() *workflowservice.ListSchedulesRequest {
 	request := &workflowservice.ListSchedulesRequest{
-		Namespace:       DefaultNamespace,
+		Namespace: DefaultNamespace,
 	}
 
 	return request
