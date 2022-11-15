@@ -193,7 +193,7 @@ type (
 		EndAt time.Time
 
 		// Jitter - All times will be incremented by a random value from 0 to this amount of jitter, capped
-		// by the time until the next schedule. 
+		// by the time until the next schedule.
 		// Optional: Defaulted to 0
 		Jitter time.Duration
 
@@ -220,6 +220,9 @@ type (
 	// ScheduleWorkflowAction implements ScheduleAction to launch a workflow.
 	ScheduleWorkflowAction struct {
 		// ID - The business identifier of the workflow execution.
+		// The workflow ID of the started workflow may not match this exactly,
+		// it may have a timestamp appended for uniqueness.
+		// Optional: defaulted to a uuid.
 		ID string
 
 		// Workflow - What workflow to run.
@@ -267,7 +270,6 @@ type (
 	// ScheduleOptions configure the parameters for creating a schedule.
 	ScheduleOptions struct {
 		// ID - The business identifier of the schedule.
-		// Optional: defaulted to a uuid.
 		ID string
 
 		// Schedule - Describes when Actions should be taken.
@@ -285,17 +287,17 @@ type (
 
 		// CatchupWindow - The Temporal Server might be down or unavailable at the time when a Schedule should take an Action.
 		// When the Server comes back up, CatchupWindow controls which missed Actions should be taken at that point. The default is one
-   		// minute, which means that the Schedule attempts to take any Actions that wouldn't be more than one minute late. It
-   		// takes those Actions according to the Overlap. An outage that lasts longer than the Catchup
-   		// Window could lead to missed Actions.
+		// minute, which means that the Schedule attempts to take any Actions that wouldn't be more than one minute late. It
+		// takes those Actions according to the Overlap. An outage that lasts longer than the Catchup
+		// Window could lead to missed Actions.
 		// Optional: defaulted to 1 minute
 		CatchupWindow time.Duration
 
 		// PauseOnFailure - When an Action times out or reaches the end of its Retry Policy the Schedule will pause.
 		//
 		// With SCHEDULE_OVERLAP_POLICY_ALLOW_ALL, this pause might not apply to the next Action, because the next Action
-   		// might have already started previous to the failed one finishing. Pausing applies only to Actions that are scheduled
-   		// to start after the failed one finishes.
+		// might have already started previous to the failed one finishing. Pausing applies only to Actions that are scheduled
+		// to start after the failed one finishes.
 		// Optional: defaulted to false
 		PauseOnFailure bool
 
@@ -451,7 +453,7 @@ type (
 	}
 
 	// ScheduleUpdateOptions configure the parameters for updating a schedule.
-	ScheduleUpdateOptions struct{
+	ScheduleUpdateOptions struct {
 		// DoUpdate - Takes a description of the schedule and returns the new desired schedule.
 		// If update returns ErrSkipScheduleUpdate response and no update will occur.
 		// Any other error will be passed through.
@@ -459,27 +461,27 @@ type (
 	}
 
 	// ScheduleTriggerOptions configure the parameters for triggering a schedule.
-	ScheduleTriggerOptions struct{
+	ScheduleTriggerOptions struct {
 		// Overlap - If specified, policy to override the schedules default overlap policy.
 		Overlap enumspb.ScheduleOverlapPolicy
 	}
 
 	// SchedulePauseOptions configure the parameters for pausing a schedule.
-	SchedulePauseOptions struct{
+	SchedulePauseOptions struct {
 		// Note - Informative human-readable message with contextual notes.
 		// Optional: defaulted to 'Paused via Go SDK'
 		Note string
 	}
 
 	// ScheduleUnpauseOptions configure the parameters for unpausing a schedule.
-	ScheduleUnpauseOptions struct{
+	ScheduleUnpauseOptions struct {
 		// Note - Informative human-readable message with contextual notes.
 		// Optional: defaulted to 'Unpaused via Go SDK'
 		Note string
 	}
 
 	// ScheduleBackfillOptions configure the parameters for backfilling a schedule.
-	ScheduleBackfillOptions struct{
+	ScheduleBackfillOptions struct {
 		// Backfill  - Time periods to backfill the schedule.
 		Backfill []ScheduleBackfill
 	}
@@ -489,7 +491,7 @@ type (
 		// GetID returns the schedule ID asssociated with this handle.
 		GetID() string
 
-		// Delete the Schedule 
+		// Delete the Schedule
 		Delete(ctx context.Context) error
 
 		// Backfill the schedule by going though the specified time periods and taking Actions as if that time passed by right now, all at once.
@@ -597,8 +599,7 @@ type (
 		// methods like ScheduleHandle.Describe() will return an error.
 		GetHandle(ctx context.Context, scheduleID string) ScheduleHandle
 	}
-
 )
 
-func (ScheduleWorkflowAction) isScheduleAction() {
+func (*ScheduleWorkflowAction) isScheduleAction() {
 }
