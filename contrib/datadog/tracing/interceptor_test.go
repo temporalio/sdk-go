@@ -36,12 +36,7 @@ type testTracer struct {
 }
 
 func (t testTracer) SpanName(options *interceptor.TracerStartSpanOptions) string {
-	if impl, ok := t.Tracer.(*tracerImpl); ok {
-		return impl.SpanName(options)
-	} else {
-		// Should not happen
-		panic("datadog has custom naming")
-	}
+	return t.Tracer.(*tracerImpl).SpanName(options)
 }
 
 func (t testTracer) FinishedSpans() []*interceptortest.SpanInfo {

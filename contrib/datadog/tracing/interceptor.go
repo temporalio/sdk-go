@@ -173,7 +173,6 @@ func (t *tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (int
 	}
 
 	// Start and return span
-
 	s := tracer.StartSpan(t.SpanName(options), startOpts...)
 	return &tracerSpan{Span: s}, nil
 }
@@ -189,7 +188,8 @@ func (t *tracerImpl) GetLogger(logger log.Logger, ref interceptor.TracerSpanRef)
 
 // SpanName Implements interceptortest.TestTracerCustomNaming
 func (t *tracerImpl) SpanName(options *interceptor.TracerStartSpanOptions) string {
-	return fmt.Sprintf("temporal.%s", options.Name)
+	//TODO add another test to ensure that operation name is correct according to datadog expectations
+	return fmt.Sprintf("temporal.%s", options.Operation)
 }
 
 func newSpanContextReader(parent ddtrace.SpanContext) spanContextReader {

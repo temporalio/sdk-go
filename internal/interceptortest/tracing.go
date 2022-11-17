@@ -42,10 +42,6 @@ var testWorkflowStartTime = time.Date(1969, 7, 20, 20, 17, 0, 0, time.UTC)
 type TestTracer interface {
 	interceptor.Tracer
 	FinishedSpans() []*SpanInfo
-}
-
-type TestTracerCustomNaming interface {
-	TestTracer
 	SpanName(options *interceptor.TracerStartSpanOptions) string
 }
 
@@ -95,14 +91,7 @@ func RunTestWorkflow(t *testing.T, tracer interceptor.Tracer) {
 }
 
 func AssertSpanPropagation(t *testing.T, tracer TestTracer) {
-	// Check span tree
-	var namingF = func(options *interceptor.TracerStartSpanOptions) string {
-		return options.Operation + ":" + options.Name
-
-	}
-	if namedTracer, ok := tracer.(TestTracerCustomNaming); ok {
-		namingF = namedTracer.SpanName
-	}
+	namingF := tracer.SpanName
 
 	require.Equal(t, []*SpanInfo{
 		Span(namingF(&interceptor.TracerStartSpanOptions{Operation: "RunWorkflow", Name: "testWorkflow"}),

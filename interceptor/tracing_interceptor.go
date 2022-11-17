@@ -156,7 +156,8 @@ type TracerStartSpanOptions struct {
 }
 
 // TracerSpanRef represents a span reference such as a parent.
-type TracerSpanRef interface{}
+type TracerSpanRef interface {
+}
 
 // TracerSpan represents a span.
 type TracerSpan interface {
