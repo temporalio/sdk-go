@@ -186,9 +186,7 @@ func (t *tracerImpl) GetLogger(logger log.Logger, ref interceptor.TracerSpanRef)
 	return log.With(logger, "dd.trace_id", spanRef.TraceID(), "dd.span_id", spanRef.SpanID())
 }
 
-// SpanName Implements interceptortest.TestTracerCustomNaming
 func (t *tracerImpl) SpanName(options *interceptor.TracerStartSpanOptions) string {
-	//TODO add another test to ensure that operation name is correct according to datadog expectations
 	return fmt.Sprintf("temporal.%s", options.Operation)
 }
 

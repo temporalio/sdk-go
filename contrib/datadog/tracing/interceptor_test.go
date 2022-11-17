@@ -24,6 +24,7 @@ package tracing
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
 
 	"go.temporal.io/sdk/interceptor"
@@ -65,7 +66,20 @@ func TestSpanPropagation(t *testing.T) {
 	interceptortest.RunTestWorkflow(t, testTracer)
 	interceptortest.AssertSpanPropagation(t, testTracer)
 }
+func TestSpanName(t *testing.T) {
+	// Start the mock tracer.
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	impl := NewTracer(TracerOptions{})
+	testTracer := testTracer{
+		Tracer: impl,
+		mt:     mt,
+	}
+	interceptortest.RunTestWorkflow(t, testTracer)
+	// Ensure the naming scheme follows "temporal.${operation}"
+	require.Equal(t, "temporal.RunWorkflow", testTracer.FinishedSpans()[0].Name)
 
+}
 func Test_tracerImpl_genSpanID(t1 *testing.T) {
 	tests := []struct {
 		name  string
@@ -85,6 +99,8 @@ func Test_tracerImpl_genSpanID(t1 *testing.T) {
 	}
 	for _, tt := range tests {
 		t1.Run(tt.name, func(t1 *testing.T) {
+			// Ensure that if we generate spans for two different consecutive runs, they are consistent
+			// given the same input parameters (runId)
 			if first := genSpanID(tt.runId); first != tt.want {
 				t1.Errorf("genSpanID() = %v, want %v", first, tt.want)
 				if second := genSpanID(tt.runId); second != first {

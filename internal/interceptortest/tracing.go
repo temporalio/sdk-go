@@ -91,23 +91,22 @@ func RunTestWorkflow(t *testing.T, tracer interceptor.Tracer) {
 }
 
 func AssertSpanPropagation(t *testing.T, tracer TestTracer) {
-	namingF := tracer.SpanName
 
 	require.Equal(t, []*SpanInfo{
-		Span(namingF(&interceptor.TracerStartSpanOptions{Operation: "RunWorkflow", Name: "testWorkflow"}),
-			Span(namingF(&interceptor.TracerStartSpanOptions{Operation: "StartActivity", Name: "testActivity"}),
-				Span(namingF(&interceptor.TracerStartSpanOptions{Operation: "RunActivity", Name: "testActivity"}))),
-			Span(namingF(&interceptor.TracerStartSpanOptions{Operation: "StartActivity", Name: "testActivityLocal"}),
-				Span(namingF(&interceptor.TracerStartSpanOptions{Operation: "RunActivity", Name: "testActivityLocal"}))),
-			Span(namingF(&interceptor.TracerStartSpanOptions{Operation: "StartChildWorkflow", Name: "testWorkflowChild"}),
-				Span(namingF(&interceptor.TracerStartSpanOptions{Operation: "RunWorkflow", Name: "testWorkflowChild"}),
-					Span(namingF(&interceptor.TracerStartSpanOptions{Operation: "StartActivity", Name: "testActivity"}),
-						Span(namingF(&interceptor.TracerStartSpanOptions{Operation: "RunActivity", Name: "testActivity"}))),
-					Span(namingF(&interceptor.TracerStartSpanOptions{Operation: "StartActivity", Name: "testActivityLocal"}),
-						Span(namingF(&interceptor.TracerStartSpanOptions{Operation: "RunActivity", Name: "testActivityLocal"}))))),
-			Span(namingF(&interceptor.TracerStartSpanOptions{Operation: "SignalChildWorkflow", Name: "my-signal"}),
-				Span(namingF(&interceptor.TracerStartSpanOptions{Operation: "HandleSignal", Name: "my-signal"})))),
-		Span(namingF(&interceptor.TracerStartSpanOptions{Operation: "HandleQuery", Name: "my-query"})),
+		Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunWorkflow", Name: "testWorkflow"}),
+			Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "StartActivity", Name: "testActivity"}),
+				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunActivity", Name: "testActivity"}))),
+			Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "StartActivity", Name: "testActivityLocal"}),
+				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunActivity", Name: "testActivityLocal"}))),
+			Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "StartChildWorkflow", Name: "testWorkflowChild"}),
+				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunWorkflow", Name: "testWorkflowChild"}),
+					Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "StartActivity", Name: "testActivity"}),
+						Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunActivity", Name: "testActivity"}))),
+					Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "StartActivity", Name: "testActivityLocal"}),
+						Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunActivity", Name: "testActivityLocal"}))))),
+			Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "SignalChildWorkflow", Name: "my-signal"}),
+				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "HandleSignal", Name: "my-signal"})))),
+		Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "HandleQuery", Name: "my-query"})),
 	}, tracer.FinishedSpans())
 }
 
