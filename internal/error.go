@@ -271,6 +271,12 @@ var (
 	// which indicate the activity is not done yet. Then, when the waited human action happened, it needs to trigger something
 	// that could report the activity completed event to temporal server via Client.CompleteActivity() API.
 	ErrActivityResultPending = errors.New("not error: do not autocomplete, using Client.CompleteActivity() to complete")
+
+	// ErrScheduleAlreadyRunning is returned if there's already a running (not deleted) Schedule with the same ID
+	ErrScheduleAlreadyRunning = errors.New("schedule with this ID is already registered")
+
+	// ErrSkipScheduleUpdate is used by a user if they want to skip updating a schedule.
+	ErrSkipScheduleUpdate = errors.New("skip schedule update")
 )
 
 // NewApplicationError create new instance of *ApplicationError with message, type, and optional details.

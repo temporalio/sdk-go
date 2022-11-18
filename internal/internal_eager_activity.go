@@ -56,18 +56,30 @@ func newEagerActivityExecutor(options eagerActivityExecutorOptions) *eagerActivi
 func (e *eagerActivityExecutor) applyToRequest(
 	req *workflowservice.RespondWorkflowTaskCompletedRequest,
 ) (amountActivitySlotsReserved int) {
+	// Don't allow more than this hardcoded amount per workflow task for now
+	const maxPerTask = 3
+
 	// Go over every command checking for activities that can be eagerly executed
+	eagerRequestsThisTask := 0
 	for _, command := range req.Commands {
 		if attrs := command.GetScheduleActivityTaskCommandAttributes(); attrs != nil {
-			// If not present, disabled, or on a different task queue, we must mark as
+			// If not present, disabled, not requested, no activity worker, on a
+			// different task queue, or reached max for task, we must mark as
 			// explicitly disabled
-			if e == nil || e.disabled || e.activityWorker == nil || e.taskQueue != attrs.TaskQueue.GetName() {
+			eagerDisallowed := e == nil ||
+				e.disabled ||
+				!attrs.RequestEagerExecution ||
+				e.activityWorker == nil ||
+				e.taskQueue != attrs.TaskQueue.GetName() ||
+				eagerRequestsThisTask >= maxPerTask
+			if eagerDisallowed {
 				attrs.RequestEagerExecution = false
-			} else if attrs.RequestEagerExecution {
+			} else {
 				// If it has been requested, attempt to reserve one pending
 				attrs.RequestEagerExecution = e.reserveOnePendingSlot()
 				if attrs.RequestEagerExecution {
 					amountActivitySlotsReserved++
+					eagerRequestsThisTask++
 				}
 			}
 		}

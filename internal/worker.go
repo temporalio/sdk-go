@@ -256,8 +256,10 @@ func IsReplayNamespace(dn string) bool {
 
 // NewWorker creates an instance of worker for managing workflow and activity executions.
 // client   - client created with client.Dial() or client.NewLazyClient().
-// taskQueue - is the task queue name you use to identify your client worker, also
-//            identifies group of workflow and activity implementations that are hosted by a single worker process.
+// taskQueue - is the task queue name you use to identify your client worker,
+// also identifies group of workflow and activity implementations that are
+// hosted by a single worker process.
+//
 // options 	- configure any worker specific options.
 func NewWorker(
 	client Client,

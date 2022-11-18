@@ -287,7 +287,7 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 		task.doneCh = doneCh
 		task.laResultCh = laResultCh
 		task.laRetryCh = laRetryCh
-		completedRequest, err := wtp.taskHandler.ProcessWorkflowTask(
+		completedRequest, resetter, err := wtp.taskHandler.ProcessWorkflowTask(
 			task,
 			func(response interface{}, startTime time.Time) (*workflowTask, error) {
 				wtp.logger.Debug("Force RespondWorkflowTaskCompleted.", "TaskStartedEventID", task.task.GetStartedEventId())
@@ -314,6 +314,10 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 		response, err = wtp.RespondTaskCompletedWithMetrics(completedRequest, err, task.task, startTime)
 		if err != nil {
 			return err
+		}
+
+		if eventLevel := response.GetResetHistoryEventId(); eventLevel != 0 {
+			resetter(eventLevel)
 		}
 
 		if response == nil || response.WorkflowTask == nil {
@@ -595,10 +599,11 @@ func (wtp *workflowTaskPoller) updateBacklog(taskQueueKind enumspb.TaskQueueKind
 
 // getNextPollRequest returns appropriate next poll request based on poller configuration.
 // Simple rules:
-// 1) if sticky execution is disabled, always poll for regular task queue
-// 2) otherwise:
-//   2.1) if sticky task queue has backlog, always prefer to process sticky task first
-//   2.2) poll from the task queue that has less pending requests (prefer sticky when they are the same).
+//  1. if sticky execution is disabled, always poll for regular task queue
+//  2. otherwise:
+//     2.1) if sticky task queue has backlog, always prefer to process sticky task first
+//     2.2) poll from the task queue that has less pending requests (prefer sticky when they are the same).
+//
 // TODO: make this more smart to auto adjust based on poll latency
 func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.PollWorkflowTaskQueueRequest) {
 	taskQueueName := wtp.taskQueueName
