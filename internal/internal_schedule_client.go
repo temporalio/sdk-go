@@ -117,6 +117,13 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 		}
 	}
 
+	catchupWindow := &in.Options.CatchupWindow
+	if in.Options.CatchupWindow == 0 {
+		// Convert to nil so the server uses the default
+		// catchup window,otherwise it will use the minimum (10s).
+		catchupWindow = nil
+	}
+
 	// run propagators to extract information about tracing and other stuff, store in headers field
 	startRequest := &workflowservice.CreateScheduleRequest{
 		Namespace:  w.client.namespace,
@@ -127,14 +134,14 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 			Action: action,
 			Policies: &schedulepb.SchedulePolicies{
 				OverlapPolicy:  in.Options.Overlap,
-				CatchupWindow:  &in.Options.CatchupWindow,
+				CatchupWindow:  catchupWindow,
 				PauseOnFailure: in.Options.PauseOnFailure,
 			},
 			State: &schedulepb.ScheduleState{
 				Notes:            in.Options.Note,
 				Paused:           in.Options.Paused,
 				LimitedActions:   in.Options.RemainingActions != 0,
-				RemainingActions: in.Options.RemainingActions,
+				RemainingActions: int64(in.Options.RemainingActions),
 			},
 		},
 		InitialPatch:     initialPatch,
