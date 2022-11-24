@@ -196,6 +196,10 @@ type ClientTerminateWorkflowInput = internal.ClientTerminateWorkflowInput
 // ClientOutboundInterceptor.QueryWorkflow.
 type ClientQueryWorkflowInput = internal.ClientQueryWorkflowInput
 
+// ScheduleClientCreateInput is input for
+// ScheduleClientInterceptor.CreateSchedule.
+type ScheduleClientCreateInput = internal.ScheduleClientCreateInput
+
 // Header provides Temporal header information from the context for reading or
 // writing during specific interceptor calls.
 //

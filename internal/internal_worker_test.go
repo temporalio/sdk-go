@@ -1557,7 +1557,7 @@ func (s *internalWorkerTestSuite) testWorkflowTaskHandlerHelper(params workerExe
 	}
 
 	r := newWorkflowTaskHandler(params, nil, s.registry)
-	_, err := r.ProcessWorkflowTask(&workflowTask{task: task}, nil)
+	_, _, err := r.ProcessWorkflowTask(&workflowTask{task: task}, nil)
 	s.NoError(err)
 }
 

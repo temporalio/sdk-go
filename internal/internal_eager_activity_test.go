@@ -75,6 +75,26 @@ func TestEagerActivityWrongTaskQueue(t *testing.T) {
 	require.False(t, req.Commands[1].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
 }
 
+func TestEagerActivityMaxPerTask(t *testing.T) {
+	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{taskQueue: "task-queue1"})
+	exec.activityWorker = newActivityWorker(nil,
+		workerExecutionParameters{TaskQueue: "task-queue1", ConcurrentActivityExecutionSize: 10}, nil, newRegistry(), nil)
+	// Fill up the poller request channel
+	for i := 0; i < 10; i++ {
+		exec.activityWorker.worker.pollerRequestCh <- struct{}{}
+	}
+
+	// Add 8, but it limits to only the first 3
+	var req workflowservice.RespondWorkflowTaskCompletedRequest
+	for i := 0; i < 8; i++ {
+		addScheduleTaskCommand(&req, "task-queue1")
+	}
+	require.Equal(t, 3, exec.applyToRequest(&req))
+	for i := 0; i < 8; i++ {
+		require.Equal(t, i < 3, req.Commands[i].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
+	}
+}
+
 func TestEagerActivityCounts(t *testing.T) {
 	// We'll create an eager activity executor with 3 max eager concurrent and 5
 	// max concurrent

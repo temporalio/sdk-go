@@ -34,6 +34,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 	historypb "go.temporal.io/api/history/v1"
+	interactionpb "go.temporal.io/api/interaction/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/util"
@@ -193,6 +194,7 @@ const (
 	commandTypeAcceptWorkflowUpdate      commandType = 9
 	commandTypeCompleteWorkflowUpdate    commandType = 10
 	commandTypeModifyProperties          commandType = 11
+	commandTypeRejectWorkflowUpdate      commandType = 12
 )
 
 const (
@@ -275,6 +277,8 @@ func (d commandType) String() string {
 		return "AcceptWorkflowUpdate"
 	case commandTypeCompleteWorkflowUpdate:
 		return "CompleteWorkflowUpdate"
+	case commandTypeRejectWorkflowUpdate:
+		return "RejectWorkflowUpdate"
 	default:
 		return "Unknown"
 	}
@@ -299,61 +303,87 @@ func (h *commandsHelper) newCommandStateMachineBase(commandType commandType, id 
 
 // acceptWorkflowUpdate arranges for an AcceptWorkflowUpdate command to be added
 // to the current batch of outgoing commands.
-func (h *commandsHelper) acceptWorkflowUpdate(updateID string) {
-	sm := h.newAcceptWorkflowUpdateStateMachine(updateID)
+func (h *commandsHelper) acceptWorkflowUpdate(meta *interactionpb.Meta, in *interactionpb.Input) {
+	sm := h.newAcceptWorkflowUpdateStateMachine(meta, in)
 	h.addCommand(sm)
 }
 
 // acceptWorkflowUpdate arranges for an CompleteWorkflowUpdate command to be added
 // to the current batch of outgoing commands.
 func (h *commandsHelper) completeWorkflowUpdate(
-	updateID string,
+	meta *interactionpb.Meta,
 	success *commonpb.Payloads,
 	failure *failurepb.Failure,
-	durabilityPref enumspb.WorkflowUpdateDurabilityPreference,
 ) {
-	sm := h.newCompleteWorkflowUpdateStateMachine(updateID, success, failure, durabilityPref)
+	sm := h.newCompleteWorkflowUpdateStateMachine(meta, success, failure)
 	h.addCommand(sm)
 }
 
 func (h *commandsHelper) newCompleteWorkflowUpdateStateMachine(
-	updateID string,
+	meta *interactionpb.Meta,
 	success *commonpb.Payloads,
 	failure *failurepb.Failure,
-	durabilityPref enumspb.WorkflowUpdateDurabilityPreference,
 ) commandStateMachine {
 	attrs := &commandpb.Command_CompleteWorkflowUpdateCommandAttributes{
 		CompleteWorkflowUpdateCommandAttributes: &commandpb.CompleteWorkflowUpdateCommandAttributes{
-			UpdateId:             updateID,
-			DurabilityPreference: durabilityPref,
+			Meta:   meta,
+			Output: &interactionpb.Output{},
 		},
 	}
+
 	if failure != nil {
-		attrs.CompleteWorkflowUpdateCommandAttributes.Result = &commandpb.CompleteWorkflowUpdateCommandAttributes_Failure{
+		attrs.CompleteWorkflowUpdateCommandAttributes.Output.Result = &interactionpb.Output_Failure{
 			Failure: failure,
 		}
 	} else {
-		attrs.CompleteWorkflowUpdateCommandAttributes.Result = &commandpb.CompleteWorkflowUpdateCommandAttributes_Success{
+		attrs.CompleteWorkflowUpdateCommandAttributes.Output.Result = &interactionpb.Output_Success{
 			Success: success,
 		}
 	}
 	return &completeOnSendStateMachine{
-		h.newNaiveCommandStateMachine(commandTypeCompleteWorkflowUpdate, updateID, &commandpb.Command{
+		h.newNaiveCommandStateMachine(commandTypeCompleteWorkflowUpdate, meta.Id, &commandpb.Command{
 			CommandType: enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE,
 			Attributes:  attrs,
 		}),
 	}
 }
 
-func (h *commandsHelper) newAcceptWorkflowUpdateStateMachine(
-	updateID string,
+func (h *commandsHelper) rejectWorkflowUpdate(
+	meta *interactionpb.Meta,
+	failure *failurepb.Failure,
+) {
+	sm := h.newRejectWorkflowUpdateStateMachine(meta, failure)
+	h.addCommand(sm)
+}
+
+func (h *commandsHelper) newRejectWorkflowUpdateStateMachine(
+	meta *interactionpb.Meta,
+	failure *failurepb.Failure,
 ) commandStateMachine {
 	return &completeOnSendStateMachine{
-		h.newNaiveCommandStateMachine(commandTypeAcceptWorkflowUpdate, updateID, &commandpb.Command{
+		h.newNaiveCommandStateMachine(commandTypeRejectWorkflowUpdate, meta.Id, &commandpb.Command{
+			CommandType: enumspb.COMMAND_TYPE_REJECT_WORKFLOW_UPDATE,
+			Attributes: &commandpb.Command_RejectWorkflowUpdateCommandAttributes{
+				RejectWorkflowUpdateCommandAttributes: &commandpb.RejectWorkflowUpdateCommandAttributes{
+					Meta:    meta,
+					Failure: failure,
+				},
+			},
+		}),
+	}
+}
+
+func (h *commandsHelper) newAcceptWorkflowUpdateStateMachine(
+	meta *interactionpb.Meta,
+	in *interactionpb.Input,
+) commandStateMachine {
+	return &completeOnSendStateMachine{
+		h.newNaiveCommandStateMachine(commandTypeAcceptWorkflowUpdate, meta.Id, &commandpb.Command{
 			CommandType: enumspb.COMMAND_TYPE_ACCEPT_WORKFLOW_UPDATE,
 			Attributes: &commandpb.Command_AcceptWorkflowUpdateCommandAttributes{
 				AcceptWorkflowUpdateCommandAttributes: &commandpb.AcceptWorkflowUpdateCommandAttributes{
-					UpdateId: updateID,
+					Meta:  meta,
+					Input: in,
 				},
 			},
 		}),

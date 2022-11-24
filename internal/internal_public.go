@@ -74,6 +74,8 @@ type (
 		StackTrace() string
 	}
 
+	EventLevelResetter func(int64)
+
 	// WorkflowTaskHandler represents workflow task handlers.
 	WorkflowTaskHandler interface {
 		// Processes the workflow task
@@ -84,7 +86,7 @@ type (
 		ProcessWorkflowTask(
 			task *workflowTask,
 			f workflowTaskHeartbeatFunc,
-		) (response interface{}, err error)
+		) (response interface{}, resetter EventLevelResetter, err error)
 	}
 
 	// ActivityTaskHandler represents activity task handlers.
