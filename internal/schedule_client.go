@@ -316,7 +316,7 @@ type (
 		// taken when the number is `0` (unless ScheduleHandle.Trigger is called).
 		//
 		// Optional: defaulted to zero
-		RemainingActions int64
+		RemainingActions int
 
 		// TriggerImmediately - Trigger one Action immediately on creating the schedule.
 		// Optional: defaulted to false
