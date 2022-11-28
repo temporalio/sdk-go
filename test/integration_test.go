@@ -1772,6 +1772,36 @@ func (ts *IntegrationTestSuite) waitForQueryTrue(run client.WorkflowRun, query s
 	ts.True(result, "query didn't return true in reasonable amount of time")
 }
 
+func (ts *IntegrationTestSuite) TestNumPollersCounter() {
+	_, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	assertNumPollersEventually := func(expected float64, pollerType string, tags ...string) {
+		// Try for two seconds
+		var lastCount float64
+		for start := time.Now(); time.Since(start) <= 10*time.Second; {
+			lastCount = ts.metricGauge(
+				metrics.NumPoller,
+				"poller_type", pollerType,
+				"task_queue", ts.taskQueueName,
+			)
+			if lastCount == expected {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		// Will fail
+		ts.Equal(expected, lastCount)
+	}
+	if ts.config.maxWorkflowCacheSize == 0 {
+		assertNumPollersEventually(2, "workflow_task")
+		assertNumPollersEventually(0, "workflow_sticky_task")
+	} else {
+		assertNumPollersEventually(1, "workflow_task")
+		assertNumPollersEventually(1, "workflow_sticky_task")
+	}
+	assertNumPollersEventually(2, "activity_task")
+}
+
 func (ts *IntegrationTestSuite) TestSlotsAvailableCounter() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
