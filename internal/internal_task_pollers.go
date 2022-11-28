@@ -31,6 +31,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gogo/protobuf/types"
@@ -94,6 +95,12 @@ type (
 		requestLock             sync.Mutex
 		stickyCacheSize         int
 		eagerActivityExecutor   *eagerActivityExecutor
+
+		// must be accessed atomically
+		numNormalPollers      int32
+		numNormalPollersGauge metrics.Gauge
+		numStickyPollers      int32
+		numStickyPollersGauge metrics.Gauge
 	}
 
 	// activityTaskPoller implements polling/processing a workflow task
@@ -106,6 +113,10 @@ type (
 		taskHandler         ActivityTaskHandler
 		logger              log.Logger
 		activitiesPerSecond float64
+
+		// must be accessed atomically
+		numPollers      int32
+		numPollersGauge metrics.Gauge
 	}
 
 	historyIteratorImpl struct {
@@ -238,6 +249,8 @@ func newWorkflowTaskPoller(
 		StickyScheduleToStartTimeout: params.StickyScheduleToStartTimeout,
 		stickyCacheSize:              params.cache.MaxWorkflowCacheSize(),
 		eagerActivityExecutor:        params.eagerActivityExecutor,
+		numNormalPollersGauge:        params.MetricsHandler.WithTags(metrics.PollerTags(metrics.PollerTypeWorkflowTask)).Gauge(metrics.NumPoller),
+		numStickyPollersGauge:        params.MetricsHandler.WithTags(metrics.PollerTags(metrics.PollerTypeWorkflowStickyTask)).Gauge(metrics.NumPoller),
 	}
 }
 
@@ -335,7 +348,6 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 	task *workflowservice.PollWorkflowTaskQueueResponse,
 	startTime time.Time,
 ) (response *workflowservice.RespondWorkflowTaskCompletedResponse, err error) {
-
 	metricsHandler := wtp.metricsHandler.WithTags(metrics.WorkflowTags(task.WorkflowType.GetName()))
 	if taskErr != nil {
 		metricsHandler.Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
@@ -632,6 +644,23 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 	}
 }
 
+// Poll the workflow task queue and update the num_poller metric
+func (wtp *workflowTaskPoller) pollWorkflowTaskQueue(ctx context.Context, request *workflowservice.PollWorkflowTaskQueueRequest) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
+	if request.TaskQueue.GetKind() == enumspb.TASK_QUEUE_KIND_NORMAL {
+		wtp.numNormalPollersGauge.Update(float64(atomic.AddInt32(&wtp.numNormalPollers, 1)))
+		defer func() {
+			wtp.numNormalPollersGauge.Update(float64(atomic.AddInt32(&wtp.numNormalPollers, -1)))
+		}()
+	} else {
+		wtp.numStickyPollersGauge.Update(float64(atomic.AddInt32(&wtp.numStickyPollers, 1)))
+		defer func() {
+			wtp.numStickyPollersGauge.Update(float64(atomic.AddInt32(&wtp.numStickyPollers, -1)))
+		}()
+	}
+
+	return wtp.service.PollWorkflowTaskQueue(ctx, request)
+}
+
 // Poll for a single workflow task from the service
 func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	traceLog(func() {
@@ -641,7 +670,7 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	request := wtp.getNextPollRequest()
 	defer wtp.release(request.TaskQueue.GetKind())
 
-	response, err := wtp.service.PollWorkflowTaskQueue(ctx, request)
+	response, err := wtp.pollWorkflowTaskQueue(ctx, request)
 	if err != nil {
 		wtp.updateBacklog(request.TaskQueue.GetKind(), 0)
 		return nil, err
@@ -784,7 +813,18 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 		identity:            params.Identity,
 		logger:              params.Logger,
 		activitiesPerSecond: params.TaskQueueActivitiesPerSecond,
+		numPollersGauge:     params.MetricsHandler.WithTags(metrics.PollerTags(metrics.PollerTypeActivityTask)).Gauge(metrics.NumPoller),
 	}
+}
+
+// Poll the activity task queue and update the num_poller metric
+func (atp *activityTaskPoller) pollActivityTaskQueue(ctx context.Context, request *workflowservice.PollActivityTaskQueueRequest) (*workflowservice.PollActivityTaskQueueResponse, error) {
+	atp.numPollersGauge.Update(float64(atomic.AddInt32(&atp.numPollers, 1)))
+	defer func() {
+		atp.numPollersGauge.Update(float64(atomic.AddInt32(&atp.numPollers, -1)))
+	}()
+
+	return atp.service.PollActivityTaskQueue(ctx, request)
 }
 
 // Poll for a single activity task from the service
@@ -799,7 +839,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 		TaskQueueMetadata: &taskqueuepb.TaskQueueMetadata{MaxTasksPerSecond: &types.DoubleValue{Value: atp.activitiesPerSecond}},
 	}
 
-	response, err := atp.service.PollActivityTaskQueue(ctx, request)
+	response, err := atp.pollActivityTaskQueue(ctx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -971,7 +1011,8 @@ func convertActivityResultToRespondRequest(
 			TaskToken: taskToken,
 			Result:    result,
 			Identity:  identity,
-			Namespace: namespace}
+			Namespace: namespace,
+		}
 	}
 
 	// Only respond with canceled if allowed
@@ -982,13 +1023,15 @@ func convertActivityResultToRespondRequest(
 				TaskToken: taskToken,
 				Details:   convertErrDetailsToPayloads(canceledErr.details, dataConverter),
 				Identity:  identity,
-				Namespace: namespace}
+				Namespace: namespace,
+			}
 		}
 		if errors.Is(err, context.Canceled) {
 			return &workflowservice.RespondActivityTaskCanceledRequest{
 				TaskToken: taskToken,
 				Identity:  identity,
-				Namespace: namespace}
+				Namespace: namespace,
+			}
 		}
 	}
 
@@ -1002,7 +1045,8 @@ func convertActivityResultToRespondRequest(
 		TaskToken: taskToken,
 		Failure:   failureConverter.ErrorToFailure(err),
 		Identity:  identity,
-		Namespace: namespace}
+		Namespace: namespace,
+	}
 }
 
 func convertActivityResultToRespondRequestByID(
@@ -1030,7 +1074,8 @@ func convertActivityResultToRespondRequestByID(
 			RunId:      runID,
 			ActivityId: activityID,
 			Result:     result,
-			Identity:   identity}
+			Identity:   identity,
+		}
 	}
 
 	// Only respond with canceled if allowed
@@ -1043,7 +1088,8 @@ func convertActivityResultToRespondRequestByID(
 				RunId:      runID,
 				ActivityId: activityID,
 				Details:    convertErrDetailsToPayloads(canceledErr.details, dataConverter),
-				Identity:   identity}
+				Identity:   identity,
+			}
 		}
 		if errors.Is(err, context.Canceled) {
 			return &workflowservice.RespondActivityTaskCanceledByIdRequest{
@@ -1051,7 +1097,8 @@ func convertActivityResultToRespondRequestByID(
 				WorkflowId: workflowID,
 				RunId:      runID,
 				ActivityId: activityID,
-				Identity:   identity}
+				Identity:   identity,
+			}
 		}
 	}
 
@@ -1067,5 +1114,6 @@ func convertActivityResultToRespondRequestByID(
 		RunId:      runID,
 		ActivityId: activityID,
 		Failure:    failureConverter.ErrorToFailure(err),
-		Identity:   identity}
+		Identity:   identity,
+	}
 }

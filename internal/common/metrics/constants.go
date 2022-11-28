@@ -62,6 +62,7 @@ const (
 	WorkerStartCounter       = TemporalMetricsPrefix + "worker_start"
 	WorkerTaskSlotsAvailable = TemporalMetricsPrefix + "worker_task_slots_available"
 	PollerStartCounter       = TemporalMetricsPrefix + "poller_start"
+	NumPoller                = TemporalMetricsPrefix + "num_pollers"
 
 	TemporalRequest                      = TemporalMetricsPrefix + "request"
 	TemporalRequestFailure               = TemporalRequest + "_failure"
@@ -84,6 +85,7 @@ const (
 const (
 	NamespaceTagName        = "namespace"
 	ClientTagName           = "client_name"
+	PollerTypeTagName       = "poller_type"
 	WorkerTypeTagName       = "worker_type"
 	WorkflowTypeNameTagName = "workflow_type"
 	ActivityTypeNameTagName = "activity_type"
@@ -94,6 +96,9 @@ const (
 
 // Metric tag values
 const (
-	NoneTagValue   = "none"
-	ClientTagValue = "temporal_go"
+	NoneTagValue                 = "none"
+	ClientTagValue               = "temporal_go"
+	PollerTypeWorkflowTask       = "workflow_task"
+	PollerTypeWorkflowStickyTask = "workflow_sticky_task"
+	PollerTypeActivityTask       = "activity_task"
 )
