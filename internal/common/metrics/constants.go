@@ -50,13 +50,14 @@ const (
 	ActivitySucceedEndToEndLatency        = TemporalMetricsPrefix + "activity_succeed_endtoend_latency"
 	ActivityTaskErrorCounter              = TemporalMetricsPrefix + "activity_task_error"
 
-	LocalActivityTotalCounter           = TemporalMetricsPrefix + "local_activity_total"
-	LocalActivityCanceledCounter        = TemporalMetricsPrefix + "local_activity_canceled"
-	LocalActivityFailedCounter          = TemporalMetricsPrefix + "local_activity_failed" // Deprecated: Use LocalActivityExecutionFailedCounter instead.
-	LocalActivityExecutionFailedCounter = TemporalMetricsPrefix + "local_activity_execution_failed"
-	LocalActivityErrorCounter           = TemporalMetricsPrefix + "local_activity_error"
-	LocalActivityExecutionLatency       = TemporalMetricsPrefix + "local_activity_execution_latency"
-	LocalActivitySucceedEndToEndLatency = TemporalMetricsPrefix + "local_activity_succeed_endtoend_latency"
+	LocalActivityTotalCounter             = TemporalMetricsPrefix + "local_activity_total"
+	LocalActivityCanceledCounter          = TemporalMetricsPrefix + "local_activity_canceled" // Deprecated: Use LocalActivityExecutionCanceledCounter instead.
+	LocalActivityExecutionCanceledCounter = TemporalMetricsPrefix + "local_activity_execution_cancelled"
+	LocalActivityFailedCounter            = TemporalMetricsPrefix + "local_activity_failed" // Deprecated: Use LocalActivityExecutionFailedCounter instead.
+	LocalActivityExecutionFailedCounter   = TemporalMetricsPrefix + "local_activity_execution_failed"
+	LocalActivityErrorCounter             = TemporalMetricsPrefix + "local_activity_error"
+	LocalActivityExecutionLatency         = TemporalMetricsPrefix + "local_activity_execution_latency"
+	LocalActivitySucceedEndToEndLatency   = TemporalMetricsPrefix + "local_activity_succeed_endtoend_latency"
 
 	CorruptedSignalsCounter = TemporalMetricsPrefix + "corrupted_signals"
 

@@ -587,6 +587,7 @@ WaitResult:
 		// context is done
 		if ctx.Err() == context.Canceled {
 			metricsHandler.Counter(metrics.LocalActivityCanceledCounter).Inc(1)
+			metricsHandler.Counter(metrics.LocalActivityExecutionCanceledCounter).Inc(1)
 			return &localActivityResult{err: ErrCanceled, task: task}
 		} else if ctx.Err() == context.DeadlineExceeded {
 			return &localActivityResult{err: ErrDeadlineExceeded, task: task}
