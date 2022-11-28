@@ -81,7 +81,7 @@ func WorkerTags(workerType string) map[string]string {
 	}
 }
 
-// PllerTags returns a set of tags for pollers.
+// PollerTags returns a set of tags for pollers.
 func PollerTags(pollerType string) map[string]string {
 	return map[string]string{
 		PollerTypeTagName: pollerType,

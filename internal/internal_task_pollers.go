@@ -31,7 +31,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gogo/protobuf/types"
@@ -74,6 +73,13 @@ type (
 		stopC          <-chan struct{}
 	}
 
+	// numPollerMetric tracks the number of active pollers and publishes a metric on it.
+	numPollerMetric struct {
+		lock       sync.Mutex
+		numPollers int32
+		gauge      metrics.Gauge
+	}
+
 	// workflowTaskPoller implements polling/processing a workflow task
 	workflowTaskPoller struct {
 		basePoller
@@ -96,11 +102,8 @@ type (
 		stickyCacheSize         int
 		eagerActivityExecutor   *eagerActivityExecutor
 
-		// must be accessed atomically
-		numNormalPollers      int32
-		numNormalPollersGauge metrics.Gauge
-		numStickyPollers      int32
-		numStickyPollersGauge metrics.Gauge
+		numNormalPollerMetric *numPollerMetric
+		numStickyPollerMetric *numPollerMetric
 	}
 
 	// activityTaskPoller implements polling/processing a workflow task
@@ -113,10 +116,7 @@ type (
 		taskHandler         ActivityTaskHandler
 		logger              log.Logger
 		activitiesPerSecond float64
-
-		// must be accessed atomically
-		numPollers      int32
-		numPollersGauge metrics.Gauge
+		numPollerMetric     *numPollerMetric
 	}
 
 	historyIteratorImpl struct {
@@ -159,6 +159,26 @@ type (
 		stopCh   <-chan struct{}
 	}
 )
+
+func newNumPollerMetric(metricsHandler metrics.Handler, pollerType string) *numPollerMetric {
+	return &numPollerMetric{
+		gauge: metricsHandler.WithTags(metrics.PollerTags(pollerType)).Gauge(metrics.NumPoller),
+	}
+}
+
+func (npm *numPollerMetric) increment() {
+	npm.lock.Lock()
+	defer npm.lock.Unlock()
+	npm.numPollers += 1
+	npm.gauge.Update(float64(npm.numPollers))
+}
+
+func (npm *numPollerMetric) decrement() {
+	npm.lock.Lock()
+	defer npm.lock.Unlock()
+	npm.numPollers -= 1
+	npm.gauge.Update(float64(npm.numPollers))
+}
 
 func newLocalActivityTunnel(stopCh <-chan struct{}) *localActivityTunnel {
 	return &localActivityTunnel{
@@ -249,8 +269,8 @@ func newWorkflowTaskPoller(
 		StickyScheduleToStartTimeout: params.StickyScheduleToStartTimeout,
 		stickyCacheSize:              params.cache.MaxWorkflowCacheSize(),
 		eagerActivityExecutor:        params.eagerActivityExecutor,
-		numNormalPollersGauge:        params.MetricsHandler.WithTags(metrics.PollerTags(metrics.PollerTypeWorkflowTask)).Gauge(metrics.NumPoller),
-		numStickyPollersGauge:        params.MetricsHandler.WithTags(metrics.PollerTags(metrics.PollerTypeWorkflowStickyTask)).Gauge(metrics.NumPoller),
+		numNormalPollerMetric:        newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowTask),
+		numStickyPollerMetric:        newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowStickyTask),
 	}
 }
 
@@ -647,15 +667,11 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 // Poll the workflow task queue and update the num_poller metric
 func (wtp *workflowTaskPoller) pollWorkflowTaskQueue(ctx context.Context, request *workflowservice.PollWorkflowTaskQueueRequest) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
 	if request.TaskQueue.GetKind() == enumspb.TASK_QUEUE_KIND_NORMAL {
-		wtp.numNormalPollersGauge.Update(float64(atomic.AddInt32(&wtp.numNormalPollers, 1)))
-		defer func() {
-			wtp.numNormalPollersGauge.Update(float64(atomic.AddInt32(&wtp.numNormalPollers, -1)))
-		}()
+		wtp.numNormalPollerMetric.increment()
+		defer wtp.numNormalPollerMetric.decrement()
 	} else {
-		wtp.numStickyPollersGauge.Update(float64(atomic.AddInt32(&wtp.numStickyPollers, 1)))
-		defer func() {
-			wtp.numStickyPollersGauge.Update(float64(atomic.AddInt32(&wtp.numStickyPollers, -1)))
-		}()
+		wtp.numStickyPollerMetric.increment()
+		defer wtp.numStickyPollerMetric.decrement()
 	}
 
 	return wtp.service.PollWorkflowTaskQueue(ctx, request)
@@ -813,16 +829,14 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 		identity:            params.Identity,
 		logger:              params.Logger,
 		activitiesPerSecond: params.TaskQueueActivitiesPerSecond,
-		numPollersGauge:     params.MetricsHandler.WithTags(metrics.PollerTags(metrics.PollerTypeActivityTask)).Gauge(metrics.NumPoller),
+		numPollerMetric:     newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeActivityTask),
 	}
 }
 
 // Poll the activity task queue and update the num_poller metric
 func (atp *activityTaskPoller) pollActivityTaskQueue(ctx context.Context, request *workflowservice.PollActivityTaskQueueRequest) (*workflowservice.PollActivityTaskQueueResponse, error) {
-	atp.numPollersGauge.Update(float64(atomic.AddInt32(&atp.numPollers, 1)))
-	defer func() {
-		atp.numPollersGauge.Update(float64(atomic.AddInt32(&atp.numPollers, -1)))
-	}()
+	atp.numPollerMetric.increment()
+	defer atp.numPollerMetric.decrement()
 
 	return atp.service.PollActivityTaskQueue(ctx, request)
 }
