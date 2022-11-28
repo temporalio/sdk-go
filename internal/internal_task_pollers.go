@@ -556,6 +556,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 			}
 			if err != nil {
 				metricsHandler.Counter(metrics.LocalActivityFailedCounter).Inc(1)
+				metricsHandler.Counter(metrics.LocalActivityExecutionFailedCounter).Inc(1)
 			}
 		}()
 

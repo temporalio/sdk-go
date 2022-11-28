@@ -52,7 +52,8 @@ const (
 
 	LocalActivityTotalCounter           = TemporalMetricsPrefix + "local_activity_total"
 	LocalActivityCanceledCounter        = TemporalMetricsPrefix + "local_activity_canceled"
-	LocalActivityFailedCounter          = TemporalMetricsPrefix + "local_activity_failed"
+	LocalActivityFailedCounter          = TemporalMetricsPrefix + "local_activity_failed" // Deprecated: Use LocalActivityExecutionFailedCounter instead.
+	LocalActivityExecutionFailedCounter = TemporalMetricsPrefix + "local_activity_execution_failed"
 	LocalActivityErrorCounter           = TemporalMetricsPrefix + "local_activity_error"
 	LocalActivityExecutionLatency       = TemporalMetricsPrefix + "local_activity_execution_latency"
 	LocalActivitySucceedEndToEndLatency = TemporalMetricsPrefix + "local_activity_succeed_endtoend_latency"
