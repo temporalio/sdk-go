@@ -29,9 +29,16 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 )
 
+// WorkflowServiceProxyOptions provides options for configuring a WorkflowServiceProxyServer.
+// Client is a WorkflowServiceClient used to forward requests received by the server to the
+// Temporal Frontend.
+type WorkflowServiceProxyOptions struct {
+	Client workflowservice.WorkflowServiceClient
+}
+
 // NewWorkflowServiceProxyServer creates a WorkflowServiceServer suitable for registering with a GRPC Server. Requests will
 // be forwarded to the passed in WorkflowService Client. GRPC interceptors can be added on the Server or Client to adjust
 // requests and responses.
-func NewWorkflowServiceProxyServer(options proxy.WorkflowServiceProxyOptions) (workflowservice.WorkflowServiceServer, error) {
-	return proxy.NewWorkflowServiceProxyServer(options)
+func NewWorkflowServiceProxyServer(options WorkflowServiceProxyOptions) (workflowservice.WorkflowServiceServer, error) {
+	return proxy.NewWorkflowServiceProxyServer(proxy.WorkflowServiceProxyOptions(options))
 }
