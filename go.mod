@@ -17,7 +17,6 @@ require (
 	go.temporal.io/api v1.13.1-0.20221205090347-06c76d587cc9
 	go.uber.org/atomic v1.9.0
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac
-	golang.org/x/tools v0.1.12
 	google.golang.org/grpc v1.51.0
 	google.golang.org/protobuf v1.28.1
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
