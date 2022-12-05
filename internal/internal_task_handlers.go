@@ -666,6 +666,19 @@ func (w *workflowExecutionContextImpl) resetStateIfDestroyed(task *workflowservi
 				return err
 			}
 		}
+		if w.workflowInfo != nil {
+			// Reset the search attributes and memos from the WorkflowExecutionStartedEvent.
+			// The search attributes and memo may have been modified by calls like UpsertMemo
+			// or UpsertSearchAttributes. They must be reset to avoid non determinism on replay.
+			h := task.History
+			startedEvent := h.Events[0]
+			attributes := startedEvent.GetWorkflowExecutionStartedEventAttributes()
+			if attributes == nil {
+				return errors.New("first history event is not WorkflowExecutionStarted")
+			}
+			w.workflowInfo.SearchAttributes = attributes.SearchAttributes
+			w.workflowInfo.Memo = attributes.Memo
+		}
 	}
 	return nil
 }
@@ -1158,27 +1171,7 @@ func (w *workflowExecutionContextImpl) ResetIfStale(task *workflowservice.PollWo
 			tagPreviousStartedEventID, task.GetPreviousStartedEventId(),
 		)
 		w.clearState()
-		err := w.resetStateIfDestroyed(task, historyIterator)
-		if err != nil {
-			return err
-		}
-		if w.workflowInfo != nil {
-			// Reset the search attributes and memos from the WorkflowExecutionStartedEvent.
-			// The search attributes and memo may have been modified by calls like UpsertMemo
-			// or UpsertSearchAttributes. They must be reset to avoid non determinism on replay.
-			h := task.History
-			startedEvent := h.Events[0]
-			attributes := startedEvent.GetWorkflowExecutionStartedEventAttributes()
-			// The first event in the history has to be WorkflowExecutionStartedEvent because
-			// w.clearState() should "destroy" the state and w.resetStateIfDestroyed() will reset the
-			// history of the execution context if it is considered "destroyed".
-			if attributes == nil {
-				return errors.New("first history event is not WorkflowExecutionStarted")
-			}
-			w.workflowInfo.SearchAttributes = attributes.SearchAttributes
-			w.workflowInfo.Memo = attributes.Memo
-		}
-		return nil
+		return w.resetStateIfDestroyed(task, historyIterator)
 	}
 	return nil
 }
