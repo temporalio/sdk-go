@@ -30,7 +30,7 @@ package internal
 const (
 	// SDKVersion is a semver (https://semver.org/) that represents the version of this Temporal GoSDK.
 	// Server validates if SDKVersion fits its supported range and rejects request if it doesn't.
-	SDKVersion = "1.18.1"
+	SDKVersion = "1.19.0"
 
 	// SupportedServerVersions is a semver rages (https://github.com/blang/semver#ranges) of server versions that
 	// are supported by this Temporal SDK.
