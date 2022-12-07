@@ -25,9 +25,12 @@
 package converter
 
 import (
+	"fmt"
+
 	"google.golang.org/grpc"
 
 	commonpb "go.temporal.io/api/common/v1"
+	failurepb "go.temporal.io/api/failure/v1"
 	"go.temporal.io/api/proxy"
 )
 
@@ -68,6 +71,52 @@ func NewPayloadCodecGRPCClientInterceptor(options PayloadCodecGRPCClientIntercep
 				return payloads, nil
 			},
 			SkipSearchAttributes: true,
+		},
+	})
+}
+
+type NewFailureGRPCClientInterceptorOptions struct {
+	// DataConverter ??
+	EncodeCommonAttributes bool
+}
+
+// Do we want to expose this from converter so that we are sure things line up?
+type encodedFailure struct {
+	Message    string `json:"message"`
+	StackTrace string `json:"stack_trace"`
+}
+
+// NewFailureGRPCClientInterceptor returns a GRPC Client Interceptor that will mimic the encoding
+// that the SDK system would perform when configured with a FailureConverter with the EncodeCommonAttributes option set.
+func NewFailureGRPCClientInterceptor(options NewFailureGRPCClientInterceptorOptions) (grpc.UnaryClientInterceptor, error) {
+	if !options.EncodeCommonAttributes {
+		return nil, fmt.Errorf("EncodeCommonAttributes must be set for this interceptor to function")
+	}
+
+	dc := GetDefaultDataConverter()
+	return proxy.NewFailureVisitorInterceptor(proxy.FailureVisitorInterceptorOptions{
+		Outbound: &proxy.VisitFailuresOptions{
+			Visitor: func(vpc *proxy.VisitFailuresContext, failure *failurepb.Failure) error {
+				var err error
+				failure.EncodedAttributes, err = dc.ToPayload(encodedFailure{
+					Message:    failure.Message,
+					StackTrace: failure.StackTrace,
+				})
+				return err
+			},
+		},
+		Inbound: &proxy.VisitFailuresOptions{
+			Visitor: func(vpc *proxy.VisitFailuresContext, failure *failurepb.Failure) error {
+				var ea encodedFailure
+				err := dc.FromPayload(failure.EncodedAttributes, &ea)
+				if err != nil {
+					return err
+				}
+				failure.Message = ea.Message
+				failure.StackTrace = ea.StackTrace
+
+				return nil
+			},
 		},
 	})
 }

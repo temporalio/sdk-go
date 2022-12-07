@@ -14,7 +14,7 @@ require (
 	github.com/pborman/uuid v1.2.1
 	github.com/robfig/cron v1.2.0
 	github.com/stretchr/testify v1.8.1
-	go.temporal.io/api v1.13.1-0.20221205090347-06c76d587cc9
+	go.temporal.io/api v1.13.1-0.20221207154453-3063fa2aa669
 	go.uber.org/atomic v1.9.0
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac
 	google.golang.org/grpc v1.51.0
