@@ -2324,6 +2324,68 @@ func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch b
 	ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR, taskFailed.Cause)
 }
 
+func (ts *IntegrationTestSuite) TestDeterminismUpsertSearchAttributesConditional() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	maxTicks := 3
+	options := ts.startWorkflowOptions("test-determinism-upsert-search-attributes-conidtional-" + uuid.New())
+	options.SearchAttributes = map[string]interface{}{
+		"CustomKeywordField": "unset",
+	}
+	run, err := ts.client.ExecuteWorkflow(
+		ctx,
+		options,
+		ts.workflows.UpsertSearchAttributesConditional,
+		maxTicks,
+	)
+	ts.NoError(err)
+
+	ts.testStaleCacheReplayDeterminism(ctx, run, maxTicks)
+}
+
+func (ts *IntegrationTestSuite) TestDeterminismUpsertMemoConditional() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	maxTicks := 3
+	options := ts.startWorkflowOptions("test-determinism-upsert-search-attributes-conidtional-" + uuid.New())
+	options.Memo = map[string]interface{}{
+		"TestMemo": "unset",
+	}
+	run, err := ts.client.ExecuteWorkflow(
+		ctx,
+		options,
+		ts.workflows.UpsertMemoConditional,
+		maxTicks,
+	)
+	ts.NoError(err)
+
+	ts.testStaleCacheReplayDeterminism(ctx, run, maxTicks)
+}
+
+func (ts *IntegrationTestSuite) testStaleCacheReplayDeterminism(ctx context.Context, run client.WorkflowRun, maxTicks int) {
+	// clean up if test fails
+	defer func() { _ = ts.client.TerminateWorkflow(ctx, run.GetID(), run.GetRunID(), "", nil) }()
+	ts.waitForQueryTrue(run, "is-wait-tick-count", 1)
+
+	ts.workerStopped = true
+	currentWorker := ts.worker
+	currentWorker.Stop()
+	for i := 0; i < maxTicks-1; i++ {
+		func() {
+			ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "tick", nil))
+			currentWorker = worker.New(ts.client, ts.taskQueueName, worker.Options{})
+			defer currentWorker.Stop()
+			ts.registerWorkflowsAndActivities(currentWorker)
+			ts.NoError(currentWorker.Start())
+			ts.waitForQueryTrue(run, "is-wait-tick-count", 2+i)
+		}()
+	}
+	err := run.Get(ctx, nil)
+	ts.NoError(err)
+}
+
 func (ts *IntegrationTestSuite) TestClientGetNotFollowingRuns() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

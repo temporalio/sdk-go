@@ -217,7 +217,6 @@ func (eh *history) IsReplayEvent(event *historypb.HistoryEvent) bool {
 }
 
 func (eh *history) IsNextWorkflowTaskFailed() (isFailed bool, binaryChecksum string, err error) {
-
 	nextIndex := eh.currentIndex + 1
 	if nextIndex >= len(eh.loadedEvents) && eh.hasMoreEvents() { // current page ends and there is more pages
 		if err := eh.loadMoreEvents(); err != nil {
@@ -666,6 +665,19 @@ func (w *workflowExecutionContextImpl) resetStateIfDestroyed(task *workflowservi
 			if _, err := resetHistory(task, historyIterator); err != nil {
 				return err
 			}
+		}
+		if w.workflowInfo != nil {
+			// Reset the search attributes and memos from the WorkflowExecutionStartedEvent.
+			// The search attributes and memo may have been modified by calls like UpsertMemo
+			// or UpsertSearchAttributes. They must be reset to avoid non determinism on replay.
+			h := task.History
+			startedEvent := h.Events[0]
+			attributes := startedEvent.GetWorkflowExecutionStartedEventAttributes()
+			if attributes == nil {
+				return errors.New("first history event is not WorkflowExecutionStarted")
+			}
+			w.workflowInfo.SearchAttributes = attributes.SearchAttributes
+			w.workflowInfo.Memo = attributes.Memo
 		}
 	}
 	return nil
@@ -1156,8 +1168,8 @@ func (w *workflowExecutionContextImpl) ResetIfStale(task *workflowservice.PollWo
 			tagCachedPreviousStartedEventID, w.previousStartedEventID,
 			tagTaskFirstEventID, task.History.Events[0].GetEventId(),
 			tagTaskStartedEventID, task.GetStartedEventId(),
-			tagPreviousStartedEventID, task.GetPreviousStartedEventId())
-
+			tagPreviousStartedEventID, task.GetPreviousStartedEventId(),
+		)
 		w.clearState()
 		return w.resetStateIfDestroyed(task, historyIterator)
 	}
@@ -1185,7 +1197,7 @@ func skipDeterministicCheckForEvent(e *historypb.HistoryEvent) bool {
 		if markerName == versionMarkerName || markerName == mutableSideEffectMarkerName {
 			return true
 		}
-		//case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
+		// case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
 		//	return true
 	}
 	return false
@@ -1501,8 +1513,8 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	task *workflowservice.PollWorkflowTaskQueueResponse,
 	workflowContext *workflowExecutionContextImpl,
 	commands []*commandpb.Command,
-	forceNewWorkflowTask bool) interface{} {
-
+	forceNewWorkflowTask bool,
+) interface{} {
 	// for query task
 	if task.Query != nil {
 		queryCompletedRequest := &workflowservice.RespondQueryTaskCompletedRequest{
@@ -1613,8 +1625,8 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 }
 
 func errorToFailWorkflowTask(taskToken []byte, err error, identity string, dataConverter converter.DataConverter,
-	failureConverter converter.FailureConverter, namespace string) *workflowservice.RespondWorkflowTaskFailedRequest {
-
+	failureConverter converter.FailureConverter, namespace string,
+) *workflowservice.RespondWorkflowTaskFailedRequest {
 	cause := enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
 	// If it was a panic due to a bad state machine or if it was a history
 	// mismatch error, mark as non-deterministic
@@ -2002,7 +2014,8 @@ func createNewCommand(commandType enumspb.CommandType) *commandpb.Command {
 }
 
 func recordActivityHeartbeat(ctx context.Context, service workflowservice.WorkflowServiceClient, metricsHandler metrics.Handler,
-	identity string, taskToken []byte, details *commonpb.Payloads) error {
+	identity string, taskToken []byte, details *commonpb.Payloads,
+) error {
 	namespace := getNamespaceFromActivityCtx(ctx)
 	request := &workflowservice.RecordActivityTaskHeartbeatRequest{
 		TaskToken: taskToken,
@@ -2025,14 +2038,16 @@ func recordActivityHeartbeat(ctx context.Context, service workflowservice.Workfl
 }
 
 func recordActivityHeartbeatByID(ctx context.Context, service workflowservice.WorkflowServiceClient, metricsHandler metrics.Handler,
-	identity, namespace, workflowID, runID, activityID string, details *commonpb.Payloads) error {
+	identity, namespace, workflowID, runID, activityID string, details *commonpb.Payloads,
+) error {
 	request := &workflowservice.RecordActivityTaskHeartbeatByIdRequest{
 		Namespace:  namespace,
 		WorkflowId: workflowID,
 		RunId:      runID,
 		ActivityId: activityID,
 		Details:    details,
-		Identity:   identity}
+		Identity:   identity,
+	}
 
 	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatByIdResponse
 	grpcCtx, cancel := newGRPCContext(ctx,
