@@ -1076,9 +1076,10 @@ func (aw *AggregatedWorker) Stop() {
 
 // WorkflowReplayer is used to replay workflow code from an event history
 type WorkflowReplayer struct {
-	registry         *registry
-	dataConverter    converter.DataConverter
-	failureConverter converter.FailureConverter
+	registry              *registry
+	dataConverter         converter.DataConverter
+	failureConverter      converter.FailureConverter
+	enableLoggingInReplay bool
 }
 
 // WorkflowReplayerOptions are options for creating a workflow replayer.
@@ -1097,6 +1098,13 @@ type WorkflowReplayerOptions struct {
 	// worker.Options.DisableRegistrationAliasing when originally run. See
 	// documentation for that field for more information.
 	DisableRegistrationAliasing bool
+
+	// Optional: Enable logging in replay.
+	// In the workflow code you can use workflow.GetLogger(ctx) to write logs. By default, the logger will skip log
+	// entry during replay mode so you won't see duplicate logs. This option will enable the logging in replay mode.
+	// This is only useful for debugging purpose.
+	// default: false
+	EnableLoggingInReplay bool
 }
 
 // NewWorkflowReplayer creates an instance of the WorkflowReplayer.
@@ -1104,9 +1112,10 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 	registry := newRegistryWithOptions(registryOptions{disableAliasing: options.DisableRegistrationAliasing})
 	registry.interceptors = options.Interceptors
 	return &WorkflowReplayer{
-		registry:         registry,
-		dataConverter:    options.DataConverter,
-		failureConverter: options.FailureConverter,
+		registry:              registry,
+		dataConverter:         options.DataConverter,
+		failureConverter:      options.FailureConverter,
+		enableLoggingInReplay: options.EnableLoggingInReplay,
 	}, nil
 }
 
@@ -1248,13 +1257,14 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 	}
 	cache := NewWorkerCache()
 	params := workerExecutionParameters{
-		Namespace:        namespace,
-		TaskQueue:        taskQueue,
-		Identity:         "replayID",
-		Logger:           logger,
-		cache:            cache,
-		DataConverter:    aw.dataConverter,
-		FailureConverter: aw.failureConverter,
+		Namespace:             namespace,
+		TaskQueue:             taskQueue,
+		Identity:              "replayID",
+		Logger:                logger,
+		cache:                 cache,
+		DataConverter:         aw.dataConverter,
+		FailureConverter:      aw.failureConverter,
+		EnableLoggingInReplay: aw.enableLoggingInReplay,
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
 	resp, _, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, nil)
