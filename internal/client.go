@@ -340,6 +340,11 @@ type (
 		// API. If the check fails, an error is returned.
 		CheckHealth(ctx context.Context, request *CheckHealthRequest) (*CheckHealthResponse, error)
 
+		// UpdateWorkflowExecution issues an update request to the specified
+		// workflow execution and returns the result synchronously.
+		// NOTE: Experimental
+		UpdateWorkflowExecution(ctx context.Context, workflowID string, updateName string, args []interface{}, opts UpdateWorkflowExecutionOptions) (converter.EncodedValue, error)
+
 		// WorkflowService provides access to the underlying gRPC service. This should only be used for advanced use cases
 		// that cannot be accomplished via other Client methods. Unlike calls to other Client methods, calls directly to the
 		// service are not configured with internal semantics such as automatic retries.
@@ -439,6 +444,15 @@ type (
 	// the error will be propagated back through the interceptor chain.
 	TrafficController interface {
 		CheckCallAllowed(ctx context.Context, method string, req, reply interface{}) error
+	}
+
+	// UpdateWorkflowExecutionOptions encapsulates the optional parameters for
+	// sending an update to a workflow execution.
+	// NOTE: Experimental
+	UpdateWorkflowExecutionOptions struct {
+		FirstExecutionRunID string
+		RunID               string
+		Header              *commonpb.Header
 	}
 
 	// ConnectionOptions is provided by SDK consumers to control optional connection params.
@@ -829,8 +843,9 @@ func newNamespaceServiceClient(workflowServiceClient workflowservice.WorkflowSer
 // User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got response from calling Client.DescribeWorkflowExecution.
 // The response contains binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
-//   var result string // This need to be same type as the one passed to RecordHeartbeat
-//   NewValue(data).Get(&result)
+//
+//	var result string // This need to be same type as the one passed to RecordHeartbeat
+//	NewValue(data).Get(&result)
 func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 	return newEncodedValue(data, nil)
 }
@@ -839,9 +854,10 @@ func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 // User had Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got response from calling Client.DescribeWorkflowExecution.
 // The response contains binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
-//   var result1 string
-//   var result2 int // These need to be same type as those arguments passed to RecordHeartbeat
-//   NewValues(data).Get(&result1, &result2)
+//
+//	var result1 string
+//	var result2 int // These need to be same type as those arguments passed to RecordHeartbeat
+//	NewValues(data).Get(&result1, &result2)
 func NewValues(data *commonpb.Payloads) converter.EncodedValues {
 	return newEncodedValues(data, nil)
 }

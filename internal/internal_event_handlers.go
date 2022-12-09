@@ -1060,7 +1060,6 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessInteraction(
 			commands: weh.commandsHelper,
 		},
 	)
-	weh.workflowDefinition.OnWorkflowTaskStarted(weh.deadlockDetectionTimeout)
 	return nil
 }
 

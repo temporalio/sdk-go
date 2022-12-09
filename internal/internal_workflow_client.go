@@ -39,6 +39,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	interactionpb "go.temporal.io/api/interaction/v1"
 	"go.temporal.io/api/operatorservice/v1"
 	querypb "go.temporal.io/api/query/v1"
 	"go.temporal.io/api/serviceerror"
@@ -877,6 +878,42 @@ func (wc *WorkflowClient) ResetWorkflowExecution(ctx context.Context, request *w
 	return resp, nil
 }
 
+func (wc *WorkflowClient) UpdateWorkflowExecution(ctx context.Context, workflowID string, updateName string, args []interface{}, opts UpdateWorkflowExecutionOptions) (converter.EncodedValue, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+	argPayloads, err := wc.dataConverter.ToPayloads(args...)
+	if err != nil {
+		return nil, err
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	resp, err := wc.workflowService.UpdateWorkflow(grpcCtx, &workflowservice.UpdateWorkflowRequest{
+		RequestId:         uuid.New(),
+		ResultAccessStyle: enumspb.WORKFLOW_UPDATE_RESULT_ACCESS_STYLE_REQUIRE_INLINE,
+		Namespace:         wc.namespace,
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: workflowID,
+			RunId:      opts.RunID,
+		},
+		Identity:            wc.identity,
+		FirstExecutionRunId: opts.FirstExecutionRunID,
+		Input: &interactionpb.Input{
+			Header: opts.Header,
+			Name:   updateName,
+			Args:   argPayloads,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if failure := resp.Output.GetFailure(); failure != nil {
+		return nil, wc.failureConverter.FailureToError(failure)
+	}
+	return newEncodedValue(resp.Output.GetSuccess(), wc.dataConverter), nil
+}
+
 // CheckHealthRequest is a request for Client.CheckHealth.
 type CheckHealthRequest struct{}
 
@@ -1521,6 +1558,30 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 		return nil, err
 	}
 	return result.QueryResult, nil
+}
+
+func (w *workflowClientInterceptor) UpdateWorkflowExecution(
+	ctx context.Context,
+	in *ClientUpdateWorkflowInput,
+) (converter.EncodedValue, error) {
+	header, err := headerPropagated(ctx, w.client.contextPropagators)
+	if err != nil {
+		return nil, err
+	}
+	result, err := w.client.UpdateWorkflowExecution(
+		ctx,
+		in.WorkflowID,
+		in.UpdateName,
+		in.Args,
+		UpdateWorkflowExecutionOptions{
+			RunID:               in.RunID,
+			FirstExecutionRunID: in.FirstExecutionRunID,
+			Header:              header,
+		})
+	if err != nil {
+		return nil, err
+	}
+	return result, err
 }
 
 // Required to implement ClientOutboundInterceptor

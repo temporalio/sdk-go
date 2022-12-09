@@ -542,6 +542,28 @@ func (_m *Client) CheckHealth(ctx context.Context, request *client.CheckHealthRe
 	return r0, r1
 }
 
+func (_m *Client) UpdateWorkflowExecution(ctx context.Context, workflowID string, updateName string, args []interface{}, opts client.UpdateWorkflowExecutionOptions) (converter.EncodedValue, error) {
+	ret := _m.Called(ctx, workflowID, updateName, args, opts)
+
+	var r0 converter.EncodedValue
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, []interface{}, client.UpdateWorkflowExecutionOptions) converter.EncodedValue); ok {
+		r0 = rf(ctx, workflowID, updateName, args, opts)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(converter.EncodedValue)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, string, string, []interface{}, client.UpdateWorkflowExecutionOptions) error); ok {
+		r1 = rf(ctx, workflowID, updateName, args, opts)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // WorkflowService provides a mock function with given fields:
 func (_m *Client) WorkflowService() workflowservice.WorkflowServiceClient {
 	ret := _m.Called()

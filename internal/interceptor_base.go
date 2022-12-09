@@ -327,7 +327,7 @@ func (w *WorkflowOutboundInterceptorBase) SetQueryHandler(ctx Context, queryType
 }
 
 // SetUpdateHandler implements WorkflowOutboundInterceptor.SetUpdateHandler.
-func (w *WorkflowOutboundInterceptorBase) SetUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateOptions) error {
+func (w *WorkflowOutboundInterceptorBase) SetUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions) error {
 	return w.Next.SetUpdateHandler(ctx, updateName, handler, opts)
 }
 
@@ -388,6 +388,13 @@ type ClientOutboundInterceptorBase struct {
 }
 
 var _ ClientOutboundInterceptor = &ClientOutboundInterceptorBase{}
+
+func (c *ClientOutboundInterceptorBase) UpdateWorkflowExecution(
+	ctx context.Context,
+	in *ClientUpdateWorkflowInput,
+) (converter.EncodedValue, error) {
+	return c.Next.UpdateWorkflowExecution(ctx, in)
+}
 
 // ExecuteWorkflow implements ClientOutboundInterceptor.ExecuteWorkflow.
 func (c *ClientOutboundInterceptorBase) ExecuteWorkflow(
