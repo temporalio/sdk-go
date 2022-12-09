@@ -239,7 +239,8 @@ type WorkflowOutboundInterceptor interface {
 	// SetQueryHandler intercepts workflow.SetQueryHandler.
 	SetQueryHandler(ctx Context, queryType string, handler interface{}) error
 
-	SetUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateOptions) error
+	// SetUpdateHandler intercepts workflow.SetUpdateHandler.
+	SetUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions) error
 
 	// IsReplaying intercepts workflow.IsReplaying.
 	IsReplaying(ctx Context) bool
@@ -299,7 +300,21 @@ type ClientOutboundInterceptor interface {
 	// interceptor.Header will return a non-nil map for this context.
 	QueryWorkflow(context.Context, *ClientQueryWorkflowInput) (converter.EncodedValue, error)
 
+	// UpdateWorkflowExecution intercepts client.Client.UpdateWorkflowExecution.
+	// interceptor.Header will return a non-nil map for this context.
+	UpdateWorkflowExecution(context.Context, *ClientUpdateWorkflowInput) (converter.EncodedValue, error)
+
 	mustEmbedClientOutboundInterceptorBase()
+}
+
+// ClientUpdateWorkflowInput is the input to
+// ClientOutboundInterceptor.UpdateWorkflowExecution.
+type ClientUpdateWorkflowInput struct {
+	WorkflowID          string
+	UpdateName          string
+	Args                []interface{}
+	RunID               string
+	FirstExecutionRunID string
 }
 
 // ScheduleClientCreateInput is the input to

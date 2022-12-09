@@ -49,6 +49,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	interactionpb "go.temporal.io/api/interaction/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 
@@ -1210,6 +1211,23 @@ func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service
 	return aw.replayWorkflowHistory(logger, service, namespace, &history)
 }
 
+// inferInvocations extracts the set of *interactionpb.Invocation objects that
+// should be attached to a workflow task (i.e. the
+// PollWorkflowTaskQueueResponse.Interactions) if that task were to carry the
+// provided slice of history events.
+func inferInvocations(events []*historypb.HistoryEvent) []*interactionpb.Invocation {
+	var invocations []*interactionpb.Invocation
+	for _, e := range events {
+		if attrs := e.GetWorkflowUpdateAcceptedEventAttributes(); attrs != nil {
+			invocations = append(invocations, &interactionpb.Invocation{
+				Meta:  attrs.Meta,
+				Input: attrs.Input,
+			})
+		}
+	}
+	return invocations
+}
+
 func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service workflowservice.WorkflowServiceClient, namespace string, history *historypb.History) error {
 	taskQueue := "ReplayTaskQueue"
 	events := history.Events
@@ -1245,6 +1263,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 		WorkflowExecution:      execution,
 		History:                history,
 		PreviousStartedEventId: math.MaxInt64,
+		Interactions:           inferInvocations(history.Events),
 	}
 
 	iterator := &historyIteratorImpl{

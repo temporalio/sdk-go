@@ -1183,9 +1183,6 @@ func skipDeterministicCheckForCommand(d *commandpb.Command) bool {
 		if markerName == versionMarkerName || markerName == mutableSideEffectMarkerName {
 			return true
 		}
-	case enumspb.COMMAND_TYPE_ACCEPT_WORKFLOW_UPDATE,
-		enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION:
-		return true
 	}
 	return false
 }
@@ -1197,8 +1194,6 @@ func skipDeterministicCheckForEvent(e *historypb.HistoryEvent) bool {
 		if markerName == versionMarkerName || markerName == mutableSideEffectMarkerName {
 			return true
 		}
-		// case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
-		//	return true
 	}
 	return false
 }
