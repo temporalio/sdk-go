@@ -58,7 +58,7 @@ func EncodeCommonFailureAttributes(dc DataConverter, failure *failurepb.Failure)
 
 func DecodeCommonFailureAttributes(dc DataConverter, failure *failurepb.Failure) {
 	var ea encodedFailure
-	if dc.FromPayload(failure.GetEncodedAttributes(), &ea) == nil {
+	if failure.GetEncodedAttributes() != nil && dc.FromPayload(failure.GetEncodedAttributes(), &ea) == nil {
 		failure.Message = ea.Message
 		failure.StackTrace = ea.StackTrace
 	}
