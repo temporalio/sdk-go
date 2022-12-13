@@ -48,11 +48,6 @@ type DefaultFailureConverterOptions struct {
 	EncodeCommonAttributes bool
 }
 
-type encodedFailure struct {
-	Message    string `json:"message"`
-	StackTrace string `json:"stack_trace"`
-}
-
 // DefaultFailureConverter seralizes errors with the option to encode common parameters under Failure.EncodedAttributes
 type DefaultFailureConverter struct {
 	dataConverter          converter.DataConverter
