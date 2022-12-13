@@ -76,14 +76,8 @@ func NewPayloadCodecGRPCClientInterceptor(options PayloadCodecGRPCClientIntercep
 }
 
 type NewFailureGRPCClientInterceptorOptions struct {
-	// DataConverter ??
+	DataConverter          DataConverter
 	EncodeCommonAttributes bool
-}
-
-// Do we want to expose this from converter so that we are sure things line up?
-type encodedFailure struct {
-	Message    string `json:"message"`
-	StackTrace string `json:"stack_trace"`
 }
 
 // NewFailureGRPCClientInterceptor returns a GRPC Client Interceptor that will mimic the encoding
@@ -93,27 +87,20 @@ func NewFailureGRPCClientInterceptor(options NewFailureGRPCClientInterceptorOpti
 		return nil, fmt.Errorf("EncodeCommonAttributes must be set for this interceptor to function")
 	}
 
-	dc := GetDefaultDataConverter()
+	dc := options.DataConverter
+	if dc == nil {
+		dc = GetDefaultDataConverter()
+	}
+
 	return proxy.NewFailureVisitorInterceptor(proxy.FailureVisitorInterceptorOptions{
 		Outbound: &proxy.VisitFailuresOptions{
 			Visitor: func(vpc *proxy.VisitFailuresContext, failure *failurepb.Failure) error {
-				var err error
-				failure.EncodedAttributes, err = dc.ToPayload(encodedFailure{
-					Message:    failure.Message,
-					StackTrace: failure.StackTrace,
-				})
-				return err
+				return EncodeCommonFailureAttributes(dc, failure)
 			},
 		},
 		Inbound: &proxy.VisitFailuresOptions{
 			Visitor: func(vpc *proxy.VisitFailuresContext, failure *failurepb.Failure) error {
-				var ea encodedFailure
-				err := dc.FromPayload(failure.EncodedAttributes, &ea)
-				if err != nil {
-					return err
-				}
-				failure.Message = ea.Message
-				failure.StackTrace = ea.StackTrace
+				DecodeCommonFailureAttributes(dc, failure)
 
 				return nil
 			},

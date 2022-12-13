@@ -34,3 +34,32 @@ type FailureConverter interface {
 	// FailureToError converts a Failure proto message to a Go Error.
 	FailureToError(failure *failurepb.Failure) error
 }
+
+type encodedFailure struct {
+	Message    string `json:"message"`
+	StackTrace string `json:"stack_trace"`
+}
+
+func EncodeCommonFailureAttributes(dc DataConverter, failure *failurepb.Failure) error {
+	var err error
+
+	failure.EncodedAttributes, err = dc.ToPayload(encodedFailure{
+		Message:    failure.Message,
+		StackTrace: failure.StackTrace,
+	})
+	if err != nil {
+		return err
+	}
+	failure.Message = "Encoded failure"
+	failure.StackTrace = ""
+
+	return nil
+}
+
+func DecodeCommonFailureAttributes(dc DataConverter, failure *failurepb.Failure) {
+	var ea encodedFailure
+	if dc.FromPayload(failure.GetEncodedAttributes(), &ea) == nil {
+		failure.Message = ea.Message
+		failure.StackTrace = ea.StackTrace
+	}
+}
