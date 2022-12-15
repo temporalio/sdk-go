@@ -40,6 +40,7 @@ type encodedFailure struct {
 	StackTrace string `json:"stack_trace"`
 }
 
+// EncodeCommonFailureAttributes packs failure attributes to a payload so that they flow through a dataconverter.
 func EncodeCommonFailureAttributes(dc DataConverter, failure *failurepb.Failure) error {
 	var err error
 
@@ -56,6 +57,7 @@ func EncodeCommonFailureAttributes(dc DataConverter, failure *failurepb.Failure)
 	return nil
 }
 
+// DecodeCommonFailureAttributes unpacks failure attributes from a stored payload, if present.
 func DecodeCommonFailureAttributes(dc DataConverter, failure *failurepb.Failure) {
 	var ea encodedFailure
 	if failure.GetEncodedAttributes() != nil && dc.FromPayload(failure.GetEncodedAttributes(), &ea) == nil {

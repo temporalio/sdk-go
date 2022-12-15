@@ -175,9 +175,7 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 		return nil
 	}
 
-	if failure.GetEncodedAttributes() != nil {
-		converter.DecodeCommonFailureAttributes(dfc.dataConverter, failure)
-	}
+	converter.DecodeCommonFailureAttributes(dfc.dataConverter, failure)
 
 	message := failure.GetMessage()
 	stackTrace := failure.GetStackTrace()
