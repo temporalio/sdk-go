@@ -75,13 +75,18 @@ func NewPayloadCodecGRPCClientInterceptor(options PayloadCodecGRPCClientIntercep
 	})
 }
 
+// NewFailureGRPCClientInterceptorOptions holds interceptor options.
 type NewFailureGRPCClientInterceptorOptions struct {
-	DataConverter          DataConverter
+	// DataConverter is optional. If not set the SDK's dataconverter will be used.
+	DataConverter DataConverter
+	// Whether to Encode attributes. The current implementation requires this be true.
 	EncodeCommonAttributes bool
 }
 
 // NewFailureGRPCClientInterceptor returns a GRPC Client Interceptor that will mimic the encoding
 // that the SDK system would perform when configured with a FailureConverter with the EncodeCommonAttributes option set.
+// When combining this with NewPayloadCodecGRPCClientInterceptor you should ensure that NewFailureGRPCClientInterceptor is
+// before NewPayloadCodecGRPCClientInterceptor in the chain.
 func NewFailureGRPCClientInterceptor(options NewFailureGRPCClientInterceptorOptions) (grpc.UnaryClientInterceptor, error) {
 	if !options.EncodeCommonAttributes {
 		return nil, fmt.Errorf("EncodeCommonAttributes must be set for this interceptor to function")
