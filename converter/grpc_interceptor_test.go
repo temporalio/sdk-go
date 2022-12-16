@@ -34,6 +34,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
+	"go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/failure/v1"
+	"go.temporal.io/api/history/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -58,7 +61,7 @@ func payloadEncoding(payloads *commonpb.Payloads) string {
 	return string(payloads.Payloads[0].Metadata[MetadataEncoding])
 }
 
-func TestClientInterceptor(t *testing.T) {
+func TestPayloadCodecGRPCClientInterceptor(t *testing.T) {
 	require := require.New(t)
 
 	server, err := startTestGRPCServer()
@@ -99,11 +102,62 @@ func TestClientInterceptor(t *testing.T) {
 	require.Equal("json/plain", payloadEncoding(response.Input))
 }
 
+func TestFailureGRPCClientInterceptor(t *testing.T) {
+	require := require.New(t)
+
+	server, err := startTestGRPCServer()
+	require.NoError(err)
+
+	interceptor, err := NewFailureGRPCClientInterceptor(
+		NewFailureGRPCClientInterceptorOptions{
+			EncodeCommonAttributes: true,
+		},
+	)
+	require.NoError(err)
+
+	c, err := grpc.Dial(
+		server.addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithChainUnaryInterceptor(interceptor),
+	)
+	require.NoError(err)
+
+	client := workflowservice.NewWorkflowServiceClient(c)
+
+	_, err = client.RespondWorkflowTaskFailed(
+		context.Background(),
+		&workflowservice.RespondWorkflowTaskFailedRequest{
+			Failure: &failure.Failure{
+				Message:    "internal error: code 123",
+				StackTrace: "internal_file:12",
+			},
+		},
+	)
+	require.NoError(err)
+
+	require.Equal("Encoded failure", server.respondWorkflowTaskFailedRequest.Failure.Message)
+	require.Equal("", server.respondWorkflowTaskFailedRequest.Failure.StackTrace)
+
+	res, err := client.PollWorkflowTaskQueue(
+		context.Background(),
+		&workflowservice.PollWorkflowTaskQueueRequest{},
+	)
+	require.NoError(err)
+
+	attrs, ok := res.History.Events[0].Attributes.(*history.HistoryEvent_ChildWorkflowExecutionFailedEventAttributes)
+	require.True(ok)
+	f := attrs.ChildWorkflowExecutionFailedEventAttributes.Failure
+
+	require.Equal("internal error: code 123", f.Message)
+	require.Equal("internal_file:12", f.StackTrace)
+}
+
 type testGRPCServer struct {
 	workflowservice.UnimplementedWorkflowServiceServer
 	*grpc.Server
-	addr                          string
-	startWorkflowExecutionRequest *workflowservice.StartWorkflowExecutionRequest
+	addr                             string
+	startWorkflowExecutionRequest    *workflowservice.StartWorkflowExecutionRequest
+	respondWorkflowTaskFailedRequest *workflowservice.RespondWorkflowTaskFailedRequest
 }
 
 func startTestGRPCServer() (*testGRPCServer, error) {
@@ -160,6 +214,43 @@ func (t *testGRPCServer) StartWorkflowExecution(
 ) (*workflowservice.StartWorkflowExecutionResponse, error) {
 	t.startWorkflowExecutionRequest = req
 	return &workflowservice.StartWorkflowExecutionResponse{}, nil
+}
+
+func (t *testGRPCServer) RespondWorkflowTaskFailed(
+	ctx context.Context,
+	req *workflowservice.RespondWorkflowTaskFailedRequest,
+) (*workflowservice.RespondWorkflowTaskFailedResponse, error) {
+	t.respondWorkflowTaskFailedRequest = req
+	return &workflowservice.RespondWorkflowTaskFailedResponse{}, nil
+}
+
+func (t *testGRPCServer) PollWorkflowTaskQueue(
+	ctx context.Context,
+	req *workflowservice.PollWorkflowTaskQueueRequest,
+) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
+	f := failure.Failure{
+		Message:    "internal error: code 123",
+		StackTrace: "internal_file:12",
+	}
+	err := EncodeCommonFailureAttributes(GetDefaultDataConverter(), &f)
+	if err != nil {
+		return nil, err
+	}
+
+	return &workflowservice.PollWorkflowTaskQueueResponse{
+		History: &history.History{
+			Events: []*history.HistoryEvent{
+				{
+					EventType: enums.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_FAILED,
+					Attributes: &history.HistoryEvent_ChildWorkflowExecutionFailedEventAttributes{
+						ChildWorkflowExecutionFailedEventAttributes: &history.ChildWorkflowExecutionFailedEventAttributes{
+							Failure: &f,
+						},
+					},
+				},
+			},
+		},
+	}, nil
 }
 
 func (t *testGRPCServer) PollActivityTaskQueue(
