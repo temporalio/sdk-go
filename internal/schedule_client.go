@@ -591,6 +591,8 @@ type (
 		Create(ctx context.Context, options ScheduleOptions) (ScheduleHandle, error)
 
 		// List returns an interator to list all schedules
+		//
+		// Note: When using advanced visibility List is eventually consistent.
 		List(ctx context.Context, options ScheduleListOptions) (ScheduleListIterator, error)
 
 		// GetHandle returns a handle to a Schedule
