@@ -187,10 +187,15 @@ type (
 	// NOTE: Experimental
 	ScheduleBackfillOptions = internal.ScheduleBackfillOptions
 
-	// UpdateWorkflowExecutionOptions encapsulates the optional parameters for
+	// UpdateWorkflowWithOptionsRequest encapsulates the parameters for
 	// sending an update to a workflow execution.
 	// NOTE: Experimental
-	UpdateWorkflowExecutionOptions = internal.UpdateWorkflowExecutionOptions
+	UpdateWorkflowWithOptionsRequest = internal.UpdateWorkflowWithOptionsRequest
+
+	// WorkflowExecutionUpdateHandle represents a running or completed workflow
+	// execution update and gives the holder access to the outcome of the same.
+	// NOTE: Experimental
+	WorkflowExecutionUpdateHandle = internal.WorkflowUpdateHandle
 
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
@@ -482,10 +487,24 @@ type (
 		// API. If the check fails, an error is returned.
 		CheckHealth(ctx context.Context, request *CheckHealthRequest) (*CheckHealthResponse, error)
 
-		// UpdateWorkflowExecution issues an update request to the specified
-		// workflow execution and returns the result synchronously.
+		// UpdateWorkflow issues an update request to the specified
+		// workflow execution and returns the result synchronously. Calling this
+		// function is equivalent to calling UpdateWorkflowOptions with
+		// the same arguments and indicating that the RPC call should wait for
+		// completion of the update process.
 		// NOTE: Experimental
-		UpdateWorkflowExecution(ctx context.Context, workflowID string, updateName string, args []interface{}, opts UpdateWorkflowExecutionOptions) (converter.EncodedValue, error)
+		UpdateWorkflow(ctx context.Context, workflowID string, workflowRunID string, updateName string, args ...interface{}) (WorkflowExecutionUpdateHandle, error)
+
+		// UpdateWorkflowWithOptions issues an update request to the
+		// specified workflow execution and returns a handle to the update that
+		// is running in in parallel with the calling thread. Errors returned
+		// from the server will be exposed through the return value of
+		// WorkflowExecutionUpdateHandle.Get(). Errors that occur before the
+		// update is requested (e.g. if the required workflow ID field is
+		// missing from the UpdateWorkflowWithOptionsRequest) are returned
+		// directly from this function call.
+		// NOTE: Experimental
+		UpdateWorkflowWithOptions(ctx context.Context, request *UpdateWorkflowWithOptionsRequest) (WorkflowExecutionUpdateHandle, error)
 
 		// WorkflowService provides access to the underlying gRPC service. This should only be used for advanced use cases
 		// that cannot be accomplished via other Client methods. Unlike calls to other Client methods, calls directly to the

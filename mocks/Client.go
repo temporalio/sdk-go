@@ -542,25 +542,46 @@ func (_m *Client) CheckHealth(ctx context.Context, request *client.CheckHealthRe
 	return r0, r1
 }
 
-func (_m *Client) UpdateWorkflowExecution(ctx context.Context, workflowID string, updateName string, args []interface{}, opts client.UpdateWorkflowExecutionOptions) (converter.EncodedValue, error) {
-	ret := _m.Called(ctx, workflowID, updateName, args, opts)
+func (_m *Client) UpdateWorkflow(ctx context.Context, workflowID string, workflowRunID, updateName string, args ...interface{}) (client.WorkflowExecutionUpdateHandle, error) {
+	ret := _m.Called(ctx, workflowID, updateName, args)
 
-	var r0 converter.EncodedValue
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, []interface{}, client.UpdateWorkflowExecutionOptions) converter.EncodedValue); ok {
-		r0 = rf(ctx, workflowID, updateName, args, opts)
+	var r0 client.WorkflowExecutionUpdateHandle
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, ...interface{}) client.WorkflowExecutionUpdateHandle); ok {
+		r0 = rf(ctx, workflowID, updateName, args)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(converter.EncodedValue)
+			r0 = ret.Get(0).(client.WorkflowExecutionUpdateHandle)
 		}
 	}
 
 	var r1 error
-	if rf, ok := ret.Get(1).(func(context.Context, string, string, []interface{}, client.UpdateWorkflowExecutionOptions) error); ok {
-		r1 = rf(ctx, workflowID, updateName, args, opts)
+	if rf, ok := ret.Get(1).(func(context.Context, string, string, ...interface{}) error); ok {
+		r1 = rf(ctx, workflowID, updateName, args)
 	} else {
 		r1 = ret.Error(1)
 	}
 
+	return r0, r1
+}
+
+func (_m *Client) UpdateWorkflowWithOptions(ctx context.Context, req *client.UpdateWorkflowWithOptionsRequest) (client.WorkflowExecutionUpdateHandle, error) {
+	ret := _m.Called(ctx, req)
+
+	var r0 client.WorkflowExecutionUpdateHandle
+	if rf, ok := ret.Get(0).(func(context.Context, *client.UpdateWorkflowWithOptionsRequest) client.WorkflowExecutionUpdateHandle); ok {
+		r0 = rf(ctx, req)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(client.WorkflowExecutionUpdateHandle)
+		}
+	}
+
+	var r1 error
+	if rf, ok := ret.Get(1).(func(context.Context, *client.UpdateWorkflowWithOptionsRequest) error); ok {
+		r1 = rf(ctx, req)
+	} else {
+		r1 = ret.Error(1)
+	}
 	return r0, r1
 }
 

@@ -1463,3 +1463,27 @@ func TestClientCloseCount(t *testing.T) {
 	client2.Close()
 	require.Equal(t, connectivity.Shutdown, workflowClient.conn.GetState())
 }
+
+func TestUpdateHandle(t *testing.T) {
+	t.Run("error case", func(t *testing.T) {
+		err := errors.New(t.Name())
+		uh := updateHandle{value: err}
+		require.Error(t, uh.Get(context.TODO(), nil))
+	})
+
+	t.Run("value case", func(t *testing.T) {
+		dc := converter.GetDefaultDataConverter()
+		payloads, err := dc.ToPayloads(t.Name())
+		require.NoError(t, err)
+		uh := updateHandle{value: newEncodedValues(payloads, dc)}
+		var out string
+		require.NoError(t, uh.Get(context.TODO(), &out))
+		require.Equal(t, t.Name(), out)
+	})
+
+	t.Run("unsupported value type", func(t *testing.T) {
+		uh := updateHandle{value: "string is not supported"}
+		var out string
+		require.Panics(t, func() { _ = uh.Get(context.TODO(), &out) })
+	})
+}

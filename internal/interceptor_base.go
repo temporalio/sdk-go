@@ -389,11 +389,11 @@ type ClientOutboundInterceptorBase struct {
 
 var _ ClientOutboundInterceptor = &ClientOutboundInterceptorBase{}
 
-func (c *ClientOutboundInterceptorBase) UpdateWorkflowExecution(
+func (c *ClientOutboundInterceptorBase) UpdateWorkflow(
 	ctx context.Context,
 	in *ClientUpdateWorkflowInput,
-) (converter.EncodedValue, error) {
-	return c.Next.UpdateWorkflowExecution(ctx, in)
+) (WorkflowUpdateHandle, error) {
+	return c.Next.UpdateWorkflow(ctx, in)
 }
 
 // ExecuteWorkflow implements ClientOutboundInterceptor.ExecuteWorkflow.

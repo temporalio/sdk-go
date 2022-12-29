@@ -300,21 +300,25 @@ type ClientOutboundInterceptor interface {
 	// interceptor.Header will return a non-nil map for this context.
 	QueryWorkflow(context.Context, *ClientQueryWorkflowInput) (converter.EncodedValue, error)
 
-	// UpdateWorkflowExecution intercepts client.Client.UpdateWorkflowExecution.
+	// UpdateWorkflow intercepts client.Client.UpdateWorkflow
 	// interceptor.Header will return a non-nil map for this context.
-	UpdateWorkflowExecution(context.Context, *ClientUpdateWorkflowInput) (converter.EncodedValue, error)
+	UpdateWorkflow(context.Context, *ClientUpdateWorkflowInput) (WorkflowUpdateHandle, error)
 
 	mustEmbedClientOutboundInterceptorBase()
 }
 
 // ClientUpdateWorkflowInput is the input to
-// ClientOutboundInterceptor.UpdateWorkflowExecution.
+// ClientOutboundInterceptor.UpdateWorkflow
 type ClientUpdateWorkflowInput struct {
+	UpdateID            string
 	WorkflowID          string
 	UpdateName          string
 	Args                []interface{}
 	RunID               string
 	FirstExecutionRunID string
+
+	// this isn't upstream in API yet
+	// WaitFor enumspb.WorkflowExecutionUpdateWaitEvent
 }
 
 // ScheduleClientCreateInput is the input to
