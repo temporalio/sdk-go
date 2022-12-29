@@ -33,7 +33,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -331,7 +330,6 @@ func (wc *workflowEnvironmentImpl) SignalExternalWorkflow(
 	childWorkflowOnly bool,
 	callback ResultHandler,
 ) {
-
 	signalID := wc.GenerateSequenceID()
 	command := wc.commandsHelper.signalExternalWorkflowExecution(namespace, workflowID, runID, signalName, input,
 		header, signalID, childWorkflowOnly)
@@ -444,7 +442,8 @@ func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
 }
 
 func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
-	params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) {
+	params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error),
+) {
 	if params.WorkflowID == "" {
 		params.WorkflowID = wc.workflowInfo.WorkflowExecution.RunID + "_" + wc.GenerateSequenceID()
 	}
@@ -796,12 +795,6 @@ func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interfa
 }
 
 func (wc *workflowEnvironmentImpl) isEqualValue(newValue interface{}, encodedOldValue *commonpb.Payloads, equals func(a, b interface{}) bool) bool {
-	if newValue == nil {
-		// new value is nil
-		newEncodedValue := wc.encodeValue(nil)
-		return proto.Equal(newEncodedValue, encodedOldValue)
-	}
-
 	oldValue := decodeValue(newEncodedValue(encodedOldValue, wc.GetDataConverter()), newValue)
 	return equals(newValue, oldValue)
 }
@@ -1103,7 +1096,8 @@ func (weh *workflowExecutionEventHandlerImpl) Close() {
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionStarted(
-	attributes *historypb.WorkflowExecutionStartedEventAttributes) (err error) {
+	attributes *historypb.WorkflowExecutionStartedEventAttributes,
+) (err error) {
 	weh.workflowDefinition, err = weh.registry.getWorkflowDefinition(
 		weh.workflowInfo.WorkflowType,
 	)
@@ -1381,7 +1375,8 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionSignaled(
-	attributes *historypb.WorkflowExecutionSignaledEventAttributes) error {
+	attributes *historypb.WorkflowExecutionSignaledEventAttributes,
+) error {
 	return weh.signalHandler(attributes.GetSignalName(), attributes.Input, attributes.Header)
 }
 

@@ -1,0 +1,86 @@
+{
+ "events": [
+  {
+   "eventId": "1",
+   "eventTime": "2022-12-14T19:45:55.862915835Z",
+   "eventType": "WorkflowExecutionStarted",
+   "taskId": "7344364",
+   "workflowExecutionStartedEventAttributes": {
+    "workflowType": {
+     "name": "ContinueAsNewWorkflow"
+    },
+    "taskQueue": {
+     "name": "replay-test",
+     "kind": "Normal"
+    },
+    "input": {
+     "payloads": [
+      {
+       "metadata": {
+        "encoding": "anNvbi9wbGFpbg=="
+       },
+       "data": "dHJ1ZQ=="
+      }
+     ]
+    },
+    "workflowExecutionTimeout": "0s",
+    "workflowRunTimeout": "0s",
+    "workflowTaskTimeout": "10s",
+    "originalExecutionRunId": "d4517dc9-5a5b-4f00-84b2-3af8b6bec753",
+    "identity": "32656@Quinn-Klassens-MacBook-Pro.local@",
+    "firstExecutionRunId": "d4517dc9-5a5b-4f00-84b2-3af8b6bec753",
+    "attempt": 1,
+    "firstWorkflowTaskBackoff": "0s",
+    "header": {
+
+    }
+   }
+  },
+  {
+   "eventId": "2",
+   "eventTime": "2022-12-14T19:45:55.862935294Z",
+   "eventType": "WorkflowTaskScheduled",
+   "taskId": "7344365",
+   "workflowTaskScheduledEventAttributes": {
+    "taskQueue": {
+     "name": "replay-test",
+     "kind": "Normal"
+    },
+    "startToCloseTimeout": "10s",
+    "attempt": 1
+   }
+  },
+  {
+   "eventId": "3",
+   "eventTime": "2022-12-14T19:45:55.871394877Z",
+   "eventType": "WorkflowTaskStarted",
+   "taskId": "7344372",
+   "workflowTaskStartedEventAttributes": {
+    "scheduledEventId": "2",
+    "identity": "32656@Quinn-Klassens-MacBook-Pro.local@",
+    "requestId": "5bda1026-1ff7-4027-b5d3-da6b5a4147bf"
+   }
+  },
+  {
+   "eventId": "4",
+   "eventTime": "2022-12-14T19:45:55.875993835Z",
+   "eventType": "WorkflowTaskCompleted",
+   "taskId": "7344376",
+   "workflowTaskCompletedEventAttributes": {
+    "scheduledEventId": "2",
+    "startedEventId": "3",
+    "identity": "32656@Quinn-Klassens-MacBook-Pro.local@",
+    "binaryChecksum": "0c23de87770f076626dd550d6d25850c"
+   }
+  },
+  {
+   "eventId": "5",
+   "eventTime": "2022-12-14T19:45:55.876011960Z",
+   "eventType": "WorkflowExecutionCompleted",
+   "taskId": "7344377",
+   "workflowExecutionCompletedEventAttributes": {
+    "workflowTaskCompletedEventId": "4"
+   }
+  }
+ ]
+}

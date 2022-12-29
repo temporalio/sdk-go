@@ -43,7 +43,6 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/jsonpb"
-	"github.com/gogo/protobuf/proto"
 	"github.com/golang/mock/gomock"
 	"github.com/pborman/uuid"
 	commonpb "go.temporal.io/api/common/v1"
@@ -295,7 +294,8 @@ func newWorkflowTaskWorkerInternal(
 		identity:          params.Identity,
 		workerType:        "WorkflowWorker",
 		stopTimeout:       params.WorkerStopTimeout,
-		fatalErrCb:        params.WorkerFatalErrorCallback},
+		fatalErrCb:        params.WorkerFatalErrorCallback,
+	},
 		params.Logger,
 		params.MetricsHandler,
 		nil,
@@ -319,7 +319,8 @@ func newWorkflowTaskWorkerInternal(
 		identity:          params.Identity,
 		workerType:        "LocalActivityWorker",
 		stopTimeout:       params.WorkerStopTimeout,
-		fatalErrCb:        params.WorkerFatalErrorCallback},
+		fatalErrCb:        params.WorkerFatalErrorCallback,
+	},
 		params.Logger,
 		params.MetricsHandler,
 		nil,
@@ -436,7 +437,8 @@ func newActivityTaskWorker(taskHandler ActivityTaskHandler, service workflowserv
 			workerType:        "ActivityWorker",
 			stopTimeout:       workerParams.WorkerStopTimeout,
 			fatalErrCb:        workerParams.WorkerFatalErrorCallback,
-			userContextCancel: workerParams.UserContextCancel},
+			userContextCancel: workerParams.UserContextCancel,
+		},
 		workerParams.Logger,
 		workerParams.MetricsHandler,
 		sessionTokenBucket,
@@ -961,8 +963,10 @@ func (aw *AggregatedWorker) assertNotStopped() {
 	}
 }
 
-var binaryChecksum string
-var binaryChecksumLock sync.Mutex
+var (
+	binaryChecksum     string
+	binaryChecksumLock sync.Mutex
+)
 
 // SetBinaryChecksum sets the identifier of the binary(aka BinaryChecksum).
 // The identifier is mainly used in recording reset points when respondWorkflowTaskCompleted. For each workflow, the very first
@@ -1156,7 +1160,6 @@ func (aw *WorkflowReplayer) ReplayWorkflowHistoryFromJSONFile(logger log.Logger,
 // The logger is an optional parameter. Defaults to the noop logger.
 func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(logger log.Logger, jsonfileName string, lastEventID int64) error {
 	history, err := extractHistoryFromFile(jsonfileName, lastEventID)
-
 	if err != nil {
 		return err
 	}
@@ -1286,20 +1289,12 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 			for _, d := range completeReq.Commands {
 				if d.GetCommandType() == enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION {
 					if last.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW {
-						inputA := d.GetContinueAsNewWorkflowExecutionCommandAttributes().GetInput()
-						inputB := last.GetWorkflowExecutionContinuedAsNewEventAttributes().GetInput()
-						if proto.Equal(inputA, inputB) {
-							return nil
-						}
+						return nil
 					}
 				}
 				if d.GetCommandType() == enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION {
 					if last.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED {
-						resultA := last.GetWorkflowExecutionCompletedEventAttributes().GetResult()
-						resultB := d.GetCompleteWorkflowExecutionCommandAttributes().GetResult()
-						if proto.Equal(resultA, resultB) {
-							return nil
-						}
+						return nil
 					}
 				}
 			}
