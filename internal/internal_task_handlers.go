@@ -1208,7 +1208,7 @@ func skipDeterministicCheckForEvent(e *historypb.HistoryEvent) bool {
 		return true
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED:
 		return true
-	case enumspb.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT:
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
 		return true
 	}
 	return false
