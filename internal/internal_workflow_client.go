@@ -781,7 +781,8 @@ type WorkflowUpdateHandle interface {
 // only supports the case where the output value is aready known at construction
 // time.
 type updateHandle struct {
-	value interface{} // converter.EncodedValue | error
+	value converter.EncodedValues
+	err   error
 }
 
 // QueryWorkflowWithOptionsRequest is the request to QueryWorkflowWithOptions
@@ -962,10 +963,10 @@ func (wc *WorkflowClient) UpdateWorkflowWithOptions(
 		},
 	})
 	if err != nil {
-		return &updateHandle{value: err}, nil
+		return &updateHandle{err: err}, nil
 	}
 	if failure := resp.Output.GetFailure(); failure != nil {
-		return &updateHandle{value: wc.failureConverter.FailureToError(failure)}, nil
+		return &updateHandle{err: wc.failureConverter.FailureToError(failure)}, nil
 	}
 	return &updateHandle{value: newEncodedValues(resp.Output.GetSuccess(), wc.dataConverter)}, nil
 }
@@ -1657,11 +1658,8 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 func (*workflowClientInterceptor) mustEmbedClientOutboundInterceptorBase() {}
 
 func (uh *updateHandle) Get(ctx context.Context, valuePtr interface{}) error {
-	switch tv := uh.value.(type) {
-	case error:
-		return tv
-	case converter.EncodedValues:
-		return tv.Get(valuePtr)
+	if uh.err != nil {
+		return uh.err
 	}
-	panic(fmt.Sprintf("unexpected handle value type %T", uh.value))
+	return uh.value.Get(valuePtr)
 }

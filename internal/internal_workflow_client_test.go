@@ -1467,7 +1467,7 @@ func TestClientCloseCount(t *testing.T) {
 func TestUpdateHandle(t *testing.T) {
 	t.Run("error case", func(t *testing.T) {
 		err := errors.New(t.Name())
-		uh := updateHandle{value: err}
+		uh := updateHandle{err: err}
 		require.Error(t, uh.Get(context.TODO(), nil))
 	})
 
@@ -1481,9 +1481,8 @@ func TestUpdateHandle(t *testing.T) {
 		require.Equal(t, t.Name(), out)
 	})
 
-	t.Run("unsupported value type", func(t *testing.T) {
-		uh := updateHandle{value: "string is not supported"}
-		var out string
-		require.Panics(t, func() { _ = uh.Get(context.TODO(), &out) })
+	t.Run("invalid state", func(t *testing.T) {
+		uh := updateHandle{}
+		require.Panics(t, func() { _ = uh.Get(context.TODO(), nil) })
 	})
 }
