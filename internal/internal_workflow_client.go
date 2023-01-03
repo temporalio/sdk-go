@@ -774,7 +774,7 @@ type UpdateWorkflowWithOptionsRequest struct {
 // this type will return that error.
 type WorkflowUpdateHandle interface {
 	// UpdateRef() *updatepb.UpdateRef //once API lands
-	Get(ctx context.Context, valuePtrs ...interface{}) error
+	Get(ctx context.Context, valuePtr interface{}) error
 }
 
 // updateHandle is a dumb implementation of WorkflowExecutionUpdateHandle that
@@ -1656,12 +1656,12 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 // Required to implement ClientOutboundInterceptor
 func (*workflowClientInterceptor) mustEmbedClientOutboundInterceptorBase() {}
 
-func (uh *updateHandle) Get(ctx context.Context, valuePtrs ...interface{}) error {
+func (uh *updateHandle) Get(ctx context.Context, valuePtr interface{}) error {
 	switch tv := uh.value.(type) {
 	case error:
 		return tv
 	case converter.EncodedValues:
-		return tv.Get(valuePtrs...)
+		return tv.Get(valuePtr)
 	}
 	panic(fmt.Sprintf("unexpected handle value type %T", uh.value))
 }
