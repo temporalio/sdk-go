@@ -413,10 +413,64 @@ func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 	return internal.SetQueryHandler(ctx, queryType, handler)
 }
 
+// SetUpdateHandler forwards to SetUpdateHandlerOpts with an zero-initialized
+// UpdateHandlerOptions struct. See SetUpdateHandlerOpts for more details.
+//
+// NOTE: Experimental
 func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error {
 	return SetUpdateHandlerOpts(ctx, updateName, handler, UpdateHandlerOptions{})
 }
 
+// SetUpdateHandlerOpts binds an update handler function to the specified name
+// such that update invocations specifying that name will invoke the handler.
+// The handler function can take as input any number of parameters so long as
+// they can be serialized/deserialized by the system. The handler can take a
+// workflow.Context as its first parameter but this is not required. The update
+// handler must return either a single error or a single serializable object
+// along with a single error. The update handler function is invoked in the
+// context of the workflow and thus is subject to the same restrictions as
+// workflow code, namely, the update handler must be deterministic. As with
+// other workflow code, update code is free to invoke and wait on the results of
+// activities. Update handler code is free to mutate workflow state.
+//
+// This registration can optionally specify (through UpdateHandlerOptions) an
+// update validation function. If provided, this function will be invoked before
+// the update handler itself is invoked and if this function returns an error,
+// the update request will be considered to have been rejected and as such will
+// not occupy any space in the workflow history. Validation functions must take
+// as inputs the same parameters as the associated update handler but my vary
+// from said handler by the presence/absence of a workflow.Context as the first
+// parameter. Validation handlers must only return a single error. Validation
+// handlers must be deterministic and can observe workflow state but must not
+// mutate workflow state in any way.
+//
+// Example of workflow code that supports a monotonic counter
+//
+//	func MyWorkflow(ctx workflow.Context) (int, error) {
+//		counter := 0
+//		err := workflow.SetUpdateHandlerOpts(
+//			ctx,
+//			"add",
+//			func(val int) (int, error) { // Calls
+//				counter += val // note that this mutates workflow state
+//				return counter, nil
+//			},
+//			UpdateHandlerOptions{
+//				Validator: func(val int) error {
+//					if val < 0 { // reject attempts to add negative values
+//						return fmt.Errorf("invalid addend: %v", val)
+//					}
+//					return nil
+//				},
+//			})
+//		if err != nil {
+//			return 0, err
+//		}
+//		_ = ctx.Done().Receive(ctx, nil)
+//		return counter, nil
+//	}
+//
+// NOTE: Experimental
 func SetUpdateHandlerOpts(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions) error {
 	return internal.SetUpdateHandler(ctx, updateName, handler, opts)
 }
