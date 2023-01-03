@@ -413,22 +413,23 @@ func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 	return internal.SetQueryHandler(ctx, queryType, handler)
 }
 
-// SetUpdateHandler forwards to SetUpdateHandlerOpts with an zero-initialized
-// UpdateHandlerOptions struct. See SetUpdateHandlerOpts for more details.
+// SetUpdateHandler forwards to SetUpdateHandlerWithOptions with an
+// zero-initialized UpdateHandlerOptions struct. See SetUpdateHandlerWithOptions
+// for more details.
 //
 // NOTE: Experimental
 func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error {
-	return SetUpdateHandlerOpts(ctx, updateName, handler, UpdateHandlerOptions{})
+	return SetUpdateHandlerWithOptions(ctx, updateName, handler, UpdateHandlerOptions{})
 }
 
-// SetUpdateHandlerOpts binds an update handler function to the specified name
-// such that update invocations specifying that name will invoke the handler.
-// The handler function can take as input any number of parameters so long as
-// they can be serialized/deserialized by the system. The handler can take a
-// workflow.Context as its first parameter but this is not required. The update
-// handler must return either a single error or a single serializable object
-// along with a single error. The update handler function is invoked in the
-// context of the workflow and thus is subject to the same restrictions as
+// SetUpdateHandlerWithOptions binds an update handler function to the specified
+// name such that update invocations specifying that name will invoke the
+// handler.  The handler function can take as input any number of parameters so
+// long as they can be serialized/deserialized by the system. The handler can
+// take a workflow.Context as its first parameter but this is not required. The
+// update handler must return either a single error or a single serializable
+// object along with a single error. The update handler function is invoked in
+// the context of the workflow and thus is subject to the same restrictions as
 // workflow code, namely, the update handler must be deterministic. As with
 // other workflow code, update code is free to invoke and wait on the results of
 // activities. Update handler code is free to mutate workflow state.
@@ -448,7 +449,7 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error
 //
 //	func MyWorkflow(ctx workflow.Context) (int, error) {
 //		counter := 0
-//		err := workflow.SetUpdateHandlerOpts(
+//		err := workflow.SetUpdateHandlerWithOptions(
 //			ctx,
 //			"add",
 //			func(val int) (int, error) { // Calls
@@ -471,7 +472,7 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error
 //	}
 //
 // NOTE: Experimental
-func SetUpdateHandlerOpts(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions) error {
+func SetUpdateHandlerWithOptions(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions) error {
 	return internal.SetUpdateHandler(ctx, updateName, handler, opts)
 }
 
