@@ -197,7 +197,7 @@ func GetMetricsHandler(ctx Context) metrics.Handler {
 	return internal.GetMetricsHandler(ctx)
 }
 
-// GetUnhandledSignalNames returns signal names that have not been consumed.
+// GetUnhandledSignalNames returns signal names that have unconsumed signals.
 func GetUnhandledSignalNames(ctx Context) []string {
 	return internal.GetUnhandledSignalNames(ctx)
 }
