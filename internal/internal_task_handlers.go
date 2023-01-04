@@ -847,7 +847,7 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 	shouldForceReplayCheck := func() bool {
 		isInReplayer := IsReplayNamespace(w.wth.namespace)
 		// If we are in the replayer we should always check the history replay, even if the workflow is completed
-		// Skip if the workflow paniced to avoid potentially breaking old histories
+		// Skip if the workflow panicked to avoid potentially breaking old histories
 		_, wfPanicked := w.err.(*workflowPanicError)
 		return !wfPanicked && isInReplayer
 	}
