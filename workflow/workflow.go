@@ -197,6 +197,11 @@ func GetMetricsHandler(ctx Context) metrics.Handler {
 	return internal.GetMetricsHandler(ctx)
 }
 
+// GetUnhandledSignalNames returns signal names not been consumed.
+func GetUnhandledSignalNames(ctx Context) []string {
+	return internal.GetUnhandledSignalNames(ctx)
+}
+
 // RequestCancelExternalWorkflow can be used to request cancellation of an external workflow.
 // Input workflowID is the workflow ID of target workflow.
 // Input runID indicates the instance of a workflow. Input runID is optional (default is ""). When runID is not specified,

@@ -633,14 +633,14 @@ func signalWorkflowTest(ctx Context) ([]byte, error) {
 	s.Select(ctx)
 
 	// Check un handled signals.
-	list := getWorkflowEnvOptions(ctx).getUnhandledSignals()
+	list := getWorkflowEnvOptions(ctx).getUnhandledSignalNames()
 	if len(list) != 1 || list[0] != "testSig3" {
 		panic("expecting one unhandled signal")
 	}
 	ch3 := GetSignalChannel(ctx, "testSig3")
 	ch3.Receive(ctx, &v)
 	result += v
-	list = getWorkflowEnvOptions(ctx).getUnhandledSignals()
+	list = getWorkflowEnvOptions(ctx).getUnhandledSignalNames()
 	if len(list) != 0 {
 		panic("expecting no unhandled signals")
 	}
