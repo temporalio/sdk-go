@@ -1463,3 +1463,26 @@ func TestClientCloseCount(t *testing.T) {
 	client2.Close()
 	require.Equal(t, connectivity.Shutdown, workflowClient.conn.GetState())
 }
+
+func TestUpdateHandle(t *testing.T) {
+	t.Run("error case", func(t *testing.T) {
+		err := errors.New(t.Name())
+		uh := updateHandle{err: err}
+		require.Error(t, uh.Get(context.TODO(), nil))
+	})
+
+	t.Run("value case", func(t *testing.T) {
+		dc := converter.GetDefaultDataConverter()
+		payloads, err := dc.ToPayloads(t.Name())
+		require.NoError(t, err)
+		uh := updateHandle{value: newEncodedValues(payloads, dc)}
+		var out string
+		require.NoError(t, uh.Get(context.TODO(), &out))
+		require.Equal(t, t.Name(), out)
+	})
+
+	t.Run("invalid state", func(t *testing.T) {
+		uh := updateHandle{}
+		require.Panics(t, func() { _ = uh.Get(context.TODO(), nil) })
+	})
+}

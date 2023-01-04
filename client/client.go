@@ -157,7 +157,7 @@ type (
 
 	// ScheduleDescription describes the current Schedule details from ScheduleHandle.Describe.
 	// NOTE: Experimental
-	ScheduleDescription = internal.ScheduleDescription 
+	ScheduleDescription = internal.ScheduleDescription
 
 	// Schedule describes a created schedule.
 	// NOTE: Experimental
@@ -186,6 +186,16 @@ type (
 	// ScheduleBackfillOptions configure the parameters for backfilling a schedule.
 	// NOTE: Experimental
 	ScheduleBackfillOptions = internal.ScheduleBackfillOptions
+
+	// UpdateWorkflowWithOptionsRequest encapsulates the parameters for
+	// sending an update to a workflow execution.
+	// NOTE: Experimental
+	UpdateWorkflowWithOptionsRequest = internal.UpdateWorkflowWithOptionsRequest
+
+	// WorkflowUpdateHandle represents a running or completed workflow
+	// execution update and gives the holder access to the outcome of the same.
+	// NOTE: Experimental
+	WorkflowUpdateHandle = internal.WorkflowUpdateHandle
 
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
@@ -477,6 +487,25 @@ type (
 		// API. If the check fails, an error is returned.
 		CheckHealth(ctx context.Context, request *CheckHealthRequest) (*CheckHealthResponse, error)
 
+		// UpdateWorkflow issues an update request to the specified
+		// workflow execution and returns the result synchronously. Calling this
+		// function is equivalent to calling UpdateWorkflowOptions with
+		// the same arguments and indicating that the RPC call should wait for
+		// completion of the update process.
+		// NOTE: Experimental
+		UpdateWorkflow(ctx context.Context, workflowID string, workflowRunID string, updateName string, args ...interface{}) (WorkflowUpdateHandle, error)
+
+		// UpdateWorkflowWithOptions issues an update request to the
+		// specified workflow execution and returns a handle to the update that
+		// is running in in parallel with the calling thread. Errors returned
+		// from the server will be exposed through the return value of
+		// WorkflowUpdateHandle.Get(). Errors that occur before the
+		// update is requested (e.g. if the required workflow ID field is
+		// missing from the UpdateWorkflowWithOptionsRequest) are returned
+		// directly from this function call.
+		// NOTE: Experimental
+		UpdateWorkflowWithOptions(ctx context.Context, request *UpdateWorkflowWithOptionsRequest) (WorkflowUpdateHandle, error)
+
 		// WorkflowService provides access to the underlying gRPC service. This should only be used for advanced use cases
 		// that cannot be accomplished via other Client methods. Unlike calls to other Client methods, calls directly to the
 		// service are not configured with internal semantics such as automatic retries.
@@ -611,8 +640,9 @@ var _ internal.NamespaceClient = NamespaceClient(nil)
 // User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got response from calling Client.DescribeWorkflowExecution.
 // The response contains binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
-//   var result string // This need to be same type as the one passed to RecordHeartbeat
-//   NewValue(data).Get(&result)
+//
+//	var result string // This need to be same type as the one passed to RecordHeartbeat
+//	NewValue(data).Get(&result)
 func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 	return internal.NewValue(data)
 }
@@ -621,9 +651,10 @@ func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 // User had Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got response from calling Client.DescribeWorkflowExecution.
 // The response contains binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
-//   var result1 string
-//   var result2 int // These need to be same type as those arguments passed to RecordHeartbeat
-//   NewValues(data).Get(&result1, &result2)
+//
+//	var result1 string
+//	var result2 int // These need to be same type as those arguments passed to RecordHeartbeat
+//	NewValues(data).Get(&result1, &result2)
 func NewValues(data *commonpb.Payloads) converter.EncodedValues {
 	return internal.NewValues(data)
 }

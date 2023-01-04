@@ -39,6 +39,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	interactionpb "go.temporal.io/api/interaction/v1"
 	"go.temporal.io/api/operatorservice/v1"
 	querypb "go.temporal.io/api/query/v1"
 	"go.temporal.io/api/serviceerror"
@@ -734,6 +735,56 @@ func (wc *WorkflowClient) QueryWorkflow(ctx context.Context, workflowID string, 
 	})
 }
 
+// UpdateWorkflowWithOptionsRequest is the request to UpdateWorkflowWithOptions
+type UpdateWorkflowWithOptionsRequest struct {
+	// UpdateID is an application-layer identifier for the requested update. It
+	// must be unique within the scope of a Namespace+WorkflowID+RunID.
+	UpdateID string
+
+	// WorkflowID is a required field indicating the workflow which should be
+	// updated.
+	WorkflowID string
+
+	// RunID is an optional field used to identify a specific run of the target
+	// workflow.  If RunID is not provided the latest run will be used.
+	RunID string
+
+	// UpdateName is a required field which specifies the update you want to run.
+	// See comments at workflow.SetUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions)
+	// for more details on how to setup update handlers within the target workflow.
+	UpdateName string
+
+	// Args is an optional field used to identify the arguments passed to the
+	// update.
+	Args []interface{}
+
+	// FirstExecutionRunID specifies the RunID expected to identify the first
+	// run in the workflow execution chain. If this expectation does not match
+	// then the server will reject the update request with an error.
+	FirstExecutionRunID string
+
+	// this isn't upstream in API yet
+	// WaitFor enumspb.WorkflowExecutionUpdateWaitEvent
+}
+
+// WorkflowUpdateHandle is a handle to a workflow execution update
+// process. The update may or may not have completed so an instance of this type
+// functions simlarly to a Future with respect to the result value of the
+// update. If the update is rejected or returns an error, the Get function on
+// this type will return that error.
+type WorkflowUpdateHandle interface {
+	// UpdateRef() *updatepb.UpdateRef //once API lands
+	Get(ctx context.Context, valuePtr interface{}) error
+}
+
+// updateHandle is a dumb implementation of WorkflowExecutionUpdateHandle that
+// only supports the case where the output value is aready known at construction
+// time.
+type updateHandle struct {
+	value converter.EncodedValues
+	err   error
+}
+
 // QueryWorkflowWithOptionsRequest is the request to QueryWorkflowWithOptions
 type QueryWorkflowWithOptionsRequest struct {
 	// WorkflowID is a required field indicating the workflow which should be queried.
@@ -875,6 +926,46 @@ func (wc *WorkflowClient) ResetWorkflowExecution(ctx context.Context, request *w
 	}
 
 	return resp, nil
+}
+
+func (wc *WorkflowClient) UpdateWorkflowWithOptions(
+	ctx context.Context,
+	req *UpdateWorkflowWithOptionsRequest,
+) (WorkflowUpdateHandle, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
+	ctx = contextWithNewHeader(ctx)
+
+	return wc.interceptor.UpdateWorkflow(ctx, &ClientUpdateWorkflowInput{
+		UpdateID:            req.UpdateID,
+		WorkflowID:          req.WorkflowID,
+		UpdateName:          req.UpdateName,
+		Args:                req.Args,
+		RunID:               req.RunID,
+		FirstExecutionRunID: req.FirstExecutionRunID,
+	})
+}
+
+func (wc *WorkflowClient) UpdateWorkflow(
+	ctx context.Context,
+	workflowID string,
+	workflowRunID string,
+	updateName string,
+	args ...interface{},
+) (WorkflowUpdateHandle, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
+	ctx = contextWithNewHeader(ctx)
+
+	return wc.interceptor.UpdateWorkflow(ctx, &ClientUpdateWorkflowInput{
+		WorkflowID: workflowID,
+		UpdateName: updateName,
+		Args:       args,
+	})
 }
 
 // CheckHealthRequest is a request for Client.CheckHealth.
@@ -1523,5 +1614,54 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 	return result.QueryResult, nil
 }
 
+func (w *workflowClientInterceptor) UpdateWorkflow(
+	ctx context.Context,
+	in *ClientUpdateWorkflowInput,
+) (WorkflowUpdateHandle, error) {
+
+	argPayloads, err := w.client.dataConverter.ToPayloads(in.Args...)
+	if err != nil {
+		return nil, err
+	}
+	header, _ := headerPropagated(ctx, w.client.contextPropagators)
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	resp, err := w.client.workflowService.UpdateWorkflow(grpcCtx, &workflowservice.UpdateWorkflowRequest{
+		RequestId: uuid.New(),
+
+		// currently fixed as this is the only supported execution method - will
+		// change to BlockingPolicy (or similar) when upstream API changes land
+		ResultAccessStyle: enumspb.WORKFLOW_UPDATE_RESULT_ACCESS_STYLE_REQUIRE_INLINE,
+		Namespace:         w.client.namespace,
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: in.WorkflowID,
+			RunId:      in.RunID,
+		},
+		Identity:            w.client.identity,
+		FirstExecutionRunId: in.FirstExecutionRunID,
+		Input: &interactionpb.Input{
+			Header: header,
+			Name:   in.UpdateName,
+			Args:   argPayloads,
+		},
+	})
+	if err != nil {
+		return &updateHandle{err: err}, nil
+	}
+	if failure := resp.Output.GetFailure(); failure != nil {
+		return &updateHandle{err: w.client.failureConverter.FailureToError(failure)}, nil
+	}
+	encVals := newEncodedValues(resp.Output.GetSuccess(), w.client.dataConverter)
+	return &updateHandle{value: encVals}, nil
+}
+
 // Required to implement ClientOutboundInterceptor
 func (*workflowClientInterceptor) mustEmbedClientOutboundInterceptorBase() {}
+
+func (uh *updateHandle) Get(ctx context.Context, valuePtr interface{}) error {
+	if uh.err != nil {
+		return uh.err
+	}
+	return uh.value.Get(valuePtr)
+}

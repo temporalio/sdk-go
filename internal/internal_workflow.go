@@ -1479,7 +1479,7 @@ func setQueryHandler(ctx Context, queryType string, handler interface{}) error {
 }
 
 // setUpdateHandler sets update handler for a given update name.
-func setUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateOptions) error {
+func setUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions) error {
 	if err := validateUpdateHandlerFn(handler); err != nil {
 		return err
 	}
@@ -1488,7 +1488,7 @@ func setUpdateHandler(ctx Context, updateName string, handler interface{}, opts 
 		if err := validateValidatorFn(opts.Validator); err != nil {
 			return err
 		}
-		if err := validateSameParams(handler, opts.Validator); err != nil {
+		if err := validateEquivalentParams(handler, opts.Validator); err != nil {
 			return err
 		}
 		validateFn = opts.Validator
@@ -1502,7 +1502,11 @@ func setUpdateHandler(ctx Context, updateName string, handler interface{}, opts 
 	return nil
 }
 
-func validateSameParams(fn1, fn2 interface{}) error {
+// validateEquivalentParams verifies that both arguments are functions and that
+// said functions take the exact same parameter types in the same order but not
+// considering the presence or absence of a workflow.Context parameter in the
+// zeroth position.
+func validateEquivalentParams(fn1, fn2 interface{}) error {
 	fn1Type := reflect.TypeOf(fn1)
 	fn2Type := reflect.TypeOf(fn2)
 
@@ -1514,13 +1518,30 @@ func validateSameParams(fn1, fn2 interface{}) error {
 		return fmt.Errorf("type must be function but was %s", fn1Type.Kind())
 	}
 
-	if fn1Type.NumIn() != fn2Type.NumIn() {
+	ctxType := reflect.TypeOf(new(Context)).Elem()
+	extractRelevantParamTypes := func(t reflect.Type) []reflect.Type {
+		out := make([]reflect.Type, 0, t.NumIn())
+		for i := 0; i < t.NumIn(); i++ {
+			paramType := t.In(i)
+			if i == 0 && paramType.Implements(ctxType) {
+				// ignore the presence of a workflow.Context as a first param
+				continue
+			}
+			out = append(out, paramType)
+		}
+		return out
+	}
+
+	fn1ParamTypes := extractRelevantParamTypes(fn1Type)
+	fn2ParamTypes := extractRelevantParamTypes(fn2Type)
+
+	if len(fn1ParamTypes) != len(fn2ParamTypes) {
 		return errors.New("functions have different numbers of parameters")
 	}
 
-	for i := 0; i < fn1Type.NumIn(); i++ {
-		fn1ParamType := fn1Type.In(i)
-		fn2ParamType := fn2Type.In(i)
+	for i := 0; i < len(fn1ParamTypes); i++ {
+		fn1ParamType := fn1ParamTypes[i]
+		fn2ParamType := fn2ParamTypes[i]
 		if fn1ParamType != fn2ParamType {
 			return fmt.Errorf("functions differ at parameter %v; %v != %v", i, fn1ParamType, fn2ParamType)
 		}
