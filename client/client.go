@@ -192,10 +192,10 @@ type (
 	// NOTE: Experimental
 	UpdateWorkflowWithOptionsRequest = internal.UpdateWorkflowWithOptionsRequest
 
-	// WorkflowExecutionUpdateHandle represents a running or completed workflow
+	// WorkflowUpdateHandle represents a running or completed workflow
 	// execution update and gives the holder access to the outcome of the same.
 	// NOTE: Experimental
-	WorkflowExecutionUpdateHandle = internal.WorkflowUpdateHandle
+	WorkflowUpdateHandle = internal.WorkflowUpdateHandle
 
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
@@ -493,18 +493,18 @@ type (
 		// the same arguments and indicating that the RPC call should wait for
 		// completion of the update process.
 		// NOTE: Experimental
-		UpdateWorkflow(ctx context.Context, workflowID string, workflowRunID string, updateName string, args ...interface{}) (WorkflowExecutionUpdateHandle, error)
+		UpdateWorkflow(ctx context.Context, workflowID string, workflowRunID string, updateName string, args ...interface{}) (WorkflowUpdateHandle, error)
 
 		// UpdateWorkflowWithOptions issues an update request to the
 		// specified workflow execution and returns a handle to the update that
 		// is running in in parallel with the calling thread. Errors returned
 		// from the server will be exposed through the return value of
-		// WorkflowExecutionUpdateHandle.Get(). Errors that occur before the
+		// WorkflowUpdateHandle.Get(). Errors that occur before the
 		// update is requested (e.g. if the required workflow ID field is
 		// missing from the UpdateWorkflowWithOptionsRequest) are returned
 		// directly from this function call.
 		// NOTE: Experimental
-		UpdateWorkflowWithOptions(ctx context.Context, request *UpdateWorkflowWithOptionsRequest) (WorkflowExecutionUpdateHandle, error)
+		UpdateWorkflowWithOptions(ctx context.Context, request *UpdateWorkflowWithOptionsRequest) (WorkflowUpdateHandle, error)
 
 		// WorkflowService provides access to the underlying gRPC service. This should only be used for advanced use cases
 		// that cannot be accomplished via other Client methods. Unlike calls to other Client methods, calls directly to the

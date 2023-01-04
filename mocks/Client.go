@@ -542,15 +542,15 @@ func (_m *Client) CheckHealth(ctx context.Context, request *client.CheckHealthRe
 	return r0, r1
 }
 
-func (_m *Client) UpdateWorkflow(ctx context.Context, workflowID string, workflowRunID, updateName string, args ...interface{}) (client.WorkflowExecutionUpdateHandle, error) {
+func (_m *Client) UpdateWorkflow(ctx context.Context, workflowID string, workflowRunID, updateName string, args ...interface{}) (client.WorkflowUpdateHandle, error) {
 	ret := _m.Called(ctx, workflowID, updateName, args)
 
-	var r0 client.WorkflowExecutionUpdateHandle
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, ...interface{}) client.WorkflowExecutionUpdateHandle); ok {
+	var r0 client.WorkflowUpdateHandle
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, ...interface{}) client.WorkflowUpdateHandle); ok {
 		r0 = rf(ctx, workflowID, updateName, args)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(client.WorkflowExecutionUpdateHandle)
+			r0 = ret.Get(0).(client.WorkflowUpdateHandle)
 		}
 	}
 
@@ -564,15 +564,15 @@ func (_m *Client) UpdateWorkflow(ctx context.Context, workflowID string, workflo
 	return r0, r1
 }
 
-func (_m *Client) UpdateWorkflowWithOptions(ctx context.Context, req *client.UpdateWorkflowWithOptionsRequest) (client.WorkflowExecutionUpdateHandle, error) {
+func (_m *Client) UpdateWorkflowWithOptions(ctx context.Context, req *client.UpdateWorkflowWithOptionsRequest) (client.WorkflowUpdateHandle, error) {
 	ret := _m.Called(ctx, req)
 
-	var r0 client.WorkflowExecutionUpdateHandle
-	if rf, ok := ret.Get(0).(func(context.Context, *client.UpdateWorkflowWithOptionsRequest) client.WorkflowExecutionUpdateHandle); ok {
+	var r0 client.WorkflowUpdateHandle
+	if rf, ok := ret.Get(0).(func(context.Context, *client.UpdateWorkflowWithOptionsRequest) client.WorkflowUpdateHandle); ok {
 		r0 = rf(ctx, req)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(client.WorkflowExecutionUpdateHandle)
+			r0 = ret.Get(0).(client.WorkflowUpdateHandle)
 		}
 	}
 
