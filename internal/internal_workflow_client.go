@@ -935,40 +935,17 @@ func (wc *WorkflowClient) UpdateWorkflowWithOptions(
 	if err := wc.ensureInitialized(); err != nil {
 		return nil, err
 	}
-	argPayloads, err := wc.dataConverter.ToPayloads(req.Args...)
-	if err != nil {
-		return nil, err
-	}
-	header, _ := headerPropagated(ctx, wc.contextPropagators)
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
-	defer cancel()
-	resp, err := wc.workflowService.UpdateWorkflow(grpcCtx, &workflowservice.UpdateWorkflowRequest{
-		RequestId: uuid.New(),
+	ctx = contextWithNewHeader(ctx)
 
-		// currently fixed as this is the only supported execution method - will
-		// change to BlockingPolicy (or similar) when upstream API changes land
-		ResultAccessStyle: enumspb.WORKFLOW_UPDATE_RESULT_ACCESS_STYLE_REQUIRE_INLINE,
-		Namespace:         wc.namespace,
-		WorkflowExecution: &commonpb.WorkflowExecution{
-			WorkflowId: req.WorkflowID,
-			RunId:      req.RunID,
-		},
-		Identity:            wc.identity,
-		FirstExecutionRunId: req.FirstExecutionRunID,
-		Input: &interactionpb.Input{
-			Header: header,
-			Name:   req.UpdateName,
-			Args:   argPayloads,
-		},
+	return wc.interceptor.UpdateWorkflow(ctx, &ClientUpdateWorkflowInput{
+		UpdateID:            req.UpdateID,
+		WorkflowID:          req.WorkflowID,
+		UpdateName:          req.UpdateName,
+		Args:                req.Args,
+		RunID:               req.RunID,
+		FirstExecutionRunID: req.FirstExecutionRunID,
 	})
-	if err != nil {
-		return &updateHandle{err: err}, nil
-	}
-	if failure := resp.Output.GetFailure(); failure != nil {
-		return &updateHandle{err: wc.failureConverter.FailureToError(failure)}, nil
-	}
-	return &updateHandle{value: newEncodedValues(resp.Output.GetSuccess(), wc.dataConverter)}, nil
 }
 
 func (wc *WorkflowClient) UpdateWorkflow(
@@ -1641,17 +1618,42 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 	ctx context.Context,
 	in *ClientUpdateWorkflowInput,
 ) (WorkflowUpdateHandle, error) {
-	return w.client.UpdateWorkflowWithOptions(
-		ctx,
-		&UpdateWorkflowWithOptionsRequest{
-			UpdateID:            in.UpdateID,
-			WorkflowID:          in.WorkflowID,
-			RunID:               in.RunID,
-			UpdateName:          in.UpdateName,
-			Args:                in.Args,
-			FirstExecutionRunID: in.FirstExecutionRunID,
+
+	argPayloads, err := w.client.dataConverter.ToPayloads(in.Args...)
+	if err != nil {
+		return nil, err
+	}
+	header, _ := headerPropagated(ctx, w.client.contextPropagators)
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	resp, err := w.client.workflowService.UpdateWorkflow(grpcCtx, &workflowservice.UpdateWorkflowRequest{
+		RequestId: uuid.New(),
+
+		// currently fixed as this is the only supported execution method - will
+		// change to BlockingPolicy (or similar) when upstream API changes land
+		ResultAccessStyle: enumspb.WORKFLOW_UPDATE_RESULT_ACCESS_STYLE_REQUIRE_INLINE,
+		Namespace:         w.client.namespace,
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: in.WorkflowID,
+			RunId:      in.RunID,
 		},
-	)
+		Identity:            w.client.identity,
+		FirstExecutionRunId: in.FirstExecutionRunID,
+		Input: &interactionpb.Input{
+			Header: header,
+			Name:   in.UpdateName,
+			Args:   argPayloads,
+		},
+	})
+	if err != nil {
+		return &updateHandle{err: err}, nil
+	}
+	if failure := resp.Output.GetFailure(); failure != nil {
+		return &updateHandle{err: w.client.failureConverter.FailureToError(failure)}, nil
+	}
+	encVals := newEncodedValues(resp.Output.GetSuccess(), w.client.dataConverter)
+	return &updateHandle{value: encVals}, nil
 }
 
 // Required to implement ClientOutboundInterceptor
