@@ -318,6 +318,8 @@ type (
 	}
 
 	// UpdateHandlerOptions consists of options for executing a named workflow update.
+	//
+	// NOTE: Experimental
 	UpdateHandlerOptions struct {
 		// Validator is an optional (i.e. can be left nil) func with exactly the
 		// same type signature as the required update handler func but returning
@@ -1619,15 +1621,30 @@ func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 	return i.SetQueryHandler(ctx, queryType, handler)
 }
 
-// SetUpdateHandler sets the update callback function and (optionally) an update
-// validator function for a given name. The handler must be a func that takes any
-// number of values and returns either a single error or a serializable result
-// and an error. The validator func (if specified) takes the exact same
-// parameters as the handler and returns a single error. Both the handler and
-// the validator can optionally take a workflow.Context as their first
-// parameter. The validator function MUST NOT mutate workflow state in any way,
-// much like a query handler function. The update handler function however is
-// free to do anything that normal workflow code would do.
+// SetUpdateHandler binds an update handler function to the specified
+// name such that update invocations specifying that name will invoke the
+// handler.  The handler function can take as input any number of parameters so
+// long as they can be serialized/deserialized by the system. The handler can
+// take a workflow.Context as its first parameter but this is not required. The
+// update handler must return either a single error or a single serializable
+// object along with a single error. The update handler function is invoked in
+// the context of the workflow and thus is subject to the same restrictions as
+// workflow code, namely, the update handler must be deterministic. As with
+// other workflow code, update code is free to invoke and wait on the results of
+// activities. Update handler code is free to mutate workflow state.
+//
+// This registration can optionally specify (through UpdateHandlerOptions) an
+// update validation function. If provided, this function will be invoked before
+// the update handler itself is invoked and if this function returns an error,
+// the update request will be considered to have been rejected and as such will
+// not occupy any space in the workflow history. Validation functions must take
+// as inputs the same parameters as the associated update handler but my vary
+// from said handler by the presence/absence of a workflow.Context as the first
+// parameter. Validation handlers must only return a single error. Validation
+// handlers must be deterministic and can observe workflow state but must not
+// mutate workflow state in any way.
+//
+// NOTE: Experimental
 func SetUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions) error {
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.SetUpdateHandler(ctx, updateName, handler, opts)
