@@ -1112,6 +1112,13 @@ type WorkflowReplayerOptions struct {
 	EnableLoggingInReplay bool
 }
 
+// ReplayWorkflowHistoryOptions are options for replaying a workflow.
+type ReplayWorkflowHistoryOptions struct {
+	// OriginalExecution - Overide the workflow execution details used for replay.
+	// Optional
+	OriginalExecution WorkflowExecution
+}
+
 // NewWorkflowReplayer creates an instance of the WorkflowReplayer.
 func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, error) {
 	registry := newRegistryWithOptions(registryOptions{disableAliasing: options.DisableRegistrationAliasing})
@@ -1134,10 +1141,10 @@ func (aw *WorkflowReplayer) RegisterWorkflowWithOptions(w interface{}, options R
 	aw.registry.RegisterWorkflowWithOptions(w, options)
 }
 
-// ReplayWorkflowHistory executes a single workflow task for the given history.
+// ReplayWorkflowHistoryWithOptions executes a single workflow task for the given history.
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
-func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger log.Logger, history *historypb.History) error {
+func (aw *WorkflowReplayer) ReplayWorkflowHistoryWithOptions(logger log.Logger, history *historypb.History, options ReplayWorkflowHistoryOptions) error {
 	if logger == nil {
 		logger = ilog.NewDefaultLogger()
 	}
@@ -1145,7 +1152,14 @@ func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger log.Logger, history *hi
 	controller := gomock.NewController(ilog.NewTestReporter(logger))
 	service := workflowservicemock.NewMockWorkflowServiceClient(controller)
 
-	return aw.replayWorkflowHistory(logger, service, ReplayNamespace, history)
+	return aw.replayWorkflowHistory(logger, service, ReplayNamespace, options.OriginalExecution, history)
+}
+
+// ReplayWorkflowHistory executes a single workflow task for the given history.
+// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
+// The logger is an optional parameter. Defaults to the noop logger.
+func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger log.Logger, history *historypb.History) error {
+	return aw.ReplayWorkflowHistoryWithOptions(logger, history, ReplayWorkflowHistoryOptions{})
 }
 
 // ReplayWorkflowHistoryFromJSONFile executes a single workflow task for the given json history file.
@@ -1172,7 +1186,7 @@ func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(logger log.
 	controller := gomock.NewController(ilog.NewTestReporter(logger))
 	service := workflowservicemock.NewMockWorkflowServiceClient(controller)
 
-	return aw.replayWorkflowHistory(logger, service, ReplayNamespace, history)
+	return aw.replayWorkflowHistory(logger, service, ReplayNamespace, WorkflowExecution{}, history)
 }
 
 // ReplayWorkflowExecution replays workflow execution loading it from Temporal service.
@@ -1211,7 +1225,7 @@ func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service
 		}
 		request.NextPageToken = resp.NextPageToken
 	}
-	return aw.replayWorkflowHistory(logger, service, namespace, &history)
+	return aw.replayWorkflowHistory(logger, service, namespace, execution, &history)
 }
 
 // inferInvocations extracts the set of *interactionpb.Invocation objects that
@@ -1231,7 +1245,7 @@ func inferInvocations(events []*historypb.HistoryEvent) []*interactionpb.Invocat
 	return invocations
 }
 
-func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service workflowservice.WorkflowServiceClient, namespace string, history *historypb.History) error {
+func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service workflowservice.WorkflowServiceClient, namespace string, originalExecution WorkflowExecution, history *historypb.History) error {
 	taskQueue := "ReplayTaskQueue"
 	events := history.Events
 	if events == nil {
@@ -1255,7 +1269,12 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 		RunId:      uuid.NewRandom().String(),
 		WorkflowId: "ReplayId",
 	}
-	if first.GetWorkflowExecutionStartedEventAttributes().GetOriginalExecutionRunId() != "" {
+	if originalExecution.ID != "" {
+		execution.WorkflowId = originalExecution.ID
+	}
+	if originalExecution.RunID != "" {
+		execution.RunId = originalExecution.RunID
+	} else if first.GetWorkflowExecutionStartedEventAttributes().GetOriginalExecutionRunId() != "" {
 		execution.RunId = first.GetWorkflowExecutionStartedEventAttributes().GetOriginalExecutionRunId()
 	}
 
