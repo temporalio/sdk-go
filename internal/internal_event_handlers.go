@@ -479,7 +479,11 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 		attributes.CronSchedule = params.CronSchedule
 	}
 
-	command := wc.commandsHelper.startChildWorkflowExecution(attributes)
+	command, err := wc.commandsHelper.startChildWorkflowExecution(attributes)
+	if _, ok := err.(*childWorkflowExistsWithId); ok {
+		callback(nil, &ChildWorkflowExecutionAlreadyStartedError{})
+		return
+	}
 	command.setData(&scheduledChildWorkflow{
 		resultCallback:      callback,
 		startedCallback:     startedHandler,

@@ -164,6 +164,12 @@ type (
 	stateMachineIllegalStatePanic struct {
 		message string
 	}
+
+	// Error returned when a child workflow with the same id already exists and hasn't completed
+	// and been removed from internal state.
+	childWorkflowExistsWithId struct {
+		id string
+	}
 )
 
 const (
@@ -1253,10 +1259,18 @@ func (h *commandsHelper) recordMutableSideEffectMarker(mutableSideEffectID strin
 	return command
 }
 
-func (h *commandsHelper) startChildWorkflowExecution(attributes *commandpb.StartChildWorkflowExecutionCommandAttributes) commandStateMachine {
+// startChildWorkflowExecution can return an error in the event that there is already a child wf
+// with the same ID which exists as a command in memory. Other SDKs actually will send this command
+// to server, and have it reject it - but here the command ID is exactly equal to the child's wf ID,
+// and changing that without potentially blowing up backwards compatability is difficult. So we
+// return the error eagerly locally, which is at least an improvement on panicking.
+func (h *commandsHelper) startChildWorkflowExecution(attributes *commandpb.StartChildWorkflowExecutionCommandAttributes) (commandStateMachine, error) {
 	command := h.newChildWorkflowCommandStateMachine(attributes)
+	if h.commands[command.getID()] != nil {
+		return nil, &childWorkflowExistsWithId{id: attributes.WorkflowId}
+	}
 	h.addCommand(command)
-	return command
+	return command, nil
 }
 
 func (h *commandsHelper) handleStartChildWorkflowExecutionInitiated(workflowID string) {
@@ -1512,4 +1526,8 @@ func (h *commandsHelper) isCancelExternalWorkflowEventForChildWorkflow(cancellat
 	// for cancellation external workflow, Control in RequestCancelExternalWorkflowExecutionInitiatedEventAttributes
 	// will have a client generated sequence ID
 	return len(cancellationID) == 0
+}
+
+func (e *childWorkflowExistsWithId) Error() string {
+	return fmt.Sprintf("child workflow already exists with id: %v", e.id)
 }

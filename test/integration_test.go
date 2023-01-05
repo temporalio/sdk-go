@@ -999,9 +999,16 @@ func (ts *IntegrationTestSuite) TestCancelChildWorkflowUnusualTransitions() {
 	)
 	ts.NoError(err)
 
-	// Synchronously wait for the workflow completion. Behind the scenes the SDK performs a long poll operation.
-	// If you need to wait for the workflow completion from another process use
-	// Client.GetWorkflow API to get an instance of a WorkflowRun.
+	err = run.Get(context.Background(), nil)
+	ts.NoError(err)
+}
+
+func (ts *IntegrationTestSuite) TestChildWorkflowDuplicatePanic_Regression() {
+	wfid := "test-child-workflow-duplicate-panic-regression"
+	run, err := ts.client.ExecuteWorkflow(context.Background(),
+		ts.startWorkflowOptions(wfid),
+		ts.workflows.ChildWorkflowDuplicatePanicRepro)
+	ts.NoError(err)
 	err = run.Get(context.Background(), nil)
 	ts.NoError(err)
 }

@@ -520,6 +520,29 @@ func (w *Workflows) ChildWorkflowCancelUnusualTransitionsRepro(ctx workflow.Cont
 	return nil
 }
 
+func (w *Workflows) ChildWorkflowDuplicatePanicRepro(ctx workflow.Context) error {
+	cwo := workflow.ChildWorkflowOptions{
+		WorkflowID: "ABC-SIMPLE-CHILD-WORKFLOW-ID",
+	}
+	childCtx := workflow.WithChildOptions(ctx, cwo)
+
+	child1 := workflow.ExecuteChildWorkflow(childCtx, w.childWorkflowWaitOnSignal)
+	var childWE workflow.Execution
+	err := child1.GetChildWorkflowExecution().Get(ctx, &childWE)
+	if err != nil {
+		return err
+	}
+	workflow.SignalExternalWorkflow(ctx, childWE.ID, childWE.RunID, "unblock", nil)
+	if err != nil {
+		return err
+	}
+	err = workflow.ExecuteChildWorkflow(childCtx, w.childWorkflowWaitOnSignal).Get(ctx, nil)
+	if _, ok := err.(*internal.ChildWorkflowExecutionAlreadyStartedError); !ok {
+		panic("Second child must fail to start as duplicate")
+	}
+	return nil
+}
+
 func (w *Workflows) ActivityCancelRepro(ctx workflow.Context) ([]string, error) {
 	ctx, cancelFunc := workflow.WithCancel(ctx)
 
@@ -1860,7 +1883,7 @@ func (w *Workflows) HeartbeatSpecificCount(ctx workflow.Context, interval time.D
 func (w *Workflows) UpsertMemo(ctx workflow.Context, memo map[string]interface{}) (*commonpb.Memo, error) {
 	err := workflow.UpsertMemo(ctx, memo)
 	if err != nil {
-		return nil, err;
+		return nil, err
 	}
 	return workflow.GetInfo(ctx).Memo, nil
 }
@@ -1897,6 +1920,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ChildWorkflowSuccessWithParentClosePolicyTerminate)
 	worker.RegisterWorkflow(w.ChildWorkflowSuccessWithParentClosePolicyAbandon)
 	worker.RegisterWorkflow(w.ChildWorkflowCancelUnusualTransitionsRepro)
+	worker.RegisterWorkflow(w.ChildWorkflowDuplicatePanicRepro)
 	worker.RegisterWorkflow(w.ConsistentQueryWorkflow)
 	worker.RegisterWorkflow(w.ContextPropagator)
 	worker.RegisterWorkflow(w.ContinueAsNew)
