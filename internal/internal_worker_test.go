@@ -1379,6 +1379,24 @@ func testReplayWorkflowSideEffect(ctx Context) error {
 	return nil
 }
 
+func testReplayRunID(ctx Context) error {
+	info := GetWorkflowInfo(ctx)
+	if info.WorkflowExecution.ID == "TestID" && info.WorkflowExecution.RunID == "TestRunID" {
+		ao := ActivityOptions{
+			ScheduleToStartTimeout: time.Second,
+			StartToCloseTimeout:    time.Second,
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		var A1Result string
+		if err := ExecuteActivity(ctx, "A1", "first").Get(ctx, &A1Result); err != nil {
+			return err
+		}
+	}
+
+	getLogger().Info("workflow completed.")
+	return nil
+}
+
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_SideEffect() {
 	taskQueue := "taskQueue1"
 	testEvents := []*historypb.HistoryEvent{
@@ -1462,6 +1480,54 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_SideEffect() {
 	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflowSideEffect)
 	err = replayer.ReplayWorkflowHistory(logger, history)
+	require.NoError(s.T(), err)
+}
+
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_ReplayRunID() {
+	taskQueue := "taskQueue1"
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &commonpb.WorkflowType{Name: "testReplayRunID"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
+		}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
+		createTestEventActivityTaskScheduled(5, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "5",
+			ActivityType: &commonpb.ActivityType{Name: "A1"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+		}),
+		createTestEventActivityTaskStarted(6, &historypb.ActivityTaskStartedEventAttributes{
+			ScheduledEventId: 5,
+		}),
+		createTestEventActivityTaskCompleted(7, &historypb.ActivityTaskCompletedEventAttributes{
+			ScheduledEventId: 5,
+			StartedEventId:   6,
+		}),
+		createTestEventWorkflowTaskScheduled(8, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(9),
+		createTestEventWorkflowTaskCompleted(10, &historypb.WorkflowTaskCompletedEventAttributes{
+			ScheduledEventId: 8,
+			StartedEventId:   9,
+		}),
+		createTestEventWorkflowExecutionCompleted(11, &historypb.WorkflowExecutionCompletedEventAttributes{
+			WorkflowTaskCompletedEventId: 10,
+		}),
+	}
+
+	history := &historypb.History{Events: testEvents}
+	logger := getLogger()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
+	replayer.RegisterWorkflow(testReplayRunID)
+	err = replayer.ReplayWorkflowHistoryWithOptions(logger, history, ReplayWorkflowHistoryOptions{
+		OriginalExecution: WorkflowExecution{
+			ID:    "TestID",
+			RunID: "TestRunID",
+		},
+	})
 	require.NoError(s.T(), err)
 }
 

@@ -171,6 +171,14 @@ type (
 		// History can be loaded from a reader with client.HistoryFromJSON.
 		ReplayWorkflowHistory(logger log.Logger, history *historypb.History) error
 
+		// ReplayWorkflowHistoryWithOptions executes a single workflow task for the given json history file.
+		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
+		// The logger is an optional parameter. Defaults to the noop logger. Options allow aditional customization when
+		// replaying this history.
+		//
+		// History can be loaded from a reader with client.HistoryFromJSON.
+		ReplayWorkflowHistoryWithOptions(logger log.Logger, history *historypb.History, options ReplayWorkflowHistoryOptions) error
+
 		// ReplayWorkflowHistoryFromJSONFile executes a single workflow task for the json history file downloaded from the cli.
 		// To download the history file: temporal workflow showid <workflow_id> -of <output_filename>
 		// See https://github.com/temporalio/temporal/blob/master/tools/cli/README.md for full documentation
@@ -188,7 +196,8 @@ type (
 
 		// ReplayWorkflowExecution loads a workflow execution history from the Temporal service and executes a single workflow task for it.
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
-		// The logger is the only optional parameter. Defaults to the noop logger.
+		// The logger is the only optional parameter. Defaults to the noop logger. The Run ID and Workflow ID used during replay are derived
+		// from execution.
 		ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger log.Logger, namespace string, execution workflow.Execution) error
 	}
 
@@ -204,6 +213,9 @@ type (
 	// WorkflowReplayerOptions are options used for
 	// NewWorkflowReplayerWithOptions.
 	WorkflowReplayerOptions = internal.WorkflowReplayerOptions
+
+	// ReplayWorkflowHistoryOptions are options for replaying a workflow.
+	ReplayWorkflowHistoryOptions = internal.ReplayWorkflowHistoryOptions
 )
 
 const (
@@ -219,11 +231,12 @@ const (
 )
 
 // New creates an instance of worker for managing workflow and activity executions.
-//    client    - the client for use by the worker
-//    taskQueue - is the task queue name you use to identify your client worker, also
-//               identifies group of workflow and activity implementations that are
-//               hosted by a single worker process
-//    options  - configure any worker specific options like logger, metrics, identity
+//
+//	client    - the client for use by the worker
+//	taskQueue - is the task queue name you use to identify your client worker, also
+//	           identifies group of workflow and activity implementations that are
+//	           hosted by a single worker process
+//	options  - configure any worker specific options like logger, metrics, identity
 func New(
 	client client.Client,
 	taskQueue string,
