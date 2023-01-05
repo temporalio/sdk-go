@@ -26,8 +26,8 @@ import (
 	"fmt"
 	"go/ast"
 	"go/types"
-	"io/ioutil"
 	"log"
+	"os"
 	"regexp"
 	"strings"
 
@@ -202,7 +202,7 @@ func (configFileFlag) String() string { return "<built-in>" }
 
 func (c configFileFlag) Set(flag string) error {
 	// Load the file into YAML
-	b, err := ioutil.ReadFile(flag)
+	b, err := os.ReadFile(flag)
 	if err != nil {
 		return fmt.Errorf("failed reading config: %w", err)
 	}

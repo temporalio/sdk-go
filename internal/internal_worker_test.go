@@ -31,7 +31,6 @@ import (
 	"os"
 	"reflect"
 	"runtime"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -181,7 +180,8 @@ func (s *internalWorkerTestSuite) createLocalActivityMarkerDataForTest(activityI
 }
 
 func (s *internalWorkerTestSuite) createSideEffectMarkerDataForTest(payloads *commonpb.Payloads,
-	sideEffectID int64) map[string]*commonpb.Payloads {
+	sideEffectID int64,
+) map[string]*commonpb.Payloads {
 	idPayload, err := s.dataConverter.ToPayloads(sideEffectID)
 	s.NoError(err)
 	return map[string]*commonpb.Payloads{
@@ -1016,8 +1016,9 @@ func createHistoryForFailedToStartChildWorkflow(workflowType string) []*historyp
 		createTestEventWorkflowTaskStarted(3),
 		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
 		createTestEventStartChildWorkflowExecutionInitiated(5, &historypb.StartChildWorkflowExecutionInitiatedEventAttributes{
-			TaskQueue:  &taskqueuepb.TaskQueue{Name: taskQueue},
-			WorkflowId: "workflowId",
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+			WorkflowId:   "workflowId",
+			WorkflowType: &commonpb.WorkflowType{Name: "testWorkflow"},
 		}),
 		createTestEventStartChildWorkflowExecutionFailed(6, &historypb.StartChildWorkflowExecutionFailedEventAttributes{
 			WorkflowId:                   "workflowId",
@@ -1079,8 +1080,9 @@ func createHistoryForCancelChildWorkflowTests(workflowType string) []*historypb.
 		createTestEventWorkflowTaskStarted(3),
 		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
 		createTestEventStartChildWorkflowExecutionInitiated(5, &historypb.StartChildWorkflowExecutionInitiatedEventAttributes{
-			TaskQueue:  &taskqueuepb.TaskQueue{Name: taskQueue},
-			WorkflowId: "workflowId",
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+			WorkflowType: &commonpb.WorkflowType{Name: "testWorkflow"},
+			WorkflowId:   "workflowId",
 		}),
 		createTestEventTimerStarted(6, 6),
 		createTestEventChildWorkflowExecutionStarted(7, &historypb.ChildWorkflowExecutionStartedEventAttributes{
@@ -1171,8 +1173,9 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_ChildWorkflowCancell
 		createTestEventWorkflowTaskStarted(3),
 		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
 		createTestEventStartChildWorkflowExecutionInitiated(5, &historypb.StartChildWorkflowExecutionInitiatedEventAttributes{
-			TaskQueue:  &taskqueuepb.TaskQueue{Name: taskQueue},
-			WorkflowId: "workflowId",
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+			WorkflowId:   "workflowId",
+			WorkflowType: &commonpb.WorkflowType{Name: "testWorkflow"},
 		}),
 		createTestEventTimerStarted(6, 6),
 		createTestEventChildWorkflowExecutionStarted(7, &historypb.ChildWorkflowExecutionStartedEventAttributes{
@@ -1205,26 +1208,16 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_ChildWorkflowCancell
 			InitiatedEventId:  15,
 		}),
 		createTestEventWorkflowTaskScheduled(18, &historypb.WorkflowTaskScheduledEventAttributes{}),
-
-		createTestEventActivityTaskStarted(19, &historypb.ActivityTaskStartedEventAttributes{
-			ScheduledEventId: 16,
+		createTestEventWorkflowTaskStarted(19),
+		createTestEventWorkflowTaskCompleted(20, &historypb.WorkflowTaskCompletedEventAttributes{}),
+		createTestEventWorkflowTaskScheduled(21, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(22),
+		createTestEventWorkflowTaskCompleted(23, &historypb.WorkflowTaskCompletedEventAttributes{
+			ScheduledEventId: 21,
+			StartedEventId:   22,
 		}),
-		createTestEventWorkflowTaskStarted(20),
-		createTestEventWorkflowTaskCompleted(21, &historypb.WorkflowTaskCompletedEventAttributes{}),
-
-		createTestEventActivityTaskCompleted(22, &historypb.ActivityTaskCompletedEventAttributes{
-			ScheduledEventId: 16,
-			StartedEventId:   19,
-		}),
-
-		createTestEventWorkflowTaskScheduled(23, &historypb.WorkflowTaskScheduledEventAttributes{}),
-		createTestEventWorkflowTaskStarted(24),
-		createTestEventWorkflowTaskCompleted(25, &historypb.WorkflowTaskCompletedEventAttributes{
-			ScheduledEventId: 23,
-			StartedEventId:   24,
-		}),
-		createTestEventWorkflowExecutionCompleted(26, &historypb.WorkflowExecutionCompletedEventAttributes{
-			WorkflowTaskCompletedEventId: 25,
+		createTestEventWorkflowExecutionCompleted(24, &historypb.WorkflowExecutionCompletedEventAttributes{
+			WorkflowTaskCompletedEventId: 23,
 		}),
 	}
 
@@ -1265,7 +1258,6 @@ func testReplayWorkflowCancelWorkflowWhileSleepingWithActivities(ctx Context) er
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_CancelWorkflowWhileSleepingWithActivities() {
 	taskQueue := "taskQueue1"
 	testEvents := []*historypb.HistoryEvent{
-
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflowCancelWorkflowWhileSleepingWithActivities"},
 			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
@@ -1306,49 +1298,6 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_CancelWorkflowWhileS
 		fmt.Printf("replay failed.  Error: %v", err.Error())
 	}
 	require.NoError(s.T(), err)
-}
-
-func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Result_Mismatch() {
-	taskQueue := "taskQueue1"
-	result, _ := converter.GetDefaultDataConverter().ToPayloads("some-incorrect-result")
-	testEvents := []*historypb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
-			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflowLocalActivity"},
-			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
-			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
-		}),
-		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
-		createTestEventWorkflowTaskStarted(3),
-		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
-
-		createTestEventMarkerRecorded(5, &historypb.MarkerRecordedEventAttributes{
-			MarkerName:                   localActivityMarkerName,
-			Details:                      s.createLocalActivityMarkerDataForTest("1"),
-			WorkflowTaskCompletedEventId: 4,
-		}),
-		createTestEventMarkerRecorded(6, &historypb.MarkerRecordedEventAttributes{
-			MarkerName:                   localActivityMarkerName,
-			Details:                      s.createLocalActivityMarkerDataForTest("2"),
-			WorkflowTaskCompletedEventId: 4,
-		}),
-
-		createTestEventWorkflowExecutionCompleted(7, &historypb.WorkflowExecutionCompletedEventAttributes{
-			Result:                       result,
-			WorkflowTaskCompletedEventId: 4,
-		}),
-	}
-
-	history := &historypb.History{Events: testEvents}
-	logger := getLogger()
-	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
-	require.NoError(s.T(), err)
-	replayer.RegisterWorkflow(testReplayWorkflowLocalActivity)
-	err = replayer.ReplayWorkflowHistory(logger, history)
-	if err != nil {
-		fmt.Printf("replay failed.  Error: %v", err.Error())
-	}
-	require.Error(s.T(), err)
-	require.True(s.T(), strings.HasPrefix(err.Error(), "replay workflow doesn't return the same result as the last event"))
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity_Activity_Type_Mismatch() {
@@ -1748,7 +1697,8 @@ func createWorkerWithThrottle(
 	workerOptions := WorkerOptions{
 		WorkerActivitiesPerSecond:    20,
 		TaskQueueActivitiesPerSecond: activitiesPerSecond,
-		EnableSessionWorker:          true}
+		EnableSessionWorker:          true,
+	}
 
 	clientOptions := ClientOptions{
 		Namespace: namespace,
@@ -2133,15 +2083,19 @@ func testActivityReturnEmptyStruct() (testActivityResult, error) {
 	// expect to convert it to appropriate default value.
 	return testActivityResult{}, nil
 }
+
 func testActivityReturnNilStructPtr() (*testActivityResult, error) {
 	return nil, nil
 }
+
 func testActivityReturnStructPtr() (*testActivityResult, error) {
 	return &testActivityResult{Index: 10}, nil
 }
+
 func testActivityReturnNilStructPtrPtr() (**testActivityResult, error) {
 	return nil, nil
 }
+
 func testActivityReturnStructPtrPtr() (**testActivityResult, error) {
 	r := &testActivityResult{Index: 10}
 	return &r, nil
@@ -2266,7 +2220,8 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 		name: "test",
 		fn: func(arg1 int) (err error) {
 			return NewApplicationError("testReason", "", false, nil, "testStringDetails")
-		}}
+		},
+	}
 	_, e := a1.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
 	require.Error(t, e)
 	errWD := e.(*ApplicationError)
@@ -2279,7 +2234,8 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 		name: "test",
 		fn: func(arg1 int) (err error) {
 			return NewApplicationError("testReason", "", false, nil, testErrorDetails{T: "testErrorStack"})
-		}}
+		},
+	}
 	_, e = a2.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
 	require.Error(t, e)
 	errWD = e.(*ApplicationError)
@@ -2292,7 +2248,8 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 		name: "test",
 		fn: func(arg1 int) (result string, err error) {
 			return "testResult", NewApplicationError("testReason", "", false, nil, testErrorDetails{T: "testErrorStack3"})
-		}}
+		},
+	}
 	encResult, e := a3.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
 	var result string
 	err := dataConverter.FromPayloads(encResult, &result)
@@ -2308,7 +2265,8 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 		name: "test",
 		fn: func(arg1 int) (result string, err error) {
 			return "testResult4", NewApplicationError("testReason", "", false, nil, "testMultipleString", testErrorDetails{T: "testErrorStack4"})
-		}}
+		},
+	}
 	encResult, e = a4.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
 	err = dataConverter.FromPayloads(encResult, &result)
 	require.NoError(t, err)
@@ -2333,7 +2291,8 @@ func testActivityCanceledErrorHelper(ctx context.Context, t *testing.T, dataConv
 		name: "test",
 		fn: func(arg1 int) (err error) {
 			return NewCanceledError("testCancelStringDetails")
-		}}
+		},
+	}
 	_, e := a1.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
 	require.Error(t, e)
 	errWD := e.(*CanceledError)
@@ -2345,7 +2304,8 @@ func testActivityCanceledErrorHelper(ctx context.Context, t *testing.T, dataConv
 		name: "test",
 		fn: func(arg1 int) (err error) {
 			return NewCanceledError(testErrorDetails{T: "testCancelErrorStack"})
-		}}
+		},
+	}
 	_, e = a2.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
 	require.Error(t, e)
 	errWD = e.(*CanceledError)
@@ -2357,7 +2317,8 @@ func testActivityCanceledErrorHelper(ctx context.Context, t *testing.T, dataConv
 		name: "test",
 		fn: func(arg1 int) (result string, err error) {
 			return "testResult", NewCanceledError(testErrorDetails{T: "testErrorStack3"})
-		}}
+		},
+	}
 	encResult, e := a3.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
 	var r string
 	err := dataConverter.FromPayloads(encResult, &r)
@@ -2372,7 +2333,8 @@ func testActivityCanceledErrorHelper(ctx context.Context, t *testing.T, dataConv
 		name: "test",
 		fn: func(arg1 int) (result string, err error) {
 			return "testResult4", NewCanceledError("testMultipleString", testErrorDetails{T: "testErrorStack4"})
-		}}
+		},
+	}
 	encResult, e = a4.Execute(ctx, testEncodeFunctionArgs(dataConverter, 1))
 	err = dataConverter.FromPayloads(encResult, &r)
 	require.NoError(t, err)
@@ -2395,7 +2357,8 @@ func testActivityExecutionVariousTypesHelper(ctx context.Context, t *testing.T, 
 	a1 := activityExecutor{
 		fn: func(ctx context.Context, arg1 string) (*testWorkflowResult, error) {
 			return &testWorkflowResult{V: 1}, nil
-		}}
+		},
+	}
 	encResult, e := a1.Execute(ctx, testEncodeFunctionArgs(dataConverter, "test"))
 	require.NoError(t, e)
 	var r *testWorkflowResult
@@ -2406,7 +2369,8 @@ func testActivityExecutionVariousTypesHelper(ctx context.Context, t *testing.T, 
 	a2 := activityExecutor{
 		fn: func(ctx context.Context, arg1 *testWorkflowResult) (*testWorkflowResult, error) {
 			return &testWorkflowResult{V: 2}, nil
-		}}
+		},
+	}
 	encResult, e = a2.Execute(ctx, testEncodeFunctionArgs(dataConverter, r))
 	require.NoError(t, e)
 	err = dataConverter.FromPayloads(encResult, &r)
