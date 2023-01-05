@@ -26,6 +26,7 @@ package replaytests
 
 import (
 	"context"
+	"math/rand"
 	"time"
 
 	"go.temporal.io/sdk/activity"
@@ -122,4 +123,97 @@ func TimerWf(ctx workflow.Context) error {
 		_ = workflow.NewTimer(newCtx, 10*time.Minute).Get(ctx, nil)
 	}()
 	return workflow.NewTimer(ctx, time.Minute*10).Get(ctx, nil)
+}
+
+func LocalActivityWorkflow(ctx workflow.Context, name string) error {
+	ao := workflow.LocalActivityOptions{
+		ScheduleToCloseTimeout: time.Minute,
+	}
+
+	ctx = workflow.WithLocalActivityOptions(ctx, ao)
+	var helloworldResult string
+	return workflow.ExecuteLocalActivity(ctx, helloworldActivity, name).Get(ctx, &helloworldResult)
+}
+
+func ContinueAsNewWorkflow(ctx workflow.Context, continueAsNew bool) error {
+	if continueAsNew {
+		return workflow.NewContinueAsNewError(ctx, ContinueAsNewWorkflow, false)
+	}
+	return nil
+}
+
+func UpsertMemoWorkflow(ctx workflow.Context, memo string) error {
+	err := workflow.UpsertMemo(ctx, map[string]interface{}{
+		"Test key": memo,
+	})
+	if err != nil {
+		return err
+	}
+	ao := workflow.ActivityOptions{
+		ScheduleToStartTimeout: time.Minute,
+		StartToCloseTimeout:    time.Minute,
+		HeartbeatTimeout:       time.Second * 20,
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+	err = workflow.ExecuteActivity(ctx, helloworldActivity, memo).Get(ctx, &memo)
+	if err != nil {
+		return err
+	}
+
+	return workflow.UpsertMemo(ctx, map[string]interface{}{
+		"Test key": memo,
+	})
+}
+
+func UpsertSearchAttributesWorkflow(ctx workflow.Context, field string) error {
+	err := workflow.UpsertSearchAttributes(ctx, map[string]interface{}{
+		"CustomStringField": field,
+	})
+	if err != nil {
+		return err
+	}
+
+	ao := workflow.ActivityOptions{
+		ScheduleToStartTimeout: time.Minute,
+		StartToCloseTimeout:    time.Minute,
+		HeartbeatTimeout:       time.Second * 20,
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+	err = workflow.ExecuteActivity(ctx, helloworldActivity, field).Get(ctx, &field)
+	if err != nil {
+		return err
+	}
+
+	return workflow.UpsertSearchAttributes(ctx, map[string]interface{}{
+		"CustomStringField": field,
+	})
+}
+
+func SideEffectWorkflow(ctx workflow.Context, field string) error {
+	encodedRandom := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+		return rand.Intn(100)
+	})
+
+	var random int
+	err := encodedRandom.Get(&random)
+	if err != nil {
+		return err
+	}
+
+	ao := workflow.ActivityOptions{
+		ScheduleToStartTimeout: time.Minute,
+		StartToCloseTimeout:    time.Minute,
+		HeartbeatTimeout:       time.Second * 20,
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+	err = workflow.ExecuteActivity(ctx, helloworldActivity, field).Get(ctx, &field)
+	if err != nil {
+		return err
+	}
+
+	return encodedRandom.Get(&random)
+}
+
+func EmptyWorkflow(ctx workflow.Context, _ string) error {
+	return nil
 }

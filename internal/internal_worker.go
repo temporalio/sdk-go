@@ -43,12 +43,12 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/jsonpb"
-	"github.com/gogo/protobuf/proto"
 	"github.com/golang/mock/gomock"
 	"github.com/pborman/uuid"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	interactionpb "go.temporal.io/api/interaction/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 
@@ -295,7 +295,8 @@ func newWorkflowTaskWorkerInternal(
 		identity:          params.Identity,
 		workerType:        "WorkflowWorker",
 		stopTimeout:       params.WorkerStopTimeout,
-		fatalErrCb:        params.WorkerFatalErrorCallback},
+		fatalErrCb:        params.WorkerFatalErrorCallback,
+	},
 		params.Logger,
 		params.MetricsHandler,
 		nil,
@@ -319,7 +320,8 @@ func newWorkflowTaskWorkerInternal(
 		identity:          params.Identity,
 		workerType:        "LocalActivityWorker",
 		stopTimeout:       params.WorkerStopTimeout,
-		fatalErrCb:        params.WorkerFatalErrorCallback},
+		fatalErrCb:        params.WorkerFatalErrorCallback,
+	},
 		params.Logger,
 		params.MetricsHandler,
 		nil,
@@ -436,7 +438,8 @@ func newActivityTaskWorker(taskHandler ActivityTaskHandler, service workflowserv
 			workerType:        "ActivityWorker",
 			stopTimeout:       workerParams.WorkerStopTimeout,
 			fatalErrCb:        workerParams.WorkerFatalErrorCallback,
-			userContextCancel: workerParams.UserContextCancel},
+			userContextCancel: workerParams.UserContextCancel,
+		},
 		workerParams.Logger,
 		workerParams.MetricsHandler,
 		sessionTokenBucket,
@@ -961,8 +964,10 @@ func (aw *AggregatedWorker) assertNotStopped() {
 	}
 }
 
-var binaryChecksum string
-var binaryChecksumLock sync.Mutex
+var (
+	binaryChecksum     string
+	binaryChecksumLock sync.Mutex
+)
 
 // SetBinaryChecksum sets the identifier of the binary(aka BinaryChecksum).
 // The identifier is mainly used in recording reset points when respondWorkflowTaskCompleted. For each workflow, the very first
@@ -1156,7 +1161,6 @@ func (aw *WorkflowReplayer) ReplayWorkflowHistoryFromJSONFile(logger log.Logger,
 // The logger is an optional parameter. Defaults to the noop logger.
 func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(logger log.Logger, jsonfileName string, lastEventID int64) error {
 	history, err := extractHistoryFromFile(jsonfileName, lastEventID)
-
 	if err != nil {
 		return err
 	}
@@ -1210,6 +1214,23 @@ func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service
 	return aw.replayWorkflowHistory(logger, service, namespace, &history)
 }
 
+// inferInvocations extracts the set of *interactionpb.Invocation objects that
+// should be attached to a workflow task (i.e. the
+// PollWorkflowTaskQueueResponse.Interactions) if that task were to carry the
+// provided slice of history events.
+func inferInvocations(events []*historypb.HistoryEvent) []*interactionpb.Invocation {
+	var invocations []*interactionpb.Invocation
+	for _, e := range events {
+		if attrs := e.GetWorkflowUpdateAcceptedEventAttributes(); attrs != nil {
+			invocations = append(invocations, &interactionpb.Invocation{
+				Meta:  attrs.Meta,
+				Input: attrs.Input,
+			})
+		}
+	}
+	return invocations
+}
+
 func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service workflowservice.WorkflowServiceClient, namespace string, history *historypb.History) error {
 	taskQueue := "ReplayTaskQueue"
 	events := history.Events
@@ -1245,6 +1266,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 		WorkflowExecution:      execution,
 		History:                history,
 		PreviousStartedEventId: math.MaxInt64,
+		Interactions:           inferInvocations(history.Events),
 	}
 
 	iterator := &historyIteratorImpl{
@@ -1286,20 +1308,12 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 			for _, d := range completeReq.Commands {
 				if d.GetCommandType() == enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION {
 					if last.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW {
-						inputA := d.GetContinueAsNewWorkflowExecutionCommandAttributes().GetInput()
-						inputB := last.GetWorkflowExecutionContinuedAsNewEventAttributes().GetInput()
-						if proto.Equal(inputA, inputB) {
-							return nil
-						}
+						return nil
 					}
 				}
 				if d.GetCommandType() == enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION {
 					if last.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED {
-						resultA := last.GetWorkflowExecutionCompletedEventAttributes().GetResult()
-						resultB := d.GetCompleteWorkflowExecutionCommandAttributes().GetResult()
-						if proto.Equal(resultA, resultB) {
-							return nil
-						}
+						return nil
 					}
 				}
 			}

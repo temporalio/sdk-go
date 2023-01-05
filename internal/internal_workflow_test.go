@@ -633,14 +633,14 @@ func signalWorkflowTest(ctx Context) ([]byte, error) {
 	s.Select(ctx)
 
 	// Check un handled signals.
-	list := getWorkflowEnvOptions(ctx).getUnhandledSignals()
+	list := getWorkflowEnvOptions(ctx).getUnhandledSignalNames()
 	if len(list) != 1 || list[0] != "testSig3" {
 		panic("expecting one unhandled signal")
 	}
 	ch3 := GetSignalChannel(ctx, "testSig3")
 	ch3.Receive(ctx, &v)
 	result += v
-	list = getWorkflowEnvOptions(ctx).getUnhandledSignals()
+	list = getWorkflowEnvOptions(ctx).getUnhandledSignalNames()
 	if len(list) != 0 {
 		panic("expecting no unhandled signals")
 	}
@@ -1395,7 +1395,7 @@ func MustSetUpdateHandler(
 	ctx Context,
 	name string,
 	handler interface{},
-	opts UpdateOptions,
+	opts UpdateHandlerOptions,
 ) {
 	t.Helper()
 	require.NoError(t, SetUpdateHandler(ctx, name, handler, opts))
@@ -1415,7 +1415,7 @@ func TestUpdateHandlerPanicSafety(t *testing.T) {
 	require.NoError(t, err)
 
 	panicFunc := func() error { panic("intentional") }
-	MustSetUpdateHandler(t, ctx, t.Name(), panicFunc, UpdateOptions{Validator: panicFunc})
+	MustSetUpdateHandler(t, ctx, t.Name(), panicFunc, UpdateHandlerOptions{Validator: panicFunc})
 	in := UpdateInput{Name: t.Name(), Args: []interface{}{}}
 
 	t.Run("ValidateUpdate", func(t *testing.T) {
@@ -1463,7 +1463,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	runOnCallingThread := func(ctx Context, _ string, f func(Context)) Context { f(ctx); return ctx }
 
 	t.Run("no handler registered", func(t *testing.T) {
-		MustSetUpdateHandler(t, ctx, "unused_handler", func() error { panic("not called") }, UpdateOptions{})
+		MustSetUpdateHandler(t, ctx, "unused_handler", func() error { panic("not called") }, UpdateHandlerOptions{})
 		var rejectErr error
 		defaultUpdateHandler(ctx, "will_not_be_found", args, hdr, &testUpdateCallbacks{
 			RejectImpl: func(err error) { rejectErr = err },
@@ -1474,7 +1474,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	})
 
 	t.Run("malformed serialized input", func(t *testing.T) {
-		MustSetUpdateHandler(t, ctx, t.Name(), func(Context, int) error { return nil }, UpdateOptions{})
+		MustSetUpdateHandler(t, ctx, t.Name(), func(Context, int) error { return nil }, UpdateHandlerOptions{})
 		junkArgs := &commonpb.Payloads{Payloads: []*commonpb.Payload{&commonpb.Payload{}}}
 		var rejectErr error
 		defaultUpdateHandler(ctx, t.Name(), junkArgs, hdr, &testUpdateCallbacks{
@@ -1486,7 +1486,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	t.Run("reject from validator", func(t *testing.T) {
 		updateFunc := func(Context, string) error { panic("should not get called") }
 		validatorFunc := func(Context, string) error { return errors.New("expected") }
-		MustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateOptions{Validator: validatorFunc})
+		MustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateHandlerOptions{Validator: validatorFunc})
 		var rejectErr error
 		defaultUpdateHandler(ctx, t.Name(), args, hdr, &testUpdateCallbacks{
 			RejectImpl: func(err error) { rejectErr = err },
@@ -1496,7 +1496,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 
 	t.Run("error from update func", func(t *testing.T) {
 		updateFunc := func(Context, string) error { return errors.New("expected") }
-		MustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateOptions{})
+		MustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateHandlerOptions{})
 		var (
 			resultErr error
 			accepted  bool
@@ -1516,7 +1516,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 
 	t.Run("update success", func(t *testing.T) {
 		updateFunc := func(ctx Context, s string) (string, error) { return s + " success!", nil }
-		MustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateOptions{})
+		MustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateHandlerOptions{})
 		var (
 			resultErr error
 			accepted  bool
@@ -1616,6 +1616,16 @@ func TestParamValidator(t *testing.T) {
 			Check: require.NoError,
 		},
 		{
+			Fn0:   func(Context, int) {},
+			Fn1:   func(int) {},
+			Check: require.NoError,
+		},
+		{
+			Fn0:   func(int) {},
+			Fn1:   func(Context, int) {},
+			Check: require.NoError,
+		},
+		{
 			Fn0:   func(int) {},
 			Fn1:   func(int, ...struct{}) {},
 			Check: require.Error,
@@ -1657,7 +1667,7 @@ func TestParamValidator(t *testing.T) {
 		},
 	} {
 		t.Run(strconv.FormatInt(int64(i), 10), func(t *testing.T) {
-			tc.Check(t, validateSameParams(tc.Fn0, tc.Fn1))
+			tc.Check(t, validateEquivalentParams(tc.Fn0, tc.Fn1))
 		})
 	}
 }

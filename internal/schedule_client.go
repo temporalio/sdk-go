@@ -51,7 +51,7 @@ type (
 	// ScheduleCalendarSpec is an event specification relative to the calendar, similar to a traditional cron specification.
 	// A timestamp matches if at least one range of each field matches the
 	// corresponding fields of the timestamp, except for year: if year is missing,
-	// that means all years match. For all fields besides year, at least one Range
+	// that means all years match. For all fields besides year, at least one Range must be present to match anything.
 	ScheduleCalendarSpec struct {
 		// Second range to match (0-59).
 		Second []ScheduleRange
@@ -181,7 +181,7 @@ type (
 
 		// Skip - Any matching times will be skipped.
 		//
-		// All aspects of the schedulepb.ScheduleCalendarSpec—including seconds—must match a time for the time to be skipped.
+		// All fields of the ScheduleCalendarSpec—including seconds—must match a time for the time to be skipped.
 		Skip []ScheduleCalendarSpec
 
 		// StartAt - Any times before `startAt` will be skipped. Together, `startAt` and `endAt` make an inclusive interval.
