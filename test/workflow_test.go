@@ -537,7 +537,7 @@ func (w *Workflows) ChildWorkflowDuplicatePanicRepro(ctx workflow.Context) error
 		return err
 	}
 	err = workflow.ExecuteChildWorkflow(childCtx, w.childWorkflowWaitOnSignal).Get(ctx, nil)
-	if _, ok := err.(*internal.ChildWorkflowExecutionAlreadyStartedError); !ok {
+	if _, ok := err.(*temporal.ChildWorkflowExecutionAlreadyStartedError); !ok {
 		panic("Second child must fail to start as duplicate")
 	}
 	return nil
