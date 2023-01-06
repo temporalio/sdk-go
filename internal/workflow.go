@@ -317,8 +317,10 @@ type (
 		isMethod bool
 	}
 
-	// UpdateOptions consists of options for executing a named workflow update.
-	UpdateOptions struct {
+	// UpdateHandlerOptions consists of options for executing a named workflow update.
+	//
+	// NOTE: Experimental
+	UpdateHandlerOptions struct {
 		// Validator is an optional (i.e. can be left nil) func with exactly the
 		// same type signature as the required update handler func but returning
 		// only a single value of type error. The implementation of this
@@ -513,16 +515,20 @@ func (wc *workflowEnvironmentInterceptor) Init(outbound WorkflowOutboundIntercep
 // Context can be used to pass the settings for this activity.
 // For example: task queue that this need to be routed, timeouts that need to be configured.
 // Use ActivityOptions to pass down the options.
-//  ao := ActivityOptions{
-// 	    TaskQueue: "exampleTaskQueue",
-// 	    ScheduleToStartTimeout: 10 * time.Second,
-// 	    StartToCloseTimeout: 5 * time.Second,
-// 	    ScheduleToCloseTimeout: 10 * time.Second,
-// 	    HeartbeatTimeout: 0,
-// 	}
-//	ctx := WithActivityOptions(ctx, ao)
+//
+//	ao := ActivityOptions{
+//		TaskQueue: "exampleTaskQueue",
+//		ScheduleToStartTimeout: 10 * time.Second,
+//		StartToCloseTimeout: 5 * time.Second,
+//		ScheduleToCloseTimeout: 10 * time.Second,
+//		HeartbeatTimeout: 0,
+//	}
+//		ctx := WithActivityOptions(ctx, ao)
+//
 // Or to override a single option
-//  ctx := WithTaskQueue(ctx, "exampleTaskQueue")
+//
+//	ctx := WithTaskQueue(ctx, "exampleTaskQueue")
+//
 // Input activity is either an activity name (string) or a function representing an activity that is getting scheduled.
 // Input args are the arguments that need to be passed to the scheduled activity.
 //
@@ -630,10 +636,12 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 //
 // Context can be used to pass the settings for this local activity.
 // For now there is only one setting for timeout to be set:
-//  lao := LocalActivityOptions{
-// 	    ScheduleToCloseTimeout: 5 * time.Second,
-// 	}
+//
+//	lao := LocalActivityOptions{
+//		ScheduleToCloseTimeout: 5 * time.Second,
+//	}
 //	ctx := WithLocalActivityOptions(ctx, lao)
+//
 // The timeout here should be relative shorter than the WorkflowTaskTimeout of the workflow. If you need a
 // longer timeout, you probably should not use local activity and instead should use regular activity. Local activity is
 // designed to be used for short living activities (usually finishes within seconds).
@@ -822,11 +830,13 @@ func (wc *workflowEnvironmentInterceptor) scheduleLocalActivity(ctx Context, par
 // Context can be used to pass the settings for the child workflow.
 // For example: task queue that this child workflow should be routed, timeouts that need to be configured.
 // Use ChildWorkflowOptions to pass down the options.
-//  cwo := ChildWorkflowOptions{
-// 	    WorkflowExecutionTimeout: 10 * time.Minute,
-// 	    WorkflowTaskTimeout: time.Minute,
-// 	}
-//  ctx := WithChildWorkflowOptions(ctx, cwo)
+//
+//	 cwo := ChildWorkflowOptions{
+//		WorkflowExecutionTimeout: 10 * time.Minute,
+//		WorkflowTaskTimeout: time.Minute,
+//	 }
+//	 ctx := WithChildWorkflowOptions(ctx, cwo)
+//
 // Input childWorkflow is either a workflow name or a workflow function that is getting scheduled.
 // Input args are the arguments that need to be passed to the child workflow function represented by childWorkflow.
 //
@@ -1018,8 +1028,6 @@ func (wc *workflowEnvironmentInterceptor) Now(ctx Context) time.Time {
 // this NewTimer() to get the timer instead of the Go lang library one(timer.NewTimer()). You can cancel the pending
 // timer by cancel the Context (using context from workflow.WithCancel(ctx)) and that will cancel the timer. After timer
 // is canceled, the returned Future become ready, and Future.Get() will return *CanceledError.
-// The current timer resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
-// subjected to change in the future.
 func NewTimer(ctx Context, d time.Duration) Future {
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.NewTimer(ctx, d)
@@ -1063,8 +1071,6 @@ func (wc *workflowEnvironmentInterceptor) NewTimer(ctx Context, d time.Duration)
 // Sleep() returns nil if the duration d is passed, or it returns *CanceledError if the ctx is canceled. There are 2
 // reasons the ctx could be canceled: 1) your workflow code cancel the ctx (with workflow.WithCancel(ctx));
 // 2) your workflow itself is canceled by external request.
-// The current timer resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
-// subjected to change in the future.
 func Sleep(ctx Context, d time.Duration) (err error) {
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.Sleep(ctx, d)
@@ -1082,7 +1088,9 @@ func (wc *workflowEnvironmentInterceptor) Sleep(ctx Context, d time.Duration) (e
 // then the currently running instance of that workflowID will be used.
 // By default, the current workflow's namespace will be used as target namespace. However, you can specify a different namespace
 // of the target workflow using the context like:
+//
 //	ctx := WithWorkflowNamespace(ctx, "namespace")
+//
 // RequestCancelExternalWorkflow return Future with failure or empty success result.
 func RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future {
 	i := getWorkflowOutboundInterceptor(ctx)
@@ -1119,7 +1127,9 @@ func (wc *workflowEnvironmentInterceptor) RequestCancelExternalWorkflow(ctx Cont
 // then the currently running instance of that workflowID will be used.
 // By default, the current workflow's namespace will be used as target namespace. However, you can specify a different namespace
 // of the target workflow using the context like:
+//
 //	ctx := WithWorkflowNamespace(ctx, "namespace")
+//
 // SignalExternalWorkflow return Future with failure or empty success result.
 func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future {
 	i := getWorkflowOutboundInterceptor(ctx)
@@ -1188,25 +1198,29 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 // The value has to deterministic when replay;
 // The value has to be Json serializable.
 // UpsertSearchAttributes will merge attributes to existing map in workflow, for example workflow code:
-//   func MyWorkflow(ctx workflow.Context, input string) error {
-//	   attr1 := map[string]interface{}{
-//		   "CustomIntField": 1,
-//		   "CustomBoolField": true,
-//	   }
-//	   workflow.UpsertSearchAttributes(ctx, attr1)
 //
-//	   attr2 := map[string]interface{}{
-//		   "CustomIntField": 2,
-//		   "CustomKeywordField": "seattle",
-//	   }
-//	   workflow.UpsertSearchAttributes(ctx, attr2)
-//   }
+//	func MyWorkflow(ctx workflow.Context, input string) error {
+//		attr1 := map[string]interface{}{
+//			"CustomIntField": 1,
+//			"CustomBoolField": true,
+//		}
+//		workflow.UpsertSearchAttributes(ctx, attr1)
+//
+//		attr2 := map[string]interface{}{
+//			"CustomIntField": 2,
+//			"CustomKeywordField": "seattle",
+//		}
+//		workflow.UpsertSearchAttributes(ctx, attr2)
+//	}
+//
 // will eventually have search attributes:
-//   map[string]interface{}{
-//   	"CustomIntField": 2,
-//   	"CustomBoolField": true,
-//   	"CustomKeywordField": "seattle",
-//   }
+//
+//	map[string]interface{}{
+//		"CustomIntField": 2,
+//		"CustomBoolField": true,
+//		"CustomKeywordField": "seattle",
+//	}
+//
 // This is only supported when using ElasticSearch.
 func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error {
 	i := getWorkflowOutboundInterceptor(ctx)
@@ -1403,33 +1417,36 @@ func (b EncodedValue) HasValue() bool {
 //
 // Caution: do not use SideEffect to modify closures. Always retrieve result from SideEffect's encoded return value.
 // For example this code is BROKEN:
-//  // Bad example:
-//  var random int
-//  workflow.SideEffect(func(ctx workflow.Context) interface{} {
-//         random = rand.Intn(100)
-//         return nil
-//  })
-//  // random will always be 0 in replay, thus this code is non-deterministic
-//  if random < 50 {
-//         ....
-//  } else {
-//         ....
-//  }
+//
+//	// Bad example:
+//	var random int
+//	workflow.SideEffect(func(ctx workflow.Context) interface{} {
+//		random = rand.Intn(100)
+//		return nil
+//	})
+//	// random will always be 0 in replay, thus this code is non-deterministic
+//	if random < 50 {
+//		....
+//	} else {
+//		....
+//	}
+//
 // On replay the provided function is not executed, the random will always be 0, and the workflow could takes a
 // different path breaking the determinism.
 //
 // Here is the correct way to use SideEffect:
-//  // Good example:
-//  encodedRandom := SideEffect(func(ctx workflow.Context) interface{} {
-//        return rand.Intn(100)
-//  })
-//  var random int
-//  encodedRandom.Get(&random)
-//  if random < 50 {
-//         ....
-//  } else {
-//         ....
-//  }
+//
+//	// Good example:
+//	encodedRandom := SideEffect(func(ctx workflow.Context) interface{} {
+//		return rand.Intn(100)
+//	})
+//	var random int
+//	encodedRandom.Get(&random)
+//	if random < 50 {
+//		....
+//	} else {
+//		....
+//	}
 func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedValue {
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.SideEffect(ctx, f)
@@ -1494,38 +1511,46 @@ const TemporalChangeVersion = "TemporalChangeVersion"
 // workflow history as a marker event. Even if maxSupported version is changed the version that was recorded is
 // returned on replay. DefaultVersion constant contains version of code that wasn't versioned before.
 // For example initially workflow has the following code:
-//  err = workflow.ExecuteActivity(ctx, foo).Get(ctx, nil)
+//
+//	err = workflow.ExecuteActivity(ctx, foo).Get(ctx, nil)
+//
 // it should be updated to
-//  err = workflow.ExecuteActivity(ctx, bar).Get(ctx, nil)
+//
+//	err = workflow.ExecuteActivity(ctx, bar).Get(ctx, nil)
+//
 // The backwards compatible way to execute the update is
-//  v :=  GetVersion(ctx, "fooChange", DefaultVersion, 1)
-//  if v  == DefaultVersion {
-//      err = workflow.ExecuteActivity(ctx, foo).Get(ctx, nil)
-//  } else {
-//      err = workflow.ExecuteActivity(ctx, bar).Get(ctx, nil)
-//  }
+//
+//	v :=  GetVersion(ctx, "fooChange", DefaultVersion, 1)
+//	if v  == DefaultVersion {
+//	    err = workflow.ExecuteActivity(ctx, foo).Get(ctx, nil)
+//	} else {
+//	    err = workflow.ExecuteActivity(ctx, bar).Get(ctx, nil)
+//	}
 //
 // Then bar has to be changed to baz:
-//  v :=  GetVersion(ctx, "fooChange", DefaultVersion, 2)
-//  if v  == DefaultVersion {
-//      err = workflow.ExecuteActivity(ctx, foo).Get(ctx, nil)
-//  } else if v == 1 {
-//      err = workflow.ExecuteActivity(ctx, bar).Get(ctx, nil)
-//  } else {
-//      err = workflow.ExecuteActivity(ctx, baz).Get(ctx, nil)
-//  }
+//
+//	v :=  GetVersion(ctx, "fooChange", DefaultVersion, 2)
+//	if v  == DefaultVersion {
+//	    err = workflow.ExecuteActivity(ctx, foo).Get(ctx, nil)
+//	} else if v == 1 {
+//	    err = workflow.ExecuteActivity(ctx, bar).Get(ctx, nil)
+//	} else {
+//	    err = workflow.ExecuteActivity(ctx, baz).Get(ctx, nil)
+//	}
 //
 // Later when there are no workflow executions running DefaultVersion the correspondent branch can be removed:
-//  v :=  GetVersion(ctx, "fooChange", 1, 2)
-//  if v == 1 {
-//      err = workflow.ExecuteActivity(ctx, bar).Get(ctx, nil)
-//  } else {
-//      err = workflow.ExecuteActivity(ctx, baz).Get(ctx, nil)
-//  }
+//
+//	v :=  GetVersion(ctx, "fooChange", 1, 2)
+//	if v == 1 {
+//	    err = workflow.ExecuteActivity(ctx, bar).Get(ctx, nil)
+//	} else {
+//	    err = workflow.ExecuteActivity(ctx, baz).Get(ctx, nil)
+//	}
 //
 // It is recommended to keep the GetVersion() call even if single branch is left:
-//  GetVersion(ctx, "fooChange", 2, 2)
-//  err = workflow.ExecuteActivity(ctx, baz).Get(ctx, nil)
+//
+//	GetVersion(ctx, "fooChange", 2, 2)
+//	err = workflow.ExecuteActivity(ctx, baz).Get(ctx, nil)
 //
 // The reason to keep it is: 1) it ensures that if there is older version execution still running, it will fail here
 // and not proceed; 2) if you ever need to make more changes for “fooChange”, for example change activity from baz to qux,
@@ -1537,12 +1562,12 @@ const TemporalChangeVersion = "TemporalChangeVersion"
 // as changeID. If you ever need to make changes to that same part like change from baz to qux, you would need to use a
 // different changeID like “fooChange-fix2”, and start minVersion from DefaultVersion again. The code would looks like:
 //
-//  v := workflow.GetVersion(ctx, "fooChange-fix2", workflow.DefaultVersion, 1)
-//  if v == workflow.DefaultVersion {
-//    err = workflow.ExecuteActivity(ctx, baz, data).Get(ctx, nil)
-//  } else {
-//    err = workflow.ExecuteActivity(ctx, qux, data).Get(ctx, nil)
-//  }
+//	v := workflow.GetVersion(ctx, "fooChange-fix2", workflow.DefaultVersion, 1)
+//	if v == workflow.DefaultVersion {
+//		err = workflow.ExecuteActivity(ctx, baz, data).Get(ctx, nil)
+//	} else {
+//		err = workflow.ExecuteActivity(ctx, qux, data).Get(ctx, nil)
+//	}
 func GetVersion(ctx Context, changeID string, minSupported, maxSupported Version) Version {
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.GetVersion(ctx, changeID, minSupported, maxSupported)
@@ -1563,48 +1588,64 @@ func (wc *workflowEnvironmentInterceptor) GetVersion(ctx Context, changeID strin
 // Channel.Get() or Future.Get(). Trying to do so in query handler code will fail the query and client will receive
 // QueryFailedError.
 // Example of workflow code that support query type "current_state":
-//  func MyWorkflow(ctx workflow.Context, input string) error {
-//    currentState := "started" // this could be any serializable struct
-//    err := workflow.SetQueryHandler(ctx, "current_state", func() (string, error) {
-//      return currentState, nil
-//    })
-//    if err != nil {
-//      currentState = "failed to register query handler"
-//      return err
-//    }
-//    // your normal workflow code begins here, and you update the currentState as the code makes progress.
-//    currentState = "waiting timer"
-//    err = NewTimer(ctx, time.Hour).Get(ctx, nil)
-//    if err != nil {
-//      currentState = "timer failed"
-//      return err
-//    }
 //
-//    currentState = "waiting activity"
-//    ctx = WithActivityOptions(ctx, myActivityOptions)
-//    err = ExecuteActivity(ctx, MyActivity, "my_input").Get(ctx, nil)
-//    if err != nil {
-//      currentState = "activity failed"
-//      return err
-//    }
-//    currentState = "done"
-//    return nil
-//  }
+//	func MyWorkflow(ctx workflow.Context, input string) error {
+//		currentState := "started" // this could be any serializable struct
+//		err := workflow.SetQueryHandler(ctx, "current_state", func() (string, error) {
+//			return currentState, nil
+//		})
+//		if err != nil {
+//			currentState = "failed to register query handler"
+//			return err
+//		}
+//		// your normal workflow code begins here, and you update the currentState as the code makes progress.
+//		currentState = "waiting timer"
+//		err = NewTimer(ctx, time.Hour).Get(ctx, nil)
+//		if err != nil {
+//			currentState = "timer failed"
+//			return err
+//		}
+//
+//		currentState = "waiting activity"
+//		ctx = WithActivityOptions(ctx, myActivityOptions)
+//		err = ExecuteActivity(ctx, MyActivity, "my_input").Get(ctx, nil)
+//		if err != nil {
+//			currentState = "activity failed"
+//			return err
+//		}
+//		currentState = "done"
+//		return nil
+//	}
 func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.SetQueryHandler(ctx, queryType, handler)
 }
 
-// SetUpdateHandler sets the update callback function and (optionally) an update
-// validator function for a given name. The handler must be a func that takes any
-// number of values and returns either a single error or a serializable result
-// and an error. The validator func (if specified) takes the exact same
-// parameters as the handler and returns a single error. Both the handler and
-// the validator can optionally take a workflow.Context as their first
-// parameter. The validator function MUST NOT mutate workflow state in any way,
-// much like a query handler function. The update handler function however is
-// free to do anything that normal workflow code would do.
-func SetUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateOptions) error {
+// SetUpdateHandler binds an update handler function to the specified
+// name such that update invocations specifying that name will invoke the
+// handler.  The handler function can take as input any number of parameters so
+// long as they can be serialized/deserialized by the system. The handler can
+// take a workflow.Context as its first parameter but this is not required. The
+// update handler must return either a single error or a single serializable
+// object along with a single error. The update handler function is invoked in
+// the context of the workflow and thus is subject to the same restrictions as
+// workflow code, namely, the update handler must be deterministic. As with
+// other workflow code, update code is free to invoke and wait on the results of
+// activities. Update handler code is free to mutate workflow state.
+//
+// This registration can optionally specify (through UpdateHandlerOptions) an
+// update validation function. If provided, this function will be invoked before
+// the update handler itself is invoked and if this function returns an error,
+// the update request will be considered to have been rejected and as such will
+// not occupy any space in the workflow history. Validation functions must take
+// as inputs the same parameters as the associated update handler but my vary
+// from said handler by the presence/absence of a workflow.Context as the first
+// parameter. Validation handlers must only return a single error. Validation
+// handlers must be deterministic and can observe workflow state but must not
+// mutate workflow state in any way.
+//
+// NOTE: Experimental
+func SetUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions) error {
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.SetUpdateHandler(ctx, updateName, handler, opts)
 }
@@ -1616,7 +1657,7 @@ func (wc *workflowEnvironmentInterceptor) SetQueryHandler(ctx Context, queryType
 	return setQueryHandler(ctx, queryType, handler)
 }
 
-func (wc *workflowEnvironmentInterceptor) SetUpdateHandler(ctx Context, name string, handler interface{}, opts UpdateOptions) error {
+func (wc *workflowEnvironmentInterceptor) SetUpdateHandler(ctx Context, name string, handler interface{}, opts UpdateHandlerOptions) error {
 	if strings.HasPrefix(name, "__") {
 		return errors.New("update names starting with '__' are reserved for internal use")
 	}

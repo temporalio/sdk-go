@@ -43,12 +43,12 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/jsonpb"
-	"github.com/gogo/protobuf/proto"
 	"github.com/golang/mock/gomock"
 	"github.com/pborman/uuid"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	interactionpb "go.temporal.io/api/interaction/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 
@@ -295,7 +295,8 @@ func newWorkflowTaskWorkerInternal(
 		identity:          params.Identity,
 		workerType:        "WorkflowWorker",
 		stopTimeout:       params.WorkerStopTimeout,
-		fatalErrCb:        params.WorkerFatalErrorCallback},
+		fatalErrCb:        params.WorkerFatalErrorCallback,
+	},
 		params.Logger,
 		params.MetricsHandler,
 		nil,
@@ -319,7 +320,8 @@ func newWorkflowTaskWorkerInternal(
 		identity:          params.Identity,
 		workerType:        "LocalActivityWorker",
 		stopTimeout:       params.WorkerStopTimeout,
-		fatalErrCb:        params.WorkerFatalErrorCallback},
+		fatalErrCb:        params.WorkerFatalErrorCallback,
+	},
 		params.Logger,
 		params.MetricsHandler,
 		nil,
@@ -436,7 +438,8 @@ func newActivityTaskWorker(taskHandler ActivityTaskHandler, service workflowserv
 			workerType:        "ActivityWorker",
 			stopTimeout:       workerParams.WorkerStopTimeout,
 			fatalErrCb:        workerParams.WorkerFatalErrorCallback,
-			userContextCancel: workerParams.UserContextCancel},
+			userContextCancel: workerParams.UserContextCancel,
+		},
 		workerParams.Logger,
 		workerParams.MetricsHandler,
 		sessionTokenBucket,
@@ -961,8 +964,10 @@ func (aw *AggregatedWorker) assertNotStopped() {
 	}
 }
 
-var binaryChecksum string
-var binaryChecksumLock sync.Mutex
+var (
+	binaryChecksum     string
+	binaryChecksumLock sync.Mutex
+)
 
 // SetBinaryChecksum sets the identifier of the binary(aka BinaryChecksum).
 // The identifier is mainly used in recording reset points when respondWorkflowTaskCompleted. For each workflow, the very first
@@ -1076,9 +1081,10 @@ func (aw *AggregatedWorker) Stop() {
 
 // WorkflowReplayer is used to replay workflow code from an event history
 type WorkflowReplayer struct {
-	registry         *registry
-	dataConverter    converter.DataConverter
-	failureConverter converter.FailureConverter
+	registry              *registry
+	dataConverter         converter.DataConverter
+	failureConverter      converter.FailureConverter
+	enableLoggingInReplay bool
 }
 
 // WorkflowReplayerOptions are options for creating a workflow replayer.
@@ -1097,6 +1103,20 @@ type WorkflowReplayerOptions struct {
 	// worker.Options.DisableRegistrationAliasing when originally run. See
 	// documentation for that field for more information.
 	DisableRegistrationAliasing bool
+
+	// Optional: Enable logging in replay.
+	// In the workflow code you can use workflow.GetLogger(ctx) to write logs. By default, the logger will skip log
+	// entry during replay mode so you won't see duplicate logs. This option will enable the logging in replay mode.
+	// This is only useful for debugging purpose.
+	// default: false
+	EnableLoggingInReplay bool
+}
+
+// ReplayWorkflowHistoryOptions are options for replaying a workflow.
+type ReplayWorkflowHistoryOptions struct {
+	// OriginalExecution - Overide the workflow execution details used for replay.
+	// Optional
+	OriginalExecution WorkflowExecution
 }
 
 // NewWorkflowReplayer creates an instance of the WorkflowReplayer.
@@ -1104,9 +1124,10 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 	registry := newRegistryWithOptions(registryOptions{disableAliasing: options.DisableRegistrationAliasing})
 	registry.interceptors = options.Interceptors
 	return &WorkflowReplayer{
-		registry:         registry,
-		dataConverter:    options.DataConverter,
-		failureConverter: options.FailureConverter,
+		registry:              registry,
+		dataConverter:         options.DataConverter,
+		failureConverter:      options.FailureConverter,
+		enableLoggingInReplay: options.EnableLoggingInReplay,
 	}, nil
 }
 
@@ -1120,10 +1141,10 @@ func (aw *WorkflowReplayer) RegisterWorkflowWithOptions(w interface{}, options R
 	aw.registry.RegisterWorkflowWithOptions(w, options)
 }
 
-// ReplayWorkflowHistory executes a single workflow task for the given history.
+// ReplayWorkflowHistoryWithOptions executes a single workflow task for the given history.
 // Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 // The logger is an optional parameter. Defaults to the noop logger.
-func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger log.Logger, history *historypb.History) error {
+func (aw *WorkflowReplayer) ReplayWorkflowHistoryWithOptions(logger log.Logger, history *historypb.History, options ReplayWorkflowHistoryOptions) error {
 	if logger == nil {
 		logger = ilog.NewDefaultLogger()
 	}
@@ -1131,7 +1152,14 @@ func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger log.Logger, history *hi
 	controller := gomock.NewController(ilog.NewTestReporter(logger))
 	service := workflowservicemock.NewMockWorkflowServiceClient(controller)
 
-	return aw.replayWorkflowHistory(logger, service, ReplayNamespace, history)
+	return aw.replayWorkflowHistory(logger, service, ReplayNamespace, options.OriginalExecution, history)
+}
+
+// ReplayWorkflowHistory executes a single workflow task for the given history.
+// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
+// The logger is an optional parameter. Defaults to the noop logger.
+func (aw *WorkflowReplayer) ReplayWorkflowHistory(logger log.Logger, history *historypb.History) error {
+	return aw.ReplayWorkflowHistoryWithOptions(logger, history, ReplayWorkflowHistoryOptions{})
 }
 
 // ReplayWorkflowHistoryFromJSONFile executes a single workflow task for the given json history file.
@@ -1147,7 +1175,6 @@ func (aw *WorkflowReplayer) ReplayWorkflowHistoryFromJSONFile(logger log.Logger,
 // The logger is an optional parameter. Defaults to the noop logger.
 func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(logger log.Logger, jsonfileName string, lastEventID int64) error {
 	history, err := extractHistoryFromFile(jsonfileName, lastEventID)
-
 	if err != nil {
 		return err
 	}
@@ -1159,7 +1186,7 @@ func (aw *WorkflowReplayer) ReplayPartialWorkflowHistoryFromJSONFile(logger log.
 	controller := gomock.NewController(ilog.NewTestReporter(logger))
 	service := workflowservicemock.NewMockWorkflowServiceClient(controller)
 
-	return aw.replayWorkflowHistory(logger, service, ReplayNamespace, history)
+	return aw.replayWorkflowHistory(logger, service, ReplayNamespace, WorkflowExecution{}, history)
 }
 
 // ReplayWorkflowExecution replays workflow execution loading it from Temporal service.
@@ -1198,10 +1225,27 @@ func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service
 		}
 		request.NextPageToken = resp.NextPageToken
 	}
-	return aw.replayWorkflowHistory(logger, service, namespace, &history)
+	return aw.replayWorkflowHistory(logger, service, namespace, execution, &history)
 }
 
-func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service workflowservice.WorkflowServiceClient, namespace string, history *historypb.History) error {
+// inferInvocations extracts the set of *interactionpb.Invocation objects that
+// should be attached to a workflow task (i.e. the
+// PollWorkflowTaskQueueResponse.Interactions) if that task were to carry the
+// provided slice of history events.
+func inferInvocations(events []*historypb.HistoryEvent) []*interactionpb.Invocation {
+	var invocations []*interactionpb.Invocation
+	for _, e := range events {
+		if attrs := e.GetWorkflowUpdateAcceptedEventAttributes(); attrs != nil {
+			invocations = append(invocations, &interactionpb.Invocation{
+				Meta:  attrs.Meta,
+				Input: attrs.Input,
+			})
+		}
+	}
+	return invocations
+}
+
+func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service workflowservice.WorkflowServiceClient, namespace string, originalExecution WorkflowExecution, history *historypb.History) error {
 	taskQueue := "ReplayTaskQueue"
 	events := history.Events
 	if events == nil {
@@ -1225,7 +1269,12 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 		RunId:      uuid.NewRandom().String(),
 		WorkflowId: "ReplayId",
 	}
-	if first.GetWorkflowExecutionStartedEventAttributes().GetOriginalExecutionRunId() != "" {
+	if originalExecution.ID != "" {
+		execution.WorkflowId = originalExecution.ID
+	}
+	if originalExecution.RunID != "" {
+		execution.RunId = originalExecution.RunID
+	} else if first.GetWorkflowExecutionStartedEventAttributes().GetOriginalExecutionRunId() != "" {
 		execution.RunId = first.GetWorkflowExecutionStartedEventAttributes().GetOriginalExecutionRunId()
 	}
 
@@ -1236,6 +1285,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 		WorkflowExecution:      execution,
 		History:                history,
 		PreviousStartedEventId: math.MaxInt64,
+		Interactions:           inferInvocations(history.Events),
 	}
 
 	iterator := &historyIteratorImpl{
@@ -1248,13 +1298,14 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 	}
 	cache := NewWorkerCache()
 	params := workerExecutionParameters{
-		Namespace:        namespace,
-		TaskQueue:        taskQueue,
-		Identity:         "replayID",
-		Logger:           logger,
-		cache:            cache,
-		DataConverter:    aw.dataConverter,
-		FailureConverter: aw.failureConverter,
+		Namespace:             namespace,
+		TaskQueue:             taskQueue,
+		Identity:              "replayID",
+		Logger:                logger,
+		cache:                 cache,
+		DataConverter:         aw.dataConverter,
+		FailureConverter:      aw.failureConverter,
+		EnableLoggingInReplay: aw.enableLoggingInReplay,
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
 	resp, _, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, nil)
@@ -1276,20 +1327,12 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 			for _, d := range completeReq.Commands {
 				if d.GetCommandType() == enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION {
 					if last.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW {
-						inputA := d.GetContinueAsNewWorkflowExecutionCommandAttributes().GetInput()
-						inputB := last.GetWorkflowExecutionContinuedAsNewEventAttributes().GetInput()
-						if proto.Equal(inputA, inputB) {
-							return nil
-						}
+						return nil
 					}
 				}
 				if d.GetCommandType() == enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION {
 					if last.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED {
-						resultA := last.GetWorkflowExecutionCompletedEventAttributes().GetResult()
-						resultB := d.GetCompleteWorkflowExecutionCommandAttributes().GetResult()
-						if proto.Equal(resultA, resultB) {
-							return nil
-						}
+						return nil
 					}
 				}
 			}

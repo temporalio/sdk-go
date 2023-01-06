@@ -73,6 +73,13 @@ type (
 		stopC          <-chan struct{}
 	}
 
+	// numPollerMetric tracks the number of active pollers and publishes a metric on it.
+	numPollerMetric struct {
+		lock       sync.Mutex
+		numPollers int32
+		gauge      metrics.Gauge
+	}
+
 	// workflowTaskPoller implements polling/processing a workflow task
 	workflowTaskPoller struct {
 		basePoller
@@ -94,6 +101,9 @@ type (
 		requestLock             sync.Mutex
 		stickyCacheSize         int
 		eagerActivityExecutor   *eagerActivityExecutor
+
+		numNormalPollerMetric *numPollerMetric
+		numStickyPollerMetric *numPollerMetric
 	}
 
 	// activityTaskPoller implements polling/processing a workflow task
@@ -106,6 +116,7 @@ type (
 		taskHandler         ActivityTaskHandler
 		logger              log.Logger
 		activitiesPerSecond float64
+		numPollerMetric     *numPollerMetric
 	}
 
 	historyIteratorImpl struct {
@@ -148,6 +159,26 @@ type (
 		stopCh   <-chan struct{}
 	}
 )
+
+func newNumPollerMetric(metricsHandler metrics.Handler, pollerType string) *numPollerMetric {
+	return &numPollerMetric{
+		gauge: metricsHandler.WithTags(metrics.PollerTags(pollerType)).Gauge(metrics.NumPoller),
+	}
+}
+
+func (npm *numPollerMetric) increment() {
+	npm.lock.Lock()
+	defer npm.lock.Unlock()
+	npm.numPollers += 1
+	npm.gauge.Update(float64(npm.numPollers))
+}
+
+func (npm *numPollerMetric) decrement() {
+	npm.lock.Lock()
+	defer npm.lock.Unlock()
+	npm.numPollers -= 1
+	npm.gauge.Update(float64(npm.numPollers))
+}
 
 func newLocalActivityTunnel(stopCh <-chan struct{}) *localActivityTunnel {
 	return &localActivityTunnel{
@@ -238,6 +269,8 @@ func newWorkflowTaskPoller(
 		StickyScheduleToStartTimeout: params.StickyScheduleToStartTimeout,
 		stickyCacheSize:              params.cache.MaxWorkflowCacheSize(),
 		eagerActivityExecutor:        params.eagerActivityExecutor,
+		numNormalPollerMetric:        newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowTask),
+		numStickyPollerMetric:        newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowStickyTask),
 	}
 }
 
@@ -335,7 +368,6 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 	task *workflowservice.PollWorkflowTaskQueueResponse,
 	startTime time.Time,
 ) (response *workflowservice.RespondWorkflowTaskCompletedResponse, err error) {
-
 	metricsHandler := wtp.metricsHandler.WithTags(metrics.WorkflowTags(task.WorkflowType.GetName()))
 	if taskErr != nil {
 		metricsHandler.Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
@@ -524,6 +556,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 			}
 			if err != nil {
 				metricsHandler.Counter(metrics.LocalActivityFailedCounter).Inc(1)
+				metricsHandler.Counter(metrics.LocalActivityExecutionFailedCounter).Inc(1)
 			}
 		}()
 
@@ -554,6 +587,7 @@ WaitResult:
 		// context is done
 		if ctx.Err() == context.Canceled {
 			metricsHandler.Counter(metrics.LocalActivityCanceledCounter).Inc(1)
+			metricsHandler.Counter(metrics.LocalActivityExecutionCanceledCounter).Inc(1)
 			return &localActivityResult{err: ErrCanceled, task: task}
 		} else if ctx.Err() == context.DeadlineExceeded {
 			return &localActivityResult{err: ErrDeadlineExceeded, task: task}
@@ -632,6 +666,19 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 	}
 }
 
+// Poll the workflow task queue and update the num_poller metric
+func (wtp *workflowTaskPoller) pollWorkflowTaskQueue(ctx context.Context, request *workflowservice.PollWorkflowTaskQueueRequest) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
+	if request.TaskQueue.GetKind() == enumspb.TASK_QUEUE_KIND_NORMAL {
+		wtp.numNormalPollerMetric.increment()
+		defer wtp.numNormalPollerMetric.decrement()
+	} else {
+		wtp.numStickyPollerMetric.increment()
+		defer wtp.numStickyPollerMetric.decrement()
+	}
+
+	return wtp.service.PollWorkflowTaskQueue(ctx, request)
+}
+
 // Poll for a single workflow task from the service
 func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	traceLog(func() {
@@ -641,7 +688,7 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	request := wtp.getNextPollRequest()
 	defer wtp.release(request.TaskQueue.GetKind())
 
-	response, err := wtp.service.PollWorkflowTaskQueue(ctx, request)
+	response, err := wtp.pollWorkflowTaskQueue(ctx, request)
 	if err != nil {
 		wtp.updateBacklog(request.TaskQueue.GetKind(), 0)
 		return nil, err
@@ -784,7 +831,16 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 		identity:            params.Identity,
 		logger:              params.Logger,
 		activitiesPerSecond: params.TaskQueueActivitiesPerSecond,
+		numPollerMetric:     newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeActivityTask),
 	}
+}
+
+// Poll the activity task queue and update the num_poller metric
+func (atp *activityTaskPoller) pollActivityTaskQueue(ctx context.Context, request *workflowservice.PollActivityTaskQueueRequest) (*workflowservice.PollActivityTaskQueueResponse, error) {
+	atp.numPollerMetric.increment()
+	defer atp.numPollerMetric.decrement()
+
+	return atp.service.PollActivityTaskQueue(ctx, request)
 }
 
 // Poll for a single activity task from the service
@@ -799,7 +855,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 		TaskQueueMetadata: &taskqueuepb.TaskQueueMetadata{MaxTasksPerSecond: &types.DoubleValue{Value: atp.activitiesPerSecond}},
 	}
 
-	response, err := atp.service.PollActivityTaskQueue(ctx, request)
+	response, err := atp.pollActivityTaskQueue(ctx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -971,7 +1027,8 @@ func convertActivityResultToRespondRequest(
 			TaskToken: taskToken,
 			Result:    result,
 			Identity:  identity,
-			Namespace: namespace}
+			Namespace: namespace,
+		}
 	}
 
 	// Only respond with canceled if allowed
@@ -982,13 +1039,15 @@ func convertActivityResultToRespondRequest(
 				TaskToken: taskToken,
 				Details:   convertErrDetailsToPayloads(canceledErr.details, dataConverter),
 				Identity:  identity,
-				Namespace: namespace}
+				Namespace: namespace,
+			}
 		}
 		if errors.Is(err, context.Canceled) {
 			return &workflowservice.RespondActivityTaskCanceledRequest{
 				TaskToken: taskToken,
 				Identity:  identity,
-				Namespace: namespace}
+				Namespace: namespace,
+			}
 		}
 	}
 
@@ -1002,7 +1061,8 @@ func convertActivityResultToRespondRequest(
 		TaskToken: taskToken,
 		Failure:   failureConverter.ErrorToFailure(err),
 		Identity:  identity,
-		Namespace: namespace}
+		Namespace: namespace,
+	}
 }
 
 func convertActivityResultToRespondRequestByID(
@@ -1030,7 +1090,8 @@ func convertActivityResultToRespondRequestByID(
 			RunId:      runID,
 			ActivityId: activityID,
 			Result:     result,
-			Identity:   identity}
+			Identity:   identity,
+		}
 	}
 
 	// Only respond with canceled if allowed
@@ -1043,7 +1104,8 @@ func convertActivityResultToRespondRequestByID(
 				RunId:      runID,
 				ActivityId: activityID,
 				Details:    convertErrDetailsToPayloads(canceledErr.details, dataConverter),
-				Identity:   identity}
+				Identity:   identity,
+			}
 		}
 		if errors.Is(err, context.Canceled) {
 			return &workflowservice.RespondActivityTaskCanceledByIdRequest{
@@ -1051,7 +1113,8 @@ func convertActivityResultToRespondRequestByID(
 				WorkflowId: workflowID,
 				RunId:      runID,
 				ActivityId: activityID,
-				Identity:   identity}
+				Identity:   identity,
+			}
 		}
 	}
 
@@ -1067,5 +1130,6 @@ func convertActivityResultToRespondRequestByID(
 		RunId:      runID,
 		ActivityId: activityID,
 		Failure:    failureConverter.ErrorToFailure(err),
-		Identity:   identity}
+		Identity:   identity,
+	}
 }

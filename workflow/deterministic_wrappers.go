@@ -160,8 +160,6 @@ func Now(ctx Context) time.Time {
 // this NewTimer() to get the timer instead of the Go lang library one(timer.NewTimer()). You can cancel the pending
 // timer by cancel the Context (using context from workflow.WithCancel(ctx)) and that will cancel the timer. After timer
 // is canceled, the returned Future become ready, and Future.Get() will return *CanceledError.
-// The current timer resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
-// subjected to change in the future.
 func NewTimer(ctx Context, d time.Duration) Future {
 	return internal.NewTimer(ctx, d)
 }
@@ -172,8 +170,6 @@ func NewTimer(ctx Context, d time.Duration) Future {
 // Sleep() returns nil if the duration d is passed, or it returns *CanceledError if the ctx is canceled. There are 2
 // reasons the ctx could be canceled: 1) your workflow code cancel the ctx (with workflow.WithCancel(ctx));
 // 2) your workflow itself is canceled by external request.
-// The current timer resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
-// subjected to change in the future.
 func Sleep(ctx Context, d time.Duration) (err error) {
 	return internal.Sleep(ctx, d)
 }

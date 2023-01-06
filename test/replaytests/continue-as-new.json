@@ -1,0 +1,109 @@
+{
+ "events": [
+  {
+   "eventId": "1",
+   "eventTime": "2022-12-13T23:18:31.822878008Z",
+   "eventType": "WorkflowExecutionStarted",
+   "taskId": "7343430",
+   "workflowExecutionStartedEventAttributes": {
+    "workflowType": {
+     "name": "ContinueAsNewWorkflow"
+    },
+    "taskQueue": {
+     "name": "replay-test",
+     "kind": "Normal"
+    },
+    "input": {
+     "payloads": [
+      {
+       "metadata": {
+        "encoding": "anNvbi9wbGFpbg=="
+       },
+       "data": "dHJ1ZQ=="
+      }
+     ]
+    },
+    "workflowExecutionTimeout": "0s",
+    "workflowRunTimeout": "0s",
+    "workflowTaskTimeout": "10s",
+    "originalExecutionRunId": "bdb5a608-0880-421d-90fb-f85e748d12b4",
+    "identity": "14127@Quinn-Klassens-MacBook-Pro.local@",
+    "firstExecutionRunId": "bdb5a608-0880-421d-90fb-f85e748d12b4",
+    "attempt": 1,
+    "firstWorkflowTaskBackoff": "0s",
+    "header": {
+
+    }
+   }
+  },
+  {
+   "eventId": "2",
+   "eventTime": "2022-12-13T23:18:31.822898091Z",
+   "eventType": "WorkflowTaskScheduled",
+   "taskId": "7343431",
+   "workflowTaskScheduledEventAttributes": {
+    "taskQueue": {
+     "name": "replay-test",
+     "kind": "Normal"
+    },
+    "startToCloseTimeout": "10s",
+    "attempt": 1
+   }
+  },
+  {
+   "eventId": "3",
+   "eventTime": "2022-12-13T23:18:31.830787008Z",
+   "eventType": "WorkflowTaskStarted",
+   "taskId": "7343438",
+   "workflowTaskStartedEventAttributes": {
+    "scheduledEventId": "2",
+    "identity": "14127@Quinn-Klassens-MacBook-Pro.local@",
+    "requestId": "c55e1ca9-08f1-4409-ab41-20080efe48f1"
+   }
+  },
+  {
+   "eventId": "4",
+   "eventTime": "2022-12-13T23:18:31.835409800Z",
+   "eventType": "WorkflowTaskCompleted",
+   "taskId": "7343442",
+   "workflowTaskCompletedEventAttributes": {
+    "scheduledEventId": "2",
+    "startedEventId": "3",
+    "identity": "14127@Quinn-Klassens-MacBook-Pro.local@",
+    "binaryChecksum": "88517a4f638baf593f75e0214a4ebf92"
+   }
+  },
+  {
+   "eventId": "5",
+   "eventTime": "2022-12-13T23:18:31.835425591Z",
+   "eventType": "WorkflowExecutionContinuedAsNew",
+   "taskId": "7343443",
+   "workflowExecutionContinuedAsNewEventAttributes": {
+    "newExecutionRunId": "74f38af0-7c7d-4aae-bc10-6c34ba946693",
+    "workflowType": {
+     "name": "ContinueAsNewWorkflow"
+    },
+    "taskQueue": {
+     "name": "replay-test",
+     "kind": "Normal"
+    },
+    "input": {
+     "payloads": [
+      {
+       "metadata": {
+        "encoding": "anNvbi9wbGFpbg=="
+       },
+       "data": "ZmFsc2U="
+      }
+     ]
+    },
+    "workflowRunTimeout": "0s",
+    "workflowTaskTimeout": "10s",
+    "workflowTaskCompletedEventId": "4",
+    "header": {
+
+    }
+   }
+  }
+ ]
+}

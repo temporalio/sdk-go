@@ -54,8 +54,10 @@ const (
 )
 
 // Assert that structs do indeed implement the interfaces
-var _ WorkflowEnvironment = (*workflowEnvironmentImpl)(nil)
-var _ workflowExecutionEventHandler = (*workflowExecutionEventHandlerImpl)(nil)
+var (
+	_ WorkflowEnvironment           = (*workflowEnvironmentImpl)(nil)
+	_ workflowExecutionEventHandler = (*workflowExecutionEventHandlerImpl)(nil)
+)
 
 type (
 	// completionHandler Handler to indicate completion result
@@ -331,7 +333,6 @@ func (wc *workflowEnvironmentImpl) SignalExternalWorkflow(
 	childWorkflowOnly bool,
 	callback ResultHandler,
 ) {
-
 	signalID := wc.GenerateSequenceID()
 	command := wc.commandsHelper.signalExternalWorkflowExecution(namespace, workflowID, runID, signalName, input,
 		header, signalID, childWorkflowOnly)
@@ -444,7 +445,8 @@ func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
 }
 
 func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
-	params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) {
+	params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error),
+) {
 	if params.WorkflowID == "" {
 		params.WorkflowID = wc.workflowInfo.WorkflowExecution.RunID + "_" + wc.GenerateSequenceID()
 	}
@@ -1064,7 +1066,6 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessInteraction(
 			commands: weh.commandsHelper,
 		},
 	)
-	weh.workflowDefinition.OnWorkflowTaskStarted(weh.deadlockDetectionTimeout)
 	return nil
 }
 
@@ -1107,7 +1108,8 @@ func (weh *workflowExecutionEventHandlerImpl) Close() {
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionStarted(
-	attributes *historypb.WorkflowExecutionStartedEventAttributes) (err error) {
+	attributes *historypb.WorkflowExecutionStartedEventAttributes,
+) (err error) {
 	weh.workflowDefinition, err = weh.registry.getWorkflowDefinition(
 		weh.workflowInfo.WorkflowType,
 	)
@@ -1385,7 +1387,8 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionSignaled(
-	attributes *historypb.WorkflowExecutionSignaledEventAttributes) error {
+	attributes *historypb.WorkflowExecutionSignaledEventAttributes,
+) error {
 	return weh.signalHandler(attributes.GetSignalName(), attributes.Input, attributes.Header)
 }
 

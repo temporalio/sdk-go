@@ -28,6 +28,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"math/rand"
 	"reflect"
 	"strconv"
@@ -78,7 +79,6 @@ func (w *Workflows) Deadlocked(ctx workflow.Context) ([]string, error) {
 var isDeadlockedWithLocalActivityFirstAttempt bool = true
 
 func (w *Workflows) DeadlockedWithLocalActivity(ctx workflow.Context) ([]string, error) {
-
 	laCtx := workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
 		ScheduleToCloseTimeout: 5 * time.Second,
 	})
@@ -364,8 +364,8 @@ func (w *Workflows) IDReusePolicy(
 	childWFID string,
 	policy enumspb.WorkflowIdReusePolicy,
 	parallel bool,
-	failFirstChild bool) (string, error) {
-
+	failFirstChild bool,
+) (string, error) {
 	ctx = workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
 		WorkflowID:               childWFID,
 		WorkflowExecutionTimeout: 9 * time.Second,
@@ -486,6 +486,7 @@ func (w *Workflows) ChildWorkflowSuccessWithParentClosePolicyAbandon(ctx workflo
 	err = ft.GetChildWorkflowExecution().Get(ctx, &childWE)
 	return childWE.ID, err
 }
+
 func (w *Workflows) childWorkflowWaitOnSignal(ctx workflow.Context) error {
 	workflow.GetSignalChannel(ctx, "unblock").Receive(ctx, nil)
 	return nil
@@ -789,7 +790,6 @@ func (w *Workflows) LargeQueryResultWorkflow(ctx workflow.Context) (string, erro
 		rand.Read(result)
 		return result, nil
 	})
-
 	if err != nil {
 		return "", errors.New("failed to register query handler")
 	}
@@ -1817,6 +1817,93 @@ func (w *Workflows) ForcedNonDeterminism(ctx workflow.Context, sameCommandButDif
 	return
 }
 
+func (w *Workflows) UpsertSearchAttributesConditional(ctx workflow.Context, maxTicks int) error {
+	var waitTickCount int
+	tickCh := workflow.GetSignalChannel(ctx, "tick")
+	err := workflow.SetQueryHandler(
+		ctx,
+		"is-wait-tick-count",
+		func(v int) (bool, error) { return waitTickCount == v, nil },
+	)
+	if err != nil {
+		return err
+	}
+	currentPayload, exists := workflow.GetInfo(ctx).SearchAttributes.GetIndexedFields()["CustomKeywordField"]
+	if !exists {
+		return errors.New("search attribute not present")
+	}
+	var searchAttr string
+	err = converter.GetDefaultDataConverter().FromPayload(currentPayload, &searchAttr)
+	log.Printf("Search attribute: %s. Replaying? %v.", searchAttr, workflow.IsReplaying(ctx))
+	if err != nil {
+		return errors.New("error when get search attribute")
+	}
+	// Search attribute should always be "unset".
+	if searchAttr == "set" {
+		err = workflow.Sleep(ctx, 100*time.Millisecond)
+	} else if searchAttr == "unset" {
+		err = workflow.UpsertSearchAttributes(ctx, map[string]interface{}{"CustomKeywordField": "set"})
+	} else {
+		return errors.New("unkown search attribute value")
+	}
+	if err != nil {
+		return err
+	}
+	// Now just wait for signals over and over
+	for {
+		waitTickCount++
+		if waitTickCount >= maxTicks {
+			return nil
+		}
+		tickCh.Receive(ctx, nil)
+		log.Printf("Signal received (replaying? %v)", workflow.IsReplaying(ctx))
+	}
+}
+
+func (w *Workflows) UpsertMemoConditional(ctx workflow.Context, maxTicks int) error {
+	var waitTickCount int
+	tickCh := workflow.GetSignalChannel(ctx, "tick")
+	err := workflow.SetQueryHandler(
+		ctx,
+		"is-wait-tick-count",
+		func(v int) (bool, error) { return waitTickCount == v, nil },
+	)
+	if err != nil {
+		return err
+	}
+	// Get current memo value
+	currentPayload, ok := workflow.GetInfo(ctx).Memo.GetFields()["TestMemo"]
+	if !ok {
+		return errors.New("no memo value")
+	}
+	var memoValue string
+	err = converter.GetDefaultDataConverter().FromPayload(currentPayload, &memoValue)
+	if err != nil {
+		return err
+	}
+	// Memo should always be "unset".
+	log.Printf("Memo value %s, Replaying? %v.", memoValue, workflow.IsReplaying(ctx))
+	if memoValue == "set" {
+		err = workflow.Sleep(ctx, 100*time.Millisecond)
+	} else if memoValue == "unset" {
+		err = workflow.UpsertMemo(ctx, map[string]interface{}{"TestMemo": "set"})
+	} else {
+		return errors.New("memo unknown value")
+	}
+	if err != nil {
+		return err
+	}
+	// Now just wait for signals over and over
+	for {
+		waitTickCount++
+		if waitTickCount >= maxTicks {
+			return nil
+		}
+		tickCh.Receive(ctx, nil)
+		log.Printf("Signal received (replaying? %v)", workflow.IsReplaying(ctx))
+	}
+}
+
 func (w *Workflows) MutableSideEffect(ctx workflow.Context, startVal int) (currVal int, err error) {
 	// Make some mutable side effect calls with timers in between
 	sideEffector := func(retVal int) (newVal int, err error) {
@@ -1924,6 +2011,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ConsistentQueryWorkflow)
 	worker.RegisterWorkflow(w.ContextPropagator)
 	worker.RegisterWorkflow(w.ContinueAsNew)
+	worker.RegisterWorkflow(w.UpsertSearchAttributesConditional)
+	worker.RegisterWorkflow(w.UpsertMemoConditional)
 	worker.RegisterWorkflow(w.ContinueAsNewWithOptions)
 	worker.RegisterWorkflow(w.IDReusePolicy)
 	worker.RegisterWorkflow(w.InspectActivityInfo)

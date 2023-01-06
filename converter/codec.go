@@ -30,7 +30,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"strings"
 
@@ -117,7 +116,7 @@ func (*zlibCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, err
 			return payloads, err
 		}
 		// Read all and unmarshal
-		b, err := ioutil.ReadAll(r)
+		b, err := io.ReadAll(r)
 		if closeErr := r.Close(); closeErr != nil && err == nil {
 			err = closeErr
 		}
