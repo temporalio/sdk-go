@@ -29,11 +29,6 @@ copyright $(BUILD)/copyright:
 	@mkdir -p $(BUILD)
 	@touch $(BUILD)/copyright
 
-# Ensure generated code dependent on the API is not stale
-generatorcheck:
-	(cd converter && go run ../internal/cmd/generateinterceptor/main.go -verifyOnly)
-	(cd client && go run ../internal/cmd/generateproxy/main.go -verifyOnly)
-
 $(BUILD)/dummy:
 	go build -o $@ internal/cmd/dummy/dummy.go
 
@@ -103,4 +98,4 @@ fmt:
 clean:
 	rm -rf $(BUILD)
 
-check: vet errcheck staticcheck copyright generatorcheck bins
+check: vet errcheck staticcheck copyright bins

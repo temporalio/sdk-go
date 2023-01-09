@@ -353,7 +353,8 @@ func Test_ChildWorkflowStateMachine_Basic(t *testing.T) {
 	h := newCommandsHelper()
 
 	// start child workflow
-	d := h.startChildWorkflowExecution(attributes)
+	d, err := h.startChildWorkflowExecution(attributes)
+	require.NoError(t, err)
 	require.Equal(t, commandStateCreated, d.getState())
 
 	// send command
@@ -391,7 +392,8 @@ func Test_ChildWorkflowStateMachine_CancelSucceed(t *testing.T) {
 	h := newCommandsHelper()
 
 	// start child workflow
-	d := h.startChildWorkflowExecution(attributes)
+	d, err := h.startChildWorkflowExecution(attributes)
+	require.NoError(t, err)
 	// send command
 	_ = h.getCommands(true)
 	// child workflow initiated
@@ -435,11 +437,12 @@ func Test_ChildWorkflowStateMachine_InvalidStates(t *testing.T) {
 	h := newCommandsHelper()
 
 	// start child workflow
-	d := h.startChildWorkflowExecution(attributes)
+	d, err := h.startChildWorkflowExecution(attributes)
+	require.NoError(t, err)
 	require.Equal(t, commandStateCreated, d.getState())
 
 	// invalid: start child workflow failed before command was sent
-	err := runAndCatchPanic(func() {
+	err = runAndCatchPanic(func() {
 		h.handleStartChildWorkflowExecutionFailed(workflowID)
 	})
 	require.NotNil(t, err)
@@ -511,7 +514,8 @@ func Test_ChildWorkflow_UnusualCancelationOrdering(t *testing.T) {
 	h := newCommandsHelper()
 
 	// start child workflow
-	h.startChildWorkflowExecution(attributes)
+	_, err := h.startChildWorkflowExecution(attributes)
+	require.NoError(t, err)
 	// send command
 	h.getCommands(true)
 	// child workflow initiated
@@ -525,7 +529,7 @@ func Test_ChildWorkflow_UnusualCancelationOrdering(t *testing.T) {
 	// Now, the unusual part. The cancellation happens before we get the external cancel request
 	h.handleChildWorkflowExecutionCanceled(workflowID)
 	// Oh no, server took a bit.
-	err := runAndCatchPanic(func() {
+	err = runAndCatchPanic(func() {
 		h.handleExternalWorkflowExecutionCancelRequested(initiatedEventID, workflowID)
 	})
 	require.Nil(t, err)
@@ -544,7 +548,8 @@ func Test_ChildWorkflowStateMachine_CancelFailed(t *testing.T) {
 	h := newCommandsHelper()
 
 	// start child workflow
-	d := h.startChildWorkflowExecution(attributes)
+	d, err := h.startChildWorkflowExecution(attributes)
+	require.NoError(t, err)
 	// send command
 	h.getCommands(true)
 	// child workflow initiated
