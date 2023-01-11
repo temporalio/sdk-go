@@ -1475,7 +1475,7 @@ func TestUpdateHandle(t *testing.T) {
 		dc := converter.GetDefaultDataConverter()
 		payloads, err := dc.ToPayloads(t.Name())
 		require.NoError(t, err)
-		uh := updateHandle{value: newEncodedValues(payloads, dc)}
+		uh := updateHandle{value: newEncodedValue(payloads, dc)}
 		var out string
 		require.NoError(t, uh.Get(context.TODO(), &out))
 		require.Equal(t, t.Name(), out)

@@ -39,13 +39,14 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 	historypb "go.temporal.io/api/history/v1"
-	interactionpb "go.temporal.io/api/interaction/v1"
+	protocolpb "go.temporal.io/api/protocol/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/internal/protocol"
 	"go.temporal.io/sdk/log"
 )
 
@@ -103,6 +104,7 @@ type (
 		workflowInfo *WorkflowInfo
 
 		commandsHelper    *commandsHelper
+		outbox            []*protocolpb.Message
 		sideEffectResult  map[int64]*commonpb.Payloads
 		changeVersions    map[string]Version
 		pendingLaTasks    map[string]*localActivityTask
@@ -129,7 +131,7 @@ type (
 		cancelHandler   func()                                                                     // A cancel handler to be invoked on a cancel notification
 		signalHandler   func(name string, input *commonpb.Payloads, header *commonpb.Header) error // A signal handler to be invoked on a signal event
 		queryHandler    func(queryType string, queryArgs *commonpb.Payloads, header *commonpb.Header) (*commonpb.Payloads, error)
-		updateHandler   func(name string, args *commonpb.Payloads, header *commonpb.Header, update UpdateCallbacks)
+		updateHandler   func(name string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
 
 		logger                log.Logger
 		isReplay              bool // flag to indicate if workflow is in replay mode
@@ -141,17 +143,8 @@ type (
 		failureConverter         converter.FailureConverter
 		contextPropagators       []ContextPropagator
 		deadlockDetectionTimeout time.Duration
-	}
 
-	// updateCommandCallbacks is an implementation of the UpdateCallbacks
-	// interface that translates function calls on that interface into temporal
-	// server commands.
-	updateCommandCallbacks struct {
-		meta     *interactionpb.Meta
-		in       *interactionpb.Input
-		dc       converter.DataConverter
-		fc       converter.FailureConverter
-		commands *commandsHelper
+		protocols *protocol.Registry
 	}
 
 	localActivityTask struct {
@@ -215,6 +208,7 @@ func newWorkflowExecutionEventHandler(
 		failureConverter:         failureConverter,
 		contextPropagators:       contextPropagators,
 		deadlockDetectionTimeout: deadlockDetectionTimeout,
+		protocols:                protocol.NewRegistry(),
 	}
 	context.logger = ilog.NewReplayLogger(
 		log.With(logger,
@@ -290,6 +284,19 @@ func (s *scheduledSignal) handle(result *commonpb.Payloads, err error) {
 	}
 	s.handled = true
 	s.callback(result, err)
+}
+
+func (wc *workflowEnvironmentImpl) drainOutbox(sink *[]*protocolpb.Message) {
+	*sink = append(*sink, wc.outbox...)
+	wc.outbox = nil
+}
+
+func (wc *workflowEnvironmentImpl) ScheduleUpdate(name string, args *commonpb.Payloads, hdr *commonpb.Header, callbacks UpdateCallbacks) {
+	wc.updateHandler(name, args, hdr, callbacks)
+}
+
+func (wc *workflowEnvironmentImpl) Send(msg *protocolpb.Message) {
+	wc.outbox = append(wc.outbox, msg)
 }
 
 func (wc *workflowEnvironmentImpl) getNextLocalActivityID() string {
@@ -1012,13 +1019,13 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	case enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES:
 		weh.handleUpsertWorkflowSearchAttributes(event)
 
-	case enumspb.EVENT_TYPE_WORKFLOW_UPDATE_ACCEPTED:
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED:
 		// No Operation
 
-	case enumspb.EVENT_TYPE_WORKFLOW_UPDATE_REJECTED:
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_REJECTED:
 		// No Operation
 
-	case enumspb.EVENT_TYPE_WORKFLOW_UPDATE_COMPLETED:
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED:
 		// No Operation
 
 	case enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED:
@@ -1045,28 +1052,17 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) ProcessInteraction(
-	meta *interactionpb.Meta,
-	input *interactionpb.Input,
+func (weh *workflowExecutionEventHandlerImpl) ProcessMessage(
+	msg *protocolpb.Message,
 	isReplay bool,
 	isLast bool,
 ) error {
-	if meta.GetInteractionType() != enumspb.INTERACTION_TYPE_WORKFLOW_UPDATE {
-		return fmt.Errorf("unsupported interaction type %q", meta.GetInteractionType())
+	ctor, err := weh.protocolConstructorForMessage(msg)
+	if err != nil {
+		return nil
 	}
-	weh.updateHandler(
-		input.GetName(),
-		input.GetArgs(),
-		input.GetHeader(),
-		&updateCommandCallbacks{
-			meta:     meta,
-			in:       input,
-			dc:       weh.dataConverter,
-			fc:       weh.failureConverter,
-			commands: weh.commandsHelper,
-		},
-	)
-	return nil
+	instance := weh.protocols.FindOrAdd(msg.ProtocolInstanceId, ctor)
+	return instance.HandleMessage(msg)
 }
 
 func (weh *workflowExecutionEventHandlerImpl) ProcessQuery(
@@ -1550,45 +1546,6 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTermin
 	return nil
 }
 
-func (ucc *updateCommandCallbacks) Accept() {
-	ucc.commands.acceptWorkflowUpdate(ucc.meta, ucc.in)
-}
-
-func (ucc *updateCommandCallbacks) Reject(err error) {
-	ucc.commands.rejectWorkflowUpdate(
-		ucc.meta,
-		ucc.fc.ErrorToFailure(err),
-	)
-}
-
-func (ucc *updateCommandCallbacks) Complete(success interface{}, err error) {
-	if err != nil {
-		ucc.commands.completeWorkflowUpdate(
-			ucc.meta,
-			nil,
-			ucc.fc.ErrorToFailure(err),
-		)
-		return
-	}
-
-	serializedResult, err := ucc.dc.ToPayloads(success)
-	if err != nil {
-		// Update ran to completion but result cannot be converted to a
-		// Payload
-		ucc.commands.completeWorkflowUpdate(
-			ucc.meta,
-			nil,
-			ucc.fc.ErrorToFailure(err),
-		)
-		return
-	}
-	ucc.commands.completeWorkflowUpdate(
-		ucc.meta,
-		serializedResult,
-		nil,
-	)
-}
-
 func (weh *workflowExecutionEventHandlerImpl) handleUpsertWorkflowSearchAttributes(event *historypb.HistoryEvent) {
 	weh.updateWorkflowInfoWithSearchAttributes(event.GetUpsertWorkflowSearchAttributesEventAttributes().SearchAttributes)
 }
@@ -1689,4 +1646,21 @@ func (weh *workflowExecutionEventHandlerImpl) handleSignalExternalWorkflowExecut
 	signal.handle(nil, err)
 
 	return nil
+}
+
+func (weh *workflowExecutionEventHandlerImpl) protocolConstructorForMessage(
+	msg *protocolpb.Message,
+) (func() protocol.Instance, error) {
+	protoName, err := protocol.NameFromMessage(msg)
+	if err != nil {
+		return nil, err
+	}
+
+	switch protoName {
+	case updateProtocolV1:
+		return func() protocol.Instance {
+			return newUpdateProtocol(msg.ProtocolInstanceId, weh.updateHandler, weh)
+		}, nil
+	}
+	return nil, fmt.Errorf("unsupported protocol: %v", protoName)
 }

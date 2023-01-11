@@ -25,19 +25,21 @@
 package internal
 
 import (
-	"errors"
 	"testing"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
+	"github.com/gogo/protobuf/types"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
-	interactionpb "go.temporal.io/api/interaction/v1"
+	protocolpb "go.temporal.io/api/protocol/v1"
+	updatepb "go.temporal.io/api/update/v1"
 
 	"go.temporal.io/sdk/converter"
 	iconverter "go.temporal.io/sdk/internal/converter"
+	"go.temporal.io/sdk/internal/protocol"
 )
 
 type mockWorkflowDefinition struct {
@@ -439,26 +441,30 @@ func TestUpdateEvents(t *testing.T) {
 				gotArgs = args
 				gotHeader = header
 			},
+			protocols: protocol.NewRegistry(),
 		},
 		workflowDefinition: &mockWorkflowDefinition{
 			OnWorkflowTaskStartedFunc: func(time.Duration) {},
 		},
 	}
 
-	meta := &interactionpb.Meta{
-		Id:              t.Name() + "-id",
-		EventId:         1,
-		InteractionType: enumspb.INTERACTION_TYPE_WORKFLOW_UPDATE,
-		Identity:        t.Name() + "-identity",
-		RequestId:       t.Name() + "-request_id",
+	meta := &updatepb.Meta{
+		UpdateId: t.Name() + "-id",
+		Identity: t.Name() + "-identity",
 	}
-	input := &interactionpb.Input{
+	input := &updatepb.Input{
 		Header: &commonpb.Header{Fields: map[string]*commonpb.Payload{"a": mustPayload("b")}},
 		Name:   t.Name(),
 		Args:   &commonpb.Payloads{Payloads: []*commonpb.Payload{mustPayload("arg0")}},
 	}
 
-	err := weh.ProcessInteraction(meta, input, false, false)
+	body, err := types.MarshalAny(&updatepb.Request{Meta: meta, Input: input})
+	require.NoError(t, err)
+
+	err = weh.ProcessMessage(&protocolpb.Message{
+		ProtocolInstanceId: t.Name(),
+		Body:               body,
+	}, false, false)
 	require.NoError(t, err)
 
 	require.Equal(t, input.Name, gotName)
@@ -467,70 +473,9 @@ func TestUpdateEvents(t *testing.T) {
 
 	// UPDATE_ACCEPTED and UPDATE_COMPLETED are noops for the worker
 	for _, evtype := range [...]enumspb.EventType{
-		enumspb.EVENT_TYPE_WORKFLOW_UPDATE_ACCEPTED,
-		enumspb.EVENT_TYPE_WORKFLOW_UPDATE_COMPLETED,
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED,
 	} {
 		require.NoError(t, weh.ProcessEvent(&historypb.HistoryEvent{EventType: evtype}, false, false))
 	}
-}
-
-func TestUpdateCommandAdapter(t *testing.T) {
-	t.Parallel()
-	cmdHelper := newCommandsHelper()
-	dc := converter.GetDefaultDataConverter()
-	updateCallbacks := &updateCommandCallbacks{
-		meta:     &interactionpb.Meta{Id: t.Name() + "-id"},
-		dc:       dc,
-		fc:       defaultFailureConverter,
-		commands: cmdHelper,
-	}
-	t.Run("reject", func(t *testing.T) {
-		wantErr := errors.New(t.Name())
-		updateCallbacks.Reject(wantErr)
-		cmds := cmdHelper.getCommands(true)
-		require.Len(t, cmds, 1)
-		cmd, attrs := cmds[0], cmds[0].GetRejectWorkflowUpdateCommandAttributes()
-		require.Equal(t, enumspb.COMMAND_TYPE_REJECT_WORKFLOW_UPDATE, cmd.GetCommandType())
-		require.NotNil(t, attrs.GetFailure())
-		require.Equal(t, wantErr.Error(), attrs.GetFailure().GetMessage())
-	})
-	t.Run("accept", func(t *testing.T) {
-		updateCallbacks.Accept()
-		cmds := cmdHelper.getCommands(true)
-		require.Len(t, cmds, 1)
-		require.Equal(t, enumspb.COMMAND_TYPE_ACCEPT_WORKFLOW_UPDATE, cmds[0].GetCommandType())
-	})
-	t.Run("complete with error", func(t *testing.T) {
-		wantErr := errors.New(t.Name())
-		updateCallbacks.Complete(nil, wantErr)
-		cmds := cmdHelper.getCommands(true)
-		require.Len(t, cmds, 1)
-		cmd, attrs := cmds[0], cmds[0].GetCompleteWorkflowUpdateCommandAttributes()
-		require.Equal(t, enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE, cmd.GetCommandType())
-		require.NotNil(t, attrs.Output.GetFailure())
-		require.Equal(t, wantErr.Error(), attrs.Output.GetFailure().GetMessage())
-	})
-	t.Run("complete successfully", func(t *testing.T) {
-		wantSuccess := "success!"
-		updateCallbacks.Complete(wantSuccess, nil)
-		cmds := cmdHelper.getCommands(true)
-		require.Len(t, cmds, 1)
-		cmd, attrs := cmds[0], cmds[0].GetCompleteWorkflowUpdateCommandAttributes()
-		require.Equal(t, enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE, cmd.GetCommandType())
-		require.Nil(t, attrs.Output.GetFailure())
-		require.NotNil(t, attrs.Output.GetSuccess())
-
-		deserializedSuccess := ""
-		err := dc.FromPayloads(attrs.Output.GetSuccess(), &deserializedSuccess)
-		require.NoError(t, err)
-		require.Equal(t, wantSuccess, deserializedSuccess)
-	})
-	t.Run("complete successfully with invalid payload", func(*testing.T) {
-		updateCallbacks.Complete(make(chan int), nil) // dataconverter cannot serialize a chan
-		cmds := cmdHelper.getCommands(true)
-		require.Len(t, cmds, 1)
-		cmd, attrs := cmds[0], cmds[0].GetCompleteWorkflowUpdateCommandAttributes()
-		require.Equal(t, enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE, cmd.GetCommandType())
-		require.NotNil(t, attrs.Output.GetFailure())
-	})
 }

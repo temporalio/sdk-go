@@ -42,7 +42,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
-	interactionpb "go.temporal.io/api/interaction/v1"
+	protocolpb "go.temporal.io/api/protocol/v1"
 	querypb "go.temporal.io/api/query/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
@@ -1596,10 +1596,16 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 }
 
 func Test_NonDeterministicCheck(t *testing.T) {
+	unimplementedCommands := []int32{
+		int32(enumspb.COMMAND_TYPE_UNSPECIFIED),
+		int32(enumspb.COMMAND_TYPE_PROTOCOL_MESSAGE),
+	}
 	commandTypes := enumspb.CommandType_name
-	delete(commandTypes, 0) // Ignore "Unspecified".
+	for _, cmd := range unimplementedCommands {
+		delete(commandTypes, cmd)
+	}
 
-	require.Equal(t, 17, len(commandTypes), "If you see this error, you are adding new command type. "+
+	require.Equal(t, 14, len(commandTypes), "If you see this error, you are adding new command type. "+
 		"Before updating the number to make this test pass, please make sure you update isCommandMatchEvent() method "+
 		"to check the new command type. Otherwise the replay will fail on the new command event.")
 
@@ -1886,23 +1892,26 @@ func Test_IsMemoMatched(t *testing.T) {
 	}
 }
 
-func TestInvocationIndexing(t *testing.T) {
+func TestMessageIndexing(t *testing.T) {
 	wft := &workflowTask{
 		task: &workflowservice.PollWorkflowTaskQueueResponse{
-			Interactions: []*interactionpb.Invocation{
+			Messages: []*protocolpb.Message{
 				{
-					Meta: &interactionpb.Meta{Id: "ID.1", EventId: 3},
+					Id:           "ID.1",
+					SequencingId: &protocolpb.Message_EventId{EventId: 3},
 				},
 				{
-					Meta: &interactionpb.Meta{Id: "ID.2", EventId: 5},
+					Id:           "ID.2",
+					SequencingId: &protocolpb.Message_EventId{EventId: 5},
 				},
 				{
-					Meta: &interactionpb.Meta{Id: "ID.3", EventId: 3},
+					Id:           "ID.3",
+					SequencingId: &protocolpb.Message_EventId{EventId: 3},
 				},
 			},
 		},
 	}
-	index := indexInvocations(wft)
+	index := indexMessages(wft)
 
 	event3Interactions := index[3]
 	event4Interactions := index[4]
@@ -1912,9 +1921,9 @@ func TestInvocationIndexing(t *testing.T) {
 	require.Len(t, event4Interactions, 0)
 	require.Len(t, event5Interactions, 1)
 
-	require.Equal(t, event3Interactions[0].Meta.Id, "ID.1")
-	require.Equal(t, event3Interactions[1].Meta.Id, "ID.3")
-	require.Equal(t, event5Interactions[0].Meta.Id, "ID.2")
+	require.Equal(t, event3Interactions[0].Id, "ID.1")
+	require.Equal(t, event3Interactions[1].Id, "ID.3")
+	require.Equal(t, event5Interactions[0].Id, "ID.2")
 }
 
 func TestHeartbeatThrottleInterval(t *testing.T) {

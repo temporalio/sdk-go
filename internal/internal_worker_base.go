@@ -76,21 +76,6 @@ type (
 		Backoff time.Duration
 	}
 
-	// UpdateCallbacks supplies callbacks for the three possible outcomes of a
-	// workflow update.
-	UpdateCallbacks interface {
-		// Accept is called for an update after it has passed validation and
-		// before execution has started.
-		Accept()
-
-		// Reject is called for an update if validation fails.
-		Reject(err error)
-
-		// Complete is called for an update with the result of executing the
-		// update function.
-		Complete(success interface{}, err error)
-	}
-
 	// WorkflowEnvironment Represents the environment for workflow.
 	// Should only be used within the scope of workflow definition.
 	WorkflowEnvironment interface {
