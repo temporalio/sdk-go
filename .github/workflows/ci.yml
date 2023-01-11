@@ -59,11 +59,9 @@ jobs:
         run: 'go test -v --count 1 -p 1 . -run "TestIntegrationSuite/TestBasic$"'
         working-directory: test
 
-
-  sdk-features-test:
-    uses: temporalio/sdk-features/.github/workflows/go.yaml@main
+  features-test:
+    uses: temporalio/features/.github/workflows/go.yaml@main
     with:
       go-repo-path: ${{github.event.pull_request.head.repo.full_name}}
       version: ${{github.event.pull_request.head.ref}}
       version-is-repo-ref: true
-
