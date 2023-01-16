@@ -1390,6 +1390,14 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("cannot set MaxConcurrentWorkflowTaskPollers to 1")
 	}
 
+	// If max-concurrent workflow task execution size is 1, the worker will only do
+	// sticky-queue requests and never regular-queue requests. This is because we
+	// limit the number of running pollers to MaxConcurrentWorkflowTaskExecutionSize.
+	// 	We disallow the value of 1 here.
+	if options.MaxConcurrentWorkflowTaskExecutionSize == 1 {
+		panic("cannot set MaxConcurrentWorkflowTaskExecutionSize to 1")
+	}
+
 	// Need reference to result for fatal error handler
 	var aw *AggregatedWorker
 	fatalErrorCallback := func(err error) {

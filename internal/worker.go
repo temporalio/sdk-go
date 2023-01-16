@@ -79,7 +79,9 @@ type (
 		MaxConcurrentActivityTaskPollers int
 
 		// Optional: To set the maximum concurrent workflow task executions this worker can have.
-		// The zero value of this uses the default value.
+		// The zero value of this uses the default value. Due to internal logic where pollers
+		// alternate between stick and non-sticky queues, this
+		// value cannot be 1 and will panic if set to that value.
 		// default: defaultMaxConcurrentTaskExecutionSize(1k)
 		MaxConcurrentWorkflowTaskExecutionSize int
 

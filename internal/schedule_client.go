@@ -551,12 +551,12 @@ type (
 		// describes what workflow is run.
 		WorkflowType WorkflowType
 
-		// RecentActions- Most recent 10 Actions started (including manual triggers).
+		// RecentActions- Most recent 5 Actions started (including manual triggers).
 		//
 		// Sorted from older start time to newer.
 		RecentActions []ScheduleActionResult
 
-		// NextActionTimes - Next 10 scheduled Action times.
+		// NextActionTimes - Next 5 scheduled Action times.
 		NextActionTimes []time.Time
 
 		// Memo - Non-indexed user supplied information.
