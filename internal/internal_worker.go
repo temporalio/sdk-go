@@ -48,7 +48,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
-	interactionpb "go.temporal.io/api/interaction/v1"
+	protocolpb "go.temporal.io/api/protocol/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 
@@ -57,6 +57,7 @@ import (
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/common/util"
 	ilog "go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/internal/protocol"
 	"go.temporal.io/sdk/log"
 )
 
@@ -1228,21 +1229,25 @@ func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service
 	return aw.replayWorkflowHistory(logger, service, namespace, execution, &history)
 }
 
-// inferInvocations extracts the set of *interactionpb.Invocation objects that
+// inferMessages extracts the set of *interactionpb.Invocation objects that
 // should be attached to a workflow task (i.e. the
-// PollWorkflowTaskQueueResponse.Interactions) if that task were to carry the
+// PollWorkflowTaskQueueResponse.Messages) if that task were to carry the
 // provided slice of history events.
-func inferInvocations(events []*historypb.HistoryEvent) []*interactionpb.Invocation {
-	var invocations []*interactionpb.Invocation
+func inferMessages(events []*historypb.HistoryEvent) []*protocolpb.Message {
+	var messages []*protocolpb.Message
 	for _, e := range events {
-		if attrs := e.GetWorkflowUpdateAcceptedEventAttributes(); attrs != nil {
-			invocations = append(invocations, &interactionpb.Invocation{
-				Meta:  attrs.Meta,
-				Input: attrs.Input,
+		if attrs := e.GetWorkflowExecutionUpdateAcceptedEventAttributes(); attrs != nil {
+			messages = append(messages, &protocolpb.Message{
+				Id:                 attrs.GetAcceptedRequestMessageId(),
+				ProtocolInstanceId: attrs.GetProtocolInstanceId(),
+				SequencingId: &protocolpb.Message_EventId{
+					EventId: attrs.GetAcceptedRequestSequencingEventId(),
+				},
+				Body: protocol.MustMarshalAny(attrs.GetAcceptedRequest()),
 			})
 		}
 	}
-	return invocations
+	return messages
 }
 
 func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service workflowservice.WorkflowServiceClient, namespace string, originalExecution WorkflowExecution, history *historypb.History) error {
@@ -1285,7 +1290,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 		WorkflowExecution:      execution,
 		History:                history,
 		PreviousStartedEventId: math.MaxInt64,
-		Interactions:           inferInvocations(history.Events),
+		Messages:               inferMessages(history.Events),
 	}
 
 	iterator := &historyIteratorImpl{

@@ -41,7 +41,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
-	interactionpb "go.temporal.io/api/interaction/v1"
+	protocolpb "go.temporal.io/api/protocol/v1"
 	querypb "go.temporal.io/api/query/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
@@ -72,7 +72,7 @@ type (
 		// Return List of commands made, any error.
 		ProcessEvent(event *historypb.HistoryEvent, isReplay bool, isLast bool) error
 		// ProcessInteraction processes interaction inputs
-		ProcessInteraction(meta *interactionpb.Meta, input *interactionpb.Input, isReplay bool, isLast bool) error
+		ProcessMessage(msg *protocolpb.Message, isReplay bool, isLast bool) error
 		// ProcessQuery process a query request.
 		ProcessQuery(queryType string, queryArgs *commonpb.Payloads, header *commonpb.Header) (*commonpb.Payloads, error)
 		StackTrace() string
@@ -86,6 +86,7 @@ type (
 		historyIterator HistoryIterator
 		doneCh          chan struct{}
 		laResultCh      chan *localActivityResult
+
 		// This channel must be initialized with a one-size buffer and is used to indicate when
 		// it is time for a local activity to be retried
 		laRetryCh chan *localActivityTask
@@ -111,6 +112,7 @@ type (
 		previousStartedEventID int64
 
 		newCommands         []*commandpb.Command
+		newMessages         []*protocolpb.Message
 		currentWorkflowTask *workflowservice.PollWorkflowTaskQueueResponse
 		laTunnel            *localActivityTunnel
 		cached              bool
@@ -263,9 +265,6 @@ func isCommandEvent(eventType enumspb.EventType) bool {
 		enumspb.EVENT_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED,
 		enumspb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED,
 		enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES,
-		enumspb.EVENT_TYPE_WORKFLOW_UPDATE_ACCEPTED,
-		enumspb.EVENT_TYPE_WORKFLOW_UPDATE_REJECTED,
-		enumspb.EVENT_TYPE_WORKFLOW_UPDATE_COMPLETED,
 		enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED:
 		return true
 	default:
@@ -493,6 +492,7 @@ func (w *workflowExecutionContextImpl) clearState() {
 	w.err = nil
 	w.previousStartedEventID = 0
 	w.newCommands = nil
+	w.newMessages = nil
 
 	eventHandler := w.getEventHandler()
 	if eventHandler != nil {
@@ -820,10 +820,10 @@ processWorkflowLoop:
 // event after which the interaction can execute) and the value is the
 // invocation itself. This function may return an empty map but it will not
 // return nil.
-func indexInvocations(workflowTask *workflowTask) map[int64][]*interactionpb.Invocation {
-	out := map[int64][]*interactionpb.Invocation{}
-	for _, inter := range workflowTask.task.GetInteractions() {
-		out[inter.GetMeta().GetEventId()] = append(out[inter.GetMeta().GetEventId()], inter)
+func indexMessages(workflowTask *workflowTask) map[int64][]*protocolpb.Message {
+	out := map[int64][]*protocolpb.Message{}
+	for _, msg := range workflowTask.task.Messages {
+		out[msg.GetEventId()] = append(out[msg.GetEventId()], msg)
 	}
 	return out
 }
@@ -841,7 +841,7 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 	var replayCommands []*commandpb.Command
 	var respondEvents []*historypb.HistoryEvent
 
-	invocations := indexInvocations(workflowTask)
+	msgs := indexMessages(workflowTask)
 
 	skipReplayCheck := w.skipReplayCheck()
 	shouldForceReplayCheck := func() bool {
@@ -917,8 +917,8 @@ ProcessEvents:
 				return nil, err
 			}
 
-			for _, inv := range invocations[event.GetEventId()] {
-				err := eventHandler.ProcessInteraction(inv.GetMeta(), inv.GetInput(), isInReplay, isLast)
+			for _, msg := range msgs[event.GetEventId()] {
+				err := eventHandler.ProcessMessage(msg, isInReplay, isLast)
 				if err != nil {
 					return nil, err
 				}
@@ -1129,7 +1129,10 @@ func (w *workflowExecutionContextImpl) CompleteWorkflowTask(workflowTask *workfl
 		w.newCommands = append(w.newCommands, eventCommands...)
 	}
 
-	completeRequest := w.wth.completeWorkflow(eventHandler, w.currentWorkflowTask, w, w.newCommands, !waitLocalActivities)
+	eventHandler.drainOutbox(&w.newMessages)
+	eventHandler.protocols.ClearCompleted()
+
+	completeRequest := w.wth.completeWorkflow(eventHandler, w.currentWorkflowTask, w, w.newCommands, w.newMessages, !waitLocalActivities)
 	w.clearCurrentTask()
 
 	return completeRequest
@@ -1146,6 +1149,7 @@ func (w *workflowExecutionContextImpl) hasPendingLocalActivityWork() bool {
 
 func (w *workflowExecutionContextImpl) clearCurrentTask() {
 	w.newCommands = nil
+	w.newMessages = nil
 	w.currentWorkflowTask = nil
 }
 
@@ -1423,19 +1427,6 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent) bool {
 		}
 		return true
 
-	case enumspb.COMMAND_TYPE_ACCEPT_WORKFLOW_UPDATE:
-		if e.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_UPDATE_ACCEPTED {
-			return false
-		}
-		return true
-
-	case enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE:
-		if e.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_UPDATE_COMPLETED {
-			return false
-		}
-
-		return true
-
 	case enumspb.COMMAND_TYPE_MODIFY_WORKFLOW_PROPERTIES:
 		if e.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED {
 			return false
@@ -1477,6 +1468,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	task *workflowservice.PollWorkflowTaskQueueResponse,
 	workflowContext *workflowExecutionContextImpl,
 	commands []*commandpb.Command,
+	messages []*protocolpb.Message,
 	forceNewWorkflowTask bool,
 ) interface{} {
 	// for query task
@@ -1579,6 +1571,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	return &workflowservice.RespondWorkflowTaskCompletedRequest{
 		TaskToken:                  task.TaskToken,
 		Commands:                   commands,
+		Messages:                   messages,
 		Identity:                   wth.identity,
 		ReturnNewWorkflowTask:      true,
 		ForceCreateNewWorkflowTask: forceNewWorkflowTask,
