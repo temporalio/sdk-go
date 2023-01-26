@@ -1166,6 +1166,8 @@ func (w *workflowExecutionContextImpl) SetCurrentTask(task *workflowservice.Poll
 }
 
 func (w *workflowExecutionContextImpl) SetPreviousStartedEventID(eventID int64) {
+	w.mutex.Lock() // This call can race against the cache eviction thread - see clearState
+	defer w.mutex.Unlock()
 	w.previousStartedEventID = eventID
 }
 
