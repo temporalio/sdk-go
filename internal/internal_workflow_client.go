@@ -1663,11 +1663,7 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 			},
 		},
 	})
-	handle := &updateHandle{
-		ref: &updatepb.UpdateRef{
-			WorkflowExecution: wfexec,
-			UpdateId:          in.UpdateID,
-		}}
+	handle := &updateHandle{ref: resp.UpdateRef}
 	if err != nil {
 		handle.err = err
 		return handle, nil
@@ -1699,7 +1695,12 @@ func (uh *updateHandle) UpdateID() string {
 }
 
 func (uh *updateHandle) Get(ctx context.Context, valuePtr interface{}) error {
-	if uh.err != nil {
+	// implementation note: this is a broken implementation that assumes the
+	// update has already completed by the time Get is called. This is true for
+	// the current implementation of synchronous updates but will not be true in
+	// the future with async update.
+
+	if uh.err != nil || valuePtr == nil {
 		return uh.err
 	}
 	return uh.value.Get(valuePtr)
