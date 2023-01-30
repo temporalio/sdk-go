@@ -227,6 +227,12 @@ type (
 		// and aliased names when not using string names when executing child
 		// workflow or activities.
 		DisableRegistrationAliasing bool
+
+		// Optional: Enable encoding built in query handles like stack trace.
+		// if enabled built in queries will use the provided data converter.
+		// if disabled they will use the default data converter.
+		// default: false
+		EnableEncodeBuiltInQueries bool
 	}
 )
 

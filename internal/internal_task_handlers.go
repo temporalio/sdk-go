@@ -120,20 +120,21 @@ type (
 
 	// workflowTaskHandlerImpl is the implementation of WorkflowTaskHandler
 	workflowTaskHandlerImpl struct {
-		namespace                string
-		metricsHandler           metrics.Handler
-		ppMgr                    pressurePointMgr
-		logger                   log.Logger
-		identity                 string
-		enableLoggingInReplay    bool
-		registry                 *registry
-		laTunnel                 *localActivityTunnel
-		workflowPanicPolicy      WorkflowPanicPolicy
-		dataConverter            converter.DataConverter
-		failureConverter         converter.FailureConverter
-		contextPropagators       []ContextPropagator
-		cache                    *WorkerCache
-		deadlockDetectionTimeout time.Duration
+		namespace                  string
+		metricsHandler             metrics.Handler
+		ppMgr                      pressurePointMgr
+		logger                     log.Logger
+		identity                   string
+		enableLoggingInReplay      bool
+		registry                   *registry
+		laTunnel                   *localActivityTunnel
+		workflowPanicPolicy        WorkflowPanicPolicy
+		dataConverter              converter.DataConverter
+		failureConverter           converter.FailureConverter
+		contextPropagators         []ContextPropagator
+		cache                      *WorkerCache
+		deadlockDetectionTimeout   time.Duration
+		enableEncodeBuiltInQueries bool
 	}
 
 	activityProvider func(name string) activity
@@ -399,19 +400,20 @@ func isPreloadMarkerEvent(event *historypb.HistoryEvent) bool {
 func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePointMgr, registry *registry) WorkflowTaskHandler {
 	ensureRequiredParams(&params)
 	return &workflowTaskHandlerImpl{
-		namespace:                params.Namespace,
-		logger:                   params.Logger,
-		ppMgr:                    ppMgr,
-		metricsHandler:           params.MetricsHandler,
-		identity:                 params.Identity,
-		enableLoggingInReplay:    params.EnableLoggingInReplay,
-		registry:                 registry,
-		workflowPanicPolicy:      params.WorkflowPanicPolicy,
-		dataConverter:            params.DataConverter,
-		failureConverter:         params.FailureConverter,
-		contextPropagators:       params.ContextPropagators,
-		cache:                    params.cache,
-		deadlockDetectionTimeout: params.DeadlockDetectionTimeout,
+		namespace:                  params.Namespace,
+		logger:                     params.Logger,
+		ppMgr:                      ppMgr,
+		metricsHandler:             params.MetricsHandler,
+		identity:                   params.Identity,
+		enableLoggingInReplay:      params.EnableLoggingInReplay,
+		registry:                   registry,
+		workflowPanicPolicy:        params.WorkflowPanicPolicy,
+		dataConverter:              params.DataConverter,
+		failureConverter:           params.FailureConverter,
+		contextPropagators:         params.ContextPropagators,
+		cache:                      params.cache,
+		deadlockDetectionTimeout:   params.DeadlockDetectionTimeout,
+		enableEncodeBuiltInQueries: params.EnableEncodeBuiltInQueries,
 	}
 }
 
@@ -516,6 +518,7 @@ func (w *workflowExecutionContextImpl) createEventHandler() {
 		w.wth.failureConverter,
 		w.wth.contextPropagators,
 		w.wth.deadlockDetectionTimeout,
+		w.wth.enableEncodeBuiltInQueries,
 	)
 
 	w.eventHandler = &eventHandler

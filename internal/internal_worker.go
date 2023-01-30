@@ -215,6 +215,9 @@ type (
 		cache *WorkerCache
 
 		eagerActivityExecutor *eagerActivityExecutor
+
+		// Enable using the provided data converter for built in queries like stack trace queries.
+		EnableEncodeBuiltInQueries bool
 	}
 )
 
@@ -1443,6 +1446,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		MetricsHandler:                        client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue)),
 		Logger:                                client.logger,
 		EnableLoggingInReplay:                 options.EnableLoggingInReplay,
+		EnableEncodeBuiltInQueries:            options.EnableEncodeBuiltInQueries,
 		UserContext:                           backgroundActivityContext,
 		UserContextCancel:                     backgroundActivityContextCancel,
 		StickyScheduleToStartTimeout:          options.StickyScheduleToStartTimeout,

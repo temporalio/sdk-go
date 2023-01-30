@@ -133,9 +133,10 @@ type (
 		queryHandler    func(queryType string, queryArgs *commonpb.Payloads, header *commonpb.Header) (*commonpb.Payloads, error)
 		updateHandler   func(name string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
 
-		logger                log.Logger
-		isReplay              bool // flag to indicate if workflow is in replay mode
-		enableLoggingInReplay bool // flag to indicate if workflow should enable logging in replay mode
+		logger                     log.Logger
+		isReplay                   bool // flag to indicate if workflow is in replay mode
+		enableLoggingInReplay      bool // flag to indicate if workflow should enable logging in replay mode
+		enableEncodeBuiltInQueries bool // flag to indicate if built in queries like stacktrace queries should use the provided data converter or the default
 
 		metricsHandler           metrics.Handler
 		registry                 *registry
@@ -191,24 +192,26 @@ func newWorkflowExecutionEventHandler(
 	failureConverter converter.FailureConverter,
 	contextPropagators []ContextPropagator,
 	deadlockDetectionTimeout time.Duration,
+	enableEncodeBuiltInQueries bool,
 ) workflowExecutionEventHandler {
 	context := &workflowEnvironmentImpl{
-		workflowInfo:             workflowInfo,
-		commandsHelper:           newCommandsHelper(),
-		sideEffectResult:         make(map[int64]*commonpb.Payloads),
-		mutableSideEffect:        make(map[string]*commonpb.Payloads),
-		changeVersions:           make(map[string]Version),
-		pendingLaTasks:           make(map[string]*localActivityTask),
-		unstartedLaTasks:         make(map[string]struct{}),
-		openSessions:             make(map[string]*SessionInfo),
-		completeHandler:          completeHandler,
-		enableLoggingInReplay:    enableLoggingInReplay,
-		registry:                 registry,
-		dataConverter:            dataConverter,
-		failureConverter:         failureConverter,
-		contextPropagators:       contextPropagators,
-		deadlockDetectionTimeout: deadlockDetectionTimeout,
-		protocols:                protocol.NewRegistry(),
+		workflowInfo:               workflowInfo,
+		commandsHelper:             newCommandsHelper(),
+		sideEffectResult:           make(map[int64]*commonpb.Payloads),
+		mutableSideEffect:          make(map[string]*commonpb.Payloads),
+		changeVersions:             make(map[string]Version),
+		pendingLaTasks:             make(map[string]*localActivityTask),
+		unstartedLaTasks:           make(map[string]struct{}),
+		openSessions:               make(map[string]*SessionInfo),
+		completeHandler:            completeHandler,
+		enableLoggingInReplay:      enableLoggingInReplay,
+		enableEncodeBuiltInQueries: enableEncodeBuiltInQueries,
+		registry:                   registry,
+		dataConverter:              dataConverter,
+		failureConverter:           failureConverter,
+		contextPropagators:         contextPropagators,
+		deadlockDetectionTimeout:   deadlockDetectionTimeout,
+		protocols:                  protocol.NewRegistry(),
 	}
 	context.logger = ilog.NewReplayLogger(
 		log.With(logger,
@@ -1072,9 +1075,17 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessQuery(
 ) (*commonpb.Payloads, error) {
 	switch queryType {
 	case QueryTypeStackTrace:
-		return weh.encodeArg(weh.StackTrace())
+		if weh.enableEncodeBuiltInQueries {
+			return weh.encodeArg(weh.StackTrace())
+		} else {
+			return converter.GetDefaultDataConverter().ToPayloads(weh.StackTrace())
+		}
 	case QueryTypeOpenSessions:
-		return weh.encodeArg(weh.getOpenSessions())
+		if weh.enableEncodeBuiltInQueries {
+			return weh.encodeArg(weh.getOpenSessions())
+		} else {
+			return converter.GetDefaultDataConverter().ToPayloads(weh.getOpenSessions())
+		}
 	default:
 		result, err := weh.queryHandler(queryType, queryArgs, header)
 		if err != nil {
