@@ -1481,8 +1481,8 @@ func TestUpdateHandle(t *testing.T) {
 		require.Equal(t, t.Name(), out)
 	})
 
-	t.Run("invalid state", func(t *testing.T) {
+	t.Run("nil does not panic", func(t *testing.T) {
 		uh := updateHandle{}
-		require.Panics(t, func() { _ = uh.Get(context.TODO(), nil) })
+		require.NotPanics(t, func() { _ = uh.Get(context.TODO(), nil) })
 	})
 }
