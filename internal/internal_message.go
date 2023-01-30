@@ -25,39 +25,33 @@
 package internal
 
 import (
-	"sort"
-
 	protocolpb "go.temporal.io/api/protocol/v1"
 )
 
 type eventMsgIndex []*protocolpb.Message
 
-// indexMessagesByEventID creates an index over a set of input messages that allows for
-// fast access to messages with an event ID less than or equal to a specific
-// upper bound. The order of messages with the same event ID will be preserved.
+// indexMessagesByEventID creates an index over a set of input messages that
+// allows for access to messages with an event ID less than or equal to a
+// specific upper bound. The order of messages with the same event ID will be
+// preserved.
 func indexMessagesByEventID(msgs []*protocolpb.Message) *eventMsgIndex {
-	// implementor note: the order preservation requirement is why we can't use
-	// the heap package from the Go SDK here.
-
-	sorted := make(eventMsgIndex, len(msgs))
-	copy(sorted, msgs)
-	sort.SliceStable(sorted, func(i, j int) bool {
-		return sorted[i].GetEventId() < sorted[j].GetEventId()
-	})
-	return &sorted
+	emi := eventMsgIndex(msgs)
+	return &emi
 }
 
 // takeLTE removes and returns the messages in this index that have an event ID
 // less than or equal to the input argument.
 func (emi *eventMsgIndex) takeLTE(eventID int64) []*protocolpb.Message {
-	indexOfFirstGreater := len(*emi)
-	for i, msg := range *emi {
+	n := 0
+	var out []*protocolpb.Message
+	for _, msg := range *emi {
 		if msg.GetEventId() > eventID {
-			indexOfFirstGreater = i
-			break
+			(*emi)[n] = msg
+			n++
+		} else {
+			out = append(out, msg)
 		}
 	}
-	var out []*protocolpb.Message
-	out, *emi = (*emi)[0:indexOfFirstGreater], (*emi)[indexOfFirstGreater:]
+	*emi = (*emi)[:n]
 	return out
 }
