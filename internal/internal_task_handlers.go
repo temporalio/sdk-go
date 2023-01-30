@@ -815,19 +815,6 @@ processWorkflowLoop:
 	return
 }
 
-// indexInvocations builds a map of the interaction invocations contained in a
-// workflow task where the index is the interaction's event level (i.e. the
-// event after which the interaction can execute) and the value is the
-// invocation itself. This function may return an empty map but it will not
-// return nil.
-func indexMessages(workflowTask *workflowTask) map[int64][]*protocolpb.Message {
-	out := map[int64][]*protocolpb.Message{}
-	for _, msg := range workflowTask.task.Messages {
-		out[msg.GetEventId()] = append(out[msg.GetEventId()], msg)
-	}
-	return out
-}
-
 func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflowTask) (interface{}, error) {
 	task := workflowTask.task
 	historyIterator := workflowTask.historyIterator
@@ -841,7 +828,7 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 	var replayCommands []*commandpb.Command
 	var respondEvents []*historypb.HistoryEvent
 
-	msgs := indexMessages(workflowTask)
+	msgs := indexMessagesByEventID(workflowTask.task.GetMessages())
 
 	skipReplayCheck := w.skipReplayCheck()
 	shouldForceReplayCheck := func() bool {
@@ -912,12 +899,25 @@ ProcessEvents:
 				return nil, err
 			}
 
+			// because we don't run all events through this code path, we have
+			// to run ProcessMessages both before and after ProcessEvent to
+			// catch any messages that should have been delivered _before_ this
+			// event but perhaps were not because there were attached to an
+			// event (e.g. WFTScheduledEvent) that does not come through this
+			// loop.
+			for _, msg := range msgs.takeLTE(event.GetEventId() - 1) {
+				err := eventHandler.ProcessMessage(msg, isInReplay, isLast)
+				if err != nil {
+					return nil, err
+				}
+			}
+
 			err = eventHandler.ProcessEvent(event, isInReplay, isLast)
 			if err != nil {
 				return nil, err
 			}
 
-			for _, msg := range msgs[event.GetEventId()] {
+			for _, msg := range msgs.takeLTE(event.GetEventId()) {
 				err := eventHandler.ProcessMessage(msg, isInReplay, isLast)
 				if err != nil {
 					return nil, err
