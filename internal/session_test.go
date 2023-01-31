@@ -72,14 +72,14 @@ func (s *SessionTestSuite) TestCreationCompletion() {
 			return err
 		}
 		info := GetSessionInfo(sessionCtx)
-		if info == nil || info.sessionState != sessionStateOpen {
+		if info == nil || info.SessionState != SessionStateOpen {
 			return errors.New("session state should be open after creation")
 		}
 
 		CompleteSession(sessionCtx)
 
 		info = GetSessionInfo(sessionCtx)
-		if info == nil || info.sessionState != sessionStateClosed {
+		if info == nil || info.SessionState != SessionStateClosed {
 			return errors.New("session state should be closed after completion")
 		}
 		return nil
@@ -102,7 +102,7 @@ func (s *SessionTestSuite) TestCreationWithOpenSessionContext() {
 		sessionCtx := setSessionInfo(ctx, &SessionInfo{
 			SessionID:    "some random sessionID",
 			taskqueue:    "some random taskqueue",
-			sessionState: sessionStateOpen,
+			SessionState: SessionStateOpen,
 		})
 		_, err := CreateSession(sessionCtx, s.sessionOptions)
 		return err
@@ -137,7 +137,7 @@ func (s *SessionTestSuite) TestCreationWithClosedSessionContext() {
 		sessionCtx := setSessionInfo(ctx, &SessionInfo{
 			SessionID:    "some random sessionID",
 			taskqueue:    "some random taskqueue",
-			sessionState: sessionStateClosed,
+			SessionState: SessionStateClosed,
 		})
 
 		sessionCtx, err := CreateSession(sessionCtx, s.sessionOptions)
@@ -171,7 +171,7 @@ func (s *SessionTestSuite) TestCreationWithFailedSessionContext() {
 		sessionCtx := setSessionInfo(ctx, &SessionInfo{
 			SessionID:    "some random sessionID",
 			taskqueue:    "some random taskqueue",
-			sessionState: sessionStateFailed,
+			SessionState: SessionStateFailed,
 		})
 
 		sessionCtx, err := CreateSession(sessionCtx, s.sessionOptions)
@@ -199,7 +199,7 @@ func (s *SessionTestSuite) TestCompletionWithClosedSessionContext() {
 		sessionCtx := setSessionInfo(ctx, &SessionInfo{
 			SessionID:    "some random sessionID",
 			taskqueue:    "some random taskqueue",
-			sessionState: sessionStateClosed,
+			SessionState: SessionStateClosed,
 		})
 		CompleteSession(sessionCtx)
 		return nil
@@ -219,7 +219,7 @@ func (s *SessionTestSuite) TestCompletionWithFailedSessionContext() {
 		sessionCtx := setSessionInfo(ctx, &SessionInfo{
 			SessionID:    "some random sessionID",
 			taskqueue:    "some random taskqueue",
-			sessionState: sessionStateFailed,
+			SessionState: SessionStateFailed,
 		})
 		CompleteSession(sessionCtx)
 		return nil
@@ -244,7 +244,7 @@ func (s *SessionTestSuite) TestGetSessionInfo() {
 		sessionCtx := setSessionInfo(ctx, &SessionInfo{
 			SessionID:    "some random sessionID",
 			taskqueue:    "some random taskqueue",
-			sessionState: sessionStateFailed,
+			SessionState: SessionStateFailed,
 		})
 		info = GetSessionInfo(sessionCtx)
 		if info == nil {
@@ -254,7 +254,7 @@ func (s *SessionTestSuite) TestGetSessionInfo() {
 		newSessionInfo := &SessionInfo{
 			SessionID:    "another sessionID",
 			taskqueue:    "another taskqueue",
-			sessionState: sessionStateClosed,
+			SessionState: SessionStateClosed,
 		}
 		sessionCtx = setSessionInfo(ctx, newSessionInfo)
 		info = GetSessionInfo(sessionCtx)
@@ -286,7 +286,7 @@ func (s *SessionTestSuite) TestRecreation() {
 		sessionInfo := &SessionInfo{
 			SessionID:    "some random sessionID",
 			taskqueue:    "some random taskqueue",
-			sessionState: sessionStateFailed,
+			SessionState: SessionStateFailed,
 		}
 
 		sessionCtx, err := RecreateSession(ctx, sessionInfo.GetRecreateToken(), s.sessionOptions)
@@ -461,7 +461,7 @@ func (s *SessionTestSuite) TestSessionRecreationTaskQueue() {
 		sessionInfo := &SessionInfo{
 			SessionID:    "testSessionID",
 			taskqueue:    resourceSpecificTaskQueue,
-			sessionState: sessionStateClosed,
+			SessionState: SessionStateClosed,
 		}
 		sessionCtx, err := RecreateSession(ctx, sessionInfo.GetRecreateToken(), s.sessionOptions)
 		if err != nil {
@@ -509,7 +509,7 @@ func (s *SessionTestSuite) TestExecuteActivityInFailedSession() {
 		sessionCtx := setSessionInfo(ctx, &SessionInfo{
 			SessionID:    "random sessionID",
 			taskqueue:    "random taskqueue",
-			sessionState: sessionStateFailed,
+			SessionState: SessionStateFailed,
 		})
 
 		return ExecuteActivity(sessionCtx, testSessionActivity, "a random name").Get(sessionCtx, nil)
@@ -543,7 +543,7 @@ func (s *SessionTestSuite) TestExecuteActivityInClosedSession() {
 		sessionCtx := setSessionInfo(ctx, &SessionInfo{
 			SessionID:    "random sessionID",
 			taskqueue:    "random taskqueue",
-			sessionState: sessionStateClosed,
+			SessionState: SessionStateClosed,
 		})
 
 		return ExecuteActivity(sessionCtx, testSessionActivity, "some random message").Get(sessionCtx, nil)
@@ -569,7 +569,7 @@ func (s *SessionTestSuite) TestSessionRecreateToken() {
 	sessionInfo := &SessionInfo{
 		SessionID:    "testSessionID",
 		taskqueue:    taskqueue,
-		sessionState: sessionStateClosed,
+		SessionState: SessionStateClosed,
 	}
 	token := sessionInfo.GetRecreateToken()
 	params, err := deserializeRecreateToken(token)
@@ -600,7 +600,7 @@ func (s *SessionTestSuite) TestCompletionFailed() {
 		CompleteSession(sessionCtx)
 
 		info := GetSessionInfo(sessionCtx)
-		if info == nil || info.sessionState != sessionStateClosed {
+		if info == nil || info.SessionState != SessionStateClosed {
 			return errors.New("session state should be closed after completion even when completion activity failed")
 		}
 		return nil

@@ -47,9 +47,20 @@ type (
 	SessionOptions = internal.SessionOptions
 )
 
-// ErrSessionFailed is the error returned when user tries to execute an activity but the
-// session it belongs to has already failed
-var ErrSessionFailed = internal.ErrSessionFailed
+var (
+	// ErrSessionFailed is the error returned when user tries to execute an activity but the
+	// session it belongs to has already failed
+	ErrSessionFailed = internal.ErrSessionFailed
+
+	// SessionStateOpen means the session worker is heartbeating and new activities will be schedule on the session host.
+	SessionStateOpen = internal.SessionStateOpen
+
+	// SessionStateClosed means the session was closed by the workflow and new activities will not be scheduled on the session host.
+	SessionStateClosed = internal.SessionStateClosed
+
+	// SessionStateFailed means the session worker was detected to be down and the session cannot be used to schedule new activities.
+	SessionStateFailed = internal.SessionStateFailed
+)
 
 // Note: Worker should be configured to process session. To do this, set the following
 // fields in WorkerOptions:
@@ -62,11 +73,11 @@ var ErrSessionFailed = internal.ErrSessionFailed
 // ActivityOptions. If none is specified, the default one will be used.
 //
 // CreationSession will fail in the following situations:
-//     1. The context passed in already contains a session which is still open
-//        (not closed and failed).
-//     2. All the workers are busy (number of sessions currently running on all the workers have reached
-//        MaxConcurrentSessionExecutionSize, which is specified when starting the workers) and session
-//        cannot be created within a specified timeout.
+//  1. The context passed in already contains a session which is still open
+//     (not closed and failed).
+//  2. All the workers are busy (number of sessions currently running on all the workers have reached
+//     MaxConcurrentSessionExecutionSize, which is specified when starting the workers) and session
+//     cannot be created within a specified timeout.
 //
 // If an activity is executed using the returned context, it's regarded as part of the
 // session. All activities within the same session will be executed by the same worker.
@@ -83,22 +94,23 @@ var ErrSessionFailed = internal.ErrSessionFailed
 // New session can be created if necessary to retry the whole session.
 //
 // Example:
-//    so := &SessionOptions{
-// 	      ExecutionTimeout: time.Minute,
-// 	      CreationTimeout:  time.Minute,
-//    }
-//    sessionCtx, err := CreateSession(ctx, so)
-//    if err != nil {
-//		    // Creation failed. Wrong ctx or too many outstanding sessions.
-//    }
-//    defer CompleteSession(sessionCtx)
-//    err = ExecuteActivity(sessionCtx, someActivityFunc, activityInput).Get(sessionCtx, nil)
-//    if err == ErrSessionFailed {
-//        // Session has failed
-//    } else {
-//        // Handle activity error
-//    }
-//    ... // execute more activities using sessionCtx
+//
+//	   so := &SessionOptions{
+//		      ExecutionTimeout: time.Minute,
+//		      CreationTimeout:  time.Minute,
+//	   }
+//	   sessionCtx, err := CreateSession(ctx, so)
+//	   if err != nil {
+//			    // Creation failed. Wrong ctx or too many outstanding sessions.
+//	   }
+//	   defer CompleteSession(sessionCtx)
+//	   err = ExecuteActivity(sessionCtx, someActivityFunc, activityInput).Get(sessionCtx, nil)
+//	   if err == ErrSessionFailed {
+//	       // Session has failed
+//	   } else {
+//	       // Handle activity error
+//	   }
+//	   ... // execute more activities using sessionCtx
 //
 // NOTE: Session recreation via RecreateSession may not work properly across worker fail/crash before Temporal server
 // version v1.15.1.

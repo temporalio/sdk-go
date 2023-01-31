@@ -46,9 +46,9 @@ type (
 	SessionInfo struct {
 		SessionID         string
 		HostName          string
-		resourceID        string // hide from user for now
-		taskqueue         string // resource specific taskqueue
-		sessionState      sessionState
+		SessionState      SessionState
+		resourceID        string     // hide from user for now
+		taskqueue         string     // resource specific taskqueue
 		sessionCancelFunc CancelFunc // cancel func for the session context, used by both creation activity and user activities
 		completionCtx     Context    // context for executing the completion activity
 	}
@@ -71,7 +71,7 @@ type (
 		Taskqueue string
 	}
 
-	sessionState int
+	SessionState int
 
 	sessionTokenBucket struct {
 		*sync.Cond
@@ -104,9 +104,9 @@ type (
 
 // Session State enum
 const (
-	sessionStateOpen sessionState = iota
-	sessionStateFailed
-	sessionStateClosed
+	SessionStateOpen SessionState = iota
+	SessionStateFailed
+	SessionStateClosed
 )
 
 const (
@@ -143,11 +143,11 @@ var (
 // ActivityOptions. If none is specified, the default one will be used.
 //
 // CreationSession will fail in the following situations:
-//     1. The context passed in already contains a session which is still open
-//        (not closed and failed).
-//     2. All the workers are busy (number of sessions currently running on all the workers have reached
-//        MaxConcurrentSessionExecutionSize, which is specified when starting the workers) and session
-//        cannot be created within a specified timeout.
+//  1. The context passed in already contains a session which is still open
+//     (not closed and failed).
+//  2. All the workers are busy (number of sessions currently running on all the workers have reached
+//     MaxConcurrentSessionExecutionSize, which is specified when starting the workers) and session
+//     cannot be created within a specified timeout.
 //
 // If an activity is executed using the returned context, it's regarded as part of the
 // session. All activities within the same session will be executed by the same worker.
@@ -164,22 +164,23 @@ var (
 // New session can be created if necessary to retry the whole session.
 //
 // Example:
-//    so := &SessionOptions{
-// 	      ExecutionTimeout: time.Minute,
-// 	      CreationTimeout:  time.Minute,
-//    }
-//    sessionCtx, err := CreateSession(ctx, so)
-//    if err != nil {
-//		    // Creation failed. Wrong ctx or too many outstanding sessions.
-//    }
-//    defer CompleteSession(sessionCtx)
-//    err = ExecuteActivity(sessionCtx, someActivityFunc, activityInput).Get(sessionCtx, nil)
-//    if err == ErrSessionFailed {
-//        // Session has failed
-//    } else {
-//        // Handle activity error
-//    }
-//    ... // execute more activities using sessionCtx
+//
+//	   so := &SessionOptions{
+//		      ExecutionTimeout: time.Minute,
+//		      CreationTimeout:  time.Minute,
+//	   }
+//	   sessionCtx, err := CreateSession(ctx, so)
+//	   if err != nil {
+//			    // Creation failed. Wrong ctx or too many outstanding sessions.
+//	   }
+//	   defer CompleteSession(sessionCtx)
+//	   err = ExecuteActivity(sessionCtx, someActivityFunc, activityInput).Get(sessionCtx, nil)
+//	   if err == ErrSessionFailed {
+//	       // Session has failed
+//	   } else {
+//	       // Handle activity error
+//	   }
+//	   ... // execute more activities using sessionCtx
 func CreateSession(ctx Context, sessionOptions *SessionOptions) (Context, error) {
 	options := getActivityOptions(ctx)
 	baseTaskqueue := options.TaskQueueName
@@ -214,7 +215,7 @@ func RecreateSession(ctx Context, recreateToken []byte, sessionOptions *SessionO
 // it's not in a session.
 func CompleteSession(ctx Context) {
 	sessionInfo := getSessionInfo(ctx)
-	if sessionInfo == nil || sessionInfo.sessionState != sessionStateOpen {
+	if sessionInfo == nil || sessionInfo.SessionState != SessionStateOpen {
 		return
 	}
 
@@ -237,7 +238,7 @@ func CompleteSession(ctx Context) {
 		GetLogger(completionCtx).Warn("Complete session activity failed", tagError, err)
 	}
 
-	sessionInfo.sessionState = sessionStateClosed
+	sessionInfo.SessionState = SessionStateClosed
 	getWorkflowEnvironment(ctx).RemoveSession(sessionInfo.SessionID)
 	GetLogger(ctx).Debug("Completed session", "sessionID", sessionInfo.SessionID)
 }
@@ -279,7 +280,7 @@ func setSessionInfo(ctx Context, sessionInfo *SessionInfo) Context {
 func createSession(ctx Context, creationTaskqueue string, options *SessionOptions, retryable bool) (Context, error) {
 	logger := GetLogger(ctx)
 	logger.Debug("Start creating session")
-	if prevSessionInfo := getSessionInfo(ctx); prevSessionInfo != nil && prevSessionInfo.sessionState == sessionStateOpen {
+	if prevSessionInfo := getSessionInfo(ctx); prevSessionInfo != nil && prevSessionInfo.SessionState == SessionStateOpen {
 		return nil, errFoundExistingOpenSession
 	}
 	sessionID, err := generateSessionID(ctx)
@@ -316,7 +317,7 @@ func createSession(ctx Context, creationTaskqueue string, options *SessionOption
 
 	sessionInfo := &SessionInfo{
 		SessionID:    sessionID,
-		sessionState: sessionStateOpen,
+		SessionState: SessionStateOpen,
 	}
 	completionCtx := setSessionInfo(ctx, sessionInfo)
 	sessionInfo.completionCtx = completionCtx
@@ -361,7 +362,7 @@ func createSession(ctx Context, creationTaskqueue string, options *SessionOption
 		if !errors.As(err, &canceledErr) {
 			getWorkflowEnvironment(creationCtx).RemoveSession(sessionID)
 			GetLogger(creationCtx).Debug("Session failed", "sessionID", sessionID, tagError, err)
-			sessionInfo.sessionState = sessionStateFailed
+			sessionInfo.SessionState = SessionStateFailed
 			sessionCancelFunc()
 		}
 	})
