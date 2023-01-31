@@ -1289,6 +1289,10 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 		execution.RunId = first.GetWorkflowExecutionStartedEventAttributes().GetOriginalExecutionRunId()
 	}
 
+	if first.GetWorkflowExecutionStartedEventAttributes().GetTaskQueue().GetName() != "" {
+		taskQueue = first.GetWorkflowExecutionStartedEventAttributes().GetTaskQueue().GetName()
+	}
+
 	task := &workflowservice.PollWorkflowTaskQueueResponse{
 		Attempt:                1,
 		TaskToken:              []byte("ReplayTaskToken"),
