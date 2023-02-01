@@ -48,6 +48,11 @@ func mustSetUpdateHandler(
 	require.NoError(t, SetUpdateHandler(ctx, name, handler, opts))
 }
 
+type testUpdateScheduler struct {
+	SpawnImpl func(Context, string, func(Context)) Context
+	YieldImpl func(Context, string)
+}
+
 type testUpdateCallbacks struct {
 	AcceptImpl   func()
 	RejectImpl   func(err error)
@@ -58,6 +63,22 @@ func (tuc *testUpdateCallbacks) Accept()          { tuc.AcceptImpl() }
 func (tuc *testUpdateCallbacks) Reject(err error) { tuc.RejectImpl(err) }
 func (tuc *testUpdateCallbacks) Complete(success interface{}, err error) {
 	tuc.CompleteImpl(success, err)
+}
+
+func (tus *testUpdateScheduler) Spawn(ctx Context, name string, f func(Context)) Context {
+	return tus.SpawnImpl(ctx, name, f)
+}
+
+func (tus *testUpdateScheduler) Yield(ctx Context, status string) {
+	tus.YieldImpl(ctx, status)
+}
+
+var runOnCallingThread = &testUpdateScheduler{
+	SpawnImpl: func(ctx Context, _ string, f func(Context)) Context {
+		f(ctx)
+		return ctx
+	},
+	YieldImpl: func(Context, string) {},
 }
 
 func TestUpdateHandlerPanicSafety(t *testing.T) {
@@ -151,8 +172,6 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	args, err := dc.ToPayloads(argStr)
 	require.NoError(t, err)
 
-	runOnCallingThread := func(ctx Context, _ string, f func(Context)) Context { f(ctx); return ctx }
-
 	t.Run("no handler registered", func(t *testing.T) {
 		mustSetUpdateHandler(
 			t,
@@ -244,6 +263,56 @@ func TestDefaultUpdateHandler(t *testing.T) {
 		expectedResult, _ := updateFunc(ctx, argStr)
 		require.Equal(t, expectedResult, result)
 	})
+
+	t.Run("update before handlers registered", func(t *testing.T) {
+		// same test as above except that we don't set the update handler for
+		// t.Name() until the first Yield. This emulates the situation where
+		// there is an update in the first WFT of a workflow so the SDK needs to
+		// wait for the workflow function to execute up to the point where it
+		// has registered some update handlers. If the SDK attempts to deliver
+		// the update before the first run of the workflow function, no handlers
+		// will be registered yet.
+
+		// don't reuse the context that has all the other update handlers
+		// registered because the code under test will think the handler
+		// registration at workflow start time has already occurred
+		_, ctx, err := newWorkflowContext(env, nil)
+		require.NoError(t, err)
+
+		updateFunc := func(ctx Context, s string) (string, error) { return s + " success!", nil }
+		var (
+			resultErr error
+			rejectErr error
+			accepted  bool
+			result    interface{}
+		)
+		sched := &testUpdateScheduler{
+			SpawnImpl: func(ctx Context, _ string, f func(Context)) Context {
+				f(ctx)
+				return ctx
+			},
+			YieldImpl: func(ctx Context, _ string) {
+				// set the handler in place here
+				mustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateHandlerOptions{})
+			},
+		}
+		defaultUpdateHandler(ctx, t.Name(), args, hdr, &testUpdateCallbacks{
+			RejectImpl: func(err error) { rejectErr = err },
+			AcceptImpl: func() { accepted = true },
+			CompleteImpl: func(success interface{}, err error) {
+				resultErr = err
+				result = success
+			},
+		}, sched)
+
+		require.True(t, accepted)
+		require.Nil(t, resultErr)
+		require.Nil(t, rejectErr)
+
+		expectedResult, _ := updateFunc(ctx, argStr)
+		require.Equal(t, expectedResult, result)
+	})
+
 }
 
 func TestInvalidUpdateStateTransitions(t *testing.T) {

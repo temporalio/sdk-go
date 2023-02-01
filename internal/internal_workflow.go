@@ -243,6 +243,11 @@ type (
 		queryType     string
 		dataConverter converter.DataConverter
 	}
+
+	// coroScheduler adapts the coro dispatcher to the UpdateScheduler interface
+	coroScheduler struct {
+		dispatcher dispatcher
+	}
 )
 
 const (
@@ -533,7 +538,7 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 
 	getWorkflowEnvironment(d.rootCtx).RegisterUpdateHandler(
 		func(name string, serializedArgs *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks) {
-			defaultUpdateHandler(d.rootCtx, name, serializedArgs, header, callbacks, d.dispatcher.NewCoroutine)
+			defaultUpdateHandler(d.rootCtx, name, serializedArgs, header, callbacks, coroScheduler{d.dispatcher})
 		})
 
 	getWorkflowEnvironment(d.rootCtx).RegisterQueryHandler(
@@ -1578,4 +1583,15 @@ func (wg *waitGroupImpl) Wait(ctx Context) {
 		panic(err)
 	}
 	wg.future, wg.settable = NewFuture(ctx)
+}
+
+// Spawn starts a new coroutine with Dispatcher.NewCoroutine
+func (cs coroScheduler) Spawn(ctx Context, name string, f func(Context)) Context {
+	return cs.dispatcher.NewCoroutine(ctx, name, f)
+}
+
+// Yield calls the yield function on the coroutineState associated with the
+// supplied workflow context.
+func (cs coroScheduler) Yield(ctx Context, reason string) {
+	getState(ctx).yield(reason)
 }

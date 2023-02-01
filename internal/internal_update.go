@@ -65,6 +65,16 @@ type (
 		Complete(success interface{}, err error)
 	}
 
+	// UpdateScheduluer allows an update state machine to spawn coroutines and
+	// yield itself as necessary.
+	UpdateScheduler interface {
+		// Spawn starts a new named coroutine, executing the given function f.
+		Spawn(ctx Context, name string, f func(ctx Context)) Context
+
+		// Yield returns control to the scheduler.
+		Yield(ctx Context, status string)
+	}
+
 	// updateEnv encapsulates the utility functions needed by update protocol
 	// instance in order to implement the UpdateCallbacks interface. This
 	// interface is conveniently implemented by
@@ -207,7 +217,7 @@ func defaultUpdateHandler(
 	serializedArgs *commonpb.Payloads,
 	header *commonpb.Header,
 	callbacks UpdateCallbacks,
-	spawn func(Context, string, func(Context)) Context,
+	scheduler UpdateScheduler,
 ) {
 	env := getWorkflowEnvironment(rootCtx)
 	ctx, err := workflowContextWithHeaderPropagated(rootCtx, header, env.GetContextPropagators())
@@ -215,29 +225,39 @@ func defaultUpdateHandler(
 		callbacks.Reject(err)
 		return
 	}
-	eo := getWorkflowEnvOptions(ctx)
-	handler, ok := eo.updateHandlers[name]
-	if !ok {
-		keys := make([]string, 0, len(eo.updateHandlers))
-		for k := range eo.updateHandlers {
-			keys = append(keys, k)
+	scheduler.Spawn(ctx, name, func(ctx Context) {
+		eo := getWorkflowEnvOptions(ctx)
+
+		// If we suspect that handler registration has not occurred (e.g.
+		// because this update is part of the first workflow task and is being
+		// delivered before the workflow function itself has run and had a
+		// chance to register update handlers) then we yield control back to the
+		// scheduler to allow handler registration to occur. The sceduler will
+		// resume this coroutine after others have run to a blocking point.
+		if len(eo.updateHandlers) == 0 {
+			scheduler.Yield(ctx, "yielding for initial handler registration")
 		}
-		callbacks.Reject(fmt.Errorf("unknown update %v. KnownUpdates=%v", name, keys))
-		return
-	}
+		handler, ok := eo.updateHandlers[name]
+		if !ok {
+			keys := make([]string, 0, len(eo.updateHandlers))
+			for k := range eo.updateHandlers {
+				keys = append(keys, k)
+			}
+			callbacks.Reject(fmt.Errorf("unknown update %v. KnownUpdates=%v", name, keys))
+			return
+		}
 
-	args, err := decodeArgsToRawValues(
-		env.GetDataConverter(),
-		reflect.TypeOf(handler.fn),
-		serializedArgs,
-	)
-	if err != nil {
-		callbacks.Reject(fmt.Errorf("unable to decode the input for update %q: %w", name, err))
-		return
-	}
-	input := UpdateInput{Name: name, Args: args}
+		args, err := decodeArgsToRawValues(
+			env.GetDataConverter(),
+			reflect.TypeOf(handler.fn),
+			serializedArgs,
+		)
+		if err != nil {
+			callbacks.Reject(fmt.Errorf("unable to decode the input for update %q: %w", name, err))
+			return
+		}
+		input := UpdateInput{Name: name, Args: args}
 
-	spawn(ctx, name, func(ctx Context) {
 		envInterceptor := getWorkflowEnvironmentInterceptor(ctx)
 		if !IsReplaying(ctx) {
 			// we don't execute update validation during replay so that
