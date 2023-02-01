@@ -1663,7 +1663,7 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 			},
 		},
 	})
-	handle := &updateHandle{ref: resp.UpdateRef}
+	handle := &updateHandle{ref: resp.GetUpdateRef()}
 	if err != nil {
 		handle.err = err
 		return handle, nil
