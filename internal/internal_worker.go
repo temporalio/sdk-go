@@ -1085,6 +1085,7 @@ type WorkflowReplayer struct {
 	registry              *registry
 	dataConverter         converter.DataConverter
 	failureConverter      converter.FailureConverter
+	contextPropagators    []ContextPropagator
 	enableLoggingInReplay bool
 }
 
@@ -1095,6 +1096,10 @@ type WorkflowReplayerOptions struct {
 	DataConverter converter.DataConverter
 
 	FailureConverter converter.FailureConverter
+
+	// Optional: Sets ContextPropagators that allows users to control the context information passed through a workflow
+	// default: nil
+	ContextPropagators []ContextPropagator
 
 	// Interceptors to apply to the worker. Earlier interceptors wrap later
 	// interceptors.
@@ -1128,6 +1133,7 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 		registry:              registry,
 		dataConverter:         options.DataConverter,
 		failureConverter:      options.FailureConverter,
+		contextPropagators:    options.ContextPropagators,
 		enableLoggingInReplay: options.EnableLoggingInReplay,
 	}, nil
 }
@@ -1283,6 +1289,10 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 		execution.RunId = first.GetWorkflowExecutionStartedEventAttributes().GetOriginalExecutionRunId()
 	}
 
+	if first.GetWorkflowExecutionStartedEventAttributes().GetTaskQueue().GetName() != "" {
+		taskQueue = first.GetWorkflowExecutionStartedEventAttributes().GetTaskQueue().GetName()
+	}
+
 	task := &workflowservice.PollWorkflowTaskQueueResponse{
 		Attempt:                1,
 		TaskToken:              []byte("ReplayTaskToken"),
@@ -1310,6 +1320,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 		cache:                 cache,
 		DataConverter:         aw.dataConverter,
 		FailureConverter:      aw.failureConverter,
+		ContextPropagators:    aw.contextPropagators,
 		EnableLoggingInReplay: aw.enableLoggingInReplay,
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
