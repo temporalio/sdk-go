@@ -566,11 +566,11 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 	// Validate session state.
 	if sessionInfo := getSessionInfo(ctx); sessionInfo != nil {
 		isCreationActivity := isSessionCreationActivity(typeName)
-		if sessionInfo.sessionState == sessionStateFailed && !isCreationActivity {
+		if sessionInfo.SessionState == SessionStateFailed && !isCreationActivity {
 			settable.Set(nil, ErrSessionFailed)
 			return future
 		}
-		if sessionInfo.sessionState == sessionStateOpen && !isCreationActivity {
+		if sessionInfo.SessionState == SessionStateOpen && !isCreationActivity {
 			// Use session taskqueue
 			oldTaskQueueName := options.TaskQueueName
 			options.TaskQueueName = sessionInfo.taskqueue
