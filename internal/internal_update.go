@@ -232,7 +232,7 @@ func defaultUpdateHandler(
 		// because this update is part of the first workflow task and is being
 		// delivered before the workflow function itself has run and had a
 		// chance to register update handlers) then we yield control back to the
-		// scheduler to allow handler registration to occur. The sceduler will
+		// scheduler to allow handler registration to occur. The scheduler will
 		// resume this coroutine after others have run to a blocking point.
 		if len(eo.updateHandlers) == 0 {
 			scheduler.Yield(ctx, "yielding for initial handler registration")
