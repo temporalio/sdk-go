@@ -1159,6 +1159,39 @@ func (ts *IntegrationTestSuite) TestBasicSession() {
 		ts.tracer.GetTrace("BasicSession"))
 }
 
+func (ts *IntegrationTestSuite) TestSessionStateFailedWorkerFailed() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	ts.activities.manualStopContext = ctx
+	// We want to start a single long-running activity in a session
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-session-worker-failure"),
+		ts.workflows.SessionFailedStateWorkflow,
+		&AdvancedSessionParams{
+			SessionCount:           1,
+			SessionCreationTimeout: 10 * time.Second,
+		})
+	ts.NoError(err)
+
+	// Wait until sessions started
+	ts.waitForQueryTrue(run, "sessions-created-equals", 1)
+
+	// Kill the worker, this should cause the session to timeout.
+	ts.worker.Stop()
+	ts.workerStopped = true
+
+	// Now create a new worker on that same task queue to resume the work of the
+	// workflow
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{DisableStickyExecution: true})
+	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.NoError(nextWorker.Start())
+	defer nextWorker.Stop()
+
+	// Get the result of the workflow run now
+	err = run.Get(ctx, nil)
+	ts.NoError(err)
+}
+
 func (ts *IntegrationTestSuite) TestAsyncActivityCompletion() {
 	workflowID := "test-async-activity-completion"
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)

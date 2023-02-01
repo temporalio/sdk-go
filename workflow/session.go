@@ -31,9 +31,17 @@ import (
 type (
 	// SessionInfo contains information of a created session. For now, exported
 	// fields are SessionID and HostName.
+	//
 	// SessionID is a uuid generated when CreateSession() or RecreateSession()
 	// is called and can be used to uniquely identify a session.
+	//
 	// HostName specifies which host is executing the session
+	//
+	// SessionState specifies the current know state of the session.
+	//
+	// Note: Sessions have an inherently stale view of the worker they are running on. Session
+	// state may be stale up the the SessionOptions.HeartbeatTimeout. SessionOptions.HeartbeatTimeout
+	// should be less than half the activity timeout for the state to be accurate when checking after activity failure.
 	SessionInfo = internal.SessionInfo
 
 	// SessionOptions specifies metadata for a session.
@@ -45,6 +53,9 @@ type (
 	//     Specifies the heartbeat timeout. If heartbeat is not received by server
 	//     within the timeout, the session will be declared as failed
 	SessionOptions = internal.SessionOptions
+
+	// SessionState specifies the state of the session.
+	SessionState = internal.SessionState
 )
 
 var (

@@ -1275,6 +1275,46 @@ func (w Workflows) AdvancedSession(ctx workflow.Context, params *AdvancedSession
 	return nil
 }
 
+func (w Workflows) SessionFailedStateWorkflow(ctx workflow.Context, params *AdvancedSessionParams) error {
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 10 * time.Second,
+		// No retry on activities
+		RetryPolicy: &temporal.RetryPolicy{MaximumAttempts: 1},
+	})
+
+	// Create a query to know sessions pending or started
+	var sessionsCreated int
+	err := workflow.SetQueryHandler(ctx, "sessions-created-equals", func(expected int) (bool, error) {
+		return sessionsCreated == expected, nil
+	})
+	if err != nil {
+		return err
+	}
+
+	opts := &workflow.SessionOptions{
+		CreationTimeout:  params.SessionCreationTimeout,
+		ExecutionTimeout: 20 * time.Second,
+		// Note the heartbeat timeout is less then half the activity timeout.
+		HeartbeatTimeout: 1 * time.Second,
+	}
+	sessionCtx, err := workflow.CreateSession(ctx, opts)
+	if err != nil {
+		return err
+	}
+	sessionsCreated += 1
+	var act Activities
+	// The test should kill the worker and the session should fail.
+	err = workflow.ExecuteActivity(sessionCtx, act.WaitForManualStop).Get(sessionCtx, nil)
+	var canceledErr *temporal.CanceledError
+	if !errors.As(err, &canceledErr) {
+		return errors.New("Expected activity to be canceled")
+	}
+	if workflow.GetSessionInfo(sessionCtx).SessionState != workflow.SessionStateFailed {
+		return errors.New("Session not in correct state")
+	}
+	return nil
+}
+
 func (w *Workflows) ActivityCompletionUsingID(ctx workflow.Context) ([]string, error) {
 	activityAOptions := workflow.ActivityOptions{
 		ActivityID:             "A",
@@ -2055,6 +2095,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.HistoryLengths)
 	worker.RegisterWorkflow(w.HeartbeatSpecificCount)
 	worker.RegisterWorkflow(w.UpsertMemo)
+	worker.RegisterWorkflow(w.SessionFailedStateWorkflow)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
