@@ -137,7 +137,11 @@ func (up *updateProtocol) HandleMessage(msg *protocolpb.Message) error {
 	if err := types.UnmarshalAny(msg.Body, &up.initialRequest); err != nil {
 		return err
 	}
-	up.requireState("update request", updateStateNew)
+	if up.state != updateStateNew {
+		// this is a redelivery of a previously seen request message, probably
+		// due to upstream WFT timeout/retry.
+		return nil
+	}
 	up.requestMsgID = msg.GetId()
 	up.requestSeqID = msg.GetEventId()
 	input := up.initialRequest.GetInput()

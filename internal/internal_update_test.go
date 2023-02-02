@@ -339,30 +339,11 @@ func TestInvalidUpdateStateTransitions(t *testing.T) {
 		require.NoError(t, up.HandleMessage(&requestMsg))
 		require.Panics(t, func() { up.Complete("the result", nil) })
 	})
-	t.Run("cannot request from requested state", func(t *testing.T) {
-		up := newUpdateProtocol(t.Name(), stubUpdateHandler, env)
-		require.NoError(t, up.HandleMessage(&requestMsg))
-		require.Panics(t, func() { _ = up.HandleMessage(&requestMsg) })
-	})
-	t.Run("cannot request from accepted state", func(t *testing.T) {
-		up := newUpdateProtocol(t.Name(), stubUpdateHandler, env)
-		require.NoError(t, up.HandleMessage(&requestMsg))
-		up.Accept()
-		require.Panics(t, func() { _ = up.HandleMessage(&requestMsg) })
-	})
 	t.Run("cannot reject from accepted state", func(t *testing.T) {
 		up := newUpdateProtocol(t.Name(), stubUpdateHandler, env)
 		require.NoError(t, up.HandleMessage(&requestMsg))
 		up.Accept()
 		require.Panics(t, func() { up.Reject(errors.New("reject")) })
-	})
-	t.Run("cannot request from completed state", func(t *testing.T) {
-		up := newUpdateProtocol(t.Name(), stubUpdateHandler, env)
-		require.NoError(t, up.HandleMessage(&requestMsg))
-		up.Accept()
-		up.Complete("success", nil)
-		require.True(t, up.HasCompleted())
-		require.Panics(t, func() { _ = up.HandleMessage(&requestMsg) })
 	})
 	t.Run("cannot accept from completed state", func(t *testing.T) {
 		up := newUpdateProtocol(t.Name(), stubUpdateHandler, env)
@@ -380,4 +361,22 @@ func TestInvalidUpdateStateTransitions(t *testing.T) {
 		require.True(t, up.HasCompleted())
 		require.Panics(t, func() { up.Reject(errors.New("reject")) })
 	})
+}
+
+func TestRepeatedRequestDeliveryIsNotAnError(t *testing.T) {
+	handlerCalls := 0
+	stubUpdateHandler := func(string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks) {
+		handlerCalls++
+	}
+	requestMsg := protocolpb.Message{
+		Id:                 t.Name() + "-id",
+		ProtocolInstanceId: t.Name() + "-proto-id",
+		Body:               protocol.MustMarshalAny(&updatepb.Request{}),
+	}
+	up := newUpdateProtocol(t.Name(), stubUpdateHandler, &workflowEnvironmentImpl{})
+
+	// deliver the request message twice:
+	require.NoError(t, up.HandleMessage(&requestMsg))
+	require.NoError(t, up.HandleMessage(&requestMsg), "Duplicate request delivery is not an error")
+	require.Equal(t, 1, handlerCalls, "state machine should dedup repeated Request messages")
 }
