@@ -1161,6 +1161,57 @@ func testReplayWorkflowCancelChildWorkflowUnusualOrdering(ctx Context) error {
 	return nil
 }
 
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_ChildWorkflowCancellation_WhenWorkflowCanceled() {
+	taskQueue := "taskQueue1"
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflowCancelChildWorkflowUnusualOrdering"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
+		}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
+		createTestEventStartChildWorkflowExecutionInitiated(5, &historypb.StartChildWorkflowExecutionInitiatedEventAttributes{
+			TaskQueue:         &taskqueuepb.TaskQueue{Name: taskQueue},
+			WorkflowId:        "workflowId",
+			WorkflowType:      &commonpb.WorkflowType{Name: "testWorkflow"},
+			ParentClosePolicy: enumspb.PARENT_CLOSE_POLICY_TERMINATE,
+		}),
+		createTestEventTimerStarted(6, 6),
+		createTestEventChildWorkflowExecutionStarted(7, &historypb.ChildWorkflowExecutionStartedEventAttributes{
+			InitiatedEventId:  5,
+			WorkflowType:      &commonpb.WorkflowType{Name: "testWorkflow"},
+			WorkflowExecution: &commonpb.WorkflowExecution{WorkflowId: "workflowId"},
+		}),
+
+		createTestEventWorkflowTaskScheduled(8, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(9),
+		createTestEventWorkflowTaskCompleted(10, &historypb.WorkflowTaskCompletedEventAttributes{}),
+		createTestEventWorkflowExecutionCancelRequested(11, &historypb.WorkflowExecutionCancelRequestedEventAttributes{}),
+		createTestEventTimerFired(12, 6),
+		createTestEventWorkflowTaskScheduled(13, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventChildWorkflowExecutionCanceled(14, &historypb.ChildWorkflowExecutionCanceledEventAttributes{
+			InitiatedEventId:  5,
+			StartedEventId:    7,
+			WorkflowExecution: &commonpb.WorkflowExecution{WorkflowId: "workflowId"},
+		}),
+		createTestEventWorkflowTaskStarted(15),
+		createTestEventWorkflowTaskCompleted(16, &historypb.WorkflowTaskCompletedEventAttributes{}),
+	}
+
+	history := &historypb.History{Events: testEvents}
+	logger := getLogger()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
+	replayer.RegisterWorkflow(testReplayWorkflowCancelChildWorkflowUnusualOrdering)
+	err = replayer.ReplayWorkflowHistory(logger, history)
+	if err != nil {
+		fmt.Printf("replay failed.  Error: %v", err.Error())
+	}
+	require.NoError(s.T(), err)
+}
+
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_ChildWorkflowCancellation_Unusual_Ordering() {
 	taskQueue := "taskQueue1"
 	testEvents := []*historypb.HistoryEvent{

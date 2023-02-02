@@ -487,6 +487,46 @@ func (w *Workflows) ChildWorkflowSuccessWithParentClosePolicyAbandon(ctx workflo
 	return childWE.ID, err
 }
 
+func (w *Workflows) childWorkflowWaitOnContextCancel(ctx workflow.Context) error {
+	var err error
+	// Wait for the workflow to be cancelled
+	ctx.Done().Receive(ctx, &err)
+	var canceledError *temporal.CanceledError
+	if errors.As(ctx.Err(), &canceledError) {
+		return ctx.Err()
+	} else {
+		return errors.New("childWorkflowWaitOnContextCancel was not cancelled")
+	}
+}
+
+func (w *Workflows) ChildWorkflowAndParentCancel(ctx workflow.Context) error {
+	var childWorkflowID string
+	err := workflow.SetQueryHandler(ctx, "child-and-parent-cancel-child-workflow-id", func(input []byte) (string, error) {
+		return childWorkflowID, nil
+	})
+	if err != nil {
+		return err
+	}
+
+	cwo := workflow.ChildWorkflowOptions{
+		WorkflowRunTimeout: time.Second * 2,
+	}
+	ctx = workflow.WithChildOptions(ctx, cwo)
+
+	childWorkflowFuture := workflow.ExecuteChildWorkflow(ctx, w.childWorkflowWaitOnContextCancel)
+
+	var childWorkflowExecution workflow.Execution
+	err = childWorkflowFuture.GetChildWorkflowExecution().Get(ctx, &childWorkflowExecution)
+	if err != nil {
+		return err
+	}
+	childWorkflowID = childWorkflowExecution.ID
+
+	// Wait for the workflow to be cancelled
+	ctx.Done().Receive(ctx, &err)
+	return nil
+}
+
 func (w *Workflows) childWorkflowWaitOnSignal(ctx workflow.Context) error {
 	workflow.GetSignalChannel(ctx, "unblock").Receive(ctx, nil)
 	return nil
@@ -2100,6 +2140,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
 	worker.RegisterWorkflow(w.childWorkflowWaitOnSignal)
+	worker.RegisterWorkflow(w.childWorkflowWaitOnContextCancel)
+	worker.RegisterWorkflow(w.ChildWorkflowAndParentCancel)
 	worker.RegisterWorkflow(w.sleep)
 	worker.RegisterWorkflow(w.timer)
 }
