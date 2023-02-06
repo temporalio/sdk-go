@@ -20,8 +20,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-// Package testsuite contains unit testing framework for Temporal workflows and activities and a helper to download and
-// start a dev server.
 package testsuite
 
 import (
@@ -101,7 +99,7 @@ type devServer struct {
 }
 
 // StartDevServer starts a Temporal CLI dev server process. This may download the server if not already downloaded.
-func StartDevServer(ctx context.Context, options *DevServerOptions) (DevServer, error) {
+func StartDevServer(ctx context.Context, options DevServerOptions) (DevServer, error) {
 	// Accept nil because all options are "optional".
 	if options == nil {
 		options = &DevServerOptions{}
@@ -191,7 +189,7 @@ func downloadIfNeeded(options *DevServerOptions, logger log.Logger) (string, err
 	if arch != "amd64" && arch != "arm64" {
 		return "", fmt.Errorf("unsupported architecture %v", arch)
 	}
-	infoURL := fmt.Sprintf("https://temporal.download/cli/%v?platform=%v&arch=%v&sdk-name=sdk-go&sdk-version=%v", version, platform, arch, internal.SDKVersion)
+	infoURL := fmt.Sprintf("https://temporal.download/cli/%v?platform=%v&arch=%v&sdk-name=sdk-go&sdk-version=%v", url.QueryEscape(version), platform, arch, internal.SDKVersion)
 
 	// Get info
 	info := struct {
@@ -257,8 +255,6 @@ func (opts *DevServerOptions) clientOptionsOrDefault() client.Options {
 	if opts.ClientOptions != nil {
 		// Shallow copy the client options since we intend to overwrite some fields.
 		out = *opts.ClientOptions
-	} else {
-		out = client.Options{}
 	}
 	if out.Logger == nil {
 		out.Logger = ilog.NewDefaultLogger()
