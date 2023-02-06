@@ -33,6 +33,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -56,18 +57,12 @@ type CachedDownload struct {
 	DestDir string
 }
 
-// Where to find an executable. Can be a path or cached download.
-type EphemeralExe struct {
+// Configuration for the dev server.
+type DevServerOptions struct {
 	// Existing path on the filesystem for the executable.
 	ExistingPath string
 	// Download the executable if not already there.
 	CachedDownload CachedDownload
-}
-
-// Configuration for the dev server.
-type DevServerOptions struct {
-	// Path to executable or download info - defaults to cached download.
-	Exe EphemeralExe
 	// Client options used to create a client for the dev server.
 	// The provided Namespace or the "default" namespace is automatically registered on startup.
 	// If HostPort is provided, the host and port will be used to bind the server, otherwise the server will bind to
@@ -77,36 +72,25 @@ type DevServerOptions struct {
 	DBFilename string
 	// Whether to enable the UI.
 	EnableUI bool
-	// Log format - defaults to "pretty"
+	// Log format - defaults to "pretty".
 	LogFormat string
-	// Log level - defaults to "warn"
+	// Log level - defaults to "warn".
 	LogLevel string
 	// Additional arguments to the dev server.
 	ExtraArgs []string
 }
 
-type DevServer interface {
-	// Stop the running server and wait for shutdown to complete. Error is propagated from server shutdown.
-	Stop() error
-	// Get a connected client, configured to work with the dev server.
-	Client() client.Client
-}
-
 // Temporal CLI based DevServer
-type devServer struct {
+type DevServer struct {
 	cmd    *exec.Cmd
 	client client.Client
 }
 
 // StartDevServer starts a Temporal CLI dev server process. This may download the server if not already downloaded.
-func StartDevServer(ctx context.Context, options DevServerOptions) (DevServer, error) {
-	// Accept nil because all options are "optional".
-	if options == nil {
-		options = &DevServerOptions{}
-	}
+func StartDevServer(ctx context.Context, options DevServerOptions) (*DevServer, error) {
 	clientOptions := options.clientOptionsOrDefault()
 
-	exePath, err := downloadIfNeeded(options, clientOptions.Logger)
+	exePath, err := downloadIfNeeded(ctx, &options, clientOptions.Logger)
 	if err != nil {
 		return nil, err
 	}
@@ -124,21 +108,7 @@ func StartDevServer(ctx context.Context, options DevServerOptions) (DevServer, e
 		return nil, fmt.Errorf("invalid HostPort: %w", err)
 	}
 
-	args := []string{
-		"server",
-		"start-dev",
-		"--ip", host, "--port", port,
-		"--namespace", clientOptions.Namespace,
-		"--dynamic-config-value", "frontend.enableServerVersionCheck=false",
-		"--dynamic-config-value", "system.enableEagerWorkflowStart=true",
-		"--dynamic-config-value", "system.enableEagerWorkflowStart=true",
-	}
-	if options.LogLevel != "" {
-		args = append(args, "--log-level", options.LogLevel)
-	}
-	if options.LogFormat != "" {
-		args = append(args, "--log-format", options.LogFormat)
-	}
+	args := prepareCommand(&options, host, port, clientOptions.Namespace)
 	cmd := exec.Command(exePath, args...)
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	clientOptions.Logger.Info("Starting DevServer", "ExePath", exePath, "Args", args)
@@ -147,22 +117,45 @@ func StartDevServer(ctx context.Context, options DevServerOptions) (DevServer, e
 	}
 
 	returnedClient, err := waitServerReady(ctx, clientOptions)
-	clientOptions.Logger.Info("DevServer ready")
 	if err != nil {
 		return nil, err
 	}
-	return &devServer{client: returnedClient, cmd: cmd}, nil
+	clientOptions.Logger.Info("DevServer ready")
+	return &DevServer{client: returnedClient, cmd: cmd}, nil
 }
 
-func downloadIfNeeded(options *DevServerOptions, logger log.Logger) (string, error) {
-	if options.Exe.ExistingPath != "" {
-		return options.Exe.ExistingPath, nil
+func prepareCommand(options *DevServerOptions, host, port, namespace string) []string {
+	args := []string{
+		"server",
+		"start-dev",
+		"--ip", host, "--port", port,
+		"--namespace", namespace,
+		"--dynamic-config-value", "frontend.enableServerVersionCheck=false",
 	}
-	version := options.Exe.CachedDownload.Version
+	if options.LogLevel != "" {
+		args = append(args, "--log-level", options.LogLevel)
+	}
+	if options.LogFormat != "" {
+		args = append(args, "--log-format", options.LogFormat)
+	}
+	if !options.EnableUI {
+		args = append(args, "--headless")
+	}
+	if options.DBFilename != "" {
+		args = append(args, "--db-filename", options.DBFilename)
+	}
+	return append(args, options.ExtraArgs...)
+}
+
+func downloadIfNeeded(ctx context.Context, options *DevServerOptions, logger log.Logger) (string, error) {
+	if options.ExistingPath != "" {
+		return options.ExistingPath, nil
+	}
+	version := options.CachedDownload.Version
 	if version == "" {
 		version = "default"
 	}
-	destDir := options.Exe.CachedDownload.DestDir
+	destDir := options.CachedDownload.DestDir
 	if destDir == "" {
 		destDir = os.TempDir()
 	}
@@ -180,6 +173,8 @@ func downloadIfNeeded(options *DevServerOptions, logger log.Logger) (string, err
 		return exePath, nil
 	}
 
+	client := &http.Client{}
+
 	// Build info URL
 	platform := runtime.GOOS
 	if platform != "windows" && platform != "darwin" && platform != "linux" {
@@ -196,7 +191,11 @@ func downloadIfNeeded(options *DevServerOptions, logger log.Logger) (string, err
 		ArchiveURL    string `json:"archiveUrl"`
 		FileToExtract string `json:"fileToExtract"`
 	}{}
-	resp, err := http.Get(infoURL)
+	req, err := http.NewRequestWithContext(ctx, "GET", infoURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed preparing request: %w", err)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed fetching info: %w", err)
 	}
@@ -212,11 +211,18 @@ func downloadIfNeeded(options *DevServerOptions, logger log.Logger) (string, err
 
 	// Download and extract
 	logger.Info("Downloading temporal CLI", "Url", info.ArchiveURL, "ExePath", exePath)
-	resp, err = http.Get(info.ArchiveURL)
+	req, err = http.NewRequestWithContext(ctx, "GET", info.ArchiveURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed preparing request: %w", err)
+	}
+	resp, err = client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed downloading: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("failed downloading, status: %v", resp.Status)
+	}
 	// We want to download to a temporary file then rename. A better system-wide
 	// atomic downloader would use a common temp file and check whether it exists
 	// and wait on it, but doing multiple downloads in racy situations is
@@ -340,13 +346,15 @@ func retryFor(maxAttempts int, interval time.Duration, cond func() error) error 
 	return lastErr
 }
 
-func (s *devServer) Stop() error {
+// Stop the running server and wait for shutdown to complete. Error is propagated from server shutdown.
+func (s *DevServer) Stop() error {
 	if err := s.cmd.Process.Signal(syscall.SIGTERM); err != nil {
 		return err
 	}
 	return s.cmd.Wait()
 }
 
-func (s *devServer) Client() client.Client {
+// Get a connected client, configured to work with the dev server.
+func (s *DevServer) Client() client.Client {
 	return s.client
 }
