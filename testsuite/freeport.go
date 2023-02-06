@@ -19,9 +19,6 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
-
-// Package testsuite contains unit testing framework for Temporal workflows and activities and a helper to download and
-// start a dev server.
 package testsuite
 
 import (
@@ -73,9 +70,11 @@ func (p *portProvider) Close() error {
 func getFreeHostPort() (string, error) {
 	pp := newPortProvider()
 	host, port, err := pp.GetFreePort()
-	pp.Close()
+	closeErr := pp.Close()
 	if err != nil {
 		return "", err
+	} else if closeErr != nil {
+		return "", fmt.Errorf("failed to close TCP listener: %w", closeErr)
 	}
 	return fmt.Sprintf("%v:%v", host, port), nil
 }

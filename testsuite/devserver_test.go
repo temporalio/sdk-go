@@ -13,7 +13,7 @@ import (
 func TestStartDevServer_Defaults(t *testing.T) {
 	server, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{})
 	require.NoError(t, err)
-	defer server.Stop()
+	defer require.NoError(t, server.Stop())
 	info, err := server.Client().WorkflowService().GetSystemInfo(context.Background(), &workflowservice.GetSystemInfoRequest{})
 	require.NoError(t, err)
 	require.NotNil(t, info.Capabilities)
@@ -22,7 +22,7 @@ func TestStartDevServer_Defaults(t *testing.T) {
 func TestStartDevServer_SpecificVersion(t *testing.T) {
 	server, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{CachedDownload: testsuite.CachedDownload{Version: "v0.3.0"}})
 	require.NoError(t, err)
-	defer server.Stop()
+	defer require.NoError(t, server.Stop())
 	info, err := server.Client().WorkflowService().GetSystemInfo(context.Background(), &workflowservice.GetSystemInfoRequest{})
 	require.NoError(t, err)
 	require.NotNil(t, info.Capabilities)
@@ -31,7 +31,7 @@ func TestStartDevServer_SpecificVersion(t *testing.T) {
 func TestStartDevServer_CustomNamespace(t *testing.T) {
 	server, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{ClientOptions: &client.Options{Namespace: "testing"}})
 	require.NoError(t, err)
-	defer server.Stop()
+	defer require.NoError(t, server.Stop())
 	info, err := server.Client().WorkflowService().DescribeNamespace(context.Background(), &workflowservice.DescribeNamespaceRequest{Namespace: "testing"})
 	require.NoError(t, err)
 	require.Equal(t, "testing", info.NamespaceInfo.Name)

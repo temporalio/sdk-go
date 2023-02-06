@@ -200,7 +200,9 @@ func downloadIfNeeded(ctx context.Context, options *DevServerOptions, logger log
 		return "", fmt.Errorf("failed fetching info: %w", err)
 	}
 	b, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		logger.Warn("Failed to close response body: %v", closeErr)
+	}
 	if err != nil {
 		return "", fmt.Errorf("failed fetching info body: %w", err)
 	} else if resp.StatusCode != 200 {
@@ -219,7 +221,11 @@ func downloadIfNeeded(ctx context.Context, options *DevServerOptions, logger log
 	if err != nil {
 		return "", fmt.Errorf("failed downloading: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			logger.Warn("Failed to close response body: %v", closeErr)
+		}
+	}()
 	if resp.StatusCode != 200 {
 		return "", fmt.Errorf("failed downloading, status: %v", resp.Status)
 	}
@@ -240,9 +246,11 @@ func downloadIfNeeded(ctx context.Context, options *DevServerOptions, logger log
 	} else {
 		err = fmt.Errorf("unrecognized file extension on %v", info.ArchiveURL)
 	}
-	f.Close()
+	closeErr := f.Close()
 	if err != nil {
 		return "", err
+	} else if closeErr != nil {
+		return "", fmt.Errorf("failed to close temp file: %w", closeErr)
 	}
 	// Chmod it if not Windows
 	if runtime.GOOS != "windows" {
