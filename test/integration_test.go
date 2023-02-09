@@ -62,6 +62,7 @@ import (
 	"go.temporal.io/sdk/client"
 	contribtally "go.temporal.io/sdk/contrib/tally"
 	"go.temporal.io/sdk/interceptor"
+	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/interceptortest"
@@ -2276,6 +2277,8 @@ func (ts *IntegrationTestSuite) TestWorkerFatalErrorOnStart() {
 }
 
 func (ts *IntegrationTestSuite) testWorkerFatalError(useWorkerRun bool) {
+	// Allow the worker to fail faster so the test does not take 2 minutes.
+	internal.SetRetryLongPollGracePeriod(5 * time.Second)
 	// Make a new client that will fail a poll with a namespace not found
 	c, err := client.Dial(client.Options{
 		HostPort:  ts.config.ServiceAddr,

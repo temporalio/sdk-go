@@ -45,6 +45,7 @@ type (
 
 	// Retrier manages the state of retry operation
 	Retrier interface {
+		GetElapsedTime() time.Duration
 		NextBackOff() time.Duration
 		Reset()
 	}
@@ -195,13 +196,15 @@ func (r *retrierImpl) Reset() {
 
 // NextBackOff returns the next delay interval.  This is used by Retry to delay calling the operation again
 func (r *retrierImpl) NextBackOff() time.Duration {
-	nextInterval := r.policy.ComputeNextDelay(r.getElapsedTime(), r.currentAttempt)
+	nextInterval := r.policy.ComputeNextDelay(r.GetElapsedTime(), r.currentAttempt)
 
 	// Now increment the current attempt
 	r.currentAttempt++
 	return nextInterval
 }
 
-func (r *retrierImpl) getElapsedTime() time.Duration {
+// GetElapsedTime returns the amount of time since the retrier was created or the last reset,
+// whatever was sooner.
+func (r *retrierImpl) GetElapsedTime() time.Duration {
 	return r.clock.Now().Sub(r.startTime)
 }
