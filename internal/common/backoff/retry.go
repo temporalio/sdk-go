@@ -58,6 +58,13 @@ func (c *ConcurrentRetrier) Throttle(doneCh <-chan struct{}) {
 	c.throttleInternal(doneCh)
 }
 
+// GetElapsedTime gets the amount of time since that last ConcurrentRetrier.Succeeded call
+func (c *ConcurrentRetrier) GetElapsedTime() time.Duration {
+	c.Lock()
+	defer c.Unlock()
+	return c.retrier.GetElapsedTime()
+}
+
 func (c *ConcurrentRetrier) throttleInternal(doneCh <-chan struct{}) time.Duration {
 	next := done
 

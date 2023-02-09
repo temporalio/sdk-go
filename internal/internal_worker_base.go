@@ -51,6 +51,7 @@ const (
 	retryPollOperationMaxInterval             = 10 * time.Second
 	retryPollResourceExhaustedInitialInterval = time.Second
 	retryPollResourceExhaustedMaxInterval     = 10 * time.Second
+	retryLongPollGracePeriod                  = 2 * time.Minute
 	// How long the same poll task error can remain suppressed
 	lastPollTaskErrSuppressTime = 1 * time.Minute
 )
@@ -332,7 +333,9 @@ func (bw *baseWorker) pollTask() {
 		task, err = bw.options.taskWorker.PollTask()
 		bw.logPollTaskError(err)
 		if err != nil {
-			if isNonRetriableError(err) {
+			// We retry "non retriable" errors while long polling for a while, because some proxies return
+			// unexpected values causing unnecessary downtime.
+			if isNonRetriableError(err) && bw.retrier.GetElapsedTime() > retryLongPollGracePeriod {
 				bw.logger.Error("Worker received non-retriable error. Shutting down.", tagError, err)
 				if bw.fatalErrCb != nil {
 					bw.fatalErrCb(err)
