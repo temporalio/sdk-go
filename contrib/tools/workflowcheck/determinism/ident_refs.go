@@ -38,10 +38,16 @@ var DefaultIdentRefs = IdentRefs{
 	// We mark these as deterministic since they give so many false positives
 	"(reflect.Value).Interface": false,
 	"runtime.Caller":            false,
+	"fmt.Append":                false,
+	"fmt.Appendf":               false,
+	"fmt.Appendln":              false,
 	"fmt.Errorf":                false,
 	"fmt.Sprintf":               false,
 	"fmt.Sprint":                false,
 	"fmt.Sprintln":              false,
+	"fmt.Sscan":                 false,
+	"fmt.Sscanf":                false,
+	"fmt.Sscanln":               false,
 	// We are considering the global pseudorandom as non-deterministic by default
 	// since it's global (even if they set a seed), but we allow use of a manually
 	// instantiated random instance that may have a localized, fixed seed
