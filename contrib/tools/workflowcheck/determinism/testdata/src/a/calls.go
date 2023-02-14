@@ -1,6 +1,7 @@
 package a
 
 import (
+	"fmt"
 	"log"
 	mathrand "math/rand"
 	"net/http"
@@ -56,4 +57,8 @@ func CallsMathRandom() { // want CallsMathRandom:"calls non-deterministic functi
 
 func CallsHTTP() { // want CallsHTTP:"calls non-deterministic function net/http.Get"
 	http.Get("http://example.com")
+}
+
+func SafeFmtCall() {
+	fmt.Sprintf("foo bar")
 }
