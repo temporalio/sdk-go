@@ -76,12 +76,7 @@ vet: $(ALL_SRC)
 	done;
 
 staticcheck: $(ALL_SRC)
-	# The latest version of staticcheck (0.4.0 as of 3 Feb 2023) scans
-	# dependencies (?) and incorrectly detects that the
-	# proxy.WorkflowServiceProxyOptions.Client field is unused in api-go. We
-	# will pin to the previous version for now but be advised this version is
-	# known not to work with go1.20.
-	go install honnef.co/go/tools/cmd/staticcheck@v0.3.3
+	go install honnef.co/go/tools/cmd/staticcheck@v0.4.1
 	@for dir in $(MOD_DIRS); do \
 		(cd "$$dir" && echo "In $$dir" && staticcheck ./...) || exit 1; \
 	done;
