@@ -186,7 +186,7 @@ func Retry(ctx context.Context, operation Operation, policy RetryPolicy, isRetry
 func IgnoreErrors(errorsToExclude []error) func(error) bool {
 	return func(err error) bool {
 		for _, errorToExclude := range errorsToExclude {
-			if err == errorToExclude {
+			if errors.Is(err, errorToExclude) {
 				return false
 			}
 		}
