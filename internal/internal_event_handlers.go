@@ -103,14 +103,15 @@ type (
 	workflowEnvironmentImpl struct {
 		workflowInfo *WorkflowInfo
 
-		commandsHelper    *commandsHelper
-		outbox            []*protocolpb.Message
-		sideEffectResult  map[int64]*commonpb.Payloads
-		changeVersions    map[string]Version
-		pendingLaTasks    map[string]*localActivityTask
-		mutableSideEffect map[string]*commonpb.Payloads
-		unstartedLaTasks  map[string]struct{}
-		openSessions      map[string]*SessionInfo
+		commandsHelper             *commandsHelper
+		outbox                     []*protocolpb.Message
+		sideEffectResult           map[int64]*commonpb.Payloads
+		changeVersions             map[string]Version
+		pendingLaTasks             map[string]*localActivityTask
+		completedLaAttemptsThisWFT uint32
+		mutableSideEffect          map[string]*commonpb.Payloads
+		unstartedLaTasks           map[string]struct{}
+		openSessions               map[string]*SessionInfo
 
 		// Set of mutable side effect IDs that are recorded on the next task for use
 		// during replay to determine whether a command should be created. The keys
@@ -149,17 +150,19 @@ type (
 
 	localActivityTask struct {
 		sync.Mutex
-		workflowTask *workflowTask
-		activityID   string
-		params       *ExecuteLocalActivityParams
-		callback     LocalActivityResultHandler
-		wc           *workflowExecutionContextImpl
-		canceled     bool
-		cancelFunc   func()
-		attempt      int32 // attempt starting from 1
-		retryPolicy  *RetryPolicy
-		expireTime   time.Time
-		header       *commonpb.Header
+		workflowTask    *workflowTask
+		activityID      string
+		params          *ExecuteLocalActivityParams
+		callback        LocalActivityResultHandler
+		wc              *workflowExecutionContextImpl
+		canceled        bool
+		cancelFunc      func()
+		attempt         int32  // attempt starting from 1
+		attemptsThisWFT uint32 // Number of attempts started during this workflow task
+		pastFirstWFT    bool   // Set true once this LA has lived for more than one workflow task
+		retryPolicy     *RetryPolicy
+		expireTime      time.Time
+		header          *commonpb.Header
 	}
 
 	localActivityMarkerData struct {
@@ -871,6 +874,32 @@ func (wc *workflowEnvironmentImpl) GetRegistry() *registry {
 	return wc.registry
 }
 
+// ResetLAWFTAttemptCounts resets the number of attempts in this WFT for all LAs to 0 - should be
+// called at the beginning of every WFT
+func (wc *workflowEnvironmentImpl) ResetLAWFTAttemptCounts() {
+	wc.completedLaAttemptsThisWFT = 0
+	for _, task := range wc.pendingLaTasks {
+		task.Lock()
+		task.attemptsThisWFT = 0
+		task.pastFirstWFT = true
+		task.Unlock()
+	}
+}
+
+// GatherLAAttemptsThisWFT returns the total number of attempts in this WFT for all LAs who are
+// past their first WFT
+func (wc *workflowEnvironmentImpl) GatherLAAttemptsThisWFT() uint32 {
+	var attempts uint32
+	for _, task := range wc.pendingLaTasks {
+		task.Lock()
+		if task.pastFirstWFT {
+			attempts += task.attemptsThisWFT
+		}
+		task.Unlock()
+	}
+	return attempts + wc.completedLaAttemptsThisWFT
+}
+
 func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	event *historypb.HistoryEvent,
 	isReplay bool,
@@ -1322,6 +1351,9 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 			panicIllegalState(panicMsg)
 		}
 		weh.commandsHelper.recordLocalActivityMarker(lamd.ActivityID, details, failure)
+		if la.pastFirstWFT {
+			weh.completedLaAttemptsThisWFT += la.attemptsThisWFT
+		}
 		delete(weh.pendingLaTasks, lamd.ActivityID)
 		delete(weh.unstartedLaTasks, lamd.ActivityID)
 		lar := &LocalActivityResultWrapper{}

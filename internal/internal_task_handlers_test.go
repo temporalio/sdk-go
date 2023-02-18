@@ -1280,6 +1280,9 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 		nil)
 	t.NotNil(response)
 	t.NoError(err)
+	asWFTComplete := response.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	// There should be no non-first LA attempts since all the retries happen in one WFT
+	t.Equal(uint32(0), asWFTComplete.MeteringMetadata.NonfirstLocalActivityExecutionAttempts)
 	// wait long enough for wf to complete
 	time.Sleep(backoffInterval * 3)
 	t.True(workflowComplete)

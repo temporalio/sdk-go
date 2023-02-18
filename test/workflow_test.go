@@ -1089,6 +1089,28 @@ func (w *Workflows) WorkflowWithLocalActivityRetries(ctx workflow.Context) error
 	return nil
 }
 
+func (w *Workflows) WorkflowWithLocalActivityRetriesAndHeartbeat(ctx workflow.Context) error {
+	laOpts := w.defaultLocalActivityOptions()
+	laOpts.RetryPolicy = &internal.RetryPolicy{
+		InitialInterval:    510 * time.Millisecond,
+		BackoffCoefficient: 1.0,
+		MaximumAttempts:    20,
+	}
+	ctx = workflow.WithLocalActivityOptions(ctx, laOpts)
+	var activities *Activities
+
+	err := workflow.ExecuteLocalActivity(ctx, activities.failNTimes, 7, 1).Get(ctx, nil)
+	if err != nil {
+		return err
+	}
+	err = workflow.ExecuteLocalActivity(ctx, activities.failNTimes, 7, 2).Get(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (w *Workflows) WorkflowWithLocalActivityRetriesAndDefaultRetryPolicy(ctx workflow.Context) error {
 	laOpts := w.defaultLocalActivityOptions()
 	// Don't set any retry policy
@@ -2107,6 +2129,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityCtxPropagation)
 	worker.RegisterWorkflow(w.WorkflowWithParallelLongLocalActivityAndHeartbeat)
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityRetries)
+	worker.RegisterWorkflow(w.WorkflowWithLocalActivityRetriesAndHeartbeat)
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityRetriesAndDefaultRetryPolicy)
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityRetriesAndPartialRetryPolicy)
 	worker.RegisterWorkflow(w.WorkflowWithParallelLocalActivities)
