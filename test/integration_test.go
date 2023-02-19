@@ -2879,6 +2879,57 @@ func (ts *IntegrationTestSuite) TestScheduleCreate() {
 	ts.Nil(description)
 }
 
+func (ts *IntegrationTestSuite) TestScheduleCalendarDefault() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID: "test-schedule-calendar-default-schedule",
+		Spec: client.ScheduleSpec{
+			Calendars: []client.ScheduleCalendarSpec{
+				{
+					Second: []client.ScheduleRange{{Start: 30, End: 30}},
+				},
+			},
+		},
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-calendar-default-workflow"),
+		Paused: true,
+	})
+	ts.NoError(err)
+	ts.EqualValues("test-schedule-calendar-default-schedule", handle.GetID())
+	defer func() {
+		ts.NoError(handle.Delete(ctx))
+	}()
+	description, err := handle.Describe(ctx)
+	ts.NoError(err)
+	// test default calendar spec
+	ts.Equal([]client.ScheduleCalendarSpec{
+		{
+			Second: []client.ScheduleRange{{Start: 30, End: 30}},
+			Minute: []client.ScheduleRange{{}},
+			Hour:   []client.ScheduleRange{{}},
+			DayOfMonth: []client.ScheduleRange{
+				{
+					Start: 1,
+					End:   31,
+				},
+			},
+			Month: []client.ScheduleRange{
+				{
+					Start: 1,
+					End:   12,
+				},
+			},
+			Year: []client.ScheduleRange{},
+			DayOfWeek: []client.ScheduleRange{
+				{
+					Start: 0,
+					End:   6,
+				},
+			},
+		},
+	}, description.Schedule.Spec.Calendars)
+}
+
 func (ts *IntegrationTestSuite) TestScheduleCreateDuplicate() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

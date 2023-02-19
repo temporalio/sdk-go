@@ -54,25 +54,38 @@ type (
 	// that means all years match. For all fields besides year, at least one Range must be present to match anything.
 	ScheduleCalendarSpec struct {
 		// Second range to match (0-59).
+		//
+		// default: matches 0
 		Second []ScheduleRange
 
 		// Minute range to match (0-59).
+		//
+		// default: matches 0
 		Minute []ScheduleRange
 
 		// Hour range to match (0-23).
+		//
+		// default: matches 0
 		Hour []ScheduleRange
 
 		// DayOfMonth range to match (1-31)
+		//
+		// default: matches all days
 		DayOfMonth []ScheduleRange
 
 		// Month range to match (1-12)
+		//
+		// default: matches all months
 		Month []ScheduleRange
 
 		// Year range to match.
-		// Optional: Defaulted to "*"
+		//
+		// default: empty that matches all years
 		Year []ScheduleRange
 
 		// DayOfWeek range to match (0-6; 0 is Sunday)
+		//
+		// default: matches all days of the week
 		DayOfWeek []ScheduleRange
 
 		// Comment - Description of the intention of this schedule.
