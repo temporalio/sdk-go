@@ -719,9 +719,37 @@ func convertFromPBScheduleCalendarSpecList(calendarSpecPB []*schedulepb.Structur
 	return calendarSpec
 }
 
+func applyScheduleCalendarSpecDefault(calendarSpec *ScheduleCalendarSpec) {
+	if calendarSpec.Second == nil {
+		calendarSpec.Second = []ScheduleRange{{Start: 0}}
+	}
+
+	if calendarSpec.Minute == nil {
+		calendarSpec.Minute = []ScheduleRange{{Start: 0}}
+	}
+
+	if calendarSpec.Hour == nil {
+		calendarSpec.Hour = []ScheduleRange{{Start: 0}}
+	}
+
+	if calendarSpec.DayOfMonth == nil {
+		calendarSpec.DayOfMonth = []ScheduleRange{{Start: 1, End: 31}}
+	}
+
+	if calendarSpec.Month == nil {
+		calendarSpec.Month = []ScheduleRange{{Start: 1, End: 12}}
+	}
+
+	if calendarSpec.DayOfWeek == nil {
+		calendarSpec.DayOfWeek = []ScheduleRange{{Start: 0, End: 6}}
+	}
+}
+
 func convertToPBScheduleCalendarSpecList(calendarSpec []ScheduleCalendarSpec) []*schedulepb.StructuredCalendarSpec {
 	calendarSpecPB := make([]*schedulepb.StructuredCalendarSpec, len(calendarSpec))
 	for i, e := range calendarSpec {
+		applyScheduleCalendarSpecDefault(&e)
+
 		calendarSpecPB[i] = &schedulepb.StructuredCalendarSpec{
 			Second:     convertToPBRangeList(e.Second),
 			Minute:     convertToPBRangeList(e.Minute),
