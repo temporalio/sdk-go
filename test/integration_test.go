@@ -3744,6 +3744,53 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateWorkflowActionMemo() {
 	}
 }
 
+func (ts *IntegrationTestSuite) TestSendsCorrectMeteringData() {
+	nonfirstLAAttemptCounts := make([]uint32, 0)
+	c, err := client.Dial(client.Options{
+		HostPort:  ts.config.ServiceAddr,
+		Namespace: ts.config.Namespace,
+		ConnectionOptions: client.ConnectionOptions{
+			TLS: ts.config.TLS,
+			DialOptions: []grpc.DialOption{
+				grpc.WithUnaryInterceptor(func(
+					ctx context.Context,
+					method string,
+					req interface{},
+					reply interface{},
+					cc *grpc.ClientConn,
+					invoker grpc.UnaryInvoker,
+					opts ...grpc.CallOption,
+				) error {
+					if method == "/temporal.api.workflowservice.v1.WorkflowService/RespondWorkflowTaskCompleted" {
+						asReq := req.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+						nonfirstLAAttemptCounts = append(nonfirstLAAttemptCounts, asReq.MeteringMetadata.NonfirstLocalActivityExecutionAttempts)
+					}
+					return invoker(ctx, method, req, reply, cc, opts...)
+				}),
+			},
+		},
+	})
+	ts.NoError(err)
+	defer c.Close()
+
+	ts.worker.Stop()
+	ts.workerStopped = true
+	w := worker.New(c, ts.taskQueueName, worker.Options{})
+	ts.registerWorkflowsAndActivities(w)
+	ts.Nil(w.Start())
+
+	wfOpts := ts.startWorkflowOptions("test-sends-correct-metering-data")
+	wfOpts.WorkflowTaskTimeout = 2 * time.Second
+	ts.NoError(ts.executeWorkflowWithOption(wfOpts,
+		ts.workflows.WorkflowWithLocalActivityRetriesAndHeartbeat, nil))
+
+	ts.Equal(uint32(0), nonfirstLAAttemptCounts[0])
+	for i := 1; i < len(nonfirstLAAttemptCounts); i++ {
+		ts.True(nonfirstLAAttemptCounts[i] > 0)
+	}
+	w.Stop()
+}
+
 // executeWorkflow executes a given workflow and waits for the result
 func (ts *IntegrationTestSuite) executeWorkflow(
 	wfID string, wfFunc interface{}, retValPtr interface{}, args ...interface{},

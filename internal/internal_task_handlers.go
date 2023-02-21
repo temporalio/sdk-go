@@ -844,6 +844,8 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 	// This is set to nil once recorded
 	metricsTimer := metricsHandler.Timer(metrics.WorkflowTaskReplayLatency)
 
+	eventHandler.ResetLAWFTAttemptCounts()
+
 	// Process events
 ProcessEvents:
 	for {
@@ -1570,6 +1572,8 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		}
 	}
 
+	nonfirstLAAttempts := eventHandler.GatherLAAttemptsThisWFT()
+
 	return &workflowservice.RespondWorkflowTaskCompletedRequest{
 		TaskToken:                  task.TaskToken,
 		Commands:                   commands,
@@ -1580,6 +1584,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		BinaryChecksum:             getBinaryChecksum(),
 		QueryResults:               queryResults,
 		Namespace:                  wth.namespace,
+		MeteringMetadata:           &commonpb.MeteringMetadata{NonfirstLocalActivityExecutionAttempts: nonfirstLAAttempts},
 	}
 }
 

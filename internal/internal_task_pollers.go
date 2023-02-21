@@ -530,6 +530,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 		task.Unlock()
 		return &localActivityResult{err: ErrCanceled, task: task}
 	}
+	task.attemptsThisWFT += 1
 	task.cancelFunc = cancel
 	task.Unlock()
 
