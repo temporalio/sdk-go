@@ -1624,36 +1624,6 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	return builtRequest
 }
 
-func errorToFailWorkflowTask(taskToken []byte, err error, identity string, dataConverter converter.DataConverter,
-	failureConverter converter.FailureConverter, namespace string,
-) *workflowservice.RespondWorkflowTaskFailedRequest {
-	cause := enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
-	// If it was a panic due to a bad state machine or if it was a history
-	// mismatch error, mark as non-deterministic
-	if panicErr, _ := err.(*workflowPanicError); panicErr != nil {
-		if _, badStateMachine := panicErr.value.(stateMachineIllegalStatePanic); badStateMachine {
-			cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
-		}
-	} else if _, mismatch := err.(historyMismatchError); mismatch {
-		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
-	}
-
-	return &workflowservice.RespondWorkflowTaskFailedRequest{
-		TaskToken:      taskToken,
-		Cause:          cause,
-		Failure:        failureConverter.ErrorToFailure(err),
-		Identity:       identity,
-		BinaryChecksum: getBinaryChecksum(),
-		Namespace:      namespace,
-	}
-	if wth.workerBuildID != "" {
-		builtRequest.WorkerVersionStamp = &commonpb.WorkerVersionStamp{
-			BuildId: wth.workerBuildID,
-		}
-	}
-	return builtRequest
-}
-
 func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *historypb.HistoryEvent, isInReplay bool) error {
 	if wth.ppMgr != nil && !reflect.ValueOf(wth.ppMgr).IsNil() && !isInReplay {
 		switch event.GetEventType() {

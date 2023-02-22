@@ -938,10 +938,10 @@ func (wc *WorkflowClient) ResetWorkflowExecution(ctx context.Context, request *w
 	return resp, nil
 }
 
-// UpdateWorkerBuildIDOrdering allows you to update the worker-build-id based version graph for a particular
+// UpdateWorkerBuildIDCompatability allows you to update the worker-build-id based version sets for a particular
 // task queue. This is used in conjunction with workers who specify their build id and thus opt into the
 // feature. For more, see: <doc link>
-func (wc *WorkflowClient) UpdateWorkerBuildIDOrdering(ctx context.Context, options *UpdateWorkerBuildIDOrderingOptions) error {
+func (wc *WorkflowClient) UpdateWorkerBuildIDCompatability(ctx context.Context, options *UpdateWorkerBuildIDCompatabilityOptions) error {
 	if err := wc.ensureInitialized(); err != nil {
 		return err
 	}
@@ -954,12 +954,12 @@ func (wc *WorkflowClient) UpdateWorkerBuildIDOrdering(ctx context.Context, optio
 
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
-	_, err = wc.workflowService.UpdateWorkerBuildIdOrdering(grpcCtx, request)
+	_, err = wc.workflowService.UpdateWorkerBuildIdCompatability(grpcCtx, request)
 	return err
 }
 
-// GetWorkerBuildIDOrdering returns the worker-build-id based version graph for a particular task queue.
-func (wc *WorkflowClient) GetWorkerBuildIDOrdering(ctx context.Context, options *GetWorkerBuildIDOrderingOptions) (*WorkerBuildIDVersionSets, error) {
+// GetWorkerBuildIDCompatability returns the worker-build-id based version sets for a particular task queue.
+func (wc *WorkflowClient) GetWorkerBuildIDCompatability(ctx context.Context, options *GetWorkerBuildIDCompatabilityOptions) (*WorkerBuildIDVersionSets, error) {
 	if options.MaxSets < 0 {
 		return nil, errors.New("maxDepth must be >= 0")
 	}
@@ -970,12 +970,12 @@ func (wc *WorkflowClient) GetWorkerBuildIDOrdering(ctx context.Context, options 
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
-	request := &workflowservice.GetWorkerBuildIdOrderingRequest{
+	request := &workflowservice.GetWorkerBuildIdCompatabilityRequest{
 		Namespace: wc.namespace,
 		TaskQueue: options.TaskQueue,
 		MaxSets:   int32(options.MaxSets),
 	}
-	resp, err := wc.workflowService.GetWorkerBuildIdOrdering(grpcCtx, request)
+	resp, err := wc.workflowService.GetWorkerBuildIdCompatability(grpcCtx, request)
 	if err != nil {
 		return nil, err
 	}
