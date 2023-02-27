@@ -244,6 +244,30 @@ func (s *replayTestSuite) TestBadEmptyWorkflow() {
 	require.Contains(s.T(), err.Error(), "lookup failed for scheduledEventID to activityID: scheduleEventID: 7")
 }
 
+// TestMutableSideEffectLegacyWorkflow test that old, nondeterministic, mutable side effect behaviour
+// was not changed and is still broken in the same way.
+func (s *replayTestSuite) TestMutableSideEffectLegacyWorkflow() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(MutableSideEffectWorkflow)
+
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "mutable-side-effect-legacy.json")
+	require.NoError(s.T(), err)
+	var result []int
+	require.NoError(s.T(), replayer.GetWorkflowResult("ReplayId", &result))
+	require.Equal(s.T(), []int{2, 2, 2, 2, 2, 2, 4, 4, 4, 5, 5}, result)
+}
+
+func (s *replayTestSuite) TestMutableSideEffectWorkflow() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(MutableSideEffectWorkflow)
+
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "mutable-side-effect.json")
+	require.NoError(s.T(), err)
+	var result []int
+	require.NoError(s.T(), replayer.GetWorkflowResult("ReplayId", &result))
+	require.Equal(s.T(), []int{0, 0, 0, 1, 1, 2, 3, 3, 4, 4, 5}, result)
+}
+
 func TestReplayCustomConverter(t *testing.T) {
 	conv := &captureConverter{DataConverter: converter.GetDefaultDataConverter()}
 	replayer, err := worker.NewWorkflowReplayerWithOptions(worker.WorkflowReplayerOptions{

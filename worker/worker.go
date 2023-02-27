@@ -199,6 +199,12 @@ type (
 		// The logger is the only optional parameter. Defaults to the noop logger. The Run ID and Workflow ID used during replay are derived
 		// from execution.
 		ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger log.Logger, namespace string, execution workflow.Execution) error
+
+		// GetWorkflowResult gets the result from a succesfully replayed workflow that finished with WorkflowExecutionCompleted.
+		// WorkflowID is optional and defaults to ReplayId.
+		//
+		// Note: For all replay functions if no WorkflowID is given for replay the default is ReplayId.
+		GetWorkflowResult(workflowID string, valuePtr interface{}) error
 	}
 
 	// Options is used to configure a worker instance.
