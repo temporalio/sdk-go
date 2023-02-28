@@ -30,7 +30,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"sort"
 	"sync"
 	"time"
 
@@ -110,9 +109,12 @@ type (
 		changeVersions             map[string]Version
 		pendingLaTasks             map[string]*localActivityTask
 		completedLaAttemptsThisWFT uint32
-		mutableSideEffect          map[string]map[int]*commonpb.Payloads
-		unstartedLaTasks           map[string]struct{}
-		openSessions               map[string]*SessionInfo
+		// mutableSideEffect is a map for each mutable side effect ID where each key is the
+		// number of times the mutable side effect was called in a workflow
+		// execution per ID.
+		mutableSideEffect map[string]map[int]*commonpb.Payloads
+		unstartedLaTasks  map[string]struct{}
+		openSessions      map[string]*SessionInfo
 
 		// Set of mutable side effect IDs that are recorded on the next task for use
 		// during replay to determine whether a command should be created. The keys
@@ -788,44 +790,41 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 	wc.logger.Debug("SideEffect Marker added", tagSideEffectID, sideEffectID)
 }
 
-func (wc *workflowEnvironmentImpl) lookupMutableSideEffect(id string) (*commonpb.Payloads, bool) {
-	if payloadAtCallCount, ok := wc.mutableSideEffect[id]; ok {
-		currentCallCount := wc.mutableSideEffectCallCounter[id]
-		// Sort the calls
-		calls := make([]int, 0)
-		for k := range payloadAtCallCount {
-			calls = append(calls, k)
-		}
-		sort.Ints(calls)
-		// Find the most recent call at/before the current call count
-		var payload *commonpb.Payloads
-		var foundIndex int
-		for i := len(calls) - 1; i >= 0; i-- {
-			if calls[i] <= currentCallCount {
-				payload = payloadAtCallCount[calls[i]]
-				foundIndex = i
-				break
-			}
-		}
-		if payload == nil {
-			return nil, false
-		}
-		// Garbage collect old entries
-		// TODO(quinn) unclear if this should be done aggressively at WFT boundry
-		for i := 0; i < foundIndex; i++ {
-			delete(payloadAtCallCount, calls[i])
-		}
-
-		return payload, true
+// lookupMutableSideEffect gets the current value of the MutableSideEffect for id for the
+// current call count of id.
+func (wc *workflowEnvironmentImpl) lookupMutableSideEffect(id string) *commonpb.Payloads {
+	// Fail if ID not found
+	callCountPayloads := wc.mutableSideEffect[id]
+	if len(callCountPayloads) == 0 {
+		return nil
 	}
-	return nil, false
+	currentCallCount := wc.mutableSideEffectCallCounter[id]
+
+	// Find the most recent call at/before the current call count
+	var payloads *commonpb.Payloads
+	payloadIndex := -1
+	for callCount, maybePayloads := range callCountPayloads {
+		if callCount <= currentCallCount && callCount > payloadIndex {
+			payloads = maybePayloads
+			payloadIndex = callCount
+		}
+	}
+
+	// Garbage collect old entries
+	for callCount := range callCountPayloads {
+		if callCount <= currentCallCount && callCount != payloadIndex {
+			delete(callCountPayloads, callCount)
+		}
+	}
+
+	return payloads
 }
 
 func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
 	wc.mutableSideEffectCallCounter[id]++
 	callCount := wc.mutableSideEffectCallCounter[id]
 
-	if result, ok := wc.lookupMutableSideEffect(id); ok {
+	if result := wc.lookupMutableSideEffect(id); result != nil {
 		encodedResult := newEncodedValue(result, wc.GetDataConverter())
 		if wc.isReplay {
 			// During replay, we only generate a command if there was a known marker
@@ -1365,18 +1364,19 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 					// If multiple mutable side effects on the same ID are in a WFT only the last value is used.
 					counterHint = weh.mutableSideEffectCallCounter[sideEffectDataID]
 				}
-
-				if weh.mutableSideEffect[sideEffectDataID] == nil {
-					weh.mutableSideEffect[sideEffectDataID] = make(map[int]*commonpb.Payloads)
+				if err == nil {
+					if weh.mutableSideEffect[sideEffectDataID] == nil {
+						weh.mutableSideEffect[sideEffectDataID] = make(map[int]*commonpb.Payloads)
+					}
+					weh.mutableSideEffect[sideEffectDataID][counterHint] = &sideEffectDataContents
+					// We must mark that it is recorded so we can know whether a command
+					// needs to be generated during replay
+					if weh.mutableSideEffectsRecorded == nil {
+						weh.mutableSideEffectsRecorded = map[string]bool{}
+					}
+					// This must be stored with the counter
+					weh.mutableSideEffectsRecorded[sideEffectIDWithCounter] = true
 				}
-				weh.mutableSideEffect[sideEffectDataID][counterHint] = &sideEffectDataContents
-				// We must mark that it is recorded so we can know whether a command
-				// needs to be generated during replay
-				if weh.mutableSideEffectsRecorded == nil {
-					weh.mutableSideEffectsRecorded = map[string]bool{}
-				}
-				// This must be stored with the counter
-				weh.mutableSideEffectsRecorded[sideEffectIDWithCounter] = true
 			}
 		default:
 			err = ErrUnknownMarkerName

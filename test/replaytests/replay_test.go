@@ -36,6 +36,7 @@ import (
 	"go.temporal.io/api/workflowservicemock/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/worker"
 )
@@ -253,7 +254,7 @@ func (s *replayTestSuite) TestMutableSideEffectLegacyWorkflow() {
 	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "mutable-side-effect-legacy.json")
 	require.NoError(s.T(), err)
 	var result []int
-	require.NoError(s.T(), replayer.GetWorkflowResult("ReplayId", &result))
+	require.NoError(s.T(), replayer.(*internal.WorkflowReplayer).GetWorkflowResult("ReplayId", &result))
 	require.Equal(s.T(), []int{2, 2, 2, 2, 2, 2, 4, 4, 4, 5, 5}, result)
 }
 
@@ -264,7 +265,7 @@ func (s *replayTestSuite) TestMutableSideEffectWorkflow() {
 	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "mutable-side-effect.json")
 	require.NoError(s.T(), err)
 	var result []int
-	require.NoError(s.T(), replayer.GetWorkflowResult("ReplayId", &result))
+	require.NoError(s.T(), replayer.(*internal.WorkflowReplayer).GetWorkflowResult("ReplayId", &result))
 	require.Equal(s.T(), []int{0, 0, 0, 1, 1, 2, 3, 3, 4, 4, 5}, result)
 }
 
