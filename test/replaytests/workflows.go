@@ -217,3 +217,39 @@ func SideEffectWorkflow(ctx workflow.Context, field string) error {
 func EmptyWorkflow(ctx workflow.Context, _ string) error {
 	return nil
 }
+
+func MutableSideEffectWorkflow(ctx workflow.Context) ([]int, error) {
+	f := func(retVal int) (newVal int) {
+		err := workflow.MutableSideEffect(
+			ctx,
+			"side-effect-1",
+			func(ctx workflow.Context) interface{} { return retVal },
+			func(a, b interface{}) bool { return a.(int) == b.(int) },
+		).Get(&newVal)
+		if err != nil {
+			panic(err)
+		}
+		return
+	}
+	results := []int{f(0)}
+	results = append(results, f(0))
+	results = append(results, f(0))
+	results = append(results, f(1))
+	results = append(results, f(1))
+	results = append(results, f(2))
+	err := workflow.Sleep(ctx, time.Second)
+	if err != nil {
+		return nil, err
+	}
+	results = append(results, f(3))
+	results = append(results, f(3))
+	results = append(results, f(4))
+	err = workflow.Sleep(ctx, time.Second)
+	if err != nil {
+		return nil, err
+	}
+	results = append(results, f(4))
+	results = append(results, f(5))
+
+	return results, nil
+}

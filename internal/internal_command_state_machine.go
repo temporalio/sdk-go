@@ -221,12 +221,13 @@ const (
 	localActivityMarkerName     = "LocalActivity"
 	mutableSideEffectMarkerName = "MutableSideEffect"
 
-	sideEffectMarkerIDName      = "side-effect-id"
-	sideEffectMarkerDataName    = "data"
-	versionMarkerChangeIDName   = "change-id"
-	versionMarkerDataName       = "version"
-	localActivityMarkerDataName = "data"
-	localActivityResultName     = "result"
+	sideEffectMarkerIDName           = "side-effect-id"
+	sideEffectMarkerDataName         = "data"
+	versionMarkerChangeIDName        = "change-id"
+	versionMarkerDataName            = "version"
+	localActivityMarkerDataName      = "data"
+	localActivityResultName          = "result"
+	mutableSideEffectCallCounterName = "mutable-side-effect-call-counter"
 )
 
 func (d commandState) String() string {
@@ -1146,7 +1147,7 @@ func (h *commandsHelper) recordLocalActivityMarker(activityID string, details ma
 	return command
 }
 
-func (h *commandsHelper) recordMutableSideEffectMarker(mutableSideEffectID string, data *commonpb.Payloads, dc converter.DataConverter) commandStateMachine {
+func (h *commandsHelper) recordMutableSideEffectMarker(mutableSideEffectID string, callCountHint int, data *commonpb.Payloads, dc converter.DataConverter) commandStateMachine {
 	// In order to avoid duplicate marker IDs, we must append the counter to the
 	// user-provided ID
 	mutableSideEffectID = fmt.Sprintf("%v_%v", mutableSideEffectID, h.nextCommandEventID)
@@ -1157,11 +1158,17 @@ func (h *commandsHelper) recordMutableSideEffectMarker(mutableSideEffectID strin
 		panic(err)
 	}
 
+	mutableSideEffectCounterPayload, err := dc.ToPayloads(callCountHint)
+	if err != nil {
+		panic(err)
+	}
+
 	attributes := &commandpb.RecordMarkerCommandAttributes{
 		MarkerName: mutableSideEffectMarkerName,
 		Details: map[string]*commonpb.Payloads{
-			sideEffectMarkerIDName:   mutableSideEffectIDPayload,
-			sideEffectMarkerDataName: data,
+			sideEffectMarkerIDName:           mutableSideEffectIDPayload,
+			sideEffectMarkerDataName:         data,
+			mutableSideEffectCallCounterName: mutableSideEffectCounterPayload,
 		},
 	}
 	command := h.newMarkerCommandStateMachine(markerID, attributes)

@@ -2015,6 +2015,9 @@ func (w *Workflows) MutableSideEffect(ctx workflow.Context, startVal int) (currV
 			func(ctx workflow.Context) interface{} { return retVal },
 			func(a, b interface{}) bool { return a.(int) == b.(int) },
 		).Get(&newVal)
+		if retVal != newVal {
+			log.Panicf("MutableSideEffect did not return expected value %d == %d", retVal, newVal)
+		}
 		return
 	}
 	// Make several mutable side effect calls, some that change the data, some

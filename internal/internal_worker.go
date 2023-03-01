@@ -1082,11 +1082,13 @@ func (aw *AggregatedWorker) Stop() {
 
 // WorkflowReplayer is used to replay workflow code from an event history
 type WorkflowReplayer struct {
-	registry              *registry
-	dataConverter         converter.DataConverter
-	failureConverter      converter.FailureConverter
-	contextPropagators    []ContextPropagator
-	enableLoggingInReplay bool
+	registry                 *registry
+	dataConverter            converter.DataConverter
+	failureConverter         converter.FailureConverter
+	contextPropagators       []ContextPropagator
+	enableLoggingInReplay    bool
+	mu                       sync.Mutex
+	workflowExecutionResults map[string]*commonpb.Payloads
 }
 
 // WorkflowReplayerOptions are options for creating a workflow replayer.
@@ -1130,11 +1132,12 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 	registry := newRegistryWithOptions(registryOptions{disableAliasing: options.DisableRegistrationAliasing})
 	registry.interceptors = options.Interceptors
 	return &WorkflowReplayer{
-		registry:              registry,
-		dataConverter:         options.DataConverter,
-		failureConverter:      options.FailureConverter,
-		contextPropagators:    options.ContextPropagators,
-		enableLoggingInReplay: options.EnableLoggingInReplay,
+		registry:                 registry,
+		dataConverter:            options.DataConverter,
+		failureConverter:         options.FailureConverter,
+		contextPropagators:       options.ContextPropagators,
+		enableLoggingInReplay:    options.EnableLoggingInReplay,
+		workflowExecutionResults: make(map[string]*commonpb.Payloads),
 	}, nil
 }
 
@@ -1233,6 +1236,24 @@ func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service
 		request.NextPageToken = resp.NextPageToken
 	}
 	return aw.replayWorkflowHistory(logger, service, namespace, execution, &history)
+}
+
+// GetWorkflowResult get the result of a succesfully replayed workflow.
+func (aw *WorkflowReplayer) GetWorkflowResult(workflowID string, valuePtr interface{}) error {
+	aw.mu.Lock()
+	defer aw.mu.Unlock()
+	if workflowID == "" {
+		workflowID = "ReplayId"
+	}
+	payloads, ok := aw.workflowExecutionResults[workflowID]
+	if !ok {
+		return errors.New("workflow result not found")
+	}
+	dc := aw.dataConverter
+	if dc == nil {
+		dc = converter.GetDefaultDataConverter()
+	}
+	return dc.FromPayloads(payloads, valuePtr)
 }
 
 // inferMessages extracts the set of *interactionpb.Invocation objects that
@@ -1348,6 +1369,9 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 				}
 				if d.GetCommandType() == enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION {
 					if last.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED {
+						aw.mu.Lock()
+						defer aw.mu.Unlock()
+						aw.workflowExecutionResults[execution.WorkflowId] = d.GetCompleteWorkflowExecutionCommandAttributes().Result
 						return nil
 					}
 				}

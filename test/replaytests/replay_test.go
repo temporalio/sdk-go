@@ -36,6 +36,7 @@ import (
 	"go.temporal.io/api/workflowservicemock/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/worker"
 )
@@ -242,6 +243,30 @@ func (s *replayTestSuite) TestBadEmptyWorkflow() {
 	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "bad-empty-workflow.json")
 	require.Error(s.T(), err)
 	require.Contains(s.T(), err.Error(), "lookup failed for scheduledEventID to activityID: scheduleEventID: 7")
+}
+
+// TestMutableSideEffectLegacyWorkflow test that old, nondeterministic, mutable side effect behaviour
+// was not changed and is still broken in the same way.
+func (s *replayTestSuite) TestMutableSideEffectLegacyWorkflow() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(MutableSideEffectWorkflow)
+
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "mutable-side-effect-legacy.json")
+	require.NoError(s.T(), err)
+	var result []int
+	require.NoError(s.T(), replayer.(*internal.WorkflowReplayer).GetWorkflowResult("ReplayId", &result))
+	require.Equal(s.T(), []int{2, 2, 2, 2, 2, 2, 4, 4, 4, 5, 5}, result)
+}
+
+func (s *replayTestSuite) TestMutableSideEffectWorkflow() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(MutableSideEffectWorkflow)
+
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "mutable-side-effect.json")
+	require.NoError(s.T(), err)
+	var result []int
+	require.NoError(s.T(), replayer.(*internal.WorkflowReplayer).GetWorkflowResult("ReplayId", &result))
+	require.Equal(s.T(), []int{0, 0, 0, 1, 1, 2, 3, 3, 4, 4, 5}, result)
 }
 
 func TestReplayCustomConverter(t *testing.T) {
