@@ -1578,9 +1578,11 @@ func getFunctionName(i interface{}) (name string, isMethod bool) {
 	if fullName, ok := i.(string); ok {
 		return fullName, false
 	}
-	fullName := runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
 	// Full function name that has a struct pointer receiver has the following format
 	// <prefix>.(*<type>).<function>
+	fullName := runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
+	// Remove indicator of generic types
+	fullName = strings.Replace(fullName, "[...]", "", -1)
 	isMethod = strings.ContainsAny(fullName, "*")
 	elements := strings.Split(fullName, ".")
 	shortName := elements[len(elements)-1]
