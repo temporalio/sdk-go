@@ -665,6 +665,7 @@ func (w *workflowExecutionContextImpl) resetStateIfDestroyed(task *workflowservi
 				return err
 			}
 		}
+		task.Messages = inferMessages(task.GetHistory().GetEvents())
 		if w.workflowInfo != nil {
 			// Reset the search attributes and memos from the WorkflowExecutionStartedEvent.
 			// The search attributes and memo may have been modified by calls like UpsertMemo
