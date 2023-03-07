@@ -45,6 +45,7 @@ import (
 	querypb "go.temporal.io/api/query/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
+	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 
@@ -1914,4 +1915,91 @@ func TestHeartbeatThrottleInterval(t *testing.T) {
 	assertInterval(14, 2, 10, 10)
 	// Default max to 60 if not set
 	assertInterval(5000, 2, 0, 60)
+}
+
+type MockHistoryIterator struct {
+	GetNextPageImpl func() (*historypb.History, error)
+	ResetImpl       func()
+	HasNextPageImpl func() bool
+}
+
+func (mhi MockHistoryIterator) GetNextPage() (*historypb.History, error) {
+	return mhi.GetNextPageImpl()
+}
+
+func (mhi MockHistoryIterator) Reset() {
+	mhi.ResetImpl()
+}
+
+func (mhi MockHistoryIterator) HasNextPage() bool {
+	return mhi.HasNextPageImpl()
+}
+
+func TestResetIfDestroyedTaskPrep(t *testing.T) {
+	// a plausible full history that includes an update accepted event to also
+	// test for lookahead event inference
+	fullHist := &historypb.History{
+		Events: []*historypb.HistoryEvent{
+			createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{}),
+			createTestEventWorkflowTaskScheduled(2, nil),
+			createTestEventWorkflowTaskStarted(3),
+			createTestEventWorkflowTaskCompleted(4, nil),
+			&historypb.HistoryEvent{
+				EventId:   5,
+				EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
+				Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
+					WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+						ProtocolInstanceId:       "123",
+						AcceptedRequestMessageId: "MSG.001",
+						AcceptedRequest:          &updatepb.Request{},
+					},
+				},
+			},
+		},
+	}
+
+	// start the task out with a partial history to verify that we reset the
+	// history iterator back to the start
+	taskHist := &historypb.History{
+		Events: []*historypb.HistoryEvent{
+			createTestEventWorkflowTaskScheduled(6, nil),
+			createTestEventWorkflowTaskStarted(7),
+		},
+	}
+
+	// iterator implementation uses partial history until HistoryIterator.Reset
+	// is called
+	iterHist := taskHist
+
+	histIter := MockHistoryIterator{
+		ResetImpl: func() {
+			// if impl calls reset, switch to full history
+			iterHist = fullHist
+		},
+
+		GetNextPageImpl: func() (*historypb.History, error) {
+			return iterHist, nil
+		},
+	}
+	task := &workflowservice.PollWorkflowTaskQueueResponse{History: taskHist}
+
+	// values of these fields are not important to the test but some of these
+	// pointers are dereferenced as part of constructing a new event handler so
+	// they need to be non-nil
+	weci := &workflowExecutionContextImpl{
+		workflowInfo: &WorkflowInfo{
+			WorkflowExecution: WorkflowExecution{},
+			WorkflowType:      WorkflowType{Name: t.Name()},
+		},
+		wth: &workflowTaskHandlerImpl{logger: ilog.NewNopLogger()},
+	}
+
+	err := weci.resetStateIfDestroyed(task, histIter)
+
+	require.NoError(t, err)
+	require.Len(t, task.History.Events, len(fullHist.Events),
+		"expected task to be mutated to carry full WF history (all events)")
+	require.Len(t, task.Messages, 1,
+		"expected task to be mutated to carry the update request implied by the "+
+			"WorkflowExecutionUpdateAccepted event")
 }
