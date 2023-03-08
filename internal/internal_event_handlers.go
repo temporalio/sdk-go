@@ -41,6 +41,7 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
+	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
@@ -51,7 +52,8 @@ import (
 )
 
 const (
-	queryResultSizeLimit = 2000000 // 2MB
+	queryResultSizeLimit             = 2000000 // 2MB
+	changeVersionSearchAttrSizeLimit = 2048
 )
 
 // Assert that structs do indeed implement the interfaces
@@ -151,6 +153,7 @@ type (
 		failureConverter         converter.FailureConverter
 		contextPropagators       []ContextPropagator
 		deadlockDetectionTimeout time.Duration
+		sdkFlags                 *sdkFlags
 
 		protocols *protocol.Registry
 	}
@@ -201,6 +204,7 @@ func newWorkflowExecutionEventHandler(
 	failureConverter converter.FailureConverter,
 	contextPropagators []ContextPropagator,
 	deadlockDetectionTimeout time.Duration,
+	capabilities *workflowservice.GetSystemInfoResponse_Capabilities,
 ) workflowExecutionEventHandler {
 	context := &workflowEnvironmentImpl{
 		workflowInfo:                 workflowInfo,
@@ -220,6 +224,7 @@ func newWorkflowExecutionEventHandler(
 		deadlockDetectionTimeout:     deadlockDetectionTimeout,
 		protocols:                    protocol.NewRegistry(),
 		mutableSideEffectCallCounter: make(map[string]int),
+		sdkFlags:                     newSdkFlags(capabilities),
 	}
 	context.logger = ilog.NewReplayLogger(
 		log.With(logger,
@@ -728,8 +733,24 @@ func (wc *workflowEnvironmentImpl) GetVersion(changeID string, minSupported, max
 		// GetVersion for changeID is called first time (non-replay mode), generate a marker command for it.
 		// Also upsert search attributes to enable ability to search by changeVersion.
 		version = maxSupported
-		wc.commandsHelper.recordVersionMarker(changeID, version, wc.GetDataConverter())
-		_ = wc.UpsertSearchAttributes(createSearchAttributesForChangeVersion(changeID, version, wc.changeVersions))
+		changeVersionSA := createSearchAttributesForChangeVersion(changeID, version, wc.changeVersions)
+		attr, err := validateAndSerializeSearchAttributes(changeVersionSA)
+		if err == nil {
+			// Server has a limit for the max size of a single search attribute value. If we exceed the default limit
+			// do not try to upsert as it will cause the workflow to fail.
+			updateSearchAttribute := true
+			if wc.sdkFlags.tryUse(LimitChangeVersionSASize, !wc.isReplay) && len(attr.IndexedFields[TemporalChangeVersion].GetData()) >= changeVersionSearchAttrSizeLimit {
+				wc.logger.Warn(fmt.Sprintf("Serialized size of %s search attribute update would "+
+					"exceed the maximum value size. Skipping this upsert. Be aware that your "+
+					"visibility records will not include the following patch: %s", TemporalChangeVersion, getChangeVersion(changeID, version)),
+				)
+				updateSearchAttribute = false
+			}
+			wc.commandsHelper.recordVersionMarker(changeID, version, wc.GetDataConverter(), updateSearchAttribute)
+			if updateSearchAttribute {
+				_ = wc.UpsertSearchAttributes(changeVersionSA)
+			}
+		}
 	}
 
 	validateVersion(changeID, version, minSupported, maxSupported)
@@ -1324,12 +1345,18 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 				if versionPayload, ok := attributes.GetDetails()[versionMarkerDataName]; !ok {
 					err = fmt.Errorf("key %q: %w", versionMarkerDataName, ErrMissingMarkerDataKey)
 				} else {
+					// versionSearchAttributeUpdatedName is optional and was only added later so do not expect all version
+					// markers to have this.
+					searchAttrUpdated := true
+					if searchAttrUpdatedPayload, ok := attributes.GetDetails()[versionSearchAttributeUpdatedName]; ok {
+						_ = weh.dataConverter.FromPayloads(searchAttrUpdatedPayload, &searchAttrUpdated)
+					}
 					var changeID string
 					_ = weh.dataConverter.FromPayloads(changeIDPayload, &changeID)
 					var version Version
 					_ = weh.dataConverter.FromPayloads(versionPayload, &version)
 					weh.changeVersions[changeID] = version
-					weh.commandsHelper.handleVersionMarker(eventID, changeID)
+					weh.commandsHelper.handleVersionMarker(eventID, changeID, searchAttrUpdated)
 				}
 			}
 		case localActivityMarkerName:

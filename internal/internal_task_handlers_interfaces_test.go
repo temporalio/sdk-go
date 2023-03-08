@@ -46,8 +46,7 @@ type (
 )
 
 // Sample Workflow task handler
-type sampleWorkflowTaskHandler struct {
-}
+type sampleWorkflowTaskHandler struct{}
 
 func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(
 	workflowTask *workflowTask,
@@ -63,8 +62,7 @@ func newSampleWorkflowTaskHandler() *sampleWorkflowTaskHandler {
 }
 
 // Sample ActivityTaskHandler
-type sampleActivityTaskHandler struct {
-}
+type sampleActivityTaskHandler struct{}
 
 func newSampleActivityTaskHandler() *sampleActivityTaskHandler {
 	return &sampleActivityTaskHandler{}
@@ -180,7 +178,7 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextCommands() {
 
 	eh := newHistory(workflowTask, nil)
 
-	events, _, _, err := eh.NextCommandEvents()
+	events, _, _, _, err := eh.NextCommandEvents()
 
 	s.NoError(err)
 	s.Equal(3, len(events))

@@ -43,6 +43,7 @@ import (
 	"time"
 
 	"github.com/gogo/protobuf/jsonpb"
+	"github.com/gogo/protobuf/proto"
 	"github.com/golang/mock/gomock"
 	"github.com/pborman/uuid"
 	commonpb "go.temporal.io/api/common/v1"
@@ -215,6 +216,8 @@ type (
 		cache *WorkerCache
 
 		eagerActivityExecutor *eagerActivityExecutor
+
+		capabilities *workflowservice.GetSystemInfoResponse_Capabilities
 	}
 )
 
@@ -878,6 +881,7 @@ type AggregatedWorker struct {
 	stopC          chan struct{}
 	fatalErr       error
 	fatalErrLock   sync.Mutex
+	capabilities   *workflowservice.GetSystemInfoResponse_Capabilities
 }
 
 // RegisterWorkflow registers workflow implementation with the AggregatedWorker
@@ -914,6 +918,12 @@ func (aw *AggregatedWorker) Start() error {
 	} else if err = aw.client.ensureInitialized(); err != nil {
 		return err
 	}
+	// Populate the capabilities. This should be the only time it is written too.
+	capabilities, err := aw.client.loadCapabilities()
+	if err != nil {
+		return err
+	}
+	proto.Merge(aw.capabilities, capabilities)
 
 	if !util.IsInterfaceNil(aw.workflowWorker) {
 		if err := aw.workflowWorker.Start(); err != nil {
@@ -1343,6 +1353,16 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 		FailureConverter:      aw.failureConverter,
 		ContextPropagators:    aw.contextPropagators,
 		EnableLoggingInReplay: aw.enableLoggingInReplay,
+		capabilities: &workflowservice.GetSystemInfoResponse_Capabilities{
+			SignalAndQueryHeader:            true,
+			InternalErrorDifferentiation:    true,
+			ActivityFailureIncludeHeartbeat: true,
+			SupportsSchedules:               true,
+			EncodedFailureAttributes:        true,
+			UpsertMemo:                      true,
+			EagerWorkflowStart:              true,
+			SdkMetadata:                     true,
+		},
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
 	resp, _, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, nil)
@@ -1462,6 +1482,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			}
 		}
 	}
+	// Because of lazy clients we need to wait till the worker runs to fetch the capabilities.
+	// All worker systems that depend on the capabilities to process workflow/activity tasks
+	// should take a pointer to this struct and wait for it to be populated when the worker is run.
+	var capabilities workflowservice.GetSystemInfoResponse_Capabilities
 
 	cache := NewWorkerCache()
 	workerParams := workerExecutionParameters{
@@ -1497,6 +1521,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			taskQueue:     taskQueue,
 			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
 		}),
+		capabilities: &capabilities,
 	}
 
 	if options.Identity != "" {
@@ -1557,6 +1582,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		logger:         workerParams.Logger,
 		registry:       registry,
 		stopC:          make(chan struct{}),
+		capabilities:   &capabilities,
 	}
 	return aw
 }

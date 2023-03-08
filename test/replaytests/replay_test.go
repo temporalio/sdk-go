@@ -269,6 +269,20 @@ func (s *replayTestSuite) TestMutableSideEffectWorkflow() {
 	require.Equal(s.T(), []int{0, 0, 0, 1, 1, 2, 3, 3, 4, 4, 5}, result)
 }
 
+func (s *replayTestSuite) TestVersionLoopWorkflow() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(VersionLoopWorkflow)
+	// Verify we can still replay an old workflow that does not have sdk flags
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "version-loop-workflow-legacy-10.json")
+	require.NoError(s.T(), err)
+
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "version-loop-workflow-10.json")
+	require.NoError(s.T(), err)
+
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "version-loop-workflow-256.json")
+	require.NoError(s.T(), err)
+}
+
 func TestReplayCustomConverter(t *testing.T) {
 	conv := &captureConverter{DataConverter: converter.GetDefaultDataConverter()}
 	replayer, err := worker.NewWorkflowReplayerWithOptions(worker.WorkflowReplayerOptions{
