@@ -860,7 +860,7 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 	metricsTimer := metricsHandler.Timer(metrics.WorkflowTaskReplayLatency)
 
 	eventHandler.ResetLAWFTAttemptCounts()
-	eventHandler.sdkFlags.resetSdkFlags()
+	eventHandler.sdkFlags.markSdkFlagsSent()
 
 	// Process events
 ProcessEvents:

@@ -80,7 +80,8 @@ func (sf *sdkFlags) tryUse(flag sdkFlag, record bool) bool {
 		return false
 	}
 
-	if record {
+	if record && !sf.currentFlags[flag] {
+		// Only set new flags
 		sf.newFlags[flag] = true
 		return true
 	} else {
@@ -88,15 +89,15 @@ func (sf *sdkFlags) tryUse(flag sdkFlag, record bool) bool {
 	}
 }
 
-// resetSdkFlags marks all sdk flags as sent to the server.
-func (sf *sdkFlags) resetSdkFlags() {
+// markSdkFlagsSent marks all sdk flags as sent to the server.
+func (sf *sdkFlags) markSdkFlagsSent() {
 	for flag := range sf.newFlags {
 		sf.currentFlags[flag] = true
 	}
 	sf.newFlags = make(map[sdkFlag]bool)
 }
 
-// gatherNewSdkFlags returns all sdkFlags set since the last call to resetSdkFlags.
+// gatherNewSdkFlags returns all sdkFlags set since the last call to markSdkFlagsSent.
 func (sf *sdkFlags) gatherNewSdkFlags() []sdkFlag {
 	flags := make([]sdkFlag, 0, len(sf.newFlags))
 	for flag := range sf.newFlags {

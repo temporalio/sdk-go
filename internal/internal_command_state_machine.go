@@ -930,7 +930,7 @@ func (h *commandsHelper) incrementNextCommandEventIDIfVersionMarker() {
 		// is UpsertSearchableAttributes to keep track of executions using particular version of code.
 		delete(h.versionMarkerLookup, h.nextCommandEventID)
 		h.incrementNextCommandEventID()
-		// UpsertSearchableAttributes may not have been written if the search attriute was too large.
+		// UpsertSearchableAttributes may not have been written if the search attribute was too large.
 		if marker.searchAttrUpdated {
 			h.incrementNextCommandEventID()
 		}
@@ -1093,18 +1093,20 @@ func (h *commandsHelper) recordVersionMarker(changeID string, version Version, d
 		panic(err)
 	}
 
-	searchAttributeWasUpdatedPayload, err := dc.ToPayloads(searchAttributeWasUpdated)
-	if err != nil {
-		panic(err)
-	}
-
 	recordMarker := &commandpb.RecordMarkerCommandAttributes{
 		MarkerName: versionMarkerName,
 		Details: map[string]*commonpb.Payloads{
-			versionMarkerChangeIDName:         changeIDPayload,
-			versionMarkerDataName:             versionPayload,
-			versionSearchAttributeUpdatedName: searchAttributeWasUpdatedPayload,
+			versionMarkerChangeIDName: changeIDPayload,
+			versionMarkerDataName:     versionPayload,
 		},
+	}
+
+	if !searchAttributeWasUpdated {
+		searchAttributeWasUpdatedPayload, err := dc.ToPayloads(searchAttributeWasUpdated)
+		if err != nil {
+			panic(err)
+		}
+		recordMarker.Details[versionSearchAttributeUpdatedName] = searchAttributeWasUpdatedPayload
 	}
 
 	command := h.newMarkerCommandStateMachine(markerID, recordMarker)
