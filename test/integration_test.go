@@ -1279,6 +1279,22 @@ func (ts *IntegrationTestSuite) TestAsyncActivityCompletion() {
 	ts.EqualValues([]string{"activityA completed", "activityB completed"}, result)
 }
 
+func (ts *IntegrationTestSuite) TestVersionLoopWorkflow() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-version-loop-workflow"), ts.workflows.VersionLoopWorkflow, []string{"changeID_1", "changeID_2", "changeID_3"}, 256)
+	ts.NoError(err)
+
+	err = run.Get(ctx, nil)
+	ts.NoError(err)
+
+	resp, err := ts.client.DescribeWorkflowExecution(ctx, run.GetID(), run.GetRunID())
+	ts.NoError(err)
+	size := len(resp.WorkflowExecutionInfo.SearchAttributes.GetIndexedFields()[internal.TemporalChangeVersion].Data)
+	ts.Less(size, 2048)
+}
+
 func (ts *IntegrationTestSuite) TestContextPropagator() {
 	var propagatedValues []string
 	ctx := context.Background()

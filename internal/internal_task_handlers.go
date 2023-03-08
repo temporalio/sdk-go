@@ -860,7 +860,7 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 	metricsTimer := metricsHandler.Timer(metrics.WorkflowTaskReplayLatency)
 
 	eventHandler.ResetLAWFTAttemptCounts()
-	eventHandler.sdkFlags.markSdkFlagsSent()
+	eventHandler.sdkFlags.markSDKFlagsSent()
 
 	// Process events
 ProcessEvents:
@@ -1593,7 +1593,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 
 	nonfirstLAAttempts := eventHandler.GatherLAAttemptsThisWFT()
 
-	sdkFlags := eventHandler.sdkFlags.gatherNewSdkFlags()
+	sdkFlags := eventHandler.sdkFlags.gatherNewSDKFlags()
 	langUsedFlags := make([]uint32, 0, len(sdkFlags))
 	for _, flag := range sdkFlags {
 		langUsedFlags = append(langUsedFlags, uint32(flag))

@@ -224,7 +224,7 @@ func newWorkflowExecutionEventHandler(
 		deadlockDetectionTimeout:     deadlockDetectionTimeout,
 		protocols:                    protocol.NewRegistry(),
 		mutableSideEffectCallCounter: make(map[string]int),
-		sdkFlags:                     newSdkFlags(capabilities),
+		sdkFlags:                     newSDKFlags(capabilities),
 	}
 	context.logger = ilog.NewReplayLogger(
 		log.With(logger,
@@ -739,7 +739,7 @@ func (wc *workflowEnvironmentImpl) GetVersion(changeID string, minSupported, max
 			// Server has a limit for the max size of a single search attribute value. If we exceed the default limit
 			// do not try to upsert as it will cause the workflow to fail.
 			updateSearchAttribute := true
-			if wc.sdkFlags.tryUse(LimitChangeVersionSASize, !wc.isReplay) && len(attr.IndexedFields[TemporalChangeVersion].GetData()) >= changeVersionSearchAttrSizeLimit {
+			if wc.sdkFlags.tryUse(SDKFlagLimitChangeVersionSASize, !wc.isReplay) && len(attr.IndexedFields[TemporalChangeVersion].GetData()) >= changeVersionSearchAttrSizeLimit {
 				wc.logger.Warn(fmt.Sprintf("Serialized size of %s search attribute update would "+
 					"exceed the maximum value size. Skipping this upsert. Be aware that your "+
 					"visibility records will not include the following patch: %s", TemporalChangeVersion, getChangeVersion(changeID, version)),

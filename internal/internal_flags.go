@@ -33,26 +33,26 @@ import (
 type sdkFlag uint32
 
 const (
-	Unset sdkFlag = iota
+	SDKFlagUnset sdkFlag = iota
 	// LimitChangeVersionSASize will limit the search attribute size of TemporalChangeVersion to 2048 when
 	// calling GetVersion. If the limit is exceeded the search attribute is not updated.
-	LimitChangeVersionSASize
-	Unknown = math.MaxUint32
+	SDKFlagLimitChangeVersionSASize
+	SDKFlagUnknown = math.MaxUint32
 )
 
 func sdkFlagFromUint(value uint32) sdkFlag {
 	switch value {
-	case uint32(Unknown):
-		return Unknown
-	case uint32(LimitChangeVersionSASize):
-		return LimitChangeVersionSASize
+	case uint32(SDKFlagUnset):
+		return SDKFlagUnset
+	case uint32(SDKFlagLimitChangeVersionSASize):
+		return SDKFlagLimitChangeVersionSASize
 	default:
-		return Unknown
+		return SDKFlagUnknown
 	}
 }
 
 func (f sdkFlag) isValid() bool {
-	return f != Unset && f != Unknown
+	return f != SDKFlagUnset && f != SDKFlagUnknown
 }
 
 // sdkFlags represents all the flags that are currently set in a workflow execution.
@@ -65,7 +65,7 @@ type sdkFlags struct {
 	newFlags map[sdkFlag]bool
 }
 
-func newSdkFlags(capabilities *workflowservice.GetSystemInfoResponse_Capabilities) *sdkFlags {
+func newSDKFlags(capabilities *workflowservice.GetSystemInfoResponse_Capabilities) *sdkFlags {
 	return &sdkFlags{
 		capabilities: capabilities,
 		currentFlags: make(map[sdkFlag]bool),
@@ -89,16 +89,16 @@ func (sf *sdkFlags) tryUse(flag sdkFlag, record bool) bool {
 	}
 }
 
-// markSdkFlagsSent marks all sdk flags as sent to the server.
-func (sf *sdkFlags) markSdkFlagsSent() {
+// markSDKFlagsSent marks all sdk flags as sent to the server.
+func (sf *sdkFlags) markSDKFlagsSent() {
 	for flag := range sf.newFlags {
 		sf.currentFlags[flag] = true
 	}
 	sf.newFlags = make(map[sdkFlag]bool)
 }
 
-// gatherNewSdkFlags returns all sdkFlags set since the last call to markSdkFlagsSent.
-func (sf *sdkFlags) gatherNewSdkFlags() []sdkFlag {
+// gatherNewSDKFlags returns all sdkFlags set since the last call to markSDKFlagsSent.
+func (sf *sdkFlags) gatherNewSDKFlags() []sdkFlag {
 	flags := make([]sdkFlag, 0, len(sf.newFlags))
 	for flag := range sf.newFlags {
 		flags = append(flags, flag)
