@@ -735,7 +735,9 @@ func (wc *workflowEnvironmentImpl) GetVersion(changeID string, minSupported, max
 		version = maxSupported
 		changeVersionSA := createSearchAttributesForChangeVersion(changeID, version, wc.changeVersions)
 		attr, err := validateAndSerializeSearchAttributes(changeVersionSA)
-		if err == nil {
+		if err != nil {
+			wc.logger.Warn(fmt.Sprintf("Failed to seralize %s search attribute with: %v", TemporalChangeVersion, err))
+		} else {
 			// Server has a limit for the max size of a single search attribute value. If we exceed the default limit
 			// do not try to upsert as it will cause the workflow to fail.
 			updateSearchAttribute := true
