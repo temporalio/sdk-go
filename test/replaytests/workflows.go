@@ -26,6 +26,7 @@ package replaytests
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"time"
 
@@ -252,4 +253,11 @@ func MutableSideEffectWorkflow(ctx workflow.Context) ([]int, error) {
 	results = append(results, f(5))
 
 	return results, nil
+}
+
+func VersionLoopWorkflow(ctx workflow.Context, changeID string, iterations int) error {
+	for i := 0; i < iterations; i++ {
+		workflow.GetVersion(ctx, fmt.Sprintf("%s:%d", changeID, i), workflow.DefaultVersion, 1)
+	}
+	return workflow.Sleep(ctx, time.Second)
 }

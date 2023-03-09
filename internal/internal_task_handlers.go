@@ -43,6 +43,7 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
 	querypb "go.temporal.io/api/query/v1"
+	"go.temporal.io/api/sdk/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -134,6 +135,7 @@ type (
 		contextPropagators       []ContextPropagator
 		cache                    *WorkerCache
 		deadlockDetectionTimeout time.Duration
+		capabilities             *workflowservice.GetSystemInfoResponse_Capabilities
 	}
 
 	activityProvider func(name string) activity
@@ -217,11 +219,11 @@ func (eh *history) IsReplayEvent(event *historypb.HistoryEvent) bool {
 	return event.GetEventId() <= eh.workflowTask.task.GetPreviousStartedEventId() || isCommandEvent(event.GetEventType())
 }
 
-func (eh *history) IsNextWorkflowTaskFailed() (isFailed bool, binaryChecksum string, err error) {
+func (eh *history) IsNextWorkflowTaskFailed() (isFailed bool, binaryChecksum string, flags []sdkFlag, err error) {
 	nextIndex := eh.currentIndex + 1
 	if nextIndex >= len(eh.loadedEvents) && eh.hasMoreEvents() { // current page ends and there is more pages
 		if err := eh.loadMoreEvents(); err != nil {
-			return false, "", err
+			return false, "", nil, err
 		}
 	}
 
@@ -230,12 +232,21 @@ func (eh *history) IsNextWorkflowTaskFailed() (isFailed bool, binaryChecksum str
 		nextEventType := nextEvent.GetEventType()
 		isFailed := nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT || nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED
 		var binaryChecksum string
+		var flags []sdkFlag
 		if nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
 			binaryChecksum = nextEvent.GetWorkflowTaskCompletedEventAttributes().BinaryChecksum
+			for _, flag := range nextEvent.GetWorkflowTaskCompletedEventAttributes().GetSdkMetadata().GetLangUsedFlags() {
+				f := sdkFlagFromUint(flag)
+				if !f.isValid() {
+					// If a flag is not recognized (value is too high or not defined), it must fail the workflow task
+					return false, "", nil, errors.New("could not recognize SDK flag")
+				}
+				flags = append(flags, f)
+			}
 		}
-		return isFailed, binaryChecksum, nil
+		return isFailed, binaryChecksum, flags, nil
 	}
-	return false, "", nil
+	return false, "", nil, nil
 }
 
 func (eh *history) loadMoreEvents() error {
@@ -274,20 +285,20 @@ func isCommandEvent(eventType enumspb.EventType) bool {
 
 // NextCommandEvents returns events that there processed as new by the next command.
 // TODO(maxim): Refactor to return a struct instead of multiple parameters
-func (eh *history) NextCommandEvents() (result []*historypb.HistoryEvent, markers []*historypb.HistoryEvent, binaryChecksum string, err error) {
+func (eh *history) NextCommandEvents() (result []*historypb.HistoryEvent, markers []*historypb.HistoryEvent, binaryChecksum string, sdkFlags []sdkFlag, err error) {
 	if eh.next == nil {
-		eh.next, _, err = eh.nextCommandEvents()
+		eh.next, _, sdkFlags, err = eh.nextCommandEvents()
 		if err != nil {
-			return result, markers, eh.binaryChecksum, err
+			return result, markers, eh.binaryChecksum, sdkFlags, err
 		}
 	}
 
 	result = eh.next
 	checksum := eh.binaryChecksum
 	if len(result) > 0 {
-		eh.next, markers, err = eh.nextCommandEvents()
+		eh.next, markers, sdkFlags, err = eh.nextCommandEvents()
 	}
-	return result, markers, checksum, err
+	return result, markers, checksum, sdkFlags, err
 }
 
 func (eh *history) hasMoreEvents() bool {
@@ -315,12 +326,12 @@ func (eh *history) verifyAllEventsProcessed() error {
 	return nil
 }
 
-func (eh *history) nextCommandEvents() (nextEvents []*historypb.HistoryEvent, markers []*historypb.HistoryEvent, err error) {
+func (eh *history) nextCommandEvents() (nextEvents []*historypb.HistoryEvent, markers []*historypb.HistoryEvent, sdkFlags []sdkFlag, err error) {
 	if eh.currentIndex == len(eh.loadedEvents) && !eh.hasMoreEvents() {
 		if err := eh.verifyAllEventsProcessed(); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
-		return []*historypb.HistoryEvent{}, []*historypb.HistoryEvent{}, nil
+		return []*historypb.HistoryEvent{}, []*historypb.HistoryEvent{}, []sdkFlag{}, nil
 	}
 
 	// Process events
@@ -353,7 +364,7 @@ OrderEvents:
 
 		switch event.GetEventType() {
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
-			isFailed, binaryChecksum, err1 := eh.IsNextWorkflowTaskFailed()
+			isFailed, binaryChecksum, newFlags, err1 := eh.IsNextWorkflowTaskFailed()
 			if err1 != nil {
 				err = err1
 				return
@@ -362,6 +373,7 @@ OrderEvents:
 				eh.binaryChecksum = binaryChecksum
 				eh.currentIndex++
 				nextEvents = append(nextEvents, event)
+				sdkFlags = append(sdkFlags, newFlags...)
 				break OrderEvents
 			}
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED,
@@ -388,7 +400,7 @@ OrderEvents:
 
 	eh.currentIndex = 0
 
-	return nextEvents, markers, nil
+	return nextEvents, markers, sdkFlags, nil
 }
 
 func isPreloadMarkerEvent(event *historypb.HistoryEvent) bool {
@@ -412,6 +424,7 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		contextPropagators:       params.ContextPropagators,
 		cache:                    params.cache,
 		deadlockDetectionTimeout: params.DeadlockDetectionTimeout,
+		capabilities:             params.capabilities,
 	}
 }
 
@@ -516,6 +529,7 @@ func (w *workflowExecutionContextImpl) createEventHandler() {
 		w.wth.failureConverter,
 		w.wth.contextPropagators,
 		w.wth.deadlockDetectionTimeout,
+		w.wth.capabilities,
 	)
 
 	w.eventHandler = &eventHandler
@@ -846,11 +860,12 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 	metricsTimer := metricsHandler.Timer(metrics.WorkflowTaskReplayLatency)
 
 	eventHandler.ResetLAWFTAttemptCounts()
+	eventHandler.sdkFlags.markSDKFlagsSent()
 
 	// Process events
 ProcessEvents:
 	for {
-		reorderedEvents, markers, binaryChecksum, err := reorderedHistory.NextCommandEvents()
+		reorderedEvents, markers, binaryChecksum, flags, err := reorderedHistory.NextCommandEvents()
 		if err != nil {
 			return nil, err
 		}
@@ -862,6 +877,9 @@ ProcessEvents:
 			w.workflowInfo.BinaryChecksum = getBinaryChecksum()
 		} else {
 			w.workflowInfo.BinaryChecksum = binaryChecksum
+		}
+		for _, flag := range flags {
+			_ = eventHandler.sdkFlags.tryUse(flag, true)
 		}
 		// Reset the mutable side effect markers recorded
 		eventHandler.mutableSideEffectsRecorded = nil
@@ -1575,6 +1593,12 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 
 	nonfirstLAAttempts := eventHandler.GatherLAAttemptsThisWFT()
 
+	sdkFlags := eventHandler.sdkFlags.gatherNewSDKFlags()
+	langUsedFlags := make([]uint32, 0, len(sdkFlags))
+	for _, flag := range sdkFlags {
+		langUsedFlags = append(langUsedFlags, uint32(flag))
+	}
+
 	return &workflowservice.RespondWorkflowTaskCompletedRequest{
 		TaskToken:                  task.TaskToken,
 		Commands:                   commands,
@@ -1586,6 +1610,9 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		QueryResults:               queryResults,
 		Namespace:                  wth.namespace,
 		MeteringMetadata:           &commonpb.MeteringMetadata{NonfirstLocalActivityExecutionAttempts: nonfirstLAAttempts},
+		SdkMetadata: &sdk.WorkflowTaskCompletedMetadata{
+			LangUsedFlags: langUsedFlags,
+		},
 	}
 }
 

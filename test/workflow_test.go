@@ -2050,6 +2050,19 @@ func (w *Workflows) MutableSideEffect(ctx workflow.Context, startVal int) (currV
 	return
 }
 
+func (w *Workflows) VersionLoopWorkflow(ctx workflow.Context, changeIDs []string, iterations int) error {
+	for _, changeID := range changeIDs {
+		for i := 0; i < iterations; i++ {
+			workflow.GetVersion(ctx, fmt.Sprintf("%s:%d", changeID, i), workflow.DefaultVersion, 1)
+		}
+		err := workflow.Sleep(ctx, time.Second)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (w *Workflows) HistoryLengths(ctx workflow.Context, activityCount int) (lengths []int, err error) {
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
@@ -2162,6 +2175,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.HeartbeatSpecificCount)
 	worker.RegisterWorkflow(w.UpsertMemo)
 	worker.RegisterWorkflow(w.SessionFailedStateWorkflow)
+	worker.RegisterWorkflow(w.VersionLoopWorkflow)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)

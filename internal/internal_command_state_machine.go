@@ -140,6 +140,11 @@ type (
 		*naiveCommandStateMachine
 	}
 
+	versionMarker struct {
+		changeID          string
+		searchAttrUpdated bool
+	}
+
 	commandsHelper struct {
 		nextCommandEventID int64
 		orderedCommands    *list.List
@@ -148,7 +153,7 @@ type (
 		scheduledEventIDToActivityID          map[int64]string
 		scheduledEventIDToCancellationID      map[int64]string
 		scheduledEventIDToSignalID            map[int64]string
-		versionMarkerLookup                   map[int64]string
+		versionMarkerLookup                   map[int64]versionMarker
 		commandsCancelledDuringWFCancellation int64
 		workflowExecutionIsCancelling         bool
 
@@ -221,13 +226,14 @@ const (
 	localActivityMarkerName     = "LocalActivity"
 	mutableSideEffectMarkerName = "MutableSideEffect"
 
-	sideEffectMarkerIDName           = "side-effect-id"
-	sideEffectMarkerDataName         = "data"
-	versionMarkerChangeIDName        = "change-id"
-	versionMarkerDataName            = "version"
-	localActivityMarkerDataName      = "data"
-	localActivityResultName          = "result"
-	mutableSideEffectCallCounterName = "mutable-side-effect-call-counter"
+	sideEffectMarkerIDName            = "side-effect-id"
+	sideEffectMarkerDataName          = "data"
+	versionMarkerChangeIDName         = "change-id"
+	versionMarkerDataName             = "version"
+	versionSearchAttributeUpdatedName = "version-search-attribute-updated"
+	localActivityMarkerDataName       = "data"
+	localActivityResultName           = "result"
+	mutableSideEffectCallCounterName  = "mutable-side-effect-call-counter"
 )
 
 func (d commandState) String() string {
@@ -884,7 +890,7 @@ func newCommandsHelper() *commandsHelper {
 		scheduledEventIDToActivityID:          make(map[int64]string),
 		scheduledEventIDToCancellationID:      make(map[int64]string),
 		scheduledEventIDToSignalID:            make(map[int64]string),
-		versionMarkerLookup:                   make(map[int64]string),
+		versionMarkerLookup:                   make(map[int64]versionMarker),
 		commandsCancelledDuringWFCancellation: 0,
 	}
 }
@@ -917,15 +923,18 @@ func (h *commandsHelper) getNextID() int64 {
 }
 
 func (h *commandsHelper) incrementNextCommandEventIDIfVersionMarker() {
-	_, ok := h.versionMarkerLookup[h.nextCommandEventID]
+	marker, ok := h.versionMarkerLookup[h.nextCommandEventID]
 	for ok {
 		// Remove the marker from the lookup map and increment nextCommandEventID by 2 because call to GetVersion
-		// results in 2 events in the history.  One is GetVersion marker event for changeID and change version, other
+		// results in 1 or 2 events in the history.  One is GetVersion marker event for changeID and change version, other
 		// is UpsertSearchableAttributes to keep track of executions using particular version of code.
 		delete(h.versionMarkerLookup, h.nextCommandEventID)
 		h.incrementNextCommandEventID()
-		h.incrementNextCommandEventID()
-		_, ok = h.versionMarkerLookup[h.nextCommandEventID]
+		// UpsertSearchableAttributes may not have been written if the search attribute was too large.
+		if marker.searchAttrUpdated {
+			h.incrementNextCommandEventID()
+		}
+		marker, ok = h.versionMarkerLookup[h.nextCommandEventID]
 	}
 }
 
@@ -1071,7 +1080,7 @@ func (h *commandsHelper) getActivityAndScheduledEventIDs(event *historypb.Histor
 	return activityID, scheduledEventID
 }
 
-func (h *commandsHelper) recordVersionMarker(changeID string, version Version, dc converter.DataConverter) commandStateMachine {
+func (h *commandsHelper) recordVersionMarker(changeID string, version Version, dc converter.DataConverter, searchAttributeWasUpdated bool) commandStateMachine {
 	markerID := fmt.Sprintf("%v_%v", versionMarkerName, changeID)
 
 	changeIDPayload, err := dc.ToPayloads(changeID)
@@ -1092,12 +1101,20 @@ func (h *commandsHelper) recordVersionMarker(changeID string, version Version, d
 		},
 	}
 
+	if !searchAttributeWasUpdated {
+		searchAttributeWasUpdatedPayload, err := dc.ToPayloads(searchAttributeWasUpdated)
+		if err != nil {
+			panic(err)
+		}
+		recordMarker.Details[versionSearchAttributeUpdatedName] = searchAttributeWasUpdatedPayload
+	}
+
 	command := h.newMarkerCommandStateMachine(markerID, recordMarker)
 	h.addCommand(command)
 	return command
 }
 
-func (h *commandsHelper) handleVersionMarker(eventID int64, changeID string) {
+func (h *commandsHelper) handleVersionMarker(eventID int64, changeID string, searchAttrUpdated bool) {
 	if _, ok := h.versionMarkerLookup[eventID]; ok {
 		panicMsg := fmt.Sprintf("marker event already exists for eventID in lookup: eventID: %v, changeID: %v",
 			eventID, changeID)
@@ -1107,7 +1124,10 @@ func (h *commandsHelper) handleVersionMarker(eventID int64, changeID string) {
 	// During processing of a workflow task we reorder all GetVersion markers and process them first.
 	// Keep track of all GetVersion marker events during the processing of workflow task so we can
 	// generate correct eventIDs for other events during replay.
-	h.versionMarkerLookup[eventID] = changeID
+	h.versionMarkerLookup[eventID] = versionMarker{
+		changeID:          changeID,
+		searchAttrUpdated: searchAttrUpdated,
+	}
 }
 
 func (h *commandsHelper) recordSideEffectMarker(sideEffectID int64, data *commonpb.Payloads, dc converter.DataConverter) commandStateMachine {
