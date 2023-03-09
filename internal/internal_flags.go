@@ -33,11 +33,11 @@ import (
 type sdkFlag uint32
 
 const (
-	SDKFlagUnset sdkFlag = iota
+	SDKFlagUnset sdkFlag = 0
 	// LimitChangeVersionSASize will limit the search attribute size of TemporalChangeVersion to 2048 when
 	// calling GetVersion. If the limit is exceeded the search attribute is not updated.
-	SDKFlagLimitChangeVersionSASize
-	SDKFlagUnknown = math.MaxUint32
+	SDKFlagLimitChangeVersionSASize = 1
+	SDKFlagUnknown                  = math.MaxUint32
 )
 
 func sdkFlagFromUint(value uint32) sdkFlag {

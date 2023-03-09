@@ -283,6 +283,15 @@ func (s *replayTestSuite) TestVersionLoopWorkflow() {
 	require.NoError(s.T(), err)
 }
 
+func (s *replayTestSuite) TestUnkownSDKFlag() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(VersionLoopWorkflow)
+	// version-loop-workflow-unkown-version-flag.json had a very high sdk flag value set that the sdk does not know about.
+	// Verify if the SDK does not understand a flag we fail replay.
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "version-loop-workflow-unkown-version-flag.json")
+	require.Error(s.T(), err)
+}
+
 func TestReplayCustomConverter(t *testing.T) {
 	conv := &captureConverter{DataConverter: converter.GetDefaultDataConverter()}
 	replayer, err := worker.NewWorkflowReplayerWithOptions(worker.WorkflowReplayerOptions{
