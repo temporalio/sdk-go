@@ -37,7 +37,10 @@ const (
 	// LimitChangeVersionSASize will limit the search attribute size of TemporalChangeVersion to 2048 when
 	// calling GetVersion. If the limit is exceeded the search attribute is not updated.
 	SDKFlagLimitChangeVersionSASize = 1
-	SDKFlagUnknown                  = math.MaxUint32
+	// LimitChangeVersionSASize return errors to child workflow execution future if the child workflow would
+	// fail in the synchronous path.
+	SDKFlagChildWorkflowErrorExecution = 2
+	SDKFlagUnknown                     = math.MaxUint32
 )
 
 func sdkFlagFromUint(value uint32) sdkFlag {
@@ -46,6 +49,8 @@ func sdkFlagFromUint(value uint32) sdkFlag {
 		return SDKFlagUnset
 	case uint32(SDKFlagLimitChangeVersionSASize):
 		return SDKFlagLimitChangeVersionSASize
+	case uint32(SDKFlagChildWorkflowErrorExecution):
+		return SDKFlagChildWorkflowErrorExecution
 	default:
 		return SDKFlagUnknown
 	}

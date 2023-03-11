@@ -475,11 +475,17 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	}
 	memo, err := getWorkflowMemo(params.Memo, wc.dataConverter)
 	if err != nil {
+		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
+			startedHandler(WorkflowExecution{}, &ChildWorkflowExecutionAlreadyStartedError{})
+		}
 		callback(nil, err)
 		return
 	}
 	searchAttr, err := serializeSearchAttributes(params.SearchAttributes)
 	if err != nil {
+		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
+			startedHandler(WorkflowExecution{}, &ChildWorkflowExecutionAlreadyStartedError{})
+		}
 		callback(nil, err)
 		return
 	}
@@ -506,6 +512,9 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 
 	command, err := wc.commandsHelper.startChildWorkflowExecution(attributes)
 	if _, ok := err.(*childWorkflowExistsWithId); ok {
+		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
+			startedHandler(WorkflowExecution{}, &ChildWorkflowExecutionAlreadyStartedError{})
+		}
 		callback(nil, &ChildWorkflowExecutionAlreadyStartedError{})
 		return
 	}

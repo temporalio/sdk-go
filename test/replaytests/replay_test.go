@@ -269,6 +269,14 @@ func (s *replayTestSuite) TestMutableSideEffectWorkflow() {
 	require.Equal(s.T(), []int{0, 0, 0, 1, 1, 2, 3, 3, 4, 4, 5}, result)
 }
 
+func (s *replayTestSuite) TestDuplciateChildWorkflow() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(DuplicateChildWorkflow)
+
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "duplicate-child-workflow.json")
+	require.NoError(s.T(), err)
+}
+
 func (s *replayTestSuite) TestVersionLoopWorkflow() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflow(VersionLoopWorkflow)

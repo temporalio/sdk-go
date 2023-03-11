@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -260,4 +261,69 @@ func VersionLoopWorkflow(ctx workflow.Context, changeID string, iterations int) 
 		workflow.GetVersion(ctx, fmt.Sprintf("%s:%d", changeID, i), workflow.DefaultVersion, 1)
 	}
 	return workflow.Sleep(ctx, time.Second)
+}
+
+func ChildWorkflowWaitOnSignal(ctx workflow.Context) error {
+	workflow.GetSignalChannel(ctx, "unblock").Receive(ctx, nil)
+	return nil
+}
+
+func DuplicateChildWorkflow(ctx workflow.Context) error {
+	logger := workflow.GetLogger(ctx)
+
+	cwo := workflow.ChildWorkflowOptions{
+		WorkflowID: "ABC-SIMPLE-CHILD-WORKFLOW-ID",
+	}
+	childCtx := workflow.WithChildOptions(ctx, cwo)
+
+	child1 := workflow.ExecuteChildWorkflow(childCtx, ChildWorkflowWaitOnSignal)
+	var childWE workflow.Execution
+	err := child1.GetChildWorkflowExecution().Get(ctx, &childWE)
+	if err != nil {
+		return err
+	}
+
+	duplicateChildWFFuture := workflow.ExecuteChildWorkflow(childCtx, ChildWorkflowWaitOnSignal)
+	selector := workflow.NewSelector(ctx)
+	selector.AddFuture(duplicateChildWFFuture, func(f workflow.Future) {
+		logger.Info("child workflow is ready")
+		err = f.Get(ctx, nil)
+		if _, ok := err.(*temporal.ChildWorkflowExecutionAlreadyStartedError); !ok {
+			panic("Second child must fail to start as duplicate")
+		}
+		err = workflow.Sleep(ctx, time.Second)
+	}).AddFuture(duplicateChildWFFuture.GetChildWorkflowExecution(), func(f workflow.Future) {
+		logger.Info("child workflow execution is ready")
+		err = f.Get(ctx, nil)
+		if _, ok := err.(*temporal.ChildWorkflowExecutionAlreadyStartedError); !ok {
+			panic("Second child must fail to start as duplicate")
+		}
+		ao := workflow.ActivityOptions{
+			ScheduleToStartTimeout: time.Minute,
+			StartToCloseTimeout:    time.Minute,
+			HeartbeatTimeout:       time.Second * 20,
+		}
+		ctx = workflow.WithActivityOptions(ctx, ao)
+		field := "hello"
+		err = workflow.ExecuteActivity(ctx, helloworldActivity, field).Get(ctx, &field)
+	}).AddDefault(func() {
+		err = workflow.Sleep(ctx, time.Second)
+	})
+	for i := 0; i < 2; i++ {
+		selector.Select(ctx)
+		if err != nil {
+			return err
+		}
+	}
+
+	workflow.SignalExternalWorkflow(ctx, childWE.ID, childWE.RunID, "unblock", nil)
+	if err != nil {
+		return err
+	}
+	err = child1.Get(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

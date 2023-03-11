@@ -1041,6 +1041,16 @@ func (ts *IntegrationTestSuite) TestChildWorkflowDuplicatePanic_Regression() {
 	ts.NoError(err)
 }
 
+func (ts *IntegrationTestSuite) TestChildWorkflowDuplicateGetExecutionStuck_Regression() {
+	wfid := "test-child-workflow-duplicate-get-execution-stuck-regression"
+	run, err := ts.client.ExecuteWorkflow(context.Background(),
+		ts.startWorkflowOptions(wfid),
+		ts.workflows.ChildWorkflowDuplicateGetExecutionStuckRepro)
+	ts.NoError(err)
+	err = run.Get(context.Background(), nil)
+	ts.NoError(err)
+}
+
 func (ts *IntegrationTestSuite) TestCancelActivityImmediately() {
 	var expected []string
 	err := ts.executeWorkflow("test-cancel-activity-immediately", ts.workflows.CancelActivityImmediately, &expected)
