@@ -940,7 +940,7 @@ func (wc *WorkflowClient) ResetWorkflowExecution(ctx context.Context, request *w
 
 // UpdateWorkerBuildIDCompatability allows you to update the worker-build-id based version sets for a particular
 // task queue. This is used in conjunction with workers who specify their build id and thus opt into the
-// feature. For more, see: <doc link>
+// feature.
 func (wc *WorkflowClient) UpdateWorkerBuildIDCompatability(ctx context.Context, options *UpdateWorkerBuildIDCompatabilityOptions) error {
 	if err := wc.ensureInitialized(); err != nil {
 		return err

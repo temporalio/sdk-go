@@ -228,11 +228,10 @@ type (
 		// workflow or activities.
 		DisableRegistrationAliasing bool
 
-		// **IN DEVELOPMENT**
 		// Optional: If set, opts this worker into the worker build id based versioning
 		// feature. It will only operate on workflows it claims to be compatible with.
 		// Additionally, if this is set it will serve as the binary checksum for the worker.
-		// For more, see: <doc link>
+		// NOTE: Experimental
 		BuildIDForVersioning string
 	}
 )
