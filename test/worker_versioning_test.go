@@ -75,7 +75,7 @@ func (ts *WorkerVersioningTestSuite) TestManipulateVersionGraph() {
 	err = ts.client.UpdateWorkerBuildIDCompatability(ctx, &client.UpdateWorkerBuildIDCompatabilityOptions{
 		TaskQueue:         ts.taskQueueName,
 		WorkerBuildID:     "1.1",
-		CompatibleVersion: "1.0",
+		CompatibleBuildID: "1.0",
 	})
 	ts.NoError(err)
 
@@ -84,8 +84,8 @@ func (ts *WorkerVersioningTestSuite) TestManipulateVersionGraph() {
 	})
 	ts.NoError(err)
 	ts.Equal("2.0", res.Default())
-	ts.Equal("1.1", res.Sets[0].Versions[1])
-	ts.Equal("1.0", res.Sets[0].Versions[0])
+	ts.Equal("1.1", res.Sets[0].BuildIDs[1])
+	ts.Equal("1.0", res.Sets[0].BuildIDs[0])
 }
 
 func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {

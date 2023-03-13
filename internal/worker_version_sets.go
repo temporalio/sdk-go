@@ -36,7 +36,7 @@ type UpdateWorkerBuildIDCompatabilityOptions struct {
 	// Required, indicates the build id being added or targeted.
 	WorkerBuildID string
 	// May be empty, and if set, indicates an existing version the new id should be considered compatible with.
-	CompatibleVersion string
+	CompatibleBuildID string
 	// If true, this new id will become the default version for new workflow executions.
 	BecomeDefault bool
 }
@@ -52,21 +52,21 @@ func (uw *UpdateWorkerBuildIDCompatabilityOptions) validateAndConvertToProto() (
 	req := &workflowservice.UpdateWorkerBuildIdCompatabilityRequest{
 		TaskQueue: uw.TaskQueue,
 	}
-	if uw.CompatibleVersion != "" {
-		req.Operation = &workflowservice.UpdateWorkerBuildIdCompatabilityRequest_AddNewCompatibleVersion_{
-			AddNewCompatibleVersion: &workflowservice.UpdateWorkerBuildIdCompatabilityRequest_AddNewCompatibleVersion{
-				NewVersionId:              uw.WorkerBuildID,
-				ExistingCompatibleVersion: uw.CompatibleVersion,
+	if uw.CompatibleBuildID != "" {
+		req.Operation = &workflowservice.UpdateWorkerBuildIdCompatabilityRequest_AddNewCompatibleBuildId{
+			AddNewCompatibleBuildId: &workflowservice.UpdateWorkerBuildIdCompatabilityRequest_AddNewCompatibleVersion{
+				NewBuildId:                uw.WorkerBuildID,
+				ExistingCompatibleBuildId: uw.CompatibleBuildID,
 				MakeSetDefault:            uw.BecomeDefault,
 			},
 		}
 	} else if uw.BecomeDefault {
-		req.Operation = &workflowservice.UpdateWorkerBuildIdCompatabilityRequest_PromoteSetByVersionId{
-			PromoteSetByVersionId: uw.WorkerBuildID,
+		req.Operation = &workflowservice.UpdateWorkerBuildIdCompatabilityRequest_PromoteSetByBuildId{
+			PromoteSetByBuildId: uw.WorkerBuildID,
 		}
 	} else {
-		req.Operation = &workflowservice.UpdateWorkerBuildIdCompatabilityRequest_AddNewVersionIdInNewDefaultSet{
-			AddNewVersionIdInNewDefaultSet: uw.WorkerBuildID,
+		req.Operation = &workflowservice.UpdateWorkerBuildIdCompatabilityRequest_AddNewBuildIdInNewDefaultSet{
+			AddNewBuildIdInNewDefaultSet: uw.WorkerBuildID,
 		}
 	}
 
@@ -91,16 +91,16 @@ func (s *WorkerBuildIDVersionSets) Default() string {
 		return ""
 	}
 	lastSet := s.Sets[len(s.Sets)-1]
-	if len(lastSet.Versions) == 0 {
+	if len(lastSet.BuildIDs) == 0 {
 		return ""
 	}
-	return lastSet.Versions[len(lastSet.Versions)-1]
+	return lastSet.BuildIDs[len(lastSet.BuildIDs)-1]
 }
 
 // CompatibleVersionSet represents a set of worker build ids which are compatible with each other.
 type CompatibleVersionSet struct {
-	id       string
-	Versions []string
+	versionSetId string
+	BuildIDs     []string
 }
 
 func workerVersionSetsFromProtoResponse(response *workflowservice.GetWorkerBuildIdCompatabilityResponse) *WorkerBuildIDVersionSets {
@@ -119,8 +119,8 @@ func workerVersionSetsFromProto(sets []*taskqueuepb.CompatibleVersionSet) []*Com
 	result := make([]*CompatibleVersionSet, len(sets))
 	for i, s := range sets {
 		result[i] = &CompatibleVersionSet{
-			id:       s.GetId(),
-			Versions: s.GetVersions(),
+			versionSetId: s.GetVersionSetId(),
+			BuildIDs:     s.GetBuildIds(),
 		}
 	}
 	return result

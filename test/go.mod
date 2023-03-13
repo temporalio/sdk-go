@@ -20,7 +20,6 @@ require (
 )
 
 replace (
-	go.temporal.io/api => /mnt/chonky/dev/temporal/api-go
 	go.temporal.io/sdk => ../
 	go.temporal.io/sdk/contrib/opentelemetry => ../contrib/opentelemetry
 	go.temporal.io/sdk/contrib/opentracing => ../contrib/opentracing
