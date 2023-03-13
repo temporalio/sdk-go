@@ -71,6 +71,8 @@ type (
 	basePoller struct {
 		metricsHandler metrics.Handler // base metric handler used for rpc calls
 		stopC          <-chan struct{}
+		// Is set if this worker has opted in to build-id based versioning
+		workerBuildID string
 	}
 
 	// numPollerMetric tracks the number of active pollers and publishes a metric on it.
@@ -256,7 +258,11 @@ func newWorkflowTaskPoller(
 	params workerExecutionParameters,
 ) *workflowTaskPoller {
 	return &workflowTaskPoller{
-		basePoller:                   basePoller{metricsHandler: params.MetricsHandler, stopC: params.WorkerStopChannel},
+		basePoller: basePoller{
+			metricsHandler: params.MetricsHandler,
+			stopC:          params.WorkerStopChannel,
+			workerBuildID:  params.WorkerBuildID,
+		},
 		service:                      service,
 		namespace:                    params.Namespace,
 		taskQueueName:                params.TaskQueue,
@@ -377,8 +383,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 			tagRunID, task.WorkflowExecution.GetRunId(),
 			tagAttempt, task.Attempt,
 			tagError, taskErr)
-		// convert err to WorkflowTaskFailed
-		completedRequest = errorToFailWorkflowTask(task.TaskToken, taskErr, wtp.identity, wtp.dataConverter, wtp.failureConverter, wtp.namespace)
+		completedRequest = wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)
 	}
 
 	metricsHandler.Timer(metrics.WorkflowTaskExecutionLatency).Record(time.Since(startTime))
@@ -437,6 +442,35 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 		panic("unknown request type from ProcessWorkflowTask()")
 	}
 	return
+}
+
+func (wtp *workflowTaskPoller) errorToFailWorkflowTask(taskToken []byte, err error) *workflowservice.RespondWorkflowTaskFailedRequest {
+	cause := enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
+	// If it was a panic due to a bad state machine or if it was a history
+	// mismatch error, mark as non-deterministic
+	if panicErr, _ := err.(*workflowPanicError); panicErr != nil {
+		if _, badStateMachine := panicErr.value.(stateMachineIllegalStatePanic); badStateMachine {
+			cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
+		}
+	} else if _, mismatch := err.(historyMismatchError); mismatch {
+		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
+	}
+
+	return &workflowservice.RespondWorkflowTaskFailedRequest{
+		TaskToken:      taskToken,
+		Cause:          cause,
+		Failure:        wtp.failureConverter.ErrorToFailure(err),
+		Identity:       wtp.identity,
+		BinaryChecksum: wtp.getBuildID(),
+		Namespace:      wtp.namespace,
+	}
+}
+
+func (bp *basePoller) getBuildID() string {
+	if bp.workerBuildID == "" {
+		return getBinaryChecksum()
+	}
+	return bp.workerBuildID
 }
 
 func newLocalActivityPoller(
@@ -659,12 +693,18 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		Name: taskQueueName,
 		Kind: taskQueueKind,
 	}
-	return &workflowservice.PollWorkflowTaskQueueRequest{
+	builtRequest := &workflowservice.PollWorkflowTaskQueueRequest{
 		Namespace:      wtp.namespace,
 		TaskQueue:      taskQueue,
 		Identity:       wtp.identity,
-		BinaryChecksum: getBinaryChecksum(),
+		BinaryChecksum: wtp.getBuildID(),
 	}
+	if wtp.workerBuildID != "" {
+		builtRequest.WorkerVersionCapabilities = &commonpb.WorkerVersionCapabilities{
+			BuildId: wtp.workerBuildID,
+		}
+	}
+	return builtRequest
 }
 
 // Poll the workflow task queue and update the num_poller metric
@@ -824,7 +864,11 @@ func newGetHistoryPageFunc(
 
 func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowservice.WorkflowServiceClient, params workerExecutionParameters) *activityTaskPoller {
 	return &activityTaskPoller{
-		basePoller:          basePoller{metricsHandler: params.MetricsHandler, stopC: params.WorkerStopChannel},
+		basePoller: basePoller{
+			metricsHandler: params.MetricsHandler,
+			stopC:          params.WorkerStopChannel,
+			workerBuildID:  params.WorkerBuildID,
+		},
 		taskHandler:         taskHandler,
 		service:             service,
 		namespace:           params.Namespace,
@@ -854,6 +898,11 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 		TaskQueue:         &taskqueuepb.TaskQueue{Name: atp.taskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
 		Identity:          atp.identity,
 		TaskQueueMetadata: &taskqueuepb.TaskQueueMetadata{MaxTasksPerSecond: &types.DoubleValue{Value: atp.activitiesPerSecond}},
+	}
+	if atp.workerBuildID != "" {
+		request.WorkerVersionCapabilities = &commonpb.WorkerVersionCapabilities{
+			BuildId: atp.workerBuildID,
+		}
 	}
 
 	response, err := atp.pollActivityTaskQueue(ctx, request)

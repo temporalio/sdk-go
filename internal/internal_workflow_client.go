@@ -938,6 +938,51 @@ func (wc *WorkflowClient) ResetWorkflowExecution(ctx context.Context, request *w
 	return resp, nil
 }
 
+// UpdateWorkerBuildIDCompatability allows you to update the worker-build-id based version sets for a particular
+// task queue. This is used in conjunction with workers who specify their build id and thus opt into the
+// feature.
+func (wc *WorkflowClient) UpdateWorkerBuildIDCompatability(ctx context.Context, options *UpdateWorkerBuildIDCompatabilityOptions) error {
+	if err := wc.ensureInitialized(); err != nil {
+		return err
+	}
+
+	request, err := options.validateAndConvertToProto()
+	if err != nil {
+		return err
+	}
+	request.Namespace = wc.namespace
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	_, err = wc.workflowService.UpdateWorkerBuildIdCompatability(grpcCtx, request)
+	return err
+}
+
+// GetWorkerBuildIDCompatability returns the worker-build-id based version sets for a particular task queue.
+func (wc *WorkflowClient) GetWorkerBuildIDCompatability(ctx context.Context, options *GetWorkerBuildIDCompatabilityOptions) (*WorkerBuildIDVersionSets, error) {
+	if options.MaxSets < 0 {
+		return nil, errors.New("maxDepth must be >= 0")
+	}
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+
+	request := &workflowservice.GetWorkerBuildIdCompatabilityRequest{
+		Namespace: wc.namespace,
+		TaskQueue: options.TaskQueue,
+		MaxSets:   int32(options.MaxSets),
+	}
+	resp, err := wc.workflowService.GetWorkerBuildIdCompatability(grpcCtx, request)
+	if err != nil {
+		return nil, err
+	}
+	converted := workerVersionSetsFromProtoResponse(resp)
+	return converted, nil
+}
+
 func (wc *WorkflowClient) UpdateWorkflowWithOptions(
 	ctx context.Context,
 	req *UpdateWorkflowWithOptionsRequest,
