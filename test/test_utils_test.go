@@ -236,6 +236,9 @@ func (ts *ConfigAndClientSuiteBase) InitConfigAndNamespace() error {
 
 func (ts *ConfigAndClientSuiteBase) InitClient() error {
 	var err error
+	if ts.client != nil {
+		return nil
+	}
 	ts.client, err = client.Dial(client.Options{
 		HostPort:          ts.config.ServiceAddr,
 		Namespace:         ts.config.Namespace,
@@ -271,6 +274,10 @@ func (ts *ConfigAndClientSuiteBase) registerNamespace() error {
 		return err
 	}
 	time.Sleep(namespaceCacheRefreshInterval) // wait for namespace cache refresh on temporal-server
+	err = ts.InitClient()
+	if err != nil {
+		return err
+	}
 	// below is used to guarantee namespace is ready
 	var dummyReturn string
 	err = ts.executeWorkflow("test-namespace-exist", SimplestWorkflow, &dummyReturn)
