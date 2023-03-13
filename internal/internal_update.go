@@ -83,7 +83,12 @@ type (
 		GetFailureConverter() converter.FailureConverter
 		GetDataConverter() converter.DataConverter
 		Send(*protocolpb.Message)
+		IsReplaying() bool
 	}
+
+	// replayAwareUpdateEnv is an updateEnv wrapper that only sends messages if
+	// the workflow is not replaying.
+	replayAwareUpdateEnv struct{ updateEnv }
 
 	// updateProtocol wraps an updateEnv and some protocol metadata to
 	// implement the UpdateCallbacks abstraction. It handles callbacks by
@@ -109,6 +114,13 @@ type (
 	}
 )
 
+func (raue replayAwareUpdateEnv) Send(msg *protocolpb.Message) {
+	if raue.IsReplaying() {
+		return
+	}
+	raue.updateEnv.Send(msg)
+}
+
 // newUpdateResponder constructs an updateProtocolResponder instance to handle
 // update callbacks.
 func newUpdateProtocol(
@@ -118,7 +130,7 @@ func newUpdateProtocol(
 ) *updateProtocol {
 	return &updateProtocol{
 		protoInstanceID: protoInstanceID,
-		env:             env,
+		env:             replayAwareUpdateEnv{env},
 		scheduleUpdate:  scheduleUpdate,
 		state:           updateStateNew,
 	}

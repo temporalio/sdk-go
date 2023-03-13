@@ -381,3 +381,33 @@ func TestInvalidUpdateStateTransitions(t *testing.T) {
 		require.Panics(t, func() { up.Reject(errors.New("reject")) })
 	})
 }
+
+func TestCatchUpAfterCrashWithInFlightUpdate(t *testing.T) {
+	stubUpdateHandler := func(string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks) {}
+	env := &workflowEnvironmentImpl{
+		dataConverter: converter.GetDefaultDataConverter(),
+		workflowInfo: &WorkflowInfo{
+			Namespace:     "namespace:" + t.Name(),
+			TaskQueueName: "taskqueue:" + t.Name(),
+		},
+	}
+	requestMsg := protocolpb.Message{Body: protocol.MustMarshalAny(&updatepb.Request{})}
+
+	// scenario: worker has accepted an update and is in the middle of executing
+	// the update when it crashes, losing the protocol object state. When the
+	// worker recovers it catches up through replay - there is an UpdateAccepted
+	// event in the history but no UpdateCompleted so here we (re-)accept the
+	// update with the isReplay flag set and then complete it with the flag not
+	// being set. This scenario is further tested in temporalio/features in the
+	// update/worker_restart test.
+
+	env.isReplay = true
+	up := newUpdateProtocol(t.Name(), stubUpdateHandler, env)
+	require.NoError(t, up.HandleMessage(&requestMsg))
+	up.Accept()
+	require.Len(t, env.outbox, 0)
+
+	env.isReplay = false
+	up.Complete(1, nil)
+	require.Len(t, env.outbox, 1)
+}
