@@ -92,99 +92,75 @@ type (
 	CheckHealthResponse = internal.CheckHealthResponse
 
 	// ScheduleRange represents a set of integer values.
-	// NOTE: Experimental
 	ScheduleRange = internal.ScheduleRange
 
 	// ScheduleCalendarSpec is an event specification relative to the calendar.
-	// NOTE: Experimental
 	ScheduleCalendarSpec = internal.ScheduleCalendarSpec
 
 	// ScheduleIntervalSpec describes periods a schedules action should occur.
-	// NOTE: Experimental
 	ScheduleIntervalSpec = internal.ScheduleIntervalSpec
 
 	// ScheduleSpec describes when a schedules action should occur.
-	// NOTE: Experimental
 	ScheduleSpec = internal.ScheduleSpec
 
 	// ScheduleBackfill desribes a time periods and policy and takes Actions as if that time passed by right now, all at once.
-	// NOTE: Experimental
 	ScheduleBackfill = internal.ScheduleBackfill
 
 	// ScheduleAction is the interface for all actions a schedule can take.
-	// NOTE: Experimental
 	ScheduleAction = internal.ScheduleAction
 
 	// ScheduleWorkflowAction is the implementation of ScheduleAction to start a workflow.
-	// NOTE: Experimental
 	ScheduleWorkflowAction = internal.ScheduleWorkflowAction
 
 	// ScheduleOptions configuration parameters for creating a schedule.
-	// NOTE: Experimental
 	ScheduleOptions = internal.ScheduleOptions
 
 	// ScheduleClient is the interface with the server to create and get handles to schedules.
-	// NOTE: Experimental
 	ScheduleClient = internal.ScheduleClient
 
 	// ScheduleListOptions are configuration parameters for listing schedules.
-	// NOTE: Experimental
 	ScheduleListOptions = internal.ScheduleListOptions
 
 	// ScheduleListIterator is a iterator which can return created schedules.
-	// NOTE: Experimental
 	ScheduleListIterator = internal.ScheduleListIterator
 
 	// ScheduleListEntry is a result from ScheduleListEntry.
-	// NOTE: Experimental
 	ScheduleListEntry = internal.ScheduleListEntry
 
 	// ScheduleUpdateOptions are configuration parameters for updating a schedule.
-	// NOTE: Experimental
 	ScheduleUpdateOptions = internal.ScheduleUpdateOptions
 
 	// ScheduleHandle represents a created schedule.
-	// NOTE: Experimental
 	ScheduleHandle = internal.ScheduleHandle
 
 	// ScheduleActionResult describes when a schedule action took place.
-	// NOTE: Experimental
 	ScheduleActionResult = internal.ScheduleActionResult
 
 	// ScheduleWorkflowExecution contains details on a workflows execution stared by a schedule.
-	// NOTE: Experimental
 	ScheduleWorkflowExecution = internal.ScheduleWorkflowExecution
 
 	// ScheduleDescription describes the current Schedule details from ScheduleHandle.Describe.
-	// NOTE: Experimental
 	ScheduleDescription = internal.ScheduleDescription
 
 	// Schedule describes a created schedule.
-	// NOTE: Experimental
 	Schedule = internal.Schedule
 
 	// ScheduleUpdate describes the desired new schedule from ScheduleHandle.Update.
-	// NOTE: Experimental
 	ScheduleUpdate = internal.ScheduleUpdate
 
 	// ScheduleUpdateInput describes the current state of the schedule to be updated.
-	// NOTE: Experimental
 	ScheduleUpdateInput = internal.ScheduleUpdateInput
 
 	// ScheduleTriggerOptions configure the parameters for triggering a schedule.
-	// NOTE: Experimental
 	ScheduleTriggerOptions = internal.ScheduleTriggerOptions
 
 	// SchedulePauseOptions configure the parameters for pausing a schedule.
-	// NOTE: Experimental
 	SchedulePauseOptions = internal.SchedulePauseOptions
 
 	// ScheduleUnpauseOptions configure the parameters for unpausing a schedule.
-	// NOTE: Experimental
 	ScheduleUnpauseOptions = internal.ScheduleUnpauseOptions
 
 	// ScheduleBackfillOptions configure the parameters for backfilling a schedule.
-	// NOTE: Experimental
 	ScheduleBackfillOptions = internal.ScheduleBackfillOptions
 
 	// UpdateWorkflowWithOptionsRequest encapsulates the parameters for
@@ -537,7 +513,6 @@ type (
 		OperatorService() operatorservice.OperatorServiceClient
 
 		// Schedule creates a new shedule client with the same gRPC connection as this client.
-		// NOTE: Experimental
 		ScheduleClient() ScheduleClient
 
 		// Close client and clean up underlying resources.
@@ -653,10 +628,12 @@ func NewNamespaceClient(options Options) (NamespaceClient, error) {
 }
 
 // make sure if new methods are added to internal.Client they are also added to public Client.
-var _ Client = internal.Client(nil)
-var _ internal.Client = Client(nil)
-var _ NamespaceClient = internal.NamespaceClient(nil)
-var _ internal.NamespaceClient = NamespaceClient(nil)
+var (
+	_ Client                   = internal.Client(nil)
+	_ internal.Client          = Client(nil)
+	_ NamespaceClient          = internal.NamespaceClient(nil)
+	_ internal.NamespaceClient = NamespaceClient(nil)
+)
 
 // NewValue creates a new converter.EncodedValue which can be used to decode binary data returned by Temporal.  For example:
 // User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got response from calling Client.DescribeWorkflowExecution.
