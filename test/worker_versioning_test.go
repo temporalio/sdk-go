@@ -63,24 +63,24 @@ func (ts *WorkerVersioningTestSuite) SetupTest() {
 func (ts *WorkerVersioningTestSuite) TestManipulateVersionGraph() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
-	err := ts.client.UpdateWorkerBuildIDCompatability(ctx, &client.UpdateWorkerBuildIDCompatabilityOptions{
+	err := ts.client.UpdateWorkerBuildIdCompatibility(ctx, &client.UpdateWorkerBuildIdCompatibilityOptions{
 		TaskQueue:     ts.taskQueueName,
 		WorkerBuildID: "1.0",
 	})
 	ts.NoError(err)
-	err = ts.client.UpdateWorkerBuildIDCompatability(ctx, &client.UpdateWorkerBuildIDCompatabilityOptions{
+	err = ts.client.UpdateWorkerBuildIdCompatibility(ctx, &client.UpdateWorkerBuildIdCompatibilityOptions{
 		TaskQueue:     ts.taskQueueName,
 		WorkerBuildID: "2.0",
 	})
 	ts.NoError(err)
-	err = ts.client.UpdateWorkerBuildIDCompatability(ctx, &client.UpdateWorkerBuildIDCompatabilityOptions{
+	err = ts.client.UpdateWorkerBuildIdCompatibility(ctx, &client.UpdateWorkerBuildIdCompatibilityOptions{
 		TaskQueue:         ts.taskQueueName,
 		WorkerBuildID:     "1.1",
 		CompatibleBuildID: "1.0",
 	})
 	ts.NoError(err)
 
-	res, err := ts.client.GetWorkerBuildIDCompatability(ctx, &client.GetWorkerBuildIDCompatabilityOptions{
+	res, err := ts.client.GetWorkerBuildIdCompatibility(ctx, &client.GetWorkerBuildIdCompatibilityOptions{
 		TaskQueue: ts.taskQueueName,
 	})
 	ts.NoError(err)
@@ -93,7 +93,7 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	err := ts.client.UpdateWorkerBuildIDCompatability(ctx, &client.UpdateWorkerBuildIDCompatabilityOptions{
+	err := ts.client.UpdateWorkerBuildIdCompatibility(ctx, &client.UpdateWorkerBuildIdCompatibilityOptions{
 		TaskQueue:     ts.taskQueueName,
 		WorkerBuildID: "1.0",
 	})
@@ -115,7 +115,7 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {
 	ts.NoError(err)
 
 	// Now add the 2.0 version
-	err = ts.client.UpdateWorkerBuildIDCompatability(ctx, &client.UpdateWorkerBuildIDCompatabilityOptions{
+	err = ts.client.UpdateWorkerBuildIdCompatibility(ctx, &client.UpdateWorkerBuildIdCompatibilityOptions{
 		TaskQueue:     ts.taskQueueName,
 		WorkerBuildID: "2.0",
 	})
