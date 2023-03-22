@@ -29,8 +29,8 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 )
 
-// UpdateWorkerBuildIDCompatabilityOptions is the input to Client.UpdateWorkerBuildIDCompatability.
-type UpdateWorkerBuildIDCompatabilityOptions struct {
+// UpdateWorkerBuildIdCompatibilityOptions is the input to Client.UpdateWorkerBuildIdCompatibility.
+type UpdateWorkerBuildIdCompatibilityOptions struct {
 	// The task queue to update the version sets of.
 	TaskQueue string
 	// Required, indicates the build id being added or targeted.
@@ -42,30 +42,30 @@ type UpdateWorkerBuildIDCompatabilityOptions struct {
 }
 
 // Validates and converts the user's options into the proto request. Namespace must be attached afterward.
-func (uw *UpdateWorkerBuildIDCompatabilityOptions) validateAndConvertToProto() (*workflowservice.UpdateWorkerBuildIdCompatabilityRequest, error) {
+func (uw *UpdateWorkerBuildIdCompatibilityOptions) validateAndConvertToProto() (*workflowservice.UpdateWorkerBuildIdCompatibilityRequest, error) {
 	if uw.TaskQueue == "" {
 		return nil, errors.New("TaskQueue is required")
 	}
 	if uw.WorkerBuildID == "" {
 		return nil, errors.New("WorkerBuildID is required")
 	}
-	req := &workflowservice.UpdateWorkerBuildIdCompatabilityRequest{
+	req := &workflowservice.UpdateWorkerBuildIdCompatibilityRequest{
 		TaskQueue: uw.TaskQueue,
 	}
 	if uw.CompatibleBuildID != "" {
-		req.Operation = &workflowservice.UpdateWorkerBuildIdCompatabilityRequest_AddNewCompatibleBuildId{
-			AddNewCompatibleBuildId: &workflowservice.UpdateWorkerBuildIdCompatabilityRequest_AddNewCompatibleVersion{
+		req.Operation = &workflowservice.UpdateWorkerBuildIdCompatibilityRequest_AddNewCompatibleBuildId{
+			AddNewCompatibleBuildId: &workflowservice.UpdateWorkerBuildIdCompatibilityRequest_AddNewCompatibleVersion{
 				NewBuildId:                uw.WorkerBuildID,
 				ExistingCompatibleBuildId: uw.CompatibleBuildID,
 				MakeSetDefault:            uw.BecomeDefault,
 			},
 		}
 	} else if uw.BecomeDefault {
-		req.Operation = &workflowservice.UpdateWorkerBuildIdCompatabilityRequest_PromoteSetByBuildId{
+		req.Operation = &workflowservice.UpdateWorkerBuildIdCompatibilityRequest_PromoteSetByBuildId{
 			PromoteSetByBuildId: uw.WorkerBuildID,
 		}
 	} else {
-		req.Operation = &workflowservice.UpdateWorkerBuildIdCompatabilityRequest_AddNewBuildIdInNewDefaultSet{
+		req.Operation = &workflowservice.UpdateWorkerBuildIdCompatibilityRequest_AddNewBuildIdInNewDefaultSet{
 			AddNewBuildIdInNewDefaultSet: uw.WorkerBuildID,
 		}
 	}
@@ -73,12 +73,12 @@ func (uw *UpdateWorkerBuildIDCompatabilityOptions) validateAndConvertToProto() (
 	return req, nil
 }
 
-type GetWorkerBuildIDCompatabilityOptions struct {
+type GetWorkerBuildIdCompatibilityOptions struct {
 	TaskQueue string
 	MaxSets   int
 }
 
-// WorkerBuildIDVersionSets is the response for Client.GetWorkerBuildIDCompatability and represents the sets
+// WorkerBuildIDVersionSets is the response for Client.GetWorkerBuildIdCompatibility and represents the sets
 // of worker build id based versions.
 type WorkerBuildIDVersionSets struct {
 	Sets []*CompatibleVersionSet
@@ -103,7 +103,7 @@ type CompatibleVersionSet struct {
 	BuildIDs     []string
 }
 
-func workerVersionSetsFromProtoResponse(response *workflowservice.GetWorkerBuildIdCompatabilityResponse) *WorkerBuildIDVersionSets {
+func workerVersionSetsFromProtoResponse(response *workflowservice.GetWorkerBuildIdCompatibilityResponse) *WorkerBuildIDVersionSets {
 	if response == nil {
 		return nil
 	}

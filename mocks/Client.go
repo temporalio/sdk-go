@@ -543,12 +543,12 @@ func (_m *Client) CheckHealth(ctx context.Context, request *client.CheckHealthRe
 	return r0, r1
 }
 
-// UpdateWorkerBuildIDCompatability provides a mock function with given fields: ctx, options
-func (_m *Client) UpdateWorkerBuildIDCompatability(ctx context.Context, options *client.UpdateWorkerBuildIDCompatabilityOptions) error {
+// UpdateWorkerBuildIdCompatibility provides a mock function with given fields: ctx, options
+func (_m *Client) UpdateWorkerBuildIdCompatibility(ctx context.Context, options *client.UpdateWorkerBuildIdCompatibilityOptions) error {
 	ret := _m.Called(ctx, options)
 
 	var r0 error
-	if rf, ok := ret.Get(1).(func(context.Context, *client.UpdateWorkerBuildIDCompatabilityOptions) error); ok {
+	if rf, ok := ret.Get(1).(func(context.Context, *client.UpdateWorkerBuildIdCompatibilityOptions) error); ok {
 		r0 = rf(ctx, options)
 	} else {
 		r0 = ret.Error(1)
@@ -557,12 +557,12 @@ func (_m *Client) UpdateWorkerBuildIDCompatability(ctx context.Context, options 
 	return r0
 }
 
-// GetWorkerBuildIDCompatability provides a mock function with given fields: ctx, options
-func (_m *Client) GetWorkerBuildIDCompatability(ctx context.Context, options *client.GetWorkerBuildIDCompatabilityOptions) (*client.WorkerBuildIDVersionSets, error) {
+// GetWorkerBuildIdCompatibility provides a mock function with given fields: ctx, options
+func (_m *Client) GetWorkerBuildIdCompatibility(ctx context.Context, options *client.GetWorkerBuildIdCompatibilityOptions) (*client.WorkerBuildIDVersionSets, error) {
 	ret := _m.Called(ctx, options)
 
 	var r0 *internal.WorkerBuildIDVersionSets
-	if rf, ok := ret.Get(0).(func(context.Context, *client.GetWorkerBuildIDCompatabilityOptions) *client.WorkerBuildIDVersionSets); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, *client.GetWorkerBuildIdCompatibilityOptions) *client.WorkerBuildIDVersionSets); ok {
 		r0 = rf(ctx, options)
 	} else {
 		if ret.Get(0) != nil {
@@ -571,7 +571,7 @@ func (_m *Client) GetWorkerBuildIDCompatability(ctx context.Context, options *cl
 	}
 
 	var r1 error
-	if rf, ok := ret.Get(1).(func(context.Context, *client.GetWorkerBuildIDCompatabilityOptions) error); ok {
+	if rf, ok := ret.Get(1).(func(context.Context, *client.GetWorkerBuildIdCompatibilityOptions) error); ok {
 		r1 = rf(ctx, options)
 	} else {
 		r1 = ret.Error(1)

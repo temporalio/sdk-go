@@ -33,7 +33,7 @@ import (
 func Test_WorkerVersionSets_fromProtoResponse(t *testing.T) {
 	tests := []struct {
 		name     string
-		response *workflowservice.GetWorkerBuildIdCompatabilityResponse
+		response *workflowservice.GetWorkerBuildIdCompatibilityResponse
 		want     *WorkerBuildIDVersionSets
 	}{
 		{
@@ -43,7 +43,7 @@ func Test_WorkerVersionSets_fromProtoResponse(t *testing.T) {
 		},
 		{
 			name: "normal sets",
-			response: &workflowservice.GetWorkerBuildIdCompatabilityResponse{
+			response: &workflowservice.GetWorkerBuildIdCompatibilityResponse{
 				MajorVersionSets: []*taskqueuepb.CompatibleVersionSet{
 					{BuildIds: []string{"1.0", "1.1"}, VersionSetId: "1"},
 					{BuildIds: []string{"2.0"}, VersionSetId: "2"},
