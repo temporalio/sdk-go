@@ -2054,8 +2054,9 @@ func (w *Workflows) LocalActivityStaleCache(ctx workflow.Context, maxTicks int) 
 			return nil
 		}
 		tickCh.Receive(ctx, nil)
-		err = workflow.ExecuteLocalActivity(ctx, func(tickCount int) {
+		err = workflow.ExecuteLocalActivity(ctx, func(tickCount int) error {
 			log.Printf("Running local activity on tickCount %d", waitTickCount)
+			return nil
 		}, waitTickCount).Get(ctx, nil)
 		if err != nil {
 			return err
