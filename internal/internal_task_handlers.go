@@ -508,6 +508,7 @@ func (w *workflowExecutionContextImpl) clearState() {
 	w.previousStartedEventID = 0
 	w.newCommands = nil
 	w.newMessages = nil
+	w.laTunnel = nil
 
 	eventHandler := w.getEventHandler()
 	if eventHandler != nil {

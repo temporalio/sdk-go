@@ -2440,6 +2440,78 @@ func (ts *IntegrationTestSuite) TestDeterminismUpsertSearchAttributesConditional
 	ts.testStaleCacheReplayDeterminism(ctx, run, maxTicks)
 }
 
+func (ts *IntegrationTestSuite) TestLocalActivityWorkerRestart() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	maxTicks := 3
+	options := ts.startWorkflowOptions("test-local-activity-stake-cache-" + uuid.New())
+
+	run, err := ts.client.ExecuteWorkflow(
+		ctx,
+		options,
+		ts.workflows.LocalActivityStaleCache,
+		maxTicks,
+	)
+	ts.NoError(err)
+
+	// clean up if test fails
+	defer func() { _ = ts.client.TerminateWorkflow(ctx, run.GetID(), run.GetRunID(), "", nil) }()
+	ts.waitForQueryTrue(run, "is-wait-tick-count", 1)
+
+	// Restart worker
+	ts.workerStopped = true
+	currentWorker := ts.worker
+	currentWorker.Stop()
+	currentWorker = worker.New(ts.client, ts.taskQueueName, worker.Options{})
+	ts.registerWorkflowsAndActivities(currentWorker)
+	ts.NoError(currentWorker.Start())
+	defer currentWorker.Stop()
+
+	for i := 0; i < maxTicks-1; i++ {
+		ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "tick", nil))
+		ts.waitForQueryTrue(run, "is-wait-tick-count", 2+i)
+	}
+	err = run.Get(ctx, nil)
+	ts.NoError(err)
+}
+
+func (ts *IntegrationTestSuite) TestLocalActivityStaleCache() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	maxTicks := 3
+	options := ts.startWorkflowOptions("test-local-activity-stake-cache-" + uuid.New())
+
+	run, err := ts.client.ExecuteWorkflow(
+		ctx,
+		options,
+		ts.workflows.LocalActivityStaleCache,
+		maxTicks,
+	)
+	ts.NoError(err)
+
+	// clean up if test fails
+	defer func() { _ = ts.client.TerminateWorkflow(ctx, run.GetID(), run.GetRunID(), "", nil) }()
+	ts.waitForQueryTrue(run, "is-wait-tick-count", 1)
+
+	ts.workerStopped = true
+	currentWorker := ts.worker
+	currentWorker.Stop()
+	for i := 0; i < maxTicks-1; i++ {
+		func() {
+			ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "tick", nil))
+			currentWorker = worker.New(ts.client, ts.taskQueueName, worker.Options{})
+			defer currentWorker.Stop()
+			ts.registerWorkflowsAndActivities(currentWorker)
+			ts.NoError(currentWorker.Start())
+			ts.waitForQueryTrue(run, "is-wait-tick-count", 2+i)
+		}()
+	}
+	err = run.Get(ctx, nil)
+	ts.NoError(err)
+}
+
 func (ts *IntegrationTestSuite) TestDeterminismUpsertMemoConditional() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
