@@ -2029,6 +2029,43 @@ func (w *Workflows) UpsertMemoConditional(ctx workflow.Context, maxTicks int) er
 	}
 }
 
+func (w *Workflows) LocalActivityStaleCache(ctx workflow.Context, maxTicks int) error {
+	var waitTickCount int
+	tickCh := workflow.GetSignalChannel(ctx, "tick")
+	err := workflow.SetQueryHandler(
+		ctx,
+		"is-wait-tick-count",
+		func(v int) (bool, error) { return waitTickCount == v, nil },
+	)
+	if err != nil {
+		return err
+	}
+	oneRetry := &temporal.RetryPolicy{InitialInterval: 1 * time.Nanosecond, MaximumAttempts: 1}
+
+	ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+		StartToCloseTimeout: 5 * time.Second,
+		RetryPolicy:         oneRetry,
+	})
+
+	// Now just wait for signals over and over
+	for {
+		waitTickCount++
+		if waitTickCount >= maxTicks {
+			return nil
+		}
+		tickCh.Receive(ctx, nil)
+		err = workflow.ExecuteLocalActivity(ctx, func(tickCount int) error {
+			log.Printf("Running local activity on tickCount %d", waitTickCount)
+			return nil
+		}, waitTickCount).Get(ctx, nil)
+		if err != nil {
+			return err
+		}
+
+		log.Printf("Signal received (replaying? %v)", workflow.IsReplaying(ctx))
+	}
+}
+
 func (w *Workflows) MutableSideEffect(ctx workflow.Context, startVal int) (currVal int, err error) {
 	// Make some mutable side effect calls with timers in between
 	sideEffector := func(retVal int) (newVal int, err error) {
@@ -2176,6 +2213,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityStartWhenTimerCancel)
 	worker.RegisterWorkflow(w.WorkflowWithParallelSideEffects)
 	worker.RegisterWorkflow(w.WorkflowWithParallelMutableSideEffects)
+	worker.RegisterWorkflow(w.LocalActivityStaleCache)
 	worker.RegisterWorkflow(w.SignalWorkflow)
 	worker.RegisterWorkflow(w.CronWorkflow)
 	worker.RegisterWorkflow(w.CancelTimerConcurrentWithOtherCommandWorkflow)

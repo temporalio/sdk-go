@@ -618,20 +618,28 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
 	if task.Query == nil || (task.Query != nil && !isFullHistory) {
 		workflowContext = wth.cache.getWorkflowContext(runID)
 	}
-
+	// Verify the cached state is current and for the correct worker
 	if workflowContext != nil {
 		workflowContext.Lock()
-		if task.Query != nil && !isFullHistory {
+		if task.Query != nil && !isFullHistory && wth == workflowContext.wth {
 			// query task and we have a valid cached state
 			metricsHandler.Counter(metrics.StickyCacheHit).Inc(1)
-		} else if history.Events[0].GetEventId() == workflowContext.previousStartedEventID+1 {
+		} else if history.Events[0].GetEventId() == workflowContext.previousStartedEventID+1 && wth == workflowContext.wth {
 			// non query task and we have a valid cached state
 			metricsHandler.Counter(metrics.StickyCacheHit).Inc(1)
 		} else {
-			// non query task and cached state is missing events, we need to discard the cached state and rebuild one.
-			_ = workflowContext.ResetIfStale(task, historyIterator)
+			// possible another task already destroyed this context.
+			if !workflowContext.IsDestroyed() {
+				// non query task and cached state is missing events, we need to discard the cached state and build a new one.
+				wth.cache.removeWorkflowContext(runID)
+				workflowContext.clearState()
+			}
+			workflowContext.Unlock(err)
+			workflowContext = nil
 		}
-	} else {
+	}
+	// If the workflow was not cached or the cache was stale.
+	if workflowContext == nil {
 		if !isFullHistory {
 			// we are getting partial history task, but cached state was already evicted.
 			// we need to reset history so we get events from beginning to replay/rebuild the state
