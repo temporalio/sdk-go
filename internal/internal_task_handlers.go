@@ -631,6 +631,19 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
 			// possible another task already destroyed this context.
 			if !workflowContext.IsDestroyed() {
 				// non query task and cached state is missing events, we need to discard the cached state and build a new one.
+				if history.Events[0].GetEventId() != workflowContext.previousStartedEventID+1 {
+					wth.logger.Debug("Cached state staled, new task has unexpected events",
+						tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+						tagRunID, task.WorkflowExecution.GetRunId(),
+						tagAttempt, task.Attempt,
+						tagCachedPreviousStartedEventID, workflowContext.previousStartedEventID,
+						tagTaskFirstEventID, task.History.Events[0].GetEventId(),
+						tagTaskStartedEventID, task.GetStartedEventId(),
+						tagPreviousStartedEventID, task.GetPreviousStartedEventId(),
+					)
+				} else {
+					wth.logger.Debug("Cached state started on different worker, creating new context")
+				}
 				wth.cache.removeWorkflowContext(runID)
 				workflowContext.clearState()
 			}
