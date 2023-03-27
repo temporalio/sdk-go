@@ -9,7 +9,7 @@ BUILD := .build
 TEST_TIMEOUT := 5m
 TEST_ARG ?= -race -v -timeout $(TEST_TIMEOUT)
 
-INTEG_TEST_ROOT := ./test
+INTEG_TEST_ROOT := ./test/
 COVER_ROOT := $(abspath $(BUILD)/coverage)
 UT_COVER_FILE := $(COVER_ROOT)/unit_test_cover.out
 INTEG_ZERO_CACHE_COVER_FILE := $(COVER_ROOT)/integ_test_zero_cache_cover.out
