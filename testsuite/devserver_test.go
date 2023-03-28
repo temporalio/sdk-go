@@ -58,3 +58,15 @@ func TestStartDevServer_CustomNamespace(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "testing", info.NamespaceInfo.Name)
 }
+
+func TestStartDevServer_FrontendHostPort(t *testing.T) {
+	server, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{})
+	require.NoError(t, err)
+	defer func() { _ = server.Stop() }()
+	hostPort := server.FrontendHostPort()
+	client, err := client.Dial(client.Options{HostPort: hostPort})
+	require.NoError(t, err)
+	info, err := client.WorkflowService().GetSystemInfo(context.Background(), &workflowservice.GetSystemInfoRequest{})
+	require.NoError(t, err)
+	require.NotNil(t, info.Capabilities)
+}

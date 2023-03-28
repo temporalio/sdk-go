@@ -82,8 +82,9 @@ type DevServerOptions struct {
 
 // Temporal CLI based DevServer
 type DevServer struct {
-	cmd    *exec.Cmd
-	client client.Client
+	cmd              *exec.Cmd
+	client           client.Client
+	frontendHostPort string
 }
 
 // StartDevServer starts a Temporal CLI dev server process. This may download the server if not already downloaded.
@@ -121,7 +122,11 @@ func StartDevServer(ctx context.Context, options DevServerOptions) (*DevServer, 
 		return nil, err
 	}
 	clientOptions.Logger.Info("DevServer ready")
-	return &DevServer{client: returnedClient, cmd: cmd}, nil
+	return &DevServer{
+		client:           returnedClient,
+		cmd:              cmd,
+		frontendHostPort: clientOptions.HostPort,
+	}, nil
 }
 
 func prepareCommand(options *DevServerOptions, host, port, namespace string) []string {
@@ -365,4 +370,9 @@ func (s *DevServer) Stop() error {
 // Get a connected client, configured to work with the dev server.
 func (s *DevServer) Client() client.Client {
 	return s.client
+}
+
+// FrontendHostPort returns the host:port for this server.
+func (s *DevServer) FrontendHostPort() string {
+	return s.frontendHostPort
 }
