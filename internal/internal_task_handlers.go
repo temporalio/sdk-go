@@ -558,6 +558,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 	if taskQueue == nil || taskQueue.Name == "" {
 		return nil, errors.New("nil or empty TaskQueue in WorkflowExecutionStarted event")
 	}
+	task.Messages = append(inferMessages(task.GetHistory().GetEvents()), task.Messages...)
 
 	runID := task.WorkflowExecution.GetRunId()
 	workflowID := task.WorkflowExecution.GetWorkflowId()
@@ -702,7 +703,7 @@ func (w *workflowExecutionContextImpl) resetStateIfDestroyed(task *workflowservi
 				return err
 			}
 		}
-		task.Messages = inferMessages(task.GetHistory().GetEvents())
+		task.Messages = append(inferMessages(task.GetHistory().GetEvents()), task.Messages...)
 		if w.workflowInfo != nil {
 			// Reset the search attributes and memos from the WorkflowExecutionStartedEvent.
 			// The search attributes and memo may have been modified by calls like UpsertMemo
