@@ -2962,19 +2962,21 @@ func (ts *IntegrationTestSuite) TestScheduleCalendarDefault() {
 	// test default calendar spec
 	ts.Equal([]client.ScheduleCalendarSpec{
 		{
-			Second: []client.ScheduleRange{{Start: 30, End: 30}},
-			Minute: []client.ScheduleRange{{}},
-			Hour:   []client.ScheduleRange{{}},
+			Second: []client.ScheduleRange{{Start: 30, End: 30, Step: 1}},
+			Minute: []client.ScheduleRange{{Start: 0, End: 0, Step: 1}},
+			Hour:   []client.ScheduleRange{{Start: 0, End: 0, Step: 1}},
 			DayOfMonth: []client.ScheduleRange{
 				{
 					Start: 1,
 					End:   31,
+					Step:  1,
 				},
 			},
 			Month: []client.ScheduleRange{
 				{
 					Start: 1,
 					End:   12,
+					Step:  1,
 				},
 			},
 			Year: []client.ScheduleRange{},
@@ -2982,6 +2984,7 @@ func (ts *IntegrationTestSuite) TestScheduleCalendarDefault() {
 				{
 					Start: 0,
 					End:   6,
+					Step:  1,
 				},
 			},
 		},
@@ -3012,7 +3015,6 @@ func (ts *IntegrationTestSuite) TestScheduleCreateDuplicate() {
 func (ts *IntegrationTestSuite) TestScheduleDescribeSpec() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
 	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
 		ID: "test-schedule-describe-spec-schedule",
 		Spec: client.ScheduleSpec{
@@ -3092,27 +3094,33 @@ func (ts *IntegrationTestSuite) TestScheduleDescribeSpec() {
 	// test spec
 	ts.Equal([]client.ScheduleCalendarSpec{
 		{
-			Second: []client.ScheduleRange{{}},
-			Minute: []client.ScheduleRange{{}},
+			Second: []client.ScheduleRange{{Start: 0, End: 0, Step: 1}},
+			Minute: []client.ScheduleRange{{Start: 0, End: 0, Step: 1}},
 			Hour: []client.ScheduleRange{{
 				Start: 12,
+				End:   12,
+				Step:  1,
 			}},
 			DayOfMonth: []client.ScheduleRange{
 				{
 					Start: 1,
 					End:   31,
+					Step:  1,
 				},
 			},
 			Month: []client.ScheduleRange{
 				{
 					Start: 1,
 					End:   12,
+					Step:  1,
 				},
 			},
 			Year: []client.ScheduleRange{},
 			DayOfWeek: []client.ScheduleRange{
 				{
 					Start: 1,
+					End:   1,
+					Step:  1,
 				},
 			},
 		},
@@ -3130,27 +3138,33 @@ func (ts *IntegrationTestSuite) TestScheduleDescribeSpec() {
 
 	ts.Equal([]client.ScheduleCalendarSpec{
 		{
-			Second: []client.ScheduleRange{{}},
-			Minute: []client.ScheduleRange{{}},
+			Second: []client.ScheduleRange{{Start: 0, End: 0, Step: 1}},
+			Minute: []client.ScheduleRange{{Start: 0, End: 0, Step: 1}},
 			Hour: []client.ScheduleRange{{
 				Start: 12,
+				End:   12,
+				Step:  1,
 			}},
 			DayOfMonth: []client.ScheduleRange{
 				{
 					Start: 1,
 					End:   31,
+					Step:  1,
 				},
 			},
 			Month: []client.ScheduleRange{
 				{
 					Start: 1,
 					End:   12,
+					Step:  1,
 				},
 			},
 			Year: []client.ScheduleRange{},
 			DayOfWeek: []client.ScheduleRange{
 				{
 					Start: 1,
+					Step:  1,
+					End:   1,
 				},
 			},
 		},
@@ -3182,27 +3196,33 @@ func (ts *IntegrationTestSuite) TestScheduleDescribeSpecCron() {
 	// test spec
 	ts.Equal([]client.ScheduleCalendarSpec{
 		{
-			Second: []client.ScheduleRange{{}},
-			Minute: []client.ScheduleRange{{}},
+			Second: []client.ScheduleRange{{Start: 0, End: 0, Step: 1}},
+			Minute: []client.ScheduleRange{{Start: 0, End: 0, Step: 1}},
 			Hour: []client.ScheduleRange{{
 				Start: 12,
+				End:   12,
+				Step:  1,
 			}},
 			DayOfMonth: []client.ScheduleRange{
 				{
 					Start: 1,
 					End:   31,
+					Step:  1,
 				},
 			},
 			Month: []client.ScheduleRange{
 				{
 					Start: 1,
 					End:   12,
+					Step:  1,
 				},
 			},
 			Year: []client.ScheduleRange{},
 			DayOfWeek: []client.ScheduleRange{
 				{
 					Start: 1,
+					End:   1,
+					Step:  1,
 				},
 			},
 		},
