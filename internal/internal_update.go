@@ -163,6 +163,7 @@ func (up *updateProtocol) HandleMessage(msg *protocolpb.Message) error {
 func (up *updateProtocol) Accept() {
 	up.requireState("accept", updateStateRequestInitiated)
 	up.env.Send(&protocolpb.Message{
+		Id:                 up.protoInstanceID + "/accept",
 		ProtocolInstanceId: up.protoInstanceID,
 		Body: protocol.MustMarshalAny(&updatepb.Acceptance{
 			AcceptedRequestMessageId:         up.requestMsgID,
@@ -177,6 +178,7 @@ func (up *updateProtocol) Accept() {
 func (up *updateProtocol) Reject(err error) {
 	up.requireState("reject", updateStateNew, updateStateRequestInitiated)
 	up.env.Send(&protocolpb.Message{
+		Id:                 up.protoInstanceID + "/reject",
 		ProtocolInstanceId: up.protoInstanceID,
 		Body: protocol.MustMarshalAny(&updatepb.Rejection{
 			RejectedRequestMessageId:         up.requestMsgID,
@@ -207,6 +209,7 @@ func (up *updateProtocol) Complete(success interface{}, outcomeErr error) {
 		}
 	}
 	up.env.Send(&protocolpb.Message{
+		Id:                 up.protoInstanceID + "/complete",
 		ProtocolInstanceId: up.protoInstanceID,
 		Body: protocol.MustMarshalAny(&updatepb.Response{
 			Meta:    up.initialRequest.GetMeta(),
