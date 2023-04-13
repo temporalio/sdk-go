@@ -327,3 +327,14 @@ func DuplicateChildWorkflow(ctx workflow.Context) error {
 
 	return nil
 }
+
+func UpdateWorkflow(ctx workflow.Context) error {
+	if err := workflow.SetUpdateHandler(ctx, "update",
+		func(ctx workflow.Context, d time.Duration) error {
+			return workflow.Sleep(ctx, d)
+		}); err != nil {
+		return err
+	}
+	workflow.GetSignalChannel(ctx, "shutdown").Receive(ctx, nil)
+	return nil
+}

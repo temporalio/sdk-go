@@ -300,6 +300,13 @@ func (s *replayTestSuite) TestUnkownSDKFlag() {
 	require.Error(s.T(), err)
 }
 
+func (s *replayTestSuite) TestUpdateWorkflow() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(UpdateWorkflow)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "update.json")
+	require.NoError(s.T(), err)
+}
+
 func TestReplayCustomConverter(t *testing.T) {
 	conv := &captureConverter{DataConverter: converter.GetDefaultDataConverter()}
 	replayer, err := worker.NewWorkflowReplayerWithOptions(worker.WorkflowReplayerOptions{
