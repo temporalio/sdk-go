@@ -1334,7 +1334,6 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 		WorkflowExecution:      execution,
 		History:                history,
 		PreviousStartedEventId: math.MaxInt64,
-		Messages:               inferMessages(history.Events),
 	}
 
 	iterator := &historyIteratorImpl{
