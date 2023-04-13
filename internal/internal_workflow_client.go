@@ -763,8 +763,8 @@ type UpdateWorkflowWithOptionsRequest struct {
 	// then the server will reject the update request with an error.
 	FirstExecutionRunID string
 
-	// this isn't upstream in API yet
-	// WaitFor enumspb.WorkflowExecutionUpdateWaitEvent
+	// How this RPC should block on the server before returning.
+	WaitPolicy *updatepb.WaitPolicy
 }
 
 // WorkflowUpdateHandle is a handle to a workflow execution update process. The
@@ -786,13 +786,29 @@ type WorkflowUpdateHandle interface {
 	Get(ctx context.Context, valuePtr interface{}) error
 }
 
-// updateHandle is a dumb implementation of WorkflowExecutionUpdateHandle that
-// only supports the case where the output value is aready known at construction
-// time.
-type updateHandle struct {
+type WorkflowUpdateRef interface {
+	GetWorkflowExecution() *commonpb.WorkflowExecution
+	GetUpdateId() string
+}
+
+type baseUpdateHandle struct {
+	ref *updatepb.UpdateRef
+}
+
+// completedUpdateHandle is an UpdateHandle impelementation for use when the outcome
+// of the update is already known and the Get call can return immediately.
+type completedUpdateHandle struct {
+	baseUpdateHandle
 	value converter.EncodedValue
 	err   error
-	ref   *updatepb.UpdateRef
+}
+
+// lazyUpdateHandle represents and update that is not known to have completed
+// yet (i.e. the associated updatepb.Outcome is not known) and thus calling Get
+// will poll the server for the outcome.
+type lazyUpdateHandle struct {
+	baseUpdateHandle
+	client *WorkflowClient
 }
 
 // QueryWorkflowWithOptionsRequest is the request to QueryWorkflowWithOptions
@@ -1000,6 +1016,34 @@ func (wc *WorkflowClient) UpdateWorkflowWithOptions(
 		Args:                req.Args,
 		RunID:               req.RunID,
 		FirstExecutionRunID: req.FirstExecutionRunID,
+		WaitPolicy:          req.WaitPolicy,
+	})
+}
+
+func (wc *WorkflowClient) WorkflowUpdateHandleFromRef(ref WorkflowUpdateRef) WorkflowUpdateHandle {
+	return &lazyUpdateHandle{
+		client: wc,
+		baseUpdateHandle: baseUpdateHandle{
+			ref: &updatepb.UpdateRef{
+				WorkflowExecution: ref.GetWorkflowExecution(),
+				UpdateId:          ref.GetUpdateId(),
+			},
+		},
+	}
+}
+
+// PollWorkflowUpdate sends a request for the outcome of the specified update
+// through the interceptor chain.
+func (wc *WorkflowClient) PollWorkflowUpdate(
+	ctx context.Context,
+	ref *updatepb.UpdateRef,
+) (converter.EncodedValue, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+	ctx = contextWithNewHeader(ctx)
+	return wc.interceptor.PollWorkflowUpdate(ctx, &ClientPollWorkflowUpdateInput{
+		UpdateRef: ref,
 	})
 }
 
@@ -1687,12 +1731,7 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 		RunId:      in.RunID,
 	}
 	resp, err := w.client.workflowService.UpdateWorkflowExecution(grpcCtx, &workflowservice.UpdateWorkflowExecutionRequest{
-		WaitPolicy: &updatepb.WaitPolicy{
-			// currently fixed as this is the only supported execution method - will
-			// change to BlockingPolicy (or similar) when upstream API changes land
-			LifecycleStage: enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED,
-		},
-
+		WaitPolicy:          in.WaitPolicy,
 		Namespace:           w.client.namespace,
 		WorkflowExecution:   wfexec,
 		FirstExecutionRunId: in.FirstExecutionRunID,
@@ -1708,45 +1747,90 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 			},
 		},
 	})
-	handle := &updateHandle{ref: resp.GetUpdateRef()}
 	if err != nil {
-		handle.err = err
-		return handle, nil
+		return nil, err
 	}
 	switch v := resp.GetOutcome().GetValue().(type) {
 	case nil:
-		panic("unspported update outcome: Incomplete")
+		return &lazyUpdateHandle{
+			client:           w.client,
+			baseUpdateHandle: baseUpdateHandle{ref: resp.GetUpdateRef()},
+		}, nil
 	case *updatepb.Outcome_Failure:
-		handle.err = w.client.failureConverter.FailureToError(v.Failure)
+		return &completedUpdateHandle{
+			err:              w.client.failureConverter.FailureToError(v.Failure),
+			baseUpdateHandle: baseUpdateHandle{ref: resp.GetUpdateRef()},
+		}, nil
 	case *updatepb.Outcome_Success:
-		handle.value = newEncodedValue(v.Success, w.client.dataConverter)
+		return &completedUpdateHandle{
+			value:            newEncodedValue(v.Success, w.client.dataConverter),
+			baseUpdateHandle: baseUpdateHandle{ref: resp.GetUpdateRef()},
+		}, nil
 	}
-	return handle, nil
+	return nil, fmt.Errorf("unsupported outcome type %T", resp.GetOutcome().GetValue())
+}
+
+func (w *workflowClientInterceptor) PollWorkflowUpdate(
+	ctx context.Context,
+	in *ClientPollWorkflowUpdateInput,
+) (converter.EncodedValue, error) {
+	// header, _ = headerPropagated(ctx, w.client.contextPropagators)
+	//todo header not in PollWorkflowUpdate
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	wait := updatepb.WaitPolicy{
+		LifecycleStage: enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED,
+	}
+	pollReq := workflowservice.PollWorkflowExecutionUpdateRequest{
+		Namespace:  w.client.namespace,
+		UpdateRef:  in.UpdateRef,
+		WaitPolicy: &wait,
+		Identity:   w.client.identity,
+	}
+	resp, err := w.client.workflowService.PollWorkflowExecutionUpdate(grpcCtx, &pollReq)
+	if err != nil {
+		return nil, err
+	}
+	switch v := resp.GetOutcome().GetValue().(type) {
+	case *updatepb.Outcome_Failure:
+		return nil, w.client.failureConverter.FailureToError(v.Failure)
+	case *updatepb.Outcome_Success:
+		return newEncodedValue(v.Success, w.client.dataConverter), nil
+	default:
+		return nil, fmt.Errorf("unsupported outcome type %T", v)
+	}
 }
 
 // Required to implement ClientOutboundInterceptor
 func (*workflowClientInterceptor) mustEmbedClientOutboundInterceptorBase() {}
 
-func (uh *updateHandle) WorkflowID() string {
+func (uh *baseUpdateHandle) WorkflowID() string {
 	return uh.ref.GetWorkflowExecution().GetWorkflowId()
 }
 
-func (uh *updateHandle) RunID() string {
+func (uh *baseUpdateHandle) RunID() string {
 	return uh.ref.GetWorkflowExecution().GetRunId()
 }
 
-func (uh *updateHandle) UpdateID() string {
+func (uh *baseUpdateHandle) UpdateID() string {
 	return uh.ref.GetUpdateId()
 }
 
-func (uh *updateHandle) Get(ctx context.Context, valuePtr interface{}) error {
-	// implementation note: this is a broken implementation that assumes the
-	// update has already completed by the time Get is called. This is true for
-	// the current implementation of synchronous updates but will not be true in
-	// the future with async update.
-
-	if uh.err != nil || valuePtr == nil {
-		return uh.err
+func (ch *completedUpdateHandle) Get(ctx context.Context, valuePtr interface{}) error {
+	if ch.err != nil || valuePtr == nil {
+		return ch.err
 	}
-	return uh.value.Get(valuePtr)
+	if err := ch.value.Get(valuePtr); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (luh *lazyUpdateHandle) Get(ctx context.Context, valuePtr interface{}) error {
+	enc, err := luh.client.PollWorkflowUpdate(ctx, luh.ref)
+	if err != nil {
+		return err
+	}
+	return enc.Get(valuePtr)
 }

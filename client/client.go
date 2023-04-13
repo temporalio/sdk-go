@@ -172,6 +172,11 @@ type (
 	// NOTE: Experimental
 	WorkflowUpdateHandle = internal.WorkflowUpdateHandle
 
+	// WorkflowUpdateRef reflects the fields needed to refer to a workflow
+	// update.
+	// NOTE: Experimental
+	WorkflowUpdateRef = internal.WorkflowUpdateRef
+
 	// UpdateWorkerBuildIdCompatibilityOptions is the input to Client.UpdateWorkerBuildIdCompatibility.
 	// NOTE: Experimental
 	UpdateWorkerBuildIdCompatibilityOptions = internal.UpdateWorkerBuildIdCompatibilityOptions
@@ -502,6 +507,11 @@ type (
 		// directly from this function call.
 		// NOTE: Experimental
 		UpdateWorkflowWithOptions(ctx context.Context, request *UpdateWorkflowWithOptionsRequest) (WorkflowUpdateHandle, error)
+
+		// WorkflowUpdateHandleFromRef creates a handle to the referenced update
+		// which can be polled for an outcome.
+		// NOTE: Experimental
+		WorkflowUpdateHandleFromRef(ref WorkflowUpdateRef) WorkflowUpdateHandle
 
 		// WorkflowService provides access to the underlying gRPC service. This should only be used for advanced use cases
 		// that cannot be accomplished via other Client methods. Unlike calls to other Client methods, calls directly to the
