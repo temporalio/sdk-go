@@ -67,7 +67,7 @@ const (
 
 	getSystemInfoTimeout = 5 * time.Second
 
-	pollUpdateTimeout = 70 * time.Second
+	pollUpdateTimeout = 60 * time.Second
 )
 
 var (
@@ -777,6 +777,7 @@ type UpdateWorkflowWithOptionsRequest struct {
 // simlar to a Future with respect to the outcome of the update. If the update
 // is rejected or returns an error, the Get function on this type will return
 // that error through the output valuePtr.
+// NOTE: Experimental
 type WorkflowUpdateHandle interface {
 	// WorkflowID observes the update's workflow ID.
 	WorkflowID() string
@@ -791,9 +792,18 @@ type WorkflowUpdateHandle interface {
 	Get(ctx context.Context, valuePtr interface{}) error
 }
 
-type WorkflowUpdateRef interface {
-	GetWorkflowExecution() *commonpb.WorkflowExecution
-	GetUpdateId() string
+// WorkflowUpdateRef encapsulates the parameters needed to unambiguously
+// refer to a Workflow Update.
+// NOTE: Experimental
+type WorkflowUpdateRef struct {
+	// WorkflowID of the target update
+	WorkflowID string
+
+	// RunID of the target workflow. If blank, use the most recent run
+	RunID string
+
+	// UpdateID of the target update
+	UpdateID string
 }
 
 type baseUpdateHandle struct {
@@ -1025,13 +1035,16 @@ func (wc *WorkflowClient) UpdateWorkflowWithOptions(
 	})
 }
 
-func (wc *WorkflowClient) WorkflowUpdateHandleFromRef(ref WorkflowUpdateRef) WorkflowUpdateHandle {
+func (wc *WorkflowClient) GetWorkflowUpdateHandle(ref WorkflowUpdateRef) WorkflowUpdateHandle {
 	return &lazyUpdateHandle{
 		client: wc,
 		baseUpdateHandle: baseUpdateHandle{
 			ref: &updatepb.UpdateRef{
-				WorkflowExecution: ref.GetWorkflowExecution(),
-				UpdateId:          ref.GetUpdateId(),
+				WorkflowExecution: &commonpb.WorkflowExecution{
+					WorkflowId: ref.WorkflowID,
+					RunId:      ref.RunID,
+				},
+				UpdateId: ref.UpdateID,
 			},
 		},
 	}

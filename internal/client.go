@@ -367,10 +367,11 @@ type (
 		// NOTE: Experimental
 		UpdateWorkflowWithOptions(ctx context.Context, request *UpdateWorkflowWithOptionsRequest) (WorkflowUpdateHandle, error)
 
-		// WorkflowUpdateHandleFromRef creates a handle to the referenced update
-		// which can be polled for an outcome.
+		// GetWorkflowUpdateHandle creates a handle to the referenced update
+		// which can be polled for an outcome. Note that runID is optional and
+		// if not specified the most recent runID will be used.
 		// NOTE: Experimental
-		WorkflowUpdateHandleFromRef(ref WorkflowUpdateRef) WorkflowUpdateHandle
+		GetWorkflowUpdateHandle(WorkflowUpdateRef) WorkflowUpdateHandle
 
 		// WorkflowService provides access to the underlying gRPC service. This should only be used for advanced use cases
 		// that cannot be accomplished via other Client methods. Unlike calls to other Client methods, calls directly to the

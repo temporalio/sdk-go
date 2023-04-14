@@ -623,7 +623,7 @@ func (_m *Client) UpdateWorkflowWithOptions(ctx context.Context, req *client.Upd
 	return r0, r1
 }
 
-func (_m *Client) WorkflowUpdateHandleFromRef(ref client.WorkflowUpdateRef) client.WorkflowUpdateHandle {
+func (_m *Client) GetWorkflowUpdateHandle(ref client.WorkflowUpdateRef) client.WorkflowUpdateHandle {
 	ret := _m.Called(ref)
 
 	if rf, ok := ret.Get(0).(func(client.WorkflowUpdateRef) client.WorkflowUpdateHandle); ok {
