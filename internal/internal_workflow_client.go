@@ -47,12 +47,15 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/internal/common/retry"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/common/util"
 	"go.temporal.io/sdk/log"
 	uberatomic "go.uber.org/atomic"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/status"
 )
 
 // Assert that structs do indeed implement the interfaces
@@ -63,6 +66,8 @@ const (
 	defaultGetHistoryTimeout = 65 * time.Second
 
 	getSystemInfoTimeout = 5 * time.Second
+
+	pollUpdateTimeout = 70 * time.Second
 )
 
 var (
@@ -1771,35 +1776,49 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 }
 
 func (w *workflowClientInterceptor) PollWorkflowUpdate(
-	ctx context.Context,
+	parentCtx context.Context,
 	in *ClientPollWorkflowUpdateInput,
 ) (converter.EncodedValue, error) {
 	// header, _ = headerPropagated(ctx, w.client.contextPropagators)
 	//todo header not in PollWorkflowUpdate
 
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
-	defer cancel()
-	wait := updatepb.WaitPolicy{
-		LifecycleStage: enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED,
-	}
 	pollReq := workflowservice.PollWorkflowExecutionUpdateRequest{
-		Namespace:  w.client.namespace,
-		UpdateRef:  in.UpdateRef,
-		WaitPolicy: &wait,
-		Identity:   w.client.identity,
+		Namespace: w.client.namespace,
+		UpdateRef: in.UpdateRef,
+		Identity:  w.client.identity,
+		WaitPolicy: &updatepb.WaitPolicy{
+			LifecycleStage: enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED,
+		},
 	}
-	resp, err := w.client.workflowService.PollWorkflowExecutionUpdate(grpcCtx, &pollReq)
-	if err != nil {
-		return nil, err
+	for parentCtx.Err() == nil {
+		ctx, cancel := newGRPCContext(
+			parentCtx,
+			grpcLongPoll(true),
+			grpcTimeout(pollUpdateTimeout),
+		)
+		ctx = context.WithValue(
+			ctx,
+			retry.ConfigKey,
+			createDynamicServiceRetryPolicy(ctx).GrpcRetryConfig(),
+		)
+		resp, err := w.client.workflowService.PollWorkflowExecutionUpdate(ctx, &pollReq)
+		cancel()
+		if err == context.DeadlineExceeded || status.Code(err) == codes.DeadlineExceeded {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		switch v := resp.GetOutcome().GetValue().(type) {
+		case *updatepb.Outcome_Failure:
+			return nil, w.client.failureConverter.FailureToError(v.Failure)
+		case *updatepb.Outcome_Success:
+			return newEncodedValue(v.Success, w.client.dataConverter), nil
+		default:
+			return nil, fmt.Errorf("unsupported outcome type %T", v)
+		}
 	}
-	switch v := resp.GetOutcome().GetValue().(type) {
-	case *updatepb.Outcome_Failure:
-		return nil, w.client.failureConverter.FailureToError(v.Failure)
-	case *updatepb.Outcome_Success:
-		return newEncodedValue(v.Success, w.client.dataConverter), nil
-	default:
-		return nil, fmt.Errorf("unsupported outcome type %T", v)
-	}
+	return nil, parentCtx.Err()
 }
 
 // Required to implement ClientOutboundInterceptor
