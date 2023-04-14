@@ -45,14 +45,14 @@ func Test_WorkerVersionSets_fromProtoResponse(t *testing.T) {
 			name: "normal sets",
 			response: &workflowservice.GetWorkerBuildIdCompatibilityResponse{
 				MajorVersionSets: []*taskqueuepb.CompatibleVersionSet{
-					{BuildIds: []string{"1.0", "1.1"}, VersionSetId: "1"},
-					{BuildIds: []string{"2.0"}, VersionSetId: "2"},
+					{BuildIds: []string{"1.0", "1.1"}},
+					{BuildIds: []string{"2.0"}},
 				},
 			},
 			want: &WorkerBuildIDVersionSets{
 				Sets: []*CompatibleVersionSet{
-					{BuildIDs: []string{"1.0", "1.1"}, versionSetId: "1"},
-					{BuildIDs: []string{"2.0"}, versionSetId: "2"},
+					{BuildIDs: []string{"1.0", "1.1"}},
+					{BuildIDs: []string{"2.0"}},
 				},
 			},
 		},

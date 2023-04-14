@@ -99,8 +99,7 @@ func (s *WorkerBuildIDVersionSets) Default() string {
 
 // CompatibleVersionSet represents a set of worker build ids which are compatible with each other.
 type CompatibleVersionSet struct {
-	versionSetId string
-	BuildIDs     []string
+	BuildIDs []string
 }
 
 func workerVersionSetsFromProtoResponse(response *workflowservice.GetWorkerBuildIdCompatibilityResponse) *WorkerBuildIDVersionSets {
@@ -119,8 +118,7 @@ func workerVersionSetsFromProto(sets []*taskqueuepb.CompatibleVersionSet) []*Com
 	result := make([]*CompatibleVersionSet, len(sets))
 	for i, s := range sets {
 		result[i] = &CompatibleVersionSet{
-			versionSetId: s.GetVersionSetId(),
-			BuildIDs:     s.GetBuildIds(),
+			BuildIDs: s.GetBuildIds(),
 		}
 	}
 	return result
