@@ -211,8 +211,10 @@ type (
 
 	// WorkflowExecution details.
 	WorkflowExecution struct {
-		ID    string
-		RunID string
+		ID            string
+		RunID         string
+		OriginalRunID string // The original runID before resetting. Using it instead of current runID can make workflow decision determinstic after reset. See also FirstRunId
+		FirstRunID    string // The very first original RunId of the current Workflow Execution preserved along the chain of ContinueAsNew, Retry, Cron and Reset. Identifies the whole Runs chain of Workflow Execution.
 	}
 
 	// EncodedValue is type used to encapsulate/extract encoded result from workflow/activity.
