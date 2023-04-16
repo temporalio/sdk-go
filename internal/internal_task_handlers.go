@@ -573,11 +573,11 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 	}
 	workflowInfo := &WorkflowInfo{
 		WorkflowExecution: WorkflowExecution{
-			ID:            workflowID,
-			RunID:         runID,
-			OriginalRunID: attributes.OriginalExecutionRunId,
-			FirstRunID:    attributes.FirstExecutionRunId,
+			ID:    workflowID,
+			RunID: runID,
 		},
+		OriginalRunID:            attributes.OriginalExecutionRunId,
+		FirstRunID:               attributes.FirstExecutionRunId,
 		WorkflowType:             WorkflowType{Name: task.WorkflowType.GetName()},
 		TaskQueueName:            taskQueue.GetName(),
 		WorkflowExecutionTimeout: common.DurationValue(attributes.GetWorkflowExecutionTimeout()),
