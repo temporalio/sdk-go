@@ -371,7 +371,7 @@ type (
 		// which can be polled for an outcome. Note that runID is optional and
 		// if not specified the most recent runID will be used.
 		// NOTE: Experimental
-		GetWorkflowUpdateHandle(WorkflowUpdateRef) WorkflowUpdateHandle
+		GetWorkflowUpdateHandle(GetWorkflowUpdateHandleOptions) WorkflowUpdateHandle
 
 		// WorkflowService provides access to the underlying gRPC service. This should only be used for advanced use cases
 		// that cannot be accomplished via other Client methods. Unlike calls to other Client methods, calls directly to the

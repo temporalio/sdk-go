@@ -792,10 +792,10 @@ type WorkflowUpdateHandle interface {
 	Get(ctx context.Context, valuePtr interface{}) error
 }
 
-// WorkflowUpdateRef encapsulates the parameters needed to unambiguously
+// GetWorkflowUpdateHandleOptions encapsulates the parameters needed to unambiguously
 // refer to a Workflow Update.
 // NOTE: Experimental
-type WorkflowUpdateRef struct {
+type GetWorkflowUpdateHandleOptions struct {
 	// WorkflowID of the target update
 	WorkflowID string
 
@@ -1035,7 +1035,7 @@ func (wc *WorkflowClient) UpdateWorkflowWithOptions(
 	})
 }
 
-func (wc *WorkflowClient) GetWorkflowUpdateHandle(ref WorkflowUpdateRef) WorkflowUpdateHandle {
+func (wc *WorkflowClient) GetWorkflowUpdateHandle(ref GetWorkflowUpdateHandleOptions) WorkflowUpdateHandle {
 	return &lazyUpdateHandle{
 		client: wc,
 		baseUpdateHandle: baseUpdateHandle{

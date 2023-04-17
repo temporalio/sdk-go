@@ -1553,6 +1553,13 @@ func TestUpdate(t *testing.T) {
 		}
 	}
 
+	sleepCtx := func(ctx context.Context, dur time.Duration) {
+		select {
+		case <-ctx.Done():
+		case <-time.After(dur):
+		}
+	}
+
 	t.Run("sync success", func(t *testing.T) {
 		svc, client := init(t)
 		want := t.Name()
@@ -1574,13 +1581,13 @@ func TestUpdate(t *testing.T) {
 	})
 	t.Run("sync error", func(t *testing.T) {
 		svc, client := init(t)
-		want := "this error was intentional"
+		want := errors.New("this error was intentional")
 		req := newRequest(t, sync)
 		svc.EXPECT().
 			UpdateWorkflowExecution(gomock.Any(), gomock.Any()).Return(
 			&workflowservice.UpdateWorkflowExecutionResponse{
 				UpdateRef: refFromRequest(req),
-				Outcome:   mustOutcome(t, errors.New(want)),
+				Outcome:   mustOutcome(t, want),
 			},
 			nil,
 		)
@@ -1589,7 +1596,7 @@ func TestUpdate(t *testing.T) {
 		var got string
 		err = handle.Get(context.TODO(), &got)
 		require.Error(t, err)
-		require.ErrorContains(t, err, want)
+		require.ErrorContains(t, err, want.Error())
 	})
 	t.Run("async success", func(t *testing.T) {
 		svc, client := init(t)
@@ -1619,7 +1626,7 @@ func TestUpdate(t *testing.T) {
 	})
 	t.Run("async error", func(t *testing.T) {
 		svc, client := init(t)
-		want := "this error was intentional"
+		want := errors.New("this error was intentional")
 		req := newRequest(t, async)
 		svc.EXPECT().UpdateWorkflowExecution(gomock.Any(), gomock.Any()).
 			Return(
@@ -1632,7 +1639,7 @@ func TestUpdate(t *testing.T) {
 		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
 			Return(
 				&workflowservice.PollWorkflowExecutionUpdateResponse{
-					Outcome: mustOutcome(t, errors.New(want)),
+					Outcome: mustOutcome(t, want),
 				},
 				nil,
 			)
@@ -1641,7 +1648,7 @@ func TestUpdate(t *testing.T) {
 		var got string
 		err = handle.Get(context.TODO(), &got)
 		require.Error(t, err)
-		require.ErrorContains(t, err, want)
+		require.ErrorContains(t, err, want.Error())
 	})
 	t.Run("internal retries", func(t *testing.T) {
 		svc, client := init(t)
@@ -1674,18 +1681,55 @@ func TestUpdate(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 	})
-	t.Run("parent ctx exit", func(t *testing.T) {
+	t.Run("default ctx timeout", func(t *testing.T) {
 		svc, client := init(t)
-		req := newRequest(t, async)
-		pollCtx, cancel := context.WithCancel(context.TODO())
-		svc.EXPECT().UpdateWorkflowExecution(gomock.Any(), gomock.Any()).
-			Return(&workflowservice.UpdateWorkflowExecutionResponse{}, nil)
-		cancel()
-		handle, err := client.UpdateWorkflowWithOptions(context.TODO(), req)
-		require.NoError(t, err)
+		handle := client.GetWorkflowUpdateHandle(GetWorkflowUpdateHandleOptions{})
+		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
+			DoAndReturn(
+				func(
+					ctx context.Context,
+					_ *workflowservice.PollWorkflowExecutionUpdateRequest,
+					_ ...grpc.CallOption,
+				) (*workflowservice.PollWorkflowExecutionUpdateResponse, error) {
+					thisDeadline, ok := ctx.Deadline()
+					require.True(t, ok)
+					expectedDeadline := time.Now().Add(pollUpdateTimeout)
+					// can't tell what the exact deadline will be so assert that
+					// the effective deadline is within 2 seconds of the default
+					// pollUpdateTimout that is used when no other
+					// deadline/timeout is supplied by the caller.
+					require.WithinDuration(t, expectedDeadline, thisDeadline, 2*time.Second)
+					return nil, nil
+				},
+			)
+		_ = handle.Get(context.TODO(), nil) // assertions in DoAndReturn callback
+	})
+	t.Run("parent ctx timeout", func(t *testing.T) {
+		svc, client := init(t)
+		handle := client.GetWorkflowUpdateHandle(GetWorkflowUpdateHandleOptions{})
+		callerDeadline := time.Now().Add(50 * time.Millisecond)
+		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
+			DoAndReturn(
+				func(
+					ctx context.Context,
+					_ *workflowservice.PollWorkflowExecutionUpdateRequest,
+					_ ...grpc.CallOption,
+				) (*workflowservice.PollWorkflowExecutionUpdateResponse, error) {
+					thisDeadline, ok := ctx.Deadline()
+					require.True(t, ok)
+					require.LessOrEqual(t, thisDeadline, callerDeadline,
+						"caller timeout can be shortened but not extended")
+					ctxWillTimeoutIn := time.Until(thisDeadline)
+					sleepCtx(ctx, ctxWillTimeoutIn+3*time.Second)
+					require.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
+					return nil, ctx.Err()
+				},
+			)
+		callerCtx, cancel := context.WithDeadline(context.TODO(), callerDeadline)
+		defer cancel()
 		var got string
-		err = handle.Get(pollCtx, &got)
+		err := handle.Get(callerCtx, &got)
 		require.Error(t, err)
-		require.Equal(t, pollCtx.Err(), err)
+		require.Equal(t, callerCtx.Err(), err)
 	})
 }

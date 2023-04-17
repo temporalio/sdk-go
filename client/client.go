@@ -172,10 +172,10 @@ type (
 	// NOTE: Experimental
 	WorkflowUpdateHandle = internal.WorkflowUpdateHandle
 
-	// WorkflowUpdateRef encapsulates the parameters needed to unambiguously
+	// GetWorkflowUpdateHandleOptions encapsulates the parameters needed to unambiguously
 	// refer to a Workflow Update
 	// NOTE: Experimental
-	WorkflowUpdateRef = internal.WorkflowUpdateRef
+	GetWorkflowUpdateHandleOptions = internal.GetWorkflowUpdateHandleOptions
 
 	// UpdateWorkerBuildIdCompatibilityOptions is the input to Client.UpdateWorkerBuildIdCompatibility.
 	// NOTE: Experimental
@@ -512,7 +512,7 @@ type (
 		// which can be polled for an outcome. Note that runID is optional and
 		// if not specified the most recent runID will be used.
 		// NOTE: Experimental
-		GetWorkflowUpdateHandle(ref WorkflowUpdateRef) WorkflowUpdateHandle
+		GetWorkflowUpdateHandle(ref GetWorkflowUpdateHandleOptions) WorkflowUpdateHandle
 
 		// WorkflowService provides access to the underlying gRPC service. This should only be used for advanced use cases
 		// that cannot be accomplished via other Client methods. Unlike calls to other Client methods, calls directly to the
