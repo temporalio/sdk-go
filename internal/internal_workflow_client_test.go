@@ -1491,16 +1491,37 @@ func TestCompletedUpdateHandle(t *testing.T) {
 }
 
 func TestUpdate(t *testing.T) {
-	svc := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
-	client := NewServiceClient(svc, nil, ClientOptions{})
 	dc := converter.GetDefaultDataConverter()
 	fc := GetDefaultFailureConverter()
 
-	mustPayloads := func(t *testing.T, values ...interface{}) *commonpb.Payloads {
+	init := func(t *testing.T) (*workflowservicemock.MockWorkflowServiceClient, *WorkflowClient) {
+		svc := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+		client := NewServiceClient(svc, nil, ClientOptions{})
+		svc.EXPECT().
+			GetSystemInfo(gomock.Any(), gomock.Any()).
+			AnyTimes().
+			Return(&workflowservice.GetSystemInfoResponse{}, nil)
+
+		return svc, client
+	}
+
+	mustOutcome := func(t *testing.T, successOrError interface{}) *updatepb.Outcome {
 		t.Helper()
-		out, err := dc.ToPayloads(values...)
+		if errOut, ok := successOrError.(error); ok {
+			return &updatepb.Outcome{
+				Value: &updatepb.Outcome_Failure{
+					Failure: fc.ErrorToFailure(errOut),
+				},
+			}
+		}
+		outSuccess, err := dc.ToPayloads(successOrError)
 		require.NoError(t, err)
-		return out
+		return &updatepb.Outcome{
+			Value: &updatepb.Outcome_Success{
+				Success: outSuccess,
+			},
+		}
+
 	}
 
 	const (
@@ -1508,7 +1529,10 @@ func TestUpdate(t *testing.T) {
 		async = enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ACCEPTED
 	)
 
-	newRequest := func(t *testing.T, stage enumspb.UpdateWorkflowExecutionLifecycleStage) *UpdateWorkflowWithOptionsRequest {
+	newRequest := func(
+		t *testing.T,
+		stage enumspb.UpdateWorkflowExecutionLifecycleStage,
+	) *UpdateWorkflowWithOptionsRequest {
 		t.Helper()
 		return &UpdateWorkflowWithOptionsRequest{
 			UpdateID:   fmt.Sprintf("%v-update_id", t.Name()),
@@ -1519,33 +1543,25 @@ func TestUpdate(t *testing.T) {
 		}
 	}
 
-	newRef := func(wfID, runID, updateID string) *updatepb.UpdateRef {
+	refFromRequest := func(req *UpdateWorkflowWithOptionsRequest) *updatepb.UpdateRef {
 		return &updatepb.UpdateRef{
 			WorkflowExecution: &commonpb.WorkflowExecution{
-				WorkflowId: wfID,
-				RunId:      runID,
+				WorkflowId: req.WorkflowID,
+				RunId:      req.RunID,
 			},
-			UpdateId: updateID,
+			UpdateId: req.UpdateName,
 		}
 	}
 
-	svc.EXPECT().
-		GetSystemInfo(gomock.Any(), gomock.Any()).
-		AnyTimes().
-		Return(&workflowservice.GetSystemInfoResponse{}, nil)
-
 	t.Run("sync success", func(t *testing.T) {
+		svc, client := init(t)
 		want := t.Name()
 		req := newRequest(t, sync)
 		svc.EXPECT().
 			UpdateWorkflowExecution(gomock.Any(), gomock.Any()).Return(
 			&workflowservice.UpdateWorkflowExecutionResponse{
-				UpdateRef: newRef(req.WorkflowID, req.RunID, req.UpdateID),
-				Outcome: &updatepb.Outcome{
-					Value: &updatepb.Outcome_Success{
-						Success: mustPayloads(t, want),
-					},
-				},
+				UpdateRef: refFromRequest(req),
+				Outcome:   mustOutcome(t, want),
 			},
 			nil,
 		)
@@ -1557,17 +1573,14 @@ func TestUpdate(t *testing.T) {
 		require.Equal(t, want, got)
 	})
 	t.Run("sync error", func(t *testing.T) {
+		svc, client := init(t)
 		want := "this error was intentional"
 		req := newRequest(t, sync)
 		svc.EXPECT().
 			UpdateWorkflowExecution(gomock.Any(), gomock.Any()).Return(
 			&workflowservice.UpdateWorkflowExecutionResponse{
-				UpdateRef: newRef(req.WorkflowID, req.RunID, req.UpdateID),
-				Outcome: &updatepb.Outcome{
-					Value: &updatepb.Outcome_Failure{
-						Failure: fc.ErrorToFailure(errors.New(want)),
-					},
-				},
+				UpdateRef: refFromRequest(req),
+				Outcome:   mustOutcome(t, errors.New(want)),
 			},
 			nil,
 		)
@@ -1579,12 +1592,13 @@ func TestUpdate(t *testing.T) {
 		require.ErrorContains(t, err, want)
 	})
 	t.Run("async success", func(t *testing.T) {
+		svc, client := init(t)
 		want := t.Name()
 		req := newRequest(t, async)
 		svc.EXPECT().UpdateWorkflowExecution(gomock.Any(), gomock.Any()).
 			Return(
 				&workflowservice.UpdateWorkflowExecutionResponse{
-					UpdateRef: newRef(req.WorkflowID, req.RunID, req.UpdateID),
+					UpdateRef: refFromRequest(req),
 					Outcome:   nil, // async invocation - outcome unknown
 				},
 				nil,
@@ -1592,11 +1606,7 @@ func TestUpdate(t *testing.T) {
 		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
 			Return(
 				&workflowservice.PollWorkflowExecutionUpdateResponse{
-					Outcome: &updatepb.Outcome{
-						Value: &updatepb.Outcome_Success{
-							Success: mustPayloads(t, want),
-						},
-					},
+					Outcome: mustOutcome(t, want),
 				},
 				nil,
 			)
@@ -1608,12 +1618,13 @@ func TestUpdate(t *testing.T) {
 		require.Equal(t, want, got)
 	})
 	t.Run("async error", func(t *testing.T) {
+		svc, client := init(t)
 		want := "this error was intentional"
 		req := newRequest(t, async)
 		svc.EXPECT().UpdateWorkflowExecution(gomock.Any(), gomock.Any()).
 			Return(
 				&workflowservice.UpdateWorkflowExecutionResponse{
-					UpdateRef: newRef(req.WorkflowID, req.RunID, req.UpdateID),
+					UpdateRef: refFromRequest(req),
 					Outcome:   nil, // async invocation - outcome unknown
 				},
 				nil,
@@ -1621,11 +1632,7 @@ func TestUpdate(t *testing.T) {
 		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
 			Return(
 				&workflowservice.PollWorkflowExecutionUpdateResponse{
-					Outcome: &updatepb.Outcome{
-						Value: &updatepb.Outcome_Failure{
-							Failure: fc.ErrorToFailure(errors.New(want)),
-						},
-					},
+					Outcome: mustOutcome(t, errors.New(want)),
 				},
 				nil,
 			)
@@ -1637,12 +1644,13 @@ func TestUpdate(t *testing.T) {
 		require.ErrorContains(t, err, want)
 	})
 	t.Run("internal retries", func(t *testing.T) {
+		svc, client := init(t)
 		want := t.Name()
 		req := newRequest(t, async)
 		svc.EXPECT().UpdateWorkflowExecution(gomock.Any(), gomock.Any()).
 			Return(
 				&workflowservice.UpdateWorkflowExecutionResponse{
-					UpdateRef: newRef(req.WorkflowID, req.RunID, req.UpdateID),
+					UpdateRef: refFromRequest(req),
 					Outcome:   nil, // async invocation - outcome unknown
 				},
 				nil,
@@ -1652,22 +1660,32 @@ func TestUpdate(t *testing.T) {
 		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
 			Return(
 				&workflowservice.PollWorkflowExecutionUpdateResponse{
-					Outcome: &updatepb.Outcome{
-						Value: &updatepb.Outcome_Success{
-							Success: mustPayloads(t, want),
-						},
-					},
+					Outcome: mustOutcome(t, want),
 				},
 				nil,
 			)
 
-		callCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		pollCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
+		handle, err := client.UpdateWorkflowWithOptions(pollCtx, req)
+		require.NoError(t, err)
+		var got string
+		err = handle.Get(pollCtx, &got)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	})
+	t.Run("parent ctx exit", func(t *testing.T) {
+		svc, client := init(t)
+		req := newRequest(t, async)
+		pollCtx, cancel := context.WithCancel(context.TODO())
+		svc.EXPECT().UpdateWorkflowExecution(gomock.Any(), gomock.Any()).
+			Return(&workflowservice.UpdateWorkflowExecutionResponse{}, nil)
+		cancel()
 		handle, err := client.UpdateWorkflowWithOptions(context.TODO(), req)
 		require.NoError(t, err)
 		var got string
-		err = handle.Get(callCtx, &got)
-		require.NoError(t, err)
-		require.Equal(t, want, got)
+		err = handle.Get(pollCtx, &got)
+		require.Error(t, err)
+		require.Equal(t, pollCtx.Err(), err)
 	})
 }
