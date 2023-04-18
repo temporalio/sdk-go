@@ -944,9 +944,11 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 
 // WorkflowInfo information about currently executing workflow
 type WorkflowInfo struct {
-	WorkflowExecution        WorkflowExecution
-	OriginalRunID            string // The original runID before resetting. Using it instead of current runID can make workflow decision determinstic after reset. See also FirstRunId
-	FirstRunID               string // The very first original RunId of the current Workflow Execution preserved along the chain of ContinueAsNew, Retry, Cron and Reset. Identifies the whole Runs chain of Workflow Execution.
+	WorkflowExecution WorkflowExecution
+	// The original runID before resetting. Using it instead of current runID can make workflow decision deterministic after reset. See also FirstRunId
+	OriginalRunID string
+	// The very first original RunId of the current Workflow Execution preserved along the chain of ContinueAsNew, Retry, Cron and Reset. Identifies the whole Runs chain of Workflow Execution.
+	FirstRunID               string
 	WorkflowType             WorkflowType
 	TaskQueueName            string
 	WorkflowExecutionTimeout time.Duration
