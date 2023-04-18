@@ -1650,7 +1650,7 @@ func TestUpdate(t *testing.T) {
 		require.Error(t, err)
 		require.ErrorContains(t, err, want.Error())
 	})
-	t.Run("internal retries", func(t *testing.T) {
+	t.Run("internal retry on timeout", func(t *testing.T) {
 		svc, client := init(t)
 		want := t.Name()
 		req := newRequest(t, async)
@@ -1681,9 +1681,45 @@ func TestUpdate(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 	})
+	t.Run("internal retry on nil outcome", func(t *testing.T) {
+		svc, client := init(t)
+		want := t.Name()
+		req := newRequest(t, async)
+		svc.EXPECT().UpdateWorkflowExecution(gomock.Any(), gomock.Any()).
+			Return(
+				&workflowservice.UpdateWorkflowExecutionResponse{
+					UpdateRef: refFromRequest(req),
+					Outcome:   nil, // async invocation - outcome unknown
+				},
+				nil,
+			)
+		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
+			Return(
+				&workflowservice.PollWorkflowExecutionUpdateResponse{
+					Outcome: nil, // not an error, outcome still unknown
+				},
+				nil,
+			)
+		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
+			Return(
+				&workflowservice.PollWorkflowExecutionUpdateResponse{
+					Outcome: mustOutcome(t, want),
+				},
+				nil,
+			)
+
+		handle, err := client.UpdateWorkflowWithOptions(context.TODO(), req)
+		require.NoError(t, err)
+		var got string
+		err = handle.Get(context.TODO(), &got)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	})
 	t.Run("default ctx timeout", func(t *testing.T) {
 		svc, client := init(t)
 		handle := client.GetWorkflowUpdateHandle(GetWorkflowUpdateHandleOptions{})
+		expectedDeadline := time.Now().Add(pollUpdateTimeout)
+		var actualDeadline time.Time // assigned below in mock
 		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
 			DoAndReturn(
 				func(
@@ -1691,18 +1727,17 @@ func TestUpdate(t *testing.T) {
 					_ *workflowservice.PollWorkflowExecutionUpdateRequest,
 					_ ...grpc.CallOption,
 				) (*workflowservice.PollWorkflowExecutionUpdateResponse, error) {
-					thisDeadline, ok := ctx.Deadline()
-					require.True(t, ok)
-					expectedDeadline := time.Now().Add(pollUpdateTimeout)
-					// can't tell what the exact deadline will be so assert that
-					// the effective deadline is within 2 seconds of the default
-					// pollUpdateTimout that is used when no other
-					// deadline/timeout is supplied by the caller.
-					require.WithinDuration(t, expectedDeadline, thisDeadline, 2*time.Second)
-					return nil, nil
+					actualDeadline, _ = ctx.Deadline()
+					return nil, errors.New("intentional error")
 				},
 			)
-		_ = handle.Get(context.TODO(), nil) // assertions in DoAndReturn callback
+		_ = handle.Get(context.TODO(), nil)
+
+		// can't tell what the exact deadline will be so assert that the
+		// observed deadline passed to server rpc is within 2 seconds of the
+		// default pollUpdateTimout that is used when no other deadline/timeout
+		// is supplied by the caller.
+		require.WithinDuration(t, expectedDeadline, actualDeadline, 2*time.Second)
 	})
 	t.Run("parent ctx timeout", func(t *testing.T) {
 		svc, client := init(t)
