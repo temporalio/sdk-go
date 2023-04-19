@@ -1418,8 +1418,13 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*historypb.
 // HistoryFromJSON deserializes history from a reader of JSON bytes. This does
 // not close the reader if it is closeable.
 func HistoryFromJSON(r io.Reader, lastEventID int64) (*historypb.History, error) {
+	unmarshaler := jsonpb.Unmarshaler{
+		// Allow unknown fields because if the histroy was generated with a different version of the proto
+		// fields may have been added/removed.
+		AllowUnknownFields: true,
+	}
 	var hist historypb.History
-	if err := jsonpb.Unmarshal(r, &hist); err != nil {
+	if err := unmarshaler.Unmarshal(r, &hist); err != nil {
 		return nil, err
 	}
 	// If there is a last event ID, slice the rest off
