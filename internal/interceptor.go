@@ -27,6 +27,7 @@ import (
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
+	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
@@ -308,6 +309,12 @@ type ClientOutboundInterceptor interface {
 	// NOTE: Experimental
 	UpdateWorkflow(context.Context, *ClientUpdateWorkflowInput) (WorkflowUpdateHandle, error)
 
+	// PollWorkflowUpdate requests the outcome of a specific update from the
+	// server.
+	//
+	// NOTE: Experimental
+	PollWorkflowUpdate(context.Context, *ClientPollWorkflowUpdateInput) (converter.EncodedValue, error)
+
 	mustEmbedClientOutboundInterceptorBase()
 }
 
@@ -322,9 +329,13 @@ type ClientUpdateWorkflowInput struct {
 	Args                []interface{}
 	RunID               string
 	FirstExecutionRunID string
+	WaitPolicy          *updatepb.WaitPolicy
+}
 
-	// this isn't upstream in API yet
-	// WaitFor enumspb.WorkflowExecutionUpdateWaitEvent
+// ClientPollWorkflowUpdateInput is the input to
+// ClientOutboundInterceptor.PollWorkflowUpdate.
+type ClientPollWorkflowUpdateInput struct {
+	UpdateRef *updatepb.UpdateRef
 }
 
 // ScheduleClientCreateInput is the input to
