@@ -723,6 +723,15 @@ func validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
 		if !isWorkflowContext(fnType.In(0)) {
 			return fmt.Errorf("expected first argument to be workflow.Context but found %s", fnType.In(0))
 		}
+	} else {
+		// For activities, check that workflow context is not accidentally provided
+		// Activities registered with structs will have their receiver as the first argument so confirm it is not
+		// in the first two arguments
+		for i := 0; i < fnType.NumIn() && i < 2; i++ {
+			if isWorkflowContext(fnType.In(i)) {
+				return fmt.Errorf("unexpected use of workflow context for an activity")
+			}
+		}
 	}
 
 	// Return values
