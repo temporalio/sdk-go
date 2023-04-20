@@ -2280,7 +2280,7 @@ func testRegisterStructWithInvalidActivityWithWorkflowContextFails() {
 }
 
 func TestRegisterStructWithInvalidActivityWithWorkflowContextFails(t *testing.T) {
-	assert.Panics(t, testRegisterStructWithInvalidWorkflowContextFnFails)
+	assert.Panics(t, testRegisterStructWithInvalidActivityWithWorkflowContextFails)
 }
 
 func TestVariousActivitySchedulingOption(t *testing.T) {
