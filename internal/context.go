@@ -201,7 +201,7 @@ func WithCancel(parent Context) (ctx Context, cancel CancelFunc) {
 //  err := workflow.ExecuteActivity(ctx, ActivityFoo).Get(ctx, &activityFooResult)
 //  if err != nil && temporal.IsCanceledError(ctx.Err()) {
 //    // activity failed, and workflow context is canceled
-//    disconnectedCtx, _ := workflow.newDisconnectedContext(ctx);
+//    disconnectedCtx, _ := workflow.NewDisconnectedContext(ctx);
 //    workflow.ExecuteActivity(disconnectedCtx, handleCancellationActivity).Get(disconnectedCtx, nil)
 //    return err // workflow return CanceledError
 //  }
