@@ -396,6 +396,13 @@ func (c *ClientOutboundInterceptorBase) UpdateWorkflow(
 	return c.Next.UpdateWorkflow(ctx, in)
 }
 
+func (c *ClientOutboundInterceptorBase) PollWorkflowUpdate(
+	ctx context.Context,
+	in *ClientPollWorkflowUpdateInput,
+) (converter.EncodedValue, error) {
+	return c.Next.PollWorkflowUpdate(ctx, in)
+}
+
 // ExecuteWorkflow implements ClientOutboundInterceptor.ExecuteWorkflow.
 func (c *ClientOutboundInterceptorBase) ExecuteWorkflow(
 	ctx context.Context,

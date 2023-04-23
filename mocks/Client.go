@@ -623,6 +623,19 @@ func (_m *Client) UpdateWorkflowWithOptions(ctx context.Context, req *client.Upd
 	return r0, r1
 }
 
+func (_m *Client) GetWorkflowUpdateHandle(ref client.GetWorkflowUpdateHandleOptions) client.WorkflowUpdateHandle {
+	ret := _m.Called(ref)
+
+	if rf, ok := ret.Get(0).(func(client.GetWorkflowUpdateHandleOptions) client.WorkflowUpdateHandle); ok {
+		return rf(ref)
+	} else {
+		if ret.Get(0) != nil {
+			return ret.Get(0).(client.WorkflowUpdateHandle)
+		}
+	}
+	return nil
+}
+
 // WorkflowService provides a mock function with given fields:
 func (_m *Client) WorkflowService() workflowservice.WorkflowServiceClient {
 	ret := _m.Called()

@@ -70,7 +70,8 @@
     "scheduledEventId": "2",
     "startedEventId": "3",
     "identity": "11111@Quinn-Klassens-MacBook-Pro.local@",
-    "binaryChecksum": "48a264a4d5038290773fdab470dbf90b"
+    "binaryChecksum": "48a264a4d5038290773fdab470dbf90b",
+    "workerVersioningId": null
    }
   },
   {
