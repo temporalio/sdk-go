@@ -2252,6 +2252,37 @@ func TestRegisterStructWithInvalidFnsWithoutSkipFails(t *testing.T) {
 	assert.Panics(t, testRegisterStructWithInvalidFnsWithoutSkipFails)
 }
 
+type testActivityStructWithFnWithWorkflowContext struct{}
+
+func (t *testActivityStructWithFnWithWorkflowContext) InvalidActivity(Context) error {
+	return nil
+}
+
+func testRegisterStructWithInvalidWorkflowContextFnFails() {
+	registry := newRegistry()
+	registry.RegisterActivityWithOptions(&testActivityStructWithFnWithWorkflowContext{}, RegisterActivityOptions{
+		Name:                       "testActivityStructWithFnWithWorkflowContext_",
+		SkipInvalidStructFunctions: false,
+	})
+}
+
+func TestRegisterStructWithInvalidWorkflowContextFnFails(t *testing.T) {
+	assert.Panics(t, testRegisterStructWithInvalidWorkflowContextFnFails)
+}
+
+func InvalidActivityWithWorkflowContext(Context) error {
+	return nil
+}
+
+func testRegisterStructWithInvalidActivityWithWorkflowContextFails() {
+	registry := newRegistry()
+	registry.RegisterActivity(InvalidActivityWithWorkflowContext)
+}
+
+func TestRegisterStructWithInvalidActivityWithWorkflowContextFails(t *testing.T) {
+	assert.Panics(t, testRegisterStructWithInvalidActivityWithWorkflowContextFails)
+}
+
 func TestVariousActivitySchedulingOption(t *testing.T) {
 	w := &activitiesCallingOptionsWorkflow{t: t}
 
