@@ -667,6 +667,62 @@ func Test_convertErrorToFailure_EncodeMessage(t *testing.T) {
 	require.Equal("cause error", applicationErr.Error())
 }
 
+func Test_EncodeDecodeEncodeMessage(t *testing.T) {
+	require := require.New(t)
+
+	fc := NewDefaultFailureConverter(DefaultFailureConverterOptions{
+		DataConverter:          converter.GetDefaultDataConverter(),
+		EncodeCommonAttributes: true,
+	})
+
+	subAppErr := NewApplicationError("sub message", "sub customType", true, errors.New("cause error"), "sub details", 2208)
+	err := NewApplicationError("message", "customType", true, subAppErr, "details", 2208)
+	f := fc.ErrorToFailure(err)
+	// Check main error is encoded
+	require.Equal("Encoded failure", f.GetMessage())
+	require.Equal("", f.GetStackTrace())
+	require.Equal("customType", f.GetApplicationFailureInfo().GetType())
+	require.Equal(true, f.GetApplicationFailureInfo().GetNonRetryable())
+	require.Equal([]byte(`"details"`), f.GetApplicationFailureInfo().GetDetails().GetPayloads()[0].GetData())
+	require.Equal([]byte(`2208`), f.GetApplicationFailureInfo().GetDetails().GetPayloads()[1].GetData())
+	// Check sub error in encoded
+	require.Equal("Encoded failure", f.GetCause().GetMessage())
+	require.Equal("", f.GetCause().GetStackTrace())
+	require.Equal("sub customType", f.GetCause().GetApplicationFailureInfo().GetType())
+	require.Equal(true, f.GetCause().GetApplicationFailureInfo().GetNonRetryable())
+	// Check the sub sub error is encoded
+	require.Equal("Encoded failure", f.GetCause().GetCause().GetMessage())
+	require.Equal("", f.GetCause().GetCause().GetApplicationFailureInfo().GetType())
+	require.Nil(f.GetCause().GetCause().GetCause())
+
+	err2 := fc.FailureToError(f)
+	var applicationErr *ApplicationError
+	require.True(errors.As(err2, &applicationErr))
+	require.Equal("message (type: customType, retryable: false): sub message (type: sub customType, retryable: false): cause error", applicationErr.Error())
+
+	subErr := errors.Unwrap(err2)
+	require.True(errors.As(subErr, &applicationErr))
+	require.Equal("sub message (type: sub customType, retryable: false): cause error", applicationErr.Error())
+
+	subSubErr := errors.Unwrap(subErr)
+	require.True(errors.As(subSubErr, &applicationErr))
+	require.Equal("cause error", applicationErr.Error())
+	// Check main error is re-encoded properly
+	f = fc.ErrorToFailure(err2)
+	require.Equal("Encoded failure", f.GetMessage())
+	require.Equal("", f.GetStackTrace())
+	require.Equal("customType", f.GetApplicationFailureInfo().GetType())
+	require.Equal(true, f.GetCause().GetApplicationFailureInfo().GetNonRetryable())
+	// Check sub error in re-encoded
+	require.Equal("Encoded failure", f.GetCause().GetMessage())
+	require.Equal("", f.GetCause().GetStackTrace())
+	require.Equal("sub customType", f.GetCause().GetApplicationFailureInfo().GetType())
+	// Check the sub sub error is encoded
+	require.Equal("Encoded failure", f.GetCause().GetCause().GetMessage())
+	require.Equal("", f.GetCause().GetCause().GetApplicationFailureInfo().GetType())
+	require.Nil(f.GetCause().GetCause().GetCause())
+}
+
 func Test_convertErrorToFailure_EncodeStackTrace(t *testing.T) {
 	require := require.New(t)
 	fc := NewDefaultFailureConverter(DefaultFailureConverterOptions{
