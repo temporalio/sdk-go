@@ -25,6 +25,7 @@ package internal
 import (
 	"errors"
 
+	"github.com/gogo/protobuf/proto"
 	commonpb "go.temporal.io/api/common/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 	"go.temporal.io/sdk/converter"
@@ -174,7 +175,8 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 	if failure == nil {
 		return nil
 	}
-
+	// Copy the original future to pass to the failureHolder
+	originalFailure := proto.Clone(failure).(*failurepb.Failure)
 	converter.DecodeCommonFailureAttributes(dfc.dataConverter, failure)
 
 	message := failure.GetMessage()
@@ -243,7 +245,7 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 	}
 
 	if fh, ok := err.(failureHolder); ok {
-		fh.setFailure(failure)
+		fh.setFailure(originalFailure)
 	}
 
 	return err
