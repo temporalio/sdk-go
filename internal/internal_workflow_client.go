@@ -59,8 +59,10 @@ import (
 )
 
 // Assert that structs do indeed implement the interfaces
-var _ Client = (*WorkflowClient)(nil)
-var _ NamespaceClient = (*namespaceClient)(nil)
+var (
+	_ Client          = (*WorkflowClient)(nil)
+	_ NamespaceClient = (*namespaceClient)(nil)
+)
 
 const (
 	defaultGetHistoryTimeout = 65 * time.Second
@@ -70,9 +72,7 @@ const (
 	pollUpdateTimeout = 60 * time.Second
 )
 
-var (
-	maxListArchivedWorkflowTimeout = time.Minute * 3
-)
+var maxListArchivedWorkflowTimeout = time.Minute * 3
 
 type (
 	// WorkflowClient is the client for starting a workflow execution.
@@ -303,7 +303,8 @@ func (wc *WorkflowClient) SignalWorkflow(ctx context.Context, workflowID string,
 // SignalWithStartWorkflow sends a signal to a running workflow.
 // If the workflow is not running or not found, it starts the workflow and then sends the signal in transaction.
 func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
-	options StartWorkflowOptions, workflowFunc interface{}, workflowArgs ...interface{}) (WorkflowRun, error) {
+	options StartWorkflowOptions, workflowFunc interface{}, workflowArgs ...interface{},
+) (WorkflowRun, error) {
 	if err := wc.ensureInitialized(); err != nil {
 		return nil, err
 	}
@@ -425,7 +426,8 @@ func (wc *WorkflowClient) getWorkflowHistory(
 }
 
 func (wc *WorkflowClient) getWorkflowExecutionHistory(ctx context.Context, rpcMetricsHandler metrics.Handler, isLongPoll bool,
-	request *workflowservice.GetWorkflowExecutionHistoryRequest, filterType enumspb.HistoryEventFilterType) (*workflowservice.GetWorkflowExecutionHistoryResponse, error) {
+	request *workflowservice.GetWorkflowExecutionHistoryRequest, filterType enumspb.HistoryEventFilterType,
+) (*workflowservice.GetWorkflowExecutionHistoryResponse, error) {
 	if err := wc.ensureInitialized(); err != nil {
 		return nil, err
 	}
@@ -438,7 +440,6 @@ func (wc *WorkflowClient) getWorkflowExecutionHistory(ctx context.Context, rpcMe
 
 	defer cancel()
 	response, err := wc.workflowService.GetWorkflowExecutionHistory(grpcCtx, request)
-
 	if err != nil {
 		return nil, err
 	}
@@ -487,8 +488,8 @@ func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 // CompleteActivityByID reports activity completed. Similar to CompleteActivity
 // It takes namespace name, workflowID, runID, activityID as arguments.
 func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, namespace, workflowID, runID, activityID string,
-	result interface{}, err error) error {
-
+	result interface{}, err error,
+) error {
 	if activityID == "" || workflowID == "" || namespace == "" {
 		return errors.New("empty activity or workflow id or namespace")
 	}
@@ -526,7 +527,8 @@ func (wc *WorkflowClient) RecordActivityHeartbeat(ctx context.Context, taskToken
 
 // RecordActivityHeartbeatByID records heartbeat for an activity.
 func (wc *WorkflowClient) RecordActivityHeartbeatByID(ctx context.Context,
-	namespace, workflowID, runID, activityID string, details ...interface{}) error {
+	namespace, workflowID, runID, activityID string, details ...interface{},
+) error {
 	if err := wc.ensureInitialized(); err != nil {
 		return err
 	}
@@ -1021,6 +1023,10 @@ func (wc *WorkflowClient) UpdateWorkflowWithOptions(
 	if err := wc.ensureInitialized(); err != nil {
 		return nil, err
 	}
+	// Default update ID
+	if req.UpdateID == "" {
+		req.UpdateID = uuid.New()
+	}
 
 	ctx = contextWithNewHeader(ctx)
 
@@ -1081,6 +1087,7 @@ func (wc *WorkflowClient) UpdateWorkflow(
 	return wc.interceptor.UpdateWorkflow(ctx, &ClientUpdateWorkflowInput{
 		WorkflowID: workflowID,
 		UpdateName: updateName,
+		UpdateID:   uuid.New(),
 		Args:       args,
 	})
 }
@@ -1319,7 +1326,6 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 	valuePtr interface{},
 	options WorkflowRunGetOptions,
 ) error {
-
 	iter := workflowRun.iterFn(ctx, workflowRun.currentRunID.Get())
 	if !iter.HasNext() {
 		panic("could not get last history event for workflow")
@@ -1584,7 +1590,6 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 	ctx context.Context,
 	in *ClientSignalWithStartWorkflowInput,
 ) (WorkflowRun, error) {
-
 	dataConverter := WithContext(ctx, w.client.dataConverter)
 	signalInput, err := encodeArg(dataConverter, in.SignalArg)
 	if err != nil {
@@ -1735,7 +1740,6 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 	ctx context.Context,
 	in *ClientUpdateWorkflowInput,
 ) (WorkflowUpdateHandle, error) {
-
 	argPayloads, err := w.client.dataConverter.ToPayloads(in.Args...)
 	if err != nil {
 		return nil, err
@@ -1793,7 +1797,7 @@ func (w *workflowClientInterceptor) PollWorkflowUpdate(
 	in *ClientPollWorkflowUpdateInput,
 ) (converter.EncodedValue, error) {
 	// header, _ = headerPropagated(ctx, w.client.contextPropagators)
-	//todo header not in PollWorkflowUpdate
+	// todo header not in PollWorkflowUpdate
 
 	pollReq := workflowservice.PollWorkflowExecutionUpdateRequest{
 		Namespace: w.client.namespace,
