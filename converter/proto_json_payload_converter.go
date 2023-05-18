@@ -39,9 +39,10 @@ import (
 
 // ProtoJSONPayloadConverter converts proto objects to/from JSON.
 type ProtoJSONPayloadConverter struct {
-	gogoMarshaler   gogojsonpb.Marshaler
-	gogoUnmarshaler gogojsonpb.Unmarshaler
-	options         ProtoJSONPayloadConverterOptions
+	gogoMarshaler         gogojsonpb.Marshaler
+	gogoUnmarshaler       gogojsonpb.Unmarshaler
+	protoUnmarshalOptions protojson.UnmarshalOptions
+	options               ProtoJSONPayloadConverterOptions
 }
 
 // ProtoJSONPayloadConverterOptions represents options for `NewProtoJSONPayloadConverterWithOptions`.
@@ -49,6 +50,9 @@ type ProtoJSONPayloadConverterOptions struct {
 	// ExcludeProtobufMessageTypes prevents the message type (`my.package.MyMessage`)
 	// from being included in the Payload.
 	ExcludeProtobufMessageTypes bool
+
+	// AllowUnknownFields will ignore unknown fields when unmarshalling, as opposed to returning an error
+	AllowUnknownFields bool
 }
 
 var (
@@ -58,17 +62,23 @@ var (
 // NewProtoJSONPayloadConverter creates new instance of `ProtoJSONPayloadConverter`.
 func NewProtoJSONPayloadConverter() *ProtoJSONPayloadConverter {
 	return &ProtoJSONPayloadConverter{
-		gogoMarshaler:   gogojsonpb.Marshaler{},
-		gogoUnmarshaler: gogojsonpb.Unmarshaler{},
+		gogoMarshaler:         gogojsonpb.Marshaler{},
+		gogoUnmarshaler:       gogojsonpb.Unmarshaler{},
+		protoUnmarshalOptions: protojson.UnmarshalOptions{},
 	}
 }
 
 // NewProtoJSONPayloadConverterWithOptions creates new instance of `ProtoJSONPayloadConverter` with the provided options.
 func NewProtoJSONPayloadConverterWithOptions(options ProtoJSONPayloadConverterOptions) *ProtoJSONPayloadConverter {
 	return &ProtoJSONPayloadConverter{
-		gogoMarshaler:   gogojsonpb.Marshaler{},
-		gogoUnmarshaler: gogojsonpb.Unmarshaler{},
-		options:         options,
+		gogoMarshaler: gogojsonpb.Marshaler{},
+		gogoUnmarshaler: gogojsonpb.Unmarshaler{
+			AllowUnknownFields: options.AllowUnknownFields,
+		},
+		protoUnmarshalOptions: protojson.UnmarshalOptions{
+			DiscardUnknown: options.AllowUnknownFields,
+		},
+		options: options,
 	}
 }
 
@@ -162,7 +172,7 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 
 	var err error
 	if isProtoMessage {
-		err = protojson.Unmarshal(payload.GetData(), protoMessage)
+		err = c.protoUnmarshalOptions.Unmarshal(payload.GetData(), protoMessage)
 	} else if isGogoProtoMessage {
 		err = c.gogoUnmarshaler.Unmarshal(bytes.NewReader(payload.GetData()), gogoProtoMessage)
 	}

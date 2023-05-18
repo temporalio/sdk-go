@@ -71,6 +71,21 @@ func TestProtoJsonPayloadConverter_Gogo(t *testing.T) {
 
 	s := pc.ToString(payload)
 	assert.Equal(t, `{"eventId":"1978","eventType":"WorkflowTaskTimedOut","workflowTaskTimedOutEventAttributes":{"scheduledEventId":"2","timeoutType":"ScheduleToStart"}}`, s)
+
+	// Add additional field to payload data
+	payload.Data = []byte(`{"eventId":"1978","eventType":"WorkflowTaskTimedOut","workflowTaskTimedOutEventAttributes":{"scheduledEventId":"2","timeoutType":"ScheduleToStart"},"newField":"newValue"}`)
+	// Should fail, unknown field
+	wt5 := &GoV2{}
+	err = pc.FromPayload(payload, &wt5)
+	require.Error(t, err)
+
+	// Shouldn't fail, unknown fields are allowed
+	pc = NewProtoJSONPayloadConverterWithOptions(ProtoJSONPayloadConverterOptions{
+		AllowUnknownFields: true,
+	})
+	wt6 := &GoV2{}
+	err = pc.FromPayload(payload, &wt6)
+	require.NoError(t, err)
 }
 
 func TestProtoJsonPayloadConverter_Google(t *testing.T) {
@@ -104,6 +119,21 @@ func TestProtoJsonPayloadConverter_Google(t *testing.T) {
 
 	s := pc.ToString(payload)
 	assert.Equal(t, `{"name":"qwe","birthDay":"12","type":"TYPEV2_R","valueS":"asd"}`, strings.Replace(s, " ", "", -1))
+
+	// Add additional field to payload data
+	payload.Data = []byte(`{"name":"qwe","birthDay":"12","type":"TYPEV2_R","valueS":"asd","newField":"newValue"}`)
+	// Should fail, unknown field
+	wt5 := &GoV2{}
+	err = pc.FromPayload(payload, &wt5)
+	require.Error(t, err)
+
+	// Shouldn't fail, unknown fields are allowed
+	pc = NewProtoJSONPayloadConverterWithOptions(ProtoJSONPayloadConverterOptions{
+		AllowUnknownFields: true,
+	})
+	wt6 := &GoV2{}
+	err = pc.FromPayload(payload, &wt6)
+	require.NoError(t, err)
 }
 
 func TestProtoPayloadConverter_Gogo(t *testing.T) {
