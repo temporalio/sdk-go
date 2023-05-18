@@ -10,7 +10,7 @@ require (
 	github.com/uber-go/tally/v4 v4.1.1
 	go.opentelemetry.io/otel/sdk v1.2.0
 	go.opentelemetry.io/otel/trace v1.2.0
-	go.temporal.io/api v1.19.1-0.20230322213042-07fb271d475b
+	go.temporal.io/api v1.19.1-0.20230516232653-2ede2aba9553
 	go.temporal.io/sdk v1.12.0
 	go.temporal.io/sdk/contrib/opentelemetry v0.1.0
 	go.temporal.io/sdk/contrib/opentracing v0.0.0-00010101000000-000000000000
