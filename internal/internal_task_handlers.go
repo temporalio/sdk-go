@@ -278,7 +278,9 @@ func isCommandEvent(eventType enumspb.EventType) bool {
 		enumspb.EVENT_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED,
 		enumspb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED,
 		enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES,
-		enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED:
+		enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED,
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED:
 		return true
 	default:
 		return false
@@ -868,6 +870,7 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 
 	eventHandler := w.getEventHandler()
 	reorderedHistory := newHistory(workflowTask, eventHandler)
+	var replayOutbox []outboxEntry
 	var replayCommands []*commandpb.Command
 	var respondEvents []*historypb.HistoryEvent
 
@@ -993,8 +996,11 @@ ProcessEvents:
 		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
 		if isReplay {
 			eventCommands := eventHandler.commandsHelper.getCommands(true)
-			if len(eventCommands) > 0 && !skipReplayCheck {
+			eventOutbox := eventHandler.outbox
+			eventHandler.outbox = nil
+			if !skipReplayCheck {
 				replayCommands = append(replayCommands, eventCommands...)
+				replayOutbox = append(replayOutbox, eventOutbox...)
 			}
 		}
 	}
@@ -1014,7 +1020,7 @@ ProcessEvents:
 	var workflowError error
 	if !skipReplayCheck && (!w.isWorkflowCompleted || shouldForceReplayCheck()) {
 		// check if commands from reply matches to the history events
-		if err := matchReplayWithHistory(replayCommands, respondEvents); err != nil {
+		if err := matchReplayWithHistory(replayCommands, respondEvents, replayOutbox); err != nil {
 			workflowError = err
 			w.err = err
 		}
@@ -1178,7 +1184,7 @@ func (w *workflowExecutionContextImpl) CompleteWorkflowTask(workflowTask *workfl
 		w.newCommands = append(w.newCommands, eventCommands...)
 	}
 
-	eventHandler.drainOutbox(&w.newMessages)
+	eventHandler.drainOutboxMessages(&w.newMessages)
 	eventHandler.protocols.ClearCompleted()
 
 	completeRequest := w.wth.completeWorkflow(eventHandler, w.currentWorkflowTask, w, w.newCommands, w.newMessages, !waitLocalActivities)
@@ -1283,7 +1289,7 @@ func skipDeterministicCheckForUpsertChangeVersion(events []*historypb.HistoryEve
 	return false
 }
 
-func matchReplayWithHistory(replayCommands []*commandpb.Command, historyEvents []*historypb.HistoryEvent) error {
+func matchReplayWithHistory(replayCommands []*commandpb.Command, historyEvents []*historypb.HistoryEvent, msgs []outboxEntry) error {
 	di := 0
 	hi := 0
 	hSize := len(historyEvents)
@@ -1320,7 +1326,7 @@ matchLoop:
 			return historyMismatchErrorf("nondeterministic workflow: extra replay command for %s", util.CommandToString(d))
 		}
 
-		if !isCommandMatchEvent(d, e) {
+		if !isCommandMatchEvent(d, e, msgs) {
 			return historyMismatchErrorf("nondeterministic workflow: history event is %s, replay command is %s",
 				util.HistoryEventToString(e), util.CommandToString(d))
 		}
@@ -1339,8 +1345,17 @@ func lastPartOfName(name string) string {
 	return name[lastDotIdx+1:]
 }
 
-func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent) bool {
+func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, obes []outboxEntry) bool {
 	switch d.GetCommandType() {
+	case enumspb.COMMAND_TYPE_PROTOCOL_MESSAGE:
+		msgid := d.GetProtocolMessageCommandAttributes().GetMessageId()
+		for _, entry := range obes {
+			if entry.msg.Id == msgid {
+				return entry.eventPredicate(e)
+			}
+		}
+		return false
+
 	case enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK:
 		if e.GetEventType() != enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED {
 			return false

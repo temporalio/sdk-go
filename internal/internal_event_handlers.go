@@ -101,12 +101,24 @@ type (
 		handled  bool
 	}
 
+	sendCfg struct {
+		addCmd bool
+		pred   func(*historypb.HistoryEvent) bool
+	}
+
+	msgSendOpt func(so *sendCfg)
+
+	outboxEntry struct {
+		eventPredicate func(*historypb.HistoryEvent) bool
+		msg            *protocolpb.Message
+	}
+
 	// workflowEnvironmentImpl an implementation of WorkflowEnvironment represents a environment for workflow execution.
 	workflowEnvironmentImpl struct {
 		workflowInfo *WorkflowInfo
 
 		commandsHelper             *commandsHelper
-		outbox                     []*protocolpb.Message
+		outbox                     []outboxEntry
 		sideEffectResult           map[int64]*commonpb.Payloads
 		changeVersions             map[string]Version
 		pendingLaTasks             map[string]*localActivityTask
@@ -302,8 +314,10 @@ func (s *scheduledSignal) handle(result *commonpb.Payloads, err error) {
 	s.callback(result, err)
 }
 
-func (wc *workflowEnvironmentImpl) drainOutbox(sink *[]*protocolpb.Message) {
-	*sink = append(*sink, wc.outbox...)
+func (wc *workflowEnvironmentImpl) drainOutboxMessages(sink *[]*protocolpb.Message) {
+	for _, entry := range wc.outbox {
+		*sink = append(*sink, entry.msg)
+	}
 	wc.outbox = nil
 }
 
@@ -311,8 +325,25 @@ func (wc *workflowEnvironmentImpl) ScheduleUpdate(name string, args *commonpb.Pa
 	wc.updateHandler(name, args, hdr, callbacks)
 }
 
-func (wc *workflowEnvironmentImpl) Send(msg *protocolpb.Message) {
-	wc.outbox = append(wc.outbox, msg)
+func withExpectedEventPredicate(pred func(*historypb.HistoryEvent) bool) msgSendOpt {
+	return func(so *sendCfg) {
+		so.addCmd = true
+		so.pred = pred
+	}
+}
+
+func (wc *workflowEnvironmentImpl) Send(msg *protocolpb.Message, opts ...msgSendOpt) {
+	sendCfg := sendCfg{
+		pred: func(*historypb.HistoryEvent) bool { return false },
+	}
+	for _, opt := range opts {
+		opt(&sendCfg)
+	}
+
+	if sendCfg.addCmd {
+		wc.commandsHelper.addProtocolMessage(msg.Id)
+	}
+	wc.outbox = append(wc.outbox, outboxEntry{msg: msg, eventPredicate: sendCfg.pred})
 }
 
 func (wc *workflowEnvironmentImpl) getNextLocalActivityID() string {

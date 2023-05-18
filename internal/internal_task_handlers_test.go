@@ -1624,14 +1624,13 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 func Test_NonDeterministicCheck(t *testing.T) {
 	unimplementedCommands := []int32{
 		int32(enumspb.COMMAND_TYPE_UNSPECIFIED),
-		int32(enumspb.COMMAND_TYPE_PROTOCOL_MESSAGE),
 	}
 	commandTypes := enumspb.CommandType_name
 	for _, cmd := range unimplementedCommands {
 		delete(commandTypes, cmd)
 	}
 
-	require.Equal(t, 14, len(commandTypes), "If you see this error, you are adding new command type. "+
+	require.Equal(t, 15, len(commandTypes), "If you see this error, you are adding new command type. "+
 		"Before updating the number to make this test pass, please make sure you update isCommandMatchEvent() method "+
 		"to check the new command type. Otherwise the replay will fail on the new command event.")
 
@@ -1642,7 +1641,7 @@ func Test_NonDeterministicCheck(t *testing.T) {
 			commandEventTypeCount++
 		}
 	}
-	require.Equal(t, len(commandTypes), commandEventTypeCount, "Every command type must have one matching event type. "+
+	require.Equal(t, 16, commandEventTypeCount, "Every command type must have at least one matching event type. "+
 		"If you add new command type, you need to update isCommandEvent() method to include that new event type as well.")
 }
 
@@ -1654,6 +1653,7 @@ func Test_IsCommandMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 		name     string
 		command  *commandpb.Command
 		event    *historypb.HistoryEvent
+		msgs     []outboxEntry
 		expected bool
 	}{
 		{
@@ -1701,7 +1701,61 @@ func Test_IsCommandMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			require.Equal(t, testCase.expected, isCommandMatchEvent(testCase.command, testCase.event))
+			require.Equal(t, testCase.expected, isCommandMatchEvent(testCase.command, testCase.event, testCase.msgs))
+		})
+	}
+}
+
+func Test_ProtocolCommandEventMatching(t *testing.T) {
+	msgID := t.Name() + "-msg-id"
+	cmd := &commandpb.Command{
+		CommandType: enumspb.COMMAND_TYPE_PROTOCOL_MESSAGE,
+		Attributes: &commandpb.Command_ProtocolMessageCommandAttributes{
+			ProtocolMessageCommandAttributes: &commandpb.ProtocolMessageCommandAttributes{
+				MessageId: msgID,
+			},
+		},
+	}
+	for _, tc := range [...]struct {
+		name  string
+		event *historypb.HistoryEvent
+		msgs  []outboxEntry
+		want  bool
+	}{
+		{
+			name:  "no matching message ID",
+			event: nil,
+			msgs: []outboxEntry{
+				{msg: &protocolpb.Message{Id: "not the same msg ID"}},
+				{msg: &protocolpb.Message{Id: "also not the same msg ID"}},
+			},
+			want: false,
+		},
+		{
+			name:  "predicate rejects event",
+			event: &historypb.HistoryEvent{},
+			msgs: []outboxEntry{
+				{
+					msg:            &protocolpb.Message{Id: msgID},
+					eventPredicate: func(*historypb.HistoryEvent) bool { return false },
+				},
+			},
+			want: false,
+		},
+		{
+			name:  "predicate accepts event",
+			event: &historypb.HistoryEvent{},
+			msgs: []outboxEntry{
+				{
+					msg:            &protocolpb.Message{Id: msgID},
+					eventPredicate: func(*historypb.HistoryEvent) bool { return true },
+				},
+			},
+			want: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, isCommandMatchEvent(cmd, tc.event, tc.msgs))
 		})
 	}
 }
@@ -1780,6 +1834,7 @@ func Test_IsCommandMatchEvent_ModifyWorkflowProperties(t *testing.T) {
 		name     string
 		command  *commandpb.Command
 		event    *historypb.HistoryEvent
+		msgs     []outboxEntry
 		expected bool
 	}{
 		{
@@ -1842,7 +1897,7 @@ func Test_IsCommandMatchEvent_ModifyWorkflowProperties(t *testing.T) {
 				require.Equal(
 					t,
 					testCase.expected,
-					isCommandMatchEvent(testCase.command, testCase.event),
+					isCommandMatchEvent(testCase.command, testCase.event, testCase.msgs),
 				)
 			},
 		)
