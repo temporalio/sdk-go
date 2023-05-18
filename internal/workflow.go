@@ -297,6 +297,11 @@ type (
 		// ParentClosePolicy - Optional policy to decide what to do for the child.
 		// Default is Terminate (if onboarded to this feature)
 		ParentClosePolicy enumspb.ParentClosePolicy
+
+		// UseLatestBuildID - If true, and this worker is using build ID based versioning, then the
+		// child will execute on whatever the latest/default build ID is for the queue rather than
+		// staying within the compatible set of this worker which is the default behavior.
+		UseLatestBuildID bool
 	}
 
 	// RegisterWorkflowOptions consists of options for registering a workflow
@@ -891,6 +896,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 	options.ContextPropagators = workflowOptionsFromCtx.ContextPropagators
 	options.Memo = workflowOptionsFromCtx.Memo
 	options.SearchAttributes = workflowOptionsFromCtx.SearchAttributes
+	options.UseLatestBuildID = workflowOptionsFromCtx.UseLatestBuildID
 
 	header, err := workflowHeaderPropagated(ctx, options.ContextPropagators)
 	if err != nil {
@@ -1300,6 +1306,7 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.Memo = cwo.Memo
 	wfOptions.SearchAttributes = cwo.SearchAttributes
 	wfOptions.ParentClosePolicy = cwo.ParentClosePolicy
+	wfOptions.UseLatestBuildID = cwo.UseLatestBuildID
 
 	return ctx1
 }
@@ -1324,6 +1331,7 @@ func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 		Memo:                     opts.Memo,
 		SearchAttributes:         opts.SearchAttributes,
 		ParentClosePolicy:        opts.ParentClosePolicy,
+		UseLatestBuildID:         opts.UseLatestBuildID,
 	}
 }
 
@@ -1773,6 +1781,7 @@ func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	eap.ActivityID = options.ActivityID
 	eap.RetryPolicy = convertToPBRetryPolicy(options.RetryPolicy)
 	eap.DisableEagerExecution = options.DisableEagerExecution
+	eap.UseLatestBuildID = options.UseLatestBuildID
 	return ctx1
 }
 
@@ -1828,6 +1837,7 @@ func GetActivityOptions(ctx Context) ActivityOptions {
 		ActivityID:             opts.ActivityID,
 		RetryPolicy:            convertFromPBRetryPolicy(opts.RetryPolicy),
 		DisableEagerExecution:  opts.DisableEagerExecution,
+		UseLatestBuildID:       opts.UseLatestBuildID,
 	}
 }
 
