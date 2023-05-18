@@ -1024,14 +1024,15 @@ func (wc *WorkflowClient) UpdateWorkflowWithOptions(
 		return nil, err
 	}
 	// Default update ID
-	if req.UpdateID == "" {
-		req.UpdateID = uuid.New()
+	updateID := req.UpdateID
+	if updateID == "" {
+		updateID = uuid.New()
 	}
 
 	ctx = contextWithNewHeader(ctx)
 
 	return wc.interceptor.UpdateWorkflow(ctx, &ClientUpdateWorkflowInput{
-		UpdateID:            req.UpdateID,
+		UpdateID:            updateID,
 		WorkflowID:          req.WorkflowID,
 		UpdateName:          req.UpdateName,
 		Args:                req.Args,
