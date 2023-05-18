@@ -1596,6 +1596,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			Memo:                workflowContext.workflowInfo.Memo,
 			SearchAttributes:    workflowContext.workflowInfo.SearchAttributes,
 			RetryPolicy:         convertToPBRetryPolicy(workflowContext.workflowInfo.RetryPolicy),
+			UseLatestBuildId:    contErr.UseLatestBuildID,
 		}}
 	} else if workflowContext.err != nil {
 		// Workflow failures

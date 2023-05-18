@@ -539,6 +539,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.Header = params.Header
 	attributes.Memo = memo
 	attributes.SearchAttributes = searchAttr
+	attributes.UseLatestBuildId = params.UseLatestBuildID
 	if len(params.CronSchedule) > 0 {
 		attributes.CronSchedule = params.CronSchedule
 	}
@@ -640,6 +641,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	// false just before request by the eager activity executor if eager activity
 	// execution is otherwise disallowed
 	scheduleTaskAttr.RequestEagerExecution = !parameters.DisableEagerExecution
+	scheduleTaskAttr.UseLatestBuildId = parameters.UseLatestBuildID
 
 	command := wc.commandsHelper.scheduleActivityTask(scheduleID, scheduleTaskAttr)
 	command.setData(&scheduledActivity{

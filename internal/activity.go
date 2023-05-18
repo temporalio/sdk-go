@@ -145,6 +145,11 @@ type (
 		// activities directly from the workflow task back to this worker which is
 		// faster than non-eager which may be dispatched to a separate worker.
 		DisableEagerExecution bool
+
+		// UseLatestBuildID - If true, and this worker is using build ID based versioning, then the
+		// activity will execute on whatever the latest/default build ID is for the queue rather
+		// than staying within the compatible set of this worker which is the default behavior.
+		UseLatestBuildID bool
 	}
 
 	// LocalActivityOptions stores local activity specific parameters that will be stored inside of a context.
@@ -208,9 +213,11 @@ func GetWorkerStopChannel(ctx context.Context) <-chan struct{} {
 // RecordActivityHeartbeat sends heartbeat for the currently executing activity
 // If the activity is either canceled (or) workflow/activity doesn't exist then we would cancel
 // the context with error context.Canceled.
-//  TODO: we don't have a way to distinguish between the two cases when context is canceled because
-//  context doesn't support overriding value of ctx.Error.
-//  TODO: Implement automatic heartbeating with cancellation through ctx.
+//
+//	TODO: we don't have a way to distinguish between the two cases when context is canceled because
+//	context doesn't support overriding value of ctx.Error.
+//	TODO: Implement automatic heartbeating with cancellation through ctx.
+//
 // details - the details that you provided here can be seen in the workflow when it receives TimeoutError, you
 // can check error TimeoutType()/Details().
 func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
