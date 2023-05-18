@@ -60,23 +60,29 @@ func (ts *WorkerVersioningTestSuite) SetupTest() {
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
 }
 
-func (ts *WorkerVersioningTestSuite) TestManipulateVersionGraph() {
+func (ts *WorkerVersioningTestSuite) TestManipulateVersionSets() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	err := ts.client.UpdateWorkerBuildIdCompatibility(ctx, &client.UpdateWorkerBuildIdCompatibilityOptions{
-		TaskQueue:     ts.taskQueueName,
-		WorkerBuildID: "1.0",
+		TaskQueue: ts.taskQueueName,
+		Operation: &client.BuildIDOpAddNewIDInNewDefaultSet{
+			BuildID: "1.0",
+		},
 	})
 	ts.NoError(err)
 	err = ts.client.UpdateWorkerBuildIdCompatibility(ctx, &client.UpdateWorkerBuildIdCompatibilityOptions{
-		TaskQueue:     ts.taskQueueName,
-		WorkerBuildID: "2.0",
+		TaskQueue: ts.taskQueueName,
+		Operation: &client.BuildIDOpAddNewIDInNewDefaultSet{
+			BuildID: "2.0",
+		},
 	})
 	ts.NoError(err)
 	err = ts.client.UpdateWorkerBuildIdCompatibility(ctx, &client.UpdateWorkerBuildIdCompatibilityOptions{
-		TaskQueue:         ts.taskQueueName,
-		WorkerBuildID:     "1.1",
-		CompatibleBuildID: "1.0",
+		TaskQueue: ts.taskQueueName,
+		Operation: &client.BuildIDOpAddNewCompatibleVersion{
+			BuildID:                   "1.1",
+			ExistingCompatibleBuildId: "1.0",
+		},
 	})
 	ts.NoError(err)
 
@@ -94,16 +100,18 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {
 	defer cancel()
 
 	err := ts.client.UpdateWorkerBuildIdCompatibility(ctx, &client.UpdateWorkerBuildIdCompatibilityOptions{
-		TaskQueue:     ts.taskQueueName,
-		WorkerBuildID: "1.0",
+		TaskQueue: ts.taskQueueName,
+		Operation: &client.BuildIDOpAddNewIDInNewDefaultSet{
+			BuildID: "1.0",
+		},
 	})
 	ts.NoError(err)
 
-	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildIDForVersioning: "1.0"})
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "1.0", UseBuildIDForVersioning: true})
 	ts.workflows.register(worker1)
 	ts.NoError(worker1.Start())
 	defer worker1.Stop()
-	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildIDForVersioning: "2.0"})
+	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "2.0", UseBuildIDForVersioning: true})
 	ts.workflows.register(worker2)
 	ts.NoError(worker2.Start())
 	defer worker2.Stop()
@@ -116,8 +124,10 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {
 
 	// Now add the 2.0 version
 	err = ts.client.UpdateWorkerBuildIdCompatibility(ctx, &client.UpdateWorkerBuildIdCompatibilityOptions{
-		TaskQueue:     ts.taskQueueName,
-		WorkerBuildID: "2.0",
+		TaskQueue: ts.taskQueueName,
+		Operation: &client.BuildIDOpAddNewIDInNewDefaultSet{
+			BuildID: "2.0",
+		},
 	})
 	ts.NoError(err)
 

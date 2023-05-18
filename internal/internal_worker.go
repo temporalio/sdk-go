@@ -167,6 +167,8 @@ type (
 
 		// The worker's build ID used for versioning, if one was set.
 		WorkerBuildID string
+		// If true the worker is option in to build ID based versioning.
+		UseBuildIDForVersioning bool
 
 		MetricsHandler metrics.Handler
 
@@ -1515,7 +1517,8 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		ConcurrentWorkflowTaskExecutionSize:   options.MaxConcurrentWorkflowTaskExecutionSize,
 		MaxConcurrentWorkflowTaskQueuePollers: options.MaxConcurrentWorkflowTaskPollers,
 		Identity:                              client.identity,
-		WorkerBuildID:                         options.BuildIDForVersioning,
+		WorkerBuildID:                         options.BuildID,
+		UseBuildIDForVersioning:               options.UseBuildIDForVersioning,
 		MetricsHandler:                        client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue)),
 		Logger:                                client.logger,
 		EnableLoggingInReplay:                 options.EnableLoggingInReplay,
