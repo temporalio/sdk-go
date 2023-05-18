@@ -228,11 +228,17 @@ type (
 		// workflow or activities.
 		DisableRegistrationAliasing bool
 
-		// Optional: If set, opts this worker into the worker build id based versioning
-		// feature. It will only operate on workflows it claims to be compatible with.
-		// Additionally, if this is set it will serve as the binary checksum for the worker.
+		// Assign a BuildID to this worker. This replaces the deprecated binary checksum concept,
+		// and is used to provide a unique identifier for a set of worker code, and is necessary
+		// to opt in to the Worker Versioning feature. See UseBuildIDForVersioning.
 		// NOTE: Experimental
-		BuildIDForVersioning string
+		BuildID string
+
+		// Optional: If set, opts this worker into the Worker Versioning feature. It will only
+		// operate on workflows it claims to be compatible with. You must set BuildID if this flag
+		// is true.
+		// NOTE: Experimental
+		UseBuildIDForVersioning bool
 	}
 )
 
