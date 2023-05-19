@@ -81,7 +81,7 @@ var runOnCallingThread = &testUpdateScheduler{
 	YieldImpl: func(Context, string) {},
 }
 
-func TestUpdateHandlerPanicSafety(t *testing.T) {
+func TestUpdateHandlerPanicsPropagate(t *testing.T) {
 	t.Parallel()
 
 	env := &workflowEnvironmentImpl{
@@ -99,14 +99,12 @@ func TestUpdateHandlerPanicSafety(t *testing.T) {
 	in := UpdateInput{Name: t.Name(), Args: []interface{}{}}
 
 	t.Run("ValidateUpdate", func(t *testing.T) {
-		err := interceptor.inboundInterceptor.ValidateUpdate(ctx, &in)
-		var panicErr *PanicError
-		require.ErrorAs(t, err, &panicErr)
+		defer func() { require.NotNil(t, recover(), "expected a panic") }()
+		_ = interceptor.inboundInterceptor.ValidateUpdate(ctx, &in)
 	})
 	t.Run("ExecuteUpdate", func(t *testing.T) {
-		_, err := interceptor.inboundInterceptor.ExecuteUpdate(ctx, &in)
-		var panicErr *PanicError
-		require.ErrorAs(t, err, &panicErr)
+		defer func() { require.NotNil(t, recover(), "expected a panic") }()
+		_, _ = interceptor.inboundInterceptor.ExecuteUpdate(ctx, &in)
 	})
 }
 

@@ -317,28 +317,14 @@ func newUpdateHandler(
 	}, nil
 }
 
-// validate invokes the update's validation function and maps panics to errors.
+// validate invokes the update's validation function.
 func (h *updateHandler) validate(ctx Context, input []interface{}) (err error) {
-	defer func() {
-		if p := recover(); p != nil {
-			st := getStackTraceRaw("update validator [panic]:", 7, 0)
-			err = newPanicError(fmt.Sprintf("update validator panic: %v", p), st)
-		}
-	}()
 	_, err = executeFunctionWithWorkflowContext(ctx, h.validateFn, input)
 	return err
 }
 
-// execute executes the update itself and maps panics to errors.
+// execute executes the update itself.
 func (h *updateHandler) execute(ctx Context, input []interface{}) (result interface{}, err error) {
-	defer func() {
-		if p := recover(); p != nil {
-			result = nil
-			st := getStackTraceRaw("update handler [panic]:", 7, 0)
-			err = newPanicError(fmt.Sprintf("update handler panic: %v", p), st)
-		}
-	}()
-
 	return executeFunctionWithWorkflowContext(ctx, h.fn, input)
 }
 
