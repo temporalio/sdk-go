@@ -870,7 +870,7 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 
 	eventHandler := w.getEventHandler()
 	reorderedHistory := newHistory(workflowTask, eventHandler)
-	var replayOutbox []outboxEntry
+	var replayOutbox outbox
 	var replayCommands []*commandpb.Command
 	var respondEvents []*historypb.HistoryEvent
 
@@ -904,14 +904,14 @@ ProcessEvents:
 		if len(reorderedEvents) == 0 {
 			break ProcessEvents
 		}
+		eventHandler.sdkFlags.set(flags...)
+
 		if binaryChecksum == "" {
 			w.workflowInfo.BinaryChecksum = w.wth.getBuildID()
 		} else {
 			w.workflowInfo.BinaryChecksum = binaryChecksum
 		}
-		for _, flag := range flags {
-			_ = eventHandler.sdkFlags.tryUse(flag, true)
-		}
+
 		// Reset the mutable side effect markers recorded
 		eventHandler.mutableSideEffectsRecorded = nil
 		// Markers are from the events that are produced from the current workflow task.
@@ -996,8 +996,8 @@ ProcessEvents:
 		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
 		if isReplay {
 			eventCommands := eventHandler.commandsHelper.getCommands(true)
-			eventOutbox := eventHandler.outbox
-			eventHandler.outbox = nil
+			var eventOutbox outbox
+			eventHandler.outbox.swap(&eventOutbox)
 			if !skipReplayCheck {
 				replayCommands = append(replayCommands, eventCommands...)
 				replayOutbox = append(replayOutbox, eventOutbox...)
@@ -1020,7 +1020,7 @@ ProcessEvents:
 	var workflowError error
 	if !skipReplayCheck && (!w.isWorkflowCompleted || shouldForceReplayCheck()) {
 		// check if commands from reply matches to the history events
-		if err := matchReplayWithHistory(replayCommands, respondEvents, replayOutbox); err != nil {
+		if err := matchReplayWithHistory(replayCommands, respondEvents, replayOutbox, w.getEventHandler().sdkFlags); err != nil {
 			workflowError = err
 			w.err = err
 		}
@@ -1184,7 +1184,7 @@ func (w *workflowExecutionContextImpl) CompleteWorkflowTask(workflowTask *workfl
 		w.newCommands = append(w.newCommands, eventCommands...)
 	}
 
-	eventHandler.drainOutboxMessages(&w.newMessages)
+	eventHandler.outbox.drain(&w.newMessages)
 	eventHandler.protocols.ClearCompleted()
 
 	completeRequest := w.wth.completeWorkflow(eventHandler, w.currentWorkflowTask, w, w.newCommands, w.newMessages, !waitLocalActivities)
@@ -1243,7 +1243,7 @@ func (w *workflowExecutionContextImpl) ResetIfStale(task *workflowservice.PollWo
 	return nil
 }
 
-func skipDeterministicCheckForCommand(d *commandpb.Command) bool {
+func skipDeterministicCheckForCommand(d *commandpb.Command, _ *sdkFlags) bool {
 	switch d.GetCommandType() {
 	case enumspb.COMMAND_TYPE_RECORD_MARKER:
 		markerName := d.GetRecordMarkerCommandAttributes().GetMarkerName()
@@ -1254,7 +1254,7 @@ func skipDeterministicCheckForCommand(d *commandpb.Command) bool {
 	return false
 }
 
-func skipDeterministicCheckForEvent(e *historypb.HistoryEvent) bool {
+func skipDeterministicCheckForEvent(e *historypb.HistoryEvent, sdkFlags *sdkFlags) bool {
 	switch e.GetEventType() {
 	case enumspb.EVENT_TYPE_MARKER_RECORDED:
 		markerName := e.GetMarkerRecordedEventAttributes().GetMarkerName()
@@ -1271,6 +1271,10 @@ func skipDeterministicCheckForEvent(e *historypb.HistoryEvent) bool {
 		return true
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
 		return true
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED:
+		protocolMsgCommandInUse := sdkFlags.tryUse(SDKFlagProtocolMessageCommand, false)
+		return !protocolMsgCommandInUse
 	}
 	return false
 }
@@ -1289,7 +1293,12 @@ func skipDeterministicCheckForUpsertChangeVersion(events []*historypb.HistoryEve
 	return false
 }
 
-func matchReplayWithHistory(replayCommands []*commandpb.Command, historyEvents []*historypb.HistoryEvent, msgs []outboxEntry) error {
+func matchReplayWithHistory(
+	replayCommands []*commandpb.Command,
+	historyEvents []*historypb.HistoryEvent,
+	msgs []outboxEntry,
+	sdkFlags *sdkFlags,
+) error {
 	di := 0
 	hi := 0
 	hSize := len(historyEvents)
@@ -1303,7 +1312,7 @@ matchLoop:
 				hi += 2
 				continue matchLoop
 			}
-			if skipDeterministicCheckForEvent(e) {
+			if skipDeterministicCheckForEvent(e, sdkFlags) {
 				hi++
 				continue matchLoop
 			}
@@ -1312,7 +1321,7 @@ matchLoop:
 		var d *commandpb.Command
 		if di < dSize {
 			d = replayCommands[di]
-			if skipDeterministicCheckForCommand(d) {
+			if skipDeterministicCheckForCommand(d, sdkFlags) {
 				di++
 				continue matchLoop
 			}

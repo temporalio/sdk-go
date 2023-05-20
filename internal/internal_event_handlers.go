@@ -113,12 +113,14 @@ type (
 		msg            *protocolpb.Message
 	}
 
+	outbox []outboxEntry
+
 	// workflowEnvironmentImpl an implementation of WorkflowEnvironment represents a environment for workflow execution.
 	workflowEnvironmentImpl struct {
 		workflowInfo *WorkflowInfo
 
 		commandsHelper             *commandsHelper
-		outbox                     []outboxEntry
+		outbox                     outbox
 		sideEffectResult           map[int64]*commonpb.Payloads
 		changeVersions             map[string]Version
 		pendingLaTasks             map[string]*localActivityTask
@@ -314,11 +316,15 @@ func (s *scheduledSignal) handle(result *commonpb.Payloads, err error) {
 	s.callback(result, err)
 }
 
-func (wc *workflowEnvironmentImpl) drainOutboxMessages(sink *[]*protocolpb.Message) {
-	for _, entry := range wc.outbox {
+func (o *outbox) drain(sink *[]*protocolpb.Message) {
+	for _, entry := range *o {
 		*sink = append(*sink, entry.msg)
 	}
-	wc.outbox = nil
+	*o = nil
+}
+
+func (o *outbox) swap(other *outbox) {
+	*o, *other = *other, *o
 }
 
 func (wc *workflowEnvironmentImpl) ScheduleUpdate(name string, args *commonpb.Payloads, hdr *commonpb.Header, callbacks UpdateCallbacks) {
@@ -339,8 +345,8 @@ func (wc *workflowEnvironmentImpl) Send(msg *protocolpb.Message, opts ...msgSend
 	for _, opt := range opts {
 		opt(&sendCfg)
 	}
-
-	if sendCfg.addCmd {
+	canSendCmd := wc.sdkFlags.tryUse(SDKFlagProtocolMessageCommand, !wc.isReplay)
+	if canSendCmd && sendCfg.addCmd {
 		wc.commandsHelper.addProtocolMessage(msg.Id)
 	}
 	wc.outbox = append(wc.outbox, outboxEntry{msg: msg, eventPredicate: sendCfg.pred})

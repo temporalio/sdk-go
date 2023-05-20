@@ -34,6 +34,7 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
 	updatepb "go.temporal.io/api/update/v1"
+	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/protocol"
 )
@@ -82,10 +83,15 @@ var runOnCallingThread = &testUpdateScheduler{
 	YieldImpl: func(Context, string) {},
 }
 
+var testSDKFlags = newSDKFlags(
+	&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: true},
+)
+
 func TestUpdateHandlerPanicsPropagate(t *testing.T) {
 	t.Parallel()
 
 	env := &workflowEnvironmentImpl{
+		sdkFlags:       testSDKFlags,
 		commandsHelper: newCommandsHelper(),
 		dataConverter:  converter.GetDefaultDataConverter(),
 		workflowInfo: &WorkflowInfo{
@@ -158,6 +164,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	t.Parallel()
 	dc := converter.GetDefaultDataConverter()
 	env := &workflowEnvironmentImpl{
+		sdkFlags:       testSDKFlags,
 		commandsHelper: newCommandsHelper(),
 		dataConverter:  dc,
 		workflowInfo: &WorkflowInfo{
@@ -325,6 +332,7 @@ func TestInvalidUpdateStateTransitions(t *testing.T) {
 		Body:               protocol.MustMarshalAny(&updatepb.Request{}),
 	}
 	env := &workflowEnvironmentImpl{
+		sdkFlags:       testSDKFlags,
 		commandsHelper: newCommandsHelper(),
 		dataConverter:  converter.GetDefaultDataConverter(),
 	}
@@ -393,6 +401,7 @@ func TestCompletedEventPredicate(t *testing.T) {
 		Body:               protocol.MustMarshalAny(&updatepb.Request{}),
 	}
 	env := &workflowEnvironmentImpl{
+		sdkFlags:       testSDKFlags,
 		commandsHelper: newCommandsHelper(),
 		dataConverter:  converter.GetDefaultDataConverter(),
 	}
@@ -434,6 +443,7 @@ func TestAcceptedEventPredicate(t *testing.T) {
 		Body:               protocol.MustMarshalAny(&request),
 	}
 	env := &workflowEnvironmentImpl{
+		sdkFlags:       testSDKFlags,
 		commandsHelper: newCommandsHelper(),
 		dataConverter:  converter.GetDefaultDataConverter(),
 	}
