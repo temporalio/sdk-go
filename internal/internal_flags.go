@@ -94,6 +94,16 @@ func (sf *sdkFlags) tryUse(flag sdkFlag, record bool) bool {
 	}
 }
 
+// set marks a flag as in current use regardless of replay status.
+func (sf *sdkFlags) set(flags ...sdkFlag) {
+	if !sf.capabilities.GetSdkMetadata() {
+		return
+	}
+	for _, flag := range flags {
+		sf.currentFlags[flag] = true
+	}
+}
+
 // markSDKFlagsSent marks all sdk flags as sent to the server.
 func (sf *sdkFlags) markSDKFlagsSent() {
 	for flag := range sf.newFlags {
