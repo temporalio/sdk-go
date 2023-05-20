@@ -68,10 +68,10 @@ type (
 // Validates and converts the user's options into the proto request. Namespace must be attached afterward.
 func (uw *UpdateWorkerBuildIdCompatibilityOptions) validateAndConvertToProto() (*workflowservice.UpdateWorkerBuildIdCompatibilityRequest, error) {
 	if uw.TaskQueue == "" {
-		return nil, errors.New("TaskQueue is required")
+		return nil, errors.New("missing TaskQueue field")
 	}
 	if uw.Operation.targetedBuildId() == "" {
-		return nil, errors.New("Operation BuildID field is required")
+		return nil, errors.New("missing Operation BuildID field")
 	}
 	req := &workflowservice.UpdateWorkerBuildIdCompatibilityRequest{
 		TaskQueue: uw.TaskQueue,
@@ -85,7 +85,7 @@ func (uw *UpdateWorkerBuildIdCompatibilityOptions) validateAndConvertToProto() (
 
 	case *UpdateBuildIDOpNewCompatibleVersion:
 		if v.ExistingCompatibleBuildId == "" {
-			return nil, errors.New("ExistingCompatibleBuildId is required")
+			return nil, errors.New("missing ExistingCompatibleBuildId")
 		}
 		req.Operation = &workflowservice.UpdateWorkerBuildIdCompatibilityRequest_AddNewCompatibleBuildId{
 			AddNewCompatibleBuildId: &workflowservice.UpdateWorkerBuildIdCompatibilityRequest_AddNewCompatibleVersion{
