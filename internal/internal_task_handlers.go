@@ -127,6 +127,7 @@ type (
 		logger                   log.Logger
 		identity                 string
 		workerBuildID            string
+		useBuildIDForVersioning  bool
 		enableLoggingInReplay    bool
 		registry                 *registry
 		laTunnel                 *localActivityTunnel
@@ -418,6 +419,7 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		metricsHandler:           params.MetricsHandler,
 		identity:                 params.Identity,
 		workerBuildID:            params.WorkerBuildID,
+		useBuildIDForVersioning:  params.UseBuildIDForVersioning,
 		enableLoggingInReplay:    params.EnableLoggingInReplay,
 		registry:                 registry,
 		workflowPanicPolicy:      params.WorkflowPanicPolicy,
@@ -1643,7 +1645,8 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	}
 	if wth.workerBuildID != "" {
 		builtRequest.WorkerVersionStamp = &commonpb.WorkerVersionStamp{
-			BuildId: wth.workerBuildID,
+			BuildId:       wth.workerBuildID,
+			UseVersioning: wth.useBuildIDForVersioning,
 		}
 	}
 	return builtRequest
