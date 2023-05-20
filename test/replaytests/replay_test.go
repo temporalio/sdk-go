@@ -291,6 +291,14 @@ func (s *replayTestSuite) TestVersionLoopWorkflow() {
 	require.NoError(s.T(), err)
 }
 
+func (s *replayTestSuite) TestVersionLoopWorkflowTaskWorkflow() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(VersionLoopWorkflowMultipleTasks)
+	// Verify we can replay a workflow with SDK flags and multiple workflow tasks
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "workflow_loop_task.json")
+	require.NoError(s.T(), err)
+}
+
 func (s *replayTestSuite) TestUnkownSDKFlag() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflow(VersionLoopWorkflow)

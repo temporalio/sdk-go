@@ -263,6 +263,17 @@ func VersionLoopWorkflow(ctx workflow.Context, changeID string, iterations int) 
 	return workflow.Sleep(ctx, time.Second)
 }
 
+func VersionLoopWorkflowMultipleTasks(ctx workflow.Context, changeID string, iterations int) error {
+	for i := 0; i < iterations; i++ {
+		workflow.GetVersion(ctx, fmt.Sprintf("%s:%d", changeID, i), workflow.DefaultVersion, 1)
+		err := workflow.Sleep(ctx, time.Millisecond)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func ChildWorkflowWaitOnSignal(ctx workflow.Context) error {
 	workflow.GetSignalChannel(ctx, "unblock").Receive(ctx, nil)
 	return nil
