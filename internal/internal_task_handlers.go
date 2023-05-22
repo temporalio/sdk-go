@@ -890,7 +890,6 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 	eventHandler.ResetLAWFTAttemptCounts()
 	eventHandler.sdkFlags.markSDKFlagsSent()
 
-	// Process events
 ProcessEvents:
 	for {
 		reorderedEvents, markers, binaryChecksum, flags, err := reorderedHistory.NextCommandEvents()
@@ -898,6 +897,7 @@ ProcessEvents:
 			return nil, err
 		}
 
+		eventHandler.sdkFlags.set(flags...)
 		if len(reorderedEvents) == 0 {
 			break ProcessEvents
 		}
