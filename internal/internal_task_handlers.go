@@ -870,7 +870,7 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 
 	eventHandler := w.getEventHandler()
 	reorderedHistory := newHistory(workflowTask, eventHandler)
-	var replayOutbox outbox
+	var replayOutbox []outboxEntry
 	var replayCommands []*commandpb.Command
 	var respondEvents []*historypb.HistoryEvent
 
@@ -996,12 +996,11 @@ ProcessEvents:
 		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
 		if isReplay {
 			eventCommands := eventHandler.commandsHelper.getCommands(true)
-			var eventOutbox outbox
-			eventHandler.outbox.swap(&eventOutbox)
 			if !skipReplayCheck {
 				replayCommands = append(replayCommands, eventCommands...)
-				replayOutbox = append(replayOutbox, eventOutbox...)
+				replayOutbox = append(replayOutbox, eventHandler.outbox...)
 			}
+			eventHandler.outbox = nil
 		}
 	}
 
@@ -1184,7 +1183,7 @@ func (w *workflowExecutionContextImpl) CompleteWorkflowTask(workflowTask *workfl
 		w.newCommands = append(w.newCommands, eventCommands...)
 	}
 
-	eventHandler.outbox.drain(&w.newMessages)
+	w.newMessages = append(w.newMessages, eventHandler.takeOutgoingMessages()...)
 	eventHandler.protocols.ClearCompleted()
 
 	completeRequest := w.wth.completeWorkflow(eventHandler, w.currentWorkflowTask, w, w.newCommands, w.newMessages, !waitLocalActivities)

@@ -113,14 +113,12 @@ type (
 		msg            *protocolpb.Message
 	}
 
-	outbox []outboxEntry
-
 	// workflowEnvironmentImpl an implementation of WorkflowEnvironment represents a environment for workflow execution.
 	workflowEnvironmentImpl struct {
 		workflowInfo *WorkflowInfo
 
 		commandsHelper             *commandsHelper
-		outbox                     outbox
+		outbox                     []outboxEntry
 		sideEffectResult           map[int64]*commonpb.Payloads
 		changeVersions             map[string]Version
 		pendingLaTasks             map[string]*localActivityTask
@@ -316,15 +314,13 @@ func (s *scheduledSignal) handle(result *commonpb.Payloads, err error) {
 	s.callback(result, err)
 }
 
-func (o *outbox) drain(sink *[]*protocolpb.Message) {
-	for _, entry := range *o {
-		*sink = append(*sink, entry.msg)
+func (wc *workflowEnvironmentImpl) takeOutgoingMessages() []*protocolpb.Message {
+	retval := make([]*protocolpb.Message, 0, len(wc.outbox))
+	for _, entry := range wc.outbox {
+		retval = append(retval, entry.msg)
 	}
-	*o = nil
-}
-
-func (o *outbox) swap(other *outbox) {
-	*o, *other = *other, *o
+	wc.outbox = nil
+	return retval
 }
 
 func (wc *workflowEnvironmentImpl) ScheduleUpdate(name string, args *commonpb.Payloads, hdr *commonpb.Header, callbacks UpdateCallbacks) {
