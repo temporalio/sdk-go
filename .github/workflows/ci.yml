@@ -35,6 +35,7 @@ jobs:
       - name: Integration tests (with cache)
         run: make integration-test-normal-cache
       - name: Upload coverage
+        continue-on-error: true
         env:
           COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make cover_ci
