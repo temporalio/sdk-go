@@ -6,53 +6,103 @@ on:
       - master
 
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Print build information
         run: "echo head_ref: ${{ github.head_ref }}, ref: ${{ github.ref }}"
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           submodules: recursive
-      - uses: actions/setup-go@v2
+      - uses: actions/setup-go@v4
         with:
           go-version: "1.20"
-      - name: Check and unit test
-        run: make check unit-test
+      - name: Build
+        run: make check # includes full compilation
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      matrix:
+        include:
+          - label: Integration tests cache disabled
+            target: integration-test-zero-cache
+            coverage_file: .build/coverage/integ_test_zero_cache_cover.out
+            needs_server: true
+          - label: Integration tests
+            target: integration-test-normal-cache
+            coverage_file: .build/coverage/integ_test_normal_cache_cover.out
+            needs_server: true
+          - label: Unit tests
+            target: unit-test
+            coverage_file: .build/coverage/unit_test_cover.out
+            needs_server: false
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+      - uses: actions/setup-go@v4
+        with:
+          go-version: "1.20"
       - name: Clone Temporal Docker compose
-        uses: actions/checkout@v2
+        if: ${{ matrix.needs_server }}
+        uses: actions/checkout@v3
         with:
           repository: temporalio/docker-compose
           path: ./docker-compose
       - name: Start Temporal server
+        if: ${{ matrix.needs_server }}
         run: |
           cp ./.github/workflows/docker/docker-compose.override.yaml ./docker-compose/docker-compose.override.yaml
           cp ./.github/workflows/docker/dynamic-config-custom.yaml ./docker-compose/dynamicconfig/dynamic-config-custom.yaml
           docker-compose --project-directory ./docker-compose up &
           go run ./.github/workflows/wait_for_server.go
-      - name: Integration tests (without cache)
-        run: make integration-test-zero-cache
-      - name: Integration tests (with cache)
-        run: make integration-test-normal-cache
+      - name: ${{ matrix.label }}
+        run: make ${{ matrix.target }}
       - name: Upload coverage
-        env:
-          COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: make cover_ci
+        continue-on-error: true
+        uses: coverallsapp/github-action@v2
+        with:
+          parallel: true
+          file: ${{ matrix.coverage_file }}
+          flag-name: ${{ matrix.target }}
+          format: golang
+
+  finish-test:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Finish Coveralls Upload
+        uses: coverallsapp/github-action@v2
+        with:
+          parallel-finished: true
+
+  # This is temporary - once this workflow lands on sdk-go@master we can change
+  # that branch's protection rule to reference the "test" job rather than
+  # "build-and-test"
+  build-and-test:
+    runs-on: ubuntu-latest
+    needs: [build, test]
+    steps:
+      - name: Complete
+        run: echo "Complete"
 
   cloud-test:
     # Only supported in non-fork runs, since secrets are not available in forks.
     if: ${{ github.event.pull_request.head.repo.full_name == '' || github.event.pull_request.head.repo.full_name == 'temporalio/sdk-go' }}
     runs-on: ubuntu-latest
+    needs: build
     env:
       SERVICE_ADDR: tinycicd.sdk.tmprl.cloud:7233
       TEMPORAL_NAMESPACE: tinycicd.sdk
       TEMPORAL_CLIENT_CERT: ${{ secrets.TEMPORAL_CLIENT_CERT }}
       TEMPORAL_CLIENT_KEY: ${{ secrets.TEMPORAL_CLIENT_KEY }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           submodules: recursive
-      - uses: actions/setup-go@v2
+      - uses: actions/setup-go@v4
         with:
           go-version: "1.20"
       - name: Single integration test against cloud
@@ -61,7 +111,9 @@ jobs:
 
   features-test:
     uses: temporalio/features/.github/workflows/go.yaml@main
+    needs: build
     with:
       go-repo-path: ${{github.event.pull_request.head.repo.full_name}}
       version: ${{github.event.pull_request.head.ref}}
       version-is-repo-ref: true
+
