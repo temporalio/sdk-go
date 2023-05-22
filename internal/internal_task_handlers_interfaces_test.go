@@ -32,6 +32,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/sdk/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
@@ -185,4 +186,60 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextCommands() {
 	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED, events[1].GetEventType())
 	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED, events[2].GetEventType())
 	s.Equal(int64(7), events[2].GetEventId())
+}
+
+func (s *PollLayerInterfacesTestSuite) TestGetNextCommandsSdkFlags() {
+	// Schedule an activity and see if we complete workflow.
+	taskQueue := "tq1"
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{
+			ScheduledEventId: 2,
+			StartedEventId:   3,
+			SdkMetadata: &sdk.WorkflowTaskCompletedMetadata{
+				LangUsedFlags: []uint32{SDKFlagLimitChangeVersionSASize},
+			},
+		}),
+		createTestEventVersionMarker(5, 4, "test-id", 1),
+		createTestUpsertWorkflowSearchAttributesForChangeVersion(6, 4, "test-id", 1),
+		createTestEventWorkflowTaskScheduled(7, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskStarted(8),
+	}
+	task := createWorkflowTaskWithQueries(testEvents[0:3], 0, "HelloWorld_Workflow", nil, false)
+
+	historyIterator := &historyIteratorImpl{
+		iteratorFunc: func(nextToken []byte) (*historypb.History, []byte, error) {
+			return &historypb.History{
+				Events: testEvents[3:],
+			}, nil, nil
+		},
+		nextPageToken: []byte("test"),
+	}
+
+	workflowTask := &workflowTask{task: task, historyIterator: historyIterator}
+
+	eh := newHistory(workflowTask, nil)
+
+	events, _, _, sdkFlags, err := eh.NextCommandEvents()
+
+	s.NoError(err)
+	s.Equal(2, len(events))
+	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED, events[1].GetEventType())
+	// Verify the SDK flags are fetched at the correct point so they will be applied when the workflow
+	// function is run.
+	s.Equal(1, len(sdkFlags))
+	s.EqualValues(SDKFlagLimitChangeVersionSASize, sdkFlags[0])
+
+	events, _, _, sdkFlags, err = eh.NextCommandEvents()
+
+	s.NoError(err)
+	s.Equal(4, len(events))
+	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED, events[0].GetEventType())
+	s.Equal(enumspb.EVENT_TYPE_MARKER_RECORDED, events[1].GetEventType())
+	s.Equal(enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES, events[2].GetEventType())
+	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED, events[3].GetEventType())
+
+	s.Equal(0, len(sdkFlags))
 }
