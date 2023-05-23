@@ -57,18 +57,9 @@ integration-test-normal-cache: $(BUILD)/dummy
 
 test: unit-test integration-test-zero-cache integration-test-normal-cache
 
-$(COVER_ROOT)/cover.out: $(UT_COVER_FILE) $(INTEG_ZERO_CACHE_COVER_FILE) $(INTEG_NORMAL_CACHE_COVER_FILE)
-	@echo "mode: atomic" > $(COVER_ROOT)/cover.out
-	cat $(UT_COVER_FILE) | grep -v "^mode: \w\+" | grep -v ".gen" >> $(COVER_ROOT)/cover.out
-	cat $(INTEG_ZERO_CACHE_COVER_FILE) | grep -v "^mode: \w\+" | grep -v ".gen" >> $(COVER_ROOT)/cover.out
-	cat $(INTEG_NORMAL_CACHE_COVER_FILE) | grep -v "^mode: \w\+" | grep -v ".gen" >> $(COVER_ROOT)/cover.out
-
-cover: $(COVER_ROOT)/cover.out
-	go tool cover -html=$(COVER_ROOT)/cover.out;
-
-cover_ci: $(COVER_ROOT)/cover.out
-	go install github.com/mattn/goveralls@latest
-	goveralls -coverprofile=$(COVER_ROOT)/cover.out -service=github
+merge-coverage:
+	@echo "mode: atomic"
+	@grep -hsv "^mode: \w\+" $(COVER_ROOT)/*_cover.out | grep -v ".gen" || true
 
 vet: $(ALL_SRC)
 	@for dir in $(MOD_DIRS); do \
