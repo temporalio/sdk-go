@@ -1,0 +1,141 @@
+{
+ "events": [
+  {
+   "eventId": "1",
+   "eventTime": "2023-05-23T22:08:27.302817772Z",
+   "eventType": "WorkflowExecutionStarted",
+   "taskId": "5244704",
+   "workflowExecutionStartedEventAttributes": {
+    "workflowType": {
+     "name": "UpdateAndExit"
+    },
+    "taskQueue": {
+     "name": "replay-test",
+     "kind": "Normal"
+    },
+    "workflowExecutionTimeout": "0s",
+    "workflowRunTimeout": "0s",
+    "workflowTaskTimeout": "10s",
+    "originalExecutionRunId": "0800404a-4eaf-4009-af90-5e008d7f0e83",
+    "identity": "467379@pires@",
+    "firstExecutionRunId": "0800404a-4eaf-4009-af90-5e008d7f0e83",
+    "attempt": 1,
+    "firstWorkflowTaskBackoff": "0s",
+    "header": {
+
+    }
+   }
+  },
+  {
+   "eventId": "2",
+   "eventTime": "2023-05-23T22:08:27.302844480Z",
+   "eventType": "WorkflowTaskScheduled",
+   "taskId": "5244705",
+   "workflowTaskScheduledEventAttributes": {
+    "taskQueue": {
+     "name": "replay-test",
+     "kind": "Normal"
+    },
+    "startToCloseTimeout": "10s",
+    "attempt": 1
+   }
+  },
+  {
+   "eventId": "3",
+   "eventTime": "2023-05-23T22:08:27.318787735Z",
+   "eventType": "WorkflowTaskStarted",
+   "taskId": "5244712",
+   "workflowTaskStartedEventAttributes": {
+    "scheduledEventId": "2",
+    "identity": "467379@pires@",
+    "requestId": "05f18c5c-800e-4861-a08d-cc1f0e1ef870",
+    "historySizeBytes": "494"
+   }
+  },
+  {
+   "eventId": "4",
+   "eventTime": "2023-05-23T22:08:27.327614349Z",
+   "eventType": "WorkflowTaskCompleted",
+   "taskId": "5244716",
+   "workflowTaskCompletedEventAttributes": {
+    "scheduledEventId": "2",
+    "startedEventId": "3",
+    "identity": "467379@pires@",
+    "binaryChecksum": "7123a85e9f0e52b3479f4d5b841a8917",
+    "sdkMetadata": {
+     "langUsedFlags": [
+      3
+     ]
+    },
+    "meteringMetadata": {
+
+    }
+   }
+  },
+  {
+   "eventId": "5",
+   "eventTime": "2023-05-23T22:08:27.327672346Z",
+   "eventType": "WorkflowExecutionUpdateAccepted",
+   "taskId": "5244717",
+   "workflowExecutionUpdateAcceptedEventAttributes": {
+    "protocolInstanceId": "cb7d7c1f-c3d9-4525-b803-e2d2dcec2679",
+    "acceptedRequestMessageId": "cb7d7c1f-c3d9-4525-b803-e2d2dcec2679/request",
+    "acceptedRequestSequencingEventId": "2",
+    "acceptedRequest": {
+     "meta": {
+      "updateId": "cb7d7c1f-c3d9-4525-b803-e2d2dcec2679",
+      "identity": "467379@pires@"
+     },
+     "input": {
+      "header": {
+
+      },
+      "name": "update",
+      "args": {
+       "payloads": [
+        {
+         "metadata": {
+          "encoding": "anNvbi9wbGFpbg=="
+         },
+         "data": "MA=="
+        }
+       ]
+      }
+     }
+    }
+   }
+  },
+  {
+   "eventId": "6",
+   "eventTime": "2023-05-23T22:08:27.327698799Z",
+   "eventType": "WorkflowExecutionUpdateCompleted",
+   "taskId": "5244718",
+   "workflowExecutionUpdateCompletedEventAttributes": {
+    "meta": {
+     "updateId": "cb7d7c1f-c3d9-4525-b803-e2d2dcec2679",
+     "identity": "467379@pires@"
+    },
+    "outcome": {
+     "success": {
+      "payloads": [
+       {
+        "metadata": {
+         "encoding": "YmluYXJ5L251bGw="
+        }
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "eventId": "7",
+   "eventTime": "2023-05-23T22:08:27.327727143Z",
+   "eventType": "WorkflowExecutionCompleted",
+   "taskId": "5244719",
+   "workflowExecutionCompletedEventAttributes": {
+    "workflowTaskCompletedEventId": "4"
+   }
+  }
+ ]
+}
