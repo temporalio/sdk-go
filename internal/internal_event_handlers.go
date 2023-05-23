@@ -1250,6 +1250,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionStarted(
 	if err != nil {
 		return err
 	}
+	weh.sdkFlags.tryUse(SDKFlagProtocolMessageCommand, !weh.isReplay)
 
 	// Invoke the workflow.
 	weh.workflowDefinition.Execute(weh, attributes.Header, attributes.Input)

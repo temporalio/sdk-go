@@ -280,7 +280,8 @@ func isCommandEvent(eventType enumspb.EventType) bool {
 		enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES,
 		enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED,
 		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
-		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED:
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED,
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_REJECTED:
 		return true
 	default:
 		return false
@@ -899,19 +900,15 @@ ProcessEvents:
 		if err != nil {
 			return nil, err
 		}
-
 		eventHandler.sdkFlags.set(flags...)
 		if len(reorderedEvents) == 0 {
 			break ProcessEvents
 		}
-		eventHandler.sdkFlags.set(flags...)
-
 		if binaryChecksum == "" {
 			w.workflowInfo.BinaryChecksum = w.wth.getBuildID()
 		} else {
 			w.workflowInfo.BinaryChecksum = binaryChecksum
 		}
-
 		// Reset the mutable side effect markers recorded
 		eventHandler.mutableSideEffectsRecorded = nil
 		// Markers are from the events that are produced from the current workflow task.
@@ -1271,6 +1268,7 @@ func skipDeterministicCheckForEvent(e *historypb.HistoryEvent, sdkFlags *sdkFlag
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
 		return true
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_REJECTED,
 		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED:
 		protocolMsgCommandInUse := sdkFlags.tryUse(SDKFlagProtocolMessageCommand, false)
 		return !protocolMsgCommandInUse

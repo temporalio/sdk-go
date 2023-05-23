@@ -311,8 +311,17 @@ func (s *replayTestSuite) TestUnkownSDKFlag() {
 func (s *replayTestSuite) TestUpdateWorkflow() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflow(UpdateWorkflow)
-	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "update.json")
-	require.NoError(s.T(), err)
+
+	for _, name := range [...]string{
+		"update_before_protocol_message_command",
+		"update_with_protocol_message_command",
+	} {
+		s.Run(name, func() {
+			err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), name+".json")
+			require.NoError(s.T(), err)
+		})
+	}
+
 }
 
 func TestReplayCustomConverter(t *testing.T) {
