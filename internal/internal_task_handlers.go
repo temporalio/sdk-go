@@ -169,6 +169,7 @@ type (
 		nextEventID    int64 // next expected eventID for sanity
 		lastEventID    int64 // last expected eventID, zero indicates read until end of stream
 		next           []*historypb.HistoryEvent
+		nextFlags      []sdkFlag
 		binaryChecksum string
 	}
 
@@ -288,7 +289,7 @@ func isCommandEvent(eventType enumspb.EventType) bool {
 // TODO(maxim): Refactor to return a struct instead of multiple parameters
 func (eh *history) NextCommandEvents() (result []*historypb.HistoryEvent, markers []*historypb.HistoryEvent, binaryChecksum string, sdkFlags []sdkFlag, err error) {
 	if eh.next == nil {
-		eh.next, _, sdkFlags, err = eh.nextCommandEvents()
+		eh.next, _, eh.nextFlags, err = eh.nextCommandEvents()
 		if err != nil {
 			return result, markers, eh.binaryChecksum, sdkFlags, err
 		}
@@ -296,8 +297,9 @@ func (eh *history) NextCommandEvents() (result []*historypb.HistoryEvent, marker
 
 	result = eh.next
 	checksum := eh.binaryChecksum
+	sdkFlags = eh.nextFlags
 	if len(result) > 0 {
-		eh.next, markers, sdkFlags, err = eh.nextCommandEvents()
+		eh.next, markers, eh.nextFlags, err = eh.nextCommandEvents()
 	}
 	return result, markers, checksum, sdkFlags, err
 }
@@ -888,7 +890,6 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 	eventHandler.ResetLAWFTAttemptCounts()
 	eventHandler.sdkFlags.markSDKFlagsSent()
 
-	// Process events
 ProcessEvents:
 	for {
 		reorderedEvents, markers, binaryChecksum, flags, err := reorderedHistory.NextCommandEvents()
@@ -896,6 +897,7 @@ ProcessEvents:
 			return nil, err
 		}
 
+		eventHandler.sdkFlags.set(flags...)
 		if len(reorderedEvents) == 0 {
 			break ProcessEvents
 		}
