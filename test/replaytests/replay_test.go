@@ -326,7 +326,13 @@ func (s *replayTestSuite) TestUpdateWorkflow() {
 			require.NoError(s.T(), err)
 		})
 	}
+}
 
+func (s *replayTestSuite) TestNonDeterministicUpdate() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(NonDeterministicUpdate)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "non_deterministic_update.json")
+	s.Error(err)
 }
 
 func TestReplayCustomConverter(t *testing.T) {

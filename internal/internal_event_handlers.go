@@ -1250,6 +1250,11 @@ func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionStarted(
 	if err != nil {
 		return err
 	}
+
+	// We set this flag at workflow start because changing it on a mid-workflow
+	// WFT results in inconsistent values for SDKFlags during replay (i.e.
+	// replay sees the _final_ value of applied flags, not intermediate values
+	// as the value varies by WFT)
 	weh.sdkFlags.tryUse(SDKFlagProtocolMessageCommand, !weh.isReplay)
 
 	// Invoke the workflow.
