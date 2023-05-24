@@ -263,6 +263,24 @@ const (
 // ReplayNamespace is namespace for replay because startEvent doesn't contain it
 const ReplayNamespace = "ReplayNamespace"
 
+// VersionIntent indicates whether the user intends certain commands to be run on
+// a compatible worker build ID version or not.
+type VersionIntent int
+
+const (
+	// UnspecifiedVersion indicates that the SDK should choose the most sensible default behavior
+	// for the type of command, accounting for whether the command will be run on the same task
+	// queue as the current worker.
+	UnspecifiedVersion VersionIntent = iota
+	// CompatibleVersion indicates that the command should run on a worker with compatible version
+	// if possible. It may not be possible if the target task queue does not also have knowledge of
+	// the current worker's build ID.
+	CompatibleVersion
+	// UseDefaultVersion indicates that the command should run on the target task queue's current
+	// overall-default build ID.
+	UseDefaultVersion
+)
+
 // IsReplayNamespace checks if the namespace is from replay
 func IsReplayNamespace(dn string) bool {
 	return ReplayNamespace == dn

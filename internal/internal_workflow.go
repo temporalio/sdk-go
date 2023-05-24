@@ -194,7 +194,7 @@ type (
 		signalChannels           map[string]Channel
 		queryHandlers            map[string]*queryHandler
 		updateHandlers           map[string]*updateHandler
-		UseLatestBuildID         bool
+		VersioningIntent         VersionIntent
 	}
 
 	// ExecuteWorkflowParams parameters of the workflow invocation
