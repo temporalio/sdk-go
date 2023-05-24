@@ -326,6 +326,12 @@ func newUpdateHandler(
 
 // validate invokes the update's validation function.
 func (h *updateHandler) validate(ctx Context, input []interface{}) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			st := getStackTraceRaw("update validator [panic]:", 7, 0)
+			err = newPanicError(fmt.Sprintf("update validator panic: %v", p), st)
+		}
+	}()
 	_, err = executeFunctionWithWorkflowContext(ctx, h.validateFn, input)
 	return err
 }
