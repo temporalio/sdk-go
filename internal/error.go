@@ -178,11 +178,9 @@ type (
 		// used internally.
 		WorkflowExecutionTimeout time.Duration
 
-		// UseLatestBuildID - If true, and this worker is using build ID based versioning, then the
-		// continued workflow will execute on whatever the latest/default build ID is for the queue
-		// rather than staying within the compatible set of this worker which is the default
-		// behavior.
-		UseLatestBuildID bool
+		// VersioningIntent specifies whether the continued workflow should run on a worker with a
+		// compatible build ID or not. See VersionIntent.
+		VersioningIntent VersionIntent
 	}
 
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
@@ -466,7 +464,7 @@ func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
 		WorkflowExecutionTimeout: options.WorkflowExecutionTimeout,
 		WorkflowRunTimeout:       options.WorkflowRunTimeout,
 		WorkflowTaskTimeout:      options.WorkflowTaskTimeout,
-		UseLatestBuildID:         options.UseLatestBuildID,
+		VersioningIntent:         options.VersioningIntent,
 	}
 }
 

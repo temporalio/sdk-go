@@ -11,10 +11,10 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/pborman/uuid v1.2.1
 	github.com/robfig/cron v1.2.0
-	github.com/stretchr/testify v1.8.2
-	go.temporal.io/api v1.19.1-0.20230516232653-2ede2aba9553
+	github.com/stretchr/testify v1.8.3
+	go.temporal.io/api v1.19.1-0.20230524162623-0e1dbb54f8e4
 	go.uber.org/atomic v1.9.0
 	golang.org/x/time v0.3.0
-	google.golang.org/grpc v1.54.0
+	google.golang.org/grpc v1.55.0
 	google.golang.org/protobuf v1.30.0
 )

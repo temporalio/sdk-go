@@ -506,10 +506,19 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.Header = params.Header
 	attributes.Memo = memo
 	attributes.SearchAttributes = searchAttr
-	attributes.UseLatestBuildId = params.UseLatestBuildID
 	if len(params.CronSchedule) > 0 {
 		attributes.CronSchedule = params.CronSchedule
 	}
+	useCompat := true
+	if params.VersioningIntent == UseDefaultVersion {
+		useCompat = false
+	} else if params.VersioningIntent == UnspecifiedVersion {
+		// If the target task queue doesn't match ours, use the default version
+		if params.TaskQueueName != wc.workflowInfo.TaskQueueName {
+			useCompat = false
+		}
+	}
+	attributes.UseCompatibleVersion = useCompat
 
 	command, err := wc.commandsHelper.startChildWorkflowExecution(attributes)
 	if _, ok := err.(*childWorkflowExistsWithId); ok {
@@ -608,7 +617,16 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	// false just before request by the eager activity executor if eager activity
 	// execution is otherwise disallowed
 	scheduleTaskAttr.RequestEagerExecution = !parameters.DisableEagerExecution
-	scheduleTaskAttr.UseLatestBuildId = parameters.UseLatestBuildID
+	useCompat := true
+	if parameters.VersioningIntent == UseDefaultVersion {
+		useCompat = false
+	} else if parameters.VersioningIntent == UnspecifiedVersion {
+		// If the target task queue doesn't match ours, use the default version
+		if parameters.TaskQueueName != wc.workflowInfo.TaskQueueName {
+			useCompat = false
+		}
+	}
+	scheduleTaskAttr.UseCompatibleVersion = useCompat
 
 	command := wc.commandsHelper.scheduleActivityTask(scheduleID, scheduleTaskAttr)
 	command.setData(&scheduledActivity{

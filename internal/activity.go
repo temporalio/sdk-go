@@ -146,10 +146,9 @@ type (
 		// faster than non-eager which may be dispatched to a separate worker.
 		DisableEagerExecution bool
 
-		// UseLatestBuildID - If true, and this worker is using build ID based versioning, then the
-		// activity will execute on whatever the latest/default build ID is for the queue rather
-		// than staying within the compatible set of this worker which is the default behavior.
-		UseLatestBuildID bool
+		// VersioningIntent specifies whether this activity should run on a worker with a compatible
+		// build ID or not. See VersionIntent.
+		VersioningIntent VersionIntent
 	}
 
 	// LocalActivityOptions stores local activity specific parameters that will be stored inside of a context.

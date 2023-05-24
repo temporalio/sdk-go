@@ -228,6 +228,17 @@ const (
 	// detects non-determinism. This feature is convenient during development.
 	// WARNING: enabling this in production can cause all open workflows to fail on a single bug or bad deployment.
 	FailWorkflow = internal.FailWorkflow
+	// UnspecifiedVersion indicates that the SDK should choose the most sensible default behavior
+	// for the type of command, accounting for whether the command will be run on the same task
+	// queue as the current worker.
+	UnspecifiedVersion = internal.UnspecifiedVersion
+	// CompatibleVersion indicates that the command should run on a worker with compatible version
+	// if possible. It may not be possible if the target task queue does not also have knowledge of
+	// the current worker's build ID.
+	CompatibleVersion = internal.CompatibleVersion
+	// UseDefaultVersion indicates that the command should run on the target task queue's current
+	// overall-default build ID.
+	UseDefaultVersion = internal.UseDefaultVersion
 )
 
 // New creates an instance of worker for managing workflow and activity executions.

@@ -1563,17 +1563,27 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		// Continue as new error.
 		metricsHandler.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION)
+
+		useCompat := true
+		if contErr.VersioningIntent == UseDefaultVersion {
+			useCompat = false
+		} else if contErr.VersioningIntent == UnspecifiedVersion {
+			// If the target task queue doesn't match ours, use the default version
+			if contErr.TaskQueueName != workflowContext.workflowInfo.TaskQueueName {
+				useCompat = false
+			}
+		}
 		closeCommand.Attributes = &commandpb.Command_ContinueAsNewWorkflowExecutionCommandAttributes{ContinueAsNewWorkflowExecutionCommandAttributes: &commandpb.ContinueAsNewWorkflowExecutionCommandAttributes{
-			WorkflowType:        &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
-			Input:               contErr.Input,
-			TaskQueue:           &taskqueuepb.TaskQueue{Name: contErr.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
-			WorkflowRunTimeout:  &contErr.WorkflowRunTimeout,
-			WorkflowTaskTimeout: &contErr.WorkflowTaskTimeout,
-			Header:              contErr.Header,
-			Memo:                workflowContext.workflowInfo.Memo,
-			SearchAttributes:    workflowContext.workflowInfo.SearchAttributes,
-			RetryPolicy:         convertToPBRetryPolicy(workflowContext.workflowInfo.RetryPolicy),
-			UseLatestBuildId:    contErr.UseLatestBuildID,
+			WorkflowType:         &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
+			Input:                contErr.Input,
+			TaskQueue:            &taskqueuepb.TaskQueue{Name: contErr.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
+			WorkflowRunTimeout:   &contErr.WorkflowRunTimeout,
+			WorkflowTaskTimeout:  &contErr.WorkflowTaskTimeout,
+			Header:               contErr.Header,
+			Memo:                 workflowContext.workflowInfo.Memo,
+			SearchAttributes:     workflowContext.workflowInfo.SearchAttributes,
+			RetryPolicy:          convertToPBRetryPolicy(workflowContext.workflowInfo.RetryPolicy),
+			UseCompatibleVersion: useCompat,
 		}}
 	} else if workflowContext.err != nil {
 		// Workflow failures
