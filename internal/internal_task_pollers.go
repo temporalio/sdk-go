@@ -677,12 +677,14 @@ func (wtp *workflowTaskPoller) updateBacklog(taskQueueKind enumspb.TaskQueueKind
 func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.PollWorkflowTaskQueueRequest) {
 	taskQueueName := wtp.taskQueueName
 	taskQueueKind := enumspb.TASK_QUEUE_KIND_NORMAL
+	normalName := ""
 	if wtp.stickyCacheSize > 0 {
 		wtp.requestLock.Lock()
 		if wtp.stickyBacklog > 0 || wtp.pendingStickyPollCount <= wtp.pendingRegularPollCount {
 			wtp.pendingStickyPollCount++
 			taskQueueName = getWorkerTaskQueue(wtp.stickyUUID)
 			taskQueueKind = enumspb.TASK_QUEUE_KIND_STICKY
+			normalName = wtp.taskQueueName
 		} else {
 			wtp.pendingRegularPollCount++
 		}
@@ -690,8 +692,9 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 	}
 
 	taskQueue := &taskqueuepb.TaskQueue{
-		Name: taskQueueName,
-		Kind: taskQueueKind,
+		Name:       taskQueueName,
+		Kind:       taskQueueKind,
+		NormalName: normalName,
 	}
 	builtRequest := &workflowservice.PollWorkflowTaskQueueRequest{
 		Namespace:      wtp.namespace,
