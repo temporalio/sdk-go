@@ -349,3 +349,45 @@ func UpdateWorkflow(ctx workflow.Context) error {
 	workflow.GetSignalChannel(ctx, "shutdown").Receive(ctx, nil)
 	return nil
 }
+
+func UpdateAndExit(ctx workflow.Context) error {
+	ch := workflow.NewChannel(ctx)
+	if err := workflow.SetUpdateHandler(ctx, "update",
+		func(ctx workflow.Context, d time.Duration) error {
+			// passing a non-zero duration here controls whether the update is
+			// accepted+completed in the same WFT or accepted in one WFT and
+			// completed in a subsquent task.
+			if d != time.Duration(0) {
+				_ = workflow.Sleep(ctx, d)
+			}
+			ch.Close()
+			return nil
+		}); err != nil {
+		return err
+	}
+
+	// by waiting on a channel that is closed by a call to update we ensure that
+	// the update completion and workflow completion commands occur on the same
+	// WFT completion.
+	ch.Receive(ctx, nil)
+	return ctx.Err()
+}
+
+func NonDeterministicUpdate(ctx workflow.Context) error {
+	ch := workflow.NewChannel(ctx)
+	if err := workflow.SetUpdateHandler(ctx, "update",
+		func(ctx workflow.Context) error {
+			// The workflow.Sleep below was not commented out when the json
+			// history was generated. By commenting it out we make the update
+			// code non-deterministic.
+			//
+			//_ = workflow.Sleep(ctx, 1*time.Second)
+
+			ch.Close()
+			return nil
+		}); err != nil {
+		return err
+	}
+	ch.Receive(ctx, nil)
+	return ctx.Err()
+}

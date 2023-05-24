@@ -31,8 +31,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
+	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
 	updatepb "go.temporal.io/api/update/v1"
+	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/protocol"
 )
@@ -81,11 +83,17 @@ var runOnCallingThread = &testUpdateScheduler{
 	YieldImpl: func(Context, string) {},
 }
 
+var testSDKFlags = newSDKFlags(
+	&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: true},
+)
+
 func TestUpdateHandlerPanicsPropagate(t *testing.T) {
 	t.Parallel()
 
 	env := &workflowEnvironmentImpl{
-		dataConverter: converter.GetDefaultDataConverter(),
+		sdkFlags:       testSDKFlags,
+		commandsHelper: newCommandsHelper(),
+		dataConverter:  converter.GetDefaultDataConverter(),
 		workflowInfo: &WorkflowInfo{
 			Namespace:     "namespace:" + t.Name(),
 			TaskQueueName: "taskqueue:" + t.Name(),
@@ -156,7 +164,9 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	t.Parallel()
 	dc := converter.GetDefaultDataConverter()
 	env := &workflowEnvironmentImpl{
-		dataConverter: dc,
+		sdkFlags:       testSDKFlags,
+		commandsHelper: newCommandsHelper(),
+		dataConverter:  dc,
 		workflowInfo: &WorkflowInfo{
 			Namespace:     "namespace:" + t.Name(),
 			TaskQueueName: "taskqueue:" + t.Name(),
@@ -322,7 +332,9 @@ func TestInvalidUpdateStateTransitions(t *testing.T) {
 		Body:               protocol.MustMarshalAny(&updatepb.Request{}),
 	}
 	env := &workflowEnvironmentImpl{
-		dataConverter: converter.GetDefaultDataConverter(),
+		sdkFlags:       testSDKFlags,
+		commandsHelper: newCommandsHelper(),
+		dataConverter:  converter.GetDefaultDataConverter(),
 	}
 	t.Run("cannot complete from new state", func(t *testing.T) {
 		up := newUpdateProtocol(t.Name(), stubUpdateHandler, env)
@@ -380,32 +392,86 @@ func TestInvalidUpdateStateTransitions(t *testing.T) {
 	})
 }
 
-func TestCatchUpAfterCrashWithInFlightUpdate(t *testing.T) {
+func TestCompletedEventPredicate(t *testing.T) {
+	updateID := t.Name() + "-updaet-id"
 	stubUpdateHandler := func(string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks) {}
-	env := &workflowEnvironmentImpl{
-		dataConverter: converter.GetDefaultDataConverter(),
-		workflowInfo: &WorkflowInfo{
-			Namespace:     "namespace:" + t.Name(),
-			TaskQueueName: "taskqueue:" + t.Name(),
-		},
+	requestMsg := protocolpb.Message{
+		Id:                 t.Name() + "-id",
+		ProtocolInstanceId: updateID,
+		Body:               protocol.MustMarshalAny(&updatepb.Request{}),
 	}
-	requestMsg := protocolpb.Message{Body: protocol.MustMarshalAny(&updatepb.Request{})}
-
-	// scenario: worker has accepted an update and is in the middle of executing
-	// the update when it crashes, losing the protocol object state. When the
-	// worker recovers it catches up through replay - there is an UpdateAccepted
-	// event in the history but no UpdateCompleted so here we (re-)accept the
-	// update with the isReplay flag set and then complete it with the flag not
-	// being set. This scenario is further tested in temporalio/features in the
-	// update/worker_restart test.
-
-	env.isReplay = true
-	up := newUpdateProtocol(t.Name(), stubUpdateHandler, env)
+	env := &workflowEnvironmentImpl{
+		sdkFlags:       testSDKFlags,
+		commandsHelper: newCommandsHelper(),
+		dataConverter:  converter.GetDefaultDataConverter(),
+	}
+	up := newUpdateProtocol(updateID, stubUpdateHandler, env)
 	require.NoError(t, up.HandleMessage(&requestMsg))
 	up.Accept()
-	require.Len(t, env.outbox, 0)
+	up.Complete("success", nil)
+	require.Len(t, env.outbox, 2, "expected to find accepted and completed messages")
 
-	env.isReplay = false
-	up.Complete(1, nil)
-	require.Len(t, env.outbox, 1)
+	pred := env.outbox[1].eventPredicate
+
+	require.False(t, pred(&historypb.HistoryEvent{}))
+	require.False(t, pred(&historypb.HistoryEvent{
+		Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateCompletedEventAttributes{
+			WorkflowExecutionUpdateCompletedEventAttributes: &historypb.WorkflowExecutionUpdateCompletedEventAttributes{
+				Meta: &updatepb.Meta{UpdateId: "some other update ID"},
+			},
+		},
+	}))
+	require.True(t, pred(&historypb.HistoryEvent{
+		Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateCompletedEventAttributes{
+			WorkflowExecutionUpdateCompletedEventAttributes: &historypb.WorkflowExecutionUpdateCompletedEventAttributes{
+				Meta: &updatepb.Meta{UpdateId: updateID},
+			},
+		},
+	}))
+}
+
+func TestAcceptedEventPredicate(t *testing.T) {
+	updateID := t.Name() + "-updaet-id"
+	requestMsgID := t.Name() + "request-msg-id"
+	stubUpdateHandler := func(string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks) {}
+	request := updatepb.Request{
+		Meta: &updatepb.Meta{UpdateId: updateID},
+	}
+	requestMsg := protocolpb.Message{
+		Id:                 requestMsgID,
+		ProtocolInstanceId: updateID,
+		Body:               protocol.MustMarshalAny(&request),
+	}
+	env := &workflowEnvironmentImpl{
+		sdkFlags:       testSDKFlags,
+		commandsHelper: newCommandsHelper(),
+		dataConverter:  converter.GetDefaultDataConverter(),
+	}
+	up := newUpdateProtocol(updateID, stubUpdateHandler, env)
+	require.NoError(t, up.HandleMessage(&requestMsg))
+	up.Accept()
+	require.Len(t, env.outbox, 1, "expected to find accepted message")
+
+	pred := env.outbox[0].eventPredicate
+
+	require.False(t, pred(&historypb.HistoryEvent{}))
+	require.False(t, pred(&historypb.HistoryEvent{}))
+	require.False(t, pred(&historypb.HistoryEvent{
+		Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
+			WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+				AcceptedRequest:                  &request,
+				AcceptedRequestMessageId:         "wrong request message ID",
+				AcceptedRequestSequencingEventId: 0,
+			},
+		},
+	}))
+	require.True(t, pred(&historypb.HistoryEvent{
+		Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
+			WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+				AcceptedRequest:                  &request,
+				AcceptedRequestMessageId:         requestMsgID,
+				AcceptedRequestSequencingEventId: 0,
+			},
+		},
+	}))
 }

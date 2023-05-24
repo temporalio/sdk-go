@@ -31,6 +31,7 @@ import (
 
 	"github.com/gogo/protobuf/types"
 	commonpb "go.temporal.io/api/common/v1"
+	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
 	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/sdk/converter"
@@ -82,13 +83,8 @@ type (
 	updateEnv interface {
 		GetFailureConverter() converter.FailureConverter
 		GetDataConverter() converter.DataConverter
-		Send(*protocolpb.Message)
-		IsReplaying() bool
+		Send(*protocolpb.Message, ...msgSendOpt)
 	}
-
-	// replayAwareUpdateEnv is an updateEnv wrapper that only sends messages if
-	// the workflow is not replaying.
-	replayAwareUpdateEnv struct{ updateEnv }
 
 	// updateProtocol wraps an updateEnv and some protocol metadata to
 	// implement the UpdateCallbacks abstraction. It handles callbacks by
@@ -114,13 +110,6 @@ type (
 	}
 )
 
-func (raue replayAwareUpdateEnv) Send(msg *protocolpb.Message) {
-	if raue.IsReplaying() {
-		return
-	}
-	raue.updateEnv.Send(msg)
-}
-
 // newUpdateResponder constructs an updateProtocolResponder instance to handle
 // update callbacks.
 func newUpdateProtocol(
@@ -130,7 +119,7 @@ func newUpdateProtocol(
 ) *updateProtocol {
 	return &updateProtocol{
 		protoInstanceID: protoInstanceID,
-		env:             replayAwareUpdateEnv{env},
+		env:             env,
 		scheduleUpdate:  scheduleUpdate,
 		state:           updateStateNew,
 	}
@@ -170,7 +159,7 @@ func (up *updateProtocol) Accept() {
 			AcceptedRequestSequencingEventId: up.requestSeqID,
 			AcceptedRequest:                  &up.initialRequest,
 		}),
-	})
+	}, withExpectedEventPredicate(up.checkAcceptedEvent))
 	up.state = updateStateAccepted
 }
 
@@ -215,8 +204,26 @@ func (up *updateProtocol) Complete(success interface{}, outcomeErr error) {
 			Meta:    up.initialRequest.GetMeta(),
 			Outcome: outcome,
 		}),
-	})
+	}, withExpectedEventPredicate(up.checkCompletedEvent))
 	up.state = updateStateCompleted
+}
+
+func (up *updateProtocol) checkCompletedEvent(e *historypb.HistoryEvent) bool {
+	attrs := e.GetWorkflowExecutionUpdateCompletedEventAttributes()
+	if attrs == nil {
+		return false
+	}
+	return attrs.Meta.GetUpdateId() == up.protoInstanceID
+}
+
+func (up *updateProtocol) checkAcceptedEvent(e *historypb.HistoryEvent) bool {
+	attrs := e.GetWorkflowExecutionUpdateAcceptedEventAttributes()
+	if attrs == nil {
+		return false
+	}
+	return attrs.AcceptedRequest.GetMeta().GetUpdateId() == up.protoInstanceID &&
+		attrs.AcceptedRequestMessageId == up.requestMsgID &&
+		attrs.AcceptedRequestSequencingEventId == up.requestSeqID
 }
 
 // defaultHandler receives the initial invocation of an upate during WFT
