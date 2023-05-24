@@ -419,8 +419,9 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 		if request.StickyAttributes == nil && wtp.stickyCacheSize > 0 {
 			request.StickyAttributes = &taskqueuepb.StickyExecutionAttributes{
 				WorkerTaskQueue: &taskqueuepb.TaskQueue{
-					Name: getWorkerTaskQueue(wtp.stickyUUID),
-					Kind: enumspb.TASK_QUEUE_KIND_STICKY,
+					Name:       getWorkerTaskQueue(wtp.stickyUUID),
+					Kind:       enumspb.TASK_QUEUE_KIND_STICKY,
+					NormalName: wtp.taskQueueName,
 				},
 				ScheduleToStartTimeout: &wtp.StickyScheduleToStartTimeout,
 			}
@@ -675,27 +676,23 @@ func (wtp *workflowTaskPoller) updateBacklog(taskQueueKind enumspb.TaskQueueKind
 //
 // TODO: make this more smart to auto adjust based on poll latency
 func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.PollWorkflowTaskQueueRequest) {
-	taskQueueName := wtp.taskQueueName
-	taskQueueKind := enumspb.TASK_QUEUE_KIND_NORMAL
-	normalName := ""
+	taskQueue := &taskqueuepb.TaskQueue{
+		Name: wtp.taskQueueName,
+		Kind: enumspb.TASK_QUEUE_KIND_NORMAL,
+	}
 	if wtp.stickyCacheSize > 0 {
 		wtp.requestLock.Lock()
 		if wtp.stickyBacklog > 0 || wtp.pendingStickyPollCount <= wtp.pendingRegularPollCount {
 			wtp.pendingStickyPollCount++
-			taskQueueName = getWorkerTaskQueue(wtp.stickyUUID)
-			taskQueueKind = enumspb.TASK_QUEUE_KIND_STICKY
-			normalName = wtp.taskQueueName
+			taskQueue.Name = getWorkerTaskQueue(wtp.stickyUUID)
+			taskQueue.Kind = enumspb.TASK_QUEUE_KIND_STICKY
+			taskQueue.NormalName = wtp.taskQueueName
 		} else {
 			wtp.pendingRegularPollCount++
 		}
 		wtp.requestLock.Unlock()
 	}
 
-	taskQueue := &taskqueuepb.TaskQueue{
-		Name:       taskQueueName,
-		Kind:       taskQueueKind,
-		NormalName: normalName,
-	}
 	builtRequest := &workflowservice.PollWorkflowTaskQueueRequest{
 		Namespace:      wtp.namespace,
 		TaskQueue:      taskQueue,
