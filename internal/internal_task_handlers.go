@@ -159,6 +159,7 @@ type (
 		namespace                        string
 		defaultHeartbeatThrottleInterval time.Duration
 		maxHeartbeatThrottleInterval     time.Duration
+		versionStamp                     *commonpb.WorkerVersionStamp
 	}
 
 	// history wrapper method to help information about events.
@@ -423,7 +424,7 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		ppMgr:                    ppMgr,
 		metricsHandler:           params.MetricsHandler,
 		identity:                 params.Identity,
-		workerBuildID:            params.WorkerBuildID,
+		workerBuildID:            params.getBuildID(),
 		useBuildIDForVersioning:  params.UseBuildIDForVersioning,
 		enableLoggingInReplay:    params.EnableLoggingInReplay,
 		registry:                 registry,
@@ -907,7 +908,7 @@ ProcessEvents:
 			break ProcessEvents
 		}
 		if binaryChecksum == "" {
-			w.workflowInfo.BinaryChecksum = w.wth.getBuildID()
+			w.workflowInfo.BinaryChecksum = w.wth.workerBuildID
 		} else {
 			w.workflowInfo.BinaryChecksum = binaryChecksum
 		}
@@ -1661,28 +1662,25 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		langUsedFlags = append(langUsedFlags, uint32(flag))
 	}
 
-	builtRequest := &workflowservice.RespondWorkflowTaskCompletedRequest{
+	return &workflowservice.RespondWorkflowTaskCompletedRequest{
 		TaskToken:                  task.TaskToken,
 		Commands:                   commands,
 		Messages:                   messages,
 		Identity:                   wth.identity,
 		ReturnNewWorkflowTask:      true,
 		ForceCreateNewWorkflowTask: forceNewWorkflowTask,
-		BinaryChecksum:             wth.getBuildID(),
+		BinaryChecksum:             wth.workerBuildID,
 		QueryResults:               queryResults,
 		Namespace:                  wth.namespace,
 		MeteringMetadata:           &commonpb.MeteringMetadata{NonfirstLocalActivityExecutionAttempts: nonfirstLAAttempts},
 		SdkMetadata: &sdk.WorkflowTaskCompletedMetadata{
 			LangUsedFlags: langUsedFlags,
 		},
-	}
-	if wth.workerBuildID != "" {
-		builtRequest.WorkerVersionStamp = &commonpb.WorkerVersionStamp{
+		WorkerVersionStamp: &commonpb.WorkerVersionStamp{
 			BuildId:       wth.workerBuildID,
 			UseVersioning: wth.useBuildIDForVersioning,
-		}
+		},
 	}
-	return builtRequest
 }
 
 func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *historypb.HistoryEvent, isInReplay bool) error {
@@ -1699,13 +1697,6 @@ func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *historypb.Hi
 		}
 	}
 	return nil
-}
-
-func (wth *workflowTaskHandlerImpl) getBuildID() string {
-	if wth.workerBuildID != "" {
-		return wth.workerBuildID
-	}
-	return getBinaryChecksum()
 }
 
 func newActivityTaskHandler(
@@ -1738,6 +1729,10 @@ func newActivityTaskHandlerWithCustomProvider(
 		namespace:                        params.Namespace,
 		defaultHeartbeatThrottleInterval: params.DefaultHeartbeatThrottleInterval,
 		maxHeartbeatThrottleInterval:     params.MaxHeartbeatThrottleInterval,
+		versionStamp: &commonpb.WorkerVersionStamp{
+			BuildId:       params.getBuildID(),
+			UseVersioning: params.UseBuildIDForVersioning,
+		},
 	}
 }
 
@@ -1946,7 +1941,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		metricsHandler.Counter(metrics.UnregisteredActivityInvocationCounter).Inc(1)
 		return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil,
 			NewActivityNotRegisteredError(activityType, ath.getRegisteredActivityNames()),
-			ath.dataConverter, ath.failureConverter, ath.namespace, false), nil
+			ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp), nil
 	}
 
 	// panic handler
@@ -1964,7 +1959,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			metricsHandler.Counter(metrics.ActivityTaskErrorCounter).Inc(1)
 			panicErr := newPanicError(p, st)
 			result = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr,
-				ath.dataConverter, ath.failureConverter, ath.namespace, false)
+				ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp)
 		}
 	}()
 
@@ -2004,7 +1999,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		)
 	}
 	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err,
-		ath.dataConverter, ath.failureConverter, ath.namespace, isActivityCancel), nil
+		ath.dataConverter, ath.failureConverter, ath.namespace, isActivityCancel, ath.versionStamp), nil
 }
 
 func (ath *activityTaskHandlerImpl) getActivity(name string) activity {
