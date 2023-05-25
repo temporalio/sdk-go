@@ -26,18 +26,22 @@ import "go.temporal.io/sdk/internal"
 
 // VersioningIntent indicates whether the user intends certain commands to be run on
 // a compatible worker build ID version or not.
+// WARNING: Worker versioning is currently experimental
 type VersioningIntent = internal.VersioningIntent
 
 const (
 	// VersioningIntentUnspecified indicates that the SDK should choose the most sensible default
 	// behavior for the type of command, accounting for whether the command will be run on the same
 	// task queue as the current worker.
+	// WARNING: Worker versioning is currently experimental
 	VersioningIntentUnspecified = internal.VersioningIntentUnspecified
 	// VersioningIntentCompatible indicates that the command should run on a worker with compatible
 	// version if possible. It may not be possible if the target task queue does not also have
 	// knowledge of the current worker's build ID.
+	// WARNING: Worker versioning is currently experimental
 	VersioningIntentCompatible = internal.VersioningIntentCompatible
 	// VersioningIntentUseDefault indicates that the command should run on the target task queue's
 	// current overall-default build ID.
+	// WARNING: Worker versioning is currently experimental
 	VersioningIntentUseDefault = internal.VersioningIntentUseDefault
 )

@@ -164,7 +164,7 @@ type (
 
 	// UpdateWorkflowWithOptionsRequest encapsulates the parameters for
 	// sending an update to a workflow execution.
-	// NOTE: Experimental
+	// WARNING: Worker versioning is currently experimental
 	UpdateWorkflowWithOptionsRequest = internal.UpdateWorkflowWithOptionsRequest
 
 	// WorkflowUpdateHandle represents a running or completed workflow
@@ -178,30 +178,35 @@ type (
 	GetWorkflowUpdateHandleOptions = internal.GetWorkflowUpdateHandleOptions
 
 	// UpdateWorkerBuildIdCompatibilityOptions is the input to Client.UpdateWorkerBuildIdCompatibility.
-	// NOTE: Experimental
+	// WARNING: Worker versioning is currently experimental
 	UpdateWorkerBuildIdCompatibilityOptions = internal.UpdateWorkerBuildIdCompatibilityOptions
 
 	// GetWorkerBuildIdCompatibilityOptions is the input to Client.GetWorkerBuildIdCompatibility.
-	// NOTE: Experimental
+	// WARNING: Worker versioning is currently experimental
 	GetWorkerBuildIdCompatibilityOptions = internal.GetWorkerBuildIdCompatibilityOptions
 
 	// WorkerBuildIDVersionSets is the response for Client.GetWorkerBuildIdCompatibility.
+	// WARNING: Worker versioning is currently experimental
 	WorkerBuildIDVersionSets = internal.WorkerBuildIDVersionSets
 
 	// BuildIDOpAddNewIDInNewDefaultSet is an operation for UpdateWorkerBuildIdCompatibilityOptions
 	// to add a new BuildID in a new default set.
+	// WARNING: Worker versioning is currently experimental
 	BuildIDOpAddNewIDInNewDefaultSet = internal.BuildIDOpAddNewIDInNewDefaultSet
 
 	// BuildIDOpAddNewCompatibleVersion is an operation for UpdateWorkerBuildIdCompatibilityOptions
 	// to add a new BuildID to an existing compatible set.
+	// WARNING: Worker versioning is currently experimental
 	BuildIDOpAddNewCompatibleVersion = internal.BuildIDOpAddNewCompatibleVersion
 
 	// BuildIDOpPromoteSet is an operation for UpdateWorkerBuildIdCompatibilityOptions to promote a
 	// set to be the default set by targeting an existing BuildID.
+	// WARNING: Worker versioning is currently experimental
 	BuildIDOpPromoteSet = internal.BuildIDOpPromoteSet
 
 	// BuildIDOpPromoteIDWithinSet is an operation for UpdateWorkerBuildIdCompatibilityOptions to
 	// promote a BuildID within a set to be the default.
+	// WARNING: Worker versioning is currently experimental
 	BuildIDOpPromoteIDWithinSet = internal.BuildIDOpPromoteIDWithinSet
 
 	// Client is the client for starting and getting information about a workflow executions as well as
@@ -493,12 +498,12 @@ type (
 		// UpdateWorkerBuildIdCompatibility
 		// Allows you to update the worker-build-id based version sets for a particular task queue. This is used in
 		// conjunction with workers who specify their build id and thus opt into the feature.
-		// NOTE: Experimental
+		// WARNING: Worker versioning is currently experimental
 		UpdateWorkerBuildIdCompatibility(ctx context.Context, options *UpdateWorkerBuildIdCompatibilityOptions) error
 
 		// GetWorkerBuildIdCompatibility
 		// Returns the worker-build-id based version sets for a particular task queue.
-		// NOTE: Experimental
+		// WARNING: Worker versioning is currently experimental
 		GetWorkerBuildIdCompatibility(ctx context.Context, options *GetWorkerBuildIdCompatibilityOptions) (*WorkerBuildIDVersionSets, error)
 
 		// CheckHealth performs a server health check using the gRPC health check
