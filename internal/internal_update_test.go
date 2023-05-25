@@ -87,7 +87,7 @@ var testSDKFlags = newSDKFlags(
 	&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: true},
 )
 
-func TestUpdateHandlerPanicsPropagate(t *testing.T) {
+func TestUpdateHandlerPanicHandling(t *testing.T) {
 	t.Parallel()
 
 	env := &workflowEnvironmentImpl{
@@ -107,12 +107,15 @@ func TestUpdateHandlerPanicsPropagate(t *testing.T) {
 	in := UpdateInput{Name: t.Name(), Args: []interface{}{}}
 
 	t.Run("ValidateUpdate", func(t *testing.T) {
-		defer func() { require.NotNil(t, recover(), "expected a panic") }()
-		_ = interceptor.inboundInterceptor.ValidateUpdate(ctx, &in)
+		err = interceptor.inboundInterceptor.ValidateUpdate(ctx, &in)
+		var panicerr *PanicError
+		require.ErrorAs(t, err, &panicerr,
+			"panic during validate should be converted to an error to fail the update")
 	})
 	t.Run("ExecuteUpdate", func(t *testing.T) {
-		defer func() { require.NotNil(t, recover(), "expected a panic") }()
-		_, _ = interceptor.inboundInterceptor.ExecuteUpdate(ctx, &in)
+		require.Panics(t, func() {
+			_, _ = interceptor.inboundInterceptor.ExecuteUpdate(ctx, &in)
+		}, "panic during execution should be propagated to reach the WorkflowPanicPolicy")
 	})
 }
 
