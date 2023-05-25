@@ -29,44 +29,96 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 )
 
-// UpdateWorkerBuildIdCompatibilityOptions is the input to Client.UpdateWorkerBuildIdCompatibility.
-type UpdateWorkerBuildIdCompatibilityOptions struct {
-	// The task queue to update the version sets of.
-	TaskQueue string
-	// Required, indicates the build id being added or targeted.
-	WorkerBuildID string
-	// May be empty, and if set, indicates an existing version the new id should be considered compatible with.
-	CompatibleBuildID string
-	// If true, this new id will become the default version for new workflow executions.
-	BecomeDefault bool
-}
+// VersioningIntent indicates whether the user intends certain commands to be run on
+// a compatible worker build ID version or not.
+type VersioningIntent int
+
+const (
+	// VersioningIntentUnspecified indicates that the SDK should choose the most sensible default
+	// behavior for the type of command, accounting for whether the command will be run on the same
+	// task queue as the current worker.
+	VersioningIntentUnspecified VersioningIntent = iota
+	// VersioningIntentCompatible indicates that the command should run on a worker with compatible
+	// version if possible. It may not be possible if the target task queue does not also have
+	// knowledge of the current worker's build ID.
+	VersioningIntentCompatible
+	// VersioningIntentDefault indicates that the command should run on the target task queue's
+	// current overall-default build ID.
+	VersioningIntentDefault
+)
+
+type (
+	// UpdateWorkerBuildIdCompatibilityOptions is the input to
+	// Client.UpdateWorkerBuildIdCompatibility.
+	UpdateWorkerBuildIdCompatibilityOptions struct {
+		// The task queue to update the version sets of.
+		TaskQueue string
+		Operation UpdateBuildIDOp
+	}
+
+	// UpdateBuildIDOp is an interface for the different operations that can be
+	// performed when updating the worker build ID compatibility sets for a task queue.
+	//
+	// Possible operations are:
+	//   - BuildIDOpAddNewIDInNewDefaultSet
+	//   - BuildIDOpAddNewCompatibleVersion
+	//   - BuildIDOpPromoteSet
+	//   - BuildIDOpPromoteIDWithinSet
+	UpdateBuildIDOp interface {
+		targetedBuildId() string
+	}
+	BuildIDOpAddNewIDInNewDefaultSet struct {
+		BuildID string
+	}
+	BuildIDOpAddNewCompatibleVersion struct {
+		BuildID                   string
+		ExistingCompatibleBuildId string
+		MakeSetDefault            bool
+	}
+	BuildIDOpPromoteSet struct {
+		BuildID string
+	}
+	BuildIDOpPromoteIDWithinSet struct {
+		BuildID string
+	}
+)
 
 // Validates and converts the user's options into the proto request. Namespace must be attached afterward.
 func (uw *UpdateWorkerBuildIdCompatibilityOptions) validateAndConvertToProto() (*workflowservice.UpdateWorkerBuildIdCompatibilityRequest, error) {
 	if uw.TaskQueue == "" {
-		return nil, errors.New("TaskQueue is required")
+		return nil, errors.New("missing TaskQueue field")
 	}
-	if uw.WorkerBuildID == "" {
-		return nil, errors.New("WorkerBuildID is required")
+	if uw.Operation.targetedBuildId() == "" {
+		return nil, errors.New("missing Operation BuildID field")
 	}
 	req := &workflowservice.UpdateWorkerBuildIdCompatibilityRequest{
 		TaskQueue: uw.TaskQueue,
 	}
-	if uw.CompatibleBuildID != "" {
+
+	switch v := uw.Operation.(type) {
+	case *BuildIDOpAddNewIDInNewDefaultSet:
+		req.Operation = &workflowservice.UpdateWorkerBuildIdCompatibilityRequest_AddNewBuildIdInNewDefaultSet{
+			AddNewBuildIdInNewDefaultSet: v.BuildID,
+		}
+
+	case *BuildIDOpAddNewCompatibleVersion:
+		if v.ExistingCompatibleBuildId == "" {
+			return nil, errors.New("missing ExistingCompatibleBuildId")
+		}
 		req.Operation = &workflowservice.UpdateWorkerBuildIdCompatibilityRequest_AddNewCompatibleBuildId{
 			AddNewCompatibleBuildId: &workflowservice.UpdateWorkerBuildIdCompatibilityRequest_AddNewCompatibleVersion{
-				NewBuildId:                uw.WorkerBuildID,
-				ExistingCompatibleBuildId: uw.CompatibleBuildID,
-				MakeSetDefault:            uw.BecomeDefault,
+				NewBuildId:                v.BuildID,
+				ExistingCompatibleBuildId: v.ExistingCompatibleBuildId,
+				MakeSetDefault:            v.MakeSetDefault,
 			},
 		}
-	} else if uw.BecomeDefault {
+	case *BuildIDOpPromoteSet:
 		req.Operation = &workflowservice.UpdateWorkerBuildIdCompatibilityRequest_PromoteSetByBuildId{
-			PromoteSetByBuildId: uw.WorkerBuildID,
+			PromoteSetByBuildId: v.BuildID,
 		}
-	} else {
-		req.Operation = &workflowservice.UpdateWorkerBuildIdCompatibilityRequest_AddNewBuildIdInNewDefaultSet{
-			AddNewBuildIdInNewDefaultSet: uw.WorkerBuildID,
+	case *BuildIDOpPromoteIDWithinSet:
+		req.Operation = &workflowservice.UpdateWorkerBuildIdCompatibilityRequest_PromoteBuildIdWithinSet{
+			PromoteBuildIdWithinSet: v.BuildID,
 		}
 	}
 
@@ -122,4 +174,24 @@ func workerVersionSetsFromProto(sets []*taskqueuepb.CompatibleVersionSet) []*Com
 		}
 	}
 	return result
+}
+
+func (v *BuildIDOpAddNewIDInNewDefaultSet) targetedBuildId() string { return v.BuildID }
+func (v *BuildIDOpAddNewCompatibleVersion) targetedBuildId() string { return v.BuildID }
+func (v *BuildIDOpPromoteSet) targetedBuildId() string              { return v.BuildID }
+func (v *BuildIDOpPromoteIDWithinSet) targetedBuildId() string      { return v.BuildID }
+
+// Helper to determine if how the `UseCompatibleVersion` flag for a command should be set based on
+// the user's intent and whether the target task queue matches this worker's task queue.
+func determineUseCompatibleFlagForCommand(intent VersioningIntent, workerTq, TargetTq string) bool {
+	useCompat := true
+	if intent == VersioningIntentDefault {
+		useCompat = false
+	} else if intent == VersioningIntentUnspecified {
+		// If the target task queue doesn't match ours, use the default version
+		if workerTq != TargetTq {
+			useCompat = false
+		}
+	}
+	return useCompat
 }

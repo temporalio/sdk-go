@@ -297,6 +297,11 @@ type (
 		// ParentClosePolicy - Optional policy to decide what to do for the child.
 		// Default is Terminate (if onboarded to this feature)
 		ParentClosePolicy enumspb.ParentClosePolicy
+
+		// VersioningIntent specifies whether this child workflow should run on a worker with a
+		// compatible build ID or not. See VersioningIntent.
+		// WARNING: Worker versioning is currently experimental
+		VersioningIntent VersioningIntent
 	}
 
 	// RegisterWorkflowOptions consists of options for registering a workflow
@@ -891,6 +896,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 	options.ContextPropagators = workflowOptionsFromCtx.ContextPropagators
 	options.Memo = workflowOptionsFromCtx.Memo
 	options.SearchAttributes = workflowOptionsFromCtx.SearchAttributes
+	options.VersioningIntent = workflowOptionsFromCtx.VersioningIntent
 
 	header, err := workflowHeaderPropagated(ctx, options.ContextPropagators)
 	if err != nil {
@@ -1300,6 +1306,7 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.Memo = cwo.Memo
 	wfOptions.SearchAttributes = cwo.SearchAttributes
 	wfOptions.ParentClosePolicy = cwo.ParentClosePolicy
+	wfOptions.VersioningIntent = cwo.VersioningIntent
 
 	return ctx1
 }
@@ -1324,6 +1331,7 @@ func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 		Memo:                     opts.Memo,
 		SearchAttributes:         opts.SearchAttributes,
 		ParentClosePolicy:        opts.ParentClosePolicy,
+		VersioningIntent:         opts.VersioningIntent,
 	}
 }
 
@@ -1376,6 +1384,15 @@ func WithDataConverter(ctx Context, dc converter.DataConverter) Context {
 	}
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	getWorkflowEnvOptions(ctx1).DataConverter = dc
+	return ctx1
+}
+
+// WithWorkflowVersioningIntent is used to set the VersioningIntent before constructing a
+// ContinueAsNewError with NewContinueAsNewError.
+// WARNING: Worker versioning is currently experimental
+func WithWorkflowVersioningIntent(ctx Context, intent VersioningIntent) Context {
+	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
+	getWorkflowEnvOptions(ctx1).VersioningIntent = intent
 	return ctx1
 }
 
@@ -1773,6 +1790,7 @@ func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	eap.ActivityID = options.ActivityID
 	eap.RetryPolicy = convertToPBRetryPolicy(options.RetryPolicy)
 	eap.DisableEagerExecution = options.DisableEagerExecution
+	eap.VersioningIntent = options.VersioningIntent
 	return ctx1
 }
 
@@ -1828,6 +1846,7 @@ func GetActivityOptions(ctx Context) ActivityOptions {
 		ActivityID:             opts.ActivityID,
 		RetryPolicy:            convertFromPBRetryPolicy(opts.RetryPolicy),
 		DisableEagerExecution:  opts.DisableEagerExecution,
+		VersioningIntent:       opts.VersioningIntent,
 	}
 }
 

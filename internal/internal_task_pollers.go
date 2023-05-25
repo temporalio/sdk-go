@@ -71,8 +71,12 @@ type (
 	basePoller struct {
 		metricsHandler metrics.Handler // base metric handler used for rpc calls
 		stopC          <-chan struct{}
-		// Is set if this worker has opted in to build-id based versioning
+		// The worker's build ID, either as defined by the user or automatically set
 		workerBuildID string
+		// Whether the worker has opted in to the build-id based versioning feature
+		useBuildIDVersioning bool
+		// Server's capabilities
+		capabilities *workflowservice.GetSystemInfoResponse_Capabilities
 	}
 
 	// numPollerMetric tracks the number of active pollers and publishes a metric on it.
@@ -251,6 +255,13 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (interface{}, er
 	}
 }
 
+func (bp *basePoller) getCapabilities() *workflowservice.GetSystemInfoResponse_Capabilities {
+	if bp.capabilities == nil {
+		return &workflowservice.GetSystemInfoResponse_Capabilities{}
+	}
+	return bp.capabilities
+}
+
 // newWorkflowTaskPoller creates a new workflow task poller which must have a one to one relationship to workflow worker
 func newWorkflowTaskPoller(
 	taskHandler WorkflowTaskHandler,
@@ -259,9 +270,11 @@ func newWorkflowTaskPoller(
 ) *workflowTaskPoller {
 	return &workflowTaskPoller{
 		basePoller: basePoller{
-			metricsHandler: params.MetricsHandler,
-			stopC:          params.WorkerStopChannel,
-			workerBuildID:  params.WorkerBuildID,
+			metricsHandler:       params.MetricsHandler,
+			stopC:                params.WorkerStopChannel,
+			workerBuildID:        params.getBuildID(),
+			useBuildIDVersioning: params.UseBuildIDForVersioning,
+			capabilities:         params.capabilities,
 		},
 		service:                      service,
 		namespace:                    params.Namespace,
@@ -416,8 +429,9 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}
 		if request.StickyAttributes == nil && wtp.stickyCacheSize > 0 {
 			request.StickyAttributes = &taskqueuepb.StickyExecutionAttributes{
 				WorkerTaskQueue: &taskqueuepb.TaskQueue{
-					Name: getWorkerTaskQueue(wtp.stickyUUID),
-					Kind: enumspb.TASK_QUEUE_KIND_STICKY,
+					Name:       getWorkerTaskQueue(wtp.stickyUUID),
+					Kind:       enumspb.TASK_QUEUE_KIND_STICKY,
+					NormalName: wtp.taskQueueName,
 				},
 				ScheduleToStartTimeout: &wtp.StickyScheduleToStartTimeout,
 			}
@@ -456,21 +470,24 @@ func (wtp *workflowTaskPoller) errorToFailWorkflowTask(taskToken []byte, err err
 		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
 	}
 
-	return &workflowservice.RespondWorkflowTaskFailedRequest{
+	builtRequest := &workflowservice.RespondWorkflowTaskFailedRequest{
 		TaskToken:      taskToken,
 		Cause:          cause,
 		Failure:        wtp.failureConverter.ErrorToFailure(err),
 		Identity:       wtp.identity,
-		BinaryChecksum: wtp.getBuildID(),
+		BinaryChecksum: wtp.workerBuildID,
 		Namespace:      wtp.namespace,
+		WorkerVersion: &commonpb.WorkerVersionStamp{
+			BuildId:       wtp.workerBuildID,
+			UseVersioning: wtp.useBuildIDVersioning,
+		},
 	}
-}
 
-func (bp *basePoller) getBuildID() string {
-	if bp.workerBuildID == "" {
-		return getBinaryChecksum()
+	if wtp.getCapabilities().BuildIdBasedVersioning {
+		builtRequest.BinaryChecksum = ""
 	}
-	return bp.workerBuildID
+
+	return builtRequest
 }
 
 func newLocalActivityPoller(
@@ -675,34 +692,35 @@ func (wtp *workflowTaskPoller) updateBacklog(taskQueueKind enumspb.TaskQueueKind
 //
 // TODO: make this more smart to auto adjust based on poll latency
 func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.PollWorkflowTaskQueueRequest) {
-	taskQueueName := wtp.taskQueueName
-	taskQueueKind := enumspb.TASK_QUEUE_KIND_NORMAL
+	taskQueue := &taskqueuepb.TaskQueue{
+		Name: wtp.taskQueueName,
+		Kind: enumspb.TASK_QUEUE_KIND_NORMAL,
+	}
 	if wtp.stickyCacheSize > 0 {
 		wtp.requestLock.Lock()
 		if wtp.stickyBacklog > 0 || wtp.pendingStickyPollCount <= wtp.pendingRegularPollCount {
 			wtp.pendingStickyPollCount++
-			taskQueueName = getWorkerTaskQueue(wtp.stickyUUID)
-			taskQueueKind = enumspb.TASK_QUEUE_KIND_STICKY
+			taskQueue.Name = getWorkerTaskQueue(wtp.stickyUUID)
+			taskQueue.Kind = enumspb.TASK_QUEUE_KIND_STICKY
+			taskQueue.NormalName = wtp.taskQueueName
 		} else {
 			wtp.pendingRegularPollCount++
 		}
 		wtp.requestLock.Unlock()
 	}
 
-	taskQueue := &taskqueuepb.TaskQueue{
-		Name: taskQueueName,
-		Kind: taskQueueKind,
-	}
 	builtRequest := &workflowservice.PollWorkflowTaskQueueRequest{
 		Namespace:      wtp.namespace,
 		TaskQueue:      taskQueue,
 		Identity:       wtp.identity,
-		BinaryChecksum: wtp.getBuildID(),
+		BinaryChecksum: wtp.workerBuildID,
+		WorkerVersionCapabilities: &commonpb.WorkerVersionCapabilities{
+			BuildId:       wtp.workerBuildID,
+			UseVersioning: wtp.useBuildIDVersioning,
+		},
 	}
-	if wtp.workerBuildID != "" {
-		builtRequest.WorkerVersionCapabilities = &commonpb.WorkerVersionCapabilities{
-			BuildId: wtp.workerBuildID,
-		}
+	if wtp.getCapabilities().BuildIdBasedVersioning {
+		builtRequest.BinaryChecksum = ""
 	}
 	return builtRequest
 }
@@ -865,9 +883,11 @@ func newGetHistoryPageFunc(
 func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowservice.WorkflowServiceClient, params workerExecutionParameters) *activityTaskPoller {
 	return &activityTaskPoller{
 		basePoller: basePoller{
-			metricsHandler: params.MetricsHandler,
-			stopC:          params.WorkerStopChannel,
-			workerBuildID:  params.WorkerBuildID,
+			metricsHandler:       params.MetricsHandler,
+			stopC:                params.WorkerStopChannel,
+			workerBuildID:        params.getBuildID(),
+			useBuildIDVersioning: params.UseBuildIDForVersioning,
+			capabilities:         params.capabilities,
 		},
 		taskHandler:         taskHandler,
 		service:             service,
@@ -898,11 +918,10 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 		TaskQueue:         &taskqueuepb.TaskQueue{Name: atp.taskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
 		Identity:          atp.identity,
 		TaskQueueMetadata: &taskqueuepb.TaskQueueMetadata{MaxTasksPerSecond: &types.DoubleValue{Value: atp.activitiesPerSecond}},
-	}
-	if atp.workerBuildID != "" {
-		request.WorkerVersionCapabilities = &commonpb.WorkerVersionCapabilities{
-			BuildId: atp.workerBuildID,
-		}
+		WorkerVersionCapabilities: &commonpb.WorkerVersionCapabilities{
+			BuildId:       atp.workerBuildID,
+			UseVersioning: atp.useBuildIDVersioning,
+		},
 	}
 
 	response, err := atp.pollActivityTaskQueue(ctx, request)
@@ -1065,6 +1084,7 @@ func convertActivityResultToRespondRequest(
 	failureConverter converter.FailureConverter,
 	namespace string,
 	cancelAllowed bool,
+	versionStamp *commonpb.WorkerVersionStamp,
 ) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
@@ -1074,10 +1094,11 @@ func convertActivityResultToRespondRequest(
 
 	if err == nil {
 		return &workflowservice.RespondActivityTaskCompletedRequest{
-			TaskToken: taskToken,
-			Result:    result,
-			Identity:  identity,
-			Namespace: namespace,
+			TaskToken:     taskToken,
+			Result:        result,
+			Identity:      identity,
+			Namespace:     namespace,
+			WorkerVersion: versionStamp,
 		}
 	}
 
@@ -1086,17 +1107,19 @@ func convertActivityResultToRespondRequest(
 		var canceledErr *CanceledError
 		if errors.As(err, &canceledErr) {
 			return &workflowservice.RespondActivityTaskCanceledRequest{
-				TaskToken: taskToken,
-				Details:   convertErrDetailsToPayloads(canceledErr.details, dataConverter),
-				Identity:  identity,
-				Namespace: namespace,
+				TaskToken:     taskToken,
+				Details:       convertErrDetailsToPayloads(canceledErr.details, dataConverter),
+				Identity:      identity,
+				Namespace:     namespace,
+				WorkerVersion: versionStamp,
 			}
 		}
 		if errors.Is(err, context.Canceled) {
 			return &workflowservice.RespondActivityTaskCanceledRequest{
-				TaskToken: taskToken,
-				Identity:  identity,
-				Namespace: namespace,
+				TaskToken:     taskToken,
+				Identity:      identity,
+				Namespace:     namespace,
+				WorkerVersion: versionStamp,
 			}
 		}
 	}
@@ -1108,10 +1131,11 @@ func convertActivityResultToRespondRequest(
 	}
 
 	return &workflowservice.RespondActivityTaskFailedRequest{
-		TaskToken: taskToken,
-		Failure:   failureConverter.ErrorToFailure(err),
-		Identity:  identity,
-		Namespace: namespace,
+		TaskToken:     taskToken,
+		Failure:       failureConverter.ErrorToFailure(err),
+		Identity:      identity,
+		Namespace:     namespace,
+		WorkerVersion: versionStamp,
 	}
 }
 

@@ -177,6 +177,10 @@ type (
 		// Deprecated: WorkflowExecutionTimeout is deprecated and is never set or
 		// used internally.
 		WorkflowExecutionTimeout time.Duration
+
+		// VersioningIntent specifies whether the continued workflow should run on a worker with a
+		// compatible build ID or not. See VersioningIntent.
+		VersioningIntent VersioningIntent
 	}
 
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
@@ -416,14 +420,14 @@ func IsCanceledError(err error) bool {
 // If the workflow main function returns this error then the current execution is ended and
 // the new execution with same workflow ID is started automatically with options
 // provided to this function.
-//  ctx - use context to override any options for the new workflow like run timeout, task timeout, task queue.
-//	  if not mentioned it would use the defaults that the current workflow is using.
-//        ctx := WithWorkflowRunTimeout(ctx, 30 * time.Minute)
-//        ctx := WithWorkflowTaskTimeout(ctx, 5 * time.Second)
-//	  ctx := WithWorkflowTaskQueue(ctx, "example-group")
-//  wfn - workflow function. for new execution it can be different from the currently running.
-//  args - arguments for the new workflow.
 //
+//	 ctx - use context to override any options for the new workflow like run timeout, task timeout, task queue.
+//		  if not mentioned it would use the defaults that the current workflow is using.
+//	       ctx := WithWorkflowRunTimeout(ctx, 30 * time.Minute)
+//	       ctx := WithWorkflowTaskTimeout(ctx, 5 * time.Second)
+//		  ctx := WithWorkflowTaskQueue(ctx, "example-group")
+//	 wfn - workflow function. for new execution it can be different from the currently running.
+//	 args - arguments for the new workflow.
 func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) error {
 	i := getWorkflowOutboundInterceptor(ctx)
 	// Put header on context before executing
@@ -460,6 +464,7 @@ func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
 		WorkflowExecutionTimeout: options.WorkflowExecutionTimeout,
 		WorkflowRunTimeout:       options.WorkflowRunTimeout,
 		WorkflowTaskTimeout:      options.WorkflowTaskTimeout,
+		VersioningIntent:         options.VersioningIntent,
 	}
 }
 
