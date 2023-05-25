@@ -300,6 +300,7 @@ type (
 
 		// VersioningIntent specifies whether this child workflow should run on a worker with a
 		// compatible build ID or not. See VersioningIntent.
+		// WARNING: Worker versioning is currently experimental
 		VersioningIntent VersioningIntent
 	}
 
@@ -1388,6 +1389,7 @@ func WithDataConverter(ctx Context, dc converter.DataConverter) Context {
 
 // WithWorkflowVersioningIntent is used to set the VersioningIntent before constructing a
 // ContinueAsNewError with NewContinueAsNewError.
+// WARNING: Worker versioning is currently experimental
 func WithWorkflowVersioningIntent(ctx Context, intent VersioningIntent) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	getWorkflowEnvOptions(ctx1).VersioningIntent = intent

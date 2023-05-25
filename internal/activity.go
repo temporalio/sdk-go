@@ -148,6 +148,7 @@ type (
 
 		// VersioningIntent specifies whether this activity should run on a worker with a compatible
 		// build ID or not. See temporal.VersioningIntent.
+		// WARNING: Worker versioning is currently experimental
 		VersioningIntent VersioningIntent
 	}
 

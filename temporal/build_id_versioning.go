@@ -40,8 +40,8 @@ const (
 	// knowledge of the current worker's build ID.
 	// WARNING: Worker versioning is currently experimental
 	VersioningIntentCompatible = internal.VersioningIntentCompatible
-	// VersioningIntentUseDefault indicates that the command should run on the target task queue's
+	// VersioningIntentDefault indicates that the command should run on the target task queue's
 	// current overall-default build ID.
 	// WARNING: Worker versioning is currently experimental
-	VersioningIntentUseDefault = internal.VersioningIntentUseDefault
+	VersioningIntentDefault = internal.VersioningIntentDefault
 )

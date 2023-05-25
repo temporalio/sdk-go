@@ -56,8 +56,7 @@ func TestGetChildWorkflowOptions(t *testing.T) {
 			"foo": "bar",
 		},
 		ParentClosePolicy: enums.PARENT_CLOSE_POLICY_REQUEST_CANCEL,
-		// TODO(bergundy): test the defaults here with caller and destination same task queue / different task queue
-		VersioningIntent: VersioningIntentUseDefault,
+		VersioningIntent:  VersioningIntentDefault,
 	}
 
 	// Require test options to have non-zero value for each field. This ensures that we update tests (and the
@@ -78,8 +77,7 @@ func TestGetActivityOptions(t *testing.T) {
 		ActivityID:             "bar",
 		RetryPolicy:            newTestRetryPolicy(),
 		DisableEagerExecution:  true,
-		// TODO(bergundy): test the defaults here with caller and destination same task queue / different task queue
-		VersioningIntent: VersioningIntentUseDefault,
+		VersioningIntent:       VersioningIntentDefault,
 	}
 
 	assertNonZero(t, opts)

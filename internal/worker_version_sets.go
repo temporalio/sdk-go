@@ -42,9 +42,9 @@ const (
 	// version if possible. It may not be possible if the target task queue does not also have
 	// knowledge of the current worker's build ID.
 	VersioningIntentCompatible
-	// VersioningIntentUseDefault indicates that the command should run on the target task queue's
+	// VersioningIntentDefault indicates that the command should run on the target task queue's
 	// current overall-default build ID.
-	VersioningIntentUseDefault
+	VersioningIntentDefault
 )
 
 type (
@@ -185,7 +185,7 @@ func (v *BuildIDOpPromoteIDWithinSet) targetedBuildId() string      { return v.B
 // the user's intent and whether the target task queue matches this worker's task queue.
 func determineUseCompatibleFlagForCommand(intent VersioningIntent, workerTq, TargetTq string) bool {
 	useCompat := true
-	if intent == VersioningIntentUseDefault {
+	if intent == VersioningIntentDefault {
 		useCompat = false
 	} else if intent == VersioningIntentUnspecified {
 		// If the target task queue doesn't match ours, use the default version
