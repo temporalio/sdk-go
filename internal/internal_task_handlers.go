@@ -1655,7 +1655,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		langUsedFlags = append(langUsedFlags, uint32(flag))
 	}
 
-	return &workflowservice.RespondWorkflowTaskCompletedRequest{
+	builtRequest := &workflowservice.RespondWorkflowTaskCompletedRequest{
 		TaskToken:                  task.TaskToken,
 		Commands:                   commands,
 		Messages:                   messages,
@@ -1674,6 +1674,10 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			UseVersioning: wth.useBuildIDForVersioning,
 		},
 	}
+	if wth.capabilities != nil && wth.capabilities.BuildIdBasedVersioning {
+		builtRequest.BinaryChecksum = ""
+	}
+	return builtRequest
 }
 
 func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *historypb.HistoryEvent, isInReplay bool) error {
