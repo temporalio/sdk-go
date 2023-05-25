@@ -543,9 +543,9 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 		attributes.CronSchedule = params.CronSchedule
 	}
 	useCompat := true
-	if params.VersioningIntent == UseDefaultVersion {
+	if params.VersioningIntent == VersioningIntentUseDefault {
 		useCompat = false
-	} else if params.VersioningIntent == UnspecifiedVersion {
+	} else if params.VersioningIntent == VersioningIntentUnspecified {
 		// If the target task queue doesn't match ours, use the default version
 		if params.TaskQueueName != wc.workflowInfo.TaskQueueName {
 			useCompat = false
@@ -651,9 +651,9 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	// execution is otherwise disallowed
 	scheduleTaskAttr.RequestEagerExecution = !parameters.DisableEagerExecution
 	useCompat := true
-	if parameters.VersioningIntent == UseDefaultVersion {
+	if parameters.VersioningIntent == VersioningIntentUseDefault {
 		useCompat = false
-	} else if parameters.VersioningIntent == UnspecifiedVersion {
+	} else if parameters.VersioningIntent == VersioningIntentUnspecified {
 		// If the target task queue doesn't match ours, use the default version
 		if parameters.TaskQueueName != wc.workflowInfo.TaskQueueName {
 			useCompat = false

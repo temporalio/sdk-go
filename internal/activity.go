@@ -147,8 +147,8 @@ type (
 		DisableEagerExecution bool
 
 		// VersioningIntent specifies whether this activity should run on a worker with a compatible
-		// build ID or not. See VersionIntent.
-		VersioningIntent VersionIntent
+		// build ID or not. See VersioningIntent.
+		VersioningIntent VersioningIntent
 	}
 
 	// LocalActivityOptions stores local activity specific parameters that will be stored inside of a context.

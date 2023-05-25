@@ -299,8 +299,8 @@ type (
 		ParentClosePolicy enumspb.ParentClosePolicy
 
 		// VersioningIntent specifies whether this child workflow should run on a worker with a
-		// compatible build ID or not. See VersionIntent.
-		VersioningIntent VersionIntent
+		// compatible build ID or not. See VersioningIntent.
+		VersioningIntent VersioningIntent
 	}
 
 	// RegisterWorkflowOptions consists of options for registering a workflow
@@ -1386,9 +1386,9 @@ func WithDataConverter(ctx Context, dc converter.DataConverter) Context {
 	return ctx1
 }
 
-// WithVersionIntent is used to set the VersionIntent before constructing a ContinueAsNewError
-// with NewContinueAsNewError.
-func WithVersionIntent(ctx Context, intent VersionIntent) Context {
+// WithWorkflowVersioningIntent is used to set the VersioningIntent before constructing a
+// ContinueAsNewError with NewContinueAsNewError.
+func WithWorkflowVersioningIntent(ctx Context, intent VersioningIntent) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	getWorkflowEnvOptions(ctx1).VersioningIntent = intent
 	return ctx1

@@ -29,22 +29,22 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 )
 
-// VersionIntent indicates whether the user intends certain commands to be run on
+// VersioningIntent indicates whether the user intends certain commands to be run on
 // a compatible worker build ID version or not.
-type VersionIntent int
+type VersioningIntent int
 
 const (
-	// UnspecifiedVersion indicates that the SDK should choose the most sensible default behavior
-	// for the type of command, accounting for whether the command will be run on the same task
-	// queue as the current worker.
-	UnspecifiedVersion VersionIntent = iota
-	// CompatibleVersion indicates that the command should run on a worker with compatible version
-	// if possible. It may not be possible if the target task queue does not also have knowledge of
-	// the current worker's build ID.
-	CompatibleVersion
-	// UseDefaultVersion indicates that the command should run on the target task queue's current
-	// overall-default build ID.
-	UseDefaultVersion
+	// VersioningIntentUnspecified indicates that the SDK should choose the most sensible default
+	// behavior for the type of command, accounting for whether the command will be run on the same
+	// task queue as the current worker.
+	VersioningIntentUnspecified VersioningIntent = iota
+	// VersioningIntentCompatible indicates that the command should run on a worker with compatible
+	// version if possible. It may not be possible if the target task queue does not also have
+	// knowledge of the current worker's build ID.
+	VersioningIntentCompatible
+	// VersioningIntentUseDefault indicates that the command should run on the target task queue's
+	// current overall-default build ID.
+	VersioningIntentUseDefault
 )
 
 type (
@@ -60,25 +60,25 @@ type (
 	// performed when updating the worker build ID compatibility sets for a task queue.
 	//
 	// Possible operations are:
-	//   - UpdateBuildIDOpNewSet
-	//   - UpdateBuildIDOpNewCompatibleVersion
-	//   - UpdateBuildIDOpPromoteSet
-	//   - UpdateBuildIDOpPromoteWithinSet
+	//   - BuildIDOpAddNewIDInNewDefaultSet
+	//   - BuildIDOpAddNewCompatibleVersion
+	//   - BuildIDOpPromoteSet
+	//   - BuildIDOpPromoteIDWithinSet
 	UpdateBuildIDOp interface {
 		targetedBuildId() string
 	}
-	UpdateBuildIDOpNewSet struct {
+	BuildIDOpAddNewIDInNewDefaultSet struct {
 		BuildID string
 	}
-	UpdateBuildIDOpNewCompatibleVersion struct {
+	BuildIDOpAddNewCompatibleVersion struct {
 		BuildID                   string
 		ExistingCompatibleBuildId string
 		MakeSetDefault            bool
 	}
-	UpdateBuildIDOpPromoteSet struct {
+	BuildIDOpPromoteSet struct {
 		BuildID string
 	}
-	UpdateBuildIDOpPromoteWithinSet struct {
+	BuildIDOpPromoteIDWithinSet struct {
 		BuildID string
 	}
 )
@@ -96,12 +96,12 @@ func (uw *UpdateWorkerBuildIdCompatibilityOptions) validateAndConvertToProto() (
 	}
 
 	switch v := uw.Operation.(type) {
-	case *UpdateBuildIDOpNewSet:
+	case *BuildIDOpAddNewIDInNewDefaultSet:
 		req.Operation = &workflowservice.UpdateWorkerBuildIdCompatibilityRequest_AddNewBuildIdInNewDefaultSet{
 			AddNewBuildIdInNewDefaultSet: v.BuildID,
 		}
 
-	case *UpdateBuildIDOpNewCompatibleVersion:
+	case *BuildIDOpAddNewCompatibleVersion:
 		if v.ExistingCompatibleBuildId == "" {
 			return nil, errors.New("missing ExistingCompatibleBuildId")
 		}
@@ -112,11 +112,11 @@ func (uw *UpdateWorkerBuildIdCompatibilityOptions) validateAndConvertToProto() (
 				MakeSetDefault:            v.MakeSetDefault,
 			},
 		}
-	case *UpdateBuildIDOpPromoteSet:
+	case *BuildIDOpPromoteSet:
 		req.Operation = &workflowservice.UpdateWorkerBuildIdCompatibilityRequest_PromoteSetByBuildId{
 			PromoteSetByBuildId: v.BuildID,
 		}
-	case *UpdateBuildIDOpPromoteWithinSet:
+	case *BuildIDOpPromoteIDWithinSet:
 		req.Operation = &workflowservice.UpdateWorkerBuildIdCompatibilityRequest_PromoteBuildIdWithinSet{
 			PromoteBuildIdWithinSet: v.BuildID,
 		}
@@ -176,7 +176,7 @@ func workerVersionSetsFromProto(sets []*taskqueuepb.CompatibleVersionSet) []*Com
 	return result
 }
 
-func (v *UpdateBuildIDOpNewSet) targetedBuildId() string               { return v.BuildID }
-func (v *UpdateBuildIDOpNewCompatibleVersion) targetedBuildId() string { return v.BuildID }
-func (v *UpdateBuildIDOpPromoteSet) targetedBuildId() string           { return v.BuildID }
-func (v *UpdateBuildIDOpPromoteWithinSet) targetedBuildId() string     { return v.BuildID }
+func (v *BuildIDOpAddNewIDInNewDefaultSet) targetedBuildId() string { return v.BuildID }
+func (v *BuildIDOpAddNewCompatibleVersion) targetedBuildId() string { return v.BuildID }
+func (v *BuildIDOpPromoteSet) targetedBuildId() string              { return v.BuildID }
+func (v *BuildIDOpPromoteIDWithinSet) targetedBuildId() string      { return v.BuildID }

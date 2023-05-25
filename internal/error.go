@@ -179,8 +179,8 @@ type (
 		WorkflowExecutionTimeout time.Duration
 
 		// VersioningIntent specifies whether the continued workflow should run on a worker with a
-		// compatible build ID or not. See VersionIntent.
-		VersioningIntent VersionIntent
+		// compatible build ID or not. See VersioningIntent.
+		VersioningIntent VersioningIntent
 	}
 
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist

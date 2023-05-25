@@ -190,19 +190,19 @@ type (
 
 	// BuildIDOpAddNewIDInNewDefaultSet is an operation for UpdateWorkerBuildIdCompatibilityOptions
 	// to add a new BuildID in a new default set.
-	BuildIDOpAddNewIDInNewDefaultSet = internal.UpdateBuildIDOpNewSet
+	BuildIDOpAddNewIDInNewDefaultSet = internal.BuildIDOpAddNewIDInNewDefaultSet
 
 	// BuildIDOpAddNewCompatibleVersion is an operation for UpdateWorkerBuildIdCompatibilityOptions
 	// to add a new BuildID to an existing compatible set.
-	BuildIDOpAddNewCompatibleVersion = internal.UpdateBuildIDOpNewCompatibleVersion
+	BuildIDOpAddNewCompatibleVersion = internal.BuildIDOpAddNewCompatibleVersion
 
 	// BuildIDOpPromoteSet is an operation for UpdateWorkerBuildIdCompatibilityOptions to promote a
 	// set to be the default set by targeting an existing BuildID.
-	BuildIDOpPromoteSet = internal.UpdateBuildIDOpPromoteSet
+	BuildIDOpPromoteSet = internal.BuildIDOpPromoteSet
 
 	// BuildIDOpPromoteIDWithinSet is an operation for UpdateWorkerBuildIdCompatibilityOptions to
 	// promote a BuildID within a set to be the default.
-	BuildIDOpPromoteIDWithinSet = internal.UpdateBuildIDOpPromoteWithinSet
+	BuildIDOpPromoteIDWithinSet = internal.BuildIDOpPromoteIDWithinSet
 
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.

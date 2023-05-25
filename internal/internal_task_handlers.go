@@ -1591,9 +1591,9 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION)
 
 		useCompat := true
-		if contErr.VersioningIntent == UseDefaultVersion {
+		if contErr.VersioningIntent == VersioningIntentUseDefault {
 			useCompat = false
-		} else if contErr.VersioningIntent == UnspecifiedVersion {
+		} else if contErr.VersioningIntent == VersioningIntentUnspecified {
 			// If the target task queue doesn't match ours, use the default version
 			if contErr.TaskQueueName != workflowContext.workflowInfo.TaskQueueName {
 				useCompat = false

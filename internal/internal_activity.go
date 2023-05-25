@@ -70,7 +70,7 @@ type (
 		OriginalTaskQueueName  string
 		RetryPolicy            *commonpb.RetryPolicy
 		DisableEagerExecution  bool
-		VersioningIntent       VersionIntent
+		VersioningIntent       VersioningIntent
 	}
 
 	// ExecuteLocalActivityOptions options for executing a local activity
