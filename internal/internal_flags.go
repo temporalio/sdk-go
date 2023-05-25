@@ -40,7 +40,11 @@ const (
 	// SDKFlagChildWorkflowErrorExecution return errors to child workflow execution future if the child workflow would
 	// fail in the synchronous path.
 	SDKFlagChildWorkflowErrorExecution = 2
-	SDKFlagUnknown                     = math.MaxUint32
+	// SDKFlagProtocolMessageCommand uses ProtocolMessageCommands inserted into
+	// a workflow task response's command set to order messages with respect to
+	// commands.
+	SDKFlagProtocolMessageCommand = 3
+	SDKFlagUnknown                = math.MaxUint32
 )
 
 func sdkFlagFromUint(value uint32) sdkFlag {
@@ -51,6 +55,8 @@ func sdkFlagFromUint(value uint32) sdkFlag {
 		return SDKFlagLimitChangeVersionSASize
 	case uint32(SDKFlagChildWorkflowErrorExecution):
 		return SDKFlagChildWorkflowErrorExecution
+	case uint32(SDKFlagProtocolMessageCommand):
+		return SDKFlagProtocolMessageCommand
 	default:
 		return SDKFlagUnknown
 	}

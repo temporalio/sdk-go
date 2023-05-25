@@ -278,7 +278,10 @@ func isCommandEvent(eventType enumspb.EventType) bool {
 		enumspb.EVENT_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED,
 		enumspb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED,
 		enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES,
-		enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED:
+		enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED,
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED,
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_REJECTED:
 		return true
 	default:
 		return false
@@ -868,6 +871,7 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 
 	eventHandler := w.getEventHandler()
 	reorderedHistory := newHistory(workflowTask, eventHandler)
+	var replayOutbox []outboxEntry
 	var replayCommands []*commandpb.Command
 	var respondEvents []*historypb.HistoryEvent
 
@@ -896,7 +900,6 @@ ProcessEvents:
 		if err != nil {
 			return nil, err
 		}
-
 		eventHandler.sdkFlags.set(flags...)
 		if len(reorderedEvents) == 0 {
 			break ProcessEvents
@@ -905,9 +908,6 @@ ProcessEvents:
 			w.workflowInfo.BinaryChecksum = w.wth.getBuildID()
 		} else {
 			w.workflowInfo.BinaryChecksum = binaryChecksum
-		}
-		for _, flag := range flags {
-			_ = eventHandler.sdkFlags.tryUse(flag, true)
 		}
 		// Reset the mutable side effect markers recorded
 		eventHandler.mutableSideEffectsRecorded = nil
@@ -993,9 +993,11 @@ ProcessEvents:
 		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
 		if isReplay {
 			eventCommands := eventHandler.commandsHelper.getCommands(true)
-			if len(eventCommands) > 0 && !skipReplayCheck {
+			if !skipReplayCheck {
 				replayCommands = append(replayCommands, eventCommands...)
+				replayOutbox = append(replayOutbox, eventHandler.outbox...)
 			}
+			eventHandler.outbox = nil
 		}
 	}
 
@@ -1014,7 +1016,7 @@ ProcessEvents:
 	var workflowError error
 	if !skipReplayCheck && (!w.isWorkflowCompleted || shouldForceReplayCheck()) {
 		// check if commands from reply matches to the history events
-		if err := matchReplayWithHistory(replayCommands, respondEvents); err != nil {
+		if err := matchReplayWithHistory(replayCommands, respondEvents, replayOutbox, w.getEventHandler().sdkFlags); err != nil {
 			workflowError = err
 			w.err = err
 		}
@@ -1178,7 +1180,7 @@ func (w *workflowExecutionContextImpl) CompleteWorkflowTask(workflowTask *workfl
 		w.newCommands = append(w.newCommands, eventCommands...)
 	}
 
-	eventHandler.drainOutbox(&w.newMessages)
+	w.newMessages = append(w.newMessages, eventHandler.takeOutgoingMessages()...)
 	eventHandler.protocols.ClearCompleted()
 
 	completeRequest := w.wth.completeWorkflow(eventHandler, w.currentWorkflowTask, w, w.newCommands, w.newMessages, !waitLocalActivities)
@@ -1237,7 +1239,7 @@ func (w *workflowExecutionContextImpl) ResetIfStale(task *workflowservice.PollWo
 	return nil
 }
 
-func skipDeterministicCheckForCommand(d *commandpb.Command) bool {
+func skipDeterministicCheckForCommand(d *commandpb.Command, _ *sdkFlags) bool {
 	switch d.GetCommandType() {
 	case enumspb.COMMAND_TYPE_RECORD_MARKER:
 		markerName := d.GetRecordMarkerCommandAttributes().GetMarkerName()
@@ -1248,7 +1250,7 @@ func skipDeterministicCheckForCommand(d *commandpb.Command) bool {
 	return false
 }
 
-func skipDeterministicCheckForEvent(e *historypb.HistoryEvent) bool {
+func skipDeterministicCheckForEvent(e *historypb.HistoryEvent, sdkFlags *sdkFlags) bool {
 	switch e.GetEventType() {
 	case enumspb.EVENT_TYPE_MARKER_RECORDED:
 		markerName := e.GetMarkerRecordedEventAttributes().GetMarkerName()
@@ -1265,6 +1267,11 @@ func skipDeterministicCheckForEvent(e *historypb.HistoryEvent) bool {
 		return true
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
 		return true
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_REJECTED,
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED:
+		protocolMsgCommandInUse := sdkFlags.tryUse(SDKFlagProtocolMessageCommand, false)
+		return !protocolMsgCommandInUse
 	}
 	return false
 }
@@ -1283,7 +1290,12 @@ func skipDeterministicCheckForUpsertChangeVersion(events []*historypb.HistoryEve
 	return false
 }
 
-func matchReplayWithHistory(replayCommands []*commandpb.Command, historyEvents []*historypb.HistoryEvent) error {
+func matchReplayWithHistory(
+	replayCommands []*commandpb.Command,
+	historyEvents []*historypb.HistoryEvent,
+	msgs []outboxEntry,
+	sdkFlags *sdkFlags,
+) error {
 	di := 0
 	hi := 0
 	hSize := len(historyEvents)
@@ -1297,7 +1309,7 @@ matchLoop:
 				hi += 2
 				continue matchLoop
 			}
-			if skipDeterministicCheckForEvent(e) {
+			if skipDeterministicCheckForEvent(e, sdkFlags) {
 				hi++
 				continue matchLoop
 			}
@@ -1306,7 +1318,7 @@ matchLoop:
 		var d *commandpb.Command
 		if di < dSize {
 			d = replayCommands[di]
-			if skipDeterministicCheckForCommand(d) {
+			if skipDeterministicCheckForCommand(d, sdkFlags) {
 				di++
 				continue matchLoop
 			}
@@ -1320,7 +1332,7 @@ matchLoop:
 			return historyMismatchErrorf("nondeterministic workflow: extra replay command for %s", util.CommandToString(d))
 		}
 
-		if !isCommandMatchEvent(d, e) {
+		if !isCommandMatchEvent(d, e, msgs) {
 			return historyMismatchErrorf("nondeterministic workflow: history event is %s, replay command is %s",
 				util.HistoryEventToString(e), util.CommandToString(d))
 		}
@@ -1339,8 +1351,17 @@ func lastPartOfName(name string) string {
 	return name[lastDotIdx+1:]
 }
 
-func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent) bool {
+func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, obes []outboxEntry) bool {
 	switch d.GetCommandType() {
+	case enumspb.COMMAND_TYPE_PROTOCOL_MESSAGE:
+		msgid := d.GetProtocolMessageCommandAttributes().GetMessageId()
+		for _, entry := range obes {
+			if entry.msg.Id == msgid {
+				return entry.eventPredicate(e)
+			}
+		}
+		return false
+
 	case enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK:
 		if e.GetEventType() != enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED {
 			return false

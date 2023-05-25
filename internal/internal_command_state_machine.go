@@ -205,6 +205,7 @@ const (
 	commandTypeCompleteWorkflowUpdate    commandType = 10
 	commandTypeModifyProperties          commandType = 11
 	commandTypeRejectWorkflowUpdate      commandType = 12
+	commandTypeProtocolMessage           commandType = 13
 )
 
 const (
@@ -1334,6 +1335,18 @@ func (h *commandsHelper) signalExternalWorkflowExecution(
 	command := h.newSignalExternalWorkflowStateMachine(attributes, signalID)
 	h.addCommand(command)
 	return command
+}
+
+func (h *commandsHelper) addProtocolMessage(msgID string) commandStateMachine {
+	cmd := createNewCommand(enumspb.COMMAND_TYPE_PROTOCOL_MESSAGE)
+	cmd.Attributes = &commandpb.Command_ProtocolMessageCommandAttributes{
+		ProtocolMessageCommandAttributes: &commandpb.ProtocolMessageCommandAttributes{MessageId: msgID},
+	}
+	sm := &completeOnSendStateMachine{
+		naiveCommandStateMachine: h.newNaiveCommandStateMachine(commandTypeProtocolMessage, msgID, cmd),
+	}
+	h.addCommand(sm)
+	return sm
 }
 
 func (h *commandsHelper) upsertSearchAttributes(upsertID string, searchAttr *commonpb.SearchAttributes) commandStateMachine {

@@ -311,8 +311,28 @@ func (s *replayTestSuite) TestUnkownSDKFlag() {
 func (s *replayTestSuite) TestUpdateWorkflow() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflow(UpdateWorkflow)
-	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "update.json")
-	require.NoError(s.T(), err)
+	replayer.RegisterWorkflow(UpdateAndExit)
+
+	for _, name := range [...]string{
+		"update_before_protocol_message_command",
+		"update_with_protocol_message_command",
+		// accept and complete update _and_  complete workflow in same wft
+		"update_accept_and_complete_and_exit",
+		// accept in wft then complete both update and workflow in next wft
+		"update_complete_and_exit",
+	} {
+		s.Run(name, func() {
+			err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), name+".json")
+			require.NoError(s.T(), err)
+		})
+	}
+}
+
+func (s *replayTestSuite) TestNonDeterministicUpdate() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(NonDeterministicUpdate)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "non_deterministic_update.json")
+	s.Error(err)
 }
 
 func TestReplayCustomConverter(t *testing.T) {
