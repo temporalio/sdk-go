@@ -180,3 +180,18 @@ func (v *BuildIDOpAddNewIDInNewDefaultSet) targetedBuildId() string { return v.B
 func (v *BuildIDOpAddNewCompatibleVersion) targetedBuildId() string { return v.BuildID }
 func (v *BuildIDOpPromoteSet) targetedBuildId() string              { return v.BuildID }
 func (v *BuildIDOpPromoteIDWithinSet) targetedBuildId() string      { return v.BuildID }
+
+// Helper to determine if how the `UseCompatibleVersion` flag for a command should be set based on
+// the user's intent and whether the target task queue matches this worker's task queue.
+func determineUseCompatibleFlagForCommand(intent VersioningIntent, workerTq, TargetTq string) bool {
+	useCompat := true
+	if intent == VersioningIntentUseDefault {
+		useCompat = false
+	} else if intent == VersioningIntentUnspecified {
+		// If the target task queue doesn't match ours, use the default version
+		if workerTq != TargetTq {
+			useCompat = false
+		}
+	}
+	return useCompat
+}

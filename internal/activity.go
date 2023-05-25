@@ -147,7 +147,7 @@ type (
 		DisableEagerExecution bool
 
 		// VersioningIntent specifies whether this activity should run on a worker with a compatible
-		// build ID or not. See VersioningIntent.
+		// build ID or not. See temporal.VersioningIntent.
 		VersioningIntent VersioningIntent
 	}
 

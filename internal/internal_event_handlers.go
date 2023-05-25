@@ -542,16 +542,8 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	if len(params.CronSchedule) > 0 {
 		attributes.CronSchedule = params.CronSchedule
 	}
-	useCompat := true
-	if params.VersioningIntent == VersioningIntentUseDefault {
-		useCompat = false
-	} else if params.VersioningIntent == VersioningIntentUnspecified {
-		// If the target task queue doesn't match ours, use the default version
-		if params.TaskQueueName != wc.workflowInfo.TaskQueueName {
-			useCompat = false
-		}
-	}
-	attributes.UseCompatibleVersion = useCompat
+	attributes.UseCompatibleVersion = determineUseCompatibleFlagForCommand(
+		params.VersioningIntent, wc.workflowInfo.TaskQueueName, params.TaskQueueName)
 
 	command, err := wc.commandsHelper.startChildWorkflowExecution(attributes)
 	if _, ok := err.(*childWorkflowExistsWithId); ok {
@@ -650,16 +642,8 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	// false just before request by the eager activity executor if eager activity
 	// execution is otherwise disallowed
 	scheduleTaskAttr.RequestEagerExecution = !parameters.DisableEagerExecution
-	useCompat := true
-	if parameters.VersioningIntent == VersioningIntentUseDefault {
-		useCompat = false
-	} else if parameters.VersioningIntent == VersioningIntentUnspecified {
-		// If the target task queue doesn't match ours, use the default version
-		if parameters.TaskQueueName != wc.workflowInfo.TaskQueueName {
-			useCompat = false
-		}
-	}
-	scheduleTaskAttr.UseCompatibleVersion = useCompat
+	scheduleTaskAttr.UseCompatibleVersion = determineUseCompatibleFlagForCommand(
+		parameters.VersioningIntent, wc.workflowInfo.TaskQueueName, parameters.TaskQueueName)
 
 	command := wc.commandsHelper.scheduleActivityTask(scheduleID, scheduleTaskAttr)
 	command.setData(&scheduledActivity{

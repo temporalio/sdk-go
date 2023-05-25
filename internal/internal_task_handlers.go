@@ -1590,15 +1590,8 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		metricsHandler.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION)
 
-		useCompat := true
-		if contErr.VersioningIntent == VersioningIntentUseDefault {
-			useCompat = false
-		} else if contErr.VersioningIntent == VersioningIntentUnspecified {
-			// If the target task queue doesn't match ours, use the default version
-			if contErr.TaskQueueName != workflowContext.workflowInfo.TaskQueueName {
-				useCompat = false
-			}
-		}
+		useCompat := determineUseCompatibleFlagForCommand(
+			contErr.VersioningIntent, workflowContext.workflowInfo.TaskQueueName, contErr.TaskQueueName)
 		closeCommand.Attributes = &commandpb.Command_ContinueAsNewWorkflowExecutionCommandAttributes{ContinueAsNewWorkflowExecutionCommandAttributes: &commandpb.ContinueAsNewWorkflowExecutionCommandAttributes{
 			WorkflowType:         &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
 			Input:                contErr.Input,
