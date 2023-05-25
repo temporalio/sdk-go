@@ -1386,6 +1386,14 @@ func WithDataConverter(ctx Context, dc converter.DataConverter) Context {
 	return ctx1
 }
 
+// WithVersionIntent is used to set the VersionIntent before constructing a ContinueAsNewError
+// with NewContinueAsNewError.
+func WithVersionIntent(ctx Context, intent VersionIntent) Context {
+	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
+	getWorkflowEnvOptions(ctx1).VersioningIntent = intent
+	return ctx1
+}
+
 // withContextPropagators adds ContextPropagators to the context.
 func withContextPropagators(ctx Context, contextPropagators []ContextPropagator) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
