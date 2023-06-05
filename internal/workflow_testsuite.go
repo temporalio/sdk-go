@@ -388,19 +388,26 @@ func (e *TestWorkflowEnvironment) OnWorkflow(workflow interface{}, args ...inter
 	var call *mock.Call
 	switch fType.Kind() {
 	case reflect.Func:
-		fnType := reflect.TypeOf(workflow)
-		if err := validateFnFormat(fnType, true); err != nil {
+		if err := validateFnFormat(fType, true); err != nil {
 			panic(err)
 		}
 		fnName, _ := getWorkflowFunctionName(e.impl.registry, workflow)
 		if alias, ok := e.impl.registry.getWorkflowAlias(fnName); ok {
 			fnName = alias
 		}
+		e.impl.registry.RegisterWorkflowWithOptions(workflow, RegisterWorkflowOptions{DisableAlreadyRegisteredCheck: true})
 		call = e.mock.On(fnName, args...)
 	case reflect.String:
-		call = e.mock.On(workflow.(string), args...)
+		workflowName := workflow.(string)
+		_, ok := e.impl.registry.getWorkflowFn(workflowName)
+		if !ok {
+			registered := strings.Join(e.impl.registry.getRegisteredWorkflowTypes(), ", ")
+			panic(fmt.Sprintf("Workflow \""+workflowName+"\" is not registered with the TestWorkflowEnvironment, "+
+				"registered types are: %v", registered))
+		}
+		call = e.mock.On(workflowName, args...)
 	default:
-		panic("activity must be function or string")
+		panic("workflow must be function or string")
 	}
 
 	return e.wrapCall(call)
