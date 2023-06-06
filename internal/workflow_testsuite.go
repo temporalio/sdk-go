@@ -398,14 +398,7 @@ func (e *TestWorkflowEnvironment) OnWorkflow(workflow interface{}, args ...inter
 		e.impl.registry.RegisterWorkflowWithOptions(workflow, RegisterWorkflowOptions{DisableAlreadyRegisteredCheck: true})
 		call = e.mock.On(fnName, args...)
 	case reflect.String:
-		workflowName := workflow.(string)
-		_, ok := e.impl.registry.getWorkflowFn(workflowName)
-		if !ok {
-			registered := strings.Join(e.impl.registry.getRegisteredWorkflowTypes(), ", ")
-			panic(fmt.Sprintf("Workflow \""+workflowName+"\" is not registered with the TestWorkflowEnvironment, "+
-				"registered types are: %v", registered))
-		}
-		call = e.mock.On(workflowName, args...)
+		call = e.mock.On(workflow.(string), args...)
 	default:
 		panic("workflow must be function or string")
 	}

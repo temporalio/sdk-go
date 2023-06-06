@@ -312,12 +312,6 @@ func TestWorkflowMockingWithoutRegistration(t *testing.T) {
 	require.Equal(t, "Hello Temporal!", result)
 }
 
-func TestWorkflowMockingByNameWithoutRegistrationFails(t *testing.T) {
-	testSuite := &WorkflowTestSuite{}
-	env := testSuite.NewTestWorkflowEnvironment()
-	assert.Panics(t, func() { env.OnWorkflow("HelloWorkflow", mock.Anything, mock.Anything) }, "The code did not panic")
-}
-
 func TestActivityMockingByNameWithoutRegistrationFails(t *testing.T) {
 	testSuite := &WorkflowTestSuite{}
 	env := testSuite.NewTestWorkflowEnvironment()
