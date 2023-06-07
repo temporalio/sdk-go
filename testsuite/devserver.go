@@ -361,6 +361,11 @@ func retryFor(maxAttempts int, interval time.Duration, cond func() error) error 
 
 // Stop the running server and wait for shutdown to complete. Error is propagated from server shutdown.
 func (s *DevServer) Stop() error {
+	if runtime.GOOS == "windows" {
+		// On Windows, we can't send SIGTERM to the process, so we just kill it.
+		return s.cmd.Process.Kill()
+	}
+
 	if err := s.cmd.Process.Signal(syscall.SIGTERM); err != nil {
 		return err
 	}
