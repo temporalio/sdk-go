@@ -7,6 +7,7 @@ import (
 	"syscall"
 )
 
-func sendInterrupt(process *os.Process) error {
-	return process.Signal(syscall.SIGINT)
+// sendTerminate sends a terminate signal to the given process for graceful shutdown.
+func sendTerminate(process *os.Process) error {
+	return process.Signal(syscall.SIGTERM)
 }

@@ -7,7 +7,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func sendInterrupt(process *os.Process) error {
+// sendTerminate calls the break event on the given process for graceful shutdown.
+func sendTerminate(process *os.Process) error {
 	dll, err := windows.LoadDLL("kernel32.dll")
 	if err != nil {
 		return err

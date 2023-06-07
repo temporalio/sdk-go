@@ -355,7 +355,7 @@ func retryFor(maxAttempts int, interval time.Duration, cond func() error) error 
 
 // Stop the running server and wait for shutdown to complete. Error is propagated from server shutdown.
 func (s *DevServer) Stop() error {
-	if err := sendInterrupt(s.cmd.Process); err != nil {
+	if err := sendTerminate(s.cmd.Process); err != nil {
 		return err
 	}
 	return s.cmd.Wait()
