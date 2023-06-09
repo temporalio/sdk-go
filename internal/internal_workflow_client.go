@@ -1745,9 +1745,11 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 	if err != nil {
 		return nil, err
 	}
-	header, _ := headerPropagated(ctx, w.client.contextPropagators)
-
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	header, err := headerPropagated(ctx, w.client.contextPropagators)
+	if err != nil {
+		return nil, err
+	}
+	grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(pollUpdateTimeout), grpcLongPoll(true), defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	wfexec := &commonpb.WorkflowExecution{
 		WorkflowId: in.WorkflowID,
