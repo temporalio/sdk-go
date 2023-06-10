@@ -152,6 +152,10 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 	lookupCache := determinism.NewPackageLookupCache(pass)
 	// Check every register workflow invocation
 	for _, file := range pass.Files {
+		// Get ignore map for this file
+		ignoreMap := map[ast.Node]struct{}{}
+		determinism.UpdateIgnoreMap(pass.Fset, file, ignoreMap)
+
 		ast.Inspect(file, func(n ast.Node) bool {
 			// Only handle calls
 			callExpr, _ := n.(*ast.CallExpr)
@@ -176,7 +180,17 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 			}
 			// Report if couldn't get type
 			if fn == nil {
-				pass.Reportf(callExpr.Args[0].Pos(), "unrecognized function reference format")
+				_, isIgnored := ignoreMap[n]
+				for k := range ignoreMap {
+					asExprStmt, _ := k.(*ast.ExprStmt)
+					if asExprStmt != nil && asExprStmt.X == n {
+						isIgnored = true
+					}
+				}
+				if !isIgnored {
+					pass.Reportf(callExpr.Args[0].Pos(),
+						"unrecognized function reference format. We cannot follow this function reference to check for non-determinism.")
+				}
 				return true
 			}
 			c.debugf("Checking workflow function %v", fn.FullName())
