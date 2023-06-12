@@ -125,7 +125,7 @@ func (c *Checker) Run(pass *analysis.Pass) (PackageNonDeterminisms, error) {
 		}
 
 		// Update ignore map
-		updateIgnoreMap(pass.Fset, file, coll.ignoreMap)
+		UpdateIgnoreMap(pass.Fset, file, coll.ignoreMap)
 
 		// Collect the decls to check and check vars/iface patterns
 		for _, decl := range file.Decls {
@@ -199,7 +199,7 @@ func (c *Checker) Run(pass *analysis.Pass) (PackageNonDeterminisms, error) {
 	return coll.applyFacts(), nil
 }
 
-func updateIgnoreMap(fset *token.FileSet, f *ast.File, m map[ast.Node]struct{}) {
+func UpdateIgnoreMap(fset *token.FileSet, f *ast.File, m map[ast.Node]struct{}) {
 	// Collect only the ignore comments
 	var comments []*ast.CommentGroup
 	for _, group := range f.Comments {

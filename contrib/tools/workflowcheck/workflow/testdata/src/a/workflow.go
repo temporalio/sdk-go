@@ -16,6 +16,7 @@ func PrepWorkflow() {
 	wrk.RegisterWorkflow(WorkflowIterateMap)           // want "a.WorkflowIterateMap is non-deterministic, reason: iterates over map"
 	wrk.RegisterWorkflow(WorkflowWithTemplate)         // want "a.WorkflowWithTemplate is non-deterministic, reason: calls non-deterministic function \\(\\*text/template\\.Template\\)\\.Execute.*"
 	wrk.RegisterWorkflow(WorkflowWithAwait)
+	HigherOrderWorkflowCallIgnorable(wrk, WorkflowNop)
 }
 
 func WorkflowNop(ctx workflow.Context) error {
@@ -51,4 +52,9 @@ func WorkflowWithAwait(ctx workflow.Context) error {
 	// We do not expect this to fail
 	_, err := workflow.AwaitWithTimeout(ctx, 5*time.Second, func() bool { return true })
 	return err
+}
+
+func HigherOrderWorkflowCallIgnorable(w worker.Worker, wfunc func(workflow.Context) error) {
+	//workflowcheck:ignore
+	w.RegisterWorkflow(wfunc)
 }
