@@ -1,5 +1,3 @@
-//go:build windows
-
 // The MIT License
 //
 // Copyright (c) 2023 Temporal Technologies Inc.  All rights reserved.
@@ -31,8 +29,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// sendTerminate calls the break event on the given process for graceful shutdown.
-func sendTerminate(process *os.Process) error {
+// sendInterrupt calls the break event on the given process for graceful shutdown.
+func sendInterrupt(process *os.Process) error {
 	dll, err := windows.LoadDLL("kernel32.dll")
 	if err != nil {
 		return err
