@@ -49,6 +49,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/internal/common/retry"
+	"go.temporal.io/sdk/internal/protocol"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
@@ -292,11 +293,11 @@ func isCommandEvent(eventType enumspb.EventType) bool {
 
 // NextCommandEvents returns events that there processed as new by the next command.
 // TODO(maxim): Refactor to return a struct instead of multiple parameters
-func (eh *history) NextCommandEvents() (result []*historypb.HistoryEvent, markers []*historypb.HistoryEvent, binaryChecksum string, sdkFlags []sdkFlag, err error) {
+func (eh *history) NextCommandEvents() (result []*historypb.HistoryEvent, markers []*historypb.HistoryEvent, binaryChecksum string, sdkFlags []sdkFlag, msgs []*protocolpb.Message, err error) {
 	if eh.next == nil {
-		eh.next, _, eh.nextFlags, err = eh.nextCommandEvents()
+		eh.next, _, eh.nextFlags, _, err = eh.nextCommandEvents()
 		if err != nil {
-			return result, markers, eh.binaryChecksum, sdkFlags, err
+			return result, markers, eh.binaryChecksum, sdkFlags, msgs, err
 		}
 	}
 
@@ -304,9 +305,9 @@ func (eh *history) NextCommandEvents() (result []*historypb.HistoryEvent, marker
 	checksum := eh.binaryChecksum
 	sdkFlags = eh.nextFlags
 	if len(result) > 0 {
-		eh.next, markers, eh.nextFlags, err = eh.nextCommandEvents()
+		eh.next, markers, eh.nextFlags, msgs, err = eh.nextCommandEvents()
 	}
-	return result, markers, checksum, sdkFlags, err
+	return result, markers, checksum, sdkFlags, msgs, err
 }
 
 func (eh *history) hasMoreEvents() bool {
@@ -334,12 +335,12 @@ func (eh *history) verifyAllEventsProcessed() error {
 	return nil
 }
 
-func (eh *history) nextCommandEvents() (nextEvents []*historypb.HistoryEvent, markers []*historypb.HistoryEvent, sdkFlags []sdkFlag, err error) {
+func (eh *history) nextCommandEvents() (nextEvents []*historypb.HistoryEvent, markers []*historypb.HistoryEvent, sdkFlags []sdkFlag, msgs []*protocolpb.Message, err error) {
 	if eh.currentIndex == len(eh.loadedEvents) && !eh.hasMoreEvents() {
 		if err := eh.verifyAllEventsProcessed(); err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
-		return []*historypb.HistoryEvent{}, []*historypb.HistoryEvent{}, []sdkFlag{}, nil
+		return []*historypb.HistoryEvent{}, []*historypb.HistoryEvent{}, []sdkFlag{}, []*protocolpb.Message{}, nil
 	}
 
 	// Process events
@@ -391,6 +392,15 @@ OrderEvents:
 		default:
 			if isPreloadMarkerEvent(event) {
 				markers = append(markers, event)
+			} else if attrs := event.GetWorkflowExecutionUpdateAcceptedEventAttributes(); attrs != nil {
+				msgs = append(msgs, &protocolpb.Message{
+					Id:                 attrs.GetAcceptedRequestMessageId(),
+					ProtocolInstanceId: attrs.GetProtocolInstanceId(),
+					SequencingId: &protocolpb.Message_EventId{
+						EventId: attrs.GetAcceptedRequestSequencingEventId(),
+					},
+					Body: protocol.MustMarshalAny(attrs.GetAcceptedRequest()),
+				})
 			}
 			nextEvents = append(nextEvents, event)
 		}
@@ -408,7 +418,7 @@ OrderEvents:
 
 	eh.currentIndex = 0
 
-	return nextEvents, markers, sdkFlags, nil
+	return nextEvents, markers, sdkFlags, msgs, nil
 }
 
 func isPreloadMarkerEvent(event *historypb.HistoryEvent) bool {
@@ -566,7 +576,6 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 	if taskQueue == nil || taskQueue.Name == "" {
 		return nil, errors.New("nil or empty TaskQueue in WorkflowExecutionStarted event")
 	}
-	task.Messages = append(inferMessages(task.GetHistory().GetEvents()), task.Messages...)
 
 	runID := task.WorkflowExecution.GetRunId()
 	workflowID := task.WorkflowExecution.GetWorkflowId()
@@ -713,7 +722,6 @@ func (w *workflowExecutionContextImpl) resetStateIfDestroyed(task *workflowservi
 				return err
 			}
 		}
-		task.Messages = append(inferMessages(task.GetHistory().GetEvents()), task.Messages...)
 		if w.workflowInfo != nil {
 			// Reset the search attributes and memos from the WorkflowExecutionStartedEvent.
 			// The search attributes and memo may have been modified by calls like UpsertMemo
@@ -878,8 +886,7 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 	var replayCommands []*commandpb.Command
 	var respondEvents []*historypb.HistoryEvent
 
-	msgs := indexMessagesByEventID(workflowTask.task.GetMessages())
-
+	taskMessages := workflowTask.task.GetMessages()
 	skipReplayCheck := w.skipReplayCheck()
 	shouldForceReplayCheck := func() bool {
 		isInReplayer := IsReplayNamespace(w.wth.namespace)
@@ -899,7 +906,17 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 
 ProcessEvents:
 	for {
-		reorderedEvents, markers, binaryChecksum, flags, err := reorderedHistory.NextCommandEvents()
+		reorderedEvents, markers, binaryChecksum, flags, historyMessages, err := reorderedHistory.NextCommandEvents()
+		// Check if we are replaying so we know if we should use the messages in the WFT or the history
+		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
+		var msgs *eventMsgIndex
+		if isReplay {
+			msgs = indexMessagesByEventID(historyMessages)
+		} else {
+			msgs = indexMessagesByEventID(taskMessages)
+			taskMessages = []*protocolpb.Message{}
+		}
+
 		if err != nil {
 			return nil, err
 		}
@@ -993,7 +1010,6 @@ ProcessEvents:
 				}
 			}
 		}
-		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
 		if isReplay {
 			eventCommands := eventHandler.commandsHelper.getCommands(true)
 			if !skipReplayCheck {

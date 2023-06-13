@@ -34,6 +34,7 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/sdk/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
+	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 )
@@ -179,7 +180,7 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextCommands() {
 
 	eh := newHistory(workflowTask, nil)
 
-	events, _, _, _, err := eh.NextCommandEvents()
+	events, _, _, _, _, err := eh.NextCommandEvents()
 
 	s.NoError(err)
 	s.Equal(3, len(events))
@@ -222,7 +223,7 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextCommandsSdkFlags() {
 
 	eh := newHistory(workflowTask, nil)
 
-	events, _, _, sdkFlags, err := eh.NextCommandEvents()
+	events, _, _, sdkFlags, _, err := eh.NextCommandEvents()
 
 	s.NoError(err)
 	s.Equal(2, len(events))
@@ -232,7 +233,7 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextCommandsSdkFlags() {
 	s.Equal(1, len(sdkFlags))
 	s.EqualValues(SDKFlagLimitChangeVersionSASize, sdkFlags[0])
 
-	events, _, _, sdkFlags, err = eh.NextCommandEvents()
+	events, _, _, sdkFlags, _, err = eh.NextCommandEvents()
 
 	s.NoError(err)
 	s.Equal(4, len(events))
@@ -242,4 +243,68 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextCommandsSdkFlags() {
 	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED, events[3].GetEventType())
 
 	s.Equal(0, len(sdkFlags))
+}
+
+func (s *PollLayerInterfacesTestSuite) TestMessageCommands() {
+	// Schedule an activity and see if we complete workflow.
+	taskQueue := "tq1"
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{
+			ScheduledEventId: 2,
+			StartedEventId:   3,
+		}),
+		createTestEventWorkflowTaskScheduled(5, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskStarted(6),
+		{
+			EventId:   7,
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED,
+		},
+		{
+			EventId:   8,
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
+			Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
+				WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+					ProtocolInstanceId: "test",
+					AcceptedRequest:    &updatepb.Request{},
+				},
+			},
+		},
+		createTestEventWorkflowTaskScheduled(9, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskStarted(10),
+	}
+	task := createWorkflowTaskWithQueries(testEvents[0:3], 0, "HelloWorld_Workflow", nil, false)
+
+	historyIterator := &historyIteratorImpl{
+		iteratorFunc: func(nextToken []byte) (*historypb.History, []byte, error) {
+			return &historypb.History{
+				Events: testEvents[3:],
+			}, nil, nil
+		},
+		nextPageToken: []byte("test"),
+	}
+
+	workflowTask := &workflowTask{task: task, historyIterator: historyIterator}
+
+	eh := newHistory(workflowTask, nil)
+
+	events, _, _, _, msgs, err := eh.NextCommandEvents()
+	s.NoError(err)
+	s.Equal(2, len(events))
+	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED, events[0].GetEventType())
+	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED, events[1].GetEventType())
+
+	s.Equal(1, len(msgs))
+	s.Equal("test", msgs[0].GetProtocolInstanceId())
+
+	events, _, _, _, msgs, err = eh.NextCommandEvents()
+	s.NoError(err)
+	s.Equal(3, len(events))
+	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED, events[0].GetEventType())
+	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED, events[1].GetEventType())
+	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED, events[2].GetEventType())
+
+	s.Equal(0, len(msgs))
 }

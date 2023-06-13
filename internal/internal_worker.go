@@ -49,7 +49,6 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
-	protocolpb "go.temporal.io/api/protocol/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 
@@ -58,7 +57,6 @@ import (
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/common/util"
 	ilog "go.temporal.io/sdk/internal/log"
-	"go.temporal.io/sdk/internal/protocol"
 	"go.temporal.io/sdk/log"
 )
 
@@ -1287,27 +1285,6 @@ func (aw *WorkflowReplayer) GetWorkflowResult(workflowID string, valuePtr interf
 		dc = converter.GetDefaultDataConverter()
 	}
 	return dc.FromPayloads(payloads, valuePtr)
-}
-
-// inferMessages extracts the set of *interactionpb.Invocation objects that
-// should be attached to a workflow task (i.e. the
-// PollWorkflowTaskQueueResponse.Messages) if that task were to carry the
-// provided slice of history events.
-func inferMessages(events []*historypb.HistoryEvent) []*protocolpb.Message {
-	var messages []*protocolpb.Message
-	for _, e := range events {
-		if attrs := e.GetWorkflowExecutionUpdateAcceptedEventAttributes(); attrs != nil {
-			messages = append(messages, &protocolpb.Message{
-				Id:                 attrs.GetAcceptedRequestMessageId(),
-				ProtocolInstanceId: attrs.GetProtocolInstanceId(),
-				SequencingId: &protocolpb.Message_EventId{
-					EventId: attrs.GetAcceptedRequestSequencingEventId(),
-				},
-				Body: protocol.MustMarshalAny(attrs.GetAcceptedRequest()),
-			})
-		}
-	}
-	return messages
 }
 
 func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service workflowservice.WorkflowServiceClient, namespace string, originalExecution WorkflowExecution, history *historypb.History) error {
