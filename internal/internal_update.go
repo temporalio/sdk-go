@@ -91,9 +91,9 @@ type (
 	// sending protocol lmessages.
 	updateProtocol struct {
 		protoInstanceID string
+		clientIdentity  string
 		requestMsgID    string
 		requestSeqID    int64
-		initialRequest  updatepb.Request
 		scheduleUpdate  func(name string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
 		env             updateEnv
 		state           updateState
@@ -135,13 +135,14 @@ func (up *updateProtocol) requireState(action string, valid ...updateState) {
 }
 
 func (up *updateProtocol) HandleMessage(msg *protocolpb.Message) error {
-	if err := types.UnmarshalAny(msg.Body, &up.initialRequest); err != nil {
+	var req updatepb.Request
+	if err := types.UnmarshalAny(msg.Body, &req); err != nil {
 		return err
 	}
 	up.requireState("update request", updateStateNew)
 	up.requestMsgID = msg.GetId()
 	up.requestSeqID = msg.GetEventId()
-	input := up.initialRequest.GetInput()
+	input := req.GetInput()
 	up.scheduleUpdate(input.GetName(), input.GetArgs(), input.GetHeader(), up)
 	up.state = updateStateRequestInitiated
 	return nil
@@ -157,7 +158,7 @@ func (up *updateProtocol) Accept() {
 		Body: protocol.MustMarshalAny(&updatepb.Acceptance{
 			AcceptedRequestMessageId:         up.requestMsgID,
 			AcceptedRequestSequencingEventId: up.requestSeqID,
-			AcceptedRequest:                  &up.initialRequest,
+			// AcceptedRequest field no longer read by server - will be removed from API soon
 		}),
 	}, withExpectedEventPredicate(up.checkAcceptedEvent))
 	up.state = updateStateAccepted
@@ -172,8 +173,8 @@ func (up *updateProtocol) Reject(err error) {
 		Body: protocol.MustMarshalAny(&updatepb.Rejection{
 			RejectedRequestMessageId:         up.requestMsgID,
 			RejectedRequestSequencingEventId: up.requestSeqID,
-			RejectedRequest:                  &up.initialRequest,
 			Failure:                          up.env.GetFailureConverter().ErrorToFailure(err),
+			// RejectedRequest field no longer read by server - will be removed from API soon
 		}),
 	})
 	up.state = updateStateCompleted
@@ -201,7 +202,10 @@ func (up *updateProtocol) Complete(success interface{}, outcomeErr error) {
 		Id:                 up.protoInstanceID + "/complete",
 		ProtocolInstanceId: up.protoInstanceID,
 		Body: protocol.MustMarshalAny(&updatepb.Response{
-			Meta:    up.initialRequest.GetMeta(),
+			Meta: &updatepb.Meta{
+				UpdateId: up.protoInstanceID,
+				Identity: up.clientIdentity,
+			},
 			Outcome: outcome,
 		}),
 	}, withExpectedEventPredicate(up.checkCompletedEvent))
@@ -223,7 +227,8 @@ func (up *updateProtocol) checkAcceptedEvent(e *historypb.HistoryEvent) bool {
 	}
 	return attrs.AcceptedRequest.GetMeta().GetUpdateId() == up.protoInstanceID &&
 		attrs.AcceptedRequestMessageId == up.requestMsgID &&
-		attrs.AcceptedRequestSequencingEventId == up.requestSeqID
+		attrs.AcceptedRequestSequencingEventId == up.requestSeqID &&
+		attrs.AcceptedRequest != nil
 }
 
 // defaultHandler receives the initial invocation of an upate during WFT

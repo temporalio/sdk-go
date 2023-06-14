@@ -29,6 +29,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/gogo/protobuf/types"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	historypb "go.temporal.io/api/history/v1"
@@ -436,12 +437,14 @@ func TestCompletedEventPredicate(t *testing.T) {
 func TestAcceptedEventPredicate(t *testing.T) {
 	updateID := t.Name() + "-updaet-id"
 	requestMsgID := t.Name() + "request-msg-id"
+	requestSeqID := int64(1234)
 	stubUpdateHandler := func(string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks) {}
 	request := updatepb.Request{
 		Meta: &updatepb.Meta{UpdateId: updateID},
 	}
 	requestMsg := protocolpb.Message{
 		Id:                 requestMsgID,
+		SequencingId:       &protocolpb.Message_EventId{EventId: requestSeqID},
 		ProtocolInstanceId: updateID,
 		Body:               protocol.MustMarshalAny(&request),
 	}
@@ -455,26 +458,61 @@ func TestAcceptedEventPredicate(t *testing.T) {
 	up.Accept()
 	require.Len(t, env.outbox, 1, "expected to find accepted message")
 
-	pred := env.outbox[0].eventPredicate
+	var acptmsg updatepb.Acceptance
+	require.NoError(t, types.UnmarshalAny(env.outbox[0].msg.Body, &acptmsg))
+	require.Nil(t, acptmsg.AcceptedRequest,
+		"do not send the original request back - this field will be removed soon")
 
-	require.False(t, pred(&historypb.HistoryEvent{}))
-	require.False(t, pred(&historypb.HistoryEvent{}))
-	require.False(t, pred(&historypb.HistoryEvent{
-		Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
-			WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+	pred := env.outbox[0].eventPredicate
+	for _, tc := range [...]struct {
+		name  string
+		attrs historypb.WorkflowExecutionUpdateAcceptedEventAttributes
+		test  require.BoolAssertionFunc
+	}{
+		{
+			name: "wrong req msg ID",
+			test: require.False,
+			attrs: historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
 				AcceptedRequest:                  &request,
 				AcceptedRequestMessageId:         "wrong request message ID",
-				AcceptedRequestSequencingEventId: 0,
+				AcceptedRequestSequencingEventId: requestSeqID,
 			},
 		},
-	}))
-	require.True(t, pred(&historypb.HistoryEvent{
-		Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
-			WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+		{
+			name: "wrong req seq ID",
+			test: require.False,
+			attrs: historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
 				AcceptedRequest:                  &request,
 				AcceptedRequestMessageId:         requestMsgID,
-				AcceptedRequestSequencingEventId: 0,
+				AcceptedRequestSequencingEventId: requestSeqID + 10,
 			},
 		},
-	}))
+		{
+			name: "missing request",
+			test: require.False,
+			attrs: historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+				AcceptedRequest:                  nil,
+				AcceptedRequestMessageId:         requestMsgID,
+				AcceptedRequestSequencingEventId: requestSeqID,
+			},
+		},
+		{
+			name: "match",
+			test: require.True,
+			attrs: historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+				AcceptedRequest:                  &request,
+				AcceptedRequestMessageId:         requestMsgID,
+				AcceptedRequestSequencingEventId: requestSeqID,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			event := historypb.HistoryEvent{
+				Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
+					WorkflowExecutionUpdateAcceptedEventAttributes: &tc.attrs,
+				},
+			}
+			tc.test(t, pred(&event))
+		})
+	}
 }
