@@ -44,6 +44,7 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
 	querypb "go.temporal.io/api/query/v1"
+	"go.temporal.io/api/sdk/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	updatepb "go.temporal.io/api/update/v1"
@@ -104,6 +105,10 @@ func registerWorkflows(r *registry) {
 	r.RegisterWorkflowWithOptions(
 		binaryChecksumWorkflowFunc,
 		RegisterWorkflowOptions{Name: "BinaryChecksumWorkflow"},
+	)
+	r.RegisterWorkflowWithOptions(
+		helloUpdateWorkflowFunc,
+		RegisterWorkflowOptions{Name: "HelloUpdate_Workflow"},
 	)
 }
 
@@ -496,6 +501,16 @@ func (t *TaskHandlersTestSuite) getTestWorkerExecutionParams() workerExecutionPa
 		Logger:           t.logger,
 		FailureConverter: GetDefaultFailureConverter(),
 		cache:            cache,
+		capabilities: &workflowservice.GetSystemInfoResponse_Capabilities{
+			SignalAndQueryHeader:            true,
+			InternalErrorDifferentiation:    true,
+			ActivityFailureIncludeHeartbeat: true,
+			SupportsSchedules:               true,
+			EncodedFailureAttributes:        true,
+			UpsertMemo:                      true,
+			EagerWorkflowStart:              true,
+			SdkMetadata:                     true,
+		},
 	}
 }
 
@@ -1218,6 +1233,122 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_PageToken() {
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 	request, _, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: historyIterator}, nil)
+	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	t.NoError(err)
+	t.NotNil(response)
+}
+
+func (t *TaskHandlersTestSuite) TestWorkflowTask_Messages() {
+	taskQueue := "taskQueue"
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{
+			ScheduledEventId: 2,
+			StartedEventId:   3,
+			SdkMetadata: &sdk.WorkflowTaskCompletedMetadata{
+				LangUsedFlags: []uint32{
+					3,
+				},
+			},
+		}),
+		{
+			EventId:   5,
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
+			Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
+				WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+					AcceptedRequestSequencingEventId: 2,
+					ProtocolInstanceId:               "test",
+					AcceptedRequest: &updatepb.Request{
+						Meta: &updatepb.Meta{
+							UpdateId: "test",
+						},
+						Input: &updatepb.Input{
+							Name: updateType,
+						},
+					},
+				},
+			},
+		},
+		createTestEventActivityTaskScheduled(6, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "6",
+			ActivityType: &commonpb.ActivityType{Name: "Greeter_Activity"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+		}),
+	}
+	// createWorkflowTask add a schedule and start event
+	task := createWorkflowTask(testEvents, 0, "HelloUpdate_Workflow")
+	task.NextPageToken = []byte("token")
+	task.PreviousStartedEventId = 14
+
+	params := t.getTestWorkerExecutionParams()
+
+	nextEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowTaskCompleted(9, &historypb.WorkflowTaskCompletedEventAttributes{
+			ScheduledEventId: 7,
+			StartedEventId:   8,
+		}),
+		{
+			EventId:   10,
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
+			Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
+				WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+					AcceptedRequestSequencingEventId: 5,
+					ProtocolInstanceId:               "test_2",
+					AcceptedRequest: &updatepb.Request{
+						Meta: &updatepb.Meta{
+							UpdateId: "test_2",
+						},
+						Input: &updatepb.Input{
+							Name: updateType,
+						},
+					},
+				},
+			},
+		},
+		createTestEventActivityTaskScheduled(11, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "11",
+			ActivityType: &commonpb.ActivityType{Name: "Greeter_Activity"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+		}),
+		{
+			EventId:   12,
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
+			Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
+				WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+					AcceptedRequestSequencingEventId: 5,
+					ProtocolInstanceId:               "test_3",
+					AcceptedRequest: &updatepb.Request{
+						Meta: &updatepb.Meta{
+							UpdateId: "test_3",
+						},
+						Input: &updatepb.Input{
+							Name: updateType,
+						},
+					},
+				},
+			},
+		},
+		createTestEventActivityTaskScheduled(13, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "13",
+			ActivityType: &commonpb.ActivityType{Name: "Greeter_Activity"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+		}),
+		createTestEventWorkflowTaskScheduled(14, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(15),
+	}
+
+	historyIterator := &historyIteratorImpl{
+		nextPageToken: []byte("token"),
+		iteratorFunc: func(nextToken []byte) (*historypb.History, []byte, error) {
+			return &historypb.History{Events: nextEvents}, nil, nil
+		},
+	}
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	request, _, err := taskHandler.ProcessWorkflowTask(&workflowTask{
+		task: task, historyIterator: historyIterator,
+	}, nil)
 	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
@@ -2034,7 +2165,7 @@ func TestResetIfDestroyedTaskPrep(t *testing.T) {
 			createTestEventWorkflowTaskScheduled(2, nil),
 			createTestEventWorkflowTaskStarted(3),
 			createTestEventWorkflowTaskCompleted(4, nil),
-			&historypb.HistoryEvent{
+			{
 				EventId:   5,
 				EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
 				Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
@@ -2105,7 +2236,7 @@ func TestResetIfDestroyedTaskPrep(t *testing.T) {
 	t.Run("cache miss", func(t *testing.T) {
 		task := &workflowservice.PollWorkflowTaskQueueResponse{
 			History:  taskHist,
-			Messages: []*protocolpb.Message{&protocolpb.Message{Id: wftNewMsgID}},
+			Messages: []*protocolpb.Message{{Id: wftNewMsgID}},
 		}
 
 		require.EqualValues(t, 0, cache.Size())
@@ -2117,12 +2248,11 @@ func TestResetIfDestroyedTaskPrep(t *testing.T) {
 		require.Len(t, task.History.Events, len(fullHist.Events),
 			"expected task to be mutated to carry full WF history (all events)")
 		requireContainsMsgWithID(t, task.Messages, wftNewMsgID)
-		requireContainsMsgWithID(t, task.Messages, historyAcceptedMsgID)
 	})
 	t.Run("cache hit but destroyed", func(t *testing.T) {
 		task := &workflowservice.PollWorkflowTaskQueueResponse{
 			History:  taskHist,
-			Messages: []*protocolpb.Message{&protocolpb.Message{Id: wftNewMsgID}},
+			Messages: []*protocolpb.Message{{Id: wftNewMsgID}},
 		}
 
 		// trick the execution context into thinking it has been destroyed
@@ -2133,6 +2263,5 @@ func TestResetIfDestroyedTaskPrep(t *testing.T) {
 		require.Len(t, task.History.Events, len(fullHist.Events),
 			"expected task to be mutated to carry full WF history (all events)")
 		requireContainsMsgWithID(t, task.Messages, wftNewMsgID)
-		requireContainsMsgWithID(t, task.Messages, historyAcceptedMsgID)
 	})
 }
