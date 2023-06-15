@@ -72,7 +72,7 @@ type (
 	}
 	BuildIDOpAddNewCompatibleVersion struct {
 		BuildID                   string
-		ExistingCompatibleBuildId string
+		ExistingCompatibleBuildID string
 		MakeSetDefault            bool
 	}
 	BuildIDOpPromoteSet struct {
@@ -102,13 +102,13 @@ func (uw *UpdateWorkerBuildIdCompatibilityOptions) validateAndConvertToProto() (
 		}
 
 	case *BuildIDOpAddNewCompatibleVersion:
-		if v.ExistingCompatibleBuildId == "" {
-			return nil, errors.New("missing ExistingCompatibleBuildId")
+		if v.ExistingCompatibleBuildID == "" {
+			return nil, errors.New("missing ExistingCompatibleBuildID")
 		}
 		req.Operation = &workflowservice.UpdateWorkerBuildIdCompatibilityRequest_AddNewCompatibleBuildId{
 			AddNewCompatibleBuildId: &workflowservice.UpdateWorkerBuildIdCompatibilityRequest_AddNewCompatibleVersion{
 				NewBuildId:                v.BuildID,
-				ExistingCompatibleBuildId: v.ExistingCompatibleBuildId,
+				ExistingCompatibleBuildId: v.ExistingCompatibleBuildID,
 				MakeSetDefault:            v.MakeSetDefault,
 			},
 		}
@@ -188,8 +188,9 @@ func determineUseCompatibleFlagForCommand(intent VersioningIntent, workerTq, Tar
 	if intent == VersioningIntentDefault {
 		useCompat = false
 	} else if intent == VersioningIntentUnspecified {
-		// If the target task queue doesn't match ours, use the default version
-		if workerTq != TargetTq {
+		// If the target task queue doesn't match ours, use the default version. Empty target counts
+		// as matching.
+		if TargetTq != "" && workerTq != TargetTq {
 			useCompat = false
 		}
 	}
