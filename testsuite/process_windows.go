@@ -24,9 +24,22 @@ package testsuite
 
 import (
 	"os"
+	"os/exec"
+	"syscall"
 
 	"golang.org/x/sys/windows"
 )
+
+// newCmd creates a new command with the given executable path and arguments.
+func newCmd(exePath string, args ...string) *exec.Cmd {
+	cmd := exec.Command(exePath, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		// isolate the process from the current console so interrupt signals are not sent to it
+		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
+	}
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	return cmd
+}
 
 // sendInterrupt calls the break event on the given process for graceful shutdown.
 func sendInterrupt(process *os.Process) error {
