@@ -61,5 +61,17 @@ func sendInterrupt(process *os.Process) error {
 	if r1 == 0 {
 		return err
 	}
+
+	// Free the console after sending the interrupt
+	// To prevent sending the CTRL+BREAK signal to all processes sharing the console
+	f, err = dll.FindProc("FreeConsole")
+	if err != nil {
+		return err
+	}
+	r1, _, err = f.Call()
+	if r1 == 0 {
+		return err
+	}
+
 	return nil
 }
