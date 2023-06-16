@@ -120,3 +120,7 @@ func Test_VersioningIntent(t *testing.T) {
 		})
 	}
 }
+
+func Test_VersioningIntent_EmptyTargetTQ(t *testing.T) {
+	assert.Equal(t, true, determineUseCompatibleFlagForCommand(VersioningIntentUnspecified, "something", ""))
+}
