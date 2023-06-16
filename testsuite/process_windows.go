@@ -34,7 +34,7 @@ import (
 func newCmd(exePath string, args ...string) *exec.Cmd {
 	cmd := exec.Command(exePath, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		// isolate the process from the current console so interrupt signals are not sent to it
+		// isolate the process and signals sent to it from the current console
 		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
 	}
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
