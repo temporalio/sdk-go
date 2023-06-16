@@ -109,8 +109,8 @@ func StartDevServer(ctx context.Context, options DevServerOptions) (*DevServer, 
 	}
 
 	args := prepareCommand(&options, host, port, clientOptions.Namespace)
-	cmd := exec.Command(exePath, args...)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+
+	cmd := newCmd(exePath, args...)
 	clientOptions.Logger.Info("Starting DevServer", "ExePath", exePath, "Args", args)
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("failed starting: %w", err)
