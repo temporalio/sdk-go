@@ -224,14 +224,19 @@ func (eh *history) IsReplayEvent(event *historypb.HistoryEvent) bool {
 	return event.GetEventId() <= eh.workflowTask.task.GetPreviousStartedEventId() || isCommandEvent(event.GetEventType())
 }
 
+// IsNextWorkflowTaskFailed checks if the workflow task failed or completed. If it did complete returns some information
+// on the completed workflow task.
 func (eh *history) IsNextWorkflowTaskFailed() (isFailed bool, binaryChecksum string, flags []sdkFlag, err error) {
 	nextIndex := eh.currentIndex + 1
-	if nextIndex >= len(eh.loadedEvents) && eh.hasMoreEvents() { // current page ends and there is more pages
+	// Server can return an empty page so if we need the next event we must keep checking until we either get it
+	// or know we have no more pages to check
+	for nextIndex >= len(eh.loadedEvents) && eh.hasMoreEvents() { // current page ends and there is more pages
 		if err := eh.loadMoreEvents(); err != nil {
 			return false, "", nil, err
 		}
 	}
 
+	// If not replaying we should not expect to find any more events
 	if nextIndex < len(eh.loadedEvents) {
 		nextEvent := eh.loadedEvents[nextIndex]
 		nextEventType := nextEvent.GetEventType()
@@ -393,14 +398,7 @@ OrderEvents:
 			if isPreloadMarkerEvent(event) {
 				markers = append(markers, event)
 			} else if attrs := event.GetWorkflowExecutionUpdateAcceptedEventAttributes(); attrs != nil {
-				msgs = append(msgs, &protocolpb.Message{
-					Id:                 attrs.GetAcceptedRequestMessageId(),
-					ProtocolInstanceId: attrs.GetProtocolInstanceId(),
-					SequencingId: &protocolpb.Message_EventId{
-						EventId: attrs.GetAcceptedRequestSequencingEventId(),
-					},
-					Body: protocol.MustMarshalAny(attrs.GetAcceptedRequest()),
-				})
+				msgs = append(msgs, inferMessage(attrs))
 			}
 			nextEvents = append(nextEvents, event)
 		}
@@ -423,6 +421,17 @@ OrderEvents:
 
 func isPreloadMarkerEvent(event *historypb.HistoryEvent) bool {
 	return event.GetEventType() == enumspb.EVENT_TYPE_MARKER_RECORDED
+}
+
+func inferMessage(attrs *historypb.WorkflowExecutionUpdateAcceptedEventAttributes) *protocolpb.Message {
+	return &protocolpb.Message{
+		Id:                 attrs.GetAcceptedRequestMessageId(),
+		ProtocolInstanceId: attrs.GetProtocolInstanceId(),
+		SequencingId: &protocolpb.Message_EventId{
+			EventId: attrs.GetAcceptedRequestSequencingEventId(),
+		},
+		Body: protocol.MustMarshalAny(attrs.GetAcceptedRequest()),
+	}
 }
 
 // newWorkflowTaskHandler returns an implementation of workflow task handler.
