@@ -899,7 +899,7 @@ func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interfa
 			// During replay, we only generate a command if there was a known marker
 			// recorded on the next task. We have to append the current command
 			// counter to the user-provided ID to avoid duplicates.
-			if wc.mutableSideEffectsRecorded[fmt.Sprintf("%v_%v", id, wc.commandsHelper.nextCommandEventID)] {
+			if wc.mutableSideEffectsRecorded[fmt.Sprintf("%v_%v", id, wc.commandsHelper.getNextID())] {
 				return wc.recordMutableSideEffect(id, callCount, result)
 			}
 			return encodedResult

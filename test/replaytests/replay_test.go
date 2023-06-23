@@ -360,6 +360,13 @@ func TestReplayCustomConverter(t *testing.T) {
 	require.Contains(t, conv.fromPayloads, "Hello Workflow2!")
 }
 
+func (s *replayTestSuite) TestVersionAndMutableSideEffect() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(VersionAndMutableSideEffectWorkflow)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replay-tests-version-and-mutable-side-effect.json")
+	s.NoError(err)
+}
+
 type captureConverter struct {
 	converter.DataConverter
 	toPayloads   []interface{}

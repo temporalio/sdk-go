@@ -30,6 +30,7 @@ import (
 	"math/rand"
 	"time"
 
+	"github.com/google/uuid"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
@@ -390,4 +391,49 @@ func NonDeterministicUpdate(ctx workflow.Context) error {
 	}
 	ch.Receive(ctx, nil)
 	return ctx.Err()
+}
+
+func VersionAndMutableSideEffectWorkflow(ctx workflow.Context, name string) (string, error) {
+	uid := ""
+	logger := workflow.GetLogger(ctx)
+
+	v := workflow.GetVersion(ctx, "mutable-side-effect-bug", workflow.DefaultVersion, 1)
+	if v == 1 {
+		var err error
+		uid, err = generateUUID(ctx)
+		if err != nil {
+			logger.Error("failed to generated uuid", "Error", err)
+			return "", err
+		}
+
+		logger.Info("generated uuid", "uuid-val", uid)
+	}
+
+	ao := workflow.ActivityOptions{
+		StartToCloseTimeout: 10 * time.Second,
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+
+	var result string
+	err := workflow.ExecuteActivity(ctx, helloworldActivity, name).Get(ctx, &result)
+	if err != nil {
+		logger.Error("Activity failed.", "Error", err)
+		return "", err
+	}
+	return uid, nil
+}
+
+func generateUUID(ctx workflow.Context) (string, error) {
+	var generatedUUID string
+
+	err := workflow.MutableSideEffect(ctx, "generate-random-uuid", func(ctx workflow.Context) interface{} {
+		return uuid.NewString()
+	}, func(a, b interface{}) bool {
+		return a.(string) == b.(string)
+	}).Get(&generatedUUID)
+	if err != nil {
+		return "", err
+	}
+
+	return generatedUUID, nil
 }
