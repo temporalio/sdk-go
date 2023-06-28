@@ -78,7 +78,7 @@ constructs.
 
 The first parameter to an activity function can be an optional context.Context. The context will be cancelled when:
 * The activity function returns.
-* The context deadline is exceeded. The deadline is calculated based on the minumum of the ScheduleToClose timeout plus
+* The context deadline is exceeded. The deadline is calculated based on the minimum of the ScheduleToClose timeout plus
 the activity task scheduled time and the StartToClose timeout plus the activity task start time.
 * The activity calls RecordHeartbeat after being cancelled by the Temporal server.
 
