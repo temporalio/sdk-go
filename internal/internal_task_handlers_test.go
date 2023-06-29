@@ -42,15 +42,18 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
-	interactionpb "go.temporal.io/api/interaction/v1"
+	protocolpb "go.temporal.io/api/protocol/v1"
 	querypb "go.temporal.io/api/query/v1"
+	"go.temporal.io/api/sdk/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
+	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
+	"go.temporal.io/sdk/internal/common/cache"
 	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
@@ -103,6 +106,10 @@ func registerWorkflows(r *registry) {
 		binaryChecksumWorkflowFunc,
 		RegisterWorkflowOptions{Name: "BinaryChecksumWorkflow"},
 	)
+	r.RegisterWorkflowWithOptions(
+		helloUpdateWorkflowFunc,
+		RegisterWorkflowOptions{Name: "HelloUpdate_Workflow"},
+	)
 }
 
 func returnPanicWorkflowFunc(Context, []byte) error {
@@ -146,69 +153,79 @@ func createTestEventWorkflowExecutionCompleted(eventID int64, attr *historypb.Wo
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED,
-		Attributes: &historypb.HistoryEvent_WorkflowExecutionCompletedEventAttributes{WorkflowExecutionCompletedEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_WorkflowExecutionCompletedEventAttributes{WorkflowExecutionCompletedEventAttributes: attr},
+	}
 }
 
 func createTestEventWorkflowExecutionStarted(eventID int64, attr *historypb.WorkflowExecutionStartedEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
-		Attributes: &historypb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: attr},
+	}
 }
 
 func createTestEventMarkerRecorded(eventID int64, attr *historypb.MarkerRecordedEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_MARKER_RECORDED,
-		Attributes: &historypb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: attr},
+	}
 }
 
 func createTestEventActivityTaskScheduled(eventID int64, attr *historypb.ActivityTaskScheduledEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED,
-		Attributes: &historypb.HistoryEvent_ActivityTaskScheduledEventAttributes{ActivityTaskScheduledEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_ActivityTaskScheduledEventAttributes{ActivityTaskScheduledEventAttributes: attr},
+	}
 }
 
 func createTestEventActivityTaskCancelRequested(eventID int64, attr *historypb.ActivityTaskCancelRequestedEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCEL_REQUESTED,
-		Attributes: &historypb.HistoryEvent_ActivityTaskCancelRequestedEventAttributes{ActivityTaskCancelRequestedEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_ActivityTaskCancelRequestedEventAttributes{ActivityTaskCancelRequestedEventAttributes: attr},
+	}
 }
 
 func createTestEventActivityTaskStarted(eventID int64, attr *historypb.ActivityTaskStartedEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_ACTIVITY_TASK_STARTED,
-		Attributes: &historypb.HistoryEvent_ActivityTaskStartedEventAttributes{ActivityTaskStartedEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_ActivityTaskStartedEventAttributes{ActivityTaskStartedEventAttributes: attr},
+	}
 }
 
 func createTestEventActivityTaskCompleted(eventID int64, attr *historypb.ActivityTaskCompletedEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED,
-		Attributes: &historypb.HistoryEvent_ActivityTaskCompletedEventAttributes{ActivityTaskCompletedEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_ActivityTaskCompletedEventAttributes{ActivityTaskCompletedEventAttributes: attr},
+	}
 }
 
 func createTestEventActivityTaskTimedOut(eventID int64, attr *historypb.ActivityTaskTimedOutEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT,
-		Attributes: &historypb.HistoryEvent_ActivityTaskTimedOutEventAttributes{ActivityTaskTimedOutEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_ActivityTaskTimedOutEventAttributes{ActivityTaskTimedOutEventAttributes: attr},
+	}
 }
 
 func createTestEventWorkflowTaskScheduled(eventID int64, attr *historypb.WorkflowTaskScheduledEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED,
-		Attributes: &historypb.HistoryEvent_WorkflowTaskScheduledEventAttributes{WorkflowTaskScheduledEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_WorkflowTaskScheduledEventAttributes{WorkflowTaskScheduledEventAttributes: attr},
+	}
 }
 
 func createTestEventWorkflowTaskStarted(eventID int64) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:   eventID,
-		EventType: enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED}
+		EventType: enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED,
+	}
 }
 
 func createTestEventWorkflowExecutionSignaled(eventID int64, signalName string) *historypb.HistoryEvent {
@@ -231,77 +248,88 @@ func createTestEventWorkflowTaskCompleted(eventID int64, attr *historypb.Workflo
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED,
-		Attributes: &historypb.HistoryEvent_WorkflowTaskCompletedEventAttributes{WorkflowTaskCompletedEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_WorkflowTaskCompletedEventAttributes{WorkflowTaskCompletedEventAttributes: attr},
+	}
 }
 
 func createTestEventWorkflowTaskFailed(eventID int64, attr *historypb.WorkflowTaskFailedEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED,
-		Attributes: &historypb.HistoryEvent_WorkflowTaskFailedEventAttributes{WorkflowTaskFailedEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_WorkflowTaskFailedEventAttributes{WorkflowTaskFailedEventAttributes: attr},
+	}
 }
 
 func createTestEventWorkflowTaskTimedOut(eventID int64, attr *historypb.WorkflowTaskTimedOutEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT,
-		Attributes: &historypb.HistoryEvent_WorkflowTaskTimedOutEventAttributes{WorkflowTaskTimedOutEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_WorkflowTaskTimedOutEventAttributes{WorkflowTaskTimedOutEventAttributes: attr},
+	}
 }
 
 func createTestEventSignalExternalWorkflowExecutionFailed(eventID int64, attr *historypb.SignalExternalWorkflowExecutionFailedEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_FAILED,
-		Attributes: &historypb.HistoryEvent_SignalExternalWorkflowExecutionFailedEventAttributes{SignalExternalWorkflowExecutionFailedEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_SignalExternalWorkflowExecutionFailedEventAttributes{SignalExternalWorkflowExecutionFailedEventAttributes: attr},
+	}
 }
 
 func createTestEventStartChildWorkflowExecutionInitiated(eventID int64, attr *historypb.StartChildWorkflowExecutionInitiatedEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED,
-		Attributes: &historypb.HistoryEvent_StartChildWorkflowExecutionInitiatedEventAttributes{StartChildWorkflowExecutionInitiatedEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_StartChildWorkflowExecutionInitiatedEventAttributes{StartChildWorkflowExecutionInitiatedEventAttributes: attr},
+	}
 }
 
 func createTestEventChildWorkflowExecutionStarted(eventID int64, attr *historypb.ChildWorkflowExecutionStartedEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_STARTED,
-		Attributes: &historypb.HistoryEvent_ChildWorkflowExecutionStartedEventAttributes{ChildWorkflowExecutionStartedEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_ChildWorkflowExecutionStartedEventAttributes{ChildWorkflowExecutionStartedEventAttributes: attr},
+	}
 }
 
 func createTestEventStartChildWorkflowExecutionFailed(eventID int64, attr *historypb.StartChildWorkflowExecutionFailedEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_FAILED,
-		Attributes: &historypb.HistoryEvent_StartChildWorkflowExecutionFailedEventAttributes{StartChildWorkflowExecutionFailedEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_StartChildWorkflowExecutionFailedEventAttributes{StartChildWorkflowExecutionFailedEventAttributes: attr},
+	}
 }
 
 func createTestEventRequestCancelExternalWorkflowExecutionInitiated(eventID int64, attr *historypb.RequestCancelExternalWorkflowExecutionInitiatedEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED,
-		Attributes: &historypb.HistoryEvent_RequestCancelExternalWorkflowExecutionInitiatedEventAttributes{RequestCancelExternalWorkflowExecutionInitiatedEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_RequestCancelExternalWorkflowExecutionInitiatedEventAttributes{RequestCancelExternalWorkflowExecutionInitiatedEventAttributes: attr},
+	}
 }
 
 func createTestEventWorkflowExecutionCancelRequested(eventID int64, attr *historypb.WorkflowExecutionCancelRequestedEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCEL_REQUESTED,
-		Attributes: &historypb.HistoryEvent_WorkflowExecutionCancelRequestedEventAttributes{WorkflowExecutionCancelRequestedEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_WorkflowExecutionCancelRequestedEventAttributes{WorkflowExecutionCancelRequestedEventAttributes: attr},
+	}
 }
 
 func createTestEventExternalWorkflowExecutionCancelRequested(eventID int64, attr *historypb.ExternalWorkflowExecutionCancelRequestedEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_EXTERNAL_WORKFLOW_EXECUTION_CANCEL_REQUESTED,
-		Attributes: &historypb.HistoryEvent_ExternalWorkflowExecutionCancelRequestedEventAttributes{ExternalWorkflowExecutionCancelRequestedEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_ExternalWorkflowExecutionCancelRequestedEventAttributes{ExternalWorkflowExecutionCancelRequestedEventAttributes: attr},
+	}
 }
 
 func createTestEventChildWorkflowExecutionCanceled(eventID int64, attr *historypb.ChildWorkflowExecutionCanceledEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_CANCELED,
-		Attributes: &historypb.HistoryEvent_ChildWorkflowExecutionCanceledEventAttributes{ChildWorkflowExecutionCanceledEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_ChildWorkflowExecutionCanceledEventAttributes{ChildWorkflowExecutionCanceledEventAttributes: attr},
+	}
 }
 
 func createTestEventVersionMarker(eventID int64, workflowTaskCompletedID int64, changeID string, version Version) *historypb.HistoryEvent {
@@ -431,7 +459,8 @@ func createTestEventTimerStarted(eventID int64, id int) *historypb.HistoryEvent 
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_TIMER_STARTED,
-		Attributes: &historypb.HistoryEvent_TimerStartedEventAttributes{TimerStartedEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_TimerStartedEventAttributes{TimerStartedEventAttributes: attr},
+	}
 }
 
 func createTestEventTimerFired(eventID int64, id int) *historypb.HistoryEvent {
@@ -443,7 +472,8 @@ func createTestEventTimerFired(eventID int64, id int) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_TIMER_FIRED,
-		Attributes: &historypb.HistoryEvent_TimerFiredEventAttributes{TimerFiredEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_TimerFiredEventAttributes{TimerFiredEventAttributes: attr},
+	}
 }
 
 func createTestEventTimerCanceled(eventID int64, id int) *historypb.HistoryEvent {
@@ -455,7 +485,8 @@ func createTestEventTimerCanceled(eventID int64, id int) *historypb.HistoryEvent
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
 		EventType:  enumspb.EVENT_TYPE_TIMER_CANCELED,
-		Attributes: &historypb.HistoryEvent_TimerCanceledEventAttributes{TimerCanceledEventAttributes: attr}}
+		Attributes: &historypb.HistoryEvent_TimerCanceledEventAttributes{TimerCanceledEventAttributes: attr},
+	}
 }
 
 var testWorkflowTaskTaskqueue = "tq1"
@@ -470,6 +501,16 @@ func (t *TaskHandlersTestSuite) getTestWorkerExecutionParams() workerExecutionPa
 		Logger:           t.logger,
 		FailureConverter: GetDefaultFailureConverter(),
 		cache:            cache,
+		capabilities: &workflowservice.GetSystemInfoResponse_Capabilities{
+			SignalAndQueryHeader:            true,
+			InternalErrorDifferentiation:    true,
+			ActivityFailureIncludeHeartbeat: true,
+			SupportsSchedules:               true,
+			EncodedFailureAttributes:        true,
+			UpsertMemo:                      true,
+			EagerWorkflowStart:              true,
+			SdkMetadata:                     true,
+		},
 	}
 }
 
@@ -534,6 +575,27 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 	t.Equal("chck1", checksums[0])
 	t.Equal("chck2", checksums[1])
 	t.Equal(getBinaryChecksum(), checksums[2])
+}
+
+func (t *TaskHandlersTestSuite) TestRespondsToWFTWithWorkerBinaryID() {
+	taskQueue := "tq1"
+	workerBuildID := "yaaaay"
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskStarted(3),
+	}
+	task := createWorkflowTask(testEvents, 0, "HelloWorld_Workflow")
+	params := t.getTestWorkerExecutionParams()
+	params.WorkerBuildID = workerBuildID
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	request, _, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task}, nil)
+	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	t.NoError(err)
+	t.NotNil(response)
+	t.Equal(workerBuildID, response.GetWorkerVersionStamp().GetBuildId())
+	// clean up workflow left in cache
+	params.cache.getWorkflowCache().Delete(task.WorkflowExecution.RunId)
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
@@ -814,7 +876,7 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(cacheSize int) {
 	value := "should not be modified"
 	expectedValue := value
 	doneCh := make(chan struct{})
-	var myWorkerCachePtr = &sharedWorkerCache{}
+	myWorkerCachePtr := &sharedWorkerCache{}
 	var myWorkerCacheLock sync.Mutex
 
 	workflowFunc := func(ctx Context) error {
@@ -1061,7 +1123,8 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(3),
 		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{
-			ScheduledEventId: 2, BinaryChecksum: checksum1}),
+			ScheduledEventId: 2, BinaryChecksum: checksum1,
+		}),
 		createTestEventWorkflowExecutionSignaledWithPayload(5, signalCh, signal),
 		createTestEventWorkflowTaskScheduled(6, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(7),
@@ -1175,6 +1238,122 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_PageToken() {
 	t.NotNil(response)
 }
 
+func (t *TaskHandlersTestSuite) TestWorkflowTask_Messages() {
+	taskQueue := "taskQueue"
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{
+			ScheduledEventId: 2,
+			StartedEventId:   3,
+			SdkMetadata: &sdk.WorkflowTaskCompletedMetadata{
+				LangUsedFlags: []uint32{
+					3,
+				},
+			},
+		}),
+		{
+			EventId:   5,
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
+			Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
+				WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+					AcceptedRequestSequencingEventId: 2,
+					ProtocolInstanceId:               "test",
+					AcceptedRequest: &updatepb.Request{
+						Meta: &updatepb.Meta{
+							UpdateId: "test",
+						},
+						Input: &updatepb.Input{
+							Name: updateType,
+						},
+					},
+				},
+			},
+		},
+		createTestEventActivityTaskScheduled(6, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "6",
+			ActivityType: &commonpb.ActivityType{Name: "Greeter_Activity"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+		}),
+	}
+	// createWorkflowTask add a schedule and start event
+	task := createWorkflowTask(testEvents, 0, "HelloUpdate_Workflow")
+	task.NextPageToken = []byte("token")
+	task.PreviousStartedEventId = 14
+
+	params := t.getTestWorkerExecutionParams()
+
+	nextEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowTaskCompleted(9, &historypb.WorkflowTaskCompletedEventAttributes{
+			ScheduledEventId: 7,
+			StartedEventId:   8,
+		}),
+		{
+			EventId:   10,
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
+			Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
+				WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+					AcceptedRequestSequencingEventId: 5,
+					ProtocolInstanceId:               "test_2",
+					AcceptedRequest: &updatepb.Request{
+						Meta: &updatepb.Meta{
+							UpdateId: "test_2",
+						},
+						Input: &updatepb.Input{
+							Name: updateType,
+						},
+					},
+				},
+			},
+		},
+		createTestEventActivityTaskScheduled(11, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "11",
+			ActivityType: &commonpb.ActivityType{Name: "Greeter_Activity"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+		}),
+		{
+			EventId:   12,
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
+			Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
+				WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+					AcceptedRequestSequencingEventId: 5,
+					ProtocolInstanceId:               "test_3",
+					AcceptedRequest: &updatepb.Request{
+						Meta: &updatepb.Meta{
+							UpdateId: "test_3",
+						},
+						Input: &updatepb.Input{
+							Name: updateType,
+						},
+					},
+				},
+			},
+		},
+		createTestEventActivityTaskScheduled(13, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "13",
+			ActivityType: &commonpb.ActivityType{Name: "Greeter_Activity"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+		}),
+		createTestEventWorkflowTaskScheduled(14, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(15),
+	}
+
+	historyIterator := &historyIteratorImpl{
+		nextPageToken: []byte("token"),
+		iteratorFunc: func(nextToken []byte) (*historypb.History, []byte, error) {
+			return &historypb.History{Events: nextEvents}, nil, nil
+		},
+	}
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	request, _, err := taskHandler.ProcessWorkflowTask(&workflowTask{
+		task: task, historyIterator: historyIterator,
+	}, nil)
+	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	t.NoError(err)
+	t.NotNil(response)
+}
+
 func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 	backoffInterval := 10 * time.Millisecond
 	workflowComplete := false
@@ -1214,7 +1393,8 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			WorkflowTaskTimeout: &onesec,
-			TaskQueue:           &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}},
+			TaskQueue:           &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
+		},
 		),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		workflowTaskStartedEvent,
@@ -1255,6 +1435,9 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 		nil)
 	t.NotNil(response)
 	t.NoError(err)
+	asWFTComplete := response.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	// There should be no non-first LA attempts since all the retries happen in one WFT
+	t.Equal(uint32(0), asWFTComplete.MeteringMetadata.NonfirstLocalActivityExecutionAttempts)
 	// wait long enough for wf to complete
 	time.Sleep(backoffInterval * 3)
 	t.True(workflowComplete)
@@ -1296,7 +1479,8 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			// make sure the timeout is same as the backoff interval
 			WorkflowTaskTimeout: &wftTimeout,
-			TaskQueue:           &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}},
+			TaskQueue:           &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
+		},
 		),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		workflowTaskStartedEvent,
@@ -1491,7 +1675,8 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 			TaskToken: []byte("token"),
 			WorkflowExecution: &commonpb.WorkflowExecution{
 				WorkflowId: "wID",
-				RunId:      "rID"},
+				RunId:      "rID",
+			},
 			ActivityType:           &commonpb.ActivityType{Name: d.ActivityType},
 			ActivityId:             uuid.New(),
 			ScheduledTime:          &d.ScheduleTS,
@@ -1548,7 +1733,8 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 		TaskToken: []byte("token"),
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: "wID",
-			RunId:      "rID"},
+			RunId:      "rID",
+		},
 		ActivityType:           &commonpb.ActivityType{Name: "test"},
 		ActivityId:             uuid.New(),
 		ScheduledTime:          &now,
@@ -1567,10 +1753,15 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 }
 
 func Test_NonDeterministicCheck(t *testing.T) {
+	unimplementedCommands := []int32{
+		int32(enumspb.COMMAND_TYPE_UNSPECIFIED),
+	}
 	commandTypes := enumspb.CommandType_name
-	delete(commandTypes, 0) // Ignore "Unspecified".
+	for _, cmd := range unimplementedCommands {
+		delete(commandTypes, cmd)
+	}
 
-	require.Equal(t, 17, len(commandTypes), "If you see this error, you are adding new command type. "+
+	require.Equal(t, 15, len(commandTypes), "If you see this error, you are adding new command type. "+
 		"Before updating the number to make this test pass, please make sure you update isCommandMatchEvent() method "+
 		"to check the new command type. Otherwise the replay will fail on the new command event.")
 
@@ -1581,19 +1772,26 @@ func Test_NonDeterministicCheck(t *testing.T) {
 			commandEventTypeCount++
 		}
 	}
-	require.Equal(t, len(commandTypes), commandEventTypeCount, "Every command type must have one matching event type. "+
+	// why doesn't the commandEventTypeCount equal the len(commandTypes)? There
+	// was a time when every event type was created by exactly one command type
+	// however that is no longer the case as ProtocolMessageCommands can create
+	// multiple different event types. Currently this value is two greater than
+	// the command type count because the 1 ProtocolMessageCommand type can
+	// result in 3 different event types being created. As more protocols are
+	// added, this number will increase.
+	require.Equal(t, 17, commandEventTypeCount, "Every command type must have at least one matching event type. "+
 		"If you add new command type, you need to update isCommandEvent() method to include that new event type as well.")
 }
 
 func Test_IsCommandMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 	diType := enumspb.COMMAND_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES
 	eType := enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES
-	strictMode := false
 
 	testCases := []struct {
 		name     string
 		command  *commandpb.Command
 		event    *historypb.HistoryEvent
+		msgs     []outboxEntry
 		expected bool
 	}{
 		{
@@ -1617,7 +1815,8 @@ func Test_IsCommandMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 			},
 			event: &historypb.HistoryEvent{
 				EventType:  eType,
-				Attributes: &historypb.HistoryEvent_UpsertWorkflowSearchAttributesEventAttributes{UpsertWorkflowSearchAttributesEventAttributes: &historypb.UpsertWorkflowSearchAttributesEventAttributes{}}},
+				Attributes: &historypb.HistoryEvent_UpsertWorkflowSearchAttributesEventAttributes{UpsertWorkflowSearchAttributesEventAttributes: &historypb.UpsertWorkflowSearchAttributesEventAttributes{}},
+			},
 			expected: true,
 		},
 		{
@@ -1640,36 +1839,61 @@ func Test_IsCommandMatchEvent_UpsertWorkflowSearchAttributes(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			require.Equal(t, testCase.expected, isCommandMatchEvent(testCase.command, testCase.event, strictMode))
+			require.Equal(t, testCase.expected, isCommandMatchEvent(testCase.command, testCase.event, testCase.msgs))
 		})
 	}
+}
 
-	strictMode = true
-
-	testCases = []struct {
-		name     string
-		command  *commandpb.Command
-		event    *historypb.HistoryEvent
-		expected bool
-	}{
-		{
-			name: "attributes not match",
-			command: &commandpb.Command{
-				CommandType: diType,
-				Attributes: &commandpb.Command_UpsertWorkflowSearchAttributesCommandAttributes{UpsertWorkflowSearchAttributesCommandAttributes: &commandpb.UpsertWorkflowSearchAttributesCommandAttributes{
-					SearchAttributes: &commonpb.SearchAttributes{},
-				}},
+func Test_ProtocolCommandEventMatching(t *testing.T) {
+	msgID := t.Name() + "-msg-id"
+	cmd := &commandpb.Command{
+		CommandType: enumspb.COMMAND_TYPE_PROTOCOL_MESSAGE,
+		Attributes: &commandpb.Command_ProtocolMessageCommandAttributes{
+			ProtocolMessageCommandAttributes: &commandpb.ProtocolMessageCommandAttributes{
+				MessageId: msgID,
 			},
-			event: &historypb.HistoryEvent{
-				EventType:  eType,
-				Attributes: &historypb.HistoryEvent_UpsertWorkflowSearchAttributesEventAttributes{UpsertWorkflowSearchAttributesEventAttributes: &historypb.UpsertWorkflowSearchAttributesEventAttributes{}}},
-			expected: false,
 		},
 	}
-
-	for _, testCase := range testCases {
-		t.Run(testCase.name, func(t *testing.T) {
-			require.Equal(t, testCase.expected, isCommandMatchEvent(testCase.command, testCase.event, strictMode))
+	for _, tc := range [...]struct {
+		name  string
+		event *historypb.HistoryEvent
+		msgs  []outboxEntry
+		want  bool
+	}{
+		{
+			name:  "no matching message ID",
+			event: nil,
+			msgs: []outboxEntry{
+				{msg: &protocolpb.Message{Id: "not the same msg ID"}},
+				{msg: &protocolpb.Message{Id: "also not the same msg ID"}},
+			},
+			want: false,
+		},
+		{
+			name:  "predicate rejects event",
+			event: &historypb.HistoryEvent{},
+			msgs: []outboxEntry{
+				{
+					msg:            &protocolpb.Message{Id: msgID},
+					eventPredicate: func(*historypb.HistoryEvent) bool { return false },
+				},
+			},
+			want: false,
+		},
+		{
+			name:  "predicate accepts event",
+			event: &historypb.HistoryEvent{},
+			msgs: []outboxEntry{
+				{
+					msg:            &protocolpb.Message{Id: msgID},
+					eventPredicate: func(*historypb.HistoryEvent) bool { return true },
+				},
+			},
+			want: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, isCommandMatchEvent(cmd, tc.event, tc.msgs))
 		})
 	}
 }
@@ -1743,12 +1967,12 @@ func Test_IsSearchAttributesMatched(t *testing.T) {
 func Test_IsCommandMatchEvent_ModifyWorkflowProperties(t *testing.T) {
 	diType := enumspb.COMMAND_TYPE_MODIFY_WORKFLOW_PROPERTIES
 	eType := enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED
-	strictMode := false
 
 	testCases := []struct {
 		name     string
 		command  *commandpb.Command
 		event    *historypb.HistoryEvent
+		msgs     []outboxEntry
 		expected bool
 	}{
 		{
@@ -1811,48 +2035,7 @@ func Test_IsCommandMatchEvent_ModifyWorkflowProperties(t *testing.T) {
 				require.Equal(
 					t,
 					testCase.expected,
-					isCommandMatchEvent(testCase.command, testCase.event, strictMode),
-				)
-			},
-		)
-	}
-
-	strictMode = true
-
-	testCases = []struct {
-		name     string
-		command  *commandpb.Command
-		event    *historypb.HistoryEvent
-		expected bool
-	}{
-		{
-			name: "attributes not match",
-			command: &commandpb.Command{
-				CommandType: diType,
-				Attributes: &commandpb.Command_ModifyWorkflowPropertiesCommandAttributes{
-					ModifyWorkflowPropertiesCommandAttributes: &commandpb.ModifyWorkflowPropertiesCommandAttributes{
-						UpsertedMemo: &commonpb.Memo{},
-					},
-				},
-			},
-			event: &historypb.HistoryEvent{
-				EventType: eType,
-				Attributes: &historypb.HistoryEvent_WorkflowPropertiesModifiedEventAttributes{
-					WorkflowPropertiesModifiedEventAttributes: &historypb.WorkflowPropertiesModifiedEventAttributes{},
-				},
-			},
-			expected: false,
-		},
-	}
-
-	for _, testCase := range testCases {
-		t.Run(
-			testCase.name,
-			func(t *testing.T) {
-				require.Equal(
-					t,
-					testCase.expected,
-					isCommandMatchEvent(testCase.command, testCase.event, strictMode),
+					isCommandMatchEvent(testCase.command, testCase.event, testCase.msgs),
 				)
 			},
 		)
@@ -1928,37 +2111,6 @@ func Test_IsMemoMatched(t *testing.T) {
 	}
 }
 
-func TestInvocationIndexing(t *testing.T) {
-	wft := &workflowTask{
-		task: &workflowservice.PollWorkflowTaskQueueResponse{
-			Interactions: []*interactionpb.Invocation{
-				&interactionpb.Invocation{
-					Meta: &interactionpb.Meta{Id: "ID.1", EventId: 3},
-				},
-				&interactionpb.Invocation{
-					Meta: &interactionpb.Meta{Id: "ID.2", EventId: 5},
-				},
-				&interactionpb.Invocation{
-					Meta: &interactionpb.Meta{Id: "ID.3", EventId: 3},
-				},
-			},
-		},
-	}
-	index := indexInvocations(wft)
-
-	event3Interactions := index[3]
-	event4Interactions := index[4]
-	event5Interactions := index[5]
-
-	require.Len(t, event3Interactions, 2)
-	require.Len(t, event4Interactions, 0)
-	require.Len(t, event5Interactions, 1)
-
-	require.Equal(t, event3Interactions[0].Meta.Id, "ID.1")
-	require.Equal(t, event3Interactions[1].Meta.Id, "ID.3")
-	require.Equal(t, event5Interactions[0].Meta.Id, "ID.2")
-}
-
 func TestHeartbeatThrottleInterval(t *testing.T) {
 	assertInterval := func(timeoutSec, defaultIntervalSec, maxIntervalSec, expectedSec int) {
 		a := &activityTaskHandlerImpl{
@@ -1979,4 +2131,137 @@ func TestHeartbeatThrottleInterval(t *testing.T) {
 	assertInterval(14, 2, 10, 10)
 	// Default max to 60 if not set
 	assertInterval(5000, 2, 0, 60)
+}
+
+type MockHistoryIterator struct {
+	HistoryIterator
+	GetNextPageImpl func() (*historypb.History, error)
+	ResetImpl       func()
+	HasNextPageImpl func() bool
+}
+
+func (mhi MockHistoryIterator) GetNextPage() (*historypb.History, error) {
+	return mhi.GetNextPageImpl()
+}
+
+func (mhi MockHistoryIterator) Reset() {
+	mhi.ResetImpl()
+}
+
+func (mhi MockHistoryIterator) HasNextPage() bool {
+	return mhi.HasNextPageImpl()
+}
+
+func TestResetIfDestroyedTaskPrep(t *testing.T) {
+	historyAcceptedMsgID := t.Name() + "-historyAcceptedMsgID"
+	// a plausible full history that includes an update accepted event to also
+	// test for lookahead event inference
+	fullHist := &historypb.History{
+		Events: []*historypb.HistoryEvent{
+			createTestEventWorkflowExecutionStarted(1,
+				&historypb.WorkflowExecutionStartedEventAttributes{
+					TaskQueue: &taskqueuepb.TaskQueue{Name: t.Name() + "-queue"},
+				}),
+			createTestEventWorkflowTaskScheduled(2, nil),
+			createTestEventWorkflowTaskStarted(3),
+			createTestEventWorkflowTaskCompleted(4, nil),
+			{
+				EventId:   5,
+				EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
+				Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
+					WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+						ProtocolInstanceId:       "123",
+						AcceptedRequestMessageId: historyAcceptedMsgID,
+						AcceptedRequest:          &updatepb.Request{},
+					},
+				},
+			},
+		},
+	}
+
+	// start the task out with a partial history to verify that we reset the
+	// history iterator back to the start
+	taskHist := &historypb.History{
+		Events: []*historypb.HistoryEvent{
+			createTestEventWorkflowTaskScheduled(6, nil),
+			createTestEventWorkflowTaskStarted(7),
+		},
+	}
+
+	// iterator implementation uses partial history until HistoryIterator.Reset
+	// is called
+	iterHist := taskHist
+
+	histIter := MockHistoryIterator{
+		ResetImpl: func() {
+			// if impl calls reset, switch to full history
+			iterHist = fullHist
+		},
+
+		GetNextPageImpl: func() (*historypb.History, error) {
+			return iterHist, nil
+		},
+	}
+	cache := cache.NewLRU(1)
+	// values of these fields are not important to the test but some of these
+	// pointers are dereferenced as part of constructing a new event handler so
+	// they need to be non-nil
+	weci := &workflowExecutionContextImpl{
+		workflowInfo: &WorkflowInfo{
+			WorkflowExecution: WorkflowExecution{},
+			WorkflowType:      WorkflowType{Name: t.Name()},
+		},
+		wth: &workflowTaskHandlerImpl{
+			metricsHandler: metrics.NopHandler,
+			logger:         ilog.NewNopLogger(),
+			cache: &WorkerCache{
+				sharedCache: &sharedWorkerCache{workflowCache: &cache},
+			},
+		},
+	}
+
+	// assertion helper for use below
+	requireContainsMsgWithID := func(t *testing.T, msgs []*protocolpb.Message, id string) {
+		t.Helper()
+		for _, msg := range msgs {
+			if msg.GetId() == id {
+				return
+			}
+		}
+		require.FailNow(t, "expected message not found",
+			"message with id %q not found in %v", id, msgs)
+	}
+
+	wftNewMsgID := t.Name() + "-wftNewMsgID"
+	t.Run("cache miss", func(t *testing.T) {
+		task := &workflowservice.PollWorkflowTaskQueueResponse{
+			History:  taskHist,
+			Messages: []*protocolpb.Message{{Id: wftNewMsgID}},
+		}
+
+		require.EqualValues(t, 0, cache.Size())
+		// cache is empty so this should miss and build a new context with a
+		// full history
+		_, err := weci.wth.getOrCreateWorkflowContext(task, histIter)
+
+		require.NoError(t, err)
+		require.Len(t, task.History.Events, len(fullHist.Events),
+			"expected task to be mutated to carry full WF history (all events)")
+		requireContainsMsgWithID(t, task.Messages, wftNewMsgID)
+	})
+	t.Run("cache hit but destroyed", func(t *testing.T) {
+		task := &workflowservice.PollWorkflowTaskQueueResponse{
+			History:  taskHist,
+			Messages: []*protocolpb.Message{{Id: wftNewMsgID}},
+		}
+
+		// trick the execution context into thinking it has been destroyed
+		weci.eventHandler = nil
+		err := weci.resetStateIfDestroyed(task, histIter)
+
+		require.NoError(t, err)
+		require.Len(t, task.History.Events, len(fullHist.Events),
+			"expected task to be mutated to carry full WF history (all events)")
+		requireContainsMsgWithID(t, task.Messages, wftNewMsgID)
+	})
 }

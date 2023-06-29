@@ -305,14 +305,19 @@ func (e *TestWorkflowEnvironment) SetCurrentHistoryLength(length int) {
 // the Return() call should either be a function that has exact same signature as the mocked activity, or it should be
 // mock values with the same types as the mocked activity function returns.
 // Example: assume the activity you want to mock has function signature as:
-//   func MyActivity(ctx context.Context, msg string) (string, error)
+//
+//	func MyActivity(ctx context.Context, msg string) (string, error)
+//
 // You can mock it by return a function with exact same signature:
-//   t.OnActivity(MyActivity, mock.Anything, mock.Anything).Return(func(ctx context.Context, msg string) (string, error) {
-//      // your mock function implementation
-//      return "", nil
-//   })
+//
+//	t.OnActivity(MyActivity, mock.Anything, mock.Anything).Return(func(ctx context.Context, msg string) (string, error) {
+//	   // your mock function implementation
+//	   return "", nil
+//	})
+//
 // OR return mock values with same types as activity function's return types:
-//   t.OnActivity(MyActivity, mock.Anything, mock.Anything).Return("mock_result", nil)
+//
+//	t.OnActivity(MyActivity, mock.Anything, mock.Anything).Return("mock_result", nil)
 //
 // Note, when using a method reference with a receiver as an activity, the receiver must be an instance the same as if
 // it was being using in RegisterActivity so the parameter types are accurate. In Go, a method reference of
@@ -359,14 +364,20 @@ var ErrMockStartChildWorkflowFailed = fmt.Errorf("start child workflow failed: %
 // the Return() call should either be a function that has exact same signature as the mocked workflow, or it should be
 // mock values with the same types as the mocked workflow function returns.
 // Example: assume the workflow you want to mock has function signature as:
-//   func MyChildWorkflow(ctx workflow.Context, msg string) (string, error)
+//
+//	func MyChildWorkflow(ctx workflow.Context, msg string) (string, error)
+//
 // You can mock it by return a function with exact same signature:
-//   t.OnWorkflow(MyChildWorkflow, mock.Anything, mock.Anything).Return(func(ctx workflow.Context, msg string) (string, error) {
-//      // your mock function implementation
-//      return "", nil
-//   })
+//
+//	t.OnWorkflow(MyChildWorkflow, mock.Anything, mock.Anything).Return(func(ctx workflow.Context, msg string) (string, error) {
+//	   // your mock function implementation
+//	   return "", nil
+//	})
+//
 // OR return mock values with same types as workflow function's return types:
-//   t.OnWorkflow(MyChildWorkflow, mock.Anything, mock.Anything).Return("mock_result", nil)
+//
+//	t.OnWorkflow(MyChildWorkflow, mock.Anything, mock.Anything).Return("mock_result", nil)
+//
 // You could also setup mock to simulate start child workflow failure case by returning ErrMockStartChildWorkflowFailed
 // as error.
 //
@@ -377,19 +388,19 @@ func (e *TestWorkflowEnvironment) OnWorkflow(workflow interface{}, args ...inter
 	var call *mock.Call
 	switch fType.Kind() {
 	case reflect.Func:
-		fnType := reflect.TypeOf(workflow)
-		if err := validateFnFormat(fnType, true); err != nil {
+		if err := validateFnFormat(fType, true); err != nil {
 			panic(err)
 		}
 		fnName, _ := getWorkflowFunctionName(e.impl.registry, workflow)
 		if alias, ok := e.impl.registry.getWorkflowAlias(fnName); ok {
 			fnName = alias
 		}
+		e.impl.registry.RegisterWorkflowWithOptions(workflow, RegisterWorkflowOptions{DisableAlreadyRegisteredCheck: true})
 		call = e.mock.On(fnName, args...)
 	case reflect.String:
 		call = e.mock.On(workflow.(string), args...)
 	default:
-		panic("activity must be function or string")
+		panic("workflow must be function or string")
 	}
 
 	return e.wrapCall(call)
@@ -408,17 +419,17 @@ const mockMethodForUpsertMemo = "workflow.UpsertMemo"
 // In that case, you will need to setup mock for those signal calls.
 // Some examples of how to setup mock:
 //
-// * mock for specific target workflow that matches specific signal name and signal data
-// 	 env.OnSignalExternalWorkflow("test-namespace", "test-workflow-id1", "test-runid1", "test-signal", "test-data").Return(nil).Once()
-// * mock for anything and succeed the send
-// 	 env.OnSignalExternalWorkflow(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
-// * mock for anything and fail the send
-// 	 env.OnSignalExternalWorkflow(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errors.New("unknown external workflow")).Once()
-// * mock function for SignalExternalWorkflow
-//   env.OnSignalExternalWorkflow(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+//   - mock for specific target workflow that matches specific signal name and signal data
+//     env.OnSignalExternalWorkflow("test-namespace", "test-workflow-id1", "test-runid1", "test-signal", "test-data").Return(nil).Once()
+//   - mock for anything and succeed the send
+//     env.OnSignalExternalWorkflow(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+//   - mock for anything and fail the send
+//     env.OnSignalExternalWorkflow(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errors.New("unknown external workflow")).Once()
+//   - mock function for SignalExternalWorkflow
+//     env.OnSignalExternalWorkflow(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 //     func(namespace, workflowID, runID, signalName string, arg interface{}) error {
-//       // you can do differently based on the parameters
-//       return nil
+//     // you can do differently based on the parameters
+//     return nil
 //     })
 //
 // Mock callbacks here are run on a separate goroutine than the workflow and
@@ -435,17 +446,17 @@ func (e *TestWorkflowEnvironment) OnSignalExternalWorkflow(namespace, workflowID
 // In that case, you will need to setup mock for those cancel calls.
 // Some examples of how to setup mock:
 //
-// * mock for specific target workflow that matches specific workflow ID and run ID
-// 	 env.OnRequestCancelExternalWorkflow("test-namespace", "test-workflow-id1", "test-runid1").Return(nil).Once()
-// * mock for anything and succeed the cancellation
-// 	 env.OnRequestCancelExternalWorkflow(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
-// * mock for anything and fail the cancellation
-// 	 env.OnRequestCancelExternalWorkflow(mock.Anything, mock.Anything, mock.Anything).Return(errors.New("unknown external workflow")).Once()
-// * mock function for RequestCancelExternalWorkflow
-//   env.OnRequestCancelExternalWorkflow(mock.Anything, mock.Anything, mock.Anything).Return(
+//   - mock for specific target workflow that matches specific workflow ID and run ID
+//     env.OnRequestCancelExternalWorkflow("test-namespace", "test-workflow-id1", "test-runid1").Return(nil).Once()
+//   - mock for anything and succeed the cancellation
+//     env.OnRequestCancelExternalWorkflow(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+//   - mock for anything and fail the cancellation
+//     env.OnRequestCancelExternalWorkflow(mock.Anything, mock.Anything, mock.Anything).Return(errors.New("unknown external workflow")).Once()
+//   - mock function for RequestCancelExternalWorkflow
+//     env.OnRequestCancelExternalWorkflow(mock.Anything, mock.Anything, mock.Anything).Return(
 //     func(namespace, workflowID, runID) error {
-//       // you can do differently based on the parameters
-//       return nil
+//     // you can do differently based on the parameters
+//     return nil
 //     })
 //
 // Mock callbacks here are run on a separate goroutine than the workflow and
@@ -884,9 +895,9 @@ func (e *TestWorkflowEnvironment) AssertExpectations(t mock.TestingT) bool {
 // Useful to assert that an Activity was called from within a workflow with the expected arguments.
 // Since the first argument is a context, consider using mock.Anything for that argument.
 //
-//   env.OnActivity(namedActivity, mock.Anything, mock.Anything).Return("mock_result", nil)
-//   env.ExecuteWorkflow(workflowThatCallsActivityWithItsArgument, "Hello")
-//   env.AssertCalled(t, "namedActivity", mock.Anything, "Hello")
+//	env.OnActivity(namedActivity, mock.Anything, mock.Anything).Return("mock_result", nil)
+//	env.ExecuteWorkflow(workflowThatCallsActivityWithItsArgument, "Hello")
+//	env.AssertCalled(t, "namedActivity", mock.Anything, "Hello")
 //
 // It can produce a false result when an argument is a pointer type and the underlying value changed after calling the mocked method.
 func (e *TestWorkflowEnvironment) AssertCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {

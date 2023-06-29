@@ -51,28 +51,41 @@ type (
 	// ScheduleCalendarSpec is an event specification relative to the calendar, similar to a traditional cron specification.
 	// A timestamp matches if at least one range of each field matches the
 	// corresponding fields of the timestamp, except for year: if year is missing,
-	// that means all years match. For all fields besides year, at least one Range
+	// that means all years match. For all fields besides year, at least one Range must be present to match anything.
 	ScheduleCalendarSpec struct {
 		// Second range to match (0-59).
+		//
+		// default: matches 0
 		Second []ScheduleRange
 
 		// Minute range to match (0-59).
+		//
+		// default: matches 0
 		Minute []ScheduleRange
 
 		// Hour range to match (0-23).
+		//
+		// default: matches 0
 		Hour []ScheduleRange
 
 		// DayOfMonth range to match (1-31)
+		//
+		// default: matches all days
 		DayOfMonth []ScheduleRange
 
 		// Month range to match (1-12)
+		//
+		// default: matches all months
 		Month []ScheduleRange
 
 		// Year range to match.
-		// Optional: Defaulted to "*"
+		//
+		// default: empty that matches all years
 		Year []ScheduleRange
 
 		// DayOfWeek range to match (0-6; 0 is Sunday)
+		//
+		// default: matches all days of the week
 		DayOfWeek []ScheduleRange
 
 		// Comment - Description of the intention of this schedule.
@@ -181,7 +194,7 @@ type (
 
 		// Skip - Any matching times will be skipped.
 		//
-		// All aspects of the schedulepb.ScheduleCalendarSpec—including seconds—must match a time for the time to be skipped.
+		// All fields of the ScheduleCalendarSpec—including seconds—must match a time for the time to be skipped.
 		Skip []ScheduleCalendarSpec
 
 		// StartAt - Any times before `startAt` will be skipped. Together, `startAt` and `endAt` make an inclusive interval.
@@ -247,10 +260,6 @@ type (
 		// WorkflowTaskTimeout - The timeout for processing workflow task from the time the worker
 		// pulled this task.
 		WorkflowTaskTimeout time.Duration
-
-		// WorkflowIdReusePolicy - Whether server allow reuse of workflow ID, can be useful
-		// for dedupe logic if set to RejectDuplicate.
-		WorkflowIDReusePolicy enumspb.WorkflowIdReusePolicy
 
 		// RetryPolicy - Retry policy for workflow. If a retry policy is specified, in case of workflow failure
 		// server will start new workflow execution if needed based on the retry policy.
@@ -551,12 +560,12 @@ type (
 		// describes what workflow is run.
 		WorkflowType WorkflowType
 
-		// RecentActions- Most recent 10 Actions started (including manual triggers).
+		// RecentActions- Most recent 5 Actions started (including manual triggers).
 		//
 		// Sorted from older start time to newer.
 		RecentActions []ScheduleActionResult
 
-		// NextActionTimes - Next 10 scheduled Action times.
+		// NextActionTimes - Next 5 scheduled Action times.
 		NextActionTimes []time.Time
 
 		// Memo - Non-indexed user supplied information.

@@ -12,7 +12,7 @@ developers should still scrutinize Workflow code for other non-determinisms.**
 
 To install with [Go](https://golang.org/) installed and on the `PATH`, run:
 
-    go install go.temporal.io/sdk/contrib/tools/workflowcheck
+    go install go.temporal.io/sdk/contrib/tools/workflowcheck@latest
 
 Or you can simply build by running `go build` inside of this directory. 
 

@@ -9,7 +9,7 @@ BUILD := .build
 TEST_TIMEOUT := 5m
 TEST_ARG ?= -race -v -timeout $(TEST_TIMEOUT)
 
-INTEG_TEST_ROOT := ./test
+INTEG_TEST_ROOT := ./test/
 COVER_ROOT := $(abspath $(BUILD)/coverage)
 UT_COVER_FILE := $(COVER_ROOT)/unit_test_cover.out
 INTEG_ZERO_CACHE_COVER_FILE := $(COVER_ROOT)/integ_test_zero_cache_cover.out
@@ -28,11 +28,6 @@ copyright $(BUILD)/copyright:
 	go run ./internal/cmd/tools/copyright/licensegen.go --verifyOnly
 	@mkdir -p $(BUILD)
 	@touch $(BUILD)/copyright
-
-# Ensure generated code dependent on the API is not stale
-generatorcheck:
-	(cd converter && go run ../internal/cmd/generateinterceptor/main.go -verifyOnly)
-	(cd client && go run ../internal/cmd/generateproxy/main.go -verifyOnly)
 
 $(BUILD)/dummy:
 	go build -o $@ internal/cmd/dummy/dummy.go
@@ -62,18 +57,9 @@ integration-test-normal-cache: $(BUILD)/dummy
 
 test: unit-test integration-test-zero-cache integration-test-normal-cache
 
-$(COVER_ROOT)/cover.out: $(UT_COVER_FILE) $(INTEG_ZERO_CACHE_COVER_FILE) $(INTEG_NORMAL_CACHE_COVER_FILE)
-	@echo "mode: atomic" > $(COVER_ROOT)/cover.out
-	cat $(UT_COVER_FILE) | grep -v "^mode: \w\+" | grep -v ".gen" >> $(COVER_ROOT)/cover.out
-	cat $(INTEG_ZERO_CACHE_COVER_FILE) | grep -v "^mode: \w\+" | grep -v ".gen" >> $(COVER_ROOT)/cover.out
-	cat $(INTEG_NORMAL_CACHE_COVER_FILE) | grep -v "^mode: \w\+" | grep -v ".gen" >> $(COVER_ROOT)/cover.out
-
-cover: $(COVER_ROOT)/cover.out
-	go tool cover -html=$(COVER_ROOT)/cover.out;
-
-cover_ci: $(COVER_ROOT)/cover.out
-	go install github.com/mattn/goveralls@latest
-	goveralls -coverprofile=$(COVER_ROOT)/cover.out -service=github
+merge-coverage:
+	@echo "mode: atomic"
+	@grep -hsv "^mode: \w\+" $(COVER_ROOT)/*_cover.out | grep -v ".gen" || true
 
 vet: $(ALL_SRC)
 	@for dir in $(MOD_DIRS); do \
@@ -81,7 +67,7 @@ vet: $(ALL_SRC)
 	done;
 
 staticcheck: $(ALL_SRC)
-	go install honnef.co/go/tools/cmd/staticcheck@latest
+	go install honnef.co/go/tools/cmd/staticcheck@v0.4.1
 	@for dir in $(MOD_DIRS); do \
 		(cd "$$dir" && echo "In $$dir" && staticcheck ./...) || exit 1; \
 	done;
@@ -103,4 +89,4 @@ fmt:
 clean:
 	rm -rf $(BUILD)
 
-check: vet errcheck staticcheck copyright generatorcheck bins
+check: vet errcheck staticcheck copyright bins

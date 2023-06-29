@@ -32,9 +32,11 @@ import (
 	"testing"
 	"time"
 
+	updatepb "go.temporal.io/api/update/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	uberatomic "go.uber.org/atomic"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
 
 	ilog "go.temporal.io/sdk/internal/log"
@@ -48,6 +50,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
+	"google.golang.org/grpc/status"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -1462,4 +1465,306 @@ func TestClientCloseCount(t *testing.T) {
 	// Now close the last one (the second) and confirm it actually gets closed
 	client2.Close()
 	require.Equal(t, connectivity.Shutdown, workflowClient.conn.GetState())
+}
+
+func TestCompletedUpdateHandle(t *testing.T) {
+	t.Run("error case", func(t *testing.T) {
+		err := errors.New(t.Name())
+		uh := completedUpdateHandle{err: err}
+		require.Error(t, uh.Get(context.TODO(), nil))
+	})
+
+	t.Run("value case", func(t *testing.T) {
+		dc := converter.GetDefaultDataConverter()
+		payloads, err := dc.ToPayloads(t.Name())
+		require.NoError(t, err)
+		uh := completedUpdateHandle{value: newEncodedValue(payloads, dc)}
+		var out string
+		require.NoError(t, uh.Get(context.TODO(), &out))
+		require.Equal(t, t.Name(), out)
+	})
+
+	t.Run("nil does not panic", func(t *testing.T) {
+		uh := completedUpdateHandle{}
+		require.NotPanics(t, func() { _ = uh.Get(context.TODO(), nil) })
+	})
+}
+
+func TestUpdate(t *testing.T) {
+	dc := converter.GetDefaultDataConverter()
+	fc := GetDefaultFailureConverter()
+
+	init := func(t *testing.T) (*workflowservicemock.MockWorkflowServiceClient, *WorkflowClient) {
+		svc := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+		client := NewServiceClient(svc, nil, ClientOptions{})
+		svc.EXPECT().
+			GetSystemInfo(gomock.Any(), gomock.Any()).
+			AnyTimes().
+			Return(&workflowservice.GetSystemInfoResponse{}, nil)
+
+		return svc, client
+	}
+
+	mustOutcome := func(t *testing.T, successOrError interface{}) *updatepb.Outcome {
+		t.Helper()
+		if errOut, ok := successOrError.(error); ok {
+			return &updatepb.Outcome{
+				Value: &updatepb.Outcome_Failure{
+					Failure: fc.ErrorToFailure(errOut),
+				},
+			}
+		}
+		outSuccess, err := dc.ToPayloads(successOrError)
+		require.NoError(t, err)
+		return &updatepb.Outcome{
+			Value: &updatepb.Outcome_Success{
+				Success: outSuccess,
+			},
+		}
+
+	}
+
+	const (
+		sync  = enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED
+		async = enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ACCEPTED
+	)
+
+	newRequest := func(
+		t *testing.T,
+		stage enumspb.UpdateWorkflowExecutionLifecycleStage,
+	) *UpdateWorkflowWithOptionsRequest {
+		t.Helper()
+		return &UpdateWorkflowWithOptionsRequest{
+			UpdateID:   fmt.Sprintf("%v-update_id", t.Name()),
+			WorkflowID: fmt.Sprintf("%v-workflow_id", t.Name()),
+			RunID:      fmt.Sprintf("%v-run_id", t.Name()),
+			UpdateName: fmt.Sprintf("%v-update_name", t.Name()),
+			WaitPolicy: &updatepb.WaitPolicy{LifecycleStage: stage},
+		}
+	}
+
+	refFromRequest := func(req *UpdateWorkflowWithOptionsRequest) *updatepb.UpdateRef {
+		return &updatepb.UpdateRef{
+			WorkflowExecution: &commonpb.WorkflowExecution{
+				WorkflowId: req.WorkflowID,
+				RunId:      req.RunID,
+			},
+			UpdateId: req.UpdateName,
+		}
+	}
+
+	sleepCtx := func(ctx context.Context, dur time.Duration) {
+		select {
+		case <-ctx.Done():
+		case <-time.After(dur):
+		}
+	}
+
+	t.Run("sync success", func(t *testing.T) {
+		svc, client := init(t)
+		want := t.Name()
+		req := newRequest(t, sync)
+		svc.EXPECT().
+			UpdateWorkflowExecution(gomock.Any(), gomock.Any()).Return(
+			&workflowservice.UpdateWorkflowExecutionResponse{
+				UpdateRef: refFromRequest(req),
+				Outcome:   mustOutcome(t, want),
+			},
+			nil,
+		)
+		handle, err := client.UpdateWorkflowWithOptions(context.TODO(), req)
+		require.NoError(t, err)
+		var got string
+		err = handle.Get(context.TODO(), &got)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	})
+	t.Run("sync error", func(t *testing.T) {
+		svc, client := init(t)
+		want := errors.New("this error was intentional")
+		req := newRequest(t, sync)
+		svc.EXPECT().
+			UpdateWorkflowExecution(gomock.Any(), gomock.Any()).Return(
+			&workflowservice.UpdateWorkflowExecutionResponse{
+				UpdateRef: refFromRequest(req),
+				Outcome:   mustOutcome(t, want),
+			},
+			nil,
+		)
+		handle, err := client.UpdateWorkflowWithOptions(context.TODO(), req)
+		require.NoError(t, err)
+		var got string
+		err = handle.Get(context.TODO(), &got)
+		require.Error(t, err)
+		require.ErrorContains(t, err, want.Error())
+	})
+	t.Run("async success", func(t *testing.T) {
+		svc, client := init(t)
+		want := t.Name()
+		req := newRequest(t, async)
+		svc.EXPECT().UpdateWorkflowExecution(gomock.Any(), gomock.Any()).
+			Return(
+				&workflowservice.UpdateWorkflowExecutionResponse{
+					UpdateRef: refFromRequest(req),
+					Outcome:   nil, // async invocation - outcome unknown
+				},
+				nil,
+			)
+		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
+			Return(
+				&workflowservice.PollWorkflowExecutionUpdateResponse{
+					Outcome: mustOutcome(t, want),
+				},
+				nil,
+			)
+		handle, err := client.UpdateWorkflowWithOptions(context.TODO(), req)
+		require.NoError(t, err)
+		var got string
+		err = handle.Get(context.TODO(), &got)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	})
+	t.Run("async error", func(t *testing.T) {
+		svc, client := init(t)
+		want := errors.New("this error was intentional")
+		req := newRequest(t, async)
+		svc.EXPECT().UpdateWorkflowExecution(gomock.Any(), gomock.Any()).
+			Return(
+				&workflowservice.UpdateWorkflowExecutionResponse{
+					UpdateRef: refFromRequest(req),
+					Outcome:   nil, // async invocation - outcome unknown
+				},
+				nil,
+			)
+		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
+			Return(
+				&workflowservice.PollWorkflowExecutionUpdateResponse{
+					Outcome: mustOutcome(t, want),
+				},
+				nil,
+			)
+		handle, err := client.UpdateWorkflowWithOptions(context.TODO(), req)
+		require.NoError(t, err)
+		var got string
+		err = handle.Get(context.TODO(), &got)
+		require.Error(t, err)
+		require.ErrorContains(t, err, want.Error())
+	})
+	t.Run("internal retry on timeout", func(t *testing.T) {
+		svc, client := init(t)
+		want := t.Name()
+		req := newRequest(t, async)
+		svc.EXPECT().UpdateWorkflowExecution(gomock.Any(), gomock.Any()).
+			Return(
+				&workflowservice.UpdateWorkflowExecutionResponse{
+					UpdateRef: refFromRequest(req),
+					Outcome:   nil, // async invocation - outcome unknown
+				},
+				nil,
+			)
+		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
+			Return(nil, status.Error(codes.DeadlineExceeded, codes.DeadlineExceeded.String()))
+		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
+			Return(
+				&workflowservice.PollWorkflowExecutionUpdateResponse{
+					Outcome: mustOutcome(t, want),
+				},
+				nil,
+			)
+
+		pollCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		handle, err := client.UpdateWorkflowWithOptions(pollCtx, req)
+		require.NoError(t, err)
+		var got string
+		err = handle.Get(pollCtx, &got)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	})
+	t.Run("internal retry on nil outcome", func(t *testing.T) {
+		svc, client := init(t)
+		want := t.Name()
+		req := newRequest(t, async)
+		svc.EXPECT().UpdateWorkflowExecution(gomock.Any(), gomock.Any()).
+			Return(
+				&workflowservice.UpdateWorkflowExecutionResponse{
+					UpdateRef: refFromRequest(req),
+					Outcome:   nil, // async invocation - outcome unknown
+				},
+				nil,
+			)
+		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
+			Return(
+				&workflowservice.PollWorkflowExecutionUpdateResponse{
+					Outcome: nil, // not an error, outcome still unknown
+				},
+				nil,
+			)
+		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
+			Return(
+				&workflowservice.PollWorkflowExecutionUpdateResponse{
+					Outcome: mustOutcome(t, want),
+				},
+				nil,
+			)
+
+		handle, err := client.UpdateWorkflowWithOptions(context.TODO(), req)
+		require.NoError(t, err)
+		var got string
+		err = handle.Get(context.TODO(), &got)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+	})
+	t.Run("default ctx timeout", func(t *testing.T) {
+		svc, client := init(t)
+		handle := client.GetWorkflowUpdateHandle(GetWorkflowUpdateHandleOptions{})
+		expectedDeadline := time.Now().Add(pollUpdateTimeout)
+		var actualDeadline time.Time // assigned below in mock
+		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
+			DoAndReturn(
+				func(
+					ctx context.Context,
+					_ *workflowservice.PollWorkflowExecutionUpdateRequest,
+					_ ...grpc.CallOption,
+				) (*workflowservice.PollWorkflowExecutionUpdateResponse, error) {
+					actualDeadline, _ = ctx.Deadline()
+					return nil, errors.New("intentional error")
+				},
+			)
+		_ = handle.Get(context.TODO(), nil)
+
+		// can't tell what the exact deadline will be so assert that the
+		// observed deadline passed to server rpc is within 2 seconds of the
+		// default pollUpdateTimout that is used when no other deadline/timeout
+		// is supplied by the caller.
+		require.WithinDuration(t, expectedDeadline, actualDeadline, 2*time.Second)
+	})
+	t.Run("parent ctx timeout", func(t *testing.T) {
+		svc, client := init(t)
+		handle := client.GetWorkflowUpdateHandle(GetWorkflowUpdateHandleOptions{})
+		callerDeadline := time.Now().Add(50 * time.Millisecond)
+		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
+			DoAndReturn(
+				func(
+					ctx context.Context,
+					_ *workflowservice.PollWorkflowExecutionUpdateRequest,
+					_ ...grpc.CallOption,
+				) (*workflowservice.PollWorkflowExecutionUpdateResponse, error) {
+					thisDeadline, ok := ctx.Deadline()
+					require.True(t, ok)
+					require.LessOrEqual(t, thisDeadline, callerDeadline,
+						"caller timeout can be shortened but not extended")
+					ctxWillTimeoutIn := time.Until(thisDeadline)
+					sleepCtx(ctx, ctxWillTimeoutIn+3*time.Second)
+					require.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
+					return nil, ctx.Err()
+				},
+			)
+		callerCtx, cancel := context.WithDeadline(context.TODO(), callerDeadline)
+		defer cancel()
+		var got string
+		err := handle.Get(callerCtx, &got)
+		require.Error(t, err)
+		require.Equal(t, callerCtx.Err(), err)
+	})
 }

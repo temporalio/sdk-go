@@ -79,7 +79,9 @@ type (
 		MaxConcurrentActivityTaskPollers int
 
 		// Optional: To set the maximum concurrent workflow task executions this worker can have.
-		// The zero value of this uses the default value.
+		// The zero value of this uses the default value. Due to internal logic where pollers
+		// alternate between stick and non-sticky queues, this
+		// value cannot be 1 and will panic if set to that value.
 		// default: defaultMaxConcurrentTaskExecutionSize(1k)
 		MaxConcurrentWorkflowTaskExecutionSize int
 
@@ -225,6 +227,18 @@ type (
 		// and aliased names when not using string names when executing child
 		// workflow or activities.
 		DisableRegistrationAliasing bool
+
+		// Assign a BuildID to this worker. This replaces the deprecated binary checksum concept,
+		// and is used to provide a unique identifier for a set of worker code, and is necessary
+		// to opt in to the Worker Versioning feature. See UseBuildIDForVersioning.
+		// NOTE: Experimental
+		BuildID string
+
+		// Optional: If set, opts this worker into the Worker Versioning feature. It will only
+		// operate on workflows it claims to be compatible with. You must set BuildID if this flag
+		// is true.
+		// NOTE: Experimental
+		UseBuildIDForVersioning bool
 	}
 )
 

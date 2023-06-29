@@ -73,6 +73,9 @@ type Tracer interface {
 	// GetLogger returns a log.Logger which may include additional fields in its
 	// output in order to support correlation of tracing and log data.
 	GetLogger(log.Logger, TracerSpanRef) log.Logger
+	// SpanName can be used to give a custom name to a Span according to the input TracerStartSpanOptions,
+	// or the decision can be deferred to the BaseTracer implementation.
+	SpanName(options *TracerStartSpanOptions) string
 
 	mustEmbedBaseTracer()
 }
@@ -82,6 +85,9 @@ type BaseTracer struct{}
 
 func (BaseTracer) GetLogger(logger log.Logger, ref TracerSpanRef) log.Logger {
 	return logger
+}
+func (BaseTracer) SpanName(options *TracerStartSpanOptions) string {
+	return fmt.Sprintf("%s:%s", options.Operation, options.Name)
 }
 
 //lint:ignore U1000 Ignore unused method; it is only required to implement the Tracer interface but will never be called.
@@ -156,7 +162,8 @@ type TracerStartSpanOptions struct {
 }
 
 // TracerSpanRef represents a span reference such as a parent.
-type TracerSpanRef interface{}
+type TracerSpanRef interface {
+}
 
 // TracerSpan represents a span.
 type TracerSpan interface {

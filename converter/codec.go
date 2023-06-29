@@ -20,8 +20,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-//go:generate go run ../internal/cmd/generateinterceptor/main.go
-
 package converter
 
 import (
@@ -30,7 +28,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"strings"
 
@@ -117,7 +114,7 @@ func (*zlibCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, err
 			return payloads, err
 		}
 		// Read all and unmarshal
-		b, err := ioutil.ReadAll(r)
+		b, err := io.ReadAll(r)
 		if closeErr := r.Close(); closeErr != nil && err == nil {
 			err = closeErr
 		}

@@ -27,6 +27,7 @@ import (
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
+	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
@@ -239,7 +240,10 @@ type WorkflowOutboundInterceptor interface {
 	// SetQueryHandler intercepts workflow.SetQueryHandler.
 	SetQueryHandler(ctx Context, queryType string, handler interface{}) error
 
-	SetUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateOptions) error
+	// SetUpdateHandler intercepts workflow.SetUpdateHandler.
+	//
+	// NOTE: Experimental
+	SetUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions) error
 
 	// IsReplaying intercepts workflow.IsReplaying.
 	IsReplaying(ctx Context) bool
@@ -299,7 +303,39 @@ type ClientOutboundInterceptor interface {
 	// interceptor.Header will return a non-nil map for this context.
 	QueryWorkflow(context.Context, *ClientQueryWorkflowInput) (converter.EncodedValue, error)
 
+	// UpdateWorkflow intercepts client.Client.UpdateWorkflow
+	// interceptor.Header will return a non-nil map for this context.
+	//
+	// NOTE: Experimental
+	UpdateWorkflow(context.Context, *ClientUpdateWorkflowInput) (WorkflowUpdateHandle, error)
+
+	// PollWorkflowUpdate requests the outcome of a specific update from the
+	// server.
+	//
+	// NOTE: Experimental
+	PollWorkflowUpdate(context.Context, *ClientPollWorkflowUpdateInput) (converter.EncodedValue, error)
+
 	mustEmbedClientOutboundInterceptorBase()
+}
+
+// ClientUpdateWorkflowInput is the input to
+// ClientOutboundInterceptor.UpdateWorkflow
+//
+// NOTE: Experimental
+type ClientUpdateWorkflowInput struct {
+	UpdateID            string
+	WorkflowID          string
+	UpdateName          string
+	Args                []interface{}
+	RunID               string
+	FirstExecutionRunID string
+	WaitPolicy          *updatepb.WaitPolicy
+}
+
+// ClientPollWorkflowUpdateInput is the input to
+// ClientOutboundInterceptor.PollWorkflowUpdate.
+type ClientPollWorkflowUpdateInput struct {
+	UpdateRef *updatepb.UpdateRef
 }
 
 // ScheduleClientCreateInput is the input to

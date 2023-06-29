@@ -1,0 +1,119 @@
+{
+ "events": [
+  {
+   "eventId": "1",
+   "eventTime": "2022-12-13T22:51:53.636542965Z",
+   "eventType": "WorkflowExecutionStarted",
+   "taskId": "7343043",
+   "workflowExecutionStartedEventAttributes": {
+    "workflowType": {
+     "name": "LocalActivityWorkflow"
+    },
+    "taskQueue": {
+     "name": "replay-test",
+     "kind": "Normal"
+    },
+    "input": {
+     "payloads": [
+      {
+       "metadata": {
+        "encoding": "anNvbi9wbGFpbg=="
+       },
+       "data": "IldvcmtmbG93MyI="
+      }
+     ]
+    },
+    "workflowExecutionTimeout": "0s",
+    "workflowRunTimeout": "0s",
+    "workflowTaskTimeout": "10s",
+    "originalExecutionRunId": "9068faf2-5070-4e3f-95cf-6172644cfa24",
+    "identity": "11111@Quinn-Klassens-MacBook-Pro.local@",
+    "firstExecutionRunId": "9068faf2-5070-4e3f-95cf-6172644cfa24",
+    "attempt": 1,
+    "firstWorkflowTaskBackoff": "0s",
+    "header": {
+
+    }
+   }
+  },
+  {
+   "eventId": "2",
+   "eventTime": "2022-12-13T22:51:53.636593965Z",
+   "eventType": "WorkflowTaskScheduled",
+   "taskId": "7343044",
+   "workflowTaskScheduledEventAttributes": {
+    "taskQueue": {
+     "name": "replay-test",
+     "kind": "Normal"
+    },
+    "startToCloseTimeout": "10s",
+    "attempt": 1
+   }
+  },
+  {
+   "eventId": "3",
+   "eventTime": "2022-12-13T22:51:53.643692507Z",
+   "eventType": "WorkflowTaskStarted",
+   "taskId": "7343051",
+   "workflowTaskStartedEventAttributes": {
+    "scheduledEventId": "2",
+    "identity": "11111@Quinn-Klassens-MacBook-Pro.local@",
+    "requestId": "2c9dfc74-8477-45f7-9bd7-710054bf870c"
+   }
+  },
+  {
+   "eventId": "4",
+   "eventTime": "2022-12-13T22:51:53.648255882Z",
+   "eventType": "WorkflowTaskCompleted",
+   "taskId": "7343055",
+   "workflowTaskCompletedEventAttributes": {
+    "scheduledEventId": "2",
+    "startedEventId": "3",
+    "identity": "11111@Quinn-Klassens-MacBook-Pro.local@",
+    "binaryChecksum": "48a264a4d5038290773fdab470dbf90b",
+    "workerVersioningId": null
+   }
+  },
+  {
+   "eventId": "5",
+   "eventTime": "2022-12-13T22:51:53.648280423Z",
+   "eventType": "MarkerRecorded",
+   "taskId": "7343056",
+   "markerRecordedEventAttributes": {
+    "markerName": "LocalActivity",
+    "details": {
+     "data": {
+      "payloads": [
+       {
+        "metadata": {
+         "encoding": "anNvbi9wbGFpbg=="
+        },
+        "data": "eyJBY3Rpdml0eUlEIjoiMSIsIkFjdGl2aXR5VHlwZSI6ImhlbGxvd29ybGRBY3Rpdml0eSIsIlJlcGxheVRpbWUiOiIyMDIyLTEyLTEzVDIyOjUxOjUzLjY0MzgyMjA0OVoiLCJBdHRlbXB0IjoxLCJCYWNrb2ZmIjowfQ=="
+       }
+      ]
+     },
+     "result": {
+      "payloads": [
+       {
+        "metadata": {
+         "encoding": "anNvbi9wbGFpbg=="
+        },
+        "data": "IkhlbGxvIFdvcmtmbG93MyEi"
+       }
+      ]
+     }
+    },
+    "workflowTaskCompletedEventId": "4"
+   }
+  },
+  {
+   "eventId": "6",
+   "eventTime": "2022-12-13T22:51:53.648281840Z",
+   "eventType": "WorkflowExecutionCompleted",
+   "taskId": "7343057",
+   "workflowExecutionCompletedEventAttributes": {
+    "workflowTaskCompletedEventId": "4"
+   }
+  }
+ ]
+}

@@ -44,6 +44,7 @@ import (
 
 const (
 	queryType    = "test-query"
+	updateType   = "update-query"
 	errQueryType = "test-err-query"
 	signalCh     = "signal-chan"
 
@@ -54,8 +55,7 @@ const (
 
 type (
 	// Greeter activity
-	greeterActivity struct {
-	}
+	greeterActivity struct{}
 
 	InterfacesTestSuite struct {
 		suite.Suite
@@ -89,6 +89,30 @@ func helloWorldWorkflowFunc(ctx Context, _ []byte) error {
 
 	queryResult = "error:" + err.Error()
 	return err
+}
+
+func helloUpdateWorkflowFunc(ctx Context, _ []byte) error {
+	err := setUpdateHandler(ctx, updateType, func(ctx Context) (string, error) {
+		activityName := "Greeter_Activity"
+		ao := ActivityOptions{
+			TaskQueue:              "taskQueue",
+			ScheduleToStartTimeout: time.Minute,
+			StartToCloseTimeout:    time.Minute,
+			HeartbeatTimeout:       20 * time.Second,
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		var result string
+		err := ExecuteActivity(ctx, activityName).Get(ctx, &result)
+		return result, err
+	}, UpdateHandlerOptions{})
+	if err != nil {
+		return err
+	}
+
+	ch := GetSignalChannel(ctx, signalCh)
+	var signalResult string
+	ch.Receive(ctx, &signalResult)
+	return nil
 }
 
 func querySignalWorkflowFunc(ctx Context, numSignals int) error {

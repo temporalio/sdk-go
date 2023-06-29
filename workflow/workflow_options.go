@@ -29,6 +29,7 @@ import (
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
+	"go.temporal.io/sdk/temporal"
 )
 
 // WithChildOptions adds all workflow options to the context.
@@ -73,4 +74,10 @@ func WithDataConverter(ctx Context, dc converter.DataConverter) Context {
 // GetChildWorkflowOptions returns all workflow options present on the context.
 func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 	return internal.GetChildWorkflowOptions(ctx)
+}
+
+// WithWorkflowVersioningIntent is used to set the VersioningIntent before constructing a
+// ContinueAsNewError with NewContinueAsNewError.
+func WithWorkflowVersioningIntent(ctx Context, intent temporal.VersioningIntent) Context {
+	return internal.WithWorkflowVersioningIntent(ctx, intent)
 }

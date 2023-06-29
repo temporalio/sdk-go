@@ -27,7 +27,6 @@ package replaytests
 import (
 	"context"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -37,6 +36,7 @@ import (
 	"go.temporal.io/api/workflowservicemock/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/worker"
 )
@@ -116,9 +116,15 @@ func (s *replayTestSuite) TestReplayBadWorkflowHistoryFromFile() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflow(Workflow1)
 
+	// Test bad history that calls the no activities
 	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "bad-history.json")
 	require.Error(s.T(), err)
-	require.True(s.T(), strings.Contains(err.Error(), "nondeterministic workflow definition"))
+	require.Contains(s.T(), err.Error(), "nondeterministic workflow definition")
+
+	// Test bad history that calls the wrong activity
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "bad-history-2.json")
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), "nondeterministic workflow: history event is ActivityTaskScheduled: (ActivityId:19, ActivityType:(Name:BAD ACTIVITY)")
 }
 
 func (s *replayTestSuite) TestReplayUnhandledTimerFiredWithCancel() {
@@ -127,6 +133,206 @@ func (s *replayTestSuite) TestReplayUnhandledTimerFiredWithCancel() {
 
 	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "unhandled_cmd_timer_cancel.json")
 	require.NoError(s.T(), err)
+}
+
+func (s *replayTestSuite) TestReplayLocalActivity() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(LocalActivityWorkflow)
+
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "local-activity.json")
+	require.NoError(s.T(), err)
+}
+
+func (s *replayTestSuite) TestBadReplayLocalActivity() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(LocalActivityWorkflow)
+
+	// Test bad history that does not call any local activities
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "bad-local-activity.json")
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), "replay workflow doesn't return the same result as the last event, resp: &RespondWorkflowTaskCompletedRequest")
+
+	// Test bad history that calls two local activities
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "bad-local-activity-2.json")
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), "nondeterministic workflow: missing replay command for MarkerRecorded")
+}
+
+func (s *replayTestSuite) TestContinueAsNewWorkflow() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(ContinueAsNewWorkflow)
+
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "continue-as-new.json")
+	require.NoError(s.T(), err)
+}
+
+func (s *replayTestSuite) TestBadContinueAsNewWorkflow() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(ContinueAsNewWorkflow)
+
+	// Continue as new as the wrong workflow type
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "bad-continue-as-new.json")
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), "replay workflow doesn't return the same result")
+
+	// Do not continue as new
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "bad-continue-as-new-2.json")
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), "replay workflow doesn't return the same result")
+}
+
+func (s *replayTestSuite) TestUpsertMemoWorkflow() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(UpsertMemoWorkflow)
+
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "upsert-memo-workflow.json")
+	require.NoError(s.T(), err)
+}
+
+func (s *replayTestSuite) TestBadUpsertMemoWorkflow() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(UpsertMemoWorkflow)
+
+	// Test bad history that does not upsert a memo after the activity.
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "bad-upsert-memo-workflow.json")
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), "nondeterministic workflow: extra replay command for ModifyWorkflowProperties")
+
+	// Test bad history that does not upsert a memo before the activity.
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "bad-upsert-memo-workflow-2.json")
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), "lookup failed for scheduledEventID to activityID: scheduleEventID: 5")
+}
+
+func (s *replayTestSuite) TestSearchAttributeWorkflow() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(UpsertSearchAttributesWorkflow)
+
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "search-attribute.json")
+	require.NoError(s.T(), err)
+}
+
+func (s *replayTestSuite) TestBadSearchAttributeWorkflow() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(UpsertSearchAttributesWorkflow)
+
+	// Test bad history that does not upsert a search attributes after the activity.
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "bad-search-attribute.json")
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), "nondeterministic workflow: extra replay command for UpsertWorkflowSearchAttributes")
+
+	// Test bad history that does not upsert a search attributes before the activity.
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "bad-search-attribute-2.json")
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), "lookup failed for scheduledEventID to activityID: scheduleEventID: 5")
+}
+
+func (s *replayTestSuite) TestSideEffectWorkflow() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(SideEffectWorkflow)
+
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "side-effect.json")
+	require.NoError(s.T(), err)
+}
+
+func (s *replayTestSuite) TestBadEmptyWorkflow() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(EmptyWorkflow)
+
+	// Test a long history on a workflow that just immediately returns.
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "bad-empty-workflow.json")
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), "lookup failed for scheduledEventID to activityID: scheduleEventID: 7")
+}
+
+// TestMutableSideEffectLegacyWorkflow test that old, nondeterministic, mutable side effect behaviour
+// was not changed and is still broken in the same way.
+func (s *replayTestSuite) TestMutableSideEffectLegacyWorkflow() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(MutableSideEffectWorkflow)
+
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "mutable-side-effect-legacy.json")
+	require.NoError(s.T(), err)
+	var result []int
+	require.NoError(s.T(), replayer.(*internal.WorkflowReplayer).GetWorkflowResult("ReplayId", &result))
+	require.Equal(s.T(), []int{2, 2, 2, 2, 2, 2, 4, 4, 4, 5, 5}, result)
+}
+
+func (s *replayTestSuite) TestMutableSideEffectWorkflow() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(MutableSideEffectWorkflow)
+
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "mutable-side-effect.json")
+	require.NoError(s.T(), err)
+	var result []int
+	require.NoError(s.T(), replayer.(*internal.WorkflowReplayer).GetWorkflowResult("ReplayId", &result))
+	require.Equal(s.T(), []int{0, 0, 0, 1, 1, 2, 3, 3, 4, 4, 5}, result)
+}
+
+func (s *replayTestSuite) TestDuplciateChildWorkflow() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(DuplicateChildWorkflow)
+
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "duplicate-child-workflow.json")
+	require.NoError(s.T(), err)
+}
+
+func (s *replayTestSuite) TestVersionLoopWorkflow() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(VersionLoopWorkflow)
+	// Verify we can still replay an old workflow that does not have sdk flags
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "version-loop-workflow-legacy-10.json")
+	require.NoError(s.T(), err)
+
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "version-loop-workflow-10.json")
+	require.NoError(s.T(), err)
+
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "version-loop-workflow-256.json")
+	require.NoError(s.T(), err)
+}
+
+func (s *replayTestSuite) TestVersionLoopWorkflowTaskWorkflow() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(VersionLoopWorkflowMultipleTasks)
+	// Verify we can replay a workflow with SDK flags and multiple workflow tasks
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "workflow_loop_task.json")
+	require.NoError(s.T(), err)
+}
+
+func (s *replayTestSuite) TestUnkownSDKFlag() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(VersionLoopWorkflow)
+	// version-loop-workflow-unkown-version-flag.json had a very high sdk flag value set that the sdk does not know about.
+	// Verify if the SDK does not understand a flag we fail replay.
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "version-loop-workflow-unkown-version-flag.json")
+	require.Error(s.T(), err)
+}
+
+func (s *replayTestSuite) TestUpdateWorkflow() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(UpdateWorkflow)
+	replayer.RegisterWorkflow(UpdateAndExit)
+
+	for _, name := range [...]string{
+		"update_before_protocol_message_command",
+		"update_with_protocol_message_command",
+		// accept and complete update _and_  complete workflow in same wft
+		"update_accept_and_complete_and_exit",
+		// accept in wft then complete both update and workflow in next wft
+		"update_complete_and_exit",
+	} {
+		s.Run(name, func() {
+			err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), name+".json")
+			require.NoError(s.T(), err)
+		})
+	}
+}
+
+func (s *replayTestSuite) TestNonDeterministicUpdate() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(NonDeterministicUpdate)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "non_deterministic_update.json")
+	s.Error(err)
 }
 
 func TestReplayCustomConverter(t *testing.T) {
@@ -152,6 +358,13 @@ func TestReplayCustomConverter(t *testing.T) {
 	// Confirm 1 activity input and output
 	require.Contains(t, conv.toPayloads, "Workflow2")
 	require.Contains(t, conv.fromPayloads, "Hello Workflow2!")
+}
+
+func (s *replayTestSuite) TestVersionAndMutableSideEffect() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(VersionAndMutableSideEffectWorkflow)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replay-tests-version-and-mutable-side-effect.json")
+	s.NoError(err)
 }
 
 type captureConverter struct {

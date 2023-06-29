@@ -27,6 +27,7 @@ package internal
 import (
 	"context"
 	"errors"
+	"github.com/stretchr/testify/assert"
 	"strings"
 	"testing"
 	"time"
@@ -290,4 +291,29 @@ func TestActivityAssertNumberOfCalls(t *testing.T) {
 	require.NoError(t, env.GetWorkflowError())
 	env.AssertNumberOfCalls(t, "namedActivity", 3)
 	env.AssertNumberOfCalls(t, "otherActivity", 0)
+}
+
+func HelloWorkflow(_ Context, name string) (string, error) {
+	return "", errors.New("unimplemented")
+}
+
+func TestWorkflowMockingWithoutRegistration(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+	env.OnWorkflow(HelloWorkflow, mock.Anything, mock.Anything).Return(
+		func(ctx Context, person string) (string, error) {
+			return "Hello " + person + "!", nil
+		})
+	env.ExecuteWorkflow("HelloWorkflow", "Temporal")
+	require.NoError(t, env.GetWorkflowError())
+	var result string
+	err := env.GetWorkflowResult(&result)
+	require.NoError(t, err)
+	require.Equal(t, "Hello Temporal!", result)
+}
+
+func TestActivityMockingByNameWithoutRegistrationFails(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+	assert.Panics(t, func() { env.OnActivity("SayHello", mock.Anything, mock.Anything) }, "The code did not panic")
 }

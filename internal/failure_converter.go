@@ -25,6 +25,7 @@ package internal
 import (
 	"errors"
 
+	"github.com/gogo/protobuf/proto"
 	commonpb "go.temporal.io/api/common/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 	"go.temporal.io/sdk/converter"
@@ -46,11 +47,6 @@ type DefaultFailureConverterOptions struct {
 	// Optional: Whether to encode error messages and stack traces.
 	// default: false
 	EncodeCommonAttributes bool
-}
-
-type encodedFailure struct {
-	Message    string `json:"message"`
-	StackTrace string `json:"stack_trace"`
 }
 
 // DefaultFailureConverter seralizes errors with the option to encode common parameters under Failure.EncodedAttributes
@@ -166,15 +162,10 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 	failure.Cause = dfc.ErrorToFailure(errors.Unwrap(err))
 
 	if dfc.encodeCommonAttributes {
-		failure.EncodedAttributes, err = dfc.dataConverter.ToPayload(encodedFailure{
-			Message:    failure.Message,
-			StackTrace: failure.StackTrace,
-		})
+		err := converter.EncodeCommonFailureAttributes(dfc.dataConverter, failure)
 		if err != nil {
 			panic(err)
 		}
-		failure.Message = "Encoded failure"
-		failure.StackTrace = ""
 	}
 	return failure
 }
@@ -184,14 +175,9 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 	if failure == nil {
 		return nil
 	}
-
-	if failure.GetEncodedAttributes() != nil {
-		var ea encodedFailure
-		if dfc.dataConverter.FromPayload(failure.GetEncodedAttributes(), &ea) == nil {
-			failure.Message = ea.Message
-			failure.StackTrace = ea.StackTrace
-		}
-	}
+	// Copy the original future to pass to the failureHolder
+	originalFailure := proto.Clone(failure).(*failurepb.Failure)
+	converter.DecodeCommonFailureAttributes(dfc.dataConverter, failure)
 
 	message := failure.GetMessage()
 	stackTrace := failure.GetStackTrace()
@@ -259,7 +245,7 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 	}
 
 	if fh, ok := err.(failureHolder); ok {
-		fh.setFailure(failure)
+		fh.setFailure(originalFailure)
 	}
 
 	return err

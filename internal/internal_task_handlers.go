@@ -36,19 +36,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
-	interactionpb "go.temporal.io/api/interaction/v1"
+	protocolpb "go.temporal.io/api/protocol/v1"
 	querypb "go.temporal.io/api/query/v1"
+	"go.temporal.io/api/sdk/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/internal/common/retry"
+	"go.temporal.io/sdk/internal/protocol"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
@@ -73,7 +74,7 @@ type (
 		// Return List of commands made, any error.
 		ProcessEvent(event *historypb.HistoryEvent, isReplay bool, isLast bool) error
 		// ProcessInteraction processes interaction inputs
-		ProcessInteraction(meta *interactionpb.Meta, input *interactionpb.Input, isReplay bool, isLast bool) error
+		ProcessMessage(msg *protocolpb.Message, isReplay bool, isLast bool) error
 		// ProcessQuery process a query request.
 		ProcessQuery(queryType string, queryArgs *commonpb.Payloads, header *commonpb.Header) (*commonpb.Payloads, error)
 		StackTrace() string
@@ -87,6 +88,7 @@ type (
 		historyIterator HistoryIterator
 		doneCh          chan struct{}
 		laResultCh      chan *localActivityResult
+
 		// This channel must be initialized with a one-size buffer and is used to indicate when
 		// it is time for a local activity to be retried
 		laRetryCh chan *localActivityTask
@@ -112,6 +114,7 @@ type (
 		previousStartedEventID int64
 
 		newCommands         []*commandpb.Command
+		newMessages         []*protocolpb.Message
 		currentWorkflowTask *workflowservice.PollWorkflowTaskQueueResponse
 		laTunnel            *localActivityTunnel
 		cached              bool
@@ -124,6 +127,8 @@ type (
 		ppMgr                    pressurePointMgr
 		logger                   log.Logger
 		identity                 string
+		workerBuildID            string
+		useBuildIDForVersioning  bool
 		enableLoggingInReplay    bool
 		registry                 *registry
 		laTunnel                 *localActivityTunnel
@@ -133,6 +138,7 @@ type (
 		contextPropagators       []ContextPropagator
 		cache                    *WorkerCache
 		deadlockDetectionTimeout time.Duration
+		capabilities             *workflowservice.GetSystemInfoResponse_Capabilities
 	}
 
 	activityProvider func(name string) activity
@@ -154,6 +160,7 @@ type (
 		namespace                        string
 		defaultHeartbeatThrottleInterval time.Duration
 		maxHeartbeatThrottleInterval     time.Duration
+		versionStamp                     *commonpb.WorkerVersionStamp
 	}
 
 	// history wrapper method to help information about events.
@@ -165,6 +172,7 @@ type (
 		nextEventID    int64 // next expected eventID for sanity
 		lastEventID    int64 // last expected eventID, zero indicates read until end of stream
 		next           []*historypb.HistoryEvent
+		nextFlags      []sdkFlag
 		binaryChecksum string
 	}
 
@@ -216,25 +224,39 @@ func (eh *history) IsReplayEvent(event *historypb.HistoryEvent) bool {
 	return event.GetEventId() <= eh.workflowTask.task.GetPreviousStartedEventId() || isCommandEvent(event.GetEventType())
 }
 
-func (eh *history) IsNextWorkflowTaskFailed() (isFailed bool, binaryChecksum string, err error) {
+// IsNextWorkflowTaskFailed checks if the workflow task failed or completed. If it did complete returns some information
+// on the completed workflow task.
+func (eh *history) IsNextWorkflowTaskFailed() (isFailed bool, binaryChecksum string, flags []sdkFlag, err error) {
 	nextIndex := eh.currentIndex + 1
-	if nextIndex >= len(eh.loadedEvents) && eh.hasMoreEvents() { // current page ends and there is more pages
+	// Server can return an empty page so if we need the next event we must keep checking until we either get it
+	// or know we have no more pages to check
+	for nextIndex >= len(eh.loadedEvents) && eh.hasMoreEvents() { // current page ends and there is more pages
 		if err := eh.loadMoreEvents(); err != nil {
-			return false, "", err
+			return false, "", nil, err
 		}
 	}
 
+	// If not replaying we should not expect to find any more events
 	if nextIndex < len(eh.loadedEvents) {
 		nextEvent := eh.loadedEvents[nextIndex]
 		nextEventType := nextEvent.GetEventType()
 		isFailed := nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT || nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED
 		var binaryChecksum string
+		var flags []sdkFlag
 		if nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
 			binaryChecksum = nextEvent.GetWorkflowTaskCompletedEventAttributes().BinaryChecksum
+			for _, flag := range nextEvent.GetWorkflowTaskCompletedEventAttributes().GetSdkMetadata().GetLangUsedFlags() {
+				f := sdkFlagFromUint(flag)
+				if !f.isValid() {
+					// If a flag is not recognized (value is too high or not defined), it must fail the workflow task
+					return false, "", nil, errors.New("could not recognize SDK flag")
+				}
+				flags = append(flags, f)
+			}
 		}
-		return isFailed, binaryChecksum, nil
+		return isFailed, binaryChecksum, flags, nil
 	}
-	return false, "", nil
+	return false, "", nil, nil
 }
 
 func (eh *history) loadMoreEvents() error {
@@ -264,10 +286,10 @@ func isCommandEvent(eventType enumspb.EventType) bool {
 		enumspb.EVENT_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED,
 		enumspb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED,
 		enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES,
-		enumspb.EVENT_TYPE_WORKFLOW_UPDATE_ACCEPTED,
-		enumspb.EVENT_TYPE_WORKFLOW_UPDATE_REJECTED,
-		enumspb.EVENT_TYPE_WORKFLOW_UPDATE_COMPLETED,
-		enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED:
+		enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED,
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED,
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_REJECTED:
 		return true
 	default:
 		return false
@@ -276,20 +298,21 @@ func isCommandEvent(eventType enumspb.EventType) bool {
 
 // NextCommandEvents returns events that there processed as new by the next command.
 // TODO(maxim): Refactor to return a struct instead of multiple parameters
-func (eh *history) NextCommandEvents() (result []*historypb.HistoryEvent, markers []*historypb.HistoryEvent, binaryChecksum string, err error) {
+func (eh *history) NextCommandEvents() (result []*historypb.HistoryEvent, markers []*historypb.HistoryEvent, binaryChecksum string, sdkFlags []sdkFlag, msgs []*protocolpb.Message, err error) {
 	if eh.next == nil {
-		eh.next, _, err = eh.nextCommandEvents()
+		eh.next, _, eh.nextFlags, _, err = eh.nextCommandEvents()
 		if err != nil {
-			return result, markers, eh.binaryChecksum, err
+			return result, markers, eh.binaryChecksum, sdkFlags, msgs, err
 		}
 	}
 
 	result = eh.next
 	checksum := eh.binaryChecksum
+	sdkFlags = eh.nextFlags
 	if len(result) > 0 {
-		eh.next, markers, err = eh.nextCommandEvents()
+		eh.next, markers, eh.nextFlags, msgs, err = eh.nextCommandEvents()
 	}
-	return result, markers, checksum, err
+	return result, markers, checksum, sdkFlags, msgs, err
 }
 
 func (eh *history) hasMoreEvents() bool {
@@ -317,12 +340,12 @@ func (eh *history) verifyAllEventsProcessed() error {
 	return nil
 }
 
-func (eh *history) nextCommandEvents() (nextEvents []*historypb.HistoryEvent, markers []*historypb.HistoryEvent, err error) {
+func (eh *history) nextCommandEvents() (nextEvents []*historypb.HistoryEvent, markers []*historypb.HistoryEvent, sdkFlags []sdkFlag, msgs []*protocolpb.Message, err error) {
 	if eh.currentIndex == len(eh.loadedEvents) && !eh.hasMoreEvents() {
 		if err := eh.verifyAllEventsProcessed(); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, nil, err
 		}
-		return []*historypb.HistoryEvent{}, []*historypb.HistoryEvent{}, nil
+		return []*historypb.HistoryEvent{}, []*historypb.HistoryEvent{}, []sdkFlag{}, []*protocolpb.Message{}, nil
 	}
 
 	// Process events
@@ -355,7 +378,7 @@ OrderEvents:
 
 		switch event.GetEventType() {
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
-			isFailed, binaryChecksum, err1 := eh.IsNextWorkflowTaskFailed()
+			isFailed, binaryChecksum, newFlags, err1 := eh.IsNextWorkflowTaskFailed()
 			if err1 != nil {
 				err = err1
 				return
@@ -364,6 +387,7 @@ OrderEvents:
 				eh.binaryChecksum = binaryChecksum
 				eh.currentIndex++
 				nextEvents = append(nextEvents, event)
+				sdkFlags = append(sdkFlags, newFlags...)
 				break OrderEvents
 			}
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED,
@@ -373,6 +397,8 @@ OrderEvents:
 		default:
 			if isPreloadMarkerEvent(event) {
 				markers = append(markers, event)
+			} else if attrs := event.GetWorkflowExecutionUpdateAcceptedEventAttributes(); attrs != nil {
+				msgs = append(msgs, inferMessage(attrs))
 			}
 			nextEvents = append(nextEvents, event)
 		}
@@ -390,11 +416,22 @@ OrderEvents:
 
 	eh.currentIndex = 0
 
-	return nextEvents, markers, nil
+	return nextEvents, markers, sdkFlags, msgs, nil
 }
 
 func isPreloadMarkerEvent(event *historypb.HistoryEvent) bool {
 	return event.GetEventType() == enumspb.EVENT_TYPE_MARKER_RECORDED
+}
+
+func inferMessage(attrs *historypb.WorkflowExecutionUpdateAcceptedEventAttributes) *protocolpb.Message {
+	return &protocolpb.Message{
+		Id:                 attrs.GetAcceptedRequestMessageId(),
+		ProtocolInstanceId: attrs.GetProtocolInstanceId(),
+		SequencingId: &protocolpb.Message_EventId{
+			EventId: attrs.GetAcceptedRequestSequencingEventId(),
+		},
+		Body: protocol.MustMarshalAny(attrs.GetAcceptedRequest()),
+	}
 }
 
 // newWorkflowTaskHandler returns an implementation of workflow task handler.
@@ -406,6 +443,8 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		ppMgr:                    ppMgr,
 		metricsHandler:           params.MetricsHandler,
 		identity:                 params.Identity,
+		workerBuildID:            params.getBuildID(),
+		useBuildIDForVersioning:  params.UseBuildIDForVersioning,
 		enableLoggingInReplay:    params.EnableLoggingInReplay,
 		registry:                 registry,
 		workflowPanicPolicy:      params.WorkflowPanicPolicy,
@@ -414,6 +453,7 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		contextPropagators:       params.ContextPropagators,
 		cache:                    params.cache,
 		deadlockDetectionTimeout: params.DeadlockDetectionTimeout,
+		capabilities:             params.capabilities,
 	}
 }
 
@@ -494,6 +534,7 @@ func (w *workflowExecutionContextImpl) clearState() {
 	w.err = nil
 	w.previousStartedEventID = 0
 	w.newCommands = nil
+	w.newMessages = nil
 
 	eventHandler := w.getEventHandler()
 	if eventHandler != nil {
@@ -517,6 +558,7 @@ func (w *workflowExecutionContextImpl) createEventHandler() {
 		w.wth.failureConverter,
 		w.wth.contextPropagators,
 		w.wth.deadlockDetectionTimeout,
+		w.wth.capabilities,
 	)
 
 	w.eventHandler = &eventHandler
@@ -560,6 +602,8 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 			ID:    workflowID,
 			RunID: runID,
 		},
+		OriginalRunID:            attributes.OriginalExecutionRunId,
+		FirstRunID:               attributes.FirstExecutionRunId,
 		WorkflowType:             WorkflowType{Name: task.WorkflowType.GetName()},
 		TaskQueueName:            taskQueue.GetName(),
 		WorkflowExecutionTimeout: common.DurationValue(attributes.GetWorkflowExecutionTimeout()),
@@ -603,20 +647,41 @@ func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
 	if task.Query == nil || (task.Query != nil && !isFullHistory) {
 		workflowContext = wth.cache.getWorkflowContext(runID)
 	}
-
+	// Verify the cached state is current and for the correct worker
 	if workflowContext != nil {
 		workflowContext.Lock()
-		if task.Query != nil && !isFullHistory {
+		if task.Query != nil && !isFullHistory && wth == workflowContext.wth {
 			// query task and we have a valid cached state
 			metricsHandler.Counter(metrics.StickyCacheHit).Inc(1)
-		} else if history.Events[0].GetEventId() == workflowContext.previousStartedEventID+1 {
+		} else if history.Events[0].GetEventId() == workflowContext.previousStartedEventID+1 && wth == workflowContext.wth {
 			// non query task and we have a valid cached state
 			metricsHandler.Counter(metrics.StickyCacheHit).Inc(1)
 		} else {
-			// non query task and cached state is missing events, we need to discard the cached state and rebuild one.
-			_ = workflowContext.ResetIfStale(task, historyIterator)
+			// possible another task already destroyed this context.
+			if !workflowContext.IsDestroyed() {
+				// non query task and cached state is missing events, we need to discard the cached state and build a new one.
+				if history.Events[0].GetEventId() != workflowContext.previousStartedEventID+1 {
+					wth.logger.Debug("Cached state staled, new task has unexpected events",
+						tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+						tagRunID, task.WorkflowExecution.GetRunId(),
+						tagAttempt, task.Attempt,
+						tagCachedPreviousStartedEventID, workflowContext.previousStartedEventID,
+						tagTaskFirstEventID, task.History.Events[0].GetEventId(),
+						tagTaskStartedEventID, task.GetStartedEventId(),
+						tagPreviousStartedEventID, task.GetPreviousStartedEventId(),
+					)
+				} else {
+					wth.logger.Debug("Cached state started on different worker, creating new context")
+				}
+				wth.cache.removeWorkflowContext(runID)
+				workflowContext.clearState()
+			}
+			workflowContext.Unlock(err)
+			workflowContext = nil
 		}
-	} else {
+	}
+	// If the workflow was not cached or the cache was stale.
+	if workflowContext == nil {
 		if !isFullHistory {
 			// we are getting partial history task, but cached state was already evicted.
 			// we need to reset history so we get events from beginning to replay/rebuild the state
@@ -816,19 +881,6 @@ processWorkflowLoop:
 	return
 }
 
-// indexInvocations builds a map of the interaction invocations contained in a
-// workflow task where the index is the interaction's event level (i.e. the
-// event after which the interaction can execute) and the value is the
-// invocation itself. This function may return an empty map but it will not
-// return nil.
-func indexInvocations(workflowTask *workflowTask) map[int64][]*interactionpb.Invocation {
-	out := map[int64][]*interactionpb.Invocation{}
-	for _, inter := range workflowTask.task.GetInteractions() {
-		out[inter.GetMeta().GetEventId()] = append(out[inter.GetMeta().GetEventId()], inter)
-	}
-	return out
-}
-
 func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflowTask) (interface{}, error) {
 	task := workflowTask.task
 	historyIterator := workflowTask.historyIterator
@@ -839,31 +891,50 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 
 	eventHandler := w.getEventHandler()
 	reorderedHistory := newHistory(workflowTask, eventHandler)
+	var replayOutbox []outboxEntry
 	var replayCommands []*commandpb.Command
 	var respondEvents []*historypb.HistoryEvent
 
-	invocations := indexInvocations(workflowTask)
-
+	taskMessages := workflowTask.task.GetMessages()
 	skipReplayCheck := w.skipReplayCheck()
+	shouldForceReplayCheck := func() bool {
+		isInReplayer := IsReplayNamespace(w.wth.namespace)
+		// If we are in the replayer we should always check the history replay, even if the workflow is completed
+		// Skip if the workflow panicked to avoid potentially breaking old histories
+		_, wfPanicked := w.err.(*workflowPanicError)
+		return !wfPanicked && isInReplayer
+	}
 
 	metricsHandler := w.wth.metricsHandler.WithTags(metrics.WorkflowTags(task.WorkflowType.GetName()))
 	start := time.Now()
 	// This is set to nil once recorded
 	metricsTimer := metricsHandler.Timer(metrics.WorkflowTaskReplayLatency)
 
-	// Process events
+	eventHandler.ResetLAWFTAttemptCounts()
+	eventHandler.sdkFlags.markSDKFlagsSent()
+
 ProcessEvents:
 	for {
-		reorderedEvents, markers, binaryChecksum, err := reorderedHistory.NextCommandEvents()
+		reorderedEvents, markers, binaryChecksum, flags, historyMessages, err := reorderedHistory.NextCommandEvents()
+		// Check if we are replaying so we know if we should use the messages in the WFT or the history
+		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
+		var msgs *eventMsgIndex
+		if isReplay {
+			msgs = indexMessagesByEventID(historyMessages)
+		} else {
+			msgs = indexMessagesByEventID(taskMessages)
+			taskMessages = []*protocolpb.Message{}
+		}
+
 		if err != nil {
 			return nil, err
 		}
-
+		eventHandler.sdkFlags.set(flags...)
 		if len(reorderedEvents) == 0 {
 			break ProcessEvents
 		}
 		if binaryChecksum == "" {
-			w.workflowInfo.BinaryChecksum = getBinaryChecksum()
+			w.workflowInfo.BinaryChecksum = w.wth.workerBuildID
 		} else {
 			w.workflowInfo.BinaryChecksum = binaryChecksum
 		}
@@ -877,7 +948,7 @@ ProcessEvents:
 				if err != nil {
 					return nil, err
 				}
-				if w.isWorkflowCompleted {
+				if w.isWorkflowCompleted && !shouldForceReplayCheck() {
 					break ProcessEvents
 				}
 			}
@@ -906,19 +977,32 @@ ProcessEvents:
 				return nil, err
 			}
 
-			err = eventHandler.ProcessEvent(event, isInReplay, isLast)
-			if err != nil {
-				return nil, err
-			}
-
-			for _, inv := range invocations[event.GetEventId()] {
-				err := eventHandler.ProcessInteraction(inv.GetMeta(), inv.GetInput(), isInReplay, isLast)
+			// because we don't run all events through this code path, we have
+			// to run ProcessMessages both before and after ProcessEvent to
+			// catch any messages that should have been delivered _before_ this
+			// event but perhaps were not because there were attached to an
+			// event (e.g. WFTScheduledEvent) that does not come through this
+			// loop.
+			for _, msg := range msgs.takeLTE(event.GetEventId() - 1) {
+				err := eventHandler.ProcessMessage(msg, isInReplay, isLast)
 				if err != nil {
 					return nil, err
 				}
 			}
 
-			if w.isWorkflowCompleted {
+			err = eventHandler.ProcessEvent(event, isInReplay, isLast)
+			if err != nil {
+				return nil, err
+			}
+
+			for _, msg := range msgs.takeLTE(event.GetEventId()) {
+				err := eventHandler.ProcessMessage(msg, isInReplay, isLast)
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			if w.isWorkflowCompleted && !shouldForceReplayCheck() {
 				break ProcessEvents
 			}
 		}
@@ -930,17 +1014,18 @@ ProcessEvents:
 				if err != nil {
 					return nil, err
 				}
-				if w.isWorkflowCompleted {
+				if w.isWorkflowCompleted && !shouldForceReplayCheck() {
 					break ProcessEvents
 				}
 			}
 		}
-		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
 		if isReplay {
 			eventCommands := eventHandler.commandsHelper.getCommands(true)
-			if len(eventCommands) > 0 && !skipReplayCheck {
+			if !skipReplayCheck {
 				replayCommands = append(replayCommands, eventCommands...)
+				replayOutbox = append(replayOutbox, eventHandler.outbox...)
 			}
+			eventHandler.outbox = nil
 		}
 	}
 
@@ -957,9 +1042,9 @@ ProcessEvents:
 	// the replay of that event will panic on the command state machine and the workflow will be marked as completed
 	// with the panic error.
 	var workflowError error
-	if !skipReplayCheck && !w.isWorkflowCompleted {
+	if !skipReplayCheck && (!w.isWorkflowCompleted || shouldForceReplayCheck()) {
 		// check if commands from reply matches to the history events
-		if err := matchReplayWithHistory(replayCommands, respondEvents); err != nil {
+		if err := matchReplayWithHistory(replayCommands, respondEvents, replayOutbox, w.getEventHandler().sdkFlags); err != nil {
 			workflowError = err
 			w.err = err
 		}
@@ -1123,7 +1208,10 @@ func (w *workflowExecutionContextImpl) CompleteWorkflowTask(workflowTask *workfl
 		w.newCommands = append(w.newCommands, eventCommands...)
 	}
 
-	completeRequest := w.wth.completeWorkflow(eventHandler, w.currentWorkflowTask, w, w.newCommands, !waitLocalActivities)
+	w.newMessages = append(w.newMessages, eventHandler.takeOutgoingMessages()...)
+	eventHandler.protocols.ClearCompleted()
+
+	completeRequest := w.wth.completeWorkflow(eventHandler, w.currentWorkflowTask, w, w.newCommands, w.newMessages, !waitLocalActivities)
 	w.clearCurrentTask()
 
 	return completeRequest
@@ -1140,6 +1228,7 @@ func (w *workflowExecutionContextImpl) hasPendingLocalActivityWork() bool {
 
 func (w *workflowExecutionContextImpl) clearCurrentTask() {
 	w.newCommands = nil
+	w.newMessages = nil
 	w.currentWorkflowTask = nil
 }
 
@@ -1156,6 +1245,8 @@ func (w *workflowExecutionContextImpl) SetCurrentTask(task *workflowservice.Poll
 }
 
 func (w *workflowExecutionContextImpl) SetPreviousStartedEventID(eventID int64) {
+	w.mutex.Lock() // This call can race against the cache eviction thread - see clearState
+	defer w.mutex.Unlock()
 	w.previousStartedEventID = eventID
 }
 
@@ -1176,29 +1267,39 @@ func (w *workflowExecutionContextImpl) ResetIfStale(task *workflowservice.PollWo
 	return nil
 }
 
-func skipDeterministicCheckForCommand(d *commandpb.Command) bool {
+func skipDeterministicCheckForCommand(d *commandpb.Command, _ *sdkFlags) bool {
 	switch d.GetCommandType() {
 	case enumspb.COMMAND_TYPE_RECORD_MARKER:
 		markerName := d.GetRecordMarkerCommandAttributes().GetMarkerName()
 		if markerName == versionMarkerName || markerName == mutableSideEffectMarkerName {
 			return true
 		}
-	case enumspb.COMMAND_TYPE_ACCEPT_WORKFLOW_UPDATE,
-		enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION:
-		return true
 	}
 	return false
 }
 
-func skipDeterministicCheckForEvent(e *historypb.HistoryEvent) bool {
+func skipDeterministicCheckForEvent(e *historypb.HistoryEvent, sdkFlags *sdkFlags) bool {
 	switch e.GetEventType() {
 	case enumspb.EVENT_TYPE_MARKER_RECORDED:
 		markerName := e.GetMarkerRecordedEventAttributes().GetMarkerName()
 		if markerName == versionMarkerName || markerName == mutableSideEffectMarkerName {
 			return true
 		}
-		// case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
-		//	return true
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED:
+		return true
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW:
+		return true
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED:
+		return true
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED:
+		return true
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
+		return true
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_REJECTED,
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED:
+		protocolMsgCommandInUse := sdkFlags.tryUse(SDKFlagProtocolMessageCommand, false)
+		return !protocolMsgCommandInUse
 	}
 	return false
 }
@@ -1217,7 +1318,12 @@ func skipDeterministicCheckForUpsertChangeVersion(events []*historypb.HistoryEve
 	return false
 }
 
-func matchReplayWithHistory(replayCommands []*commandpb.Command, historyEvents []*historypb.HistoryEvent) error {
+func matchReplayWithHistory(
+	replayCommands []*commandpb.Command,
+	historyEvents []*historypb.HistoryEvent,
+	msgs []outboxEntry,
+	sdkFlags *sdkFlags,
+) error {
 	di := 0
 	hi := 0
 	hSize := len(historyEvents)
@@ -1231,7 +1337,7 @@ matchLoop:
 				hi += 2
 				continue matchLoop
 			}
-			if skipDeterministicCheckForEvent(e) {
+			if skipDeterministicCheckForEvent(e, sdkFlags) {
 				hi++
 				continue matchLoop
 			}
@@ -1240,7 +1346,7 @@ matchLoop:
 		var d *commandpb.Command
 		if di < dSize {
 			d = replayCommands[di]
-			if skipDeterministicCheckForCommand(d) {
+			if skipDeterministicCheckForCommand(d, sdkFlags) {
 				di++
 				continue matchLoop
 			}
@@ -1254,7 +1360,7 @@ matchLoop:
 			return historyMismatchErrorf("nondeterministic workflow: extra replay command for %s", util.CommandToString(d))
 		}
 
-		if !isCommandMatchEvent(d, e, false) {
+		if !isCommandMatchEvent(d, e, msgs) {
 			return historyMismatchErrorf("nondeterministic workflow: history event is %s, replay command is %s",
 				util.HistoryEventToString(e), util.CommandToString(d))
 		}
@@ -1273,8 +1379,17 @@ func lastPartOfName(name string) string {
 	return name[lastDotIdx+1:]
 }
 
-func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, strictMode bool) bool {
+func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, obes []outboxEntry) bool {
 	switch d.GetCommandType() {
+	case enumspb.COMMAND_TYPE_PROTOCOL_MESSAGE:
+		msgid := d.GetProtocolMessageCommandAttributes().GetMessageId()
+		for _, entry := range obes {
+			if entry.msg.Id == msgid {
+				return entry.eventPredicate(e)
+			}
+		}
+		return false
+
 	case enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK:
 		if e.GetEventType() != enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED {
 			return false
@@ -1283,9 +1398,7 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, strict
 		commandAttributes := d.GetScheduleActivityTaskCommandAttributes()
 
 		if eventAttributes.GetActivityId() != commandAttributes.GetActivityId() ||
-			lastPartOfName(eventAttributes.ActivityType.GetName()) != lastPartOfName(commandAttributes.ActivityType.GetName()) ||
-			(strictMode && eventAttributes.TaskQueue.GetName() != commandAttributes.TaskQueue.GetName()) ||
-			(strictMode && !proto.Equal(eventAttributes.GetInput(), commandAttributes.GetInput())) {
+			lastPartOfName(eventAttributes.ActivityType.GetName()) != lastPartOfName(commandAttributes.ActivityType.GetName()) {
 			return false
 		}
 
@@ -1310,8 +1423,7 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, strict
 		eventAttributes := e.GetTimerStartedEventAttributes()
 		commandAttributes := d.GetStartTimerCommandAttributes()
 
-		if eventAttributes.GetTimerId() != commandAttributes.GetTimerId() ||
-			(strictMode && common.DurationValue(eventAttributes.GetStartToFireTimeout()) != common.DurationValue(commandAttributes.GetStartToFireTimeout())) {
+		if eventAttributes.GetTimerId() != commandAttributes.GetTimerId() {
 			return false
 		}
 
@@ -1335,28 +1447,12 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, strict
 		if e.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED {
 			return false
 		}
-		if strictMode {
-			eventAttributes := e.GetWorkflowExecutionCompletedEventAttributes()
-			commandAttributes := d.GetCompleteWorkflowExecutionCommandAttributes()
-
-			if !proto.Equal(eventAttributes.GetResult(), commandAttributes.GetResult()) {
-				return false
-			}
-		}
 
 		return true
 
 	case enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION:
 		if e.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED {
 			return false
-		}
-		if strictMode {
-			eventAttributes := e.GetWorkflowExecutionFailedEventAttributes()
-			commandAttributes := d.GetFailWorkflowExecutionCommandAttributes()
-
-			if !proto.Equal(eventAttributes.GetFailure(), commandAttributes.GetFailure()) {
-				return false
-			}
 		}
 
 		return true
@@ -1404,13 +1500,6 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, strict
 		if e.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED {
 			return false
 		}
-		if strictMode {
-			eventAttributes := e.GetWorkflowExecutionCanceledEventAttributes()
-			commandAttributes := d.GetCancelWorkflowExecutionCommandAttributes()
-			if !proto.Equal(eventAttributes.GetDetails(), commandAttributes.GetDetails()) {
-				return false
-			}
-		}
 		return true
 
 	case enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION:
@@ -1426,9 +1515,7 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, strict
 		}
 		eventAttributes := e.GetStartChildWorkflowExecutionInitiatedEventAttributes()
 		commandAttributes := d.GetStartChildWorkflowExecutionCommandAttributes()
-		if lastPartOfName(eventAttributes.WorkflowType.GetName()) != lastPartOfName(commandAttributes.WorkflowType.GetName()) ||
-			(strictMode && checkNamespacesInCommandAndEvent(eventAttributes.GetNamespace(), commandAttributes.GetNamespace())) ||
-			(strictMode && eventAttributes.TaskQueue.GetName() != commandAttributes.TaskQueue.GetName()) {
+		if lastPartOfName(eventAttributes.WorkflowType.GetName()) != lastPartOfName(commandAttributes.WorkflowType.GetName()) {
 			return false
 		}
 
@@ -1438,42 +1525,10 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, strict
 		if e.GetEventType() != enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES {
 			return false
 		}
-		eventAttributes := e.GetUpsertWorkflowSearchAttributesEventAttributes()
-		commandAttributes := d.GetUpsertWorkflowSearchAttributesCommandAttributes()
-		if strictMode && !isSearchAttributesMatched(eventAttributes.SearchAttributes, commandAttributes.SearchAttributes) {
-			return false
-		}
-		return true
-
-	case enumspb.COMMAND_TYPE_ACCEPT_WORKFLOW_UPDATE:
-		if e.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_UPDATE_ACCEPTED {
-			return false
-		}
-		return true
-
-	case enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE:
-		if e.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_UPDATE_COMPLETED {
-			return false
-		}
-
-		if strictMode {
-			eventAttributes := e.GetWorkflowUpdateCompletedEventAttributes()
-			commandAttributes := d.GetCompleteWorkflowUpdateCommandAttributes()
-
-			if !proto.Equal(eventAttributes.GetOutput().GetSuccess(), commandAttributes.GetOutput().GetSuccess()) ||
-				!proto.Equal(eventAttributes.GetOutput().GetFailure(), commandAttributes.GetOutput().GetFailure()) {
-				return false
-			}
-		}
 		return true
 
 	case enumspb.COMMAND_TYPE_MODIFY_WORKFLOW_PROPERTIES:
 		if e.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED {
-			return false
-		}
-		eventAttributes := e.GetWorkflowPropertiesModifiedEventAttributes()
-		commandAttributes := d.GetModifyWorkflowPropertiesCommandAttributes()
-		if strictMode && !isMemoMatched(eventAttributes.UpsertedMemo, commandAttributes.UpsertedMemo) {
 			return false
 		}
 		return true
@@ -1513,6 +1568,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	task *workflowservice.PollWorkflowTaskQueueResponse,
 	workflowContext *workflowExecutionContextImpl,
 	commands []*commandpb.Command,
+	messages []*protocolpb.Message,
 	forceNewWorkflowTask bool,
 ) interface{} {
 	// for query task
@@ -1558,16 +1614,20 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		// Continue as new error.
 		metricsHandler.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION)
+
+		useCompat := determineUseCompatibleFlagForCommand(
+			contErr.VersioningIntent, workflowContext.workflowInfo.TaskQueueName, contErr.TaskQueueName)
 		closeCommand.Attributes = &commandpb.Command_ContinueAsNewWorkflowExecutionCommandAttributes{ContinueAsNewWorkflowExecutionCommandAttributes: &commandpb.ContinueAsNewWorkflowExecutionCommandAttributes{
-			WorkflowType:        &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
-			Input:               contErr.Input,
-			TaskQueue:           &taskqueuepb.TaskQueue{Name: contErr.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
-			WorkflowRunTimeout:  &contErr.WorkflowRunTimeout,
-			WorkflowTaskTimeout: &contErr.WorkflowTaskTimeout,
-			Header:              contErr.Header,
-			Memo:                workflowContext.workflowInfo.Memo,
-			SearchAttributes:    workflowContext.workflowInfo.SearchAttributes,
-			RetryPolicy:         convertToPBRetryPolicy(workflowContext.workflowInfo.RetryPolicy),
+			WorkflowType:         &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
+			Input:                contErr.Input,
+			TaskQueue:            &taskqueuepb.TaskQueue{Name: contErr.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
+			WorkflowRunTimeout:   &contErr.WorkflowRunTimeout,
+			WorkflowTaskTimeout:  &contErr.WorkflowTaskTimeout,
+			Header:               contErr.Header,
+			Memo:                 workflowContext.workflowInfo.Memo,
+			SearchAttributes:     workflowContext.workflowInfo.SearchAttributes,
+			RetryPolicy:          convertToPBRetryPolicy(workflowContext.workflowInfo.RetryPolicy),
+			UseCompatibleVersion: useCompat,
 		}}
 	} else if workflowContext.err != nil {
 		// Workflow failures
@@ -1612,40 +1672,37 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		}
 	}
 
-	return &workflowservice.RespondWorkflowTaskCompletedRequest{
+	nonfirstLAAttempts := eventHandler.GatherLAAttemptsThisWFT()
+
+	sdkFlags := eventHandler.sdkFlags.gatherNewSDKFlags()
+	langUsedFlags := make([]uint32, 0, len(sdkFlags))
+	for _, flag := range sdkFlags {
+		langUsedFlags = append(langUsedFlags, uint32(flag))
+	}
+
+	builtRequest := &workflowservice.RespondWorkflowTaskCompletedRequest{
 		TaskToken:                  task.TaskToken,
 		Commands:                   commands,
+		Messages:                   messages,
 		Identity:                   wth.identity,
 		ReturnNewWorkflowTask:      true,
 		ForceCreateNewWorkflowTask: forceNewWorkflowTask,
-		BinaryChecksum:             getBinaryChecksum(),
+		BinaryChecksum:             wth.workerBuildID,
 		QueryResults:               queryResults,
 		Namespace:                  wth.namespace,
+		MeteringMetadata:           &commonpb.MeteringMetadata{NonfirstLocalActivityExecutionAttempts: nonfirstLAAttempts},
+		SdkMetadata: &sdk.WorkflowTaskCompletedMetadata{
+			LangUsedFlags: langUsedFlags,
+		},
+		WorkerVersionStamp: &commonpb.WorkerVersionStamp{
+			BuildId:       wth.workerBuildID,
+			UseVersioning: wth.useBuildIDForVersioning,
+		},
 	}
-}
-
-func errorToFailWorkflowTask(taskToken []byte, err error, identity string, dataConverter converter.DataConverter,
-	failureConverter converter.FailureConverter, namespace string,
-) *workflowservice.RespondWorkflowTaskFailedRequest {
-	cause := enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
-	// If it was a panic due to a bad state machine or if it was a history
-	// mismatch error, mark as non-deterministic
-	if panicErr, _ := err.(*workflowPanicError); panicErr != nil {
-		if _, badStateMachine := panicErr.value.(stateMachineIllegalStatePanic); badStateMachine {
-			cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
-		}
-	} else if _, mismatch := err.(historyMismatchError); mismatch {
-		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
+	if wth.capabilities != nil && wth.capabilities.BuildIdBasedVersioning {
+		builtRequest.BinaryChecksum = ""
 	}
-
-	return &workflowservice.RespondWorkflowTaskFailedRequest{
-		TaskToken:      taskToken,
-		Cause:          cause,
-		Failure:        failureConverter.ErrorToFailure(err),
-		Identity:       identity,
-		BinaryChecksum: getBinaryChecksum(),
-		Namespace:      namespace,
-	}
+	return builtRequest
 }
 
 func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *historypb.HistoryEvent, isInReplay bool) error {
@@ -1694,6 +1751,10 @@ func newActivityTaskHandlerWithCustomProvider(
 		namespace:                        params.Namespace,
 		defaultHeartbeatThrottleInterval: params.DefaultHeartbeatThrottleInterval,
 		maxHeartbeatThrottleInterval:     params.MaxHeartbeatThrottleInterval,
+		versionStamp: &commonpb.WorkerVersionStamp{
+			BuildId:       params.getBuildID(),
+			UseVersioning: params.UseBuildIDForVersioning,
+		},
 	}
 }
 
@@ -1902,7 +1963,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		metricsHandler.Counter(metrics.UnregisteredActivityInvocationCounter).Inc(1)
 		return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil,
 			NewActivityNotRegisteredError(activityType, ath.getRegisteredActivityNames()),
-			ath.dataConverter, ath.failureConverter, ath.namespace, false), nil
+			ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp), nil
 	}
 
 	// panic handler
@@ -1920,7 +1981,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			metricsHandler.Counter(metrics.ActivityTaskErrorCounter).Inc(1)
 			panicErr := newPanicError(p, st)
 			result = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr,
-				ath.dataConverter, ath.failureConverter, ath.namespace, false)
+				ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp)
 		}
 	}()
 
@@ -1960,7 +2021,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		)
 	}
 	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err,
-		ath.dataConverter, ath.failureConverter, ath.namespace, isActivityCancel), nil
+		ath.dataConverter, ath.failureConverter, ath.namespace, isActivityCancel, ath.versionStamp), nil
 }
 
 func (ath *activityTaskHandlerImpl) getActivity(name string) activity {

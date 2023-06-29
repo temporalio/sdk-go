@@ -34,7 +34,6 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 	historypb "go.temporal.io/api/history/v1"
-	interactionpb "go.temporal.io/api/interaction/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/util"
@@ -141,6 +140,11 @@ type (
 		*naiveCommandStateMachine
 	}
 
+	versionMarker struct {
+		changeID          string
+		searchAttrUpdated bool
+	}
+
 	commandsHelper struct {
 		nextCommandEventID int64
 		orderedCommands    *list.List
@@ -149,7 +153,7 @@ type (
 		scheduledEventIDToActivityID          map[int64]string
 		scheduledEventIDToCancellationID      map[int64]string
 		scheduledEventIDToSignalID            map[int64]string
-		versionMarkerLookup                   map[int64]string
+		versionMarkerLookup                   map[int64]versionMarker
 		commandsCancelledDuringWFCancellation int64
 		workflowExecutionIsCancelling         bool
 
@@ -163,6 +167,12 @@ type (
 	// panic when command state machine is in illegal state
 	stateMachineIllegalStatePanic struct {
 		message string
+	}
+
+	// Error returned when a child workflow with the same id already exists and hasn't completed
+	// and been removed from internal state.
+	childWorkflowExistsWithId struct {
+		id string
 	}
 )
 
@@ -195,6 +205,7 @@ const (
 	commandTypeCompleteWorkflowUpdate    commandType = 10
 	commandTypeModifyProperties          commandType = 11
 	commandTypeRejectWorkflowUpdate      commandType = 12
+	commandTypeProtocolMessage           commandType = 13
 )
 
 const (
@@ -216,12 +227,14 @@ const (
 	localActivityMarkerName     = "LocalActivity"
 	mutableSideEffectMarkerName = "MutableSideEffect"
 
-	sideEffectMarkerIDName      = "side-effect-id"
-	sideEffectMarkerDataName    = "data"
-	versionMarkerChangeIDName   = "change-id"
-	versionMarkerDataName       = "version"
-	localActivityMarkerDataName = "data"
-	localActivityResultName     = "result"
+	sideEffectMarkerIDName            = "side-effect-id"
+	sideEffectMarkerDataName          = "data"
+	versionMarkerChangeIDName         = "change-id"
+	versionMarkerDataName             = "version"
+	versionSearchAttributeUpdatedName = "version-search-attribute-updated"
+	localActivityMarkerDataName       = "data"
+	localActivityResultName           = "result"
+	mutableSideEffectCallCounterName  = "mutable-side-effect-call-counter"
 )
 
 func (d commandState) String() string {
@@ -298,95 +311,6 @@ func (h *commandsHelper) newCommandStateMachineBase(commandType commandType, id 
 		state:   commandStateCreated,
 		history: []string{commandStateCreated.String()},
 		helper:  h,
-	}
-}
-
-// acceptWorkflowUpdate arranges for an AcceptWorkflowUpdate command to be added
-// to the current batch of outgoing commands.
-func (h *commandsHelper) acceptWorkflowUpdate(meta *interactionpb.Meta, in *interactionpb.Input) {
-	sm := h.newAcceptWorkflowUpdateStateMachine(meta, in)
-	h.addCommand(sm)
-}
-
-// acceptWorkflowUpdate arranges for an CompleteWorkflowUpdate command to be added
-// to the current batch of outgoing commands.
-func (h *commandsHelper) completeWorkflowUpdate(
-	meta *interactionpb.Meta,
-	success *commonpb.Payloads,
-	failure *failurepb.Failure,
-) {
-	sm := h.newCompleteWorkflowUpdateStateMachine(meta, success, failure)
-	h.addCommand(sm)
-}
-
-func (h *commandsHelper) newCompleteWorkflowUpdateStateMachine(
-	meta *interactionpb.Meta,
-	success *commonpb.Payloads,
-	failure *failurepb.Failure,
-) commandStateMachine {
-	attrs := &commandpb.Command_CompleteWorkflowUpdateCommandAttributes{
-		CompleteWorkflowUpdateCommandAttributes: &commandpb.CompleteWorkflowUpdateCommandAttributes{
-			Meta:   meta,
-			Output: &interactionpb.Output{},
-		},
-	}
-
-	if failure != nil {
-		attrs.CompleteWorkflowUpdateCommandAttributes.Output.Result = &interactionpb.Output_Failure{
-			Failure: failure,
-		}
-	} else {
-		attrs.CompleteWorkflowUpdateCommandAttributes.Output.Result = &interactionpb.Output_Success{
-			Success: success,
-		}
-	}
-	return &completeOnSendStateMachine{
-		h.newNaiveCommandStateMachine(commandTypeCompleteWorkflowUpdate, meta.Id, &commandpb.Command{
-			CommandType: enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_UPDATE,
-			Attributes:  attrs,
-		}),
-	}
-}
-
-func (h *commandsHelper) rejectWorkflowUpdate(
-	meta *interactionpb.Meta,
-	failure *failurepb.Failure,
-) {
-	sm := h.newRejectWorkflowUpdateStateMachine(meta, failure)
-	h.addCommand(sm)
-}
-
-func (h *commandsHelper) newRejectWorkflowUpdateStateMachine(
-	meta *interactionpb.Meta,
-	failure *failurepb.Failure,
-) commandStateMachine {
-	return &completeOnSendStateMachine{
-		h.newNaiveCommandStateMachine(commandTypeRejectWorkflowUpdate, meta.Id, &commandpb.Command{
-			CommandType: enumspb.COMMAND_TYPE_REJECT_WORKFLOW_UPDATE,
-			Attributes: &commandpb.Command_RejectWorkflowUpdateCommandAttributes{
-				RejectWorkflowUpdateCommandAttributes: &commandpb.RejectWorkflowUpdateCommandAttributes{
-					Meta:    meta,
-					Failure: failure,
-				},
-			},
-		}),
-	}
-}
-
-func (h *commandsHelper) newAcceptWorkflowUpdateStateMachine(
-	meta *interactionpb.Meta,
-	in *interactionpb.Input,
-) commandStateMachine {
-	return &completeOnSendStateMachine{
-		h.newNaiveCommandStateMachine(commandTypeAcceptWorkflowUpdate, meta.Id, &commandpb.Command{
-			CommandType: enumspb.COMMAND_TYPE_ACCEPT_WORKFLOW_UPDATE,
-			Attributes: &commandpb.Command_AcceptWorkflowUpdateCommandAttributes{
-				AcceptWorkflowUpdateCommandAttributes: &commandpb.AcceptWorkflowUpdateCommandAttributes{
-					Meta:  meta,
-					Input: in,
-				},
-			},
-		}),
 	}
 }
 
@@ -618,7 +542,7 @@ func (d *commandStateMachineBase) handleCancelFailedEvent() {
 
 func (d *commandStateMachineBase) handleCanceledEvent() {
 	switch d.state {
-	case commandStateCancellationCommandSent, commandStateCanceledAfterInitiated, commandStateCancellationCommandAccepted:
+	case commandStateCancellationCommandSent, commandStateCanceledAfterInitiated, commandStateCanceledAfterStarted, commandStateCancellationCommandAccepted:
 		d.moveState(commandStateCompleted, eventCanceled)
 	default:
 		d.failStateTransition(eventCanceled)
@@ -967,7 +891,7 @@ func newCommandsHelper() *commandsHelper {
 		scheduledEventIDToActivityID:          make(map[int64]string),
 		scheduledEventIDToCancellationID:      make(map[int64]string),
 		scheduledEventIDToSignalID:            make(map[int64]string),
-		versionMarkerLookup:                   make(map[int64]string),
+		versionMarkerLookup:                   make(map[int64]versionMarker),
 		commandsCancelledDuringWFCancellation: 0,
 	}
 }
@@ -1000,15 +924,18 @@ func (h *commandsHelper) getNextID() int64 {
 }
 
 func (h *commandsHelper) incrementNextCommandEventIDIfVersionMarker() {
-	_, ok := h.versionMarkerLookup[h.nextCommandEventID]
+	marker, ok := h.versionMarkerLookup[h.nextCommandEventID]
 	for ok {
 		// Remove the marker from the lookup map and increment nextCommandEventID by 2 because call to GetVersion
-		// results in 2 events in the history.  One is GetVersion marker event for changeID and change version, other
+		// results in 1 or 2 events in the history.  One is GetVersion marker event for changeID and change version, other
 		// is UpsertSearchableAttributes to keep track of executions using particular version of code.
 		delete(h.versionMarkerLookup, h.nextCommandEventID)
 		h.incrementNextCommandEventID()
-		h.incrementNextCommandEventID()
-		_, ok = h.versionMarkerLookup[h.nextCommandEventID]
+		// UpsertSearchableAttributes may not have been written if the search attribute was too large.
+		if marker.searchAttrUpdated {
+			h.incrementNextCommandEventID()
+		}
+		marker, ok = h.versionMarkerLookup[h.nextCommandEventID]
 	}
 }
 
@@ -1154,7 +1081,7 @@ func (h *commandsHelper) getActivityAndScheduledEventIDs(event *historypb.Histor
 	return activityID, scheduledEventID
 }
 
-func (h *commandsHelper) recordVersionMarker(changeID string, version Version, dc converter.DataConverter) commandStateMachine {
+func (h *commandsHelper) recordVersionMarker(changeID string, version Version, dc converter.DataConverter, searchAttributeWasUpdated bool) commandStateMachine {
 	markerID := fmt.Sprintf("%v_%v", versionMarkerName, changeID)
 
 	changeIDPayload, err := dc.ToPayloads(changeID)
@@ -1175,12 +1102,20 @@ func (h *commandsHelper) recordVersionMarker(changeID string, version Version, d
 		},
 	}
 
+	if !searchAttributeWasUpdated {
+		searchAttributeWasUpdatedPayload, err := dc.ToPayloads(searchAttributeWasUpdated)
+		if err != nil {
+			panic(err)
+		}
+		recordMarker.Details[versionSearchAttributeUpdatedName] = searchAttributeWasUpdatedPayload
+	}
+
 	command := h.newMarkerCommandStateMachine(markerID, recordMarker)
 	h.addCommand(command)
 	return command
 }
 
-func (h *commandsHelper) handleVersionMarker(eventID int64, changeID string) {
+func (h *commandsHelper) handleVersionMarker(eventID int64, changeID string, searchAttrUpdated bool) {
 	if _, ok := h.versionMarkerLookup[eventID]; ok {
 		panicMsg := fmt.Sprintf("marker event already exists for eventID in lookup: eventID: %v, changeID: %v",
 			eventID, changeID)
@@ -1190,7 +1125,10 @@ func (h *commandsHelper) handleVersionMarker(eventID int64, changeID string) {
 	// During processing of a workflow task we reorder all GetVersion markers and process them first.
 	// Keep track of all GetVersion marker events during the processing of workflow task so we can
 	// generate correct eventIDs for other events during replay.
-	h.versionMarkerLookup[eventID] = changeID
+	h.versionMarkerLookup[eventID] = versionMarker{
+		changeID:          changeID,
+		searchAttrUpdated: searchAttrUpdated,
+	}
 }
 
 func (h *commandsHelper) recordSideEffectMarker(sideEffectID int64, data *commonpb.Payloads, dc converter.DataConverter) commandStateMachine {
@@ -1230,10 +1168,10 @@ func (h *commandsHelper) recordLocalActivityMarker(activityID string, details ma
 	return command
 }
 
-func (h *commandsHelper) recordMutableSideEffectMarker(mutableSideEffectID string, data *commonpb.Payloads, dc converter.DataConverter) commandStateMachine {
+func (h *commandsHelper) recordMutableSideEffectMarker(mutableSideEffectID string, callCountHint int, data *commonpb.Payloads, dc converter.DataConverter) commandStateMachine {
 	// In order to avoid duplicate marker IDs, we must append the counter to the
 	// user-provided ID
-	mutableSideEffectID = fmt.Sprintf("%v_%v", mutableSideEffectID, h.nextCommandEventID)
+	mutableSideEffectID = fmt.Sprintf("%v_%v", mutableSideEffectID, h.getNextID())
 	markerID := fmt.Sprintf("%v_%v", mutableSideEffectMarkerName, mutableSideEffectID)
 
 	mutableSideEffectIDPayload, err := dc.ToPayloads(mutableSideEffectID)
@@ -1241,11 +1179,17 @@ func (h *commandsHelper) recordMutableSideEffectMarker(mutableSideEffectID strin
 		panic(err)
 	}
 
+	mutableSideEffectCounterPayload, err := dc.ToPayloads(callCountHint)
+	if err != nil {
+		panic(err)
+	}
+
 	attributes := &commandpb.RecordMarkerCommandAttributes{
 		MarkerName: mutableSideEffectMarkerName,
 		Details: map[string]*commonpb.Payloads{
-			sideEffectMarkerIDName:   mutableSideEffectIDPayload,
-			sideEffectMarkerDataName: data,
+			sideEffectMarkerIDName:           mutableSideEffectIDPayload,
+			sideEffectMarkerDataName:         data,
+			mutableSideEffectCallCounterName: mutableSideEffectCounterPayload,
 		},
 	}
 	command := h.newMarkerCommandStateMachine(markerID, attributes)
@@ -1253,10 +1197,18 @@ func (h *commandsHelper) recordMutableSideEffectMarker(mutableSideEffectID strin
 	return command
 }
 
-func (h *commandsHelper) startChildWorkflowExecution(attributes *commandpb.StartChildWorkflowExecutionCommandAttributes) commandStateMachine {
+// startChildWorkflowExecution can return an error in the event that there is already a child wf
+// with the same ID which exists as a command in memory. Other SDKs actually will send this command
+// to server, and have it reject it - but here the command ID is exactly equal to the child's wf ID,
+// and changing that without potentially blowing up backwards compatability is difficult. So we
+// return the error eagerly locally, which is at least an improvement on panicking.
+func (h *commandsHelper) startChildWorkflowExecution(attributes *commandpb.StartChildWorkflowExecutionCommandAttributes) (commandStateMachine, error) {
 	command := h.newChildWorkflowCommandStateMachine(attributes)
+	if h.commands[command.getID()] != nil {
+		return nil, &childWorkflowExistsWithId{id: attributes.WorkflowId}
+	}
 	h.addCommand(command)
-	return command
+	return command, nil
 }
 
 func (h *commandsHelper) handleStartChildWorkflowExecutionInitiated(workflowID string) {
@@ -1383,6 +1335,18 @@ func (h *commandsHelper) signalExternalWorkflowExecution(
 	command := h.newSignalExternalWorkflowStateMachine(attributes, signalID)
 	h.addCommand(command)
 	return command
+}
+
+func (h *commandsHelper) addProtocolMessage(msgID string) commandStateMachine {
+	cmd := createNewCommand(enumspb.COMMAND_TYPE_PROTOCOL_MESSAGE)
+	cmd.Attributes = &commandpb.Command_ProtocolMessageCommandAttributes{
+		ProtocolMessageCommandAttributes: &commandpb.ProtocolMessageCommandAttributes{MessageId: msgID},
+	}
+	sm := &completeOnSendStateMachine{
+		naiveCommandStateMachine: h.newNaiveCommandStateMachine(commandTypeProtocolMessage, msgID, cmd),
+	}
+	h.addCommand(sm)
+	return sm
 }
 
 func (h *commandsHelper) upsertSearchAttributes(upsertID string, searchAttr *commonpb.SearchAttributes) commandStateMachine {
@@ -1512,4 +1476,8 @@ func (h *commandsHelper) isCancelExternalWorkflowEventForChildWorkflow(cancellat
 	// for cancellation external workflow, Control in RequestCancelExternalWorkflowExecutionInitiatedEventAttributes
 	// will have a client generated sequence ID
 	return len(cancellationID) == 0
+}
+
+func (e *childWorkflowExistsWithId) Error() string {
+	return fmt.Sprintf("child workflow already exists with id: %v", e.id)
 }

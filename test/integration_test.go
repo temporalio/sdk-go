@@ -62,6 +62,7 @@ import (
 	"go.temporal.io/sdk/client"
 	contribtally "go.temporal.io/sdk/contrib/tally"
 	"go.temporal.io/sdk/interceptor"
+	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/interceptortest"
@@ -82,13 +83,11 @@ const (
 type IntegrationTestSuite struct {
 	*require.Assertions
 	suite.Suite
-	config                    Config
-	client                    client.Client
+	ConfigAndClientSuiteBase
 	activities                *Activities
 	workflows                 *Workflows
 	worker                    worker.Worker
 	workerStopped             bool
-	taskQueueName             string
 	tracer                    *tracingInterceptor
 	inboundSignalInterceptor  *signalInterceptor
 	trafficController         *test.SimpleTrafficController
@@ -106,13 +105,9 @@ func TestIntegrationSuite(t *testing.T) {
 
 func (ts *IntegrationTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
-	ts.config = NewConfig()
 	ts.activities = newActivities()
 	ts.workflows = &Workflows{}
-	ts.NoError(WaitForTCP(time.Minute, ts.config.ServiceAddr))
-	if ts.config.ShouldRegisterNamespace {
-		ts.registerNamespace()
-	}
+	ts.NoError(ts.InitConfigAndNamespace())
 }
 
 func (ts *IntegrationTestSuite) TearDownSuite() {
@@ -895,7 +890,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 func (ts *IntegrationTestSuite) TestActivityCancelUsingReplay() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflowWithOptions(ts.workflows.ActivityCancelRepro, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
-	err := replayer.ReplayPartialWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "fixtures/activity.cancel.sm.repro.json", 12)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "fixtures/activity.cancel.sm.repro.json")
 	ts.NoError(err)
 }
 
@@ -999,9 +994,59 @@ func (ts *IntegrationTestSuite) TestCancelChildWorkflowUnusualTransitions() {
 	)
 	ts.NoError(err)
 
-	// Synchronously wait for the workflow completion. Behind the scenes the SDK performs a long poll operation.
-	// If you need to wait for the workflow completion from another process use
-	// Client.GetWorkflow API to get an instance of a WorkflowRun.
+	err = run.Get(context.Background(), nil)
+	ts.NoError(err)
+}
+
+func (ts *IntegrationTestSuite) TestCancelChildWorkflowAndParentWorkflow() {
+	wfid := "test-cancel-child-workflow-and-parent-workflow"
+	run, err := ts.client.ExecuteWorkflow(context.Background(),
+		ts.startWorkflowOptions(wfid),
+		ts.workflows.ChildWorkflowAndParentCancel)
+	ts.NoError(err)
+
+	// Give it a sec to populate the query
+	<-time.After(1 * time.Second)
+
+	v, err := ts.client.QueryWorkflow(context.Background(), run.GetID(), "", "child-and-parent-cancel-child-workflow-id")
+	ts.NoError(err)
+
+	var childWorkflowID string
+	err = v.Get(&childWorkflowID)
+	ts.NoError(err)
+	ts.NotNil(childWorkflowID)
+	ts.NotEmpty(childWorkflowID)
+
+	err = ts.client.CancelWorkflow(context.Background(), childWorkflowID, "")
+	ts.NoError(err)
+
+	err = ts.client.CancelWorkflow(context.Background(), run.GetID(), "")
+	ts.NoError(err)
+
+	err = run.Get(context.Background(), nil)
+	ts.NoError(err)
+
+	err = ts.client.GetWorkflow(context.Background(), childWorkflowID, "").Get(context.Background(), nil)
+	var canceledError *temporal.CanceledError
+	ts.ErrorAs(err, &canceledError)
+}
+
+func (ts *IntegrationTestSuite) TestChildWorkflowDuplicatePanic_Regression() {
+	wfid := "test-child-workflow-duplicate-panic-regression"
+	run, err := ts.client.ExecuteWorkflow(context.Background(),
+		ts.startWorkflowOptions(wfid),
+		ts.workflows.ChildWorkflowDuplicatePanicRepro)
+	ts.NoError(err)
+	err = run.Get(context.Background(), nil)
+	ts.NoError(err)
+}
+
+func (ts *IntegrationTestSuite) TestChildWorkflowDuplicateGetExecutionStuck_Regression() {
+	wfid := "test-child-workflow-duplicate-get-execution-stuck-regression"
+	run, err := ts.client.ExecuteWorkflow(context.Background(),
+		ts.startWorkflowOptions(wfid),
+		ts.workflows.ChildWorkflowDuplicateGetExecutionStuckRepro)
+	ts.NoError(err)
 	err = run.Get(context.Background(), nil)
 	ts.NoError(err)
 }
@@ -1152,6 +1197,39 @@ func (ts *IntegrationTestSuite) TestBasicSession() {
 		ts.tracer.GetTrace("BasicSession"))
 }
 
+func (ts *IntegrationTestSuite) TestSessionStateFailedWorkerFailed() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	ts.activities.manualStopContext = ctx
+	// We want to start a single long-running activity in a session
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-session-worker-failure"),
+		ts.workflows.SessionFailedStateWorkflow,
+		&AdvancedSessionParams{
+			SessionCount:           1,
+			SessionCreationTimeout: 10 * time.Second,
+		})
+	ts.NoError(err)
+
+	// Wait until sessions started
+	ts.waitForQueryTrue(run, "sessions-created-equals", 1)
+
+	// Kill the worker, this should cause the session to timeout.
+	ts.worker.Stop()
+	ts.workerStopped = true
+
+	// Now create a new worker on that same task queue to resume the work of the
+	// workflow
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{DisableStickyExecution: true})
+	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.NoError(nextWorker.Start())
+	defer nextWorker.Stop()
+
+	// Get the result of the workflow run now
+	err = run.Get(ctx, nil)
+	ts.NoError(err)
+}
+
 func (ts *IntegrationTestSuite) TestAsyncActivityCompletion() {
 	workflowID := "test-async-activity-completion"
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
@@ -1203,6 +1281,22 @@ func (ts *IntegrationTestSuite) TestAsyncActivityCompletion() {
 	err = workflowRun.Get(ctx, &result)
 	ts.Nil(err)
 	ts.EqualValues([]string{"activityA completed", "activityB completed"}, result)
+}
+
+func (ts *IntegrationTestSuite) TestVersionLoopWorkflow() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-version-loop-workflow"), ts.workflows.VersionLoopWorkflow, []string{"changeID_1", "changeID_2", "changeID_3"}, 256)
+	ts.NoError(err)
+
+	err = run.Get(ctx, nil)
+	ts.NoError(err)
+
+	resp, err := ts.client.DescribeWorkflowExecution(ctx, run.GetID(), run.GetRunID())
+	ts.NoError(err)
+	size := len(resp.WorkflowExecutionInfo.SearchAttributes.GetIndexedFields()[internal.TemporalChangeVersion].Data)
+	ts.Less(size, 2048)
 }
 
 func (ts *IntegrationTestSuite) TestContextPropagator() {
@@ -2203,6 +2297,8 @@ func (ts *IntegrationTestSuite) TestWorkerFatalErrorOnStart() {
 }
 
 func (ts *IntegrationTestSuite) testWorkerFatalError(useWorkerRun bool) {
+	// Allow the worker to fail faster so the test does not take 2 minutes.
+	internal.SetRetryLongPollGracePeriod(5 * time.Second)
 	// Make a new client that will fail a poll with a namespace not found
 	c, err := client.Dial(client.Options{
 		HostPort:  ts.config.ServiceAddr,
@@ -2344,6 +2440,78 @@ func (ts *IntegrationTestSuite) TestDeterminismUpsertSearchAttributesConditional
 	ts.testStaleCacheReplayDeterminism(ctx, run, maxTicks)
 }
 
+func (ts *IntegrationTestSuite) TestLocalActivityWorkerRestart() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	maxTicks := 3
+	options := ts.startWorkflowOptions("test-local-activity-worker-restart-" + uuid.New())
+
+	run, err := ts.client.ExecuteWorkflow(
+		ctx,
+		options,
+		ts.workflows.LocalActivityStaleCache,
+		maxTicks,
+	)
+	ts.NoError(err)
+
+	// clean up if test fails
+	defer func() { _ = ts.client.TerminateWorkflow(ctx, run.GetID(), run.GetRunID(), "", nil) }()
+	ts.waitForQueryTrue(run, "is-wait-tick-count", 1)
+
+	// Restart worker
+	ts.workerStopped = true
+	currentWorker := ts.worker
+	currentWorker.Stop()
+	currentWorker = worker.New(ts.client, ts.taskQueueName, worker.Options{})
+	ts.registerWorkflowsAndActivities(currentWorker)
+	ts.NoError(currentWorker.Start())
+	defer currentWorker.Stop()
+
+	for i := 0; i < maxTicks-1; i++ {
+		ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "tick", nil))
+		ts.waitForQueryTrue(run, "is-wait-tick-count", 2+i)
+	}
+	err = run.Get(ctx, nil)
+	ts.NoError(err)
+}
+
+func (ts *IntegrationTestSuite) TestLocalActivityStaleCache() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	maxTicks := 3
+	options := ts.startWorkflowOptions("test-local-activity-stale-cache-" + uuid.New())
+
+	run, err := ts.client.ExecuteWorkflow(
+		ctx,
+		options,
+		ts.workflows.LocalActivityStaleCache,
+		maxTicks,
+	)
+	ts.NoError(err)
+
+	// clean up if test fails
+	defer func() { _ = ts.client.TerminateWorkflow(ctx, run.GetID(), run.GetRunID(), "", nil) }()
+	ts.waitForQueryTrue(run, "is-wait-tick-count", 1)
+
+	ts.workerStopped = true
+	currentWorker := ts.worker
+	currentWorker.Stop()
+	for i := 0; i < maxTicks-1; i++ {
+		func() {
+			ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "tick", nil))
+			currentWorker = worker.New(ts.client, ts.taskQueueName, worker.Options{})
+			defer currentWorker.Stop()
+			ts.registerWorkflowsAndActivities(currentWorker)
+			ts.NoError(currentWorker.Start())
+			ts.waitForQueryTrue(run, "is-wait-tick-count", 2+i)
+		}()
+	}
+	err = run.Get(ctx, nil)
+	ts.NoError(err)
+}
+
 func (ts *IntegrationTestSuite) TestDeterminismUpsertMemoConditional() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -2483,40 +2651,6 @@ func (ts *IntegrationTestSuite) TestReplayerWithInterceptor() {
 	replayer.RegisterWorkflow(ts.workflows.Basic)
 	ts.NoError(replayer.ReplayWorkflowExecution(ctx, ts.client.WorkflowService(), nil, ts.config.Namespace,
 		workflow.Execution{ID: run.GetID(), RunID: run.GetRunID()}))
-}
-
-func (ts *IntegrationTestSuite) registerNamespace() {
-	client, err := client.NewNamespaceClient(client.Options{
-		HostPort:          ts.config.ServiceAddr,
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
-	})
-	ts.NoError(err)
-	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
-	defer cancel()
-	retention := 1 * time.Hour * 24
-	err = client.Register(ctx, &workflowservice.RegisterNamespaceRequest{
-		Namespace:                        ts.config.Namespace,
-		WorkflowExecutionRetentionPeriod: &retention,
-	})
-	client.Close()
-	if _, ok := err.(*serviceerror.NamespaceAlreadyExists); ok {
-		return
-	}
-	ts.NoError(err)
-	time.Sleep(namespaceCacheRefreshInterval) // wait for namespace cache refresh on temporal-server
-	// bellow is used to guarantee namespace is ready
-	var dummyReturn string
-	err = ts.executeWorkflow("test-namespace-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
-	numOfRetry := 20
-	for err != nil && numOfRetry >= 0 {
-		if _, ok := err.(*serviceerror.NamespaceNotFound); ok {
-			time.Sleep(namespaceCacheRefreshInterval)
-			err = ts.executeWorkflow("test-namespace-exist", ts.workflows.SimplestWorkflow, &dummyReturn)
-		} else {
-			break
-		}
-		numOfRetry--
-	}
 }
 
 // We count on the no-cache test to test replay conditions here
@@ -2803,6 +2937,60 @@ func (ts *IntegrationTestSuite) TestScheduleCreate() {
 	ts.Nil(description)
 }
 
+func (ts *IntegrationTestSuite) TestScheduleCalendarDefault() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID: "test-schedule-calendar-default-schedule",
+		Spec: client.ScheduleSpec{
+			Calendars: []client.ScheduleCalendarSpec{
+				{
+					Second: []client.ScheduleRange{{Start: 30, End: 30}},
+				},
+			},
+		},
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-calendar-default-workflow"),
+		Paused: true,
+	})
+	ts.NoError(err)
+	ts.EqualValues("test-schedule-calendar-default-schedule", handle.GetID())
+	defer func() {
+		ts.NoError(handle.Delete(ctx))
+	}()
+	description, err := handle.Describe(ctx)
+	ts.NoError(err)
+	// test default calendar spec
+	ts.Equal([]client.ScheduleCalendarSpec{
+		{
+			Second: []client.ScheduleRange{{Start: 30, End: 30, Step: 1}},
+			Minute: []client.ScheduleRange{{Start: 0, End: 0, Step: 1}},
+			Hour:   []client.ScheduleRange{{Start: 0, End: 0, Step: 1}},
+			DayOfMonth: []client.ScheduleRange{
+				{
+					Start: 1,
+					End:   31,
+					Step:  1,
+				},
+			},
+			Month: []client.ScheduleRange{
+				{
+					Start: 1,
+					End:   12,
+					Step:  1,
+				},
+			},
+			Year: []client.ScheduleRange{},
+			DayOfWeek: []client.ScheduleRange{
+				{
+					Start: 0,
+					End:   6,
+					Step:  1,
+				},
+			},
+		},
+	}, description.Schedule.Spec.Calendars)
+}
+
 func (ts *IntegrationTestSuite) TestScheduleCreateDuplicate() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -2827,7 +3015,6 @@ func (ts *IntegrationTestSuite) TestScheduleCreateDuplicate() {
 func (ts *IntegrationTestSuite) TestScheduleDescribeSpec() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
 	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
 		ID: "test-schedule-describe-spec-schedule",
 		Spec: client.ScheduleSpec{
@@ -2907,27 +3094,33 @@ func (ts *IntegrationTestSuite) TestScheduleDescribeSpec() {
 	// test spec
 	ts.Equal([]client.ScheduleCalendarSpec{
 		{
-			Second: []client.ScheduleRange{{}},
-			Minute: []client.ScheduleRange{{}},
+			Second: []client.ScheduleRange{{Start: 0, End: 0, Step: 1}},
+			Minute: []client.ScheduleRange{{Start: 0, End: 0, Step: 1}},
 			Hour: []client.ScheduleRange{{
 				Start: 12,
+				End:   12,
+				Step:  1,
 			}},
 			DayOfMonth: []client.ScheduleRange{
 				{
 					Start: 1,
 					End:   31,
+					Step:  1,
 				},
 			},
 			Month: []client.ScheduleRange{
 				{
 					Start: 1,
 					End:   12,
+					Step:  1,
 				},
 			},
 			Year: []client.ScheduleRange{},
 			DayOfWeek: []client.ScheduleRange{
 				{
 					Start: 1,
+					End:   1,
+					Step:  1,
 				},
 			},
 		},
@@ -2945,27 +3138,33 @@ func (ts *IntegrationTestSuite) TestScheduleDescribeSpec() {
 
 	ts.Equal([]client.ScheduleCalendarSpec{
 		{
-			Second: []client.ScheduleRange{{}},
-			Minute: []client.ScheduleRange{{}},
+			Second: []client.ScheduleRange{{Start: 0, End: 0, Step: 1}},
+			Minute: []client.ScheduleRange{{Start: 0, End: 0, Step: 1}},
 			Hour: []client.ScheduleRange{{
 				Start: 12,
+				End:   12,
+				Step:  1,
 			}},
 			DayOfMonth: []client.ScheduleRange{
 				{
 					Start: 1,
 					End:   31,
+					Step:  1,
 				},
 			},
 			Month: []client.ScheduleRange{
 				{
 					Start: 1,
 					End:   12,
+					Step:  1,
 				},
 			},
 			Year: []client.ScheduleRange{},
 			DayOfWeek: []client.ScheduleRange{
 				{
 					Start: 1,
+					Step:  1,
+					End:   1,
 				},
 			},
 		},
@@ -2997,27 +3196,33 @@ func (ts *IntegrationTestSuite) TestScheduleDescribeSpecCron() {
 	// test spec
 	ts.Equal([]client.ScheduleCalendarSpec{
 		{
-			Second: []client.ScheduleRange{{}},
-			Minute: []client.ScheduleRange{{}},
+			Second: []client.ScheduleRange{{Start: 0, End: 0, Step: 1}},
+			Minute: []client.ScheduleRange{{Start: 0, End: 0, Step: 1}},
 			Hour: []client.ScheduleRange{{
 				Start: 12,
+				End:   12,
+				Step:  1,
 			}},
 			DayOfMonth: []client.ScheduleRange{
 				{
 					Start: 1,
 					End:   31,
+					Step:  1,
 				},
 			},
 			Month: []client.ScheduleRange{
 				{
 					Start: 1,
 					End:   12,
+					Step:  1,
 				},
 			},
 			Year: []client.ScheduleRange{},
 			DayOfWeek: []client.ScheduleRange{
 				{
 					Start: 1,
+					End:   1,
+					Step:  1,
 				},
 			},
 		},
@@ -3615,6 +3820,53 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateWorkflowActionMemo() {
 	default:
 		ts.Fail("schedule action wrong type")
 	}
+}
+
+func (ts *IntegrationTestSuite) TestSendsCorrectMeteringData() {
+	nonfirstLAAttemptCounts := make([]uint32, 0)
+	c, err := client.Dial(client.Options{
+		HostPort:  ts.config.ServiceAddr,
+		Namespace: ts.config.Namespace,
+		ConnectionOptions: client.ConnectionOptions{
+			TLS: ts.config.TLS,
+			DialOptions: []grpc.DialOption{
+				grpc.WithUnaryInterceptor(func(
+					ctx context.Context,
+					method string,
+					req interface{},
+					reply interface{},
+					cc *grpc.ClientConn,
+					invoker grpc.UnaryInvoker,
+					opts ...grpc.CallOption,
+				) error {
+					if method == "/temporal.api.workflowservice.v1.WorkflowService/RespondWorkflowTaskCompleted" {
+						asReq := req.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+						nonfirstLAAttemptCounts = append(nonfirstLAAttemptCounts, asReq.MeteringMetadata.NonfirstLocalActivityExecutionAttempts)
+					}
+					return invoker(ctx, method, req, reply, cc, opts...)
+				}),
+			},
+		},
+	})
+	ts.NoError(err)
+	defer c.Close()
+
+	ts.worker.Stop()
+	ts.workerStopped = true
+	w := worker.New(c, ts.taskQueueName, worker.Options{})
+	ts.registerWorkflowsAndActivities(w)
+	ts.Nil(w.Start())
+
+	wfOpts := ts.startWorkflowOptions("test-sends-correct-metering-data")
+	wfOpts.WorkflowTaskTimeout = 2 * time.Second
+	ts.NoError(ts.executeWorkflowWithOption(wfOpts,
+		ts.workflows.WorkflowWithLocalActivityRetriesAndHeartbeat, nil))
+
+	ts.Equal(uint32(0), nonfirstLAAttemptCounts[0])
+	for i := 1; i < len(nonfirstLAAttemptCounts); i++ {
+		ts.True(nonfirstLAAttemptCounts[i] > 0)
+	}
+	w.Stop()
 }
 
 // executeWorkflow executes a given workflow and waits for the result

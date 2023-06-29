@@ -11,16 +11,16 @@ jobs:
     steps:
       - name: Print build information
         run: "echo head_ref: ${{ github.head_ref }}, ref: ${{ github.ref }}"
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           submodules: recursive
-      - uses: actions/setup-go@v2
+      - uses: actions/setup-go@v4
         with:
-          go-version: "1.17"
+          go-version: "1.20"
       - name: Check and unit test
         run: make check unit-test
       - name: Clone Temporal Docker compose
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           repository: temporalio/docker-compose
           path: ./docker-compose
@@ -34,10 +34,18 @@ jobs:
         run: make integration-test-zero-cache
       - name: Integration tests (with cache)
         run: make integration-test-normal-cache
+      - name: Merge coverage files
+        id: merge-coverage-files
+        run: |
+          COVERAGE_FILE="$(mktemp)"
+          echo "COVERAGE_FILE=$COVERAGE_FILE" >> "$GITHUB_OUTPUT"
+          make merge-coverage > "$COVERAGE_FILE"
       - name: Upload coverage
-        env:
-          COVERALLS_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: make cover_ci
+        continue-on-error: true
+        uses: coverallsapp/github-action@v2
+        with:
+          file: ${{ steps.merge-coverage-files.outputs.COVERAGE_FILE }}
+          format: golang
 
   cloud-test:
     # Only supported in non-fork runs, since secrets are not available in forks.
@@ -49,19 +57,18 @@ jobs:
       TEMPORAL_CLIENT_CERT: ${{ secrets.TEMPORAL_CLIENT_CERT }}
       TEMPORAL_CLIENT_KEY: ${{ secrets.TEMPORAL_CLIENT_KEY }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           submodules: recursive
-      - uses: actions/setup-go@v2
+      - uses: actions/setup-go@v4
         with:
-          go-version: "1.17"
+          go-version: "1.20"
       - name: Single integration test against cloud
         run: 'go test -v --count 1 -p 1 . -run "TestIntegrationSuite/TestBasic$"'
         working-directory: test
 
-
-  sdk-features-test:
-    uses: temporalio/sdk-features/.github/workflows/go.yaml@main
+  features-test:
+    uses: temporalio/features/.github/workflows/go.yaml@main
     with:
       go-repo-path: ${{github.event.pull_request.head.repo.full_name}}
       version: ${{github.event.pull_request.head.ref}}

@@ -43,30 +43,36 @@ import (
 	querypb "go.temporal.io/api/query/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
+	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/internal/common/retry"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/common/util"
 	"go.temporal.io/sdk/log"
 	uberatomic "go.uber.org/atomic"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/status"
 )
 
 // Assert that structs do indeed implement the interfaces
-var _ Client = (*WorkflowClient)(nil)
-var _ NamespaceClient = (*namespaceClient)(nil)
+var (
+	_ Client          = (*WorkflowClient)(nil)
+	_ NamespaceClient = (*namespaceClient)(nil)
+)
 
 const (
 	defaultGetHistoryTimeout = 65 * time.Second
 
 	getSystemInfoTimeout = 5 * time.Second
+
+	pollUpdateTimeout = 60 * time.Second
 )
 
-var (
-	maxListArchivedWorkflowTimeout = time.Minute * 3
-)
+var maxListArchivedWorkflowTimeout = time.Minute * 3
 
 type (
 	// WorkflowClient is the client for starting a workflow execution.
@@ -297,7 +303,8 @@ func (wc *WorkflowClient) SignalWorkflow(ctx context.Context, workflowID string,
 // SignalWithStartWorkflow sends a signal to a running workflow.
 // If the workflow is not running or not found, it starts the workflow and then sends the signal in transaction.
 func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
-	options StartWorkflowOptions, workflowFunc interface{}, workflowArgs ...interface{}) (WorkflowRun, error) {
+	options StartWorkflowOptions, workflowFunc interface{}, workflowArgs ...interface{},
+) (WorkflowRun, error) {
 	if err := wc.ensureInitialized(); err != nil {
 		return nil, err
 	}
@@ -419,7 +426,8 @@ func (wc *WorkflowClient) getWorkflowHistory(
 }
 
 func (wc *WorkflowClient) getWorkflowExecutionHistory(ctx context.Context, rpcMetricsHandler metrics.Handler, isLongPoll bool,
-	request *workflowservice.GetWorkflowExecutionHistoryRequest, filterType enumspb.HistoryEventFilterType) (*workflowservice.GetWorkflowExecutionHistoryResponse, error) {
+	request *workflowservice.GetWorkflowExecutionHistoryRequest, filterType enumspb.HistoryEventFilterType,
+) (*workflowservice.GetWorkflowExecutionHistoryResponse, error) {
 	if err := wc.ensureInitialized(); err != nil {
 		return nil, err
 	}
@@ -432,7 +440,6 @@ func (wc *WorkflowClient) getWorkflowExecutionHistory(ctx context.Context, rpcMe
 
 	defer cancel()
 	response, err := wc.workflowService.GetWorkflowExecutionHistory(grpcCtx, request)
-
 	if err != nil {
 		return nil, err
 	}
@@ -474,15 +481,15 @@ func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 	// We do allow canceled error to be passed here
 	cancelAllowed := true
 	request := convertActivityResultToRespondRequest(wc.identity, taskToken,
-		data, err, wc.dataConverter, wc.failureConverter, wc.namespace, cancelAllowed)
+		data, err, wc.dataConverter, wc.failureConverter, wc.namespace, cancelAllowed, nil)
 	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
 // CompleteActivityByID reports activity completed. Similar to CompleteActivity
 // It takes namespace name, workflowID, runID, activityID as arguments.
 func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, namespace, workflowID, runID, activityID string,
-	result interface{}, err error) error {
-
+	result interface{}, err error,
+) error {
 	if activityID == "" || workflowID == "" || namespace == "" {
 		return errors.New("empty activity or workflow id or namespace")
 	}
@@ -520,7 +527,8 @@ func (wc *WorkflowClient) RecordActivityHeartbeat(ctx context.Context, taskToken
 
 // RecordActivityHeartbeatByID records heartbeat for an activity.
 func (wc *WorkflowClient) RecordActivityHeartbeatByID(ctx context.Context,
-	namespace, workflowID, runID, activityID string, details ...interface{}) error {
+	namespace, workflowID, runID, activityID string, details ...interface{},
+) error {
 	if err := wc.ensureInitialized(); err != nil {
 		return err
 	}
@@ -734,6 +742,92 @@ func (wc *WorkflowClient) QueryWorkflow(ctx context.Context, workflowID string, 
 	})
 }
 
+// UpdateWorkflowWithOptionsRequest is the request to UpdateWorkflowWithOptions
+type UpdateWorkflowWithOptionsRequest struct {
+	// UpdateID is an application-layer identifier for the requested update. It
+	// must be unique within the scope of a Namespace+WorkflowID+RunID.
+	UpdateID string
+
+	// WorkflowID is a required field indicating the workflow which should be
+	// updated.
+	WorkflowID string
+
+	// RunID is an optional field used to identify a specific run of the target
+	// workflow.  If RunID is not provided the latest run will be used.
+	RunID string
+
+	// UpdateName is a required field which specifies the update you want to run.
+	// See comments at workflow.SetUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions)
+	// for more details on how to setup update handlers within the target workflow.
+	UpdateName string
+
+	// Args is an optional field used to identify the arguments passed to the
+	// update.
+	Args []interface{}
+
+	// FirstExecutionRunID specifies the RunID expected to identify the first
+	// run in the workflow execution chain. If this expectation does not match
+	// then the server will reject the update request with an error.
+	FirstExecutionRunID string
+
+	// How this RPC should block on the server before returning.
+	WaitPolicy *updatepb.WaitPolicy
+}
+
+// WorkflowUpdateHandle is a handle to a workflow execution update process. The
+// update may or may not have completed so an instance of this type functions
+// simlar to a Future with respect to the outcome of the update. If the update
+// is rejected or returns an error, the Get function on this type will return
+// that error through the output valuePtr.
+// NOTE: Experimental
+type WorkflowUpdateHandle interface {
+	// WorkflowID observes the update's workflow ID.
+	WorkflowID() string
+
+	// RunID observes the update's run ID.
+	RunID() string
+
+	// UpdateID observes the update's ID.
+	UpdateID() string
+
+	// Get blocks on the outcome of the update.
+	Get(ctx context.Context, valuePtr interface{}) error
+}
+
+// GetWorkflowUpdateHandleOptions encapsulates the parameters needed to unambiguously
+// refer to a Workflow Update.
+// NOTE: Experimental
+type GetWorkflowUpdateHandleOptions struct {
+	// WorkflowID of the target update
+	WorkflowID string
+
+	// RunID of the target workflow. If blank, use the most recent run
+	RunID string
+
+	// UpdateID of the target update
+	UpdateID string
+}
+
+type baseUpdateHandle struct {
+	ref *updatepb.UpdateRef
+}
+
+// completedUpdateHandle is an UpdateHandle impelementation for use when the outcome
+// of the update is already known and the Get call can return immediately.
+type completedUpdateHandle struct {
+	baseUpdateHandle
+	value converter.EncodedValue
+	err   error
+}
+
+// lazyUpdateHandle represents and update that is not known to have completed
+// yet (i.e. the associated updatepb.Outcome is not known) and thus calling Get
+// will poll the server for the outcome.
+type lazyUpdateHandle struct {
+	baseUpdateHandle
+	client *WorkflowClient
+}
+
 // QueryWorkflowWithOptionsRequest is the request to QueryWorkflowWithOptions
 type QueryWorkflowWithOptionsRequest struct {
 	// WorkflowID is a required field indicating the workflow which should be queried.
@@ -875,6 +969,128 @@ func (wc *WorkflowClient) ResetWorkflowExecution(ctx context.Context, request *w
 	}
 
 	return resp, nil
+}
+
+// UpdateWorkerBuildIdCompatibility allows you to update the worker-build-id based version sets for a particular
+// task queue. This is used in conjunction with workers who specify their build id and thus opt into the
+// feature.
+func (wc *WorkflowClient) UpdateWorkerBuildIdCompatibility(ctx context.Context, options *UpdateWorkerBuildIdCompatibilityOptions) error {
+	if err := wc.ensureInitialized(); err != nil {
+		return err
+	}
+
+	request, err := options.validateAndConvertToProto()
+	if err != nil {
+		return err
+	}
+	request.Namespace = wc.namespace
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	_, err = wc.workflowService.UpdateWorkerBuildIdCompatibility(grpcCtx, request)
+	return err
+}
+
+// GetWorkerBuildIdCompatibility returns the worker-build-id based version sets for a particular task queue.
+func (wc *WorkflowClient) GetWorkerBuildIdCompatibility(ctx context.Context, options *GetWorkerBuildIdCompatibilityOptions) (*WorkerBuildIDVersionSets, error) {
+	if options.MaxSets < 0 {
+		return nil, errors.New("maxDepth must be >= 0")
+	}
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+
+	request := &workflowservice.GetWorkerBuildIdCompatibilityRequest{
+		Namespace: wc.namespace,
+		TaskQueue: options.TaskQueue,
+		MaxSets:   int32(options.MaxSets),
+	}
+	resp, err := wc.workflowService.GetWorkerBuildIdCompatibility(grpcCtx, request)
+	if err != nil {
+		return nil, err
+	}
+	converted := workerVersionSetsFromProtoResponse(resp)
+	return converted, nil
+}
+
+func (wc *WorkflowClient) UpdateWorkflowWithOptions(
+	ctx context.Context,
+	req *UpdateWorkflowWithOptionsRequest,
+) (WorkflowUpdateHandle, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+	// Default update ID
+	updateID := req.UpdateID
+	if updateID == "" {
+		updateID = uuid.New()
+	}
+
+	ctx = contextWithNewHeader(ctx)
+
+	return wc.interceptor.UpdateWorkflow(ctx, &ClientUpdateWorkflowInput{
+		UpdateID:            updateID,
+		WorkflowID:          req.WorkflowID,
+		UpdateName:          req.UpdateName,
+		Args:                req.Args,
+		RunID:               req.RunID,
+		FirstExecutionRunID: req.FirstExecutionRunID,
+		WaitPolicy:          req.WaitPolicy,
+	})
+}
+
+func (wc *WorkflowClient) GetWorkflowUpdateHandle(ref GetWorkflowUpdateHandleOptions) WorkflowUpdateHandle {
+	return &lazyUpdateHandle{
+		client: wc,
+		baseUpdateHandle: baseUpdateHandle{
+			ref: &updatepb.UpdateRef{
+				WorkflowExecution: &commonpb.WorkflowExecution{
+					WorkflowId: ref.WorkflowID,
+					RunId:      ref.RunID,
+				},
+				UpdateId: ref.UpdateID,
+			},
+		},
+	}
+}
+
+// PollWorkflowUpdate sends a request for the outcome of the specified update
+// through the interceptor chain.
+func (wc *WorkflowClient) PollWorkflowUpdate(
+	ctx context.Context,
+	ref *updatepb.UpdateRef,
+) (converter.EncodedValue, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+	ctx = contextWithNewHeader(ctx)
+	return wc.interceptor.PollWorkflowUpdate(ctx, &ClientPollWorkflowUpdateInput{
+		UpdateRef: ref,
+	})
+}
+
+func (wc *WorkflowClient) UpdateWorkflow(
+	ctx context.Context,
+	workflowID string,
+	workflowRunID string,
+	updateName string,
+	args ...interface{},
+) (WorkflowUpdateHandle, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
+	ctx = contextWithNewHeader(ctx)
+
+	return wc.interceptor.UpdateWorkflow(ctx, &ClientUpdateWorkflowInput{
+		WorkflowID: workflowID,
+		UpdateName: updateName,
+		UpdateID:   uuid.New(),
+		Args:       args,
+	})
 }
 
 // CheckHealthRequest is a request for Client.CheckHealth.
@@ -1111,7 +1327,6 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 	valuePtr interface{},
 	options WorkflowRunGetOptions,
 ) error {
-
 	iter := workflowRun.iterFn(ctx, workflowRun.currentRunID.Get())
 	if !iter.HasNext() {
 		panic("could not get last history event for workflow")
@@ -1376,7 +1591,6 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 	ctx context.Context,
 	in *ClientSignalWithStartWorkflowInput,
 ) (WorkflowRun, error) {
-
 	dataConverter := WithContext(ctx, w.client.dataConverter)
 	signalInput, err := encodeArg(dataConverter, in.SignalArg)
 	if err != nil {
@@ -1523,5 +1737,141 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 	return result.QueryResult, nil
 }
 
+func (w *workflowClientInterceptor) UpdateWorkflow(
+	ctx context.Context,
+	in *ClientUpdateWorkflowInput,
+) (WorkflowUpdateHandle, error) {
+	argPayloads, err := w.client.dataConverter.ToPayloads(in.Args...)
+	if err != nil {
+		return nil, err
+	}
+	header, err := headerPropagated(ctx, w.client.contextPropagators)
+	if err != nil {
+		return nil, err
+	}
+	grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(pollUpdateTimeout), grpcLongPoll(true), defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	wfexec := &commonpb.WorkflowExecution{
+		WorkflowId: in.WorkflowID,
+		RunId:      in.RunID,
+	}
+	resp, err := w.client.workflowService.UpdateWorkflowExecution(grpcCtx, &workflowservice.UpdateWorkflowExecutionRequest{
+		WaitPolicy:          in.WaitPolicy,
+		Namespace:           w.client.namespace,
+		WorkflowExecution:   wfexec,
+		FirstExecutionRunId: in.FirstExecutionRunID,
+		Request: &updatepb.Request{
+			Meta: &updatepb.Meta{
+				UpdateId: in.UpdateID,
+				Identity: w.client.identity,
+			},
+			Input: &updatepb.Input{
+				Header: header,
+				Name:   in.UpdateName,
+				Args:   argPayloads,
+			},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	switch v := resp.GetOutcome().GetValue().(type) {
+	case nil:
+		return &lazyUpdateHandle{
+			client:           w.client,
+			baseUpdateHandle: baseUpdateHandle{ref: resp.GetUpdateRef()},
+		}, nil
+	case *updatepb.Outcome_Failure:
+		return &completedUpdateHandle{
+			err:              w.client.failureConverter.FailureToError(v.Failure),
+			baseUpdateHandle: baseUpdateHandle{ref: resp.GetUpdateRef()},
+		}, nil
+	case *updatepb.Outcome_Success:
+		return &completedUpdateHandle{
+			value:            newEncodedValue(v.Success, w.client.dataConverter),
+			baseUpdateHandle: baseUpdateHandle{ref: resp.GetUpdateRef()},
+		}, nil
+	}
+	return nil, fmt.Errorf("unsupported outcome type %T", resp.GetOutcome().GetValue())
+}
+
+func (w *workflowClientInterceptor) PollWorkflowUpdate(
+	parentCtx context.Context,
+	in *ClientPollWorkflowUpdateInput,
+) (converter.EncodedValue, error) {
+	// header, _ = headerPropagated(ctx, w.client.contextPropagators)
+	// todo header not in PollWorkflowUpdate
+
+	pollReq := workflowservice.PollWorkflowExecutionUpdateRequest{
+		Namespace: w.client.namespace,
+		UpdateRef: in.UpdateRef,
+		Identity:  w.client.identity,
+		WaitPolicy: &updatepb.WaitPolicy{
+			LifecycleStage: enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED,
+		},
+	}
+	for parentCtx.Err() == nil {
+		ctx, cancel := newGRPCContext(
+			parentCtx,
+			grpcLongPoll(true),
+			grpcTimeout(pollUpdateTimeout),
+		)
+		ctx = context.WithValue(
+			ctx,
+			retry.ConfigKey,
+			createDynamicServiceRetryPolicy(ctx).GrpcRetryConfig(),
+		)
+		resp, err := w.client.workflowService.PollWorkflowExecutionUpdate(ctx, &pollReq)
+		cancel()
+		if err == context.DeadlineExceeded ||
+			status.Code(err) == codes.DeadlineExceeded ||
+			(err == nil && resp.GetOutcome() == nil) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		switch v := resp.GetOutcome().GetValue().(type) {
+		case *updatepb.Outcome_Failure:
+			return nil, w.client.failureConverter.FailureToError(v.Failure)
+		case *updatepb.Outcome_Success:
+			return newEncodedValue(v.Success, w.client.dataConverter), nil
+		default:
+			return nil, fmt.Errorf("unsupported outcome type %T", v)
+		}
+	}
+	return nil, parentCtx.Err()
+}
+
 // Required to implement ClientOutboundInterceptor
 func (*workflowClientInterceptor) mustEmbedClientOutboundInterceptorBase() {}
+
+func (uh *baseUpdateHandle) WorkflowID() string {
+	return uh.ref.GetWorkflowExecution().GetWorkflowId()
+}
+
+func (uh *baseUpdateHandle) RunID() string {
+	return uh.ref.GetWorkflowExecution().GetRunId()
+}
+
+func (uh *baseUpdateHandle) UpdateID() string {
+	return uh.ref.GetUpdateId()
+}
+
+func (ch *completedUpdateHandle) Get(ctx context.Context, valuePtr interface{}) error {
+	if ch.err != nil || valuePtr == nil {
+		return ch.err
+	}
+	if err := ch.value.Get(valuePtr); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (luh *lazyUpdateHandle) Get(ctx context.Context, valuePtr interface{}) error {
+	enc, err := luh.client.PollWorkflowUpdate(ctx, luh.ref)
+	if err != nil {
+		return err
+	}
+	return enc.Get(valuePtr)
+}

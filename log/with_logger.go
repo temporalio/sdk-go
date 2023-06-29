@@ -29,7 +29,8 @@ type WithLogger interface {
 	With(keyvals ...interface{}) Logger
 }
 
-// With returns Logger instance that prepend every log entry with keyvals. If logger implements WithLogger it is used, otherwise every log call will be intercepted.
+// With creates a child Logger that includes the supplied key-value pairs in each log entry. It does this by
+// using the supplied logger if it implements WithLogger; otherwise, it does so by intercepting every log call.
 func With(logger Logger, keyvals ...interface{}) Logger {
 	if wl, ok := logger.(WithLogger); ok {
 		return wl.With(keyvals...)

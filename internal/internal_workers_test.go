@@ -142,7 +142,8 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 		TaskToken: []byte("token"),
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: "wID",
-			RunId:      "rID"},
+			RunId:      "rID",
+		},
 		ActivityType:           &commonpb.ActivityType{Name: "test"},
 		ActivityId:             uuid.New(),
 		ScheduledTime:          &now,
@@ -224,7 +225,6 @@ func (s *WorkersTestSuite) TestLongRunningWorkflowTask() {
 		}
 		ctx = WithLocalActivityOptions(ctx, lao)
 		err := ExecuteLocalActivity(ctx, localActivitySleep, time.Second).Get(ctx, nil)
-
 		if err != nil {
 			return err
 		}
@@ -290,6 +290,7 @@ func (s *WorkersTestSuite) TestLongRunningWorkflowTask() {
 		History:                &historypb.History{Events: testEvents[0:3]},
 		NextPageToken:          nil,
 	}
+	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, serviceerror.NewInvalidArgument("")).Times(1)
 	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(task, nil).Times(1)
 	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, serviceerror.NewInternal("")).AnyTimes()
 	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollActivityTaskQueueResponse{}, nil).AnyTimes()
@@ -362,7 +363,6 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 		}
 		ctx = WithLocalActivityOptions(ctx, lao)
 		err := ExecuteLocalActivity(ctx, localActivitySleep, time.Second).Get(ctx, nil)
-
 		if err != nil {
 			return err
 		}

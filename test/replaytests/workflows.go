@@ -26,9 +26,13 @@ package replaytests
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
 	"time"
 
+	"github.com/google/uuid"
 	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -122,4 +126,314 @@ func TimerWf(ctx workflow.Context) error {
 		_ = workflow.NewTimer(newCtx, 10*time.Minute).Get(ctx, nil)
 	}()
 	return workflow.NewTimer(ctx, time.Minute*10).Get(ctx, nil)
+}
+
+func LocalActivityWorkflow(ctx workflow.Context, name string) error {
+	ao := workflow.LocalActivityOptions{
+		ScheduleToCloseTimeout: time.Minute,
+	}
+
+	ctx = workflow.WithLocalActivityOptions(ctx, ao)
+	var helloworldResult string
+	return workflow.ExecuteLocalActivity(ctx, helloworldActivity, name).Get(ctx, &helloworldResult)
+}
+
+func ContinueAsNewWorkflow(ctx workflow.Context, continueAsNew bool) error {
+	if continueAsNew {
+		return workflow.NewContinueAsNewError(ctx, ContinueAsNewWorkflow, false)
+	}
+	return nil
+}
+
+func UpsertMemoWorkflow(ctx workflow.Context, memo string) error {
+	err := workflow.UpsertMemo(ctx, map[string]interface{}{
+		"Test key": memo,
+	})
+	if err != nil {
+		return err
+	}
+	ao := workflow.ActivityOptions{
+		ScheduleToStartTimeout: time.Minute,
+		StartToCloseTimeout:    time.Minute,
+		HeartbeatTimeout:       time.Second * 20,
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+	err = workflow.ExecuteActivity(ctx, helloworldActivity, memo).Get(ctx, &memo)
+	if err != nil {
+		return err
+	}
+
+	return workflow.UpsertMemo(ctx, map[string]interface{}{
+		"Test key": memo,
+	})
+}
+
+func UpsertSearchAttributesWorkflow(ctx workflow.Context, field string) error {
+	err := workflow.UpsertSearchAttributes(ctx, map[string]interface{}{
+		"CustomStringField": field,
+	})
+	if err != nil {
+		return err
+	}
+
+	ao := workflow.ActivityOptions{
+		ScheduleToStartTimeout: time.Minute,
+		StartToCloseTimeout:    time.Minute,
+		HeartbeatTimeout:       time.Second * 20,
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+	err = workflow.ExecuteActivity(ctx, helloworldActivity, field).Get(ctx, &field)
+	if err != nil {
+		return err
+	}
+
+	return workflow.UpsertSearchAttributes(ctx, map[string]interface{}{
+		"CustomStringField": field,
+	})
+}
+
+func SideEffectWorkflow(ctx workflow.Context, field string) error {
+	encodedRandom := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+		return rand.Intn(100)
+	})
+
+	var random int
+	err := encodedRandom.Get(&random)
+	if err != nil {
+		return err
+	}
+
+	ao := workflow.ActivityOptions{
+		ScheduleToStartTimeout: time.Minute,
+		StartToCloseTimeout:    time.Minute,
+		HeartbeatTimeout:       time.Second * 20,
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+	err = workflow.ExecuteActivity(ctx, helloworldActivity, field).Get(ctx, &field)
+	if err != nil {
+		return err
+	}
+
+	return encodedRandom.Get(&random)
+}
+
+func EmptyWorkflow(ctx workflow.Context, _ string) error {
+	return nil
+}
+
+func MutableSideEffectWorkflow(ctx workflow.Context) ([]int, error) {
+	f := func(retVal int) (newVal int) {
+		err := workflow.MutableSideEffect(
+			ctx,
+			"side-effect-1",
+			func(ctx workflow.Context) interface{} { return retVal },
+			func(a, b interface{}) bool { return a.(int) == b.(int) },
+		).Get(&newVal)
+		if err != nil {
+			panic(err)
+		}
+		return
+	}
+	results := []int{f(0)}
+	results = append(results, f(0))
+	results = append(results, f(0))
+	results = append(results, f(1))
+	results = append(results, f(1))
+	results = append(results, f(2))
+	err := workflow.Sleep(ctx, time.Second)
+	if err != nil {
+		return nil, err
+	}
+	results = append(results, f(3))
+	results = append(results, f(3))
+	results = append(results, f(4))
+	err = workflow.Sleep(ctx, time.Second)
+	if err != nil {
+		return nil, err
+	}
+	results = append(results, f(4))
+	results = append(results, f(5))
+
+	return results, nil
+}
+
+func VersionLoopWorkflow(ctx workflow.Context, changeID string, iterations int) error {
+	for i := 0; i < iterations; i++ {
+		workflow.GetVersion(ctx, fmt.Sprintf("%s:%d", changeID, i), workflow.DefaultVersion, 1)
+	}
+	return workflow.Sleep(ctx, time.Second)
+}
+
+func VersionLoopWorkflowMultipleTasks(ctx workflow.Context, changeID string, iterations int) error {
+	for i := 0; i < iterations; i++ {
+		workflow.GetVersion(ctx, fmt.Sprintf("%s:%d", changeID, i), workflow.DefaultVersion, 1)
+		err := workflow.Sleep(ctx, time.Millisecond)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ChildWorkflowWaitOnSignal(ctx workflow.Context) error {
+	workflow.GetSignalChannel(ctx, "unblock").Receive(ctx, nil)
+	return nil
+}
+
+func DuplicateChildWorkflow(ctx workflow.Context) error {
+	logger := workflow.GetLogger(ctx)
+
+	cwo := workflow.ChildWorkflowOptions{
+		WorkflowID: "ABC-SIMPLE-CHILD-WORKFLOW-ID",
+	}
+	childCtx := workflow.WithChildOptions(ctx, cwo)
+
+	child1 := workflow.ExecuteChildWorkflow(childCtx, ChildWorkflowWaitOnSignal)
+	var childWE workflow.Execution
+	err := child1.GetChildWorkflowExecution().Get(ctx, &childWE)
+	if err != nil {
+		return err
+	}
+
+	duplicateChildWFFuture := workflow.ExecuteChildWorkflow(childCtx, ChildWorkflowWaitOnSignal)
+	selector := workflow.NewSelector(ctx)
+	selector.AddFuture(duplicateChildWFFuture, func(f workflow.Future) {
+		logger.Info("child workflow is ready")
+		err = f.Get(ctx, nil)
+		if _, ok := err.(*temporal.ChildWorkflowExecutionAlreadyStartedError); !ok {
+			panic("Second child must fail to start as duplicate")
+		}
+		err = workflow.Sleep(ctx, time.Second)
+	}).AddFuture(duplicateChildWFFuture.GetChildWorkflowExecution(), func(f workflow.Future) {
+		logger.Info("child workflow execution is ready")
+		err = f.Get(ctx, nil)
+		if _, ok := err.(*temporal.ChildWorkflowExecutionAlreadyStartedError); !ok {
+			panic("Second child must fail to start as duplicate")
+		}
+		ao := workflow.ActivityOptions{
+			ScheduleToStartTimeout: time.Minute,
+			StartToCloseTimeout:    time.Minute,
+			HeartbeatTimeout:       time.Second * 20,
+		}
+		ctx = workflow.WithActivityOptions(ctx, ao)
+		field := "hello"
+		err = workflow.ExecuteActivity(ctx, helloworldActivity, field).Get(ctx, &field)
+	}).AddDefault(func() {
+		err = workflow.Sleep(ctx, time.Second)
+	})
+	for i := 0; i < 2; i++ {
+		selector.Select(ctx)
+		if err != nil {
+			return err
+		}
+	}
+
+	workflow.SignalExternalWorkflow(ctx, childWE.ID, childWE.RunID, "unblock", nil)
+	if err != nil {
+		return err
+	}
+	err = child1.Get(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func UpdateWorkflow(ctx workflow.Context) error {
+	if err := workflow.SetUpdateHandler(ctx, "update",
+		func(ctx workflow.Context, d time.Duration) error {
+			return workflow.Sleep(ctx, d)
+		}); err != nil {
+		return err
+	}
+	workflow.GetSignalChannel(ctx, "shutdown").Receive(ctx, nil)
+	return nil
+}
+
+func UpdateAndExit(ctx workflow.Context) error {
+	ch := workflow.NewChannel(ctx)
+	if err := workflow.SetUpdateHandler(ctx, "update",
+		func(ctx workflow.Context, d time.Duration) error {
+			// passing a non-zero duration here controls whether the update is
+			// accepted+completed in the same WFT or accepted in one WFT and
+			// completed in a subsquent task.
+			if d != time.Duration(0) {
+				_ = workflow.Sleep(ctx, d)
+			}
+			ch.Close()
+			return nil
+		}); err != nil {
+		return err
+	}
+
+	// by waiting on a channel that is closed by a call to update we ensure that
+	// the update completion and workflow completion commands occur on the same
+	// WFT completion.
+	ch.Receive(ctx, nil)
+	return ctx.Err()
+}
+
+func NonDeterministicUpdate(ctx workflow.Context) error {
+	ch := workflow.NewChannel(ctx)
+	if err := workflow.SetUpdateHandler(ctx, "update",
+		func(ctx workflow.Context) error {
+			// The workflow.Sleep below was not commented out when the json
+			// history was generated. By commenting it out we make the update
+			// code non-deterministic.
+			//
+			//_ = workflow.Sleep(ctx, 1*time.Second)
+
+			ch.Close()
+			return nil
+		}); err != nil {
+		return err
+	}
+	ch.Receive(ctx, nil)
+	return ctx.Err()
+}
+
+func VersionAndMutableSideEffectWorkflow(ctx workflow.Context, name string) (string, error) {
+	uid := ""
+	logger := workflow.GetLogger(ctx)
+
+	v := workflow.GetVersion(ctx, "mutable-side-effect-bug", workflow.DefaultVersion, 1)
+	if v == 1 {
+		var err error
+		uid, err = generateUUID(ctx)
+		if err != nil {
+			logger.Error("failed to generated uuid", "Error", err)
+			return "", err
+		}
+
+		logger.Info("generated uuid", "uuid-val", uid)
+	}
+
+	ao := workflow.ActivityOptions{
+		StartToCloseTimeout: 10 * time.Second,
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+
+	var result string
+	err := workflow.ExecuteActivity(ctx, helloworldActivity, name).Get(ctx, &result)
+	if err != nil {
+		logger.Error("Activity failed.", "Error", err)
+		return "", err
+	}
+	return uid, nil
+}
+
+func generateUUID(ctx workflow.Context) (string, error) {
+	var generatedUUID string
+
+	err := workflow.MutableSideEffect(ctx, "generate-random-uuid", func(ctx workflow.Context) interface{} {
+		return uuid.NewString()
+	}, func(a, b interface{}) bool {
+		return a.(string) == b.(string)
+	}).Get(&generatedUUID)
+	if err != nil {
+		return "", err
+	}
+
+	return generatedUUID, nil
 }

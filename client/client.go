@@ -23,7 +23,6 @@
 // THE SOFTWARE.
 
 //go:generate mockgen -copyright_file ../LICENSE -package client -source client.go -destination client_mock.go
-//go:generate go run ../internal/cmd/generateproxy/main.go
 
 // Package client is used by external programs to communicate with Temporal service.
 // NOTE: DO NOT USE THIS API INSIDE OF ANY WORKFLOW CODE!!!
@@ -92,100 +91,129 @@ type (
 	CheckHealthResponse = internal.CheckHealthResponse
 
 	// ScheduleRange represents a set of integer values.
-	// NOTE: Experimental
 	ScheduleRange = internal.ScheduleRange
 
 	// ScheduleCalendarSpec is an event specification relative to the calendar.
-	// NOTE: Experimental
 	ScheduleCalendarSpec = internal.ScheduleCalendarSpec
 
 	// ScheduleIntervalSpec describes periods a schedules action should occur.
-	// NOTE: Experimental
 	ScheduleIntervalSpec = internal.ScheduleIntervalSpec
 
 	// ScheduleSpec describes when a schedules action should occur.
-	// NOTE: Experimental
 	ScheduleSpec = internal.ScheduleSpec
 
+	// SchedulePolicies describes the current polcies of a schedule.
+	SchedulePolicies = internal.SchedulePolicies
+
+	// ScheduleState describes the current state of a schedule.
+	ScheduleState = internal.ScheduleState
+
 	// ScheduleBackfill desribes a time periods and policy and takes Actions as if that time passed by right now, all at once.
-	// NOTE: Experimental
 	ScheduleBackfill = internal.ScheduleBackfill
 
 	// ScheduleAction is the interface for all actions a schedule can take.
-	// NOTE: Experimental
 	ScheduleAction = internal.ScheduleAction
 
 	// ScheduleWorkflowAction is the implementation of ScheduleAction to start a workflow.
-	// NOTE: Experimental
 	ScheduleWorkflowAction = internal.ScheduleWorkflowAction
 
 	// ScheduleOptions configuration parameters for creating a schedule.
-	// NOTE: Experimental
 	ScheduleOptions = internal.ScheduleOptions
 
 	// ScheduleClient is the interface with the server to create and get handles to schedules.
-	// NOTE: Experimental
 	ScheduleClient = internal.ScheduleClient
 
 	// ScheduleListOptions are configuration parameters for listing schedules.
-	// NOTE: Experimental
 	ScheduleListOptions = internal.ScheduleListOptions
 
 	// ScheduleListIterator is a iterator which can return created schedules.
-	// NOTE: Experimental
 	ScheduleListIterator = internal.ScheduleListIterator
 
 	// ScheduleListEntry is a result from ScheduleListEntry.
-	// NOTE: Experimental
 	ScheduleListEntry = internal.ScheduleListEntry
 
 	// ScheduleUpdateOptions are configuration parameters for updating a schedule.
-	// NOTE: Experimental
 	ScheduleUpdateOptions = internal.ScheduleUpdateOptions
 
 	// ScheduleHandle represents a created schedule.
-	// NOTE: Experimental
 	ScheduleHandle = internal.ScheduleHandle
 
 	// ScheduleActionResult describes when a schedule action took place.
-	// NOTE: Experimental
 	ScheduleActionResult = internal.ScheduleActionResult
 
 	// ScheduleWorkflowExecution contains details on a workflows execution stared by a schedule.
-	// NOTE: Experimental
 	ScheduleWorkflowExecution = internal.ScheduleWorkflowExecution
 
 	// ScheduleDescription describes the current Schedule details from ScheduleHandle.Describe.
-	// NOTE: Experimental
-	ScheduleDescription = internal.ScheduleDescription 
+	ScheduleDescription = internal.ScheduleDescription
 
 	// Schedule describes a created schedule.
-	// NOTE: Experimental
 	Schedule = internal.Schedule
 
 	// ScheduleUpdate describes the desired new schedule from ScheduleHandle.Update.
-	// NOTE: Experimental
 	ScheduleUpdate = internal.ScheduleUpdate
 
 	// ScheduleUpdateInput describes the current state of the schedule to be updated.
-	// NOTE: Experimental
 	ScheduleUpdateInput = internal.ScheduleUpdateInput
 
 	// ScheduleTriggerOptions configure the parameters for triggering a schedule.
-	// NOTE: Experimental
 	ScheduleTriggerOptions = internal.ScheduleTriggerOptions
 
 	// SchedulePauseOptions configure the parameters for pausing a schedule.
-	// NOTE: Experimental
 	SchedulePauseOptions = internal.SchedulePauseOptions
 
 	// ScheduleUnpauseOptions configure the parameters for unpausing a schedule.
-	// NOTE: Experimental
 	ScheduleUnpauseOptions = internal.ScheduleUnpauseOptions
 
 	// ScheduleBackfillOptions configure the parameters for backfilling a schedule.
-	// NOTE: Experimental
 	ScheduleBackfillOptions = internal.ScheduleBackfillOptions
+
+	// UpdateWorkflowWithOptionsRequest encapsulates the parameters for
+	// sending an update to a workflow execution.
+	// WARNING: Worker versioning is currently experimental
+	UpdateWorkflowWithOptionsRequest = internal.UpdateWorkflowWithOptionsRequest
+
+	// WorkflowUpdateHandle represents a running or completed workflow
+	// execution update and gives the holder access to the outcome of the same.
+	// NOTE: Experimental
+	WorkflowUpdateHandle = internal.WorkflowUpdateHandle
+
+	// GetWorkflowUpdateHandleOptions encapsulates the parameters needed to unambiguously
+	// refer to a Workflow Update
+	// NOTE: Experimental
+	GetWorkflowUpdateHandleOptions = internal.GetWorkflowUpdateHandleOptions
+
+	// UpdateWorkerBuildIdCompatibilityOptions is the input to Client.UpdateWorkerBuildIdCompatibility.
+	// WARNING: Worker versioning is currently experimental
+	UpdateWorkerBuildIdCompatibilityOptions = internal.UpdateWorkerBuildIdCompatibilityOptions
+
+	// GetWorkerBuildIdCompatibilityOptions is the input to Client.GetWorkerBuildIdCompatibility.
+	// WARNING: Worker versioning is currently experimental
+	GetWorkerBuildIdCompatibilityOptions = internal.GetWorkerBuildIdCompatibilityOptions
+
+	// WorkerBuildIDVersionSets is the response for Client.GetWorkerBuildIdCompatibility.
+	// WARNING: Worker versioning is currently experimental
+	WorkerBuildIDVersionSets = internal.WorkerBuildIDVersionSets
+
+	// BuildIDOpAddNewIDInNewDefaultSet is an operation for UpdateWorkerBuildIdCompatibilityOptions
+	// to add a new BuildID in a new default set.
+	// WARNING: Worker versioning is currently experimental
+	BuildIDOpAddNewIDInNewDefaultSet = internal.BuildIDOpAddNewIDInNewDefaultSet
+
+	// BuildIDOpAddNewCompatibleVersion is an operation for UpdateWorkerBuildIdCompatibilityOptions
+	// to add a new BuildID to an existing compatible set.
+	// WARNING: Worker versioning is currently experimental
+	BuildIDOpAddNewCompatibleVersion = internal.BuildIDOpAddNewCompatibleVersion
+
+	// BuildIDOpPromoteSet is an operation for UpdateWorkerBuildIdCompatibilityOptions to promote a
+	// set to be the default set by targeting an existing BuildID.
+	// WARNING: Worker versioning is currently experimental
+	BuildIDOpPromoteSet = internal.BuildIDOpPromoteSet
+
+	// BuildIDOpPromoteIDWithinSet is an operation for UpdateWorkerBuildIdCompatibilityOptions to
+	// promote a BuildID within a set to be the default.
+	// WARNING: Worker versioning is currently experimental
+	BuildIDOpPromoteIDWithinSet = internal.BuildIDOpPromoteIDWithinSet
 
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
@@ -468,14 +496,50 @@ type (
 		//  - serviceerror.NotFound
 		DescribeTaskQueue(ctx context.Context, taskqueue string, taskqueueType enumspb.TaskQueueType) (*workflowservice.DescribeTaskQueueResponse, error)
 
-		// ResetWorkflowExecution reset an existing workflow execution to WorkflowTaskFinishEventId(exclusive).
+		// ResetWorkflowExecution resets an existing workflow execution to WorkflowTaskFinishEventId(exclusive).
 		// And it will immediately terminating the current execution instance.
 		// RequestId is used to deduplicate requests. It will be autogenerated if not set.
 		ResetWorkflowExecution(ctx context.Context, request *workflowservice.ResetWorkflowExecutionRequest) (*workflowservice.ResetWorkflowExecutionResponse, error)
 
+		// UpdateWorkerBuildIdCompatibility
+		// Allows you to update the worker-build-id based version sets for a particular task queue. This is used in
+		// conjunction with workers who specify their build id and thus opt into the feature.
+		// WARNING: Worker versioning is currently experimental
+		UpdateWorkerBuildIdCompatibility(ctx context.Context, options *UpdateWorkerBuildIdCompatibilityOptions) error
+
+		// GetWorkerBuildIdCompatibility
+		// Returns the worker-build-id based version sets for a particular task queue.
+		// WARNING: Worker versioning is currently experimental
+		GetWorkerBuildIdCompatibility(ctx context.Context, options *GetWorkerBuildIdCompatibilityOptions) (*WorkerBuildIDVersionSets, error)
+
 		// CheckHealth performs a server health check using the gRPC health check
 		// API. If the check fails, an error is returned.
 		CheckHealth(ctx context.Context, request *CheckHealthRequest) (*CheckHealthResponse, error)
+
+		// UpdateWorkflow issues an update request to the specified
+		// workflow execution and returns the result synchronously. Calling this
+		// function is equivalent to calling UpdateWorkflowOptions with
+		// the same arguments and indicating that the RPC call should wait for
+		// completion of the update process.
+		// NOTE: Experimental
+		UpdateWorkflow(ctx context.Context, workflowID string, workflowRunID string, updateName string, args ...interface{}) (WorkflowUpdateHandle, error)
+
+		// UpdateWorkflowWithOptions issues an update request to the
+		// specified workflow execution and returns a handle to the update that
+		// is running in in parallel with the calling thread. Errors returned
+		// from the server will be exposed through the return value of
+		// WorkflowUpdateHandle.Get(). Errors that occur before the
+		// update is requested (e.g. if the required workflow ID field is
+		// missing from the UpdateWorkflowWithOptionsRequest) are returned
+		// directly from this function call.
+		// NOTE: Experimental
+		UpdateWorkflowWithOptions(ctx context.Context, request *UpdateWorkflowWithOptionsRequest) (WorkflowUpdateHandle, error)
+
+		// GetWorkflowUpdateHandle creates a handle to the referenced update
+		// which can be polled for an outcome. Note that runID is optional and
+		// if not specified the most recent runID will be used.
+		// NOTE: Experimental
+		GetWorkflowUpdateHandle(ref GetWorkflowUpdateHandleOptions) WorkflowUpdateHandle
 
 		// WorkflowService provides access to the underlying gRPC service. This should only be used for advanced use cases
 		// that cannot be accomplished via other Client methods. Unlike calls to other Client methods, calls directly to the
@@ -486,7 +550,6 @@ type (
 		OperatorService() operatorservice.OperatorServiceClient
 
 		// Schedule creates a new shedule client with the same gRPC connection as this client.
-		// NOTE: Experimental
 		ScheduleClient() ScheduleClient
 
 		// Close client and clean up underlying resources.
@@ -602,17 +665,20 @@ func NewNamespaceClient(options Options) (NamespaceClient, error) {
 }
 
 // make sure if new methods are added to internal.Client they are also added to public Client.
-var _ Client = internal.Client(nil)
-var _ internal.Client = Client(nil)
-var _ NamespaceClient = internal.NamespaceClient(nil)
-var _ internal.NamespaceClient = NamespaceClient(nil)
+var (
+	_ Client                   = internal.Client(nil)
+	_ internal.Client          = Client(nil)
+	_ NamespaceClient          = internal.NamespaceClient(nil)
+	_ internal.NamespaceClient = NamespaceClient(nil)
+)
 
 // NewValue creates a new converter.EncodedValue which can be used to decode binary data returned by Temporal.  For example:
 // User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got response from calling Client.DescribeWorkflowExecution.
 // The response contains binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
-//   var result string // This need to be same type as the one passed to RecordHeartbeat
-//   NewValue(data).Get(&result)
+//
+//	var result string // This need to be same type as the one passed to RecordHeartbeat
+//	NewValue(data).Get(&result)
 func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 	return internal.NewValue(data)
 }
@@ -621,9 +687,10 @@ func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 // User had Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got response from calling Client.DescribeWorkflowExecution.
 // The response contains binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
-//   var result1 string
-//   var result2 int // These need to be same type as those arguments passed to RecordHeartbeat
-//   NewValues(data).Get(&result1, &result2)
+//
+//	var result1 string
+//	var result2 int // These need to be same type as those arguments passed to RecordHeartbeat
+//	NewValues(data).Get(&result1, &result2)
 func NewValues(data *commonpb.Payloads) converter.EncodedValues {
 	return internal.NewValues(data)
 }

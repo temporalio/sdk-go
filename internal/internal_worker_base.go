@@ -58,6 +58,7 @@ const (
 var (
 	pollOperationRetryPolicy         = createPollRetryPolicy()
 	pollResourceExhaustedRetryPolicy = createPollResourceExhaustedRetryPolicy()
+	retryLongPollGracePeriod         = 2 * time.Minute
 )
 
 var errStop = errors.New("worker stopping")
@@ -74,21 +75,6 @@ type (
 		Result  *commonpb.Payloads
 		Attempt int32
 		Backoff time.Duration
-	}
-
-	// UpdateCallbacks supplies callbacks for the three possible outcomes of a
-	// workflow update.
-	UpdateCallbacks interface {
-		// Accept is called for an update after it has passed validation and
-		// before execution has started.
-		Accept()
-
-		// Reject is called for an update if validation fails.
-		Reject(err error)
-
-		// Complete is called for an update with the result of executing the
-		// update function.
-		Complete(success interface{}, err error)
 	}
 
 	// WorkflowEnvironment Represents the environment for workflow.
@@ -207,6 +193,17 @@ type (
 		task interface{}
 	}
 )
+
+// SetRetryLongPollGracePeriod sets the amount of time a long poller retrys on
+// fatal errors before it actually fails. For test use only,
+// not safe to call with a running worker.
+func SetRetryLongPollGracePeriod(period time.Duration) {
+	retryLongPollGracePeriod = period
+}
+
+func getRetryLongPollGracePeriod() time.Duration {
+	return retryLongPollGracePeriod
+}
 
 func createPollRetryPolicy() backoff.RetryPolicy {
 	policy := backoff.NewExponentialRetryPolicy(retryPollOperationInitialInterval)
@@ -347,7 +344,9 @@ func (bw *baseWorker) pollTask() {
 		task, err = bw.options.taskWorker.PollTask()
 		bw.logPollTaskError(err)
 		if err != nil {
-			if isNonRetriableError(err) {
+			// We retry "non retriable" errors while long polling for a while, because some proxies return
+			// unexpected values causing unnecessary downtime.
+			if isNonRetriableError(err) && bw.retrier.GetElapsedTime() > getRetryLongPollGracePeriod() {
 				bw.logger.Error("Worker received non-retriable error. Shutting down.", tagError, err)
 				if bw.fatalErrCb != nil {
 					bw.fatalErrCb(err)
