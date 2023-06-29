@@ -102,6 +102,12 @@ type (
 	// ScheduleSpec describes when a schedules action should occur.
 	ScheduleSpec = internal.ScheduleSpec
 
+	// SchedulePolicies describes the current polcies of a schedule.
+	SchedulePolicies = internal.SchedulePolicies
+
+	// ScheduleState describes the current state of a schedule.
+	ScheduleState = internal.ScheduleState
+
 	// ScheduleBackfill desribes a time periods and policy and takes Actions as if that time passed by right now, all at once.
 	ScheduleBackfill = internal.ScheduleBackfill
 
