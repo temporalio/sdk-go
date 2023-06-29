@@ -1546,7 +1546,7 @@ const TemporalChangeVersion = "TemporalChangeVersion"
 //
 // The backwards compatible way to execute the update is
 //
-//	v :=  GetVersion(ctx, "fooChange", DefaultVersion, 1)
+//	v :=  GetVersion(ctx, "fooChange", DefaultVersion, 0)
 //	if v  == DefaultVersion {
 //	    err = workflow.ExecuteActivity(ctx, foo).Get(ctx, nil)
 //	} else {
@@ -1555,10 +1555,10 @@ const TemporalChangeVersion = "TemporalChangeVersion"
 //
 // Then bar has to be changed to baz:
 //
-//	v :=  GetVersion(ctx, "fooChange", DefaultVersion, 2)
+//	v :=  GetVersion(ctx, "fooChange", DefaultVersion, 1)
 //	if v  == DefaultVersion {
 //	    err = workflow.ExecuteActivity(ctx, foo).Get(ctx, nil)
-//	} else if v == 1 {
+//	} else if v == 0 {
 //	    err = workflow.ExecuteActivity(ctx, bar).Get(ctx, nil)
 //	} else {
 //	    err = workflow.ExecuteActivity(ctx, baz).Get(ctx, nil)
@@ -1566,8 +1566,8 @@ const TemporalChangeVersion = "TemporalChangeVersion"
 //
 // Later when there are no workflow executions running DefaultVersion the correspondent branch can be removed:
 //
-//	v :=  GetVersion(ctx, "fooChange", 1, 2)
-//	if v == 1 {
+//	v :=  GetVersion(ctx, "fooChange", 0, 1)
+//	if v == 0 {
 //	    err = workflow.ExecuteActivity(ctx, bar).Get(ctx, nil)
 //	} else {
 //	    err = workflow.ExecuteActivity(ctx, baz).Get(ctx, nil)
@@ -1575,12 +1575,12 @@ const TemporalChangeVersion = "TemporalChangeVersion"
 //
 // It is recommended to keep the GetVersion() call even if single branch is left:
 //
-//	GetVersion(ctx, "fooChange", 2, 2)
+//	GetVersion(ctx, "fooChange", 1, 1)
 //	err = workflow.ExecuteActivity(ctx, baz).Get(ctx, nil)
 //
 // The reason to keep it is: 1) it ensures that if there is older version execution still running, it will fail here
 // and not proceed; 2) if you ever need to make more changes for “fooChange”, for example change activity from baz to qux,
-// you just need to update the maxVersion from 2 to 3.
+// you just need to update the maxVersion from 1 to 2.
 //
 // Note that, you only need to preserve the first call to GetVersion() for each changeID. All subsequent call to GetVersion()
 // with same changeID are safe to remove. However, if you really want to get rid of the first GetVersion() call as well,
@@ -1588,7 +1588,7 @@ const TemporalChangeVersion = "TemporalChangeVersion"
 // as changeID. If you ever need to make changes to that same part like change from baz to qux, you would need to use a
 // different changeID like “fooChange-fix2”, and start minVersion from DefaultVersion again. The code would looks like:
 //
-//	v := workflow.GetVersion(ctx, "fooChange-fix2", workflow.DefaultVersion, 1)
+//	v := workflow.GetVersion(ctx, "fooChange-fix2", workflow.DefaultVersion, 0)
 //	if v == workflow.DefaultVersion {
 //	  err = workflow.ExecuteActivity(ctx, baz, data).Get(ctx, nil)
 //	} else {
