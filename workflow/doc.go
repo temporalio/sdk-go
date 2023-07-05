@@ -325,6 +325,55 @@ workflow also has the option to stop execution by blocking on a signal channel.
 In the example above, the workflow code uses workflow.GetSignalChannel to open a workflow.Channel for the named signal.
 We then use a workflow.Selector to wait on this channel and process the payload received with the signal.
 
+# Updates
+
+## Handle Update
+
+Updates provide a fully async and durable mechanism to send data directly to a running workflow and receive a response
+back. Unlike a Query handler and update handler has no restriction over normal workflow code so you can modify
+workflow state, schedule activities, launch child workflow, etc.
+
+	counter := param.StartCount
+	err := workflow.SetUpdateHandler(ctx, YourUpdateName, func(ctx workflow.Context, arg YourUpdateArg) (YourUpdateResult, error) {
+	    counter += arg.Add
+	    result := YourUpdateResult{
+	        Total: counter,
+	    }
+	    return result, nil
+	})
+
+For more information see our docs at https://docs.temporal.io/dev-guide/go/features#handle-update
+
+## Validate Updates
+
+Note: This is a feature for advanced users for pre-persistence, read-only validation. Other more advanced validation
+can and should be done in the handler.
+
+Update validators provide a mechanism to perform read-only validation (i.e. not modify workflow state or schedule any commands). If
+the update validator returns any error the update will fail and not be written into history.
+
+	if err := workflow.SetUpdateHandlerWithOptions(
+		ctx,
+		FetchAndAdd,
+		func(ctx workflow.Context, i int) (int, error) {
+			tmp := counter
+			counter += i
+			return tmp, nil
+		},
+		workflow.UpdateHandlerOptions{Validator: nonNegative},
+	); err != nil {
+		return 0, err
+	}
+
+	func nonNegative(ctx workflow.Context, i int) error {
+		if i < 0 {
+			return fmt.Errorf("addend must be non-negative (%v)", i)
+		}
+		return nil
+	}
+
+For more information see our docs at https://docs.temporal.io/dev-guide/go/features#validator-function
+
 # ContinueAsNew Workflow Completion
 
 Workflows that need to rerun periodically could naively be implemented as a big for loop with a sleep where the entire
