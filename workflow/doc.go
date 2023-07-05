@@ -346,11 +346,11 @@ For more information see our docs at https://docs.temporal.io/dev-guide/go/featu
 
 ## Validate Updates
 
-Note: This is a feature for advanced users for pre-persistence, read-only validation and that other more advanced validation
+Note: This is a feature for advanced users for pre-persistence, read-only validation. Other more advanced validation
 can and should be done in the handler.
 
-Update validators provide a mechanism to perform read-only validation (ie not modify workflow state or schedule any commands). If
-the update validator returns any error the update will fail and not be written into history
+Update validators provide a mechanism to perform read-only validation (i.e. not modify workflow state or schedule any commands). If
+the update validator returns any error the update will fail and not be written into history.
 
 	if err := workflow.SetUpdateHandlerWithOptions(
 		ctx,
