@@ -1363,7 +1363,7 @@ func (s *WorkflowUnitTest) Test_MutatingFunctionsInQueries() {
 	env.RegisterWorkflow(wf)
 	env.RegisterDelayedCallback(func() {
 		_, err := env.QueryWorkflow(queryType, "test")
-		s.NoError(err)
+		s.Error(err)
 	}, time.Second)
 	env.ExecuteWorkflow(wf)
 	s.True(env.IsWorkflowCompleted())
@@ -1406,8 +1406,11 @@ func (s *WorkflowUnitTest) Test_MutatingFunctionsInUpdateValidator() {
 	}
 	env.RegisterWorkflow(wf)
 	env.RegisterDelayedCallback(func() {
-		env.UpdateWorkflow(updateType, &updateCallback{})
-		//s.NoError(err)
+		env.UpdateWorkflow(updateType, &updateCallback{
+			reject: func(err error) {
+				s.Error(err)
+			},
+		})
 	}, time.Second)
 	env.ExecuteWorkflow(wf)
 	s.True(env.IsWorkflowCompleted())

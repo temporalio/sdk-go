@@ -102,6 +102,11 @@ func TestUpdateHandlerPanicHandling(t *testing.T) {
 	}
 	interceptor, ctx, err := newWorkflowContext(env, nil)
 	require.NoError(t, err)
+	dispatcher, ctx := newDispatcher(
+		ctx,
+		interceptor,
+		func(ctx Context) {})
+	dispatcher.executing = true
 
 	panicFunc := func() error { panic("intentional") }
 	mustSetUpdateHandler(t, ctx, t.Name(), panicFunc, UpdateHandlerOptions{Validator: panicFunc})
@@ -176,8 +181,13 @@ func TestDefaultUpdateHandler(t *testing.T) {
 			TaskQueueName: "taskqueue:" + t.Name(),
 		},
 	}
-	_, ctx, err := newWorkflowContext(env, nil)
+	interceptor, ctx, err := newWorkflowContext(env, nil)
 	require.NoError(t, err)
+	dispatcher, ctx := newDispatcher(
+		ctx,
+		interceptor,
+		func(ctx Context) {})
+	dispatcher.executing = true
 
 	hdr := &commonpb.Header{Fields: map[string]*commonpb.Payload{}}
 	argStr := t.Name()
@@ -288,8 +298,13 @@ func TestDefaultUpdateHandler(t *testing.T) {
 		// don't reuse the context that has all the other update handlers
 		// registered because the code under test will think the handler
 		// registration at workflow start time has already occurred
-		_, ctx, err := newWorkflowContext(env, nil)
+		interceptor, ctx, err := newWorkflowContext(env, nil)
 		require.NoError(t, err)
+		dispatcher, ctx := newDispatcher(
+			ctx,
+			interceptor,
+			func(ctx Context) {})
+		dispatcher.executing = true
 
 		updateFunc := func(ctx Context, s string) (string, error) { return s + " success!", nil }
 		var (
