@@ -1425,7 +1425,7 @@ func (s *WorkflowUnitTest) Test_MutatingFunctionsInUpdateValidator() {
 
 	wf := func(ctx Context) error {
 		currentState := "fail"
-		_ = setUpdateHandler(ctx, updateType, func(ctx Context) (string, error) {
+		_ = SetUpdateHandler(ctx, updateType, func(ctx Context) (string, error) {
 			_ = Sleep(ctx, time.Minute)
 			return currentState, nil
 		}, UpdateHandlerOptions{

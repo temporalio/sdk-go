@@ -1449,7 +1449,6 @@ func newDecodeFuture(ctx Context, fn interface{}) (Future, Settable) {
 
 // setQueryHandler sets query handler for given queryType.
 func setQueryHandler(ctx Context, queryType string, handler interface{}) error {
-	assertNotInReadOnlyState(ctx)
 	qh := &queryHandler{fn: handler, queryType: queryType, dataConverter: getDataConverterFromWorkflowContext(ctx)}
 	err := validateQueryHandlerFn(qh.fn)
 	if err != nil {
@@ -1462,7 +1461,6 @@ func setQueryHandler(ctx Context, queryType string, handler interface{}) error {
 
 // setUpdateHandler sets update handler for a given update name.
 func setUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions) error {
-	assertNotInReadOnlyState(ctx)
 	uh, err := newUpdateHandler(updateName, handler, opts)
 	if err != nil {
 		return err
