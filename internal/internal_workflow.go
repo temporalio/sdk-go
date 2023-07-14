@@ -47,7 +47,7 @@ import (
 const (
 	defaultSignalChannelSize = 100000 // really large buffering size(100K)
 
-	panicIllegalAccessCoroutinueState = "getState: illegal access from outside of workflow context"
+	panicIllegalAccessCoroutineState = "getState: illegal access from outside of workflow context"
 )
 
 type (
@@ -170,6 +170,7 @@ type (
 		closed           bool
 		interceptor      WorkflowOutboundInterceptor
 		deadlockDetector *deadlockDetector
+		readOnly         bool
 	}
 
 	// WorkflowOptions options passed to the workflow function
@@ -436,6 +437,7 @@ func (f *childWorkflowFutureImpl) GetChildWorkflowExecution() Future {
 }
 
 func (f *childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName string, data interface{}) Future {
+	assertNotInReadOnlyState(ctx)
 	var childExec WorkflowExecution
 	if err := f.GetChildWorkflowExecution().Get(ctx, &childExec); err != nil {
 		return f.GetChildWorkflowExecution()
@@ -646,9 +648,18 @@ func getState(ctx Context) *coroutineState {
 	}
 	state := s.(*coroutineState)
 	if !state.dispatcher.IsExecuting() {
-		panic(panicIllegalAccessCoroutinueState)
+		panic(panicIllegalAccessCoroutineState)
 	}
 	return state
+}
+
+func assertNotInReadOnlyState(ctx Context) {
+	state := getState(ctx)
+	// use the dispatcher state instead of the coroutine state because contexts can be
+	// shared
+	if state.dispatcher.getIsReadOnly() {
+		panic(panicIllegalAccessCoroutineState)
+	}
 }
 
 func getStateIfRunning(ctx Context) *coroutineState {
@@ -675,6 +686,7 @@ func (c *channelImpl) CanSendWithoutBlocking() bool {
 }
 
 func (c *channelImpl) Receive(ctx Context, valuePtr interface{}) (more bool) {
+	assertNotInReadOnlyState(ctx)
 	state := getState(ctx)
 	hasResult := false
 	var result interface{}
@@ -1103,6 +1115,18 @@ func (d *dispatcherImpl) IsExecuting() bool {
 	return d.executing
 }
 
+func (d *dispatcherImpl) getIsReadOnly() bool {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+	return d.readOnly
+}
+
+func (d *dispatcherImpl) setIsReadOnly(readOnly bool) {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+	d.readOnly = readOnly
+}
+
 func (d *dispatcherImpl) Close() {
 	d.mutex.Lock()
 	if d.closed {
@@ -1521,7 +1545,7 @@ func (h *queryHandler) execute(input []interface{}) (result interface{}, err err
 		if p := recover(); p != nil {
 			result = nil
 			st := getStackTraceRaw("query handler [panic]:", 7, 0)
-			if p == panicIllegalAccessCoroutinueState {
+			if p == panicIllegalAccessCoroutineState {
 				// query handler code try to access workflow functions outside of workflow context, make error message
 				// more descriptive and clear.
 				p = "query handler must not use temporal context to do things like workflow.NewChannel(), " +
@@ -1572,6 +1596,7 @@ func (wg *waitGroupImpl) Done() {
 //
 // param ctx Context -> workflow context
 func (wg *waitGroupImpl) Wait(ctx Context) {
+	assertNotInReadOnlyState(ctx)
 	if wg.n <= 0 {
 		return
 	}

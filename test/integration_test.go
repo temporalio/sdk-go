@@ -1167,6 +1167,40 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	ts.Nil(value)
 }
 
+func (ts *IntegrationTestSuite) TestMutatingQuery() {
+	ctx := context.Background()
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-mutating-query"), ts.workflows.MutatingQueryWorkflow)
+	ts.Nil(err)
+	_, err = ts.client.QueryWorkflow(ctx, "test-mutating-query", run.GetRunID(), "mutating_query")
+	ts.Error(err)
+	ts.client.CancelWorkflow(ctx, "test-mutating-query", "")
+}
+
+func (ts *IntegrationTestSuite) TestMutatingUpdateValidator() {
+	ctx := context.Background()
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-mutating-update-validator"), ts.workflows.MutatingUpdateValidatorWorkflow)
+	ts.Nil(err)
+	handler, err := ts.client.UpdateWorkflow(ctx, "test-mutating-update-validator", run.GetRunID(), "mutating_update")
+	ts.NoError(err)
+
+	ts.Error(handler.Get(ctx, nil))
+	ts.client.CancelWorkflow(ctx, "test-mutating-update-validator", "")
+}
+
+func (ts *IntegrationTestSuite) TestMutatingSideEffect() {
+	ctx := context.Background()
+	err := ts.executeWorkflowWithContextAndOption(ctx, ts.startWorkflowOptions("test-mutating-side-effect"), ts.workflows.MutatingSideEffectWorkflow, nil)
+	ts.Error(err)
+}
+
+func (ts *IntegrationTestSuite) TestMutatingMutableSideEffect() {
+	ctx := context.Background()
+	err := ts.executeWorkflowWithContextAndOption(ctx, ts.startWorkflowOptions("test-mutating-mutable-side-effect"), ts.workflows.MutatingMutableSideEffectWorkflow, nil)
+	ts.Error(err)
+}
+
 func (ts *IntegrationTestSuite) TestInspectActivityInfo() {
 	err := ts.executeWorkflow("test-activity-info", ts.workflows.InspectActivityInfo, nil)
 	ts.Nil(err)
