@@ -862,7 +862,7 @@ func (w *Workflows) LargeQueryResultWorkflow(ctx workflow.Context) (string, erro
 
 func (w *Workflows) MutatingQueryWorkflow(ctx workflow.Context) (string, error) {
 	err := workflow.SetQueryHandler(ctx, "mutating_query", func() (string, error) {
-		workflow.Sleep(ctx, time.Second)
+		_ = workflow.Sleep(ctx, time.Second)
 		return "failed", nil
 	})
 	if err != nil {
@@ -874,7 +874,7 @@ func (w *Workflows) MutatingQueryWorkflow(ctx workflow.Context) (string, error) 
 
 func (w *Workflows) MutatingUpdateValidatorWorkflow(ctx workflow.Context) (string, error) {
 	err := workflow.SetUpdateHandlerWithOptions(ctx, "mutating_update", func(ctx workflow.Context) (string, error) {
-		workflow.Sleep(ctx, time.Second)
+		_ = workflow.Sleep(ctx, time.Second)
 		return "failed", nil
 	}, workflow.UpdateHandlerOptions{
 		Validator: func(ctx workflow.Context) error {
@@ -890,7 +890,7 @@ func (w *Workflows) MutatingUpdateValidatorWorkflow(ctx workflow.Context) (strin
 
 func (w *Workflows) MutatingSideEffectWorkflow(ctx workflow.Context) (string, error) {
 	encodedValue := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
-		workflow.Sleep(ctx, 45*time.Second)
+		_ = workflow.Sleep(ctx, 45*time.Second)
 		return "fail"
 	})
 	var sideEffectValue string
@@ -900,7 +900,7 @@ func (w *Workflows) MutatingSideEffectWorkflow(ctx workflow.Context) (string, er
 
 func (w *Workflows) MutatingMutableSideEffectWorkflow(ctx workflow.Context) (string, error) {
 	encodedValue := workflow.MutableSideEffect(ctx, "test-id", func(ctx workflow.Context) interface{} {
-		workflow.Sleep(ctx, 45*time.Second)
+		_ = workflow.Sleep(ctx, 45*time.Second)
 		return "fail"
 	}, func(a, b interface{}) bool {
 		return false

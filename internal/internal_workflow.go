@@ -316,6 +316,7 @@ func getWorkflowOutboundInterceptor(ctx Context) WorkflowOutboundInterceptor {
 }
 
 func (f *futureImpl) Get(ctx Context, valuePtr interface{}) error {
+	assertNotInReadOnlyState(ctx)
 	more := f.channel.Receive(ctx, nil)
 	if more {
 		panic("not closed")
@@ -1194,6 +1195,7 @@ func (s *selectorImpl) HasPending() bool {
 }
 
 func (s *selectorImpl) Select(ctx Context) {
+	assertNotInReadOnlyState(ctx)
 	state := getState(ctx)
 	var readyBranch func()
 	var cleanups []func()
@@ -1447,6 +1449,7 @@ func newDecodeFuture(ctx Context, fn interface{}) (Future, Settable) {
 
 // setQueryHandler sets query handler for given queryType.
 func setQueryHandler(ctx Context, queryType string, handler interface{}) error {
+	assertNotInReadOnlyState(ctx)
 	qh := &queryHandler{fn: handler, queryType: queryType, dataConverter: getDataConverterFromWorkflowContext(ctx)}
 	err := validateQueryHandlerFn(qh.fn)
 	if err != nil {
@@ -1459,6 +1462,7 @@ func setQueryHandler(ctx Context, queryType string, handler interface{}) error {
 
 // setUpdateHandler sets update handler for a given update name.
 func setUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions) error {
+	assertNotInReadOnlyState(ctx)
 	uh, err := newUpdateHandler(updateName, handler, opts)
 	if err != nil {
 		return err
@@ -1591,7 +1595,7 @@ func (wg *waitGroupImpl) Done() {
 	wg.Add(-1)
 }
 
-// Wait blocks and waits for specified number of couritines to
+// Wait blocks and waits for specified number of coroutines to
 // finish executing and then unblocks once the counter has reached 0.
 //
 // param ctx Context -> workflow context

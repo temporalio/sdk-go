@@ -253,8 +253,6 @@ func defaultUpdateHandler(
 		return
 	}
 	scheduler.Spawn(ctx, name, func(ctx Context) {
-		defer getState(ctx).dispatcher.setIsReadOnly(false)
-		getState(ctx).dispatcher.setIsReadOnly(true)
 		eo := getWorkflowEnvOptions(ctx)
 
 		// If we suspect that handler registration has not occurred (e.g.
@@ -291,6 +289,8 @@ func defaultUpdateHandler(
 		if !IsReplaying(ctx) {
 			// we don't execute update validation during replay so that
 			// validation routines can change across versions
+			defer getState(ctx).dispatcher.setIsReadOnly(false)
+			getState(ctx).dispatcher.setIsReadOnly(true)
 			if err := envInterceptor.inboundInterceptor.ValidateUpdate(ctx, &input); err != nil {
 				callbacks.Reject(err)
 				return

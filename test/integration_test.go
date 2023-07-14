@@ -1174,7 +1174,7 @@ func (ts *IntegrationTestSuite) TestMutatingQuery() {
 	ts.Nil(err)
 	_, err = ts.client.QueryWorkflow(ctx, "test-mutating-query", run.GetRunID(), "mutating_query")
 	ts.Error(err)
-	ts.client.CancelWorkflow(ctx, "test-mutating-query", "")
+	ts.Nil(ts.client.CancelWorkflow(ctx, "test-mutating-query", ""))
 }
 
 func (ts *IntegrationTestSuite) TestMutatingUpdateValidator() {
@@ -1186,7 +1186,7 @@ func (ts *IntegrationTestSuite) TestMutatingUpdateValidator() {
 	ts.NoError(err)
 
 	ts.Error(handler.Get(ctx, nil))
-	ts.client.CancelWorkflow(ctx, "test-mutating-update-validator", "")
+	ts.Nil(ts.client.CancelWorkflow(ctx, "test-mutating-update-validator", ""))
 }
 
 func (ts *IntegrationTestSuite) TestMutatingSideEffect() {
