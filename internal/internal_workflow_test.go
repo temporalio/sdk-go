@@ -1348,6 +1348,38 @@ func (s *WorkflowUnitTest) Test_WaitGroupWorkflowTest() {
 	s.Equal(n, total)
 }
 
+func (s *WorkflowUnitTest) Test_MutatingFunctionsInSideEffect() {
+	env := s.NewTestWorkflowEnvironment()
+
+	wf := func(ctx Context) error {
+		SideEffect(ctx, func(ctx Context) interface{} {
+			_ = Sleep(ctx, time.Minute)
+			return nil
+		})
+		return nil
+	}
+	env.RegisterWorkflow(wf)
+	env.ExecuteWorkflow(wf)
+	s.True(env.IsWorkflowCompleted())
+	s.Error(env.GetWorkflowError())
+}
+
+func (s *WorkflowUnitTest) Test_MutatingFunctionsInMutableSideEffect() {
+	env := s.NewTestWorkflowEnvironment()
+
+	wf := func(ctx Context) error {
+		MutableSideEffect(ctx, "test-side-effect", func(ctx Context) interface{} {
+			_ = Sleep(ctx, time.Minute)
+			return nil
+		}, func(a, b interface{}) bool { return false })
+		return nil
+	}
+	env.RegisterWorkflow(wf)
+	env.ExecuteWorkflow(wf)
+	s.True(env.IsWorkflowCompleted())
+	s.Error(env.GetWorkflowError())
+}
+
 func (s *WorkflowUnitTest) Test_MutatingFunctionsInQueries() {
 	env := s.NewTestWorkflowEnvironment()
 
