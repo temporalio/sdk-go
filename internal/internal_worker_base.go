@@ -112,7 +112,7 @@ type (
 			handler func(queryType string, queryArgs *commonpb.Payloads, header *commonpb.Header) (*commonpb.Payloads, error),
 		)
 		RegisterUpdateHandler(
-			handler func(string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks),
+			handler func(string, string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks),
 		)
 		IsReplaying() bool
 		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) converter.EncodedValue

@@ -88,13 +88,13 @@ type (
 
 	// updateProtocol wraps an updateEnv and some protocol metadata to
 	// implement the UpdateCallbacks abstraction. It handles callbacks by
-	// sending protocol lmessages.
+	// sending protocol messages.
 	updateProtocol struct {
 		protoInstanceID string
 		clientIdentity  string
 		requestMsgID    string
 		requestSeqID    int64
-		scheduleUpdate  func(name string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
+		scheduleUpdate  func(name string, ID string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
 		env             updateEnv
 		state           updateState
 	}
@@ -114,7 +114,7 @@ type (
 // update callbacks.
 func newUpdateProtocol(
 	protoInstanceID string,
-	scheduleUpdate func(name string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks),
+	scheduleUpdate func(name string, ID string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks),
 	env updateEnv,
 ) *updateProtocol {
 	return &updateProtocol{
@@ -143,7 +143,7 @@ func (up *updateProtocol) HandleMessage(msg *protocolpb.Message) error {
 	up.requestMsgID = msg.GetId()
 	up.requestSeqID = msg.GetEventId()
 	input := req.GetInput()
-	up.scheduleUpdate(input.GetName(), input.GetArgs(), input.GetHeader(), up)
+	up.scheduleUpdate(input.GetName(), req.GetMeta().GetUpdateId(), input.GetArgs(), input.GetHeader(), up)
 	up.state = updateStateRequestInitiated
 	return nil
 }
@@ -241,6 +241,7 @@ func (up *updateProtocol) checkAcceptedEvent(e *historypb.HistoryEvent) bool {
 func defaultUpdateHandler(
 	rootCtx Context,
 	name string,
+	ID string,
 	serializedArgs *commonpb.Payloads,
 	header *commonpb.Header,
 	callbacks UpdateCallbacks,
@@ -253,6 +254,10 @@ func defaultUpdateHandler(
 		return
 	}
 	scheduler.Spawn(ctx, name, func(ctx Context) {
+		ctx = WithValue(ctx, updateInfoContextKey, &UpdateInfo{
+			ID: ID,
+		})
+
 		eo := getWorkflowEnvOptions(ctx)
 
 		// If we suspect that handler registration has not occurred (e.g.

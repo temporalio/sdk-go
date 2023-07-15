@@ -260,6 +260,7 @@ const (
 	workflowResultContextKey         = "workflowResult"
 	coroutinesContextKey             = "coroutines"
 	workflowEnvOptionsContextKey     = "wfEnvOptions"
+	updateInfoContextKey             = "updateInfo"
 )
 
 // Assert that structs do indeed implement the interfaces
@@ -541,8 +542,8 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 	)
 
 	getWorkflowEnvironment(d.rootCtx).RegisterUpdateHandler(
-		func(name string, serializedArgs *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks) {
-			defaultUpdateHandler(d.rootCtx, name, serializedArgs, header, callbacks, coroScheduler{d.dispatcher})
+		func(name string, ID string, serializedArgs *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks) {
+			defaultUpdateHandler(d.rootCtx, name, ID, serializedArgs, header, callbacks, coroScheduler{d.dispatcher})
 		})
 
 	getWorkflowEnvironment(d.rootCtx).RegisterQueryHandler(

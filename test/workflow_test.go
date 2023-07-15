@@ -305,6 +305,24 @@ func (w *Workflows) ActivityRetryOnHBTimeout(ctx workflow.Context) ([]string, er
 	return []string{"heartbeatAndSleep", "heartbeatAndSleep", "heartbeatAndSleep"}, nil
 }
 
+func (w *Workflows) UpdateInfoWorkflow(ctx workflow.Context) error {
+	err := workflow.SetUpdateHandlerWithOptions(ctx, "update", func(ctx workflow.Context) (string, error) {
+		return workflow.GetUpdateInfo(ctx).ID, nil
+	}, workflow.UpdateHandlerOptions{
+		Validator: func(ctx workflow.Context) error {
+			if workflow.GetUpdateInfo(ctx).ID != "testID" {
+				return errors.New("invalid update ID")
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		return errors.New("failed to register update handler")
+	}
+	workflow.GetSignalChannel(ctx, "finish").Receive(ctx, nil)
+	return nil
+}
+
 func (w *Workflows) ActivityHeartbeatWithRetry(ctx workflow.Context) (heartbeatCounts int, err error) {
 	// Make retries fast
 	opts := w.defaultActivityOptions()
@@ -2268,6 +2286,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.WorkflowWithParallelSideEffects)
 	worker.RegisterWorkflow(w.WorkflowWithParallelMutableSideEffects)
 	worker.RegisterWorkflow(w.LocalActivityStaleCache)
+	worker.RegisterWorkflow(w.UpdateInfoWorkflow)
 	worker.RegisterWorkflow(w.SignalWorkflow)
 	worker.RegisterWorkflow(w.CronWorkflow)
 	worker.RegisterWorkflow(w.CancelTimerConcurrentWithOtherCommandWorkflow)

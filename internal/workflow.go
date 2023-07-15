@@ -993,6 +993,11 @@ type WorkflowInfo struct {
 	currentHistoryLength int
 }
 
+// UpdateInfo information about a currently running update
+type UpdateInfo struct {
+	ID string
+}
+
 // GetBinaryChecksum return binary checksum.
 func (wInfo *WorkflowInfo) GetBinaryChecksum() string {
 	if wInfo.BinaryChecksum == "" {
@@ -1015,6 +1020,20 @@ func GetWorkflowInfo(ctx Context) *WorkflowInfo {
 
 func (wc *workflowEnvironmentInterceptor) GetInfo(ctx Context) *WorkflowInfo {
 	return wc.env.WorkflowInfo()
+}
+
+// GetUpdateInfo extracts info of a currently running update from a context.
+func GetUpdateInfo(ctx Context) *UpdateInfo {
+	i := getWorkflowOutboundInterceptor(ctx)
+	return i.GetUpdateInfo(ctx)
+}
+
+func (wc *workflowEnvironmentInterceptor) GetUpdateInfo(ctx Context) *UpdateInfo {
+	uc := ctx.Value(updateInfoContextKey)
+	if uc == nil {
+		panic("getWorkflowOutboundInterceptor: No update associated with this context")
+	}
+	return uc.(*UpdateInfo)
 }
 
 // GetLogger returns a logger to be used in workflow's context

@@ -56,6 +56,11 @@ type (
 	// Info information about currently executing workflow
 	Info = internal.WorkflowInfo
 
+	// UpdateInfo information about a currently running update
+	//
+	// NOTE: Experimental
+	UpdateInfo = internal.UpdateInfo
+
 	// ContinueAsNewError can be returned by a workflow implementation function and indicates that
 	// the workflow should continue as new with the same WorkflowID, but new RunID and new history.
 	ContinueAsNewError = internal.ContinueAsNewError
@@ -190,6 +195,10 @@ func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interf
 // GetInfo extracts info of a current workflow from a context.
 func GetInfo(ctx Context) *Info {
 	return internal.GetWorkflowInfo(ctx)
+}
+
+func GetUpdateInfo(ctx Context) *UpdateInfo {
+	return internal.GetUpdateInfo(ctx)
 }
 
 // GetLogger returns a logger to be used in workflow's context

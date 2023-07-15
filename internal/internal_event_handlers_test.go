@@ -430,14 +430,16 @@ func TestUpdateEvents(t *testing.T) {
 
 	var (
 		gotName   string
+		gotID     string
 		gotArgs   *commonpb.Payloads
 		gotHeader *commonpb.Header
 	)
 
 	weh := &workflowExecutionEventHandlerImpl{
 		workflowEnvironmentImpl: &workflowEnvironmentImpl{
-			updateHandler: func(name string, args *commonpb.Payloads, header *commonpb.Header, cb UpdateCallbacks) {
+			updateHandler: func(name string, ID string, args *commonpb.Payloads, header *commonpb.Header, cb UpdateCallbacks) {
 				gotName = name
+				gotID = ID
 				gotArgs = args
 				gotHeader = header
 			},
@@ -468,6 +470,7 @@ func TestUpdateEvents(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, input.Name, gotName)
+	require.Equal(t, t.Name()+"-id", gotID)
 	require.True(t, proto.Equal(input.Header, gotHeader))
 	require.True(t, proto.Equal(input.Args, gotArgs))
 
