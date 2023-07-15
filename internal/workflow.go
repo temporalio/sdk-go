@@ -345,6 +345,11 @@ type (
 func Await(ctx Context, condition func() bool) error {
 	assertNotInReadOnlyState(ctx)
 	state := getState(ctx)
+	return state.dispatcher.interceptor.Await(ctx, condition)
+}
+
+func (wc *workflowEnvironmentInterceptor) Await(ctx Context, condition func() bool) error {
+	state := getState(ctx)
 	defer state.unblocked()
 
 	for !condition() {
@@ -364,6 +369,11 @@ func Await(ctx Context, condition func() bool) error {
 // Returns ok equals to false if timed out and err equals to CanceledError if the ctx is canceled.
 func AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool) (ok bool, err error) {
 	assertNotInReadOnlyState(ctx)
+	state := getState(ctx)
+	return state.dispatcher.interceptor.AwaitWithTimeout(ctx, timeout, condition)
+}
+
+func (wc *workflowEnvironmentInterceptor) AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool) (ok bool, err error) {
 	state := getState(ctx)
 	defer state.unblocked()
 	timer := NewTimer(ctx, timeout)
