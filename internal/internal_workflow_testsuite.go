@@ -2431,6 +2431,10 @@ func (env *testWorkflowEnvironmentImpl) setStartWorkflowOptions(options StartWor
 		wf.WorkflowTaskTimeout = options.WorkflowTaskTimeout
 	}
 	if len(options.ID) > 0 {
+		// Reassign the ID in running Workflows so SignalWorkflowByID can find the workflow
+		originalID := wf.WorkflowExecution.ID
+		env.runningWorkflows[options.ID] = env.runningWorkflows[wf.WorkflowExecution.ID]
+		delete(env.runningWorkflows, originalID)
 		wf.WorkflowExecution.ID = options.ID
 	}
 	if len(options.TaskQueue) > 0 {
