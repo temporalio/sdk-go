@@ -88,6 +88,7 @@ type (
 		failureConverter         converter.FailureConverter
 		contextPropagators       []ContextPropagator
 		workerInterceptors       []WorkerInterceptor
+		rootInterceptor          *workflowClientInterceptor
 		interceptor              ClientOutboundInterceptor
 		excludeInternalFromRetry *uberatomic.Bool
 		capabilities             *workflowservice.GetSystemInfoResponse_Capabilities
@@ -1443,7 +1444,17 @@ func serializeSearchAttributes(input map[string]interface{}) (*commonpb.SearchAt
 	return &commonpb.SearchAttributes{IndexedFields: attr}, nil
 }
 
-type workflowClientInterceptor struct{ client *WorkflowClient }
+type workflowClientInterceptor struct {
+	client          *WorkflowClient
+	eagerDispatcher *eagerWorkflowDispatcher
+}
+
+func (w *workflowClientInterceptor) tryGetEagerWorkflowExecutor(options *StartWorkflowOptions) *eagerWorkflowExecutor {
+	if !options.EnableEagerStart || !w.client.capabilities.GetEagerWorkflowStart() {
+		return nil
+	}
+	return w.eagerDispatcher.tryGetEagerWorkflowExecutor(options)
+}
 
 func (w *workflowClientInterceptor) ExecuteWorkflow(
 	ctx context.Context,
@@ -1486,6 +1497,10 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		return nil, err
 	}
 
+	eagerExecutor := w.tryGetEagerWorkflowExecutor(in.Options)
+	if eagerExecutor != nil {
+		defer eagerExecutor.release()
+	}
 	// run propagators to extract information about tracing and other stuff, store in headers field
 	startRequest := &workflowservice.StartWorkflowExecutionRequest{
 		Namespace:                w.client.namespace,
@@ -1503,6 +1518,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		CronSchedule:             in.Options.CronSchedule,
 		Memo:                     memo,
 		SearchAttributes:         searchAttr,
+		RequestEagerExecution:    eagerExecutor != nil,
 		Header:                   header,
 	}
 
@@ -1514,7 +1530,10 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 	defer cancel()
 
 	response, err = w.client.workflowService.StartWorkflowExecution(grpcCtx, startRequest)
-
+	eagerWorkflowTask := response.GetEagerWorkflowTask()
+	if eagerWorkflowTask != nil {
+		eagerExecutor.handleResponse(eagerWorkflowTask)
+	}
 	// Allow already-started error
 	var runID string
 	if e, ok := err.(*serviceerror.WorkflowExecutionAlreadyStarted); ok && !in.Options.WorkflowExecutionErrorWhenAlreadyStarted {

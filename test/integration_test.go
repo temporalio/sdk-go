@@ -3989,6 +3989,7 @@ func (ts *IntegrationTestSuite) startWorkflowOptions(wfID string) client.StartWo
 		WorkflowExecutionTimeout: 15 * time.Second,
 		WorkflowTaskTimeout:      time.Second,
 		WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
+		EnableEagerStart:         true,
 	}
 	if wfID == CronWorkflowID {
 		wfOptions.CronSchedule = "@every 1s"

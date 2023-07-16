@@ -596,6 +596,11 @@ type (
 		// supported when Temporal server is using ElasticSearch). The key and value type must be registered on Temporal server side.
 		// Use GetSearchAttributes API to get valid key and corresponding value type.
 		SearchAttributes map[string]interface{}
+
+		// EnableEagerStart - request eager execution for this workflow, if a local worker is available.
+		//
+		// NOTE: Experimental
+		EnableEagerStart bool
 	}
 
 	// RetryPolicy defines the retry policy.
@@ -816,7 +821,13 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	}
 
 	// Create outbound interceptor by wrapping backwards through chain
-	client.interceptor = &workflowClientInterceptor{client: client}
+	client.rootInterceptor = &workflowClientInterceptor{
+		client: client,
+		eagerDispatcher: &eagerWorkflowDispatcher{
+			workersByTaskQueue: make(map[string][]*workflowWorker),
+		},
+	}
+	client.interceptor = client.rootInterceptor
 	for i := len(options.Interceptors) - 1; i >= 0; i-- {
 		client.interceptor = options.Interceptors[i].InterceptClient(client.interceptor)
 	}

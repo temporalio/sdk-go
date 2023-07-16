@@ -94,6 +94,11 @@ type (
 		laRetryCh chan *localActivityTask
 	}
 
+	// eagerWorkflowTask represents a workflow task sent from an eager workflow executor
+	eagerWorkflowTask struct {
+		task *workflowservice.PollWorkflowTaskQueueResponse
+	}
+
 	// activityTask wraps a activity task.
 	activityTask struct {
 		task *workflowservice.PollActivityTaskQueueResponse

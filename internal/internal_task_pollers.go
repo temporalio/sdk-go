@@ -313,6 +313,8 @@ func (wtp *workflowTaskPoller) ProcessTask(task interface{}) error {
 	switch task := task.(type) {
 	case *workflowTask:
 		return wtp.processWorkflowTask(task)
+	case *eagerWorkflowTask:
+		return wtp.processWorkflowTask(wtp.toWorkflowTask(task.task))
 	default:
 		panic("unknown task type.")
 	}
