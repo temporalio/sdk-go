@@ -289,15 +289,17 @@ func defaultUpdateHandler(
 		if !IsReplaying(ctx) {
 			// we don't execute update validation during replay so that
 			// validation routines can change across versions
-			defer getState(ctx).dispatcher.setIsReadOnly(false)
-			getState(ctx).dispatcher.setIsReadOnly(true)
-			if err := envInterceptor.inboundInterceptor.ValidateUpdate(ctx, &input); err != nil {
+			err = func() error {
+				defer getState(ctx).dispatcher.setIsReadOnly(false)
+				getState(ctx).dispatcher.setIsReadOnly(true)
+				return envInterceptor.inboundInterceptor.ValidateUpdate(ctx, &input)
+			}()
+			if err != nil {
 				callbacks.Reject(err)
 				return
 			}
 		}
 		callbacks.Accept()
-		getState(ctx).dispatcher.setIsReadOnly(false)
 		success, err := envInterceptor.inboundInterceptor.ExecuteUpdate(ctx, &input)
 		callbacks.Complete(success, err)
 	})
