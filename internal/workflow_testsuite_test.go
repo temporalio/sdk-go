@@ -27,10 +27,11 @@ package internal
 import (
 	"context"
 	"errors"
-	"github.com/stretchr/testify/assert"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -223,6 +224,27 @@ func TestWorkflowIDInsideTestWorkflow(t *testing.T) {
 		return "id is: " + GetWorkflowInfo(ctx).WorkflowExecution.ID, nil
 	})
 	require.NoError(t, env.GetWorkflowError())
+	require.NoError(t, env.GetWorkflowResult(&str))
+	require.Equal(t, "id is: my-workflow-id", str)
+}
+
+func TestWorkflowIDSignalWorkflowByID(t *testing.T) {
+	var suite WorkflowTestSuite
+	// Test SignalWorkflowByID works with custom ID
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterDelayedCallback(func() {
+		err := env.SignalWorkflowByID("my-workflow-id", "signal", "payload")
+		require.NoError(t, err)
+	}, time.Second)
+
+	env.SetStartWorkflowOptions(StartWorkflowOptions{ID: "my-workflow-id"})
+	env.ExecuteWorkflow(func(ctx Context) (string, error) {
+		var result string
+		GetSignalChannel(ctx, "signal").Receive(ctx, &result)
+		return "id is: " + GetWorkflowInfo(ctx).WorkflowExecution.ID, nil
+	})
+	require.NoError(t, env.GetWorkflowError())
+	var str string
 	require.NoError(t, env.GetWorkflowResult(&str))
 	require.Equal(t, "id is: my-workflow-id", str)
 }
