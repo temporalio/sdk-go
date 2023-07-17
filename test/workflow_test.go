@@ -860,6 +860,56 @@ func (w *Workflows) LargeQueryResultWorkflow(ctx workflow.Context) (string, erro
 	return "hello", nil
 }
 
+func (w *Workflows) MutatingQueryWorkflow(ctx workflow.Context) (string, error) {
+	err := workflow.SetQueryHandler(ctx, "mutating_query", func() (string, error) {
+		_ = workflow.Sleep(ctx, time.Second)
+		return "failed", nil
+	})
+	if err != nil {
+		return "", errors.New("failed to register query handler")
+	}
+	workflow.GetSignalChannel(ctx, "finish").Receive(ctx, nil)
+	return "hello", nil
+}
+
+func (w *Workflows) MutatingUpdateValidatorWorkflow(ctx workflow.Context) (string, error) {
+	err := workflow.SetUpdateHandlerWithOptions(ctx, "mutating_update", func(ctx workflow.Context) (string, error) {
+		_ = workflow.Sleep(ctx, time.Second)
+		return "failed", nil
+	}, workflow.UpdateHandlerOptions{
+		Validator: func(ctx workflow.Context) error {
+			return workflow.Sleep(ctx, time.Second)
+		},
+	})
+	if err != nil {
+		return "", errors.New("failed to register query handler")
+	}
+	workflow.GetSignalChannel(ctx, "finish").Receive(ctx, nil)
+	return "hello", nil
+}
+
+func (w *Workflows) MutatingSideEffectWorkflow(ctx workflow.Context) (string, error) {
+	encodedValue := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+		_ = workflow.Sleep(ctx, 45*time.Second)
+		return "fail"
+	})
+	var sideEffectValue string
+	err := encodedValue.Get(&sideEffectValue)
+	return sideEffectValue, err
+}
+
+func (w *Workflows) MutatingMutableSideEffectWorkflow(ctx workflow.Context) (string, error) {
+	encodedValue := workflow.MutableSideEffect(ctx, "test-id", func(ctx workflow.Context) interface{} {
+		_ = workflow.Sleep(ctx, 45*time.Second)
+		return "fail"
+	}, func(a, b interface{}) bool {
+		return false
+	})
+	var sideEffectValue string
+	err := encodedValue.Get(&sideEffectValue)
+	return sideEffectValue, err
+}
+
 func (w *Workflows) ConsistentQueryWorkflow(ctx workflow.Context, delay time.Duration) error {
 	queryResult := "starting-value"
 	err := workflow.SetQueryHandler(ctx, "consistent_query", func() (string, error) {
@@ -2187,6 +2237,10 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ChildWorkflowCancelUnusualTransitionsRepro)
 	worker.RegisterWorkflow(w.ChildWorkflowDuplicatePanicRepro)
 	worker.RegisterWorkflow(w.ChildWorkflowDuplicateGetExecutionStuckRepro)
+	worker.RegisterWorkflow(w.MutatingQueryWorkflow)
+	worker.RegisterWorkflow(w.MutatingUpdateValidatorWorkflow)
+	worker.RegisterWorkflow(w.MutatingSideEffectWorkflow)
+	worker.RegisterWorkflow(w.MutatingMutableSideEffectWorkflow)
 	worker.RegisterWorkflow(w.ConsistentQueryWorkflow)
 	worker.RegisterWorkflow(w.ContextPropagator)
 	worker.RegisterWorkflow(w.ContinueAsNew)

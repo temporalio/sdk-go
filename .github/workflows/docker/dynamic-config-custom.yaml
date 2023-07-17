@@ -3,3 +3,7 @@ system.forceSearchAttributesCacheRefreshOnRead:
     constraints: {}
 system.enableActivityEagerExecution:
   - value: true
+frontend.enableUpdateWorkflowExecution:
+  - value: true
+frontend.enableUpdateWorkflowExecutionAsyncAccepted:
+  - value: true

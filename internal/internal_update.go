@@ -66,7 +66,7 @@ type (
 		Complete(success interface{}, err error)
 	}
 
-	// UpdateScheduluer allows an update state machine to spawn coroutines and
+	// UpdateScheduler allows an update state machine to spawn coroutines and
 	// yield itself as necessary.
 	UpdateScheduler interface {
 		// Spawn starts a new named coroutine, executing the given function f.
@@ -231,7 +231,7 @@ func (up *updateProtocol) checkAcceptedEvent(e *historypb.HistoryEvent) bool {
 		attrs.AcceptedRequest != nil
 }
 
-// defaultHandler receives the initial invocation of an upate during WFT
+// defaultHandler receives the initial invocation of an update during WFT
 // processing. The implementation will verify that an updateHandler exists for
 // the supplied name (rejecting the update otherwise) and use the provided spawn
 // function to create a new coroutine that will execute in the workflow context.
@@ -289,7 +289,12 @@ func defaultUpdateHandler(
 		if !IsReplaying(ctx) {
 			// we don't execute update validation during replay so that
 			// validation routines can change across versions
-			if err := envInterceptor.inboundInterceptor.ValidateUpdate(ctx, &input); err != nil {
+			err = func() error {
+				defer getState(ctx).dispatcher.setIsReadOnly(false)
+				getState(ctx).dispatcher.setIsReadOnly(true)
+				return envInterceptor.inboundInterceptor.ValidateUpdate(ctx, &input)
+			}()
+			if err != nil {
 				callbacks.Reject(err)
 				return
 			}
