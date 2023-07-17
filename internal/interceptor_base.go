@@ -195,6 +195,16 @@ func (w *WorkflowOutboundInterceptorBase) ExecuteActivity(ctx Context, activityT
 	return w.Next.ExecuteActivity(ctx, activityType, args...)
 }
 
+// Await implements WorkflowOutboundInterceptor.Await.
+func (w *WorkflowOutboundInterceptorBase) Await(ctx Context, condition func() bool) error {
+	return w.Next.Await(ctx, condition)
+}
+
+// AwaitWithTimeout implements WorkflowOutboundInterceptor.AwaitWithTimeout.
+func (w *WorkflowOutboundInterceptorBase) AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool) (bool, error) {
+	return w.Next.AwaitWithTimeout(ctx, timeout, condition)
+}
+
 // ExecuteLocalActivity implements WorkflowOutboundInterceptor.ExecuteLocalActivity.
 func (w *WorkflowOutboundInterceptorBase) ExecuteLocalActivity(
 	ctx Context,

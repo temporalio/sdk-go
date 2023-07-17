@@ -171,6 +171,12 @@ type WorkflowOutboundInterceptor interface {
 	// Go intercepts workflow.Go.
 	Go(ctx Context, name string, f func(ctx Context)) Context
 
+	// Await intercepts workflow.Await.
+	Await(ctx Context, condition func() bool) error
+
+	// AwaitWithTimeout intercepts workflow.AwaitWithTimeout.
+	AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool) (bool, error)
+
 	// ExecuteActivity intercepts workflow.ExecuteActivity.
 	// interceptor.WorkflowHeader will return a non-nil map for this context.
 	ExecuteActivity(ctx Context, activityType string, args ...interface{}) Future

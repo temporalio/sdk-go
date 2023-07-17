@@ -301,6 +301,18 @@ func (p *proxyWorkflowOutbound) Go(
 	return
 }
 
+func (p *proxyWorkflowOutbound) Await(ctx workflow.Context, condition func() bool) (ret error) {
+	ret, _ = p.invoke(ctx, condition)[0].Interface().(error)
+	return
+}
+
+func (p *proxyWorkflowOutbound) AwaitWithTimeout(ctx workflow.Context, timeout time.Duration, condition func() bool) (ret bool, err error) {
+	result := p.invoke(ctx, timeout, condition)
+	ret, _ = result[0].Interface().(bool)
+	err, _ = result[1].Interface().(error)
+	return
+}
+
 func (p *proxyWorkflowOutbound) ExecuteActivity(
 	ctx workflow.Context,
 	activityType string,
