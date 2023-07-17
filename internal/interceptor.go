@@ -186,6 +186,11 @@ type WorkflowOutboundInterceptor interface {
 	// GetInfo intercepts workflow.GetInfo.
 	GetInfo(ctx Context) *WorkflowInfo
 
+	// GetUpdateInfo intercepts workflow.GetUpdateInfo.
+	//
+	// NOTE: Experimental
+	GetUpdateInfo(ctx Context) *UpdateInfo
+
 	// GetLogger intercepts workflow.GetLogger.
 	GetLogger(ctx Context) log.Logger
 

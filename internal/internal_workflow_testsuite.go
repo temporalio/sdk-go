@@ -185,7 +185,7 @@ type (
 		workflowCancelHandler func()
 		signalHandler         func(name string, input *commonpb.Payloads, header *commonpb.Header) error
 		queryHandler          func(string, *commonpb.Payloads, *commonpb.Header) (*commonpb.Payloads, error)
-		updateHandler         func(name string, input *commonpb.Payloads, header *commonpb.Header, resp UpdateCallbacks)
+		updateHandler         func(name string, id string, input *commonpb.Payloads, header *commonpb.Header, resp UpdateCallbacks)
 		startedHandler        func(r WorkflowExecution, e error)
 
 		isWorkflowCompleted bool
@@ -2021,7 +2021,7 @@ func (env *testWorkflowEnvironmentImpl) RegisterSignalHandler(
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterUpdateHandler(
-	handler func(name string, input *commonpb.Payloads, header *commonpb.Header, resp UpdateCallbacks),
+	handler func(name string, id string, input *commonpb.Payloads, header *commonpb.Header, resp UpdateCallbacks),
 ) {
 	env.updateHandler = handler
 }
@@ -2361,12 +2361,12 @@ func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...
 	return newEncodedValue(blob, env.GetDataConverter()), nil
 }
 
-func (env *testWorkflowEnvironmentImpl) updateWorkflow(name string, uc UpdateCallbacks, args ...interface{}) {
+func (env *testWorkflowEnvironmentImpl) updateWorkflow(name string, id string, uc UpdateCallbacks, args ...interface{}) {
 	data, err := encodeArgs(env.GetDataConverter(), args)
 	if err != nil {
 		panic(err)
 	}
-	env.updateHandler(name, data, nil, uc)
+	env.updateHandler(name, id, data, nil, uc)
 }
 
 func (env *testWorkflowEnvironmentImpl) queryWorkflowByID(workflowID, queryType string, args ...interface{}) (converter.EncodedValue, error) {

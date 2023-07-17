@@ -218,6 +218,11 @@ func (w *WorkflowOutboundInterceptorBase) GetInfo(ctx Context) *WorkflowInfo {
 	return w.Next.GetInfo(ctx)
 }
 
+// GetUpdateInfo implements WorkflowOutboundInterceptor.GetUpdateInfo.
+func (w *WorkflowOutboundInterceptorBase) GetUpdateInfo(ctx Context) *UpdateInfo {
+	return w.Next.GetUpdateInfo(ctx)
+}
+
 // GetLogger implements WorkflowOutboundInterceptor.GetLogger.
 func (w *WorkflowOutboundInterceptorBase) GetLogger(ctx Context) log.Logger {
 	return w.Next.GetLogger(ctx)

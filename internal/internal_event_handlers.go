@@ -153,7 +153,7 @@ type (
 		cancelHandler   func()                                                                     // A cancel handler to be invoked on a cancel notification
 		signalHandler   func(name string, input *commonpb.Payloads, header *commonpb.Header) error // A signal handler to be invoked on a signal event
 		queryHandler    func(queryType string, queryArgs *commonpb.Payloads, header *commonpb.Header) (*commonpb.Payloads, error)
-		updateHandler   func(name string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
+		updateHandler   func(name string, id string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
 
 		logger                log.Logger
 		isReplay              bool // flag to indicate if workflow is in replay mode
@@ -323,8 +323,8 @@ func (wc *workflowEnvironmentImpl) takeOutgoingMessages() []*protocolpb.Message 
 	return retval
 }
 
-func (wc *workflowEnvironmentImpl) ScheduleUpdate(name string, args *commonpb.Payloads, hdr *commonpb.Header, callbacks UpdateCallbacks) {
-	wc.updateHandler(name, args, hdr, callbacks)
+func (wc *workflowEnvironmentImpl) ScheduleUpdate(name string, id string, args *commonpb.Payloads, hdr *commonpb.Header, callbacks UpdateCallbacks) {
+	wc.updateHandler(name, id, args, hdr, callbacks)
 }
 
 func withExpectedEventPredicate(pred func(*historypb.HistoryEvent) bool) msgSendOpt {
@@ -577,7 +577,7 @@ func (wc *workflowEnvironmentImpl) RegisterQueryHandler(
 }
 
 func (wc *workflowEnvironmentImpl) RegisterUpdateHandler(
-	handler func(string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks),
+	handler func(string, string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks),
 ) {
 	wc.updateHandler = handler
 }

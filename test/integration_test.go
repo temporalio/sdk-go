@@ -1221,6 +1221,38 @@ func (ts *IntegrationTestSuite) TestInspectLocalActivityInfoLocalActivityWorkerO
 	ts.Nil(err)
 }
 
+func (ts *IntegrationTestSuite) TestUpdateInfo() {
+	ctx := context.Background()
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-update-info"), ts.workflows.UpdateInfoWorkflow)
+	ts.Nil(err)
+	// Send an update request with a know update ID
+	handler, err := ts.client.UpdateWorkflowWithOptions(ctx, &client.UpdateWorkflowWithOptionsRequest{
+		UpdateID:   "testID",
+		WorkflowID: run.GetID(),
+		RunID:      run.GetRunID(),
+		UpdateName: "update",
+	})
+	ts.NoError(err)
+	// Verify the upate handler can access the update info and return the updateID
+	var result string
+	ts.NoError(handler.Get(ctx, &result))
+	ts.Equal("testID", result)
+	// Test the update validator can also use the update info
+	handler, err = ts.client.UpdateWorkflowWithOptions(ctx, &client.UpdateWorkflowWithOptionsRequest{
+		UpdateID:   "notTestID",
+		WorkflowID: run.GetID(),
+		RunID:      run.GetRunID(),
+		UpdateName: "update",
+	})
+	ts.NoError(err)
+	err = handler.Get(ctx, nil)
+	ts.Error(err)
+	// complete workflow
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
+	ts.NoError(run.Get(ctx, nil))
+}
+
 func (ts *IntegrationTestSuite) TestBasicSession() {
 	var expected []string
 	err := ts.executeWorkflow("test-basic-session", ts.workflows.BasicSession, &expected)

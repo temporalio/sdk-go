@@ -203,7 +203,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 			UpdateHandlerOptions{},
 		)
 		var rejectErr error
-		defaultUpdateHandler(ctx, "will_not_be_found", args, hdr, &testUpdateCallbacks{
+		defaultUpdateHandler(ctx, "will_not_be_found", "testID", args, hdr, &testUpdateCallbacks{
 			RejectImpl: func(err error) { rejectErr = err },
 		}, runOnCallingThread)
 		require.ErrorContains(t, rejectErr, "unknown update")
@@ -221,7 +221,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 		)
 		junkArgs := &commonpb.Payloads{Payloads: []*commonpb.Payload{&commonpb.Payload{}}}
 		var rejectErr error
-		defaultUpdateHandler(ctx, t.Name(), junkArgs, hdr, &testUpdateCallbacks{
+		defaultUpdateHandler(ctx, t.Name(), "testID", junkArgs, hdr, &testUpdateCallbacks{
 			RejectImpl: func(err error) { rejectErr = err },
 		}, runOnCallingThread)
 		require.ErrorContains(t, rejectErr, "unable to decode")
@@ -238,7 +238,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 			UpdateHandlerOptions{Validator: validatorFunc},
 		)
 		var rejectErr error
-		defaultUpdateHandler(ctx, t.Name(), args, hdr, &testUpdateCallbacks{
+		defaultUpdateHandler(ctx, t.Name(), "testID", args, hdr, &testUpdateCallbacks{
 			RejectImpl: func(err error) { rejectErr = err },
 		}, runOnCallingThread)
 		require.Equal(t, validatorFunc(ctx, argStr), rejectErr)
@@ -252,7 +252,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 			accepted  bool
 			result    interface{}
 		)
-		defaultUpdateHandler(ctx, t.Name(), args, hdr, &testUpdateCallbacks{
+		defaultUpdateHandler(ctx, t.Name(), "testID", args, hdr, &testUpdateCallbacks{
 			AcceptImpl: func() { accepted = true },
 			CompleteImpl: func(success interface{}, err error) {
 				resultErr = err
@@ -272,7 +272,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 			accepted  bool
 			result    interface{}
 		)
-		defaultUpdateHandler(ctx, t.Name(), args, hdr, &testUpdateCallbacks{
+		defaultUpdateHandler(ctx, t.Name(), "testID", args, hdr, &testUpdateCallbacks{
 			AcceptImpl: func() { accepted = true },
 			CompleteImpl: func(success interface{}, err error) {
 				resultErr = err
@@ -323,7 +323,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 				mustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateHandlerOptions{})
 			},
 		}
-		defaultUpdateHandler(ctx, t.Name(), args, hdr, &testUpdateCallbacks{
+		defaultUpdateHandler(ctx, t.Name(), "testID", args, hdr, &testUpdateCallbacks{
 			RejectImpl: func(err error) { rejectErr = err },
 			AcceptImpl: func() { accepted = true },
 			CompleteImpl: func(success interface{}, err error) {
@@ -344,7 +344,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 
 func TestInvalidUpdateStateTransitions(t *testing.T) {
 	// these would all reflect programming errors so we expect panics
-	stubUpdateHandler := func(string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks) {}
+	stubUpdateHandler := func(string, string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks) {}
 	requestMsg := protocolpb.Message{
 		Id:                 t.Name() + "-id",
 		ProtocolInstanceId: t.Name() + "-proto-id",
@@ -412,8 +412,8 @@ func TestInvalidUpdateStateTransitions(t *testing.T) {
 }
 
 func TestCompletedEventPredicate(t *testing.T) {
-	updateID := t.Name() + "-updaet-id"
-	stubUpdateHandler := func(string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks) {}
+	updateID := t.Name() + "-update-id"
+	stubUpdateHandler := func(string, string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks) {}
 	requestMsg := protocolpb.Message{
 		Id:                 t.Name() + "-id",
 		ProtocolInstanceId: updateID,
@@ -450,10 +450,10 @@ func TestCompletedEventPredicate(t *testing.T) {
 }
 
 func TestAcceptedEventPredicate(t *testing.T) {
-	updateID := t.Name() + "-updaet-id"
+	updateID := t.Name() + "-update-id"
 	requestMsgID := t.Name() + "request-msg-id"
 	requestSeqID := int64(1234)
-	stubUpdateHandler := func(string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks) {}
+	stubUpdateHandler := func(string, string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks) {}
 	request := updatepb.Request{
 		Meta: &updatepb.Meta{UpdateId: updateID},
 	}

@@ -1438,7 +1438,7 @@ func (s *WorkflowUnitTest) Test_MutatingFunctionsInUpdateValidator() {
 	}
 	env.RegisterWorkflow(wf)
 	env.RegisterDelayedCallback(func() {
-		env.UpdateWorkflow(updateType, &updateCallback{
+		env.UpdateWorkflow(updateType, "testID", &updateCallback{
 			reject: func(err error) {
 				s.Error(err)
 			},
