@@ -33,25 +33,29 @@ import (
 // eagerWorkflowDispatcher is responsible for finding an available worker for an eager workflow task.
 type eagerWorkflowDispatcher struct {
 	lock               sync.Mutex
-	workersByTaskQueue map[string][]*workflowWorker
+	workersByTaskQueue map[string][]eagerWorker
 }
 
+// registerWorker registers a worker that can be used for eager workflow dispatch
 func (e *eagerWorkflowDispatcher) registerWorker(worker *workflowWorker) {
 	e.lock.Lock()
 	defer e.lock.Unlock()
-	e.workersByTaskQueue[worker.executionParameters.TaskQueue] = append(e.workersByTaskQueue[worker.executionParameters.TaskQueue], worker)
+	e.workersByTaskQueue[worker.executionParameters.TaskQueue] = append(e.workersByTaskQueue[worker.executionParameters.TaskQueue], worker.worker)
 }
 
-func (e *eagerWorkflowDispatcher) tryGetEagerWorkflowExecutor(options *StartWorkflowOptions) *eagerWorkflowExecutor {
+// applyToRequest updates request if eager workflow dispatch is possible and returns the eagerWorkflowExecutor to use
+func (e *eagerWorkflowDispatcher) applyToRequest(request *workflowservice.StartWorkflowExecutionRequest) *eagerWorkflowExecutor {
 	e.lock.Lock()
 	defer e.lock.Unlock()
 	// Try every worker that is assigned to the desired task queue.
-	workers := e.workersByTaskQueue[options.TaskQueue]
+	workers := e.workersByTaskQueue[request.GetTaskQueue().Name]
 	rand.Shuffle(len(workers), func(i, j int) { workers[i], workers[j] = workers[j], workers[i] })
 	for _, worker := range workers {
-		executor := worker.reserveWorkflowExecutor()
-		if executor != nil {
-			return executor
+		if worker.tryReserveSlot() {
+			request.RequestEagerExecution = true
+			return &eagerWorkflowExecutor{
+				worker: worker,
+			}
 		}
 	}
 	return nil
@@ -60,7 +64,7 @@ func (e *eagerWorkflowDispatcher) tryGetEagerWorkflowExecutor(options *StartWork
 // eagerWorkflowExecutor is a worker-scoped executor for an eager workflow task.
 type eagerWorkflowExecutor struct {
 	handledResponse atomic.Bool
-	worker          *workflowWorker
+	worker          eagerWorker
 }
 
 // handleResponse of an eager workflow task from a StartWorkflowExecution request.
@@ -68,24 +72,14 @@ func (e *eagerWorkflowExecutor) handleResponse(response *workflowservice.PollWor
 	if !e.handledResponse.CompareAndSwap(false, true) {
 		panic("eagerWorkflowExecutor trying to handle multiple responses")
 	}
-	// Before starting the goroutine we have to increase the wait group counter
-	// that the poller would have otherwise increased
-	e.worker.worker.stopWG.Add(1)
-	// Asynchronously execute
+	// Asynchronously execute the task
 	task := &eagerWorkflowTask{
 		task: response,
 	}
-	go func() {
-		// Mark completed when complete
-		defer func() {
-			e.release()
-		}()
-
-		// Process the task synchronously. We call the processor on the base
-		// worker instead of a higher level so we can get the benefits of metrics,
-		// stop wait group update, etc.
-		e.worker.worker.processTask(task)
-	}()
+	e.worker.processTaskAsync(task, func() {
+		// The processTaskAsync does not do this itself because our task is *eagerWorkflowTask, not *polledTask.
+		e.release()
+	})
 }
 
 // release the executor task slot this eagerWorkflowExecutor was holding.
@@ -95,6 +89,6 @@ func (e *eagerWorkflowExecutor) release() {
 	if e.handledResponse.CompareAndSwap(false, true) {
 		// Assume there is room because it is reserved on creation, so we make a blocking send.
 		// The processTask does not do this itself because our task is not *polledTask.
-		e.worker.worker.pollerRequestCh <- struct{}{}
+		e.worker.releaseSlot()
 	}
 }

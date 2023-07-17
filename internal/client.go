@@ -824,7 +824,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	client.rootInterceptor = &workflowClientInterceptor{
 		client: client,
 		eagerDispatcher: &eagerWorkflowDispatcher{
-			workersByTaskQueue: make(map[string][]*workflowWorker),
+			workersByTaskQueue: make(map[string][]eagerWorker),
 		},
 	}
 	client.interceptor = client.rootInterceptor

@@ -1449,13 +1449,6 @@ type workflowClientInterceptor struct {
 	eagerDispatcher *eagerWorkflowDispatcher
 }
 
-func (w *workflowClientInterceptor) tryGetEagerWorkflowExecutor(options *StartWorkflowOptions) *eagerWorkflowExecutor {
-	if !options.EnableEagerStart || !w.client.capabilities.GetEagerWorkflowStart() {
-		return nil
-	}
-	return w.eagerDispatcher.tryGetEagerWorkflowExecutor(options)
-}
-
 func (w *workflowClientInterceptor) ExecuteWorkflow(
 	ctx context.Context,
 	in *ClientExecuteWorkflowInput,
@@ -1497,10 +1490,6 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		return nil, err
 	}
 
-	eagerExecutor := w.tryGetEagerWorkflowExecutor(in.Options)
-	if eagerExecutor != nil {
-		defer eagerExecutor.release()
-	}
 	// run propagators to extract information about tracing and other stuff, store in headers field
 	startRequest := &workflowservice.StartWorkflowExecutionRequest{
 		Namespace:                w.client.namespace,
@@ -1518,8 +1507,15 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		CronSchedule:             in.Options.CronSchedule,
 		Memo:                     memo,
 		SearchAttributes:         searchAttr,
-		RequestEagerExecution:    eagerExecutor != nil,
 		Header:                   header,
+	}
+
+	var eagerExecutor *eagerWorkflowExecutor
+	if in.Options.EnableEagerStart && w.client.capabilities.GetEagerWorkflowStart() && w.eagerDispatcher != nil {
+		eagerExecutor = w.eagerDispatcher.applyToRequest(startRequest)
+		if eagerExecutor != nil {
+			defer eagerExecutor.release()
+		}
 	}
 
 	var response *workflowservice.StartWorkflowExecutionResponse
@@ -1531,7 +1527,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 
 	response, err = w.client.workflowService.StartWorkflowExecution(grpcCtx, startRequest)
 	eagerWorkflowTask := response.GetEagerWorkflowTask()
-	if eagerWorkflowTask != nil {
+	if eagerWorkflowTask != nil && eagerExecutor != nil {
 		eagerExecutor.handleResponse(eagerWorkflowTask)
 	}
 	// Allow already-started error

@@ -376,25 +376,6 @@ func (ww *workflowWorker) Stop() {
 	ww.worker.Stop()
 }
 
-// reserveWorkflowExecutor
-func (ww *workflowWorker) reserveWorkflowExecutor() *eagerWorkflowExecutor {
-	if !ww.worker.isWorkerStarted || ww.worker.isStop() {
-		return nil
-	}
-	// Reserve a spot for our request via a non-blocking attempt to take a poller
-	// request entry which essentially reserves a spot
-	select {
-	case <-ww.worker.pollerRequestCh:
-	default:
-		return nil
-	}
-
-	// We can request so return the worker
-	return &eagerWorkflowExecutor{
-		worker: ww,
-	}
-}
-
 func newSessionWorker(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, overrides *workerOverrides, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
 	if params.Identity == "" {
 		params.Identity = getWorkerIdentity(params.TaskQueue)
@@ -1581,7 +1562,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		} else {
 			workflowWorker = newWorkflowWorker(client.workflowService, workerParams, nil, registry)
 		}
-		client.rootInterceptor.eagerDispatcher.registerWorker(workflowWorker)
+		if client.rootInterceptor != nil {
+			client.rootInterceptor.eagerDispatcher.registerWorker(workflowWorker)
+		}
 	}
 
 	// activity types.
@@ -1589,7 +1572,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	if !options.LocalActivityWorkerOnly {
 		activityWorker = newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
 		// Set the activity worker on the eager executor
-		workerParams.eagerActivityExecutor.activityWorker = activityWorker
+		workerParams.eagerActivityExecutor.activityWorker = activityWorker.worker
 	}
 
 	var sessionWorker *sessionWorker

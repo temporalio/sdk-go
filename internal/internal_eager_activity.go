@@ -34,7 +34,7 @@ import (
 type eagerActivityExecutor struct {
 	eagerActivityExecutorOptions
 
-	activityWorker *activityWorker
+	activityWorker eagerWorker
 	heldSlotCount  int
 	countLock      sync.Mutex
 }
@@ -97,11 +97,8 @@ func (e *eagerActivityExecutor) reserveOnePendingSlot() bool {
 		// No more room
 		return false
 	}
-	// Reserve a spot for our request via a non-blocking attempt to take a poller
-	// request entry which essentially reserves a spot
-	select {
-	case <-e.activityWorker.worker.pollerRequestCh:
-	default:
+	// Reserve a spot for our request via a non-blocking attempt
+	if !e.activityWorker.tryReserveSlot() {
 		return false
 	}
 
@@ -131,35 +128,20 @@ func (e *eagerActivityExecutor) handleResponse(
 
 	// Put every unfulfilled slot back on the poller channel
 	for i := 0; i < unfulfilledSlots; i++ {
-		// Like other parts that push onto this channel, we assume there is room
-		// because we took it, so we do a blocking send
-		e.activityWorker.worker.pollerRequestCh <- struct{}{}
+		e.activityWorker.releaseSlot()
 	}
 
 	// Start each activity asynchronously
 	for _, activity := range resp.GetActivityTasks() {
-		// Before starting the goroutine we have to increase the wait group counter
-		// that the poller would have otherwise increased
-		e.activityWorker.worker.stopWG.Add(1)
 		// Asynchronously execute
 		task := &activityTask{activity}
-		go func() {
-			// Mark completed when complete
-			defer func() {
-				// Like other sends to this channel, we assume there is room because we
-				// reserved it, so we make a blocking send. The processTask does not do
-				// this itself because our task is *activityTask, not *polledTask.
-				e.activityWorker.worker.pollerRequestCh <- struct{}{}
-				// Decrement executing count
-				e.countLock.Lock()
-				e.heldSlotCount--
-				e.countLock.Unlock()
-			}()
-
-			// Process the task synchronously. We call the processor on the base
-			// worker instead of a higher level so we can get the benefits of metrics,
-			// stop wait group update, etc.
-			e.activityWorker.worker.processTask(task)
-		}()
+		e.activityWorker.processTaskAsync(task, func() {
+			// The processTaskAsync does not do this itself because our task is *activityTask, not *polledTask.
+			e.activityWorker.releaseSlot()
+			// Decrement executing count
+			e.countLock.Lock()
+			e.heldSlotCount--
+			e.countLock.Unlock()
+		})
 	}
 }
