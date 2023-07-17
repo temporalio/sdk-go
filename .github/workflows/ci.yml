@@ -9,8 +9,6 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - name: Print build information
-        run: "echo head_ref: ${{ github.head_ref }}, ref: ${{ github.ref }}"
       - uses: actions/checkout@v3
         with:
           submodules: recursive
