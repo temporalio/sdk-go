@@ -828,8 +828,8 @@ func (e *TestWorkflowEnvironment) QueryWorkflow(queryType string, args ...interf
 	return e.impl.queryWorkflow(queryType, args...)
 }
 
-func (e *TestWorkflowEnvironment) UpdateWorkflow(name string, ID string, uc UpdateCallbacks, args ...interface{}) {
-	e.impl.updateWorkflow(name, ID, uc, args...)
+func (e *TestWorkflowEnvironment) UpdateWorkflow(name string, id string, uc UpdateCallbacks, args ...interface{}) {
+	e.impl.updateWorkflow(name, id, uc, args...)
 }
 
 // QueryWorkflowByID queries a child workflow by its ID and returns the result synchronously

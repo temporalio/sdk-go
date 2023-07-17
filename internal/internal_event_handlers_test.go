@@ -437,9 +437,9 @@ func TestUpdateEvents(t *testing.T) {
 
 	weh := &workflowExecutionEventHandlerImpl{
 		workflowEnvironmentImpl: &workflowEnvironmentImpl{
-			updateHandler: func(name string, ID string, args *commonpb.Payloads, header *commonpb.Header, cb UpdateCallbacks) {
+			updateHandler: func(name string, id string, args *commonpb.Payloads, header *commonpb.Header, cb UpdateCallbacks) {
 				gotName = name
-				gotID = ID
+				gotID = id
 				gotArgs = args
 				gotHeader = header
 			},

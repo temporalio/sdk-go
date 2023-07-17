@@ -94,7 +94,7 @@ type (
 		clientIdentity  string
 		requestMsgID    string
 		requestSeqID    int64
-		scheduleUpdate  func(name string, ID string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
+		scheduleUpdate  func(name string, id string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
 		env             updateEnv
 		state           updateState
 	}
@@ -114,7 +114,7 @@ type (
 // update callbacks.
 func newUpdateProtocol(
 	protoInstanceID string,
-	scheduleUpdate func(name string, ID string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks),
+	scheduleUpdate func(name string, id string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks),
 	env updateEnv,
 ) *updateProtocol {
 	return &updateProtocol{
@@ -241,7 +241,7 @@ func (up *updateProtocol) checkAcceptedEvent(e *historypb.HistoryEvent) bool {
 func defaultUpdateHandler(
 	rootCtx Context,
 	name string,
-	ID string,
+	id string,
 	serializedArgs *commonpb.Payloads,
 	header *commonpb.Header,
 	callbacks UpdateCallbacks,
@@ -255,7 +255,7 @@ func defaultUpdateHandler(
 	}
 	scheduler.Spawn(ctx, name, func(ctx Context) {
 		ctx = WithValue(ctx, updateInfoContextKey, &UpdateInfo{
-			ID: ID,
+			ID: id,
 		})
 
 		eo := getWorkflowEnvOptions(ctx)
