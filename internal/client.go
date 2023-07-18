@@ -824,10 +824,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	}
 
 	// Create outbound interceptor by wrapping backwards through chain
-	client.rootInterceptor = &workflowClientInterceptor{
-		client: client,
-	}
-	client.interceptor = client.rootInterceptor
+	client.interceptor = &workflowClientInterceptor{client: client}
 	for i := len(options.Interceptors) - 1; i >= 0; i-- {
 		client.interceptor = options.Interceptors[i].InterceptClient(client.interceptor)
 	}

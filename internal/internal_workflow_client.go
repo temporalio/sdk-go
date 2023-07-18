@@ -88,7 +88,6 @@ type (
 		failureConverter         converter.FailureConverter
 		contextPropagators       []ContextPropagator
 		workerInterceptors       []WorkerInterceptor
-		rootInterceptor          *workflowClientInterceptor
 		interceptor              ClientOutboundInterceptor
 		excludeInternalFromRetry *uberatomic.Bool
 		capabilities             *workflowservice.GetSystemInfoResponse_Capabilities
