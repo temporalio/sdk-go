@@ -127,12 +127,16 @@ type WorkflowInboundInterceptor interface {
 	// as part of its optional configuration. The same prohibition against
 	// mutating workflow state that is demanded of UpdateOptions.Validator
 	// functions also applies to this function.
+	//
+	// NOTE: Experimental
 	ValidateUpdate(ctx Context, in *UpdateInput) error
 
 	// ExecuteUpdate is called after ValidateUpdate if and only if the latter
 	// returns nil. interceptor.WorkflowHeader will return a non-nil map for
 	// this context. ExecuteUpdate is allowed to mutate workflow state and
 	// perform workflow actions such as scheduling activities, timers, etc.
+	//
+	// NOTE: Experimental
 	ExecuteUpdate(ctx Context, in *UpdateInput) (interface{}, error)
 
 	mustEmbedWorkflowInboundInterceptorBase()
