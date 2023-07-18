@@ -194,7 +194,7 @@ type (
 	}
 )
 
-// SetRetryLongPollGracePeriod sets the amount of time a long poller retrys on
+// SetRetryLongPollGracePeriod sets the amount of time a long poller retries on
 // fatal errors before it actually fails. For test use only,
 // not safe to call with a running worker.
 func SetRetryLongPollGracePeriod(period time.Duration) {
@@ -333,7 +333,9 @@ func (bw *baseWorker) releaseSlot() {
 func (bw *baseWorker) processTaskAsync(task interface{}, callback func()) {
 	bw.stopWG.Add(1)
 	go func() {
-		defer callback()
+		if callback != nil {
+			defer callback()
+		}
 		bw.processTask(task)
 	}()
 }
@@ -358,7 +360,7 @@ func (bw *baseWorker) runTaskDispatcher() {
 					return
 				}
 			}
-			bw.processTaskAsync(task, func() {})
+			bw.processTaskAsync(task, nil)
 		}
 	}
 }
