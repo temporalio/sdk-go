@@ -1562,8 +1562,8 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		} else {
 			workflowWorker = newWorkflowWorker(client.workflowService, workerParams, nil, registry)
 		}
-		if client.rootInterceptor != nil {
-			client.rootInterceptor.eagerDispatcher.registerWorker(workflowWorker)
+		if client.eagerDispatcher != nil {
+			client.eagerDispatcher.registerWorker(workflowWorker)
 		}
 	}
 

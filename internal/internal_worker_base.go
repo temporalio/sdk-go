@@ -318,10 +318,10 @@ func (bw *baseWorker) tryReserveSlot() bool {
 	// request entry which essentially reserves a slot
 	select {
 	case <-bw.pollerRequestCh:
+		return true
 	default:
 		return false
 	}
-	return true
 }
 
 func (bw *baseWorker) releaseSlot() {

@@ -32,7 +32,7 @@ import (
 
 // eagerWorkflowDispatcher is responsible for finding an available worker for an eager workflow task.
 type eagerWorkflowDispatcher struct {
-	lock               sync.Mutex
+	lock               sync.RWMutex
 	workersByTaskQueue map[string][]eagerWorker
 }
 
@@ -45,12 +45,15 @@ func (e *eagerWorkflowDispatcher) registerWorker(worker *workflowWorker) {
 
 // applyToRequest updates request if eager workflow dispatch is possible and returns the eagerWorkflowExecutor to use
 func (e *eagerWorkflowDispatcher) applyToRequest(request *workflowservice.StartWorkflowExecutionRequest) *eagerWorkflowExecutor {
-	e.lock.Lock()
-	defer e.lock.Unlock()
 	// Try every worker that is assigned to the desired task queue.
+	e.lock.RLock()
 	workers := e.workersByTaskQueue[request.GetTaskQueue().Name]
-	rand.Shuffle(len(workers), func(i, j int) { workers[i], workers[j] = workers[j], workers[i] })
-	for _, worker := range workers {
+	randWorkers := make([]eagerWorker, len(workers))
+	// Copy the slice so we can release the lock.
+	copy(randWorkers, workers)
+	e.lock.RUnlock()
+	rand.Shuffle(len(randWorkers), func(i, j int) { randWorkers[i], randWorkers[j] = randWorkers[j], randWorkers[i] })
+	for _, worker := range randWorkers {
 		if worker.tryReserveSlot() {
 			request.RequestEagerExecution = true
 			return &eagerWorkflowExecutor{
@@ -78,7 +81,7 @@ func (e *eagerWorkflowExecutor) handleResponse(response *workflowservice.PollWor
 	}
 	e.worker.processTaskAsync(task, func() {
 		// The processTaskAsync does not do this itself because our task is *eagerWorkflowTask, not *polledTask.
-		e.release()
+		e.worker.releaseSlot()
 	})
 }
 
@@ -90,5 +93,7 @@ func (e *eagerWorkflowExecutor) release() {
 		// Assume there is room because it is reserved on creation, so we make a blocking send.
 		// The processTask does not do this itself because our task is not *polledTask.
 		e.worker.releaseSlot()
+	} else {
+		panic("trying to release an eagerWorkflowExecutor that has already been released")
 	}
 }

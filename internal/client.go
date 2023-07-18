@@ -818,14 +818,14 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		contextPropagators:       options.ContextPropagators,
 		workerInterceptors:       workerInterceptors,
 		excludeInternalFromRetry: options.ConnectionOptions.excludeInternalFromRetry,
+		eagerDispatcher: &eagerWorkflowDispatcher{
+			workersByTaskQueue: make(map[string][]eagerWorker),
+		},
 	}
 
 	// Create outbound interceptor by wrapping backwards through chain
 	client.rootInterceptor = &workflowClientInterceptor{
 		client: client,
-		eagerDispatcher: &eagerWorkflowDispatcher{
-			workersByTaskQueue: make(map[string][]eagerWorker),
-		},
 	}
 	client.interceptor = client.rootInterceptor
 	for i := len(options.Interceptors) - 1; i >= 0; i-- {
