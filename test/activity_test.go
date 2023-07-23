@@ -156,7 +156,7 @@ func (a *Activities) failNTimes(_ context.Context, times int, id int) error {
 func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQueue, wfType string, isLocalActivity bool) error {
 	a.append("inspectActivityInfo")
 	if !activity.IsActivity(ctx) {
-		return fmt.Errorf("expected InActivity to return %v but got %v", true, activity.InActivity(ctx))
+		return fmt.Errorf("expected InActivity to return %v but got %v", true, activity.IsActivity(ctx))
 	}
 
 	info := activity.GetInfo(ctx)
