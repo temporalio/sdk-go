@@ -58,6 +58,7 @@ type (
 		StartedTime       time.Time     // Time of activity start
 		Deadline          time.Time     // Time of activity timeout
 		Attempt           int32         // Attempt starts from 1, and increased by 1 for every retry if retry policy is specified.
+		IsLocalActivity   bool          // true if it is a local activity
 	}
 
 	// RegisterActivityOptions consists of options for registering an activity
