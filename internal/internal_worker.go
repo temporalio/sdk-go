@@ -1352,6 +1352,9 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 		FailureConverter:      aw.failureConverter,
 		ContextPropagators:    aw.contextPropagators,
 		EnableLoggingInReplay: aw.enableLoggingInReplay,
+		// Hardcoding NopHandler avoids "No metrics handler configured for temporal worker"
+		// logs during replay.
+		MetricsHandler: metrics.NopHandler,
 		capabilities: &workflowservice.GetSystemInfoResponse_Capabilities{
 			SignalAndQueryHeader:            true,
 			InternalErrorDifferentiation:    true,
