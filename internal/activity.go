@@ -180,6 +180,12 @@ func HasHeartbeatDetails(ctx context.Context) bool {
 	return getActivityOutboundInterceptor(ctx).HasHeartbeatDetails(ctx)
 }
 
+// IsActivity check if the context is an activity context from a normal or local activity.
+func IsActivity(ctx context.Context) bool {
+	a := ctx.Value(activityInterceptorContextKey)
+	return a != nil
+}
+
 // GetHeartbeatDetails extract heartbeat details from last failed attempt. This is used in combination with retry policy.
 // An activity could be scheduled with an optional retry policy on ActivityOptions. If the activity failed then server
 // would attempt to dispatch another activity task to retry according to the retry policy. If there was heartbeat
