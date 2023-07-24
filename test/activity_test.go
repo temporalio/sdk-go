@@ -153,8 +153,12 @@ func (a *Activities) failNTimes(_ context.Context, times int, id int) error {
 	return errFailOnPurpose
 }
 
-func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQueue, wfType string) error {
+func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQueue, wfType string, isLocalActivity bool) error {
 	a.append("inspectActivityInfo")
+	if !activity.IsActivity(ctx) {
+		return fmt.Errorf("expected InActivity to return %v but got %v", true, activity.IsActivity(ctx))
+	}
+
 	info := activity.GetInfo(ctx)
 	if info.WorkflowNamespace != namespace {
 		return fmt.Errorf("expected namespace %v but got %v", namespace, info.WorkflowNamespace)
@@ -164,6 +168,9 @@ func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQue
 	}
 	if info.TaskQueue != taskQueue {
 		return fmt.Errorf("expected taskQueue %v but got %v", taskQueue, info.TaskQueue)
+	}
+	if info.IsLocalActivity != isLocalActivity {
+		return fmt.Errorf("expected IsLocalActivity %v but got %v", isLocalActivity, info.IsLocalActivity)
 	}
 	return nil
 }
