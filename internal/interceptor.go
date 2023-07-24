@@ -27,6 +27,7 @@ import (
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -405,8 +406,9 @@ type ClientTerminateWorkflowInput struct {
 // ClientQueryWorkflowInput is the input to
 // ClientOutboundInterceptor.QueryWorkflow.
 type ClientQueryWorkflowInput struct {
-	WorkflowID string
-	RunID      string
-	QueryType  string
-	Args       []interface{}
+	WorkflowID           string
+	RunID                string
+	QueryType            string
+	Args                 []interface{}
+	QueryRejectCondition enumspb.QueryRejectCondition
 }
