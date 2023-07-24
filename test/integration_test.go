@@ -1535,6 +1535,17 @@ func (ts *IntegrationTestSuite) TestInterceptorCalls() {
 	ts.NoError(queryVal.Get(&queryRes))
 	ts.Equal("queryresult(queryarg)", queryRes)
 
+	// Query with options
+	response, err := ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+		WorkflowID: run.GetID(),
+		RunID:      run.GetRunID(),
+		QueryType:  "query",
+		Args:       []interface{}{"queryarg"},
+	})
+	ts.NoError(err)
+	ts.NoError(response.QueryResult.Get(&queryRes))
+	ts.Equal("queryresult(queryarg)", queryRes)
+
 	// Send signal
 	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
 
