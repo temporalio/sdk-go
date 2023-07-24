@@ -101,3 +101,8 @@ func GetHeartbeatDetails(ctx context.Context, d ...interface{}) error {
 func GetWorkerStopChannel(ctx context.Context) <-chan struct{} {
 	return internal.GetWorkerStopChannel(ctx)
 }
+
+// IsActivity check if the context is an activity context from a normal or local activity.
+func IsActivity(ctx context.Context) bool {
+	return internal.IsActivity(ctx)
+}

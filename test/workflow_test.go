@@ -1058,7 +1058,7 @@ func (w *Workflows) InspectActivityInfo(ctx workflow.Context) error {
 	wfType := info.WorkflowType.Name
 	taskQueue := info.TaskQueueName
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
-	return workflow.ExecuteActivity(ctx, "inspectActivityInfo", namespace, taskQueue, wfType).Get(ctx, nil)
+	return workflow.ExecuteActivity(ctx, "inspectActivityInfo", namespace, taskQueue, wfType, false).Get(ctx, nil)
 }
 
 func (w *Workflows) InspectLocalActivityInfo(ctx workflow.Context) error {
@@ -1069,7 +1069,7 @@ func (w *Workflows) InspectLocalActivityInfo(ctx workflow.Context) error {
 	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
 	var activities *Activities
 	return workflow.ExecuteLocalActivity(
-		ctx, activities.InspectActivityInfo, namespace, taskQueue, wfType).Get(ctx, nil)
+		ctx, activities.InspectActivityInfo, namespace, taskQueue, wfType, true).Get(ctx, nil)
 }
 
 func (w *Workflows) WorkflowWithLocalActivityCtxPropagation(ctx workflow.Context) (string, error) {

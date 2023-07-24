@@ -378,6 +378,7 @@ func (a *activityEnvironmentInterceptor) GetInfo(ctx context.Context) ActivityIn
 		Attempt:           a.env.attempt,
 		WorkflowType:      a.env.workflowType,
 		WorkflowNamespace: a.env.workflowNamespace,
+		IsLocalActivity:   a.env.isLocalActivity,
 	}
 }
 
