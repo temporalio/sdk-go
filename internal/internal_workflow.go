@@ -1056,9 +1056,11 @@ func (d *dispatcherImpl) newState(name string) *coroutineState {
 func (d *dispatcherImpl) ExecuteUntilAllBlocked(deadlockDetectionTimeout time.Duration) (err error) {
 	d.mutex.Lock()
 	if d.closed {
+		d.mutex.Unlock()
 		panic("dispatcher is closed")
 	}
 	if d.executing {
+		d.mutex.Unlock()
 		panic("call to ExecuteUntilAllBlocked (possibly from a coroutine) while it is already running")
 	}
 	d.executing = true
