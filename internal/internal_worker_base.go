@@ -194,7 +194,7 @@ type (
 	}
 )
 
-// SetRetryLongPollGracePeriod sets the amount of time a long poller retrys on
+// SetRetryLongPollGracePeriod sets the amount of time a long poller retries on
 // fatal errors before it actually fails. For test use only,
 // not safe to call with a running worker.
 func SetRetryLongPollGracePeriod(period time.Duration) {
@@ -310,6 +310,36 @@ func (bw *baseWorker) runPoller() {
 	}
 }
 
+func (bw *baseWorker) tryReserveSlot() bool {
+	if !bw.isWorkerStarted || bw.isStop() {
+		return false
+	}
+	// Reserve a executor slot via a non-blocking attempt to take a poller
+	// request entry which essentially reserves a slot
+	select {
+	case <-bw.pollerRequestCh:
+		return true
+	default:
+		return false
+	}
+}
+
+func (bw *baseWorker) releaseSlot() {
+	// Like other sends to this channel, we assume there is room because we
+	// reserved it, so we make a blocking send.
+	bw.pollerRequestCh <- struct{}{}
+}
+
+func (bw *baseWorker) processTaskAsync(task interface{}, callback func()) {
+	bw.stopWG.Add(1)
+	go func() {
+		if callback != nil {
+			defer callback()
+		}
+		bw.processTask(task)
+	}()
+}
+
 func (bw *baseWorker) runTaskDispatcher() {
 	defer bw.stopWG.Done()
 
@@ -323,15 +353,14 @@ func (bw *baseWorker) runTaskDispatcher() {
 		case <-bw.stopCh:
 			return
 		case task := <-bw.taskQueueCh:
-			// for non-polled-task (local activity result as task), we don't need to rate limit
+			// for non-polled-task (local activity result as task or eager task), we don't need to rate limit
 			_, isPolledTask := task.(*polledTask)
 			if isPolledTask && bw.taskLimiter.Wait(bw.limiterContext) != nil {
 				if bw.isStop() {
 					return
 				}
 			}
-			bw.stopWG.Add(1)
-			go bw.processTask(task)
+			bw.processTaskAsync(task, nil)
 		}
 	}
 }

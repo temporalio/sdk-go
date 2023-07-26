@@ -1562,6 +1562,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		} else {
 			workflowWorker = newWorkflowWorker(client.workflowService, workerParams, nil, registry)
 		}
+		if client.eagerDispatcher != nil {
+			client.eagerDispatcher.registerWorker(workflowWorker)
+		}
 	}
 
 	// activity types.
@@ -1569,7 +1572,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	if !options.LocalActivityWorkerOnly {
 		activityWorker = newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
 		// Set the activity worker on the eager executor
-		workerParams.eagerActivityExecutor.activityWorker = activityWorker
+		workerParams.eagerActivityExecutor.activityWorker = activityWorker.worker
 	}
 
 	var sessionWorker *sessionWorker

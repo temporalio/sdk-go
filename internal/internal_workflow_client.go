@@ -92,6 +92,7 @@ type (
 		excludeInternalFromRetry *uberatomic.Bool
 		capabilities             *workflowservice.GetSystemInfoResponse_Capabilities
 		capabilitiesLock         sync.RWMutex
+		eagerDispatcher          *eagerWorkflowDispatcher
 
 		// The pointer value is shared across multiple clients. If non-nil, only
 		// access/mutate atomically.
@@ -1443,7 +1444,9 @@ func serializeSearchAttributes(input map[string]interface{}) (*commonpb.SearchAt
 	return &commonpb.SearchAttributes{IndexedFields: attr}, nil
 }
 
-type workflowClientInterceptor struct{ client *WorkflowClient }
+type workflowClientInterceptor struct {
+	client *WorkflowClient
+}
 
 func (w *workflowClientInterceptor) ExecuteWorkflow(
 	ctx context.Context,
@@ -1506,6 +1509,11 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		Header:                   header,
 	}
 
+	var eagerExecutor *eagerWorkflowExecutor
+	if in.Options.EnableEagerStart && w.client.capabilities.GetEagerWorkflowStart() && w.client.eagerDispatcher != nil {
+		eagerExecutor = w.client.eagerDispatcher.applyToRequest(startRequest)
+	}
+
 	var response *workflowservice.StartWorkflowExecutionResponse
 
 	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(
@@ -1514,7 +1522,12 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 	defer cancel()
 
 	response, err = w.client.workflowService.StartWorkflowExecution(grpcCtx, startRequest)
-
+	eagerWorkflowTask := response.GetEagerWorkflowTask()
+	if eagerWorkflowTask != nil && eagerExecutor != nil {
+		eagerExecutor.handleResponse(eagerWorkflowTask)
+	} else if eagerExecutor != nil {
+		eagerExecutor.release()
+	}
 	// Allow already-started error
 	var runID string
 	if e, ok := err.(*serviceerror.WorkflowExecutionAlreadyStarted); ok && !in.Options.WorkflowExecutionErrorWhenAlreadyStarted {
