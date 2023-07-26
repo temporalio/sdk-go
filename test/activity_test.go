@@ -76,6 +76,23 @@ func LocalSleep(_ context.Context, delay time.Duration) error {
 	return nil
 }
 
+func (a *Activities) ActivityToBeCanceled(ctx context.Context) (string, error) {
+	a.append("ActivityToBeCanceled")
+	for {
+		select {
+		case <-time.After(1 * time.Second):
+			activity.RecordHeartbeat(ctx, "")
+		case <-ctx.Done():
+			return "I am canceled by Done", nil
+		}
+	}
+}
+
+func (a *Activities) EmptyActivity(ctx context.Context) error {
+	a.append("EmptyActivity")
+	return nil
+}
+
 func (a *Activities) HeartbeatAndSleep(ctx context.Context, seq int, delay time.Duration) (int, error) {
 	a.append("heartbeatAndSleep")
 	activity.GetLogger(ctx).Info("Running HeartbeatAndSleep activity")

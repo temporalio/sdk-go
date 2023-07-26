@@ -912,6 +912,8 @@ func (h *commandsHelper) setCurrentWorkflowTaskStartedEventID(workflowTaskStarte
 	// We must change the counter here so that others who mutate
 	// commandsCancelledDuringWFCancellation know it has since been reset
 	h.nextCommandEventIDResetCounter++
+	// Once we have handled the cancellation, we can reset the flag
+	h.workflowExecutionIsCancelling = false
 }
 
 func (h *commandsHelper) getNextID() int64 {
