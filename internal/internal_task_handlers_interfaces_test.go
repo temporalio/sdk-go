@@ -53,11 +53,19 @@ type sampleWorkflowTaskHandler struct{}
 
 func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(
 	workflowTask *workflowTask,
+	_ *workflowExecutionContextImpl,
 	_ workflowTaskHeartbeatFunc,
-) (interface{}, EventLevelResetter, error) {
+) (interface{}, error) {
 	return &workflowservice.RespondWorkflowTaskCompletedRequest{
 		TaskToken: workflowTask.task.TaskToken,
-	}, nil, nil
+	}, nil
+}
+
+func (wth sampleWorkflowTaskHandler) GetOrCreateWorkflowContext(
+	task *workflowservice.PollWorkflowTaskQueueResponse,
+	historyIterator HistoryIterator,
+) (*workflowExecutionContextImpl, error) {
+	return nil, nil
 }
 
 func newSampleWorkflowTaskHandler() *sampleWorkflowTaskHandler {
@@ -115,7 +123,7 @@ func (s *PollLayerInterfacesTestSuite) TestProcessWorkflowTaskInterface() {
 
 	// Process task and respond to the service.
 	taskHandler := newSampleWorkflowTaskHandler()
-	request, _, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: response}, nil)
+	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: response}, nil, nil)
 	completionRequest := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	s.NoError(err)
 

@@ -1623,7 +1623,10 @@ func (s *internalWorkerTestSuite) testWorkflowTaskHandlerHelper(params workerExe
 	}
 
 	r := newWorkflowTaskHandler(params, nil, s.registry)
-	_, _, err := r.ProcessWorkflowTask(&workflowTask{task: task}, nil)
+	wfctx, err := r.GetOrCreateWorkflowContext(task, nil)
+	s.NoError(err)
+	_, err = r.ProcessWorkflowTask(&workflowTask{task: task}, wfctx, nil)
+	wfctx.Unlock()
 	s.NoError(err)
 }
 
