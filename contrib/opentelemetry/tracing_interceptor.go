@@ -55,6 +55,11 @@ type TracerOptions struct {
 	// DisableQueryTracing can be set to disable query tracing.
 	DisableQueryTracing bool
 
+	// AllowInvalidParentSpans will swallow errors interpreting parent
+	// spans from headers. Useful when migrating from one tracing library
+	// to another, while workflows/activities may be in progress.
+	AllowInvalidParentSpans bool
+
 	// TextMapPropagator is the propagator to use for serializing spans. If not
 	// set, this uses DefaultTextMapPropagator, not the OpenTelemetry global one.
 	// To use the OpenTelemetry global one, set this value to the result of the
