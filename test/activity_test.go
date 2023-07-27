@@ -71,6 +71,15 @@ func (a *Activities) Sleep(_ context.Context, delay time.Duration) error {
 	return nil
 }
 
+func (a *Activities) SleepN(ctx context.Context, delay time.Duration, times int) (int32, error) {
+	a.append("sleepN")
+	if activity.GetInfo(ctx).Attempt >= int32(times) {
+		return activity.GetInfo(ctx).Attempt, nil
+	}
+	time.Sleep(delay)
+	return activity.GetInfo(ctx).Attempt, nil
+}
+
 func LocalSleep(_ context.Context, delay time.Duration) error {
 	time.Sleep(delay)
 	return nil
@@ -185,6 +194,15 @@ func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQue
 	}
 	if info.TaskQueue != taskQueue {
 		return fmt.Errorf("expected taskQueue %v but got %v", taskQueue, info.TaskQueue)
+	}
+	if info.Deadline.IsZero() {
+		return errors.New("expected non zero deadline")
+	}
+	if info.StartedTime.IsZero() {
+		return errors.New("expected non zero started time")
+	}
+	if info.ScheduledTime.IsZero() {
+		return errors.New("expected non zero scheduled time")
 	}
 	if info.IsLocalActivity != isLocalActivity {
 		return fmt.Errorf("expected IsLocalActivity %v but got %v", isLocalActivity, info.IsLocalActivity)

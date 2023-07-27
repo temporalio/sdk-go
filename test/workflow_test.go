@@ -1159,6 +1159,46 @@ func (w *Workflows) WorkflowWithParallelLongLocalActivityAndHeartbeat(ctx workfl
 	return nil
 }
 
+func (w *Workflows) WorkflowWithLocalActivityStartToCloseTimeout(ctx workflow.Context) error {
+	// Validate that local activities respect StartToCloseTimeout and retry correctly
+	ao := w.defaultLocalActivityOptions()
+	ao.ScheduleToCloseTimeout = 10 * time.Second
+	ao.StartToCloseTimeout = 1 * time.Second
+	ao.RetryPolicy = &temporal.RetryPolicy{
+		MaximumInterval: time.Second,
+		MaximumAttempts: 5,
+	}
+	ctx = workflow.WithLocalActivityOptions(ctx, ao)
+
+	var activities *Activities
+	future := workflow.ExecuteLocalActivity(ctx, activities.SleepN, 3*time.Second, 3)
+	var count int32
+	err := future.Get(ctx, &count)
+	if err != nil {
+		return err
+	}
+	if count != 3 {
+		return fmt.Errorf("expected 3, got %v", count)
+	}
+	// Validate the correct timeout error is returned
+	ao.StartToCloseTimeout = 1 * time.Second
+	ao.RetryPolicy = &temporal.RetryPolicy{
+		MaximumInterval: time.Second,
+		MaximumAttempts: 1,
+	}
+	ctx = workflow.WithLocalActivityOptions(ctx, ao)
+	future = workflow.ExecuteLocalActivity(ctx, activities.SleepN, 3*time.Second, 3)
+	err = future.Get(ctx, nil)
+	var timeoutErr *temporal.TimeoutError
+	if errors.As(err, &timeoutErr) {
+		if timeoutErr.TimeoutType() != enumspb.TIMEOUT_TYPE_START_TO_CLOSE {
+			return fmt.Errorf("expected start to close timeout, got %v", timeoutErr.TimeoutType())
+		}
+		return nil
+	}
+	return errors.New("expected timeout error")
+}
+
 func (w *Workflows) WorkflowWithLocalActivityRetries(ctx workflow.Context) error {
 	laOpts := w.defaultLocalActivityOptions()
 	laOpts.RetryPolicy = &internal.RetryPolicy{
@@ -2342,6 +2382,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityStartWhenTimerCancel)
 	worker.RegisterWorkflow(w.WorkflowWithParallelSideEffects)
 	worker.RegisterWorkflow(w.WorkflowWithParallelMutableSideEffects)
+	worker.RegisterWorkflow(w.WorkflowWithLocalActivityStartToCloseTimeout)
 	worker.RegisterWorkflow(w.LocalActivityStaleCache)
 	worker.RegisterWorkflow(w.UpdateInfoWorkflow)
 	worker.RegisterWorkflow(w.SignalWorkflow)
