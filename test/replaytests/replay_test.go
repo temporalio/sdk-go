@@ -367,6 +367,17 @@ func (s *replayTestSuite) TestVersionAndMutableSideEffect() {
 	s.NoError(err)
 }
 
+func (s *replayTestSuite) TestCancelOrder() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(CancelOrderSelectWorkflow)
+
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replay-tests-cancel-order.json")
+	s.NoError(err)
+
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replay-tests-cancel-order-timer-resolved.json")
+	s.NoError(err)
+}
+
 type captureConverter struct {
 	converter.DataConverter
 	toPayloads   []interface{}

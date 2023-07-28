@@ -1575,6 +1575,59 @@ func (w *Workflows) CronWorkflow(ctx workflow.Context) (int, error) {
 	return retme, nil
 }
 
+func (w *Workflows) WaitForCancelWithDisconnectedContextWorkflow(ctx workflow.Context) (err error) {
+	ao := workflow.ActivityOptions{
+		StartToCloseTimeout: 1 * time.Minute,
+		HeartbeatTimeout:    5 * time.Second,
+		WaitForCancellation: true,
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+
+	var activities *Activities
+	defer func() {
+		if !errors.Is(ctx.Err(), workflow.ErrCanceled) {
+			return
+		}
+		// When the Workflow is canceled, it has to get a new disconnected context to execute any Activities
+		newCtx, _ := workflow.NewDisconnectedContext(ctx)
+		err = workflow.ExecuteActivity(newCtx, activities.EmptyActivity).Get(newCtx, nil)
+	}()
+
+	//Create selector
+	s := workflow.NewSelector(ctx)
+
+	newCtx, _ := workflow.NewDisconnectedContext(ctx)
+	newCtx, cancel := workflow.WithCancel(newCtx)
+
+	timer1 := workflow.NewTimer(newCtx, 5*time.Minute)
+
+	err = workflow.SetQueryHandler(newCtx, "timer-created", func() (bool, error) {
+		return true, nil
+	})
+	if err != nil {
+		return err
+	}
+
+	s.AddFuture(timer1, func(f workflow.Future) {
+		err = f.Get(newCtx, nil)
+		if !errors.Is(ctx.Err(), workflow.ErrCanceled) {
+			panic("error is not canceled error")
+		}
+	})
+
+	s.AddReceive(ctx.Done(), func(c workflow.ReceiveChannel, more bool) {
+		c.Receive(ctx, nil)
+		cancel()
+		s.Select(ctx)
+	})
+
+	s.Select(ctx)
+
+	var result string
+	err = workflow.ExecuteActivity(ctx, activities.EmptyActivity).Get(ctx, &result)
+	return
+}
+
 func (w *Workflows) CancelTimerConcurrentWithOtherCommandWorkflow(ctx workflow.Context) (int, error) {
 	ao := workflow.ActivityOptions{
 		ScheduleToStartTimeout: time.Minute,
@@ -2251,6 +2304,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.CancelTimerAfterActivity)
 	worker.RegisterWorkflow(w.CancelTimerViaDeferAfterWFTFailure)
 	worker.RegisterWorkflow(w.CascadingCancellation)
+	worker.RegisterWorkflow(w.WaitForCancelWithDisconnectedContextWorkflow)
 	worker.RegisterWorkflow(w.ChildWorkflowRetryOnError)
 	worker.RegisterWorkflow(w.ChildWorkflowRetryOnTimeout)
 	worker.RegisterWorkflow(w.ChildWorkflowSuccess)
