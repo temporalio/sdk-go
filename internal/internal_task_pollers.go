@@ -94,6 +94,7 @@ type (
 		identity         string
 		service          workflowservice.WorkflowServiceClient
 		taskHandler      WorkflowTaskHandler
+		contextManager   WorkflowContextManager
 		logger           log.Logger
 		dataConverter    converter.DataConverter
 		failureConverter converter.FailureConverter
@@ -265,6 +266,7 @@ func (bp *basePoller) getCapabilities() *workflowservice.GetSystemInfoResponse_C
 // newWorkflowTaskPoller creates a new workflow task poller which must have a one to one relationship to workflow worker
 func newWorkflowTaskPoller(
 	taskHandler WorkflowTaskHandler,
+	contextManager WorkflowContextManager,
 	service workflowservice.WorkflowServiceClient,
 	params workerExecutionParameters,
 ) *workflowTaskPoller {
@@ -281,6 +283,7 @@ func newWorkflowTaskPoller(
 		taskQueueName:                params.TaskQueue,
 		identity:                     params.Identity,
 		taskHandler:                  taskHandler,
+		contextManager:               contextManager,
 		logger:                       params.Logger,
 		dataConverter:                params.DataConverter,
 		failureConverter:             params.FailureConverter,
@@ -335,14 +338,22 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 	// close doneCh so local activity worker won't get blocked forever when trying to send back result to laResultCh.
 	defer close(doneCh)
 
+	wfctx, err := wtp.contextManager.GetOrCreateWorkflowContext(task.task, task.historyIterator)
+	if err != nil {
+		return err
+	}
+	var taskErr error
+	defer func() { wfctx.Unlock(taskErr) }()
+
 	for {
-		var response *workflowservice.RespondWorkflowTaskCompletedResponse
 		startTime := time.Now()
 		task.doneCh = doneCh
 		task.laResultCh = laResultCh
 		task.laRetryCh = laRetryCh
-		completedRequest, resetter, err := wtp.taskHandler.ProcessWorkflowTask(
+		var completedRequest interface{}
+		completedRequest, taskErr = wtp.taskHandler.ProcessWorkflowTask(
 			task,
+			wfctx,
 			func(response interface{}, startTime time.Time) (*workflowTask, error) {
 				wtp.logger.Debug("Force RespondWorkflowTaskCompleted.", "TaskStartedEventID", task.task.GetStartedEventId())
 				heartbeatResponse, err := wtp.RespondTaskCompletedWithMetrics(response, nil, task.task, startTime)
@@ -359,22 +370,22 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 				return task, nil
 			},
 		)
-		if completedRequest == nil && err == nil {
+		if completedRequest == nil && taskErr == nil {
 			return nil
 		}
-		if _, ok := err.(workflowTaskHeartbeatError); ok {
-			return err
+		if _, ok := taskErr.(workflowTaskHeartbeatError); ok {
+			return taskErr
 		}
-		response, err = wtp.RespondTaskCompletedWithMetrics(completedRequest, err, task.task, startTime)
+		response, err := wtp.RespondTaskCompletedWithMetrics(completedRequest, taskErr, task.task, startTime)
 		if err != nil {
 			return err
 		}
 
 		if eventLevel := response.GetResetHistoryEventId(); eventLevel != 0 {
-			resetter(eventLevel)
+			wfctx.SetPreviousStartedEventID(eventLevel)
 		}
 
-		if response == nil || response.WorkflowTask == nil {
+		if response == nil || response.WorkflowTask == nil || taskErr != nil {
 			return nil
 		}
 
@@ -407,7 +418,10 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 	return
 }
 
-func (wtp *workflowTaskPoller) RespondTaskCompleted(completedRequest interface{}, task *workflowservice.PollWorkflowTaskQueueResponse) (response *workflowservice.RespondWorkflowTaskCompletedResponse, err error) {
+func (wtp *workflowTaskPoller) RespondTaskCompleted(
+	completedRequest interface{},
+	task *workflowservice.PollWorkflowTaskQueueResponse,
+) (response *workflowservice.RespondWorkflowTaskCompletedResponse, err error) {
 	ctx := context.Background()
 	// Respond task completion.
 	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(
