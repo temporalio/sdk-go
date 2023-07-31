@@ -948,6 +948,10 @@ func (w *Workflows) ConsistentQueryWorkflow(ctx workflow.Context, delay time.Dur
 	return nil
 }
 
+func (w *Workflows) ActivityTimeoutsWorkflow(ctx workflow.Context, activityOptions workflow.ActivityOptions) error {
+	activityCtx := workflow.WithActivityOptions(ctx, activityOptions)
+	return workflow.ExecuteActivity(activityCtx, "Sleep", time.Second).Get(ctx, nil)
+}
 func (w *Workflows) SignalWorkflow(ctx workflow.Context) (*commonpb.WorkflowType, error) {
 	s := workflow.NewSelector(ctx)
 
@@ -2289,6 +2293,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.UpdateInfoWorkflow)
 	worker.RegisterWorkflow(w.SignalWorkflow)
 	worker.RegisterWorkflow(w.CronWorkflow)
+	worker.RegisterWorkflow(w.ActivityTimeoutsWorkflow)
 	worker.RegisterWorkflow(w.CancelTimerConcurrentWithOtherCommandWorkflow)
 	worker.RegisterWorkflow(w.CancelMultipleCommandsOverMultipleTasks)
 	worker.RegisterWorkflow(w.CancelChildAndExecuteActivityRace)
