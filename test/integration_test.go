@@ -1205,6 +1205,18 @@ func (ts *IntegrationTestSuite) TestMutatingUpdateValidator() {
 	ts.Nil(ts.client.CancelWorkflow(ctx, "test-mutating-update-validator", ""))
 }
 
+func (ts *IntegrationTestSuite) TestWaitForCancelWithDisconnectedContext() {
+	ctx := context.Background()
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-wait-for-cancel-with-disconnected-contex"), ts.workflows.WaitForCancelWithDisconnectedContextWorkflow)
+	ts.Nil(err)
+
+	ts.waitForQueryTrue(run, "timer-created", 1)
+
+	ts.Nil(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+	ts.Nil(run.Get(ctx, nil))
+}
+
 func (ts *IntegrationTestSuite) TestMutatingSideEffect() {
 	ctx := context.Background()
 	err := ts.executeWorkflowWithContextAndOption(ctx, ts.startWorkflowOptions("test-mutating-side-effect"), ts.workflows.MutatingSideEffectWorkflow, nil)

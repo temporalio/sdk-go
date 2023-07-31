@@ -494,7 +494,6 @@ func validateAndSerializeMemo(memoMap map[string]interface{}, dc converter.DataC
 
 func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
 	wrappedHandler := func() {
-		wc.commandsHelper.workflowExecutionIsCancelling = true
 		handler()
 	}
 	wc.cancelHandler = wrappedHandler
