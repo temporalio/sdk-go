@@ -100,7 +100,6 @@ type (
 		// better to rely on the default value.
 		// ScheduleToStartTimeout is always non-retryable. Retrying after this timeout doesn't make sense as it would
 		// just put the Activity Task back into the same Task Queue.
-		// If ScheduleToClose is not provided then this timeout is required.
 		// Optional: Defaults to unlimited.
 		ScheduleToStartTimeout time.Duration
 
@@ -109,7 +108,7 @@ type (
 		// to detect that an Activity that didn't complete on time. So this timeout should be as short as the longest
 		// possible execution of the Activity body. Potentially long running Activities must specify HeartbeatTimeout
 		// and call Activity.RecordHeartbeat(ctx, "my-heartbeat") periodically for timely failure detection.
-		// If ScheduleToClose is not provided then this timeout is required: Defaults to the ScheduleToCloseTimeout value.
+		// Either this option or ScheduleToClose is required: Defaults to the ScheduleToCloseTimeout value.
 		StartToCloseTimeout time.Duration
 
 		// HeartbeatTimeout - Heartbeat interval. Activity must call Activity.RecordHeartbeat(ctx, "my-heartbeat")

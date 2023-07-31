@@ -1142,6 +1142,22 @@ func (ts *IntegrationTestSuite) TestWorkflowWithParallelSideEffects() {
 	ts.NoError(ts.executeWorkflow("test-wf-parallel-side-effects", ts.workflows.WorkflowWithParallelSideEffects, nil))
 }
 
+func (ts *IntegrationTestSuite) TestActivityTimeoutsWorkflow() {
+	ts.NoError(ts.executeWorkflow("test-activity-timeout-workflow", ts.workflows.ActivityTimeoutsWorkflow, nil, workflow.ActivityOptions{
+		ScheduleToCloseTimeout: 5 * time.Second,
+	}))
+
+	ts.NoError(ts.executeWorkflow("test-activity-timeout-workflow", ts.workflows.ActivityTimeoutsWorkflow, nil, workflow.ActivityOptions{
+		StartToCloseTimeout: 5 * time.Second,
+	}))
+
+	ts.Error(ts.executeWorkflow("test-activity-timeout-workflow", ts.workflows.ActivityTimeoutsWorkflow, nil, workflow.ActivityOptions{}))
+	ts.Error(ts.executeWorkflow("test-activity-timeout-workflow", ts.workflows.ActivityTimeoutsWorkflow, nil, workflow.ActivityOptions{
+		ScheduleToStartTimeout: 5 * time.Second,
+	}))
+
+}
+
 func (ts *IntegrationTestSuite) TestWorkflowWithParallelSideEffectsUsingReplay() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflowWithOptions(ts.workflows.WorkflowWithParallelSideEffects, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
