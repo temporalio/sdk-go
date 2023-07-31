@@ -882,7 +882,6 @@ func (h *commandsHelper) setCurrentWorkflowTaskStartedEventID(workflowTaskStarte
 		d := curr.Value.(commandStateMachine)
 		command := d.getCommand()
 		if command != nil {
-			fmt.Printf("command: %v \n", command)
 			uncountedCommands += 1
 		}
 		curr = curr.Next()

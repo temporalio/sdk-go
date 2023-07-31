@@ -1593,7 +1593,6 @@ func (w *Workflows) WaitForCancelWithDisconnectedContextWorkflow(ctx workflow.Co
 		err = workflow.ExecuteActivity(newCtx, activities.EmptyActivity).Get(newCtx, nil)
 	}()
 
-	//Create selector
 	s := workflow.NewSelector(ctx)
 
 	newCtx, _ := workflow.NewDisconnectedContext(ctx)
