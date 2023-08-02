@@ -1194,6 +1194,9 @@ func (w *workflowExecutionContextImpl) CompleteWorkflowTask(workflowTask *workfl
 				task := eventHandler.pendingLaTasks[activityID]
 				task.wc = w
 				task.workflowTask = workflowTask
+
+				task.scheduledTime = time.Now()
+
 				if !w.laTunnel.sendTask(task) {
 					unstartedLaTasks[activityID] = struct{}{}
 					task.wc = nil

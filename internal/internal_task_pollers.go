@@ -578,18 +578,8 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 		return &localActivityResult{task: task, err: err}
 	}
 
-	timeout := task.params.ScheduleToCloseTimeout
-	if task.params.StartToCloseTimeout != 0 && task.params.StartToCloseTimeout < timeout {
-		timeout = task.params.StartToCloseTimeout
-	}
-	timeoutDuration := timeout
-	deadline := time.Now().Add(timeoutDuration)
-	if task.attempt > 1 && !task.expireTime.IsZero() && task.expireTime.Before(deadline) {
-		// this is attempt and expire time is before SCHEDULE_TO_CLOSE timeout
-		deadline = task.expireTime
-	}
-
-	ctx, cancel := context.WithDeadline(ctx, deadline)
+	info := getActivityEnv(ctx)
+	ctx, cancel := context.WithDeadline(ctx, info.deadline)
 	defer cancel()
 
 	task.Lock()
@@ -631,13 +621,14 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 		laResult, err = ae.ExecuteWithActualArgs(ctx, task.params.InputArgs)
 		executionLatency := time.Since(laStartTime)
 		metricsHandler.Timer(metrics.LocalActivityExecutionLatency).Record(executionLatency)
-		if executionLatency > timeoutDuration {
+		if time.Now().After(info.deadline) {
 			// If local activity takes longer than expected timeout, the context would already be DeadlineExceeded and
 			// the result would be discarded. Print a warning in this case.
 			lath.logger.Warn("LocalActivity takes too long to complete.",
 				"LocalActivityID", task.activityID,
 				"LocalActivityType", activityType,
 				"ScheduleToCloseTimeout", task.params.ScheduleToCloseTimeout,
+				"StartToCloseTimeout", task.params.StartToCloseTimeout,
 				"ActualExecutionDuration", executionLatency)
 		}
 	}(doneCh)
@@ -658,7 +649,11 @@ WaitResult:
 			metricsHandler.Counter(metrics.LocalActivityExecutionCanceledCounter).Inc(1)
 			return &localActivityResult{err: ErrCanceled, task: task}
 		} else if ctx.Err() == context.DeadlineExceeded {
-			return &localActivityResult{err: ErrDeadlineExceeded, task: task}
+			if task.params.ScheduleToCloseTimeout != 0 && time.Now().After(info.scheduledTime.Add(task.params.ScheduleToCloseTimeout)) {
+				return &localActivityResult{err: ErrDeadlineExceeded, task: task}
+			} else {
+				return &localActivityResult{err: NewTimeoutError("deadline exceeded", enumspb.TIMEOUT_TYPE_START_TO_CLOSE, nil), task: task}
+			}
 		} else {
 			// should not happen
 			return &localActivityResult{err: NewApplicationError("unexpected context done", "", true, nil), task: task}

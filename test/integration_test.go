@@ -1142,6 +1142,10 @@ func (ts *IntegrationTestSuite) TestWorkflowWithParallelSideEffects() {
 	ts.NoError(ts.executeWorkflow("test-wf-parallel-side-effects", ts.workflows.WorkflowWithParallelSideEffects, nil))
 }
 
+func (ts *IntegrationTestSuite) TestWorkflowWithLocalActivityStartToClose() {
+	ts.NoError(ts.executeWorkflow("test-wf-la-start-to-close", ts.workflows.WorkflowWithLocalActivityStartToCloseTimeout, nil))
+}
+
 func (ts *IntegrationTestSuite) TestActivityTimeoutsWorkflow() {
 	ts.NoError(ts.executeWorkflow("test-activity-timeout-workflow", ts.workflows.ActivityTimeoutsWorkflow, nil, workflow.ActivityOptions{
 		ScheduleToCloseTimeout: 5 * time.Second,

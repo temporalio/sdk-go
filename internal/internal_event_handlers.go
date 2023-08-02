@@ -184,6 +184,7 @@ type (
 		pastFirstWFT    bool   // Set true once this LA has lived for more than one workflow task
 		retryPolicy     *RetryPolicy
 		expireTime      time.Time
+		scheduledTime   time.Time // Time the activity was scheduled initially.
 		header          *commonpb.Header
 	}
 
@@ -682,12 +683,13 @@ func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActiv
 
 func newLocalActivityTask(params ExecuteLocalActivityParams, callback LocalActivityResultHandler, activityID string) *localActivityTask {
 	task := &localActivityTask{
-		activityID:  activityID,
-		params:      &params,
-		callback:    callback,
-		retryPolicy: params.RetryPolicy,
-		attempt:     params.Attempt,
-		header:      params.Header,
+		activityID:    activityID,
+		params:        &params,
+		callback:      callback,
+		retryPolicy:   params.RetryPolicy,
+		attempt:       params.Attempt,
+		header:        params.Header,
+		scheduledTime: time.Now(),
 	}
 
 	if params.ScheduleToCloseTimeout > 0 {

@@ -155,11 +155,13 @@ type (
 	// LocalActivityOptions stores local activity specific parameters that will be stored inside of a context.
 	LocalActivityOptions struct {
 		// ScheduleToCloseTimeout - The end to end timeout for the local activity including retries.
-		// This field is required.
+		// At least one of ScheduleToCloseTimeout or StartToCloseTimeout is required.
+		// defaults to StartToCloseTimeout if not set.
 		ScheduleToCloseTimeout time.Duration
 
 		// StartToCloseTimeout - The timeout for a single execution of the local activity.
-		// Optional: defaults to ScheduleToClose
+		// At least one of ScheduleToCloseTimeout or StartToCloseTimeout is required.
+		// defaults to ScheduleToCloseTimeout if not set.
 		StartToCloseTimeout time.Duration
 
 		// RetryPolicy specify how to retry activity if error happens.
@@ -253,25 +255,12 @@ func WithActivityTask(
 	contextPropagators []ContextPropagator,
 	interceptors []WorkerInterceptor,
 ) (context.Context, error) {
-	var deadline time.Time
 	scheduled := common.TimeValue(task.GetScheduledTime())
 	started := common.TimeValue(task.GetStartedTime())
 	scheduleToCloseTimeout := common.DurationValue(task.GetScheduleToCloseTimeout())
 	startToCloseTimeout := common.DurationValue(task.GetStartToCloseTimeout())
 	heartbeatTimeout := common.DurationValue(task.GetHeartbeatTimeout())
-
-	startToCloseDeadline := started.Add(startToCloseTimeout)
-	if scheduleToCloseTimeout > 0 {
-		scheduleToCloseDeadline := scheduled.Add(scheduleToCloseTimeout)
-		// Minimum of the two deadlines.
-		if scheduleToCloseDeadline.Before(startToCloseDeadline) {
-			deadline = scheduleToCloseDeadline
-		} else {
-			deadline = startToCloseDeadline
-		}
-	} else {
-		deadline = startToCloseDeadline
-	}
+	deadline := calculateActivityDeadline(scheduled, started, scheduleToCloseTimeout, startToCloseTimeout)
 
 	logger = log.With(logger,
 		tagActivityID, task.ActivityId,
@@ -332,6 +321,21 @@ func WithLocalActivityTask(
 		tagWorkflowID, task.params.WorkflowInfo.WorkflowExecution.ID,
 		tagRunID, task.params.WorkflowInfo.WorkflowExecution.RunID,
 	)
+	startedTime := time.Now()
+	scheduleToCloseTimeout := task.params.ScheduleToCloseTimeout
+	startToCloseTimeout := task.params.StartToCloseTimeout
+
+	if startToCloseTimeout == 0 {
+		startToCloseTimeout = scheduleToCloseTimeout
+	}
+	if scheduleToCloseTimeout == 0 {
+		scheduleToCloseTimeout = startToCloseTimeout
+	}
+	deadline := calculateActivityDeadline(task.scheduledTime, startedTime, scheduleToCloseTimeout, startToCloseTimeout)
+	if task.attempt > 1 && !task.expireTime.IsZero() && task.expireTime.Before(deadline) {
+		// this is attempt and expire time is before SCHEDULE_TO_CLOSE timeout
+		deadline = task.expireTime
+	}
 	return newActivityContext(ctx, interceptors, &activityEnvironment{
 		workflowType:      &workflowTypeLocal,
 		workflowNamespace: task.params.WorkflowInfo.Namespace,
@@ -342,6 +346,9 @@ func WithLocalActivityTask(
 		logger:            logger,
 		metricsHandler:    metricsHandler,
 		isLocalActivity:   true,
+		deadline:          deadline,
+		scheduledTime:     task.scheduledTime,
+		startedTime:       startedTime,
 		dataConverter:     dataConverter,
 		attempt:           task.attempt,
 	})
@@ -373,4 +380,16 @@ func newActivityContext(
 	ctx = context.WithValue(ctx, activityInterceptorContextKey, envInterceptor.outboundInterceptor)
 
 	return ctx, nil
+}
+
+func calculateActivityDeadline(scheduled, started time.Time, scheduleToCloseTimeout, startToCloseTimeout time.Duration) time.Time {
+	startToCloseDeadline := started.Add(startToCloseTimeout)
+	if scheduleToCloseTimeout > 0 {
+		scheduleToCloseDeadline := scheduled.Add(scheduleToCloseTimeout)
+		// Minimum of the two deadlines.
+		if scheduleToCloseDeadline.Before(startToCloseDeadline) {
+			return scheduleToCloseDeadline
+		}
+	}
+	return startToCloseDeadline
 }
