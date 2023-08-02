@@ -861,7 +861,6 @@ processWorkflowLoop:
 						}
 
 						laRetry.attempt++
-						laRetry.currentAttemptScheduledTime = time.Now()
 
 						if !wth.laTunnel.sendTask(laRetry) {
 							laRetry.attempt--
@@ -1197,7 +1196,6 @@ func (w *workflowExecutionContextImpl) CompleteWorkflowTask(workflowTask *workfl
 				task.workflowTask = workflowTask
 
 				task.scheduledTime = time.Now()
-				task.currentAttemptScheduledTime = task.scheduledTime
 
 				if !w.laTunnel.sendTask(task) {
 					unstartedLaTasks[activityID] = struct{}{}

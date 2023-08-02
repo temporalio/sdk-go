@@ -155,12 +155,12 @@ type (
 	// LocalActivityOptions stores local activity specific parameters that will be stored inside of a context.
 	LocalActivityOptions struct {
 		// ScheduleToCloseTimeout - The end to end timeout for the local activity including retries.
-		// At least on of ScheduleToCloseTimeout or StartToCloseTimeout is required.
+		// At least one of ScheduleToCloseTimeout or StartToCloseTimeout is required.
 		// defaults to StartToCloseTimeout if not set.
 		ScheduleToCloseTimeout time.Duration
 
 		// StartToCloseTimeout - The timeout for a single execution of the local activity.
-		// At least on of ScheduleToCloseTimeout or StartToCloseTimeout is required.
+		// At least one of ScheduleToCloseTimeout or StartToCloseTimeout is required.
 		// defaults to ScheduleToCloseTimeout if not set.
 		StartToCloseTimeout time.Duration
 
@@ -389,10 +389,7 @@ func calculateActivityDeadline(scheduled, started time.Time, scheduleToCloseTime
 		// Minimum of the two deadlines.
 		if scheduleToCloseDeadline.Before(startToCloseDeadline) {
 			return scheduleToCloseDeadline
-		} else {
-			return startToCloseDeadline
 		}
-	} else {
-		return startToCloseDeadline
 	}
+	return startToCloseDeadline
 }
