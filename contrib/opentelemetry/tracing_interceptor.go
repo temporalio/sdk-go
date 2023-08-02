@@ -130,10 +130,11 @@ func NewTracingInterceptor(options TracerOptions) (interceptor.Interceptor, erro
 
 func (t *tracer) Options() interceptor.TracerOptions {
 	return interceptor.TracerOptions{
-		SpanContextKey:       t.options.SpanContextKey,
-		HeaderKey:            t.options.HeaderKey,
-		DisableSignalTracing: t.options.DisableSignalTracing,
-		DisableQueryTracing:  t.options.DisableQueryTracing,
+		SpanContextKey:          t.options.SpanContextKey,
+		HeaderKey:               t.options.HeaderKey,
+		DisableSignalTracing:    t.options.DisableSignalTracing,
+		DisableQueryTracing:     t.options.DisableQueryTracing,
+		AllowInvalidParentSpans: t.options.AllowInvalidParentSpans,
 	}
 }
 
