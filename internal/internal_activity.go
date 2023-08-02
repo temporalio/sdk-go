@@ -217,7 +217,8 @@ func getValidatedLocalActivityOptions(ctx Context) (*ExecuteLocalActivityOptions
 	}
 	if p.ScheduleToCloseTimeout == 0 {
 		p.ScheduleToCloseTimeout = p.StartToCloseTimeout
-	} else {
+	}
+	if p.StartToCloseTimeout == 0 {
 		p.StartToCloseTimeout = p.ScheduleToCloseTimeout
 	}
 	return p, nil

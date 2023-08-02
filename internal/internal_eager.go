@@ -1,8 +1,6 @@
 // The MIT License
 //
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
+// Copyright (c) 2022 Temporal Technologies Inc.  All rights reserved.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -24,16 +22,14 @@
 
 package internal
 
-// Below are the metadata which will be embedded as part of headers in every RPC call made by this client to Temporal server.
-// Update to the metadata below is typically done by the Temporal team as part of a major feature or behavior change.
-
-const (
-	// SDKVersion is a semver (https://semver.org/) that represents the version of this Temporal GoSDK.
-	// Server validates if SDKVersion fits its supported range and rejects request if it doesn't.
-	SDKVersion = "1.24.0"
-
-	// SupportedServerVersions is a semver rages (https://github.com/blang/semver#ranges) of server versions that
-	// are supported by this Temporal SDK.
-	// Server validates if its version fits into SupportedServerVersions range and rejects request if it doesn't.
-	SupportedServerVersions = ">=1.0.0 <2.0.0"
-)
+// eagerWorker is the minimal worker interface needed for eager activities and workflows
+type eagerWorker interface {
+	// tryReserveSlot tries to reserver a task slot on the worker without blocking
+	// caller is expected to release the slot with releaseSlot
+	tryReserveSlot() bool
+	// releaseSlot release a task slot acquired by tryReserveSlot
+	releaseSlot()
+	// processTaskAsync process a new task on the worker asynchronously and
+	// call callback once complete
+	processTaskAsync(task interface{}, callback func())
+}

@@ -948,6 +948,10 @@ func (w *Workflows) ConsistentQueryWorkflow(ctx workflow.Context, delay time.Dur
 	return nil
 }
 
+func (w *Workflows) ActivityTimeoutsWorkflow(ctx workflow.Context, activityOptions workflow.ActivityOptions) error {
+	activityCtx := workflow.WithActivityOptions(ctx, activityOptions)
+	return workflow.ExecuteActivity(activityCtx, "Sleep", time.Second).Get(ctx, nil)
+}
 func (w *Workflows) SignalWorkflow(ctx workflow.Context) (*commonpb.WorkflowType, error) {
 	s := workflow.NewSelector(ctx)
 
@@ -1153,6 +1157,46 @@ func (w *Workflows) WorkflowWithParallelLongLocalActivityAndHeartbeat(ctx workfl
 	}
 
 	return nil
+}
+
+func (w *Workflows) WorkflowWithLocalActivityStartToCloseTimeout(ctx workflow.Context) error {
+	// Validate that local activities respect StartToCloseTimeout and retry correctly
+	ao := w.defaultLocalActivityOptions()
+	ao.ScheduleToCloseTimeout = 10 * time.Second
+	ao.StartToCloseTimeout = 1 * time.Second
+	ao.RetryPolicy = &temporal.RetryPolicy{
+		MaximumInterval: time.Second,
+		MaximumAttempts: 5,
+	}
+	ctx = workflow.WithLocalActivityOptions(ctx, ao)
+
+	var activities *Activities
+	future := workflow.ExecuteLocalActivity(ctx, activities.SleepN, 3*time.Second, 3)
+	var count int32
+	err := future.Get(ctx, &count)
+	if err != nil {
+		return err
+	}
+	if count != 3 {
+		return fmt.Errorf("expected 3, got %v", count)
+	}
+	// Validate the correct timeout error is returned
+	ao.StartToCloseTimeout = 1 * time.Second
+	ao.RetryPolicy = &temporal.RetryPolicy{
+		MaximumInterval: time.Second,
+		MaximumAttempts: 1,
+	}
+	ctx = workflow.WithLocalActivityOptions(ctx, ao)
+	future = workflow.ExecuteLocalActivity(ctx, activities.SleepN, 3*time.Second, 3)
+	err = future.Get(ctx, nil)
+	var timeoutErr *temporal.TimeoutError
+	if errors.As(err, &timeoutErr) {
+		if timeoutErr.TimeoutType() != enumspb.TIMEOUT_TYPE_START_TO_CLOSE {
+			return fmt.Errorf("expected start to close timeout, got %v", timeoutErr.TimeoutType())
+		}
+		return nil
+	}
+	return errors.New("expected timeout error")
 }
 
 func (w *Workflows) WorkflowWithLocalActivityRetries(ctx workflow.Context) error {
@@ -1569,6 +1613,58 @@ func (w *Workflows) CronWorkflow(ctx workflow.Context) (int, error) {
 	}
 
 	return retme, nil
+}
+
+func (w *Workflows) WaitForCancelWithDisconnectedContextWorkflow(ctx workflow.Context) (err error) {
+	ao := workflow.ActivityOptions{
+		StartToCloseTimeout: 1 * time.Minute,
+		HeartbeatTimeout:    5 * time.Second,
+		WaitForCancellation: true,
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+
+	var activities *Activities
+	defer func() {
+		if !errors.Is(ctx.Err(), workflow.ErrCanceled) {
+			return
+		}
+		// When the Workflow is canceled, it has to get a new disconnected context to execute any Activities
+		newCtx, _ := workflow.NewDisconnectedContext(ctx)
+		err = workflow.ExecuteActivity(newCtx, activities.EmptyActivity).Get(newCtx, nil)
+	}()
+
+	s := workflow.NewSelector(ctx)
+
+	newCtx, _ := workflow.NewDisconnectedContext(ctx)
+	newCtx, cancel := workflow.WithCancel(newCtx)
+
+	timer1 := workflow.NewTimer(newCtx, 5*time.Minute)
+
+	err = workflow.SetQueryHandler(newCtx, "timer-created", func() (bool, error) {
+		return true, nil
+	})
+	if err != nil {
+		return err
+	}
+
+	s.AddFuture(timer1, func(f workflow.Future) {
+		err = f.Get(newCtx, nil)
+		if !errors.Is(ctx.Err(), workflow.ErrCanceled) {
+			panic("error is not canceled error")
+		}
+	})
+
+	s.AddReceive(ctx.Done(), func(c workflow.ReceiveChannel, more bool) {
+		c.Receive(ctx, nil)
+		cancel()
+		s.Select(ctx)
+	})
+
+	s.Select(ctx)
+
+	var result string
+	err = workflow.ExecuteActivity(ctx, activities.EmptyActivity).Get(ctx, &result)
+	return
 }
 
 func (w *Workflows) CancelTimerConcurrentWithOtherCommandWorkflow(ctx workflow.Context) (int, error) {
@@ -2247,6 +2343,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.CancelTimerAfterActivity)
 	worker.RegisterWorkflow(w.CancelTimerViaDeferAfterWFTFailure)
 	worker.RegisterWorkflow(w.CascadingCancellation)
+	worker.RegisterWorkflow(w.WaitForCancelWithDisconnectedContextWorkflow)
 	worker.RegisterWorkflow(w.ChildWorkflowRetryOnError)
 	worker.RegisterWorkflow(w.ChildWorkflowRetryOnTimeout)
 	worker.RegisterWorkflow(w.ChildWorkflowSuccess)
@@ -2285,10 +2382,12 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityStartWhenTimerCancel)
 	worker.RegisterWorkflow(w.WorkflowWithParallelSideEffects)
 	worker.RegisterWorkflow(w.WorkflowWithParallelMutableSideEffects)
+	worker.RegisterWorkflow(w.WorkflowWithLocalActivityStartToCloseTimeout)
 	worker.RegisterWorkflow(w.LocalActivityStaleCache)
 	worker.RegisterWorkflow(w.UpdateInfoWorkflow)
 	worker.RegisterWorkflow(w.SignalWorkflow)
 	worker.RegisterWorkflow(w.CronWorkflow)
+	worker.RegisterWorkflow(w.ActivityTimeoutsWorkflow)
 	worker.RegisterWorkflow(w.CancelTimerConcurrentWithOtherCommandWorkflow)
 	worker.RegisterWorkflow(w.CancelMultipleCommandsOverMultipleTasks)
 	worker.RegisterWorkflow(w.CancelChildAndExecuteActivityRace)

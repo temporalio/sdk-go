@@ -634,7 +634,8 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 		params:     &params,
 		callback: func(lar *LocalActivityResultWrapper) {
 		},
-		attempt: 1,
+		attempt:       1,
+		scheduledTime: time.Now(),
 	}
 	taskHandler := localActivityTaskHandler{
 		userContext:    env.workerOptions.BackgroundActivityContext,

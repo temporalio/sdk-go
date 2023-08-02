@@ -290,18 +290,19 @@ func newWorkflowWorkerInternal(service workflowservice.WorkflowServiceClient, pa
 	} else {
 		taskHandler = newWorkflowTaskHandler(params, ppMgr, registry)
 	}
-	return newWorkflowTaskWorkerInternal(taskHandler, service, params, workerStopChannel, registry.interceptors)
+	return newWorkflowTaskWorkerInternal(taskHandler, taskHandler, service, params, workerStopChannel, registry.interceptors)
 }
 
 func newWorkflowTaskWorkerInternal(
 	taskHandler WorkflowTaskHandler,
+	contextManager WorkflowContextManager,
 	service workflowservice.WorkflowServiceClient,
 	params workerExecutionParameters,
 	stopC chan struct{},
 	interceptors []WorkerInterceptor,
 ) *workflowWorker {
 	ensureRequiredParams(&params)
-	poller := newWorkflowTaskPoller(taskHandler, service, params)
+	poller := newWorkflowTaskPoller(taskHandler, contextManager, service, params)
 	worker := newBaseWorker(baseWorkerOptions{
 		pollerCount:       params.MaxConcurrentWorkflowTaskQueuePollers,
 		pollerRate:        defaultPollerRate,
@@ -1367,7 +1368,12 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 		},
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
-	resp, _, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, nil)
+	wfctx, err := taskHandler.GetOrCreateWorkflowContext(task, iterator)
+	defer wfctx.Unlock(err)
+	if err != nil {
+		return err
+	}
+	resp, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, wfctx, nil)
 	if err != nil {
 		return err
 	}
@@ -1562,6 +1568,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		} else {
 			workflowWorker = newWorkflowWorker(client.workflowService, workerParams, nil, registry)
 		}
+		if client.eagerDispatcher != nil {
+			client.eagerDispatcher.registerWorker(workflowWorker)
+		}
 	}
 
 	// activity types.
@@ -1569,7 +1578,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	if !options.LocalActivityWorkerOnly {
 		activityWorker = newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
 		// Set the activity worker on the eager executor
-		workerParams.eagerActivityExecutor.activityWorker = activityWorker
+		workerParams.eagerActivityExecutor.activityWorker = activityWorker.worker
 	}
 
 	var sessionWorker *sessionWorker

@@ -1142,6 +1142,26 @@ func (ts *IntegrationTestSuite) TestWorkflowWithParallelSideEffects() {
 	ts.NoError(ts.executeWorkflow("test-wf-parallel-side-effects", ts.workflows.WorkflowWithParallelSideEffects, nil))
 }
 
+func (ts *IntegrationTestSuite) TestWorkflowWithLocalActivityStartToClose() {
+	ts.NoError(ts.executeWorkflow("test-wf-la-start-to-close", ts.workflows.WorkflowWithLocalActivityStartToCloseTimeout, nil))
+}
+
+func (ts *IntegrationTestSuite) TestActivityTimeoutsWorkflow() {
+	ts.NoError(ts.executeWorkflow("test-activity-timeout-workflow", ts.workflows.ActivityTimeoutsWorkflow, nil, workflow.ActivityOptions{
+		ScheduleToCloseTimeout: 5 * time.Second,
+	}))
+
+	ts.NoError(ts.executeWorkflow("test-activity-timeout-workflow", ts.workflows.ActivityTimeoutsWorkflow, nil, workflow.ActivityOptions{
+		StartToCloseTimeout: 5 * time.Second,
+	}))
+
+	ts.Error(ts.executeWorkflow("test-activity-timeout-workflow", ts.workflows.ActivityTimeoutsWorkflow, nil, workflow.ActivityOptions{}))
+	ts.Error(ts.executeWorkflow("test-activity-timeout-workflow", ts.workflows.ActivityTimeoutsWorkflow, nil, workflow.ActivityOptions{
+		ScheduleToStartTimeout: 5 * time.Second,
+	}))
+
+}
+
 func (ts *IntegrationTestSuite) TestWorkflowWithParallelSideEffectsUsingReplay() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflowWithOptions(ts.workflows.WorkflowWithParallelSideEffects, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
@@ -1187,6 +1207,18 @@ func (ts *IntegrationTestSuite) TestMutatingUpdateValidator() {
 
 	ts.Error(handler.Get(ctx, nil))
 	ts.Nil(ts.client.CancelWorkflow(ctx, "test-mutating-update-validator", ""))
+}
+
+func (ts *IntegrationTestSuite) TestWaitForCancelWithDisconnectedContext() {
+	ctx := context.Background()
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-wait-for-cancel-with-disconnected-contex"), ts.workflows.WaitForCancelWithDisconnectedContextWorkflow)
+	ts.Nil(err)
+
+	ts.waitForQueryTrue(run, "timer-created", 1)
+
+	ts.Nil(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+	ts.Nil(run.Get(ctx, nil))
 }
 
 func (ts *IntegrationTestSuite) TestMutatingSideEffect() {
@@ -3989,6 +4021,7 @@ func (ts *IntegrationTestSuite) startWorkflowOptions(wfID string) client.StartWo
 		WorkflowExecutionTimeout: 15 * time.Second,
 		WorkflowTaskTimeout:      time.Second,
 		WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
+		EnableEagerStart:         true,
 	}
 	if wfID == CronWorkflowID {
 		wfOptions.CronSchedule = "@every 1s"

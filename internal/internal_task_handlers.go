@@ -94,6 +94,11 @@ type (
 		laRetryCh chan *localActivityTask
 	}
 
+	// eagerWorkflowTask represents a workflow task sent from an eager workflow executor
+	eagerWorkflowTask struct {
+		task *workflowservice.PollWorkflowTaskQueueResponse
+	}
+
 	// activityTask wraps a activity task.
 	activityTask struct {
 		task *workflowservice.PollActivityTaskQueueResponse
@@ -469,11 +474,19 @@ func newWorkflowExecutionContext(
 	return workflowContext
 }
 
+// Lock acquires the lock on this context object, use Unlock(error) to release
+// the lock.
 func (w *workflowExecutionContextImpl) Lock() {
 	w.mutex.Lock()
 }
 
+// Unlock cleans up after the provided error and it's own internal view of the
+// workflow error state by clearing itself and removing itself from cache as
+// needed. It is an error to call this function without having called the Lock
+// function first and the behavior is undefined. Regardless of the error
+// handling involved, the context will be unlocked when this call returns.
 func (w *workflowExecutionContextImpl) Unlock(err error) {
+	defer w.mutex.Unlock()
 	if err != nil || w.err != nil || w.isWorkflowCompleted ||
 		(w.wth.cache.MaxWorkflowCacheSize() <= 0 && !w.hasPendingLocalActivityWork()) {
 		// TODO: in case of closed, it asumes the close command always succeed. need server side change to return
@@ -491,8 +504,6 @@ func (w *workflowExecutionContextImpl) Unlock(err error) {
 		// exited
 		w.clearState()
 	}
-
-	w.mutex.Unlock()
 }
 
 func (w *workflowExecutionContextImpl) getEventHandler() *workflowExecutionEventHandlerImpl {
@@ -626,7 +637,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 	return newWorkflowExecutionContext(workflowInfo, wth), nil
 }
 
-func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
+func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 	task *workflowservice.PollWorkflowTaskQueueResponse,
 	historyIterator HistoryIterator,
 ) (workflowContext *workflowExecutionContextImpl, err error) {
@@ -751,10 +762,11 @@ func (w *workflowExecutionContextImpl) resetStateIfDestroyed(task *workflowservi
 // ProcessWorkflowTask processes all the events of the workflow task.
 func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	workflowTask *workflowTask,
+	workflowContext *workflowExecutionContextImpl,
 	heartbeatFunc workflowTaskHeartbeatFunc,
-) (completeRequest interface{}, resetter EventLevelResetter, errRet error) {
+) (completeRequest interface{}, errRet error) {
 	if workflowTask == nil || workflowTask.task == nil {
-		return nil, nil, errors.New("nil workflow task provided")
+		return nil, errors.New("nil workflow task provided")
 	}
 	task := workflowTask.task
 	if task.History == nil || len(task.History.Events) == 0 {
@@ -763,11 +775,11 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 		}
 	}
 	if task.Query == nil && len(task.History.Events) == 0 {
-		return nil, nil, errors.New("nil or empty history")
+		return nil, errors.New("nil or empty history")
 	}
 
 	if task.Query != nil && len(task.Queries) != 0 {
-		return nil, nil, errors.New("invalid query workflow task")
+		return nil, errors.New("invalid query workflow task")
 	}
 
 	runID := task.WorkflowExecution.GetRunId()
@@ -781,18 +793,12 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 			tagPreviousStartedEventID, task.GetPreviousStartedEventId())
 	})
 
-	workflowContext, err := wth.getOrCreateWorkflowContext(task, workflowTask.historyIterator)
-	if err != nil {
-		return nil, nil, err
-	}
+	var (
+		response       interface{}
+		err            error
+		heartbeatTimer *time.Timer
+	)
 
-	defer func() {
-		workflowContext.Unlock(errRet)
-	}()
-
-	var response interface{}
-
-	var heartbeatTimer *time.Timer
 	defer func() {
 		if heartbeatTimer != nil {
 			heartbeatTimer.Stop()
@@ -877,7 +883,6 @@ processWorkflowLoop:
 	}
 	errRet = err
 	completeRequest = response
-	resetter = workflowContext.SetPreviousStartedEventID
 	return
 }
 
@@ -1189,6 +1194,9 @@ func (w *workflowExecutionContextImpl) CompleteWorkflowTask(workflowTask *workfl
 				task := eventHandler.pendingLaTasks[activityID]
 				task.wc = w
 				task.workflowTask = workflowTask
+
+				task.scheduledTime = time.Now()
+
 				if !w.laTunnel.sendTask(task) {
 					unstartedLaTasks[activityID] = struct{}{}
 					task.wc = nil
@@ -1245,8 +1253,6 @@ func (w *workflowExecutionContextImpl) SetCurrentTask(task *workflowservice.Poll
 }
 
 func (w *workflowExecutionContextImpl) SetPreviousStartedEventID(eventID int64) {
-	w.mutex.Lock() // This call can race against the cache eviction thread - see clearState
-	defer w.mutex.Unlock()
 	w.previousStartedEventID = eventID
 }
 
