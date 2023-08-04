@@ -269,10 +269,12 @@ type (
 		// On ScheduleHandle.Describe() or ScheduleHandle.Update() Memo will be returned as *commonpb.Payload.
 		Memo map[string]interface{}
 
-		// SearchAttributes - Optional indexed info that can be used in query of List/Scan/Count workflow APIs (only
-		// supported when Temporal server is using advanced visiblity). The key and value type must be registered on Temporal server side.
+		// SearchAttributes - Optional indexed info that can be used in query of List/Scan/Count workflow APIs. The key and value type must be registered on Temporal server side.
 		// Use GetSearchAttributes API to get valid key and corresponding value type.
 		// On ScheduleHandle.Describe() or ScheduleHandle.Update() SearchAttributes will be returned as *commonpb.Payload.
+		// For supported operations on different server versions see [Visibility].
+		//
+		// [Visibility]: https://docs.temporal.io/visibility
 		SearchAttributes map[string]interface{}
 	}
 
@@ -338,9 +340,11 @@ type (
 		// Memo - Optional non-indexed info that will be shown in list schedules.
 		Memo map[string]interface{}
 
-		// SearchAttributes - Optional indexed info that can be used in query of List schedules APIs (only
-		// supported when Temporal server is using advanced visibility). The key and value type must be registered on Temporal server side.
+		// SearchAttributes - Optional indexed info that can be used in query of List schedules APIs. The key and value type must be registered on Temporal server side.
 		// Use GetSearchAttributes API to get valid key and corresponding value type.
+		// For supported operations on different server versions see [Visibility].
+		//
+		// [Visibility]: https://docs.temporal.io/visibility
 		SearchAttributes map[string]interface{}
 	}
 
@@ -395,9 +399,11 @@ type (
 		// Memo - Non-indexed user supplied information.
 		Memo *commonpb.Memo
 
-		// SearchAttributes - Indexed info that can be used in query of List schedules APIs (only
-		// supported when Temporal server is using advanced visibility). The key and value type must be registered on Temporal server side.
+		// SearchAttributes - Indexed info that can be used in query of List schedules APIs. The key and value type must be registered on Temporal server side.
 		// Use GetSearchAttributes API to get valid key and corresponding value type.
+		// For supported operations on different server versions see [Visibility].
+		//
+		// [Visibility]: https://docs.temporal.io/visibility
 		SearchAttributes *commonpb.SearchAttributes
 	}
 
@@ -571,9 +577,11 @@ type (
 		// Memo - Non-indexed user supplied information.
 		Memo *commonpb.Memo
 
-		// SearchAttributes - Indexed info that can be used in query of List schedules APIs (only
-		// supported when Temporal server is using advanced visibility). The key and value type must be registered on Temporal server side.
+		// SearchAttributes - Indexed info that can be used in query of List schedules APIs. The key and value type must be registered on Temporal server side.
 		// Use GetSearchAttributes API to get valid key and corresponding value type.
+		// For supported operations on different server versions see [Visibility].
+		//
+		// [Visibility]: https://docs.temporal.io/visibility
 		SearchAttributes *commonpb.SearchAttributes
 	}
 
@@ -599,7 +607,7 @@ type (
 		// Create a new Schedule.
 		Create(ctx context.Context, options ScheduleOptions) (ScheduleHandle, error)
 
-		// List returns an interator to list all schedules
+		// List returns an iterator to list all schedules
 		//
 		// Note: When using advanced visibility List is eventually consistent.
 		List(ctx context.Context, options ScheduleListOptions) (ScheduleListIterator, error)
