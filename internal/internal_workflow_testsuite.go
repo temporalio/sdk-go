@@ -169,6 +169,9 @@ type (
 		onTimerScheduledListener         func(timerID string, duration time.Duration)
 		onTimerFiredListener             func(timerID string)
 		onTimerCanceledListener          func(timerID string)
+
+		activityScheduleToCloseTimeout time.Duration
+		activityStartToCloseTimeout    time.Duration
 	}
 
 	// testWorkflowEnvironmentImpl is the environment that runs the workflow/activity unit tests.
@@ -236,6 +239,9 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 			callbackChannel:   make(chan testCallbackHandle, 1000),
 			testTimeout:       3 * time.Second,
 			expectedMockCalls: make(map[string]struct{}),
+
+			activityScheduleToCloseTimeout: 600 * time.Second,
+			activityStartToCloseTimeout:    600 * time.Second,
 		},
 
 		workflowInfo: &WorkflowInfo{
@@ -544,8 +550,8 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 
 	parameters := ExecuteActivityParams{
 		ExecuteActivityOptions: ExecuteActivityOptions{
-			ScheduleToCloseTimeout: 600 * time.Second,
-			StartToCloseTimeout:    600 * time.Second,
+			ScheduleToCloseTimeout: env.activityScheduleToCloseTimeout,
+			StartToCloseTimeout:    env.activityStartToCloseTimeout,
 		},
 		ActivityType: *activityType,
 		Input:        input,

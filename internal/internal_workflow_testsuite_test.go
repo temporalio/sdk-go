@@ -4031,3 +4031,49 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowGetCurrentHistoryLength() {
 	s.NoError(env.GetWorkflowResult(&result))
 	s.Equal(17, result)
 }
+
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithStartToCloseTimeout() {
+	timeout := 100 * time.Millisecond
+
+	timeoutActivity := func(ctx context.Context) error {
+		time.Sleep(timeout * 2)
+		return nil
+	}
+
+	noTimeoutActivity := func(ctx context.Context) error {
+		time.Sleep(timeout / 2)
+		return nil
+	}
+
+	env := s.NewTestActivityEnvironment()
+	env.SetActivityStartToCloseTimeout(timeout)
+	env.RegisterActivity(timeoutActivity)
+	env.RegisterActivity(noTimeoutActivity)
+	_, err := env.ExecuteActivity(timeoutActivity)
+	s.Error(err)
+	_, err = env.ExecuteActivity(noTimeoutActivity)
+	s.NoError(err)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithScheduleToCloseTimeout() {
+	timeout := 100 * time.Millisecond
+
+	timeoutActivity := func(ctx context.Context) error {
+		time.Sleep(timeout * 2)
+		return nil
+	}
+
+	noTimeoutActivity := func(ctx context.Context) error {
+		time.Sleep(timeout / 2)
+		return nil
+	}
+
+	env := s.NewTestActivityEnvironment()
+	env.SetActivityScheduleToCloseTimeout(timeout)
+	env.RegisterActivity(timeoutActivity)
+	env.RegisterActivity(noTimeoutActivity)
+	_, err := env.ExecuteActivity(timeoutActivity)
+	s.Error(err)
+	_, err = env.ExecuteActivity(noTimeoutActivity)
+	s.NoError(err)
+}
