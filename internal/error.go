@@ -49,7 +49,7 @@ Below are the possible types of internal error:
 		  what kind of error it was and take actions based on it. The details is encoded payload which workflow code could extract
 		  to strong typed variable. Workflow code needs to know what the types of the encoded details are before extracting them.
 		- If activity implementation returns errors other than from NewApplicationError() API. In this case GetOriginalType()
-		  will return orginal type of an error represented as string. Workflow code could check this type to determine what kind of error it was
+		  will return original type of an error represented as string. Workflow code could check this type to determine what kind of error it was
 		  and take actions based on the type. These errors are retryable by default, unless error type is specified in retry policy.
 2) *CanceledError:
 	If activity was canceled, internal error will be an instance of *CanceledError. When activity cancels itself by
