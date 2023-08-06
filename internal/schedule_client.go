@@ -503,7 +503,7 @@ type (
 
 	// ScheduleHandle represents a created schedule.
 	ScheduleHandle interface {
-		// GetID returns the schedule ID asssociated with this handle.
+		// GetID returns the schedule ID associated with this handle.
 		GetID() string
 
 		// Delete the Schedule
