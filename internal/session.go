@@ -195,7 +195,7 @@ func CreateSession(ctx Context, sessionOptions *SessionOptions) (Context, error)
 // returns an error under the same situation as CreateSession() or the token passed in is invalid.
 // It also has the same usage as CreateSession().
 //
-// The main usage of RecreateSession is for long sessions that are splited into multiple runs. At the end of
+// The main usage of RecreateSession is for long sessions that are split into multiple runs. At the end of
 // one run, complete the current session, get recreateToken from sessionInfo by calling SessionInfo.GetRecreateToken()
 // and pass the token to the next run. In the new run, session can be recreated using that token.
 func RecreateSession(ctx Context, recreateToken []byte, sessionOptions *SessionOptions) (Context, error) {
@@ -232,7 +232,7 @@ func CompleteSession(ctx Context) {
 	// even though the creation activity has been canceled, the session worker doesn't know. The worker will wait until
 	// next heartbeat to figure out that the workflow is completed and then release the resource. We need to make sure the
 	// completion activity is executed before the workflow exits.
-	// the taskqueue will be overrided to use the one stored in sessionInfo.
+	// the taskqueue will be overridden to use the one stored in sessionInfo.
 	err := ExecuteActivity(completionCtx, sessionCompletionActivityName, sessionInfo.SessionID).Get(completionCtx, nil)
 	if err != nil {
 		GetLogger(completionCtx).Warn("Complete session activity failed", tagError, err)

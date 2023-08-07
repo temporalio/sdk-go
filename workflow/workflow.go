@@ -568,7 +568,9 @@ func GetLastError(ctx Context) error {
 //		"CustomKeywordField": "seattle",
 //	}
 //
-// This is only supported when using ElasticSearch.
+// For supported operations on different server versions see [Visibility].
+//
+// [Visibility]: https://docs.temporal.io/visibility
 func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error {
 	return internal.UpsertSearchAttributes(ctx, attributes)
 }

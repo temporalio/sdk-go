@@ -289,9 +289,11 @@ type (
 		// Memo - Optional non-indexed info that will be shown in list workflow.
 		Memo map[string]interface{}
 
-		// SearchAttributes - Optional indexed info that can be used in query of List/Scan/Count workflow APIs (only
-		// supported when Temporal server is using ElasticSearch). The key and value type must be registered on Temporal server side.
+		// SearchAttributes - Optional indexed info that can be used in query of List/Scan/Count workflow APIs. The key and value type must be registered on Temporal server side.
 		// Use GetSearchAttributes API to get valid key and corresponding value type.
+		// For supported operations on different server versions see [Visibility].
+		//
+		// [Visibility]: https://docs.temporal.io/visibility
 		SearchAttributes map[string]interface{}
 
 		// ParentClosePolicy - Optional policy to decide what to do for the child.
@@ -1278,7 +1280,9 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 //		"CustomKeywordField": "seattle",
 //	}
 //
-// This is only supported when using ElasticSearch.
+// For supported operations on different server versions see [Visibility].
+//
+// [Visibility]: https://docs.temporal.io/visibility
 func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
