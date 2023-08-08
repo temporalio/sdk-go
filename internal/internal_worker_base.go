@@ -311,7 +311,7 @@ func (bw *baseWorker) runPoller() {
 }
 
 func (bw *baseWorker) tryReserveSlot() bool {
-	if !bw.isWorkerStarted || bw.isStop() {
+	if bw.isStop() {
 		return false
 	}
 	// Reserve a executor slot via a non-blocking attempt to take a poller
