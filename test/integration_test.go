@@ -1295,6 +1295,26 @@ func (ts *IntegrationTestSuite) TestBasicSession() {
 		ts.tracer.GetTrace("BasicSession"))
 }
 
+func (ts *IntegrationTestSuite) TestEagerWorkflowDispatchRaceWithWorkerStop() {
+	// Attempt to stop a worker while trying to schedule an eager workflow task
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(ctx, ctxTimeout)
+		defer cancel()
+		_, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-basic-session"), ts.workflows.SimplestWorkflow)
+		ts.NoError(err)
+		wg.Done()
+	}()
+	go func() {
+		ts.worker.Stop()
+		ts.workerStopped = true
+		wg.Done()
+	}()
+	wg.Wait()
+}
+
 func (ts *IntegrationTestSuite) TestSessionStateFailedWorkerFailed() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

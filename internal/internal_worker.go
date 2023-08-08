@@ -951,6 +951,9 @@ func (aw *AggregatedWorker) Start() error {
 		if err := aw.workflowWorker.Start(); err != nil {
 			return err
 		}
+		if aw.client.eagerDispatcher != nil {
+			aw.client.eagerDispatcher.registerWorker(aw.workflowWorker)
+		}
 	}
 	if !util.IsInterfaceNil(aw.activityWorker) {
 		if err := aw.activityWorker.Start(); err != nil {
@@ -1567,9 +1570,6 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			workflowWorker = newWorkflowWorkerWithPressurePoints(client.workflowService, workerParams, testTags, registry)
 		} else {
 			workflowWorker = newWorkflowWorker(client.workflowService, workerParams, nil, registry)
-		}
-		if client.eagerDispatcher != nil {
-			client.eagerDispatcher.registerWorker(workflowWorker)
 		}
 	}
 
