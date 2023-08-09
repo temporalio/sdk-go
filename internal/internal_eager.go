@@ -29,7 +29,7 @@ type eagerWorker interface {
 	tryReserveSlot() bool
 	// releaseSlot release a task slot acquired by tryReserveSlot
 	releaseSlot()
-	// processTaskAsync process a new task on the worker asynchronously and
-	// call callback once complete
-	processTaskAsync(task interface{}, callback func())
+	// pushEagerTask pushes a new eager workflow task to the workers task queue.
+	// should only be called with a reserved slot.
+	pushEagerTask(task eagerTask)
 }
