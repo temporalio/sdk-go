@@ -44,8 +44,8 @@ func (e *eagerWorkerMock) releaseSlot() {
 	e.releaseSlotCallback()
 }
 
-func (e *eagerWorkerMock) processTaskAsync(task interface{}, callback func()) {
-	e.processTaskAsyncCallback(task, callback)
+func (e *eagerWorkerMock) pushEagerTask(task eagerTask) {
+	e.processTaskAsyncCallback(task, task.callback)
 }
 
 func TestEagerWorkflowDispatchNoWorkerOnTaskQueue(t *testing.T) {

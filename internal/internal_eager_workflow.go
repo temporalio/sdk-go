@@ -76,13 +76,14 @@ func (e *eagerWorkflowExecutor) handleResponse(response *workflowservice.PollWor
 		panic("eagerWorkflowExecutor trying to handle multiple responses")
 	}
 	// Asynchronously execute the task
-	task := &eagerWorkflowTask{
-		task: response,
-	}
-	e.worker.processTaskAsync(task, func() {
-		// The processTaskAsync does not do this itself because our task is *eagerWorkflowTask, not *polledTask.
-		e.worker.releaseSlot()
-	})
+	e.worker.pushEagerTask(
+		eagerTask{
+			task: &eagerWorkflowTask{
+				task: response,
+			},
+			// The processTaskAsync does not do this itself because our task is *eagerWorkflowTask, not *polledTask.
+			callback: e.worker.releaseSlot,
+		})
 }
 
 // release the executor task slot this eagerWorkflowExecutor was holding.

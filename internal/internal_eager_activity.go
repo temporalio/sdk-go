@@ -134,14 +134,17 @@ func (e *eagerActivityExecutor) handleResponse(
 	// Start each activity asynchronously
 	for _, activity := range resp.GetActivityTasks() {
 		// Asynchronously execute
-		task := &activityTask{activity}
-		e.activityWorker.processTaskAsync(task, func() {
-			// The processTaskAsync does not do this itself because our task is *activityTask, not *polledTask.
-			e.activityWorker.releaseSlot()
-			// Decrement executing count
-			e.countLock.Lock()
-			e.heldSlotCount--
-			e.countLock.Unlock()
-		})
+		e.activityWorker.pushEagerTask(
+			eagerTask{
+				task: &activityTask{activity},
+				callback: func() {
+					// The processTaskAsync does not do this itself because our task is *activityTask, not *polledTask.
+					e.activityWorker.releaseSlot()
+					// Decrement executing count
+					e.countLock.Lock()
+					e.heldSlotCount--
+					e.countLock.Unlock()
+				},
+			})
 	}
 }

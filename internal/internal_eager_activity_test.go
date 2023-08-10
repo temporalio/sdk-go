@@ -107,6 +107,7 @@ func TestEagerActivityCounts(t *testing.T) {
 	activityWorker := newActivityWorker(nil,
 		workerExecutionParameters{TaskQueue: "task-queue1", ConcurrentActivityExecutionSize: 5}, nil, newRegistry(), nil)
 	activityWorker.worker.isWorkerStarted = true
+	go activityWorker.worker.runEagerTaskDispatcher()
 
 	exec.activityWorker = activityWorker.worker
 	// Fill up the poller request channel
