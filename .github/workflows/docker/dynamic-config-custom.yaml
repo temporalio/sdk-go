@@ -9,3 +9,9 @@ frontend.enableUpdateWorkflowExecutionAsyncAccepted:
   - value: true
 system.enableEagerWorkflowStart:
   - value: true
+frontend.workerVersioningDataAPIs:
+  - value: true
+frontend.workerVersioningWorkflowAPIs:
+  - value: true
+worker.buildIdScavengerEnabled:
+  - value: true
