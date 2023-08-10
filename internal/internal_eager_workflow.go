@@ -81,10 +81,8 @@ func (e *eagerWorkflowExecutor) handleResponse(response *workflowservice.PollWor
 			task: &eagerWorkflowTask{
 				task: response,
 			},
-			callback: func() {
-				// The processTaskAsync does not do this itself because our task is *eagerWorkflowTask, not *polledTask.
-				e.worker.releaseSlot()
-			},
+			// The processTaskAsync does not do this itself because our task is *eagerWorkflowTask, not *polledTask.
+			callback: e.worker.releaseSlot,
 		})
 }
 

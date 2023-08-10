@@ -368,6 +368,8 @@ func (bw *baseWorker) runTaskDispatcher() {
 		// wait for new task or worker stop
 		select {
 		case <-bw.stopCh:
+			// Currently we can drop any tasks received when closing.
+			// https://github.com/temporalio/sdk-go/issues/1197
 			return
 		case task := <-bw.taskQueueCh:
 			// for non-polled-task (local activity result as task or eager task), we don't need to rate limit
