@@ -7,6 +7,9 @@ on:
 
 jobs:
   build-and-test:
+    strategy:
+      matrix:
+        go-version: ["1.20", "1.21"]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -14,7 +17,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-go@v4
         with:
-          go-version: "1.20"
+          go-version: ${{ matrix.go-version }}
       - name: Check and unit test
         run: make check unit-test
       - name: Clone Temporal Docker compose
@@ -46,6 +49,9 @@ jobs:
           format: golang
 
   cloud-test:
+    strategy:
+      matrix:
+        go-version: ["1.20", "1.21"]
     # Only supported in non-fork runs, since secrets are not available in forks.
     if: ${{ github.event.pull_request.head.repo.full_name == '' || github.event.pull_request.head.repo.full_name == 'temporalio/sdk-go' }}
     runs-on: ubuntu-latest
@@ -60,7 +66,7 @@ jobs:
           submodules: recursive
       - uses: actions/setup-go@v4
         with:
-          go-version: "1.20"
+          go-version: ${{ matrix.go-version }}
       - name: Single integration test against cloud
         run: 'go test -v --count 1 -p 1 . -run "TestIntegrationSuite/TestBasic$"'
         working-directory: test
