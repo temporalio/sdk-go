@@ -1367,7 +1367,10 @@ func (ts *IntegrationTestSuite) TestAsyncActivityCompletion() {
 	for {
 		pendingActivities = describeResp.PendingActivities
 		if len(pendingActivities) == 2 && pendingActivities[0].State == enumspb.PENDING_ACTIVITY_STATE_STARTED &&
-			pendingActivities[1].State == enumspb.PENDING_ACTIVITY_STATE_STARTED {
+			pendingActivities[1].State == enumspb.PENDING_ACTIVITY_STATE_STARTED &&
+			len(ts.activities.invoked()) == 2 &&
+			ts.activities.invoked()[0] == "asyncComplete" &&
+			ts.activities.invoked()[1] == "asyncComplete" {
 			// condition met
 			break
 		}
@@ -1380,9 +1383,6 @@ func (ts *IntegrationTestSuite) TestAsyncActivityCompletion() {
 		status := describeResp.WorkflowExecutionInfo.Status
 		ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING, status)
 	}
-
-	// Both the activities are started
-	ts.EqualValues([]string{"asyncComplete", "asyncComplete"}, ts.activities.invoked())
 
 	// Complete first activity using ID
 	err = ts.client.CompleteActivityByID(ctx, ts.config.Namespace,
