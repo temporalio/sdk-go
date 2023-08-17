@@ -349,7 +349,7 @@ func (env *testWorkflowEnvironmentImpl) setCurrentHistorySize(size int) {
 	env.workflowInfo.currentHistorySize = size
 }
 
-func (env *testWorkflowEnvironmentImpl) setContineAsNewSuggested(suggest bool) {
+func (env *testWorkflowEnvironmentImpl) setContinueAsNewSuggested(suggest bool) {
 	env.workflowInfo.continueAsNewSuggested = suggest
 }
 

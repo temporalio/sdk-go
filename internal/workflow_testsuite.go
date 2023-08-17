@@ -315,7 +315,7 @@ func (e *TestWorkflowEnvironment) SetCurrentHistorySize(length int) {
 //
 // Note: this value may not be up to date if accessed inside a query.
 func (e *TestWorkflowEnvironment) SetContinueAsNewSuggested(suggest bool) {
-	e.impl.setContineAsNewSuggested(suggest)
+	e.impl.setContinueAsNewSuggested(suggest)
 }
 
 // OnActivity setup a mock call for activity. Parameter activity must be activity function (func) or activity name (string).
