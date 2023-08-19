@@ -296,8 +296,26 @@ func (e *TestWorkflowEnvironment) SetStartTime(startTime time.Time) {
 
 // SetCurrentHistoryLength sets the value that is returned from
 // GetInfo(ctx).GetCurrentHistoryLength().
+//
+// Note: this value may not be up to date if accessed inside a query.
 func (e *TestWorkflowEnvironment) SetCurrentHistoryLength(length int) {
 	e.impl.setCurrentHistoryLength(length)
+}
+
+// setCurrentHistoryLength sets the value that is returned from
+// GetInfo(ctx).GetCurrentHistorySize().
+//
+// Note: this value may not be up to date if accessed inside a query.
+func (e *TestWorkflowEnvironment) SetCurrentHistorySize(length int) {
+	e.impl.setCurrentHistorySize(length)
+}
+
+// SetContinueAsNewSuggested set sets the value that is returned from
+// GetInfo(ctx).GetContinueAsNewSuggested().
+//
+// Note: this value may not be up to date if accessed inside a query.
+func (e *TestWorkflowEnvironment) SetContinueAsNewSuggested(suggest bool) {
+	e.impl.setContinueAsNewSuggested(suggest)
 }
 
 // OnActivity setup a mock call for activity. Parameter activity must be activity function (func) or activity name (string).

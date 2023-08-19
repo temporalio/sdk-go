@@ -1053,8 +1053,10 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
 		// Set replay clock.
 		weh.SetCurrentReplayTime(common.TimeValue(event.GetEventTime()))
-		// Set history length as this event's ID
+		// Update workflow info fields
 		weh.workflowInfo.currentHistoryLength = int(event.EventId)
+		weh.workflowInfo.continueAsNewSuggested = event.GetWorkflowTaskStartedEventAttributes().GetSuggestContinueAsNew()
+		weh.workflowInfo.currentHistorySize = int(event.GetWorkflowTaskStartedEventAttributes().GetHistorySizeBytes())
 		// Reset the counter on command helper used for generating ID for commands
 		weh.commandsHelper.setCurrentWorkflowTaskStartedEventID(event.GetEventId())
 		weh.workflowDefinition.OnWorkflowTaskStarted(weh.deadlockDetectionTimeout)

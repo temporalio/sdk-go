@@ -1002,7 +1002,9 @@ type WorkflowInfo struct {
 	// workflow, it is this worker's current value.
 	BinaryChecksum string
 
-	currentHistoryLength int
+	continueAsNewSuggested bool
+	currentHistorySize     int
+	currentHistoryLength   int
 }
 
 // UpdateInfo information about a currently running update
@@ -1022,6 +1024,19 @@ func (wInfo *WorkflowInfo) GetBinaryChecksum() string {
 // This value may change throughout the life of the workflow.
 func (wInfo *WorkflowInfo) GetCurrentHistoryLength() int {
 	return wInfo.currentHistoryLength
+}
+
+// GetCurrentHistorySize returns the current byte size of history when called.
+// This value may change throughout the life of the workflow.
+func (wInfo *WorkflowInfo) GetCurrentHistorySize() int {
+	return wInfo.currentHistorySize
+}
+
+// GetContinueAsNewSuggested returns true if the server is configured to suggest continue as new
+// and it is suggested.
+// This value may change throughout the life of the workflow.
+func (wInfo *WorkflowInfo) GetContinueAsNewSuggested() bool {
+	return wInfo.continueAsNewSuggested
 }
 
 // GetWorkflowInfo extracts info of a current workflow from a context.
