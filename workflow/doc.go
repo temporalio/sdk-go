@@ -73,7 +73,7 @@ The following sections describe what is going on in the above code.
 
 # Declaration
 
-In the Temporal programing model a workflow is implemented with a function. The function declaration specifies the
+In the Temporal programming model a workflow is implemented with a function. The function declaration specifies the
 parameters the workflow accepts as well as any values it might return.
 
 	func SimpleWorkflow(ctx workflow.Context, value string) error
@@ -140,7 +140,8 @@ Time related functions:
 # Failing a Workflow
 
 To mark a workflow as failed all that needs to happen is for the workflow function to return an error via the err
-return value.
+return value. Returning an error and a result from a workflow are mutually exclusive. If an error is returned from a
+workflow then any results returned are ignored.
 
 # Execute Activity
 
