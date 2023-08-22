@@ -189,13 +189,13 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextCommands() {
 
 	eh := newHistory(workflowTask, nil)
 
-	events, _, _, _, _, err := eh.NextCommandEvents()
+	nextTask, err := eh.NextTask()
 
 	s.NoError(err)
-	s.Equal(3, len(events))
-	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED, events[1].GetEventType())
-	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED, events[2].GetEventType())
-	s.Equal(int64(7), events[2].GetEventId())
+	s.Equal(3, len(nextTask.events))
+	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED, nextTask.events[1].GetEventType())
+	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED, nextTask.events[2].GetEventType())
+	s.Equal(int64(7), nextTask.events[2].GetEventId())
 }
 
 func (s *PollLayerInterfacesTestSuite) TestGetNextCommandsSdkFlags() {
@@ -232,26 +232,26 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextCommandsSdkFlags() {
 
 	eh := newHistory(workflowTask, nil)
 
-	events, _, _, sdkFlags, _, err := eh.NextCommandEvents()
+	nextTask, err := eh.NextTask()
 
 	s.NoError(err)
-	s.Equal(2, len(events))
-	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED, events[1].GetEventType())
+	s.Equal(2, len(nextTask.events))
+	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED, nextTask.events[1].GetEventType())
 	// Verify the SDK flags are fetched at the correct point so they will be applied when the workflow
 	// function is run.
-	s.Equal(1, len(sdkFlags))
-	s.EqualValues(SDKFlagLimitChangeVersionSASize, sdkFlags[0])
+	s.Equal(1, len(nextTask.flags))
+	s.EqualValues(SDKFlagLimitChangeVersionSASize, nextTask.flags[0])
 
-	events, _, _, sdkFlags, _, err = eh.NextCommandEvents()
+	nextTask, err = eh.NextTask()
 
 	s.NoError(err)
-	s.Equal(4, len(events))
-	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED, events[0].GetEventType())
-	s.Equal(enumspb.EVENT_TYPE_MARKER_RECORDED, events[1].GetEventType())
-	s.Equal(enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES, events[2].GetEventType())
-	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED, events[3].GetEventType())
+	s.Equal(4, len(nextTask.events))
+	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED, nextTask.events[0].GetEventType())
+	s.Equal(enumspb.EVENT_TYPE_MARKER_RECORDED, nextTask.events[1].GetEventType())
+	s.Equal(enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES, nextTask.events[2].GetEventType())
+	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED, nextTask.events[3].GetEventType())
 
-	s.Equal(0, len(sdkFlags))
+	s.Equal(0, len(nextTask.flags))
 }
 
 func (s *PollLayerInterfacesTestSuite) TestMessageCommands() {
@@ -299,23 +299,23 @@ func (s *PollLayerInterfacesTestSuite) TestMessageCommands() {
 
 	eh := newHistory(workflowTask, nil)
 
-	events, _, _, _, msgs, err := eh.NextCommandEvents()
+	nextTask, err := eh.NextTask()
 	s.NoError(err)
-	s.Equal(2, len(events))
-	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED, events[0].GetEventType())
-	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED, events[1].GetEventType())
+	s.Equal(2, len(nextTask.events))
+	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED, nextTask.events[0].GetEventType())
+	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED, nextTask.events[1].GetEventType())
 
-	s.Equal(1, len(msgs))
-	s.Equal("test", msgs[0].GetProtocolInstanceId())
+	s.Equal(1, len(nextTask.msgs))
+	s.Equal("test", nextTask.msgs[0].GetProtocolInstanceId())
 
-	events, _, _, _, msgs, err = eh.NextCommandEvents()
+	nextTask, err = eh.NextTask()
 	s.NoError(err)
-	s.Equal(3, len(events))
-	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED, events[0].GetEventType())
-	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED, events[1].GetEventType())
-	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED, events[2].GetEventType())
+	s.Equal(3, len(nextTask.events))
+	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED, nextTask.events[0].GetEventType())
+	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED, nextTask.events[1].GetEventType())
+	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED, nextTask.events[2].GetEventType())
 
-	s.Equal(0, len(msgs))
+	s.Equal(0, len(nextTask.msgs))
 }
 
 func (s *PollLayerInterfacesTestSuite) TestEmptyPages() {
@@ -421,16 +421,16 @@ func (s *PollLayerInterfacesTestSuite) TestEmptyPages() {
 	}
 
 	for _, expected := range expectedResults {
-		result, _, _, _, msgs, err := eh.NextCommandEvents()
+		nexTask, err := eh.NextTask()
 		s.NoError(err)
-		s.Equal(len(expected.events), len(result))
-		for i, event := range result {
+		s.Equal(len(expected.events), len(nexTask.events))
+		for i, event := range nexTask.events {
 			s.Equal(expected.events[i].EventId, event.EventId)
 			s.Equal(expected.events[i].EventType, event.EventType)
 		}
 
-		s.Equal(len(expected.messages), len(msgs))
-		for i, msg := range msgs {
+		s.Equal(len(expected.messages), len(nexTask.msgs))
+		for i, msg := range nexTask.msgs {
 			s.Equal(expected.messages[i].ProtocolInstanceId, msg.ProtocolInstanceId)
 		}
 	}

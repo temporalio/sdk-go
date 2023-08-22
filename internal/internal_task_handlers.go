@@ -188,6 +188,14 @@ type (
 	historyMismatchError struct {
 		message string
 	}
+
+	processedTask struct {
+		events         []*historypb.HistoryEvent
+		markers        []*historypb.HistoryEvent
+		flags          []sdkFlag
+		msgs           []*protocolpb.Message
+		binaryChecksum string
+	}
 )
 
 func newHistory(task *workflowTask, eventsHandler *workflowExecutionEventHandlerImpl) *history {
@@ -301,23 +309,40 @@ func isCommandEvent(eventType enumspb.EventType) bool {
 	}
 }
 
-// NextCommandEvents returns events that there processed as new by the next command.
-// TODO(maxim): Refactor to return a struct instead of multiple parameters
-func (eh *history) NextCommandEvents() (result []*historypb.HistoryEvent, markers []*historypb.HistoryEvent, binaryChecksum string, sdkFlags []sdkFlag, msgs []*protocolpb.Message, err error) {
+// NextTask returns the next task to be processed.
+func (eh *history) NextTask() (*processedTask, error) {
 	if eh.next == nil {
-		eh.next, _, eh.nextFlags, _, err = eh.nextCommandEvents()
+		firstTask, err := eh.nextTask()
+		eh.next = firstTask.events
+		eh.nextFlags = firstTask.flags
 		if err != nil {
-			return result, markers, eh.binaryChecksum, sdkFlags, msgs, err
+			return nil, err
 		}
 	}
 
-	result = eh.next
+	result := eh.next
 	checksum := eh.binaryChecksum
-	sdkFlags = eh.nextFlags
+	sdkFlags := eh.nextFlags
+
+	var markers []*historypb.HistoryEvent
+	var msgs []*protocolpb.Message
 	if len(result) > 0 {
-		eh.next, markers, eh.nextFlags, msgs, err = eh.nextCommandEvents()
+		nextTaskEvents, err := eh.nextTask()
+		if err != nil {
+			return nil, err
+		}
+		eh.next = nextTaskEvents.events
+		eh.nextFlags = nextTaskEvents.flags
+		markers = nextTaskEvents.markers
+		msgs = nextTaskEvents.msgs
 	}
-	return result, markers, checksum, sdkFlags, msgs, err
+	return &processedTask{
+		events:         result,
+		markers:        markers,
+		flags:          sdkFlags,
+		msgs:           msgs,
+		binaryChecksum: checksum,
+	}, nil
 }
 
 func (eh *history) hasMoreEvents() bool {
@@ -345,38 +370,38 @@ func (eh *history) verifyAllEventsProcessed() error {
 	return nil
 }
 
-func (eh *history) nextCommandEvents() (nextEvents []*historypb.HistoryEvent, markers []*historypb.HistoryEvent, sdkFlags []sdkFlag, msgs []*protocolpb.Message, err error) {
+func (eh *history) nextTask() (*processedTask, error) {
 	if eh.currentIndex == len(eh.loadedEvents) && !eh.hasMoreEvents() {
 		if err := eh.verifyAllEventsProcessed(); err != nil {
-			return nil, nil, nil, nil, err
+			return nil, err
 		}
-		return []*historypb.HistoryEvent{}, []*historypb.HistoryEvent{}, []sdkFlag{}, []*protocolpb.Message{}, nil
+		return &processedTask{}, nil
 	}
 
 	// Process events
-
+	var taskEvents processedTask
 OrderEvents:
 	for {
 		// load more history events if needed
 		for eh.currentIndex == len(eh.loadedEvents) {
 			if !eh.hasMoreEvents() {
-				if err = eh.verifyAllEventsProcessed(); err != nil {
-					return
+				if err := eh.verifyAllEventsProcessed(); err != nil {
+					return nil, err
 				}
 				break OrderEvents
 			}
-			if err = eh.loadMoreEvents(); err != nil {
-				return
+			if err := eh.loadMoreEvents(); err != nil {
+				return nil, err
 			}
 		}
 
 		event := eh.loadedEvents[eh.currentIndex]
 		eventID := event.GetEventId()
 		if eventID != eh.nextEventID {
-			err = fmt.Errorf(
+			err := fmt.Errorf(
 				"missing history events, expectedNextEventID=%v but receivedNextEventID=%v",
 				eh.nextEventID, eventID)
-			return
+			return nil, err
 		}
 
 		eh.nextEventID++
@@ -385,14 +410,14 @@ OrderEvents:
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
 			isFailed, binaryChecksum, newFlags, err1 := eh.IsNextWorkflowTaskFailed()
 			if err1 != nil {
-				err = err1
-				return
+				err := err1
+				return nil, err
 			}
 			if !isFailed {
 				eh.binaryChecksum = binaryChecksum
 				eh.currentIndex++
-				nextEvents = append(nextEvents, event)
-				sdkFlags = append(sdkFlags, newFlags...)
+				taskEvents.events = append(taskEvents.events, event)
+				taskEvents.flags = append(taskEvents.flags, newFlags...)
 				break OrderEvents
 			}
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED,
@@ -401,11 +426,11 @@ OrderEvents:
 			// Skip
 		default:
 			if isPreloadMarkerEvent(event) {
-				markers = append(markers, event)
+				taskEvents.markers = append(taskEvents.markers, event)
 			} else if attrs := event.GetWorkflowExecutionUpdateAcceptedEventAttributes(); attrs != nil {
-				msgs = append(msgs, inferMessage(attrs))
+				taskEvents.msgs = append(taskEvents.msgs, inferMessage(attrs))
 			}
-			nextEvents = append(nextEvents, event)
+			taskEvents.events = append(taskEvents.events, event)
 		}
 		eh.currentIndex++
 	}
@@ -421,7 +446,7 @@ OrderEvents:
 
 	eh.currentIndex = 0
 
-	return nextEvents, markers, sdkFlags, msgs, nil
+	return &taskEvents, nil
 }
 
 func isPreloadMarkerEvent(event *historypb.HistoryEvent) bool {
@@ -920,7 +945,15 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 
 ProcessEvents:
 	for {
-		reorderedEvents, markers, binaryChecksum, flags, historyMessages, err := reorderedHistory.NextCommandEvents()
+		nextTask, err := reorderedHistory.NextTask()
+		if err != nil {
+			return nil, err
+		}
+		reorderedEvents := nextTask.events
+		markers := nextTask.markers
+		historyMessages := nextTask.msgs
+		flags := nextTask.flags
+		binaryChecksum := nextTask.binaryChecksum
 		// Check if we are replaying so we know if we should use the messages in the WFT or the history
 		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
 		var msgs *eventMsgIndex
@@ -931,9 +964,6 @@ ProcessEvents:
 			taskMessages = []*protocolpb.Message{}
 		}
 
-		if err != nil {
-			return nil, err
-		}
 		eventHandler.sdkFlags.set(flags...)
 		if len(reorderedEvents) == 0 {
 			break ProcessEvents
