@@ -189,7 +189,7 @@ type (
 		message string
 	}
 
-	processedTask struct {
+	preparedTask struct {
 		events         []*historypb.HistoryEvent
 		markers        []*historypb.HistoryEvent
 		flags          []sdkFlag
@@ -310,14 +310,14 @@ func isCommandEvent(eventType enumspb.EventType) bool {
 }
 
 // NextTask returns the next task to be processed.
-func (eh *history) NextTask() (*processedTask, error) {
+func (eh *history) NextTask() (*preparedTask, error) {
 	if eh.next == nil {
 		firstTask, err := eh.nextTask()
-		eh.next = firstTask.events
-		eh.nextFlags = firstTask.flags
 		if err != nil {
 			return nil, err
 		}
+		eh.next = firstTask.events
+		eh.nextFlags = firstTask.flags
 	}
 
 	result := eh.next
@@ -336,7 +336,7 @@ func (eh *history) NextTask() (*processedTask, error) {
 		markers = nextTaskEvents.markers
 		msgs = nextTaskEvents.msgs
 	}
-	return &processedTask{
+	return &preparedTask{
 		events:         result,
 		markers:        markers,
 		flags:          sdkFlags,
@@ -370,16 +370,16 @@ func (eh *history) verifyAllEventsProcessed() error {
 	return nil
 }
 
-func (eh *history) nextTask() (*processedTask, error) {
+func (eh *history) nextTask() (*preparedTask, error) {
 	if eh.currentIndex == len(eh.loadedEvents) && !eh.hasMoreEvents() {
 		if err := eh.verifyAllEventsProcessed(); err != nil {
 			return nil, err
 		}
-		return &processedTask{}, nil
+		return &preparedTask{}, nil
 	}
 
 	// Process events
-	var taskEvents processedTask
+	var taskEvents preparedTask
 OrderEvents:
 	for {
 		// load more history events if needed
