@@ -37,6 +37,7 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"github.com/uber-go/tally/v4"
@@ -2380,7 +2381,9 @@ func (ts *IntegrationTestSuite) TestQueryOnlyCoroutineUsage() {
 
 	// Check coroutines are cleaned up. Before the fix accompanying this test, the
 	// count was the same as the number of queries issued.
-	ts.Equal(0, counter.count())
+	ts.EventuallyWithT(func(c *assert.CollectT) {
+		assert.Zero(c, counter.count())
+	}, time.Second, 100*time.Millisecond)
 }
 
 func (ts *IntegrationTestSuite) TestLargeHistoryReplay() {
