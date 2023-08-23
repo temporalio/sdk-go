@@ -309,10 +309,10 @@ func isCommandEvent(eventType enumspb.EventType) bool {
 	}
 }
 
-// NextTask returns the next task to be processed.
-func (eh *history) NextTask() (*preparedTask, error) {
+// nextTask returns the next task to be processed.
+func (eh *history) nextTask() (*preparedTask, error) {
 	if eh.next == nil {
-		firstTask, err := eh.nextTask()
+		firstTask, err := eh.prepareTask()
 		if err != nil {
 			return nil, err
 		}
@@ -327,7 +327,7 @@ func (eh *history) NextTask() (*preparedTask, error) {
 	var markers []*historypb.HistoryEvent
 	var msgs []*protocolpb.Message
 	if len(result) > 0 {
-		nextTaskEvents, err := eh.nextTask()
+		nextTaskEvents, err := eh.prepareTask()
 		if err != nil {
 			return nil, err
 		}
@@ -370,7 +370,7 @@ func (eh *history) verifyAllEventsProcessed() error {
 	return nil
 }
 
-func (eh *history) nextTask() (*preparedTask, error) {
+func (eh *history) prepareTask() (*preparedTask, error) {
 	if eh.currentIndex == len(eh.loadedEvents) && !eh.hasMoreEvents() {
 		if err := eh.verifyAllEventsProcessed(); err != nil {
 			return nil, err
@@ -945,7 +945,7 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 
 ProcessEvents:
 	for {
-		nextTask, err := reorderedHistory.NextTask()
+		nextTask, err := reorderedHistory.nextTask()
 		if err != nil {
 			return nil, err
 		}
