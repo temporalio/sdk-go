@@ -50,6 +50,11 @@ type (
 // that could report the activity completed event to temporal server via Client.CompleteActivity() API.
 var ErrResultPending = internal.ErrActivityResultPending
 
+// IsActivityContext returns whether or not context belongs to activity.
+func IsActivityContext(ctx context.Context) bool {
+	return internal.IsActivity(ctx)
+}
+
 // GetInfo returns information about currently executing activity.
 func GetInfo(ctx context.Context) Info {
 	return internal.GetActivityInfo(ctx)
