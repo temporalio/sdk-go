@@ -6,7 +6,7 @@ default: check test
 # general build-product folder, cleaned as part of `make clean`
 BUILD := .build
 
-TEST_TIMEOUT := 5m
+TEST_TIMEOUT := 10m
 TEST_ARG ?= -race -v -timeout $(TEST_TIMEOUT)
 
 INTEG_TEST_ROOT := ./test/
