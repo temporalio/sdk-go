@@ -815,6 +815,45 @@ func (w *Workflows) CancelActivityImmediately(ctx workflow.Context) ([]string, e
 	return []string{"toUpper"}, nil
 }
 
+func (w *Workflows) RaceOnCacheEviction(ctx workflow.Context, testCase string) error {
+	// When we evict a workflow from the cache we call runtime.Goexit() from each Go routine the workflow
+	// launched. Calling runtime.Goexit() terminates those Go routines, but also calls their respective defers.
+	// Since we clean up all the workflows Go routines in a loop, and don't do any synchronization between them,
+	// we are running all their defers in parallel. If more than one of those defers does something that generates
+	// a command there is a race on multiple data structure in the SDK state machine.
+	re := func(ctx workflow.Context) {
+		ctx, _ = workflow.NewDisconnectedContext(ctx)
+		ctx, cancel := workflow.WithCancel(ctx)
+		if testCase == "child_workflow" {
+			ctx = workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{WaitForCancellation: true})
+			child := workflow.ExecuteChildWorkflow(ctx, w.SleepForDuration, 10*time.Minute)
+			if err := child.GetChildWorkflowExecution().Get(ctx, nil); err != nil {
+				panic(err)
+			}
+		} else if testCase == "activity" {
+			ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+				ScheduleToStartTimeout: 30 * time.Second,
+				StartToCloseTimeout:    30 * time.Second,
+			})
+			_ = workflow.ExecuteActivity(ctx, "Prefix_ToUpperWithDelay", "hello", 10*time.Second)
+		} else if testCase == "timer" {
+			_ = workflow.NewTimer(ctx, 10*time.Second)
+		}
+
+		defer func() {
+			time.Sleep(time.Second)
+			cancel()
+		}()
+		// Since the main workflow function returns before this timer finishes the code will never run past it
+		_ = workflow.Sleep(ctx, time.Hour)
+	}
+	for i := 0; i < 10; i++ {
+		workflow.Go(ctx, re)
+	}
+	// Returning will eventually cause all the other go routines to clean up and call goexit in parallel
+	return workflow.Sleep(ctx, 5*time.Second)
+}
+
 func (w *Workflows) CancelMultipleCommandsOverMultipleTasks(ctx workflow.Context) error {
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 	// We want this "cleanup" activity to be run when the whole workflow is cancelled
@@ -2410,6 +2449,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.UpsertMemo)
 	worker.RegisterWorkflow(w.SessionFailedStateWorkflow)
 	worker.RegisterWorkflow(w.VersionLoopWorkflow)
+	worker.RegisterWorkflow(w.RaceOnCacheEviction)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)

@@ -638,6 +638,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 
 	if cancellable {
 		cancellationCallback.fn = func(v interface{}, more bool) bool {
+			assertNotInReadOnlyStateCancellation(ctx)
 			if ctx.Err() == ErrCanceled {
 				wc.env.RequestCancelActivity(a)
 			}
@@ -838,6 +839,7 @@ func (wc *workflowEnvironmentInterceptor) scheduleLocalActivity(ctx Context, par
 
 	if cancellable {
 		cancellationCallback.fn = func(v interface{}, more bool) bool {
+			assertNotInReadOnlyStateCancellation(ctx)
 			if ctx.Err() == ErrCanceled {
 				getWorkflowEnvironment(ctx).RequestCancelLocalActivity(la)
 			}
@@ -951,6 +953,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 			// which would result in an uncanceled workflow.
 			if cancellable {
 				cancellationCallback.fn = func(v interface{}, _ bool) bool {
+					assertNotInReadOnlyStateCancellation(ctx)
 					if ctx.Err() == ErrCanceled && !mainFuture.IsReady() {
 						// child workflow started, and ctx canceled
 						getWorkflowEnvironment(ctx).RequestCancelChildWorkflow(options.Namespace, r.ID)
@@ -1123,6 +1126,7 @@ func (wc *workflowEnvironmentInterceptor) NewTimer(ctx Context, d time.Duration)
 
 	if timerID != nil && cancellable {
 		cancellationCallback.fn = func(v interface{}, more bool) bool {
+			assertNotInReadOnlyStateCancellation(ctx)
 			if !future.IsReady() {
 				wc.env.RequestCancelTimer(*timerID)
 			}

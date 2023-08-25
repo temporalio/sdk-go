@@ -943,6 +943,14 @@ func (ts *IntegrationTestSuite) TestCancelChildWorkflow() {
 	ts.EqualValues(expected, ts.activities.invoked())
 }
 
+func (ts *IntegrationTestSuite) TestConcurrentMapWriteWorkflow() {
+	testCases := []string{"activity", "child_workflow", "timer"}
+	for _, t := range testCases {
+		err := ts.executeWorkflow("test-concurrent-map-write-workflow", ts.workflows.RaceOnCacheEviction, nil, t)
+		ts.NoError(err)
+	}
+}
+
 func (ts *IntegrationTestSuite) TestCantStartChildAfterBeingCancelled() {
 	const wfID = "test-cant-start-child-after-cancel"
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
