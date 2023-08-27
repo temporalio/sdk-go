@@ -1,8 +1,6 @@
 // The MIT License
 //
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
+// Copyright (c) 2023 Temporal Technologies Inc.  All rights reserved.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -22,18 +20,40 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package internal
+package testsuite
 
-// Below are the metadata which will be embedded as part of headers in every RPC call made by this client to Temporal server.
-// Update to the metadata below is typically done by the Temporal team as part of a major feature or behavior change.
+import (
+	"os"
+	"os/exec"
+	"syscall"
 
-const (
-	// SDKVersion is a semver (https://semver.org/) that represents the version of this Temporal GoSDK.
-	// Server validates if SDKVersion fits its supported range and rejects request if it doesn't.
-	SDKVersion = "1.24.0"
-
-	// SupportedServerVersions is a semver rages (https://github.com/blang/semver#ranges) of server versions that
-	// are supported by this Temporal SDK.
-	// Server validates if its version fits into SupportedServerVersions range and rejects request if it doesn't.
-	SupportedServerVersions = ">=1.0.0 <2.0.0"
+	"golang.org/x/sys/windows"
 )
+
+// newCmd creates a new command with the given executable path and arguments.
+func newCmd(exePath string, args ...string) *exec.Cmd {
+	cmd := exec.Command(exePath, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		// isolate the process and signals sent to it from the current console
+		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
+	}
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	return cmd
+}
+
+// sendInterrupt calls the break event on the given process for graceful shutdown.
+func sendInterrupt(process *os.Process) error {
+	dll, err := windows.LoadDLL("kernel32.dll")
+	if err != nil {
+		return err
+	}
+	p, err := dll.FindProc("GenerateConsoleCtrlEvent")
+	if err != nil {
+		return err
+	}
+	r, _, err := p.Call(uintptr(windows.CTRL_BREAK_EVENT), uintptr(process.Pid))
+	if r == 0 {
+		return err
+	}
+	return nil
+}

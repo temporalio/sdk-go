@@ -1348,6 +1348,107 @@ func (s *WorkflowUnitTest) Test_WaitGroupWorkflowTest() {
 	s.Equal(n, total)
 }
 
+func (s *WorkflowUnitTest) Test_MutatingFunctionsInSideEffect() {
+	env := s.NewTestWorkflowEnvironment()
+
+	wf := func(ctx Context) error {
+		SideEffect(ctx, func(ctx Context) interface{} {
+			_ = Sleep(ctx, time.Minute)
+			return nil
+		})
+		return nil
+	}
+	env.RegisterWorkflow(wf)
+	env.ExecuteWorkflow(wf)
+	s.True(env.IsWorkflowCompleted())
+	s.Error(env.GetWorkflowError())
+}
+
+func (s *WorkflowUnitTest) Test_MutatingFunctionsInMutableSideEffect() {
+	env := s.NewTestWorkflowEnvironment()
+
+	wf := func(ctx Context) error {
+		MutableSideEffect(ctx, "test-side-effect", func(ctx Context) interface{} {
+			_ = Sleep(ctx, time.Minute)
+			return nil
+		}, func(a, b interface{}) bool { return false })
+		return nil
+	}
+	env.RegisterWorkflow(wf)
+	env.ExecuteWorkflow(wf)
+	s.True(env.IsWorkflowCompleted())
+	s.Error(env.GetWorkflowError())
+}
+
+func (s *WorkflowUnitTest) Test_MutatingFunctionsInQueries() {
+	env := s.NewTestWorkflowEnvironment()
+
+	wf := func(ctx Context) error {
+		currentState := "fail"
+		_ = SetQueryHandler(ctx, queryType, func() (string, error) {
+			_ = Sleep(ctx, time.Minute)
+			return currentState, nil
+		})
+		_ = Sleep(ctx, time.Minute)
+		return nil
+	}
+	env.RegisterWorkflow(wf)
+	env.RegisterDelayedCallback(func() {
+		_, err := env.QueryWorkflow(queryType, "test")
+		s.Error(err)
+	}, time.Second)
+	env.ExecuteWorkflow(wf)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+}
+
+type updateCallback struct {
+	accept   func()
+	reject   func(error)
+	complete func(interface{}, error)
+}
+
+func (uc *updateCallback) Accept() {
+	uc.accept()
+}
+
+func (uc *updateCallback) Reject(err error) {
+	uc.reject(err)
+}
+
+func (uc *updateCallback) Complete(success interface{}, err error) {
+	uc.complete(success, err)
+}
+
+func (s *WorkflowUnitTest) Test_MutatingFunctionsInUpdateValidator() {
+	env := s.NewTestWorkflowEnvironment()
+
+	wf := func(ctx Context) error {
+		currentState := "fail"
+		_ = SetUpdateHandler(ctx, updateType, func(ctx Context) (string, error) {
+			_ = Sleep(ctx, time.Minute)
+			return currentState, nil
+		}, UpdateHandlerOptions{
+			Validator: func(ctx Context) error {
+				return Sleep(ctx, time.Minute)
+			},
+		})
+		_ = Sleep(ctx, time.Minute)
+		return nil
+	}
+	env.RegisterWorkflow(wf)
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflow(updateType, "testID", &updateCallback{
+			reject: func(err error) {
+				s.Error(err)
+			},
+		})
+	}, time.Second)
+	env.ExecuteWorkflow(wf)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+}
+
 func (s *WorkflowUnitTest) Test_StaleGoroutinesAreShutDown() {
 	env := s.NewTestWorkflowEnvironment()
 	deferred := make(chan struct{})

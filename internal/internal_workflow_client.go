@@ -92,6 +92,7 @@ type (
 		excludeInternalFromRetry *uberatomic.Bool
 		capabilities             *workflowservice.GetSystemInfoResponse_Capabilities
 		capabilitiesLock         sync.RWMutex
+		eagerDispatcher          *eagerWorkflowDispatcher
 
 		// The pointer value is shared across multiple clients. If non-nil, only
 		// access/mutate atomically.
@@ -193,6 +194,11 @@ type (
 		err error
 		// func which use a next token to get next page of history events
 		paginate func(nexttoken []byte) (*workflowservice.GetWorkflowExecutionHistoryResponse, error)
+	}
+
+	// queryRejectedError is a wrapper for QueryRejected
+	queryRejectedError struct {
+		queryRejected *querypb.QueryRejected
 	}
 )
 
@@ -879,43 +885,28 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 		return nil, err
 	}
 
-	var input *commonpb.Payloads
-	if len(request.Args) > 0 {
-		var err error
-		if input, err = encodeArgs(wc.dataConverter, request.Args); err != nil {
-			return nil, err
-		}
-	}
-	req := &workflowservice.QueryWorkflowRequest{
-		Namespace: wc.namespace,
-		Execution: &commonpb.WorkflowExecution{
-			WorkflowId: request.WorkflowID,
-			RunId:      request.RunID,
-		},
-		Query: &querypb.WorkflowQuery{
-			QueryType: request.QueryType,
-			QueryArgs: input,
-			Header:    request.Header,
-		},
-		QueryRejectCondition: request.QueryRejectCondition,
-	}
-
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
-	defer cancel()
-	resp, err := wc.workflowService.QueryWorkflow(grpcCtx, req)
+	// Set header before interceptor run
+	ctx, err := contextWithHeaderPropagated(ctx, request.Header, wc.contextPropagators)
 	if err != nil {
 		return nil, err
 	}
 
-	if resp.QueryRejected != nil {
-		return &QueryWorkflowWithOptionsResponse{
-			QueryRejected: resp.QueryRejected,
-			QueryResult:   nil,
-		}, nil
+	result, err := wc.interceptor.QueryWorkflow(ctx, &ClientQueryWorkflowInput{
+		WorkflowID: request.WorkflowID,
+		RunID:      request.RunID,
+		QueryType:  request.QueryType,
+		Args:       request.Args,
+	})
+	if err != nil {
+		if err, ok := err.(*queryRejectedError); ok {
+			return &QueryWorkflowWithOptionsResponse{
+				QueryRejected: err.queryRejected,
+			}, nil
+		}
+		return nil, err
 	}
 	return &QueryWorkflowWithOptionsResponse{
-		QueryRejected: nil,
-		QueryResult:   newEncodedValue(resp.QueryResult, wc.dataConverter),
+		QueryResult: result,
 	}, nil
 }
 
@@ -1453,7 +1444,9 @@ func serializeSearchAttributes(input map[string]interface{}) (*commonpb.SearchAt
 	return &commonpb.SearchAttributes{IndexedFields: attr}, nil
 }
 
-type workflowClientInterceptor struct{ client *WorkflowClient }
+type workflowClientInterceptor struct {
+	client *WorkflowClient
+}
 
 func (w *workflowClientInterceptor) ExecuteWorkflow(
 	ctx context.Context,
@@ -1516,6 +1509,11 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		Header:                   header,
 	}
 
+	var eagerExecutor *eagerWorkflowExecutor
+	if in.Options.EnableEagerStart && w.client.capabilities.GetEagerWorkflowStart() && w.client.eagerDispatcher != nil {
+		eagerExecutor = w.client.eagerDispatcher.applyToRequest(startRequest)
+	}
+
 	var response *workflowservice.StartWorkflowExecutionResponse
 
 	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(
@@ -1524,7 +1522,12 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 	defer cancel()
 
 	response, err = w.client.workflowService.StartWorkflowExecution(grpcCtx, startRequest)
-
+	eagerWorkflowTask := response.GetEagerWorkflowTask()
+	if eagerWorkflowTask != nil && eagerExecutor != nil {
+		eagerExecutor.handleResponse(eagerWorkflowTask)
+	} else if eagerExecutor != nil {
+		eagerExecutor.release()
+	}
 	// Allow already-started error
 	var runID string
 	if e, ok := err.(*serviceerror.WorkflowExecutionAlreadyStarted); ok && !in.Options.WorkflowExecutionErrorWhenAlreadyStarted {
@@ -1724,17 +1727,40 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 		return nil, err
 	}
 
-	result, err := w.client.QueryWorkflowWithOptions(ctx, &QueryWorkflowWithOptionsRequest{
-		WorkflowID: in.WorkflowID,
-		RunID:      in.RunID,
-		QueryType:  in.QueryType,
-		Args:       in.Args,
-		Header:     header,
-	})
+	var input *commonpb.Payloads
+	if len(in.Args) > 0 {
+		var err error
+		if input, err = encodeArgs(w.client.dataConverter, in.Args); err != nil {
+			return nil, err
+		}
+	}
+	req := &workflowservice.QueryWorkflowRequest{
+		Namespace: w.client.namespace,
+		Execution: &commonpb.WorkflowExecution{
+			WorkflowId: in.WorkflowID,
+			RunId:      in.RunID,
+		},
+		Query: &querypb.WorkflowQuery{
+			QueryType: in.QueryType,
+			QueryArgs: input,
+			Header:    header,
+		},
+		QueryRejectCondition: in.QueryRejectCondition,
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	resp, err := w.client.workflowService.QueryWorkflow(grpcCtx, req)
 	if err != nil {
 		return nil, err
 	}
-	return result.QueryResult, nil
+
+	if resp.QueryRejected != nil {
+		return nil, &queryRejectedError{
+			queryRejected: resp.QueryRejected,
+		}
+	}
+	return newEncodedValue(resp.QueryResult, w.client.dataConverter), nil
 }
 
 func (w *workflowClientInterceptor) UpdateWorkflow(
@@ -1745,9 +1771,11 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 	if err != nil {
 		return nil, err
 	}
-	header, _ := headerPropagated(ctx, w.client.contextPropagators)
-
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	header, err := headerPropagated(ctx, w.client.contextPropagators)
+	if err != nil {
+		return nil, err
+	}
+	grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(pollUpdateTimeout), grpcLongPoll(true), defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	wfexec := &commonpb.WorkflowExecution{
 		WorkflowId: in.WorkflowID,
@@ -1872,4 +1900,8 @@ func (luh *lazyUpdateHandle) Get(ctx context.Context, valuePtr interface{}) erro
 		return err
 	}
 	return enc.Get(valuePtr)
+}
+
+func (q *queryRejectedError) Error() string {
+	return q.queryRejected.GoString()
 }

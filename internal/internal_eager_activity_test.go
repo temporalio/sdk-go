@@ -38,7 +38,7 @@ import (
 func TestEagerActivityDisabled(t *testing.T) {
 	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{disabled: true, taskQueue: "task-queue1"})
 	exec.activityWorker = newActivityWorker(nil,
-		workerExecutionParameters{TaskQueue: "task-queue1"}, nil, newRegistry(), nil)
+		workerExecutionParameters{TaskQueue: "task-queue1"}, nil, newRegistry(), nil).worker
 
 	// Turns requests to false when disabled
 	var req workflowservice.RespondWorkflowTaskCompletedRequest
@@ -59,11 +59,13 @@ func TestEagerActivityNoActivityWorker(t *testing.T) {
 
 func TestEagerActivityWrongTaskQueue(t *testing.T) {
 	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{taskQueue: "task-queue1"})
-	exec.activityWorker = newActivityWorker(nil,
-		workerExecutionParameters{TaskQueue: "task-queue1", ConcurrentActivityExecutionSize: 10}, nil, newRegistry(), nil)
+	activityWorker := newActivityWorker(nil, workerExecutionParameters{TaskQueue: "task-queue1", ConcurrentActivityExecutionSize: 10}, nil, newRegistry(), nil)
+	activityWorker.worker.isWorkerStarted = true
+
+	exec.activityWorker = activityWorker.worker
 	// Fill up the poller request channel
 	for i := 0; i < 10; i++ {
-		exec.activityWorker.worker.pollerRequestCh <- struct{}{}
+		activityWorker.worker.pollerRequestCh <- struct{}{}
 	}
 
 	// Turns requests to false when wrong task queue
@@ -77,11 +79,14 @@ func TestEagerActivityWrongTaskQueue(t *testing.T) {
 
 func TestEagerActivityMaxPerTask(t *testing.T) {
 	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{taskQueue: "task-queue1"})
-	exec.activityWorker = newActivityWorker(nil,
+	activityWorker := newActivityWorker(nil,
 		workerExecutionParameters{TaskQueue: "task-queue1", ConcurrentActivityExecutionSize: 10}, nil, newRegistry(), nil)
+	activityWorker.worker.isWorkerStarted = true
+
+	exec.activityWorker = activityWorker.worker
 	// Fill up the poller request channel
 	for i := 0; i < 10; i++ {
-		exec.activityWorker.worker.pollerRequestCh <- struct{}{}
+		activityWorker.worker.pollerRequestCh <- struct{}{}
 	}
 
 	// Add 8, but it limits to only the first 3
@@ -99,16 +104,20 @@ func TestEagerActivityCounts(t *testing.T) {
 	// We'll create an eager activity executor with 3 max eager concurrent and 5
 	// max concurrent
 	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{taskQueue: "task-queue1", maxConcurrent: 3})
-	exec.activityWorker = newActivityWorker(nil,
+	activityWorker := newActivityWorker(nil,
 		workerExecutionParameters{TaskQueue: "task-queue1", ConcurrentActivityExecutionSize: 5}, nil, newRegistry(), nil)
+	activityWorker.worker.isWorkerStarted = true
+	go activityWorker.worker.runEagerTaskDispatcher()
+
+	exec.activityWorker = activityWorker.worker
 	// Fill up the poller request channel
-	slotsCh := exec.activityWorker.worker.pollerRequestCh
+	slotsCh := activityWorker.worker.pollerRequestCh
 	for i := 0; i < 5; i++ {
 		slotsCh <- struct{}{}
 	}
 	// Replace task processor
 	taskProcessor := newWaitingTaskProcessor()
-	exec.activityWorker.worker.options.taskWorker = taskProcessor
+	activityWorker.worker.options.taskWorker = taskProcessor
 
 	// Request 2 commands on wrong task queue then 5 commands on proper task queue
 	// but have 2nd request disabled

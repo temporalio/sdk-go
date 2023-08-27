@@ -27,6 +27,7 @@ import (
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -127,12 +128,16 @@ type WorkflowInboundInterceptor interface {
 	// as part of its optional configuration. The same prohibition against
 	// mutating workflow state that is demanded of UpdateOptions.Validator
 	// functions also applies to this function.
+	//
+	// NOTE: Experimental
 	ValidateUpdate(ctx Context, in *UpdateInput) error
 
 	// ExecuteUpdate is called after ValidateUpdate if and only if the latter
 	// returns nil. interceptor.WorkflowHeader will return a non-nil map for
 	// this context. ExecuteUpdate is allowed to mutate workflow state and
 	// perform workflow actions such as scheduling activities, timers, etc.
+	//
+	// NOTE: Experimental
 	ExecuteUpdate(ctx Context, in *UpdateInput) (interface{}, error)
 
 	mustEmbedWorkflowInboundInterceptorBase()
@@ -171,6 +176,12 @@ type WorkflowOutboundInterceptor interface {
 	// Go intercepts workflow.Go.
 	Go(ctx Context, name string, f func(ctx Context)) Context
 
+	// Await intercepts workflow.Await.
+	Await(ctx Context, condition func() bool) error
+
+	// AwaitWithTimeout intercepts workflow.AwaitWithTimeout.
+	AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool) (bool, error)
+
 	// ExecuteActivity intercepts workflow.ExecuteActivity.
 	// interceptor.WorkflowHeader will return a non-nil map for this context.
 	ExecuteActivity(ctx Context, activityType string, args ...interface{}) Future
@@ -185,6 +196,11 @@ type WorkflowOutboundInterceptor interface {
 
 	// GetInfo intercepts workflow.GetInfo.
 	GetInfo(ctx Context) *WorkflowInfo
+
+	// GetUpdateInfo intercepts workflow.GetUpdateInfo.
+	//
+	// NOTE: Experimental
+	GetUpdateInfo(ctx Context) *UpdateInfo
 
 	// GetLogger intercepts workflow.GetLogger.
 	GetLogger(ctx Context) log.Logger
@@ -390,8 +406,9 @@ type ClientTerminateWorkflowInput struct {
 // ClientQueryWorkflowInput is the input to
 // ClientOutboundInterceptor.QueryWorkflow.
 type ClientQueryWorkflowInput struct {
-	WorkflowID string
-	RunID      string
-	QueryType  string
-	Args       []interface{}
+	WorkflowID           string
+	RunID                string
+	QueryType            string
+	Args                 []interface{}
+	QueryRejectCondition enumspb.QueryRejectCondition
 }

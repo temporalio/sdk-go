@@ -112,6 +112,11 @@ type TracerOptions struct {
 
 	// DisableQueryTracing can be set to disable query tracing.
 	DisableQueryTracing bool
+
+	// AllowInvalidParentSpans will swallow errors interpreting parent
+	// spans from headers. Useful when migrating from one tracing library
+	// to another, while workflows/activities may be in progress.
+	AllowInvalidParentSpans bool
 }
 
 // TracerStartSpanOptions are options for Tracer.StartSpan.
@@ -693,7 +698,7 @@ func (t *tracingInterceptor) startSpan(
 
 	// Get parent span from header if not already present and allowed
 	if options.Parent == nil && options.FromHeader {
-		if span, err := t.readSpanFromHeader(header); err != nil {
+		if span, err := t.readSpanFromHeader(header); err != nil && !t.options.AllowInvalidParentSpans {
 			return nil, err
 		} else if span != nil {
 			options.Parent = span

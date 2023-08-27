@@ -74,6 +74,14 @@ There is nothing special about Activity code. You can write Activity implementat
 other Go service code. You can use the usual loggers and metrics collectors. You can use the standard Go concurrency
 constructs.
 
+# Context Cancellation
+
+The first parameter to an activity function can be an optional context.Context. The context will be cancelled when:
+* The activity function returns.
+* The context deadline is exceeded. The deadline is calculated based on the minimum of the ScheduleToClose timeout plus
+the activity task scheduled time and the StartToClose timeout plus the activity task start time.
+* The activity calls RecordHeartbeat after being cancelled by the Temporal server.
+
 # Failing the Activity
 
 To mark an Activity as failed, all that needs to happen is for the Activity function to return an error via the error

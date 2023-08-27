@@ -49,6 +49,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/internal/common/retry"
+	"go.temporal.io/sdk/internal/protocol"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
@@ -91,6 +92,11 @@ type (
 		// This channel must be initialized with a one-size buffer and is used to indicate when
 		// it is time for a local activity to be retried
 		laRetryCh chan *localActivityTask
+	}
+
+	// eagerWorkflowTask represents a workflow task sent from an eager workflow executor
+	eagerWorkflowTask struct {
+		task *workflowservice.PollWorkflowTaskQueueResponse
 	}
 
 	// activityTask wraps a activity task.
@@ -182,6 +188,14 @@ type (
 	historyMismatchError struct {
 		message string
 	}
+
+	preparedTask struct {
+		events         []*historypb.HistoryEvent
+		markers        []*historypb.HistoryEvent
+		flags          []sdkFlag
+		msgs           []*protocolpb.Message
+		binaryChecksum string
+	}
 )
 
 func newHistory(task *workflowTask, eventsHandler *workflowExecutionEventHandlerImpl) *history {
@@ -223,14 +237,19 @@ func (eh *history) IsReplayEvent(event *historypb.HistoryEvent) bool {
 	return event.GetEventId() <= eh.workflowTask.task.GetPreviousStartedEventId() || isCommandEvent(event.GetEventType())
 }
 
+// IsNextWorkflowTaskFailed checks if the workflow task failed or completed. If it did complete returns some information
+// on the completed workflow task.
 func (eh *history) IsNextWorkflowTaskFailed() (isFailed bool, binaryChecksum string, flags []sdkFlag, err error) {
 	nextIndex := eh.currentIndex + 1
-	if nextIndex >= len(eh.loadedEvents) && eh.hasMoreEvents() { // current page ends and there is more pages
+	// Server can return an empty page so if we need the next event we must keep checking until we either get it
+	// or know we have no more pages to check
+	for nextIndex >= len(eh.loadedEvents) && eh.hasMoreEvents() { // current page ends and there is more pages
 		if err := eh.loadMoreEvents(); err != nil {
 			return false, "", nil, err
 		}
 	}
 
+	// If not replaying we should not expect to find any more events
 	if nextIndex < len(eh.loadedEvents) {
 		nextEvent := eh.loadedEvents[nextIndex]
 		nextEventType := nextEvent.GetEventType()
@@ -290,23 +309,40 @@ func isCommandEvent(eventType enumspb.EventType) bool {
 	}
 }
 
-// NextCommandEvents returns events that there processed as new by the next command.
-// TODO(maxim): Refactor to return a struct instead of multiple parameters
-func (eh *history) NextCommandEvents() (result []*historypb.HistoryEvent, markers []*historypb.HistoryEvent, binaryChecksum string, sdkFlags []sdkFlag, err error) {
+// nextTask returns the next task to be processed.
+func (eh *history) nextTask() (*preparedTask, error) {
 	if eh.next == nil {
-		eh.next, _, eh.nextFlags, err = eh.nextCommandEvents()
+		firstTask, err := eh.prepareTask()
 		if err != nil {
-			return result, markers, eh.binaryChecksum, sdkFlags, err
+			return nil, err
 		}
+		eh.next = firstTask.events
+		eh.nextFlags = firstTask.flags
 	}
 
-	result = eh.next
+	result := eh.next
 	checksum := eh.binaryChecksum
-	sdkFlags = eh.nextFlags
+	sdkFlags := eh.nextFlags
+
+	var markers []*historypb.HistoryEvent
+	var msgs []*protocolpb.Message
 	if len(result) > 0 {
-		eh.next, markers, eh.nextFlags, err = eh.nextCommandEvents()
+		nextTaskEvents, err := eh.prepareTask()
+		if err != nil {
+			return nil, err
+		}
+		eh.next = nextTaskEvents.events
+		eh.nextFlags = nextTaskEvents.flags
+		markers = nextTaskEvents.markers
+		msgs = nextTaskEvents.msgs
 	}
-	return result, markers, checksum, sdkFlags, err
+	return &preparedTask{
+		events:         result,
+		markers:        markers,
+		flags:          sdkFlags,
+		msgs:           msgs,
+		binaryChecksum: checksum,
+	}, nil
 }
 
 func (eh *history) hasMoreEvents() bool {
@@ -334,38 +370,38 @@ func (eh *history) verifyAllEventsProcessed() error {
 	return nil
 }
 
-func (eh *history) nextCommandEvents() (nextEvents []*historypb.HistoryEvent, markers []*historypb.HistoryEvent, sdkFlags []sdkFlag, err error) {
+func (eh *history) prepareTask() (*preparedTask, error) {
 	if eh.currentIndex == len(eh.loadedEvents) && !eh.hasMoreEvents() {
 		if err := eh.verifyAllEventsProcessed(); err != nil {
-			return nil, nil, nil, err
+			return nil, err
 		}
-		return []*historypb.HistoryEvent{}, []*historypb.HistoryEvent{}, []sdkFlag{}, nil
+		return &preparedTask{}, nil
 	}
 
 	// Process events
-
+	var taskEvents preparedTask
 OrderEvents:
 	for {
 		// load more history events if needed
 		for eh.currentIndex == len(eh.loadedEvents) {
 			if !eh.hasMoreEvents() {
-				if err = eh.verifyAllEventsProcessed(); err != nil {
-					return
+				if err := eh.verifyAllEventsProcessed(); err != nil {
+					return nil, err
 				}
 				break OrderEvents
 			}
-			if err = eh.loadMoreEvents(); err != nil {
-				return
+			if err := eh.loadMoreEvents(); err != nil {
+				return nil, err
 			}
 		}
 
 		event := eh.loadedEvents[eh.currentIndex]
 		eventID := event.GetEventId()
 		if eventID != eh.nextEventID {
-			err = fmt.Errorf(
+			err := fmt.Errorf(
 				"missing history events, expectedNextEventID=%v but receivedNextEventID=%v",
 				eh.nextEventID, eventID)
-			return
+			return nil, err
 		}
 
 		eh.nextEventID++
@@ -374,14 +410,14 @@ OrderEvents:
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
 			isFailed, binaryChecksum, newFlags, err1 := eh.IsNextWorkflowTaskFailed()
 			if err1 != nil {
-				err = err1
-				return
+				err := err1
+				return nil, err
 			}
 			if !isFailed {
 				eh.binaryChecksum = binaryChecksum
 				eh.currentIndex++
-				nextEvents = append(nextEvents, event)
-				sdkFlags = append(sdkFlags, newFlags...)
+				taskEvents.events = append(taskEvents.events, event)
+				taskEvents.flags = append(taskEvents.flags, newFlags...)
 				break OrderEvents
 			}
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED,
@@ -390,9 +426,11 @@ OrderEvents:
 			// Skip
 		default:
 			if isPreloadMarkerEvent(event) {
-				markers = append(markers, event)
+				taskEvents.markers = append(taskEvents.markers, event)
+			} else if attrs := event.GetWorkflowExecutionUpdateAcceptedEventAttributes(); attrs != nil {
+				taskEvents.msgs = append(taskEvents.msgs, inferMessage(attrs))
 			}
-			nextEvents = append(nextEvents, event)
+			taskEvents.events = append(taskEvents.events, event)
 		}
 		eh.currentIndex++
 	}
@@ -408,11 +446,22 @@ OrderEvents:
 
 	eh.currentIndex = 0
 
-	return nextEvents, markers, sdkFlags, nil
+	return &taskEvents, nil
 }
 
 func isPreloadMarkerEvent(event *historypb.HistoryEvent) bool {
 	return event.GetEventType() == enumspb.EVENT_TYPE_MARKER_RECORDED
+}
+
+func inferMessage(attrs *historypb.WorkflowExecutionUpdateAcceptedEventAttributes) *protocolpb.Message {
+	return &protocolpb.Message{
+		Id:                 attrs.GetAcceptedRequestMessageId(),
+		ProtocolInstanceId: attrs.GetProtocolInstanceId(),
+		SequencingId: &protocolpb.Message_EventId{
+			EventId: attrs.GetAcceptedRequestSequencingEventId(),
+		},
+		Body: protocol.MustMarshalAny(attrs.GetAcceptedRequest()),
+	}
 }
 
 // newWorkflowTaskHandler returns an implementation of workflow task handler.
@@ -450,11 +499,19 @@ func newWorkflowExecutionContext(
 	return workflowContext
 }
 
+// Lock acquires the lock on this context object, use Unlock(error) to release
+// the lock.
 func (w *workflowExecutionContextImpl) Lock() {
 	w.mutex.Lock()
 }
 
+// Unlock cleans up after the provided error and it's own internal view of the
+// workflow error state by clearing itself and removing itself from cache as
+// needed. It is an error to call this function without having called the Lock
+// function first and the behavior is undefined. Regardless of the error
+// handling involved, the context will be unlocked when this call returns.
 func (w *workflowExecutionContextImpl) Unlock(err error) {
+	defer w.mutex.Unlock()
 	if err != nil || w.err != nil || w.isWorkflowCompleted ||
 		(w.wth.cache.MaxWorkflowCacheSize() <= 0 && !w.hasPendingLocalActivityWork()) {
 		// TODO: in case of closed, it asumes the close command always succeed. need server side change to return
@@ -472,8 +529,6 @@ func (w *workflowExecutionContextImpl) Unlock(err error) {
 		// exited
 		w.clearState()
 	}
-
-	w.mutex.Unlock()
 }
 
 func (w *workflowExecutionContextImpl) getEventHandler() *workflowExecutionEventHandlerImpl {
@@ -566,7 +621,6 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 	if taskQueue == nil || taskQueue.Name == "" {
 		return nil, errors.New("nil or empty TaskQueue in WorkflowExecutionStarted event")
 	}
-	task.Messages = append(inferMessages(task.GetHistory().GetEvents()), task.Messages...)
 
 	runID := task.WorkflowExecution.GetRunId()
 	workflowID := task.WorkflowExecution.GetWorkflowId()
@@ -608,7 +662,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 	return newWorkflowExecutionContext(workflowInfo, wth), nil
 }
 
-func (wth *workflowTaskHandlerImpl) getOrCreateWorkflowContext(
+func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 	task *workflowservice.PollWorkflowTaskQueueResponse,
 	historyIterator HistoryIterator,
 ) (workflowContext *workflowExecutionContextImpl, err error) {
@@ -713,7 +767,6 @@ func (w *workflowExecutionContextImpl) resetStateIfDestroyed(task *workflowservi
 				return err
 			}
 		}
-		task.Messages = append(inferMessages(task.GetHistory().GetEvents()), task.Messages...)
 		if w.workflowInfo != nil {
 			// Reset the search attributes and memos from the WorkflowExecutionStartedEvent.
 			// The search attributes and memo may have been modified by calls like UpsertMemo
@@ -734,10 +787,11 @@ func (w *workflowExecutionContextImpl) resetStateIfDestroyed(task *workflowservi
 // ProcessWorkflowTask processes all the events of the workflow task.
 func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	workflowTask *workflowTask,
+	workflowContext *workflowExecutionContextImpl,
 	heartbeatFunc workflowTaskHeartbeatFunc,
-) (completeRequest interface{}, resetter EventLevelResetter, errRet error) {
+) (completeRequest interface{}, errRet error) {
 	if workflowTask == nil || workflowTask.task == nil {
-		return nil, nil, errors.New("nil workflow task provided")
+		return nil, errors.New("nil workflow task provided")
 	}
 	task := workflowTask.task
 	if task.History == nil || len(task.History.Events) == 0 {
@@ -746,11 +800,11 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 		}
 	}
 	if task.Query == nil && len(task.History.Events) == 0 {
-		return nil, nil, errors.New("nil or empty history")
+		return nil, errors.New("nil or empty history")
 	}
 
 	if task.Query != nil && len(task.Queries) != 0 {
-		return nil, nil, errors.New("invalid query workflow task")
+		return nil, errors.New("invalid query workflow task")
 	}
 
 	runID := task.WorkflowExecution.GetRunId()
@@ -764,18 +818,12 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 			tagPreviousStartedEventID, task.GetPreviousStartedEventId())
 	})
 
-	workflowContext, err := wth.getOrCreateWorkflowContext(task, workflowTask.historyIterator)
-	if err != nil {
-		return nil, nil, err
-	}
+	var (
+		response       interface{}
+		err            error
+		heartbeatTimer *time.Timer
+	)
 
-	defer func() {
-		workflowContext.Unlock(errRet)
-	}()
-
-	var response interface{}
-
-	var heartbeatTimer *time.Timer
 	defer func() {
 		if heartbeatTimer != nil {
 			heartbeatTimer.Stop()
@@ -860,7 +908,6 @@ processWorkflowLoop:
 	}
 	errRet = err
 	completeRequest = response
-	resetter = workflowContext.SetPreviousStartedEventID
 	return
 }
 
@@ -878,8 +925,7 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 	var replayCommands []*commandpb.Command
 	var respondEvents []*historypb.HistoryEvent
 
-	msgs := indexMessagesByEventID(workflowTask.task.GetMessages())
-
+	taskMessages := workflowTask.task.GetMessages()
 	skipReplayCheck := w.skipReplayCheck()
 	shouldForceReplayCheck := func() bool {
 		isInReplayer := IsReplayNamespace(w.wth.namespace)
@@ -899,10 +945,25 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 
 ProcessEvents:
 	for {
-		reorderedEvents, markers, binaryChecksum, flags, err := reorderedHistory.NextCommandEvents()
+		nextTask, err := reorderedHistory.nextTask()
 		if err != nil {
 			return nil, err
 		}
+		reorderedEvents := nextTask.events
+		markers := nextTask.markers
+		historyMessages := nextTask.msgs
+		flags := nextTask.flags
+		binaryChecksum := nextTask.binaryChecksum
+		// Check if we are replaying so we know if we should use the messages in the WFT or the history
+		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
+		var msgs *eventMsgIndex
+		if isReplay {
+			msgs = indexMessagesByEventID(historyMessages)
+		} else {
+			msgs = indexMessagesByEventID(taskMessages)
+			taskMessages = []*protocolpb.Message{}
+		}
+
 		eventHandler.sdkFlags.set(flags...)
 		if len(reorderedEvents) == 0 {
 			break ProcessEvents
@@ -993,7 +1054,6 @@ ProcessEvents:
 				}
 			}
 		}
-		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
 		if isReplay {
 			eventCommands := eventHandler.commandsHelper.getCommands(true)
 			if !skipReplayCheck {
@@ -1164,6 +1224,9 @@ func (w *workflowExecutionContextImpl) CompleteWorkflowTask(workflowTask *workfl
 				task := eventHandler.pendingLaTasks[activityID]
 				task.wc = w
 				task.workflowTask = workflowTask
+
+				task.scheduledTime = time.Now()
+
 				if !w.laTunnel.sendTask(task) {
 					unstartedLaTasks[activityID] = struct{}{}
 					task.wc = nil
@@ -1220,8 +1283,6 @@ func (w *workflowExecutionContextImpl) SetCurrentTask(task *workflowservice.Poll
 }
 
 func (w *workflowExecutionContextImpl) SetPreviousStartedEventID(eventID int64) {
-	w.mutex.Lock() // This call can race against the cache eviction thread - see clearState
-	defer w.mutex.Unlock()
 	w.previousStartedEventID = eventID
 }
 

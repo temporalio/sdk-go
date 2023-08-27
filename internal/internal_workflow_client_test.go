@@ -1115,6 +1115,201 @@ func (s *workflowClientTestSuite) TestStartWorkflow() {
 	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 }
 
+func (s *workflowClientTestSuite) TestEagerStartWorkflowNotSupported() {
+	client, ok := s.client.(*WorkflowClient)
+	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{
+		EagerWorkflowStart: false,
+	}
+
+	var processTask bool
+	var releaseSlot bool
+	client.eagerDispatcher = &eagerWorkflowDispatcher{
+		workersByTaskQueue: map[string][]eagerWorker{
+			taskqueue: {
+				&eagerWorkerMock{
+					tryReserveSlotCallback: func() bool { return true },
+					releaseSlotCallback: func() {
+						releaseSlot = true
+					},
+					processTaskAsyncCallback: func(task interface{}, callback func()) {
+						processTask = true
+						callback()
+					},
+				},
+			},
+		},
+	}
+	s.True(ok)
+	options := StartWorkflowOptions{
+		ID:                       workflowID,
+		TaskQueue:                taskqueue,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
+		EnableEagerStart:         true,
+	}
+	f1 := func(ctx Context, r []byte) string {
+		panic("this is just a stub")
+	}
+
+	createResponse := &workflowservice.StartWorkflowExecutionResponse{
+		RunId:             runID,
+		EagerWorkflowTask: &workflowservice.PollWorkflowTaskQueueResponse{},
+	}
+	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
+
+	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, []byte("test"))
+	s.Equal(converter.GetDefaultDataConverter(), client.dataConverter)
+	s.Nil(err)
+	s.Equal(createResponse.GetRunId(), resp.GetRunID())
+	s.False(processTask)
+	s.False(releaseSlot)
+}
+
+func (s *workflowClientTestSuite) TestEagerStartWorkflowNoWorker() {
+	client, ok := s.client.(*WorkflowClient)
+	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{
+		EagerWorkflowStart: false,
+	}
+
+	var processTask bool
+	var releaseSlot bool
+	client.eagerDispatcher = &eagerWorkflowDispatcher{
+		workersByTaskQueue: map[string][]eagerWorker{
+			taskqueue: {
+				&eagerWorkerMock{
+					tryReserveSlotCallback: func() bool { return false },
+					releaseSlotCallback: func() {
+						releaseSlot = true
+					},
+					processTaskAsyncCallback: func(task interface{}, callback func()) {
+						processTask = true
+						callback()
+					},
+				},
+			},
+		},
+	}
+	s.True(ok)
+	options := StartWorkflowOptions{
+		ID:                       workflowID,
+		TaskQueue:                taskqueue,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
+		EnableEagerStart:         true,
+	}
+	f1 := func(ctx Context, r []byte) string {
+		panic("this is just a stub")
+	}
+
+	createResponse := &workflowservice.StartWorkflowExecutionResponse{
+		RunId:             runID,
+		EagerWorkflowTask: &workflowservice.PollWorkflowTaskQueueResponse{},
+	}
+	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
+
+	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, []byte("test"))
+	s.Equal(converter.GetDefaultDataConverter(), client.dataConverter)
+	s.Nil(err)
+	s.Equal(createResponse.GetRunId(), resp.GetRunID())
+	s.False(processTask)
+	s.False(releaseSlot)
+}
+
+func (s *workflowClientTestSuite) TestEagerStartWorkflow() {
+	client, ok := s.client.(*WorkflowClient)
+	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{
+		EagerWorkflowStart: true,
+	}
+
+	var processTask bool
+	var releaseSlot bool
+	client.eagerDispatcher = &eagerWorkflowDispatcher{
+		workersByTaskQueue: map[string][]eagerWorker{
+			taskqueue: {
+				&eagerWorkerMock{
+					tryReserveSlotCallback: func() bool { return true },
+					releaseSlotCallback: func() {
+						releaseSlot = true
+					},
+					processTaskAsyncCallback: func(task interface{}, callback func()) {
+						processTask = true
+						callback()
+					},
+				},
+			},
+		},
+	}
+	s.True(ok)
+	options := StartWorkflowOptions{
+		ID:                       workflowID,
+		TaskQueue:                taskqueue,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
+		EnableEagerStart:         true,
+	}
+	f1 := func(ctx Context, r []byte) string {
+		panic("this is just a stub")
+	}
+
+	createResponse := &workflowservice.StartWorkflowExecutionResponse{
+		RunId:             runID,
+		EagerWorkflowTask: &workflowservice.PollWorkflowTaskQueueResponse{},
+	}
+	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
+
+	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, []byte("test"))
+	s.Equal(converter.GetDefaultDataConverter(), client.dataConverter)
+	s.Nil(err)
+	s.Equal(createResponse.GetRunId(), resp.GetRunID())
+	s.True(processTask)
+	s.True(releaseSlot)
+}
+
+func (s *workflowClientTestSuite) TestEagerStartWorkflowStartRequestFail() {
+	client, ok := s.client.(*WorkflowClient)
+	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{
+		EagerWorkflowStart: true,
+	}
+
+	var processTask bool
+	var releaseSlot bool
+	client.eagerDispatcher = &eagerWorkflowDispatcher{
+		workersByTaskQueue: map[string][]eagerWorker{
+			taskqueue: {
+				&eagerWorkerMock{
+					tryReserveSlotCallback: func() bool { return true },
+					releaseSlotCallback: func() {
+						releaseSlot = true
+					},
+					processTaskAsyncCallback: func(task interface{}, callback func()) {
+						processTask = true
+						callback()
+					},
+				},
+			},
+		},
+	}
+	s.True(ok)
+	options := StartWorkflowOptions{
+		ID:                       workflowID,
+		TaskQueue:                taskqueue,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
+		EnableEagerStart:         true,
+	}
+	f1 := func(ctx Context, r []byte) string {
+		panic("this is just a stub")
+	}
+
+	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("failed request"))
+
+	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, []byte("test"))
+	s.Nil(resp)
+	s.Error(err)
+	s.False(processTask)
+	s.True(releaseSlot)
+}
+
 func (s *workflowClientTestSuite) TestExecuteWorkflowWithDataConverter() {
 	dc := iconverter.NewTestDataConverter()
 	s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})

@@ -241,3 +241,11 @@ func (s *activityTestSuite) TestGetWorkerStopChannel() {
 	channel := GetWorkerStopChannel(ctx)
 	s.NotNil(channel)
 }
+
+func (s *activityTestSuite) TestIsActivity() {
+	ctx := context.Background()
+	s.False(IsActivity(ctx))
+	ch := make(chan struct{}, 1)
+	ctx, _ = newActivityContext(context.Background(), nil, &activityEnvironment{workerStopChannel: ch})
+	s.True(IsActivity(ctx))
+}

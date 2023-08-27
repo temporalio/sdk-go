@@ -49,7 +49,6 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
-	protocolpb "go.temporal.io/api/protocol/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 
@@ -58,7 +57,6 @@ import (
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/common/util"
 	ilog "go.temporal.io/sdk/internal/log"
-	"go.temporal.io/sdk/internal/protocol"
 	"go.temporal.io/sdk/log"
 )
 
@@ -292,18 +290,19 @@ func newWorkflowWorkerInternal(service workflowservice.WorkflowServiceClient, pa
 	} else {
 		taskHandler = newWorkflowTaskHandler(params, ppMgr, registry)
 	}
-	return newWorkflowTaskWorkerInternal(taskHandler, service, params, workerStopChannel, registry.interceptors)
+	return newWorkflowTaskWorkerInternal(taskHandler, taskHandler, service, params, workerStopChannel, registry.interceptors)
 }
 
 func newWorkflowTaskWorkerInternal(
 	taskHandler WorkflowTaskHandler,
+	contextManager WorkflowContextManager,
 	service workflowservice.WorkflowServiceClient,
 	params workerExecutionParameters,
 	stopC chan struct{},
 	interceptors []WorkerInterceptor,
 ) *workflowWorker {
 	ensureRequiredParams(&params)
-	poller := newWorkflowTaskPoller(taskHandler, service, params)
+	poller := newWorkflowTaskPoller(taskHandler, contextManager, service, params)
 	worker := newBaseWorker(baseWorkerOptions{
 		pollerCount:       params.MaxConcurrentWorkflowTaskQueuePollers,
 		pollerRate:        defaultPollerRate,
@@ -952,6 +951,9 @@ func (aw *AggregatedWorker) Start() error {
 		if err := aw.workflowWorker.Start(); err != nil {
 			return err
 		}
+		if aw.client.eagerDispatcher != nil {
+			aw.client.eagerDispatcher.registerWorker(aw.workflowWorker)
+		}
 	}
 	if !util.IsInterfaceNil(aw.activityWorker) {
 		if err := aw.activityWorker.Start(); err != nil {
@@ -1289,27 +1291,6 @@ func (aw *WorkflowReplayer) GetWorkflowResult(workflowID string, valuePtr interf
 	return dc.FromPayloads(payloads, valuePtr)
 }
 
-// inferMessages extracts the set of *interactionpb.Invocation objects that
-// should be attached to a workflow task (i.e. the
-// PollWorkflowTaskQueueResponse.Messages) if that task were to carry the
-// provided slice of history events.
-func inferMessages(events []*historypb.HistoryEvent) []*protocolpb.Message {
-	var messages []*protocolpb.Message
-	for _, e := range events {
-		if attrs := e.GetWorkflowExecutionUpdateAcceptedEventAttributes(); attrs != nil {
-			messages = append(messages, &protocolpb.Message{
-				Id:                 attrs.GetAcceptedRequestMessageId(),
-				ProtocolInstanceId: attrs.GetProtocolInstanceId(),
-				SequencingId: &protocolpb.Message_EventId{
-					EventId: attrs.GetAcceptedRequestSequencingEventId(),
-				},
-				Body: protocol.MustMarshalAny(attrs.GetAcceptedRequest()),
-			})
-		}
-	}
-	return messages
-}
-
 func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service workflowservice.WorkflowServiceClient, namespace string, originalExecution WorkflowExecution, history *historypb.History) error {
 	taskQueue := "ReplayTaskQueue"
 	events := history.Events
@@ -1375,6 +1356,9 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 		FailureConverter:      aw.failureConverter,
 		ContextPropagators:    aw.contextPropagators,
 		EnableLoggingInReplay: aw.enableLoggingInReplay,
+		// Hardcoding NopHandler avoids "No metrics handler configured for temporal worker"
+		// logs during replay.
+		MetricsHandler: metrics.NopHandler,
 		capabilities: &workflowservice.GetSystemInfoResponse_Capabilities{
 			SignalAndQueryHeader:            true,
 			InternalErrorDifferentiation:    true,
@@ -1387,7 +1371,12 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 		},
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
-	resp, _, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, nil)
+	wfctx, err := taskHandler.GetOrCreateWorkflowContext(task, iterator)
+	defer wfctx.Unlock(err)
+	if err != nil {
+		return err
+	}
+	resp, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: task, historyIterator: iterator}, wfctx, nil)
 	if err != nil {
 		return err
 	}
@@ -1589,7 +1578,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	if !options.LocalActivityWorkerOnly {
 		activityWorker = newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
 		// Set the activity worker on the eager executor
-		workerParams.eagerActivityExecutor.activityWorker = activityWorker
+		workerParams.eagerActivityExecutor.activityWorker = activityWorker.worker
 	}
 
 	var sessionWorker *sessionWorker

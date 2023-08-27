@@ -71,6 +71,9 @@ func GetMetricsHandler(ctx context.Context) metrics.Handler {
 //
 // details - the details that you provided here can be seen in the workflow when it receives TimeoutError, you
 // can check error with TimeoutType()/Details().
+//
+// Note: If using asynchronous activity completion,
+// after returning [ErrResultPending] users should heartbeat with [client.Client.RecordActivityHeartbeat]
 func RecordHeartbeat(ctx context.Context, details ...interface{}) {
 	internal.RecordActivityHeartbeat(ctx, details...)
 }
@@ -100,4 +103,9 @@ func GetHeartbeatDetails(ctx context.Context, d ...interface{}) error {
 // Use this channel to handle activity graceful exit when the activity worker stops.
 func GetWorkerStopChannel(ctx context.Context) <-chan struct{} {
 	return internal.GetWorkerStopChannel(ctx)
+}
+
+// IsActivity check if the context is an activity context from a normal or local activity.
+func IsActivity(ctx context.Context) bool {
+	return internal.IsActivity(ctx)
 }

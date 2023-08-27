@@ -31,6 +31,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -226,6 +228,27 @@ func TestWorkflowIDInsideTestWorkflow(t *testing.T) {
 	require.Equal(t, "id is: my-workflow-id", str)
 }
 
+func TestWorkflowIDSignalWorkflowByID(t *testing.T) {
+	var suite WorkflowTestSuite
+	// Test SignalWorkflowByID works with custom ID
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterDelayedCallback(func() {
+		err := env.SignalWorkflowByID("my-workflow-id", "signal", "payload")
+		require.NoError(t, err)
+	}, time.Second)
+
+	env.SetStartWorkflowOptions(StartWorkflowOptions{ID: "my-workflow-id"})
+	env.ExecuteWorkflow(func(ctx Context) (string, error) {
+		var result string
+		GetSignalChannel(ctx, "signal").Receive(ctx, &result)
+		return "id is: " + GetWorkflowInfo(ctx).WorkflowExecution.ID, nil
+	})
+	require.NoError(t, env.GetWorkflowError())
+	var str string
+	require.NoError(t, env.GetWorkflowResult(&str))
+	require.Equal(t, "id is: my-workflow-id", str)
+}
+
 func TestWorkflowStartTimeInsideTestWorkflow(t *testing.T) {
 	var suite WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
@@ -290,4 +313,29 @@ func TestActivityAssertNumberOfCalls(t *testing.T) {
 	require.NoError(t, env.GetWorkflowError())
 	env.AssertNumberOfCalls(t, "namedActivity", 3)
 	env.AssertNumberOfCalls(t, "otherActivity", 0)
+}
+
+func HelloWorkflow(_ Context, name string) (string, error) {
+	return "", errors.New("unimplemented")
+}
+
+func TestWorkflowMockingWithoutRegistration(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+	env.OnWorkflow(HelloWorkflow, mock.Anything, mock.Anything).Return(
+		func(ctx Context, person string) (string, error) {
+			return "Hello " + person + "!", nil
+		})
+	env.ExecuteWorkflow("HelloWorkflow", "Temporal")
+	require.NoError(t, env.GetWorkflowError())
+	var result string
+	err := env.GetWorkflowResult(&result)
+	require.NoError(t, err)
+	require.Equal(t, "Hello Temporal!", result)
+}
+
+func TestActivityMockingByNameWithoutRegistrationFails(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+	assert.Panics(t, func() { env.OnActivity("SayHello", mock.Anything, mock.Anything) }, "The code did not panic")
 }

@@ -1,8 +1,6 @@
 // The MIT License
 //
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
+// Copyright (c) 2023 Temporal Technologies Inc.  All rights reserved.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -22,18 +20,24 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package internal
+//go:build !windows
 
-// Below are the metadata which will be embedded as part of headers in every RPC call made by this client to Temporal server.
-// Update to the metadata below is typically done by the Temporal team as part of a major feature or behavior change.
+package testsuite
 
-const (
-	// SDKVersion is a semver (https://semver.org/) that represents the version of this Temporal GoSDK.
-	// Server validates if SDKVersion fits its supported range and rejects request if it doesn't.
-	SDKVersion = "1.24.0"
-
-	// SupportedServerVersions is a semver rages (https://github.com/blang/semver#ranges) of server versions that
-	// are supported by this Temporal SDK.
-	// Server validates if its version fits into SupportedServerVersions range and rejects request if it doesn't.
-	SupportedServerVersions = ">=1.0.0 <2.0.0"
+import (
+	"os"
+	"os/exec"
+	"syscall"
 )
+
+// newCmd creates a new command with the given executable path and arguments.
+func newCmd(exePath string, args ...string) *exec.Cmd {
+	cmd := exec.Command(exePath, args...)
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	return cmd
+}
+
+// sendInterrupt sends an interrupt signal to the given process for graceful shutdown.
+func sendInterrupt(process *os.Process) error {
+	return process.Signal(syscall.SIGINT)
+}

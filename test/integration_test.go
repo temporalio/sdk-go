@@ -37,6 +37,7 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"github.com/uber-go/tally/v4"
@@ -1142,6 +1143,26 @@ func (ts *IntegrationTestSuite) TestWorkflowWithParallelSideEffects() {
 	ts.NoError(ts.executeWorkflow("test-wf-parallel-side-effects", ts.workflows.WorkflowWithParallelSideEffects, nil))
 }
 
+func (ts *IntegrationTestSuite) TestWorkflowWithLocalActivityStartToClose() {
+	ts.NoError(ts.executeWorkflow("test-wf-la-start-to-close", ts.workflows.WorkflowWithLocalActivityStartToCloseTimeout, nil))
+}
+
+func (ts *IntegrationTestSuite) TestActivityTimeoutsWorkflow() {
+	ts.NoError(ts.executeWorkflow("test-activity-timeout-workflow", ts.workflows.ActivityTimeoutsWorkflow, nil, workflow.ActivityOptions{
+		ScheduleToCloseTimeout: 5 * time.Second,
+	}))
+
+	ts.NoError(ts.executeWorkflow("test-activity-timeout-workflow", ts.workflows.ActivityTimeoutsWorkflow, nil, workflow.ActivityOptions{
+		StartToCloseTimeout: 5 * time.Second,
+	}))
+
+	ts.Error(ts.executeWorkflow("test-activity-timeout-workflow", ts.workflows.ActivityTimeoutsWorkflow, nil, workflow.ActivityOptions{}))
+	ts.Error(ts.executeWorkflow("test-activity-timeout-workflow", ts.workflows.ActivityTimeoutsWorkflow, nil, workflow.ActivityOptions{
+		ScheduleToStartTimeout: 5 * time.Second,
+	}))
+
+}
+
 func (ts *IntegrationTestSuite) TestWorkflowWithParallelSideEffectsUsingReplay() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflowWithOptions(ts.workflows.WorkflowWithParallelSideEffects, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
@@ -1167,6 +1188,52 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	ts.Nil(value)
 }
 
+func (ts *IntegrationTestSuite) TestMutatingQuery() {
+	ctx := context.Background()
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-mutating-query"), ts.workflows.MutatingQueryWorkflow)
+	ts.Nil(err)
+	_, err = ts.client.QueryWorkflow(ctx, "test-mutating-query", run.GetRunID(), "mutating_query")
+	ts.Error(err)
+	ts.Nil(ts.client.CancelWorkflow(ctx, "test-mutating-query", ""))
+}
+
+func (ts *IntegrationTestSuite) TestMutatingUpdateValidator() {
+	ctx := context.Background()
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-mutating-update-validator"), ts.workflows.MutatingUpdateValidatorWorkflow)
+	ts.Nil(err)
+	handler, err := ts.client.UpdateWorkflow(ctx, "test-mutating-update-validator", run.GetRunID(), "mutating_update")
+	ts.NoError(err)
+
+	ts.Error(handler.Get(ctx, nil))
+	ts.Nil(ts.client.CancelWorkflow(ctx, "test-mutating-update-validator", ""))
+}
+
+func (ts *IntegrationTestSuite) TestWaitForCancelWithDisconnectedContext() {
+	ctx := context.Background()
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-wait-for-cancel-with-disconnected-contex"), ts.workflows.WaitForCancelWithDisconnectedContextWorkflow)
+	ts.Nil(err)
+
+	ts.waitForQueryTrue(run, "timer-created", 1)
+
+	ts.Nil(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+	ts.Nil(run.Get(ctx, nil))
+}
+
+func (ts *IntegrationTestSuite) TestMutatingSideEffect() {
+	ctx := context.Background()
+	err := ts.executeWorkflowWithContextAndOption(ctx, ts.startWorkflowOptions("test-mutating-side-effect"), ts.workflows.MutatingSideEffectWorkflow, nil)
+	ts.Error(err)
+}
+
+func (ts *IntegrationTestSuite) TestMutatingMutableSideEffect() {
+	ctx := context.Background()
+	err := ts.executeWorkflowWithContextAndOption(ctx, ts.startWorkflowOptions("test-mutating-mutable-side-effect"), ts.workflows.MutatingMutableSideEffectWorkflow, nil)
+	ts.Error(err)
+}
+
 func (ts *IntegrationTestSuite) TestInspectActivityInfo() {
 	err := ts.executeWorkflow("test-activity-info", ts.workflows.InspectActivityInfo, nil)
 	ts.Nil(err)
@@ -1187,6 +1254,38 @@ func (ts *IntegrationTestSuite) TestInspectLocalActivityInfoLocalActivityWorkerO
 	ts.Nil(err)
 }
 
+func (ts *IntegrationTestSuite) TestUpdateInfo() {
+	ctx := context.Background()
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-update-info"), ts.workflows.UpdateInfoWorkflow)
+	ts.Nil(err)
+	// Send an update request with a know update ID
+	handler, err := ts.client.UpdateWorkflowWithOptions(ctx, &client.UpdateWorkflowWithOptionsRequest{
+		UpdateID:   "testID",
+		WorkflowID: run.GetID(),
+		RunID:      run.GetRunID(),
+		UpdateName: "update",
+	})
+	ts.NoError(err)
+	// Verify the upate handler can access the update info and return the updateID
+	var result string
+	ts.NoError(handler.Get(ctx, &result))
+	ts.Equal("testID", result)
+	// Test the update validator can also use the update info
+	handler, err = ts.client.UpdateWorkflowWithOptions(ctx, &client.UpdateWorkflowWithOptionsRequest{
+		UpdateID:   "notTestID",
+		WorkflowID: run.GetID(),
+		RunID:      run.GetRunID(),
+		UpdateName: "update",
+	})
+	ts.NoError(err)
+	err = handler.Get(ctx, nil)
+	ts.Error(err)
+	// complete workflow
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
+	ts.NoError(run.Get(ctx, nil))
+}
+
 func (ts *IntegrationTestSuite) TestBasicSession() {
 	var expected []string
 	err := ts.executeWorkflow("test-basic-session", ts.workflows.BasicSession, &expected)
@@ -1195,6 +1294,26 @@ func (ts *IntegrationTestSuite) TestBasicSession() {
 	// createSession activity, actual activity, completeSession activity.
 	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteActivity", "HandleSignal", "Go", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
 		ts.tracer.GetTrace("BasicSession"))
+}
+
+func (ts *IntegrationTestSuite) TestEagerWorkflowDispatchRaceWithWorkerStop() {
+	// Attempt to stop a worker while trying to schedule an eager workflow task
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		ctx := context.Background()
+		ctx, cancel := context.WithTimeout(ctx, ctxTimeout)
+		defer cancel()
+		_, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-basic-session"), ts.workflows.SimplestWorkflow)
+		ts.NoError(err)
+		wg.Done()
+	}()
+	go func() {
+		ts.worker.Stop()
+		ts.workerStopped = true
+		wg.Done()
+	}()
+	wg.Wait()
 }
 
 func (ts *IntegrationTestSuite) TestSessionStateFailedWorkerFailed() {
@@ -1249,7 +1368,10 @@ func (ts *IntegrationTestSuite) TestAsyncActivityCompletion() {
 	for {
 		pendingActivities = describeResp.PendingActivities
 		if len(pendingActivities) == 2 && pendingActivities[0].State == enumspb.PENDING_ACTIVITY_STATE_STARTED &&
-			pendingActivities[1].State == enumspb.PENDING_ACTIVITY_STATE_STARTED {
+			pendingActivities[1].State == enumspb.PENDING_ACTIVITY_STATE_STARTED &&
+			len(ts.activities.invoked()) == 2 &&
+			ts.activities.invoked()[0] == "asyncComplete" &&
+			ts.activities.invoked()[1] == "asyncComplete" {
 			// condition met
 			break
 		}
@@ -1262,9 +1384,6 @@ func (ts *IntegrationTestSuite) TestAsyncActivityCompletion() {
 		status := describeResp.WorkflowExecutionInfo.Status
 		ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING, status)
 	}
-
-	// Both the activities are started
-	ts.EqualValues([]string{"asyncComplete", "asyncComplete"}, ts.activities.invoked())
 
 	// Complete first activity using ID
 	err = ts.client.CompleteActivityByID(ctx, ts.config.Namespace,
@@ -1467,6 +1586,17 @@ func (ts *IntegrationTestSuite) TestInterceptorCalls() {
 	ts.NoError(err)
 	var queryRes string
 	ts.NoError(queryVal.Get(&queryRes))
+	ts.Equal("queryresult(queryarg)", queryRes)
+
+	// Query with options
+	response, err := ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+		WorkflowID: run.GetID(),
+		RunID:      run.GetRunID(),
+		QueryType:  "query",
+		Args:       []interface{}{"queryarg"},
+	})
+	ts.NoError(err)
+	ts.NoError(response.QueryResult.Get(&queryRes))
 	ts.Equal("queryresult(queryarg)", queryRes)
 
 	// Send signal
@@ -2251,7 +2381,9 @@ func (ts *IntegrationTestSuite) TestQueryOnlyCoroutineUsage() {
 
 	// Check coroutines are cleaned up. Before the fix accompanying this test, the
 	// count was the same as the number of queries issued.
-	ts.Equal(0, counter.count())
+	ts.EventuallyWithT(func(c *assert.CollectT) {
+		assert.Zero(c, counter.count())
+	}, time.Second, 100*time.Millisecond)
 }
 
 func (ts *IntegrationTestSuite) TestLargeHistoryReplay() {
@@ -3912,6 +4044,7 @@ func (ts *IntegrationTestSuite) startWorkflowOptions(wfID string) client.StartWo
 		WorkflowExecutionTimeout: 15 * time.Second,
 		WorkflowTaskTimeout:      time.Second,
 		WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
+		EnableEagerStart:         true,
 	}
 	if wfID == CronWorkflowID {
 		wfOptions.CronSchedule = "@every 1s"

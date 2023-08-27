@@ -153,7 +153,7 @@ type (
 		cancelHandler   func()                                                                     // A cancel handler to be invoked on a cancel notification
 		signalHandler   func(name string, input *commonpb.Payloads, header *commonpb.Header) error // A signal handler to be invoked on a signal event
 		queryHandler    func(queryType string, queryArgs *commonpb.Payloads, header *commonpb.Header) (*commonpb.Payloads, error)
-		updateHandler   func(name string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
+		updateHandler   func(name string, id string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
 
 		logger                log.Logger
 		isReplay              bool // flag to indicate if workflow is in replay mode
@@ -184,6 +184,7 @@ type (
 		pastFirstWFT    bool   // Set true once this LA has lived for more than one workflow task
 		retryPolicy     *RetryPolicy
 		expireTime      time.Time
+		scheduledTime   time.Time // Time the activity was scheduled initially.
 		header          *commonpb.Header
 	}
 
@@ -323,8 +324,8 @@ func (wc *workflowEnvironmentImpl) takeOutgoingMessages() []*protocolpb.Message 
 	return retval
 }
 
-func (wc *workflowEnvironmentImpl) ScheduleUpdate(name string, args *commonpb.Payloads, hdr *commonpb.Header, callbacks UpdateCallbacks) {
-	wc.updateHandler(name, args, hdr, callbacks)
+func (wc *workflowEnvironmentImpl) ScheduleUpdate(name string, id string, args *commonpb.Payloads, hdr *commonpb.Header, callbacks UpdateCallbacks) {
+	wc.updateHandler(name, id, args, hdr, callbacks)
 }
 
 func withExpectedEventPredicate(pred func(*historypb.HistoryEvent) bool) msgSendOpt {
@@ -494,7 +495,6 @@ func validateAndSerializeMemo(memoMap map[string]interface{}, dc converter.DataC
 
 func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
 	wrappedHandler := func() {
-		wc.commandsHelper.workflowExecutionIsCancelling = true
 		handler()
 	}
 	wc.cancelHandler = wrappedHandler
@@ -577,7 +577,7 @@ func (wc *workflowEnvironmentImpl) RegisterQueryHandler(
 }
 
 func (wc *workflowEnvironmentImpl) RegisterUpdateHandler(
-	handler func(string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks),
+	handler func(string, string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks),
 ) {
 	wc.updateHandler = handler
 }
@@ -683,12 +683,13 @@ func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActiv
 
 func newLocalActivityTask(params ExecuteLocalActivityParams, callback LocalActivityResultHandler, activityID string) *localActivityTask {
 	task := &localActivityTask{
-		activityID:  activityID,
-		params:      &params,
-		callback:    callback,
-		retryPolicy: params.RetryPolicy,
-		attempt:     params.Attempt,
-		header:      params.Header,
+		activityID:    activityID,
+		params:        &params,
+		callback:      callback,
+		retryPolicy:   params.RetryPolicy,
+		attempt:       params.Attempt,
+		header:        params.Header,
+		scheduledTime: time.Now(),
 	}
 
 	if params.ScheduleToCloseTimeout > 0 {
@@ -899,7 +900,7 @@ func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interfa
 			// During replay, we only generate a command if there was a known marker
 			// recorded on the next task. We have to append the current command
 			// counter to the user-provided ID to avoid duplicates.
-			if wc.mutableSideEffectsRecorded[fmt.Sprintf("%v_%v", id, wc.commandsHelper.nextCommandEventID)] {
+			if wc.mutableSideEffectsRecorded[fmt.Sprintf("%v_%v", id, wc.commandsHelper.getNextID())] {
 				return wc.recordMutableSideEffect(id, callCount, result)
 			}
 			return encodedResult
@@ -1052,8 +1053,10 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
 		// Set replay clock.
 		weh.SetCurrentReplayTime(common.TimeValue(event.GetEventTime()))
-		// Set history length as this event's ID
+		// Update workflow info fields
 		weh.workflowInfo.currentHistoryLength = int(event.EventId)
+		weh.workflowInfo.continueAsNewSuggested = event.GetWorkflowTaskStartedEventAttributes().GetSuggestContinueAsNew()
+		weh.workflowInfo.currentHistorySize = int(event.GetWorkflowTaskStartedEventAttributes().GetHistorySizeBytes())
 		// Reset the counter on command helper used for generating ID for commands
 		weh.commandsHelper.setCurrentWorkflowTaskStartedEventID(event.GetEventId())
 		weh.workflowDefinition.OnWorkflowTaskStarted(weh.deadlockDetectionTimeout)

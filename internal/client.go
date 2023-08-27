@@ -172,7 +172,7 @@ type (
 		GetWorkflowHistory(ctx context.Context, workflowID string, runID string, isLongPoll bool, filterType enumspb.HistoryEventFilterType) HistoryEventIterator
 
 		// CompleteActivity reports activity completed.
-		// activity Execute method can return acitivity.activity.ErrResultPending to
+		// activity Execute method can return activity.ErrResultPending to
 		// indicate the activity is not completed when it's Execute method returns. In that case, this CompleteActivity() method
 		// should be called when that activity is completed with the actual result and error. If err is nil, activity task
 		// completed event will be reported; if err is CanceledError, activity task canceled event will be reported; otherwise,
@@ -233,18 +233,20 @@ type (
 		//  - serviceerror.NamespaceNotFound
 		ListOpenWorkflow(ctx context.Context, request *workflowservice.ListOpenWorkflowExecutionsRequest) (*workflowservice.ListOpenWorkflowExecutionsResponse, error)
 
-		// ListWorkflow gets workflow executions based on query. This API only works with ElasticSearch,
-		// and will return serviceerror.InvalidArgument when using Cassandra or MySQL. The query is basically the SQL WHERE clause,
+		// ListWorkflow gets workflow executions based on query.The query is basically the SQL WHERE clause,
 		// examples:
 		//  - "(WorkflowID = 'wid1' or (WorkflowType = 'type2' and WorkflowID = 'wid2'))".
 		//  - "CloseTime between '2019-08-27T15:04:05+00:00' and '2019-08-28T15:04:05+00:00'".
 		//  - to list only open workflow use "CloseTime = missing"
 		// Retrieved workflow executions are sorted by StartTime in descending order when list open workflow,
 		// and sorted by CloseTime in descending order for other queries.
+		// For supported operations on different server versions see [Visibility].
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
+		//
+		// [Visibility]: https://docs.temporal.io/visibility
 		ListWorkflow(ctx context.Context, request *workflowservice.ListWorkflowExecutionsRequest) (*workflowservice.ListWorkflowExecutionsResponse, error)
 
 		// ListArchivedWorkflow gets archived workflow executions based on query. This API will return BadRequest if Temporal
@@ -257,25 +259,28 @@ type (
 		//  - serviceerror.Unavailable
 		ListArchivedWorkflow(ctx context.Context, request *workflowservice.ListArchivedWorkflowExecutionsRequest) (*workflowservice.ListArchivedWorkflowExecutionsResponse, error)
 
-		// ScanWorkflow gets workflow executions based on query. This API only works with ElasticSearch,
-		// and will return serviceerror.InvalidArgument when using Cassandra or MySQL. The query is basically the SQL WHERE clause
+		// ScanWorkflow gets workflow executions based on query. The query is basically the SQL WHERE clause
 		// (see ListWorkflow for query examples).
 		// ScanWorkflow should be used when retrieving large amount of workflows and order is not needed.
-		// It will use more ElasticSearch resources than ListWorkflow, but will be several times faster
+		// It will use more resources than ListWorkflow, but will be several times faster
 		// when retrieving millions of workflows.
+		// For supported operations on different server versions see [Visibility].
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
+		// [Visibility]: https://docs.temporal.io/visibility
 		ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error)
 
-		// CountWorkflow gets number of workflow executions based on query. This API only works with ElasticSearch,
-		// and will return serviceerror.InvalidArgument when using Cassandra or MySQL. The query is basically the SQL WHERE clause
+		// CountWorkflow gets number of workflow executions based on query. The query is basically the SQL WHERE clause
 		// (see ListWorkflow for query examples).
+		// For supported operations on different server versions see [Visibility].
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
+		//
+		// [Visibility]: https://docs.temporal.io/visibility
 		CountWorkflow(ctx context.Context, request *workflowservice.CountWorkflowExecutionsRequest) (*workflowservice.CountWorkflowExecutionsResponse, error)
 
 		// GetSearchAttributes returns valid search attributes keys and value types.
@@ -592,10 +597,17 @@ type (
 		// Memo - Optional non-indexed info that will be shown in list workflow.
 		Memo map[string]interface{}
 
-		// SearchAttributes - Optional indexed info that can be used in query of List/Scan/Count workflow APIs (only
-		// supported when Temporal server is using ElasticSearch). The key and value type must be registered on Temporal server side.
+		// SearchAttributes - Optional indexed info that can be used in query of List/Scan/Count workflow APIs. The key and value type must be registered on Temporal server side.
 		// Use GetSearchAttributes API to get valid key and corresponding value type.
+		// For supported operations on different server versions see [Visibility].
+		//
+		// [Visibility]: https://docs.temporal.io/visibility
 		SearchAttributes map[string]interface{}
+
+		// EnableEagerStart - request eager execution for this workflow, if a local worker is available.
+		//
+		// NOTE: Experimental
+		EnableEagerStart bool
 	}
 
 	// RetryPolicy defines the retry policy.
@@ -813,6 +825,9 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		contextPropagators:       options.ContextPropagators,
 		workerInterceptors:       workerInterceptors,
 		excludeInternalFromRetry: options.ConnectionOptions.excludeInternalFromRetry,
+		eagerDispatcher: &eagerWorkflowDispatcher{
+			workersByTaskQueue: make(map[string][]eagerWorker),
+		},
 	}
 
 	// Create outbound interceptor by wrapping backwards through chain

@@ -102,6 +102,12 @@ type (
 	// ScheduleSpec describes when a schedules action should occur.
 	ScheduleSpec = internal.ScheduleSpec
 
+	// SchedulePolicies describes the current polcies of a schedule.
+	SchedulePolicies = internal.SchedulePolicies
+
+	// ScheduleState describes the current state of a schedule.
+	ScheduleState = internal.ScheduleState
+
 	// ScheduleBackfill desribes a time periods and policy and takes Actions as if that time passed by right now, all at once.
 	ScheduleBackfill = internal.ScheduleBackfill
 
@@ -395,13 +401,15 @@ type (
 		//  - "(WorkflowID = 'wid1' or (WorkflowType = 'type2' and WorkflowID = 'wid2'))".
 		//  - "CloseTime between '2019-08-27T15:04:05+00:00' and '2019-08-28T15:04:05+00:00'".
 		//  - to list only open workflow use "CloseTime = missing"
-		// Advanced queries require ElasticSearch, but simple queries do not.
+		// For supported operations on different server versions see [Visibility].
 		// Retrieved workflow executions are sorted by StartTime in descending order when list open workflow,
 		// and sorted by CloseTime in descending order for other queries.
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
+		//
+		// [Visibility]: https://docs.temporal.io/visibility
 		ListWorkflow(ctx context.Context, request *workflowservice.ListWorkflowExecutionsRequest) (*workflowservice.ListWorkflowExecutionsResponse, error)
 
 		// ListArchivedWorkflow gets archived workflow executions based on query. This API will return BadRequest if Temporal
@@ -414,25 +422,29 @@ type (
 		//  - serviceerror.Unavailable
 		ListArchivedWorkflow(ctx context.Context, request *workflowservice.ListArchivedWorkflowExecutionsRequest) (*workflowservice.ListArchivedWorkflowExecutionsResponse, error)
 
-		// ScanWorkflow gets workflow executions based on query. This API only works with ElasticSearch,
-		// and will return serviceerror.InvalidArgument when using Cassandra or MySQL. The query is basically the SQL WHERE clause
+		// ScanWorkflow gets workflow executions based on query. The query is basically the SQL WHERE clause
 		// (see ListWorkflow for query examples).
+		// For supported operations on different server versions see [Visibility].
 		// ScanWorkflow should be used when retrieving large amount of workflows and order is not needed.
-		// It will use more ElasticSearch resources than ListWorkflow, but will be several times faster
+		// It will use more resources than ListWorkflow, but will be several times faster
 		// when retrieving millions of workflows.
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
+		//
+		// [Visibility]: https://docs.temporal.io/visibility
 		ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error)
 
-		// CountWorkflow gets number of workflow executions based on query. This API only works with ElasticSearch,
-		// and will return serviceerror.InvalidArgument when using Cassandra or MySQL. The query is basically the SQL WHERE clause
+		// CountWorkflow gets number of workflow executions based on query. The query is basically the SQL WHERE clause
 		// (see ListWorkflow for query examples).
+		// For supported operations on different server versions see [Visibility].
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
+		//
+		// [Visibility]: https://docs.temporal.io/visibility
 		CountWorkflow(ctx context.Context, request *workflowservice.CountWorkflowExecutionsRequest) (*workflowservice.CountWorkflowExecutionsResponse, error)
 
 		// GetSearchAttributes returns valid search attributes keys and value types.

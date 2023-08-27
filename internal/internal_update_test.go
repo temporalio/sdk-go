@@ -29,6 +29,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/gogo/protobuf/types"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	historypb "go.temporal.io/api/history/v1"
@@ -101,6 +102,11 @@ func TestUpdateHandlerPanicHandling(t *testing.T) {
 	}
 	interceptor, ctx, err := newWorkflowContext(env, nil)
 	require.NoError(t, err)
+	dispatcher, ctx := newDispatcher(
+		ctx,
+		interceptor,
+		func(ctx Context) {})
+	dispatcher.executing = true
 
 	panicFunc := func() error { panic("intentional") }
 	mustSetUpdateHandler(t, ctx, t.Name(), panicFunc, UpdateHandlerOptions{Validator: panicFunc})
@@ -175,8 +181,13 @@ func TestDefaultUpdateHandler(t *testing.T) {
 			TaskQueueName: "taskqueue:" + t.Name(),
 		},
 	}
-	_, ctx, err := newWorkflowContext(env, nil)
+	interceptor, ctx, err := newWorkflowContext(env, nil)
 	require.NoError(t, err)
+	dispatcher, ctx := newDispatcher(
+		ctx,
+		interceptor,
+		func(ctx Context) {})
+	dispatcher.executing = true
 
 	hdr := &commonpb.Header{Fields: map[string]*commonpb.Payload{}}
 	argStr := t.Name()
@@ -192,7 +203,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 			UpdateHandlerOptions{},
 		)
 		var rejectErr error
-		defaultUpdateHandler(ctx, "will_not_be_found", args, hdr, &testUpdateCallbacks{
+		defaultUpdateHandler(ctx, "will_not_be_found", "testID", args, hdr, &testUpdateCallbacks{
 			RejectImpl: func(err error) { rejectErr = err },
 		}, runOnCallingThread)
 		require.ErrorContains(t, rejectErr, "unknown update")
@@ -210,7 +221,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 		)
 		junkArgs := &commonpb.Payloads{Payloads: []*commonpb.Payload{&commonpb.Payload{}}}
 		var rejectErr error
-		defaultUpdateHandler(ctx, t.Name(), junkArgs, hdr, &testUpdateCallbacks{
+		defaultUpdateHandler(ctx, t.Name(), "testID", junkArgs, hdr, &testUpdateCallbacks{
 			RejectImpl: func(err error) { rejectErr = err },
 		}, runOnCallingThread)
 		require.ErrorContains(t, rejectErr, "unable to decode")
@@ -227,7 +238,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 			UpdateHandlerOptions{Validator: validatorFunc},
 		)
 		var rejectErr error
-		defaultUpdateHandler(ctx, t.Name(), args, hdr, &testUpdateCallbacks{
+		defaultUpdateHandler(ctx, t.Name(), "testID", args, hdr, &testUpdateCallbacks{
 			RejectImpl: func(err error) { rejectErr = err },
 		}, runOnCallingThread)
 		require.Equal(t, validatorFunc(ctx, argStr), rejectErr)
@@ -241,7 +252,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 			accepted  bool
 			result    interface{}
 		)
-		defaultUpdateHandler(ctx, t.Name(), args, hdr, &testUpdateCallbacks{
+		defaultUpdateHandler(ctx, t.Name(), "testID", args, hdr, &testUpdateCallbacks{
 			AcceptImpl: func() { accepted = true },
 			CompleteImpl: func(success interface{}, err error) {
 				resultErr = err
@@ -261,7 +272,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 			accepted  bool
 			result    interface{}
 		)
-		defaultUpdateHandler(ctx, t.Name(), args, hdr, &testUpdateCallbacks{
+		defaultUpdateHandler(ctx, t.Name(), "testID", args, hdr, &testUpdateCallbacks{
 			AcceptImpl: func() { accepted = true },
 			CompleteImpl: func(success interface{}, err error) {
 				resultErr = err
@@ -287,8 +298,13 @@ func TestDefaultUpdateHandler(t *testing.T) {
 		// don't reuse the context that has all the other update handlers
 		// registered because the code under test will think the handler
 		// registration at workflow start time has already occurred
-		_, ctx, err := newWorkflowContext(env, nil)
+		interceptor, ctx, err := newWorkflowContext(env, nil)
 		require.NoError(t, err)
+		dispatcher, ctx := newDispatcher(
+			ctx,
+			interceptor,
+			func(ctx Context) {})
+		dispatcher.executing = true
 
 		updateFunc := func(ctx Context, s string) (string, error) { return s + " success!", nil }
 		var (
@@ -307,7 +323,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 				mustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateHandlerOptions{})
 			},
 		}
-		defaultUpdateHandler(ctx, t.Name(), args, hdr, &testUpdateCallbacks{
+		defaultUpdateHandler(ctx, t.Name(), "testID", args, hdr, &testUpdateCallbacks{
 			RejectImpl: func(err error) { rejectErr = err },
 			AcceptImpl: func() { accepted = true },
 			CompleteImpl: func(success interface{}, err error) {
@@ -328,7 +344,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 
 func TestInvalidUpdateStateTransitions(t *testing.T) {
 	// these would all reflect programming errors so we expect panics
-	stubUpdateHandler := func(string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks) {}
+	stubUpdateHandler := func(string, string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks) {}
 	requestMsg := protocolpb.Message{
 		Id:                 t.Name() + "-id",
 		ProtocolInstanceId: t.Name() + "-proto-id",
@@ -396,8 +412,8 @@ func TestInvalidUpdateStateTransitions(t *testing.T) {
 }
 
 func TestCompletedEventPredicate(t *testing.T) {
-	updateID := t.Name() + "-updaet-id"
-	stubUpdateHandler := func(string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks) {}
+	updateID := t.Name() + "-update-id"
+	stubUpdateHandler := func(string, string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks) {}
 	requestMsg := protocolpb.Message{
 		Id:                 t.Name() + "-id",
 		ProtocolInstanceId: updateID,
@@ -434,14 +450,16 @@ func TestCompletedEventPredicate(t *testing.T) {
 }
 
 func TestAcceptedEventPredicate(t *testing.T) {
-	updateID := t.Name() + "-updaet-id"
+	updateID := t.Name() + "-update-id"
 	requestMsgID := t.Name() + "request-msg-id"
-	stubUpdateHandler := func(string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks) {}
+	requestSeqID := int64(1234)
+	stubUpdateHandler := func(string, string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks) {}
 	request := updatepb.Request{
 		Meta: &updatepb.Meta{UpdateId: updateID},
 	}
 	requestMsg := protocolpb.Message{
 		Id:                 requestMsgID,
+		SequencingId:       &protocolpb.Message_EventId{EventId: requestSeqID},
 		ProtocolInstanceId: updateID,
 		Body:               protocol.MustMarshalAny(&request),
 	}
@@ -455,26 +473,61 @@ func TestAcceptedEventPredicate(t *testing.T) {
 	up.Accept()
 	require.Len(t, env.outbox, 1, "expected to find accepted message")
 
-	pred := env.outbox[0].eventPredicate
+	var acptmsg updatepb.Acceptance
+	require.NoError(t, types.UnmarshalAny(env.outbox[0].msg.Body, &acptmsg))
+	require.Nil(t, acptmsg.AcceptedRequest,
+		"do not send the original request back - this field will be removed soon")
 
-	require.False(t, pred(&historypb.HistoryEvent{}))
-	require.False(t, pred(&historypb.HistoryEvent{}))
-	require.False(t, pred(&historypb.HistoryEvent{
-		Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
-			WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+	pred := env.outbox[0].eventPredicate
+	for _, tc := range [...]struct {
+		name  string
+		attrs historypb.WorkflowExecutionUpdateAcceptedEventAttributes
+		test  require.BoolAssertionFunc
+	}{
+		{
+			name: "wrong req msg ID",
+			test: require.False,
+			attrs: historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
 				AcceptedRequest:                  &request,
 				AcceptedRequestMessageId:         "wrong request message ID",
-				AcceptedRequestSequencingEventId: 0,
+				AcceptedRequestSequencingEventId: requestSeqID,
 			},
 		},
-	}))
-	require.True(t, pred(&historypb.HistoryEvent{
-		Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
-			WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+		{
+			name: "wrong req seq ID",
+			test: require.False,
+			attrs: historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
 				AcceptedRequest:                  &request,
 				AcceptedRequestMessageId:         requestMsgID,
-				AcceptedRequestSequencingEventId: 0,
+				AcceptedRequestSequencingEventId: requestSeqID + 10,
 			},
 		},
-	}))
+		{
+			name: "missing request",
+			test: require.False,
+			attrs: historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+				AcceptedRequest:                  nil,
+				AcceptedRequestMessageId:         requestMsgID,
+				AcceptedRequestSequencingEventId: requestSeqID,
+			},
+		},
+		{
+			name: "match",
+			test: require.True,
+			attrs: historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+				AcceptedRequest:                  &request,
+				AcceptedRequestMessageId:         requestMsgID,
+				AcceptedRequestSequencingEventId: requestSeqID,
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			event := historypb.HistoryEvent{
+				Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
+					WorkflowExecutionUpdateAcceptedEventAttributes: &tc.attrs,
+				},
+			}
+			tc.test(t, pred(&event))
+		})
+	}
 }

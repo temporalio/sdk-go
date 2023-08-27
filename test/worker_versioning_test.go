@@ -56,7 +56,6 @@ func (ts *WorkerVersioningTestSuite) TearDownSuite() {
 }
 
 func (ts *WorkerVersioningTestSuite) SetupTest() {
-	ts.T().Skip("Skipped until server is updated and this works")
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
 }
 
@@ -81,7 +80,7 @@ func (ts *WorkerVersioningTestSuite) TestManipulateVersionSets() {
 		TaskQueue: ts.taskQueueName,
 		Operation: &client.BuildIDOpAddNewCompatibleVersion{
 			BuildID:                   "1.1",
-			ExistingCompatibleBuildId: "1.0",
+			ExistingCompatibleBuildID: "1.0",
 		},
 	})
 	ts.NoError(err)

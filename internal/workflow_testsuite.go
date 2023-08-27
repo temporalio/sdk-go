@@ -296,8 +296,26 @@ func (e *TestWorkflowEnvironment) SetStartTime(startTime time.Time) {
 
 // SetCurrentHistoryLength sets the value that is returned from
 // GetInfo(ctx).GetCurrentHistoryLength().
+//
+// Note: this value may not be up to date if accessed inside a query.
 func (e *TestWorkflowEnvironment) SetCurrentHistoryLength(length int) {
 	e.impl.setCurrentHistoryLength(length)
+}
+
+// setCurrentHistoryLength sets the value that is returned from
+// GetInfo(ctx).GetCurrentHistorySize().
+//
+// Note: this value may not be up to date if accessed inside a query.
+func (e *TestWorkflowEnvironment) SetCurrentHistorySize(length int) {
+	e.impl.setCurrentHistorySize(length)
+}
+
+// SetContinueAsNewSuggested set sets the value that is returned from
+// GetInfo(ctx).GetContinueAsNewSuggested().
+//
+// Note: this value may not be up to date if accessed inside a query.
+func (e *TestWorkflowEnvironment) SetContinueAsNewSuggested(suggest bool) {
+	e.impl.setContinueAsNewSuggested(suggest)
 }
 
 // OnActivity setup a mock call for activity. Parameter activity must be activity function (func) or activity name (string).
@@ -388,19 +406,19 @@ func (e *TestWorkflowEnvironment) OnWorkflow(workflow interface{}, args ...inter
 	var call *mock.Call
 	switch fType.Kind() {
 	case reflect.Func:
-		fnType := reflect.TypeOf(workflow)
-		if err := validateFnFormat(fnType, true); err != nil {
+		if err := validateFnFormat(fType, true); err != nil {
 			panic(err)
 		}
 		fnName, _ := getWorkflowFunctionName(e.impl.registry, workflow)
 		if alias, ok := e.impl.registry.getWorkflowAlias(fnName); ok {
 			fnName = alias
 		}
+		e.impl.registry.RegisterWorkflowWithOptions(workflow, RegisterWorkflowOptions{DisableAlreadyRegisteredCheck: true})
 		call = e.mock.On(fnName, args...)
 	case reflect.String:
 		call = e.mock.On(workflow.(string), args...)
 	default:
-		panic("activity must be function or string")
+		panic("workflow must be function or string")
 	}
 
 	return e.wrapCall(call)
@@ -828,8 +846,8 @@ func (e *TestWorkflowEnvironment) QueryWorkflow(queryType string, args ...interf
 	return e.impl.queryWorkflow(queryType, args...)
 }
 
-func (e *TestWorkflowEnvironment) UpdateWorkflow(name string, uc UpdateCallbacks, args ...interface{}) {
-	e.impl.updateWorkflow(name, uc, args...)
+func (e *TestWorkflowEnvironment) UpdateWorkflow(name string, id string, uc UpdateCallbacks, args ...interface{}) {
+	e.impl.updateWorkflow(name, id, uc, args...)
 }
 
 // QueryWorkflowByID queries a child workflow by its ID and returns the result synchronously

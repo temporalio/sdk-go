@@ -66,7 +66,7 @@ type (
 		Complete(success interface{}, err error)
 	}
 
-	// UpdateScheduluer allows an update state machine to spawn coroutines and
+	// UpdateScheduler allows an update state machine to spawn coroutines and
 	// yield itself as necessary.
 	UpdateScheduler interface {
 		// Spawn starts a new named coroutine, executing the given function f.
@@ -88,13 +88,13 @@ type (
 
 	// updateProtocol wraps an updateEnv and some protocol metadata to
 	// implement the UpdateCallbacks abstraction. It handles callbacks by
-	// sending protocol lmessages.
+	// sending protocol messages.
 	updateProtocol struct {
 		protoInstanceID string
+		clientIdentity  string
 		requestMsgID    string
 		requestSeqID    int64
-		initialRequest  updatepb.Request
-		scheduleUpdate  func(name string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
+		scheduleUpdate  func(name string, id string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
 		env             updateEnv
 		state           updateState
 	}
@@ -114,7 +114,7 @@ type (
 // update callbacks.
 func newUpdateProtocol(
 	protoInstanceID string,
-	scheduleUpdate func(name string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks),
+	scheduleUpdate func(name string, id string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks),
 	env updateEnv,
 ) *updateProtocol {
 	return &updateProtocol{
@@ -135,14 +135,15 @@ func (up *updateProtocol) requireState(action string, valid ...updateState) {
 }
 
 func (up *updateProtocol) HandleMessage(msg *protocolpb.Message) error {
-	if err := types.UnmarshalAny(msg.Body, &up.initialRequest); err != nil {
+	var req updatepb.Request
+	if err := types.UnmarshalAny(msg.Body, &req); err != nil {
 		return err
 	}
 	up.requireState("update request", updateStateNew)
 	up.requestMsgID = msg.GetId()
 	up.requestSeqID = msg.GetEventId()
-	input := up.initialRequest.GetInput()
-	up.scheduleUpdate(input.GetName(), input.GetArgs(), input.GetHeader(), up)
+	input := req.GetInput()
+	up.scheduleUpdate(input.GetName(), req.GetMeta().GetUpdateId(), input.GetArgs(), input.GetHeader(), up)
 	up.state = updateStateRequestInitiated
 	return nil
 }
@@ -157,7 +158,7 @@ func (up *updateProtocol) Accept() {
 		Body: protocol.MustMarshalAny(&updatepb.Acceptance{
 			AcceptedRequestMessageId:         up.requestMsgID,
 			AcceptedRequestSequencingEventId: up.requestSeqID,
-			AcceptedRequest:                  &up.initialRequest,
+			// AcceptedRequest field no longer read by server - will be removed from API soon
 		}),
 	}, withExpectedEventPredicate(up.checkAcceptedEvent))
 	up.state = updateStateAccepted
@@ -172,8 +173,8 @@ func (up *updateProtocol) Reject(err error) {
 		Body: protocol.MustMarshalAny(&updatepb.Rejection{
 			RejectedRequestMessageId:         up.requestMsgID,
 			RejectedRequestSequencingEventId: up.requestSeqID,
-			RejectedRequest:                  &up.initialRequest,
 			Failure:                          up.env.GetFailureConverter().ErrorToFailure(err),
+			// RejectedRequest field no longer read by server - will be removed from API soon
 		}),
 	})
 	up.state = updateStateCompleted
@@ -201,7 +202,10 @@ func (up *updateProtocol) Complete(success interface{}, outcomeErr error) {
 		Id:                 up.protoInstanceID + "/complete",
 		ProtocolInstanceId: up.protoInstanceID,
 		Body: protocol.MustMarshalAny(&updatepb.Response{
-			Meta:    up.initialRequest.GetMeta(),
+			Meta: &updatepb.Meta{
+				UpdateId: up.protoInstanceID,
+				Identity: up.clientIdentity,
+			},
 			Outcome: outcome,
 		}),
 	}, withExpectedEventPredicate(up.checkCompletedEvent))
@@ -223,10 +227,11 @@ func (up *updateProtocol) checkAcceptedEvent(e *historypb.HistoryEvent) bool {
 	}
 	return attrs.AcceptedRequest.GetMeta().GetUpdateId() == up.protoInstanceID &&
 		attrs.AcceptedRequestMessageId == up.requestMsgID &&
-		attrs.AcceptedRequestSequencingEventId == up.requestSeqID
+		attrs.AcceptedRequestSequencingEventId == up.requestSeqID &&
+		attrs.AcceptedRequest != nil
 }
 
-// defaultHandler receives the initial invocation of an upate during WFT
+// defaultHandler receives the initial invocation of an update during WFT
 // processing. The implementation will verify that an updateHandler exists for
 // the supplied name (rejecting the update otherwise) and use the provided spawn
 // function to create a new coroutine that will execute in the workflow context.
@@ -236,6 +241,7 @@ func (up *updateProtocol) checkAcceptedEvent(e *historypb.HistoryEvent) bool {
 func defaultUpdateHandler(
 	rootCtx Context,
 	name string,
+	id string,
 	serializedArgs *commonpb.Payloads,
 	header *commonpb.Header,
 	callbacks UpdateCallbacks,
@@ -248,6 +254,10 @@ func defaultUpdateHandler(
 		return
 	}
 	scheduler.Spawn(ctx, name, func(ctx Context) {
+		ctx = WithValue(ctx, updateInfoContextKey, &UpdateInfo{
+			ID: id,
+		})
+
 		eo := getWorkflowEnvOptions(ctx)
 
 		// If we suspect that handler registration has not occurred (e.g.
@@ -284,7 +294,12 @@ func defaultUpdateHandler(
 		if !IsReplaying(ctx) {
 			// we don't execute update validation during replay so that
 			// validation routines can change across versions
-			if err := envInterceptor.inboundInterceptor.ValidateUpdate(ctx, &input); err != nil {
+			err = func() error {
+				defer getState(ctx).dispatcher.setIsReadOnly(false)
+				getState(ctx).dispatcher.setIsReadOnly(true)
+				return envInterceptor.inboundInterceptor.ValidateUpdate(ctx, &input)
+			}()
+			if err != nil {
 				callbacks.Reject(err)
 				return
 			}

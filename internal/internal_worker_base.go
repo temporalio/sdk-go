@@ -112,7 +112,7 @@ type (
 			handler func(queryType string, queryArgs *commonpb.Payloads, header *commonpb.Header) (*commonpb.Payloads, error),
 		)
 		RegisterUpdateHandler(
-			handler func(string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks),
+			handler func(string, string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks),
 		)
 		IsReplaying() bool
 		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) converter.EncodedValue
@@ -181,6 +181,7 @@ type (
 
 		pollerRequestCh    chan struct{}
 		taskQueueCh        chan interface{}
+		eagerTaskQueueCh   chan eagerTask
 		fatalErrCb         func(error)
 		sessionTokenBucket *sessionTokenBucket
 
@@ -192,9 +193,16 @@ type (
 	polledTask struct {
 		task interface{}
 	}
+
+	eagerTask struct {
+		// task to process.
+		task interface{}
+		// callback to run once the task is processed.
+		callback func()
+	}
 )
 
-// SetRetryLongPollGracePeriod sets the amount of time a long poller retrys on
+// SetRetryLongPollGracePeriod sets the amount of time a long poller retries on
 // fatal errors before it actually fails. For test use only,
 // not safe to call with a running worker.
 func SetRetryLongPollGracePeriod(period time.Duration) {
@@ -240,7 +248,8 @@ func newBaseWorker(
 		metricsHandler:     metricsHandler.WithTags(metrics.WorkerTags(options.workerType)),
 		taskSlotsAvailable: int32(options.maxConcurrentTask),
 		pollerRequestCh:    make(chan struct{}, options.maxConcurrentTask),
-		taskQueueCh:        make(chan interface{}), // no buffer, so poller only able to poll new task after previous is dispatched.
+		taskQueueCh:        make(chan interface{}),                          // no buffer, so poller only able to poll new task after previous is dispatched.
+		eagerTaskQueueCh:   make(chan eagerTask, options.maxConcurrentTask), // allow enough capacity so that eager dispatch will not block
 		fatalErrCb:         options.fatalErrCb,
 
 		limiterContext:       ctx,
@@ -273,6 +282,9 @@ func (bw *baseWorker) Start() {
 
 	bw.stopWG.Add(1)
 	go bw.runTaskDispatcher()
+
+	bw.stopWG.Add(1)
+	go bw.runEagerTaskDispatcher()
 
 	bw.isWorkerStarted = true
 	traceLog(func() {
@@ -310,6 +322,41 @@ func (bw *baseWorker) runPoller() {
 	}
 }
 
+func (bw *baseWorker) tryReserveSlot() bool {
+	if bw.isStop() {
+		return false
+	}
+	// Reserve a executor slot via a non-blocking attempt to take a poller
+	// request entry which essentially reserves a slot
+	select {
+	case <-bw.pollerRequestCh:
+		return true
+	default:
+		return false
+	}
+}
+
+func (bw *baseWorker) releaseSlot() {
+	// Like other sends to this channel, we assume there is room because we
+	// reserved it, so we make a blocking send.
+	bw.pollerRequestCh <- struct{}{}
+}
+
+func (bw *baseWorker) pushEagerTask(task eagerTask) {
+	// Should always be non blocking if a slot was reserved.
+	bw.eagerTaskQueueCh <- task
+}
+
+func (bw *baseWorker) processTaskAsync(task interface{}, callback func()) {
+	bw.stopWG.Add(1)
+	go func() {
+		if callback != nil {
+			defer callback()
+		}
+		bw.processTask(task)
+	}()
+}
+
 func (bw *baseWorker) runTaskDispatcher() {
 	defer bw.stopWG.Done()
 
@@ -321,17 +368,35 @@ func (bw *baseWorker) runTaskDispatcher() {
 		// wait for new task or worker stop
 		select {
 		case <-bw.stopCh:
+			// Currently we can drop any tasks received when closing.
+			// https://github.com/temporalio/sdk-go/issues/1197
 			return
 		case task := <-bw.taskQueueCh:
-			// for non-polled-task (local activity result as task), we don't need to rate limit
+			// for non-polled-task (local activity result as task or eager task), we don't need to rate limit
 			_, isPolledTask := task.(*polledTask)
 			if isPolledTask && bw.taskLimiter.Wait(bw.limiterContext) != nil {
 				if bw.isStop() {
 					return
 				}
 			}
-			bw.stopWG.Add(1)
-			go bw.processTask(task)
+			bw.processTaskAsync(task, nil)
+		}
+	}
+}
+
+func (bw *baseWorker) runEagerTaskDispatcher() {
+	defer bw.stopWG.Done()
+	for {
+		select {
+		case <-bw.stopCh:
+			// drain eager dispatch queue
+			for len(bw.eagerTaskQueueCh) > 0 {
+				eagerTask := <-bw.eagerTaskQueueCh
+				bw.processTaskAsync(eagerTask.task, eagerTask.callback)
+			}
+			return
+		case eagerTask := <-bw.eagerTaskQueueCh:
+			bw.processTaskAsync(eagerTask.task, eagerTask.callback)
 		}
 	}
 }

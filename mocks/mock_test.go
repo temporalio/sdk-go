@@ -117,3 +117,17 @@ func Test_MockResetWorkflowExecution(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "new-run-id", actualResp.GetRunId())
 }
+
+func Test_MockScheduleClient(t *testing.T) {
+	testScheduleID := "test-scheduleID"
+	mockClient := &ScheduleClient{}
+
+	mockScheduleHandle := &ScheduleHandle{}
+	mockScheduleHandle.On("GetID").Return(testScheduleID).Times(1)
+
+	mockClient.On("Create", mock.Anything, mock.Anything).Return(mockScheduleHandle, nil).Once()
+	wr, err := mockClient.Create(context.Background(), client.ScheduleOptions{})
+	mockClient.AssertExpectations(t)
+	require.NoError(t, err)
+	require.Equal(t, testScheduleID, wr.GetID())
+}

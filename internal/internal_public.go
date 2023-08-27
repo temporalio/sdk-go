@@ -78,6 +78,8 @@ type (
 
 	// WorkflowTaskHandler represents workflow task handlers.
 	WorkflowTaskHandler interface {
+		WorkflowContextManager
+
 		// Processes the workflow task
 		// The response could be:
 		// - RespondWorkflowTaskCompletedRequest
@@ -85,8 +87,21 @@ type (
 		// - RespondQueryTaskCompletedRequest
 		ProcessWorkflowTask(
 			task *workflowTask,
+			ctx *workflowExecutionContextImpl,
 			f workflowTaskHeartbeatFunc,
-		) (response interface{}, resetter EventLevelResetter, err error)
+		) (response interface{}, err error)
+	}
+
+	WorkflowContextManager interface {
+		// GetOrCreateWorkflowContext finds an existing cached context object
+		// for the provided task's run ID or creates a new object, adds it to
+		// cache, and returns it. In all non-error cases the returned context
+		// object is in a locked state (i.e.
+		// workflowExecutionContextImpl.Lock() has been called).
+		GetOrCreateWorkflowContext(
+			task *workflowservice.PollWorkflowTaskQueueResponse,
+			historyIterator HistoryIterator,
+		) (*workflowExecutionContextImpl, error)
 	}
 
 	// ActivityTaskHandler represents activity task handlers.

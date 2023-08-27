@@ -125,6 +125,12 @@ type HandleSignalInput = internal.HandleSignalInput
 // HandleQueryInput is input for WorkflowInboundInterceptor.HandleQuery.
 type HandleQueryInput = internal.HandleQueryInput
 
+// UpdateInput is input for WorkflowInboundInterceptor.ExecuteUpdate
+// and WorkflowInboundInterceptor.ValidateUpdate.
+//
+// NOTE: Experimental
+type UpdateInput = internal.UpdateInput
+
 // WorkflowOutboundInterceptor is an interface for all workflow calls
 // originating from the SDK.
 //

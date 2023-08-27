@@ -185,7 +185,7 @@ type (
 		workflowCancelHandler func()
 		signalHandler         func(name string, input *commonpb.Payloads, header *commonpb.Header) error
 		queryHandler          func(string, *commonpb.Payloads, *commonpb.Header) (*commonpb.Payloads, error)
-		updateHandler         func(name string, input *commonpb.Payloads, header *commonpb.Header, resp UpdateCallbacks)
+		updateHandler         func(name string, id string, input *commonpb.Payloads, header *commonpb.Header, resp UpdateCallbacks)
 		startedHandler        func(r WorkflowExecution, e error)
 
 		isWorkflowCompleted bool
@@ -343,6 +343,14 @@ func (env *testWorkflowEnvironmentImpl) setStartTime(startTime time.Time) {
 
 func (env *testWorkflowEnvironmentImpl) setCurrentHistoryLength(length int) {
 	env.workflowInfo.currentHistoryLength = length
+}
+
+func (env *testWorkflowEnvironmentImpl) setCurrentHistorySize(size int) {
+	env.workflowInfo.currentHistorySize = size
+}
+
+func (env *testWorkflowEnvironmentImpl) setContinueAsNewSuggested(suggest bool) {
+	env.workflowInfo.continueAsNewSuggested = suggest
 }
 
 func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(params *ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) (*testWorkflowEnvironmentImpl, error) {
@@ -634,7 +642,8 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 		params:     &params,
 		callback: func(lar *LocalActivityResultWrapper) {
 		},
-		attempt: 1,
+		attempt:       1,
+		scheduledTime: time.Now(),
 	}
 	taskHandler := localActivityTaskHandler{
 		userContext:    env.workerOptions.BackgroundActivityContext,
@@ -2021,7 +2030,7 @@ func (env *testWorkflowEnvironmentImpl) RegisterSignalHandler(
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterUpdateHandler(
-	handler func(name string, input *commonpb.Payloads, header *commonpb.Header, resp UpdateCallbacks),
+	handler func(name string, id string, input *commonpb.Payloads, header *commonpb.Header, resp UpdateCallbacks),
 ) {
 	env.updateHandler = handler
 }
@@ -2361,12 +2370,12 @@ func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...
 	return newEncodedValue(blob, env.GetDataConverter()), nil
 }
 
-func (env *testWorkflowEnvironmentImpl) updateWorkflow(name string, uc UpdateCallbacks, args ...interface{}) {
+func (env *testWorkflowEnvironmentImpl) updateWorkflow(name string, id string, uc UpdateCallbacks, args ...interface{}) {
 	data, err := encodeArgs(env.GetDataConverter(), args)
 	if err != nil {
 		panic(err)
 	}
-	env.updateHandler(name, data, nil, uc)
+	env.updateHandler(name, id, data, nil, uc)
 }
 
 func (env *testWorkflowEnvironmentImpl) queryWorkflowByID(workflowID, queryType string, args ...interface{}) (converter.EncodedValue, error) {
@@ -2431,6 +2440,10 @@ func (env *testWorkflowEnvironmentImpl) setStartWorkflowOptions(options StartWor
 		wf.WorkflowTaskTimeout = options.WorkflowTaskTimeout
 	}
 	if len(options.ID) > 0 {
+		// Reassign the ID in running Workflows so SignalWorkflowByID can find the workflow
+		originalID := wf.WorkflowExecution.ID
+		env.runningWorkflows[options.ID] = env.runningWorkflows[wf.WorkflowExecution.ID]
+		delete(env.runningWorkflows, originalID)
 		wf.WorkflowExecution.ID = options.ID
 	}
 	if len(options.TaskQueue) > 0 {

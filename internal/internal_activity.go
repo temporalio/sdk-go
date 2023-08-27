@@ -217,7 +217,8 @@ func getValidatedLocalActivityOptions(ctx Context) (*ExecuteLocalActivityOptions
 	}
 	if p.ScheduleToCloseTimeout == 0 {
 		p.ScheduleToCloseTimeout = p.StartToCloseTimeout
-	} else {
+	}
+	if p.StartToCloseTimeout == 0 {
 		p.StartToCloseTimeout = p.ScheduleToCloseTimeout
 	}
 	return p, nil
@@ -378,6 +379,7 @@ func (a *activityEnvironmentInterceptor) GetInfo(ctx context.Context) ActivityIn
 		Attempt:           a.env.attempt,
 		WorkflowType:      a.env.workflowType,
 		WorkflowNamespace: a.env.workflowNamespace,
+		IsLocalActivity:   a.env.isLocalActivity,
 	}
 }
 

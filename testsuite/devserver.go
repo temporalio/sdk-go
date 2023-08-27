@@ -39,7 +39,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"time"
 
 	"go.temporal.io/sdk/client"
@@ -110,8 +109,8 @@ func StartDevServer(ctx context.Context, options DevServerOptions) (*DevServer, 
 	}
 
 	args := prepareCommand(&options, host, port, clientOptions.Namespace)
-	cmd := exec.Command(exePath, args...)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+
+	cmd := newCmd(exePath, args...)
 	clientOptions.Logger.Info("Starting DevServer", "ExePath", exePath, "Args", args)
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("failed starting: %w", err)
@@ -361,7 +360,7 @@ func retryFor(maxAttempts int, interval time.Duration, cond func() error) error 
 
 // Stop the running server and wait for shutdown to complete. Error is propagated from server shutdown.
 func (s *DevServer) Stop() error {
-	if err := s.cmd.Process.Signal(syscall.SIGTERM); err != nil {
+	if err := sendInterrupt(s.cmd.Process); err != nil {
 		return err
 	}
 	return s.cmd.Wait()
