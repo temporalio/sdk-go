@@ -1831,3 +1831,43 @@ func executeFunction(fn interface{}, args []interface{}) (interface{}, error) {
 	}
 	return res, err
 }
+
+func (w *AggregatedWorker) ListRegisteredWorkflowNames() []string {
+	w.registry.Lock()
+	defer w.registry.Unlock()
+	names := make([]string, 0, len(w.registry.workflowFuncMap))
+	for k := range w.registry.workflowFuncMap {
+		names = append(names, k)
+	}
+	return names
+}
+
+func (w *AggregatedWorker) GetRegisteredWorkflowAliases() map[string]string {
+	w.registry.Lock()
+	defer w.registry.Unlock()
+	aliases := make(map[string]string)
+	for k, v := range w.registry.workflowAliasMap {
+		aliases[k] = v
+	}
+	return aliases
+}
+
+func (w *AggregatedWorker) ListRegisteredActivityNames() []string {
+	w.registry.Lock()
+	defer w.registry.Unlock()
+	names := make([]string, 0, len(w.registry.activityFuncMap))
+	for k := range w.registry.activityFuncMap {
+		names = append(names, k)
+	}
+	return names
+}
+
+func (w *AggregatedWorker) GetRegisteredActivityAliases() map[string]string {
+	w.registry.Lock()
+	defer w.registry.Unlock()
+	aliases := make(map[string]string)
+	for k, v := range w.registry.activityAliasMap {
+		aliases[k] = v
+	}
+	return aliases
+}

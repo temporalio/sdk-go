@@ -2850,3 +2850,21 @@ func TestAliasUnqualifiedNameClash(t *testing.T) {
 	require.Equal(t, "func3", executeWorkflow(false))
 	require.Equal(t, "func1", executeWorkflow(true))
 }
+
+func TestGetRegisteredActivities(t *testing.T) {
+	client := &WorkflowClient{}
+	taskQueue := "worker-options-tq"
+	aggWorker := NewAggregatedWorker(client, taskQueue, WorkerOptions{LocalActivityWorkerOnly: true})
+	aggWorker.RegisterActivityWithOptions(testActivity, RegisterActivityOptions{Name: "testSomeActivity"})
+	require.Equal(t, []string{"testSomeActivity"}, aggWorker.ListRegisteredActivityNames())
+	require.Equal(t, map[string]string{"testActivity": "testSomeActivity"}, aggWorker.GetRegisteredActivityAliases())
+}
+
+func TestGetRegisteredWorkflows(t *testing.T) {
+	client := &WorkflowClient{}
+	taskQueue := "worker-options-tq"
+	aggWorker := NewAggregatedWorker(client, taskQueue, WorkerOptions{LocalActivityWorkerOnly: true})
+	aggWorker.RegisterWorkflowWithOptions(sampleWorkflowExecute, RegisterWorkflowOptions{Name: "someSampleWorkflowExecute"})
+	require.Equal(t, []string{"someSampleWorkflowExecute"}, aggWorker.ListRegisteredWorkflowNames())
+	require.Equal(t, map[string]string{"sampleWorkflowExecute": "someSampleWorkflowExecute"}, aggWorker.GetRegisteredActivityAliases())
+}

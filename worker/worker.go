@@ -97,6 +97,12 @@ type (
 		// This method panics if workflowFunc doesn't comply with the expected format or tries to register the same workflow
 		// type name twice. Use workflow.RegisterOptions.DisableAlreadyRegisteredCheck to allow multiple registrations.
 		RegisterWorkflowWithOptions(w interface{}, options workflow.RegisterOptions)
+
+		// ListRegisteredWorkflowNames - List registered workflow names
+		ListRegisteredWorkflowNames() []string
+
+		// GetRegisteredWorkflowAliases - Get the registered workflow aliases
+		GetRegisteredWorkflowAliases() map[string]string
 	}
 
 	// ActivityRegistry exposes activity registration functions to consumers.
@@ -148,6 +154,12 @@ type (
 		// which might be useful for integration tests.
 		// worker.RegisterActivityWithOptions(barActivity, RegisterActivityOptions{DisableAlreadyRegisteredCheck: true})
 		RegisterActivityWithOptions(a interface{}, options activity.RegisterOptions)
+
+		// ListRegisteredActivityNames - List registered activity names
+		ListRegisteredActivityNames() []string
+
+		// GetRegisteredActivityAliases - Get the registered workflow aliases
+		GetRegisteredActivityAliases() map[string]string
 	}
 
 	// WorkflowReplayer supports replaying a workflow from its event history.
