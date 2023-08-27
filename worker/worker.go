@@ -158,7 +158,7 @@ type (
 		// ListRegisteredActivityNames - List registered activity names
 		ListRegisteredActivityNames() []string
 
-		// GetRegisteredActivityAliases - Get the registered workflow aliases
+		// GetRegisteredActivityAliases - Get the registered activity aliases
 		GetRegisteredActivityAliases() map[string]string
 	}
 
