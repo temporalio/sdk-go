@@ -664,6 +664,24 @@ func assertNotInReadOnlyState(ctx Context) {
 	}
 }
 
+func assertNotInReadOnlyStateCancellation(ctx Context) {
+	s := ctx.Value(coroutinesContextKey)
+	if s == nil {
+		panic("assertNotInReadOnlyStateCtxCancellation: not workflow context")
+	}
+	state := s.(*coroutineState)
+	// For cancellation the dispatcher may not be running because workflow cancellation
+	// is sent outside of the dispatchers loop.
+	if state.dispatcher.IsClosed() {
+		panic(panicIllegalAccessCoroutineState)
+	}
+	// use the dispatcher state instead of the coroutine state because contexts can be
+	// shared
+	if state.dispatcher.getIsReadOnly() {
+		panic(panicIllegalAccessCoroutineState)
+	}
+}
+
 func getStateIfRunning(ctx Context) *coroutineState {
 	if ctx == nil {
 		return nil
@@ -1053,6 +1071,12 @@ func (d *dispatcherImpl) newState(name string) *coroutineState {
 	return c
 }
 
+func (d *dispatcherImpl) IsClosed() bool {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+	return d.closed
+}
+
 func (d *dispatcherImpl) ExecuteUntilAllBlocked(deadlockDetectionTimeout time.Duration) (err error) {
 	d.mutex.Lock()
 	if d.closed {
@@ -1139,6 +1163,10 @@ func (d *dispatcherImpl) Close() {
 	}
 	d.closed = true
 	d.mutex.Unlock()
+	// This loop breaks our expectation that only one workflow
+	// coroutine is running at any time because it triggers all workflow goroutines
+	// to call their defers at once. Adding synchronization seemed more problematic because
+	// it could block eviction if there was a deadlock.
 	for i := 0; i < len(d.coroutines); i++ {
 		c := d.coroutines[i]
 		if !c.closed.Load() {
