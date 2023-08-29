@@ -378,6 +378,16 @@ func (s *replayTestSuite) TestCancelOrder() {
 	s.NoError(err)
 }
 
+func (s *replayTestSuite) TestChildWorkflowCancelWithUpdate() {
+	// Test that update requests are still replayed successfully
+	// when commands are generated before the update requests are handled
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(ChildWorkflowCancelWithUpdate)
+	replayer.RegisterWorkflow(ChildWorkflowWaitOnSignal)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "child-workflow-cancel-with-update.json")
+	s.NoError(err)
+}
+
 type captureConverter struct {
 	converter.DataConverter
 	toPayloads   []interface{}
