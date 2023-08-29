@@ -470,3 +470,27 @@ func CancelOrderSelectWorkflow(ctx workflow.Context) error {
 	selector.Select(ctx)
 	return err
 }
+
+func ChildWorkflowCancelWithUpdate(ctx workflow.Context) error {
+	if err := workflow.SetUpdateHandler(ctx, "update",
+		func(ctx workflow.Context) error {
+			activityCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+				StartToCloseTimeout: 5 * time.Second,
+			})
+
+			return workflow.ExecuteActivity(activityCtx, helloworldActivity, "world", time.Second).Get(ctx, nil)
+		}); err != nil {
+		return err
+	}
+	childCtx, cancel := workflow.WithCancel(ctx)
+
+	childCtx = workflow.WithChildOptions(childCtx, workflow.ChildWorkflowOptions{
+		WorkflowExecutionTimeout: time.Second * 30,
+	})
+	childFut := workflow.ExecuteChildWorkflow(childCtx, ChildWorkflowWaitOnSignal)
+	cancel()
+	_ = childFut.GetChildWorkflowExecution().Get(ctx, nil)
+
+	workflow.GetSignalChannel(ctx, "shutdown").Receive(ctx, nil)
+	return nil
+}
