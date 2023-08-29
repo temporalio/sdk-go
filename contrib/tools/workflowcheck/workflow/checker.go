@@ -198,7 +198,11 @@ func isWorkflowFunc(f *ast.FuncDecl, pass *analysis.Pass) bool {
 		return false
 	}
 	obj := named.Obj()
-	return obj.Pkg() != nil && obj.Pkg().Path() == "go.temporal.io/sdk/workflow" && obj.Name() == "Context"
+	if obj.Pkg() == nil || obj.Name() != "Context" {
+		return false
+	}
+	path := obj.Pkg().Path()
+	return path == "go.temporal.io/sdk/workflow" || path == "go.temporal.io/sdk/internal"
 }
 
 type configFileFlag struct{ checker *determinism.Checker }
