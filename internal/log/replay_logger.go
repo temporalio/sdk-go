@@ -80,3 +80,11 @@ func (l *ReplayLogger) Error(msg string, keyvals ...interface{}) {
 func (l *ReplayLogger) With(keyvals ...interface{}) log.Logger {
 	return NewReplayLogger(log.With(l.logger, keyvals...), l.isReplay, l.enableLoggingInReplay)
 }
+
+// AddCallerSkip increases the caller skip depth if the underlying logger supports it.
+func (l *ReplayLogger) AddCallerSkip(depth int) log.Logger {
+	if sl, ok := l.logger.(log.WithSkipCallers); ok {
+		return NewReplayLogger(sl.AddCallerSkip(depth), l.isReplay, l.enableLoggingInReplay)
+	}
+	return l
+}

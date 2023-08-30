@@ -22,20 +22,10 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+//go:build go1.21
+
 package log
 
-type (
-	// Logger is an interface that can be passed to ClientOptions.Logger.
-	Logger interface {
-		Debug(msg string, keyvals ...interface{})
-		Info(msg string, keyvals ...interface{})
-		Warn(msg string, keyvals ...interface{})
-		Error(msg string, keyvals ...interface{})
-	}
+import "testing"
 
-	// WithSkipCallers is an optional interface that a Logger can implement that
-	// indicate the number of stack frames to skip.
-	WithSkipCallers interface {
-		AddCallerSkip(int) Logger
-	}
-)
+func TestSlogAddapter(t *testing.T) {}

@@ -39,6 +39,15 @@ func With(logger Logger, keyvals ...interface{}) Logger {
 	return newWithLogger(logger, keyvals...)
 }
 
+// Skip creates a child Logger that increase increases its' caller skip depth if it
+// implements [WithSkipCallers]. Otherwise returns the original logger.
+func Skip(logger Logger, depth int) Logger {
+	if sl, ok := logger.(WithSkipCallers); ok {
+		return sl.AddCallerSkip(depth)
+	}
+	return logger
+}
+
 type withLogger struct {
 	logger  Logger
 	keyvals []interface{}
@@ -70,4 +79,12 @@ func (l *withLogger) Warn(msg string, keyvals ...interface{}) {
 // Error writes message to the log.
 func (l *withLogger) Error(msg string, keyvals ...interface{}) {
 	l.logger.Error(msg, l.prependKeyvals(keyvals)...)
+}
+
+// AddCallerSkip increases the caller skip depth if the underlying logger supports it.
+func (l *withLogger) AddCallerSkip(depth int) Logger {
+	if sl, ok := l.logger.(WithSkipCallers); ok {
+		return newWithLogger(sl.AddCallerSkip(depth), l.keyvals)
+	}
+	return l
 }
