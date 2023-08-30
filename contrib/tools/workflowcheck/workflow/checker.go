@@ -33,7 +33,6 @@ import (
 
 	"go.temporal.io/sdk/contrib/tools/workflowcheck/determinism"
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/types/typeutil"
 	"gopkg.in/yaml.v2"
 )
 
@@ -165,32 +164,11 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 					isIgnored = true
 				}
 			}
-			callExpr, _ := n.(*ast.CallExpr)
-			if callExpr == nil || isIgnored {
+			funcDecl, _ := n.(*ast.FuncDecl)
+			if funcDecl == nil || isIgnored || !isWorkflowFunc(funcDecl, pass) {
 				return true
 			}
-			// Callee needs to be workflow registry
-			callee, _ := typeutil.Callee(pass.TypesInfo, callExpr).(*types.Func)
-			const regName = "(go.temporal.io/sdk/worker.WorkflowRegistry).RegisterWorkflow"
-			const regOptName = "(go.temporal.io/sdk/worker.WorkflowRegistry).RegisterWorkflowWithOptions"
-			if callee == nil || len(callExpr.Args) == 0 || (callee.FullName() != regName && callee.FullName() != regOptName) {
-				return true
-			}
-			// First param should be a function ident or a selector with ident as
-			// function
-			var fn *types.Func
-			switch arg := callExpr.Args[0].(type) {
-			case *ast.Ident:
-				fn, _ = pass.TypesInfo.ObjectOf(arg).(*types.Func)
-			case *ast.SelectorExpr:
-				fn, _ = pass.TypesInfo.ObjectOf(arg.Sel).(*types.Func)
-			}
-			// Report if couldn't get type
-			if fn == nil {
-				pass.Reportf(callExpr.Args[0].Pos(),
-					"unrecognized function reference format. We cannot follow this function reference to check for non-determinism.")
-				return true
-			}
+			fn, _ := pass.TypesInfo.ObjectOf(funcDecl.Name).(*types.Func)
 			c.debugf("Checking workflow function %v", fn.FullName())
 			// Get non-determinisms of that package and check
 			packageNonDeterminisms := lookupCache.PackageNonDeterminisms(fn.Pkg())
@@ -199,13 +177,32 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 				for _, reason := range nonDeterminisms {
 					lines := determinism.NonDeterminisms{reason}.AppendChildReasonLines(
 						fn.FullName(), nil, 0, depthRepeat, c.IncludePosOnMessage, fn.Pkg(), lookupCache, map[string]bool{})
-					pass.Report(analysis.Diagnostic{Pos: callExpr.Pos(), Message: strings.Join(lines, hierarchySeparator)})
+					pass.Report(analysis.Diagnostic{Pos: fn.Pos(), Message: strings.Join(lines, hierarchySeparator)})
 				}
 			}
 			return true
 		})
 	}
 	return nil
+}
+
+// isWorkflowFunc checks if f has workflow.Context as a first parameter.
+func isWorkflowFunc(f *ast.FuncDecl, pass *analysis.Pass) bool {
+	if f.Type.Params == nil || len(f.Type.Params.List) == 0 {
+		return false
+	}
+	firstParam := f.Type.Params.List[0]
+	typeInfo := pass.TypesInfo.TypeOf(firstParam.Type)
+	named, _ := typeInfo.(*types.Named)
+	if named == nil {
+		return false
+	}
+	obj := named.Obj()
+	if obj.Pkg() == nil || obj.Name() != "Context" {
+		return false
+	}
+	path := obj.Pkg().Path()
+	return path == "go.temporal.io/sdk/workflow" || path == "go.temporal.io/sdk/internal"
 }
 
 type configFileFlag struct{ checker *determinism.Checker }

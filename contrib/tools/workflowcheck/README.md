@@ -2,7 +2,7 @@
 
 Temporal Workflow Check is a tool that statically analyzes
 Temporal [Workflow Definitions written in Go](https://docs.temporal.io/docs/go/how-to-write-a-workflow-definition-in-go)
-(i.e. functions passed to `worker.RegisterWorkflow`) to check for non-deterministic code either directly in the function
+(i.e. functions with `workflow.Context` as first argument) to check for non-deterministic code either directly in the function
 or in a function called by the Workflow. It is highly optimized to scan large codebases quickly.
 
 **NOTE: This will not catch all cases of non-determinism such as global var mutation. This is just a helper and
