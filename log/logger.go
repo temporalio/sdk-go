@@ -34,8 +34,9 @@ type (
 	}
 
 	// WithSkipCallers is an optional interface that a Logger can implement that
-	// indicate the number of stack frames to skip.
+	// may create a new child logger that skips the number of stack frames of the caller.
+	// This call must not mutate the original logger.
 	WithSkipCallers interface {
-		AddCallerSkip(int) Logger
+		WithCallerSkip(int) Logger
 	}
 )

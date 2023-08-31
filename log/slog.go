@@ -86,7 +86,7 @@ func (s *slogLogger) With(keyvals ...interface{}) Logger {
 	}
 }
 
-func (s *slogLogger) AddCallerSkip(depth int) Logger {
+func (s *slogLogger) WithCallerSkip(depth int) Logger {
 	return &slogLogger{
 		logger: s.logger,
 		depth:  s.depth + depth,

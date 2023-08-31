@@ -43,7 +43,7 @@ func With(logger Logger, keyvals ...interface{}) Logger {
 // implements [WithSkipCallers]. Otherwise returns the original logger.
 func Skip(logger Logger, depth int) Logger {
 	if sl, ok := logger.(WithSkipCallers); ok {
-		return sl.AddCallerSkip(depth)
+		return sl.WithCallerSkip(depth)
 	}
 	return logger
 }
@@ -81,10 +81,9 @@ func (l *withLogger) Error(msg string, keyvals ...interface{}) {
 	l.logger.Error(msg, l.prependKeyvals(keyvals)...)
 }
 
-// AddCallerSkip increases the caller skip depth if the underlying logger supports it.
-func (l *withLogger) AddCallerSkip(depth int) Logger {
+func (l *withLogger) WithCallerSkip(depth int) Logger {
 	if sl, ok := l.logger.(WithSkipCallers); ok {
-		return newWithLogger(sl.AddCallerSkip(depth), l.keyvals)
+		return newWithLogger(sl.WithCallerSkip(depth), l.keyvals)
 	}
 	return l
 }
