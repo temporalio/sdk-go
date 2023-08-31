@@ -1122,6 +1122,7 @@ type WorkflowReplayer struct {
 	failureConverter         converter.FailureConverter
 	contextPropagators       []ContextPropagator
 	enableLoggingInReplay    bool
+	disableDeadlockDetection bool
 	mu                       sync.Mutex
 	workflowExecutionResults map[string]*commonpb.Payloads
 }
@@ -1153,6 +1154,10 @@ type WorkflowReplayerOptions struct {
 	// This is only useful for debugging purpose.
 	// default: false
 	EnableLoggingInReplay bool
+
+	// Optional: Disable the default 1 second deadlock detection timeout. This option can be used to step through
+	// workflow code with multiple breakpoints in a debugger.
+	DisableDeadlockDetection bool
 }
 
 // ReplayWorkflowHistoryOptions are options for replaying a workflow.
@@ -1172,6 +1177,7 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 		failureConverter:         options.FailureConverter,
 		contextPropagators:       options.ContextPropagators,
 		enableLoggingInReplay:    options.EnableLoggingInReplay,
+		disableDeadlockDetection: options.DisableDeadlockDetection,
 		workflowExecutionResults: make(map[string]*commonpb.Payloads),
 	}, nil
 }
@@ -1369,6 +1375,9 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 			EagerWorkflowStart:              true,
 			SdkMetadata:                     true,
 		},
+	}
+	if aw.disableDeadlockDetection {
+		params.DeadlockDetectionTimeout = math.MaxInt64
 	}
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
 	wfctx, err := taskHandler.GetOrCreateWorkflowContext(task, iterator)
