@@ -48,6 +48,9 @@ func Skip(logger Logger, depth int) Logger {
 	return logger
 }
 
+var _ Logger = (*withLogger)(nil)
+var _ WithSkipCallers = (*withLogger)(nil)
+
 type withLogger struct {
 	logger  Logger
 	keyvals []interface{}

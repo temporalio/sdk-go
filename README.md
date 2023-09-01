@@ -17,31 +17,34 @@ See [samples](https://github.com/temporalio/samples-go) to get started.
 Documentation is available [here](https://docs.temporal.io). 
 You can also find the API documentation [here](https://pkg.go.dev/go.temporal.io/sdk).
 
-## Using a custom logger
+## Using slog
 
-Although the Go SDK does not support most third-party logging solutions natively, [our friends at Banzai Cloud](https://github.com/sagikazarmark) built the [adapter package logur](https://github.com/logur/logur) which makes it possible to use third party loggers with minimal overhead. Here is an example of using logur to support [Logrus](https://github.com/sirupsen/logrus):
+If using Go version 1.21+ the Go SDK provides built in integration with the standard [slog](https://pkg.go.dev/log) package.
+
 
 ```go
 package main
 import (
-	"github.com/sirupsen/logrus"
+	"log/slog"
+	"os"
+
 	"go.temporal.io/sdk/client"
-	logrusadapter "logur.dev/adapter/logrus"
-	"logur.dev/logur"
+	"go.temporal.io/sdk/log"
+	"go.temporal.io/sdk/worker"
 )
 
 func main() {
-	// feed this logger into Temporal
-	logger := logur.LoggerToKV(logrusadapter.New(logrus.New()))
 	clientOptions := client.Options{
-		Logger: logger,
+		Logger: log.NewStructuredLogger(
+			slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+				AddSource: true,
+				Level:     slog.LevelDebug,
+			}))),
 	}
 	temporalClient, err := client.Dial(clientOptions)
 	// ...
 }
 ```
-
-Most of the popular logging solutions have existing adapters in logur. If you're curious about which adapters are available, here is a helpful [link](https://github.com/logur?q=adapter-).
 
 ## Workflow determinism checker
 
