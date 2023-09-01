@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
@@ -218,6 +219,12 @@ func SideEffectWorkflow(ctx workflow.Context, field string) error {
 }
 
 func EmptyWorkflow(ctx workflow.Context, _ string) error {
+	return nil
+}
+
+func DeadlockedWorkflow(ctx workflow.Context, _ string) error {
+	// Sleep for just over 1 second to trigger deadlock detection
+	time.Sleep(1100 * time.Millisecond)
 	return nil
 }
 

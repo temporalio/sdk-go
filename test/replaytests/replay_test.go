@@ -34,6 +34,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
+
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
@@ -358,6 +359,23 @@ func TestReplayCustomConverter(t *testing.T) {
 	// Confirm 1 activity input and output
 	require.Contains(t, conv.toPayloads, "Workflow2")
 	require.Contains(t, conv.fromPayloads, "Hello Workflow2!")
+}
+
+func TestReplayDeadlockDetection(t *testing.T) {
+	defaultReplayer := worker.NewWorkflowReplayer()
+	noDeadlockReplayer, err := worker.NewWorkflowReplayerWithOptions(worker.WorkflowReplayerOptions{
+		DisableDeadlockDetection: true,
+	})
+	require.NoError(t, err)
+
+	defaultReplayer.RegisterWorkflow(DeadlockedWorkflow)
+	noDeadlockReplayer.RegisterWorkflow(DeadlockedWorkflow)
+
+	err = defaultReplayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "deadlocked-workflow.json")
+	require.Error(t, err)
+
+	err = noDeadlockReplayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "deadlocked-workflow.json")
+	require.NoError(t, err)
 }
 
 func (s *replayTestSuite) TestVersionAndMutableSideEffect() {
