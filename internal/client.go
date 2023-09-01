@@ -237,7 +237,7 @@ type (
 		// examples:
 		//  - "(WorkflowID = 'wid1' or (WorkflowType = 'type2' and WorkflowID = 'wid2'))".
 		//  - "CloseTime between '2019-08-27T15:04:05+00:00' and '2019-08-28T15:04:05+00:00'".
-		//  - to list only open workflow use "CloseTime = missing"
+		//  - to list only open workflow use "CloseTime is null"
 		// Retrieved workflow executions are sorted by StartTime in descending order when list open workflow,
 		// and sorted by CloseTime in descending order for other queries.
 		// For supported operations on different server versions see [Visibility].
