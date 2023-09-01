@@ -239,7 +239,8 @@ func newWorkflowExecutionEventHandler(
 		mutableSideEffectCallCounter: make(map[string]int),
 		sdkFlags:                     newSDKFlags(capabilities),
 	}
-	context.logger = ilog.NewReplayLogger(
+	// Attempt to skip 1 log level to remove the ReplayLogger from the stack.
+	context.logger = log.Skip(ilog.NewReplayLogger(
 		log.With(logger,
 			tagWorkflowType, workflowInfo.WorkflowType.Name,
 			tagWorkflowID, workflowInfo.WorkflowExecution.ID,
@@ -247,7 +248,7 @@ func newWorkflowExecutionEventHandler(
 			tagAttempt, workflowInfo.Attempt,
 		),
 		&context.isReplay,
-		&context.enableLoggingInReplay)
+		&context.enableLoggingInReplay), 1)
 
 	if metricsHandler != nil {
 		context.metricsHandler = metrics.NewReplayAwareHandler(&context.isReplay, metricsHandler).
