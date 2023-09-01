@@ -1,0 +1,91 @@
+{
+  "events": [
+    {
+      "eventId": "1",
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
+      "eventType": "WorkflowExecutionStarted",
+      "version": "-24",
+      "taskId": "1048576",
+      "workflowExecutionStartedEventAttributes": {
+        "workflowType": {
+          "name": "DeadlockedWorkflow"
+        },
+        "taskQueue": {
+          "name": "replay-test",
+          "kind": "Normal"
+        },
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "IldvcmtmbG93MSI="
+            }
+          ]
+        },
+        "workflowExecutionTimeout": "315360000s",
+        "workflowRunTimeout": "315360000s",
+        "workflowTaskTimeout": "10s",
+        "initiator": "Workflow",
+        "originalExecutionRunId": "32c62bbb-dfa3-4558-8bab-11cd5b4e17b7",
+        "identity": "22866@ShtinUbuntu2@",
+        "firstExecutionRunId": "32c62bbb-dfa3-4558-8bab-11cd5b4e17b7",
+        "attempt": 1,
+        "workflowExecutionExpirationTime": "0001-01-01T00:00:00Z",
+        "firstWorkflowTaskBackoff": "0s",
+        "header": {}
+      }
+    },
+    {
+      "eventId": "2",
+      "eventTime": "2020-07-30T00:30:02.971668264Z",
+      "eventType": "WorkflowTaskScheduled",
+      "version": "-24",
+      "taskId": "1048577",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "replay-test",
+          "kind": "Normal"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": "1"
+      }
+    },
+    {
+      "eventId": "3",
+      "eventTime": "2020-07-30T00:30:02.981403193Z",
+      "eventType": "WorkflowTaskStarted",
+      "version": "-24",
+      "taskId": "1048582",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "22866@ShtinUbuntu2@",
+        "requestId": "43107987-202a-44ca-b718-4aecc6cd6f3b"
+      }
+    },
+    {
+      "eventId": "4",
+      "eventTime": "2020-07-30T00:30:02.992586820Z",
+      "eventType": "WorkflowTaskCompleted",
+      "version": "-24",
+      "taskId": "1048585",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "2",
+        "startedEventId": "3",
+        "identity": "22866@ShtinUbuntu2@",
+        "binaryChecksum": "01c85c2da1ff4eb3ef3641a5746edef0"
+      }
+    },
+    {
+      "eventId": "5",
+      "eventTime": "2020-07-30T00:30:03.070438610Z",
+      "eventType": "WorkflowExecutionCompleted",
+      "version": "-24",
+      "taskId": "1048640",
+      "workflowExecutionCompletedEventAttributes": {
+        "workflowTaskCompletedEventId": "4"
+      }
+    }
+  ]
+}
