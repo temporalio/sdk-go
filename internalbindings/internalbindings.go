@@ -75,6 +75,8 @@ type (
 	TimerID = internal.TimerID
 	// ContinueAsNewError used by a workflow to request continue as new
 	ContinueAsNewError = internal.ContinueAsNewError
+	// UpdateCallbacks used by a workflow to request updates
+	UpdateCallbacks = internal.UpdateCallbacks
 )
 
 // GetLastCompletionResult returns last completion result from workflow.
