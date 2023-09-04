@@ -75,7 +75,7 @@ type (
 	TimerID = internal.TimerID
 	// ContinueAsNewError used by a workflow to request continue as new
 	ContinueAsNewError = internal.ContinueAsNewError
-	// UpdateCallbacks used by a workflow to request updates
+	// UpdateCallbacks used to report the result of an update
 	UpdateCallbacks = internal.UpdateCallbacks
 )
 
