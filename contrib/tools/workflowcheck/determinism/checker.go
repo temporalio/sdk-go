@@ -367,13 +367,14 @@ func (c *collector) collectFuncInfo(fn *types.Func, decl *ast.FuncDecl) {
 }
 
 func (c *collector) checkRangeType(rangeType types.Type, n ast.Node, fn *types.Func) Reason {
-L: // Unwrap named or generic type
+Loop:
+	// Unwrap named or generic type
 	for {
 		switch rangeType.(type) {
 		case *types.Named, *types.TypeParam:
 			rangeType = rangeType.Underlying()
 		default:
-			break L
+			break Loop
 		}
 	}
 	switch t := rangeType.(type) {
