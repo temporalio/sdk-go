@@ -517,8 +517,8 @@ func HasLastCompletionResult(ctx Context) bool {
 	return internal.HasLastCompletionResult(ctx)
 }
 
-// GetLastCompletionResult extract last completion result from the last successful run for this cron workflow.
-// This is used in combination with cron schedule. A workflow can be started with an optional cron schedule.
+// GetLastCompletionResult extract last completion result from the last successful run for this cron or schedule workflow.
+// This is used in combination with cron schedule or schedule workflow. A workflow can be started with an optional cron schedule.
 // If a cron workflow wants to pass some data to next schedule, it can return any data and that data will become
 // available when next run starts. This will contain the last successful result even if the most recent run failed.
 // This GetLastCompletionResult() extract the data into expected data structure.
@@ -532,7 +532,7 @@ func GetLastCompletionResult(ctx Context, d ...interface{}) error {
 }
 
 // GetLastError extracts the error from the last run of this workflow. If the last run of this workflow did not fail or
-// this is the first run, this will be nil.
+// this is the first run, this will be nil. This is used in combination with cron schedule or schedule workflow.
 //
 // See TestWorkflowEnvironment.SetLastError() for unit test support.
 func GetLastError(ctx Context) error {
