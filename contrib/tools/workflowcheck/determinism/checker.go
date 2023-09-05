@@ -346,23 +346,8 @@ func (c *collector) collectFuncInfo(fn *types.Func, decl *ast.FuncDecl) {
 		case *ast.RangeStmt:
 			// Map and chan ranges are non-deterministic
 			rangeType := c.pass.TypesInfo.TypeOf(n.X)
-			// Unwrap named type
-			for {
-				if namedType, _ := rangeType.(*types.Named); namedType != nil {
-					rangeType = namedType.Underlying()
-				} else {
-					break
-				}
-			}
-			switch rangeType.(type) {
-			case *types.Map:
-				c.checker.debugf("Marking %v as non-deterministic because it iterates over a map", fn.FullName())
-				pos := c.pass.Fset.Position(n.Pos())
-				info.reasons = append(info.reasons, &ReasonMapRange{SourcePos: &pos})
-			case *types.Chan:
-				c.checker.debugf("Marking %v as non-deterministic because it iterates over a channel", fn.FullName())
-				pos := c.pass.Fset.Position(n.Pos())
-				info.reasons = append(info.reasons, &ReasonConcurrency{SourcePos: &pos, Kind: ConcurrencyKindRange})
+			if reason := c.checkRangeType(rangeType, n, fn); reason != nil {
+				info.reasons = append(info.reasons, reason)
 			}
 		case *ast.SendStmt:
 			// Any send statement is non-deterministic
@@ -379,6 +364,41 @@ func (c *collector) collectFuncInfo(fn *types.Func, decl *ast.FuncDecl) {
 		}
 		return true
 	})
+}
+
+func (c *collector) checkRangeType(rangeType types.Type, n ast.Node, fn *types.Func) Reason {
+L: // Unwrap named or generic type
+	for {
+		switch rangeType.(type) {
+		case *types.Named, *types.TypeParam:
+			rangeType = rangeType.Underlying()
+		default:
+			break L
+		}
+	}
+	switch t := rangeType.(type) {
+	case *types.Map:
+		c.checker.debugf("Marking %v as non-deterministic because it iterates over a map", fn.FullName())
+		pos := c.pass.Fset.Position(n.Pos())
+		return &ReasonMapRange{SourcePos: &pos}
+	case *types.Chan:
+		c.checker.debugf("Marking %v as non-deterministic because it iterates over a channel", fn.FullName())
+		pos := c.pass.Fset.Position(n.Pos())
+		return &ReasonConcurrency{SourcePos: &pos, Kind: ConcurrencyKindRange}
+	case *types.Interface:
+		for i := 0; i < t.NumEmbeddeds(); i++ {
+			if reason := c.checkRangeType(t.EmbeddedType(i), n, fn); reason != nil {
+				return reason
+			}
+		}
+	case *types.Union:
+		for i := 0; i < t.Len(); i++ {
+			if reason := c.checkRangeType(t.Term(i).Type(), n, fn); reason != nil {
+				return reason
+			}
+		}
+	}
+	return nil
 }
 
 // Expects to be called as second pass after all func infos collected.

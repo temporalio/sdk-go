@@ -21,3 +21,9 @@ func MapIterateWrappedType() { // want MapIterateWrappedType:"iterates over map"
 		_ = fmt.Sprint(k, v)
 	}
 }
+
+func MapIterateGenericType[M ~map[K]V, K comparable, V any](m M) { // want MapIterateGenericType:"iterates over map"
+	for k, v := range m {
+		_ = fmt.Sprint(k, v)
+	}
+}

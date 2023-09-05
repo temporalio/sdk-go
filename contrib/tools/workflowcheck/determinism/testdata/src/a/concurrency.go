@@ -52,3 +52,8 @@ func ChannelRangeWrappedType() { // want ChannelRangeWrappedType:"iterates over 
 	for range ch {
 	}
 }
+
+func ChannelRangeGenericType[C chan T, T any](ch C) { // want ChannelRangeGenericType:"iterates over channel"
+	for range ch {
+	}
+}
