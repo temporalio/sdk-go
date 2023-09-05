@@ -367,17 +367,9 @@ func (c *collector) collectFuncInfo(fn *types.Func, decl *ast.FuncDecl) {
 }
 
 func (c *collector) checkRangeType(rangeType types.Type, n ast.Node, fn *types.Func) Reason {
-Loop:
-	// Unwrap named or generic type
-	for {
-		switch rangeType.(type) {
-		case *types.Named, *types.TypeParam:
-			rangeType = rangeType.Underlying()
-		default:
-			break Loop
-		}
-	}
 	switch t := rangeType.(type) {
+	case *types.Named, *types.TypeParam:
+		return c.checkRangeType(t.Underlying(), n, fn)
 	case *types.Map:
 		c.checker.debugf("Marking %v as non-deterministic because it iterates over a map", fn.FullName())
 		pos := c.pass.Fset.Position(n.Pos())
