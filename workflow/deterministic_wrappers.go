@@ -32,16 +32,16 @@ import (
 
 type (
 
-	// Channel must be used instead of native go channel by workflow code.
-	// Use workflow.NewChannel(ctx) method to create Channel instance.
-	// Channel extends both ReadChanel and SendChannel. Prefer to use one of these interfaces
-	// to share Channel with consumers or producers.
+	// Channel must be used instead of a native go channel by workflow code.
+	// Use workflow.NewChannel(ctx) method to create a Channel instance.
+	// Channel extends both ReadChannel and SendChannel. Prefer using one of these interfaces
+	// to share a Channel with consumers or producers.
 	Channel = internal.Channel
 
-	// ReceiveChannel is a read only view of the Channel
+	// ReceiveChannel is a read-only view of the Channel
 	ReceiveChannel = internal.ReceiveChannel
 
-	// SendChannel is a write only view of the Channel
+	// SendChannel is a write-only view of the Channel
 	SendChannel = internal.SendChannel
 
 	// Selector must be used instead of native go select by workflow code.
@@ -63,56 +63,58 @@ type (
 // Await blocks the calling thread until condition() returns true.
 // Do not mutate values or trigger side effects inside condition.
 // Returns CanceledError if the ctx is canceled.
-// The following code is going to block until the captured count
+// The following code will block until the captured count
 // variable is set to 5:
-//   workflow.Await(ctx, func() bool {
-//       return count == 5
-//   })
+//
+//	workflow.Await(ctx, func() bool {
+//	    return count == 5
+//	})
 //
 // The trigger is evaluated on every workflow state transition.
 // Note that conditions that wait for time can be error-prone as nothing might cause evaluation.
 // For example:
-//   workflow.Await(ctx, func() bool {
-//       return workflow.Now() > someTime
-//   })
-// might never return true unless some other event like Signal or activity completion would force the condition evaluation.
+//
+//	workflow.Await(ctx, func() bool {
+//	    return workflow.Now() > someTime
+//	})
+//
+// might never return true unless some other event like a Signal or activity completion forces the condition evaluation.
 // For a time-based wait use workflow.AwaitWithTimeout function.
 func Await(ctx Context, condition func() bool) error {
 	return internal.Await(ctx, condition)
 }
 
 // AwaitWithTimeout blocks the calling thread until condition() returns true
-// or blocking time exceeds the passed timeout value
-// Returns ok equals to false if timed out and err equals to
-// CanceledError if the ctx is canceled.
-// The following code is going to block until the captured count
-// variable is set to 5 or one hour passes.
+// or blocking time exceeds the passed timeout value.
+// Returns ok=false if timed out, and err CanceledError if the ctx is canceled.
+// The following code will block until the captured count
+// variable is set to 5, or one hour passes.
 //
-// workflow.AwaitWithTimeout(ctx, time.Hour, func() bool {
-//   return count == 5
-// })
+//	workflow.AwaitWithTimeout(ctx, time.Hour, func() bool {
+//	  return count == 5
+//	})
 func AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool) (ok bool, err error) {
 	return internal.AwaitWithTimeout(ctx, timeout, condition)
 }
 
-// NewChannel create new Channel instance
+// NewChannel creates a new Channel instance
 func NewChannel(ctx Context) Channel {
 	return internal.NewChannel(ctx)
 }
 
-// NewNamedChannel create new Channel instance with a given human readable name.
-// Name appears in stack traces that are blocked on this channel.
+// NewNamedChannel creates a new Channel instance with a given human-readable name.
+// The name appears in stack traces that are blocked on this channel.
 func NewNamedChannel(ctx Context, name string) Channel {
 	return internal.NewNamedChannel(ctx, name)
 }
 
-// NewBufferedChannel create new buffered Channel instance
+// NewBufferedChannel creates a new buffered Channel instance
 func NewBufferedChannel(ctx Context, size int) Channel {
 	return internal.NewBufferedChannel(ctx, size)
 }
 
-// NewNamedBufferedChannel create new BufferedChannel instance with a given human readable name.
-// Name appears in stack traces that are blocked on this Channel.
+// NewNamedBufferedChannel creates a new BufferedChannel instance with a given human-readable name.
+// The name appears in stack traces that are blocked on this Channel.
 func NewNamedBufferedChannel(ctx Context, name string, size int) Channel {
 	return internal.NewNamedBufferedChannel(ctx, name, size)
 }
@@ -122,8 +124,8 @@ func NewSelector(ctx Context) Selector {
 	return internal.NewSelector(ctx)
 }
 
-// NewNamedSelector creates a new Selector instance with a given human readable name.
-// Name appears in stack traces that are blocked on this Selector.
+// NewNamedSelector creates a new Selector instance with a given human-readable name.
+// The name appears in stack traces that are blocked on this Selector.
 func NewNamedSelector(ctx Context, name string) Selector {
 	return internal.NewNamedSelector(ctx, name)
 }
@@ -133,43 +135,43 @@ func NewWaitGroup(ctx Context) WaitGroup {
 	return internal.NewWaitGroup(ctx)
 }
 
-// Go creates a new coroutine. It has similar semantic to goroutine in a context of the workflow.
+// Go creates a new coroutine. It has similar semantics to a goroutine, but in the context of the workflow.
 func Go(ctx Context, f func(ctx Context)) {
 	internal.Go(ctx, f)
 }
 
-// GoNamed creates a new coroutine with a given human readable name.
-// It has similar semantic to goroutine in a context of the workflow.
-// Name appears in stack traces that include this coroutine.
+// GoNamed creates a new coroutine with a given human-readable name.
+// It has similar semantics to a goroutine, but in the context of the workflow.
+// The name appears in stack traces that include this coroutine.
 func GoNamed(ctx Context, name string, f func(ctx Context)) {
 	internal.GoNamed(ctx, name, f)
 }
 
-// NewFuture creates a new future as well as associated Settable that is used to set its value.
+// NewFuture creates a new future as well as an associated Settable that is used to set its value.
 func NewFuture(ctx Context) (Future, Settable) {
 	return internal.NewFuture(ctx)
 }
 
 // Now returns the current time when the workflow task is started or replayed.
-// The workflow needs to use this Now() to get the wall clock time instead of the Go lang library one.
+// Workflows must use this Now() to get the wall clock time, instead of Go's time.Now().
 func Now(ctx Context) time.Time {
 	return internal.Now(ctx)
 }
 
-// NewTimer returns immediately and the future becomes ready after the specified duration d. The workflow needs to use
-// this NewTimer() to get the timer instead of the Go lang library one(timer.NewTimer()). You can cancel the pending
-// timer by cancel the Context (using context from workflow.WithCancel(ctx)) and that will cancel the timer. After timer
-// is canceled, the returned Future become ready, and Future.Get() will return *CanceledError.
+// NewTimer returns immediately and the future becomes ready after the specified duration d. Workflows must use
+// this NewTimer() to get the timer, instead of Go's timer.NewTimer(). You can cancel the pending
+// timer by canceling the Context (using the context from workflow.WithCancel(ctx)) and that will cancel the timer. After the timer
+// is canceled, the returned Future becomes ready, and Future.Get() will return *CanceledError.
 func NewTimer(ctx Context, d time.Duration) Future {
 	return internal.NewTimer(ctx, d)
 }
 
 // Sleep pauses the current workflow for at least the duration d. A negative or zero duration causes Sleep to return
-// immediately. Workflow code needs to use this Sleep() to sleep instead of the Go lang library one(timer.Sleep()).
-// You can cancel the pending sleep by cancel the Context (using context from workflow.WithCancel(ctx)).
-// Sleep() returns nil if the duration d is passed, or it returns *CanceledError if the ctx is canceled. There are 2
-// reasons the ctx could be canceled: 1) your workflow code cancel the ctx (with workflow.WithCancel(ctx));
-// 2) your workflow itself is canceled by external request.
+// immediately. Workflow code must use this Sleep() to sleep, instead of Go's timer.Sleep().
+// You can cancel the pending sleep by canceling the Context (using the context from workflow.WithCancel(ctx)).
+// Sleep() returns nil if the duration d is passed, or *CanceledError if the ctx is canceled. There are two
+// reasons the ctx might be canceled: 1) your workflow code canceled the ctx (with workflow.WithCancel(ctx));
+// 2) your workflow itself was canceled by external request.
 func Sleep(ctx Context, d time.Duration) (err error) {
 	return internal.Sleep(ctx, d)
 }
