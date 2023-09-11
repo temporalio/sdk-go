@@ -34,6 +34,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"go.temporal.io/sdk/interceptor"
+	"go.temporal.io/sdk/log"
 )
 
 // DefaultTextMapPropagator is the default OpenTelemetry TextMapPropagator used
@@ -194,6 +195,20 @@ func (t *tracer) StartSpan(opts *interceptor.TracerStartSpanOptions) (intercepto
 	}
 
 	return &tracerSpan{Span: span}, nil
+}
+
+func (t *tracer) GetLogger(logger log.Logger, ref interceptor.TracerSpanRef) log.Logger {
+	span, ok := ref.(*tracerSpan)
+	if !ok {
+		return logger
+	}
+
+	logger = log.With(logger,
+		"TraceID", span.SpanContext().TraceID(),
+		"SpanID", span.SpanContext().SpanID(),
+	)
+
+	return logger
 }
 
 type tracerSpanRef struct{ trace.SpanContext }
