@@ -52,7 +52,7 @@ type Config struct {
 	// Whether to export a *NonDeterminisms fact per object.
 	EnableObjectFacts bool
 	// Map `package -> function names` with functions making any argument deterministic
-	DeterministicWrappers map[string][]string
+	AcceptsNonDeterministicParameters map[string][]string
 }
 
 // Checker is a checker that can run analysis passes to check for
@@ -304,7 +304,7 @@ func (c *collector) collectFuncInfo(fn *types.Func, decl *ast.FuncDecl) {
 		case *ast.CallExpr:
 			// Get the callee
 			if callee, _ := typeutil.Callee(c.pass.TypesInfo, n).(*types.Func); callee != nil {
-				if callee.Pkg() != nil && slices.Contains(c.checker.DeterministicWrappers[callee.Pkg().Path()], callee.Name()) {
+				if callee.Pkg() != nil && slices.Contains(c.checker.AcceptsNonDeterministicParameters[callee.Pkg().Path()], callee.Name()) {
 					return false
 				} else if c.pass.Pkg != callee.Pkg() {
 					// If it's in a different package, check externals

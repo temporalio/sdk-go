@@ -92,11 +92,11 @@ func NewChecker(config Config) *Checker {
 		Debug:               config.Debug,
 		IncludePosOnMessage: config.IncludePosOnMessage,
 		Determinism: determinism.NewChecker(determinism.Config{
-			IdentRefs:             config.IdentRefs,
-			DebugfFunc:            config.DebugfFunc,
-			Debug:                 config.DeterminismDebug,
-			EnableObjectFacts:     config.EnableObjectFacts,
-			DeterministicWrappers: map[string][]string{"go.temporal.io/sdk/workflow": {"SideEffect", "MutableSideEffect"}},
+			IdentRefs:                         config.IdentRefs,
+			DebugfFunc:                        config.DebugfFunc,
+			Debug:                             config.DeterminismDebug,
+			EnableObjectFacts:                 config.EnableObjectFacts,
+			AcceptsNonDeterministicParameters: map[string][]string{"go.temporal.io/sdk/workflow": {"SideEffect", "MutableSideEffect"}},
 		}),
 	}
 }
