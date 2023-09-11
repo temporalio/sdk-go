@@ -63,6 +63,10 @@ func SafeFmtCall() {
 	fmt.Sprintf("foo bar")
 }
 
+func NotSafeFmtCall() { // want NotSafeFmtCall:"calls non-deterministic function time.Now"
+	fmt.Sprintf("%d", time.Now())
+}
+
 func SafeMathRandomCall() {
 	DeterministicWrapper(func() {
 		mathrand.Int()
