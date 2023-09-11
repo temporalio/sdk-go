@@ -56,8 +56,8 @@ jobs:
     if: ${{ github.event.pull_request.head.repo.full_name == '' || github.event.pull_request.head.repo.full_name == 'temporalio/sdk-go' }}
     runs-on: ubuntu-latest
     env:
-      SERVICE_ADDR: tinycicd.sdk.tmprl.cloud:7233
-      TEMPORAL_NAMESPACE: tinycicd.sdk
+      SERVICE_ADDR: sdk-ci.a2dd6.tmprl.cloud:7233
+      TEMPORAL_NAMESPACE: sdk-ci.a2dd6
       TEMPORAL_CLIENT_CERT: ${{ secrets.TEMPORAL_CLIENT_CERT }}
       TEMPORAL_CLIENT_KEY: ${{ secrets.TEMPORAL_CLIENT_KEY }}
     steps:
@@ -77,4 +77,3 @@ jobs:
       go-repo-path: ${{github.event.pull_request.head.repo.full_name}}
       version: ${{github.event.pull_request.head.ref}}
       version-is-repo-ref: true
-
