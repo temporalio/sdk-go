@@ -41,11 +41,12 @@ func Test(t *testing.T) {
 		t,
 		analysistest.TestData(),
 		determinism.NewChecker(determinism.Config{
-			IdentRefs:         identRefs,
-			SkipFiles:         []*regexp.Regexp{regexp.MustCompile(`.*/should_skip\.go`)},
-			Debug:             false, // Set to true to see details
-			DebugfFunc:        t.Logf,
-			EnableObjectFacts: true,
+			IdentRefs:             identRefs,
+			SkipFiles:             []*regexp.Regexp{regexp.MustCompile(`.*/should_skip\.go`)},
+			Debug:                 false, // Set to true to see details
+			DebugfFunc:            t.Logf,
+			EnableObjectFacts:     true,
+			DeterministicWrappers: map[string][]string{"a": {"DeterministicWrapper"}},
 		}).NewAnalyzer(),
 		"a",
 	)

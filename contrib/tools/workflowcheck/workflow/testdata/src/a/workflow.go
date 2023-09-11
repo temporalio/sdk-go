@@ -17,6 +17,21 @@ func WorkflowCallTime(ctx workflow.Context) error { // want "a.WorkflowCallTime 
 	return nil
 }
 
+func WorkflowCallTimeInSideEffect(ctx workflow.Context) error {
+	workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+		return time.Now()
+	})
+	return nil
+}
+
+func WorkflowCallTimeInSideEffectAndNot(ctx workflow.Context) error { // want "a.WorkflowCallTimeInSideEffectAndNot is non-deterministic, reason: calls non-deterministic function time.Now"
+	workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+		return time.Now()
+	})
+	time.Now()
+	return nil
+}
+
 func WorkflowCallTimeTransitively(ctx workflow.Context) error { // want "a.WorkflowCallTimeTransitively is non-deterministic, reason: calls non-deterministic function a.SomeTimeCall"
 	SomeTimeCall()
 	return nil
