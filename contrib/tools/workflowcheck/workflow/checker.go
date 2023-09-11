@@ -63,8 +63,6 @@ type Config struct {
 	EnableObjectFacts bool
 	// If set, the output uses "->" instead of "\n" as the hierarchy separator.
 	SingleLine bool
-	// Map `package -> function names` with functions making any argument deterministic
-	DeterministicWrappers map[string][]string
 }
 
 // Checker checks if functions passed RegisterWorkflow are non-deterministic
@@ -88,10 +86,6 @@ func NewChecker(config Config) *Checker {
 	if config.DebugfFunc == nil {
 		config.DebugfFunc = log.Printf
 	}
-	// Default deterministic wrappers
-	if config.DeterministicWrappers == nil {
-		config.DeterministicWrappers = map[string][]string{"go.temporal.io/sdk/workflow": {"SideEffect"}}
-	}
 	// Build checker
 	return &Checker{
 		DebugfFunc:          config.DebugfFunc,
@@ -102,7 +96,7 @@ func NewChecker(config Config) *Checker {
 			DebugfFunc:            config.DebugfFunc,
 			Debug:                 config.DeterminismDebug,
 			EnableObjectFacts:     config.EnableObjectFacts,
-			DeterministicWrappers: config.DeterministicWrappers,
+			DeterministicWrappers: map[string][]string{"go.temporal.io/sdk/workflow": {"SideEffect", "MutableSideEffect"}},
 		}),
 	}
 }
@@ -224,9 +218,8 @@ func (c configFileFlag) Set(flag string) error {
 	}
 
 	config := struct {
-		Decls                 determinism.IdentRefs
-		Skip                  []string
-		DeterministicWrappers map[string][]string
+		Decls determinism.IdentRefs
+		Skip  []string
 	}{}
 	if err := yaml.Unmarshal(b, &config); err != nil {
 		return fmt.Errorf("failed parsing config file: %w", err)
@@ -240,9 +233,6 @@ func (c configFileFlag) Set(flag string) error {
 			return fmt.Errorf("invalid skip regex %v: %w", skip, err)
 		}
 		c.checker.SkipFiles = append(c.checker.SkipFiles, r)
-	}
-	if config.DeterministicWrappers != nil {
-		c.checker.DeterministicWrappers = config.DeterministicWrappers
 	}
 	return nil
 }
