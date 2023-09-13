@@ -34,6 +34,7 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/exp/slices"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/types/typeutil"
 )
@@ -50,6 +51,8 @@ type Config struct {
 	Debug bool
 	// Whether to export a *NonDeterminisms fact per object.
 	EnableObjectFacts bool
+	// Map `package -> function names` with functions making any argument deterministic
+	AcceptsNonDeterministicParameters map[string][]string
 }
 
 // Checker is a checker that can run analysis passes to check for
@@ -301,8 +304,10 @@ func (c *collector) collectFuncInfo(fn *types.Func, decl *ast.FuncDecl) {
 		case *ast.CallExpr:
 			// Get the callee
 			if callee, _ := typeutil.Callee(c.pass.TypesInfo, n).(*types.Func); callee != nil {
-				// If it's in a different package, check externals
-				if c.pass.Pkg != callee.Pkg() {
+				if callee.Pkg() != nil && slices.Contains(c.checker.AcceptsNonDeterministicParameters[callee.Pkg().Path()], callee.Name()) {
+					return false
+				} else if c.pass.Pkg != callee.Pkg() {
+					// If it's in a different package, check externals
 					calleeReasons := c.externalFuncNonDeterminisms(callee)
 					if len(calleeReasons) > 0 {
 						c.checker.debugf("Marking %v as non-deterministic because it calls %v", fn.FullName(), callee.FullName())

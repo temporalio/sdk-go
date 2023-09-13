@@ -11,3 +11,7 @@ func AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool)
 	time.Sleep(10 * time.Second)
 	return false, nil
 }
+
+func SideEffect(ctx Context, f func(ctx Context) interface{}) interface{} {
+	return nil
+}

@@ -62,3 +62,28 @@ func CallsHTTP() { // want CallsHTTP:"calls non-deterministic function net/http.
 func SafeFmtCall() {
 	fmt.Sprintf("foo bar")
 }
+
+func NotSafeFmtCall() { // want NotSafeFmtCall:"calls non-deterministic function time.Now"
+	fmt.Sprintf("%d", time.Now())
+}
+
+func SafeMathRandomCall() {
+	DeterministicWrapper(func() {
+		mathrand.Int()
+	})
+}
+
+func NotSafeMathRandomCall() { // want NotSafeMathRandomCall:"calls non-deterministic function math/rand.Int"
+	DeterministicWrapper(func() {
+		mathrand.Int()
+	})
+	NonDeterministicWrapper(func() {
+		mathrand.Int()
+	})
+}
+
+func DeterministicWrapper(func()) {
+}
+
+func NonDeterministicWrapper(func()) {
+}
