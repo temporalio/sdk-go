@@ -391,7 +391,7 @@ func GetVersion(ctx Context, changeID string, minSupported, maxSupported Version
 // code. When client calls Client.QueryWorkflow() to temporal server, a task will be generated on server that will be dispatched
 // to a workflow worker, which will replay the history events and then execute a query handler based on the query type.
 // The query handler will be invoked out of the context of the workflow, meaning that the handler code must not use workflow
-// context to do things like workflow.NewChannel(), workflow.Go() or to call any workflow blocking functions like
+// context to do things like [workflow.NewChannel](), [workflow.Go]() or to call any workflow blocking functions like
 // Channel.Get() or Future.Get(). Trying to do so in query handler code will fail the query and client will receive
 // QueryFailedError.
 // Example of workflow code that support query type "current_state":
@@ -440,7 +440,7 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error
 // name such that update invocations specifying that name will invoke the
 // handler.  The handler function can take as input any number of parameters so
 // long as they can be serialized/deserialized by the system. The handler can
-// take a workflow.Context as its first parameter but this is not required. The
+// take a [workflow.Context] as its first parameter but this is not required. The
 // update handler must return either a single error or a single serializable
 // object along with a single error. The update handler function is invoked in
 // the context of the workflow and thus is subject to the same restrictions as
@@ -454,7 +454,7 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error
 // the update request will be considered to have been rejected and as such will
 // not occupy any space in the workflow history. Validation functions must take
 // as inputs the same parameters as the associated update handler but my vary
-// from said handler by the presence/absence of a workflow.Context as the first
+// from said handler by the presence/absence of a [workflow.Context] as the first
 // parameter. Validation handlers must only return a single error. Validation
 // handlers must be deterministic and can observe workflow state but must not
 // mutate workflow state in any way.
@@ -495,8 +495,8 @@ func SetUpdateHandlerWithOptions(ctx Context, updateName string, handler interfa
 // Warning! Never make commands, like schedule activity/childWorkflow/timer or send/wait on future/channel, based on
 // this flag as it is going to break workflow determinism requirement.
 // The only reasonable use case for this flag is to avoid some external actions during replay, like custom logging or
-// metric reporting. Please note that Temporal already provide standard logging/metric via workflow.GetLogger(ctx) and
-// workflow.GetMetricsHandler(ctx), and those standard mechanism are replay-aware and it will automatically suppress
+// metric reporting. Please note that Temporal already provide standard logging/metric via [workflow.GetLogger] and
+// [workflow.GetMetricsHandler], and those standard mechanism are replay-aware and it will automatically suppress
 // during replay. Only use this flag if you need custom logging/metrics reporting, for example if you want to log to
 // kafka.
 //

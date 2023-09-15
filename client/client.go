@@ -25,6 +25,7 @@
 //go:generate mockgen -copyright_file ../LICENSE -package client -source client.go -destination client_mock.go
 
 // Package client is used by external programs to communicate with Temporal service.
+//
 // NOTE: DO NOT USE THIS API INSIDE OF ANY WORKFLOW CODE!!!
 package client
 
@@ -401,15 +402,13 @@ type (
 		//  - "(WorkflowID = 'wid1' or (WorkflowType = 'type2' and WorkflowID = 'wid2'))".
 		//  - "CloseTime between '2019-08-27T15:04:05+00:00' and '2019-08-28T15:04:05+00:00'".
 		//  - to list only open workflow use "CloseTime is null"
-		// For supported operations on different server versions see [Visibility].
+		// For supported operations on different server versions see https://docs.temporal.io/visibility.
 		// Retrieved workflow executions are sorted by StartTime in descending order when list open workflow,
 		// and sorted by CloseTime in descending order for other queries.
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
-		//
-		// [Visibility]: https://docs.temporal.io/visibility
 		ListWorkflow(ctx context.Context, request *workflowservice.ListWorkflowExecutionsRequest) (*workflowservice.ListWorkflowExecutionsResponse, error)
 
 		// ListArchivedWorkflow gets archived workflow executions based on query. This API will return BadRequest if Temporal
@@ -424,7 +423,7 @@ type (
 
 		// ScanWorkflow gets workflow executions based on query. The query is basically the SQL WHERE clause
 		// (see ListWorkflow for query examples).
-		// For supported operations on different server versions see [Visibility].
+		// For supported operations on different server versions see https://docs.temporal.io/visibility.
 		// ScanWorkflow should be used when retrieving large amount of workflows and order is not needed.
 		// It will use more resources than ListWorkflow, but will be several times faster
 		// when retrieving millions of workflows.
@@ -432,19 +431,15 @@ type (
 		//  - serviceerror.InvalidArgument
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
-		//
-		// [Visibility]: https://docs.temporal.io/visibility
 		ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error)
 
 		// CountWorkflow gets number of workflow executions based on query. The query is basically the SQL WHERE clause
 		// (see ListWorkflow for query examples).
-		// For supported operations on different server versions see [Visibility].
+		// For supported operations on different server versions see https://docs.temporal.io/visibility.
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
-		//
-		// [Visibility]: https://docs.temporal.io/visibility
 		CountWorkflow(ctx context.Context, request *workflowservice.CountWorkflowExecutionsRequest) (*workflowservice.CountWorkflowExecutionsResponse, error)
 
 		// GetSearchAttributes returns valid search attributes keys and value types.
@@ -678,7 +673,7 @@ var (
 	_ internal.NamespaceClient = NamespaceClient(nil)
 )
 
-// NewValue creates a new converter.EncodedValue which can be used to decode binary data returned by Temporal.  For example:
+// NewValue creates a new [converter.EncodedValue] which can be used to decode binary data returned by Temporal.  For example:
 // User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got response from calling Client.DescribeWorkflowExecution.
 // The response contains binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
@@ -689,7 +684,7 @@ func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 	return internal.NewValue(data)
 }
 
-// NewValues creates a new converter.EncodedValues which can be used to decode binary data returned by Temporal. For example:
+// NewValues creates a new [converter.EncodedValues] which can be used to decode binary data returned by Temporal. For example:
 // User had Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got response from calling Client.DescribeWorkflowExecution.
 // The response contains binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:

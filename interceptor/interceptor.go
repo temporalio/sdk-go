@@ -37,12 +37,12 @@ import (
 // calls will be intercepted by it. If an implementation of this interceptor is
 // provided via worker options, all worker calls will be intercepted by it.
 //
-// All implementations of this should embed InterceptorBase but are not required
+// All implementations of this should embed [InterceptorBase] but are not required
 // to.
 type Interceptor = internal.Interceptor
 
 // InterceptorBase is a default implementation of Interceptor meant for
-// embedding. It simply embeds ClientInterceptorBase and WorkerInterceptorBase.
+// embedding. It simply embeds [ClientInterceptorBase] and [WorkerInterceptorBase].
 type InterceptorBase = internal.InterceptorBase
 
 // WorkerInterceptor is an interface for all calls that can be intercepted
@@ -55,9 +55,9 @@ type InterceptorBase = internal.InterceptorBase
 // changes.
 type WorkerInterceptor = internal.WorkerInterceptor
 
-// WorkerInterceptorBase is a default implementation of WorkerInterceptor that
-// simply instantiates ActivityInboundInterceptorBase or
-// WorkflowInboundInterceptorBase when called to intercept activities or
+// WorkerInterceptorBase is a default implementation of [WorkerInterceptor] that
+// simply instantiates [ActivityInboundInterceptorBase] or
+// [WorkflowInboundInterceptorBase] when called to intercept activities or
 // workflows respectively.
 //
 // This must be embedded into all WorkerInterceptor implementations to safely
@@ -69,15 +69,15 @@ type WorkerInterceptorBase = internal.WorkerInterceptorBase
 // activity calls, can change the outbound interceptor in Init before the next
 // call in the chain.
 //
-// All implementations must embed ActivityInboundInterceptorBase to safely
+// All implementations must embed [ActivityInboundInterceptorBase] to safely
 // handle future changes.
 type ActivityInboundInterceptor = internal.ActivityInboundInterceptor
 
 // ActivityInboundInterceptorBase is a default implementation of
-// ActivityInboundInterceptor that forwards calls to the next inbound
+// [ActivityInboundInterceptor] that forwards calls to the next inbound
 // interceptor and uses an ActivityOutboundInterceptorBase on Init.
 //
-// This must be embedded into all ActivityInboundInterceptor implementations to
+// This must be embedded into all [ActivityInboundInterceptor] implementations to
 // safely handle future changes.
 type ActivityInboundInterceptorBase = internal.ActivityInboundInterceptorBase
 
@@ -87,12 +87,12 @@ type ExecuteActivityInput = internal.ExecuteActivityInput
 // ActivityOutboundInterceptor is an interface for all activity calls
 // originating from the SDK.
 //
-// All implementations must embed ActivityOutboundInterceptorBase to safely
+// All implementations must embed [ActivityOutboundInterceptorBase] to safely
 // handle future changes.
 type ActivityOutboundInterceptor = internal.ActivityOutboundInterceptor
 
 // ActivityOutboundInterceptorBase is a default implementation of
-// ActivityOutboundInterceptor that forwards calls to the next outbound
+// [ActivityOutboundInterceptor] that forwards calls to the next outbound
 // interceptor.
 //
 // This must be embedded into all ActivityOutboundInterceptor implementations to
@@ -104,15 +104,15 @@ type ActivityOutboundInterceptorBase = internal.ActivityOutboundInterceptorBase
 // workflow calls, can change the outbound interceptor in Init before the next
 // call in the chain.
 //
-// All implementations must embed WorkflowInboundInterceptorBase to safely
+// All implementations must embed [WorkflowInboundInterceptorBase] to safely
 // handle future changes.
 type WorkflowInboundInterceptor = internal.WorkflowInboundInterceptor
 
 // WorkflowInboundInterceptorBase is a default implementation of
-// WorkflowInboundInterceptor that forwards calls to the next inbound
+// [WorkflowInboundInterceptor] that forwards calls to the next inbound
 // interceptor and uses an WorkflowOutboundInterceptorBase on Init.
 //
-// This must be embedded into all WorkflowInboundInterceptor implementations to
+// This must be embedded into all [WorkflowInboundInterceptor] implementations to
 // safely handle future changes.
 type WorkflowInboundInterceptorBase = internal.WorkflowInboundInterceptorBase
 
@@ -134,47 +134,47 @@ type UpdateInput = internal.UpdateInput
 // WorkflowOutboundInterceptor is an interface for all workflow calls
 // originating from the SDK.
 //
-// All implementations must embed WorkflowOutboundInterceptorBase to safely
+// All implementations must embed [WorkflowOutboundInterceptorBase] to safely
 // handle future changes.
 type WorkflowOutboundInterceptor = internal.WorkflowOutboundInterceptor
 
 // WorkflowOutboundInterceptorBase is a default implementation of
-// WorkflowOutboundInterceptor that forwards calls to the next outbound
+// [WorkflowOutboundInterceptor] that forwards calls to the next outbound
 // interceptor.
 //
-// This must be embedded into all WorkflowOutboundInterceptor implementations to
+// This must be embedded into all [WorkflowOutboundInterceptor] implementations to
 // safely handle future changes.
 type WorkflowOutboundInterceptorBase = internal.WorkflowOutboundInterceptorBase
 
-// ClientInterceptor for providing a ClientOutboundInterceptor to intercept
+// ClientInterceptor for providing a [ClientOutboundInterceptor] to intercept
 // certain workflow-specific client calls from the SDK. If an implementation of
 // this is provided via client or worker options, certain client calls will be
 // intercepted by it.
 //
-// All implementations must embed ClientInterceptorBase to safely handle future
+// All implementations must embed [ClientInterceptorBase] to safely handle future
 // changes.
 type ClientInterceptor = internal.ClientInterceptor
 
-// ClientInterceptorBase is a default implementation of ClientInterceptor that
-// simply instantiates ClientOutboundInterceptorBase when called to intercept
+// ClientInterceptorBase is a default implementation of [ClientInterceptor] that
+// simply instantiates [ClientOutboundInterceptorBase] when called to intercept
 // the client.
 //
-// This must be embedded into all ClientInterceptor implementations to safely
+// This must be embedded into all [ClientInterceptor] implementations to safely
 // handle future changes.
 type ClientInterceptorBase = internal.ClientInterceptorBase
 
 // ClientOutboundInterceptor is an interface for certain workflow-specific calls
 // originating from the SDK.
 //
-// All implementations must embed ClientOutboundInterceptorBase to safely handle
+// All implementations must embed [ClientOutboundInterceptorBase] to safely handle
 // future changes.
 type ClientOutboundInterceptor = internal.ClientOutboundInterceptor
 
 // ClientOutboundInterceptorBase is a default implementation of
-// ClientOutboundInterceptor that forwards calls to the next outbound
+// [ClientOutboundInterceptor] that forwards calls to the next outbound
 // interceptor.
 //
-// This must be embedded into all ActivityInboundInterceptor implementations to
+// This must be embedded into all [ClientOutboundInterceptor] implementations to
 // safely handle future changes.
 type ClientOutboundInterceptorBase = internal.ClientOutboundInterceptorBase
 

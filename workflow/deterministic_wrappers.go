@@ -33,8 +33,8 @@ import (
 type (
 
 	// Channel must be used instead of a native go channel by workflow code.
-	// Use workflow.NewChannel(ctx) method to create a Channel instance.
-	// Channel extends both ReadChannel and SendChannel. Prefer using one of these interfaces
+	// Use [workflow.NewChannel] to create a Channel instance.
+	// Channel extends both [ReceiveChannel] and [SendChannel]. Prefer using one of these interfaces
 	// to share a Channel with consumers or producers.
 	Channel = internal.Channel
 
@@ -45,14 +45,14 @@ type (
 	SendChannel = internal.SendChannel
 
 	// Selector must be used instead of native go select by workflow code.
-	// Use workflow.NewSelector(ctx) method to create a Selector instance.
+	// Use [workflow.NewSelector] method to create a Selector instance.
 	Selector = internal.Selector
 
 	// Future represents the result of an asynchronous computation.
 	Future = internal.Future
 
 	// Settable is used to set value or error on a future.
-	// See more: workflow.NewFuture(ctx).
+	// See more: [workflow.NewFuture].
 	Settable = internal.Settable
 
 	// WaitGroup is used to wait for a collection of
