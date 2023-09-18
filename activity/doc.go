@@ -102,7 +102,7 @@ the Temporal managed service.
 	}
 
 When the Activity times out due to a missed heartbeat, the last value of the details (progress in the above sample) is
-returned from the workflow.ExecuteActivity function as the details field of TimeoutError with TimeoutType_HEARTBEAT.
+returned from the [workflow.ExecuteActivity] function as the details field of [temporal.TimeoutError] with TimeoutType_HEARTBEAT.
 
 It is also possible to heartbeat an Activity from an external source:
 
@@ -113,7 +113,7 @@ It is also possible to heartbeat an Activity from an external source:
 	err := client.RecordActivityHeartbeat(ctx, taskToken, details)
 
 It expects an additional parameter, "taskToken", which is the value of the binary "TaskToken" field of the
-"ActivityInfo" struct retrieved inside the Activity (GetActivityInfo(ctx).TaskToken). "details" is the serializable
+[activity.Info] retrieved inside the Activity (GetActivityInfo(ctx).TaskToken). "details" is the serializable
 payload containing progress information.
 
 # Activity Cancellation

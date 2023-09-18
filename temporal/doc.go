@@ -47,7 +47,7 @@ The root temporal package contains common data structures. The subpackages are:
     activity code.
   - testsuite - unit testing framework for activity and workflow testing
 
-How Temporal works
+# How Temporal works
 
 The Temporal hosted service brokers and persists events generated during workflow execution. Worker nodes owned and
 operated by customers execute the coordination and task logic. To facilitate the implementation of worker nodes Temporal
@@ -56,7 +56,7 @@ provides a client-side library for the Go language.
 In Temporal, you can code the logical flow of events separately as a workflow and code business logic as activities. The
 workflow identifies the activities and sequences them, while an activity executes the logic.
 
-Key Features
+# Key Features
 
 Dynamic workflow execution graphs - Determine the workflow execution graphs at runtime based on the data you are
 processing. Temporal does not pre-compute the execution graphs at compile time or at workflow start time. Therefore, you

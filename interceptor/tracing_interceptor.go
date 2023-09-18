@@ -100,7 +100,7 @@ type TracerOptions struct {
 	// never be nil.
 	//
 	// This is used internally to set the span on contexts not natively supported
-	// by tracing systems such as workflow.Context.
+	// by tracing systems such as [workflow.Context].
 	SpanContextKey interface{}
 
 	// HeaderKey is the key name on the Temporal header to serialize the span to.

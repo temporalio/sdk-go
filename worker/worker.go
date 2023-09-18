@@ -78,7 +78,7 @@ type (
 	// WorkflowRegistry exposes workflow registration functions to consumers.
 	WorkflowRegistry interface {
 		// RegisterWorkflow - registers a workflow function with the worker.
-		// A workflow takes a workflow.Context and input and returns a (result, error) or just error.
+		// A workflow takes a [workflow.Context] and input and returns a (result, error) or just error.
 		// Examples:
 		//	func sampleWorkflow(ctx workflow.Context, input []byte) (result []byte, err error)
 		//	func sampleWorkflow(ctx workflow.Context, arg1 int, arg2 string) (result []byte, err error)
@@ -155,7 +155,7 @@ type (
 	// For example if a workflow failed in production then its history can be downloaded through UI or CLI
 	// and replayed in a debugger as many times as necessary.
 	// Use this class to create unit tests that check if workflow changes are backwards compatible.
-	// It is important to maintain backwards compatibility through use of workflow.GetVersion
+	// It is important to maintain backwards compatibility through use of [workflow.GetVersion]
 	// to ensure that new deployments are not going to break open workflows.
 	WorkflowReplayer interface {
 		// RegisterWorkflow registers workflow that is going to be replayed
@@ -206,7 +206,7 @@ type (
 
 	// WorkflowPanicPolicy is used for configuring how worker deals with workflow
 	// code panicking which includes non backwards compatible changes to the workflow code without appropriate
-	// versioning (see workflow.GetVersion).
+	// versioning (see [workflow.GetVersion]).
 	// The default behavior is to block workflow execution until the problem is fixed.
 	WorkflowPanicPolicy = internal.WorkflowPanicPolicy
 
