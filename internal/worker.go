@@ -238,6 +238,7 @@ type (
 		// operate on workflows it claims to be compatible with. You must set BuildID if this flag
 		// is true.
 		// NOTE: Experimental
+		// Note: Cannot be enabled at the same time as EnableSessionWorker
 		UseBuildIDForVersioning bool
 	}
 )

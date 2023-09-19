@@ -2778,6 +2778,17 @@ func TestWorkerRegisterDisabledWorkflow(t *testing.T) {
 	require.Equal(t, "workflow worker disabled, cannot register workflow", recovered)
 }
 
+func TestWorkerBuildIDAndSessionPanic(t *testing.T) {
+	// Expect panic
+	var recovered interface{}
+	func() {
+		defer func() { recovered = recover() }()
+		worker := NewAggregatedWorker(&WorkflowClient{}, "some-task-queue", WorkerOptions{EnableSessionWorker: true, UseBuildIDForVersioning: true})
+		worker.RegisterWorkflow(testReplayWorkflow)
+	}()
+	require.Equal(t, "cannot set both EnableSessionWorker and UseBuildIDForVersioning", recovered)
+}
+
 func TestHistoryFromJSON(t *testing.T) {
 	// Load sample history and just make sure it has the right event count
 	r, err := os.Open("testdata/sampleHistory.json")
