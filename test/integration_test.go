@@ -386,6 +386,40 @@ func (ts *IntegrationTestSuite) TestPanicActivityWorkflow() {
 	}, res)
 }
 
+func (ts *IntegrationTestSuite) TestSDKNameAndVersionWritten() {
+	const wfID = "test-sdk-name-and-version"
+	wfOpts := ts.startWorkflowOptions(wfID)
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	run, err := ts.client.ExecuteWorkflow(ctx, wfOpts, ts.workflows.sleep, time.Second)
+	ts.NoError(err)
+
+	var result int
+	err = run.Get(ctx, &result)
+	ts.NoError(err)
+
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	var firstTaskFound bool
+	for iter.HasNext() {
+		event, err := iter.Next()
+		ts.NoError(err)
+		if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
+			sdkName := event.GetWorkflowTaskCompletedEventAttributes().GetSdkMetadata().GetSdkName()
+			sdkVersion := event.GetWorkflowTaskCompletedEventAttributes().GetSdkMetadata().GetSdkVersion()
+			if !firstTaskFound {
+				firstTaskFound = true
+				// The name and version should only be written once if they don't change
+				ts.Equal(internal.SDKName, sdkName)
+				ts.Equal(internal.SDKVersion, sdkVersion)
+			} else {
+				ts.Equal("", sdkName)
+				ts.Equal("", sdkVersion)
+			}
+		}
+	}
+}
+
 func (ts *IntegrationTestSuite) TestDeadlockDetection() {
 	var expected []string
 	wfOpts := ts.startWorkflowOptions("test-deadlock")

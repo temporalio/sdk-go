@@ -210,6 +210,8 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextCommandsSdkFlags() {
 			StartedEventId:   3,
 			SdkMetadata: &sdk.WorkflowTaskCompletedMetadata{
 				LangUsedFlags: []uint32{SDKFlagLimitChangeVersionSASize},
+				SdkName:       SDKName,
+				SdkVersion:    "1.0",
 			},
 		}),
 		createTestEventVersionMarker(5, 4, "test-id", 1),
@@ -241,6 +243,8 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextCommandsSdkFlags() {
 	// function is run.
 	s.Equal(1, len(nextTask.flags))
 	s.EqualValues(SDKFlagLimitChangeVersionSASize, nextTask.flags[0])
+	s.EqualValues(SDKName, nextTask.sdkName)
+	s.EqualValues("1.0", nextTask.sdkVersion)
 
 	nextTask, err = eh.nextTask()
 
