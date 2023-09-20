@@ -439,9 +439,8 @@ OrderEvents:
 				err := err1
 				return nil, err
 			}
-			binaryChecksum = finishedTask.binaryChecksum
 			if !finishedTask.isFailed {
-				eh.binaryChecksum = binaryChecksum
+				eh.binaryChecksum = finishedTask.binaryChecksum
 				eh.currentIndex++
 				taskEvents.events = append(taskEvents.events, event)
 				taskEvents.flags = append(taskEvents.flags, finishedTask.flags...)
