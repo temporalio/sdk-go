@@ -3747,6 +3747,12 @@ func (s *WorkflowTestSuiteUnitTest) Test_SetWorkerStopChannel() {
 	s.NotNil(env.workerStopChannel)
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_SetContinuedExecutionRunID() {
+	env := newTestWorkflowEnvironmentImpl(&s.WorkflowTestSuite, nil)
+	env.setContinuedExecutionID("some-run-id")
+	s.NotNil(env.workflowInfo.ContinuedExecutionRunID)
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityTimeoutWithDetails() {
 	count := 0
 	timeoutFn := func() error {
