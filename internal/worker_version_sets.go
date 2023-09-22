@@ -25,9 +25,13 @@ package internal
 import (
 	"errors"
 
+	enumspb "go.temporal.io/api/enums/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 )
+
+// A stand-in for a Build Id for unversioned Workers.
+const UnversionedBuildID = ""
 
 // VersioningIntent indicates whether the user intends certain commands to be run on
 // a compatible worker build ID version or not.
@@ -45,6 +49,27 @@ const (
 	// VersioningIntentDefault indicates that the command should run on the target task queue's
 	// current overall-default build ID.
 	VersioningIntentDefault
+)
+
+// TaskReachability specifies which category of tasks may reach a worker on a versioned task queue.
+// Used both in a reachability query and its response.
+type TaskReachability int
+
+const (
+	// TaskReachabilityNotFetched indicates that reachability for this task
+	// was not fetched
+	TaskReachabilityNotFetched TaskReachability = iota - 1
+	// TaskReachabilityUnspecified indicates the reachability was not specified
+	TaskReachabilityUnspecified
+	// TaskReachabilityNewWorkflows indicates the Build Id might be used by new workflows
+	TaskReachabilityNewWorkflows
+	// TaskReachabilityExistingWorkflows indicates the Build Id might be used by open workflows
+	// and/or closed workflows.
+	TaskReachabilityExistingWorkflows
+	// TaskReachabilityOpenWorkflows indicates the Build Id might be used by open workflows.
+	TaskReachabilityOpenWorkflows
+	// TaskReachabilityClosedWorkflows indicates the Build Id might be used by closed workflows
+	TaskReachabilityClosedWorkflows
 )
 
 type (
@@ -130,6 +155,35 @@ type GetWorkerBuildIdCompatibilityOptions struct {
 	MaxSets   int
 }
 
+type GetWorkerTaskReachabilityOptions struct {
+	// BuildIDs - The build IDs to query the reachability of. At least one build ID must be provided.
+	BuildIDs []string
+	// TaskQueues - The task queues with Build IDs defined on them that the request is
+	// concerned with.
+	// Optional: defaults to all task queues
+	TaskQueues []string
+	// Reachability - The reachability this request is concerned with.
+	// Optional: defaults to all types of reachability
+	Reachability TaskReachability
+}
+
+type WorkerTaskReachability struct {
+	// Reachable - map of build IDs and their reachability information
+	// May contain an entry with [UnversionedBuildID] for an unversioned worker
+	Reachable map[string]*BuildIDReachability
+}
+
+type BuildIDReachability struct {
+	// TaskQueueReachable map of task queues and their reachability information
+	TaskQueueReachable map[string]*TaskQueueReachability
+}
+
+type TaskQueueReachability struct {
+	// Reachability for a worker in a single task queue.
+	// If Reachability is empty, this worker is considered unreachable in this task queue.
+	Reachability []TaskReachability
+}
+
 // WorkerBuildIDVersionSets is the response for Client.GetWorkerBuildIdCompatibility and represents the sets
 // of worker build id based versions.
 type WorkerBuildIDVersionSets struct {
@@ -174,6 +228,80 @@ func workerVersionSetsFromProto(sets []*taskqueuepb.CompatibleVersionSet) []*Com
 		}
 	}
 	return result
+}
+
+func workerTaskReachabilityFromProtoResponse(response *workflowservice.GetWorkerTaskReachabilityResponse) *WorkerTaskReachability {
+	if response == nil {
+		return nil
+	}
+	return &WorkerTaskReachability{
+		Reachable: buildIDReachabilityFromProto(response.GetBuildIdReachability()),
+	}
+}
+
+func buildIDReachabilityFromProto(sets []*taskqueuepb.BuildIdReachability) map[string]*BuildIDReachability {
+	if sets == nil {
+		return nil
+	}
+	result := make(map[string]*BuildIDReachability, len(sets))
+	for _, s := range sets {
+		result[s.GetBuildId()] = &BuildIDReachability{
+			TaskQueueReachable: taskQueueReachabilityFromProto(s.GetTaskQueueReachability()),
+		}
+	}
+	return result
+}
+
+func taskQueueReachabilityFromProto(sets []*taskqueuepb.TaskQueueReachability) map[string]*TaskQueueReachability {
+	if sets == nil {
+		return nil
+	}
+	result := make(map[string]*TaskQueueReachability, len(sets))
+	for _, s := range sets {
+		reachability := make([]TaskReachability, len(s.GetReachability()))
+		for i, r := range s.GetReachability() {
+			reachability[i] = taskReachabilityFromProto(r)
+		}
+		result[s.GetTaskQueue()] = &TaskQueueReachability{
+			Reachability: reachability,
+		}
+	}
+	return result
+}
+
+func taskReachabilityToProto(r TaskReachability) enumspb.TaskReachability {
+	switch r {
+	case TaskReachabilityUnspecified:
+		return enumspb.TASK_REACHABILITY_UNSPECIFIED
+	case TaskReachabilityNewWorkflows:
+		return enumspb.TASK_REACHABILITY_NEW_WORKFLOWS
+	case TaskReachabilityExistingWorkflows:
+		return enumspb.TASK_REACHABILITY_EXISTING_WORKFLOWS
+	case TaskReachabilityOpenWorkflows:
+		return enumspb.TASK_REACHABILITY_OPEN_WORKFLOWS
+	case TaskReachabilityClosedWorkflows:
+		return enumspb.TASK_REACHABILITY_CLOSED_WORKFLOWS
+	default:
+		panic("unknown task reachability")
+
+	}
+}
+
+func taskReachabilityFromProto(r enumspb.TaskReachability) TaskReachability {
+	switch r {
+	case enumspb.TASK_REACHABILITY_UNSPECIFIED:
+		return TaskReachabilityNotFetched
+	case enumspb.TASK_REACHABILITY_NEW_WORKFLOWS:
+		return TaskReachabilityNewWorkflows
+	case enumspb.TASK_REACHABILITY_EXISTING_WORKFLOWS:
+		return TaskReachabilityExistingWorkflows
+	case enumspb.TASK_REACHABILITY_OPEN_WORKFLOWS:
+		return TaskReachabilityOpenWorkflows
+	case enumspb.TASK_REACHABILITY_CLOSED_WORKFLOWS:
+		return TaskReachabilityClosedWorkflows
+	default:
+		panic("unknown task reachability")
+	}
 }
 
 func (v *BuildIDOpAddNewIDInNewDefaultSet) targetedBuildId() string { return v.BuildID }

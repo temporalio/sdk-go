@@ -349,6 +349,9 @@ type (
 		// GetWorkerBuildIdCompatibility returns the worker-build-id based version sets for a particular task queue.
 		GetWorkerBuildIdCompatibility(ctx context.Context, options *GetWorkerBuildIdCompatibilityOptions) (*WorkerBuildIDVersionSets, error)
 
+		// GetWorkerTaskReachability returns which versions are is still in use by open or closed workflows.
+		GetWorkerTaskReachability(ctx context.Context, options *GetWorkerTaskReachabilityOptions) (*WorkerTaskReachability, error)
+
 		// CheckHealth performs a server health check using the gRPC health check
 		// API. If the check fails, an error is returned.
 		CheckHealth(ctx context.Context, request *CheckHealthRequest) (*CheckHealthResponse, error)
