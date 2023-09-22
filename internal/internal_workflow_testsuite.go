@@ -353,7 +353,7 @@ func (env *testWorkflowEnvironmentImpl) setContinueAsNewSuggested(suggest bool) 
 	env.workflowInfo.continueAsNewSuggested = suggest
 }
 
-func (env *testWorkflowEnvironmentImpl) setContinuedExecutionID(rid string) {
+func (env *testWorkflowEnvironmentImpl) setContinuedExecutionRunID(rid string) {
 	env.workflowInfo.ContinuedExecutionRunID = rid
 }
 

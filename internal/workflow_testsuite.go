@@ -318,10 +318,10 @@ func (e *TestWorkflowEnvironment) SetContinueAsNewSuggested(suggest bool) {
 	e.impl.setContinueAsNewSuggested(suggest)
 }
 
-// SetContinuedExecutionID sets the value that is returned from
+// SetContinuedExecutionRunID sets the value that is returned from
 // GetInfo(ctx).ContinuedExecutionRunID
-func (e *TestWorkflowEnvironment) SetContinuedAsNewRunID(rid string) {
-	e.impl.setContinuedExecutionID(rid)
+func (e *TestWorkflowEnvironment) SetContinuedExecutionRunID(rid string) {
+	e.impl.setContinuedExecutionRunID(rid)
 }
 
 // OnActivity setup a mock call for activity. Parameter activity must be activity function (func) or activity name (string).

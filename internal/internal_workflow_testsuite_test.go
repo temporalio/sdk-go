@@ -3749,7 +3749,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_SetWorkerStopChannel() {
 
 func (s *WorkflowTestSuiteUnitTest) Test_SetContinuedExecutionRunID() {
 	env := newTestWorkflowEnvironmentImpl(&s.WorkflowTestSuite, nil)
-	env.setContinuedExecutionID("some-run-id")
+	env.setContinuedExecutionRunID("some-run-id")
 	s.NotNil(env.workflowInfo.ContinuedExecutionRunID)
 }
 
