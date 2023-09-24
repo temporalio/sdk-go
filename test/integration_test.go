@@ -1414,7 +1414,7 @@ func (ts *IntegrationTestSuite) TestVersionLoopWorkflow() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	run, err := ts.client.ExecuteWorkflow(ctx,
-		ts.startWorkflowOptions("test-version-loop-workflow"), ts.workflows.VersionLoopWorkflow, []string{"changeID_1", "changeID_2", "changeID_3"}, 256)
+		ts.startWorkflowOptions("test-version-loop-workflow"), ts.workflows.VersionLoopWorkflow, []string{"changeID_1", "changeID_2", "changeID_3"}, 126)
 	ts.NoError(err)
 
 	err = run.Get(ctx, nil)
