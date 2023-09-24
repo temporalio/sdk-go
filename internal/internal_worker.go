@@ -1483,6 +1483,12 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("cannot set MaxConcurrentWorkflowTaskExecutionSize to 1")
 	}
 
+	// Sessions are not currently compatible with worker versioning
+	// See: https://github.com/temporalio/sdk-go/issues/1227
+	if options.EnableSessionWorker && options.UseBuildIDForVersioning {
+		panic("cannot set both EnableSessionWorker and UseBuildIDForVersioning")
+	}
+
 	// Need reference to result for fatal error handler
 	var aw *AggregatedWorker
 	fatalErrorCallback := func(err error) {
