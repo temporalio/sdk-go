@@ -1514,6 +1514,10 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		eagerExecutor = w.client.eagerDispatcher.applyToRequest(startRequest)
 	}
 
+	if in.Options.StartDelay != 0 {
+		startRequest.WorkflowStartDelay = &in.Options.StartDelay
+	}
+
 	var response *workflowservice.StartWorkflowExecutionResponse
 
 	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(
@@ -1645,6 +1649,10 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		SearchAttributes:         searchAttr,
 		WorkflowIdReusePolicy:    in.Options.WorkflowIDReusePolicy,
 		Header:                   header,
+	}
+
+	if in.Options.StartDelay != 0 {
+		signalWithStartRequest.WorkflowStartDelay = &in.Options.StartDelay
 	}
 
 	var response *workflowservice.SignalWithStartWorkflowExecutionResponse

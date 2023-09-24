@@ -608,6 +608,14 @@ type (
 		//
 		// NOTE: Experimental
 		EnableEagerStart bool
+
+		// StartDelay - Time to wait before dispatching the first workflow task.
+		// If the workflow gets a signal before the delay, a workflow task will be dispatched and the rest
+		// of the delay will be ignored. A signal from signal with start will not trigger a workflow task.
+		// Cannot be set the same time as a CronSchedule.
+		//
+		// NOTE: Experimental
+		StartDelay time.Duration
 	}
 
 	// RetryPolicy defines the retry policy.

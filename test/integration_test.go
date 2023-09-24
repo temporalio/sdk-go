@@ -1474,6 +1474,48 @@ func (ts *IntegrationTestSuite) TestTimerCancellationConcurrentWithOtherCommandD
 	ts.NoError(err)
 }
 
+func (ts *IntegrationTestSuite) TestStartDelay() {
+	const wfID = "test-start-delay"
+	wfOpts := ts.startWorkflowOptions(wfID)
+	wfOpts.StartDelay = 5 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	run, err := ts.client.ExecuteWorkflow(ctx, wfOpts, ts.workflows.sleep, time.Second)
+	ts.NoError(err)
+
+	var result int
+	err = run.Get(ctx, &result)
+	ts.NoError(err)
+
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	event, err := iter.Next()
+	ts.NoError(err)
+	ts.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED, event.EventType)
+	ts.Equal(5*time.Second, *event.GetWorkflowExecutionStartedEventAttributes().GetFirstWorkflowTaskBackoff())
+}
+
+func (ts *IntegrationTestSuite) TestStartDelaySignalWithStart() {
+	const wfID = "test-start-delay-signal-with-start"
+	wfOpts := ts.startWorkflowOptions(wfID)
+	wfOpts.StartDelay = 5 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	run, err := ts.client.SignalWithStartWorkflow(ctx, wfID, "done-signal", true, wfOpts, ts.workflows.WaitSignalReturnParam, 0)
+	ts.NoError(err)
+
+	var result int
+	err = run.Get(ctx, &result)
+	ts.NoError(err)
+
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	event, err := iter.Next()
+	ts.NoError(err)
+	ts.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED, event.EventType)
+	ts.Equal(5*time.Second, *event.GetWorkflowExecutionStartedEventAttributes().GetFirstWorkflowTaskBackoff())
+}
+
 func (ts *IntegrationTestSuite) TestResetWorkflowExecution() {
 	var originalResult []string
 	err := ts.executeWorkflow("basic-reset-workflow-execution", ts.workflows.Basic, &originalResult)
