@@ -353,6 +353,10 @@ func (env *testWorkflowEnvironmentImpl) setContinueAsNewSuggested(suggest bool) 
 	env.workflowInfo.continueAsNewSuggested = suggest
 }
 
+func (env *testWorkflowEnvironmentImpl) setContinuedExecutionRunID(rid string) {
+	env.workflowInfo.ContinuedExecutionRunID = rid
+}
+
 func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(params *ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) (*testWorkflowEnvironmentImpl, error) {
 	// create a new test env
 	childEnv := newTestWorkflowEnvironmentImpl(env.testSuite, env.registry)
