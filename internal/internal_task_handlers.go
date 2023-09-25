@@ -1772,8 +1772,8 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		MeteringMetadata:           &commonpb.MeteringMetadata{NonfirstLocalActivityExecutionAttempts: nonfirstLAAttempts},
 		SdkMetadata: &sdk.WorkflowTaskCompletedMetadata{
 			LangUsedFlags: langUsedFlags,
-			SdkName:       eventHandler.getNewSdkName(),
-			SdkVersion:    eventHandler.getNewSdkVersion(),
+			SdkName:       eventHandler.getNewSdkNameAndReset(),
+			SdkVersion:    eventHandler.getNewSdkVersionAndReset(),
 		},
 		WorkerVersionStamp: &commonpb.WorkerVersionStamp{
 			BuildId:       wth.workerBuildID,

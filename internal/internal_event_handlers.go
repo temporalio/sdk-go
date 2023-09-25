@@ -354,7 +354,7 @@ func (wc *workflowEnvironmentImpl) Send(msg *protocolpb.Message, opts ...msgSend
 	wc.outbox = append(wc.outbox, outboxEntry{msg: msg, eventPredicate: sendCfg.pred})
 }
 
-func (wc *workflowEnvironmentImpl) getNewSdkName() string {
+func (wc *workflowEnvironmentImpl) getNewSdkNameAndReset() string {
 	if wc.sdkNameUpdated {
 		wc.sdkNameUpdated = false
 		return wc.sdkName
@@ -362,7 +362,7 @@ func (wc *workflowEnvironmentImpl) getNewSdkName() string {
 	return ""
 }
 
-func (wc *workflowEnvironmentImpl) getNewSdkVersion() string {
+func (wc *workflowEnvironmentImpl) getNewSdkVersionAndReset() string {
 	if wc.sdkVersionUpdated {
 		wc.sdkVersionUpdated = false
 		return wc.sdkVersion
