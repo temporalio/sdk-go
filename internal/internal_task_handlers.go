@@ -179,6 +179,8 @@ type (
 		next           []*historypb.HistoryEvent
 		nextFlags      []sdkFlag
 		binaryChecksum string
+		sdkVersion     string
+		sdkName        string
 	}
 
 	workflowTaskHeartbeatError struct {
@@ -195,6 +197,16 @@ type (
 		flags          []sdkFlag
 		msgs           []*protocolpb.Message
 		binaryChecksum string
+		sdkVersion     string
+		sdkName        string
+	}
+
+	finishedTask struct {
+		isFailed       bool
+		binaryChecksum string
+		flags          []sdkFlag
+		sdkVersion     string
+		sdkName        string
 	}
 )
 
@@ -237,15 +249,15 @@ func (eh *history) IsReplayEvent(event *historypb.HistoryEvent) bool {
 	return event.GetEventId() <= eh.workflowTask.task.GetPreviousStartedEventId() || isCommandEvent(event.GetEventType())
 }
 
-// IsNextWorkflowTaskFailed checks if the workflow task failed or completed. If it did complete returns some information
+// isNextWorkflowTaskFailed checks if the workflow task failed or completed. If it did complete returns some information
 // on the completed workflow task.
-func (eh *history) IsNextWorkflowTaskFailed() (isFailed bool, binaryChecksum string, flags []sdkFlag, err error) {
+func (eh *history) isNextWorkflowTaskFailed() (task finishedTask, err error) {
 	nextIndex := eh.currentIndex + 1
 	// Server can return an empty page so if we need the next event we must keep checking until we either get it
 	// or know we have no more pages to check
 	for nextIndex >= len(eh.loadedEvents) && eh.hasMoreEvents() { // current page ends and there is more pages
 		if err := eh.loadMoreEvents(); err != nil {
-			return false, "", nil, err
+			return finishedTask{}, err
 		}
 	}
 
@@ -262,14 +274,20 @@ func (eh *history) IsNextWorkflowTaskFailed() (isFailed bool, binaryChecksum str
 				f := sdkFlagFromUint(flag)
 				if !f.isValid() {
 					// If a flag is not recognized (value is too high or not defined), it must fail the workflow task
-					return false, "", nil, errors.New("could not recognize SDK flag")
+					return finishedTask{}, errors.New("could not recognize SDK flag")
 				}
 				flags = append(flags, f)
 			}
 		}
-		return isFailed, binaryChecksum, flags, nil
+		return finishedTask{
+			isFailed:       isFailed,
+			binaryChecksum: binaryChecksum,
+			flags:          flags,
+			sdkName:        nextEvent.GetWorkflowTaskCompletedEventAttributes().GetSdkMetadata().GetSdkName(),
+			sdkVersion:     nextEvent.GetWorkflowTaskCompletedEventAttributes().GetSdkMetadata().GetSdkVersion(),
+		}, nil
 	}
-	return false, "", nil, nil
+	return finishedTask{}, nil
 }
 
 func (eh *history) loadMoreEvents() error {
@@ -318,11 +336,15 @@ func (eh *history) nextTask() (*preparedTask, error) {
 		}
 		eh.next = firstTask.events
 		eh.nextFlags = firstTask.flags
+		eh.sdkName = firstTask.sdkName
+		eh.sdkVersion = firstTask.sdkVersion
 	}
 
 	result := eh.next
 	checksum := eh.binaryChecksum
 	sdkFlags := eh.nextFlags
+	sdkName := eh.sdkName
+	sdkVersion := eh.sdkVersion
 
 	var markers []*historypb.HistoryEvent
 	var msgs []*protocolpb.Message
@@ -333,6 +355,8 @@ func (eh *history) nextTask() (*preparedTask, error) {
 		}
 		eh.next = nextTaskEvents.events
 		eh.nextFlags = nextTaskEvents.flags
+		eh.sdkName = nextTaskEvents.sdkName
+		eh.sdkVersion = nextTaskEvents.sdkVersion
 		markers = nextTaskEvents.markers
 		msgs = nextTaskEvents.msgs
 	}
@@ -342,6 +366,8 @@ func (eh *history) nextTask() (*preparedTask, error) {
 		flags:          sdkFlags,
 		msgs:           msgs,
 		binaryChecksum: checksum,
+		sdkName:        sdkName,
+		sdkVersion:     sdkVersion,
 	}, nil
 }
 
@@ -408,16 +434,22 @@ OrderEvents:
 
 		switch event.GetEventType() {
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
-			isFailed, binaryChecksum, newFlags, err1 := eh.IsNextWorkflowTaskFailed()
+			finishedTask, err1 := eh.isNextWorkflowTaskFailed()
 			if err1 != nil {
 				err := err1
 				return nil, err
 			}
-			if !isFailed {
-				eh.binaryChecksum = binaryChecksum
+			if !finishedTask.isFailed {
+				eh.binaryChecksum = finishedTask.binaryChecksum
 				eh.currentIndex++
 				taskEvents.events = append(taskEvents.events, event)
-				taskEvents.flags = append(taskEvents.flags, newFlags...)
+				taskEvents.flags = append(taskEvents.flags, finishedTask.flags...)
+				if finishedTask.sdkName != "" {
+					taskEvents.sdkName = finishedTask.sdkName
+				}
+				if finishedTask.sdkVersion != "" {
+					taskEvents.sdkVersion = finishedTask.sdkVersion
+				}
 				break OrderEvents
 			}
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED,
@@ -959,9 +991,20 @@ ProcessEvents:
 		var msgs *eventMsgIndex
 		if isReplay {
 			msgs = indexMessagesByEventID(historyMessages)
+
+			eventHandler.sdkVersion = nextTask.sdkVersion
+			eventHandler.sdkName = nextTask.sdkName
 		} else {
 			msgs = indexMessagesByEventID(taskMessages)
 			taskMessages = []*protocolpb.Message{}
+			if eventHandler.sdkVersion != SDKVersion {
+				eventHandler.sdkVersionUpdated = true
+				eventHandler.sdkVersion = SDKVersion
+			}
+			if eventHandler.sdkName != SDKName {
+				eventHandler.sdkNameUpdated = true
+				eventHandler.sdkName = SDKName
+			}
 		}
 
 		eventHandler.sdkFlags.set(flags...)
@@ -1729,6 +1772,8 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		MeteringMetadata:           &commonpb.MeteringMetadata{NonfirstLocalActivityExecutionAttempts: nonfirstLAAttempts},
 		SdkMetadata: &sdk.WorkflowTaskCompletedMetadata{
 			LangUsedFlags: langUsedFlags,
+			SdkName:       eventHandler.getNewSdkNameAndReset(),
+			SdkVersion:    eventHandler.getNewSdkVersionAndReset(),
 		},
 		WorkerVersionStamp: &commonpb.WorkerVersionStamp{
 			BuildId:       wth.workerBuildID,

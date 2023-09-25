@@ -166,6 +166,10 @@ type (
 		contextPropagators       []ContextPropagator
 		deadlockDetectionTimeout time.Duration
 		sdkFlags                 *sdkFlags
+		sdkVersionUpdated        bool
+		sdkVersion               string
+		sdkNameUpdated           bool
+		sdkName                  string
 
 		protocols *protocol.Registry
 	}
@@ -348,6 +352,22 @@ func (wc *workflowEnvironmentImpl) Send(msg *protocolpb.Message, opts ...msgSend
 		wc.commandsHelper.addProtocolMessage(msg.Id)
 	}
 	wc.outbox = append(wc.outbox, outboxEntry{msg: msg, eventPredicate: sendCfg.pred})
+}
+
+func (wc *workflowEnvironmentImpl) getNewSdkNameAndReset() string {
+	if wc.sdkNameUpdated {
+		wc.sdkNameUpdated = false
+		return wc.sdkName
+	}
+	return ""
+}
+
+func (wc *workflowEnvironmentImpl) getNewSdkVersionAndReset() string {
+	if wc.sdkVersionUpdated {
+		wc.sdkVersionUpdated = false
+		return wc.sdkVersion
+	}
+	return ""
 }
 
 func (wc *workflowEnvironmentImpl) getNextLocalActivityID() string {

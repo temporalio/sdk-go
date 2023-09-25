@@ -32,6 +32,9 @@ const (
 	// Server validates if SDKVersion fits its supported range and rejects request if it doesn't.
 	SDKVersion = "1.24.0"
 
+	// SDKName represents the name of the SDK.
+	SDKName = clientNameHeaderValue
+
 	// SupportedServerVersions is a semver rages (https://github.com/blang/semver#ranges) of server versions that
 	// are supported by this Temporal SDK.
 	// Server validates if its version fits into SupportedServerVersions range and rejects request if it doesn't.
