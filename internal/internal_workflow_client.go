@@ -1528,6 +1528,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 	response, err = w.client.workflowService.StartWorkflowExecution(grpcCtx, startRequest)
 	eagerWorkflowTask := response.GetEagerWorkflowTask()
 	if eagerWorkflowTask != nil && eagerExecutor != nil {
+		w.client.logger.Error("Received eager task")
 		eagerExecutor.handleResponse(eagerWorkflowTask)
 	} else if eagerExecutor != nil {
 		eagerExecutor.release()

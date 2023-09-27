@@ -114,3 +114,19 @@ func TestEagerWorkflowExecutor(t *testing.T) {
 		exec.handleResponse(&workflowservice.PollWorkflowTaskQueueResponse{})
 	})
 }
+
+func TestEagerWorkflowDispatchAndVersioning(t *testing.T) {
+	dispatcher := &eagerWorkflowDispatcher{
+		workersByTaskQueue: make(map[string][]eagerWorker),
+	}
+	dispatcher.registerWorker(&workflowWorker{
+		executionParameters: workerExecutionParameters{TaskQueue: "task-queue", UseBuildIDForVersioning: true},
+	})
+
+	request := &workflowservice.StartWorkflowExecutionRequest{
+		TaskQueue: &taskqueuepb.TaskQueue{Name: "task-queue"},
+	}
+	exec := dispatcher.applyToRequest(request)
+	require.Nil(t, exec)
+	require.False(t, request.GetRequestEagerExecution())
+}

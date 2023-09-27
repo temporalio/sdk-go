@@ -606,6 +606,8 @@ type (
 
 		// EnableEagerStart - request eager execution for this workflow, if a local worker is available.
 		//
+		// WARNING: Do not use in combination with a versioned task queue.
+		//
 		// NOTE: Experimental
 		EnableEagerStart bool
 
