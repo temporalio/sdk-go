@@ -28,14 +28,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
-	"github.com/gogo/protobuf/types"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
 	updatepb "go.temporal.io/api/update/v1"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	"go.temporal.io/sdk/converter"
 	iconverter "go.temporal.io/sdk/internal/converter"
@@ -460,10 +460,10 @@ func TestUpdateEvents(t *testing.T) {
 		Args:   &commonpb.Payloads{Payloads: []*commonpb.Payload{mustPayload("arg0")}},
 	}
 
-	body, err := types.MarshalAny(&updatepb.Request{Meta: meta, Input: input})
-	require.NoError(t, err)
+	body := &anypb.Any{}
+	require.NoError(t, anypb.MarshalFrom(body, &updatepb.Request{Meta: meta, Input: input}, proto.MarshalOptions{}))
 
-	err = weh.ProcessMessage(&protocolpb.Message{
+	err := weh.ProcessMessage(&protocolpb.Message{
 		ProtocolInstanceId: t.Name(),
 		Body:               body,
 	}, false, false)

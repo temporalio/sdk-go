@@ -28,16 +28,16 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/gogo/protobuf/proto"
-	"github.com/gogo/protobuf/types"
 	"github.com/stretchr/testify/require"
 	protocolpb "go.temporal.io/api/protocol/v1"
 	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/sdk/internal/protocol"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 func TestNameFromMessage(t *testing.T) {
-	msg := &protocolpb.Message{Body: &types.Any{}}
+	msg := &protocolpb.Message{Body: &anypb.Any{}}
 	_, err := protocol.NameFromMessage(msg)
 	require.Error(t, err)
 

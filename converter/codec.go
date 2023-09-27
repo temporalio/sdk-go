@@ -31,9 +31,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gogo/protobuf/jsonpb"
-	"github.com/gogo/protobuf/proto"
 	commonpb "go.temporal.io/api/common/v1"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 // PayloadCodec is an codec that encodes or decodes the given payloads.
@@ -304,8 +304,7 @@ func (e *codecHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = jsonpb.Unmarshal(r.Body, &payloadspb)
-	if err != nil {
+	if err = protojson.Unmarshal(r.Body, &payloadspb); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

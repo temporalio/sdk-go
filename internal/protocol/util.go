@@ -28,15 +28,15 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gogo/protobuf/proto"
-	"github.com/gogo/protobuf/types"
 	protocolpb "go.temporal.io/api/protocol/v1"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 // NameFromMessage extracts the name of the protocol to which the supplied
 // message belongs.
 func NameFromMessage(msg *protocolpb.Message) (string, error) {
-	bodyType, err := types.AnyMessageName(msg.Body)
+	bodyType, err := msg.Body.MessageName()
 	if err != nil {
 		return "", fmt.Errorf("unrecognized message type: %w", err)
 	}
@@ -47,8 +47,8 @@ func NameFromMessage(msg *protocolpb.Message) (string, error) {
 }
 
 // MustMarshalAny serializes a protobuf message into an Any or panics.
-func MustMarshalAny(msg proto.Message) *types.Any {
-	result, err := types.MarshalAny(msg)
+func MustMarshalAny(msg proto.Message) *anypb.Any {
+	result, err := anypb.New(msg)
 	if err != nil {
 		panic(err)
 	}

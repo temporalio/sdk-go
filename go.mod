@@ -2,6 +2,8 @@ module go.temporal.io/sdk
 
 go 1.20
 
+replace go.temporal.io/api => ../my-api-go
+
 require (
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a
 	github.com/gogo/protobuf v1.3.2

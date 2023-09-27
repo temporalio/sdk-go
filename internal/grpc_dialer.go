@@ -28,7 +28,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/gogo/status"
+	"google.golang.org/grpc/status"
 	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/internal/common/metrics"

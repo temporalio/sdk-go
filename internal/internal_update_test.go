@@ -29,7 +29,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/gogo/protobuf/types"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	historypb "go.temporal.io/api/history/v1"
@@ -38,6 +37,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/protocol"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 func mustSetUpdateHandler(
@@ -474,7 +474,7 @@ func TestAcceptedEventPredicate(t *testing.T) {
 	require.Len(t, env.outbox, 1, "expected to find accepted message")
 
 	var acptmsg updatepb.Acceptance
-	require.NoError(t, types.UnmarshalAny(env.outbox[0].msg.Body, &acptmsg))
+	require.NoError(t, env.outbox[0].msg.Body.UnmarshalTo(&acptmsg))
 	require.Nil(t, acptmsg.AcceptedRequest,
 		"do not send the original request back - this field will be removed soon")
 

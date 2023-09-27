@@ -35,8 +35,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
-	"github.com/gogo/status"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/grpc/status"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/api/common/v1"
