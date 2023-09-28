@@ -38,6 +38,10 @@ type eagerWorkflowDispatcher struct {
 
 // registerWorker registers a worker that can be used for eager workflow dispatch
 func (e *eagerWorkflowDispatcher) registerWorker(worker *workflowWorker) {
+	// Currently eager workflow start does not work with versioning
+	if worker.executionParameters.UseBuildIDForVersioning {
+		return
+	}
 	e.lock.Lock()
 	defer e.lock.Unlock()
 	e.workersByTaskQueue[worker.executionParameters.TaskQueue] = append(e.workersByTaskQueue[worker.executionParameters.TaskQueue], worker.worker)
