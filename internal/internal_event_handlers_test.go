@@ -540,7 +540,7 @@ func TestUpdateEventsPanic(t *testing.T) {
 	require.True(t, proto.Equal(input.Args, gotArgs))
 
 	require.Panics(t, func() {
-		weh.ProcessMessage(&protocolpb.Message{
+		_ = weh.ProcessMessage(&protocolpb.Message{
 			ProtocolInstanceId: t.Name(),
 			Body:               body,
 		}, false, false)
