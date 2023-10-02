@@ -2024,6 +2024,22 @@ func convertFromPBRetryPolicy(retryPolicy *commonpb.RetryPolicy) *RetryPolicy {
 	return &p
 }
 
+func copyPBRetryPolicy(retryPolicy *commonpb.RetryPolicy) *commonpb.RetryPolicy {
+	if retryPolicy == nil {
+		return nil
+	}
+
+	errTypes := make([]string, len(retryPolicy.NonRetryableErrorTypes))
+	copy(errTypes, retryPolicy.NonRetryableErrorTypes)
+	return &commonpb.RetryPolicy{
+		MaximumInterval:        common.DurationPtr(retryPolicy.MaximumInterval.AsDuration()),
+		InitialInterval:        common.DurationPtr(retryPolicy.InitialInterval.AsDuration()),
+		BackoffCoefficient:     retryPolicy.BackoffCoefficient,
+		MaximumAttempts:        retryPolicy.MaximumAttempts,
+		NonRetryableErrorTypes: errTypes,
+	}
+}
+
 // GetLastCompletionResultFromWorkflowInfo returns value of last completion result.
 func GetLastCompletionResultFromWorkflowInfo(info *WorkflowInfo) *commonpb.Payloads {
 	return info.lastCompletionResult

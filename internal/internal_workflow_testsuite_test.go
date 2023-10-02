@@ -40,6 +40,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	uberatomic "go.uber.org/atomic"
+	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
 	iconverter "go.temporal.io/sdk/internal/converter"
@@ -51,6 +52,10 @@ type WorkflowTestSuiteUnitTest struct {
 	WorkflowTestSuite
 	activityOptions      ActivityOptions
 	localActivityOptions LocalActivityOptions
+}
+
+func (s *WorkflowTestSuiteUnitTest) ProtoEqual(a proto.Message, b proto.Message) {
+	s.True(proto.Equal(a, b))
 }
 
 type testContextKey string
@@ -1868,7 +1873,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
 
 	var ret commonpb.Payloads
 	_ = payload.Get(&ret)
-	s.Equal(commonpb.Payloads{Payloads: []*commonpb.Payload{{Data: []byte("result")}}}, &ret)
+	s.ProtoEqual(&commonpb.Payloads{Payloads: []*commonpb.Payload{{Data: []byte("result")}}}, &ret)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithRandomProto() {
@@ -1887,11 +1892,11 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithRandomProto() {
 	payload, err := env.ExecuteActivity(activitySingleFn, &input1, input2)
 
 	s.NoError(err)
-	s.EqualValues([]string{"input1", "Proto3"}, actualValues)
+	s.EqualValues([]string{"input1", "ENCODING_TYPE_PROTO3"}, actualValues)
 
 	var ret *commonpb.WorkflowType
 	_ = payload.Get(&ret)
-	s.Equal(&commonpb.WorkflowType{Name: "result"}, ret)
+	s.ProtoEqual(&commonpb.WorkflowType{Name: "result"}, ret)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityRegistration() {

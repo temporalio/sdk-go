@@ -311,10 +311,7 @@ func setActivityParametersIfNotExist(ctx Context) Context {
 	if params != nil {
 		newParams = *params
 		if params.RetryPolicy != nil {
-			// FIXME validate this. The new go proto runtime embeds locks in each object and we want a copy of it here
-			newRetryPolicy := reflect.New(reflect.TypeOf(newParams.RetryPolicy))
-			reflect.Copy(newRetryPolicy, reflect.ValueOf(newParams.RetryPolicy))
-			newParams.RetryPolicy = newRetryPolicy.Interface().(*commonpb.RetryPolicy)
+			newParams.RetryPolicy = copyPBRetryPolicy(params.RetryPolicy)
 		}
 	}
 	return WithValue(ctx, activityOptionsContextKey, &newParams)

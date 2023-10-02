@@ -1591,6 +1591,8 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistoryFromFileParent() {
 	require.NoError(s.T(), err)
 }
 
+//FIXME: add a test for the new-style PROTO_JSON_ENUMS
+
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistoryFromFile() {
 	logger := getLogger()
 	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
