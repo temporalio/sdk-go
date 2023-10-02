@@ -1342,6 +1342,82 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_PageToken() {
 	t.NotNil(response)
 }
 
+func (t *TaskHandlersTestSuite) TestWorkflowTask_DuplicateMessagesPanic() {
+	//taskQueue := "taskQueue"
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{
+			ScheduledEventId: 2,
+			StartedEventId:   3,
+			SdkMetadata: &sdk.WorkflowTaskCompletedMetadata{
+				LangUsedFlags: []uint32{
+					3,
+				},
+			},
+		}),
+		{
+			EventId:   5,
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
+			Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
+				WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+					AcceptedRequestSequencingEventId: 2,
+					ProtocolInstanceId:               "test",
+					AcceptedRequest: &updatepb.Request{
+						Meta: &updatepb.Meta{
+							UpdateId: "test",
+						},
+						Input: &updatepb.Input{
+							Name: updateType,
+						},
+					},
+				},
+			},
+		},
+		{
+			EventId:   6,
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
+			Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
+				WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+					AcceptedRequestSequencingEventId: 2,
+					ProtocolInstanceId:               "test",
+					AcceptedRequest: &updatepb.Request{
+						Meta: &updatepb.Meta{
+							UpdateId: "test",
+						},
+						Input: &updatepb.Input{
+							Name: updateType,
+						},
+					},
+				},
+			},
+		},
+	}
+	// createWorkflowTask add a schedule and start event
+	task := createWorkflowTask(testEvents, 0, "HelloUpdate_Workflow")
+	task.NextPageToken = []byte("token")
+	task.PreviousStartedEventId = 14
+
+	params := t.getTestWorkerExecutionParams()
+
+	historyIterator := &historyIteratorImpl{
+		nextPageToken: []byte("token"),
+		iteratorFunc: func(nextToken []byte) (*historypb.History, []byte, error) {
+			return &historypb.History{Events: nil}, nil, nil
+		},
+	}
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	wftask := workflowTask{task: task, historyIterator: historyIterator}
+	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
+	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
+	wfctx.Unlock(err)
+	t.Error(err)
+	t.Nil(request)
+	_, ok := err.(*workflowPanicError)
+	t.True(ok)
+}
+
 func (t *TaskHandlersTestSuite) TestWorkflowTask_Messages() {
 	taskQueue := "taskQueue"
 	testEvents := []*historypb.HistoryEvent{
