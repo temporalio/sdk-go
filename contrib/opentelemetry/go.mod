@@ -11,3 +11,5 @@ require (
 )
 
 replace go.temporal.io/sdk => ../../
+
+replace go.temporal.io/api => ../../../my-api-go

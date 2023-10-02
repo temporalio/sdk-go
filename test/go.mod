@@ -17,10 +17,11 @@ require (
 	go.temporal.io/sdk/contrib/opentracing v0.0.0-00010101000000-000000000000
 	go.temporal.io/sdk/contrib/tally v0.1.0
 	go.uber.org/goleak v1.1.11
-	google.golang.org/grpc v1.57.0
+	google.golang.org/grpc v1.58.2
 )
 
 replace (
+	go.temporal.io/api => ../../my-api-go
 	go.temporal.io/sdk => ../
 	go.temporal.io/sdk/contrib/opentelemetry => ../contrib/opentelemetry
 	go.temporal.io/sdk/contrib/opentracing => ../contrib/opentracing

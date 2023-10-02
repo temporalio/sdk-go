@@ -52,6 +52,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.uber.org/goleak"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/contrib/opentelemetry"
 	sdkopentracing "go.temporal.io/sdk/contrib/opentracing"
@@ -695,7 +696,7 @@ func (ts *IntegrationTestSuite) TestSignalWorkflow() {
 	var protoValue *commonpb.WorkflowType
 	err = run.Get(ctx, &protoValue)
 	ts.NoError(err)
-	ts.Equal(commonpb.WorkflowType{Name: "string-value"}, *protoValue)
+	ts.True(proto.Equal(&commonpb.WorkflowType{Name: "string-value"}, protoValue))
 	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "HandleSignal", "HandleSignal", "ExecuteWorkflow end"},
 		ts.tracer.GetTrace("SignalWorkflow"))
 }
