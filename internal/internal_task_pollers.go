@@ -33,6 +33,9 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
+
 	"github.com/pborman/uuid"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -44,7 +47,6 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/log"
-	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 const (
@@ -449,7 +451,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(
 					Kind:       enumspb.TASK_QUEUE_KIND_STICKY,
 					NormalName: wtp.taskQueueName,
 				},
-				ScheduleToStartTimeout: &wtp.StickyScheduleToStartTimeout,
+				ScheduleToStartTimeout: durationpb.New(wtp.StickyScheduleToStartTimeout),
 			}
 		}
 		eagerReserved := wtp.eagerActivityExecutor.applyToRequest(request)

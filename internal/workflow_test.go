@@ -35,6 +35,7 @@ import (
 	"go.temporal.io/api/enums/v1"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/common"
 )
 
 func TestGetChildWorkflowOptions(t *testing.T) {
@@ -98,14 +99,14 @@ func TestGetLocalActivityOptions(t *testing.T) {
 func TestConvertRetryPolicy(t *testing.T) {
 	someDuration := time.Minute
 	pbRetryPolicy := commonpb.RetryPolicy{
-		InitialInterval:        &someDuration,
-		MaximumInterval:        &someDuration,
+		InitialInterval:        common.DurationPtr(someDuration),
+		MaximumInterval:        common.DurationPtr(someDuration),
 		BackoffCoefficient:     1,
 		MaximumAttempts:        2,
 		NonRetryableErrorTypes: []string{"some_error"},
 	}
 
-	assertNonZero(t, pbRetryPolicy)
+	assertNonZero(t, &pbRetryPolicy)
 	// Check that converting from/to commonpb.RetryPolicy is transparent
 	assert.Equal(t, &pbRetryPolicy, convertToPBRetryPolicy(convertFromPBRetryPolicy(&pbRetryPolicy)))
 }

@@ -33,7 +33,6 @@ import (
 	"testing"
 	"time"
 
-	"google.golang.org/protobuf/proto"
 	"github.com/golang/mock/gomock"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
@@ -50,6 +49,7 @@ import (
 	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
+	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
@@ -1134,9 +1134,9 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 		ContinuedExecutionRunId:  continuedRunID,
 		ParentWorkflowNamespace:  parentNamespace,
 		Attempt:                  attempt,
-		WorkflowExecutionTimeout: &executionTimeout,
-		WorkflowRunTimeout:       &runTimeout,
-		WorkflowTaskTimeout:      &taskTimeout,
+		WorkflowExecutionTimeout: common.DurationPtr(executionTimeout),
+		WorkflowRunTimeout:       common.DurationPtr(runTimeout),
+		WorkflowTaskTimeout:      common.DurationPtr(taskTimeout),
 		LastCompletionResult:     lastCompletionResult,
 	}
 	testEvents := []*historypb.HistoryEvent{
@@ -1570,10 +1570,10 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 	workflowTaskStartedEvent := createTestEventWorkflowTaskStarted(3)
 	now := time.Now()
 	onesec := 5 * time.Second
-	workflowTaskStartedEvent.EventTime = &now
+	workflowTaskStartedEvent.EventTime = common.TimePtr(now)
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
-			WorkflowTaskTimeout: &onesec,
+			WorkflowTaskTimeout: common.DurationPtr(onesec),
 			TaskQueue:           &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
 		},
 		),
@@ -1649,13 +1649,13 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 
 	workflowTaskStartedEvent := createTestEventWorkflowTaskStarted(3)
 	now := time.Now()
-	workflowTaskStartedEvent.EventTime = &now
+	workflowTaskStartedEvent.EventTime = common.TimePtr(now)
 	// WFT timeout must be larger than the local activity backoff or the local activity is not retried
 	wftTimeout := 500 * time.Millisecond
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			// make sure the timeout is same as the backoff interval
-			WorkflowTaskTimeout: &wftTimeout,
+			WorkflowTaskTimeout: common.DurationPtr(wftTimeout),
 			TaskQueue:           &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
 		},
 		),
@@ -1857,10 +1857,10 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 			},
 			ActivityType:           &commonpb.ActivityType{Name: d.ActivityType},
 			ActivityId:             uuid.New(),
-			ScheduledTime:          &d.ScheduleTS,
-			ScheduleToCloseTimeout: &d.ScheduleDuration,
-			StartedTime:            &d.StartTS,
-			StartToCloseTimeout:    &d.StartDuration,
+			ScheduledTime:          common.TimePtr(d.ScheduleTS),
+			ScheduleToCloseTimeout: common.DurationPtr(d.ScheduleDuration),
+			StartedTime:            common.TimePtr(d.StartTS),
+			StartToCloseTimeout:    common.DurationPtr(d.StartDuration),
 			WorkflowType: &commonpb.WorkflowType{
 				Name: "wType",
 			},
@@ -1915,9 +1915,9 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 		},
 		ActivityType:           &commonpb.ActivityType{Name: "test"},
 		ActivityId:             uuid.New(),
-		ScheduledTime:          &now,
+		ScheduledTime:          common.TimePtr(now),
 		ScheduleToCloseTimeout: common.DurationPtr(1 * time.Second),
-		StartedTime:            &now,
+		StartedTime:            common.TimePtr(now),
 		StartToCloseTimeout:    common.DurationPtr(1 * time.Second),
 		WorkflowType: &commonpb.WorkflowType{
 			Name: "wType",

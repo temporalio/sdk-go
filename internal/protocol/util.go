@@ -25,7 +25,7 @@
 package protocol
 
 import (
-	"fmt"
+	"errors"
 	"strings"
 
 	protocolpb "go.temporal.io/api/protocol/v1"
@@ -33,13 +33,16 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
+var ErrProtoNameNotFound = errors.New("protocol name not found")
+
 // NameFromMessage extracts the name of the protocol to which the supplied
 // message belongs.
 func NameFromMessage(msg *protocolpb.Message) (string, error) {
-	bodyType, err := msg.Body.MessageName()
-	if err != nil {
-		return "", fmt.Errorf("unrecognized message type: %w", err)
+	bodyType := string(msg.Body.MessageName())
+	if bodyType == "" {
+		return "", ErrProtoNameNotFound
 	}
+
 	if lastDot := strings.LastIndex(bodyType, "."); lastDot > -1 {
 		bodyType = bodyType[0:lastDot]
 	}

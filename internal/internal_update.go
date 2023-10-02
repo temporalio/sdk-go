@@ -35,7 +35,6 @@ import (
 	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/protocol"
-	"google.golang.org/protobuf/types/known/anypb"
 )
 
 type updateState string

@@ -343,7 +343,7 @@ func TestProtoPayloadConverter_WithOptions(t *testing.T) {
 	pc := NewProtoPayloadConverterWithOptions(ProtoPayloadConverterOptions{ExcludeProtobufMessageTypes: true})
 
 	wt := commonpb.WorkflowType{Name: "qwe"}
-	payload, err := pc.ToPayload(wt)
+	payload, err := pc.ToPayload(&wt)
 	require.NoError(t, err)
 
 	_, ok := payload.Metadata[MetadataMessageType]
@@ -354,7 +354,7 @@ func TestProtoJSONPayloadConverter_WithOptions(t *testing.T) {
 	pc := NewProtoJSONPayloadConverterWithOptions(ProtoJSONPayloadConverterOptions{ExcludeProtobufMessageTypes: true})
 
 	wt := commonpb.WorkflowType{Name: "qwe"}
-	payload, err := pc.ToPayload(wt)
+	payload, err := pc.ToPayload(&wt)
 	require.NoError(t, err)
 
 	_, ok := payload.Metadata[MetadataMessageType]
@@ -365,7 +365,7 @@ func TestProtoJsonPayloadConverter_FromPayload_Errors(t *testing.T) {
 	pc := NewProtoJSONPayloadConverter()
 
 	wt := commonpb.WorkflowType{Name: "qwe"}
-	payload, err := pc.ToPayload(wt)
+	payload, err := pc.ToPayload(&wt)
 	require.NoError(t, err)
 
 	var wt2 *int
@@ -398,7 +398,7 @@ func TestProtoJsonPayloadConverter_FromPayload_Errors(t *testing.T) {
 	assert.Equal(t, "qwe", wt33.Name)
 
 	var wt4 commonpb.WorkflowType
-	err = pc.FromPayload(payload, wt4)
+	err = pc.FromPayload(payload, &wt4)
 	require.Error(t, err)
 	assert.Equal(t, "type: common.WorkflowType: not a pointer type", err.Error())
 	assert.True(t, errors.Is(err, ErrValuePtrIsNotPointer))
@@ -439,7 +439,7 @@ func TestProtoPayloadConverter_FromPayload_Errors(t *testing.T) {
 	pc := NewProtoPayloadConverter()
 
 	wt := commonpb.WorkflowType{Name: "qwe"}
-	payload, err := pc.ToPayload(wt)
+	payload, err := pc.ToPayload(&wt)
 	require.NoError(t, err)
 
 	var wt2 *int
@@ -472,7 +472,7 @@ func TestProtoPayloadConverter_FromPayload_Errors(t *testing.T) {
 	assert.Equal(t, "qwe", wt33.Name)
 
 	var wt4 commonpb.WorkflowType
-	err = pc.FromPayload(payload, wt4)
+	err = pc.FromPayload(payload, &wt4)
 	require.Error(t, err)
 	assert.Equal(t, "type: common.WorkflowType: not a pointer type", err.Error())
 	assert.True(t, errors.Is(err, ErrValuePtrIsNotPointer))

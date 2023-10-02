@@ -36,7 +36,8 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
+
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -47,6 +48,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"google.golang.org/grpc/status"
 
 	"go.temporal.io/sdk/internal/common/retry"
 	"go.temporal.io/sdk/internal/protocol"
@@ -1705,8 +1707,8 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			WorkflowType:         &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
 			Input:                contErr.Input,
 			TaskQueue:            &taskqueuepb.TaskQueue{Name: contErr.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
-			WorkflowRunTimeout:   &contErr.WorkflowRunTimeout,
-			WorkflowTaskTimeout:  &contErr.WorkflowTaskTimeout,
+			WorkflowRunTimeout:   durationpb.New(contErr.WorkflowRunTimeout),
+			WorkflowTaskTimeout:  durationpb.New(contErr.WorkflowTaskTimeout),
 			Header:               contErr.Header,
 			Memo:                 workflowContext.workflowInfo.Memo,
 			SearchAttributes:     workflowContext.workflowInfo.SearchAttributes,

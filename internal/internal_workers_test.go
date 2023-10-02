@@ -146,9 +146,9 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 		},
 		ActivityType:           &commonpb.ActivityType{Name: "test"},
 		ActivityId:             uuid.New(),
-		ScheduledTime:          &now,
+		ScheduledTime:          common.TimePtr(now),
 		ScheduleToCloseTimeout: common.DurationPtr(1 * time.Second),
-		StartedTime:            &now,
+		StartedTime:            common.TimePtr(now),
 		StartToCloseTimeout:    common.DurationPtr(1 * time.Second),
 		WorkflowType: &commonpb.WorkflowType{
 			Name: "wType",

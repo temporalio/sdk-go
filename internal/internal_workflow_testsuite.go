@@ -45,6 +45,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
@@ -573,10 +574,10 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}
 	scheduleTaskAttr.TaskQueue = &taskqueuepb.TaskQueue{Name: parameters.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL}
 	scheduleTaskAttr.Input = parameters.Input
-	scheduleTaskAttr.ScheduleToCloseTimeout = &parameters.ScheduleToCloseTimeout
-	scheduleTaskAttr.StartToCloseTimeout = &parameters.StartToCloseTimeout
-	scheduleTaskAttr.ScheduleToStartTimeout = &parameters.ScheduleToStartTimeout
-	scheduleTaskAttr.HeartbeatTimeout = &parameters.HeartbeatTimeout
+	scheduleTaskAttr.ScheduleToCloseTimeout = common.DurationPtr(parameters.ScheduleToCloseTimeout)
+	scheduleTaskAttr.StartToCloseTimeout = common.DurationPtr(parameters.StartToCloseTimeout)
+	scheduleTaskAttr.ScheduleToStartTimeout = common.DurationPtr(parameters.ScheduleToStartTimeout)
+	scheduleTaskAttr.HeartbeatTimeout = common.DurationPtr(parameters.HeartbeatTimeout)
 	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
 	scheduleTaskAttr.Header = parameters.Header
 
@@ -1087,10 +1088,10 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}
 	scheduleTaskAttr.TaskQueue = &taskqueuepb.TaskQueue{Name: parameters.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL}
 	scheduleTaskAttr.Input = parameters.Input
-	scheduleTaskAttr.ScheduleToCloseTimeout = &parameters.ScheduleToCloseTimeout
-	scheduleTaskAttr.StartToCloseTimeout = &parameters.StartToCloseTimeout
-	scheduleTaskAttr.ScheduleToStartTimeout = &parameters.ScheduleToStartTimeout
-	scheduleTaskAttr.HeartbeatTimeout = &parameters.HeartbeatTimeout
+	scheduleTaskAttr.ScheduleToCloseTimeout = common.DurationPtr(parameters.ScheduleToCloseTimeout)
+	scheduleTaskAttr.StartToCloseTimeout = common.DurationPtr(parameters.StartToCloseTimeout)
+	scheduleTaskAttr.ScheduleToStartTimeout = common.DurationPtr(parameters.ScheduleToStartTimeout)
+	scheduleTaskAttr.HeartbeatTimeout = common.DurationPtr(parameters.HeartbeatTimeout)
 	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
 	scheduleTaskAttr.Header = parameters.Header
 	err := env.validateActivityScheduleAttributes(scheduleTaskAttr, env.WorkflowInfo().WorkflowRunTimeout)
@@ -1198,9 +1199,9 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 		}
 	} else if validStartToClose {
 		// We are in !validScheduleToClose due to the first if above
-		attributes.ScheduleToCloseTimeout = &runTimeout
+		attributes.ScheduleToCloseTimeout = common.DurationPtr(runTimeout)
 		if !validScheduleToStart {
-			attributes.ScheduleToStartTimeout = &runTimeout
+			attributes.ScheduleToStartTimeout = common.DurationPtr(runTimeout)
 		}
 	} else {
 		// Deduction failed as there's not enough information to fill in missing timeouts.
@@ -1209,16 +1210,16 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 	// ensure activity timeout never larger than workflow timeout
 	if runTimeout > 0 {
 		if common.DurationValue(attributes.GetScheduleToCloseTimeout()) > runTimeout {
-			attributes.ScheduleToCloseTimeout = &runTimeout
+			attributes.ScheduleToCloseTimeout = common.DurationPtr(runTimeout)
 		}
 		if common.DurationValue(attributes.GetScheduleToStartTimeout()) > runTimeout {
-			attributes.ScheduleToStartTimeout = &runTimeout
+			attributes.ScheduleToStartTimeout = common.DurationPtr(runTimeout)
 		}
 		if common.DurationValue(attributes.GetStartToCloseTimeout()) > runTimeout {
-			attributes.StartToCloseTimeout = &runTimeout
+			attributes.StartToCloseTimeout = common.DurationPtr(runTimeout)
 		}
 		if common.DurationValue(attributes.GetHeartbeatTimeout()) > runTimeout {
-			attributes.HeartbeatTimeout = &runTimeout
+			attributes.HeartbeatTimeout = common.DurationPtr(runTimeout)
 		}
 	}
 	attributes.HeartbeatTimeout = common.MinDurationPtr(attributes.GetHeartbeatTimeout(), attributes.GetScheduleToCloseTimeout())
@@ -1382,11 +1383,11 @@ func ensureDefaultRetryPolicy(parameters *ExecuteActivityParams) {
 		parameters.RetryPolicy = &commonpb.RetryPolicy{}
 	}
 
-	if parameters.RetryPolicy.InitialInterval == nil || *parameters.RetryPolicy.InitialInterval == 0 {
+	if parameters.RetryPolicy.InitialInterval == nil || parameters.RetryPolicy.InitialInterval.AsDuration() == 0 {
 		parameters.RetryPolicy.InitialInterval = common.DurationPtr(time.Second)
 	}
-	if parameters.RetryPolicy.MaximumInterval == nil || *parameters.RetryPolicy.MaximumInterval == 0 {
-		parameters.RetryPolicy.MaximumInterval = common.DurationPtr(*parameters.RetryPolicy.InitialInterval)
+	if parameters.RetryPolicy.MaximumInterval == nil || parameters.RetryPolicy.MaximumInterval.AsDuration() == 0 {
+		parameters.RetryPolicy.MaximumInterval = parameters.RetryPolicy.InitialInterval
 	}
 	if parameters.RetryPolicy.BackoffCoefficient == 0 {
 		parameters.RetryPolicy.BackoffCoefficient = 2
@@ -1956,9 +1957,9 @@ func newTestActivityTask(workflowID, runID, workflowTypeName, namespace string,
 		TaskToken:              []byte(activityID), // use activityID as TaskToken so we can map TaskToken in heartbeat calls.
 		ActivityType:           &commonpb.ActivityType{Name: attr.GetActivityType().GetName()},
 		Input:                  attr.GetInput(),
-		ScheduledTime:          &now,
+		ScheduledTime:          timestamppb.New(now),
 		ScheduleToCloseTimeout: attr.GetScheduleToCloseTimeout(),
-		StartedTime:            &now,
+		StartedTime:            timestamppb.New(now),
 		StartToCloseTimeout:    attr.GetStartToCloseTimeout(),
 		HeartbeatTimeout:       attr.GetHeartbeatTimeout(),
 		WorkflowType: &commonpb.WorkflowType{

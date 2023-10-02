@@ -36,6 +36,7 @@ import (
 	failurepb "go.temporal.io/api/failure/v1"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 )
@@ -1998,8 +1999,8 @@ func convertToPBRetryPolicy(retryPolicy *RetryPolicy) *commonpb.RetryPolicy {
 	}
 
 	return &commonpb.RetryPolicy{
-		MaximumInterval:        &retryPolicy.MaximumInterval,
-		InitialInterval:        &retryPolicy.InitialInterval,
+		MaximumInterval:        common.DurationPtr(retryPolicy.MaximumInterval),
+		InitialInterval:        common.DurationPtr(retryPolicy.InitialInterval),
 		BackoffCoefficient:     retryPolicy.BackoffCoefficient,
 		MaximumAttempts:        retryPolicy.MaximumAttempts,
 		NonRetryableErrorTypes: retryPolicy.NonRetryableErrorTypes,
@@ -2017,13 +2018,8 @@ func convertFromPBRetryPolicy(retryPolicy *commonpb.RetryPolicy) *RetryPolicy {
 		NonRetryableErrorTypes: retryPolicy.NonRetryableErrorTypes,
 	}
 
-	// Avoid nil pointer dereferences
-	if v := retryPolicy.MaximumInterval; v != nil {
-		p.MaximumInterval = *v
-	}
-	if v := retryPolicy.InitialInterval; v != nil {
-		p.InitialInterval = *v
-	}
+	p.MaximumInterval = common.DurationValue(retryPolicy.MaximumInterval)
+	p.InitialInterval = common.DurationValue(retryPolicy.InitialInterval)
 
 	return &p
 }

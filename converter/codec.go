@@ -304,7 +304,13 @@ func (e *codecHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = protojson.Unmarshal(r.Body, &payloadspb); err != nil {
+	bs, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err = protojson.Unmarshal(bs, &payloadspb); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -476,8 +482,12 @@ func (rdc *remoteDataConverter) encodeOrDecodePayloads(endpoint string, payloads
 	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode == 200 {
+		bs, err := io.ReadAll(response.Body)
+		if err != nil {
+			return payloads, fmt.Errorf("failed to read response body: %w", err)
+		}
 		var resultPayloads commonpb.Payloads
-		err = jsonpb.Unmarshal(response.Body, &resultPayloads)
+		err = protojson.Unmarshal(bs, &resultPayloads)
 		if err != nil {
 			return payloads, fmt.Errorf("unable to unmarshal payloads: %w", err)
 		}

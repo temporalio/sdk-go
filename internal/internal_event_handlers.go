@@ -33,7 +33,6 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/protobuf/proto"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -42,6 +41,8 @@ import (
 	protocolpb "go.temporal.io/api/protocol/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
@@ -549,9 +550,9 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.Namespace = params.Namespace
 	attributes.TaskQueue = &taskqueuepb.TaskQueue{Name: params.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL}
 	attributes.WorkflowId = params.WorkflowID
-	attributes.WorkflowExecutionTimeout = &params.WorkflowExecutionTimeout
-	attributes.WorkflowRunTimeout = &params.WorkflowRunTimeout
-	attributes.WorkflowTaskTimeout = &params.WorkflowTaskTimeout
+	attributes.WorkflowExecutionTimeout = durationpb.New(params.WorkflowExecutionTimeout)
+	attributes.WorkflowRunTimeout = durationpb.New(params.WorkflowRunTimeout)
+	attributes.WorkflowTaskTimeout = durationpb.New(params.WorkflowTaskTimeout)
 	attributes.Input = params.Input
 	attributes.WorkflowType = &commonpb.WorkflowType{Name: params.WorkflowType.Name}
 	attributes.WorkflowIdReusePolicy = params.WorkflowIDReusePolicy
@@ -653,10 +654,10 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}
 	scheduleTaskAttr.TaskQueue = &taskqueuepb.TaskQueue{Name: parameters.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL}
 	scheduleTaskAttr.Input = parameters.Input
-	scheduleTaskAttr.ScheduleToCloseTimeout = &parameters.ScheduleToCloseTimeout
-	scheduleTaskAttr.StartToCloseTimeout = &parameters.StartToCloseTimeout
-	scheduleTaskAttr.ScheduleToStartTimeout = &parameters.ScheduleToStartTimeout
-	scheduleTaskAttr.HeartbeatTimeout = &parameters.HeartbeatTimeout
+	scheduleTaskAttr.ScheduleToCloseTimeout = durationpb.New(parameters.ScheduleToCloseTimeout)
+	scheduleTaskAttr.StartToCloseTimeout = durationpb.New(parameters.StartToCloseTimeout)
+	scheduleTaskAttr.ScheduleToStartTimeout = durationpb.New(parameters.ScheduleToStartTimeout)
+	scheduleTaskAttr.HeartbeatTimeout = durationpb.New(parameters.HeartbeatTimeout)
 	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
 	scheduleTaskAttr.Header = parameters.Header
 	// We set this as true if not disabled on the params knowing it will be set as
@@ -750,7 +751,7 @@ func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback ResultHand
 	timerID := wc.GenerateSequenceID()
 	startTimerAttr := &commandpb.StartTimerCommandAttributes{}
 	startTimerAttr.TimerId = timerID
-	startTimerAttr.StartToFireTimeout = &d
+	startTimerAttr.StartToFireTimeout = durationpb.New(d)
 
 	command := wc.commandsHelper.startTimer(startTimerAttr)
 	command.setData(&scheduledTimer{callback: callback})
@@ -1256,12 +1257,16 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessQuery(
 			return nil, err
 		}
 
-		if result.Size() > queryResultSizeLimit {
+		bs, err := proto.Marshal(result)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check size of query result: %w", err)
+		}
+		if len(bs) > queryResultSizeLimit {
 			weh.logger.Error("Query result size exceeds limit.",
 				tagQueryType, queryType,
 				tagWorkflowID, weh.workflowInfo.WorkflowExecution.ID,
 				tagRunID, weh.workflowInfo.WorkflowExecution.RunID)
-			return nil, fmt.Errorf("query result size (%v) exceeds limit (%v)", result.Size(), queryResultSizeLimit)
+			return nil, fmt.Errorf("query result size (%v) exceeds limit (%v)", len(bs), queryResultSizeLimit)
 		}
 
 		return result, nil

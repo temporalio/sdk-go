@@ -1443,7 +1443,11 @@ func HistoryFromJSON(r io.Reader, lastEventID int64) (*historypb.History, error)
 		DiscardUnknown: true,
 	}
 	var hist historypb.History
-	if err := protojson.Unmarshal(r, &hist, opts); err != nil {
+	bs, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read history: %w", err)
+	}
+	if err := opts.Unmarshal(bs, &hist); err != nil {
 		return nil, err
 	}
 	// If there is a last event ID, slice the rest off

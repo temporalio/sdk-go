@@ -26,34 +26,42 @@ package common
 
 import (
 	"time"
+
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // TimeValue dereference time in a safe way.
-func TimeValue(t *time.Time) time.Time {
+func TimeValue(t *timestamppb.Timestamp) time.Time {
 	if t == nil {
 		return time.Time{}
 	}
-	return *t
+	return t.AsTime()
+}
+
+// TimePtr create a proto-compatible timestamp pointer from a golang time value
+func TimePtr(t time.Time) *timestamppb.Timestamp {
+	return timestamppb.New(t)
 }
 
 // DurationValue dereference duration in a safe way.
-func DurationValue(d *time.Duration) time.Duration {
+func DurationValue(d *durationpb.Duration) time.Duration {
 	if d == nil {
 		return 0
 	}
-	return *d
+	return d.AsDuration()
 }
 
 // MinDurationPtr returns pointer to minimum duration.
-func MinDurationPtr(d1 *time.Duration, d2 *time.Duration) *time.Duration {
+func MinDurationPtr(d1 *durationpb.Duration, d2 *durationpb.Duration) *durationpb.Duration {
 	d1v, d2v := DurationValue(d1), DurationValue(d2)
 	if d1v > d2v {
-		return &d2v
+		return durationpb.New(d2v)
 	}
-	return &d1v
+	return durationpb.New(d1v)
 }
 
 // DurationPtr returns pointer to duration.
-func DurationPtr(d time.Duration) *time.Duration {
-	return &d
+func DurationPtr(d time.Duration) *durationpb.Duration {
+	return durationpb.New(d)
 }
