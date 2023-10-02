@@ -4085,6 +4085,13 @@ func (ts *IntegrationTestSuite) TestSendsCorrectMeteringData() {
 	w.Stop()
 }
 
+func (ts *IntegrationTestSuite) TestNondeterministicUpdateRegistertion() {
+	var expected []string
+	err := ts.executeWorkflow("test-activity-retry-options-change", ts.workflows.ActivityRetryOptionsChange, &expected)
+	ts.NoError(err)
+	ts.EqualValues(expected, ts.activities.invoked())
+}
+
 // executeWorkflow executes a given workflow and waits for the result
 func (ts *IntegrationTestSuite) executeWorkflow(
 	wfID string, wfFunc interface{}, retValPtr interface{}, args ...interface{},

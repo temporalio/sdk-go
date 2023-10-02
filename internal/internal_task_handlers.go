@@ -1066,11 +1066,17 @@ ProcessEvents:
 				if err != nil {
 					return nil, err
 				}
+				if w.isWorkflowCompleted && !shouldForceReplayCheck() {
+					break ProcessEvents
+				}
 			}
 
 			err = eventHandler.ProcessEvent(event, isInReplay, isLast)
 			if err != nil {
 				return nil, err
+			}
+			if w.isWorkflowCompleted && !shouldForceReplayCheck() {
+				break ProcessEvents
 			}
 
 			for _, msg := range msgs.takeLTE(event.GetEventId()) {
@@ -1078,10 +1084,9 @@ ProcessEvents:
 				if err != nil {
 					return nil, err
 				}
-			}
-
-			if w.isWorkflowCompleted && !shouldForceReplayCheck() {
-				break ProcessEvents
+				if w.isWorkflowCompleted && !shouldForceReplayCheck() {
+					break ProcessEvents
+				}
 			}
 		}
 

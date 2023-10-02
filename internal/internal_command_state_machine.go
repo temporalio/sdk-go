@@ -148,7 +148,7 @@ type (
 		versionMarkerLookup              map[int64]versionMarker
 	}
 
-	// panic when command state machine is in illegal state
+	// panic when command or message state machine is in illegal state
 	stateMachineIllegalStatePanic struct {
 		message string
 	}

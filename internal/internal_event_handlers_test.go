@@ -482,3 +482,67 @@ func TestUpdateEvents(t *testing.T) {
 		require.NoError(t, weh.ProcessEvent(&historypb.HistoryEvent{EventType: evtype}, false, false))
 	}
 }
+
+func TestUpdateEventsPanic(t *testing.T) {
+	mustPayload := func(i interface{}) *commonpb.Payload {
+		t.Helper()
+		p, err := converter.NewJSONPayloadConverter().ToPayload(i)
+		if err != nil {
+			t.FailNow()
+		}
+		return p
+	}
+
+	var (
+		gotName   string
+		gotID     string
+		gotArgs   *commonpb.Payloads
+		gotHeader *commonpb.Header
+	)
+
+	weh := &workflowExecutionEventHandlerImpl{
+		workflowEnvironmentImpl: &workflowEnvironmentImpl{
+			updateHandler: func(name string, id string, args *commonpb.Payloads, header *commonpb.Header, cb UpdateCallbacks) {
+				gotName = name
+				gotID = id
+				gotArgs = args
+				gotHeader = header
+			},
+			protocols: protocol.NewRegistry(),
+		},
+		workflowDefinition: &mockWorkflowDefinition{
+			OnWorkflowTaskStartedFunc: func(time.Duration) {},
+		},
+	}
+
+	meta := &updatepb.Meta{
+		UpdateId: t.Name() + "-id",
+		Identity: t.Name() + "-identity",
+	}
+	input := &updatepb.Input{
+		Header: &commonpb.Header{Fields: map[string]*commonpb.Payload{"a": mustPayload("b")}},
+		Name:   t.Name(),
+		Args:   &commonpb.Payloads{Payloads: []*commonpb.Payload{mustPayload("arg0")}},
+	}
+
+	body, err := types.MarshalAny(&updatepb.Request{Meta: meta, Input: input})
+	require.NoError(t, err)
+
+	err = weh.ProcessMessage(&protocolpb.Message{
+		ProtocolInstanceId: t.Name(),
+		Body:               body,
+	}, false, false)
+	require.NoError(t, err)
+
+	require.Equal(t, input.Name, gotName)
+	require.Equal(t, t.Name()+"-id", gotID)
+	require.True(t, proto.Equal(input.Header, gotHeader))
+	require.True(t, proto.Equal(input.Args, gotArgs))
+
+	require.Panics(t, func() {
+		_ = weh.ProcessMessage(&protocolpb.Message{
+			ProtocolInstanceId: t.Name(),
+			Body:               body,
+		}, false, false)
+	})
+}

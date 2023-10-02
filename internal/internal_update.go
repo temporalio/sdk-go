@@ -131,7 +131,7 @@ func (up *updateProtocol) requireState(action string, valid ...updateState) {
 			return
 		}
 	}
-	panic(fmt.Sprintf("invalid action %q in update protocol from state %s", action, up.state))
+	panicIllegalState(fmt.Sprintf("invalid action %q in update protocol %v", action, up))
 }
 
 func (up *updateProtocol) HandleMessage(msg *protocolpb.Message) error {

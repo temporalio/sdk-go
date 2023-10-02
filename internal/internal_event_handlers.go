@@ -1223,6 +1223,15 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessMessage(
 	isReplay bool,
 	isLast bool,
 ) error {
+	defer func() {
+		if p := recover(); p != nil {
+			weh.metricsHandler.Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
+			topLine := fmt.Sprintf("process message for %s [panic]:", weh.workflowInfo.TaskQueueName)
+			st := getStackTraceRaw(topLine, 7, 0)
+			weh.Complete(nil, newWorkflowPanicError(p, st))
+		}
+	}()
+
 	ctor, err := weh.protocolConstructorForMessage(msg)
 	if err != nil {
 		return nil
