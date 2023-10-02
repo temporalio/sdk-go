@@ -32,10 +32,10 @@ import (
 	"strings"
 	"testing"
 
-	"google.golang.org/protobuf/proto"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/sdk/converter"
+	"google.golang.org/protobuf/proto"
 )
 
 func ExampleCodecDataConverter_compression() {
@@ -278,7 +278,7 @@ func TestRemoteDataConverter(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NotEqual(t, unencodedPayloads, localEncodedPayloads)
-	require.Equal(t, localEncodedPayloads, remoteEncodedPayloads)
+	require.True(t, proto.Equal(localEncodedPayloads, remoteEncodedPayloads))
 
 	unencodedPayload, err := defaultConv.ToPayload("test")
 	require.NoError(t, err)
@@ -289,5 +289,5 @@ func TestRemoteDataConverter(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NotEqual(t, unencodedPayload, localEncodedPayload)
-	require.Equal(t, localEncodedPayload, remoteEncodedPayload)
+	require.True(t, proto.Equal(localEncodedPayload, remoteEncodedPayload))
 }

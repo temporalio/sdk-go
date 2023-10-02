@@ -27,12 +27,15 @@ package internal
 import (
 	"fmt"
 	"reflect"
+	"regexp"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common"
@@ -140,11 +143,31 @@ func assertNonZero(t *testing.T, i interface{}) {
 	_assertNonZero(t, i, reflect.ValueOf(i).Type().Name())
 }
 
+// Matches when a method should be private (by name)
+// Sure, this only works for latin characters. It's fine enough for the test
+var isPrivate = regexp.MustCompile("^[a-z]")
+
 func _assertNonZero(t *testing.T, i interface{}, prefix string) {
 	v := reflect.ValueOf(i)
+	vt := v.Type()
 	switch v.Kind() {
 	case reflect.Struct:
+		switch vx := v.Interface().(type) {
+		case timestamppb.Timestamp:
+			if vx.Nanos == 0 && vx.Seconds == 0 {
+				t.Errorf("%s: value of type %T must be non-zero", prefix, i)
+			}
+			return
+		case durationpb.Duration:
+			if vx.Nanos == 0 && vx.Seconds == 0 {
+				t.Errorf("%s: value of type %T must be non-zero", prefix, i)
+			}
+			return
+		}
 		for i := 0; i < v.NumField(); i++ {
+			if isPrivate.MatchString(vt.Field(i).Name) {
+				continue
+			}
 			_assertNonZero(t, v.Field(i).Interface(), fmt.Sprintf("%s.%s", prefix, v.Type().Field(i).Name))
 		}
 	case reflect.Slice:
