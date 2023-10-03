@@ -8,6 +8,7 @@ require (
 	gopkg.in/DataDog/dd-trace-go.v1 v1.42.0
 )
 
-replace go.temporal.io/sdk => ../../
-
-replace go.temporal.io/api => ../../../my-api-go
+replace (
+	go.temporal.io/api => github.com/tdeebswihart/temporal-api-go v0.0.0-20231003190133-d410a2a8e043
+	go.temporal.io/sdk => ../../
+)

@@ -1,4 +1,4 @@
-.PHONY: test bins clean cover cover-ci check errcheck staticcheck lint fmt
+.PHONY: test bins clean cover cover-ci check errcheck staticcheck lint fmt gomodtidy check
 
 # default target
 default: check test
@@ -55,7 +55,7 @@ integration-test-normal-cache: $(BUILD)/dummy
 		(cd "$$dir" && go test $(TEST_ARG) . -coverprofile=$(INTEG_NORMAL_CACHE_COVER_FILE) -coverpkg=./...) || exit 1; \
 	done;
 
-test: unit-test integration-test-zero-cache integration-test-normal-cache
+test: gomodtidy unit-test integration-test-zero-cache integration-test-normal-cache
 
 merge-coverage:
 	@echo "mode: atomic"
@@ -90,3 +90,6 @@ clean:
 	rm -rf $(BUILD)
 
 check: vet errcheck staticcheck copyright bins
+
+gomodtidy:
+	$(shell find . -name go.mod | xargs dirname | xargs -P 4 -I{} bash -c 'cd {} && go mod tidy')

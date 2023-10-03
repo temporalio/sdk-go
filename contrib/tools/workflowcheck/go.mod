@@ -15,4 +15,4 @@ require (
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127 // indirect
 )
 
-replace go.temporal.io/api => ../../../my-api-go
+replace go.temporal.io/api => github.com/tdeebswihart/temporal-api v0.0.0-20231003190030-5b228be4548b
