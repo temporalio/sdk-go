@@ -609,7 +609,8 @@ type (
 
 		// EnableEagerStart - request eager execution for this workflow, if a local worker is available.
 		//
-		// WARNING: Do not use in combination with a versioned task queue.
+		// WARNING: Eager start does not respect worker versioning. An eagerly started workflow may run on
+		// any available local worker even if that worker is not in the default build ID set.
 		//
 		// NOTE: Experimental
 		EnableEagerStart bool
