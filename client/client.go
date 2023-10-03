@@ -749,5 +749,5 @@ type HistoryJSONOptions struct {
 // HistoryFromJSON deserializes history from a reader of JSON bytes. This does
 // not close the reader if it is closeable.
 func HistoryFromJSON(r io.Reader, options HistoryJSONOptions) (*historypb.History, error) {
-	return internal.HistoryFromJSON(r, options.LastEventID)
+	return historypb.LoadFromJSON(r, options.LastEventID)
 }

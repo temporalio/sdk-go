@@ -49,7 +49,6 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
@@ -1426,41 +1425,11 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*historypb.
 	if err != nil {
 		return nil, err
 	}
-	hist, err := HistoryFromJSON(reader, lastEventID)
+	hist, err := historypb.LoadFromJSON(reader, lastEventID)
 	if closeErr := reader.Close(); closeErr != nil && err == nil {
 		err = closeErr
 	}
 	return hist, err
-}
-
-// HistoryFromJSON deserializes history from a reader of JSON bytes. This does
-// not close the reader if it is closeable.
-func HistoryFromJSON(r io.Reader, lastEventID int64) (*historypb.History, error) {
-	// FIXME: handle different json casing here
-	opts := protojson.UnmarshalOptions{
-		// Ignore unknown fields because if the histroy was generated with a different version of the proto
-		// fields may have been added/removed.
-		DiscardUnknown: true,
-	}
-	var hist historypb.History
-	bs, err := io.ReadAll(r)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read history: %w", err)
-	}
-	if err := opts.Unmarshal(bs, &hist); err != nil {
-		return nil, err
-	}
-	// If there is a last event ID, slice the rest off
-	if lastEventID > 0 {
-		for i, event := range hist.Events {
-			if event.EventId == lastEventID {
-				// Inclusive
-				hist.Events = hist.Events[:i+1]
-				break
-			}
-		}
-	}
-	return &hist, nil
 }
 
 // NewAggregatedWorker returns an instance to manage both activity and workflow workers

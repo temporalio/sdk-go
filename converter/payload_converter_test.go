@@ -70,7 +70,7 @@ func TestProtoJsonPayloadConverter_Google(t *testing.T) {
 	assert.Equal(t, int64(1978), wt3.EventId)
 
 	s := pc.ToString(payload)
-	assert.Equal(t, `{"eventId":"1978", "eventType":"EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT", "workflowTaskTimedOutEventAttributes":{"scheduledEventId":"2", "timeoutType":"TIMEOUT_TYPE_SCHEDULE_TO_START"}}`, s)
+	assert.JSONEq(t, `{"eventId":"1978","eventType":"EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT","workflowTaskTimedOutEventAttributes":{"scheduledEventId":"2","timeoutType":"TIMEOUT_TYPE_SCHEDULE_TO_START"}}`, s)
 
 	// Add additional field to payload data
 	payload.Data = []byte(`{"eventId":"1978","eventType":"EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT","workflowTaskTimedOutEventAttributes":{"scheduledEventId":"2","timeoutType":"TIMEOUT_TYPE_SCHEDULE_TO_START"},"newField":"newValue"}`)
@@ -397,13 +397,6 @@ func TestProtoJsonPayloadConverter_FromPayload_Errors(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "qwe", wt33.Name)
 
-	// FIXME: convert to a gogo type
-	// var wt4 commonpb.WorkflowType
-	// err = pc.FromPayload(payload, &wt4)
-	// require.Error(t, err)
-	// assert.Equal(t, "type: common.WorkflowType: not a pointer type", err.Error())
-	// assert.True(t, errors.Is(err, ErrValuePtrIsNotPointer))
-
 	var wt5 interface{}
 	err = pc.FromPayload(payload, wt5)
 	require.Error(t, err)
@@ -471,13 +464,6 @@ func TestProtoPayloadConverter_FromPayload_Errors(t *testing.T) {
 	err = pc.FromPayload(payload, wt33)
 	require.NoError(t, err)
 	assert.Equal(t, "qwe", wt33.Name)
-
-	// FIXME: convert to a gogo type
-	// var wt4 commonpb.WorkflowType
-	// err = pc.FromPayload(payload, &wt4)
-	// require.Error(t, err)
-	// assert.Equal(t, "type: common.WorkflowType: not a pointer type", err.Error())
-	// assert.True(t, errors.Is(err, ErrValuePtrIsNotPointer))
 
 	var wt5 interface{}
 	err = pc.FromPayload(payload, wt5)

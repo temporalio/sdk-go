@@ -18,6 +18,7 @@ require (
 	go.temporal.io/sdk/contrib/tally v0.1.0
 	go.uber.org/goleak v1.1.11
 	google.golang.org/grpc v1.58.2
+	google.golang.org/protobuf v1.31.0
 )
 
 replace (
