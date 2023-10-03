@@ -46,13 +46,14 @@ import (
 	"go.temporal.io/api/sdk/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
+	"go.temporal.io/api/types/duration"
+	"go.temporal.io/api/types/timestamp"
 	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/cache"
 	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
@@ -1134,9 +1135,9 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 		ContinuedExecutionRunId:  continuedRunID,
 		ParentWorkflowNamespace:  parentNamespace,
 		Attempt:                  attempt,
-		WorkflowExecutionTimeout: common.DurationPtr(executionTimeout),
-		WorkflowRunTimeout:       common.DurationPtr(runTimeout),
-		WorkflowTaskTimeout:      common.DurationPtr(taskTimeout),
+		WorkflowExecutionTimeout: duration.Proto(executionTimeout),
+		WorkflowRunTimeout:       duration.Proto(runTimeout),
+		WorkflowTaskTimeout:      duration.Proto(taskTimeout),
 		LastCompletionResult:     lastCompletionResult,
 	}
 	testEvents := []*historypb.HistoryEvent{
@@ -1570,10 +1571,10 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 	workflowTaskStartedEvent := createTestEventWorkflowTaskStarted(3)
 	now := time.Now()
 	onesec := 5 * time.Second
-	workflowTaskStartedEvent.EventTime = common.TimePtr(now)
+	workflowTaskStartedEvent.EventTime = timestamp.Proto(now)
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
-			WorkflowTaskTimeout: common.DurationPtr(onesec),
+			WorkflowTaskTimeout: duration.Proto(onesec),
 			TaskQueue:           &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
 		},
 		),
@@ -1649,13 +1650,13 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 
 	workflowTaskStartedEvent := createTestEventWorkflowTaskStarted(3)
 	now := time.Now()
-	workflowTaskStartedEvent.EventTime = common.TimePtr(now)
+	workflowTaskStartedEvent.EventTime = timestamp.Proto(now)
 	// WFT timeout must be larger than the local activity backoff or the local activity is not retried
 	wftTimeout := 500 * time.Millisecond
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
 			// make sure the timeout is same as the backoff interval
-			WorkflowTaskTimeout: common.DurationPtr(wftTimeout),
+			WorkflowTaskTimeout: duration.Proto(wftTimeout),
 			TaskQueue:           &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
 		},
 		),
@@ -1857,10 +1858,10 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 			},
 			ActivityType:           &commonpb.ActivityType{Name: d.ActivityType},
 			ActivityId:             uuid.New(),
-			ScheduledTime:          common.TimePtr(d.ScheduleTS),
-			ScheduleToCloseTimeout: common.DurationPtr(d.ScheduleDuration),
-			StartedTime:            common.TimePtr(d.StartTS),
-			StartToCloseTimeout:    common.DurationPtr(d.StartDuration),
+			ScheduledTime:          timestamp.Proto(d.ScheduleTS),
+			ScheduleToCloseTimeout: duration.Proto(d.ScheduleDuration),
+			StartedTime:            timestamp.Proto(d.StartTS),
+			StartToCloseTimeout:    duration.Proto(d.StartDuration),
 			WorkflowType: &commonpb.WorkflowType{
 				Name: "wType",
 			},
@@ -1915,10 +1916,10 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 		},
 		ActivityType:           &commonpb.ActivityType{Name: "test"},
 		ActivityId:             uuid.New(),
-		ScheduledTime:          common.TimePtr(now),
-		ScheduleToCloseTimeout: common.DurationPtr(1 * time.Second),
-		StartedTime:            common.TimePtr(now),
-		StartToCloseTimeout:    common.DurationPtr(1 * time.Second),
+		ScheduledTime:          timestamp.Proto(now),
+		ScheduleToCloseTimeout: duration.Proto(1 * time.Second),
+		StartedTime:            timestamp.Proto(now),
+		StartToCloseTimeout:    duration.Proto(1 * time.Second),
 		WorkflowType: &commonpb.WorkflowType{
 			Name: "wType",
 		},

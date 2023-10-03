@@ -37,10 +37,11 @@ import (
 	schedulepb "go.temporal.io/api/schedule/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
+	"go.temporal.io/api/types/duration"
+	"go.temporal.io/api/types/timestamp"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/internal/common"
 )
 
 type (
@@ -427,8 +428,8 @@ func convertFromPBScheduleSpec(scheduleSpec *schedulepb.ScheduleSpec) *ScheduleS
 	intervals := make([]ScheduleIntervalSpec, len(scheduleSpec.GetInterval()))
 	for i, s := range scheduleSpec.GetInterval() {
 		intervals[i] = ScheduleIntervalSpec{
-			Every:  common.DurationValue(s.Interval),
-			Offset: common.DurationValue(s.Phase),
+			Every:  duration.Value(s.Interval),
+			Offset: duration.Value(s.Phase),
 		}
 	}
 
@@ -436,12 +437,12 @@ func convertFromPBScheduleSpec(scheduleSpec *schedulepb.ScheduleSpec) *ScheduleS
 
 	startAt := time.Time{}
 	if scheduleSpec.GetStartTime() != nil {
-		startAt = common.TimeValue(scheduleSpec.GetStartTime())
+		startAt = timestamp.Value(scheduleSpec.GetStartTime())
 	}
 
 	endAt := time.Time{}
 	if scheduleSpec.GetEndTime() != nil {
-		endAt = common.TimeValue(scheduleSpec.GetEndTime())
+		endAt = timestamp.Value(scheduleSpec.GetEndTime())
 	}
 
 	return &ScheduleSpec{
@@ -450,7 +451,7 @@ func convertFromPBScheduleSpec(scheduleSpec *schedulepb.ScheduleSpec) *ScheduleS
 		Skip:         skip,
 		StartAt:      startAt,
 		EndAt:        endAt,
-		Jitter:       common.DurationValue(scheduleSpec.GetJitter()),
+		Jitter:       duration.Value(scheduleSpec.GetJitter()),
 		TimeZoneName: scheduleSpec.GetTimezoneName(),
 	}
 }
@@ -472,7 +473,7 @@ func scheduleDescriptionFromPB(describeResponse *workflowservice.DescribeSchedul
 
 	nextActionTimes := make([]time.Time, len(describeResponse.Info.GetFutureActionTimes()))
 	for i, t := range describeResponse.Info.GetFutureActionTimes() {
-		nextActionTimes[i] = common.TimeValue(t)
+		nextActionTimes[i] = timestamp.Value(t)
 	}
 
 	actionDescription, err := convertFromPBScheduleAction(describeResponse.Schedule.Action)
@@ -486,7 +487,7 @@ func scheduleDescriptionFromPB(describeResponse *workflowservice.DescribeSchedul
 			Spec:   convertFromPBScheduleSpec(describeResponse.Schedule.Spec),
 			Policy: &SchedulePolicies{
 				Overlap:        describeResponse.Schedule.Policies.GetOverlapPolicy(),
-				CatchupWindow:  common.DurationValue(describeResponse.Schedule.Policies.GetCatchupWindow()),
+				CatchupWindow:  duration.Value(describeResponse.Schedule.Policies.GetCatchupWindow()),
 				PauseOnFailure: describeResponse.Schedule.Policies.GetPauseOnFailure(),
 			},
 			State: &ScheduleState{
@@ -503,8 +504,8 @@ func scheduleDescriptionFromPB(describeResponse *workflowservice.DescribeSchedul
 			RunningWorkflows:              runningWorkflows,
 			RecentActions:                 recentActions,
 			NextActionTimes:               nextActionTimes,
-			CreatedAt:                     common.TimeValue(describeResponse.Info.GetCreateTime()),
-			LastUpdateAt:                  common.TimeValue(describeResponse.Info.GetUpdateTime()),
+			CreatedAt:                     timestamp.Value(describeResponse.Info.GetCreateTime()),
+			LastUpdateAt:                  timestamp.Value(describeResponse.Info.GetUpdateTime()),
 		},
 		Memo:             describeResponse.Memo,
 		SearchAttributes: describeResponse.SearchAttributes,
@@ -543,7 +544,7 @@ func convertFromPBScheduleListEntry(schedule *schedulepb.ScheduleListEntry) *Sch
 
 	nextActionTimes := make([]time.Time, len(schedule.Info.GetFutureActionTimes()))
 	for i, t := range schedule.Info.GetFutureActionTimes() {
-		nextActionTimes[i] = common.TimeValue(t)
+		nextActionTimes[i] = timestamp.Value(t)
 	}
 
 	return &ScheduleListEntry{
@@ -650,9 +651,9 @@ func convertFromPBScheduleAction(action *schedulepb.ScheduleAction) (ScheduleAct
 			Workflow:                 workflow.WorkflowType.GetName(),
 			Args:                     args,
 			TaskQueue:                workflow.TaskQueue.GetName(),
-			WorkflowExecutionTimeout: common.DurationValue(workflow.GetWorkflowExecutionTimeout()),
-			WorkflowRunTimeout:       common.DurationValue(workflow.GetWorkflowRunTimeout()),
-			WorkflowTaskTimeout:      common.DurationValue(workflow.GetWorkflowTaskTimeout()),
+			WorkflowExecutionTimeout: duration.Value(workflow.GetWorkflowExecutionTimeout()),
+			WorkflowRunTimeout:       duration.Value(workflow.GetWorkflowRunTimeout()),
+			WorkflowTaskTimeout:      duration.Value(workflow.GetWorkflowTaskTimeout()),
 			RetryPolicy:              convertFromPBRetryPolicy(workflow.RetryPolicy),
 			Memo:                     memos,
 			SearchAttributes:         searchAttributes,
@@ -776,8 +777,8 @@ func convertFromPBScheduleActionResultList(aa []*schedulepb.ScheduleActionResult
 			}
 		}
 		recentActions[i] = ScheduleActionResult{
-			ScheduleTime:        common.TimeValue(a.GetScheduleTime()),
-			ActualTime:          common.TimeValue(a.GetActualTime()),
+			ScheduleTime:        timestamp.Value(a.GetScheduleTime()),
+			ActualTime:          timestamp.Value(a.GetActualTime()),
 			StartWorkflowResult: workflowExecution,
 		}
 	}

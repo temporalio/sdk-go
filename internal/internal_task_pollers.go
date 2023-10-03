@@ -41,9 +41,9 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
+	"go.temporal.io/api/types/timestamp"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/log"
@@ -791,7 +791,7 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	metricsHandler := wtp.metricsHandler.WithTags(metrics.WorkflowTags(response.WorkflowType.GetName()))
 	metricsHandler.Counter(metrics.WorkflowTaskQueuePollSucceedCounter).Inc(1)
 
-	scheduleToStartLatency := common.TimeValue(response.GetStartedTime()).Sub(common.TimeValue(response.GetScheduledTime()))
+	scheduleToStartLatency := timestamp.Value(response.GetStartedTime()).Sub(timestamp.Value(response.GetScheduledTime()))
 	metricsHandler.Timer(metrics.WorkflowTaskScheduleToStartLatency).Record(scheduleToStartLatency)
 	return task, nil
 }
@@ -951,7 +951,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	activityType := response.ActivityType.GetName()
 	metricsHandler := atp.metricsHandler.WithTags(metrics.ActivityTags(workflowType, activityType, atp.taskQueueName))
 
-	scheduleToStartLatency := common.TimeValue(response.GetStartedTime()).Sub(common.TimeValue(response.GetCurrentAttemptScheduledTime()))
+	scheduleToStartLatency := timestamp.Value(response.GetStartedTime()).Sub(timestamp.Value(response.GetCurrentAttemptScheduledTime()))
 	metricsHandler.Timer(metrics.ActivityScheduleToStartLatency).Record(scheduleToStartLatency)
 
 	return &activityTask{task: response}, nil
@@ -1015,7 +1015,7 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 
 	activityMetricsHandler.
 		Timer(metrics.ActivitySucceedEndToEndLatency).
-		Record(time.Since(common.TimeValue(activityTask.task.GetScheduledTime())))
+		Record(time.Since(timestamp.Value(activityTask.task.GetScheduledTime())))
 	return nil
 }
 
