@@ -461,7 +461,7 @@ func TestUpdateEvents(t *testing.T) {
 	}
 
 	body := &anypb.Any{}
-	require.NoError(t, anypb.MarshalFrom(body, &updatepb.Request{Meta: meta, Input: input}, proto.MarshalOptions{}))
+	require.NoError(t, body.MarshalFrom(&updatepb.Request{Meta: meta, Input: input}))
 
 	err := weh.ProcessMessage(&protocolpb.Message{
 		ProtocolInstanceId: t.Name(),
@@ -525,10 +525,10 @@ func TestUpdateEventsPanic(t *testing.T) {
 		Args:   &commonpb.Payloads{Payloads: []*commonpb.Payload{mustPayload("arg0")}},
 	}
 
-	body, err := types.MarshalAny(&updatepb.Request{Meta: meta, Input: input})
-	require.NoError(t, err)
+	body := &anypb.Any{}
+	require.NoError(t, body.MarshalFrom(&updatepb.Request{Meta: meta, Input: input}))
 
-	err = weh.ProcessMessage(&protocolpb.Message{
+	err := weh.ProcessMessage(&protocolpb.Message{
 		ProtocolInstanceId: t.Name(),
 		Body:               body,
 	}, false, false)
