@@ -124,9 +124,8 @@ type (
 		// The branch is automatically removed after the channel is closed and callback function is called once
 		// with more parameter set to false.
 		AddReceive(c ReceiveChannel, f func(c ReceiveChannel, more bool)) Selector
-		// AddSend registers a callback function to be called when sending message to channel is not going to block.
-		// The callback is called when Select(ctx) is called.
-		// The sending message to the channel is expected to be done by the callback function
+		// AddSend registers a callback function to be called when a message is sent on a channel.
+		// The callback is called after the message is sent to the channel and Select(ctx) is called
 		AddSend(c SendChannel, v interface{}, f func()) Selector
 		// AddFuture registers a callback function to be called when a future is ready.
 		// The callback is called when Select(ctx) is called.
