@@ -34,6 +34,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/api/common/v1"
@@ -41,6 +42,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	uberatomic "go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	"go.temporal.io/sdk/converter"
 	iconverter "go.temporal.io/sdk/internal/converter"
@@ -55,7 +57,9 @@ type WorkflowTestSuiteUnitTest struct {
 }
 
 func (s *WorkflowTestSuiteUnitTest) ProtoEqual(a proto.Message, b proto.Message) {
-	s.True(proto.Equal(a, b))
+	if diff := cmp.Diff(a, b, protocmp.Transform()); diff != "" {
+		s.T().Errorf("LoadFromJSON() mismatch (-want +got):\n%v", diff)
+	}
 }
 
 type testContextKey string

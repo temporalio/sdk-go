@@ -35,9 +35,8 @@ import (
 	"testing"
 	"time"
 
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/grpc/status"
 	"github.com/pborman/uuid"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
@@ -55,6 +54,8 @@ import (
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/resolver/manual"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestErrorWrapper_SimpleError(t *testing.T) {
@@ -426,14 +427,15 @@ func TestResourceExhaustedCause(t *testing.T) {
 	// Make sure we have 1 metric with cause and 1 without
 	var foundWithCause, foundWithoutCause bool
 	for _, counter := range handler.Counters() {
-		if counter.Tags["operation"] == "GetSystemInfo" && counter.Tags["cause"] == "ConcurrentLimit" {
+		t.Logf("%+v", counter)
+		if counter.Tags["operation"] == "GetSystemInfo" && counter.Tags["cause"] == "RESOURCE_EXHAUSTED_CAUSE_CONCURRENT_LIMIT" {
 			foundWithCause = true
-		} else if counter.Tags["operation"] == "GetSystemInfo" && counter.Tags["cause"] == "Unspecified" {
+		} else if counter.Tags["operation"] == "GetSystemInfo" && counter.Tags["cause"] == "RESOURCE_EXHAUSTED_CAUSE_UNSPECIFIED" {
 			foundWithoutCause = true
 		}
 	}
-	require.True(t, foundWithCause)
-	require.True(t, foundWithoutCause)
+	assert.True(t, foundWithCause)
+	assert.True(t, foundWithoutCause)
 }
 
 type testGRPCServer struct {

@@ -36,8 +36,6 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/protobuf/types/known/durationpb"
-
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -49,6 +47,7 @@ import (
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"go.temporal.io/sdk/internal/common/retry"
 	"go.temporal.io/sdk/internal/protocol"
