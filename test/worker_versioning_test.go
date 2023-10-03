@@ -163,13 +163,13 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityUnreachable() {
 		TaskQueues: []string{ts.taskQueueName},
 	})
 	ts.NoError(err)
-	ts.Equal(1, len(compatibility.Reachable))
-	buildIDReachable, ok := compatibility.Reachable[buildID]
+	ts.Equal(1, len(compatibility.BuildIDReachability))
+	buildIDReachable, ok := compatibility.BuildIDReachability[buildID]
 	ts.True(ok)
 	ts.Equal(1, len(buildIDReachable.TaskQueueReachable))
 	taskQueueReachable, ok := buildIDReachable.TaskQueueReachable[ts.taskQueueName]
 	ts.True(ok)
-	ts.Equal(0, len(taskQueueReachable.Reachability))
+	ts.Equal(0, len(taskQueueReachable.TaskQueueReachability))
 }
 
 func (ts *WorkerVersioningTestSuite) TestReachabilityUnversionedWorker() {
@@ -187,13 +187,13 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityUnversionedWorker() {
 	})
 
 	ts.NoError(err)
-	ts.Equal(1, len(compatibility.Reachable))
-	buildIDReachable, ok := compatibility.Reachable[client.UnversionedBuildID]
+	ts.Equal(1, len(compatibility.BuildIDReachability))
+	buildIDReachable, ok := compatibility.BuildIDReachability[client.UnversionedBuildID]
 	ts.True(ok)
 	ts.Equal(1, len(buildIDReachable.TaskQueueReachable))
 	taskQueueReachable, ok := buildIDReachable.TaskQueueReachable[ts.taskQueueName]
 	ts.True(ok)
-	ts.Equal([]client.TaskReachability{client.TaskReachabilityNewWorkflows}, taskQueueReachable.Reachability)
+	ts.Equal([]client.TaskReachability{client.TaskReachabilityNewWorkflows}, taskQueueReachable.TaskQueueReachability)
 }
 
 func (ts *WorkerVersioningTestSuite) TestReachabilityVersions() {
@@ -251,23 +251,25 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersions() {
 		Reachability: client.TaskReachabilityClosedWorkflows,
 	})
 	ts.NoError(err)
-	ts.Equal(2, len(compatibility.Reachable))
+	ts.Equal(2, len(compatibility.BuildIDReachability))
 
 	// Test the first worker
-	buildIDReachability, ok := compatibility.Reachable[buildID1]
+	buildIDReachability, ok := compatibility.BuildIDReachability[buildID1]
 	ts.True(ok)
+	ts.Equal(0, len(buildIDReachability.UnretrievedTaskQueues))
 	ts.Equal(1, len(buildIDReachability.TaskQueueReachable))
 	taskQueueReachability, ok := buildIDReachability.TaskQueueReachable[ts.taskQueueName]
 	ts.True(ok)
-	ts.Equal(2, len(taskQueueReachability.Reachability))
-	ts.Equal([]client.TaskReachability{client.TaskReachabilityNewWorkflows, client.TaskReachabilityClosedWorkflows}, taskQueueReachability.Reachability)
+	ts.Equal(2, len(taskQueueReachability.TaskQueueReachability))
+	ts.Equal([]client.TaskReachability{client.TaskReachabilityNewWorkflows, client.TaskReachabilityClosedWorkflows}, taskQueueReachability.TaskQueueReachability)
 
 	// Test the second worker
-	buildIDReachability, ok = compatibility.Reachable[buildID2]
+	buildIDReachability, ok = compatibility.BuildIDReachability[buildID2]
 	ts.True(ok)
+	ts.Equal(0, len(buildIDReachability.UnretrievedTaskQueues))
 	ts.Equal(1, len(buildIDReachability.TaskQueueReachable))
 	taskQueueReachability, ok = buildIDReachability.TaskQueueReachable[ts.taskQueueName]
 	ts.True(ok)
-	ts.Equal(1, len(taskQueueReachability.Reachability))
-	ts.Equal([]client.TaskReachability{client.TaskReachabilityNewWorkflows}, taskQueueReachability.Reachability)
+	ts.Equal(1, len(taskQueueReachability.TaskQueueReachability))
+	ts.Equal([]client.TaskReachability{client.TaskReachabilityNewWorkflows}, taskQueueReachability.TaskQueueReachability)
 }

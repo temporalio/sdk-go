@@ -56,11 +56,8 @@ const (
 type TaskReachability int
 
 const (
-	// TaskReachabilityNotFetched indicates that reachability for this task
-	// was not fetched
-	TaskReachabilityNotFetched TaskReachability = iota - 1
 	// TaskReachabilityUnspecified indicates the reachability was not specified
-	TaskReachabilityUnspecified
+	TaskReachabilityUnspecified = iota
 	// TaskReachabilityNewWorkflows indicates the Build Id might be used by new workflows
 	TaskReachabilityNewWorkflows
 	// TaskReachabilityExistingWorkflows indicates the Build Id might be used by open workflows
@@ -168,20 +165,23 @@ type GetWorkerTaskReachabilityOptions struct {
 }
 
 type WorkerTaskReachability struct {
-	// Reachable - map of build IDs and their reachability information
-	// May contain an entry with [UnversionedBuildID] for an unversioned worker
-	Reachable map[string]*BuildIDReachability
+	// BuildIDReachability - map of build IDs and their reachability information
+	// May contain an entry with UnversionedBuildID for an unversioned worker
+	BuildIDReachability map[string]*BuildIDReachability
 }
 
 type BuildIDReachability struct {
-	// TaskQueueReachable map of task queues and their reachability information
+	// TaskQueueReachable map of task queues and their reachability information.
 	TaskQueueReachable map[string]*TaskQueueReachability
+	// UnretrievedTaskQueues is a list of task queues not retrieved because the server limits
+	// the number that can be queried at once.
+	UnretrievedTaskQueues []string
 }
 
 type TaskQueueReachability struct {
-	// Reachability for a worker in a single task queue.
-	// If Reachability is empty, this worker is considered unreachable in this task queue.
-	Reachability []TaskReachability
+	// TaskQueueReachability for a worker in a single task queue.
+	// If TaskQueueReachability is empty, this worker is considered unreachable in this task queue.
+	TaskQueueReachability []TaskReachability
 }
 
 // WorkerBuildIDVersionSets is the response for Client.GetWorkerBuildIdCompatibility and represents the sets
@@ -235,7 +235,7 @@ func workerTaskReachabilityFromProtoResponse(response *workflowservice.GetWorker
 		return nil
 	}
 	return &WorkerTaskReachability{
-		Reachable: buildIDReachabilityFromProto(response.GetBuildIdReachability()),
+		BuildIDReachability: buildIDReachabilityFromProto(response.GetBuildIdReachability()),
 	}
 }
 
@@ -245,28 +245,36 @@ func buildIDReachabilityFromProto(sets []*taskqueuepb.BuildIdReachability) map[s
 	}
 	result := make(map[string]*BuildIDReachability, len(sets))
 	for _, s := range sets {
+		retrievedTaskQueues, unretrievedTaskQueues := taskQueueReachabilityFromProto(s.GetTaskQueueReachability())
 		result[s.GetBuildId()] = &BuildIDReachability{
-			TaskQueueReachable: taskQueueReachabilityFromProto(s.GetTaskQueueReachability()),
+			TaskQueueReachable:    retrievedTaskQueues,
+			UnretrievedTaskQueues: unretrievedTaskQueues,
 		}
 	}
 	return result
 }
 
-func taskQueueReachabilityFromProto(sets []*taskqueuepb.TaskQueueReachability) map[string]*TaskQueueReachability {
+func taskQueueReachabilityFromProto(sets []*taskqueuepb.TaskQueueReachability) (map[string]*TaskQueueReachability, []string) {
 	if sets == nil {
-		return nil
+		return nil, nil
 	}
-	result := make(map[string]*TaskQueueReachability, len(sets))
+	retrievedTaskQueues := make(map[string]*TaskQueueReachability, len(sets))
+	unretrievedTaskQueues := make([]string, 0, len(sets))
 	for _, s := range sets {
 		reachability := make([]TaskReachability, len(s.GetReachability()))
 		for i, r := range s.GetReachability() {
 			reachability[i] = taskReachabilityFromProto(r)
 		}
-		result[s.GetTaskQueue()] = &TaskQueueReachability{
-			Reachability: reachability,
+		if len(reachability) == 1 && reachability[0] == TaskReachabilityUnspecified {
+			unretrievedTaskQueues = append(unretrievedTaskQueues, s.GetTaskQueue())
+		} else {
+			retrievedTaskQueues[s.GetTaskQueue()] = &TaskQueueReachability{
+				TaskQueueReachability: reachability,
+			}
 		}
+
 	}
-	return result
+	return retrievedTaskQueues, unretrievedTaskQueues
 }
 
 func taskReachabilityToProto(r TaskReachability) enumspb.TaskReachability {
@@ -290,7 +298,7 @@ func taskReachabilityToProto(r TaskReachability) enumspb.TaskReachability {
 func taskReachabilityFromProto(r enumspb.TaskReachability) TaskReachability {
 	switch r {
 	case enumspb.TASK_REACHABILITY_UNSPECIFIED:
-		return TaskReachabilityNotFetched
+		return TaskReachabilityUnspecified
 	case enumspb.TASK_REACHABILITY_NEW_WORKFLOWS:
 		return TaskReachabilityNewWorkflows
 	case enumspb.TASK_REACHABILITY_EXISTING_WORKFLOWS:

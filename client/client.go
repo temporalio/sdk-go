@@ -50,9 +50,6 @@ import (
 type TaskReachability = internal.TaskReachability
 
 const (
-	// TaskReachabilityNotFetched indicates that reachability for this task
-	// was not fetched
-	TaskReachabilityNotFetched = internal.TaskReachabilityNotFetched
 	// TaskReachabilityUnspecified indicates the reachability was not specified
 	TaskReachabilityUnspecified = internal.TaskReachabilityUnspecified
 	// TaskReachabilityNewWorkflows indicates the Build Id might be used by new workflows
