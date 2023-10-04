@@ -44,6 +44,25 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 )
 
+// TaskReachability specifies which category of tasks may reach a worker on a versioned task queue.
+// Used both in a reachability query and its response.
+// WARNING: Worker versioning is currently experimental
+type TaskReachability = internal.TaskReachability
+
+const (
+	// TaskReachabilityUnspecified indicates the reachability was not specified
+	TaskReachabilityUnspecified = internal.TaskReachabilityUnspecified
+	// TaskReachabilityNewWorkflows indicates the Build Id might be used by new workflows
+	TaskReachabilityNewWorkflows = internal.TaskReachabilityNewWorkflows
+	// TaskReachabilityExistingWorkflows indicates the Build Id might be used by open workflows
+	// and/or closed workflows.
+	TaskReachabilityExistingWorkflows = internal.TaskReachabilityExistingWorkflows
+	// TaskReachabilityOpenWorkflows indicates the Build Id might be used by open workflows.
+	TaskReachabilityOpenWorkflows = internal.TaskReachabilityOpenWorkflows
+	// TaskReachabilityClosedWorkflows indicates the Build Id might be used by closed workflows
+	TaskReachabilityClosedWorkflows = internal.TaskReachabilityClosedWorkflows
+)
+
 const (
 	// DefaultHostPort is the host:port which is used if not passed with options.
 	DefaultHostPort = internal.LocalHostPort
@@ -58,6 +77,10 @@ const (
 	// QueryTypeOpenSessions is the build in query type for Client.QueryWorkflow() call. Use this query type to get all open
 	// sessions in the workflow. The result will be a list of SessionInfo encoded in the converter.EncodedValue.
 	QueryTypeOpenSessions string = internal.QueryTypeOpenSessions
+
+	// UnversionedBuildID is a stand-in for a Build Id for unversioned Workers.
+	// WARNING: Worker versioning is currently experimental
+	UnversionedBuildID string = internal.UnversionedBuildID
 )
 
 type (
@@ -215,6 +238,22 @@ type (
 	// promote a BuildID within a set to be the default.
 	// WARNING: Worker versioning is currently experimental
 	BuildIDOpPromoteIDWithinSet = internal.BuildIDOpPromoteIDWithinSet
+
+	// GetWorkerTaskReachabilityOptions is the input to Client.GetWorkerTaskReachability.
+	// WARNING: Worker versioning is currently experimental
+	GetWorkerTaskReachabilityOptions = internal.GetWorkerTaskReachabilityOptions
+
+	// WorkerTaskReachability is the response for Client.GetWorkerTaskReachability.
+	// WARNING: Worker versioning is currently experimental
+	WorkerTaskReachability = internal.WorkerTaskReachability
+
+	// BuildIDReachability describes the reachability of a buildID
+	// WARNING: Worker versioning is currently experimental
+	BuildIDReachability = internal.BuildIDReachability
+
+	// TaskQueueReachability Describes how the Build ID may be reachable from the task queue.
+	// WARNING: Worker versioning is currently experimental
+	TaskQueueReachability = internal.TaskQueueReachability
 
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
@@ -512,6 +551,11 @@ type (
 		// Returns the worker-build-id based version sets for a particular task queue.
 		// WARNING: Worker versioning is currently experimental
 		GetWorkerBuildIdCompatibility(ctx context.Context, options *GetWorkerBuildIdCompatibilityOptions) (*WorkerBuildIDVersionSets, error)
+
+		// GetWorkerTaskReachability
+		// Returns which versions are is still in use by open or closed workflows
+		// WARNING: Worker versioning is currently experimental
+		GetWorkerTaskReachability(ctx context.Context, options *GetWorkerTaskReachabilityOptions) (*WorkerTaskReachability, error)
 
 		// CheckHealth performs a server health check using the gRPC health check
 		// API. If the check fails, an error is returned.

@@ -1007,6 +1007,29 @@ func (wc *WorkflowClient) GetWorkerBuildIdCompatibility(ctx context.Context, opt
 	return converted, nil
 }
 
+// GetWorkerTaskReachability returns which versions are is still in use by open or closed workflows.
+func (wc *WorkflowClient) GetWorkerTaskReachability(ctx context.Context, options *GetWorkerTaskReachabilityOptions) (*WorkerTaskReachability, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+
+	request := &workflowservice.GetWorkerTaskReachabilityRequest{
+		Namespace:    wc.namespace,
+		BuildIds:     options.BuildIDs,
+		TaskQueues:   options.TaskQueues,
+		Reachability: taskReachabilityToProto(options.Reachability),
+	}
+	resp, err := wc.workflowService.GetWorkerTaskReachability(grpcCtx, request)
+	if err != nil {
+		return nil, err
+	}
+	converted := workerTaskReachabilityFromProtoResponse(resp)
+	return converted, nil
+}
+
 func (wc *WorkflowClient) UpdateWorkflowWithOptions(
 	ctx context.Context,
 	req *UpdateWorkflowWithOptionsRequest,

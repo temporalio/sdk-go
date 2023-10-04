@@ -25,7 +25,9 @@ package test_test
 import (
 	"context"
 	"testing"
+	"time"
 
+	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"go.temporal.io/sdk/client"
@@ -149,4 +151,125 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {
 	ts.NoError(handle22.Get(ctx, nil))
 
 	// TODO: Actually assert they ran on the appropriate workers, once David's changes are ready
+}
+
+func (ts *WorkerVersioningTestSuite) TestReachabilityUnreachable() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	buildID := uuid.New()
+	compatibility, err := ts.client.GetWorkerTaskReachability(ctx, &client.GetWorkerTaskReachabilityOptions{
+		BuildIDs:   []string{buildID},
+		TaskQueues: []string{ts.taskQueueName},
+	})
+	ts.NoError(err)
+	ts.Equal(1, len(compatibility.BuildIDReachability))
+	buildIDReachable, ok := compatibility.BuildIDReachability[buildID]
+	ts.True(ok)
+	ts.Equal(1, len(buildIDReachable.TaskQueueReachable))
+	taskQueueReachable, ok := buildIDReachable.TaskQueueReachable[ts.taskQueueName]
+	ts.True(ok)
+	ts.Equal(0, len(taskQueueReachable.TaskQueueReachability))
+}
+
+func (ts *WorkerVersioningTestSuite) TestReachabilityUnversionedWorker() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{})
+	ts.workflows.register(worker1)
+	ts.NoError(worker1.Start())
+	defer worker1.Stop()
+
+	compatibility, err := ts.client.GetWorkerTaskReachability(ctx, &client.GetWorkerTaskReachabilityOptions{
+		BuildIDs:   []string{client.UnversionedBuildID},
+		TaskQueues: []string{ts.taskQueueName},
+	})
+
+	ts.NoError(err)
+	ts.Equal(1, len(compatibility.BuildIDReachability))
+	buildIDReachable, ok := compatibility.BuildIDReachability[client.UnversionedBuildID]
+	ts.True(ok)
+	ts.Equal(1, len(buildIDReachable.TaskQueueReachable))
+	taskQueueReachable, ok := buildIDReachable.TaskQueueReachable[ts.taskQueueName]
+	ts.True(ok)
+	ts.Equal([]client.TaskReachability{client.TaskReachabilityNewWorkflows}, taskQueueReachable.TaskQueueReachability)
+}
+
+func (ts *WorkerVersioningTestSuite) TestReachabilityVersions() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	buildID1 := uuid.New()
+	buildID2 := uuid.New()
+
+	err := ts.client.UpdateWorkerBuildIdCompatibility(ctx, &client.UpdateWorkerBuildIdCompatibilityOptions{
+		TaskQueue: ts.taskQueueName,
+		Operation: &client.BuildIDOpAddNewIDInNewDefaultSet{
+			BuildID: buildID1,
+		},
+	})
+	ts.NoError(err)
+
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: buildID1, UseBuildIDForVersioning: true})
+	ts.workflows.register(worker1)
+	ts.NoError(worker1.Start())
+	defer worker1.Stop()
+
+	// Start some workflows targeting 1.0
+	handle11, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("1-1"), ts.workflows.WaitSignalToStart)
+	ts.NoError(err)
+	handle12, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("1-2"), ts.workflows.WaitSignalToStart)
+	ts.NoError(err)
+
+	ts.NoError(ts.client.SignalWorkflow(ctx, handle11.GetID(), handle11.GetRunID(), "start-signal", ""))
+	ts.NoError(ts.client.SignalWorkflow(ctx, handle12.GetID(), handle12.GetRunID(), "start-signal", ""))
+
+	// Wait for all wfs to finish
+	ts.NoError(handle11.Get(ctx, nil))
+	ts.NoError(handle12.Get(ctx, nil))
+
+	// Start the second worker
+	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: buildID2, UseBuildIDForVersioning: true})
+	ts.workflows.register(worker2)
+	ts.NoError(worker2.Start())
+	defer worker2.Stop()
+
+	// Now add the 2.0 version
+	err = ts.client.UpdateWorkerBuildIdCompatibility(ctx, &client.UpdateWorkerBuildIdCompatibilityOptions{
+		TaskQueue: ts.taskQueueName,
+		Operation: &client.BuildIDOpAddNewIDInNewDefaultSet{
+			BuildID: buildID2,
+		},
+	})
+	ts.NoError(err)
+	time.Sleep(15 * time.Second)
+
+	compatibility, err := ts.client.GetWorkerTaskReachability(ctx, &client.GetWorkerTaskReachabilityOptions{
+		BuildIDs:     []string{buildID1, buildID2},
+		TaskQueues:   []string{ts.taskQueueName},
+		Reachability: client.TaskReachabilityClosedWorkflows,
+	})
+	ts.NoError(err)
+	ts.Equal(2, len(compatibility.BuildIDReachability))
+
+	// Test the first worker
+	buildIDReachability, ok := compatibility.BuildIDReachability[buildID1]
+	ts.True(ok)
+	ts.Equal(0, len(buildIDReachability.UnretrievedTaskQueues))
+	ts.Equal(1, len(buildIDReachability.TaskQueueReachable))
+	taskQueueReachability, ok := buildIDReachability.TaskQueueReachable[ts.taskQueueName]
+	ts.True(ok)
+	ts.Equal(2, len(taskQueueReachability.TaskQueueReachability))
+	ts.Equal([]client.TaskReachability{client.TaskReachabilityNewWorkflows, client.TaskReachabilityClosedWorkflows}, taskQueueReachability.TaskQueueReachability)
+
+	// Test the second worker
+	buildIDReachability, ok = compatibility.BuildIDReachability[buildID2]
+	ts.True(ok)
+	ts.Equal(0, len(buildIDReachability.UnretrievedTaskQueues))
+	ts.Equal(1, len(buildIDReachability.TaskQueueReachable))
+	taskQueueReachability, ok = buildIDReachability.TaskQueueReachable[ts.taskQueueName]
+	ts.True(ok)
+	ts.Equal(1, len(taskQueueReachability.TaskQueueReachability))
+	ts.Equal([]client.TaskReachability{client.TaskReachabilityNewWorkflows}, taskQueueReachability.TaskQueueReachability)
 }
