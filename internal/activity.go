@@ -30,8 +30,6 @@ import (
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
-	"go.temporal.io/api/types/duration"
-	"go.temporal.io/api/types/timestamp"
 	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/converter"
@@ -256,11 +254,11 @@ func WithActivityTask(
 	contextPropagators []ContextPropagator,
 	interceptors []WorkerInterceptor,
 ) (context.Context, error) {
-	scheduled := timestamp.Value(task.GetScheduledTime())
-	started := timestamp.Value(task.GetStartedTime())
-	scheduleToCloseTimeout := duration.Value(task.GetScheduleToCloseTimeout())
-	startToCloseTimeout := duration.Value(task.GetStartToCloseTimeout())
-	heartbeatTimeout := duration.Value(task.GetHeartbeatTimeout())
+	scheduled := task.GetScheduledTime().AsTime()
+	started := task.GetStartedTime().AsTime()
+	scheduleToCloseTimeout := task.GetScheduleToCloseTimeout().AsDuration()
+	startToCloseTimeout := task.GetStartToCloseTimeout().AsDuration()
+	heartbeatTimeout := task.GetHeartbeatTimeout().AsDuration()
 	deadline := calculateActivityDeadline(scheduled, started, scheduleToCloseTimeout, startToCloseTimeout)
 
 	logger = log.With(logger,

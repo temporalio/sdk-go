@@ -34,7 +34,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/api/common/v1"
@@ -42,7 +41,6 @@ import (
 	"go.temporal.io/api/serviceerror"
 	uberatomic "go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/testing/protocmp"
 
 	"go.temporal.io/sdk/converter"
 	iconverter "go.temporal.io/sdk/internal/converter"
@@ -54,12 +52,6 @@ type WorkflowTestSuiteUnitTest struct {
 	WorkflowTestSuite
 	activityOptions      ActivityOptions
 	localActivityOptions LocalActivityOptions
-}
-
-func (s *WorkflowTestSuiteUnitTest) ProtoEqual(a proto.Message, b proto.Message) {
-	if diff := cmp.Diff(a, b, protocmp.Transform()); diff != "" {
-		s.T().Errorf("LoadFromJSON() mismatch (-want +got):\n%v", diff)
-	}
 }
 
 type testContextKey string
@@ -1877,7 +1869,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
 
 	var ret commonpb.Payloads
 	_ = payload.Get(&ret)
-	s.ProtoEqual(&commonpb.Payloads{Payloads: []*commonpb.Payload{{Data: []byte("result")}}}, &ret)
+	s.True(proto.Equal(&commonpb.Payloads{Payloads: []*commonpb.Payload{{Data: []byte("result")}}}, &ret))
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithRandomProto() {
@@ -1900,7 +1892,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithRandomProto() {
 
 	var ret *commonpb.WorkflowType
 	_ = payload.Get(&ret)
-	s.ProtoEqual(&commonpb.WorkflowType{Name: "result"}, ret)
+	s.True(proto.Equal(&commonpb.WorkflowType{Name: "result"}, ret))
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityRegistration() {

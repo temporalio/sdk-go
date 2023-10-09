@@ -37,16 +37,17 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/robfig/cron"
 	"github.com/stretchr/testify/mock"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
-	"go.temporal.io/api/types/duration"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
-	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -574,10 +575,10 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}
 	scheduleTaskAttr.TaskQueue = &taskqueuepb.TaskQueue{Name: parameters.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL}
 	scheduleTaskAttr.Input = parameters.Input
-	scheduleTaskAttr.ScheduleToCloseTimeout = duration.Proto(parameters.ScheduleToCloseTimeout)
-	scheduleTaskAttr.StartToCloseTimeout = duration.Proto(parameters.StartToCloseTimeout)
-	scheduleTaskAttr.ScheduleToStartTimeout = duration.Proto(parameters.ScheduleToStartTimeout)
-	scheduleTaskAttr.HeartbeatTimeout = duration.Proto(parameters.HeartbeatTimeout)
+	scheduleTaskAttr.ScheduleToCloseTimeout = durationpb.New(parameters.ScheduleToCloseTimeout)
+	scheduleTaskAttr.StartToCloseTimeout = durationpb.New(parameters.StartToCloseTimeout)
+	scheduleTaskAttr.ScheduleToStartTimeout = durationpb.New(parameters.ScheduleToStartTimeout)
+	scheduleTaskAttr.HeartbeatTimeout = durationpb.New(parameters.HeartbeatTimeout)
 	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
 	scheduleTaskAttr.Header = parameters.Header
 
@@ -1088,10 +1089,10 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}
 	scheduleTaskAttr.TaskQueue = &taskqueuepb.TaskQueue{Name: parameters.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL}
 	scheduleTaskAttr.Input = parameters.Input
-	scheduleTaskAttr.ScheduleToCloseTimeout = duration.Proto(parameters.ScheduleToCloseTimeout)
-	scheduleTaskAttr.StartToCloseTimeout = duration.Proto(parameters.StartToCloseTimeout)
-	scheduleTaskAttr.ScheduleToStartTimeout = duration.Proto(parameters.ScheduleToStartTimeout)
-	scheduleTaskAttr.HeartbeatTimeout = duration.Proto(parameters.HeartbeatTimeout)
+	scheduleTaskAttr.ScheduleToCloseTimeout = durationpb.New(parameters.ScheduleToCloseTimeout)
+	scheduleTaskAttr.StartToCloseTimeout = durationpb.New(parameters.StartToCloseTimeout)
+	scheduleTaskAttr.ScheduleToStartTimeout = durationpb.New(parameters.ScheduleToStartTimeout)
+	scheduleTaskAttr.HeartbeatTimeout = durationpb.New(parameters.HeartbeatTimeout)
 	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
 	scheduleTaskAttr.Header = parameters.Header
 	err := env.validateActivityScheduleAttributes(scheduleTaskAttr, env.WorkflowInfo().WorkflowRunTimeout)
@@ -1141,6 +1142,14 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 	return activityID
 }
 
+func minDur(a *durationpb.Duration, b *durationpb.Duration) *durationpb.Duration {
+	ad, bd := a.AsDuration(), b.AsDuration()
+	if ad < bd {
+		return a
+	}
+	return b
+}
+
 // Copy of the server function func (v *commandAttrValidator) validateActivityScheduleAttributes
 func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 	attributes *commandpb.ScheduleActivityTaskCommandAttributes,
@@ -1177,31 +1186,31 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 	}
 
 	// Only attempt to deduce and fill in unspecified timeouts only when all timeouts are non-negative.
-	if duration.Value(attributes.GetScheduleToCloseTimeout()) < 0 || duration.Value(attributes.GetScheduleToStartTimeout()) < 0 ||
-		duration.Value(attributes.GetStartToCloseTimeout()) < 0 || duration.Value(attributes.GetHeartbeatTimeout()) < 0 {
+	if attributes.GetScheduleToCloseTimeout().AsDuration() < 0 || attributes.GetScheduleToStartTimeout().AsDuration() < 0 ||
+		attributes.GetStartToCloseTimeout().AsDuration() < 0 || attributes.GetHeartbeatTimeout().AsDuration() < 0 {
 		return serviceerror.NewInvalidArgument("A valid timeout may not be negative.")
 	}
 
-	validScheduleToClose := duration.Value(attributes.GetScheduleToCloseTimeout()) > 0
-	validScheduleToStart := duration.Value(attributes.GetScheduleToStartTimeout()) > 0
-	validStartToClose := duration.Value(attributes.GetStartToCloseTimeout()) > 0
+	validScheduleToClose := attributes.GetScheduleToCloseTimeout().AsDuration() > 0
+	validScheduleToStart := attributes.GetScheduleToStartTimeout().AsDuration() > 0
+	validStartToClose := attributes.GetStartToCloseTimeout().AsDuration() > 0
 
 	if validScheduleToClose {
 		if validScheduleToStart {
-			attributes.ScheduleToStartTimeout = duration.MinProto(attributes.GetScheduleToStartTimeout(), attributes.GetScheduleToCloseTimeout())
+			attributes.ScheduleToStartTimeout = minDur(attributes.GetScheduleToStartTimeout(), attributes.GetScheduleToCloseTimeout())
 		} else {
 			attributes.ScheduleToStartTimeout = attributes.GetScheduleToCloseTimeout()
 		}
 		if validStartToClose {
-			attributes.StartToCloseTimeout = duration.MinProto(attributes.GetStartToCloseTimeout(), attributes.GetScheduleToCloseTimeout())
+			attributes.StartToCloseTimeout = minDur(attributes.GetStartToCloseTimeout(), attributes.GetScheduleToCloseTimeout())
 		} else {
 			attributes.StartToCloseTimeout = attributes.GetScheduleToCloseTimeout()
 		}
 	} else if validStartToClose {
 		// We are in !validScheduleToClose due to the first if above
-		attributes.ScheduleToCloseTimeout = duration.Proto(runTimeout)
+		attributes.ScheduleToCloseTimeout = durationpb.New(runTimeout)
 		if !validScheduleToStart {
-			attributes.ScheduleToStartTimeout = duration.Proto(runTimeout)
+			attributes.ScheduleToStartTimeout = durationpb.New(runTimeout)
 		}
 	} else {
 		// Deduction failed as there's not enough information to fill in missing timeouts.
@@ -1209,20 +1218,20 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 	}
 	// ensure activity timeout never larger than workflow timeout
 	if runTimeout > 0 {
-		if duration.Value(attributes.GetScheduleToCloseTimeout()) > runTimeout {
-			attributes.ScheduleToCloseTimeout = duration.Proto(runTimeout)
+		if attributes.GetScheduleToCloseTimeout().AsDuration() > runTimeout {
+			attributes.ScheduleToCloseTimeout = durationpb.New(runTimeout)
 		}
-		if duration.Value(attributes.GetScheduleToStartTimeout()) > runTimeout {
-			attributes.ScheduleToStartTimeout = duration.Proto(runTimeout)
+		if attributes.GetScheduleToStartTimeout().AsDuration() > runTimeout {
+			attributes.ScheduleToStartTimeout = durationpb.New(runTimeout)
 		}
-		if duration.Value(attributes.GetStartToCloseTimeout()) > runTimeout {
-			attributes.StartToCloseTimeout = duration.Proto(runTimeout)
+		if attributes.GetStartToCloseTimeout().AsDuration() > runTimeout {
+			attributes.StartToCloseTimeout = durationpb.New(runTimeout)
 		}
-		if duration.Value(attributes.GetHeartbeatTimeout()) > runTimeout {
-			attributes.HeartbeatTimeout = duration.Proto(runTimeout)
+		if attributes.GetHeartbeatTimeout().AsDuration() > runTimeout {
+			attributes.HeartbeatTimeout = durationpb.New(runTimeout)
 		}
 	}
-	attributes.HeartbeatTimeout = duration.MinProto(attributes.GetHeartbeatTimeout(), attributes.GetScheduleToCloseTimeout())
+	attributes.HeartbeatTimeout = minDur(attributes.GetHeartbeatTimeout(), attributes.GetScheduleToCloseTimeout())
 	return nil
 }
 
@@ -1268,16 +1277,16 @@ func (env *testWorkflowEnvironmentImpl) validateRetryPolicy(policy *commonpb.Ret
 		// rest of the arguments is pointless
 		return nil
 	}
-	if duration.Value(policy.GetInitialInterval()) < 0 {
+	if policy.GetInitialInterval().AsDuration() < 0 {
 		return serviceerror.NewInvalidArgument("InitialInterval cannot be negative on retry policy.")
 	}
 	if policy.GetBackoffCoefficient() < 1 {
 		return serviceerror.NewInvalidArgument("BackoffCoefficient cannot be less than 1 on retry policy.")
 	}
-	if duration.Value(policy.GetMaximumInterval()) < 0 {
+	if policy.GetMaximumInterval().AsDuration() < 0 {
 		return serviceerror.NewInvalidArgument("MaximumInterval cannot be negative on retry policy.")
 	}
-	if duration.Value(policy.GetMaximumInterval()) > 0 && duration.Value(policy.GetMaximumInterval()) < duration.Value(policy.GetInitialInterval()) {
+	if policy.GetMaximumInterval().AsDuration() > 0 && policy.GetMaximumInterval().AsDuration() < policy.GetInitialInterval().AsDuration() {
 		return serviceerror.NewInvalidArgument("MaximumInterval cannot be less than InitialInterval on retry policy.")
 	}
 	if policy.GetMaximumAttempts() < 0 {
@@ -1360,9 +1369,9 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 
 func fromProtoRetryPolicy(p *commonpb.RetryPolicy) *RetryPolicy {
 	return &RetryPolicy{
-		InitialInterval:        duration.Value(p.GetInitialInterval()),
+		InitialInterval:        p.GetInitialInterval().AsDuration(),
 		BackoffCoefficient:     p.GetBackoffCoefficient(),
-		MaximumInterval:        duration.Value(p.GetMaximumInterval()),
+		MaximumInterval:        p.GetMaximumInterval().AsDuration(),
 		MaximumAttempts:        p.GetMaximumAttempts(),
 		NonRetryableErrorTypes: p.NonRetryableErrorTypes,
 	}
@@ -1384,7 +1393,7 @@ func ensureDefaultRetryPolicy(parameters *ExecuteActivityParams) {
 	}
 
 	if parameters.RetryPolicy.InitialInterval == nil || parameters.RetryPolicy.InitialInterval.AsDuration() == 0 {
-		parameters.RetryPolicy.InitialInterval = duration.Proto(time.Second)
+		parameters.RetryPolicy.InitialInterval = durationpb.New(time.Second)
 	}
 	if parameters.RetryPolicy.MaximumInterval == nil || parameters.RetryPolicy.MaximumInterval.AsDuration() == 0 {
 		parameters.RetryPolicy.MaximumInterval = parameters.RetryPolicy.InitialInterval

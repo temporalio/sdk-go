@@ -36,9 +36,10 @@ import (
 	"time"
 
 	"github.com/pborman/uuid"
+	"google.golang.org/protobuf/types/known/durationpb"
+
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
-	"go.temporal.io/api/types/duration"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
@@ -264,7 +265,7 @@ func (ts *ConfigAndClientSuiteBase) registerNamespace() error {
 	defer cancel()
 	err = client.Register(ctx, &workflowservice.RegisterNamespaceRequest{
 		Namespace:                        ts.config.Namespace,
-		WorkflowExecutionRetentionPeriod: duration.Proto(1 * 24 * time.Hour),
+		WorkflowExecutionRetentionPeriod: durationpb.New(1 * 24 * time.Hour),
 	})
 	defer client.Close()
 	if _, ok := err.(*serviceerror.NamespaceAlreadyExists); ok {

@@ -40,7 +40,6 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
-	"go.temporal.io/api/types/timestamp"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -1074,7 +1073,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		// No Operation
 	case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
 		// Set replay clock.
-		weh.SetCurrentReplayTime(timestamp.Value(event.GetEventTime()))
+		weh.SetCurrentReplayTime(event.GetEventTime().AsTime())
 		// Update workflow info fields
 		weh.workflowInfo.currentHistoryLength = int(event.EventId)
 		weh.workflowInfo.continueAsNewSuggested = event.GetWorkflowTaskStartedEventAttributes().GetSuggestContinueAsNew()
@@ -1257,16 +1256,12 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessQuery(
 			return nil, err
 		}
 
-		bs, err := proto.Marshal(result)
-		if err != nil {
-			return nil, fmt.Errorf("failed to check size of query result: %w", err)
-		}
-		if len(bs) > queryResultSizeLimit {
+		if result.Size() > queryResultSizeLimit {
 			weh.logger.Error("Query result size exceeds limit.",
 				tagQueryType, queryType,
 				tagWorkflowID, weh.workflowInfo.WorkflowExecution.ID,
 				tagRunID, weh.workflowInfo.WorkflowExecution.RunID)
-			return nil, fmt.Errorf("query result size (%v) exceeds limit (%v)", len(bs), queryResultSizeLimit)
+			return nil, fmt.Errorf("query result size (%v) exceeds limit (%v)", result.Size(), queryResultSizeLimit)
 		}
 
 		return result, nil

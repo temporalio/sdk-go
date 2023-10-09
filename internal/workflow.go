@@ -31,10 +31,11 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/protobuf/types/known/durationpb"
+
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
-	"go.temporal.io/api/types/duration"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -1999,8 +2000,8 @@ func convertToPBRetryPolicy(retryPolicy *RetryPolicy) *commonpb.RetryPolicy {
 	}
 
 	return &commonpb.RetryPolicy{
-		MaximumInterval:        duration.Proto(retryPolicy.MaximumInterval),
-		InitialInterval:        duration.Proto(retryPolicy.InitialInterval),
+		MaximumInterval:        durationpb.New(retryPolicy.MaximumInterval),
+		InitialInterval:        durationpb.New(retryPolicy.InitialInterval),
 		BackoffCoefficient:     retryPolicy.BackoffCoefficient,
 		MaximumAttempts:        retryPolicy.MaximumAttempts,
 		NonRetryableErrorTypes: retryPolicy.NonRetryableErrorTypes,
@@ -2018,8 +2019,8 @@ func convertFromPBRetryPolicy(retryPolicy *commonpb.RetryPolicy) *RetryPolicy {
 		NonRetryableErrorTypes: retryPolicy.NonRetryableErrorTypes,
 	}
 
-	p.MaximumInterval = duration.Value(retryPolicy.MaximumInterval)
-	p.InitialInterval = duration.Value(retryPolicy.InitialInterval)
+	p.MaximumInterval = retryPolicy.MaximumInterval.AsDuration()
+	p.InitialInterval = retryPolicy.InitialInterval.AsDuration()
 
 	return &p
 }
@@ -2032,8 +2033,8 @@ func copyPBRetryPolicy(retryPolicy *commonpb.RetryPolicy) *commonpb.RetryPolicy 
 	errTypes := make([]string, len(retryPolicy.NonRetryableErrorTypes))
 	copy(errTypes, retryPolicy.NonRetryableErrorTypes)
 	return &commonpb.RetryPolicy{
-		MaximumInterval:        duration.Proto(retryPolicy.MaximumInterval.AsDuration()),
-		InitialInterval:        duration.Proto(retryPolicy.InitialInterval.AsDuration()),
+		MaximumInterval:        durationpb.New(retryPolicy.MaximumInterval.AsDuration()),
+		InitialInterval:        durationpb.New(retryPolicy.InitialInterval.AsDuration()),
 		BackoffCoefficient:     retryPolicy.BackoffCoefficient,
 		MaximumAttempts:        retryPolicy.MaximumAttempts,
 		NonRetryableErrorTypes: errTypes,

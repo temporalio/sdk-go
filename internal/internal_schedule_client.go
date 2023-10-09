@@ -37,8 +37,6 @@ import (
 	schedulepb "go.temporal.io/api/schedule/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
-	"go.temporal.io/api/types/duration"
-	"go.temporal.io/api/types/timestamp"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
@@ -395,14 +393,14 @@ func convertToPBScheduleSpec(scheduleSpec *ScheduleSpec) *schedulepb.ScheduleSpe
 
 	skip := convertToPBScheduleCalendarSpecList(scheduleSpec.Skip)
 
-	var startTime time.Time
+	var startTime *timestamppb.Timestamp
 	if !scheduleSpec.StartAt.IsZero() {
-		startTime = scheduleSpec.StartAt
+		startTime = timestamppb.New(scheduleSpec.StartAt)
 	}
 
-	var endTime time.Time
+	var endTime *timestamppb.Timestamp
 	if !scheduleSpec.EndAt.IsZero() {
-		endTime = scheduleSpec.EndAt
+		endTime = timestamppb.New(scheduleSpec.EndAt)
 	}
 
 	return &schedulepb.ScheduleSpec{
@@ -410,8 +408,8 @@ func convertToPBScheduleSpec(scheduleSpec *ScheduleSpec) *schedulepb.ScheduleSpe
 		Interval:                  intervals,
 		CronString:                scheduleSpec.CronExpressions,
 		ExcludeStructuredCalendar: skip,
-		StartTime:                 timestamppb.New(startTime),
-		EndTime:                   timestamppb.New(endTime),
+		StartTime:                 startTime,
+		EndTime:                   endTime,
 		Jitter:                    durationpb.New(scheduleSpec.Jitter),
 		// TODO support custom time zone data
 		TimezoneName: scheduleSpec.TimeZoneName,
@@ -428,8 +426,8 @@ func convertFromPBScheduleSpec(scheduleSpec *schedulepb.ScheduleSpec) *ScheduleS
 	intervals := make([]ScheduleIntervalSpec, len(scheduleSpec.GetInterval()))
 	for i, s := range scheduleSpec.GetInterval() {
 		intervals[i] = ScheduleIntervalSpec{
-			Every:  duration.Value(s.Interval),
-			Offset: duration.Value(s.Phase),
+			Every:  s.Interval.AsDuration(),
+			Offset: s.Phase.AsDuration(),
 		}
 	}
 
@@ -437,12 +435,12 @@ func convertFromPBScheduleSpec(scheduleSpec *schedulepb.ScheduleSpec) *ScheduleS
 
 	startAt := time.Time{}
 	if scheduleSpec.GetStartTime() != nil {
-		startAt = timestamp.Value(scheduleSpec.GetStartTime())
+		startAt = scheduleSpec.GetStartTime().AsTime()
 	}
 
 	endAt := time.Time{}
 	if scheduleSpec.GetEndTime() != nil {
-		endAt = timestamp.Value(scheduleSpec.GetEndTime())
+		endAt = scheduleSpec.GetEndTime().AsTime()
 	}
 
 	return &ScheduleSpec{
@@ -451,7 +449,7 @@ func convertFromPBScheduleSpec(scheduleSpec *schedulepb.ScheduleSpec) *ScheduleS
 		Skip:         skip,
 		StartAt:      startAt,
 		EndAt:        endAt,
-		Jitter:       duration.Value(scheduleSpec.GetJitter()),
+		Jitter:       scheduleSpec.GetJitter().AsDuration(),
 		TimeZoneName: scheduleSpec.GetTimezoneName(),
 	}
 }
@@ -473,7 +471,7 @@ func scheduleDescriptionFromPB(describeResponse *workflowservice.DescribeSchedul
 
 	nextActionTimes := make([]time.Time, len(describeResponse.Info.GetFutureActionTimes()))
 	for i, t := range describeResponse.Info.GetFutureActionTimes() {
-		nextActionTimes[i] = timestamp.Value(t)
+		nextActionTimes[i] = t.AsTime()
 	}
 
 	actionDescription, err := convertFromPBScheduleAction(describeResponse.Schedule.Action)
@@ -487,7 +485,7 @@ func scheduleDescriptionFromPB(describeResponse *workflowservice.DescribeSchedul
 			Spec:   convertFromPBScheduleSpec(describeResponse.Schedule.Spec),
 			Policy: &SchedulePolicies{
 				Overlap:        describeResponse.Schedule.Policies.GetOverlapPolicy(),
-				CatchupWindow:  duration.Value(describeResponse.Schedule.Policies.GetCatchupWindow()),
+				CatchupWindow:  describeResponse.Schedule.Policies.GetCatchupWindow().AsDuration(),
 				PauseOnFailure: describeResponse.Schedule.Policies.GetPauseOnFailure(),
 			},
 			State: &ScheduleState{
@@ -504,8 +502,8 @@ func scheduleDescriptionFromPB(describeResponse *workflowservice.DescribeSchedul
 			RunningWorkflows:              runningWorkflows,
 			RecentActions:                 recentActions,
 			NextActionTimes:               nextActionTimes,
-			CreatedAt:                     timestamp.Value(describeResponse.Info.GetCreateTime()),
-			LastUpdateAt:                  timestamp.Value(describeResponse.Info.GetUpdateTime()),
+			CreatedAt:                     describeResponse.Info.GetCreateTime().AsTime(),
+			LastUpdateAt:                  describeResponse.Info.GetUpdateTime().AsTime(),
 		},
 		Memo:             describeResponse.Memo,
 		SearchAttributes: describeResponse.SearchAttributes,
@@ -544,7 +542,7 @@ func convertFromPBScheduleListEntry(schedule *schedulepb.ScheduleListEntry) *Sch
 
 	nextActionTimes := make([]time.Time, len(schedule.Info.GetFutureActionTimes()))
 	for i, t := range schedule.Info.GetFutureActionTimes() {
-		nextActionTimes[i] = timestamp.Value(t)
+		nextActionTimes[i] = t.AsTime()
 	}
 
 	return &ScheduleListEntry{
@@ -651,9 +649,9 @@ func convertFromPBScheduleAction(action *schedulepb.ScheduleAction) (ScheduleAct
 			Workflow:                 workflow.WorkflowType.GetName(),
 			Args:                     args,
 			TaskQueue:                workflow.TaskQueue.GetName(),
-			WorkflowExecutionTimeout: duration.Value(workflow.GetWorkflowExecutionTimeout()),
-			WorkflowRunTimeout:       duration.Value(workflow.GetWorkflowRunTimeout()),
-			WorkflowTaskTimeout:      duration.Value(workflow.GetWorkflowTaskTimeout()),
+			WorkflowExecutionTimeout: workflow.GetWorkflowExecutionTimeout().AsDuration(),
+			WorkflowRunTimeout:       workflow.GetWorkflowRunTimeout().AsDuration(),
+			WorkflowTaskTimeout:      workflow.GetWorkflowTaskTimeout().AsDuration(),
 			RetryPolicy:              convertFromPBRetryPolicy(workflow.RetryPolicy),
 			Memo:                     memos,
 			SearchAttributes:         searchAttributes,
@@ -777,8 +775,8 @@ func convertFromPBScheduleActionResultList(aa []*schedulepb.ScheduleActionResult
 			}
 		}
 		recentActions[i] = ScheduleActionResult{
-			ScheduleTime:        timestamp.Value(a.GetScheduleTime()),
-			ActualTime:          timestamp.Value(a.GetActualTime()),
+			ScheduleTime:        a.GetScheduleTime().AsTime(),
+			ActualTime:          a.GetActualTime().AsTime(),
 			StartWorkflowResult: workflowExecution,
 		}
 	}

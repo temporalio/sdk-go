@@ -52,7 +52,7 @@ func NewJSONPBIndentEncoder(indent string) JSONPBEncoder {
 
 // Encode protobuf struct to bytes.
 func (e JSONPBEncoder) Encode(pb proto.Message) ([]byte, error) {
-	return protojson.Marshal(pb)
+	return e.opts.Marshal(pb)
 }
 
 // Decode bytes to protobuf struct.

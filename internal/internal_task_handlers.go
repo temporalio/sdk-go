@@ -45,8 +45,6 @@ import (
 	"go.temporal.io/api/sdk/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
-	"go.temporal.io/api/types/duration"
-	"go.temporal.io/api/types/timestamp"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -676,12 +674,12 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		FirstRunID:               attributes.FirstExecutionRunId,
 		WorkflowType:             WorkflowType{Name: task.WorkflowType.GetName()},
 		TaskQueueName:            taskQueue.GetName(),
-		WorkflowExecutionTimeout: duration.Value(attributes.GetWorkflowExecutionTimeout()),
-		WorkflowRunTimeout:       duration.Value(attributes.GetWorkflowRunTimeout()),
-		WorkflowTaskTimeout:      duration.Value(attributes.GetWorkflowTaskTimeout()),
+		WorkflowExecutionTimeout: attributes.GetWorkflowExecutionTimeout().AsDuration(),
+		WorkflowRunTimeout:       attributes.GetWorkflowRunTimeout().AsDuration(),
+		WorkflowTaskTimeout:      attributes.GetWorkflowTaskTimeout().AsDuration(),
 		Namespace:                wth.namespace,
 		Attempt:                  attributes.GetAttempt(),
-		WorkflowStartTime:        timestamp.Value(startedEvent.GetEventTime()),
+		WorkflowStartTime:        startedEvent.GetEventTime().AsTime(),
 		lastCompletionResult:     attributes.LastCompletionResult,
 		lastFailure:              attributes.ContinuedFailure,
 		CronSchedule:             attributes.CronSchedule,
@@ -2023,7 +2021,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	canCtx, cancel := context.WithCancel(rootCtx)
 	defer cancel()
 
-	heartbeatThrottleInterval := ath.getHeartbeatThrottleInterval(duration.Value(t.GetHeartbeatTimeout()))
+	heartbeatThrottleInterval := ath.getHeartbeatThrottleInterval(t.GetHeartbeatTimeout().AsDuration())
 	invoker := newServiceInvoker(
 		t.TaskToken, ath.identity, ath.service, ath.metricsHandler, cancel, heartbeatThrottleInterval,
 		ath.workerStopCh, ath.namespace)

@@ -749,5 +749,20 @@ type HistoryJSONOptions struct {
 // HistoryFromJSON deserializes history from a reader of JSON bytes. This does
 // not close the reader if it is closeable.
 func HistoryFromJSON(r io.Reader, options HistoryJSONOptions) (*historypb.History, error) {
-	return historypb.LoadFromJSON(r, options.LastEventID)
+	hist, err := historypb.LoadFromJSON(r)
+	if err != nil {
+		return nil, err
+	}
+
+	// If there is a last event ID, slice the rest off
+	if options.LastEventID > 0 {
+		for i, event := range hist.Events {
+			if event.EventId == options.LastEventID {
+				// Inclusive
+				hist.Events = hist.Events[:i+1]
+				break
+			}
+		}
+	}
+	return hist, nil
 }

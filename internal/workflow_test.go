@@ -32,11 +32,11 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	commonpb "go.temporal.io/api/common/v1"
-	"go.temporal.io/api/enums/v1"
-	"go.temporal.io/api/types/duration"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	commonpb "go.temporal.io/api/common/v1"
+	"go.temporal.io/api/enums/v1"
 
 	"go.temporal.io/sdk/converter"
 )
@@ -102,8 +102,8 @@ func TestGetLocalActivityOptions(t *testing.T) {
 func TestConvertRetryPolicy(t *testing.T) {
 	someDuration := time.Minute
 	pbRetryPolicy := commonpb.RetryPolicy{
-		InitialInterval:        duration.Proto(someDuration),
-		MaximumInterval:        duration.Proto(someDuration),
+		InitialInterval:        durationpb.New(someDuration),
+		MaximumInterval:        durationpb.New(someDuration),
 		BackoffCoefficient:     1,
 		MaximumAttempts:        2,
 		NonRetryableErrorTypes: []string{"some_error"},

@@ -1425,10 +1425,27 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*historypb.
 	if err != nil {
 		return nil, err
 	}
-	hist, err := historypb.LoadFromJSON(reader, lastEventID)
+
+	hist, err := historypb.LoadFromJSON(reader)
+	if err != nil {
+		return nil, err
+	}
+
 	if closeErr := reader.Close(); closeErr != nil && err == nil {
 		err = closeErr
 	}
+
+	// If there is a last event ID, slice the rest off
+	if lastEventID > 0 {
+		for i, event := range hist.Events {
+			if event.EventId == lastEventID {
+				// Inclusive
+				hist.Events = hist.Events[:i+1]
+				break
+			}
+		}
+	}
+
 	return hist, err
 }
 
