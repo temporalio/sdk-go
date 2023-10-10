@@ -36,6 +36,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	jsonpb "go.temporal.io/api/jsonpb"
 	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/workflowservice/v1"
 
@@ -749,8 +750,9 @@ type HistoryJSONOptions struct {
 // HistoryFromJSON deserializes history from a reader of JSON bytes. This does
 // not close the reader if it is closeable.
 func HistoryFromJSON(r io.Reader, options HistoryJSONOptions) (*historypb.History, error) {
-	hist, err := historypb.LoadFromJSON(r)
-	if err != nil {
+	hist := &historypb.History{}
+	dec := jsonpb.NewDecoder(r)
+	if err := dec.Decode(hist); err != nil {
 		return nil, err
 	}
 

@@ -47,6 +47,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/jsonpb"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"google.golang.org/protobuf/proto"
@@ -1426,8 +1427,9 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*historypb.
 		return nil, err
 	}
 
-	hist, err := historypb.LoadFromJSON(reader)
-	if err != nil {
+	hist := &historypb.History{}
+	dec := jsonpb.NewDecoder(reader)
+	if err := dec.Decode(hist); err != nil {
 		return nil, err
 	}
 

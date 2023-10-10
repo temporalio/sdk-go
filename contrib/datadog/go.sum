@@ -1537,8 +1537,8 @@ github.com/stretchr/testify v1.8.3/go.mod h1:sz/lmYIOXD/1dqDmKjjqLyZ2RngseejIcXl
 github.com/stretchr/testify v1.8.4 h1:CcVxjf3Q8PM0mHUKJCdn+eZZtm5yQwehR5yeSVQQcUk=
 github.com/stretchr/testify v1.8.4/go.mod h1:sz/lmYIOXD/1dqDmKjjqLyZ2RngseejIcXlSw2iwfAo=
 github.com/syndtr/goleveldb v1.0.0/go.mod h1:ZVVdQEZoIme9iO1Ch2Jdy24qqXrMMOU6lpPAyBWyWuQ=
-github.com/tdeebswihart/temporal-api-go v0.0.0-20231009210256-ec12a7f8f043 h1:ZUJTkTraA0v6EKJjbKBCp2b+cWxdZ9/zq2uviwOvXoo=
-github.com/tdeebswihart/temporal-api-go v0.0.0-20231009210256-ec12a7f8f043/go.mod h1:dTq2IChtG7Eej0xq3uJkNYCubUJSukUlPRyzMTZVIt4=
+github.com/tdeebswihart/temporal-api-go v0.0.0-20231010190531-7515ef0b3e54 h1:uv+jHCWbulpmIJm+oU45vfpPkC/BhPjndUPXtMf7JYY=
+github.com/tdeebswihart/temporal-api-go v0.0.0-20231010190531-7515ef0b3e54/go.mod h1:dTq2IChtG7Eej0xq3uJkNYCubUJSukUlPRyzMTZVIt4=
 github.com/tidwall/btree v0.3.0/go.mod h1:huei1BkDWJ3/sLXmO+bsCNELL+Bp2Kks9OLyQFkzvA8=
 github.com/tidwall/btree v1.1.0/go.mod h1:TzIRzen6yHbibdSfK6t8QimqbUnoxUSrZfeW7Uob0q4=
 github.com/tidwall/buntdb v1.2.0/go.mod h1:XLza/dhlwzO6dc5o/KWor4kfZSt3BP8QV+77ZMKfI58=
