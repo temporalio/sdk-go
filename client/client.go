@@ -36,8 +36,8 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
-	jsonpb "go.temporal.io/api/jsonpb"
 	"go.temporal.io/api/operatorservice/v1"
+	"go.temporal.io/api/temporalproto"
 	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/converter"
@@ -751,7 +751,7 @@ type HistoryJSONOptions struct {
 // not close the reader if it is closeable.
 func HistoryFromJSON(r io.Reader, options HistoryJSONOptions) (*historypb.History, error) {
 	hist := &historypb.History{}
-	dec := jsonpb.NewDecoder(r)
+	dec := temporalproto.NewJSONDecoder(r)
 	if err := dec.Decode(hist); err != nil {
 		return nil, err
 	}
