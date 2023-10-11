@@ -267,11 +267,14 @@ func TestWorkflowIDUpdateWorkflowByID(t *testing.T) {
 	env.SetStartWorkflowOptions(StartWorkflowOptions{ID: "my-workflow-id"})
 	env.ExecuteWorkflow(func(ctx Context) (string, error) {
 		var result string
-		SetUpdateHandler(ctx, "update", func(ctx Context, input string) error {
+		err := SetUpdateHandler(ctx, "update", func(ctx Context, input string) error {
 			result = input
 			return nil
 		}, UpdateHandlerOptions{})
-		err := Await(ctx, func() bool { return result != "" })
+		if err != nil {
+			return "", err
+		}
+		err = Await(ctx, func() bool { return result != "" })
 		return result, err
 	})
 	require.NoError(t, env.GetWorkflowError())
