@@ -842,7 +842,7 @@ func (e *TestWorkflowEnvironment) SignalWorkflowSkippingWorkflowTask(name string
 	e.impl.signalWorkflow(name, input, false)
 }
 
-// SignalWorkflowByID sends signal to the currently running test workflow.
+// SignalWorkflowByID signals a workflow by its ID.
 func (e *TestWorkflowEnvironment) SignalWorkflowByID(workflowID, signalName string, input interface{}) error {
 	return e.impl.signalWorkflowByID(workflowID, signalName, input)
 }
@@ -852,6 +852,7 @@ func (e *TestWorkflowEnvironment) QueryWorkflow(queryType string, args ...interf
 	return e.impl.queryWorkflow(queryType, args...)
 }
 
+// UpdateWorkflow sends an update to the currently running workflow.
 func (e *TestWorkflowEnvironment) UpdateWorkflow(name string, id string, uc UpdateCallbacks, args ...interface{}) {
 	e.impl.updateWorkflow(name, id, uc, args...)
 }
