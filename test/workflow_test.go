@@ -1920,6 +1920,16 @@ func (w *Workflows) SignalsAndQueries(ctx workflow.Context, execChild, execActiv
 	return nil
 }
 
+func (w *Workflows) CheckOpenTelemetryBaggage(ctx workflow.Context, key string) (string, error) {
+	var baggage string
+	var a Activities
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	if err := workflow.ExecuteActivity(ctx, a.CheckBaggage, key).Get(ctx, &baggage); err != nil {
+		return "", fmt.Errorf("failed checking baggage: %w", err)
+	}
+	return baggage, nil
+}
+
 type AdvancedPostCancellationInput struct {
 	PreCancelActivity  bool
 	PostCancelActivity bool
@@ -2434,6 +2444,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.InterceptorCalls)
 	worker.RegisterWorkflow(w.WaitSignalToStart)
 	worker.RegisterWorkflow(w.SignalsAndQueries)
+	worker.RegisterWorkflow(w.CheckOpenTelemetryBaggage)
 	worker.RegisterWorkflow(w.AdvancedPostCancellation)
 	worker.RegisterWorkflow(w.AdvancedPostCancellationChildWithDone)
 	worker.RegisterWorkflow(w.TooFewParams)

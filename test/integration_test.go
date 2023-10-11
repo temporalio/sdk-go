@@ -28,6 +28,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go.opentelemetry.io/otel/baggage"
 	"os"
 	"strings"
 	"sync"
@@ -156,7 +157,8 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	}
 
 	// Record spans for tracing test
-	if strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestOpenTelemetryTracing") {
+	if strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestOpenTelemetryTracing") ||
+		strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestOpenTelemetryBaggageHandling") {
 		ts.openTelemetrySpanRecorder = tracetest.NewSpanRecorder()
 		ts.openTelemetryTracer = sdktrace.NewTracerProvider(
 			sdktrace.WithSpanProcessor(ts.openTelemetrySpanRecorder)).Tracer("")
@@ -1986,6 +1988,29 @@ func (ts *IntegrationTestSuite) addOpenTelemetryChildren(
 		// Collect grandchildren
 		ts.addOpenTelemetryChildren(s.SpanContext().SpanID(), child, spans)
 	}
+}
+
+func (ts *IntegrationTestSuite) TestOpenTelemetryBaggageHandling() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Start a top-level span
+	ctx, rootSpan := ts.openTelemetryTracer.Start(ctx, "root-span")
+	defer rootSpan.End()
+
+	// Add baggage to context
+	expectedBaggage := "baggage-value"
+	bag := baggage.FromContext(ctx)
+	member, _ := baggage.NewMember("baggage-key", expectedBaggage)
+	bag, _ = bag.SetMember(member)
+	ctx = baggage.ContextWithBaggage(ctx, bag)
+
+	// Start workflow
+	var actualBaggage string
+	opts := ts.startWorkflowOptions("test-interceptor-open-telemetry-baggage")
+	err := ts.executeWorkflowWithContextAndOption(ctx, opts, ts.workflows.CheckOpenTelemetryBaggage, &actualBaggage, "baggage-key")
+	ts.NoError(err)
+
+	ts.Equal(expectedBaggage, actualBaggage)
 }
 
 func (ts *IntegrationTestSuite) TestOpenTracingNoopTracer() {
