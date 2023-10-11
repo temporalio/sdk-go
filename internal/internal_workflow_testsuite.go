@@ -2382,6 +2382,22 @@ func (env *testWorkflowEnvironmentImpl) updateWorkflow(name string, id string, u
 	env.updateHandler(name, id, data, nil, uc)
 }
 
+func (env *testWorkflowEnvironmentImpl) updateWorkflowByID(workflowID, name, id string, uc UpdateCallbacks, args ...interface{}) error {
+	if workflowHandle, ok := env.runningWorkflows[workflowID]; ok {
+		if workflowHandle.handled {
+			return serviceerror.NewNotFound(fmt.Sprintf("Workflow %v already completed", workflowID))
+		}
+		data, err := encodeArgs(env.GetDataConverter(), args)
+		if err != nil {
+			panic(err)
+		}
+		env.updateHandler(name, id, data, nil, uc)
+		return nil
+	}
+
+	return serviceerror.NewNotFound(fmt.Sprintf("Workflow %v not exists", workflowID))
+}
+
 func (env *testWorkflowEnvironmentImpl) queryWorkflowByID(workflowID, queryType string, args ...interface{}) (converter.EncodedValue, error) {
 	if workflowHandle, ok := env.runningWorkflows[workflowID]; ok {
 		data, err := encodeArgs(workflowHandle.env.GetDataConverter(), args)

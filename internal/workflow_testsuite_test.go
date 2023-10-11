@@ -249,6 +249,37 @@ func TestWorkflowIDSignalWorkflowByID(t *testing.T) {
 	require.Equal(t, "id is: my-workflow-id", str)
 }
 
+func TestWorkflowIDUpdateWorkflowByID(t *testing.T) {
+	var suite WorkflowTestSuite
+	// Test UpdateWorkflowByID works with custom ID
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterDelayedCallback(func() {
+		err := env.UpdateWorkflowByID("my-workflow-id", "update", "id", &updateCallback{
+			reject: func(err error) {
+				require.Fail(t, "update should not be rejected")
+			},
+			accept:   func() {},
+			complete: func(interface{}, error) {},
+		}, "input")
+		require.NoError(t, err)
+	}, time.Second)
+
+	env.SetStartWorkflowOptions(StartWorkflowOptions{ID: "my-workflow-id"})
+	env.ExecuteWorkflow(func(ctx Context) (string, error) {
+		var result string
+		SetUpdateHandler(ctx, "update", func(ctx Context, input string) error {
+			result = input
+			return nil
+		}, UpdateHandlerOptions{})
+		err := Await(ctx, func() bool { return result != "" })
+		return result, err
+	})
+	require.NoError(t, env.GetWorkflowError())
+	var str string
+	require.NoError(t, env.GetWorkflowResult(&str))
+	require.Equal(t, "input", str)
+}
+
 func TestWorkflowStartTimeInsideTestWorkflow(t *testing.T) {
 	var suite WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
