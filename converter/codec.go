@@ -62,16 +62,41 @@ type ZlibCodecOptions struct {
 	AlwaysEncode bool
 }
 
-type zlibCodec struct{ options ZlibCodecOptions }
-
 // NewZlibCodec creates a PayloadCodec for use in NewCodecDataConverter
 // to support zlib payload compression.
 //
 // While this serves as a reasonable example of a compression encoder, callers
 // may prefer alternative compression algorithms for lots of small payloads.
-func NewZlibCodec(options ZlibCodecOptions) PayloadCodec { return &zlibCodec{options} }
+func NewZlibCodec(options ZlibCodecOptions) PayloadCodec {
+	return &codec{
+		newWriter: func(w io.Writer) (io.WriteCloser, error) {
+			return zlib.NewWriter(w), nil
+		},
+		newReader:    zlib.NewReader,
+		alwaysEncode: options.AlwaysEncode,
+		encodingType: "binary/zlib",
+	}
+}
 
-func (z *zlibCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+// NewCompressionCodec creates a PayloadCodec for use in NewCodecDataConverter
+// This can be used to pass compression encoders for different needs.
+func NewCompressionCodec(newWriter func(io.Writer) (io.WriteCloser, error), newReader func(io.Reader) (io.ReadCloser, error), encodingType string, alwaysEncode bool) PayloadCodec {
+	return &codec{
+		newWriter:    newWriter,
+		newReader:    newReader,
+		encodingType: encodingType,
+		alwaysEncode: alwaysEncode,
+	}
+}
+
+type codec struct {
+	newWriter    func(io.Writer) (io.WriteCloser, error)
+	newReader    func(io.Reader) (io.ReadCloser, error)
+	encodingType string
+	alwaysEncode bool
+}
+
+func (c *codec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	result := make([]*commonpb.Payload, len(payloads))
 	for i, p := range payloads {
 		// Marshal and write
@@ -80,7 +105,10 @@ func (z *zlibCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, e
 			return payloads, err
 		}
 		var buf bytes.Buffer
-		w := zlib.NewWriter(&buf)
+		w, err := c.newWriter(&buf)
+		if err != nil {
+			return payloads, err
+		}
 		_, err = w.Write(b)
 		if closeErr := w.Close(); closeErr != nil && err == nil {
 			err = closeErr
@@ -89,9 +117,9 @@ func (z *zlibCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, e
 			return payloads, err
 		}
 		// Only set if smaller than original amount or has option to always encode
-		if buf.Len() < len(b) || z.options.AlwaysEncode {
+		if buf.Len() < len(b) || c.alwaysEncode {
 			result[i] = &commonpb.Payload{
-				Metadata: map[string][]byte{MetadataEncoding: []byte("binary/zlib")},
+				Metadata: map[string][]byte{MetadataEncoding: []byte(c.encodingType)},
 				Data:     buf.Bytes(),
 			}
 		} else {
@@ -101,15 +129,15 @@ func (z *zlibCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, e
 	return result, nil
 }
 
-func (*zlibCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+func (c *codec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	result := make([]*commonpb.Payload, len(payloads))
 	for i, p := range payloads {
 		// Only if it's our encoding
-		if string(p.Metadata[MetadataEncoding]) != "binary/zlib" {
+		if string(p.Metadata[MetadataEncoding]) != c.encodingType {
 			result[i] = p
 			continue
 		}
-		r, err := zlib.NewReader(bytes.NewReader(p.Data))
+		r, err := c.newReader(bytes.NewReader(p.Data))
 		if err != nil {
 			return payloads, err
 		}

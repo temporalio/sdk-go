@@ -24,8 +24,10 @@ package converter_test
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -75,25 +77,44 @@ func ExampleCodecDataConverter_compression() {
 
 type SomeStruct struct{ MyValue string }
 
-func TestEncodingDataConverter(t *testing.T) {
-	assertEncodingDataConverter(t, "foo")
-	assertEncodingDataConverter(t, nil)
-	assertEncodingDataConverter(t, []byte("foo"))
-	assertEncodingDataConverter(t, &SomeStruct{MyValue: "somestring"})
+func TestZLibEncodingDataConverter(t *testing.T) {
+	assertEncodingDataConverter(t, "foo", "binary/zlib", converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}), converter.NewZlibCodec(converter.ZlibCodecOptions{}))
+	assertEncodingDataConverter(t, nil, "binary/zlib", converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}), converter.NewZlibCodec(converter.ZlibCodecOptions{}))
+	assertEncodingDataConverter(t, []byte("foo"), "binary/zlib", converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}), converter.NewZlibCodec(converter.ZlibCodecOptions{}))
+	assertEncodingDataConverter(t, &SomeStruct{MyValue: "somestring"}, "binary/zlib", converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}), converter.NewZlibCodec(converter.ZlibCodecOptions{}))
 }
 
-func assertEncodingDataConverter(t *testing.T, data interface{}) {
+func TestGzipEncodingDataConverter(t *testing.T) {
+	gzipAlwaysEncode := converter.NewCompressionCodec(func(w io.Writer) (io.WriteCloser, error) {
+		return gzip.NewWriter(w), nil
+	}, func(r io.Reader) (io.ReadCloser, error) {
+		return gzip.NewReader(r)
+	}, "binary/gzip", true)
+
+	gzipEncode := converter.NewCompressionCodec(func(w io.Writer) (io.WriteCloser, error) {
+		return gzip.NewWriter(w), nil
+	}, func(r io.Reader) (io.ReadCloser, error) {
+		return gzip.NewReader(r)
+	}, "binary/gzip", false)
+
+	assertEncodingDataConverter(t, "foo", "binary/gzip", gzipAlwaysEncode, gzipEncode)
+	assertEncodingDataConverter(t, nil, "binary/gzip", gzipAlwaysEncode, gzipEncode)
+	assertEncodingDataConverter(t, []byte("foo"), "binary/gzip", gzipAlwaysEncode, gzipEncode)
+	assertEncodingDataConverter(t, &SomeStruct{MyValue: "somestring"}, "binary/gzip", gzipAlwaysEncode, gzipEncode)
+}
+
+func assertEncodingDataConverter(t *testing.T, data interface{}, header string, alwaysEncoder converter.PayloadCodec, encoder converter.PayloadCodec) {
 	defaultConv := converter.GetDefaultDataConverter()
 	zlibConv := converter.NewCodecDataConverter(
 		defaultConv,
 		// Always encode
-		converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}),
+		alwaysEncoder,
 	)
 
 	// To/FromPayload
 	compPayload, err := zlibConv.ToPayload(data)
 	require.NoError(t, err)
-	require.Equal(t, "binary/zlib", string(compPayload.Metadata[converter.MetadataEncoding]))
+	require.Equal(t, header, string(compPayload.Metadata[converter.MetadataEncoding]))
 	var newData interface{}
 	if data == nil {
 		newData = &newData
@@ -140,7 +161,7 @@ func assertEncodingDataConverter(t *testing.T, data interface{}) {
 	// Check that it's ignored if too small (which all params given are)
 	zlibIgnoreMinConv := converter.NewCodecDataConverter(
 		defaultConv,
-		converter.NewZlibCodec(converter.ZlibCodecOptions{}),
+		encoder,
 	)
 	require.NoError(t, err)
 	compUnderMinPayload, err := zlibIgnoreMinConv.ToPayload(data)
