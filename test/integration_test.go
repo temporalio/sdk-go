@@ -166,6 +166,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 			Tracer:               ts.openTelemetryTracer,
 			DisableSignalTracing: strings.HasSuffix(ts.T().Name(), "WithoutSignalsAndQueries"),
 			DisableQueryTracing:  strings.HasSuffix(ts.T().Name(), "WithoutSignalsAndQueries"),
+			DisableBaggage:       strings.HasSuffix(ts.T().Name(), "WithDisableBaggageOption"),
 		})
 		ts.NoError(err)
 		clientInterceptors = append(clientInterceptors, interceptor)
@@ -1991,6 +1992,14 @@ func (ts *IntegrationTestSuite) addOpenTelemetryChildren(
 }
 
 func (ts *IntegrationTestSuite) TestOpenTelemetryBaggageHandling() {
+	ts.testOpenTelemetryBaggageHandling(false)
+}
+
+func (ts *IntegrationTestSuite) TestOpenTelemetryBaggageHandlingWithDisableBaggageOption() {
+	ts.testOpenTelemetryBaggageHandling(true)
+}
+
+func (ts *IntegrationTestSuite) testOpenTelemetryBaggageHandling(disableBaggage bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// Start a top-level span
@@ -1998,9 +2007,14 @@ func (ts *IntegrationTestSuite) TestOpenTelemetryBaggageHandling() {
 	defer rootSpan.End()
 
 	// Add baggage to context
-	expectedBaggage := "baggage-value"
+	var expectedBaggage string
+	if disableBaggage {
+		expectedBaggage = ""
+	} else {
+		expectedBaggage = "baggage-value"
+	}
 	bag := baggage.FromContext(ctx)
-	member, _ := baggage.NewMember("baggage-key", expectedBaggage)
+	member, _ := baggage.NewMember("baggage-key", "baggage-value")
 	bag, _ = bag.SetMember(member)
 	ctx = baggage.ContextWithBaggage(ctx, bag)
 
