@@ -1888,7 +1888,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithRandomProto() {
 	payload, err := env.ExecuteActivity(activitySingleFn, &input1, input2)
 
 	s.NoError(err)
-	s.EqualValues([]string{"input1", "ENCODING_TYPE_PROTO3"}, actualValues)
+	s.EqualValues([]string{"input1", "Proto3"}, actualValues)
 
 	var ret *commonpb.WorkflowType
 	_ = payload.Get(&ret)

@@ -2,7 +2,7 @@ module go.temporal.io/sdk
 
 go 1.20
 
-replace go.temporal.io/api => github.com/tdeebswihart/temporal-api-go v0.0.0-20231010204526-910c300e64c5
+replace go.temporal.io/api => github.com/tdeebswihart/temporal-api-go v0.0.0-20231012194353-229d40fa1d78
 
 require (
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a
@@ -16,7 +16,7 @@ require (
 	go.uber.org/atomic v1.9.0
 	golang.org/x/sys v0.13.0
 	golang.org/x/time v0.3.0
-	google.golang.org/grpc v1.58.2
+	google.golang.org/grpc v1.58.3
 	google.golang.org/protobuf v1.31.0
 )
 
@@ -30,8 +30,8 @@ require (
 	github.com/stretchr/objx v0.5.0 // indirect
 	golang.org/x/net v0.17.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
-	google.golang.org/genproto v0.0.0-20231009173412-8bfb1ae86b6c // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20231009173412-8bfb1ae86b6c // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20231009173412-8bfb1ae86b6c // indirect
+	google.golang.org/genproto v0.0.0-20231012185656-8102cb6e9bc5 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20231012185656-8102cb6e9bc5 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20231012185656-8102cb6e9bc5 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

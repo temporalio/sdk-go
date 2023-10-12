@@ -428,9 +428,9 @@ func TestResourceExhaustedCause(t *testing.T) {
 	var foundWithCause, foundWithoutCause bool
 	for _, counter := range handler.Counters() {
 		t.Logf("%+v", counter)
-		if counter.Tags["operation"] == "GetSystemInfo" && counter.Tags["cause"] == "RESOURCE_EXHAUSTED_CAUSE_CONCURRENT_LIMIT" {
+		if counter.Tags["operation"] == "GetSystemInfo" && counter.Tags["cause"] == "ConcurrentLimit" {
 			foundWithCause = true
-		} else if counter.Tags["operation"] == "GetSystemInfo" && counter.Tags["cause"] == "RESOURCE_EXHAUSTED_CAUSE_UNSPECIFIED" {
+		} else if counter.Tags["operation"] == "GetSystemInfo" && counter.Tags["cause"] == "Unspecified" {
 			foundWithoutCause = true
 		}
 	}

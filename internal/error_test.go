@@ -824,7 +824,7 @@ func Test_convertErrorToFailure_TimeoutError(t *testing.T) {
 	err2 := fc.FailureToError(f)
 	var timeoutErr2 *TimeoutError
 	require.True(errors.As(err2, &timeoutErr2))
-	require.Equal("timeout (type: TIMEOUT_TYPE_HEARTBEAT): cool error (type: coolError, retryable: true)", timeoutErr2.Error())
+	require.Equal("timeout (type: Heartbeat): cool error (type: coolError, retryable: true)", timeoutErr2.Error())
 	require.Equal(timeoutErr.TimeoutType(), timeoutErr2.TimeoutType())
 }
 
@@ -1064,7 +1064,7 @@ func Test_convertFailureToError_TimeoutFailure(t *testing.T) {
 	err := fc.FailureToError(f)
 	var timeoutErr *TimeoutError
 	require.True(errors.As(err, &timeoutErr))
-	require.Equal("timeout (type: TIMEOUT_TYPE_START_TO_CLOSE)", timeoutErr.Error())
+	require.Equal("timeout (type: StartToClose)", timeoutErr.Error())
 	require.Equal(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, timeoutErr.TimeoutType())
 }
 
