@@ -31,21 +31,21 @@ import (
 	"go.temporal.io/sdk/log"
 )
 
-// MemoryLogger is Logger implementation that stores logs in memory (useful for testing). Use Lines() to get log lines.
-type MemoryLogger struct {
+// MemoryLoggerWithoutWith is a Logger implementation that stores logs in memory (useful for testing). Use Lines() to get log lines.
+type MemoryLoggerWithoutWith struct {
 	lines         *[]string
 	globalKeyvals string
 }
 
-// NewMemoryLogger creates new instance of MemoryLogger.
-func NewMemoryLogger() *MemoryLogger {
+// NewMemoryLoggerWithoutWith creates new instance of MemoryLoggerWithoutWith.
+func NewMemoryLoggerWithoutWith() *MemoryLoggerWithoutWith {
 	var lines []string
-	return &MemoryLogger{
+	return &MemoryLoggerWithoutWith{
 		lines: &lines,
 	}
 }
 
-func (l *MemoryLogger) println(level, msg string, keyvals []interface{}) {
+func (l *MemoryLoggerWithoutWith) println(level, msg string, keyvals []interface{}) {
 	// To avoid extra space when globalKeyvals is not specified.
 	if l.globalKeyvals == "" {
 		*l.lines = append(*l.lines, fmt.Sprintln(append([]interface{}{level, msg}, keyvals...)...))
@@ -55,28 +55,44 @@ func (l *MemoryLogger) println(level, msg string, keyvals []interface{}) {
 }
 
 // Debug appends message to the log.
-func (l *MemoryLogger) Debug(msg string, keyvals ...interface{}) {
+func (l *MemoryLoggerWithoutWith) Debug(msg string, keyvals ...interface{}) {
 	l.println("DEBUG", msg, keyvals)
 }
 
 // Info appends message to the log.
-func (l *MemoryLogger) Info(msg string, keyvals ...interface{}) {
+func (l *MemoryLoggerWithoutWith) Info(msg string, keyvals ...interface{}) {
 	l.println("INFO ", msg, keyvals)
 }
 
 // Warn appends message to the log.
-func (l *MemoryLogger) Warn(msg string, keyvals ...interface{}) {
+func (l *MemoryLoggerWithoutWith) Warn(msg string, keyvals ...interface{}) {
 	l.println("WARN ", msg, keyvals)
 }
 
 // Error appends message to the log.
-func (l *MemoryLogger) Error(msg string, keyvals ...interface{}) {
+func (l *MemoryLoggerWithoutWith) Error(msg string, keyvals ...interface{}) {
 	l.println("ERROR", msg, keyvals)
 }
 
-// With returns new logger the prepend every log entry with keyvals.
+// Lines returns written log lines.
+func (l *MemoryLoggerWithoutWith) Lines() []string {
+	return *l.lines
+}
+
+type MemoryLogger struct {
+	*MemoryLoggerWithoutWith
+}
+
+// NewMemoryLogger creates new instance of MemoryLogger.
+func NewMemoryLogger() *MemoryLogger {
+	return &MemoryLogger{
+		NewMemoryLoggerWithoutWith(),
+	}
+}
+
+// With returns new logger that prepend every log entry with keyvals.
 func (l *MemoryLogger) With(keyvals ...interface{}) log.Logger {
-	logger := &MemoryLogger{
+	logger := &MemoryLoggerWithoutWith{
 		lines: l.lines,
 	}
 
@@ -87,9 +103,4 @@ func (l *MemoryLogger) With(keyvals ...interface{}) log.Logger {
 	logger.globalKeyvals += strings.TrimSuffix(fmt.Sprintln(keyvals...), "\n")
 
 	return logger
-}
-
-// Lines returns written log lines.
-func (l *MemoryLogger) Lines() []string {
-	return *l.lines
 }

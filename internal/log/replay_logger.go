@@ -80,7 +80,7 @@ func (l *ReplayLogger) Error(msg string, keyvals ...interface{}) {
 	}
 }
 
-// With returns new logger the prepend every log entry with keyvals.
+// With returns new logger that prepend every log entry with keyvals.
 func (l *ReplayLogger) With(keyvals ...interface{}) log.Logger {
 	return NewReplayLogger(log.With(l.logger, keyvals...), l.isReplay, l.enableLoggingInReplay)
 }
