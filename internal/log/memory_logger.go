@@ -31,7 +31,7 @@ import (
 	"go.temporal.io/sdk/log"
 )
 
-// MemoryLoggerWithoutWith is Logger implementation that stores logs in memory (useful for testing). Use Lines() to get log lines.
+// MemoryLoggerWithoutWith is a Logger implementation that stores logs in memory (useful for testing). Use Lines() to get log lines.
 type MemoryLoggerWithoutWith struct {
 	lines         *[]string
 	globalKeyvals string
@@ -90,7 +90,7 @@ func NewMemoryLogger() *MemoryLogger {
 	}
 }
 
-// With returns new logger the prepend every log entry with keyvals.
+// With returns new logger that prepend every log entry with keyvals.
 func (l *MemoryLogger) With(keyvals ...interface{}) log.Logger {
 	logger := &MemoryLoggerWithoutWith{
 		lines: l.lines,
