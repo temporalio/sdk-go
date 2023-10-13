@@ -86,7 +86,7 @@ func (l *withLogger) Error(msg string, keyvals ...interface{}) {
 
 func (l *withLogger) WithCallerSkip(depth int) Logger {
 	if sl, ok := l.logger.(WithSkipCallers); ok {
-		return newWithLogger(sl.WithCallerSkip(depth), l.keyvals)
+		return newWithLogger(sl.WithCallerSkip(depth), l.keyvals...)
 	}
 	return l
 }
