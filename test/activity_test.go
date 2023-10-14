@@ -28,6 +28,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go.opentelemetry.io/otel/baggage"
 	"strconv"
 	"strings"
 	"sync"
@@ -376,6 +377,10 @@ func (a *Activities) ExternalSignalsAndQueries(ctx context.Context) error {
 		return err
 	}
 	return run.Get(ctx, nil)
+}
+
+func (a *Activities) CheckBaggage(ctx context.Context, key string) (string, error) {
+	return baggage.FromContext(ctx).Member(key).Value(), nil
 }
 
 func (*Activities) TooFewParams(

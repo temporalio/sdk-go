@@ -26,9 +26,9 @@ package opentelemetry
 import (
 	"context"
 	"fmt"
-
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
@@ -55,6 +55,9 @@ type TracerOptions struct {
 
 	// DisableQueryTracing can be set to disable query tracing.
 	DisableQueryTracing bool
+
+	// DisableBaggage can be set to disable baggage propagation.
+	DisableBaggage bool
 
 	// AllowInvalidParentSpans will swallow errors interpreting parent
 	// spans from headers. Useful when migrating from one tracing library
@@ -140,17 +143,27 @@ func (t *tracer) Options() interceptor.TracerOptions {
 }
 
 func (t *tracer) UnmarshalSpan(m map[string]string) (interceptor.TracerSpanRef, error) {
-	ctx := trace.SpanContextFromContext(t.options.TextMapPropagator.Extract(context.Background(), textMapCarrier(m)))
-	if !ctx.IsValid() {
+	ctx := t.options.TextMapPropagator.Extract(context.Background(), textMapCarrier(m))
+	spanCtx := trace.SpanContextFromContext(ctx)
+	if !spanCtx.IsValid() {
 		return nil, fmt.Errorf("failed extracting OpenTelemetry span from map")
 	}
-	return &tracerSpanRef{SpanContext: ctx}, nil
+	spanRef := &tracerSpanRef{SpanContext: spanCtx}
+	if !t.options.DisableBaggage {
+		spanRef.Baggage = baggage.FromContext(ctx)
+	}
+	return spanRef, nil
 }
 
 func (t *tracer) MarshalSpan(span interceptor.TracerSpan) (map[string]string, error) {
 	data := textMapCarrier{}
-	t.options.TextMapPropagator.Inject(trace.ContextWithSpan(context.Background(), span.(*tracerSpan).Span), data)
-	return map[string]string(data), nil
+	tSpan := span.(*tracerSpan)
+	ctx := context.Background()
+	if !t.options.DisableBaggage {
+		ctx = baggage.ContextWithBaggage(ctx, tSpan.Baggage)
+	}
+	t.options.TextMapPropagator.Inject(trace.ContextWithSpan(ctx, tSpan.Span), data)
+	return data, nil
 }
 
 func (t *tracer) SpanFromContext(ctx context.Context) interceptor.TracerSpan {
@@ -158,28 +171,41 @@ func (t *tracer) SpanFromContext(ctx context.Context) interceptor.TracerSpan {
 	if !span.SpanContext().IsValid() {
 		return nil
 	}
-	return &tracerSpan{Span: span}
+	tSpan := &tracerSpan{Span: span}
+	if !t.options.DisableBaggage {
+		tSpan.Baggage = baggage.FromContext(ctx)
+	}
+	return tSpan
 }
 
 func (t *tracer) ContextWithSpan(ctx context.Context, span interceptor.TracerSpan) context.Context {
+	if !t.options.DisableBaggage {
+		ctx = baggage.ContextWithBaggage(ctx, span.(*tracerSpan).Baggage)
+	}
 	return trace.ContextWithSpan(ctx, span.(*tracerSpan).Span)
 }
 
 func (t *tracer) StartSpan(opts *interceptor.TracerStartSpanOptions) (interceptor.TracerSpan, error) {
 	// Create context with parent
 	var parent trace.SpanContext
+	var bag baggage.Baggage
 	switch optParent := opts.Parent.(type) {
 	case nil:
 	case *tracerSpan:
 		parent = optParent.SpanContext()
+		bag = optParent.Baggage
 	case *tracerSpanRef:
 		parent = optParent.SpanContext
+		bag = optParent.Baggage
 	default:
 		return nil, fmt.Errorf("unrecognized parent type %T", optParent)
 	}
 	ctx := context.Background()
 	if parent.IsValid() {
 		ctx = trace.ContextWithSpanContext(ctx, parent)
+		if !t.options.DisableBaggage {
+			ctx = baggage.ContextWithBaggage(ctx, bag)
+		}
 	}
 
 	// Create span
@@ -194,7 +220,12 @@ func (t *tracer) StartSpan(opts *interceptor.TracerStartSpanOptions) (intercepto
 		span.SetAttributes(attrs...)
 	}
 
-	return &tracerSpan{Span: span}, nil
+	tSpan := &tracerSpan{Span: span}
+	if !t.options.DisableBaggage {
+		tSpan.Baggage = bag
+	}
+
+	return tSpan, nil
 }
 
 func (t *tracer) GetLogger(logger log.Logger, ref interceptor.TracerSpanRef) log.Logger {
@@ -211,9 +242,15 @@ func (t *tracer) GetLogger(logger log.Logger, ref interceptor.TracerSpanRef) log
 	return logger
 }
 
-type tracerSpanRef struct{ trace.SpanContext }
+type tracerSpanRef struct {
+	trace.SpanContext
+	baggage.Baggage
+}
 
-type tracerSpan struct{ trace.Span }
+type tracerSpan struct {
+	trace.Span
+	baggage.Baggage
+}
 
 func (t *tracerSpan) Finish(opts *interceptor.TracerFinishSpanOptions) {
 	if opts.Error != nil {
