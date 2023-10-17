@@ -11,6 +11,6 @@ require (
 )
 
 replace (
-	go.temporal.io/api => github.com/tdeebswihart/temporal-api-go v0.0.0-20231012194353-229d40fa1d78
+	go.temporal.io/api => github.com/tdeebswihart/temporal-api-go v0.0.0-20231016220718-646941139bf7
 	go.temporal.io/sdk => ../../
 )
