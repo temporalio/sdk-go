@@ -76,5 +76,4 @@ jobs:
     with:
       go-repo-path: ${{github.event.pull_request.head.repo.full_name}}
       version: ${{github.event.pull_request.head.ref}}
-      features-repo-path: tdeebswihart/temporal-features
       version-is-repo-ref: true
