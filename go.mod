@@ -2,7 +2,7 @@ module go.temporal.io/sdk
 
 go 1.20
 
-replace go.temporal.io/api => github.com/tdeebswihart/temporal-api-go v0.0.0-20231016220718-646941139bf7
+replace go.temporal.io/api => github.com/tdeebswihart/temporal-api-go v0.0.0-20231024224906-a4867f8364cf
 
 require (
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a
@@ -16,14 +16,14 @@ require (
 	go.uber.org/atomic v1.9.0
 	golang.org/x/sys v0.13.0
 	golang.org/x/time v0.3.0
-	google.golang.org/grpc v1.58.3
+	google.golang.org/grpc v1.59.0
 	google.golang.org/protobuf v1.31.0
 )
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
-	github.com/google/uuid v1.3.0 // indirect
+	github.com/google/uuid v1.3.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.18.0 // indirect
 	github.com/iancoleman/strcase v0.3.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
