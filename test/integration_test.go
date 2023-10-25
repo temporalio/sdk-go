@@ -1530,7 +1530,7 @@ func (ts *IntegrationTestSuite) TestStartDelay() {
 	event, err := iter.Next()
 	ts.NoError(err)
 	ts.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED, event.EventType)
-	ts.Equal(5*time.Second, *event.GetWorkflowExecutionStartedEventAttributes().GetFirstWorkflowTaskBackoff())
+	ts.Equal(5*time.Second, event.GetWorkflowExecutionStartedEventAttributes().GetFirstWorkflowTaskBackoff().AsTime())
 }
 
 func (ts *IntegrationTestSuite) TestStartDelaySignalWithStart() {
@@ -1551,7 +1551,7 @@ func (ts *IntegrationTestSuite) TestStartDelaySignalWithStart() {
 	event, err := iter.Next()
 	ts.NoError(err)
 	ts.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED, event.EventType)
-	ts.Equal(5*time.Second, *event.GetWorkflowExecutionStartedEventAttributes().GetFirstWorkflowTaskBackoff())
+	ts.Equal(5*time.Second, event.GetWorkflowExecutionStartedEventAttributes().GetFirstWorkflowTaskBackoff().AsTime())
 }
 
 func (ts *IntegrationTestSuite) TestResetWorkflowExecution() {
