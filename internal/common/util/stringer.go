@@ -35,7 +35,7 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 )
 
-var privateField = regexp.MustCompile("^[A-Z]")
+var privateField = regexp.MustCompile("^[a-z]")
 
 func anyToString(d interface{}) string {
 	v := reflect.ValueOf(d)
