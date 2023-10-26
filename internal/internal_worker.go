@@ -1418,7 +1418,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 			}
 		}
 	}
-	return fmt.Errorf("replay workflow doesn't return the same result as the last event, resp: %v, last: %v", resp, last)
+	return fmt.Errorf("replay workflow doesn't return the same result as the last event, resp: (%T) %v, last: %v", resp, resp, last)
 }
 
 func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*historypb.History, error) {
