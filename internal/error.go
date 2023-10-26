@@ -44,12 +44,12 @@ and actual error which caused activity failure. This internal error can be unwra
 Below are the possible types of internal error:
 1) *ApplicationError: (this should be the most common one)
 	*ApplicationError can be returned in two cases:
-		- If activity implementation returns *ApplicationError by using NewApplicationError() API.
-		  The err would contain a message, details, and NonRetryable flag. Workflow code could check this flag and details to determine
-		  what kind of error it was and take actions based on it. The details is encoded payload which workflow code could extract
-		  to strong typed variable. Workflow code needs to know what the types of the encoded details are before extracting them.
+		- If activity implementation returns *ApplicationError by using NewApplicationError()/NewNonRetryableApplicationError() API.
+		  The error would contain a message and optional details. Workflow code could extract details to string typed variable, determine
+		  what kind of error it was, and take actions based on it. The details are encoded payload therefore, workflow code needs to know what
+          the types of the encoded details are before extracting them.
 		- If activity implementation returns errors other than from NewApplicationError() API. In this case GetOriginalType()
-		  will return original type of an error represented as string. Workflow code could check this type to determine what kind of error it was
+		  will return original type of error represented as string. Workflow code could check this type to determine what kind of error it was
 		  and take actions based on the type. These errors are retryable by default, unless error type is specified in retry policy.
 2) *CanceledError:
 	If activity was canceled, internal error will be an instance of *CanceledError. When activity cancels itself by
@@ -59,19 +59,18 @@ Below are the possible types of internal error:
 	details about what type of timeout it was.
 4) *PanicError:
 	If activity code panic while executing, temporal activity worker will report it as activity failure to temporal server.
-	The SDK will present that failure as *PanicError. The err contains a string	representation of the panic message and
+	The SDK will present that failure as *PanicError. The error contains a string	representation of the panic message and
 	the call stack when panic was happen.
-
 Workflow code could handle errors based on different types of error. Below is sample code of how error handling looks like.
 
 err := workflow.ExecuteActivity(ctx, MyActivity, ...).Get(ctx, nil)
 if err != nil {
 	var applicationErr *ApplicationError
 	if errors.As(err, &applicationError) {
+		// retrieve error message
+		fmt.Println(applicationError.Error())
+
 		// handle activity errors (created via NewApplicationError() API)
-		if !applicationErr.NonRetryable() {
-			// manually retry activity
-		}
 		var detailMsg string // assuming activity return error by NewApplicationError("message", true, "string details")
 		applicationErr.Details(&detailMsg) // extract strong typed details
 
@@ -95,12 +94,12 @@ if err != nil {
 	if errors.As(err, &timeoutErr) {
 		// handle timeout, could check timeout type by timeoutErr.TimeoutType()
         switch err.TimeoutType() {
-        case commonpb.ScheduleToStart:
-                // Handle ScheduleToStart timeout.
-        case commonpb.StartToClose:
-                // Handle StartToClose timeout.
-        case commonpb.Heartbeat:
-                // Handle heartbeat timeout.
+        case enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START:
+			// Handle ScheduleToStart timeout.
+        case enumspb.TIMEOUT_TYPE_START_TO_CLOSE:
+            // Handle StartToClose timeout.
+        case enumspb.TIMEOUT_TYPE_HEARTBEAT:
+            // Handle heartbeat timeout.
         default:
         }
 	}
@@ -110,13 +109,13 @@ if err != nil {
 		// handle panic, message and stack trace are available by panicErr.Error() and panicErr.StackTrace()
 	}
 }
-
 Errors from child workflow should be handled in a similar way, except that instance of *ChildWorkflowExecutionError is returned to
-workflow code. It will contains *ActivityError, which in turn will contains on of the errors above.
+workflow code. It might contain *ActivityError in case if error comes from activity (which in turn will contain on of the errors above),
+or *ApplicationError in case if error comes from child workflow itself.
+
 When panic happen in workflow implementation code, SDK catches that panic and causing the workflow task timeout.
 That workflow task will be retried at a later time (with exponential backoff retry intervals).
-
-Workflow consumers will get an instance of *WorkflowExecutionError. This error will contains one of errors above.
+Workflow consumers will get an instance of *WorkflowExecutionError. This error will contain one of errors above.
 */
 
 type (
