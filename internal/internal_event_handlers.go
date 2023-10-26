@@ -857,7 +857,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 			for k := range wc.sideEffectResult {
 				keys = append(keys, k)
 			}
-			panic(fmt.Sprintf("No cached result found for side effectID=%v. KnownSideEffects=%v",
+			panic(fmt.Sprintf("[TMPRL1100] No cached result found for side effectID=%v. KnownSideEffects=%v",
 				sideEffectID, keys))
 		}
 

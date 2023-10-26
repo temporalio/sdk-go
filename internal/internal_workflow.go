@@ -1008,7 +1008,7 @@ func (s *coroutineState) call(timeout time.Duration) {
 	case <-s.aboutToBlock:
 	case <-deadlockTicker.reached():
 		s.closed.Store(true)
-		panic(fmt.Sprintf("Potential deadlock detected: "+
+		panic(fmt.Sprintf("[TMPRL1101] Potential deadlock detected: "+
 			"workflow goroutine %q didn't yield for over a second", s.name))
 	}
 }

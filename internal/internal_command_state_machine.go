@@ -918,7 +918,7 @@ func (h *commandsHelper) incrementNextCommandEventIDIfVersionMarker() {
 func (h *commandsHelper) getCommand(id commandID) commandStateMachine {
 	command, ok := h.commands[id]
 	if !ok {
-		panicMsg := fmt.Sprintf("unknown command %v, possible causes are nondeterministic workflow definition code"+
+		panicMsg := fmt.Sprintf("[TMPRL1100] unknown command %v, possible causes are nondeterministic workflow definition code"+
 			" or incompatible change in the workflow definition", id)
 		panicIllegalState(panicMsg)
 	}
@@ -993,7 +993,7 @@ func (h *commandsHelper) handleActivityTaskClosed(activityID string, scheduledEv
 
 func (h *commandsHelper) handleActivityTaskScheduled(activityID string, scheduledEventID int64) {
 	if _, ok := h.scheduledEventIDToActivityID[scheduledEventID]; !ok {
-		panicMsg := fmt.Sprintf("lookup failed for scheduledEventID to activityID: scheduleEventID: %v, activityID: %v",
+		panicMsg := fmt.Sprintf("[TMPRL1100] lookup failed for scheduledEventID to activityID: scheduleEventID: %v, activityID: %v",
 			scheduledEventID, activityID)
 		panicIllegalState(panicMsg)
 	}
@@ -1005,7 +1005,7 @@ func (h *commandsHelper) handleActivityTaskScheduled(activityID string, schedule
 func (h *commandsHelper) handleActivityTaskCancelRequested(scheduledEventID int64) {
 	activityID, ok := h.scheduledEventIDToActivityID[scheduledEventID]
 	if !ok {
-		panicIllegalState(fmt.Sprintf("unable to find activityID for the scheduledEventID: %v", scheduledEventID))
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find activityID for the scheduledEventID: %v", scheduledEventID))
 	}
 	command := h.getCommand(makeCommandID(commandTypeActivity, activityID))
 	command.handleCancelInitiatedEvent()
