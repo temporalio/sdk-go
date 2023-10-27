@@ -151,7 +151,7 @@ func (s *replayTestSuite) TestBadReplayLocalActivity() {
 	// Test bad history that does not call any local activities
 	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "bad-local-activity.json")
 	require.Error(s.T(), err)
-	require.Contains(s.T(), err.Error(), "replay workflow doesn't return the same result as the last event, resp: &RespondWorkflowTaskCompletedRequest")
+	require.Contains(s.T(), err.Error(), "replay workflow doesn't return the same result as the last event, resp: *workflowservice.RespondWorkflowTaskCompletedRequest")
 
 	// Test bad history that calls two local activities
 	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "bad-local-activity-2.json")
