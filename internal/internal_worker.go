@@ -222,6 +222,12 @@ type (
 
 		capabilities *workflowservice.GetSystemInfoResponse_Capabilities
 	}
+
+	// HistoryJSONOptions are options for HistoryFromJSON.
+	HistoryJSONOptions struct {
+		// LastEventID, if set, will only load history up to this ID (inclusive).
+		LastEventID int64
+	}
 )
 
 var debugMode = os.Getenv("TEMPORAL_DEBUG") != ""
@@ -1419,6 +1425,30 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 		}
 	}
 	return fmt.Errorf("replay workflow doesn't return the same result as the last event, resp: %[1]T{%[1]v}, last: %[2]T{%[2]v}", resp, resp, last)
+}
+
+// HistoryFromJSON deserializes history from a reader of JSON bytes. This does
+// not close the reader if it is closeable.
+func HistoryFromJSON(r io.Reader, lastEventID int64) (*historypb.History, error) {
+	hist := &historypb.History{}
+	// We set DiscardUnknown here because the history may have been created by a previous
+	// version of our protos
+	dec := temporalproto.NewJSONDecoder(r, true)
+	if err := dec.Decode(hist); err != nil {
+		return nil, err
+	}
+
+	// If there is a last event ID, slice the rest off
+	if lastEventID > 0 {
+		for i, event := range hist.Events {
+			if event.EventId == lastEventID {
+				// Inclusive
+				hist.Events = hist.Events[:i+1]
+				break
+			}
+		}
+	}
+	return hist, nil
 }
 
 func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*historypb.History, error) {

@@ -2789,6 +2789,24 @@ func TestWorkerBuildIDAndSessionPanic(t *testing.T) {
 	require.Equal(t, "cannot set both EnableSessionWorker and UseBuildIDForVersioning", recovered)
 }
 
+func TestHistoryFromJSON(t *testing.T) {
+	// Load sample history and just make sure it has the right event count
+	r, err := os.Open("testdata/sampleHistory.json")
+	require.NoError(t, err)
+	hist, err := HistoryFromJSON(r, 0)
+	require.NoError(t, err)
+	require.NoError(t, r.Close())
+	require.Len(t, hist.Events, 11)
+
+	// Only load up through event 5 and confirm
+	r, err = os.Open("testdata/sampleHistory.json")
+	require.NoError(t, err)
+	hist, err = HistoryFromJSON(r, 5)
+	require.NoError(t, err)
+	require.NoError(t, r.Close())
+	require.Len(t, hist.Events, 5)
+}
+
 func aliasNameClash1(context.Context) (string, error) { return "func1", nil }
 func aliasNameClash2(context.Context) (string, error) { return "func2", nil }
 
