@@ -1428,7 +1428,7 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*historypb.
 	}
 
 	hist := &historypb.History{}
-	dec := temporalproto.NewJSONDecoder(reader)
+	dec := temporalproto.NewJSONDecoder(reader, true)
 	if err := dec.Decode(hist); err != nil {
 		return nil, err
 	}

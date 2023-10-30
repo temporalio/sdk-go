@@ -23,7 +23,7 @@ require (
 )
 
 replace (
-	go.temporal.io/api => github.com/tdeebswihart/temporal-api-go v0.0.0-20231027221743-bfe668b5925d
+	go.temporal.io/api => github.com/tdeebswihart/temporal-api-go v0.0.0-20231030163055-872ab2d7375a
 	go.temporal.io/sdk => ../
 	go.temporal.io/sdk/contrib/opentelemetry => ../contrib/opentelemetry
 	go.temporal.io/sdk/contrib/opentracing => ../contrib/opentracing

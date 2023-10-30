@@ -2,7 +2,7 @@ module go.temporal.io/sdk
 
 go 1.20
 
-replace go.temporal.io/api => github.com/tdeebswihart/temporal-api-go v0.0.0-20231027221743-bfe668b5925d
+replace go.temporal.io/api => github.com/tdeebswihart/temporal-api-go v0.0.0-20231030163055-872ab2d7375a
 
 require (
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a

@@ -751,7 +751,9 @@ type HistoryJSONOptions struct {
 // not close the reader if it is closeable.
 func HistoryFromJSON(r io.Reader, options HistoryJSONOptions) (*historypb.History, error) {
 	hist := &historypb.History{}
-	dec := temporalproto.NewJSONDecoder(r)
+	// We set DiscardUnknown here because the history may have been created by a previous
+	// version of our protos
+	dec := temporalproto.NewJSONDecoder(r, true)
 	if err := dec.Decode(hist); err != nil {
 		return nil, err
 	}
