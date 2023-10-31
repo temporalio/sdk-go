@@ -41,6 +41,7 @@ import (
 type ProtoJSONPayloadConverter struct {
 	gogoMarshaler         gogojsonpb.Marshaler
 	gogoUnmarshaler       gogojsonpb.Unmarshaler
+	protoMarshalOptions   protojson.MarshalOptions
 	protoUnmarshalOptions protojson.UnmarshalOptions
 	options               ProtoJSONPayloadConverterOptions
 }
@@ -53,6 +54,16 @@ type ProtoJSONPayloadConverterOptions struct {
 
 	// AllowUnknownFields will ignore unknown fields when unmarshalling, as opposed to returning an error
 	AllowUnknownFields bool
+
+	// UseProtoNames uses proto field name instead of lowerCamelCase name in JSON
+	// field names.
+	UseProtoNames bool
+
+	// UseEnumNumbers emits enum values as numbers.
+	UseEnumNumbers bool
+
+	// EmitUnpopulated specifies whether to emit unpopulated fields.
+	EmitUnpopulated bool
 }
 
 var (
@@ -64,6 +75,7 @@ func NewProtoJSONPayloadConverter() *ProtoJSONPayloadConverter {
 	return &ProtoJSONPayloadConverter{
 		gogoMarshaler:         gogojsonpb.Marshaler{},
 		gogoUnmarshaler:       gogojsonpb.Unmarshaler{},
+		protoMarshalOptions:   protojson.MarshalOptions{},
 		protoUnmarshalOptions: protojson.UnmarshalOptions{},
 	}
 }
@@ -71,9 +83,18 @@ func NewProtoJSONPayloadConverter() *ProtoJSONPayloadConverter {
 // NewProtoJSONPayloadConverterWithOptions creates new instance of `ProtoJSONPayloadConverter` with the provided options.
 func NewProtoJSONPayloadConverterWithOptions(options ProtoJSONPayloadConverterOptions) *ProtoJSONPayloadConverter {
 	return &ProtoJSONPayloadConverter{
-		gogoMarshaler: gogojsonpb.Marshaler{},
+		gogoMarshaler: gogojsonpb.Marshaler{
+			EnumsAsInts:  options.UseEnumNumbers,
+			EmitDefaults: options.EmitUnpopulated,
+			OrigName:     options.UseProtoNames,
+		},
 		gogoUnmarshaler: gogojsonpb.Unmarshaler{
 			AllowUnknownFields: options.AllowUnknownFields,
+		},
+		protoMarshalOptions: protojson.MarshalOptions{
+			UseProtoNames:   options.UseProtoNames,
+			UseEnumNumbers:  options.UseEnumNumbers,
+			EmitUnpopulated: options.EmitUnpopulated,
 		},
 		protoUnmarshalOptions: protojson.UnmarshalOptions{
 			DiscardUnknown: options.AllowUnknownFields,
@@ -101,7 +122,7 @@ func (c *ProtoJSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 	builtPointer := false
 	for {
 		if valueProto, ok := value.(proto.Message); ok {
-			byteSlice, err := protojson.Marshal(valueProto)
+			byteSlice, err := c.protoMarshalOptions.Marshal(valueProto)
 			if err != nil {
 				return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
 			}
