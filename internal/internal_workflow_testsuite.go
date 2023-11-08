@@ -640,6 +640,7 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 		ActivityFn:   activityFn,
 		InputArgs:    args,
 		WorkflowInfo: env.workflowInfo,
+		Header:       env.header,
 	}
 	task := &localActivityTask{
 		activityID: "test-local-activity",
@@ -648,6 +649,7 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 		},
 		attempt:       1,
 		scheduledTime: time.Now(),
+		header:        params.Header,
 	}
 	taskHandler := localActivityTaskHandler{
 		userContext:        env.workerOptions.BackgroundActivityContext,

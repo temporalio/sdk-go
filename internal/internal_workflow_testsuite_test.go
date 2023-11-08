@@ -2391,6 +2391,32 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 	s.True(localActivityFnCanceled.Load())
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityWithHeaderContext() {
+	// inline activity using value passing through user context.
+	activityWithUserContext := func(ctx context.Context) (string, error) {
+		value := ctx.Value(contextKey(testHeader))
+		if val, ok := value.(string); ok {
+			return val, nil
+		}
+		return "", errors.New("value not found from ctx")
+	}
+
+	env := s.NewTestActivityEnvironment()
+	env.SetHeader(&commonpb.Header{
+		Fields: map[string]*commonpb.Payload{
+			testHeader: encodeString(s.T(), "test-data"),
+		},
+	})
+	env.SetContextPropagators([]ContextPropagator{NewKeysPropagator([]string{testHeader})})
+
+	env.RegisterActivity(activityWithUserContext)
+	blob, err := env.ExecuteLocalActivity(activityWithUserContext)
+	s.NoError(err)
+	var value string
+	_ = blob.Get(&value)
+	s.Equal("test-data", value)
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflow() {
 	// This test will send signal from parent to child, and then child will send back signal to ack. No mock is needed.
 	signalName := "test-signal-name"
