@@ -61,16 +61,16 @@ Workflow code could handle errors based on different types of error. Below is sa
 err := workflow.ExecuteActivity(ctx, MyActivity, ...).Get(ctx, nil)
 if err != nil {
 	var applicationErr *ApplicationError
-	if errors.As(err, &applicationError) {
+	if errors.As(err, &applicationErr) {
 		// retrieve error message
-		fmt.Println(applicationError.Error())
+		fmt.Println(applicationErr.Error())
 
 		// handle activity errors (created via NewApplicationError() API)
 		var detailMsg string // assuming activity return error by NewApplicationError("message", true, "string details")
 		applicationErr.Details(&detailMsg) // extract strong typed details
 
 		// handle activity errors (errors created other than using NewApplicationError() API)
-		switch err.Type() {
+		switch applicationErr.Type() {
 		case "CustomErrTypeA":
 			// handle CustomErrTypeA
 		case CustomErrTypeB:
@@ -88,9 +88,11 @@ if err != nil {
 	var timeoutErr *TimeoutError
 	if errors.As(err, &timeoutErr) {
 		// handle timeout, could check timeout type by timeoutErr.TimeoutType()
-        switch err.TimeoutType() {
+        switch timeoutErr.TimeoutType() {
         case enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START:
 			// Handle ScheduleToStart timeout.
+        case enumspb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE:
+			// Handle ScheduleToClose timeout.
         case enumspb.TIMEOUT_TYPE_START_TO_CLOSE:
             // Handle StartToClose timeout.
         case enumspb.TIMEOUT_TYPE_HEARTBEAT:
