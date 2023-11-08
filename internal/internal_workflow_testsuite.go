@@ -650,10 +650,11 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 		scheduledTime: time.Now(),
 	}
 	taskHandler := localActivityTaskHandler{
-		userContext:    env.workerOptions.BackgroundActivityContext,
-		metricsHandler: env.metricsHandler,
-		logger:         env.logger,
-		interceptors:   env.registry.interceptors,
+		userContext:        env.workerOptions.BackgroundActivityContext,
+		metricsHandler:     env.metricsHandler,
+		logger:             env.logger,
+		interceptors:       env.registry.interceptors,
+		contextPropagators: env.contextPropagators,
 	}
 
 	result := taskHandler.executeLocalActivityTask(task)
