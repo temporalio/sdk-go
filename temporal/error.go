@@ -91,6 +91,8 @@ if err != nil {
         switch timeoutErr.TimeoutType() {
         case enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START:
 			// Handle ScheduleToStart timeout.
+        case enumspb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE:
+			// Handle ScheduleToClose timeout.
         case enumspb.TIMEOUT_TYPE_START_TO_CLOSE:
             // Handle StartToClose timeout.
         case enumspb.TIMEOUT_TYPE_HEARTBEAT:
