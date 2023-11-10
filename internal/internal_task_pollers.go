@@ -404,11 +404,11 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 	if taskErr != nil {
 		metricsHandler.Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
 		wtp.logger.Warn("Failed to process workflow task.",
-			tagWorkflowType, task.WorkflowType.GetName(),
-			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
-			tagRunID, task.WorkflowExecution.GetRunId(),
-			tagAttempt, task.Attempt,
-			tagError, taskErr)
+			TagWorkflowType, task.WorkflowType.GetName(),
+			TagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+			TagRunID, task.WorkflowExecution.GetRunId(),
+			TagAttempt, task.Attempt,
+			TagError, taskErr)
 		completedRequest = wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)
 	}
 
@@ -437,7 +437,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(
 			_, err = wtp.service.RespondWorkflowTaskFailed(grpcCtx, request)
 			if err != nil {
 				traceLog(func() {
-					wtp.logger.Debug("RespondWorkflowTaskFailed failed.", tagError, err)
+					wtp.logger.Debug("RespondWorkflowTaskFailed failed.", TagError, err)
 				})
 			}
 		}
@@ -456,7 +456,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(
 		response, err = wtp.service.RespondWorkflowTaskCompleted(grpcCtx, request)
 		if err != nil {
 			traceLog(func() {
-				wtp.logger.Debug("RespondWorkflowTaskCompleted failed.", tagError, err)
+				wtp.logger.Debug("RespondWorkflowTaskCompleted failed.", TagError, err)
 			})
 		}
 		wtp.eagerActivityExecutor.handleResponse(response, eagerReserved)
@@ -464,7 +464,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(
 		_, err = wtp.service.RespondQueryTaskCompleted(grpcCtx, request)
 		if err != nil {
 			traceLog(func() {
-				wtp.logger.Debug("RespondQueryTaskCompleted failed.", tagError, err)
+				wtp.logger.Debug("RespondQueryTaskCompleted failed.", TagError, err)
 			})
 		}
 	default:
@@ -560,10 +560,10 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 	ae := activityExecutor{name: activityType, fn: task.params.ActivityFn}
 	traceLog(func() {
 		lath.logger.Debug("Processing new local activity task",
-			tagWorkflowID, task.params.WorkflowInfo.WorkflowExecution.ID,
-			tagRunID, task.params.WorkflowInfo.WorkflowExecution.RunID,
-			tagActivityType, activityType,
-			tagAttempt, task.attempt,
+			TagWorkflowID, task.params.WorkflowInfo.WorkflowExecution.ID,
+			TagRunID, task.params.WorkflowInfo.WorkflowExecution.RunID,
+			TagActivityType, activityType,
+			TagAttempt, task.attempt,
 		)
 	})
 	ctx, err := WithLocalActivityTask(lath.userContext, task, lath.logger, lath.metricsHandler,
@@ -603,12 +603,12 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 				topLine := fmt.Sprintf("local activity for %s [panic]:", activityType)
 				st := getStackTraceRaw(topLine, 7, 0)
 				lath.logger.Error("LocalActivity panic.",
-					tagWorkflowID, task.params.WorkflowInfo.WorkflowExecution.ID,
-					tagRunID, task.params.WorkflowInfo.WorkflowExecution.RunID,
-					tagActivityType, activityType,
-					tagAttempt, task.attempt,
-					tagPanicError, fmt.Sprintf("%v", p),
-					tagPanicStack, st)
+					TagWorkflowID, task.params.WorkflowInfo.WorkflowExecution.ID,
+					TagRunID, task.params.WorkflowInfo.WorkflowExecution.RunID,
+					TagActivityType, activityType,
+					TagAttempt, task.attempt,
+					TagPanicError, fmt.Sprintf("%v", p),
+					TagPanicStack, st)
 				metricsHandler.Counter(metrics.LocalActivityErrorCounter).Inc(1)
 				err = newPanicError(p, st)
 			}
@@ -1006,7 +1006,7 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 	reportErr := reportActivityComplete(context.Background(), atp.service, request, rpcMetricsHandler)
 	if reportErr != nil {
 		traceLog(func() {
-			atp.logger.Debug("reportActivityComplete failed", tagError, reportErr)
+			atp.logger.Debug("reportActivityComplete failed", TagError, reportErr)
 		})
 		return reportErr
 	}

@@ -244,7 +244,7 @@ func newBaseWorker(
 		stopCh:             make(chan struct{}),
 		taskLimiter:        rate.NewLimiter(rate.Limit(options.maxTaskPerSecond), 1),
 		retrier:            backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
-		logger:             log.With(logger, tagWorkerType, options.workerType),
+		logger:             log.With(logger, TagWorkerType, options.workerType),
 		metricsHandler:     metricsHandler.WithTags(metrics.WorkerTags(options.workerType)),
 		taskSlotsAvailable: int32(options.maxConcurrentTask),
 		pollerRequestCh:    make(chan struct{}, options.maxConcurrentTask),
@@ -412,7 +412,7 @@ func (bw *baseWorker) pollTask() {
 			// We retry "non retriable" errors while long polling for a while, because some proxies return
 			// unexpected values causing unnecessary downtime.
 			if isNonRetriableError(err) && bw.retrier.GetElapsedTime() > getRetryLongPollGracePeriod() {
-				bw.logger.Error("Worker received non-retriable error. Shutting down.", tagError, err)
+				bw.logger.Error("Worker received non-retriable error. Shutting down.", TagError, err)
 				if bw.fatalErrCb != nil {
 					bw.fatalErrCb(err)
 				}
@@ -455,7 +455,7 @@ func (bw *baseWorker) logPollTaskError(err error) {
 	// Log the error as warn if it doesn't match the last error seen or its over
 	// the time since
 	if err.Error() != bw.lastPollTaskErrMessage || time.Since(bw.lastPollTaskErrStarted) > lastPollTaskErrSuppressTime {
-		bw.logger.Warn("Failed to poll for task.", tagError, err)
+		bw.logger.Warn("Failed to poll for task.", TagError, err)
 		bw.lastPollTaskErrMessage = err.Error()
 		bw.lastPollTaskErrStarted = time.Now()
 	}
@@ -505,9 +505,9 @@ func (bw *baseWorker) processTask(task interface{}) {
 	err := bw.options.taskWorker.ProcessTask(task)
 	if err != nil {
 		if isClientSideError(err) {
-			bw.logger.Info("Task processing failed with client side error", tagError, err)
+			bw.logger.Info("Task processing failed with client side error", TagError, err)
 		} else {
-			bw.logger.Info("Task processing failed with error", tagError, err)
+			bw.logger.Info("Task processing failed with error", TagError, err)
 		}
 	}
 }

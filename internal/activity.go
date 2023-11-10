@@ -263,12 +263,12 @@ func WithActivityTask(
 	deadline := calculateActivityDeadline(scheduled, started, scheduleToCloseTimeout, startToCloseTimeout)
 
 	logger = log.With(logger,
-		tagActivityID, task.ActivityId,
-		tagActivityType, task.ActivityType.GetName(),
-		tagAttempt, task.Attempt,
-		tagWorkflowType, task.WorkflowType.GetName(),
-		tagWorkflowID, task.WorkflowExecution.WorkflowId,
-		tagRunID, task.WorkflowExecution.RunId,
+		TagActivityID, task.ActivityId,
+		TagActivityType, task.ActivityType.GetName(),
+		TagAttempt, task.Attempt,
+		TagWorkflowType, task.WorkflowType.GetName(),
+		TagWorkflowID, task.WorkflowExecution.WorkflowId,
+		TagRunID, task.WorkflowExecution.RunId,
 	)
 
 	return newActivityContext(ctx, interceptors, &activityEnvironment{
@@ -314,12 +314,12 @@ func WithLocalActivityTask(
 	workflowType := task.params.WorkflowInfo.WorkflowType.Name
 	activityType := task.params.ActivityType
 	logger = log.With(logger,
-		tagActivityID, task.activityID,
-		tagActivityType, activityType,
-		tagAttempt, task.attempt,
-		tagWorkflowType, workflowType,
-		tagWorkflowID, task.params.WorkflowInfo.WorkflowExecution.ID,
-		tagRunID, task.params.WorkflowInfo.WorkflowExecution.RunID,
+		TagActivityID, task.activityID,
+		TagActivityType, activityType,
+		TagAttempt, task.attempt,
+		TagWorkflowType, workflowType,
+		TagWorkflowID, task.params.WorkflowInfo.WorkflowExecution.ID,
+		TagRunID, task.params.WorkflowInfo.WorkflowExecution.RunID,
 	)
 	startedTime := time.Now()
 	scheduleToCloseTimeout := task.params.ScheduleToCloseTimeout

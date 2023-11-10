@@ -1212,7 +1212,7 @@ func (wc *WorkflowClient) Close() {
 
 	if wc.conn != nil {
 		if err := wc.conn.Close(); err != nil {
-			wc.logger.Warn("unable to close connection", tagError, err)
+			wc.logger.Warn("unable to close connection", TagError, err)
 		}
 	}
 }
@@ -1273,7 +1273,7 @@ func (nc *namespaceClient) Close() {
 		return
 	}
 	if err := nc.connectionCloser.Close(); err != nil {
-		nc.logger.Warn("unable to close connection", tagError, err)
+		nc.logger.Warn("unable to close connection", TagError, err)
 	}
 }
 

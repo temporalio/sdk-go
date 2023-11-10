@@ -294,7 +294,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		env.locker.Unlock()
 		if !ok {
 			env.logger.Debug("RecordActivityTaskHeartbeat: ActivityID not found, could be already completed or canceled.",
-				tagActivityID, activityID)
+				TagActivityID, activityID)
 			return serviceerror.NewNotFound("")
 		}
 		activityHandle.heartbeatDetails = r.Details
@@ -311,7 +311,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 			}
 		}
 
-		env.logger.Debug("RecordActivityTaskHeartbeat", tagActivityID, activityID)
+		env.logger.Debug("RecordActivityTaskHeartbeat", TagActivityID, activityID)
 		return nil
 	}
 
@@ -782,7 +782,7 @@ func (env *testWorkflowEnvironmentImpl) autoFireNextTimer() bool {
 	fireTimer := func(th *testTimerHandle) {
 		skipDuration := th.mockTimeToFire.Sub(env.mockClock.Now())
 		env.logger.Debug("Auto fire timer",
-			tagTimerID, th.timerID,
+			TagTimerID, th.timerID,
 			"TimerDuration", th.duration,
 			"TimeSkipped", skipDuration)
 
@@ -836,11 +836,11 @@ func (env *testWorkflowEnvironmentImpl) postCallback(cb func(), startWorkflowTas
 func (env *testWorkflowEnvironmentImpl) RequestCancelActivity(activityID ActivityID) {
 	handle, ok := env.getActivityHandle(activityID.id, env.workflowInfo.WorkflowExecution.RunID)
 	if !ok {
-		env.logger.Debug("RequestCancelActivity failed, Activity not exists or already completed.", tagActivityID, activityID)
+		env.logger.Debug("RequestCancelActivity failed, Activity not exists or already completed.", TagActivityID, activityID)
 		return
 	}
 	activityInfo := env.getActivityInfo(activityID, handle.activityType)
-	env.logger.Debug("RequestCancelActivity", tagActivityID, activityID)
+	env.logger.Debug("RequestCancelActivity", TagActivityID, activityID)
 	env.deleteHandle(activityID.id, env.workflowInfo.WorkflowExecution.RunID)
 	env.postCallback(func() {
 		handle.callback(nil, NewCanceledError())
@@ -852,10 +852,10 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelActivity(activityID Activit
 
 // RequestCancelTimer request to cancel timer on this testWorkflowEnvironmentImpl.
 func (env *testWorkflowEnvironmentImpl) RequestCancelTimer(timerID TimerID) {
-	env.logger.Debug("RequestCancelTimer", tagTimerID, timerID)
+	env.logger.Debug("RequestCancelTimer", TagTimerID, timerID)
 	timerHandle, ok := env.timers[timerID.id]
 	if !ok {
-		env.logger.Debug("RequestCancelTimer failed, TimerID not exists.", tagTimerID, timerID)
+		env.logger.Debug("RequestCancelTimer failed, TimerID not exists.", TagTimerID, timerID)
 		return
 	}
 
@@ -1041,7 +1041,7 @@ func (env *testWorkflowEnvironmentImpl) CompleteActivity(taskToken []byte, resul
 		activityHandle, ok := env.getActivityHandle(activityID.id, env.workflowInfo.WorkflowExecution.RunID)
 		if !ok {
 			env.logger.Debug("CompleteActivity: ActivityID not found, could be already completed or canceled.",
-				tagActivityID, activityID)
+				TagActivityID, activityID)
 			return
 		}
 		// We do allow canceled error to be passed here
@@ -1445,17 +1445,17 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocal
 func (env *testWorkflowEnvironmentImpl) RequestCancelLocalActivity(activityID LocalActivityID) {
 	task, ok := env.localActivities[activityID.id]
 	if !ok {
-		env.logger.Debug("RequestCancelLocalActivity failed, LocalActivity not exists or already completed.", tagActivityID, activityID)
+		env.logger.Debug("RequestCancelLocalActivity failed, LocalActivity not exists or already completed.", TagActivityID, activityID)
 		return
 	}
-	env.logger.Debug("RequestCancelLocalActivity", tagActivityID, activityID)
+	env.logger.Debug("RequestCancelLocalActivity", TagActivityID, activityID)
 	task.cancel()
 }
 
 func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID ActivityID, result interface{}, activityType string,
 	dataConverter converter.DataConverter) {
 	env.logger.Debug(fmt.Sprintf("handleActivityResult: %T.", result),
-		tagActivityID, activityID, tagActivityType, activityType)
+		TagActivityID, activityID, TagActivityType, activityType)
 	activityInfo := env.getActivityInfo(activityID, activityType)
 	if result == ErrActivityResultPending {
 		// In case activity returns ErrActivityResultPending, the respond will be nil, and we don't need to do anything.
@@ -1470,7 +1470,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID Activity
 	activityHandle, ok := env.getActivityHandle(activityID.id, activityInfo.WorkflowExecution.RunID)
 	if !ok {
 		env.logger.Debug("handleActivityResult: ActivityID not exists, could be already completed or canceled.",
-			tagActivityID, activityID)
+			TagActivityID, activityID)
 		return
 	}
 
@@ -1545,13 +1545,13 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 	activityID := ActivityID{id: result.task.activityID}
 	activityType := getActivityFunctionName(env.registry, result.task.params.ActivityFn)
 	env.logger.Debug(fmt.Sprintf("handleLocalActivityResult: Err: %v, Result: %v.", result.err, result.result),
-		tagActivityID, activityID, tagActivityType, activityType)
+		TagActivityID, activityID, TagActivityType, activityType)
 
 	activityInfo := env.getActivityInfo(activityID, activityType)
 	task, ok := env.localActivities[activityID.id]
 	if !ok {
 		env.logger.Debug("handleLocalActivityResult: ActivityID not exists, could be already completed or canceled.",
-			tagActivityID, activityID)
+			TagActivityID, activityID)
 		return
 	}
 	delete(env.localActivities, activityID.id)
@@ -2171,13 +2171,13 @@ func (env *testWorkflowEnvironmentImpl) ExecuteChildWorkflow(params ExecuteWorkf
 func (env *testWorkflowEnvironmentImpl) executeChildWorkflowWithDelay(delayStart time.Duration, params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) {
 	childEnv, err := env.newTestWorkflowEnvironmentForChild(&params, callback, startedHandler)
 	if err != nil {
-		env.logger.Info("ExecuteChildWorkflow failed", tagError, err)
+		env.logger.Info("ExecuteChildWorkflow failed", TagError, err)
 		callback(nil, err)
 		startedHandler(WorkflowExecution{}, err)
 		return
 	}
 
-	env.logger.Info("ExecuteChildWorkflow", tagWorkflowType, params.WorkflowType.Name)
+	env.logger.Info("ExecuteChildWorkflow", TagWorkflowType, params.WorkflowType.Name)
 	env.runningCount++
 
 	// run child workflow in separate goroutinue

@@ -730,13 +730,13 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 				// non query task and cached state is missing events, we need to discard the cached state and build a new one.
 				if history.Events[0].GetEventId() != workflowContext.previousStartedEventID+1 {
 					wth.logger.Debug("Cached state staled, new task has unexpected events",
-						tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
-						tagRunID, task.WorkflowExecution.GetRunId(),
-						tagAttempt, task.Attempt,
-						tagCachedPreviousStartedEventID, workflowContext.previousStartedEventID,
-						tagTaskFirstEventID, task.History.Events[0].GetEventId(),
-						tagTaskStartedEventID, task.GetStartedEventId(),
-						tagPreviousStartedEventID, task.GetPreviousStartedEventId(),
+						TagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+						TagRunID, task.WorkflowExecution.GetRunId(),
+						TagAttempt, task.Attempt,
+						TagCachedPreviousStartedEventID, workflowContext.previousStartedEventID,
+						TagTaskFirstEventID, task.History.Events[0].GetEventId(),
+						TagTaskStartedEventID, task.GetStartedEventId(),
+						TagPreviousStartedEventID, task.GetPreviousStartedEventId(),
 					)
 				} else {
 					wth.logger.Debug("Cached state started on different worker, creating new context")
@@ -843,11 +843,11 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	workflowID := task.WorkflowExecution.GetWorkflowId()
 	traceLog(func() {
 		wth.logger.Debug("Processing new workflow task.",
-			tagWorkflowType, task.WorkflowType.GetName(),
-			tagWorkflowID, workflowID,
-			tagRunID, runID,
-			tagAttempt, task.Attempt,
-			tagPreviousStartedEventID, task.GetPreviousStartedEventId())
+			TagWorkflowType, task.WorkflowType.GetName(),
+			TagWorkflowID, workflowID,
+			TagRunID, runID,
+			TagAttempt, task.Attempt,
+			TagPreviousStartedEventID, task.GetPreviousStartedEventId())
 	})
 
 	var (
@@ -1156,19 +1156,19 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 	if workflowError != nil {
 		if panicErr, ok := w.err.(*workflowPanicError); ok {
 			w.wth.logger.Error("Workflow panic",
-				tagWorkflowType, task.WorkflowType.GetName(),
-				tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
-				tagRunID, task.WorkflowExecution.GetRunId(),
-				tagAttempt, task.Attempt,
-				tagError, workflowError,
-				tagStackTrace, panicErr.StackTrace())
+				TagWorkflowType, task.WorkflowType.GetName(),
+				TagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+				TagRunID, task.WorkflowExecution.GetRunId(),
+				TagAttempt, task.Attempt,
+				TagError, workflowError,
+				TagStackTrace, panicErr.StackTrace())
 		} else {
 			w.wth.logger.Error("Workflow panic",
-				tagWorkflowType, task.WorkflowType.GetName(),
-				tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
-				tagRunID, task.WorkflowExecution.GetRunId(),
-				tagAttempt, task.Attempt,
-				tagError, workflowError)
+				TagWorkflowType, task.WorkflowType.GetName(),
+				TagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+				TagRunID, task.WorkflowExecution.GetRunId(),
+				TagAttempt, task.Attempt,
+				TagError, workflowError)
 		}
 
 		switch w.wth.workflowPanicPolicy {
@@ -1337,13 +1337,13 @@ func (w *workflowExecutionContextImpl) SetPreviousStartedEventID(eventID int64) 
 func (w *workflowExecutionContextImpl) ResetIfStale(task *workflowservice.PollWorkflowTaskQueueResponse, historyIterator HistoryIterator) error {
 	if len(task.History.Events) > 0 && task.History.Events[0].GetEventId() != w.previousStartedEventID+1 {
 		w.wth.logger.Debug("Cached state staled, new task has unexpected events",
-			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
-			tagRunID, task.WorkflowExecution.GetRunId(),
-			tagAttempt, task.Attempt,
-			tagCachedPreviousStartedEventID, w.previousStartedEventID,
-			tagTaskFirstEventID, task.History.Events[0].GetEventId(),
-			tagTaskStartedEventID, task.GetStartedEventId(),
-			tagPreviousStartedEventID, task.GetPreviousStartedEventId(),
+			TagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+			TagRunID, task.WorkflowExecution.GetRunId(),
+			TagAttempt, task.Attempt,
+			TagCachedPreviousStartedEventID, w.previousStartedEventID,
+			TagTaskFirstEventID, task.History.Events[0].GetEventId(),
+			TagTaskStartedEventID, task.GetStartedEventId(),
+			TagPreviousStartedEventID, task.GetPreviousStartedEventId(),
 		)
 		w.clearState()
 		return w.resetStateIfDestroyed(task, historyIterator)
@@ -1956,7 +1956,7 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 
 	if err != nil {
 		logger := GetActivityLogger(ctx)
-		logger.Warn("RecordActivityHeartbeat with error", tagError, err)
+		logger.Warn("RecordActivityHeartbeat with error", TagError, err)
 	}
 
 	// This error won't be returned to user check RecordActivityHeartbeat().
@@ -2007,10 +2007,10 @@ func newServiceInvoker(
 func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice.PollActivityTaskQueueResponse) (result interface{}, err error) {
 	traceLog(func() {
 		ath.logger.Debug("Processing new activity task",
-			tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
-			tagRunID, t.WorkflowExecution.GetRunId(),
-			tagActivityType, t.ActivityType.GetName(),
-			tagAttempt, t.Attempt,
+			TagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
+			TagRunID, t.WorkflowExecution.GetRunId(),
+			TagActivityType, t.ActivityType.GetName(),
+			TagAttempt, t.Attempt,
 		)
 	})
 
@@ -2058,12 +2058,12 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			topLine := fmt.Sprintf("activity for %s [panic]:", ath.taskQueueName)
 			st := getStackTraceRaw(topLine, 7, 0)
 			ath.logger.Error("Activity panic.",
-				tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
-				tagRunID, t.WorkflowExecution.GetRunId(),
-				tagActivityType, activityType,
-				tagAttempt, t.Attempt,
-				tagPanicError, fmt.Sprintf("%v", p),
-				tagPanicStack, st)
+				TagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
+				TagRunID, t.WorkflowExecution.GetRunId(),
+				TagActivityType, activityType,
+				TagAttempt, t.Attempt,
+				TagPanicError, fmt.Sprintf("%v", p),
+				TagPanicStack, st)
 			metricsHandler.Counter(metrics.ActivityTaskErrorCounter).Inc(1)
 			panicErr := newPanicError(p, st)
 			result = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr,
@@ -2088,22 +2088,22 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	dlCancelFunc()
 	if <-ctx.Done(); ctx.Err() == context.DeadlineExceeded {
 		ath.logger.Info("Activity complete after timeout.",
-			tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
-			tagRunID, t.WorkflowExecution.GetRunId(),
-			tagActivityType, activityType,
-			tagAttempt, t.Attempt,
-			tagResult, output,
-			tagError, err,
+			TagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
+			TagRunID, t.WorkflowExecution.GetRunId(),
+			TagActivityType, activityType,
+			TagAttempt, t.Attempt,
+			TagResult, output,
+			TagError, err,
 		)
 		return nil, ctx.Err()
 	}
 	if err != nil && err != ErrActivityResultPending {
 		ath.logger.Error("Activity error.",
-			tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
-			tagRunID, t.WorkflowExecution.GetRunId(),
-			tagActivityType, activityType,
-			tagAttempt, t.Attempt,
-			tagError, err,
+			TagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
+			TagRunID, t.WorkflowExecution.GetRunId(),
+			TagActivityType, activityType,
+			TagAttempt, t.Attempt,
+			TagError, err,
 		)
 	}
 	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err,

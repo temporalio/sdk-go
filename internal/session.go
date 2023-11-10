@@ -235,7 +235,7 @@ func CompleteSession(ctx Context) {
 	// the taskqueue will be overridden to use the one stored in sessionInfo.
 	err := ExecuteActivity(completionCtx, sessionCompletionActivityName, sessionInfo.SessionID).Get(completionCtx, nil)
 	if err != nil {
-		GetLogger(completionCtx).Warn("Complete session activity failed", tagError, err)
+		GetLogger(completionCtx).Warn("Complete session activity failed", TagError, err)
 	}
 
 	sessionInfo.SessionState = SessionStateClosed
@@ -339,7 +339,7 @@ func createSession(ctx Context, creationTaskqueue string, options *SessionOption
 	s.AddFuture(creationFuture, func(f Future) {
 		// activity stoped before signal is received, must be creation timeout.
 		creationErr = f.Get(creationCtx, nil)
-		GetLogger(creationCtx).Debug("Failed to create session", "sessionID", sessionID, tagError, creationErr)
+		GetLogger(creationCtx).Debug("Failed to create session", "sessionID", sessionID, TagError, creationErr)
 	})
 	s.Select(creationCtx)
 
@@ -361,7 +361,7 @@ func createSession(ctx Context, creationTaskqueue string, options *SessionOption
 		var canceledErr *CanceledError
 		if !errors.As(err, &canceledErr) {
 			getWorkflowEnvironment(creationCtx).RemoveSession(sessionID)
-			GetLogger(creationCtx).Debug("Session failed", "sessionID", sessionID, tagError, err)
+			GetLogger(creationCtx).Debug("Session failed", "sessionID", sessionID, TagError, err)
 			sessionInfo.SessionState = SessionStateFailed
 			sessionCancelFunc()
 		}
@@ -448,7 +448,7 @@ func sessionCreationActivity(ctx context.Context, sessionID string) error {
 			// TODO refactor using grpc-retry, add support for custom handling for error codes.
 			err := backoff.Retry(ctx, heartbeatOp, heartbeatRetryPolicy, isRetryable)
 			if err != nil {
-				GetActivityLogger(ctx).Info("session heartbeat failed", tagError, err, "sessionID", sessionID)
+				GetActivityLogger(ctx).Info("session heartbeat failed", TagError, err, "sessionID", sessionID)
 			}
 		case <-doneCh:
 			return nil

@@ -246,10 +246,10 @@ func newWorkflowExecutionEventHandler(
 	// Attempt to skip 1 log level to remove the ReplayLogger from the stack.
 	context.logger = log.Skip(ilog.NewReplayLogger(
 		log.With(logger,
-			tagWorkflowType, workflowInfo.WorkflowType.Name,
-			tagWorkflowID, workflowInfo.WorkflowExecution.ID,
-			tagRunID, workflowInfo.WorkflowExecution.RunID,
-			tagAttempt, workflowInfo.Attempt,
+			TagWorkflowType, workflowInfo.WorkflowType.Name,
+			TagWorkflowID, workflowInfo.WorkflowExecution.ID,
+			TagRunID, workflowInfo.WorkflowExecution.RunID,
+			TagAttempt, workflowInfo.Attempt,
 		),
 		&context.isReplay,
 		&context.enableLoggingInReplay), 1)
@@ -581,8 +581,8 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	})
 
 	wc.logger.Debug("ExecuteChildWorkflow",
-		tagChildWorkflowID, params.WorkflowID,
-		tagWorkflowType, params.WorkflowType.Name)
+		TagChildWorkflowID, params.WorkflowID,
+		TagWorkflowType, params.WorkflowType.Name)
 }
 
 func (wc *workflowEnvironmentImpl) RegisterSignalHandler(
@@ -674,8 +674,8 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	})
 
 	wc.logger.Debug("ExecuteActivity",
-		tagActivityID, activityID,
-		tagActivityType, scheduleTaskAttr.ActivityType.GetName())
+		TagActivityID, activityID,
+		TagActivityType, scheduleTaskAttr.ActivityType.GetName())
 
 	return ActivityID{id: activityID}
 }
@@ -691,7 +691,7 @@ func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID ActivityID) 
 		activity.handle(nil, ErrCanceled)
 	}
 
-	wc.logger.Debug("RequestCancelActivity", tagActivityID, activityID)
+	wc.logger.Debug("RequestCancelActivity", TagActivityID, activityID)
 }
 
 func (wc *workflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocalActivityParams, callback LocalActivityResultHandler) LocalActivityID {
@@ -756,7 +756,7 @@ func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback ResultHand
 	command.setData(&scheduledTimer{callback: callback})
 
 	wc.logger.Debug("NewTimer",
-		tagTimerID, startTimerAttr.GetTimerId(),
+		TagTimerID, startTimerAttr.GetTimerId(),
 		"Duration", d)
 
 	return &TimerID{id: timerID}
@@ -771,7 +771,7 @@ func (wc *workflowEnvironmentImpl) RequestCancelTimer(timerID TimerID) {
 		}
 		timer.handle(nil, ErrCanceled)
 	}
-	wc.logger.Debug("RequestCancelTimer", tagTimerID, timerID)
+	wc.logger.Debug("RequestCancelTimer", TagTimerID, timerID)
 }
 
 func validateVersion(changeID string, version, minSupported, maxSupported Version) {
@@ -865,7 +865,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 		// to reduce memory pressure
 		delete(wc.sideEffectResult, sideEffectID)
 		wc.logger.Debug("SideEffect returning already calculated result.",
-			tagSideEffectID, sideEffectID)
+			TagSideEffectID, sideEffectID)
 	} else {
 		var err error
 		result, err = f()
@@ -878,7 +878,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 	wc.commandsHelper.recordSideEffectMarker(sideEffectID, result, wc.dataConverter)
 
 	callback(result, nil)
-	wc.logger.Debug("SideEffect Marker added", tagSideEffectID, sideEffectID)
+	wc.logger.Debug("SideEffect Marker added", TagSideEffectID, sideEffectID)
 }
 
 // lookupMutableSideEffect gets the current value of the MutableSideEffect for id for the
@@ -1055,8 +1055,8 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	weh.isReplay = isReplay
 	traceLog(func() {
 		weh.logger.Debug("ProcessEvent",
-			tagEventID, event.GetEventId(),
-			tagEventType, event.GetEventType().String())
+			TagEventID, event.GetEventId(),
+			TagEventType, event.GetEventType().String())
 	})
 
 	switch event.GetEventType() {
@@ -1199,8 +1199,8 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 
 	default:
 		weh.logger.Error("unknown event type",
-			tagEventID, event.GetEventId(),
-			tagEventType, event.GetEventType().String())
+			TagEventID, event.GetEventId(),
+			TagEventType, event.GetEventType().String())
 		// Do not fail to be forward compatible with new events
 	}
 
@@ -1258,9 +1258,9 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessQuery(
 
 		if result.Size() > queryResultSizeLimit {
 			weh.logger.Error("Query result size exceeds limit.",
-				tagQueryType, queryType,
-				tagWorkflowID, weh.workflowInfo.WorkflowExecution.ID,
-				tagRunID, weh.workflowInfo.WorkflowExecution.RunID)
+				TagQueryType, queryType,
+				TagWorkflowID, weh.workflowInfo.WorkflowExecution.ID,
+				TagRunID, weh.workflowInfo.WorkflowExecution.RunID)
 			return nil, fmt.Errorf("query result size (%v) exceeds limit (%v)", result.Size(), queryResultSizeLimit)
 		}
 
