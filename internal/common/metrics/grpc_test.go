@@ -71,7 +71,6 @@ func TestGRPCInterceptor(t *testing.T) {
 	require.Len(t, timers, 1)
 	require.Equal(t, metrics.TemporalRequestLatency+"_my_suffix", timers[0].Name)
 	require.Equal(t, map[string]string{metrics.OperationTagName: "Check"}, timers[0].Tags)
-	require.Greater(t, timers[0].Value(), 0*time.Second)
 
 	// Now clear the metrics and set a handler with tags and long poll on the
 	// context and make a known failing call

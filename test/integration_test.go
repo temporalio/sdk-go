@@ -28,7 +28,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go.opentelemetry.io/otel/baggage"
 	"os"
 	"strings"
 	"sync"
@@ -42,6 +41,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"github.com/uber-go/tally/v4"
+	"go.opentelemetry.io/otel/baggage"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
@@ -2684,6 +2684,9 @@ func (ts *IntegrationTestSuite) TestDeterminismUpsertSearchAttributesConditional
 	options.SearchAttributes = map[string]interface{}{
 		"CustomKeywordField": "unset",
 	}
+	// TODO(cretz): There is a bug with search attribute names on standard
+	// visibility with eager workflow start
+	options.EnableEagerStart = false
 	run, err := ts.client.ExecuteWorkflow(
 		ctx,
 		options,

@@ -9,44 +9,81 @@ jobs:
   build-and-test:
     strategy:
       matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
         go-version: ["1.20", "1.21"]
-    runs-on: ubuntu-latest
+        include:
+          - os: ubuntu-latest
+            go-version: "1.21"
+            # We only want to upload coverage on a single target
+            uploadCoverage: true
+            # We only want to check docker compose on a single target
+            testDockerCompose: true
+    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
+
+      - name: Checkout repository
+        uses: actions/checkout@v3
         with:
           submodules: recursive
-      - uses: actions/setup-go@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
         with:
           go-version: ${{ matrix.go-version }}
-      - name: Check and unit test
-        run: make check unit-test
-      - name: Clone Temporal Docker compose
+
+      - name: Check
+        run: go run . check
+        working-directory: ./internal/cmd/build
+      
+      - name: Unit test
+        run: go run . unit-test -coverage=${{ matrix.uploadCoverage && 'true' || 'false' }}
+        working-directory: ./internal/cmd/build
+
+      - name: Integration tests (without cache)
+        run: go run . integration-test -dev-server
+        working-directory: ./internal/cmd/build
+        env:
+          WORKFLOW_CACHE_SIZE: "0"
+          TEMPORAL_COVERAGE_FILE: ${{ matrix.uploadCoverage && 'integ_test_zero_cache_cover.out' || '' }}
+
+      - name: Integration tests (with cache)
+        run: go run . integration-test -dev-server
+        working-directory: ./internal/cmd/build
+        env:
+          TEMPORAL_COVERAGE_FILE: ${{ matrix.uploadCoverage && 'integ_test_normal_cache_cover.out' || '' }}
+
+      - name: Merge coverage files
+        if: ${{ matrix.uploadCoverage }}
+        run: go run . merge-coverage-files ../../../coverage.out
+        working-directory: ./internal/cmd/build
+
+      - name: Upload coverage
+        if: ${{ matrix.uploadCoverage }}
+        continue-on-error: true
+        uses: coverallsapp/github-action@v2
+        with:
+          file: coverage.out
+          format: golang
+
+      - name: Docker compose - checkout
+        if: ${{ matrix.testDockerCompose }}
         uses: actions/checkout@v3
         with:
           repository: temporalio/docker-compose
           path: ./docker-compose
-      - name: Start Temporal server
+
+      - name: Docker compose - start
+        if: ${{ matrix.testDockerCompose }}
         run: |
           cp ./.github/workflows/docker/docker-compose.override.yaml ./docker-compose/docker-compose.override.yaml
           cp ./.github/workflows/docker/dynamic-config-custom.yaml ./docker-compose/dynamicconfig/dynamic-config-custom.yaml
           docker-compose --project-directory ./docker-compose up &
           go run ./.github/workflows/wait_for_server.go
-      - name: Integration tests (without cache)
-        run: make integration-test-zero-cache
-      - name: Integration tests (with cache)
-        run: make integration-test-normal-cache
-      - name: Merge coverage files
-        id: merge-coverage-files
-        run: |
-          COVERAGE_FILE="$(mktemp)"
-          echo "COVERAGE_FILE=$COVERAGE_FILE" >> "$GITHUB_OUTPUT"
-          make merge-coverage > "$COVERAGE_FILE"
-      - name: Upload coverage
-        continue-on-error: true
-        uses: coverallsapp/github-action@v2
-        with:
-          file: ${{ steps.merge-coverage-files.outputs.COVERAGE_FILE }}
-          format: golang
+
+      - name: Docker compose - integration tests
+        if: ${{ matrix.testDockerCompose }}
+        run: go run . integration-test
+        working-directory: ./internal/cmd/build
 
   cloud-test:
     strategy:
