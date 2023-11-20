@@ -87,3 +87,10 @@ func PollerTags(pollerType string) map[string]string {
 		PollerTypeTagName: pollerType,
 	}
 }
+
+// WorkflowTaskFailedTags returns a set of tags for a workflow task failure.
+func WorkflowTaskFailedTags(reason string) map[string]string {
+	return map[string]string{
+		WorkflowTaskFailureReason: reason,
+	}
+}

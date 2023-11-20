@@ -776,12 +776,12 @@ func (wc *workflowEnvironmentImpl) RequestCancelTimer(timerID TimerID) {
 
 func validateVersion(changeID string, version, minSupported, maxSupported Version) {
 	if version < minSupported {
-		panic(fmt.Sprintf("Workflow code removed support of version %v. "+
+		panicIllegalState(fmt.Sprintf("Workflow code removed support of version %v. "+
 			"for \"%v\" changeID. The oldest supported version is %v",
 			version, changeID, minSupported))
 	}
 	if version > maxSupported {
-		panic(fmt.Sprintf("Workflow code is too old to support version %v "+
+		panicIllegalState(fmt.Sprintf("Workflow code is too old to support version %v "+
 			"for \"%v\" changeID. The maximum supported version is %v",
 			version, changeID, maxSupported))
 	}
@@ -857,7 +857,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 			for k := range wc.sideEffectResult {
 				keys = append(keys, k)
 			}
-			panic(fmt.Sprintf("No cached result found for side effectID=%v. KnownSideEffects=%v",
+			panicIllegalState(fmt.Sprintf("No cached result found for side effectID=%v. KnownSideEffects=%v",
 				sideEffectID, keys))
 		}
 
@@ -937,7 +937,7 @@ func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interfa
 
 	if wc.isReplay {
 		// This should not happen
-		panic(fmt.Sprintf("Non deterministic workflow code change detected. MutableSideEffect API call doesn't have a correspondent event in the workflow history. MutableSideEffect ID: %s", id))
+		panicIllegalState(fmt.Sprintf("Non deterministic workflow code change detected. MutableSideEffect API call doesn't have a correspondent event in the workflow history. MutableSideEffect ID: %s", id))
 	}
 
 	return wc.recordMutableSideEffect(id, callCount, wc.encodeValue(f()))
