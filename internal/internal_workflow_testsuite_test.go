@@ -105,6 +105,15 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunctionZero() {
 	env.AssertExpectations(s.T())
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_WorkflowReturnedCancel() {
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(testWorkflowCancelled)
+	env.ExecuteWorkflow(testWorkflowCancelled)
+
+	s.True(env.IsWorkflowCompleted())
+	s.Error(env.GetWorkflowError())
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityByNameMockFunction() {
 	mockActivity := func(ctx context.Context, msg string) (string, error) {
 		return "mock_" + msg, nil
@@ -608,6 +617,11 @@ func testWorkflowHello(ctx Context) (string, error) {
 		return "", err
 	}
 	return result, nil
+}
+
+func testWorkflowCancelled(ctx Context) error {
+	_ = NewTimer(ctx, 20*time.Minute)
+	return NewCanceledError()
 }
 
 func testWorkflowContext(ctx Context) (string, error) {
