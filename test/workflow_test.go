@@ -26,10 +26,10 @@ package test_test
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log"
-	"math/rand"
 	"reflect"
 	"strconv"
 	"strings"
