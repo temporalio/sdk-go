@@ -36,7 +36,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gogo/status"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -47,12 +46,13 @@ import (
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"go.temporal.io/sdk/internal/common/retry"
 	"go.temporal.io/sdk/internal/protocol"
 
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/util"
 	"go.temporal.io/sdk/log"
@@ -674,12 +674,12 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		FirstRunID:               attributes.FirstExecutionRunId,
 		WorkflowType:             WorkflowType{Name: task.WorkflowType.GetName()},
 		TaskQueueName:            taskQueue.GetName(),
-		WorkflowExecutionTimeout: common.DurationValue(attributes.GetWorkflowExecutionTimeout()),
-		WorkflowRunTimeout:       common.DurationValue(attributes.GetWorkflowRunTimeout()),
-		WorkflowTaskTimeout:      common.DurationValue(attributes.GetWorkflowTaskTimeout()),
+		WorkflowExecutionTimeout: attributes.GetWorkflowExecutionTimeout().AsDuration(),
+		WorkflowRunTimeout:       attributes.GetWorkflowRunTimeout().AsDuration(),
+		WorkflowTaskTimeout:      attributes.GetWorkflowTaskTimeout().AsDuration(),
 		Namespace:                wth.namespace,
 		Attempt:                  attributes.GetAttempt(),
-		WorkflowStartTime:        common.TimeValue(startedEvent.GetEventTime()),
+		WorkflowStartTime:        startedEvent.GetEventTime().AsTime(),
 		lastCompletionResult:     attributes.LastCompletionResult,
 		lastFailure:              attributes.ContinuedFailure,
 		CronSchedule:             attributes.CronSchedule,
@@ -1705,8 +1705,8 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			WorkflowType:         &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
 			Input:                contErr.Input,
 			TaskQueue:            &taskqueuepb.TaskQueue{Name: contErr.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
-			WorkflowRunTimeout:   &contErr.WorkflowRunTimeout,
-			WorkflowTaskTimeout:  &contErr.WorkflowTaskTimeout,
+			WorkflowRunTimeout:   durationpb.New(contErr.WorkflowRunTimeout),
+			WorkflowTaskTimeout:  durationpb.New(contErr.WorkflowTaskTimeout),
 			Header:               contErr.Header,
 			Memo:                 workflowContext.workflowInfo.Memo,
 			SearchAttributes:     workflowContext.workflowInfo.SearchAttributes,
@@ -2021,7 +2021,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	canCtx, cancel := context.WithCancel(rootCtx)
 	defer cancel()
 
-	heartbeatThrottleInterval := ath.getHeartbeatThrottleInterval(common.DurationValue(t.GetHeartbeatTimeout()))
+	heartbeatThrottleInterval := ath.getHeartbeatThrottleInterval(t.GetHeartbeatTimeout().AsDuration())
 	invoker := newServiceInvoker(
 		t.TaskToken, ath.identity, ath.service, ath.metricsHandler, cancel, heartbeatThrottleInterval,
 		ath.workerStopCh, ath.namespace)

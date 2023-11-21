@@ -525,7 +525,7 @@ func (e *ApplicationError) Unwrap() error {
 
 // Error from error interface
 func (e *TimeoutError) Error() string {
-	msg := fmt.Sprintf("%s (type: %v)", e.message(), e.timeoutType)
+	msg := fmt.Sprintf("%s (type: %s)", e.message(), e.timeoutType)
 	if e.cause != nil {
 		msg = fmt.Sprintf("%s: %v", msg, e.cause)
 	}

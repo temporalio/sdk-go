@@ -31,6 +31,8 @@ import (
 	"strings"
 	"time"
 
+	"google.golang.org/protobuf/types/known/durationpb"
+
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
@@ -1998,8 +2000,8 @@ func convertToPBRetryPolicy(retryPolicy *RetryPolicy) *commonpb.RetryPolicy {
 	}
 
 	return &commonpb.RetryPolicy{
-		MaximumInterval:        &retryPolicy.MaximumInterval,
-		InitialInterval:        &retryPolicy.InitialInterval,
+		MaximumInterval:        durationpb.New(retryPolicy.MaximumInterval),
+		InitialInterval:        durationpb.New(retryPolicy.InitialInterval),
 		BackoffCoefficient:     retryPolicy.BackoffCoefficient,
 		MaximumAttempts:        retryPolicy.MaximumAttempts,
 		NonRetryableErrorTypes: retryPolicy.NonRetryableErrorTypes,
@@ -2017,13 +2019,8 @@ func convertFromPBRetryPolicy(retryPolicy *commonpb.RetryPolicy) *RetryPolicy {
 		NonRetryableErrorTypes: retryPolicy.NonRetryableErrorTypes,
 	}
 
-	// Avoid nil pointer dereferences
-	if v := retryPolicy.MaximumInterval; v != nil {
-		p.MaximumInterval = *v
-	}
-	if v := retryPolicy.InitialInterval; v != nil {
-		p.InitialInterval = *v
-	}
+	p.MaximumInterval = retryPolicy.MaximumInterval.AsDuration()
+	p.InitialInterval = retryPolicy.InitialInterval.AsDuration()
 
 	return &p
 }

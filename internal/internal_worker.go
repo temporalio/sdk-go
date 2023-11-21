@@ -42,15 +42,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gogo/protobuf/jsonpb"
-	"github.com/gogo/protobuf/proto"
 	"github.com/golang/mock/gomock"
 	"github.com/pborman/uuid"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/temporalproto"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
+	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -221,6 +221,12 @@ type (
 		eagerActivityExecutor *eagerActivityExecutor
 
 		capabilities *workflowservice.GetSystemInfoResponse_Capabilities
+	}
+
+	// HistoryJSONOptions are options for HistoryFromJSON.
+	HistoryJSONOptions struct {
+		// LastEventID, if set, will only load history up to this ID (inclusive).
+		LastEventID int64
 	}
 )
 
@@ -1418,33 +1424,20 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 			}
 		}
 	}
-	return fmt.Errorf("replay workflow doesn't return the same result as the last event, resp: %v, last: %v", resp, last)
-}
-
-func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*historypb.History, error) {
-	reader, err := os.Open(jsonfileName)
-	if err != nil {
-		return nil, err
-	}
-	hist, err := HistoryFromJSON(reader, lastEventID)
-	if closeErr := reader.Close(); closeErr != nil && err == nil {
-		err = closeErr
-	}
-	return hist, err
+	return fmt.Errorf("replay workflow doesn't return the same result as the last event, resp: %[1]T{%[1]v}, last: %[2]T{%[2]v}", resp, last)
 }
 
 // HistoryFromJSON deserializes history from a reader of JSON bytes. This does
 // not close the reader if it is closeable.
 func HistoryFromJSON(r io.Reader, lastEventID int64) (*historypb.History, error) {
-	unmarshaler := jsonpb.Unmarshaler{
-		// Allow unknown fields because if the histroy was generated with a different version of the proto
-		// fields may have been added/removed.
-		AllowUnknownFields: true,
-	}
-	var hist historypb.History
-	if err := unmarshaler.Unmarshal(r, &hist); err != nil {
+	hist := &historypb.History{}
+	// We set DiscardUnknown here because the history may have been created by a previous
+	// version of our protos
+	dec := temporalproto.NewJSONDecoder(r, true)
+	if err := dec.Decode(hist); err != nil {
 		return nil, err
 	}
+
 	// If there is a last event ID, slice the rest off
 	if lastEventID > 0 {
 		for i, event := range hist.Events {
@@ -1455,7 +1448,37 @@ func HistoryFromJSON(r io.Reader, lastEventID int64) (*historypb.History, error)
 			}
 		}
 	}
-	return &hist, nil
+	return hist, nil
+}
+
+func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*historypb.History, error) {
+	reader, err := os.Open(jsonfileName)
+	if err != nil {
+		return nil, err
+	}
+
+	hist := &historypb.History{}
+	dec := temporalproto.NewJSONDecoder(reader, true)
+	if err := dec.Decode(hist); err != nil {
+		return nil, err
+	}
+
+	if closeErr := reader.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
+
+	// If there is a last event ID, slice the rest off
+	if lastEventID > 0 {
+		for i, event := range hist.Events {
+			if event.EventId == lastEventID {
+				// Inclusive
+				hist.Events = hist.Events[:i+1]
+				break
+			}
+		}
+	}
+
+	return hist, err
 }
 
 // NewAggregatedWorker returns an instance to manage both activity and workflow workers

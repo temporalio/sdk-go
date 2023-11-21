@@ -28,11 +28,14 @@ import (
 	"bytes"
 	"fmt"
 	"reflect"
+	"regexp"
 
 	commandpb "go.temporal.io/api/command/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 )
+
+var privateField = regexp.MustCompile("^[a-z]")
 
 func anyToString(d interface{}) string {
 	v := reflect.ValueOf(d)
@@ -45,7 +48,7 @@ func anyToString(d interface{}) string {
 		buf.WriteString("(")
 		for i := 0; i < v.NumField(); i++ {
 			f := v.Field(i)
-			if f.Kind() == reflect.Invalid {
+			if f.Kind() == reflect.Invalid || privateField.MatchString(t.Field(i).Name) {
 				continue
 			}
 			fieldValue := valueToString(f)

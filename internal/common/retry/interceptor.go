@@ -29,7 +29,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/gogo/status"
+	"google.golang.org/grpc/status"
 	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"github.com/grpc-ecosystem/go-grpc-middleware/util/backoffutils"
 	uberatomic "go.uber.org/atomic"

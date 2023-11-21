@@ -29,7 +29,6 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/gogo/protobuf/types"
 	commonpb "go.temporal.io/api/common/v1"
 	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
@@ -136,7 +135,7 @@ func (up *updateProtocol) requireState(action string, valid ...updateState) {
 
 func (up *updateProtocol) HandleMessage(msg *protocolpb.Message) error {
 	var req updatepb.Request
-	if err := types.UnmarshalAny(msg.Body, &req); err != nil {
+	if err := msg.Body.UnmarshalTo(&req); err != nil {
 		return err
 	}
 	up.requireState("update request", updateStateNew)

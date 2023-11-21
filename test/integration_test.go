@@ -28,13 +28,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go.opentelemetry.io/otel/baggage"
 	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"go.opentelemetry.io/otel/baggage"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
@@ -52,6 +53,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.uber.org/goleak"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/contrib/opentelemetry"
 	sdkopentracing "go.temporal.io/sdk/contrib/opentracing"
@@ -65,7 +67,6 @@ import (
 	contribtally "go.temporal.io/sdk/contrib/tally"
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal"
-	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/interceptortest"
 	ilog "go.temporal.io/sdk/internal/log"
@@ -695,7 +696,7 @@ func (ts *IntegrationTestSuite) TestSignalWorkflow() {
 	var protoValue *commonpb.WorkflowType
 	err = run.Get(ctx, &protoValue)
 	ts.NoError(err)
-	ts.Equal(commonpb.WorkflowType{Name: "string-value"}, *protoValue)
+	ts.True(proto.Equal(&commonpb.WorkflowType{Name: "string-value"}, protoValue))
 	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "HandleSignal", "HandleSignal", "ExecuteWorkflow end"},
 		ts.tracer.GetTrace("SignalWorkflow"))
 }
@@ -900,7 +901,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyTerminate() {
 		resp, err := ts.client.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
 		ts.NoError(err)
 		info := resp.WorkflowExecutionInfo
-		if !common.TimeValue(info.GetCloseTime()).IsZero() {
+		if info.CloseTime != nil {
 			ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED, info.GetStatus(), info)
 			break
 		}
@@ -917,7 +918,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 		resp, err := ts.client.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
 		ts.NoError(err)
 		info := resp.WorkflowExecutionInfo
-		if !common.TimeValue(info.GetCloseTime()).IsZero() {
+		if info.CloseTime != nil {
 			ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED, info.GetStatus(), info)
 			break
 		}
@@ -1529,7 +1530,7 @@ func (ts *IntegrationTestSuite) TestStartDelay() {
 	event, err := iter.Next()
 	ts.NoError(err)
 	ts.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED, event.EventType)
-	ts.Equal(5*time.Second, *event.GetWorkflowExecutionStartedEventAttributes().GetFirstWorkflowTaskBackoff())
+	ts.Equal(5*time.Second, event.GetWorkflowExecutionStartedEventAttributes().GetFirstWorkflowTaskBackoff().AsDuration())
 }
 
 func (ts *IntegrationTestSuite) TestStartDelaySignalWithStart() {
@@ -1550,7 +1551,7 @@ func (ts *IntegrationTestSuite) TestStartDelaySignalWithStart() {
 	event, err := iter.Next()
 	ts.NoError(err)
 	ts.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED, event.EventType)
-	ts.Equal(5*time.Second, *event.GetWorkflowExecutionStartedEventAttributes().GetFirstWorkflowTaskBackoff())
+	ts.Equal(5*time.Second, event.GetWorkflowExecutionStartedEventAttributes().GetFirstWorkflowTaskBackoff().AsDuration())
 }
 
 func (ts *IntegrationTestSuite) TestResetWorkflowExecution() {
