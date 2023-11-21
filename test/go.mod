@@ -12,7 +12,7 @@ require (
 	go.opentelemetry.io/otel v1.2.0
 	go.opentelemetry.io/otel/sdk v1.2.0
 	go.opentelemetry.io/otel/trace v1.2.0
-	go.temporal.io/api v1.24.0
+	go.temporal.io/api v1.26.1-0.20231121220434-5a4d95cc60c0
 	go.temporal.io/sdk v1.12.0
 	go.temporal.io/sdk/contrib/opentelemetry v0.1.0
 	go.temporal.io/sdk/contrib/opentracing v0.0.0-00010101000000-000000000000
@@ -45,7 +45,6 @@ require (
 )
 
 replace (
-	go.temporal.io/api => github.com/tdeebswihart/temporal-api-go v0.0.0-20231121192838-2507a2402391
 	go.temporal.io/sdk => ../
 	go.temporal.io/sdk/contrib/opentelemetry => ../contrib/opentelemetry
 	go.temporal.io/sdk/contrib/opentracing => ../contrib/opentracing

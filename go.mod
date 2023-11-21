@@ -2,8 +2,6 @@ module go.temporal.io/sdk
 
 go 1.20
 
-replace go.temporal.io/api => github.com/tdeebswihart/temporal-api-go v0.0.0-20231121192838-2507a2402391
-
 require (
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a
 	github.com/gogo/protobuf v1.3.2
@@ -12,7 +10,7 @@ require (
 	github.com/pborman/uuid v1.2.1
 	github.com/robfig/cron v1.2.0
 	github.com/stretchr/testify v1.8.4
-	go.temporal.io/api v1.24.0
+	go.temporal.io/api v1.26.1-0.20231121220434-5a4d95cc60c0
 	go.uber.org/atomic v1.9.0
 	golang.org/x/sys v0.14.0
 	golang.org/x/time v0.3.0
