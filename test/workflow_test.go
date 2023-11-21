@@ -907,8 +907,8 @@ func (w *Workflows) ThreeParameterWorkflow(_ workflow.Context, _ string, _ strin
 func (w *Workflows) LargeQueryResultWorkflow(ctx workflow.Context) (string, error) {
 	err := workflow.SetQueryHandler(ctx, "large_query", func() ([]byte, error) {
 		result := make([]byte, 3000000)
-		rand.Read(result)
-		return result, nil
+		_, err := rand.Read(result)
+		return result, err
 	})
 	if err != nil {
 		return "", errors.New("failed to register query handler")
