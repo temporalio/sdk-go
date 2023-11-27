@@ -46,7 +46,7 @@ type ProtoPayloadConverterOptions struct {
 	ExcludeProtobufMessageTypes bool
 }
 
-// NewProtoPayloadConverter creates new instance of `ProtoPayloadConverter``.
+// NewProtoPayloadConverter creates new instance of `ProtoPayloadConverter“.
 func NewProtoPayloadConverter() *ProtoPayloadConverter {
 	return &ProtoPayloadConverter{}
 }

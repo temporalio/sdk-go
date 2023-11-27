@@ -28,6 +28,9 @@ import (
 	"fmt"
 	"time"
 
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	"github.com/pborman/uuid"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -37,7 +40,6 @@ import (
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/internal/common"
 )
 
 type (
@@ -117,11 +119,11 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 		}
 	}
 
-	catchupWindow := &in.Options.CatchupWindow
-	if in.Options.CatchupWindow == 0 {
+	var catchupWindow *durationpb.Duration
+	if in.Options.CatchupWindow != 0 {
 		// Convert to nil so the server uses the default
 		// catchup window,otherwise it will use the minimum (10s).
-		catchupWindow = nil
+		catchupWindow = durationpb.New(in.Options.CatchupWindow)
 	}
 
 	// run propagators to extract information about tracing and other stuff, store in headers field
@@ -384,21 +386,21 @@ func convertToPBScheduleSpec(scheduleSpec *ScheduleSpec) *schedulepb.ScheduleSpe
 	for i, interval := range scheduleSpec.Intervals {
 		intervalSpec := interval
 		intervals[i] = &schedulepb.IntervalSpec{
-			Interval: &intervalSpec.Every,
-			Phase:    &intervalSpec.Offset,
+			Interval: durationpb.New(intervalSpec.Every),
+			Phase:    durationpb.New(intervalSpec.Offset),
 		}
 	}
 
 	skip := convertToPBScheduleCalendarSpecList(scheduleSpec.Skip)
 
-	var startTime *time.Time
+	var startTime *timestamppb.Timestamp
 	if !scheduleSpec.StartAt.IsZero() {
-		startTime = &scheduleSpec.StartAt
+		startTime = timestamppb.New(scheduleSpec.StartAt)
 	}
 
-	var endTime *time.Time
+	var endTime *timestamppb.Timestamp
 	if !scheduleSpec.EndAt.IsZero() {
-		endTime = &scheduleSpec.EndAt
+		endTime = timestamppb.New(scheduleSpec.EndAt)
 	}
 
 	return &schedulepb.ScheduleSpec{
@@ -408,7 +410,7 @@ func convertToPBScheduleSpec(scheduleSpec *ScheduleSpec) *schedulepb.ScheduleSpe
 		ExcludeStructuredCalendar: skip,
 		StartTime:                 startTime,
 		EndTime:                   endTime,
-		Jitter:                    &scheduleSpec.Jitter,
+		Jitter:                    durationpb.New(scheduleSpec.Jitter),
 		// TODO support custom time zone data
 		TimezoneName: scheduleSpec.TimeZoneName,
 	}
@@ -424,8 +426,8 @@ func convertFromPBScheduleSpec(scheduleSpec *schedulepb.ScheduleSpec) *ScheduleS
 	intervals := make([]ScheduleIntervalSpec, len(scheduleSpec.GetInterval()))
 	for i, s := range scheduleSpec.GetInterval() {
 		intervals[i] = ScheduleIntervalSpec{
-			Every:  common.DurationValue(s.Interval),
-			Offset: common.DurationValue(s.Phase),
+			Every:  s.Interval.AsDuration(),
+			Offset: s.Phase.AsDuration(),
 		}
 	}
 
@@ -433,12 +435,12 @@ func convertFromPBScheduleSpec(scheduleSpec *schedulepb.ScheduleSpec) *ScheduleS
 
 	startAt := time.Time{}
 	if scheduleSpec.GetStartTime() != nil {
-		startAt = *scheduleSpec.GetStartTime()
+		startAt = scheduleSpec.GetStartTime().AsTime()
 	}
 
 	endAt := time.Time{}
 	if scheduleSpec.GetEndTime() != nil {
-		endAt = *scheduleSpec.GetEndTime()
+		endAt = scheduleSpec.GetEndTime().AsTime()
 	}
 
 	return &ScheduleSpec{
@@ -447,7 +449,7 @@ func convertFromPBScheduleSpec(scheduleSpec *schedulepb.ScheduleSpec) *ScheduleS
 		Skip:         skip,
 		StartAt:      startAt,
 		EndAt:        endAt,
-		Jitter:       common.DurationValue(scheduleSpec.GetJitter()),
+		Jitter:       scheduleSpec.GetJitter().AsDuration(),
 		TimeZoneName: scheduleSpec.GetTimezoneName(),
 	}
 }
@@ -469,7 +471,7 @@ func scheduleDescriptionFromPB(describeResponse *workflowservice.DescribeSchedul
 
 	nextActionTimes := make([]time.Time, len(describeResponse.Info.GetFutureActionTimes()))
 	for i, t := range describeResponse.Info.GetFutureActionTimes() {
-		nextActionTimes[i] = common.TimeValue(t)
+		nextActionTimes[i] = t.AsTime()
 	}
 
 	actionDescription, err := convertFromPBScheduleAction(describeResponse.Schedule.Action)
@@ -483,7 +485,7 @@ func scheduleDescriptionFromPB(describeResponse *workflowservice.DescribeSchedul
 			Spec:   convertFromPBScheduleSpec(describeResponse.Schedule.Spec),
 			Policy: &SchedulePolicies{
 				Overlap:        describeResponse.Schedule.Policies.GetOverlapPolicy(),
-				CatchupWindow:  common.DurationValue(describeResponse.Schedule.Policies.GetCatchupWindow()),
+				CatchupWindow:  describeResponse.Schedule.Policies.GetCatchupWindow().AsDuration(),
 				PauseOnFailure: describeResponse.Schedule.Policies.GetPauseOnFailure(),
 			},
 			State: &ScheduleState{
@@ -500,8 +502,8 @@ func scheduleDescriptionFromPB(describeResponse *workflowservice.DescribeSchedul
 			RunningWorkflows:              runningWorkflows,
 			RecentActions:                 recentActions,
 			NextActionTimes:               nextActionTimes,
-			CreatedAt:                     common.TimeValue(describeResponse.Info.GetCreateTime()),
-			LastUpdateAt:                  common.TimeValue(describeResponse.Info.GetUpdateTime()),
+			CreatedAt:                     describeResponse.Info.GetCreateTime().AsTime(),
+			LastUpdateAt:                  describeResponse.Info.GetUpdateTime().AsTime(),
 		},
 		Memo:             describeResponse.Memo,
 		SearchAttributes: describeResponse.SearchAttributes,
@@ -521,7 +523,7 @@ func convertToPBSchedule(ctx context.Context, client *WorkflowClient, schedule *
 		Action: action,
 		Policies: &schedulepb.SchedulePolicies{
 			OverlapPolicy:  schedule.Policy.Overlap,
-			CatchupWindow:  &schedule.Policy.CatchupWindow,
+			CatchupWindow:  durationpb.New(schedule.Policy.CatchupWindow),
 			PauseOnFailure: schedule.Policy.PauseOnFailure,
 		},
 		State: &schedulepb.ScheduleState{
@@ -540,7 +542,7 @@ func convertFromPBScheduleListEntry(schedule *schedulepb.ScheduleListEntry) *Sch
 
 	nextActionTimes := make([]time.Time, len(schedule.Info.GetFutureActionTimes()))
 	for i, t := range schedule.Info.GetFutureActionTimes() {
-		nextActionTimes[i] = common.TimeValue(t)
+		nextActionTimes[i] = t.AsTime()
 	}
 
 	return &ScheduleListEntry{
@@ -606,9 +608,9 @@ func convertToPBScheduleAction(ctx context.Context, client *WorkflowClient, sche
 					WorkflowType:             &commonpb.WorkflowType{Name: workflowType},
 					TaskQueue:                &taskqueuepb.TaskQueue{Name: action.TaskQueue, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
 					Input:                    input,
-					WorkflowExecutionTimeout: &action.WorkflowExecutionTimeout,
-					WorkflowRunTimeout:       &action.WorkflowRunTimeout,
-					WorkflowTaskTimeout:      &action.WorkflowTaskTimeout,
+					WorkflowExecutionTimeout: durationpb.New(action.WorkflowExecutionTimeout),
+					WorkflowRunTimeout:       durationpb.New(action.WorkflowRunTimeout),
+					WorkflowTaskTimeout:      durationpb.New(action.WorkflowTaskTimeout),
 					RetryPolicy:              convertToPBRetryPolicy(action.RetryPolicy),
 					Memo:                     memo,
 					SearchAttributes:         searchAttr,
@@ -647,9 +649,9 @@ func convertFromPBScheduleAction(action *schedulepb.ScheduleAction) (ScheduleAct
 			Workflow:                 workflow.WorkflowType.GetName(),
 			Args:                     args,
 			TaskQueue:                workflow.TaskQueue.GetName(),
-			WorkflowExecutionTimeout: common.DurationValue(workflow.GetWorkflowExecutionTimeout()),
-			WorkflowRunTimeout:       common.DurationValue(workflow.GetWorkflowRunTimeout()),
-			WorkflowTaskTimeout:      common.DurationValue(workflow.GetWorkflowTaskTimeout()),
+			WorkflowExecutionTimeout: workflow.GetWorkflowExecutionTimeout().AsDuration(),
+			WorkflowRunTimeout:       workflow.GetWorkflowRunTimeout().AsDuration(),
+			WorkflowTaskTimeout:      workflow.GetWorkflowTaskTimeout().AsDuration(),
 			RetryPolicy:              convertFromPBRetryPolicy(workflow.RetryPolicy),
 			Memo:                     memos,
 			SearchAttributes:         searchAttributes,
@@ -665,8 +667,8 @@ func convertToPBBackfillList(backfillRequests []ScheduleBackfill) []*schedulepb.
 	for i, b := range backfillRequests {
 		backfill := b
 		backfillRequestsPB[i] = &schedulepb.BackfillRequest{
-			StartTime:     &backfill.Start,
-			EndTime:       &backfill.End,
+			StartTime:     timestamppb.New(backfill.Start),
+			EndTime:       timestamppb.New(backfill.End),
 			OverlapPolicy: backfill.Overlap,
 		}
 	}
@@ -773,8 +775,8 @@ func convertFromPBScheduleActionResultList(aa []*schedulepb.ScheduleActionResult
 			}
 		}
 		recentActions[i] = ScheduleActionResult{
-			ScheduleTime:        common.TimeValue(a.GetScheduleTime()),
-			ActualTime:          common.TimeValue(a.GetActualTime()),
+			ScheduleTime:        a.GetScheduleTime().AsTime(),
+			ActualTime:          a.GetActualTime().AsTime(),
 			StartWorkflowResult: workflowExecution,
 		}
 	}

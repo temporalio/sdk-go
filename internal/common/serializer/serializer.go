@@ -28,11 +28,11 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/gogo/protobuf/proto"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/serviceerror"
+	"google.golang.org/protobuf/proto"
 )
 
 type (
@@ -51,6 +51,11 @@ type (
 	UnknownEncodingTypeError struct {
 		encodingType enumspb.EncodingType
 	}
+
+	// Marshaler is implemented by objects that can marshal themselves
+	Marshaler interface {
+		Marshal() ([]byte, error)
+	}
 )
 
 // SerializeBatchEvents serializes batch events into a datablob proto
@@ -58,7 +63,7 @@ func SerializeBatchEvents(events []*historypb.HistoryEvent, encodingType enumspb
 	return serialize(&historypb.History{Events: events}, encodingType)
 }
 
-func serializeProto(p proto.Marshaler, encodingType enumspb.EncodingType) (*commonpb.DataBlob, error) {
+func serializeProto(p Marshaler, encodingType enumspb.EncodingType) (*commonpb.DataBlob, error) {
 	if p == nil {
 		return nil, nil
 	}
@@ -122,7 +127,7 @@ func serialize(input interface{}, encodingType enumspb.EncodingType) (*commonpb.
 		return nil, nil
 	}
 
-	if p, ok := input.(proto.Marshaler); ok {
+	if p, ok := input.(Marshaler); ok {
 		return serializeProto(p, encodingType)
 	}
 

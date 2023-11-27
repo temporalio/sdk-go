@@ -33,6 +33,8 @@ import (
 	"reflect"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	commonpb "go.temporal.io/api/common/v1"
 
 	"go.temporal.io/sdk/converter"
@@ -311,8 +313,7 @@ func setActivityParametersIfNotExist(ctx Context) Context {
 	if params != nil {
 		newParams = *params
 		if params.RetryPolicy != nil {
-			newRetryPolicy := *newParams.RetryPolicy
-			newParams.RetryPolicy = &newRetryPolicy
+			newParams.RetryPolicy = proto.Clone(params.RetryPolicy).(*commonpb.RetryPolicy)
 		}
 	}
 	return WithValue(ctx, activityOptionsContextKey, &newParams)

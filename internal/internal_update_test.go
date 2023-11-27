@@ -29,7 +29,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/gogo/protobuf/types"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	historypb "go.temporal.io/api/history/v1"
@@ -474,20 +473,20 @@ func TestAcceptedEventPredicate(t *testing.T) {
 	require.Len(t, env.outbox, 1, "expected to find accepted message")
 
 	var acptmsg updatepb.Acceptance
-	require.NoError(t, types.UnmarshalAny(env.outbox[0].msg.Body, &acptmsg))
+	require.NoError(t, env.outbox[0].msg.Body.UnmarshalTo(&acptmsg))
 	require.Nil(t, acptmsg.AcceptedRequest,
 		"do not send the original request back - this field will be removed soon")
 
 	pred := env.outbox[0].eventPredicate
 	for _, tc := range [...]struct {
 		name  string
-		attrs historypb.WorkflowExecutionUpdateAcceptedEventAttributes
+		attrs *historypb.WorkflowExecutionUpdateAcceptedEventAttributes
 		test  require.BoolAssertionFunc
 	}{
 		{
 			name: "wrong req msg ID",
 			test: require.False,
-			attrs: historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+			attrs: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
 				AcceptedRequest:                  &request,
 				AcceptedRequestMessageId:         "wrong request message ID",
 				AcceptedRequestSequencingEventId: requestSeqID,
@@ -496,7 +495,7 @@ func TestAcceptedEventPredicate(t *testing.T) {
 		{
 			name: "wrong req seq ID",
 			test: require.False,
-			attrs: historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+			attrs: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
 				AcceptedRequest:                  &request,
 				AcceptedRequestMessageId:         requestMsgID,
 				AcceptedRequestSequencingEventId: requestSeqID + 10,
@@ -505,7 +504,7 @@ func TestAcceptedEventPredicate(t *testing.T) {
 		{
 			name: "missing request",
 			test: require.False,
-			attrs: historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+			attrs: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
 				AcceptedRequest:                  nil,
 				AcceptedRequestMessageId:         requestMsgID,
 				AcceptedRequestSequencingEventId: requestSeqID,
@@ -514,7 +513,7 @@ func TestAcceptedEventPredicate(t *testing.T) {
 		{
 			name: "match",
 			test: require.True,
-			attrs: historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+			attrs: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
 				AcceptedRequest:                  &request,
 				AcceptedRequestMessageId:         requestMsgID,
 				AcceptedRequestSequencingEventId: requestSeqID,
@@ -524,7 +523,7 @@ func TestAcceptedEventPredicate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			event := historypb.HistoryEvent{
 				Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
-					WorkflowExecutionUpdateAcceptedEventAttributes: &tc.attrs,
+					WorkflowExecutionUpdateAcceptedEventAttributes: tc.attrs,
 				},
 			}
 			tc.test(t, pred(&event))

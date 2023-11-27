@@ -40,6 +40,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	uberatomic "go.uber.org/atomic"
+	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
 	iconverter "go.temporal.io/sdk/internal/converter"
@@ -1844,7 +1845,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithPointerTypes() {
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
 	var actualValues []string
 
-	activitySingleFn := func(ctx context.Context, wf1 commonpb.Payloads, wf2 *commonpb.Payloads) (commonpb.Payloads, error) {
+	activitySingleFn := func(ctx context.Context, wf1 *commonpb.Payloads, wf2 *commonpb.Payloads) (commonpb.Payloads, error) {
 		actualValues = append(actualValues, string(wf1.GetPayloads()[0].GetData()))
 		actualValues = append(actualValues, string(wf1.GetPayloads()[0].GetMetadata()["encoding"]))
 		actualValues = append(actualValues, string(wf2.GetPayloads()[0].GetData()))
@@ -1854,7 +1855,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
 		return commonpb.Payloads{Payloads: []*commonpb.Payload{{Data: []byte("result")}}}, nil
 	}
 
-	input1 := commonpb.Payloads{Payloads: []*commonpb.Payload{{ // This will be JSON
+	input1 := &commonpb.Payloads{Payloads: []*commonpb.Payload{{ // This will be JSON
 		Metadata: map[string][]byte{
 			"encoding": []byte("someencoding"),
 		},
@@ -1868,13 +1869,13 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
 
 	var ret commonpb.Payloads
 	_ = payload.Get(&ret)
-	s.Equal(commonpb.Payloads{Payloads: []*commonpb.Payload{{Data: []byte("result")}}}, ret)
+	s.True(proto.Equal(&commonpb.Payloads{Payloads: []*commonpb.Payload{{Data: []byte("result")}}}, &ret))
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithRandomProto() {
 	var actualValues []string
 
-	activitySingleFn := func(ctx context.Context, wf1 commonpb.WorkflowType, wf2 *commonpb.DataBlob) (*commonpb.WorkflowType, error) {
+	activitySingleFn := func(ctx context.Context, wf1 *commonpb.WorkflowType, wf2 *commonpb.DataBlob) (*commonpb.WorkflowType, error) {
 		actualValues = append(actualValues, wf1.Name)
 		actualValues = append(actualValues, wf2.EncodingType.String())
 		return &commonpb.WorkflowType{Name: "result"}, nil
@@ -1884,14 +1885,14 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithRandomProto() {
 	input2 := &commonpb.DataBlob{EncodingType: enumspb.ENCODING_TYPE_PROTO3}
 	env := s.NewTestActivityEnvironment()
 	env.RegisterActivity(activitySingleFn)
-	payload, err := env.ExecuteActivity(activitySingleFn, input1, input2)
+	payload, err := env.ExecuteActivity(activitySingleFn, &input1, input2)
 
 	s.NoError(err)
 	s.EqualValues([]string{"input1", "Proto3"}, actualValues)
 
 	var ret *commonpb.WorkflowType
 	_ = payload.Get(&ret)
-	s.Equal(&commonpb.WorkflowType{Name: "result"}, ret)
+	s.True(proto.Equal(&commonpb.WorkflowType{Name: "result"}, ret))
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityRegistration() {

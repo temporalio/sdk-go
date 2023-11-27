@@ -373,3 +373,24 @@ func TestActivityMockingByNameWithoutRegistrationFails(t *testing.T) {
 	env := testSuite.NewTestWorkflowEnvironment()
 	assert.Panics(t, func() { env.OnActivity("SayHello", mock.Anything, mock.Anything) }, "The code did not panic")
 }
+
+func TestMockCallWrapperNotBefore(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+	env.RegisterActivity(namedActivity)
+
+	c1 := env.OnActivity(namedActivity, mock.Anything, "call1").Return("result1", nil)
+	env.OnActivity(namedActivity, mock.Anything, "call2").Return("result2", nil).NotBefore(c1)
+
+	env.ExecuteWorkflow(func(ctx Context) error {
+		ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{
+			ScheduleToCloseTimeout: time.Hour,
+			StartToCloseTimeout:    time.Hour,
+		})
+		var result string
+		return ExecuteLocalActivity(ctx, "namedActivity", "call2").Get(ctx, &result)
+	})
+	var expectedErr *PanicError
+	require.ErrorAs(t, env.GetWorkflowError(), &expectedErr)
+	require.ErrorContains(t, expectedErr, "Must not be called before")
+}
