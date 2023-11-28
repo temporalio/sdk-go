@@ -1430,11 +1430,18 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 // HistoryFromJSON deserializes history from a reader of JSON bytes. This does
 // not close the reader if it is closeable.
 func HistoryFromJSON(r io.Reader, lastEventID int64) (*historypb.History, error) {
-	hist := &historypb.History{}
 	// We set DiscardUnknown here because the history may have been created by a previous
 	// version of our protos
-	dec := temporalproto.NewJSONDecoder(r, true)
-	if err := dec.Decode(hist); err != nil {
+	opts := temporalproto.CustomJSONUnmarshalOptions{
+		DiscardUnknown: true,
+	}
+	bs, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	hist := &historypb.History{}
+	if err := opts.Unmarshal(bs, hist); err != nil {
 		return nil, err
 	}
 
@@ -1451,20 +1458,32 @@ func HistoryFromJSON(r io.Reader, lastEventID int64) (*historypb.History, error)
 	return hist, nil
 }
 
-func extractHistoryFromFile(jsonfileName string, lastEventID int64) (*historypb.History, error) {
+func extractHistoryFromFile(jsonfileName string, lastEventID int64) (hist *historypb.History, err error) {
 	reader, err := os.Open(jsonfileName)
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		closeErr := reader.Close()
+		if closeErr != nil && err == nil {
+			err = closeErr
+		} else if closeErr != nil {
+			ilog.NewDefaultLogger().Warn("failed to close json file", "path", jsonfileName, "error", closeErr)
+		}
+	}()
 
-	hist := &historypb.History{}
-	dec := temporalproto.NewJSONDecoder(reader, true)
-	if err := dec.Decode(hist); err != nil {
+	opts := temporalproto.CustomJSONUnmarshalOptions{
+		DiscardUnknown: true,
+	}
+
+	bs, err := io.ReadAll(reader)
+	if err != nil {
 		return nil, err
 	}
 
-	if closeErr := reader.Close(); closeErr != nil && err == nil {
-		err = closeErr
+	hist = &historypb.History{}
+	if err := opts.Unmarshal(bs, hist); err != nil {
+		return nil, err
 	}
 
 	// If there is a last event ID, slice the rest off
