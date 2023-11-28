@@ -171,7 +171,6 @@ func TestUpdateValidatorFnValidation(t *testing.T) {
 }
 
 func TestDefaultUpdateHandler(t *testing.T) {
-	t.Parallel()
 	dc := converter.GetDefaultDataConverter()
 	env := &workflowEnvironmentImpl{
 		sdkFlags:       testSDKFlags,
