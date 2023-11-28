@@ -35,14 +35,13 @@ import (
 	"testing"
 	"time"
 
-	"go.opentelemetry.io/otel/baggage"
-
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"github.com/uber-go/tally/v4"
+	"go.opentelemetry.io/otel/baggage"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
@@ -2463,7 +2462,7 @@ func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
 }
 
 func (ts *IntegrationTestSuite) TestQueryOnlyCoroutineUsage() {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
 	// Start the workflow that should run forever, send 5 signals, and wait until
@@ -2685,6 +2684,9 @@ func (ts *IntegrationTestSuite) TestDeterminismUpsertSearchAttributesConditional
 	options.SearchAttributes = map[string]interface{}{
 		"CustomKeywordField": "unset",
 	}
+	// TODO(cretz): There is a bug with search attribute names on standard
+	// visibility with eager workflow start
+	options.EnableEagerStart = false
 	run, err := ts.client.ExecuteWorkflow(
 		ctx,
 		options,

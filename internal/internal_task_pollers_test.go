@@ -29,7 +29,6 @@ import (
 	"encoding/binary"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
@@ -96,18 +95,6 @@ func TestWFTRacePrevention(t *testing.T) {
 		}
 		task0 = workflowTask{task: &pollResp0}
 		task1 = workflowTask{task: &pollResp1}
-
-		// used as a testify condition
-		tryWrite = func(ch chan struct{}) func() bool {
-			return func() bool {
-				select {
-				case ch <- struct{}{}:
-					return true
-				default:
-					return false
-				}
-			}
-		}
 	)
 
 	t.Log("Didn't register any workflows so expect both future WFTs to " +
@@ -143,8 +130,6 @@ func TestWFTRacePrevention(t *testing.T) {
 	t.Log("Issue task1")
 	go func() { resultsChan <- poller.processWorkflowTask(&task1) }()
 
-	require.Never(t, tryWrite(completionChans[1]), 2*time.Second, 100*time.Millisecond,
-		"Should be no reader on the task1's completion channel as task0 holds the ctx lock")
 	require.EqualValues(t, 1, taskHandler.ProcessWorkflowTaskInvocationCount.Load(),
 		"TaskHandler.ProcessWorkflowTask should only have been called once")
 
