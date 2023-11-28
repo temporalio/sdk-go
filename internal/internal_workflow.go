@@ -92,7 +92,7 @@ type (
 
 		// Create coroutine. To be called from within other coroutine.
 		// Used by the interceptors
-		NewCoroutine(ctx Context, name string, f func(ctx Context)) Context
+		NewCoroutine(ctx Context, name string, highPriority bool, f func(ctx Context)) Context
 	}
 
 	// Workflow is an interface that any workflow should implement.
@@ -171,6 +171,10 @@ type (
 		interceptor      WorkflowOutboundInterceptor
 		deadlockDetector *deadlockDetector
 		readOnly         bool
+		// allBlockedCallback is called when all coroutines are blocked,
+		// returns true if the callback updated any coroutines state and there may be more work
+		allBlockedCallback func() bool
+		newEagerCoroutines []*coroutineState
 	}
 
 	// WorkflowOptions options passed to the workflow function
@@ -246,8 +250,8 @@ type (
 		dataConverter converter.DataConverter
 	}
 
-	// coroScheduler adapts the coro dispatcher to the UpdateScheduler interface
-	coroScheduler struct {
+	// updateSchedulerImpl adapts the coro dispatcher to the UpdateScheduler interface
+	updateSchedulerImpl struct {
 		dispatcher dispatcher
 	}
 )
@@ -305,7 +309,7 @@ type workflowEnvironmentInterceptor struct {
 }
 
 func (wc *workflowEnvironmentInterceptor) Go(ctx Context, name string, f func(ctx Context)) Context {
-	return wc.dispatcher.NewCoroutine(ctx, name, f)
+	return wc.dispatcher.NewCoroutine(ctx, name, false, f)
 }
 
 func getWorkflowOutboundInterceptor(ctx Context) WorkflowOutboundInterceptor {
@@ -512,7 +516,7 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 			r.workflowResult, r.error = d.workflow.Execute(d.rootCtx, input)
 			rpp := getWorkflowResultPointerPointer(ctx)
 			*rpp = r
-		})
+		}, getWorkflowEnvironment(rootCtx).DrainUnhandledUpdates)
 
 	// set the information from the headers that is to be propagated in the workflow context
 	rootCtx, err = workflowContextWithHeaderPropagated(rootCtx, header, env.GetContextPropagators())
@@ -543,7 +547,7 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 
 	getWorkflowEnvironment(d.rootCtx).RegisterUpdateHandler(
 		func(name string, id string, serializedArgs *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks) {
-			defaultUpdateHandler(d.rootCtx, name, id, serializedArgs, header, callbacks, coroScheduler{d.dispatcher})
+			defaultUpdateHandler(d.rootCtx, name, id, serializedArgs, header, callbacks, updateSchedulerImpl{d.dispatcher})
 		})
 
 	getWorkflowEnvironment(d.rootCtx).RegisterQueryHandler(
@@ -605,10 +609,11 @@ func (d *syncWorkflowDefinition) Close() {
 // NewDispatcher creates a new Dispatcher instance with a root coroutine function.
 // Context passed to the root function is child of the passed rootCtx.
 // This way rootCtx can be used to pass values to the coroutine code.
-func newDispatcher(rootCtx Context, interceptor *workflowEnvironmentInterceptor, root func(ctx Context)) (*dispatcherImpl, Context) {
+func newDispatcher(rootCtx Context, interceptor *workflowEnvironmentInterceptor, root func(ctx Context), allBlockedCallback func() bool) (*dispatcherImpl, Context) {
 	result := &dispatcherImpl{
-		interceptor:      interceptor.outboundInterceptor,
-		deadlockDetector: newDeadlockDetector(),
+		interceptor:        interceptor.outboundInterceptor,
+		deadlockDetector:   newDeadlockDetector(),
+		allBlockedCallback: allBlockedCallback,
 	}
 	interceptor.dispatcher = result
 	ctxWithState := result.interceptor.Go(rootCtx, "root", root)
@@ -1039,11 +1044,11 @@ func (s *coroutineState) stackTrace() string {
 	return <-stackCh
 }
 
-func (d *dispatcherImpl) NewCoroutine(ctx Context, name string, f func(ctx Context)) Context {
+func (d *dispatcherImpl) NewCoroutine(ctx Context, name string, highPriority bool, f func(ctx Context)) Context {
 	if name == "" {
 		name = fmt.Sprintf("%v", d.sequence+1)
 	}
-	state := d.newState(name)
+	state := d.newState(name, highPriority)
 	spawned := WithValue(ctx, coroutinesContextKey, state)
 	go func(crt *coroutineState) {
 		defer crt.close()
@@ -1059,7 +1064,7 @@ func (d *dispatcherImpl) NewCoroutine(ctx Context, name string, f func(ctx Conte
 	return spawned
 }
 
-func (d *dispatcherImpl) newState(name string) *coroutineState {
+func (d *dispatcherImpl) newState(name string, highPriority bool) *coroutineState {
 	c := &coroutineState{
 		name:         name,
 		dispatcher:   d,
@@ -1067,7 +1072,11 @@ func (d *dispatcherImpl) newState(name string) *coroutineState {
 		unblock:      make(chan unblockFunc),
 	}
 	d.sequence++
-	d.coroutines = append(d.coroutines, c)
+	if highPriority {
+		d.newEagerCoroutines = append(d.newEagerCoroutines, c)
+	} else {
+		d.coroutines = append(d.coroutines, c)
+	}
 	return c
 }
 
@@ -1095,8 +1104,10 @@ func (d *dispatcherImpl) ExecuteUntilAllBlocked(deadlockDetectionTimeout time.Du
 		d.mutex.Unlock()
 	}()
 	allBlocked := false
+	d.coroutines = append(d.newEagerCoroutines, d.coroutines...)
+	d.newEagerCoroutines = nil
 	// Keep executing until at least one goroutine made some progress
-	for !allBlocked {
+	for !allBlocked || d.allBlockedCallback() {
 		// Give every coroutine chance to execute removing closed ones
 		allBlocked = true
 		lastSequence := d.sequence
@@ -1123,8 +1134,10 @@ func (d *dispatcherImpl) ExecuteUntilAllBlocked(deadlockDetectionTimeout time.Du
 			}
 		}
 		// Set allBlocked to false if new coroutines where created
-		allBlocked = allBlocked && lastSequence == d.sequence
-		if len(d.coroutines) == 0 {
+		allBlocked = allBlocked && lastSequence == d.sequence && len(d.newEagerCoroutines) == 0
+		d.coroutines = append(d.newEagerCoroutines, d.coroutines...)
+		d.newEagerCoroutines = nil
+		if len(d.coroutines) == 0 && !d.allBlockedCallback() {
 			break
 		}
 	}
@@ -1497,6 +1510,9 @@ func setUpdateHandler(ctx Context, updateName string, handler interface{}, opts 
 		return err
 	}
 	getWorkflowEnvOptions(ctx).updateHandlers[updateName] = uh
+	if getWorkflowEnvironment(ctx).HandleUpdates(updateName) {
+		getState(ctx).yield("letting any updates waiting on a handler run")
+	}
 	return nil
 }
 
@@ -1645,12 +1661,14 @@ func (wg *waitGroupImpl) Wait(ctx Context) {
 }
 
 // Spawn starts a new coroutine with Dispatcher.NewCoroutine
-func (cs coroScheduler) Spawn(ctx Context, name string, f func(Context)) Context {
-	return cs.dispatcher.NewCoroutine(ctx, name, f)
+func (us updateSchedulerImpl) Spawn(ctx Context, name string, highPriority bool, f func(Context)) Context {
+	// Update requests need to be added to the front of the dispatchers coroutine list so they
+	// are handled before the root coroutine.
+	return us.dispatcher.NewCoroutine(ctx, name, highPriority, f)
 }
 
 // Yield calls the yield function on the coroutineState associated with the
 // supplied workflow context.
-func (cs coroScheduler) Yield(ctx Context, reason string) {
+func (us updateSchedulerImpl) Yield(ctx Context, reason string) {
 	getState(ctx).yield(reason)
 }

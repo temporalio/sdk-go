@@ -406,6 +406,15 @@ func (s *replayTestSuite) TestChildWorkflowCancelWithUpdate() {
 	s.NoError(err)
 }
 
+func (s *replayTestSuite) TestMultipleUpdates() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(MultipleUpdateWorkflow)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "multiple-updates.json")
+	s.NoError(err)
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "multiple-updates-canceled.json")
+	s.NoError(err)
+}
+
 type captureConverter struct {
 	converter.DataConverter
 	toPayloads   []interface{}

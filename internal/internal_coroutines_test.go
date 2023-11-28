@@ -49,7 +49,7 @@ func createRootTestContext() (interceptor *workflowEnvironmentInterceptor, ctx C
 
 func createNewDispatcher(f func(ctx Context)) dispatcher {
 	interceptor, ctx := createRootTestContext()
-	result, _ := newDispatcher(ctx, interceptor, f)
+	result, _ := newDispatcher(ctx, interceptor, f, func() bool { return false })
 	result.interceptor = interceptor
 	return result
 }
@@ -906,7 +906,7 @@ func TestAwaitCancellation(t *testing.T) {
 	ctx, cancelHandler := WithCancel(ctx)
 	d, _ := newDispatcher(ctx, interceptor, func(ctx Context) {
 		awaitError = Await(ctx, func() bool { return false })
-	})
+	}, func() bool { return false })
 	defer d.Close()
 	err := d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
 	require.NoError(t, err)
@@ -950,7 +950,7 @@ func TestAwaitWithTimeoutCancellation(t *testing.T) {
 	ctx, cancelHandler := WithCancel(ctx)
 	d, _ := newDispatcher(ctx, interceptor, func(ctx Context) {
 		awaitOk, awaitWithTimeoutError = AwaitWithTimeout(ctx, time.Hour, func() bool { return false })
-	})
+	}, func() bool { return false })
 	defer d.Close()
 	err := d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
 	require.NoError(t, err)

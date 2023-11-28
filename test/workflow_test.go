@@ -2130,6 +2130,70 @@ func (w *Workflows) PanicOnSignal(ctx workflow.Context) error {
 	panic("intentional panic")
 }
 
+func (w *Workflows) WaitOnUpdate(ctx workflow.Context) (int, error) {
+	inflightUpdates := 0
+	updatesRan := 0
+	sleepHandle := func(ctx workflow.Context) error {
+		inflightUpdates++
+		updatesRan++
+		defer func() {
+			inflightUpdates--
+		}()
+		return workflow.Sleep(ctx, time.Second)
+	}
+	echoHandle := func(ctx workflow.Context) error {
+		inflightUpdates++
+		updatesRan++
+		defer func() {
+			inflightUpdates--
+		}()
+
+		ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+		var a Activities
+		return workflow.ExecuteActivity(ctx, a.Echo, 1, 1).Get(ctx, nil)
+	}
+	emptyHandle := func(ctx workflow.Context) error {
+		inflightUpdates++
+		updatesRan++
+		defer func() {
+			inflightUpdates--
+		}()
+		return ctx.Err()
+	}
+	// Register multiple update handles in the first workflow task to make sure we process an
+	// update only when its handle is registered, not when any handle is registered
+	workflow.SetUpdateHandler(ctx, "echo", echoHandle)
+	workflow.SetUpdateHandler(ctx, "sleep", sleepHandle)
+	workflow.SetUpdateHandler(ctx, "empty", emptyHandle)
+	err := workflow.Await(ctx, func() bool { return inflightUpdates == 0 })
+	if err != nil {
+		return 0, err
+	}
+	return updatesRan, nil
+}
+
+func (w *Workflows) UpdateOrdering(ctx workflow.Context) (int, error) {
+	inflightUpdates := 0
+	updatesRan := 0
+	updateHandle := func(ctx workflow.Context) error {
+		inflightUpdates++
+		updatesRan++
+		defer func() {
+			inflightUpdates--
+		}()
+		return nil
+	}
+	// Register multiple update handles in the first workflow task to make sure we process an
+	// update only when its handle is registered, not when any handle is registered
+	workflow.SetUpdateHandler(ctx, "update", updateHandle)
+	currentTime := workflow.Now(ctx)
+	// Wait a workflow task
+	workflow.Await(ctx, func() bool {
+		return workflow.Now(ctx).After(currentTime)
+	})
+	return updatesRan, nil
+}
+
 var forcedNonDeterminismCounter int
 
 func (w *Workflows) ForcedNonDeterminism(ctx workflow.Context, sameCommandButDiffName bool) (err error) {
@@ -2471,6 +2535,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ChildWorkflowAndParentCancel)
 	worker.RegisterWorkflow(w.sleep)
 	worker.RegisterWorkflow(w.timer)
+	worker.RegisterWorkflow(w.WaitOnUpdate)
+	worker.RegisterWorkflow(w.UpdateOrdering)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {

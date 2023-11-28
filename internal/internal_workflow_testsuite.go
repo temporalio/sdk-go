@@ -206,6 +206,9 @@ type (
 
 		// True if this was created only for testing activities not workflows.
 		activityEnvOnly bool
+
+		workflowFunctionExecuting bool
+		blockedUpdates            map[string][]func()
 	}
 
 	testSessionEnvironmentImpl struct {
@@ -263,6 +266,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		dataConverter:     converter.GetDefaultDataConverter(),
 		failureConverter:  GetDefaultFailureConverter(),
 		runTimeout:        maxWorkflowTimeout,
+		blockedUpdates:    make(map[string][]func()),
 	}
 
 	if debugMode {
@@ -540,6 +544,47 @@ func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (
 		env:              env,
 	}
 	return newSyncWorkflowDefinition(wd), nil
+}
+
+func (env *testWorkflowEnvironmentImpl) TryUse(flag sdkFlag) bool {
+	return true
+}
+
+func (env *testWorkflowEnvironmentImpl) QueueUpdate(name string, f func()) {
+	env.blockedUpdates[name] = append(env.blockedUpdates[name], f)
+}
+
+func (env *testWorkflowEnvironmentImpl) HandleUpdates(name string) bool {
+	updatesHandled := false
+	if blockedUpdates, ok := env.blockedUpdates[name]; ok {
+		updatesHandled = true
+		for _, update := range blockedUpdates {
+			update()
+		}
+		delete(env.blockedUpdates, name)
+	}
+	return updatesHandled
+}
+
+func (env *testWorkflowEnvironmentImpl) DrainUnhandledUpdates() bool {
+	// Due to mock registration the test environment cannot run the workflow function
+	// in the first "workflow task". We need to delay the draining until the main function has
+	// had a chance to run.
+	if !env.workflowFunctionExecuting {
+		return false
+	}
+	rerun := false
+	// Check if any blocked updates remain when we have no more coroutines to run and let them run so they are rejected.
+	// Generally iterating a map in workflow code is bad because it is non deterministic
+	// this case is fine since all these update handles will be rejected and not recorded in history.
+	for name, us := range env.blockedUpdates {
+		for _, u := range us {
+			u()
+		}
+		rerun = true
+		delete(env.blockedUpdates, name)
+	}
+	return rerun
 }
 
 func (env *testWorkflowEnvironmentImpl) executeActivity(
@@ -1721,6 +1766,7 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input *commonpb.Payloads)
 	// reduce runningCount to allow auto-forwarding mock clock after current workflow dispatcher run is blocked (aka
 	// ExecuteUntilAllBlocked() returns).
 	env.runningCount--
+	w.env.workflowFunctionExecuting = true
 
 	childWE := env.workflowInfo.WorkflowExecution
 	var startedErr error
@@ -2389,7 +2435,10 @@ func (env *testWorkflowEnvironmentImpl) updateWorkflow(name string, id string, u
 	if err != nil {
 		panic(err)
 	}
-	env.updateHandler(name, id, data, nil, uc)
+	env.postCallback(func() {
+		// Do not send any headers on test invocations
+		env.updateHandler(name, id, data, nil, uc)
+	}, true)
 }
 
 func (env *testWorkflowEnvironmentImpl) updateWorkflowByID(workflowID, name, id string, uc UpdateCallbacks, args ...interface{}) error {
@@ -2401,7 +2450,9 @@ func (env *testWorkflowEnvironmentImpl) updateWorkflowByID(workflowID, name, id 
 		if err != nil {
 			panic(err)
 		}
-		env.updateHandler(name, id, data, nil, uc)
+		env.postCallback(func() {
+			env.updateHandler(name, id, data, nil, uc)
+		}, true)
 		return nil
 	}
 

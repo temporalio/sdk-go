@@ -170,6 +170,10 @@ type (
 		sdkVersion               string
 		sdkNameUpdated           bool
 		sdkName                  string
+		// Any updates received in a workflow task before we have registered
+		// any handlers are queued here until either their handler is registered
+		// or the event loop runs out of work and they are rejected.
+		blockedUpdates map[string][]func()
 
 		protocols *protocol.Registry
 	}
@@ -242,6 +246,7 @@ func newWorkflowExecutionEventHandler(
 		protocols:                    protocol.NewRegistry(),
 		mutableSideEffectCallCounter: make(map[string]int),
 		sdkFlags:                     newSDKFlags(capabilities),
+		blockedUpdates:               make(map[string][]func()),
 	}
 	// Attempt to skip 1 log level to remove the ReplayLogger from the stack.
 	context.logger = log.Skip(ilog.NewReplayLogger(
@@ -881,6 +886,41 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 	wc.logger.Debug("SideEffect Marker added", tagSideEffectID, sideEffectID)
 }
 
+func (wc *workflowEnvironmentImpl) TryUse(flag sdkFlag) bool {
+	return wc.sdkFlags.tryUse(flag, !wc.isReplay)
+}
+
+func (wc *workflowEnvironmentImpl) QueueUpdate(name string, f func()) {
+	wc.blockedUpdates[name] = append(wc.blockedUpdates[name], f)
+}
+
+func (wc *workflowEnvironmentImpl) HandleUpdates(name string) bool {
+	updatesHandled := false
+	if blockedUpdates, ok := wc.blockedUpdates[name]; wc.sdkFlags.tryUse(SDKPriorityUpdateHandling, !wc.isReplay) && ok {
+		updatesHandled = true
+		for _, update := range blockedUpdates {
+			update()
+		}
+		delete(wc.blockedUpdates, name)
+	}
+	return updatesHandled
+}
+
+func (wc *workflowEnvironmentImpl) DrainUnhandledUpdates() bool {
+	rerun := false
+	// Check if any blocked updates remain when we have no more coroutines to run and let them run so they are rejected.
+	// Generally iterating a map in workflow code is bad because it is non deterministic
+	// this case is fine since all these update handles will be rejected and not recorded in history.
+	for name, us := range wc.blockedUpdates {
+		for _, u := range us {
+			u()
+		}
+		rerun = true
+		delete(wc.blockedUpdates, name)
+	}
+	return rerun
+}
+
 // lookupMutableSideEffect gets the current value of the MutableSideEffect for id for the
 // current call count of id.
 func (wc *workflowEnvironmentImpl) lookupMutableSideEffect(id string) *commonpb.Payloads {
@@ -1293,6 +1333,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionStarted(
 	// replay sees the _final_ value of applied flags, not intermediate values
 	// as the value varies by WFT)
 	weh.sdkFlags.tryUse(SDKFlagProtocolMessageCommand, !weh.isReplay)
+	weh.sdkFlags.tryUse(SDKPriorityUpdateHandling, !weh.isReplay)
 
 	// Invoke the workflow.
 	weh.workflowDefinition.Execute(weh, attributes.Header, attributes.Input)
