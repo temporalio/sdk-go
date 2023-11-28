@@ -336,7 +336,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 				result = success
 			},
 		}, sched)
-		dispatcher.ExecuteUntilAllBlocked(time.Second)
+		require.NoError(t, dispatcher.ExecuteUntilAllBlocked(time.Second))
 
 		require.True(t, accepted)
 		require.Nil(t, resultErr)
