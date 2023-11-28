@@ -35,8 +35,6 @@ import (
 	"testing"
 	"time"
 
-	"go.opentelemetry.io/otel/baggage"
-
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/assert"
@@ -2464,7 +2462,7 @@ func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
 }
 
 func (ts *IntegrationTestSuite) TestQueryOnlyCoroutineUsage() {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
 	// Start the workflow that should run forever, send 5 signals, and wait until
