@@ -2136,21 +2136,19 @@ func (w *Workflows) WaitOnUpdate(ctx workflow.Context) (int, error) {
 	sleepHandle := func(ctx workflow.Context) error {
 		inflightUpdates++
 		updatesRan++
-		defer func() {
-			inflightUpdates--
-		}()
-		return workflow.Sleep(ctx, time.Second)
+		err := workflow.Sleep(ctx, time.Second)
+		inflightUpdates--
+		return err
 	}
 	echoHandle := func(ctx workflow.Context) error {
 		inflightUpdates++
 		updatesRan++
-		defer func() {
-			inflightUpdates--
-		}()
 
 		ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 		var a Activities
-		return workflow.ExecuteActivity(ctx, a.Echo, 1, 1).Get(ctx, nil)
+		err := workflow.ExecuteActivity(ctx, a.Echo, 1, 1).Get(ctx, nil)
+		inflightUpdates--
+		return err
 	}
 	emptyHandle := func(ctx workflow.Context) error {
 		inflightUpdates++
@@ -2173,14 +2171,9 @@ func (w *Workflows) WaitOnUpdate(ctx workflow.Context) (int, error) {
 }
 
 func (w *Workflows) UpdateOrdering(ctx workflow.Context) (int, error) {
-	inflightUpdates := 0
 	updatesRan := 0
 	updateHandle := func(ctx workflow.Context) error {
-		inflightUpdates++
 		updatesRan++
-		defer func() {
-			inflightUpdates--
-		}()
 		return nil
 	}
 	// Register multiple update handles in the first workflow task to make sure we process an
