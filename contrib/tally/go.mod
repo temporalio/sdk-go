@@ -22,7 +22,7 @@ require (
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/stretchr/objx v0.5.0 // indirect
 	github.com/twmb/murmur3 v1.1.5 // indirect
-	go.temporal.io/api v1.26.1-0.20231128184747-3be2272d0651 // indirect
+	go.temporal.io/api v1.26.1 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	golang.org/x/net v0.19.0 // indirect
 	golang.org/x/sys v0.15.0 // indirect
