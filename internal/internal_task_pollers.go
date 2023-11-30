@@ -403,14 +403,19 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 ) (response *workflowservice.RespondWorkflowTaskCompletedResponse, err error) {
 	metricsHandler := wtp.metricsHandler.WithTags(metrics.WorkflowTags(task.WorkflowType.GetName()))
 	if taskErr != nil {
-		metricsHandler.Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
 		wtp.logger.Warn("Failed to process workflow task.",
 			tagWorkflowType, task.WorkflowType.GetName(),
 			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 			tagRunID, task.WorkflowExecution.GetRunId(),
 			tagAttempt, task.Attempt,
 			tagError, taskErr)
-		completedRequest = wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)
+		failWorkflowTask := wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)
+		failureReason := "WorkflowError"
+		if failWorkflowTask.Cause == enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR {
+			failureReason = "NonDeterminismError"
+		}
+		metricsHandler.WithTags(metrics.WorkflowTaskFailedTags(failureReason)).Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
+		completedRequest = failWorkflowTask
 	}
 
 	metricsHandler.Timer(metrics.WorkflowTaskExecutionLatency).Record(time.Since(startTime))

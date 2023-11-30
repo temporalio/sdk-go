@@ -35,13 +35,14 @@ import (
 	"testing"
 	"time"
 
+	"go.opentelemetry.io/otel/baggage"
+
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"github.com/uber-go/tally/v4"
-	"go.opentelemetry.io/otel/baggage"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
@@ -2625,6 +2626,20 @@ func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch b
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	fetchMetrics := func() (localMetric int64) {
+		for _, counter := range ts.metricsHandler.Counters() {
+			counter := counter
+			if counter.Name == "temporal_workflow_task_execution_failed" && counter.Tags["failure_reason"] == "NonDeterminismError" {
+				localMetric = counter.Value()
+			}
+		}
+		return
+	}
+
+	// Confirm no metrics to start
+	taskFailedMetric := fetchMetrics()
+	ts.Zero(taskFailedMetric)
+
 	// Start workflow
 	forcedNonDeterminismCounter = 0
 	run, err := ts.client.ExecuteWorkflow(
@@ -2673,6 +2688,8 @@ func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch b
 	// Check the task has the expected cause
 	ts.NoError(histErr)
 	ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR, taskFailed.Cause)
+	taskFailedMetric = fetchMetrics()
+	ts.True(taskFailedMetric > 1)
 }
 
 func (ts *IntegrationTestSuite) TestDeterminismUpsertSearchAttributesConditional() {
