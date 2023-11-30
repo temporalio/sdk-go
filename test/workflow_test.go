@@ -2170,6 +2170,16 @@ func (w *Workflows) WaitOnUpdate(ctx workflow.Context) (int, error) {
 	return updatesRan, nil
 }
 
+func (w *Workflows) UpdateSetHandlerOnly(ctx workflow.Context) (int, error) {
+	updatesRan := 0
+	updateHandle := func(ctx workflow.Context) error {
+		updatesRan++
+		return nil
+	}
+	workflow.SetUpdateHandler(ctx, "update", updateHandle)
+	return updatesRan, nil
+}
+
 func (w *Workflows) UpdateOrdering(ctx workflow.Context) (int, error) {
 	updatesRan := 0
 	updateHandle := func(ctx workflow.Context) error {
@@ -2530,6 +2540,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.timer)
 	worker.RegisterWorkflow(w.WaitOnUpdate)
 	worker.RegisterWorkflow(w.UpdateOrdering)
+	worker.RegisterWorkflow(w.UpdateSetHandlerOnly)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {

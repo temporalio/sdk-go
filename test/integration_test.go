@@ -2465,7 +2465,6 @@ func (ts *IntegrationTestSuite) TestUpdateWithWrongHandleRejected() {
 func (ts *IntegrationTestSuite) TestWaitOnUpdate() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	// We want to start a single long-running activity in a session
 	options := ts.startWorkflowOptions("test-wait-on-update")
 	options.StartDelay = time.Hour
 	run, err := ts.client.ExecuteWorkflow(ctx,
@@ -2485,7 +2484,6 @@ func (ts *IntegrationTestSuite) TestWaitOnUpdate() {
 func (ts *IntegrationTestSuite) TestUpdateOrdering() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	// We want to start a single long-running activity in a session
 	options := ts.startWorkflowOptions("test-update-ordering")
 	options.StartDelay = time.Hour
 	run, err := ts.client.ExecuteWorkflow(ctx,
@@ -2562,6 +2560,22 @@ func (ts *IntegrationTestSuite) testUpdateOrderingCancel(cancelWf bool) {
 	ts.NoError(run.Get(ctx, &result))
 	ts.Equal(10, result)
 }
+
+func (ts *IntegrationTestSuite) TestUpdateAlwaysHandled() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-update-always-handled")
+	options.StartDelay = time.Hour
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.UpdateSetHandlerOnly)
+	ts.NoError(err)
+	// Send an update before the first workflow task
+	_, err = ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	ts.NoError(err)
+	var result int
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal(1, result)
+}
+
 func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

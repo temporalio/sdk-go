@@ -208,7 +208,7 @@ type (
 		activityEnvOnly bool
 
 		workflowFunctionExecuting bool
-		blockedUpdates            map[string][]func()
+		bufferedUpdateRequests    map[string][]func()
 	}
 
 	testSessionEnvironmentImpl struct {
@@ -261,12 +261,12 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		changeVersions: make(map[string]Version),
 		openSessions:   make(map[string]*SessionInfo),
 
-		doneChannel:       make(chan struct{}),
-		workerStopChannel: make(chan struct{}),
-		dataConverter:     converter.GetDefaultDataConverter(),
-		failureConverter:  GetDefaultFailureConverter(),
-		runTimeout:        maxWorkflowTimeout,
-		blockedUpdates:    make(map[string][]func()),
+		doneChannel:            make(chan struct{}),
+		workerStopChannel:      make(chan struct{}),
+		dataConverter:          converter.GetDefaultDataConverter(),
+		failureConverter:       GetDefaultFailureConverter(),
+		runTimeout:             maxWorkflowTimeout,
+		bufferedUpdateRequests: make(map[string][]func()),
 	}
 
 	if debugMode {
@@ -551,17 +551,17 @@ func (env *testWorkflowEnvironmentImpl) TryUse(flag sdkFlag) bool {
 }
 
 func (env *testWorkflowEnvironmentImpl) QueueUpdate(name string, f func()) {
-	env.blockedUpdates[name] = append(env.blockedUpdates[name], f)
+	env.bufferedUpdateRequests[name] = append(env.bufferedUpdateRequests[name], f)
 }
 
 func (env *testWorkflowEnvironmentImpl) HandleUpdates(name string) bool {
 	updatesHandled := false
-	if blockedUpdates, ok := env.blockedUpdates[name]; ok {
-		updatesHandled = true
-		for _, update := range blockedUpdates {
-			update()
+	if bufferedUpdateRequests, ok := env.bufferedUpdateRequests[name]; ok {
+		for _, requests := range bufferedUpdateRequests {
+			requests()
+			updatesHandled = true
 		}
-		delete(env.blockedUpdates, name)
+		delete(env.bufferedUpdateRequests, name)
 	}
 	return updatesHandled
 }
@@ -573,18 +573,18 @@ func (env *testWorkflowEnvironmentImpl) DrainUnhandledUpdates() bool {
 	if !env.workflowFunctionExecuting {
 		return false
 	}
-	rerun := false
-	// Check if any blocked updates remain when we have no more coroutines to run and let them run so they are rejected.
+	anyExecuted := false
+	// Check if any buffered update requests remain when we have no more coroutines to run and let them schedule so they are rejected.
 	// Generally iterating a map in workflow code is bad because it is non deterministic
 	// this case is fine since all these update handles will be rejected and not recorded in history.
-	for name, us := range env.blockedUpdates {
-		for _, u := range us {
-			u()
+	for name, bufferedUpdateRequests := range env.bufferedUpdateRequests {
+		for _, request := range bufferedUpdateRequests {
+			request()
+			anyExecuted = true
 		}
-		rerun = true
-		delete(env.blockedUpdates, name)
+		delete(env.bufferedUpdateRequests, name)
 	}
-	return rerun
+	return anyExecuted
 }
 
 func (env *testWorkflowEnvironmentImpl) executeActivity(

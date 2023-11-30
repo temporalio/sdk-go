@@ -180,7 +180,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 			Namespace:     "namespace:" + t.Name(),
 			TaskQueueName: "taskqueue:" + t.Name(),
 		},
-		blockedUpdates: make(map[string][]func()),
+		bufferedUpdateRequests: make(map[string][]func()),
 	}
 	interceptor, ctx, err := newWorkflowContext(env, nil)
 	require.NoError(t, err)

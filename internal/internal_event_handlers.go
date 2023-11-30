@@ -170,10 +170,10 @@ type (
 		sdkVersion               string
 		sdkNameUpdated           bool
 		sdkName                  string
-		// Any updates received in a workflow task before we have registered
-		// any handlers are queued here until either their handler is registered
-		// or the event loop runs out of work and they are rejected.
-		blockedUpdates map[string][]func()
+		// Any update requests received in a workflow task before we have registered
+		// any handlers are not scheduled and are queued here until either their
+		// handler is registered or the event loop runs out of work and they are rejected.
+		bufferedUpdateRequests map[string][]func()
 
 		protocols *protocol.Registry
 	}
@@ -246,7 +246,7 @@ func newWorkflowExecutionEventHandler(
 		protocols:                    protocol.NewRegistry(),
 		mutableSideEffectCallCounter: make(map[string]int),
 		sdkFlags:                     newSDKFlags(capabilities),
-		blockedUpdates:               make(map[string][]func()),
+		bufferedUpdateRequests:       make(map[string][]func()),
 	}
 	// Attempt to skip 1 log level to remove the ReplayLogger from the stack.
 	context.logger = log.Skip(ilog.NewReplayLogger(
@@ -891,34 +891,37 @@ func (wc *workflowEnvironmentImpl) TryUse(flag sdkFlag) bool {
 }
 
 func (wc *workflowEnvironmentImpl) QueueUpdate(name string, f func()) {
-	wc.blockedUpdates[name] = append(wc.blockedUpdates[name], f)
+	wc.bufferedUpdateRequests[name] = append(wc.bufferedUpdateRequests[name], f)
 }
 
 func (wc *workflowEnvironmentImpl) HandleUpdates(name string) bool {
+	if !wc.sdkFlags.tryUse(SDKPriorityUpdateHandling, !wc.isReplay) {
+		return false
+	}
 	updatesHandled := false
-	if blockedUpdates, ok := wc.blockedUpdates[name]; wc.sdkFlags.tryUse(SDKPriorityUpdateHandling, !wc.isReplay) && ok {
-		updatesHandled = true
-		for _, update := range blockedUpdates {
-			update()
+	if bufferedUpdateRequests, ok := wc.bufferedUpdateRequests[name]; ok {
+		for _, request := range bufferedUpdateRequests {
+			request()
+			updatesHandled = true
 		}
-		delete(wc.blockedUpdates, name)
+		delete(wc.bufferedUpdateRequests, name)
 	}
 	return updatesHandled
 }
 
 func (wc *workflowEnvironmentImpl) DrainUnhandledUpdates() bool {
-	rerun := false
-	// Check if any blocked updates remain when we have no more coroutines to run and let them run so they are rejected.
+	anyExecuted := false
+	// Check if any buffered update requests remain when we have no more coroutines to run and let them schedule so they are rejected.
 	// Generally iterating a map in workflow code is bad because it is non deterministic
 	// this case is fine since all these update handles will be rejected and not recorded in history.
-	for name, us := range wc.blockedUpdates {
-		for _, u := range us {
-			u()
+	for name, requests := range wc.bufferedUpdateRequests {
+		for _, request := range requests {
+			request()
+			anyExecuted = true
 		}
-		rerun = true
-		delete(wc.blockedUpdates, name)
+		delete(wc.bufferedUpdateRequests, name)
 	}
-	return rerun
+	return anyExecuted
 }
 
 // lookupMutableSideEffect gets the current value of the MutableSideEffect for id for the

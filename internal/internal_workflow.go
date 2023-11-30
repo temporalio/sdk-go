@@ -1073,6 +1073,8 @@ func (d *dispatcherImpl) newState(name string, highPriority bool) *coroutineStat
 	}
 	d.sequence++
 	if highPriority {
+		// Update requests need to be added to the front of the dispatchers coroutine list so they
+		// are handled before the root coroutine.
 		d.newEagerCoroutines = append(d.newEagerCoroutines, c)
 	} else {
 		d.coroutines = append(d.coroutines, c)
@@ -1135,10 +1137,12 @@ func (d *dispatcherImpl) ExecuteUntilAllBlocked(deadlockDetectionTimeout time.Du
 		}
 		// Set allBlocked to false if new coroutines where created
 		allBlocked = allBlocked && lastSequence == d.sequence && len(d.newEagerCoroutines) == 0
-		d.coroutines = append(d.newEagerCoroutines, d.coroutines...)
-		d.newEagerCoroutines = nil
-		if len(d.coroutines) == 0 && !d.allBlockedCallback() {
-			break
+		if len(d.newEagerCoroutines) > 0 {
+			d.coroutines = append(d.newEagerCoroutines, d.coroutines...)
+			d.newEagerCoroutines = nil
+			allBlocked = false
+		} else {
+			allBlocked = allBlocked && lastSequence == d.sequence
 		}
 	}
 	return nil
@@ -1662,8 +1666,6 @@ func (wg *waitGroupImpl) Wait(ctx Context) {
 
 // Spawn starts a new coroutine with Dispatcher.NewCoroutine
 func (us updateSchedulerImpl) Spawn(ctx Context, name string, highPriority bool, f func(Context)) Context {
-	// Update requests need to be added to the front of the dispatchers coroutine list so they
-	// are handled before the root coroutine.
 	return us.dispatcher.NewCoroutine(ctx, name, highPriority, f)
 }
 
