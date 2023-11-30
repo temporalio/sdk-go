@@ -1749,12 +1749,14 @@ func (w *Workflows) WaitSignalReturnParam(ctx workflow.Context, v interface{}) (
 	// Wait for signal before returning
 	s := workflow.NewSelector(ctx)
 	signalCh := workflow.GetSignalChannel(ctx, "done-signal")
+	var finishWf bool
 	s.AddReceive(signalCh, func(c workflow.ReceiveChannel, more bool) {
-		var ignore bool
-		c.Receive(ctx, &ignore)
+		c.Receive(ctx, &finishWf)
 		workflow.GetLogger(ctx).Info("Received signal")
 	})
-	s.Select(ctx)
+	for !finishWf {
+		s.Select(ctx)
+	}
 	return v, nil
 }
 

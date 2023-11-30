@@ -851,7 +851,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseIgnoreDuplicateWhileRunning()
 
 	// Send signal to each (though in practice they both have the same ID and run
 	// ID, so it's really just two signals)
-	err = ts.client.SignalWorkflow(ctx, run1.GetID(), run1.GetRunID(), "done-signal", true)
+	err = ts.client.SignalWorkflow(ctx, run1.GetID(), run1.GetRunID(), "done-signal", false)
 	ts.NoError(err)
 	err = ts.client.SignalWorkflow(ctx, run2.GetID(), run2.GetRunID(), "done-signal", true)
 	ts.NoError(err)
