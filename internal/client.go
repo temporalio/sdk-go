@@ -491,23 +491,26 @@ type (
 		// This value only used when TLS is nil.
 		Authority string
 
-		// Enables keep alive ping from client to the server, which can help detect abruptly closed connections faster.
-		EnableKeepAliveCheck bool
+		// Disable keep alive ping from client to the server.
+		DisableKeepAliveCheck bool
 
 		// After a duration of this time if the client doesn't see any activity it
 		// pings the server to see if the transport is still alive.
 		// If set below 10s, a minimum value of 10s will be used instead.
+		// default: 15s
 		KeepAliveTime time.Duration
 
 		// After having pinged for keepalive check, the client waits for a duration
 		// of Timeout and if no activity is seen even after that the connection is
 		// closed.
+		// default: 30s
 		KeepAliveTimeout time.Duration
 
-		// If true, client sends keepalive pings even with no active RPCs. If false,
-		// when there are no active RPCs, Time and Timeout will be ignored and no
+		// if true, when there are no active RPCs, Time and Timeout will be ignored and no
 		// keepalive pings will be sent.
-		KeepAlivePermitWithoutStream bool
+		// If false, client sends keepalive pings even with no active RPCs
+		// default: false
+		DisableKeepAlivePermitWithoutStream bool
 
 		// MaxPayloadSize is a number of bytes that gRPC would allow to travel to and from server. Defaults to 128 MB.
 		MaxPayloadSize int
