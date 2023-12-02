@@ -36,6 +36,8 @@ import (
 	"time"
 	"unicode"
 
+	"golang.org/x/exp/slices"
+
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.uber.org/atomic"
@@ -1106,10 +1108,10 @@ func (d *dispatcherImpl) ExecuteUntilAllBlocked(deadlockDetectionTimeout time.Du
 		d.mutex.Unlock()
 	}()
 	allBlocked := false
-	d.coroutines = append(d.newEagerCoroutines, d.coroutines...)
-	d.newEagerCoroutines = nil
 	// Keep executing until at least one goroutine made some progress
 	for !allBlocked || d.allBlockedCallback() {
+		d.coroutines = append(d.newEagerCoroutines, d.coroutines...)
+		d.newEagerCoroutines = nil
 		// Give every coroutine chance to execute removing closed ones
 		allBlocked = true
 		lastSequence := d.sequence
@@ -1134,16 +1136,16 @@ func (d *dispatcherImpl) ExecuteUntilAllBlocked(deadlockDetectionTimeout time.Du
 			} else {
 				allBlocked = allBlocked && (c.keptBlocked || c.closed.Load())
 			}
+			// If any eager coroutines were created by the last coroutine we
+			// need to schedule them now.
+			if len(d.newEagerCoroutines) > 0 {
+				d.coroutines = slices.Insert(d.coroutines, i+1, d.newEagerCoroutines...)
+				d.newEagerCoroutines = nil
+				allBlocked = false
+			}
 		}
 		// Set allBlocked to false if new coroutines where created
-		allBlocked = allBlocked && lastSequence == d.sequence && len(d.newEagerCoroutines) == 0
-		if len(d.newEagerCoroutines) > 0 {
-			d.coroutines = append(d.newEagerCoroutines, d.coroutines...)
-			d.newEagerCoroutines = nil
-			allBlocked = false
-		} else {
-			allBlocked = allBlocked && lastSequence == d.sequence
-		}
+		allBlocked = allBlocked && lastSequence == d.sequence
 	}
 	return nil
 }
