@@ -364,6 +364,62 @@ func NewRemotePayloadCodec(options RemotePayloadCodecOptions) PayloadCodec {
 	return &remotePayloadCodec{options}
 }
 
+// Encode uses the remote payload codec endpoint to encode payloads.
+func (pc *remotePayloadCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	return pc.encodeOrDecode(pc.options.Endpoint+remotePayloadCodecEncodePath, payloads)
+}
+
+// Decode uses the remote payload codec endpoint to decode payloads.
+func (pc *remotePayloadCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	return pc.encodeOrDecode(pc.options.Endpoint+remotePayloadCodecDecodePath, payloads)
+}
+
+func (pc *remotePayloadCodec) encodeOrDecode(endpoint string, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	requestPayloads, err := json.Marshal(commonpb.Payloads{Payloads: payloads})
+	if err != nil {
+		return payloads, fmt.Errorf("unable to marshal payloads: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(requestPayloads))
+	if err != nil {
+		return payloads, fmt.Errorf("unable to build request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	if pc.options.ModifyRequest != nil {
+		err = pc.options.ModifyRequest(req)
+		if err != nil {
+			return payloads, err
+		}
+	}
+
+	response, err := pc.options.Client.Do(req)
+	if err != nil {
+		return payloads, err
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	if response.StatusCode == 200 {
+		bs, err := io.ReadAll(response.Body)
+		if err != nil {
+			return payloads, fmt.Errorf("failed to read response body: %w", err)
+		}
+		var resultPayloads commonpb.Payloads
+		err = protojson.Unmarshal(bs, &resultPayloads)
+		if err != nil {
+			return payloads, fmt.Errorf("unable to unmarshal payloads: %w", err)
+		}
+		if len(payloads) != len(resultPayloads.Payloads) {
+			return payloads, fmt.Errorf("received %d payloads from remote codec, expected %d", len(resultPayloads.Payloads), len(payloads))
+		}
+		return resultPayloads.Payloads, nil
+	}
+
+	message, _ := io.ReadAll(response.Body)
+	return payloads, fmt.Errorf("%s: %s", http.StatusText(response.StatusCode), message)
+}
+
 // Fields Endpoint, ModifyRequest, Client of RemotePayloadCodecOptions are also
 // exposed here in RemoteDataConverterOptions for backwards compatibility.
 
@@ -462,60 +518,4 @@ func (rdc *remoteDataConverter) ToStrings(payloads *commonpb.Payloads) []string 
 		strs[i] = rdc.ToString(payload)
 	}
 	return strs
-}
-
-// Encode uses the remote payload codec endpoint to encode payloads.
-func (pc *remotePayloadCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
-	return pc.encodeOrDecode(pc.options.Endpoint+remotePayloadCodecEncodePath, payloads)
-}
-
-// Decode uses the remote payload codec endpoint to decode payloads.
-func (pc *remotePayloadCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
-	return pc.encodeOrDecode(pc.options.Endpoint+remotePayloadCodecDecodePath, payloads)
-}
-
-func (pc *remotePayloadCodec) encodeOrDecode(endpoint string, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
-	requestPayloads, err := json.Marshal(commonpb.Payloads{Payloads: payloads})
-	if err != nil {
-		return payloads, fmt.Errorf("unable to marshal payloads: %w", err)
-	}
-
-	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(requestPayloads))
-	if err != nil {
-		return payloads, fmt.Errorf("unable to build request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	if pc.options.ModifyRequest != nil {
-		err = pc.options.ModifyRequest(req)
-		if err != nil {
-			return payloads, err
-		}
-	}
-
-	response, err := pc.options.Client.Do(req)
-	if err != nil {
-		return payloads, err
-	}
-	defer func() { _ = response.Body.Close() }()
-
-	if response.StatusCode == 200 {
-		bs, err := io.ReadAll(response.Body)
-		if err != nil {
-			return payloads, fmt.Errorf("failed to read response body: %w", err)
-		}
-		var resultPayloads commonpb.Payloads
-		err = protojson.Unmarshal(bs, &resultPayloads)
-		if err != nil {
-			return payloads, fmt.Errorf("unable to unmarshal payloads: %w", err)
-		}
-		if len(payloads) != len(resultPayloads.Payloads) {
-			return payloads, fmt.Errorf("received %d payloads from remote codec, expected %d", len(resultPayloads.Payloads), len(payloads))
-		}
-		return resultPayloads.Payloads, nil
-	}
-
-	message, _ := io.ReadAll(response.Body)
-	return payloads, fmt.Errorf("%s: %s", http.StatusText(response.StatusCode), message)
 }
