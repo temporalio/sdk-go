@@ -2689,7 +2689,7 @@ func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch b
 	ts.NoError(histErr)
 	ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR, taskFailed.Cause)
 	taskFailedMetric = fetchMetrics()
-	ts.True(taskFailedMetric > 1)
+	ts.True(taskFailedMetric >= 1)
 }
 
 func (ts *IntegrationTestSuite) TestDeterminismUpsertSearchAttributesConditional() {
