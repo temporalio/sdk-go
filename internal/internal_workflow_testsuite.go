@@ -877,16 +877,13 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 		return
 	}
 	env.workflowDef.Close()
-	var canceledErr *CanceledError
-	if errors.As(err, &canceledErr) && env.workflowCancelHandler != nil {
-		env.workflowCancelHandler()
-	}
 
 	dc := env.GetDataConverter()
 	env.isWorkflowCompleted = true
 
 	if err != nil {
 		var continueAsNewErr *ContinueAsNewError
+		var canceledErr *CanceledError
 		var timeoutErr *TimeoutError
 		var workflowPanicErr *workflowPanicError
 		var workflowExecutionAlreadyStartedErr *serviceerror.WorkflowExecutionAlreadyStarted
