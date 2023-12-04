@@ -124,6 +124,17 @@ type (
 		UpsertSearchAttributes(attributes map[string]interface{}) error
 		UpsertMemo(memoMap map[string]interface{}) error
 		GetRegistry() *registry
+		// QueueUpdate request of type name
+		QueueUpdate(name string, f func())
+		// HandleUpdates unblock all updates of type name
+		// returns true if any update was unblocked
+		HandleUpdates(name string) bool
+		// DrainUnhandledUpdates unblocks all updates, meant to be used to drain
+		// all unhandled updates at the end of a workflow task
+		// returns true if any update was unblocked
+		DrainUnhandledUpdates() bool
+		// TryUse returns true if this flag may currently be used.
+		TryUse(flag sdkFlag) bool
 	}
 
 	// WorkflowDefinitionFactory factory for creating WorkflowDefinition instances.

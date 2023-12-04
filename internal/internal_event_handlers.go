@@ -170,6 +170,10 @@ type (
 		sdkVersion               string
 		sdkNameUpdated           bool
 		sdkName                  string
+		// Any update requests received in a workflow task before we have registered
+		// any handlers are not scheduled and are queued here until either their
+		// handler is registered or the event loop runs out of work and they are rejected.
+		bufferedUpdateRequests map[string][]func()
 
 		protocols *protocol.Registry
 	}
@@ -242,6 +246,7 @@ func newWorkflowExecutionEventHandler(
 		protocols:                    protocol.NewRegistry(),
 		mutableSideEffectCallCounter: make(map[string]int),
 		sdkFlags:                     newSDKFlags(capabilities),
+		bufferedUpdateRequests:       make(map[string][]func()),
 	}
 	// Attempt to skip 1 log level to remove the ReplayLogger from the stack.
 	context.logger = log.Skip(ilog.NewReplayLogger(
@@ -881,6 +886,44 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 	wc.logger.Debug("SideEffect Marker added", tagSideEffectID, sideEffectID)
 }
 
+func (wc *workflowEnvironmentImpl) TryUse(flag sdkFlag) bool {
+	return wc.sdkFlags.tryUse(flag, !wc.isReplay)
+}
+
+func (wc *workflowEnvironmentImpl) QueueUpdate(name string, f func()) {
+	wc.bufferedUpdateRequests[name] = append(wc.bufferedUpdateRequests[name], f)
+}
+
+func (wc *workflowEnvironmentImpl) HandleUpdates(name string) bool {
+	if !wc.sdkFlags.tryUse(SDKPriorityUpdateHandling, !wc.isReplay) {
+		return false
+	}
+	updatesHandled := false
+	if bufferedUpdateRequests, ok := wc.bufferedUpdateRequests[name]; ok {
+		for _, request := range bufferedUpdateRequests {
+			request()
+			updatesHandled = true
+		}
+		delete(wc.bufferedUpdateRequests, name)
+	}
+	return updatesHandled
+}
+
+func (wc *workflowEnvironmentImpl) DrainUnhandledUpdates() bool {
+	anyExecuted := false
+	// Check if any buffered update requests remain when we have no more coroutines to run and let them schedule so they are rejected.
+	// Generally iterating a map in workflow code is bad because it is non deterministic
+	// this case is fine since all these update handles will be rejected and not recorded in history.
+	for name, requests := range wc.bufferedUpdateRequests {
+		for _, request := range requests {
+			request()
+			anyExecuted = true
+		}
+		delete(wc.bufferedUpdateRequests, name)
+	}
+	return anyExecuted
+}
+
 // lookupMutableSideEffect gets the current value of the MutableSideEffect for id for the
 // current call count of id.
 func (wc *workflowEnvironmentImpl) lookupMutableSideEffect(id string) *commonpb.Payloads {
@@ -1293,6 +1336,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionStarted(
 	// replay sees the _final_ value of applied flags, not intermediate values
 	// as the value varies by WFT)
 	weh.sdkFlags.tryUse(SDKFlagProtocolMessageCommand, !weh.isReplay)
+	weh.sdkFlags.tryUse(SDKPriorityUpdateHandling, !weh.isReplay)
 
 	// Invoke the workflow.
 	weh.workflowDefinition.Execute(weh, attributes.Header, attributes.Input)

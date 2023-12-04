@@ -44,7 +44,10 @@ const (
 	// a workflow task response's command set to order messages with respect to
 	// commands.
 	SDKFlagProtocolMessageCommand = 3
-	SDKFlagUnknown                = math.MaxUint32
+	// SDKPriorityUpdateHandling will cause update request to be handled before the main workflow method.
+	// It will also cause the SDK to immediately handle updates when a handler is registered.
+	SDKPriorityUpdateHandling = 4
+	SDKFlagUnknown            = math.MaxUint32
 )
 
 func sdkFlagFromUint(value uint32) sdkFlag {
@@ -57,6 +60,8 @@ func sdkFlagFromUint(value uint32) sdkFlag {
 		return SDKFlagChildWorkflowErrorExecution
 	case uint32(SDKFlagProtocolMessageCommand):
 		return SDKFlagProtocolMessageCommand
+	case uint32(SDKPriorityUpdateHandling):
+		return SDKPriorityUpdateHandling
 	default:
 		return SDKFlagUnknown
 	}

@@ -28,6 +28,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
@@ -51,7 +52,7 @@ func mustSetUpdateHandler(
 }
 
 type testUpdateScheduler struct {
-	SpawnImpl func(Context, string, func(Context)) Context
+	SpawnImpl func(Context, string, bool, func(Context)) Context
 	YieldImpl func(Context, string)
 }
 
@@ -67,8 +68,8 @@ func (tuc *testUpdateCallbacks) Complete(success interface{}, err error) {
 	tuc.CompleteImpl(success, err)
 }
 
-func (tus *testUpdateScheduler) Spawn(ctx Context, name string, f func(Context)) Context {
-	return tus.SpawnImpl(ctx, name, f)
+func (tus *testUpdateScheduler) Spawn(ctx Context, name string, p bool, f func(Context)) Context {
+	return tus.SpawnImpl(ctx, name, p, f)
 }
 
 func (tus *testUpdateScheduler) Yield(ctx Context, status string) {
@@ -76,7 +77,7 @@ func (tus *testUpdateScheduler) Yield(ctx Context, status string) {
 }
 
 var runOnCallingThread = &testUpdateScheduler{
-	SpawnImpl: func(ctx Context, _ string, f func(Context)) Context {
+	SpawnImpl: func(ctx Context, _ string, _ bool, f func(Context)) Context {
 		f(ctx)
 		return ctx
 	},
@@ -104,7 +105,8 @@ func TestUpdateHandlerPanicHandling(t *testing.T) {
 	dispatcher, ctx := newDispatcher(
 		ctx,
 		interceptor,
-		func(ctx Context) {})
+		func(ctx Context) {},
+		func() bool { return false })
 	dispatcher.executing = true
 
 	panicFunc := func() error { panic("intentional") }
@@ -169,7 +171,6 @@ func TestUpdateValidatorFnValidation(t *testing.T) {
 }
 
 func TestDefaultUpdateHandler(t *testing.T) {
-	t.Parallel()
 	dc := converter.GetDefaultDataConverter()
 	env := &workflowEnvironmentImpl{
 		sdkFlags:       testSDKFlags,
@@ -179,13 +180,15 @@ func TestDefaultUpdateHandler(t *testing.T) {
 			Namespace:     "namespace:" + t.Name(),
 			TaskQueueName: "taskqueue:" + t.Name(),
 		},
+		bufferedUpdateRequests: make(map[string][]func()),
 	}
 	interceptor, ctx, err := newWorkflowContext(env, nil)
 	require.NoError(t, err)
 	dispatcher, ctx := newDispatcher(
 		ctx,
 		interceptor,
-		func(ctx Context) {})
+		func(ctx Context) {},
+		env.DrainUnhandledUpdates)
 	dispatcher.executing = true
 
 	hdr := &commonpb.Header{Fields: map[string]*commonpb.Payload{}}
@@ -299,13 +302,15 @@ func TestDefaultUpdateHandler(t *testing.T) {
 		// registration at workflow start time has already occurred
 		interceptor, ctx, err := newWorkflowContext(env, nil)
 		require.NoError(t, err)
+		updateFunc := func(ctx Context, s string) (string, error) { return s + " success!", nil }
 		dispatcher, ctx := newDispatcher(
 			ctx,
 			interceptor,
-			func(ctx Context) {})
-		dispatcher.executing = true
+			func(ctx Context) {
+				mustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateHandlerOptions{})
+			},
+			func() bool { return false })
 
-		updateFunc := func(ctx Context, s string) (string, error) { return s + " success!", nil }
 		var (
 			resultErr error
 			rejectErr error
@@ -313,7 +318,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 			result    interface{}
 		)
 		sched := &testUpdateScheduler{
-			SpawnImpl: func(ctx Context, _ string, f func(Context)) Context {
+			SpawnImpl: func(ctx Context, _ string, _ bool, f func(Context)) Context {
 				f(ctx)
 				return ctx
 			},
@@ -330,6 +335,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 				result = success
 			},
 		}, sched)
+		require.NoError(t, dispatcher.ExecuteUntilAllBlocked(time.Second))
 
 		require.True(t, accepted)
 		require.Nil(t, resultErr)

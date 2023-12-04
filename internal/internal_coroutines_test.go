@@ -49,7 +49,7 @@ func createRootTestContext() (interceptor *workflowEnvironmentInterceptor, ctx C
 
 func createNewDispatcher(f func(ctx Context)) dispatcher {
 	interceptor, ctx := createRootTestContext()
-	result, _ := newDispatcher(ctx, interceptor, f)
+	result, _ := newDispatcher(ctx, interceptor, f, func() bool { return false })
 	result.interceptor = interceptor
 	return result
 }
@@ -906,7 +906,7 @@ func TestAwaitCancellation(t *testing.T) {
 	ctx, cancelHandler := WithCancel(ctx)
 	d, _ := newDispatcher(ctx, interceptor, func(ctx Context) {
 		awaitError = Await(ctx, func() bool { return false })
-	})
+	}, func() bool { return false })
 	defer d.Close()
 	err := d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
 	require.NoError(t, err)
@@ -943,6 +943,58 @@ func TestAwaitWithTimeoutNoTimeout(t *testing.T) {
 	require.True(t, d.IsDone())
 }
 
+func TestRecursiveEagerCoroutine(t *testing.T) {
+	// Verify eager coroutines run before normal coroutines
+	// even if they are scheduled in other eager coroutines
+	var d dispatcher
+	var history []string
+	d = createNewDispatcher(func(ctx Context) {
+		history = append(history, "root")
+		Go(ctx, func(ctx Context) {
+			history = append(history, "coroutine 1")
+		})
+		d.NewCoroutine(ctx, "outer eager", true, func(ctx Context) {
+			history = append(history, "outer eager coroutine")
+			d.NewCoroutine(ctx, "inner eager", true, func(ctx Context) {
+				history = append(history, "inner eager coroutine")
+			})
+		})
+		Go(ctx, func(ctx Context) {
+			history = append(history, "coroutine 2")
+		})
+		// Yield to allow the eager coroutines to run
+		state := getState(ctx)
+		history = append(history, "root yield start")
+		state.yield("test")
+		history = append(history, "root yield finish")
+
+	})
+	defer d.Close()
+	err := d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
+	require.NoError(t, err)
+	require.True(t, d.IsDone())
+	require.Equal(t, []string{"root", "root yield start", "outer eager coroutine", "inner eager coroutine", "coroutine 1", "coroutine 2", "root yield finish"}, history)
+}
+
+func TestEagerCoroutineWhileNotRunning(t *testing.T) {
+	var history []string
+	interceptor, ctx := createRootTestContext()
+	d, _ := newDispatcher(ctx, interceptor, func(ctx Context) {
+		history = append(history, "root")
+	}, func() bool { return false })
+	d.interceptor = interceptor
+
+	defer d.Close()
+	d.NewCoroutine(ctx, "eager", true, func(ctx Context) {
+		history = append(history, "eager coroutine")
+	})
+
+	err := d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
+	require.NoError(t, err)
+	require.True(t, d.IsDone())
+	require.Equal(t, []string{"eager coroutine", "root"}, history)
+}
+
 func TestAwaitWithTimeoutCancellation(t *testing.T) {
 	var awaitWithTimeoutError error
 	var awaitOk bool
@@ -950,7 +1002,7 @@ func TestAwaitWithTimeoutCancellation(t *testing.T) {
 	ctx, cancelHandler := WithCancel(ctx)
 	d, _ := newDispatcher(ctx, interceptor, func(ctx Context) {
 		awaitOk, awaitWithTimeoutError = AwaitWithTimeout(ctx, time.Hour, func() bool { return false })
-	})
+	}, func() bool { return false })
 	defer d.Close()
 	err := d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
 	require.NoError(t, err)

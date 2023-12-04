@@ -28,6 +28,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"os"
 	"strings"
 	"sync"
@@ -2422,6 +2423,157 @@ func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSizeWithRecreat
 	manualCancel()
 	ts.NoError(run1.Get(ctx, nil))
 	ts.NoError(run2.Get(ctx, nil))
+}
+
+func (ts *IntegrationTestSuite) TestUpdateWithNoHandlerRejected() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-update-with-no-handle-rejected")
+	options.StartDelay = time.Hour
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		options,
+		ts.workflows.Basic)
+	ts.NoError(err)
+	// Send an update that we know has no handle
+	handle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "bad handle")
+	ts.NoError(err)
+	ts.Error(handle.Get(ctx, nil))
+	// The workflow should still complete
+	var result []string
+	ts.NoError(run.Get(ctx, &result))
+}
+
+func (ts *IntegrationTestSuite) TestUpdateWithWrongHandleRejected() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-update-with-wrong-handle-rejected")
+	options.StartDelay = time.Hour
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		options,
+		ts.workflows.WaitOnUpdate)
+	ts.NoError(err)
+	// Send an update before the first workflow task
+	updateHandle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "bad update")
+	ts.NoError(err)
+	ts.Error(updateHandle.Get(ctx, nil))
+	// Get the result
+	var result int
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal(0, result)
+}
+
+func (ts *IntegrationTestSuite) TestWaitOnUpdate() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-wait-on-update")
+	options.StartDelay = time.Hour
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		options,
+		ts.workflows.WaitOnUpdate)
+	ts.NoError(err)
+	// Send an update before the first workflow task
+	updateHandle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "echo")
+	ts.NoError(err)
+	ts.NoError(updateHandle.Get(ctx, nil))
+	// Get the result
+	var result int
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal(1, result)
+}
+
+func (ts *IntegrationTestSuite) TestUpdateOrdering() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-update-ordering")
+	options.StartDelay = time.Hour
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		options,
+		ts.workflows.UpdateOrdering)
+	ts.NoError(err)
+	// Send an update before the first workflow task
+	updateHandle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	ts.NoError(err)
+	ts.NoError(updateHandle.Get(ctx, nil))
+	// Send an update after the first workflow task
+	updateHandle, err = ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	ts.NoError(err)
+	ts.NoError(updateHandle.Get(ctx, nil))
+	// Get the result
+	var result int
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal(2, result)
+}
+
+func (ts *IntegrationTestSuite) TestMultipleUpdateOrderingCancel() {
+	ts.testUpdateOrderingCancel(true)
+}
+
+func (ts *IntegrationTestSuite) TestMultipleUpdateOrdering() {
+	ts.testUpdateOrderingCancel(false)
+}
+
+func (ts *IntegrationTestSuite) testUpdateOrderingCancel(cancelWf bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	// Kill the worker so we can send multiple update requests and possibly a cancel in the same WFT
+	ts.worker.Stop()
+	// Start the workflow
+	options := ts.startWorkflowOptions("test-multiple-update-ordering")
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		options,
+		ts.workflows.WaitOnUpdate)
+	ts.NoError(err)
+
+	if cancelWf {
+		ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+	}
+	var wf sync.WaitGroup
+	updateHandles := []string{"echo", "sleep", "empty"}
+	for i := 0; i < 10; i++ {
+		wf.Add(1)
+		go func() {
+			defer wf.Done()
+			handle := updateHandles[rand.Intn(3)]
+			updateHandle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), handle)
+			ts.NoError(err)
+			updateErr := updateHandle.Get(ctx, nil)
+			if cancelWf {
+				var cancelErr *temporal.CanceledError
+				ts.ErrorAs(updateErr, &cancelErr)
+			} else {
+				ts.NoError(updateErr)
+			}
+		}()
+	}
+
+	// Server does not support admitted so we have to send the update in a seperate goroutine
+	time.Sleep(5 * time.Second)
+	// Now create a new worker on that same task queue to resume the work of the
+	// workflow
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
+	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.NoError(nextWorker.Start())
+	defer nextWorker.Stop()
+	wf.Wait()
+	// Get the result
+	var result int
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal(10, result)
+}
+
+func (ts *IntegrationTestSuite) TestUpdateAlwaysHandled() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-update-always-handled")
+	options.StartDelay = time.Hour
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.UpdateSetHandlerOnly)
+	ts.NoError(err)
+	// Send an update before the first workflow task
+	_, err = ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	ts.NoError(err)
+	var result int
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal(1, result)
 }
 
 func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
