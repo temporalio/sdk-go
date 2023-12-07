@@ -1744,7 +1744,7 @@ func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 // the update handler itself is invoked and if this function returns an error,
 // the update request will be considered to have been rejected and as such will
 // not occupy any space in the workflow history. Validation functions must take
-// as inputs the same parameters as the associated update handler but my vary
+// as inputs the same parameters as the associated update handler but may vary
 // from said handler by the presence/absence of a workflow.Context as the first
 // parameter. Validation handlers must only return a single error. Validation
 // handlers must be deterministic and can observe workflow state but must not
