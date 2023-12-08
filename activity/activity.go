@@ -41,6 +41,10 @@ type (
 
 	// RegisterOptions consists of options for registering an activity
 	RegisterOptions = internal.RegisterActivityOptions
+
+	// ExtraRequests is an additional data which should be sent to the server to influence its decision
+	// about the next retry
+	ExtraRequests = internal.ActivityExtraRequests
 )
 
 // ErrResultPending is returned from activity's implementation to indicate the activity is not completed when

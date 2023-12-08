@@ -37,11 +37,13 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	"github.com/pborman/uuid"
+
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
+
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
@@ -1035,23 +1037,23 @@ func reportActivityComplete(
 	}
 
 	var reportErr error
-	switch request := request.(type) {
+	switch rqst := request.(type) {
 	case *workflowservice.RespondActivityTaskCanceledRequest:
 		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler),
 			defaultGrpcRetryParameters(ctx))
 		defer cancel()
-		_, err := service.RespondActivityTaskCanceled(grpcCtx, request)
+		_, err := service.RespondActivityTaskCanceled(grpcCtx, rqst)
 		reportErr = err
 	case *workflowservice.RespondActivityTaskFailedRequest:
 		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler), defaultGrpcRetryParameters(ctx))
 		defer cancel()
-		_, err := service.RespondActivityTaskFailed(grpcCtx, request)
+		_, err := service.RespondActivityTaskFailed(grpcCtx, rqst)
 		reportErr = err
 	case *workflowservice.RespondActivityTaskCompletedRequest:
 		grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(rpcMetricsHandler),
 			defaultGrpcRetryParameters(ctx))
 		defer cancel()
-		_, err := service.RespondActivityTaskCompleted(grpcCtx, request)
+		_, err := service.RespondActivityTaskCompleted(grpcCtx, rqst)
 		reportErr = err
 	}
 	return reportErr
@@ -1148,11 +1150,12 @@ func convertActivityResultToRespondRequest(
 	}
 
 	return &workflowservice.RespondActivityTaskFailedRequest{
-		TaskToken:     taskToken,
-		Failure:       failureConverter.ErrorToFailure(err),
-		Identity:      identity,
-		Namespace:     namespace,
-		WorkerVersion: versionStamp,
+		TaskToken:      taskToken,
+		Failure:        failureConverter.ErrorToFailure(err),
+		Identity:       identity,
+		Namespace:      namespace,
+		WorkerVersion:  versionStamp,
+		NextRetryDelay: extractActivityRequestsFrom(err),
 	}
 }
 
@@ -1223,4 +1226,16 @@ func convertActivityResultToRespondRequestByID(
 		Failure:    failureConverter.ErrorToFailure(err),
 		Identity:   identity,
 	}
+}
+
+func extractActivityRequestsFrom(err error) *durationpb.Duration {
+	applicationError, ok := err.(*ApplicationError)
+	if !ok {
+		return nil
+	}
+	activityExtra, ok := applicationError.extra.(*ActivityExtraRequests)
+	if !ok {
+		return nil
+	}
+	return durationpb.New(activityExtra.RetryDelay)
 }

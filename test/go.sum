@@ -154,8 +154,8 @@ go.opentelemetry.io/otel/sdk v1.21.0/go.mod h1:Nna6Yv7PWTdgJHVRD9hIYywQBRx7pbox6
 go.opentelemetry.io/otel/sdk/metric v1.21.0 h1:smhI5oD714d6jHE6Tie36fPx4WDFIg+Y6RfAY4ICcR0=
 go.opentelemetry.io/otel/trace v1.21.0 h1:WD9i5gzvoUPuXIXH24ZNBudiarZDKuekPqi/E8fpfLc=
 go.opentelemetry.io/otel/trace v1.21.0/go.mod h1:LGbsEB0f9LGjN+OZaQQ26sohbOmiMR+BaslueVtS/qQ=
-go.temporal.io/api v1.26.1 h1:YqGQsOr/Tx4nVdA8wCv74AxesaIzCRHWb3KkHrYqI8k=
-go.temporal.io/api v1.26.1/go.mod h1:Y/rALXTprFO+bvAlAfLFoJj7KpQIcL4GDQVN6fhYIa4=
+go.temporal.io/api v1.26.1-0.20240103185939-608bdd111e4b h1:Fi5NWG08z7pfxBolgjchVp4PnmWrGIHjqboDlXve5Sg=
+go.temporal.io/api v1.26.1-0.20240103185939-608bdd111e4b/go.mod h1:mix7Bpl8mFEfYud66rjYInxNpP43sqXvr1UiHv+mur0=
 go.uber.org/atomic v1.4.0/go.mod h1:gD2HeocX3+yG+ygLZcrzQJaqmWj9AIm7n08wl/qW/PE=
 go.uber.org/atomic v1.7.0/go.mod h1:fEN4uk6kAWBTFdckzkM89CLk9XfWZrxpCo0nPH17wJc=
 go.uber.org/atomic v1.9.0 h1:ECmE8Bn/WFTYwEW/bpKD3M8VtR/zQVbavAoalC1PYyE=

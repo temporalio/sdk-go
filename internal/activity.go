@@ -60,6 +60,11 @@ type (
 		IsLocalActivity   bool          // true if it is a local activity
 	}
 
+	// ActivityExtraRequests contains additional data to be sent to the server on activity failure
+	ActivityExtraRequests struct {
+		RetryDelay time.Duration
+	}
+
 	// RegisterActivityOptions consists of options for registering an activity
 	RegisterActivityOptions struct {
 		// When an activity is a function the name is an actual activity type name.

@@ -26,6 +26,7 @@ import (
 	"errors"
 
 	"google.golang.org/protobuf/proto"
+
 	commonpb "go.temporal.io/api/common/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 	"go.temporal.io/sdk/converter"
@@ -92,7 +93,7 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 	case *ApplicationError:
 		failureInfo := &failurepb.ApplicationFailureInfo{
 			Type:         err.errType,
-			NonRetryable: err.nonRetryable,
+			NonRetryable: err.NonRetryable(),
 			Details:      convertErrDetailsToPayloads(err.details, dfc.dataConverter),
 		}
 		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: failureInfo}

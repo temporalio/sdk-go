@@ -119,6 +119,12 @@ Workflow consumers will get an instance of *WorkflowExecutionError. This error w
 */
 
 type (
+	ApplicationErrorAttributes struct {
+		NonRetryable bool
+		Cause        error
+		Details      []interface{}
+	}
+
 	// ApplicationError returned from activity implementations with message and optional details.
 	ApplicationError struct {
 		temporalError
@@ -127,6 +133,7 @@ type (
 		nonRetryable bool
 		cause        error
 		details      converter.EncodedValues
+		extra        ExtraRequests
 	}
 
 	// TimeoutError returned when activity or child workflow timed out.
@@ -291,6 +298,33 @@ func NewApplicationError(msg string, errType string, nonRetryable bool, cause er
 		cause:        cause}
 
 	// When return error to user, use EncodedValues as details and data is ready to be decoded by calling Get
+	if len(details) == 1 {
+		if d, ok := details[0].(*EncodedValues); ok {
+			applicationErr.details = d
+			return applicationErr
+		}
+	}
+
+	// When create error for server, use ErrorDetailsValues as details to hold values and encode later
+	applicationErr.details = ErrorDetailsValues(details)
+	return applicationErr
+}
+
+func NewApplicationErrorWithExtraRequests(
+	msg string,
+	errType string,
+	attributes ApplicationErrorAttributes,
+	requests ExtraRequests,
+) error {
+	applicationErr := &ApplicationError{
+		msg:          msg,
+		errType:      errType,
+		cause:        attributes.Cause,
+		nonRetryable: attributes.NonRetryable,
+		extra:        requests,
+	}
+	// When return error to user, use EncodedValues as details and data is ready to be decoded by calling Get
+	details := attributes.Details
 	if len(details) == 1 {
 		if d, ok := details[0].(*EncodedValues); ok {
 			applicationErr.details = d

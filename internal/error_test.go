@@ -31,6 +31,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -621,6 +622,40 @@ func Test_convertErrorToFailure_ApplicationError(t *testing.T) {
 	require.Equal("message", f.GetMessage())
 	require.Equal("customType", f.GetApplicationFailureInfo().GetType())
 	require.Equal(true, f.GetApplicationFailureInfo().GetNonRetryable())
+	require.Equal([]byte(`"details"`), f.GetApplicationFailureInfo().GetDetails().GetPayloads()[0].GetData())
+	require.Equal([]byte(`2208`), f.GetApplicationFailureInfo().GetDetails().GetPayloads()[1].GetData())
+	require.Equal("cause error", f.GetCause().GetMessage())
+	require.Equal("", f.GetCause().GetApplicationFailureInfo().GetType())
+	require.Nil(f.GetCause().GetCause())
+
+	err2 := fc.FailureToError(f)
+	var applicationErr *ApplicationError
+	require.True(errors.As(err2, &applicationErr))
+	require.Equal("message (type: customType, retryable: false): cause error", applicationErr.Error())
+
+	err2 = errors.Unwrap(err2)
+	require.True(errors.As(err2, &applicationErr))
+	require.Equal("cause error", applicationErr.Error())
+}
+
+func Test_convertErrorToFailure_ApplicationErrorWithExtraRequests(t *testing.T) {
+	require := require.New(t)
+	fc := GetDefaultFailureConverter()
+
+	err := NewApplicationErrorWithExtraRequests(
+		"message",
+		"customType",
+		ApplicationErrorAttributes{
+			NonRetryable: true,
+			Cause:        errors.New("cause error"),
+			Details:      []interface{}{"details", 2208},
+		},
+		ActivityExtraRequests{},
+	)
+	f := fc.ErrorToFailure(err)
+	require.Equal("message", f.GetMessage())
+	require.Equal("customType", f.GetApplicationFailureInfo().GetType())
+	require.True(f.GetApplicationFailureInfo().GetNonRetryable())
 	require.Equal([]byte(`"details"`), f.GetApplicationFailureInfo().GetDetails().GetPayloads()[0].GetData())
 	require.Equal([]byte(`2208`), f.GetApplicationFailureInfo().GetDetails().GetPayloads()[1].GetData())
 	require.Equal("cause error", f.GetCause().GetMessage())
