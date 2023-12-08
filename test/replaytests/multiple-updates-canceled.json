@@ -112,10 +112,7 @@
         },
         "sdkMetadata": {
           "coreUsedFlags": [],
-          "langUsedFlags": [
-            3,
-            4
-          ],
+          "langUsedFlags": [3, 4],
           "sdkName": "temporal-go",
           "sdkVersion": "1.25.1"
         },
@@ -134,7 +131,6 @@
       "workflowExecutionUpdateAcceptedEventAttributes": {
         "protocolInstanceId": "67b35fc6-482c-4c07-a735-170845a63f0c",
         "acceptedRequestMessageId": "67b35fc6-482c-4c07-a735-170845a63f0c/request",
-        "acceptedRequestSequencingEventId": "3",
         "acceptedRequest": {
           "meta": {
             "updateId": "67b35fc6-482c-4c07-a735-170845a63f0c",
@@ -225,7 +221,6 @@
           "updateId": "67b35fc6-482c-4c07-a735-170845a63f0c",
           "identity": ""
         },
-        "acceptedEventId": "6",
         "outcome": {
           "failure": {
             "message": "canceled",
@@ -250,7 +245,6 @@
       "workflowExecutionUpdateAcceptedEventAttributes": {
         "protocolInstanceId": "ca99de81-de56-4b35-8cc5-6aaf4921c01d",
         "acceptedRequestMessageId": "ca99de81-de56-4b35-8cc5-6aaf4921c01d/request",
-        "acceptedRequestSequencingEventId": "3",
         "acceptedRequest": {
           "meta": {
             "updateId": "ca99de81-de56-4b35-8cc5-6aaf4921c01d",
@@ -341,7 +335,6 @@
           "updateId": "ca99de81-de56-4b35-8cc5-6aaf4921c01d",
           "identity": ""
         },
-        "acceptedEventId": "10",
         "outcome": {
           "failure": {
             "message": "canceled",
@@ -366,7 +359,6 @@
       "workflowExecutionUpdateAcceptedEventAttributes": {
         "protocolInstanceId": "91c39ecb-99d6-43e1-a074-b81193870e78",
         "acceptedRequestMessageId": "91c39ecb-99d6-43e1-a074-b81193870e78/request",
-        "acceptedRequestSequencingEventId": "3",
         "acceptedRequest": {
           "meta": {
             "updateId": "91c39ecb-99d6-43e1-a074-b81193870e78",
@@ -457,7 +449,6 @@
           "updateId": "91c39ecb-99d6-43e1-a074-b81193870e78",
           "identity": ""
         },
-        "acceptedEventId": "14",
         "outcome": {
           "failure": {
             "message": "canceled",
@@ -482,7 +473,6 @@
       "workflowExecutionUpdateAcceptedEventAttributes": {
         "protocolInstanceId": "822ed276-adc7-467e-9057-8b3549fc81d5",
         "acceptedRequestMessageId": "822ed276-adc7-467e-9057-8b3549fc81d5/request",
-        "acceptedRequestSequencingEventId": "3",
         "acceptedRequest": {
           "meta": {
             "updateId": "822ed276-adc7-467e-9057-8b3549fc81d5",
@@ -573,7 +563,6 @@
           "updateId": "822ed276-adc7-467e-9057-8b3549fc81d5",
           "identity": ""
         },
-        "acceptedEventId": "18",
         "outcome": {
           "failure": {
             "message": "canceled",
@@ -598,7 +587,6 @@
       "workflowExecutionUpdateAcceptedEventAttributes": {
         "protocolInstanceId": "ec448fe1-b60b-4268-9316-4c8a8aa08bd6",
         "acceptedRequestMessageId": "ec448fe1-b60b-4268-9316-4c8a8aa08bd6/request",
-        "acceptedRequestSequencingEventId": "3",
         "acceptedRequest": {
           "meta": {
             "updateId": "ec448fe1-b60b-4268-9316-4c8a8aa08bd6",
@@ -653,7 +641,6 @@
           "updateId": "ec448fe1-b60b-4268-9316-4c8a8aa08bd6",
           "identity": ""
         },
-        "acceptedEventId": "22",
         "outcome": {
           "failure": {
             "message": "canceled",
@@ -678,7 +665,6 @@
       "workflowExecutionUpdateAcceptedEventAttributes": {
         "protocolInstanceId": "2b2860a0-bb75-4f9e-bfb1-ae4fced0345e",
         "acceptedRequestMessageId": "2b2860a0-bb75-4f9e-bfb1-ae4fced0345e/request",
-        "acceptedRequestSequencingEventId": "3",
         "acceptedRequest": {
           "meta": {
             "updateId": "2b2860a0-bb75-4f9e-bfb1-ae4fced0345e",
@@ -733,7 +719,6 @@
           "updateId": "2b2860a0-bb75-4f9e-bfb1-ae4fced0345e",
           "identity": ""
         },
-        "acceptedEventId": "26",
         "outcome": {
           "failure": {
             "message": "canceled",
@@ -758,7 +743,6 @@
       "workflowExecutionUpdateAcceptedEventAttributes": {
         "protocolInstanceId": "7b208937-82cd-4538-8029-506244aa66a8",
         "acceptedRequestMessageId": "7b208937-82cd-4538-8029-506244aa66a8/request",
-        "acceptedRequestSequencingEventId": "3",
         "acceptedRequest": {
           "meta": {
             "updateId": "7b208937-82cd-4538-8029-506244aa66a8",
@@ -813,7 +797,6 @@
           "updateId": "7b208937-82cd-4538-8029-506244aa66a8",
           "identity": ""
         },
-        "acceptedEventId": "30",
         "outcome": {
           "failure": {
             "message": "canceled",
@@ -838,7 +821,6 @@
       "workflowExecutionUpdateAcceptedEventAttributes": {
         "protocolInstanceId": "0fc68c09-7cf4-47c5-a7fe-a54b87690075",
         "acceptedRequestMessageId": "0fc68c09-7cf4-47c5-a7fe-a54b87690075/request",
-        "acceptedRequestSequencingEventId": "3",
         "acceptedRequest": {
           "meta": {
             "updateId": "0fc68c09-7cf4-47c5-a7fe-a54b87690075",
@@ -866,7 +848,6 @@
           "updateId": "0fc68c09-7cf4-47c5-a7fe-a54b87690075",
           "identity": ""
         },
-        "acceptedEventId": "34",
         "outcome": {
           "failure": {
             "message": "canceled",
@@ -891,7 +872,6 @@
       "workflowExecutionUpdateAcceptedEventAttributes": {
         "protocolInstanceId": "6f56376a-c2e9-4392-88d7-acab5a88ef5c",
         "acceptedRequestMessageId": "6f56376a-c2e9-4392-88d7-acab5a88ef5c/request",
-        "acceptedRequestSequencingEventId": "3",
         "acceptedRequest": {
           "meta": {
             "updateId": "6f56376a-c2e9-4392-88d7-acab5a88ef5c",
@@ -919,7 +899,6 @@
           "updateId": "6f56376a-c2e9-4392-88d7-acab5a88ef5c",
           "identity": ""
         },
-        "acceptedEventId": "36",
         "outcome": {
           "failure": {
             "message": "canceled",
@@ -944,7 +923,6 @@
       "workflowExecutionUpdateAcceptedEventAttributes": {
         "protocolInstanceId": "2dca0463-2edb-41fd-99ae-771b6cf0ea5a",
         "acceptedRequestMessageId": "2dca0463-2edb-41fd-99ae-771b6cf0ea5a/request",
-        "acceptedRequestSequencingEventId": "3",
         "acceptedRequest": {
           "meta": {
             "updateId": "2dca0463-2edb-41fd-99ae-771b6cf0ea5a",
@@ -972,7 +950,6 @@
           "updateId": "2dca0463-2edb-41fd-99ae-771b6cf0ea5a",
           "identity": ""
         },
-        "acceptedEventId": "38",
         "outcome": {
           "failure": {
             "message": "canceled",

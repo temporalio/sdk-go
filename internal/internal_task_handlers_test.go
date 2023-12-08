@@ -1364,8 +1364,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_DuplicateMessagesPanic() {
 			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
 			Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
 				WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
-					AcceptedRequestSequencingEventId: 2,
-					ProtocolInstanceId:               "test",
+					ProtocolInstanceId: "test",
 					AcceptedRequest: &updatepb.Request{
 						Meta: &updatepb.Meta{
 							UpdateId: "test",
@@ -1382,8 +1381,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_DuplicateMessagesPanic() {
 			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
 			Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
 				WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
-					AcceptedRequestSequencingEventId: 2,
-					ProtocolInstanceId:               "test",
+					ProtocolInstanceId: "test",
 					AcceptedRequest: &updatepb.Request{
 						Meta: &updatepb.Meta{
 							UpdateId: "test",
@@ -1440,8 +1438,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_Messages() {
 			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
 			Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
 				WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
-					AcceptedRequestSequencingEventId: 2,
-					ProtocolInstanceId:               "test",
+					ProtocolInstanceId: "test",
 					AcceptedRequest: &updatepb.Request{
 						Meta: &updatepb.Meta{
 							UpdateId: "test",
@@ -1476,8 +1473,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_Messages() {
 			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
 			Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
 				WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
-					AcceptedRequestSequencingEventId: 5,
-					ProtocolInstanceId:               "test_2",
+					ProtocolInstanceId: "test_2",
 					AcceptedRequest: &updatepb.Request{
 						Meta: &updatepb.Meta{
 							UpdateId: "test_2",
@@ -1499,8 +1495,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_Messages() {
 			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
 			Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
 				WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
-					AcceptedRequestSequencingEventId: 5,
-					ProtocolInstanceId:               "test_3",
+					ProtocolInstanceId: "test_3",
 					AcceptedRequest: &updatepb.Request{
 						Meta: &updatepb.Meta{
 							UpdateId: "test_3",

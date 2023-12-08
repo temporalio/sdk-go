@@ -155,8 +155,7 @@ func (up *updateProtocol) Accept() {
 		Id:                 up.protoInstanceID + "/accept",
 		ProtocolInstanceId: up.protoInstanceID,
 		Body: protocol.MustMarshalAny(&updatepb.Acceptance{
-			AcceptedRequestMessageId:         up.requestMsgID,
-			AcceptedRequestSequencingEventId: up.requestSeqID,
+			AcceptedRequestMessageId: up.requestMsgID,
 			// AcceptedRequest field no longer read by server - will be removed from API soon
 		}),
 	}, withExpectedEventPredicate(up.checkAcceptedEvent))
@@ -170,9 +169,8 @@ func (up *updateProtocol) Reject(err error) {
 		Id:                 up.protoInstanceID + "/reject",
 		ProtocolInstanceId: up.protoInstanceID,
 		Body: protocol.MustMarshalAny(&updatepb.Rejection{
-			RejectedRequestMessageId:         up.requestMsgID,
-			RejectedRequestSequencingEventId: up.requestSeqID,
-			Failure:                          up.env.GetFailureConverter().ErrorToFailure(err),
+			RejectedRequestMessageId: up.requestMsgID,
+			Failure:                  up.env.GetFailureConverter().ErrorToFailure(err),
 			// RejectedRequest field no longer read by server - will be removed from API soon
 		}),
 	})
@@ -226,7 +224,6 @@ func (up *updateProtocol) checkAcceptedEvent(e *historypb.HistoryEvent) bool {
 	}
 	return attrs.AcceptedRequest.GetMeta().GetUpdateId() == up.protoInstanceID &&
 		attrs.AcceptedRequestMessageId == up.requestMsgID &&
-		attrs.AcceptedRequestSequencingEventId == up.requestSeqID &&
 		attrs.AcceptedRequest != nil
 }
 

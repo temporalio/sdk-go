@@ -98,10 +98,7 @@
         },
         "sdkMetadata": {
           "coreUsedFlags": [],
-          "langUsedFlags": [
-            3,
-            4
-          ],
+          "langUsedFlags": [3, 4],
           "sdkName": "temporal-go",
           "sdkVersion": "1.25.1"
         },
@@ -120,7 +117,6 @@
       "workflowExecutionUpdateAcceptedEventAttributes": {
         "protocolInstanceId": "30ea422c-1f4f-4410-b829-f1530e66499e",
         "acceptedRequestMessageId": "30ea422c-1f4f-4410-b829-f1530e66499e/request",
-        "acceptedRequestSequencingEventId": "2",
         "acceptedRequest": {
           "meta": {
             "updateId": "30ea422c-1f4f-4410-b829-f1530e66499e",
@@ -197,7 +193,6 @@
       "workflowExecutionUpdateAcceptedEventAttributes": {
         "protocolInstanceId": "b1db82b7-891f-45b0-b1ff-2a145665aaaf",
         "acceptedRequestMessageId": "b1db82b7-891f-45b0-b1ff-2a145665aaaf/request",
-        "acceptedRequestSequencingEventId": "2",
         "acceptedRequest": {
           "meta": {
             "updateId": "b1db82b7-891f-45b0-b1ff-2a145665aaaf",
@@ -274,7 +269,6 @@
       "workflowExecutionUpdateAcceptedEventAttributes": {
         "protocolInstanceId": "5c579628-c76d-4bb4-b9fb-be82d0ac1ca2",
         "acceptedRequestMessageId": "5c579628-c76d-4bb4-b9fb-be82d0ac1ca2/request",
-        "acceptedRequestSequencingEventId": "2",
         "acceptedRequest": {
           "meta": {
             "updateId": "5c579628-c76d-4bb4-b9fb-be82d0ac1ca2",
@@ -351,7 +345,6 @@
       "workflowExecutionUpdateAcceptedEventAttributes": {
         "protocolInstanceId": "be3af148-fa9e-48d5-8d6a-5040bb1ef3c5",
         "acceptedRequestMessageId": "be3af148-fa9e-48d5-8d6a-5040bb1ef3c5/request",
-        "acceptedRequestSequencingEventId": "2",
         "acceptedRequest": {
           "meta": {
             "updateId": "be3af148-fa9e-48d5-8d6a-5040bb1ef3c5",
@@ -390,7 +383,6 @@
       "workflowExecutionUpdateAcceptedEventAttributes": {
         "protocolInstanceId": "6526309d-5d3e-489c-a0dd-5c832991a9be",
         "acceptedRequestMessageId": "6526309d-5d3e-489c-a0dd-5c832991a9be/request",
-        "acceptedRequestSequencingEventId": "2",
         "acceptedRequest": {
           "meta": {
             "updateId": "6526309d-5d3e-489c-a0dd-5c832991a9be",
@@ -429,7 +421,6 @@
       "workflowExecutionUpdateAcceptedEventAttributes": {
         "protocolInstanceId": "bfaaf99c-dd02-49c2-b658-ffe30447f8c4",
         "acceptedRequestMessageId": "bfaaf99c-dd02-49c2-b658-ffe30447f8c4/request",
-        "acceptedRequestSequencingEventId": "2",
         "acceptedRequest": {
           "meta": {
             "updateId": "bfaaf99c-dd02-49c2-b658-ffe30447f8c4",
@@ -468,7 +459,6 @@
       "workflowExecutionUpdateAcceptedEventAttributes": {
         "protocolInstanceId": "54cd05be-76fb-4bdd-8312-ae89db4bd6f8",
         "acceptedRequestMessageId": "54cd05be-76fb-4bdd-8312-ae89db4bd6f8/request",
-        "acceptedRequestSequencingEventId": "2",
         "acceptedRequest": {
           "meta": {
             "updateId": "54cd05be-76fb-4bdd-8312-ae89db4bd6f8",
@@ -507,7 +497,6 @@
       "workflowExecutionUpdateAcceptedEventAttributes": {
         "protocolInstanceId": "836d871d-0cd2-4407-9d31-25289f9a2d4a",
         "acceptedRequestMessageId": "836d871d-0cd2-4407-9d31-25289f9a2d4a/request",
-        "acceptedRequestSequencingEventId": "2",
         "acceptedRequest": {
           "meta": {
             "updateId": "836d871d-0cd2-4407-9d31-25289f9a2d4a",
@@ -560,7 +549,6 @@
       "workflowExecutionUpdateAcceptedEventAttributes": {
         "protocolInstanceId": "983ed085-f136-4c79-8296-d39236fcbc1a",
         "acceptedRequestMessageId": "983ed085-f136-4c79-8296-d39236fcbc1a/request",
-        "acceptedRequestSequencingEventId": "2",
         "acceptedRequest": {
           "meta": {
             "updateId": "983ed085-f136-4c79-8296-d39236fcbc1a",
@@ -613,7 +601,6 @@
       "workflowExecutionUpdateAcceptedEventAttributes": {
         "protocolInstanceId": "cdc28308-7c06-4360-867d-1cc77718e575",
         "acceptedRequestMessageId": "cdc28308-7c06-4360-867d-1cc77718e575/request",
-        "acceptedRequestSequencingEventId": "2",
         "acceptedRequest": {
           "meta": {
             "updateId": "cdc28308-7c06-4360-867d-1cc77718e575",

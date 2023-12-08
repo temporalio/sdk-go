@@ -493,36 +493,32 @@ func TestAcceptedEventPredicate(t *testing.T) {
 			name: "wrong req msg ID",
 			test: require.False,
 			attrs: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
-				AcceptedRequest:                  &request,
-				AcceptedRequestMessageId:         "wrong request message ID",
-				AcceptedRequestSequencingEventId: requestSeqID,
+				AcceptedRequest:          &request,
+				AcceptedRequestMessageId: "wrong request message ID",
 			},
 		},
 		{
 			name: "wrong req seq ID",
 			test: require.False,
 			attrs: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
-				AcceptedRequest:                  &request,
-				AcceptedRequestMessageId:         requestMsgID,
-				AcceptedRequestSequencingEventId: requestSeqID + 10,
+				AcceptedRequest:          &request,
+				AcceptedRequestMessageId: requestMsgID,
 			},
 		},
 		{
 			name: "missing request",
 			test: require.False,
 			attrs: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
-				AcceptedRequest:                  nil,
-				AcceptedRequestMessageId:         requestMsgID,
-				AcceptedRequestSequencingEventId: requestSeqID,
+				AcceptedRequest:          nil,
+				AcceptedRequestMessageId: requestMsgID,
 			},
 		},
 		{
 			name: "match",
 			test: require.True,
 			attrs: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
-				AcceptedRequest:                  &request,
-				AcceptedRequestMessageId:         requestMsgID,
-				AcceptedRequestSequencingEventId: requestSeqID,
+				AcceptedRequest:          &request,
+				AcceptedRequestMessageId: requestMsgID,
 			},
 		},
 	} {

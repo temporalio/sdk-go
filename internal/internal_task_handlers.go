@@ -489,10 +489,7 @@ func inferMessage(attrs *historypb.WorkflowExecutionUpdateAcceptedEventAttribute
 	return &protocolpb.Message{
 		Id:                 attrs.GetAcceptedRequestMessageId(),
 		ProtocolInstanceId: attrs.GetProtocolInstanceId(),
-		SequencingId: &protocolpb.Message_EventId{
-			EventId: attrs.GetAcceptedRequestSequencingEventId(),
-		},
-		Body: protocol.MustMarshalAny(attrs.GetAcceptedRequest()),
+		Body:               protocol.MustMarshalAny(attrs.GetAcceptedRequest()),
 	}
 }
 
