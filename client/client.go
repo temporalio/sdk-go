@@ -563,7 +563,7 @@ type (
 
 		// UpdateWorkflow issues an update request to the specified
 		// workflow execution and returns the result synchronously. Calling this
-		// function is equivalent to calling UpdateWorkflowOptions with
+		// function is equivalent to calling UpdateWorkflowWithOptions with
 		// the same arguments and indicating that the RPC call should wait for
 		// completion of the update process.
 		// NOTE: Experimental
