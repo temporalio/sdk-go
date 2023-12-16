@@ -525,9 +525,9 @@ type (
 		// GetRunID() will always return "run ID 1" and  Get(ctx context.Context, valuePtr interface{}) will return the result of second run.
 		GetWorkflow(ctx context.Context, workflowID string, runID string) WorkflowRun
 
-		// SignalWorkflow sends a signals to a workflow in execution
+		// SignalWorkflow sends a signals to a running workflow.
 		// - workflow ID of the workflow.
-		// - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
+		// - runID can be default(empty string). If empty string then it will pick the running execution of that workflow ID.
 		// - signalName name to identify the signal.
 		// The errors it can return:
 		//  - serviceerror.NotFound
@@ -537,10 +537,10 @@ type (
 
 		// SignalWithStartWorkflow sends a signal to a running workflow.
 		// If the workflow is not running or not found, it starts the workflow and then sends the signal in transaction.
-		// - workflowID, signalName, signalArg are same as SignalWorkflow's parameters
-		// - options, workflow, workflowArgs are same as StartWorkflow's parameters
+		// - workflowID, signalName, signalArg are the same as SignalWorkflow's parameters
+		// - options, workflow, workflowArgs are the same as StartWorkflow's parameters
 		// - the workflowID parameter is used instead of options.ID. If the latter is present, it must match the workflowID.
-		// Note: options.WorkflowIDReusePolicy is default to AllowDuplicate in this API.
+		// Note: options.WorkflowIDReusePolicy defaults to AllowDuplicate in this API.
 		// The errors it can return:
 		//  - serviceerror.NotFound
 		//  - serviceerror.InvalidArgument
