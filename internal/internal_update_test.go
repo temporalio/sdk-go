@@ -184,12 +184,6 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	}
 	interceptor, ctx, err := newWorkflowContext(env, nil)
 	require.NoError(t, err)
-	dispatcher, ctx := newDispatcher(
-		ctx,
-		interceptor,
-		func(ctx Context) {},
-		env.DrainUnhandledUpdates)
-	dispatcher.executing = true
 
 	hdr := &commonpb.Header{Fields: map[string]*commonpb.Payload{}}
 	argStr := t.Name()
@@ -197,52 +191,74 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("no handler registered", func(t *testing.T) {
-		mustSetUpdateHandler(
-			t,
+		dispatcher, ctx := newDispatcher(
 			ctx,
-			"unused_handler",
-			func() error { panic("should not be called") },
-			UpdateHandlerOptions{},
-		)
+			interceptor,
+			func(ctx Context) {
+				mustSetUpdateHandler(
+					t,
+					ctx,
+					"unused_handler",
+					func() error { panic("should not be called") },
+					UpdateHandlerOptions{},
+				)
+			},
+			env.DrainUnhandledUpdates)
 		var rejectErr error
 		defaultUpdateHandler(ctx, "will_not_be_found", "testID", args, hdr, &testUpdateCallbacks{
 			RejectImpl: func(err error) { rejectErr = err },
 		}, runOnCallingThread)
+		require.NoError(t, dispatcher.ExecuteUntilAllBlocked(10*time.Second))
 		require.ErrorContains(t, rejectErr, "unknown update")
 		require.ErrorContains(t, rejectErr, "unused_handler",
 			"handler not found error should include a list of the registered handlers")
 	})
 
 	t.Run("malformed serialized input", func(t *testing.T) {
-		mustSetUpdateHandler(
-			t,
+		dispatcher, ctx := newDispatcher(
 			ctx,
-			t.Name(),
-			func(Context, int) error { return nil },
-			UpdateHandlerOptions{},
-		)
+			interceptor,
+			func(ctx Context) {
+				mustSetUpdateHandler(
+					t,
+					ctx,
+					t.Name(),
+					func(Context, int) error { return nil },
+					UpdateHandlerOptions{},
+				)
+			},
+			env.DrainUnhandledUpdates)
+
 		junkArgs := &commonpb.Payloads{Payloads: []*commonpb.Payload{&commonpb.Payload{}}}
 		var rejectErr error
 		defaultUpdateHandler(ctx, t.Name(), "testID", junkArgs, hdr, &testUpdateCallbacks{
 			RejectImpl: func(err error) { rejectErr = err },
 		}, runOnCallingThread)
+		require.NoError(t, dispatcher.ExecuteUntilAllBlocked(10*time.Second))
 		require.ErrorContains(t, rejectErr, "unable to decode")
 	})
 
 	t.Run("reject from validator", func(t *testing.T) {
 		updateFunc := func(Context, string) error { panic("should not get called") }
 		validatorFunc := func(Context, string) error { return errors.New("expected") }
-		mustSetUpdateHandler(
-			t,
+		dispatcher, ctx := newDispatcher(
 			ctx,
-			t.Name(),
-			updateFunc,
-			UpdateHandlerOptions{Validator: validatorFunc},
-		)
+			interceptor,
+			func(ctx Context) {
+				mustSetUpdateHandler(
+					t,
+					ctx,
+					t.Name(),
+					updateFunc,
+					UpdateHandlerOptions{Validator: validatorFunc},
+				)
+			},
+			env.DrainUnhandledUpdates)
 		var rejectErr error
 		defaultUpdateHandler(ctx, t.Name(), "testID", args, hdr, &testUpdateCallbacks{
 			RejectImpl: func(err error) { rejectErr = err },
 		}, runOnCallingThread)
+		require.NoError(t, dispatcher.ExecuteUntilAllBlocked(10*time.Second))
 		require.Equal(t, validatorFunc(ctx, argStr), rejectErr)
 	})
 
@@ -264,7 +280,13 @@ func TestDefaultUpdateHandler(t *testing.T) {
 
 	t.Run("error from update func", func(t *testing.T) {
 		updateFunc := func(Context, string) error { return errors.New("expected") }
-		mustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateHandlerOptions{})
+		dispatcher, ctx := newDispatcher(
+			ctx,
+			interceptor,
+			func(ctx Context) {
+				mustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateHandlerOptions{})
+			},
+			env.DrainUnhandledUpdates)
 		var (
 			resultErr error
 			accepted  bool
@@ -277,6 +299,8 @@ func TestDefaultUpdateHandler(t *testing.T) {
 				result = success
 			},
 		}, runOnCallingThread)
+
+		require.NoError(t, dispatcher.ExecuteUntilAllBlocked(10*time.Second))
 		require.True(t, accepted)
 		require.Equal(t, updateFunc(ctx, argStr), resultErr)
 		require.Nil(t, result)
@@ -284,7 +308,13 @@ func TestDefaultUpdateHandler(t *testing.T) {
 
 	t.Run("update success", func(t *testing.T) {
 		updateFunc := func(ctx Context, s string) (string, error) { return s + " success!", nil }
-		mustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateHandlerOptions{})
+		dispatcher, ctx := newDispatcher(
+			ctx,
+			interceptor,
+			func(ctx Context) {
+				mustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateHandlerOptions{})
+			},
+			env.DrainUnhandledUpdates)
 		var (
 			resultErr error
 			accepted  bool
@@ -297,6 +327,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 				result = success
 			},
 		}, runOnCallingThread)
+		require.NoError(t, dispatcher.ExecuteUntilAllBlocked(10*time.Second))
 		require.True(t, accepted)
 		require.Nil(t, resultErr)
 
