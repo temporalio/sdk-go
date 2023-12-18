@@ -894,19 +894,13 @@ func (wc *workflowEnvironmentImpl) QueueUpdate(name string, f func()) {
 	wc.bufferedUpdateRequests[name] = append(wc.bufferedUpdateRequests[name], f)
 }
 
-func (wc *workflowEnvironmentImpl) HandleUpdates(name string) bool {
-	if !wc.sdkFlags.tryUse(SDKPriorityUpdateHandling, !wc.isReplay) {
-		return false
-	}
-	updatesHandled := false
+func (wc *workflowEnvironmentImpl) HandleQueuedUpdates(name string) {
 	if bufferedUpdateRequests, ok := wc.bufferedUpdateRequests[name]; ok {
 		for _, request := range bufferedUpdateRequests {
 			request()
-			updatesHandled = true
 		}
 		delete(wc.bufferedUpdateRequests, name)
 	}
-	return updatesHandled
 }
 
 func (wc *workflowEnvironmentImpl) DrainUnhandledUpdates() bool {

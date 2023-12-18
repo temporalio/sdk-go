@@ -513,6 +513,7 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 			// we are yielding.
 			state := getState(d.rootCtx)
 			state.yield("yield before executing to setup state")
+			state.unblocked()
 
 			// TODO: @shreyassrivatsan - add workflow trace span here
 			r.workflowResult, r.error = d.workflow.Execute(d.rootCtx, input)
@@ -1516,8 +1517,11 @@ func setUpdateHandler(ctx Context, updateName string, handler interface{}, opts 
 		return err
 	}
 	getWorkflowEnvOptions(ctx).updateHandlers[updateName] = uh
-	if getWorkflowEnvironment(ctx).HandleUpdates(updateName) {
-		getState(ctx).yield("letting any updates waiting on a handler run")
+	if getWorkflowEnvironment(ctx).TryUse(SDKPriorityUpdateHandling) {
+		getWorkflowEnvironment(ctx).HandleQueuedUpdates(updateName)
+		state := getState(ctx)
+		defer state.unblocked()
+		state.yield("letting any updates waiting on a handler run")
 	}
 	return nil
 }

@@ -554,16 +554,13 @@ func (env *testWorkflowEnvironmentImpl) QueueUpdate(name string, f func()) {
 	env.bufferedUpdateRequests[name] = append(env.bufferedUpdateRequests[name], f)
 }
 
-func (env *testWorkflowEnvironmentImpl) HandleUpdates(name string) bool {
-	updatesHandled := false
+func (env *testWorkflowEnvironmentImpl) HandleQueuedUpdates(name string) {
 	if bufferedUpdateRequests, ok := env.bufferedUpdateRequests[name]; ok {
 		for _, requests := range bufferedUpdateRequests {
 			requests()
-			updatesHandled = true
 		}
 		delete(env.bufferedUpdateRequests, name)
 	}
-	return updatesHandled
 }
 
 func (env *testWorkflowEnvironmentImpl) DrainUnhandledUpdates() bool {

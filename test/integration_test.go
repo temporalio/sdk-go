@@ -1334,6 +1334,42 @@ func (ts *IntegrationTestSuite) TestUpdateInfo() {
 	ts.NoError(run.Get(ctx, nil))
 }
 
+func (ts *IntegrationTestSuite) TestUpdateValidatorRejectedFirstWFT() {
+	ctx := context.Background()
+	wfOptions := ts.startWorkflowOptions("test-update-validator-rejected-first-wft")
+	// Add start delay to make sure the update is in the first WFT
+	wfOptions.StartDelay = time.Hour
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		wfOptions, ts.workflows.UpdateWithValidatorWorkflow)
+	ts.Nil(err)
+	// Send a bad update request that will get rejected
+	handler, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update", "")
+	ts.NoError(err)
+	err = handler.Get(ctx, nil)
+	ts.Error(err)
+	// complete workflow
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
+	ts.NoError(run.Get(ctx, nil))
+}
+
+func (ts *IntegrationTestSuite) TestUpdateValidatorRejected() {
+	ctx := context.Background()
+	wfOptions := ts.startWorkflowOptions("test-update-validator-rejected")
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		wfOptions, ts.workflows.UpdateWithValidatorWorkflow)
+	ts.Nil(err)
+	_, err = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "__stack_trace")
+	ts.NoError(err)
+	// Send a bad update request that will get rejected
+	handler, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update", "")
+	ts.NoError(err)
+	err = handler.Get(ctx, nil)
+	ts.Error(err)
+	// complete workflow
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
+	ts.NoError(run.Get(ctx, nil))
+}
+
 func (ts *IntegrationTestSuite) TestBasicSession() {
 	var expected []string
 	err := ts.executeWorkflow("test-basic-session", ts.workflows.BasicSession, &expected)
