@@ -182,8 +182,6 @@ func TestDefaultUpdateHandler(t *testing.T) {
 		},
 		bufferedUpdateRequests: make(map[string][]func()),
 	}
-	interceptor, ctx, err := newWorkflowContext(env, nil)
-	require.NoError(t, err)
 
 	hdr := &commonpb.Header{Fields: map[string]*commonpb.Payload{}}
 	argStr := t.Name()
@@ -191,6 +189,9 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("no handler registered", func(t *testing.T) {
+		interceptor, ctx, err := newWorkflowContext(env, nil)
+		require.NoError(t, err)
+
 		dispatcher, ctx := newDispatcher(
 			ctx,
 			interceptor,
@@ -215,6 +216,9 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	})
 
 	t.Run("malformed serialized input", func(t *testing.T) {
+		interceptor, ctx, err := newWorkflowContext(env, nil)
+		require.NoError(t, err)
+
 		dispatcher, ctx := newDispatcher(
 			ctx,
 			interceptor,
@@ -239,6 +243,9 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	})
 
 	t.Run("reject from validator", func(t *testing.T) {
+		interceptor, ctx, err := newWorkflowContext(env, nil)
+		require.NoError(t, err)
+
 		updateFunc := func(Context, string) error { panic("should not get called") }
 		validatorFunc := func(Context, string) error { return errors.New("expected") }
 		dispatcher, ctx := newDispatcher(
@@ -279,6 +286,9 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	})
 
 	t.Run("error from update func", func(t *testing.T) {
+		interceptor, ctx, err := newWorkflowContext(env, nil)
+		require.NoError(t, err)
+
 		updateFunc := func(Context, string) error { return errors.New("expected") }
 		dispatcher, ctx := newDispatcher(
 			ctx,
@@ -307,6 +317,9 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	})
 
 	t.Run("update success", func(t *testing.T) {
+		interceptor, ctx, err := newWorkflowContext(env, nil)
+		require.NoError(t, err)
+
 		updateFunc := func(ctx Context, s string) (string, error) { return s + " success!", nil }
 		dispatcher, ctx := newDispatcher(
 			ctx,
