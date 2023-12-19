@@ -77,7 +77,7 @@ func (_m *NamespaceClient) Register(ctx context.Context, request *workflowservic
 
 // Update provides a mock function with given fields: ctx, request
 func (_m *NamespaceClient) Update(ctx context.Context, request *workflowservice.UpdateNamespaceRequest) error {
-	ret := _m.Called(ctx)
+	ret := _m.Called(ctx, request)
 
 	var r0 error
 	if rf, ok := ret.Get(0).(func(context.Context, *workflowservice.UpdateNamespaceRequest) error); ok {
