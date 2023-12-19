@@ -89,8 +89,6 @@ var testSDKFlags = newSDKFlags(
 )
 
 func TestUpdateHandlerPanicHandling(t *testing.T) {
-	t.Parallel()
-
 	env := &workflowEnvironmentImpl{
 		sdkFlags:       testSDKFlags,
 		commandsHelper: newCommandsHelper(),
@@ -100,29 +98,45 @@ func TestUpdateHandlerPanicHandling(t *testing.T) {
 			TaskQueueName: "taskqueue:" + t.Name(),
 		},
 	}
-	interceptor, ctx, err := newWorkflowContext(env, nil)
-	require.NoError(t, err)
-	dispatcher, ctx := newDispatcher(
-		ctx,
-		interceptor,
-		func(ctx Context) {},
-		func() bool { return false })
-	dispatcher.executing = true
-
-	panicFunc := func() error { panic("intentional") }
-	mustSetUpdateHandler(t, ctx, t.Name(), panicFunc, UpdateHandlerOptions{Validator: panicFunc})
-	in := UpdateInput{Name: t.Name(), Args: []interface{}{}}
 
 	t.Run("ValidateUpdate", func(t *testing.T) {
-		err = interceptor.inboundInterceptor.ValidateUpdate(ctx, &in)
+		interceptor, ctx, err := newWorkflowContext(env, nil)
+		require.NoError(t, err)
+
+		panicFunc := func() error { panic("intentional") }
+		dispatcher, _ := newDispatcher(
+			ctx,
+			interceptor,
+			func(ctx Context) {
+				mustSetUpdateHandler(t, ctx, t.Name(), panicFunc, UpdateHandlerOptions{Validator: panicFunc})
+				in := UpdateInput{Name: t.Name(), Args: []interface{}{}}
+				err = interceptor.inboundInterceptor.ValidateUpdate(ctx, &in)
+			},
+			func() bool { return false })
+
+		require.NoError(t, dispatcher.ExecuteUntilAllBlocked(10*time.Second))
 		var panicerr *PanicError
 		require.ErrorAs(t, err, &panicerr,
 			"panic during validate should be converted to an error to fail the update")
 	})
 	t.Run("ExecuteUpdate", func(t *testing.T) {
-		require.Panics(t, func() {
-			_, _ = interceptor.inboundInterceptor.ExecuteUpdate(ctx, &in)
-		}, "panic during execution should be propagated to reach the WorkflowPanicPolicy")
+		interceptor, ctx, err := newWorkflowContext(env, nil)
+		require.NoError(t, err)
+
+		panicFunc := func() error { panic("intentional") }
+		dispatcher, _ := newDispatcher(
+			ctx,
+			interceptor,
+			func(ctx Context) {
+				mustSetUpdateHandler(t, ctx, t.Name(), panicFunc, UpdateHandlerOptions{})
+				in := UpdateInput{Name: t.Name(), Args: []interface{}{}}
+				err = interceptor.inboundInterceptor.ValidateUpdate(ctx, &in)
+				require.Panics(t, func() {
+					_, _ = interceptor.inboundInterceptor.ExecuteUpdate(ctx, &in)
+				}, "panic during execution should be propagated to reach the WorkflowPanicPolicy")
+			},
+			func() bool { return false })
+		require.NoError(t, dispatcher.ExecuteUntilAllBlocked(10*time.Second))
 	})
 }
 
