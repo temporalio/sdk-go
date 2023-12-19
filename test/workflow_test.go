@@ -324,9 +324,9 @@ func (w *Workflows) UpdateInfoWorkflow(ctx workflow.Context) error {
 }
 
 func (w *Workflows) UpdateWithValidatorWorkflow(ctx workflow.Context) error {
-	// workflow.Go(ctx, func(ctx workflow.Context) {
-	// 	_ = workflow.Sleep(ctx, time.Minute)
-	// })
+	workflow.Go(ctx, func(ctx workflow.Context) {
+		_ = workflow.Sleep(ctx, time.Minute)
+	})
 	err := workflow.SetUpdateHandlerWithOptions(ctx, "update", func(ctx workflow.Context, id string) (string, error) {
 		ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 		var activities *Activities
