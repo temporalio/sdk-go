@@ -1250,11 +1250,12 @@ func (ts *IntegrationTestSuite) TestMutatingUpdateValidator() {
 	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-mutating-update-validator"), ts.workflows.MutatingUpdateValidatorWorkflow)
 	ts.Nil(err)
-	handler, err := ts.client.UpdateWorkflow(ctx, "test-mutating-update-validator", run.GetRunID(), "mutating_update")
-	ts.NoError(err)
+	go func() {
+		_, err = ts.client.UpdateWorkflow(ctx, "test-mutating-update-validator", run.GetRunID(), "mutating_update")
+	}()
 
-	ts.Error(handler.Get(ctx, nil))
-	ts.Nil(ts.client.CancelWorkflow(ctx, "test-mutating-update-validator", ""))
+	wfErr := run.Get(ctx, nil)
+	ts.Error(wfErr)
 }
 
 func (ts *IntegrationTestSuite) TestWaitForCancelWithDisconnectedContext() {

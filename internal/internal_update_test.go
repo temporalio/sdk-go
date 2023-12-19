@@ -246,6 +246,22 @@ func TestDefaultUpdateHandler(t *testing.T) {
 		require.Equal(t, validatorFunc(ctx, argStr), rejectErr)
 	})
 
+	t.Run("illegal state panic from validator", func(t *testing.T) {
+		updateFunc := func(Context, string) error { panic("should not get called") }
+		validatorFunc := func(Context, string) error { panic(panicIllegalAccessCoroutineState) }
+		mustSetUpdateHandler(
+			t,
+			ctx,
+			t.Name(),
+			updateFunc,
+			UpdateHandlerOptions{Validator: validatorFunc},
+		)
+
+		require.Panics(t, func() {
+			defaultUpdateHandler(ctx, t.Name(), "testID", args, hdr, &testUpdateCallbacks{}, runOnCallingThread)
+		})
+	})
+
 	t.Run("error from update func", func(t *testing.T) {
 		updateFunc := func(Context, string) error { return errors.New("expected") }
 		mustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateHandlerOptions{})

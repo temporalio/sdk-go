@@ -931,7 +931,6 @@ func (w *Workflows) MutatingQueryWorkflow(ctx workflow.Context) (string, error) 
 
 func (w *Workflows) MutatingUpdateValidatorWorkflow(ctx workflow.Context) (string, error) {
 	err := workflow.SetUpdateHandlerWithOptions(ctx, "mutating_update", func(ctx workflow.Context) (string, error) {
-		_ = workflow.Sleep(ctx, time.Second)
 		return "failed", nil
 	}, workflow.UpdateHandlerOptions{
 		Validator: func(ctx workflow.Context) error {
