@@ -1438,15 +1438,11 @@ func (s *WorkflowUnitTest) Test_MutatingFunctionsInUpdateValidator() {
 	}
 	env.RegisterWorkflow(wf)
 	env.RegisterDelayedCallback(func() {
-		env.UpdateWorkflow(updateType, "testID", &updateCallback{
-			reject: func(err error) {
-				s.Error(err)
-			},
-		})
+		env.UpdateWorkflow(updateType, "testID", &updateCallback{})
 	}, time.Second)
 	env.ExecuteWorkflow(wf)
 	s.True(env.IsWorkflowCompleted())
-	s.NoError(env.GetWorkflowError())
+	s.Error(env.GetWorkflowError())
 }
 
 func (s *WorkflowUnitTest) Test_StaleGoroutinesAreShutDown() {

@@ -353,6 +353,11 @@ func newUpdateHandler(
 func (h *updateHandler) validate(ctx Context, input []interface{}) (err error) {
 	defer func() {
 		if p := recover(); p != nil {
+			if p == panicIllegalAccessCoroutineState {
+				// Don't handle the panic since this error means the workflow state is
+				// likely corrupted and should be discarded.
+				panic(p)
+			}
 			st := getStackTraceRaw("update validator [panic]:", 7, 0)
 			err = newPanicError(fmt.Sprintf("update validator panic: %v", p), st)
 		}
