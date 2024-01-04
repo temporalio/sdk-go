@@ -179,6 +179,7 @@ type (
 		next           []*historypb.HistoryEvent
 		nextFlags      []sdkFlag
 		binaryChecksum string
+		lastBuildID    string
 		sdkVersion     string
 		sdkName        string
 	}
@@ -269,8 +270,9 @@ func (eh *history) isNextWorkflowTaskFailed() (task finishedTask, err error) {
 		var binaryChecksum string
 		var flags []sdkFlag
 		if nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
-			binaryChecksum = nextEvent.GetWorkflowTaskCompletedEventAttributes().BinaryChecksum
-			for _, flag := range nextEvent.GetWorkflowTaskCompletedEventAttributes().GetSdkMetadata().GetLangUsedFlags() {
+			completedAttrs := nextEvent.GetWorkflowTaskCompletedEventAttributes()
+			binaryChecksum = completedAttrs.BinaryChecksum
+			for _, flag := range completedAttrs.GetSdkMetadata().GetLangUsedFlags() {
 				f := sdkFlagFromUint(flag)
 				if !f.isValid() {
 					// If a flag is not recognized (value is too high or not defined), it must fail the workflow task
@@ -1299,6 +1301,11 @@ func (w *workflowExecutionContextImpl) CompleteWorkflowTask(workflowTask *workfl
 
 	completeRequest := w.wth.completeWorkflow(eventHandler, w.currentWorkflowTask, w, w.newCommands, w.newMessages, !waitLocalActivities)
 	w.clearCurrentTask()
+	if w.wth.workerBuildID != "" {
+		println("EXISTING", w.workflowInfo.lastCompletedBuildID)
+		println("SETTING ON COMPLETE TO ", w.wth.workerBuildID)
+		w.workflowInfo.lastCompletedBuildID = w.wth.workerBuildID
+	}
 
 	return completeRequest
 }

@@ -1882,6 +1882,19 @@ func (w *Workflows) WaitSignalToStart(ctx workflow.Context) (string, error) {
 	return value, nil
 }
 
+func (w *Workflows) BuildIDWorkflow(ctx workflow.Context) error {
+	firstBuildID := workflow.GetInfo(ctx).GetLastCompletedBuildID()
+
+	_ = workflow.SetQueryHandler(ctx, "get-last-build-id", func() (string, error) {
+		// Since the first build ID should always be empty, prepend it here to mess up any
+		// assertions if it wasn't empty
+		return firstBuildID + workflow.GetInfo(ctx).GetLastCompletedBuildID(), nil
+	})
+
+	workflow.GetSignalChannel(ctx, "finish").Receive(ctx, nil)
+	return nil
+}
+
 func (w *Workflows) SignalsAndQueries(ctx workflow.Context, execChild, execActivity bool) error {
 	// Add query handler
 	err := workflow.SetQueryHandler(ctx, "workflow-query", func() (string, error) { return "query-response", nil })
@@ -2511,6 +2524,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.SleepForDuration)
 	worker.RegisterWorkflow(w.InterceptorCalls)
 	worker.RegisterWorkflow(w.WaitSignalToStart)
+	worker.RegisterWorkflow(w.BuildIDWorkflow)
 	worker.RegisterWorkflow(w.SignalsAndQueries)
 	worker.RegisterWorkflow(w.CheckOpenTelemetryBaggage)
 	worker.RegisterWorkflow(w.AdvancedPostCancellation)

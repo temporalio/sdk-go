@@ -27,6 +27,9 @@ import (
 	"testing"
 	"time"
 
+	"go.temporal.io/api/common/v1"
+	"go.temporal.io/api/workflowservice/v1"
+
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -149,8 +152,6 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {
 	ts.NoError(handle12.Get(ctx, nil))
 	ts.NoError(handle21.Get(ctx, nil))
 	ts.NoError(handle22.Get(ctx, nil))
-
-	// TODO: Actually assert they ran on the appropriate workers, once David's changes are ready
 }
 
 func (ts *WorkerVersioningTestSuite) TestReachabilityUnreachable() {
@@ -272,4 +273,74 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersions() {
 	ts.True(ok)
 	ts.Equal(1, len(taskQueueReachability.TaskQueueReachability))
 	ts.Equal([]client.TaskReachability{client.TaskReachabilityNewWorkflows}, taskQueueReachability.TaskQueueReachability)
+}
+
+func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	err := ts.client.UpdateWorkerBuildIdCompatibility(ctx, &client.UpdateWorkerBuildIdCompatibilityOptions{
+		TaskQueue: ts.taskQueueName,
+		Operation: &client.BuildIDOpAddNewIDInNewDefaultSet{
+			BuildID: "1.0",
+		},
+	})
+	ts.NoError(err)
+
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "1.0", UseBuildIDForVersioning: true})
+	ts.workflows.register(worker1)
+	ts.NoError(worker1.Start())
+
+	// Start workflow
+	wfHandle, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("evolving-wf"), ts.workflows.BuildIDWorkflow)
+	// Query to see that the last build ID becomes 1.0 (we do eventually, because we might
+	// get the update in the very first task, in which case it'll be empty and that's OK -- see
+	// workflow for verifying it is always empty in the first task)
+	ts.Eventually(func() bool {
+		var lastBuildID string
+		res, err := ts.client.QueryWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "get-last-build-id", nil)
+		ts.NoError(err)
+		ts.NoError(res.Get(&lastBuildID))
+		return lastBuildID == "1.0"
+	}, 5*time.Second, 100*time.Millisecond)
+
+	// Add new compat ver
+	err = ts.client.UpdateWorkerBuildIdCompatibility(ctx, &client.UpdateWorkerBuildIdCompatibilityOptions{
+		TaskQueue: ts.taskQueueName,
+		Operation: &client.BuildIDOpAddNewCompatibleVersion{
+			BuildID:                   "1.1",
+			ExistingCompatibleBuildID: "1.0",
+		},
+	})
+	ts.NoError(err)
+
+	worker11 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "1.1", UseBuildIDForVersioning: true})
+	ts.workflows.register(worker11)
+	ts.NoError(worker11.Start())
+	defer worker11.Stop()
+
+	_, err = ts.client.WorkflowService().ResetStickyTaskQueue(ctx, &workflowservice.ResetStickyTaskQueueRequest{
+		Namespace: ts.config.Namespace,
+		Execution: &common.WorkflowExecution{
+			WorkflowId: wfHandle.GetID(),
+		},
+	})
+	ts.NoError(err)
+
+	// The last task, with the new worker, should definitely, immediately, be 1.0
+	var lastBuildID string
+	enval, err := ts.client.QueryWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "get-last-build-id", nil)
+	ts.NoError(err)
+	ts.NoError(enval.Get(&lastBuildID))
+	ts.Equal("1.0", lastBuildID)
+
+	// finish the workflow under 1.1
+	ts.NoError(ts.client.SignalWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "finish", ""))
+	ts.NoError(wfHandle.Get(ctx, nil))
+
+	// Post completion it should have the value of the last task
+	enval, err = ts.client.QueryWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "get-last-build-id", nil)
+	ts.NoError(err)
+	ts.NoError(enval.Get(&lastBuildID))
+	ts.Equal("1.1", lastBuildID)
 }

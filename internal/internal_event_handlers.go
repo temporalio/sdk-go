@@ -1130,7 +1130,8 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	case enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED:
 		// No Operation
 	case enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED:
-		// No Operation
+		weh.workflowInfo.lastCompletedBuildID = event.GetWorkflowTaskCompletedEventAttributes().GetWorkerVersion().GetBuildId()
+		println("Set to ", weh.workflowInfo.lastCompletedBuildID)
 	case enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED:
 		weh.commandsHelper.handleActivityTaskScheduled(
 			event.GetActivityTaskScheduledEventAttributes().GetActivityId(), event.GetEventId())
