@@ -314,6 +314,7 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 	})
 	ts.NoError(err)
 
+	worker1.Stop()
 	worker11 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "1.1", UseBuildIDForVersioning: true})
 	ts.workflows.register(worker11)
 	ts.NoError(worker11.Start())
