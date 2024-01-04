@@ -293,16 +293,12 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 
 	// Start workflow
 	wfHandle, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("evolving-wf"), ts.workflows.BuildIDWorkflow)
-	// Query to see that the last build ID becomes 1.0 (we do eventually, because we might
-	// get the update in the very first task, in which case it'll be empty and that's OK -- see
-	// workflow for verifying it is always empty in the first task)
-	ts.Eventually(func() bool {
-		var lastBuildID string
-		res, err := ts.client.QueryWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "get-last-build-id", nil)
-		ts.NoError(err)
-		ts.NoError(res.Get(&lastBuildID))
-		return lastBuildID == "1.0"
-	}, 5*time.Second, 100*time.Millisecond)
+	// Query to see that the build ID is 1.0
+	var lastBuildID string
+	res, err := ts.client.QueryWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "get-last-build-id", nil)
+	ts.NoError(err)
+	ts.NoError(res.Get(&lastBuildID))
+	ts.Equal("1.0", lastBuildID)
 
 	// Add new compat ver
 	err = ts.client.UpdateWorkerBuildIdCompatibility(ctx, &client.UpdateWorkerBuildIdCompatibilityOptions{
@@ -328,8 +324,7 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 	})
 	ts.NoError(err)
 
-	// The last task, with the new worker, should definitely, immediately, be 1.0
-	var lastBuildID string
+	// The current task, with the new worker, should still be 1.0 since no new tasks have happened
 	enval, err := ts.client.QueryWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "get-last-build-id", nil)
 	ts.NoError(err)
 	ts.NoError(enval.Get(&lastBuildID))

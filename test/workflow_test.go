@@ -1883,12 +1883,8 @@ func (w *Workflows) WaitSignalToStart(ctx workflow.Context) (string, error) {
 }
 
 func (w *Workflows) BuildIDWorkflow(ctx workflow.Context) error {
-	firstBuildID := workflow.GetInfo(ctx).GetLastCompletedBuildID()
-
 	_ = workflow.SetQueryHandler(ctx, "get-last-build-id", func() (string, error) {
-		// Since the first build ID should always be empty, prepend it here to mess up any
-		// assertions if it wasn't empty
-		return firstBuildID + workflow.GetInfo(ctx).GetLastCompletedBuildID(), nil
+		return workflow.GetInfo(ctx).GetCurrentBuildID(), nil
 	})
 
 	workflow.GetSignalChannel(ctx, "finish").Receive(ctx, nil)
