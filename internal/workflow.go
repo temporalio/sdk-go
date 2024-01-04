@@ -1032,6 +1032,8 @@ func (wInfo *WorkflowInfo) GetBinaryChecksum() string {
 // GetCurrentBuildID returns the Build ID of the worker that processed this task, which may be
 // empty. During replay this id may not equal the id of the replaying worker. If not replaying and
 // this worker has a defined Build ID, it will equal that ID. It is safe to use for branching.
+// When used inside a query, the ID of the worker that processed the task which last affected
+// the workflow will be returned.
 func (wInfo *WorkflowInfo) GetCurrentBuildID() string {
 	return wInfo.currentTaskBuildID
 }
