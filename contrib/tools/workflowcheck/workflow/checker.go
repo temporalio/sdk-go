@@ -39,9 +39,6 @@ import (
 // DefaultIdentRefs are additional overrides of determinism.DefaultIdentRefs for
 // safe Temporal library functions.
 var DefaultIdentRefs = determinism.DefaultIdentRefs.Clone().SetAll(determinism.IdentRefs{
-	// Reported as non-deterministic because it internally starts a goroutine, so
-	// mark deterministic explicitly
-	"go.temporal.io/sdk/internal.propagateCancel": false,
 	// Reported as non-deterministic because it iterates over a map, so mark
 	// deterministic explicitly
 	"(*go.temporal.io/sdk/internal.cancelCtx).cancel": false,
