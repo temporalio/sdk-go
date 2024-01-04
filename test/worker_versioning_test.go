@@ -41,7 +41,8 @@ type WorkerVersioningTestSuite struct {
 	*require.Assertions
 	suite.Suite
 	ConfigAndClientSuiteBase
-	workflows *Workflows
+	workflows  *Workflows
+	activities *Activities
 }
 
 func TestWorkerVersioningTestSuite(t *testing.T) {
@@ -51,6 +52,7 @@ func TestWorkerVersioningTestSuite(t *testing.T) {
 func (ts *WorkerVersioningTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
 	ts.workflows = &Workflows{}
+	ts.activities = &Activities{}
 	ts.NoError(ts.InitConfigAndNamespace())
 	ts.NoError(ts.InitClient())
 }
@@ -289,6 +291,7 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 
 	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "1.0", UseBuildIDForVersioning: true})
 	ts.workflows.register(worker1)
+	ts.activities.register(worker1)
 	ts.NoError(worker1.Start())
 
 	// Start workflow
@@ -300,6 +303,16 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 	ts.NoError(res.Get(&lastBuildID))
 	ts.Equal("1.0", lastBuildID)
 
+	// Make sure we've got to the activity
+	ts.Eventually(func() bool {
+		var didRun bool
+		res, err := ts.client.QueryWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "activity-ran", nil)
+		ts.NoError(err)
+		ts.NoError(res.Get(&didRun))
+		return didRun
+	}, time.Second*10, time.Millisecond*100)
+	worker1.Stop()
+
 	// Add new compat ver
 	err = ts.client.UpdateWorkerBuildIdCompatibility(ctx, &client.UpdateWorkerBuildIdCompatibilityOptions{
 		TaskQueue: ts.taskQueueName,
@@ -310,9 +323,9 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 	})
 	ts.NoError(err)
 
-	worker1.Stop()
 	worker11 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "1.1", UseBuildIDForVersioning: true})
 	ts.workflows.register(worker11)
+	ts.activities.register(worker11)
 	ts.NoError(worker11.Start())
 	defer worker11.Stop()
 
