@@ -27,6 +27,9 @@ import (
 	"testing"
 	"time"
 
+	"go.temporal.io/api/common/v1"
+	"go.temporal.io/api/workflowservice/v1"
+
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -38,7 +41,8 @@ type WorkerVersioningTestSuite struct {
 	*require.Assertions
 	suite.Suite
 	ConfigAndClientSuiteBase
-	workflows *Workflows
+	workflows  *Workflows
+	activities *Activities
 }
 
 func TestWorkerVersioningTestSuite(t *testing.T) {
@@ -48,6 +52,7 @@ func TestWorkerVersioningTestSuite(t *testing.T) {
 func (ts *WorkerVersioningTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
 	ts.workflows = &Workflows{}
+	ts.activities = &Activities{}
 	ts.NoError(ts.InitConfigAndNamespace())
 	ts.NoError(ts.InitClient())
 }
@@ -149,8 +154,6 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {
 	ts.NoError(handle12.Get(ctx, nil))
 	ts.NoError(handle21.Get(ctx, nil))
 	ts.NoError(handle22.Get(ctx, nil))
-
-	// TODO: Actually assert they ran on the appropriate workers, once David's changes are ready
 }
 
 func (ts *WorkerVersioningTestSuite) TestReachabilityUnreachable() {
@@ -272,4 +275,81 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersions() {
 	ts.True(ok)
 	ts.Equal(1, len(taskQueueReachability.TaskQueueReachability))
 	ts.Equal([]client.TaskReachability{client.TaskReachabilityNewWorkflows}, taskQueueReachability.TaskQueueReachability)
+}
+
+func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	err := ts.client.UpdateWorkerBuildIdCompatibility(ctx, &client.UpdateWorkerBuildIdCompatibilityOptions{
+		TaskQueue: ts.taskQueueName,
+		Operation: &client.BuildIDOpAddNewIDInNewDefaultSet{
+			BuildID: "1.0",
+		},
+	})
+	ts.NoError(err)
+
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "1.0", UseBuildIDForVersioning: true})
+	ts.workflows.register(worker1)
+	ts.activities.register(worker1)
+	ts.NoError(worker1.Start())
+
+	// Start workflow
+	wfHandle, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("evolving-wf"), ts.workflows.BuildIDWorkflow)
+	// Query to see that the build ID is 1.0
+	var lastBuildID string
+	res, err := ts.client.QueryWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "get-last-build-id", nil)
+	ts.NoError(err)
+	ts.NoError(res.Get(&lastBuildID))
+	ts.Equal("1.0", lastBuildID)
+
+	// Make sure we've got to the activity
+	ts.Eventually(func() bool {
+		var didRun bool
+		res, err := ts.client.QueryWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "activity-ran", nil)
+		ts.NoError(err)
+		ts.NoError(res.Get(&didRun))
+		return didRun
+	}, time.Second*10, time.Millisecond*100)
+	worker1.Stop()
+
+	// Add new compat ver
+	err = ts.client.UpdateWorkerBuildIdCompatibility(ctx, &client.UpdateWorkerBuildIdCompatibilityOptions{
+		TaskQueue: ts.taskQueueName,
+		Operation: &client.BuildIDOpAddNewCompatibleVersion{
+			BuildID:                   "1.1",
+			ExistingCompatibleBuildID: "1.0",
+		},
+	})
+	ts.NoError(err)
+
+	worker11 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "1.1", UseBuildIDForVersioning: true})
+	ts.workflows.register(worker11)
+	ts.activities.register(worker11)
+	ts.NoError(worker11.Start())
+	defer worker11.Stop()
+
+	_, err = ts.client.WorkflowService().ResetStickyTaskQueue(ctx, &workflowservice.ResetStickyTaskQueueRequest{
+		Namespace: ts.config.Namespace,
+		Execution: &common.WorkflowExecution{
+			WorkflowId: wfHandle.GetID(),
+		},
+	})
+	ts.NoError(err)
+
+	// The current task, with the new worker, should still be 1.0 since no new tasks have happened
+	enval, err := ts.client.QueryWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "get-last-build-id", nil)
+	ts.NoError(err)
+	ts.NoError(enval.Get(&lastBuildID))
+	ts.Equal("1.0", lastBuildID)
+
+	// finish the workflow under 1.1
+	ts.NoError(ts.client.SignalWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "finish", ""))
+	ts.NoError(wfHandle.Get(ctx, nil))
+
+	// Post completion it should have the value of the last task
+	enval, err = ts.client.QueryWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "get-last-build-id", nil)
+	ts.NoError(err)
+	ts.NoError(enval.Get(&lastBuildID))
+	ts.Equal("1.1", lastBuildID)
 }

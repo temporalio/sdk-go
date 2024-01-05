@@ -1882,6 +1882,32 @@ func (w *Workflows) WaitSignalToStart(ctx workflow.Context) (string, error) {
 	return value, nil
 }
 
+func (w *Workflows) BuildIDWorkflow(ctx workflow.Context) error {
+	activityRan := false
+	_ = workflow.SetQueryHandler(ctx, "get-last-build-id", func() (string, error) {
+		return workflow.GetInfo(ctx).GetCurrentBuildID(), nil
+	})
+	_ = workflow.SetQueryHandler(ctx, "activity-ran", func() (bool, error) {
+		return activityRan, nil
+	})
+
+	if err := workflow.Sleep(ctx, 1*time.Millisecond); err != nil {
+		return err
+	}
+	// Ensure that we are still deterministic when a test using a worker with a different build id
+	// re-runs this workflow
+	if workflow.GetInfo(ctx).GetCurrentBuildID() == "1.0" {
+		ctx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{StartToCloseTimeout: 1 * time.Minute})
+		if err := workflow.ExecuteActivity(ctx, new(Activities).Echo, 0, 1).Get(ctx, nil); err != nil {
+			return err
+		}
+		activityRan = true
+	}
+
+	workflow.GetSignalChannel(ctx, "finish").Receive(ctx, nil)
+	return nil
+}
+
 func (w *Workflows) SignalsAndQueries(ctx workflow.Context, execChild, execActivity bool) error {
 	// Add query handler
 	err := workflow.SetQueryHandler(ctx, "workflow-query", func() (string, error) { return "query-response", nil })
@@ -2511,6 +2537,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.SleepForDuration)
 	worker.RegisterWorkflow(w.InterceptorCalls)
 	worker.RegisterWorkflow(w.WaitSignalToStart)
+	worker.RegisterWorkflow(w.BuildIDWorkflow)
 	worker.RegisterWorkflow(w.SignalsAndQueries)
 	worker.RegisterWorkflow(w.CheckOpenTelemetryBaggage)
 	worker.RegisterWorkflow(w.AdvancedPostCancellation)

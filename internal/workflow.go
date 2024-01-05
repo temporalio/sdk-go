@@ -1005,6 +1005,10 @@ type WorkflowInfo struct {
 	// build-id based versioning, is the explicitly set worker build id. If this is the first worker to operate on the
 	// workflow, it is this worker's current value.
 	BinaryChecksum string
+	// currentTaskBuildID, if nonempty, contains the Build ID of the worker that processed the task
+	// which is currently or about to be executing. If no longer replaying will be set to the ID of
+	// this worker
+	currentTaskBuildID string
 
 	continueAsNewSuggested bool
 	currentHistorySize     int
@@ -1016,12 +1020,22 @@ type UpdateInfo struct {
 	ID string
 }
 
-// GetBinaryChecksum return binary checksum.
+// GetBinaryChecksum returns the binary checksum of the last worker to complete a task for this
+// workflow, or if this is the first task, this worker's checksum.
 func (wInfo *WorkflowInfo) GetBinaryChecksum() string {
 	if wInfo.BinaryChecksum == "" {
 		return getBinaryChecksum()
 	}
 	return wInfo.BinaryChecksum
+}
+
+// GetCurrentBuildID returns the Build ID of the worker that processed this task, which may be
+// empty. During replay this id may not equal the id of the replaying worker. If not replaying and
+// this worker has a defined Build ID, it will equal that ID. It is safe to use for branching.
+// When used inside a query, the ID of the worker that processed the task which last affected
+// the workflow will be returned.
+func (wInfo *WorkflowInfo) GetCurrentBuildID() string {
+	return wInfo.currentTaskBuildID
 }
 
 // GetCurrentHistoryLength returns the current length of history when called.

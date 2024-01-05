@@ -199,6 +199,7 @@ type (
 		binaryChecksum string
 		sdkVersion     string
 		sdkName        string
+		buildID        string
 	}
 
 	finishedTask struct {
@@ -269,8 +270,9 @@ func (eh *history) isNextWorkflowTaskFailed() (task finishedTask, err error) {
 		var binaryChecksum string
 		var flags []sdkFlag
 		if nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
-			binaryChecksum = nextEvent.GetWorkflowTaskCompletedEventAttributes().BinaryChecksum
-			for _, flag := range nextEvent.GetWorkflowTaskCompletedEventAttributes().GetSdkMetadata().GetLangUsedFlags() {
+			completedAttrs := nextEvent.GetWorkflowTaskCompletedEventAttributes()
+			binaryChecksum = completedAttrs.BinaryChecksum
+			for _, flag := range completedAttrs.GetSdkMetadata().GetLangUsedFlags() {
 				f := sdkFlagFromUint(flag)
 				if !f.isValid() {
 					// If a flag is not recognized (value is too high or not defined), it must fail the workflow task
@@ -348,6 +350,7 @@ func (eh *history) nextTask() (*preparedTask, error) {
 
 	var markers []*historypb.HistoryEvent
 	var msgs []*protocolpb.Message
+	var buildID string
 	if len(result) > 0 {
 		nextTaskEvents, err := eh.prepareTask()
 		if err != nil {
@@ -359,6 +362,7 @@ func (eh *history) nextTask() (*preparedTask, error) {
 		eh.sdkVersion = nextTaskEvents.sdkVersion
 		markers = nextTaskEvents.markers
 		msgs = nextTaskEvents.msgs
+		buildID = nextTaskEvents.buildID
 	}
 	return &preparedTask{
 		events:         result,
@@ -368,6 +372,7 @@ func (eh *history) nextTask() (*preparedTask, error) {
 		binaryChecksum: checksum,
 		sdkName:        sdkName,
 		sdkVersion:     sdkVersion,
+		buildID:        buildID,
 	}, nil
 }
 
@@ -457,7 +462,10 @@ OrderEvents:
 			enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED:
 			// Skip
 		default:
-			if isPreloadMarkerEvent(event) {
+			if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
+				taskEvents.buildID = event.GetWorkflowTaskCompletedEventAttributes().
+					GetWorkerVersion().GetBuildId()
+			} else if isPreloadMarkerEvent(event) {
 				taskEvents.markers = append(taskEvents.markers, event)
 			} else if attrs := event.GetWorkflowExecutionUpdateAcceptedEventAttributes(); attrs != nil {
 				taskEvents.msgs = append(taskEvents.msgs, inferMessage(attrs))
@@ -975,6 +983,7 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 	eventHandler.ResetLAWFTAttemptCounts()
 	eventHandler.sdkFlags.markSDKFlagsSent()
 
+	isQueryOnlyTask := workflowTask.task.StartedEventId == 0
 ProcessEvents:
 	for {
 		nextTask, err := reorderedHistory.nextTask()
@@ -986,6 +995,7 @@ ProcessEvents:
 		historyMessages := nextTask.msgs
 		flags := nextTask.flags
 		binaryChecksum := nextTask.binaryChecksum
+		currentBuildID := nextTask.buildID
 		// Check if we are replaying so we know if we should use the messages in the WFT or the history
 		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
 		var msgs *eventMsgIndex
@@ -1015,6 +1025,13 @@ ProcessEvents:
 			w.workflowInfo.BinaryChecksum = w.wth.workerBuildID
 		} else {
 			w.workflowInfo.BinaryChecksum = binaryChecksum
+		}
+		if isReplay {
+			w.workflowInfo.currentTaskBuildID = currentBuildID
+		} else if !isReplay && !isQueryOnlyTask {
+			// Query only tasks should use the build ID from the workflow task, not the worker's
+			// build id, since the user cares about what affected workflow state.
+			w.workflowInfo.currentTaskBuildID = w.wth.workerBuildID
 		}
 		// Reset the mutable side effect markers recorded
 		eventHandler.mutableSideEffectsRecorded = nil
