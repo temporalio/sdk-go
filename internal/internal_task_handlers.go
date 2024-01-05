@@ -1028,10 +1028,16 @@ ProcessEvents:
 		}
 		if isReplay {
 			w.workflowInfo.currentTaskBuildID = currentBuildID
-		} else if !isReplay && !isQueryOnlyTask {
+		} else if !isQueryOnlyTask {
 			// Query only tasks should use the build ID from the workflow task, not the worker's
 			// build id, since the user cares about what affected workflow state.
 			w.workflowInfo.currentTaskBuildID = w.wth.workerBuildID
+		} else {
+			// It is a query only task, and we're not replaying somehow - still use the task's build
+			// ID if it's determined
+			if currentBuildID != "" {
+				w.workflowInfo.currentTaskBuildID = currentBuildID
+			}
 		}
 		// Reset the mutable side effect markers recorded
 		eventHandler.mutableSideEffectsRecorded = nil
