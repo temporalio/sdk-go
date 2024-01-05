@@ -40,7 +40,11 @@ func TestTags(t *testing.T) {
 	ctx := context.Background()
 	metricReader := metric.NewManualReader()
 	meterProvider := metric.NewMeterProvider(metric.WithReader(metricReader))
-	handler := opentelemetry.NewMetricsHandler(meterProvider.Meter("test"))
+	handler := opentelemetry.NewMetricsHandler(
+		opentelemetry.MetricsHandlerOptions{
+			Meter: meterProvider.Meter("test"),
+		},
+	)
 	handlerWithTag := handler.WithTags(map[string]string{"tag1": "value1"})
 	// Emit some values with multiple tags
 	handlerWithTag.WithTags(map[string]string{"tag2": "value2"}).Counter("testCounter").Inc(1)
@@ -73,7 +77,11 @@ func TestCounterHandler(t *testing.T) {
 	ctx := context.Background()
 	metricReader := metric.NewManualReader()
 	meterProvider := metric.NewMeterProvider(metric.WithReader(metricReader))
-	handler := opentelemetry.NewMetricsHandler(meterProvider.Meter("test"))
+	handler := opentelemetry.NewMetricsHandler(
+		opentelemetry.MetricsHandlerOptions{
+			Meter: meterProvider.Meter("test"),
+		},
+	)
 	handlerWithTag := handler.WithTags(map[string]string{"tag1": "value1"})
 	// Emit some values
 	testCounter := handlerWithTag.Counter("testCounter")
@@ -106,7 +114,11 @@ func TestGaugeHandler(t *testing.T) {
 	ctx := context.Background()
 	metricReader := metric.NewManualReader()
 	meterProvider := metric.NewMeterProvider(metric.WithReader(metricReader))
-	handler := opentelemetry.NewMetricsHandler(meterProvider.Meter("test"))
+	handler := opentelemetry.NewMetricsHandler(
+		opentelemetry.MetricsHandlerOptions{
+			Meter: meterProvider.Meter("test"),
+		},
+	)
 	handlerWithTag := handler.WithTags(map[string]string{"tag1": "value1"})
 	// Emit some values
 	testGauge := handlerWithTag.Gauge("testGauge")
@@ -137,7 +149,11 @@ func TestTimerHandler(t *testing.T) {
 	ctx := context.Background()
 	metricReader := metric.NewManualReader()
 	meterProvider := metric.NewMeterProvider(metric.WithReader(metricReader))
-	handler := opentelemetry.NewMetricsHandler(meterProvider.Meter("test"))
+	handler := opentelemetry.NewMetricsHandler(
+		opentelemetry.MetricsHandlerOptions{
+			Meter: meterProvider.Meter("test"),
+		},
+	)
 	handlerWithTag := handler.WithTags(map[string]string{"tag1": "value1"})
 	testTimer := handlerWithTag.Timer("testTimer")
 	testTimer.Record(time.Millisecond)

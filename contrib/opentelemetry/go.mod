@@ -3,8 +3,6 @@ module go.temporal.io/sdk/contrib/opentelemetry
 go 1.20
 
 require (
-	github.com/go-logr/logr v1.3.0 // indirect
-	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/stretchr/testify v1.8.4
 	go.opentelemetry.io/otel v1.21.0
 	go.opentelemetry.io/otel/sdk v1.21.0
@@ -13,6 +11,8 @@ require (
 )
 
 require (
+	github.com/go-logr/logr v1.3.0 // indirect
+	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
