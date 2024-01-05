@@ -120,6 +120,7 @@ func (m MetricsHandler) Counter(name string) client.MetricsCounter {
 	c, err := m.meter.Int64UpDownCounter(name)
 	if err != nil {
 		m.onError(err)
+		return client.MetricsNopHandler.Counter(name)
 	}
 	return metrics.CounterFunc(func(d int64) {
 		c.Add(context.Background(), d, metric.WithAttributeSet(m.attributes))
@@ -130,11 +131,15 @@ func (m MetricsHandler) Gauge(name string) client.MetricsGauge {
 	// TODO(https://github.com/open-telemetry/opentelemetry-go/issues/3984) replace with sync gauge once supported
 	var config atomic.Value
 	config.Store(0.0)
-	m.meter.Float64ObservableGauge(name,
+	_, err := m.meter.Float64ObservableGauge(name,
 		metric.WithFloat64Callback(func(ctx context.Context, o metric.Float64Observer) error {
 			o.Observe(config.Load().(float64), metric.WithAttributeSet(m.attributes))
 			return nil
 		}))
+	if err != nil {
+		m.onError(err)
+		return client.MetricsNopHandler.Gauge(name)
+	}
 	return metrics.GaugeFunc(func(f float64) {
 		config.Store(f)
 	})
@@ -144,6 +149,7 @@ func (m MetricsHandler) Timer(name string) client.MetricsTimer {
 	h, err := m.meter.Float64Histogram(name, metric.WithUnit("s"))
 	if err != nil {
 		m.onError(err)
+		return client.MetricsNopHandler.Timer(name)
 	}
 	return metrics.TimerFunc(func(t time.Duration) {
 		h.Record(context.Background(), t.Seconds(), metric.WithAttributeSet(m.attributes))
