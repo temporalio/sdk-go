@@ -1029,12 +1029,11 @@ ProcessEvents:
 		if isReplay {
 			w.workflowInfo.currentTaskBuildID = currentBuildID
 		} else if !isQueryOnlyTask {
-			// Query only tasks should use the build ID from the workflow task, not the worker's
-			// build id, since the user cares about what affected workflow state.
+			// Real new (non-query, non-replay) tasks use the worker's build ID
 			w.workflowInfo.currentTaskBuildID = w.wth.workerBuildID
 		} else {
-			// It is a query only task, and we're not replaying somehow - still use the task's build
-			// ID if it's determined
+			// It *is* a query only task, use the task's build ID (queries are considered non-replay
+			// in go sdk), but only if one was actually discovered.
 			if currentBuildID != "" {
 				w.workflowInfo.currentTaskBuildID = currentBuildID
 			}
