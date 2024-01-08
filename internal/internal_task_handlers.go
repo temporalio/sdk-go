@@ -199,7 +199,9 @@ type (
 		binaryChecksum string
 		sdkVersion     string
 		sdkName        string
-		buildID        string
+		// Is null if there was no task completed event to read the build ID from (but may be
+		// empty string if there was, and it was empty)
+		buildID *string
 	}
 
 	finishedTask struct {
@@ -350,7 +352,7 @@ func (eh *history) nextTask() (*preparedTask, error) {
 
 	var markers []*historypb.HistoryEvent
 	var msgs []*protocolpb.Message
-	var buildID string
+	var buildID *string
 	if len(result) > 0 {
 		nextTaskEvents, err := eh.prepareTask()
 		if err != nil {
@@ -463,8 +465,9 @@ OrderEvents:
 			// Skip
 		default:
 			if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
-				taskEvents.buildID = event.GetWorkflowTaskCompletedEventAttributes().
+				bidStr := event.GetWorkflowTaskCompletedEventAttributes().
 					GetWorkerVersion().GetBuildId()
+				taskEvents.buildID = &bidStr
 			} else if isPreloadMarkerEvent(event) {
 				taskEvents.markers = append(taskEvents.markers, event)
 			} else if attrs := event.GetWorkflowExecutionUpdateAcceptedEventAttributes(); attrs != nil {
@@ -1026,8 +1029,8 @@ ProcessEvents:
 		} else {
 			w.workflowInfo.BinaryChecksum = binaryChecksum
 		}
-		if isReplay {
-			w.workflowInfo.currentTaskBuildID = nextTaskBuildId
+		if isReplay && nextTaskBuildId != nil {
+			w.workflowInfo.currentTaskBuildID = *nextTaskBuildId
 		}
 		// Reset the mutable side effect markers recorded
 		eventHandler.mutableSideEffectsRecorded = nil
