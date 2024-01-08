@@ -297,8 +297,8 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 	// Start workflow
 	wfHandle, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("evolving-wf"), ts.workflows.BuildIDWorkflow)
 	// Query to see that the build ID is 1.0
-	var lastBuildID string
 	res, err := ts.client.QueryWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "get-last-build-id", nil)
+	var lastBuildID string
 	ts.NoError(err)
 	ts.NoError(res.Get(&lastBuildID))
 	ts.Equal("1.0", lastBuildID)

@@ -983,7 +983,7 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 	eventHandler.ResetLAWFTAttemptCounts()
 	eventHandler.sdkFlags.markSDKFlagsSent()
 
-	isQueryOnlyTask := workflowTask.task.StartedEventId == 0
+	w.workflowInfo.currentTaskBuildID = w.wth.workerBuildID
 ProcessEvents:
 	for {
 		nextTask, err := reorderedHistory.nextTask()
@@ -995,7 +995,7 @@ ProcessEvents:
 		historyMessages := nextTask.msgs
 		flags := nextTask.flags
 		binaryChecksum := nextTask.binaryChecksum
-		currentBuildID := nextTask.buildID
+		nextTaskBuildId := nextTask.buildID
 		// Check if we are replaying so we know if we should use the messages in the WFT or the history
 		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
 		var msgs *eventMsgIndex
@@ -1027,16 +1027,7 @@ ProcessEvents:
 			w.workflowInfo.BinaryChecksum = binaryChecksum
 		}
 		if isReplay {
-			w.workflowInfo.currentTaskBuildID = currentBuildID
-		} else if !isQueryOnlyTask {
-			// Real new (non-query, non-replay) tasks use the worker's build ID
-			w.workflowInfo.currentTaskBuildID = w.wth.workerBuildID
-		} else {
-			// It *is* a query only task, use the task's build ID (queries are considered non-replay
-			// in go sdk), but only if one was actually discovered.
-			if currentBuildID != "" {
-				w.workflowInfo.currentTaskBuildID = currentBuildID
-			}
+			w.workflowInfo.currentTaskBuildID = nextTaskBuildId
 		}
 		// Reset the mutable side effect markers recorded
 		eventHandler.mutableSideEffectsRecorded = nil
