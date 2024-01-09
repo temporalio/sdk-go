@@ -31,6 +31,7 @@ import (
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
+	"golang.org/x/exp/constraints"
 )
 
 type (
@@ -634,4 +635,18 @@ func IsContinueAsNewError(err error) bool {
 // timeout.
 func DataConverterWithoutDeadlockDetection(c converter.DataConverter) converter.DataConverter {
 	return internal.DataConverterWithoutDeadlockDetection(c)
+}
+
+// DeterministicKeys returns the keys of a map in deterministic (sorted) order. To be used in for
+// loops in workflows for deterministic iteration.
+func DeterministicKeys[K constraints.Ordered, V any](m map[K]V) []K {
+	return internal.DeterministicKeys(m)
+}
+
+// DeterministicKeysFunc returns the keys of a map in a deterministic (sorted) order.
+// cmp(a, b) should return a negative number when a < b, a positive number when
+// a > b and zero when a == b. Keys are sorted by cmp.
+// To be used in for loops in workflows for deterministic iteration.
+func DeterministicKeysFunc[K comparable, V any](m map[K]V, cmp func(K, K) int) []K {
+	return internal.DeterministicKeysFunc(m, cmp)
 }
