@@ -639,7 +639,7 @@ func DataConverterWithoutDeadlockDetection(c converter.DataConverter) converter.
 
 // DeterministicKeys returns the keys of a map in deterministic (sorted) order. To be used in for
 // loops in workflows for deterministic iteration.
-func SortedKeys[K constraints.Ordered, V any](m map[K]V) []K {
+func DeterministicKeys[K constraints.Ordered, V any](m map[K]V) []K {
 	return internal.DeterministicKeys(m)
 }
 
@@ -647,6 +647,6 @@ func SortedKeys[K constraints.Ordered, V any](m map[K]V) []K {
 // cmp(a, b) should return a negative number when a < b, a positive number when
 // a > b and zero when a == b. Keys are sorted by cmp.
 // To be used in for loops in workflows for deterministic iteration.
-func SortedKeysFunc[K comparable, V any](m map[K]V, cmp func(K, K) int) []K {
+func DeterministicKeysFunc[K comparable, V any](m map[K]V, cmp func(K, K) int) []K {
 	return internal.DeterministicKeysFunc(m, cmp)
 }
