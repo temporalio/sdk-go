@@ -625,6 +625,9 @@ type (
 		//
 		// NOTE: Experimental
 		StartDelay time.Duration
+
+		// CompletionCallbacks is a list of callbacks that will be invoked when the workflow completes.
+		CompletionCallbacks []*commonpb.Callback
 	}
 
 	// RetryPolicy defines the retry policy.

@@ -34,12 +34,12 @@ import (
 
 	updatepb "go.temporal.io/api/update/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
+	ilog "go.temporal.io/sdk/internal/log"
 	uberatomic "go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
-
-	ilog "go.temporal.io/sdk/internal/log"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
@@ -1411,6 +1411,56 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithMemoAndSearchAttr() {
 			s.Equal("attr value", resultAttr)
 		})
 	_, _ = s.client.ExecuteWorkflow(context.Background(), options, wf)
+}
+
+// Tests that ExecuteWorkflow attaches the completion callbacks to the StartWorkflowExecutionRequest.
+func (s *workflowClientTestSuite) TestExecuteWorkflowCompletionCallback() {
+	callbacks := []*commonpb.Callback{
+		{
+			Variant: &commonpb.Callback_Nexus_{
+				Nexus: &commonpb.Callback_Nexus{
+					Url: "http://localhost:8080",
+				},
+			},
+		},
+		{
+			Variant: &commonpb.Callback_Nexus_{
+				Nexus: &commonpb.Callback_Nexus{
+					Url: "http://localhost:8081",
+				},
+			},
+		},
+	}
+	options := StartWorkflowOptions{
+		ID:                       workflowID,
+		TaskQueue:                taskqueue,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		CompletionCallbacks:      callbacks,
+	}
+	f1 := func(ctx Context, r []byte) string {
+		panic("this is just a stub")
+	}
+
+	createResponse := &workflowservice.StartWorkflowExecutionResponse{
+		RunId: runID,
+	}
+	var called bool
+	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Do(
+		func(_ context.Context, req *workflowservice.StartWorkflowExecutionRequest, _ ...grpc.CallOption) {
+			called = true
+			if !s.Assert().Lenf(req.CompletionCallbacks, len(callbacks),
+				"expected %v callbacks in request, got %v", len(callbacks), len(req.CompletionCallbacks)) {
+				return
+			}
+			for i, c := range callbacks {
+				s.Assert().Truef(proto.Equal(c, req.CompletionCallbacks[i]),
+					"expected callback %d in request to be %v, got %v", i, c, req.CompletionCallbacks[i])
+			}
+		}).Return(createResponse, nil)
+	resp, err := s.client.ExecuteWorkflow(context.Background(), options, f1, []byte("test"))
+	s.Nil(err)
+	s.Assert().Equal(createResponse.GetRunId(), resp.GetRunID())
+	s.Assert().True(called, "expected StartWorkflowExecution to be called")
 }
 
 func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithMemoAndSearchAttr() {

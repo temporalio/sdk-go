@@ -23,17 +23,17 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/stretchr/objx v0.5.0 // indirect
-	go.temporal.io/api v1.26.1 // indirect
+	go.temporal.io/api v1.26.1-0.20240106224952-e65d246174b6 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	golang.org/x/exp v0.0.0-20231127185646-65229373498e // indirect
 	golang.org/x/net v0.19.0 // indirect
 	golang.org/x/sys v0.15.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
-	google.golang.org/genproto v0.0.0-20231127180814-3a041ad873d4 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20231127180814-3a041ad873d4 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20231127180814-3a041ad873d4 // indirect
-	google.golang.org/grpc v1.59.0 // indirect
+	google.golang.org/genproto v0.0.0-20231212172506-995d672761c0 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20231212172506-995d672761c0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20231212172506-995d672761c0 // indirect
+	google.golang.org/grpc v1.60.1 // indirect
 	google.golang.org/protobuf v1.31.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

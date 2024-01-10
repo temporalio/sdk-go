@@ -12,13 +12,13 @@ require (
 	go.opentelemetry.io/otel v1.2.0
 	go.opentelemetry.io/otel/sdk v1.2.0
 	go.opentelemetry.io/otel/trace v1.2.0
-	go.temporal.io/api v1.26.1
+	go.temporal.io/api v1.26.1-0.20240106224952-e65d246174b6
 	go.temporal.io/sdk v1.12.0
 	go.temporal.io/sdk/contrib/opentelemetry v0.1.0
 	go.temporal.io/sdk/contrib/opentracing v0.0.0-00010101000000-000000000000
 	go.temporal.io/sdk/contrib/tally v0.1.0
 	go.uber.org/goleak v1.1.11
-	google.golang.org/grpc v1.59.0
+	google.golang.org/grpc v1.60.1
 	google.golang.org/protobuf v1.31.0
 )
 
@@ -39,9 +39,9 @@ require (
 	golang.org/x/sys v0.15.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
-	google.golang.org/genproto v0.0.0-20231127180814-3a041ad873d4 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20231127180814-3a041ad873d4 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20231127180814-3a041ad873d4 // indirect
+	google.golang.org/genproto v0.0.0-20231212172506-995d672761c0 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20231212172506-995d672761c0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20231212172506-995d672761c0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 

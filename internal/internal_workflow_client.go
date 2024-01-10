@@ -1532,6 +1532,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		Memo:                     memo,
 		SearchAttributes:         searchAttr,
 		Header:                   header,
+		CompletionCallbacks:      in.Options.CompletionCallbacks,
 	}
 
 	var eagerExecutor *eagerWorkflowExecutor
