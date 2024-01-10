@@ -1046,23 +1046,25 @@ func (s *coroutineState) stackTrace() string {
 	return <-stackCh
 }
 
+func (s *coroutineState) run(ctx Context, f func(ctx Context)) {
+	defer s.close()
+	defer func() {
+		if r := recover(); r != nil {
+			st := getStackTrace(s.name, "panic", 4)
+			s.panicError = newWorkflowPanicError(r, st)
+		}
+	}()
+	s.initialYield(1, "")
+	f(ctx)
+}
+
 func (d *dispatcherImpl) NewCoroutine(ctx Context, name string, highPriority bool, f func(ctx Context)) Context {
 	if name == "" {
 		name = fmt.Sprintf("%v", d.sequence+1)
 	}
 	state := d.newState(name, highPriority)
 	spawned := WithValue(ctx, coroutinesContextKey, state)
-	go func(crt *coroutineState) {
-		defer crt.close()
-		defer func() {
-			if r := recover(); r != nil {
-				st := getStackTrace(name, "panic", 4)
-				crt.panicError = newWorkflowPanicError(r, st)
-			}
-		}()
-		crt.initialYield(1, "")
-		f(spawned)
-	}(state)
+	go state.run(spawned, f)
 	return spawned
 }
 
