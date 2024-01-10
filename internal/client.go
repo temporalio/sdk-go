@@ -35,7 +35,6 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/workflowservice/v1"
-	uberatomic "go.uber.org/atomic"
 	"google.golang.org/grpc"
 
 	"go.temporal.io/sdk/converter"
@@ -532,7 +531,7 @@ type (
 		// other gRPC errors. If not present during service client creation, it will
 		// be created as false. This is set to true when server capabilities are
 		// fetched.
-		excludeInternalFromRetry *uberatomic.Bool
+		excludeInternalFromRetry *atomic.Bool
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
@@ -746,7 +745,7 @@ func newClient(options ClientOptions, existing *WorkflowClient) (Client, error) 
 	var connection *grpc.ClientConn
 	var err error
 	if existing == nil {
-		options.ConnectionOptions.excludeInternalFromRetry = uberatomic.NewBool(false)
+		options.ConnectionOptions.excludeInternalFromRetry = &atomic.Bool{}
 		connection, err = dial(newDialParameters(&options, options.ConnectionOptions.excludeInternalFromRetry))
 		if err != nil {
 			return nil, err
@@ -780,7 +779,7 @@ func newClient(options ClientOptions, existing *WorkflowClient) (Client, error) 
 	return client, nil
 }
 
-func newDialParameters(options *ClientOptions, excludeInternalFromRetry *uberatomic.Bool) dialParameters {
+func newDialParameters(options *ClientOptions, excludeInternalFromRetry *atomic.Bool) dialParameters {
 	return dialParameters{
 		UserConnectionOptions: options.ConnectionOptions,
 		HostPort:              options.HostPort,
@@ -818,7 +817,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	}
 
 	if options.ConnectionOptions.excludeInternalFromRetry == nil {
-		options.ConnectionOptions.excludeInternalFromRetry = uberatomic.NewBool(false)
+		options.ConnectionOptions.excludeInternalFromRetry = &atomic.Bool{}
 	}
 
 	// Collect set of applicable worker interceptors

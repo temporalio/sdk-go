@@ -36,7 +36,6 @@ import (
 	"time"
 
 	"github.com/pborman/uuid"
-	uberatomic "go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -91,7 +90,7 @@ type (
 		contextPropagators       []ContextPropagator
 		workerInterceptors       []WorkerInterceptor
 		interceptor              ClientOutboundInterceptor
-		excludeInternalFromRetry *uberatomic.Bool
+		excludeInternalFromRetry *atomic.Bool
 		capabilities             *workflowservice.GetSystemInfoResponse_Capabilities
 		capabilitiesLock         sync.RWMutex
 		eagerDispatcher          *eagerWorkflowDispatcher

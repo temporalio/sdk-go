@@ -26,13 +26,13 @@ package internal
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/retry"
-	uberatomic "go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
@@ -148,7 +148,7 @@ func requiredInterceptors(
 	metricsHandler metrics.Handler,
 	headersProvider HeadersProvider,
 	controller TrafficController,
-	excludeInternalFromRetry *uberatomic.Bool,
+	excludeInternalFromRetry *atomic.Bool,
 ) []grpc.UnaryClientInterceptor {
 	interceptors := []grpc.UnaryClientInterceptor{
 		errorInterceptor,
