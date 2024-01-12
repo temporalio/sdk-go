@@ -121,8 +121,10 @@ type (
 		GetRunID() string
 
 		// Get will fill the workflow execution result to valuePtr, if workflow
-		// execution is a success, or return corresponding error. This is a blocking
-		// API.
+		// execution is a success, or return corresponding error. If valuePtr is
+		// nil, the valuePtr will be ignored and only the corresponding error
+		// of the workflow will be returned (nil on workflow execution success). 
+		// This is a blocking API.
 		//
 		// This call will follow execution runs to the latest result for this run
 		// instead of strictly returning this run's result. This means that if the
