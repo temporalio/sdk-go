@@ -122,8 +122,8 @@ type (
 
 		// Get will fill the workflow execution result to valuePtr, if workflow
 		// execution is a success, or return corresponding error. If valuePtr is
-		// nil, the valuePtr will be ignored and only the corresponding error
-		// of the workflow will be returned (nil on workflow execution success). 
+		// nil, valuePtr will be ignored and only the corresponding error of the 
+		// workflow will be returned (nil on workflow execution success). 
 		// This is a blocking API.
 		//
 		// This call will follow execution runs to the latest result for this run
@@ -140,9 +140,9 @@ type (
 		Get(ctx context.Context, valuePtr interface{}) error
 
 		// GetWithOptions will fill the workflow execution result to valuePtr, if
-		// workflow execution is a success, or return corresponding error. If valuePtr is
-		// nil, the valuePtr will be ignored and only the corresponding error
-		// of the workflow will be returned (nil on workflow execution success). 
+		// workflow execution is a success, or return corresponding error. If
+		// valuePtr is nil, valuePtr will be ignored and only the corresponding
+		// error of the workflow will be returned (nil on workflow execution success). 
 		// This is a blocking API.
 		//
 		// Note, values should not be reused for extraction here because merging on
