@@ -96,3 +96,47 @@ func (s *slowToPayloadsConverter) ToPayloads(value ...interface{}) (*commonpb.Pa
 	time.Sleep(600 * time.Millisecond)
 	return s.DataConverter.ToPayloads(value...)
 }
+
+func TestDataConverterWithoutDeadlockDetectionContext(t *testing.T) {
+	contextAwareDataConverter := NewContextAwareDataConverter(converter.GetDefaultDataConverter())
+	conv := DataConverterWithoutDeadlockDetection(contextAwareDataConverter)
+
+	t.Parallel()
+	t.Run("default", func(t *testing.T) {
+		t.Parallel()
+		payload, _ := conv.ToPayload("test")
+		result := conv.ToString(payload)
+
+		require.Equal(t, `"test"`, result)
+	})
+	t.Run("implements ContextAware", func(t *testing.T) {
+		t.Parallel()
+		_, ok := conv.(ContextAware)
+		require.True(t, ok)
+	})
+	t.Run("with activity context", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+		ctx = context.WithValue(ctx, ContextAwareDataConverterContextKey, "e")
+
+		dc := WithContext(ctx, conv)
+
+		payload, _ := dc.ToPayload("test")
+		result := dc.ToString(payload)
+
+		require.Equal(t, `"t?st"`, result)
+	})
+	t.Run("with workflow context", func(t *testing.T) {
+		t.Parallel()
+		ctx := Background()
+		ctx = WithValue(ctx, ContextAwareDataConverterContextKey, "e")
+
+		dc := WithWorkflowContext(ctx, conv)
+
+		payload, _ := dc.ToPayload("test")
+		result := dc.ToString(payload)
+
+		require.Equal(t, `"t?st"`, result)
+	})
+
+}
