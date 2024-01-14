@@ -1057,9 +1057,15 @@ func (s *coroutineState) call(timeout time.Duration) {
 	select {
 	case <-s.aboutToBlock:
 	case <-deadlockTicker.reached():
+		// Use workflowPanicError since this used to call panic(msg)
+		st, err := getCoroStackTrace(s, "running", 0)
+		if err != nil {
+			st = fmt.Sprintf("<%s>", err)
+		}
+		msg := fmt.Sprintf("Potential deadlock detected: "+
+			"workflow goroutine %q didn't yield for over a second", s.name)
 		s.closed.Store(true)
-		panic(fmt.Sprintf("Potential deadlock detected: "+
-			"workflow goroutine %q didn't yield for over a second", s.name))
+		s.panicError = newWorkflowPanicError(msg, st)
 	}
 }
 
