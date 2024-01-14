@@ -884,20 +884,16 @@ func TestAwait(t *testing.T) {
 }
 
 func TestDeadlockDetectorAndAwaitRace(t *testing.T) {
-	// Expecting deadlock detection timeout instead of a data race.
-	defer func() {
-		err := recover()
-		require.NotNil(t, err, "panic expected")
-		require.Equal(t, err, "Potential deadlock detected: workflow goroutine \"root\" didn't yield for over a second")
-	}()
 	d := createNewDispatcher(func(ctx Context) {
 		_ = Await(ctx, func() bool {
 			time.Sleep(defaultDeadlockDetectionTimeout + (100 * time.Millisecond))
 			return false
 		})
 	})
-	_ = d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
-	d.Close()
+	defer d.Close()
+	// Expecting deadlock detection timeout instead of a data race.
+	err := d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
+	require.EqualError(t, err, "Potential deadlock detected: workflow goroutine \"root\" didn't yield for over a second")
 }
 
 func TestAwaitCancellation(t *testing.T) {
