@@ -1587,3 +1587,24 @@ func TestContextChildCancelRace(t *testing.T) {
 	env.ExecuteWorkflow(wf)
 	require.NoError(t, env.GetWorkflowError())
 }
+
+func TestDeadlockDetectorStackTrace(t *testing.T) {
+	d := createNewDispatcher(func(ctx Context) {
+		c := NewNamedChannel(ctx, "forever_blocked")
+		GoNamed(ctx, "blocked", func(ctx Context) {
+			c.Receive(ctx, nil) // blocked forever
+		})
+		GoNamed(ctx, "sleeper", func(ctx Context) {
+			time.Sleep(defaultDeadlockDetectionTimeout + 100 * time.Millisecond)
+		})
+		c.Receive(ctx, nil) // blocked forever
+	})
+	defer d.Close()
+	err := d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
+
+	var wfPanic *workflowPanicError
+	require.ErrorAs(t, err, &wfPanic)
+	require.Equal(t, `Potential deadlock detected: workflow goroutine "sleeper" didn't yield for over a second`, wfPanic.Error())
+	require.Regexp(t, `^coroutine sleeper \[running\]:\ntime\.Sleep\(0x[\da-f]+\)\n`, wfPanic.StackTrace())
+	require.Equal(t, 4, strings.Count(wfPanic.StackTrace(), "\n"), "2 stack frames expected")
+}
