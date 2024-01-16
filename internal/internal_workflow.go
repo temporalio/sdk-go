@@ -751,7 +751,7 @@ func (c *channelImpl) Receive(ctx Context, valuePtr interface{}) (more bool) {
 				}
 				break // Corrupt signal. Drop and reset process.
 			}
-			state.yield(fmt.Sprintf("blocked on %s.Receive", c.name))
+			state.yield("blocked on " + c.name + ".Receive")
 		}
 	}
 
@@ -887,7 +887,7 @@ func (c *channelImpl) Send(ctx Context, v interface{}) {
 		if c.closed {
 			panic("Closed channel")
 		}
-		state.yield(fmt.Sprintf("blocked on %s.Send", c.name))
+		state.yield("blocked on " + c.name + ".Send")
 	}
 }
 
@@ -1365,7 +1365,7 @@ func (s *selectorImpl) Select(ctx Context) {
 			state.unblocked()
 			return
 		}
-		state.yield(fmt.Sprintf("blocked on %s.Select", s.name))
+		state.yield("blocked on " + s.name + ".Select")
 	}
 }
 
