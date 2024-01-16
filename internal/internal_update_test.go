@@ -185,16 +185,20 @@ func TestUpdateValidatorFnValidation(t *testing.T) {
 }
 
 func TestDefaultUpdateHandler(t *testing.T) {
+	t.Parallel()
+
 	dc := converter.GetDefaultDataConverter()
-	env := &workflowEnvironmentImpl{
-		sdkFlags:       testSDKFlags,
-		commandsHelper: newCommandsHelper(),
-		dataConverter:  dc,
-		workflowInfo: &WorkflowInfo{
-			Namespace:     "namespace:" + t.Name(),
-			TaskQueueName: "taskqueue:" + t.Name(),
-		},
-		bufferedUpdateRequests: make(map[string][]func()),
+	createTestWfEnv := func() *workflowEnvironmentImpl {
+		return &workflowEnvironmentImpl{
+			sdkFlags:       testSDKFlags,
+			commandsHelper: newCommandsHelper(),
+			dataConverter:  dc,
+			workflowInfo: &WorkflowInfo{
+				Namespace:     "namespace:" + t.Name(),
+				TaskQueueName: "taskqueue:" + t.Name(),
+			},
+			bufferedUpdateRequests: make(map[string][]func()),
+		}
 	}
 
 	hdr := &commonpb.Header{Fields: map[string]*commonpb.Payload{}}
@@ -203,6 +207,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("no handler registered", func(t *testing.T) {
+		env := createTestWfEnv()
 		interceptor, ctx, err := newWorkflowContext(env, nil)
 		require.NoError(t, err)
 
@@ -230,6 +235,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	})
 
 	t.Run("malformed serialized input", func(t *testing.T) {
+		env := createTestWfEnv()
 		interceptor, ctx, err := newWorkflowContext(env, nil)
 		require.NoError(t, err)
 
@@ -257,6 +263,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	})
 
 	t.Run("reject from validator", func(t *testing.T) {
+		env := createTestWfEnv()
 		interceptor, ctx, err := newWorkflowContext(env, nil)
 		require.NoError(t, err)
 
@@ -284,6 +291,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	})
 
 	t.Run("illegal state panic from validator", func(t *testing.T) {
+		env := createTestWfEnv()
 		interceptor, ctx, err := newWorkflowContext(env, nil)
 		require.NoError(t, err)
 
@@ -307,6 +315,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	})
 
 	t.Run("error from update func", func(t *testing.T) {
+		env := createTestWfEnv()
 		interceptor, ctx, err := newWorkflowContext(env, nil)
 		require.NoError(t, err)
 
@@ -338,6 +347,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	})
 
 	t.Run("update success", func(t *testing.T) {
+		env := createTestWfEnv()
 		interceptor, ctx, err := newWorkflowContext(env, nil)
 		require.NoError(t, err)
 
@@ -370,6 +380,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	})
 
 	t.Run("update before handlers registered", func(t *testing.T) {
+		env := createTestWfEnv()
 		// same test as above except that we don't set the update handler for
 		// t.Name() until the first Yield. This emulates the situation where
 		// there is an update in the first WFT of a workflow so the SDK needs to
