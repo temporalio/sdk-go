@@ -27,6 +27,7 @@ package internal
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"sync/atomic"
 	"testing"
 
@@ -145,4 +146,80 @@ func TestWFTRacePrevention(t *testing.T) {
 	t.Log("Unblock task1 allowing poller.processWorkflowTask to return")
 	close(completionChans[1])
 	require.NoError(t, <-resultsChan)
+}
+
+func TestWFTCorruption(t *testing.T) {
+	cache := NewWorkerCache()
+	params := workerExecutionParameters{cache: cache}
+	ensureRequiredParams(&params)
+	wfType := commonpb.WorkflowType{Name: t.Name() + "-workflow-type"}
+	reg := newRegistry()
+	reg.RegisterWorkflowWithOptions(func(ctx Context) error {
+		Await(ctx, func() bool {
+			return false
+		})
+		return nil
+	}, RegisterWorkflowOptions{
+		Name: wfType.Name,
+	})
+	var (
+		taskQueue    = taskqueuepb.TaskQueue{Name: t.Name() + "task-queue"}
+		startedAttrs = historypb.WorkflowExecutionStartedEventAttributes{
+			TaskQueue: &taskQueue,
+		}
+		startedEvent     = createTestEventWorkflowExecutionStarted(1, &startedAttrs)
+		history          = historypb.History{Events: []*historypb.HistoryEvent{startedEvent}}
+		runID            = t.Name() + "-run-id"
+		wfID             = t.Name() + "-workflow-id"
+		wfe              = commonpb.WorkflowExecution{RunId: runID, WorkflowId: wfID}
+		ctrl             = gomock.NewController(t)
+		client           = workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+		innerTaskHandler = newWorkflowTaskHandler(params, nil, reg)
+		taskHandler      = &countingTaskHandler{WorkflowTaskHandler: innerTaskHandler}
+		contextManager   = taskHandler
+		completionChans  = []chan struct{}{make(chan struct{}), make(chan struct{})}
+		codec            = binary.LittleEndian
+		pollResp0        = workflowservice.PollWorkflowTaskQueueResponse{
+			Attempt:           1,
+			WorkflowExecution: &wfe,
+			WorkflowType:      &wfType,
+			History:           &history,
+			// encode the task pseudo-ID into the token; 0 here and 1 for
+			// pollResp1 below. The mock will use this as an index into
+			// `completionChans` (above) to get a task-specific control channel.
+			TaskToken: codec.AppendUint32(nil, 0),
+		}
+		task0 = workflowTask{task: &pollResp0}
+	)
+
+	// Return an error on respond workflow task complete, the SDK should flush the workflow from cache
+	client.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ context.Context,
+			req *workflowservice.RespondWorkflowTaskCompletedRequest,
+			_ ...grpc.CallOption,
+		) (*workflowservice.RespondWorkflowTaskCompletedResponse, error) {
+			// find the appropriate channel for this task - the index is encoded
+			// into the TaskToken
+			ch := completionChans[int(codec.Uint32(req.TaskToken))]
+			<-ch
+			// these two reads ^v allow the test code to capture a task processing
+			// goroutine exactly here
+			<-ch
+			return nil, errors.New("Failure responding to workflow task")
+		})
+
+	poller := newWorkflowTaskPoller(taskHandler, contextManager, client, params)
+	processTaskDone := make(chan struct{})
+	go func() {
+		require.Error(t, poller.processWorkflowTask(&task0))
+		close(processTaskDone)
+	}()
+	completionChans[0] <- struct{}{}
+	// Until RespondWorkflowTaskCompleted returns an error the workflow should be in cache
+	require.True(t, (*cache.sharedCache.workflowCache).Exist(runID))
+	close(completionChans[0])
+	<-processTaskDone
+	// Workflow should not be in cache
+	require.Nil(t, cache.getWorkflowContext(runID))
 }
