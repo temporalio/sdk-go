@@ -155,10 +155,9 @@ func TestWFTCorruption(t *testing.T) {
 	wfType := commonpb.WorkflowType{Name: t.Name() + "-workflow-type"}
 	reg := newRegistry()
 	reg.RegisterWorkflowWithOptions(func(ctx Context) error {
-		Await(ctx, func() bool {
+		return Await(ctx, func() bool {
 			return false
 		})
-		return nil
 	}, RegisterWorkflowOptions{
 		Name: wfType.Name,
 	})
