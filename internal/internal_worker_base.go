@@ -126,7 +126,7 @@ type (
 		GetRegistry() *registry
 		// QueueUpdate request of type name
 		QueueUpdate(name string, f func())
-		// HandleQueuedUpdates unblock all queued updates of type name
+		// HandleQueuedUpdates unblocks all queued updates of type name
 		HandleQueuedUpdates(name string)
 		// DrainUnhandledUpdates unblocks all updates, meant to be used to drain
 		// all unhandled updates at the end of a workflow task
