@@ -284,19 +284,26 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	})
 
 	t.Run("illegal state panic from validator", func(t *testing.T) {
+		interceptor, ctx, err := newWorkflowContext(env, nil)
+		require.NoError(t, err)
+
 		updateFunc := func(Context, string) error { panic("should not get called") }
 		validatorFunc := func(Context, string) error { panic(panicIllegalAccessCoroutineState) }
-		mustSetUpdateHandler(
-			t,
+		dispatcher, ctx := newDispatcher(
 			ctx,
-			t.Name(),
-			updateFunc,
-			UpdateHandlerOptions{Validator: validatorFunc},
-		)
-
-		require.Panics(t, func() {
-			defaultUpdateHandler(ctx, t.Name(), "testID", args, hdr, &testUpdateCallbacks{}, runOnCallingThread)
-		})
+			interceptor,
+			func(ctx Context) {
+				mustSetUpdateHandler(
+					t,
+					ctx,
+					t.Name(),
+					updateFunc,
+					UpdateHandlerOptions{Validator: validatorFunc},
+				)
+			},
+			env.DrainUnhandledUpdates)
+		defaultUpdateHandler(ctx, t.Name(), "testID", args, hdr, &testUpdateCallbacks{}, runOnCallingThread)
+		require.Error(t, dispatcher.ExecuteUntilAllBlocked(10*time.Second))
 	})
 
 	t.Run("error from update func", func(t *testing.T) {
