@@ -70,6 +70,8 @@ type (
 		// once for every 10 seconds. This can be used to protect down stream services from flooding.
 		// The zero value of this uses the default value.
 		// default: 100k
+		//
+		// Note: Setting this to a non zero value will also disable eager activities.
 		TaskQueueActivitiesPerSecond float64
 
 		// Optional: Sets the maximum number of goroutines that will concurrently poll the
@@ -200,6 +202,8 @@ type (
 		// Eager activity execution means the server returns requested eager
 		// activities directly from the workflow task back to this worker which is
 		// faster than non-eager which may be dispatched to a separate worker.
+		//
+		// Note: Eager activities will automatically be disabled if TaskQueueActivitiesPerSecond is set.
 		DisableEagerActivities bool
 
 		// Optional: Maximum number of eager activities that can be running.
