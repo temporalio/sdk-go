@@ -33,6 +33,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -40,7 +41,6 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
-	"go.uber.org/atomic"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -751,7 +751,7 @@ func (c *channelImpl) Receive(ctx Context, valuePtr interface{}) (more bool) {
 				}
 				break // Corrupt signal. Drop and reset process.
 			}
-			state.yield(fmt.Sprintf("blocked on %s.Receive", c.name))
+			state.yield("blocked on " + c.name + ".Receive")
 		}
 	}
 
@@ -887,7 +887,7 @@ func (c *channelImpl) Send(ctx Context, v interface{}) {
 		if c.closed {
 			panic("Closed channel")
 		}
-		state.yield(fmt.Sprintf("blocked on %s.Send", c.name))
+		state.yield("blocked on " + c.name + ".Send")
 	}
 }
 
@@ -1365,7 +1365,7 @@ func (s *selectorImpl) Select(ctx Context) {
 			state.unblocked()
 			return
 		}
-		state.yield(fmt.Sprintf("blocked on %s.Select", s.name))
+		state.yield("blocked on " + s.name + ".Select")
 	}
 }
 
