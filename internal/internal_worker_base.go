@@ -154,6 +154,7 @@ type (
 		OnWorkflowTaskStarted(deadlockDetectionTimeout time.Duration)
 		// StackTrace of all coroutines owned by the Dispatcher instance.
 		StackTrace() string
+		// Close destroys all coroutines without waiting for their completion
 		Close()
 	}
 
