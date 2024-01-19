@@ -1774,6 +1774,10 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 	}
 	if options.TaskQueueActivitiesPerSecond == 0 {
 		options.TaskQueueActivitiesPerSecond = defaultTaskQueueActivitiesPerSecond
+	} else {
+		// Disable eager activities when the task queue rate limit is set because
+		// the server does not rate limit eager activities.
+		options.DisableEagerActivities = true
 	}
 	if options.StickyScheduleToStartTimeout.Seconds() == 0 {
 		options.StickyScheduleToStartTimeout = stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second
