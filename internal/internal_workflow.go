@@ -27,6 +27,7 @@ package internal
 // All code in this file is private to the package.
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"reflect"
@@ -275,7 +276,13 @@ var _ Selector = (*selectorImpl)(nil)
 var _ WaitGroup = (*waitGroupImpl)(nil)
 var _ dispatcher = (*dispatcherImpl)(nil)
 
-var stackBuf [100000]byte
+// 1MB buffer to fit combined stack trace of all active goroutines
+var stackBuf [1024*1024]byte
+
+var (
+	errCoroStackNotFound   = errors.New("coroutine stack not found")
+	errStackTraceTruncated = errors.New("stack trace truncated: stackBuf is too small")
+)
 
 // Pointer to pointer to workflow result
 func getWorkflowResultPointerPointer(ctx Context) **workflowResult {
@@ -973,20 +980,56 @@ func getStackTrace(coroutineName, status string, stackDepth int) string {
 
 func getStackTraceRaw(top string, omitTop, omitBottom int) string {
 	stack := stackBuf[:runtime.Stack(stackBuf[:], false)]
-	rawStack := strings.TrimRightFunc(string(stack), unicode.IsSpace)
+	outStack := filterStackTrace(string(stack), omitTop, omitBottom)
+	return strings.Join([]string{top, outStack}, "\n")
+}
+
+func filterStackTrace(stack string, omitTop, omitBottom int) string {
+	stack = strings.TrimRightFunc(stack, unicode.IsSpace)
 	if disableCleanStackTraces {
-		return rawStack
+		return stack
 	}
-	lines := strings.Split(rawStack, "\n")
+
+	lines := strings.Split(stack, "\n")
 	omitEnd := len(lines) - omitBottom
 	// If the start is after the end, the depth was invalid originally so return
 	// the entire raw stack
 	if omitTop > omitEnd {
-		return rawStack
+		return stack
 	}
-	lines = lines[omitTop:omitEnd]
-	lines = append([]string{top}, lines...)
-	return strings.Join(lines, "\n")
+	return strings.Join(lines[omitTop:omitEnd], "\n")
+}
+
+func getCoroStackTrace(crt *coroutineState, status string, stackDepth int) (string, error) {
+	// Can't dump goroutines selectively :(
+	// Instead, we identify a coroutine's stack trace by the *coroutineState pointer address
+	// in its function arguments. To avoid false positives, we also match on the fixed
+	// member function name.
+	stacks := stackBuf[:runtime.Stack(stackBuf[:], true)]
+	needle := []byte(fmt.Sprintf("/internal.(*coroutineState).run(%p,", crt))
+	idx := bytes.Index(stacks, needle)
+	if idx == -1 {
+		if len(stacks) == len(stackBuf) {
+			return "", fmt.Errorf("coroutine not found: %w", errStackTraceTruncated)
+		}
+		// NOTE: This could happen if coroutineState is moved between runtime.Stack(...)
+		// and formatting needle. However, Go's GC is currently non-moving.
+		return "", errCoroStackNotFound
+	}
+
+	// coroStack spans from the stackDelim before idx to the stackDelim after idx
+	stackDelim := []byte("\n\n")
+	coroStack := stacks
+	if start := bytes.LastIndex(stacks[:idx], stackDelim); start != -1 {
+		start += len(stackDelim) // skip over delimiter
+		coroStack = stacks[start:]
+	}
+	coroStack, _, _ = bytes.Cut(coroStack, stackDelim)
+
+	// Omit top stackDepth frames + top status line.
+	// Omit bottom two frames which is wrapping of coroutine in a goroutine.
+	outStack := filterStackTrace(string(coroStack), stackDepth*2+1, 4)
+	return fmt.Sprintf("coroutine %s [%s]:\n%s", crt.name, status, outStack), nil
 }
 
 // unblocked is called by coroutine to indicate that since the last time yield was unblocked channel or select
@@ -1015,9 +1058,15 @@ func (s *coroutineState) call(timeout time.Duration) {
 	select {
 	case <-s.aboutToBlock:
 	case <-deadlockTicker.reached():
+		// Use workflowPanicError since this used to call panic(msg)
+		st, err := getCoroStackTrace(s, "running", 0)
+		if err != nil {
+			st = fmt.Sprintf("<%s>", err)
+		}
+		msg := fmt.Sprintf("Potential deadlock detected: "+
+			"workflow goroutine %q didn't yield for over a second", s.name)
 		s.closed.Store(true)
-		panic(fmt.Sprintf("Potential deadlock detected: "+
-			"workflow goroutine %q didn't yield for over a second", s.name))
+		s.panicError = newWorkflowPanicError(msg, st)
 	}
 }
 
@@ -1047,23 +1096,26 @@ func (s *coroutineState) stackTrace() string {
 	return <-stackCh
 }
 
+func (s *coroutineState) run(ctx Context, f func(ctx Context)) {
+	defer runtime.KeepAlive(&s) // keep receiver argument alive for getCoroStackTrace
+	defer s.close()
+	defer func() {
+		if r := recover(); r != nil {
+			st := getStackTrace(s.name, "panic", 4)
+			s.panicError = newWorkflowPanicError(r, st)
+		}
+	}()
+	s.initialYield(1, "")
+	f(ctx)
+}
+
 func (d *dispatcherImpl) NewCoroutine(ctx Context, name string, highPriority bool, f func(ctx Context)) Context {
 	if name == "" {
 		name = fmt.Sprintf("%v", d.sequence+1)
 	}
 	state := d.newState(name, highPriority)
 	spawned := WithValue(ctx, coroutinesContextKey, state)
-	go func(crt *coroutineState) {
-		defer crt.close()
-		defer func() {
-			if r := recover(); r != nil {
-				st := getStackTrace(name, "panic", 4)
-				crt.panicError = newWorkflowPanicError(r, st)
-			}
-		}()
-		crt.initialYield(1, "")
-		f(spawned)
-	}(state)
+	go state.run(spawned, f)
 	return spawned
 }
 
