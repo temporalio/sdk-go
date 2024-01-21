@@ -212,6 +212,8 @@ var (
 	ErrMissingMarkerDetails = errors.New("marker details are nil")
 	// ErrMissingMarkerDataKey is returned when marker details doesn't have data key.
 	ErrMissingMarkerDataKey = errors.New("marker key is missing in details")
+	// ErrUnknownHistoryEvent is returned if there is an unknown event in history and the SDK needs to handle it
+	ErrUnknownHistoryEvent = errors.New("unknown history event")
 )
 
 func newWorkflowExecutionEventHandler(
@@ -1235,10 +1237,17 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		weh.handleWorkflowPropertiesModified(event)
 
 	default:
-		weh.logger.Error("unknown event type",
-			tagEventID, event.GetEventId(),
-			tagEventType, event.GetEventType().String())
-		// Do not fail to be forward compatible with new events
+		if event.WorkerMayIgnore {
+			// Do not fail to be forward compatible with new events
+			weh.logger.Debug("unknown event type",
+				tagEventID, event.GetEventId(),
+				tagEventType, event.GetEventType().String())
+		} else {
+			weh.logger.Error("unknown event type",
+				tagEventID, event.GetEventId(),
+				tagEventType, event.GetEventType().String())
+			return ErrUnknownHistoryEvent
+		}
 	}
 
 	if err != nil {

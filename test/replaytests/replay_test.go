@@ -113,6 +113,22 @@ func (s *replayTestSuite) TestReplayWorkflowHistoryFromFile() {
 	}
 }
 
+func (s *replayTestSuite) TestReplayWorkflowWithBadUnknownEvent() {
+	// Test replaying a history with an unknown event that cannot be ignored fails
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(Workflow1)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "workflow_with_bad_unknown_event.json")
+	require.ErrorContains(s.T(), err, "unknown history event")
+}
+
+func (s *replayTestSuite) TestReplayWorkflowWithUnknownEvent() {
+	// Test replaying a history with an unknown event that can be ignored does not fails
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(Workflow1)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "workflow_with_unknown_event.json")
+	require.NoError(s.T(), err)
+}
+
 func (s *replayTestSuite) TestReplayBadWorkflowHistoryFromFile() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflow(Workflow1)
