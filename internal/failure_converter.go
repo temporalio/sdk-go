@@ -202,7 +202,7 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 			err = NewApplicationErrorWithOptions(
 				message,
 				applicationFailureInfo.GetType(),
-				ApplicationErrorAttributes{
+				ApplicationErrorOptions{
 					NonRetryable:   applicationFailureInfo.GetNonRetryable(),
 					Cause:          dfc.FailureToError(failure.GetCause()),
 					Details:        []interface{}{details},

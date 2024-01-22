@@ -151,8 +151,6 @@ type (
 	// PanicError contains information about panicked workflow/activity.
 	PanicError = internal.PanicError
 
-	ExtraRequests = internal.ExtraRequests
-
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
 	UnknownExternalWorkflowExecutionError = internal.UnknownExternalWorkflowExecutionError
 )
@@ -168,14 +166,14 @@ var (
 	ErrSkipScheduleUpdate = internal.ErrSkipScheduleUpdate
 )
 
-// ApplicationErrorAttributes should be used to set all the desired attributes of a new ApplicationError
+// ApplicationErrorOptions should be used to set all the desired attributes of a new ApplicationError
 // To get a new instance use ErrorAttributes function
-type ApplicationErrorAttributes = internal.ApplicationErrorAttributes
+type ApplicationErrorOptions = internal.ApplicationErrorOptions
 
-// NewApplicationErrorWithExtraRequests creates new instance of *ApplicationError type, all the attributes of the
-// newly created error could be controlled through instance of ApplicationErrorAttributes.
-// This function also receives some extra requests. See activity.ActivityExtraRequests for details.
-func NewApplicationErrorWithExtraRequests(msg, errType string, attributes ApplicationErrorAttributes, extras ExtraRequests) error {
+// NewApplicationErrorWithOptions creates new instance of *ApplicationError type, all the attributes of the
+// newly created error could be controlled through instance of ApplicationErrorOptions.
+// This function also receives some extra requests. See activity.ApplicationErrorOptions for details.
+func NewApplicationErrorWithOptions(msg, errType string, attributes ApplicationErrorOptions) error {
 	return internal.NewApplicationErrorWithOptions(msg, errType, attributes)
 }
 

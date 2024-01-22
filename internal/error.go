@@ -119,7 +119,7 @@ Workflow consumers will get an instance of *WorkflowExecutionError. This error w
 */
 
 type (
-	ApplicationErrorAttributes struct {
+	ApplicationErrorOptions struct {
 		NonRetryable   bool
 		Cause          error
 		Details        []interface{}
@@ -311,7 +311,7 @@ func NewApplicationError(msg string, errType string, nonRetryable bool, cause er
 	return applicationErr
 }
 
-func NewApplicationErrorWithOptions(msg string, errType string, attributes ApplicationErrorAttributes) error {
+func NewApplicationErrorWithOptions(msg string, errType string, attributes ApplicationErrorOptions) error {
 	applicationErr := &ApplicationError{
 		msg:          msg,
 		errType:      errType,

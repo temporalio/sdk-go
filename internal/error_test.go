@@ -645,7 +645,7 @@ func Test_convertErrorToFailure_ApplicationErrorWithExtraRequests(t *testing.T) 
 	err := NewApplicationErrorWithOptions(
 		"message",
 		"customType",
-		ApplicationErrorAttributes{
+		ApplicationErrorOptions{
 			NonRetryable: true,
 			Cause:        errors.New("cause error"),
 			Details:      []interface{}{"details", 2208},
