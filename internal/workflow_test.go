@@ -189,3 +189,75 @@ func _assertNonZero(t *testing.T, i interface{}, prefix string) {
 		}
 	}
 }
+
+func TestDeterministicKeys(t *testing.T) {
+	t.Parallel()
+
+	var tests = []struct {
+		unsorted map[int]int
+		sorted   []int
+	}{
+		{
+			map[int]int{1: 1, 2: 2, 3: 3},
+			[]int{1, 2, 3},
+		},
+		{
+			map[int]int{},
+			[]int{},
+		},
+		{
+			map[int]int{1: 1, 5: 5, 3: 3},
+			[]int{1, 3, 5},
+		},
+		{
+			map[int]int{3: 3, 2: 2, 1: 1},
+			[]int{1, 2, 3},
+		},
+	}
+
+	for _, tt := range tests {
+		testname := fmt.Sprintf("%d,%d", tt.unsorted, tt.sorted)
+		t.Run(testname, func(t *testing.T) {
+			assert.Equal(t, tt.sorted, DeterministicKeys(tt.unsorted))
+		})
+	}
+}
+
+func TestDeterministicKeysFunc(t *testing.T) {
+	t.Parallel()
+
+	type keyStruct struct {
+		i int
+	}
+
+	var tests = []struct {
+		unsorted map[keyStruct]int
+		sorted   []keyStruct
+	}{
+		{
+			map[keyStruct]int{{1}: 1, {2}: 2, {3}: 3},
+			[]keyStruct{{1}, {2}, {3}},
+		},
+		{
+			map[keyStruct]int{},
+			[]keyStruct{},
+		},
+		{
+			map[keyStruct]int{{1}: 1, {5}: 5, {3}: 3},
+			[]keyStruct{{1}, {3}, {5}},
+		},
+		{
+			map[keyStruct]int{{3}: 3, {2}: 2, {1}: 1},
+			[]keyStruct{{1}, {2}, {3}},
+		},
+	}
+
+	for _, tt := range tests {
+		testname := fmt.Sprintf("%d,%d", tt.unsorted, tt.sorted)
+		t.Run(testname, func(t *testing.T) {
+			assert.Equal(t, tt.sorted, DeterministicKeysFunc(tt.unsorted, func(a, b keyStruct) int {
+				return a.i - b.i
+			}))
+		})
+	}
+}

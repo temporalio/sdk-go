@@ -36,7 +36,6 @@ import (
 	"time"
 
 	"github.com/pborman/uuid"
-	uberatomic "go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -91,7 +90,7 @@ type (
 		contextPropagators       []ContextPropagator
 		workerInterceptors       []WorkerInterceptor
 		interceptor              ClientOutboundInterceptor
-		excludeInternalFromRetry *uberatomic.Bool
+		excludeInternalFromRetry *atomic.Bool
 		capabilities             *workflowservice.GetSystemInfoResponse_Capabilities
 		capabilitiesLock         sync.RWMutex
 		eagerDispatcher          *eagerWorkflowDispatcher
@@ -121,8 +120,10 @@ type (
 		GetRunID() string
 
 		// Get will fill the workflow execution result to valuePtr, if workflow
-		// execution is a success, or return corresponding error. This is a blocking
-		// API.
+		// execution is a success, or return corresponding error. If valuePtr is
+		// nil, valuePtr will be ignored and only the corresponding error of the 
+		// workflow will be returned (nil on workflow execution success). 
+		// This is a blocking API.
 		//
 		// This call will follow execution runs to the latest result for this run
 		// instead of strictly returning this run's result. This means that if the
@@ -138,8 +139,10 @@ type (
 		Get(ctx context.Context, valuePtr interface{}) error
 
 		// GetWithOptions will fill the workflow execution result to valuePtr, if
-		// workflow execution is a success, or return corresponding error. This is a
-		// blocking API.
+		// workflow execution is a success, or return corresponding error. If
+		// valuePtr is nil, valuePtr will be ignored and only the corresponding
+		// error of the workflow will be returned (nil on workflow execution success). 
+		// This is a blocking API.
 		//
 		// Note, values should not be reused for extraction here because merging on
 		// top of existing values may result in unexpected behavior similar to

@@ -884,20 +884,16 @@ func TestAwait(t *testing.T) {
 }
 
 func TestDeadlockDetectorAndAwaitRace(t *testing.T) {
-	// Expecting deadlock detection timeout instead of a data race.
-	defer func() {
-		err := recover()
-		require.NotNil(t, err, "panic expected")
-		require.Equal(t, err, "Potential deadlock detected: workflow goroutine \"root\" didn't yield for over a second")
-	}()
 	d := createNewDispatcher(func(ctx Context) {
 		_ = Await(ctx, func() bool {
 			time.Sleep(defaultDeadlockDetectionTimeout + (100 * time.Millisecond))
 			return false
 		})
 	})
-	_ = d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
-	d.Close()
+	defer d.Close()
+	// Expecting deadlock detection timeout instead of a data race.
+	err := d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
+	require.EqualError(t, err, "Potential deadlock detected: workflow goroutine \"root\" didn't yield for over a second")
 }
 
 func TestAwaitCancellation(t *testing.T) {
@@ -1590,4 +1586,25 @@ func TestContextChildCancelRace(t *testing.T) {
 	env.RegisterWorkflow(wf)
 	env.ExecuteWorkflow(wf)
 	require.NoError(t, env.GetWorkflowError())
+}
+
+func TestDeadlockDetectorStackTrace(t *testing.T) {
+	d := createNewDispatcher(func(ctx Context) {
+		c := NewNamedChannel(ctx, "forever_blocked")
+		GoNamed(ctx, "blocked", func(ctx Context) {
+			c.Receive(ctx, nil) // blocked forever
+		})
+		GoNamed(ctx, "sleeper", func(ctx Context) {
+			time.Sleep(defaultDeadlockDetectionTimeout + 100 * time.Millisecond)
+		})
+		c.Receive(ctx, nil) // blocked forever
+	})
+	defer d.Close()
+	err := d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
+
+	var wfPanic *workflowPanicError
+	require.ErrorAs(t, err, &wfPanic)
+	require.Equal(t, `Potential deadlock detected: workflow goroutine "sleeper" didn't yield for over a second`, wfPanic.Error())
+	require.Regexp(t, `^coroutine sleeper \[running\]:\ntime\.Sleep\(0x[\da-f]+\)\n`, wfPanic.StackTrace())
+	require.Equal(t, 4, strings.Count(wfPanic.StackTrace(), "\n"), "2 stack frames expected")
 }

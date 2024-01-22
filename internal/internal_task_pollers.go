@@ -381,6 +381,8 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 		}
 		response, err := wtp.RespondTaskCompletedWithMetrics(completedRequest, taskErr, task.task, startTime)
 		if err != nil {
+			// If we get an error responding to the workflow task we need to evict the execution from the cache.
+			taskErr = err
 			return err
 		}
 

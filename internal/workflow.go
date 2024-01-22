@@ -31,6 +31,9 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/exp/constraints"
+	"golang.org/x/exp/slices"
+
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	commonpb "go.temporal.io/api/common/v1"
@@ -2042,4 +2045,28 @@ func convertFromPBRetryPolicy(retryPolicy *commonpb.RetryPolicy) *RetryPolicy {
 // GetLastCompletionResultFromWorkflowInfo returns value of last completion result.
 func GetLastCompletionResultFromWorkflowInfo(info *WorkflowInfo) *commonpb.Payloads {
 	return info.lastCompletionResult
+}
+
+// DeterministicKeys returns the keys of a map in deterministic (sorted) order. To be used in for
+// loops in workflows for deterministic iteration.
+func DeterministicKeys[K constraints.Ordered, V any](m map[K]V) []K {
+	r := make([]K, 0, len(m))
+	for k := range m {
+		r = append(r, k)
+	}
+	slices.Sort(r)
+	return r
+}
+
+// DeterministicKeysFunc returns the keys of a map in a deterministic (sorted) order.
+// cmp(a, b) should return a negative number when a < b, a positive number when
+// a > b and zero when a == b. Keys are sorted by cmp.
+// To be used in for loops in workflows for deterministic iteration.
+func DeterministicKeysFunc[K comparable, V any](m map[K]V, cmp func(a K, b K) int) []K {
+	r := make([]K, 0, len(m))
+	for k := range m {
+		r = append(r, k)
+	}
+	slices.SortStableFunc(r, cmp)
+	return r
 }

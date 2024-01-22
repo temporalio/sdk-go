@@ -39,7 +39,6 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
-	uberatomic "go.uber.org/atomic"
 	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
@@ -2331,8 +2330,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivity() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListeners() {
-	var localActivityFnCanceled uberatomic.Bool
-	var startedCount, completedCount, canceledCount uberatomic.Int32
+	var localActivityFnCanceled atomic.Bool
+	var startedCount, completedCount, canceledCount atomic.Int32
 	env := s.NewTestWorkflowEnvironment()
 
 	localActivityFn := func(_ context.Context, _ string) (string, error) {
@@ -2376,7 +2375,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 	env.RegisterWorkflow(workflowFn)
 	env.OnActivity(localActivityFn, mock.Anything, "local_activity").Return("hello mock", nil).Once()
 	env.SetOnLocalActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args []interface{}) {
-		startedCount.Inc()
+		startedCount.Add(1)
 	})
 
 	env.SetOnLocalActivityCompletedListener(func(activityInfo *ActivityInfo, result converter.EncodedValue, err error) {
@@ -2385,11 +2384,11 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		err = result.Get(&resultValue)
 		s.NoError(err)
 		s.Equal("hello mock", resultValue)
-		completedCount.Inc()
+		completedCount.Add(1)
 	})
 
 	env.SetOnLocalActivityCanceledListener(func(activityInfo *ActivityInfo) {
-		canceledCount.Inc()
+		canceledCount.Add(1)
 	})
 
 	env.ExecuteWorkflow(workflowFn)

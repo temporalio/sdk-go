@@ -211,9 +211,9 @@ func (d *dataConverterWithoutDeadlock) ToStrings(input *commonpb.Payloads) []str
 }
 
 func (d *dataConverterWithoutDeadlock) WithWorkflowContext(ctx Context) converter.DataConverter {
-	return &dataConverterWithoutDeadlock{context: ctx, underlying: d.underlying}
+	return &dataConverterWithoutDeadlock{context: ctx, underlying: WithWorkflowContext(ctx, d.underlying)}
 }
 
 func (d *dataConverterWithoutDeadlock) WithContext(ctx context.Context) converter.DataConverter {
-	return d
+	return &dataConverterWithoutDeadlock{context: d.context, underlying: WithContext(ctx, d.underlying)}
 }

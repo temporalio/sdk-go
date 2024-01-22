@@ -490,6 +490,14 @@ func (s *WorkersTestSuite) TestWorkerMultipleStop() {
 	worker.Stop()
 }
 
+func (s *WorkersTestSuite) TestWorkerTaskQueueLimitDisableEager() {
+	client := NewServiceClient(s.service, nil, ClientOptions{Identity: "task-queue-limit-disable-eager"})
+	worker := NewAggregatedWorker(client, "task-queue-limit-disable-eager", WorkerOptions{
+		TaskQueueActivitiesPerSecond: 1.0,
+	})
+	s.True(worker.activityWorker.executionParameters.eagerActivityExecutor.disabled)
+}
+
 func (s *WorkersTestSuite) createLocalActivityMarkerDataForTest(activityID string) map[string]*commonpb.Payloads {
 	lamd := localActivityMarkerData{
 		ActivityID: activityID,

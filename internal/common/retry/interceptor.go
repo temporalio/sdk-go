@@ -27,14 +27,14 @@ package retry
 import (
 	"context"
 	"math"
+	"sync/atomic"
 	"time"
 
-	"google.golang.org/grpc/status"
 	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"github.com/grpc-ecosystem/go-grpc-middleware/util/backoffutils"
-	uberatomic "go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -127,7 +127,7 @@ var (
 // NewRetryOptionsInterceptor creates a new gRPC interceptor that populates retry options for each call based on values
 // provided in the context. The atomic bool is checked each call to determine whether internals are included in retry.
 // If not present or false, internals are assumed to be included.
-func NewRetryOptionsInterceptor(excludeInternal *uberatomic.Bool) grpc.UnaryClientInterceptor {
+func NewRetryOptionsInterceptor(excludeInternal *atomic.Bool) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		if rc, ok := ctx.Value(ConfigKey).(*GrpcRetryConfig); ok {
 			if _, ok := ctx.Deadline(); !ok {

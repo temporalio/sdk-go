@@ -323,6 +323,43 @@ func (w *Workflows) UpdateInfoWorkflow(ctx workflow.Context) error {
 	return nil
 }
 
+func (w *Workflows) UpdateWithValidatorWorkflow(ctx workflow.Context) error {
+	workflow.Go(ctx, func(ctx workflow.Context) {
+		_ = workflow.Sleep(ctx, time.Minute)
+	})
+	err := workflow.SetUpdateHandlerWithOptions(ctx, "update", func(ctx workflow.Context, id string) (string, error) {
+		ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+		var activities *Activities
+		activityFut := workflow.ExecuteActivity(ctx, activities.Echo, 0, 0)
+		err := activityFut.Get(ctx, nil)
+		if err != nil {
+			return "", err
+		}
+		return id, nil
+	}, workflow.UpdateHandlerOptions{
+		Validator: func(ctx workflow.Context, id string) error {
+			if id != "testID" {
+				return errors.New("invalid ID")
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		return errors.New("failed to register update handler")
+	}
+
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	var activities *Activities
+	activityFut := workflow.ExecuteActivity(ctx, activities.Sleep, time.Second)
+	err = activityFut.Get(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	workflow.GetSignalChannel(ctx, "finish").Receive(ctx, nil)
+	return nil
+}
+
 func (w *Workflows) ActivityHeartbeatWithRetry(ctx workflow.Context) (heartbeatCounts int, err error) {
 	// Make retries fast
 	opts := w.defaultActivityOptions()
@@ -2556,6 +2593,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.SessionFailedStateWorkflow)
 	worker.RegisterWorkflow(w.VersionLoopWorkflow)
 	worker.RegisterWorkflow(w.RaceOnCacheEviction)
+	worker.RegisterWorkflow(w.UpdateWithValidatorWorkflow)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
