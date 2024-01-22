@@ -121,14 +121,16 @@ Workflow consumers will get an instance of *WorkflowExecutionError. This error w
 type (
 	// ApplicationErrorOptions represents a combination of error attributes and additional requests.
 	// All fields are optional, providing flexibility in error customization.
-	// NextRetryInterval is a request from server to override retry interval calculated by the
-	// server according to the RetryPolicy set by the Workflow.
-	// IMPORTANT: NextRetryInterval is meaningful only within the context of errors originating from Activity.
-	// It is impossible to specify immediate retry as it is indistinguishable from the default value.
 	ApplicationErrorOptions struct {
-		NonRetryable   bool
-		Cause          error
-		Details        []interface{}
+		NonRetryable bool
+		Cause        error
+		Details      []interface{}
+		// NextRetryInterval is a request from server to override retry interval calculated by the
+		// server according to the RetryPolicy set by the Workflow.
+		// IMPORTANT: NextRetryInterval is meaningful only within the context of errors originating from Activity.
+		// Any value set from Worflow or LocalActivity will be silently ignored.
+		// It is impossible to specify immediate retry as it is indistinguishable from the default value. As a
+		// workaround you could set NextRetryDelay to some small value.
 		NextRetryDelay time.Duration
 	}
 
@@ -545,6 +547,8 @@ func (e *ApplicationError) NonRetryable() bool {
 func (e *ApplicationError) Unwrap() error {
 	return e.cause
 }
+
+func (e *ApplicationError) NextRetryDelay() time.Duration { return e.nextRetryDelay }
 
 // Error from error interface
 func (e *TimeoutError) Error() string {
