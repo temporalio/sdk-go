@@ -119,6 +119,12 @@ Workflow consumers will get an instance of *WorkflowExecutionError. This error w
 */
 
 type (
+	// ApplicationErrorOptions represents a combination of error attributes and additional requests.
+	// All fields are optional, providing flexibility in error customization.
+	// NextRetryInterval is a request from server to override retry interval calculated by the
+	// server according to the RetryPolicy set by the Workflow.
+	// IMPORTANT: NextRetryInterval is meaningful only within the context of errors originating from Activity.
+	// It is impossible to specify immediate retry as it is indistinguishable from the default value.
 	ApplicationErrorOptions struct {
 		NonRetryable   bool
 		Cause          error
