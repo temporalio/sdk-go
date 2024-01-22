@@ -28,16 +28,17 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/gogo/protobuf/proto"
-	"github.com/gogo/protobuf/types"
 	"github.com/stretchr/testify/require"
 	protocolpb "go.temporal.io/api/protocol/v1"
 	updatepb "go.temporal.io/api/update/v1"
+	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/protocol"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
 func TestNameFromMessage(t *testing.T) {
-	msg := &protocolpb.Message{Body: &types.Any{}}
+	msg := &protocolpb.Message{Body: &anypb.Any{}}
 	_, err := protocol.NameFromMessage(msg)
 	require.Error(t, err)
 
@@ -55,6 +56,6 @@ func (i *IllTemperedProtoMessage) Marshal() ([]byte, error) {
 
 func TestMustMarshalAny(t *testing.T) {
 	msg := &IllTemperedProtoMessage{}
-	require.Implements(t, new(proto.Marshaler), msg)
+	require.Implements(t, new(serializer.Marshaler), msg)
 	require.Panics(t, func() { protocol.MustMarshalAny(msg) })
 }

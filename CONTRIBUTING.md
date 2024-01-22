@@ -30,7 +30,7 @@ This project is Open Source Software, and requires a header at the beginning of
 all source files. To verify that all files contain the header execute:
 
 ```bash
-make copyright
+go run ./internal/cmd/tools/copyright/licensegen.go
 ```
 
 ## Commit Messages And Titles of Pull Requests
@@ -49,17 +49,20 @@ All PR titles should start with Upper case.
 Run all static analysis tools:
 
 ```bash
-make check
+cd ./internal/cmd/build
+go run . check
 ```
 
-Run all the tests (including integration tests, which require you to [run a server locally](https://docs.temporal.io/docs/server/quick-install/)) with coverage and race detector enabled:
+Run the integration tests (requires local server running, or pass `-dev-server`):
 
 ```bash
-make test
+cd ./internal/cmd/build
+go run . integration-test
 ```
 
-To run just the unit tests:
+Run the unit tests:
 
 ```bash
-make unit-test
+cd ./internal/cmd/build
+go run . unit-test
 ```

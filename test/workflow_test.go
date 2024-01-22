@@ -26,10 +26,10 @@ package test_test
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log"
-	"math/rand"
 	"reflect"
 	"strconv"
 	"strings"
@@ -319,6 +319,43 @@ func (w *Workflows) UpdateInfoWorkflow(ctx workflow.Context) error {
 	if err != nil {
 		return errors.New("failed to register update handler")
 	}
+	workflow.GetSignalChannel(ctx, "finish").Receive(ctx, nil)
+	return nil
+}
+
+func (w *Workflows) UpdateWithValidatorWorkflow(ctx workflow.Context) error {
+	workflow.Go(ctx, func(ctx workflow.Context) {
+		_ = workflow.Sleep(ctx, time.Minute)
+	})
+	err := workflow.SetUpdateHandlerWithOptions(ctx, "update", func(ctx workflow.Context, id string) (string, error) {
+		ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+		var activities *Activities
+		activityFut := workflow.ExecuteActivity(ctx, activities.Echo, 0, 0)
+		err := activityFut.Get(ctx, nil)
+		if err != nil {
+			return "", err
+		}
+		return id, nil
+	}, workflow.UpdateHandlerOptions{
+		Validator: func(ctx workflow.Context, id string) error {
+			if id != "testID" {
+				return errors.New("invalid ID")
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		return errors.New("failed to register update handler")
+	}
+
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	var activities *Activities
+	activityFut := workflow.ExecuteActivity(ctx, activities.Sleep, time.Second)
+	err = activityFut.Get(ctx, nil)
+	if err != nil {
+		return err
+	}
+
 	workflow.GetSignalChannel(ctx, "finish").Receive(ctx, nil)
 	return nil
 }
@@ -907,8 +944,8 @@ func (w *Workflows) ThreeParameterWorkflow(_ workflow.Context, _ string, _ strin
 func (w *Workflows) LargeQueryResultWorkflow(ctx workflow.Context) (string, error) {
 	err := workflow.SetQueryHandler(ctx, "large_query", func() ([]byte, error) {
 		result := make([]byte, 3000000)
-		rand.Read(result)
-		return result, nil
+		_, err := rand.Read(result)
+		return result, err
 	})
 	if err != nil {
 		return "", errors.New("failed to register query handler")
@@ -931,7 +968,6 @@ func (w *Workflows) MutatingQueryWorkflow(ctx workflow.Context) (string, error) 
 
 func (w *Workflows) MutatingUpdateValidatorWorkflow(ctx workflow.Context) (string, error) {
 	err := workflow.SetUpdateHandlerWithOptions(ctx, "mutating_update", func(ctx workflow.Context) (string, error) {
-		_ = workflow.Sleep(ctx, time.Second)
 		return "failed", nil
 	}, workflow.UpdateHandlerOptions{
 		Validator: func(ctx workflow.Context) error {
@@ -1749,12 +1785,14 @@ func (w *Workflows) WaitSignalReturnParam(ctx workflow.Context, v interface{}) (
 	// Wait for signal before returning
 	s := workflow.NewSelector(ctx)
 	signalCh := workflow.GetSignalChannel(ctx, "done-signal")
+	var finishWf bool
 	s.AddReceive(signalCh, func(c workflow.ReceiveChannel, more bool) {
-		var ignore bool
-		c.Receive(ctx, &ignore)
+		c.Receive(ctx, &finishWf)
 		workflow.GetLogger(ctx).Info("Received signal")
 	})
-	s.Select(ctx)
+	for !finishWf {
+		s.Select(ctx)
+	}
 	return v, nil
 }
 
@@ -1879,6 +1917,32 @@ func (w *Workflows) WaitSignalToStart(ctx workflow.Context) (string, error) {
 	var value string
 	workflow.GetSignalChannel(ctx, "start-signal").Receive(ctx, &value)
 	return value, nil
+}
+
+func (w *Workflows) BuildIDWorkflow(ctx workflow.Context) error {
+	activityRan := false
+	_ = workflow.SetQueryHandler(ctx, "get-last-build-id", func() (string, error) {
+		return workflow.GetInfo(ctx).GetCurrentBuildID(), nil
+	})
+	_ = workflow.SetQueryHandler(ctx, "activity-ran", func() (bool, error) {
+		return activityRan, nil
+	})
+
+	if err := workflow.Sleep(ctx, 1*time.Millisecond); err != nil {
+		return err
+	}
+	// Ensure that we are still deterministic when a test using a worker with a different build id
+	// re-runs this workflow
+	if workflow.GetInfo(ctx).GetCurrentBuildID() == "1.0" {
+		ctx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{StartToCloseTimeout: 1 * time.Minute})
+		if err := workflow.ExecuteActivity(ctx, new(Activities).Echo, 0, 1).Get(ctx, nil); err != nil {
+			return err
+		}
+		activityRan = true
+	}
+
+	workflow.GetSignalChannel(ctx, "finish").Receive(ctx, nil)
+	return nil
 }
 
 func (w *Workflows) SignalsAndQueries(ctx workflow.Context, execChild, execActivity bool) error {
@@ -2126,6 +2190,73 @@ func (w *Workflows) PanicOnSignal(ctx workflow.Context) error {
 	// Wait for signal then panic
 	workflow.GetSignalChannel(ctx, "panic-signal").Receive(ctx, nil)
 	panic("intentional panic")
+}
+
+func (w *Workflows) WaitOnUpdate(ctx workflow.Context) (int, error) {
+	inflightUpdates := 0
+	updatesRan := 0
+	sleepHandle := func(ctx workflow.Context) error {
+		inflightUpdates++
+		updatesRan++
+		err := workflow.Sleep(ctx, time.Second)
+		inflightUpdates--
+		return err
+	}
+	echoHandle := func(ctx workflow.Context) error {
+		inflightUpdates++
+		updatesRan++
+
+		ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+		var a Activities
+		err := workflow.ExecuteActivity(ctx, a.Echo, 1, 1).Get(ctx, nil)
+		inflightUpdates--
+		return err
+	}
+	emptyHandle := func(ctx workflow.Context) error {
+		inflightUpdates++
+		updatesRan++
+		defer func() {
+			inflightUpdates--
+		}()
+		return ctx.Err()
+	}
+	// Register multiple update handles in the first workflow task to make sure we process an
+	// update only when its handle is registered, not when any handle is registered
+	workflow.SetUpdateHandler(ctx, "echo", echoHandle)
+	workflow.SetUpdateHandler(ctx, "sleep", sleepHandle)
+	workflow.SetUpdateHandler(ctx, "empty", emptyHandle)
+	err := workflow.Await(ctx, func() bool { return inflightUpdates == 0 })
+	if err != nil {
+		return 0, err
+	}
+	return updatesRan, nil
+}
+
+func (w *Workflows) UpdateSetHandlerOnly(ctx workflow.Context) (int, error) {
+	updatesRan := 0
+	updateHandle := func(ctx workflow.Context) error {
+		updatesRan++
+		return nil
+	}
+	workflow.SetUpdateHandler(ctx, "update", updateHandle)
+	return updatesRan, nil
+}
+
+func (w *Workflows) UpdateOrdering(ctx workflow.Context) (int, error) {
+	updatesRan := 0
+	updateHandle := func(ctx workflow.Context) error {
+		updatesRan++
+		return nil
+	}
+	// Register multiple update handles in the first workflow task to make sure we process an
+	// update only when its handle is registered, not when any handle is registered
+	workflow.SetUpdateHandler(ctx, "update", updateHandle)
+	currentTime := workflow.Now(ctx)
+	// Wait a workflow task
+	workflow.Await(ctx, func() bool {
+		return workflow.Now(ctx).After(currentTime)
+	})
+	return updatesRan, nil
 }
 
 var forcedNonDeterminismCounter int
@@ -2443,6 +2574,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.SleepForDuration)
 	worker.RegisterWorkflow(w.InterceptorCalls)
 	worker.RegisterWorkflow(w.WaitSignalToStart)
+	worker.RegisterWorkflow(w.BuildIDWorkflow)
 	worker.RegisterWorkflow(w.SignalsAndQueries)
 	worker.RegisterWorkflow(w.CheckOpenTelemetryBaggage)
 	worker.RegisterWorkflow(w.AdvancedPostCancellation)
@@ -2461,6 +2593,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.SessionFailedStateWorkflow)
 	worker.RegisterWorkflow(w.VersionLoopWorkflow)
 	worker.RegisterWorkflow(w.RaceOnCacheEviction)
+	worker.RegisterWorkflow(w.UpdateWithValidatorWorkflow)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
@@ -2469,6 +2602,9 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ChildWorkflowAndParentCancel)
 	worker.RegisterWorkflow(w.sleep)
 	worker.RegisterWorkflow(w.timer)
+	worker.RegisterWorkflow(w.WaitOnUpdate)
+	worker.RegisterWorkflow(w.UpdateOrdering)
+	worker.RegisterWorkflow(w.UpdateSetHandlerOnly)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {

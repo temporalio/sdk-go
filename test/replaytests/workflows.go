@@ -501,3 +501,48 @@ func ChildWorkflowCancelWithUpdate(ctx workflow.Context) error {
 	workflow.GetSignalChannel(ctx, "shutdown").Receive(ctx, nil)
 	return nil
 }
+
+func MultipleUpdateWorkflow(ctx workflow.Context) (int, error) {
+	inflightUpdates := 0
+	updatesRan := 0
+	sleepHandle := func(ctx workflow.Context) error {
+		inflightUpdates++
+		updatesRan++
+		defer func() {
+			inflightUpdates--
+		}()
+		return workflow.Sleep(ctx, time.Second)
+	}
+	echoHandle := func(ctx workflow.Context) error {
+		inflightUpdates++
+		updatesRan++
+		defer func() {
+			inflightUpdates--
+		}()
+
+		ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+			ScheduleToStartTimeout: 5 * time.Second,
+			ScheduleToCloseTimeout: 5 * time.Second,
+			StartToCloseTimeout:    9 * time.Second,
+		})
+		return workflow.ExecuteActivity(ctx, "Echo", 1, 1).Get(ctx, nil)
+	}
+	emptyHandle := func(ctx workflow.Context) error {
+		inflightUpdates++
+		updatesRan++
+		defer func() {
+			inflightUpdates--
+		}()
+		return ctx.Err()
+	}
+	// Register multiple update handles in the first workflow task to make sure we process an
+	// update only when its handle is registered, not when any handle is registered
+	workflow.SetUpdateHandler(ctx, "echo", echoHandle)
+	workflow.SetUpdateHandler(ctx, "sleep", sleepHandle)
+	workflow.SetUpdateHandler(ctx, "empty", emptyHandle)
+	err := workflow.Await(ctx, func() bool { return inflightUpdates == 0 })
+	if err != nil {
+		return 0, err
+	}
+	return updatesRan, nil
+}

@@ -55,9 +55,7 @@ func TestDeadlockDetector(t *testing.T) {
 }
 
 func TestDataConverterWithoutDeadlockDetection(t *testing.T) {
-	conv := converter.GetDefaultDataConverter()
-
-	runWorkflow := func() {
+	runWorkflow := func(conv converter.DataConverter) error {
 		var suite WorkflowTestSuite
 		activityFn := func(ctx context.Context, arg string) error {
 			return nil
@@ -73,15 +71,17 @@ func TestDataConverterWithoutDeadlockDetection(t *testing.T) {
 		env.RegisterActivity(activityFn)
 		env.ExecuteWorkflow(workflowFn)
 		require.True(t, env.IsWorkflowCompleted())
+		return env.GetWorkflowError()
 	}
 
-	// Run with a slow converter and confirm it panics
+	// Run with a slow converter and confirm a deadlock is detected
+	conv := converter.GetDefaultDataConverter()
 	conv = &slowToPayloadsConverter{conv}
-	require.Panics(t, runWorkflow)
+	require.ErrorContains(t, runWorkflow(conv), "Potential deadlock detected")
 
 	// Run with that same payload converter without deadlock detection
 	conv = DataConverterWithoutDeadlockDetection(conv)
-	require.NotPanics(t, runWorkflow)
+	require.NoError(t, runWorkflow(conv))
 
 	// Also confirm outside of workflow, pause/resume is noop
 	_, err := conv.ToPayload("foo")
@@ -95,4 +95,48 @@ type slowToPayloadsConverter struct{ converter.DataConverter }
 func (s *slowToPayloadsConverter) ToPayloads(value ...interface{}) (*commonpb.Payloads, error) {
 	time.Sleep(600 * time.Millisecond)
 	return s.DataConverter.ToPayloads(value...)
+}
+
+func TestDataConverterWithoutDeadlockDetectionContext(t *testing.T) {
+	contextAwareDataConverter := NewContextAwareDataConverter(converter.GetDefaultDataConverter())
+	conv := DataConverterWithoutDeadlockDetection(contextAwareDataConverter)
+
+	t.Parallel()
+	t.Run("default", func(t *testing.T) {
+		t.Parallel()
+		payload, _ := conv.ToPayload("test")
+		result := conv.ToString(payload)
+
+		require.Equal(t, `"test"`, result)
+	})
+	t.Run("implements ContextAware", func(t *testing.T) {
+		t.Parallel()
+		_, ok := conv.(ContextAware)
+		require.True(t, ok)
+	})
+	t.Run("with activity context", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.Background()
+		ctx = context.WithValue(ctx, ContextAwareDataConverterContextKey, "e")
+
+		dc := WithContext(ctx, conv)
+
+		payload, _ := dc.ToPayload("test")
+		result := dc.ToString(payload)
+
+		require.Equal(t, `"t?st"`, result)
+	})
+	t.Run("with workflow context", func(t *testing.T) {
+		t.Parallel()
+		ctx := Background()
+		ctx = WithValue(ctx, ContextAwareDataConverterContextKey, "e")
+
+		dc := WithWorkflowContext(ctx, conv)
+
+		payload, _ := dc.ToPayload("test")
+		result := dc.ToString(payload)
+
+		require.Equal(t, `"t?st"`, result)
+	})
+
 }

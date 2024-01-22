@@ -19,3 +19,5 @@ test.log
 .bins
 .DS_Store
 .gobincache
+go.work
+go.work.sum

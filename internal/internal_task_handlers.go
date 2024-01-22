@@ -36,7 +36,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gogo/status"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -47,12 +46,13 @@ import (
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"go.temporal.io/sdk/internal/common/retry"
 	"go.temporal.io/sdk/internal/protocol"
 
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/util"
 	"go.temporal.io/sdk/log"
@@ -199,6 +199,9 @@ type (
 		binaryChecksum string
 		sdkVersion     string
 		sdkName        string
+		// Is null if there was no task completed event to read the build ID from (but may be
+		// empty string if there was, and it was empty)
+		buildID *string
 	}
 
 	finishedTask struct {
@@ -269,8 +272,9 @@ func (eh *history) isNextWorkflowTaskFailed() (task finishedTask, err error) {
 		var binaryChecksum string
 		var flags []sdkFlag
 		if nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
-			binaryChecksum = nextEvent.GetWorkflowTaskCompletedEventAttributes().BinaryChecksum
-			for _, flag := range nextEvent.GetWorkflowTaskCompletedEventAttributes().GetSdkMetadata().GetLangUsedFlags() {
+			completedAttrs := nextEvent.GetWorkflowTaskCompletedEventAttributes()
+			binaryChecksum = completedAttrs.BinaryChecksum
+			for _, flag := range completedAttrs.GetSdkMetadata().GetLangUsedFlags() {
 				f := sdkFlagFromUint(flag)
 				if !f.isValid() {
 					// If a flag is not recognized (value is too high or not defined), it must fail the workflow task
@@ -348,6 +352,7 @@ func (eh *history) nextTask() (*preparedTask, error) {
 
 	var markers []*historypb.HistoryEvent
 	var msgs []*protocolpb.Message
+	var buildID *string
 	if len(result) > 0 {
 		nextTaskEvents, err := eh.prepareTask()
 		if err != nil {
@@ -359,6 +364,7 @@ func (eh *history) nextTask() (*preparedTask, error) {
 		eh.sdkVersion = nextTaskEvents.sdkVersion
 		markers = nextTaskEvents.markers
 		msgs = nextTaskEvents.msgs
+		buildID = nextTaskEvents.buildID
 	}
 	return &preparedTask{
 		events:         result,
@@ -368,6 +374,7 @@ func (eh *history) nextTask() (*preparedTask, error) {
 		binaryChecksum: checksum,
 		sdkName:        sdkName,
 		sdkVersion:     sdkVersion,
+		buildID:        buildID,
 	}, nil
 }
 
@@ -457,7 +464,11 @@ OrderEvents:
 			enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED:
 			// Skip
 		default:
-			if isPreloadMarkerEvent(event) {
+			if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
+				bidStr := event.GetWorkflowTaskCompletedEventAttributes().
+					GetWorkerVersion().GetBuildId()
+				taskEvents.buildID = &bidStr
+			} else if isPreloadMarkerEvent(event) {
 				taskEvents.markers = append(taskEvents.markers, event)
 			} else if attrs := event.GetWorkflowExecutionUpdateAcceptedEventAttributes(); attrs != nil {
 				taskEvents.msgs = append(taskEvents.msgs, inferMessage(attrs))
@@ -674,12 +685,12 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		FirstRunID:               attributes.FirstExecutionRunId,
 		WorkflowType:             WorkflowType{Name: task.WorkflowType.GetName()},
 		TaskQueueName:            taskQueue.GetName(),
-		WorkflowExecutionTimeout: common.DurationValue(attributes.GetWorkflowExecutionTimeout()),
-		WorkflowRunTimeout:       common.DurationValue(attributes.GetWorkflowRunTimeout()),
-		WorkflowTaskTimeout:      common.DurationValue(attributes.GetWorkflowTaskTimeout()),
+		WorkflowExecutionTimeout: attributes.GetWorkflowExecutionTimeout().AsDuration(),
+		WorkflowRunTimeout:       attributes.GetWorkflowRunTimeout().AsDuration(),
+		WorkflowTaskTimeout:      attributes.GetWorkflowTaskTimeout().AsDuration(),
 		Namespace:                wth.namespace,
 		Attempt:                  attributes.GetAttempt(),
-		WorkflowStartTime:        common.TimeValue(startedEvent.GetEventTime()),
+		WorkflowStartTime:        startedEvent.GetEventTime().AsTime(),
 		lastCompletionResult:     attributes.LastCompletionResult,
 		lastFailure:              attributes.ContinuedFailure,
 		CronSchedule:             attributes.CronSchedule,
@@ -975,6 +986,7 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 	eventHandler.ResetLAWFTAttemptCounts()
 	eventHandler.sdkFlags.markSDKFlagsSent()
 
+	w.workflowInfo.currentTaskBuildID = w.wth.workerBuildID
 ProcessEvents:
 	for {
 		nextTask, err := reorderedHistory.nextTask()
@@ -986,6 +998,7 @@ ProcessEvents:
 		historyMessages := nextTask.msgs
 		flags := nextTask.flags
 		binaryChecksum := nextTask.binaryChecksum
+		nextTaskBuildId := nextTask.buildID
 		// Check if we are replaying so we know if we should use the messages in the WFT or the history
 		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
 		var msgs *eventMsgIndex
@@ -1015,6 +1028,9 @@ ProcessEvents:
 			w.workflowInfo.BinaryChecksum = w.wth.workerBuildID
 		} else {
 			w.workflowInfo.BinaryChecksum = binaryChecksum
+		}
+		if isReplay && nextTaskBuildId != nil {
+			w.workflowInfo.currentTaskBuildID = *nextTaskBuildId
 		}
 		// Reset the mutable side effect markers recorded
 		eventHandler.mutableSideEffectsRecorded = nil
@@ -1705,8 +1721,8 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			WorkflowType:         &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
 			Input:                contErr.Input,
 			TaskQueue:            &taskqueuepb.TaskQueue{Name: contErr.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
-			WorkflowRunTimeout:   &contErr.WorkflowRunTimeout,
-			WorkflowTaskTimeout:  &contErr.WorkflowTaskTimeout,
+			WorkflowRunTimeout:   durationpb.New(contErr.WorkflowRunTimeout),
+			WorkflowTaskTimeout:  durationpb.New(contErr.WorkflowTaskTimeout),
 			Header:               contErr.Header,
 			Memo:                 workflowContext.workflowInfo.Memo,
 			SearchAttributes:     workflowContext.workflowInfo.SearchAttributes,
@@ -2021,7 +2037,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	canCtx, cancel := context.WithCancel(rootCtx)
 	defer cancel()
 
-	heartbeatThrottleInterval := ath.getHeartbeatThrottleInterval(common.DurationValue(t.GetHeartbeatTimeout()))
+	heartbeatThrottleInterval := ath.getHeartbeatThrottleInterval(t.GetHeartbeatTimeout().AsDuration())
 	invoker := newServiceInvoker(
 		t.TaskToken, ath.identity, ath.service, ath.metricsHandler, cancel, heartbeatThrottleInterval,
 		ath.workerStopCh, ath.namespace)

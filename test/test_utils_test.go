@@ -36,12 +36,14 @@ import (
 	"time"
 
 	"github.com/pborman/uuid"
+	"google.golang.org/protobuf/types/known/durationpb"
+
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/internal/common"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/workflow"
 )
@@ -226,8 +228,9 @@ func (ts *ConfigAndClientSuiteBase) InitConfigAndNamespace() error {
 		return err
 	}
 	if ts.config.ShouldRegisterNamespace {
-		err = ts.registerNamespace()
-		if err != nil {
+		if err = ts.registerNamespace(); err != nil {
+			return err
+		} else if err = ts.ensureSearchAttributes(); err != nil {
 			return err
 		}
 	}
@@ -239,13 +242,17 @@ func (ts *ConfigAndClientSuiteBase) InitClient() error {
 	if ts.client != nil {
 		return nil
 	}
-	ts.client, err = client.Dial(client.Options{
+	ts.client, err = ts.newClient()
+	return err
+}
+
+func (ts *ConfigAndClientSuiteBase) newClient() (client.Client, error) {
+	return client.Dial(client.Options{
 		HostPort:          ts.config.ServiceAddr,
 		Namespace:         ts.config.Namespace,
 		Logger:            ilog.NewDefaultLogger(),
 		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
 	})
-	return err
 }
 
 func SimplestWorkflow(_ workflow.Context) error {
@@ -264,7 +271,7 @@ func (ts *ConfigAndClientSuiteBase) registerNamespace() error {
 	defer cancel()
 	err = client.Register(ctx, &workflowservice.RegisterNamespaceRequest{
 		Namespace:                        ts.config.Namespace,
-		WorkflowExecutionRetentionPeriod: common.DurationPtr(1 * 24 * time.Hour),
+		WorkflowExecutionRetentionPeriod: durationpb.New(1 * 24 * time.Hour),
 	})
 	defer client.Close()
 	if _, ok := err.(*serviceerror.NamespaceAlreadyExists); ok {
@@ -290,6 +297,38 @@ func (ts *ConfigAndClientSuiteBase) registerNamespace() error {
 			break
 		}
 		numOfRetry--
+	}
+	return nil
+}
+
+func (ts *ConfigAndClientSuiteBase) ensureSearchAttributes() error {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	// We have to create a client specifically for this call and close it after
+	// this call because it may not get closed externally and can trip the
+	// goroutine leak detector.
+	client, err := ts.newClient()
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	// Add CustomKeywordField attribute if not already present
+	saResp, err := client.OperatorService().ListSearchAttributes(ctx, &operatorservice.ListSearchAttributesRequest{
+		Namespace: ts.config.Namespace,
+	})
+	if err != nil {
+		return fmt.Errorf("failed checking search attributes: %w", err)
+	} else if _, ok := saResp.CustomAttributes["CustomKeywordField"]; ok {
+		return nil
+	}
+	_, err = client.OperatorService().AddSearchAttributes(ctx, &operatorservice.AddSearchAttributesRequest{
+		Namespace:        ts.config.Namespace,
+		SearchAttributes: map[string]enumspb.IndexedValueType{"CustomKeywordField": enumspb.INDEXED_VALUE_TYPE_KEYWORD},
+	})
+	if err != nil {
+		return fmt.Errorf("failed adding search attribute: %w", err)
 	}
 	return nil
 }

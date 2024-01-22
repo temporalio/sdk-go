@@ -28,13 +28,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go.opentelemetry.io/otel/baggage"
+	"math/rand"
 	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"go.opentelemetry.io/otel/baggage"
 
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
@@ -52,6 +54,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.uber.org/goleak"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/contrib/opentelemetry"
 	sdkopentracing "go.temporal.io/sdk/contrib/opentracing"
@@ -65,7 +68,6 @@ import (
 	contribtally "go.temporal.io/sdk/contrib/tally"
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal"
-	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/interceptortest"
 	ilog "go.temporal.io/sdk/internal/log"
@@ -695,7 +697,7 @@ func (ts *IntegrationTestSuite) TestSignalWorkflow() {
 	var protoValue *commonpb.WorkflowType
 	err = run.Get(ctx, &protoValue)
 	ts.NoError(err)
-	ts.Equal(commonpb.WorkflowType{Name: "string-value"}, *protoValue)
+	ts.True(proto.Equal(&commonpb.WorkflowType{Name: "string-value"}, protoValue))
 	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "HandleSignal", "HandleSignal", "ExecuteWorkflow end"},
 		ts.tracer.GetTrace("SignalWorkflow"))
 }
@@ -850,7 +852,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseIgnoreDuplicateWhileRunning()
 
 	// Send signal to each (though in practice they both have the same ID and run
 	// ID, so it's really just two signals)
-	err = ts.client.SignalWorkflow(ctx, run1.GetID(), run1.GetRunID(), "done-signal", true)
+	err = ts.client.SignalWorkflow(ctx, run1.GetID(), run1.GetRunID(), "done-signal", false)
 	ts.NoError(err)
 	err = ts.client.SignalWorkflow(ctx, run2.GetID(), run2.GetRunID(), "done-signal", true)
 	ts.NoError(err)
@@ -900,7 +902,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyTerminate() {
 		resp, err := ts.client.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
 		ts.NoError(err)
 		info := resp.WorkflowExecutionInfo
-		if !common.TimeValue(info.GetCloseTime()).IsZero() {
+		if info.CloseTime != nil {
 			ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED, info.GetStatus(), info)
 			break
 		}
@@ -917,7 +919,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 		resp, err := ts.client.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
 		ts.NoError(err)
 		info := resp.WorkflowExecutionInfo
-		if !common.TimeValue(info.GetCloseTime()).IsZero() {
+		if info.CloseTime != nil {
 			ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED, info.GetStatus(), info)
 			break
 		}
@@ -1248,11 +1250,12 @@ func (ts *IntegrationTestSuite) TestMutatingUpdateValidator() {
 	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-mutating-update-validator"), ts.workflows.MutatingUpdateValidatorWorkflow)
 	ts.Nil(err)
-	handler, err := ts.client.UpdateWorkflow(ctx, "test-mutating-update-validator", run.GetRunID(), "mutating_update")
-	ts.NoError(err)
+	go func() {
+		_, err = ts.client.UpdateWorkflow(ctx, "test-mutating-update-validator", run.GetRunID(), "mutating_update")
+	}()
 
-	ts.Error(handler.Get(ctx, nil))
-	ts.Nil(ts.client.CancelWorkflow(ctx, "test-mutating-update-validator", ""))
+	wfErr := run.Get(ctx, nil)
+	ts.Error(wfErr)
 }
 
 func (ts *IntegrationTestSuite) TestWaitForCancelWithDisconnectedContext() {
@@ -1323,6 +1326,42 @@ func (ts *IntegrationTestSuite) TestUpdateInfo() {
 		RunID:      run.GetRunID(),
 		UpdateName: "update",
 	})
+	ts.NoError(err)
+	err = handler.Get(ctx, nil)
+	ts.Error(err)
+	// complete workflow
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
+	ts.NoError(run.Get(ctx, nil))
+}
+
+func (ts *IntegrationTestSuite) TestUpdateValidatorRejectedFirstWFT() {
+	ctx := context.Background()
+	wfOptions := ts.startWorkflowOptions("test-update-validator-rejected-first-wft")
+	// Add start delay to make sure the update is in the first WFT
+	wfOptions.StartDelay = time.Hour
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		wfOptions, ts.workflows.UpdateWithValidatorWorkflow)
+	ts.Nil(err)
+	// Send a bad update request that will get rejected
+	handler, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update", "")
+	ts.NoError(err)
+	err = handler.Get(ctx, nil)
+	ts.Error(err)
+	// complete workflow
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
+	ts.NoError(run.Get(ctx, nil))
+}
+
+func (ts *IntegrationTestSuite) TestUpdateValidatorRejected() {
+	ctx := context.Background()
+	wfOptions := ts.startWorkflowOptions("test-update-validator-rejected")
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		wfOptions, ts.workflows.UpdateWithValidatorWorkflow)
+	ts.Nil(err)
+	_, err = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "__stack_trace")
+	ts.NoError(err)
+	// Send a bad update request that will get rejected
+	handler, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update", "")
 	ts.NoError(err)
 	err = handler.Get(ctx, nil)
 	ts.Error(err)
@@ -1529,7 +1568,7 @@ func (ts *IntegrationTestSuite) TestStartDelay() {
 	event, err := iter.Next()
 	ts.NoError(err)
 	ts.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED, event.EventType)
-	ts.Equal(5*time.Second, *event.GetWorkflowExecutionStartedEventAttributes().GetFirstWorkflowTaskBackoff())
+	ts.Equal(5*time.Second, event.GetWorkflowExecutionStartedEventAttributes().GetFirstWorkflowTaskBackoff().AsDuration())
 }
 
 func (ts *IntegrationTestSuite) TestStartDelaySignalWithStart() {
@@ -1550,7 +1589,7 @@ func (ts *IntegrationTestSuite) TestStartDelaySignalWithStart() {
 	event, err := iter.Next()
 	ts.NoError(err)
 	ts.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED, event.EventType)
-	ts.Equal(5*time.Second, *event.GetWorkflowExecutionStartedEventAttributes().GetFirstWorkflowTaskBackoff())
+	ts.Equal(5*time.Second, event.GetWorkflowExecutionStartedEventAttributes().GetFirstWorkflowTaskBackoff().AsDuration())
 }
 
 func (ts *IntegrationTestSuite) TestResetWorkflowExecution() {
@@ -2423,6 +2462,157 @@ func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSizeWithRecreat
 	ts.NoError(run2.Get(ctx, nil))
 }
 
+func (ts *IntegrationTestSuite) TestUpdateWithNoHandlerRejected() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-update-with-no-handle-rejected")
+	options.StartDelay = time.Hour
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		options,
+		ts.workflows.Basic)
+	ts.NoError(err)
+	// Send an update that we know has no handle
+	handle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "bad handle")
+	ts.NoError(err)
+	ts.Error(handle.Get(ctx, nil))
+	// The workflow should still complete
+	var result []string
+	ts.NoError(run.Get(ctx, &result))
+}
+
+func (ts *IntegrationTestSuite) TestUpdateWithWrongHandleRejected() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-update-with-wrong-handle-rejected")
+	options.StartDelay = time.Hour
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		options,
+		ts.workflows.WaitOnUpdate)
+	ts.NoError(err)
+	// Send an update before the first workflow task
+	updateHandle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "bad update")
+	ts.NoError(err)
+	ts.Error(updateHandle.Get(ctx, nil))
+	// Get the result
+	var result int
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal(0, result)
+}
+
+func (ts *IntegrationTestSuite) TestWaitOnUpdate() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-wait-on-update")
+	options.StartDelay = time.Hour
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		options,
+		ts.workflows.WaitOnUpdate)
+	ts.NoError(err)
+	// Send an update before the first workflow task
+	updateHandle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "echo")
+	ts.NoError(err)
+	ts.NoError(updateHandle.Get(ctx, nil))
+	// Get the result
+	var result int
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal(1, result)
+}
+
+func (ts *IntegrationTestSuite) TestUpdateOrdering() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-update-ordering")
+	options.StartDelay = time.Hour
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		options,
+		ts.workflows.UpdateOrdering)
+	ts.NoError(err)
+	// Send an update before the first workflow task
+	updateHandle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	ts.NoError(err)
+	ts.NoError(updateHandle.Get(ctx, nil))
+	// Send an update after the first workflow task
+	updateHandle, err = ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	ts.NoError(err)
+	ts.NoError(updateHandle.Get(ctx, nil))
+	// Get the result
+	var result int
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal(2, result)
+}
+
+func (ts *IntegrationTestSuite) TestMultipleUpdateOrderingCancel() {
+	ts.testUpdateOrderingCancel(true)
+}
+
+func (ts *IntegrationTestSuite) TestMultipleUpdateOrdering() {
+	ts.testUpdateOrderingCancel(false)
+}
+
+func (ts *IntegrationTestSuite) testUpdateOrderingCancel(cancelWf bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	// Kill the worker so we can send multiple update requests and possibly a cancel in the same WFT
+	ts.worker.Stop()
+	// Start the workflow
+	options := ts.startWorkflowOptions("test-multiple-update-ordering")
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		options,
+		ts.workflows.WaitOnUpdate)
+	ts.NoError(err)
+
+	if cancelWf {
+		ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+	}
+	var wf sync.WaitGroup
+	updateHandles := []string{"echo", "sleep", "empty"}
+	for i := 0; i < 10; i++ {
+		wf.Add(1)
+		go func() {
+			defer wf.Done()
+			handle := updateHandles[rand.Intn(3)]
+			updateHandle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), handle)
+			ts.NoError(err)
+			updateErr := updateHandle.Get(ctx, nil)
+			if cancelWf {
+				var cancelErr *temporal.CanceledError
+				ts.ErrorAs(updateErr, &cancelErr)
+			} else {
+				ts.NoError(updateErr)
+			}
+		}()
+	}
+
+	// Server does not support admitted so we have to send the update in a seperate goroutine
+	time.Sleep(5 * time.Second)
+	// Now create a new worker on that same task queue to resume the work of the
+	// workflow
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
+	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.NoError(nextWorker.Start())
+	defer nextWorker.Stop()
+	wf.Wait()
+	// Get the result
+	var result int
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal(10, result)
+}
+
+func (ts *IntegrationTestSuite) TestUpdateAlwaysHandled() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-update-always-handled")
+	options.StartDelay = time.Hour
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.UpdateSetHandlerOnly)
+	ts.NoError(err)
+	// Send an update before the first workflow task
+	_, err = ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	ts.NoError(err)
+	var result int
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal(1, result)
+}
+
 func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -2462,7 +2652,7 @@ func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
 }
 
 func (ts *IntegrationTestSuite) TestQueryOnlyCoroutineUsage() {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
 	// Start the workflow that should run forever, send 5 signals, and wait until
@@ -2625,6 +2815,20 @@ func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch b
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	fetchMetrics := func() (localMetric int64) {
+		for _, counter := range ts.metricsHandler.Counters() {
+			counter := counter
+			if counter.Name == "temporal_workflow_task_execution_failed" && counter.Tags["failure_reason"] == "NonDeterminismError" {
+				localMetric = counter.Value()
+			}
+		}
+		return
+	}
+
+	// Confirm no metrics to start
+	taskFailedMetric := fetchMetrics()
+	ts.Zero(taskFailedMetric)
+
 	// Start workflow
 	forcedNonDeterminismCounter = 0
 	run, err := ts.client.ExecuteWorkflow(
@@ -2673,6 +2877,8 @@ func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch b
 	// Check the task has the expected cause
 	ts.NoError(histErr)
 	ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR, taskFailed.Cause)
+	taskFailedMetric = fetchMetrics()
+	ts.True(taskFailedMetric >= 1)
 }
 
 func (ts *IntegrationTestSuite) TestDeterminismUpsertSearchAttributesConditional() {
@@ -2684,6 +2890,9 @@ func (ts *IntegrationTestSuite) TestDeterminismUpsertSearchAttributesConditional
 	options.SearchAttributes = map[string]interface{}{
 		"CustomKeywordField": "unset",
 	}
+	// TODO(cretz): There is a bug with search attribute names on standard
+	// visibility with eager workflow start
+	options.EnableEagerStart = false
 	run, err := ts.client.ExecuteWorkflow(
 		ctx,
 		options,

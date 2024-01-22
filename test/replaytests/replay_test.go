@@ -113,6 +113,22 @@ func (s *replayTestSuite) TestReplayWorkflowHistoryFromFile() {
 	}
 }
 
+func (s *replayTestSuite) TestReplayWorkflowWithBadUnknownEvent() {
+	// Test replaying a history with an unknown event that cannot be ignored fails
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(Workflow1)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "workflow_with_bad_unknown_event.json")
+	require.ErrorContains(s.T(), err, "unknown history event")
+}
+
+func (s *replayTestSuite) TestReplayWorkflowWithUnknownEvent() {
+	// Test replaying a history with an unknown event that can be ignored does not fails
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(Workflow1)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "workflow_with_unknown_event.json")
+	require.NoError(s.T(), err)
+}
+
 func (s *replayTestSuite) TestReplayBadWorkflowHistoryFromFile() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflow(Workflow1)
@@ -151,7 +167,7 @@ func (s *replayTestSuite) TestBadReplayLocalActivity() {
 	// Test bad history that does not call any local activities
 	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "bad-local-activity.json")
 	require.Error(s.T(), err)
-	require.Contains(s.T(), err.Error(), "replay workflow doesn't return the same result as the last event, resp: &RespondWorkflowTaskCompletedRequest")
+	require.Contains(s.T(), err.Error(), "replay workflow doesn't return the same result as the last event, resp: *workflowservice.RespondWorkflowTaskCompletedRequest")
 
 	// Test bad history that calls two local activities
 	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "bad-local-activity-2.json")
@@ -403,6 +419,15 @@ func (s *replayTestSuite) TestChildWorkflowCancelWithUpdate() {
 	replayer.RegisterWorkflow(ChildWorkflowCancelWithUpdate)
 	replayer.RegisterWorkflow(ChildWorkflowWaitOnSignal)
 	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "child-workflow-cancel-with-update.json")
+	s.NoError(err)
+}
+
+func (s *replayTestSuite) TestMultipleUpdates() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(MultipleUpdateWorkflow)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "multiple-updates.json")
+	s.NoError(err)
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "multiple-updates-canceled.json")
 	s.NoError(err)
 }
 

@@ -39,7 +39,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
-	uberatomic "go.uber.org/atomic"
+	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
 	iconverter "go.temporal.io/sdk/internal/converter"
@@ -102,6 +102,15 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityMockFunctionZero() {
 	s.NotNil(env.GetWorkflowError())
 	s.Contains(env.GetWorkflowError().Error(), "unexpected call: testActivityHello(string,string)")
 	env.AssertExpectations(s.T())
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_WorkflowReturnedCancel() {
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(testWorkflowCancelled)
+	env.ExecuteWorkflow(testWorkflowCancelled)
+
+	s.True(env.IsWorkflowCompleted())
+	s.Error(env.GetWorkflowError())
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityByNameMockFunction() {
@@ -607,6 +616,11 @@ func testWorkflowHello(ctx Context) (string, error) {
 		return "", err
 	}
 	return result, nil
+}
+
+func testWorkflowCancelled(ctx Context) error {
+	_ = NewTimer(ctx, 20*time.Minute)
+	return NewCanceledError()
 }
 
 func testWorkflowContext(ctx Context) (string, error) {
@@ -1844,7 +1858,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithPointerTypes() {
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
 	var actualValues []string
 
-	activitySingleFn := func(ctx context.Context, wf1 commonpb.Payloads, wf2 *commonpb.Payloads) (commonpb.Payloads, error) {
+	activitySingleFn := func(ctx context.Context, wf1 *commonpb.Payloads, wf2 *commonpb.Payloads) (commonpb.Payloads, error) {
 		actualValues = append(actualValues, string(wf1.GetPayloads()[0].GetData()))
 		actualValues = append(actualValues, string(wf1.GetPayloads()[0].GetMetadata()["encoding"]))
 		actualValues = append(actualValues, string(wf2.GetPayloads()[0].GetData()))
@@ -1854,7 +1868,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
 		return commonpb.Payloads{Payloads: []*commonpb.Payload{{Data: []byte("result")}}}, nil
 	}
 
-	input1 := commonpb.Payloads{Payloads: []*commonpb.Payload{{ // This will be JSON
+	input1 := &commonpb.Payloads{Payloads: []*commonpb.Payload{{ // This will be JSON
 		Metadata: map[string][]byte{
 			"encoding": []byte("someencoding"),
 		},
@@ -1868,13 +1882,13 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithProtoPayload() {
 
 	var ret commonpb.Payloads
 	_ = payload.Get(&ret)
-	s.Equal(commonpb.Payloads{Payloads: []*commonpb.Payload{{Data: []byte("result")}}}, ret)
+	s.True(proto.Equal(&commonpb.Payloads{Payloads: []*commonpb.Payload{{Data: []byte("result")}}}, &ret))
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithRandomProto() {
 	var actualValues []string
 
-	activitySingleFn := func(ctx context.Context, wf1 commonpb.WorkflowType, wf2 *commonpb.DataBlob) (*commonpb.WorkflowType, error) {
+	activitySingleFn := func(ctx context.Context, wf1 *commonpb.WorkflowType, wf2 *commonpb.DataBlob) (*commonpb.WorkflowType, error) {
 		actualValues = append(actualValues, wf1.Name)
 		actualValues = append(actualValues, wf2.EncodingType.String())
 		return &commonpb.WorkflowType{Name: "result"}, nil
@@ -1884,14 +1898,14 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityWithRandomProto() {
 	input2 := &commonpb.DataBlob{EncodingType: enumspb.ENCODING_TYPE_PROTO3}
 	env := s.NewTestActivityEnvironment()
 	env.RegisterActivity(activitySingleFn)
-	payload, err := env.ExecuteActivity(activitySingleFn, input1, input2)
+	payload, err := env.ExecuteActivity(activitySingleFn, &input1, input2)
 
 	s.NoError(err)
 	s.EqualValues([]string{"input1", "Proto3"}, actualValues)
 
 	var ret *commonpb.WorkflowType
 	_ = payload.Get(&ret)
-	s.Equal(&commonpb.WorkflowType{Name: "result"}, ret)
+	s.True(proto.Equal(&commonpb.WorkflowType{Name: "result"}, ret))
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ActivityRegistration() {
@@ -2316,8 +2330,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_LocalActivity() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListeners() {
-	var localActivityFnCanceled uberatomic.Bool
-	var startedCount, completedCount, canceledCount uberatomic.Int32
+	var localActivityFnCanceled atomic.Bool
+	var startedCount, completedCount, canceledCount atomic.Int32
 	env := s.NewTestWorkflowEnvironment()
 
 	localActivityFn := func(_ context.Context, _ string) (string, error) {
@@ -2361,7 +2375,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 	env.RegisterWorkflow(workflowFn)
 	env.OnActivity(localActivityFn, mock.Anything, "local_activity").Return("hello mock", nil).Once()
 	env.SetOnLocalActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args []interface{}) {
-		startedCount.Inc()
+		startedCount.Add(1)
 	})
 
 	env.SetOnLocalActivityCompletedListener(func(activityInfo *ActivityInfo, result converter.EncodedValue, err error) {
@@ -2370,11 +2384,11 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 		err = result.Get(&resultValue)
 		s.NoError(err)
 		s.Equal("hello mock", resultValue)
-		completedCount.Inc()
+		completedCount.Add(1)
 	})
 
 	env.SetOnLocalActivityCanceledListener(func(activityInfo *ActivityInfo) {
-		canceledCount.Inc()
+		canceledCount.Add(1)
 	})
 
 	env.ExecuteWorkflow(workflowFn)
@@ -2389,6 +2403,32 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 	s.Equal(int32(1), canceledCount.Load())
 	s.Equal("hello mock", result)
 	s.True(localActivityFnCanceled.Load())
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityWithHeaderContext() {
+	// inline activity using value passing through user context.
+	activityWithUserContext := func(ctx context.Context) (string, error) {
+		value := ctx.Value(contextKey(testHeader))
+		if val, ok := value.(string); ok {
+			return val, nil
+		}
+		return "", errors.New("value not found from ctx")
+	}
+
+	env := s.NewTestActivityEnvironment()
+	env.SetHeader(&commonpb.Header{
+		Fields: map[string]*commonpb.Payload{
+			testHeader: encodeString(s.T(), "test-data"),
+		},
+	})
+	env.SetContextPropagators([]ContextPropagator{NewKeysPropagator([]string{testHeader})})
+
+	env.RegisterActivity(activityWithUserContext)
+	blob, err := env.ExecuteLocalActivity(activityWithUserContext)
+	s.NoError(err)
+	var value string
+	_ = blob.Get(&value)
+	s.Equal("test-data", value)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflow() {

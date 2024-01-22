@@ -26,20 +26,20 @@ package internal
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
-	"github.com/gogo/status"
 	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/retry"
-	uberatomic "go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 type (
@@ -64,10 +64,18 @@ const (
 
 	// attemptSuffix is a suffix added to the metric name for individual call attempts made to the server, which includes retries.
 	attemptSuffix = "_attempt"
+
 	// mb is a number of bytes in a megabyte
 	mb = 1024 * 1024
+
 	// defaultMaxPayloadSize is a maximum size of the payload that grpc client would allow.
 	defaultMaxPayloadSize = 128 * mb
+
+	// defaultKeepAliveTime is the keep alive time if one is not specified.
+	defaultKeepAliveTime = 15 * time.Second
+
+	// defaultKeepAliveTimeout is the keep alive timeout if one is not specified.
+	defaultKeepAliveTimeout = 30 * time.Second
 )
 
 func dial(params dialParameters) (*grpc.ClientConn, error) {
@@ -110,14 +118,22 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 	opts = append(opts, grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(maxPayloadSize)))
 	opts = append(opts, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxPayloadSize)))
 
-	if params.UserConnectionOptions.EnableKeepAliveCheck {
+	if !params.UserConnectionOptions.DisableKeepAliveCheck {
 		// gRPC utilizes keep alive mechanism to detect dead connections in case if server didn't close them
 		// gracefully. Client would ping the server periodically and expect replies withing the specified timeout.
 		// Learn more by reading https://github.com/grpc/grpc/blob/master/doc/keepalive.md
+		keepAliveTime := params.UserConnectionOptions.KeepAliveTime
+		if keepAliveTime == 0 {
+			keepAliveTime = defaultKeepAliveTime
+		}
+		keepAliveTimeout := params.UserConnectionOptions.KeepAliveTimeout
+		if keepAliveTimeout == 0 {
+			keepAliveTimeout = defaultKeepAliveTimeout
+		}
 		var kap = keepalive.ClientParameters{
-			Time:                params.UserConnectionOptions.KeepAliveTime,
-			Timeout:             params.UserConnectionOptions.KeepAliveTimeout,
-			PermitWithoutStream: params.UserConnectionOptions.KeepAlivePermitWithoutStream,
+			Time:                keepAliveTime,
+			Timeout:             keepAliveTimeout,
+			PermitWithoutStream: !params.UserConnectionOptions.DisableKeepAlivePermitWithoutStream,
 		}
 		opts = append(opts, grpc.WithKeepaliveParams(kap))
 	}
@@ -132,7 +148,7 @@ func requiredInterceptors(
 	metricsHandler metrics.Handler,
 	headersProvider HeadersProvider,
 	controller TrafficController,
-	excludeInternalFromRetry *uberatomic.Bool,
+	excludeInternalFromRetry *atomic.Bool,
 ) []grpc.UnaryClientInterceptor {
 	interceptors := []grpc.UnaryClientInterceptor{
 		errorInterceptor,

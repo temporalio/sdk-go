@@ -27,10 +27,14 @@ package internal
 import (
 	"fmt"
 	"reflect"
+	"regexp"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
 
@@ -98,14 +102,14 @@ func TestGetLocalActivityOptions(t *testing.T) {
 func TestConvertRetryPolicy(t *testing.T) {
 	someDuration := time.Minute
 	pbRetryPolicy := commonpb.RetryPolicy{
-		InitialInterval:        &someDuration,
-		MaximumInterval:        &someDuration,
+		InitialInterval:        durationpb.New(someDuration),
+		MaximumInterval:        durationpb.New(someDuration),
 		BackoffCoefficient:     1,
 		MaximumAttempts:        2,
 		NonRetryableErrorTypes: []string{"some_error"},
 	}
 
-	assertNonZero(t, pbRetryPolicy)
+	assertNonZero(t, &pbRetryPolicy)
 	// Check that converting from/to commonpb.RetryPolicy is transparent
 	assert.Equal(t, &pbRetryPolicy, convertToPBRetryPolicy(convertFromPBRetryPolicy(&pbRetryPolicy)))
 }
@@ -139,11 +143,31 @@ func assertNonZero(t *testing.T, i interface{}) {
 	_assertNonZero(t, i, reflect.ValueOf(i).Type().Name())
 }
 
+// Matches when a method should be private (by name)
+// Sure, this only works for latin characters. It's fine enough for the test
+var isPrivate = regexp.MustCompile("^[a-z]")
+
 func _assertNonZero(t *testing.T, i interface{}, prefix string) {
 	v := reflect.ValueOf(i)
+	vt := v.Type()
 	switch v.Kind() {
 	case reflect.Struct:
+		switch vx := v.Interface().(type) {
+		case timestamppb.Timestamp:
+			if vx.Nanos == 0 && vx.Seconds == 0 {
+				t.Errorf("%s: value of type %T must be non-zero", prefix, i)
+			}
+			return
+		case durationpb.Duration:
+			if vx.Nanos == 0 && vx.Seconds == 0 {
+				t.Errorf("%s: value of type %T must be non-zero", prefix, i)
+			}
+			return
+		}
 		for i := 0; i < v.NumField(); i++ {
+			if isPrivate.MatchString(vt.Field(i).Name) {
+				continue
+			}
 			_assertNonZero(t, v.Field(i).Interface(), fmt.Sprintf("%s.%s", prefix, v.Type().Field(i).Name))
 		}
 	case reflect.Slice:
@@ -163,5 +187,77 @@ func _assertNonZero(t *testing.T, i interface{}, prefix string) {
 		if v.IsZero() {
 			t.Errorf("%s: value of type %T must be non-zero", prefix, i)
 		}
+	}
+}
+
+func TestDeterministicKeys(t *testing.T) {
+	t.Parallel()
+
+	var tests = []struct {
+		unsorted map[int]int
+		sorted   []int
+	}{
+		{
+			map[int]int{1: 1, 2: 2, 3: 3},
+			[]int{1, 2, 3},
+		},
+		{
+			map[int]int{},
+			[]int{},
+		},
+		{
+			map[int]int{1: 1, 5: 5, 3: 3},
+			[]int{1, 3, 5},
+		},
+		{
+			map[int]int{3: 3, 2: 2, 1: 1},
+			[]int{1, 2, 3},
+		},
+	}
+
+	for _, tt := range tests {
+		testname := fmt.Sprintf("%d,%d", tt.unsorted, tt.sorted)
+		t.Run(testname, func(t *testing.T) {
+			assert.Equal(t, tt.sorted, DeterministicKeys(tt.unsorted))
+		})
+	}
+}
+
+func TestDeterministicKeysFunc(t *testing.T) {
+	t.Parallel()
+
+	type keyStruct struct {
+		i int
+	}
+
+	var tests = []struct {
+		unsorted map[keyStruct]int
+		sorted   []keyStruct
+	}{
+		{
+			map[keyStruct]int{{1}: 1, {2}: 2, {3}: 3},
+			[]keyStruct{{1}, {2}, {3}},
+		},
+		{
+			map[keyStruct]int{},
+			[]keyStruct{},
+		},
+		{
+			map[keyStruct]int{{1}: 1, {5}: 5, {3}: 3},
+			[]keyStruct{{1}, {3}, {5}},
+		},
+		{
+			map[keyStruct]int{{3}: 3, {2}: 2, {1}: 1},
+			[]keyStruct{{1}, {2}, {3}},
+		},
+	}
+
+	for _, tt := range tests {
+		testname := fmt.Sprintf("%d,%d", tt.unsorted, tt.sorted)
+		t.Run(testname, func(t *testing.T) {
+			assert.Equal(t, tt.sorted, DeterministicKeysFunc(tt.unsorted, func(a, b keyStruct) int {
+				return a.i - b.i
+			}))
+		})
 	}
 }

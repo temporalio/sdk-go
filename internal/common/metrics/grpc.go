@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gogo/status"
+	"google.golang.org/grpc/status"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	"google.golang.org/grpc"

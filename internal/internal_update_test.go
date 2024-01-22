@@ -28,8 +28,8 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
-	"github.com/gogo/protobuf/types"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	historypb "go.temporal.io/api/history/v1"
@@ -52,7 +52,7 @@ func mustSetUpdateHandler(
 }
 
 type testUpdateScheduler struct {
-	SpawnImpl func(Context, string, func(Context)) Context
+	SpawnImpl func(Context, string, bool, func(Context)) Context
 	YieldImpl func(Context, string)
 }
 
@@ -68,8 +68,8 @@ func (tuc *testUpdateCallbacks) Complete(success interface{}, err error) {
 	tuc.CompleteImpl(success, err)
 }
 
-func (tus *testUpdateScheduler) Spawn(ctx Context, name string, f func(Context)) Context {
-	return tus.SpawnImpl(ctx, name, f)
+func (tus *testUpdateScheduler) Spawn(ctx Context, name string, p bool, f func(Context)) Context {
+	return tus.SpawnImpl(ctx, name, p, f)
 }
 
 func (tus *testUpdateScheduler) Yield(ctx Context, status string) {
@@ -77,7 +77,7 @@ func (tus *testUpdateScheduler) Yield(ctx Context, status string) {
 }
 
 var runOnCallingThread = &testUpdateScheduler{
-	SpawnImpl: func(ctx Context, _ string, f func(Context)) Context {
+	SpawnImpl: func(ctx Context, _ string, _ bool, f func(Context)) Context {
 		f(ctx)
 		return ctx
 	},
@@ -89,8 +89,6 @@ var testSDKFlags = newSDKFlags(
 )
 
 func TestUpdateHandlerPanicHandling(t *testing.T) {
-	t.Parallel()
-
 	env := &workflowEnvironmentImpl{
 		sdkFlags:       testSDKFlags,
 		commandsHelper: newCommandsHelper(),
@@ -100,28 +98,45 @@ func TestUpdateHandlerPanicHandling(t *testing.T) {
 			TaskQueueName: "taskqueue:" + t.Name(),
 		},
 	}
-	interceptor, ctx, err := newWorkflowContext(env, nil)
-	require.NoError(t, err)
-	dispatcher, ctx := newDispatcher(
-		ctx,
-		interceptor,
-		func(ctx Context) {})
-	dispatcher.executing = true
-
-	panicFunc := func() error { panic("intentional") }
-	mustSetUpdateHandler(t, ctx, t.Name(), panicFunc, UpdateHandlerOptions{Validator: panicFunc})
-	in := UpdateInput{Name: t.Name(), Args: []interface{}{}}
 
 	t.Run("ValidateUpdate", func(t *testing.T) {
-		err = interceptor.inboundInterceptor.ValidateUpdate(ctx, &in)
+		interceptor, ctx, err := newWorkflowContext(env, nil)
+		require.NoError(t, err)
+
+		panicFunc := func() error { panic("intentional") }
+		dispatcher, _ := newDispatcher(
+			ctx,
+			interceptor,
+			func(ctx Context) {
+				mustSetUpdateHandler(t, ctx, t.Name(), panicFunc, UpdateHandlerOptions{Validator: panicFunc})
+				in := UpdateInput{Name: t.Name(), Args: []interface{}{}}
+				err = interceptor.inboundInterceptor.ValidateUpdate(ctx, &in)
+			},
+			func() bool { return false })
+
+		require.NoError(t, dispatcher.ExecuteUntilAllBlocked(10*time.Second))
 		var panicerr *PanicError
 		require.ErrorAs(t, err, &panicerr,
 			"panic during validate should be converted to an error to fail the update")
 	})
 	t.Run("ExecuteUpdate", func(t *testing.T) {
-		require.Panics(t, func() {
-			_, _ = interceptor.inboundInterceptor.ExecuteUpdate(ctx, &in)
-		}, "panic during execution should be propagated to reach the WorkflowPanicPolicy")
+		interceptor, ctx, err := newWorkflowContext(env, nil)
+		require.NoError(t, err)
+
+		panicFunc := func() error { panic("intentional") }
+		dispatcher, _ := newDispatcher(
+			ctx,
+			interceptor,
+			func(ctx Context) {
+				mustSetUpdateHandler(t, ctx, t.Name(), panicFunc, UpdateHandlerOptions{})
+				in := UpdateInput{Name: t.Name(), Args: []interface{}{}}
+				err = interceptor.inboundInterceptor.ValidateUpdate(ctx, &in)
+				require.Panics(t, func() {
+					_, _ = interceptor.inboundInterceptor.ExecuteUpdate(ctx, &in)
+				}, "panic during execution should be propagated to reach the WorkflowPanicPolicy")
+			},
+			func() bool { return false })
+		require.NoError(t, dispatcher.ExecuteUntilAllBlocked(10*time.Second))
 	})
 }
 
@@ -171,23 +186,20 @@ func TestUpdateValidatorFnValidation(t *testing.T) {
 
 func TestDefaultUpdateHandler(t *testing.T) {
 	t.Parallel()
+
 	dc := converter.GetDefaultDataConverter()
-	env := &workflowEnvironmentImpl{
-		sdkFlags:       testSDKFlags,
-		commandsHelper: newCommandsHelper(),
-		dataConverter:  dc,
-		workflowInfo: &WorkflowInfo{
-			Namespace:     "namespace:" + t.Name(),
-			TaskQueueName: "taskqueue:" + t.Name(),
-		},
+	createTestWfEnv := func() *workflowEnvironmentImpl {
+		return &workflowEnvironmentImpl{
+			sdkFlags:       testSDKFlags,
+			commandsHelper: newCommandsHelper(),
+			dataConverter:  dc,
+			workflowInfo: &WorkflowInfo{
+				Namespace:     "namespace:" + t.Name(),
+				TaskQueueName: "taskqueue:" + t.Name(),
+			},
+			bufferedUpdateRequests: make(map[string][]func()),
+		}
 	}
-	interceptor, ctx, err := newWorkflowContext(env, nil)
-	require.NoError(t, err)
-	dispatcher, ctx := newDispatcher(
-		ctx,
-		interceptor,
-		func(ctx Context) {})
-	dispatcher.executing = true
 
 	hdr := &commonpb.Header{Fields: map[string]*commonpb.Payload{}}
 	argStr := t.Name()
@@ -195,58 +207,126 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("no handler registered", func(t *testing.T) {
-		mustSetUpdateHandler(
-			t,
+		env := createTestWfEnv()
+		interceptor, ctx, err := newWorkflowContext(env, nil)
+		require.NoError(t, err)
+
+		dispatcher, ctx := newDispatcher(
 			ctx,
-			"unused_handler",
-			func() error { panic("should not be called") },
-			UpdateHandlerOptions{},
-		)
+			interceptor,
+			func(ctx Context) {
+				mustSetUpdateHandler(
+					t,
+					ctx,
+					"unused_handler",
+					func() error { panic("should not be called") },
+					UpdateHandlerOptions{},
+				)
+			},
+			env.DrainUnhandledUpdates)
 		var rejectErr error
 		defaultUpdateHandler(ctx, "will_not_be_found", "testID", args, hdr, &testUpdateCallbacks{
 			RejectImpl: func(err error) { rejectErr = err },
 		}, runOnCallingThread)
+		require.NoError(t, dispatcher.ExecuteUntilAllBlocked(10*time.Second))
 		require.ErrorContains(t, rejectErr, "unknown update")
 		require.ErrorContains(t, rejectErr, "unused_handler",
 			"handler not found error should include a list of the registered handlers")
 	})
 
 	t.Run("malformed serialized input", func(t *testing.T) {
-		mustSetUpdateHandler(
-			t,
+		env := createTestWfEnv()
+		interceptor, ctx, err := newWorkflowContext(env, nil)
+		require.NoError(t, err)
+
+		dispatcher, ctx := newDispatcher(
 			ctx,
-			t.Name(),
-			func(Context, int) error { return nil },
-			UpdateHandlerOptions{},
-		)
+			interceptor,
+			func(ctx Context) {
+				mustSetUpdateHandler(
+					t,
+					ctx,
+					t.Name(),
+					func(Context, int) error { return nil },
+					UpdateHandlerOptions{},
+				)
+			},
+			env.DrainUnhandledUpdates)
+
 		junkArgs := &commonpb.Payloads{Payloads: []*commonpb.Payload{&commonpb.Payload{}}}
 		var rejectErr error
 		defaultUpdateHandler(ctx, t.Name(), "testID", junkArgs, hdr, &testUpdateCallbacks{
 			RejectImpl: func(err error) { rejectErr = err },
 		}, runOnCallingThread)
+		require.NoError(t, dispatcher.ExecuteUntilAllBlocked(10*time.Second))
 		require.ErrorContains(t, rejectErr, "unable to decode")
 	})
 
 	t.Run("reject from validator", func(t *testing.T) {
+		env := createTestWfEnv()
+		interceptor, ctx, err := newWorkflowContext(env, nil)
+		require.NoError(t, err)
+
 		updateFunc := func(Context, string) error { panic("should not get called") }
 		validatorFunc := func(Context, string) error { return errors.New("expected") }
-		mustSetUpdateHandler(
-			t,
+		dispatcher, ctx := newDispatcher(
 			ctx,
-			t.Name(),
-			updateFunc,
-			UpdateHandlerOptions{Validator: validatorFunc},
-		)
+			interceptor,
+			func(ctx Context) {
+				mustSetUpdateHandler(
+					t,
+					ctx,
+					t.Name(),
+					updateFunc,
+					UpdateHandlerOptions{Validator: validatorFunc},
+				)
+			},
+			env.DrainUnhandledUpdates)
 		var rejectErr error
 		defaultUpdateHandler(ctx, t.Name(), "testID", args, hdr, &testUpdateCallbacks{
 			RejectImpl: func(err error) { rejectErr = err },
 		}, runOnCallingThread)
+		require.NoError(t, dispatcher.ExecuteUntilAllBlocked(10*time.Second))
 		require.Equal(t, validatorFunc(ctx, argStr), rejectErr)
 	})
 
+	t.Run("illegal state panic from validator", func(t *testing.T) {
+		env := createTestWfEnv()
+		interceptor, ctx, err := newWorkflowContext(env, nil)
+		require.NoError(t, err)
+
+		updateFunc := func(Context, string) error { panic("should not get called") }
+		validatorFunc := func(Context, string) error { panic(panicIllegalAccessCoroutineState) }
+		dispatcher, ctx := newDispatcher(
+			ctx,
+			interceptor,
+			func(ctx Context) {
+				mustSetUpdateHandler(
+					t,
+					ctx,
+					t.Name(),
+					updateFunc,
+					UpdateHandlerOptions{Validator: validatorFunc},
+				)
+			},
+			env.DrainUnhandledUpdates)
+		defaultUpdateHandler(ctx, t.Name(), "testID", args, hdr, &testUpdateCallbacks{}, runOnCallingThread)
+		require.Error(t, dispatcher.ExecuteUntilAllBlocked(10*time.Second))
+	})
+
 	t.Run("error from update func", func(t *testing.T) {
+		env := createTestWfEnv()
+		interceptor, ctx, err := newWorkflowContext(env, nil)
+		require.NoError(t, err)
+
 		updateFunc := func(Context, string) error { return errors.New("expected") }
-		mustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateHandlerOptions{})
+		dispatcher, ctx := newDispatcher(
+			ctx,
+			interceptor,
+			func(ctx Context) {
+				mustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateHandlerOptions{})
+			},
+			env.DrainUnhandledUpdates)
 		var (
 			resultErr error
 			accepted  bool
@@ -259,14 +339,26 @@ func TestDefaultUpdateHandler(t *testing.T) {
 				result = success
 			},
 		}, runOnCallingThread)
+
+		require.NoError(t, dispatcher.ExecuteUntilAllBlocked(10*time.Second))
 		require.True(t, accepted)
 		require.Equal(t, updateFunc(ctx, argStr), resultErr)
 		require.Nil(t, result)
 	})
 
 	t.Run("update success", func(t *testing.T) {
+		env := createTestWfEnv()
+		interceptor, ctx, err := newWorkflowContext(env, nil)
+		require.NoError(t, err)
+
 		updateFunc := func(ctx Context, s string) (string, error) { return s + " success!", nil }
-		mustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateHandlerOptions{})
+		dispatcher, ctx := newDispatcher(
+			ctx,
+			interceptor,
+			func(ctx Context) {
+				mustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateHandlerOptions{})
+			},
+			env.DrainUnhandledUpdates)
 		var (
 			resultErr error
 			accepted  bool
@@ -279,6 +371,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 				result = success
 			},
 		}, runOnCallingThread)
+		require.NoError(t, dispatcher.ExecuteUntilAllBlocked(10*time.Second))
 		require.True(t, accepted)
 		require.Nil(t, resultErr)
 
@@ -287,6 +380,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 	})
 
 	t.Run("update before handlers registered", func(t *testing.T) {
+		env := createTestWfEnv()
 		// same test as above except that we don't set the update handler for
 		// t.Name() until the first Yield. This emulates the situation where
 		// there is an update in the first WFT of a workflow so the SDK needs to
@@ -300,13 +394,15 @@ func TestDefaultUpdateHandler(t *testing.T) {
 		// registration at workflow start time has already occurred
 		interceptor, ctx, err := newWorkflowContext(env, nil)
 		require.NoError(t, err)
+		updateFunc := func(ctx Context, s string) (string, error) { return s + " success!", nil }
 		dispatcher, ctx := newDispatcher(
 			ctx,
 			interceptor,
-			func(ctx Context) {})
-		dispatcher.executing = true
+			func(ctx Context) {
+				mustSetUpdateHandler(t, ctx, t.Name(), updateFunc, UpdateHandlerOptions{})
+			},
+			func() bool { return false })
 
-		updateFunc := func(ctx Context, s string) (string, error) { return s + " success!", nil }
 		var (
 			resultErr error
 			rejectErr error
@@ -314,7 +410,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 			result    interface{}
 		)
 		sched := &testUpdateScheduler{
-			SpawnImpl: func(ctx Context, _ string, f func(Context)) Context {
+			SpawnImpl: func(ctx Context, _ string, _ bool, f func(Context)) Context {
 				f(ctx)
 				return ctx
 			},
@@ -331,6 +427,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 				result = success
 			},
 		}, sched)
+		require.NoError(t, dispatcher.ExecuteUntilAllBlocked(time.Second))
 
 		require.True(t, accepted)
 		require.Nil(t, resultErr)
@@ -474,20 +571,20 @@ func TestAcceptedEventPredicate(t *testing.T) {
 	require.Len(t, env.outbox, 1, "expected to find accepted message")
 
 	var acptmsg updatepb.Acceptance
-	require.NoError(t, types.UnmarshalAny(env.outbox[0].msg.Body, &acptmsg))
+	require.NoError(t, env.outbox[0].msg.Body.UnmarshalTo(&acptmsg))
 	require.Nil(t, acptmsg.AcceptedRequest,
 		"do not send the original request back - this field will be removed soon")
 
 	pred := env.outbox[0].eventPredicate
 	for _, tc := range [...]struct {
 		name  string
-		attrs historypb.WorkflowExecutionUpdateAcceptedEventAttributes
+		attrs *historypb.WorkflowExecutionUpdateAcceptedEventAttributes
 		test  require.BoolAssertionFunc
 	}{
 		{
 			name: "wrong req msg ID",
 			test: require.False,
-			attrs: historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+			attrs: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
 				AcceptedRequest:                  &request,
 				AcceptedRequestMessageId:         "wrong request message ID",
 				AcceptedRequestSequencingEventId: requestSeqID,
@@ -496,7 +593,7 @@ func TestAcceptedEventPredicate(t *testing.T) {
 		{
 			name: "wrong req seq ID",
 			test: require.False,
-			attrs: historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+			attrs: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
 				AcceptedRequest:                  &request,
 				AcceptedRequestMessageId:         requestMsgID,
 				AcceptedRequestSequencingEventId: requestSeqID + 10,
@@ -505,7 +602,7 @@ func TestAcceptedEventPredicate(t *testing.T) {
 		{
 			name: "missing request",
 			test: require.False,
-			attrs: historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+			attrs: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
 				AcceptedRequest:                  nil,
 				AcceptedRequestMessageId:         requestMsgID,
 				AcceptedRequestSequencingEventId: requestSeqID,
@@ -514,7 +611,7 @@ func TestAcceptedEventPredicate(t *testing.T) {
 		{
 			name: "match",
 			test: require.True,
-			attrs: historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+			attrs: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
 				AcceptedRequest:                  &request,
 				AcceptedRequestMessageId:         requestMsgID,
 				AcceptedRequestSequencingEventId: requestSeqID,
@@ -524,7 +621,7 @@ func TestAcceptedEventPredicate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			event := historypb.HistoryEvent{
 				Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
-					WorkflowExecutionUpdateAcceptedEventAttributes: &tc.attrs,
+					WorkflowExecutionUpdateAcceptedEventAttributes: tc.attrs,
 				},
 			}
 			tc.test(t, pred(&event))

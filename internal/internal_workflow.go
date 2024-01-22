@@ -27,25 +27,29 @@ package internal
 // All code in this file is private to the package.
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"reflect"
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
+	"golang.org/x/exp/slices"
+
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
-	"go.uber.org/atomic"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 )
 
 const (
-	defaultSignalChannelSize = 100000 // really large buffering size(100K)
+	defaultSignalChannelSize    = 100000 // really large buffering size(100K)
+	defaultCoroutineExitTimeout = 100 * time.Millisecond
 
 	panicIllegalAccessCoroutineState = "getState: illegal access from outside of workflow context"
 )
@@ -86,13 +90,14 @@ type (
 		ExecuteUntilAllBlocked(deadlockDetectionTimeout time.Duration) (err error)
 		// IsDone returns true when all of coroutines are completed
 		IsDone() bool
+		IsClosed() bool
 		IsExecuting() bool
 		Close()             // Destroys all coroutines without waiting for their completion
 		StackTrace() string // Stack trace of all coroutines owned by the Dispatcher instance
 
 		// Create coroutine. To be called from within other coroutine.
 		// Used by the interceptors
-		NewCoroutine(ctx Context, name string, f func(ctx Context)) Context
+		NewCoroutine(ctx Context, name string, highPriority bool, f func(ctx Context)) Context
 	}
 
 	// Workflow is an interface that any workflow should implement.
@@ -171,6 +176,10 @@ type (
 		interceptor      WorkflowOutboundInterceptor
 		deadlockDetector *deadlockDetector
 		readOnly         bool
+		// allBlockedCallback is called when all coroutines are blocked,
+		// returns true if the callback updated any coroutines state and there may be more work
+		allBlockedCallback func() bool
+		newEagerCoroutines []*coroutineState
 	}
 
 	// WorkflowOptions options passed to the workflow function
@@ -246,8 +255,8 @@ type (
 		dataConverter converter.DataConverter
 	}
 
-	// coroScheduler adapts the coro dispatcher to the UpdateScheduler interface
-	coroScheduler struct {
+	// updateSchedulerImpl adapts the coro dispatcher to the UpdateScheduler interface
+	updateSchedulerImpl struct {
 		dispatcher dispatcher
 	}
 )
@@ -269,7 +278,13 @@ var _ Selector = (*selectorImpl)(nil)
 var _ WaitGroup = (*waitGroupImpl)(nil)
 var _ dispatcher = (*dispatcherImpl)(nil)
 
-var stackBuf [100000]byte
+// 1MB buffer to fit combined stack trace of all active goroutines
+var stackBuf [1024 * 1024]byte
+
+var (
+	errCoroStackNotFound   = errors.New("coroutine stack not found")
+	errStackTraceTruncated = errors.New("stack trace truncated: stackBuf is too small")
+)
 
 // Pointer to pointer to workflow result
 func getWorkflowResultPointerPointer(ctx Context) **workflowResult {
@@ -305,7 +320,7 @@ type workflowEnvironmentInterceptor struct {
 }
 
 func (wc *workflowEnvironmentInterceptor) Go(ctx Context, name string, f func(ctx Context)) Context {
-	return wc.dispatcher.NewCoroutine(ctx, name, f)
+	return wc.dispatcher.NewCoroutine(ctx, name, false, f)
 }
 
 func getWorkflowOutboundInterceptor(ctx Context) WorkflowOutboundInterceptor {
@@ -507,12 +522,13 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 			// we are yielding.
 			state := getState(d.rootCtx)
 			state.yield("yield before executing to setup state")
+			state.unblocked()
 
 			// TODO: @shreyassrivatsan - add workflow trace span here
 			r.workflowResult, r.error = d.workflow.Execute(d.rootCtx, input)
 			rpp := getWorkflowResultPointerPointer(ctx)
 			*rpp = r
-		})
+		}, getWorkflowEnvironment(rootCtx).DrainUnhandledUpdates)
 
 	// set the information from the headers that is to be propagated in the workflow context
 	rootCtx, err = workflowContextWithHeaderPropagated(rootCtx, header, env.GetContextPropagators())
@@ -543,7 +559,7 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 
 	getWorkflowEnvironment(d.rootCtx).RegisterUpdateHandler(
 		func(name string, id string, serializedArgs *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks) {
-			defaultUpdateHandler(d.rootCtx, name, id, serializedArgs, header, callbacks, coroScheduler{d.dispatcher})
+			defaultUpdateHandler(d.rootCtx, name, id, serializedArgs, header, callbacks, updateSchedulerImpl{d.dispatcher})
 		})
 
 	getWorkflowEnvironment(d.rootCtx).RegisterQueryHandler(
@@ -605,10 +621,11 @@ func (d *syncWorkflowDefinition) Close() {
 // NewDispatcher creates a new Dispatcher instance with a root coroutine function.
 // Context passed to the root function is child of the passed rootCtx.
 // This way rootCtx can be used to pass values to the coroutine code.
-func newDispatcher(rootCtx Context, interceptor *workflowEnvironmentInterceptor, root func(ctx Context)) (*dispatcherImpl, Context) {
+func newDispatcher(rootCtx Context, interceptor *workflowEnvironmentInterceptor, root func(ctx Context), allBlockedCallback func() bool) (*dispatcherImpl, Context) {
 	result := &dispatcherImpl{
-		interceptor:      interceptor.outboundInterceptor,
-		deadlockDetector: newDeadlockDetector(),
+		interceptor:        interceptor.outboundInterceptor,
+		deadlockDetector:   newDeadlockDetector(),
+		allBlockedCallback: allBlockedCallback,
 	}
 	interceptor.dispatcher = result
 	ctxWithState := result.interceptor.Go(rootCtx, "root", root)
@@ -744,7 +761,7 @@ func (c *channelImpl) Receive(ctx Context, valuePtr interface{}) (more bool) {
 				}
 				break // Corrupt signal. Drop and reset process.
 			}
-			state.yield(fmt.Sprintf("blocked on %s.Receive", c.name))
+			state.yield("blocked on " + c.name + ".Receive")
 		}
 	}
 
@@ -880,7 +897,7 @@ func (c *channelImpl) Send(ctx Context, v interface{}) {
 		if c.closed {
 			panic("Closed channel")
 		}
-		state.yield(fmt.Sprintf("blocked on %s.Send", c.name))
+		state.yield("blocked on " + c.name + ".Send")
 	}
 }
 
@@ -965,20 +982,56 @@ func getStackTrace(coroutineName, status string, stackDepth int) string {
 
 func getStackTraceRaw(top string, omitTop, omitBottom int) string {
 	stack := stackBuf[:runtime.Stack(stackBuf[:], false)]
-	rawStack := strings.TrimRightFunc(string(stack), unicode.IsSpace)
+	outStack := filterStackTrace(string(stack), omitTop, omitBottom)
+	return strings.Join([]string{top, outStack}, "\n")
+}
+
+func filterStackTrace(stack string, omitTop, omitBottom int) string {
+	stack = strings.TrimRightFunc(stack, unicode.IsSpace)
 	if disableCleanStackTraces {
-		return rawStack
+		return stack
 	}
-	lines := strings.Split(rawStack, "\n")
+
+	lines := strings.Split(stack, "\n")
 	omitEnd := len(lines) - omitBottom
 	// If the start is after the end, the depth was invalid originally so return
 	// the entire raw stack
 	if omitTop > omitEnd {
-		return rawStack
+		return stack
 	}
-	lines = lines[omitTop:omitEnd]
-	lines = append([]string{top}, lines...)
-	return strings.Join(lines, "\n")
+	return strings.Join(lines[omitTop:omitEnd], "\n")
+}
+
+func getCoroStackTrace(crt *coroutineState, status string, stackDepth int) (string, error) {
+	// Can't dump goroutines selectively :(
+	// Instead, we identify a coroutine's stack trace by the *coroutineState pointer address
+	// in its function arguments. To avoid false positives, we also match on the fixed
+	// member function name.
+	stacks := stackBuf[:runtime.Stack(stackBuf[:], true)]
+	needle := []byte(fmt.Sprintf("/internal.(*coroutineState).run(%p,", crt))
+	idx := bytes.Index(stacks, needle)
+	if idx == -1 {
+		if len(stacks) == len(stackBuf) {
+			return "", fmt.Errorf("coroutine not found: %w", errStackTraceTruncated)
+		}
+		// NOTE: This could happen if coroutineState is moved between runtime.Stack(...)
+		// and formatting needle. However, Go's GC is currently non-moving.
+		return "", errCoroStackNotFound
+	}
+
+	// coroStack spans from the stackDelim before idx to the stackDelim after idx
+	stackDelim := []byte("\n\n")
+	coroStack := stacks
+	if start := bytes.LastIndex(stacks[:idx], stackDelim); start != -1 {
+		start += len(stackDelim) // skip over delimiter
+		coroStack = stacks[start:]
+	}
+	coroStack, _, _ = bytes.Cut(coroStack, stackDelim)
+
+	// Omit top stackDepth frames + top status line.
+	// Omit bottom two frames which is wrapping of coroutine in a goroutine.
+	outStack := filterStackTrace(string(coroStack), stackDepth*2+1, 4)
+	return fmt.Sprintf("coroutine %s [%s]:\n%s", crt.name, status, outStack), nil
 }
 
 // unblocked is called by coroutine to indicate that since the last time yield was unblocked channel or select
@@ -1007,9 +1060,15 @@ func (s *coroutineState) call(timeout time.Duration) {
 	select {
 	case <-s.aboutToBlock:
 	case <-deadlockTicker.reached():
+		// Use workflowPanicError since this used to call panic(msg)
+		st, err := getCoroStackTrace(s, "running", 0)
+		if err != nil {
+			st = fmt.Sprintf("<%s>", err)
+		}
+		msg := fmt.Sprintf("[TMPRL1101] Potential deadlock detected: "+
+			"workflow goroutine %q didn't yield for over a second", s.name)
 		s.closed.Store(true)
-		panic(fmt.Sprintf("[TMPRL1101] Potential deadlock detected: "+
-			"workflow goroutine %q didn't yield for over a second", s.name))
+		s.panicError = newWorkflowPanicError(msg, st)
 	}
 }
 
@@ -1018,11 +1077,21 @@ func (s *coroutineState) close() {
 	s.aboutToBlock <- true
 }
 
-func (s *coroutineState) exit() {
+// exit tries to run Goexit on the coroutine and wait for it to exit
+// within timeout.
+func (s *coroutineState) exit(timeout time.Duration) {
 	if !s.closed.Load() {
 		s.unblock <- func(status string, stackDepth int) bool {
 			runtime.Goexit()
 			return true
+		}
+
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
+
+		select {
+		case <-s.aboutToBlock:
+		case <-timer.C:
 		}
 	}
 }
@@ -1039,27 +1108,30 @@ func (s *coroutineState) stackTrace() string {
 	return <-stackCh
 }
 
-func (d *dispatcherImpl) NewCoroutine(ctx Context, name string, f func(ctx Context)) Context {
+func (s *coroutineState) run(ctx Context, f func(ctx Context)) {
+	defer runtime.KeepAlive(&s) // keep receiver argument alive for getCoroStackTrace
+	defer s.close()
+	defer func() {
+		if r := recover(); r != nil {
+			st := getStackTrace(s.name, "panic", 4)
+			s.panicError = newWorkflowPanicError(r, st)
+		}
+	}()
+	s.initialYield(1, "")
+	f(ctx)
+}
+
+func (d *dispatcherImpl) NewCoroutine(ctx Context, name string, highPriority bool, f func(ctx Context)) Context {
 	if name == "" {
 		name = fmt.Sprintf("%v", d.sequence+1)
 	}
-	state := d.newState(name)
+	state := d.newState(name, highPriority)
 	spawned := WithValue(ctx, coroutinesContextKey, state)
-	go func(crt *coroutineState) {
-		defer crt.close()
-		defer func() {
-			if r := recover(); r != nil {
-				st := getStackTrace(name, "panic", 4)
-				crt.panicError = newWorkflowPanicError(r, st)
-			}
-		}()
-		crt.initialYield(1, "")
-		f(spawned)
-	}(state)
+	go state.run(spawned, f)
 	return spawned
 }
 
-func (d *dispatcherImpl) newState(name string) *coroutineState {
+func (d *dispatcherImpl) newState(name string, highPriority bool) *coroutineState {
 	c := &coroutineState{
 		name:         name,
 		dispatcher:   d,
@@ -1067,7 +1139,13 @@ func (d *dispatcherImpl) newState(name string) *coroutineState {
 		unblock:      make(chan unblockFunc),
 	}
 	d.sequence++
-	d.coroutines = append(d.coroutines, c)
+	if highPriority {
+		// Update requests need to be added to the front of the dispatchers coroutine list so they
+		// are handled before the root coroutine.
+		d.newEagerCoroutines = append(d.newEagerCoroutines, c)
+	} else {
+		d.coroutines = append(d.coroutines, c)
+	}
 	return c
 }
 
@@ -1096,7 +1174,9 @@ func (d *dispatcherImpl) ExecuteUntilAllBlocked(deadlockDetectionTimeout time.Du
 	}()
 	allBlocked := false
 	// Keep executing until at least one goroutine made some progress
-	for !allBlocked {
+	for !allBlocked || d.allBlockedCallback() {
+		d.coroutines = append(d.newEagerCoroutines, d.coroutines...)
+		d.newEagerCoroutines = nil
 		// Give every coroutine chance to execute removing closed ones
 		allBlocked = true
 		lastSequence := d.sequence
@@ -1121,12 +1201,16 @@ func (d *dispatcherImpl) ExecuteUntilAllBlocked(deadlockDetectionTimeout time.Du
 			} else {
 				allBlocked = allBlocked && (c.keptBlocked || c.closed.Load())
 			}
+			// If any eager coroutines were created by the last coroutine we
+			// need to schedule them now.
+			if len(d.newEagerCoroutines) > 0 {
+				d.coroutines = slices.Insert(d.coroutines, i+1, d.newEagerCoroutines...)
+				d.newEagerCoroutines = nil
+				allBlocked = false
+			}
 		}
 		// Set allBlocked to false if new coroutines where created
 		allBlocked = allBlocked && lastSequence == d.sequence
-		if len(d.coroutines) == 0 {
-			break
-		}
 	}
 	return nil
 }
@@ -1163,16 +1247,14 @@ func (d *dispatcherImpl) Close() {
 	}
 	d.closed = true
 	d.mutex.Unlock()
-	// This loop breaks our expectation that only one workflow
-	// coroutine is running at any time because it triggers all workflow goroutines
-	// to call their defers at once. Adding synchronization seemed more problematic because
-	// it could block eviction if there was a deadlock.
-	for i := 0; i < len(d.coroutines); i++ {
-		c := d.coroutines[i]
-		if !c.closed.Load() {
-			c.exit()
+	// We need to exit the coroutines in a separate goroutine because:
+	// 	* The coroutine may be stuck and won't respond to the exit request.
+	// 	* On exit the coroutines defers will still run and that may block.
+	go func() {
+		for _, c := range d.coroutines {
+			c.exit(defaultCoroutineExitTimeout)
 		}
-	}
+	}()
 }
 
 func (d *dispatcherImpl) StackTrace() string {
@@ -1346,7 +1428,7 @@ func (s *selectorImpl) Select(ctx Context) {
 			state.unblocked()
 			return
 		}
-		state.yield(fmt.Sprintf("blocked on %s.Select", s.name))
+		state.yield("blocked on " + s.name + ".Select")
 	}
 }
 
@@ -1497,6 +1579,12 @@ func setUpdateHandler(ctx Context, updateName string, handler interface{}, opts 
 		return err
 	}
 	getWorkflowEnvOptions(ctx).updateHandlers[updateName] = uh
+	if getWorkflowEnvironment(ctx).TryUse(SDKPriorityUpdateHandling) {
+		getWorkflowEnvironment(ctx).HandleQueuedUpdates(updateName)
+		state := getState(ctx)
+		defer state.unblocked()
+		state.yield("letting any updates waiting on a handler run")
+	}
 	return nil
 }
 
@@ -1645,12 +1733,12 @@ func (wg *waitGroupImpl) Wait(ctx Context) {
 }
 
 // Spawn starts a new coroutine with Dispatcher.NewCoroutine
-func (cs coroScheduler) Spawn(ctx Context, name string, f func(Context)) Context {
-	return cs.dispatcher.NewCoroutine(ctx, name, f)
+func (us updateSchedulerImpl) Spawn(ctx Context, name string, highPriority bool, f func(Context)) Context {
+	return us.dispatcher.NewCoroutine(ctx, name, highPriority, f)
 }
 
 // Yield calls the yield function on the coroutineState associated with the
 // supplied workflow context.
-func (cs coroScheduler) Yield(ctx Context, reason string) {
+func (us updateSchedulerImpl) Yield(ctx Context, reason string) {
 	getState(ctx).yield(reason)
 }

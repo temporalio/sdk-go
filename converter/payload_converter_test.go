@@ -42,7 +42,7 @@ type testStruct struct {
 	Age  int
 }
 
-func TestProtoJsonPayloadConverter_Gogo(t *testing.T) {
+func TestProtoJsonPayloadConverter_Google(t *testing.T) {
 	pc := NewProtoJSONPayloadConverter()
 
 	wt := &historypb.HistoryEvent{
@@ -70,12 +70,12 @@ func TestProtoJsonPayloadConverter_Gogo(t *testing.T) {
 	assert.Equal(t, int64(1978), wt3.EventId)
 
 	s := pc.ToString(payload)
-	assert.Equal(t, `{"eventId":"1978","eventType":"WorkflowTaskTimedOut","workflowTaskTimedOutEventAttributes":{"scheduledEventId":"2","timeoutType":"ScheduleToStart"}}`, s)
+	assert.JSONEq(t, `{"eventId":"1978","eventType":"EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT","workflowTaskTimedOutEventAttributes":{"scheduledEventId":"2","timeoutType":"TIMEOUT_TYPE_SCHEDULE_TO_START"}}`, s)
 
 	// Add additional field to payload data
-	payload.Data = []byte(`{"eventId":"1978","eventType":"WorkflowTaskTimedOut","workflowTaskTimedOutEventAttributes":{"scheduledEventId":"2","timeoutType":"ScheduleToStart"},"newField":"newValue"}`)
+	payload.Data = []byte(`{"eventId":"1978","eventType":"EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT","workflowTaskTimedOutEventAttributes":{"scheduledEventId":"2","timeoutType":"TIMEOUT_TYPE_SCHEDULE_TO_START"},"newField":"newValue"}`)
 	// Should fail, unknown field
-	wt5 := &GoV2{}
+	wt5 := &Gogo{}
 	err = pc.FromPayload(payload, &wt5)
 	require.Error(t, err)
 
@@ -83,47 +83,47 @@ func TestProtoJsonPayloadConverter_Gogo(t *testing.T) {
 	pc = NewProtoJSONPayloadConverterWithOptions(ProtoJSONPayloadConverterOptions{
 		AllowUnknownFields: true,
 	})
-	wt6 := &GoV2{}
+	wt6 := &Gogo{}
 	err = pc.FromPayload(payload, &wt6)
 	require.NoError(t, err)
 }
 
-func TestProtoJsonPayloadConverter_Google(t *testing.T) {
+func TestProtoJsonPayloadConverter_Gogo(t *testing.T) {
 	pc := NewProtoJSONPayloadConverter()
 
-	wt := &GoV2{
+	wt := &Gogo{
 		Name:     "qwe",
-		BirthDay: 12,
-		Type:     TypeV2_TYPEV2_R,
-		Values:   &GoV2_ValueS{ValueS: "asd"},
+		Birthday: 12,
+		Type:     Typegogo_TYPEGOGO_R,
+		Values:   &Gogo_ValueS{ValueS: "asd"},
 	}
 	payload, err := pc.ToPayload(wt)
 	require.NoError(t, err)
-	wt2 := &GoV2{}
+	wt2 := &Gogo{}
 	err = pc.FromPayload(payload, &wt2)
 	require.NoError(t, err)
 	assert.Equal(t, "qwe", wt2.Name)
-	assert.Equal(t, int64(12), wt2.BirthDay)
+	assert.Equal(t, int64(12), wt2.Birthday)
 
-	var wt3 *GoV2
+	var wt3 *Gogo
 	err = pc.FromPayload(payload, &wt3)
 	require.NoError(t, err)
 	assert.Equal(t, "qwe", wt3.Name)
-	assert.Equal(t, int64(12), wt3.BirthDay)
+	assert.Equal(t, int64(12), wt3.Birthday)
 
-	var wt4 GoV2
+	var wt4 Gogo
 	err = pc.FromPayload(payload, &wt4)
 	require.NoError(t, err)
 	assert.Equal(t, "qwe", wt4.Name)
-	assert.Equal(t, int64(12), wt4.BirthDay)
+	assert.Equal(t, int64(12), wt4.Birthday)
 
 	s := pc.ToString(payload)
-	assert.Equal(t, `{"name":"qwe","birthDay":"12","type":"TYPEV2_R","valueS":"asd"}`, strings.Replace(s, " ", "", -1))
+	assert.Equal(t, `{"name":"qwe","birthday":"12","type":"TYPEGOGO_R","valueS":"asd"}`, strings.Replace(s, " ", "", -1))
 
 	// Add additional field to payload data
-	payload.Data = []byte(`{"name":"qwe","birthDay":"12","type":"TYPEV2_R","valueS":"asd","newField":"newValue"}`)
+	payload.Data = []byte(`{"name":"qwe","birthday":"12","type":"TYPEGOGO_R","valueS":"asd","newField":"newValue"}`)
 	// Should fail, unknown field
-	wt5 := &GoV2{}
+	wt5 := &Gogo{}
 	err = pc.FromPayload(payload, &wt5)
 	require.Error(t, err)
 
@@ -131,12 +131,12 @@ func TestProtoJsonPayloadConverter_Google(t *testing.T) {
 	pc = NewProtoJSONPayloadConverterWithOptions(ProtoJSONPayloadConverterOptions{
 		AllowUnknownFields: true,
 	})
-	wt6 := &GoV2{}
+	wt6 := &Gogo{}
 	err = pc.FromPayload(payload, &wt6)
 	require.NoError(t, err)
 }
 
-func TestProtoPayloadConverter_Gogo(t *testing.T) {
+func TestProtoPayloadConverter_Google(t *testing.T) {
 	pc := NewProtoPayloadConverter()
 
 	wt := &historypb.HistoryEvent{
@@ -168,35 +168,35 @@ func TestProtoPayloadConverter_Gogo(t *testing.T) {
 	assert.Equal(t, "temporal.api.history.v1.HistoryEvent", string(payload.Metadata[MetadataMessageType]))
 }
 
-func TestProtoPayloadConverter_Google(t *testing.T) {
+func TestProtoPayloadConverter_Gogo(t *testing.T) {
 	pc := NewProtoPayloadConverter()
 
-	wt := &GoV2{
+	wt := &Gogo{
 		Name:     "qwe",
-		BirthDay: 12,
-		Type:     TypeV2_TYPEV2_R,
-		Values:   &GoV2_ValueS{ValueS: "asd"},
+		Birthday: 12,
+		Type:     Typegogo_TYPEGOGO_R,
+		Values:   &Gogo_ValueS{ValueS: "asd"},
 	}
 	payload, err := pc.ToPayload(wt)
 	require.NoError(t, err)
-	wt2 := &GoV2{}
+	wt2 := &Gogo{}
 	err = pc.FromPayload(payload, &wt2)
 	require.NoError(t, err)
 	assert.Equal(t, "qwe", wt2.Name)
 
-	var wt3 *GoV2
+	var wt3 *Gogo
 	err = pc.FromPayload(payload, &wt3)
 	require.NoError(t, err)
 	assert.Equal(t, "qwe", wt3.Name)
 
-	var wt4 GoV2
+	var wt4 Gogo
 	err = pc.FromPayload(payload, &wt4)
 	require.NoError(t, err)
 	assert.Equal(t, "qwe", wt4.Name)
 
 	s := pc.ToString(payload)
 	assert.Equal(t, "CgNxd2UQDDgBQgNhc2Q", s)
-	assert.Equal(t, "protobench.GoV2", string(payload.Metadata[MetadataMessageType]))
+	assert.Equal(t, "temporal.sdk.converter.Gogo", string(payload.Metadata[MetadataMessageType]))
 }
 
 func TestJsonPayloadConverter(t *testing.T) {
@@ -227,12 +227,12 @@ func TestJsonPayloadConverter(t *testing.T) {
 func TestProtoJsonPayloadConverter_Nil(t *testing.T) {
 	pc := NewProtoJSONPayloadConverter()
 
-	var wt1 *GoV2
+	var wt1 *Gogo
 	payload, err := pc.ToPayload(wt1)
 	require.NoError(t, err)
 	assert.Equal(t, "null", string(payload.Data))
 
-	wt1 = &GoV2{Name: "qwe"}
+	wt1 = &Gogo{Name: "qwe"}
 	err = pc.FromPayload(payload, &wt1)
 	require.NoError(t, err)
 	assert.Nil(t, wt1)
@@ -343,7 +343,7 @@ func TestProtoPayloadConverter_WithOptions(t *testing.T) {
 	pc := NewProtoPayloadConverterWithOptions(ProtoPayloadConverterOptions{ExcludeProtobufMessageTypes: true})
 
 	wt := commonpb.WorkflowType{Name: "qwe"}
-	payload, err := pc.ToPayload(wt)
+	payload, err := pc.ToPayload(&wt)
 	require.NoError(t, err)
 
 	_, ok := payload.Metadata[MetadataMessageType]
@@ -354,7 +354,7 @@ func TestProtoJSONPayloadConverter_WithOptions(t *testing.T) {
 	pc := NewProtoJSONPayloadConverterWithOptions(ProtoJSONPayloadConverterOptions{ExcludeProtobufMessageTypes: true})
 
 	wt := commonpb.WorkflowType{Name: "qwe"}
-	payload, err := pc.ToPayload(wt)
+	payload, err := pc.ToPayload(&wt)
 	require.NoError(t, err)
 
 	_, ok := payload.Metadata[MetadataMessageType]
@@ -365,7 +365,7 @@ func TestProtoJsonPayloadConverter_FromPayload_Errors(t *testing.T) {
 	pc := NewProtoJSONPayloadConverter()
 
 	wt := commonpb.WorkflowType{Name: "qwe"}
-	payload, err := pc.ToPayload(wt)
+	payload, err := pc.ToPayload(&wt)
 	require.NoError(t, err)
 
 	var wt2 *int
@@ -396,12 +396,6 @@ func TestProtoJsonPayloadConverter_FromPayload_Errors(t *testing.T) {
 	err = pc.FromPayload(payload, wt33)
 	require.NoError(t, err)
 	assert.Equal(t, "qwe", wt33.Name)
-
-	var wt4 commonpb.WorkflowType
-	err = pc.FromPayload(payload, wt4)
-	require.Error(t, err)
-	assert.Equal(t, "type: common.WorkflowType: not a pointer type", err.Error())
-	assert.True(t, errors.Is(err, ErrValuePtrIsNotPointer))
 
 	var wt5 interface{}
 	err = pc.FromPayload(payload, wt5)
@@ -439,7 +433,7 @@ func TestProtoPayloadConverter_FromPayload_Errors(t *testing.T) {
 	pc := NewProtoPayloadConverter()
 
 	wt := commonpb.WorkflowType{Name: "qwe"}
-	payload, err := pc.ToPayload(wt)
+	payload, err := pc.ToPayload(&wt)
 	require.NoError(t, err)
 
 	var wt2 *int
@@ -470,12 +464,6 @@ func TestProtoPayloadConverter_FromPayload_Errors(t *testing.T) {
 	err = pc.FromPayload(payload, wt33)
 	require.NoError(t, err)
 	assert.Equal(t, "qwe", wt33.Name)
-
-	var wt4 commonpb.WorkflowType
-	err = pc.FromPayload(payload, wt4)
-	require.Error(t, err)
-	assert.Equal(t, "type: common.WorkflowType: not a pointer type", err.Error())
-	assert.True(t, errors.Is(err, ErrValuePtrIsNotPointer))
 
 	var wt5 interface{}
 	err = pc.FromPayload(payload, wt5)

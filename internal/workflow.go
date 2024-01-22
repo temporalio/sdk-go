@@ -31,6 +31,11 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/exp/constraints"
+	"golang.org/x/exp/slices"
+
+	"google.golang.org/protobuf/types/known/durationpb"
+
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
@@ -1003,6 +1008,10 @@ type WorkflowInfo struct {
 	// build-id based versioning, is the explicitly set worker build id. If this is the first worker to operate on the
 	// workflow, it is this worker's current value.
 	BinaryChecksum string
+	// currentTaskBuildID, if nonempty, contains the Build ID of the worker that processed the task
+	// which is currently or about to be executing. If no longer replaying will be set to the ID of
+	// this worker
+	currentTaskBuildID string
 
 	continueAsNewSuggested bool
 	currentHistorySize     int
@@ -1014,12 +1023,22 @@ type UpdateInfo struct {
 	ID string
 }
 
-// GetBinaryChecksum return binary checksum.
+// GetBinaryChecksum returns the binary checksum of the last worker to complete a task for this
+// workflow, or if this is the first task, this worker's checksum.
 func (wInfo *WorkflowInfo) GetBinaryChecksum() string {
 	if wInfo.BinaryChecksum == "" {
 		return getBinaryChecksum()
 	}
 	return wInfo.BinaryChecksum
+}
+
+// GetCurrentBuildID returns the Build ID of the worker that processed this task, which may be
+// empty. During replay this id may not equal the id of the replaying worker. If not replaying and
+// this worker has a defined Build ID, it will equal that ID. It is safe to use for branching.
+// When used inside a query, the ID of the worker that processed the task which last affected
+// the workflow will be returned.
+func (wInfo *WorkflowInfo) GetCurrentBuildID() string {
+	return wInfo.currentTaskBuildID
 }
 
 // GetCurrentHistoryLength returns the current length of history when called.
@@ -1742,7 +1761,7 @@ func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 // the update handler itself is invoked and if this function returns an error,
 // the update request will be considered to have been rejected and as such will
 // not occupy any space in the workflow history. Validation functions must take
-// as inputs the same parameters as the associated update handler but my vary
+// as inputs the same parameters as the associated update handler but may vary
 // from said handler by the presence/absence of a workflow.Context as the first
 // parameter. Validation handlers must only return a single error. Validation
 // handlers must be deterministic and can observe workflow state but must not
@@ -1998,8 +2017,8 @@ func convertToPBRetryPolicy(retryPolicy *RetryPolicy) *commonpb.RetryPolicy {
 	}
 
 	return &commonpb.RetryPolicy{
-		MaximumInterval:        &retryPolicy.MaximumInterval,
-		InitialInterval:        &retryPolicy.InitialInterval,
+		MaximumInterval:        durationpb.New(retryPolicy.MaximumInterval),
+		InitialInterval:        durationpb.New(retryPolicy.InitialInterval),
 		BackoffCoefficient:     retryPolicy.BackoffCoefficient,
 		MaximumAttempts:        retryPolicy.MaximumAttempts,
 		NonRetryableErrorTypes: retryPolicy.NonRetryableErrorTypes,
@@ -2017,13 +2036,8 @@ func convertFromPBRetryPolicy(retryPolicy *commonpb.RetryPolicy) *RetryPolicy {
 		NonRetryableErrorTypes: retryPolicy.NonRetryableErrorTypes,
 	}
 
-	// Avoid nil pointer dereferences
-	if v := retryPolicy.MaximumInterval; v != nil {
-		p.MaximumInterval = *v
-	}
-	if v := retryPolicy.InitialInterval; v != nil {
-		p.InitialInterval = *v
-	}
+	p.MaximumInterval = retryPolicy.MaximumInterval.AsDuration()
+	p.InitialInterval = retryPolicy.InitialInterval.AsDuration()
 
 	return &p
 }
@@ -2031,4 +2045,28 @@ func convertFromPBRetryPolicy(retryPolicy *commonpb.RetryPolicy) *RetryPolicy {
 // GetLastCompletionResultFromWorkflowInfo returns value of last completion result.
 func GetLastCompletionResultFromWorkflowInfo(info *WorkflowInfo) *commonpb.Payloads {
 	return info.lastCompletionResult
+}
+
+// DeterministicKeys returns the keys of a map in deterministic (sorted) order. To be used in for
+// loops in workflows for deterministic iteration.
+func DeterministicKeys[K constraints.Ordered, V any](m map[K]V) []K {
+	r := make([]K, 0, len(m))
+	for k := range m {
+		r = append(r, k)
+	}
+	slices.Sort(r)
+	return r
+}
+
+// DeterministicKeysFunc returns the keys of a map in a deterministic (sorted) order.
+// cmp(a, b) should return a negative number when a < b, a positive number when
+// a > b and zero when a == b. Keys are sorted by cmp.
+// To be used in for loops in workflows for deterministic iteration.
+func DeterministicKeysFunc[K comparable, V any](m map[K]V, cmp func(a K, b K) int) []K {
+	r := make([]K, 0, len(m))
+	for k := range m {
+		r = append(r, k)
+	}
+	slices.SortStableFunc(r, cmp)
+	return r
 }

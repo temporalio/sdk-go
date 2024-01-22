@@ -35,12 +35,12 @@ import (
 type JSONPayloadConverter struct {
 }
 
-// NewJSONPayloadConverter creates new instance of JSONPayloadConverter.
+// NewJSONPayloadConverter creates a new instance of JSONPayloadConverter.
 func NewJSONPayloadConverter() *JSONPayloadConverter {
 	return &JSONPayloadConverter{}
 }
 
-// ToPayload converts single value to payload.
+// ToPayload converts a single value to a payload.
 func (c *JSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
 	data, err := json.Marshal(value)
 	if err != nil {
@@ -49,7 +49,7 @@ func (c *JSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, 
 	return newPayload(data, c), nil
 }
 
-// FromPayload converts single value from payload.
+// FromPayload converts a single payload to a value.
 func (c *JSONPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
 	err := json.Unmarshal(payload.GetData(), valuePtr)
 	if err != nil {
@@ -58,7 +58,7 @@ func (c *JSONPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr i
 	return nil
 }
 
-// ToString converts payload object into human readable string.
+// ToString converts a payload object into a human-readable string.
 func (c *JSONPayloadConverter) ToString(payload *commonpb.Payload) string {
 	return string(payload.GetData())
 }

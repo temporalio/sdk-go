@@ -331,7 +331,7 @@ We then use a [workflow.Selector] to wait on this channel and process the payloa
 ## Handle Update
 
 Updates provide a fully async and durable mechanism to send data directly to a running workflow and receive a response
-back. Unlike a Query handler and update handler has no restriction over normal workflow code so you can modify
+back. Unlike a Query handler, an update handler has no restriction over normal workflow code so you can modify
 workflow state, schedule activities, launch child workflow, etc.
 
 	counter := param.StartCount

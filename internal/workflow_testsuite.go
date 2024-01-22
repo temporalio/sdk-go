@@ -584,6 +584,17 @@ func (c *MockCallWrapper) Panic(msg string) *MockCallWrapper {
 	return c
 }
 
+// NotBefore indicates that a call to this mock must not happen before the given calls have happened as expected.
+// It calls `NotBefore` on the wrapped mock call.
+func (c *MockCallWrapper) NotBefore(calls ...*MockCallWrapper) *MockCallWrapper {
+	wrappedCalls := make([]*mock.Call, 0, len(calls))
+	for _, call := range calls {
+		wrappedCalls = append(wrappedCalls, call.call)
+	}
+	c.call.NotBefore(wrappedCalls...)
+	return c
+}
+
 // ExecuteWorkflow executes a workflow, wait until workflow complete. It will fail the test if workflow is blocked and
 // cannot complete within TestTimeout (set by SetTestTimeout()).
 func (e *TestWorkflowEnvironment) ExecuteWorkflow(workflowFn interface{}, args ...interface{}) {

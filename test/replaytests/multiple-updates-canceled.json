@@ -1,0 +1,1013 @@
+{
+  "events": [
+    {
+      "eventId": "1",
+      "eventTime": "2023-11-28T16:56:19.803025336Z",
+      "eventType": "WorkflowExecutionStarted",
+      "version": "0",
+      "taskId": "1446787",
+      "workerMayIgnore": false,
+      "workflowExecutionStartedEventAttributes": {
+        "workflowType": {
+          "name": "MultipleUpdateWorkflow"
+        },
+        "parentWorkflowNamespace": "",
+        "parentWorkflowNamespaceId": "",
+        "parentWorkflowExecution": null,
+        "parentInitiatedEventId": "0",
+        "taskQueue": {
+          "name": "tq-733cff68-44a2-41b8-ad85-1d4ee6291579-TestIntegrationSuite/TestMultipleUpdateOrderingCancel",
+          "kind": "Normal",
+          "normalName": ""
+        },
+        "input": null,
+        "workflowExecutionTimeout": "15s",
+        "workflowRunTimeout": "15s",
+        "workflowTaskTimeout": "1s",
+        "continuedExecutionRunId": "",
+        "initiator": "Unspecified",
+        "continuedFailure": null,
+        "lastCompletionResult": null,
+        "originalExecutionRunId": "bf3a8dfb-61f9-4ea2-a5f6-ce6a9103fbab",
+        "identity": "13318@Quinn-Klassens-MacBook-Pro.local@",
+        "firstExecutionRunId": "bf3a8dfb-61f9-4ea2-a5f6-ce6a9103fbab",
+        "retryPolicy": null,
+        "attempt": 1,
+        "workflowExecutionExpirationTime": "2023-11-28T16:56:34.802Z",
+        "cronSchedule": "",
+        "firstWorkflowTaskBackoff": "0s",
+        "memo": null,
+        "searchAttributes": null,
+        "prevAutoResetPoints": null,
+        "header": {
+          "fields": {}
+        },
+        "parentInitiatedEventVersion": "0",
+        "workflowId": "test-multiple-update-ordering",
+        "sourceVersionStamp": null
+      }
+    },
+    {
+      "eventId": "2",
+      "eventTime": "2023-11-28T16:56:19.803105378Z",
+      "eventType": "WorkflowTaskScheduled",
+      "version": "0",
+      "taskId": "1446788",
+      "workerMayIgnore": false,
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "tq-733cff68-44a2-41b8-ad85-1d4ee6291579-TestIntegrationSuite/TestMultipleUpdateOrderingCancel",
+          "kind": "Normal",
+          "normalName": ""
+        },
+        "startToCloseTimeout": "1s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "3",
+      "eventTime": "2023-11-28T16:56:19.817677670Z",
+      "eventType": "WorkflowExecutionCancelRequested",
+      "version": "0",
+      "taskId": "1446797",
+      "workerMayIgnore": false,
+      "workflowExecutionCancelRequestedEventAttributes": {
+        "cause": "",
+        "externalInitiatedEventId": "0",
+        "externalWorkflowExecution": null,
+        "identity": "13318@Quinn-Klassens-MacBook-Pro.local@"
+      }
+    },
+    {
+      "eventId": "4",
+      "eventTime": "2023-11-28T16:56:24.846537880Z",
+      "eventType": "WorkflowTaskStarted",
+      "version": "0",
+      "taskId": "1446799",
+      "workerMayIgnore": false,
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "13318@Quinn-Klassens-MacBook-Pro.local@",
+        "requestId": "7e88b502-e3d3-4553-9fbe-18411cef7a5e",
+        "suggestContinueAsNew": false,
+        "historySizeBytes": "990"
+      }
+    },
+    {
+      "eventId": "5",
+      "eventTime": "2023-11-28T16:56:24.876563214Z",
+      "eventType": "WorkflowTaskCompleted",
+      "version": "0",
+      "taskId": "1446803",
+      "workerMayIgnore": false,
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "2",
+        "startedEventId": "4",
+        "identity": "13318@Quinn-Klassens-MacBook-Pro.local@",
+        "binaryChecksum": "",
+        "workerVersion": {
+          "buildId": "62d192ee9495d08baad51e9cb4060dcc",
+          "bundleId": "",
+          "useVersioning": false
+        },
+        "sdkMetadata": {
+          "coreUsedFlags": [],
+          "langUsedFlags": [
+            3,
+            4
+          ],
+          "sdkName": "temporal-go",
+          "sdkVersion": "1.25.1"
+        },
+        "meteringMetadata": {
+          "nonfirstLocalActivityExecutionAttempts": 0
+        }
+      }
+    },
+    {
+      "eventId": "6",
+      "eventTime": "2023-11-28T16:56:24.877446339Z",
+      "eventType": "WorkflowExecutionUpdateAccepted",
+      "version": "0",
+      "taskId": "1446804",
+      "workerMayIgnore": false,
+      "workflowExecutionUpdateAcceptedEventAttributes": {
+        "protocolInstanceId": "67b35fc6-482c-4c07-a735-170845a63f0c",
+        "acceptedRequestMessageId": "67b35fc6-482c-4c07-a735-170845a63f0c/request",
+        "acceptedRequestSequencingEventId": "3",
+        "acceptedRequest": {
+          "meta": {
+            "updateId": "67b35fc6-482c-4c07-a735-170845a63f0c",
+            "identity": "13318@Quinn-Klassens-MacBook-Pro.local@"
+          },
+          "input": {
+            "header": {
+              "fields": {}
+            },
+            "name": "echo",
+            "args": null
+          }
+        }
+      }
+    },
+    {
+      "eventId": "7",
+      "eventTime": "2023-11-28T16:56:24.877501922Z",
+      "eventType": "ActivityTaskScheduled",
+      "version": "0",
+      "taskId": "1446805",
+      "workerMayIgnore": false,
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "7",
+        "activityType": {
+          "name": "Echo"
+        },
+        "taskQueue": {
+          "name": "tq-733cff68-44a2-41b8-ad85-1d4ee6291579-TestIntegrationSuite/TestMultipleUpdateOrderingCancel",
+          "kind": "Normal",
+          "normalName": ""
+        },
+        "header": {
+          "fields": {}
+        },
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "MQ=="
+            },
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "MQ=="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "5s",
+        "scheduleToStartTimeout": "5s",
+        "startToCloseTimeout": "5s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "5",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2,
+          "maximumInterval": "100s",
+          "maximumAttempts": 0,
+          "nonRetryableErrorTypes": []
+        },
+        "useCompatibleVersion": true
+      }
+    },
+    {
+      "eventId": "8",
+      "eventTime": "2023-11-28T16:56:24.877519172Z",
+      "eventType": "ActivityTaskCancelRequested",
+      "version": "0",
+      "taskId": "1446806",
+      "workerMayIgnore": false,
+      "activityTaskCancelRequestedEventAttributes": {
+        "scheduledEventId": "7",
+        "workflowTaskCompletedEventId": "5"
+      }
+    },
+    {
+      "eventId": "9",
+      "eventTime": "2023-11-28T16:56:24.877554922Z",
+      "eventType": "WorkflowExecutionUpdateCompleted",
+      "version": "0",
+      "taskId": "1446807",
+      "workerMayIgnore": false,
+      "workflowExecutionUpdateCompletedEventAttributes": {
+        "meta": {
+          "updateId": "67b35fc6-482c-4c07-a735-170845a63f0c",
+          "identity": ""
+        },
+        "acceptedEventId": "6",
+        "outcome": {
+          "failure": {
+            "message": "canceled",
+            "source": "GoSDK",
+            "stackTrace": "",
+            "encodedAttributes": null,
+            "cause": null,
+            "canceledFailureInfo": {
+              "details": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "eventId": "10",
+      "eventTime": "2023-11-28T16:56:24.877575422Z",
+      "eventType": "WorkflowExecutionUpdateAccepted",
+      "version": "0",
+      "taskId": "1446808",
+      "workerMayIgnore": false,
+      "workflowExecutionUpdateAcceptedEventAttributes": {
+        "protocolInstanceId": "ca99de81-de56-4b35-8cc5-6aaf4921c01d",
+        "acceptedRequestMessageId": "ca99de81-de56-4b35-8cc5-6aaf4921c01d/request",
+        "acceptedRequestSequencingEventId": "3",
+        "acceptedRequest": {
+          "meta": {
+            "updateId": "ca99de81-de56-4b35-8cc5-6aaf4921c01d",
+            "identity": "13318@Quinn-Klassens-MacBook-Pro.local@"
+          },
+          "input": {
+            "header": {
+              "fields": {}
+            },
+            "name": "echo",
+            "args": null
+          }
+        }
+      }
+    },
+    {
+      "eventId": "11",
+      "eventTime": "2023-11-28T16:56:24.877591589Z",
+      "eventType": "ActivityTaskScheduled",
+      "version": "0",
+      "taskId": "1446809",
+      "workerMayIgnore": false,
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "11",
+        "activityType": {
+          "name": "Echo"
+        },
+        "taskQueue": {
+          "name": "tq-733cff68-44a2-41b8-ad85-1d4ee6291579-TestIntegrationSuite/TestMultipleUpdateOrderingCancel",
+          "kind": "Normal",
+          "normalName": ""
+        },
+        "header": {
+          "fields": {}
+        },
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "MQ=="
+            },
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "MQ=="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "5s",
+        "scheduleToStartTimeout": "5s",
+        "startToCloseTimeout": "5s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "5",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2,
+          "maximumInterval": "100s",
+          "maximumAttempts": 0,
+          "nonRetryableErrorTypes": []
+        },
+        "useCompatibleVersion": true
+      }
+    },
+    {
+      "eventId": "12",
+      "eventTime": "2023-11-28T16:56:24.877598755Z",
+      "eventType": "ActivityTaskCancelRequested",
+      "version": "0",
+      "taskId": "1446810",
+      "workerMayIgnore": false,
+      "activityTaskCancelRequestedEventAttributes": {
+        "scheduledEventId": "11",
+        "workflowTaskCompletedEventId": "5"
+      }
+    },
+    {
+      "eventId": "13",
+      "eventTime": "2023-11-28T16:56:24.877605630Z",
+      "eventType": "WorkflowExecutionUpdateCompleted",
+      "version": "0",
+      "taskId": "1446811",
+      "workerMayIgnore": false,
+      "workflowExecutionUpdateCompletedEventAttributes": {
+        "meta": {
+          "updateId": "ca99de81-de56-4b35-8cc5-6aaf4921c01d",
+          "identity": ""
+        },
+        "acceptedEventId": "10",
+        "outcome": {
+          "failure": {
+            "message": "canceled",
+            "source": "GoSDK",
+            "stackTrace": "",
+            "encodedAttributes": null,
+            "cause": null,
+            "canceledFailureInfo": {
+              "details": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "eventId": "14",
+      "eventTime": "2023-11-28T16:56:24.877613672Z",
+      "eventType": "WorkflowExecutionUpdateAccepted",
+      "version": "0",
+      "taskId": "1446812",
+      "workerMayIgnore": false,
+      "workflowExecutionUpdateAcceptedEventAttributes": {
+        "protocolInstanceId": "91c39ecb-99d6-43e1-a074-b81193870e78",
+        "acceptedRequestMessageId": "91c39ecb-99d6-43e1-a074-b81193870e78/request",
+        "acceptedRequestSequencingEventId": "3",
+        "acceptedRequest": {
+          "meta": {
+            "updateId": "91c39ecb-99d6-43e1-a074-b81193870e78",
+            "identity": "13318@Quinn-Klassens-MacBook-Pro.local@"
+          },
+          "input": {
+            "header": {
+              "fields": {}
+            },
+            "name": "echo",
+            "args": null
+          }
+        }
+      }
+    },
+    {
+      "eventId": "15",
+      "eventTime": "2023-11-28T16:56:24.877620589Z",
+      "eventType": "ActivityTaskScheduled",
+      "version": "0",
+      "taskId": "1446813",
+      "workerMayIgnore": false,
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "15",
+        "activityType": {
+          "name": "Echo"
+        },
+        "taskQueue": {
+          "name": "tq-733cff68-44a2-41b8-ad85-1d4ee6291579-TestIntegrationSuite/TestMultipleUpdateOrderingCancel",
+          "kind": "Normal",
+          "normalName": ""
+        },
+        "header": {
+          "fields": {}
+        },
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "MQ=="
+            },
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "MQ=="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "5s",
+        "scheduleToStartTimeout": "5s",
+        "startToCloseTimeout": "5s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "5",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2,
+          "maximumInterval": "100s",
+          "maximumAttempts": 0,
+          "nonRetryableErrorTypes": []
+        },
+        "useCompatibleVersion": true
+      }
+    },
+    {
+      "eventId": "16",
+      "eventTime": "2023-11-28T16:56:24.877624672Z",
+      "eventType": "ActivityTaskCancelRequested",
+      "version": "0",
+      "taskId": "1446814",
+      "workerMayIgnore": false,
+      "activityTaskCancelRequestedEventAttributes": {
+        "scheduledEventId": "15",
+        "workflowTaskCompletedEventId": "5"
+      }
+    },
+    {
+      "eventId": "17",
+      "eventTime": "2023-11-28T16:56:24.877630172Z",
+      "eventType": "WorkflowExecutionUpdateCompleted",
+      "version": "0",
+      "taskId": "1446815",
+      "workerMayIgnore": false,
+      "workflowExecutionUpdateCompletedEventAttributes": {
+        "meta": {
+          "updateId": "91c39ecb-99d6-43e1-a074-b81193870e78",
+          "identity": ""
+        },
+        "acceptedEventId": "14",
+        "outcome": {
+          "failure": {
+            "message": "canceled",
+            "source": "GoSDK",
+            "stackTrace": "",
+            "encodedAttributes": null,
+            "cause": null,
+            "canceledFailureInfo": {
+              "details": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "eventId": "18",
+      "eventTime": "2023-11-28T16:56:24.877637505Z",
+      "eventType": "WorkflowExecutionUpdateAccepted",
+      "version": "0",
+      "taskId": "1446816",
+      "workerMayIgnore": false,
+      "workflowExecutionUpdateAcceptedEventAttributes": {
+        "protocolInstanceId": "822ed276-adc7-467e-9057-8b3549fc81d5",
+        "acceptedRequestMessageId": "822ed276-adc7-467e-9057-8b3549fc81d5/request",
+        "acceptedRequestSequencingEventId": "3",
+        "acceptedRequest": {
+          "meta": {
+            "updateId": "822ed276-adc7-467e-9057-8b3549fc81d5",
+            "identity": "13318@Quinn-Klassens-MacBook-Pro.local@"
+          },
+          "input": {
+            "header": {
+              "fields": {}
+            },
+            "name": "echo",
+            "args": null
+          }
+        }
+      }
+    },
+    {
+      "eventId": "19",
+      "eventTime": "2023-11-28T16:56:24.877647255Z",
+      "eventType": "ActivityTaskScheduled",
+      "version": "0",
+      "taskId": "1446817",
+      "workerMayIgnore": false,
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "19",
+        "activityType": {
+          "name": "Echo"
+        },
+        "taskQueue": {
+          "name": "tq-733cff68-44a2-41b8-ad85-1d4ee6291579-TestIntegrationSuite/TestMultipleUpdateOrderingCancel",
+          "kind": "Normal",
+          "normalName": ""
+        },
+        "header": {
+          "fields": {}
+        },
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "MQ=="
+            },
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "MQ=="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "5s",
+        "scheduleToStartTimeout": "5s",
+        "startToCloseTimeout": "5s",
+        "heartbeatTimeout": "0s",
+        "workflowTaskCompletedEventId": "5",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2,
+          "maximumInterval": "100s",
+          "maximumAttempts": 0,
+          "nonRetryableErrorTypes": []
+        },
+        "useCompatibleVersion": true
+      }
+    },
+    {
+      "eventId": "20",
+      "eventTime": "2023-11-28T16:56:24.877650380Z",
+      "eventType": "ActivityTaskCancelRequested",
+      "version": "0",
+      "taskId": "1446818",
+      "workerMayIgnore": false,
+      "activityTaskCancelRequestedEventAttributes": {
+        "scheduledEventId": "19",
+        "workflowTaskCompletedEventId": "5"
+      }
+    },
+    {
+      "eventId": "21",
+      "eventTime": "2023-11-28T16:56:24.877656547Z",
+      "eventType": "WorkflowExecutionUpdateCompleted",
+      "version": "0",
+      "taskId": "1446819",
+      "workerMayIgnore": false,
+      "workflowExecutionUpdateCompletedEventAttributes": {
+        "meta": {
+          "updateId": "822ed276-adc7-467e-9057-8b3549fc81d5",
+          "identity": ""
+        },
+        "acceptedEventId": "18",
+        "outcome": {
+          "failure": {
+            "message": "canceled",
+            "source": "GoSDK",
+            "stackTrace": "",
+            "encodedAttributes": null,
+            "cause": null,
+            "canceledFailureInfo": {
+              "details": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "eventId": "22",
+      "eventTime": "2023-11-28T16:56:24.877662547Z",
+      "eventType": "WorkflowExecutionUpdateAccepted",
+      "version": "0",
+      "taskId": "1446820",
+      "workerMayIgnore": false,
+      "workflowExecutionUpdateAcceptedEventAttributes": {
+        "protocolInstanceId": "ec448fe1-b60b-4268-9316-4c8a8aa08bd6",
+        "acceptedRequestMessageId": "ec448fe1-b60b-4268-9316-4c8a8aa08bd6/request",
+        "acceptedRequestSequencingEventId": "3",
+        "acceptedRequest": {
+          "meta": {
+            "updateId": "ec448fe1-b60b-4268-9316-4c8a8aa08bd6",
+            "identity": "13318@Quinn-Klassens-MacBook-Pro.local@"
+          },
+          "input": {
+            "header": {
+              "fields": {}
+            },
+            "name": "sleep",
+            "args": null
+          }
+        }
+      }
+    },
+    {
+      "eventId": "23",
+      "eventTime": "2023-11-28T16:56:24.877672130Z",
+      "eventType": "TimerStarted",
+      "version": "0",
+      "taskId": "1446821",
+      "workerMayIgnore": false,
+      "timerStartedEventAttributes": {
+        "timerId": "23",
+        "startToFireTimeout": "1s",
+        "workflowTaskCompletedEventId": "5"
+      }
+    },
+    {
+      "eventId": "24",
+      "eventTime": "2023-11-28T16:56:24.877680422Z",
+      "eventType": "TimerCanceled",
+      "version": "0",
+      "taskId": "1446822",
+      "workerMayIgnore": false,
+      "timerCanceledEventAttributes": {
+        "timerId": "23",
+        "startedEventId": "23",
+        "workflowTaskCompletedEventId": "5",
+        "identity": "13318@Quinn-Klassens-MacBook-Pro.local@"
+      }
+    },
+    {
+      "eventId": "25",
+      "eventTime": "2023-11-28T16:56:24.877685839Z",
+      "eventType": "WorkflowExecutionUpdateCompleted",
+      "version": "0",
+      "taskId": "1446823",
+      "workerMayIgnore": false,
+      "workflowExecutionUpdateCompletedEventAttributes": {
+        "meta": {
+          "updateId": "ec448fe1-b60b-4268-9316-4c8a8aa08bd6",
+          "identity": ""
+        },
+        "acceptedEventId": "22",
+        "outcome": {
+          "failure": {
+            "message": "canceled",
+            "source": "GoSDK",
+            "stackTrace": "",
+            "encodedAttributes": null,
+            "cause": null,
+            "canceledFailureInfo": {
+              "details": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "eventId": "26",
+      "eventTime": "2023-11-28T16:56:24.877695547Z",
+      "eventType": "WorkflowExecutionUpdateAccepted",
+      "version": "0",
+      "taskId": "1446824",
+      "workerMayIgnore": false,
+      "workflowExecutionUpdateAcceptedEventAttributes": {
+        "protocolInstanceId": "2b2860a0-bb75-4f9e-bfb1-ae4fced0345e",
+        "acceptedRequestMessageId": "2b2860a0-bb75-4f9e-bfb1-ae4fced0345e/request",
+        "acceptedRequestSequencingEventId": "3",
+        "acceptedRequest": {
+          "meta": {
+            "updateId": "2b2860a0-bb75-4f9e-bfb1-ae4fced0345e",
+            "identity": "13318@Quinn-Klassens-MacBook-Pro.local@"
+          },
+          "input": {
+            "header": {
+              "fields": {}
+            },
+            "name": "sleep",
+            "args": null
+          }
+        }
+      }
+    },
+    {
+      "eventId": "27",
+      "eventTime": "2023-11-28T16:56:24.877701380Z",
+      "eventType": "TimerStarted",
+      "version": "0",
+      "taskId": "1446825",
+      "workerMayIgnore": false,
+      "timerStartedEventAttributes": {
+        "timerId": "27",
+        "startToFireTimeout": "1s",
+        "workflowTaskCompletedEventId": "5"
+      }
+    },
+    {
+      "eventId": "28",
+      "eventTime": "2023-11-28T16:56:24.877702505Z",
+      "eventType": "TimerCanceled",
+      "version": "0",
+      "taskId": "1446826",
+      "workerMayIgnore": false,
+      "timerCanceledEventAttributes": {
+        "timerId": "27",
+        "startedEventId": "27",
+        "workflowTaskCompletedEventId": "5",
+        "identity": "13318@Quinn-Klassens-MacBook-Pro.local@"
+      }
+    },
+    {
+      "eventId": "29",
+      "eventTime": "2023-11-28T16:56:24.877704630Z",
+      "eventType": "WorkflowExecutionUpdateCompleted",
+      "version": "0",
+      "taskId": "1446827",
+      "workerMayIgnore": false,
+      "workflowExecutionUpdateCompletedEventAttributes": {
+        "meta": {
+          "updateId": "2b2860a0-bb75-4f9e-bfb1-ae4fced0345e",
+          "identity": ""
+        },
+        "acceptedEventId": "26",
+        "outcome": {
+          "failure": {
+            "message": "canceled",
+            "source": "GoSDK",
+            "stackTrace": "",
+            "encodedAttributes": null,
+            "cause": null,
+            "canceledFailureInfo": {
+              "details": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "eventId": "30",
+      "eventTime": "2023-11-28T16:56:24.877715589Z",
+      "eventType": "WorkflowExecutionUpdateAccepted",
+      "version": "0",
+      "taskId": "1446828",
+      "workerMayIgnore": false,
+      "workflowExecutionUpdateAcceptedEventAttributes": {
+        "protocolInstanceId": "7b208937-82cd-4538-8029-506244aa66a8",
+        "acceptedRequestMessageId": "7b208937-82cd-4538-8029-506244aa66a8/request",
+        "acceptedRequestSequencingEventId": "3",
+        "acceptedRequest": {
+          "meta": {
+            "updateId": "7b208937-82cd-4538-8029-506244aa66a8",
+            "identity": "13318@Quinn-Klassens-MacBook-Pro.local@"
+          },
+          "input": {
+            "header": {
+              "fields": {}
+            },
+            "name": "sleep",
+            "args": null
+          }
+        }
+      }
+    },
+    {
+      "eventId": "31",
+      "eventTime": "2023-11-28T16:56:24.877721380Z",
+      "eventType": "TimerStarted",
+      "version": "0",
+      "taskId": "1446829",
+      "workerMayIgnore": false,
+      "timerStartedEventAttributes": {
+        "timerId": "31",
+        "startToFireTimeout": "1s",
+        "workflowTaskCompletedEventId": "5"
+      }
+    },
+    {
+      "eventId": "32",
+      "eventTime": "2023-11-28T16:56:24.877722089Z",
+      "eventType": "TimerCanceled",
+      "version": "0",
+      "taskId": "1446830",
+      "workerMayIgnore": false,
+      "timerCanceledEventAttributes": {
+        "timerId": "31",
+        "startedEventId": "31",
+        "workflowTaskCompletedEventId": "5",
+        "identity": "13318@Quinn-Klassens-MacBook-Pro.local@"
+      }
+    },
+    {
+      "eventId": "33",
+      "eventTime": "2023-11-28T16:56:24.877724505Z",
+      "eventType": "WorkflowExecutionUpdateCompleted",
+      "version": "0",
+      "taskId": "1446831",
+      "workerMayIgnore": false,
+      "workflowExecutionUpdateCompletedEventAttributes": {
+        "meta": {
+          "updateId": "7b208937-82cd-4538-8029-506244aa66a8",
+          "identity": ""
+        },
+        "acceptedEventId": "30",
+        "outcome": {
+          "failure": {
+            "message": "canceled",
+            "source": "GoSDK",
+            "stackTrace": "",
+            "encodedAttributes": null,
+            "cause": null,
+            "canceledFailureInfo": {
+              "details": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "eventId": "34",
+      "eventTime": "2023-11-28T16:56:24.877729922Z",
+      "eventType": "WorkflowExecutionUpdateAccepted",
+      "version": "0",
+      "taskId": "1446832",
+      "workerMayIgnore": false,
+      "workflowExecutionUpdateAcceptedEventAttributes": {
+        "protocolInstanceId": "0fc68c09-7cf4-47c5-a7fe-a54b87690075",
+        "acceptedRequestMessageId": "0fc68c09-7cf4-47c5-a7fe-a54b87690075/request",
+        "acceptedRequestSequencingEventId": "3",
+        "acceptedRequest": {
+          "meta": {
+            "updateId": "0fc68c09-7cf4-47c5-a7fe-a54b87690075",
+            "identity": "13318@Quinn-Klassens-MacBook-Pro.local@"
+          },
+          "input": {
+            "header": {
+              "fields": {}
+            },
+            "name": "empty",
+            "args": null
+          }
+        }
+      }
+    },
+    {
+      "eventId": "35",
+      "eventTime": "2023-11-28T16:56:24.877734130Z",
+      "eventType": "WorkflowExecutionUpdateCompleted",
+      "version": "0",
+      "taskId": "1446833",
+      "workerMayIgnore": false,
+      "workflowExecutionUpdateCompletedEventAttributes": {
+        "meta": {
+          "updateId": "0fc68c09-7cf4-47c5-a7fe-a54b87690075",
+          "identity": ""
+        },
+        "acceptedEventId": "34",
+        "outcome": {
+          "failure": {
+            "message": "canceled",
+            "source": "GoSDK",
+            "stackTrace": "",
+            "encodedAttributes": null,
+            "cause": null,
+            "canceledFailureInfo": {
+              "details": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "eventId": "36",
+      "eventTime": "2023-11-28T16:56:24.877738172Z",
+      "eventType": "WorkflowExecutionUpdateAccepted",
+      "version": "0",
+      "taskId": "1446834",
+      "workerMayIgnore": false,
+      "workflowExecutionUpdateAcceptedEventAttributes": {
+        "protocolInstanceId": "6f56376a-c2e9-4392-88d7-acab5a88ef5c",
+        "acceptedRequestMessageId": "6f56376a-c2e9-4392-88d7-acab5a88ef5c/request",
+        "acceptedRequestSequencingEventId": "3",
+        "acceptedRequest": {
+          "meta": {
+            "updateId": "6f56376a-c2e9-4392-88d7-acab5a88ef5c",
+            "identity": "13318@Quinn-Klassens-MacBook-Pro.local@"
+          },
+          "input": {
+            "header": {
+              "fields": {}
+            },
+            "name": "empty",
+            "args": null
+          }
+        }
+      }
+    },
+    {
+      "eventId": "37",
+      "eventTime": "2023-11-28T16:56:24.877747047Z",
+      "eventType": "WorkflowExecutionUpdateCompleted",
+      "version": "0",
+      "taskId": "1446835",
+      "workerMayIgnore": false,
+      "workflowExecutionUpdateCompletedEventAttributes": {
+        "meta": {
+          "updateId": "6f56376a-c2e9-4392-88d7-acab5a88ef5c",
+          "identity": ""
+        },
+        "acceptedEventId": "36",
+        "outcome": {
+          "failure": {
+            "message": "canceled",
+            "source": "GoSDK",
+            "stackTrace": "",
+            "encodedAttributes": null,
+            "cause": null,
+            "canceledFailureInfo": {
+              "details": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "eventId": "38",
+      "eventTime": "2023-11-28T16:56:24.877753547Z",
+      "eventType": "WorkflowExecutionUpdateAccepted",
+      "version": "0",
+      "taskId": "1446836",
+      "workerMayIgnore": false,
+      "workflowExecutionUpdateAcceptedEventAttributes": {
+        "protocolInstanceId": "2dca0463-2edb-41fd-99ae-771b6cf0ea5a",
+        "acceptedRequestMessageId": "2dca0463-2edb-41fd-99ae-771b6cf0ea5a/request",
+        "acceptedRequestSequencingEventId": "3",
+        "acceptedRequest": {
+          "meta": {
+            "updateId": "2dca0463-2edb-41fd-99ae-771b6cf0ea5a",
+            "identity": "13318@Quinn-Klassens-MacBook-Pro.local@"
+          },
+          "input": {
+            "header": {
+              "fields": {}
+            },
+            "name": "empty",
+            "args": null
+          }
+        }
+      }
+    },
+    {
+      "eventId": "39",
+      "eventTime": "2023-11-28T16:56:24.877757255Z",
+      "eventType": "WorkflowExecutionUpdateCompleted",
+      "version": "0",
+      "taskId": "1446837",
+      "workerMayIgnore": false,
+      "workflowExecutionUpdateCompletedEventAttributes": {
+        "meta": {
+          "updateId": "2dca0463-2edb-41fd-99ae-771b6cf0ea5a",
+          "identity": ""
+        },
+        "acceptedEventId": "38",
+        "outcome": {
+          "failure": {
+            "message": "canceled",
+            "source": "GoSDK",
+            "stackTrace": "",
+            "encodedAttributes": null,
+            "cause": null,
+            "canceledFailureInfo": {
+              "details": null
+            }
+          }
+        }
+      }
+    },
+    {
+      "eventId": "40",
+      "eventTime": "2023-11-28T16:56:24.877764089Z",
+      "eventType": "WorkflowExecutionCompleted",
+      "version": "0",
+      "taskId": "1446838",
+      "workerMayIgnore": false,
+      "workflowExecutionCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "MTA="
+            }
+          ]
+        },
+        "workflowTaskCompletedEventId": "5",
+        "newExecutionRunId": ""
+      }
+    }
+  ]
+}

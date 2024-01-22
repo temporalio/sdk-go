@@ -25,7 +25,7 @@ package internal
 import (
 	"errors"
 
-	"github.com/gogo/protobuf/proto"
+	"google.golang.org/protobuf/proto"
 	commonpb "go.temporal.io/api/common/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 	"go.temporal.io/sdk/converter"

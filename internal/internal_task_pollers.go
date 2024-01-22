@@ -33,7 +33,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gogo/protobuf/types"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
+
 	"github.com/pborman/uuid"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -41,7 +43,6 @@ import (
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/internal/common"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/log"
@@ -378,6 +379,8 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 		}
 		response, err := wtp.RespondTaskCompletedWithMetrics(completedRequest, taskErr, task.task, startTime)
 		if err != nil {
+			// If we get an error responding to the workflow task we need to evict the execution from the cache.
+			taskErr = err
 			return err
 		}
 
@@ -402,14 +405,19 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 ) (response *workflowservice.RespondWorkflowTaskCompletedResponse, err error) {
 	metricsHandler := wtp.metricsHandler.WithTags(metrics.WorkflowTags(task.WorkflowType.GetName()))
 	if taskErr != nil {
-		metricsHandler.Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
 		wtp.logger.Warn("Failed to process workflow task.",
 			tagWorkflowType, task.WorkflowType.GetName(),
 			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 			tagRunID, task.WorkflowExecution.GetRunId(),
 			tagAttempt, task.Attempt,
 			tagError, taskErr)
-		completedRequest = wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)
+		failWorkflowTask := wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)
+		failureReason := "WorkflowError"
+		if failWorkflowTask.Cause == enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR {
+			failureReason = "NonDeterminismError"
+		}
+		metricsHandler.WithTags(metrics.WorkflowTaskFailedTags(failureReason)).Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
+		completedRequest = failWorkflowTask
 	}
 
 	metricsHandler.Timer(metrics.WorkflowTaskExecutionLatency).Record(time.Since(startTime))
@@ -449,7 +457,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(
 					Kind:       enumspb.TASK_QUEUE_KIND_STICKY,
 					NormalName: wtp.taskQueueName,
 				},
-				ScheduleToStartTimeout: &wtp.StickyScheduleToStartTimeout,
+				ScheduleToStartTimeout: durationpb.New(wtp.StickyScheduleToStartTimeout),
 			}
 		}
 		eagerReserved := wtp.eagerActivityExecutor.applyToRequest(request)
@@ -789,7 +797,7 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	metricsHandler := wtp.metricsHandler.WithTags(metrics.WorkflowTags(response.WorkflowType.GetName()))
 	metricsHandler.Counter(metrics.WorkflowTaskQueuePollSucceedCounter).Inc(1)
 
-	scheduleToStartLatency := common.TimeValue(response.GetStartedTime()).Sub(common.TimeValue(response.GetScheduledTime()))
+	scheduleToStartLatency := response.GetStartedTime().AsTime().Sub(response.GetScheduledTime().AsTime())
 	metricsHandler.Timer(metrics.WorkflowTaskScheduleToStartLatency).Record(scheduleToStartLatency)
 	return task, nil
 }
@@ -928,7 +936,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 		Namespace:         atp.namespace,
 		TaskQueue:         &taskqueuepb.TaskQueue{Name: atp.taskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
 		Identity:          atp.identity,
-		TaskQueueMetadata: &taskqueuepb.TaskQueueMetadata{MaxTasksPerSecond: &types.DoubleValue{Value: atp.activitiesPerSecond}},
+		TaskQueueMetadata: &taskqueuepb.TaskQueueMetadata{MaxTasksPerSecond: wrapperspb.Double(atp.activitiesPerSecond)},
 		WorkerVersionCapabilities: &commonpb.WorkerVersionCapabilities{
 			BuildId:       atp.workerBuildID,
 			UseVersioning: atp.useBuildIDVersioning,
@@ -949,7 +957,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 	activityType := response.ActivityType.GetName()
 	metricsHandler := atp.metricsHandler.WithTags(metrics.ActivityTags(workflowType, activityType, atp.taskQueueName))
 
-	scheduleToStartLatency := common.TimeValue(response.GetStartedTime()).Sub(common.TimeValue(response.GetCurrentAttemptScheduledTime()))
+	scheduleToStartLatency := response.GetStartedTime().AsTime().Sub(response.GetCurrentAttemptScheduledTime().AsTime())
 	metricsHandler.Timer(metrics.ActivityScheduleToStartLatency).Record(scheduleToStartLatency)
 
 	return &activityTask{task: response}, nil
@@ -1013,7 +1021,7 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 
 	activityMetricsHandler.
 		Timer(metrics.ActivitySucceedEndToEndLatency).
-		Record(time.Since(common.TimeValue(activityTask.task.GetScheduledTime())))
+		Record(time.Since(activityTask.task.GetScheduledTime().AsTime()))
 	return nil
 }
 

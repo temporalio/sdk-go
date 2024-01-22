@@ -283,6 +283,133 @@ func TestWorkflowIDUpdateWorkflowByID(t *testing.T) {
 	require.Equal(t, "input", str)
 }
 
+func TestWorkflowUpdateOrder(t *testing.T) {
+	var suite WorkflowTestSuite
+	// Test UpdateWorkflowByID works with custom ID
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflow("update", "id", &updateCallback{
+			reject: func(err error) {
+				require.Fail(t, "update should not be rejected")
+			},
+			accept:   func() {},
+			complete: func(interface{}, error) {},
+		})
+	}, 0)
+
+	env.ExecuteWorkflow(func(ctx Context) (int, error) {
+		var inflightUpdates int
+		var ranUpdates int
+		err := SetUpdateHandler(ctx, "update", func(ctx Context) error {
+			inflightUpdates++
+			ranUpdates++
+			defer func() {
+				inflightUpdates--
+			}()
+			return Sleep(ctx, time.Hour)
+		}, UpdateHandlerOptions{})
+		if err != nil {
+			return 0, err
+		}
+		err = Await(ctx, func() bool { return inflightUpdates == 0 })
+		return ranUpdates, err
+	})
+	require.NoError(t, env.GetWorkflowError())
+	var result int
+	require.NoError(t, env.GetWorkflowResult(&result))
+	require.Equal(t, 1, result)
+}
+
+func TestWorkflowNotRegisteredRejected(t *testing.T) {
+	var suite WorkflowTestSuite
+	// Test UpdateWorkflowByID works with custom ID
+	env := suite.NewTestWorkflowEnvironment()
+	var updateRejectionErr error
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflow("update", "id", &updateCallback{
+			reject: func(err error) {
+				updateRejectionErr = err
+			},
+			accept: func() {
+				require.Fail(t, "update should not be accepted")
+			},
+			complete: func(interface{}, error) {},
+		})
+	}, 0)
+
+	env.ExecuteWorkflow(func(ctx Context) error {
+		return Sleep(ctx, time.Hour)
+	})
+	require.NoError(t, env.GetWorkflowError())
+	require.NoError(t, env.GetWorkflowResult(nil))
+	require.Error(t, updateRejectionErr)
+	require.Equal(t, "unknown update update. KnownUpdates=[]", updateRejectionErr.Error())
+}
+
+func TestWorkflowUpdateOrderAcceptReject(t *testing.T) {
+	var suite WorkflowTestSuite
+	// Test UpdateWorkflowByID works with custom ID
+	env := suite.NewTestWorkflowEnvironment()
+	// Send 3 updates, with one bad update
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflow("update", "1", &updateCallback{
+			reject: func(err error) {
+				require.Fail(t, "update should not be rejected")
+			},
+			accept:   func() {},
+			complete: func(interface{}, error) {},
+		})
+	}, 0)
+
+	var updateRejectionErr error
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflow("bad update", "2", &updateCallback{
+			reject: func(err error) {
+				updateRejectionErr = err
+			},
+			accept: func() {
+				require.Fail(t, "update should not be rejected")
+			},
+			complete: func(interface{}, error) {},
+		})
+	}, 0)
+
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflow("update", "3", &updateCallback{
+			reject: func(err error) {
+				require.Fail(t, "update should not be rejected")
+			},
+			accept:   func() {},
+			complete: func(interface{}, error) {},
+		})
+	}, 0)
+
+	env.ExecuteWorkflow(func(ctx Context) (int, error) {
+		var inflightUpdates int
+		var ranUpdates int
+		err := SetUpdateHandler(ctx, "update", func(ctx Context) error {
+			inflightUpdates++
+			ranUpdates++
+			defer func() {
+				inflightUpdates--
+			}()
+			return Sleep(ctx, time.Hour)
+		}, UpdateHandlerOptions{})
+		if err != nil {
+			return 0, err
+		}
+		err = Await(ctx, func() bool { return inflightUpdates == 0 })
+		return ranUpdates, err
+	})
+	require.NoError(t, env.GetWorkflowError())
+	var result int
+	require.NoError(t, env.GetWorkflowResult(&result))
+	require.Equal(t, 2, result)
+
+	require.Error(t, updateRejectionErr)
+	require.Equal(t, "unknown update bad update. KnownUpdates=[update]", updateRejectionErr.Error())
+}
+
 func TestWorkflowStartTimeInsideTestWorkflow(t *testing.T) {
 	var suite WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
@@ -372,4 +499,25 @@ func TestActivityMockingByNameWithoutRegistrationFails(t *testing.T) {
 	testSuite := &WorkflowTestSuite{}
 	env := testSuite.NewTestWorkflowEnvironment()
 	assert.Panics(t, func() { env.OnActivity("SayHello", mock.Anything, mock.Anything) }, "The code did not panic")
+}
+
+func TestMockCallWrapperNotBefore(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+	env.RegisterActivity(namedActivity)
+
+	c1 := env.OnActivity(namedActivity, mock.Anything, "call1").Return("result1", nil)
+	env.OnActivity(namedActivity, mock.Anything, "call2").Return("result2", nil).NotBefore(c1)
+
+	env.ExecuteWorkflow(func(ctx Context) error {
+		ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{
+			ScheduleToCloseTimeout: time.Hour,
+			StartToCloseTimeout:    time.Hour,
+		})
+		var result string
+		return ExecuteLocalActivity(ctx, "namedActivity", "call2").Get(ctx, &result)
+	})
+	var expectedErr *PanicError
+	require.ErrorAs(t, env.GetWorkflowError(), &expectedErr)
+	require.ErrorContains(t, expectedErr, "Must not be called before")
 }

@@ -36,6 +36,12 @@ import (
 	"time"
 
 	"github.com/pborman/uuid"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
+
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
@@ -51,11 +57,6 @@ import (
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/common/util"
 	"go.temporal.io/sdk/log"
-	uberatomic "go.uber.org/atomic"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	healthpb "google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/grpc/status"
 )
 
 // Assert that structs do indeed implement the interfaces
@@ -89,7 +90,7 @@ type (
 		contextPropagators       []ContextPropagator
 		workerInterceptors       []WorkerInterceptor
 		interceptor              ClientOutboundInterceptor
-		excludeInternalFromRetry *uberatomic.Bool
+		excludeInternalFromRetry *atomic.Bool
 		capabilities             *workflowservice.GetSystemInfoResponse_Capabilities
 		capabilitiesLock         sync.RWMutex
 		eagerDispatcher          *eagerWorkflowDispatcher
@@ -119,8 +120,10 @@ type (
 		GetRunID() string
 
 		// Get will fill the workflow execution result to valuePtr, if workflow
-		// execution is a success, or return corresponding error. This is a blocking
-		// API.
+		// execution is a success, or return corresponding error. If valuePtr is
+		// nil, valuePtr will be ignored and only the corresponding error of the 
+		// workflow will be returned (nil on workflow execution success). 
+		// This is a blocking API.
 		//
 		// This call will follow execution runs to the latest result for this run
 		// instead of strictly returning this run's result. This means that if the
@@ -136,8 +139,10 @@ type (
 		Get(ctx context.Context, valuePtr interface{}) error
 
 		// GetWithOptions will fill the workflow execution result to valuePtr, if
-		// workflow execution is a success, or return corresponding error. This is a
-		// blocking API.
+		// workflow execution is a success, or return corresponding error. If
+		// valuePtr is nil, valuePtr will be ignored and only the corresponding
+		// error of the workflow will be returned (nil on workflow execution success). 
+		// This is a blocking API.
 		//
 		// Note, values should not be reused for extraction here because merging on
 		// top of existing values may result in unexpected behavior similar to
@@ -1394,10 +1399,10 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 			TaskQueueName: attributes.GetTaskQueue().GetName(),
 		}
 		if attributes.WorkflowRunTimeout != nil {
-			err.WorkflowRunTimeout = *attributes.WorkflowRunTimeout
+			err.WorkflowRunTimeout = attributes.WorkflowRunTimeout.AsDuration()
 		}
 		if attributes.WorkflowTaskTimeout != nil {
-			err.WorkflowTaskTimeout = *attributes.WorkflowTaskTimeout
+			err.WorkflowTaskTimeout = attributes.WorkflowTaskTimeout.AsDuration()
 		}
 		return err
 	default:
@@ -1520,9 +1525,9 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		WorkflowType:             &commonpb.WorkflowType{Name: in.WorkflowType},
 		TaskQueue:                &taskqueuepb.TaskQueue{Name: in.Options.TaskQueue, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
 		Input:                    input,
-		WorkflowExecutionTimeout: &executionTimeout,
-		WorkflowRunTimeout:       &runTimeout,
-		WorkflowTaskTimeout:      &workflowTaskTimeout,
+		WorkflowExecutionTimeout: durationpb.New(executionTimeout),
+		WorkflowRunTimeout:       durationpb.New(runTimeout),
+		WorkflowTaskTimeout:      durationpb.New(workflowTaskTimeout),
 		Identity:                 w.client.identity,
 		WorkflowIdReusePolicy:    in.Options.WorkflowIDReusePolicy,
 		RetryPolicy:              convertToPBRetryPolicy(in.Options.RetryPolicy),
@@ -1538,7 +1543,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 	}
 
 	if in.Options.StartDelay != 0 {
-		startRequest.WorkflowStartDelay = &in.Options.StartDelay
+		startRequest.WorkflowStartDelay = durationpb.New(in.Options.StartDelay)
 	}
 
 	var response *workflowservice.StartWorkflowExecutionResponse
@@ -1660,9 +1665,9 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		WorkflowType:             &commonpb.WorkflowType{Name: in.WorkflowType},
 		TaskQueue:                &taskqueuepb.TaskQueue{Name: in.Options.TaskQueue, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
 		Input:                    input,
-		WorkflowExecutionTimeout: &executionTimeout,
-		WorkflowRunTimeout:       &runTimeout,
-		WorkflowTaskTimeout:      &taskTimeout,
+		WorkflowExecutionTimeout: durationpb.New(executionTimeout),
+		WorkflowRunTimeout:       durationpb.New(runTimeout),
+		WorkflowTaskTimeout:      durationpb.New(taskTimeout),
 		SignalName:               in.SignalName,
 		SignalInput:              signalInput,
 		Identity:                 w.client.identity,
@@ -1675,7 +1680,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 	}
 
 	if in.Options.StartDelay != 0 {
-		signalWithStartRequest.WorkflowStartDelay = &in.Options.StartDelay
+		signalWithStartRequest.WorkflowStartDelay = durationpb.New(in.Options.StartDelay)
 	}
 
 	var response *workflowservice.SignalWithStartWorkflowExecutionResponse
@@ -1934,5 +1939,5 @@ func (luh *lazyUpdateHandle) Get(ctx context.Context, valuePtr interface{}) erro
 }
 
 func (q *queryRejectedError) Error() string {
-	return q.queryRejected.GoString()
+	return fmt.Sprintf("query rejected: %s", q.queryRejected.Status.String())
 }

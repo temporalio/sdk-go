@@ -32,6 +32,10 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/suite"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
@@ -39,10 +43,8 @@ import (
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
-	"google.golang.org/grpc"
 
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/internal/common"
 	ilog "go.temporal.io/sdk/internal/log"
 )
 
@@ -146,10 +148,10 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 		},
 		ActivityType:           &commonpb.ActivityType{Name: "test"},
 		ActivityId:             uuid.New(),
-		ScheduledTime:          &now,
-		ScheduleToCloseTimeout: common.DurationPtr(1 * time.Second),
-		StartedTime:            &now,
-		StartToCloseTimeout:    common.DurationPtr(1 * time.Second),
+		ScheduledTime:          timestamppb.New(now),
+		ScheduleToCloseTimeout: durationpb.New(1 * time.Second),
+		StartedTime:            timestamppb.New(now),
+		StartToCloseTimeout:    durationpb.New(1 * time.Second),
 		WorkflowType: &commonpb.WorkflowType{
 			Name: "wType",
 		},
@@ -241,9 +243,9 @@ func (s *WorkersTestSuite) TestLongRunningWorkflowTask() {
 			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
 			Attributes: &historypb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: &historypb.WorkflowExecutionStartedEventAttributes{
 				TaskQueue:                &taskqueuepb.TaskQueue{Name: taskQueue},
-				WorkflowExecutionTimeout: common.DurationPtr(10 * time.Second),
-				WorkflowRunTimeout:       common.DurationPtr(10 * time.Second),
-				WorkflowTaskTimeout:      common.DurationPtr(2 * time.Second),
+				WorkflowExecutionTimeout: durationpb.New(10 * time.Second),
+				WorkflowRunTimeout:       durationpb.New(10 * time.Second),
+				WorkflowTaskTimeout:      durationpb.New(2 * time.Second),
 				WorkflowType:             &commonpb.WorkflowType{Name: "long-running-workflow-task-workflow-type"},
 			}},
 		},
@@ -379,9 +381,9 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
 			Attributes: &historypb.HistoryEvent_WorkflowExecutionStartedEventAttributes{WorkflowExecutionStartedEventAttributes: &historypb.WorkflowExecutionStartedEventAttributes{
 				TaskQueue:                &taskqueuepb.TaskQueue{Name: taskQueue},
-				WorkflowExecutionTimeout: common.DurationPtr(10 * time.Second),
-				WorkflowRunTimeout:       common.DurationPtr(10 * time.Second),
-				WorkflowTaskTimeout:      common.DurationPtr(3 * time.Second),
+				WorkflowExecutionTimeout: durationpb.New(10 * time.Second),
+				WorkflowRunTimeout:       durationpb.New(10 * time.Second),
+				WorkflowTaskTimeout:      durationpb.New(3 * time.Second),
 				WorkflowType:             &commonpb.WorkflowType{Name: "multiple-local-activities-workflow-type"},
 			}},
 		},
@@ -486,6 +488,14 @@ func (s *WorkersTestSuite) TestWorkerMultipleStop() {
 	s.NoError(worker.Start())
 	worker.Stop()
 	worker.Stop()
+}
+
+func (s *WorkersTestSuite) TestWorkerTaskQueueLimitDisableEager() {
+	client := NewServiceClient(s.service, nil, ClientOptions{Identity: "task-queue-limit-disable-eager"})
+	worker := NewAggregatedWorker(client, "task-queue-limit-disable-eager", WorkerOptions{
+		TaskQueueActivitiesPerSecond: 1.0,
+	})
+	s.True(worker.activityWorker.executionParameters.eagerActivityExecutor.disabled)
 }
 
 func (s *WorkersTestSuite) createLocalActivityMarkerDataForTest(activityID string) map[string]*commonpb.Payloads {

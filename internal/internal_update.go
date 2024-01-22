@@ -29,7 +29,6 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/gogo/protobuf/types"
 	commonpb "go.temporal.io/api/common/v1"
 	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
@@ -70,7 +69,7 @@ type (
 	// yield itself as necessary.
 	UpdateScheduler interface {
 		// Spawn starts a new named coroutine, executing the given function f.
-		Spawn(ctx Context, name string, f func(ctx Context)) Context
+		Spawn(ctx Context, name string, highPriority bool, f func(ctx Context)) Context
 
 		// Yield returns control to the scheduler.
 		Yield(ctx Context, status string)
@@ -131,12 +130,12 @@ func (up *updateProtocol) requireState(action string, valid ...updateState) {
 			return
 		}
 	}
-	panicIllegalState(fmt.Sprintf("invalid action %q in update protocol %v", action, up))
+	panicIllegalState(fmt.Sprintf("invalid action %q in update protocol %+v", action, up))
 }
 
 func (up *updateProtocol) HandleMessage(msg *protocolpb.Message) error {
 	var req updatepb.Request
-	if err := types.UnmarshalAny(msg.Body, &req); err != nil {
+	if err := msg.Body.UnmarshalTo(&req); err != nil {
 		return err
 	}
 	up.requireState("update request", updateStateNew)
@@ -253,20 +252,16 @@ func defaultUpdateHandler(
 		callbacks.Reject(err)
 		return
 	}
-	scheduler.Spawn(ctx, name, func(ctx Context) {
+	eo := getWorkflowEnvOptions(ctx)
+	priorityUpdateHandling := env.TryUse(SDKPriorityUpdateHandling)
+
+	updateRunner := func(ctx Context) {
 		ctx = WithValue(ctx, updateInfoContextKey, &UpdateInfo{
 			ID: id,
 		})
 
 		eo := getWorkflowEnvOptions(ctx)
-
-		// If we suspect that handler registration has not occurred (e.g.
-		// because this update is part of the first workflow task and is being
-		// delivered before the workflow function itself has run and had a
-		// chance to register update handlers) then we yield control back to the
-		// scheduler to allow handler registration to occur. The scheduler will
-		// resume this coroutine after others have run to a blocking point.
-		if len(eo.updateHandlers) == 0 {
+		if len(eo.updateHandlers) == 0 && !priorityUpdateHandling {
 			scheduler.Yield(ctx, "yielding for initial handler registration")
 		}
 		handler, ok := eo.updateHandlers[name]
@@ -307,7 +302,22 @@ func defaultUpdateHandler(
 		callbacks.Accept()
 		success, err := envInterceptor.inboundInterceptor.ExecuteUpdate(ctx, &input)
 		callbacks.Complete(success, err)
-	})
+	}
+
+	// If we suspect that handler registration has not occurred (e.g.
+	// because this update is part of the first workflow task and is being
+	// delivered before the workflow function itself has run and had a
+	// chance to register update handlers) then we queue updates
+	// to allow handler registration to occur. When a handler is registered the
+	// updates will be scheduled and ran.
+	if len(eo.updateHandlers) == 0 && priorityUpdateHandling {
+		env.QueueUpdate(name, func() {
+			scheduler.Spawn(ctx, name, priorityUpdateHandling, updateRunner)
+		})
+	} else {
+		scheduler.Spawn(ctx, name, priorityUpdateHandling, updateRunner)
+	}
+
 }
 
 // newUpdateHandler instantiates a new updateHandler if the supplied handler and
@@ -343,6 +353,11 @@ func newUpdateHandler(
 func (h *updateHandler) validate(ctx Context, input []interface{}) (err error) {
 	defer func() {
 		if p := recover(); p != nil {
+			if p == panicIllegalAccessCoroutineState {
+				// Don't handle the panic since this error means the workflow state is
+				// likely corrupted and should be discarded.
+				panic(p)
+			}
 			st := getStackTraceRaw("update validator [panic]:", 7, 0)
 			err = newPanicError(fmt.Sprintf("update validator panic: %v", p), st)
 		}

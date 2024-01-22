@@ -34,7 +34,6 @@ import (
 
 	updatepb "go.temporal.io/api/update/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
-	uberatomic "go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
@@ -174,7 +173,7 @@ func (s *historyEventIteratorSuite) SetupTest() {
 	s.wfClient = &WorkflowClient{
 		workflowService:          s.workflowServiceClient,
 		namespace:                DefaultNamespace,
-		excludeInternalFromRetry: uberatomic.NewBool(false),
+		excludeInternalFromRetry: &atomic.Bool{},
 	}
 }
 
