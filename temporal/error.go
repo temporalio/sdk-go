@@ -176,7 +176,7 @@ type ApplicationErrorAttributes = internal.ApplicationErrorAttributes
 // newly created error could be controlled through instance of ApplicationErrorAttributes.
 // This function also receives some extra requests. See activity.ActivityExtraRequests for details.
 func NewApplicationErrorWithExtraRequests(msg, errType string, attributes ApplicationErrorAttributes, extras ExtraRequests) error {
-	return internal.NewApplicationErrorWithExtraRequests(msg, errType, attributes, extras)
+	return internal.NewApplicationErrorWithOptions(msg, errType, attributes)
 }
 
 // NewApplicationError creates new instance of retryable *ApplicationError with message, type, and optional details.

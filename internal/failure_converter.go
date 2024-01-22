@@ -24,11 +24,14 @@ package internal
 
 import (
 	"errors"
+	"time"
 
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	commonpb "go.temporal.io/api/common/v1"
 	failurepb "go.temporal.io/api/failure/v1"
+
 	"go.temporal.io/sdk/converter"
 )
 
@@ -92,9 +95,10 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 	switch err := err.(type) {
 	case *ApplicationError:
 		failureInfo := &failurepb.ApplicationFailureInfo{
-			Type:         err.errType,
-			NonRetryable: err.NonRetryable(),
-			Details:      convertErrDetailsToPayloads(err.details, dfc.dataConverter),
+			Type:           err.errType,
+			NonRetryable:   err.NonRetryable(),
+			Details:        convertErrDetailsToPayloads(err.details, dfc.dataConverter),
+			NextRetryDelay: durationpb.New(err.nextRetryDelay),
 		}
 		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: failureInfo}
 	case *CanceledError:
@@ -191,12 +195,20 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 		case getErrType(&PanicError{}):
 			err = newPanicError(message, stackTrace)
 		default:
-			err = NewApplicationError(
+			var nextRetryDelay time.Duration
+			if delay := applicationFailureInfo.GetNextRetryDelay(); delay != nil {
+				nextRetryDelay = delay.AsDuration()
+			}
+			err = NewApplicationErrorWithOptions(
 				message,
 				applicationFailureInfo.GetType(),
-				applicationFailureInfo.GetNonRetryable(),
-				dfc.FailureToError(failure.GetCause()),
-				details)
+				ApplicationErrorAttributes{
+					NonRetryable:   applicationFailureInfo.GetNonRetryable(),
+					Cause:          dfc.FailureToError(failure.GetCause()),
+					Details:        []interface{}{details},
+					NextRetryDelay: nextRetryDelay,
+				},
+			)
 		}
 	} else if failure.GetCanceledFailureInfo() != nil {
 		details := newEncodedValues(failure.GetCanceledFailureInfo().GetDetails(), dfc.dataConverter)

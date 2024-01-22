@@ -1150,12 +1150,11 @@ func convertActivityResultToRespondRequest(
 	}
 
 	return &workflowservice.RespondActivityTaskFailedRequest{
-		TaskToken:      taskToken,
-		Failure:        failureConverter.ErrorToFailure(err),
-		Identity:       identity,
-		Namespace:      namespace,
-		WorkerVersion:  versionStamp,
-		NextRetryDelay: extractActivityRequestsFrom(err),
+		TaskToken:     taskToken,
+		Failure:       failureConverter.ErrorToFailure(err),
+		Identity:      identity,
+		Namespace:     namespace,
+		WorkerVersion: versionStamp,
 	}
 }
 
@@ -1226,16 +1225,4 @@ func convertActivityResultToRespondRequestByID(
 		Failure:    failureConverter.ErrorToFailure(err),
 		Identity:   identity,
 	}
-}
-
-func extractActivityRequestsFrom(err error) *durationpb.Duration {
-	applicationError, ok := err.(*ApplicationError)
-	if !ok {
-		return nil
-	}
-	activityExtra, ok := applicationError.extra.(*ActivityExtraRequests)
-	if !ok {
-		return nil
-	}
-	return durationpb.New(activityExtra.RetryDelay)
 }

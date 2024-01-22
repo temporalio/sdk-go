@@ -120,20 +120,21 @@ Workflow consumers will get an instance of *WorkflowExecutionError. This error w
 
 type (
 	ApplicationErrorAttributes struct {
-		NonRetryable bool
-		Cause        error
-		Details      []interface{}
+		NonRetryable   bool
+		Cause          error
+		Details        []interface{}
+		NextRetryDelay time.Duration
 	}
 
 	// ApplicationError returned from activity implementations with message and optional details.
 	ApplicationError struct {
 		temporalError
-		msg          string
-		errType      string
-		nonRetryable bool
-		cause        error
-		details      converter.EncodedValues
-		extra        ExtraRequests
+		msg            string
+		errType        string
+		nonRetryable   bool
+		cause          error
+		details        converter.EncodedValues
+		nextRetryDelay time.Duration
 	}
 
 	// TimeoutError returned when activity or child workflow timed out.
@@ -310,18 +311,12 @@ func NewApplicationError(msg string, errType string, nonRetryable bool, cause er
 	return applicationErr
 }
 
-func NewApplicationErrorWithExtraRequests(
-	msg string,
-	errType string,
-	attributes ApplicationErrorAttributes,
-	requests ExtraRequests,
-) error {
+func NewApplicationErrorWithOptions(msg string, errType string, attributes ApplicationErrorAttributes) error {
 	applicationErr := &ApplicationError{
 		msg:          msg,
 		errType:      errType,
 		cause:        attributes.Cause,
 		nonRetryable: attributes.NonRetryable,
-		extra:        requests,
 	}
 	// When return error to user, use EncodedValues as details and data is ready to be decoded by calling Get
 	details := attributes.Details

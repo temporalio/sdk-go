@@ -642,7 +642,7 @@ func Test_convertErrorToFailure_ApplicationErrorWithExtraRequests(t *testing.T) 
 	require := require.New(t)
 	fc := GetDefaultFailureConverter()
 
-	err := NewApplicationErrorWithExtraRequests(
+	err := NewApplicationErrorWithOptions(
 		"message",
 		"customType",
 		ApplicationErrorAttributes{
@@ -650,7 +650,6 @@ func Test_convertErrorToFailure_ApplicationErrorWithExtraRequests(t *testing.T) 
 			Cause:        errors.New("cause error"),
 			Details:      []interface{}{"details", 2208},
 		},
-		ActivityExtraRequests{},
 	)
 	f := fc.ErrorToFailure(err)
 	require.Equal("message", f.GetMessage())
