@@ -48,7 +48,8 @@ import (
 )
 
 const (
-	defaultSignalChannelSize = 100000 // really large buffering size(100K)
+	defaultSignalChannelSize    = 100000 // really large buffering size(100K)
+	defaultCoroutineExitTimeout = 100 * time.Millisecond
 
 	panicIllegalAccessCoroutineState = "getState: illegal access from outside of workflow context"
 )
@@ -89,6 +90,7 @@ type (
 		ExecuteUntilAllBlocked(deadlockDetectionTimeout time.Duration) (err error)
 		// IsDone returns true when all of coroutines are completed
 		IsDone() bool
+		IsClosed() bool
 		IsExecuting() bool
 		Close()             // Destroys all coroutines without waiting for their completion
 		StackTrace() string // Stack trace of all coroutines owned by the Dispatcher instance
@@ -1075,11 +1077,21 @@ func (s *coroutineState) close() {
 	s.aboutToBlock <- true
 }
 
-func (s *coroutineState) exit() {
+// exit tries to run Goexit on the coroutine and wait for it to exit
+// within timeout.
+func (s *coroutineState) exit(timeout time.Duration) {
 	if !s.closed.Load() {
 		s.unblock <- func(status string, stackDepth int) bool {
 			runtime.Goexit()
 			return true
+		}
+
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
+
+		select {
+		case <-s.aboutToBlock:
+		case <-timer.C:
 		}
 	}
 }
@@ -1235,16 +1247,14 @@ func (d *dispatcherImpl) Close() {
 	}
 	d.closed = true
 	d.mutex.Unlock()
-	// This loop breaks our expectation that only one workflow
-	// coroutine is running at any time because it triggers all workflow goroutines
-	// to call their defers at once. Adding synchronization seemed more problematic because
-	// it could block eviction if there was a deadlock.
-	for i := 0; i < len(d.coroutines); i++ {
-		c := d.coroutines[i]
-		if !c.closed.Load() {
-			c.exit()
+	// We need to exit the coroutines in a separate goroutine because:
+	// 	* The coroutine may be stuck and won't respond to the exit request.
+	// 	* On exit the coroutines defers will still run and that may block.
+	go func() {
+		for _, c := range d.coroutines {
+			c.exit(defaultCoroutineExitTimeout)
 		}
-	}
+	}()
 }
 
 func (d *dispatcherImpl) StackTrace() string {

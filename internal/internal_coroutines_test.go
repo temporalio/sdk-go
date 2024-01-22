@@ -28,7 +28,10 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strconv"
 	"strings"
+	"sync/atomic"
+
 	"testing"
 	"time"
 
@@ -69,6 +72,78 @@ func TestDispatcher(t *testing.T) {
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
 	require.True(t, d.IsDone())
 	require.Equal(t, "bar", value)
+}
+
+func TestDispatcherDeferClose(t *testing.T) {
+	var value atomic.Bool
+	d := createNewDispatcher(func(ctx Context) {
+		// Block all coroutines on this channel
+		c1 := NewChannel(ctx)
+		defer func() {
+			value.Store(true)
+		}()
+		c1.Receive(ctx, nil)
+	})
+	defer d.Close()
+	require.Equal(t, false, value.Load())
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+	// Closing the dispatcher will cause the blocked goroutine to stop executing, but defers
+	// will still run.
+	d.Close()
+	require.True(t, d.IsClosed())
+	require.Eventually(t, value.Load, time.Second, 10*time.Millisecond)
+}
+
+func TestDispatcherDeadlockedDefer(t *testing.T) {
+	var value atomic.Bool
+	d := createNewDispatcher(func(ctx Context) {
+		// Block all coroutines on this channel
+		c1 := NewChannel(ctx)
+		defer func() {
+			// The blocking defer should not block the dispatcher closing
+			time.Sleep(time.Hour)
+			value.Store(true)
+		}()
+		c1.Receive(ctx, nil)
+	})
+	require.Equal(t, false, value.Load())
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+	// Closing the dispatcher will cause the blocked goroutine to stop executing, but defers
+	// will still run.
+	d.Close()
+	require.True(t, d.IsClosed())
+	require.Equal(t, false, value.Load())
+}
+
+func TestDispatcherDeferCloseRace(t *testing.T) {
+	var value atomic.Int32
+	var d dispatcher
+	d = createNewDispatcher(func(ctx Context) {
+		// Block all coroutines on this channel
+		c1 := NewChannel(ctx)
+		for i := 0; i < 100; i++ {
+			index := i
+			id := "coroutine_" + strconv.Itoa(index)
+			d.NewCoroutine(ctx, id, false, func(ctx Context) {
+				defer func() {
+					value.Store(int32(index))
+				}()
+				c1.Receive(ctx, nil)
+			})
+		}
+		c1.Receive(ctx, nil)
+	})
+	defer d.Close()
+
+	require.Equal(t, int32(0), value.Load())
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+	// Closing the dispatcher will cause the blocked coroutine to stop executing, but defers
+	// will still run.
+	d.Close()
+	require.True(t, d.IsClosed())
+	require.Eventually(t, func() bool {
+		return value.Load() == int32(99)
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestNonBlockingChildren(t *testing.T) {
