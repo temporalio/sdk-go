@@ -298,34 +298,22 @@ var (
 
 // NewApplicationError create new instance of *ApplicationError with message, type, and optional details.
 func NewApplicationError(msg string, errType string, nonRetryable bool, cause error, details ...interface{}) error {
-	applicationErr := &ApplicationError{
-		msg:          msg,
-		errType:      errType,
-		nonRetryable: nonRetryable,
-		cause:        cause}
-
-	// When return error to user, use EncodedValues as details and data is ready to be decoded by calling Get
-	if len(details) == 1 {
-		if d, ok := details[0].(*EncodedValues); ok {
-			applicationErr.details = d
-			return applicationErr
-		}
-	}
-
-	// When create error for server, use ErrorDetailsValues as details to hold values and encode later
-	applicationErr.details = ErrorDetailsValues(details)
-	return applicationErr
+	return NewApplicationErrorWithOptions(
+		msg,
+		errType,
+		ApplicationErrorOptions{NonRetryable: nonRetryable, Cause: cause, Details: details},
+	)
 }
 
-func NewApplicationErrorWithOptions(msg string, errType string, attributes ApplicationErrorOptions) error {
+func NewApplicationErrorWithOptions(msg string, errType string, options ApplicationErrorOptions) error {
 	applicationErr := &ApplicationError{
 		msg:          msg,
 		errType:      errType,
-		cause:        attributes.Cause,
-		nonRetryable: attributes.NonRetryable,
+		cause:        options.Cause,
+		nonRetryable: options.NonRetryable,
 	}
 	// When return error to user, use EncodedValues as details and data is ready to be decoded by calling Get
-	details := attributes.Details
+	details := options.Details
 	if len(details) == 1 {
 		if d, ok := details[0].(*EncodedValues); ok {
 			applicationErr.details = d
