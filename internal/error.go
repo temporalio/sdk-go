@@ -128,7 +128,7 @@ type (
 		// NextRetryInterval is a request from server to override retry interval calculated by the
 		// server according to the RetryPolicy set by the Workflow.
 		// IMPORTANT: NextRetryInterval is meaningful only within the context of errors originating from Activity.
-		// Any value set from Worflow or LocalActivity will be silently ignored.
+		// Any value set from Workflow or LocalActivity will be silently ignored.
 		// It is impossible to specify immediate retry as it is indistinguishable from the default value. As a
 		// workaround you could set NextRetryDelay to some small value.
 		NextRetryDelay time.Duration
