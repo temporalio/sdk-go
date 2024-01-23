@@ -30,8 +30,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
-	"github.com/grpc-ecosystem/go-grpc-middleware/util/backoffutils"
+	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/util/backoffutils"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -136,7 +136,7 @@ func NewRetryOptionsInterceptor(excludeInternal *atomic.Bool) grpc.UnaryClientIn
 				ctx = deadlineCtx
 			}
 			// Populate backoff function, which provides retrier with the delay for each attempt.
-			opts = append(opts, grpc_retry.WithBackoff(func(attempt uint) time.Duration {
+			opts = append(opts, grpc_retry.WithBackoff(func(_ context.Context, attempt uint) time.Duration {
 				next := float64(rc.initialInterval) * math.Pow(rc.backoffCoefficient, float64(attempt))
 				if rc.maximumInterval != UnlimitedInterval {
 					next = math.Min(next, float64(rc.maximumInterval))
