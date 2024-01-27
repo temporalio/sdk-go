@@ -262,6 +262,16 @@ func (t *TestActivityEnvironment) SetOnActivityHeartbeatListener(
 	return t
 }
 
+// SetActivityStartToCloseTimeout sets the start to close timeouts of activities in the test environment.
+func (e *TestActivityEnvironment) SetActivityStartToCloseTimeout(timeout time.Duration) {
+	e.impl.testWorkflowEnvironmentShared.activityStartToCloseTimeout = timeout
+}
+
+// SetActivityStartToCloseTimeout sets the schedule to close timeouts of activities in the test environment
+func (e *TestActivityEnvironment) SetActivityScheduleToCloseTimeout(timeout time.Duration) {
+	e.impl.testWorkflowEnvironmentShared.activityScheduleToCloseTimeout = timeout
+}
+
 // RegisterWorkflow registers workflow implementation with the TestWorkflowEnvironment
 func (e *TestWorkflowEnvironment) RegisterWorkflow(w interface{}) {
 	e.impl.RegisterWorkflow(w)
