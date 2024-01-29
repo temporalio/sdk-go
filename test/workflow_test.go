@@ -2290,7 +2290,7 @@ func (w *Workflows) ScheduleTypedSearchAttributesWorkflow(ctx workflow.Context) 
 	attributes := workflow.GetTypedSearchAttributes(ctx)
 
 	scheduleStartTimeKey := temporal.NewSearchAttributeKeyTime("TemporalScheduledStartTime")
-	scheduleByIDKey := temporal.NewSearchAttributeKeyword("TemporalScheduledById")
+	scheduleByIDKey := temporal.NewSearchAttributeKeyKeyword("TemporalScheduledById")
 
 	_, ok := attributes.GetTime(scheduleStartTimeKey)
 	if !ok {
@@ -2314,7 +2314,7 @@ func (w *Workflows) UpsertTypedSearchAttributesWorkflow(ctx workflow.Context, sl
 	}
 
 	// Add a new search attribute
-	key := temporal.NewSearchAttributeKeyword("CustomKeywordField")
+	key := temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
 	err := workflow.UpsertTypedSearchAttributes(ctx, key.ValueSet("CustomKeywordFieldValue"))
 	if err != nil {
 		return err

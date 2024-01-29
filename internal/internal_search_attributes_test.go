@@ -46,11 +46,11 @@ func TestSearchAttributes(t *testing.T) {
 	require.Equal(t, 0, sa.Size())
 
 	stringKey := NewSearchAttributeKeyString("stringKey")
-	keywordKey := NewSearchAttributeKeyword("keywordKey")
+	keywordKey := NewSearchAttributeKeyKeyword("keywordKey")
 	intKey := NewSearchAttributeKeyInt64("intKey")
 	floatKey := NewSearchAttributeKeyFloat64("floatKey")
 	timeKey := NewSearchAttributeKeyTime("timeKey")
-	keywordListKey := NewSearchAttributeKeywordList("keywordListKey")
+	keywordListKey := NewSearchAttributeKeyKeywordList("keywordListKey")
 
 	now := time.Now()
 	sa = NewSearchAttributes(
@@ -78,12 +78,12 @@ func TestSearchAttributes(t *testing.T) {
 	require.True(t, ok)
 
 	require.True(t, sa.ContainsKey(intKey))
-	intValue, ok := sa.GetInt(intKey)
+	intValue, ok := sa.GetInt64(intKey)
 	require.Equal(t, int64(10), intValue)
 	require.True(t, ok)
 
 	require.True(t, sa.ContainsKey(floatKey))
-	floatValue, ok := sa.GetFloat(floatKey)
+	floatValue, ok := sa.GetFloat64(floatKey)
 	require.Equal(t, float64(5.4), floatValue)
 	require.True(t, ok)
 
@@ -134,9 +134,9 @@ func TestSearchAttributes(t *testing.T) {
 	require.Equal(t, 7, sa.Size())
 }
 
-func TestSearchAttributesKeyWordList(t *testing.T) {
+func TestSearchAttributesKeywordList(t *testing.T) {
 	t.Parallel()
-	kw := NewSearchAttributeKeywordList("keywordList")
+	kw := NewSearchAttributeKeyKeywordList("keywordList")
 	kv := []string{"keyword1", "keyword2", "keyword3"}
 	sa := NewSearchAttributes(kw.ValueSet(kv))
 	// Modify the list and verify it doesn't change the search attribute
@@ -156,7 +156,7 @@ func TestSearchAttributesKeyWordList(t *testing.T) {
 func TestSearchAttributesDeepCopy(t *testing.T) {
 	t.Parallel()
 	key1 := NewSearchAttributeKeyString("stringKey1")
-	key2 := NewSearchAttributeKeywordList("keywordList")
+	key2 := NewSearchAttributeKeyKeywordList("keywordList")
 	keywordListValue := []string{"keyword1", "keyword2", "keyword3"}
 	sa := NewSearchAttributes(
 		key1.ValueSet("value"),

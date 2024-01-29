@@ -584,6 +584,26 @@ func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) erro
 	return internal.UpsertSearchAttributes(ctx, attributes)
 }
 
+// UpsertTypedSearchAttributes is used to add, update, or remove workflow search attributes. The search attributes can
+// be used in query of List/Scan/Count workflow APIs. The key and value type must be registered on temporal server side;
+// The value has to deterministic when replay; The value has to be Json serializable.
+// UpsertTypedSearchAttributes will merge attributes to existing map in workflow, for example workflow code:
+//
+//	var intKey = temporal.NewSearchAttributeKeyInt64("CustomIntField")
+//	var boolKey = temporal.NewSearchAttributeKeyBool("CustomBoolField")
+//	var keywordKey = temporal.NewSearchAttributeKeyBool("CustomKeywordField")
+//
+//	func MyWorkflow(ctx workflow.Context, input string) error {
+//		err = workflow.UpsertTypedSearchAttributes(ctx, intAttrKey.ValueSet(1), boolAttrKey.ValueSet(true))
+//		// ...
+//
+//		err = workflow.UpsertSearchAttributes(ctx, intKey.ValueSet(2), keywordKey.ValueUnset())
+//		// ...
+//	}
+//
+// For supported operations on different server versions see [Visibility].
+//
+// [Visibility]: https://docs.temporal.io/visibility
 func UpsertTypedSearchAttributes(ctx Context, searchAttributeUpdate ...temporal.SearchAttributeUpdate) error {
 	return internal.UpsertTypedSearchAttributes(ctx, searchAttributeUpdate...)
 }

@@ -1450,67 +1450,6 @@ func getWorkflowMemo(input map[string]interface{}, dc converter.DataConverter) (
 	return &commonpb.Memo{Fields: memo}, nil
 }
 
-func serializeSearchAttributes(input map[string]interface{}) (*commonpb.SearchAttributes, error) {
-	if input == nil {
-		return nil, nil
-	}
-
-	attr := make(map[string]*commonpb.Payload)
-	for k, v := range input {
-		// If search attribute value is already of Payload type, then use it directly.
-		// This allows to copy search attributes from workflow info to child workflow options.
-		if vp, ok := v.(*commonpb.Payload); ok {
-			attr[k] = vp
-			continue
-		}
-		var err error
-		attr[k], err = converter.GetDefaultDataConverter().ToPayload(v)
-		if err != nil {
-			return nil, fmt.Errorf("encode search attribute [%s] error: %v", k, err)
-		}
-	}
-	return &commonpb.SearchAttributes{IndexedFields: attr}, nil
-}
-
-func serializeTypedSearchAttributes(searchAttributes map[SearchAttributeKey]interface{}) (*commonpb.SearchAttributes, error) {
-	if searchAttributes == nil {
-		return nil, nil
-	}
-
-	serializedAttr := make(map[string]*commonpb.Payload)
-	for k, v := range searchAttributes {
-		payload, err := converter.GetDefaultDataConverter().ToPayload(v)
-		if err != nil {
-			return nil, fmt.Errorf("encode search attribute [%s] error: %v", k, err)
-		}
-		// Server does not remove search attributes if they set a type
-		if payload.GetData() != nil {
-			payload.Metadata["type"] = []byte(enumspb.IndexedValueType_name[int32(k.GetValueType())])
-		}
-		serializedAttr[k.GetName()] = payload
-	}
-	return &commonpb.SearchAttributes{IndexedFields: serializedAttr}, nil
-}
-
-func GetSearchAttributes(untypedAttributes map[string]interface{}, typedAttributes SearchAttributes) (*commonpb.SearchAttributes, error) {
-	var searchAttr *commonpb.SearchAttributes
-	var err error
-	if untypedAttributes != nil && typedAttributes.Size() != 0 {
-		return nil, fmt.Errorf("cannot specify both SearchAttributes and TypedSearchAttributes")
-	} else if untypedAttributes != nil {
-		searchAttr, err = serializeSearchAttributes(untypedAttributes)
-		if err != nil {
-			return nil, err
-		}
-	} else if typedAttributes.Size() != 0 {
-		searchAttr, err = serializeTypedSearchAttributes(typedAttributes.GetUntypedValues())
-		if err != nil {
-			return nil, err
-		}
-	}
-	return searchAttr, nil
-}
-
 type workflowClientInterceptor struct {
 	client *WorkflowClient
 }
@@ -1545,7 +1484,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		return nil, err
 	}
 
-	searchAttr, err := GetSearchAttributes(in.Options.SearchAttributes, in.Options.TypedSearchAttributes)
+	searchAttr, err := serializeSearchAttributes(in.Options.SearchAttributes, in.Options.TypedSearchAttributes)
 	if err != nil {
 		return nil, err
 	}
@@ -1686,7 +1625,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		return nil, err
 	}
 
-	searchAttr, err := serializeSearchAttributes(in.Options.SearchAttributes)
+	searchAttr, err := serializeUntypedSearchAttributes(in.Options.SearchAttributes)
 	if err != nil {
 		return nil, err
 	}

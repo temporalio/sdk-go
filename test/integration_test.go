@@ -3381,7 +3381,7 @@ func (ts *IntegrationTestSuite) TestUpsertMemoWithExistingMemo() {
 	ts.Equal(expectedMemo, memo)
 }
 
-func (ts *IntegrationTestSuite) createBasicScheduleWorkflowAction(ID string, workflow interface{}) client.ScheduleAction {
+func (ts *IntegrationTestSuite) createBasicScheduleWorkflowAction(ID string, workflow interface{}) *client.ScheduleWorkflowAction {
 	return &client.ScheduleWorkflowAction{
 		Workflow:                 workflow,
 		ID:                       ID,
@@ -3422,23 +3422,99 @@ func (ts *IntegrationTestSuite) TestScheduleTypedSearchAttributes() {
 				"* * * * * * *",
 			},
 		},
-		Action: ts.createBasicScheduleWorkflowAction("test-schedule-typed-search-attributes", ts.workflows.ScheduleTypedSearchAttributesWorkflow),
+		Action: ts.createBasicScheduleWorkflowAction(
+			"test-schedule-typed-search-attributes", ts.workflows.ScheduleTypedSearchAttributesWorkflow),
 	})
 	ts.NoError(err)
 	defer func() {
 		ts.NoError(handle.Delete(ctx))
 	}()
+
 	// Wait for the schedule to run
-	time.Sleep(2 * time.Second)
-	desc, err := handle.Describe(ctx)
-	ts.NoError(err)
-	ts.Len(desc.Info.RecentActions, 1)
+	var desc *client.ScheduleDescription
+	ts.Eventually(func() bool {
+		desc, err = handle.Describe(ctx)
+		ts.NoError(err)
+		return len(desc.Info.RecentActions) > 0
+	}, 2*time.Second, 200*time.Millisecond)
 	startWorkflowResult := desc.Info.RecentActions[0].StartWorkflowResult
 	run := ts.client.GetWorkflow(ctx, startWorkflowResult.WorkflowID, startWorkflowResult.FirstExecutionRunID)
 	var result string
 	err = run.Get(ctx, &result)
 	ts.NoError(err)
 	ts.Equal(scheduleID, result)
+}
+
+func (ts *IntegrationTestSuite) TestScheduleWorkflowActionTypedSearchAttributes() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	scheduleID := "test-schedule-typed-search-attributes"
+	action := ts.createBasicScheduleWorkflowAction(
+		"test-schedule-typed-search-attributes", ts.workflows.SimplestWorkflow)
+	stringKey := temporal.NewSearchAttributeKeyString("CustomStringField")
+	action.TypedSearchAttributes = temporal.NewSearchAttributes(stringKey.ValueSet("SomeValue1"))
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:               scheduleID,
+		RemainingActions: 1,
+		Spec: client.ScheduleSpec{
+			CronExpressions: []string{
+				"* * * * * * *",
+			},
+		},
+		Action: action,
+	})
+	ts.NoError(err)
+	defer func() {
+		ts.NoError(handle.Delete(ctx))
+	}()
+
+	// Confirm typed search attrs on action
+	desc, err := handle.Describe(ctx)
+	ts.NoError(err)
+	actualAttrVal, _ := desc.Schedule.Action.(*client.ScheduleWorkflowAction).TypedSearchAttributes.GetString(stringKey)
+	ts.Equal("SomeValue1", actualAttrVal)
+
+	// Update but don't change
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+			return &client.ScheduleUpdate{Schedule: &input.Description.Schedule}, nil
+		},
+	})
+	ts.NoError(err)
+	desc, err = handle.Describe(ctx)
+	ts.NoError(err)
+	actualAttrVal, _ = desc.Schedule.Action.(*client.ScheduleWorkflowAction).TypedSearchAttributes.GetString(stringKey)
+	ts.Equal("SomeValue1", actualAttrVal)
+
+	// Update with change
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+			action := input.Description.Schedule.Action.(*client.ScheduleWorkflowAction)
+			action.TypedSearchAttributes = temporal.NewSearchAttributes(
+				action.TypedSearchAttributes.Copy(), stringKey.ValueSet("SomeValue2"))
+			return &client.ScheduleUpdate{Schedule: &input.Description.Schedule}, nil
+		},
+	})
+	ts.NoError(err)
+	desc, err = handle.Describe(ctx)
+	ts.NoError(err)
+	actualAttrVal, _ = desc.Schedule.Action.(*client.ScheduleWorkflowAction).TypedSearchAttributes.GetString(stringKey)
+	ts.Equal("SomeValue2", actualAttrVal)
+
+	// Now remove it
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+			action := input.Description.Schedule.Action.(*client.ScheduleWorkflowAction)
+			action.TypedSearchAttributes = temporal.NewSearchAttributes(
+				action.TypedSearchAttributes.Copy(), stringKey.ValueUnset())
+			return &client.ScheduleUpdate{Schedule: &input.Description.Schedule}, nil
+		},
+	})
+	ts.NoError(err)
+	desc, err = handle.Describe(ctx)
+	ts.NoError(err)
+	_, hasAttr := desc.Schedule.Action.(*client.ScheduleWorkflowAction).TypedSearchAttributes.GetString(stringKey)
+	ts.False(hasAttr)
 }
 
 func (ts *IntegrationTestSuite) TestScheduleCalendarDefault() {

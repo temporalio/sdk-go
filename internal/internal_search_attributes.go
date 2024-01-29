@@ -25,10 +25,14 @@
 package internal
 
 import (
+	"fmt"
 	"reflect"
 	"time"
 
+	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/log"
 )
 
 type (
@@ -56,50 +60,53 @@ type (
 		reflectType reflect.Type
 	}
 
-	// SearchAttributeKeyString represents a search attribute key for a text attribute type
+	// SearchAttributeKeyString represents a search attribute key for a text attribute type.
 	SearchAttributeKeyString struct {
 		baseSearchAttributeKey
 	}
 
-	// SearchAttributeKeyString represents a search attribute key for a keyword attribute type
-	SearchAttributeKeyword struct {
+	// SearchAttributeKeyKeyword represents a search attribute key for a keyword attribute type.
+	SearchAttributeKeyKeyword struct {
 		baseSearchAttributeKey
 	}
 
-	// SearchAttributeKeyBool represents a search attribute key for a boolean attribute type
+	// SearchAttributeKeyBool represents a search attribute key for a boolean attribute type.
 	SearchAttributeKeyBool struct {
 		baseSearchAttributeKey
 	}
 
-	// SearchAttributeKeyInt64 represents a search attribute key for a integer attribute type
+	// SearchAttributeKeyInt64 represents a search attribute key for a integer attribute type.
 	SearchAttributeKeyInt64 struct {
 		baseSearchAttributeKey
 	}
 
-	// SearchAttributeKeyFloat64 represents a search attribute key for a float attribute type
+	// SearchAttributeKeyFloat64 represents a search attribute key for a float attribute type.
 	SearchAttributeKeyFloat64 struct {
 		baseSearchAttributeKey
 	}
 
-	// SearchAttributeKeyTime represents a search attribute key for a date time attribute type
+	// SearchAttributeKeyTime represents a search attribute key for a date time attribute type.
 	SearchAttributeKeyTime struct {
 		baseSearchAttributeKey
 	}
 
-	// SearchAttributeKeywordList represents a search attribute key for a list of keyword attribute type
-	SearchAttributeKeywordList struct {
+	// SearchAttributeKeyKeywordList represents a search attribute key for a list of keyword attribute type.
+	SearchAttributeKeyKeywordList struct {
 		baseSearchAttributeKey
 	}
 )
 
+// GetName of the search attribute.
 func (bk baseSearchAttributeKey) GetName() string {
 	return bk.name
 }
 
+// GetValueType of the search attribute.
 func (bk baseSearchAttributeKey) GetValueType() enumspb.IndexedValueType {
 	return bk.valueType
 }
 
+// GetReflectType of the search attribute.
 func (bk baseSearchAttributeKey) GetReflectType() reflect.Type {
 	return bk.reflectType
 }
@@ -114,20 +121,22 @@ func NewSearchAttributeKeyString(name string) SearchAttributeKeyString {
 	}
 }
 
+// ValueSet creates an update to set the value of the attribute.
 func (k SearchAttributeKeyString) ValueSet(value string) SearchAttributeUpdate {
 	return func(sa *SearchAttributes) {
 		sa.untypedValue[k] = value
 	}
 }
 
+// ValueUnset creates an update to remove the attribute.
 func (k SearchAttributeKeyString) ValueUnset() SearchAttributeUpdate {
 	return func(sa *SearchAttributes) {
 		sa.untypedValue[k] = nil
 	}
 }
 
-func NewSearchAttributeKeyword(name string) SearchAttributeKeyword {
-	return SearchAttributeKeyword{
+func NewSearchAttributeKeyKeyword(name string) SearchAttributeKeyKeyword {
+	return SearchAttributeKeyKeyword{
 		baseSearchAttributeKey: baseSearchAttributeKey{
 			name:        name,
 			valueType:   enumspb.INDEXED_VALUE_TYPE_KEYWORD,
@@ -136,13 +145,15 @@ func NewSearchAttributeKeyword(name string) SearchAttributeKeyword {
 	}
 }
 
-func (k SearchAttributeKeyword) ValueSet(value string) SearchAttributeUpdate {
+// ValueSet creates an update to set the value of the attribute.
+func (k SearchAttributeKeyKeyword) ValueSet(value string) SearchAttributeUpdate {
 	return func(sa *SearchAttributes) {
 		sa.untypedValue[k] = value
 	}
 }
 
-func (k SearchAttributeKeyword) ValueUnset() SearchAttributeUpdate {
+// ValueUnset creates an update to remove the attribute.
+func (k SearchAttributeKeyKeyword) ValueUnset() SearchAttributeUpdate {
 	return func(sa *SearchAttributes) {
 		sa.untypedValue[k] = nil
 	}
@@ -158,12 +169,14 @@ func NewSearchAttributeKeyBool(name string) SearchAttributeKeyBool {
 	}
 }
 
+// ValueSet creates an update to set the value of the attribute.
 func (k SearchAttributeKeyBool) ValueSet(value bool) SearchAttributeUpdate {
 	return func(sa *SearchAttributes) {
 		sa.untypedValue[k] = value
 	}
 }
 
+// ValueUnset creates an update to remove the attribute.
 func (k SearchAttributeKeyBool) ValueUnset() SearchAttributeUpdate {
 	return func(sa *SearchAttributes) {
 		sa.untypedValue[k] = nil
@@ -180,12 +193,14 @@ func NewSearchAttributeKeyInt64(name string) SearchAttributeKeyInt64 {
 	}
 }
 
+// ValueSet creates an update to set the value of the attribute.
 func (k SearchAttributeKeyInt64) ValueSet(value int64) SearchAttributeUpdate {
 	return func(sa *SearchAttributes) {
 		sa.untypedValue[k] = value
 	}
 }
 
+// ValueUnset creates an update to remove the attribute.
 func (k SearchAttributeKeyInt64) ValueUnset() SearchAttributeUpdate {
 	return func(sa *SearchAttributes) {
 		sa.untypedValue[k] = nil
@@ -202,12 +217,14 @@ func NewSearchAttributeKeyFloat64(name string) SearchAttributeKeyFloat64 {
 	}
 }
 
+// ValueSet creates an update to set the value of the attribute.
 func (k SearchAttributeKeyFloat64) ValueSet(value float64) SearchAttributeUpdate {
 	return func(sa *SearchAttributes) {
 		sa.untypedValue[k] = value
 	}
 }
 
+// ValueUnset creates an update to remove the attribute.
 func (k SearchAttributeKeyFloat64) ValueUnset() SearchAttributeUpdate {
 	return func(sa *SearchAttributes) {
 		sa.untypedValue[k] = nil
@@ -224,20 +241,22 @@ func NewSearchAttributeKeyTime(name string) SearchAttributeKeyTime {
 	}
 }
 
+// ValueSet creates an update to set the value of the attribute.
 func (k SearchAttributeKeyTime) ValueSet(value time.Time) SearchAttributeUpdate {
 	return func(sa *SearchAttributes) {
 		sa.untypedValue[k] = value
 	}
 }
 
+// ValueUnset creates an update to remove the attribute.
 func (k SearchAttributeKeyTime) ValueUnset() SearchAttributeUpdate {
 	return func(sa *SearchAttributes) {
 		sa.untypedValue[k] = nil
 	}
 }
 
-func NewSearchAttributeKeywordList(name string) SearchAttributeKeywordList {
-	return SearchAttributeKeywordList{
+func NewSearchAttributeKeyKeywordList(name string) SearchAttributeKeyKeywordList {
+	return SearchAttributeKeyKeywordList{
 		baseSearchAttributeKey: baseSearchAttributeKey{
 			name:        name,
 			valueType:   enumspb.INDEXED_VALUE_TYPE_KEYWORD_LIST,
@@ -246,14 +265,16 @@ func NewSearchAttributeKeywordList(name string) SearchAttributeKeywordList {
 	}
 }
 
-func (k SearchAttributeKeywordList) ValueSet(values []string) SearchAttributeUpdate {
+// ValueSet creates an update to set the value of the attribute.
+func (k SearchAttributeKeyKeywordList) ValueSet(values []string) SearchAttributeUpdate {
 	listCopy := append([]string(nil), values...)
 	return func(sa *SearchAttributes) {
 		sa.untypedValue[k] = listCopy
 	}
 }
 
-func (k SearchAttributeKeywordList) ValueUnset() SearchAttributeUpdate {
+// ValueUnset creates an update to remove the attribute.
+func (k SearchAttributeKeyKeywordList) ValueUnset() SearchAttributeUpdate {
 	return func(sa *SearchAttributes) {
 		sa.untypedValue[k] = nil
 	}
@@ -275,6 +296,7 @@ func NewSearchAttributes(attributes ...SearchAttributeUpdate) SearchAttributes {
 	return sa
 }
 
+// GetString gets a value for the given key and whether it was present.
 func (sa *SearchAttributes) GetString(key SearchAttributeKeyString) (string, bool) {
 	value, ok := sa.untypedValue[key]
 	if !ok {
@@ -283,7 +305,8 @@ func (sa *SearchAttributes) GetString(key SearchAttributeKeyString) (string, boo
 	return value.(string), true
 }
 
-func (sa *SearchAttributes) GetKeyword(key SearchAttributeKeyword) (string, bool) {
+// GetKeyword gets a value for the given key and whether it was present.
+func (sa *SearchAttributes) GetKeyword(key SearchAttributeKeyKeyword) (string, bool) {
 	value, ok := sa.untypedValue[key]
 	if !ok {
 		return "", false
@@ -291,6 +314,7 @@ func (sa *SearchAttributes) GetKeyword(key SearchAttributeKeyword) (string, bool
 	return value.(string), true
 }
 
+// GetBool gets a value for the given key and whether it was present.
 func (sa *SearchAttributes) GetBool(key SearchAttributeKeyBool) (bool, bool) {
 	value, ok := sa.untypedValue[key]
 	if !ok {
@@ -299,7 +323,8 @@ func (sa *SearchAttributes) GetBool(key SearchAttributeKeyBool) (bool, bool) {
 	return value.(bool), true
 }
 
-func (sa *SearchAttributes) GetInt(key SearchAttributeKeyInt64) (int64, bool) {
+// GetInt64 gets a value for the given key and whether it was present.
+func (sa *SearchAttributes) GetInt64(key SearchAttributeKeyInt64) (int64, bool) {
 	value, ok := sa.untypedValue[key]
 	if !ok {
 		return 0, false
@@ -307,7 +332,8 @@ func (sa *SearchAttributes) GetInt(key SearchAttributeKeyInt64) (int64, bool) {
 	return value.(int64), true
 }
 
-func (sa *SearchAttributes) GetFloat(key SearchAttributeKeyFloat64) (float64, bool) {
+// GetFloat64 gets a value for the given key and whether it was present.
+func (sa *SearchAttributes) GetFloat64(key SearchAttributeKeyFloat64) (float64, bool) {
 	value, ok := sa.untypedValue[key]
 	if !ok {
 		return 0.0, false
@@ -315,6 +341,7 @@ func (sa *SearchAttributes) GetFloat(key SearchAttributeKeyFloat64) (float64, bo
 	return value.(float64), true
 }
 
+// GetTime gets a value for the given key and whether it was present.
 func (sa *SearchAttributes) GetTime(key SearchAttributeKeyTime) (time.Time, bool) {
 	value, ok := sa.untypedValue[key]
 	if !ok {
@@ -323,7 +350,8 @@ func (sa *SearchAttributes) GetTime(key SearchAttributeKeyTime) (time.Time, bool
 	return value.(time.Time), true
 }
 
-func (sa *SearchAttributes) GetKeywordList(key SearchAttributeKeywordList) ([]string, bool) {
+// GetKeywordList gets a value for the given key and whether it was present.
+func (sa *SearchAttributes) GetKeywordList(key SearchAttributeKeyKeywordList) ([]string, bool) {
 	value, ok := sa.untypedValue[key]
 	if !ok {
 		return nil, false
@@ -333,15 +361,18 @@ func (sa *SearchAttributes) GetKeywordList(key SearchAttributeKeywordList) ([]st
 	return append([]string(nil), result...), true
 }
 
+// ContainsKey gets whether a key is present.
 func (sa *SearchAttributes) ContainsKey(key SearchAttributeKey) bool {
 	_, ok := sa.untypedValue[key]
 	return ok
 }
 
+// Size gets the size of the attribute collection.
 func (sa *SearchAttributes) Size() int {
 	return len(sa.untypedValue)
 }
 
+// GetUntypedValues gets a copy of the collection with raw types.
 func (sa *SearchAttributes) GetUntypedValues() map[SearchAttributeKey]interface{} {
 	untypedValueCopy := make(map[SearchAttributeKey]interface{}, len(sa.untypedValue))
 	for key, value := range sa.untypedValue {
@@ -355,6 +386,7 @@ func (sa *SearchAttributes) GetUntypedValues() map[SearchAttributeKey]interface{
 	return untypedValueCopy
 }
 
+// Copy creates an update that copies existing values.
 func (sa *SearchAttributes) Copy() SearchAttributeUpdate {
 	return func(s *SearchAttributes) {
 		untypedValues := sa.GetUntypedValues()
@@ -362,4 +394,142 @@ func (sa *SearchAttributes) Copy() SearchAttributeUpdate {
 			s.untypedValue[key] = value
 		}
 	}
+}
+
+func serializeUntypedSearchAttributes(input map[string]interface{}) (*commonpb.SearchAttributes, error) {
+	if input == nil {
+		return nil, nil
+	}
+
+	attr := make(map[string]*commonpb.Payload)
+	for k, v := range input {
+		// If search attribute value is already of Payload type, then use it directly.
+		// This allows to copy search attributes from workflow info to child workflow options.
+		if vp, ok := v.(*commonpb.Payload); ok {
+			attr[k] = vp
+			continue
+		}
+		var err error
+		attr[k], err = converter.GetDefaultDataConverter().ToPayload(v)
+		if err != nil {
+			return nil, fmt.Errorf("encode search attribute [%s] error: %v", k, err)
+		}
+	}
+	return &commonpb.SearchAttributes{IndexedFields: attr}, nil
+}
+
+func serializeTypedSearchAttributes(searchAttributes map[SearchAttributeKey]interface{}) (*commonpb.SearchAttributes, error) {
+	if searchAttributes == nil {
+		return nil, nil
+	}
+
+	serializedAttr := make(map[string]*commonpb.Payload)
+	for k, v := range searchAttributes {
+		payload, err := converter.GetDefaultDataConverter().ToPayload(v)
+		if err != nil {
+			return nil, fmt.Errorf("encode search attribute [%s] error: %v", k, err)
+		}
+		// Server does not remove search attributes if they set a type
+		if payload.GetData() != nil {
+			payload.Metadata["type"] = []byte(enumspb.IndexedValueType_name[int32(k.GetValueType())])
+		}
+		serializedAttr[k.GetName()] = payload
+	}
+	return &commonpb.SearchAttributes{IndexedFields: serializedAttr}, nil
+}
+
+func serializeSearchAttributes(
+	untypedAttributes map[string]interface{},
+	typedAttributes SearchAttributes,
+) (*commonpb.SearchAttributes, error) {
+	var searchAttr *commonpb.SearchAttributes
+	var err error
+	if untypedAttributes != nil && typedAttributes.Size() != 0 {
+		return nil, fmt.Errorf("cannot specify both SearchAttributes and TypedSearchAttributes")
+	} else if untypedAttributes != nil {
+		searchAttr, err = serializeUntypedSearchAttributes(untypedAttributes)
+		if err != nil {
+			return nil, err
+		}
+	} else if typedAttributes.Size() != 0 {
+		searchAttr, err = serializeTypedSearchAttributes(typedAttributes.GetUntypedValues())
+		if err != nil {
+			return nil, err
+		}
+	}
+	return searchAttr, nil
+}
+
+func getIndexValue(payload *commonpb.Payload) enumspb.IndexedValueType {
+	return enumspb.IndexedValueType(enumspb.IndexedValueType_value[string(payload.GetMetadata()["type"][:])])
+}
+
+func convertToTypeSearchAttributes(logger log.Logger, attributes map[string]*commonpb.Payload) SearchAttributes {
+	updates := make([]SearchAttributeUpdate, 0, len(attributes))
+	for key, payload := range attributes {
+		if payload.Data == nil {
+			continue
+		}
+		switch index := getIndexValue(payload); index {
+		case enumspb.INDEXED_VALUE_TYPE_BOOL:
+			attr := NewSearchAttributeKeyBool(key)
+			var value bool
+			err := converter.GetDefaultDataConverter().FromPayload(payload, &value)
+			if err != nil {
+				panic(err)
+			}
+			updates = append(updates, attr.ValueSet(value))
+		case enumspb.INDEXED_VALUE_TYPE_KEYWORD:
+			attr := NewSearchAttributeKeyKeyword(key)
+			var value string
+			err := converter.GetDefaultDataConverter().FromPayload(payload, &value)
+			if err != nil {
+				panic(err)
+			}
+			updates = append(updates, attr.ValueSet(value))
+		case enumspb.INDEXED_VALUE_TYPE_TEXT:
+			attr := NewSearchAttributeKeyString(key)
+			var value string
+			err := converter.GetDefaultDataConverter().FromPayload(payload, &value)
+			if err != nil {
+				panic(err)
+			}
+			updates = append(updates, attr.ValueSet(value))
+		case enumspb.INDEXED_VALUE_TYPE_INT:
+			attr := NewSearchAttributeKeyInt64(key)
+			var value int64
+			err := converter.GetDefaultDataConverter().FromPayload(payload, &value)
+			if err != nil {
+				panic(err)
+			}
+			updates = append(updates, attr.ValueSet(value))
+		case enumspb.INDEXED_VALUE_TYPE_DOUBLE:
+			attr := NewSearchAttributeKeyFloat64(key)
+			var value float64
+			err := converter.GetDefaultDataConverter().FromPayload(payload, &value)
+			if err != nil {
+				panic(err)
+			}
+			updates = append(updates, attr.ValueSet(value))
+		case enumspb.INDEXED_VALUE_TYPE_DATETIME:
+			attr := NewSearchAttributeKeyTime(key)
+			var value time.Time
+			err := converter.GetDefaultDataConverter().FromPayload(payload, &value)
+			if err != nil {
+				panic(err)
+			}
+			updates = append(updates, attr.ValueSet(value))
+		case enumspb.INDEXED_VALUE_TYPE_KEYWORD_LIST:
+			attr := NewSearchAttributeKeyKeywordList(key)
+			var value []string
+			err := converter.GetDefaultDataConverter().FromPayload(payload, &value)
+			if err != nil {
+				panic(err)
+			}
+			updates = append(updates, attr.ValueSet(value))
+		default:
+			logger.Warn("Unrecognized indexed value type on search attribute key", "key", key, "index", index)
+		}
+	}
+	return NewSearchAttributes(updates...)
 }
