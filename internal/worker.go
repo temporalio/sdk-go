@@ -263,6 +263,9 @@ const (
 	// This feature is convenient during development.
 	// WARNING: enabling this in production can cause all open workflows to fail on a single bug or bad deployment.
 	FailWorkflow
+	// RestartWorkflow immediately restarts the workflow execution if workflow code throws panic or detects non-determinism.
+	// This feature is convenient if the workflows are finite state machines
+	RestartWorkflow
 )
 
 // ReplayNamespace is namespace for replay because startEvent doesn't contain it
