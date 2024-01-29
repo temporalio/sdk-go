@@ -50,6 +50,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
+	"go.temporal.io/api/update/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.uber.org/goleak"
@@ -1350,6 +1351,42 @@ func (ts *IntegrationTestSuite) TestUpdateValidatorRejectedFirstWFT() {
 	// complete workflow
 	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
 	ts.NoError(run.Get(ctx, nil))
+}
+
+func (ts *IntegrationTestSuite) TestUpdateHighLatency_Admitted() {
+	ctx := context.Background()
+	wfOptions := ts.startWorkflowOptions("test-update-high-latency-admitted")
+	wfOptions.WorkflowExecutionTimeout = time.Minute
+	run, err := ts.client.ExecuteWorkflow(ctx, wfOptions, ts.workflows.UpdateHighLatency)
+	ts.Require().NoError(err)
+	handle, err := ts.client.UpdateWorkflowWithOptions(ctx, &client.UpdateWorkflowWithOptionsRequest{
+		WorkflowID: run.GetID(),
+		RunID:      run.GetRunID(),
+		UpdateID:   "test-update-high-latency",
+		UpdateName: "update",
+		WaitPolicy: &update.WaitPolicy{LifecycleStage: enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ACCEPTED},
+	})
+	ts.Require().NoError(err)
+	ts.Require().NoError(handle.Get(ctx, nil))
+	ts.Require().NoError(run.Get(ctx, nil))
+}
+
+func (ts *IntegrationTestSuite) TestUpdateHighLatency_Completed() {
+	ctx := context.Background()
+	wfOptions := ts.startWorkflowOptions("test-update-high-latency-completed")
+	wfOptions.WorkflowExecutionTimeout = time.Minute
+	run, err := ts.client.ExecuteWorkflow(ctx, wfOptions, ts.workflows.UpdateHighLatency)
+	ts.Require().NoError(err)
+	handle, err := ts.client.UpdateWorkflowWithOptions(ctx, &client.UpdateWorkflowWithOptionsRequest{
+		WorkflowID: run.GetID(),
+		RunID:      run.GetRunID(),
+		UpdateID:   "test-update-high-latency",
+		UpdateName: "update",
+		WaitPolicy: &update.WaitPolicy{LifecycleStage: enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED},
+	})
+	ts.Require().NoError(err)
+	ts.Require().NoError(handle.Get(ctx, nil))
+	ts.Require().NoError(run.Get(ctx, nil))
 }
 
 func (ts *IntegrationTestSuite) TestUpdateValidatorRejected() {

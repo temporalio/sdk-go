@@ -2232,6 +2232,20 @@ func (w *Workflows) WaitOnUpdate(ctx workflow.Context) (int, error) {
 	return updatesRan, nil
 }
 
+func (w *Workflows) UpdateHighLatency(ctx workflow.Context) error {
+	var updated bool
+	workflow.SetUpdateHandler(ctx, "update", func(ctx workflow.Context) error {
+		if err := workflow.Sleep(ctx, time.Second*35); err != nil {
+			return err
+		}
+		updated = true
+		return nil
+	})
+	return workflow.Await(ctx, func() bool {
+		return updated
+	})
+}
+
 func (w *Workflows) UpdateSetHandlerOnly(ctx workflow.Context) (int, error) {
 	updatesRan := 0
 	updateHandle := func(ctx workflow.Context) error {
@@ -2605,6 +2619,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.WaitOnUpdate)
 	worker.RegisterWorkflow(w.UpdateOrdering)
 	worker.RegisterWorkflow(w.UpdateSetHandlerOnly)
+	worker.RegisterWorkflow(w.UpdateHighLatency)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {
