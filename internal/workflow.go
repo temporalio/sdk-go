@@ -297,8 +297,20 @@ type (
 		// Use GetSearchAttributes API to get valid key and corresponding value type.
 		// For supported operations on different server versions see [Visibility].
 		//
+		// Deprecated: Use TypedSearchAttributes instead.
+		//
 		// [Visibility]: https://docs.temporal.io/visibility
 		SearchAttributes map[string]interface{}
+
+		// TypedSearchAttributes - Specifies Search Attributes that will be attached to the Workflow. Search Attributes are
+		// additional indexed information attributed to workflow and used for search and visibility. The search attributes
+		// can be used in query of List/Scan/Count workflow APIs. The key and its value type must be registered on Temporal
+		// server side. For supported operations on different server versions see [Visibility].
+		//
+		// Optional: default to none.
+		//
+		// [Visibility]: https://docs.temporal.io/visibility
+		TypedSearchAttributes SearchAttributes
 
 		// ParentClosePolicy - Optional policy to decide what to do for the child.
 		// Default is Terminate (if onboarded to this feature)
@@ -1000,9 +1012,10 @@ type WorkflowInfo struct {
 	ContinuedExecutionRunID string
 	ParentWorkflowNamespace string
 	ParentWorkflowExecution *WorkflowExecution
-	Memo                    *commonpb.Memo             // Value can be decoded using data converter (defaultDataConverter, or custom one if set).
-	SearchAttributes        *commonpb.SearchAttributes // Value can be decoded using defaultDataConverter.
-	RetryPolicy             *RetryPolicy
+	Memo                    *commonpb.Memo // Value can be decoded using data converter (defaultDataConverter, or custom one if set).
+	// Deprecated: use [Workflow.GetTypedSearchAttributes] instead.
+	SearchAttributes *commonpb.SearchAttributes // Value can be decoded using defaultDataConverter.
+	RetryPolicy      *RetryPolicy
 	// BinaryChecksum represents the value persisted by the last worker to complete a task in this workflow. It may be
 	// an explicitly set or implicitly derived binary checksum of the worker binary, or, if this worker has opted into
 	// build-id based versioning, is the explicitly set worker build id. If this is the first worker to operate on the
@@ -1068,6 +1081,15 @@ func GetWorkflowInfo(ctx Context) *WorkflowInfo {
 
 func (wc *workflowEnvironmentInterceptor) GetInfo(ctx Context) *WorkflowInfo {
 	return wc.env.WorkflowInfo()
+}
+
+func GetTypedSearchAttributes(ctx Context) SearchAttributes {
+	i := getWorkflowOutboundInterceptor(ctx)
+	return i.GetTypedSearchAttributes(ctx)
+}
+
+func (wc *workflowEnvironmentInterceptor) GetTypedSearchAttributes(ctx Context) SearchAttributes {
+	return wc.env.TypedSearchAttributes()
 }
 
 // GetUpdateInfo extracts info of a currently running update from a context.
@@ -1319,6 +1341,8 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 //
 // For supported operations on different server versions see [Visibility].
 //
+// Deprecated: Use [UpsertTypedSearchAttributes] instead.
+//
 // [Visibility]: https://docs.temporal.io/visibility
 func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error {
 	assertNotInReadOnlyState(ctx)
@@ -1331,6 +1355,37 @@ func (wc *workflowEnvironmentInterceptor) UpsertSearchAttributes(ctx Context, at
 		return errors.New("TemporalChangeVersion is a reserved key that cannot be set, please use other key")
 	}
 	return wc.env.UpsertSearchAttributes(attributes)
+}
+
+func UpsertTypedSearchAttributes(ctx Context, attributes ...SearchAttributeUpdate) error {
+	assertNotInReadOnlyState(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
+	return i.UpsertTypedSearchAttributes(ctx, attributes...)
+}
+
+func (wc *workflowEnvironmentInterceptor) UpsertTypedSearchAttributes(ctx Context, attributes ...SearchAttributeUpdate) error {
+	assertNotInReadOnlyState(ctx)
+
+	sa := SearchAttributes{
+		untypedValue: make(map[SearchAttributeKey]interface{}),
+	}
+	for _, attribute := range attributes {
+		attribute(&sa)
+	}
+	rawSearchAttributes, err := serializeTypedSearchAttributes(sa.untypedValue)
+	if err != nil {
+		return err
+	}
+
+	if _, ok := rawSearchAttributes.GetIndexedFields()[TemporalChangeVersion]; ok {
+		return errors.New("TemporalChangeVersion is a reserved key that cannot be set, please use other key")
+	}
+
+	attr := make(map[string]interface{})
+	for k, v := range rawSearchAttributes.GetIndexedFields() {
+		attr[k] = v
+	}
+	return wc.env.UpsertSearchAttributes(attr)
 }
 
 // UpsertMemo is used to add or update workflow memo.
@@ -1391,6 +1446,7 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.CronSchedule = cwo.CronSchedule
 	wfOptions.Memo = cwo.Memo
 	wfOptions.SearchAttributes = cwo.SearchAttributes
+	wfOptions.TypedSearchAttributes = cwo.TypedSearchAttributes
 	wfOptions.ParentClosePolicy = cwo.ParentClosePolicy
 	wfOptions.VersioningIntent = cwo.VersioningIntent
 
@@ -1442,6 +1498,13 @@ func WithWorkflowTaskQueue(ctx Context, name string) Context {
 func WithWorkflowID(ctx Context, workflowID string) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	getWorkflowEnvOptions(ctx1).WorkflowID = workflowID
+	return ctx1
+}
+
+// WithTypedSearchAttributes add these search attribute to the context
+func WithTypedSearchAttributes(ctx Context, searchAttributes SearchAttributes) Context {
+	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
+	getWorkflowEnvOptions(ctx1).TypedSearchAttributes = searchAttributes
 	return ctx1
 }
 

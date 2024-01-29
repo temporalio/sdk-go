@@ -200,6 +200,7 @@ type (
 		ContextPropagators       []ContextPropagator
 		Memo                     map[string]interface{}
 		SearchAttributes         map[string]interface{}
+		TypedSearchAttributes    SearchAttributes
 		ParentClosePolicy        enumspb.ParentClosePolicy
 		signalChannels           map[string]Channel
 		queryHandlers            map[string]*queryHandler
@@ -279,7 +280,7 @@ var _ WaitGroup = (*waitGroupImpl)(nil)
 var _ dispatcher = (*dispatcherImpl)(nil)
 
 // 1MB buffer to fit combined stack trace of all active goroutines
-var stackBuf [1024*1024]byte
+var stackBuf [1024 * 1024]byte
 
 var (
 	errCoroStackNotFound   = errors.New("coroutine stack not found")

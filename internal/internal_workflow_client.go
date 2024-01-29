@@ -121,8 +121,8 @@ type (
 
 		// Get will fill the workflow execution result to valuePtr, if workflow
 		// execution is a success, or return corresponding error. If valuePtr is
-		// nil, valuePtr will be ignored and only the corresponding error of the 
-		// workflow will be returned (nil on workflow execution success). 
+		// nil, valuePtr will be ignored and only the corresponding error of the
+		// workflow will be returned (nil on workflow execution success).
 		// This is a blocking API.
 		//
 		// This call will follow execution runs to the latest result for this run
@@ -141,7 +141,7 @@ type (
 		// GetWithOptions will fill the workflow execution result to valuePtr, if
 		// workflow execution is a success, or return corresponding error. If
 		// valuePtr is nil, valuePtr will be ignored and only the corresponding
-		// error of the workflow will be returned (nil on workflow execution success). 
+		// error of the workflow will be returned (nil on workflow execution success).
 		// This is a blocking API.
 		//
 		// Note, values should not be reused for extraction here because merging on
@@ -1472,6 +1472,45 @@ func serializeSearchAttributes(input map[string]interface{}) (*commonpb.SearchAt
 	return &commonpb.SearchAttributes{IndexedFields: attr}, nil
 }
 
+func serializeTypedSearchAttributes(searchAttributes map[SearchAttributeKey]interface{}) (*commonpb.SearchAttributes, error) {
+	if searchAttributes == nil {
+		return nil, nil
+	}
+
+	serializedAttr := make(map[string]*commonpb.Payload)
+	for k, v := range searchAttributes {
+		payload, err := converter.GetDefaultDataConverter().ToPayload(v)
+		if err != nil {
+			return nil, fmt.Errorf("encode search attribute [%s] error: %v", k, err)
+		}
+		// Server does not remove search attributes if they set a type
+		if payload.GetData() != nil {
+			payload.Metadata["type"] = []byte(enumspb.IndexedValueType_name[int32(k.GetValueType())])
+		}
+		serializedAttr[k.GetName()] = payload
+	}
+	return &commonpb.SearchAttributes{IndexedFields: serializedAttr}, nil
+}
+
+func GetSearchAttributes(untypedAttributes map[string]interface{}, typedAttributes SearchAttributes) (*commonpb.SearchAttributes, error) {
+	var searchAttr *commonpb.SearchAttributes
+	var err error
+	if untypedAttributes != nil && typedAttributes.Size() != 0 {
+		return nil, fmt.Errorf("cannot specify both SearchAttributes and TypedSearchAttributes")
+	} else if untypedAttributes != nil {
+		searchAttr, err = serializeSearchAttributes(untypedAttributes)
+		if err != nil {
+			return nil, err
+		}
+	} else if typedAttributes.Size() != 0 {
+		searchAttr, err = serializeTypedSearchAttributes(typedAttributes.GetUntypedValues())
+		if err != nil {
+			return nil, err
+		}
+	}
+	return searchAttr, nil
+}
+
 type workflowClientInterceptor struct {
 	client *WorkflowClient
 }
@@ -1506,7 +1545,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		return nil, err
 	}
 
-	searchAttr, err := serializeSearchAttributes(in.Options.SearchAttributes)
+	searchAttr, err := GetSearchAttributes(in.Options.SearchAttributes, in.Options.TypedSearchAttributes)
 	if err != nil {
 		return nil, err
 	}

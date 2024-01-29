@@ -228,6 +228,11 @@ func (w *WorkflowOutboundInterceptorBase) GetInfo(ctx Context) *WorkflowInfo {
 	return w.Next.GetInfo(ctx)
 }
 
+// GetTypedSearchAttributes implements WorkflowOutboundInterceptor.GetTypedSearchAttributes.
+func (w *WorkflowOutboundInterceptorBase) GetTypedSearchAttributes(ctx Context) SearchAttributes {
+	return w.Next.GetTypedSearchAttributes(ctx)
+}
+
 // GetUpdateInfo implements WorkflowOutboundInterceptor.GetUpdateInfo.
 func (w *WorkflowOutboundInterceptorBase) GetUpdateInfo(ctx Context) *UpdateInfo {
 	return w.Next.GetUpdateInfo(ctx)
@@ -295,6 +300,12 @@ func (w *WorkflowOutboundInterceptorBase) SignalChildWorkflow(
 // WorkflowOutboundInterceptor.UpsertSearchAttributes.
 func (w *WorkflowOutboundInterceptorBase) UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error {
 	return w.Next.UpsertSearchAttributes(ctx, attributes)
+}
+
+// UpsertTypedSearchAttributes implements
+// WorkflowOutboundInterceptor.UpsertTypedSearchAttributes.
+func (w *WorkflowOutboundInterceptorBase) UpsertTypedSearchAttributes(ctx Context, attributes ...SearchAttributeUpdate) error {
+	return w.Next.UpsertTypedSearchAttributes(ctx, attributes...)
 }
 
 // UpsertMemo implements

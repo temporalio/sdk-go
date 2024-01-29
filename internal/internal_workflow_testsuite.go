@@ -2059,6 +2059,10 @@ func (env *testWorkflowEnvironmentImpl) WorkflowInfo() *WorkflowInfo {
 	return env.workflowInfo
 }
 
+func (env *testWorkflowEnvironmentImpl) TypedSearchAttributes() SearchAttributes {
+	return convertToTypeSearchAttributes(env.logger, env.workflowInfo.SearchAttributes.GetIndexedFields())
+}
+
 func (env *testWorkflowEnvironmentImpl) RegisterWorkflow(w interface{}) {
 	env.registry.RegisterWorkflow(w)
 }

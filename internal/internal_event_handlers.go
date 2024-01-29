@@ -391,6 +391,84 @@ func (wc *workflowEnvironmentImpl) WorkflowInfo() *WorkflowInfo {
 	return wc.workflowInfo
 }
 
+func getIndexValue(payload *commonpb.Payload) enumspb.IndexedValueType {
+	return enumspb.IndexedValueType(enumspb.IndexedValueType_value[string(payload.GetMetadata()["type"][:])])
+}
+
+func convertToTypeSearchAttributes(logger log.Logger, attributes map[string]*commonpb.Payload) SearchAttributes {
+	updates := make([]SearchAttributeUpdate, 0, len(attributes))
+	for key, payload := range attributes {
+		if payload.Data == nil {
+			continue
+		}
+		switch index := getIndexValue(payload); index {
+		case enumspb.INDEXED_VALUE_TYPE_BOOL:
+			attr := NewSearchAttributeKeyBool(key)
+			var value bool
+			err := converter.GetDefaultDataConverter().FromPayload(payload, &value)
+			if err != nil {
+				panic(err)
+			}
+			updates = append(updates, attr.ValueSet(value))
+		case enumspb.INDEXED_VALUE_TYPE_KEYWORD:
+			attr := NewSearchAttributeKeyword(key)
+			var value string
+			err := converter.GetDefaultDataConverter().FromPayload(payload, &value)
+			if err != nil {
+				panic(err)
+			}
+			updates = append(updates, attr.ValueSet(value))
+		case enumspb.INDEXED_VALUE_TYPE_TEXT:
+			attr := NewSearchAttributeKeyString(key)
+			var value string
+			err := converter.GetDefaultDataConverter().FromPayload(payload, &value)
+			if err != nil {
+				panic(err)
+			}
+			updates = append(updates, attr.ValueSet(value))
+		case enumspb.INDEXED_VALUE_TYPE_INT:
+			attr := NewSearchAttributeKeyInt64(key)
+			var value int64
+			err := converter.GetDefaultDataConverter().FromPayload(payload, &value)
+			if err != nil {
+				panic(err)
+			}
+			updates = append(updates, attr.ValueSet(value))
+		case enumspb.INDEXED_VALUE_TYPE_DOUBLE:
+			attr := NewSearchAttributeKeyFloat64(key)
+			var value float64
+			err := converter.GetDefaultDataConverter().FromPayload(payload, &value)
+			if err != nil {
+				panic(err)
+			}
+			updates = append(updates, attr.ValueSet(value))
+		case enumspb.INDEXED_VALUE_TYPE_DATETIME:
+			attr := NewSearchAttributeKeyTime(key)
+			var value time.Time
+			err := converter.GetDefaultDataConverter().FromPayload(payload, &value)
+			if err != nil {
+				panic(err)
+			}
+			updates = append(updates, attr.ValueSet(value))
+		case enumspb.INDEXED_VALUE_TYPE_KEYWORD_LIST:
+			attr := NewSearchAttributeKeywordList(key)
+			var value []string
+			err := converter.GetDefaultDataConverter().FromPayload(payload, &value)
+			if err != nil {
+				panic(err)
+			}
+			updates = append(updates, attr.ValueSet(value))
+		default:
+			logger.Warn("Unrecognized indexed value type on search attribute key", "key", key, "index", index)
+		}
+	}
+	return NewSearchAttributes(updates...)
+}
+
+func (wc *workflowEnvironmentImpl) TypedSearchAttributes() SearchAttributes {
+	return convertToTypeSearchAttributes(wc.logger, wc.workflowInfo.SearchAttributes.GetIndexedFields())
+}
+
 func (wc *workflowEnvironmentImpl) Complete(result *commonpb.Payloads, err error) {
 	wc.completeHandler(result, err)
 }
