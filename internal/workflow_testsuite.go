@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/stretchr/testify/mock"
@@ -62,8 +63,9 @@ type (
 
 	// TestWorkflowEnvironment is the environment that you use to test workflow
 	TestWorkflowEnvironment struct {
-		mock mock.Mock
-		impl *testWorkflowEnvironmentImpl
+		workflowMock mock.Mock
+		activityMock mock.Mock
+		impl         *testWorkflowEnvironmentImpl
 	}
 
 	// TestActivityEnvironment is the environment that you use to test activity
@@ -269,7 +271,7 @@ func (e *TestWorkflowEnvironment) RegisterWorkflow(w interface{}) {
 
 // RegisterWorkflowWithOptions registers workflow implementation with the TestWorkflowEnvironment
 func (e *TestWorkflowEnvironment) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
-	if len(e.mock.ExpectedCalls) > 0 {
+	if len(e.workflowMock.ExpectedCalls) > 0 {
 		panic("RegisterWorkflow calls cannot follow mock related ones like OnWorkflow or similar")
 	}
 	e.impl.RegisterWorkflowWithOptions(w, options)
@@ -282,7 +284,7 @@ func (e *TestWorkflowEnvironment) RegisterActivity(a interface{}) {
 
 // RegisterActivityWithOptions registers activity implementation with TestWorkflowEnvironment
 func (e *TestWorkflowEnvironment) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) {
-	if len(e.mock.ExpectedCalls) > 0 {
+	if len(e.activityMock.ExpectedCalls) > 0 {
 		panic("RegisterActivity calls cannot follow mock related ones like OnActivity or similar")
 	}
 	e.impl.RegisterActivityWithOptions(a, options)
@@ -361,7 +363,7 @@ func (e *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...inter
 		}
 		fnName := getActivityFunctionName(e.impl.registry, activity)
 		e.impl.registry.RegisterActivityWithOptions(activity, RegisterActivityOptions{DisableAlreadyRegisteredCheck: true})
-		call = e.mock.On(fnName, args...)
+		call = e.activityMock.On(fnName, args...)
 
 	case reflect.String:
 		name := activity.(string)
@@ -371,12 +373,12 @@ func (e *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...inter
 			panic(fmt.Sprintf("activity \""+name+"\" is not registered with the TestWorkflowEnvironment, "+
 				"registered types are: %v", registered))
 		}
-		call = e.mock.On(name, args...)
+		call = e.activityMock.On(name, args...)
 	default:
 		panic("activity must be function or string")
 	}
 
-	return e.wrapCall(call)
+	return e.wrapActivityCall(call)
 }
 
 // ErrMockStartChildWorkflowFailed is special error used to indicate the mocked child workflow should fail to start.
@@ -420,14 +422,14 @@ func (e *TestWorkflowEnvironment) OnWorkflow(workflow interface{}, args ...inter
 			fnName = alias
 		}
 		e.impl.registry.RegisterWorkflowWithOptions(workflow, RegisterWorkflowOptions{DisableAlreadyRegisteredCheck: true})
-		call = e.mock.On(fnName, args...)
+		call = e.workflowMock.On(fnName, args...)
 	case reflect.String:
-		call = e.mock.On(workflow.(string), args...)
+		call = e.workflowMock.On(workflow.(string), args...)
 	default:
 		panic("workflow must be function or string")
 	}
 
-	return e.wrapCall(call)
+	return e.wrapWorkflowCall(call)
 }
 
 const mockMethodForSignalExternalWorkflow = "workflow.SignalExternalWorkflow"
@@ -459,8 +461,8 @@ const mockMethodForUpsertMemo = "workflow.UpsertMemo"
 // Mock callbacks here are run on a separate goroutine than the workflow and
 // therefore are not concurrency-safe with workflow code.
 func (e *TestWorkflowEnvironment) OnSignalExternalWorkflow(namespace, workflowID, runID, signalName, arg interface{}) *MockCallWrapper {
-	call := e.mock.On(mockMethodForSignalExternalWorkflow, namespace, workflowID, runID, signalName, arg)
-	return e.wrapCall(call)
+	call := e.workflowMock.On(mockMethodForSignalExternalWorkflow, namespace, workflowID, runID, signalName, arg)
+	return e.wrapWorkflowCall(call)
 }
 
 // OnRequestCancelExternalWorkflow setup a mock for cancellation of external workflow.
@@ -486,8 +488,8 @@ func (e *TestWorkflowEnvironment) OnSignalExternalWorkflow(namespace, workflowID
 // Mock callbacks here are run on a separate goroutine than the workflow and
 // therefore are not concurrency-safe with workflow code.
 func (e *TestWorkflowEnvironment) OnRequestCancelExternalWorkflow(namespace, workflowID, runID string) *MockCallWrapper {
-	call := e.mock.On(mockMethodForRequestCancelExternalWorkflow, namespace, workflowID, runID)
-	return e.wrapCall(call)
+	call := e.workflowMock.On(mockMethodForRequestCancelExternalWorkflow, namespace, workflowID, runID)
+	return e.wrapWorkflowCall(call)
 }
 
 // OnGetVersion setup a mock for workflow.GetVersion() call. By default, if mock is not setup, the GetVersion call from
@@ -497,29 +499,35 @@ func (e *TestWorkflowEnvironment) OnRequestCancelExternalWorkflow(namespace, wor
 // Note: mock can be setup for a specific changeID. Or if mock.Anything is used as changeID then all calls to GetVersion
 // will be mocked. Mock for a specific changeID has higher priority over mock.Anything.
 func (e *TestWorkflowEnvironment) OnGetVersion(changeID string, minSupported, maxSupported Version) *MockCallWrapper {
-	call := e.mock.On(getMockMethodForGetVersion(changeID), changeID, minSupported, maxSupported)
-	return e.wrapCall(call)
+	call := e.workflowMock.On(getMockMethodForGetVersion(changeID), changeID, minSupported, maxSupported)
+	return e.wrapWorkflowCall(call)
 }
 
 // OnUpsertSearchAttributes setup a mock for workflow.UpsertSearchAttributes call.
 // If mock is not setup, the UpsertSearchAttributes call will only validate input attributes.
 // If mock is setup, all UpsertSearchAttributes calls in workflow have to be mocked.
 func (e *TestWorkflowEnvironment) OnUpsertSearchAttributes(attributes interface{}) *MockCallWrapper {
-	call := e.mock.On(mockMethodForUpsertSearchAttributes, attributes)
-	return e.wrapCall(call)
+	call := e.workflowMock.On(mockMethodForUpsertSearchAttributes, attributes)
+	return e.wrapWorkflowCall(call)
 }
 
 // OnUpsertMemo setup a mock for workflow.UpsertMemo call.
 // If mock is not setup, the UpsertMemo call will only validate input attributes.
 // If mock is setup, all UpsertMemo calls in workflow have to be mocked.
 func (e *TestWorkflowEnvironment) OnUpsertMemo(attributes interface{}) *MockCallWrapper {
-	call := e.mock.On(mockMethodForUpsertMemo, attributes)
-	return e.wrapCall(call)
+	call := e.workflowMock.On(mockMethodForUpsertMemo, attributes)
+	return e.wrapWorkflowCall(call)
 }
 
-func (e *TestWorkflowEnvironment) wrapCall(call *mock.Call) *MockCallWrapper {
+func (e *TestWorkflowEnvironment) wrapWorkflowCall(call *mock.Call) *MockCallWrapper {
 	callWrapper := &MockCallWrapper{call: call, env: e}
-	call.Run(e.impl.getMockRunFn(callWrapper))
+	call.Run(e.impl.getWorkflowMockRunFn(callWrapper))
+	return callWrapper
+}
+
+func (e *TestWorkflowEnvironment) wrapActivityCall(call *mock.Call) *MockCallWrapper {
+	callWrapper := &MockCallWrapper{call: call, env: e}
+	call.Run(e.impl.getActivityMockRunFn(callWrapper))
 	return callWrapper
 }
 
@@ -598,7 +606,8 @@ func (c *MockCallWrapper) NotBefore(calls ...*MockCallWrapper) *MockCallWrapper 
 // ExecuteWorkflow executes a workflow, wait until workflow complete. It will fail the test if workflow is blocked and
 // cannot complete within TestTimeout (set by SetTestTimeout()).
 func (e *TestWorkflowEnvironment) ExecuteWorkflow(workflowFn interface{}, args ...interface{}) {
-	e.impl.mock = &e.mock
+	e.impl.workflowMock = &e.workflowMock
+	e.impl.activityMock = &e.activityMock
 	e.impl.executeWorkflow(workflowFn, args...)
 }
 
@@ -929,7 +938,7 @@ func (e *TestWorkflowEnvironment) SetSearchAttributesOnStart(searchAttributes ma
 // AssertExpectations  asserts that everything specified with OnActivity
 // in fact called as expected.  Calls may have occurred in any order.
 func (e *TestWorkflowEnvironment) AssertExpectations(t mock.TestingT) bool {
-	return e.mock.AssertExpectations(t)
+	return e.workflowMock.AssertExpectations(t) && e.activityMock.AssertExpectations(t)
 }
 
 // AssertCalled asserts that the method was called with the supplied arguments.
@@ -942,16 +951,28 @@ func (e *TestWorkflowEnvironment) AssertExpectations(t mock.TestingT) bool {
 //
 // It can produce a false result when an argument is a pointer type and the underlying value changed after calling the mocked method.
 func (e *TestWorkflowEnvironment) AssertCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {
-	return e.mock.AssertCalled(t, methodName, arguments...)
+	dummyT := &testing.T{}
+	if !(e.workflowMock.AssertCalled(dummyT, methodName, arguments...) || e.activityMock.AssertCalled(dummyT, methodName, arguments...)) {
+		return e.workflowMock.AssertCalled(t, methodName, arguments...) && e.activityMock.AssertCalled(t, methodName, arguments...)
+	}
+	return true
 }
 
 // AssertNotCalled asserts that the method was not called with the given arguments.
 // See AssertCalled for more info.
 func (e *TestWorkflowEnvironment) AssertNotCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {
-	return e.mock.AssertNotCalled(t, methodName, arguments...)
+	dummyT := &testing.T{}
+	if !(e.workflowMock.AssertNotCalled(dummyT, methodName, arguments...) || e.activityMock.AssertNotCalled(dummyT, methodName, arguments...)) {
+		return e.workflowMock.AssertNotCalled(t, methodName, arguments...) && e.activityMock.AssertNotCalled(t, methodName, arguments...)
+	}
+	return true
 }
 
 // AssertNumberOfCalls asserts that a method was called expectedCalls times.
 func (e *TestWorkflowEnvironment) AssertNumberOfCalls(t mock.TestingT, methodName string, expectedCalls int) bool {
-	return e.mock.AssertNumberOfCalls(t, methodName, expectedCalls)
+	dummyT := &testing.T{}
+	if !(e.workflowMock.AssertNumberOfCalls(dummyT, methodName, expectedCalls) || e.activityMock.AssertNumberOfCalls(dummyT, methodName, expectedCalls)) {
+		return e.workflowMock.AssertNumberOfCalls(t, methodName, expectedCalls) && e.activityMock.AssertNumberOfCalls(t, methodName, expectedCalls)
+	}
+	return true
 }

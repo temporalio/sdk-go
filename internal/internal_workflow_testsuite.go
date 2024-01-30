@@ -133,7 +133,8 @@ type (
 
 		taskQueueSpecificActivities map[string]*taskQueueSpecificActivity
 
-		mock                      *mock.Mock
+		workflowMock              *mock.Mock
+		activityMock              *mock.Mock
 		service                   workflowservice.WorkflowServiceClient
 		logger                    log.Logger
 		metricsHandler            metrics.Handler
@@ -156,7 +157,8 @@ type (
 
 		runningCount int
 
-		expectedMockCalls map[string]struct{}
+		expectedWorkflowMockCalls map[string]struct{}
+		expectedActivityMockCalls map[string]struct{}
 
 		onActivityStartedListener        func(activityInfo *ActivityInfo, ctx context.Context, args converter.EncodedValues)
 		onActivityCompletedListener      func(activityInfo *ActivityInfo, result converter.EncodedValue, err error)
@@ -230,17 +232,18 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 			testSuite:                   s,
 			taskQueueSpecificActivities: make(map[string]*taskQueueSpecificActivity),
 
-			logger:            s.logger,
-			metricsHandler:    s.metricsHandler,
-			mockClock:         clock.NewMock(),
-			wallClock:         clock.New(),
-			timers:            make(map[string]*testTimerHandle),
-			activities:        make(map[string]*testActivityHandle),
-			localActivities:   make(map[string]*localActivityTask),
-			runningWorkflows:  make(map[string]*testWorkflowHandle),
-			callbackChannel:   make(chan testCallbackHandle, 1000),
-			testTimeout:       3 * time.Second,
-			expectedMockCalls: make(map[string]struct{}),
+			logger:                    s.logger,
+			metricsHandler:            s.metricsHandler,
+			mockClock:                 clock.NewMock(),
+			wallClock:                 clock.New(),
+			timers:                    make(map[string]*testTimerHandle),
+			activities:                make(map[string]*testActivityHandle),
+			localActivities:           make(map[string]*localActivityTask),
+			runningWorkflows:          make(map[string]*testWorkflowHandle),
+			callbackChannel:           make(chan testCallbackHandle, 1000),
+			testTimeout:               3 * time.Second,
+			expectedWorkflowMockCalls: make(map[string]struct{}),
+			expectedActivityMockCalls: make(map[string]struct{}),
 		},
 
 		workflowInfo: &WorkflowInfo{
@@ -1689,7 +1692,7 @@ func (a *activityExecutorWrapper) Execute(ctx context.Context, input *commonpb.P
 	}
 
 	m := &mockWrapper{env: a.env, name: a.name, fn: a.fn, isWorkflow: false, dataConverter: dc}
-	if mockRet := m.getMockReturn(ctx, input); mockRet != nil {
+	if mockRet := m.getActivityMockReturn(ctx, input); mockRet != nil {
 		return m.executeMock(ctx, input, mockRet)
 	}
 
@@ -1709,7 +1712,7 @@ func (a *activityExecutorWrapper) ExecuteWithActualArgs(ctx context.Context, inp
 	}
 
 	m := &mockWrapper{env: a.env, name: a.name, fn: a.fn, isWorkflow: false}
-	if mockRet := m.getMockReturnWithActualArgs(ctx, inputArgs); mockRet != nil {
+	if mockRet := m.getActivityMockReturnWithActualArgs(ctx, inputArgs); mockRet != nil {
 		// check if mock returns function which must match to the actual function.
 		if mockFn := m.getMockFn(mockRet); mockFn != nil {
 			executor := &activityExecutor{name: m.name, fn: mockFn}
@@ -1740,16 +1743,16 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input *commonpb.Payloads)
 	// the main loop, but the mock could block if it is configured to wait. So we need to use a separate goroutinue to
 	// run the mock, and resume after mock call returns.
 	mockReadyChannel := NewChannel(ctx)
-	// make a copy of the context for getMockReturn() call to avoid race condition
+	// make a copy of the context for getWorkflowMockReturn() call to avoid race condition
 	_, ctxCopy, err := newWorkflowContext(w.env, nil)
 	if err != nil {
 		return nil, err
 	}
 	go func() {
-		// getMockReturn could block if mock is configured to wait. The returned mockRet is what has been configured
+		// getWorkflowMockReturn could block if mock is configured to wait. The returned mockRet is what has been configured
 		// for the mock by using MockCallWrapper.Return(). The mockRet could be mock values or mock function. We process
 		// the returned mockRet by calling executeMock() later in the main thread after it is send over via mockReadyChannel.
-		mockRet := m.getMockReturn(ctxCopy, input)
+		mockRet := m.getWorkflowMockReturn(ctxCopy, input)
 		env.postCallback(func() {
 			mockReadyChannel.SendAsync(mockRet)
 		}, true /* true to trigger the dispatcher for this workflow so it resume from mockReadyChannel block*/)
@@ -1757,7 +1760,7 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input *commonpb.Payloads)
 
 	var mockRet mock.Arguments
 	// This will block workflow dispatcher (on temporal channel), which the dispatcher understand and will return from
-	// ExecuteUntilAllBlocked() so the main loop is not blocked. The dispatcher will unblock when getMockReturn() returns.
+	// ExecuteUntilAllBlocked() so the main loop is not blocked. The dispatcher will unblock when getWorkflowMockReturn() returns.
 	mockReadyChannel.Receive(ctx, &mockRet)
 
 	// reduce runningCount to allow auto-forwarding mock clock after current workflow dispatcher run is blocked (aka
@@ -1801,12 +1804,25 @@ func (m *mockWrapper) getCtxArg(ctx interface{}) []interface{} {
 	return nil
 }
 
-func (m *mockWrapper) getMockReturn(ctx interface{}, input *commonpb.Payloads) (retArgs mock.Arguments) {
-	if _, ok := m.env.expectedMockCalls[m.name]; !ok {
+func (m *mockWrapper) getActivityMockReturn(ctx interface{}, input *commonpb.Payloads) (retArgs mock.Arguments) {
+	if _, ok := m.env.expectedActivityMockCalls[m.name]; !ok {
 		// no mock
 		return nil
 	}
 
+	return m.getMockReturn(ctx, input, m.env.activityMock)
+}
+
+func (m *mockWrapper) getWorkflowMockReturn(ctx interface{}, input *commonpb.Payloads) (retArgs mock.Arguments) {
+	if _, ok := m.env.expectedWorkflowMockCalls[m.name]; !ok {
+		// no mock
+		return nil
+	}
+
+	return m.getMockReturn(ctx, input, m.env.workflowMock)
+}
+
+func (m *mockWrapper) getMockReturn(ctx interface{}, input *commonpb.Payloads, envMock *mock.Mock) (retArgs mock.Arguments) {
 	fnType := reflect.TypeOf(m.fn)
 	reflectArgs, err := decodeArgs(m.dataConverter, fnType, input)
 	if err != nil {
@@ -1817,18 +1833,22 @@ func (m *mockWrapper) getMockReturn(ctx interface{}, input *commonpb.Payloads) (
 		realArgs = append(realArgs, arg.Interface())
 	}
 
-	return m.env.mock.MethodCalled(m.name, realArgs...)
+	return envMock.MethodCalled(m.name, realArgs...)
 }
 
-func (m *mockWrapper) getMockReturnWithActualArgs(ctx interface{}, inputArgs []interface{}) (retArgs mock.Arguments) {
-	if _, ok := m.env.expectedMockCalls[m.name]; !ok {
+func (m *mockWrapper) getActivityMockReturnWithActualArgs(ctx interface{}, inputArgs []interface{}) (retArgs mock.Arguments) {
+	if _, ok := m.env.expectedActivityMockCalls[m.name]; !ok {
 		// no mock
 		return nil
 	}
 
+	return m.getMockReturnWithActualArgs(ctx, inputArgs, m.env.activityMock)
+}
+
+func (m *mockWrapper) getMockReturnWithActualArgs(ctx interface{}, inputArgs []interface{}, envMock *mock.Mock) (retArgs mock.Arguments) {
 	realArgs := m.getCtxArg(ctx)
 	realArgs = append(realArgs, inputArgs...)
-	return m.env.mock.MethodCalled(m.name, realArgs...)
+	return envMock.MethodCalled(m.name, realArgs...)
 }
 
 func (m *mockWrapper) getMockFn(mockRet mock.Arguments) interface{} {
@@ -2138,7 +2158,7 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace,
 	go func() {
 		args := []interface{}{namespace, workflowID, runID}
 		// below call will panic if mock is not properly setup.
-		mockRet := env.mock.MethodCalled(mockMethodForRequestCancelExternalWorkflow, args...)
+		mockRet := env.workflowMock.MethodCalled(mockMethodForRequestCancelExternalWorkflow, args...)
 		m := &mockWrapper{name: mockMethodForRequestCancelExternalWorkflow, fn: mockFnRequestCancelExternalWorkflow}
 		var err error
 		if mockFn := m.getMockFn(mockRet); mockFn != nil {
@@ -2199,7 +2219,7 @@ func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(
 	go func() {
 		args := []interface{}{namespace, workflowID, runID, signalName, arg}
 		// below call will panic if mock is not properly setup.
-		mockRet := env.mock.MethodCalled(mockMethodForSignalExternalWorkflow, args...)
+		mockRet := env.workflowMock.MethodCalled(mockMethodForSignalExternalWorkflow, args...)
 		m := &mockWrapper{name: mockMethodForSignalExternalWorkflow, fn: mockFnSignalExternalWorkflow}
 		var err error
 		if mockFn := m.getMockFn(mockRet); mockFn != nil {
@@ -2264,14 +2284,14 @@ func (env *testWorkflowEnvironmentImpl) GetVersion(changeID string, minSupported
 
 func (env *testWorkflowEnvironmentImpl) getMockedVersion(mockedChangeID, changeID string, minSupported, maxSupported Version) (Version, bool) {
 	mockMethod := getMockMethodForGetVersion(mockedChangeID)
-	if _, ok := env.expectedMockCalls[mockMethod]; !ok {
+	if _, ok := env.expectedWorkflowMockCalls[mockMethod]; !ok {
 		// mock not found
 		return DefaultVersion, false
 	}
 
 	args := []interface{}{changeID, minSupported, maxSupported}
 	// below call will panic if mock is not properly setup.
-	mockRet := env.mock.MethodCalled(mockMethod, args...)
+	mockRet := env.workflowMock.MethodCalled(mockMethod, args...)
 	m := &mockWrapper{name: mockMethodForGetVersion, fn: mockFnGetVersion}
 	if mockFn := m.getMockFn(mockRet); mockFn != nil {
 		var reflectArgs []reflect.Value
@@ -2307,13 +2327,13 @@ func (env *testWorkflowEnvironmentImpl) UpsertSearchAttributes(attributes map[st
 	env.workflowInfo.SearchAttributes = mergeSearchAttributes(env.workflowInfo.SearchAttributes, attr)
 
 	mockMethod := mockMethodForUpsertSearchAttributes
-	if _, ok := env.expectedMockCalls[mockMethod]; !ok {
+	if _, ok := env.expectedWorkflowMockCalls[mockMethod]; !ok {
 		// mock not found
 		return err
 	}
 
 	args := []interface{}{attributes}
-	env.mock.MethodCalled(mockMethod, args...)
+	env.workflowMock.MethodCalled(mockMethod, args...)
 
 	return err
 }
@@ -2324,13 +2344,13 @@ func (env *testWorkflowEnvironmentImpl) UpsertMemo(memoMap map[string]interface{
 	env.workflowInfo.Memo = mergeMemo(env.workflowInfo.Memo, memo)
 
 	mockMethod := mockMethodForUpsertMemo
-	if _, ok := env.expectedMockCalls[mockMethod]; !ok {
+	if _, ok := env.expectedWorkflowMockCalls[mockMethod]; !ok {
 		// mock not found
 		return err
 	}
 
 	args := []interface{}{memoMap}
-	env.mock.MethodCalled(mockMethod, args...)
+	env.workflowMock.MethodCalled(mockMethod, args...)
 
 	return err
 }
@@ -2472,11 +2492,21 @@ func (env *testWorkflowEnvironmentImpl) queryWorkflowByID(workflowID, queryType 
 	return nil, serviceerror.NewNotFound(fmt.Sprintf("Workflow %v not exists", workflowID))
 }
 
-func (env *testWorkflowEnvironmentImpl) getMockRunFn(callWrapper *MockCallWrapper) func(args mock.Arguments) {
+func (env *testWorkflowEnvironmentImpl) getWorkflowMockRunFn(callWrapper *MockCallWrapper) func(args mock.Arguments) {
 	env.locker.Lock()
 	defer env.locker.Unlock()
 
-	env.expectedMockCalls[callWrapper.call.Method] = struct{}{}
+	env.expectedWorkflowMockCalls[callWrapper.call.Method] = struct{}{}
+	return func(args mock.Arguments) {
+		env.runBeforeMockCallReturns(callWrapper, args)
+	}
+}
+
+func (env *testWorkflowEnvironmentImpl) getActivityMockRunFn(callWrapper *MockCallWrapper) func(args mock.Arguments) {
+	env.locker.Lock()
+	defer env.locker.Unlock()
+
+	env.expectedActivityMockCalls[callWrapper.call.Method] = struct{}{}
 	return func(args mock.Arguments) {
 		env.runBeforeMockCallReturns(callWrapper, args)
 	}
