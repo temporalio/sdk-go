@@ -656,7 +656,7 @@ func convertFromPBScheduleAction(logger log.Logger, action *schedulepb.ScheduleA
 			memos[key] = element
 		}
 
-		searchAttrs := convertToTypeSearchAttributes(logger, workflow.GetSearchAttributes().GetIndexedFields())
+		searchAttrs := convertToTypedSearchAttributes(logger, workflow.GetSearchAttributes().GetIndexedFields())
 		// Create untyped list for any attribute not in the existing list
 		untypedSearchAttrs := map[string]*commonpb.Payload{}
 		for k, v := range workflow.GetSearchAttributes().GetIndexedFields() {

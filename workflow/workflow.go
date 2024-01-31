@@ -549,7 +549,6 @@ func GetLastError(ctx Context) error {
 // UpsertSearchAttributes is used to add or update workflow search attributes.
 // The search attributes can be used in query of List/Scan/Count workflow APIs.
 // The key and value type must be registered on temporal server side;
-// The value has to deterministic when replay;
 // The value has to be Json serializable.
 // UpsertSearchAttributes will merge attributes to existing map in workflow, for example workflow code:
 //
@@ -585,8 +584,7 @@ func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) erro
 }
 
 // UpsertTypedSearchAttributes is used to add, update, or remove workflow search attributes. The search attributes can
-// be used in query of List/Scan/Count workflow APIs. The key and value type must be registered on temporal server side;
-// The value has to deterministic when replay; The value has to be Json serializable.
+// be used in query of List/Scan/Count workflow APIs. The key and value type must be registered on temporal server side.
 // UpsertTypedSearchAttributes will merge attributes to existing map in workflow, for example workflow code:
 //
 //	var intKey = temporal.NewSearchAttributeKeyInt64("CustomIntField")

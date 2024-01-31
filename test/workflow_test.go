@@ -2305,7 +2305,28 @@ func (w *Workflows) ScheduleTypedSearchAttributesWorkflow(ctx workflow.Context) 
 }
 
 func (w *Workflows) UpsertTypedSearchAttributesWorkflow(ctx workflow.Context, sleepBetweenUpsert bool) error {
-	//
+	// Do a get version and confirmed patched attribute. First confirm change
+	// version not there.
+	changeKey := temporal.NewSearchAttributeKeyKeywordList("TemporalChangeVersion")
+	if workflow.GetInfo(ctx).SearchAttributes.GetIndexedFields()["TemporalChangeVersion"] != nil {
+		return fmt.Errorf("change version unexpectedly present")
+	} else if _, ok := workflow.GetTypedSearchAttributes(ctx).GetKeywordList(changeKey); ok {
+		return fmt.Errorf("change version unexpectedly present")
+	}
+	// Now do a get version and confirm it is set afterwards
+	_ = workflow.GetVersion(ctx, "some-id-1", workflow.DefaultVersion, 0)
+	if sleepBetweenUpsert {
+		_ = workflow.Sleep(ctx, 1*time.Millisecond)
+	}
+	if p := workflow.GetInfo(ctx).SearchAttributes.GetIndexedFields()["TemporalChangeVersion"]; p == nil {
+		return fmt.Errorf("change version not present")
+	} else if string(p.Data) != `["some-id-1-0"]` {
+		return fmt.Errorf("change version invalid, got: %s", p.Data)
+	} else if s, _ := workflow.GetTypedSearchAttributes(ctx).GetKeywordList(changeKey); len(s) != 1 || s[0] != "some-id-1-0" {
+		return fmt.Errorf("change version invalid: got: %v", s)
+	}
+
+	// Check string attribute
 	attributes := workflow.GetTypedSearchAttributes(ctx)
 	stringKey := temporal.NewSearchAttributeKeyString("CustomStringField")
 	value, ok := attributes.GetString(stringKey)
@@ -2320,7 +2341,7 @@ func (w *Workflows) UpsertTypedSearchAttributesWorkflow(ctx workflow.Context, sl
 		return err
 	}
 	if sleepBetweenUpsert {
-		_ = workflow.Sleep(ctx, 1*time.Second)
+		_ = workflow.Sleep(ctx, 1*time.Millisecond)
 	}
 
 	// Verify the search attributes is added
@@ -2336,7 +2357,7 @@ func (w *Workflows) UpsertTypedSearchAttributesWorkflow(ctx workflow.Context, sl
 		return err
 	}
 	if sleepBetweenUpsert {
-		_ = workflow.Sleep(ctx, 1*time.Second)
+		_ = workflow.Sleep(ctx, 1*time.Millisecond)
 	}
 
 	// Verify the search attributes is removed

@@ -297,7 +297,7 @@ func NewSearchAttributes(attributes ...SearchAttributeUpdate) SearchAttributes {
 }
 
 // GetString gets a value for the given key and whether it was present.
-func (sa *SearchAttributes) GetString(key SearchAttributeKeyString) (string, bool) {
+func (sa SearchAttributes) GetString(key SearchAttributeKeyString) (string, bool) {
 	value, ok := sa.untypedValue[key]
 	if !ok {
 		return "", false
@@ -306,7 +306,7 @@ func (sa *SearchAttributes) GetString(key SearchAttributeKeyString) (string, boo
 }
 
 // GetKeyword gets a value for the given key and whether it was present.
-func (sa *SearchAttributes) GetKeyword(key SearchAttributeKeyKeyword) (string, bool) {
+func (sa SearchAttributes) GetKeyword(key SearchAttributeKeyKeyword) (string, bool) {
 	value, ok := sa.untypedValue[key]
 	if !ok {
 		return "", false
@@ -315,7 +315,7 @@ func (sa *SearchAttributes) GetKeyword(key SearchAttributeKeyKeyword) (string, b
 }
 
 // GetBool gets a value for the given key and whether it was present.
-func (sa *SearchAttributes) GetBool(key SearchAttributeKeyBool) (bool, bool) {
+func (sa SearchAttributes) GetBool(key SearchAttributeKeyBool) (bool, bool) {
 	value, ok := sa.untypedValue[key]
 	if !ok {
 		return false, false
@@ -324,7 +324,7 @@ func (sa *SearchAttributes) GetBool(key SearchAttributeKeyBool) (bool, bool) {
 }
 
 // GetInt64 gets a value for the given key and whether it was present.
-func (sa *SearchAttributes) GetInt64(key SearchAttributeKeyInt64) (int64, bool) {
+func (sa SearchAttributes) GetInt64(key SearchAttributeKeyInt64) (int64, bool) {
 	value, ok := sa.untypedValue[key]
 	if !ok {
 		return 0, false
@@ -333,7 +333,7 @@ func (sa *SearchAttributes) GetInt64(key SearchAttributeKeyInt64) (int64, bool) 
 }
 
 // GetFloat64 gets a value for the given key and whether it was present.
-func (sa *SearchAttributes) GetFloat64(key SearchAttributeKeyFloat64) (float64, bool) {
+func (sa SearchAttributes) GetFloat64(key SearchAttributeKeyFloat64) (float64, bool) {
 	value, ok := sa.untypedValue[key]
 	if !ok {
 		return 0.0, false
@@ -342,7 +342,7 @@ func (sa *SearchAttributes) GetFloat64(key SearchAttributeKeyFloat64) (float64, 
 }
 
 // GetTime gets a value for the given key and whether it was present.
-func (sa *SearchAttributes) GetTime(key SearchAttributeKeyTime) (time.Time, bool) {
+func (sa SearchAttributes) GetTime(key SearchAttributeKeyTime) (time.Time, bool) {
 	value, ok := sa.untypedValue[key]
 	if !ok {
 		return time.Time{}, false
@@ -351,7 +351,7 @@ func (sa *SearchAttributes) GetTime(key SearchAttributeKeyTime) (time.Time, bool
 }
 
 // GetKeywordList gets a value for the given key and whether it was present.
-func (sa *SearchAttributes) GetKeywordList(key SearchAttributeKeyKeywordList) ([]string, bool) {
+func (sa SearchAttributes) GetKeywordList(key SearchAttributeKeyKeywordList) ([]string, bool) {
 	value, ok := sa.untypedValue[key]
 	if !ok {
 		return nil, false
@@ -362,18 +362,18 @@ func (sa *SearchAttributes) GetKeywordList(key SearchAttributeKeyKeywordList) ([
 }
 
 // ContainsKey gets whether a key is present.
-func (sa *SearchAttributes) ContainsKey(key SearchAttributeKey) bool {
+func (sa SearchAttributes) ContainsKey(key SearchAttributeKey) bool {
 	_, ok := sa.untypedValue[key]
 	return ok
 }
 
 // Size gets the size of the attribute collection.
-func (sa *SearchAttributes) Size() int {
+func (sa SearchAttributes) Size() int {
 	return len(sa.untypedValue)
 }
 
 // GetUntypedValues gets a copy of the collection with raw types.
-func (sa *SearchAttributes) GetUntypedValues() map[SearchAttributeKey]interface{} {
+func (sa SearchAttributes) GetUntypedValues() map[SearchAttributeKey]interface{} {
 	untypedValueCopy := make(map[SearchAttributeKey]interface{}, len(sa.untypedValue))
 	for key, value := range sa.untypedValue {
 		switch v := value.(type) {
@@ -387,7 +387,7 @@ func (sa *SearchAttributes) GetUntypedValues() map[SearchAttributeKey]interface{
 }
 
 // Copy creates an update that copies existing values.
-func (sa *SearchAttributes) Copy() SearchAttributeUpdate {
+func (sa SearchAttributes) Copy() SearchAttributeUpdate {
 	return func(s *SearchAttributes) {
 		untypedValues := sa.GetUntypedValues()
 		for key, value := range untypedValues {
@@ -431,7 +431,7 @@ func serializeTypedSearchAttributes(searchAttributes map[SearchAttributeKey]inte
 		}
 		// Server does not remove search attributes if they set a type
 		if payload.GetData() != nil {
-			payload.Metadata["type"] = []byte(enumspb.IndexedValueType_name[int32(k.GetValueType())])
+			payload.Metadata["type"] = []byte(k.GetValueType().String())
 		}
 		serializedAttr[k.GetName()] = payload
 	}
@@ -460,17 +460,19 @@ func serializeSearchAttributes(
 	return searchAttr, nil
 }
 
-func getIndexValue(payload *commonpb.Payload) enumspb.IndexedValueType {
-	return enumspb.IndexedValueType(enumspb.IndexedValueType_value[string(payload.GetMetadata()["type"][:])])
-}
-
-func convertToTypeSearchAttributes(logger log.Logger, attributes map[string]*commonpb.Payload) SearchAttributes {
+func convertToTypedSearchAttributes(logger log.Logger, attributes map[string]*commonpb.Payload) SearchAttributes {
 	updates := make([]SearchAttributeUpdate, 0, len(attributes))
 	for key, payload := range attributes {
 		if payload.Data == nil {
 			continue
 		}
-		switch index := getIndexValue(payload); index {
+		valueType := enumspb.IndexedValueType(
+			enumspb.IndexedValueType_shorthandValue[string(payload.GetMetadata()["type"])])
+		// For TemporalChangeVersion, we imply the value type
+		if valueType == 0 && key == TemporalChangeVersion {
+			valueType = enumspb.INDEXED_VALUE_TYPE_KEYWORD_LIST
+		}
+		switch valueType {
 		case enumspb.INDEXED_VALUE_TYPE_BOOL:
 			attr := NewSearchAttributeKeyBool(key)
 			var value bool
@@ -528,7 +530,7 @@ func convertToTypeSearchAttributes(logger log.Logger, attributes map[string]*com
 			}
 			updates = append(updates, attr.ValueSet(value))
 		default:
-			logger.Warn("Unrecognized indexed value type on search attribute key", "key", key, "index", index)
+			logger.Warn("Unrecognized indexed value type on search attribute key", "key", key, "type", valueType)
 		}
 	}
 	return NewSearchAttributes(updates...)

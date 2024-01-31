@@ -1223,6 +1223,8 @@ func (ts *IntegrationTestSuite) TestWorkflowWithParallelMutableSideEffects() {
 
 func (ts *IntegrationTestSuite) TestWorkflowTypedSearchAttributes() {
 	options := ts.startWorkflowOptions("test-wf-typed-search-attributes")
+	// Need to disable eager workflow start until https://github.com/temporalio/temporal/pull/5124 fixed
+	options.EnableEagerStart = false
 	// Create initial set of search attributes
 	stringKey := temporal.NewSearchAttributeKeyString("CustomStringField")
 	options.TypedSearchAttributes = temporal.NewSearchAttributes(stringKey.ValueSet("CustomStringFieldValue"))
