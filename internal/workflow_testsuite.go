@@ -958,6 +958,18 @@ func (e *TestWorkflowEnvironment) AssertCalled(t mock.TestingT, methodName strin
 	return true
 }
 
+// AssertWorkflowCalled asserts that the workflow method was called with the supplied arguments.
+// Special method for workflows, doesn't assert activity calls.
+func (e *TestWorkflowEnvironment) AssertWorkflowCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {
+	return e.workflowMock.AssertCalled(t, methodName, arguments...)
+}
+
+// AssertActivityCalled asserts that the activity method was called with the supplied arguments.
+// Special method for activities, doesn't assert workflow calls.
+func (e *TestWorkflowEnvironment) AssertActivityCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {
+	return e.activityMock.AssertCalled(t, methodName, arguments...)
+}
+
 // AssertNotCalled asserts that the method was not called with the given arguments.
 // See AssertCalled for more info.
 func (e *TestWorkflowEnvironment) AssertNotCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {
@@ -968,6 +980,20 @@ func (e *TestWorkflowEnvironment) AssertNotCalled(t mock.TestingT, methodName st
 	return true
 }
 
+// AssertWorkflowNotCalled asserts that the workflow method was not called with the given arguments.
+// Special method for workflows, doesn't assert activity calls.
+// See AssertCalled for more info.
+func (e *TestWorkflowEnvironment) AssertWorkflowNotCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {
+	return e.workflowMock.AssertNotCalled(t, methodName, arguments...)
+}
+
+// AssertActivityNotCalled asserts that the activity method was not called with the given arguments.
+// Special method for activities, doesn't assert workflow calls.
+// See AssertCalled for more info.
+func (e *TestWorkflowEnvironment) AssertActivityNotCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {
+	return e.activityMock.AssertNotCalled(t, methodName, arguments...)
+}
+
 // AssertNumberOfCalls asserts that a method was called expectedCalls times.
 func (e *TestWorkflowEnvironment) AssertNumberOfCalls(t mock.TestingT, methodName string, expectedCalls int) bool {
 	dummyT := &testing.T{}
@@ -975,4 +1001,16 @@ func (e *TestWorkflowEnvironment) AssertNumberOfCalls(t mock.TestingT, methodNam
 		return e.workflowMock.AssertNumberOfCalls(t, methodName, expectedCalls) && e.activityMock.AssertNumberOfCalls(t, methodName, expectedCalls)
 	}
 	return true
+}
+
+// AssertWorkflowNumberOfCalls asserts that a workflow method was called expectedCalls times.
+// Special method for workflows, doesn't assert activity calls.
+func (e *TestWorkflowEnvironment) AssertWorkflowNumberOfCalls(t mock.TestingT, methodName string, expectedCalls int) bool {
+	return e.workflowMock.AssertNumberOfCalls(t, methodName, expectedCalls)
+}
+
+// AssertActivityNumberOfCalls asserts that a activity method was called expectedCalls times.
+// Special method for activities, doesn't assert workflow calls.
+func (e *TestWorkflowEnvironment) AssertActivityNumberOfCalls(t mock.TestingT, methodName string, expectedCalls int) bool {
+	return e.activityMock.AssertNumberOfCalls(t, methodName, expectedCalls)
 }
