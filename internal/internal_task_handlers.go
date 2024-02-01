@@ -1453,15 +1453,15 @@ matchLoop:
 		}
 
 		if d == nil {
-			return historyMismatchErrorf("nondeterministic workflow: missing replay command for %s", util.HistoryEventToString(e))
+			return historyMismatchErrorf("[TMPRL1100] nondeterministic workflow: missing replay command for %s", util.HistoryEventToString(e))
 		}
 
 		if e == nil {
-			return historyMismatchErrorf("nondeterministic workflow: extra replay command for %s", util.CommandToString(d))
+			return historyMismatchErrorf("[TMPRL1100] nondeterministic workflow: extra replay command for %s", util.CommandToString(d))
 		}
 
 		if !isCommandMatchEvent(d, e, msgs) {
-			return historyMismatchErrorf("nondeterministic workflow: history event is %s, replay command is %s",
+			return historyMismatchErrorf("[TMPRL1100] nondeterministic workflow: history event is %s, replay command is %s",
 				util.HistoryEventToString(e), util.CommandToString(d))
 		}
 

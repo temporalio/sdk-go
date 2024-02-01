@@ -442,7 +442,7 @@ func panicIllegalState(message string) {
 
 func (d *commandStateMachineBase) failStateTransition(event string) {
 	// this is when we detect illegal state transition, likely due to ill history sequence or nondeterministic workflow code
-	panicIllegalState(fmt.Sprintf("invalid state transition: attempt to %v, %v", event, d))
+	panicIllegalState(fmt.Sprintf("[TMPRL1100] invalid state transition: attempt to %v, %v", event, d))
 }
 
 func (d *commandStateMachineBase) handleCommandSent() {
@@ -918,7 +918,7 @@ func (h *commandsHelper) incrementNextCommandEventIDIfVersionMarker() {
 func (h *commandsHelper) getCommand(id commandID) commandStateMachine {
 	command, ok := h.commands[id]
 	if !ok {
-		panicMsg := fmt.Sprintf("unknown command %v, possible causes are nondeterministic workflow definition code"+
+		panicMsg := fmt.Sprintf("[TMPRL1100] unknown command %v, possible causes are nondeterministic workflow definition code"+
 			" or incompatible change in the workflow definition", id)
 		panicIllegalState(panicMsg)
 	}
@@ -927,7 +927,7 @@ func (h *commandsHelper) getCommand(id commandID) commandStateMachine {
 
 func (h *commandsHelper) addCommand(command commandStateMachine) {
 	if _, ok := h.commands[command.getID()]; ok {
-		panicMsg := fmt.Sprintf("adding duplicate command %v", command)
+		panicMsg := fmt.Sprintf("[TMPRL1100] adding duplicate command %v", command)
 		panicIllegalState(panicMsg)
 	}
 	element := h.orderedCommands.PushBack(command)
@@ -957,7 +957,7 @@ func (h *commandsHelper) removeCancelOfResolvedCommand(commandID commandID) {
 func (h *commandsHelper) moveCommandToBack(command commandStateMachine) {
 	elem := h.commands[command.getID()]
 	if elem == nil {
-		panicIllegalState(fmt.Sprintf("moving command not present %v", command))
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] moving command not present %v", command))
 	}
 	h.orderedCommands.Remove(elem)
 	h.commands[command.getID()] = h.orderedCommands.PushBack(command)
@@ -993,7 +993,7 @@ func (h *commandsHelper) handleActivityTaskClosed(activityID string, scheduledEv
 
 func (h *commandsHelper) handleActivityTaskScheduled(activityID string, scheduledEventID int64) {
 	if _, ok := h.scheduledEventIDToActivityID[scheduledEventID]; !ok {
-		panicMsg := fmt.Sprintf("lookup failed for scheduledEventID to activityID: scheduleEventID: %v, activityID: %v",
+		panicMsg := fmt.Sprintf("[TMPRL1100] lookup failed for scheduledEventID to activityID: scheduleEventID: %v, activityID: %v",
 			scheduledEventID, activityID)
 		panicIllegalState(panicMsg)
 	}
@@ -1005,7 +1005,7 @@ func (h *commandsHelper) handleActivityTaskScheduled(activityID string, schedule
 func (h *commandsHelper) handleActivityTaskCancelRequested(scheduledEventID int64) {
 	activityID, ok := h.scheduledEventIDToActivityID[scheduledEventID]
 	if !ok {
-		panicIllegalState(fmt.Sprintf("unable to find activityID for the scheduledEventID: %v", scheduledEventID))
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find activityID for the scheduledEventID: %v", scheduledEventID))
 	}
 	command := h.getCommand(makeCommandID(commandTypeActivity, activityID))
 	command.handleCancelInitiatedEvent()
@@ -1030,12 +1030,12 @@ func (h *commandsHelper) getActivityAndScheduledEventIDs(event *historypb.Histor
 	case enumspb.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT:
 		scheduledEventID = event.GetActivityTaskTimedOutEventAttributes().GetScheduledEventId()
 	default:
-		panicIllegalState(fmt.Sprintf("unexpected event type: %v", event.GetEventType()))
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] unexpected event type: %v", event.GetEventType()))
 	}
 
 	activityID, ok := h.scheduledEventIDToActivityID[scheduledEventID]
 	if !ok {
-		panicIllegalState(fmt.Sprintf("unable to find activityID for the event: %v", util.HistoryEventToString(event)))
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find activityID for the event: %v", util.HistoryEventToString(event)))
 	}
 	return activityID, scheduledEventID
 }
@@ -1076,7 +1076,7 @@ func (h *commandsHelper) recordVersionMarker(changeID string, version Version, d
 
 func (h *commandsHelper) handleVersionMarker(eventID int64, changeID string, searchAttrUpdated bool) {
 	if _, ok := h.versionMarkerLookup[eventID]; ok {
-		panicMsg := fmt.Sprintf("marker event already exists for eventID in lookup: eventID: %v, changeID: %v",
+		panicMsg := fmt.Sprintf("[TMPRL1100] marker event already exists for eventID in lookup: eventID: %v, changeID: %v",
 			eventID, changeID)
 		panicIllegalState(panicMsg)
 	}
