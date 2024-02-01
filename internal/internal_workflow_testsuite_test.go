@@ -4083,7 +4083,9 @@ type dummyWorkflow struct {
 }
 
 func (w *dummyWorkflow) SameFuncName(ctx Context, input string) error {
-	return ExecuteActivity(ctx, w.a.SameFuncName, input).Get(ctx, nil)
+	return ExecuteActivity(WithActivityOptions(ctx, ActivityOptions{
+		StartToCloseTimeout: time.Minute,
+	}), w.a.SameFuncName, input).Get(ctx, nil)
 }
 
 type dummyActivity struct{}
