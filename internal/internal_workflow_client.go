@@ -121,8 +121,8 @@ type (
 
 		// Get will fill the workflow execution result to valuePtr, if workflow
 		// execution is a success, or return corresponding error. If valuePtr is
-		// nil, valuePtr will be ignored and only the corresponding error of the 
-		// workflow will be returned (nil on workflow execution success). 
+		// nil, valuePtr will be ignored and only the corresponding error of the
+		// workflow will be returned (nil on workflow execution success).
 		// This is a blocking API.
 		//
 		// This call will follow execution runs to the latest result for this run
@@ -141,7 +141,7 @@ type (
 		// GetWithOptions will fill the workflow execution result to valuePtr, if
 		// workflow execution is a success, or return corresponding error. If
 		// valuePtr is nil, valuePtr will be ignored and only the corresponding
-		// error of the workflow will be returned (nil on workflow execution success). 
+		// error of the workflow will be returned (nil on workflow execution success).
 		// This is a blocking API.
 		//
 		// Note, values should not be reused for extraction here because merging on
@@ -1450,28 +1450,6 @@ func getWorkflowMemo(input map[string]interface{}, dc converter.DataConverter) (
 	return &commonpb.Memo{Fields: memo}, nil
 }
 
-func serializeSearchAttributes(input map[string]interface{}) (*commonpb.SearchAttributes, error) {
-	if input == nil {
-		return nil, nil
-	}
-
-	attr := make(map[string]*commonpb.Payload)
-	for k, v := range input {
-		// If search attribute value is already of Payload type, then use it directly.
-		// This allows to copy search attributes from workflow info to child workflow options.
-		if vp, ok := v.(*commonpb.Payload); ok {
-			attr[k] = vp
-			continue
-		}
-		var err error
-		attr[k], err = converter.GetDefaultDataConverter().ToPayload(v)
-		if err != nil {
-			return nil, fmt.Errorf("encode search attribute [%s] error: %v", k, err)
-		}
-	}
-	return &commonpb.SearchAttributes{IndexedFields: attr}, nil
-}
-
 type workflowClientInterceptor struct {
 	client *WorkflowClient
 }
@@ -1506,7 +1484,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		return nil, err
 	}
 
-	searchAttr, err := serializeSearchAttributes(in.Options.SearchAttributes)
+	searchAttr, err := serializeSearchAttributes(in.Options.SearchAttributes, in.Options.TypedSearchAttributes)
 	if err != nil {
 		return nil, err
 	}
@@ -1647,7 +1625,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		return nil, err
 	}
 
-	searchAttr, err := serializeSearchAttributes(in.Options.SearchAttributes)
+	searchAttr, err := serializeUntypedSearchAttributes(in.Options.SearchAttributes)
 	if err != nil {
 		return nil, err
 	}

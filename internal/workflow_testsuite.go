@@ -927,7 +927,7 @@ func (e *TestWorkflowEnvironment) SetMemoOnStart(memo map[string]interface{}) er
 
 // SetSearchAttributesOnStart sets the search attributes when start workflow.
 func (e *TestWorkflowEnvironment) SetSearchAttributesOnStart(searchAttributes map[string]interface{}) error {
-	attr, err := serializeSearchAttributes(searchAttributes)
+	attr, err := serializeUntypedSearchAttributes(searchAttributes)
 	if err != nil {
 		return err
 	}

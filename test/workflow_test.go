@@ -2286,6 +2286,90 @@ func (w *Workflows) ForcedNonDeterminism(ctx workflow.Context, sameCommandButDif
 	return
 }
 
+func (w *Workflows) ScheduleTypedSearchAttributesWorkflow(ctx workflow.Context) (string, error) {
+	attributes := workflow.GetTypedSearchAttributes(ctx)
+
+	scheduleStartTimeKey := temporal.NewSearchAttributeKeyTime("TemporalScheduledStartTime")
+	scheduleByIDKey := temporal.NewSearchAttributeKeyKeyword("TemporalScheduledById")
+
+	_, ok := attributes.GetTime(scheduleStartTimeKey)
+	if !ok {
+		return "", errors.New("missing TemporalScheduledStartTime")
+	}
+
+	scheduleByID, ok := attributes.GetKeyword(scheduleByIDKey)
+	if !ok {
+		return "", errors.New("missing TemporalScheduledById")
+	}
+	return scheduleByID, nil
+}
+
+func (w *Workflows) UpsertTypedSearchAttributesWorkflow(ctx workflow.Context, sleepBetweenUpsert bool) error {
+	// Do a get version and confirmed patched attribute. First confirm change
+	// version not there.
+	changeKey := temporal.NewSearchAttributeKeyKeywordList("TemporalChangeVersion")
+	if workflow.GetInfo(ctx).SearchAttributes.GetIndexedFields()["TemporalChangeVersion"] != nil {
+		return fmt.Errorf("change version unexpectedly present")
+	} else if _, ok := workflow.GetTypedSearchAttributes(ctx).GetKeywordList(changeKey); ok {
+		return fmt.Errorf("change version unexpectedly present")
+	}
+	// Now do a get version and confirm it is set afterwards
+	_ = workflow.GetVersion(ctx, "some-id-1", workflow.DefaultVersion, 0)
+	if sleepBetweenUpsert {
+		_ = workflow.Sleep(ctx, 1*time.Millisecond)
+	}
+	if p := workflow.GetInfo(ctx).SearchAttributes.GetIndexedFields()["TemporalChangeVersion"]; p == nil {
+		return fmt.Errorf("change version not present")
+	} else if string(p.Data) != `["some-id-1-0"]` {
+		return fmt.Errorf("change version invalid, got: %s", p.Data)
+	} else if s, _ := workflow.GetTypedSearchAttributes(ctx).GetKeywordList(changeKey); len(s) != 1 || s[0] != "some-id-1-0" {
+		return fmt.Errorf("change version invalid: got: %v", s)
+	}
+
+	// Check string attribute
+	attributes := workflow.GetTypedSearchAttributes(ctx)
+	stringKey := temporal.NewSearchAttributeKeyString("CustomStringField")
+	value, ok := attributes.GetString(stringKey)
+	if !ok || value != "CustomStringFieldValue" {
+		return errors.New("search attribute CustomStringField not present or value incorrect")
+	}
+
+	// Add a new search attribute
+	key := temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
+	err := workflow.UpsertTypedSearchAttributes(ctx, key.ValueSet("CustomKeywordFieldValue"))
+	if err != nil {
+		return err
+	}
+	if sleepBetweenUpsert {
+		_ = workflow.Sleep(ctx, 1*time.Millisecond)
+	}
+
+	// Verify the search attributes is added
+	attributes = workflow.GetTypedSearchAttributes(ctx)
+	value, ok = attributes.GetKeyword(key)
+	if !ok || value != "CustomKeywordFieldValue" {
+		return errors.New("search attribute CustomKeywordField not present or value incorrect")
+	}
+
+	// Remove a search attribute
+	err = workflow.UpsertTypedSearchAttributes(ctx, key.ValueUnset())
+	if err != nil {
+		return err
+	}
+	if sleepBetweenUpsert {
+		_ = workflow.Sleep(ctx, 1*time.Millisecond)
+	}
+
+	// Verify the search attributes is removed
+	attributes = workflow.GetTypedSearchAttributes(ctx)
+	value, ok = attributes.GetKeyword(key)
+	if ok || value != "" {
+		return errors.New("search attribute CustomKeywordField not deleted")
+	}
+	return nil
+
+}
+
 func (w *Workflows) UpsertSearchAttributesConditional(ctx workflow.Context, maxTicks int) error {
 	var waitTickCount int
 	tickCh := workflow.GetSignalChannel(ctx, "tick")
@@ -2590,6 +2674,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.HistoryLengths)
 	worker.RegisterWorkflow(w.HeartbeatSpecificCount)
 	worker.RegisterWorkflow(w.UpsertMemo)
+	worker.RegisterWorkflow(w.UpsertTypedSearchAttributesWorkflow)
+	worker.RegisterWorkflow(w.ScheduleTypedSearchAttributesWorkflow)
 	worker.RegisterWorkflow(w.SessionFailedStateWorkflow)
 	worker.RegisterWorkflow(w.VersionLoopWorkflow)
 	worker.RegisterWorkflow(w.RaceOnCacheEviction)

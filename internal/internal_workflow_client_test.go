@@ -1475,12 +1475,12 @@ func (s *workflowClientTestSuite) TestGetWorkflowMemo() {
 
 func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	var input1 map[string]interface{}
-	result1, err := serializeSearchAttributes(input1)
+	result1, err := serializeUntypedSearchAttributes(input1)
 	s.NoError(err)
 	s.Nil(result1)
 
 	input1 = make(map[string]interface{})
-	result2, err := serializeSearchAttributes(input1)
+	result2, err := serializeUntypedSearchAttributes(input1)
 	s.NoError(err)
 	s.NotNil(result2)
 	s.Equal(0, len(result2.IndexedFields))
@@ -1488,7 +1488,7 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	input1 = map[string]interface{}{
 		"t1": "v1",
 	}
-	result3, err := serializeSearchAttributes(input1)
+	result3, err := serializeUntypedSearchAttributes(input1)
 	s.NoError(err)
 	s.NotNil(result3)
 	s.Equal(1, len(result3.IndexedFields))
@@ -1502,7 +1502,7 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	input1 = map[string]interface{}{
 		"payload": p,
 	}
-	result4, err := serializeSearchAttributes(input1)
+	result4, err := serializeUntypedSearchAttributes(input1)
 	s.NoError(err)
 	s.NotNil(result3)
 	s.Equal(1, len(result3.IndexedFields))
@@ -1512,7 +1512,7 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	input1 = map[string]interface{}{
 		"non-serializable": make(chan int),
 	}
-	_, err = serializeSearchAttributes(input1)
+	_, err = serializeUntypedSearchAttributes(input1)
 	s.Error(err)
 }
 

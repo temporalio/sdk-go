@@ -391,6 +391,10 @@ func (wc *workflowEnvironmentImpl) WorkflowInfo() *WorkflowInfo {
 	return wc.workflowInfo
 }
 
+func (wc *workflowEnvironmentImpl) TypedSearchAttributes() SearchAttributes {
+	return convertToTypedSearchAttributes(wc.logger, wc.workflowInfo.SearchAttributes.GetIndexedFields())
+}
+
 func (wc *workflowEnvironmentImpl) Complete(result *commonpb.Payloads, err error) {
 	wc.completeHandler(result, err)
 }
@@ -469,7 +473,7 @@ func validateAndSerializeSearchAttributes(attributes map[string]interface{}) (*c
 	if len(attributes) == 0 {
 		return nil, errSearchAttributesNotSet
 	}
-	attr, err := serializeSearchAttributes(attributes)
+	attr, err := serializeUntypedSearchAttributes(attributes)
 	if err != nil {
 		return nil, err
 	}
@@ -542,7 +546,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 		callback(nil, err)
 		return
 	}
-	searchAttr, err := serializeSearchAttributes(params.SearchAttributes)
+	searchAttr, err := serializeUntypedSearchAttributes(params.SearchAttributes)
 	if err != nil {
 		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
 			startedHandler(WorkflowExecution{}, &ChildWorkflowExecutionAlreadyStartedError{})
