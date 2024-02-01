@@ -4077,3 +4077,30 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowGetCurrentHistoryLength() {
 	s.NoError(env.GetWorkflowResult(&result))
 	s.Equal(17, result)
 }
+
+type dummyWorkflow struct {
+	a *dummyActivity
+}
+
+func (w *dummyWorkflow) SameFuncName(ctx Context, input string) error {
+	return ExecuteActivity(WithActivityOptions(ctx, ActivityOptions{
+		StartToCloseTimeout: time.Minute,
+	}), w.a.SameFuncName, input).Get(ctx, nil)
+}
+
+type dummyActivity struct{}
+
+func (a *dummyActivity) SameFuncName(ctx context.Context, input string) (string, error) {
+	return input, nil
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_SameWorkflowAndActivityNames() {
+	env := s.NewTestWorkflowEnvironment()
+
+	env.OnActivity(new(dummyActivity).SameFuncName, mock.Anything, "input").Return("output", nil)
+
+	env.ExecuteWorkflow(new(dummyWorkflow).SameFuncName, "input")
+
+	s.Require().True(env.IsWorkflowCompleted())
+	s.Require().NoError(env.GetWorkflowError())
+}
