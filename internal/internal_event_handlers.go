@@ -787,12 +787,12 @@ func (wc *workflowEnvironmentImpl) RequestCancelTimer(timerID TimerID) {
 
 func validateVersion(changeID string, version, minSupported, maxSupported Version) {
 	if version < minSupported {
-		panicIllegalState(fmt.Sprintf("Workflow code removed support of version %v. "+
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] Workflow code removed support of version %v. "+
 			"for \"%v\" changeID. The oldest supported version is %v",
 			version, changeID, minSupported))
 	}
 	if version > maxSupported {
-		panicIllegalState(fmt.Sprintf("Workflow code is too old to support version %v "+
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] Workflow code is too old to support version %v "+
 			"for \"%v\" changeID. The maximum supported version is %v",
 			version, changeID, maxSupported))
 	}
@@ -868,7 +868,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 			for k := range wc.sideEffectResult {
 				keys = append(keys, k)
 			}
-			panicIllegalState(fmt.Sprintf("No cached result found for side effectID=%v. KnownSideEffects=%v",
+			panicIllegalState(fmt.Sprintf("[TMPRL1100] No cached result found for side effectID=%v. KnownSideEffects=%v",
 				sideEffectID, keys))
 		}
 
@@ -980,7 +980,7 @@ func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interfa
 
 	if wc.isReplay {
 		// This should not happen
-		panicIllegalState(fmt.Sprintf("Non deterministic workflow code change detected. MutableSideEffect API call doesn't have a correspondent event in the workflow history. MutableSideEffect ID: %s", id))
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] Non deterministic workflow code change detected. MutableSideEffect API call doesn't have a correspondent event in the workflow history. MutableSideEffect ID: %s", id))
 	}
 
 	return wc.recordMutableSideEffect(id, callCount, wc.encodeValue(f()))
@@ -1570,7 +1570,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 	if la, ok := weh.pendingLaTasks[lamd.ActivityID]; ok {
 		if len(lamd.ActivityType) > 0 && lamd.ActivityType != la.params.ActivityType {
 			// history marker mismatch to the current code.
-			panicMsg := fmt.Sprintf("code execute local activity %v, but history event found %v, markerData: %v", la.params.ActivityType, lamd.ActivityType, markerData)
+			panicMsg := fmt.Sprintf("[TMPRL1100] code execute local activity %v, but history event found %v, markerData: %v", la.params.ActivityType, lamd.ActivityType, markerData)
 			panicIllegalState(panicMsg)
 		}
 		weh.commandsHelper.recordLocalActivityMarker(lamd.ActivityID, details, failure)
