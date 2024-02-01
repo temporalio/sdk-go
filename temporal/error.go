@@ -166,12 +166,23 @@ var (
 	ErrSkipScheduleUpdate = internal.ErrSkipScheduleUpdate
 )
 
+// ApplicationErrorOptions should be used to set all the desired attributes of a new ApplicationError
+// To get a new instance use ErrorAttributes function
+type ApplicationErrorOptions = internal.ApplicationErrorOptions
+
+// NewApplicationErrorWithOptions creates new instance of *ApplicationError type, all the options of the
+// newly created error could be controlled through instance of ApplicationErrorOptions.
+// The options structure also receives some extra requests. See activity.ApplicationErrorOptions for details.
+func NewApplicationErrorWithOptions(msg, errType string, options ApplicationErrorOptions) error {
+	return internal.NewApplicationErrorWithOptions(msg, errType, options)
+}
+
 // NewApplicationError creates new instance of retryable *ApplicationError with message, type, and optional details.
 // Use ApplicationError for any use case specific errors that cross activity and child workflow boundaries.
 // errType can be used to control if error is retryable or not. Add the same type in to RetryPolicy.NonRetryableErrorTypes
 // to avoid retrying of particular error types.
 func NewApplicationError(message, errType string, details ...interface{}) error {
-	return internal.NewApplicationError(message, errType, false, nil, details...)
+	return internal.NewApplicationErrorWithOptions(message, errType, ApplicationErrorOptions{Details: details})
 }
 
 // NewApplicationErrorWithCause creates new instance of retryable *ApplicationError with message, type, cause, and optional details.
@@ -179,13 +190,17 @@ func NewApplicationError(message, errType string, details ...interface{}) error 
 // errType can be used to control if error is retryable or not. Add the same type in to RetryPolicy.NonRetryableErrorTypes
 // to avoid retrying of particular error types.
 func NewApplicationErrorWithCause(message, errType string, cause error, details ...interface{}) error {
-	return internal.NewApplicationError(message, errType, false, cause, details...)
+	return internal.NewApplicationErrorWithOptions(
+		message, errType, ApplicationErrorOptions{NonRetryable: false, Cause: cause, Details: details},
+	)
 }
 
 // NewNonRetryableApplicationError creates new instance of non-retryable *ApplicationError with message, type, and optional cause and details.
 // Use ApplicationError for any use case specific errors that cross activity and child workflow boundaries.
 func NewNonRetryableApplicationError(message, errType string, cause error, details ...interface{}) error {
-	return internal.NewApplicationError(message, errType, true, cause, details...)
+	return internal.NewApplicationErrorWithOptions(
+		message, errType, ApplicationErrorOptions{NonRetryable: true, Cause: cause, Details: details},
+	)
 }
 
 // NewCanceledError creates CanceledError instance.

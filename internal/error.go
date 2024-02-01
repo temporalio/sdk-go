@@ -119,14 +119,30 @@ Workflow consumers will get an instance of *WorkflowExecutionError. This error w
 */
 
 type (
+	// ApplicationErrorOptions represents a combination of error attributes and additional requests.
+	// All fields are optional, providing flexibility in error customization.
+	ApplicationErrorOptions struct {
+		NonRetryable bool
+		Cause        error
+		Details      []interface{}
+		// NextRetryInterval is a request from server to override retry interval calculated by the
+		// server according to the RetryPolicy set by the Workflow.
+		// IMPORTANT: NextRetryInterval is meaningful only within the context of errors originating from Activity.
+		// Any value set from Workflow or LocalActivity will be silently ignored.
+		// It is impossible to specify immediate retry as it is indistinguishable from the default value. As a
+		// workaround you could set NextRetryDelay to some small value.
+		NextRetryDelay time.Duration
+	}
+
 	// ApplicationError returned from activity implementations with message and optional details.
 	ApplicationError struct {
 		temporalError
-		msg          string
-		errType      string
-		nonRetryable bool
-		cause        error
-		details      converter.EncodedValues
+		msg            string
+		errType        string
+		nonRetryable   bool
+		cause          error
+		details        converter.EncodedValues
+		nextRetryDelay time.Duration
 	}
 
 	// TimeoutError returned when activity or child workflow timed out.
@@ -284,13 +300,22 @@ var (
 
 // NewApplicationError create new instance of *ApplicationError with message, type, and optional details.
 func NewApplicationError(msg string, errType string, nonRetryable bool, cause error, details ...interface{}) error {
+	return NewApplicationErrorWithOptions(
+		msg,
+		errType,
+		ApplicationErrorOptions{NonRetryable: nonRetryable, Cause: cause, Details: details},
+	)
+}
+
+func NewApplicationErrorWithOptions(msg string, errType string, options ApplicationErrorOptions) error {
 	applicationErr := &ApplicationError{
 		msg:          msg,
 		errType:      errType,
-		nonRetryable: nonRetryable,
-		cause:        cause}
-
+		cause:        options.Cause,
+		nonRetryable: options.NonRetryable,
+	}
 	// When return error to user, use EncodedValues as details and data is ready to be decoded by calling Get
+	details := options.Details
 	if len(details) == 1 {
 		if d, ok := details[0].(*EncodedValues); ok {
 			applicationErr.details = d
@@ -522,6 +547,8 @@ func (e *ApplicationError) NonRetryable() bool {
 func (e *ApplicationError) Unwrap() error {
 	return e.cause
 }
+
+func (e *ApplicationError) NextRetryDelay() time.Duration { return e.nextRetryDelay }
 
 // Error from error interface
 func (e *TimeoutError) Error() string {
