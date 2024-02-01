@@ -1910,7 +1910,7 @@ func (ch *completedUpdateHandle) Get(ctx context.Context, valuePtr interface{}) 
 
 func (luh *lazyUpdateHandle) Get(ctx context.Context, valuePtr interface{}) error {
 	enc, err := luh.client.PollWorkflowUpdate(ctx, luh.ref)
-	if err != nil {
+	if err != nil || valuePtr == nil {
 		return err
 	}
 	return enc.Get(valuePtr)

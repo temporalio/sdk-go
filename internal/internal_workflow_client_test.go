@@ -1772,6 +1772,9 @@ func TestUpdate(t *testing.T) {
 		err = handle.Get(context.TODO(), &got)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
+		// Verify that calling Get with nil does not panic
+		err = handle.Get(context.TODO(), nil)
+		require.NoError(t, err)
 	})
 	t.Run("sync error", func(t *testing.T) {
 		svc, client := init(t)
@@ -1810,13 +1813,16 @@ func TestUpdate(t *testing.T) {
 					Outcome: mustOutcome(t, want),
 				},
 				nil,
-			)
+			).Times(2)
 		handle, err := client.UpdateWorkflowWithOptions(context.TODO(), req)
 		require.NoError(t, err)
 		var got string
 		err = handle.Get(context.TODO(), &got)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
+		// Verify that calling Get with nil does not panic
+		err = handle.Get(context.TODO(), nil)
+		require.NoError(t, err)
 	})
 	t.Run("async error", func(t *testing.T) {
 		svc, client := init(t)
