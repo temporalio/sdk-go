@@ -83,6 +83,10 @@ func PurgeStickyWorkflowCache() {
 // a hook to runtime.SetFinalizer (ie: When they are freed by the GC). When there are no reachable instances of
 // WorkerCache, shared caches will be cleared
 func NewWorkerCache() *WorkerCache {
+	sharedWorkerCacheLock.Lock()
+	desiredWorkflowCacheSize := desiredWorkflowCacheSize
+	sharedWorkerCacheLock.Unlock()
+
 	return newWorkerCache(sharedWorkerCachePtr, &sharedWorkerCacheLock, desiredWorkflowCacheSize)
 }
 
