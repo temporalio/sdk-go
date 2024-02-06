@@ -123,6 +123,7 @@ type (
 		RemoveSession(sessionID string)
 		GetContextPropagators() []ContextPropagator
 		UpsertSearchAttributes(attributes map[string]interface{}) error
+		UpsertTypedSearchAttributes(attributes SearchAttributes) error
 		UpsertMemo(memoMap map[string]interface{}) error
 		GetRegistry() *registry
 		// QueueUpdate request of type name

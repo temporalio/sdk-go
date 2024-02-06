@@ -76,6 +76,18 @@ func TestSetSearchAttributesOnStart(t *testing.T) {
 	require.NotNil(t, env.impl.workflowInfo.SearchAttributes)
 }
 
+func TestSetTypedSearchAttributesOnStart(t *testing.T) {
+	t.Parallel()
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+
+	CustomIntKey := NewSearchAttributeKeyInt64("CustomIntField")
+
+	err := env.SetTypedSearchAttributesOnStart(NewSearchAttributes(CustomIntKey.ValueSet(1)))
+	require.NoError(t, err)
+	require.NotNil(t, env.impl.workflowInfo.SearchAttributes)
+}
+
 func TestNoExplicitRegistrationRequired(t *testing.T) {
 	testSuite := &WorkflowTestSuite{}
 	env := testSuite.NewTestWorkflowEnvironment()
