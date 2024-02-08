@@ -38,7 +38,6 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
-
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/temporal"
@@ -412,6 +411,39 @@ func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, ta
 	ctx = workflow.WithTaskQueue(ctx, taskQueue)
 
 	return "", workflow.NewContinueAsNewError(ctx, w.ContinueAsNewWithOptions, count-1, taskQueue)
+}
+
+func (w *Workflows) ContinueAsNewWithRetryPolicy(ctx workflow.Context, count int) (string, error) {
+	const (
+		initialMaximumAttempts int32 = 3   // Set in IntegrationTestSuite::TestContinueAsNewWithNewRetryPolicy
+		newMaximumAttempts     int32 = 100 // Set in Workflows::ContinueAsNewWithRetryPolicy
+		numIterations                = 4
+	)
+
+	info := workflow.GetInfo(ctx)
+	if info.RetryPolicy == nil {
+		return "", errors.New("retry policy is not carried over")
+	}
+
+	actual := info.RetryPolicy.MaximumAttempts
+	expected := initialMaximumAttempts
+	if count > 0 {
+		expected = newMaximumAttempts
+	}
+
+	if expected != actual {
+		return "", fmt.Errorf("unexpected retry policy: count=%v, expected=%v, actual=%v", count, expected, actual)
+	}
+
+	if count == numIterations {
+		return fmt.Sprintf("End of workflow: %v", actual), nil
+	}
+
+	ctx = workflow.WithWorkflowRetryPolicy(ctx, temporal.RetryPolicy{
+		MaximumAttempts: newMaximumAttempts,
+	})
+
+	return "", workflow.NewContinueAsNewError(ctx, w.ContinueAsNewWithRetryPolicy, count+1)
 }
 
 func (w *Workflows) IDReusePolicy(
@@ -2626,6 +2658,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.UpsertSearchAttributesConditional)
 	worker.RegisterWorkflow(w.UpsertMemoConditional)
 	worker.RegisterWorkflow(w.ContinueAsNewWithOptions)
+	worker.RegisterWorkflow(w.ContinueAsNewWithRetryPolicy)
 	worker.RegisterWorkflow(w.IDReusePolicy)
 	worker.RegisterWorkflow(w.InspectActivityInfo)
 	worker.RegisterWorkflow(w.InspectLocalActivityInfo)

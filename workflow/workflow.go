@@ -643,9 +643,10 @@ func UpsertMemo(ctx Context, memo map[string]interface{}) error {
 //
 //	 ctx - use context to override any options for the new workflow like execution timeout, workflow task timeout, task queue.
 //		  if not mentioned it would use the defaults that the current workflow is using.
-//	       ctx := WithWorkflowExecutionTimeout(ctx, 30 * time.Minute)
-//	       ctx := WithWorkflowTaskTimeout(ctx, time.Minute)
-//		  ctx := WithWorkflowTaskQueue(ctx, "example-group")
+//	       ctx = WithWorkflowRunTimeout(ctx, 30 * time.Minute)
+//	       ctx = WithWorkflowTaskTimeout(ctx, 5 * time.Second)
+//	       ctx = WithWorkflowTaskQueue(ctx, "example-group")
+//	       ctx = WithWorkflowRetryPolicy(ctx, retryPolicy)
 //	 wfn - workflow function. for new execution it can be different from the currently running.
 //	 args - arguments for the new workflow.
 func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) error {

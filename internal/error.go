@@ -196,6 +196,11 @@ type (
 		// VersioningIntent specifies whether the continued workflow should run on a worker with a
 		// compatible build ID or not. See VersioningIntent.
 		VersioningIntent VersioningIntent
+
+		// Propagates the retry policy to the next run of the workflow.
+		// This is usually set by StartWorkflowOptions.RetryPolicy,
+		// but it could be overridden using workflow.WithWorkflowRetryPolicy.
+		RetryPolicy *commonpb.RetryPolicy
 	}
 
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
@@ -447,9 +452,10 @@ func IsCanceledError(err error) bool {
 //
 //	 ctx - use context to override any options for the new workflow like run timeout, task timeout, task queue.
 //		  if not mentioned it would use the defaults that the current workflow is using.
-//	       ctx := WithWorkflowRunTimeout(ctx, 30 * time.Minute)
-//	       ctx := WithWorkflowTaskTimeout(ctx, 5 * time.Second)
-//		  ctx := WithWorkflowTaskQueue(ctx, "example-group")
+//	       ctx = WithWorkflowRunTimeout(ctx, 30 * time.Minute)
+//	       ctx = WithWorkflowTaskTimeout(ctx, 5 * time.Second)
+//	       ctx = WithWorkflowTaskQueue(ctx, "example-group")
+//	       ctx = WithWorkflowRetryPolicy(ctx, retryPolicy)
 //	 wfn - workflow function. for new execution it can be different from the currently running.
 //	 args - arguments for the new workflow.
 func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) error {
@@ -489,6 +495,7 @@ func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
 		WorkflowRunTimeout:       options.WorkflowRunTimeout,
 		WorkflowTaskTimeout:      options.WorkflowTaskTimeout,
 		VersioningIntent:         options.VersioningIntent,
+		RetryPolicy:              options.RetryPolicy,
 	}
 }
 

@@ -81,3 +81,8 @@ func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 func WithWorkflowVersioningIntent(ctx Context, intent temporal.VersioningIntent) Context {
 	return internal.WithWorkflowVersioningIntent(ctx, intent)
 }
+
+// WithWorkflowRetryPolicy adds RetryPolicy to the context.
+func WithWorkflowRetryPolicy(ctx Context, retryPolicy temporal.RetryPolicy) Context {
+	return internal.WithWorkflowRetryPolicy(ctx, retryPolicy)
+}

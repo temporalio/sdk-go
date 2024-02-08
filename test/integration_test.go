@@ -576,6 +576,21 @@ func (ts *IntegrationTestSuite) TestContinueAsNewCarryOver() {
 	ts.Equal("memoVal,searchAttr,123", result)
 }
 
+func (ts *IntegrationTestSuite) TestContinueAsNewWithNewRetryPolicy() {
+	const (
+		initialMaximumAttempts int32 = 3   // Set in IntegrationTestSuite::TestContinueAsNewWithNewRetryPolicy
+		newMaximumAttempts     int32 = 100 // Set in Workflows::ContinueAsNewWithRetryPolicy
+	)
+	var result string
+	startOptions := ts.startWorkflowOptions("test-continueasnew-with-new-retry-policy")
+	startOptions.RetryPolicy = &temporal.RetryPolicy{
+		MaximumAttempts: initialMaximumAttempts,
+	}
+	err := ts.executeWorkflowWithOption(startOptions, ts.workflows.ContinueAsNewWithRetryPolicy, &result, 0)
+	ts.NoError(err)
+	ts.Equal(fmt.Sprintf("End of workflow: %v", newMaximumAttempts), result)
+}
+
 func (ts *IntegrationTestSuite) TestCancellation() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()

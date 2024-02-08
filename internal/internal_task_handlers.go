@@ -1715,6 +1715,12 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		metricsHandler.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION)
 
+		// This attribute is added as a patch, and it may not be present during a replay.
+		retryPolicy := contErr.RetryPolicy
+		if retryPolicy == nil {
+			retryPolicy = convertToPBRetryPolicy(workflowContext.workflowInfo.RetryPolicy)
+		}
+
 		useCompat := determineUseCompatibleFlagForCommand(
 			contErr.VersioningIntent, workflowContext.workflowInfo.TaskQueueName, contErr.TaskQueueName)
 		closeCommand.Attributes = &commandpb.Command_ContinueAsNewWorkflowExecutionCommandAttributes{ContinueAsNewWorkflowExecutionCommandAttributes: &commandpb.ContinueAsNewWorkflowExecutionCommandAttributes{
@@ -1726,7 +1732,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			Header:               contErr.Header,
 			Memo:                 workflowContext.workflowInfo.Memo,
 			SearchAttributes:     workflowContext.workflowInfo.SearchAttributes,
-			RetryPolicy:          convertToPBRetryPolicy(workflowContext.workflowInfo.RetryPolicy),
+			RetryPolicy:          retryPolicy,
 			UseCompatibleVersion: useCompat,
 		}}
 	} else if workflowContext.err != nil {

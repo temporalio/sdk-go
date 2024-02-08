@@ -1544,6 +1544,13 @@ func WithWorkflowVersioningIntent(ctx Context, intent VersioningIntent) Context 
 	return ctx1
 }
 
+// WithWorkflowRetryPolicy adds RetryPolicy to the context.
+func WithWorkflowRetryPolicy(ctx Context, retryPolicy RetryPolicy) Context {
+	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
+	getWorkflowEnvOptions(ctx1).RetryPolicy = convertToPBRetryPolicy(&retryPolicy)
+	return ctx1
+}
+
 // withContextPropagators adds ContextPropagators to the context.
 func withContextPropagators(ctx Context, contextPropagators []ContextPropagator) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
