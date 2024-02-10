@@ -888,6 +888,46 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseIgnoreDuplicateWhileRunning()
 	ts.NotEqual(run1.GetRunID(), run3.GetRunID())
 }
 
+func (ts *IntegrationTestSuite) TestChildWFWithRetryPolicy_ShortLived() {
+	ts.testChildWFWithRetryPolicy(ts.workflows.ChildWorkflowWithRetryPolicy, 0)
+}
+
+func (ts *IntegrationTestSuite) TestChildWFWithRetryPolicy_LongRunning() {
+	ts.testChildWFWithRetryPolicy(ts.workflows.ChildWorkflowWithRetryPolicy, 4)
+}
+
+func (ts *IntegrationTestSuite) TestChildWFWithRetryPolicy_LongRunningWithCustomRetry() {
+	ts.testChildWFWithRetryPolicy(ts.workflows.ChildWorkflowWithCustomRetryPolicy, 6)
+}
+
+func (ts *IntegrationTestSuite) testChildWFWithRetryPolicy(wfFunc interface{}, iterations int) {
+	const (
+		parentWorkflowMaximumAttempts int32 = 3
+	)
+
+	startOptions := ts.startWorkflowOptions("test-childwf-with-retry-policy")
+	startOptions.RetryPolicy = &temporal.RetryPolicy{
+		InitialInterval:    time.Second,
+		BackoffCoefficient: 2.0,
+		MaximumInterval:    time.Second,
+		MaximumAttempts:    parentWorkflowMaximumAttempts,
+	}
+	err := ts.executeWorkflowWithOption(
+		startOptions,
+		wfFunc,
+		nil,
+		parentWorkflowMaximumAttempts,
+		iterations,
+	)
+	ts.NoError(err)
+
+	expectedActivities := make([]string, iterations+1)
+	for i := 0; i <= iterations; i++ {
+		expectedActivities[i] = "toUpper"
+	}
+	ts.EqualValues(expectedActivities, ts.activities.invoked())
+}
+
 func (ts *IntegrationTestSuite) TestChildWFRetryOnError() {
 	err := ts.executeWorkflow("test-childwf-retry-on-error", ts.workflows.ChildWorkflowRetryOnError, nil)
 	ts.Error(err)
