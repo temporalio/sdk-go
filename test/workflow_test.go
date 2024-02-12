@@ -413,37 +413,137 @@ func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, ta
 	return "", workflow.NewContinueAsNewError(ctx, w.ContinueAsNewWithOptions, count-1, taskQueue)
 }
 
-func (w *Workflows) ContinueAsNewWithRetryPolicy(ctx workflow.Context, count int) (string, error) {
-	const (
-		initialMaximumAttempts int32 = 3   // Set in IntegrationTestSuite::TestContinueAsNewWithNewRetryPolicy
-		newMaximumAttempts     int32 = 100 // Set in Workflows::ContinueAsNewWithRetryPolicy
-		numIterations                = 4
-	)
-
+func (w *Workflows) ContinueAsNewWithRetryPolicy(
+	ctx workflow.Context,
+	initialMaximumAttempts int,
+	newMaximumAttempts int,
+	expectedMaximumAttempts int,
+	iterations int,
+) (string, error) {
 	info := workflow.GetInfo(ctx)
 	if info.RetryPolicy == nil {
 		return "", errors.New("retry policy is not carried over")
 	}
 
+	expected := expectedMaximumAttempts
 	actual := info.RetryPolicy.MaximumAttempts
-	expected := initialMaximumAttempts
-	if count > 0 {
-		expected = newMaximumAttempts
+	if expected != int(actual) {
+		return "", fmt.Errorf("unexpected retry policy: expected=%v, actual=%v, iterations=%v", expected, actual, iterations)
 	}
 
-	if expected != actual {
-		return "", fmt.Errorf("unexpected retry policy: count=%v, expected=%v, actual=%v", count, expected, actual)
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	err := workflow.ExecuteActivity(ctx, "Prefix_ToUpper", "foo").Get(ctx, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to execute activity: %w", err)
 	}
 
-	if count == numIterations {
+	if iterations == 0 {
 		return fmt.Sprintf("End of workflow: %v", actual), nil
 	}
 
 	ctx = workflow.WithWorkflowRetryPolicy(ctx, temporal.RetryPolicy{
-		MaximumAttempts: newMaximumAttempts,
+		InitialInterval:    time.Second,
+		BackoffCoefficient: 2.0,
+		MaximumInterval:    time.Second,
+		MaximumAttempts:    int32(newMaximumAttempts),
 	})
 
-	return "", workflow.NewContinueAsNewError(ctx, w.ContinueAsNewWithRetryPolicy, count+1)
+	return "", workflow.NewContinueAsNewError(
+		ctx,
+		w.ContinueAsNewWithRetryPolicy,
+		initialMaximumAttempts,
+		newMaximumAttempts,
+		newMaximumAttempts,
+		iterations-1,
+	)
+}
+
+func (w *Workflows) ContinueAsNewWithChildWF(
+	ctx workflow.Context,
+	iterations int,
+) error {
+	const (
+		childWorkflowMaximumAttempts = 6
+	)
+
+	info := workflow.GetInfo(ctx)
+	if info.RetryPolicy != nil {
+		return errors.New("retry policy should not be carried over from the child workflow")
+	}
+
+	opts := workflow.ChildWorkflowOptions{
+		WorkflowTaskTimeout:      5 * time.Second,
+		WorkflowExecutionTimeout: 9 * time.Second,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval:    time.Second,
+			BackoffCoefficient: 2.0,
+			MaximumInterval:    time.Second,
+			MaximumAttempts:    childWorkflowMaximumAttempts,
+		},
+	}
+
+	// This is a workaround to the issue outlined in ContinueAsNewWithChildWFInheritingRetryPolicy.
+	// By using a different context, the retry policy in the parent workflow won't be carried over.
+	childCtx := workflow.WithChildOptions(ctx, opts)
+	err := workflow.ExecuteChildWorkflow(childCtx, w.childWithRetryPolicy, childWorkflowMaximumAttempts, 0).Get(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to execute child workflow: %w", err)
+	}
+
+	if iterations == 0 {
+		return nil
+	}
+
+	return workflow.NewContinueAsNewError(ctx, w.ContinueAsNewWithChildWF, iterations-1)
+}
+
+func (w *Workflows) ContinueAsNewWithChildWFInheritingRetryPolicy(
+	ctx workflow.Context,
+	expectedMaximumAttempts int,
+	iterations int,
+) error {
+	const (
+		childWorkflowMaximumAttempts = 6
+	)
+
+	// BUG: The retry policy in parent and child workflow should be independent;
+	// however, it is currently overridden by WithChildOptions.
+	// This is a known issue with other options as well, but it may be more visible with the RetryPolicy.
+	info := workflow.GetInfo(ctx)
+	expected := expectedMaximumAttempts
+	actual := 0
+	if info.RetryPolicy != nil {
+		actual = int(info.RetryPolicy.MaximumAttempts)
+	}
+	if expected != actual {
+		return fmt.Errorf("unexpected retry policy: expected=%v, actual=%v, iterations=%v", expected, actual, iterations)
+	}
+
+	opts := workflow.ChildWorkflowOptions{
+		WorkflowTaskTimeout:      5 * time.Second,
+		WorkflowExecutionTimeout: 9 * time.Second,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval:    time.Second,
+			BackoffCoefficient: 2.0,
+			MaximumInterval:    time.Second,
+			MaximumAttempts:    childWorkflowMaximumAttempts,
+		},
+	}
+
+	// When the context is shared between parent and child workflows,
+	// the retry policy defined in ChildWorkflowOptions gets carried over to the parent workflow.
+	ctx = workflow.WithChildOptions(ctx, opts)
+	err := workflow.ExecuteChildWorkflow(ctx, w.childWithRetryPolicy, childWorkflowMaximumAttempts, 0).Get(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to execute child workflow: %w", err)
+	}
+
+	if iterations == 0 {
+		return nil
+	}
+
+	// BUG: the expectedMaximumAttempts param should be zero, but it is not.
+	return workflow.NewContinueAsNewError(ctx, w.ContinueAsNewWithChildWFInheritingRetryPolicy, childWorkflowMaximumAttempts, iterations-1)
 }
 
 func (w *Workflows) IDReusePolicy(
@@ -514,8 +614,10 @@ func (w *Workflows) childWorkflowWithRetryPolicy(ctx workflow.Context, wfFunc in
 		return errors.New("retry policy is not carried over")
 	}
 
-	if expectedMaximumAttempts != info.RetryPolicy.MaximumAttempts {
-		return fmt.Errorf("unexpected retry policy: expected=%v, actual=%v", expectedMaximumAttempts, info.RetryPolicy.MaximumAttempts)
+	expected := expectedMaximumAttempts
+	actual := info.RetryPolicy.MaximumAttempts
+	if expected != actual {
+		return fmt.Errorf("unexpected retry policy: expected=%v, actual=%v, iterations=%v", expected, actual, iterations)
 	}
 
 	opts := workflow.ChildWorkflowOptions{
@@ -529,8 +631,7 @@ func (w *Workflows) childWorkflowWithRetryPolicy(ctx workflow.Context, wfFunc in
 		},
 	}
 	ctx = workflow.WithChildOptions(ctx, opts)
-	var result string
-	return workflow.ExecuteChildWorkflow(ctx, wfFunc, childWorkflowMaximumAttempts, iterations).Get(ctx, &result)
+	return workflow.ExecuteChildWorkflow(ctx, wfFunc, childWorkflowMaximumAttempts, iterations).Get(ctx, nil)
 }
 
 func (w *Workflows) ChildWorkflowRetryOnError(ctx workflow.Context) error {
@@ -1172,30 +1273,32 @@ func (w *Workflows) child(ctx workflow.Context, arg string, mustFail bool) (stri
 	return result, err
 }
 
-func (w *Workflows) childWithRetryPolicy(ctx workflow.Context, expectedMaximumAttempts int32, iterations int) (string, error) {
+func (w *Workflows) childWithRetryPolicy(ctx workflow.Context, expectedMaximumAttempts int32, iterations int) error {
 	info := workflow.GetInfo(ctx)
 	if info.RetryPolicy == nil {
-		return "", errors.New("retry policy is not carried over")
+		return errors.New("retry policy is not carried over")
 	}
 
-	if expectedMaximumAttempts != info.RetryPolicy.MaximumAttempts {
-		return "", fmt.Errorf("unexpected retry policy: expected=%v, actual=%v", expectedMaximumAttempts, info.RetryPolicy.MaximumAttempts)
+	expected := expectedMaximumAttempts
+	actual := info.RetryPolicy.MaximumAttempts
+	if expected != actual {
+		return fmt.Errorf("unexpected retry policy: expected=%v, actual=%v, iterations=%v", expected, actual, iterations)
 	}
 
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 	err := workflow.ExecuteActivity(ctx, "Prefix_ToUpper", "foo").Get(ctx, nil)
 	if err != nil {
-		return "", err
+		return fmt.Errorf("failed to execute activity: %w", err)
 	}
 
 	if iterations > 0 {
-		return "", workflow.NewContinueAsNewError(ctx, w.childWithRetryPolicy, expectedMaximumAttempts, iterations-1)
+		return workflow.NewContinueAsNewError(ctx, w.childWithRetryPolicy, expectedMaximumAttempts, iterations-1)
 	}
 
-	return "success", nil
+	return nil
 }
 
-func (w *Workflows) childWithCustomRetryPolicy(ctx workflow.Context, expectedMaximumAttempts int32, iterations int) (string, error) {
+func (w *Workflows) childWithCustomRetryPolicy(ctx workflow.Context, expectedMaximumAttempts int32, iterations int) error {
 	const (
 		// Note that this value is different from the one specified for the first run.
 		// See childWorkflowWithRetryPolicy.
@@ -1204,19 +1307,19 @@ func (w *Workflows) childWithCustomRetryPolicy(ctx workflow.Context, expectedMax
 
 	info := workflow.GetInfo(ctx)
 	if info.RetryPolicy == nil {
-		return "", errors.New("retry policy is not carried over")
+		return errors.New("retry policy is not carried over")
 	}
 
 	// Note that expectedMaximumAttempts is 5 for the first run,
 	// and it becomes 7 for subsequent runs.
 	if expectedMaximumAttempts != info.RetryPolicy.MaximumAttempts {
-		return "", fmt.Errorf("unexpected retry policy: expected=%v, actual=%v", expectedMaximumAttempts, info.RetryPolicy.MaximumAttempts)
+		return fmt.Errorf("unexpected retry policy: expected=%v, actual=%v", expectedMaximumAttempts, info.RetryPolicy.MaximumAttempts)
 	}
 
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 	err := workflow.ExecuteActivity(ctx, "Prefix_ToUpper", "foo").Get(ctx, nil)
 	if err != nil {
-		return "", err
+		return fmt.Errorf("failed to execute activity: %w", err)
 	}
 
 	if iterations > 0 {
@@ -1228,10 +1331,10 @@ func (w *Workflows) childWithCustomRetryPolicy(ctx workflow.Context, expectedMax
 			MaximumAttempts:    customMaximumAttempts,
 		})
 
-		return "", workflow.NewContinueAsNewError(ctx, w.childWithCustomRetryPolicy, customMaximumAttempts, iterations-1)
+		return workflow.NewContinueAsNewError(ctx, w.childWithCustomRetryPolicy, customMaximumAttempts, iterations-1)
 	}
 
-	return "success", nil
+	return nil
 }
 
 func (w *Workflows) childForMemoAndSearchAttr(ctx workflow.Context) (result string, err error) {
@@ -2762,6 +2865,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.UpsertMemoConditional)
 	worker.RegisterWorkflow(w.ContinueAsNewWithOptions)
 	worker.RegisterWorkflow(w.ContinueAsNewWithRetryPolicy)
+	worker.RegisterWorkflow(w.ContinueAsNewWithChildWF)
+	worker.RegisterWorkflow(w.ContinueAsNewWithChildWFInheritingRetryPolicy)
 	worker.RegisterWorkflow(w.IDReusePolicy)
 	worker.RegisterWorkflow(w.InspectActivityInfo)
 	worker.RegisterWorkflow(w.InspectLocalActivityInfo)
