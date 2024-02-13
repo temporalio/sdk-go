@@ -443,7 +443,6 @@ func (w *Workflows) ContinueAsNewWithRetryPolicy(
 
 	return "", workflow.NewContinueAsNewErrorWithOptions(
 		ctx,
-		w.ContinueAsNewWithRetryPolicy,
 		workflow.ContinueAsNewErrorOptions{
 			RetryPolicy: &temporal.RetryPolicy{
 				InitialInterval:    time.Second,
@@ -452,6 +451,7 @@ func (w *Workflows) ContinueAsNewWithRetryPolicy(
 				MaximumAttempts:    int32(newMaximumAttempts),
 			},
 		},
+		w.ContinueAsNewWithRetryPolicy,
 		initialMaximumAttempts,
 		newMaximumAttempts,
 		newMaximumAttempts,
@@ -484,7 +484,7 @@ func (w *Workflows) ContinueAsNewWithChildWF(
 	}
 
 	// WARNING: this overrides the retry policy in the parent workflow context.
-	// As a result, NewContinueAsNewError cannot inherit the retry policy from the WorkflowOptions for backward compatibilities.
+	// As a result, NewContinueAsNewError cannot inherit the retry policy from the WorkflowOptions for backward compatibility.
 	ctx = workflow.WithChildOptions(ctx, opts)
 	err := workflow.ExecuteChildWorkflow(ctx, w.childWithRetryPolicy, childWorkflowMaximumAttempts, 0).Get(ctx, nil)
 	if err != nil {
@@ -1280,7 +1280,6 @@ func (w *Workflows) childWithCustomRetryPolicy(ctx workflow.Context, expectedMax
 		// Override the maximum attempts for the next run.
 		return workflow.NewContinueAsNewErrorWithOptions(
 			ctx,
-			w.childWithCustomRetryPolicy,
 			workflow.ContinueAsNewErrorOptions{
 				RetryPolicy: &temporal.RetryPolicy{
 					InitialInterval:    time.Second,
@@ -1289,6 +1288,7 @@ func (w *Workflows) childWithCustomRetryPolicy(ctx workflow.Context, expectedMax
 					MaximumAttempts:    int32(customMaximumAttempts),
 				},
 			},
+			w.childWithCustomRetryPolicy,
 			customMaximumAttempts,
 			iterations-1,
 		)

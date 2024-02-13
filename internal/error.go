@@ -201,9 +201,11 @@ type (
 		// It specifies the retry policy which gets carried over to the next run.
 		// If not set, the current workflow's retry policy will be carried over automatically.
 		//
-		// NOTE: Unlike other options that can be overridden using WithWorkflowTaskQueue, WithWorkflowRunTimeout, etc.
-		// we can't introduce an option, say WithWorkflowRetryPolicy, for backward compatibility.
-		// See #676 or IntegrationTestSuite::TestContinueAsNewWithWithChildWF for more details.
+		// NOTES:
+		// 1. This is always nil when returned from a client as a workflow response.
+		// 2. Unlike other options that can be overridden using WithWorkflowTaskQueue, WithWorkflowRunTimeout, etc.
+		//    we can't introduce an option, say WithWorkflowRetryPolicy, for backward compatibility.
+		//    See #676 or IntegrationTestSuite::TestContinueAsNewWithWithChildWF for more details.
 		RetryPolicy *commonpb.RetryPolicy
 	}
 
@@ -476,7 +478,7 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) er
 }
 
 // NewContinueAsNewErrorWithOptions creates ContinueAsNewError instance with additional options.
-func NewContinueAsNewErrorWithOptions(ctx Context, wfn interface{}, options ContinueAsNewErrorOptions, args ...interface{}) error {
+func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOptions, wfn interface{}, args ...interface{}) error {
 	err := NewContinueAsNewError(ctx, wfn, args...)
 	contErr := err.(*ContinueAsNewError)
 	if options.RetryPolicy != nil {

@@ -656,8 +656,8 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) er
 }
 
 // NewContinueAsNewErrorWithOptions creates ContinueAsNewError instance with additional options.
-func NewContinueAsNewErrorWithOptions(ctx Context, wfn interface{}, options ContinueAsNewErrorOptions, args ...interface{}) error {
-	return internal.NewContinueAsNewErrorWithOptions(ctx, wfn, options, args...)
+func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOptions, wfn interface{}, args ...interface{}) error {
+	return internal.NewContinueAsNewErrorWithOptions(ctx, options, wfn, args...)
 }
 
 // IsContinueAsNewError return if the err is a ContinueAsNewError
