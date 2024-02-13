@@ -2342,6 +2342,37 @@ func (env *testWorkflowEnvironmentImpl) UpsertSearchAttributes(attributes map[st
 	return err
 }
 
+func validateAndSerializeTypedSearchAttributes(searchAttributes map[SearchAttributeKey]interface{}) (*commonpb.SearchAttributes, error) {
+	if len(searchAttributes) == 0 {
+		return nil, errSearchAttributesNotSet
+	}
+
+	rawSearchAttributes, err := serializeTypedSearchAttributes(searchAttributes)
+	if err != nil {
+		return nil, err
+	}
+
+	return rawSearchAttributes, nil
+}
+
+func (env *testWorkflowEnvironmentImpl) UpsertTypedSearchAttributes(attributes SearchAttributes) error {
+	// Don't immediately return the error from validateAndSerializeTypedSearchAttributes, as we may need to call the mock
+	rawSearchAttributes, err := validateAndSerializeTypedSearchAttributes(attributes.untypedValue)
+
+	env.workflowInfo.SearchAttributes = mergeSearchAttributes(env.workflowInfo.SearchAttributes, rawSearchAttributes)
+
+	mockMethod := mockMethodForUpsertTypedSearchAttributes
+	if _, ok := env.expectedWorkflowMockCalls[mockMethod]; !ok {
+		// mock not found
+		return err
+	}
+
+	args := []interface{}{attributes}
+	env.workflowMock.MethodCalled(mockMethod, args...)
+
+	return err
+}
+
 func (env *testWorkflowEnvironmentImpl) UpsertMemo(memoMap map[string]interface{}) error {
 	memo, err := validateAndSerializeMemo(memoMap, env.dataConverter)
 

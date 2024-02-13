@@ -436,6 +436,7 @@ const mockMethodForSignalExternalWorkflow = "workflow.SignalExternalWorkflow"
 const mockMethodForRequestCancelExternalWorkflow = "workflow.RequestCancelExternalWorkflow"
 const mockMethodForGetVersion = "workflow.GetVersion"
 const mockMethodForUpsertSearchAttributes = "workflow.UpsertSearchAttributes"
+const mockMethodForUpsertTypedSearchAttributes = "workflow.UpsertTypedSearchAttributes"
 const mockMethodForUpsertMemo = "workflow.UpsertMemo"
 
 // OnSignalExternalWorkflow setup a mock for sending signal to external workflow.
@@ -506,8 +507,17 @@ func (e *TestWorkflowEnvironment) OnGetVersion(changeID string, minSupported, ma
 // OnUpsertSearchAttributes setup a mock for workflow.UpsertSearchAttributes call.
 // If mock is not setup, the UpsertSearchAttributes call will only validate input attributes.
 // If mock is setup, all UpsertSearchAttributes calls in workflow have to be mocked.
+// Deprecated: use OnUpsertTypedSearchAttributes instead.
 func (e *TestWorkflowEnvironment) OnUpsertSearchAttributes(attributes interface{}) *MockCallWrapper {
 	call := e.workflowMock.On(mockMethodForUpsertSearchAttributes, attributes)
+	return e.wrapWorkflowCall(call)
+}
+
+// OnUpsertTypedSearchAttributes setup a mock for workflow.UpsertTypedSearchAttributes call.
+// If mock is not setup, the UpsertTypedSearchAttributes call will only validate input attributes.
+// If mock is setup, all UpsertTypedSearchAttributes calls in workflow have to be mocked.
+func (e *TestWorkflowEnvironment) OnUpsertTypedSearchAttributes(attributes ...interface{}) *MockCallWrapper {
+	call := e.workflowMock.On(mockMethodForUpsertTypedSearchAttributes, attributes...)
 	return e.wrapWorkflowCall(call)
 }
 
@@ -926,8 +936,19 @@ func (e *TestWorkflowEnvironment) SetMemoOnStart(memo map[string]interface{}) er
 }
 
 // SetSearchAttributesOnStart sets the search attributes when start workflow.
+// Deprecated: Use SetTypedSearchAttributes instead.
 func (e *TestWorkflowEnvironment) SetSearchAttributesOnStart(searchAttributes map[string]interface{}) error {
 	attr, err := serializeUntypedSearchAttributes(searchAttributes)
+	if err != nil {
+		return err
+	}
+	e.impl.workflowInfo.SearchAttributes = attr
+	return nil
+}
+
+// SetTypedSearchAttributesOnStart sets the search attributes when start workflow.
+func (e *TestWorkflowEnvironment) SetTypedSearchAttributesOnStart(searchAttributes SearchAttributes) error {
+	attr, err := serializeSearchAttributes(nil, searchAttributes)
 	if err != nil {
 		return err
 	}
