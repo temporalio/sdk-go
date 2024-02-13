@@ -197,16 +197,20 @@ type (
 		// compatible build ID or not. See VersioningIntent.
 		VersioningIntent VersioningIntent
 
-		// This is optional and may be used to override the retry policy which gets carried over to the next run.
-		// If not set, the existing retry policy will be carried over automatically.
-		// For backward compatibility, we can't introduce an option, say WithWorkflowRetryPolicy,
-		// to override the retry policy attached to the workflow context.
-		// See #676 for more details.
+		// This is by default nil but may be overridden using NewContinueAsNewErrorWithOptions.
+		// It specifies the retry policy which gets carried over to the next run.
+		// If not set, the current workflow's retry policy will be carried over automatically.
+		//
+		// NOTE: Unlike other options that can be overridden using WithWorkflowTaskQueue, WithWorkflowRunTimeout, etc.
+		// we can't introduce an option, say WithWorkflowRetryPolicy, for backward compatibility.
+		// See #676 or IntegrationTestSuite::TestContinueAsNewWithWithChildWF for more details.
 		RetryPolicy *commonpb.RetryPolicy
 	}
 
 	// ContinueAsNewErrorOptions specifies optional attributes to be carried over to the next run.
 	ContinueAsNewErrorOptions struct {
+		// RetryPolicy specifies the retry policy to be used for the next run.
+		// If nil, the current workflow's retry policy will be used.
 		RetryPolicy *RetryPolicy
 	}
 

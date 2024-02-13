@@ -483,6 +483,8 @@ func (w *Workflows) ContinueAsNewWithChildWF(
 		},
 	}
 
+	// WARNING: this overrides the retry policy in the parent workflow context.
+	// As a result, NewContinueAsNewError cannot inherit the retry policy from the WorkflowOptions for backward compatibilities.
 	ctx = workflow.WithChildOptions(ctx, opts)
 	err := workflow.ExecuteChildWorkflow(ctx, w.childWithRetryPolicy, childWorkflowMaximumAttempts, 0).Get(ctx, nil)
 	if err != nil {
@@ -493,6 +495,8 @@ func (w *Workflows) ContinueAsNewWithChildWF(
 		return nil
 	}
 
+	// To override the retry policy in the parent workflow context, use NewContinueAsNewErrorWithOptions.
+	// See ContinueAsNewWithRetryPolicy for an example.
 	return workflow.NewContinueAsNewError(ctx, w.ContinueAsNewWithChildWF, iterations-1)
 }
 
