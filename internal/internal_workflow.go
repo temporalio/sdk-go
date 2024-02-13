@@ -481,9 +481,6 @@ func newWorkflowContext(
 	getWorkflowEnvOptions(ctx).WorkflowExecutionTimeout = info.WorkflowExecutionTimeout
 	ctx = WithWorkflowRunTimeout(ctx, info.WorkflowRunTimeout)
 	ctx = WithWorkflowTaskTimeout(ctx, info.WorkflowTaskTimeout)
-	if info.RetryPolicy != nil {
-		ctx = WithWorkflowRetryPolicy(ctx, *info.RetryPolicy)
-	}
 	ctx = WithTaskQueue(ctx, info.TaskQueueName)
 	ctx = WithDataConverter(ctx, env.GetDataConverter())
 	ctx = withContextPropagators(ctx, env.GetContextPropagators())

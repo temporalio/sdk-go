@@ -197,10 +197,17 @@ type (
 		// compatible build ID or not. See VersioningIntent.
 		VersioningIntent VersioningIntent
 
-		// Propagates the retry policy to the next run of the workflow.
-		// This is usually set by StartWorkflowOptions.RetryPolicy,
-		// but it could be overridden using workflow.WithWorkflowRetryPolicy.
+		// This is optional and may be used to override the retry policy which gets carried over to the next run.
+		// If not set, the existing retry policy will be carried over automatically.
+		// For backward compatibility, we can't introduce an option, say WithWorkflowRetryPolicy,
+		// to override the retry policy attached to the workflow context.
+		// See #676 for more details.
 		RetryPolicy *commonpb.RetryPolicy
+	}
+
+	// ContinueAsNewErrorOptions specifies optional attributes to be carried over to the next run.
+	ContinueAsNewErrorOptions struct {
+		RetryPolicy *RetryPolicy
 	}
 
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
@@ -452,10 +459,9 @@ func IsCanceledError(err error) bool {
 //
 //	 ctx - use context to override any options for the new workflow like run timeout, task timeout, task queue.
 //		  if not mentioned it would use the defaults that the current workflow is using.
-//	       ctx = WithWorkflowRunTimeout(ctx, 30 * time.Minute)
-//	       ctx = WithWorkflowTaskTimeout(ctx, 5 * time.Second)
-//	       ctx = WithWorkflowTaskQueue(ctx, "example-group")
-//	       ctx = WithWorkflowRetryPolicy(ctx, retryPolicy)
+//	       ctx := WithWorkflowRunTimeout(ctx, 30 * time.Minute)
+//	       ctx := WithWorkflowTaskTimeout(ctx, 5 * time.Second)
+//		  ctx := WithWorkflowTaskQueue(ctx, "example-group")
 //	 wfn - workflow function. for new execution it can be different from the currently running.
 //	 args - arguments for the new workflow.
 func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) error {
@@ -463,6 +469,17 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) er
 	// Put header on context before executing
 	ctx = workflowContextWithNewHeader(ctx)
 	return i.NewContinueAsNewError(ctx, wfn, args...)
+}
+
+// NewContinueAsNewErrorWithOptions creates ContinueAsNewError instance with additional options.
+func NewContinueAsNewErrorWithOptions(ctx Context, wfn interface{}, options ContinueAsNewErrorOptions, args ...interface{}) error {
+	err := NewContinueAsNewError(ctx, wfn, args...)
+	contErr := err.(*ContinueAsNewError)
+	if options.RetryPolicy != nil {
+		contErr.RetryPolicy = convertToPBRetryPolicy(options.RetryPolicy)
+	}
+
+	return err
 }
 
 func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
@@ -495,7 +512,7 @@ func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
 		WorkflowRunTimeout:       options.WorkflowRunTimeout,
 		WorkflowTaskTimeout:      options.WorkflowTaskTimeout,
 		VersioningIntent:         options.VersioningIntent,
-		RetryPolicy:              options.RetryPolicy,
+		RetryPolicy:              nil, // The retry policy can't be propagated like other options due to #676.
 	}
 }
 

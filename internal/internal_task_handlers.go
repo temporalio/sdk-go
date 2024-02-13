@@ -1715,7 +1715,8 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		metricsHandler.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION)
 
-		// This attribute is added as a patch, and it may not be present during a replay.
+		// ContinueAsNewError.RetryPolicy is optional.
+		// If not set, use the retry policy from the workflow context.
 		retryPolicy := contErr.RetryPolicy
 		if retryPolicy == nil {
 			retryPolicy = convertToPBRetryPolicy(workflowContext.workflowInfo.RetryPolicy)

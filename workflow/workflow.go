@@ -67,6 +67,9 @@ type (
 	// the workflow should continue as new with the same WorkflowID, but new RunID and new history.
 	ContinueAsNewError = internal.ContinueAsNewError
 
+	// ContinueAsNewErrorOptions specifies optional attributes to be carried over to the next run.
+	ContinueAsNewErrorOptions = internal.ContinueAsNewErrorOptions
+
 	UpdateHandlerOptions = internal.UpdateHandlerOptions
 )
 
@@ -643,14 +646,18 @@ func UpsertMemo(ctx Context, memo map[string]interface{}) error {
 //
 //	 ctx - use context to override any options for the new workflow like execution timeout, workflow task timeout, task queue.
 //		  if not mentioned it would use the defaults that the current workflow is using.
-//	       ctx = WithWorkflowRunTimeout(ctx, 30 * time.Minute)
-//	       ctx = WithWorkflowTaskTimeout(ctx, 5 * time.Second)
-//	       ctx = WithWorkflowTaskQueue(ctx, "example-group")
-//	       ctx = WithWorkflowRetryPolicy(ctx, retryPolicy)
+//	       ctx := WithWorkflowExecutionTimeout(ctx, 30 * time.Minute)
+//	       ctx := WithWorkflowTaskTimeout(ctx, time.Minute)
+//		  ctx := WithWorkflowTaskQueue(ctx, "example-group")
 //	 wfn - workflow function. for new execution it can be different from the currently running.
 //	 args - arguments for the new workflow.
 func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) error {
 	return internal.NewContinueAsNewError(ctx, wfn, args...)
+}
+
+// NewContinueAsNewErrorWithOptions creates ContinueAsNewError instance with additional options.
+func NewContinueAsNewErrorWithOptions(ctx Context, wfn interface{}, options ContinueAsNewErrorOptions, args ...interface{}) error {
+	return internal.NewContinueAsNewErrorWithOptions(ctx, wfn, options, args...)
 }
 
 // IsContinueAsNewError return if the err is a ContinueAsNewError

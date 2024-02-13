@@ -627,28 +627,6 @@ func (ts *IntegrationTestSuite) TestContinueAsNewWithWithChildWF() {
 	ts.EqualValues(expectedActivities, ts.activities.invoked())
 }
 
-func (ts *IntegrationTestSuite) TestContinueAsNewWithChildWFInheritingRetryPolicy() {
-	const (
-		iterations             = 6
-		initialMaximumAttempts = 0
-	)
-
-	err := ts.executeWorkflow(
-		"test-continueasnew-with-child-wf-inheriting-retry-policy",
-		ts.workflows.ContinueAsNewWithChildWFInheritingRetryPolicy,
-		nil,
-		initialMaximumAttempts,
-		iterations,
-	)
-	ts.NoError(err)
-
-	expectedActivities := make([]string, iterations+1)
-	for i := 0; i <= iterations; i++ {
-		expectedActivities[i] = "toUpper"
-	}
-	ts.EqualValues(expectedActivities, ts.activities.invoked())
-}
-
 func (ts *IntegrationTestSuite) TestCancellation() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -960,7 +938,7 @@ func (ts *IntegrationTestSuite) TestChildWFWithRetryPolicy_LongRunningWithCustom
 
 func (ts *IntegrationTestSuite) testChildWFWithRetryPolicy(wfFunc interface{}, iterations int) {
 	const (
-		parentWorkflowMaximumAttempts int32 = 3
+		parentWorkflowMaximumAttempts = 3
 	)
 
 	startOptions := ts.startWorkflowOptions("test-childwf-with-retry-policy")
