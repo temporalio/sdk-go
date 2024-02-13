@@ -28,15 +28,16 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 	historypb "go.temporal.io/api/history/v1"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"go.temporal.io/sdk/converter"
 	ilog "go.temporal.io/sdk/internal/log"
@@ -565,6 +566,80 @@ func Test_ContinueAsNewError(t *testing.T) {
 	require.Equal(t, a1, intArg)
 	require.Equal(t, a2, stringArg)
 	require.Equal(t, header, continueAsNewErr.Header)
+
+	require.Nil(t, continueAsNewErr.RetryPolicy)
+}
+
+func Test_ContinueAsNewErrorWithOptions(t *testing.T) {
+	const (
+		a1                        = 1234
+		a2                        = "some random input"
+		continueAsNewWfName       = "continueAsNewWorkflowFn"
+		initialInterval           = 2 * time.Second
+		backoffCoefficient        = 1.1
+		maximumAttempts     int32 = 23
+		maximumInterval           = time.Minute
+	)
+
+	require := require.New(t)
+	continueAsNewWorkflowFn := func(ctx Context, testInt int, testString string) error {
+		err := NewContinueAsNewErrorWithOptions(
+			ctx,
+			ContinueAsNewErrorOptions{RetryPolicy: &RetryPolicy{
+				BackoffCoefficient: backoffCoefficient,
+				InitialInterval:    initialInterval,
+				MaximumAttempts:    maximumAttempts,
+				MaximumInterval:    maximumInterval,
+			}},
+			continueAsNewWfName,
+			a1,
+			a2,
+		)
+
+		continueAsNewErr := err.(*ContinueAsNewError)
+		if continueAsNewErr.RetryPolicy == nil {
+			return errors.New("retry policy is nil")
+		}
+
+		if continueAsNewErr.RetryPolicy.MaximumAttempts != maximumAttempts {
+			return errors.New("retry policy maximum attempts is not set")
+		}
+
+		return err
+	}
+
+	s := &WorkflowTestSuite{}
+	wfEnv := s.NewTestWorkflowEnvironment()
+	wfEnv.RegisterWorkflowWithOptions(continueAsNewWorkflowFn, RegisterWorkflowOptions{
+		Name: continueAsNewWfName,
+	})
+	wfEnv.ExecuteWorkflow(continueAsNewWorkflowFn, 101, "another random string")
+
+	err := wfEnv.GetWorkflowError()
+
+	require.Error(err)
+	var workflowErr *WorkflowExecutionError
+	require.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var continueAsNewErr *ContinueAsNewError
+	require.True(errors.As(err, &continueAsNewErr))
+	require.Equal(continueAsNewWfName, continueAsNewErr.WorkflowType.Name)
+
+	input := continueAsNewErr.Input
+	var intArg int
+	var stringArg string
+	dataConverter := converter.GetDefaultDataConverter()
+	err = dataConverter.FromPayloads(input, &intArg, &stringArg)
+	require.NoError(err)
+	require.Equal(a1, intArg)
+	require.Equal(a2, stringArg)
+
+	require.NotNil(continueAsNewErr.RetryPolicy)
+	require.Equal(backoffCoefficient, continueAsNewErr.RetryPolicy.BackoffCoefficient)
+	require.Equal(durationpb.New(initialInterval), continueAsNewErr.RetryPolicy.InitialInterval)
+	require.Equal(maximumAttempts, continueAsNewErr.RetryPolicy.MaximumAttempts)
+	require.Equal(durationpb.New(maximumInterval), continueAsNewErr.RetryPolicy.MaximumInterval)
 }
 
 type coolError struct{}
