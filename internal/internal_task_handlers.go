@@ -1719,7 +1719,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		// If not set, use the retry policy from the workflow context.
 		retryPolicy := contErr.RetryPolicy
 		if retryPolicy == nil {
-			retryPolicy = convertToPBRetryPolicy(workflowContext.workflowInfo.RetryPolicy)
+			retryPolicy = workflowContext.workflowInfo.RetryPolicy
 		}
 
 		useCompat := determineUseCompatibleFlagForCommand(
@@ -1733,7 +1733,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			Header:               contErr.Header,
 			Memo:                 workflowContext.workflowInfo.Memo,
 			SearchAttributes:     workflowContext.workflowInfo.SearchAttributes,
-			RetryPolicy:          retryPolicy,
+			RetryPolicy:          convertToPBRetryPolicy(retryPolicy),
 			UseCompatibleVersion: useCompat,
 		}}
 	} else if workflowContext.err != nil {

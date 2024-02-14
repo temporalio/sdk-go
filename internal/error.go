@@ -206,7 +206,7 @@ type (
 		// 2. Unlike other options that can be overridden using WithWorkflowTaskQueue, WithWorkflowRunTimeout, etc.
 		//    we can't introduce an option, say WithWorkflowRetryPolicy, for backward compatibility.
 		//    See #676 or IntegrationTestSuite::TestContinueAsNewWithWithChildWF for more details.
-		RetryPolicy *commonpb.RetryPolicy
+		RetryPolicy *RetryPolicy
 	}
 
 	// ContinueAsNewErrorOptions specifies optional attributes to be carried over to the next run.
@@ -482,7 +482,7 @@ func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOpt
 	err := NewContinueAsNewError(ctx, wfn, args...)
 	contErr := err.(*ContinueAsNewError)
 	if options.RetryPolicy != nil {
-		contErr.RetryPolicy = convertToPBRetryPolicy(options.RetryPolicy)
+		contErr.RetryPolicy = options.RetryPolicy
 	}
 
 	return err

@@ -37,8 +37,6 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 	historypb "go.temporal.io/api/history/v1"
-	"google.golang.org/protobuf/types/known/durationpb"
-
 	"go.temporal.io/sdk/converter"
 	ilog "go.temporal.io/sdk/internal/log"
 )
@@ -637,9 +635,9 @@ func Test_ContinueAsNewErrorWithOptions(t *testing.T) {
 
 	require.NotNil(continueAsNewErr.RetryPolicy)
 	require.Equal(backoffCoefficient, continueAsNewErr.RetryPolicy.BackoffCoefficient)
-	require.Equal(durationpb.New(initialInterval), continueAsNewErr.RetryPolicy.InitialInterval)
+	require.Equal(initialInterval, continueAsNewErr.RetryPolicy.InitialInterval)
 	require.Equal(maximumAttempts, continueAsNewErr.RetryPolicy.MaximumAttempts)
-	require.Equal(durationpb.New(maximumInterval), continueAsNewErr.RetryPolicy.MaximumInterval)
+	require.Equal(maximumInterval, continueAsNewErr.RetryPolicy.MaximumInterval)
 }
 
 type coolError struct{}
