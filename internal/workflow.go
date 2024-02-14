@@ -1363,28 +1363,13 @@ func UpsertTypedSearchAttributes(ctx Context, attributes ...SearchAttributeUpdat
 }
 
 func (wc *workflowEnvironmentInterceptor) UpsertTypedSearchAttributes(ctx Context, attributes ...SearchAttributeUpdate) error {
-	assertNotInReadOnlyState(ctx)
-
 	sa := SearchAttributes{
 		untypedValue: make(map[SearchAttributeKey]interface{}),
 	}
 	for _, attribute := range attributes {
 		attribute(&sa)
 	}
-	rawSearchAttributes, err := serializeTypedSearchAttributes(sa.untypedValue)
-	if err != nil {
-		return err
-	}
-
-	if _, ok := rawSearchAttributes.GetIndexedFields()[TemporalChangeVersion]; ok {
-		return errors.New("TemporalChangeVersion is a reserved key that cannot be set, please use other key")
-	}
-
-	attr := make(map[string]interface{})
-	for k, v := range rawSearchAttributes.GetIndexedFields() {
-		attr[k] = v
-	}
-	return wc.env.UpsertSearchAttributes(attr)
+	return wc.env.UpsertTypedSearchAttributes(sa)
 }
 
 // UpsertMemo is used to add or update workflow memo.
