@@ -480,9 +480,12 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) er
 // NewContinueAsNewErrorWithOptions creates ContinueAsNewError instance with additional options.
 func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOptions, wfn interface{}, args ...interface{}) error {
 	err := NewContinueAsNewError(ctx, wfn, args...)
-	contErr := err.(*ContinueAsNewError)
-	if options.RetryPolicy != nil {
-		contErr.RetryPolicy = options.RetryPolicy
+
+	var continueAsNewErr *ContinueAsNewError
+	if errors.As(err, &continueAsNewErr) {
+		if options.RetryPolicy != nil {
+			continueAsNewErr.RetryPolicy = options.RetryPolicy
+		}
 	}
 
 	return err
