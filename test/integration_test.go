@@ -576,6 +576,57 @@ func (ts *IntegrationTestSuite) TestContinueAsNewCarryOver() {
 	ts.Equal("memoVal,searchAttr,123", result)
 }
 
+func (ts *IntegrationTestSuite) TestContinueAsNewWithRetryPolicy() {
+	const (
+		initialMaximumAttempts = 3
+		newMaximumAttempts     = 100
+		iterations             = 4
+	)
+
+	var result string
+	startOptions := ts.startWorkflowOptions("test-continueasnew-with-retry-policy")
+	startOptions.RetryPolicy = &temporal.RetryPolicy{
+		MaximumAttempts: initialMaximumAttempts,
+	}
+	err := ts.executeWorkflowWithOption(
+		startOptions,
+		ts.workflows.ContinueAsNewWithRetryPolicy,
+		&result,
+		initialMaximumAttempts,
+		newMaximumAttempts,
+		initialMaximumAttempts,
+		iterations,
+	)
+	ts.NoError(err)
+	ts.Equal(fmt.Sprintf("End of workflow: %v", newMaximumAttempts), result)
+
+	expectedActivities := make([]string, iterations+1)
+	for i := 0; i <= iterations; i++ {
+		expectedActivities[i] = "toUpper"
+	}
+	ts.EqualValues(expectedActivities, ts.activities.invoked())
+}
+
+func (ts *IntegrationTestSuite) TestContinueAsNewWithWithChildWF() {
+	const (
+		iterations = 6
+	)
+
+	err := ts.executeWorkflow(
+		"test-continueasnew-with-child-wf",
+		ts.workflows.ContinueAsNewWithChildWF,
+		nil,
+		iterations,
+	)
+	ts.NoError(err)
+
+	expectedActivities := make([]string, iterations+1)
+	for i := 0; i <= iterations; i++ {
+		expectedActivities[i] = "toUpper"
+	}
+	ts.EqualValues(expectedActivities, ts.activities.invoked())
+}
+
 func (ts *IntegrationTestSuite) TestCancellation() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -871,6 +922,46 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseIgnoreDuplicateWhileRunning()
 	ts.NoError(err)
 	ts.Equal(run1.GetID(), run3.GetID())
 	ts.NotEqual(run1.GetRunID(), run3.GetRunID())
+}
+
+func (ts *IntegrationTestSuite) TestChildWFWithRetryPolicy_ShortLived() {
+	ts.testChildWFWithRetryPolicy(ts.workflows.ChildWorkflowWithRetryPolicy, 0)
+}
+
+func (ts *IntegrationTestSuite) TestChildWFWithRetryPolicy_LongRunning() {
+	ts.testChildWFWithRetryPolicy(ts.workflows.ChildWorkflowWithRetryPolicy, 4)
+}
+
+func (ts *IntegrationTestSuite) TestChildWFWithRetryPolicy_LongRunningWithCustomRetry() {
+	ts.testChildWFWithRetryPolicy(ts.workflows.ChildWorkflowWithCustomRetryPolicy, 6)
+}
+
+func (ts *IntegrationTestSuite) testChildWFWithRetryPolicy(wfFunc interface{}, iterations int) {
+	const (
+		parentWorkflowMaximumAttempts = 3
+	)
+
+	startOptions := ts.startWorkflowOptions("test-childwf-with-retry-policy")
+	startOptions.RetryPolicy = &temporal.RetryPolicy{
+		InitialInterval:    time.Second,
+		BackoffCoefficient: 2.0,
+		MaximumInterval:    time.Second,
+		MaximumAttempts:    parentWorkflowMaximumAttempts,
+	}
+	err := ts.executeWorkflowWithOption(
+		startOptions,
+		wfFunc,
+		nil,
+		parentWorkflowMaximumAttempts,
+		iterations,
+	)
+	ts.NoError(err)
+
+	expectedActivities := make([]string, iterations+1)
+	for i := 0; i <= iterations; i++ {
+		expectedActivities[i] = "toUpper"
+	}
+	ts.EqualValues(expectedActivities, ts.activities.invoked())
 }
 
 func (ts *IntegrationTestSuite) TestChildWFRetryOnError() {

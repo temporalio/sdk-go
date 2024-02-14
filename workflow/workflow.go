@@ -67,6 +67,9 @@ type (
 	// the workflow should continue as new with the same WorkflowID, but new RunID and new history.
 	ContinueAsNewError = internal.ContinueAsNewError
 
+	// ContinueAsNewErrorOptions specifies optional attributes to be carried over to the next run.
+	ContinueAsNewErrorOptions = internal.ContinueAsNewErrorOptions
+
 	UpdateHandlerOptions = internal.UpdateHandlerOptions
 )
 
@@ -650,6 +653,11 @@ func UpsertMemo(ctx Context, memo map[string]interface{}) error {
 //	 args - arguments for the new workflow.
 func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) error {
 	return internal.NewContinueAsNewError(ctx, wfn, args...)
+}
+
+// NewContinueAsNewErrorWithOptions creates ContinueAsNewError instance with additional options.
+func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOptions, wfn interface{}, args ...interface{}) error {
+	return internal.NewContinueAsNewErrorWithOptions(ctx, options, wfn, args...)
 }
 
 // IsContinueAsNewError return if the err is a ContinueAsNewError
