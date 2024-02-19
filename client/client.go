@@ -484,6 +484,7 @@ type (
 		// GetSearchAttributes returns valid search attributes keys and value types.
 		// The search attributes can be used in query of List/Scan/Count APIs. Adding new search attributes requires temporal server
 		// to update dynamic config ValidSearchAttributes.
+		// NOTE: This API is not supported on Temporal Cloud.
 		GetSearchAttributes(ctx context.Context) (*workflowservice.GetSearchAttributesResponse, error)
 
 		// QueryWorkflow queries a given workflow's last execution and returns the query result synchronously. Parameter workflowID
