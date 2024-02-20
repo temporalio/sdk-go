@@ -516,8 +516,9 @@ func (e *TestWorkflowEnvironment) OnUpsertSearchAttributes(attributes interface{
 // OnUpsertTypedSearchAttributes setup a mock for workflow.UpsertTypedSearchAttributes call.
 // If mock is not setup, the UpsertTypedSearchAttributes call will only validate input attributes.
 // If mock is setup, all UpsertTypedSearchAttributes calls in workflow have to be mocked.
-func (e *TestWorkflowEnvironment) OnUpsertTypedSearchAttributes(attributes ...interface{}) *MockCallWrapper {
-	call := e.workflowMock.On(mockMethodForUpsertTypedSearchAttributes, attributes...)
+// Note: The mock is called with a temporal.SearchAttributes constructed from the inputs to workflow.UpsertTypedSearchAttributes.
+func (e *TestWorkflowEnvironment) OnUpsertTypedSearchAttributes(attributes interface{}) *MockCallWrapper {
+	call := e.workflowMock.On(mockMethodForUpsertTypedSearchAttributes, attributes)
 	return e.wrapWorkflowCall(call)
 }
 
