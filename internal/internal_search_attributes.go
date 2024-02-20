@@ -370,7 +370,7 @@ func (sa SearchAttributes) Size() int {
 func (sa SearchAttributes) GetUntypedValues() map[SearchAttributeKey]interface{} {
 	untypedValueCopy := make(map[SearchAttributeKey]interface{}, len(sa.untypedValue))
 	for key, value := range sa.untypedValue {
-		// Filer out nil values
+		// Filter out nil values
 		if value == nil {
 			continue
 		}
