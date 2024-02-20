@@ -946,15 +946,15 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(cacheSize int) {
 
 	workflowFunc := func(ctx Context) error {
 		defer func() {
-			t.logger.Info("deferred function called")
+			fmt.Println("deferred function called")
 			if !IsReplaying(ctx) {
 				// This is an side effect op
 				value = ""
 			}
-			t.logger.Info("Channel closed")
+			fmt.Println("Channel closed")
 			close(doneCh)
 		}()
-		t.logger.Info("Sleeping")
+		fmt.Println("Sleeping")
 		_ = Sleep(ctx, 1*time.Second)
 		return nil
 	}
