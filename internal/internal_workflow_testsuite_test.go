@@ -1782,6 +1782,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertTypedSearchAttributes() {
 		err = UpsertTypedSearchAttributes(ctx, CustomIntKey.ValueSet(1))
 		s.NoError(err)
 
+		err = UpsertTypedSearchAttributes(ctx, CustomIntKey.ValueUnset())
+		s.NoError(err)
+
 		// Falls back to the mock.Anything mock
 		CustomIntKey2 := NewSearchAttributeKeyInt64("CustomIntField2")
 		err = UpsertTypedSearchAttributes(ctx, CustomIntKey2.ValueSet(2))
@@ -1789,10 +1792,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertTypedSearchAttributes() {
 
 		sa := GetTypedSearchAttributes(ctx)
 		s.NotNil(sa)
-		val, ok := sa.GetInt64(CustomIntKey)
-		s.True(ok)
-		s.Equal(int64(1), val)
-		val, ok = sa.GetInt64(CustomIntKey2)
+		_, ok := sa.GetInt64(CustomIntKey)
+		s.False(ok)
+		val, ok := sa.GetInt64(CustomIntKey2)
 		s.True(ok)
 		s.Equal(int64(2), val)
 
@@ -1812,6 +1814,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertTypedSearchAttributes() {
 	env = s.NewTestWorkflowEnvironment()
 	env.OnUpsertTypedSearchAttributes(NewSearchAttributes()).Return(errors.New("empty")).Once()
 	env.OnUpsertTypedSearchAttributes(NewSearchAttributes(CustomIntKey.ValueSet(1))).Return(nil).Once()
+	env.OnUpsertTypedSearchAttributes(NewSearchAttributes(CustomIntKey.ValueUnset())).Return(nil).Once()
 	env.OnUpsertTypedSearchAttributes(mock.Anything).Return(nil).Once()
 
 	env.ExecuteWorkflow(workflowFn)
