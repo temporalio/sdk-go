@@ -287,19 +287,13 @@ func NewSearchAttributes(attributes ...SearchAttributeUpdate) SearchAttributes {
 	for _, attr := range attributes {
 		attr(&sa)
 	}
-	// remove nil values
-	for key, value := range sa.untypedValue {
-		if value == nil {
-			delete(sa.untypedValue, key)
-		}
-	}
 	return sa
 }
 
 // GetString gets a value for the given key and whether it was present.
 func (sa SearchAttributes) GetString(key SearchAttributeKeyString) (string, bool) {
 	value, ok := sa.untypedValue[key]
-	if !ok {
+	if !ok || value == nil {
 		return "", false
 	}
 	return value.(string), true
@@ -308,7 +302,7 @@ func (sa SearchAttributes) GetString(key SearchAttributeKeyString) (string, bool
 // GetKeyword gets a value for the given key and whether it was present.
 func (sa SearchAttributes) GetKeyword(key SearchAttributeKeyKeyword) (string, bool) {
 	value, ok := sa.untypedValue[key]
-	if !ok {
+	if !ok || value == nil {
 		return "", false
 	}
 	return value.(string), true
@@ -317,7 +311,7 @@ func (sa SearchAttributes) GetKeyword(key SearchAttributeKeyKeyword) (string, bo
 // GetBool gets a value for the given key and whether it was present.
 func (sa SearchAttributes) GetBool(key SearchAttributeKeyBool) (bool, bool) {
 	value, ok := sa.untypedValue[key]
-	if !ok {
+	if !ok || value == nil {
 		return false, false
 	}
 	return value.(bool), true
@@ -326,7 +320,7 @@ func (sa SearchAttributes) GetBool(key SearchAttributeKeyBool) (bool, bool) {
 // GetInt64 gets a value for the given key and whether it was present.
 func (sa SearchAttributes) GetInt64(key SearchAttributeKeyInt64) (int64, bool) {
 	value, ok := sa.untypedValue[key]
-	if !ok {
+	if !ok || value == nil {
 		return 0, false
 	}
 	return value.(int64), true
@@ -335,7 +329,7 @@ func (sa SearchAttributes) GetInt64(key SearchAttributeKeyInt64) (int64, bool) {
 // GetFloat64 gets a value for the given key and whether it was present.
 func (sa SearchAttributes) GetFloat64(key SearchAttributeKeyFloat64) (float64, bool) {
 	value, ok := sa.untypedValue[key]
-	if !ok {
+	if !ok || value == nil {
 		return 0.0, false
 	}
 	return value.(float64), true
@@ -344,7 +338,7 @@ func (sa SearchAttributes) GetFloat64(key SearchAttributeKeyFloat64) (float64, b
 // GetTime gets a value for the given key and whether it was present.
 func (sa SearchAttributes) GetTime(key SearchAttributeKeyTime) (time.Time, bool) {
 	value, ok := sa.untypedValue[key]
-	if !ok {
+	if !ok || value == nil {
 		return time.Time{}, false
 	}
 	return value.(time.Time), true
@@ -353,7 +347,7 @@ func (sa SearchAttributes) GetTime(key SearchAttributeKeyTime) (time.Time, bool)
 // GetKeywordList gets a value for the given key and whether it was present.
 func (sa SearchAttributes) GetKeywordList(key SearchAttributeKeyKeywordList) ([]string, bool) {
 	value, ok := sa.untypedValue[key]
-	if !ok {
+	if !ok || value == nil {
 		return nil, false
 	}
 	result := value.([]string)
@@ -363,19 +357,23 @@ func (sa SearchAttributes) GetKeywordList(key SearchAttributeKeyKeywordList) ([]
 
 // ContainsKey gets whether a key is present.
 func (sa SearchAttributes) ContainsKey(key SearchAttributeKey) bool {
-	_, ok := sa.untypedValue[key]
-	return ok
+	val, ok := sa.untypedValue[key]
+	return ok && val != nil
 }
 
 // Size gets the size of the attribute collection.
 func (sa SearchAttributes) Size() int {
-	return len(sa.untypedValue)
+	return len(sa.GetUntypedValues())
 }
 
 // GetUntypedValues gets a copy of the collection with raw types.
 func (sa SearchAttributes) GetUntypedValues() map[SearchAttributeKey]interface{} {
 	untypedValueCopy := make(map[SearchAttributeKey]interface{}, len(sa.untypedValue))
 	for key, value := range sa.untypedValue {
+		// Filter out nil values
+		if value == nil {
+			continue
+		}
 		switch v := value.(type) {
 		case []string:
 			untypedValueCopy[key] = append([]string(nil), v...)
@@ -389,6 +387,8 @@ func (sa SearchAttributes) GetUntypedValues() map[SearchAttributeKey]interface{}
 // Copy creates an update that copies existing values.
 func (sa SearchAttributes) Copy() SearchAttributeUpdate {
 	return func(s *SearchAttributes) {
+		// GetUntypedValues returns a copy of the map without nil values
+		// so the copy won't delete any existing values
 		untypedValues := sa.GetUntypedValues()
 		for key, value := range untypedValues {
 			s.untypedValue[key] = value
