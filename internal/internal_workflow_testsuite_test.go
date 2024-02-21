@@ -602,6 +602,46 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowCancellation() {
 	s.True(errors.As(err, &err1))
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowCancellation() {
+	childWorkflowFn := func(ctx Context) error {
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+		f := ExecuteActivity(ctx, testActivityHeartbeat, "msg1", time.Second*10)
+		err := f.Get(ctx, nil) // wait for result
+		return err
+	}
+
+	childID := "child_workflow_id"
+	workflowFn := func(ctx Context) (string, error) {
+		ctx = WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
+			WorkflowID: childID,
+		})
+		err := ExecuteChildWorkflow(ctx, childWorkflowFn).Get(ctx, nil)
+		if err != nil {
+			return err.Error(), nil
+		}
+		return "", nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterDelayedCallback(func() {
+		env.CancelWorkflowByID(childID, "")
+	}, time.Second)
+
+	env.RegisterWorkflow(workflowFn)
+	env.RegisterWorkflow(childWorkflowFn)
+	env.RegisterActivity(testActivityHeartbeat)
+
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	s.NoError(err)
+
+	var res string
+	s.NoError(env.GetWorkflowResult(&res))
+	s.Contains(res, "canceled")
+}
+
 func testWorkflowHello(ctx Context) (string, error) {
 	ao := ActivityOptions{
 		ScheduleToStartTimeout: time.Minute,
