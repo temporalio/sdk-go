@@ -861,6 +861,11 @@ func (e *TestWorkflowEnvironment) CancelWorkflow() {
 	e.impl.cancelWorkflow(func(result *commonpb.Payloads, err error) {})
 }
 
+// CancelWorkflowByID requests cancellation (through workflow Context) to the specified workflow.
+func (e *TestWorkflowEnvironment) CancelWorkflowByID(workflowID string, runID string) {
+	e.impl.cancelWorkflowByID(workflowID, runID, func(result *commonpb.Payloads, err error) {})
+}
+
 // SignalWorkflow sends signal to the currently running test workflow.
 func (e *TestWorkflowEnvironment) SignalWorkflow(name string, input interface{}) {
 	e.impl.signalWorkflow(name, input, true)

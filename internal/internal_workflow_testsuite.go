@@ -2427,12 +2427,16 @@ func (env *testWorkflowEnvironmentImpl) getActivityInfo(activityID ActivityID, a
 }
 
 func (env *testWorkflowEnvironmentImpl) cancelWorkflow(callback ResultHandler) {
+	env.cancelWorkflowByID(env.workflowInfo.WorkflowExecution.ID, env.workflowInfo.WorkflowExecution.RunID, callback)
+}
+
+func (env *testWorkflowEnvironmentImpl) cancelWorkflowByID(workflowID string, runID string, callback ResultHandler) {
 	env.postCallback(func() {
 		// RequestCancelWorkflow needs to be run in main thread
 		env.RequestCancelExternalWorkflow(
 			env.workflowInfo.Namespace,
-			env.workflowInfo.WorkflowExecution.ID,
-			env.workflowInfo.WorkflowExecution.RunID,
+			workflowID,
+			runID,
 			callback,
 		)
 	}, true)
