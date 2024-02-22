@@ -550,7 +550,7 @@ func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (
 }
 
 func (env *testWorkflowEnvironmentImpl) TryUse(flag sdkFlag) bool {
-	return true
+	return !SdkSoftLaunchFlags[flag]
 }
 
 func (env *testWorkflowEnvironmentImpl) QueueUpdate(name string, f func()) {
