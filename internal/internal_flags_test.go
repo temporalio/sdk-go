@@ -42,7 +42,7 @@ func TestSet(t *testing.T) {
 	t.Parallel()
 
 	t.Run("no server sdk metadata support", func(t *testing.T) {
-		flags := newSDKFlags(&metadataDisabled)
+		flags := newSDKFlags(&metadataDisabled, nil)
 		flags.set(testFlag)
 		require.Empty(t, flags.gatherNewSDKFlags(),
 			"flags assigned when servier does not support metadata are dropped")
@@ -51,10 +51,21 @@ func TestSet(t *testing.T) {
 	})
 
 	t.Run("with server sdk metadata support", func(t *testing.T) {
-		flags := newSDKFlags(&metadataEnabled)
+		flags := newSDKFlags(&metadataEnabled, nil)
 		flags.set(testFlag)
 		require.Empty(t, flags.gatherNewSDKFlags(),
 			"flag set via sdkFlags.set is not 'new'")
+		require.True(t, flags.tryUse(testFlag, false),
+			"flag set via sdkFlags.set should be immediately visible")
+	})
+
+	t.Run("with soft launch flag", func(t *testing.T) {
+		flags := newSDKFlags(&metadataEnabled, map[sdkFlag]bool{testFlag: true})
+		require.False(t, flags.tryUse(testFlag, true))
+		require.Empty(t, flags.gatherNewSDKFlags())
+		require.False(t, flags.tryUse(testFlag, false),
+			"soft launch flags should not be set")
+		flags.set(testFlag)
 		require.True(t, flags.tryUse(testFlag, false),
 			"flag set via sdkFlags.set should be immediately visible")
 	})

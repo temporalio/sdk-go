@@ -247,7 +247,7 @@ func newWorkflowExecutionEventHandler(
 		deadlockDetectionTimeout:     deadlockDetectionTimeout,
 		protocols:                    protocol.NewRegistry(),
 		mutableSideEffectCallCounter: make(map[string]int),
-		sdkFlags:                     newSDKFlags(capabilities),
+		sdkFlags:                     newSDKFlags(capabilities, SdkSoftLaunchFlags),
 		bufferedUpdateRequests:       make(map[string][]func()),
 	}
 	// Attempt to skip 1 log level to remove the ReplayLogger from the stack.

@@ -46,9 +46,16 @@ const (
 	SDKFlagProtocolMessageCommand = 3
 	// SDKPriorityUpdateHandling will cause update request to be handled before the main workflow method.
 	// It will also cause the SDK to immediately handle updates when a handler is registered.
+	// This flag is currently implemented, but not set to preserve rollback safety between Go SDK 1.26.x and 1.25.x.
 	SDKPriorityUpdateHandling = 4
 	SDKFlagUnknown            = math.MaxUint32
 )
+
+// sdkSoftLaunchFlags are flags that are implemented, but not set by default to preserve rollback safety between
+// minor SDK versions.
+var SdkSoftLaunchFlags = map[sdkFlag]bool{
+	SDKPriorityUpdateHandling: true,
+}
 
 func sdkFlagFromUint(value uint32) sdkFlag {
 	switch value {
@@ -74,18 +81,26 @@ func (f sdkFlag) isValid() bool {
 // sdkFlags represents all the flags that are currently set in a workflow execution.
 type sdkFlags struct {
 	capabilities *workflowservice.GetSystemInfoResponse_Capabilities
-	// Flags that have been recieved from the server
+	// Flags that have been received from the server
 	currentFlags map[sdkFlag]bool
 	// Flags that have been set this WFT that have not been sent to the server.
-	// Keep track of them sepratly so we know what to send to the server.
+	// Keep track of them separately so we know what to send to the server.
 	newFlags map[sdkFlag]bool
+	// Flags that are set to be soft launched.
+	// It indicates the SDK understands the flag, but it is not set yet.
+	// Used to maintain rollback safety between minor SDK versions.
+	softLaunchFlags map[sdkFlag]bool
 }
 
-func newSDKFlags(capabilities *workflowservice.GetSystemInfoResponse_Capabilities) *sdkFlags {
+func newSDKFlags(capabilities *workflowservice.GetSystemInfoResponse_Capabilities, softLaunchFlags map[sdkFlag]bool) *sdkFlags {
+	if softLaunchFlags == nil {
+		softLaunchFlags = make(map[sdkFlag]bool)
+	}
 	return &sdkFlags{
-		capabilities: capabilities,
-		currentFlags: make(map[sdkFlag]bool),
-		newFlags:     make(map[sdkFlag]bool),
+		capabilities:    capabilities,
+		currentFlags:    make(map[sdkFlag]bool),
+		newFlags:        make(map[sdkFlag]bool),
+		softLaunchFlags: softLaunchFlags,
 	}
 }
 
@@ -94,6 +109,10 @@ func newSDKFlags(capabilities *workflowservice.GetSystemInfoResponse_Capabilitie
 func (sf *sdkFlags) tryUse(flag sdkFlag, record bool) bool {
 	if !sf.capabilities.GetSdkMetadata() {
 		return false
+	}
+	if sf.softLaunchFlags[flag] {
+		// Soft launch flags should not be used unless explicitly set.
+		record = false
 	}
 
 	if record && !sf.currentFlags[flag] {

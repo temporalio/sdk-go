@@ -86,6 +86,7 @@ var runOnCallingThread = &testUpdateScheduler{
 
 var testSDKFlags = newSDKFlags(
 	&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: true},
+	nil,
 )
 
 func TestUpdateHandlerPanicHandling(t *testing.T) {
