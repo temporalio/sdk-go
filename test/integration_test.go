@@ -3503,6 +3503,38 @@ func (ts *IntegrationTestSuite) TestScheduleCreate() {
 	ts.Nil(description)
 }
 
+func (ts *IntegrationTestSuite) TestScheduleKeepOriginalWorkflowID() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	scheduleID := "test-schedule-typed-search-attributes"
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:               scheduleID,
+		RemainingActions: 1,
+		Spec: client.ScheduleSpec{
+			CronExpressions: []string{
+				"* * * * * * *",
+			},
+		},
+		Action: ts.createBasicScheduleWorkflowAction(
+			"test-schedule-typed-search-attributes", ts.workflows.ScheduleTypedSearchAttributesWorkflow),
+		KeepOriginalWorkflowID: true,
+	})
+	ts.NoError(err)
+	defer func() {
+		ts.NoError(handle.Delete(ctx))
+	}()
+
+	// Wait for the schedule to run
+	var desc *client.ScheduleDescription
+	ts.Eventually(func() bool {
+		desc, err = handle.Describe(ctx)
+		ts.NoError(err)
+		return len(desc.Info.RecentActions) > 0
+	}, 2*time.Second, 200*time.Millisecond)
+	startWorkflowResult := desc.Info.RecentActions[0].StartWorkflowResult
+	ts.Equal(startWorkflowResult.WorkflowID, scheduleID)
+}
+
 func (ts *IntegrationTestSuite) TestScheduleTypedSearchAttributes() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
