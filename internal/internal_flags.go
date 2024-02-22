@@ -104,7 +104,7 @@ func newSDKFlags(capabilities *workflowservice.GetSystemInfoResponse_Capabilitie
 	}
 }
 
-// tryUse returns true if this flag may currently be used. If record is true, always returns
+// tryUse returns true if this flag may currently be used. If record is true and the flag is not soft launched, always returns
 // true and records the flag as being used.
 func (sf *sdkFlags) tryUse(flag sdkFlag, record bool) bool {
 	if !sf.capabilities.GetSdkMetadata() {
