@@ -39,6 +39,7 @@ import (
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
+
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/log"
 )
@@ -136,9 +137,10 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 			Spec:   convertToPBScheduleSpec(&in.Options.Spec),
 			Action: action,
 			Policies: &schedulepb.SchedulePolicies{
-				OverlapPolicy:  in.Options.Overlap,
-				CatchupWindow:  catchupWindow,
-				PauseOnFailure: in.Options.PauseOnFailure,
+				OverlapPolicy:          in.Options.Overlap,
+				CatchupWindow:          catchupWindow,
+				PauseOnFailure:         in.Options.PauseOnFailure,
+				KeepOriginalWorkflowId: in.Options.KeepOriginalWorkflowID,
 			},
 			State: &schedulepb.ScheduleState{
 				Notes:            in.Options.Note,

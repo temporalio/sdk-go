@@ -363,6 +363,10 @@ type (
 		//
 		// [Visibility]: https://docs.temporal.io/visibility
 		TypedSearchAttributes SearchAttributes
+
+		// KeepOriginalWorkflowID - If true, and the action would start a workflow, a timestamp will not be
+		// appended to the scheduled workflow id.
+		KeepOriginalWorkflowID bool
 	}
 
 	// ScheduleWorkflowExecution contains details on a workflows execution stared by a schedule.
