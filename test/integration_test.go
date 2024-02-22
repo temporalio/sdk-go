@@ -2602,6 +2602,9 @@ func (ts *IntegrationTestSuite) TestUpdateWithWrongHandleRejected() {
 }
 
 func (ts *IntegrationTestSuite) TestWaitOnUpdate() {
+	if internal.SdkSoftLaunchFlags[internal.SDKPriorityUpdateHandling] {
+		ts.T().Skip("This test requires priority update handling to be enabled")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	options := ts.startWorkflowOptions("test-wait-on-update")
@@ -2622,7 +2625,7 @@ func (ts *IntegrationTestSuite) TestWaitOnUpdate() {
 
 func (ts *IntegrationTestSuite) TestUpdateOrdering() {
 	if internal.SdkSoftLaunchFlags[internal.SDKPriorityUpdateHandling] {
-		ts.T().Skip("This test is flaky and needs to be fixed")
+		ts.T().Skip("This test requires priority update handling to be enabled")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -2656,7 +2659,7 @@ func (ts *IntegrationTestSuite) TestMultipleUpdateOrdering() {
 
 func (ts *IntegrationTestSuite) testUpdateOrderingCancel(cancelWf bool) {
 	if internal.SdkSoftLaunchFlags[internal.SDKPriorityUpdateHandling] {
-		ts.T().Skip("This test is flaky and needs to be fixed")
+		ts.T().Skip("This test requires priority update handling to be enabled")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
