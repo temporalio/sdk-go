@@ -1865,6 +1865,7 @@ func (w *workflowClientInterceptor) PollWorkflowUpdate(
 		cancel()
 		if err == context.DeadlineExceeded ||
 			status.Code(err) == codes.DeadlineExceeded ||
+			serviceerror.ToStatus(err).Code() == codes.DeadlineExceeded ||
 			(err == nil && resp.GetOutcome() == nil) {
 			continue
 		}

@@ -116,6 +116,7 @@ func (b *builder) integrationTest() error {
 	runFlag := flagSet.String("run", "", "Passed to go test as -run")
 	devServerFlag := flagSet.Bool("dev-server", false, "Use an embedded dev server")
 	coverageFileFlag := flagSet.String("coverage-file", "", "If set, enables coverage output to this filename")
+	testifyFlag := flagSet.String("testify.m", "", "Passed to go test as -testify.m")
 	if err := flagSet.Parse(os.Args[2:]); err != nil {
 		return fmt.Errorf("failed parsing flags: %w", err)
 	}
@@ -162,6 +163,9 @@ func (b *builder) integrationTest() error {
 	args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "10m"}
 	if *runFlag != "" {
 		args = append(args, "-run", *runFlag)
+	}
+	if *testifyFlag != "" {
+		args = append(args, "-testify.m", *testifyFlag)
 	}
 	if *coverageFileFlag != "" {
 		args = append(args, "-coverprofile="+filepath.Join(b.rootDir, coverageDir, *coverageFileFlag), "-coverpkg=./...")
