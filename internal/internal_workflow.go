@@ -525,7 +525,6 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 			state.yield("yield before executing to setup state")
 			state.unblocked()
 
-			// TODO: @shreyassrivatsan - add workflow trace span here
 			r.workflowResult, r.error = d.workflow.Execute(d.rootCtx, input)
 			rpp := getWorkflowResultPointerPointer(ctx)
 			*rpp = r

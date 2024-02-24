@@ -1472,6 +1472,24 @@ func (ts *IntegrationTestSuite) TestUpdateValidatorRejected() {
 	ts.NoError(run.Get(ctx, nil))
 }
 
+func (ts *IntegrationTestSuite) TestUpdateWorkflowCancelled() {
+	ctx := context.Background()
+	wfOptions := ts.startWorkflowOptions("test-update-workflow-cancelled")
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		wfOptions, ts.workflows.UpdateWithValidatorWorkflow)
+	ts.Nil(err)
+	_, err = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "__stack_trace")
+	ts.NoError(err)
+	// Send a bad update request that will get rejected
+	handler, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update", "")
+	ts.NoError(err)
+	err = handler.Get(ctx, nil)
+	ts.Error(err)
+	// complete workflow
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
+	ts.NoError(run.Get(ctx, nil))
+}
+
 func (ts *IntegrationTestSuite) TestBasicSession() {
 	var expected []string
 	err := ts.executeWorkflow("test-basic-session", ts.workflows.BasicSession, &expected)
@@ -2713,6 +2731,56 @@ func (ts *IntegrationTestSuite) TestUpdateAlwaysHandled() {
 	var result int
 	ts.NoError(run.Get(ctx, &result))
 	ts.Equal(1, result)
+}
+
+func (ts *IntegrationTestSuite) TestUpdateRejected() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-update-rejected")
+	options.StartDelay = time.Hour
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.UpdateRejectedWithOtherGoRoutine)
+	ts.NoError(err)
+	// Send an update we expect to be rejected before the first workflow task
+	handle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	ts.NoError(err)
+	ts.Error(handle.Get(ctx, nil))
+	ts.NoError(run.Get(ctx, nil))
+}
+
+func (ts *IntegrationTestSuite) TestUpdateSettingHandlerInGoroutine() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-update-setting-handler-in-goroutine")
+	options.StartDelay = time.Hour
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.UpdateSettingHandlerInGoroutine)
+	ts.NoError(err)
+	// Send an update handler in a workflow goroutine, this should be accepted
+	handle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	ts.NoError(err)
+	ts.NoError(handle.Get(ctx, nil))
+	ts.NoError(run.Get(ctx, nil))
+}
+
+func (ts *IntegrationTestSuite) TestUpdateSettingHandlerInHandler() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-update-setting-handler-in-handler")
+	options.StartDelay = time.Hour
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.UpdateSettingHandlerInHandler)
+	ts.NoError(err)
+	// Expect this to fail because the handler is not set yet
+	handle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "inner update")
+	ts.NoError(err)
+	ts.Error(handle.Get(ctx, nil))
+	// Send an update that should register a new handler for "inner update"
+	handle, err = ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	ts.NoError(err)
+	ts.NoError(handle.Get(ctx, nil))
+	// Expect this to succeed because the handler is set now
+	handle, err = ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "inner update")
+	ts.NoError(err)
+	ts.NoError(handle.Get(ctx, nil))
+	ts.NoError(run.Get(ctx, nil))
 }
 
 func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {

@@ -2393,27 +2393,31 @@ func (w *Workflows) WaitOnUpdate(ctx workflow.Context) (int, error) {
 	updatesRan := 0
 	sleepHandle := func(ctx workflow.Context) error {
 		inflightUpdates++
+		defer func() {
+			inflightUpdates--
+		}()
 		updatesRan++
 		err := workflow.Sleep(ctx, time.Second)
-		inflightUpdates--
 		return err
 	}
 	echoHandle := func(ctx workflow.Context) error {
 		inflightUpdates++
+		defer func() {
+			inflightUpdates--
+		}()
 		updatesRan++
 
 		ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 		var a Activities
 		err := workflow.ExecuteActivity(ctx, a.Echo, 1, 1).Get(ctx, nil)
-		inflightUpdates--
 		return err
 	}
 	emptyHandle := func(ctx workflow.Context) error {
 		inflightUpdates++
-		updatesRan++
 		defer func() {
 			inflightUpdates--
 		}()
+		updatesRan++
 		return ctx.Err()
 	}
 	// Register multiple update handles in the first workflow task to make sure we process an
@@ -2438,6 +2442,28 @@ func (w *Workflows) UpdateSetHandlerOnly(ctx workflow.Context) (int, error) {
 	return updatesRan, nil
 }
 
+func (w *Workflows) UpdateRejectedWithOtherGoRoutine(ctx workflow.Context) error {
+	unblock := false
+	workflow.Go(ctx, func(ctx workflow.Context) {
+		workflow.Sleep(ctx, 100*time.Millisecond)
+		unblock = true
+	})
+
+	workflow.SetUpdateHandlerWithOptions(ctx, "update",
+		func(ctx workflow.Context) error {
+			return nil
+		}, workflow.UpdateHandlerOptions{
+			Validator: func(ctx workflow.Context) error {
+				// Always reject the update
+				return errors.New("update rejected")
+			},
+		})
+	workflow.Await(ctx, func() bool {
+		return unblock
+	})
+	return nil
+}
+
 func (w *Workflows) UpdateOrdering(ctx workflow.Context) (int, error) {
 	updatesRan := 0
 	updateHandle := func(ctx workflow.Context) error {
@@ -2453,6 +2479,45 @@ func (w *Workflows) UpdateOrdering(ctx workflow.Context) (int, error) {
 		return workflow.Now(ctx).After(currentTime)
 	})
 	return updatesRan, nil
+}
+
+func (w *Workflows) UpdateSettingHandlerInGoroutine(ctx workflow.Context) (int, error) {
+	updatesRan := 0
+	inflightUpdates := 0
+	wg := workflow.NewWaitGroup(ctx)
+	wg.Add(1)
+	workflow.Go(ctx, func(ctx workflow.Context) {
+		defer wg.Done()
+		workflow.SetUpdateHandler(ctx, "update", func(ctx workflow.Context) error {
+			updatesRan++
+			inflightUpdates++
+			defer func() {
+				inflightUpdates--
+			}()
+			return workflow.Sleep(ctx, 100*time.Millisecond)
+		})
+	})
+	wg.Wait(ctx)
+	// Wait for no inflight updates
+	workflow.Await(ctx, func() bool {
+		return inflightUpdates == 0
+	})
+	return updatesRan, nil
+}
+
+func (w *Workflows) UpdateSettingHandlerInHandler(ctx workflow.Context) (int, error) {
+	innerUpdatesRan := 0
+	workflow.SetUpdateHandler(ctx, "update", func(ctx workflow.Context) error {
+		return workflow.SetUpdateHandler(ctx, "inner update", func(ctx workflow.Context) error {
+			innerUpdatesRan++
+			return nil
+		})
+	})
+	currentTime := workflow.Now(ctx)
+	workflow.Await(ctx, func() bool {
+		return workflow.Now(ctx).After(currentTime)
+	})
+	return innerUpdatesRan, nil
 }
 
 var forcedNonDeterminismCounter int
@@ -2880,6 +2945,9 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.VersionLoopWorkflow)
 	worker.RegisterWorkflow(w.RaceOnCacheEviction)
 	worker.RegisterWorkflow(w.UpdateWithValidatorWorkflow)
+	worker.RegisterWorkflow(w.UpdateRejectedWithOtherGoRoutine)
+	worker.RegisterWorkflow(w.UpdateSettingHandlerInGoroutine)
+	worker.RegisterWorkflow(w.UpdateSettingHandlerInHandler)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childWithRetryPolicy)

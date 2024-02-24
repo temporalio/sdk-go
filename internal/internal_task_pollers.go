@@ -33,6 +33,7 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
@@ -463,6 +464,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(
 			}
 		}
 		eagerReserved := wtp.eagerActivityExecutor.applyToRequest(request)
+		wtp.logger.Info("RespondWorkflowTaskCompleted.", "request", protojson.Format(request))
 		response, err = wtp.service.RespondWorkflowTaskCompleted(grpcCtx, request)
 		if err != nil {
 			traceLog(func() {
@@ -493,6 +495,8 @@ func (wtp *workflowTaskPoller) errorToFailWorkflowTask(taskToken []byte, err err
 			cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
 		}
 	} else if _, mismatch := err.(historyMismatchError); mismatch {
+		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
+	} else if _, unknown := err.(unknownSdkFlagError); unknown {
 		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
 	}
 

@@ -191,6 +191,10 @@ type (
 		message string
 	}
 
+	unknownSdkFlagError struct {
+		message string
+	}
+
 	preparedTask struct {
 		events         []*historypb.HistoryEvent
 		markers        []*historypb.HistoryEvent
@@ -239,6 +243,10 @@ func (h historyMismatchError) Error() string {
 	return h.message
 }
 
+func (s unknownSdkFlagError) Error() string {
+	return s.message
+}
+
 // Get workflow start event.
 func (eh *history) GetWorkflowStartedEvent() (*historypb.HistoryEvent, error) {
 	events := eh.workflowTask.task.History.Events
@@ -278,7 +286,9 @@ func (eh *history) isNextWorkflowTaskFailed() (task finishedTask, err error) {
 				f := sdkFlagFromUint(flag)
 				if !f.isValid() {
 					// If a flag is not recognized (value is too high or not defined), it must fail the workflow task
-					return finishedTask{}, errors.New("could not recognize SDK flag")
+					return finishedTask{}, unknownSdkFlagError{
+						message: fmt.Sprintf("unknown sdk flag: %d", flag),
+					}
 				}
 				flags = append(flags, f)
 			}
