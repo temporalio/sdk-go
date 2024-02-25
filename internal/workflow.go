@@ -120,35 +120,34 @@ type (
 		// json.Unmarshal.
 		ReceiveWithTimeout(ctx Context, timeout time.Duration, valuePtr interface{}) (ok, more bool)
 
-		// ReceiveAsync try to receive from Channel without blocking. If there is data available from the Channel, it
-		// assign the data to valuePtr and returns true. Otherwise, it returns false immediately.
+		// ReceiveAsync tries to receive from a Channel without blocking. If there is data available, it
+		// assigns the data to valuePtr and returns true. Otherwise, it returns false immediately.
 		//
 		// Note, values should not be reused for extraction here because merging on
 		// top of existing values may result in unexpected behavior similar to
 		// json.Unmarshal.
 		ReceiveAsync(valuePtr interface{}) (ok bool)
 
-		// ReceiveAsyncWithMoreFlag is same as ReceiveAsync with extra return value more to indicate if there could be
-		// more value from the Channel. The more is false when Channel is closed.
+		// ReceiveAsyncWithMoreFlag is the same as ReceiveAsync but with an extra return value `more` that indicates
+		// whether the channel contains more data. `more` is false when the channel is closed.
 		//
-		// Note, values should not be reused for extraction here because merging on
-		// top of existing values may result in unexpected behavior similar to
-		// json.Unmarshal.
+		// Note, values should not be reused for extraction here because merging on top of existing values may result in
+		// unexpected behavior similar to json.Unmarshal.
 		ReceiveAsyncWithMoreFlag(valuePtr interface{}) (ok bool, more bool)
 
 		// Len returns the number of buffered messages plus the number of blocked Send calls.
 		Len() int
 	}
 
-	// Channel must be used instead of native go channel by workflow code.
+	// Channel must be used by workflow code instead of native go channels.
 	// Use workflow.NewChannel(ctx) method to create Channel instance.
 	Channel interface {
 		SendChannel
 		ReceiveChannel
 	}
 
-	// Selector must be used instead of native go select by workflow code.
-	// Create through workflow.NewSelector(ctx).
+	// Selector must be used by workflow code instead of native go `select`.
+	// Use workflow.NewSelector(ctx) to create a selector.
 	Selector interface {
 		// AddReceive registers a callback function to be called when a channel has a message to receive.
 		// The callback is called when Select(ctx) is called.
