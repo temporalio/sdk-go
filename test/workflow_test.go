@@ -2454,6 +2454,24 @@ func (w *Workflows) UpdateSetHandlerOnly(ctx workflow.Context) (int, error) {
 	return updatesRan, nil
 }
 
+func (w *Workflows) UpdateHandlerRegisteredLate(ctx workflow.Context) (int, error) {
+	updatesRan := 0
+	state := 0
+	workflow.SetQueryHandler(ctx, "state", func(expectedState int) (bool, error) {
+		return state == expectedState, nil
+	})
+	workflow.GetSignalChannel(ctx, "unblock").Receive(ctx, nil)
+	state++
+	updateHandle := func(ctx workflow.Context) error {
+		updatesRan++
+		return nil
+	}
+	workflow.SetUpdateHandler(ctx, "update", updateHandle)
+	workflow.GetSignalChannel(ctx, "unblock").Receive(ctx, nil)
+	state++
+	return updatesRan, nil
+}
+
 func (w *Workflows) UpdateRejectedWithOtherGoRoutine(ctx workflow.Context) error {
 	unblock := false
 	workflow.Go(ctx, func(ctx workflow.Context) {
@@ -2961,6 +2979,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.UpdateSettingHandlerInGoroutine)
 	worker.RegisterWorkflow(w.UpdateSettingHandlerInHandler)
 	worker.RegisterWorkflow(w.UpdateCancelableWorkflow)
+	worker.RegisterWorkflow(w.UpdateHandlerRegisteredLate)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childWithRetryPolicy)

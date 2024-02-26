@@ -2652,6 +2652,74 @@ func (ts *IntegrationTestSuite) TestWaitOnUpdate() {
 	ts.Equal(1, result)
 }
 
+func (ts *IntegrationTestSuite) TestUpdateHandlerRegisteredLate() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-update-handler-registered-late")
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		options,
+		ts.workflows.UpdateHandlerRegisteredLate)
+	ts.NoError(err)
+	// Wait for the workflow to be blocked
+	ts.waitForQueryTrue(run, "state", 0)
+	// Send an update before the handler is registered
+	updateHandle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	ts.NoError(err)
+	ts.Error(updateHandle.Get(ctx, nil))
+	// Unblock the workflow so it can register the handler
+	ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "unblock", nil)
+	// Send an update after the handler is registered
+	updateHandle, err = ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	ts.NoError(err)
+	ts.NoError(updateHandle.Get(ctx, nil))
+	// Unblock the workflow so it can complete
+	ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "unblock", nil)
+	// Get the result
+	var result int
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal(1, result)
+}
+
+func (ts *IntegrationTestSuite) TestUpdateSDKFlag() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-update-SDK-flag")
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		options,
+		ts.workflows.UpdateHandlerRegisteredLate)
+	ts.NoError(err)
+	// Wait for the workflow to be blocked
+	ts.waitForQueryTrue(run, "state", 0)
+	// Unblock the workflow so it can register the handler
+	ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "unblock", nil)
+	// Send an update after the handler is registered
+	updateHandle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	ts.NoError(err)
+	ts.NoError(updateHandle.Get(ctx, nil))
+	// Unblock the workflow so it can complete
+	ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "unblock", nil)
+	// Get the result
+	var result int
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal(1, result)
+	// Now test the SDK flag
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	flagsSet := make([][]uint32, 0)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		ts.NoError(err)
+		taskCompleted := event.GetWorkflowTaskCompletedEventAttributes()
+		if taskCompleted != nil {
+			flagsSet = append(flagsSet, taskCompleted.GetSdkMetadata().GetLangUsedFlags())
+		}
+	}
+	priorityUpdateHandlingFlag := 4
+	// The first workflow task should not have the flag set
+	ts.NotContains(flagsSet[0], priorityUpdateHandlingFlag)
+	// The second workflow task should have the flag set
+	ts.NotContains(flagsSet[1], priorityUpdateHandlingFlag)
+}
+
 func (ts *IntegrationTestSuite) TestUpdateOrdering() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
