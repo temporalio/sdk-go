@@ -287,7 +287,7 @@ func (eh *history) isNextWorkflowTaskFailed() (task finishedTask, err error) {
 				if !f.isValid() {
 					// If a flag is not recognized (value is too high or not defined), it must fail the workflow task
 					return finishedTask{}, unknownSdkFlagError{
-						message: fmt.Sprintf("unknown sdk flag: %d", flag),
+						message: fmt.Sprintf("unknown SDK flag: %d", flag),
 					}
 				}
 				flags = append(flags, f)
