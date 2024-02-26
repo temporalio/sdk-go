@@ -1463,15 +1463,15 @@ matchLoop:
 		}
 
 		if d == nil {
-			return historyMismatchErrorf("nondeterministic workflow: missing replay command for %s", util.HistoryEventToString(e))
+			return historyMismatchErrorf("[TMPRL1100] nondeterministic workflow: missing replay command for %s", util.HistoryEventToString(e))
 		}
 
 		if e == nil {
-			return historyMismatchErrorf("nondeterministic workflow: extra replay command for %s", util.CommandToString(d))
+			return historyMismatchErrorf("[TMPRL1100] nondeterministic workflow: extra replay command for %s", util.CommandToString(d))
 		}
 
 		if !isCommandMatchEvent(d, e, msgs) {
-			return historyMismatchErrorf("nondeterministic workflow: history event is %s, replay command is %s",
+			return historyMismatchErrorf("[TMPRL1100] nondeterministic workflow: history event is %s, replay command is %s",
 				util.HistoryEventToString(e), util.CommandToString(d))
 		}
 
@@ -1725,6 +1725,13 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		metricsHandler.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION)
 
+		// ContinueAsNewError.RetryPolicy is optional.
+		// If not set, use the retry policy from the workflow context.
+		retryPolicy := contErr.RetryPolicy
+		if retryPolicy == nil {
+			retryPolicy = workflowContext.workflowInfo.RetryPolicy
+		}
+
 		useCompat := determineUseCompatibleFlagForCommand(
 			contErr.VersioningIntent, workflowContext.workflowInfo.TaskQueueName, contErr.TaskQueueName)
 		closeCommand.Attributes = &commandpb.Command_ContinueAsNewWorkflowExecutionCommandAttributes{ContinueAsNewWorkflowExecutionCommandAttributes: &commandpb.ContinueAsNewWorkflowExecutionCommandAttributes{
@@ -1736,7 +1743,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			Header:               contErr.Header,
 			Memo:                 workflowContext.workflowInfo.Memo,
 			SearchAttributes:     workflowContext.workflowInfo.SearchAttributes,
-			RetryPolicy:          convertToPBRetryPolicy(workflowContext.workflowInfo.RetryPolicy),
+			RetryPolicy:          convertToPBRetryPolicy(retryPolicy),
 			UseCompatibleVersion: useCompat,
 		}}
 	} else if workflowContext.err != nil {

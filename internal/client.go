@@ -496,13 +496,13 @@ type (
 		// After a duration of this time if the client doesn't see any activity it
 		// pings the server to see if the transport is still alive.
 		// If set below 10s, a minimum value of 10s will be used instead.
-		// default: 15s
+		// default: 30s
 		KeepAliveTime time.Duration
 
 		// After having pinged for keepalive check, the client waits for a duration
 		// of Timeout and if no activity is seen even after that the connection is
 		// closed.
-		// default: 30s
+		// default: 15s
 		KeepAliveTimeout time.Duration
 
 		// if true, when there are no active RPCs, Time and Timeout will be ignored and no
@@ -606,8 +606,20 @@ type (
 		// Use GetSearchAttributes API to get valid key and corresponding value type.
 		// For supported operations on different server versions see [Visibility].
 		//
+		// Deprecated: use TypedSearchAttributes instead.
+		//
 		// [Visibility]: https://docs.temporal.io/visibility
 		SearchAttributes map[string]interface{}
+
+		// TypedSearchAttributes - Specifies Search Attributes that will be attached to the Workflow. Search Attributes are
+		// additional indexed information attributed to workflow and used for search and visibility. The search attributes
+		// can be used in query of List/Scan/Count workflow APIs. The key and its value type must be registered on Temporal
+		// server side. For supported operations on different server versions see [Visibility].
+		//
+		// Optional: default to none.
+		//
+		// [Visibility]: https://docs.temporal.io/visibility
+		TypedSearchAttributes SearchAttributes
 
 		// EnableEagerStart - request eager execution for this workflow, if a local worker is available.
 		//

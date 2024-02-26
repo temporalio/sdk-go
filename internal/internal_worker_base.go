@@ -86,6 +86,7 @@ type (
 		SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler)
 		GetVersion(changeID string, minSupported, maxSupported Version) Version
 		WorkflowInfo() *WorkflowInfo
+		TypedSearchAttributes() SearchAttributes
 		Complete(result *commonpb.Payloads, err error)
 		RegisterCancelHandler(handler func())
 		RequestCancelChildWorkflow(namespace, workflowID string)
@@ -122,6 +123,7 @@ type (
 		RemoveSession(sessionID string)
 		GetContextPropagators() []ContextPropagator
 		UpsertSearchAttributes(attributes map[string]interface{}) error
+		UpsertTypedSearchAttributes(attributes SearchAttributes) error
 		UpsertMemo(memoMap map[string]interface{}) error
 		GetRegistry() *registry
 		// QueueUpdate request of type name

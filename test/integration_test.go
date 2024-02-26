@@ -576,6 +576,57 @@ func (ts *IntegrationTestSuite) TestContinueAsNewCarryOver() {
 	ts.Equal("memoVal,searchAttr,123", result)
 }
 
+func (ts *IntegrationTestSuite) TestContinueAsNewWithRetryPolicy() {
+	const (
+		initialMaximumAttempts = 3
+		newMaximumAttempts     = 100
+		iterations             = 4
+	)
+
+	var result string
+	startOptions := ts.startWorkflowOptions("test-continueasnew-with-retry-policy")
+	startOptions.RetryPolicy = &temporal.RetryPolicy{
+		MaximumAttempts: initialMaximumAttempts,
+	}
+	err := ts.executeWorkflowWithOption(
+		startOptions,
+		ts.workflows.ContinueAsNewWithRetryPolicy,
+		&result,
+		initialMaximumAttempts,
+		newMaximumAttempts,
+		initialMaximumAttempts,
+		iterations,
+	)
+	ts.NoError(err)
+	ts.Equal(fmt.Sprintf("End of workflow: %v", newMaximumAttempts), result)
+
+	expectedActivities := make([]string, iterations+1)
+	for i := 0; i <= iterations; i++ {
+		expectedActivities[i] = "toUpper"
+	}
+	ts.EqualValues(expectedActivities, ts.activities.invoked())
+}
+
+func (ts *IntegrationTestSuite) TestContinueAsNewWithWithChildWF() {
+	const (
+		iterations = 6
+	)
+
+	err := ts.executeWorkflow(
+		"test-continueasnew-with-child-wf",
+		ts.workflows.ContinueAsNewWithChildWF,
+		nil,
+		iterations,
+	)
+	ts.NoError(err)
+
+	expectedActivities := make([]string, iterations+1)
+	for i := 0; i <= iterations; i++ {
+		expectedActivities[i] = "toUpper"
+	}
+	ts.EqualValues(expectedActivities, ts.activities.invoked())
+}
+
 func (ts *IntegrationTestSuite) TestCancellation() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -871,6 +922,46 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseIgnoreDuplicateWhileRunning()
 	ts.NoError(err)
 	ts.Equal(run1.GetID(), run3.GetID())
 	ts.NotEqual(run1.GetRunID(), run3.GetRunID())
+}
+
+func (ts *IntegrationTestSuite) TestChildWFWithRetryPolicy_ShortLived() {
+	ts.testChildWFWithRetryPolicy(ts.workflows.ChildWorkflowWithRetryPolicy, 0)
+}
+
+func (ts *IntegrationTestSuite) TestChildWFWithRetryPolicy_LongRunning() {
+	ts.testChildWFWithRetryPolicy(ts.workflows.ChildWorkflowWithRetryPolicy, 4)
+}
+
+func (ts *IntegrationTestSuite) TestChildWFWithRetryPolicy_LongRunningWithCustomRetry() {
+	ts.testChildWFWithRetryPolicy(ts.workflows.ChildWorkflowWithCustomRetryPolicy, 6)
+}
+
+func (ts *IntegrationTestSuite) testChildWFWithRetryPolicy(wfFunc interface{}, iterations int) {
+	const (
+		parentWorkflowMaximumAttempts = 3
+	)
+
+	startOptions := ts.startWorkflowOptions("test-childwf-with-retry-policy")
+	startOptions.RetryPolicy = &temporal.RetryPolicy{
+		InitialInterval:    time.Second,
+		BackoffCoefficient: 2.0,
+		MaximumInterval:    time.Second,
+		MaximumAttempts:    parentWorkflowMaximumAttempts,
+	}
+	err := ts.executeWorkflowWithOption(
+		startOptions,
+		wfFunc,
+		nil,
+		parentWorkflowMaximumAttempts,
+		iterations,
+	)
+	ts.NoError(err)
+
+	expectedActivities := make([]string, iterations+1)
+	for i := 0; i <= iterations; i++ {
+		expectedActivities[i] = "toUpper"
+	}
+	ts.EqualValues(expectedActivities, ts.activities.invoked())
 }
 
 func (ts *IntegrationTestSuite) TestChildWFRetryOnError() {
@@ -1219,6 +1310,17 @@ func (ts *IntegrationTestSuite) TestWorkflowWithParallelSideEffectsUsingReplay()
 
 func (ts *IntegrationTestSuite) TestWorkflowWithParallelMutableSideEffects() {
 	ts.NoError(ts.executeWorkflow("test-wf-parallel-mutable-side-effects", ts.workflows.WorkflowWithParallelMutableSideEffects, nil))
+}
+
+func (ts *IntegrationTestSuite) TestWorkflowTypedSearchAttributes() {
+	options := ts.startWorkflowOptions("test-wf-typed-search-attributes")
+	// Need to disable eager workflow start until https://github.com/temporalio/temporal/pull/5124 fixed
+	options.EnableEagerStart = false
+	// Create initial set of search attributes
+	stringKey := temporal.NewSearchAttributeKeyString("CustomStringField")
+	options.TypedSearchAttributes = temporal.NewSearchAttributes(stringKey.ValueSet("CustomStringFieldValue"))
+	ts.NoError(ts.executeWorkflowWithOption(options, ts.workflows.UpsertTypedSearchAttributesWorkflow, nil, true))
+	ts.NoError(ts.executeWorkflowWithOption(options, ts.workflows.UpsertTypedSearchAttributesWorkflow, nil, false))
 }
 
 func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
@@ -3372,9 +3474,9 @@ func (ts *IntegrationTestSuite) TestUpsertMemoWithExistingMemo() {
 	ts.Equal(expectedMemo, memo)
 }
 
-func (ts *IntegrationTestSuite) createBasicScheduleWorkflowAction(ID string) client.ScheduleAction {
+func (ts *IntegrationTestSuite) createBasicScheduleWorkflowAction(ID string, workflow interface{}) *client.ScheduleWorkflowAction {
 	return &client.ScheduleWorkflowAction{
-		Workflow:                 ts.workflows.SimplestWorkflow,
+		Workflow:                 workflow,
 		ID:                       ID,
 		TaskQueue:                ts.taskQueueName,
 		WorkflowExecutionTimeout: 15 * time.Second,
@@ -3388,7 +3490,7 @@ func (ts *IntegrationTestSuite) TestScheduleCreate() {
 	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
 		ID:     "test-schedule-create-schedule",
 		Spec:   client.ScheduleSpec{},
-		Action: ts.createBasicScheduleWorkflowAction("test-schedule-create-workflow"),
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-create-workflow", ts.workflows.SimplestWorkflow),
 	})
 	ts.NoError(err)
 	ts.EqualValues("test-schedule-create-schedule", handle.GetID())
@@ -3399,6 +3501,113 @@ func (ts *IntegrationTestSuite) TestScheduleCreate() {
 	description, err := handle.Describe(ctx)
 	ts.IsType(&serviceerror.NotFound{}, err)
 	ts.Nil(description)
+}
+
+func (ts *IntegrationTestSuite) TestScheduleTypedSearchAttributes() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	scheduleID := "test-schedule-typed-search-attributes"
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:               scheduleID,
+		RemainingActions: 1,
+		Spec: client.ScheduleSpec{
+			CronExpressions: []string{
+				"* * * * * * *",
+			},
+		},
+		Action: ts.createBasicScheduleWorkflowAction(
+			"test-schedule-typed-search-attributes", ts.workflows.ScheduleTypedSearchAttributesWorkflow),
+	})
+	ts.NoError(err)
+	defer func() {
+		ts.NoError(handle.Delete(ctx))
+	}()
+
+	// Wait for the schedule to run
+	var desc *client.ScheduleDescription
+	ts.Eventually(func() bool {
+		desc, err = handle.Describe(ctx)
+		ts.NoError(err)
+		return len(desc.Info.RecentActions) > 0
+	}, 2*time.Second, 200*time.Millisecond)
+	startWorkflowResult := desc.Info.RecentActions[0].StartWorkflowResult
+	run := ts.client.GetWorkflow(ctx, startWorkflowResult.WorkflowID, startWorkflowResult.FirstExecutionRunID)
+	var result string
+	err = run.Get(ctx, &result)
+	ts.NoError(err)
+	ts.Equal(scheduleID, result)
+}
+
+func (ts *IntegrationTestSuite) TestScheduleWorkflowActionTypedSearchAttributes() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	scheduleID := "test-schedule-typed-search-attributes"
+	action := ts.createBasicScheduleWorkflowAction(
+		"test-schedule-typed-search-attributes", ts.workflows.SimplestWorkflow)
+	stringKey := temporal.NewSearchAttributeKeyString("CustomStringField")
+	action.TypedSearchAttributes = temporal.NewSearchAttributes(stringKey.ValueSet("SomeValue1"))
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:               scheduleID,
+		RemainingActions: 1,
+		Spec: client.ScheduleSpec{
+			CronExpressions: []string{
+				"* * * * * * *",
+			},
+		},
+		Action: action,
+	})
+	ts.NoError(err)
+	defer func() {
+		ts.NoError(handle.Delete(ctx))
+	}()
+
+	// Confirm typed search attrs on action
+	desc, err := handle.Describe(ctx)
+	ts.NoError(err)
+	actualAttrVal, _ := desc.Schedule.Action.(*client.ScheduleWorkflowAction).TypedSearchAttributes.GetString(stringKey)
+	ts.Equal("SomeValue1", actualAttrVal)
+
+	// Update but don't change
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+			return &client.ScheduleUpdate{Schedule: &input.Description.Schedule}, nil
+		},
+	})
+	ts.NoError(err)
+	desc, err = handle.Describe(ctx)
+	ts.NoError(err)
+	actualAttrVal, _ = desc.Schedule.Action.(*client.ScheduleWorkflowAction).TypedSearchAttributes.GetString(stringKey)
+	ts.Equal("SomeValue1", actualAttrVal)
+
+	// Update with change
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+			action := input.Description.Schedule.Action.(*client.ScheduleWorkflowAction)
+			action.TypedSearchAttributes = temporal.NewSearchAttributes(
+				action.TypedSearchAttributes.Copy(), stringKey.ValueSet("SomeValue2"))
+			return &client.ScheduleUpdate{Schedule: &input.Description.Schedule}, nil
+		},
+	})
+	ts.NoError(err)
+	desc, err = handle.Describe(ctx)
+	ts.NoError(err)
+	actualAttrVal, _ = desc.Schedule.Action.(*client.ScheduleWorkflowAction).TypedSearchAttributes.GetString(stringKey)
+	ts.Equal("SomeValue2", actualAttrVal)
+
+	// Now remove it
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+			action := input.Description.Schedule.Action.(*client.ScheduleWorkflowAction)
+			action.TypedSearchAttributes = temporal.NewSearchAttributes(
+				action.TypedSearchAttributes.Copy(), stringKey.ValueUnset())
+			return &client.ScheduleUpdate{Schedule: &input.Description.Schedule}, nil
+		},
+	})
+	ts.NoError(err)
+	desc, err = handle.Describe(ctx)
+	ts.NoError(err)
+	_, hasAttr := desc.Schedule.Action.(*client.ScheduleWorkflowAction).TypedSearchAttributes.GetString(stringKey)
+	ts.False(hasAttr)
 }
 
 func (ts *IntegrationTestSuite) TestScheduleCalendarDefault() {
@@ -3413,7 +3622,7 @@ func (ts *IntegrationTestSuite) TestScheduleCalendarDefault() {
 				},
 			},
 		},
-		Action: ts.createBasicScheduleWorkflowAction("test-schedule-calendar-default-workflow"),
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-calendar-default-workflow", ts.workflows.SimplestWorkflow),
 		Paused: true,
 	})
 	ts.NoError(err)
@@ -3461,7 +3670,7 @@ func (ts *IntegrationTestSuite) TestScheduleCreateDuplicate() {
 	scheduleOptions := client.ScheduleOptions{
 		ID:     "test-schedule-create-duplicate-schedule",
 		Spec:   client.ScheduleSpec{},
-		Action: ts.createBasicScheduleWorkflowAction("test-schedule-create-duplicate-workflow"),
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-create-duplicate-workflow", ts.workflows.SimplestWorkflow),
 	}
 
 	handle, err := ts.client.ScheduleClient().Create(ctx, scheduleOptions)
@@ -3544,7 +3753,7 @@ func (ts *IntegrationTestSuite) TestScheduleDescribeSpec() {
 				},
 			},
 		},
-		Action: ts.createBasicScheduleWorkflowAction("test-schedule-describe-spec-workflow"),
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-describe-spec-workflow", ts.workflows.SimplestWorkflow),
 	})
 	ts.NoError(err)
 	ts.EqualValues("test-schedule-describe-spec-schedule", handle.GetID())
@@ -3646,7 +3855,7 @@ func (ts *IntegrationTestSuite) TestScheduleDescribeSpecCron() {
 				"0 12 * * MON",
 			},
 		},
-		Action: ts.createBasicScheduleWorkflowAction("test-schedule-describe-spec-cron-workflow"),
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-describe-spec-cron-workflow", ts.workflows.SimplestWorkflow),
 	})
 	ts.NoError(err)
 	ts.EqualValues("test-schedule-describe-spec-cron-schedule", handle.GetID())
@@ -3781,7 +3990,7 @@ func (ts *IntegrationTestSuite) TestSchedulePause() {
 	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
 		ID:     "test-schedule-pause-schedule",
 		Spec:   client.ScheduleSpec{},
-		Action: ts.createBasicScheduleWorkflowAction("test-schedule-pause-workflow"),
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-pause-workflow", ts.workflows.SimplestWorkflow),
 		Paused: true,
 	})
 	ts.NoError(err)
@@ -3827,7 +4036,7 @@ func (ts *IntegrationTestSuite) TestScheduleTrigger() {
 	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
 		ID:      "test-schedule-trigger-schedule",
 		Spec:    client.ScheduleSpec{},
-		Action:  ts.createBasicScheduleWorkflowAction("test-schedule-trigger-workflow"),
+		Action:  ts.createBasicScheduleWorkflowAction("test-schedule-trigger-workflow", ts.workflows.SimplestWorkflow),
 		Paused:  true,
 		Overlap: enumspb.SCHEDULE_OVERLAP_POLICY_ALLOW_ALL,
 	})
@@ -3871,7 +4080,7 @@ func (ts *IntegrationTestSuite) TestScheduleBackfillCreate() {
 			},
 			EndAt: endTime,
 		},
-		Action: ts.createBasicScheduleWorkflowAction("test-schedule-backfill-create-workflow"),
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-backfill-create-workflow", ts.workflows.SimplestWorkflow),
 		ScheduleBackfill: []client.ScheduleBackfill{
 			{
 				Start:   now.Add(-time.Hour),
@@ -3910,7 +4119,7 @@ func (ts *IntegrationTestSuite) TestScheduleBackfill() {
 				},
 			},
 		},
-		Action: ts.createBasicScheduleWorkflowAction("test-schedule-backfill-workflow"),
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-backfill-workflow", ts.workflows.SimplestWorkflow),
 		Paused: true,
 	})
 	ts.NoError(err)
@@ -3986,7 +4195,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
 		ID:     "test-schedule-update-schedule",
 		Spec:   client.ScheduleSpec{},
-		Action: ts.createBasicScheduleWorkflowAction("test-schedule-update-workflow"),
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-update-workflow", ts.workflows.SimplestWorkflow),
 		Paused: true,
 	})
 	ts.NoError(err)
@@ -4020,7 +4229,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateCancelUpdate() {
 	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
 		ID:     "test-schedule-update-schedule",
 		Spec:   client.ScheduleSpec{},
-		Action: ts.createBasicScheduleWorkflowAction("test-schedule-update-workflow"),
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-update-workflow", ts.workflows.SimplestWorkflow),
 		Paused: true,
 	})
 	ts.NoError(err)
@@ -4063,7 +4272,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateError() {
 	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
 		ID:     "test-schedule-update-schedule",
 		Spec:   client.ScheduleSpec{},
-		Action: ts.createBasicScheduleWorkflowAction("test-schedule-update-workflow"),
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-update-workflow", ts.workflows.SimplestWorkflow),
 		Paused: true,
 	})
 	ts.NoError(err)
@@ -4088,7 +4297,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateNewAction() {
 	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
 		ID:     "test-schedule-update-new-action-schedule",
 		Spec:   client.ScheduleSpec{},
-		Action: ts.createBasicScheduleWorkflowAction("test-schedule-update-new-action-workflow"),
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-update-new-action-workflow", ts.workflows.SimplestWorkflow),
 		Paused: true,
 	})
 	ts.NoError(err)
@@ -4131,7 +4340,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateAction() {
 	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
 		ID:     "test-schedule-update-action-schedule",
 		Spec:   client.ScheduleSpec{},
-		Action: ts.createBasicScheduleWorkflowAction("test-schedule-update-action-workflow"),
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-update-action-workflow", ts.workflows.SimplestWorkflow),
 		Paused: true,
 	})
 	ts.NoError(err)

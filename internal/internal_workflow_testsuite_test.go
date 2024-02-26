@@ -602,6 +602,46 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowCancellation() {
 	s.True(errors.As(err, &err1))
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowCancellation() {
+	childWorkflowFn := func(ctx Context) error {
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+		f := ExecuteActivity(ctx, testActivityHeartbeat, "msg1", time.Second*10)
+		err := f.Get(ctx, nil) // wait for result
+		return err
+	}
+
+	childID := "child_workflow_id"
+	workflowFn := func(ctx Context) (string, error) {
+		ctx = WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
+			WorkflowID: childID,
+		})
+		err := ExecuteChildWorkflow(ctx, childWorkflowFn).Get(ctx, nil)
+		if err != nil {
+			return err.Error(), nil
+		}
+		return "", nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterDelayedCallback(func() {
+		env.CancelWorkflowByID(childID, "")
+	}, time.Second)
+
+	env.RegisterWorkflow(workflowFn)
+	env.RegisterWorkflow(childWorkflowFn)
+	env.RegisterActivity(testActivityHeartbeat)
+
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	s.NoError(err)
+
+	var res string
+	s.NoError(env.GetWorkflowResult(&res))
+	s.Contains(res, "canceled")
+}
+
 func testWorkflowHello(ctx Context) (string, error) {
 	ao := ActivityOptions{
 		ScheduleToStartTimeout: time.Minute,
@@ -1764,6 +1804,58 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 	env.OnUpsertSearchAttributes(map[string]interface{}{}).Return(errors.New("empty")).Once()
 	env.OnUpsertSearchAttributes(map[string]interface{}{"CustomIntField": 1}).Return(nil).Once()
 	env.OnUpsertSearchAttributes(mock.Anything).Return(nil).Once()
+
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.Nil(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
+
+	// mix no-mock and mock is not support
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertTypedSearchAttributes() {
+	CustomIntKey := NewSearchAttributeKeyInt64("CustomIntField")
+	workflowFn := func(ctx Context) error {
+		err := UpsertTypedSearchAttributes(ctx)
+		s.Error(err)
+
+		err = UpsertTypedSearchAttributes(ctx, CustomIntKey.ValueSet(1))
+		s.NoError(err)
+
+		err = UpsertTypedSearchAttributes(ctx, CustomIntKey.ValueUnset())
+		s.NoError(err)
+
+		// Falls back to the mock.Anything mock
+		CustomIntKey2 := NewSearchAttributeKeyInt64("CustomIntField2")
+		err = UpsertTypedSearchAttributes(ctx, CustomIntKey2.ValueSet(2))
+		s.NoError(err)
+
+		sa := GetTypedSearchAttributes(ctx)
+		s.NotNil(sa)
+		_, ok := sa.GetInt64(CustomIntKey)
+		s.False(ok)
+		val, ok := sa.GetInt64(CustomIntKey2)
+		s.True(ok)
+		s.Equal(int64(2), val)
+
+		return nil
+	}
+
+	// no mock
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(workflowFn)
+
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.Nil(env.GetWorkflowError())
+	env.AssertExpectations(s.T())
+
+	// has mock
+	env = s.NewTestWorkflowEnvironment()
+	env.OnUpsertTypedSearchAttributes(NewSearchAttributes()).Return(errors.New("empty")).Once()
+	env.OnUpsertTypedSearchAttributes(NewSearchAttributes(CustomIntKey.ValueSet(1))).Return(nil).Once()
+	env.OnUpsertTypedSearchAttributes(NewSearchAttributes(CustomIntKey.ValueUnset())).Return(nil).Once()
+	env.OnUpsertTypedSearchAttributes(mock.Anything).Return(nil).Once()
 
 	env.ExecuteWorkflow(workflowFn)
 	s.True(env.IsWorkflowCompleted())
@@ -4076,4 +4168,31 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowGetCurrentHistoryLength() {
 	var result int
 	s.NoError(env.GetWorkflowResult(&result))
 	s.Equal(17, result)
+}
+
+type dummyWorkflow struct {
+	a *dummyActivity
+}
+
+func (w *dummyWorkflow) SameFuncName(ctx Context, input string) error {
+	return ExecuteActivity(WithActivityOptions(ctx, ActivityOptions{
+		StartToCloseTimeout: time.Minute,
+	}), w.a.SameFuncName, input).Get(ctx, nil)
+}
+
+type dummyActivity struct{}
+
+func (a *dummyActivity) SameFuncName(ctx context.Context, input string) (string, error) {
+	return input, nil
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_SameWorkflowAndActivityNames() {
+	env := s.NewTestWorkflowEnvironment()
+
+	env.OnActivity(new(dummyActivity).SameFuncName, mock.Anything, "input").Return("output", nil)
+
+	env.ExecuteWorkflow(new(dummyWorkflow).SameFuncName, "input")
+
+	s.Require().True(env.IsWorkflowCompleted())
+	s.Require().NoError(env.GetWorkflowError())
 }

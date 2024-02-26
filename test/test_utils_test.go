@@ -314,7 +314,7 @@ func (ts *ConfigAndClientSuiteBase) ensureSearchAttributes() error {
 	}
 	defer client.Close()
 
-	// Add CustomKeywordField attribute if not already present
+	// Add CustomKeywordField and CustomStringField attribute if not already present
 	saResp, err := client.OperatorService().ListSearchAttributes(ctx, &operatorservice.ListSearchAttributesRequest{
 		Namespace: ts.config.Namespace,
 	})
@@ -324,8 +324,11 @@ func (ts *ConfigAndClientSuiteBase) ensureSearchAttributes() error {
 		return nil
 	}
 	_, err = client.OperatorService().AddSearchAttributes(ctx, &operatorservice.AddSearchAttributesRequest{
-		Namespace:        ts.config.Namespace,
-		SearchAttributes: map[string]enumspb.IndexedValueType{"CustomKeywordField": enumspb.INDEXED_VALUE_TYPE_KEYWORD},
+		Namespace: ts.config.Namespace,
+		SearchAttributes: map[string]enumspb.IndexedValueType{
+			"CustomKeywordField": enumspb.INDEXED_VALUE_TYPE_KEYWORD,
+			"CustomStringField":  enumspb.INDEXED_VALUE_TYPE_TEXT,
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("failed adding search attribute: %w", err)

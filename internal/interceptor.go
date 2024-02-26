@@ -197,6 +197,9 @@ type WorkflowOutboundInterceptor interface {
 	// GetInfo intercepts workflow.GetInfo.
 	GetInfo(ctx Context) *WorkflowInfo
 
+	// GetTypedSearchAttributes intercepts workflow.GetTypedSearchAttributes.
+	GetTypedSearchAttributes(ctx Context) SearchAttributes
+
 	// GetUpdateInfo intercepts workflow.GetUpdateInfo.
 	//
 	// NOTE: Experimental
@@ -232,6 +235,9 @@ type WorkflowOutboundInterceptor interface {
 
 	// UpsertSearchAttributes intercepts workflow.UpsertSearchAttributes.
 	UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error
+
+	// UpsertTypedSearchAttributes intercepts workflow.UpsertTypedSearchAttributes.
+	UpsertTypedSearchAttributes(ctx Context, attributes ...SearchAttributeUpdate) error
 
 	// UpsertMemo intercepts workflow.UpsertMemo.
 	UpsertMemo(ctx Context, memo map[string]interface{}) error

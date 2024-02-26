@@ -40,6 +40,7 @@ import (
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/log"
 )
 
 type (
@@ -96,7 +97,7 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 		return nil, err
 	}
 
-	searchAttr, err := serializeSearchAttributes(in.Options.SearchAttributes)
+	searchAttr, err := serializeSearchAttributes(in.Options.SearchAttributes, in.Options.TypedSearchAttributes)
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +276,7 @@ func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, options Sc
 	if err != nil {
 		return err
 	}
-	scheduleDescription, err := scheduleDescriptionFromPB(describeResponse)
+	scheduleDescription, err := scheduleDescriptionFromPB(scheduleHandle.client.logger, describeResponse)
 	if err != nil {
 		return err
 	}
@@ -314,7 +315,7 @@ func (scheduleHandle *scheduleHandleImpl) Describe(ctx context.Context) (*Schedu
 	if err != nil {
 		return nil, err
 	}
-	return scheduleDescriptionFromPB(describeResponse)
+	return scheduleDescriptionFromPB(scheduleHandle.client.logger, describeResponse)
 }
 
 func (scheduleHandle *scheduleHandleImpl) Trigger(ctx context.Context, options ScheduleTriggerOptions) error {
@@ -454,7 +455,10 @@ func convertFromPBScheduleSpec(scheduleSpec *schedulepb.ScheduleSpec) *ScheduleS
 	}
 }
 
-func scheduleDescriptionFromPB(describeResponse *workflowservice.DescribeScheduleResponse) (*ScheduleDescription, error) {
+func scheduleDescriptionFromPB(
+	logger log.Logger,
+	describeResponse *workflowservice.DescribeScheduleResponse,
+) (*ScheduleDescription, error) {
 	if describeResponse == nil {
 		return nil, nil
 	}
@@ -474,7 +478,7 @@ func scheduleDescriptionFromPB(describeResponse *workflowservice.DescribeSchedul
 		nextActionTimes[i] = t.AsTime()
 	}
 
-	actionDescription, err := convertFromPBScheduleAction(describeResponse.Schedule.Action)
+	actionDescription, err := convertFromPBScheduleAction(logger, describeResponse.Schedule.Action)
 	if err != nil {
 		return nil, err
 	}
@@ -560,7 +564,11 @@ func convertFromPBScheduleListEntry(schedule *schedulepb.ScheduleListEntry) *Sch
 	}
 }
 
-func convertToPBScheduleAction(ctx context.Context, client *WorkflowClient, scheduleAction ScheduleAction) (*schedulepb.ScheduleAction, error) {
+func convertToPBScheduleAction(
+	ctx context.Context,
+	client *WorkflowClient,
+	scheduleAction ScheduleAction,
+) (*schedulepb.ScheduleAction, error) {
 	switch action := scheduleAction.(type) {
 	case *ScheduleWorkflowAction:
 		// Set header before interceptor run
@@ -590,9 +598,18 @@ func convertToPBScheduleAction(ctx context.Context, client *WorkflowClient, sche
 			return nil, err
 		}
 
-		searchAttr, err := serializeSearchAttributes(action.SearchAttributes)
+		searchAttrs, err := serializeSearchAttributes(nil, action.TypedSearchAttributes)
 		if err != nil {
 			return nil, err
+		}
+		// Add any untyped search attributes that aren't already there
+		for k, v := range action.UntypedSearchAttributes {
+			if searchAttrs.GetIndexedFields()[k] == nil {
+				if searchAttrs == nil || searchAttrs.IndexedFields == nil {
+					searchAttrs = &commonpb.SearchAttributes{IndexedFields: map[string]*commonpb.Payload{}}
+				}
+				searchAttrs.IndexedFields[k] = v
+			}
 		}
 
 		// get workflow headers from the context
@@ -613,7 +630,7 @@ func convertToPBScheduleAction(ctx context.Context, client *WorkflowClient, sche
 					WorkflowTaskTimeout:      durationpb.New(action.WorkflowTaskTimeout),
 					RetryPolicy:              convertToPBRetryPolicy(action.RetryPolicy),
 					Memo:                     memo,
-					SearchAttributes:         searchAttr,
+					SearchAttributes:         searchAttrs,
 					Header:                   header,
 				},
 			},
@@ -624,7 +641,7 @@ func convertToPBScheduleAction(ctx context.Context, client *WorkflowClient, sche
 	}
 }
 
-func convertFromPBScheduleAction(action *schedulepb.ScheduleAction) (ScheduleAction, error) {
+func convertFromPBScheduleAction(logger log.Logger, action *schedulepb.ScheduleAction) (ScheduleAction, error) {
 	switch action := action.Action.(type) {
 	case *schedulepb.ScheduleAction_StartWorkflow:
 		workflow := action.StartWorkflow
@@ -639,9 +656,19 @@ func convertFromPBScheduleAction(action *schedulepb.ScheduleAction) (ScheduleAct
 			memos[key] = element
 		}
 
-		searchAttributes := make(map[string]interface{})
-		for key, element := range workflow.GetSearchAttributes().GetIndexedFields() {
-			searchAttributes[key] = element
+		searchAttrs := convertToTypedSearchAttributes(logger, workflow.GetSearchAttributes().GetIndexedFields())
+		// Create untyped list for any attribute not in the existing list
+		untypedSearchAttrs := map[string]*commonpb.Payload{}
+		for k, v := range workflow.GetSearchAttributes().GetIndexedFields() {
+			var inTyped bool
+			for typedKey := range searchAttrs.untypedValue {
+				if inTyped = typedKey.GetName() == k; inTyped {
+					break
+				}
+			}
+			if !inTyped {
+				untypedSearchAttrs[k] = v
+			}
 		}
 
 		return &ScheduleWorkflowAction{
@@ -654,7 +681,8 @@ func convertFromPBScheduleAction(action *schedulepb.ScheduleAction) (ScheduleAct
 			WorkflowTaskTimeout:      workflow.GetWorkflowTaskTimeout().AsDuration(),
 			RetryPolicy:              convertFromPBRetryPolicy(workflow.RetryPolicy),
 			Memo:                     memos,
-			SearchAttributes:         searchAttributes,
+			TypedSearchAttributes:    searchAttrs,
+			UntypedSearchAttributes:  untypedSearchAttrs,
 		}, nil
 	default:
 		// TODO maybe just panic instead?

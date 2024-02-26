@@ -269,13 +269,18 @@ type (
 		// On ScheduleHandle.Describe() or ScheduleHandle.Update() Memo will be returned as *commonpb.Payload.
 		Memo map[string]interface{}
 
-		// SearchAttributes - Optional indexed info that can be used in query of List/Scan/Count workflow APIs. The key and value type must be registered on Temporal server side.
-		// Use GetSearchAttributes API to get valid key and corresponding value type.
-		// On ScheduleHandle.Describe() or ScheduleHandle.Update() SearchAttributes will be returned as *commonpb.Payload.
-		// For supported operations on different server versions see [Visibility].
+		// TypedSearchAttributes - Optional indexed info that can be used in query of List/Scan/Count workflow APIs. The key
+		// and value type must be registered on Temporal server side. For supported operations on different server versions
+		// see [Visibility].
 		//
 		// [Visibility]: https://docs.temporal.io/visibility
-		SearchAttributes map[string]interface{}
+		TypedSearchAttributes SearchAttributes
+
+		// UntypedSearchAttributes - These are set upon update for older schedules that did not have typed attributes. This
+		// should never be used for create.
+		//
+		// Deprecated - This is only for update of older search attributes. This may be removed in a future version.
+		UntypedSearchAttributes map[string]*commonpb.Payload
 	}
 
 	// ScheduleOptions configure the parameters for creating a schedule.
@@ -344,8 +349,20 @@ type (
 		// Use GetSearchAttributes API to get valid key and corresponding value type.
 		// For supported operations on different server versions see [Visibility].
 		//
+		// Deprecated: use TypedSearchAttributes instead.
+		//
 		// [Visibility]: https://docs.temporal.io/visibility
 		SearchAttributes map[string]interface{}
+
+		// TypedSearchAttributes - Specifies Search Attributes that will be attached to the Workflow. Search Attributes are
+		// additional indexed information attributed to workflow and used for search and visibility. The search attributes
+		// can be used in query of List/Scan/Count workflow APIs. The key and its value type must be registered on Temporal
+		// server side. For supported operations on different server versions see [Visibility].
+		//
+		// Optional: default to none.
+		//
+		// [Visibility]: https://docs.temporal.io/visibility
+		TypedSearchAttributes SearchAttributes
 	}
 
 	// ScheduleWorkflowExecution contains details on a workflows execution stared by a schedule.

@@ -196,6 +196,24 @@ type (
 		// VersioningIntent specifies whether the continued workflow should run on a worker with a
 		// compatible build ID or not. See VersioningIntent.
 		VersioningIntent VersioningIntent
+
+		// This is by default nil but may be overridden using NewContinueAsNewErrorWithOptions.
+		// It specifies the retry policy which gets carried over to the next run.
+		// If not set, the current workflow's retry policy will be carried over automatically.
+		//
+		// NOTES:
+		// 1. This is always nil when returned from a client as a workflow response.
+		// 2. Unlike other options that can be overridden using WithWorkflowTaskQueue, WithWorkflowRunTimeout, etc.
+		//    we can't introduce an option, say WithWorkflowRetryPolicy, for backward compatibility.
+		//    See #676 or IntegrationTestSuite::TestContinueAsNewWithWithChildWF for more details.
+		RetryPolicy *RetryPolicy
+	}
+
+	// ContinueAsNewErrorOptions specifies optional attributes to be carried over to the next run.
+	ContinueAsNewErrorOptions struct {
+		// RetryPolicy specifies the retry policy to be used for the next run.
+		// If nil, the current workflow's retry policy will be used.
+		RetryPolicy *RetryPolicy
 	}
 
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
@@ -459,6 +477,20 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) er
 	return i.NewContinueAsNewError(ctx, wfn, args...)
 }
 
+// NewContinueAsNewErrorWithOptions creates ContinueAsNewError instance with additional options.
+func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOptions, wfn interface{}, args ...interface{}) error {
+	err := NewContinueAsNewError(ctx, wfn, args...)
+
+	var continueAsNewErr *ContinueAsNewError
+	if errors.As(err, &continueAsNewErr) {
+		if options.RetryPolicy != nil {
+			continueAsNewErr.RetryPolicy = options.RetryPolicy
+		}
+	}
+
+	return err
+}
+
 func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
 	ctx Context,
 	wfn interface{},
@@ -489,6 +521,7 @@ func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
 		WorkflowRunTimeout:       options.WorkflowRunTimeout,
 		WorkflowTaskTimeout:      options.WorkflowTaskTimeout,
 		VersioningIntent:         options.VersioningIntent,
+		RetryPolicy:              nil, // The retry policy can't be propagated like other options due to #676.
 	}
 }
 

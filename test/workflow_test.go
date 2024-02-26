@@ -38,7 +38,6 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
-
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/temporal"
@@ -414,6 +413,93 @@ func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, ta
 	return "", workflow.NewContinueAsNewError(ctx, w.ContinueAsNewWithOptions, count-1, taskQueue)
 }
 
+func (w *Workflows) ContinueAsNewWithRetryPolicy(
+	ctx workflow.Context,
+	initialMaximumAttempts int,
+	newMaximumAttempts int,
+	expectedMaximumAttempts int,
+	iterations int,
+) (string, error) {
+	info := workflow.GetInfo(ctx)
+	if info.RetryPolicy == nil {
+		return "", errors.New("retry policy is not carried over")
+	}
+
+	expected := expectedMaximumAttempts
+	actual := info.RetryPolicy.MaximumAttempts
+	if expected != int(actual) {
+		return "", fmt.Errorf("unexpected retry policy: expected=%v, actual=%v, iterations=%v", expected, actual, iterations)
+	}
+
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	err := workflow.ExecuteActivity(ctx, "Prefix_ToUpper", "foo").Get(ctx, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to execute activity: %w", err)
+	}
+
+	if iterations == 0 {
+		return fmt.Sprintf("End of workflow: %v", actual), nil
+	}
+
+	return "", workflow.NewContinueAsNewErrorWithOptions(
+		ctx,
+		workflow.ContinueAsNewErrorOptions{
+			RetryPolicy: &temporal.RetryPolicy{
+				InitialInterval:    time.Second,
+				BackoffCoefficient: 2.0,
+				MaximumInterval:    time.Second,
+				MaximumAttempts:    int32(newMaximumAttempts),
+			},
+		},
+		w.ContinueAsNewWithRetryPolicy,
+		initialMaximumAttempts,
+		newMaximumAttempts,
+		newMaximumAttempts,
+		iterations-1,
+	)
+}
+
+func (w *Workflows) ContinueAsNewWithChildWF(
+	ctx workflow.Context,
+	iterations int,
+) error {
+	const (
+		childWorkflowMaximumAttempts = 6
+	)
+
+	info := workflow.GetInfo(ctx)
+	if info.RetryPolicy != nil {
+		return errors.New("retry policy should not be carried over from the child workflow")
+	}
+
+	opts := workflow.ChildWorkflowOptions{
+		WorkflowTaskTimeout:      5 * time.Second,
+		WorkflowExecutionTimeout: 9 * time.Second,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval:    time.Second,
+			BackoffCoefficient: 2.0,
+			MaximumInterval:    time.Second,
+			MaximumAttempts:    childWorkflowMaximumAttempts,
+		},
+	}
+
+	// WARNING: this overrides the retry policy in the parent workflow context.
+	// As a result, NewContinueAsNewError cannot inherit the retry policy from the WorkflowOptions for backward compatibility.
+	ctx = workflow.WithChildOptions(ctx, opts)
+	err := workflow.ExecuteChildWorkflow(ctx, w.childWithRetryPolicy, childWorkflowMaximumAttempts, 0).Get(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to execute child workflow: %w", err)
+	}
+
+	if iterations == 0 {
+		return nil
+	}
+
+	// To override the retry policy in the parent workflow context, use NewContinueAsNewErrorWithOptions.
+	// See ContinueAsNewWithRetryPolicy for an example.
+	return workflow.NewContinueAsNewError(ctx, w.ContinueAsNewWithChildWF, iterations-1)
+}
+
 func (w *Workflows) IDReusePolicy(
 	ctx workflow.Context,
 	childWFID string,
@@ -460,6 +546,46 @@ func (w *Workflows) IDReusePolicy(
 	}
 
 	return ans1 + ans2, nil
+}
+
+func (w *Workflows) ChildWorkflowWithRetryPolicy(ctx workflow.Context, expectedMaximumAttempts int, iterations int) error {
+	return w.childWorkflowWithRetryPolicy(ctx, w.childWithRetryPolicy, expectedMaximumAttempts, iterations)
+}
+
+func (w *Workflows) ChildWorkflowWithCustomRetryPolicy(ctx workflow.Context, expectedMaximumAttempts int, iterations int) error {
+	return w.childWorkflowWithRetryPolicy(ctx, w.childWithCustomRetryPolicy, expectedMaximumAttempts, iterations)
+}
+
+func (w *Workflows) childWorkflowWithRetryPolicy(ctx workflow.Context, wfFunc interface{}, expectedMaximumAttempts int, iterations int) error {
+	const (
+		// Note that this value is different from the one specified by the parent workflow.
+		// See IntegrationTestSuite::testChildWFWithRetryPolicy.
+		childWorkflowMaximumAttempts = 5
+	)
+
+	info := workflow.GetInfo(ctx)
+	if info.RetryPolicy == nil {
+		return errors.New("retry policy is not carried over")
+	}
+
+	expected := expectedMaximumAttempts
+	actual := int(info.RetryPolicy.MaximumAttempts)
+	if expected != actual {
+		return fmt.Errorf("unexpected retry policy: expected=%v, actual=%v, iterations=%v", expected, actual, iterations)
+	}
+
+	opts := workflow.ChildWorkflowOptions{
+		WorkflowTaskTimeout:      5 * time.Second,
+		WorkflowExecutionTimeout: 9 * time.Second,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval:    time.Second,
+			BackoffCoefficient: 2.0,
+			MaximumInterval:    time.Second,
+			MaximumAttempts:    childWorkflowMaximumAttempts,
+		},
+	}
+	ctx = workflow.WithChildOptions(ctx, opts)
+	return workflow.ExecuteChildWorkflow(ctx, wfFunc, childWorkflowMaximumAttempts, iterations).Get(ctx, nil)
 }
 
 func (w *Workflows) ChildWorkflowRetryOnError(ctx workflow.Context) error {
@@ -1099,6 +1225,76 @@ func (w *Workflows) child(ctx workflow.Context, arg string, mustFail bool) (stri
 		return "", fmt.Errorf("failing-on-purpose")
 	}
 	return result, err
+}
+
+func (w *Workflows) childWithRetryPolicy(ctx workflow.Context, expectedMaximumAttempts int, iterations int) error {
+	info := workflow.GetInfo(ctx)
+	if info.RetryPolicy == nil {
+		return errors.New("retry policy is not carried over")
+	}
+
+	expected := expectedMaximumAttempts
+	actual := int(info.RetryPolicy.MaximumAttempts)
+	if expected != actual {
+		return fmt.Errorf("unexpected retry policy: expected=%v, actual=%v, iterations=%v", expected, actual, iterations)
+	}
+
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	err := workflow.ExecuteActivity(ctx, "Prefix_ToUpper", "foo").Get(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to execute activity: %w", err)
+	}
+
+	if iterations > 0 {
+		return workflow.NewContinueAsNewError(ctx, w.childWithRetryPolicy, expectedMaximumAttempts, iterations-1)
+	}
+
+	return nil
+}
+
+func (w *Workflows) childWithCustomRetryPolicy(ctx workflow.Context, expectedMaximumAttempts int, iterations int) error {
+	const (
+		// Note that this value is different from the one specified for the first run.
+		// See childWorkflowWithRetryPolicy.
+		customMaximumAttempts = 7
+	)
+
+	info := workflow.GetInfo(ctx)
+	if info.RetryPolicy == nil {
+		return errors.New("retry policy is not carried over")
+	}
+
+	// Note that expectedMaximumAttempts is 5 for the first run,
+	// and it becomes 7 for subsequent runs.
+	if expectedMaximumAttempts != int(info.RetryPolicy.MaximumAttempts) {
+		return fmt.Errorf("unexpected retry policy: expected=%v, actual=%v", expectedMaximumAttempts, info.RetryPolicy.MaximumAttempts)
+	}
+
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	err := workflow.ExecuteActivity(ctx, "Prefix_ToUpper", "foo").Get(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to execute activity: %w", err)
+	}
+
+	if iterations > 0 {
+		// Override the maximum attempts for the next run.
+		return workflow.NewContinueAsNewErrorWithOptions(
+			ctx,
+			workflow.ContinueAsNewErrorOptions{
+				RetryPolicy: &temporal.RetryPolicy{
+					InitialInterval:    time.Second,
+					BackoffCoefficient: 2.0,
+					MaximumInterval:    time.Second,
+					MaximumAttempts:    int32(customMaximumAttempts),
+				},
+			},
+			w.childWithCustomRetryPolicy,
+			customMaximumAttempts,
+			iterations-1,
+		)
+	}
+
+	return nil
 }
 
 func (w *Workflows) childForMemoAndSearchAttr(ctx workflow.Context) (result string, err error) {
@@ -2286,6 +2482,90 @@ func (w *Workflows) ForcedNonDeterminism(ctx workflow.Context, sameCommandButDif
 	return
 }
 
+func (w *Workflows) ScheduleTypedSearchAttributesWorkflow(ctx workflow.Context) (string, error) {
+	attributes := workflow.GetTypedSearchAttributes(ctx)
+
+	scheduleStartTimeKey := temporal.NewSearchAttributeKeyTime("TemporalScheduledStartTime")
+	scheduleByIDKey := temporal.NewSearchAttributeKeyKeyword("TemporalScheduledById")
+
+	_, ok := attributes.GetTime(scheduleStartTimeKey)
+	if !ok {
+		return "", errors.New("missing TemporalScheduledStartTime")
+	}
+
+	scheduleByID, ok := attributes.GetKeyword(scheduleByIDKey)
+	if !ok {
+		return "", errors.New("missing TemporalScheduledById")
+	}
+	return scheduleByID, nil
+}
+
+func (w *Workflows) UpsertTypedSearchAttributesWorkflow(ctx workflow.Context, sleepBetweenUpsert bool) error {
+	// Do a get version and confirmed patched attribute. First confirm change
+	// version not there.
+	changeKey := temporal.NewSearchAttributeKeyKeywordList("TemporalChangeVersion")
+	if workflow.GetInfo(ctx).SearchAttributes.GetIndexedFields()["TemporalChangeVersion"] != nil {
+		return fmt.Errorf("change version unexpectedly present")
+	} else if _, ok := workflow.GetTypedSearchAttributes(ctx).GetKeywordList(changeKey); ok {
+		return fmt.Errorf("change version unexpectedly present")
+	}
+	// Now do a get version and confirm it is set afterwards
+	_ = workflow.GetVersion(ctx, "some-id-1", workflow.DefaultVersion, 0)
+	if sleepBetweenUpsert {
+		_ = workflow.Sleep(ctx, 1*time.Millisecond)
+	}
+	if p := workflow.GetInfo(ctx).SearchAttributes.GetIndexedFields()["TemporalChangeVersion"]; p == nil {
+		return fmt.Errorf("change version not present")
+	} else if string(p.Data) != `["some-id-1-0"]` {
+		return fmt.Errorf("change version invalid, got: %s", p.Data)
+	} else if s, _ := workflow.GetTypedSearchAttributes(ctx).GetKeywordList(changeKey); len(s) != 1 || s[0] != "some-id-1-0" {
+		return fmt.Errorf("change version invalid: got: %v", s)
+	}
+
+	// Check string attribute
+	attributes := workflow.GetTypedSearchAttributes(ctx)
+	stringKey := temporal.NewSearchAttributeKeyString("CustomStringField")
+	value, ok := attributes.GetString(stringKey)
+	if !ok || value != "CustomStringFieldValue" {
+		return errors.New("search attribute CustomStringField not present or value incorrect")
+	}
+
+	// Add a new search attribute
+	key := temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
+	err := workflow.UpsertTypedSearchAttributes(ctx, key.ValueSet("CustomKeywordFieldValue"))
+	if err != nil {
+		return err
+	}
+	if sleepBetweenUpsert {
+		_ = workflow.Sleep(ctx, 1*time.Millisecond)
+	}
+
+	// Verify the search attributes is added
+	attributes = workflow.GetTypedSearchAttributes(ctx)
+	value, ok = attributes.GetKeyword(key)
+	if !ok || value != "CustomKeywordFieldValue" {
+		return errors.New("search attribute CustomKeywordField not present or value incorrect")
+	}
+
+	// Remove a search attribute
+	err = workflow.UpsertTypedSearchAttributes(ctx, key.ValueUnset())
+	if err != nil {
+		return err
+	}
+	if sleepBetweenUpsert {
+		_ = workflow.Sleep(ctx, 1*time.Millisecond)
+	}
+
+	// Verify the search attributes is removed
+	attributes = workflow.GetTypedSearchAttributes(ctx)
+	value, ok = attributes.GetKeyword(key)
+	if ok || value != "" {
+		return errors.New("search attribute CustomKeywordField not deleted")
+	}
+	return nil
+
+}
+
 func (w *Workflows) UpsertSearchAttributesConditional(ctx workflow.Context, maxTicks int) error {
 	var waitTickCount int
 	tickCh := workflow.GetSignalChannel(ctx, "tick")
@@ -2524,6 +2804,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.CancelTimerViaDeferAfterWFTFailure)
 	worker.RegisterWorkflow(w.CascadingCancellation)
 	worker.RegisterWorkflow(w.WaitForCancelWithDisconnectedContextWorkflow)
+	worker.RegisterWorkflow(w.ChildWorkflowWithRetryPolicy)
+	worker.RegisterWorkflow(w.ChildWorkflowWithCustomRetryPolicy)
 	worker.RegisterWorkflow(w.ChildWorkflowRetryOnError)
 	worker.RegisterWorkflow(w.ChildWorkflowRetryOnTimeout)
 	worker.RegisterWorkflow(w.ChildWorkflowSuccess)
@@ -2542,6 +2824,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.UpsertSearchAttributesConditional)
 	worker.RegisterWorkflow(w.UpsertMemoConditional)
 	worker.RegisterWorkflow(w.ContinueAsNewWithOptions)
+	worker.RegisterWorkflow(w.ContinueAsNewWithRetryPolicy)
+	worker.RegisterWorkflow(w.ContinueAsNewWithChildWF)
 	worker.RegisterWorkflow(w.IDReusePolicy)
 	worker.RegisterWorkflow(w.InspectActivityInfo)
 	worker.RegisterWorkflow(w.InspectLocalActivityInfo)
@@ -2590,12 +2874,16 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.HistoryLengths)
 	worker.RegisterWorkflow(w.HeartbeatSpecificCount)
 	worker.RegisterWorkflow(w.UpsertMemo)
+	worker.RegisterWorkflow(w.UpsertTypedSearchAttributesWorkflow)
+	worker.RegisterWorkflow(w.ScheduleTypedSearchAttributesWorkflow)
 	worker.RegisterWorkflow(w.SessionFailedStateWorkflow)
 	worker.RegisterWorkflow(w.VersionLoopWorkflow)
 	worker.RegisterWorkflow(w.RaceOnCacheEviction)
 	worker.RegisterWorkflow(w.UpdateWithValidatorWorkflow)
 
 	worker.RegisterWorkflow(w.child)
+	worker.RegisterWorkflow(w.childWithRetryPolicy)
+	worker.RegisterWorkflow(w.childWithCustomRetryPolicy)
 	worker.RegisterWorkflow(w.childForMemoAndSearchAttr)
 	worker.RegisterWorkflow(w.childWorkflowWaitOnSignal)
 	worker.RegisterWorkflow(w.childWorkflowWaitOnContextCancel)

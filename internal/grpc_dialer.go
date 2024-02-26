@@ -72,10 +72,10 @@ const (
 	defaultMaxPayloadSize = 128 * mb
 
 	// defaultKeepAliveTime is the keep alive time if one is not specified.
-	defaultKeepAliveTime = 15 * time.Second
+	defaultKeepAliveTime = 30 * time.Second
 
 	// defaultKeepAliveTimeout is the keep alive timeout if one is not specified.
-	defaultKeepAliveTimeout = 30 * time.Second
+	defaultKeepAliveTimeout = 15 * time.Second
 )
 
 func dial(params dialParameters) (*grpc.ClientConn, error) {

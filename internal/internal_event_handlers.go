@@ -391,6 +391,10 @@ func (wc *workflowEnvironmentImpl) WorkflowInfo() *WorkflowInfo {
 	return wc.workflowInfo
 }
 
+func (wc *workflowEnvironmentImpl) TypedSearchAttributes() SearchAttributes {
+	return convertToTypedSearchAttributes(wc.logger, wc.workflowInfo.SearchAttributes.GetIndexedFields())
+}
+
 func (wc *workflowEnvironmentImpl) Complete(result *commonpb.Payloads, err error) {
 	wc.completeHandler(result, err)
 }
@@ -444,6 +448,23 @@ func (wc *workflowEnvironmentImpl) UpsertSearchAttributes(attributes map[string]
 	return nil
 }
 
+func (wc *workflowEnvironmentImpl) UpsertTypedSearchAttributes(attributes SearchAttributes) error {
+	rawSearchAttributes, err := serializeTypedSearchAttributes(attributes.untypedValue)
+	if err != nil {
+		return err
+	}
+
+	if _, ok := rawSearchAttributes.GetIndexedFields()[TemporalChangeVersion]; ok {
+		return errors.New("TemporalChangeVersion is a reserved key that cannot be set, please use other key")
+	}
+
+	attr := make(map[string]interface{})
+	for k, v := range rawSearchAttributes.GetIndexedFields() {
+		attr[k] = v
+	}
+	return wc.UpsertSearchAttributes(attr)
+}
+
 func (wc *workflowEnvironmentImpl) updateWorkflowInfoWithSearchAttributes(attributes *commonpb.SearchAttributes) {
 	wc.workflowInfo.SearchAttributes = mergeSearchAttributes(wc.workflowInfo.SearchAttributes, attributes)
 }
@@ -469,7 +490,7 @@ func validateAndSerializeSearchAttributes(attributes map[string]interface{}) (*c
 	if len(attributes) == 0 {
 		return nil, errSearchAttributesNotSet
 	}
-	attr, err := serializeSearchAttributes(attributes)
+	attr, err := serializeUntypedSearchAttributes(attributes)
 	if err != nil {
 		return nil, err
 	}
@@ -542,7 +563,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 		callback(nil, err)
 		return
 	}
-	searchAttr, err := serializeSearchAttributes(params.SearchAttributes)
+	searchAttr, err := serializeUntypedSearchAttributes(params.SearchAttributes)
 	if err != nil {
 		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
 			startedHandler(WorkflowExecution{}, &ChildWorkflowExecutionAlreadyStartedError{})
@@ -783,12 +804,12 @@ func (wc *workflowEnvironmentImpl) RequestCancelTimer(timerID TimerID) {
 
 func validateVersion(changeID string, version, minSupported, maxSupported Version) {
 	if version < minSupported {
-		panicIllegalState(fmt.Sprintf("Workflow code removed support of version %v. "+
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] Workflow code removed support of version %v. "+
 			"for \"%v\" changeID. The oldest supported version is %v",
 			version, changeID, minSupported))
 	}
 	if version > maxSupported {
-		panicIllegalState(fmt.Sprintf("Workflow code is too old to support version %v "+
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] Workflow code is too old to support version %v "+
 			"for \"%v\" changeID. The maximum supported version is %v",
 			version, changeID, maxSupported))
 	}
@@ -864,7 +885,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 			for k := range wc.sideEffectResult {
 				keys = append(keys, k)
 			}
-			panicIllegalState(fmt.Sprintf("No cached result found for side effectID=%v. KnownSideEffects=%v",
+			panicIllegalState(fmt.Sprintf("[TMPRL1100] No cached result found for side effectID=%v. KnownSideEffects=%v",
 				sideEffectID, keys))
 		}
 
@@ -976,7 +997,7 @@ func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interfa
 
 	if wc.isReplay {
 		// This should not happen
-		panicIllegalState(fmt.Sprintf("Non deterministic workflow code change detected. MutableSideEffect API call doesn't have a correspondent event in the workflow history. MutableSideEffect ID: %s", id))
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] Non deterministic workflow code change detected. MutableSideEffect API call doesn't have a correspondent event in the workflow history. MutableSideEffect ID: %s", id))
 	}
 
 	return wc.recordMutableSideEffect(id, callCount, wc.encodeValue(f()))
@@ -1566,7 +1587,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 	if la, ok := weh.pendingLaTasks[lamd.ActivityID]; ok {
 		if len(lamd.ActivityType) > 0 && lamd.ActivityType != la.params.ActivityType {
 			// history marker mismatch to the current code.
-			panicMsg := fmt.Sprintf("code execute local activity %v, but history event found %v, markerData: %v", la.params.ActivityType, lamd.ActivityType, markerData)
+			panicMsg := fmt.Sprintf("[TMPRL1100] code execute local activity %v, but history event found %v, markerData: %v", la.params.ActivityType, lamd.ActivityType, markerData)
 			panicIllegalState(panicMsg)
 		}
 		weh.commandsHelper.recordLocalActivityMarker(lamd.ActivityID, details, failure)

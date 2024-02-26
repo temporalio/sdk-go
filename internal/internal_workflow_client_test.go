@@ -1475,12 +1475,12 @@ func (s *workflowClientTestSuite) TestGetWorkflowMemo() {
 
 func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	var input1 map[string]interface{}
-	result1, err := serializeSearchAttributes(input1)
+	result1, err := serializeUntypedSearchAttributes(input1)
 	s.NoError(err)
 	s.Nil(result1)
 
 	input1 = make(map[string]interface{})
-	result2, err := serializeSearchAttributes(input1)
+	result2, err := serializeUntypedSearchAttributes(input1)
 	s.NoError(err)
 	s.NotNil(result2)
 	s.Equal(0, len(result2.IndexedFields))
@@ -1488,7 +1488,7 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	input1 = map[string]interface{}{
 		"t1": "v1",
 	}
-	result3, err := serializeSearchAttributes(input1)
+	result3, err := serializeUntypedSearchAttributes(input1)
 	s.NoError(err)
 	s.NotNil(result3)
 	s.Equal(1, len(result3.IndexedFields))
@@ -1502,7 +1502,7 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	input1 = map[string]interface{}{
 		"payload": p,
 	}
-	result4, err := serializeSearchAttributes(input1)
+	result4, err := serializeUntypedSearchAttributes(input1)
 	s.NoError(err)
 	s.NotNil(result3)
 	s.Equal(1, len(result3.IndexedFields))
@@ -1512,7 +1512,7 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	input1 = map[string]interface{}{
 		"non-serializable": make(chan int),
 	}
-	_, err = serializeSearchAttributes(input1)
+	_, err = serializeUntypedSearchAttributes(input1)
 	s.Error(err)
 }
 
@@ -1772,6 +1772,9 @@ func TestUpdate(t *testing.T) {
 		err = handle.Get(context.TODO(), &got)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
+		// Verify that calling Get with nil does not panic
+		err = handle.Get(context.TODO(), nil)
+		require.NoError(t, err)
 	})
 	t.Run("sync error", func(t *testing.T) {
 		svc, client := init(t)
@@ -1810,13 +1813,16 @@ func TestUpdate(t *testing.T) {
 					Outcome: mustOutcome(t, want),
 				},
 				nil,
-			)
+			).Times(2)
 		handle, err := client.UpdateWorkflowWithOptions(context.TODO(), req)
 		require.NoError(t, err)
 		var got string
 		err = handle.Get(context.TODO(), &got)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
+		// Verify that calling Get with nil does not panic
+		err = handle.Get(context.TODO(), nil)
+		require.NoError(t, err)
 	})
 	t.Run("async error", func(t *testing.T) {
 		svc, client := init(t)
