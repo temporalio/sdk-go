@@ -50,6 +50,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
+	updatepb "go.temporal.io/api/update/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.uber.org/goleak"
@@ -1460,7 +1461,7 @@ func (ts *IntegrationTestSuite) TestUpdateValidatorRejected() {
 	run, err := ts.client.ExecuteWorkflow(ctx,
 		wfOptions, ts.workflows.UpdateWithValidatorWorkflow)
 	ts.Nil(err)
-	_, err = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "__stack_trace")
+	_, err = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), client.QueryTypeStackTrace)
 	ts.NoError(err)
 	// Send a bad update request that will get rejected
 	handler, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update", "")
@@ -1476,17 +1477,30 @@ func (ts *IntegrationTestSuite) TestUpdateWorkflowCancelled() {
 	ctx := context.Background()
 	wfOptions := ts.startWorkflowOptions("test-update-workflow-cancelled")
 	run, err := ts.client.ExecuteWorkflow(ctx,
-		wfOptions, ts.workflows.UpdateWithValidatorWorkflow)
+		wfOptions, ts.workflows.UpdateCancelableWorkflow)
 	ts.Nil(err)
-	_, err = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "__stack_trace")
-	ts.NoError(err)
-	// Send a bad update request that will get rejected
-	handler, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update", "")
-	ts.NoError(err)
-	err = handler.Get(ctx, nil)
-	ts.Error(err)
-	// complete workflow
-	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
+
+	// Send a few updates to the workflow
+	handles := make([]client.WorkflowUpdateHandle, 0, 5)
+	for i := 0; i < 5; i++ {
+		handler, err := ts.client.UpdateWorkflowWithOptions(ctx, &client.UpdateWorkflowWithOptionsRequest{
+			UpdateID:   fmt.Sprintf("test-update-%d", i),
+			WorkflowID: run.GetID(),
+			RunID:      run.GetRunID(),
+			UpdateName: "update",
+			WaitPolicy: &updatepb.WaitPolicy{
+				LifecycleStage: enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ACCEPTED,
+			},
+		})
+		ts.NoError(err)
+		handles = append(handles, handler)
+	}
+	// All updates should complete with a cancellation error
+	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+	for _, handle := range handles {
+		err = handle.Get(ctx, nil)
+		ts.NotNil(err.(*temporal.CanceledError))
+	}
 	ts.NoError(run.Get(ctx, nil))
 }
 

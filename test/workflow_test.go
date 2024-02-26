@@ -304,6 +304,17 @@ func (w *Workflows) ActivityRetryOnHBTimeout(ctx workflow.Context) ([]string, er
 	return []string{"heartbeatAndSleep", "heartbeatAndSleep", "heartbeatAndSleep"}, nil
 }
 
+func (w *Workflows) UpdateCancelableWorkflow(ctx workflow.Context) error {
+	err := workflow.SetUpdateHandler(ctx, "update", func(ctx workflow.Context) error {
+		return workflow.Sleep(ctx, time.Hour)
+	})
+	if err != nil {
+		return errors.New("failed to register update handler")
+	}
+	ctx.Done().Receive(ctx, nil)
+	return nil
+}
+
 func (w *Workflows) UpdateInfoWorkflow(ctx workflow.Context) error {
 	err := workflow.SetUpdateHandlerWithOptions(ctx, "update", func(ctx workflow.Context) (string, error) {
 		return workflow.GetUpdateInfo(ctx).ID, nil
@@ -323,6 +334,7 @@ func (w *Workflows) UpdateInfoWorkflow(ctx workflow.Context) error {
 }
 
 func (w *Workflows) UpdateWithValidatorWorkflow(ctx workflow.Context) error {
+	workflow.GetLogger(ctx).Info("UpdateWithValidatorWorkflow started")
 	workflow.Go(ctx, func(ctx workflow.Context) {
 		_ = workflow.Sleep(ctx, time.Minute)
 	})
@@ -2948,6 +2960,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.UpdateRejectedWithOtherGoRoutine)
 	worker.RegisterWorkflow(w.UpdateSettingHandlerInGoroutine)
 	worker.RegisterWorkflow(w.UpdateSettingHandlerInHandler)
+	worker.RegisterWorkflow(w.UpdateCancelableWorkflow)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childWithRetryPolicy)
