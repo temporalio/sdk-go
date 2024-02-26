@@ -33,7 +33,6 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
@@ -464,7 +463,6 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(
 			}
 		}
 		eagerReserved := wtp.eagerActivityExecutor.applyToRequest(request)
-		wtp.logger.Info("RespondWorkflowTaskCompleted.", "request", protojson.Format(request))
 		response, err = wtp.service.RespondWorkflowTaskCompleted(grpcCtx, request)
 		if err != nil {
 			traceLog(func() {

@@ -334,7 +334,6 @@ func (w *Workflows) UpdateInfoWorkflow(ctx workflow.Context) error {
 }
 
 func (w *Workflows) UpdateWithValidatorWorkflow(ctx workflow.Context) error {
-	workflow.GetLogger(ctx).Info("UpdateWithValidatorWorkflow started")
 	workflow.Go(ctx, func(ctx workflow.Context) {
 		_ = workflow.Sleep(ctx, time.Minute)
 	})
