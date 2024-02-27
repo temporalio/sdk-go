@@ -131,6 +131,7 @@ type (
 		// Any value set from Workflow or LocalActivity will be silently ignored.
 		// It is impossible to specify immediate retry as it is indistinguishable from the default value. As a
 		// workaround you could set NextRetryDelay to some small value.
+		// NOTE: This is not currently supported by the Temporal Server as of 1.23.0.
 		NextRetryDelay time.Duration
 	}
 
