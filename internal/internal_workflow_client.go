@@ -787,7 +787,7 @@ type UpdateWorkflowWithOptionsRequest struct {
 
 // WorkflowUpdateHandle is a handle to a workflow execution update process. The
 // update may or may not have completed so an instance of this type functions
-// simlar to a Future with respect to the outcome of the update. If the update
+// similar to a Future with respect to the outcome of the update. If the update
 // is rejected or returns an error, the Get function on this type will return
 // that error through the output valuePtr.
 // NOTE: Experimental

@@ -1360,7 +1360,6 @@ func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionStarted(
 	// replay sees the _final_ value of applied flags, not intermediate values
 	// as the value varies by WFT)
 	weh.sdkFlags.tryUse(SDKFlagProtocolMessageCommand, !weh.isReplay)
-	weh.sdkFlags.tryUse(SDKPriorityUpdateHandling, !weh.isReplay)
 
 	// Invoke the workflow.
 	weh.workflowDefinition.Execute(weh, attributes.Header, attributes.Input)

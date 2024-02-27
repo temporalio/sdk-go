@@ -494,6 +494,8 @@ func (wtp *workflowTaskPoller) errorToFailWorkflowTask(taskToken []byte, err err
 		}
 	} else if _, mismatch := err.(historyMismatchError); mismatch {
 		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
+	} else if _, unknown := err.(unknownSdkFlagError); unknown {
+		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
 	}
 
 	builtRequest := &workflowservice.RespondWorkflowTaskFailedRequest{

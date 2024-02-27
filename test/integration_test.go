@@ -50,6 +50,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
+	updatepb "go.temporal.io/api/update/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.uber.org/goleak"
@@ -1460,7 +1461,7 @@ func (ts *IntegrationTestSuite) TestUpdateValidatorRejected() {
 	run, err := ts.client.ExecuteWorkflow(ctx,
 		wfOptions, ts.workflows.UpdateWithValidatorWorkflow)
 	ts.Nil(err)
-	_, err = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "__stack_trace")
+	_, err = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), client.QueryTypeStackTrace)
 	ts.NoError(err)
 	// Send a bad update request that will get rejected
 	handler, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update", "")
@@ -1469,6 +1470,37 @@ func (ts *IntegrationTestSuite) TestUpdateValidatorRejected() {
 	ts.Error(err)
 	// complete workflow
 	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
+	ts.NoError(run.Get(ctx, nil))
+}
+
+func (ts *IntegrationTestSuite) TestUpdateWorkflowCancelled() {
+	ctx := context.Background()
+	wfOptions := ts.startWorkflowOptions("test-update-workflow-cancelled")
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		wfOptions, ts.workflows.UpdateCancelableWorkflow)
+	ts.Nil(err)
+
+	// Send a few updates to the workflow
+	handles := make([]client.WorkflowUpdateHandle, 0, 5)
+	for i := 0; i < 5; i++ {
+		handler, err := ts.client.UpdateWorkflowWithOptions(ctx, &client.UpdateWorkflowWithOptionsRequest{
+			UpdateID:   fmt.Sprintf("test-update-%d", i),
+			WorkflowID: run.GetID(),
+			RunID:      run.GetRunID(),
+			UpdateName: "update",
+			WaitPolicy: &updatepb.WaitPolicy{
+				LifecycleStage: enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ACCEPTED,
+			},
+		})
+		ts.NoError(err)
+		handles = append(handles, handler)
+	}
+	// All updates should complete with a cancellation error
+	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+	for _, handle := range handles {
+		err = handle.Get(ctx, nil)
+		ts.NotNil(err.(*temporal.CanceledError))
+	}
 	ts.NoError(run.Get(ctx, nil))
 }
 
@@ -2620,6 +2652,74 @@ func (ts *IntegrationTestSuite) TestWaitOnUpdate() {
 	ts.Equal(1, result)
 }
 
+func (ts *IntegrationTestSuite) TestUpdateHandlerRegisteredLate() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-update-handler-registered-late")
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		options,
+		ts.workflows.UpdateHandlerRegisteredLate)
+	ts.NoError(err)
+	// Wait for the workflow to be blocked
+	ts.waitForQueryTrue(run, "state", 0)
+	// Send an update before the handler is registered
+	updateHandle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	ts.NoError(err)
+	ts.Error(updateHandle.Get(ctx, nil))
+	// Unblock the workflow so it can register the handler
+	ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "unblock", nil)
+	// Send an update after the handler is registered
+	updateHandle, err = ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	ts.NoError(err)
+	ts.NoError(updateHandle.Get(ctx, nil))
+	// Unblock the workflow so it can complete
+	ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "unblock", nil)
+	// Get the result
+	var result int
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal(1, result)
+}
+
+func (ts *IntegrationTestSuite) TestUpdateSDKFlag() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-update-SDK-flag")
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		options,
+		ts.workflows.UpdateHandlerRegisteredLate)
+	ts.NoError(err)
+	// Wait for the workflow to be blocked
+	ts.waitForQueryTrue(run, "state", 0)
+	// Unblock the workflow so it can register the handler
+	ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "unblock", nil)
+	// Send an update after the handler is registered
+	updateHandle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	ts.NoError(err)
+	ts.NoError(updateHandle.Get(ctx, nil))
+	// Unblock the workflow so it can complete
+	ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "unblock", nil)
+	// Get the result
+	var result int
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal(1, result)
+	// Now test the SDK flag
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	flagsSet := make([][]uint32, 0)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		ts.NoError(err)
+		taskCompleted := event.GetWorkflowTaskCompletedEventAttributes()
+		if taskCompleted != nil {
+			flagsSet = append(flagsSet, taskCompleted.GetSdkMetadata().GetLangUsedFlags())
+		}
+	}
+	priorityUpdateHandlingFlag := 4
+	// The first workflow task should not have the flag set
+	ts.NotContains(flagsSet[0], priorityUpdateHandlingFlag)
+	// The second workflow task should have the flag set
+	ts.NotContains(flagsSet[1], priorityUpdateHandlingFlag)
+}
+
 func (ts *IntegrationTestSuite) TestUpdateOrdering() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -2713,6 +2813,56 @@ func (ts *IntegrationTestSuite) TestUpdateAlwaysHandled() {
 	var result int
 	ts.NoError(run.Get(ctx, &result))
 	ts.Equal(1, result)
+}
+
+func (ts *IntegrationTestSuite) TestUpdateRejected() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-update-rejected")
+	options.StartDelay = time.Hour
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.UpdateRejectedWithOtherGoRoutine)
+	ts.NoError(err)
+	// Send an update we expect to be rejected before the first workflow task
+	handle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	ts.NoError(err)
+	ts.Error(handle.Get(ctx, nil))
+	ts.NoError(run.Get(ctx, nil))
+}
+
+func (ts *IntegrationTestSuite) TestUpdateSettingHandlerInGoroutine() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-update-setting-handler-in-goroutine")
+	options.StartDelay = time.Hour
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.UpdateSettingHandlerInGoroutine)
+	ts.NoError(err)
+	// Send an update handler in a workflow goroutine, this should be accepted
+	handle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	ts.NoError(err)
+	ts.NoError(handle.Get(ctx, nil))
+	ts.NoError(run.Get(ctx, nil))
+}
+
+func (ts *IntegrationTestSuite) TestUpdateSettingHandlerInHandler() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-update-setting-handler-in-handler")
+	options.StartDelay = time.Hour
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.UpdateSettingHandlerInHandler)
+	ts.NoError(err)
+	// Expect this to fail because the handler is not set yet
+	handle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "inner update")
+	ts.NoError(err)
+	ts.Error(handle.Get(ctx, nil))
+	// Send an update that should register a new handler for "inner update"
+	handle, err = ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	ts.NoError(err)
+	ts.NoError(handle.Get(ctx, nil))
+	// Expect this to succeed because the handler is set now
+	handle, err = ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "inner update")
+	ts.NoError(err)
+	ts.NoError(handle.Get(ctx, nil))
+	ts.NoError(run.Get(ctx, nil))
 }
 
 func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
