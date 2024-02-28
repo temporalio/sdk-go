@@ -943,11 +943,11 @@ func (aw *AggregatedWorker) Start() error {
 	aw.assertNotStopped()
 	if err := initBinaryChecksum(); err != nil {
 		return fmt.Errorf("failed to get executable checksum: %v", err)
-	} else if err = aw.client.ensureInitialized(); err != nil {
+	} else if err = aw.client.ensureInitialized(context.Background()); err != nil {
 		return err
 	}
 	// Populate the capabilities. This should be the only time it is written too.
-	capabilities, err := aw.client.loadCapabilities()
+	capabilities, err := aw.client.loadCapabilities(context.Background())
 	if err != nil {
 		return err
 	}
