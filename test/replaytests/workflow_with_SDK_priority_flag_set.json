@@ -1,0 +1,489 @@
+{
+  "events": [
+    {
+      "eventId": "1",
+      "eventTime": "2020-07-30T00:30:02.971655189Z",
+      "eventType": "WorkflowExecutionStarted",
+      "version": "-24",
+      "taskId": "1048576",
+      "workflowExecutionStartedEventAttributes": {
+        "workflowType": {
+          "name": "Workflow1"
+        },
+        "taskQueue": {
+          "name": "replay-test",
+          "kind": "Normal"
+        },
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "IldvcmtmbG93MSI="
+            }
+          ]
+        },
+        "workflowExecutionTimeout": "315360000s",
+        "workflowRunTimeout": "315360000s",
+        "workflowTaskTimeout": "10s",
+        "initiator": "Workflow",
+        "originalExecutionRunId": "32c62bbb-dfa3-4558-8bab-11cd5b4e17b7",
+        "identity": "22866@ShtinUbuntu2@",
+        "firstExecutionRunId": "32c62bbb-dfa3-4558-8bab-11cd5b4e17b7",
+        "attempt": 1,
+        "workflowExecutionExpirationTime": "0001-01-01T00:00:00Z",
+        "firstWorkflowTaskBackoff": "0s",
+        "header": {}
+      }
+    },
+    {
+      "eventId": "2",
+      "eventTime": "2020-07-30T00:30:02.971668264Z",
+      "eventType": "WorkflowTaskScheduled",
+      "version": "-24",
+      "taskId": "1048577",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "replay-test",
+          "kind": "Normal"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": "1"
+      }
+    },
+    {
+      "eventId": "3",
+      "eventTime": "2020-07-30T00:30:02.981403193Z",
+      "eventType": "WorkflowTaskStarted",
+      "version": "-24",
+      "taskId": "1048582",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "22866@ShtinUbuntu2@",
+        "requestId": "43107987-202a-44ca-b718-4aecc6cd6f3b"
+      }
+    },
+    {
+      "eventId": "4",
+      "eventTime": "2020-07-30T00:30:02.992586820Z",
+      "eventType": "WorkflowTaskCompleted",
+      "version": "-24",
+      "taskId": "1048585",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "2",
+        "startedEventId": "3",
+        "identity": "22866@ShtinUbuntu2@",
+        "sdkMetadata": {
+          "langUsedFlags": [
+           3,
+           4
+          ]
+        },
+        "binaryChecksum": "01c85c2da1ff4eb3ef3641a5746edef0"
+      }
+    },
+    {
+      "eventId": "5",
+      "eventTime": "2020-07-30T00:30:02.992740076Z",
+      "eventType": "MarkerRecorded",
+      "version": "-24",
+      "taskId": "1048586",
+      "markerRecordedEventAttributes": {
+        "markerName": "Version",
+        "details": {
+          "change-id": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "InRlc3QtY2hhbmdlIg=="
+              }
+            ]
+          },
+          "version": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "MQ=="
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "6",
+      "eventTime": "2020-07-30T00:30:02.992943898Z",
+      "eventType": "UpsertWorkflowSearchAttributes",
+      "version": "-24",
+      "taskId": "1048587",
+      "upsertWorkflowSearchAttributesEventAttributes": {
+        "workflowTaskCompletedEventId": "4",
+        "searchAttributes": {
+          "indexedFields": {
+            "TemporalChangeVersion": {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "WyJ0ZXN0LWNoYW5nZS0xIl0="
+            }
+          }
+        }
+      }
+    },
+    {
+      "eventId": "7",
+      "eventTime": "2020-07-30T00:30:02.992959657Z",
+      "eventType": "ActivityTaskScheduled",
+      "version": "-24",
+      "taskId": "1048588",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "7",
+        "activityType": {
+          "name": "helloworldActivity"
+        },
+        "taskQueue": {
+          "name": "replay-test",
+          "kind": "Normal"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "IldvcmtmbG93MSI="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "60s",
+        "startToCloseTimeout": "60s",
+        "heartbeatTimeout": "20s",
+        "workflowTaskCompletedEventId": "4",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2,
+          "maximumInterval": "120s"
+        }
+      }
+    },
+    {
+      "eventId": "8",
+      "eventTime": "2020-07-30T00:30:03.000176849Z",
+      "eventType": "ActivityTaskStarted",
+      "version": "-24",
+      "taskId": "1048594",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "7",
+        "identity": "22866@ShtinUbuntu2@",
+        "requestId": "115ee611-7746-43b6-9966-afa6d78f33a0",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "9",
+      "eventTime": "2020-07-30T00:30:03.004500861Z",
+      "eventType": "ActivityTaskCompleted",
+      "version": "-24",
+      "taskId": "1048595",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "IkhlbGxvIFdvcmtmbG93MSEi"
+            }
+          ]
+        },
+        "scheduledEventId": "7",
+        "startedEventId": "8",
+        "identity": "22866@ShtinUbuntu2@"
+      }
+    },
+    {
+      "eventId": "10",
+      "eventTime": "2020-07-30T00:30:03.004546840Z",
+      "eventType": "WorkflowTaskScheduled",
+      "version": "-24",
+      "taskId": "1048598",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "ShtinUbuntu2:558d9b07-a236-4b7a-9866-ac678c7d4248",
+          "kind": "Sticky"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": "1"
+      }
+    },
+    {
+      "eventId": "11",
+      "eventTime": "2020-07-30T00:30:03.011253288Z",
+      "eventType": "WorkflowTaskStarted",
+      "version": "-24",
+      "taskId": "1048602",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "10",
+        "identity": "22866@ShtinUbuntu2@",
+        "requestId": "05a54015-aa0c-49e9-afcf-89fc297f794f"
+      }
+    },
+    {
+      "eventId": "12",
+      "eventTime": "2020-07-30T00:30:03.017420164Z",
+      "eventType": "WorkflowTaskCompleted",
+      "version": "-24",
+      "taskId": "1048605",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "10",
+        "startedEventId": "11",
+        "identity": "22866@ShtinUbuntu2@",
+        "binaryChecksum": "01c85c2da1ff4eb3ef3641a5746edef0"
+      }
+    },
+    {
+      "eventId": "13",
+      "eventTime": "2020-07-30T00:30:03.017446790Z",
+      "eventType": "ActivityTaskScheduled",
+      "version": "-24",
+      "taskId": "1048606",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "13",
+        "activityType": {
+          "name": "helloworldActivity"
+        },
+        "taskQueue": {
+          "name": "replay-test",
+          "kind": "Normal"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "IldvcmtmbG93MSI="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "60s",
+        "startToCloseTimeout": "60s",
+        "heartbeatTimeout": "20s",
+        "workflowTaskCompletedEventId": "12",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2,
+          "maximumInterval": "120s"
+        }
+      }
+    },
+    {
+      "eventId": "14",
+      "eventTime": "2020-07-30T00:30:03.022531293Z",
+      "eventType": "ActivityTaskStarted",
+      "version": "-24",
+      "taskId": "1048611",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "13",
+        "identity": "22866@ShtinUbuntu2@",
+        "requestId": "d5ab2e59-e910-439b-aa6a-826f5a70a4a0",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "15",
+      "eventTime": "2020-07-30T00:30:03.026839379Z",
+      "eventType": "ActivityTaskCompleted",
+      "version": "-24",
+      "taskId": "1048612",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "IkhlbGxvIFdvcmtmbG93MSEi"
+            }
+          ]
+        },
+        "scheduledEventId": "13",
+        "startedEventId": "14",
+        "identity": "22866@ShtinUbuntu2@"
+      }
+    },
+    {
+      "eventId": "16",
+      "eventTime": "2020-07-30T00:30:03.026848476Z",
+      "eventType": "WorkflowTaskScheduled",
+      "version": "-24",
+      "taskId": "1048615",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "ShtinUbuntu2:558d9b07-a236-4b7a-9866-ac678c7d4248",
+          "kind": "Sticky"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": "1"
+      }
+    },
+    {
+      "eventId": "17",
+      "eventTime": "2020-07-30T00:30:03.031989958Z",
+      "eventType": "WorkflowTaskStarted",
+      "version": "-24",
+      "taskId": "1048619",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "16",
+        "identity": "22866@ShtinUbuntu2@",
+        "requestId": "fc9e0d16-4df1-476e-9b6c-d310f4fb3d98"
+      }
+    },
+    {
+      "eventId": "18",
+      "eventTime": "2020-07-30T00:30:03.038368790Z",
+      "eventType": "WorkflowTaskCompleted",
+      "version": "-24",
+      "taskId": "1048622",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "16",
+        "startedEventId": "17",
+        "identity": "22866@ShtinUbuntu2@",
+        "binaryChecksum": "01c85c2da1ff4eb3ef3641a5746edef0"
+      }
+    },
+    {
+      "eventId": "19",
+      "eventTime": "2020-07-30T00:30:03.038399041Z",
+      "eventType": "ActivityTaskScheduled",
+      "version": "-24",
+      "taskId": "1048623",
+      "activityTaskScheduledEventAttributes": {
+        "activityId": "19",
+        "activityType": {
+          "name": "helloworldActivity"
+        },
+        "taskQueue": {
+          "name": "replay-test",
+          "kind": "Normal"
+        },
+        "header": {},
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "IldvcmtmbG93MSI="
+            }
+          ]
+        },
+        "scheduleToCloseTimeout": "315360000s",
+        "scheduleToStartTimeout": "60s",
+        "startToCloseTimeout": "60s",
+        "heartbeatTimeout": "20s",
+        "workflowTaskCompletedEventId": "18",
+        "retryPolicy": {
+          "initialInterval": "1s",
+          "backoffCoefficient": 2,
+          "maximumInterval": "120s"
+        }
+      }
+    },
+    {
+      "eventId": "20",
+      "eventTime": "2020-07-30T00:30:03.043777440Z",
+      "eventType": "ActivityTaskStarted",
+      "version": "-24",
+      "taskId": "1048628",
+      "activityTaskStartedEventAttributes": {
+        "scheduledEventId": "19",
+        "identity": "22866@ShtinUbuntu2@",
+        "requestId": "e177df9e-29e7-4f31-927d-bfa0f9e8e639",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "21",
+      "eventTime": "2020-07-30T00:30:03.048056395Z",
+      "eventType": "ActivityTaskCompleted",
+      "version": "-24",
+      "taskId": "1048629",
+      "activityTaskCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "IkhlbGxvIFdvcmtmbG93MSEi"
+            }
+          ]
+        },
+        "scheduledEventId": "19",
+        "startedEventId": "20",
+        "identity": "22866@ShtinUbuntu2@"
+      }
+    },
+    {
+      "eventId": "22",
+      "eventTime": "2020-07-30T00:30:03.048065496Z",
+      "eventType": "WorkflowTaskScheduled",
+      "version": "-24",
+      "taskId": "1048632",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "ShtinUbuntu2:558d9b07-a236-4b7a-9866-ac678c7d4248",
+          "kind": "Sticky"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": "1"
+      }
+    },
+    {
+      "eventId": "23",
+      "eventTime": "2020-07-30T00:30:03.062716538Z",
+      "eventType": "WorkflowTaskStarted",
+      "version": "-24",
+      "taskId": "1048636",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "22",
+        "identity": "22866@ShtinUbuntu2@",
+        "requestId": "cbd16b72-040e-41c8-a754-4a9d72e4b69b"
+      }
+    },
+    {
+      "eventId": "24",
+      "eventTime": "2020-07-30T00:30:03.070392239Z",
+      "eventType": "WorkflowTaskCompleted",
+      "version": "-24",
+      "taskId": "1048639",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "22",
+        "startedEventId": "23",
+        "identity": "22866@ShtinUbuntu2@",
+        "binaryChecksum": "01c85c2da1ff4eb3ef3641a5746edef0"
+      }
+    },
+    {
+      "eventId": "25",
+      "eventTime": "2020-07-30T00:30:03.070438610Z",
+      "eventType": "WorkflowExecutionCompleted",
+      "version": "-24",
+      "taskId": "1048640",
+      "workflowExecutionCompletedEventAttributes": {
+        "workflowTaskCompletedEventId": "24"
+      }
+    }
+  ]
+}

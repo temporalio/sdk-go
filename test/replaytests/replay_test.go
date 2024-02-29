@@ -425,3 +425,11 @@ func (c *captureConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs .
 	}
 	return err
 }
+
+func (s *replayTestSuite) TestReplayWorkflowWithSDKPriorityUpdateHandling() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(Workflow1)
+
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "workflow_with_SDK_priority_flag_set.json")
+	require.NoError(s.T(), err)
+}
