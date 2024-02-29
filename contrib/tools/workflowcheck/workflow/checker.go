@@ -45,6 +45,15 @@ var DefaultIdentRefs = determinism.DefaultIdentRefs.Clone().SetAll(determinism.I
 	// Reported as non-deterministic because it iterates over a map, so mark
 	// deterministic explicitly
 	"(*go.temporal.io/sdk/internal.cancelCtx).cancel": false,
+	// Reported as non-deterministic because it iterates over a map, just takes
+	// the size of the map, so mark deterministic explicitly
+	"(go.temporal.io/sdk/internal.SearchAttributes).Size": false,
+	// Reported as non-deterministic because it iterates over a map, result is sorted
+	// so mark deterministic explicitly
+	"go.temporal.io/sdk/internal.DeterministicKeys": false,
+	// Reported as non-deterministic because it iterates over a map, result is sorted
+	// so mark deterministic explicitly
+	"go.temporal.io/sdk/internal.DeterministicKeysFunc": false,
 })
 
 // Config is config for NewChecker.
