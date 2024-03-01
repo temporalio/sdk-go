@@ -69,6 +69,14 @@ func (w *Workflows) Basic(ctx workflow.Context) ([]string, error) {
 	return []string{"toUpperWithDelay", "toUpper"}, nil
 }
 
+func (w *Workflows) Echo(ctx workflow.Context, message string) (string, error) {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	var ans1 string
+	workflow.GetLogger(ctx).Info("calling ExecuteActivity")
+	activityFut := workflow.ExecuteActivity(ctx, "EchoString", message)
+	return ans1, activityFut.Get(ctx, &ans1)
+}
+
 func (w *Workflows) Deadlocked(ctx workflow.Context) ([]string, error) {
 	// Simulates deadlock. Never call time.Sleep in production code!
 	time.Sleep(2 * time.Second)
@@ -2992,6 +3000,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.WaitOnUpdate)
 	worker.RegisterWorkflow(w.UpdateOrdering)
 	worker.RegisterWorkflow(w.UpdateSetHandlerOnly)
+	worker.RegisterWorkflow(w.Echo)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {
