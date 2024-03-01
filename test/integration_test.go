@@ -5015,19 +5015,10 @@ type InvalidUTF8Suite struct {
 	*require.Assertions
 	suite.Suite
 	ConfigAndClientSuiteBase
-	activities                *Activities
-	workflows                 *Workflows
-	worker                    worker.Worker
-	workerStopped             bool
-	tracer                    *tracingInterceptor
-	inboundSignalInterceptor  *signalInterceptor
-	trafficController         *test.SimpleTrafficController
-	metricsHandler            *metrics.CapturingHandler
-	tallyScope                tally.TestScope
-	interceptorCallRecorder   *interceptortest.CallRecordingInvoker
-	openTelemetryTracer       trace.Tracer
-	openTelemetrySpanRecorder *tracetest.SpanRecorder
-	openTracingTracer         opentracing.Tracer
+	activities    *Activities
+	workflows     *Workflows
+	worker        worker.Worker
+	workerStopped bool
 }
 
 func TestInvalidUTF8Suite(t *testing.T) {
@@ -5069,13 +5060,7 @@ func (ts *InvalidUTF8Suite) TearDownSuite() {
 }
 
 func (ts *InvalidUTF8Suite) SetupTest() {
-	ts.metricsHandler = metrics.NewCapturingHandler()
-	var metricsHandler client.MetricsHandler = ts.metricsHandler
-	var clientInterceptors []interceptor.ClientInterceptor
-	var workerInterceptors []interceptor.WorkerInterceptor
-
 	var err error
-	trafficController := test.NewSimpleTrafficController()
 	ts.client, err = client.Dial(client.Options{
 		HostPort:  ts.config.ServiceAddr,
 		Namespace: ts.config.Namespace,
@@ -5085,22 +5070,14 @@ func (ts *InvalidUTF8Suite) SetupTest() {
 			NewKeysPropagator([]string{testContextKey1}),
 			NewKeysPropagator([]string{testContextKey2}),
 		},
-		MetricsHandler:    metricsHandler,
-		TrafficController: trafficController,
-		Interceptors:      clientInterceptors,
 		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
 	})
 	ts.NoError(err)
 
-	ts.trafficController = trafficController
 	ts.activities.clearInvoked()
 	ts.activities.client = ts.client
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
-	ts.tracer = newTracingInterceptor()
-	ts.inboundSignalInterceptor = newSignalInterceptor()
-	workerInterceptors = append(workerInterceptors, ts.tracer, ts.inboundSignalInterceptor)
 	options := worker.Options{
-		Interceptors:        workerInterceptors,
 		WorkflowPanicPolicy: worker.FailWorkflow,
 	}
 
@@ -5124,7 +5101,22 @@ func (ts *InvalidUTF8Suite) TearDownTest() {
 
 func (ts *InvalidUTF8Suite) TestBasic() {
 	var response string
-	err := ts.executeWorkflow("test-basic", ts.workflows.Echo, &response, invalidUTF8)
+
+	startOptions := client.StartWorkflowOptions{
+		ID:                       "test-invalidutf8-basic",
+		TaskQueue:                ts.taskQueueName,
+		WorkflowExecutionTimeout: 15 * time.Second,
+		WorkflowTaskTimeout:      time.Second,
+		WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
+		EnableEagerStart:         true,
+	}
+	startOptions.Memo = map[string]interface{}{
+		invalidUTF8: "memoVal",
+	}
+	startOptions.RetryPolicy = &temporal.RetryPolicy{
+		MaximumAttempts: 1,
+	}
+	err := ts.executeWorkflowWithOption(startOptions, ts.workflows.Echo, &response, invalidUTF8)
 	ts.NoError(err)
 	ts.EqualValues([]string{"EchoString"}, ts.activities.invoked())
 	// Go's JSON coding stack will replace invalid bytes with the unicode substitute char U+FFFD
