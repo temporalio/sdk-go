@@ -277,26 +277,6 @@ func (ts *IntegrationTestSuite) TestBasic() {
 	ts.assertMetricCountAtLeast("temporal_long_request", 3, "operation", "PollWorkflowTaskQueue")
 }
 
-func (ts *IntegrationTestSuite) TestBasic_InvalidUTF8() {
-	var expected []string
-	err := ts.executeWorkflow("test-basic", ts.workflows.Basic, &expected)
-	ts.NoError(err)
-	ts.EqualValues(expected, ts.activities.invoked())
-	// See https://grokbase.com/p/gg/golang-nuts/153jjj8dgg/go-nuts-fm-suffix-in-function-name-what-does-it-mean
-	// for explanation of -fm postfix.
-	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
-		ts.tracer.GetTrace("Basic"))
-
-	// Check metrics (some may be called a non-deterministic number of times
-	// based on server speed)
-	ts.assertMetricCount("temporal_request", 1, "operation", "StartWorkflowExecution")
-	ts.assertMetricCountAtLeast("temporal_request", 1, "operation", "RespondWorkflowTaskCompleted")
-	ts.assertMetricCountAtLeast("temporal_workflow_task_queue_poll_succeed", 1)
-	// We cannot check PollActivityTaskQueue metric because eager activities
-	// affect poll count
-	ts.assertMetricCountAtLeast("temporal_long_request", 3, "operation", "PollWorkflowTaskQueue")
-}
-
 // TestLocalActivityRetryBehavior verifies local activity retry behaviors:
 // 1) local activity retry with local timer backoff when backoff duration is less than or equal to workflow task timeout
 // 2) workflow task heartbeat is happening when local activity takes longer than workflow task timeout
