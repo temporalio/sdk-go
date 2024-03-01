@@ -66,9 +66,3 @@ Run the unit tests:
 cd ./internal/cmd/build
 go run . unit-test
 ```
-
-## Go build and run-time tags
-
-Prior to SDK version v1.26.0 our protobuf code generator allowed invalid UTF-8 data to be stored as proto strings. This isn't actually allowed by the proto3 spec, so if you're building our SDK manually and think you may store arbitrary binary data in our strings you should set `-tags protolegacy` when building against our SDK.
-
-If you're unsure then you should specify it anyways as there's no harm in doing so unless you relied on the protobuf compiler to ensure all strings were valid UTF-8.
