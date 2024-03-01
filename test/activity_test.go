@@ -228,6 +228,11 @@ func (a *Activities) Echo(ctx context.Context, delayInSeconds int, value int) (i
 	return value, nil
 }
 
+func (a *Activities) EchoString(ctx context.Context, message string) (string, error) {
+	a.append("EchoString")
+	return message, nil
+}
+
 func (a *Activities) WaitForWorkerStop(ctx context.Context, timeout time.Duration) (string, error) {
 	stopCh := activity.GetWorkerStopChannel(ctx)
 	// Mark activity as invoked then wait for it to be stopped
