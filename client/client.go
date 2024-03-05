@@ -757,7 +757,7 @@ func HistoryFromJSON(r io.Reader, options HistoryJSONOptions) (*historypb.Histor
 	return internal.HistoryFromJSON(r, options.LastEventID)
 }
 
-// NewAPIKeyCredentials creates credentials that can be provided to
+// NewAPIKeyStaticCredentials creates credentials that can be provided to
 // ClientOptions to use a fixed API key.
 //
 // This is the equivalent of providing a headers provider that sets the
@@ -767,12 +767,12 @@ func HistoryFromJSON(r io.Reader, options HistoryJSONOptions) (*historypb.Histor
 //
 // Note, this uses a fixed header value for authentication. Many users that want
 // to rotate this value without reconnecting should use
-// [NewAPIKeyCallbackCredentials].
-func NewAPIKeyCredentials(apiKey string) Credentials {
-	return internal.NewAPIKeyCredentials(apiKey)
+// [NewAPIKeyDynamicCredentials].
+func NewAPIKeyStaticCredentials(apiKey string) Credentials {
+	return internal.NewAPIKeyStaticCredentials(apiKey)
 }
 
-// NewAPIKeyCallbackCredentials creates credentials powered by a callback that
+// NewAPIKeyDynamicCredentials creates credentials powered by a callback that
 // is invoked on each request. The callback accepts the context that is given by
 // the calling user and can return a key or an error. When error is non-nil, the
 // client call is failed with that error. When string is non-empty, it is used
@@ -782,8 +782,8 @@ func NewAPIKeyCredentials(apiKey string) Credentials {
 // "Authorization" header with "Bearer " + the given function result. If the
 // resulting string is non-empty, it will overwrite any "Authorization" header
 // that may be on the context or from existing header provider.
-func NewAPIKeyCallbackCredentials(apiKeyCallback func(context.Context) (string, error)) Credentials {
-	return internal.NewAPIKeyCallbackCredentials(apiKeyCallback)
+func NewAPIKeyDynamicCredentials(apiKeyCallback func(context.Context) (string, error)) Credentials {
+	return internal.NewAPIKeyDynamicCredentials(apiKeyCallback)
 }
 
 // NewMTLSCredentials creates credentials that use TLS with the client

@@ -447,7 +447,7 @@ func TestCredentialsAPIKey(t *testing.T) {
 	// Fixed string
 	client, err := DialClient(ClientOptions{
 		HostPort:    srv.addr,
-		Credentials: NewAPIKeyCredentials("my-api-key"),
+		Credentials: NewAPIKeyStaticCredentials("my-api-key"),
 	})
 	require.NoError(t, err)
 	defer client.Close()
@@ -460,7 +460,7 @@ func TestCredentialsAPIKey(t *testing.T) {
 	// Callback
 	client, err = DialClient(ClientOptions{
 		HostPort: srv.addr,
-		Credentials: NewAPIKeyCallbackCredentials(func(ctx context.Context) (string, error) {
+		Credentials: NewAPIKeyDynamicCredentials(func(ctx context.Context) (string, error) {
 			return "my-callback-api-key", nil
 		}),
 	})

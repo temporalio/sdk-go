@@ -477,7 +477,6 @@ type (
 	HeadersProvider interface {
 		GetHeaders(ctx context.Context) (map[string]string, error)
 	}
-
 	// TrafficController is getting called in the interceptor chain with API invocation parameters.
 	// Result is either nil if API call is allowed or an error, in which case request would be interrupted and
 	// the error will be propagated back through the interceptor chain.
@@ -944,11 +943,11 @@ func NewValues(data *commonpb.Payloads) converter.EncodedValues {
 
 type apiKeyCredentials func(context.Context) (string, error)
 
-func NewAPIKeyCredentials(apiKey string) Credentials {
-	return NewAPIKeyCallbackCredentials(func(ctx context.Context) (string, error) { return apiKey, nil })
+func NewAPIKeyStaticCredentials(apiKey string) Credentials {
+	return NewAPIKeyDynamicCredentials(func(ctx context.Context) (string, error) { return apiKey, nil })
 }
 
-func NewAPIKeyCallbackCredentials(apiKeyCallback func(context.Context) (string, error)) Credentials {
+func NewAPIKeyDynamicCredentials(apiKeyCallback func(context.Context) (string, error)) Credentials {
 	return apiKeyCredentials(apiKeyCallback)
 }
 
