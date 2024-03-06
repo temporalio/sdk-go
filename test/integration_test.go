@@ -50,7 +50,6 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
-	updatepb "go.temporal.io/api/update/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.uber.org/goleak"
@@ -1486,13 +1485,11 @@ func (ts *IntegrationTestSuite) TestUpdateWorkflowCancelled() {
 	handles := make([]client.WorkflowUpdateHandle, 0, 5)
 	for i := 0; i < 5; i++ {
 		handler, err := ts.client.UpdateWorkflowWithOptions(ctx, &client.UpdateWorkflowWithOptionsRequest{
-			UpdateID:   fmt.Sprintf("test-update-%d", i),
-			WorkflowID: run.GetID(),
-			RunID:      run.GetRunID(),
-			UpdateName: "update",
-			WaitPolicy: &updatepb.WaitPolicy{
-				LifecycleStage: enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ACCEPTED,
-			},
+			UpdateID:           fmt.Sprintf("test-update-%d", i),
+			WorkflowID:         run.GetID(),
+			RunID:              run.GetRunID(),
+			UpdateName:         "update",
+			LifeCycleWaitStage: client.UpdateLifeCycleStageAccepted,
 		})
 		ts.NoError(err)
 		handles = append(handles, handler)
