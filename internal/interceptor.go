@@ -351,7 +351,7 @@ type ClientUpdateWorkflowInput struct {
 	Args                []interface{}
 	RunID               string
 	FirstExecutionRunID string
-	LifeCycleWaitStage  UpdateLifeCycleStage
+	WaitForStage        WorkflowUpdateLifeCycleStage
 }
 
 // ClientPollWorkflowUpdateInput is the input to

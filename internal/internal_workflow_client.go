@@ -782,7 +782,7 @@ type UpdateWorkflowWithOptionsRequest struct {
 	FirstExecutionRunID string
 
 	// How this RPC should block on the server before returning.
-	LifeCycleWaitStage UpdateLifeCycleStage
+	WaitForStage WorkflowUpdateLifeCycleStage
 }
 
 // WorkflowUpdateHandle is a handle to a workflow execution update process. The
@@ -1058,7 +1058,7 @@ func (wc *WorkflowClient) UpdateWorkflowWithOptions(
 		Args:                req.Args,
 		RunID:               req.RunID,
 		FirstExecutionRunID: req.FirstExecutionRunID,
-		LifeCycleWaitStage:  req.LifeCycleWaitStage,
+		WaitForStage:        req.WaitForStage,
 	})
 }
 
@@ -1800,7 +1800,7 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 	}
 	resp, err := w.client.workflowService.UpdateWorkflowExecution(grpcCtx, &workflowservice.UpdateWorkflowExecutionRequest{
 		WaitPolicy: &updatepb.WaitPolicy{
-			LifecycleStage: updateLifeCycleStageToProto(in.LifeCycleWaitStage),
+			LifecycleStage: updateLifeCycleStageToProto(in.WaitForStage),
 		},
 		Namespace:           w.client.namespace,
 		WorkflowExecution:   wfexec,
