@@ -1719,21 +1719,21 @@ func TestUpdate(t *testing.T) {
 	}
 
 	const (
-		sync  = UpdateLifeCycleStageCompleted
-		async = UpdateLifeCycleStageAccepted
+		sync  = WorkflowUpdateLifeCycleStageCompleted
+		async = WorkflowUpdateLifeCycleStageAccepted
 	)
 
 	newRequest := func(
 		t *testing.T,
-		stage UpdateLifeCycleStage,
+		stage WorkflowUpdateLifeCycleStage,
 	) *UpdateWorkflowWithOptionsRequest {
 		t.Helper()
 		return &UpdateWorkflowWithOptionsRequest{
-			UpdateID:           fmt.Sprintf("%v-update_id", t.Name()),
-			WorkflowID:         fmt.Sprintf("%v-workflow_id", t.Name()),
-			RunID:              fmt.Sprintf("%v-run_id", t.Name()),
-			UpdateName:         fmt.Sprintf("%v-update_name", t.Name()),
-			LifeCycleWaitStage: stage,
+			UpdateID:     fmt.Sprintf("%v-update_id", t.Name()),
+			WorkflowID:   fmt.Sprintf("%v-workflow_id", t.Name()),
+			RunID:        fmt.Sprintf("%v-run_id", t.Name()),
+			UpdateName:   fmt.Sprintf("%v-update_name", t.Name()),
+			WaitForStage: stage,
 		}
 	}
 

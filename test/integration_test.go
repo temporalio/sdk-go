@@ -1485,11 +1485,11 @@ func (ts *IntegrationTestSuite) TestUpdateWorkflowCancelled() {
 	handles := make([]client.WorkflowUpdateHandle, 0, 5)
 	for i := 0; i < 5; i++ {
 		handler, err := ts.client.UpdateWorkflowWithOptions(ctx, &client.UpdateWorkflowWithOptionsRequest{
-			UpdateID:           fmt.Sprintf("test-update-%d", i),
-			WorkflowID:         run.GetID(),
-			RunID:              run.GetRunID(),
-			UpdateName:         "update",
-			LifeCycleWaitStage: client.UpdateLifeCycleStageAccepted,
+			UpdateID:     fmt.Sprintf("test-update-%d", i),
+			WorkflowID:   run.GetID(),
+			RunID:        run.GetRunID(),
+			UpdateName:   "update",
+			WaitForStage: client.WorkflowUpdateLifeCycleStageAccepted,
 		})
 		ts.NoError(err)
 		handles = append(handles, handler)
