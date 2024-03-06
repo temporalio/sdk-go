@@ -40,18 +40,18 @@ import (
 
 type updateState string
 
-// UpdateLifeCycleStage indicates the stage of an update request.
-type UpdateLifeCycleStage int
+// WorkflowUpdateLifeCycleStage indicates the stage of an update request.
+type WorkflowUpdateLifeCycleStage int
 
 const (
-	// UpdateLifeCycleStageUnspecified indicates the wait stage was not specified
-	UpdateLifeCycleStageUnspecified UpdateLifeCycleStage = iota
-	// UpdateLifeCycleStageAdmitted indicates the update is admitted
-	UpdateLifeCycleStageAdmitted
-	// UpdateLifeCycleStageAccepted indicates the update is accepted
-	UpdateLifeCycleStageAccepted
-	// UpdateLifeCycleStageCompleted indicates the update is completed
-	UpdateLifeCycleStageCompleted
+	// WorkflowUpdateLifeCycleStageUnspecified indicates the wait stage was not specified
+	WorkflowUpdateLifeCycleStageUnspecified WorkflowUpdateLifeCycleStage = iota
+	// WorkflowUpdateLifeCycleStageAdmitted indicates the update is admitted
+	WorkflowUpdateLifeCycleStageAdmitted
+	// WorkflowUpdateLifeCycleStageAccepted indicates the update is accepted
+	WorkflowUpdateLifeCycleStageAccepted
+	// WorkflowUpdateLifeCycleStageCompleted indicates the update is completed
+	WorkflowUpdateLifeCycleStageCompleted
 )
 
 const (
@@ -469,15 +469,15 @@ func validateUpdateHandlerFn(fn interface{}) error {
 	return nil
 }
 
-func updateLifeCycleStageToProto(l UpdateLifeCycleStage) enumspb.UpdateWorkflowExecutionLifecycleStage {
+func updateLifeCycleStageToProto(l WorkflowUpdateLifeCycleStage) enumspb.UpdateWorkflowExecutionLifecycleStage {
 	switch l {
-	case UpdateLifeCycleStageUnspecified:
+	case WorkflowUpdateLifeCycleStageUnspecified:
 		return enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_UNSPECIFIED
-	case UpdateLifeCycleStageAdmitted:
+	case WorkflowUpdateLifeCycleStageAdmitted:
 		return enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ADMITTED
-	case UpdateLifeCycleStageAccepted:
+	case WorkflowUpdateLifeCycleStageAccepted:
 		return enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ACCEPTED
-	case UpdateLifeCycleStageCompleted:
+	case WorkflowUpdateLifeCycleStageCompleted:
 		return enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED
 	default:
 		panic("unknown update lifecycle stage")
