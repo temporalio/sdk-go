@@ -1719,21 +1719,21 @@ func TestUpdate(t *testing.T) {
 	}
 
 	const (
-		sync  = enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED
-		async = enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ACCEPTED
+		sync  = UpdateLifeCycleStageCompleted
+		async = UpdateLifeCycleStageAccepted
 	)
 
 	newRequest := func(
 		t *testing.T,
-		stage enumspb.UpdateWorkflowExecutionLifecycleStage,
+		stage UpdateLifeCycleStage,
 	) *UpdateWorkflowWithOptionsRequest {
 		t.Helper()
 		return &UpdateWorkflowWithOptionsRequest{
-			UpdateID:   fmt.Sprintf("%v-update_id", t.Name()),
-			WorkflowID: fmt.Sprintf("%v-workflow_id", t.Name()),
-			RunID:      fmt.Sprintf("%v-run_id", t.Name()),
-			UpdateName: fmt.Sprintf("%v-update_name", t.Name()),
-			WaitPolicy: &updatepb.WaitPolicy{LifecycleStage: stage},
+			UpdateID:           fmt.Sprintf("%v-update_id", t.Name()),
+			WorkflowID:         fmt.Sprintf("%v-workflow_id", t.Name()),
+			RunID:              fmt.Sprintf("%v-run_id", t.Name()),
+			UpdateName:         fmt.Sprintf("%v-update_name", t.Name()),
+			LifeCycleWaitStage: stage,
 		}
 	}
 
