@@ -358,6 +358,36 @@ func retryFor(maxAttempts int, interval time.Duration, cond func() error) error 
 	return lastErr
 }
 
+// Pause temporarily pauses the running server until the provided channel is
+// closed in another goroutine.  This can be used to simulate what would happen
+// if the host running the server experienced a network partition or a major
+// load spike that prevented it from servicing client requests.
+//
+// This operation is not available on Windows.
+func (s *DevServer) Pause(ch <-chan struct{}) error {
+	if err := sendStop(s.cmd.Process); err != nil {
+		return err
+	}
+	<-ch
+	return sendContinue(s.cmd.Process)
+}
+
+// Kill immediately terminates the running server.  This can be used to
+// simulate what would happen if the host running the server experienced a
+// spontaneous reboot or sudden loss of power.
+//
+// (Kill does not attempt to simulate hardware-level or filesystem-level
+// concerns, such as lost write buffers or non-atomic writes.  It's just a
+// traditional Unix SIGKILL.)
+//
+// This operation is not available on Windows.
+func (s *DevServer) Kill() error {
+	if err := sendKill(s.cmd.Process); err != nil {
+		return err
+	}
+	return s.cmd.Wait()
+}
+
 // Stop the running server and wait for shutdown to complete. Error is propagated from server shutdown.
 func (s *DevServer) Stop() error {
 	if err := sendInterrupt(s.cmd.Process); err != nil {

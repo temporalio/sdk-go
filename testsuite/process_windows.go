@@ -23,6 +23,7 @@
 package testsuite
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"syscall"
@@ -56,4 +57,16 @@ func sendInterrupt(process *os.Process) error {
 		return err
 	}
 	return nil
+}
+
+func sendStop(process *os.Process) error {
+	return errors.New("operation not supported on this platform")
+}
+
+func sendContinue(process *os.Process) error {
+	return errors.New("operation not supported on this platform")
+}
+
+func sendKill(process *os.Process) error {
+	return errors.New("operation not supported on this platform")
 }

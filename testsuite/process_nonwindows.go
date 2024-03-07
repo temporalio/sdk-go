@@ -41,3 +41,15 @@ func newCmd(exePath string, args ...string) *exec.Cmd {
 func sendInterrupt(process *os.Process) error {
 	return process.Signal(syscall.SIGINT)
 }
+
+func sendStop(process *os.Process) error {
+	return process.Signal(syscall.SIGSTOP)
+}
+
+func sendContinue(process *os.Process) error {
+	return process.Signal(syscall.SIGCONT)
+}
+
+func sendKill(process *os.Process) error {
+	return process.Signal(syscall.SIGKILL)
+}
