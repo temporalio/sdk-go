@@ -149,6 +149,7 @@ func requiredInterceptors(
 	headersProvider HeadersProvider,
 	controller TrafficController,
 	excludeInternalFromRetry *atomic.Bool,
+	credentials Credentials,
 ) []grpc.UnaryClientInterceptor {
 	interceptors := []grpc.UnaryClientInterceptor{
 		errorInterceptor,
@@ -167,6 +168,13 @@ func requiredInterceptors(
 	}
 	if controller != nil {
 		interceptors = append(interceptors, trafficControllerInterceptor(controller))
+	}
+	// Add credentials interceptor. This is intentionally added after headers
+	// provider to overwrite anything set there.
+	if credentials != nil {
+		if interceptor := credentials.gRPCInterceptor(); interceptor != nil {
+			interceptors = append(interceptors, interceptor)
+		}
 	}
 	return interceptors
 }

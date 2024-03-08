@@ -26,6 +26,7 @@ package internal
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log"
@@ -127,13 +128,13 @@ func TestHeadersProvider_Error(t *testing.T) {
 }
 
 func TestHeadersProvider_NotIncludedWhenNil(t *testing.T) {
-	interceptors := requiredInterceptors(nil, nil, nil, nil)
+	interceptors := requiredInterceptors(nil, nil, nil, nil, nil)
 	require.Equal(t, 5, len(interceptors))
 }
 
 func TestHeadersProvider_IncludedWithHeadersProvider(t *testing.T) {
 	interceptors := requiredInterceptors(nil,
-		authHeadersProvider{token: "test-auth-token"}, nil, nil)
+		authHeadersProvider{token: "test-auth-token"}, nil, nil, nil)
 	require.Equal(t, 6, len(interceptors))
 }
 
@@ -438,12 +439,73 @@ func TestResourceExhaustedCause(t *testing.T) {
 	assert.True(t, foundWithoutCause)
 }
 
+func TestCredentialsAPIKey(t *testing.T) {
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+
+	// Fixed string
+	client, err := DialClient(ClientOptions{
+		HostPort:    srv.addr,
+		Credentials: NewAPIKeyStaticCredentials("my-api-key"),
+	})
+	require.NoError(t, err)
+	defer client.Close()
+	require.Equal(
+		t,
+		[]string{"Bearer my-api-key"},
+		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, "Authorization"),
+	)
+
+	// Callback
+	client, err = DialClient(ClientOptions{
+		HostPort: srv.addr,
+		Credentials: NewAPIKeyDynamicCredentials(func(ctx context.Context) (string, error) {
+			return "my-callback-api-key", nil
+		}),
+	})
+	require.NoError(t, err)
+	defer client.Close()
+	require.Equal(
+		t,
+		[]string{"Bearer my-callback-api-key"},
+		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, "Authorization"),
+	)
+}
+
+func TestCredentialsMTLS(t *testing.T) {
+	// Just confirming option is set, not full end-to-end mTLS test
+
+	// No TLS set
+	var clientOptions ClientOptions
+	creds := NewMTLSCredentials(tls.Certificate{Certificate: [][]byte{[]byte("somedata1")}})
+	require.NoError(t, creds.applyToOptions(&clientOptions))
+	require.Equal(t, "somedata1", string(clientOptions.ConnectionOptions.TLS.Certificates[0].Certificate[0]))
+
+	// TLS already set
+	clientOptions = ClientOptions{}
+	clientOptions.ConnectionOptions.TLS = &tls.Config{ServerName: "my-server-name"}
+	creds = NewMTLSCredentials(tls.Certificate{Certificate: [][]byte{[]byte("somedata2")}})
+	require.NoError(t, creds.applyToOptions(&clientOptions))
+	require.Equal(t, "my-server-name", clientOptions.ConnectionOptions.TLS.ServerName)
+	require.Equal(t, "somedata2", string(clientOptions.ConnectionOptions.TLS.Certificates[0].Certificate[0]))
+
+	// Fail with existing cert
+	clientOptions = ClientOptions{}
+	clientOptions.ConnectionOptions.TLS = &tls.Config{
+		Certificates: []tls.Certificate{{Certificate: [][]byte{[]byte("somedata3")}}},
+	}
+	creds = NewMTLSCredentials(tls.Certificate{Certificate: [][]byte{[]byte("somedata4")}})
+	require.Error(t, creds.applyToOptions(&clientOptions))
+}
+
 type testGRPCServer struct {
 	workflowservice.UnimplementedWorkflowServiceServer
 	*grpc.Server
 	addr                                 string
 	healthServer                         *health.Server
 	sigWfCount                           int32
+	getSystemInfoRequestContext          context.Context
 	getSystemInfoResponse                workflowservice.GetSystemInfoResponse
 	getSystemInfoResponseError           error
 	signalWorkflowExecutionResponse      workflowservice.SignalWorkflowExecutionResponse
@@ -500,6 +562,7 @@ func (t *testGRPCServer) GetSystemInfo(
 	ctx context.Context,
 	req *workflowservice.GetSystemInfoRequest,
 ) (*workflowservice.GetSystemInfoResponse, error) {
+	t.getSystemInfoRequestContext = ctx
 	return &t.getSystemInfoResponse, t.getSystemInfoResponseError
 }
 

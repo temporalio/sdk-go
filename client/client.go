@@ -31,6 +31,7 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 
 	commonpb "go.temporal.io/api/common/v1"
@@ -89,6 +90,9 @@ type (
 
 	// ConnectionOptions are optional parameters that can be specified in ClientOptions
 	ConnectionOptions = internal.ConnectionOptions
+
+	// Credentials are optional credentials that can be specified in ClientOptions.
+	Credentials = internal.Credentials
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
 	StartWorkflowOptions = internal.StartWorkflowOptions
@@ -751,4 +755,42 @@ type HistoryJSONOptions struct {
 // not close the reader if it is closeable.
 func HistoryFromJSON(r io.Reader, options HistoryJSONOptions) (*historypb.History, error) {
 	return internal.HistoryFromJSON(r, options.LastEventID)
+}
+
+// NewAPIKeyStaticCredentials creates credentials that can be provided to
+// ClientOptions to use a fixed API key.
+//
+// This is the equivalent of providing a headers provider that sets the
+// "Authorization" header with "Bearer " + the given key. This will overwrite
+// any "Authorization" header that may be on the context or from existing header
+// provider.
+//
+// Note, this uses a fixed header value for authentication. Many users that want
+// to rotate this value without reconnecting should use
+// [NewAPIKeyDynamicCredentials].
+func NewAPIKeyStaticCredentials(apiKey string) Credentials {
+	return internal.NewAPIKeyStaticCredentials(apiKey)
+}
+
+// NewAPIKeyDynamicCredentials creates credentials powered by a callback that
+// is invoked on each request. The callback accepts the context that is given by
+// the calling user and can return a key or an error. When error is non-nil, the
+// client call is failed with that error. When string is non-empty, it is used
+// as the API key. When string is empty, nothing is set/overridden.
+//
+// This is the equivalent of providing a headers provider that returns the
+// "Authorization" header with "Bearer " + the given function result. If the
+// resulting string is non-empty, it will overwrite any "Authorization" header
+// that may be on the context or from existing header provider.
+func NewAPIKeyDynamicCredentials(apiKeyCallback func(context.Context) (string, error)) Credentials {
+	return internal.NewAPIKeyDynamicCredentials(apiKeyCallback)
+}
+
+// NewMTLSCredentials creates credentials that use TLS with the client
+// certificate as the given one. If the client options do not already enable
+// TLS, this enables it. If the client options' TLS configuration is present and
+// already has a client certificate, client creation will fail when applying
+// these credentials.
+func NewMTLSCredentials(certificate tls.Certificate) Credentials {
+	return internal.NewMTLSCredentials(certificate)
 }

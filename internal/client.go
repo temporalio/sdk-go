@@ -36,6 +36,7 @@ import (
 	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -421,6 +422,9 @@ type (
 		// default: default
 		Namespace string
 
+		// Optional: Set the credentials for this client.
+		Credentials Credentials
+
 		// Optional: Logger framework can use to log.
 		// default: default logger provided.
 		Logger log.Logger
@@ -473,7 +477,6 @@ type (
 	HeadersProvider interface {
 		GetHeaders(ctx context.Context) (map[string]string, error)
 	}
-
 	// TrafficController is getting called in the interceptor chain with API invocation parameters.
 	// Result is either nil if API call is allowed or an error, in which case request would be interrupted and
 	// the error will be propagated back through the interceptor chain.
@@ -704,6 +707,13 @@ type (
 	}
 )
 
+// Credentials are optional credentials that can be specified in ClientOptions.
+type Credentials interface {
+	applyToOptions(*ClientOptions) error
+	// Can return nil to have no interceptor
+	gRPCInterceptor() grpc.UnaryClientInterceptor
+}
+
 // DialClient creates a client and attempts to connect to the server.
 func DialClient(options ClientOptions) (Client, error) {
 	options.ConnectionOptions.disableEagerConnection = false
@@ -753,6 +763,12 @@ func newClient(options ClientOptions, existing *WorkflowClient) (Client, error) 
 		options.Logger.Info("No logger configured for temporal client. Created default one.")
 	}
 
+	if options.Credentials != nil {
+		if err := options.Credentials.applyToOptions(&options); err != nil {
+			return nil, err
+		}
+	}
+
 	// Dial or use existing connection
 	var connection *grpc.ClientConn
 	var err error
@@ -800,6 +816,7 @@ func newDialParameters(options *ClientOptions, excludeInternalFromRetry *atomic.
 			options.HeadersProvider,
 			options.TrafficController,
 			excludeInternalFromRetry,
+			options.Credentials,
 		),
 		DefaultServiceConfig: defaultServiceConfig,
 	}
@@ -923,3 +940,56 @@ func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 func NewValues(data *commonpb.Payloads) converter.EncodedValues {
 	return newEncodedValues(data, nil)
 }
+
+type apiKeyCredentials func(context.Context) (string, error)
+
+func NewAPIKeyStaticCredentials(apiKey string) Credentials {
+	return NewAPIKeyDynamicCredentials(func(ctx context.Context) (string, error) { return apiKey, nil })
+}
+
+func NewAPIKeyDynamicCredentials(apiKeyCallback func(context.Context) (string, error)) Credentials {
+	return apiKeyCredentials(apiKeyCallback)
+}
+
+func (apiKeyCredentials) applyToOptions(*ClientOptions) error { return nil }
+
+func (a apiKeyCredentials) gRPCInterceptor() grpc.UnaryClientInterceptor { return a.gRPCIntercept }
+
+func (a apiKeyCredentials) gRPCIntercept(
+	ctx context.Context,
+	method string,
+	req any,
+	reply any,
+	cc *grpc.ClientConn,
+	invoker grpc.UnaryInvoker,
+	opts ...grpc.CallOption,
+) error {
+	if apiKey, err := a(ctx); err != nil {
+		return err
+	} else if apiKey != "" {
+		// Do from-add-new instead of append to overwrite anything there
+		md, _ := metadata.FromOutgoingContext(ctx)
+		if md == nil {
+			md = metadata.MD{}
+		}
+		md["authorization"] = []string{"Bearer " + apiKey}
+		ctx = metadata.NewOutgoingContext(ctx, md)
+	}
+	return invoker(ctx, method, req, reply, cc, opts...)
+}
+
+type mTLSCredentials tls.Certificate
+
+func NewMTLSCredentials(certificate tls.Certificate) Credentials { return mTLSCredentials(certificate) }
+
+func (m mTLSCredentials) applyToOptions(opts *ClientOptions) error {
+	if opts.ConnectionOptions.TLS == nil {
+		opts.ConnectionOptions.TLS = &tls.Config{}
+	} else if len(opts.ConnectionOptions.TLS.Certificates) != 0 {
+		return fmt.Errorf("cannot apply mTLS credentials, certificates already exist on TLS options")
+	}
+	opts.ConnectionOptions.TLS.Certificates = append(opts.ConnectionOptions.TLS.Certificates, tls.Certificate(m))
+	return nil
+}
+
+func (mTLSCredentials) gRPCInterceptor() grpc.UnaryClientInterceptor { return nil }
