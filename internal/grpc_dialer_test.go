@@ -171,7 +171,7 @@ func TestMissingGetServerInfo(t *testing.T) {
 	require.NoError(t, lastErr)
 
 	// Create a new client and confirm client has empty capabilities set
-	client, err := DialClient(ClientOptions{HostPort: l.Addr().String()})
+	client, err := DialClient(context.Background(), ClientOptions{HostPort: l.Addr().String()})
 	require.NoError(t, err)
 	workflowClient := client.(*WorkflowClient)
 	require.True(t, proto.Equal(&workflowservice.GetSystemInfoResponse_Capabilities{}, workflowClient.capabilities))
@@ -192,7 +192,7 @@ func TestInternalErrorRetry(t *testing.T) {
 	srv.signalWorkflowExecutionResponseError = status.Error(codes.Internal, "oh no, an internal error")
 
 	// Create client and make call
-	client, err := DialClient(ClientOptions{HostPort: srv.addr})
+	client, err := DialClient(context.Background(), ClientOptions{HostPort: srv.addr})
 	require.NoError(t, err)
 	defer client.Close()
 	_, err = client.WorkflowService().SignalWorkflowExecution(ctx, &workflowservice.SignalWorkflowExecutionRequest{})
@@ -213,7 +213,7 @@ func TestInternalErrorRetry(t *testing.T) {
 	srv.signalWorkflowExecutionResponseError = status.Error(codes.Internal, "oh no, an internal error")
 
 	// Create client and make call
-	client, err = DialClient(ClientOptions{HostPort: srv.addr})
+	client, err = DialClient(context.Background(), ClientOptions{HostPort: srv.addr})
 	require.NoError(t, err)
 	defer client.Close()
 	_, err = client.WorkflowService().SignalWorkflowExecution(ctx, &workflowservice.SignalWorkflowExecutionRequest{})
@@ -231,7 +231,7 @@ func TestEagerAndLazyClient(t *testing.T) {
 	srv.getSystemInfoResponseError = fmt.Errorf("some server failure")
 
 	// Confirm eager dial fails
-	_, err = DialClient(ClientOptions{HostPort: srv.addr})
+	_, err = DialClient(context.Background(), ClientOptions{HostPort: srv.addr})
 	require.EqualError(t, err, "failed reaching server: some server failure")
 
 	// Confirm lazy dial succeeds but fails signal workflow
@@ -247,7 +247,7 @@ func TestEagerAndLazyClient(t *testing.T) {
 	require.NoError(t, err)
 
 	// Now that there's no sys info response error, eager should succeed
-	c, err = DialClient(ClientOptions{HostPort: srv.addr})
+	c, err = DialClient(context.Background(), ClientOptions{HostPort: srv.addr})
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -316,7 +316,7 @@ func TestDialOptions(t *testing.T) {
 			return invoker(ctx, method, req, reply, cc, opts...)
 		}
 	}
-	client, err := DialClient(ClientOptions{
+	client, err := DialClient(context.Background(), ClientOptions{
 		HostPort: srv.addr,
 		ConnectionOptions: ConnectionOptions{
 			DialOptions: []grpc.DialOption{
@@ -353,7 +353,7 @@ func TestCustomResolver(t *testing.T) {
 	builder := manual.NewBuilderWithScheme(scheme)
 	builder.InitialState(resolver.State{Addresses: []resolver.Address{{Addr: s1.addr}, {Addr: s2.addr}}})
 	resolver.Register(builder)
-	client, err := DialClient(ClientOptions{HostPort: scheme + ":///whatever"})
+	client, err := DialClient(context.Background(), ClientOptions{HostPort: scheme + ":///whatever"})
 	require.NoError(t, err)
 	defer client.Close()
 
@@ -417,12 +417,12 @@ func TestResourceExhaustedCause(t *testing.T) {
 		Cause: enums.RESOURCE_EXHAUSTED_CAUSE_CONCURRENT_LIMIT,
 	})
 	srv.getSystemInfoResponseError = s.Err()
-	_, err = DialClient(ClientOptions{HostPort: srv.addr, MetricsHandler: handler})
+	_, err = DialClient(context.Background(), ClientOptions{HostPort: srv.addr, MetricsHandler: handler})
 	require.Error(t, err)
 
 	// Attempt dial with a cause-less resource exhausted
 	srv.getSystemInfoResponseError = status.New(codes.ResourceExhausted, "some resource exhausted").Err()
-	_, err = DialClient(ClientOptions{HostPort: srv.addr, MetricsHandler: handler})
+	_, err = DialClient(context.Background(), ClientOptions{HostPort: srv.addr, MetricsHandler: handler})
 	require.Error(t, err)
 
 	// Make sure we have 1 metric with cause and 1 without
