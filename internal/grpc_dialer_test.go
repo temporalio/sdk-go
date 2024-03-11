@@ -457,6 +457,18 @@ func TestCredentialsAPIKey(t *testing.T) {
 		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, "Authorization"),
 	)
 
+	// Overwrite via context
+	_, err = client.WorkflowService().GetSystemInfo(
+		metadata.AppendToOutgoingContext(context.Background(), "authorization", "overridden value"),
+		&workflowservice.GetSystemInfoRequest{},
+	)
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		[]string{"overridden value"},
+		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, "Authorization"),
+	)
+
 	// Callback
 	client, err = DialClient(ClientOptions{
 		HostPort: srv.addr,
