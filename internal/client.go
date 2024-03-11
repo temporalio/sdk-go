@@ -508,6 +508,10 @@ type (
 		// default: 15s
 		KeepAliveTimeout time.Duration
 
+		// GetSystemInfoTimeout is the timeout for the RPC made by the
+		// client to fetch server capabilities.
+		GetSystemInfoTimeout time.Duration
+
 		// if true, when there are no active RPCs, Time and Timeout will be ignored and no
 		// keepalive pings will be sent.
 		// If false, client sends keepalive pings even with no active RPCs
@@ -788,13 +792,13 @@ func newClient(ctx context.Context, options ClientOptions, existing *WorkflowCli
 	// the new connection. Otherwise, only load server capabilities eagerly if not
 	// disabled.
 	if existing != nil {
-		if client.capabilities, err = existing.loadCapabilities(ctx); err != nil {
+		if client.capabilities, err = existing.loadCapabilities(ctx, withGetSystemInfoTimeout(options.ConnectionOptions.GetSystemInfoTimeout)); err != nil {
 			return nil, err
 		}
 		client.unclosedClients = existing.unclosedClients
 	} else {
 		if !options.ConnectionOptions.disableEagerConnection {
-			if _, err := client.loadCapabilities(ctx); err != nil {
+			if _, err := client.loadCapabilities(ctx, withGetSystemInfoTimeout(options.ConnectionOptions.GetSystemInfoTimeout)); err != nil {
 				client.Close()
 				return nil, err
 			}
