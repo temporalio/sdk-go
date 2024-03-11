@@ -445,7 +445,7 @@ func TestCredentialsAPIKey(t *testing.T) {
 	defer srv.Stop()
 
 	// Fixed string
-	client, err := DialClient(ClientOptions{
+	client, err := DialClient(context.Background(), ClientOptions{
 		HostPort:    srv.addr,
 		Credentials: NewAPIKeyStaticCredentials("my-api-key"),
 	})
@@ -470,7 +470,7 @@ func TestCredentialsAPIKey(t *testing.T) {
 	)
 
 	// Callback
-	client, err = DialClient(ClientOptions{
+	client, err = DialClient(context.Background(), ClientOptions{
 		HostPort: srv.addr,
 		Credentials: NewAPIKeyDynamicCredentials(func(ctx context.Context) (string, error) {
 			return "my-callback-api-key", nil
