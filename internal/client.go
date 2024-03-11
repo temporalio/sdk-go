@@ -566,10 +566,14 @@ type (
 		// Optional: defaulted to 10 secs.
 		WorkflowTaskTimeout time.Duration
 
-		// WorkflowIDReusePolicy - Whether server allow reuse of workflow ID, can be useful
-		// for dedupe logic if set to RejectDuplicate.
+		// WorkflowIDReusePolicy - Whether server should allow reuse of the workflow ID of a *closed* Workflow.
+		// This can be useful for dedupe logic if set to RejectDuplicate.
 		// Optional: defaulted to AllowDuplicate.
 		WorkflowIDReusePolicy enumspb.WorkflowIdReusePolicy
+
+		// WorkflowIDConflictPolicy - Defines how to resolve an ID conflict with a *running* workflow.
+		// Optional: defaulted to Fail for Start Workflow, UseExisting for Signal-With-Start.
+		WorkflowIDConflictPolicy enumspb.WorkflowIdConflictPolicy
 
 		// When WorkflowExecutionErrorWhenAlreadyStarted is true, Client.ExecuteWorkflow will return an error if the
 		// workflow id has already been used and WorkflowIDReusePolicy would disallow a re-run. If it is set to false,
