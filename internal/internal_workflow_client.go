@@ -68,7 +68,7 @@ var (
 const (
 	defaultGetHistoryTimeout = 65 * time.Second
 
-	getSystemInfoTimeout = 5 * time.Second
+	defaultGetSystemInfoTimeout = 5 * time.Second
 
 	pollUpdateTimeout = 60 * time.Second
 )
@@ -1147,36 +1147,12 @@ func (wc *WorkflowClient) OperatorService() operatorservice.OperatorServiceClien
 	return operatorservice.NewOperatorServiceClient(wc.conn)
 }
 
-type loadCapabilitiesConfig struct {
-	getSystemInfoTimeout time.Duration
-}
-
-var defaultLoadCapabilitiesOptions = loadCapabilitiesConfig{
-	getSystemInfoTimeout: getSystemInfoTimeout,
-}
-
-type loadCapabilitiesOption func(config *loadCapabilitiesConfig)
-
-func withGetSystemInfoTimeout(timeout time.Duration) loadCapabilitiesOption {
-	return func(config *loadCapabilitiesConfig) {
-		if timeout > 0 {
-			config.getSystemInfoTimeout = timeout
-		}
-	}
-}
-
 // Get capabilities, lazily fetching from server if not already obtained.
-func (wc *WorkflowClient) loadCapabilities(ctx context.Context, opts ...loadCapabilitiesOption) (*workflowservice.GetSystemInfoResponse_Capabilities, error) {
-	cfg := defaultLoadCapabilitiesOptions
-	for _, opt := range opts {
-		opt(&cfg)
-	}
-
+func (wc *WorkflowClient) loadCapabilities(ctx context.Context, getSystemInfoTimeout time.Duration) (*workflowservice.GetSystemInfoResponse_Capabilities, error) {
 	// While we want to memoize the result here, we take care not to lock during
 	// the call. This means that in racy situations where this is called multiple
 	// times at once, it may result in multiple calls. This is far more preferable
 	// than locking on the call itself.
-
 	wc.capabilitiesLock.RLock()
 	capabilities := wc.capabilities
 	wc.capabilitiesLock.RUnlock()
@@ -1185,7 +1161,10 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context, opts ...loadCapa
 	}
 
 	// Fetch the capabilities
-	ctx, cancel := context.WithTimeout(ctx, cfg.getSystemInfoTimeout)
+	if getSystemInfoTimeout == 0 {
+		getSystemInfoTimeout = defaultGetSystemInfoTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, getSystemInfoTimeout)
 	defer cancel()
 	resp, err := wc.workflowService.GetSystemInfo(ctx, &workflowservice.GetSystemInfoRequest{})
 	// We ignore unimplemented
@@ -1210,7 +1189,7 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context, opts ...loadCapa
 
 func (wc *WorkflowClient) ensureInitialized(ctx context.Context) error {
 	// Just loading the capabilities is enough
-	_, err := wc.loadCapabilities(ctx)
+	_, err := wc.loadCapabilities(ctx, defaultGetSystemInfoTimeout)
 	return err
 }
 
