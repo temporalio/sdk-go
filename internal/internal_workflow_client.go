@@ -782,6 +782,8 @@ type UpdateWorkflowWithOptionsRequest struct {
 	FirstExecutionRunID string
 
 	// How this RPC should block on the server before returning.
+	// By default will block until the update is completed.
+	// NOTE: Specifying WorkflowUpdateLifeCycleStageAdmitted is not supported.
 	WaitForStage WorkflowUpdateLifeCycleStage
 }
 
