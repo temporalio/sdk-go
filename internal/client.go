@@ -967,13 +967,10 @@ func (a apiKeyCredentials) gRPCIntercept(
 	if apiKey, err := a(ctx); err != nil {
 		return err
 	} else if apiKey != "" {
-		// Do from-add-new instead of append to overwrite anything there
-		md, _ := metadata.FromOutgoingContext(ctx)
-		if md == nil {
-			md = metadata.MD{}
+		// Only add API key if it doesn't already exist
+		if md, _ := metadata.FromOutgoingContext(ctx); len(md.Get("authorization")) == 0 {
+			ctx = metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+apiKey)
 		}
-		md["authorization"] = []string{"Bearer " + apiKey}
-		ctx = metadata.NewOutgoingContext(ctx, md)
 	}
 	return invoker(ctx, method, req, reply, cc, opts...)
 }
