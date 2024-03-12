@@ -1624,7 +1624,7 @@ func TestClientCloseCount(t *testing.T) {
 	server, err := startTestGRPCServer()
 	require.NoError(t, err)
 	defer server.Stop()
-	client, err := DialClient(ClientOptions{HostPort: server.addr})
+	client, err := DialClient(context.Background(), ClientOptions{HostPort: server.addr})
 	require.NoError(t, err)
 	workflowClient := client.(*WorkflowClient)
 
@@ -1632,11 +1632,11 @@ func TestClientCloseCount(t *testing.T) {
 	require.EqualValues(t, 1, atomic.LoadInt32(workflowClient.unclosedClients))
 
 	// Create two more and confirm counts
-	client2, err := NewClientFromExisting(client, ClientOptions{})
+	client2, err := NewClientFromExisting(context.Background(), client, ClientOptions{})
 	require.NoError(t, err)
 	require.EqualValues(t, 2, atomic.LoadInt32(workflowClient.unclosedClients))
 	require.Same(t, workflowClient.unclosedClients, client2.(*WorkflowClient).unclosedClients)
-	client3, err := NewClientFromExisting(client, ClientOptions{})
+	client3, err := NewClientFromExisting(context.Background(), client, ClientOptions{})
 	require.NoError(t, err)
 	require.EqualValues(t, 3, atomic.LoadInt32(workflowClient.unclosedClients))
 	require.Same(t, workflowClient.unclosedClients, client3.(*WorkflowClient).unclosedClients)

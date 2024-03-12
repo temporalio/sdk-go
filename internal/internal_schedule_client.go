@@ -171,7 +171,7 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 }
 
 func (sc *scheduleClient) Create(ctx context.Context, options ScheduleOptions) (ScheduleHandle, error) {
-	if err := sc.workflowClient.ensureInitialized(); err != nil {
+	if err := sc.workflowClient.ensureInitialized(ctx); err != nil {
 		return nil, err
 	}
 
