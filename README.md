@@ -1,4 +1,4 @@
-# Temporal Go SDK [![Build Status](https://badge.buildkite.com/ce6df3b1a8b375270261ae70fb2d2756af298fef3a0dac4d20.svg?theme=github&branch=master)](https://buildkite.com/temporal/temporal-go-client) [![PkgGoDev](https://pkg.go.dev/badge/go.temporal.io/sdk)](https://pkg.go.dev/go.temporal.io/sdk)
+# Temporal Go SDK [![Build Status](https://github.com/temporalio/sdk-go/actions/workflows/ci.yml/badge.svg?event=push)](https://github.com/temporalio/sdk-go/actions/workflows/ci.yml) [![PkgGoDev](https://pkg.go.dev/badge/go.temporal.io/sdk)](https://pkg.go.dev/go.temporal.io/sdk)
 
 [Temporal](https://github.com/temporalio/temporal) is a distributed, scalable, durable, and highly available orchestration engine used to execute asynchronous long-running business logic in a scalable and resilient way.
 
