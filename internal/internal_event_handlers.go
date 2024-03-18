@@ -591,7 +591,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	if len(params.CronSchedule) > 0 {
 		attributes.CronSchedule = params.CronSchedule
 	}
-	attributes.InheritBuildId = determineUseCompatibleFlagForCommand(
+	attributes.UseCompatibleVersion = determineUseCompatibleFlagForCommand(
 		params.VersioningIntent, wc.workflowInfo.TaskQueueName, params.TaskQueueName)
 
 	command, err := wc.commandsHelper.startChildWorkflowExecution(attributes)
@@ -691,7 +691,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	// false just before request by the eager activity executor if eager activity
 	// execution is otherwise disallowed
 	scheduleTaskAttr.RequestEagerExecution = !parameters.DisableEagerExecution
-	scheduleTaskAttr.UseWorkflowBuildId = determineUseCompatibleFlagForCommand(
+	scheduleTaskAttr.UseCompatibleVersion = determineUseCompatibleFlagForCommand(
 		parameters.VersioningIntent, wc.workflowInfo.TaskQueueName, parameters.TaskQueueName)
 
 	command := wc.commandsHelper.scheduleActivityTask(scheduleID, scheduleTaskAttr)
