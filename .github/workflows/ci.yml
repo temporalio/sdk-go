@@ -9,7 +9,7 @@ jobs:
   build-and-test:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
         go-version: ["1.21", "1.22"]
         include:
           - os: ubuntu-latest
@@ -18,7 +18,12 @@ jobs:
             uploadCoverage: true
             # We only want to check docker compose on a single target
             testDockerCompose: true
-    runs-on: ${{ matrix.os }}
+          - os: macos-intel
+            runsOn: macos-12
+          - os: macos-arm
+            runsOn: macos-14
+            
+    runs-on: ${{ matrix.runsOn || matrix.os }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
