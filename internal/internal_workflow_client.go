@@ -1510,6 +1510,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		WorkflowTaskTimeout:      durationpb.New(workflowTaskTimeout),
 		Identity:                 w.client.identity,
 		WorkflowIdReusePolicy:    in.Options.WorkflowIDReusePolicy,
+		WorkflowIdConflictPolicy: in.Options.WorkflowIDConflictPolicy,
 		RetryPolicy:              convertToPBRetryPolicy(in.Options.RetryPolicy),
 		CronSchedule:             in.Options.CronSchedule,
 		Memo:                     memo,
@@ -1656,6 +1657,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		Memo:                     memo,
 		SearchAttributes:         searchAttr,
 		WorkflowIdReusePolicy:    in.Options.WorkflowIDReusePolicy,
+		WorkflowIdConflictPolicy: in.Options.WorkflowIDConflictPolicy,
 		Header:                   header,
 	}
 
