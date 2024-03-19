@@ -34,6 +34,7 @@ import (
 	"crypto/tls"
 	"io"
 
+	"go.temporal.io/api/cloud/cloudservice/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
@@ -87,6 +88,9 @@ const (
 type (
 	// Options are optional parameters for Client creation.
 	Options = internal.ClientOptions
+
+	// CloudOperationsClientOptions are parameters for CloutOperationsClient creation.
+	CloudOperationsClientOptions = internal.CloudOperationsClientOptions
 
 	// ConnectionOptions are optional parameters that can be specified in ClientOptions
 	ConnectionOptions = internal.ConnectionOptions
@@ -644,6 +648,15 @@ type (
 		// Close client and clean up underlying resources.
 		Close()
 	}
+
+	// CloudOperationsClient is the client for cloud operations.
+	CloudOperationsClient interface {
+		// CloudService provides access to the underlying gRPC service.
+		CloudService() cloudservice.CloudServiceClient
+
+		// Close client and clean up underlying resources.
+		Close()
+	}
 )
 
 // MetricsHandler is a handler for metrics emitted by the SDK. This interface is
@@ -742,7 +755,12 @@ var (
 	_ internal.Client          = Client(nil)
 	_ NamespaceClient          = internal.NamespaceClient(nil)
 	_ internal.NamespaceClient = NamespaceClient(nil)
+	_ CloudOperationsClient    = internal.CloudOperationsClient(nil)
 )
+
+func DialCloudOperationsClient(ctx context.Context, options CloudOperationsClientOptions) (CloudOperationsClient, error) {
+	return internal.DialCloudOperationsClient(ctx, options)
+}
 
 // NewValue creates a new [converter.EncodedValue] which can be used to decode binary data returned by Temporal.  For example:
 // User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got response from calling Client.DescribeWorkflowExecution.

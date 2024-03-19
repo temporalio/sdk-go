@@ -491,14 +491,14 @@ func TestCredentialsMTLS(t *testing.T) {
 	// No TLS set
 	var clientOptions ClientOptions
 	creds := NewMTLSCredentials(tls.Certificate{Certificate: [][]byte{[]byte("somedata1")}})
-	require.NoError(t, creds.applyToOptions(&clientOptions))
+	require.NoError(t, creds.applyToOptions(&clientOptions.ConnectionOptions))
 	require.Equal(t, "somedata1", string(clientOptions.ConnectionOptions.TLS.Certificates[0].Certificate[0]))
 
 	// TLS already set
 	clientOptions = ClientOptions{}
 	clientOptions.ConnectionOptions.TLS = &tls.Config{ServerName: "my-server-name"}
 	creds = NewMTLSCredentials(tls.Certificate{Certificate: [][]byte{[]byte("somedata2")}})
-	require.NoError(t, creds.applyToOptions(&clientOptions))
+	require.NoError(t, creds.applyToOptions(&clientOptions.ConnectionOptions))
 	require.Equal(t, "my-server-name", clientOptions.ConnectionOptions.TLS.ServerName)
 	require.Equal(t, "somedata2", string(clientOptions.ConnectionOptions.TLS.Certificates[0].Certificate[0]))
 
@@ -508,7 +508,7 @@ func TestCredentialsMTLS(t *testing.T) {
 		Certificates: []tls.Certificate{{Certificate: [][]byte{[]byte("somedata3")}}},
 	}
 	creds = NewMTLSCredentials(tls.Certificate{Certificate: [][]byte{[]byte("somedata4")}})
-	require.Error(t, creds.applyToOptions(&clientOptions))
+	require.Error(t, creds.applyToOptions(&clientOptions.ConnectionOptions))
 }
 
 type testGRPCServer struct {

@@ -31,6 +31,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.temporal.io/api/cloud/cloudservice/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/operatorservice/v1"
@@ -473,6 +474,39 @@ type (
 		Interceptors []ClientInterceptor
 	}
 
+	CloudOperationsClient interface {
+		CloudService() cloudservice.CloudServiceClient
+		Close()
+	}
+
+	CloudOperationsClientOptions struct {
+		// Required: The credentials for this client. See
+		// [go.temporal.io/sdk/client.NewAPIKeyStaticCredentials],
+		// [go.temporal.io/sdk/client.NewAPIKeyDynamicCredentials], and
+		// [go.temporal.io/sdk/client.NewMTLSCredentials].
+		Credentials Credentials
+
+		// Optional: Advanced server connection options such as TLS settings. Not
+		// usually needed.
+		ConnectionOptions ConnectionOptions
+
+		// Optional: Logger framework can use to log.
+		// default: default logger provided.
+		Logger log.Logger
+
+		// Optional: Metrics handler for reporting metrics.
+		// Default: No metrics
+		MetricsHandler metrics.Handler
+
+		// Optional: Overrides the specific host to connect to. Not usually needed.
+		// Default: saas-api.tmprl.cloud:443
+		HostPort string
+
+		// Optional: Disable TLS.
+		// Default: false (i.e. TLS enabled)
+		DisableTLS bool
+	}
+
 	// HeadersProvider returns a map of gRPC headers that should be used on every request.
 	HeadersProvider interface {
 		GetHeaders(ctx context.Context) (map[string]string, error)
@@ -713,7 +747,7 @@ type (
 
 // Credentials are optional credentials that can be specified in ClientOptions.
 type Credentials interface {
-	applyToOptions(*ClientOptions) error
+	applyToOptions(*ConnectionOptions) error
 	// Can return nil to have no interceptor
 	gRPCInterceptor() grpc.UnaryClientInterceptor
 }
@@ -768,7 +802,7 @@ func newClient(ctx context.Context, options ClientOptions, existing *WorkflowCli
 	}
 
 	if options.Credentials != nil {
-		if err := options.Credentials.applyToOptions(&options); err != nil {
+		if err := options.Credentials.applyToOptions(&options.ConnectionOptions); err != nil {
 			return nil, err
 		}
 	}
@@ -922,6 +956,61 @@ func newNamespaceServiceClient(workflowServiceClient workflowservice.WorkflowSer
 	}
 }
 
+type cloudOperationsClient struct {
+	conn               *grpc.ClientConn
+	logger             log.Logger
+	cloudServiceClient cloudservice.CloudServiceClient
+}
+
+func DialCloudOperationsClient(ctx context.Context, options CloudOperationsClientOptions) (CloudOperationsClient, error) {
+	// Set defaults
+	if options.MetricsHandler == nil {
+		options.MetricsHandler = metrics.NopHandler
+	}
+	if options.Logger == nil {
+		options.Logger = ilog.NewDefaultLogger()
+	}
+	if options.HostPort == "" {
+		options.HostPort = "saas-api.tmprl.cloud:443"
+	}
+	if options.Credentials != nil {
+		if err := options.Credentials.applyToOptions(&options.ConnectionOptions); err != nil {
+			return nil, err
+		}
+	}
+	if options.ConnectionOptions.TLS == nil && !options.DisableTLS {
+		options.ConnectionOptions.TLS = &tls.Config{}
+	}
+	// Exclude internal from retry by default
+	options.ConnectionOptions.excludeInternalFromRetry = &atomic.Bool{}
+	options.ConnectionOptions.excludeInternalFromRetry.Store(true)
+	// TODO(cretz): Pass through context on dial
+	conn, err := dial(newDialParameters(&ClientOptions{
+		HostPort:          options.HostPort,
+		ConnectionOptions: options.ConnectionOptions,
+		MetricsHandler:    options.MetricsHandler,
+		Credentials:       options.Credentials,
+	}, options.ConnectionOptions.excludeInternalFromRetry))
+	if err != nil {
+		return nil, err
+	}
+	return &cloudOperationsClient{
+		conn:               conn,
+		logger:             options.Logger,
+		cloudServiceClient: cloudservice.NewCloudServiceClient(conn),
+	}, nil
+}
+
+func (c *cloudOperationsClient) CloudService() cloudservice.CloudServiceClient {
+	return c.cloudServiceClient
+}
+
+func (c *cloudOperationsClient) Close() {
+	if err := c.conn.Close(); err != nil {
+		c.logger.Warn("unable to close connection", tagError, err)
+	}
+}
+
 // NewValue creates a new converter.EncodedValue which can be used to decode binary data returned by Temporal.  For example:
 // User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got response from calling Client.DescribeWorkflowExecution.
 // The response contains binary field PendingActivityInfo.HeartbeatDetails,
@@ -955,7 +1044,7 @@ func NewAPIKeyDynamicCredentials(apiKeyCallback func(context.Context) (string, e
 	return apiKeyCredentials(apiKeyCallback)
 }
 
-func (apiKeyCredentials) applyToOptions(*ClientOptions) error { return nil }
+func (apiKeyCredentials) applyToOptions(*ConnectionOptions) error { return nil }
 
 func (a apiKeyCredentials) gRPCInterceptor() grpc.UnaryClientInterceptor { return a.gRPCIntercept }
 
@@ -983,13 +1072,13 @@ type mTLSCredentials tls.Certificate
 
 func NewMTLSCredentials(certificate tls.Certificate) Credentials { return mTLSCredentials(certificate) }
 
-func (m mTLSCredentials) applyToOptions(opts *ClientOptions) error {
-	if opts.ConnectionOptions.TLS == nil {
-		opts.ConnectionOptions.TLS = &tls.Config{}
-	} else if len(opts.ConnectionOptions.TLS.Certificates) != 0 {
+func (m mTLSCredentials) applyToOptions(opts *ConnectionOptions) error {
+	if opts.TLS == nil {
+		opts.TLS = &tls.Config{}
+	} else if len(opts.TLS.Certificates) != 0 {
 		return fmt.Errorf("cannot apply mTLS credentials, certificates already exist on TLS options")
 	}
-	opts.ConnectionOptions.TLS.Certificates = append(opts.ConnectionOptions.TLS.Certificates, tls.Certificate(m))
+	opts.TLS.Certificates = append(opts.TLS.Certificates, tls.Certificate(m))
 	return nil
 }
 
