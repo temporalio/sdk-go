@@ -47,6 +47,7 @@ import (
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"go.temporal.io/sdk/internal/common/retry"
@@ -177,6 +178,7 @@ type (
 		nextEventID    int64 // next expected eventID for sanity
 		lastEventID    int64 // last expected eventID, zero indicates read until end of stream
 		next           []*historypb.HistoryEvent
+		nextMessages   []*protocolpb.Message
 		nextFlags      []sdkFlag
 		binaryChecksum string
 		sdkVersion     string
@@ -199,7 +201,8 @@ type (
 		events         []*historypb.HistoryEvent
 		markers        []*historypb.HistoryEvent
 		flags          []sdkFlag
-		msgs           []*protocolpb.Message
+		acceptedMsgs   []*protocolpb.Message
+		requestedMsgs  []*protocolpb.Message
 		binaryChecksum string
 		sdkVersion     string
 		sdkName        string
@@ -349,19 +352,21 @@ func (eh *history) nextTask() (*preparedTask, error) {
 			return nil, err
 		}
 		eh.next = firstTask.events
+		eh.nextMessages = firstTask.requestedMsgs
 		eh.nextFlags = firstTask.flags
 		eh.sdkName = firstTask.sdkName
 		eh.sdkVersion = firstTask.sdkVersion
 	}
 
 	result := eh.next
+	requestMessages := eh.nextMessages
 	checksum := eh.binaryChecksum
 	sdkFlags := eh.nextFlags
 	sdkName := eh.sdkName
 	sdkVersion := eh.sdkVersion
 
 	var markers []*historypb.HistoryEvent
-	var msgs []*protocolpb.Message
+	var acceptedMsgs []*protocolpb.Message
 	var buildID *string
 	if len(result) > 0 {
 		nextTaskEvents, err := eh.prepareTask()
@@ -369,18 +374,20 @@ func (eh *history) nextTask() (*preparedTask, error) {
 			return nil, err
 		}
 		eh.next = nextTaskEvents.events
+		eh.nextMessages = nextTaskEvents.requestedMsgs
 		eh.nextFlags = nextTaskEvents.flags
 		eh.sdkName = nextTaskEvents.sdkName
 		eh.sdkVersion = nextTaskEvents.sdkVersion
 		markers = nextTaskEvents.markers
-		msgs = nextTaskEvents.msgs
+		acceptedMsgs = nextTaskEvents.acceptedMsgs
 		buildID = nextTaskEvents.buildID
 	}
 	return &preparedTask{
 		events:         result,
 		markers:        markers,
 		flags:          sdkFlags,
-		msgs:           msgs,
+		acceptedMsgs:   acceptedMsgs,
+		requestedMsgs:  requestMessages,
 		binaryChecksum: checksum,
 		sdkName:        sdkName,
 		sdkVersion:     sdkVersion,
@@ -481,7 +488,17 @@ OrderEvents:
 			} else if isPreloadMarkerEvent(event) {
 				taskEvents.markers = append(taskEvents.markers, event)
 			} else if attrs := event.GetWorkflowExecutionUpdateAcceptedEventAttributes(); attrs != nil {
-				taskEvents.msgs = append(taskEvents.msgs, inferMessage(attrs))
+				taskEvents.acceptedMsgs = append(taskEvents.acceptedMsgs, inferMessageFromAcceptedEvent(attrs))
+			} else if attrs := event.GetWorkflowExecutionUpdateRequestedEventAttributes(); attrs != nil {
+				updateID := attrs.GetRequest().GetMeta().GetUpdateId()
+				taskEvents.requestedMsgs = append(taskEvents.requestedMsgs, &protocolpb.Message{
+					Id:                 updateID + "/request",
+					ProtocolInstanceId: updateID,
+					SequencingId: &protocolpb.Message_EventId{
+						EventId: event.GetEventId(),
+					},
+					Body: protocol.MustMarshalAny(attrs.GetRequest().GetInput()),
+				})
 			}
 			taskEvents.events = append(taskEvents.events, event)
 		}
@@ -506,7 +523,7 @@ func isPreloadMarkerEvent(event *historypb.HistoryEvent) bool {
 	return event.GetEventType() == enumspb.EVENT_TYPE_MARKER_RECORDED
 }
 
-func inferMessage(attrs *historypb.WorkflowExecutionUpdateAcceptedEventAttributes) *protocolpb.Message {
+func inferMessageFromAcceptedEvent(attrs *historypb.WorkflowExecutionUpdateAcceptedEventAttributes) *protocolpb.Message {
 	return &protocolpb.Message{
 		Id:                 attrs.GetAcceptedRequestMessageId(),
 		ProtocolInstanceId: attrs.GetProtocolInstanceId(),
@@ -1005,19 +1022,30 @@ ProcessEvents:
 		}
 		reorderedEvents := nextTask.events
 		markers := nextTask.markers
-		historyMessages := nextTask.msgs
+		historyMessages := nextTask.acceptedMsgs
 		flags := nextTask.flags
 		binaryChecksum := nextTask.binaryChecksum
 		nextTaskBuildId := nextTask.buildID
+		requestedUpdates := nextTask.requestedMsgs
 		// Check if we are replaying so we know if we should use the messages in the WFT or the history
 		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
 		var msgs *eventMsgIndex
 		if isReplay {
+			requestUpdatePayload := make(map[string]*anypb.Any)
+			for _, updateRequest := range requestedUpdates {
+				requestUpdatePayload[updateRequest.GetId()] = updateRequest.GetBody()
+			}
+			for _, msg := range historyMessages {
+				if payload, ok := requestUpdatePayload[msg.Id]; ok {
+					msg.Body = payload
+				}
+			}
 			msgs = indexMessagesByEventID(historyMessages)
 
 			eventHandler.sdkVersion = nextTask.sdkVersion
 			eventHandler.sdkName = nextTask.sdkName
 		} else {
+			taskMessages = append(taskMessages, requestedUpdates...)
 			msgs = indexMessagesByEventID(taskMessages)
 			taskMessages = []*protocolpb.Message{}
 			if eventHandler.sdkVersion != SDKVersion {
