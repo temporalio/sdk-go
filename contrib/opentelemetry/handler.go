@@ -39,9 +39,10 @@ var _ client.MetricsHandler = MetricsHandler{}
 // MetricsHandler is an implementation of client.MetricsHandler
 // for open telemetry.
 type MetricsHandler struct {
-	meter      metric.Meter
-	attributes attribute.Set
-	onError    func(error)
+	meter                     metric.Meter
+	attributes                attribute.Set
+	onError                   func(error)
+	histogramBucketBoundaries func(string) []float64
 }
 
 // MetricsHandlerOptions are options provided to NewMetricsHandler.
@@ -55,6 +56,16 @@ type MetricsHandlerOptions struct {
 	// OnError Callback to invoke if the provided meter returns an error.
 	// Optional: Defaults to panicking on any error.
 	OnError func(error)
+	// HistogramBucketBoundaries will be called when creating timing metrics, to
+	// determine the bucket boundaries. Timings are recorded as a floating point
+	// number of seconds, and the lower default boundaries (0, 5, ..., 10000) will
+	// not offer enough granularity for operations that only take milliseconds.
+	//
+	// The name parameter is the name of the metric being created. If the function
+	// returns nil, the default boundaries will be used.
+	//
+	// Optional: Defaults to the OpenTelemetry default values.
+	HistogramBucketBoundaries func(name string) []float64
 }
 
 // NewMetricsHandler returns a client.MetricsHandler that is backed by the given Meter
@@ -66,9 +77,10 @@ func NewMetricsHandler(options MetricsHandlerOptions) MetricsHandler {
 		options.OnError = func(err error) { panic(err) }
 	}
 	return MetricsHandler{
-		meter:      options.Meter,
-		attributes: options.InitialAttributes,
-		onError:    options.OnError,
+		meter:                     options.Meter,
+		attributes:                options.InitialAttributes,
+		onError:                   options.OnError,
+		histogramBucketBoundaries: options.HistogramBucketBoundaries,
 	}
 }
 
@@ -110,9 +122,10 @@ func (m MetricsHandler) WithTags(tags map[string]string) client.MetricsHandler {
 		attributes = append(attributes, attribute.String(k, v))
 	}
 	return MetricsHandler{
-		meter:      m.meter,
-		attributes: attribute.NewSet(attributes...),
-		onError:    m.onError,
+		meter:                     m.meter,
+		attributes:                attribute.NewSet(attributes...),
+		onError:                   m.onError,
+		histogramBucketBoundaries: m.histogramBucketBoundaries,
 	}
 }
 
@@ -146,7 +159,17 @@ func (m MetricsHandler) Gauge(name string) client.MetricsGauge {
 }
 
 func (m MetricsHandler) Timer(name string) client.MetricsTimer {
-	h, err := m.meter.Float64Histogram(name, metric.WithUnit("s"))
+	opts := []metric.Float64HistogramOption{
+		metric.WithUnit("s"),
+	}
+
+	if fn := m.histogramBucketBoundaries; fn != nil {
+		if bb := fn(name); bb != nil {
+			opts = append(opts, metric.WithExplicitBucketBoundaries(bb...))
+		}
+	}
+
+	h, err := m.meter.Float64Histogram(name, opts...)
 	if err != nil {
 		m.onError(err)
 		return client.MetricsNopHandler.Timer(name)

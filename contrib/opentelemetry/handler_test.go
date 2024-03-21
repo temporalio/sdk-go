@@ -146,42 +146,89 @@ func TestGaugeHandler(t *testing.T) {
 }
 
 func TestTimerHandler(t *testing.T) {
-	ctx := context.Background()
-	metricReader := metric.NewManualReader()
-	meterProvider := metric.NewMeterProvider(metric.WithReader(metricReader))
-	handler := opentelemetry.NewMetricsHandler(
-		opentelemetry.MetricsHandlerOptions{
-			Meter: meterProvider.Meter("test"),
+	testCases := map[string]struct {
+		opts opentelemetry.MetricsHandlerOptions
+		fn   func(opentelemetry.MetricsHandler)
+		want metricdata.Metrics
+	}{
+		"default buckets": {
+			opts: opentelemetry.MetricsHandlerOptions{},
+			fn: func(handler opentelemetry.MetricsHandler) {
+				handlerWithTag := handler.WithTags(map[string]string{"tag1": "value1"})
+				testTimer := handlerWithTag.Timer("testTimer")
+				testTimer.Record(time.Millisecond)
+				testTimer.Record(time.Second)
+				testTimer.Record(time.Hour)
+			},
+			want: metricdata.Metrics{
+				Name: "testTimer",
+				Unit: "s",
+				Data: metricdata.Histogram[float64]{
+					Temporality: metricdata.CumulativeTemporality,
+					DataPoints: []metricdata.HistogramDataPoint[float64]{
+						{
+							Count:        3,
+							Sum:          3601.001,
+							Min:          metricdata.NewExtrema(time.Millisecond.Seconds()),
+							Max:          metricdata.NewExtrema(time.Hour.Seconds()),
+							Bounds:       []float64{0, 5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000},
+							BucketCounts: []uint64{0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
+							Attributes:   attribute.NewSet(attribute.String("tag1", "value1")),
+						},
+					},
+				},
+			},
 		},
-	)
-	handlerWithTag := handler.WithTags(map[string]string{"tag1": "value1"})
-	testTimer := handlerWithTag.Timer("testTimer")
-	testTimer.Record(time.Millisecond)
-	testTimer.Record(time.Second)
-	testTimer.Record(time.Hour)
-
-	var rm metricdata.ResourceMetrics
-	metricReader.Collect(ctx, &rm)
-	assert.Len(t, rm.ScopeMetrics, 1)
-	metrics := rm.ScopeMetrics[0].Metrics
-	assert.Len(t, metrics, 1)
-	want := metricdata.Metrics{
-		Name: "testTimer",
-		Unit: "s",
-		Data: metricdata.Histogram[float64]{
-			Temporality: metricdata.CumulativeTemporality,
-			DataPoints: []metricdata.HistogramDataPoint[float64]{
-				{
-					Count:        3,
-					Sum:          3601.001,
-					Min:          metricdata.NewExtrema(time.Millisecond.Seconds()),
-					Max:          metricdata.NewExtrema(time.Hour.Seconds()),
-					Bounds:       []float64{0, 5, 10, 25, 50, 75, 100, 250, 500, 750, 1000, 2500, 5000, 7500, 10000},
-					BucketCounts: []uint64{0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
-					Attributes:   attribute.NewSet(attribute.String("tag1", "value1")),
+		"custom buckets": {
+			opts: opentelemetry.MetricsHandlerOptions{
+				HistogramBucketBoundaries: func(name string) []float64 {
+					return []float64{0.5, 1, 2, 3}
+				},
+			},
+			fn: func(handler opentelemetry.MetricsHandler) {
+				handlerWithTag := handler.WithTags(map[string]string{"tag1": "value1"})
+				testTimer := handlerWithTag.Timer("testTimer")
+				testTimer.Record(time.Millisecond)
+				testTimer.Record(time.Second)
+				testTimer.Record(time.Hour)
+			},
+			want: metricdata.Metrics{
+				Name: "testTimer",
+				Unit: "s",
+				Data: metricdata.Histogram[float64]{
+					Temporality: metricdata.CumulativeTemporality,
+					DataPoints: []metricdata.HistogramDataPoint[float64]{
+						{
+							Count:        3,
+							Sum:          3601.001,
+							Min:          metricdata.NewExtrema(time.Millisecond.Seconds()),
+							Max:          metricdata.NewExtrema(time.Hour.Seconds()),
+							Bounds:       []float64{0.5, 1, 2, 3},
+							BucketCounts: []uint64{1, 1, 0, 0, 1},
+							Attributes:   attribute.NewSet(attribute.String("tag1", "value1")),
+						},
+					},
 				},
 			},
 		},
 	}
-	metricdatatest.AssertEqual(t, want, metrics[0], metricdatatest.IgnoreTimestamp())
+	for desc, tc := range testCases {
+		t.Run(desc, func(t *testing.T) {
+			ctx := context.Background()
+
+			metricReader := metric.NewManualReader()
+			meterProvider := metric.NewMeterProvider(metric.WithReader(metricReader))
+			tc.opts.Meter = meterProvider.Meter("test")
+			handler := opentelemetry.NewMetricsHandler(tc.opts)
+
+			tc.fn(handler)
+
+			var rm metricdata.ResourceMetrics
+			metricReader.Collect(ctx, &rm)
+			assert.Len(t, rm.ScopeMetrics, 1)
+			metrics := rm.ScopeMetrics[0].Metrics
+			assert.Len(t, metrics, 1)
+			metricdatatest.AssertEqual(t, tc.want, metrics[0], metricdatatest.IgnoreTimestamp())
+		})
+	}
 }
