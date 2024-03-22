@@ -42,12 +42,13 @@ require (
 	golang.org/x/sys v0.18.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20240304212257-790db918fca8 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240304212257-790db918fca8 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20240318140521-94a12d6c2237 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240318140521-94a12d6c2237 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 replace (
+	go.temporal.io/api => ../../temporal-api-go
 	go.temporal.io/sdk => ../
 	go.temporal.io/sdk/contrib/opentelemetry => ../contrib/opentelemetry
 	go.temporal.io/sdk/contrib/opentracing => ../contrib/opentracing
