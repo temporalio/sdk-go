@@ -64,6 +64,25 @@ const (
 	TaskReachabilityClosedWorkflows = internal.TaskReachabilityClosedWorkflows
 )
 
+// WorkflowUpdateLifeCycleStage indicates the stage of an update request.
+// NOTE: Experimental
+type WorkflowUpdateLifeCycleStage = internal.WorkflowUpdateLifeCycleStage
+
+const (
+	// WorkflowUpdateLifeCycleStageUnspecified indicates the wait stage was not specified
+	// NOTE: Experimental
+	WorkflowUpdateLifeCycleStageUnspecified = internal.WorkflowUpdateLifeCycleStageUnspecified
+	// WorkflowUpdateLifeCycleStageAdmitted indicates the update is admitted
+	// NOTE: Experimental
+	WorkflowUpdateLifeCycleStageAdmitted = internal.WorkflowUpdateLifeCycleStageAdmitted
+	// WorkflowUpdateLifeCycleStageAccepted indicates the update is accepted
+	// NOTE: Experimental
+	WorkflowUpdateLifeCycleStageAccepted = internal.WorkflowUpdateLifeCycleStageAccepted
+	// WorkflowUpdateLifeCycleStageCompleted indicates the update is completed
+	// NOTE: Experimental
+	WorkflowUpdateLifeCycleStageCompleted = internal.WorkflowUpdateLifeCycleStageCompleted
+)
+
 const (
 	// DefaultHostPort is the host:port which is used if not passed with options.
 	DefaultHostPort = internal.LocalHostPort
@@ -198,7 +217,7 @@ type (
 
 	// UpdateWorkflowWithOptionsRequest encapsulates the parameters for
 	// sending an update to a workflow execution.
-	// WARNING: Worker versioning is currently experimental
+	// NOTE: Experimental
 	UpdateWorkflowWithOptionsRequest = internal.UpdateWorkflowWithOptionsRequest
 
 	// WorkflowUpdateHandle represents a running or completed workflow

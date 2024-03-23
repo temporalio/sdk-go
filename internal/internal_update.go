@@ -30,6 +30,7 @@ import (
 	"reflect"
 
 	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
 	updatepb "go.temporal.io/api/update/v1"
@@ -38,6 +39,20 @@ import (
 )
 
 type updateState string
+
+// WorkflowUpdateLifeCycleStage indicates the stage of an update request.
+type WorkflowUpdateLifeCycleStage int
+
+const (
+	// WorkflowUpdateLifeCycleStageUnspecified indicates the wait stage was not specified
+	WorkflowUpdateLifeCycleStageUnspecified WorkflowUpdateLifeCycleStage = iota
+	// WorkflowUpdateLifeCycleStageAdmitted indicates the update is admitted
+	WorkflowUpdateLifeCycleStageAdmitted
+	// WorkflowUpdateLifeCycleStageAccepted indicates the update is accepted
+	WorkflowUpdateLifeCycleStageAccepted
+	// WorkflowUpdateLifeCycleStageCompleted indicates the update is completed
+	WorkflowUpdateLifeCycleStageCompleted
+)
 
 const (
 	updateStateNew              updateState = "New"
@@ -440,4 +455,19 @@ func validateUpdateHandlerFn(fn interface{}) error {
 			"error or a serializable result and error (i.e. (ResultType, error))")
 	}
 	return nil
+}
+
+func updateLifeCycleStageToProto(l WorkflowUpdateLifeCycleStage) enumspb.UpdateWorkflowExecutionLifecycleStage {
+	switch l {
+	case WorkflowUpdateLifeCycleStageUnspecified:
+		return enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_UNSPECIFIED
+	case WorkflowUpdateLifeCycleStageAdmitted:
+		return enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ADMITTED
+	case WorkflowUpdateLifeCycleStageAccepted:
+		return enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ACCEPTED
+	case WorkflowUpdateLifeCycleStageCompleted:
+		return enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED
+	default:
+		panic("unknown update lifecycle stage")
+	}
 }
