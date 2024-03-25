@@ -113,6 +113,9 @@ jobs:
       - name: Single integration test against cloud
         run: 'go test -v --count 1 -p 1 . -run "TestIntegrationSuite/TestBasic$"'
         working-directory: test
+      - name: Cloud integration tests
+        run: 'go test -v --count 1 -p 1 . -run "TestCloudSuite/.*" -cloud-tests'
+        working-directory: test
 
   features-test:
     uses: temporalio/features/.github/workflows/go.yaml@main
