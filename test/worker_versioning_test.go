@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"go.temporal.io/api/common/v1"
+	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 
 	"github.com/pborman/uuid"
@@ -101,6 +102,280 @@ func (ts *WorkerVersioningTestSuite) TestManipulateVersionSets() {
 	ts.Equal("1.0", res.Sets[0].BuildIDs[0])
 }
 
+func (ts *WorkerVersioningTestSuite) TestManipulateRules() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	res, err := ts.client.GetWorkerVersioningRules(ctx, &client.GetWorkerVersioningOptions{
+		TaskQueue: ts.taskQueueName,
+	})
+	ts.NoError(err)
+
+	token, err := ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: res.ConflictToken,
+		Operation: &client.VersioningOpInsertAssignmentRule{
+			RuleIndex: 0,
+			Rule: client.VersioningAssignmentRule{
+				TargetBuildId: "1.0",
+			},
+		},
+	})
+	ts.NoError(err)
+
+	token, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: token,
+		Operation: &client.VersioningOpInsertAssignmentRule{
+			RuleIndex: 0,
+			Rule: client.VersioningAssignmentRule{
+				TargetBuildId: "2.0",
+				Ramp: &client.VersioningRampByPercentage{
+					Percentage: 45.0,
+				},
+			},
+		},
+	})
+	ts.NoError(err)
+
+	token, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: token,
+		Operation: &client.VersioningOpInsertRedirectRule{
+			Rule: client.VersioningRedirectRule{
+				SourceBuildId: "1.0",
+				TargetBuildId: "2.0",
+			},
+		},
+	})
+	ts.NoError(err)
+
+	res, err = ts.client.GetWorkerVersioningRules(ctx, &client.GetWorkerVersioningOptions{
+		TaskQueue: ts.taskQueueName,
+	})
+	ts.NoError(err)
+
+	ts.Equal("2.0", res.AssignmentRules[0].TargetBuildId)
+	r, ok := res.AssignmentRules[0].Ramp.(*client.VersioningRampByPercentage)
+	ts.Truef(ok, "Not a percentage ramp")
+	ts.Equal(float32(45.0), r.Percentage)
+
+	ts.Equal("1.0", res.AssignmentRules[1].TargetBuildId)
+
+	ts.Equal("1.0", res.RedirectRules[0].SourceBuildId)
+	ts.Equal("2.0", res.RedirectRules[0].TargetBuildId)
+}
+
+func (ts *WorkerVersioningTestSuite) TestReplaceDeleteRules() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	res, err := ts.client.GetWorkerVersioningRules(ctx, &client.GetWorkerVersioningOptions{
+		TaskQueue: ts.taskQueueName,
+	})
+	ts.NoError(err)
+
+	token, err := ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: res.ConflictToken,
+		Operation: &client.VersioningOpInsertAssignmentRule{
+			RuleIndex: 0,
+			Rule: client.VersioningAssignmentRule{
+				TargetBuildId: "1.0",
+			},
+		},
+	})
+	ts.NoError(err)
+
+	// Replace by unconditional rule is OK
+	token, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: token,
+		Operation: &client.VersioningOpReplaceAssignmentRule{
+			RuleIndex: 0,
+			Rule: client.VersioningAssignmentRule{
+				TargetBuildId: "1.1",
+			},
+		},
+	})
+	ts.NoError(err)
+
+	// Replace by conditional rule fails
+	_, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: token,
+		Operation: &client.VersioningOpReplaceAssignmentRule{
+			RuleIndex: 0,
+			Rule: client.VersioningAssignmentRule{
+				TargetBuildId: "2.0",
+				Ramp: &client.VersioningRampByPercentage{
+					Percentage: 45.0,
+				},
+			},
+			Force: false,
+		},
+	})
+	// Without `force` at least one unconditional rule should remain
+	ts.Error(err)
+	ts.IsType(&serviceerror.FailedPrecondition{}, err)
+
+	token, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: token,
+		Operation: &client.VersioningOpReplaceAssignmentRule{
+			RuleIndex: 0,
+			Rule: client.VersioningAssignmentRule{
+				TargetBuildId: "2.0",
+				Ramp: &client.VersioningRampByPercentage{
+					Percentage: 45.0,
+				},
+			},
+			Force: true,
+		},
+	})
+	ts.NoError(err)
+
+	_, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: token,
+		Operation: &client.VersioningOpDeleteAssignmentRule{
+			RuleIndex: 0,
+			Force:     false,
+		},
+	})
+	// At least one unconditional rule left without `force`
+	ts.Error(err)
+	ts.IsType(&serviceerror.FailedPrecondition{}, err)
+
+	_, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: token,
+		Operation: &client.VersioningOpDeleteAssignmentRule{
+			RuleIndex: 0,
+			Force:     true,
+		},
+	})
+	ts.NoError(err)
+}
+
+func (ts *WorkerVersioningTestSuite) TestCommitRules() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	res, err := ts.client.GetWorkerVersioningRules(ctx, &client.GetWorkerVersioningOptions{
+		TaskQueue: ts.taskQueueName,
+	})
+	ts.NoError(err)
+
+	token, err := ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: res.ConflictToken,
+		Operation: &client.VersioningOpInsertAssignmentRule{
+			RuleIndex: 0,
+			Rule: client.VersioningAssignmentRule{
+				TargetBuildId: "1.0",
+			},
+		},
+	})
+	ts.NoError(err)
+
+	token, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: token,
+		Operation: &client.VersioningOpInsertAssignmentRule{
+			RuleIndex: 0,
+			Rule: client.VersioningAssignmentRule{
+				TargetBuildId: "2.0",
+				Ramp: &client.VersioningRampByPercentage{
+					Percentage: 45.0,
+				},
+			},
+		},
+	})
+	ts.NoError(err)
+
+	// No worker recently polling so it should fail
+	_, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: token,
+		Operation: &client.VersioningOpCommitBuildId{
+			TargetBuildId: "2.0",
+			Force:         false,
+		},
+	})
+	ts.Error(err)
+	ts.IsType(&serviceerror.FailedPrecondition{}, err)
+
+	// Use the `force`...
+	token, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: token,
+		Operation: &client.VersioningOpCommitBuildId{
+			TargetBuildId: "2.0",
+			Force:         true,
+		},
+	})
+	ts.NoError(err)
+
+	res, err = ts.client.GetWorkerVersioningRules(ctx, &client.GetWorkerVersioningOptions{
+		TaskQueue: ts.taskQueueName,
+	})
+	ts.NoError(err)
+
+	// replace all rules by unconditional "2.0"
+	ts.Equal(1, len(res.AssignmentRules))
+	ts.Equal("2.0", res.AssignmentRules[0].TargetBuildId)
+	_, ok := res.AssignmentRules[0].Ramp.(*client.VersioningRampByPercentage)
+	ts.Falsef(ok, "Still has a percentage ramp")
+}
+
+func (ts *WorkerVersioningTestSuite) TestConflictTokens() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	res, err := ts.client.GetWorkerVersioningRules(ctx, &client.GetWorkerVersioningOptions{
+		TaskQueue: ts.taskQueueName,
+	})
+	ts.NoError(err)
+
+	token, err := ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: res.ConflictToken,
+		Operation: &client.VersioningOpInsertAssignmentRule{
+			RuleIndex: 0,
+			Rule: client.VersioningAssignmentRule{
+				TargetBuildId: "1.0",
+			},
+		},
+	})
+	ts.NoError(err)
+
+	_, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: res.ConflictToken, // duplicated token
+		Operation: &client.VersioningOpInsertAssignmentRule{
+			RuleIndex: 0,
+			Rule: client.VersioningAssignmentRule{
+				TargetBuildId: "2.0",
+			},
+		},
+	})
+	ts.Error(err)
+	ts.IsType(&serviceerror.FailedPrecondition{}, err)
+
+	token, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: token, // original token
+		Operation: &client.VersioningOpInsertAssignmentRule{
+			RuleIndex: 0,
+			Rule: client.VersioningAssignmentRule{
+				TargetBuildId: "2.0",
+			},
+		},
+	})
+	ts.NoError(err)
+}
+
 func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -133,6 +408,74 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {
 		TaskQueue: ts.taskQueueName,
 		Operation: &client.BuildIDOpAddNewIDInNewDefaultSet{
 			BuildID: "2.0",
+		},
+	})
+	ts.NoError(err)
+
+	// 2.0 workflows
+	handle21, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("2-1"), ts.workflows.WaitSignalToStart)
+	ts.NoError(err)
+	handle22, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("2-2"), ts.workflows.WaitSignalToStart)
+	ts.NoError(err)
+
+	// finish them all
+	ts.NoError(ts.client.SignalWorkflow(ctx, handle11.GetID(), handle11.GetRunID(), "start-signal", ""))
+	ts.NoError(ts.client.SignalWorkflow(ctx, handle12.GetID(), handle12.GetRunID(), "start-signal", ""))
+	ts.NoError(ts.client.SignalWorkflow(ctx, handle21.GetID(), handle21.GetRunID(), "start-signal", ""))
+	ts.NoError(ts.client.SignalWorkflow(ctx, handle22.GetID(), handle22.GetRunID(), "start-signal", ""))
+
+	// Wait for all wfs to finish
+	ts.NoError(handle11.Get(ctx, nil))
+	ts.NoError(handle12.Get(ctx, nil))
+	ts.NoError(handle21.Get(ctx, nil))
+	ts.NoError(handle22.Get(ctx, nil))
+}
+
+func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasksWithRules() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	res, err := ts.client.GetWorkerVersioningRules(ctx, &client.GetWorkerVersioningOptions{
+		TaskQueue: ts.taskQueueName,
+	})
+	ts.NoError(err)
+
+	token, err := ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: res.ConflictToken,
+		Operation: &client.VersioningOpInsertAssignmentRule{
+			RuleIndex: 0,
+			Rule: client.VersioningAssignmentRule{
+				TargetBuildId: "1.0",
+			},
+		},
+	})
+	ts.NoError(err)
+
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "1.0", UseBuildIDForVersioning: true})
+	ts.workflows.register(worker1)
+	ts.NoError(worker1.Start())
+	defer worker1.Stop()
+	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "2.0", UseBuildIDForVersioning: true})
+	ts.workflows.register(worker2)
+	ts.NoError(worker2.Start())
+	defer worker2.Stop()
+
+	// Start some workflows targeting 1.0
+	handle11, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("1-1"), ts.workflows.WaitSignalToStart)
+	ts.NoError(err)
+	handle12, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("1-2"), ts.workflows.WaitSignalToStart)
+	ts.NoError(err)
+
+	// Now add the 2.0 version
+	token, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: token,
+		Operation: &client.VersioningOpInsertAssignmentRule{
+			RuleIndex: 0,
+			Rule: client.VersioningAssignmentRule{
+				TargetBuildId: "2.0",
+			},
 		},
 	})
 	ts.NoError(err)
@@ -319,6 +662,106 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 		Operation: &client.BuildIDOpAddNewCompatibleVersion{
 			BuildID:                   "1.1",
 			ExistingCompatibleBuildID: "1.0",
+		},
+	})
+	ts.NoError(err)
+
+	worker11 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "1.1", UseBuildIDForVersioning: true})
+	ts.workflows.register(worker11)
+	ts.activities.register(worker11)
+	ts.NoError(worker11.Start())
+	defer worker11.Stop()
+
+	_, err = ts.client.WorkflowService().ResetStickyTaskQueue(ctx, &workflowservice.ResetStickyTaskQueueRequest{
+		Namespace: ts.config.Namespace,
+		Execution: &common.WorkflowExecution{
+			WorkflowId: wfHandle.GetID(),
+		},
+	})
+	ts.NoError(err)
+
+	// The current task, with the new worker, should still be 1.0 since no new tasks have happened
+	enval, err := ts.client.QueryWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "get-last-build-id", nil)
+	ts.NoError(err)
+	ts.NoError(enval.Get(&lastBuildID))
+	ts.Equal("1.0", lastBuildID)
+
+	// finish the workflow under 1.1
+	ts.NoError(ts.client.SignalWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "finish", ""))
+	ts.NoError(wfHandle.Get(ctx, nil))
+
+	// Post completion it should have the value of the last task
+	enval, err = ts.client.QueryWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "get-last-build-id", nil)
+	ts.NoError(err)
+	ts.NoError(enval.Get(&lastBuildID))
+	ts.Equal("1.1", lastBuildID)
+}
+
+func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetimeWithRules() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	result, err := ts.client.GetWorkerVersioningRules(ctx, &client.GetWorkerVersioningOptions{
+		TaskQueue: ts.taskQueueName,
+	})
+	ts.NoError(err)
+
+	token, err := ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: result.ConflictToken,
+		Operation: &client.VersioningOpInsertAssignmentRule{
+			RuleIndex: 0,
+			Rule: client.VersioningAssignmentRule{
+				TargetBuildId: "1.0",
+			},
+		},
+	})
+	ts.NoError(err)
+
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "1.0", UseBuildIDForVersioning: true})
+	ts.workflows.register(worker1)
+	ts.activities.register(worker1)
+	ts.NoError(worker1.Start())
+
+	// Start workflow
+	wfHandle, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("evolving-wf"), ts.workflows.BuildIDWorkflow)
+	// Query to see that the build ID is 1.0
+	res, err := ts.client.QueryWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "get-last-build-id", nil)
+	var lastBuildID string
+	ts.NoError(err)
+	ts.NoError(res.Get(&lastBuildID))
+	ts.Equal("1.0", lastBuildID)
+
+	// Make sure we've got to the activity
+	ts.Eventually(func() bool {
+		var didRun bool
+		res, err := ts.client.QueryWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "activity-ran", nil)
+		ts.NoError(err)
+		ts.NoError(res.Get(&didRun))
+		return didRun
+	}, time.Second*10, time.Millisecond*100)
+	worker1.Stop()
+
+	// Add new compat ver
+	token, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: token,
+		Operation: &client.VersioningOpInsertAssignmentRule{
+			RuleIndex: 0,
+			Rule: client.VersioningAssignmentRule{
+				TargetBuildId: "1.1",
+			},
+		},
+	})
+
+	token, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: token,
+		Operation: &client.VersioningOpInsertRedirectRule{
+			Rule: client.VersioningRedirectRule{
+				SourceBuildId: "1.0",
+				TargetBuildId: "1.1",
+			},
 		},
 	})
 	ts.NoError(err)
