@@ -406,7 +406,7 @@ func (r *VersioningRampByPercentage) validateRamp() error {
 
 func (r *VersioningAssignmentRule) validateRule() error {
 	if r.TargetBuildID == "" {
-		return errors.New("Missing TargetBuildID in assigment rule")
+		return errors.New("missing TargetBuildID in assigment rule")
 	}
 	switch ramp := r.Ramp.(type) {
 	case *VersioningRampByPercentage:
@@ -420,10 +420,10 @@ func (r *VersioningAssignmentRule) validateRule() error {
 
 func (r *VersioningRedirectRule) validateRule() error {
 	if r.TargetBuildID == "" {
-		return errors.New("Missing TargetBuildID in redirect rule")
+		return errors.New("missing TargetBuildID in redirect rule")
 	}
 	if r.SourceBuildID == "" {
-		return errors.New("Missing SourceBuildID in redirect rule")
+		return errors.New("missing SourceBuildID in redirect rule")
 	}
 	return nil
 }
@@ -436,14 +436,14 @@ func (u *VersioningOpReplaceRedirectRule) validateOp() error   { return u.Rule.v
 
 func (u *VersioningOpDeleteRedirectRule) validateOp() error {
 	if u.SourceBuildID == "" {
-		return errors.New("Missing SourceBuildID")
+		return errors.New("missing SourceBuildID")
 	}
 	return nil
 }
 
 func (u *VersioningOpCommitBuildID) validateOp() error {
 	if u.TargetBuildID == "" {
-		return errors.New("Missing TargetBuildID")
+		return errors.New("missing TargetBuildID")
 	}
 	return nil
 }
