@@ -259,7 +259,7 @@ type (
 	// WARNING: Worker versioning is currently experimental
 	TaskQueueReachability = internal.TaskQueueReachability
 
-	// UpdateWorkerVersioningRulesOptions is the input to Client.UpdateWorkerVersioningRules.
+	// UpdateWorkerVersioningRulesOptions is the input to [Client.UpdateWorkerVersioningRules].
 	// WARNING: Worker versioning-2 is currently experimental
 	UpdateWorkerVersioningRulesOptions = internal.UpdateWorkerVersioningRulesOptions
 
@@ -271,7 +271,7 @@ type (
 	VersioningConflictToken = internal.VersioningConflictToken
 
 	// VersioningRampByPercentage is a VersionRamp that sends a proportion of the traffic
-	// to the target Build ID
+	// to the target Build ID.
 	// WARNING: Worker versioning-2 is currently experimental
 	VersioningRampByPercentage = internal.VersioningRampByPercentage
 
@@ -280,10 +280,20 @@ type (
 	// WARNING: Worker versioning-2 is currently experimental
 	VersioningAssignmentRule = internal.VersioningAssignmentRule
 
+	// VersioningAssignmentRuleWithTimestamp contains an assignment rule annotated
+	// by the server with its creation time.
+	// WARNING: Worker versioning-2 is currently experimental
+	VersioningAssignmentRuleWithTimestamp = internal.VersioningAssignmentRuleWithTimestamp
+
 	// VersioningAssignmentRule is a BuildID redirect rule for a task queue.
 	// It changes the behavior of currently running workflows and new ones.
 	// WARNING: Worker versioning-2 is currently experimental
 	VersioningRedirectRule = internal.VersioningRedirectRule
+
+	// VersioningRedirectRuleWithTimestamp contains a redirect rule annotated
+	// by the server with its creation time.
+	// WARNING: Worker versioning-2 is currently experimental
+	VersioningRedirectRuleWithTimestamp = internal.VersioningRedirectRuleWithTimestamp
 
 	// VersioningOpInsertAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that inserts the rule to the list of assignment rules for this Task Queue.
@@ -327,7 +337,7 @@ type (
 	// WARNING: Worker versioning-2 is currently experimental
 	VersioningOpDeleteRedirectRule = internal.VersioningOpDeleteRedirectRule
 
-	// VersioningOpCommitBuildId is an operation for UpdateWorkerVersioningRulesOptions
+	// VersioningOpCommitBuildID is an operation for UpdateWorkerVersioningRulesOptions
 	// that completes  the rollout of a BuildID and cleanup unnecessary rules possibly
 	// created during a gradual rollout. Specifically, this command will make the following changes
 	// atomically:
@@ -341,13 +351,13 @@ type (
 	// pollers have been seen recently for this Build ID. Use the `force`
 	// option to disable this validation.
 	// WARNING: Worker versioning-2 is currently experimental
-	VersioningOpCommitBuildId = internal.VersioningOpCommitBuildId
+	VersioningOpCommitBuildID = internal.VersioningOpCommitBuildID
 
-	// GetWorkerVersioningOptions is the input to Client.GetWorkerVersioningRules.
+	// GetWorkerVersioningOptions is the input to [Client.GetWorkerVersioningRules].
 	// WARNING: Worker versioning-2 is currently experimental
 	GetWorkerVersioningOptions = internal.GetWorkerVersioningOptions
 
-	// WorkerVersioningRules is the response for Client.GetWorkerVersioningRules.
+	// WorkerVersioningRules is the response for [Client.GetWorkerVersioningRules].
 	// WARNING: Worker versioning-2 is currently experimental
 	WorkerVersioningRules = internal.WorkerVersioningRules
 

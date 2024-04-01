@@ -117,7 +117,7 @@ func (ts *WorkerVersioningTestSuite) TestManipulateRules() {
 		Operation: &client.VersioningOpInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
-				TargetBuildId: "1.0",
+				TargetBuildID: "1.0",
 			},
 		},
 	})
@@ -129,7 +129,7 @@ func (ts *WorkerVersioningTestSuite) TestManipulateRules() {
 		Operation: &client.VersioningOpInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
-				TargetBuildId: "2.0",
+				TargetBuildID: "2.0",
 				Ramp: &client.VersioningRampByPercentage{
 					Percentage: 45.0,
 				},
@@ -143,8 +143,8 @@ func (ts *WorkerVersioningTestSuite) TestManipulateRules() {
 		ConflictToken: token,
 		Operation: &client.VersioningOpInsertRedirectRule{
 			Rule: client.VersioningRedirectRule{
-				SourceBuildId: "1.0",
-				TargetBuildId: "2.0",
+				SourceBuildID: "1.0",
+				TargetBuildID: "2.0",
 			},
 		},
 	})
@@ -155,15 +155,15 @@ func (ts *WorkerVersioningTestSuite) TestManipulateRules() {
 	})
 	ts.NoError(err)
 
-	ts.Equal("2.0", res.AssignmentRules[0].TargetBuildId)
-	r, ok := res.AssignmentRules[0].Ramp.(*client.VersioningRampByPercentage)
+	ts.Equal("2.0", res.AssignmentRules[0].Rule.TargetBuildID)
+	r, ok := res.AssignmentRules[0].Rule.Ramp.(*client.VersioningRampByPercentage)
 	ts.Truef(ok, "Not a percentage ramp")
 	ts.Equal(float32(45.0), r.Percentage)
 
-	ts.Equal("1.0", res.AssignmentRules[1].TargetBuildId)
+	ts.Equal("1.0", res.AssignmentRules[1].Rule.TargetBuildID)
 
-	ts.Equal("1.0", res.RedirectRules[0].SourceBuildId)
-	ts.Equal("2.0", res.RedirectRules[0].TargetBuildId)
+	ts.Equal("1.0", res.RedirectRules[0].Rule.SourceBuildID)
+	ts.Equal("2.0", res.RedirectRules[0].Rule.TargetBuildID)
 }
 
 func (ts *WorkerVersioningTestSuite) TestReplaceDeleteRules() {
@@ -181,7 +181,7 @@ func (ts *WorkerVersioningTestSuite) TestReplaceDeleteRules() {
 		Operation: &client.VersioningOpInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
-				TargetBuildId: "1.0",
+				TargetBuildID: "1.0",
 			},
 		},
 	})
@@ -194,7 +194,7 @@ func (ts *WorkerVersioningTestSuite) TestReplaceDeleteRules() {
 		Operation: &client.VersioningOpReplaceAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
-				TargetBuildId: "1.1",
+				TargetBuildID: "1.1",
 			},
 		},
 	})
@@ -207,7 +207,7 @@ func (ts *WorkerVersioningTestSuite) TestReplaceDeleteRules() {
 		Operation: &client.VersioningOpReplaceAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
-				TargetBuildId: "2.0",
+				TargetBuildID: "2.0",
 				Ramp: &client.VersioningRampByPercentage{
 					Percentage: 45.0,
 				},
@@ -225,7 +225,7 @@ func (ts *WorkerVersioningTestSuite) TestReplaceDeleteRules() {
 		Operation: &client.VersioningOpReplaceAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
-				TargetBuildId: "2.0",
+				TargetBuildID: "2.0",
 				Ramp: &client.VersioningRampByPercentage{
 					Percentage: 45.0,
 				},
@@ -273,7 +273,7 @@ func (ts *WorkerVersioningTestSuite) TestCommitRules() {
 		Operation: &client.VersioningOpInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
-				TargetBuildId: "1.0",
+				TargetBuildID: "1.0",
 			},
 		},
 	})
@@ -285,7 +285,7 @@ func (ts *WorkerVersioningTestSuite) TestCommitRules() {
 		Operation: &client.VersioningOpInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
-				TargetBuildId: "2.0",
+				TargetBuildID: "2.0",
 				Ramp: &client.VersioningRampByPercentage{
 					Percentage: 45.0,
 				},
@@ -298,8 +298,8 @@ func (ts *WorkerVersioningTestSuite) TestCommitRules() {
 	_, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: token,
-		Operation: &client.VersioningOpCommitBuildId{
-			TargetBuildId: "2.0",
+		Operation: &client.VersioningOpCommitBuildID{
+			TargetBuildID: "2.0",
 			Force:         false,
 		},
 	})
@@ -310,8 +310,8 @@ func (ts *WorkerVersioningTestSuite) TestCommitRules() {
 	token, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: token,
-		Operation: &client.VersioningOpCommitBuildId{
-			TargetBuildId: "2.0",
+		Operation: &client.VersioningOpCommitBuildID{
+			TargetBuildID: "2.0",
 			Force:         true,
 		},
 	})
@@ -324,8 +324,8 @@ func (ts *WorkerVersioningTestSuite) TestCommitRules() {
 
 	// replace all rules by unconditional "2.0"
 	ts.Equal(1, len(res.AssignmentRules))
-	ts.Equal("2.0", res.AssignmentRules[0].TargetBuildId)
-	_, ok := res.AssignmentRules[0].Ramp.(*client.VersioningRampByPercentage)
+	ts.Equal("2.0", res.AssignmentRules[0].Rule.TargetBuildID)
+	_, ok := res.AssignmentRules[0].Rule.Ramp.(*client.VersioningRampByPercentage)
 	ts.Falsef(ok, "Still has a percentage ramp")
 }
 
@@ -344,7 +344,7 @@ func (ts *WorkerVersioningTestSuite) TestConflictTokens() {
 		Operation: &client.VersioningOpInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
-				TargetBuildId: "1.0",
+				TargetBuildID: "1.0",
 			},
 		},
 	})
@@ -356,7 +356,7 @@ func (ts *WorkerVersioningTestSuite) TestConflictTokens() {
 		Operation: &client.VersioningOpInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
-				TargetBuildId: "2.0",
+				TargetBuildID: "2.0",
 			},
 		},
 	})
@@ -369,7 +369,7 @@ func (ts *WorkerVersioningTestSuite) TestConflictTokens() {
 		Operation: &client.VersioningOpInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
-				TargetBuildId: "2.0",
+				TargetBuildID: "2.0",
 			},
 		},
 	})
@@ -392,7 +392,7 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {
 	ts.workflows.register(worker1)
 	ts.NoError(worker1.Start())
 	defer worker1.Stop()
-	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "2.0", UseBuildIDForVersioning: true})
+	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "1.1", UseBuildIDForVersioning: true})
 	ts.workflows.register(worker2)
 	ts.NoError(worker2.Start())
 	defer worker2.Stop()
@@ -411,6 +411,13 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {
 		},
 	})
 	ts.NoError(err)
+
+	// If we add the worker before the BuildID "2.0" has been registered, the worker poller ends up
+	// in the new versioning queue, and it only recovers after 1m timeout.
+	worker3 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "2.0", UseBuildIDForVersioning: true})
+	ts.workflows.register(worker3)
+	ts.NoError(worker3.Start())
+	defer worker3.Stop()
 
 	// 2.0 workflows
 	handle21, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("2-1"), ts.workflows.WaitSignalToStart)
@@ -446,7 +453,7 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasksWithRules() 
 		Operation: &client.VersioningOpInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
-				TargetBuildId: "1.0",
+				TargetBuildID: "1.0",
 			},
 		},
 	})
@@ -474,7 +481,7 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasksWithRules() 
 		Operation: &client.VersioningOpInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
-				TargetBuildId: "2.0",
+				TargetBuildID: "2.0",
 			},
 		},
 	})
@@ -712,7 +719,7 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetimeWithR
 		Operation: &client.VersioningOpInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
-				TargetBuildId: "1.0",
+				TargetBuildID: "1.0",
 			},
 		},
 	})
@@ -749,7 +756,7 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetimeWithR
 		Operation: &client.VersioningOpInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
-				TargetBuildId: "1.1",
+				TargetBuildID: "1.1",
 			},
 		},
 	})
@@ -759,8 +766,8 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetimeWithR
 		ConflictToken: token,
 		Operation: &client.VersioningOpInsertRedirectRule{
 			Rule: client.VersioningRedirectRule{
-				SourceBuildId: "1.0",
-				TargetBuildId: "1.1",
+				SourceBuildID: "1.0",
+				TargetBuildID: "1.1",
 			},
 		},
 	})

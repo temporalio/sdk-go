@@ -34,10 +34,11 @@ import (
 type (
 	// VersioningRamp is an interface for the different strategies of gradual workflow deployments.
 	VersioningRamp interface {
-		isValidVersioningRamp() bool
+		validateRamp() error
 	}
 
 	// VersioningRampByPercentage sends a proportion of the traffic to the target Build ID.
+	// WARNING: Worker versioning-2 is currently experimental
 	VersioningRampByPercentage struct {
 		// Percentage of traffic with a value in [0,100)
 		Percentage float32
@@ -45,78 +46,147 @@ type (
 
 	// VersioningAssignmentRule is a BuildID assigment rule for a task queue.
 	// Assignment rules only affect new workflows.
+	// WARNING: Worker versioning-2 is currently experimental
 	VersioningAssignmentRule struct {
 		// The BuildID of new workflows affected by this rule.
-		TargetBuildId string
+		TargetBuildID string
 		// A strategy for gradual workflow deployment.
 		Ramp VersioningRamp
-		// An optional registration time set by the server.
-		Timestamp *time.Time
+	}
+
+	// VersioningAssignmentRuleWithTimestamp contains an assignment rule annotated
+	// by the server with its creation time.
+	// WARNING: Worker versioning-2 is currently experimental
+	VersioningAssignmentRuleWithTimestamp struct {
+		Rule VersioningAssignmentRule
+		// The time when the server created this rule.
+		CreateTime time.Time
 	}
 
 	// VersioningAssignmentRule is a BuildID redirect rule for a task queue.
 	// It changes the behavior of currently running workflows and new ones.
+	// WARNING: Worker versioning-2 is currently experimental
 	VersioningRedirectRule struct {
-		SourceBuildId string
-		TargetBuildId string
-		// An optional registration time set by the server.
-		Timestamp *time.Time
+		SourceBuildID string
+		TargetBuildID string
+	}
+
+	// VersioningRedirectRuleWithTimestamp contains a redirect rule annotated
+	// by the server with its creation time.
+	// WARNING: Worker versioning-2 is currently experimental
+	VersioningRedirectRuleWithTimestamp struct {
+		Rule VersioningRedirectRule
+		// The time when the server created this rule.
+		CreateTime time.Time
 	}
 
 	//VersioningConflictToken is a conflict token to serialize updates.
 	// An update with an old token fails with `serviceerror.FailedPrecondition`.
 	// The current token can be obtained with [GetWorkerVersioningRules], or returned by a successful [UpdateWorkerVersioningRules].
+	// WARNING: Worker versioning-2 is currently experimental
 	VersioningConflictToken struct {
 		token []byte
 	}
 
-	// UpdateWorkerVersioningRulesOptions is the input to Client.UpdateWorkerVersioningRules.
+	// UpdateWorkerVersioningRulesOptions is the input to [Client.UpdateWorkerVersioningRules].
+	// WARNING: Worker versioning-2 is currently experimental
 	UpdateWorkerVersioningRulesOptions struct {
 		// The task queue to update the versioning rules of.
 		TaskQueue string
 		// A conflict token to serialize updates.
 		ConflictToken VersioningConflictToken
-		Operation     UpdateVersioningOp
+		Operation     VersioningOp
 	}
 
-	// UpdateVersioningOp is an interface for the different operations that can be
+	// VersioningOp is an interface for the different operations that can be
 	// performed when updating the worker versioning rules for a task queue.
 	//
 	// Possible operations are:
-	//   - VersioningOpInsertAssignmentRule
-	//   - VersioningOpReplaceAssignmentRule
-	//   - VersioningOpDeleteAssignmentRule
-	//   - VersioningOpInsertRedirectRule
-	//   - VersioningOpReplaceRedirectRule
-	//   - VersioningOpDeleteRedirectRule
-	//   - VersioningOpCommitBuildId
-	UpdateVersioningOp interface {
-		isValidUpdateVersioningOp() bool
+	//   - [VersioningOpInsertAssignmentRule]
+	//   - [VersioningOpReplaceAssignmentRule]
+	//   - [VersioningOpDeleteAssignmentRule]
+	//   - [VersioningOpInsertRedirectRule]
+	//   - [VersioningOpReplaceRedirectRule]
+	//   - [VersioningOpDeleteRedirectRule]
+	//   - [VersioningOpCommitBuildID]
+	VersioningOp interface {
+		validateOp() error
 	}
+
+	// VersioningOpInsertAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
+	// that inserts the rule to the list of assignment rules for this Task Queue.
+	// The rules are evaluated in order, starting from index 0. The first
+	// applicable rule will be applied and the rest will be ignored.
+	// By default, the new rule is inserted at the beginning of the list
+	// (index 0). If the given index is too larger the rule will be
+	// inserted at the end of the list.
+	// WARNING: Worker versioning-2 is currently experimental
 	VersioningOpInsertAssignmentRule struct {
 		RuleIndex int32
 		Rule      VersioningAssignmentRule
 	}
+
+	// VersioningOpReplaceAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
+	// that replaces the assignment rule at a given index. By default presence of one
+	// unconditional rule, i.e., no hint filter or ramp, is enforced, otherwise
+	// the delete operation will be rejected. Set `force` to true to
+	// bypass this validation.
+	// WARNING: Worker versioning-2 is currently experimental
 	VersioningOpReplaceAssignmentRule struct {
 		RuleIndex int32
 		Rule      VersioningAssignmentRule
 		Force     bool
 	}
+
+	// VersioningOpDeleteAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
+	// that deletes the assignment rule at a given index. By default presence of one
+	// unconditional rule, i.e., no hint filter or ramp, is enforced, otherwise
+	// the delete operation will be rejected. Set `force` to true to
+	// bypass this validation.
+	// WARNING: Worker versioning-2 is currently experimental
 	VersioningOpDeleteAssignmentRule struct {
 		RuleIndex int32
 		Force     bool
 	}
+
+	// VersioningOpInsertRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
+	// that adds the rule to the list of redirect rules for this Task Queue. There
+	// can be at most one redirect rule for each distinct Source BuildID.
+	// WARNING: Worker versioning-2 is currently experimental
 	VersioningOpInsertRedirectRule struct {
 		Rule VersioningRedirectRule
 	}
+
+	// VersioningOpReplaceRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
+	// that replaces the routing rule with the given source BuildID.
+	// WARNING: Worker versioning-2 is currently experimental
 	VersioningOpReplaceRedirectRule struct {
 		Rule VersioningRedirectRule
 	}
+
+	// VersioningOpDeleteRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
+	// that deletes the routing rule with the given source Build ID.
+	// WARNING: Worker versioning-2 is currently experimental
 	VersioningOpDeleteRedirectRule struct {
-		SourceBuildId string
+		SourceBuildID string
 	}
-	VersioningOpCommitBuildId struct {
-		TargetBuildId string
+
+	// VersioningOpCommitBuildId is an operation for UpdateWorkerVersioningRulesOptions
+	// that completes  the rollout of a BuildID and cleanup unnecessary rules possibly
+	// created during a gradual rollout. Specifically, this command will make the following changes
+	// atomically:
+	//  1. Adds an assignment rule (with full ramp) for the target Build ID at
+	//     the end of the list.
+	//  2. Removes all previously added assignment rules to the given target
+	//     Build ID (if any).
+	//  3. Removes any fully-ramped assignment rule for other Build IDs.
+	//
+	// To prevent committing invalid Build IDs, we reject the request if no
+	// pollers have been seen recently for this Build ID. Use the `force`
+	// option to disable this validation.
+	// WARNING: Worker versioning-2 is currently experimental
+	VersioningOpCommitBuildID struct {
+		TargetBuildID string
 		Force         bool
 	}
 )
@@ -128,8 +198,8 @@ func (uw *UpdateWorkerVersioningRulesOptions) validateAndConvertToProto(namespac
 	if uw.TaskQueue == "" {
 		return nil, errors.New("missing TaskQueue field")
 	}
-	if !uw.Operation.isValidUpdateVersioningOp() {
-		return nil, errors.New("invalid Operation BuildID field")
+	if err := uw.Operation.validateOp(); err != nil {
+		return nil, err
 	}
 	req := &workflowservice.UpdateWorkerVersioningRulesRequest{
 		Namespace:     namespace,
@@ -175,21 +245,25 @@ func (uw *UpdateWorkerVersioningRulesOptions) validateAndConvertToProto(namespac
 	case *VersioningOpDeleteRedirectRule:
 		req.Operation = &workflowservice.UpdateWorkerVersioningRulesRequest_DeleteCompatibleRedirectRule{
 			DeleteCompatibleRedirectRule: &workflowservice.UpdateWorkerVersioningRulesRequest_DeleteCompatibleBuildIdRedirectRule{
-				SourceBuildId: v.SourceBuildId,
+				SourceBuildId: v.SourceBuildID,
 			},
 		}
-	case *VersioningOpCommitBuildId:
+	case *VersioningOpCommitBuildID:
 		req.Operation = &workflowservice.UpdateWorkerVersioningRulesRequest_CommitBuildId_{
 			CommitBuildId: &workflowservice.UpdateWorkerVersioningRulesRequest_CommitBuildId{
-				TargetBuildId: v.TargetBuildId,
+				TargetBuildId: v.TargetBuildID,
 				Force:         v.Force,
 			},
 		}
+	default:
+		return nil, errors.New("converting an invalid operation")
 	}
 
 	return req, nil
 }
 
+// GetWorkerVersioningOptions is the input to [Client.GetWorkerVersioningRules].
+// WARNING: Worker versioning-2 is currently experimental
 type GetWorkerVersioningOptions struct {
 	// The task queue to get the versioning rules from.
 	TaskQueue string
@@ -211,16 +285,18 @@ func (gw *GetWorkerVersioningOptions) validateAndConvertToProto(namespace string
 	return req, nil
 }
 
+// WorkerVersioningRules is the response for [Client.GetWorkerVersioningRules].
+// WARNING: Worker versioning-2 is currently experimental
 type WorkerVersioningRules struct {
-	AssignmentRules []*VersioningAssignmentRule
-	RedirectRules   []*VersioningRedirectRule
+	AssignmentRules []*VersioningAssignmentRuleWithTimestamp
+	RedirectRules   []*VersioningRedirectRuleWithTimestamp
 	ConflictToken   VersioningConflictToken
 }
 
 func versioningAssignmentRuleToProto(rule *VersioningAssignmentRule) *taskqueuepb.BuildIdAssignmentRule {
 	// Assumed `rule` already validated
 	result := &taskqueuepb.BuildIdAssignmentRule{
-		TargetBuildId: rule.TargetBuildId,
+		TargetBuildId: rule.TargetBuildID,
 	}
 
 	switch r := rule.Ramp.(type) {
@@ -231,7 +307,6 @@ func versioningAssignmentRuleToProto(rule *VersioningAssignmentRule) *taskqueuep
 			},
 		}
 	}
-	// Ignore `rule.Timestamp`
 
 	return result
 }
@@ -239,50 +314,51 @@ func versioningAssignmentRuleToProto(rule *VersioningAssignmentRule) *taskqueuep
 func versioningRedirectRuleToProto(rule *VersioningRedirectRule) *taskqueuepb.CompatibleBuildIdRedirectRule {
 	// Assumed `rule` already validated
 	result := &taskqueuepb.CompatibleBuildIdRedirectRule{
-		SourceBuildId: rule.SourceBuildId,
-		TargetBuildId: rule.TargetBuildId,
+		SourceBuildId: rule.SourceBuildID,
+		TargetBuildId: rule.TargetBuildID,
 	}
-	// Ignore `rule.Timestamp`
 
 	return result
 }
 
-func versioningAssignmentRuleFromProto(rule *taskqueuepb.BuildIdAssignmentRule, timestamp *timestamppb.Timestamp) *VersioningAssignmentRule {
+func versioningAssignmentRuleFromProto(rule *taskqueuepb.BuildIdAssignmentRule, timestamp *timestamppb.Timestamp) *VersioningAssignmentRuleWithTimestamp {
 	if rule == nil {
 		return nil
 	}
 
-	result := &VersioningAssignmentRule{
-		TargetBuildId: rule.GetTargetBuildId(),
+	result := &VersioningAssignmentRuleWithTimestamp{
+		Rule: VersioningAssignmentRule{
+			TargetBuildID: rule.GetTargetBuildId(),
+		},
 	}
 
 	switch r := rule.GetRamp().(type) {
 	case *taskqueuepb.BuildIdAssignmentRule_PercentageRamp:
-		result.Ramp = &VersioningRampByPercentage{
+		result.Rule.Ramp = &VersioningRampByPercentage{
 			Percentage: r.PercentageRamp.GetRampPercentage(),
 		}
 	}
 
 	if timestamp != nil {
-		t := timestamp.AsTime()
-		result.Timestamp = &t
+		result.CreateTime = timestamp.AsTime()
 	}
 	return result
 }
 
-func versioningRedirectRuleFromProto(rule *taskqueuepb.CompatibleBuildIdRedirectRule, timestamp *timestamppb.Timestamp) *VersioningRedirectRule {
+func versioningRedirectRuleFromProto(rule *taskqueuepb.CompatibleBuildIdRedirectRule, timestamp *timestamppb.Timestamp) *VersioningRedirectRuleWithTimestamp {
 	if rule == nil {
 		return nil
 	}
 
-	result := &VersioningRedirectRule{
-		SourceBuildId: rule.GetSourceBuildId(),
-		TargetBuildId: rule.GetTargetBuildId(),
+	result := &VersioningRedirectRuleWithTimestamp{
+		Rule: VersioningRedirectRule{
+			SourceBuildID: rule.GetSourceBuildId(),
+			TargetBuildID: rule.GetTargetBuildId(),
+		},
 	}
 
 	if timestamp != nil {
-		t := timestamp.AsTime()
-		result.Timestamp = &t
+		result.CreateTime = timestamp.AsTime()
 	}
 	return result
 }
@@ -291,12 +367,12 @@ func workerVersioningRulesFromProtoResponse(response *workflowservice.GetWorkerV
 	if response == nil {
 		return nil
 	}
-	aRules := make([]*VersioningAssignmentRule, len(response.GetAssignmentRules()))
+	aRules := make([]*VersioningAssignmentRuleWithTimestamp, len(response.GetAssignmentRules()))
 	for i, s := range response.GetAssignmentRules() {
 		aRules[i] = versioningAssignmentRuleFromProto(s.GetRule(), s.GetCreateTime())
 	}
 
-	rRules := make([]*VersioningRedirectRule, len(response.GetCompatibleRedirectRules()))
+	rRules := make([]*VersioningRedirectRuleWithTimestamp, len(response.GetCompatibleRedirectRules()))
 	for i, s := range response.GetCompatibleRedirectRules() {
 		rRules[i] = versioningRedirectRuleFromProto(s.GetRule(), s.GetCreateTime())
 	}
@@ -320,19 +396,54 @@ func workerVersioningConflictTokenFromProtoResponse(response *workflowservice.Up
 	}
 }
 
-func (r *VersioningRampByPercentage) isValidVersioningRamp() bool { return true }
-
-func (r *VersioningAssignmentRule) isValid() bool { return r.TargetBuildId != "" }
-func (r *VersioningRedirectRule) isValid() bool {
-	return r.TargetBuildId != "" && r.SourceBuildId != ""
+func (r *VersioningRampByPercentage) validateRamp() error {
+	if r.Percentage >= 0.0 && r.Percentage < 100.0 {
+		return nil
+	} else {
+		return errors.New("invalid percentage in `Ramp`, not in [0,100)")
+	}
 }
 
-func (u *VersioningOpInsertAssignmentRule) isValidUpdateVersioningOp() bool  { return u.Rule.isValid() }
-func (u *VersioningOpReplaceAssignmentRule) isValidUpdateVersioningOp() bool { return u.Rule.isValid() }
-func (u *VersioningOpDeleteAssignmentRule) isValidUpdateVersioningOp() bool  { return true }
-func (u *VersioningOpInsertRedirectRule) isValidUpdateVersioningOp() bool    { return u.Rule.isValid() }
-func (u *VersioningOpReplaceRedirectRule) isValidUpdateVersioningOp() bool   { return u.Rule.isValid() }
-func (u *VersioningOpDeleteRedirectRule) isValidUpdateVersioningOp() bool {
-	return u.SourceBuildId != ""
+func (r *VersioningAssignmentRule) validateRule() error {
+	if r.TargetBuildID == "" {
+		return errors.New("Missing TargetBuildID in assigment rule")
+	}
+	switch ramp := r.Ramp.(type) {
+	case *VersioningRampByPercentage:
+		if err := ramp.validateRamp(); err != nil {
+			return err
+		}
+		// Ramp is optional, defaults to "nothing to validate"
+	}
+	return nil
 }
-func (u *VersioningOpCommitBuildId) isValidUpdateVersioningOp() bool { return u.TargetBuildId != "" }
+
+func (r *VersioningRedirectRule) validateRule() error {
+	if r.TargetBuildID == "" {
+		return errors.New("Missing TargetBuildID in redirect rule")
+	}
+	if r.SourceBuildID == "" {
+		return errors.New("Missing SourceBuildID in redirect rule")
+	}
+	return nil
+}
+
+func (u *VersioningOpInsertAssignmentRule) validateOp() error  { return u.Rule.validateRule() }
+func (u *VersioningOpReplaceAssignmentRule) validateOp() error { return u.Rule.validateRule() }
+func (u *VersioningOpDeleteAssignmentRule) validateOp() error  { return nil }
+func (u *VersioningOpInsertRedirectRule) validateOp() error    { return u.Rule.validateRule() }
+func (u *VersioningOpReplaceRedirectRule) validateOp() error   { return u.Rule.validateRule() }
+
+func (u *VersioningOpDeleteRedirectRule) validateOp() error {
+	if u.SourceBuildID == "" {
+		return errors.New("Missing SourceBuildID")
+	}
+	return nil
+}
+
+func (u *VersioningOpCommitBuildID) validateOp() error {
+	if u.TargetBuildID == "" {
+		return errors.New("Missing TargetBuildID")
+	}
+	return nil
+}

@@ -63,12 +63,12 @@ func Test_WorkerVersioningRules_fromProtoResponse(t *testing.T) {
 				ConflictToken: []byte("This is a token"),
 			},
 			want: &WorkerVersioningRules{
-				AssignmentRules: []*VersioningAssignmentRule{
-					{TargetBuildId: "one", Ramp: &VersioningRampByPercentage{Percentage: 50.0}, Timestamp: &timestamp},
+				AssignmentRules: []*VersioningAssignmentRuleWithTimestamp{
+					{Rule: VersioningAssignmentRule{TargetBuildID: "one", Ramp: &VersioningRampByPercentage{Percentage: 50.0}}, CreateTime: timestamp},
 				},
-				RedirectRules: []*VersioningRedirectRule{
-					{SourceBuildId: "one", TargetBuildId: "two", Timestamp: &timestamp},
-					{SourceBuildId: "two", TargetBuildId: "three", Timestamp: &timestamp},
+				RedirectRules: []*VersioningRedirectRuleWithTimestamp{
+					{Rule: VersioningRedirectRule{SourceBuildID: "one", TargetBuildID: "two"}, CreateTime: timestamp},
+					{Rule: VersioningRedirectRule{SourceBuildID: "two", TargetBuildID: "three"}, CreateTime: timestamp},
 				},
 				ConflictToken: VersioningConflictToken{
 					token: []byte("This is a token"),
