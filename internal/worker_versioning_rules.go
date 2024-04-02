@@ -191,6 +191,13 @@ type (
 	}
 )
 
+// Token
+// Returns an internal representation of this token, mostly for debugging purposes.
+// WARNING: Worker versioning-2 is currently experimental
+func (c *VersioningConflictToken) Token() []byte {
+	return c.token
+}
+
 func (uw *UpdateWorkerVersioningRulesOptions) validateAndConvertToProto(namespace string) (*workflowservice.UpdateWorkerVersioningRulesRequest, error) {
 	if namespace == "" {
 		return nil, errors.New("missing namespace argument")
