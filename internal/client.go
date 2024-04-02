@@ -352,6 +352,17 @@ type (
 		// GetWorkerTaskReachability returns which versions are is still in use by open or closed workflows.
 		GetWorkerTaskReachability(ctx context.Context, options *GetWorkerTaskReachabilityOptions) (*WorkerTaskReachability, error)
 
+		// UpdateWorkerVersioningRules allows updating the worker-build-id based assignment and redirect rules for a given
+		// task queue. This is used in conjunction with workers who specify their build id and thus opt into the feature.
+		// The errors it can return:
+		//  - serviceerror.FailedPrecondition when the conflict token is invalid
+		// WARNING: Worker versioning-2 is currently experimental, and requires server 1.XX+
+		UpdateWorkerVersioningRules(ctx context.Context, options *UpdateWorkerVersioningRulesOptions) (VersioningConflictToken, error)
+
+		// GetWorkerVersioningRules returns the worker-build-id assignment and redirect rules for a task queue.
+		// WARNING: Worker versioning-2 is currently experimental, and requires server 1.XX+
+		GetWorkerVersioningRules(ctx context.Context, options *GetWorkerVersioningOptions) (*WorkerVersioningRules, error)
+
 		// CheckHealth performs a server health check using the gRPC health check
 		// API. If the check fails, an error is returned.
 		CheckHealth(ctx context.Context, request *CheckHealthRequest) (*CheckHealthResponse, error)

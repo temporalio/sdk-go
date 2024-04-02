@@ -259,6 +259,108 @@ type (
 	// WARNING: Worker versioning is currently experimental
 	TaskQueueReachability = internal.TaskQueueReachability
 
+	// UpdateWorkerVersioningRulesOptions is the input to [Client.UpdateWorkerVersioningRules].
+	// WARNING: Worker versioning-2 is currently experimental
+	UpdateWorkerVersioningRulesOptions = internal.UpdateWorkerVersioningRulesOptions
+
+	// VersioningConflictToken is a conflict token to serialize calls to Client.UpdateWorkerVersioningRules.
+	// An update with an old token fails with `serviceerror.FailedPrecondition`.
+	// The current token can be obtained with [GetWorkerVersioningRules],
+	// or returned by a successful [UpdateWorkerVersioningRules].
+	// WARNING: Worker versioning-2 is currently experimental
+	VersioningConflictToken = internal.VersioningConflictToken
+
+	// VersioningRampByPercentage is a VersionRamp that sends a proportion of the traffic
+	// to the target Build ID.
+	// WARNING: Worker versioning-2 is currently experimental
+	VersioningRampByPercentage = internal.VersioningRampByPercentage
+
+	// VersioningAssignmentRule is a BuildID  assigment rule for a task queue.
+	// Assignment rules only affect new workflows.
+	// WARNING: Worker versioning-2 is currently experimental
+	VersioningAssignmentRule = internal.VersioningAssignmentRule
+
+	// VersioningAssignmentRuleWithTimestamp contains an assignment rule annotated
+	// by the server with its creation time.
+	// WARNING: Worker versioning-2 is currently experimental
+	VersioningAssignmentRuleWithTimestamp = internal.VersioningAssignmentRuleWithTimestamp
+
+	// VersioningAssignmentRule is a BuildID redirect rule for a task queue.
+	// It changes the behavior of currently running workflows and new ones.
+	// WARNING: Worker versioning-2 is currently experimental
+	VersioningRedirectRule = internal.VersioningRedirectRule
+
+	// VersioningRedirectRuleWithTimestamp contains a redirect rule annotated
+	// by the server with its creation time.
+	// WARNING: Worker versioning-2 is currently experimental
+	VersioningRedirectRuleWithTimestamp = internal.VersioningRedirectRuleWithTimestamp
+
+	// VersioningOpInsertAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
+	// that inserts the rule to the list of assignment rules for this Task Queue.
+	// The rules are evaluated in order, starting from index 0. The first
+	// applicable rule will be applied and the rest will be ignored.
+	// By default, the new rule is inserted at the beginning of the list
+	// (index 0). If the given index is too larger the rule will be
+	// inserted at the end of the list.
+	// WARNING: Worker versioning-2 is currently experimental
+	VersioningOpInsertAssignmentRule = internal.VersioningOpInsertAssignmentRule
+
+	// VersioningOpReplaceAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
+	// that replaces the assignment rule at a given index. By default presence of one
+	// unconditional rule, i.e., no hint filter or ramp, is enforced, otherwise
+	// the delete operation will be rejected. Set `force` to true to
+	// bypass this validation.
+	// WARNING: Worker versioning-2 is currently experimental
+	VersioningOpReplaceAssignmentRule = internal.VersioningOpReplaceAssignmentRule
+
+	// VersioningOpDeleteAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
+	// that deletes the assignment rule at a given index. By default presence of one
+	// unconditional rule, i.e., no hint filter or ramp, is enforced, otherwise
+	// the delete operation will be rejected. Set `force` to true to
+	// bypass this validation.
+	// WARNING: Worker versioning-2 is currently experimental
+	VersioningOpDeleteAssignmentRule = internal.VersioningOpDeleteAssignmentRule
+
+	// VersioningOpInsertRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
+	// that adds the rule to the list of redirect rules for this Task Queue. There
+	// can be at most one redirect rule for each distinct Source BuildID.
+	// WARNING: Worker versioning-2 is currently experimental
+	VersioningOpInsertRedirectRule = internal.VersioningOpInsertRedirectRule
+
+	// VersioningOpReplaceRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
+	// that replaces the routing rule with the given source BuildID.
+	// WARNING: Worker versioning-2 is currently experimental
+	VersioningOpReplaceRedirectRule = internal.VersioningOpReplaceRedirectRule
+
+	// VersioningOpDeleteRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
+	// that deletes the routing rule with the given source Build ID.
+	// WARNING: Worker versioning-2 is currently experimental
+	VersioningOpDeleteRedirectRule = internal.VersioningOpDeleteRedirectRule
+
+	// VersioningOpCommitBuildID is an operation for UpdateWorkerVersioningRulesOptions
+	// that completes  the rollout of a BuildID and cleanup unnecessary rules possibly
+	// created during a gradual rollout. Specifically, this command will make the following changes
+	// atomically:
+	//  1. Adds an assignment rule (with full ramp) for the target Build ID at
+	//     the end of the list.
+	//  2. Removes all previously added assignment rules to the given target
+	//     Build ID (if any).
+	//  3. Removes any fully-ramped assignment rule for other Build IDs.
+	//
+	// To prevent committing invalid Build IDs, we reject the request if no
+	// pollers have been seen recently for this Build ID. Use the `force`
+	// option to disable this validation.
+	// WARNING: Worker versioning-2 is currently experimental
+	VersioningOpCommitBuildID = internal.VersioningOpCommitBuildID
+
+	// GetWorkerVersioningOptions is the input to [Client.GetWorkerVersioningRules].
+	// WARNING: Worker versioning-2 is currently experimental
+	GetWorkerVersioningOptions = internal.GetWorkerVersioningOptions
+
+	// WorkerVersioningRules is the response for [Client.GetWorkerVersioningRules].
+	// WARNING: Worker versioning-2 is currently experimental
+	WorkerVersioningRules = internal.WorkerVersioningRules
+
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
 	Client interface {
@@ -550,17 +652,33 @@ type (
 		// Allows you to update the worker-build-id based version sets for a particular task queue. This is used in
 		// conjunction with workers who specify their build id and thus opt into the feature.
 		// WARNING: Worker versioning is currently experimental
+		// Deprecated: Use [UpdateWorkerVersioningRules] with the versioning-2 api.
 		UpdateWorkerBuildIdCompatibility(ctx context.Context, options *UpdateWorkerBuildIdCompatibilityOptions) error
 
 		// GetWorkerBuildIdCompatibility
 		// Returns the worker-build-id based version sets for a particular task queue.
 		// WARNING: Worker versioning is currently experimental
+		// Deprecated: Use [GetWorkerVersioningRules] with the versioning-2 api.
 		GetWorkerBuildIdCompatibility(ctx context.Context, options *GetWorkerBuildIdCompatibilityOptions) (*WorkerBuildIDVersionSets, error)
 
 		// GetWorkerTaskReachability
 		// Returns which versions are is still in use by open or closed workflows
 		// WARNING: Worker versioning is currently experimental
+		// Deprecated: Use [DescribeTaskQueue] with the versioning-2 api.
 		GetWorkerTaskReachability(ctx context.Context, options *GetWorkerTaskReachabilityOptions) (*WorkerTaskReachability, error)
+
+		// UpdateWorkerVersioningRules
+		// Allows updating the worker-build-id based assignment and redirect rules for a given task queue. This is used in
+		// conjunction with workers who specify their build id and thus opt into the feature.
+		// The errors it can return:
+		//  - serviceerror.FailedPrecondition when the conflict token is invalid
+		// WARNING: Worker versioning-2 is currently experimental, and requires server 1.XX+
+		UpdateWorkerVersioningRules(ctx context.Context, options *UpdateWorkerVersioningRulesOptions) (VersioningConflictToken, error)
+
+		// GetWorkerVersioningRules
+		// Returns the worker-build-id assignment and redirect rules for a task queue.
+		// WARNING: Worker versioning-2 is currently experimental, and requires server 1.XX+
+		GetWorkerVersioningRules(ctx context.Context, options *GetWorkerVersioningOptions) (*WorkerVersioningRules, error)
 
 		// CheckHealth performs a server health check using the gRPC health check
 		// API. If the check fails, an error is returned.

@@ -1035,6 +1035,50 @@ func (wc *WorkflowClient) GetWorkerTaskReachability(ctx context.Context, options
 	return converted, nil
 }
 
+// UpdateWorkerVersioningRules allows updating the worker-build-id based assignment and redirect rules for a given
+// task queue. This is used in conjunction with workers who specify their build id and thus opt into the feature.
+// The errors it can return:
+//   - serviceerror.FailedPrecondition when the conflict token is invalid
+func (wc *WorkflowClient) UpdateWorkerVersioningRules(ctx context.Context, options *UpdateWorkerVersioningRulesOptions) (VersioningConflictToken, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return VersioningConflictToken{}, err
+	}
+
+	request, err := options.validateAndConvertToProto(wc.namespace)
+	if err != nil {
+		return VersioningConflictToken{}, err
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	resp, err := wc.workflowService.UpdateWorkerVersioningRules(grpcCtx, request)
+	if err != nil {
+		return VersioningConflictToken{}, err
+	}
+	return workerVersioningConflictTokenFromProtoResponse(resp), nil
+}
+
+// GetWorkerVersioningRules returns the worker-build-id assignment and redirect rules for a task queue.
+func (wc *WorkflowClient) GetWorkerVersioningRules(ctx context.Context, options *GetWorkerVersioningOptions) (*WorkerVersioningRules, error) {
+	if err := wc.ensureInitialized(); err != nil {
+		return nil, err
+	}
+
+	request, err := options.validateAndConvertToProto(wc.namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+
+	resp, err := wc.workflowService.GetWorkerVersioningRules(grpcCtx, request)
+	if err != nil {
+		return nil, err
+	}
+	return workerVersioningRulesFromProtoResponse(resp), nil
+}
+
 func (wc *WorkflowClient) UpdateWorkflowWithOptions(
 	ctx context.Context,
 	req *UpdateWorkflowWithOptionsRequest,
