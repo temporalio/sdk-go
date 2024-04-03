@@ -856,23 +856,23 @@ func (_m *Client) UpdateWorkerBuildIdCompatibility(ctx context.Context, options 
 }
 
 // UpdateWorkerVersioningRules provides a mock function with given fields: ctx, options
-func (_m *Client) UpdateWorkerVersioningRules(ctx context.Context, options *client.UpdateWorkerVersioningRulesOptions) (client.VersioningConflictToken, error) {
+func (_m *Client) UpdateWorkerVersioningRules(ctx context.Context, options *client.UpdateWorkerVersioningRulesOptions) (*client.WorkerVersioningRules, error) {
 	ret := _m.Called(ctx, options)
 
 	if len(ret) == 0 {
 		panic("no return value specified for UpdateWorkerVersioningRules")
 	}
 
-	var r0 client.VersioningConflictToken
+	var r0 *client.WorkerVersioningRules
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, *client.UpdateWorkerVersioningRulesOptions) (client.VersioningConflictToken, error)); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, *client.UpdateWorkerVersioningRulesOptions) (*client.WorkerVersioningRules, error)); ok {
 		return rf(ctx, options)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, *client.UpdateWorkerVersioningRulesOptions) client.VersioningConflictToken); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, *client.UpdateWorkerVersioningRulesOptions) *client.WorkerVersioningRules); ok {
 		r0 = rf(ctx, options)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(client.VersioningConflictToken)
+			r0 = ret.Get(0).(*client.WorkerVersioningRules)
 		}
 	}
 

@@ -673,7 +673,7 @@ type (
 		// The errors it can return:
 		//  - serviceerror.FailedPrecondition when the conflict token is invalid
 		// WARNING: Worker versioning-2 is currently experimental, and requires server 1.XX+
-		UpdateWorkerVersioningRules(ctx context.Context, options *UpdateWorkerVersioningRulesOptions) (VersioningConflictToken, error)
+		UpdateWorkerVersioningRules(ctx context.Context, options *UpdateWorkerVersioningRulesOptions) (*WorkerVersioningRules, error)
 
 		// GetWorkerVersioningRules
 		// Returns the worker-build-id assignment and redirect rules for a task queue.
