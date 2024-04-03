@@ -370,22 +370,19 @@ func versioningRedirectRuleFromProto(rule *taskqueuepb.CompatibleBuildIdRedirect
 	return result
 }
 
-func workerVersioningRulesFromProtoResponse(response *workflowservice.GetWorkerVersioningRulesResponse) *WorkerVersioningRules {
-	if response == nil {
-		return nil
-	}
-	aRules := make([]*VersioningAssignmentRuleWithTimestamp, len(response.GetAssignmentRules()))
-	for i, s := range response.GetAssignmentRules() {
+func workerVersioningRulesFromResponse(assignmentRules []*taskqueuepb.TimestampedBuildIdAssignmentRule, redirectRules []*taskqueuepb.TimestampedCompatibleBuildIdRedirectRule, token []byte) *WorkerVersioningRules {
+	aRules := make([]*VersioningAssignmentRuleWithTimestamp, len(assignmentRules))
+	for i, s := range assignmentRules {
 		aRules[i] = versioningAssignmentRuleFromProto(s.GetRule(), s.GetCreateTime())
 	}
 
-	rRules := make([]*VersioningRedirectRuleWithTimestamp, len(response.GetCompatibleRedirectRules()))
-	for i, s := range response.GetCompatibleRedirectRules() {
+	rRules := make([]*VersioningRedirectRuleWithTimestamp, len(redirectRules))
+	for i, s := range redirectRules {
 		rRules[i] = versioningRedirectRuleFromProto(s.GetRule(), s.GetCreateTime())
 	}
 
 	conflictToken := VersioningConflictToken{
-		token: response.GetConflictToken(),
+		token,
 	}
 	return &WorkerVersioningRules{
 		AssignmentRules: aRules,
@@ -394,13 +391,18 @@ func workerVersioningRulesFromProtoResponse(response *workflowservice.GetWorkerV
 	}
 }
 
-func workerVersioningConflictTokenFromProtoResponse(response *workflowservice.UpdateWorkerVersioningRulesResponse) VersioningConflictToken {
+func workerVersioningRulesFromProtoUpdateResponse(response *workflowservice.UpdateWorkerVersioningRulesResponse) *WorkerVersioningRules {
 	if response == nil {
-		return VersioningConflictToken{}
+		return nil
 	}
-	return VersioningConflictToken{
-		token: response.GetConflictToken(),
+	return workerVersioningRulesFromResponse(response.GetAssignmentRules(), response.GetCompatibleRedirectRules(), response.GetConflictToken())
+}
+
+func workerVersioningRulesFromProtoGetResponse(response *workflowservice.GetWorkerVersioningRulesResponse) *WorkerVersioningRules {
+	if response == nil {
+		return nil
 	}
+	return workerVersioningRulesFromResponse(response.GetAssignmentRules(), response.GetCompatibleRedirectRules(), response.GetConflictToken())
 }
 
 func (r *VersioningRampByPercentage) validateRamp() error {

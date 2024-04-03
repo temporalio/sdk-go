@@ -31,7 +31,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func Test_WorkerVersioningRules_fromProtoResponse(t *testing.T) {
+func Test_WorkerVersioningRules_fromProtoGetResponse(t *testing.T) {
 	nowProto := timestamppb.Now()
 	timestamp := nowProto.AsTime()
 	tests := []struct {
@@ -78,7 +78,7 @@ func Test_WorkerVersioningRules_fromProtoResponse(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equalf(t, tt.want, workerVersioningRulesFromProtoResponse(tt.response), "workerVersioningRulesFromProtoResponse(%v)", tt.response)
+			assert.Equalf(t, tt.want, workerVersioningRulesFromProtoGetResponse(tt.response), "workerVersioningRulesFromProtoGetResponse(%v)", tt.response)
 		})
 	}
 }
