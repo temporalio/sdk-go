@@ -321,11 +321,11 @@ type (
 	// WARNING: Worker versioning-2 is currently experimental
 	VersioningOpDeleteAssignmentRule = internal.VersioningOpDeleteAssignmentRule
 
-	// VersioningOpInsertRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
+	// VersioningOpAddRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that adds the rule to the list of redirect rules for this Task Queue. There
 	// can be at most one redirect rule for each distinct Source BuildID.
 	// WARNING: Worker versioning-2 is currently experimental
-	VersioningOpInsertRedirectRule = internal.VersioningOpInsertRedirectRule
+	VersioningOpAddRedirectRule = internal.VersioningOpAddRedirectRule
 
 	// VersioningOpReplaceRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that replaces the routing rule with the given source BuildID.
