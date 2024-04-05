@@ -402,6 +402,13 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 	childEnv.workflowInfo.CronSchedule = cronSchedule
 	childEnv.workflowInfo.ParentWorkflowNamespace = env.workflowInfo.Namespace
 	childEnv.workflowInfo.ParentWorkflowExecution = &env.workflowInfo.WorkflowExecution
+
+	searchAttrs, err := serializeSearchAttributes(params.SearchAttributes, params.TypedSearchAttributes)
+	if err != nil {
+		return nil, err
+	}
+	childEnv.workflowInfo.SearchAttributes = searchAttrs
+
 	childEnv.runTimeout = params.WorkflowRunTimeout
 	if workflowHandler, ok := env.runningWorkflows[params.WorkflowID]; ok {
 		// duplicate workflow ID

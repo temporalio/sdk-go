@@ -563,7 +563,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 		callback(nil, err)
 		return
 	}
-	searchAttr, err := serializeUntypedSearchAttributes(params.SearchAttributes)
+	searchAttr, err := serializeSearchAttributes(params.SearchAttributes, params.TypedSearchAttributes)
 	if err != nil {
 		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
 			startedHandler(WorkflowExecution{}, &ChildWorkflowExecutionAlreadyStartedError{})
