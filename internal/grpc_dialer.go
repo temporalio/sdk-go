@@ -140,7 +140,7 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 
 	// Append any user-supplied options
 	opts = append(opts, params.UserConnectionOptions.DialOptions...)
-
+	//lint:ignore SA1019 Not to be merged
 	return grpc.Dial(params.HostPort, opts...)
 }
 
