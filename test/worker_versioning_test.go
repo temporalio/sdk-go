@@ -141,7 +141,7 @@ func (ts *WorkerVersioningTestSuite) TestManipulateRules() {
 	resp, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: resp.ConflictToken,
-		Operation: &client.VersioningOpInsertRedirectRule{
+		Operation: &client.VersioningOpAddRedirectRule{
 			Rule: client.VersioningRedirectRule{
 				SourceBuildID: "1.0",
 				TargetBuildID: "2.0",
@@ -768,7 +768,7 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetimeWithR
 	resp, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: resp.ConflictToken,
-		Operation: &client.VersioningOpInsertRedirectRule{
+		Operation: &client.VersioningOpAddRedirectRule{
 			Rule: client.VersioningRedirectRule{
 				SourceBuildID: "1.0",
 				TargetBuildID: "1.1",

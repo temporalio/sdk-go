@@ -105,7 +105,7 @@ type (
 	//   - [VersioningOpInsertAssignmentRule]
 	//   - [VersioningOpReplaceAssignmentRule]
 	//   - [VersioningOpDeleteAssignmentRule]
-	//   - [VersioningOpInsertRedirectRule]
+	//   - [VersioningOpAddRedirectRule]
 	//   - [VersioningOpReplaceRedirectRule]
 	//   - [VersioningOpDeleteRedirectRule]
 	//   - [VersioningOpCommitBuildID]
@@ -149,11 +149,11 @@ type (
 		Force     bool
 	}
 
-	// VersioningOpInsertRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
+	// VersioningOpAddRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that adds the rule to the list of redirect rules for this Task Queue. There
 	// can be at most one redirect rule for each distinct Source BuildID.
 	// WARNING: Worker versioning-2 is currently experimental
-	VersioningOpInsertRedirectRule struct {
+	VersioningOpAddRedirectRule struct {
 		Rule VersioningRedirectRule
 	}
 
@@ -237,9 +237,9 @@ func (uw *UpdateWorkerVersioningRulesOptions) validateAndConvertToProto(namespac
 				Force:     v.Force,
 			},
 		}
-	case *VersioningOpInsertRedirectRule:
-		req.Operation = &workflowservice.UpdateWorkerVersioningRulesRequest_InsertCompatibleRedirectRule{
-			InsertCompatibleRedirectRule: &workflowservice.UpdateWorkerVersioningRulesRequest_AddCompatibleBuildIdRedirectRule{
+	case *VersioningOpAddRedirectRule:
+		req.Operation = &workflowservice.UpdateWorkerVersioningRulesRequest_AddCompatibleRedirectRule{
+			AddCompatibleRedirectRule: &workflowservice.UpdateWorkerVersioningRulesRequest_AddCompatibleBuildIdRedirectRule{
 				Rule: versioningRedirectRuleToProto(&v.Rule),
 			},
 		}
@@ -440,7 +440,7 @@ func (r *VersioningRedirectRule) validateRule() error {
 func (u *VersioningOpInsertAssignmentRule) validateOp() error  { return u.Rule.validateRule() }
 func (u *VersioningOpReplaceAssignmentRule) validateOp() error { return u.Rule.validateRule() }
 func (u *VersioningOpDeleteAssignmentRule) validateOp() error  { return nil }
-func (u *VersioningOpInsertRedirectRule) validateOp() error    { return u.Rule.validateRule() }
+func (u *VersioningOpAddRedirectRule) validateOp() error       { return u.Rule.validateRule() }
 func (u *VersioningOpReplaceRedirectRule) validateOp() error   { return u.Rule.validateRule() }
 
 func (u *VersioningOpDeleteRedirectRule) validateOp() error {
