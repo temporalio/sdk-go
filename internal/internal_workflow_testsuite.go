@@ -267,7 +267,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		doneChannel:            make(chan struct{}),
 		workerStopChannel:      make(chan struct{}),
 		dataConverter:          converter.GetDefaultDataConverter(),
-		failureConverter:       GetDefaultFailureConverter(),
+		failureConverter:       s.failureConverter,
 		runTimeout:             maxWorkflowTimeout,
 		bufferedUpdateRequests: make(map[string][]func()),
 	}
@@ -288,6 +288,9 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 	}
 	if env.metricsHandler == nil {
 		env.metricsHandler = metrics.NopHandler
+	}
+	if env.failureConverter == nil {
+		env.failureConverter = GetDefaultFailureConverter()
 	}
 	env.contextPropagators = s.contextPropagators
 	env.header = s.header

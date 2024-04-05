@@ -57,6 +57,7 @@ type (
 		logger                      log.Logger
 		metricsHandler              metrics.Handler
 		contextPropagators          []ContextPropagator
+		failureConverter            converter.FailureConverter
 		header                      *commonpb.Header
 		disableRegistrationAliasing bool
 	}
@@ -157,6 +158,12 @@ func (s *WorkflowTestSuite) SetMetricsHandler(metricsHandler metrics.Handler) {
 // test suite will not use context propagators
 func (s *WorkflowTestSuite) SetContextPropagators(ctxProps []ContextPropagator) {
 	s.contextPropagators = ctxProps
+}
+
+// SetFailureConverter sets the failure converter for this WorkflowTestSuite. If you don't set the failure converter,
+// the default failure converter will be used.
+func (s *WorkflowTestSuite) SetFailureConverter(failureConverter converter.FailureConverter) {
+	s.failureConverter = failureConverter
 }
 
 // SetHeader sets the headers for this WorkflowTestSuite. If you don't set header, test suite will not pass headers to
