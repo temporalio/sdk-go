@@ -936,6 +936,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 	options.ContextPropagators = workflowOptionsFromCtx.ContextPropagators
 	options.Memo = workflowOptionsFromCtx.Memo
 	options.SearchAttributes = workflowOptionsFromCtx.SearchAttributes
+	options.TypedSearchAttributes = workflowOptionsFromCtx.TypedSearchAttributes
 	options.VersioningIntent = workflowOptionsFromCtx.VersioningIntent
 
 	header, err := workflowHeaderPropagated(ctx, options.ContextPropagators)
@@ -1456,6 +1457,7 @@ func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 		CronSchedule:             opts.CronSchedule,
 		Memo:                     opts.Memo,
 		SearchAttributes:         opts.SearchAttributes,
+		TypedSearchAttributes:    opts.TypedSearchAttributes,
 		ParentClosePolicy:        opts.ParentClosePolicy,
 		VersioningIntent:         opts.VersioningIntent,
 	}
