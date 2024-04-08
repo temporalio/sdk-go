@@ -658,6 +658,25 @@ func testWorkflowHello(ctx Context) (string, error) {
 	return result, nil
 }
 
+func testWorkflowHelloContinueAsNew(ctx Context, count int) (string, error) {
+	ao := ActivityOptions{
+		ScheduleToStartTimeout: time.Minute,
+		StartToCloseTimeout:    time.Minute,
+		HeartbeatTimeout:       20 * time.Second,
+	}
+	ctx = WithActivityOptions(ctx, ao)
+
+	var result string
+	err := ExecuteActivity(ctx, testActivityHello, "world").Get(ctx, &result)
+	if err != nil {
+		return "", err
+	}
+	if count > 0 {
+		return "", NewContinueAsNewError(ctx, testWorkflowHelloContinueAsNew, count-1)
+	}
+	return result, nil
+}
+
 func testWorkflowCancelled(ctx Context) error {
 	_ = NewTimer(ctx, 20*time.Minute)
 	return NewCanceledError()
@@ -840,6 +859,39 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Basic() {
 	env := s.NewTestWorkflowEnvironment()
 	env.RegisterWorkflow(workflowFn)
 	env.RegisterWorkflow(testWorkflowHello)
+	env.RegisterActivity(testActivityHello)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var actualResult string
+	s.NoError(env.GetWorkflowResult(&actualResult))
+	s.Equal("hello_activity hello_world", actualResult)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_ContinueAsNew() {
+	workflowFn := func(ctx Context) (string, error) {
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+		var helloActivityResult string
+		err := ExecuteActivity(ctx, testActivityHello, "activity").Get(ctx, &helloActivityResult)
+		if err != nil {
+			return "", err
+		}
+
+		cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Minute}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		var helloWorkflowResult string
+		err = ExecuteChildWorkflow(ctx, testWorkflowHelloContinueAsNew, 1).Get(ctx, &helloWorkflowResult)
+		if err != nil {
+			return "", err
+		}
+
+		return helloActivityResult + " " + helloWorkflowResult, nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(workflowFn)
+	env.RegisterWorkflow(testWorkflowHelloContinueAsNew)
 	env.RegisterActivity(testActivityHello)
 	env.ExecuteWorkflow(workflowFn)
 
