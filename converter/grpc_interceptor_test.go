@@ -74,6 +74,7 @@ func TestPayloadCodecGRPCClientInterceptor(t *testing.T) {
 	)
 	require.NoError(err)
 
+	//lint:ignore SA1019 test
 	c, err := grpc.Dial(
 		server.addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -115,6 +116,7 @@ func TestFailureGRPCClientInterceptor(t *testing.T) {
 	)
 	require.NoError(err)
 
+	//lint:ignore SA1019 test
 	c, err := grpc.Dial(
 		server.addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
@@ -181,6 +183,7 @@ func (t *testGRPCServer) waitUntilServing() error {
 	// Try 20 times, waiting 100ms between
 	var lastErr error
 	for i := 0; i < 20; i++ {
+		//lint:ignore SA1019 test
 		conn, err := grpc.Dial(t.addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			lastErr = err

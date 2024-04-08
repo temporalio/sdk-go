@@ -357,14 +357,6 @@ func createTestEventWorkflowExecutionUpdateAccepted(eventID int64, attr *history
 	}
 }
 
-func createTestEventWorkflowExecutionUpdateCompleted(eventID int64, attr *historypb.WorkflowExecutionUpdateCompletedEventAttributes) *historypb.HistoryEvent {
-	return &historypb.HistoryEvent{
-		EventId:    eventID,
-		EventType:  enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED,
-		Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateCompletedEventAttributes{WorkflowExecutionUpdateCompletedEventAttributes: attr},
-	}
-}
-
 func createTestEventVersionMarker(eventID int64, workflowTaskCompletedID int64, changeID string, version Version) *historypb.HistoryEvent {
 	changeIDPayload, err := converter.GetDefaultDataConverter().ToPayloads(changeID)
 	if err != nil {

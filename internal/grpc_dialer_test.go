@@ -153,6 +153,7 @@ func TestMissingGetServerInfo(t *testing.T) {
 	var lastErr error
 	for i := 0; i < 20; i++ {
 		lastErr = nil
+		//lint:ignore SA1019 test
 		conn, err := grpc.Dial(l.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			lastErr = err
@@ -550,6 +551,7 @@ func (t *testGRPCServer) waitUntilServing() error {
 	// Try 20 times, waiting 100ms between
 	var lastErr error
 	for i := 0; i < 20; i++ {
+		//lint:ignore SA1019 test
 		conn, err := grpc.Dial(t.addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			lastErr = err
