@@ -25,10 +25,7 @@
 package internal
 
 import (
-	enumspb "go.temporal.io/api/enums/v1"
-	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
-	updatepb "go.temporal.io/api/update/v1"
 )
 
 type eventMsgIndex []*protocolpb.Message
@@ -57,14 +54,4 @@ func (emi *eventMsgIndex) takeLTE(eventID int64) []*protocolpb.Message {
 	}
 	*emi = (*emi)[:n]
 	return out
-}
-
-func rehydrateUpdateMessages(events []*historypb.HistoryEvent, msgs []*protocolpb.Message) error {
-	requestedUpdates := make(map[string]*updatepb.Request)
-	for _, event := range events {
-		if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_REQUESTED {
-			attributes := event.GetWorkflowExecutionUpdateRequestedEventAttributes()
-			requestedUpdates[attributes.GetRequest().GetMeta().GetUpdateId()] = attributes.GetRequest()
-		}
-	}
 }

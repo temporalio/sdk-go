@@ -202,7 +202,7 @@ type (
 		markers        []*historypb.HistoryEvent
 		flags          []sdkFlag
 		acceptedMsgs   []*protocolpb.Message
-		requestedMsgs  []*protocolpb.Message
+		admittedMsgs   []*protocolpb.Message
 		binaryChecksum string
 		sdkVersion     string
 		sdkName        string
@@ -352,7 +352,7 @@ func (eh *history) nextTask() (*preparedTask, error) {
 			return nil, err
 		}
 		eh.next = firstTask.events
-		eh.nextMessages = firstTask.requestedMsgs
+		eh.nextMessages = firstTask.admittedMsgs
 		eh.nextFlags = firstTask.flags
 		eh.sdkName = firstTask.sdkName
 		eh.sdkVersion = firstTask.sdkVersion
@@ -374,7 +374,7 @@ func (eh *history) nextTask() (*preparedTask, error) {
 			return nil, err
 		}
 		eh.next = nextTaskEvents.events
-		eh.nextMessages = nextTaskEvents.requestedMsgs
+		eh.nextMessages = nextTaskEvents.admittedMsgs
 		eh.nextFlags = nextTaskEvents.flags
 		eh.sdkName = nextTaskEvents.sdkName
 		eh.sdkVersion = nextTaskEvents.sdkVersion
@@ -387,7 +387,7 @@ func (eh *history) nextTask() (*preparedTask, error) {
 		markers:        markers,
 		flags:          sdkFlags,
 		acceptedMsgs:   acceptedMsgs,
-		requestedMsgs:  requestMessages,
+		admittedMsgs:   requestMessages,
 		binaryChecksum: checksum,
 		sdkName:        sdkName,
 		sdkVersion:     sdkVersion,
@@ -489,15 +489,15 @@ OrderEvents:
 				taskEvents.markers = append(taskEvents.markers, event)
 			} else if attrs := event.GetWorkflowExecutionUpdateAcceptedEventAttributes(); attrs != nil {
 				taskEvents.acceptedMsgs = append(taskEvents.acceptedMsgs, inferMessageFromAcceptedEvent(attrs))
-			} else if attrs := event.GetWorkflowExecutionUpdateRequestedEventAttributes(); attrs != nil {
+			} else if attrs := event.GetWorkflowExecutionUpdateAdmittedEventAttributes(); attrs != nil {
 				updateID := attrs.GetRequest().GetMeta().GetUpdateId()
-				taskEvents.requestedMsgs = append(taskEvents.requestedMsgs, &protocolpb.Message{
+				taskEvents.admittedMsgs = append(taskEvents.admittedMsgs, &protocolpb.Message{
 					Id:                 updateID + "/request",
 					ProtocolInstanceId: updateID,
 					SequencingId: &protocolpb.Message_EventId{
 						EventId: event.GetEventId(),
 					},
-					Body: protocol.MustMarshalAny(attrs.GetRequest().GetInput()),
+					Body: protocol.MustMarshalAny(attrs.GetRequest()),
 				})
 			}
 			taskEvents.events = append(taskEvents.events, event)
@@ -1026,18 +1026,21 @@ ProcessEvents:
 		flags := nextTask.flags
 		binaryChecksum := nextTask.binaryChecksum
 		nextTaskBuildId := nextTask.buildID
-		requestedUpdates := nextTask.requestedMsgs
+		admittedUpdates := nextTask.admittedMsgs
 		// Check if we are replaying so we know if we should use the messages in the WFT or the history
 		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
 		var msgs *eventMsgIndex
 		if isReplay {
-			requestUpdatePayload := make(map[string]*anypb.Any)
-			for _, updateRequest := range requestedUpdates {
-				requestUpdatePayload[updateRequest.GetId()] = updateRequest.GetBody()
+			requestUpdateBodies := make(map[string]*anypb.Any)
+			for _, updateRequest := range admittedUpdates {
+				requestUpdateBodies[updateRequest.GetProtocolInstanceId()] = updateRequest.GetBody()
 			}
+			// Check if we need to replace the body of the update request with the body of the update admitted event
 			for _, msg := range historyMessages {
-				if payload, ok := requestUpdatePayload[msg.Id]; ok {
-					msg.Body = payload
+				if body, ok := requestUpdateBodies[msg.GetProtocolInstanceId()]; ok {
+					msg.Body = body
+				} else if msg.Body == nil {
+					return nil, errors.New("missing body for accepted message")
 				}
 			}
 			msgs = indexMessagesByEventID(historyMessages)
@@ -1045,7 +1048,7 @@ ProcessEvents:
 			eventHandler.sdkVersion = nextTask.sdkVersion
 			eventHandler.sdkName = nextTask.sdkName
 		} else {
-			taskMessages = append(taskMessages, requestedUpdates...)
+			taskMessages = append(taskMessages, admittedUpdates...)
 			msgs = indexMessagesByEventID(taskMessages)
 			taskMessages = []*protocolpb.Message{}
 			if eventHandler.sdkVersion != SDKVersion {
@@ -1432,6 +1435,8 @@ func skipDeterministicCheckForEvent(e *historypb.HistoryEvent, sdkFlags *sdkFlag
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED:
 		return true
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
+		return true
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ADMITTED:
 		return true
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
 		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_REJECTED,

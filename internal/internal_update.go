@@ -157,7 +157,6 @@ func (up *updateProtocol) Accept() {
 		Body: protocol.MustMarshalAny(&updatepb.Acceptance{
 			AcceptedRequestMessageId:         up.requestMsgID,
 			AcceptedRequestSequencingEventId: up.requestSeqID,
-			// AcceptedRequest field no longer read by server - will be removed from API soon
 		}),
 	}, withExpectedEventPredicate(up.checkAcceptedEvent))
 	up.state = updateStateAccepted
@@ -224,10 +223,9 @@ func (up *updateProtocol) checkAcceptedEvent(e *historypb.HistoryEvent) bool {
 	if attrs == nil {
 		return false
 	}
-	return attrs.AcceptedRequest.GetMeta().GetUpdateId() == up.protoInstanceID &&
+	return attrs.GetProtocolInstanceId() == up.protoInstanceID &&
 		attrs.AcceptedRequestMessageId == up.requestMsgID &&
-		attrs.AcceptedRequestSequencingEventId == up.requestSeqID &&
-		attrs.AcceptedRequest != nil
+		attrs.AcceptedRequestSequencingEventId == up.requestSeqID
 }
 
 // defaultHandler receives the initial invocation of an update during WFT
