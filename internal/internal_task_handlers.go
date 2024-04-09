@@ -47,7 +47,6 @@ import (
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"go.temporal.io/sdk/internal/common/retry"
@@ -1031,15 +1030,18 @@ ProcessEvents:
 		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
 		var msgs *eventMsgIndex
 		if isReplay {
-			requestUpdateBodies := make(map[string]*anypb.Any)
+			requestUpdates := make(map[string]*protocolpb.Message, len(admittedUpdates))
 			for _, updateRequest := range admittedUpdates {
-				requestUpdateBodies[updateRequest.GetProtocolInstanceId()] = updateRequest.GetBody()
+				requestUpdates[updateRequest.GetProtocolInstanceId()] = updateRequest
 			}
-			// Check if we need to replace the body of the update request with the body of the update admitted event
-			for _, msg := range historyMessages {
-				if body, ok := requestUpdateBodies[msg.GetProtocolInstanceId()]; ok {
-					msg.Body = body
-				} else if msg.Body == nil {
+			// Check if we need to replace the update message synthesize from an
+			// accepted event with the update message synthesize from an admitted event
+			for i, msg := range historyMessages {
+				if requestUpdate, ok := requestUpdates[msg.GetProtocolInstanceId()]; ok {
+					historyMessages[i] = requestUpdate
+				}
+				// At this point, all update messages should have a body
+				if historyMessages[i].Body == nil {
 					return nil, errors.New("missing body for accepted message")
 				}
 			}

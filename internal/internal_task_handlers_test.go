@@ -1561,7 +1561,8 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_Message_Mixed_Types() {
 			},
 		}),
 		createTestEventWorkflowExecutionUpdateAccepted(7, &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
-			AcceptedRequestSequencingEventId: 4,
+			AcceptedRequestSequencingEventId: 2,
+			AcceptedRequestMessageId:         "admittedUpdate1/request",
 			ProtocolInstanceId:               "admittedUpdate1",
 		}),
 		createTestEventActivityTaskScheduled(8, &historypb.ActivityTaskScheduledEventAttributes{
@@ -1572,6 +1573,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_Message_Mixed_Types() {
 		createTestEventWorkflowExecutionUpdateAccepted(9, &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
 			AcceptedRequestSequencingEventId: 4,
 			ProtocolInstanceId:               "protocolUpdate1",
+			AcceptedRequestMessageId:         "protocolUpdate1/request",
 			AcceptedRequest: &updatepb.Request{
 				Meta: &updatepb.Meta{
 					UpdateId: "protocolUpdate1",
@@ -1671,8 +1673,9 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_Message_Admitted_Paged() {
 			},
 		}),
 		createTestEventWorkflowExecutionUpdateAccepted(6, &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
-			AcceptedRequestSequencingEventId: 3,
+			AcceptedRequestSequencingEventId: 2,
 			ProtocolInstanceId:               "test",
+			AcceptedRequestMessageId:         "test/request",
 		}),
 		createTestEventActivityTaskScheduled(7, &historypb.ActivityTaskScheduledEventAttributes{
 			ActivityId:   "7",
