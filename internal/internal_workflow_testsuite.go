@@ -1024,7 +1024,22 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 		return false
 	}
 	params := h.params
-
+	var continueAsNewErr *ContinueAsNewError
+	if errors.As(env.testError, &continueAsNewErr) {
+		params.Input = continueAsNewErr.Input
+		params.Header = continueAsNewErr.Header
+		params.RetryPolicy = convertToPBRetryPolicy(continueAsNewErr.RetryPolicy)
+		params.WorkflowType = continueAsNewErr.WorkflowType
+		params.TaskQueueName = continueAsNewErr.TaskQueueName
+		params.VersioningIntent = continueAsNewErr.VersioningIntent
+		params.WorkflowRunTimeout = continueAsNewErr.WorkflowRunTimeout
+		params.WorkflowTaskTimeout = continueAsNewErr.WorkflowTaskTimeout
+		// remove the current child workflow from the pending child workflow map because
+		// the childWorkflowID will be the same for retry run.
+		delete(env.runningWorkflows, env.workflowInfo.WorkflowExecution.ID)
+		env.parentEnv.ExecuteChildWorkflow(*params, h.callback, nil /* child workflow already started */)
+		return true
+	}
 	// pass down the last completion result
 	var result *commonpb.Payloads
 	// TODO (shtin): convert env.testResult to *commonpb.Payloads
@@ -1036,7 +1051,6 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 		result = env.workflowInfo.lastCompletionResult
 	}
 	params.lastCompletionResult = result
-
 	if params.RetryPolicy != nil && env.testError != nil {
 		var expireTime time.Time
 		if params.WorkflowOptions.WorkflowExecutionTimeout > 0 {
