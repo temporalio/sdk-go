@@ -50,7 +50,6 @@ func TestGRPCInterceptor(t *testing.T) {
 
 	// Create client with interceptor
 	handler := metrics.NewCapturingHandler()
-	//lint:ignore SA1019 test
 	cc, err := grpc.Dial(l.Addr().String(),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithUnaryInterceptor(metrics.NewGRPCInterceptor(handler, "_my_suffix")))
