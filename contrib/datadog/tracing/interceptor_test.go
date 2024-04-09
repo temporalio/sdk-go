@@ -22,6 +22,7 @@
 package tracing
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -109,4 +110,30 @@ func Test_tracerImpl_genSpanID(t1 *testing.T) {
 			}
 		})
 	}
+}
+func Test_ErrCheckFn(t *testing.T) {
+	// Start the mock tracer.
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	errCheckFn := func(err error) bool {
+		if strings.Contains(err.Error(), "ignore me") {
+			return false
+		}
+
+		return true
+	}
+
+	impl := NewTracer(TracerOptions{ErrCheckFn: errCheckFn})
+	trc := testTracer{
+		Tracer: impl,
+		mt:     mt,
+	}
+
+	interceptortest.RunTestWorkflowWithError(t, trc)
+
+	spans := trc.FinishedSpans()
+
+	require.Len(t, spans, 1)
+	require.Equal(t, "temporal.RunWorkflow", spans[0].Name)
 }
