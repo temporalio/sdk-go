@@ -508,6 +508,10 @@ type (
 		// default: 15s
 		KeepAliveTimeout time.Duration
 
+		// GetSystemInfoTimeout is the timeout for the RPC made by the
+		// client to fetch server capabilities.
+		GetSystemInfoTimeout time.Duration
+
 		// if true, when there are no active RPCs, Time and Timeout will be ignored and no
 		// keepalive pings will be sent.
 		// If false, client sends keepalive pings even with no active RPCs
@@ -636,8 +640,6 @@ type (
 		// If the workflow gets a signal before the delay, a workflow task will be dispatched and the rest
 		// of the delay will be ignored. A signal from signal with start will not trigger a workflow task.
 		// Cannot be set the same time as a CronSchedule.
-		//
-		// NOTE: Experimental
 		StartDelay time.Duration
 	}
 
@@ -715,35 +717,35 @@ type Credentials interface {
 }
 
 // DialClient creates a client and attempts to connect to the server.
-func DialClient(options ClientOptions) (Client, error) {
+func DialClient(ctx context.Context, options ClientOptions) (Client, error) {
 	options.ConnectionOptions.disableEagerConnection = false
-	return NewClient(options)
+	return NewClient(ctx, options)
 }
 
 // NewLazyClient creates a client and does not attempt to connect to the server.
 func NewLazyClient(options ClientOptions) (Client, error) {
 	options.ConnectionOptions.disableEagerConnection = true
-	return NewClient(options)
+	return NewClient(context.Background(), options)
 }
 
 // NewClient creates an instance of a workflow client
 //
 // Deprecated: Use DialClient or NewLazyClient instead.
-func NewClient(options ClientOptions) (Client, error) {
-	return newClient(options, nil)
+func NewClient(ctx context.Context, options ClientOptions) (Client, error) {
+	return newClient(ctx, options, nil)
 }
 
 // NewClientFromExisting creates a new client using the same connection as the
 // existing client.
-func NewClientFromExisting(existingClient Client, options ClientOptions) (Client, error) {
+func NewClientFromExisting(ctx context.Context, existingClient Client, options ClientOptions) (Client, error) {
 	existing, _ := existingClient.(*WorkflowClient)
 	if existing == nil {
 		return nil, fmt.Errorf("existing client must have been created directly from a client package call")
 	}
-	return newClient(options, existing)
+	return newClient(ctx, options, existing)
 }
 
-func newClient(options ClientOptions, existing *WorkflowClient) (Client, error) {
+func newClient(ctx context.Context, options ClientOptions, existing *WorkflowClient) (Client, error) {
 	if options.Namespace == "" {
 		options.Namespace = DefaultNamespace
 	}
@@ -788,13 +790,13 @@ func newClient(options ClientOptions, existing *WorkflowClient) (Client, error) 
 	// the new connection. Otherwise, only load server capabilities eagerly if not
 	// disabled.
 	if existing != nil {
-		if client.capabilities, err = existing.loadCapabilities(); err != nil {
+		if client.capabilities, err = existing.loadCapabilities(ctx, options.ConnectionOptions.GetSystemInfoTimeout); err != nil {
 			return nil, err
 		}
 		client.unclosedClients = existing.unclosedClients
 	} else {
 		if !options.ConnectionOptions.disableEagerConnection {
-			if _, err := client.loadCapabilities(); err != nil {
+			if _, err := client.loadCapabilities(ctx, options.ConnectionOptions.GetSystemInfoTimeout); err != nil {
 				client.Close()
 				return nil, err
 			}

@@ -152,7 +152,7 @@ func NewFuture(ctx Context) (Future, Settable) {
 	return internal.NewFuture(ctx)
 }
 
-// Now returns the current time when the workflow task is started or replayed.
+// Now returns the time when the workflow task was first started, even during replay.
 // Workflows must use this Now() to get the wall clock time, instead of Go's time.Now().
 func Now(ctx Context) time.Time {
 	return internal.Now(ctx)
