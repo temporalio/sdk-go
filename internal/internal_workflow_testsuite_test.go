@@ -3489,6 +3489,40 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowRetry() {
 	s.Equal("retry-done", result)
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflowTypedSearchAttributes() {
+
+	childWorkflowFn := func(ctx Context) error {
+		sa := GetTypedSearchAttributes(ctx)
+		foo, ok := sa.GetString(NewSearchAttributeKeyString("foo"))
+		if !s.True(ok) || !s.Equal("bar", foo) {
+			return NewApplicationErrorWithOptions("invalid foo search attribute", "Internal", ApplicationErrorOptions{
+				Cause:        fmt.Errorf("expected foo search attribute to equal 'bar', got: %v", sa.untypedValue),
+				NonRetryable: true,
+			})
+		}
+		return nil
+	}
+
+	workflowFn := func(ctx Context) error {
+		cwo := ChildWorkflowOptions{
+			WorkflowRunTimeout: time.Minute,
+			TypedSearchAttributes: NewSearchAttributes(
+				NewSearchAttributeKeyString("foo").ValueSet("bar"),
+			),
+		}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		return ExecuteChildWorkflow(ctx, childWorkflowFn).Get(ctx, nil)
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(childWorkflowFn)
+	env.RegisterWorkflow(workflowFn)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_SignalChildWorkflowRetry() {
 	childWorkflowFn := func(ctx Context) (string, error) {
 		info := GetWorkflowInfo(ctx)
