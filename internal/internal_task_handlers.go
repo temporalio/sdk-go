@@ -1732,7 +1732,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			retryPolicy = workflowContext.workflowInfo.RetryPolicy
 		}
 
-		useCompat := determineUseCompatibleFlagForCommand(
+		useCompat := determineInheritBuildIdFlagForCommand(
 			contErr.VersioningIntent, workflowContext.workflowInfo.TaskQueueName, contErr.TaskQueueName)
 		closeCommand.Attributes = &commandpb.Command_ContinueAsNewWorkflowExecutionCommandAttributes{ContinueAsNewWorkflowExecutionCommandAttributes: &commandpb.ContinueAsNewWorkflowExecutionCommandAttributes{
 			WorkflowType:         &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
@@ -1744,7 +1744,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			Memo:                 workflowContext.workflowInfo.Memo,
 			SearchAttributes:     workflowContext.workflowInfo.SearchAttributes,
 			RetryPolicy:          convertToPBRetryPolicy(retryPolicy),
-			UseCompatibleVersion: useCompat,
+			InheritBuildId: useCompat,
 		}}
 	} else if workflowContext.err != nil {
 		// Workflow failures
