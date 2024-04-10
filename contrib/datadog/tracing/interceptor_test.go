@@ -124,7 +124,7 @@ func Test_ErrCheckFn(t *testing.T) {
 		return true
 	}
 
-	impl := NewTracer(TracerOptions{ErrCheckFn: errCheckFn})
+	impl := NewTracer(TracerOptions{CheckError: errCheckFn})
 	trc := testTracer{
 		Tracer: impl,
 		mt:     mt,

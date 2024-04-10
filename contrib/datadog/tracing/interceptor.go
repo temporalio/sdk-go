@@ -47,8 +47,8 @@ type TracerOptions struct {
 	// DisableQueryTracing can be set to disable query tracing.
 	DisableQueryTracing bool
 
-	// ErrCheckFn can be set to a custom function to determine if an error should be traced.
-	ErrCheckFn func(err error) bool
+	// CheckError can be set to a custom function to determine if an error should be traced.
+	CheckError func(err error) bool
 }
 
 // NewTracingInterceptor convenience method that wraps a NeTracer() with a tracing interceptor
@@ -64,7 +64,7 @@ func NewTracer(opts TracerOptions) interceptor.Tracer {
 		opts: TracerOptions{
 			DisableSignalTracing: opts.DisableSignalTracing,
 			DisableQueryTracing:  opts.DisableQueryTracing,
-			ErrCheckFn:           opts.ErrCheckFn,
+			CheckError:           opts.CheckError,
 		},
 	}
 }
@@ -118,7 +118,7 @@ func (t *tracerImpl) SpanFromContext(ctx context.Context) interceptor.TracerSpan
 	if !ok {
 		return nil
 	}
-	return &tracerSpan{ErrCheckFn: t.opts.ErrCheckFn, Span: span}
+	return &tracerSpan{CheckError: t.opts.CheckError, Span: span}
 }
 
 func (t *tracerImpl) ContextWithSpan(ctx context.Context, span interceptor.TracerSpan) context.Context {
@@ -178,7 +178,7 @@ func (t *tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (int
 
 	// Start and return span
 	s := tracer.StartSpan(t.SpanName(options), startOpts...)
-	return &tracerSpan{ErrCheckFn: t.opts.ErrCheckFn, Span: s}, nil
+	return &tracerSpan{CheckError: t.opts.CheckError, Span: s}, nil
 }
 
 func (t *tracerImpl) GetLogger(logger log.Logger, ref interceptor.TracerSpanRef) log.Logger {
@@ -227,7 +227,7 @@ func (r spanContextReader) ForeachKey(handler func(key string, value string) err
 
 type tracerSpan struct {
 	ddtrace.Span
-	ErrCheckFn func(err error) bool
+	CheckError func(err error) bool
 }
 type tracerSpanCtx struct {
 	ddtrace.SpanContext
@@ -249,19 +249,13 @@ func (t *tracerSpan) Finish(options *interceptor.TracerFinishSpanOptions) {
 	var opts []tracer.FinishOption
 
 	err := options.Error
-	isErrEligible := err != nil && !workflow.IsContinueAsNewError(err) && t.shouldErrBeTraced(err)
+	isErrEligible := err != nil &&
+		!workflow.IsContinueAsNewError(err) &&
+		t.CheckError != nil && t.CheckError(err)
 
 	if isErrEligible {
 		opts = append(opts, tracer.WithError(err))
 	}
 
 	t.Span.Finish(opts...)
-}
-
-func (t *tracerSpan) shouldErrBeTraced(err error) bool {
-	if t.ErrCheckFn == nil {
-		return true
-	}
-
-	return t.ErrCheckFn(err)
 }
