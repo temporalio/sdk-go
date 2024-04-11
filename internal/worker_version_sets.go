@@ -317,9 +317,9 @@ func (v *BuildIDOpAddNewCompatibleVersion) targetedBuildId() string { return v.B
 func (v *BuildIDOpPromoteSet) targetedBuildId() string              { return v.BuildID }
 func (v *BuildIDOpPromoteIDWithinSet) targetedBuildId() string      { return v.BuildID }
 
-// Helper to determine if how the `UseCompatibleVersion` flag for a command should be set based on
+// Helper to determine if how the `InheritBuildId` flag for a command should be set based on
 // the user's intent and whether the target task queue matches this worker's task queue.
-func determineUseCompatibleFlagForCommand(intent VersioningIntent, workerTq, TargetTq string) bool {
+func determineInheritBuildIdFlagForCommand(intent VersioningIntent, workerTq, TargetTq string) bool {
 	useCompat := true
 	if intent == VersioningIntentDefault {
 		useCompat = false

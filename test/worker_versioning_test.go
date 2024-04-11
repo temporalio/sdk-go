@@ -396,10 +396,6 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {
 	ts.workflows.register(worker1)
 	ts.NoError(worker1.Start())
 	defer worker1.Stop()
-	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "1.1", UseBuildIDForVersioning: true})
-	ts.workflows.register(worker2)
-	ts.NoError(worker2.Start())
-	defer worker2.Stop()
 
 	// Start some workflows targeting 1.0
 	handle11, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("1-1"), ts.workflows.WaitSignalToStart)
@@ -415,6 +411,10 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {
 		},
 	})
 	ts.NoError(err)
+	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "2.0", UseBuildIDForVersioning: true})
+	ts.workflows.register(worker2)
+	ts.NoError(worker2.Start())
+	defer worker2.Stop()
 
 	// If we add the worker before the BuildID "2.0" has been registered, the worker poller ends up
 	// in the new versioning queue, and it only recovers after 1m timeout.

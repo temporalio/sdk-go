@@ -687,6 +687,41 @@ func (w *Workflows) ChildWorkflowSuccessWithParentClosePolicyAbandon(ctx workflo
 	return childWE.ID, err
 }
 
+type (
+	testSearchAttribute struct {
+		Type  enumspb.IndexedValueType
+		Value any
+	}
+
+	testSearchAttributes struct {
+		SearchAttributes map[string]testSearchAttribute
+	}
+)
+
+func (w *Workflows) ChildWorkflowSuccessWithTypedSearchAttributes(ctx workflow.Context) (result testSearchAttributes, err error) {
+	cwo := workflow.GetChildWorkflowOptions(ctx)
+	cwo.TypedSearchAttributes = workflow.GetTypedSearchAttributes(ctx)
+	err = workflow.ExecuteChildWorkflow(workflow.WithChildOptions(ctx, cwo), w.GetTypedSearchAttributes).Get(ctx, &result)
+	return
+}
+
+func (w *Workflows) GetTypedSearchAttributes(ctx workflow.Context) (result testSearchAttributes, err error) {
+	tsa := workflow.GetTypedSearchAttributes(ctx)
+	result.SearchAttributes = map[string]testSearchAttribute{}
+	for _, k := range workflow.DeterministicKeysFunc(tsa.GetUntypedValues(), func(a, b temporal.SearchAttributeKey) int {
+		if a.GetName() < b.GetName() {
+			return -1
+		}
+		return 1
+	}) {
+		result.SearchAttributes[k.GetName()] = testSearchAttribute{
+			Value: tsa.GetUntypedValues()[k],
+			Type:  k.GetValueType(),
+		}
+	}
+	return result, nil
+}
+
 func (w *Workflows) childWorkflowWaitOnContextCancel(ctx workflow.Context) error {
 	var err error
 	// Wait for the workflow to be cancelled
@@ -2913,6 +2948,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ChildWorkflowSuccess)
 	worker.RegisterWorkflow(w.ChildWorkflowSuccessWithParentClosePolicyTerminate)
 	worker.RegisterWorkflow(w.ChildWorkflowSuccessWithParentClosePolicyAbandon)
+	worker.RegisterWorkflow(w.ChildWorkflowSuccessWithTypedSearchAttributes)
+	worker.RegisterWorkflow(w.GetTypedSearchAttributes)
 	worker.RegisterWorkflow(w.ChildWorkflowCancelUnusualTransitionsRepro)
 	worker.RegisterWorkflow(w.ChildWorkflowDuplicatePanicRepro)
 	worker.RegisterWorkflow(w.ChildWorkflowDuplicateGetExecutionStuckRepro)

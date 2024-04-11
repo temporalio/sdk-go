@@ -1732,7 +1732,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			retryPolicy = workflowContext.workflowInfo.RetryPolicy
 		}
 
-		useCompat := determineUseCompatibleFlagForCommand(
+		useCompat := determineInheritBuildIdFlagForCommand(
 			contErr.VersioningIntent, workflowContext.workflowInfo.TaskQueueName, contErr.TaskQueueName)
 		closeCommand.Attributes = &commandpb.Command_ContinueAsNewWorkflowExecutionCommandAttributes{ContinueAsNewWorkflowExecutionCommandAttributes: &commandpb.ContinueAsNewWorkflowExecutionCommandAttributes{
 			WorkflowType:         &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
