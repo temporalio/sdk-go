@@ -47,8 +47,10 @@ type TracerOptions struct {
 	// DisableQueryTracing can be set to disable query tracing.
 	DisableQueryTracing bool
 
-	// CheckError can be set to a custom function to determine if an error should be traced.
-	CheckError func(err error) bool
+	// OnFinish sets finish options.
+	// If unset, this will use [tracer.WithError]
+	// in case [interceptor.TracerFinishSpanOptions.Error] is non-nil and not [workflow.IsContinueAsNewError].
+	OnFinish func(options *interceptor.TracerFinishSpanOptions) []tracer.FinishOption
 }
 
 // NewTracingInterceptor convenience method that wraps a NeTracer() with a tracing interceptor
@@ -60,11 +62,23 @@ func NewTracingInterceptor(opts TracerOptions) interceptor.Interceptor {
 // NewTracer creates an interceptor for setting on client options
 // that implements Datadog tracing for workflows.
 func NewTracer(opts TracerOptions) interceptor.Tracer {
+	if opts.OnFinish == nil {
+		opts.OnFinish = func(options *interceptor.TracerFinishSpanOptions) []tracer.FinishOption {
+			var finishOpts []tracer.FinishOption
+
+			if err := options.Error; err != nil && !workflow.IsContinueAsNewError(err) {
+				finishOpts = append(finishOpts, tracer.WithError(err))
+			}
+
+			return finishOpts
+		}
+	}
+
 	return &tracerImpl{
 		opts: TracerOptions{
 			DisableSignalTracing: opts.DisableSignalTracing,
 			DisableQueryTracing:  opts.DisableQueryTracing,
-			CheckError:           opts.CheckError,
+			OnFinish:             opts.OnFinish,
 		},
 	}
 }
@@ -118,7 +132,7 @@ func (t *tracerImpl) SpanFromContext(ctx context.Context) interceptor.TracerSpan
 	if !ok {
 		return nil
 	}
-	return &tracerSpan{CheckError: t.opts.CheckError, Span: span}
+	return &tracerSpan{OnFinish: t.opts.OnFinish, Span: span}
 }
 
 func (t *tracerImpl) ContextWithSpan(ctx context.Context, span interceptor.TracerSpan) context.Context {
@@ -178,7 +192,7 @@ func (t *tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (int
 
 	// Start and return span
 	s := tracer.StartSpan(t.SpanName(options), startOpts...)
-	return &tracerSpan{CheckError: t.opts.CheckError, Span: s}, nil
+	return &tracerSpan{OnFinish: t.opts.OnFinish, Span: s}, nil
 }
 
 func (t *tracerImpl) GetLogger(logger log.Logger, ref interceptor.TracerSpanRef) log.Logger {
@@ -227,7 +241,7 @@ func (r spanContextReader) ForeachKey(handler func(key string, value string) err
 
 type tracerSpan struct {
 	ddtrace.Span
-	CheckError func(err error) bool
+	OnFinish func(options *interceptor.TracerFinishSpanOptions) []tracer.FinishOption
 }
 type tracerSpanCtx struct {
 	ddtrace.SpanContext
@@ -246,16 +260,7 @@ func (t *tracerSpan) ForeachBaggageItem(handler func(k string, v string) bool) {
 }
 
 func (t *tracerSpan) Finish(options *interceptor.TracerFinishSpanOptions) {
-	var opts []tracer.FinishOption
-
-	err := options.Error
-	isErrEligible := err != nil &&
-		!workflow.IsContinueAsNewError(err) &&
-		t.CheckError != nil && t.CheckError(err)
-
-	if isErrEligible {
-		opts = append(opts, tracer.WithError(err))
-	}
+	opts := t.OnFinish(options)
 
 	t.Span.Finish(opts...)
 }
