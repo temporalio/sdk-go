@@ -1,0 +1,226 @@
+{
+  "events": [
+    {
+      "eventId": "1",
+      "eventTime": "2024-03-25T22:18:22.830541Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "taskId": "1050032",
+      "workflowExecutionStartedEventAttributes": {
+        "workflowType": {
+          "name": "CounterWorkflow"
+        },
+        "taskQueue": {
+          "name": "update",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "workflowExecutionTimeout": "0s",
+        "workflowRunTimeout": "0s",
+        "workflowTaskTimeout": "10s",
+        "originalExecutionRunId": "a178da94-2ac5-4866-b1a5-4c786fa4e29d",
+        "identity": "75101@Quinn-Klassens-MacBook-Pro.local@",
+        "firstExecutionRunId": "a178da94-2ac5-4866-b1a5-4c786fa4e29d",
+        "attempt": 1,
+        "firstWorkflowTaskBackoff": "0s",
+        "header": {},
+        "workflowId": "update-workflow-ID"
+      }
+    },
+    {
+      "eventId": "2",
+      "eventTime": "2024-03-25T22:18:22.830576Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1050033",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "update",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "3",
+      "eventTime": "2024-03-25T22:18:22.832619Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId": "1050040",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "74841@Quinn-Klassens-MacBook-Pro.local@",
+        "requestId": "7812cc67-4c7e-46a8-918c-2c744b88aea0",
+        "historySizeBytes": "502"
+      }
+    },
+    {
+      "eventId": "4",
+      "eventTime": "2024-03-25T22:18:26.641635Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_FAILED",
+      "taskId": "1050069",
+      "workflowTaskFailedEventAttributes": {
+        "scheduledEventId": "2",
+        "startedEventId": "3",
+        "cause": "WORKFLOW_TASK_FAILED_CAUSE_RESET_WORKFLOW",
+        "failure": {
+          "message": "<unknown-user>: test",
+          "resetWorkflowFailureInfo": {}
+        },
+        "identity": "history-service",
+        "baseRunId": "a178da94-2ac5-4866-b1a5-4c786fa4e29d",
+        "newRunId": "3962f036-4c03-4563-95f7-766ca7aa9dd9"
+      }
+    },
+    {
+      "eventId": "5",
+      "eventTime": "2024-03-25T22:18:26.641732Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ADMITTED",
+      "taskId": "1050070",
+      "workflowExecutionUpdateAdmittedEventAttributes": {
+        "request": {
+          "meta": {
+            "updateId": "33160fb1-3285-49a6-a655-078dfc30099a",
+            "identity": "75101@Quinn-Klassens-MacBook-Pro.local@"
+          },
+          "input": {
+            "header": {},
+            "name": "fetch_and_add",
+            "args": {
+              "payloads": [
+                {
+                  "metadata": {
+                    "encoding": "anNvbi9wbGFpbg=="
+                  },
+                  "data": "MA=="
+                }
+              ]
+            }
+          }
+        },
+        "origin": "UPDATE_REQUESTED_EVENT_ORIGIN_REAPPLY"
+      }
+    },
+    {
+      "eventId": "6",
+      "eventTime": "2024-03-25T22:18:26.641772Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1050071",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "update",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "7",
+      "eventTime": "2024-03-25T22:18:26.644481Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId": "1050079",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "6",
+        "identity": "74841@Quinn-Klassens-MacBook-Pro.local@",
+        "requestId": "1b4a2c02-27ac-46a6-838a-43fbf6870e4a",
+        "historySizeBytes": "722"
+      }
+    },
+    {
+      "eventId": "8",
+      "eventTime": "2024-03-25T22:18:26.646631Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId": "1050083",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "6",
+        "startedEventId": "7",
+        "identity": "74841@Quinn-Klassens-MacBook-Pro.local@",
+        "workerVersion": {
+          "buildId": "c39a89ac57bee1cb328b9820896586dc"
+        },
+        "sdkMetadata": {
+          "langUsedFlags": [
+            3,
+            4
+          ],
+          "sdkName": "temporal-go",
+          "sdkVersion": "1.26.0"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "9",
+      "eventTime": "2024-03-25T22:18:48.754878Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED",
+      "taskId": "1050100",
+      "workflowExecutionSignaledEventAttributes": {
+        "signalName": "done",
+        "input": {},
+        "identity": "temporal-cli:quinnklassen@Quinn-Klassens-MacBook-Pro.local"
+      }
+    },
+    {
+      "eventId": "10",
+      "eventTime": "2024-03-25T22:18:48.754880Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1050101",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "update",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "11",
+      "eventTime": "2024-03-25T22:18:48.756089Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId": "1050104",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "10",
+        "identity": "74841@Quinn-Klassens-MacBook-Pro.local@",
+        "requestId": "cf986b25-0ead-4639-a727-57e3ac88da65",
+        "historySizeBytes": "1658"
+      }
+    },
+    {
+      "eventId": "12",
+      "eventTime": "2024-03-25T22:18:48.758130Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId": "1050108",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "10",
+        "startedEventId": "11",
+        "identity": "74841@Quinn-Klassens-MacBook-Pro.local@",
+        "workerVersion": {
+          "buildId": "c39a89ac57bee1cb328b9820896586dc"
+        },
+        "sdkMetadata": {
+          "sdkName": "temporal-go",
+          "sdkVersion": "1.26.0"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "13",
+      "eventTime": "2024-03-25T22:18:48.758153Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED",
+      "taskId": "1050109",
+      "workflowExecutionCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "MA=="
+            }
+          ]
+        },
+        "workflowTaskCompletedEventId": "12"
+      }
+    }
+  ]
+}

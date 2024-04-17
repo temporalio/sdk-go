@@ -1245,6 +1245,12 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	case enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES:
 		weh.handleUpsertWorkflowSearchAttributes(event)
 
+	case enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED:
+		weh.handleWorkflowPropertiesModified(event)
+
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ADMITTED:
+		// No Operation
+
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED:
 		// No Operation
 
@@ -1253,9 +1259,6 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED:
 		// No Operation
-
-	case enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED:
-		weh.handleWorkflowPropertiesModified(event)
 
 	default:
 		if event.WorkerMayIgnore {
