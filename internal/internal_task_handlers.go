@@ -1030,15 +1030,15 @@ ProcessEvents:
 		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
 		var msgs *eventMsgIndex
 		if isReplay {
-			requestUpdates := make(map[string]*protocolpb.Message, len(admittedUpdates))
-			for _, updateRequest := range admittedUpdates {
-				requestUpdates[updateRequest.GetProtocolInstanceId()] = updateRequest
+			admittedUpdatesByID := make(map[string]*protocolpb.Message, len(admittedUpdates))
+			for _, admittedUpdate := range admittedUpdates {
+				admittedUpdatesByID[admittedUpdate.GetProtocolInstanceId()] = admittedUpdate
 			}
 			// Check if we need to replace the update message synthesize from an
 			// accepted event with the update message synthesize from an admitted event
 			for i, msg := range historyMessages {
-				if requestUpdate, ok := requestUpdates[msg.GetProtocolInstanceId()]; ok {
-					historyMessages[i] = requestUpdate
+				if admittedUpdate, ok := admittedUpdatesByID[msg.GetProtocolInstanceId()]; ok {
+					historyMessages[i] = admittedUpdate
 				}
 				// At this point, all update messages should have a body
 				if historyMessages[i].Body == nil {
@@ -1770,16 +1770,16 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		useCompat := determineInheritBuildIdFlagForCommand(
 			contErr.VersioningIntent, workflowContext.workflowInfo.TaskQueueName, contErr.TaskQueueName)
 		closeCommand.Attributes = &commandpb.Command_ContinueAsNewWorkflowExecutionCommandAttributes{ContinueAsNewWorkflowExecutionCommandAttributes: &commandpb.ContinueAsNewWorkflowExecutionCommandAttributes{
-			WorkflowType:         &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
-			Input:                contErr.Input,
-			TaskQueue:            &taskqueuepb.TaskQueue{Name: contErr.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
-			WorkflowRunTimeout:   durationpb.New(contErr.WorkflowRunTimeout),
-			WorkflowTaskTimeout:  durationpb.New(contErr.WorkflowTaskTimeout),
-			Header:               contErr.Header,
-			Memo:                 workflowContext.workflowInfo.Memo,
-			SearchAttributes:     workflowContext.workflowInfo.SearchAttributes,
-			RetryPolicy:          convertToPBRetryPolicy(retryPolicy),
-			InheritBuildId: useCompat,
+			WorkflowType:        &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
+			Input:               contErr.Input,
+			TaskQueue:           &taskqueuepb.TaskQueue{Name: contErr.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
+			WorkflowRunTimeout:  durationpb.New(contErr.WorkflowRunTimeout),
+			WorkflowTaskTimeout: durationpb.New(contErr.WorkflowTaskTimeout),
+			Header:              contErr.Header,
+			Memo:                workflowContext.workflowInfo.Memo,
+			SearchAttributes:    workflowContext.workflowInfo.SearchAttributes,
+			RetryPolicy:         convertToPBRetryPolicy(retryPolicy),
+			InheritBuildId:      useCompat,
 		}}
 	} else if workflowContext.err != nil {
 		// Workflow failures

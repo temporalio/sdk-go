@@ -548,7 +548,6 @@ func MultipleUpdateWorkflow(ctx workflow.Context) (int, error) {
 }
 
 func CounterWorkflow(ctx workflow.Context) (int, error) {
-	log := workflow.GetLogger(ctx)
 	counter := 0
 
 	if err := workflow.SetUpdateHandlerWithOptions(
@@ -557,7 +556,6 @@ func CounterWorkflow(ctx workflow.Context) (int, error) {
 		func(ctx workflow.Context, i int) (int, error) {
 			tmp := counter
 			counter += i
-			log.Info("counter updated", "addend", i, "new-value", counter)
 			_ = workflow.Sleep(ctx, 1*time.Second)
 			return tmp, nil
 		},
@@ -571,11 +569,8 @@ func CounterWorkflow(ctx workflow.Context) (int, error) {
 }
 
 func nonNegative(ctx workflow.Context, i int) error {
-	log := workflow.GetLogger(ctx)
 	if i < 0 {
-		log.Debug("Rejecting negative update", "addend", i)
 		return fmt.Errorf("addend must be non-negative (%v)", i)
 	}
-	log.Debug("Accepting update", "addend", i)
 	return nil
 }
