@@ -38,7 +38,7 @@ var ErrProtoNameNotFound = errors.New("protocol name not found")
 // NameFromMessage extracts the name of the protocol to which the supplied
 // message belongs.
 func NameFromMessage(msg *protocolpb.Message) (string, error) {
-	bodyType := string(msg.Body.MessageName())
+	bodyType := string(msg.GetBody().MessageName())
 	if bodyType == "" {
 		return "", ErrProtoNameNotFound
 	}

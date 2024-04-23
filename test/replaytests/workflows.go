@@ -546,3 +546,31 @@ func MultipleUpdateWorkflow(ctx workflow.Context) (int, error) {
 	}
 	return updatesRan, nil
 }
+
+func CounterWorkflow(ctx workflow.Context) (int, error) {
+	counter := 0
+
+	if err := workflow.SetUpdateHandlerWithOptions(
+		ctx,
+		"fetch_and_add",
+		func(ctx workflow.Context, i int) (int, error) {
+			tmp := counter
+			counter += i
+			_ = workflow.Sleep(ctx, 1*time.Second)
+			return tmp, nil
+		},
+		workflow.UpdateHandlerOptions{Validator: nonNegative},
+	); err != nil {
+		return 0, err
+	}
+
+	_ = workflow.GetSignalChannel(ctx, "done").Receive(ctx, nil)
+	return counter, ctx.Err()
+}
+
+func nonNegative(ctx workflow.Context, i int) error {
+	if i < 0 {
+		return fmt.Errorf("addend must be non-negative (%v)", i)
+	}
+	return nil
+}

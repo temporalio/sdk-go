@@ -1326,6 +1326,25 @@ func (ts *IntegrationTestSuite) TestWorkflowTypedSearchAttributes() {
 	ts.NoError(ts.executeWorkflowWithOption(options, ts.workflows.UpsertTypedSearchAttributesWorkflow, nil, false))
 }
 
+func (ts *IntegrationTestSuite) TestChildWorkflowTypedSearchAttributes() {
+	options := ts.startWorkflowOptions("test-child-wf-typed-search-attributes")
+	// Need to disable eager workflow start until https://github.com/temporalio/temporal/pull/5124 fixed
+	options.EnableEagerStart = false
+	// Create initial set of search attributes
+	stringKey := temporal.NewSearchAttributeKeyString("CustomStringField")
+	keywordKey := temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
+	options.TypedSearchAttributes = temporal.NewSearchAttributes(
+		stringKey.ValueSet("CustomStringFieldValue"),
+		keywordKey.ValueSet("foo"),
+	)
+	var result testSearchAttributes
+	ts.NoError(ts.executeWorkflowWithOption(options, ts.workflows.ChildWorkflowSuccessWithTypedSearchAttributes, &result))
+	ts.Equal("CustomStringFieldValue", result.SearchAttributes["CustomStringField"].Value.(string))
+	ts.Equal(enumspb.INDEXED_VALUE_TYPE_TEXT, result.SearchAttributes["CustomStringField"].Type)
+	ts.Equal("foo", result.SearchAttributes["CustomKeywordField"].Value.(string))
+	ts.Equal(enumspb.INDEXED_VALUE_TYPE_KEYWORD, result.SearchAttributes["CustomKeywordField"].Type)
+}
+
 func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()

@@ -30,7 +30,7 @@ package internal
 const (
 	// SDKVersion is a semver (https://semver.org/) that represents the version of this Temporal GoSDK.
 	// Server validates if SDKVersion fits its supported range and rejects request if it doesn't.
-	SDKVersion = "1.26.0"
+	SDKVersion = "1.26.1"
 
 	// SDKName represents the name of the SDK.
 	SDKName = clientNameHeaderValue

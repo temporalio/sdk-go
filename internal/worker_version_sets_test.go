@@ -116,11 +116,11 @@ func Test_VersioningIntent(t *testing.T) {
 				tqB = tqA
 			}
 			assert.Equal(t,
-				tt.shouldUseCompatible, determineUseCompatibleFlagForCommand(tt.intent, tqA, tqB))
+				tt.shouldUseCompatible, determineInheritBuildIdFlagForCommand(tt.intent, tqA, tqB))
 		})
 	}
 }
 
 func Test_VersioningIntent_EmptyTargetTQ(t *testing.T) {
-	assert.Equal(t, true, determineUseCompatibleFlagForCommand(VersioningIntentUnspecified, "something", ""))
+	assert.Equal(t, true, determineInheritBuildIdFlagForCommand(VersioningIntentUnspecified, "something", ""))
 }

@@ -24,6 +24,7 @@ package interceptortest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -90,6 +91,27 @@ func RunTestWorkflow(t *testing.T, tracer interceptor.Tracer) {
 	require.Equal(t, "query-response", queryResp)
 }
 
+func RunTestWorkflowWithError(t *testing.T, tracer interceptor.Tracer) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+
+	env.RegisterWorkflow(testWorkflowWithError)
+
+	// Set tracer interceptor
+	env.SetWorkerOptions(worker.Options{
+		Interceptors: []interceptor.WorkerInterceptor{interceptor.NewTracingInterceptor(tracer)},
+	})
+
+	env.SetStartTime(testWorkflowStartTime)
+
+	// Exec
+	env.ExecuteWorkflow(testWorkflowWithError)
+
+	// Confirm result
+	require.True(t, env.IsWorkflowCompleted())
+	require.Error(t, env.GetWorkflowError())
+}
+
 func AssertSpanPropagation(t *testing.T, tracer TestTracer) {
 
 	require.Equal(t, []*SpanInfo{
@@ -108,6 +130,10 @@ func AssertSpanPropagation(t *testing.T, tracer TestTracer) {
 				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "HandleSignal", Name: "my-signal"})))),
 		Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "HandleQuery", Name: "my-query"})),
 	}, tracer.FinishedSpans())
+}
+
+func testWorkflowWithError(_ workflow.Context) error {
+	return errors.New("ignore me")
 }
 
 func testWorkflow(ctx workflow.Context) ([]string, error) {

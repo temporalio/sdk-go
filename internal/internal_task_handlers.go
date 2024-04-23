@@ -177,6 +177,7 @@ type (
 		nextEventID    int64 // next expected eventID for sanity
 		lastEventID    int64 // last expected eventID, zero indicates read until end of stream
 		next           []*historypb.HistoryEvent
+		nextMessages   []*protocolpb.Message
 		nextFlags      []sdkFlag
 		binaryChecksum string
 		sdkVersion     string
@@ -199,7 +200,8 @@ type (
 		events         []*historypb.HistoryEvent
 		markers        []*historypb.HistoryEvent
 		flags          []sdkFlag
-		msgs           []*protocolpb.Message
+		acceptedMsgs   []*protocolpb.Message
+		admittedMsgs   []*protocolpb.Message
 		binaryChecksum string
 		sdkVersion     string
 		sdkName        string
@@ -349,19 +351,21 @@ func (eh *history) nextTask() (*preparedTask, error) {
 			return nil, err
 		}
 		eh.next = firstTask.events
+		eh.nextMessages = firstTask.admittedMsgs
 		eh.nextFlags = firstTask.flags
 		eh.sdkName = firstTask.sdkName
 		eh.sdkVersion = firstTask.sdkVersion
 	}
 
 	result := eh.next
+	requestMessages := eh.nextMessages
 	checksum := eh.binaryChecksum
 	sdkFlags := eh.nextFlags
 	sdkName := eh.sdkName
 	sdkVersion := eh.sdkVersion
 
 	var markers []*historypb.HistoryEvent
-	var msgs []*protocolpb.Message
+	var acceptedMsgs []*protocolpb.Message
 	var buildID *string
 	if len(result) > 0 {
 		nextTaskEvents, err := eh.prepareTask()
@@ -369,18 +373,20 @@ func (eh *history) nextTask() (*preparedTask, error) {
 			return nil, err
 		}
 		eh.next = nextTaskEvents.events
+		eh.nextMessages = nextTaskEvents.admittedMsgs
 		eh.nextFlags = nextTaskEvents.flags
 		eh.sdkName = nextTaskEvents.sdkName
 		eh.sdkVersion = nextTaskEvents.sdkVersion
 		markers = nextTaskEvents.markers
-		msgs = nextTaskEvents.msgs
+		acceptedMsgs = nextTaskEvents.acceptedMsgs
 		buildID = nextTaskEvents.buildID
 	}
 	return &preparedTask{
 		events:         result,
 		markers:        markers,
 		flags:          sdkFlags,
-		msgs:           msgs,
+		acceptedMsgs:   acceptedMsgs,
+		admittedMsgs:   requestMessages,
 		binaryChecksum: checksum,
 		sdkName:        sdkName,
 		sdkVersion:     sdkVersion,
@@ -481,7 +487,17 @@ OrderEvents:
 			} else if isPreloadMarkerEvent(event) {
 				taskEvents.markers = append(taskEvents.markers, event)
 			} else if attrs := event.GetWorkflowExecutionUpdateAcceptedEventAttributes(); attrs != nil {
-				taskEvents.msgs = append(taskEvents.msgs, inferMessage(attrs))
+				taskEvents.acceptedMsgs = append(taskEvents.acceptedMsgs, inferMessageFromAcceptedEvent(attrs))
+			} else if attrs := event.GetWorkflowExecutionUpdateAdmittedEventAttributes(); attrs != nil {
+				updateID := attrs.GetRequest().GetMeta().GetUpdateId()
+				taskEvents.admittedMsgs = append(taskEvents.admittedMsgs, &protocolpb.Message{
+					Id:                 updateID + "/request",
+					ProtocolInstanceId: updateID,
+					SequencingId: &protocolpb.Message_EventId{
+						EventId: event.GetEventId(),
+					},
+					Body: protocol.MustMarshalAny(attrs.GetRequest()),
+				})
 			}
 			taskEvents.events = append(taskEvents.events, event)
 		}
@@ -506,7 +522,7 @@ func isPreloadMarkerEvent(event *historypb.HistoryEvent) bool {
 	return event.GetEventType() == enumspb.EVENT_TYPE_MARKER_RECORDED
 }
 
-func inferMessage(attrs *historypb.WorkflowExecutionUpdateAcceptedEventAttributes) *protocolpb.Message {
+func inferMessageFromAcceptedEvent(attrs *historypb.WorkflowExecutionUpdateAcceptedEventAttributes) *protocolpb.Message {
 	return &protocolpb.Message{
 		Id:                 attrs.GetAcceptedRequestMessageId(),
 		ProtocolInstanceId: attrs.GetProtocolInstanceId(),
@@ -1005,19 +1021,36 @@ ProcessEvents:
 		}
 		reorderedEvents := nextTask.events
 		markers := nextTask.markers
-		historyMessages := nextTask.msgs
+		historyMessages := nextTask.acceptedMsgs
 		flags := nextTask.flags
 		binaryChecksum := nextTask.binaryChecksum
 		nextTaskBuildId := nextTask.buildID
+		admittedUpdates := nextTask.admittedMsgs
 		// Check if we are replaying so we know if we should use the messages in the WFT or the history
 		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
 		var msgs *eventMsgIndex
 		if isReplay {
+			admittedUpdatesByID := make(map[string]*protocolpb.Message, len(admittedUpdates))
+			for _, admittedUpdate := range admittedUpdates {
+				admittedUpdatesByID[admittedUpdate.GetProtocolInstanceId()] = admittedUpdate
+			}
+			// Check if we need to replace the update message synthesize from an
+			// accepted event with the update message synthesize from an admitted event
+			for i, msg := range historyMessages {
+				if admittedUpdate, ok := admittedUpdatesByID[msg.GetProtocolInstanceId()]; ok {
+					historyMessages[i] = admittedUpdate
+				}
+				// At this point, all update messages should have a body
+				if historyMessages[i].Body == nil {
+					return nil, errors.New("missing body for accepted message")
+				}
+			}
 			msgs = indexMessagesByEventID(historyMessages)
 
 			eventHandler.sdkVersion = nextTask.sdkVersion
 			eventHandler.sdkName = nextTask.sdkName
 		} else {
+			taskMessages = append(taskMessages, admittedUpdates...)
 			msgs = indexMessagesByEventID(taskMessages)
 			taskMessages = []*protocolpb.Message{}
 			if eventHandler.sdkVersion != SDKVersion {
@@ -1405,6 +1438,8 @@ func skipDeterministicCheckForEvent(e *historypb.HistoryEvent, sdkFlags *sdkFlag
 		return true
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TIMED_OUT:
 		return true
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ADMITTED:
+		return true
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
 		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_REJECTED,
 		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED:
@@ -1732,19 +1767,19 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			retryPolicy = workflowContext.workflowInfo.RetryPolicy
 		}
 
-		useCompat := determineUseCompatibleFlagForCommand(
+		useCompat := determineInheritBuildIdFlagForCommand(
 			contErr.VersioningIntent, workflowContext.workflowInfo.TaskQueueName, contErr.TaskQueueName)
 		closeCommand.Attributes = &commandpb.Command_ContinueAsNewWorkflowExecutionCommandAttributes{ContinueAsNewWorkflowExecutionCommandAttributes: &commandpb.ContinueAsNewWorkflowExecutionCommandAttributes{
-			WorkflowType:         &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
-			Input:                contErr.Input,
-			TaskQueue:            &taskqueuepb.TaskQueue{Name: contErr.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
-			WorkflowRunTimeout:   durationpb.New(contErr.WorkflowRunTimeout),
-			WorkflowTaskTimeout:  durationpb.New(contErr.WorkflowTaskTimeout),
-			Header:               contErr.Header,
-			Memo:                 workflowContext.workflowInfo.Memo,
-			SearchAttributes:     workflowContext.workflowInfo.SearchAttributes,
-			RetryPolicy:          convertToPBRetryPolicy(retryPolicy),
-			UseCompatibleVersion: useCompat,
+			WorkflowType:        &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
+			Input:               contErr.Input,
+			TaskQueue:           &taskqueuepb.TaskQueue{Name: contErr.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
+			WorkflowRunTimeout:  durationpb.New(contErr.WorkflowRunTimeout),
+			WorkflowTaskTimeout: durationpb.New(contErr.WorkflowTaskTimeout),
+			Header:              contErr.Header,
+			Memo:                workflowContext.workflowInfo.Memo,
+			SearchAttributes:    workflowContext.workflowInfo.SearchAttributes,
+			RetryPolicy:         convertToPBRetryPolicy(retryPolicy),
+			InheritBuildId:      useCompat,
 		}}
 	} else if workflowContext.err != nil {
 		// Workflow failures
