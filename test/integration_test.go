@@ -27,6 +27,7 @@ package test_test
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"math/rand"
 	"os"
@@ -76,6 +77,12 @@ import (
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
+
+var usingCLIDevServer bool
+
+func init() {
+	flag.BoolVar(&usingCLIDevServer, "using-cli-dev-server", false, "Whether CLI dev server is in use")
+}
 
 const (
 	ctxTimeout                    = 15 * time.Second
@@ -5059,6 +5066,13 @@ func (ts *InvalidUTF8Suite) TearDownSuite() {
 }
 
 func (ts *InvalidUTF8Suite) SetupTest() {
+	// This suite isn't valid for CLI dev servers because they don't allow invalid
+	// UTF8
+	if usingCLIDevServer {
+		ts.T().Skip("Skipping invalid UTF8 suite for dev server")
+		return
+	}
+
 	var err error
 	ts.client, err = client.Dial(client.Options{
 		HostPort:  ts.config.ServiceAddr,
@@ -5091,6 +5105,9 @@ func (ts *InvalidUTF8Suite) SetupTest() {
 }
 
 func (ts *InvalidUTF8Suite) TearDownTest() {
+	if usingCLIDevServer {
+		return
+	}
 	ts.client.Close()
 	if !ts.workerStopped {
 		ts.worker.Stop()

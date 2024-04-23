@@ -135,6 +135,7 @@ func (b *builder) integrationTest() error {
 	// Start dev server if wanted
 	if *devServerFlag {
 		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
+			CachedDownload: testsuite.CachedDownload{Version: "v0.12.0-rc.3"},
 			ClientOptions: &client.Options{
 				HostPort:  "127.0.0.1:7233",
 				Namespace: "integration-test-namespace",
@@ -165,6 +166,9 @@ func (b *builder) integrationTest() error {
 	}
 	if *coverageFileFlag != "" {
 		args = append(args, "-coverprofile="+filepath.Join(b.rootDir, coverageDir, *coverageFileFlag), "-coverpkg=./...")
+	}
+	if *devServerFlag {
+		args = append(args, "-using-cli-dev-server")
 	}
 	args = append(args, "./...")
 	// Must run in test dir
