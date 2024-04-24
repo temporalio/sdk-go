@@ -27,11 +27,11 @@ import (
 	"strings"
 	"time"
 
-	"google.golang.org/grpc/status"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // HandlerContextKey is the context key for a MetricHandler value.
@@ -63,16 +63,17 @@ func NewGRPCInterceptor(defaultHandler Handler, suffix string) grpc.UnaryClientI
 
 		// Only take method name after the last slash
 		operation := method[strings.LastIndex(method, "/")+1:]
-		tags := map[string]string{OperationTagName: operation}
 
 		// Since this interceptor can be used for clients of different name, we
 		// attempt to extract the namespace out of the request. All namespace-based
 		// requests have been confirmed to have a top-level namespace field.
+		namespace := "_unknown_"
 		if nsReq, _ := req.(interface{ GetNamespace() string }); nsReq != nil {
-			tags[NamespaceTagName] = nsReq.GetNamespace()
+			namespace = nsReq.GetNamespace()
 		}
 
 		// Capture time, record start, run, and record end
+		tags := map[string]string{OperationTagName: operation, NamespaceTagName: namespace}
 		handler = handler.WithTags(tags)
 		start := time.Now()
 		recordRequestStart(handler, longPoll, suffix)
