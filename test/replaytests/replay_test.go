@@ -431,6 +431,20 @@ func (s *replayTestSuite) TestMultipleUpdates() {
 	s.NoError(err)
 }
 
+func (s *replayTestSuite) TestResetWithUpdateAccepted() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(CounterWorkflow)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "update-reset-accepted.json")
+	s.NoError(err)
+}
+
+func (s *replayTestSuite) TestResetWithUpdateRejected() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(CounterWorkflow)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "update-reset-rejected.json")
+	s.NoError(err)
+}
+
 type captureConverter struct {
 	converter.DataConverter
 	toPayloads   []interface{}
