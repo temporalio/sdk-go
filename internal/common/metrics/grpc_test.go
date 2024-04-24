@@ -65,12 +65,12 @@ func TestGRPCInterceptor(t *testing.T) {
 	counters := handler.Counters()
 	require.Len(t, counters, 1)
 	require.Equal(t, metrics.TemporalRequest+"_my_suffix", counters[0].Name)
-	require.Equal(t, map[string]string{metrics.OperationTagName: "Check"}, counters[0].Tags)
+	require.Equal(t, map[string]string{metrics.OperationTagName: "Check", metrics.NamespaceTagName: "_unknown_"}, counters[0].Tags)
 	require.Equal(t, int64(1), counters[0].Value())
 	timers := handler.Timers()
 	require.Len(t, timers, 1)
 	require.Equal(t, metrics.TemporalRequestLatency+"_my_suffix", timers[0].Name)
-	require.Equal(t, map[string]string{metrics.OperationTagName: "Check"}, timers[0].Tags)
+	require.Equal(t, map[string]string{metrics.OperationTagName: "Check", metrics.NamespaceTagName: "_unknown_"}, timers[0].Tags)
 
 	// Now clear the metrics and set a handler with tags and long poll on the
 	// context and make a known failing call
@@ -85,9 +85,9 @@ func TestGRPCInterceptor(t *testing.T) {
 	counters = handler.Counters()
 	require.Len(t, counters, 2)
 	require.Equal(t, metrics.TemporalLongRequest+"_my_suffix", counters[0].Name)
-	require.Equal(t, map[string]string{metrics.OperationTagName: "Check", "roottag": "roottagval"}, counters[0].Tags)
+	require.Equal(t, map[string]string{metrics.OperationTagName: "Check", "roottag": "roottagval", metrics.NamespaceTagName: "_unknown_"}, counters[0].Tags)
 	require.Equal(t, int64(1), counters[0].Value())
 	require.Equal(t, metrics.TemporalLongRequestFailure+"_my_suffix", counters[1].Name)
-	require.Equal(t, map[string]string{metrics.OperationTagName: "Check", "roottag": "roottagval"}, counters[1].Tags)
+	require.Equal(t, map[string]string{metrics.OperationTagName: "Check", "roottag": "roottagval", metrics.NamespaceTagName: "_unknown_"}, counters[1].Tags)
 	require.Equal(t, int64(1), counters[1].Value())
 }
