@@ -166,6 +166,9 @@ func (b *builder) integrationTest() error {
 	if *coverageFileFlag != "" {
 		args = append(args, "-coverprofile="+filepath.Join(b.rootDir, coverageDir, *coverageFileFlag), "-coverpkg=./...")
 	}
+	if *devServerFlag {
+		args = append(args, "-using-cli-dev-server")
+	}
 	args = append(args, "./...")
 	// Must run in test dir
 	cmd := b.cmdFromRoot(args...)
