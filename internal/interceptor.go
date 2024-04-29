@@ -335,7 +335,7 @@ type ClientOutboundInterceptor interface {
 	// server.
 	//
 	// NOTE: Experimental
-	PollWorkflowUpdate(context.Context, *ClientPollWorkflowUpdateInput) (converter.EncodedValue, error)
+	PollWorkflowUpdate(context.Context, *ClientPollWorkflowUpdateInput) (*ClientPollWorkflowUpdateOutput, error)
 
 	mustEmbedClientOutboundInterceptorBase()
 }
@@ -358,6 +358,15 @@ type ClientUpdateWorkflowInput struct {
 // ClientOutboundInterceptor.PollWorkflowUpdate.
 type ClientPollWorkflowUpdateInput struct {
 	UpdateRef *updatepb.UpdateRef
+}
+
+// ClientPollWorkflowUpdateOutput is the output to
+// ClientOutboundInterceptor.PollWorkflowUpdate.
+type ClientPollWorkflowUpdateOutput struct {
+	// Result is the result of the update, if it has completed successfully.
+	Result converter.EncodedValue
+	// Error is the result of a failed update.
+	Error error
 }
 
 // ScheduleClientCreateInput is the input to

@@ -1081,7 +1081,7 @@ func (wc *WorkflowClient) GetWorkflowUpdateHandle(ref GetWorkflowUpdateHandleOpt
 func (wc *WorkflowClient) PollWorkflowUpdate(
 	ctx context.Context,
 	ref *updatepb.UpdateRef,
-) (converter.EncodedValue, error) {
+) (*ClientPollWorkflowUpdateOutput, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return nil, err
 	}
@@ -1791,32 +1791,76 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 	if err != nil {
 		return nil, err
 	}
-	grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(pollUpdateTimeout), grpcLongPoll(true), defaultGrpcRetryParameters(ctx))
-	defer cancel()
-	wfexec := &commonpb.WorkflowExecution{
-		WorkflowId: in.WorkflowID,
-		RunId:      in.RunID,
+
+	var resp *workflowservice.UpdateWorkflowExecutionResponse
+	for ctx.Err() == nil {
+		var err error
+		resp, err = func() (*workflowservice.UpdateWorkflowExecutionResponse, error) {
+			grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(pollUpdateTimeout), grpcLongPoll(true), defaultGrpcRetryParameters(ctx))
+			defer cancel()
+			wfexec := &commonpb.WorkflowExecution{
+				WorkflowId: in.WorkflowID,
+				RunId:      in.RunID,
+			}
+			return w.client.workflowService.UpdateWorkflowExecution(grpcCtx, &workflowservice.UpdateWorkflowExecutionRequest{
+				WaitPolicy:          in.WaitPolicy,
+				Namespace:           w.client.namespace,
+				WorkflowExecution:   wfexec,
+				FirstExecutionRunId: in.FirstExecutionRunID,
+				Request: &updatepb.Request{
+					Meta: &updatepb.Meta{
+						UpdateId: in.UpdateID,
+						Identity: w.client.identity,
+					},
+					Input: &updatepb.Input{
+						Header: header,
+						Name:   in.UpdateName,
+						Args:   argPayloads,
+					},
+				},
+			})
+		}()
+		if err != nil {
+			return nil, err
+		}
+		// Once the update is past admitted we know it is durable
+		// Note: old server version may return UNSPECIFIED if the update request
+		// did not reach the desired lifecycle stage.
+		if resp.GetStage() != enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ADMITTED &&
+			resp.GetStage() != enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_UNSPECIFIED {
+			break
+		}
 	}
-	resp, err := w.client.workflowService.UpdateWorkflowExecution(grpcCtx, &workflowservice.UpdateWorkflowExecutionRequest{
-		WaitPolicy:          in.WaitPolicy,
-		Namespace:           w.client.namespace,
-		WorkflowExecution:   wfexec,
-		FirstExecutionRunId: in.FirstExecutionRunID,
-		Request: &updatepb.Request{
-			Meta: &updatepb.Meta{
-				UpdateId: in.UpdateID,
-				Identity: w.client.identity,
-			},
-			Input: &updatepb.Input{
-				Header: header,
-				Name:   in.UpdateName,
-				Args:   argPayloads,
-			},
-		},
-	})
-	if err != nil {
-		return nil, err
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
 	}
+
+	desiredLifecycleStage := in.WaitPolicy.GetLifecycleStage()
+	if desiredLifecycleStage == enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_UNSPECIFIED {
+		desiredLifecycleStage = enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED
+	}
+
+	// Here we know the update is at least accepted
+	if desiredLifecycleStage == enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED &&
+		resp.GetStage() != enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED {
+		// TODO(https://github.com/temporalio/features/issues/428) replace with handle wait for stage once implemented
+		pollResp, err := w.client.PollWorkflowUpdate(ctx, resp.GetUpdateRef())
+		if err != nil {
+			return nil, err
+		}
+		if pollResp.Error != nil {
+			return &completedUpdateHandle{
+				err:              pollResp.Error,
+				baseUpdateHandle: baseUpdateHandle{ref: resp.GetUpdateRef()},
+			}, nil
+		} else {
+			return &completedUpdateHandle{
+				value:            pollResp.Result,
+				baseUpdateHandle: baseUpdateHandle{ref: resp.GetUpdateRef()},
+			}, nil
+		}
+	}
+
 	switch v := resp.GetOutcome().GetValue().(type) {
 	case nil:
 		return &lazyUpdateHandle{
@@ -1840,7 +1884,7 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 func (w *workflowClientInterceptor) PollWorkflowUpdate(
 	parentCtx context.Context,
 	in *ClientPollWorkflowUpdateInput,
-) (converter.EncodedValue, error) {
+) (*ClientPollWorkflowUpdateOutput, error) {
 	// header, _ = headerPropagated(ctx, w.client.contextPropagators)
 	// todo header not in PollWorkflowUpdate
 
@@ -1875,9 +1919,13 @@ func (w *workflowClientInterceptor) PollWorkflowUpdate(
 		}
 		switch v := resp.GetOutcome().GetValue().(type) {
 		case *updatepb.Outcome_Failure:
-			return nil, w.client.failureConverter.FailureToError(v.Failure)
+			return &ClientPollWorkflowUpdateOutput{
+				Error: w.client.failureConverter.FailureToError(v.Failure),
+			}, nil
 		case *updatepb.Outcome_Success:
-			return newEncodedValue(v.Success, w.client.dataConverter), nil
+			return &ClientPollWorkflowUpdateOutput{
+				Result: newEncodedValue(v.Success, w.client.dataConverter),
+			}, nil
 		default:
 			return nil, fmt.Errorf("unsupported outcome type %T", v)
 		}
@@ -1911,11 +1959,14 @@ func (ch *completedUpdateHandle) Get(ctx context.Context, valuePtr interface{}) 
 }
 
 func (luh *lazyUpdateHandle) Get(ctx context.Context, valuePtr interface{}) error {
-	enc, err := luh.client.PollWorkflowUpdate(ctx, luh.ref)
-	if err != nil || valuePtr == nil {
+	resp, err := luh.client.PollWorkflowUpdate(ctx, luh.ref)
+	if err != nil {
 		return err
 	}
-	return enc.Get(valuePtr)
+	if resp.Error != nil || valuePtr == nil {
+		return resp.Error
+	}
+	return resp.Result.Get(valuePtr)
 }
 
 func (q *queryRejectedError) Error() string {

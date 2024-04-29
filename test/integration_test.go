@@ -1433,6 +1433,108 @@ func (ts *IntegrationTestSuite) TestInspectLocalActivityInfoLocalActivityWorkerO
 	ts.Nil(err)
 }
 
+func (ts *IntegrationTestSuite) TestUpdateBasic() {
+	ctx := context.Background()
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-update-beee"), ts.workflows.UpdateBasicWorkflow)
+	ts.Nil(err)
+	// Send an update request
+	ts.Run("ShortUpdate", func() {
+		handler, err := ts.client.UpdateWorkflowWithOptions(ctx, &client.UpdateWorkflowWithOptionsRequest{
+			WorkflowID: run.GetID(),
+			RunID:      run.GetRunID(),
+			UpdateName: "update",
+			Args:       []interface{}{time.Duration(0)},
+		})
+		ts.NoError(err)
+		handler.Get(ctx, nil)
+	})
+	// Send an update request
+	ts.Run("ShortUpdateWaitOnCompleted", func() {
+		handler, err := ts.client.UpdateWorkflowWithOptions(ctx, &client.UpdateWorkflowWithOptionsRequest{
+			WorkflowID: run.GetID(),
+			RunID:      run.GetRunID(),
+			UpdateName: "update",
+			Args:       []interface{}{time.Duration(0)},
+			WaitPolicy: &updatepb.WaitPolicy{
+				LifecycleStage: enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED,
+			},
+		})
+
+		ts.NoError(err)
+		handler.Get(ctx, nil)
+	})
+	// Send an update request
+	ts.Run("LongUpdateWaitOnAccepted", func() {
+		handler, err := ts.client.UpdateWorkflowWithOptions(ctx, &client.UpdateWorkflowWithOptionsRequest{
+			WorkflowID: run.GetID(),
+			RunID:      run.GetRunID(),
+			UpdateName: "update",
+			Args:       []interface{}{time.Hour},
+			WaitPolicy: &updatepb.WaitPolicy{
+				LifecycleStage: enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ACCEPTED,
+			},
+		})
+		ts.NoError(err)
+		// The update result should not be ready yet
+		tCtx, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		ts.Error(handler.Get(tCtx, nil))
+	})
+	// complete workflow
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
+	ts.NoError(run.Get(ctx, nil))
+}
+
+func (ts *IntegrationTestSuite) TestLongUpdateWaitOnCompleted() {
+	ctx := context.Background()
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-long-update-wait-on-completed"), ts.workflows.UpdateBasicWorkflow)
+	ts.Nil(err)
+
+	// Send an update request
+	tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	_, err = ts.client.UpdateWorkflowWithOptions(tctx, &client.UpdateWorkflowWithOptionsRequest{
+		WorkflowID: run.GetID(),
+		RunID:      run.GetRunID(),
+		UpdateName: "update",
+		Args:       []interface{}{time.Hour},
+	})
+	ts.Error(err)
+
+	// complete workflow
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
+	ts.NoError(run.Get(ctx, nil))
+}
+
+func (ts *IntegrationTestSuite) TestUpdateAdmittedNoWorker() {
+	ctx := context.Background()
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-long-update-wait-on-completed"), ts.workflows.UpdateBasicWorkflow)
+	ts.Nil(err)
+
+	ts.worker.Stop()
+	ts.workerStopped = true
+
+	// Send an update request
+	tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	_, err = ts.client.UpdateWorkflowWithOptions(tctx, &client.UpdateWorkflowWithOptionsRequest{
+		WorkflowID: run.GetID(),
+		RunID:      run.GetRunID(),
+		UpdateName: "update",
+		Args:       []interface{}{time.Hour},
+		WaitPolicy: &updatepb.WaitPolicy{
+			LifecycleStage: enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ACCEPTED,
+		},
+	})
+	ts.Error(err)
+
+	// complete workflow
+	ts.NoError(ts.client.TerminateWorkflow(ctx, run.GetID(), run.GetRunID(), "for test"))
+}
+
 func (ts *IntegrationTestSuite) TestUpdateInfo() {
 	ctx := context.Background()
 	run, err := ts.client.ExecuteWorkflow(ctx,

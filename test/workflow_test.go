@@ -341,6 +341,21 @@ func (w *Workflows) UpdateInfoWorkflow(ctx workflow.Context) error {
 	return nil
 }
 
+func (w *Workflows) UpdateBasicWorkflow(ctx workflow.Context) error {
+	err := workflow.SetUpdateHandler(ctx, "update", func(ctx workflow.Context, t time.Duration) (string, error) {
+		err := workflow.Sleep(ctx, t)
+		if err != nil {
+			return "", err
+		}
+		return "test", nil
+	})
+	if err != nil {
+		return errors.New("failed to register update handler")
+	}
+	workflow.GetSignalChannel(ctx, "finish").Receive(ctx, nil)
+	return nil
+}
+
 func (w *Workflows) UpdateWithValidatorWorkflow(ctx workflow.Context) error {
 	workflow.Go(ctx, func(ctx workflow.Context) {
 		_ = workflow.Sleep(ctx, time.Minute)
@@ -3024,6 +3039,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.UpdateSettingHandlerInHandler)
 	worker.RegisterWorkflow(w.UpdateCancelableWorkflow)
 	worker.RegisterWorkflow(w.UpdateHandlerRegisteredLate)
+	worker.RegisterWorkflow(w.UpdateBasicWorkflow)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childWithRetryPolicy)
