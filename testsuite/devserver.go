@@ -77,6 +77,8 @@ type DevServerOptions struct {
 	LogLevel string
 	// Additional arguments to the dev server.
 	ExtraArgs []string
+	// Where to redirect stdout and stderr, if empty they will be redirected to the current process.
+	StdoutLogFile string
 }
 
 // Temporal CLI based DevServer
@@ -110,7 +112,15 @@ func StartDevServer(ctx context.Context, options DevServerOptions) (*DevServer, 
 
 	args := prepareCommand(&options, host, port, clientOptions.Namespace)
 
+	stdout, stderr, err := stdStreams(options.StdoutLogFile)
+	if err != nil {
+		return nil, err
+	}
+
 	cmd := newCmd(exePath, args...)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+
 	clientOptions.Logger.Info("Starting DevServer", "ExePath", exePath, "Args", args)
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("failed starting: %w", err)
@@ -374,4 +384,17 @@ func (s *DevServer) Client() client.Client {
 // FrontendHostPort returns the host:port for this server.
 func (s *DevServer) FrontendHostPort() string {
 	return s.frontendHostPort
+}
+
+func stdStreams(stdoutLogFile string) (io.Writer, io.Writer, error) {
+	if stdoutLogFile == "" {
+		return os.Stdout, os.Stderr, nil
+	}
+
+	file, err := os.OpenFile(stdoutLogFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open %q: %w", stdoutLogFile, err)
+	}
+
+	return file, file, nil
 }

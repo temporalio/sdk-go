@@ -33,7 +33,6 @@ import (
 // newCmd creates a new command with the given executable path and arguments.
 func newCmd(exePath string, args ...string) *exec.Cmd {
 	cmd := exec.Command(exePath, args...)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	return cmd
 }
 
