@@ -197,6 +197,36 @@ func (_m *Client) DescribeTaskQueue(ctx context.Context, taskqueue string, taskq
 	return r0, r1
 }
 
+// DescribeTaskQueueEnhanced provides a mock function with given fields: ctx, options
+func (_m *Client) DescribeTaskQueueEnhanced(ctx context.Context, options *client.DescribeTaskQueueEnhancedOptions) (*client.TaskQueueInfo, error) {
+	ret := _m.Called(ctx, options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DescribeTaskQueueEnhanced")
+	}
+
+	var r0 *client.TaskQueueInfo
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, *client.DescribeTaskQueueEnhancedOptions) (*client.TaskQueueInfo, error)); ok {
+		return rf(ctx, options)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, *client.DescribeTaskQueueEnhancedOptions) *client.TaskQueueInfo); ok {
+		r0 = rf(ctx, options)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*client.TaskQueueInfo)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, *client.DescribeTaskQueueEnhancedOptions) error); ok {
+		r1 = rf(ctx, options)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // DescribeWorkflowExecution provides a mock function with given fields: ctx, workflowID, runID
 func (_m *Client) DescribeWorkflowExecution(ctx context.Context, workflowID string, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
 	ret := _m.Called(ctx, workflowID, runID)

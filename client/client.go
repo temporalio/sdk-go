@@ -47,7 +47,7 @@ import (
 
 // TaskReachability specifies which category of tasks may reach a worker on a versioned task queue.
 // Used both in a reachability query and its response.
-// WARNING: Worker versioning is currently experimental
+// Deprecated: Use [BuildIDTaskReachability]
 type TaskReachability = internal.TaskReachability
 
 const (
@@ -62,6 +62,45 @@ const (
 	TaskReachabilityOpenWorkflows = internal.TaskReachabilityOpenWorkflows
 	// TaskReachabilityClosedWorkflows indicates the Build Id might be used by closed workflows
 	TaskReachabilityClosedWorkflows = internal.TaskReachabilityClosedWorkflows
+)
+
+// TaskQueueType specifies which category of tasks are associated with a queue.
+// WARNING: Worker versioning-2 is currently experimental
+type TaskQueueType = internal.TaskQueueType
+
+const (
+	// TaskQueueTypeUnspecified indicates the task queue type was not specified.
+	TaskQueueTypeUnspecified = internal.TaskQueueTypeUnspecified
+	// TaskQueueTypeWorkflow indicates the task queue has workflow type.
+	TaskQueueTypeWorkflow = internal.TaskQueueTypeWorkflow
+	// TaskQueueTypeActivity indicates the task queue has activity type.
+	TaskQueueTypeActivity = internal.TaskQueueTypeActivity
+	// TaskQueueTypeNexus indicates the task queue is used for dispatching Nexus requests.
+	TaskQueueTypeNexus = internal.TaskQueueTypeNexus
+)
+
+// BuildIDTaskReachability specifies which category of tasks may reach a versioned worker of a certain Build ID.
+// Note: future activities who inherit their workflow's Build ID but not its task queue will not be
+// accounted for reachability as server cannot know if they'll happen as they do not use
+// assignment rules of their task queue. Same goes for Child Workflows or Continue-As-New Workflows
+// who inherit the parent/previous workflow's Build ID but not its task queue. In those cases, make
+// sure to query reachability for the parent/previous workflow's task queue as well.
+// WARNING: Worker versioning-2 is currently experimental
+type BuildIDTaskReachability = internal.BuildIDTaskReachability
+
+const (
+	// BuildIDTaskReachabilityUnspecified indicates that task reachability was not reported.
+	BuildIDTaskReachabilityUnspecified = internal.BuildIDTaskReachabilityUnspecified
+	// BuildIDTaskReachabilityReachable indicates that this Build ID may be used by new workflows or activities
+	// (based on versioning rules), or there are open workflows or backlogged activities assigned to it.
+	BuildIDTaskReachabilityReachable = internal.BuildIDTaskReachabilityReachable
+	// BuildIDTaskReachabilityClosedWorkflowsOnly specifies that this Build ID does not have open workflows
+	// and is not reachable by new workflows, but MAY have closed workflows within the namespace retention period.
+	// Not applicable to activity-only task queues.
+	BuildIDTaskReachabilityClosedWorkflowsOnly = internal.BuildIDTaskReachabilityClosedWorkflowsOnly
+	// BuildIDTaskReachabilityUnreachable indicates that this Build ID is not used for new executions, nor
+	// it has been used by any existing execution within the retention period.
+	BuildIDTaskReachabilityUnreachable = internal.BuildIDTaskReachabilityUnreachable
 )
 
 const (
@@ -258,6 +297,40 @@ type (
 	// TaskQueueReachability Describes how the Build ID may be reachable from the task queue.
 	// WARNING: Worker versioning is currently experimental
 	TaskQueueReachability = internal.TaskQueueReachability
+
+	// DescribeTaskQueueEnhancedOptions is the input to [Client.DescribeTaskQueueEnhanced].
+	// WARNING: Worker versioning-2 is currently experimental
+	DescribeTaskQueueEnhancedOptions = internal.DescribeTaskQueueEnhancedOptions
+
+	// TaskQueueVersionSelection is a task queue filter based on versioning.
+	// It is an optional component of [Client.DescribeTaskQueueEnhancedOptions].
+	// WARNING: Worker versioning-2 is currently experimental
+	TaskQueueVersionSelection = internal.TaskQueueVersionSelection
+
+	// TaskQueueInfo is the response to [Client.DescribeTaskQueueEnhanced].
+	// WARNING: Worker versioning-2 is currently experimental
+	TaskQueueInfo = internal.TaskQueueInfo
+
+	// TaskQueueVersionInfo includes task queue information per Build ID.
+	// It is part of [Client.TaskQueueInfo].
+	// WARNING: Worker versioning-2 is currently experimental
+	TaskQueueVersionInfo = internal.TaskQueueVersionInfo
+
+	// TaskQueueTypeInfo specifies task queue information per task type and Build ID.
+	// It is included in [Client.TaskQueueVersionInfo].
+	// WARNING: Worker versioning-2 is currently experimental
+	TaskQueueTypeInfo = internal.TaskQueueTypeInfo
+
+	// PollerInfo provides information about a worker/client polling a task queue.
+	// It is used by [Client.TaskQueueTypeInfo].
+	// WARNING: Worker versioning-2 is currently experimental
+	PollerInfo = internal.PollerInfo
+
+	// WorkerVersionCapabilities includes a worker's build identifier
+	// and whether it is choosing to use the versioning feature.
+	// It is an optional component of [Client.PollerInfo].
+	// WARNING: Worker versioning-2 is currently experimental
+	WorkerVersionCapabilities = internal.WorkerVersionCapabilities
 
 	// UpdateWorkerVersioningRulesOptions is the input to [Client.UpdateWorkerVersioningRules].
 	// WARNING: Worker versioning-2 is currently experimental
@@ -641,7 +714,15 @@ type (
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
 		//  - serviceerror.NotFound
+		// Deprecated: Use [DescribeTaskQueueEnhanced]
 		DescribeTaskQueue(ctx context.Context, taskqueue string, taskqueueType enumspb.TaskQueueType) (*workflowservice.DescribeTaskQueueResponse, error)
+
+		// DescribeTaskQueueEnhanced  returns information about the target task queue, broken down by Build Id:
+		//   - List of pollers
+		//   - Workflow Reachability status
+		//   - Backlog info for Workflow and/or Activity tasks
+		// WARNING: Worker versioning-2 is currently experimental, and requires server 1.XX+
+		DescribeTaskQueueEnhanced(ctx context.Context, options *DescribeTaskQueueEnhancedOptions) (*TaskQueueInfo, error)
 
 		// ResetWorkflowExecution resets an existing workflow execution to WorkflowTaskFinishEventId(exclusive).
 		// And it will immediately terminating the current execution instance.
@@ -651,20 +732,17 @@ type (
 		// UpdateWorkerBuildIdCompatibility
 		// Allows you to update the worker-build-id based version sets for a particular task queue. This is used in
 		// conjunction with workers who specify their build id and thus opt into the feature.
-		// WARNING: Worker versioning is currently experimental
 		// Deprecated: Use [UpdateWorkerVersioningRules] with the versioning-2 api.
 		UpdateWorkerBuildIdCompatibility(ctx context.Context, options *UpdateWorkerBuildIdCompatibilityOptions) error
 
 		// GetWorkerBuildIdCompatibility
 		// Returns the worker-build-id based version sets for a particular task queue.
-		// WARNING: Worker versioning is currently experimental
 		// Deprecated: Use [GetWorkerVersioningRules] with the versioning-2 api.
 		GetWorkerBuildIdCompatibility(ctx context.Context, options *GetWorkerBuildIdCompatibilityOptions) (*WorkerBuildIDVersionSets, error)
 
 		// GetWorkerTaskReachability
 		// Returns which versions are is still in use by open or closed workflows
-		// WARNING: Worker versioning is currently experimental
-		// Deprecated: Use [DescribeTaskQueue] with the versioning-2 api.
+		// Deprecated: Use [DescribeTaskQueueEnhanced] with the versioning-2 api.
 		GetWorkerTaskReachability(ctx context.Context, options *GetWorkerTaskReachabilityOptions) (*WorkerTaskReachability, error)
 
 		// UpdateWorkerVersioningRules

@@ -1035,6 +1035,31 @@ func (wc *WorkflowClient) GetWorkerTaskReachability(ctx context.Context, options
 	return converted, nil
 }
 
+// DescribeTaskQueueEnhanced returns information about the target task queue, broken down by Build Id:
+//   - List of pollers
+//   - Workflow Reachability status
+//   - Backlog info for Workflow and/or Activity tasks
+//
+// WARNING: Worker versioning-2 is currently experimental, and requires server 1.XX+
+func (wc *WorkflowClient) DescribeTaskQueueEnhanced(ctx context.Context, options *DescribeTaskQueueEnhancedOptions) (*TaskQueueInfo, error) {
+	if err := wc.ensureInitialized(ctx); err != nil {
+		return nil, err
+	}
+
+	request, err := options.validateAndConvertToProto(wc.namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	resp, err := wc.workflowService.DescribeTaskQueue(grpcCtx, request)
+	if err != nil {
+		return nil, err
+	}
+	return taskQueueInfoFromResponse(resp), nil
+}
+
 // UpdateWorkerVersioningRules allows updating the worker-build-id based assignment and redirect rules for a given
 // task queue. This is used in conjunction with workers who specify their build id and thus opt into the feature.
 // The errors it can return:

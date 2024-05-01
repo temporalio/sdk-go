@@ -529,6 +529,44 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityUnreachable() {
 	ts.Equal(0, len(taskQueueReachable.TaskQueueReachability))
 }
 
+func (ts *WorkerVersioningTestSuite) TestReachabilityUnreachableWithRules() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	buildID := uuid.New()
+
+	taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, &client.DescribeTaskQueueEnhancedOptions{
+		TaskQueue: ts.taskQueueName,
+		Versions: &client.TaskQueueVersionSelection{
+			BuildIds: []string{buildID},
+		},
+		TaskQueueTypes: []client.TaskQueueType{
+			client.TaskQueueTypeWorkflow,
+			client.TaskQueueTypeActivity,
+			client.TaskQueueTypeNexus,
+		},
+		ReportPollers:          true,
+		ReportTaskReachability: true,
+	})
+	ts.NoError(err)
+
+	ts.Equal(1, len(taskQueueInfo.VersionsInfo))
+	taskQueueVersionInfo, ok := taskQueueInfo.VersionsInfo[buildID]
+	ts.True(ok)
+	ts.Equal(client.BuildIDTaskReachability(client.BuildIDTaskReachabilityUnreachable), taskQueueVersionInfo.TaskReachability)
+
+	ts.Equal(3, len(taskQueueVersionInfo.TypesInfo))
+	taskQueueTypeInfo, ok := taskQueueVersionInfo.TypesInfo[client.TaskQueueTypeWorkflow]
+	ts.True(ok)
+	ts.Equal(0, len(taskQueueTypeInfo.Pollers))
+	taskQueueTypeInfo, ok = taskQueueVersionInfo.TypesInfo[client.TaskQueueTypeActivity]
+	ts.True(ok)
+	ts.Equal(0, len(taskQueueTypeInfo.Pollers))
+	taskQueueTypeInfo, ok = taskQueueVersionInfo.TypesInfo[client.TaskQueueTypeNexus]
+	ts.True(ok)
+	ts.Equal(0, len(taskQueueTypeInfo.Pollers))
+}
+
 func (ts *WorkerVersioningTestSuite) TestReachabilityUnversionedWorker() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -551,6 +589,42 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityUnversionedWorker() {
 	taskQueueReachable, ok := buildIDReachable.TaskQueueReachable[ts.taskQueueName]
 	ts.True(ok)
 	ts.Equal([]client.TaskReachability{client.TaskReachabilityNewWorkflows}, taskQueueReachable.TaskQueueReachability)
+}
+
+func (ts *WorkerVersioningTestSuite) TestReachabilityUnversionedWorkerWithRules() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{Identity: "worker1"})
+	ts.workflows.register(worker1)
+	ts.NoError(worker1.Start())
+	defer worker1.Stop()
+
+	taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, &client.DescribeTaskQueueEnhancedOptions{
+		TaskQueue: ts.taskQueueName,
+		Versions: &client.TaskQueueVersionSelection{
+			// `client.UnversionedBuildID` is an empty string
+			BuildIds: []string{client.UnversionedBuildID},
+		},
+		TaskQueueTypes: []client.TaskQueueType{
+			client.TaskQueueTypeWorkflow,
+		},
+		ReportPollers:          true,
+		ReportTaskReachability: true,
+	})
+	ts.NoError(err)
+	ts.Equal(1, len(taskQueueInfo.VersionsInfo))
+
+	taskQueueVersionInfo, ok := taskQueueInfo.VersionsInfo[client.UnversionedBuildID]
+	ts.True(ok)
+	ts.Equal(client.BuildIDTaskReachability(client.BuildIDTaskReachabilityReachable), taskQueueVersionInfo.TaskReachability)
+
+	ts.Equal(1, len(taskQueueVersionInfo.TypesInfo))
+	taskQueueTypeInfo, ok := taskQueueVersionInfo.TypesInfo[client.TaskQueueTypeWorkflow]
+	ts.True(ok)
+	ts.Equal(1, len(taskQueueTypeInfo.Pollers))
+	ts.Equal("worker1", taskQueueTypeInfo.Pollers[0].Identity)
+	ts.Equal(false, taskQueueTypeInfo.Pollers[0].WorkerVersionCapabilities.UseVersioning)
 }
 
 func (ts *WorkerVersioningTestSuite) TestReachabilityVersions() {
@@ -629,6 +703,91 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersions() {
 	ts.True(ok)
 	ts.Equal(1, len(taskQueueReachability.TaskQueueReachability))
 	ts.Equal([]client.TaskReachability{client.TaskReachabilityNewWorkflows}, taskQueueReachability.TaskQueueReachability)
+}
+
+func (ts *WorkerVersioningTestSuite) TestReachabilityVersionsWithRules() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	buildID1 := uuid.New()
+	buildID2 := uuid.New()
+
+	result, err := ts.client.GetWorkerVersioningRules(ctx, &client.GetWorkerVersioningOptions{
+		TaskQueue: ts.taskQueueName,
+	})
+	ts.NoError(err)
+
+	result, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: result.ConflictToken,
+		Operation: &client.VersioningOpInsertAssignmentRule{
+			RuleIndex: 0,
+			Rule: client.VersioningAssignmentRule{
+				TargetBuildID: buildID1,
+			},
+		},
+	})
+	ts.NoError(err)
+
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: buildID1, UseBuildIDForVersioning: true})
+	ts.workflows.register(worker1)
+	ts.NoError(worker1.Start())
+	defer worker1.Stop()
+
+	// Start some workflows targeting 1.0
+	handle11, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("1-1"), ts.workflows.WaitSignalToStart)
+	ts.NoError(err)
+	handle12, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("1-2"), ts.workflows.WaitSignalToStart)
+	ts.NoError(err)
+
+	ts.NoError(ts.client.SignalWorkflow(ctx, handle11.GetID(), handle11.GetRunID(), "start-signal", ""))
+	ts.NoError(ts.client.SignalWorkflow(ctx, handle12.GetID(), handle12.GetRunID(), "start-signal", ""))
+
+	// Wait for all wfs to finish
+	ts.NoError(handle11.Get(ctx, nil))
+	ts.NoError(handle12.Get(ctx, nil))
+
+	// Start the second worker
+	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: buildID2, UseBuildIDForVersioning: true})
+	ts.workflows.register(worker2)
+	ts.NoError(worker2.Start())
+	defer worker2.Stop()
+
+	// Now add the 2.0 version
+	result, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: result.ConflictToken,
+		Operation: &client.VersioningOpInsertAssignmentRule{
+			RuleIndex: 0,
+			Rule: client.VersioningAssignmentRule{
+				TargetBuildID: buildID2,
+			},
+		},
+	})
+	ts.NoError(err)
+
+	taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, &client.DescribeTaskQueueEnhancedOptions{
+		TaskQueue: ts.taskQueueName,
+		Versions: &client.TaskQueueVersionSelection{
+			BuildIds: []string{buildID1, buildID2},
+		},
+		TaskQueueTypes: []client.TaskQueueType{
+			client.TaskQueueTypeWorkflow,
+		},
+		ReportTaskReachability: true,
+	})
+	ts.NoError(err)
+	ts.Equal(2, len(taskQueueInfo.VersionsInfo))
+
+	// Test the first worker
+	taskQueueVersionInfo, ok := taskQueueInfo.VersionsInfo[buildID1]
+	ts.True(ok)
+	ts.Equal(client.BuildIDTaskReachability(client.BuildIDTaskReachabilityClosedWorkflowsOnly), taskQueueVersionInfo.TaskReachability)
+
+	// Test the second worker
+	taskQueueVersionInfo, ok = taskQueueInfo.VersionsInfo[buildID2]
+	ts.True(ok)
+	ts.Equal(client.BuildIDTaskReachability(client.BuildIDTaskReachabilityReachable), taskQueueVersionInfo.TaskReachability)
 }
 
 func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetime() {

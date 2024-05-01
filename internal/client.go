@@ -352,6 +352,13 @@ type (
 		// GetWorkerTaskReachability returns which versions are is still in use by open or closed workflows.
 		GetWorkerTaskReachability(ctx context.Context, options *GetWorkerTaskReachabilityOptions) (*WorkerTaskReachability, error)
 
+		// DescribeTaskQueueEnhanced returns information about the target task queue, broken down by Build Id:
+		//   - List of pollers
+		//   - Workflow Reachability status
+		//   - Backlog info for Workflow and/or Activity tasks
+		// WARNING: Worker versioning-2 is currently experimental, and requires server 1.XX+
+		DescribeTaskQueueEnhanced(ctx context.Context, options *DescribeTaskQueueEnhancedOptions) (*TaskQueueInfo, error)
+
 		// UpdateWorkerVersioningRules allows updating the worker-build-id based assignment and redirect rules for a given
 		// task queue. This is used in conjunction with workers who specify their build id and thus opt into the feature.
 		// The errors it can return:
