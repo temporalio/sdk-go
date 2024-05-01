@@ -1042,7 +1042,7 @@ ProcessEvents:
 				}
 				// At this point, all update messages should have a body
 				if historyMessages[i].Body == nil {
-					return nil, errors.New("missing body for accepted message")
+					return nil, fmt.Errorf("missing body in message for update ID %v", msg.GetProtocolInstanceId())
 				}
 			}
 			msgs = indexMessagesByEventID(historyMessages)
