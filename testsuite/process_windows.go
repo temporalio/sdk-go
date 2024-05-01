@@ -37,6 +37,8 @@ func newCmd(exePath string, args ...string) *exec.Cmd {
 		// isolate the process and signals sent to it from the current console
 		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
 	}
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 
 	return cmd
 }
