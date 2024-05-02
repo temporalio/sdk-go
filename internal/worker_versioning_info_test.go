@@ -33,18 +33,18 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func Test_TaskQueueInfo_fromProtoResponse(t *testing.T) {
+func Test_TaskQueueDescription_fromProtoResponse(t *testing.T) {
 	nowProto := timestamppb.Now()
 	now := nowProto.AsTime()
 	tests := []struct {
 		name     string
 		response *workflowservice.DescribeTaskQueueResponse
-		want     *TaskQueueInfo
+		want     TaskQueueDescription
 	}{
 		{
 			name:     "nil response",
 			response: nil,
-			want:     nil,
+			want:     TaskQueueDescription{},
 		},
 		{
 			name: "normal task queue info",
@@ -62,7 +62,7 @@ func Test_TaskQueueInfo_fromProtoResponse(t *testing.T) {
 					},
 				},
 			},
-			want: &TaskQueueInfo{
+			want: TaskQueueDescription{
 				VersionsInfo: map[string]TaskQueueVersionInfo{
 					"one": {
 						TypesInfo: map[TaskQueueType]TaskQueueTypeInfo{
@@ -80,7 +80,7 @@ func Test_TaskQueueInfo_fromProtoResponse(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equalf(t, tt.want, taskQueueInfoFromResponse(tt.response), "taskQueueInfoFromResponse(%v)", tt.response)
+			assert.Equalf(t, tt.want, taskQueueDescriptionFromResponse(tt.response), "taskQueueInfoFromResponse(%v)", tt.response)
 		})
 	}
 }

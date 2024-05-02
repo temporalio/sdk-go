@@ -538,7 +538,7 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityUnreachableWithRules() {
 	taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, &client.DescribeTaskQueueEnhancedOptions{
 		TaskQueue: ts.taskQueueName,
 		Versions: &client.TaskQueueVersionSelection{
-			BuildIds: []string{buildID},
+			BuildIDs: []string{buildID},
 		},
 		TaskQueueTypes: []client.TaskQueueType{
 			client.TaskQueueTypeWorkflow,
@@ -604,7 +604,7 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityUnversionedWorkerWithRules(
 		TaskQueue: ts.taskQueueName,
 		Versions: &client.TaskQueueVersionSelection{
 			// `client.UnversionedBuildID` is an empty string
-			BuildIds: []string{client.UnversionedBuildID},
+			BuildIDs: []string{client.UnversionedBuildID},
 		},
 		TaskQueueTypes: []client.TaskQueueType{
 			client.TaskQueueTypeWorkflow,
@@ -769,7 +769,7 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersionsWithRules() {
 	taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, &client.DescribeTaskQueueEnhancedOptions{
 		TaskQueue: ts.taskQueueName,
 		Versions: &client.TaskQueueVersionSelection{
-			BuildIds: []string{buildID1, buildID2},
+			BuildIDs: []string{buildID1, buildID2},
 		},
 		TaskQueueTypes: []client.TaskQueueType{
 			client.TaskQueueTypeWorkflow,

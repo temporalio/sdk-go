@@ -356,8 +356,9 @@ type (
 		//   - List of pollers
 		//   - Workflow Reachability status
 		//   - Backlog info for Workflow and/or Activity tasks
+		// When not supported by the server, it returns an empty [TaskQueueDescription]
 		// WARNING: Worker versioning-2 is currently experimental, and requires server 1.XX+
-		DescribeTaskQueueEnhanced(ctx context.Context, options *DescribeTaskQueueEnhancedOptions) (*TaskQueueInfo, error)
+		DescribeTaskQueueEnhanced(ctx context.Context, options *DescribeTaskQueueEnhancedOptions) (TaskQueueDescription, error)
 
 		// UpdateWorkerVersioningRules allows updating the worker-build-id based assignment and redirect rules for a given
 		// task queue. This is used in conjunction with workers who specify their build id and thus opt into the feature.

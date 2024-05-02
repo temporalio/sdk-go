@@ -47,7 +47,7 @@ const (
 	TaskQueueTypeNexus
 )
 
-//	BuildIDTaskReachability specifies which category of tasks may reach a versioned worker of a certain Build ID.
+// BuildIDTaskReachability specifies which category of tasks may reach a versioned worker of a certain Build ID.
 //
 // Note: future activities who inherit their workflow's Build ID but not its task queue will not be
 // accounted for reachability as server cannot know if they'll happen as they do not use
@@ -76,7 +76,7 @@ type (
 	// It is an optional component of [DescribeTaskQueueEnhancedOptions].
 	TaskQueueVersionSelection struct {
 		// Include specific Build IDs.
-		BuildIds []string
+		BuildIDs []string
 		// Include the unversioned queue.
 		Unversioned bool
 		// Include all active versions. A version is active if it has had new
@@ -132,7 +132,7 @@ type (
 	}
 
 	// TaskQueueVersionInfo includes task queue information per Build ID.
-	// It is part of [TaskQueueInfo].
+	// It is part of [TaskQueueDescription].
 	TaskQueueVersionInfo struct {
 		// Task queue info per task type.
 		TypesInfo map[TaskQueueType]TaskQueueTypeInfo
@@ -140,8 +140,8 @@ type (
 		TaskReachability BuildIDTaskReachability
 	}
 
-	// TaskQueueInfo is the response to [Client.DescribeTaskQueueEnhanced].
-	TaskQueueInfo struct {
+	// TaskQueueDescription is the response to [Client.DescribeTaskQueueEnhanced].
+	TaskQueueDescription struct {
 		// Task queue information for each Build ID. Empty string as key value means unversioned.
 		VersionsInfo map[string]TaskQueueVersionInfo
 	}
@@ -226,7 +226,7 @@ func taskQueueVersionInfoFromResponse(response *taskqueuepb.TaskQueueVersionInfo
 		return TaskQueueVersionInfo{}
 	}
 
-	typesInfo := make(map[TaskQueueType]TaskQueueTypeInfo)
+	typesInfo := make(map[TaskQueueType]TaskQueueTypeInfo, len(response.GetTypesInfo()))
 	for taskType, tInfo := range response.GetTypesInfo() {
 		typesInfo[taskQueueTypeFromProto(enumspb.TaskQueueType(taskType))] = taskQueueTypeInfoFromResponse(tInfo)
 	}
@@ -237,17 +237,17 @@ func taskQueueVersionInfoFromResponse(response *taskqueuepb.TaskQueueVersionInfo
 	}
 }
 
-func taskQueueInfoFromResponse(response *workflowservice.DescribeTaskQueueResponse) *TaskQueueInfo {
+func taskQueueDescriptionFromResponse(response *workflowservice.DescribeTaskQueueResponse) TaskQueueDescription {
 	if response == nil {
-		return nil
+		return TaskQueueDescription{}
 	}
 
-	versionsInfo := make(map[string]TaskQueueVersionInfo)
+	versionsInfo := make(map[string]TaskQueueVersionInfo, len(response.GetVersionsInfo()))
 	for buildID, vInfo := range response.GetVersionsInfo() {
 		versionsInfo[buildID] = taskQueueVersionInfoFromResponse(vInfo)
 	}
 
-	return &TaskQueueInfo{
+	return TaskQueueDescription{
 		VersionsInfo: versionsInfo,
 	}
 }
@@ -258,7 +258,7 @@ func taskQueueVersionSelectionToProto(s *TaskQueueVersionSelection) *taskqueuepb
 	}
 
 	return &taskqueuepb.TaskQueueVersionSelection{
-		BuildIds:    s.BuildIds,
+		BuildIds:    s.BuildIDs,
 		Unversioned: s.Unversioned,
 		AllActive:   s.AllActive,
 	}

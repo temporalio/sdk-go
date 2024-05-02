@@ -307,12 +307,12 @@ type (
 	// WARNING: Worker versioning-2 is currently experimental
 	TaskQueueVersionSelection = internal.TaskQueueVersionSelection
 
-	// TaskQueueInfo is the response to [Client.DescribeTaskQueueEnhanced].
+	// TaskQueueDescription is the response to [Client.DescribeTaskQueueEnhanced].
 	// WARNING: Worker versioning-2 is currently experimental
-	TaskQueueInfo = internal.TaskQueueInfo
+	TaskQueueDescription = internal.TaskQueueDescription
 
 	// TaskQueueVersionInfo includes task queue information per Build ID.
-	// It is part of [Client.TaskQueueInfo].
+	// It is part of [Client.TaskQueueDescription].
 	// WARNING: Worker versioning-2 is currently experimental
 	TaskQueueVersionInfo = internal.TaskQueueVersionInfo
 
@@ -721,8 +721,9 @@ type (
 		//   - List of pollers
 		//   - Workflow Reachability status
 		//   - Backlog info for Workflow and/or Activity tasks
+		// When not supported by the server, it returns an empty [TaskQueueDescription]
 		// WARNING: Worker versioning-2 is currently experimental, and requires server 1.XX+
-		DescribeTaskQueueEnhanced(ctx context.Context, options *DescribeTaskQueueEnhancedOptions) (*TaskQueueInfo, error)
+		DescribeTaskQueueEnhanced(ctx context.Context, options *DescribeTaskQueueEnhancedOptions) (TaskQueueDescription, error)
 
 		// ResetWorkflowExecution resets an existing workflow execution to WorkflowTaskFinishEventId(exclusive).
 		// And it will immediately terminating the current execution instance.

@@ -198,23 +198,23 @@ func (_m *Client) DescribeTaskQueue(ctx context.Context, taskqueue string, taskq
 }
 
 // DescribeTaskQueueEnhanced provides a mock function with given fields: ctx, options
-func (_m *Client) DescribeTaskQueueEnhanced(ctx context.Context, options *client.DescribeTaskQueueEnhancedOptions) (*client.TaskQueueInfo, error) {
+func (_m *Client) DescribeTaskQueueEnhanced(ctx context.Context, options *client.DescribeTaskQueueEnhancedOptions) (client.TaskQueueDescription, error) {
 	ret := _m.Called(ctx, options)
 
 	if len(ret) == 0 {
 		panic("no return value specified for DescribeTaskQueueEnhanced")
 	}
 
-	var r0 *client.TaskQueueInfo
+	var r0 client.TaskQueueDescription
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, *client.DescribeTaskQueueEnhancedOptions) (*client.TaskQueueInfo, error)); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, *client.DescribeTaskQueueEnhancedOptions) (client.TaskQueueDescription, error)); ok {
 		return rf(ctx, options)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, *client.DescribeTaskQueueEnhancedOptions) *client.TaskQueueInfo); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, *client.DescribeTaskQueueEnhancedOptions) client.TaskQueueDescription); ok {
 		r0 = rf(ctx, options)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*client.TaskQueueInfo)
+			r0 = ret.Get(0).(client.TaskQueueDescription)
 		}
 	}
 
