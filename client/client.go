@@ -714,7 +714,6 @@ type (
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
 		//  - serviceerror.NotFound
-		// Deprecated: Use [DescribeTaskQueueEnhanced]
 		DescribeTaskQueue(ctx context.Context, taskqueue string, taskqueueType enumspb.TaskQueueType) (*workflowservice.DescribeTaskQueueResponse, error)
 
 		// DescribeTaskQueueEnhanced  returns information about the target task queue, broken down by Build Id:

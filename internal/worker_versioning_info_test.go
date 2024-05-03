@@ -23,6 +23,7 @@
 package internal
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -32,6 +33,45 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+func Test_DetectEnhancedNotSupported_fromProtoResponse(t *testing.T) {
+	tests := []struct {
+		name     string
+		response *workflowservice.DescribeTaskQueueResponse
+		want     error
+	}{
+		{
+			name: "enhanced task queue info",
+			response: &workflowservice.DescribeTaskQueueResponse{
+				VersionsInfo: map[string]*taskqueuepb.TaskQueueVersionInfo{
+					"one": {
+						TypesInfo:        map[int32]*taskqueuepb.TaskQueueTypeInfo{},
+						TaskReachability: enumspb.BUILD_ID_TASK_REACHABILITY_REACHABLE,
+					},
+				},
+			},
+			want: nil,
+		},
+		{
+			name: "legacy task queue info",
+			response: &workflowservice.DescribeTaskQueueResponse{
+				TaskQueueStatus: &taskqueuepb.TaskQueueStatus{},
+			},
+			want: errors.New("server does not support `DescribeTaskQueueEnhanced`"),
+		},
+		{
+			name:     "empty response assumed enhanced",
+			response: &workflowservice.DescribeTaskQueueResponse{},
+			want:     nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equalf(t, tt.want, detectEnhancedNotSupported(tt.response), "detectEnhancedNotSupported(%v)", tt.response)
+		})
+	}
+}
 
 func Test_TaskQueueDescription_fromProtoResponse(t *testing.T) {
 	nowProto := timestamppb.Now()
