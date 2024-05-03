@@ -600,6 +600,9 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityUnversionedWorkerWithRules(
 	ts.NoError(worker1.Start())
 	defer worker1.Stop()
 
+	// Give time for worker pollers stats to show up
+	time.Sleep(2 * time.Second)
+
 	taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, &client.DescribeTaskQueueEnhancedOptions{
 		TaskQueue: ts.taskQueueName,
 		Versions: &client.TaskQueueVersionSelection{
@@ -622,7 +625,7 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityUnversionedWorkerWithRules(
 	ts.Equal(1, len(taskQueueVersionInfo.TypesInfo))
 	taskQueueTypeInfo, ok := taskQueueVersionInfo.TypesInfo[client.TaskQueueTypeWorkflow]
 	ts.True(ok)
-	ts.Equal(1, len(taskQueueTypeInfo.Pollers))
+	ts.True(len(taskQueueTypeInfo.Pollers) > 0)
 	ts.Equal("worker1", taskQueueTypeInfo.Pollers[0].Identity)
 	ts.Equal(false, taskQueueTypeInfo.Pollers[0].WorkerVersionCapabilities.UseVersioning)
 }

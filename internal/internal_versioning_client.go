@@ -237,7 +237,7 @@ func taskQueueVersionInfoFromResponse(response *taskqueuepb.TaskQueueVersionInfo
 	}
 }
 
-func detectEnhancedNotSupported(response *workflowservice.DescribeTaskQueueResponse) error {
+func detectTaskQueueEnhancedNotSupported(response *workflowservice.DescribeTaskQueueResponse) error {
 	// A server before 1.24 returns a non-enhanced proto, which only fills `pollers` and `taskQueueStatus` fields
 	if len(response.GetVersionsInfo()) == 0 &&
 		(len(response.GetPollers()) > 0 || response.GetTaskQueueStatus() != nil) {

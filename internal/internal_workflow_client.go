@@ -1058,7 +1058,7 @@ func (wc *WorkflowClient) DescribeTaskQueueEnhanced(ctx context.Context, options
 		return TaskQueueDescription{}, err
 	}
 
-	err = detectEnhancedNotSupported(resp)
+	err = detectTaskQueueEnhancedNotSupported(resp)
 	if err != nil {
 		return TaskQueueDescription{}, err
 	}

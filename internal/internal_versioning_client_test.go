@@ -68,7 +68,7 @@ func Test_DetectEnhancedNotSupported_fromProtoResponse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equalf(t, tt.want, detectEnhancedNotSupported(tt.response), "detectEnhancedNotSupported(%v)", tt.response)
+			assert.Equalf(t, tt.want, detectTaskQueueEnhancedNotSupported(tt.response), "detectEnhancedNotSupported(%v)", tt.response)
 		})
 	}
 }
