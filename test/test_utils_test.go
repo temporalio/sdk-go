@@ -52,6 +52,7 @@ type (
 	// Config contains the integration test configuration
 	Config struct {
 		ServiceAddr             string
+		ServiceHTTPAddr         string
 		maxWorkflowCacheSize    int
 		Debug                   bool
 		Namespace               string
@@ -73,12 +74,16 @@ var taskQueuePrefix = "tq-" + uuid.New()
 func NewConfig() Config {
 	cfg := Config{
 		ServiceAddr:             client.DefaultHostPort,
+		ServiceHTTPAddr:         "localhost:7243",
 		maxWorkflowCacheSize:    10000,
 		Namespace:               "integration-test-namespace",
 		ShouldRegisterNamespace: true,
 	}
 	if addr := getEnvServiceAddr(); addr != "" {
 		cfg.ServiceAddr = addr
+	}
+	if addr := strings.TrimSpace(os.Getenv("SERVICE_HTTP_ADDR")); addr != "" {
+		cfg.ServiceHTTPAddr = addr
 	}
 	if siz := getEnvCacheSize(); siz != "" {
 		asInt, err := strconv.Atoi(siz)

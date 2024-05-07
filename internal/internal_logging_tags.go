@@ -49,6 +49,8 @@ const (
 	tagTaskStartedEventID           = "TaskStartedEventID"
 	tagPreviousStartedEventID       = "PreviousStartedEventID"
 	tagCachedPreviousStartedEventID = "CachedPreviousStartedEventID"
+	tagNexusOperation               = "NexusOperation"
+	tagNexusService                 = "NexusService"
 	tagPanicError                   = "PanicError"
 	tagPanicStack                   = "PanicStack"
 )
