@@ -40,9 +40,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/pborman/uuid"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -158,6 +160,12 @@ type (
 
 		// TaskQueueActivitiesPerSecond is the throttling limit for activity tasks controlled by the server.
 		TaskQueueActivitiesPerSecond float64
+
+		// MaxConcurrentNexusTaskQueuePollers is the max number of pollers for the nexus task queue.
+		MaxConcurrentNexusTaskQueuePollers int
+
+		// Defines how many concurrent nexus task executions should be handled by this worker.
+		ConcurrentNexusTaskExecutionSize int
 
 		// User can provide an identity for the debuggability. If not provided the framework has
 		// a default option.
@@ -496,6 +504,7 @@ func (aw *activityWorker) Stop() {
 
 type registry struct {
 	sync.Mutex
+	nexusServices    map[string]*nexus.Service
 	workflowFuncMap  map[string]interface{}
 	workflowAliasMap map[string]string
 	activityFuncMap  map[string]activity
@@ -635,6 +644,20 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 		return fmt.Errorf("no activities (public methods) found at %v structure", structType.Name())
 	}
 	return nil
+}
+
+func (r *registry) RegisterNexusService(service *nexus.Service) {
+	if service.Name == "" {
+		panic(fmt.Errorf("tried to register a service with no name"))
+	}
+
+	r.Lock()
+	defer r.Unlock()
+
+	if _, ok := r.nexusServices[service.Name]; ok {
+		panic(fmt.Sprintf("service name \"%v\" is already registered", service.Name))
+	}
+	r.nexusServices[service.Name] = service
 }
 
 func (r *registry) getWorkflowAlias(fnName string) (string, bool) {
@@ -778,6 +801,7 @@ func newRegistryWithOptions(options registryOptions) *registry {
 	r := &registry{
 		workflowFuncMap: make(map[string]interface{}),
 		activityFuncMap: make(map[string]activity),
+		nexusServices:   make(map[string]*nexus.Service),
 	}
 	if !options.disableAliasing {
 		r.workflowAliasMap = make(map[string]string)
@@ -900,16 +924,24 @@ func getActivityEnvironmentFromCtx(ctx context.Context) *activityEnvironment {
 
 // AggregatedWorker combines management of both workflowWorker and activityWorker worker lifecycle.
 type AggregatedWorker struct {
+	// Stored for creating a nexus worker on Start.
+	executionParams workerExecutionParameters
+	// Memoized start function. Ensures start runs once and returns the same error when called multiple times.
+	memoizedStart func() error
+
 	client         *WorkflowClient
 	workflowWorker *workflowWorker
 	activityWorker *activityWorker
 	sessionWorker  *sessionWorker
+	nexusWorker    *nexusWorker
 	logger         log.Logger
 	registry       *registry
-	stopC          chan struct{}
-	fatalErr       error
-	fatalErrLock   sync.Mutex
-	capabilities   *workflowservice.GetSystemInfoResponse_Capabilities
+	// Stores a boolean indicating whether the worker has already been started.
+	started      atomic.Bool
+	stopC        chan struct{}
+	fatalErr     error
+	fatalErrLock sync.Mutex
+	capabilities *workflowservice.GetSystemInfoResponse_Capabilities
 }
 
 // RegisterWorkflow registers workflow implementation with the AggregatedWorker
@@ -938,9 +970,18 @@ func (aw *AggregatedWorker) RegisterActivityWithOptions(a interface{}, options R
 	aw.registry.RegisterActivityWithOptions(a, options)
 }
 
+func (aw *AggregatedWorker) RegisterNexusService(service *nexus.Service) {
+	if aw.started.Load() {
+		panic(errors.New("cannot register Nexus services after worker start"))
+	}
+	aw.registry.RegisterNexusService(service)
+}
+
 // Start the worker in a non-blocking fashion.
+// Some of the initialization logic, like loading capabilities is done here so it can be retried.
+// The rest of the work is done in the memoized "start" function to ensure duplicate calls are returned a consistent
+// error.
 func (aw *AggregatedWorker) Start() error {
-	aw.assertNotStopped()
 	if err := initBinaryChecksum(); err != nil {
 		return fmt.Errorf("failed to get executable checksum: %v", err)
 	} else if err = aw.client.ensureInitialized(context.Background()); err != nil {
@@ -952,6 +993,14 @@ func (aw *AggregatedWorker) Start() error {
 		return err
 	}
 	proto.Merge(aw.capabilities, capabilities)
+
+	return aw.memoizedStart()
+}
+
+// start the worker. This method is memoized using sync.OnceValue in memoizedStart.
+func (aw *AggregatedWorker) start() error {
+	aw.started.Store(true)
+	aw.assertNotStopped()
 
 	if !util.IsInterfaceNil(aw.workflowWorker) {
 		if err := aw.workflowWorker.Start(); err != nil {
@@ -988,6 +1037,31 @@ func (aw *AggregatedWorker) Start() error {
 				}
 			}
 			return err
+		}
+	}
+	nexusServices := aw.registry.nexusServices
+	if len(nexusServices) > 0 {
+		reg := nexus.NewServiceRegistry()
+		for _, service := range nexusServices {
+			if err := reg.Register(service); err != nil {
+				return fmt.Errorf("failed to create a nexus worker: %w", err)
+			}
+		}
+		handler, err := reg.NewHandler()
+		if err != nil {
+			return fmt.Errorf("failed to create a nexus worker: %w", err)
+		}
+		aw.nexusWorker, err = newNexusWorker(nexusWorkerOptions{
+			executionParameters: aw.executionParams,
+			client:              aw.client,
+			workflowService:     aw.client.workflowService,
+			handler:             handler,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create a nexus worker: %w", err)
+		}
+		if err := aw.nexusWorker.Start(); err != nil {
+			return fmt.Errorf("failed to start a nexus worker: %w", err)
 		}
 	}
 	aw.logger.Info("Started Worker")
@@ -1571,6 +1645,8 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		WorkerLocalActivitiesPerSecond:        options.WorkerLocalActivitiesPerSecond,
 		ConcurrentWorkflowTaskExecutionSize:   options.MaxConcurrentWorkflowTaskExecutionSize,
 		MaxConcurrentWorkflowTaskQueuePollers: options.MaxConcurrentWorkflowTaskPollers,
+		ConcurrentNexusTaskExecutionSize:      options.MaxConcurrentNexusTaskExecutionSize,
+		MaxConcurrentNexusTaskQueuePollers:    options.MaxConcurrentNexusTaskPollers,
 		Identity:                              client.identity,
 		WorkerBuildID:                         options.BuildID,
 		UseBuildIDForVersioning:               options.UseBuildIDForVersioning,
@@ -1650,15 +1726,17 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	aw = &AggregatedWorker{
-		client:         client,
-		workflowWorker: workflowWorker,
-		activityWorker: activityWorker,
-		sessionWorker:  sessionWorker,
-		logger:         workerParams.Logger,
-		registry:       registry,
-		stopC:          make(chan struct{}),
-		capabilities:   &capabilities,
+		client:          client,
+		workflowWorker:  workflowWorker,
+		activityWorker:  activityWorker,
+		sessionWorker:   sessionWorker,
+		logger:          workerParams.Logger,
+		registry:        registry,
+		stopC:           make(chan struct{}),
+		capabilities:    &capabilities,
+		executionParams: workerParams,
 	}
+	aw.memoizedStart = sync.OnceValue(aw.start)
 	return aw
 }
 
@@ -1778,6 +1856,12 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 		// Disable eager activities when the task queue rate limit is set because
 		// the server does not rate limit eager activities.
 		options.DisableEagerActivities = true
+	}
+	if options.MaxConcurrentNexusTaskPollers <= 0 {
+		options.MaxConcurrentNexusTaskPollers = defaultConcurrentPollRoutineSize
+	}
+	if options.MaxConcurrentNexusTaskExecutionSize == 0 {
+		options.MaxConcurrentNexusTaskExecutionSize = defaultMaxConcurrentTaskExecutionSize
 	}
 	if options.StickyScheduleToStartTimeout.Seconds() == 0 {
 		options.StickyScheduleToStartTimeout = stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second

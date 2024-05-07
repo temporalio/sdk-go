@@ -2,9 +2,12 @@ module go.temporal.io/sdk/test
 
 go 1.21
 
+toolchain go1.21.1
+
 require (
 	github.com/golang/mock v1.6.0
 	github.com/google/uuid v1.6.0
+	github.com/nexus-rpc/sdk-go v0.0.8-0.20240617225139-cd9d6c50e99d
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/pborman/uuid v1.2.1
 	github.com/stretchr/testify v1.9.0
@@ -28,6 +31,7 @@ require (
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/gorilla/mux v1.8.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.20.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect

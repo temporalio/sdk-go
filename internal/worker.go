@@ -95,6 +95,17 @@ type (
 		// default: 2
 		MaxConcurrentWorkflowTaskPollers int
 
+		// Optional: Sets the maximum concurrent nexus task executions this worker can have.
+		// The zero value of this uses the default value.
+		// default: defaultMaxConcurrentTaskExecutionSize(1k)
+		MaxConcurrentNexusTaskExecutionSize int
+
+		// Optional: Sets the maximum number of goroutines that will concurrently poll the
+		// temporal-server to retrieve nexus tasks. Changing this value will affect the
+		// rate at which the worker is able to consume tasks from a task queue.
+		// default: 2
+		MaxConcurrentNexusTaskPollers int
+
 		// Optional: Enable logging in replay.
 		// In the workflow code you can use workflow.GetLogger(ctx) to write logs. By default, the logger will skip log
 		// entry during replay mode so you won't see duplicate logs. This option will enable the logging in replay mode.

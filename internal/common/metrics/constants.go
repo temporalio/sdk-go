@@ -43,11 +43,16 @@ const (
 	WorkflowTaskNoCompletionCounter     = TemporalMetricsPrefix + "workflow_task_no_completion"
 
 	ActivityPollNoTaskCounter             = TemporalMetricsPrefix + "activity_poll_no_task"
+	NexusPollNoTaskCounter                = TemporalMetricsPrefix + "nexus_poll_no_task"
 	ActivityScheduleToStartLatency        = TemporalMetricsPrefix + "activity_schedule_to_start_latency"
 	ActivityExecutionFailedCounter        = TemporalMetricsPrefix + "activity_execution_failed"
+	NexusTaskScheduleToStartLatency       = TemporalMetricsPrefix + "nexus_task_schedule_to_start_latency"
+	NexusTaskExecutionFailedCounter       = TemporalMetricsPrefix + "nexus_task_execution_failed"
 	UnregisteredActivityInvocationCounter = TemporalMetricsPrefix + "unregistered_activity_invocation"
 	ActivityExecutionLatency              = TemporalMetricsPrefix + "activity_execution_latency"
+	NexusTaskExecutionLatency             = TemporalMetricsPrefix + "nexus_task_execution_latency"
 	ActivitySucceedEndToEndLatency        = TemporalMetricsPrefix + "activity_succeed_endtoend_latency"
+	NexusTaskEndToEndLatency              = TemporalMetricsPrefix + "nexus_task_endtoend_latency"
 	ActivityTaskErrorCounter              = TemporalMetricsPrefix + "activity_task_error"
 
 	LocalActivityTotalCounter             = TemporalMetricsPrefix + "local_activity_total"
@@ -91,6 +96,8 @@ const (
 	WorkerTypeTagName         = "worker_type"
 	WorkflowTypeNameTagName   = "workflow_type"
 	ActivityTypeNameTagName   = "activity_type"
+	NexusServiceTagName       = "nexus_service"
+	NexusOperationTagName     = "nexus_operation"
 	TaskQueueTagName          = "task_queue"
 	OperationTagName          = "operation"
 	CauseTagName              = "cause"
@@ -105,4 +112,5 @@ const (
 	PollerTypeWorkflowTask       = "workflow_task"
 	PollerTypeWorkflowStickyTask = "workflow_sticky_task"
 	PollerTypeActivityTask       = "activity_task"
+	PollerTypeNexusTask          = "nexus_task"
 )
