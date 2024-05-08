@@ -101,6 +101,22 @@ func (w *Workflows) DeadlockedWithLocalActivity(ctx workflow.Context) ([]string,
 	return []string{}, nil
 }
 
+func (w *Workflows) LocalActivityNextRetryDelay(ctx workflow.Context) (time.Duration, error) {
+	laCtx := workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+		ScheduleToCloseTimeout: time.Minute,
+		RetryPolicy: &temporal.RetryPolicy{
+			MaximumAttempts: 8,
+		},
+	})
+
+	t1 := workflow.Now(ctx)
+	workflow.GetLogger(ctx).Info("calling ExecuteLocalActivity")
+	_ = workflow.ExecuteLocalActivity(laCtx, ErrorWithNextDelay, time.Second).Get(laCtx, nil)
+	workflow.GetLogger(ctx).Info("calling ExecuteLocalActivity done")
+	t2 := workflow.Now(ctx)
+	return t2.Sub(t1), nil
+}
+
 func (w *Workflows) Panicked(ctx workflow.Context) ([]string, error) {
 	panic("simulated")
 }
@@ -3024,6 +3040,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.UpdateSettingHandlerInHandler)
 	worker.RegisterWorkflow(w.UpdateCancelableWorkflow)
 	worker.RegisterWorkflow(w.UpdateHandlerRegisteredLate)
+	worker.RegisterWorkflow(w.LocalActivityNextRetryDelay)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childWithRetryPolicy)

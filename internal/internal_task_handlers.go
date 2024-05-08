@@ -1279,7 +1279,7 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 	return false
 }
 
-func getRetryBackoff(lar *localActivityResult, now time.Time, dataConverter converter.DataConverter) time.Duration {
+func getRetryBackoff(lar *localActivityResult, now time.Time, _ converter.DataConverter) time.Duration {
 	return getRetryBackoffWithNowTime(lar.task.retryPolicy, lar.task.attempt, lar.err, now, lar.task.expireTime)
 }
 
@@ -1291,20 +1291,29 @@ func getRetryBackoffWithNowTime(p *RetryPolicy, attempt int32, err error, now, e
 	if p.MaximumAttempts > 0 && attempt >= p.MaximumAttempts {
 		return noRetryBackoff // max attempt reached
 	}
-	// attempt starts from 1
-	backoffInterval := time.Duration(float64(p.InitialInterval) * math.Pow(p.BackoffCoefficient, float64(attempt-1)))
-	if backoffInterval <= 0 {
-		// math.Pow() could overflow
-		if p.MaximumInterval > 0 {
-			backoffInterval = p.MaximumInterval
-		} else {
-			return noRetryBackoff
-		}
-	}
 
-	if p.MaximumInterval > 0 && backoffInterval > p.MaximumInterval {
-		// cap next interval to MaxInterval
-		backoffInterval = p.MaximumInterval
+	var backoffInterval time.Duration
+	// Extract backoff interval from error if it is a retryable error.
+	// Not using errors.As() since we don't want to explore the whole error chain.
+	if applicationErr, ok := err.(*ApplicationError); ok {
+		backoffInterval = applicationErr.nextRetryDelay
+	}
+	// Calculate next backoff interval if the error did not contain the next backoff interval.
+	// attempt starts from 1
+	if backoffInterval == time.Duration(0) {
+		backoffInterval = time.Duration(float64(p.InitialInterval) * math.Pow(p.BackoffCoefficient, float64(attempt-1)))
+		if backoffInterval <= 0 {
+			// math.Pow() could overflow
+			if p.MaximumInterval > 0 {
+				backoffInterval = p.MaximumInterval
+			} else {
+				return noRetryBackoff
+			}
+		}
+		if p.MaximumInterval > 0 && backoffInterval > p.MaximumInterval {
+			// cap next interval to MaxInterval
+			backoffInterval = p.MaximumInterval
+		}
 	}
 
 	nextScheduleTime := now.Add(backoffInterval)

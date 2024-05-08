@@ -2412,6 +2412,39 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowWithLocalActivity() {
 	s.Equal("hello local_activity", result)
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_WorkflowWithLocalActivityNextDelay() {
+	localActivityFn := func(ctx context.Context, delay time.Duration) error {
+		return NewApplicationErrorWithOptions("test delay", "DelayError", ApplicationErrorOptions{
+			NextRetryDelay: delay,
+		})
+	}
+
+	workflowFn := func(ctx Context) (time.Duration, error) {
+		lao := LocalActivityOptions{
+			ScheduleToCloseTimeout: time.Minute,
+			RetryPolicy: &RetryPolicy{
+				MaximumAttempts: 5,
+			},
+		}
+		ctx = WithLocalActivityOptions(ctx, lao)
+		var result string
+		t1 := Now(ctx)
+		f := ExecuteLocalActivity(ctx, localActivityFn, time.Second)
+		_ = f.Get(ctx, &result)
+		t2 := Now(ctx)
+		return t2.Sub(t1), nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var result time.Duration
+	err := env.GetWorkflowResult(&result)
+	s.NoError(err)
+	s.Equal(4*time.Second, result)
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_LocalActivity() {
 	localActivityFn := func(ctx context.Context, name string) (string, error) {
 		return "hello " + name, nil

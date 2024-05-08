@@ -465,6 +465,15 @@ func (ts *IntegrationTestSuite) TestDeadlockDetectionViaLocalActivity() {
 	ts.True(strings.Contains(applicationErr.Error(), "Potential deadlock detected"))
 }
 
+func (ts *IntegrationTestSuite) TestLocalActivityNextRetryDelay() {
+	var expected time.Duration
+	wfOpts := ts.startWorkflowOptions("test-local-activity-next-retry-delay")
+	wfOpts.WorkflowTaskTimeout = 5 * time.Second
+	err := ts.executeWorkflowWithOption(wfOpts, ts.workflows.LocalActivityNextRetryDelay, &expected)
+	ts.NoError(err)
+	fmt.Println(expected)
+}
+
 func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
 	var expected []string
 	err := ts.executeWorkflow("test-activity-retry-on-error", ts.workflows.ActivityRetryOnError, &expected)
