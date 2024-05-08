@@ -110,9 +110,7 @@ func (w *Workflows) LocalActivityNextRetryDelay(ctx workflow.Context) (time.Dura
 	})
 
 	t1 := workflow.Now(ctx)
-	workflow.GetLogger(ctx).Info("calling ExecuteLocalActivity")
 	_ = workflow.ExecuteLocalActivity(laCtx, ErrorWithNextDelay, time.Second).Get(laCtx, nil)
-	workflow.GetLogger(ctx).Info("calling ExecuteLocalActivity done")
 	t2 := workflow.Now(ctx)
 	return t2.Sub(t1), nil
 }
