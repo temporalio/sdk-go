@@ -2450,6 +2450,26 @@ func (w *Workflows) SignalCounter(ctx workflow.Context) error {
 	}
 }
 
+func (w *Workflows) QueryTestWorkflow(ctx workflow.Context) error {
+	status := "running"
+	defer func() {
+		status = "completed"
+	}()
+	err := workflow.SetQueryHandler(ctx, "query", func() (string, error) {
+		return status, nil
+	})
+	if err != nil {
+		return err
+	}
+	signalCh := workflow.GetSignalChannel(ctx, "signal")
+	var fail bool
+	signalCh.Receive(ctx, &fail)
+	if fail {
+		return errors.New("test failure")
+	}
+	return nil
+}
+
 func (w *Workflows) PanicOnSignal(ctx workflow.Context) error {
 	// Wait for signal then panic
 	workflow.GetSignalChannel(ctx, "panic-signal").Receive(ctx, nil)
@@ -3039,6 +3059,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.UpdateCancelableWorkflow)
 	worker.RegisterWorkflow(w.UpdateHandlerRegisteredLate)
 	worker.RegisterWorkflow(w.LocalActivityNextRetryDelay)
+	worker.RegisterWorkflow(w.QueryTestWorkflow)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childWithRetryPolicy)
