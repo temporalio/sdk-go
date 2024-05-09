@@ -1254,7 +1254,7 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 		return false
 	}
 
-	retryBackoff := getRetryBackoff(lar, time.Now(), w.wth.dataConverter)
+	retryBackoff := getRetryBackoff(lar, time.Now())
 	if retryBackoff > 0 && retryBackoff <= w.workflowInfo.WorkflowTaskTimeout {
 		// we need a local retry
 		time.AfterFunc(retryBackoff, func() {
@@ -1279,7 +1279,7 @@ func (w *workflowExecutionContextImpl) retryLocalActivity(lar *localActivityResu
 	return false
 }
 
-func getRetryBackoff(lar *localActivityResult, now time.Time, _ converter.DataConverter) time.Duration {
+func getRetryBackoff(lar *localActivityResult, now time.Time) time.Duration {
 	return getRetryBackoffWithNowTime(lar.task.retryPolicy, lar.task.attempt, lar.err, now, lar.task.expireTime)
 }
 
@@ -1300,7 +1300,7 @@ func getRetryBackoffWithNowTime(p *RetryPolicy, attempt int32, err error, now, e
 	}
 	// Calculate next backoff interval if the error did not contain the next backoff interval.
 	// attempt starts from 1
-	if backoffInterval == time.Duration(0) {
+	if backoffInterval == 0 {
 		backoffInterval = time.Duration(float64(p.InitialInterval) * math.Pow(p.BackoffCoefficient, float64(attempt-1)))
 		if backoffInterval <= 0 {
 			// math.Pow() could overflow
