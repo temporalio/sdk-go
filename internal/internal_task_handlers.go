@@ -1306,14 +1306,15 @@ func getRetryBackoffWithNowTime(p *RetryPolicy, attempt int32, err error, now, e
 			// math.Pow() could overflow
 			if p.MaximumInterval > 0 {
 				backoffInterval = p.MaximumInterval
-			} else {
-				return noRetryBackoff
 			}
 		}
 		if p.MaximumInterval > 0 && backoffInterval > p.MaximumInterval {
 			// cap next interval to MaxInterval
 			backoffInterval = p.MaximumInterval
 		}
+	}
+	if backoffInterval <= 0 {
+		return noRetryBackoff
 	}
 
 	nextScheduleTime := now.Add(backoffInterval)
