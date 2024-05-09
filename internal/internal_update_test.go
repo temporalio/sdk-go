@@ -103,7 +103,7 @@ func TestUpdateHandlerPanicHandling(t *testing.T) {
 		interceptor, ctx, err := newWorkflowContext(env, nil)
 		require.NoError(t, err)
 
-		panicFunc := func() error { panic("intentional") }
+		panicFunc := func(ctx Context) error { panic("intentional") }
 		dispatcher, _ := newDispatcher(
 			ctx,
 			interceptor,
@@ -123,7 +123,7 @@ func TestUpdateHandlerPanicHandling(t *testing.T) {
 		interceptor, ctx, err := newWorkflowContext(env, nil)
 		require.NoError(t, err)
 
-		panicFunc := func() error { panic("intentional") }
+		panicFunc := func(ctx Context) error { panic("intentional") }
 		dispatcher, _ := newDispatcher(
 			ctx,
 			interceptor,
