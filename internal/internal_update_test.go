@@ -103,7 +103,7 @@ func TestUpdateHandlerPanicHandling(t *testing.T) {
 		interceptor, ctx, err := newWorkflowContext(env, nil)
 		require.NoError(t, err)
 
-		panicFunc := func() error { panic("intentional") }
+		panicFunc := func(ctx Context) error { panic("intentional") }
 		dispatcher, _ := newDispatcher(
 			ctx,
 			interceptor,
@@ -123,7 +123,7 @@ func TestUpdateHandlerPanicHandling(t *testing.T) {
 		interceptor, ctx, err := newWorkflowContext(env, nil)
 		require.NoError(t, err)
 
-		panicFunc := func() error { panic("intentional") }
+		panicFunc := func(ctx Context) error { panic("intentional") }
 		dispatcher, _ := newDispatcher(
 			ctx,
 			interceptor,
@@ -151,10 +151,12 @@ func TestUpdateHandlerFnValidation(t *testing.T) {
 		{require.Error, func() int { return 0 }},
 		{require.Error, func(Context, int) (int, int, error) { return 0, 0, nil }},
 		{require.Error, func(int) (chan int, error) { return nil, nil }},
-		{require.NoError, func() error { return nil }},
+		{require.Error, func() error { return nil }},
+		{require.Error, func(int, int, string) error { return nil }},
+		{require.Error, func(int) error { return nil }},
+		{require.NoError, func(Context, int) error { return nil }},
+		{require.NoError, func(Context, int, int, string) error { return nil }},
 		{require.NoError, func(Context) error { return nil }},
-		{require.NoError, func(int) error { return nil }},
-		{require.NoError, func(int, int, string) error { return nil }},
 		{require.NoError, func(Context, int, int, string) error { return nil }},
 	} {
 		t.Run(reflect.TypeOf(tc.fn).String(), func(t *testing.T) {
@@ -219,7 +221,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 					t,
 					ctx,
 					"unused_handler",
-					func() error { panic("should not be called") },
+					func(ctx Context) error { panic("should not be called") },
 					UpdateHandlerOptions{},
 				)
 			},
