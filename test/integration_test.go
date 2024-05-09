@@ -29,6 +29,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 	"strings"
@@ -463,6 +464,16 @@ func (ts *IntegrationTestSuite) TestDeadlockDetectionViaLocalActivity() {
 	ok := errors.As(err, &applicationErr)
 	ts.True(ok)
 	ts.True(strings.Contains(applicationErr.Error(), "Potential deadlock detected"))
+}
+
+func (ts *IntegrationTestSuite) TestLocalActivityNextRetryDelay() {
+	var activityExecutionTime time.Duration
+	wfOpts := ts.startWorkflowOptions("test-local-activity-next-retry-delay")
+	wfOpts.WorkflowTaskTimeout = 5 * time.Second
+	err := ts.executeWorkflowWithOption(wfOpts, ts.workflows.LocalActivityNextRetryDelay, &activityExecutionTime)
+	ts.NoError(err)
+	// Check the activity execution time is around 7 seconds
+	ts.LessOrEqual(math.Abs((activityExecutionTime - 7*time.Second).Seconds()), 1.0)
 }
 
 func (ts *IntegrationTestSuite) TestActivityRetryOnError() {

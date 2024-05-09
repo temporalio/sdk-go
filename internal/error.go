@@ -328,10 +328,11 @@ func NewApplicationError(msg string, errType string, nonRetryable bool, cause er
 
 func NewApplicationErrorWithOptions(msg string, errType string, options ApplicationErrorOptions) error {
 	applicationErr := &ApplicationError{
-		msg:          msg,
-		errType:      errType,
-		cause:        options.Cause,
-		nonRetryable: options.NonRetryable,
+		msg:            msg,
+		errType:        errType,
+		cause:          options.Cause,
+		nonRetryable:   options.NonRetryable,
+		nextRetryDelay: options.NextRetryDelay,
 	}
 	// When return error to user, use EncodedValues as details and data is ready to be decoded by calling Get
 	details := options.Details
@@ -582,6 +583,8 @@ func (e *ApplicationError) Unwrap() error {
 	return e.cause
 }
 
+// NextRetryDelay returns the delay to wait before retrying the activity.
+// a zero value means to use the activities retry policy.
 func (e *ApplicationError) NextRetryDelay() time.Duration { return e.nextRetryDelay }
 
 // Error from error interface
