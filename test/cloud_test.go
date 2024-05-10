@@ -27,6 +27,7 @@ package test_test
 import (
 	"context"
 	"flag"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -51,12 +52,18 @@ type CloudTestSuite struct {
 	*require.Assertions
 	suite.Suite
 
-	config Config
 	client client.CloudOperationsClient
+
+	namespace string
+	apiKey    string
 }
 
 func (c *CloudTestSuite) SetupSuite() {
 	c.Assertions = require.New(c.T())
+	c.namespace = os.Getenv("TEMPORAL_NAMESPACE")
+	c.NotEmpty(c.namespace)
+	c.apiKey = os.Getenv("TEMPORAL_CLIENT_CLOUD_API_KEY")
+	c.NotEmpty(c.apiKey)
 }
 
 func (c *CloudTestSuite) TearDownSuite() {
@@ -65,7 +72,7 @@ func (c *CloudTestSuite) TearDownSuite() {
 func (c *CloudTestSuite) SetupTest() {
 	var err error
 	c.client, err = client.DialCloudOperationsClient(context.Background(), client.CloudOperationsClientOptions{
-		ConnectionOptions: client.ConnectionOptions{TLS: c.config.TLS},
+		Credentials: client.NewAPIKeyStaticCredentials(c.apiKey),
 	})
 	c.NoError(err)
 }
@@ -79,8 +86,8 @@ func (c *CloudTestSuite) TearDownTest() {
 func (c *CloudTestSuite) TestSimpleGetNamespace() {
 	resp, err := c.client.CloudService().GetNamespace(
 		context.Background(),
-		&cloudservice.GetNamespaceRequest{Namespace: c.config.Namespace},
+		&cloudservice.GetNamespaceRequest{Namespace: c.namespace},
 	)
 	c.NoError(err)
-	c.Equal(c.config.Namespace, resp.Namespace.Namespace)
+	c.Equal(c.namespace, resp.Namespace.Namespace)
 }

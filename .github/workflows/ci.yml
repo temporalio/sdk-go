@@ -103,6 +103,7 @@ jobs:
       TEMPORAL_NAMESPACE: sdk-ci.a2dd6
       TEMPORAL_CLIENT_CERT: ${{ secrets.TEMPORAL_CLIENT_CERT }}
       TEMPORAL_CLIENT_KEY: ${{ secrets.TEMPORAL_CLIENT_KEY }}
+      TEMPORAL_CLIENT_CLOUD_API_KEY: ${{ secrets.TEMPORAL_CLIENT_CLOUD_API_KEY }}
     steps:
       - uses: actions/checkout@v3
         with:
