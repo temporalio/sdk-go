@@ -897,10 +897,11 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 	}
 
 	result, err := wc.interceptor.QueryWorkflow(ctx, &ClientQueryWorkflowInput{
-		WorkflowID: request.WorkflowID,
-		RunID:      request.RunID,
-		QueryType:  request.QueryType,
-		Args:       request.Args,
+		WorkflowID:           request.WorkflowID,
+		RunID:                request.RunID,
+		QueryType:            request.QueryType,
+		Args:                 request.Args,
+		QueryRejectCondition: request.QueryRejectCondition,
 	})
 	if err != nil {
 		if err, ok := err.(*queryRejectedError); ok {

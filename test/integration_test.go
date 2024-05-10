@@ -1871,6 +1871,96 @@ func (ts *IntegrationTestSuite) TestCancelChildAndExecuteActivityRace() {
 	ts.NoError(err)
 }
 
+func (ts *IntegrationTestSuite) TestQueryWorkflowRejectNotOpen() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start workflow
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-workflow-query-reject-not-open"),
+		ts.workflows.QueryTestWorkflow)
+	ts.NoError(err)
+
+	// Query when the workflow is running
+	queryVal, err := ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+		WorkflowID:           run.GetID(),
+		RunID:                run.GetRunID(),
+		QueryType:            "query",
+		QueryRejectCondition: enumspb.QUERY_REJECT_CONDITION_NONE,
+	})
+	ts.NoError(err)
+	var queryRes string
+	ts.NoError(queryVal.QueryResult.Get(&queryRes))
+	ts.Equal("running", queryRes)
+
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "signal", false))
+	ts.NoError(run.Get(ctx, nil))
+
+	// Query when the workflow is completed
+	queryVal, err = ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+		WorkflowID:           run.GetID(),
+		RunID:                run.GetRunID(),
+		QueryType:            "query",
+		QueryRejectCondition: enumspb.QUERY_REJECT_CONDITION_NOT_COMPLETED_CLEANLY,
+	})
+	ts.NoError(err)
+	queryRes = ""
+	ts.NoError(queryVal.QueryResult.Get(&queryRes))
+	ts.Equal("completed", queryRes)
+
+	queryVal, err = ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+		WorkflowID:           run.GetID(),
+		RunID:                run.GetRunID(),
+		QueryType:            "query",
+		QueryRejectCondition: enumspb.QUERY_REJECT_CONDITION_NOT_OPEN,
+	})
+	ts.NoError(err)
+	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED, queryVal.QueryRejected.Status)
+}
+
+func (ts *IntegrationTestSuite) TestQueryWorkflowRejectNotCompleteCleanly() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start workflow
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-workflow-query-not-complete-cleanly"),
+		ts.workflows.QueryTestWorkflow)
+	ts.NoError(err)
+
+	// Query when the workflow is running
+	queryVal, err := ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+		WorkflowID:           run.GetID(),
+		RunID:                run.GetRunID(),
+		QueryType:            "query",
+		QueryRejectCondition: enumspb.QUERY_REJECT_CONDITION_NONE,
+	})
+	ts.NoError(err)
+	var queryRes string
+	ts.NoError(queryVal.QueryResult.Get(&queryRes))
+	ts.Equal("running", queryRes)
+
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "signal", true))
+	ts.Error(run.Get(ctx, nil))
+
+	// Query when the workflow is failed
+	queryVal, err = ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+		WorkflowID:           run.GetID(),
+		RunID:                run.GetRunID(),
+		QueryType:            "query",
+		QueryRejectCondition: enumspb.QUERY_REJECT_CONDITION_NOT_OPEN,
+	})
+	ts.NoError(err)
+	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_FAILED, queryVal.QueryRejected.Status)
+
+	queryVal, err = ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+		WorkflowID:           run.GetID(),
+		RunID:                run.GetRunID(),
+		QueryType:            "query",
+		QueryRejectCondition: enumspb.QUERY_REJECT_CONDITION_NOT_COMPLETED_CLEANLY,
+	})
+	ts.NoError(err)
+	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_FAILED, queryVal.QueryRejected.Status)
+}
+
 func (ts *IntegrationTestSuite) TestInterceptorCalls() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
