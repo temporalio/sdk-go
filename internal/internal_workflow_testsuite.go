@@ -1647,7 +1647,7 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 		Attempt: 1,
 	}
 	if result.task.retryPolicy != nil && result.err != nil {
-		lar.Backoff = getRetryBackoff(result, env.Now(), env.dataConverter)
+		lar.Backoff = getRetryBackoff(result, env.Now())
 		lar.Attempt = task.attempt
 	}
 	task.callback(lar)
