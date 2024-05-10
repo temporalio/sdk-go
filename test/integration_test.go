@@ -1596,7 +1596,7 @@ func (ts *IntegrationTestSuite) TestSessionStateFailedWorkerFailed() {
 
 	// Now create a new worker on that same task queue to resume the work of the
 	// workflow
-	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{DisableStickyExecution: true})
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
 	ts.registerWorkflowsAndActivities(nextWorker)
 	ts.NoError(nextWorker.Start())
 	defer nextWorker.Stop()
@@ -3017,7 +3017,7 @@ func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
 
 	// Now create a new worker on that same task queue to resume the work of the
 	// workflow
-	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{DisableStickyExecution: true})
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
 	ts.registerWorkflowsAndActivities(nextWorker)
 	ts.NoError(nextWorker.Start())
 	defer nextWorker.Stop()
@@ -3229,7 +3229,7 @@ func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch b
 	// Now, stop the worker and start a new one
 	ts.worker.Stop()
 	ts.workerStopped = true
-	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{DisableStickyExecution: true})
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
 	ts.registerWorkflowsAndActivities(nextWorker)
 	ts.NoError(nextWorker.Start())
 	defer nextWorker.Stop()

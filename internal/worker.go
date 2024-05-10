@@ -102,21 +102,16 @@ type (
 		// default: false
 		EnableLoggingInReplay bool
 
-		// Optional: Disable sticky execution.
+		// Optional: Sticky schedule to start timeout.
+		// The resolution is seconds.
+		//
 		// Sticky Execution is to run the workflow tasks for one workflow execution on same worker host. This is an
 		// optimization for workflow execution. When sticky execution is enabled, worker keeps the workflow state in
 		// memory. New workflow task contains the new history events will be dispatched to the same worker. If this
 		// worker crashes, the sticky workflow task will timeout after StickyScheduleToStartTimeout, and temporal server
 		// will clear the stickiness for that workflow execution and automatically reschedule a new workflow task that
 		// is available for any worker to pick up and resume the progress.
-		// default: false
 		//
-		// Deprecated: DisableStickyExecution harms performance. It will be removed soon. See SetStickyWorkflowCacheSize
-		// instead.
-		DisableStickyExecution bool
-
-		// Optional: Sticky schedule to start timeout.
-		// The resolution is seconds. See details about StickyExecution on the comments for DisableStickyExecution.
 		// default: 5s
 		StickyScheduleToStartTimeout time.Duration
 
