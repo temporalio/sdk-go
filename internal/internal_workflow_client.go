@@ -39,6 +39,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -1167,6 +1168,8 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context, getSystemInfoTim
 	}
 	ctx, cancel := context.WithTimeout(ctx, getSystemInfoTimeout)
 	defer cancel()
+	// Manually append the namespace to the header since the request does not have it.
+	ctx = metadata.AppendToOutgoingContext(ctx, temporalNamespaceHeaderKey, wc.namespace)
 	resp, err := wc.workflowService.GetSystemInfo(ctx, &workflowservice.GetSystemInfoRequest{})
 	// We ignore unimplemented
 	if _, isUnimplemented := err.(*serviceerror.Unimplemented); err != nil && !isUnimplemented {
