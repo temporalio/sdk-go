@@ -530,6 +530,33 @@ func TestCredentialsAPIKey(t *testing.T) {
 	)
 }
 
+func TestNamespaceInterceptor(t *testing.T) {
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+
+	// Fixed string
+	client, err := DialClient(context.Background(), ClientOptions{
+		Namespace: "test-namespace",
+		HostPort:  srv.addr,
+	})
+	require.NoError(t, err)
+	defer client.Close()
+	// Verify namespace header is set in the context even though getSystemInfo doesn't have it on the request
+	require.Equal(
+		t,
+		[]string{"test-namespace"},
+		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, temporalNamespaceHeaderKey),
+	)
+	// Verify namespace header is set on a request that does have namespace on the request
+	require.NoError(t, client.SignalWorkflow(context.Background(), "workflowid", "runid", "signalname", nil))
+	require.Equal(
+		t,
+		[]string{"test-namespace"},
+		metadata.ValueFromIncomingContext(srv.lastSignalWorkflowExecutionContext, temporalNamespaceHeaderKey),
+	)
+}
+
 func TestCredentialsMTLS(t *testing.T) {
 	// Just confirming option is set, not full end-to-end mTLS test
 
@@ -565,6 +592,7 @@ type testGRPCServer struct {
 	getSystemInfoRequestContext          context.Context
 	getSystemInfoResponse                workflowservice.GetSystemInfoResponse
 	getSystemInfoResponseError           error
+	lastSignalWorkflowExecutionContext   context.Context
 	signalWorkflowExecutionResponse      workflowservice.SignalWorkflowExecutionResponse
 	signalWorkflowExecutionResponseError error
 }
@@ -624,10 +652,11 @@ func (t *testGRPCServer) GetSystemInfo(
 }
 
 func (t *testGRPCServer) SignalWorkflowExecution(
-	context.Context,
-	*workflowservice.SignalWorkflowExecutionRequest,
+	ctx context.Context,
+	_ *workflowservice.SignalWorkflowExecutionRequest,
 ) (*workflowservice.SignalWorkflowExecutionResponse, error) {
 	atomic.AddInt32(&t.sigWfCount, 1)
+	t.lastSignalWorkflowExecutionContext = ctx
 	return &t.signalWorkflowExecutionResponse, t.signalWorkflowExecutionResponseError
 }
 
