@@ -978,10 +978,16 @@ func (aw *AggregatedWorker) RegisterNexusService(service *nexus.Service) {
 }
 
 // Start the worker in a non-blocking fashion.
-// Some of the initialization logic, like loading capabilities is done here so it can be retried.
-// The rest of the work is done in the memoized "start" function to ensure duplicate calls are returned a consistent
-// error.
+// The actual work is done in the memoized "start" function to ensure duplicate calls are returned a consistent error.
 func (aw *AggregatedWorker) Start() error {
+	return aw.memoizedStart()
+}
+
+// start the worker. This method is memoized using sync.OnceValue in memoizedStart.
+func (aw *AggregatedWorker) start() error {
+	aw.started.Store(true)
+	aw.assertNotStopped()
+
 	if err := initBinaryChecksum(); err != nil {
 		return fmt.Errorf("failed to get executable checksum: %v", err)
 	} else if err = aw.client.ensureInitialized(context.Background()); err != nil {
@@ -993,14 +999,6 @@ func (aw *AggregatedWorker) Start() error {
 		return err
 	}
 	proto.Merge(aw.capabilities, capabilities)
-
-	return aw.memoizedStart()
-}
-
-// start the worker. This method is memoized using sync.OnceValue in memoizedStart.
-func (aw *AggregatedWorker) start() error {
-	aw.started.Store(true)
-	aw.assertNotStopped()
 
 	if !util.IsInterfaceNil(aw.workflowWorker) {
 		if err := aw.workflowWorker.Start(); err != nil {

@@ -126,10 +126,10 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 		metricsHandler.Counter(metrics.NexusTaskExecutionFailedCounter).Inc(1)
 	}
 
-	// Drop the task, nothing to report back.
+	// Let the poller machinary drop the task, nothing to report back.
 	// This is only expected due to context deadline errors.
 	if err != nil {
-		return nil
+		return err
 	}
 
 	if err := ntp.reportCompletion(res, failure); err != nil {

@@ -27,17 +27,11 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 	poller := newNexusTaskPoller(
 		newNexusTaskHandler(
 			opts.handler,
+			opts.executionParameters.Namespace,
+			opts.executionParameters.Identity,
 			opts.executionParameters.TaskQueue,
 			opts.client,
 			opts.executionParameters.DataConverter,
-			&workflowservice.RespondNexusTaskCompletedRequest{
-				Namespace: opts.executionParameters.Namespace,
-				Identity:  opts.executionParameters.Identity,
-			},
-			&workflowservice.RespondNexusTaskFailedRequest{
-				Namespace: opts.executionParameters.Namespace,
-				Identity:  opts.executionParameters.Identity,
-			},
 			opts.executionParameters.Logger,
 			opts.executionParameters.MetricsHandler,
 		),
