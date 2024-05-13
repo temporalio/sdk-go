@@ -77,6 +77,14 @@ type (
 		Backoff time.Duration
 	}
 
+	executeNexusOperationParams struct {
+		client      NexusClient
+		operation   string
+		input       *commonpb.Payload
+		options     NexusOperationOptions
+		nexusHeader map[string]string
+	}
+
 	// WorkflowEnvironment Represents the environment for workflow.
 	// Should only be used within the scope of workflow definition.
 	WorkflowEnvironment interface {
@@ -92,6 +100,8 @@ type (
 		RequestCancelChildWorkflow(namespace, workflowID string)
 		RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback ResultHandler)
 		ExecuteChildWorkflow(params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error))
+		ExecuteNexusOperation(params executeNexusOperationParams, callback func(*commonpb.Payload, error), startedHandler func(opID string, e error)) int64
+		RequestCancelNexusOperation(seq int64)
 		GetLogger() log.Logger
 		GetMetricsHandler() metrics.Handler
 		// Must be called before WorkflowDefinition.Execute returns

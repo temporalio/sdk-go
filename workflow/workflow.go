@@ -71,6 +71,26 @@ type (
 	ContinueAsNewErrorOptions = internal.ContinueAsNewErrorOptions
 
 	UpdateHandlerOptions = internal.UpdateHandlerOptions
+
+	// NexusClient is a client for executing Nexus Operations from a workflow.
+	//
+	// NOTE: Experimental
+	NexusClient = internal.NexusClient
+
+	// NexusOperationOptions are options for starting a Nexus Operation from a Workflow.
+	//
+	// NOTE: Experimental
+	NexusOperationOptions = internal.NexusOperationOptions
+
+	// NexusOperationFuture represents the result of a Nexus Operation.
+	//
+	// NOTE: Experimental
+	NexusOperationFuture = internal.NexusOperationFuture
+
+	// NexusOperationExecution is the result of [NexusOperationFuture.GetNexusOperationExecution].
+	//
+	// NOTE: Experimental
+	NexusOperationExecution = internal.NexusOperationExecution
 )
 
 // ExecuteActivity requests activity execution in the context of a workflow.
@@ -691,4 +711,9 @@ func DeterministicKeys[K constraints.Ordered, V any](m map[K]V) []K {
 // To be used in for loops in workflows for deterministic iteration.
 func DeterministicKeysFunc[K comparable, V any](m map[K]V, cmp func(K, K) int) []K {
 	return internal.DeterministicKeysFunc(m, cmp)
+}
+
+// Create a [NexusClient] from an endpoint name and a service name.
+func NewNexusClient(endpoint, service string) NexusClient {
+	return internal.NewNexusClient(endpoint, service)
 }

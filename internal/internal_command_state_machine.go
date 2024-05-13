@@ -132,6 +132,35 @@ type (
 		*naiveCommandStateMachine
 	}
 
+	// nexusOperationStateMachine is the state machine for the NexusOperation lifecycle.
+	// It may never transition to the started state if the operation completes synchronously.
+	// Valid transitions:
+	// commandStateCreated -> commandStateCommandSent
+	// commandStateCommandSent - (NexusOperationScheduled) -> commandStateInitiated
+	// commandStateInitiated - (NexusOperationStarted) -> commandStateStarted
+	// commandStateInitiated - (NexusOperation(Completed|Failed|Canceled|TimedOut)) -> commandStateCompleted
+	// commandStateStarted - (NexusOperation(Completed|Failed|Canceled|TimedOut)) -> commandStateCompleted
+	nexusOperationStateMachine struct {
+		*commandStateMachineBase
+		// Unique sequence number for identifying this machine SDK side.
+		seq int64
+		// Event ID of the NexusOperationScheduled event for correlating progress events with this machine.
+		scheduledEventID int64
+		attributes       *commandpb.ScheduleNexusOperationCommandAttributes
+		// Instead of tracking cancelation as a state, we track it as a separate dimension with the request-cancel state
+		// machine.
+		cancelation *requestCancelNexusOperationStateMachine
+	}
+
+	// requestCancelNexusOperationStateMachine is the state machine for the RequestCancelNexusOperation command.
+	// Valid transitions:
+	// commandStateCreated -> commandStateCommandSent
+	// commandStateCommandSent - (NexusOperationCancelRequested) -> commandStateCompleted
+	requestCancelNexusOperationStateMachine struct {
+		*commandStateMachineBase
+		attributes *commandpb.RequestCancelNexusOperationCommandAttributes
+	}
+
 	versionMarker struct {
 		changeID          string
 		searchAttrUpdated bool
@@ -146,6 +175,15 @@ type (
 		scheduledEventIDToCancellationID map[int64]string
 		scheduledEventIDToSignalID       map[int64]string
 		versionMarkerLookup              map[int64]versionMarker
+
+		// A mapping of scheduled event ID to a sequence.
+		scheduledEventIDToNexusSeq map[int64]int64
+		// A list containing all nexus operation machines that have not yet been assigned a scheduled event ID.
+		// Every new operation state machine is added to this list on creation and deleted once the scheduled event is
+		// seen or the operation was deleted before sending the command.
+		// This mechanism is based on Core SDK
+		// (https://github.com/temporalio/sdk-core/blob/16c7a33dc1aec8fafb33c9ad6f77569a3dacc8ea/core/src/worker/workflow/machines/workflow_machines.rs#L837).
+		nexusOperationsWithoutScheduledID *list.List
 	}
 
 	// panic when command or message state machine is in illegal state
@@ -176,20 +214,22 @@ const (
 )
 
 const (
-	commandTypeActivity                  commandType = 0
-	commandTypeChildWorkflow             commandType = 1
-	commandTypeCancellation              commandType = 2
-	commandTypeMarker                    commandType = 3
-	commandTypeTimer                     commandType = 4
-	commandTypeSignal                    commandType = 5
-	commandTypeUpsertSearchAttributes    commandType = 6
-	commandTypeCancelTimer               commandType = 7
-	commandTypeRequestCancelActivityTask commandType = 8
-	commandTypeAcceptWorkflowUpdate      commandType = 9
-	commandTypeCompleteWorkflowUpdate    commandType = 10
-	commandTypeModifyProperties          commandType = 11
-	commandTypeRejectWorkflowUpdate      commandType = 12
-	commandTypeProtocolMessage           commandType = 13
+	commandTypeActivity                    commandType = 0
+	commandTypeChildWorkflow               commandType = 1
+	commandTypeCancellation                commandType = 2
+	commandTypeMarker                      commandType = 3
+	commandTypeTimer                       commandType = 4
+	commandTypeSignal                      commandType = 5
+	commandTypeUpsertSearchAttributes      commandType = 6
+	commandTypeCancelTimer                 commandType = 7
+	commandTypeRequestCancelActivityTask   commandType = 8
+	commandTypeAcceptWorkflowUpdate        commandType = 9
+	commandTypeCompleteWorkflowUpdate      commandType = 10
+	commandTypeModifyProperties            commandType = 11
+	commandTypeRejectWorkflowUpdate        commandType = 12
+	commandTypeProtocolMessage             commandType = 13
+	commandTypeNexusOperation              commandType = 14
+	commandTypeRequestCancelNexusOperation commandType = 15
 )
 
 const (
@@ -276,6 +316,10 @@ func (d commandType) String() string {
 		return "CompleteWorkflowUpdate"
 	case commandTypeRejectWorkflowUpdate:
 		return "RejectWorkflowUpdate"
+	case commandTypeNexusOperation:
+		return "NexusOperation"
+	case commandTypeRequestCancelNexusOperation:
+		return "RequestCancelNexusOperation"
 	default:
 		return "Unknown"
 	}
@@ -313,6 +357,29 @@ func (h *commandsHelper) newActivityCommandStateMachine(
 func (h *commandsHelper) newCancelActivityStateMachine(attributes *commandpb.RequestCancelActivityTaskCommandAttributes) *cancelActivityStateMachine {
 	base := h.newCommandStateMachineBase(commandTypeRequestCancelActivityTask, strconv.FormatInt(attributes.GetScheduledEventId(), 10))
 	return &cancelActivityStateMachine{
+		commandStateMachineBase: base,
+		attributes:              attributes,
+	}
+}
+
+func (h *commandsHelper) newNexusOperationStateMachine(
+	seq int64,
+	attributes *commandpb.ScheduleNexusOperationCommandAttributes,
+) *nexusOperationStateMachine {
+	base := h.newCommandStateMachineBase(commandTypeNexusOperation, strconv.FormatInt(seq, 10))
+	sm := &nexusOperationStateMachine{
+		commandStateMachineBase: base,
+		attributes:              attributes,
+		seq:                     seq,
+		// scheduledEventID will be assigned by the server when the corresponding event comes in.
+	}
+	h.nexusOperationsWithoutScheduledID.PushBack(sm)
+	return sm
+}
+
+func (h *commandsHelper) newRequestCancelNexusOperationStateMachine(attributes *commandpb.RequestCancelNexusOperationCommandAttributes) *requestCancelNexusOperationStateMachine {
+	base := h.newCommandStateMachineBase(commandTypeRequestCancelNexusOperation, strconv.FormatInt(attributes.GetScheduledEventId(), 10))
+	return &requestCancelNexusOperationStateMachine{
 		commandStateMachineBase: base,
 		attributes:              attributes,
 	}
@@ -853,15 +920,87 @@ func (d *modifyPropertiesCommandStateMachine) handleCommandSent() {
 	}
 }
 
+func (sm *nexusOperationStateMachine) getCommand() *commandpb.Command {
+	if sm.state == commandStateCreated && sm.cancelation == nil {
+		// Only create the command in this state unlike other machines that also create it if canceled before sent.
+		return &commandpb.Command{
+			CommandType: enumspb.COMMAND_TYPE_SCHEDULE_NEXUS_OPERATION,
+			Attributes: &commandpb.Command_ScheduleNexusOperationCommandAttributes{
+				ScheduleNexusOperationCommandAttributes: sm.attributes,
+			},
+		}
+	}
+	return nil
+}
+
+func (sm *nexusOperationStateMachine) handleStartedEvent() {
+	switch sm.state {
+	case commandStateInitiated:
+		sm.moveState(commandStateStarted, eventStarted)
+	default:
+		sm.failStateTransition(eventStarted)
+	}
+}
+
+func (sm *nexusOperationStateMachine) handleCompletionEvent() {
+	switch sm.state {
+	case commandStateInitiated,
+		commandStateStarted:
+		sm.moveState(commandStateCompleted, eventCompletion)
+	default:
+		sm.failStateTransition(eventStarted)
+	}
+}
+
+func (sm *nexusOperationStateMachine) cancel() {
+	// Already canceled or already completed.
+	if sm.cancelation != nil || sm.state == commandStateCompleted {
+		return
+	}
+
+	attribs := &commandpb.RequestCancelNexusOperationCommandAttributes{
+		ScheduledEventId: sm.scheduledEventID,
+	}
+	cancelCmd := sm.helper.newRequestCancelNexusOperationStateMachine(attribs)
+	sm.cancelation = cancelCmd
+	sm.helper.addCommand(cancelCmd)
+
+	// No need to actually send the cancelation, mark the state machine as completed.
+	if sm.state == commandStateCreated {
+		cancelCmd.handleCompletionEvent()
+	}
+}
+
+func (d *requestCancelNexusOperationStateMachine) getCommand() *commandpb.Command {
+	switch d.state {
+	case commandStateCreated:
+		command := createNewCommand(enumspb.COMMAND_TYPE_REQUEST_CANCEL_NEXUS_OPERATION)
+		command.Attributes = &commandpb.Command_RequestCancelNexusOperationCommandAttributes{RequestCancelNexusOperationCommandAttributes: d.attributes}
+		return command
+	default:
+		return nil
+	}
+}
+
+func (d *requestCancelNexusOperationStateMachine) handleCompletionEvent() {
+	if d.state != commandStateCommandSent && d.state != commandStateCreated {
+		d.failStateTransition(eventCompletion)
+		return
+	}
+	d.moveState(commandStateCompleted, eventCompletion)
+}
+
 func newCommandsHelper() *commandsHelper {
 	return &commandsHelper{
 		orderedCommands: list.New(),
 		commands:        make(map[commandID]*list.Element),
 
-		scheduledEventIDToActivityID:     make(map[int64]string),
-		scheduledEventIDToCancellationID: make(map[int64]string),
-		scheduledEventIDToSignalID:       make(map[int64]string),
-		versionMarkerLookup:              make(map[int64]versionMarker),
+		scheduledEventIDToActivityID:      make(map[int64]string),
+		scheduledEventIDToCancellationID:  make(map[int64]string),
+		scheduledEventIDToSignalID:        make(map[int64]string),
+		versionMarkerLookup:               make(map[int64]versionMarker),
+		scheduledEventIDToNexusSeq:        make(map[int64]int64),
+		nexusOperationsWithoutScheduledID: list.New(),
 	}
 }
 
@@ -1038,6 +1177,71 @@ func (h *commandsHelper) getActivityAndScheduledEventIDs(event *historypb.Histor
 		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find activityID for the event: %v", util.HistoryEventToString(event)))
 	}
 	return activityID, scheduledEventID
+}
+
+func (h *commandsHelper) scheduleNexusOperation(
+	seq int64,
+	attributes *commandpb.ScheduleNexusOperationCommandAttributes,
+) *nexusOperationStateMachine {
+	command := h.newNexusOperationStateMachine(seq, attributes)
+	h.addCommand(command)
+	return command
+}
+
+func (h *commandsHelper) handleNexusOperationScheduled(event *historypb.HistoryEvent) {
+	elem := h.nexusOperationsWithoutScheduledID.Front()
+	if elem == nil {
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event: %v", util.HistoryEventToString(event)))
+	}
+	command := h.nexusOperationsWithoutScheduledID.Remove(elem).(*nexusOperationStateMachine)
+
+	command.scheduledEventID = event.EventId
+	h.scheduledEventIDToNexusSeq[event.EventId] = command.seq
+	command.handleInitiatedEvent()
+}
+
+func (h *commandsHelper) handleNexusOperationStarted(scheduledEventID int64) commandStateMachine {
+	seq, ok := h.scheduledEventIDToNexusSeq[scheduledEventID]
+	if !ok {
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event ID: %v", scheduledEventID))
+	}
+	command := h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+	command.handleStartedEvent()
+	return command
+}
+
+func (h *commandsHelper) handleNexusOperationCompleted(scheduledEventID int64) commandStateMachine {
+	seq, ok := h.scheduledEventIDToNexusSeq[scheduledEventID]
+	if !ok {
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event ID: %v", scheduledEventID))
+	}
+	// We don't need this anymore, the state will not transition after completion.
+	delete(h.scheduledEventIDToNexusSeq, scheduledEventID)
+	command := h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+	command.handleCompletionEvent()
+	return command
+}
+
+func (h *commandsHelper) handleNexusOperationCancelRequested(scheduledEventID int64) {
+	command := h.getCommand(makeCommandID(commandTypeRequestCancelNexusOperation, strconv.FormatInt(scheduledEventID, 10)))
+	command.handleCompletionEvent()
+}
+
+func (h *commandsHelper) requestCancelNexusOperation(seq int64) commandStateMachine {
+	command := h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+	command.cancel()
+	// If we haven't sent the command yet, ensure that it doesn't get mapped to the wrong scheduledEventID.
+	if command.getState() != commandStateCanceledBeforeSent {
+		return command
+	}
+	for elem := h.nexusOperationsWithoutScheduledID.Front(); elem != nil; elem = elem.Next() {
+		sm := elem.Value.(*nexusOperationStateMachine)
+		if sm.seq == seq {
+			h.nexusOperationsWithoutScheduledID.Remove(elem)
+			break
+		}
+	}
+	return command
 }
 
 func (h *commandsHelper) recordVersionMarker(changeID string, version Version, dc converter.DataConverter, searchAttributeWasUpdated bool) commandStateMachine {

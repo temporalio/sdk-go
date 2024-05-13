@@ -2291,6 +2291,14 @@ func (env *testWorkflowEnvironmentImpl) executeChildWorkflowWithDelay(delayStart
 	go childEnv.executeWorkflowInternal(delayStart, params.WorkflowType.Name, params.Input)
 }
 
+func (wc *testWorkflowEnvironmentImpl) ExecuteNexusOperation(params executeNexusOperationParams, callback func(*commonpb.Payload, error), startedHandler func(opID string, e error)) int64 {
+	panic("TODO")
+}
+
+func (wc *testWorkflowEnvironmentImpl) RequestCancelNexusOperation(seq int64) {
+	panic("TODO")
+}
+
 func (env *testWorkflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler) {
 	callback(f())
 }

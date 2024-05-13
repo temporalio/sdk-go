@@ -134,7 +134,7 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 
 	if err := ntp.reportCompletion(res, failure); err != nil {
 		traceLog(func() {
-			ntp.logger.Debug("reportActivityComplete failed", tagError, err)
+			ntp.logger.Debug("reportNexusTaskComplete failed", tagError, err)
 		})
 		return err
 	}
