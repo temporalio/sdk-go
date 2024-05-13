@@ -17,7 +17,6 @@ import (
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
-	"google.golang.org/protobuf/proto"
 )
 
 func nexusHandlerError(t nexus.HandlerErrorType, message string) *nexuspb.HandlerError {
@@ -45,22 +44,22 @@ func nexusHandlerErrorToProto(handlerErr *nexus.HandlerError) *nexuspb.HandlerEr
 
 type nexusTaskHandler struct {
 	nexusHandler   nexus.Handler
+	identity       string
+	namespace      string
 	taskQueueName  string
 	client         Client
 	dataConverter  converter.DataConverter
-	baseCompletion *workflowservice.RespondNexusTaskCompletedRequest
-	baseFailure    *workflowservice.RespondNexusTaskFailedRequest
 	logger         log.Logger
 	metricsHandler metrics.Handler
 }
 
 func newNexusTaskHandler(
 	nexusHandler nexus.Handler,
+	identity string,
+	namespace string,
 	taskQueueName string,
 	client Client,
 	dataConverter converter.DataConverter,
-	baseCompletion *workflowservice.RespondNexusTaskCompletedRequest,
-	baseFailure *workflowservice.RespondNexusTaskFailedRequest,
 	logger log.Logger,
 	metricsHandler metrics.Handler,
 ) *nexusTaskHandler {
@@ -68,11 +67,11 @@ func newNexusTaskHandler(
 		nexusHandler:   nexusHandler,
 		logger:         logger,
 		dataConverter:  dataConverter,
+		identity:       identity,
+		namespace:      namespace,
 		taskQueueName:  taskQueueName,
 		client:         client,
 		metricsHandler: metricsHandler,
-		baseCompletion: baseCompletion,
-		baseFailure:    baseFailure,
 	}
 }
 
@@ -127,7 +126,7 @@ func (h *nexusTaskHandler) handleStartOperation(ctx context.Context, nctx *Nexus
 	input := nexus.NewLazyValue(
 		serializer,
 		&nexus.Reader{
-			ReadCloser: nopReadCloser,
+			ReadCloser: emptyReaderNopCloser,
 		},
 	)
 	// Ensure we don't pass nil values to handlers.
@@ -322,17 +321,21 @@ func (h *nexusTaskHandler) metricsHandlerForTask(response *workflowservice.PollN
 }
 
 func (h *nexusTaskHandler) fillInCompletion(taskToken []byte, res *nexuspb.Response) *workflowservice.RespondNexusTaskCompletedRequest {
-	r := proto.Clone(h.baseCompletion).(*workflowservice.RespondNexusTaskCompletedRequest)
-	r.TaskToken = taskToken
-	r.Response = res
-	return r
+	return &workflowservice.RespondNexusTaskCompletedRequest{
+		Identity:  h.identity,
+		Namespace: h.namespace,
+		TaskToken: taskToken,
+		Response:  res,
+	}
 }
 
 func (h *nexusTaskHandler) fillInFailure(taskToken []byte, err *nexuspb.HandlerError) *workflowservice.RespondNexusTaskFailedRequest {
-	r := proto.Clone(h.baseFailure).(*workflowservice.RespondNexusTaskFailedRequest)
-	r.TaskToken = taskToken
-	r.Error = err
-	return r
+	return &workflowservice.RespondNexusTaskFailedRequest{
+		Identity:  h.identity,
+		Namespace: h.namespace,
+		TaskToken: taskToken,
+		Error:     err,
+	}
 }
 
 // payloadSerializer is a fake nexus Serializer that uses a data converter to read from an embedded payload instead of
@@ -350,4 +353,4 @@ func (p *payloadSerializer) Serialize(v any) (*nexus.Content, error) {
 	panic("unimplemented") // not used - operation outputs are directly serialized to payload.
 }
 
-var nopReadCloser = io.NopCloser(bytes.NewReader([]byte{}))
+var emptyReaderNopCloser = io.NopCloser(bytes.NewReader([]byte{}))
