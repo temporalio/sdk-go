@@ -27,8 +27,8 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 	poller := newNexusTaskPoller(
 		newNexusTaskHandler(
 			opts.handler,
-			opts.executionParameters.Namespace,
 			opts.executionParameters.Identity,
+			opts.executionParameters.Namespace,
 			opts.executionParameters.TaskQueue,
 			opts.client,
 			opts.executionParameters.DataConverter,

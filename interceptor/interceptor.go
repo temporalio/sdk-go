@@ -131,6 +131,11 @@ type HandleQueryInput = internal.HandleQueryInput
 // NOTE: Experimental
 type UpdateInput = internal.UpdateInput
 
+// RequestCancelNexusOperationInput is the input to WorkflowOutboundInterceptor.RequestCancelNexusOperation.
+//
+// NOTE: Experimental
+type RequestCancelNexusOperationInput = internal.RequestCancelNexusOperationInput
+
 // WorkflowOutboundInterceptor is an interface for all workflow calls
 // originating from the SDK.
 //

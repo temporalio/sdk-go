@@ -255,6 +255,28 @@ type (
 		cause            error
 	}
 
+	// NexusOperationError is an error returned when a Nexus Operation has failed.
+	//
+	// NOTE: Experimental
+	NexusOperationError struct {
+		// The raw proto failure object this error was created from.
+		Failure *failurepb.Failure
+		// Error message.
+		Message string
+		// ID of the NexusOperationScheduled event.
+		ScheduledEventID int64
+		// Endpoint name.
+		Endpoint string
+		// Service name.
+		Service string
+		// Operation name.
+		Operation string
+		// Operation ID - may be empty if the operation completed synchronously.
+		OperationID string
+		// Chained cause - typically an ApplicationError or a CanceledError.
+		Cause error
+	}
+
 	// ChildWorkflowExecutionAlreadyStartedError is set as the cause of
 	// ChildWorkflowExecutionError when failure is due the child workflow having
 	// already started.
@@ -798,6 +820,30 @@ func (e *ChildWorkflowExecutionError) message() string {
 
 func (e *ChildWorkflowExecutionError) Unwrap() error {
 	return e.cause
+}
+
+func (e *NexusOperationError) Error() string {
+	msg := fmt.Sprintf(
+		"%s (endpoint: %q, service: %q, operation: %q, operation ID: %q, scheduledEventID: %d)",
+		e.Message, e.Endpoint, e.Service, e.Operation, e.OperationID, e.ScheduledEventID)
+	if e.Cause != nil {
+		msg = fmt.Sprintf("%s: %v", msg, e.Cause)
+	}
+	return msg
+}
+
+// setFailure implements the failureHolder interface for consistency with other failure based errors..
+func (e *NexusOperationError) setFailure(f *failurepb.Failure) {
+	e.Failure = f
+}
+
+// failure implements the failureHolder interface for consistency with other failure based errors.
+func (e *NexusOperationError) failure() *failurepb.Failure {
+	return e.Failure
+}
+
+func (e *NexusOperationError) Unwrap() error {
+	return e.Cause
 }
 
 // Error from error interface

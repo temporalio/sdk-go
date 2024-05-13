@@ -389,6 +389,24 @@ func (w *WorkflowOutboundInterceptorBase) NewContinueAsNewError(
 	return w.Next.NewContinueAsNewError(ctx, wfn, args...)
 }
 
+// ExecuteNexusOperation implements
+// WorkflowOutboundInterceptor.ExecuteNexusOperation.
+func (w *WorkflowOutboundInterceptorBase) ExecuteNexusOperation(
+	ctx Context,
+	client NexusClient,
+	operation any,
+	input any,
+	options NexusOperationOptions,
+) NexusOperationFuture {
+	return w.Next.ExecuteNexusOperation(ctx, client, operation, input, options)
+}
+
+// RequestCancelNexusOperation implements
+// WorkflowOutboundInterceptor.RequestCancelNexusOperation.
+func (w *WorkflowOutboundInterceptorBase) RequestCancelNexusOperation(ctx Context, input RequestCancelNexusOperationInput) {
+	w.Next.RequestCancelNexusOperation(ctx, input)
+}
+
 func (*WorkflowOutboundInterceptorBase) mustEmbedWorkflowOutboundInterceptorBase() {}
 
 // ClientInterceptorBase is a default implementation of ClientInterceptor meant
