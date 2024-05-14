@@ -64,7 +64,7 @@ func Test_WorkerVersionSets_fromProtoResponse(t *testing.T) {
 	}
 }
 
-func Test_VersioningIntent(t *testing.T) {
+func Test_VersioningIntentOld(t *testing.T) {
 	tests := []struct {
 		name                string
 		intent              VersioningIntent
