@@ -83,11 +83,10 @@ func Test_WorkerVersioningRules_fromProtoGetResponse(t *testing.T) {
 	}
 }
 
-
 func Test_VersioningIntent(t *testing.T) {
 	tests := []struct {
-		name                string
-		intent              VersioningIntent
+		name          string
+		intent        VersioningIntent
 		tqSame        bool
 		shouldInherit bool
 	}{

@@ -49,9 +49,9 @@ const (
 	// VersioningIntentInheritBuildID indicates the command should inherit the current Build ID of the
 	// Workflow triggering it, and not use Assignment Rules. (Redirect Rules are still applicable)
 	// This is the default behavior for commands running on the same Task Queue as the current worker.
-	VersioningIntentInheritBuildID= internal.VersioningIntentInheritBuildID
+	VersioningIntentInheritBuildID = internal.VersioningIntentInheritBuildID
 	// VersioningIntentUseAssignmentRules indicates the command should use the latest Assignment Rules
 	// to select a Build ID independently of the workflow triggering it.
 	// This is the default behavior for commands not running on the same Task Queue as the current worker.
-	VersioningIntentUseAssignmentRules= internal.VersioningIntentUseAssignmentRules
+	VersioningIntentUseAssignmentRules = internal.VersioningIntentUseAssignmentRules
 )
