@@ -471,6 +471,9 @@ type (
 		// worker options, the ones here wrap the ones in worker options. The same
 		// interceptor should not be set here and in worker options.
 		Interceptors []ClientInterceptor
+
+		// If set true, error code labels will not be included on request failure metrics.
+		DisableErrorCodeMetricTags bool
 	}
 
 	// HeadersProvider returns a map of gRPC headers that should be used on every request.
@@ -813,14 +816,8 @@ func newDialParameters(options *ClientOptions, excludeInternalFromRetry *atomic.
 	return dialParameters{
 		UserConnectionOptions: options.ConnectionOptions,
 		HostPort:              options.HostPort,
-		RequiredInterceptors: requiredInterceptors(
-			options.MetricsHandler,
-			options.HeadersProvider,
-			options.TrafficController,
-			excludeInternalFromRetry,
-			options.Credentials,
-		),
-		DefaultServiceConfig: defaultServiceConfig,
+		RequiredInterceptors:  requiredInterceptors(options, excludeInternalFromRetry),
+		DefaultServiceConfig:  defaultServiceConfig,
 	}
 }
 

@@ -4828,6 +4828,18 @@ func (ts *IntegrationTestSuite) TestNondeterministicUpdateRegistertion() {
 	ts.EqualValues(expected, ts.activities.invoked())
 }
 
+func (ts *IntegrationTestSuite) TestRequestFailureMetric() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Unset namespace field will cause an invalid argument error
+	_, _ = ts.client.WorkflowService().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{})
+
+	ts.assertMetricCount(metrics.TemporalRequestFailure, 1,
+		metrics.OperationTagName, "DescribeNamespace",
+		metrics.RequestFailureCode, "INVALID_ARGUMENT")
+}
+
 // executeWorkflow executes a given workflow and waits for the result
 func (ts *IntegrationTestSuite) executeWorkflow(
 	wfID string, wfFunc interface{}, retValPtr interface{}, args ...interface{},

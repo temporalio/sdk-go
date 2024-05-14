@@ -52,7 +52,7 @@ func TestGRPCInterceptor(t *testing.T) {
 	handler := metrics.NewCapturingHandler()
 	cc, err := grpc.Dial(l.Addr().String(),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithUnaryInterceptor(metrics.NewGRPCInterceptor(handler, "_my_suffix")))
+		grpc.WithUnaryInterceptor(metrics.NewGRPCInterceptor(handler, "_my_suffix", true)))
 	require.NoError(t, err)
 	defer func() { _ = cc.Close() }()
 	client := grpc_health_v1.NewHealthClient(cc)
