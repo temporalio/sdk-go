@@ -95,6 +95,7 @@ const (
 	OperationTagName          = "operation"
 	CauseTagName              = "cause"
 	WorkflowTaskFailureReason = "failure_reason"
+	RequestFailureCode        = "status_code"
 )
 
 // Metric tag values
