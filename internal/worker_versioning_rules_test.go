@@ -116,14 +116,14 @@ func Test_VersioningIntent(t *testing.T) {
 			shouldInherit: false,
 		},
 		{
-			name:          "InheritBuildId same TQ",
-			intent:        VersioningIntentInheritBuildId,
+			name:          "InheritBuildID same TQ",
+			intent:        VersioningIntentInheritBuildID,
 			tqSame:        true,
 			shouldInherit: true,
 		},
 		{
-			name:          "InheritBuildId different TQ",
-			intent:        VersioningIntentInheritBuildId,
+			name:          "InheritBuildID different TQ",
+			intent:        VersioningIntentInheritBuildID,
 			tqSame:        false,
 			shouldInherit: true,
 		},
