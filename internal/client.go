@@ -472,7 +472,7 @@ type (
 		// interceptor should not be set here and in worker options.
 		Interceptors []ClientInterceptor
 
-		/// If set true, error code labels will not be included on request failure metrics.
+		// If set true, error code labels will not be included on request failure metrics.
 		DisableErrorCodeMetricTags bool
 	}
 
