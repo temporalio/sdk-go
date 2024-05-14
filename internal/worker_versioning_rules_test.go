@@ -82,3 +82,60 @@ func Test_WorkerVersioningRules_fromProtoGetResponse(t *testing.T) {
 		})
 	}
 }
+
+func Test_VersioningIntent(t *testing.T) {
+	tests := []struct {
+		name          string
+		intent        VersioningIntent
+		tqSame        bool
+		shouldInherit bool
+	}{
+		{
+			name:          "Unspecified same TQ",
+			intent:        VersioningIntentUnspecified,
+			tqSame:        true,
+			shouldInherit: true,
+		},
+		{
+			name:          "Unspecified different TQ",
+			intent:        VersioningIntentUnspecified,
+			tqSame:        false,
+			shouldInherit: false,
+		},
+		{
+			name:          "UseAssignmentRules same TQ",
+			intent:        VersioningIntentUseAssignmentRules,
+			tqSame:        true,
+			shouldInherit: false,
+		},
+		{
+			name:          "UseAssignmentRules different TQ",
+			intent:        VersioningIntentUseAssignmentRules,
+			tqSame:        false,
+			shouldInherit: false,
+		},
+		{
+			name:          "InheritBuildID same TQ",
+			intent:        VersioningIntentInheritBuildID,
+			tqSame:        true,
+			shouldInherit: true,
+		},
+		{
+			name:          "InheritBuildID different TQ",
+			intent:        VersioningIntentInheritBuildID,
+			tqSame:        false,
+			shouldInherit: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tqA := "a"
+			tqB := "b"
+			if tt.tqSame {
+				tqB = tqA
+			}
+			assert.Equal(t,
+				tt.shouldInherit, determineInheritBuildIdFlagForCommand(tt.intent, tqA, tqB))
+		})
+	}
+}
