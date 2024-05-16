@@ -24,6 +24,7 @@ package test_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -44,6 +45,7 @@ import (
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/temporalnexus"
+	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
@@ -656,4 +658,265 @@ func TestReplay(t *testing.T) {
 		err = rw.ReplayWorkflowHistory(ilog.NewDefaultLogger(), &historypb.History{Events: events})
 		require.ErrorContains(t, err, "[TMPRL1100]")
 	})
+}
+
+func TestWorkflowTestSuite_NexusSyncOperation(t *testing.T) {
+	op := nexus.NewSyncOperation("op", func(ctx context.Context, outcome string, opts nexus.StartOperationOptions) (string, error) {
+		switch outcome {
+		case "ok":
+			return outcome, nil
+		case "failure":
+			return "", &nexus.UnsuccessfulOperationError{
+				State: nexus.OperationStateFailed,
+				Failure: nexus.Failure{
+					Message: "test operation failed",
+				},
+			}
+		case "handler-error":
+			return "", &nexus.HandlerError{
+				Type: nexus.HandlerErrorTypeBadRequest,
+				Failure: &nexus.Failure{
+					Message: "test operation failed",
+				},
+			}
+		}
+		panic(fmt.Errorf("invalid outcome: %q", outcome))
+	})
+	wf := func(ctx workflow.Context, outcome string) error {
+		client := workflow.NewNexusClient("endpoint", "test")
+		fut := client.ExecuteOperation(ctx, op, outcome, workflow.NexusOperationOptions{})
+		var exec workflow.NexusOperationExecution
+		if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil {
+			return err
+		}
+		var res string
+		if err := fut.Get(ctx, &res); err != nil {
+			return err
+		}
+		if res != "ok" {
+			return fmt.Errorf("unexpected result: %v", res)
+		}
+		return nil
+	}
+
+	service := nexus.NewService("test")
+	service.Register(op)
+
+	t.Run("ok", func(t *testing.T) {
+		suite := testsuite.WorkflowTestSuite{}
+		env := suite.NewTestWorkflowEnvironment()
+		env.RegisterNexusService(service)
+		env.ExecuteWorkflow(wf, "ok")
+		require.True(t, env.IsWorkflowCompleted())
+		require.NoError(t, env.GetWorkflowError())
+	})
+
+	for _, outcome := range []string{"failure", "handler-error"} {
+		outcome := outcome // capture just in case.
+		t.Run(outcome, func(t *testing.T) {
+			suite := testsuite.WorkflowTestSuite{}
+			env := suite.NewTestWorkflowEnvironment()
+			env.RegisterNexusService(service)
+			env.ExecuteWorkflow(wf, "failure")
+			require.True(t, env.IsWorkflowCompleted())
+			var execErr *temporal.WorkflowExecutionError
+			err := env.GetWorkflowError()
+			require.ErrorAs(t, err, &execErr)
+			var opErr *temporal.NexusOperationError
+			err = execErr.Unwrap()
+			require.ErrorAs(t, err, &opErr)
+			require.Equal(t, "endpoint", opErr.Endpoint)
+			require.Equal(t, "test", opErr.Service)
+			require.Equal(t, op.Name(), opErr.Operation)
+			require.Empty(t, opErr.OperationID)
+			require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
+			err = opErr.Unwrap()
+			var appErr *temporal.ApplicationError
+			require.ErrorAs(t, err, &appErr)
+			require.Equal(t, "test operation failed", appErr.Message())
+		})
+	}
+}
+
+func TestWorkflowTestSuite_WorkflowRunOperation(t *testing.T) {
+	handlerWF := func(ctx workflow.Context, outcome string) (string, error) {
+		if outcome == "ok" {
+			return "ok", nil
+		}
+		return "", fmt.Errorf("expected failure")
+	}
+
+	op := temporalnexus.NewWorkflowRunOperation(
+		"op",
+		handlerWF,
+		func(ctx context.Context, id string, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+			return client.StartWorkflowOptions{ID: opts.RequestID}, nil
+		})
+
+	callerWF := func(ctx workflow.Context, outcome string) error {
+		client := workflow.NewNexusClient("endpoint", "test")
+		fut := client.ExecuteOperation(ctx, op, outcome, workflow.NexusOperationOptions{})
+		var exec workflow.NexusOperationExecution
+		if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil {
+			return err
+		}
+		if exec.OperationID == "" {
+			return errors.New("got empty operation ID")
+		}
+
+		var result string
+		if err := fut.Get(ctx, &result); err != nil {
+			return err
+		}
+		if result != "ok" {
+			return fmt.Errorf("expected result to be 'ok', got: %s", result)
+		}
+		return nil
+	}
+
+	service := nexus.NewService("test")
+	service.Register(op)
+
+	t.Run("ok", func(t *testing.T) {
+		suite := testsuite.WorkflowTestSuite{}
+		env := suite.NewTestWorkflowEnvironment()
+		env.RegisterWorkflow(handlerWF)
+		env.RegisterNexusService(service)
+
+		env.ExecuteWorkflow(callerWF, "ok")
+		require.True(t, env.IsWorkflowCompleted())
+		require.NoError(t, env.GetWorkflowError())
+	})
+
+	t.Run("fail", func(t *testing.T) {
+		suite := testsuite.WorkflowTestSuite{}
+		env := suite.NewTestWorkflowEnvironment()
+		env.RegisterWorkflow(handlerWF)
+		env.RegisterNexusService(service)
+
+		env.ExecuteWorkflow(callerWF, "fail")
+		require.True(t, env.IsWorkflowCompleted())
+
+		var execErr *temporal.WorkflowExecutionError
+		err := env.GetWorkflowError()
+		require.ErrorAs(t, err, &execErr)
+		var opErr *temporal.NexusOperationError
+		err = execErr.Unwrap()
+		require.ErrorAs(t, err, &opErr)
+		require.Equal(t, "endpoint", opErr.Endpoint)
+		require.Equal(t, "test", opErr.Service)
+		require.Equal(t, op.Name(), opErr.Operation)
+		require.Empty(t, opErr.OperationID)
+		require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
+		err = opErr.Unwrap()
+		var appErr *temporal.ApplicationError
+		require.ErrorAs(t, err, &appErr)
+		require.Equal(t, "expected failure", appErr.Message())
+	})
+}
+
+func TestWorkflowTestSuite_WorkflowRunOperation_WithCancel(t *testing.T) {
+	wf := func(ctx workflow.Context, cancelBeforeStarted bool) error {
+		childCtx, cancel := workflow.WithCancel(ctx)
+		defer cancel()
+
+		client := workflow.NewNexusClient("endpoint", "test")
+		fut := client.ExecuteOperation(childCtx, workflowOp, "op-id", workflow.NexusOperationOptions{})
+		if cancelBeforeStarted {
+			cancel()
+		}
+		var exec workflow.NexusOperationExecution
+		if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil {
+			return err
+		}
+		if exec.OperationID != "op-id" {
+			return fmt.Errorf("unexpected operation ID: %q", exec.OperationID)
+		}
+
+		if !cancelBeforeStarted {
+			cancel()
+		}
+		err := fut.Get(ctx, nil)
+		return err
+	}
+
+	service := nexus.NewService("test")
+	service.Register(workflowOp)
+
+	cases := []struct {
+		cancelBeforeStarted bool
+		name                string
+	}{
+		{false, "AfterStarted"},
+		{true, "BeforeStarted"},
+	}
+	for _, tc := range cases {
+		tc := tc // capture just in case.
+		t.Run(tc.name, func(t *testing.T) {
+			suite := testsuite.WorkflowTestSuite{}
+			env := suite.NewTestWorkflowEnvironment()
+			env.RegisterWorkflow(waitForCancelWorkflow)
+			env.RegisterNexusService(service)
+			env.ExecuteWorkflow(wf, tc.cancelBeforeStarted)
+			require.True(t, env.IsWorkflowCompleted())
+			// Error wrapping is different in the test environment than the server (same as for child workflows).
+			var execErr *temporal.WorkflowExecutionError
+			err := env.GetWorkflowError()
+			require.ErrorAs(t, err, &execErr)
+			var opErr *temporal.NexusOperationError
+			err = execErr.Unwrap()
+			require.ErrorAs(t, err, &opErr)
+			require.Equal(t, "endpoint", opErr.Endpoint)
+			require.Equal(t, "test", opErr.Service)
+			require.Equal(t, workflowOp.Name(), opErr.Operation)
+			require.Equal(t, "op-id", opErr.OperationID)
+			require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
+			err = opErr.Unwrap()
+			var canceledError *temporal.CanceledError
+			require.ErrorAs(t, err, &canceledError)
+		})
+	}
+}
+
+func TestWorkflowTestSuite_NexusSyncOperation_ClientMethods(t *testing.T) {
+	op := temporalnexus.NewSyncOperation("signal-op", func(ctx context.Context, c client.Client, workflowID string, opts nexus.StartOperationOptions) (nexus.NoValue, error) {
+		val, err := c.QueryWorkflow(ctx, workflowID, "", "get-secret")
+		if err != nil {
+			return nil, err
+		}
+		var secret string
+		if err := val.Get(&secret); err != nil {
+			return nil, err
+		}
+		return nil, c.SignalWorkflow(ctx, workflowID, "", "submit-secret", secret)
+	})
+	wf := func(ctx workflow.Context) error {
+		workflow.SetQueryHandler(ctx, "get-secret", func() (string, error) {
+			return "secret", nil
+		})
+		client := workflow.NewNexusClient("endpoint", "test")
+		fut := client.ExecuteOperation(ctx, op, workflow.GetInfo(ctx).WorkflowExecution.ID, workflow.NexusOperationOptions{})
+		if err := fut.Get(ctx, nil); err != nil {
+			return err
+		}
+
+		ch := workflow.GetSignalChannel(ctx, "submit-secret")
+		var secret string
+		ch.Receive(ctx, &secret)
+		if secret != "secret" {
+			return fmt.Errorf("invalid secret")
+		}
+		return nil
+	}
+
+	service := nexus.NewService("test")
+	service.Register(op)
+
+	suite := testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(waitForCancelWorkflow)
+	env.RegisterNexusService(service)
+	env.ExecuteWorkflow(wf)
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
 }

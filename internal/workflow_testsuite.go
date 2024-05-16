@@ -32,6 +32,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/mock"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -288,6 +289,11 @@ func (e *TestWorkflowEnvironment) RegisterActivityWithOptions(a interface{}, opt
 		panic("RegisterActivity calls cannot follow mock related ones like OnActivity or similar")
 	}
 	e.impl.RegisterActivityWithOptions(a, options)
+}
+
+// RegisterWorkflow registers a Nexus Service with the TestWorkflowEnvironment.
+func (e *TestWorkflowEnvironment) RegisterNexusService(s *nexus.Service) {
+	e.impl.RegisterNexusService(s)
 }
 
 // SetStartTime sets the start time of the workflow. This is optional, default start time will be the wall clock time when
