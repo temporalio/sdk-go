@@ -48,7 +48,7 @@ import (
 func getFreePort(host string) (string, int, error) {
 	l, err := net.Listen("tcp", host+":0")
 	if err != nil {
-		return "", 0, fmt.Errorf("failed to assign a free port: %v", err)
+		return "", 0, fmt.Errorf("failed to assign a free port: %w", err)
 	}
 	defer func() { _ = l.Close() }()
 	port := l.Addr().(*net.TCPAddr).Port
@@ -71,11 +71,11 @@ func getFreePort(host string) (string, int, error) {
 	if runtime.GOOS != "darwin" && runtime.GOOS != "windows" {
 		r, err := net.DialTCP("tcp", nil, l.Addr().(*net.TCPAddr))
 		if err != nil {
-			return "", 0, fmt.Errorf("failed to assign a free port: %v", err)
+			return "", 0, fmt.Errorf("failed to assign a free port: %w", err)
 		}
 		c, err := l.Accept()
 		if err != nil {
-			return "", 0, fmt.Errorf("failed to assign a free port: %v", err)
+			return "", 0, fmt.Errorf("failed to assign a free port: %w", err)
 		}
 		// Closing the socket from the server side
 		_ = c.Close()
