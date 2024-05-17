@@ -7,7 +7,7 @@ import (
 )
 
 // Copied and adapted from
-// https://github.com/mjameswh/temporalio-cli/blob/6b5a708e51da89dbdfd4fda7b7219ae12bcd8ffb/temporalcli/devserver/freeport.go
+// https://github.com/temporalio/cli/blob/350cb2f9dca55e5063b39ffbdaa2739fdeab4399/temporalcli/devserver/freeport.go
 
 // Returns a TCP port that is available to listen on, for the given (local) host.
 //
