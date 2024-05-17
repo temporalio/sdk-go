@@ -823,6 +823,7 @@ func (e *ChildWorkflowExecutionError) Unwrap() error {
 	return e.cause
 }
 
+// Error implements the error interface.
 func (e *NexusOperationError) Error() string {
 	msg := fmt.Sprintf(
 		"%s (endpoint: %q, service: %q, operation: %q, operation ID: %q, scheduledEventID: %d)",
@@ -843,6 +844,7 @@ func (e *NexusOperationError) failure() *failurepb.Failure {
 	return e.Failure
 }
 
+// Unwrap returns the Cause associated with this error.
 func (e *NexusOperationError) Unwrap() error {
 	return e.Cause
 }

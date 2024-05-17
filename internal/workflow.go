@@ -2128,8 +2128,10 @@ type NexusOperationOptions struct {
 	ScheduleToCloseTimeout time.Duration
 }
 
-// NexusOperationExecution is the result of [NexusOperationFuture.GetNexusOperationExecution].
+// NexusOperationExecution is the result of NexusOperationFuture.GetNexusOperationExecution.
 type NexusOperationExecution struct {
+	// Operation ID as set by the Operation's handler. May be empty if the operation hasn't started yet or completed
+	// synchronously.
 	OperationID string
 }
 
@@ -2144,10 +2146,17 @@ type NexusOperationFuture interface {
 	// synchronous operations.
 	//
 	// NOTE: Experimental
+	//
+	//  fut := nexusClient.ExecuteOperation(ctx, op, ...)
+	//  var exec workflow.NexusOperationExecution
+	//  if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err == nil {
+	//      // Nexus Operation started, OperationID is optionally set.
+	//  }
 	GetNexusOperationExecution() Future
 }
 
 // NexusClient is a client for executing Nexus Operations from a workflow.
+// NOTE to maintainers, this interface definition is duplicated in the workflow package to provide a better UX.
 type NexusClient interface {
 	// The endpoint name this client uses.
 	//
@@ -2243,7 +2252,11 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, cli
 
 	var operationID string
 	seq := wc.env.ExecuteNexusOperation(params, func(r *commonpb.Payload, e error) {
-		mainSettable.Set(&commonpb.Payloads{Payloads: []*commonpb.Payload{r}}, e)
+		var payloads *commonpb.Payloads
+		if r != nil {
+			payloads = &commonpb.Payloads{Payloads: []*commonpb.Payload{r}}
+		}
+		mainSettable.Set(payloads, e)
 		if cancellable {
 			// future is done, we don't need cancellation anymore
 			ctxDone.removeReceiveCallback(cancellationCallback)
