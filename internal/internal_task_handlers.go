@@ -1697,14 +1697,18 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, obes [
 		eventAttributes := e.GetNexusOperationScheduledEventAttributes()
 		commandAttributes := d.GetScheduleNexusOperationCommandAttributes()
 
-		if eventAttributes.GetService() != commandAttributes.GetService() || eventAttributes.GetOperation() != commandAttributes.GetOperation() {
+		return eventAttributes.GetService() == commandAttributes.GetService() &&
+			eventAttributes.GetOperation() == commandAttributes.GetOperation()
+
+	case enumspb.COMMAND_TYPE_REQUEST_CANCEL_NEXUS_OPERATION:
+		if e.GetEventType() != enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUESTED {
 			return false
 		}
 
-		return true
+		eventAttributes := e.GetNexusOperationCancelRequestedEventAttributes()
+		commandAttributes := d.GetRequestCancelNexusOperationCommandAttributes()
 
-	case enumspb.COMMAND_TYPE_REQUEST_CANCEL_NEXUS_OPERATION:
-		return e.GetEventType() == enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUESTED
+		return eventAttributes.GetScheduledEventId() == commandAttributes.GetScheduledEventId()
 	}
 
 	return false

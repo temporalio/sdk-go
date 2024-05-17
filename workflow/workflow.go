@@ -72,10 +72,25 @@ type (
 
 	UpdateHandlerOptions = internal.UpdateHandlerOptions
 
+	// NOTE to maintainers, this interface definition is duplicated in the internal package to provide a better UX.
+
 	// NexusClient is a client for executing Nexus Operations from a workflow.
-	//
-	// NOTE: Experimental
-	NexusClient = internal.NexusClient
+	NexusClient interface {
+		// The endpoint name this client uses.
+		//
+		// NOTE: Experimental
+		Endpoint() string
+		// The service name this client uses.
+		//
+		// NOTE: Experimental
+		Service() string
+
+		// ExecuteOperation executes a Nexus Operation.
+		// The operation argument can be a string, a [nexus.Operation] or a [nexus.OperationReference].
+		//
+		// NOTE: Experimental
+		ExecuteOperation(ctx Context, operation any, input any, options NexusOperationOptions) NexusOperationFuture
+	}
 
 	// NexusOperationOptions are options for starting a Nexus Operation from a Workflow.
 	//

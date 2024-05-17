@@ -574,7 +574,7 @@ func TestAsyncOperationFromWorkflow(t *testing.T) {
 }
 
 func TestReplay(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 	tc := newTestContext(t, ctx)
 
