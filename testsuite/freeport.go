@@ -28,7 +28,7 @@ func getFreePort(host string) (string, int, error) {
 	if err != nil {
 		return "", 0, fmt.Errorf("failed to assign a free port: %v", err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	port := l.Addr().(*net.TCPAddr).Port
 
 	// On Linux and some BSD variants, ephemeral ports are randomized, and may
@@ -56,8 +56,8 @@ func getFreePort(host string) (string, int, error) {
 			return "", 0, fmt.Errorf("failed to assign a free port: %v", err)
 		}
 		// Closing the socket from the server side
-		c.Close()
-		defer r.Close()
+		_ = c.Close()
+		defer func() { _ = r.Close() }()
 	}
 
 	return host, port, nil
