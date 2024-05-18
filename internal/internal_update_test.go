@@ -574,8 +574,8 @@ func TestAcceptedEventPredicate(t *testing.T) {
 
 	var acptmsg updatepb.Acceptance
 	require.NoError(t, env.outbox[0].msg.Body.UnmarshalTo(&acptmsg))
-	require.Nil(t, acptmsg.AcceptedRequest,
-		"do not send the original request back - this field will be removed soon")
+	require.EqualExportedValues(t, &request, acptmsg.AcceptedRequest,
+		"Sent the original request back in the accepted message")
 
 	pred := env.outbox[0].eventPredicate
 	for _, tc := range [...]struct {

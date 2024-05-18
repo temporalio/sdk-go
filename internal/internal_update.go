@@ -90,7 +90,7 @@ type (
 	// sending protocol messages.
 	updateProtocol struct {
 		protoInstanceID string
-		clientIdentity  string
+		initialRequest  updatepb.Request
 		requestMsgID    string
 		requestSeqID    int64
 		scheduleUpdate  func(name string, id string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
@@ -134,15 +134,14 @@ func (up *updateProtocol) requireState(action string, valid ...updateState) {
 }
 
 func (up *updateProtocol) HandleMessage(msg *protocolpb.Message) error {
-	var req updatepb.Request
-	if err := msg.Body.UnmarshalTo(&req); err != nil {
+	if err := msg.Body.UnmarshalTo(&up.initialRequest); err != nil {
 		return err
 	}
 	up.requireState("update request", updateStateNew)
 	up.requestMsgID = msg.GetId()
 	up.requestSeqID = msg.GetEventId()
-	input := req.GetInput()
-	up.scheduleUpdate(input.GetName(), req.GetMeta().GetUpdateId(), input.GetArgs(), input.GetHeader(), up)
+	input := up.initialRequest.GetInput()
+	up.scheduleUpdate(input.GetName(), up.initialRequest.GetMeta().GetUpdateId(), input.GetArgs(), input.GetHeader(), up)
 	up.state = updateStateRequestInitiated
 	return nil
 }
@@ -157,8 +156,11 @@ func (up *updateProtocol) Accept() {
 		Body: protocol.MustMarshalAny(&updatepb.Acceptance{
 			AcceptedRequestMessageId:         up.requestMsgID,
 			AcceptedRequestSequencingEventId: up.requestSeqID,
+			AcceptedRequest:                  &up.initialRequest,
 		}),
 	}, withExpectedEventPredicate(up.checkAcceptedEvent))
+	// clear the input to avoid since we don't need it anymore
+	up.initialRequest.Input = nil
 	up.state = updateStateAccepted
 }
 
@@ -171,6 +173,7 @@ func (up *updateProtocol) Reject(err error) {
 		Body: protocol.MustMarshalAny(&updatepb.Rejection{
 			RejectedRequestMessageId:         up.requestMsgID,
 			RejectedRequestSequencingEventId: up.requestSeqID,
+			RejectedRequest:                  &up.initialRequest,
 			Failure:                          up.env.GetFailureConverter().ErrorToFailure(err),
 			// RejectedRequest field no longer read by server - will be removed from API soon
 		}),
@@ -200,10 +203,7 @@ func (up *updateProtocol) Complete(success interface{}, outcomeErr error) {
 		Id:                 up.protoInstanceID + "/complete",
 		ProtocolInstanceId: up.protoInstanceID,
 		Body: protocol.MustMarshalAny(&updatepb.Response{
-			Meta: &updatepb.Meta{
-				UpdateId: up.protoInstanceID,
-				Identity: up.clientIdentity,
-			},
+			Meta:    up.initialRequest.GetMeta(),
 			Outcome: outcome,
 		}),
 	}, withExpectedEventPredicate(up.checkCompletedEvent))
