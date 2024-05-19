@@ -35,6 +35,7 @@ import (
 	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/protocol"
+	"google.golang.org/protobuf/proto"
 )
 
 type updateState string
@@ -156,7 +157,7 @@ func (up *updateProtocol) Accept() {
 		Body: protocol.MustMarshalAny(&updatepb.Acceptance{
 			AcceptedRequestMessageId:         up.requestMsgID,
 			AcceptedRequestSequencingEventId: up.requestSeqID,
-			AcceptedRequest:                  &up.initialRequest,
+			AcceptedRequest:                  proto.Clone(&up.initialRequest).(*updatepb.Request),
 		}),
 	}, withExpectedEventPredicate(up.checkAcceptedEvent))
 	// clear the input to avoid since we don't need it anymore
