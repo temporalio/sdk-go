@@ -444,6 +444,10 @@ func (env *testWorkflowEnvironmentImpl) setDataConverter(dataConverter converter
 	env.dataConverter = dataConverter
 }
 
+func (env *testWorkflowEnvironmentImpl) setFailureConverter(failureConverter converter.FailureConverter) {
+	env.failureConverter = failureConverter
+}
+
 func (env *testWorkflowEnvironmentImpl) setContextPropagators(contextPropagators []ContextPropagator) {
 	env.contextPropagators = contextPropagators
 }
