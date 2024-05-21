@@ -1825,6 +1825,39 @@ func (ts *IntegrationTestSuite) TestEndToEndLatencyMetrics() {
 	ts.Equal(prevNonLocalValue, nonLocal.Value())
 }
 
+func (ts *IntegrationTestSuite) TestEndToEndLatencyOnFailureMetrics() {
+	fetchMetrics := func() (localMetric, nonLocalMetric *metrics.CapturedTimer) {
+		for _, timer := range ts.metricsHandler.Timers() {
+			timer := timer
+			if timer.Name == "temporal_activity_succeed_endtoend_latency" {
+				nonLocalMetric = timer
+			} else if timer.Name == "temporal_local_activity_succeed_endtoend_latency" {
+				localMetric = timer
+			}
+		}
+		return
+	}
+
+	// Confirm no metrics to start
+	local, nonLocal := fetchMetrics()
+	ts.Nil(local)
+	ts.Nil(nonLocal)
+
+	// Run regular activity and confirm non-local metric is not emitted
+	err := ts.executeWorkflow("test-end-to-end-metrics-on-failure-1", ts.workflows.ActivityRetryOnError, nil)
+	ts.NoError(err)
+	local, nonLocal = fetchMetrics()
+	ts.Nil(local)
+	ts.Nil(nonLocal)
+
+	// Run local activity and confirm local metric is not emitted
+	err = ts.executeWorkflow("test-end-to-end-metrics-on-failure-2", ts.workflows.ActivityRetryOnError, nil)
+	ts.NoError(err)
+	local, nonLocal = fetchMetrics()
+	ts.Nil(local)
+	ts.Nil(nonLocal)
+}
+
 func (ts *IntegrationTestSuite) TestGracefulActivityCompletion() {
 	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
 	ctx, cancel := context.WithCancel(context.Background())

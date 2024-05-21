@@ -1023,9 +1023,11 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 		return reportErr
 	}
 
-	activityMetricsHandler.
-		Timer(metrics.ActivitySucceedEndToEndLatency).
-		Record(time.Since(activityTask.task.GetScheduledTime().AsTime()))
+	if _, ok := request.(*workflowservice.RespondActivityTaskCompletedRequest); ok {
+		activityMetricsHandler.
+			Timer(metrics.ActivitySucceedEndToEndLatency).
+			Record(time.Since(activityTask.task.GetScheduledTime().AsTime()))
+	}
 	return nil
 }
 
