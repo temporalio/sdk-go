@@ -1,6 +1,8 @@
 module go.temporal.io/sdk/test
 
-go 1.20
+go 1.21
+
+toolchain go1.22.2
 
 require (
 	github.com/golang/mock v1.6.0
@@ -9,9 +11,9 @@ require (
 	github.com/pborman/uuid v1.2.1
 	github.com/stretchr/testify v1.9.0
 	github.com/uber-go/tally/v4 v4.1.1
-	go.opentelemetry.io/otel v1.23.0
-	go.opentelemetry.io/otel/sdk v1.23.0
-	go.opentelemetry.io/otel/trace v1.23.0
+	go.opentelemetry.io/otel v1.27.0
+	go.opentelemetry.io/otel/sdk v1.27.0
+	go.opentelemetry.io/otel/trace v1.27.0
 	go.temporal.io/api v1.32.0
 	go.temporal.io/sdk v1.12.0
 	go.temporal.io/sdk/contrib/opentelemetry v0.1.0
@@ -34,11 +36,11 @@ require (
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/twmb/murmur3 v1.1.5 // indirect
-	go.opentelemetry.io/otel/metric v1.23.0 // indirect
+	go.opentelemetry.io/otel/metric v1.27.0 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	golang.org/x/exp v0.0.0-20231127185646-65229373498e // indirect
 	golang.org/x/net v0.24.0 // indirect
-	golang.org/x/sys v0.19.0 // indirect
+	golang.org/x/sys v0.20.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240401170217-c3f982113cda // indirect
