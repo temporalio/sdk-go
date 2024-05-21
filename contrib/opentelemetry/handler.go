@@ -130,12 +130,20 @@ func (m MetricsHandler) Counter(name string) client.MetricsCounter {
 func (m MetricsHandler) Gauge(name string) client.MetricsGauge {
 	// TODO(https://github.com/open-telemetry/opentelemetry-go/issues/3984) replace with sync gauge once supported
 	var config atomic.Value
-	config.Store(0.0)
-	_, err := m.meter.Float64ObservableGauge(name,
-		metric.WithFloat64Callback(func(ctx context.Context, o metric.Float64Observer) error {
-			o.Observe(config.Load().(float64), metric.WithAttributeSet(m.attributes))
+	og, err := m.meter.Float64ObservableGauge(name)
+	if err != nil {
+		m.onError(err)
+		return client.MetricsNopHandler.Gauge(name)
+	}
+	_, err = m.meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
+		val := config.Load()
+		if val == nil {
+			// Skip observation if no value has been stored.
 			return nil
-		}))
+		}
+		o.ObserveFloat64(og, config.Load().(float64), metric.WithAttributeSet(m.attributes))
+		return nil
+	}, og)
 	if err != nil {
 		m.onError(err)
 		return client.MetricsNopHandler.Gauge(name)

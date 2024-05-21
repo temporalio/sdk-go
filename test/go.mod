@@ -9,9 +9,9 @@ require (
 	github.com/pborman/uuid v1.2.1
 	github.com/stretchr/testify v1.9.0
 	github.com/uber-go/tally/v4 v4.1.1
-	go.opentelemetry.io/otel v1.21.0
-	go.opentelemetry.io/otel/sdk v1.21.0
-	go.opentelemetry.io/otel/trace v1.21.0
+	go.opentelemetry.io/otel v1.23.0
+	go.opentelemetry.io/otel/sdk v1.23.0
+	go.opentelemetry.io/otel/trace v1.23.0
 	go.temporal.io/api v1.32.0
 	go.temporal.io/sdk v1.12.0
 	go.temporal.io/sdk/contrib/opentelemetry v0.1.0
@@ -25,7 +25,7 @@ require (
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a // indirect
-	github.com/go-logr/logr v1.3.0 // indirect
+	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 // indirect
@@ -34,7 +34,7 @@ require (
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/twmb/murmur3 v1.1.5 // indirect
-	go.opentelemetry.io/otel/metric v1.21.0 // indirect
+	go.opentelemetry.io/otel/metric v1.23.0 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	golang.org/x/exp v0.0.0-20231127185646-65229373498e // indirect
 	golang.org/x/net v0.24.0 // indirect
