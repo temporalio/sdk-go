@@ -22,10 +22,12 @@
 package tracing
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
+	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/interceptortest"
@@ -109,4 +111,31 @@ func Test_tracerImpl_genSpanID(t1 *testing.T) {
 			}
 		})
 	}
+}
+func Test_OnFinishOption(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	onFinish := func(options *interceptor.TracerFinishSpanOptions) []tracer.FinishOption {
+		var finishOpts []tracer.FinishOption
+
+		if err := options.Error; strings.Contains(err.Error(), "ignore me") {
+			finishOpts = append(finishOpts, tracer.WithError(err))
+		}
+
+		return finishOpts
+	}
+
+	impl := NewTracer(TracerOptions{OnFinish: onFinish})
+	trc := testTracer{
+		Tracer: impl,
+		mt:     mt,
+	}
+
+	interceptortest.RunTestWorkflowWithError(t, trc)
+
+	spans := trc.FinishedSpans()
+
+	require.Len(t, spans, 1)
+	require.Equal(t, "temporal.RunWorkflow", spans[0].Name)
 }

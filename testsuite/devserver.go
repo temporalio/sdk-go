@@ -77,6 +77,9 @@ type DevServerOptions struct {
 	LogLevel string
 	// Additional arguments to the dev server.
 	ExtraArgs []string
+	// Where to redirect stdout and stderr, if nil they will be redirected to the current process.
+	Stdout io.Writer
+	Stderr io.Writer
 }
 
 // Temporal CLI based DevServer
@@ -111,6 +114,13 @@ func StartDevServer(ctx context.Context, options DevServerOptions) (*DevServer, 
 	args := prepareCommand(&options, host, port, clientOptions.Namespace)
 
 	cmd := newCmd(exePath, args...)
+	if options.Stdout != nil {
+		cmd.Stdout = options.Stdout
+	}
+	if options.Stderr != nil {
+		cmd.Stderr = options.Stderr
+	}
+
 	clientOptions.Logger.Info("Starting DevServer", "ExePath", exePath, "Args", args)
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("failed starting: %w", err)

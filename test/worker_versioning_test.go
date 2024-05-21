@@ -117,10 +117,6 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {
 	ts.workflows.register(worker1)
 	ts.NoError(worker1.Start())
 	defer worker1.Stop()
-	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "2.0", UseBuildIDForVersioning: true})
-	ts.workflows.register(worker2)
-	ts.NoError(worker2.Start())
-	defer worker2.Stop()
 
 	// Start some workflows targeting 1.0
 	handle11, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("1-1"), ts.workflows.WaitSignalToStart)
@@ -136,6 +132,10 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {
 		},
 	})
 	ts.NoError(err)
+	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "2.0", UseBuildIDForVersioning: true})
+	ts.workflows.register(worker2)
+	ts.NoError(worker2.Start())
+	defer worker2.Stop()
 
 	// 2.0 workflows
 	handle21, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("2-1"), ts.workflows.WaitSignalToStart)

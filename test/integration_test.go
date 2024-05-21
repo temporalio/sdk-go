@@ -27,7 +27,9 @@ package test_test
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 	"strings"
@@ -76,6 +78,12 @@ import (
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
+
+var usingCLIDevServerFlag bool
+
+func init() {
+	flag.BoolVar(&usingCLIDevServerFlag, "using-cli-dev-server", false, "Whether CLI dev server is in use")
+}
 
 const (
 	ctxTimeout                    = 15 * time.Second
@@ -456,6 +464,16 @@ func (ts *IntegrationTestSuite) TestDeadlockDetectionViaLocalActivity() {
 	ok := errors.As(err, &applicationErr)
 	ts.True(ok)
 	ts.True(strings.Contains(applicationErr.Error(), "Potential deadlock detected"))
+}
+
+func (ts *IntegrationTestSuite) TestLocalActivityNextRetryDelay() {
+	var activityExecutionTime time.Duration
+	wfOpts := ts.startWorkflowOptions("test-local-activity-next-retry-delay")
+	wfOpts.WorkflowTaskTimeout = 5 * time.Second
+	err := ts.executeWorkflowWithOption(wfOpts, ts.workflows.LocalActivityNextRetryDelay, &activityExecutionTime)
+	ts.NoError(err)
+	// Check the activity execution time is around 7 seconds
+	ts.LessOrEqual(math.Abs((activityExecutionTime - 7*time.Second).Seconds()), 1.0)
 }
 
 func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
@@ -1326,6 +1344,25 @@ func (ts *IntegrationTestSuite) TestWorkflowTypedSearchAttributes() {
 	ts.NoError(ts.executeWorkflowWithOption(options, ts.workflows.UpsertTypedSearchAttributesWorkflow, nil, false))
 }
 
+func (ts *IntegrationTestSuite) TestChildWorkflowTypedSearchAttributes() {
+	options := ts.startWorkflowOptions("test-child-wf-typed-search-attributes")
+	// Need to disable eager workflow start until https://github.com/temporalio/temporal/pull/5124 fixed
+	options.EnableEagerStart = false
+	// Create initial set of search attributes
+	stringKey := temporal.NewSearchAttributeKeyString("CustomStringField")
+	keywordKey := temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
+	options.TypedSearchAttributes = temporal.NewSearchAttributes(
+		stringKey.ValueSet("CustomStringFieldValue"),
+		keywordKey.ValueSet("foo"),
+	)
+	var result testSearchAttributes
+	ts.NoError(ts.executeWorkflowWithOption(options, ts.workflows.ChildWorkflowSuccessWithTypedSearchAttributes, &result))
+	ts.Equal("CustomStringFieldValue", result.SearchAttributes["CustomStringField"].Value.(string))
+	ts.Equal(enumspb.INDEXED_VALUE_TYPE_TEXT, result.SearchAttributes["CustomStringField"].Type)
+	ts.Equal("foo", result.SearchAttributes["CustomKeywordField"].Value.(string))
+	ts.Equal(enumspb.INDEXED_VALUE_TYPE_KEYWORD, result.SearchAttributes["CustomKeywordField"].Type)
+}
+
 func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -1559,7 +1596,7 @@ func (ts *IntegrationTestSuite) TestSessionStateFailedWorkerFailed() {
 
 	// Now create a new worker on that same task queue to resume the work of the
 	// workflow
-	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{DisableStickyExecution: true})
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
 	ts.registerWorkflowsAndActivities(nextWorker)
 	ts.NoError(nextWorker.Start())
 	defer nextWorker.Stop()
@@ -1788,6 +1825,39 @@ func (ts *IntegrationTestSuite) TestEndToEndLatencyMetrics() {
 	ts.Equal(prevNonLocalValue, nonLocal.Value())
 }
 
+func (ts *IntegrationTestSuite) TestEndToEndLatencyOnFailureMetrics() {
+	fetchMetrics := func() (localMetric, nonLocalMetric *metrics.CapturedTimer) {
+		for _, timer := range ts.metricsHandler.Timers() {
+			timer := timer
+			if timer.Name == "temporal_activity_succeed_endtoend_latency" {
+				nonLocalMetric = timer
+			} else if timer.Name == "temporal_local_activity_succeed_endtoend_latency" {
+				localMetric = timer
+			}
+		}
+		return
+	}
+
+	// Confirm no metrics to start
+	local, nonLocal := fetchMetrics()
+	ts.Nil(local)
+	ts.Nil(nonLocal)
+
+	// Run regular activity and confirm non-local metric is not emitted
+	err := ts.executeWorkflow("test-end-to-end-metrics-on-failure-1", ts.workflows.ActivityRetryOnError, nil)
+	ts.NoError(err)
+	local, nonLocal = fetchMetrics()
+	ts.Nil(local)
+	ts.Nil(nonLocal)
+
+	// Run local activity and confirm local metric is not emitted
+	err = ts.executeWorkflow("test-end-to-end-metrics-on-failure-2", ts.workflows.ActivityRetryOnError, nil)
+	ts.NoError(err)
+	local, nonLocal = fetchMetrics()
+	ts.Nil(local)
+	ts.Nil(nonLocal)
+}
+
 func (ts *IntegrationTestSuite) TestGracefulActivityCompletion() {
 	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1832,6 +1902,96 @@ func (ts *IntegrationTestSuite) TestGracefulActivityCompletion() {
 func (ts *IntegrationTestSuite) TestCancelChildAndExecuteActivityRace() {
 	err := ts.executeWorkflow("cancel-child-and-execute-act-race", ts.workflows.CancelChildAndExecuteActivityRace, nil)
 	ts.NoError(err)
+}
+
+func (ts *IntegrationTestSuite) TestQueryWorkflowRejectNotOpen() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start workflow
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-workflow-query-reject-not-open"),
+		ts.workflows.QueryTestWorkflow)
+	ts.NoError(err)
+
+	// Query when the workflow is running
+	queryVal, err := ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+		WorkflowID:           run.GetID(),
+		RunID:                run.GetRunID(),
+		QueryType:            "query",
+		QueryRejectCondition: enumspb.QUERY_REJECT_CONDITION_NONE,
+	})
+	ts.NoError(err)
+	var queryRes string
+	ts.NoError(queryVal.QueryResult.Get(&queryRes))
+	ts.Equal("running", queryRes)
+
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "signal", false))
+	ts.NoError(run.Get(ctx, nil))
+
+	// Query when the workflow is completed
+	queryVal, err = ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+		WorkflowID:           run.GetID(),
+		RunID:                run.GetRunID(),
+		QueryType:            "query",
+		QueryRejectCondition: enumspb.QUERY_REJECT_CONDITION_NOT_COMPLETED_CLEANLY,
+	})
+	ts.NoError(err)
+	queryRes = ""
+	ts.NoError(queryVal.QueryResult.Get(&queryRes))
+	ts.Equal("completed", queryRes)
+
+	queryVal, err = ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+		WorkflowID:           run.GetID(),
+		RunID:                run.GetRunID(),
+		QueryType:            "query",
+		QueryRejectCondition: enumspb.QUERY_REJECT_CONDITION_NOT_OPEN,
+	})
+	ts.NoError(err)
+	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED, queryVal.QueryRejected.Status)
+}
+
+func (ts *IntegrationTestSuite) TestQueryWorkflowRejectNotCompleteCleanly() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start workflow
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-workflow-query-not-complete-cleanly"),
+		ts.workflows.QueryTestWorkflow)
+	ts.NoError(err)
+
+	// Query when the workflow is running
+	queryVal, err := ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+		WorkflowID:           run.GetID(),
+		RunID:                run.GetRunID(),
+		QueryType:            "query",
+		QueryRejectCondition: enumspb.QUERY_REJECT_CONDITION_NONE,
+	})
+	ts.NoError(err)
+	var queryRes string
+	ts.NoError(queryVal.QueryResult.Get(&queryRes))
+	ts.Equal("running", queryRes)
+
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "signal", true))
+	ts.Error(run.Get(ctx, nil))
+
+	// Query when the workflow is failed
+	queryVal, err = ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+		WorkflowID:           run.GetID(),
+		RunID:                run.GetRunID(),
+		QueryType:            "query",
+		QueryRejectCondition: enumspb.QUERY_REJECT_CONDITION_NOT_OPEN,
+	})
+	ts.NoError(err)
+	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_FAILED, queryVal.QueryRejected.Status)
+
+	queryVal, err = ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+		WorkflowID:           run.GetID(),
+		RunID:                run.GetRunID(),
+		QueryType:            "query",
+		QueryRejectCondition: enumspb.QUERY_REJECT_CONDITION_NOT_COMPLETED_CLEANLY,
+	})
+	ts.NoError(err)
+	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_FAILED, queryVal.QueryRejected.Status)
 }
 
 func (ts *IntegrationTestSuite) TestInterceptorCalls() {
@@ -2890,7 +3050,7 @@ func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
 
 	// Now create a new worker on that same task queue to resume the work of the
 	// workflow
-	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{DisableStickyExecution: true})
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
 	ts.registerWorkflowsAndActivities(nextWorker)
 	ts.NoError(nextWorker.Start())
 	defer nextWorker.Stop()
@@ -3102,7 +3262,7 @@ func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch b
 	// Now, stop the worker and start a new one
 	ts.worker.Stop()
 	ts.workerStopped = true
-	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{DisableStickyExecution: true})
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
 	ts.registerWorkflowsAndActivities(nextWorker)
 	ts.NoError(nextWorker.Start())
 	defer nextWorker.Stop()
@@ -4701,6 +4861,18 @@ func (ts *IntegrationTestSuite) TestNondeterministicUpdateRegistertion() {
 	ts.EqualValues(expected, ts.activities.invoked())
 }
 
+func (ts *IntegrationTestSuite) TestRequestFailureMetric() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Unset namespace field will cause an invalid argument error
+	_, _ = ts.client.WorkflowService().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{})
+
+	ts.assertMetricCount(metrics.TemporalRequestFailure, 1,
+		metrics.OperationTagName, "DescribeNamespace",
+		metrics.RequestFailureCode, "INVALID_ARGUMENT")
+}
+
 // executeWorkflow executes a given workflow and waits for the result
 func (ts *IntegrationTestSuite) executeWorkflow(
 	wfID string, wfFunc interface{}, retValPtr interface{}, args ...interface{},
@@ -5040,6 +5212,12 @@ func (ts *InvalidUTF8Suite) TearDownSuite() {
 }
 
 func (ts *InvalidUTF8Suite) SetupTest() {
+	// This suite isn't valid for CLI dev servers because they don't allow invalid
+	// UTF8
+	if usingCLIDevServerFlag {
+		ts.T().Skip("Skipping invalid UTF8 suite for dev server")
+		return
+	}
 	var err error
 	ts.client, err = client.Dial(client.Options{
 		HostPort:  ts.config.ServiceAddr,
@@ -5072,6 +5250,9 @@ func (ts *InvalidUTF8Suite) SetupTest() {
 }
 
 func (ts *InvalidUTF8Suite) TearDownTest() {
+	if usingCLIDevServerFlag {
+		return
+	}
 	ts.client.Close()
 	if !ts.workerStopped {
 		ts.worker.Stop()

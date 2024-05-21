@@ -157,7 +157,6 @@ func (up *updateProtocol) Accept() {
 		Body: protocol.MustMarshalAny(&updatepb.Acceptance{
 			AcceptedRequestMessageId:         up.requestMsgID,
 			AcceptedRequestSequencingEventId: up.requestSeqID,
-			// AcceptedRequest field no longer read by server - will be removed from API soon
 		}),
 	}, withExpectedEventPredicate(up.checkAcceptedEvent))
 	up.state = updateStateAccepted
@@ -224,10 +223,9 @@ func (up *updateProtocol) checkAcceptedEvent(e *historypb.HistoryEvent) bool {
 	if attrs == nil {
 		return false
 	}
-	return attrs.AcceptedRequest.GetMeta().GetUpdateId() == up.protoInstanceID &&
+	return attrs.GetProtocolInstanceId() == up.protoInstanceID &&
 		attrs.AcceptedRequestMessageId == up.requestMsgID &&
-		attrs.AcceptedRequestSequencingEventId == up.requestSeqID &&
-		attrs.AcceptedRequest != nil
+		attrs.AcceptedRequestSequencingEventId == up.requestSeqID
 }
 
 // defaultHandler receives the initial invocation of an update during WFT
@@ -381,7 +379,7 @@ func (up *updateProtocol) HasCompleted() bool {
 //
 // 1. is a function
 // 2. has exactly one return parameter
-// 3. the one return prarmeter is of type `error`
+// 3. the one return parameter is of type `error`
 func validateValidatorFn(fn interface{}) error {
 	fnType := reflect.TypeOf(fn)
 	if fnType.Kind() != reflect.Func {
@@ -407,12 +405,21 @@ func validateValidatorFn(fn interface{}) error {
 // validateUpdateHandlerFn validates that the supplied interface
 //
 // 1. is a function
-// 2. has one or two return parameters, the last of which is of type `error`
-// 3. if there are two return parameters, the first is a serializable type
+// 2. has at least one parameter, the first of which is of type `workflow.Context`
+// 3. has one or two return parameters, the last of which is of type `error`
+// 4. if there are two return parameters, the first is a serializable type
 func validateUpdateHandlerFn(fn interface{}) error {
 	fnType := reflect.TypeOf(fn)
 	if fnType.Kind() != reflect.Func {
 		return fmt.Errorf("handler must be function but was %s", fnType.Kind())
+	}
+	if fnType.NumIn() == 0 {
+		return errors.New("first parameter of handler must be a workflow.Context")
+	} else if !isWorkflowContext(fnType.In(0)) {
+		return fmt.Errorf(
+			"first parameter of handler must be a workflow.Context but found %v",
+			fnType.In(0).Kind(),
+		)
 	}
 	switch fnType.NumOut() {
 	case 1:

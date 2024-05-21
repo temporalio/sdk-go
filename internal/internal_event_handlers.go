@@ -563,7 +563,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 		callback(nil, err)
 		return
 	}
-	searchAttr, err := serializeUntypedSearchAttributes(params.SearchAttributes)
+	searchAttr, err := serializeSearchAttributes(params.SearchAttributes, params.TypedSearchAttributes)
 	if err != nil {
 		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
 			startedHandler(WorkflowExecution{}, &ChildWorkflowExecutionAlreadyStartedError{})
@@ -591,7 +591,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	if len(params.CronSchedule) > 0 {
 		attributes.CronSchedule = params.CronSchedule
 	}
-	attributes.UseCompatibleVersion = determineUseCompatibleFlagForCommand(
+	attributes.InheritBuildId = determineInheritBuildIdFlagForCommand(
 		params.VersioningIntent, wc.workflowInfo.TaskQueueName, params.TaskQueueName)
 
 	command, err := wc.commandsHelper.startChildWorkflowExecution(attributes)
@@ -691,7 +691,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	// false just before request by the eager activity executor if eager activity
 	// execution is otherwise disallowed
 	scheduleTaskAttr.RequestEagerExecution = !parameters.DisableEagerExecution
-	scheduleTaskAttr.UseCompatibleVersion = determineUseCompatibleFlagForCommand(
+	scheduleTaskAttr.UseWorkflowBuildId = determineInheritBuildIdFlagForCommand(
 		parameters.VersioningIntent, wc.workflowInfo.TaskQueueName, parameters.TaskQueueName)
 
 	command := wc.commandsHelper.scheduleActivityTask(scheduleID, scheduleTaskAttr)
@@ -1245,6 +1245,12 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	case enumspb.EVENT_TYPE_UPSERT_WORKFLOW_SEARCH_ATTRIBUTES:
 		weh.handleUpsertWorkflowSearchAttributes(event)
 
+	case enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED:
+		weh.handleWorkflowPropertiesModified(event)
+
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ADMITTED:
+		// No Operation
+
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED:
 		// No Operation
 
@@ -1253,9 +1259,6 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED:
 		// No Operation
-
-	case enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED:
-		weh.handleWorkflowPropertiesModified(event)
 
 	default:
 		if event.WorkerMayIgnore {

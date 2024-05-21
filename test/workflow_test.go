@@ -101,6 +101,20 @@ func (w *Workflows) DeadlockedWithLocalActivity(ctx workflow.Context) ([]string,
 	return []string{}, nil
 }
 
+func (w *Workflows) LocalActivityNextRetryDelay(ctx workflow.Context) (time.Duration, error) {
+	laCtx := workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+		ScheduleToCloseTimeout: time.Minute,
+		RetryPolicy: &temporal.RetryPolicy{
+			MaximumAttempts: 8,
+		},
+	})
+
+	t1 := workflow.Now(ctx)
+	_ = workflow.ExecuteLocalActivity(laCtx, ErrorWithNextDelay, time.Second).Get(laCtx, nil)
+	t2 := workflow.Now(ctx)
+	return t2.Sub(t1), nil
+}
+
 func (w *Workflows) Panicked(ctx workflow.Context) ([]string, error) {
 	panic("simulated")
 }
@@ -685,6 +699,41 @@ func (w *Workflows) ChildWorkflowSuccessWithParentClosePolicyAbandon(ctx workflo
 	var childWE internal.WorkflowExecution
 	err = ft.GetChildWorkflowExecution().Get(ctx, &childWE)
 	return childWE.ID, err
+}
+
+type (
+	testSearchAttribute struct {
+		Type  enumspb.IndexedValueType
+		Value any
+	}
+
+	testSearchAttributes struct {
+		SearchAttributes map[string]testSearchAttribute
+	}
+)
+
+func (w *Workflows) ChildWorkflowSuccessWithTypedSearchAttributes(ctx workflow.Context) (result testSearchAttributes, err error) {
+	cwo := workflow.GetChildWorkflowOptions(ctx)
+	cwo.TypedSearchAttributes = workflow.GetTypedSearchAttributes(ctx)
+	err = workflow.ExecuteChildWorkflow(workflow.WithChildOptions(ctx, cwo), w.GetTypedSearchAttributes).Get(ctx, &result)
+	return
+}
+
+func (w *Workflows) GetTypedSearchAttributes(ctx workflow.Context) (result testSearchAttributes, err error) {
+	tsa := workflow.GetTypedSearchAttributes(ctx)
+	result.SearchAttributes = map[string]testSearchAttribute{}
+	for _, k := range workflow.DeterministicKeysFunc(tsa.GetUntypedValues(), func(a, b temporal.SearchAttributeKey) int {
+		if a.GetName() < b.GetName() {
+			return -1
+		}
+		return 1
+	}) {
+		result.SearchAttributes[k.GetName()] = testSearchAttribute{
+			Value: tsa.GetUntypedValues()[k],
+			Type:  k.GetValueType(),
+		}
+	}
+	return result, nil
 }
 
 func (w *Workflows) childWorkflowWaitOnContextCancel(ctx workflow.Context) error {
@@ -2401,6 +2450,26 @@ func (w *Workflows) SignalCounter(ctx workflow.Context) error {
 	}
 }
 
+func (w *Workflows) QueryTestWorkflow(ctx workflow.Context) error {
+	status := "running"
+	defer func() {
+		status = "completed"
+	}()
+	err := workflow.SetQueryHandler(ctx, "query", func() (string, error) {
+		return status, nil
+	})
+	if err != nil {
+		return err
+	}
+	signalCh := workflow.GetSignalChannel(ctx, "signal")
+	var fail bool
+	signalCh.Receive(ctx, &fail)
+	if fail {
+		return errors.New("test failure")
+	}
+	return nil
+}
+
 func (w *Workflows) PanicOnSignal(ctx workflow.Context) error {
 	// Wait for signal then panic
 	workflow.GetSignalChannel(ctx, "panic-signal").Receive(ctx, nil)
@@ -2913,6 +2982,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ChildWorkflowSuccess)
 	worker.RegisterWorkflow(w.ChildWorkflowSuccessWithParentClosePolicyTerminate)
 	worker.RegisterWorkflow(w.ChildWorkflowSuccessWithParentClosePolicyAbandon)
+	worker.RegisterWorkflow(w.ChildWorkflowSuccessWithTypedSearchAttributes)
+	worker.RegisterWorkflow(w.GetTypedSearchAttributes)
 	worker.RegisterWorkflow(w.ChildWorkflowCancelUnusualTransitionsRepro)
 	worker.RegisterWorkflow(w.ChildWorkflowDuplicatePanicRepro)
 	worker.RegisterWorkflow(w.ChildWorkflowDuplicateGetExecutionStuckRepro)
@@ -2987,6 +3058,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.UpdateSettingHandlerInHandler)
 	worker.RegisterWorkflow(w.UpdateCancelableWorkflow)
 	worker.RegisterWorkflow(w.UpdateHandlerRegisteredLate)
+	worker.RegisterWorkflow(w.LocalActivityNextRetryDelay)
+	worker.RegisterWorkflow(w.QueryTestWorkflow)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childWithRetryPolicy)

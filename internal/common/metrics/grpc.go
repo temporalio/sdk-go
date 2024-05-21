@@ -27,11 +27,11 @@ import (
 	"strings"
 	"time"
 
-	"google.golang.org/grpc/status"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // HandlerContextKey is the context key for a MetricHandler value.
@@ -42,7 +42,7 @@ type HandlerContextKey struct{}
 type LongPollContextKey struct{}
 
 // NewGRPCInterceptor creates a new gRPC unary interceptor to record metrics.
-func NewGRPCInterceptor(defaultHandler Handler, suffix string) grpc.UnaryClientInterceptor {
+func NewGRPCInterceptor(defaultHandler Handler, suffix string, disableRequestFailCodes bool) grpc.UnaryClientInterceptor {
 	return func(
 		ctx context.Context,
 		method string,
@@ -63,21 +63,22 @@ func NewGRPCInterceptor(defaultHandler Handler, suffix string) grpc.UnaryClientI
 
 		// Only take method name after the last slash
 		operation := method[strings.LastIndex(method, "/")+1:]
-		tags := map[string]string{OperationTagName: operation}
 
 		// Since this interceptor can be used for clients of different name, we
 		// attempt to extract the namespace out of the request. All namespace-based
 		// requests have been confirmed to have a top-level namespace field.
+		namespace := "_unknown_"
 		if nsReq, _ := req.(interface{ GetNamespace() string }); nsReq != nil {
-			tags[NamespaceTagName] = nsReq.GetNamespace()
+			namespace = nsReq.GetNamespace()
 		}
 
 		// Capture time, record start, run, and record end
+		tags := map[string]string{OperationTagName: operation, NamespaceTagName: namespace}
 		handler = handler.WithTags(tags)
 		start := time.Now()
 		recordRequestStart(handler, longPoll, suffix)
 		err := invoker(ctx, method, req, reply, cc, opts...)
-		recordRequestEnd(handler, longPoll, suffix, start, err)
+		recordRequestEnd(handler, longPoll, suffix, start, err, disableRequestFailCodes)
 		return err
 	}
 }
@@ -92,7 +93,7 @@ func recordRequestStart(handler Handler, longPoll bool, suffix string) {
 	handler.Counter(metric).Inc(1)
 }
 
-func recordRequestEnd(handler Handler, longPoll bool, suffix string, start time.Time, err error) {
+func recordRequestEnd(handler Handler, longPoll bool, suffix string, start time.Time, err error, disableRequestFailCodes bool) {
 	// Record latency
 	timerMetric := TemporalRequestLatency
 	if longPoll {
@@ -108,6 +109,10 @@ func recordRequestEnd(handler Handler, longPoll bool, suffix string, start time.
 			failureMetric = TemporalLongRequestFailure
 		}
 		failureMetric += suffix
+		errStatus, _ := status.FromError(err)
+		if !disableRequestFailCodes {
+			handler = handler.WithTags(RequestFailureCodeTags(errStatus.Code()))
+		}
 		handler.Counter(failureMetric).Inc(1)
 
 		// If it's a resource exhausted, extract cause if present and increment
