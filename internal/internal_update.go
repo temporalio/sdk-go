@@ -35,7 +35,6 @@ import (
 	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/protocol"
-	"google.golang.org/protobuf/proto"
 )
 
 type updateState string
@@ -91,7 +90,8 @@ type (
 	// sending protocol messages.
 	updateProtocol struct {
 		protoInstanceID string
-		initialRequest  updatepb.Request
+		clientIdentity  string
+		initialRequest  *updatepb.Request
 		requestMsgID    string
 		requestSeqID    int64
 		scheduleUpdate  func(name string, id string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
@@ -135,9 +135,11 @@ func (up *updateProtocol) requireState(action string, valid ...updateState) {
 }
 
 func (up *updateProtocol) HandleMessage(msg *protocolpb.Message) error {
-	if err := msg.Body.UnmarshalTo(&up.initialRequest); err != nil {
+	var request updatepb.Request
+	if err := msg.Body.UnmarshalTo(&request); err != nil {
 		return err
 	}
+	up.initialRequest = &request
 	up.requireState("update request", updateStateNew)
 	up.requestMsgID = msg.GetId()
 	up.requestSeqID = msg.GetEventId()
@@ -157,11 +159,11 @@ func (up *updateProtocol) Accept() {
 		Body: protocol.MustMarshalAny(&updatepb.Acceptance{
 			AcceptedRequestMessageId:         up.requestMsgID,
 			AcceptedRequestSequencingEventId: up.requestSeqID,
-			AcceptedRequest:                  proto.Clone(&up.initialRequest).(*updatepb.Request),
+			AcceptedRequest:                  up.initialRequest,
 		}),
 	}, withExpectedEventPredicate(up.checkAcceptedEvent))
-	// clear the input to avoid since we don't need it anymore
-	up.initialRequest.Input = nil
+	// Stop holding a reference to the initial request to allow it to be GCed
+	up.initialRequest = nil
 	up.state = updateStateAccepted
 }
 
@@ -174,9 +176,8 @@ func (up *updateProtocol) Reject(err error) {
 		Body: protocol.MustMarshalAny(&updatepb.Rejection{
 			RejectedRequestMessageId:         up.requestMsgID,
 			RejectedRequestSequencingEventId: up.requestSeqID,
-			RejectedRequest:                  &up.initialRequest,
+			RejectedRequest:                  up.initialRequest,
 			Failure:                          up.env.GetFailureConverter().ErrorToFailure(err),
-			// RejectedRequest field no longer read by server - will be removed from API soon
 		}),
 	})
 	up.state = updateStateCompleted
@@ -204,7 +205,10 @@ func (up *updateProtocol) Complete(success interface{}, outcomeErr error) {
 		Id:                 up.protoInstanceID + "/complete",
 		ProtocolInstanceId: up.protoInstanceID,
 		Body: protocol.MustMarshalAny(&updatepb.Response{
-			Meta:    up.initialRequest.GetMeta(),
+			Meta: &updatepb.Meta{
+				UpdateId: up.protoInstanceID,
+				Identity: up.clientIdentity,
+			},
 			Outcome: outcome,
 		}),
 	}, withExpectedEventPredicate(up.checkCompletedEvent))
