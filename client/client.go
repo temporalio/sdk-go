@@ -34,6 +34,7 @@ import (
 	"crypto/tls"
 	"io"
 
+	"go.temporal.io/api/cloud/cloudservice/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
@@ -87,6 +88,11 @@ const (
 type (
 	// Options are optional parameters for Client creation.
 	Options = internal.ClientOptions
+
+	// CloudOperationsClientOptions are parameters for CloudOperationsClient creation.
+	//
+	// WARNING: Cloud operations client is currently experimental.
+	CloudOperationsClientOptions = internal.CloudOperationsClientOptions
 
 	// ConnectionOptions are optional parameters that can be specified in ClientOptions
 	ConnectionOptions = internal.ConnectionOptions
@@ -611,6 +617,17 @@ type (
 		Close()
 	}
 
+	// CloudOperationsClient is the client for cloud operations.
+	//
+	// WARNING: Cloud operations client is currently experimental.
+	CloudOperationsClient interface {
+		// CloudService provides access to the underlying gRPC service.
+		CloudService() cloudservice.CloudServiceClient
+
+		// Close client and clean up underlying resources.
+		Close()
+	}
+
 	// NamespaceClient is the client for managing operations on the namespace.
 	// CLI, tools, ... can use this layer to manager operations on namespace.
 	NamespaceClient interface {
@@ -727,6 +744,14 @@ func NewClientFromExistingWithContext(ctx context.Context, existingClient Client
 	return internal.NewClientFromExisting(ctx, existingClient, options)
 }
 
+// DialCloudOperationsClient creates a cloud client to perform cloud-management
+// operations. Users should provide Credentials in the options.
+//
+// WARNING: Cloud operations client is currently experimental.
+func DialCloudOperationsClient(ctx context.Context, options CloudOperationsClientOptions) (CloudOperationsClient, error) {
+	return internal.DialCloudOperationsClient(ctx, options)
+}
+
 // NewNamespaceClient creates an instance of a namespace client, to manage
 // lifecycle of namespaces. This will not attempt to connect to the server
 // eagerly and therefore may not fail for an unreachable server until a call is
@@ -738,10 +763,12 @@ func NewNamespaceClient(options Options) (NamespaceClient, error) {
 
 // make sure if new methods are added to internal.Client they are also added to public Client.
 var (
-	_ Client                   = internal.Client(nil)
-	_ internal.Client          = Client(nil)
-	_ NamespaceClient          = internal.NamespaceClient(nil)
-	_ internal.NamespaceClient = NamespaceClient(nil)
+	_ Client                         = internal.Client(nil)
+	_ internal.Client                = Client(nil)
+	_ CloudOperationsClient          = internal.CloudOperationsClient(nil)
+	_ internal.CloudOperationsClient = CloudOperationsClient(nil)
+	_ NamespaceClient                = internal.NamespaceClient(nil)
+	_ internal.NamespaceClient       = NamespaceClient(nil)
 )
 
 // NewValue creates a new [converter.EncodedValue] which can be used to decode binary data returned by Temporal.  For example:
