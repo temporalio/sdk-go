@@ -214,6 +214,12 @@ func (t *TestActivityEnvironment) SetDataConverter(dataConverter converter.DataC
 	return t
 }
 
+// SetFailureConverter sets the failure converter.
+func (t *TestActivityEnvironment) SetFailureConverter(failureConverter converter.FailureConverter) *TestActivityEnvironment {
+	t.impl.setFailureConverter(failureConverter)
+	return t
+}
+
 // SetIdentity sets identity.
 func (t *TestActivityEnvironment) SetIdentity(identity string) *TestActivityEnvironment {
 	t.impl.setIdentity(identity)
@@ -647,6 +653,12 @@ func (e *TestWorkflowEnvironment) SetStartWorkflowOptions(options StartWorkflowO
 func (e *TestWorkflowEnvironment) SetDataConverter(dataConverter converter.DataConverter) *TestWorkflowEnvironment {
 	e.impl.setDataConverter(dataConverter)
 	return e
+}
+
+// SetFailureConverter sets the failure converter.
+func (t *TestWorkflowEnvironment) SetFailureConverter(failureConverter converter.FailureConverter) *TestWorkflowEnvironment {
+	t.impl.setFailureConverter(failureConverter)
+	return t
 }
 
 // SetContextPropagators sets context propagators.
