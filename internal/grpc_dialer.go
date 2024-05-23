@@ -141,7 +141,7 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 	// Append any user-supplied options
 	opts = append(opts, params.UserConnectionOptions.DialOptions...)
 
-	return grpc.Dial(params.HostPort, opts...)
+	return grpc.NewClient(params.HostPort, opts...)
 }
 
 func requiredInterceptors(
