@@ -1526,7 +1526,7 @@ func (ts *IntegrationTestSuite) TestUpdateWorkflowCancelled() {
 			WorkflowID:   run.GetID(),
 			RunID:        run.GetRunID(),
 			UpdateName:   "update",
-			WaitForStage: client.WorkflowUpdateLifeCycleStageAccepted,
+			WaitForStage: client.WorkflowUpdateStageAccepted,
 		})
 		ts.NoError(err)
 		handles = append(handles, handler)

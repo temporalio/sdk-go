@@ -1719,13 +1719,13 @@ func TestUpdate(t *testing.T) {
 	}
 
 	const (
-		sync  = WorkflowUpdateLifeCycleStageCompleted
-		async = WorkflowUpdateLifeCycleStageAccepted
+		sync  = WorkflowUpdateStageCompleted
+		async = WorkflowUpdateStageAccepted
 	)
 
 	newRequest := func(
 		t *testing.T,
-		stage WorkflowUpdateLifeCycleStage,
+		stage WorkflowUpdateStage,
 	) *UpdateWorkflowWithOptionsRequest {
 		t.Helper()
 		return &UpdateWorkflowWithOptionsRequest{

@@ -64,23 +64,23 @@ const (
 	TaskReachabilityClosedWorkflows = internal.TaskReachabilityClosedWorkflows
 )
 
-// WorkflowUpdateLifeCycleStage indicates the stage of an update request.
+// WorkflowUpdateStage indicates the stage of an update request.
 // NOTE: Experimental
-type WorkflowUpdateLifeCycleStage = internal.WorkflowUpdateLifeCycleStage
+type WorkflowUpdateStage = internal.WorkflowUpdateStage
 
 const (
-	// WorkflowUpdateLifeCycleStageUnspecified indicates the wait stage was not specified
+	// WorkflowUpdateStageUnspecified indicates the wait stage was not specified
 	// NOTE: Experimental
-	WorkflowUpdateLifeCycleStageUnspecified = internal.WorkflowUpdateLifeCycleStageUnspecified
-	// WorkflowUpdateLifeCycleStageAdmitted indicates the update is admitted
+	WorkflowUpdateStageUnspecified = internal.WorkflowUpdateStageUnspecified
+	// WorkflowUpdateStageAdmitted indicates the update is admitted
 	// NOTE: Experimental
-	WorkflowUpdateLifeCycleStageAdmitted = internal.WorkflowUpdateLifeCycleStageAdmitted
-	// WorkflowUpdateLifeCycleStageAccepted indicates the update is accepted
+	WorkflowUpdateStageAdmitted = internal.WorkflowUpdateStageAdmitted
+	// WorkflowUpdateStageAccepted indicates the update is accepted
 	// NOTE: Experimental
-	WorkflowUpdateLifeCycleStageAccepted = internal.WorkflowUpdateLifeCycleStageAccepted
-	// WorkflowUpdateLifeCycleStageCompleted indicates the update is completed
+	WorkflowUpdateStageAccepted = internal.WorkflowUpdateStageAccepted
+	// WorkflowUpdateStageCompleted indicates the update is completed
 	// NOTE: Experimental
-	WorkflowUpdateLifeCycleStageCompleted = internal.WorkflowUpdateLifeCycleStageCompleted
+	WorkflowUpdateStageCompleted = internal.WorkflowUpdateStageCompleted
 )
 
 const (

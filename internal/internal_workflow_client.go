@@ -783,8 +783,8 @@ type UpdateWorkflowWithOptionsRequest struct {
 
 	// How this RPC should block on the server before returning.
 	// By default will block until the update is completed.
-	// NOTE: Specifying WorkflowUpdateLifeCycleStageAdmitted is not supported.
-	WaitForStage WorkflowUpdateLifeCycleStage
+	// NOTE: Specifying WorkflowUpdateStageAdmitted is not supported.
+	WaitForStage WorkflowUpdateStage
 }
 
 // WorkflowUpdateHandle is a handle to a workflow execution update process. The
