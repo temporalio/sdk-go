@@ -356,24 +356,16 @@ type (
 		// API. If the check fails, an error is returned.
 		CheckHealth(ctx context.Context, request *CheckHealthRequest) (*CheckHealthResponse, error)
 
-		// UpdateWorkflow issues an update request to the specified
-		// workflow execution and returns the result synchronously. Calling this
-		// function is equivalent to calling UpdateWorkflowWithOptions with
-		// the same arguments and indicating that the RPC call should wait for
-		// completion of the update process.
-		// NOTE: Experimental
-		UpdateWorkflow(ctx context.Context, workflowID string, workflowRunID string, updateName string, args ...interface{}) (WorkflowUpdateHandle, error)
-
-		// UpdateWorkflowWithOptions issues an update request to the
+		// UpdateWorkflow issues an update request to the
 		// specified workflow execution and returns a handle to the update that
 		// is running in in parallel with the calling thread. Errors returned
 		// from the server will be exposed through the return value of
 		// WorkflowExecutionUpdateHandle.Get(). Errors that occur before the
 		// update is requested (e.g. if the required workflow ID field is
-		// missing from the UpdateWorkflowWithOptionsRequest) are returned
+		// missing from the UpdateWorkflowOptionsRequest) are returned
 		// directly from this function call.
 		// NOTE: Experimental
-		UpdateWorkflowWithOptions(ctx context.Context, request *UpdateWorkflowWithOptionsRequest) (WorkflowUpdateHandle, error)
+		UpdateWorkflow(ctx context.Context, request *UpdateWorkflowOptionsRequest) (WorkflowUpdateHandle, error)
 
 		// GetWorkflowUpdateHandle creates a handle to the referenced update
 		// which can be polled for an outcome. Note that runID is optional and

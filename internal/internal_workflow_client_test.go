@@ -1726,9 +1726,9 @@ func TestUpdate(t *testing.T) {
 	newRequest := func(
 		t *testing.T,
 		stage WorkflowUpdateStage,
-	) *UpdateWorkflowWithOptionsRequest {
+	) *UpdateWorkflowOptionsRequest {
 		t.Helper()
-		return &UpdateWorkflowWithOptionsRequest{
+		return &UpdateWorkflowOptionsRequest{
 			UpdateID:     fmt.Sprintf("%v-update_id", t.Name()),
 			WorkflowID:   fmt.Sprintf("%v-workflow_id", t.Name()),
 			RunID:        fmt.Sprintf("%v-run_id", t.Name()),
@@ -1737,7 +1737,7 @@ func TestUpdate(t *testing.T) {
 		}
 	}
 
-	refFromRequest := func(req *UpdateWorkflowWithOptionsRequest) *updatepb.UpdateRef {
+	refFromRequest := func(req *UpdateWorkflowOptionsRequest) *updatepb.UpdateRef {
 		return &updatepb.UpdateRef{
 			WorkflowExecution: &commonpb.WorkflowExecution{
 				WorkflowId: req.WorkflowID,
@@ -1763,10 +1763,11 @@ func TestUpdate(t *testing.T) {
 			&workflowservice.UpdateWorkflowExecutionResponse{
 				UpdateRef: refFromRequest(req),
 				Outcome:   mustOutcome(t, want),
+				Stage:     enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED,
 			},
 			nil,
 		)
-		handle, err := client.UpdateWorkflowWithOptions(context.TODO(), req)
+		handle, err := client.UpdateWorkflow(context.TODO(), req)
 		require.NoError(t, err)
 		var got string
 		err = handle.Get(context.TODO(), &got)
@@ -1785,10 +1786,11 @@ func TestUpdate(t *testing.T) {
 			&workflowservice.UpdateWorkflowExecutionResponse{
 				UpdateRef: refFromRequest(req),
 				Outcome:   mustOutcome(t, want),
+				Stage:     enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED,
 			},
 			nil,
 		)
-		handle, err := client.UpdateWorkflowWithOptions(context.TODO(), req)
+		handle, err := client.UpdateWorkflow(context.TODO(), req)
 		require.NoError(t, err)
 		var got string
 		err = handle.Get(context.TODO(), &got)
@@ -1804,6 +1806,7 @@ func TestUpdate(t *testing.T) {
 				&workflowservice.UpdateWorkflowExecutionResponse{
 					UpdateRef: refFromRequest(req),
 					Outcome:   nil, // async invocation - outcome unknown
+					Stage:     enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ACCEPTED,
 				},
 				nil,
 			)
@@ -1814,7 +1817,7 @@ func TestUpdate(t *testing.T) {
 				},
 				nil,
 			).Times(2)
-		handle, err := client.UpdateWorkflowWithOptions(context.TODO(), req)
+		handle, err := client.UpdateWorkflow(context.TODO(), req)
 		require.NoError(t, err)
 		var got string
 		err = handle.Get(context.TODO(), &got)
@@ -1824,7 +1827,7 @@ func TestUpdate(t *testing.T) {
 		err = handle.Get(context.TODO(), nil)
 		require.NoError(t, err)
 	})
-	t.Run("async error", func(t *testing.T) {
+	t.Run("async delayed accepted", func(t *testing.T) {
 		svc, client := init(t)
 		want := errors.New("this error was intentional")
 		req := newRequest(t, async)
@@ -1833,6 +1836,7 @@ func TestUpdate(t *testing.T) {
 				&workflowservice.UpdateWorkflowExecutionResponse{
 					UpdateRef: refFromRequest(req),
 					Outcome:   nil, // async invocation - outcome unknown
+					Stage:     enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ACCEPTED,
 				},
 				nil,
 			)
@@ -1843,12 +1847,50 @@ func TestUpdate(t *testing.T) {
 				},
 				nil,
 			)
-		handle, err := client.UpdateWorkflowWithOptions(context.TODO(), req)
+		handle, err := client.UpdateWorkflow(context.TODO(), req)
 		require.NoError(t, err)
 		var got string
 		err = handle.Get(context.TODO(), &got)
 		require.Error(t, err)
 		require.ErrorContains(t, err, want.Error())
+	})
+	t.Run("admitted error", func(t *testing.T) {
+		svc, client := init(t)
+		want := t.Name()
+		req := newRequest(t, async)
+		svc.EXPECT().UpdateWorkflowExecution(gomock.Any(), gomock.Any()).
+			Return(
+				&workflowservice.UpdateWorkflowExecutionResponse{
+					UpdateRef: refFromRequest(req),
+					Outcome:   nil, // async invocation - outcome unknown
+					Stage:     enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ADMITTED,
+				},
+				nil,
+			).
+			Return(
+				&workflowservice.UpdateWorkflowExecutionResponse{
+					UpdateRef: refFromRequest(req),
+					Outcome:   nil, // async invocation - outcome unknown
+					Stage:     enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ACCEPTED,
+				},
+				nil,
+			)
+		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
+			Return(
+				&workflowservice.PollWorkflowExecutionUpdateResponse{
+					Outcome: mustOutcome(t, want),
+				},
+				nil,
+			).Times(2)
+		handle, err := client.UpdateWorkflow(context.TODO(), req)
+		require.NoError(t, err)
+		var got string
+		err = handle.Get(context.TODO(), &got)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+		// Verify that calling Get with nil does not panic
+		err = handle.Get(context.TODO(), nil)
+		require.NoError(t, err)
 	})
 	t.Run("internal retry on timeout", func(t *testing.T) {
 		svc, client := init(t)
@@ -1859,6 +1901,7 @@ func TestUpdate(t *testing.T) {
 				&workflowservice.UpdateWorkflowExecutionResponse{
 					UpdateRef: refFromRequest(req),
 					Outcome:   nil, // async invocation - outcome unknown
+					Stage:     enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ACCEPTED,
 				},
 				nil,
 			)
@@ -1874,7 +1917,7 @@ func TestUpdate(t *testing.T) {
 
 		pollCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
-		handle, err := client.UpdateWorkflowWithOptions(pollCtx, req)
+		handle, err := client.UpdateWorkflow(pollCtx, req)
 		require.NoError(t, err)
 		var got string
 		err = handle.Get(pollCtx, &got)
@@ -1890,6 +1933,7 @@ func TestUpdate(t *testing.T) {
 				&workflowservice.UpdateWorkflowExecutionResponse{
 					UpdateRef: refFromRequest(req),
 					Outcome:   nil, // async invocation - outcome unknown
+					Stage:     enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ACCEPTED,
 				},
 				nil,
 			)
@@ -1908,7 +1952,7 @@ func TestUpdate(t *testing.T) {
 				nil,
 			)
 
-		handle, err := client.UpdateWorkflowWithOptions(context.TODO(), req)
+		handle, err := client.UpdateWorkflow(context.TODO(), req)
 		require.NoError(t, err)
 		var got string
 		err = handle.Get(context.TODO(), &got)
@@ -1966,5 +2010,77 @@ func TestUpdate(t *testing.T) {
 		err := handle.Get(callerCtx, &got)
 		require.Error(t, err)
 		require.Equal(t, callerCtx.Err(), err)
+	})
+	t.Run("sync delayed success", func(t *testing.T) {
+		svc, client := init(t)
+		want := t.Name()
+		req := newRequest(t, sync)
+		svc.EXPECT().
+			UpdateWorkflowExecution(gomock.Any(), gomock.Any()).
+			Return(
+				&workflowservice.UpdateWorkflowExecutionResponse{
+					UpdateRef: refFromRequest(req),
+					Outcome:   nil,
+					Stage:     enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ADMITTED,
+				},
+				nil,
+			).
+			Return(
+				&workflowservice.UpdateWorkflowExecutionResponse{
+					UpdateRef: refFromRequest(req),
+					Outcome:   mustOutcome(t, want),
+					Stage:     enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED,
+				},
+				nil,
+			)
+		handle, err := client.UpdateWorkflow(context.TODO(), req)
+		require.NoError(t, err)
+		var got string
+		err = handle.Get(context.TODO(), &got)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+		// Verify that calling Get with nil does not panic
+		err = handle.Get(context.TODO(), nil)
+		require.NoError(t, err)
+	})
+	t.Run("sync multiple step success", func(t *testing.T) {
+		svc, client := init(t)
+		want := t.Name()
+		req := newRequest(t, sync)
+		svc.EXPECT().
+			UpdateWorkflowExecution(gomock.Any(), gomock.Any()).
+			Return(
+				&workflowservice.UpdateWorkflowExecutionResponse{
+					UpdateRef: refFromRequest(req),
+					Outcome:   nil,
+					Stage:     enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ADMITTED,
+				},
+				nil,
+			).
+			Return(
+				&workflowservice.UpdateWorkflowExecutionResponse{
+					UpdateRef: refFromRequest(req),
+					Outcome:   nil,
+					Stage:     enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ACCEPTED,
+				},
+				nil,
+			)
+		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
+			Return(
+				&workflowservice.PollWorkflowExecutionUpdateResponse{
+					Outcome: mustOutcome(t, want),
+					Stage:   enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED,
+				},
+				nil,
+			).Times(1)
+		handle, err := client.UpdateWorkflow(context.TODO(), req)
+		require.NoError(t, err)
+		var got string
+		err = handle.Get(context.TODO(), &got)
+		require.NoError(t, err)
+		require.Equal(t, want, got)
+		// Verify that calling Get with nil does not panic
+		err = handle.Get(context.TODO(), nil)
+		require.NoError(t, err)
 	})
 }
