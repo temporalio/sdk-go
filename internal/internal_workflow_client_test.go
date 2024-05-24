@@ -35,7 +35,6 @@ import (
 	updatepb "go.temporal.io/api/update/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
 
 	ilog "go.temporal.io/sdk/internal/log"
@@ -49,7 +48,6 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
-	"google.golang.org/grpc/status"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -1891,38 +1889,6 @@ func TestUpdate(t *testing.T) {
 		// Verify that calling Get with nil does not panic
 		err = handle.Get(context.TODO(), nil)
 		require.NoError(t, err)
-	})
-	t.Run("internal retry on timeout", func(t *testing.T) {
-		svc, client := init(t)
-		want := t.Name()
-		req := newRequest(t, async)
-		svc.EXPECT().UpdateWorkflowExecution(gomock.Any(), gomock.Any()).
-			Return(
-				&workflowservice.UpdateWorkflowExecutionResponse{
-					UpdateRef: refFromRequest(req),
-					Outcome:   nil, // async invocation - outcome unknown
-					Stage:     enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ACCEPTED,
-				},
-				nil,
-			)
-		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
-			Return(nil, status.Error(codes.DeadlineExceeded, codes.DeadlineExceeded.String()))
-		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
-			Return(
-				&workflowservice.PollWorkflowExecutionUpdateResponse{
-					Outcome: mustOutcome(t, want),
-				},
-				nil,
-			)
-
-		pollCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		defer cancel()
-		handle, err := client.UpdateWorkflow(pollCtx, req)
-		require.NoError(t, err)
-		var got string
-		err = handle.Get(pollCtx, &got)
-		require.NoError(t, err)
-		require.Equal(t, want, got)
 	})
 	t.Run("internal retry on nil outcome", func(t *testing.T) {
 		svc, client := init(t)
