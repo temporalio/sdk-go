@@ -878,35 +878,21 @@ func TestWorkflowTestSuite_WorkflowRunOperation_WithCancel(t *testing.T) {
 	}
 }
 
-func TestWorkflowTestSuite_NexusSyncOperation_ClientMethods(t *testing.T) {
-	op := temporalnexus.NewSyncOperation("signal-op", func(ctx context.Context, c client.Client, workflowID string, opts nexus.StartOperationOptions) (nexus.NoValue, error) {
-		val, err := c.QueryWorkflow(ctx, workflowID, "", "get-secret")
-		if err != nil {
-			return nil, err
-		}
-		var secret string
-		if err := val.Get(&secret); err != nil {
-			return nil, err
-		}
-		return nil, c.SignalWorkflow(ctx, workflowID, "", "submit-secret", secret)
+func TestWorkflowTestSuite_NexusSyncOperation_ClientMethods_Panic(t *testing.T) {
+	var panicReason any
+	op := temporalnexus.NewSyncOperation("signal-op", func(ctx context.Context, c client.Client, _ nexus.NoValue, opts nexus.StartOperationOptions) (nexus.NoValue, error) {
+		func() {
+			defer func() {
+				panicReason = recover()
+			}()
+			c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{}, "test", "", "get-secret")
+		}()
+		return nil, nil
 	})
 	wf := func(ctx workflow.Context) error {
-		workflow.SetQueryHandler(ctx, "get-secret", func() (string, error) {
-			return "secret", nil
-		})
 		client := workflow.NewNexusClient("endpoint", "test")
-		fut := client.ExecuteOperation(ctx, op, workflow.GetInfo(ctx).WorkflowExecution.ID, workflow.NexusOperationOptions{})
-		if err := fut.Get(ctx, nil); err != nil {
-			return err
-		}
-
-		ch := workflow.GetSignalChannel(ctx, "submit-secret")
-		var secret string
-		ch.Receive(ctx, &secret)
-		if secret != "secret" {
-			return fmt.Errorf("invalid secret")
-		}
-		return nil
+		fut := client.ExecuteOperation(ctx, op, nil, workflow.NexusOperationOptions{})
+		return fut.Get(ctx, nil)
 	}
 
 	service := nexus.NewService("test")
@@ -919,4 +905,5 @@ func TestWorkflowTestSuite_NexusSyncOperation_ClientMethods(t *testing.T) {
 	env.ExecuteWorkflow(wf)
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+	require.Equal(t, "not implemented in the test environment", panicReason)
 }
