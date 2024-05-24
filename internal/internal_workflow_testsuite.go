@@ -2323,7 +2323,7 @@ func (env *testWorkflowEnvironmentImpl) newTestNexusTaskHandler() *nexusTaskHand
 		env.identity,
 		env.workflowInfo.Namespace,
 		env.workflowInfo.TaskQueueName,
-		&testSuiteClientForNexusOperations{env},
+		&testSuiteClientForNexusOperations{env: env},
 		env.dataConverter,
 		env.logger,
 		env.metricsHandler,

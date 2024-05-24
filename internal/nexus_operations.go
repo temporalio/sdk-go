@@ -11,7 +11,6 @@ import (
 	failurepb "go.temporal.io/api/failure/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
 	"go.temporal.io/api/operatorservice/v1"
-	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/log"
@@ -24,8 +23,17 @@ type NexusOperationContext struct {
 	Log       log.Logger
 }
 
+type nexusOperationContextKeyType struct{}
+
 // nexusOperationContextKey is a key for associating a [NexusOperationContext] with a [context.Context].
-var nexusOperationContextKey = struct{}{}
+var nexusOperationContextKey = nexusOperationContextKeyType{}
+
+type isWorkflowRunOpContextKeyType struct{}
+
+// IsWorkflowRunOpContextKey is a key to mark that the current context is used within a workflow run operation.
+// The fake test env client verifies this key is set on the context to decide whether it should execute a method or
+// panic as we don't want to expose a partial client to sync operations.
+var IsWorkflowRunOpContextKey = isWorkflowRunOpContextKeyType{}
 
 // NexusOperationContextFromGoContext gets the [NexusOperationContext] associated with the given [context.Context].
 func NexusOperationContextFromGoContext(ctx context.Context) (nctx *NexusOperationContext, ok bool) {
@@ -95,15 +103,17 @@ func nexusFailureMetadataToPayloads(failure *nexuspb.Failure) *commonpb.Payloads
 }
 
 // testSuiteClientForNexusOperations is a partial [Client] implementation for the test workflow environment used to
-// support basic Nexus functionality.
-// Most of its methods are unimplemented, and best effort was made to return errors where possible instead of panicking.
-// More methods can be implemented on demand.
+// support running the workflow run operation - and only this operation, all methods will panic when this client is
+// passed to sync operations.
 type testSuiteClientForNexusOperations struct {
 	env *testWorkflowEnvironmentImpl
 }
 
 // CancelWorkflow implements Client.
 func (t *testSuiteClientForNexusOperations) CancelWorkflow(ctx context.Context, workflowID string, runID string) error {
+	if set, ok := ctx.Value(IsWorkflowRunOpContextKey).(bool); !ok || !set {
+		panic("not implemented in the test environment")
+	}
 	doneCh := make(chan error)
 	t.env.cancelWorkflowByID(workflowID, runID, func(result *commonpb.Payloads, err error) {
 		doneCh <- err
@@ -123,31 +133,34 @@ func (t *testSuiteClientForNexusOperations) Close() {
 
 // CompleteActivity implements Client.
 func (t *testSuiteClientForNexusOperations) CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error {
-	return serviceerror.NewUnimplemented("not implemented in the test environment")
+	panic("not implemented in the test environment")
 }
 
 // CompleteActivityByID implements Client.
 func (t *testSuiteClientForNexusOperations) CompleteActivityByID(ctx context.Context, namespace string, workflowID string, runID string, activityID string, result interface{}, err error) error {
-	return serviceerror.NewUnimplemented("not implemented in the test environment")
+	panic("not implemented in the test environment")
 }
 
 // CountWorkflow implements Client.
 func (t *testSuiteClientForNexusOperations) CountWorkflow(ctx context.Context, request *workflowservice.CountWorkflowExecutionsRequest) (*workflowservice.CountWorkflowExecutionsResponse, error) {
-	return nil, serviceerror.NewUnimplemented("not implemented in the test environment")
+	panic("not implemented in the test environment")
 }
 
 // DescribeTaskQueue implements Client.
 func (t *testSuiteClientForNexusOperations) DescribeTaskQueue(ctx context.Context, taskqueue string, taskqueueType enums.TaskQueueType) (*workflowservice.DescribeTaskQueueResponse, error) {
-	return nil, serviceerror.NewUnimplemented("not implemented in the test environment")
+	panic("not implemented in the test environment")
 }
 
 // DescribeWorkflowExecution implements Client.
 func (t *testSuiteClientForNexusOperations) DescribeWorkflowExecution(ctx context.Context, workflowID string, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
-	return nil, serviceerror.NewUnimplemented("not implemented in the test environment")
+	panic("not implemented in the test environment")
 }
 
 // ExecuteWorkflow implements Client.
 func (t *testSuiteClientForNexusOperations) ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error) {
+	if set, ok := ctx.Value(IsWorkflowRunOpContextKey).(bool); !ok || !set {
+		panic("not implemented in the test environment")
+	}
 	wfType, input, err := getValidatedWorkflowFunction(workflow, args, t.env.dataConverter, t.env.GetRegistry())
 	if err != nil {
 		return nil, fmt.Errorf("cannot validate workflow function: %w", err)
@@ -220,17 +233,17 @@ func (t *testSuiteClientForNexusOperations) ExecuteWorkflow(ctx context.Context,
 
 // GetSearchAttributes implements Client.
 func (t *testSuiteClientForNexusOperations) GetSearchAttributes(ctx context.Context) (*workflowservice.GetSearchAttributesResponse, error) {
-	return nil, serviceerror.NewUnimplemented("not implemented in the test environment")
+	panic("not implemented in the test environment")
 }
 
 // GetWorkerBuildIdCompatibility implements Client.
 func (t *testSuiteClientForNexusOperations) GetWorkerBuildIdCompatibility(ctx context.Context, options *GetWorkerBuildIdCompatibilityOptions) (*WorkerBuildIDVersionSets, error) {
-	return nil, serviceerror.NewUnimplemented("not implemented in the test environment")
+	panic("not implemented in the test environment")
 }
 
 // GetWorkerTaskReachability implements Client.
 func (t *testSuiteClientForNexusOperations) GetWorkerTaskReachability(ctx context.Context, options *GetWorkerTaskReachabilityOptions) (*WorkerTaskReachability, error) {
-	return nil, serviceerror.NewUnimplemented("not implemented in the test environment")
+	panic("not implemented in the test environment")
 }
 
 // GetWorkflow implements Client.
@@ -250,22 +263,22 @@ func (t *testSuiteClientForNexusOperations) GetWorkflowUpdateHandle(GetWorkflowU
 
 // ListArchivedWorkflow implements Client.
 func (t *testSuiteClientForNexusOperations) ListArchivedWorkflow(ctx context.Context, request *workflowservice.ListArchivedWorkflowExecutionsRequest) (*workflowservice.ListArchivedWorkflowExecutionsResponse, error) {
-	return nil, serviceerror.NewUnimplemented("not implemented in the test environment")
+	panic("not implemented in the test environment")
 }
 
 // ListClosedWorkflow implements Client.
 func (t *testSuiteClientForNexusOperations) ListClosedWorkflow(ctx context.Context, request *workflowservice.ListClosedWorkflowExecutionsRequest) (*workflowservice.ListClosedWorkflowExecutionsResponse, error) {
-	return nil, serviceerror.NewUnimplemented("not implemented in the test environment")
+	panic("not implemented in the test environment")
 }
 
 // ListOpenWorkflow implements Client.
 func (t *testSuiteClientForNexusOperations) ListOpenWorkflow(ctx context.Context, request *workflowservice.ListOpenWorkflowExecutionsRequest) (*workflowservice.ListOpenWorkflowExecutionsResponse, error) {
-	return nil, serviceerror.NewUnimplemented("not implemented in the test environment")
+	panic("not implemented in the test environment")
 }
 
 // ListWorkflow implements Client.
 func (t *testSuiteClientForNexusOperations) ListWorkflow(ctx context.Context, request *workflowservice.ListWorkflowExecutionsRequest) (*workflowservice.ListWorkflowExecutionsResponse, error) {
-	return nil, serviceerror.NewUnimplemented("not implemented in the test environment")
+	panic("not implemented in the test environment")
 }
 
 // OperatorService implements Client.
@@ -275,32 +288,32 @@ func (t *testSuiteClientForNexusOperations) OperatorService() operatorservice.Op
 
 // QueryWorkflow implements Client.
 func (t *testSuiteClientForNexusOperations) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.EncodedValue, error) {
-	return t.env.queryWorkflowByID(workflowID, queryType, args)
+	panic("not implemented in the test environment")
 }
 
 // QueryWorkflowWithOptions implements Client.
 func (t *testSuiteClientForNexusOperations) QueryWorkflowWithOptions(ctx context.Context, request *QueryWorkflowWithOptionsRequest) (*QueryWorkflowWithOptionsResponse, error) {
-	return nil, serviceerror.NewUnimplemented("not implemented in the test environment")
+	panic("not implemented in the test environment")
 }
 
 // RecordActivityHeartbeat implements Client.
 func (t *testSuiteClientForNexusOperations) RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...interface{}) error {
-	return serviceerror.NewUnimplemented("not implemented in the test environment")
+	panic("not implemented in the test environment")
 }
 
 // RecordActivityHeartbeatByID implements Client.
 func (t *testSuiteClientForNexusOperations) RecordActivityHeartbeatByID(ctx context.Context, namespace string, workflowID string, runID string, activityID string, details ...interface{}) error {
-	return serviceerror.NewUnimplemented("not implemented in the test environment")
+	panic("not implemented in the test environment")
 }
 
 // ResetWorkflowExecution implements Client.
 func (t *testSuiteClientForNexusOperations) ResetWorkflowExecution(ctx context.Context, request *workflowservice.ResetWorkflowExecutionRequest) (*workflowservice.ResetWorkflowExecutionResponse, error) {
-	return nil, serviceerror.NewUnimplemented("not implemented in the test environment")
+	panic("not implemented in the test environment")
 }
 
 // ScanWorkflow implements Client.
 func (t *testSuiteClientForNexusOperations) ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error) {
-	return nil, serviceerror.NewUnimplemented("not implemented in the test environment")
+	panic("not implemented in the test environment")
 }
 
 // ScheduleClient implements Client.
@@ -310,32 +323,32 @@ func (t *testSuiteClientForNexusOperations) ScheduleClient() ScheduleClient {
 
 // SignalWithStartWorkflow implements Client.
 func (t *testSuiteClientForNexusOperations) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{}, options StartWorkflowOptions, workflow interface{}, workflowArgs ...interface{}) (WorkflowRun, error) {
-	return nil, serviceerror.NewUnimplemented("not implemented in the test environment")
+	panic("not implemented in the test environment")
 }
 
 // SignalWorkflow implements Client.
 func (t *testSuiteClientForNexusOperations) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error {
-	return t.env.signalWorkflowByID(workflowID, signalName, arg)
+	panic("not implemented in the test environment")
 }
 
 // TerminateWorkflow implements Client.
 func (t *testSuiteClientForNexusOperations) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error {
-	return serviceerror.NewUnimplemented("not implemented in the test environment")
+	panic("not implemented in the test environment")
 }
 
 // UpdateWorkerBuildIdCompatibility implements Client.
 func (t *testSuiteClientForNexusOperations) UpdateWorkerBuildIdCompatibility(ctx context.Context, options *UpdateWorkerBuildIdCompatibilityOptions) error {
-	return serviceerror.NewUnimplemented("not implemented in the test environment")
+	panic("not implemented in the test environment")
 }
 
 // UpdateWorkflow implements Client.
 func (t *testSuiteClientForNexusOperations) UpdateWorkflow(ctx context.Context, workflowID string, workflowRunID string, updateName string, args ...interface{}) (WorkflowUpdateHandle, error) {
-	return nil, serviceerror.NewUnimplemented("not implemented in the test environment")
+	panic("not implemented in the test environment")
 }
 
 // UpdateWorkflowWithOptions implements Client.
 func (t *testSuiteClientForNexusOperations) UpdateWorkflowWithOptions(ctx context.Context, request *UpdateWorkflowWithOptionsRequest) (WorkflowUpdateHandle, error) {
-	return nil, serviceerror.NewUnimplemented("not implemented in the test environment")
+	panic("not implemented in the test environment")
 }
 
 // WorkflowService implements Client.
