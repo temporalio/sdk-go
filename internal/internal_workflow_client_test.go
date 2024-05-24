@@ -1724,9 +1724,9 @@ func TestUpdate(t *testing.T) {
 	newRequest := func(
 		t *testing.T,
 		stage WorkflowUpdateStage,
-	) *UpdateWorkflowOptionsRequest {
+	) UpdateWorkflowOptions {
 		t.Helper()
-		return &UpdateWorkflowOptionsRequest{
+		return UpdateWorkflowOptions{
 			UpdateID:     fmt.Sprintf("%v-update_id", t.Name()),
 			WorkflowID:   fmt.Sprintf("%v-workflow_id", t.Name()),
 			RunID:        fmt.Sprintf("%v-run_id", t.Name()),
@@ -1735,13 +1735,13 @@ func TestUpdate(t *testing.T) {
 		}
 	}
 
-	refFromRequest := func(req *UpdateWorkflowOptionsRequest) *updatepb.UpdateRef {
+	refFromRequest := func(opt UpdateWorkflowOptions) *updatepb.UpdateRef {
 		return &updatepb.UpdateRef{
 			WorkflowExecution: &commonpb.WorkflowExecution{
-				WorkflowId: req.WorkflowID,
-				RunId:      req.RunID,
+				WorkflowId: opt.WorkflowID,
+				RunId:      opt.RunID,
 			},
-			UpdateId: req.UpdateName,
+			UpdateId: opt.UpdateName,
 		}
 	}
 

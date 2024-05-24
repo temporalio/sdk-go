@@ -751,8 +751,8 @@ func (wc *WorkflowClient) QueryWorkflow(ctx context.Context, workflowID string, 
 	})
 }
 
-// UpdateWorkflowOptionsRequest is the request to UpdateWorkflow
-type UpdateWorkflowOptionsRequest struct {
+// UpdateWorkflowOptions is the request to UpdateWorkflow
+type UpdateWorkflowOptions struct {
 	// UpdateID is an application-layer identifier for the requested update. It
 	// must be unique within the scope of a Namespace+WorkflowID+RunID.
 	UpdateID string
@@ -1068,22 +1068,22 @@ func (wc *WorkflowClient) PollWorkflowUpdate(
 
 func (wc *WorkflowClient) UpdateWorkflow(
 	ctx context.Context,
-	req *UpdateWorkflowOptionsRequest,
+	opt UpdateWorkflowOptions,
 ) (WorkflowUpdateHandle, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return nil, err
 	}
 	// Default update ID
-	updateID := req.UpdateID
+	updateID := opt.UpdateID
 	if updateID == "" {
 		updateID = uuid.New()
 	}
 
-	if req.WaitForStage == WorkflowUpdateStageUnspecified {
+	if opt.WaitForStage == WorkflowUpdateStageUnspecified {
 		return nil, errors.New("WaitForStage must be specified")
 	}
 
-	if req.WaitForStage == WorkflowUpdateStageAdmitted {
+	if opt.WaitForStage == WorkflowUpdateStageAdmitted {
 		return nil, errors.New("WaitForStage WorkflowUpdateStageAdmitted is not supported")
 	}
 
@@ -1091,12 +1091,12 @@ func (wc *WorkflowClient) UpdateWorkflow(
 
 	return wc.interceptor.UpdateWorkflow(ctx, &ClientUpdateWorkflowInput{
 		UpdateID:            updateID,
-		WorkflowID:          req.WorkflowID,
-		UpdateName:          req.UpdateName,
-		Args:                req.Args,
-		RunID:               req.RunID,
-		FirstExecutionRunID: req.FirstExecutionRunID,
-		WaitForStage:        req.WaitForStage,
+		WorkflowID:          opt.WorkflowID,
+		UpdateName:          opt.UpdateName,
+		Args:                opt.Args,
+		RunID:               opt.RunID,
+		FirstExecutionRunID: opt.FirstExecutionRunID,
+		WaitForStage:        opt.WaitForStage,
 	})
 }
 
@@ -1781,7 +1781,7 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 	}
 	desiredLifecycleStage := updateLifeCycleStageToProto(in.WaitForStage)
 	var resp *workflowservice.UpdateWorkflowExecutionResponse
-	for ctx.Err() == nil {
+	for {
 		var err error
 		resp, err = func() (*workflowservice.UpdateWorkflowExecutionResponse, error) {
 			grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(pollUpdateTimeout), grpcLongPoll(true), defaultGrpcRetryParameters(ctx))
@@ -1819,10 +1819,6 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 			break
 		}
 	}
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-
 	// Here we know the update is at least accepted
 	if desiredLifecycleStage == enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED &&
 		resp.GetStage() != enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED {
