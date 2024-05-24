@@ -405,8 +405,7 @@ type (
 		// will use a registered resolver. By default all hosts returned from the resolver will be used in a round-robin
 		// fashion.
 		//
-		// The "dns" resolver is registered by default. Using a "dns:///" prefixed address will periodically resolve all IPs
-		// for DNS address given and round robin amongst them.
+		// The "dns" resolver is registered by and used by default.
 		//
 		// A custom resolver can be created to provide multiple hosts in other ways. For example, to manually provide
 		// multiple IPs to round-robin across, a google.golang.org/grpc/resolver/manual resolver can be created and
