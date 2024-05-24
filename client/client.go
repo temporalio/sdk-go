@@ -215,10 +215,10 @@ type (
 	// ScheduleBackfillOptions configure the parameters for backfilling a schedule.
 	ScheduleBackfillOptions = internal.ScheduleBackfillOptions
 
-	// UpdateWorkflowOptionsRequest encapsulates the parameters for
+	// UpdateWorkflowOptions encapsulates the parameters for
 	// sending an update to a workflow execution.
 	// NOTE: Experimental
-	UpdateWorkflowOptionsRequest = internal.UpdateWorkflowOptionsRequest
+	UpdateWorkflowOptions = internal.UpdateWorkflowOptions
 
 	// WorkflowUpdateHandle represents a running or completed workflow
 	// execution update and gives the holder access to the outcome of the same.
@@ -591,10 +591,10 @@ type (
 		// from the server will be exposed through the return value of
 		// WorkflowUpdateHandle.Get(). Errors that occur before the
 		// update is requested (e.g. if the required workflow ID field is
-		// missing from the UpdateWorkflowOptionsRequest) are returned
+		// missing from the UpdateWorkflowOptions) are returned
 		// directly from this function call.
 		// NOTE: Experimental
-		UpdateWorkflow(ctx context.Context, request *UpdateWorkflowOptionsRequest) (WorkflowUpdateHandle, error)
+		UpdateWorkflow(ctx context.Context, options UpdateWorkflowOptions) (WorkflowUpdateHandle, error)
 
 		// GetWorkflowUpdateHandle creates a handle to the referenced update
 		// which can be polled for an outcome. Note that runID is optional and

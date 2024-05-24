@@ -362,10 +362,10 @@ type (
 		// from the server will be exposed through the return value of
 		// WorkflowExecutionUpdateHandle.Get(). Errors that occur before the
 		// update is requested (e.g. if the required workflow ID field is
-		// missing from the UpdateWorkflowOptionsRequest) are returned
+		// missing from the UpdateWorkflowOptions) are returned
 		// directly from this function call.
 		// NOTE: Experimental
-		UpdateWorkflow(ctx context.Context, request *UpdateWorkflowOptionsRequest) (WorkflowUpdateHandle, error)
+		UpdateWorkflow(ctx context.Context, options UpdateWorkflowOptions) (WorkflowUpdateHandle, error)
 
 		// GetWorkflowUpdateHandle creates a handle to the referenced update
 		// which can be polled for an outcome. Note that runID is optional and
