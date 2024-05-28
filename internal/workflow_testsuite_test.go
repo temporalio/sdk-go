@@ -28,10 +28,13 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	failurepb "go.temporal.io/api/failure/v1"
+	"go.temporal.io/sdk/converter"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -532,4 +535,65 @@ func TestMockCallWrapperNotBefore(t *testing.T) {
 	var expectedErr *PanicError
 	require.ErrorAs(t, env.GetWorkflowError(), &expectedErr)
 	require.ErrorContains(t, expectedErr, "Must not be called before")
+}
+
+func TestCustomFailureConverter(t *testing.T) {
+	t.Parallel()
+
+	var suite WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	env.SetFailureConverter(testFailureConverter{
+		fallback: defaultFailureConverter,
+	})
+
+	var calls atomic.Int32
+	activity := func(context.Context) error {
+		_ = calls.Add(1)
+		return testCustomError{}
+	}
+	env.RegisterActivity(activity)
+
+	env.ExecuteWorkflow(func(ctx Context) error {
+		ctx = WithActivityOptions(ctx, ActivityOptions{
+			StartToCloseTimeout: time.Hour,
+		})
+		return ExecuteActivity(ctx, activity).Get(ctx, nil)
+	})
+	require.True(t, env.IsWorkflowCompleted())
+
+	// Failure converter should've reconstructed the custom error type.
+	require.True(t, errors.As(env.GetWorkflowError(), &testCustomError{}))
+
+	// Activity should've only been called once because the failure converter
+	// set the NonRetryable flag.
+	require.Equal(t, 1, int(calls.Load()))
+}
+
+type testCustomError struct{}
+
+func (testCustomError) Error() string { return "this is a custom error type" }
+
+type testFailureConverter struct {
+	fallback converter.FailureConverter
+}
+
+func (c testFailureConverter) ErrorToFailure(err error) *failurepb.Failure {
+	if errors.As(err, &testCustomError{}) {
+		return &failurepb.Failure{
+			FailureInfo: &failurepb.Failure_ApplicationFailureInfo{
+				ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{
+					Type:         "CUSTOM ERROR",
+					NonRetryable: true,
+				},
+			},
+		}
+	}
+	return c.fallback.ErrorToFailure(err)
+}
+
+func (c testFailureConverter) FailureToError(failure *failurepb.Failure) error {
+	if failure.GetApplicationFailureInfo().GetType() == "CUSTOM ERROR" {
+		return testCustomError{}
+	}
+	return c.fallback.FailureToError(failure)
 }
