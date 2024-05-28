@@ -119,4 +119,5 @@ jobs:
     with:
       go-repo-path: ${{github.event.pull_request.head.repo.full_name}}
       version: ${{github.event.pull_request.head.ref}}
+      features-repo-ref: go-sdk-update-refactor
       version-is-repo-ref: true
