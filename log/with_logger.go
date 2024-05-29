@@ -24,11 +24,6 @@
 
 package log
 
-// WithLogger is an interface that prepend every log entry with keyvals.
-type WithLogger interface {
-	With(keyvals ...interface{}) Logger
-}
-
 // With creates a child Logger that includes the supplied key-value pairs in each log entry. It does this by
 // using the supplied logger if it implements WithLogger; otherwise, it does so by intercepting every log call.
 func With(logger Logger, keyvals ...interface{}) Logger {

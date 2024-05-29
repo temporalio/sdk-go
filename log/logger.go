@@ -39,4 +39,10 @@ type (
 	WithSkipCallers interface {
 		WithCallerSkip(int) Logger
 	}
+
+	// WithLogger is an optional interface that prepend every log entry with keyvals.
+	// This call must not mutate the original logger.
+	WithLogger interface {
+		With(keyvals ...interface{}) Logger
+	}
 )
