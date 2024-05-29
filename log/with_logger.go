@@ -52,7 +52,7 @@ type withLogger struct {
 }
 
 func newWithLogger(logger Logger, keyvals ...interface{}) *withLogger {
-	return &withLogger{logger: logger, keyvals: keyvals}
+	return &withLogger{logger: Skip(logger, 1), keyvals: keyvals}
 }
 
 func (l *withLogger) prependKeyvals(keyvals []interface{}) []interface{} {
