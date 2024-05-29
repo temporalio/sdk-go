@@ -1041,7 +1041,7 @@ func (wc *WorkflowClient) GetWorkerTaskReachability(ctx context.Context, options
 //   - Workflow Reachability status
 //   - Backlog info for Workflow and/or Activity tasks
 //
-// WARNING: Worker versioning-2 is currently experimental, and requires server 1.XX+
+// WARNING: Worker versioning is currently experimental, and requires server 1.24+
 func (wc *WorkflowClient) DescribeTaskQueueEnhanced(ctx context.Context, options *DescribeTaskQueueEnhancedOptions) (TaskQueueDescription, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return TaskQueueDescription{}, err

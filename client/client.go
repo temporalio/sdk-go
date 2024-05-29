@@ -65,7 +65,7 @@ const (
 )
 
 // TaskQueueType specifies which category of tasks are associated with a queue.
-// WARNING: Worker versioning-2 is currently experimental
+// WARNING: Worker versioning is currently experimental
 type TaskQueueType = internal.TaskQueueType
 
 const (
@@ -85,7 +85,7 @@ const (
 // assignment rules of their task queue. Same goes for Child Workflows or Continue-As-New Workflows
 // who inherit the parent/previous workflow's Build ID but not its task queue. In those cases, make
 // sure to query reachability for the parent/previous workflow's task queue as well.
-// WARNING: Worker versioning-2 is currently experimental
+// WARNING: Worker versioning is currently experimental
 type BuildIDTaskReachability = internal.BuildIDTaskReachability
 
 const (
@@ -138,7 +138,7 @@ const (
 	QueryTypeOpenSessions string = internal.QueryTypeOpenSessions
 
 	// UnversionedBuildID is a stand-in for a Build Id for unversioned Workers.
-	// WARNING: Worker versioning is currently experimental
+	// WARNING: Legacy worker versioning is currently experimental
 	UnversionedBuildID string = internal.UnversionedBuildID
 )
 
@@ -270,121 +270,121 @@ type (
 	GetWorkflowUpdateHandleOptions = internal.GetWorkflowUpdateHandleOptions
 
 	// UpdateWorkerBuildIdCompatibilityOptions is the input to Client.UpdateWorkerBuildIdCompatibility.
-	// WARNING: Worker versioning is currently experimental
+	// WARNING: Legacy worker versioning is currently experimental
 	UpdateWorkerBuildIdCompatibilityOptions = internal.UpdateWorkerBuildIdCompatibilityOptions
 
 	// GetWorkerBuildIdCompatibilityOptions is the input to Client.GetWorkerBuildIdCompatibility.
-	// WARNING: Worker versioning is currently experimental
+	// WARNING: Legacy worker versioning is currently experimental
 	GetWorkerBuildIdCompatibilityOptions = internal.GetWorkerBuildIdCompatibilityOptions
 
 	// WorkerBuildIDVersionSets is the response for Client.GetWorkerBuildIdCompatibility.
-	// WARNING: Worker versioning is currently experimental
+	// WARNING: Legacy worker versioning is currently experimental
 	WorkerBuildIDVersionSets = internal.WorkerBuildIDVersionSets
 
 	// BuildIDOpAddNewIDInNewDefaultSet is an operation for UpdateWorkerBuildIdCompatibilityOptions
 	// to add a new BuildID in a new default set.
-	// WARNING: Worker versioning is currently experimental
+	// WARNING: Legacy worker versioning is currently experimental
 	BuildIDOpAddNewIDInNewDefaultSet = internal.BuildIDOpAddNewIDInNewDefaultSet
 
 	// BuildIDOpAddNewCompatibleVersion is an operation for UpdateWorkerBuildIdCompatibilityOptions
 	// to add a new BuildID to an existing compatible set.
-	// WARNING: Worker versioning is currently experimental
+	// WARNING: Legacy worker versioning is currently experimental
 	BuildIDOpAddNewCompatibleVersion = internal.BuildIDOpAddNewCompatibleVersion
 
 	// BuildIDOpPromoteSet is an operation for UpdateWorkerBuildIdCompatibilityOptions to promote a
 	// set to be the default set by targeting an existing BuildID.
-	// WARNING: Worker versioning is currently experimental
+	// WARNING: Legacy worker versioning is currently experimental
 	BuildIDOpPromoteSet = internal.BuildIDOpPromoteSet
 
 	// BuildIDOpPromoteIDWithinSet is an operation for UpdateWorkerBuildIdCompatibilityOptions to
 	// promote a BuildID within a set to be the default.
-	// WARNING: Worker versioning is currently experimental
+	// WARNING: Legacy worker versioning is currently experimental
 	BuildIDOpPromoteIDWithinSet = internal.BuildIDOpPromoteIDWithinSet
 
 	// GetWorkerTaskReachabilityOptions is the input to Client.GetWorkerTaskReachability.
-	// WARNING: Worker versioning is currently experimental
+	// WARNING: Legacy worker versioning is currently experimental
 	GetWorkerTaskReachabilityOptions = internal.GetWorkerTaskReachabilityOptions
 
 	// WorkerTaskReachability is the response for Client.GetWorkerTaskReachability.
-	// WARNING: Worker versioning is currently experimental
+	// WARNING: Legacy worker versioning is currently experimental
 	WorkerTaskReachability = internal.WorkerTaskReachability
 
 	// BuildIDReachability describes the reachability of a buildID
-	// WARNING: Worker versioning is currently experimental
+	// WARNING: Legacy worker versioning is currently experimental
 	BuildIDReachability = internal.BuildIDReachability
 
 	// TaskQueueReachability Describes how the Build ID may be reachable from the task queue.
-	// WARNING: Worker versioning is currently experimental
+	// WARNING: Legacy worker versioning is currently experimental
 	TaskQueueReachability = internal.TaskQueueReachability
 
 	// DescribeTaskQueueEnhancedOptions is the input to [Client.DescribeTaskQueueEnhanced].
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	DescribeTaskQueueEnhancedOptions = internal.DescribeTaskQueueEnhancedOptions
 
 	// TaskQueueVersionSelection is a task queue filter based on versioning.
 	// It is an optional component of [Client.DescribeTaskQueueEnhancedOptions].
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	TaskQueueVersionSelection = internal.TaskQueueVersionSelection
 
 	// TaskQueueDescription is the response to [Client.DescribeTaskQueueEnhanced].
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	TaskQueueDescription = internal.TaskQueueDescription
 
 	// TaskQueueVersionInfo includes task queue information per Build ID.
 	// It is part of [Client.TaskQueueDescription].
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	TaskQueueVersionInfo = internal.TaskQueueVersionInfo
 
 	// TaskQueueTypeInfo specifies task queue information per task type and Build ID.
 	// It is included in [Client.TaskQueueVersionInfo].
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	TaskQueueTypeInfo = internal.TaskQueueTypeInfo
 
 	// PollerInfo provides information about a worker/client polling a task queue.
 	// It is used by [Client.TaskQueueTypeInfo].
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	PollerInfo = internal.PollerInfo
 
 	// WorkerVersionCapabilities includes a worker's build identifier
 	// and whether it is choosing to use the versioning feature.
 	// It is an optional component of [Client.PollerInfo].
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	WorkerVersionCapabilities = internal.WorkerVersionCapabilities
 
 	// UpdateWorkerVersioningRulesOptions is the input to [Client.UpdateWorkerVersioningRules].
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	UpdateWorkerVersioningRulesOptions = internal.UpdateWorkerVersioningRulesOptions
 
 	// VersioningConflictToken is a conflict token to serialize calls to Client.UpdateWorkerVersioningRules.
 	// An update with an old token fails with `serviceerror.FailedPrecondition`.
 	// The current token can be obtained with [GetWorkerVersioningRules],
 	// or returned by a successful [UpdateWorkerVersioningRules].
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	VersioningConflictToken = internal.VersioningConflictToken
 
 	// VersioningRampByPercentage is a VersionRamp that sends a proportion of the traffic
 	// to the target Build ID.
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	VersioningRampByPercentage = internal.VersioningRampByPercentage
 
 	// VersioningAssignmentRule is a BuildID  assigment rule for a task queue.
 	// Assignment rules only affect new workflows.
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	VersioningAssignmentRule = internal.VersioningAssignmentRule
 
 	// VersioningAssignmentRuleWithTimestamp contains an assignment rule annotated
 	// by the server with its creation time.
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	VersioningAssignmentRuleWithTimestamp = internal.VersioningAssignmentRuleWithTimestamp
 
 	// VersioningAssignmentRule is a BuildID redirect rule for a task queue.
 	// It changes the behavior of currently running workflows and new ones.
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	VersioningRedirectRule = internal.VersioningRedirectRule
 
 	// VersioningRedirectRuleWithTimestamp contains a redirect rule annotated
 	// by the server with its creation time.
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	VersioningRedirectRuleWithTimestamp = internal.VersioningRedirectRuleWithTimestamp
 
 	// VersioningOpInsertAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
@@ -394,7 +394,7 @@ type (
 	// By default, the new rule is inserted at the beginning of the list
 	// (index 0). If the given index is too larger the rule will be
 	// inserted at the end of the list.
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	VersioningOpInsertAssignmentRule = internal.VersioningOpInsertAssignmentRule
 
 	// VersioningOpReplaceAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
@@ -402,7 +402,7 @@ type (
 	// unconditional rule, i.e., no hint filter or ramp, is enforced, otherwise
 	// the delete operation will be rejected. Set `force` to true to
 	// bypass this validation.
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	VersioningOpReplaceAssignmentRule = internal.VersioningOpReplaceAssignmentRule
 
 	// VersioningOpDeleteAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
@@ -410,23 +410,23 @@ type (
 	// unconditional rule, i.e., no hint filter or ramp, is enforced, otherwise
 	// the delete operation will be rejected. Set `force` to true to
 	// bypass this validation.
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	VersioningOpDeleteAssignmentRule = internal.VersioningOpDeleteAssignmentRule
 
 	// VersioningOpAddRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that adds the rule to the list of redirect rules for this Task Queue. There
 	// can be at most one redirect rule for each distinct Source BuildID.
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	VersioningOpAddRedirectRule = internal.VersioningOpAddRedirectRule
 
 	// VersioningOpReplaceRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that replaces the routing rule with the given source BuildID.
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	VersioningOpReplaceRedirectRule = internal.VersioningOpReplaceRedirectRule
 
 	// VersioningOpDeleteRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that deletes the routing rule with the given source Build ID.
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	VersioningOpDeleteRedirectRule = internal.VersioningOpDeleteRedirectRule
 
 	// VersioningOpCommitBuildID is an operation for UpdateWorkerVersioningRulesOptions
@@ -442,15 +442,15 @@ type (
 	// To prevent committing invalid Build IDs, we reject the request if no
 	// pollers have been seen recently for this Build ID. Use the `force`
 	// option to disable this validation.
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	VersioningOpCommitBuildID = internal.VersioningOpCommitBuildID
 
 	// GetWorkerVersioningOptions is the input to [Client.GetWorkerVersioningRules].
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	GetWorkerVersioningOptions = internal.GetWorkerVersioningOptions
 
 	// WorkerVersioningRules is the response for [Client.GetWorkerVersioningRules].
-	// WARNING: Worker versioning-2 is currently experimental
+	// WARNING: Worker versioning is currently experimental
 	WorkerVersioningRules = internal.WorkerVersioningRules
 
 	// Client is the client for starting and getting information about a workflow executions as well as
@@ -740,7 +740,7 @@ type (
 		//   - Workflow Reachability status
 		//   - Backlog info for Workflow and/or Activity tasks
 		// When not supported by the server, it returns an empty [TaskQueueDescription]
-		// WARNING: Worker versioning-2 is currently experimental, and requires server 1.XX+
+		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
 		DescribeTaskQueueEnhanced(ctx context.Context, options *DescribeTaskQueueEnhancedOptions) (TaskQueueDescription, error)
 
 		// ResetWorkflowExecution resets an existing workflow execution to WorkflowTaskFinishEventId(exclusive).
@@ -751,17 +751,17 @@ type (
 		// UpdateWorkerBuildIdCompatibility
 		// Allows you to update the worker-build-id based version sets for a particular task queue. This is used in
 		// conjunction with workers who specify their build id and thus opt into the feature.
-		// Deprecated: Use [UpdateWorkerVersioningRules] with the versioning-2 api.
+		// Deprecated: Use [UpdateWorkerVersioningRules] with the versioning api.
 		UpdateWorkerBuildIdCompatibility(ctx context.Context, options *UpdateWorkerBuildIdCompatibilityOptions) error
 
 		// GetWorkerBuildIdCompatibility
 		// Returns the worker-build-id based version sets for a particular task queue.
-		// Deprecated: Use [GetWorkerVersioningRules] with the versioning-2 api.
+		// Deprecated: Use [GetWorkerVersioningRules] with the versioning api.
 		GetWorkerBuildIdCompatibility(ctx context.Context, options *GetWorkerBuildIdCompatibilityOptions) (*WorkerBuildIDVersionSets, error)
 
 		// GetWorkerTaskReachability
 		// Returns which versions are is still in use by open or closed workflows
-		// Deprecated: Use [DescribeTaskQueueEnhanced] with the versioning-2 api.
+		// Deprecated: Use [DescribeTaskQueueEnhanced] with the versioning api.
 		GetWorkerTaskReachability(ctx context.Context, options *GetWorkerTaskReachabilityOptions) (*WorkerTaskReachability, error)
 
 		// UpdateWorkerVersioningRules
@@ -769,12 +769,12 @@ type (
 		// conjunction with workers who specify their build id and thus opt into the feature.
 		// The errors it can return:
 		//  - serviceerror.FailedPrecondition when the conflict token is invalid
-		// WARNING: Worker versioning-2 is currently experimental, and requires server 1.XX+
+		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
 		UpdateWorkerVersioningRules(ctx context.Context, options *UpdateWorkerVersioningRulesOptions) (*WorkerVersioningRules, error)
 
 		// GetWorkerVersioningRules
 		// Returns the worker-build-id assignment and redirect rules for a task queue.
-		// WARNING: Worker versioning-2 is currently experimental, and requires server 1.XX+
+		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
 		GetWorkerVersioningRules(ctx context.Context, options *GetWorkerVersioningOptions) (*WorkerVersioningRules, error)
 
 		// CheckHealth performs a server health check using the gRPC health check

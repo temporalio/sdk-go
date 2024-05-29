@@ -4598,7 +4598,7 @@ func (ts *IntegrationTestSuite) TestScheduleBackfillCreate() {
 	defer func() {
 		ts.NoError(handle.Delete(ctx))
 	}()
-	time.Sleep(5 * time.Second)
+	time.Sleep(10 * time.Second)
 	description, err := handle.Describe(ctx)
 	ts.NoError(err)
 	ts.EqualValues(60, description.Info.NumActions)
