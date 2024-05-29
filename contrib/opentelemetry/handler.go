@@ -24,7 +24,6 @@ package opentelemetry
 
 import (
 	"context"
-	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -128,20 +127,13 @@ func (m MetricsHandler) Counter(name string) client.MetricsCounter {
 }
 
 func (m MetricsHandler) Gauge(name string) client.MetricsGauge {
-	// TODO(https://github.com/open-telemetry/opentelemetry-go/issues/3984) replace with sync gauge once supported
-	var config atomic.Value
-	config.Store(0.0)
-	_, err := m.meter.Float64ObservableGauge(name,
-		metric.WithFloat64Callback(func(ctx context.Context, o metric.Float64Observer) error {
-			o.Observe(config.Load().(float64), metric.WithAttributeSet(m.attributes))
-			return nil
-		}))
+	g, err := m.meter.Float64Gauge(name)
 	if err != nil {
 		m.onError(err)
 		return client.MetricsNopHandler.Gauge(name)
 	}
 	return metrics.GaugeFunc(func(f float64) {
-		config.Store(f)
+		g.Record(context.Background(), f, metric.WithAttributeSet(m.attributes))
 	})
 }
 

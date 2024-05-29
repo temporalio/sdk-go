@@ -128,13 +128,13 @@ func TestHeadersProvider_Error(t *testing.T) {
 }
 
 func TestHeadersProvider_NotIncludedWhenNil(t *testing.T) {
-	interceptors := requiredInterceptors(nil, nil, nil, nil, nil)
+	interceptors := requiredInterceptors(&ClientOptions{}, nil)
 	require.Equal(t, 5, len(interceptors))
 }
 
 func TestHeadersProvider_IncludedWithHeadersProvider(t *testing.T) {
-	interceptors := requiredInterceptors(nil,
-		authHeadersProvider{token: "test-auth-token"}, nil, nil, nil)
+	opts := &ClientOptions{HeadersProvider: authHeadersProvider{token: "test-auth-token"}}
+	interceptors := requiredInterceptors(opts, nil)
 	require.Equal(t, 6, len(interceptors))
 }
 
@@ -153,7 +153,7 @@ func TestMissingGetServerInfo(t *testing.T) {
 	var lastErr error
 	for i := 0; i < 20; i++ {
 		lastErr = nil
-		conn, err := grpc.Dial(l.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conn, err := grpc.NewClient(l.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			lastErr = err
 		} else {
@@ -550,7 +550,7 @@ func (t *testGRPCServer) waitUntilServing() error {
 	// Try 20 times, waiting 100ms between
 	var lastErr error
 	for i := 0; i < 20; i++ {
-		conn, err := grpc.Dial(t.addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conn, err := grpc.NewClient(t.addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			lastErr = err
 		} else {

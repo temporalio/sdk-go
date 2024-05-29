@@ -375,24 +375,16 @@ type (
 		// API. If the check fails, an error is returned.
 		CheckHealth(ctx context.Context, request *CheckHealthRequest) (*CheckHealthResponse, error)
 
-		// UpdateWorkflow issues an update request to the specified
-		// workflow execution and returns the result synchronously. Calling this
-		// function is equivalent to calling UpdateWorkflowWithOptions with
-		// the same arguments and indicating that the RPC call should wait for
-		// completion of the update process.
-		// NOTE: Experimental
-		UpdateWorkflow(ctx context.Context, workflowID string, workflowRunID string, updateName string, args ...interface{}) (WorkflowUpdateHandle, error)
-
-		// UpdateWorkflowWithOptions issues an update request to the
+		// UpdateWorkflow issues an update request to the
 		// specified workflow execution and returns a handle to the update that
 		// is running in in parallel with the calling thread. Errors returned
 		// from the server will be exposed through the return value of
 		// WorkflowExecutionUpdateHandle.Get(). Errors that occur before the
 		// update is requested (e.g. if the required workflow ID field is
-		// missing from the UpdateWorkflowWithOptionsRequest) are returned
+		// missing from the UpdateWorkflowOptions) are returned
 		// directly from this function call.
 		// NOTE: Experimental
-		UpdateWorkflowWithOptions(ctx context.Context, request *UpdateWorkflowWithOptionsRequest) (WorkflowUpdateHandle, error)
+		UpdateWorkflow(ctx context.Context, options UpdateWorkflowOptions) (WorkflowUpdateHandle, error)
 
 		// GetWorkflowUpdateHandle creates a handle to the referenced update
 		// which can be polled for an outcome. Note that runID is optional and
@@ -424,8 +416,7 @@ type (
 		// will use a registered resolver. By default all hosts returned from the resolver will be used in a round-robin
 		// fashion.
 		//
-		// The "dns" resolver is registered by default. Using a "dns:///" prefixed address will periodically resolve all IPs
-		// for DNS address given and round robin amongst them.
+		// The "dns" resolver is registered by and used by default.
 		//
 		// A custom resolver can be created to provide multiple hosts in other ways. For example, to manually provide
 		// multiple IPs to round-robin across, a google.golang.org/grpc/resolver/manual resolver can be created and
@@ -490,6 +481,9 @@ type (
 		// worker options, the ones here wrap the ones in worker options. The same
 		// interceptor should not be set here and in worker options.
 		Interceptors []ClientInterceptor
+
+		// If set true, error code labels will not be included on request failure metrics.
+		DisableErrorCodeMetricTags bool
 	}
 
 	// HeadersProvider returns a map of gRPC headers that should be used on every request.
@@ -832,14 +826,8 @@ func newDialParameters(options *ClientOptions, excludeInternalFromRetry *atomic.
 	return dialParameters{
 		UserConnectionOptions: options.ConnectionOptions,
 		HostPort:              options.HostPort,
-		RequiredInterceptors: requiredInterceptors(
-			options.MetricsHandler,
-			options.HeadersProvider,
-			options.TrafficController,
-			excludeInternalFromRetry,
-			options.Credentials,
-		),
-		DefaultServiceConfig: defaultServiceConfig,
+		RequiredInterceptors:  requiredInterceptors(options, excludeInternalFromRetry),
+		DefaultServiceConfig:  defaultServiceConfig,
 	}
 }
 

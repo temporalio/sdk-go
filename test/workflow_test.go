@@ -101,6 +101,20 @@ func (w *Workflows) DeadlockedWithLocalActivity(ctx workflow.Context) ([]string,
 	return []string{}, nil
 }
 
+func (w *Workflows) LocalActivityNextRetryDelay(ctx workflow.Context) (time.Duration, error) {
+	laCtx := workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+		ScheduleToCloseTimeout: time.Minute,
+		RetryPolicy: &temporal.RetryPolicy{
+			MaximumAttempts: 8,
+		},
+	})
+
+	t1 := workflow.Now(ctx)
+	_ = workflow.ExecuteLocalActivity(laCtx, ErrorWithNextDelay, time.Second).Get(laCtx, nil)
+	t2 := workflow.Now(ctx)
+	return t2.Sub(t1), nil
+}
+
 func (w *Workflows) Panicked(ctx workflow.Context) ([]string, error) {
 	panic("simulated")
 }
@@ -310,6 +324,21 @@ func (w *Workflows) ActivityRetryOnHBTimeout(ctx workflow.Context) ([]string, er
 	}
 
 	return []string{"heartbeatAndSleep", "heartbeatAndSleep", "heartbeatAndSleep"}, nil
+}
+
+func (w *Workflows) UpdateBasicWorkflow(ctx workflow.Context) error {
+	err := workflow.SetUpdateHandler(ctx, "update", func(ctx workflow.Context, t time.Duration) (string, error) {
+		err := workflow.Sleep(ctx, t)
+		if err != nil {
+			return "", err
+		}
+		return "test", nil
+	})
+	if err != nil {
+		return errors.New("failed to register update handler")
+	}
+	workflow.GetSignalChannel(ctx, "finish").Receive(ctx, nil)
+	return nil
 }
 
 func (w *Workflows) UpdateCancelableWorkflow(ctx workflow.Context) error {
@@ -2436,6 +2465,26 @@ func (w *Workflows) SignalCounter(ctx workflow.Context) error {
 	}
 }
 
+func (w *Workflows) QueryTestWorkflow(ctx workflow.Context) error {
+	status := "running"
+	defer func() {
+		status = "completed"
+	}()
+	err := workflow.SetQueryHandler(ctx, "query", func() (string, error) {
+		return status, nil
+	})
+	if err != nil {
+		return err
+	}
+	signalCh := workflow.GetSignalChannel(ctx, "signal")
+	var fail bool
+	signalCh.Receive(ctx, &fail)
+	if fail {
+		return errors.New("test failure")
+	}
+	return nil
+}
+
 func (w *Workflows) PanicOnSignal(ctx workflow.Context) error {
 	// Wait for signal then panic
 	workflow.GetSignalChannel(ctx, "panic-signal").Receive(ctx, nil)
@@ -3024,6 +3073,9 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.UpdateSettingHandlerInHandler)
 	worker.RegisterWorkflow(w.UpdateCancelableWorkflow)
 	worker.RegisterWorkflow(w.UpdateHandlerRegisteredLate)
+	worker.RegisterWorkflow(w.UpdateBasicWorkflow)
+	worker.RegisterWorkflow(w.LocalActivityNextRetryDelay)
+	worker.RegisterWorkflow(w.QueryTestWorkflow)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childWithRetryPolicy)

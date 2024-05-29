@@ -103,6 +103,25 @@ const (
 	BuildIDTaskReachabilityUnreachable = internal.BuildIDTaskReachabilityUnreachable
 )
 
+// WorkflowUpdateStage indicates the stage of an update request.
+// NOTE: Experimental
+type WorkflowUpdateStage = internal.WorkflowUpdateStage
+
+const (
+	// WorkflowUpdateStageUnspecified indicates the wait stage was not specified
+	// NOTE: Experimental
+	WorkflowUpdateStageUnspecified = internal.WorkflowUpdateStageUnspecified
+	// WorkflowUpdateStageAdmitted indicates the update is admitted
+	// NOTE: Experimental
+	WorkflowUpdateStageAdmitted = internal.WorkflowUpdateStageAdmitted
+	// WorkflowUpdateStageAccepted indicates the update is accepted
+	// NOTE: Experimental
+	WorkflowUpdateStageAccepted = internal.WorkflowUpdateStageAccepted
+	// WorkflowUpdateStageCompleted indicates the update is completed
+	// NOTE: Experimental
+	WorkflowUpdateStageCompleted = internal.WorkflowUpdateStageCompleted
+)
+
 const (
 	// DefaultHostPort is the host:port which is used if not passed with options.
 	DefaultHostPort = internal.LocalHostPort
@@ -235,10 +254,10 @@ type (
 	// ScheduleBackfillOptions configure the parameters for backfilling a schedule.
 	ScheduleBackfillOptions = internal.ScheduleBackfillOptions
 
-	// UpdateWorkflowWithOptionsRequest encapsulates the parameters for
+	// UpdateWorkflowOptions encapsulates the parameters for
 	// sending an update to a workflow execution.
-	// WARNING: Worker versioning is currently experimental
-	UpdateWorkflowWithOptionsRequest = internal.UpdateWorkflowWithOptionsRequest
+	// NOTE: Experimental
+	UpdateWorkflowOptions = internal.UpdateWorkflowOptions
 
 	// WorkflowUpdateHandle represents a running or completed workflow
 	// execution update and gives the holder access to the outcome of the same.
@@ -762,24 +781,16 @@ type (
 		// API. If the check fails, an error is returned.
 		CheckHealth(ctx context.Context, request *CheckHealthRequest) (*CheckHealthResponse, error)
 
-		// UpdateWorkflow issues an update request to the specified
-		// workflow execution and returns the result synchronously. Calling this
-		// function is equivalent to calling UpdateWorkflowWithOptions with
-		// the same arguments and indicating that the RPC call should wait for
-		// completion of the update process.
-		// NOTE: Experimental
-		UpdateWorkflow(ctx context.Context, workflowID string, workflowRunID string, updateName string, args ...interface{}) (WorkflowUpdateHandle, error)
-
-		// UpdateWorkflowWithOptions issues an update request to the
+		// UpdateWorkflow issues an update request to the
 		// specified workflow execution and returns a handle to the update that
 		// is running in in parallel with the calling thread. Errors returned
 		// from the server will be exposed through the return value of
 		// WorkflowUpdateHandle.Get(). Errors that occur before the
 		// update is requested (e.g. if the required workflow ID field is
-		// missing from the UpdateWorkflowWithOptionsRequest) are returned
+		// missing from the UpdateWorkflowOptions) are returned
 		// directly from this function call.
 		// NOTE: Experimental
-		UpdateWorkflowWithOptions(ctx context.Context, request *UpdateWorkflowWithOptionsRequest) (WorkflowUpdateHandle, error)
+		UpdateWorkflow(ctx context.Context, options UpdateWorkflowOptions) (WorkflowUpdateHandle, error)
 
 		// GetWorkflowUpdateHandle creates a handle to the referenced update
 		// which can be polled for an outcome. Note that runID is optional and

@@ -86,6 +86,12 @@ func LocalSleep(_ context.Context, delay time.Duration) error {
 	return nil
 }
 
+func ErrorWithNextDelay(_ context.Context, delay time.Duration) error {
+	return temporal.NewApplicationErrorWithOptions("error with next delay", "NextDelay", temporal.ApplicationErrorOptions{
+		NextRetryDelay: delay,
+	})
+}
+
 func (a *Activities) ActivityToBeCanceled(ctx context.Context) (string, error) {
 	a.append("ActivityToBeCanceled")
 	for {

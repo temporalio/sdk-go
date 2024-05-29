@@ -309,8 +309,8 @@ func (s *PollLayerInterfacesTestSuite) TestMessageCommands() {
 	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED, nextTask.events[0].GetEventType())
 	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED, nextTask.events[1].GetEventType())
 
-	s.Equal(1, len(nextTask.msgs))
-	s.Equal("test", nextTask.msgs[0].GetProtocolInstanceId())
+	s.Equal(1, len(nextTask.acceptedMsgs))
+	s.Equal("test", nextTask.acceptedMsgs[0].GetProtocolInstanceId())
 
 	nextTask, err = eh.nextTask()
 	s.NoError(err)
@@ -319,7 +319,7 @@ func (s *PollLayerInterfacesTestSuite) TestMessageCommands() {
 	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED, nextTask.events[1].GetEventType())
 	s.Equal(enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED, nextTask.events[2].GetEventType())
 
-	s.Equal(0, len(nextTask.msgs))
+	s.Equal(0, len(nextTask.acceptedMsgs))
 }
 
 func (s *PollLayerInterfacesTestSuite) TestEmptyPages() {
@@ -339,16 +339,10 @@ func (s *PollLayerInterfacesTestSuite) TestEmptyPages() {
 			ScheduledEventId: 5,
 			StartedEventId:   6,
 		}),
-		{
-			EventId:   8,
-			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
-			Attributes: &historypb.HistoryEvent_WorkflowExecutionUpdateAcceptedEventAttributes{
-				WorkflowExecutionUpdateAcceptedEventAttributes: &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
-					ProtocolInstanceId: "test",
-					AcceptedRequest:    &updatepb.Request{},
-				},
-			},
-		},
+		createTestEventWorkflowExecutionUpdateAccepted(8, &historypb.WorkflowExecutionUpdateAcceptedEventAttributes{
+			ProtocolInstanceId: "test",
+			AcceptedRequest:    &updatepb.Request{},
+		}),
 		createTestEventWorkflowTaskScheduled(9, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
 		createTestEventWorkflowTaskStarted(10),
 	}
@@ -433,8 +427,8 @@ func (s *PollLayerInterfacesTestSuite) TestEmptyPages() {
 			s.Equal(expected.events[i].EventType, event.EventType)
 		}
 
-		s.Equal(len(expected.messages), len(nexTask.msgs))
-		for i, msg := range nexTask.msgs {
+		s.Equal(len(expected.messages), len(nexTask.acceptedMsgs))
+		for i, msg := range nexTask.acceptedMsgs {
 			s.Equal(expected.messages[i].ProtocolInstanceId, msg.ProtocolInstanceId)
 		}
 	}

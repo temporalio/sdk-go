@@ -451,6 +451,10 @@ func (env *testWorkflowEnvironmentImpl) setDataConverter(dataConverter converter
 	env.dataConverter = dataConverter
 }
 
+func (env *testWorkflowEnvironmentImpl) setFailureConverter(failureConverter converter.FailureConverter) {
+	env.failureConverter = failureConverter
+}
+
 func (env *testWorkflowEnvironmentImpl) setContextPropagators(contextPropagators []ContextPropagator) {
 	env.contextPropagators = contextPropagators
 }
@@ -1647,7 +1651,7 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 		Attempt: 1,
 	}
 	if result.task.retryPolicy != nil && result.err != nil {
-		lar.Backoff = getRetryBackoff(result, env.Now(), env.dataConverter)
+		lar.Backoff = getRetryBackoff(result, env.Now())
 		lar.Attempt = task.attempt
 	}
 	task.callback(lar)

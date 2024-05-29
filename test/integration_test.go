@@ -27,7 +27,9 @@ package test_test
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
+	"math"
 	"math/rand"
 	"os"
 	"strings"
@@ -50,7 +52,6 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
-	updatepb "go.temporal.io/api/update/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.uber.org/goleak"
@@ -76,6 +77,12 @@ import (
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
+
+var usingCLIDevServerFlag bool
+
+func init() {
+	flag.BoolVar(&usingCLIDevServerFlag, "using-cli-dev-server", false, "Whether CLI dev server is in use")
+}
 
 const (
 	ctxTimeout                    = 15 * time.Second
@@ -456,6 +463,16 @@ func (ts *IntegrationTestSuite) TestDeadlockDetectionViaLocalActivity() {
 	ok := errors.As(err, &applicationErr)
 	ts.True(ok)
 	ts.True(strings.Contains(applicationErr.Error(), "Potential deadlock detected"))
+}
+
+func (ts *IntegrationTestSuite) TestLocalActivityNextRetryDelay() {
+	var activityExecutionTime time.Duration
+	wfOpts := ts.startWorkflowOptions("test-local-activity-next-retry-delay")
+	wfOpts.WorkflowTaskTimeout = 5 * time.Second
+	err := ts.executeWorkflowWithOption(wfOpts, ts.workflows.LocalActivityNextRetryDelay, &activityExecutionTime)
+	ts.NoError(err)
+	// Check the activity execution time is around 7 seconds
+	ts.LessOrEqual(math.Abs((activityExecutionTime - 7*time.Second).Seconds()), 1.0)
 }
 
 func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
@@ -1375,7 +1392,12 @@ func (ts *IntegrationTestSuite) TestMutatingUpdateValidator() {
 		ts.startWorkflowOptions("test-mutating-update-validator"), ts.workflows.MutatingUpdateValidatorWorkflow)
 	ts.Nil(err)
 	go func() {
-		_, err = ts.client.UpdateWorkflow(ctx, "test-mutating-update-validator", run.GetRunID(), "mutating_update")
+		_, err = ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+			WorkflowID:   "test-mutating-update-validator",
+			RunID:        run.GetRunID(),
+			UpdateName:   "mutating_update",
+			WaitForStage: client.WorkflowUpdateStageCompleted,
+		})
 	}()
 
 	wfErr := run.Get(ctx, nil)
@@ -1432,11 +1454,12 @@ func (ts *IntegrationTestSuite) TestUpdateInfo() {
 		ts.startWorkflowOptions("test-update-info"), ts.workflows.UpdateInfoWorkflow)
 	ts.Nil(err)
 	// Send an update request with a know update ID
-	handler, err := ts.client.UpdateWorkflowWithOptions(ctx, &client.UpdateWorkflowWithOptionsRequest{
-		UpdateID:   "testID",
-		WorkflowID: run.GetID(),
-		RunID:      run.GetRunID(),
-		UpdateName: "update",
+	handler, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		UpdateID:     "testID",
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
 	})
 	ts.NoError(err)
 	// Verify the upate handler can access the update info and return the updateID
@@ -1444,11 +1467,12 @@ func (ts *IntegrationTestSuite) TestUpdateInfo() {
 	ts.NoError(handler.Get(ctx, &result))
 	ts.Equal("testID", result)
 	// Test the update validator can also use the update info
-	handler, err = ts.client.UpdateWorkflowWithOptions(ctx, &client.UpdateWorkflowWithOptionsRequest{
-		UpdateID:   "notTestID",
-		WorkflowID: run.GetID(),
-		RunID:      run.GetRunID(),
-		UpdateName: "update",
+	handler, err = ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		UpdateID:     "notTestID",
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
 	})
 	ts.NoError(err)
 	err = handler.Get(ctx, nil)
@@ -1467,7 +1491,12 @@ func (ts *IntegrationTestSuite) TestUpdateValidatorRejectedFirstWFT() {
 		wfOptions, ts.workflows.UpdateWithValidatorWorkflow)
 	ts.Nil(err)
 	// Send a bad update request that will get rejected
-	handler, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update", "")
+	handler, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
 	ts.NoError(err)
 	err = handler.Get(ctx, nil)
 	ts.Error(err)
@@ -1485,7 +1514,12 @@ func (ts *IntegrationTestSuite) TestUpdateValidatorRejected() {
 	_, err = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), client.QueryTypeStackTrace)
 	ts.NoError(err)
 	// Send a bad update request that will get rejected
-	handler, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update", "")
+	handler, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
 	ts.NoError(err)
 	err = handler.Get(ctx, nil)
 	ts.Error(err)
@@ -1504,14 +1538,12 @@ func (ts *IntegrationTestSuite) TestUpdateWorkflowCancelled() {
 	// Send a few updates to the workflow
 	handles := make([]client.WorkflowUpdateHandle, 0, 5)
 	for i := 0; i < 5; i++ {
-		handler, err := ts.client.UpdateWorkflowWithOptions(ctx, &client.UpdateWorkflowWithOptionsRequest{
-			UpdateID:   fmt.Sprintf("test-update-%d", i),
-			WorkflowID: run.GetID(),
-			RunID:      run.GetRunID(),
-			UpdateName: "update",
-			WaitPolicy: &updatepb.WaitPolicy{
-				LifecycleStage: enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ACCEPTED,
-			},
+		handler, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+			UpdateID:     fmt.Sprintf("test-update-%d", i),
+			WorkflowID:   run.GetID(),
+			RunID:        run.GetRunID(),
+			UpdateName:   "update",
+			WaitForStage: client.WorkflowUpdateStageAccepted,
 		})
 		ts.NoError(err)
 		handles = append(handles, handler)
@@ -1578,7 +1610,7 @@ func (ts *IntegrationTestSuite) TestSessionStateFailedWorkerFailed() {
 
 	// Now create a new worker on that same task queue to resume the work of the
 	// workflow
-	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{DisableStickyExecution: true})
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
 	ts.registerWorkflowsAndActivities(nextWorker)
 	ts.NoError(nextWorker.Start())
 	defer nextWorker.Stop()
@@ -1807,6 +1839,39 @@ func (ts *IntegrationTestSuite) TestEndToEndLatencyMetrics() {
 	ts.Equal(prevNonLocalValue, nonLocal.Value())
 }
 
+func (ts *IntegrationTestSuite) TestEndToEndLatencyOnFailureMetrics() {
+	fetchMetrics := func() (localMetric, nonLocalMetric *metrics.CapturedTimer) {
+		for _, timer := range ts.metricsHandler.Timers() {
+			timer := timer
+			if timer.Name == "temporal_activity_succeed_endtoend_latency" {
+				nonLocalMetric = timer
+			} else if timer.Name == "temporal_local_activity_succeed_endtoend_latency" {
+				localMetric = timer
+			}
+		}
+		return
+	}
+
+	// Confirm no metrics to start
+	local, nonLocal := fetchMetrics()
+	ts.Nil(local)
+	ts.Nil(nonLocal)
+
+	// Run regular activity and confirm non-local metric is not emitted
+	err := ts.executeWorkflow("test-end-to-end-metrics-on-failure-1", ts.workflows.ActivityRetryOnError, nil)
+	ts.NoError(err)
+	local, nonLocal = fetchMetrics()
+	ts.Nil(local)
+	ts.Nil(nonLocal)
+
+	// Run local activity and confirm local metric is not emitted
+	err = ts.executeWorkflow("test-end-to-end-metrics-on-failure-2", ts.workflows.ActivityRetryOnError, nil)
+	ts.NoError(err)
+	local, nonLocal = fetchMetrics()
+	ts.Nil(local)
+	ts.Nil(nonLocal)
+}
+
 func (ts *IntegrationTestSuite) TestGracefulActivityCompletion() {
 	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1851,6 +1916,96 @@ func (ts *IntegrationTestSuite) TestGracefulActivityCompletion() {
 func (ts *IntegrationTestSuite) TestCancelChildAndExecuteActivityRace() {
 	err := ts.executeWorkflow("cancel-child-and-execute-act-race", ts.workflows.CancelChildAndExecuteActivityRace, nil)
 	ts.NoError(err)
+}
+
+func (ts *IntegrationTestSuite) TestQueryWorkflowRejectNotOpen() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start workflow
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-workflow-query-reject-not-open"),
+		ts.workflows.QueryTestWorkflow)
+	ts.NoError(err)
+
+	// Query when the workflow is running
+	queryVal, err := ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+		WorkflowID:           run.GetID(),
+		RunID:                run.GetRunID(),
+		QueryType:            "query",
+		QueryRejectCondition: enumspb.QUERY_REJECT_CONDITION_NONE,
+	})
+	ts.NoError(err)
+	var queryRes string
+	ts.NoError(queryVal.QueryResult.Get(&queryRes))
+	ts.Equal("running", queryRes)
+
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "signal", false))
+	ts.NoError(run.Get(ctx, nil))
+
+	// Query when the workflow is completed
+	queryVal, err = ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+		WorkflowID:           run.GetID(),
+		RunID:                run.GetRunID(),
+		QueryType:            "query",
+		QueryRejectCondition: enumspb.QUERY_REJECT_CONDITION_NOT_COMPLETED_CLEANLY,
+	})
+	ts.NoError(err)
+	queryRes = ""
+	ts.NoError(queryVal.QueryResult.Get(&queryRes))
+	ts.Equal("completed", queryRes)
+
+	queryVal, err = ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+		WorkflowID:           run.GetID(),
+		RunID:                run.GetRunID(),
+		QueryType:            "query",
+		QueryRejectCondition: enumspb.QUERY_REJECT_CONDITION_NOT_OPEN,
+	})
+	ts.NoError(err)
+	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED, queryVal.QueryRejected.Status)
+}
+
+func (ts *IntegrationTestSuite) TestQueryWorkflowRejectNotCompleteCleanly() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start workflow
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-workflow-query-not-complete-cleanly"),
+		ts.workflows.QueryTestWorkflow)
+	ts.NoError(err)
+
+	// Query when the workflow is running
+	queryVal, err := ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+		WorkflowID:           run.GetID(),
+		RunID:                run.GetRunID(),
+		QueryType:            "query",
+		QueryRejectCondition: enumspb.QUERY_REJECT_CONDITION_NONE,
+	})
+	ts.NoError(err)
+	var queryRes string
+	ts.NoError(queryVal.QueryResult.Get(&queryRes))
+	ts.Equal("running", queryRes)
+
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "signal", true))
+	ts.Error(run.Get(ctx, nil))
+
+	// Query when the workflow is failed
+	queryVal, err = ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+		WorkflowID:           run.GetID(),
+		RunID:                run.GetRunID(),
+		QueryType:            "query",
+		QueryRejectCondition: enumspb.QUERY_REJECT_CONDITION_NOT_OPEN,
+	})
+	ts.NoError(err)
+	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_FAILED, queryVal.QueryRejected.Status)
+
+	queryVal, err = ts.client.QueryWorkflowWithOptions(ctx, &client.QueryWorkflowWithOptionsRequest{
+		WorkflowID:           run.GetID(),
+		RunID:                run.GetRunID(),
+		QueryType:            "query",
+		QueryRejectCondition: enumspb.QUERY_REJECT_CONDITION_NOT_COMPLETED_CLEANLY,
+	})
+	ts.NoError(err)
+	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_FAILED, queryVal.QueryRejected.Status)
 }
 
 func (ts *IntegrationTestSuite) TestInterceptorCalls() {
@@ -2617,6 +2772,104 @@ func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSizeWithRecreat
 	ts.NoError(run2.Get(ctx, nil))
 }
 
+func (ts *IntegrationTestSuite) TestUpdateBasic() {
+	ctx := context.Background()
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-update-beee"), ts.workflows.UpdateBasicWorkflow)
+	ts.Nil(err)
+	// Send an update request
+	ts.Run("ShortUpdate", func() {
+		handler, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+			WorkflowID:   run.GetID(),
+			RunID:        run.GetRunID(),
+			UpdateName:   "update",
+			Args:         []interface{}{time.Duration(0)},
+			WaitForStage: client.WorkflowUpdateStageCompleted,
+		})
+		ts.NoError(err)
+		handler.Get(ctx, nil)
+	})
+	// Send an update request
+	ts.Run("ShortUpdateWaitOnCompleted", func() {
+		handler, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+			WorkflowID:   run.GetID(),
+			RunID:        run.GetRunID(),
+			UpdateName:   "update",
+			Args:         []interface{}{time.Duration(0)},
+			WaitForStage: client.WorkflowUpdateStageAccepted,
+		})
+
+		ts.NoError(err)
+		handler.Get(ctx, nil)
+	})
+	// Send an update request
+	ts.Run("LongUpdateWaitOnAccepted", func() {
+		handler, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+			WorkflowID:   run.GetID(),
+			RunID:        run.GetRunID(),
+			UpdateName:   "update",
+			Args:         []interface{}{time.Hour},
+			WaitForStage: client.WorkflowUpdateStageAccepted,
+		})
+		ts.NoError(err)
+		// The update result should not be ready yet
+		tCtx, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		ts.Error(handler.Get(tCtx, nil))
+	})
+	// complete workflow
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
+	ts.NoError(run.Get(ctx, nil))
+}
+
+func (ts *IntegrationTestSuite) TestLongUpdateWaitOnCompleted() {
+	ctx := context.Background()
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-long-update-wait-on-completed"), ts.workflows.UpdateBasicWorkflow)
+	ts.Nil(err)
+
+	// Send an update request
+	tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	_, err = ts.client.UpdateWorkflow(tctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		Args:         []interface{}{time.Hour},
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
+	ts.Error(err)
+
+	// complete workflow
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
+	ts.NoError(run.Get(ctx, nil))
+}
+
+func (ts *IntegrationTestSuite) TestUpdateAdmittedNoWorker() {
+	ctx := context.Background()
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-long-update-wait-on-completed"), ts.workflows.UpdateBasicWorkflow)
+	ts.Nil(err)
+
+	ts.worker.Stop()
+	ts.workerStopped = true
+
+	// Send an update request
+	tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	_, err = ts.client.UpdateWorkflow(tctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		Args:         []interface{}{time.Hour},
+		WaitForStage: client.WorkflowUpdateStageAccepted,
+	})
+	ts.Error(err)
+
+	// complete workflow
+	ts.NoError(ts.client.TerminateWorkflow(ctx, run.GetID(), run.GetRunID(), "for test"))
+}
+
 func (ts *IntegrationTestSuite) TestUpdateWithNoHandlerRejected() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -2627,7 +2880,12 @@ func (ts *IntegrationTestSuite) TestUpdateWithNoHandlerRejected() {
 		ts.workflows.Basic)
 	ts.NoError(err)
 	// Send an update that we know has no handle
-	handle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "bad handle")
+	handle, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "bad update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
 	ts.NoError(err)
 	ts.Error(handle.Get(ctx, nil))
 	// The workflow should still complete
@@ -2645,7 +2903,12 @@ func (ts *IntegrationTestSuite) TestUpdateWithWrongHandleRejected() {
 		ts.workflows.WaitOnUpdate)
 	ts.NoError(err)
 	// Send an update before the first workflow task
-	updateHandle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "bad update")
+	updateHandle, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "bad update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
 	ts.NoError(err)
 	ts.Error(updateHandle.Get(ctx, nil))
 	// Get the result
@@ -2664,7 +2927,12 @@ func (ts *IntegrationTestSuite) TestWaitOnUpdate() {
 		ts.workflows.WaitOnUpdate)
 	ts.NoError(err)
 	// Send an update before the first workflow task
-	updateHandle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "echo")
+	updateHandle, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "echo",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
 	ts.NoError(err)
 	ts.NoError(updateHandle.Get(ctx, nil))
 	// Get the result
@@ -2684,13 +2952,23 @@ func (ts *IntegrationTestSuite) TestUpdateHandlerRegisteredLate() {
 	// Wait for the workflow to be blocked
 	ts.waitForQueryTrue(run, "state", 0)
 	// Send an update before the handler is registered
-	updateHandle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	updateHandle, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
 	ts.NoError(err)
 	ts.Error(updateHandle.Get(ctx, nil))
 	// Unblock the workflow so it can register the handler
 	ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "unblock", nil)
 	// Send an update after the handler is registered
-	updateHandle, err = ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	updateHandle, err = ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
 	ts.NoError(err)
 	ts.NoError(updateHandle.Get(ctx, nil))
 	// Unblock the workflow so it can complete
@@ -2714,7 +2992,12 @@ func (ts *IntegrationTestSuite) TestUpdateSDKFlag() {
 	// Unblock the workflow so it can register the handler
 	ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "unblock", nil)
 	// Send an update after the handler is registered
-	updateHandle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	updateHandle, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
 	ts.NoError(err)
 	ts.NoError(updateHandle.Get(ctx, nil))
 	// Unblock the workflow so it can complete
@@ -2751,11 +3034,21 @@ func (ts *IntegrationTestSuite) TestUpdateOrdering() {
 		ts.workflows.UpdateOrdering)
 	ts.NoError(err)
 	// Send an update before the first workflow task
-	updateHandle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	updateHandle, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
 	ts.NoError(err)
 	ts.NoError(updateHandle.Get(ctx, nil))
 	// Send an update after the first workflow task
-	updateHandle, err = ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	updateHandle, err = ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
 	ts.NoError(err)
 	ts.NoError(updateHandle.Get(ctx, nil))
 	// Get the result
@@ -2794,7 +3087,12 @@ func (ts *IntegrationTestSuite) testUpdateOrderingCancel(cancelWf bool) {
 		go func() {
 			defer wf.Done()
 			handle := updateHandles[rand.Intn(3)]
-			updateHandle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), handle)
+			updateHandle, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+				WorkflowID:   run.GetID(),
+				RunID:        run.GetRunID(),
+				UpdateName:   handle,
+				WaitForStage: client.WorkflowUpdateStageCompleted,
+			})
 			ts.NoError(err)
 			updateErr := updateHandle.Get(ctx, nil)
 			if cancelWf {
@@ -2829,7 +3127,12 @@ func (ts *IntegrationTestSuite) TestUpdateAlwaysHandled() {
 	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.UpdateSetHandlerOnly)
 	ts.NoError(err)
 	// Send an update before the first workflow task
-	_, err = ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	_, err = ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
 	ts.NoError(err)
 	var result int
 	ts.NoError(run.Get(ctx, &result))
@@ -2844,7 +3147,12 @@ func (ts *IntegrationTestSuite) TestUpdateRejected() {
 	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.UpdateRejectedWithOtherGoRoutine)
 	ts.NoError(err)
 	// Send an update we expect to be rejected before the first workflow task
-	handle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	handle, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
 	ts.NoError(err)
 	ts.Error(handle.Get(ctx, nil))
 	ts.NoError(run.Get(ctx, nil))
@@ -2858,7 +3166,12 @@ func (ts *IntegrationTestSuite) TestUpdateSettingHandlerInGoroutine() {
 	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.UpdateSettingHandlerInGoroutine)
 	ts.NoError(err)
 	// Send an update handler in a workflow goroutine, this should be accepted
-	handle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	handle, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
 	ts.NoError(err)
 	ts.NoError(handle.Get(ctx, nil))
 	ts.NoError(run.Get(ctx, nil))
@@ -2872,15 +3185,30 @@ func (ts *IntegrationTestSuite) TestUpdateSettingHandlerInHandler() {
 	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.UpdateSettingHandlerInHandler)
 	ts.NoError(err)
 	// Expect this to fail because the handler is not set yet
-	handle, err := ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "inner update")
+	handle, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "inner update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
 	ts.NoError(err)
 	ts.Error(handle.Get(ctx, nil))
 	// Send an update that should register a new handler for "inner update"
-	handle, err = ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "update")
+	handle, err = ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
 	ts.NoError(err)
 	ts.NoError(handle.Get(ctx, nil))
 	// Expect this to succeed because the handler is set now
-	handle, err = ts.client.UpdateWorkflow(ctx, run.GetID(), run.GetRunID(), "inner update")
+	handle, err = ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "inner update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
 	ts.NoError(err)
 	ts.NoError(handle.Get(ctx, nil))
 	ts.NoError(run.Get(ctx, nil))
@@ -2909,7 +3237,7 @@ func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
 
 	// Now create a new worker on that same task queue to resume the work of the
 	// workflow
-	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{DisableStickyExecution: true})
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
 	ts.registerWorkflowsAndActivities(nextWorker)
 	ts.NoError(nextWorker.Start())
 	defer nextWorker.Stop()
@@ -3121,7 +3449,7 @@ func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch b
 	// Now, stop the worker and start a new one
 	ts.worker.Stop()
 	ts.workerStopped = true
-	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{DisableStickyExecution: true})
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
 	ts.registerWorkflowsAndActivities(nextWorker)
 	ts.NoError(nextWorker.Start())
 	defer nextWorker.Stop()
@@ -4720,6 +5048,18 @@ func (ts *IntegrationTestSuite) TestNondeterministicUpdateRegistertion() {
 	ts.EqualValues(expected, ts.activities.invoked())
 }
 
+func (ts *IntegrationTestSuite) TestRequestFailureMetric() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Unset namespace field will cause an invalid argument error
+	_, _ = ts.client.WorkflowService().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{})
+
+	ts.assertMetricCount(metrics.TemporalRequestFailure, 1,
+		metrics.OperationTagName, "DescribeNamespace",
+		metrics.RequestFailureCode, "INVALID_ARGUMENT")
+}
+
 // executeWorkflow executes a given workflow and waits for the result
 func (ts *IntegrationTestSuite) executeWorkflow(
 	wfID string, wfFunc interface{}, retValPtr interface{}, args ...interface{},
@@ -5059,6 +5399,12 @@ func (ts *InvalidUTF8Suite) TearDownSuite() {
 }
 
 func (ts *InvalidUTF8Suite) SetupTest() {
+	// This suite isn't valid for CLI dev servers because they don't allow invalid
+	// UTF8
+	if usingCLIDevServerFlag {
+		ts.T().Skip("Skipping invalid UTF8 suite for dev server")
+		return
+	}
 	var err error
 	ts.client, err = client.Dial(client.Options{
 		HostPort:  ts.config.ServiceAddr,
@@ -5091,6 +5437,9 @@ func (ts *InvalidUTF8Suite) SetupTest() {
 }
 
 func (ts *InvalidUTF8Suite) TearDownTest() {
+	if usingCLIDevServerFlag {
+		return
+	}
 	ts.client.Close()
 	if !ts.workerStopped {
 		ts.worker.Stop()

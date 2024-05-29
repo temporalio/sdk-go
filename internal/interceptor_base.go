@@ -425,7 +425,7 @@ func (c *ClientOutboundInterceptorBase) UpdateWorkflow(
 func (c *ClientOutboundInterceptorBase) PollWorkflowUpdate(
 	ctx context.Context,
 	in *ClientPollWorkflowUpdateInput,
-) (converter.EncodedValue, error) {
+) (*ClientPollWorkflowUpdateOutput, error) {
 	return c.Next.PollWorkflowUpdate(ctx, in)
 }
 

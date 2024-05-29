@@ -30,6 +30,7 @@ import (
 	"reflect"
 
 	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
 	updatepb "go.temporal.io/api/update/v1"
@@ -38,6 +39,20 @@ import (
 )
 
 type updateState string
+
+// WorkflowUpdateStage indicates the stage of an update request.
+type WorkflowUpdateStage int
+
+const (
+	// WorkflowUpdateStageUnspecified indicates the wait stage was not specified
+	WorkflowUpdateStageUnspecified WorkflowUpdateStage = iota
+	// WorkflowUpdateStageAdmitted indicates the update is admitted
+	WorkflowUpdateStageAdmitted
+	// WorkflowUpdateStageAccepted indicates the update is accepted
+	WorkflowUpdateStageAccepted
+	// WorkflowUpdateStageCompleted indicates the update is completed
+	WorkflowUpdateStageCompleted
+)
 
 const (
 	updateStateNew              updateState = "New"
@@ -91,6 +106,7 @@ type (
 	updateProtocol struct {
 		protoInstanceID string
 		clientIdentity  string
+		initialRequest  *updatepb.Request
 		requestMsgID    string
 		requestSeqID    int64
 		scheduleUpdate  func(name string, id string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
@@ -134,15 +150,16 @@ func (up *updateProtocol) requireState(action string, valid ...updateState) {
 }
 
 func (up *updateProtocol) HandleMessage(msg *protocolpb.Message) error {
-	var req updatepb.Request
-	if err := msg.Body.UnmarshalTo(&req); err != nil {
+	var request updatepb.Request
+	if err := msg.Body.UnmarshalTo(&request); err != nil {
 		return err
 	}
+	up.initialRequest = &request
 	up.requireState("update request", updateStateNew)
 	up.requestMsgID = msg.GetId()
 	up.requestSeqID = msg.GetEventId()
-	input := req.GetInput()
-	up.scheduleUpdate(input.GetName(), req.GetMeta().GetUpdateId(), input.GetArgs(), input.GetHeader(), up)
+	input := up.initialRequest.GetInput()
+	up.scheduleUpdate(input.GetName(), up.initialRequest.GetMeta().GetUpdateId(), input.GetArgs(), input.GetHeader(), up)
 	up.state = updateStateRequestInitiated
 	return nil
 }
@@ -157,9 +174,11 @@ func (up *updateProtocol) Accept() {
 		Body: protocol.MustMarshalAny(&updatepb.Acceptance{
 			AcceptedRequestMessageId:         up.requestMsgID,
 			AcceptedRequestSequencingEventId: up.requestSeqID,
-			// AcceptedRequest field no longer read by server - will be removed from API soon
+			AcceptedRequest:                  up.initialRequest,
 		}),
 	}, withExpectedEventPredicate(up.checkAcceptedEvent))
+	// Stop holding a reference to the initial request to allow it to be GCed
+	up.initialRequest = nil
 	up.state = updateStateAccepted
 }
 
@@ -172,8 +191,8 @@ func (up *updateProtocol) Reject(err error) {
 		Body: protocol.MustMarshalAny(&updatepb.Rejection{
 			RejectedRequestMessageId:         up.requestMsgID,
 			RejectedRequestSequencingEventId: up.requestSeqID,
+			RejectedRequest:                  up.initialRequest,
 			Failure:                          up.env.GetFailureConverter().ErrorToFailure(err),
-			// RejectedRequest field no longer read by server - will be removed from API soon
 		}),
 	})
 	up.state = updateStateCompleted
@@ -224,10 +243,9 @@ func (up *updateProtocol) checkAcceptedEvent(e *historypb.HistoryEvent) bool {
 	if attrs == nil {
 		return false
 	}
-	return attrs.AcceptedRequest.GetMeta().GetUpdateId() == up.protoInstanceID &&
+	return attrs.GetProtocolInstanceId() == up.protoInstanceID &&
 		attrs.AcceptedRequestMessageId == up.requestMsgID &&
-		attrs.AcceptedRequestSequencingEventId == up.requestSeqID &&
-		attrs.AcceptedRequest != nil
+		attrs.AcceptedRequestSequencingEventId == up.requestSeqID
 }
 
 // defaultHandler receives the initial invocation of an update during WFT
@@ -381,7 +399,7 @@ func (up *updateProtocol) HasCompleted() bool {
 //
 // 1. is a function
 // 2. has exactly one return parameter
-// 3. the one return prarmeter is of type `error`
+// 3. the one return parameter is of type `error`
 func validateValidatorFn(fn interface{}) error {
 	fnType := reflect.TypeOf(fn)
 	if fnType.Kind() != reflect.Func {
@@ -407,12 +425,21 @@ func validateValidatorFn(fn interface{}) error {
 // validateUpdateHandlerFn validates that the supplied interface
 //
 // 1. is a function
-// 2. has one or two return parameters, the last of which is of type `error`
-// 3. if there are two return parameters, the first is a serializable type
+// 2. has at least one parameter, the first of which is of type `workflow.Context`
+// 3. has one or two return parameters, the last of which is of type `error`
+// 4. if there are two return parameters, the first is a serializable type
 func validateUpdateHandlerFn(fn interface{}) error {
 	fnType := reflect.TypeOf(fn)
 	if fnType.Kind() != reflect.Func {
 		return fmt.Errorf("handler must be function but was %s", fnType.Kind())
+	}
+	if fnType.NumIn() == 0 {
+		return errors.New("first parameter of handler must be a workflow.Context")
+	} else if !isWorkflowContext(fnType.In(0)) {
+		return fmt.Errorf(
+			"first parameter of handler must be a workflow.Context but found %v",
+			fnType.In(0).Kind(),
+		)
 	}
 	switch fnType.NumOut() {
 	case 1:
@@ -440,4 +467,19 @@ func validateUpdateHandlerFn(fn interface{}) error {
 			"error or a serializable result and error (i.e. (ResultType, error))")
 	}
 	return nil
+}
+
+func updateLifeCycleStageToProto(l WorkflowUpdateStage) enumspb.UpdateWorkflowExecutionLifecycleStage {
+	switch l {
+	case WorkflowUpdateStageUnspecified:
+		return enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_UNSPECIFIED
+	case WorkflowUpdateStageAdmitted:
+		return enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ADMITTED
+	case WorkflowUpdateStageAccepted:
+		return enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ACCEPTED
+	case WorkflowUpdateStageCompleted:
+		return enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED
+	default:
+		panic("unknown update lifecycle stage")
+	}
 }
