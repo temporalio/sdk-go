@@ -39,9 +39,9 @@ type TaskQueueType int
 const (
 	// TaskQueueTypeUnspecified indicates the task queue type was not specified.
 	TaskQueueTypeUnspecified = iota
-	// TaskQueueTypeWorkflow indicates the task queue has workflow type.
+	// TaskQueueTypeWorkflow indicates the task queue is used for dispatching workflow tasks.
 	TaskQueueTypeWorkflow
-	// TaskQueueTypeActivity indicates the task queue has activity type.
+	// TaskQueueTypeActivity indicates the task queue is used for delivering activity tasks.
 	TaskQueueTypeActivity
 	// TaskQueueTypeNexus indicates the task queue is used for dispatching Nexus requests.
 	TaskQueueTypeNexus
@@ -107,7 +107,9 @@ type (
 	// and whether it is choosing to use the versioning feature.
 	// It is an optional component of [PollerInfo].
 	WorkerVersionCapabilities struct {
-		BuildID       string
+		// Build ID of the worker.
+		BuildID string
+		// Whether the worker is using the versioning feature.
 		UseVersioning bool
 	}
 
