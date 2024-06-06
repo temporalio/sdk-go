@@ -354,10 +354,10 @@ func (w *Workflows) UpdateCancelableWorkflow(ctx workflow.Context) error {
 
 func (w *Workflows) UpdateInfoWorkflow(ctx workflow.Context) error {
 	err := workflow.SetUpdateHandlerWithOptions(ctx, "update", func(ctx workflow.Context) (string, error) {
-		return workflow.GetUpdateInfo(ctx).ID, nil
+		return workflow.GetCurrentUpdateInfo(ctx).ID, nil
 	}, workflow.UpdateHandlerOptions{
 		Validator: func(ctx workflow.Context) error {
-			if workflow.GetUpdateInfo(ctx).ID != "testID" {
+			if workflow.GetCurrentUpdateInfo(ctx).ID != "testID" {
 				return errors.New("invalid update ID")
 			}
 			return nil

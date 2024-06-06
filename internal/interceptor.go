@@ -200,10 +200,10 @@ type WorkflowOutboundInterceptor interface {
 	// GetTypedSearchAttributes intercepts workflow.GetTypedSearchAttributes.
 	GetTypedSearchAttributes(ctx Context) SearchAttributes
 
-	// GetUpdateInfo intercepts workflow.GetUpdateInfo.
+	// GetCurrentUpdateInfo intercepts workflow.GetCurrentUpdateInfo.
 	//
 	// NOTE: Experimental
-	GetUpdateInfo(ctx Context) *UpdateInfo
+	GetCurrentUpdateInfo(ctx Context) *UpdateInfo
 
 	// GetLogger intercepts workflow.GetLogger.
 	GetLogger(ctx Context) log.Logger
