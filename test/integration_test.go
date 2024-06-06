@@ -4598,10 +4598,11 @@ func (ts *IntegrationTestSuite) TestScheduleBackfillCreate() {
 	defer func() {
 		ts.NoError(handle.Delete(ctx))
 	}()
-	time.Sleep(10 * time.Second)
-	description, err := handle.Describe(ctx)
-	ts.NoError(err)
-	ts.EqualValues(60, description.Info.NumActions)
+	ts.Eventually(func() bool {
+		description, err := handle.Describe(ctx)
+		ts.NoError(err)
+		return description.Info.NumActions == 60
+	}, 15*time.Second, time.Second)
 }
 
 func (ts *IntegrationTestSuite) TestScheduleBackfill() {
@@ -4644,10 +4645,11 @@ func (ts *IntegrationTestSuite) TestScheduleBackfill() {
 		},
 	})
 	ts.NoError(err)
-	time.Sleep(5 * time.Second)
-	description, err = handle.Describe(ctx)
-	ts.NoError(err)
-	ts.EqualValues(4, description.Info.NumActions)
+	ts.Eventually(func() bool {
+		description, err := handle.Describe(ctx)
+		ts.NoError(err)
+		return description.Info.NumActions == 4
+	}, 5*time.Second, time.Second)
 }
 
 func (ts *IntegrationTestSuite) TestScheduleList() {

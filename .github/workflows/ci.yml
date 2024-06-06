@@ -26,12 +26,12 @@ jobs:
     runs-on: ${{ matrix.runsOn || matrix.os }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: recursive
 
       - name: Setup Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
 
@@ -71,7 +71,7 @@ jobs:
 
       - name: Docker compose - checkout
         if: ${{ matrix.testDockerCompose }}
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           repository: temporalio/docker-compose
           path: ./docker-compose
@@ -81,7 +81,7 @@ jobs:
         run: |
           cp ./.github/workflows/docker/docker-compose.override.yaml ./docker-compose/docker-compose.override.yaml
           cp ./.github/workflows/docker/dynamic-config-custom.yaml ./docker-compose/dynamicconfig/dynamic-config-custom.yaml
-          docker-compose --project-directory ./docker-compose up &
+          docker compose --project-directory ./docker-compose up &
           go run ./.github/workflows/wait_for_server.go
 
       - name: Docker compose - integration tests
@@ -104,10 +104,10 @@ jobs:
       TEMPORAL_CLIENT_CERT: ${{ secrets.TEMPORAL_CLIENT_CERT }}
       TEMPORAL_CLIENT_KEY: ${{ secrets.TEMPORAL_CLIENT_KEY }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - uses: actions/setup-go@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
       - name: Single integration test against cloud

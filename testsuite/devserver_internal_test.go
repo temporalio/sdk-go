@@ -22,27 +22,41 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package log
+package testsuite
 
-type (
-	// Logger is an interface that can be passed to ClientOptions.Logger.
-	Logger interface {
-		Debug(msg string, keyvals ...interface{})
-		Info(msg string, keyvals ...interface{})
-		Warn(msg string, keyvals ...interface{})
-		Error(msg string, keyvals ...interface{})
-	}
+import (
+	"context"
+	"testing"
+	"time"
 
-	// WithSkipCallers is an optional interface that a Logger can implement that
-	// may create a new child logger that skips the number of stack frames of the caller.
-	// This call must not mutate the original logger.
-	WithSkipCallers interface {
-		WithCallerSkip(int) Logger
-	}
-
-	// WithLogger is an optional interface that prepend every log entry with keyvals.
-	// This call must not mutate the original logger.
-	WithLogger interface {
-		With(keyvals ...interface{}) Logger
-	}
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/internal/log"
 )
+
+func TestWaitServerReady_respectsTimeout(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+
+	hostPort, err := getFreeHostPort()
+	require.NoError(t, err, "get free host port")
+
+	startTime := time.Now()
+	_, err = waitServerReady(ctx, client.Options{
+		HostPort:  hostPort,
+		Namespace: "default",
+		Logger:    log.NewNopLogger(),
+	})
+	require.Error(t, err, "Dial should fail")
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.WithinDuration(t,
+		startTime.Add(time.Millisecond),
+		time.Now(),
+		5*time.Millisecond,
+		// Even though the timeout is only a millisecond,
+		// we'll allow for a slack of up to 5 milliseconds
+		// to account for slow CI machines.
+		// Anything smaller than 1 second is fine to use here.
+	)
+}
