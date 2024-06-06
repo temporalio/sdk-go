@@ -40,5 +40,10 @@ type WorkflowServiceProxyOptions struct {
 // be forwarded to the passed in WorkflowService Client. GRPC interceptors can be added on the Server or Client to adjust
 // requests and responses.
 func NewWorkflowServiceProxyServer(options WorkflowServiceProxyOptions) (workflowservice.WorkflowServiceServer, error) {
-	return proxy.NewWorkflowServiceProxyServer(proxy.WorkflowServiceProxyOptions(options))
+	return proxy.NewWorkflowServiceProxyServer(proxy.WorkflowServiceProxyOptions{
+		// These options are expected to be kept mostly in sync, but we can't do a
+		// naive type conversion because we want users to be able to update to newer
+		// API library versions with older SDK versions.
+		Client: options.Client,
+	})
 }
