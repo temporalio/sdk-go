@@ -233,9 +233,9 @@ func (w *WorkflowOutboundInterceptorBase) GetTypedSearchAttributes(ctx Context) 
 	return w.Next.GetTypedSearchAttributes(ctx)
 }
 
-// GetUpdateInfo implements WorkflowOutboundInterceptor.GetUpdateInfo.
-func (w *WorkflowOutboundInterceptorBase) GetUpdateInfo(ctx Context) *UpdateInfo {
-	return w.Next.GetUpdateInfo(ctx)
+// GetCurrentUpdateInfo implements WorkflowOutboundInterceptor.GetCurrentUpdateInfo.
+func (w *WorkflowOutboundInterceptorBase) GetCurrentUpdateInfo(ctx Context) *UpdateInfo {
+	return w.Next.GetCurrentUpdateInfo(ctx)
 }
 
 // GetLogger implements WorkflowOutboundInterceptor.GetLogger.

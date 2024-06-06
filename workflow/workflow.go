@@ -207,8 +207,12 @@ func GetTypedSearchAttributes(ctx Context) temporal.SearchAttributes {
 	return internal.GetTypedSearchAttributes(ctx)
 }
 
-func GetUpdateInfo(ctx Context) *UpdateInfo {
-	return internal.GetUpdateInfo(ctx)
+// GetCurrentUpdateInfo returns information about the currently running update if any
+// from the context.
+//
+// NOTE: Experimental
+func GetCurrentUpdateInfo(ctx Context) *UpdateInfo {
+	return internal.GetCurrentUpdateInfo(ctx)
 }
 
 // GetLogger returns a logger to be used in workflow's context

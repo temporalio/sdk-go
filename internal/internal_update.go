@@ -275,7 +275,8 @@ func defaultUpdateHandler(
 
 	updateRunner := func(ctx Context) {
 		ctx = WithValue(ctx, updateInfoContextKey, &UpdateInfo{
-			ID: id,
+			ID:   id,
+			Name: name,
 		})
 
 		eo := getWorkflowEnvOptions(ctx)
