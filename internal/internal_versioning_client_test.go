@@ -107,7 +107,7 @@ func Test_TaskQueueDescription_fromProtoResponse(t *testing.T) {
 					"one": {
 						TypesInfo: map[TaskQueueType]TaskQueueTypeInfo{
 							TaskQueueTypeWorkflow: {
-								Pollers: []PollerInfo{
+								Pollers: []TaskQueuePollerInfo{
 									{LastAccessTime: now, Identity: "me", RatePerSecond: 3.0, WorkerVersionCapabilities: &WorkerVersionCapabilities{BuildID: "1.0", UseVersioning: true}},
 								},
 							},

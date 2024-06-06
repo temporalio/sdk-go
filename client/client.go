@@ -340,14 +340,14 @@ type (
 	// WARNING: Worker versioning is currently experimental.
 	TaskQueueTypeInfo = internal.TaskQueueTypeInfo
 
-	// PollerInfo provides information about a worker/client polling a task queue.
+	// TaskQueuePollerInfo provides information about a worker/client polling a task queue.
 	// It is used by [Client.TaskQueueTypeInfo].
 	// WARNING: Worker versioning is currently experimental.
-	PollerInfo = internal.PollerInfo
+	TaskQueuePollerInfo = internal.TaskQueuePollerInfo
 
 	// WorkerVersionCapabilities includes a worker's build identifier
 	// and whether it is choosing to use the versioning feature.
-	// It is an optional component of [Client.PollerInfo].
+	// It is an optional component of [Client.TaskQueuePollerInfo].
 	// WARNING: Worker versioning is currently experimental.
 	WorkerVersionCapabilities = internal.WorkerVersionCapabilities
 
@@ -387,7 +387,7 @@ type (
 	// WARNING: Worker versioning is currently experimental.
 	VersioningRedirectRuleWithTimestamp = internal.VersioningRedirectRuleWithTimestamp
 
-	// VersioningOpInsertAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
+	// VersioningOperationInsertAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that inserts the rule to the list of assignment rules for this Task Queue.
 	// The rules are evaluated in order, starting from index 0. The first
 	// applicable rule will be applied and the rest will be ignored.
@@ -395,41 +395,41 @@ type (
 	// (index 0). If the given index is too larger the rule will be
 	// inserted at the end of the list.
 	// WARNING: Worker versioning is currently experimental.
-	VersioningOpInsertAssignmentRule = internal.VersioningOpInsertAssignmentRule
+	VersioningOperationInsertAssignmentRule = internal.VersioningOperationInsertAssignmentRule
 
-	// VersioningOpReplaceAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
+	// VersioningOperationReplaceAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that replaces the assignment rule at a given index. By default presence of one
 	// unconditional rule, i.e., no hint filter or ramp, is enforced, otherwise
 	// the delete operation will be rejected. Set `force` to true to
 	// bypass this validation.
 	// WARNING: Worker versioning is currently experimental.
-	VersioningOpReplaceAssignmentRule = internal.VersioningOpReplaceAssignmentRule
+	VersioningOperationReplaceAssignmentRule = internal.VersioningOperationReplaceAssignmentRule
 
-	// VersioningOpDeleteAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
+	// VersioningOperationDeleteAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that deletes the assignment rule at a given index. By default presence of one
 	// unconditional rule, i.e., no hint filter or ramp, is enforced, otherwise
 	// the delete operation will be rejected. Set `force` to true to
 	// bypass this validation.
 	// WARNING: Worker versioning is currently experimental.
-	VersioningOpDeleteAssignmentRule = internal.VersioningOpDeleteAssignmentRule
+	VersioningOperationDeleteAssignmentRule = internal.VersioningOperationDeleteAssignmentRule
 
-	// VersioningOpAddRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
+	// VersioningOperationAddRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that adds the rule to the list of redirect rules for this Task Queue. There
 	// can be at most one redirect rule for each distinct Source BuildID.
 	// WARNING: Worker versioning is currently experimental.
-	VersioningOpAddRedirectRule = internal.VersioningOpAddRedirectRule
+	VersioningOperationAddRedirectRule = internal.VersioningOperationAddRedirectRule
 
-	// VersioningOpReplaceRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
+	// VersioningOperationReplaceRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that replaces the routing rule with the given source BuildID.
 	// WARNING: Worker versioning is currently experimental.
-	VersioningOpReplaceRedirectRule = internal.VersioningOpReplaceRedirectRule
+	VersioningOperationReplaceRedirectRule = internal.VersioningOperationReplaceRedirectRule
 
-	// VersioningOpDeleteRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
+	// VersioningOperationDeleteRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that deletes the routing rule with the given source Build ID.
 	// WARNING: Worker versioning is currently experimental.
-	VersioningOpDeleteRedirectRule = internal.VersioningOpDeleteRedirectRule
+	VersioningOperationDeleteRedirectRule = internal.VersioningOperationDeleteRedirectRule
 
-	// VersioningOpCommitBuildID is an operation for UpdateWorkerVersioningRulesOptions
+	// VersioningOperationCommitBuildID is an operation for UpdateWorkerVersioningRulesOptions
 	// that completes  the rollout of a BuildID and cleanup unnecessary rules possibly
 	// created during a gradual rollout. Specifically, this command will make the following changes
 	// atomically:
@@ -443,7 +443,7 @@ type (
 	// pollers have been seen recently for this Build ID. Use the `force`
 	// option to disable this validation.
 	// WARNING: Worker versioning is currently experimental.
-	VersioningOpCommitBuildID = internal.VersioningOpCommitBuildID
+	VersioningOperationCommitBuildID = internal.VersioningOperationCommitBuildID
 
 	// GetWorkerVersioningOptions is the input to [Client.GetWorkerVersioningRules].
 	// WARNING: Worker versioning is currently experimental.
@@ -743,7 +743,7 @@ type (
 		// about the task queue, or an error when the response identifies an unsupported server.
 		// Note that using a sticky queue as target is not supported.
 		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
-		DescribeTaskQueueEnhanced(ctx context.Context, options *DescribeTaskQueueEnhancedOptions) (TaskQueueDescription, error)
+		DescribeTaskQueueEnhanced(ctx context.Context, options DescribeTaskQueueEnhancedOptions) (TaskQueueDescription, error)
 
 		// ResetWorkflowExecution resets an existing workflow execution to WorkflowTaskFinishEventId(exclusive).
 		// And it will immediately terminating the current execution instance.
@@ -772,12 +772,12 @@ type (
 		// The errors it can return:
 		//  - serviceerror.FailedPrecondition when the conflict token is invalid
 		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
-		UpdateWorkerVersioningRules(ctx context.Context, options *UpdateWorkerVersioningRulesOptions) (*WorkerVersioningRules, error)
+		UpdateWorkerVersioningRules(ctx context.Context, options UpdateWorkerVersioningRulesOptions) (*WorkerVersioningRules, error)
 
 		// GetWorkerVersioningRules
 		// Returns the worker-build-id assignment and redirect rules for a task queue.
 		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
-		GetWorkerVersioningRules(ctx context.Context, options *GetWorkerVersioningOptions) (*WorkerVersioningRules, error)
+		GetWorkerVersioningRules(ctx context.Context, options GetWorkerVersioningOptions) (*WorkerVersioningRules, error)
 
 		// CheckHealth performs a server health check using the gRPC health check
 		// API. If the check fails, an error is returned.

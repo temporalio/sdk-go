@@ -1042,7 +1042,7 @@ func (wc *WorkflowClient) GetWorkerTaskReachability(ctx context.Context, options
 //   - Backlog info for Workflow and/or Activity tasks
 //
 // WARNING: Worker versioning is currently experimental, and requires server 1.24+
-func (wc *WorkflowClient) DescribeTaskQueueEnhanced(ctx context.Context, options *DescribeTaskQueueEnhancedOptions) (TaskQueueDescription, error) {
+func (wc *WorkflowClient) DescribeTaskQueueEnhanced(ctx context.Context, options DescribeTaskQueueEnhancedOptions) (TaskQueueDescription, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return TaskQueueDescription{}, err
 	}
@@ -1071,7 +1071,7 @@ func (wc *WorkflowClient) DescribeTaskQueueEnhanced(ctx context.Context, options
 // task queue. This is used in conjunction with workers who specify their build id and thus opt into the feature.
 // The errors it can return:
 //   - serviceerror.FailedPrecondition when the conflict token is invalid
-func (wc *WorkflowClient) UpdateWorkerVersioningRules(ctx context.Context, options *UpdateWorkerVersioningRulesOptions) (*WorkerVersioningRules, error) {
+func (wc *WorkflowClient) UpdateWorkerVersioningRules(ctx context.Context, options UpdateWorkerVersioningRulesOptions) (*WorkerVersioningRules, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return nil, err
 	}
@@ -1091,7 +1091,7 @@ func (wc *WorkflowClient) UpdateWorkerVersioningRules(ctx context.Context, optio
 }
 
 // GetWorkerVersioningRules returns the worker-build-id assignment and redirect rules for a task queue.
-func (wc *WorkflowClient) GetWorkerVersioningRules(ctx context.Context, options *GetWorkerVersioningOptions) (*WorkerVersioningRules, error) {
+func (wc *WorkflowClient) GetWorkerVersioningRules(ctx context.Context, options GetWorkerVersioningOptions) (*WorkerVersioningRules, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return nil, err
 	}

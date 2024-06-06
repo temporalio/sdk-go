@@ -198,7 +198,7 @@ func (_m *Client) DescribeTaskQueue(ctx context.Context, taskqueue string, taskq
 }
 
 // DescribeTaskQueueEnhanced provides a mock function with given fields: ctx, options
-func (_m *Client) DescribeTaskQueueEnhanced(ctx context.Context, options *client.DescribeTaskQueueEnhancedOptions) (client.TaskQueueDescription, error) {
+func (_m *Client) DescribeTaskQueueEnhanced(ctx context.Context, options client.DescribeTaskQueueEnhancedOptions) (client.TaskQueueDescription, error) {
 	ret := _m.Called(ctx, options)
 
 	if len(ret) == 0 {
@@ -207,10 +207,10 @@ func (_m *Client) DescribeTaskQueueEnhanced(ctx context.Context, options *client
 
 	var r0 client.TaskQueueDescription
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, *client.DescribeTaskQueueEnhancedOptions) (client.TaskQueueDescription, error)); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, client.DescribeTaskQueueEnhancedOptions) (client.TaskQueueDescription, error)); ok {
 		return rf(ctx, options)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, *client.DescribeTaskQueueEnhancedOptions) client.TaskQueueDescription); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, client.DescribeTaskQueueEnhancedOptions) client.TaskQueueDescription); ok {
 		r0 = rf(ctx, options)
 	} else {
 		if ret.Get(0) != nil {
@@ -218,7 +218,7 @@ func (_m *Client) DescribeTaskQueueEnhanced(ctx context.Context, options *client
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, *client.DescribeTaskQueueEnhancedOptions) error); ok {
+	if rf, ok := ret.Get(1).(func(context.Context, client.DescribeTaskQueueEnhancedOptions) error); ok {
 		r1 = rf(ctx, options)
 	} else {
 		r1 = ret.Error(1)
@@ -381,7 +381,7 @@ func (_m *Client) GetWorkerTaskReachability(ctx context.Context, options *client
 }
 
 // GetWorkerVersioningRules provides a mock function with given fields: ctx, options
-func (_m *Client) GetWorkerVersioningRules(ctx context.Context, options *client.GetWorkerVersioningOptions) (*client.WorkerVersioningRules, error) {
+func (_m *Client) GetWorkerVersioningRules(ctx context.Context, options client.GetWorkerVersioningOptions) (*client.WorkerVersioningRules, error) {
 	ret := _m.Called(ctx, options)
 
 	if len(ret) == 0 {
@@ -390,10 +390,10 @@ func (_m *Client) GetWorkerVersioningRules(ctx context.Context, options *client.
 
 	var r0 *client.WorkerVersioningRules
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, *client.GetWorkerVersioningOptions) (*client.WorkerVersioningRules, error)); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, client.GetWorkerVersioningOptions) (*client.WorkerVersioningRules, error)); ok {
 		return rf(ctx, options)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, *client.GetWorkerVersioningOptions) *client.WorkerVersioningRules); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, client.GetWorkerVersioningOptions) *client.WorkerVersioningRules); ok {
 		r0 = rf(ctx, options)
 	} else {
 		if ret.Get(0) != nil {
@@ -401,7 +401,7 @@ func (_m *Client) GetWorkerVersioningRules(ctx context.Context, options *client.
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, *client.GetWorkerVersioningOptions) error); ok {
+	if rf, ok := ret.Get(1).(func(context.Context, client.GetWorkerVersioningOptions) error); ok {
 		r1 = rf(ctx, options)
 	} else {
 		r1 = ret.Error(1)
@@ -886,7 +886,7 @@ func (_m *Client) UpdateWorkerBuildIdCompatibility(ctx context.Context, options 
 }
 
 // UpdateWorkerVersioningRules provides a mock function with given fields: ctx, options
-func (_m *Client) UpdateWorkerVersioningRules(ctx context.Context, options *client.UpdateWorkerVersioningRulesOptions) (*client.WorkerVersioningRules, error) {
+func (_m *Client) UpdateWorkerVersioningRules(ctx context.Context, options client.UpdateWorkerVersioningRulesOptions) (*client.WorkerVersioningRules, error) {
 	ret := _m.Called(ctx, options)
 
 	if len(ret) == 0 {
@@ -895,10 +895,10 @@ func (_m *Client) UpdateWorkerVersioningRules(ctx context.Context, options *clie
 
 	var r0 *client.WorkerVersioningRules
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, *client.UpdateWorkerVersioningRulesOptions) (*client.WorkerVersioningRules, error)); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, client.UpdateWorkerVersioningRulesOptions) (*client.WorkerVersioningRules, error)); ok {
 		return rf(ctx, options)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, *client.UpdateWorkerVersioningRulesOptions) *client.WorkerVersioningRules); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, client.UpdateWorkerVersioningRulesOptions) *client.WorkerVersioningRules); ok {
 		r0 = rf(ctx, options)
 	} else {
 		if ret.Get(0) != nil {
@@ -906,7 +906,7 @@ func (_m *Client) UpdateWorkerVersioningRules(ctx context.Context, options *clie
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, *client.UpdateWorkerVersioningRulesOptions) error); ok {
+	if rf, ok := ret.Get(1).(func(context.Context, client.UpdateWorkerVersioningRulesOptions) error); ok {
 		r1 = rf(ctx, options)
 	} else {
 		r1 = ret.Error(1)

@@ -106,15 +106,15 @@ func (ts *WorkerVersioningTestSuite) TestManipulateRules() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	res, err := ts.client.GetWorkerVersioningRules(ctx, &client.GetWorkerVersioningOptions{
+	res, err := ts.client.GetWorkerVersioningRules(ctx, client.GetWorkerVersioningOptions{
 		TaskQueue: ts.taskQueueName,
 	})
 	ts.NoError(err)
 
-	resp, err := ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	resp, err := ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: res.ConflictToken,
-		Operation: &client.VersioningOpInsertAssignmentRule{
+		Operation: &client.VersioningOperationInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
 				TargetBuildID: "1.0",
@@ -123,10 +123,10 @@ func (ts *WorkerVersioningTestSuite) TestManipulateRules() {
 	})
 	ts.NoError(err)
 
-	resp, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	resp, err = ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: resp.ConflictToken,
-		Operation: &client.VersioningOpInsertAssignmentRule{
+		Operation: &client.VersioningOperationInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
 				TargetBuildID: "2.0",
@@ -138,10 +138,10 @@ func (ts *WorkerVersioningTestSuite) TestManipulateRules() {
 	})
 	ts.NoError(err)
 
-	resp, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	resp, err = ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: resp.ConflictToken,
-		Operation: &client.VersioningOpAddRedirectRule{
+		Operation: &client.VersioningOperationAddRedirectRule{
 			Rule: client.VersioningRedirectRule{
 				SourceBuildID: "1.0",
 				TargetBuildID: "2.0",
@@ -150,7 +150,7 @@ func (ts *WorkerVersioningTestSuite) TestManipulateRules() {
 	})
 	ts.NoError(err)
 
-	res, err = ts.client.GetWorkerVersioningRules(ctx, &client.GetWorkerVersioningOptions{
+	res, err = ts.client.GetWorkerVersioningRules(ctx, client.GetWorkerVersioningOptions{
 		TaskQueue: ts.taskQueueName,
 	})
 	ts.NoError(err)
@@ -172,15 +172,15 @@ func (ts *WorkerVersioningTestSuite) TestReplaceDeleteRules() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	res, err := ts.client.GetWorkerVersioningRules(ctx, &client.GetWorkerVersioningOptions{
+	res, err := ts.client.GetWorkerVersioningRules(ctx, client.GetWorkerVersioningOptions{
 		TaskQueue: ts.taskQueueName,
 	})
 	ts.NoError(err)
 
-	resp, err := ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	resp, err := ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: res.ConflictToken,
-		Operation: &client.VersioningOpInsertAssignmentRule{
+		Operation: &client.VersioningOperationInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
 				TargetBuildID: "1.0",
@@ -190,10 +190,10 @@ func (ts *WorkerVersioningTestSuite) TestReplaceDeleteRules() {
 	ts.NoError(err)
 
 	// Replace by unconditional rule is OK
-	resp, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	resp, err = ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: resp.ConflictToken,
-		Operation: &client.VersioningOpReplaceAssignmentRule{
+		Operation: &client.VersioningOperationReplaceAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
 				TargetBuildID: "1.1",
@@ -203,10 +203,10 @@ func (ts *WorkerVersioningTestSuite) TestReplaceDeleteRules() {
 	ts.NoError(err)
 
 	// Replace by conditional rule fails
-	_, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	_, err = ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: resp.ConflictToken,
-		Operation: &client.VersioningOpReplaceAssignmentRule{
+		Operation: &client.VersioningOperationReplaceAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
 				TargetBuildID: "2.0",
@@ -221,10 +221,10 @@ func (ts *WorkerVersioningTestSuite) TestReplaceDeleteRules() {
 	ts.Error(err)
 	ts.IsType(&serviceerror.FailedPrecondition{}, err)
 
-	resp, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	resp, err = ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: resp.ConflictToken,
-		Operation: &client.VersioningOpReplaceAssignmentRule{
+		Operation: &client.VersioningOperationReplaceAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
 				TargetBuildID: "2.0",
@@ -237,10 +237,10 @@ func (ts *WorkerVersioningTestSuite) TestReplaceDeleteRules() {
 	})
 	ts.NoError(err)
 
-	_, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	_, err = ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: resp.ConflictToken,
-		Operation: &client.VersioningOpDeleteAssignmentRule{
+		Operation: &client.VersioningOperationDeleteAssignmentRule{
 			RuleIndex: 0,
 			Force:     false,
 		},
@@ -249,10 +249,10 @@ func (ts *WorkerVersioningTestSuite) TestReplaceDeleteRules() {
 	ts.Error(err)
 	ts.IsType(&serviceerror.FailedPrecondition{}, err)
 
-	_, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	_, err = ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: resp.ConflictToken,
-		Operation: &client.VersioningOpDeleteAssignmentRule{
+		Operation: &client.VersioningOperationDeleteAssignmentRule{
 			RuleIndex: 0,
 			Force:     true,
 		},
@@ -264,15 +264,15 @@ func (ts *WorkerVersioningTestSuite) TestCommitRules() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	res, err := ts.client.GetWorkerVersioningRules(ctx, &client.GetWorkerVersioningOptions{
+	res, err := ts.client.GetWorkerVersioningRules(ctx, client.GetWorkerVersioningOptions{
 		TaskQueue: ts.taskQueueName,
 	})
 	ts.NoError(err)
 
-	resp, err := ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	resp, err := ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: res.ConflictToken,
-		Operation: &client.VersioningOpInsertAssignmentRule{
+		Operation: &client.VersioningOperationInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
 				TargetBuildID: "1.0",
@@ -281,10 +281,10 @@ func (ts *WorkerVersioningTestSuite) TestCommitRules() {
 	})
 	ts.NoError(err)
 
-	resp, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	resp, err = ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: resp.ConflictToken,
-		Operation: &client.VersioningOpInsertAssignmentRule{
+		Operation: &client.VersioningOperationInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
 				TargetBuildID: "2.0",
@@ -297,10 +297,10 @@ func (ts *WorkerVersioningTestSuite) TestCommitRules() {
 	ts.NoError(err)
 
 	// No worker recently polling so it should fail
-	_, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	_, err = ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: resp.ConflictToken,
-		Operation: &client.VersioningOpCommitBuildID{
+		Operation: &client.VersioningOperationCommitBuildID{
 			TargetBuildID: "2.0",
 			Force:         false,
 		},
@@ -309,17 +309,17 @@ func (ts *WorkerVersioningTestSuite) TestCommitRules() {
 	ts.IsType(&serviceerror.FailedPrecondition{}, err)
 
 	// Use the `force`...
-	resp, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	resp, err = ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: resp.ConflictToken,
-		Operation: &client.VersioningOpCommitBuildID{
+		Operation: &client.VersioningOperationCommitBuildID{
 			TargetBuildID: "2.0",
 			Force:         true,
 		},
 	})
 	ts.NoError(err)
 
-	res, err = ts.client.GetWorkerVersioningRules(ctx, &client.GetWorkerVersioningOptions{
+	res, err = ts.client.GetWorkerVersioningRules(ctx, client.GetWorkerVersioningOptions{
 		TaskQueue: ts.taskQueueName,
 	})
 	ts.NoError(err)
@@ -337,15 +337,15 @@ func (ts *WorkerVersioningTestSuite) TestConflictTokens() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	res, err := ts.client.GetWorkerVersioningRules(ctx, &client.GetWorkerVersioningOptions{
+	res, err := ts.client.GetWorkerVersioningRules(ctx, client.GetWorkerVersioningOptions{
 		TaskQueue: ts.taskQueueName,
 	})
 	ts.NoError(err)
 
-	resp, err := ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	resp, err := ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: res.ConflictToken,
-		Operation: &client.VersioningOpInsertAssignmentRule{
+		Operation: &client.VersioningOperationInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
 				TargetBuildID: "1.0",
@@ -354,10 +354,10 @@ func (ts *WorkerVersioningTestSuite) TestConflictTokens() {
 	})
 	ts.NoError(err)
 
-	_, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	_, err = ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: res.ConflictToken, // duplicated token
-		Operation: &client.VersioningOpInsertAssignmentRule{
+		Operation: &client.VersioningOperationInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
 				TargetBuildID: "2.0",
@@ -367,10 +367,10 @@ func (ts *WorkerVersioningTestSuite) TestConflictTokens() {
 	ts.Error(err)
 	ts.IsType(&serviceerror.FailedPrecondition{}, err)
 
-	resp, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	resp, err = ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: resp.ConflictToken, // original token
-		Operation: &client.VersioningOpInsertAssignmentRule{
+		Operation: &client.VersioningOperationInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
 				TargetBuildID: "2.0",
@@ -446,15 +446,15 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasksWithRules() 
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	res, err := ts.client.GetWorkerVersioningRules(ctx, &client.GetWorkerVersioningOptions{
+	res, err := ts.client.GetWorkerVersioningRules(ctx, client.GetWorkerVersioningOptions{
 		TaskQueue: ts.taskQueueName,
 	})
 	ts.NoError(err)
 
-	resp, err := ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	resp, err := ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: res.ConflictToken,
-		Operation: &client.VersioningOpInsertAssignmentRule{
+		Operation: &client.VersioningOperationInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
 				TargetBuildID: "1.0",
@@ -479,10 +479,10 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasksWithRules() 
 	ts.NoError(err)
 
 	// Now add the 2.0 version
-	_, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	_, err = ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: resp.ConflictToken,
-		Operation: &client.VersioningOpInsertAssignmentRule{
+		Operation: &client.VersioningOperationInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
 				TargetBuildID: "2.0",
@@ -535,7 +535,7 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityUnreachableWithRules() {
 
 	buildID := uuid.New()
 
-	taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, &client.DescribeTaskQueueEnhancedOptions{
+	taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, client.DescribeTaskQueueEnhancedOptions{
 		TaskQueue: ts.taskQueueName,
 		Versions: &client.TaskQueueVersionSelection{
 			BuildIDs: []string{buildID},
@@ -603,7 +603,7 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityUnversionedWorkerWithRules(
 	// Give time for worker pollers stats to show up
 	time.Sleep(2 * time.Second)
 
-	taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, &client.DescribeTaskQueueEnhancedOptions{
+	taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, client.DescribeTaskQueueEnhancedOptions{
 		TaskQueue: ts.taskQueueName,
 		Versions: &client.TaskQueueVersionSelection{
 			// `client.UnversionedBuildID` is an empty string
@@ -715,15 +715,15 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersionsWithRules() {
 	buildID1 := uuid.New()
 	buildID2 := uuid.New()
 
-	result, err := ts.client.GetWorkerVersioningRules(ctx, &client.GetWorkerVersioningOptions{
+	result, err := ts.client.GetWorkerVersioningRules(ctx, client.GetWorkerVersioningOptions{
 		TaskQueue: ts.taskQueueName,
 	})
 	ts.NoError(err)
 
-	result, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	result, err = ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: result.ConflictToken,
-		Operation: &client.VersioningOpInsertAssignmentRule{
+		Operation: &client.VersioningOperationInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
 				TargetBuildID: buildID1,
@@ -757,10 +757,10 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersionsWithRules() {
 	defer worker2.Stop()
 
 	// Now add the 2.0 version
-	result, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	result, err = ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: result.ConflictToken,
-		Operation: &client.VersioningOpInsertAssignmentRule{
+		Operation: &client.VersioningOperationInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
 				TargetBuildID: buildID2,
@@ -769,7 +769,7 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersionsWithRules() {
 	})
 	ts.NoError(err)
 
-	taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, &client.DescribeTaskQueueEnhancedOptions{
+	taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, client.DescribeTaskQueueEnhancedOptions{
 		TaskQueue: ts.taskQueueName,
 		Versions: &client.TaskQueueVersionSelection{
 			BuildIDs: []string{buildID1, buildID2},
@@ -874,15 +874,15 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetimeWithR
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	result, err := ts.client.GetWorkerVersioningRules(ctx, &client.GetWorkerVersioningOptions{
+	result, err := ts.client.GetWorkerVersioningRules(ctx, client.GetWorkerVersioningOptions{
 		TaskQueue: ts.taskQueueName,
 	})
 	ts.NoError(err)
 
-	resp, err := ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	resp, err := ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: result.ConflictToken,
-		Operation: &client.VersioningOpInsertAssignmentRule{
+		Operation: &client.VersioningOperationInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
 				TargetBuildID: "1.0",
@@ -916,10 +916,10 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetimeWithR
 	worker1.Stop()
 
 	// Add new compat ver
-	resp, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	resp, err = ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: resp.ConflictToken,
-		Operation: &client.VersioningOpInsertAssignmentRule{
+		Operation: &client.VersioningOperationInsertAssignmentRule{
 			RuleIndex: 0,
 			Rule: client.VersioningAssignmentRule{
 				TargetBuildID: "1.1",
@@ -927,10 +927,10 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetimeWithR
 		},
 	})
 
-	resp, err = ts.client.UpdateWorkerVersioningRules(ctx, &client.UpdateWorkerVersioningRulesOptions{
+	resp, err = ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
 		TaskQueue:     ts.taskQueueName,
 		ConflictToken: resp.ConflictToken,
-		Operation: &client.VersioningOpAddRedirectRule{
+		Operation: &client.VersioningOperationAddRedirectRule{
 			Rule: client.VersioningRedirectRule{
 				SourceBuildID: "1.0",
 				TargetBuildID: "1.1",

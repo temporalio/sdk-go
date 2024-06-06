@@ -9,6 +9,8 @@ frontend.enableUpdateWorkflowExecutionAsyncAccepted:
   - value: true
 system.enableEagerWorkflowStart:
   - value: true
+frontend.workerVersioningRuleAPIs:
+  - value: true
 frontend.workerVersioningDataAPIs:
   - value: true
 frontend.workerVersioningWorkflowAPIs:

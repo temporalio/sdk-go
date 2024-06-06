@@ -105,7 +105,7 @@ type (
 
 	// WorkerVersionCapabilities includes a worker's build identifier
 	// and whether it is choosing to use the versioning feature.
-	// It is an optional component of [PollerInfo].
+	// It is an optional component of [TaskQueuePollerInfo].
 	WorkerVersionCapabilities struct {
 		// Build ID of the worker.
 		BuildID string
@@ -113,9 +113,9 @@ type (
 		UseVersioning bool
 	}
 
-	// PollerInfo provides information about a worker/client polling a task queue.
+	// TaskQueuePollerInfo provides information about a worker/client polling a task queue.
 	// It is used by [TaskQueueTypeInfo].
-	PollerInfo struct {
+	TaskQueuePollerInfo struct {
 		// Time of the last poll. A value of zero means it was not set.
 		LastAccessTime time.Time
 		// The identity of the worker/client who is polling this task queue.
@@ -130,7 +130,7 @@ type (
 	// It is included in [TaskQueueVersionInfo].
 	TaskQueueTypeInfo struct {
 		// Poller details for this task queue category.
-		Pollers []PollerInfo
+		Pollers []TaskQueuePollerInfo
 	}
 
 	// TaskQueueVersionInfo includes task queue information per Build ID.
@@ -190,9 +190,9 @@ func workerVersionCapabilitiesFromResponse(response *common.WorkerVersionCapabil
 	}
 }
 
-func pollerInfoFromResponse(response *taskqueuepb.PollerInfo) PollerInfo {
+func pollerInfoFromResponse(response *taskqueuepb.PollerInfo) TaskQueuePollerInfo {
 	if response == nil {
-		return PollerInfo{}
+		return TaskQueuePollerInfo{}
 	}
 
 	lastAccessTime := time.Time{}
@@ -200,7 +200,7 @@ func pollerInfoFromResponse(response *taskqueuepb.PollerInfo) PollerInfo {
 		lastAccessTime = response.GetLastAccessTime().AsTime()
 	}
 
-	return PollerInfo{
+	return TaskQueuePollerInfo{
 		LastAccessTime:            lastAccessTime,
 		Identity:                  response.GetIdentity(),
 		RatePerSecond:             response.GetRatePerSecond(),
@@ -213,7 +213,7 @@ func taskQueueTypeInfoFromResponse(response *taskqueuepb.TaskQueueTypeInfo) Task
 		return TaskQueueTypeInfo{}
 	}
 
-	pollers := make([]PollerInfo, len(response.GetPollers()))
+	pollers := make([]TaskQueuePollerInfo, len(response.GetPollers()))
 	for i, pInfo := range response.GetPollers() {
 		pollers[i] = pollerInfoFromResponse(pInfo)
 	}

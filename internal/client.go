@@ -360,18 +360,18 @@ type (
 		// about the task queue, or an error when the response identifies an unsupported server.
 		// Note that using a sticky queue as target is not supported.
 		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
-		DescribeTaskQueueEnhanced(ctx context.Context, options *DescribeTaskQueueEnhancedOptions) (TaskQueueDescription, error)
+		DescribeTaskQueueEnhanced(ctx context.Context, options DescribeTaskQueueEnhancedOptions) (TaskQueueDescription, error)
 
 		// UpdateWorkerVersioningRules allows updating the worker-build-id based assignment and redirect rules for a given
 		// task queue. This is used in conjunction with workers who specify their build id and thus opt into the feature.
 		// The errors it can return:
 		//  - serviceerror.FailedPrecondition when the conflict token is invalid
 		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
-		UpdateWorkerVersioningRules(ctx context.Context, options *UpdateWorkerVersioningRulesOptions) (*WorkerVersioningRules, error)
+		UpdateWorkerVersioningRules(ctx context.Context, options UpdateWorkerVersioningRulesOptions) (*WorkerVersioningRules, error)
 
 		// GetWorkerVersioningRules returns the worker-build-id assignment and redirect rules for a task queue.
 		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
-		GetWorkerVersioningRules(ctx context.Context, options *GetWorkerVersioningOptions) (*WorkerVersioningRules, error)
+		GetWorkerVersioningRules(ctx context.Context, options GetWorkerVersioningOptions) (*WorkerVersioningRules, error)
 
 		// CheckHealth performs a server health check using the gRPC health check
 		// API. If the check fails, an error is returned.

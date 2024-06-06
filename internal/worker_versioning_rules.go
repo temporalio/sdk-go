@@ -95,25 +95,25 @@ type (
 		TaskQueue string
 		// A conflict token to serialize updates.
 		ConflictToken VersioningConflictToken
-		Operation     VersioningOp
+		Operation     VersioningOperation
 	}
 
-	// VersioningOp is an interface for the different operations that can be
+	// VersioningOperation is an interface for the different operations that can be
 	// performed when updating the worker versioning rules for a task queue.
 	//
 	// Possible operations are:
-	//   - [VersioningOpInsertAssignmentRule]
-	//   - [VersioningOpReplaceAssignmentRule]
-	//   - [VersioningOpDeleteAssignmentRule]
-	//   - [VersioningOpAddRedirectRule]
-	//   - [VersioningOpReplaceRedirectRule]
-	//   - [VersioningOpDeleteRedirectRule]
-	//   - [VersioningOpCommitBuildID]
-	VersioningOp interface {
+	//   - [VersioningOperationInsertAssignmentRule]
+	//   - [VersioningOperationReplaceAssignmentRule]
+	//   - [VersioningOperationDeleteAssignmentRule]
+	//   - [VersioningOperationAddRedirectRule]
+	//   - [VersioningOperationReplaceRedirectRule]
+	//   - [VersioningOperationDeleteRedirectRule]
+	//   - [VersioningOperationCommitBuildID]
+	VersioningOperation interface {
 		validateOp() error
 	}
 
-	// VersioningOpInsertAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
+	// VersioningOperationInsertAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that inserts the rule to the list of assignment rules for this Task Queue.
 	// The rules are evaluated in order, starting from index 0. The first
 	// applicable rule will be applied and the rest will be ignored.
@@ -121,57 +121,57 @@ type (
 	// (index 0). If the given index is too larger the rule will be
 	// inserted at the end of the list.
 	// WARNING: Worker versioning is currently experimental
-	VersioningOpInsertAssignmentRule struct {
+	VersioningOperationInsertAssignmentRule struct {
 		RuleIndex int32
 		Rule      VersioningAssignmentRule
 	}
 
-	// VersioningOpReplaceAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
+	// VersioningOperationReplaceAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that replaces the assignment rule at a given index. By default presence of one
 	// unconditional rule, i.e., no hint filter or ramp, is enforced, otherwise
 	// the delete operation will be rejected. Set `force` to true to
 	// bypass this validation.
 	// WARNING: Worker versioning is currently experimental
-	VersioningOpReplaceAssignmentRule struct {
+	VersioningOperationReplaceAssignmentRule struct {
 		RuleIndex int32
 		Rule      VersioningAssignmentRule
 		Force     bool
 	}
 
-	// VersioningOpDeleteAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
+	// VersioningOperationDeleteAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that deletes the assignment rule at a given index. By default presence of one
 	// unconditional rule, i.e., no hint filter or ramp, is enforced, otherwise
 	// the delete operation will be rejected. Set `force` to true to
 	// bypass this validation.
 	// WARNING: Worker versioning is currently experimental
-	VersioningOpDeleteAssignmentRule struct {
+	VersioningOperationDeleteAssignmentRule struct {
 		RuleIndex int32
 		Force     bool
 	}
 
-	// VersioningOpAddRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
+	// VersioningOperationAddRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that adds the rule to the list of redirect rules for this Task Queue. There
 	// can be at most one redirect rule for each distinct Source BuildID.
 	// WARNING: Worker versioning is currently experimental
-	VersioningOpAddRedirectRule struct {
+	VersioningOperationAddRedirectRule struct {
 		Rule VersioningRedirectRule
 	}
 
-	// VersioningOpReplaceRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
+	// VersioningOperationReplaceRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that replaces the routing rule with the given source BuildID.
 	// WARNING: Worker versioning is currently experimental
-	VersioningOpReplaceRedirectRule struct {
+	VersioningOperationReplaceRedirectRule struct {
 		Rule VersioningRedirectRule
 	}
 
-	// VersioningOpDeleteRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
+	// VersioningOperationDeleteRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that deletes the routing rule with the given source Build ID.
 	// WARNING: Worker versioning is currently experimental
-	VersioningOpDeleteRedirectRule struct {
+	VersioningOperationDeleteRedirectRule struct {
 		SourceBuildID string
 	}
 
-	// VersioningOpCommitBuildId is an operation for UpdateWorkerVersioningRulesOptions
+	// VersioningOperationCommitBuildID is an operation for UpdateWorkerVersioningRulesOptions
 	// that completes  the rollout of a BuildID and cleanup unnecessary rules possibly
 	// created during a gradual rollout. Specifically, this command will make the following changes
 	// atomically:
@@ -185,7 +185,7 @@ type (
 	// pollers have been seen recently for this Build ID. Use the `force`
 	// option to disable this validation.
 	// WARNING: Worker versioning is currently experimental
-	VersioningOpCommitBuildID struct {
+	VersioningOperationCommitBuildID struct {
 		TargetBuildID string
 		Force         bool
 	}
@@ -215,14 +215,14 @@ func (uw *UpdateWorkerVersioningRulesOptions) validateAndConvertToProto(namespac
 	}
 
 	switch v := uw.Operation.(type) {
-	case *VersioningOpInsertAssignmentRule:
+	case *VersioningOperationInsertAssignmentRule:
 		req.Operation = &workflowservice.UpdateWorkerVersioningRulesRequest_InsertAssignmentRule{
 			InsertAssignmentRule: &workflowservice.UpdateWorkerVersioningRulesRequest_InsertBuildIdAssignmentRule{
 				RuleIndex: v.RuleIndex,
 				Rule:      versioningAssignmentRuleToProto(&v.Rule),
 			},
 		}
-	case *VersioningOpReplaceAssignmentRule:
+	case *VersioningOperationReplaceAssignmentRule:
 		req.Operation = &workflowservice.UpdateWorkerVersioningRulesRequest_ReplaceAssignmentRule{
 			ReplaceAssignmentRule: &workflowservice.UpdateWorkerVersioningRulesRequest_ReplaceBuildIdAssignmentRule{
 				RuleIndex: v.RuleIndex,
@@ -230,32 +230,32 @@ func (uw *UpdateWorkerVersioningRulesOptions) validateAndConvertToProto(namespac
 				Force:     v.Force,
 			},
 		}
-	case *VersioningOpDeleteAssignmentRule:
+	case *VersioningOperationDeleteAssignmentRule:
 		req.Operation = &workflowservice.UpdateWorkerVersioningRulesRequest_DeleteAssignmentRule{
 			DeleteAssignmentRule: &workflowservice.UpdateWorkerVersioningRulesRequest_DeleteBuildIdAssignmentRule{
 				RuleIndex: v.RuleIndex,
 				Force:     v.Force,
 			},
 		}
-	case *VersioningOpAddRedirectRule:
+	case *VersioningOperationAddRedirectRule:
 		req.Operation = &workflowservice.UpdateWorkerVersioningRulesRequest_AddCompatibleRedirectRule{
 			AddCompatibleRedirectRule: &workflowservice.UpdateWorkerVersioningRulesRequest_AddCompatibleBuildIdRedirectRule{
 				Rule: versioningRedirectRuleToProto(&v.Rule),
 			},
 		}
-	case *VersioningOpReplaceRedirectRule:
+	case *VersioningOperationReplaceRedirectRule:
 		req.Operation = &workflowservice.UpdateWorkerVersioningRulesRequest_ReplaceCompatibleRedirectRule{
 			ReplaceCompatibleRedirectRule: &workflowservice.UpdateWorkerVersioningRulesRequest_ReplaceCompatibleBuildIdRedirectRule{
 				Rule: versioningRedirectRuleToProto(&v.Rule),
 			},
 		}
-	case *VersioningOpDeleteRedirectRule:
+	case *VersioningOperationDeleteRedirectRule:
 		req.Operation = &workflowservice.UpdateWorkerVersioningRulesRequest_DeleteCompatibleRedirectRule{
 			DeleteCompatibleRedirectRule: &workflowservice.UpdateWorkerVersioningRulesRequest_DeleteCompatibleBuildIdRedirectRule{
 				SourceBuildId: v.SourceBuildID,
 			},
 		}
-	case *VersioningOpCommitBuildID:
+	case *VersioningOperationCommitBuildID:
 		req.Operation = &workflowservice.UpdateWorkerVersioningRulesRequest_CommitBuildId_{
 			CommitBuildId: &workflowservice.UpdateWorkerVersioningRulesRequest_CommitBuildId{
 				TargetBuildId: v.TargetBuildID,
@@ -437,20 +437,20 @@ func (r *VersioningRedirectRule) validateRule() error {
 	return nil
 }
 
-func (u *VersioningOpInsertAssignmentRule) validateOp() error  { return u.Rule.validateRule() }
-func (u *VersioningOpReplaceAssignmentRule) validateOp() error { return u.Rule.validateRule() }
-func (u *VersioningOpDeleteAssignmentRule) validateOp() error  { return nil }
-func (u *VersioningOpAddRedirectRule) validateOp() error       { return u.Rule.validateRule() }
-func (u *VersioningOpReplaceRedirectRule) validateOp() error   { return u.Rule.validateRule() }
+func (u *VersioningOperationInsertAssignmentRule) validateOp() error  { return u.Rule.validateRule() }
+func (u *VersioningOperationReplaceAssignmentRule) validateOp() error { return u.Rule.validateRule() }
+func (u *VersioningOperationDeleteAssignmentRule) validateOp() error  { return nil }
+func (u *VersioningOperationAddRedirectRule) validateOp() error       { return u.Rule.validateRule() }
+func (u *VersioningOperationReplaceRedirectRule) validateOp() error   { return u.Rule.validateRule() }
 
-func (u *VersioningOpDeleteRedirectRule) validateOp() error {
+func (u *VersioningOperationDeleteRedirectRule) validateOp() error {
 	if u.SourceBuildID == "" {
 		return errors.New("missing SourceBuildID")
 	}
 	return nil
 }
 
-func (u *VersioningOpCommitBuildID) validateOp() error {
+func (u *VersioningOperationCommitBuildID) validateOp() error {
 	if u.TargetBuildID == "" {
 		return errors.New("missing TargetBuildID")
 	}
