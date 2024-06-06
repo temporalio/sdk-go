@@ -769,6 +769,8 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersionsWithRules() {
 	})
 	ts.NoError(err)
 
+	time.Sleep(15 * time.Second)
+
 	taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, client.DescribeTaskQueueEnhancedOptions{
 		TaskQueue: ts.taskQueueName,
 		Versions: &client.TaskQueueVersionSelection{
