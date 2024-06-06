@@ -769,30 +769,34 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersionsWithRules() {
 	})
 	ts.NoError(err)
 
-	time.Sleep(15 * time.Second)
+	ts.Eventually(func() bool {
+		taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, client.DescribeTaskQueueEnhancedOptions{
+			TaskQueue: ts.taskQueueName,
+			Versions: &client.TaskQueueVersionSelection{
+				BuildIDs: []string{buildID1, buildID2},
+			},
+			TaskQueueTypes: []client.TaskQueueType{
+				client.TaskQueueTypeWorkflow,
+			},
+			ReportTaskReachability: true,
+		})
+		ts.NoError(err)
+		ts.Equal(2, len(taskQueueInfo.VersionsInfo))
 
-	taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, client.DescribeTaskQueueEnhancedOptions{
-		TaskQueue: ts.taskQueueName,
-		Versions: &client.TaskQueueVersionSelection{
-			BuildIDs: []string{buildID1, buildID2},
-		},
-		TaskQueueTypes: []client.TaskQueueType{
-			client.TaskQueueTypeWorkflow,
-		},
-		ReportTaskReachability: true,
-	})
-	ts.NoError(err)
-	ts.Equal(2, len(taskQueueInfo.VersionsInfo))
+		// Test the first worker
+		taskQueueVersionInfo1, ok := taskQueueInfo.VersionsInfo[buildID1]
+		ts.True(ok)
+		ts.Equal(client.BuildIDTaskReachability(client.BuildIDTaskReachabilityClosedWorkflowsOnly), taskQueueVersionInfo1.TaskReachability)
 
-	// Test the first worker
-	taskQueueVersionInfo, ok := taskQueueInfo.VersionsInfo[buildID1]
-	ts.True(ok)
-	ts.Equal(client.BuildIDTaskReachability(client.BuildIDTaskReachabilityClosedWorkflowsOnly), taskQueueVersionInfo.TaskReachability)
+		// Test the second worker
+		taskQueueVersionInfo2, ok := taskQueueInfo.VersionsInfo[buildID2]
+		ts.True(ok)
 
-	// Test the second worker
-	taskQueueVersionInfo, ok = taskQueueInfo.VersionsInfo[buildID2]
-	ts.True(ok)
-	ts.Equal(client.BuildIDTaskReachability(client.BuildIDTaskReachabilityReachable), taskQueueVersionInfo.TaskReachability)
+		ts.Equal(client.BuildIDTaskReachability(client.BuildIDTaskReachabilityReachable), taskQueueVersionInfo2.TaskReachability)
+
+		return client.BuildIDTaskReachability(client.BuildIDTaskReachabilityClosedWorkflowsOnly) == taskQueueVersionInfo1.TaskReachability &&
+			client.BuildIDTaskReachability(client.BuildIDTaskReachabilityReachable) == taskQueueVersionInfo2.TaskReachability
+	}, 15*time.Second, 250*time.Millisecond)
 }
 
 func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
