@@ -786,13 +786,10 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersionsWithRules() {
 		// Test the first worker
 		taskQueueVersionInfo1, ok := taskQueueInfo.VersionsInfo[buildID1]
 		ts.True(ok)
-		ts.Equal(client.BuildIDTaskReachability(client.BuildIDTaskReachabilityClosedWorkflowsOnly), taskQueueVersionInfo1.TaskReachability)
 
 		// Test the second worker
 		taskQueueVersionInfo2, ok := taskQueueInfo.VersionsInfo[buildID2]
 		ts.True(ok)
-
-		ts.Equal(client.BuildIDTaskReachability(client.BuildIDTaskReachabilityReachable), taskQueueVersionInfo2.TaskReachability)
 
 		return client.BuildIDTaskReachability(client.BuildIDTaskReachabilityClosedWorkflowsOnly) == taskQueueVersionInfo1.TaskReachability &&
 			client.BuildIDTaskReachability(client.BuildIDTaskReachabilityReachable) == taskQueueVersionInfo2.TaskReachability
