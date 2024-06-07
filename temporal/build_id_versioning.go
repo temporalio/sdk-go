@@ -38,10 +38,20 @@ const (
 	// VersioningIntentCompatible indicates that the command should run on a worker with compatible
 	// version if possible. It may not be possible if the target task queue does not also have
 	// knowledge of the current worker's build ID.
-	// WARNING: Worker versioning is currently experimental
+	// Deprecated: This has the same effect as [VersioningIntentInheritBuildID], use that instead.
 	VersioningIntentCompatible = internal.VersioningIntentCompatible
 	// VersioningIntentDefault indicates that the command should run on the target task queue's
 	// current overall-default build ID.
-	// WARNING: Worker versioning is currently experimental
+	// Deprecated: This has the same effect as [VersioningIntentUseAssignmentRules], use that instead.
 	VersioningIntentDefault = internal.VersioningIntentDefault
+	// VersioningIntentInheritBuildID indicates the command should inherit the current Build ID of the
+	// Workflow triggering it, and not use Assignment Rules. (Redirect Rules are still applicable)
+	// This is the default behavior for commands running on the same Task Queue as the current worker.
+	// WARNING: Worker versioning is currently experimental
+	VersioningIntentInheritBuildID = internal.VersioningIntentInheritBuildID
+	// VersioningIntentUseAssignmentRules indicates the command should use the latest Assignment Rules
+	// to select a Build ID independently of the workflow triggering it.
+	// This is the default behavior for commands not running on the same Task Queue as the current worker.
+	// WARNING: Worker versioning is currently experimental
+	VersioningIntentUseAssignmentRules = internal.VersioningIntentUseAssignmentRules
 )

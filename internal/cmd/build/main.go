@@ -143,6 +143,7 @@ func (b *builder) integrationTest() error {
 			ExtraArgs: []string{
 				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecution=true",
 				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecutionAsyncAccepted=true",
+				"--dynamic-config-value", "frontend.workerVersioningRuleAPIs=true",
 				"--dynamic-config-value", "frontend.workerVersioningDataAPIs=true",
 				"--dynamic-config-value", "frontend.workerVersioningWorkflowAPIs=true",
 				"--dynamic-config-value", "system.enableActivityEagerExecution=true",

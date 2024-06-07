@@ -45,10 +45,20 @@ const (
 	// VersioningIntentCompatible indicates that the command should run on a worker with compatible
 	// version if possible. It may not be possible if the target task queue does not also have
 	// knowledge of the current worker's build ID.
+	// Deprecated: This has the same effect as [VersioningIntentInheritBuildID], use that instead.
 	VersioningIntentCompatible
 	// VersioningIntentDefault indicates that the command should run on the target task queue's
 	// current overall-default build ID.
+	// Deprecated: This has the same effect as [VersioningIntentUseAssignmentRules], use that instead.
 	VersioningIntentDefault
+	// VersioningIntentInheritBuildID indicates the command should inherit the current Build ID of the
+	// Workflow triggering it, and not use Assignment Rules. (Redirect Rules are still applicable)
+	// This is the default behavior for commands running on the same Task Queue as the current worker.
+	VersioningIntentInheritBuildID
+	// VersioningIntentUseAssignmentRules indicates the command should use the latest Assignment Rules
+	// to select a Build ID independently of the workflow triggering it.
+	// This is the default behavior for commands not running on the same Task Queue as the current worker.
+	VersioningIntentUseAssignmentRules
 )
 
 // TaskReachability specifies which category of tasks may reach a worker on a versioned task queue.
@@ -320,15 +330,15 @@ func (v *BuildIDOpPromoteIDWithinSet) targetedBuildId() string      { return v.B
 // Helper to determine if how the `InheritBuildId` flag for a command should be set based on
 // the user's intent and whether the target task queue matches this worker's task queue.
 func determineInheritBuildIdFlagForCommand(intent VersioningIntent, workerTq, TargetTq string) bool {
-	useCompat := true
-	if intent == VersioningIntentDefault {
-		useCompat = false
+	inheritBuildId := true
+	if intent == VersioningIntentDefault || intent == VersioningIntentUseAssignmentRules {
+		inheritBuildId = false
 	} else if intent == VersioningIntentUnspecified {
 		// If the target task queue doesn't match ours, use the default version. Empty target counts
 		// as matching.
 		if TargetTq != "" && workerTq != TargetTq {
-			useCompat = false
+			inheritBuildId = false
 		}
 	}
-	return useCompat
+	return inheritBuildId
 }

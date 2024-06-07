@@ -21,3 +21,4 @@ test.log
 .gobincache
 go.work
 go.work.sum
+*~
