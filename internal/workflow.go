@@ -1034,7 +1034,10 @@ type WorkflowInfo struct {
 
 // UpdateInfo information about a currently running update
 type UpdateInfo struct {
+	// ID of the update
 	ID string
+	// Name of the update
+	Name string
 }
 
 // GetBinaryChecksum returns the binary checksum of the last worker to complete a task for this
@@ -1094,12 +1097,12 @@ func (wc *workflowEnvironmentInterceptor) GetTypedSearchAttributes(ctx Context) 
 }
 
 // GetUpdateInfo extracts info of a currently running update from a context.
-func GetUpdateInfo(ctx Context) *UpdateInfo {
+func GetCurrentUpdateInfo(ctx Context) *UpdateInfo {
 	i := getWorkflowOutboundInterceptor(ctx)
-	return i.GetUpdateInfo(ctx)
+	return i.GetCurrentUpdateInfo(ctx)
 }
 
-func (wc *workflowEnvironmentInterceptor) GetUpdateInfo(ctx Context) *UpdateInfo {
+func (wc *workflowEnvironmentInterceptor) GetCurrentUpdateInfo(ctx Context) *UpdateInfo {
 	uc := ctx.Value(updateInfoContextKey)
 	if uc == nil {
 		panic("getWorkflowOutboundInterceptor: No update associated with this context")
