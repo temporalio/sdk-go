@@ -24,6 +24,7 @@ package test_test
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -37,6 +38,13 @@ import (
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
 )
+
+var runNewVersioningTests bool
+
+func init() {
+	run, ok := os.LookupEnv("RUN_VERSIONING_V2_TESTS")
+	runNewVersioningTests = ok && run != ""
+}
 
 type WorkerVersioningTestSuite struct {
 	*require.Assertions
@@ -103,6 +111,10 @@ func (ts *WorkerVersioningTestSuite) TestManipulateVersionSets() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestManipulateRules() {
+	if !runNewVersioningTests {
+		ts.T().Skip("temporal cli devserver does not support new versioning API yet.")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -169,6 +181,10 @@ func (ts *WorkerVersioningTestSuite) TestManipulateRules() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestReplaceDeleteRules() {
+	if !runNewVersioningTests {
+		ts.T().Skip("temporal cli devserver does not support new versioning API yet.")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -261,6 +277,10 @@ func (ts *WorkerVersioningTestSuite) TestReplaceDeleteRules() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestCommitRules() {
+	if !runNewVersioningTests {
+		ts.T().Skip("temporal cli devserver does not support new versioning API yet.")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -334,6 +354,10 @@ func (ts *WorkerVersioningTestSuite) TestCommitRules() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestConflictTokens() {
+	if !runNewVersioningTests {
+		ts.T().Skip("temporal cli devserver does not support new versioning API yet.")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -443,6 +467,10 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasksWithRules() {
+	if !runNewVersioningTests {
+		ts.T().Skip("temporal cli devserver does not support new versioning API yet.")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -530,6 +558,10 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityUnreachable() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestReachabilityUnreachableWithRules() {
+	if !runNewVersioningTests {
+		ts.T().Skip("temporal cli devserver does not support new versioning API yet.")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -592,6 +624,10 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityUnversionedWorker() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestReachabilityUnversionedWorkerWithRules() {
+	if !runNewVersioningTests {
+		ts.T().Skip("temporal cli devserver does not support new versioning API yet.")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -709,6 +745,10 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersions() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestReachabilityVersionsWithRules() {
+	if !runNewVersioningTests {
+		ts.T().Skip("temporal cli devserver does not support new versioning API yet.")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -873,6 +913,10 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetimeWithRules() {
+	if !runNewVersioningTests {
+		ts.T().Skip("temporal cli devserver does not support new versioning API yet.")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
