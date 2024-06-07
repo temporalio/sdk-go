@@ -769,31 +769,30 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersionsWithRules() {
 	})
 	ts.NoError(err)
 
-	ts.Eventually(func() bool {
-		taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, client.DescribeTaskQueueEnhancedOptions{
-			TaskQueue: ts.taskQueueName,
-			Versions: &client.TaskQueueVersionSelection{
-				BuildIDs: []string{buildID1, buildID2},
-			},
-			TaskQueueTypes: []client.TaskQueueType{
-				client.TaskQueueTypeWorkflow,
-			},
-			ReportTaskReachability: true,
-		})
-		ts.NoError(err)
-		ts.Equal(2, len(taskQueueInfo.VersionsInfo))
+	time.Sleep(15 * time.Second)
 
-		// Test the first worker
-		taskQueueVersionInfo1, ok := taskQueueInfo.VersionsInfo[buildID1]
-		ts.True(ok)
+	taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, client.DescribeTaskQueueEnhancedOptions{
+		TaskQueue: ts.taskQueueName,
+		Versions: &client.TaskQueueVersionSelection{
+			BuildIDs: []string{buildID1, buildID2},
+		},
+		TaskQueueTypes: []client.TaskQueueType{
+			client.TaskQueueTypeWorkflow,
+		},
+		ReportTaskReachability: true,
+	})
+	ts.NoError(err)
+	ts.Equal(2, len(taskQueueInfo.VersionsInfo))
 
-		// Test the second worker
-		taskQueueVersionInfo2, ok := taskQueueInfo.VersionsInfo[buildID2]
-		ts.True(ok)
+	// Test the first worker
+	taskQueueVersionInfo, ok := taskQueueInfo.VersionsInfo[buildID1]
+	ts.True(ok)
+	ts.Equal(client.BuildIDTaskReachability(client.BuildIDTaskReachabilityClosedWorkflowsOnly), taskQueueVersionInfo.TaskReachability)
 
-		return client.BuildIDTaskReachability(client.BuildIDTaskReachabilityClosedWorkflowsOnly) == taskQueueVersionInfo1.TaskReachability &&
-			client.BuildIDTaskReachability(client.BuildIDTaskReachabilityReachable) == taskQueueVersionInfo2.TaskReachability
-	}, 15*time.Second, 250*time.Millisecond)
+	// Test the second worker
+	taskQueueVersionInfo, ok = taskQueueInfo.VersionsInfo[buildID2]
+	ts.True(ok)
+	ts.Equal(client.BuildIDTaskReachability(client.BuildIDTaskReachabilityReachable), taskQueueVersionInfo.TaskReachability)
 }
 
 func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
