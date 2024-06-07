@@ -43,31 +43,31 @@ jobs:
         run: go run . unit-test -coverage=${{ matrix.uploadCoverage && 'true' || 'false' }}
         working-directory: ./internal/cmd/build
 
-      # - name: Integration tests (without cache)
-      #   run: go run . integration-test -dev-server
-      #   working-directory: ./internal/cmd/build
-      #   env:
-      #     WORKFLOW_CACHE_SIZE: "0"
-      #     TEMPORAL_COVERAGE_FILE: ${{ matrix.uploadCoverage && 'integ_test_zero_cache_cover.out' || '' }}
+      - name: Integration tests (without cache)
+        run: go run . integration-test -dev-server
+        working-directory: ./internal/cmd/build
+        env:
+          WORKFLOW_CACHE_SIZE: "0"
+          TEMPORAL_COVERAGE_FILE: ${{ matrix.uploadCoverage && 'integ_test_zero_cache_cover.out' || '' }}
 
-      # - name: Integration tests (with cache)
-      #   run: go run . integration-test -dev-server
-      #   working-directory: ./internal/cmd/build
-      #   env:
-      #     TEMPORAL_COVERAGE_FILE: ${{ matrix.uploadCoverage && 'integ_test_normal_cache_cover.out' || '' }}
+      - name: Integration tests (with cache)
+        run: go run . integration-test -dev-server
+        working-directory: ./internal/cmd/build
+        env:
+          TEMPORAL_COVERAGE_FILE: ${{ matrix.uploadCoverage && 'integ_test_normal_cache_cover.out' || '' }}
 
-      # - name: Merge coverage files
-      #   if: ${{ matrix.uploadCoverage }}
-      #   run: go run . merge-coverage-files ../../../coverage.out
-      #   working-directory: ./internal/cmd/build
+      - name: Merge coverage files
+        if: ${{ matrix.uploadCoverage }}
+        run: go run . merge-coverage-files ../../../coverage.out
+        working-directory: ./internal/cmd/build
 
-      # - name: Upload coverage
-      #   if: ${{ matrix.uploadCoverage }}
-      #   continue-on-error: true
-      #   uses: coverallsapp/github-action@v2
-      #   with:
-      #     file: coverage.out
-      #     format: golang
+      - name: Upload coverage
+        if: ${{ matrix.uploadCoverage }}
+        continue-on-error: true
+        uses: coverallsapp/github-action@v2
+        with:
+          file: coverage.out
+          format: golang
 
       - name: Docker compose - checkout
         if: ${{ matrix.testDockerCompose }}
