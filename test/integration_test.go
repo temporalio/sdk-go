@@ -255,6 +255,11 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.worker = worker.New(ts.client, ts.taskQueueName, options)
 	ts.workerStopped = false
 	ts.registerWorkflowsAndActivities(ts.worker)
+	if strings.Contains(ts.T().Name(), "NoWorker") {
+		// Don't even start the worker
+		ts.workerStopped = true
+		return
+	}
 	ts.Nil(ts.worker.Start())
 }
 
@@ -2847,12 +2852,11 @@ func (ts *IntegrationTestSuite) TestLongUpdateWaitOnCompleted() {
 
 func (ts *IntegrationTestSuite) TestUpdateAdmittedNoWorker() {
 	ctx := context.Background()
+
 	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-long-update-wait-on-completed"), ts.workflows.UpdateBasicWorkflow)
 	ts.Nil(err)
-
-	ts.worker.Stop()
-	ts.workerStopped = true
+	defer ts.NoError(ts.client.TerminateWorkflow(ctx, run.GetID(), run.GetRunID(), "for test"))
 
 	// Send an update request
 	tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -2865,9 +2869,6 @@ func (ts *IntegrationTestSuite) TestUpdateAdmittedNoWorker() {
 		WaitForStage: client.WorkflowUpdateStageAccepted,
 	})
 	ts.Error(err)
-
-	// complete workflow
-	ts.NoError(ts.client.TerminateWorkflow(ctx, run.GetID(), run.GetRunID(), "for test"))
 }
 
 func (ts *IntegrationTestSuite) TestUpdateWithNoHandlerRejected() {
