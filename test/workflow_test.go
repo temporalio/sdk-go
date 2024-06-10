@@ -326,19 +326,21 @@ func (w *Workflows) ActivityRetryOnHBTimeout(ctx workflow.Context) ([]string, er
 	return []string{"heartbeatAndSleep", "heartbeatAndSleep", "heartbeatAndSleep"}, nil
 }
 
-func (w *Workflows) UpdateBasicWorkflow(ctx workflow.Context) error {
+func (w *Workflows) UpdateBasicWorkflow(ctx workflow.Context) (int, error) {
+	updatesProcessed := 0
 	err := workflow.SetUpdateHandler(ctx, "update", func(ctx workflow.Context, t time.Duration) (string, error) {
 		err := workflow.Sleep(ctx, t)
 		if err != nil {
 			return "", err
 		}
+		updatesProcessed += 1
 		return "test", nil
 	})
 	if err != nil {
-		return errors.New("failed to register update handler")
+		return updatesProcessed, errors.New("failed to register update handler")
 	}
 	workflow.GetSignalChannel(ctx, "finish").Receive(ctx, nil)
-	return nil
+	return updatesProcessed, nil
 }
 
 func (w *Workflows) UpdateCancelableWorkflow(ctx workflow.Context) error {
