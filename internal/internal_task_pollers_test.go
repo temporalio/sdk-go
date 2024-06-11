@@ -230,8 +230,7 @@ func TestWFTCorruption(t *testing.T) {
 func TestWFTReset(t *testing.T) {
 	cache := NewWorkerCache()
 	params := workerExecutionParameters{
-		cache:                    cache,
-		DeadlockDetectionTimeout: time.Hour,
+		cache: cache,
 	}
 	ensureRequiredParams(&params)
 	wfType := commonpb.WorkflowType{Name: t.Name() + "-workflow-type"}
