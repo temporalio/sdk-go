@@ -135,6 +135,7 @@ func (b *builder) integrationTest() error {
 	// Start dev server if wanted
 	if *devServerFlag {
 		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
+			CachedDownload: testsuite.CachedDownload{Version: "v0.13.0-rc.2"},
 			ClientOptions: &client.Options{
 				HostPort:  "127.0.0.1:7233",
 				Namespace: "integration-test-namespace",

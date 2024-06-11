@@ -24,7 +24,6 @@ package test_test
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
@@ -42,8 +41,9 @@ import (
 var runNewVersioningTests bool
 
 func init() {
-	run, ok := os.LookupEnv("RUN_VERSIONING_V2_TESTS")
-	runNewVersioningTests = ok && run != ""
+	// run, ok := os.LookupEnv("RUN_VERSIONING_V2_TESTS")
+	// runNewVersioningTests = ok && run != ""
+	runNewVersioningTests = true
 }
 
 type WorkerVersioningTestSuite struct {
