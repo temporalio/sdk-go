@@ -426,6 +426,15 @@ func createTestUpsertWorkflowSearchAttributesForChangeVersion(eventID int64, wor
 	}
 }
 
+func createTestProtocolMessageUpdateRequest(ID string, eventID int64, request *updatepb.Request) *protocolpb.Message {
+	return &protocolpb.Message{
+		Id:                 uuid.New(),
+		ProtocolInstanceId: ID,
+		SequencingId:       &protocolpb.Message_EventId{EventId: eventID},
+		Body:               protocol.MustMarshalAny(request),
+	}
+}
+
 func createWorkflowTask(
 	events []*historypb.HistoryEvent,
 	previousStartEventID int64,

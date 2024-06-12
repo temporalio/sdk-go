@@ -187,7 +187,7 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextCommands() {
 
 	workflowTask := &workflowTask{task: task, historyIterator: historyIterator}
 
-	eh := newHistory(workflowTask, nil)
+	eh := newHistory(0, workflowTask, nil)
 
 	nextTask, err := eh.nextTask()
 
@@ -232,7 +232,7 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextCommandsSdkFlags() {
 
 	workflowTask := &workflowTask{task: task, historyIterator: historyIterator}
 
-	eh := newHistory(workflowTask, nil)
+	eh := newHistory(0, workflowTask, nil)
 
 	nextTask, err := eh.nextTask()
 
@@ -301,7 +301,7 @@ func (s *PollLayerInterfacesTestSuite) TestMessageCommands() {
 
 	workflowTask := &workflowTask{task: task, historyIterator: historyIterator}
 
-	eh := newHistory(workflowTask, nil)
+	eh := newHistory(0, workflowTask, nil)
 
 	nextTask, err := eh.nextTask()
 	s.NoError(err)
@@ -370,7 +370,7 @@ func (s *PollLayerInterfacesTestSuite) TestEmptyPages() {
 	}
 
 	workflowTask := &workflowTask{task: task, historyIterator: historyIterator}
-	eh := newHistory(workflowTask, nil)
+	eh := newHistory(0, workflowTask, nil)
 
 	type result struct {
 		events   []*historypb.HistoryEvent
