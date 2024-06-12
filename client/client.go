@@ -742,6 +742,7 @@ type (
 		// When not supported by the server, it returns an empty [TaskQueueDescription] if there is no information
 		// about the task queue, or an error when the response identifies an unsupported server.
 		// Note that using a sticky queue as target is not supported.
+		// Also, workflow reachability status is eventually consistent, and it could take a few minutes to update.
 		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
 		DescribeTaskQueueEnhanced(ctx context.Context, options DescribeTaskQueueEnhancedOptions) (TaskQueueDescription, error)
 
