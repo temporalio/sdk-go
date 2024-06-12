@@ -88,8 +88,6 @@ jobs:
         if: ${{ matrix.testDockerCompose }}
         run: go run . integration-test
         working-directory: ./internal/cmd/build
-        env:
-          RUN_VERSIONING_V2_TESTS: "true"
 
   cloud-test:
     strategy:
