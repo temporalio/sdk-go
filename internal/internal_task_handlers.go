@@ -115,9 +115,9 @@ type (
 		isWorkflowCompleted bool
 		result              *commonpb.Payloads
 		err                 error
-		// previousStartedEventID is the event ID of the workflow task started of the previous workflow task.
+		// previousStartedEventID is the event ID of the workflow task started event of the previous workflow task.
 		previousStartedEventID int64
-		// lastHandledEventID is the event ID of the last command that the workflow state machine processed.
+		// lastHandledEventID is the event ID of the last event that the workflow state machine processed.
 		lastHandledEventID int64
 
 		newCommands         []*commandpb.Command
