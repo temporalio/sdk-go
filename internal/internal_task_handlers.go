@@ -592,16 +592,15 @@ func (w *workflowExecutionContextImpl) Unlock(err error) {
 	defer w.mutex.Unlock()
 	if err != nil || w.err != nil || w.isWorkflowCompleted ||
 		(w.wth.cache.MaxWorkflowCacheSize() <= 0 && !w.hasPendingLocalActivityWork()) {
-		// TODO: in case of closed, it asumes the close command always succeed. need server side change to return
+		// TODO: in case of closed, it assumes the close command always succeed. need server side change to return
 		// error to indicate the close failure case. This should be rare case. For now, always remove the cache, and
 		// if the close command failed, the next command will have to rebuild the state.
 		if w.wth.cache.getWorkflowCache().Exist(w.workflowInfo.WorkflowExecution.RunID) {
 			w.wth.cache.removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID)
 			w.cached = false
-		} else {
-			// sticky is disabled, manually clear the workflow state.
-			w.clearState()
 		}
+		// Clear the state so other tasks waiting on the context know it should be discarded.
+		w.clearState()
 	} else if !w.cached {
 		// Clear the state if we never cached the workflow so coroutines can be
 		// exited
@@ -765,10 +764,10 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 	// Verify the cached state is current and for the correct worker
 	if workflowContext != nil {
 		workflowContext.Lock()
-		if task.Query != nil && !isFullHistory && wth == workflowContext.wth {
+		if task.Query != nil && !isFullHistory && wth == workflowContext.wth && !workflowContext.IsDestroyed() {
 			// query task and we have a valid cached state
 			metricsHandler.Counter(metrics.StickyCacheHit).Inc(1)
-		} else if history.Events[0].GetEventId() == workflowContext.previousStartedEventID+1 && wth == workflowContext.wth {
+		} else if history.Events[0].GetEventId() == workflowContext.previousStartedEventID+1 && wth == workflowContext.wth && !workflowContext.IsDestroyed() {
 			// non query task and we have a valid cached state
 			metricsHandler.Counter(metrics.StickyCacheHit).Inc(1)
 		} else {
