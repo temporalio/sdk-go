@@ -1806,6 +1806,63 @@ func (ts *IntegrationTestSuite) TestResetWorkflowExecution() {
 	ts.Equal(originalResult, newResult)
 }
 
+func (ts *IntegrationTestSuite) TestResetWorkflowExecutionWithUpdate() {
+	ctx := context.Background()
+	wfId := "reset-workflow-execution-with-update"
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions(wfId), ts.workflows.UpdateBasicWorkflow)
+	ts.NoError(err)
+	// Send a few updates to the workflow
+	for i := 0; i < 2; i++ {
+		handler, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+			WorkflowID:   run.GetID(),
+			RunID:        run.GetRunID(),
+			UpdateName:   "update",
+			Args:         []interface{}{time.Millisecond},
+			WaitForStage: client.WorkflowUpdateStageCompleted,
+		})
+		ts.NoError(err)
+		ts.NoError(handler.Get(ctx, nil))
+	}
+	// Complete workflow
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
+	var updatesProcessed int
+	ts.NoError(run.Get(ctx, &updatesProcessed))
+	ts.Equal(2, updatesProcessed)
+	// Reset the workflow
+	resp, err := ts.client.ResetWorkflowExecution(ctx, &workflowservice.ResetWorkflowExecutionRequest{
+		Namespace: ts.config.Namespace,
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: run.GetID(),
+			RunId:      run.GetRunID(),
+		},
+		Reason:                    "integration test",
+		WorkflowTaskFinishEventId: 4,
+		ResetReapplyType:          enumspb.RESET_REAPPLY_TYPE_ALL_ELIGIBLE,
+		ResetReapplyExcludeTypes:  []enumspb.ResetReapplyExcludeType{enumspb.RESET_REAPPLY_EXCLUDE_TYPE_SIGNAL},
+	})
+	ts.NoError(err)
+	ts.NotEmpty(resp.GetRunId())
+	newWf := ts.client.GetWorkflow(ctx, wfId, resp.GetRunId())
+	// Send a few updates to the new workflow
+	for i := 0; i < 2; i++ {
+		handler, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+			WorkflowID:   newWf.GetID(),
+			RunID:        newWf.GetRunID(),
+			UpdateName:   "update",
+			Args:         []interface{}{time.Millisecond},
+			WaitForStage: client.WorkflowUpdateStageCompleted,
+		})
+		ts.NoError(err)
+		ts.NoError(handler.Get(ctx, nil))
+	}
+	// Complete the new workflow
+	ts.NoError(ts.client.SignalWorkflow(ctx, newWf.GetID(), newWf.GetRunID(), "finish", "finished"))
+	err = newWf.Get(ctx, &updatesProcessed)
+	ts.NoError(err)
+	ts.Equal(4, updatesProcessed)
+}
+
 func (ts *IntegrationTestSuite) TestEndToEndLatencyMetrics() {
 	fetchMetrics := func() (localMetric, nonLocalMetric *metrics.CapturedTimer) {
 		for _, timer := range ts.metricsHandler.Timers() {
@@ -2780,7 +2837,7 @@ func (ts *IntegrationTestSuite) TestMaxConcurrentSessionExecutionSizeWithRecreat
 func (ts *IntegrationTestSuite) TestUpdateBasic() {
 	ctx := context.Background()
 	run, err := ts.client.ExecuteWorkflow(ctx,
-		ts.startWorkflowOptions("test-update-beee"), ts.workflows.UpdateBasicWorkflow)
+		ts.startWorkflowOptions("test-update-basic"), ts.workflows.UpdateBasicWorkflow)
 	ts.Nil(err)
 	// Send an update request
 	ts.Run("ShortUpdate", func() {
