@@ -8,12 +8,13 @@ on:
 jobs:
   build-and-test:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
-        go-version: ["1.21", "1.22"]
+        go-version: ["oldstable", "stable"]
         include:
           - os: ubuntu-latest
-            go-version: "1.22"
+            go-version: "stable"
             # We only want to upload coverage on a single target
             uploadCoverage: true
             # We only want to check docker compose on a single target
@@ -92,7 +93,7 @@ jobs:
   cloud-test:
     strategy:
       matrix:
-        go-version: ["1.21", "1.22"]
+        go-version: ["oldstable", "stable"]
       # Try to avoid running tests in parallel to avoid workflow ID conflict
       max-parallel: 1
     # Only supported in non-fork runs, since secrets are not available in forks.
