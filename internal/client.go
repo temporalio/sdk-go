@@ -538,7 +538,8 @@ type (
 		MaxPayloadSize int
 
 		// Advanced dial options for gRPC connections. These are applied after the internal default dial options are
-		// applied. Therefore any dial options here may override internal ones.
+		// applied. Therefore any dial options here may override internal ones. Dial options WithBlock, WithTimeout,
+		// WithReturnConnectionError, and FailOnNonTempDialError are ignored.
 		//
 		// For gRPC interceptors, internal interceptors such as error handling, metrics, and retrying are done via
 		// grpc.WithChainUnaryInterceptor. Therefore to add inner interceptors that are wrapped by those, a
