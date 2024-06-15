@@ -135,6 +135,9 @@ func TestUnregisteredActivity(t *testing.T) {
 func namedActivity(ctx context.Context, arg string) (string, error) {
 	return arg + " World!", nil
 }
+func otherActivity(ctx context.Context, arg string) (string, error) {
+	return arg + " World!", nil
+}
 
 func TestLocalActivityExecutionByActivityName(t *testing.T) {
 	testSuite := &WorkflowTestSuite{}
@@ -474,6 +477,31 @@ func TestActivityAssertNumberOfCalls(t *testing.T) {
 	require.NoError(t, env.GetWorkflowError())
 	env.AssertNumberOfCalls(t, "namedActivity", 3)
 	env.AssertNumberOfCalls(t, "otherActivity", 0)
+}
+
+func TestActivityCalls(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+
+	env.RegisterActivity(namedActivity)
+	env.RegisterActivity(otherActivity)
+	env.OnActivity(namedActivity, mock.Anything, mock.Anything).Return("Mock!", nil)
+	env.OnActivity(otherActivity, mock.Anything, mock.Anything).Return("Mock!", nil)
+
+	env.ExecuteWorkflow(func(ctx Context, arg1 string) (string, error) {
+		ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{
+			ScheduleToCloseTimeout: time.Hour,
+			StartToCloseTimeout:    time.Hour,
+		})
+		var result string
+		_ = ExecuteLocalActivity(ctx, "namedActivity", arg1).Get(ctx, &result)
+		_ = ExecuteLocalActivity(ctx, "otherActivity", arg1).Get(ctx, &result)
+		return result, nil
+	}, "Hello")
+
+	require.NoError(t, env.GetWorkflowError())
+	require.Equal(t, "namedActivity", env.Calls()[0].Method)
+	require.Equal(t, "otherActivity", env.Calls()[1].Method)
 }
 
 func HelloWorkflow(_ Context, name string) (string, error) {

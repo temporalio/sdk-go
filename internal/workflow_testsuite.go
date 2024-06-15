@@ -955,3 +955,7 @@ func (e *TestWorkflowEnvironment) AssertNotCalled(t mock.TestingT, methodName st
 func (e *TestWorkflowEnvironment) AssertNumberOfCalls(t mock.TestingT, methodName string, expectedCalls int) bool {
 	return e.mock.AssertNumberOfCalls(t, methodName, expectedCalls)
 }
+
+func (e *TestWorkflowEnvironment) Calls() []mock.Call {
+	return e.mock.Calls
+}
