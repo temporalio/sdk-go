@@ -151,6 +151,11 @@ func (t *testSuiteClientForNexusOperations) DescribeTaskQueue(ctx context.Contex
 	panic("not implemented in the test environment")
 }
 
+// DescribeTaskQueueEnhanced implements Client.
+func (t *testSuiteClientForNexusOperations) DescribeTaskQueueEnhanced(ctx context.Context, options DescribeTaskQueueEnhancedOptions) (TaskQueueDescription, error) {
+	panic("unimplemented in the test environment")
+}
+
 // DescribeWorkflowExecution implements Client.
 func (t *testSuiteClientForNexusOperations) DescribeWorkflowExecution(ctx context.Context, workflowID string, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
 	panic("not implemented in the test environment")
@@ -246,6 +251,11 @@ func (t *testSuiteClientForNexusOperations) GetWorkerTaskReachability(ctx contex
 	panic("not implemented in the test environment")
 }
 
+// GetWorkerVersioningRules implements Client.
+func (t *testSuiteClientForNexusOperations) GetWorkerVersioningRules(ctx context.Context, options GetWorkerVersioningOptions) (*WorkerVersioningRules, error) {
+	panic("unimplemented in the test environment")
+}
+
 // GetWorkflow implements Client.
 func (t *testSuiteClientForNexusOperations) GetWorkflow(ctx context.Context, workflowID string, runID string) WorkflowRun {
 	panic("not implemented in the test environment")
@@ -336,19 +346,19 @@ func (t *testSuiteClientForNexusOperations) TerminateWorkflow(ctx context.Contex
 	panic("not implemented in the test environment")
 }
 
+// UpdateWorkflow implements Client.
+func (t *testSuiteClientForNexusOperations) UpdateWorkflow(ctx context.Context, options UpdateWorkflowOptions) (WorkflowUpdateHandle, error) {
+	panic("unimplemented in the test environment")
+}
+
 // UpdateWorkerBuildIdCompatibility implements Client.
 func (t *testSuiteClientForNexusOperations) UpdateWorkerBuildIdCompatibility(ctx context.Context, options *UpdateWorkerBuildIdCompatibilityOptions) error {
 	panic("not implemented in the test environment")
 }
 
-// UpdateWorkflow implements Client.
-func (t *testSuiteClientForNexusOperations) UpdateWorkflow(ctx context.Context, workflowID string, workflowRunID string, updateName string, args ...interface{}) (WorkflowUpdateHandle, error) {
-	panic("not implemented in the test environment")
-}
-
-// UpdateWorkflowWithOptions implements Client.
-func (t *testSuiteClientForNexusOperations) UpdateWorkflowWithOptions(ctx context.Context, request *UpdateWorkflowWithOptionsRequest) (WorkflowUpdateHandle, error) {
-	panic("not implemented in the test environment")
+// UpdateWorkerVersioningRules implements Client.
+func (t *testSuiteClientForNexusOperations) UpdateWorkerVersioningRules(ctx context.Context, options UpdateWorkerVersioningRulesOptions) (*WorkerVersioningRules, error) {
+	panic("unimplemented in the test environment")
 }
 
 // WorkflowService implements Client.
