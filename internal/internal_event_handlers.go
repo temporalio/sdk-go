@@ -54,6 +54,7 @@ import (
 const (
 	queryResultSizeLimit             = 2000000 // 2MB
 	changeVersionSearchAttrSizeLimit = 2048
+	failureReasonPanic               = "Panic"
 )
 
 // Assert that structs do indeed implement the interfaces
@@ -1105,7 +1106,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	}
 	defer func() {
 		if p := recover(); p != nil {
-			weh.metricsHandler.Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
+			weh.metricsHandler.WithTags(metrics.WorkflowTaskFailedTags(failureReasonPanic)).Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
 			topLine := fmt.Sprintf("process event for %s [panic]:", weh.workflowInfo.TaskQueueName)
 			st := getStackTraceRaw(topLine, 7, 0)
 			weh.Complete(nil, newWorkflowPanicError(p, st))
@@ -1295,7 +1296,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessMessage(
 ) error {
 	defer func() {
 		if p := recover(); p != nil {
-			weh.metricsHandler.Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
+			weh.metricsHandler.WithTags(metrics.WorkflowTaskFailedTags(failureReasonPanic)).Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
 			topLine := fmt.Sprintf("process message for %s [panic]:", weh.workflowInfo.TaskQueueName)
 			st := getStackTraceRaw(topLine, 7, 0)
 			weh.Complete(nil, newWorkflowPanicError(p, st))
