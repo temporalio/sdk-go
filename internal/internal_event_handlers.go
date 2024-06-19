@@ -84,6 +84,14 @@ type (
 		activityType         ActivityType
 	}
 
+	scheduledNexusOperation struct {
+		startedCallback   func(operationID string, err error)
+		completedCallback func(result *commonpb.Payload, err error)
+		endpoint          string
+		service           string
+		operation         string
+	}
+
 	scheduledChildWorkflow struct {
 		resultCallback      ResultHandler
 		startedCallback     func(r WorkflowExecution, e error)
@@ -611,6 +619,57 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	wc.logger.Debug("ExecuteChildWorkflow",
 		tagChildWorkflowID, params.WorkflowID,
 		tagWorkflowType, params.WorkflowType.Name)
+}
+
+func (wc *workflowEnvironmentImpl) ExecuteNexusOperation(params executeNexusOperationParams, callback func(*commonpb.Payload, error), startedHandler func(opID string, e error)) int64 {
+	seq := wc.GenerateSequence()
+	scheduleTaskAttr := &commandpb.ScheduleNexusOperationCommandAttributes{
+		Endpoint:               params.client.Endpoint(),
+		Service:                params.client.Service(),
+		Operation:              params.operation,
+		Input:                  params.input,
+		ScheduleToCloseTimeout: durationpb.New(params.options.ScheduleToCloseTimeout),
+		NexusHeader:            params.nexusHeader,
+	}
+
+	command := wc.commandsHelper.scheduleNexusOperation(seq, scheduleTaskAttr)
+	command.setData(&scheduledNexusOperation{
+		startedCallback:   startedHandler,
+		completedCallback: callback,
+		endpoint:          params.client.Endpoint(),
+		service:           params.client.Service(),
+		operation:         params.operation,
+	})
+
+	wc.logger.Debug("ScheduleNexusOperation",
+		tagNexusEndpoint, params.client.Endpoint(),
+		tagNexusService, params.client.Service(),
+		tagNexusOperation, params.operation,
+	)
+
+	return command.seq
+}
+
+func (wc *workflowEnvironmentImpl) RequestCancelNexusOperation(seq int64) {
+	command := wc.commandsHelper.requestCancelNexusOperation(seq)
+	data := command.getData().(*scheduledNexusOperation)
+
+	// Make sure to unblock the futures.
+	if command.getState() == commandStateCreated || command.getState() == commandStateCommandSent {
+		if data.startedCallback != nil {
+			data.startedCallback("", ErrCanceled)
+			data.startedCallback = nil
+		}
+		if data.completedCallback != nil {
+			data.completedCallback(nil, ErrCanceled)
+			data.completedCallback = nil
+		}
+	}
+	wc.logger.Debug("RequestCancelNexusOperation",
+		tagNexusEndpoint, data.endpoint,
+		tagNexusService, data.service,
+		tagNexusOperation, data.operation,
+	)
 }
 
 func (wc *workflowEnvironmentImpl) RegisterSignalHandler(
@@ -1260,6 +1319,19 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED:
 		// No Operation
 
+	case enumspb.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED:
+		weh.commandsHelper.handleNexusOperationScheduled(event)
+	case enumspb.EVENT_TYPE_NEXUS_OPERATION_STARTED:
+		err = weh.handleNexusOperationStarted(event)
+	// all forms of completions are handled by the same method.
+	case enumspb.EVENT_TYPE_NEXUS_OPERATION_COMPLETED,
+		enumspb.EVENT_TYPE_NEXUS_OPERATION_FAILED,
+		enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCELED,
+		enumspb.EVENT_TYPE_NEXUS_OPERATION_TIMED_OUT:
+		err = weh.handleNexusOperationCompleted(event)
+	case enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUESTED:
+		weh.commandsHelper.handleNexusOperationCancelRequested(event.GetNexusOperationCancelRequestedEventAttributes().GetScheduledEventId())
+
 	default:
 		if event.WorkerMayIgnore {
 			// Do not fail to be forward compatible with new events
@@ -1817,6 +1889,61 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTermin
 		newTerminatedError(),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
+	return nil
+}
+
+func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationStarted(event *historypb.HistoryEvent) error {
+	attributes := event.GetNexusOperationStartedEventAttributes()
+	command := weh.commandsHelper.handleNexusOperationStarted(attributes.ScheduledEventId)
+	state := command.getData().(*scheduledNexusOperation)
+	if state.startedCallback != nil {
+		state.startedCallback(attributes.OperationId, nil)
+		state.startedCallback = nil
+	}
+	return nil
+}
+
+func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationCompleted(event *historypb.HistoryEvent) error {
+	var result *commonpb.Payload
+	var failure *failurepb.Failure
+	var scheduledEventId int64
+
+	switch event.EventType {
+	case enumspb.EVENT_TYPE_NEXUS_OPERATION_COMPLETED:
+		attrs := event.GetNexusOperationCompletedEventAttributes()
+		result = attrs.GetResult()
+		scheduledEventId = attrs.GetScheduledEventId()
+	case enumspb.EVENT_TYPE_NEXUS_OPERATION_FAILED:
+		attrs := event.GetNexusOperationFailedEventAttributes()
+		failure = attrs.GetFailure()
+		scheduledEventId = attrs.GetScheduledEventId()
+	case enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCELED:
+		attrs := event.GetNexusOperationCanceledEventAttributes()
+		failure = attrs.GetFailure()
+		scheduledEventId = attrs.GetScheduledEventId()
+	case enumspb.EVENT_TYPE_NEXUS_OPERATION_TIMED_OUT:
+		attrs := event.GetNexusOperationTimedOutEventAttributes()
+		failure = attrs.GetFailure()
+		scheduledEventId = attrs.GetScheduledEventId()
+	default:
+		// This is only called internally and should never happen.
+		panic(fmt.Errorf("invalid event type, not a Nexus Operation resolution: %v", event.EventType))
+	}
+	command := weh.commandsHelper.handleNexusOperationCompleted(scheduledEventId)
+	state := command.getData().(*scheduledNexusOperation)
+	var err error
+	if failure != nil {
+		err = weh.failureConverter.FailureToError(failure)
+	}
+	// Also unblock the start future
+	if state.startedCallback != nil {
+		state.startedCallback("", err) // We didn't get a started event, the operation completed synchronously.
+		state.startedCallback = nil
+	}
+	if state.completedCallback != nil {
+		state.completedCallback(result, err)
+		state.completedCallback = nil
+	}
 	return nil
 }
 

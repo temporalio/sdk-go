@@ -169,6 +169,20 @@ type HandleQueryInput struct {
 	Args      []interface{}
 }
 
+// RequestCancelNexusOperationInput is the input to WorkflowOutboundInterceptor.RequestCancelNexusOperation.
+//
+// NOTE: Experimental
+type RequestCancelNexusOperationInput struct {
+	// Client that was used to start the operation.
+	Client NexusClient
+	// Operation name.
+	Operation any
+	// Operation ID. May be empty if the operation is synchronous or has not started yet.
+	ID string
+	// seq number. For internal use only.
+	seq int64
+}
+
 // WorkflowOutboundInterceptor is an interface for all workflow calls
 // originating from the SDK. See documentation in the interceptor package for
 // more details.
@@ -282,6 +296,15 @@ type WorkflowOutboundInterceptor interface {
 	// NewContinueAsNewError intercepts workflow.NewContinueAsNewError.
 	// interceptor.WorkflowHeader will return a non-nil map for this context.
 	NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) error
+
+	// ExecuteNexusOperation intercepts NexusClient.ExecuteOperation.
+	//
+	// NOTE: Experimental
+	ExecuteNexusOperation(ctx Context, client NexusClient, operation any, input any, options NexusOperationOptions) NexusOperationFuture
+	// RequestCancelNexusOperation intercepts Nexus Operation cancelation via context.
+	//
+	// NOTE: Experimental
+	RequestCancelNexusOperation(ctx Context, input RequestCancelNexusOperationInput)
 
 	mustEmbedWorkflowOutboundInterceptorBase()
 }

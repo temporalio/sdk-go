@@ -31,7 +31,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go.temporal.io/api/common/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/operatorservice/v1"
@@ -649,7 +648,7 @@ type (
 		// request ID. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
 		requestID string
 		// workflow completion callback. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
-		callbacks []*common.Callback
+		callbacks []*commonpb.Callback
 	}
 
 	// RetryPolicy defines the retry policy.
@@ -1004,6 +1003,6 @@ func SetRequestIDOnStartWorkflowOptions(opts *StartWorkflowOptions, requestID st
 
 // SetCallbacksOnStartWorkflowOptions is an internal only method for setting callbacks on StartWorkflowOptions.
 // Callbacks are purposefully not exposed to users for the time being.
-func SetCallbacksOnStartWorkflowOptions(opts *StartWorkflowOptions, callbacks []*common.Callback) {
+func SetCallbacksOnStartWorkflowOptions(opts *StartWorkflowOptions, callbacks []*commonpb.Callback) {
 	opts.callbacks = callbacks
 }

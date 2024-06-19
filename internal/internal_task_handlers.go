@@ -336,7 +336,9 @@ func isCommandEvent(eventType enumspb.EventType) bool {
 		enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED,
 		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
 		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED,
-		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_REJECTED:
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_REJECTED,
+		enumspb.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED,
+		enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUESTED:
 		return true
 	default:
 		return false
@@ -1687,6 +1689,26 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, obes [
 			return false
 		}
 		return true
+
+	case enumspb.COMMAND_TYPE_SCHEDULE_NEXUS_OPERATION:
+		if e.GetEventType() != enumspb.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED {
+			return false
+		}
+		eventAttributes := e.GetNexusOperationScheduledEventAttributes()
+		commandAttributes := d.GetScheduleNexusOperationCommandAttributes()
+
+		return eventAttributes.GetService() == commandAttributes.GetService() &&
+			eventAttributes.GetOperation() == commandAttributes.GetOperation()
+
+	case enumspb.COMMAND_TYPE_REQUEST_CANCEL_NEXUS_OPERATION:
+		if e.GetEventType() != enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUESTED {
+			return false
+		}
+
+		eventAttributes := e.GetNexusOperationCancelRequestedEventAttributes()
+		commandAttributes := d.GetRequestCancelNexusOperationCommandAttributes()
+
+		return eventAttributes.GetScheduledEventId() == commandAttributes.GetScheduledEventId()
 	}
 
 	return false
