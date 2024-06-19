@@ -249,6 +249,11 @@ type (
 		executionFuture   *futureImpl // for child workflow execution future
 	}
 
+	nexusOperationFutureImpl struct {
+		*decodeFutureImpl             // for the result
+		executionFuture   *futureImpl // for the NexusOperationExecution
+	}
+
 	asyncFuture interface {
 		Future
 		// Used by selectorImpl
@@ -484,6 +489,10 @@ func (f *childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName st
 	// Put header on context before executing
 	ctx = workflowContextWithNewHeader(ctx)
 	return i.SignalChildWorkflow(ctx, childExec.ID, signalName, data)
+}
+
+func (f *nexusOperationFutureImpl) GetNexusOperationExecution() Future {
+	return f.executionFuture
 }
 
 func newWorkflowContext(

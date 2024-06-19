@@ -160,6 +160,15 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 			RetryState:       err.retryState,
 		}
 		failure.FailureInfo = &failurepb.Failure_ChildWorkflowExecutionFailureInfo{ChildWorkflowExecutionFailureInfo: failureInfo}
+	case *NexusOperationError:
+		failureInfo := &failurepb.NexusOperationFailureInfo{
+			ScheduledEventId: err.ScheduledEventID,
+			Endpoint: err.Endpoint,
+			Service: err.Service,
+			Operation: err.Operation,
+			OperationId: err.OperationID,
+		}
+		failure.FailureInfo = &failurepb.Failure_NexusOperationExecutionFailureInfo{NexusOperationExecutionFailureInfo: failureInfo}
 	default: // All unknown errors are considered to be retryable ApplicationFailureInfo.
 		failureInfo := &failurepb.ApplicationFailureInfo{
 			Type:         getErrType(err),
@@ -254,6 +263,17 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 			childWorkflowExecutionFailureInfo.GetRetryState(),
 			dfc.FailureToError(failure.GetCause()),
 		)
+	} else if info := failure.GetNexusOperationExecutionFailureInfo(); info != nil {
+		err = &NexusOperationError{
+			Message:          failure.Message,
+			Cause:            dfc.FailureToError(failure.GetCause()),
+			Failure:          originalFailure,
+			ScheduledEventID: info.GetScheduledEventId(),
+			Endpoint:         info.GetEndpoint(),
+			Service:          info.GetService(),
+			Operation:        info.GetOperation(),
+			OperationID:      info.GetOperationId(),
+		}
 	}
 
 	if err == nil {

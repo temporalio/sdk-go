@@ -2199,3 +2199,173 @@ func DeterministicKeysFunc[K comparable, V any](m map[K]V, cmp func(a K, b K) in
 func AllHandlersFinished(ctx Context) bool {
 	return len(getWorkflowEnvOptions(ctx).getRunningUpdateHandles()) == 0
 }
+
+// NexusOperationOptions are options for starting a Nexus Operation from a Workflow.
+type NexusOperationOptions struct {
+	ScheduleToCloseTimeout time.Duration
+}
+
+// NexusOperationExecution is the result of NexusOperationFuture.GetNexusOperationExecution.
+type NexusOperationExecution struct {
+	// Operation ID as set by the Operation's handler. May be empty if the operation hasn't started yet or completed
+	// synchronously.
+	OperationID string
+}
+
+// NexusOperationFuture represents the result of a Nexus Operation.
+type NexusOperationFuture interface {
+	Future
+	// GetNexusOperationExecution returns a future that is resolved when the operation reaches the STARTED state.
+	// For synchronous operations, this will be resolved at the same as the containing [NexusOperationFuture]. For
+	// asynchronous operations, this future is resolved independently.
+	// If the operation is unsuccessful, this future will contain the same error as the [NexusOperationFuture].
+	// Use this method to extract the Operation ID of an asynchronous operation. OperationID will be empty for
+	// synchronous operations.
+	//
+	// NOTE: Experimental
+	//
+	//  fut := nexusClient.ExecuteOperation(ctx, op, ...)
+	//  var exec workflow.NexusOperationExecution
+	//  if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err == nil {
+	//      // Nexus Operation started, OperationID is optionally set.
+	//  }
+	GetNexusOperationExecution() Future
+}
+
+// NexusClient is a client for executing Nexus Operations from a workflow.
+// NOTE to maintainers, this interface definition is duplicated in the workflow package to provide a better UX.
+type NexusClient interface {
+	// The endpoint name this client uses.
+	//
+	// NOTE: Experimental
+	Endpoint() string
+	// The service name this client uses.
+	//
+	// NOTE: Experimental
+	Service() string
+
+	// ExecuteOperation executes a Nexus Operation.
+	// The operation argument can be a string, a [nexus.Operation] or a [nexus.OperationReference].
+	//
+	// NOTE: Experimental
+	ExecuteOperation(ctx Context, operation any, input any, options NexusOperationOptions) NexusOperationFuture
+}
+
+type nexusClient struct {
+	endpoint, service string
+}
+
+// Create a [NexusClient] from an endpoint name and a service name.
+//
+// NOTE: Experimental
+func NewNexusClient(endpoint, service string) NexusClient {
+	return nexusClient{endpoint, service}
+}
+
+func (c nexusClient) Endpoint() string {
+	return c.endpoint
+}
+
+func (c nexusClient) Service() string {
+	return c.service
+}
+
+func (c nexusClient) ExecuteOperation(ctx Context, operation any, input any, options NexusOperationOptions) NexusOperationFuture {
+	assertNotInReadOnlyState(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
+	return i.ExecuteNexusOperation(ctx, c, operation, input, options)
+}
+
+func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Context, client NexusClient, operation any, input any, options NexusOperationOptions) (executeNexusOperationParams, error) {
+	dc := WithWorkflowContext(ctx, wc.env.GetDataConverter())
+
+	var ok bool
+	var operationName string
+	if operationName, ok = operation.(string); ok {
+	} else if regOp, ok := operation.(interface{ Name() string }); ok {
+		operationName = regOp.Name()
+	} else {
+		return executeNexusOperationParams{}, fmt.Errorf("invalid 'operation' parameter, must be an OperationReference or a string")
+	}
+	// TODO(bergundy): Validate operation types against input once there's a good way to extract the generic types from
+	// OperationReference in the Nexus Go SDK.
+
+	payload, err := dc.ToPayload(input)
+	if err != nil {
+		return executeNexusOperationParams{}, err
+	}
+
+	return executeNexusOperationParams{
+		client:    client,
+		operation: operationName,
+		input:     payload,
+		options:   options,
+	}, nil
+}
+
+func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, client NexusClient, operation any, input any, options NexusOperationOptions) NexusOperationFuture {
+	mainFuture, mainSettable := newDecodeFuture(ctx, nil /* this param is never used */)
+	executionFuture, executionSettable := NewFuture(ctx)
+	result := &nexusOperationFutureImpl{
+		decodeFutureImpl: mainFuture.(*decodeFutureImpl),
+		executionFuture:  executionFuture.(*futureImpl),
+	}
+
+	// Immediately return if the context has an error without spawning the child workflow
+	if ctx.Err() != nil {
+		executionSettable.Set(nil, ctx.Err())
+		mainSettable.Set(nil, ctx.Err())
+		return result
+	}
+
+	ctxDone, cancellable := ctx.Done().(*channelImpl)
+	cancellationCallback := &receiveCallback{}
+	params, err := wc.prepareNexusOperationParams(ctx, client, operation, input, options)
+	if err != nil {
+		executionSettable.Set(nil, err)
+		mainSettable.Set(nil, err)
+		return result
+	}
+
+	var operationID string
+	seq := wc.env.ExecuteNexusOperation(params, func(r *commonpb.Payload, e error) {
+		var payloads *commonpb.Payloads
+		if r != nil {
+			payloads = &commonpb.Payloads{Payloads: []*commonpb.Payload{r}}
+		}
+		mainSettable.Set(payloads, e)
+		if cancellable {
+			// future is done, we don't need cancellation anymore
+			ctxDone.removeReceiveCallback(cancellationCallback)
+		}
+	}, func(opID string, e error) {
+		operationID = opID
+		executionSettable.Set(NexusOperationExecution{opID}, e)
+	})
+
+	if cancellable {
+		cancellationCallback.fn = func(v any, _ bool) bool {
+			assertNotInReadOnlyStateCancellation(ctx)
+			if ctx.Err() == ErrCanceled && !mainFuture.IsReady() {
+				// Go back to the top of the interception chain.
+				getWorkflowOutboundInterceptor(ctx).RequestCancelNexusOperation(ctx, RequestCancelNexusOperationInput{
+					Client:    client,
+					Operation: operation,
+					ID:        operationID,
+					seq:       seq,
+				})
+			}
+			return false
+		}
+		_, ok, more := ctxDone.receiveAsyncImpl(cancellationCallback)
+		if ok || !more {
+			cancellationCallback.fn(nil, more)
+		}
+	}
+
+	return result
+}
+
+func (wc *workflowEnvironmentInterceptor) RequestCancelNexusOperation(ctx Context, input RequestCancelNexusOperationInput) {
+	wc.env.RequestCancelNexusOperation(input.seq)
+}
