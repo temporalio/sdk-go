@@ -145,6 +145,9 @@ func MustNewWorkflowRunOperationWithOptions[I, O any](options WorkflowRunOperati
 }
 
 func (*workflowRunOperation[I, O]) Cancel(ctx context.Context, id string, options nexus.CancelOperationOptions) error {
+	// Prevent the test env client from panicking when we try to use it from a workflow run operation.
+	ctx = context.WithValue(ctx, internal.IsWorkflowRunOpContextKey, true)
+
 	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
 	if !ok {
 		return nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
@@ -157,6 +160,9 @@ func (o *workflowRunOperation[I, O]) Name() string {
 }
 
 func (o *workflowRunOperation[I, O]) Start(ctx context.Context, input I, options nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[O], error) {
+	// Prevent the test env client from panicking when we try to use it from a workflow run operation.
+	ctx = context.WithValue(ctx, internal.IsWorkflowRunOpContextKey, true)
+
 	if o.options.Handler != nil {
 		handle, err := o.options.Handler(ctx, input, options)
 		if err != nil {
