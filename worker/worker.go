@@ -28,6 +28,7 @@ package worker
 import (
 	"context"
 
+	"github.com/nexus-rpc/sdk-go/nexus"
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/workflowservice/v1"
 
@@ -73,6 +74,7 @@ type (
 	Registry interface {
 		WorkflowRegistry
 		ActivityRegistry
+		NexusServiceRegistry
 	}
 
 	// WorkflowRegistry exposes workflow registration functions to consumers.
@@ -148,6 +150,14 @@ type (
 		// which might be useful for integration tests.
 		// worker.RegisterActivityWithOptions(barActivity, RegisterActivityOptions{DisableAlreadyRegisteredCheck: true})
 		RegisterActivityWithOptions(a interface{}, options activity.RegisterOptions)
+	}
+
+	// NexusServiceRegistry exposes Nexus Service registration functions.
+	NexusServiceRegistry interface {
+		// RegisterNexusService registers a service with a worker. Panics if a service with the same name has
+		// already been registered on this worker or if the worker has already been started. A worker will only
+		// poll for Nexus tasks if any services are registered on it.
+		RegisterNexusService(*nexus.Service)
 	}
 
 	// WorkflowReplayer supports replaying a workflow from its event history.
