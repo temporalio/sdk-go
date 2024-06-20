@@ -453,6 +453,12 @@ type (
 	// WARNING: Worker versioning is currently experimental.
 	WorkerVersioningRules = internal.WorkerVersioningRules
 
+	// WorkflowUpdateRPCTimeoutOrCancelledError is an error that occurs when an update RPC call times out or is cancelled.
+	//
+	// Note, this is not related to any general concept of timing out or cancelling a running update, this is only related to the client call itself.
+	// NOTE: Experimental
+	WorkflowUpdateRPCTimeoutOrCancelledError = internal.WorkflowUpdateRPCTimeoutOrCancelledError
+
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
 	Client interface {
@@ -792,6 +798,9 @@ type (
 		// update is requested (e.g. if the required workflow ID field is
 		// missing from the UpdateWorkflowOptions) are returned
 		// directly from this function call.
+		//
+		// The errors it can return:
+		//  - WorkflowUpdateRPCTimeoutOrCancelledError
 		// NOTE: Experimental
 		UpdateWorkflow(ctx context.Context, options UpdateWorkflowOptions) (WorkflowUpdateHandle, error)
 
@@ -1024,4 +1033,9 @@ func NewAPIKeyDynamicCredentials(apiKeyCallback func(context.Context) (string, e
 // these credentials.
 func NewMTLSCredentials(certificate tls.Certificate) Credentials {
 	return internal.NewMTLSCredentials(certificate)
+}
+
+// NewWorkflowUpdateRPCTimeoutOrCancelledError creates a new WorkflowUpdateRPCTimeoutOrCancelledError.
+func NewWorkflowUpdateRPCTimeoutOrCancelledError(err error) *WorkflowUpdateRPCTimeoutOrCancelledError {
+	return internal.NewWorkflowUpdateRPCTimeoutOrCancelledError(err)
 }

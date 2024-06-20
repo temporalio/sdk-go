@@ -37,7 +37,9 @@ import (
 
 	"github.com/pborman/uuid"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	commonpb "go.temporal.io/api/common/v1"
@@ -1884,6 +1886,12 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 			})
 		}()
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil, NewWorkflowUpdateRPCTimeoutOrCancelledError(err)
+			}
+			if code := status.Code(err); code == codes.Canceled || code == codes.DeadlineExceeded {
+				return nil, NewWorkflowUpdateRPCTimeoutOrCancelledError(err)
+			}
 			return nil, err
 		}
 		// Once the update is past admitted we know it is durable
@@ -1949,7 +1957,7 @@ func (w *workflowClientInterceptor) PollWorkflowUpdate(
 			LifecycleStage: enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED,
 		},
 	}
-	for parentCtx.Err() == nil {
+	for {
 		ctx, cancel := newGRPCContext(
 			parentCtx,
 			grpcLongPoll(true),
@@ -1966,6 +1974,12 @@ func (w *workflowClientInterceptor) PollWorkflowUpdate(
 			continue
 		}
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil, NewWorkflowUpdateRPCTimeoutOrCancelledError(err)
+			}
+			if code := status.Code(err); code == codes.Canceled || code == codes.DeadlineExceeded {
+				return nil, NewWorkflowUpdateRPCTimeoutOrCancelledError(err)
+			}
 			return nil, err
 		}
 		switch v := resp.GetOutcome().GetValue().(type) {
@@ -1981,7 +1995,6 @@ func (w *workflowClientInterceptor) PollWorkflowUpdate(
 			return nil, fmt.Errorf("unsupported outcome type %T", v)
 		}
 	}
-	return nil, parentCtx.Err()
 }
 
 // Required to implement ClientOutboundInterceptor

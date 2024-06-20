@@ -1863,6 +1863,54 @@ func (ts *IntegrationTestSuite) TestResetWorkflowExecutionWithUpdate() {
 	ts.Equal(4, updatesProcessed)
 }
 
+func (ts *IntegrationTestSuite) TestWorkflowExecutionUpdateDeadline() {
+	ctx := context.Background()
+	wfId := "workflow-execution-update-deadline-exceeded"
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions(wfId), ts.workflows.UpdateBasicWorkflow)
+	ts.NoError(err)
+
+	updateCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, err = ts.client.UpdateWorkflow(updateCtx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		Args:         []interface{}{10 * time.Second},
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
+	ts.Error(err)
+	var rpcErr *client.WorkflowUpdateRPCTimeoutOrCancelledError
+	ts.ErrorAs(err, &rpcErr)
+	ts.Contains(err.Error(), "context deadline exceeded")
+	// Complete workflow
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
+}
+
+func (ts *IntegrationTestSuite) TestWorkflowExecutionUpdateCancelled() {
+	ctx := context.Background()
+	wfId := "workflow-execution-update-cancelled"
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions(wfId), ts.workflows.UpdateBasicWorkflow)
+	ts.NoError(err)
+
+	updateCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err = ts.client.UpdateWorkflow(updateCtx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		Args:         []interface{}{10 * time.Second},
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
+	ts.Error(err)
+	var rpcErr *client.WorkflowUpdateRPCTimeoutOrCancelledError
+	ts.ErrorAs(err, &rpcErr)
+	ts.Contains(err.Error(), "context canceled")
+	// Complete workflow
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
+}
+
 func (ts *IntegrationTestSuite) TestEndToEndLatencyMetrics() {
 	fetchMetrics := func() (localMetric, nonLocalMetric *metrics.CapturedTimer) {
 		for _, timer := range ts.metricsHandler.Timers() {

@@ -1003,3 +1003,23 @@ func (m mTLSCredentials) applyToOptions(opts *ClientOptions) error {
 }
 
 func (mTLSCredentials) gRPCInterceptor() grpc.UnaryClientInterceptor { return nil }
+
+// WorkflowUpdateRPCTimeoutOrCancelledError is an error that occurs when an update RPC call times out or is cancelled.
+//
+// Note, this is not related to any general concept of timing out or cancelling a running update, this is only related to the client call itself.
+type WorkflowUpdateRPCTimeoutOrCancelledError struct {
+	cause error
+}
+
+// NewWorkflowUpdateRPCTimeoutOrCancelledError creates a new WorkflowUpdateRPCTimeoutOrCancelledError.
+func NewWorkflowUpdateRPCTimeoutOrCancelledError(err error) *WorkflowUpdateRPCTimeoutOrCancelledError {
+	return &WorkflowUpdateRPCTimeoutOrCancelledError{
+		cause: err,
+	}
+}
+
+func (e *WorkflowUpdateRPCTimeoutOrCancelledError) Error() string {
+	return fmt.Sprintf("Timeout or cancellation waiting for update: %v", e.cause)
+}
+
+func (e *WorkflowUpdateRPCTimeoutOrCancelledError) Unwrap() error { return e.cause }
