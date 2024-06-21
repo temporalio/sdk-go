@@ -1880,7 +1880,7 @@ func (ts *IntegrationTestSuite) TestWorkflowExecutionUpdateDeadline() {
 		WaitForStage: client.WorkflowUpdateStageCompleted,
 	})
 	ts.Error(err)
-	var rpcErr *client.WorkflowUpdateRPCTimeoutOrCancelledError
+	var rpcErr *client.WorkflowUpdateServiceTimeoutOrCanceledError
 	ts.ErrorAs(err, &rpcErr)
 	ts.Contains(err.Error(), "context deadline exceeded")
 	// Complete workflow
@@ -1904,7 +1904,7 @@ func (ts *IntegrationTestSuite) TestWorkflowExecutionUpdateCancelled() {
 		WaitForStage: client.WorkflowUpdateStageCompleted,
 	})
 	ts.Error(err)
-	var rpcErr *client.WorkflowUpdateRPCTimeoutOrCancelledError
+	var rpcErr *client.WorkflowUpdateServiceTimeoutOrCanceledError
 	ts.ErrorAs(err, &rpcErr)
 	ts.Contains(err.Error(), "context canceled")
 	// Complete workflow

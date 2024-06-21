@@ -1977,7 +1977,7 @@ func TestUpdate(t *testing.T) {
 		var got string
 		err := handle.Get(callerCtx, &got)
 		require.Error(t, err)
-		var rpcErr *WorkflowUpdateRPCTimeoutOrCancelledError
+		var rpcErr *WorkflowUpdateServiceTimeoutOrCanceledError
 		require.ErrorAs(t, err, &rpcErr)
 	})
 	t.Run("parent ctx cancelled", func(t *testing.T) {
@@ -1998,7 +1998,7 @@ func TestUpdate(t *testing.T) {
 		var got string
 		err := handle.Get(callerCtx, &got)
 		require.Error(t, err)
-		var rpcErr *WorkflowUpdateRPCTimeoutOrCancelledError
+		var rpcErr *WorkflowUpdateServiceTimeoutOrCanceledError
 		require.ErrorAs(t, err, &rpcErr)
 		require.Contains(t, err.Error(), "context canceled")
 	})

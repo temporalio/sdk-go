@@ -1887,10 +1887,10 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 		}()
 		if err != nil {
 			if ctx.Err() != nil {
-				return nil, NewWorkflowUpdateRPCTimeoutOrCancelledError(err)
+				return nil, NewWorkflowUpdateServiceTimeoutOrCanceledError(err)
 			}
 			if code := status.Code(err); code == codes.Canceled || code == codes.DeadlineExceeded {
-				return nil, NewWorkflowUpdateRPCTimeoutOrCancelledError(err)
+				return nil, NewWorkflowUpdateServiceTimeoutOrCanceledError(err)
 			}
 			return nil, err
 		}
@@ -1975,10 +1975,10 @@ func (w *workflowClientInterceptor) PollWorkflowUpdate(
 		}
 		if err != nil {
 			if ctx.Err() != nil {
-				return nil, NewWorkflowUpdateRPCTimeoutOrCancelledError(err)
+				return nil, NewWorkflowUpdateServiceTimeoutOrCanceledError(err)
 			}
 			if code := status.Code(err); code == codes.Canceled || code == codes.DeadlineExceeded {
-				return nil, NewWorkflowUpdateRPCTimeoutOrCancelledError(err)
+				return nil, NewWorkflowUpdateServiceTimeoutOrCanceledError(err)
 			}
 			return nil, err
 		}
