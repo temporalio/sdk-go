@@ -35,7 +35,9 @@ import (
 	updatepb "go.temporal.io/api/update/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/status"
 
 	ilog "go.temporal.io/sdk/internal/log"
 
@@ -1967,7 +1969,7 @@ func TestUpdate(t *testing.T) {
 					ctxWillTimeoutIn := time.Until(thisDeadline)
 					sleepCtx(ctx, ctxWillTimeoutIn+3*time.Second)
 					require.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
-					return nil, ctx.Err()
+					return nil, status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error())
 				},
 			)
 		callerCtx, cancel := context.WithDeadline(context.TODO(), callerDeadline)
@@ -1975,7 +1977,30 @@ func TestUpdate(t *testing.T) {
 		var got string
 		err := handle.Get(callerCtx, &got)
 		require.Error(t, err)
-		require.Equal(t, callerCtx.Err(), err)
+		var rpcErr *WorkflowUpdateServiceTimeoutOrCanceledError
+		require.ErrorAs(t, err, &rpcErr)
+	})
+	t.Run("parent ctx cancelled", func(t *testing.T) {
+		svc, client := init(t)
+		handle := client.GetWorkflowUpdateHandle(GetWorkflowUpdateHandleOptions{})
+		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
+			DoAndReturn(
+				func(
+					ctx context.Context,
+					_ *workflowservice.PollWorkflowExecutionUpdateRequest,
+					_ ...grpc.CallOption,
+				) (*workflowservice.PollWorkflowExecutionUpdateResponse, error) {
+					return nil, status.Error(codes.Canceled, context.Canceled.Error())
+				},
+			)
+		callerCtx, cancel := context.WithCancel(context.TODO())
+		cancel()
+		var got string
+		err := handle.Get(callerCtx, &got)
+		require.Error(t, err)
+		var rpcErr *WorkflowUpdateServiceTimeoutOrCanceledError
+		require.ErrorAs(t, err, &rpcErr)
+		require.Contains(t, err.Error(), "context canceled")
 	})
 	t.Run("sync delayed success", func(t *testing.T) {
 		svc, client := init(t)
