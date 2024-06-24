@@ -55,7 +55,7 @@ We'd love your help in making the Temporal Go SDK great. Please review our [cont
 
 ## Go SDK upgrading past v1.25.1
 
-Go SDK version v1.26.0 switch from using https://github.com/gogo/protobuf to https://github.com/golang/protobuf. While this migration is mostly internal there are a few user visible changes to be aware of. 
+Go SDK version v1.26.0 switched from using https://github.com/gogo/protobuf to https://github.com/golang/protobuf. While this migration is mostly internal there are a few user visible changes to be aware of:
 
 ### Change in types
 
@@ -89,7 +89,7 @@ If users used Temporal proto types in their Workflows, such as for activity outp
 	}),
 ```
 
-While upgrading from Go SDK version `< 1.26.0` to a version `> 1.26.0` users may want to also bias towards using 
+While upgrading from Go SDK version `< 1.26.0` to a version `>= 1.26.0` users may want to also bias towards using 
 proto binary to avoid any potential incompatibilities due to having clients serialize messages with incompatible `proto/json` format.
 
 On clients running Go SDK `< 1.26.0`
@@ -103,7 +103,7 @@ converter.NewCompositeDataConverter(
 	)
 ```
 
-On clients running Go SDK `> 1.26.0`
+On clients running Go SDK `>= 1.26.0`
 
 ``` go
 converter.NewCompositeDataConverter(

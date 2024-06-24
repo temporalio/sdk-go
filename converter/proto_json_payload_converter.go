@@ -204,7 +204,7 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 	var err error
 	if isProtoMessage {
 		if c.options.AllowScreamingSnakeCaseEnums {
-			c.temporalProtoUnmarshalOptions.Unmarshal(payload.GetData(), protoMessage)
+			err = c.temporalProtoUnmarshalOptions.Unmarshal(payload.GetData(), protoMessage)
 		} else {
 			err = c.protoUnmarshalOptions.Unmarshal(payload.GetData(), protoMessage)
 		}
