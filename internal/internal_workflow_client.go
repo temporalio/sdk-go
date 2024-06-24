@@ -1229,9 +1229,9 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context, getSystemInfoTim
 	if getSystemInfoTimeout == 0 {
 		getSystemInfoTimeout = defaultGetSystemInfoTimeout
 	}
-	ctx, cancel := context.WithTimeout(ctx, getSystemInfoTimeout)
+	grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(getSystemInfoTimeout))
 	defer cancel()
-	resp, err := wc.workflowService.GetSystemInfo(ctx, &workflowservice.GetSystemInfoRequest{})
+	resp, err := wc.workflowService.GetSystemInfo(grpcCtx, &workflowservice.GetSystemInfoRequest{})
 	// We ignore unimplemented
 	if _, isUnimplemented := err.(*serviceerror.Unimplemented); err != nil && !isUnimplemented {
 		return nil, fmt.Errorf("failed reaching server: %w", err)
