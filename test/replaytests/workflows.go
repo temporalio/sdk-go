@@ -32,6 +32,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
@@ -573,4 +575,38 @@ func nonNegative(ctx workflow.Context, i int) error {
 		return fmt.Errorf("addend must be non-negative (%v)", i)
 	}
 	return nil
+}
+
+func ListAndDescribeWorkflow(ctx workflow.Context) (int, error) {
+	ao := workflow.ActivityOptions{
+		StartToCloseTimeout: 10 * time.Second,
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+
+	var result workflowservice.ListWorkflowExecutionsResponse
+	err := workflow.ExecuteActivity(ctx, "ListWorkflow").Get(ctx, &result)
+	if err != nil {
+		return 0, err
+	}
+	for _, execution := range result.Executions {
+		if execution.Status == enums.WORKFLOW_EXECUTION_STATUS_RUNNING {
+			err := workflow.Sleep(ctx, 1*time.Second)
+			if err != nil {
+				return 0, err
+			}
+		} else {
+			var wf workflowservice.DescribeWorkflowExecutionResponse
+			err := workflow.ExecuteActivity(ctx, "DescribeWorkflowExecution", execution.GetExecution().WorkflowId).Get(ctx, &wf)
+			if err != nil {
+				return 0, err
+			}
+			if wf.ExecutionConfig.WorkflowExecutionTimeout != nil {
+				err = workflow.Sleep(ctx, time.Second)
+				if err != nil {
+					return 0, err
+				}
+			}
+		}
+	}
+	return len(result.Executions), nil
 }

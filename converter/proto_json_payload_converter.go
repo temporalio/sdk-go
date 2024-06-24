@@ -33,17 +33,19 @@ import (
 	gogojsonpb "github.com/gogo/protobuf/jsonpb"
 	gogoproto "github.com/gogo/protobuf/proto"
 	commonpb "go.temporal.io/api/common/v1"
+	"go.temporal.io/api/temporalproto"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
 // ProtoJSONPayloadConverter converts proto objects to/from JSON.
 type ProtoJSONPayloadConverter struct {
-	gogoMarshaler         gogojsonpb.Marshaler
-	gogoUnmarshaler       gogojsonpb.Unmarshaler
-	protoMarshalOptions   protojson.MarshalOptions
-	protoUnmarshalOptions protojson.UnmarshalOptions
-	options               ProtoJSONPayloadConverterOptions
+	gogoMarshaler                 gogojsonpb.Marshaler
+	gogoUnmarshaler               gogojsonpb.Unmarshaler
+	protoMarshalOptions           protojson.MarshalOptions
+	protoUnmarshalOptions         protojson.UnmarshalOptions
+	temporalProtoUnmarshalOptions temporalproto.CustomJSONUnmarshalOptions
+	options                       ProtoJSONPayloadConverterOptions
 }
 
 // ProtoJSONPayloadConverterOptions represents options for `NewProtoJSONPayloadConverterWithOptions`.
@@ -64,6 +66,10 @@ type ProtoJSONPayloadConverterOptions struct {
 
 	// EmitUnpopulated specifies whether to emit unpopulated fields.
 	EmitUnpopulated bool
+
+	// AllowScreamingSnakeCaseEnums will allow enums serialized as SCREAMING_SNAKE_CASE.
+	// Useful for backwards compatibility when migrating a proto message from gogoproto to standard protobuf.
+	AllowScreamingSnakeCaseEnums bool
 }
 
 var (
@@ -73,10 +79,11 @@ var (
 // NewProtoJSONPayloadConverter creates new instance of `ProtoJSONPayloadConverter`.
 func NewProtoJSONPayloadConverter() *ProtoJSONPayloadConverter {
 	return &ProtoJSONPayloadConverter{
-		gogoMarshaler:         gogojsonpb.Marshaler{},
-		gogoUnmarshaler:       gogojsonpb.Unmarshaler{},
-		protoMarshalOptions:   protojson.MarshalOptions{},
-		protoUnmarshalOptions: protojson.UnmarshalOptions{},
+		gogoMarshaler:                 gogojsonpb.Marshaler{},
+		gogoUnmarshaler:               gogojsonpb.Unmarshaler{},
+		protoMarshalOptions:           protojson.MarshalOptions{},
+		protoUnmarshalOptions:         protojson.UnmarshalOptions{},
+		temporalProtoUnmarshalOptions: temporalproto.CustomJSONUnmarshalOptions{},
 	}
 }
 
@@ -97,6 +104,9 @@ func NewProtoJSONPayloadConverterWithOptions(options ProtoJSONPayloadConverterOp
 			EmitUnpopulated: options.EmitUnpopulated,
 		},
 		protoUnmarshalOptions: protojson.UnmarshalOptions{
+			DiscardUnknown: options.AllowUnknownFields,
+		},
+		temporalProtoUnmarshalOptions: temporalproto.CustomJSONUnmarshalOptions{
 			DiscardUnknown: options.AllowUnknownFields,
 		},
 		options: options,
@@ -193,7 +203,11 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 
 	var err error
 	if isProtoMessage {
-		err = c.protoUnmarshalOptions.Unmarshal(payload.GetData(), protoMessage)
+		if c.options.AllowScreamingSnakeCaseEnums {
+			c.temporalProtoUnmarshalOptions.Unmarshal(payload.GetData(), protoMessage)
+		} else {
+			err = c.protoUnmarshalOptions.Unmarshal(payload.GetData(), protoMessage)
+		}
 	} else if isGogoProtoMessage {
 		err = c.gogoUnmarshaler.Unmarshal(bytes.NewReader(payload.GetData()), gogoProtoMessage)
 	}

@@ -53,7 +53,17 @@ See [contrib/tools/workflowcheck](contrib/tools/workflowcheck) for a tool to det
 ## Contributing
 We'd love your help in making the Temporal Go SDK great. Please review our [contribution guidelines](CONTRIBUTING.md).
 
-## Go build and run tags
+## Go SDK upgrading past v1.25.1
+
+Go SDK version v1.26.0 switch from using https://github.com/gogo/protobuf to https://github.com/golang/protobuf. While this migration is mostly internal there are a few user visible changes to be aware of. 
+
+### Change in types
+
+* `time.Time` in proto structs will now be [timestamppb.Timestamp](https://pkg.go.dev/google.golang.org/protobuf@v1.31.0/types/known/timestamppb#section-documentation)
+* `time.Duration` will now be [durationpb.Duration](https://pkg.go.dev/google.golang.org/protobuf/types/known/durationpb)
+* V2-generated structs embed locks, so you cannot dereference them.
+
+### Invalid UTF-8
 
 Prior to SDK version v1.26.0 our protobuf code generator allowed invalid UTF-8 data to be stored as proto strings. This isn't actually allowed by the proto3 spec, so if you're using our SDK and think you may store arbitrary binary data in our strings you should set `-tags protolegacy` when building against our SDK.
 
@@ -66,6 +76,48 @@ $ go build -tags protolegacy myworker/main.go
 If you see an error like `grpc: error unmarshalling request: string field contains invalid UTF-8` then you will need to enable this when building your code.
 
 If you're unsure then you should specify it anyways as there's no harm in doing so unless you relied on the protobuf compiler to ensure all strings were valid UTF-8.
+
+### Incompatible proto/json encoding
+
+Proto enums will, when formatted to JSON, now be in SCREAMING_SNAKE_CASE rather than PascalCase.
+    * If trying to deserialize old JSON with PascalCase to proto use [go.temporal.io/api/temporalproto]
+
+If users used Temporal proto types in their Workflows, such as for activity output, users may need to modify the default data converter to handle these payloads.
+``` go
+	converter.NewProtoJSONPayloadConverterWithOptions(converter.ProtoJSONPayloadConverterOptions{
+		AllowScreamingSnakeCaseEnums: true,
+	}),
+```
+
+While upgrading from Go SDK version `< 1.26.0` to a version `> 1.26.0` users may want to also bias towards using 
+proto binary to avoid any potential incompatibilities due to having clients serialize messages with incompatible `proto/json` format.
+
+On clients running Go SDK `< 1.26.0`
+``` go
+converter.NewCompositeDataConverter(
+		converter.NewNilPayloadConverter(),
+		converter.NewByteSlicePayloadConverter(),
+		converter.NewProtoPayloadConverter(),
+		converter.NewProtoJSONPayloadConverterWithOptions(),
+		converter.NewJSONPayloadConverter(),
+	)
+```
+
+On clients running Go SDK `> 1.26.0`
+
+``` go
+converter.NewCompositeDataConverter(
+		converter.NewNilPayloadConverter(),
+		converter.NewByteSlicePayloadConverter(),
+		converter.NewProtoPayloadConverter(),
+		converter.NewProtoJSONPayloadConverterWithOptions(converter.ProtoJSONPayloadConverterOptions{
+			AllowScreamingSnakeCaseEnums: true,
+		}),
+		converter.NewJSONPayloadConverter(),
+	)
+```
+
+Note: Payloads encoded with `proto/binary` will not be readable in the Temporal web UI. 
 
 ## License
 MIT License, please see [LICENSE](LICENSE) for details.

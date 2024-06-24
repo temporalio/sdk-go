@@ -445,6 +445,25 @@ func (s *replayTestSuite) TestResetWithUpdateRejected() {
 	s.NoError(err)
 }
 
+func (s *replayTestSuite) TestGogoprotoPayloadWorkflow() {
+	conv := converter.NewCompositeDataConverter(
+		converter.NewNilPayloadConverter(),
+		converter.NewByteSlicePayloadConverter(),
+		converter.NewProtoJSONPayloadConverterWithOptions(converter.ProtoJSONPayloadConverterOptions{
+			AllowScreamingSnakeCaseEnums: true,
+		}),
+		converter.NewProtoPayloadConverter(),
+		converter.NewJSONPayloadConverter(),
+	)
+	replayer, err := worker.NewWorkflowReplayerWithOptions(worker.WorkflowReplayerOptions{
+		DataConverter: conv,
+	})
+	s.NoError(err)
+	replayer.RegisterWorkflow(ListAndDescribeWorkflow)
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "gogoproto-payload-workflow.json")
+	s.NoError(err)
+}
+
 type captureConverter struct {
 	converter.DataConverter
 	toPayloads   []interface{}
