@@ -245,11 +245,33 @@ func TestEagerAndLazyClient(t *testing.T) {
 	srv.getSystemInfoResponseError = nil
 	err = c.SignalWorkflow(context.Background(), "workflow1", "", "my-signal", nil)
 	require.NoError(t, err)
+	// Verify version headers are set
+	require.Equal(
+		t,
+		[]string{SDKVersion},
+		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, clientVersionHeaderName),
+	)
+	require.Equal(
+		t,
+		[]string{clientNameHeaderValue},
+		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, clientNameHeaderName),
+	)
 
 	// Now that there's no sys info response error, eager should succeed
 	c, err = DialClient(context.Background(), ClientOptions{HostPort: srv.addr})
 	require.NoError(t, err)
 	defer c.Close()
+	// Verify version headers are set
+	require.Equal(
+		t,
+		[]string{SDKVersion},
+		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, clientVersionHeaderName),
+	)
+	require.Equal(
+		t,
+		[]string{clientNameHeaderValue},
+		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, clientNameHeaderName),
+	)
 
 	// And even if it starts erroring, the success was memoized so calls succeed
 	srv.getSystemInfoResponseError = fmt.Errorf("some server failure")
@@ -456,6 +478,17 @@ func TestCredentialsAPIKey(t *testing.T) {
 		[]string{"Bearer my-api-key"},
 		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, "Authorization"),
 	)
+	// Verify version headers are set
+	require.Equal(
+		t,
+		[]string{SDKVersion},
+		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, clientVersionHeaderName),
+	)
+	require.Equal(
+		t,
+		[]string{clientNameHeaderValue},
+		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, clientNameHeaderName),
+	)
 
 	// Overwrite via context
 	_, err = client.WorkflowService().GetSystemInfo(
@@ -482,6 +515,18 @@ func TestCredentialsAPIKey(t *testing.T) {
 		t,
 		[]string{"Bearer my-callback-api-key"},
 		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, "Authorization"),
+	)
+
+	// Verify version headers are set
+	require.Equal(
+		t,
+		[]string{SDKVersion},
+		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, clientVersionHeaderName),
+	)
+	require.Equal(
+		t,
+		[]string{clientNameHeaderValue},
+		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, clientNameHeaderName),
 	)
 }
 
