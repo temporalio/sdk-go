@@ -151,12 +151,43 @@ type (
 	}
 
 	// WaitGroup must be used instead of native go sync.WaitGroup by
-	// workflow code.  Use workflow.NewWaitGroup(ctx) method to create
+	// workflow code. Use workflow.NewWaitGroup(ctx) method to create
 	// a new WaitGroup instance
 	WaitGroup interface {
 		Add(delta int)
 		Done()
 		Wait(ctx Context)
+	}
+
+	// Mutex must be used instead of native go sync.Mutex by
+	// workflow code. Use workflow.NewMutex(ctx) method to create
+	// a new Mutex instance
+	Mutex interface {
+		// Lock blocks until the mutex is acquired.
+		// Returns CanceledError if the ctx is canceled.
+		Lock(ctx Context) error
+		// TryLock tries to acquire the mutex without blocking.
+		// Returns true if the mutex was acquired, otherwise false.
+		TryLock(ctx Context) bool
+		// Unlock releases the mutex.
+		// It is a run-time error if the mutex is not locked on entry to Unlock.
+		Unlock()
+		// IsLocked returns true if the mutex is currently locked.
+		IsLocked() bool
+	}
+
+	// Semaphore must be used instead of semaphore.Weighted by
+	// workflow code. Use workflow.NewSemaphore(ctx) method to create
+	// a new Semaphore instance
+	Semaphore interface {
+		// Acquire acquires the semaphore with a weight of n.
+		// On success, returns nil. On failure, returns CanceledError and leaves the semaphore unchanged.
+		Acquire(ctx Context, n int64) error
+		// TryAcquire acquires the semaphore with a weight of n without blocking.
+		// On success, returns true. On failure, returns false and leaves the semaphore unchanged.
+		TryAcquire(ctx Context, n int64) bool
+		// Release releases the semaphore with a weight of n.
+		Release(n int64)
 	}
 
 	// Future represents the result of an asynchronous computation.
@@ -457,6 +488,18 @@ func NewWaitGroup(ctx Context) WaitGroup {
 	assertNotInReadOnlyState(ctx)
 	f, s := NewFuture(ctx)
 	return &waitGroupImpl{future: f, settable: s}
+}
+
+// NewMutex creates a new Mutex instance.
+func NewMutex(ctx Context) Mutex {
+	assertNotInReadOnlyState(ctx)
+	return &mutexImpl{}
+}
+
+// NewSemaphore creates a new Semaphore instance with an initial weight.
+func NewSemaphore(ctx Context, n int64) Semaphore {
+	assertNotInReadOnlyState(ctx)
+	return &semaphoreImpl{count: n}
 }
 
 // Go creates a new coroutine. It has similar semantic to goroutine in a context of the workflow.
