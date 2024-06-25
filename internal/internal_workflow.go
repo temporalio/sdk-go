@@ -1767,6 +1767,7 @@ func (m *mutexImpl) Lock(ctx Context) error {
 }
 
 func (m *mutexImpl) TryLock(ctx Context) bool {
+	assertNotInReadOnlyState(ctx)
 	if m.locked {
 		return false
 	}
@@ -1806,4 +1807,7 @@ func (s *semaphoreImpl) TryAcquire(ctx Context, n int64) bool {
 
 func (s *semaphoreImpl) Release(n int64) {
 	s.count += n
+	if s.count > 0 {
+		panic("Mutex.Release() released more than held")
+	}
 }
