@@ -450,7 +450,7 @@ func (s *replayTestSuite) TestGogoprotoPayloadWorkflow() {
 		converter.NewNilPayloadConverter(),
 		converter.NewByteSlicePayloadConverter(),
 		converter.NewProtoJSONPayloadConverterWithOptions(converter.ProtoJSONPayloadConverterOptions{
-			AllowScreamingSnakeCaseEnums: true,
+			LegacyTemporalProtoCompat: true,
 		}),
 		converter.NewProtoPayloadConverter(),
 		converter.NewJSONPayloadConverter(),

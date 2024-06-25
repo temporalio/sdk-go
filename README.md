@@ -85,7 +85,7 @@ Proto enums will, when formatted to JSON, now be in SCREAMING_SNAKE_CASE rather 
 If users used Temporal proto types in their Workflows, such as for activity output, users may need to modify the default data converter to handle these payloads.
 ``` go
 	converter.NewProtoJSONPayloadConverterWithOptions(converter.ProtoJSONPayloadConverterOptions{
-		AllowScreamingSnakeCaseEnums: true,
+		LegacyTemporalProtoCompat: true,
 	}),
 ```
 
@@ -111,7 +111,7 @@ converter.NewCompositeDataConverter(
 		converter.NewByteSlicePayloadConverter(),
 		converter.NewProtoPayloadConverter(),
 		converter.NewProtoJSONPayloadConverterWithOptions(converter.ProtoJSONPayloadConverterOptions{
-			AllowScreamingSnakeCaseEnums: true,
+			LegacyTemporalProtoCompat: true,
 		}),
 		converter.NewJSONPayloadConverter(),
 	)

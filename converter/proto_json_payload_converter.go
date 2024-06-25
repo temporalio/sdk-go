@@ -67,9 +67,9 @@ type ProtoJSONPayloadConverterOptions struct {
 	// EmitUnpopulated specifies whether to emit unpopulated fields.
 	EmitUnpopulated bool
 
-	// AllowScreamingSnakeCaseEnums will allow enums serialized as SCREAMING_SNAKE_CASE.
+	// LegacyTemporalProtoCompat will allow enums serialized as SCREAMING_SNAKE_CASE.
 	// Useful for backwards compatibility when migrating a proto message from gogoproto to standard protobuf.
-	AllowScreamingSnakeCaseEnums bool
+	LegacyTemporalProtoCompat bool
 }
 
 var (
@@ -203,7 +203,7 @@ func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, value
 
 	var err error
 	if isProtoMessage {
-		if c.options.AllowScreamingSnakeCaseEnums {
+		if c.options.LegacyTemporalProtoCompat {
 			err = c.temporalProtoUnmarshalOptions.Unmarshal(payload.GetData(), protoMessage)
 		} else {
 			err = c.protoUnmarshalOptions.Unmarshal(payload.GetData(), protoMessage)
