@@ -1810,6 +1810,6 @@ func (s *semaphoreImpl) TryAcquire(ctx Context, n int64) bool {
 func (s *semaphoreImpl) Release(n int64) {
 	s.cur -= n
 	if s.cur < 0 {
-		panic("Mutex.Release() released more than held")
+		panic("Semaphore.Release() released more than held")
 	}
 }
