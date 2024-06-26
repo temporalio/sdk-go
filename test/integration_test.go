@@ -1632,7 +1632,7 @@ func (ts *IntegrationTestSuite) TestUpdateWithSemaphore() {
 	ctx := context.Background()
 	wfOptions := ts.startWorkflowOptions("test-update-with-semaphore")
 	run, err := ts.client.ExecuteWorkflow(ctx,
-		wfOptions, ts.workflows.UpdateWitSemaphore)
+		wfOptions, ts.workflows.UpdateWithSemaphore)
 	ts.Nil(err)
 
 	firstUpdate, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
