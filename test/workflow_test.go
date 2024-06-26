@@ -436,6 +436,25 @@ func (w *Workflows) UpdateWithMutex(ctx workflow.Context) error {
 	return nil
 }
 
+func (w *Workflows) UpdateWithSemaphore(ctx workflow.Context) error {
+	semaphore := workflow.NewSemaphore(ctx, 100)
+	err := workflow.SetUpdateHandler(ctx, "update", func(ctx workflow.Context, count int64) error {
+		err := semaphore.Acquire(ctx, count)
+		if err != nil {
+			return err
+		}
+		// Sleep to simulate long running update
+		workflow.GetSignalChannel(ctx, "unblock").Receive(ctx, nil)
+		return nil
+	})
+	if err != nil {
+		return errors.New("failed to register update handler")
+	}
+
+	workflow.GetSignalChannel(ctx, "finish").Receive(ctx, nil)
+	return nil
+}
+
 func (w *Workflows) ActivityHeartbeatWithRetry(ctx workflow.Context) (heartbeatCounts int, err error) {
 	// Make retries fast
 	opts := w.defaultActivityOptions()
@@ -3106,6 +3125,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.LocalActivityNextRetryDelay)
 	worker.RegisterWorkflow(w.QueryTestWorkflow)
 	worker.RegisterWorkflow(w.UpdateWithMutex)
+	worker.RegisterWorkflow(w.UpdateWithSemaphore)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childWithRetryPolicy)

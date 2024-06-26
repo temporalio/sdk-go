@@ -499,7 +499,7 @@ func NewMutex(ctx Context) Mutex {
 // NewSemaphore creates a new Semaphore instance with an initial weight.
 func NewSemaphore(ctx Context, n int64) Semaphore {
 	assertNotInReadOnlyState(ctx)
-	return &semaphoreImpl{count: n}
+	return &semaphoreImpl{size: n}
 }
 
 // Go creates a new coroutine. It has similar semantic to goroutine in a context of the workflow.

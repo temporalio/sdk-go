@@ -1628,6 +1628,56 @@ func (ts *IntegrationTestSuite) TestUpdateWithMutex() {
 	ts.NoError(run.Get(ctx, nil))
 }
 
+func (ts *IntegrationTestSuite) TestUpdateWithSemaphore() {
+	ctx := context.Background()
+	wfOptions := ts.startWorkflowOptions("test-update-with-semaphore")
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		wfOptions, ts.workflows.UpdateWitSemaphore)
+	ts.Nil(err)
+
+	firstUpdate, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageAccepted,
+		Args:         []interface{}{100},
+	})
+	ts.NoError(err)
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "unblock", nil))
+	ts.NoError(firstUpdate.Get(ctx, nil))
+
+	// Send a few updates to the workflow
+	for i := 0; i < 2; i++ {
+		_, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+			UpdateID:     fmt.Sprintf("test-update-%d", i),
+			WorkflowID:   run.GetID(),
+			RunID:        run.GetRunID(),
+			UpdateName:   "update",
+			WaitForStage: client.WorkflowUpdateStageAccepted,
+			Args:         []interface{}{40},
+		})
+		ts.NoError(err)
+	}
+	// Send an update that will block on the semaphore
+	blockedUpdate, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageAccepted,
+		Args:         []interface{}{100},
+	})
+	ts.NoError(err)
+	cctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	ts.Error(blockedUpdate.Get(cctx, nil))
+	// Cancel the workflow, this should cancel any update blocking on the semaphore
+	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+	ts.Error(blockedUpdate.Get(ctx, nil))
+	// Signal the workflow to complete it
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
+	ts.NoError(run.Get(ctx, nil))
+}
+
 func (ts *IntegrationTestSuite) TestBasicSession() {
 	var expected []string
 	err := ts.executeWorkflow("test-basic-session", ts.workflows.BasicSession, &expected)
