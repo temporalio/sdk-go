@@ -90,7 +90,8 @@ type (
 
 	// Implements Semaphore interface
 	semaphoreImpl struct {
-		count int64
+		size int64
+		cur  int64
 	}
 
 	// Dispatcher is a container of a set of coroutines.
@@ -1788,26 +1789,27 @@ func (m *mutexImpl) IsLocked() bool {
 
 func (s *semaphoreImpl) Acquire(ctx Context, n int64) error {
 	err := Await(ctx, func() bool {
-		return s.count >= n
+		return s.size-s.cur >= n
 	})
 	if err != nil {
 		return err
 	}
-	s.count -= n
+	s.cur += n
 	return nil
 }
 
 func (s *semaphoreImpl) TryAcquire(ctx Context, n int64) bool {
-	if s.count < n {
-		return false
+	assertNotInReadOnlyState(ctx)
+	success := s.size-s.cur >= n
+	if success {
+		s.cur += n
 	}
-	s.count -= n
-	return true
+	return success
 }
 
 func (s *semaphoreImpl) Release(n int64) {
-	s.count += n
-	if s.count > 0 {
+	s.cur -= n
+	if s.cur < 0 {
 		panic("Mutex.Release() released more than held")
 	}
 }
