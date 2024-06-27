@@ -34,6 +34,8 @@ import (
 // Temporal Frontend.
 type WorkflowServiceProxyOptions struct {
 	Client workflowservice.WorkflowServiceClient
+	// DisableHeaderForwarding disables the forwarding of headers from the incoming request to the outgoing request.
+	DisableHeaderForwarding bool
 }
 
 // NewWorkflowServiceProxyServer creates a WorkflowServiceServer suitable for registering with a GRPC Server. Requests will
@@ -44,6 +46,7 @@ func NewWorkflowServiceProxyServer(options WorkflowServiceProxyOptions) (workflo
 		// These options are expected to be kept mostly in sync, but we can't do a
 		// naive type conversion because we want users to be able to update to newer
 		// API library versions with older SDK versions.
-		Client: options.Client,
+		Client:                  options.Client,
+		DisableHeaderForwarding: options.DisableHeaderForwarding,
 	})
 }
