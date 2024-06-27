@@ -58,6 +58,15 @@ type (
 	// WaitGroup is used to wait for a collection of
 	// coroutines to finish
 	WaitGroup = internal.WaitGroup
+
+	// Mutex is a mutual exclusion lock.
+	// Mutex must be used instead of native go mutex by workflow code.
+	// Use [workflow.NewMutex] method to create a Mutex instance.
+	Mutex = internal.Mutex
+
+	// Semaphore is a counting semaphore.
+	// Use [workflow.NewSemaphore] method to create a Semaphore instance.
+	Semaphore = internal.Semaphore
 )
 
 // Await blocks the calling thread until condition() returns true.
@@ -133,6 +142,21 @@ func NewNamedSelector(ctx Context, name string) Selector {
 // NewWaitGroup creates a new WaitGroup instance.
 func NewWaitGroup(ctx Context) WaitGroup {
 	return internal.NewWaitGroup(ctx)
+}
+
+// NewMutex creates a new Mutex instance. A mutex can be used
+// when you want to ensure only one coroutine in a workflow is executing a
+// critical section of code at a time.
+//
+// Note: In a workflow, only one coroutine is ever executing at a time. So
+// a mutex is not needed to simply protect shared data.
+func NewMutex(ctx Context) Mutex {
+	return internal.NewMutex(ctx)
+}
+
+// NewSemaphore creates a new Semaphore instance.
+func NewSemaphore(ctx Context, n int64) Semaphore {
+	return internal.NewSemaphore(ctx, n)
 }
 
 // Go creates a new coroutine. It has similar semantics to a goroutine, but in the context of the workflow.

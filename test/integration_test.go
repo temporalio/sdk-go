@@ -1562,6 +1562,122 @@ func (ts *IntegrationTestSuite) TestUpdateWorkflowCancelled() {
 	ts.NoError(run.Get(ctx, nil))
 }
 
+func (ts *IntegrationTestSuite) TestUpdateWithMutex() {
+	ctx := context.Background()
+	wfOptions := ts.startWorkflowOptions("test-update-with-mutex")
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		wfOptions, ts.workflows.UpdateWithMutex)
+	ts.Nil(err)
+	// Send a first update to lock the mutex
+	firstUpdate, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageAccepted,
+		Args:         []interface{}{true},
+	})
+	ts.NoError(err)
+	// Send a few updates to the workflow, these should fail because the mutex is locked
+	for i := 0; i < 5; i++ {
+		handle, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+			UpdateID:     fmt.Sprintf("test-update-%d", i),
+			WorkflowID:   run.GetID(),
+			RunID:        run.GetRunID(),
+			UpdateName:   "update",
+			WaitForStage: client.WorkflowUpdateStageAccepted,
+			Args:         []interface{}{true},
+		})
+		ts.NoError(err)
+		err = handle.Get(ctx, nil)
+		ts.Error(err)
+	}
+	// Send an update that will block on the mutex
+	blockedUpdate, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageAccepted,
+		Args:         []interface{}{false},
+	})
+	ts.NoError(err)
+	// Unblock the update to release the mutex
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "unblock", nil))
+	// The first update should now complete
+	ts.NoError(firstUpdate.Get(ctx, nil))
+	// The second update should be blocked on the signal
+	cctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	ts.Error(blockedUpdate.Get(cctx, nil))
+	// Send another update
+	updateToCancel, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageAccepted,
+		Args:         []interface{}{false},
+	})
+	ts.NoError(err)
+	// Cancel the workflow, this should cancel any update blocking on the mutex
+	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+	ts.Error(updateToCancel.Get(ctx, nil))
+	// Unblock the update to release the mutex
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "unblock", nil))
+	ts.NoError(blockedUpdate.Get(ctx, nil))
+	// Signal the workflow to complete it
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
+	ts.NoError(run.Get(ctx, nil))
+}
+
+func (ts *IntegrationTestSuite) TestUpdateWithSemaphore() {
+	ctx := context.Background()
+	wfOptions := ts.startWorkflowOptions("test-update-with-semaphore")
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		wfOptions, ts.workflows.UpdateWithSemaphore)
+	ts.Nil(err)
+
+	firstUpdate, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageAccepted,
+		Args:         []interface{}{100},
+	})
+	ts.NoError(err)
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "unblock", nil))
+	ts.NoError(firstUpdate.Get(ctx, nil))
+
+	// Send a few updates to the workflow
+	for i := 0; i < 2; i++ {
+		_, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+			UpdateID:     fmt.Sprintf("test-update-%d", i),
+			WorkflowID:   run.GetID(),
+			RunID:        run.GetRunID(),
+			UpdateName:   "update",
+			WaitForStage: client.WorkflowUpdateStageAccepted,
+			Args:         []interface{}{40},
+		})
+		ts.NoError(err)
+	}
+	// Send an update that will block on the semaphore
+	blockedUpdate, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageAccepted,
+		Args:         []interface{}{100},
+	})
+	ts.NoError(err)
+	cctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	ts.Error(blockedUpdate.Get(cctx, nil))
+	// Cancel the workflow, this should cancel any update blocking on the semaphore
+	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+	ts.Error(blockedUpdate.Get(ctx, nil))
+	// Signal the workflow to complete it
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
+	ts.NoError(run.Get(ctx, nil))
+}
+
 func (ts *IntegrationTestSuite) TestBasicSession() {
 	var expected []string
 	err := ts.executeWorkflow("test-basic-session", ts.workflows.BasicSession, &expected)

@@ -83,6 +83,17 @@ type (
 		settable Settable // used to unblock the future when all coroutines have completed
 	}
 
+	// Implements Mutex interface
+	mutexImpl struct {
+		locked bool
+	}
+
+	// Implements Semaphore interface
+	semaphoreImpl struct {
+		size int64
+		cur  int64
+	}
+
 	// Dispatcher is a container of a set of coroutines.
 	dispatcher interface {
 		// ExecuteUntilAllBlocked executes coroutines one by one in deterministic order
@@ -278,6 +289,8 @@ var _ Channel = (*channelImpl)(nil)
 var _ Selector = (*selectorImpl)(nil)
 var _ WaitGroup = (*waitGroupImpl)(nil)
 var _ dispatcher = (*dispatcherImpl)(nil)
+var _ Mutex = (*mutexImpl)(nil)
+var _ Semaphore = (*semaphoreImpl)(nil)
 
 // 1MB buffer to fit combined stack trace of all active goroutines
 var stackBuf [1024 * 1024]byte
@@ -1741,4 +1754,62 @@ func (us updateSchedulerImpl) Spawn(ctx Context, name string, highPriority bool,
 // supplied workflow context.
 func (us updateSchedulerImpl) Yield(ctx Context, reason string) {
 	getState(ctx).yield(reason)
+}
+
+func (m *mutexImpl) Lock(ctx Context) error {
+	err := Await(ctx, func() bool {
+		return !m.locked
+	})
+	if err != nil {
+		return err
+	}
+	m.locked = true
+	return nil
+}
+
+func (m *mutexImpl) TryLock(ctx Context) bool {
+	assertNotInReadOnlyState(ctx)
+	if m.locked {
+		return false
+	}
+	m.locked = true
+	return true
+}
+
+func (m *mutexImpl) Unlock() {
+	if !m.locked {
+		panic("Mutex.Unlock() was called on an unlocked mutex")
+	}
+	m.locked = false
+}
+
+func (m *mutexImpl) IsLocked() bool {
+	return m.locked
+}
+
+func (s *semaphoreImpl) Acquire(ctx Context, n int64) error {
+	err := Await(ctx, func() bool {
+		return s.size-s.cur >= n
+	})
+	if err != nil {
+		return err
+	}
+	s.cur += n
+	return nil
+}
+
+func (s *semaphoreImpl) TryAcquire(ctx Context, n int64) bool {
+	assertNotInReadOnlyState(ctx)
+	success := s.size-s.cur >= n
+	if success {
+		s.cur += n
+	}
+	return success
+}
+
+func (s *semaphoreImpl) Release(n int64) {
+	s.cur -= n
+	if s.cur < 0 {
+		panic("Semaphore.Release() released more than held")
+	}
 }
