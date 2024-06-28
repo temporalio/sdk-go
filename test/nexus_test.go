@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,7 +73,7 @@ func newTestContext(t *testing.T, ctx context.Context) *testContext {
 	require.NoError(t, err)
 
 	taskQueue := "sdk-go-nexus-test-tq-" + uuid.NewString()
-	endpoint := "sdk-go-nexus-test-ep-" + uuid.NewString()
+	endpoint := strings.ReplaceAll("sdk-go-nexus-test-ep-"+uuid.NewString(), "-", "_")
 	res, err := c.OperatorService().CreateNexusEndpoint(ctx, &operatorservice.CreateNexusEndpointRequest{
 		Spec: &nexuspb.EndpointSpec{
 			Name: endpoint,
