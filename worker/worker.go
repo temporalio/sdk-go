@@ -228,6 +228,9 @@ const (
 	// detects non-determinism. This feature is convenient during development.
 	// WARNING: enabling this in production can cause all open workflows to fail on a single bug or bad deployment.
 	FailWorkflow = internal.FailWorkflow
+	// RestartWorkflow immediately restarts the workflow execution if workflow code throws panic or detects non-determinism.
+	// This feature is convenient if the workflows are finite state machines
+	RestartWorkflow = internal.RestartWorkflow
 )
 
 // New creates an instance of worker for managing workflow and activity executions.
