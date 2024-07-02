@@ -61,7 +61,7 @@ func (r *Registry) FindOrAdd(instID string, ctor func() Instance) Instance {
 	return p
 }
 
-// ClearCopmleted walks the registered protocols and removes those that have
+// ClearCompleted walks the registered protocols and removes those that have
 // completed.
 func (r *Registry) ClearCompleted() {
 	r.mut.Lock()

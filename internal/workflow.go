@@ -45,6 +45,19 @@ import (
 	"go.temporal.io/sdk/log"
 )
 
+// HandlerUnfinishedPolicy actions taken if a workflow completes with running handlers.
+//
+// Policy defining actions taken when a workflow exits while update or signal handlers are running.
+// The workflow exit may be due to successful return, failure, cancellation, or continue-as-new
+type HandlerUnfinishedPolicy int
+
+const (
+	// WarnAndAbandon issues a warning in addition to abandoning.
+	HandlerUnfinishedPolicyWarnAndAbandon HandlerUnfinishedPolicy = iota
+	// ABANDON abandon the handler.
+	HandlerUnfinishedPolicyAbandon
+)
+
 var (
 	errWorkflowIDNotSet              = errors.New("workflowId is not set")
 	errLocalActivityParamsBadRequest = errors.New("missing local activity parameters through context, check LocalActivityOptions")
@@ -386,6 +399,9 @@ type (
 		// performing side-effects. A panic from this function will be treated
 		// as equivalent to returning an error.
 		Validator interface{}
+		// UnfinishedPolicy is the policy to apply when a workflow exits while
+		// the update handler is still running.
+		UnfinishedPolicy HandlerUnfinishedPolicy
 	}
 )
 
@@ -2164,4 +2180,8 @@ func DeterministicKeysFunc[K comparable, V any](m map[K]V, cmp func(a K, b K) in
 	}
 	slices.SortStableFunc(r, cmp)
 	return r
+}
+
+func AllHandlersFinished(ctx Context) bool {
+	return len(getWorkflowEnvOptions(ctx).getRunningUpdateHandles()) == 0
 }
