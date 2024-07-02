@@ -54,10 +54,12 @@ func (e *eagerWorkflowDispatcher) applyToRequest(request *workflowservice.StartW
 	e.lock.RUnlock()
 	rand.Shuffle(len(randWorkers), func(i, j int) { randWorkers[i], randWorkers[j] = randWorkers[j], randWorkers[i] })
 	for _, worker := range randWorkers {
-		if worker.tryReserveSlot() {
+		maybePermit := worker.tryReserveSlot()
+		if maybePermit != nil {
 			request.RequestEagerExecution = true
 			return &eagerWorkflowExecutor{
 				worker: worker,
+				permit: maybePermit,
 			}
 		}
 	}
@@ -68,6 +70,7 @@ func (e *eagerWorkflowDispatcher) applyToRequest(request *workflowservice.StartW
 type eagerWorkflowExecutor struct {
 	handledResponse atomic.Bool
 	worker          eagerWorker
+	permit          *SlotPermit
 }
 
 // handleResponse of an eager workflow task from a StartWorkflowExecution request.
@@ -81,20 +84,16 @@ func (e *eagerWorkflowExecutor) handleResponse(response *workflowservice.PollWor
 			task: &eagerWorkflowTask{
 				task: response,
 			},
-			// The processTaskAsync does not do this itself because our task is *eagerWorkflowTask, not *polledTask.
-			callback: e.worker.releaseSlot,
+			permit: e.permit,
 		})
 }
 
-// release the executor task slot this eagerWorkflowExecutor was holding.
-// If it is currently handling a responses or has already released the task slot
-// then do nothing.
-func (e *eagerWorkflowExecutor) release() {
+// releaseUnused should be called if the executor cannot be used because no eager task was received.
+// It will error if handleResponse was already called, as this would indicate misuse.
+func (e *eagerWorkflowExecutor) releaseUnused() {
 	if e.handledResponse.CompareAndSwap(false, true) {
-		// Assume there is room because it is reserved on creation, so we make a blocking send.
-		// The processTask does not do this itself because our task is not *polledTask.
-		e.worker.releaseSlot()
+		e.worker.releaseSlot(e.permit, "eager wft release")
 	} else {
-		panic("trying to release an eagerWorkflowExecutor that has already been released")
+		panic("trying to release an eagerWorkflowExecutor that was used")
 	}
 }

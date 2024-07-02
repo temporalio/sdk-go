@@ -226,6 +226,12 @@ type (
 
 	// ReplayWorkflowHistoryOptions are options for replaying a workflow.
 	ReplayWorkflowHistoryOptions = internal.ReplayWorkflowHistoryOptions
+
+	// WorkerTuner allows for the dynamic customization of some aspects of worker behavior.
+	WorkerTuner = internal.WorkerTuner
+
+	// CompositeTuner allows you to build a tuner from multiple slot suppliers.
+	CompositeTuner = internal.CompositeTuner
 )
 
 const (
@@ -304,4 +310,9 @@ func SetBinaryChecksum(checksum string) {
 // InterruptCh returns channel which will get data when system receives interrupt signal from OS. Pass it to worker.Run() func to stop worker with Ctrl+C.
 func InterruptCh() <-chan interface{} {
 	return internal.InterruptCh()
+}
+
+// CreateFixedSizeTuner creates a WorkerTuner that uses fixed size slot suppliers.
+func CreateFixedSizeTuner(numWorkflowSlots, numActivitySlots, numLocalActivitySlots int) WorkerTuner {
+	return internal.CreateFixedSizeTuner(numWorkflowSlots, numActivitySlots, numLocalActivitySlots)
 }

@@ -31,21 +31,21 @@ import (
 )
 
 type eagerWorkerMock struct {
-	tryReserveSlotCallback   func() bool
-	releaseSlotCallback      func()
-	processTaskAsyncCallback func(interface{}, func())
+	releaseCalled            bool
+	tryReserveSlotCallback   func() *SlotPermit
+	processTaskAsyncCallback func(eagerTask)
 }
 
-func (e *eagerWorkerMock) tryReserveSlot() bool {
+func (e *eagerWorkerMock) tryReserveSlot() *SlotPermit {
 	return e.tryReserveSlotCallback()
 }
 
-func (e *eagerWorkerMock) releaseSlot() {
-	e.releaseSlotCallback()
+func (e *eagerWorkerMock) releaseSlot(_ *SlotPermit, _ string) {
+	e.releaseCalled = true
 }
 
 func (e *eagerWorkerMock) pushEagerTask(task eagerTask) {
-	e.processTaskAsyncCallback(task, task.callback)
+	e.processTaskAsyncCallback(task)
 }
 
 func TestEagerWorkflowDispatchNoWorkerOnTaskQueue(t *testing.T) {
@@ -70,14 +70,14 @@ func TestEagerWorkflowDispatchAvailableWorker(t *testing.T) {
 	}
 
 	availableWorker := &eagerWorkerMock{
-		tryReserveSlotCallback: func() bool { return true },
+		tryReserveSlotCallback: func() *SlotPermit { return &SlotPermit{} },
 	}
 	dispatcher.workersByTaskQueue["task-queue"] = []eagerWorker{
 		&eagerWorkerMock{
-			tryReserveSlotCallback: func() bool { return false },
+			tryReserveSlotCallback: func() *SlotPermit { return nil },
 		},
 		&eagerWorkerMock{
-			tryReserveSlotCallback: func() bool { return false },
+			tryReserveSlotCallback: func() *SlotPermit { return nil },
 		},
 		availableWorker,
 	}
@@ -91,25 +91,30 @@ func TestEagerWorkflowDispatchAvailableWorker(t *testing.T) {
 }
 
 func TestEagerWorkflowExecutor(t *testing.T) {
-	slotReleased := false
+	processCalled := false
+	permit := &SlotPermit{}
 	worker := &eagerWorkerMock{
-		tryReserveSlotCallback: func() bool { return true },
-		releaseSlotCallback: func() {
-			slotReleased = true
-		},
-		processTaskAsyncCallback: func(task interface{}, callback func()) {
-			callback()
+		tryReserveSlotCallback: nil, // isn't called in this situation
+		processTaskAsyncCallback: func(task eagerTask) {
+			require.Equal(t, permit, task.permit)
+			processCalled = true
 		},
 	}
 
 	exec := &eagerWorkflowExecutor{
 		worker: worker,
+		permit: permit,
 	}
 	exec.handleResponse(&workflowservice.PollWorkflowTaskQueueResponse{})
-	require.True(t, slotReleased)
+	require.True(t, processCalled)
+	// Release will not have been called, since the real implementation would call it after
+	// processing the task
+	require.False(t, worker.releaseCalled)
+	// This panics because we did use it - process was called
 	require.Panics(t, func() {
-		exec.release()
+		exec.releaseUnused()
 	})
+	// Panics because we already handled a response
 	require.Panics(t, func() {
 		exec.handleResponse(&workflowservice.PollWorkflowTaskQueueResponse{})
 	})

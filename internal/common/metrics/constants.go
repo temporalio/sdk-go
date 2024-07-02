@@ -63,6 +63,7 @@ const (
 
 	WorkerStartCounter       = TemporalMetricsPrefix + "worker_start"
 	WorkerTaskSlotsAvailable = TemporalMetricsPrefix + "worker_task_slots_available"
+	WorkerTaskSlotsUsed      = TemporalMetricsPrefix + "worker_task_slots_used"
 	PollerStartCounter       = TemporalMetricsPrefix + "poller_start"
 	NumPoller                = TemporalMetricsPrefix + "num_pollers"
 
