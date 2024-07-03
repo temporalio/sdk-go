@@ -54,7 +54,7 @@ type HandlerUnfinishedPolicy int
 const (
 	// WarnAndAbandon issues a warning in addition to abandoning.
 	HandlerUnfinishedPolicyWarnAndAbandon HandlerUnfinishedPolicy = iota
-	// ABANDON abandon the handler.
+	// ABANDON abandons the handler.
 	HandlerUnfinishedPolicyAbandon
 )
 

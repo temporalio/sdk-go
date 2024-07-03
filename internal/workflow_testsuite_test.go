@@ -587,10 +587,12 @@ func TestWorkflowAllHandlersFinished(t *testing.T) {
 		require.Equal(t, unhandledUpdateWarningMessage, logs[0]["msg"])
 		warnedUpdates := parseWarnedUpdates(logs[0]["Updates"])
 		require.Len(t, warnedUpdates, 2)
+		// Order of updates is not guaranteed
 		require.Equal(t, "update", warnedUpdates[0]["name"])
-		require.Equal(t, "id_1", warnedUpdates[0]["id"])
+		require.True(t, warnedUpdates[0]["id"] == "id_1" || warnedUpdates[0]["id"] == "id_2")
 		require.Equal(t, "update", warnedUpdates[1]["name"])
-		require.Equal(t, "id_2", warnedUpdates[1]["id"])
+		require.True(t, warnedUpdates[1]["id"] != warnedUpdates[0]["id"])
+		require.True(t, warnedUpdates[1]["id"] == "id_1" || warnedUpdates[1]["id"] == "id_2")
 	}
 
 	t.Run("complete", func(t *testing.T) {

@@ -53,11 +53,11 @@ const (
 
 	panicIllegalAccessCoroutineState = "getState: illegal access from outside of workflow context"
 	unhandledUpdateWarningMessage    = "Workflow finished while update handlers are still running. This may have interrupted work that the" +
-		"update handler was doing, and the client that sent the update will receive a 'workflow execution" +
-		"already completed' RPCError instead of the update result. You can wait for all update" +
-		"handlers to complete by using `await workflow.Await(ctx, () -> workflow.AllHandlersFinished())`. Alternatively, if both you and the clients sending the update" +
-		"are okay with interrupting running handlers when the workflow finishes, and causing clients to" +
-		"receive errors, then you can disable this warning via UnfinishedPolicy in UpdateHandlerOptions."
+		" update handler was doing, and the client that sent the update will receive a 'workflow execution" +
+		" already completed' RPCError instead of the update result. You can wait for all update" +
+		" handlers to complete by using `workflow.Await(ctx, func() bool { return workflow.AllHandlersFinished(ctx) })`. Alternatively, if both you and the clients sending the update" +
+		" are okay with interrupting running handlers when the workflow finishes, and causing clients to" +
+		" receive errors, then you can disable this warning via UnfinishedPolicy in UpdateHandlerOptions."
 )
 
 type (

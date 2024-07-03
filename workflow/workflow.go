@@ -712,7 +712,7 @@ func DeterministicKeysFunc[K comparable, V any](m map[K]V, cmp func(K, K) int) [
 // Consider waiting on this condition before workflow return or continue-as-new, to prevent
 // interruption of in-progress handlers by workflow exit:
 //
-//	workflow.Await(ctx, () -> workflow.AllHandlersFinished(ctx))
+//	workflow.Await(ctx, func() bool { return workflow.AllHandlersFinished(ctx) })
 func AllHandlersFinished(ctx Context) bool {
 	return internal.AllHandlersFinished(ctx)
 }
