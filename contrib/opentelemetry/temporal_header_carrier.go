@@ -14,7 +14,6 @@ func (h TemporalHeaderCarrier) Get(key string) string {
 	payload := h[key]
 
 	if err := converter.GetDefaultDataConverter().FromPayload(payload, &value); err != nil {
-		//log.Warn(context.Background(), "error during temporal data conversion from payload", log.Str("error", err.Error()))
 		return ""
 	}
 
@@ -36,7 +35,6 @@ func (h TemporalHeaderCarrier) Set(key string, value string) {
 	// Convert value to payload
 	payload, err := converter.GetDefaultDataConverter().ToPayload(value)
 	if err != nil {
-		//log.Warn(context.Background(), "error during temporal data conversion to payload", log.Str("error", err.Error()))
 		return
 	}
 	h[key] = payload
