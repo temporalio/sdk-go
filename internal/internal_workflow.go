@@ -52,6 +52,12 @@ const (
 	defaultCoroutineExitTimeout = 100 * time.Millisecond
 
 	panicIllegalAccessCoroutineState = "getState: illegal access from outside of workflow context"
+	unhandledUpdateWarningMessage    = "Workflow finished while update handlers are still running. This may have interrupted work that the" +
+		" update handler was doing, and the client that sent the update will receive a 'workflow execution" +
+		" already completed' RPCError instead of the update result. You can wait for all update" +
+		" handlers to complete by using `workflow.Await(ctx, func() bool { return workflow.AllHandlersFinished(ctx) })`. Alternatively, if both you and the clients sending the update" +
+		" are okay with interrupting running handlers when the workflow finishes, and causing clients to" +
+		" receive errors, then you can disable this warning via UnfinishedPolicy in UpdateHandlerOptions."
 )
 
 type (
@@ -216,7 +222,9 @@ type (
 		signalChannels           map[string]Channel
 		queryHandlers            map[string]*queryHandler
 		updateHandlers           map[string]*updateHandler
-		VersioningIntent         VersioningIntent
+		// runningUpdatesHandles is a map of update handlers that are currently running.
+		runningUpdatesHandles map[string]UpdateInfo
+		VersioningIntent      VersioningIntent
 	}
 
 	// ExecuteWorkflowParams parameters of the workflow invocation
@@ -289,8 +297,6 @@ var _ Channel = (*channelImpl)(nil)
 var _ Selector = (*selectorImpl)(nil)
 var _ WaitGroup = (*waitGroupImpl)(nil)
 var _ dispatcher = (*dispatcherImpl)(nil)
-var _ Mutex = (*mutexImpl)(nil)
-var _ Semaphore = (*semaphoreImpl)(nil)
 
 // 1MB buffer to fit combined stack trace of all active goroutines
 var stackBuf [1024 * 1024]byte
@@ -661,9 +667,27 @@ func executeDispatcher(ctx Context, dispatcher dispatcher, timeout time.Duration
 		return
 	}
 
-	us := getWorkflowEnvOptions(ctx).getUnhandledSignalNames()
+	weo := getWorkflowEnvOptions(ctx)
+	us := weo.getUnhandledSignalNames()
 	if len(us) > 0 {
-		env.GetLogger().Info("Workflow has unhandled signals", "SignalNames", us)
+		env.GetLogger().Warn("Workflow has unhandled signals", "SignalNames", us)
+	}
+	//
+	type warnUpdate struct {
+		Name string `json:"name"`
+		ID   string `json:"id"`
+	}
+	var updatesToWarn []warnUpdate
+	for _, info := range weo.getRunningUpdateHandles() {
+		if weo.updateHandlers[info.Name].unfinishedPolicy == HandlerUnfinishedPolicyWarnAndAbandon {
+			updatesToWarn = append(updatesToWarn, warnUpdate{
+				Name: info.Name,
+				ID:   info.ID,
+			})
+		}
+	}
+	if len(updatesToWarn) > 0 {
+		env.GetLogger().Warn(unhandledUpdateWarningMessage, "Updates", updatesToWarn)
 	}
 
 	env.Complete(rp.workflowResult, rp.error)
@@ -1487,6 +1511,7 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 		newOptions.signalChannels = make(map[string]Channel)
 		newOptions.queryHandlers = make(map[string]*queryHandler)
 		newOptions.updateHandlers = make(map[string]*updateHandler)
+		newOptions.runningUpdatesHandles = make(map[string]UpdateInfo)
 	}
 	if newOptions.DataConverter == nil {
 		newOptions.DataConverter = converter.GetDefaultDataConverter()
@@ -1540,6 +1565,10 @@ func (w *WorkflowOptions) getUnhandledSignalNames() []string {
 		}
 	}
 	return unhandledSignals
+}
+
+func (w *WorkflowOptions) getRunningUpdateHandles() map[string]UpdateInfo {
+	return w.runningUpdatesHandles
 }
 
 func (d *decodeFutureImpl) Get(ctx Context, valuePtr interface{}) error {

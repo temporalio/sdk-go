@@ -119,9 +119,10 @@ type (
 	// for a given name. It offers the ability to invoke the associated
 	// execution and validation functions.
 	updateHandler struct {
-		fn         interface{}
-		validateFn interface{}
-		name       string
+		fn               interface{}
+		validateFn       interface{}
+		name             string
+		unfinishedPolicy HandlerUnfinishedPolicy
 	}
 )
 
@@ -274,10 +275,11 @@ func defaultUpdateHandler(
 	priorityUpdateHandling := env.TryUse(SDKPriorityUpdateHandling)
 
 	updateRunner := func(ctx Context) {
-		ctx = WithValue(ctx, updateInfoContextKey, &UpdateInfo{
+		updateInfo := UpdateInfo{
 			ID:   id,
 			Name: name,
-		})
+		}
+		ctx = WithValue(ctx, updateInfoContextKey, &updateInfo)
 
 		eo := getWorkflowEnvOptions(ctx)
 		if len(eo.updateHandlers) == 0 && !priorityUpdateHandling {
@@ -303,6 +305,10 @@ func defaultUpdateHandler(
 			return
 		}
 		input := UpdateInput{Name: name, Args: args}
+		eo.runningUpdatesHandles[id] = updateInfo
+		defer func() {
+			delete(eo.runningUpdatesHandles, id)
+		}()
 
 		envInterceptor := getWorkflowEnvironmentInterceptor(ctx)
 		if !IsReplaying(ctx) {
@@ -362,9 +368,10 @@ func newUpdateHandler(
 		validateFn = opts.Validator
 	}
 	return &updateHandler{
-		fn:         handler,
-		validateFn: validateFn,
-		name:       updateName,
+		fn:               handler,
+		validateFn:       validateFn,
+		name:             updateName,
+		unfinishedPolicy: opts.UnfinishedPolicy,
 	}, nil
 }
 
