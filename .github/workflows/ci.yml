@@ -104,6 +104,7 @@ jobs:
       TEMPORAL_CLIENT_CERT: ${{ secrets.TEMPORAL_CLIENT_CERT }}
       TEMPORAL_CLIENT_KEY: ${{ secrets.TEMPORAL_CLIENT_KEY }}
       TEMPORAL_CLIENT_CLOUD_API_KEY: ${{ secrets.TEMPORAL_CLIENT_CLOUD_API_KEY }}
+      TEMPORAL_CLIENT_CLOUD_API_VERSION: 2024-05-13-00
     steps:
       - uses: actions/checkout@v3
         with:

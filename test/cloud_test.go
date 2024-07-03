@@ -54,8 +54,9 @@ type CloudTestSuite struct {
 
 	client client.CloudOperationsClient
 
-	namespace string
-	apiKey    string
+	namespace  string
+	apiKey     string
+	apiVersion string
 }
 
 func (c *CloudTestSuite) SetupSuite() {
@@ -64,6 +65,8 @@ func (c *CloudTestSuite) SetupSuite() {
 	c.NotEmpty(c.namespace)
 	c.apiKey = os.Getenv("TEMPORAL_CLIENT_CLOUD_API_KEY")
 	c.NotEmpty(c.apiKey)
+	c.apiVersion = os.Getenv("TEMPORAL_CLIENT_CLOUD_API_VERSION")
+	c.NotEmpty(c.apiVersion)
 }
 
 func (c *CloudTestSuite) TearDownSuite() {
@@ -72,6 +75,7 @@ func (c *CloudTestSuite) TearDownSuite() {
 func (c *CloudTestSuite) SetupTest() {
 	var err error
 	c.client, err = client.DialCloudOperationsClient(context.Background(), client.CloudOperationsClientOptions{
+		Version:     c.apiVersion,
 		Credentials: client.NewAPIKeyStaticCredentials(c.apiKey),
 	})
 	c.NoError(err)

@@ -487,15 +487,20 @@ type (
 		// See [go.temporal.io/sdk/client.NewAPIKeyStaticCredentials],
 		// [go.temporal.io/sdk/client.NewAPIKeyDynamicCredentials], and
 		// [go.temporal.io/sdk/client.NewMTLSCredentials].
-		// Default: no credentials.
+		// Default: No credentials.
 		Credentials Credentials
+
+		// Optional: Version header for safer mutations. May or may not be required
+		// depending on cloud settings.
+		// Default: No header.
+		Version string
 
 		// Optional: Advanced server connection options such as TLS settings. Not
 		// usually needed.
 		ConnectionOptions ConnectionOptions
 
 		// Optional: Logger framework can use to log.
-		// Default: default logger provided.
+		// Default: Default logger provided.
 		Logger log.Logger
 
 		// Optional: Metrics handler for reporting metrics.
@@ -936,6 +941,18 @@ func DialCloudOperationsClient(ctx context.Context, options CloudOperationsClien
 	}
 	if options.HostPort == "" {
 		options.HostPort = "saas-api.tmprl.cloud:443"
+	}
+	if options.Version != "" {
+		options.ConnectionOptions.DialOptions = append(
+			options.ConnectionOptions.DialOptions,
+			grpc.WithChainUnaryInterceptor(func(
+				ctx context.Context, method string, req, reply any,
+				cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+			) error {
+				ctx = metadata.AppendToOutgoingContext(ctx, "temporal-cloud-api-version", options.Version)
+				return invoker(ctx, method, req, reply, cc, opts...)
+			}),
+		)
 	}
 	if options.Credentials != nil {
 		if err := options.Credentials.applyToOptions(&options.ConnectionOptions); err != nil {
