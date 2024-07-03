@@ -9,7 +9,6 @@ import (
 type TemporalHeaderCarrier map[string]*commonpb.Payload
 
 // Get returns the value associated with the passed key.
-// nolint:fabric_structfunctionordering,fabric_typesordering // https://github.com/anzx/fabric-codestyle/issues/114, https://github.com/anzx/fabric-codestyle/issues/115
 func (h TemporalHeaderCarrier) Get(key string) string {
 	value := ""
 	payload := h[key]
@@ -23,7 +22,6 @@ func (h TemporalHeaderCarrier) Get(key string) string {
 }
 
 // Keys lists the keys stored in this carrier.
-// nolint:fabric_structfunctionordering,fabric_typesordering // https://github.com/anzx/fabric-codestyle/issues/114, https://github.com/anzx/fabric-codestyle/issues/115
 func (h TemporalHeaderCarrier) Keys() []string {
 	keys := make([]string, 0, len(h))
 	for k := range h {
@@ -34,7 +32,6 @@ func (h TemporalHeaderCarrier) Keys() []string {
 }
 
 // Set stores the key-value pair.
-// nolint:fabric_structfunctionordering // https://github.com/anzx/fabric-codestyle/issues/114
 func (h TemporalHeaderCarrier) Set(key string, value string) {
 	// Convert value to payload
 	payload, err := converter.GetDefaultDataConverter().ToPayload(value)
