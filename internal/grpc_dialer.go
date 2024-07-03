@@ -141,38 +141,35 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 	// Append any user-supplied options
 	opts = append(opts, params.UserConnectionOptions.DialOptions...)
 
-	return grpc.Dial(params.HostPort, opts...)
+	return grpc.NewClient(params.HostPort, opts...)
 }
 
 func requiredInterceptors(
-	metricsHandler metrics.Handler,
-	headersProvider HeadersProvider,
-	controller TrafficController,
+	clientOptions *ClientOptions,
 	excludeInternalFromRetry *atomic.Bool,
-	credentials Credentials,
 ) []grpc.UnaryClientInterceptor {
 	interceptors := []grpc.UnaryClientInterceptor{
 		errorInterceptor,
 		// Report aggregated metrics for the call, this is done outside of the retry loop.
-		metrics.NewGRPCInterceptor(metricsHandler, ""),
+		metrics.NewGRPCInterceptor(clientOptions.MetricsHandler, "", clientOptions.DisableErrorCodeMetricTags),
 		// By default the grpc retry interceptor *is disabled*, preventing accidental use of retries.
 		// We add call options for retry configuration based on the values present in the context.
 		retry.NewRetryOptionsInterceptor(excludeInternalFromRetry),
 		// Performs retries *IF* retry options are set for the call.
 		grpc_retry.UnaryClientInterceptor(),
 		// Report metrics for every call made to the server.
-		metrics.NewGRPCInterceptor(metricsHandler, attemptSuffix),
+		metrics.NewGRPCInterceptor(clientOptions.MetricsHandler, attemptSuffix, clientOptions.DisableErrorCodeMetricTags),
 	}
-	if headersProvider != nil {
-		interceptors = append(interceptors, headersProviderInterceptor(headersProvider))
+	if clientOptions.HeadersProvider != nil {
+		interceptors = append(interceptors, headersProviderInterceptor(clientOptions.HeadersProvider))
 	}
-	if controller != nil {
-		interceptors = append(interceptors, trafficControllerInterceptor(controller))
+	if clientOptions.TrafficController != nil {
+		interceptors = append(interceptors, trafficControllerInterceptor(clientOptions.TrafficController))
 	}
 	// Add credentials interceptor. This is intentionally added after headers
 	// provider to overwrite anything set there.
-	if credentials != nil {
-		if interceptor := credentials.gRPCInterceptor(); interceptor != nil {
+	if clientOptions.Credentials != nil {
+		if interceptor := clientOptions.Credentials.gRPCInterceptor(); interceptor != nil {
 			interceptors = append(interceptors, interceptor)
 		}
 	}

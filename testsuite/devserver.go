@@ -339,9 +339,9 @@ func extractZip(r io.Reader, toExtract string, w io.Writer) error {
 // Returns a connected client created using the provided options.
 func waitServerReady(ctx context.Context, options client.Options) (client.Client, error) {
 	var returnedClient client.Client
-	lastErr := retryFor(600, 100*time.Millisecond, func() error {
+	lastErr := retryFor(ctx, 600, 100*time.Millisecond, func() error {
 		var err error
-		returnedClient, err = client.Dial(options)
+		returnedClient, err = client.DialContext(ctx, options)
 		return err
 	})
 	if lastErr != nil {
@@ -351,11 +351,15 @@ func waitServerReady(ctx context.Context, options client.Options) (client.Client
 }
 
 // retryFor retries some function until it returns nil or runs out of attempts. Wait interval between attempts.
-func retryFor(maxAttempts int, interval time.Duration, cond func() error) error {
+func retryFor(ctx context.Context, maxAttempts int, interval time.Duration, cond func() error) error {
 	if maxAttempts < 1 {
 		// this is used internally, okay to panic
 		panic("maxAttempts should be at least 1")
 	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
 	var lastErr error
 	for i := 0; i < maxAttempts; i++ {
 		if curE := cond(); curE == nil {
@@ -363,7 +367,12 @@ func retryFor(maxAttempts int, interval time.Duration, cond func() error) error 
 		} else {
 			lastErr = curE
 		}
-		time.Sleep(interval)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			// Try again after waiting up to interval.
+		}
 	}
 	return lastErr
 }

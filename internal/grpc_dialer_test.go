@@ -128,13 +128,13 @@ func TestHeadersProvider_Error(t *testing.T) {
 }
 
 func TestHeadersProvider_NotIncludedWhenNil(t *testing.T) {
-	interceptors := requiredInterceptors(nil, nil, nil, nil, nil)
+	interceptors := requiredInterceptors(&ClientOptions{}, nil)
 	require.Equal(t, 5, len(interceptors))
 }
 
 func TestHeadersProvider_IncludedWithHeadersProvider(t *testing.T) {
-	interceptors := requiredInterceptors(nil,
-		authHeadersProvider{token: "test-auth-token"}, nil, nil, nil)
+	opts := &ClientOptions{HeadersProvider: authHeadersProvider{token: "test-auth-token"}}
+	interceptors := requiredInterceptors(opts, nil)
 	require.Equal(t, 6, len(interceptors))
 }
 
@@ -153,7 +153,7 @@ func TestMissingGetServerInfo(t *testing.T) {
 	var lastErr error
 	for i := 0; i < 20; i++ {
 		lastErr = nil
-		conn, err := grpc.Dial(l.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conn, err := grpc.NewClient(l.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			lastErr = err
 		} else {
@@ -245,11 +245,33 @@ func TestEagerAndLazyClient(t *testing.T) {
 	srv.getSystemInfoResponseError = nil
 	err = c.SignalWorkflow(context.Background(), "workflow1", "", "my-signal", nil)
 	require.NoError(t, err)
+	// Verify version headers are set
+	require.Equal(
+		t,
+		[]string{SDKVersion},
+		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, clientVersionHeaderName),
+	)
+	require.Equal(
+		t,
+		[]string{clientNameHeaderValue},
+		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, clientNameHeaderName),
+	)
 
 	// Now that there's no sys info response error, eager should succeed
 	c, err = DialClient(context.Background(), ClientOptions{HostPort: srv.addr})
 	require.NoError(t, err)
 	defer c.Close()
+	// Verify version headers are set
+	require.Equal(
+		t,
+		[]string{SDKVersion},
+		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, clientVersionHeaderName),
+	)
+	require.Equal(
+		t,
+		[]string{clientNameHeaderValue},
+		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, clientNameHeaderName),
+	)
 
 	// And even if it starts erroring, the success was memoized so calls succeed
 	srv.getSystemInfoResponseError = fmt.Errorf("some server failure")
@@ -456,6 +478,17 @@ func TestCredentialsAPIKey(t *testing.T) {
 		[]string{"Bearer my-api-key"},
 		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, "Authorization"),
 	)
+	// Verify version headers are set
+	require.Equal(
+		t,
+		[]string{SDKVersion},
+		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, clientVersionHeaderName),
+	)
+	require.Equal(
+		t,
+		[]string{clientNameHeaderValue},
+		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, clientNameHeaderName),
+	)
 
 	// Overwrite via context
 	_, err = client.WorkflowService().GetSystemInfo(
@@ -482,6 +515,18 @@ func TestCredentialsAPIKey(t *testing.T) {
 		t,
 		[]string{"Bearer my-callback-api-key"},
 		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, "Authorization"),
+	)
+
+	// Verify version headers are set
+	require.Equal(
+		t,
+		[]string{SDKVersion},
+		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, clientVersionHeaderName),
+	)
+	require.Equal(
+		t,
+		[]string{clientNameHeaderValue},
+		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, clientNameHeaderName),
 	)
 }
 
@@ -550,7 +595,7 @@ func (t *testGRPCServer) waitUntilServing() error {
 	// Try 20 times, waiting 100ms between
 	var lastErr error
 	for i := 0; i < 20; i++ {
-		conn, err := grpc.Dial(t.addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conn, err := grpc.NewClient(t.addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			lastErr = err
 		} else {

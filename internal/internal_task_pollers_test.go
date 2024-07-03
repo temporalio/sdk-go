@@ -30,15 +30,19 @@ import (
 	"errors"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	historypb "go.temporal.io/api/history/v1"
+	protocolpb "go.temporal.io/api/protocol/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
+	"go.temporal.io/api/update/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 type countingTaskHandler struct {
@@ -221,4 +225,155 @@ func TestWFTCorruption(t *testing.T) {
 	<-processTaskDone
 	// Workflow should not be in cache
 	require.Nil(t, cache.getWorkflowContext(runID))
+}
+
+func TestWFTReset(t *testing.T) {
+	cache := NewWorkerCache()
+	params := workerExecutionParameters{
+		cache: cache,
+	}
+	ensureRequiredParams(&params)
+	wfType := commonpb.WorkflowType{Name: t.Name() + "-workflow-type"}
+	reg := newRegistry()
+	reg.RegisterWorkflowWithOptions(func(ctx Context) error {
+		_ = SetUpdateHandler(ctx, "update", func(ctx Context) error {
+			return nil
+		}, UpdateHandlerOptions{
+			Validator: func(ctx Context) error {
+				return errors.New("rejecting for test")
+			},
+		})
+		_ = Sleep(ctx, time.Second)
+		return Sleep(ctx, time.Second)
+	}, RegisterWorkflowOptions{
+		Name: wfType.Name,
+	})
+	var (
+		taskQueue = taskqueuepb.TaskQueue{Name: t.Name() + "task-queue"}
+		history0  = historypb.History{Events: []*historypb.HistoryEvent{
+			createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+				TaskQueue: &taskQueue,
+			}),
+			createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{
+				TaskQueue:           &taskQueue,
+				StartToCloseTimeout: &durationpb.Duration{Seconds: 10},
+				Attempt:             1,
+			}),
+			createTestEventWorkflowTaskStarted(3),
+			createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{
+				ScheduledEventId: 2,
+				StartedEventId:   3,
+			}),
+			createTestEventTimerStarted(5, 5),
+			createTestEventWorkflowTaskScheduled(6, &historypb.WorkflowTaskScheduledEventAttributes{
+				TaskQueue:           &taskQueue,
+				StartToCloseTimeout: &durationpb.Duration{Seconds: 10},
+				Attempt:             1,
+			}),
+			createTestEventWorkflowTaskStarted(7),
+		}}
+		messages = []*protocolpb.Message{
+			createTestProtocolMessageUpdateRequest("test-update", 6, &update.Request{
+				Meta: &update.Meta{
+					UpdateId: "test-update",
+				},
+				Input: &update.Input{
+					Name: "update",
+				},
+			}),
+		}
+		history1 = historypb.History{Events: []*historypb.HistoryEvent{
+			createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{
+				ScheduledEventId: 2,
+				StartedEventId:   3,
+			}),
+			createTestEventTimerStarted(5, 5),
+			createTestEventWorkflowTaskScheduled(6, &historypb.WorkflowTaskScheduledEventAttributes{
+				TaskQueue:           &taskQueue,
+				StartToCloseTimeout: &durationpb.Duration{Seconds: 10},
+				Attempt:             1,
+			}),
+			createTestEventWorkflowTaskStarted(7),
+		}}
+		history2 = historypb.History{Events: []*historypb.HistoryEvent{
+			createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{
+				ScheduledEventId: 2,
+				StartedEventId:   3,
+			}),
+			createTestEventTimerStarted(5, 5),
+			createTestEventTimerFired(6, 5),
+			createTestEventWorkflowTaskScheduled(7, &historypb.WorkflowTaskScheduledEventAttributes{
+				TaskQueue:           &taskQueue,
+				StartToCloseTimeout: &durationpb.Duration{Seconds: 10},
+				Attempt:             1,
+			}),
+			createTestEventWorkflowTaskStarted(8),
+		}}
+		runID            = t.Name() + "-run-id"
+		wfID             = t.Name() + "-workflow-id"
+		wfe              = commonpb.WorkflowExecution{RunId: runID, WorkflowId: wfID}
+		ctrl             = gomock.NewController(t)
+		client           = workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+		innerTaskHandler = newWorkflowTaskHandler(params, nil, reg)
+		taskHandler      = &countingTaskHandler{WorkflowTaskHandler: innerTaskHandler}
+		contextManager   = taskHandler
+		pollResp0        = workflowservice.PollWorkflowTaskQueueResponse{
+			Attempt:                1,
+			WorkflowExecution:      &wfe,
+			WorkflowType:           &wfType,
+			History:                &history0,
+			Messages:               messages,
+			PreviousStartedEventId: 3,
+		}
+		task0     = workflowTask{task: &pollResp0}
+		pollResp1 = workflowservice.PollWorkflowTaskQueueResponse{
+			Attempt:                1,
+			WorkflowExecution:      &wfe,
+			WorkflowType:           &wfType,
+			History:                &history1,
+			PreviousStartedEventId: 3,
+		}
+		task1     = workflowTask{task: &pollResp1}
+		pollResp2 = workflowservice.PollWorkflowTaskQueueResponse{
+			Attempt:                1,
+			WorkflowExecution:      &wfe,
+			WorkflowType:           &wfType,
+			History:                &history2,
+			PreviousStartedEventId: 3,
+		}
+		task2 = workflowTask{task: &pollResp2}
+	)
+
+	// Return a workflow task to reset the workflow to a previous state
+	client.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any()).
+		Return(&workflowservice.RespondWorkflowTaskCompletedResponse{
+			ResetHistoryEventId: 3,
+		}, nil).Times(3)
+	// Return a workflow task to complete the workflow
+	client.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any()).
+		Return(&workflowservice.RespondWorkflowTaskCompletedResponse{}, nil)
+
+	poller := newWorkflowTaskPoller(taskHandler, contextManager, client, params)
+	// Send a full history as part of the speculative WFT
+	require.NoError(t, poller.processWorkflowTask(&task0))
+	originalCachedExecution := cache.getWorkflowContext(runID)
+	require.NotNil(t, originalCachedExecution)
+	require.Equal(t, int64(3), originalCachedExecution.previousStartedEventID)
+	require.Equal(t, int64(5), originalCachedExecution.lastHandledEventID)
+	// Send some fake speculative WFTs to ensure the workflow is reset properly
+	require.NoError(t, poller.processWorkflowTask(&task1))
+	cachedExecution := cache.getWorkflowContext(runID)
+	require.True(t, originalCachedExecution == cachedExecution)
+	require.Equal(t, int64(3), cachedExecution.previousStartedEventID)
+	require.Equal(t, int64(5), cachedExecution.lastHandledEventID)
+	require.NoError(t, poller.processWorkflowTask(&task1))
+	cachedExecution = cache.getWorkflowContext(runID)
+	// Check the cached execution is the same as the original
+	require.True(t, originalCachedExecution == cachedExecution)
+	require.Equal(t, int64(3), cachedExecution.previousStartedEventID)
+	require.Equal(t, int64(5), cachedExecution.lastHandledEventID)
+	// Send a real WFT with new events
+	require.NoError(t, poller.processWorkflowTask(&task2))
+	cachedExecution = cache.getWorkflowContext(runID)
+	require.True(t, originalCachedExecution == cachedExecution)
 }

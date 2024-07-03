@@ -122,16 +122,17 @@ type (
 	// ApplicationErrorOptions represents a combination of error attributes and additional requests.
 	// All fields are optional, providing flexibility in error customization.
 	ApplicationErrorOptions struct {
+		// NonRetryable indicates if the error should not be retried regardless of the retry policy.
 		NonRetryable bool
-		Cause        error
-		Details      []interface{}
+		// Cause is the original error that caused this error.
+		Cause error
+		// Details is a list of arbitrary values that can be used to provide additional context to the error.
+		Details []interface{}
 		// NextRetryInterval is a request from server to override retry interval calculated by the
 		// server according to the RetryPolicy set by the Workflow.
-		// IMPORTANT: NextRetryInterval is meaningful only within the context of errors originating from Activity.
-		// Any value set from Workflow or LocalActivity will be silently ignored.
 		// It is impossible to specify immediate retry as it is indistinguishable from the default value. As a
 		// workaround you could set NextRetryDelay to some small value.
-		// NOTE: This is not currently supported by the Temporal Server as of 1.23.0.
+		// NOTE: This option is supported by Temporal Server >= v1.24.2 older version will ignore this value.
 		NextRetryDelay time.Duration
 	}
 

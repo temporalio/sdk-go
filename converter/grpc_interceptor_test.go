@@ -74,7 +74,7 @@ func TestPayloadCodecGRPCClientInterceptor(t *testing.T) {
 	)
 	require.NoError(err)
 
-	c, err := grpc.Dial(
+	c, err := grpc.NewClient(
 		server.addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithChainUnaryInterceptor(interceptor),
@@ -115,7 +115,7 @@ func TestFailureGRPCClientInterceptor(t *testing.T) {
 	)
 	require.NoError(err)
 
-	c, err := grpc.Dial(
+	c, err := grpc.NewClient(
 		server.addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithChainUnaryInterceptor(interceptor),
@@ -181,7 +181,7 @@ func (t *testGRPCServer) waitUntilServing() error {
 	// Try 20 times, waiting 100ms between
 	var lastErr error
 	for i := 0; i < 20; i++ {
-		conn, err := grpc.Dial(t.addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conn, err := grpc.NewClient(t.addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			lastErr = err
 		} else {

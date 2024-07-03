@@ -60,10 +60,7 @@ func (ts *AsyncBindingsTestSuite) TearDownSuite() {
 
 func (ts *AsyncBindingsTestSuite) SetupTest() {
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
-	options := worker.Options{
-		DisableStickyExecution: ts.config.maxWorkflowCacheSize <= 0,
-	}
-	ts.worker = worker.New(ts.client, ts.taskQueueName, options)
+	ts.worker = worker.New(ts.client, ts.taskQueueName, worker.Options{})
 	ts.worker.RegisterWorkflow(SimplestWorkflow)
 }
 

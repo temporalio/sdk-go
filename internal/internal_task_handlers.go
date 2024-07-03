@@ -115,8 +115,10 @@ type (
 		isWorkflowCompleted bool
 		result              *commonpb.Payloads
 		err                 error
-
+		// previousStartedEventID is the event ID of the workflow task started event of the previous workflow task.
 		previousStartedEventID int64
+		// lastHandledEventID is the event ID of the last event that the workflow state machine processed.
+		lastHandledEventID int64
 
 		newCommands         []*commandpb.Command
 		newMessages         []*protocolpb.Message
@@ -170,18 +172,19 @@ type (
 
 	// history wrapper method to help information about events.
 	history struct {
-		workflowTask   *workflowTask
-		eventsHandler  *workflowExecutionEventHandlerImpl
-		loadedEvents   []*historypb.HistoryEvent
-		currentIndex   int
-		nextEventID    int64 // next expected eventID for sanity
-		lastEventID    int64 // last expected eventID, zero indicates read until end of stream
-		next           []*historypb.HistoryEvent
-		nextMessages   []*protocolpb.Message
-		nextFlags      []sdkFlag
-		binaryChecksum string
-		sdkVersion     string
-		sdkName        string
+		workflowTask       *workflowTask
+		eventsHandler      *workflowExecutionEventHandlerImpl
+		loadedEvents       []*historypb.HistoryEvent
+		currentIndex       int
+		nextEventID        int64 // next expected eventID for sanity
+		lastEventID        int64 // last expected eventID, zero indicates read until end of stream
+		lastHandledEventID int64 // last event ID that was processed
+		next               []*historypb.HistoryEvent
+		nextMessages       []*protocolpb.Message
+		nextFlags          []sdkFlag
+		binaryChecksum     string
+		sdkVersion         string
+		sdkName            string
 	}
 
 	workflowTaskHeartbeatError struct {
@@ -219,13 +222,14 @@ type (
 	}
 )
 
-func newHistory(task *workflowTask, eventsHandler *workflowExecutionEventHandlerImpl) *history {
+func newHistory(lastHandledEventID int64, task *workflowTask, eventsHandler *workflowExecutionEventHandlerImpl) *history {
 	result := &history{
-		workflowTask:  task,
-		eventsHandler: eventsHandler,
-		loadedEvents:  task.task.History.Events,
-		currentIndex:  0,
-		lastEventID:   task.task.GetStartedEventId(),
+		workflowTask:       task,
+		eventsHandler:      eventsHandler,
+		loadedEvents:       task.task.History.Events,
+		currentIndex:       0,
+		lastEventID:        task.task.GetStartedEventId(),
+		lastHandledEventID: lastHandledEventID,
 	}
 	if len(result.loadedEvents) > 0 {
 		result.nextEventID = result.loadedEvents[0].GetEventId()
@@ -454,6 +458,11 @@ OrderEvents:
 		}
 
 		eh.nextEventID++
+		if eventID <= eh.lastHandledEventID {
+			eh.currentIndex++
+			continue
+		}
+		eh.lastHandledEventID = eventID
 
 		switch event.GetEventType() {
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
@@ -583,16 +592,15 @@ func (w *workflowExecutionContextImpl) Unlock(err error) {
 	defer w.mutex.Unlock()
 	if err != nil || w.err != nil || w.isWorkflowCompleted ||
 		(w.wth.cache.MaxWorkflowCacheSize() <= 0 && !w.hasPendingLocalActivityWork()) {
-		// TODO: in case of closed, it asumes the close command always succeed. need server side change to return
+		// TODO: in case of closed, it assumes the close command always succeed. need server side change to return
 		// error to indicate the close failure case. This should be rare case. For now, always remove the cache, and
 		// if the close command failed, the next command will have to rebuild the state.
 		if w.wth.cache.getWorkflowCache().Exist(w.workflowInfo.WorkflowExecution.RunID) {
 			w.wth.cache.removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID)
 			w.cached = false
-		} else {
-			// sticky is disabled, manually clear the workflow state.
-			w.clearState()
 		}
+		// Clear the state so other tasks waiting on the context know it should be discarded.
+		w.clearState()
 	} else if !w.cached {
 		// Clear the state if we never cached the workflow so coroutines can be
 		// exited
@@ -638,6 +646,7 @@ func (w *workflowExecutionContextImpl) clearState() {
 	w.result = nil
 	w.err = nil
 	w.previousStartedEventID = 0
+	w.lastHandledEventID = 0
 	w.newCommands = nil
 	w.newMessages = nil
 
@@ -755,10 +764,10 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 	// Verify the cached state is current and for the correct worker
 	if workflowContext != nil {
 		workflowContext.Lock()
-		if task.Query != nil && !isFullHistory && wth == workflowContext.wth {
+		if task.Query != nil && !isFullHistory && wth == workflowContext.wth && !workflowContext.IsDestroyed() {
 			// query task and we have a valid cached state
 			metricsHandler.Counter(metrics.StickyCacheHit).Inc(1)
-		} else if history.Events[0].GetEventId() == workflowContext.previousStartedEventID+1 && wth == workflowContext.wth {
+		} else if history.Events[0].GetEventId() == workflowContext.previousStartedEventID+1 && wth == workflowContext.wth && !workflowContext.IsDestroyed() {
 			// non query task and we have a valid cached state
 			metricsHandler.Counter(metrics.StickyCacheHit).Inc(1)
 		} else {
@@ -989,7 +998,14 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 	w.SetCurrentTask(task)
 
 	eventHandler := w.getEventHandler()
-	reorderedHistory := newHistory(workflowTask, eventHandler)
+	reorderedHistory := newHistory(w.lastHandledEventID, workflowTask, eventHandler)
+	defer func() {
+		// After processing the workflow task, update the last handled event ID
+		// to the last event ID in the history. We do this regardless of whether the workflow task
+		// was successfully processed or not. This is because a failed workflow task will cause the
+		// cache to be evicted and the next workflow task will start from the beginning of the history.
+		w.lastHandledEventID = reorderedHistory.lastHandledEventID
+	}()
 	var replayOutbox []outboxEntry
 	var replayCommands []*commandpb.Command
 	var respondEvents []*historypb.HistoryEvent
@@ -1400,6 +1416,12 @@ func (w *workflowExecutionContextImpl) SetCurrentTask(task *workflowservice.Poll
 }
 
 func (w *workflowExecutionContextImpl) SetPreviousStartedEventID(eventID int64) {
+	// We must reset the last event we handled to be after the last WFT we really completed
+	// + any command events (since the SDK "processed" those when it emitted the commands). This
+	// is also equal to what we just processed in the speculative task, minus two, since we
+	// would've just handled the most recent WFT started event, and we need to drop that & the
+	// schedule event just before it.
+	w.lastHandledEventID = w.lastHandledEventID - 2
 	w.previousStartedEventID = eventID
 }
 

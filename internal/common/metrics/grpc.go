@@ -42,7 +42,7 @@ type HandlerContextKey struct{}
 type LongPollContextKey struct{}
 
 // NewGRPCInterceptor creates a new gRPC unary interceptor to record metrics.
-func NewGRPCInterceptor(defaultHandler Handler, suffix string) grpc.UnaryClientInterceptor {
+func NewGRPCInterceptor(defaultHandler Handler, suffix string, disableRequestFailCodes bool) grpc.UnaryClientInterceptor {
 	return func(
 		ctx context.Context,
 		method string,
@@ -78,7 +78,7 @@ func NewGRPCInterceptor(defaultHandler Handler, suffix string) grpc.UnaryClientI
 		start := time.Now()
 		recordRequestStart(handler, longPoll, suffix)
 		err := invoker(ctx, method, req, reply, cc, opts...)
-		recordRequestEnd(handler, longPoll, suffix, start, err)
+		recordRequestEnd(handler, longPoll, suffix, start, err, disableRequestFailCodes)
 		return err
 	}
 }
@@ -93,7 +93,7 @@ func recordRequestStart(handler Handler, longPoll bool, suffix string) {
 	handler.Counter(metric).Inc(1)
 }
 
-func recordRequestEnd(handler Handler, longPoll bool, suffix string, start time.Time, err error) {
+func recordRequestEnd(handler Handler, longPoll bool, suffix string, start time.Time, err error, disableRequestFailCodes bool) {
 	// Record latency
 	timerMetric := TemporalRequestLatency
 	if longPoll {
@@ -109,6 +109,10 @@ func recordRequestEnd(handler Handler, longPoll bool, suffix string, start time.
 			failureMetric = TemporalLongRequestFailure
 		}
 		failureMetric += suffix
+		errStatus, _ := status.FromError(err)
+		if !disableRequestFailCodes {
+			handler = handler.WithTags(RequestFailureCodeTags(errStatus.Code()))
+		}
 		handler.Counter(failureMetric).Inc(1)
 
 		// If it's a resource exhausted, extract cause if present and increment

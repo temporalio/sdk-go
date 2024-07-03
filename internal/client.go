@@ -353,28 +353,42 @@ type (
 		// GetWorkerTaskReachability returns which versions are is still in use by open or closed workflows.
 		GetWorkerTaskReachability(ctx context.Context, options *GetWorkerTaskReachabilityOptions) (*WorkerTaskReachability, error)
 
+		// DescribeTaskQueueEnhanced returns information about the target task queue, broken down by Build Id:
+		//   - List of pollers
+		//   - Workflow Reachability status
+		//   - Backlog info for Workflow and/or Activity tasks
+		// When not supported by the server, it returns an empty [TaskQueueDescription] if there is no information
+		// about the task queue, or an error when the response identifies an unsupported server.
+		// Note that using a sticky queue as target is not supported.
+		// Also, workflow reachability status is eventually consistent, and it could take a few minutes to update.
+		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
+		DescribeTaskQueueEnhanced(ctx context.Context, options DescribeTaskQueueEnhancedOptions) (TaskQueueDescription, error)
+
+		// UpdateWorkerVersioningRules allows updating the worker-build-id based assignment and redirect rules for a given
+		// task queue. This is used in conjunction with workers who specify their build id and thus opt into the feature.
+		// The errors it can return:
+		//  - serviceerror.FailedPrecondition when the conflict token is invalid
+		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
+		UpdateWorkerVersioningRules(ctx context.Context, options UpdateWorkerVersioningRulesOptions) (*WorkerVersioningRules, error)
+
+		// GetWorkerVersioningRules returns the worker-build-id assignment and redirect rules for a task queue.
+		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
+		GetWorkerVersioningRules(ctx context.Context, options GetWorkerVersioningOptions) (*WorkerVersioningRules, error)
+
 		// CheckHealth performs a server health check using the gRPC health check
 		// API. If the check fails, an error is returned.
 		CheckHealth(ctx context.Context, request *CheckHealthRequest) (*CheckHealthResponse, error)
 
-		// UpdateWorkflow issues an update request to the specified
-		// workflow execution and returns the result synchronously. Calling this
-		// function is equivalent to calling UpdateWorkflowWithOptions with
-		// the same arguments and indicating that the RPC call should wait for
-		// completion of the update process.
-		// NOTE: Experimental
-		UpdateWorkflow(ctx context.Context, workflowID string, workflowRunID string, updateName string, args ...interface{}) (WorkflowUpdateHandle, error)
-
-		// UpdateWorkflowWithOptions issues an update request to the
+		// UpdateWorkflow issues an update request to the
 		// specified workflow execution and returns a handle to the update that
 		// is running in in parallel with the calling thread. Errors returned
 		// from the server will be exposed through the return value of
 		// WorkflowExecutionUpdateHandle.Get(). Errors that occur before the
 		// update is requested (e.g. if the required workflow ID field is
-		// missing from the UpdateWorkflowWithOptionsRequest) are returned
+		// missing from the UpdateWorkflowOptions) are returned
 		// directly from this function call.
 		// NOTE: Experimental
-		UpdateWorkflowWithOptions(ctx context.Context, request *UpdateWorkflowWithOptionsRequest) (WorkflowUpdateHandle, error)
+		UpdateWorkflow(ctx context.Context, options UpdateWorkflowOptions) (WorkflowUpdateHandle, error)
 
 		// GetWorkflowUpdateHandle creates a handle to the referenced update
 		// which can be polled for an outcome. Note that runID is optional and
@@ -406,8 +420,7 @@ type (
 		// will use a registered resolver. By default all hosts returned from the resolver will be used in a round-robin
 		// fashion.
 		//
-		// The "dns" resolver is registered by default. Using a "dns:///" prefixed address will periodically resolve all IPs
-		// for DNS address given and round robin amongst them.
+		// The "dns" resolver is registered by and used by default.
 		//
 		// A custom resolver can be created to provide multiple hosts in other ways. For example, to manually provide
 		// multiple IPs to round-robin across, a google.golang.org/grpc/resolver/manual resolver can be created and
@@ -472,6 +485,9 @@ type (
 		// worker options, the ones here wrap the ones in worker options. The same
 		// interceptor should not be set here and in worker options.
 		Interceptors []ClientInterceptor
+
+		// If set true, error code labels will not be included on request failure metrics.
+		DisableErrorCodeMetricTags bool
 	}
 
 	CloudOperationsClient interface {
@@ -565,7 +581,8 @@ type (
 		MaxPayloadSize int
 
 		// Advanced dial options for gRPC connections. These are applied after the internal default dial options are
-		// applied. Therefore any dial options here may override internal ones.
+		// applied. Therefore any dial options here may override internal ones. Dial options WithBlock, WithTimeout,
+		// WithReturnConnectionError, and FailOnNonTempDialError are ignored since [grpc.NewClient] is used.
 		//
 		// For gRPC interceptors, internal interceptors such as error handling, metrics, and retrying are done via
 		// grpc.WithChainUnaryInterceptor. Therefore to add inner interceptors that are wrapped by those, a
@@ -856,14 +873,8 @@ func newDialParameters(options *ClientOptions, excludeInternalFromRetry *atomic.
 	return dialParameters{
 		UserConnectionOptions: options.ConnectionOptions,
 		HostPort:              options.HostPort,
-		RequiredInterceptors: requiredInterceptors(
-			options.MetricsHandler,
-			options.HeadersProvider,
-			options.TrafficController,
-			excludeInternalFromRetry,
-			options.Credentials,
-		),
-		DefaultServiceConfig: defaultServiceConfig,
+		RequiredInterceptors:  requiredInterceptors(options, excludeInternalFromRetry),
+		DefaultServiceConfig:  defaultServiceConfig,
 	}
 }
 
@@ -1088,3 +1099,23 @@ func (m mTLSCredentials) applyToOptions(opts *ConnectionOptions) error {
 }
 
 func (mTLSCredentials) gRPCInterceptor() grpc.UnaryClientInterceptor { return nil }
+
+// WorkflowUpdateServiceTimeoutOrCanceledError is an error that occurs when an update call times out or is cancelled.
+//
+// Note, this is not related to any general concept of timing out or cancelling a running update, this is only related to the client call itself.
+type WorkflowUpdateServiceTimeoutOrCanceledError struct {
+	cause error
+}
+
+// NewWorkflowUpdateServiceTimeoutOrCanceledError creates a new WorkflowUpdateServiceTimeoutOrCanceledError.
+func NewWorkflowUpdateServiceTimeoutOrCanceledError(err error) *WorkflowUpdateServiceTimeoutOrCanceledError {
+	return &WorkflowUpdateServiceTimeoutOrCanceledError{
+		cause: err,
+	}
+}
+
+func (e *WorkflowUpdateServiceTimeoutOrCanceledError) Error() string {
+	return fmt.Sprintf("Timeout or cancellation waiting for update: %v", e.cause)
+}
+
+func (e *WorkflowUpdateServiceTimeoutOrCanceledError) Unwrap() error { return e.cause }

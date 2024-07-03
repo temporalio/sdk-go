@@ -326,6 +326,23 @@ func (w *Workflows) ActivityRetryOnHBTimeout(ctx workflow.Context) ([]string, er
 	return []string{"heartbeatAndSleep", "heartbeatAndSleep", "heartbeatAndSleep"}, nil
 }
 
+func (w *Workflows) UpdateBasicWorkflow(ctx workflow.Context) (int, error) {
+	updatesProcessed := 0
+	err := workflow.SetUpdateHandler(ctx, "update", func(ctx workflow.Context, t time.Duration) (string, error) {
+		err := workflow.Sleep(ctx, t)
+		if err != nil {
+			return "", err
+		}
+		updatesProcessed += 1
+		return "test", nil
+	})
+	if err != nil {
+		return updatesProcessed, errors.New("failed to register update handler")
+	}
+	workflow.GetSignalChannel(ctx, "finish").Receive(ctx, nil)
+	return updatesProcessed, nil
+}
+
 func (w *Workflows) UpdateCancelableWorkflow(ctx workflow.Context) error {
 	err := workflow.SetUpdateHandler(ctx, "update", func(ctx workflow.Context) error {
 		return workflow.Sleep(ctx, time.Hour)
@@ -339,10 +356,10 @@ func (w *Workflows) UpdateCancelableWorkflow(ctx workflow.Context) error {
 
 func (w *Workflows) UpdateInfoWorkflow(ctx workflow.Context) error {
 	err := workflow.SetUpdateHandlerWithOptions(ctx, "update", func(ctx workflow.Context) (string, error) {
-		return workflow.GetUpdateInfo(ctx).ID, nil
+		return workflow.GetCurrentUpdateInfo(ctx).ID, nil
 	}, workflow.UpdateHandlerOptions{
 		Validator: func(ctx workflow.Context) error {
-			if workflow.GetUpdateInfo(ctx).ID != "testID" {
+			if workflow.GetCurrentUpdateInfo(ctx).ID != "testID" {
 				return errors.New("invalid update ID")
 			}
 			return nil
@@ -386,6 +403,52 @@ func (w *Workflows) UpdateWithValidatorWorkflow(ctx workflow.Context) error {
 	err = activityFut.Get(ctx, nil)
 	if err != nil {
 		return err
+	}
+
+	workflow.GetSignalChannel(ctx, "finish").Receive(ctx, nil)
+	return nil
+}
+
+func (w *Workflows) UpdateWithMutex(ctx workflow.Context) error {
+	updateMutex := workflow.NewMutex(ctx)
+	err := workflow.SetUpdateHandlerWithOptions(ctx, "update", func(ctx workflow.Context, _ bool) error {
+		err := updateMutex.Lock(ctx)
+		if err != nil {
+			return err
+		}
+		defer updateMutex.Unlock()
+		// Sleep to simulate long running update
+		workflow.GetSignalChannel(ctx, "unblock").Receive(ctx, nil)
+		return nil
+	}, workflow.UpdateHandlerOptions{
+		Validator: func(ctx workflow.Context, failfast bool) error {
+			if failfast && updateMutex.IsLocked() {
+				return errors.New("already an update in progress")
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		return errors.New("failed to register update handler")
+	}
+
+	workflow.GetSignalChannel(ctx, "finish").Receive(ctx, nil)
+	return nil
+}
+
+func (w *Workflows) UpdateWithSemaphore(ctx workflow.Context) error {
+	semaphore := workflow.NewSemaphore(ctx, 100)
+	err := workflow.SetUpdateHandler(ctx, "update", func(ctx workflow.Context, count int64) error {
+		err := semaphore.Acquire(ctx, count)
+		if err != nil {
+			return err
+		}
+		// Sleep to simulate long running update
+		workflow.GetSignalChannel(ctx, "unblock").Receive(ctx, nil)
+		return nil
+	})
+	if err != nil {
+		return errors.New("failed to register update handler")
 	}
 
 	workflow.GetSignalChannel(ctx, "finish").Receive(ctx, nil)
@@ -2450,6 +2513,26 @@ func (w *Workflows) SignalCounter(ctx workflow.Context) error {
 	}
 }
 
+func (w *Workflows) QueryTestWorkflow(ctx workflow.Context) error {
+	status := "running"
+	defer func() {
+		status = "completed"
+	}()
+	err := workflow.SetQueryHandler(ctx, "query", func() (string, error) {
+		return status, nil
+	})
+	if err != nil {
+		return err
+	}
+	signalCh := workflow.GetSignalChannel(ctx, "signal")
+	var fail bool
+	signalCh.Receive(ctx, &fail)
+	if fail {
+		return errors.New("test failure")
+	}
+	return nil
+}
+
 func (w *Workflows) PanicOnSignal(ctx workflow.Context) error {
 	// Wait for signal then panic
 	workflow.GetSignalChannel(ctx, "panic-signal").Receive(ctx, nil)
@@ -3038,7 +3121,11 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.UpdateSettingHandlerInHandler)
 	worker.RegisterWorkflow(w.UpdateCancelableWorkflow)
 	worker.RegisterWorkflow(w.UpdateHandlerRegisteredLate)
+	worker.RegisterWorkflow(w.UpdateBasicWorkflow)
 	worker.RegisterWorkflow(w.LocalActivityNextRetryDelay)
+	worker.RegisterWorkflow(w.QueryTestWorkflow)
+	worker.RegisterWorkflow(w.UpdateWithMutex)
+	worker.RegisterWorkflow(w.UpdateWithSemaphore)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childWithRetryPolicy)

@@ -48,7 +48,7 @@ import (
 
 // TaskReachability specifies which category of tasks may reach a worker on a versioned task queue.
 // Used both in a reachability query and its response.
-// WARNING: Worker versioning is currently experimental
+// Deprecated: Use [BuildIDTaskReachability]
 type TaskReachability = internal.TaskReachability
 
 const (
@@ -63,6 +63,64 @@ const (
 	TaskReachabilityOpenWorkflows = internal.TaskReachabilityOpenWorkflows
 	// TaskReachabilityClosedWorkflows indicates the Build Id might be used by closed workflows
 	TaskReachabilityClosedWorkflows = internal.TaskReachabilityClosedWorkflows
+)
+
+// TaskQueueType specifies which category of tasks are associated with a queue.
+// WARNING: Worker versioning is currently experimental
+type TaskQueueType = internal.TaskQueueType
+
+const (
+	// TaskQueueTypeUnspecified indicates the task queue type was not specified.
+	TaskQueueTypeUnspecified = internal.TaskQueueTypeUnspecified
+	// TaskQueueTypeWorkflow indicates the task queue is used for dispatching workflow tasks.
+	TaskQueueTypeWorkflow = internal.TaskQueueTypeWorkflow
+	// TaskQueueTypeActivity indicates the task queue is used for delivering activity tasks.
+	TaskQueueTypeActivity = internal.TaskQueueTypeActivity
+	// TaskQueueTypeNexus indicates the task queue is used for dispatching Nexus requests.
+	TaskQueueTypeNexus = internal.TaskQueueTypeNexus
+)
+
+// BuildIDTaskReachability specifies which category of tasks may reach a versioned worker of a certain Build ID.
+// Note: future activities who inherit their workflow's Build ID but not its task queue will not be
+// accounted for reachability as server cannot know if they'll happen as they do not use
+// assignment rules of their task queue. Same goes for Child Workflows or Continue-As-New Workflows
+// who inherit the parent/previous workflow's Build ID but not its task queue. In those cases, make
+// sure to query reachability for the parent/previous workflow's task queue as well.
+// WARNING: Worker versioning is currently experimental
+type BuildIDTaskReachability = internal.BuildIDTaskReachability
+
+const (
+	// BuildIDTaskReachabilityUnspecified indicates that task reachability was not reported.
+	BuildIDTaskReachabilityUnspecified = internal.BuildIDTaskReachabilityUnspecified
+	// BuildIDTaskReachabilityReachable indicates that this Build ID may be used by new workflows or activities
+	// (based on versioning rules), or there are open workflows or backlogged activities assigned to it.
+	BuildIDTaskReachabilityReachable = internal.BuildIDTaskReachabilityReachable
+	// BuildIDTaskReachabilityClosedWorkflowsOnly specifies that this Build ID does not have open workflows
+	// and is not reachable by new workflows, but MAY have closed workflows within the namespace retention period.
+	// Not applicable to activity-only task queues.
+	BuildIDTaskReachabilityClosedWorkflowsOnly = internal.BuildIDTaskReachabilityClosedWorkflowsOnly
+	// BuildIDTaskReachabilityUnreachable indicates that this Build ID is not used for new executions, nor
+	// it has been used by any existing execution within the retention period.
+	BuildIDTaskReachabilityUnreachable = internal.BuildIDTaskReachabilityUnreachable
+)
+
+// WorkflowUpdateStage indicates the stage of an update request.
+// NOTE: Experimental
+type WorkflowUpdateStage = internal.WorkflowUpdateStage
+
+const (
+	// WorkflowUpdateStageUnspecified indicates the wait stage was not specified
+	// NOTE: Experimental
+	WorkflowUpdateStageUnspecified = internal.WorkflowUpdateStageUnspecified
+	// WorkflowUpdateStageAdmitted indicates the update is admitted
+	// NOTE: Experimental
+	WorkflowUpdateStageAdmitted = internal.WorkflowUpdateStageAdmitted
+	// WorkflowUpdateStageAccepted indicates the update is accepted
+	// NOTE: Experimental
+	WorkflowUpdateStageAccepted = internal.WorkflowUpdateStageAccepted
+	// WorkflowUpdateStageCompleted indicates the update is completed
+	// NOTE: Experimental
+	WorkflowUpdateStageCompleted = internal.WorkflowUpdateStageCompleted
 )
 
 const (
@@ -202,10 +260,10 @@ type (
 	// ScheduleBackfillOptions configure the parameters for backfilling a schedule.
 	ScheduleBackfillOptions = internal.ScheduleBackfillOptions
 
-	// UpdateWorkflowWithOptionsRequest encapsulates the parameters for
+	// UpdateWorkflowOptions encapsulates the parameters for
 	// sending an update to a workflow execution.
-	// WARNING: Worker versioning is currently experimental
-	UpdateWorkflowWithOptionsRequest = internal.UpdateWorkflowWithOptionsRequest
+	// NOTE: Experimental
+	UpdateWorkflowOptions = internal.UpdateWorkflowOptions
 
 	// WorkflowUpdateHandle represents a running or completed workflow
 	// execution update and gives the holder access to the outcome of the same.
@@ -218,52 +276,194 @@ type (
 	GetWorkflowUpdateHandleOptions = internal.GetWorkflowUpdateHandleOptions
 
 	// UpdateWorkerBuildIdCompatibilityOptions is the input to Client.UpdateWorkerBuildIdCompatibility.
-	// WARNING: Worker versioning is currently experimental
+	// Deprecated: Use [UpdateWorkerVersioningRulesOptions] with the new worker versioning api.
 	UpdateWorkerBuildIdCompatibilityOptions = internal.UpdateWorkerBuildIdCompatibilityOptions
 
 	// GetWorkerBuildIdCompatibilityOptions is the input to Client.GetWorkerBuildIdCompatibility.
-	// WARNING: Worker versioning is currently experimental
+	// Deprecated: Use [GetWorkerVersioningOptions] with the new worker versioning api.
 	GetWorkerBuildIdCompatibilityOptions = internal.GetWorkerBuildIdCompatibilityOptions
 
 	// WorkerBuildIDVersionSets is the response for Client.GetWorkerBuildIdCompatibility.
-	// WARNING: Worker versioning is currently experimental
+	// Deprecated: Replaced by the new worker versioning api.
 	WorkerBuildIDVersionSets = internal.WorkerBuildIDVersionSets
 
 	// BuildIDOpAddNewIDInNewDefaultSet is an operation for UpdateWorkerBuildIdCompatibilityOptions
 	// to add a new BuildID in a new default set.
-	// WARNING: Worker versioning is currently experimental
+	// Deprecated: Replaced by the new worker versioning api.
 	BuildIDOpAddNewIDInNewDefaultSet = internal.BuildIDOpAddNewIDInNewDefaultSet
 
 	// BuildIDOpAddNewCompatibleVersion is an operation for UpdateWorkerBuildIdCompatibilityOptions
 	// to add a new BuildID to an existing compatible set.
-	// WARNING: Worker versioning is currently experimental
+	// Deprecated: Replaced by the new worker versioning api.
 	BuildIDOpAddNewCompatibleVersion = internal.BuildIDOpAddNewCompatibleVersion
 
 	// BuildIDOpPromoteSet is an operation for UpdateWorkerBuildIdCompatibilityOptions to promote a
 	// set to be the default set by targeting an existing BuildID.
-	// WARNING: Worker versioning is currently experimental
+	// Deprecated: Replaced by the new worker versioning api.
 	BuildIDOpPromoteSet = internal.BuildIDOpPromoteSet
 
 	// BuildIDOpPromoteIDWithinSet is an operation for UpdateWorkerBuildIdCompatibilityOptions to
 	// promote a BuildID within a set to be the default.
-	// WARNING: Worker versioning is currently experimental
+	// Deprecated: Replaced by the new worker versioning api.
 	BuildIDOpPromoteIDWithinSet = internal.BuildIDOpPromoteIDWithinSet
 
 	// GetWorkerTaskReachabilityOptions is the input to Client.GetWorkerTaskReachability.
-	// WARNING: Worker versioning is currently experimental
+	// Deprecated: Use [DescribeTaskQueueEnhancedOptions] with the new worker versioning api.
 	GetWorkerTaskReachabilityOptions = internal.GetWorkerTaskReachabilityOptions
 
 	// WorkerTaskReachability is the response for Client.GetWorkerTaskReachability.
-	// WARNING: Worker versioning is currently experimental
+	// Deprecated: Replaced by the new worker versioning api.
 	WorkerTaskReachability = internal.WorkerTaskReachability
 
 	// BuildIDReachability describes the reachability of a buildID
-	// WARNING: Worker versioning is currently experimental
+	// Deprecated: Replaced by the new worker versioning api.
 	BuildIDReachability = internal.BuildIDReachability
 
 	// TaskQueueReachability Describes how the Build ID may be reachable from the task queue.
-	// WARNING: Worker versioning is currently experimental
+	// Deprecated: Replaced by the new worker versioning api.
 	TaskQueueReachability = internal.TaskQueueReachability
+
+	// DescribeTaskQueueEnhancedOptions is the input to [Client.DescribeTaskQueueEnhanced].
+	// WARNING: Worker versioning is currently experimental.
+	DescribeTaskQueueEnhancedOptions = internal.DescribeTaskQueueEnhancedOptions
+
+	// TaskQueueVersionSelection is a task queue filter based on versioning.
+	// It is an optional component of [Client.DescribeTaskQueueEnhancedOptions].
+	// WARNING: Worker versioning is currently experimental.
+	TaskQueueVersionSelection = internal.TaskQueueVersionSelection
+
+	// TaskQueueDescription is the response to [Client.DescribeTaskQueueEnhanced].
+	// WARNING: Worker versioning is currently experimental.
+	TaskQueueDescription = internal.TaskQueueDescription
+
+	// TaskQueueVersionInfo includes task queue information per Build ID.
+	// It is part of [Client.TaskQueueDescription].
+	// WARNING: Worker versioning is currently experimental.
+	TaskQueueVersionInfo = internal.TaskQueueVersionInfo
+
+	// TaskQueueTypeInfo specifies task queue information per task type and Build ID.
+	// It is included in [Client.TaskQueueVersionInfo].
+	// WARNING: Worker versioning is currently experimental.
+	TaskQueueTypeInfo = internal.TaskQueueTypeInfo
+
+	// TaskQueuePollerInfo provides information about a worker/client polling a task queue.
+	// It is used by [Client.TaskQueueTypeInfo].
+	// WARNING: Worker versioning is currently experimental.
+	TaskQueuePollerInfo = internal.TaskQueuePollerInfo
+
+	// WorkerVersionCapabilities includes a worker's build identifier
+	// and whether it is choosing to use the versioning feature.
+	// It is an optional component of [Client.TaskQueuePollerInfo].
+	// WARNING: Worker versioning is currently experimental.
+	WorkerVersionCapabilities = internal.WorkerVersionCapabilities
+
+	// UpdateWorkerVersioningRulesOptions is the input to [Client.UpdateWorkerVersioningRules].
+	// WARNING: Worker versioning is currently experimental.
+	UpdateWorkerVersioningRulesOptions = internal.UpdateWorkerVersioningRulesOptions
+
+	// VersioningConflictToken is a conflict token to serialize calls to Client.UpdateWorkerVersioningRules.
+	// An update with an old token fails with `serviceerror.FailedPrecondition`.
+	// The current token can be obtained with [GetWorkerVersioningRules],
+	// or returned by a successful [UpdateWorkerVersioningRules].
+	// WARNING: Worker versioning is currently experimental.
+	VersioningConflictToken = internal.VersioningConflictToken
+
+	// VersioningRampByPercentage is a VersionRamp that sends a proportion of the traffic
+	// to the target Build ID.
+	// WARNING: Worker versioning is currently experimental.
+	VersioningRampByPercentage = internal.VersioningRampByPercentage
+
+	// VersioningAssignmentRule is a BuildID  assigment rule for a task queue.
+	// Assignment rules only affect new workflows.
+	// WARNING: Worker versioning is currently experimental.
+	VersioningAssignmentRule = internal.VersioningAssignmentRule
+
+	// VersioningAssignmentRuleWithTimestamp contains an assignment rule annotated
+	// by the server with its creation time.
+	// WARNING: Worker versioning is currently experimental.
+	VersioningAssignmentRuleWithTimestamp = internal.VersioningAssignmentRuleWithTimestamp
+
+	// VersioningAssignmentRule is a BuildID redirect rule for a task queue.
+	// It changes the behavior of currently running workflows and new ones.
+	// WARNING: Worker versioning is currently experimental.
+	VersioningRedirectRule = internal.VersioningRedirectRule
+
+	// VersioningRedirectRuleWithTimestamp contains a redirect rule annotated
+	// by the server with its creation time.
+	// WARNING: Worker versioning is currently experimental.
+	VersioningRedirectRuleWithTimestamp = internal.VersioningRedirectRuleWithTimestamp
+
+	// VersioningOperationInsertAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
+	// that inserts the rule to the list of assignment rules for this Task Queue.
+	// The rules are evaluated in order, starting from index 0. The first
+	// applicable rule will be applied and the rest will be ignored.
+	// By default, the new rule is inserted at the beginning of the list
+	// (index 0). If the given index is too larger the rule will be
+	// inserted at the end of the list.
+	// WARNING: Worker versioning is currently experimental.
+	VersioningOperationInsertAssignmentRule = internal.VersioningOperationInsertAssignmentRule
+
+	// VersioningOperationReplaceAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
+	// that replaces the assignment rule at a given index. By default presence of one
+	// unconditional rule, i.e., no hint filter or ramp, is enforced, otherwise
+	// the delete operation will be rejected. Set `force` to true to
+	// bypass this validation.
+	// WARNING: Worker versioning is currently experimental.
+	VersioningOperationReplaceAssignmentRule = internal.VersioningOperationReplaceAssignmentRule
+
+	// VersioningOperationDeleteAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
+	// that deletes the assignment rule at a given index. By default presence of one
+	// unconditional rule, i.e., no hint filter or ramp, is enforced, otherwise
+	// the delete operation will be rejected. Set `force` to true to
+	// bypass this validation.
+	// WARNING: Worker versioning is currently experimental.
+	VersioningOperationDeleteAssignmentRule = internal.VersioningOperationDeleteAssignmentRule
+
+	// VersioningOperationAddRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
+	// that adds the rule to the list of redirect rules for this Task Queue. There
+	// can be at most one redirect rule for each distinct Source BuildID.
+	// WARNING: Worker versioning is currently experimental.
+	VersioningOperationAddRedirectRule = internal.VersioningOperationAddRedirectRule
+
+	// VersioningOperationReplaceRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
+	// that replaces the routing rule with the given source BuildID.
+	// WARNING: Worker versioning is currently experimental.
+	VersioningOperationReplaceRedirectRule = internal.VersioningOperationReplaceRedirectRule
+
+	// VersioningOperationDeleteRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
+	// that deletes the routing rule with the given source Build ID.
+	// WARNING: Worker versioning is currently experimental.
+	VersioningOperationDeleteRedirectRule = internal.VersioningOperationDeleteRedirectRule
+
+	// VersioningOperationCommitBuildID is an operation for UpdateWorkerVersioningRulesOptions
+	// that completes  the rollout of a BuildID and cleanup unnecessary rules possibly
+	// created during a gradual rollout. Specifically, this command will make the following changes
+	// atomically:
+	//  1. Adds an assignment rule (with full ramp) for the target Build ID at
+	//     the end of the list.
+	//  2. Removes all previously added assignment rules to the given target
+	//     Build ID (if any).
+	//  3. Removes any fully-ramped assignment rule for other Build IDs.
+	//
+	// To prevent committing invalid Build IDs, we reject the request if no
+	// pollers have been seen recently for this Build ID. Use the `force`
+	// option to disable this validation.
+	// WARNING: Worker versioning is currently experimental.
+	VersioningOperationCommitBuildID = internal.VersioningOperationCommitBuildID
+
+	// GetWorkerVersioningOptions is the input to [Client.GetWorkerVersioningRules].
+	// WARNING: Worker versioning is currently experimental.
+	GetWorkerVersioningOptions = internal.GetWorkerVersioningOptions
+
+	// WorkerVersioningRules is the response for [Client.GetWorkerVersioningRules].
+	// WARNING: Worker versioning is currently experimental.
+	WorkerVersioningRules = internal.WorkerVersioningRules
+
+	// WorkflowUpdateServiceTimeoutOrCanceledError is an error that occurs when an update call times out or is cancelled.
+	//
+	// Note, this is not related to any general concept of timing out or cancelling a running update, this is only related to the client call itself.
+	// NOTE: Experimental
+	WorkflowUpdateServiceTimeoutOrCanceledError = internal.WorkflowUpdateServiceTimeoutOrCanceledError
 
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
@@ -547,6 +747,17 @@ type (
 		//  - serviceerror.NotFound
 		DescribeTaskQueue(ctx context.Context, taskqueue string, taskqueueType enumspb.TaskQueueType) (*workflowservice.DescribeTaskQueueResponse, error)
 
+		// DescribeTaskQueueEnhanced  returns information about the target task queue, broken down by Build Id:
+		//   - List of pollers
+		//   - Workflow Reachability status
+		//   - Backlog info for Workflow and/or Activity tasks
+		// When not supported by the server, it returns an empty [TaskQueueDescription] if there is no information
+		// about the task queue, or an error when the response identifies an unsupported server.
+		// Note that using a sticky queue as target is not supported.
+		// Also, workflow reachability status is eventually consistent, and it could take a few minutes to update.
+		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
+		DescribeTaskQueueEnhanced(ctx context.Context, options DescribeTaskQueueEnhancedOptions) (TaskQueueDescription, error)
+
 		// ResetWorkflowExecution resets an existing workflow execution to WorkflowTaskFinishEventId(exclusive).
 		// And it will immediately terminating the current execution instance.
 		// RequestId is used to deduplicate requests. It will be autogenerated if not set.
@@ -555,41 +766,49 @@ type (
 		// UpdateWorkerBuildIdCompatibility
 		// Allows you to update the worker-build-id based version sets for a particular task queue. This is used in
 		// conjunction with workers who specify their build id and thus opt into the feature.
-		// WARNING: Worker versioning is currently experimental
+		// Deprecated: Use [UpdateWorkerVersioningRules] with the versioning api.
 		UpdateWorkerBuildIdCompatibility(ctx context.Context, options *UpdateWorkerBuildIdCompatibilityOptions) error
 
 		// GetWorkerBuildIdCompatibility
 		// Returns the worker-build-id based version sets for a particular task queue.
-		// WARNING: Worker versioning is currently experimental
+		// Deprecated: Use [GetWorkerVersioningRules] with the versioning api.
 		GetWorkerBuildIdCompatibility(ctx context.Context, options *GetWorkerBuildIdCompatibilityOptions) (*WorkerBuildIDVersionSets, error)
 
 		// GetWorkerTaskReachability
 		// Returns which versions are is still in use by open or closed workflows
-		// WARNING: Worker versioning is currently experimental
+		// Deprecated: Use [DescribeTaskQueueEnhanced] with the versioning api.
 		GetWorkerTaskReachability(ctx context.Context, options *GetWorkerTaskReachabilityOptions) (*WorkerTaskReachability, error)
+
+		// UpdateWorkerVersioningRules
+		// Allows updating the worker-build-id based assignment and redirect rules for a given task queue. This is used in
+		// conjunction with workers who specify their build id and thus opt into the feature.
+		// The errors it can return:
+		//  - serviceerror.FailedPrecondition when the conflict token is invalid
+		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
+		UpdateWorkerVersioningRules(ctx context.Context, options UpdateWorkerVersioningRulesOptions) (*WorkerVersioningRules, error)
+
+		// GetWorkerVersioningRules
+		// Returns the worker-build-id assignment and redirect rules for a task queue.
+		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
+		GetWorkerVersioningRules(ctx context.Context, options GetWorkerVersioningOptions) (*WorkerVersioningRules, error)
 
 		// CheckHealth performs a server health check using the gRPC health check
 		// API. If the check fails, an error is returned.
 		CheckHealth(ctx context.Context, request *CheckHealthRequest) (*CheckHealthResponse, error)
 
-		// UpdateWorkflow issues an update request to the specified
-		// workflow execution and returns the result synchronously. Calling this
-		// function is equivalent to calling UpdateWorkflowWithOptions with
-		// the same arguments and indicating that the RPC call should wait for
-		// completion of the update process.
-		// NOTE: Experimental
-		UpdateWorkflow(ctx context.Context, workflowID string, workflowRunID string, updateName string, args ...interface{}) (WorkflowUpdateHandle, error)
-
-		// UpdateWorkflowWithOptions issues an update request to the
+		// UpdateWorkflow issues an update request to the
 		// specified workflow execution and returns a handle to the update that
 		// is running in in parallel with the calling thread. Errors returned
 		// from the server will be exposed through the return value of
 		// WorkflowUpdateHandle.Get(). Errors that occur before the
 		// update is requested (e.g. if the required workflow ID field is
-		// missing from the UpdateWorkflowWithOptionsRequest) are returned
+		// missing from the UpdateWorkflowOptions) are returned
 		// directly from this function call.
+		//
+		// The errors it can return:
+		//  - WorkflowUpdateServiceTimeoutOrCanceledError
 		// NOTE: Experimental
-		UpdateWorkflowWithOptions(ctx context.Context, request *UpdateWorkflowWithOptionsRequest) (WorkflowUpdateHandle, error)
+		UpdateWorkflow(ctx context.Context, options UpdateWorkflowOptions) (WorkflowUpdateHandle, error)
 
 		// GetWorkflowUpdateHandle creates a handle to the referenced update
 		// which can be polled for an outcome. Note that runID is optional and
@@ -755,8 +974,7 @@ func DialCloudOperationsClient(ctx context.Context, options CloudOperationsClien
 // NewNamespaceClient creates an instance of a namespace client, to manage
 // lifecycle of namespaces. This will not attempt to connect to the server
 // eagerly and therefore may not fail for an unreachable server until a call is
-// made. grpc.WithBlock can be passed as a gRPC dial option to connection
-// options to eagerly connect.
+// made.
 func NewNamespaceClient(options Options) (NamespaceClient, error) {
 	return internal.NewNamespaceClient(options)
 }
@@ -842,4 +1060,9 @@ func NewAPIKeyDynamicCredentials(apiKeyCallback func(context.Context) (string, e
 // these credentials.
 func NewMTLSCredentials(certificate tls.Certificate) Credentials {
 	return internal.NewMTLSCredentials(certificate)
+}
+
+// NewWorkflowUpdateServiceTimeoutOrCanceledError creates a new WorkflowUpdateServiceTimeoutOrCanceledError.
+func NewWorkflowUpdateServiceTimeoutOrCanceledError(err error) *WorkflowUpdateServiceTimeoutOrCanceledError {
+	return internal.NewWorkflowUpdateServiceTimeoutOrCanceledError(err)
 }

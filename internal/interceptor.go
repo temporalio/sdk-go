@@ -200,10 +200,10 @@ type WorkflowOutboundInterceptor interface {
 	// GetTypedSearchAttributes intercepts workflow.GetTypedSearchAttributes.
 	GetTypedSearchAttributes(ctx Context) SearchAttributes
 
-	// GetUpdateInfo intercepts workflow.GetUpdateInfo.
+	// GetCurrentUpdateInfo intercepts workflow.GetCurrentUpdateInfo.
 	//
 	// NOTE: Experimental
-	GetUpdateInfo(ctx Context) *UpdateInfo
+	GetCurrentUpdateInfo(ctx Context) *UpdateInfo
 
 	// GetLogger intercepts workflow.GetLogger.
 	GetLogger(ctx Context) log.Logger
@@ -335,7 +335,7 @@ type ClientOutboundInterceptor interface {
 	// server.
 	//
 	// NOTE: Experimental
-	PollWorkflowUpdate(context.Context, *ClientPollWorkflowUpdateInput) (converter.EncodedValue, error)
+	PollWorkflowUpdate(context.Context, *ClientPollWorkflowUpdateInput) (*ClientPollWorkflowUpdateOutput, error)
 
 	mustEmbedClientOutboundInterceptorBase()
 }
@@ -351,13 +351,22 @@ type ClientUpdateWorkflowInput struct {
 	Args                []interface{}
 	RunID               string
 	FirstExecutionRunID string
-	WaitPolicy          *updatepb.WaitPolicy
+	WaitForStage        WorkflowUpdateStage
 }
 
 // ClientPollWorkflowUpdateInput is the input to
 // ClientOutboundInterceptor.PollWorkflowUpdate.
 type ClientPollWorkflowUpdateInput struct {
 	UpdateRef *updatepb.UpdateRef
+}
+
+// ClientPollWorkflowUpdateOutput is the output to
+// ClientOutboundInterceptor.PollWorkflowUpdate.
+type ClientPollWorkflowUpdateOutput struct {
+	// Result is the result of the update, if it has completed successfully.
+	Result converter.EncodedValue
+	// Error is the result of a failed update.
+	Error error
 }
 
 // ScheduleClientCreateInput is the input to

@@ -30,6 +30,7 @@ package mocks
 
 import (
 	"context"
+
 	"go.temporal.io/sdk/client"
 
 	"go.temporal.io/api/enums/v1"
@@ -196,6 +197,36 @@ func (_m *Client) DescribeTaskQueue(ctx context.Context, taskqueue string, taskq
 	return r0, r1
 }
 
+// DescribeTaskQueueEnhanced provides a mock function with given fields: ctx, options
+func (_m *Client) DescribeTaskQueueEnhanced(ctx context.Context, options client.DescribeTaskQueueEnhancedOptions) (client.TaskQueueDescription, error) {
+	ret := _m.Called(ctx, options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DescribeTaskQueueEnhanced")
+	}
+
+	var r0 client.TaskQueueDescription
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, client.DescribeTaskQueueEnhancedOptions) (client.TaskQueueDescription, error)); ok {
+		return rf(ctx, options)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, client.DescribeTaskQueueEnhancedOptions) client.TaskQueueDescription); ok {
+		r0 = rf(ctx, options)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(client.TaskQueueDescription)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, client.DescribeTaskQueueEnhancedOptions) error); ok {
+		r1 = rf(ctx, options)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // DescribeWorkflowExecution provides a mock function with given fields: ctx, workflowID, runID
 func (_m *Client) DescribeWorkflowExecution(ctx context.Context, workflowID string, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
 	ret := _m.Called(ctx, workflowID, runID)
@@ -341,6 +372,36 @@ func (_m *Client) GetWorkerTaskReachability(ctx context.Context, options *client
 	}
 
 	if rf, ok := ret.Get(1).(func(context.Context, *client.GetWorkerTaskReachabilityOptions) error); ok {
+		r1 = rf(ctx, options)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// GetWorkerVersioningRules provides a mock function with given fields: ctx, options
+func (_m *Client) GetWorkerVersioningRules(ctx context.Context, options client.GetWorkerVersioningOptions) (*client.WorkerVersioningRules, error) {
+	ret := _m.Called(ctx, options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetWorkerVersioningRules")
+	}
+
+	var r0 *client.WorkerVersioningRules
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, client.GetWorkerVersioningOptions) (*client.WorkerVersioningRules, error)); ok {
+		return rf(ctx, options)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, client.GetWorkerVersioningOptions) *client.WorkerVersioningRules); ok {
+		r0 = rf(ctx, options)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*client.WorkerVersioningRules)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, client.GetWorkerVersioningOptions) error); ok {
 		r1 = rf(ctx, options)
 	} else {
 		r1 = ret.Error(1)
@@ -824,32 +885,29 @@ func (_m *Client) UpdateWorkerBuildIdCompatibility(ctx context.Context, options 
 	return r0
 }
 
-// UpdateWorkflow provides a mock function with given fields: ctx, workflowID, workflowRunID, updateName, args
-func (_m *Client) UpdateWorkflow(ctx context.Context, workflowID string, workflowRunID string, updateName string, args ...interface{}) (client.WorkflowUpdateHandle, error) {
-	var _ca []interface{}
-	_ca = append(_ca, ctx, workflowID, workflowRunID, updateName)
-	_ca = append(_ca, args...)
-	ret := _m.Called(_ca...)
+// UpdateWorkerVersioningRules provides a mock function with given fields: ctx, options
+func (_m *Client) UpdateWorkerVersioningRules(ctx context.Context, options client.UpdateWorkerVersioningRulesOptions) (*client.WorkerVersioningRules, error) {
+	ret := _m.Called(ctx, options)
 
 	if len(ret) == 0 {
-		panic("no return value specified for UpdateWorkflow")
+		panic("no return value specified for UpdateWorkerVersioningRules")
 	}
 
-	var r0 client.WorkflowUpdateHandle
+	var r0 *client.WorkerVersioningRules
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, ...interface{}) (client.WorkflowUpdateHandle, error)); ok {
-		return rf(ctx, workflowID, workflowRunID, updateName, args...)
+	if rf, ok := ret.Get(0).(func(context.Context, client.UpdateWorkerVersioningRulesOptions) (*client.WorkerVersioningRules, error)); ok {
+		return rf(ctx, options)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, ...interface{}) client.WorkflowUpdateHandle); ok {
-		r0 = rf(ctx, workflowID, workflowRunID, updateName, args...)
+	if rf, ok := ret.Get(0).(func(context.Context, client.UpdateWorkerVersioningRulesOptions) *client.WorkerVersioningRules); ok {
+		r0 = rf(ctx, options)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(client.WorkflowUpdateHandle)
+			r0 = ret.Get(0).(*client.WorkerVersioningRules)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, string, string, string, ...interface{}) error); ok {
-		r1 = rf(ctx, workflowID, workflowRunID, updateName, args...)
+	if rf, ok := ret.Get(1).(func(context.Context, client.UpdateWorkerVersioningRulesOptions) error); ok {
+		r1 = rf(ctx, options)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -857,29 +915,29 @@ func (_m *Client) UpdateWorkflow(ctx context.Context, workflowID string, workflo
 	return r0, r1
 }
 
-// UpdateWorkflowWithOptions provides a mock function with given fields: ctx, request
-func (_m *Client) UpdateWorkflowWithOptions(ctx context.Context, request *client.UpdateWorkflowWithOptionsRequest) (client.WorkflowUpdateHandle, error) {
-	ret := _m.Called(ctx, request)
+// UpdateWorkflow provides a mock function with given fields: ctx, options
+func (_m *Client) UpdateWorkflow(ctx context.Context, options client.UpdateWorkflowOptions) (client.WorkflowUpdateHandle, error) {
+	ret := _m.Called(ctx, options)
 
 	if len(ret) == 0 {
-		panic("no return value specified for UpdateWorkflowWithOptions")
+		panic("no return value specified for UpdateWorkflow")
 	}
 
 	var r0 client.WorkflowUpdateHandle
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, *client.UpdateWorkflowWithOptionsRequest) (client.WorkflowUpdateHandle, error)); ok {
-		return rf(ctx, request)
+	if rf, ok := ret.Get(0).(func(context.Context, client.UpdateWorkflowOptions) (client.WorkflowUpdateHandle, error)); ok {
+		return rf(ctx, options)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, *client.UpdateWorkflowWithOptionsRequest) client.WorkflowUpdateHandle); ok {
-		r0 = rf(ctx, request)
+	if rf, ok := ret.Get(0).(func(context.Context, client.UpdateWorkflowOptions) client.WorkflowUpdateHandle); ok {
+		r0 = rf(ctx, options)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(client.WorkflowUpdateHandle)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, *client.UpdateWorkflowWithOptionsRequest) error); ok {
-		r1 = rf(ctx, request)
+	if rf, ok := ret.Get(1).(func(context.Context, client.UpdateWorkflowOptions) error); ok {
+		r1 = rf(ctx, options)
 	} else {
 		r1 = ret.Error(1)
 	}
