@@ -751,6 +751,10 @@ func getStateIfRunning(ctx Context) *coroutineState {
 	return state
 }
 
+func (c *channelImpl) Name() string {
+	return c.name
+}
+
 func (c *channelImpl) CanReceiveWithoutBlocking() bool {
 	return c.recValue != nil || len(c.buffer) > 0 || len(c.blockedSends) > 0 || c.closed
 }

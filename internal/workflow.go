@@ -66,8 +66,16 @@ var (
 )
 
 type (
+	// commonChannel contains methods common to both SendChannel and ReceiveChannel
+	commonChannel interface {
+		// Name returns the name of the channel.
+		Name() string
+	}
+
 	// SendChannel is a write only view of the Channel
 	SendChannel interface {
+		commonChannel
+
 		// Send blocks until the data is sent.
 		Send(ctx Context, v interface{})
 
@@ -80,6 +88,8 @@ type (
 
 	// ReceiveChannel is a read only view of the Channel
 	ReceiveChannel interface {
+		commonChannel
+
 		// Receive blocks until it receives a value, and then assigns the received value to the provided pointer.
 		// Returns false when Channel is closed.
 		// Parameter valuePtr is a pointer to the expected data structure to be received. For example:
