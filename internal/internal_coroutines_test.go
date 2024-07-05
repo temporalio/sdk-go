@@ -420,6 +420,25 @@ func TestBufferedChannelGet(t *testing.T) {
 	require.EqualValues(t, expected, history)
 }
 
+func TestChannelName(t *testing.T) {
+	d := createNewDispatcher(func(ctx Context) {
+		const namedBufferedChannel = "named-buffered-channel"
+		ch1 := NewNamedBufferedChannel(ctx, namedBufferedChannel, 1)
+		assert.Equal(t, namedBufferedChannel, ch1.Name())
+
+		const namedChannel = "named-channel"
+		ch2 := NewNamedChannel(ctx, namedChannel)
+		assert.Equal(t, namedChannel, ch2.Name())
+
+		const signalChannel = "signal-channel"
+		ch3 := GetSignalChannel(ctx, signalChannel)
+		assert.Equal(t, signalChannel, ch3.Name())
+	})
+	defer d.Close()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+	require.True(t, d.IsDone())
+}
+
 func TestNotBlockingSelect(t *testing.T) {
 	var history []string
 	d := createNewDispatcher(func(ctx Context) {
