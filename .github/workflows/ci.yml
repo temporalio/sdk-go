@@ -104,6 +104,8 @@ jobs:
       TEMPORAL_NAMESPACE: sdk-ci.a2dd6
       TEMPORAL_CLIENT_CERT: ${{ secrets.TEMPORAL_CLIENT_CERT }}
       TEMPORAL_CLIENT_KEY: ${{ secrets.TEMPORAL_CLIENT_KEY }}
+      TEMPORAL_CLIENT_CLOUD_API_KEY: ${{ secrets.TEMPORAL_CLIENT_CLOUD_API_KEY }}
+      TEMPORAL_CLIENT_CLOUD_API_VERSION: 2024-05-13-00
     steps:
       - uses: actions/checkout@v4
         with:
@@ -113,6 +115,9 @@ jobs:
           go-version: ${{ matrix.go-version }}
       - name: Single integration test against cloud
         run: 'go test -v --count 1 -p 1 . -run "TestIntegrationSuite/TestBasic$"'
+        working-directory: test
+      - name: Cloud operations tests
+        run: 'go test -v --count 1 -p 1 . -run "TestCloudOperationsSuite/.*" -cloud-operations-tests'
         working-directory: test
 
   features-test:
