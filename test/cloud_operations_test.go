@@ -36,19 +36,21 @@ import (
 	"go.temporal.io/sdk/client"
 )
 
-var cloudTestsFlag bool
+var cloudOperationsTestsFlag bool
 
-func init() { flag.BoolVar(&cloudTestsFlag, "cloud-tests", false, "Enable cloud tests") }
-
-func TestCloudSuite(t *testing.T) {
-	// Skip if cloud tests not enabled
-	if !cloudTestsFlag {
-		t.Skip("Cloud tests disabled")
-	}
-	suite.Run(t, new(CloudTestSuite))
+func init() {
+	flag.BoolVar(&cloudOperationsTestsFlag, "cloud-operations-tests", false, "Enable cloud operations tests")
 }
 
-type CloudTestSuite struct {
+func TestCloudOperationsSuite(t *testing.T) {
+	// Skip if cloud tests not enabled
+	if !cloudOperationsTestsFlag {
+		t.Skip("Cloud operations tests disabled")
+	}
+	suite.Run(t, new(CloudOperationsTestSuite))
+}
+
+type CloudOperationsTestSuite struct {
 	*require.Assertions
 	suite.Suite
 
@@ -59,7 +61,7 @@ type CloudTestSuite struct {
 	apiVersion string
 }
 
-func (c *CloudTestSuite) SetupSuite() {
+func (c *CloudOperationsTestSuite) SetupSuite() {
 	c.Assertions = require.New(c.T())
 	c.namespace = os.Getenv("TEMPORAL_NAMESPACE")
 	c.NotEmpty(c.namespace)
@@ -69,10 +71,10 @@ func (c *CloudTestSuite) SetupSuite() {
 	c.NotEmpty(c.apiVersion)
 }
 
-func (c *CloudTestSuite) TearDownSuite() {
+func (c *CloudOperationsTestSuite) TearDownSuite() {
 }
 
-func (c *CloudTestSuite) SetupTest() {
+func (c *CloudOperationsTestSuite) SetupTest() {
 	var err error
 	c.client, err = client.DialCloudOperationsClient(context.Background(), client.CloudOperationsClientOptions{
 		Version:     c.apiVersion,
@@ -81,13 +83,13 @@ func (c *CloudTestSuite) SetupTest() {
 	c.NoError(err)
 }
 
-func (c *CloudTestSuite) TearDownTest() {
+func (c *CloudOperationsTestSuite) TearDownTest() {
 	if c.client != nil {
 		c.client.Close()
 	}
 }
 
-func (c *CloudTestSuite) TestSimpleGetNamespace() {
+func (c *CloudOperationsTestSuite) TestSimpleGetNamespace() {
 	resp, err := c.client.CloudService().GetNamespace(
 		context.Background(),
 		&cloudservice.GetNamespaceRequest{Namespace: c.namespace},
