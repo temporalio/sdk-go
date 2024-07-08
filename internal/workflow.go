@@ -69,6 +69,10 @@ type (
 	// commonChannel contains methods common to both SendChannel and ReceiveChannel
 	commonChannel interface {
 		// Name returns the name of the channel.
+		// If the channel was retrieved from a GetSignalChannel call, Name returns the signal name.
+		//
+		// A Channel created without an explicit name will use a generated name by the SDK and
+		// is not deterministic.
 		Name() string
 	}
 
