@@ -464,7 +464,14 @@ func TestAllHandlersFinished(t *testing.T) {
 				inflightUpdates--
 			}()
 			return Sleep(ctx, time.Hour)
-		}, UpdateHandlerOptions{})
+		}, UpdateHandlerOptions{
+			Validator: func() error {
+				if AllHandlersFinished(ctx) {
+					return errors.New("AllHandlersFinished should return false in a validator")
+				}
+				return nil
+			},
+		})
 		if err != nil {
 			return 0, err
 		}
