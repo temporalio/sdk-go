@@ -35,6 +35,21 @@ import (
 	"golang.org/x/exp/constraints"
 )
 
+// HandlerUnfinishedPolicy defines the actions taken when a workflow exits while update handlers are
+// running. The workflow exit may be due to successful return, failure, cancellation, or
+// continue-as-new.
+type HandlerUnfinishedPolicy = internal.HandlerUnfinishedPolicy
+
+const (
+	// WarnAndAbandon issue a warning in addition to abandoning.
+	HandlerUnfinishedPolicyWarnAndAbandon = internal.HandlerUnfinishedPolicyWarnAndAbandon
+	// ABANDON the handler.
+	//
+	// In the case of an update handler this means that the client will receive an error rather
+	// than the update result.
+	HandlerUnfinishedPolicyAbandon = internal.HandlerUnfinishedPolicyAbandon
+)
+
 type (
 
 	// ChildWorkflowFuture represents the result of a child workflow execution
@@ -691,4 +706,13 @@ func DeterministicKeys[K constraints.Ordered, V any](m map[K]V) []K {
 // To be used in for loops in workflows for deterministic iteration.
 func DeterministicKeysFunc[K comparable, V any](m map[K]V, cmp func(K, K) int) []K {
 	return internal.DeterministicKeysFunc(m, cmp)
+}
+
+// AllHandlersFinished returns true if all update handlers have finished execution.
+// Consider waiting on this condition before workflow return or continue-as-new, to prevent
+// interruption of in-progress handlers by workflow exit:
+//
+//	workflow.Await(ctx, func() bool { return workflow.AllHandlersFinished(ctx) })
+func AllHandlersFinished(ctx Context) bool {
+	return internal.AllHandlersFinished(ctx)
 }

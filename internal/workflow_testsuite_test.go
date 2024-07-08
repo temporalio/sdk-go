@@ -25,8 +25,12 @@
 package internal
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -35,6 +39,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	failurepb "go.temporal.io/api/failure/v1"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/log"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -423,6 +428,198 @@ func TestWorkflowUpdateOrderAcceptReject(t *testing.T) {
 
 	require.Error(t, updateRejectionErr)
 	require.Equal(t, "unknown update bad update. KnownUpdates=[update]", updateRejectionErr.Error())
+}
+
+func TestAllHandlersFinished(t *testing.T) {
+	var suite WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflow("update", "id_1", &updateCallback{
+			reject: func(err error) {
+				require.Fail(t, "update should not be rejected")
+			},
+			accept:   func() {},
+			complete: func(interface{}, error) {},
+		})
+	}, 0)
+
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflow("update", "id_2", &updateCallback{
+			reject: func(err error) {
+				require.Fail(t, "update should not be rejected")
+			},
+			accept:   func() {},
+			complete: func(interface{}, error) {},
+		})
+	}, time.Minute)
+
+	env.ExecuteWorkflow(func(ctx Context) (int, error) {
+		var inflightUpdates int
+		var ranUpdates int
+		err := SetUpdateHandler(ctx, "update", func(ctx Context) error {
+			inflightUpdates++
+			ranUpdates++
+			defer func() {
+				inflightUpdates--
+			}()
+			return Sleep(ctx, time.Hour)
+		}, UpdateHandlerOptions{})
+		if err != nil {
+			return 0, err
+		}
+		err = Await(ctx, func() bool { return AllHandlersFinished(ctx) })
+		return ranUpdates, err
+	})
+	require.NoError(t, env.GetWorkflowError())
+	var result int
+	require.NoError(t, env.GetWorkflowResult(&result))
+	require.Equal(t, 2, result)
+}
+
+func TestWorkflowAllHandlersFinished(t *testing.T) {
+	// runWf runs a workflow that sends two updates and then signals the workflow to complete
+	runWf := func(completionType string, buf *bytes.Buffer) (int, error) {
+		var suite WorkflowTestSuite
+		th := slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelWarn})
+		suite.SetLogger(log.NewStructuredLogger(slog.New(th)))
+		env := suite.NewTestWorkflowEnvironment()
+
+		env.RegisterDelayedCallback(func() {
+			env.UpdateWorkflow("update", "id_1", &updateCallback{
+				reject: func(err error) {
+					require.Fail(t, "update should not be rejected")
+				},
+				accept:   func() {},
+				complete: func(interface{}, error) {},
+			})
+		}, 0)
+
+		env.RegisterDelayedCallback(func() {
+			env.UpdateWorkflow("update", "id_2", &updateCallback{
+				reject: func(err error) {
+					require.Fail(t, "update should not be rejected")
+				},
+				accept:   func() {},
+				complete: func(interface{}, error) {},
+			})
+		}, time.Minute)
+
+		env.RegisterDelayedCallback(func() {
+			if completionType == "cancel" {
+				env.CancelWorkflow()
+			} else {
+				env.SignalWorkflow("completion", completionType)
+			}
+		}, time.Minute*2)
+
+		env.ExecuteWorkflow(func(ctx Context) (int, error) {
+			var inflightUpdates int
+			var ranUpdates int
+			err := SetUpdateHandler(ctx, "update", func(ctx Context) error {
+				inflightUpdates++
+				ranUpdates++
+				defer func() {
+					inflightUpdates--
+				}()
+				return Sleep(ctx, time.Hour)
+			}, UpdateHandlerOptions{})
+			if err != nil {
+				return 0, err
+			}
+
+			var completeType string
+			s := NewSelector(ctx)
+			s.AddReceive(ctx.Done(), func(c ReceiveChannel, more bool) {
+				completeType = "cancel"
+			}).AddReceive(GetSignalChannel(ctx, "completion"), func(c ReceiveChannel, more bool) {
+				c.Receive(ctx, &completeType)
+			}).Select(ctx)
+
+			if completeType == "cancel" {
+				return 0, ctx.Err()
+			} else if completeType == "complete" {
+				return ranUpdates, nil
+			} else if completeType == "failure" {
+				return 0, errors.New("test workflow failed")
+			} else if completeType == "continue-as-new" {
+				return 0, NewContinueAsNewError(ctx, "continue-as-new", nil)
+			} else {
+				panic("unknown completion type")
+			}
+		})
+		err := env.GetWorkflowError()
+		if err != nil {
+			return 0, err
+		}
+		var result int
+		require.NoError(t, env.GetWorkflowResult(&result))
+		return result, nil
+	}
+	// parseLogs parses the logs from the buffer and returns the logs as a slice of maps
+	parseLogs := func(buf *bytes.Buffer) []map[string]any {
+		var ms []map[string]any
+		for _, line := range bytes.Split(buf.Bytes(), []byte{'\n'}) {
+			if len(line) == 0 {
+				continue
+			}
+			var m map[string]any
+			err := json.Unmarshal(line, &m)
+			require.NoError(t, err)
+			fmt.Println(m)
+			ms = append(ms, m)
+		}
+		return ms
+	}
+	// parseWarnedUpdates parses the warned updates from the logs and returns them as a slice of maps
+	parseWarnedUpdates := func(updates interface{}) []map[string]interface{} {
+		var warnedUpdates []map[string]interface{}
+		for _, update := range updates.([]interface{}) {
+			warnedUpdates = append(warnedUpdates, update.(map[string]interface{}))
+		}
+		return warnedUpdates
+
+	}
+	// assertExpectedLogs asserts that the logs in the buffer are as expected
+	assertExpectedLogs := func(t *testing.T, buf *bytes.Buffer) {
+		logs := parseLogs(buf)
+		require.Len(t, logs, 1)
+		require.Equal(t, unhandledUpdateWarningMessage, logs[0]["msg"])
+		warnedUpdates := parseWarnedUpdates(logs[0]["Updates"])
+		require.Len(t, warnedUpdates, 2)
+		// Order of updates is not guaranteed
+		require.Equal(t, "update", warnedUpdates[0]["name"])
+		require.True(t, warnedUpdates[0]["id"] == "id_1" || warnedUpdates[0]["id"] == "id_2")
+		require.Equal(t, "update", warnedUpdates[1]["name"])
+		require.True(t, warnedUpdates[1]["id"] != warnedUpdates[0]["id"])
+		require.True(t, warnedUpdates[1]["id"] == "id_1" || warnedUpdates[1]["id"] == "id_2")
+	}
+
+	t.Run("complete", func(t *testing.T) {
+		var buf bytes.Buffer
+		result, err := runWf("complete", &buf)
+		require.NoError(t, err)
+		require.Equal(t, 2, result)
+		assertExpectedLogs(t, &buf)
+	})
+	t.Run("cancel", func(t *testing.T) {
+		var buf bytes.Buffer
+		_, err := runWf("cancel", &buf)
+		require.Error(t, err)
+		assertExpectedLogs(t, &buf)
+	})
+	t.Run("failure", func(t *testing.T) {
+		var buf bytes.Buffer
+		_, err := runWf("failure", &buf)
+		require.Error(t, err)
+		assertExpectedLogs(t, &buf)
+	})
+	t.Run("continue-as-new", func(t *testing.T) {
+		var buf bytes.Buffer
+		_, err := runWf("continue-as-new", &buf)
+		require.Error(t, err)
+		assertExpectedLogs(t, &buf)
+	})
 }
 
 func TestWorkflowStartTimeInsideTestWorkflow(t *testing.T) {
