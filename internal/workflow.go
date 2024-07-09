@@ -68,6 +68,13 @@ var (
 type (
 	// SendChannel is a write only view of the Channel
 	SendChannel interface {
+		// Name returns the name of the Channel.
+		// If the Channel was retrieved from a GetSignalChannel call, Name returns the signal name.
+		//
+		// A Channel created without an explicit name will use a generated name by the SDK and
+		// is not deterministic.
+		Name() string
+
 		// Send blocks until the data is sent.
 		Send(ctx Context, v interface{})
 
@@ -80,6 +87,13 @@ type (
 
 	// ReceiveChannel is a read only view of the Channel
 	ReceiveChannel interface {
+		// Name returns the name of the Channel.
+		// If the Channel was retrieved from a GetSignalChannel call, Name returns the signal name.
+		//
+		// A Channel created without an explicit name will use a generated name by the SDK and
+		// is not deterministic.
+		Name() string
+
 		// Receive blocks until it receives a value, and then assigns the received value to the provided pointer.
 		// Returns false when Channel is closed.
 		// Parameter valuePtr is a pointer to the expected data structure to be received. For example:
