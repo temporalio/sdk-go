@@ -430,6 +430,12 @@ func TestChannelName(t *testing.T) {
 		ch2 := NewNamedChannel(ctx, namedChannel)
 		assert.Equal(t, namedChannel, ch2.Name())
 
+		var receiveChannel ReceiveChannel = ch2
+		assert.Equal(t, namedChannel, receiveChannel.Name())
+
+		var sendChannel SendChannel = ch2
+		assert.Equal(t, namedChannel, sendChannel.Name())
+
 		const signalChannel = "signal-channel"
 		ch3 := GetSignalChannel(ctx, signalChannel)
 		assert.Equal(t, signalChannel, ch3.Name())
