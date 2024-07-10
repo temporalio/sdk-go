@@ -48,6 +48,7 @@ import (
 
 // TaskReachability specifies which category of tasks may reach a worker on a versioned task queue.
 // Used both in a reachability query and its response.
+//
 // Deprecated: Use [BuildIDTaskReachability]
 type TaskReachability = internal.TaskReachability
 
@@ -276,50 +277,61 @@ type (
 	GetWorkflowUpdateHandleOptions = internal.GetWorkflowUpdateHandleOptions
 
 	// UpdateWorkerBuildIdCompatibilityOptions is the input to Client.UpdateWorkerBuildIdCompatibility.
+	//
 	// Deprecated: Use [UpdateWorkerVersioningRulesOptions] with the new worker versioning api.
 	UpdateWorkerBuildIdCompatibilityOptions = internal.UpdateWorkerBuildIdCompatibilityOptions
 
 	// GetWorkerBuildIdCompatibilityOptions is the input to Client.GetWorkerBuildIdCompatibility.
+	//
 	// Deprecated: Use [GetWorkerVersioningOptions] with the new worker versioning api.
 	GetWorkerBuildIdCompatibilityOptions = internal.GetWorkerBuildIdCompatibilityOptions
 
 	// WorkerBuildIDVersionSets is the response for Client.GetWorkerBuildIdCompatibility.
+	//
 	// Deprecated: Replaced by the new worker versioning api.
 	WorkerBuildIDVersionSets = internal.WorkerBuildIDVersionSets
 
 	// BuildIDOpAddNewIDInNewDefaultSet is an operation for UpdateWorkerBuildIdCompatibilityOptions
 	// to add a new BuildID in a new default set.
+	//
 	// Deprecated: Replaced by the new worker versioning api.
 	BuildIDOpAddNewIDInNewDefaultSet = internal.BuildIDOpAddNewIDInNewDefaultSet
 
 	// BuildIDOpAddNewCompatibleVersion is an operation for UpdateWorkerBuildIdCompatibilityOptions
 	// to add a new BuildID to an existing compatible set.
+	//
 	// Deprecated: Replaced by the new worker versioning api.
 	BuildIDOpAddNewCompatibleVersion = internal.BuildIDOpAddNewCompatibleVersion
 
 	// BuildIDOpPromoteSet is an operation for UpdateWorkerBuildIdCompatibilityOptions to promote a
 	// set to be the default set by targeting an existing BuildID.
+	//
 	// Deprecated: Replaced by the new worker versioning api.
 	BuildIDOpPromoteSet = internal.BuildIDOpPromoteSet
 
 	// BuildIDOpPromoteIDWithinSet is an operation for UpdateWorkerBuildIdCompatibilityOptions to
 	// promote a BuildID within a set to be the default.
+	//
 	// Deprecated: Replaced by the new worker versioning api.
 	BuildIDOpPromoteIDWithinSet = internal.BuildIDOpPromoteIDWithinSet
 
 	// GetWorkerTaskReachabilityOptions is the input to Client.GetWorkerTaskReachability.
+	//
 	// Deprecated: Use [DescribeTaskQueueEnhancedOptions] with the new worker versioning api.
 	GetWorkerTaskReachabilityOptions = internal.GetWorkerTaskReachabilityOptions
 
 	// WorkerTaskReachability is the response for Client.GetWorkerTaskReachability.
+	//
 	// Deprecated: Replaced by the new worker versioning api.
 	WorkerTaskReachability = internal.WorkerTaskReachability
 
 	// BuildIDReachability describes the reachability of a buildID
+	//
 	// Deprecated: Replaced by the new worker versioning api.
 	BuildIDReachability = internal.BuildIDReachability
 
 	// TaskQueueReachability Describes how the Build ID may be reachable from the task queue.
+	//
 	// Deprecated: Replaced by the new worker versioning api.
 	TaskQueueReachability = internal.TaskQueueReachability
 
@@ -766,16 +778,19 @@ type (
 		// UpdateWorkerBuildIdCompatibility
 		// Allows you to update the worker-build-id based version sets for a particular task queue. This is used in
 		// conjunction with workers who specify their build id and thus opt into the feature.
+		//
 		// Deprecated: Use [UpdateWorkerVersioningRules] with the versioning api.
 		UpdateWorkerBuildIdCompatibility(ctx context.Context, options *UpdateWorkerBuildIdCompatibilityOptions) error
 
 		// GetWorkerBuildIdCompatibility
 		// Returns the worker-build-id based version sets for a particular task queue.
+		//
 		// Deprecated: Use [GetWorkerVersioningRules] with the versioning api.
 		GetWorkerBuildIdCompatibility(ctx context.Context, options *GetWorkerBuildIdCompatibilityOptions) (*WorkerBuildIDVersionSets, error)
 
 		// GetWorkerTaskReachability
 		// Returns which versions are is still in use by open or closed workflows
+		//
 		// Deprecated: Use [DescribeTaskQueueEnhanced] with the versioning api.
 		GetWorkerTaskReachability(ctx context.Context, options *GetWorkerTaskReachabilityOptions) (*WorkerTaskReachability, error)
 
