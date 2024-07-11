@@ -38,11 +38,15 @@ const (
 	// VersioningIntentCompatible indicates that the command should run on a worker with compatible
 	// version if possible. It may not be possible if the target task queue does not also have
 	// knowledge of the current worker's build ID.
+	//
 	// Deprecated: This has the same effect as [VersioningIntentInheritBuildID], use that instead.
+	//lint:ignore SA1019 ignore for SDK
 	VersioningIntentCompatible = internal.VersioningIntentCompatible
 	// VersioningIntentDefault indicates that the command should run on the target task queue's
 	// current overall-default build ID.
+	//
 	// Deprecated: This has the same effect as [VersioningIntentUseAssignmentRules], use that instead.
+	//lint:ignore SA1019 ignore for SDK
 	VersioningIntentDefault = internal.VersioningIntentDefault
 	// VersioningIntentInheritBuildID indicates the command should inherit the current Build ID of the
 	// Workflow triggering it, and not use Assignment Rules. (Redirect Rules are still applicable)

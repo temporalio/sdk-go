@@ -513,6 +513,7 @@ func (e *TestWorkflowEnvironment) OnGetVersion(changeID string, minSupported, ma
 // OnUpsertSearchAttributes setup a mock for workflow.UpsertSearchAttributes call.
 // If mock is not setup, the UpsertSearchAttributes call will only validate input attributes.
 // If mock is setup, all UpsertSearchAttributes calls in workflow have to be mocked.
+//
 // Deprecated: use OnUpsertTypedSearchAttributes instead.
 func (e *TestWorkflowEnvironment) OnUpsertSearchAttributes(attributes interface{}) *MockCallWrapper {
 	call := e.workflowMock.On(mockMethodForUpsertSearchAttributes, attributes)
@@ -954,6 +955,7 @@ func (e *TestWorkflowEnvironment) SetMemoOnStart(memo map[string]interface{}) er
 }
 
 // SetSearchAttributesOnStart sets the search attributes when start workflow.
+//
 // Deprecated: Use SetTypedSearchAttributes instead.
 func (e *TestWorkflowEnvironment) SetSearchAttributesOnStart(searchAttributes map[string]interface{}) error {
 	attr, err := serializeUntypedSearchAttributes(searchAttributes)

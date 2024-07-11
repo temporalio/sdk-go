@@ -321,6 +321,8 @@ func (_m *Client) GetSearchAttributes(ctx context.Context) (*workflowservice.Get
 }
 
 // GetWorkerBuildIdCompatibility provides a mock function with given fields: ctx, options
+//
+//lint:ignore SA1019 ignore for SDK
 func (_m *Client) GetWorkerBuildIdCompatibility(ctx context.Context, options *client.GetWorkerBuildIdCompatibilityOptions) (*client.WorkerBuildIDVersionSets, error) {
 	ret := _m.Called(ctx, options)
 
@@ -328,19 +330,23 @@ func (_m *Client) GetWorkerBuildIdCompatibility(ctx context.Context, options *cl
 		panic("no return value specified for GetWorkerBuildIdCompatibility")
 	}
 
+	//lint:ignore SA1019 ignore for SDK mocks
 	var r0 *client.WorkerBuildIDVersionSets
 	var r1 error
+	//lint:ignore SA1019 ignore for SDK mocks
 	if rf, ok := ret.Get(0).(func(context.Context, *client.GetWorkerBuildIdCompatibilityOptions) (*client.WorkerBuildIDVersionSets, error)); ok {
 		return rf(ctx, options)
 	}
+	//lint:ignore SA1019 ignore for SDK mocks
 	if rf, ok := ret.Get(0).(func(context.Context, *client.GetWorkerBuildIdCompatibilityOptions) *client.WorkerBuildIDVersionSets); ok {
 		r0 = rf(ctx, options)
 	} else {
 		if ret.Get(0) != nil {
+			//lint:ignore SA1019 ignore for SDK mocks
 			r0 = ret.Get(0).(*client.WorkerBuildIDVersionSets)
 		}
 	}
-
+	//lint:ignore SA1019 ignore for SDK
 	if rf, ok := ret.Get(1).(func(context.Context, *client.GetWorkerBuildIdCompatibilityOptions) error); ok {
 		r1 = rf(ctx, options)
 	} else {
@@ -351,26 +357,31 @@ func (_m *Client) GetWorkerBuildIdCompatibility(ctx context.Context, options *cl
 }
 
 // GetWorkerTaskReachability provides a mock function with given fields: ctx, options
+//
+//lint:ignore SA1019 ignore for SDK mocks
 func (_m *Client) GetWorkerTaskReachability(ctx context.Context, options *client.GetWorkerTaskReachabilityOptions) (*client.WorkerTaskReachability, error) {
 	ret := _m.Called(ctx, options)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetWorkerTaskReachability")
 	}
-
+	//lint:ignore SA1019 ignore for SDK mocks
 	var r0 *client.WorkerTaskReachability
 	var r1 error
+	//lint:ignore SA1019 ignore for SDK mocks
 	if rf, ok := ret.Get(0).(func(context.Context, *client.GetWorkerTaskReachabilityOptions) (*client.WorkerTaskReachability, error)); ok {
 		return rf(ctx, options)
 	}
+	//lint:ignore SA1019 ignore for SDK mocks
 	if rf, ok := ret.Get(0).(func(context.Context, *client.GetWorkerTaskReachabilityOptions) *client.WorkerTaskReachability); ok {
 		r0 = rf(ctx, options)
 	} else {
 		if ret.Get(0) != nil {
+			//lint:ignore SA1019 ignore for SDK mocks
 			r0 = ret.Get(0).(*client.WorkerTaskReachability)
 		}
 	}
-
+	//lint:ignore SA1019 ignore for SDK mocks
 	if rf, ok := ret.Get(1).(func(context.Context, *client.GetWorkerTaskReachabilityOptions) error); ok {
 		r1 = rf(ctx, options)
 	} else {
@@ -868,6 +879,8 @@ func (_m *Client) TerminateWorkflow(ctx context.Context, workflowID string, runI
 }
 
 // UpdateWorkerBuildIdCompatibility provides a mock function with given fields: ctx, options
+//
+//lint:ignore SA1019 ignore for SDK mocks
 func (_m *Client) UpdateWorkerBuildIdCompatibility(ctx context.Context, options *client.UpdateWorkerBuildIdCompatibilityOptions) error {
 	ret := _m.Called(ctx, options)
 
@@ -876,6 +889,7 @@ func (_m *Client) UpdateWorkerBuildIdCompatibility(ctx context.Context, options 
 	}
 
 	var r0 error
+	//lint:ignore SA1019 ignore for SDK mocks
 	if rf, ok := ret.Get(0).(func(context.Context, *client.UpdateWorkerBuildIdCompatibilityOptions) error); ok {
 		r0 = rf(ctx, options)
 	} else {
