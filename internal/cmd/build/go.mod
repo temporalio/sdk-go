@@ -1,6 +1,8 @@
 module go.temporal.io/sdk/internal/cmd/build
 
-go 1.20
+go 1.21
+
+toolchain go1.22.4
 
 require (
 	github.com/BurntSushi/toml v1.3.2
@@ -15,8 +17,10 @@ require (
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/gorilla/mux v1.8.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.20.0 // indirect
+	github.com/nexus-rpc/sdk-go v0.0.8-0.20240617225139-cd9d6c50e99d // indirect
 	github.com/pborman/uuid v1.2.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/robfig/cron v1.2.0 // indirect
