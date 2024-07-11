@@ -531,16 +531,17 @@ func NewSemaphore(ctx Context, n int64) Semaphore {
 	return &semaphoreImpl{size: n}
 }
 
-// Go creates a new coroutine. It has similar semantic to goroutine in a context of the workflow.
+// Go creates a new coroutine in workflow code. It has similar semantics to native goroutines, but these must not be
+// used in workflow code.
 func Go(ctx Context, f func(ctx Context)) {
 	assertNotInReadOnlyState(ctx)
 	state := getState(ctx)
 	state.dispatcher.interceptor.Go(ctx, "", f)
 }
 
-// GoNamed creates a new coroutine with a given human readable name.
-// It has similar semantic to goroutine in a context of the workflow.
-// Name appears in stack traces that are blocked on this Channel.
+// GoNamed creates a new coroutine in workflow code, with a given human-readable name. It has similar semantics to
+// native goroutines, but these must not be used in workflow code. Name appears in stack traces that are blocked on this
+// Channel.
 func GoNamed(ctx Context, name string, f func(ctx Context)) {
 	assertNotInReadOnlyState(ctx)
 	state := getState(ctx)
