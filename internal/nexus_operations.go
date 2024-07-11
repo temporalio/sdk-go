@@ -12,15 +12,18 @@ import (
 	nexuspb "go.temporal.io/api/nexus/v1"
 	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/workflowservice/v1"
+
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 )
 
 // NexusOperationContext is an internal only struct that holds fields used by the temporalnexus functions.
 type NexusOperationContext struct {
-	Client    Client
-	TaskQueue string
-	Log       log.Logger
+	Client         Client
+	TaskQueue      string
+	MetricsHandler metrics.Handler
+	Log            log.Logger
 }
 
 type nexusOperationContextKeyType struct{}

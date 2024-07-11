@@ -22,10 +22,21 @@ import (
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/api/common/v1"
+
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/workflow"
 )
+
+// GetMetricsHandler returns a metrics handler to be used in a Nexus operation's context.
+func GetMetricsHandler(ctx context.Context) metrics.Handler {
+	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
+	if !ok {
+		panic("temporalnexus GetMetricsHandler: Not a valid Nexus context")
+	}
+	return nctx.MetricsHandler
+}
 
 type syncOperation[I, O any] struct {
 	nexus.UnimplementedOperation[I, O]

@@ -14,6 +14,7 @@ import (
 	"go.temporal.io/api/common/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
 	"go.temporal.io/api/workflowservice/v1"
+
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
@@ -87,14 +88,19 @@ func (h *nexusTaskHandler) Execute(task *workflowservice.PollNexusTaskQueueRespo
 }
 
 func (h *nexusTaskHandler) execute(task *workflowservice.PollNexusTaskQueueResponse) (*nexuspb.Response, *nexuspb.HandlerError, error) {
+	metricsHandler, handlerErr := h.metricsHandlerForTask(task)
+	if handlerErr != nil {
+		return nil, handlerErr, nil
+	}
 	log, handlerErr := h.loggerForTask(task)
 	if handlerErr != nil {
 		return nil, handlerErr, nil
 	}
 	nctx := &NexusOperationContext{
-		Client:    h.client,
-		TaskQueue: h.taskQueueName,
-		Log:       log,
+		Client:         h.client,
+		TaskQueue:      h.taskQueueName,
+		MetricsHandler: metricsHandler,
+		Log:            log,
 	}
 	header := nexus.Header(task.GetRequest().GetHeader())
 	if header == nil {
