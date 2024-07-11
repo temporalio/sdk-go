@@ -128,8 +128,8 @@ type (
 		// json.Unmarshal.
 		ReceiveAsync(valuePtr interface{}) (ok bool)
 
-		// ReceiveAsyncWithMoreFlag is the same as ReceiveAsync but with an extra return value `more` that indicates
-		// whether the channel contains more data. `more` is false when the channel is closed.
+		// ReceiveAsyncWithMoreFlag is the same as ReceiveAsync but with an extra return value more that indicates
+		// whether the channel contains more data. more is false when the channel is closed.
 		//
 		// Note, values should not be reused for extraction here because merging on top of existing values may result in
 		// unexpected behavior similar to json.Unmarshal.
@@ -146,7 +146,7 @@ type (
 		ReceiveChannel
 	}
 
-	// Selector must be used by workflow code instead of native go `select`.
+	// Selector must be used by workflow code instead of native go select.
 	// Use workflow.NewSelector(ctx) to create a selector.
 	Selector interface {
 		// AddReceive registers a callback function to be called when a channel has a message to receive.
@@ -531,7 +531,7 @@ func NewSemaphore(ctx Context, n int64) Semaphore {
 	return &semaphoreImpl{size: n}
 }
 
-// Go creates a new coroutine in workflow code. It has similar semantics to native goroutines, but these must not be
+// Go creates a new coroutine in workflow code. It has similar semantics to native goroutines, which must not be
 // used in workflow code.
 func Go(ctx Context, f func(ctx Context)) {
 	assertNotInReadOnlyState(ctx)
@@ -540,7 +540,7 @@ func Go(ctx Context, f func(ctx Context)) {
 }
 
 // GoNamed creates a new coroutine in workflow code, with a given human-readable name. It has similar semantics to
-// native goroutines, but these must not be used in workflow code. Name appears in stack traces that are blocked on this
+// native goroutines, which must not be used in workflow code. name appears in stack traces that are blocked on this
 // Channel.
 func GoNamed(ctx Context, name string, f func(ctx Context)) {
 	assertNotInReadOnlyState(ctx)

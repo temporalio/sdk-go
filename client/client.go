@@ -527,7 +527,7 @@ type (
 
 		// SignalWorkflow sends a signals to a running workflow.
 		// - workflow ID of the workflow.
-		// - runID can be default(empty string). If empty string then it will pick the running execution of that workflow ID.
+		// - runID can be default(empty string). If set to empty string, then it will pick the running execution of that workflow ID.
 		// - signalName name to identify the signal.
 		// The errors it can return:
 		//  - serviceerror.NotFound
