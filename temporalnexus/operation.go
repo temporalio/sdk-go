@@ -26,6 +26,7 @@ import (
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -36,6 +37,15 @@ func GetMetricsHandler(ctx context.Context) metrics.Handler {
 		panic("temporalnexus GetMetricsHandler: Not a valid Nexus context")
 	}
 	return nctx.MetricsHandler
+}
+
+// GetLogger returns a logger to be used in a Nexus operation's context.
+func GetLogger(ctx context.Context) log.Logger {
+	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
+	if !ok {
+		panic("temporalnexus GetLogger: Not a valid Nexus context")
+	}
+	return nctx.Log
 }
 
 type syncOperation[I, O any] struct {

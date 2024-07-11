@@ -41,6 +41,7 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
 	"go.temporal.io/api/operatorservice/v1"
+
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
@@ -312,6 +313,11 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 	tc := newTestContext(t, ctx)
 
 	op := temporalnexus.NewSyncOperation("op", func(ctx context.Context, c client.Client, outcome string, o nexus.StartOperationOptions) (string, error) {
+		require.NotPanicsf(t, func() {
+			temporalnexus.GetMetricsHandler(ctx)
+			temporalnexus.GetLogger(ctx)
+		}, "Failed to get metrics handler or logger from operation context.")
+
 		switch outcome {
 		case "successful":
 			return outcome, nil
@@ -434,6 +440,11 @@ func TestAsyncOperationFromWorkflow(t *testing.T) {
 		}
 	}
 	op := temporalnexus.NewWorkflowRunOperation("op", handlerWorkflow, func(ctx context.Context, action string, soo nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+		require.NotPanicsf(t, func() {
+			temporalnexus.GetMetricsHandler(ctx)
+			temporalnexus.GetLogger(ctx)
+		}, "Failed to get metrics handler or logger from operation context.")
+
 		if action == "fail-to-start" {
 			return client.StartWorkflowOptions{}, nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, "fake internal error")
 		}
@@ -663,6 +674,11 @@ func TestReplay(t *testing.T) {
 
 func TestWorkflowTestSuite_NexusSyncOperation(t *testing.T) {
 	op := nexus.NewSyncOperation("op", func(ctx context.Context, outcome string, opts nexus.StartOperationOptions) (string, error) {
+		require.NotPanicsf(t, func() {
+			temporalnexus.GetMetricsHandler(ctx)
+			temporalnexus.GetLogger(ctx)
+		}, "Failed to get metrics handler or logger from operation context.")
+
 		switch outcome {
 		case "ok":
 			return outcome, nil
@@ -751,6 +767,11 @@ func TestWorkflowTestSuite_WorkflowRunOperation(t *testing.T) {
 		"op",
 		handlerWF,
 		func(ctx context.Context, id string, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+			require.NotPanicsf(t, func() {
+				temporalnexus.GetMetricsHandler(ctx)
+				temporalnexus.GetLogger(ctx)
+			}, "Failed to get metrics handler or logger from operation context.")
+
 			return client.StartWorkflowOptions{ID: opts.RequestID}, nil
 		})
 

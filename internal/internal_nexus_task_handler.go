@@ -301,6 +301,7 @@ func (h *nexusTaskHandler) loggerForTask(response *workflowservice.PollNexusTask
 	return log.With(h.logger,
 		tagNexusService, service,
 		tagNexusOperation, operation,
+		tagTaskQueue, h.taskQueueName,
 	), nil
 }
 
