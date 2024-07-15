@@ -1458,7 +1458,7 @@ func (ts *IntegrationTestSuite) TestUpdateInfo() {
 	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-update-info"), ts.workflows.UpdateInfoWorkflow)
 	ts.Nil(err)
-	// Send an update request with a know update ID
+	// Send an update request with a known update ID
 	handler, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
 		UpdateID:     "testID",
 		WorkflowID:   run.GetID(),
@@ -1467,7 +1467,7 @@ func (ts *IntegrationTestSuite) TestUpdateInfo() {
 		WaitForStage: client.WorkflowUpdateStageCompleted,
 	})
 	ts.NoError(err)
-	// Verify the upate handler can access the update info and return the updateID
+	// Verify the update handler can access the update info and return the updateID
 	var result string
 	ts.NoError(handler.Get(ctx, &result))
 	ts.Equal("testID", result)
