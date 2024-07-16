@@ -303,6 +303,67 @@ func TestWorkflowIDUpdateWorkflowByID(t *testing.T) {
 	require.Equal(t, "input", str)
 }
 
+func TestChildWorkflowUpdate(t *testing.T) {
+	var suite WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	wfID := "fake_workflow_id"
+	env.SetStartWorkflowOptions(StartWorkflowOptions{
+		ID: wfID,
+	})
+	env.RegisterDelayedCallback(func() {
+		err := env.UpdateWorkflowByID("child-workflow", "child-handler", "1", &updateCallback{
+			accept: func() {
+			},
+			reject: func(err error) {
+				require.Fail(t, "update failed", err)
+			},
+			complete: func(result interface{}, err error) {
+				if err != nil {
+					require.Fail(t, "update failed", err)
+				}
+			},
+		}, nil)
+		assert.NoError(t, err)
+	}, time.Second*5)
+
+	env.RegisterWorkflow(updateChildWf)
+	env.RegisterWorkflow(updateParentWf)
+
+	env.ExecuteWorkflow(updateParentWf)
+	assert.NoError(t, env.GetWorkflowErrorByID(wfID))
+}
+
+func updateParentWf(ctx Context) error {
+	if err := SetUpdateHandler(ctx, "parent-handler", func(ctx Context, input interface{}) error {
+		return nil
+	}, UpdateHandlerOptions{}); err != nil {
+		return err
+	}
+
+	var childErr error
+	if err := ExecuteChildWorkflow(WithChildWorkflowOptions(ctx, ChildWorkflowOptions{
+		WorkflowID: "child-workflow",
+	}), updateChildWf).Get(ctx, &childErr); err != nil {
+		return err
+	}
+	return childErr
+}
+
+func updateChildWf(ctx Context) error {
+	var done bool
+	err := SetUpdateHandler(ctx, "child-handler", func(ctx Context, input interface{}) error {
+		done = true
+		return nil
+	}, UpdateHandlerOptions{})
+	if err != nil {
+		return err
+	}
+
+	return Await(ctx, func() bool {
+		return done
+	})
+}
+
 func TestWorkflowUpdateOrder(t *testing.T) {
 	var suite WorkflowTestSuite
 	// Test UpdateWorkflowByID works with custom ID
