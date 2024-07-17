@@ -1348,6 +1348,25 @@ func (ts *IntegrationTestSuite) TestWorkflowTypedSearchAttributes() {
 	ts.NoError(ts.executeWorkflowWithOption(options, ts.workflows.UpsertTypedSearchAttributesWorkflow, nil, false))
 }
 
+func (ts *IntegrationTestSuite) TestSignalWithStartWorkflowTypedSearchAttributes() {
+	wfID := "test-signal-with-start-wf-typed-search-attributes"
+	options := ts.startWorkflowOptions(wfID)
+	// Need to disable eager workflow start until https://github.com/temporalio/temporal/pull/5124 fixed
+	options.EnableEagerStart = false
+	// Create initial set of search attributes
+	stringKey := temporal.NewSearchAttributeKeyString("CustomStringField")
+	options.TypedSearchAttributes = temporal.NewSearchAttributes(stringKey.ValueSet("CustomStringFieldValue"))
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	run, err := ts.client.SignalWithStartWorkflow(ctx, wfID, "signal", "", options, ts.workflows.UpsertTypedSearchAttributesWorkflow, true)
+	ts.NoError(err)
+	ts.NoError(run.Get(ctx, nil))
+
+	run, err = ts.client.SignalWithStartWorkflow(ctx, wfID, "signal", "", options, ts.workflows.UpsertTypedSearchAttributesWorkflow, false)
+	ts.NoError(err)
+	ts.NoError(run.Get(ctx, nil))
+}
+
 func (ts *IntegrationTestSuite) TestChildWorkflowTypedSearchAttributes() {
 	options := ts.startWorkflowOptions("test-child-wf-typed-search-attributes")
 	// Need to disable eager workflow start until https://github.com/temporalio/temporal/pull/5124 fixed
