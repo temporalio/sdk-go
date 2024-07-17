@@ -2539,8 +2539,8 @@ func (env *testWorkflowEnvironmentImpl) updateWorkflowByID(workflowID, name, id 
 		if err != nil {
 			panic(err)
 		}
-		env.postCallback(func() {
-			env.updateHandler(name, id, data, nil, uc)
+		workflowHandle.env.postCallback(func() {
+			workflowHandle.env.updateHandler(name, id, data, nil, uc)
 		}, true)
 		return nil
 	}
