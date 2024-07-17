@@ -1710,7 +1710,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		return nil, err
 	}
 
-	searchAttr, err := serializeUntypedSearchAttributes(in.Options.SearchAttributes)
+	searchAttr, err := serializeSearchAttributes(in.Options.SearchAttributes, in.Options.TypedSearchAttributes)
 	if err != nil {
 		return nil, err
 	}
