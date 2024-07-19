@@ -30,6 +30,7 @@ import (
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/internal"
 
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/require"
@@ -53,7 +54,7 @@ func TestWorkerVersioningTestSuite(t *testing.T) {
 func (ts *WorkerVersioningTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
 	ts.workflows = &Workflows{}
-	ts.activities = &Activities{}
+	ts.activities = newActivities()
 	ts.NoError(ts.InitConfigAndNamespace())
 	ts.NoError(ts.InitClient())
 }
@@ -795,6 +796,72 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersionsWithRules() {
 	ts.Equal(client.BuildIDTaskReachability(client.BuildIDTaskReachabilityReachable), taskQueueVersionInfo.TaskReachability)
 }
 
+func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	fetchAndValidateStats := func(expectedWorkflowStats *client.TaskQueueStats, expectedActivityStats *client.TaskQueueStats) {
+		taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, client.DescribeTaskQueueEnhancedOptions{
+			TaskQueue: ts.taskQueueName,
+			TaskQueueTypes: []client.TaskQueueType{
+				client.TaskQueueTypeWorkflow,
+				client.TaskQueueTypeActivity,
+			},
+			ReportStats: true,
+		})
+		ts.NoError(err)
+		ts.Equal(1, len(taskQueueInfo.VersionsInfo))
+		ts.validateTaskQueueStats(expectedWorkflowStats, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats)
+		ts.validateTaskQueueStats(expectedActivityStats, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeActivity].Stats)
+	}
+
+	// Basic workflow runs two activities
+	handle, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("basic-wf"), ts.workflows.Basic)
+	ts.NoError(err)
+
+	// no workers yet, so only workflow should have a backlog
+	fetchAndValidateStats(
+		&client.TaskQueueStats{
+			ApproximateBacklogCount: 1,
+			ApproximateBacklogAge:   time.Millisecond,
+			TasksAddRate:            1,
+			TasksDispatchRate:       0,
+		},
+		&client.TaskQueueStats{
+			ApproximateBacklogCount: 0,
+			ApproximateBacklogAge:   0,
+			TasksAddRate:            0,
+			TasksDispatchRate:       0,
+		},
+	)
+
+	// run the worker
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{})
+	ts.workflows.register(worker1)
+	ts.activities.register(worker1)
+	ts.NoError(worker1.Start())
+	defer worker1.Stop()
+
+	// Wait for the wf to finish
+	ts.NoError(handle.Get(ctx, nil))
+
+	// backlogs should be empty but the rates should be non-zero
+	fetchAndValidateStats(
+		&client.TaskQueueStats{
+			ApproximateBacklogCount: 0,
+			ApproximateBacklogAge:   0,
+			TasksAddRate:            1,
+			TasksDispatchRate:       1,
+		},
+		&client.TaskQueueStats{
+			ApproximateBacklogCount: 0,
+			ApproximateBacklogAge:   0,
+			TasksAddRate:            1,
+			TasksDispatchRate:       1,
+		},
+	)
+}
+
 func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -970,4 +1037,29 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetimeWithR
 	ts.NoError(err)
 	ts.NoError(enval.Get(&lastBuildID))
 	ts.Equal("1.1", lastBuildID)
+}
+
+// validateTaskQueueStats compares expected vs actual stats. For age and rates, it treats all non-zero values the same.
+func (ts *WorkerVersioningTestSuite) validateTaskQueueStats(expected *client.TaskQueueStats, actual *internal.TaskQueueStats) {
+	if expected == nil {
+		ts.Nil(actual)
+		return
+	}
+	ts.NotNil(actual)
+	ts.Equal(expected.ApproximateBacklogCount, actual.ApproximateBacklogCount)
+	if expected.ApproximateBacklogAge == 0 {
+		ts.Equal(time.Duration(0), actual.ApproximateBacklogAge)
+	} else {
+		ts.Greater(actual.ApproximateBacklogAge, time.Duration(0))
+	}
+	if expected.TasksAddRate == 0 {
+		ts.Equal(float32(0), actual.TasksAddRate)
+	} else {
+		ts.Greater(actual.TasksAddRate, float32(0))
+	}
+	if expected.TasksDispatchRate == 0 {
+		ts.Equal(float32(0), actual.TasksDispatchRate)
+	} else {
+		ts.Greater(actual.TasksDispatchRate, float32(0))
+	}
 }
