@@ -202,55 +202,57 @@ func (t *testSuiteClientForNexusOperations) ExecuteWorkflow(ctx context.Context,
 		callback = options.callbacks[0]
 	}
 
-	t.env.executeChildWorkflowWithDelay(options.StartDelay, ExecuteWorkflowParams{
-		// Not propagating Header as this client does not support context propagation.
-		WorkflowType: wfType,
-		Input:        input,
-		WorkflowOptions: WorkflowOptions{
-			WaitForCancellation:      true,
-			Namespace:                t.env.workflowInfo.Namespace,
-			TaskQueueName:            t.env.workflowInfo.TaskQueueName,
-			WorkflowID:               options.ID,
-			WorkflowExecutionTimeout: options.WorkflowExecutionTimeout,
-			WorkflowRunTimeout:       options.WorkflowRunTimeout,
-			WorkflowTaskTimeout:      options.WorkflowTaskTimeout,
-			DataConverter:            t.env.dataConverter,
-			WorkflowIDReusePolicy:    options.WorkflowIDReusePolicy,
-			ContextPropagators:       t.env.contextPropagators,
-			SearchAttributes:         options.SearchAttributes,
-			TypedSearchAttributes:    options.TypedSearchAttributes,
-			ParentClosePolicy:        enums.PARENT_CLOSE_POLICY_ABANDON,
-			Memo:                     options.Memo,
-			CronSchedule:             options.CronSchedule,
-			RetryPolicy:              convertToPBRetryPolicy(options.RetryPolicy),
-		},
-	}, func(result *commonpb.Payloads, wfErr error) {
-		ncb := callback.GetNexus()
-		if ncb == nil {
-			return
-		}
-		seqStr := ncb.GetHeader()["operation-sequence"]
-		if seqStr == "" {
-			return
-		}
-		seq, err := strconv.ParseInt(seqStr, 10, 64)
-		if err != nil {
-			panic(fmt.Errorf("unexpected operation sequence in callback header: %s: %w", seqStr, err))
-		}
-
-		if wfErr != nil {
-			t.env.resolveNexusOperation(seq, nil, wfErr)
-		} else {
-			var payload *commonpb.Payload
-			if len(result.GetPayloads()) > 0 {
-				payload = result.Payloads[0]
+	t.env.postCallback(func() {
+		t.env.executeChildWorkflowWithDelay(options.StartDelay, ExecuteWorkflowParams{
+			// Not propagating Header as this client does not support context propagation.
+			WorkflowType: wfType,
+			Input:        input,
+			WorkflowOptions: WorkflowOptions{
+				WaitForCancellation:      true,
+				Namespace:                t.env.workflowInfo.Namespace,
+				TaskQueueName:            t.env.workflowInfo.TaskQueueName,
+				WorkflowID:               options.ID,
+				WorkflowExecutionTimeout: options.WorkflowExecutionTimeout,
+				WorkflowRunTimeout:       options.WorkflowRunTimeout,
+				WorkflowTaskTimeout:      options.WorkflowTaskTimeout,
+				DataConverter:            t.env.dataConverter,
+				WorkflowIDReusePolicy:    options.WorkflowIDReusePolicy,
+				ContextPropagators:       t.env.contextPropagators,
+				SearchAttributes:         options.SearchAttributes,
+				TypedSearchAttributes:    options.TypedSearchAttributes,
+				ParentClosePolicy:        enums.PARENT_CLOSE_POLICY_ABANDON,
+				Memo:                     options.Memo,
+				CronSchedule:             options.CronSchedule,
+				RetryPolicy:              convertToPBRetryPolicy(options.RetryPolicy),
+			},
+		}, func(result *commonpb.Payloads, wfErr error) {
+			ncb := callback.GetNexus()
+			if ncb == nil {
+				return
 			}
-			t.env.resolveNexusOperation(seq, payload, nil)
-		}
-	}, func(r WorkflowExecution, err error) {
-		run.WorkflowExecution = r
-		doneCh <- err
-	})
+			seqStr := ncb.GetHeader()["operation-sequence"]
+			if seqStr == "" {
+				return
+			}
+			seq, err := strconv.ParseInt(seqStr, 10, 64)
+			if err != nil {
+				panic(fmt.Errorf("unexpected operation sequence in callback header: %s: %w", seqStr, err))
+			}
+
+			if wfErr != nil {
+				t.env.resolveNexusOperation(seq, nil, wfErr)
+			} else {
+				var payload *commonpb.Payload
+				if len(result.GetPayloads()) > 0 {
+					payload = result.Payloads[0]
+				}
+				t.env.resolveNexusOperation(seq, payload, nil)
+			}
+		}, func(r WorkflowExecution, err error) {
+			run.WorkflowExecution = r
+			doneCh <- err
+		})
+	}, false)
 	err = <-doneCh
 	if err != nil {
 		return nil, err
