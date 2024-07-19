@@ -89,6 +89,7 @@ jobs:
         if: ${{ matrix.testDockerCompose }}
         run: go run . integration-test
         env:
+          # TODO(bergundy): Remove this flag once server is out 1.25.0.
           DISABLE_NEXUS_TESTS: "1"
         working-directory: ./internal/cmd/build
 
