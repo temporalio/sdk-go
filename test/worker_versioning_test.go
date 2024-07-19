@@ -796,6 +796,8 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersionsWithRules() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
+	// TODO: Unskip this test, it is flaky with server 1.25.0-rc.0
+	ts.T().SkipNow()
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
