@@ -139,6 +139,10 @@ func (b *builder) integrationTest() error {
 				HostPort:  "127.0.0.1:7233",
 				Namespace: "integration-test-namespace",
 			},
+			// TODO(bergundy): Remove this override after server 1.25.0 is released.
+			CachedDownload: testsuite.CachedDownload{
+				Version: "v0.14.0-nexus.0",
+			},
 			LogLevel: "warn",
 			ExtraArgs: []string{
 				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecution=true",
@@ -151,6 +155,11 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", "system.forceSearchAttributesCacheRefreshOnRead=true",
 				"--dynamic-config-value", "worker.buildIdScavengerEnabled=true",
 				"--dynamic-config-value", "worker.removableBuildIdDurationSinceDefault=1",
+				// All of the below is required for Nexus tests.
+				"--http-port", "7243",
+				"--dynamic-config-value", "system.enableNexus=true",
+				// SDK tests use arbitrary callback URLs, permit that on the server.
+				"--dynamic-config-value", `component.callbacks.allowedAddresses=[{"Pattern":"*","AllowInsecure":true}]`,
 			},
 		})
 		if err != nil {

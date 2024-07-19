@@ -980,13 +980,13 @@ func (aw *AggregatedWorker) RegisterNexusService(service *nexus.Service) {
 // Start the worker in a non-blocking fashion.
 // The actual work is done in the memoized "start" function to ensure duplicate calls are returned a consistent error.
 func (aw *AggregatedWorker) Start() error {
+	aw.assertNotStopped()
 	return aw.memoizedStart()
 }
 
 // start the worker. This method is memoized using sync.OnceValue in memoizedStart.
 func (aw *AggregatedWorker) start() error {
 	aw.started.Store(true)
-	aw.assertNotStopped()
 
 	if err := initBinaryChecksum(); err != nil {
 		return fmt.Errorf("failed to get executable checksum: %v", err)

@@ -7,7 +7,7 @@ toolchain go1.21.1
 require (
 	github.com/golang/mock v1.6.0
 	github.com/google/uuid v1.6.0
-	github.com/nexus-rpc/sdk-go v0.0.8-0.20240617225139-cd9d6c50e99d
+	github.com/nexus-rpc/sdk-go v0.0.8
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/pborman/uuid v1.2.1
 	github.com/stretchr/testify v1.9.0

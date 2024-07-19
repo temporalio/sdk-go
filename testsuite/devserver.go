@@ -199,6 +199,7 @@ func downloadIfNeeded(ctx context.Context, options *DevServerOptions, logger log
 		return "", fmt.Errorf("unsupported architecture %v", arch)
 	}
 	infoURL := fmt.Sprintf("https://temporal.download/cli/%v?platform=%v&arch=%v&sdk-name=sdk-go&sdk-version=%v", url.QueryEscape(version), platform, arch, internal.SDKVersion)
+	fmt.Println(infoURL)
 
 	// Get info
 	info := struct {

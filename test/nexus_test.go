@@ -27,6 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -200,6 +201,9 @@ var workflowOp = temporalnexus.NewWorkflowRunOperation(
 )
 
 func TestNexusSyncOperation(t *testing.T) {
+	if os.Getenv("DISABLE_NEXUS_TESTS") != "" {
+		t.SkipNow()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
@@ -267,6 +271,9 @@ func TestNexusSyncOperation(t *testing.T) {
 }
 
 func TestNexusWorkflowRunOperation(t *testing.T) {
+	if os.Getenv("DISABLE_NEXUS_TESTS") != "" {
+		t.SkipNow()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -305,6 +312,9 @@ func TestNexusWorkflowRunOperation(t *testing.T) {
 }
 
 func TestSyncOperationFromWorkflow(t *testing.T) {
+	if os.Getenv("DISABLE_NEXUS_TESTS") != "" {
+		t.SkipNow()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -415,6 +425,9 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 }
 
 func TestAsyncOperationFromWorkflow(t *testing.T) {
+	if os.Getenv("DISABLE_NEXUS_TESTS") != "" {
+		t.SkipNow()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -575,6 +588,9 @@ func TestAsyncOperationFromWorkflow(t *testing.T) {
 }
 
 func TestReplay(t *testing.T) {
+	if os.Getenv("DISABLE_NEXUS_TESTS") != "" {
+		t.SkipNow()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 	tc := newTestContext(t, ctx)
