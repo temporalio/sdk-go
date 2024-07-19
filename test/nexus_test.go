@@ -261,9 +261,7 @@ func TestNexusSyncOperation(t *testing.T) {
 		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "panic", nexus.ExecuteOperationOptions{})
 		var unexpectedResponseErr *nexus.UnexpectedResponseError
 		require.ErrorAs(t, err, &unexpectedResponseErr)
-		// TODO(bergundy): Eventually we'll get rid of this special status and propagate error from worker.
-		// At that point this test will need to be modified.
-		require.Equal(t, 520, unexpectedResponseErr.Response.StatusCode)
+		require.Equal(t, 500, unexpectedResponseErr.Response.StatusCode)
 		require.Contains(t, unexpectedResponseErr.Message, "internal error")
 	})
 }
