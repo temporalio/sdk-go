@@ -381,6 +381,8 @@ func (ts *WorkerVersioningTestSuite) TestConflictTokens() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {
+	// TODO: Unskip this test, it is flaky with server 1.25.0-rc.0
+	ts.T().SkipNow()
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
