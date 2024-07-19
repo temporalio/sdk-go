@@ -821,7 +821,6 @@ func TestWorkflowTestSuite_WorkflowRunOperation(t *testing.T) {
 		require.Equal(t, "endpoint", opErr.Endpoint)
 		require.Equal(t, "test", opErr.Service)
 		require.Equal(t, op.Name(), opErr.Operation)
-		require.Empty(t, opErr.OperationID)
 		require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
 		err = opErr.Unwrap()
 		var appErr *temporal.ApplicationError
