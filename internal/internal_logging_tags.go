@@ -36,6 +36,7 @@ const (
 	tagWorkflowID                   = "WorkflowID"
 	tagWorkflowType                 = "WorkflowType"
 	tagWorkerID                     = "WorkerID"
+	tagBuildID                      = "BuildID"
 	tagWorkerType                   = "WorkerType"
 	tagSideEffectID                 = "SideEffectID"
 	tagChildWorkflowID              = "ChildWorkflowID"
