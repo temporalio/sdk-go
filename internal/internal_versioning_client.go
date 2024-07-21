@@ -172,7 +172,7 @@ type (
 	TaskQueueTypeInfo struct {
 		// Poller details for this task queue category.
 		Pollers []TaskQueuePollerInfo
-		Stats *TaskQueueStats
+		Stats   *TaskQueueStats
 	}
 
 	// TaskQueueVersionInfo includes task queue information per Build ID.
@@ -216,7 +216,7 @@ func (o *DescribeTaskQueueEnhancedOptions) validateAndConvertToProto(namespace s
 		TaskQueueTypes:         taskQueueTypes,
 		ReportPollers:          o.ReportPollers,
 		ReportTaskReachability: o.ReportTaskReachability,
-		ReportStats: o.ReportStats,
+		ReportStats:            o.ReportStats,
 	}
 
 	return opt, nil
@@ -263,7 +263,7 @@ func taskQueueTypeInfoFromResponse(response *taskqueuepb.TaskQueueTypeInfo) Task
 
 	return TaskQueueTypeInfo{
 		Pollers: pollers,
-		Stats: statsFromResponse(response.Stats),
+		Stats:   statsFromResponse(response.Stats),
 	}
 }
 
@@ -274,9 +274,9 @@ func statsFromResponse(stats *taskqueuepb.TaskQueueStats) *TaskQueueStats {
 
 	return &TaskQueueStats{
 		ApproximateBacklogCount: stats.GetApproximateBacklogCount(),
-		ApproximateBacklogAge: stats.GetApproximateBacklogAge().AsDuration(),
-		TasksAddRate: stats.TasksAddRate,
-		TasksDispatchRate: stats.TasksDispatchRate,
+		ApproximateBacklogAge:   stats.GetApproximateBacklogAge().AsDuration(),
+		TasksAddRate:            stats.TasksAddRate,
+		TasksDispatchRate:       stats.TasksDispatchRate,
 	}
 }
 

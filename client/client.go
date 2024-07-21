@@ -336,7 +336,6 @@ type (
 	TaskQueueReachability = internal.TaskQueueReachability
 
 	// DescribeTaskQueueEnhancedOptions is the input to [Client.DescribeTaskQueueEnhanced].
-	// WARNING: Worker versioning is currently experimental.
 	DescribeTaskQueueEnhancedOptions = internal.DescribeTaskQueueEnhancedOptions
 
 	// TaskQueueVersionSelection is a task queue filter based on versioning.
