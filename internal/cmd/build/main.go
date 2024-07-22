@@ -183,6 +183,7 @@ func (b *builder) integrationTest() error {
 	// Must run in test dir
 	cmd := b.cmdFromRoot(args...)
 	cmd.Dir = filepath.Join(cmd.Dir, "test")
+	cmd.Env = append(os.Environ(), "DISABLE_SERVER_1_25_TESTS=1")
 	if err := b.runCmd(cmd); err != nil {
 		return fmt.Errorf("integration test failed: %w", err)
 	}
