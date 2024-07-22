@@ -553,7 +553,11 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error),
 ) {
 	if params.WorkflowID == "" {
-		params.WorkflowID = wc.workflowInfo.WorkflowExecution.RunID + "_" + wc.GenerateSequenceID()
+		if wc.workflowInfo.OriginalRunID != "" {
+			params.WorkflowID = wc.workflowInfo.OriginalRunID + "_" + wc.GenerateSequenceID()
+		} else {
+			params.WorkflowID = wc.workflowInfo.WorkflowExecution.RunID + "_" + wc.GenerateSequenceID()
+		}
 	}
 	memo, err := getWorkflowMemo(params.Memo, wc.dataConverter)
 	if err != nil {
