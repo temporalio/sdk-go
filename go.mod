@@ -9,7 +9,7 @@ require (
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/mock v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
-	github.com/nexus-rpc/sdk-go v0.0.8
+	github.com/nexus-rpc/sdk-go v0.0.9
 	github.com/pborman/uuid v1.2.1
 	github.com/robfig/cron v1.2.0
 	github.com/stretchr/testify v1.9.0
@@ -19,8 +19,6 @@ require (
 	google.golang.org/grpc v1.65.0
 	google.golang.org/protobuf v1.34.2
 )
-
-require github.com/gorilla/mux v1.8.0 // indirect
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect

@@ -13,8 +13,7 @@ require (
 require (
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/gorilla/mux v1.8.0 // indirect
-	github.com/nexus-rpc/sdk-go v0.0.8 // indirect
+	github.com/nexus-rpc/sdk-go v0.0.9 // indirect
 )
 
 require (
