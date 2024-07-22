@@ -607,6 +607,10 @@ type (
 		// PageSize - How many results to fetch from the Server at a time.
 		// Optional: defaulted to 1000
 		PageSize int
+
+		// Query - Filter results using a SQL-like query.
+		// Optional
+		Query string
 	}
 
 	// ScheduleListIterator represents the interface for
