@@ -1583,7 +1583,6 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 	// run propagators to extract information about tracing and other stuff, store in headers field
 	startRequest := &workflowservice.StartWorkflowExecutionRequest{
 		Namespace:                w.client.namespace,
-		RequestId:                uuid.New(),
 		WorkflowId:               workflowID,
 		WorkflowType:             &commonpb.WorkflowType{Name: in.WorkflowType},
 		TaskQueue:                &taskqueuepb.TaskQueue{Name: in.Options.TaskQueue, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
@@ -1598,6 +1597,13 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		Memo:                     memo,
 		SearchAttributes:         searchAttr,
 		Header:                   header,
+		CompletionCallbacks:      in.Options.callbacks,
+	}
+
+	if in.Options.requestID != "" {
+		startRequest.RequestId = in.Options.requestID
+	} else {
+		startRequest.RequestId = uuid.New()
 	}
 
 	var eagerExecutor *eagerWorkflowExecutor

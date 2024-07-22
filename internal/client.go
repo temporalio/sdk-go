@@ -701,6 +701,11 @@ type (
 		// of the delay will be ignored. A signal from signal with start will not trigger a workflow task.
 		// Cannot be set the same time as a CronSchedule.
 		StartDelay time.Duration
+
+		// request ID. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
+		requestID string
+		// workflow completion callback. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
+		callbacks []*commonpb.Callback
 	}
 
 	// RetryPolicy defines the retry policy.
@@ -1119,3 +1124,15 @@ func (e *WorkflowUpdateServiceTimeoutOrCanceledError) Error() string {
 }
 
 func (e *WorkflowUpdateServiceTimeoutOrCanceledError) Unwrap() error { return e.cause }
+
+// SetRequestIDOnStartWorkflowOptions is an internal only method for setting a requestID on StartWorkflowOptions.
+// RequestID is purposefully not exposed to users for the time being.
+func SetRequestIDOnStartWorkflowOptions(opts *StartWorkflowOptions, requestID string) {
+	opts.requestID = requestID
+}
+
+// SetCallbacksOnStartWorkflowOptions is an internal only method for setting callbacks on StartWorkflowOptions.
+// Callbacks are purposefully not exposed to users for the time being.
+func SetCallbacksOnStartWorkflowOptions(opts *StartWorkflowOptions, callbacks []*commonpb.Callback) {
+	opts.callbacks = callbacks
+}

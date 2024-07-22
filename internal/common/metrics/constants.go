@@ -81,6 +81,12 @@ const (
 	StickyCacheSize                = TemporalMetricsPrefix + "sticky_cache_size"
 
 	WorkflowActiveThreadCount = TemporalMetricsPrefix + "workflow_active_thread_count"
+
+	NexusPollNoTaskCounter          = TemporalMetricsPrefix + "nexus_poll_no_task"
+	NexusTaskScheduleToStartLatency = TemporalMetricsPrefix + "nexus_task_schedule_to_start_latency"
+	NexusTaskExecutionFailedCounter = TemporalMetricsPrefix + "nexus_task_execution_failed"
+	NexusTaskExecutionLatency       = TemporalMetricsPrefix + "nexus_task_execution_latency"
+	NexusTaskEndToEndLatency        = TemporalMetricsPrefix + "nexus_task_endtoend_latency"
 )
 
 // Metric tag keys
@@ -91,6 +97,8 @@ const (
 	WorkerTypeTagName         = "worker_type"
 	WorkflowTypeNameTagName   = "workflow_type"
 	ActivityTypeNameTagName   = "activity_type"
+	NexusServiceTagName       = "nexus_service"
+	NexusOperationTagName     = "nexus_operation"
 	TaskQueueTagName          = "task_queue"
 	OperationTagName          = "operation"
 	CauseTagName              = "cause"
@@ -105,4 +113,5 @@ const (
 	PollerTypeWorkflowTask       = "workflow_task"
 	PollerTypeWorkflowStickyTask = "workflow_sticky_task"
 	PollerTypeActivityTask       = "activity_task"
+	PollerTypeNexusTask          = "nexus_task"
 )

@@ -2180,7 +2180,7 @@ func Test_NonDeterministicCheck(t *testing.T) {
 	// the command type count because the 1 ProtocolMessageCommand type can
 	// result in 3 different event types being created. As more protocols are
 	// added, this number will increase.
-	require.Equal(t, 17, commandEventTypeCount, "Every command type must have at least one matching event type. "+
+	require.Equal(t, 19, commandEventTypeCount, "Every command type must have at least one matching event type. "+
 		"If you add new command type, you need to update isCommandEvent() method to include that new event type as well.")
 }
 

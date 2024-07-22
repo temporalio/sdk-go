@@ -131,6 +131,11 @@ type (
 	// ChildWorkflowExecutionError returned from workflow when child workflow returned an error.
 	ChildWorkflowExecutionError = internal.ChildWorkflowExecutionError
 
+	// NexusOperationError is an error returned when a Nexus Operation has failed.
+	//
+	// NOTE: Experimental
+	NexusOperationError = internal.NexusOperationError
+
 	// ChildWorkflowExecutionAlreadyStartedError is set as the cause of
 	// ChildWorkflowExecutionError when failure is due the child workflow having
 	// already started.

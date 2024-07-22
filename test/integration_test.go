@@ -4935,6 +4935,10 @@ func (ts *IntegrationTestSuite) TestScheduleList() {
 	ts.GreaterOrEqual(5, len(events))
 	ts.NoError(err)
 
+	// TODO: unskip once https://github.com/temporalio/temporal/issues/6319 is fixed
+	if os.Getenv("DISABLE_SERVER_1_25_TESTS") != "" {
+		return
+	}
 	// query -- match
 	ts.Eventually(func() bool {
 		iter, err = ts.client.ScheduleClient().List(ctx, client.ScheduleListOptions{
