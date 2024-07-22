@@ -199,6 +199,7 @@ func (sc *scheduleClient) List(ctx context.Context, options ScheduleListOptions)
 			Namespace:       sc.workflowClient.namespace,
 			MaximumPageSize: int32(options.PageSize),
 			NextPageToken:   nextToken,
+			Query:           options.Query,
 		}
 
 		return sc.workflowClient.workflowService.ListSchedules(grpcCtx, request)

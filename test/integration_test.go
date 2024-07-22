@@ -4896,13 +4896,19 @@ func (ts *IntegrationTestSuite) TestScheduleBackfill() {
 func (ts *IntegrationTestSuite) TestScheduleList() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	stringKey := temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
+
 	for i := 0; i < 5; i++ {
 		scheduleID := fmt.Sprintf("test-schedule-list-schedule-%d", i)
 		workflowID := fmt.Sprintf("test-schedule-list-workflow-%d", i)
+		attrId := stringKey.ValueSet(fmt.Sprintf("TestScheduleList-%d", i))
+
 		// Create a paused workflow
 		handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
-			ID:   scheduleID,
-			Spec: client.ScheduleSpec{},
+			ID:                    scheduleID,
+			Spec:                  client.ScheduleSpec{},
+			TypedSearchAttributes: temporal.NewSearchAttributes(attrId),
 			Action: &client.ScheduleWorkflowAction{
 				Workflow:                 ts.workflows.SimplestWorkflow,
 				ID:                       workflowID,
@@ -4928,6 +4934,30 @@ func (ts *IntegrationTestSuite) TestScheduleList() {
 	}
 	ts.GreaterOrEqual(5, len(events))
 	ts.NoError(err)
+
+	// query -- match
+	ts.Eventually(func() bool {
+		iter, err = ts.client.ScheduleClient().List(ctx, client.ScheduleListOptions{
+			PageSize: 1,
+			Query:    "CustomKeywordField = 'TestScheduleList-1'",
+		})
+		ts.NoError(err)
+		count := 0
+		for iter.HasNext() {
+			_, err = iter.Next()
+			ts.Nil(err)
+			count++
+		}
+		return count == 1
+	}, 10*time.Second, 100*time.Millisecond)
+
+	// query -- no match
+	iter, err = ts.client.ScheduleClient().List(ctx, client.ScheduleListOptions{
+		PageSize: 1,
+		Query:    "CustomKeywordField = 'TestScheduleList-DOES_NOT_EXIST'",
+	})
+	ts.NoError(err)
+	ts.False(iter.HasNext())
 }
 
 func (ts *IntegrationTestSuite) TestScheduleUpdate() {
