@@ -52,6 +52,7 @@ import (
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/api/workflowservice/v1"
+
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/retry"
@@ -1158,6 +1159,22 @@ func (wc *WorkflowClient) UpdateWorkflow(
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return nil, err
 	}
+
+	in, err := wc.convertToUpdateWorkflowInput(opt)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set header before interceptor run
+	ctx = contextWithNewHeader(ctx)
+
+	// Run via interceptor
+	return wc.interceptor.UpdateWorkflow(ctx, in)
+}
+
+func (wc *WorkflowClient) convertToUpdateWorkflowInput(
+	opt UpdateWorkflowOptions,
+) (*ClientUpdateWorkflowInput, error) {
 	// Default update ID
 	updateID := opt.UpdateID
 	if updateID == "" {
@@ -1172,9 +1189,7 @@ func (wc *WorkflowClient) UpdateWorkflow(
 		return nil, errors.New("WaitForStage WorkflowUpdateStageAdmitted is not supported")
 	}
 
-	ctx = contextWithNewHeader(ctx)
-
-	return wc.interceptor.UpdateWorkflow(ctx, &ClientUpdateWorkflowInput{
+	return &ClientUpdateWorkflowInput{
 		UpdateID:            updateID,
 		WorkflowID:          opt.WorkflowID,
 		UpdateName:          opt.UpdateName,
@@ -1182,7 +1197,7 @@ func (wc *WorkflowClient) UpdateWorkflow(
 		RunID:               opt.RunID,
 		FirstExecutionRunID: opt.FirstExecutionRunID,
 		WaitForStage:        opt.WaitForStage,
-	})
+	}, nil
 }
 
 // CheckHealthRequest is a request for Client.CheckHealth.
@@ -1866,42 +1881,18 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 	ctx context.Context,
 	in *ClientUpdateWorkflowInput,
 ) (WorkflowUpdateHandle, error) {
-	argPayloads, err := w.client.dataConverter.ToPayloads(in.Args...)
+	req, err := w.convertToUpdateWorkflowRequest(ctx, in)
 	if err != nil {
 		return nil, err
 	}
-	header, err := headerPropagated(ctx, w.client.contextPropagators)
-	if err != nil {
-		return nil, err
-	}
-	desiredLifecycleStage := updateLifeCycleStageToProto(in.WaitForStage)
+
 	var resp *workflowservice.UpdateWorkflowExecutionResponse
 	for {
 		var err error
 		resp, err = func() (*workflowservice.UpdateWorkflowExecutionResponse, error) {
 			grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(pollUpdateTimeout), grpcLongPoll(true), defaultGrpcRetryParameters(ctx))
 			defer cancel()
-			wfexec := &commonpb.WorkflowExecution{
-				WorkflowId: in.WorkflowID,
-				RunId:      in.RunID,
-			}
-			return w.client.workflowService.UpdateWorkflowExecution(grpcCtx, &workflowservice.UpdateWorkflowExecutionRequest{
-				WaitPolicy:          &updatepb.WaitPolicy{LifecycleStage: desiredLifecycleStage},
-				Namespace:           w.client.namespace,
-				WorkflowExecution:   wfexec,
-				FirstExecutionRunId: in.FirstExecutionRunID,
-				Request: &updatepb.Request{
-					Meta: &updatepb.Meta{
-						UpdateId: in.UpdateID,
-						Identity: w.client.identity,
-					},
-					Input: &updatepb.Input{
-						Header: header,
-						Name:   in.UpdateName,
-						Args:   argPayloads,
-					},
-				},
-			})
+			return w.client.workflowService.UpdateWorkflowExecution(grpcCtx, req)
 		}()
 		if err != nil {
 			if ctx.Err() != nil {
@@ -1920,9 +1911,55 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 			break
 		}
 	}
+
 	// Here we know the update is at least accepted
-	if desiredLifecycleStage == enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED &&
-		resp.GetStage() != enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED {
+	return w.updateHandleFromResponse(ctx, resp, req.WaitPolicy.LifecycleStage)
+}
+
+func (w *workflowClientInterceptor) convertToUpdateWorkflowRequest(
+	ctx context.Context,
+	in *ClientUpdateWorkflowInput,
+) (*workflowservice.UpdateWorkflowExecutionRequest, error) {
+	argPayloads, err := w.client.dataConverter.ToPayloads(in.Args...)
+	if err != nil {
+		return nil, err
+	}
+	header, err := headerPropagated(ctx, w.client.contextPropagators)
+	if err != nil {
+		return nil, err
+	}
+
+	return &workflowservice.UpdateWorkflowExecutionRequest{
+		WaitPolicy: &updatepb.WaitPolicy{LifecycleStage: updateLifeCycleStageToProto(in.WaitForStage)},
+		Namespace:  w.client.namespace,
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: in.WorkflowID,
+			RunId:      in.RunID,
+		},
+		FirstExecutionRunId: in.FirstExecutionRunID,
+		Request: &updatepb.Request{
+			Meta: &updatepb.Meta{
+				UpdateId: in.UpdateID,
+				Identity: w.client.identity,
+			},
+			Input: &updatepb.Input{
+				Header: header,
+				Name:   in.UpdateName,
+				Args:   argPayloads,
+			},
+		},
+	}, nil
+}
+
+func (w *workflowClientInterceptor) updateHandleFromResponse(
+	ctx context.Context,
+	resp *workflowservice.UpdateWorkflowExecutionResponse,
+	desiredLifecycleStage enumspb.UpdateWorkflowExecutionLifecycleStage,
+) (WorkflowUpdateHandle, error) {
+	pollingNeeded :=
+		desiredLifecycleStage == enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED &&
+			resp.GetStage() != enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED
+	if pollingNeeded {
 		// TODO(https://github.com/temporalio/features/issues/428) replace with handle wait for stage once implemented
 		pollResp, err := w.client.PollWorkflowUpdate(ctx, resp.GetUpdateRef())
 		if err != nil {
@@ -1940,6 +1977,7 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 			}, nil
 		}
 	}
+
 	switch v := resp.GetOutcome().GetValue().(type) {
 	case nil:
 		return &lazyUpdateHandle{
