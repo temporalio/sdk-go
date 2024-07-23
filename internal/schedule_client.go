@@ -476,6 +476,10 @@ type (
 	ScheduleUpdate struct {
 		// Schedule - New schedule to replace the existing schedule with
 		Schedule *Schedule
+
+		// SearchAttributes - Optional indexed info that can be used for querying via the List schedules APIs.
+		// The key and value type must be registered on Temporal server side.
+		SearchAttributes *SearchAttributes
 	}
 
 	// ScheduleUpdateInput describes the current state of the schedule to be updated.

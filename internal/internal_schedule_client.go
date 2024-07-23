@@ -294,13 +294,24 @@ func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, options Sc
 	if err != nil {
 		return err
 	}
+
+	var newSA *commonpb.SearchAttributes
+	attributes := newSchedule.SearchAttributes
+	if attributes != nil {
+		newSA, err = serializeTypedSearchAttributes(attributes.GetUntypedValues())
+		if err != nil {
+			return err
+		}
+	}
+
 	_, err = scheduleHandle.client.workflowService.UpdateSchedule(grpcCtx, &workflowservice.UpdateScheduleRequest{
-		Namespace:     scheduleHandle.client.namespace,
-		ScheduleId:    scheduleHandle.ID,
-		Schedule:      newSchedulePB,
-		ConflictToken: nil,
-		Identity:      scheduleHandle.client.identity,
-		RequestId:     uuid.New(),
+		Namespace:        scheduleHandle.client.namespace,
+		ScheduleId:       scheduleHandle.ID,
+		Schedule:         newSchedulePB,
+		ConflictToken:    nil,
+		Identity:         scheduleHandle.client.identity,
+		RequestId:        uuid.New(),
+		SearchAttributes: newSA,
 	})
 	return err
 }

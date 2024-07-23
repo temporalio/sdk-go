@@ -4980,9 +4980,14 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 		err = handle.Delete(ctx)
 		ts.NoError(err)
 	}()
+
+	stringKey := temporal.NewSearchAttributeKeyString("CustomStringField")
+	sa := temporal.NewSearchAttributes(stringKey.ValueSet("CustomStringFieldValue"))
+
 	updateFunc := func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
 		return &client.ScheduleUpdate{
-			Schedule: &input.Description.Schedule,
+			Schedule:         &input.Description.Schedule,
+			SearchAttributes: &sa,
 		}, nil
 	}
 	description, err := handle.Describe(ctx)
@@ -4993,9 +4998,12 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 	})
 	ts.NoError(err)
 
-	description2, err := handle.Describe(ctx)
-	ts.NoError(err)
-	ts.Equal(description.Schedule, description2.Schedule)
+	ts.Eventually(func() bool {
+		description2, err := handle.Describe(ctx)
+		ts.NoError(err)
+		ts.Equal(description.Schedule, description2.Schedule)
+		return len(description2.SearchAttributes.IndexedFields) == 1
+	}, time.Second, 100*time.Millisecond)
 }
 
 func (ts *IntegrationTestSuite) TestScheduleUpdateCancelUpdate() {
