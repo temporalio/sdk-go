@@ -421,11 +421,6 @@ type (
 		// its value type must be registered on Temporal server side.
 		// For supported operations on different server versions see [Visibility].
 		//
-		// nil: leave any pre-existing assigned search attributes intact
-		// empty: remove any and all pre-existing assigned search attributes
-		// attributes present: replace any and all pre-existing assigned search attributes with the defined search
-		//                     attributes, i.e. upsert
-		//
 		// [Visibility]: https://docs.temporal.io/visibility
 		SearchAttributes *commonpb.SearchAttributes
 
@@ -433,11 +428,6 @@ type (
 		// are additional indexed information attributed to the schedule and used for search and visibility. The key and
 		// its value type must be registered on Temporal server side.
 		// For supported operations on different server versions see [Visibility].
-		//
-		// nil: leave any pre-existing assigned search attributes intact
-		// empty: remove any and all pre-existing assigned search attributes
-		// attributes present: replace any and all pre-existing assigned search attributes with the defined search
-		//                     attributes, i.e. upsert
 		//
 		// [Visibility]: https://docs.temporal.io/visibility
 		TypedSearchAttributes SearchAttributes
