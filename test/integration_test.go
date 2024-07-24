@@ -4982,7 +4982,11 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 	}()
 
 	stringKey := temporal.NewSearchAttributeKeyString("CustomStringField")
-	sa := temporal.NewSearchAttributes(stringKey.ValueSet("CustomStringFieldValue"))
+	keywordKey := temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
+	sa := temporal.NewSearchAttributes(
+		stringKey.ValueSet("CustomStringFieldValue"),
+		keywordKey.ValueSet("foo"),
+	)
 
 	updateFunc := func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
 		return &client.ScheduleUpdate{
@@ -5002,11 +5006,14 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 		description2, err := handle.Describe(ctx)
 		ts.NoError(err)
 		ts.Equal(description.Schedule, description2.Schedule)
-		ts.Equal(1, description2.TypedSearchAttributes.Size())
+		ts.Equal(2, description2.TypedSearchAttributes.Size())
 		returnedSa, _ := description2.TypedSearchAttributes.GetString(stringKey)
 		expectedSa, _ := sa.GetString(stringKey)
 		ts.Equal(expectedSa, returnedSa)
-		return len(description2.SearchAttributes.IndexedFields) == 1
+		returnedSa, _ = description2.TypedSearchAttributes.GetKeyword(keywordKey)
+		expectedSa, _ = sa.GetKeyword(keywordKey)
+		ts.Equal(expectedSa, returnedSa)
+		return len(description2.SearchAttributes.IndexedFields) == 2
 	}, time.Second, 100*time.Millisecond)
 
 	// nil search attributes should leave current search attributes untouched
@@ -5024,9 +5031,36 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 	ts.Eventually(func() bool {
 		description2, err := handle.Describe(ctx)
 		ts.NoError(err)
-		ts.Equal(1, description2.TypedSearchAttributes.Size())
+		ts.Equal(2, description2.TypedSearchAttributes.Size())
 		returnedSa, _ := description2.TypedSearchAttributes.GetString(stringKey)
 		expectedSa, _ := sa.GetString(stringKey)
+		ts.Equal(expectedSa, returnedSa)
+		returnedSa, _ = description2.TypedSearchAttributes.GetKeyword(keywordKey)
+		expectedSa, _ = sa.GetKeyword(keywordKey)
+		ts.Equal(expectedSa, returnedSa)
+		return len(description2.SearchAttributes.IndexedFields) == 2
+	}, time.Second, 100*time.Millisecond)
+
+	// updating a single search attribute on an existing collection acts as an upsert on the entire collection
+	newSa := temporal.NewSearchAttributes(stringKey.ValueSet("Changed"))
+	updateFunc = func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+		return &client.ScheduleUpdate{
+			Schedule:              &input.Description.Schedule,
+			TypedSearchAttributes: &newSa,
+		}, nil
+	}
+
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: updateFunc,
+	})
+	ts.NoError(err)
+
+	ts.Eventually(func() bool {
+		description2, err := handle.Describe(ctx)
+		ts.NoError(err)
+		ts.Equal(1, description2.TypedSearchAttributes.Size())
+		returnedSa, _ := description2.TypedSearchAttributes.GetString(stringKey)
+		expectedSa, _ := newSa.GetString(stringKey)
 		ts.Equal(expectedSa, returnedSa)
 		return len(description2.SearchAttributes.IndexedFields) == 1
 	}, time.Second, 100*time.Millisecond)
