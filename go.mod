@@ -14,6 +14,7 @@ require (
 	github.com/robfig/cron v1.2.0
 	github.com/stretchr/testify v1.9.0
 	go.temporal.io/api v1.36.0
+	golang.org/x/sync v0.7.0
 	golang.org/x/sys v0.22.0
 	golang.org/x/time v0.3.0
 	google.golang.org/grpc v1.65.0

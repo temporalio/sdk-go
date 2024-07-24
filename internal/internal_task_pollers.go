@@ -1258,3 +1258,7 @@ func (*localActivityTask) isEmpty() bool {
 func (*eagerWorkflowTask) isEmpty() bool {
 	return false
 }
+
+func (nt *nexusTask) isEmpty() bool {
+	return nt.task == nil
+}

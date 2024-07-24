@@ -180,7 +180,7 @@ func TestEagerActivityCounts(t *testing.T) {
 	// Now take all remaining slots from the activity side and confirm we can't
 	// reserve any eager
 	for {
-		permit := tss.TryReserveSlot()
+		permit := tss.TryReserveSlot(&slotReservationData{taskQueue: "task-queue1"})
 		if permit == nil {
 			break
 		}
