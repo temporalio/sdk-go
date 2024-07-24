@@ -211,6 +211,7 @@ type (
 		WorkflowID               string
 		WaitForCancellation      bool
 		WorkflowIDReusePolicy    enumspb.WorkflowIdReusePolicy
+		WorkflowIDConflictPolicy enumspb.WorkflowIdConflictPolicy
 		DataConverter            converter.DataConverter
 		RetryPolicy              *commonpb.RetryPolicy
 		CronSchedule             string

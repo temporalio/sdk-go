@@ -949,6 +949,43 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseIgnoreDuplicateWhileRunning()
 	ts.NotEqual(run1.GetRunID(), run3.GetRunID())
 }
 
+func (ts *IntegrationTestSuite) TestWorkflowIDConflictPolicy() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	opts := ts.startWorkflowOptions("test-workflowidconflict-" + uuid.New())
+	opts.WorkflowExecutionErrorWhenAlreadyStarted = true
+
+	var alreadyStartedErr *serviceerror.WorkflowExecutionAlreadyStarted
+
+	// Start a workflow
+	run1, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.IDConflictPolicy)
+	ts.NoError(err)
+
+	// Confirm another fails by default
+	_, err = ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.IDConflictPolicy)
+	ts.ErrorAs(err, &alreadyStartedErr)
+
+	// Confirm fails if explicitly given that option
+	opts.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL
+	_, err = ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.IDConflictPolicy)
+	ts.ErrorAs(err, &alreadyStartedErr)
+
+	// Confirm gives back same WorkflowRun if requested
+	opts.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING
+	run2, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.IDConflictPolicy)
+	ts.Equal(run1.GetRunID(), run2.GetRunID())
+
+	// Confirm terminates and starts new if requested
+	opts.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_TERMINATE_EXISTING
+	run3, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.IDConflictPolicy)
+	ts.NotEqual(run1.GetRunID(), run3.GetRunID())
+
+	statusRun1, err := ts.client.DescribeWorkflowExecution(ctx, run1.GetID(), run1.GetRunID())
+	ts.NoError(err)
+	ts.Equal(statusRun1.WorkflowExecutionInfo.Status, enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED)
+}
+
 func (ts *IntegrationTestSuite) TestChildWFWithRetryPolicy_ShortLived() {
 	ts.testChildWFWithRetryPolicy(ts.workflows.ChildWorkflowWithRetryPolicy, 0)
 }
@@ -1917,6 +1954,41 @@ func (ts *IntegrationTestSuite) TestStartDelaySignalWithStart() {
 	ts.NoError(err)
 	ts.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED, event.EventType)
 	ts.Equal(5*time.Second, event.GetWorkflowExecutionStartedEventAttributes().GetFirstWorkflowTaskBackoff().AsDuration())
+}
+
+func (ts *IntegrationTestSuite) TestSignalWithStartIdConflictPolicy() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var invalidArgErr *serviceerror.InvalidArgument
+	opts := ts.startWorkflowOptions("test-signalwithstart-workflowidconflict-" + uuid.New())
+
+	// Start a workflow
+	run1, err := ts.client.SignalWithStartWorkflow(ctx, opts.ID, "signal", true, opts, ts.workflows.IDConflictPolicy)
+	ts.NoError(err)
+
+	// Confirm gives back same WorkflowRun by default
+	run2, err := ts.client.SignalWithStartWorkflow(ctx, opts.ID, "signal", true, opts, ts.workflows.IDConflictPolicy)
+	ts.Equal(run1.GetRunID(), run2.GetRunID())
+
+	// Confirm gives back same WorkflowRun if requested explicitly
+	opts.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING
+	run3, err := ts.client.SignalWithStartWorkflow(ctx, opts.ID, "signal", true, opts, ts.workflows.IDConflictPolicy)
+	ts.Equal(run1.GetRunID(), run3.GetRunID())
+
+	// Confirm policy to fail is invalid
+	opts.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL
+	_, err = ts.client.SignalWithStartWorkflow(ctx, opts.ID, "signal", true, opts, ts.workflows.IDConflictPolicy)
+	ts.ErrorAs(err, &invalidArgErr)
+
+	// Confirm terminates and starts new if requested
+	opts.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_TERMINATE_EXISTING
+	run4, err := ts.client.SignalWithStartWorkflow(ctx, opts.ID, "signal", true, opts, ts.workflows.IDConflictPolicy)
+	ts.NotEqual(run1.GetRunID(), run4.GetRunID())
+
+	statusRun1, err := ts.client.DescribeWorkflowExecution(ctx, run1.GetID(), run1.GetRunID())
+	ts.NoError(err)
+	ts.Equal(statusRun1.WorkflowExecutionInfo.Status, enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED)
 }
 
 func (ts *IntegrationTestSuite) TestResetWorkflowExecution() {
