@@ -416,17 +416,15 @@ type (
 		// Memo - Non-indexed user supplied information.
 		Memo *commonpb.Memo
 
-		// SearchAttributes - Specifies Search Attributes that will be attached to the schedule. Search Attributes
-		// are additional indexed information attributed to the schedule and used for search and visibility. The key and
-		// its value type must be registered on Temporal server side.
+		// SearchAttributes - Additional indexed information used for search and visibility. The key and its value type
+		// are registered on Temporal server side.
 		// For supported operations on different server versions see [Visibility].
 		//
 		// [Visibility]: https://docs.temporal.io/visibility
 		SearchAttributes *commonpb.SearchAttributes
 
-		// TypedSearchAttributes - Specifies Search Attributes that will be attached to the schedule. Search Attributes
-		// are additional indexed information attributed to the schedule and used for search and visibility. The key and
-		// its value type must be registered on Temporal server side.
+		// TypedSearchAttributes - Additional indexed information used for search and visibility. The key and its value
+		// type are registered on Temporal server side.
 		// For supported operations on different server versions see [Visibility].
 		//
 		// [Visibility]: https://docs.temporal.io/visibility
