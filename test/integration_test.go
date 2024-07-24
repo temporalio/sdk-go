@@ -61,6 +61,7 @@ import (
 
 	"go.temporal.io/sdk/contrib/opentelemetry"
 	sdkopentracing "go.temporal.io/sdk/contrib/opentracing"
+	"go.temporal.io/sdk/contrib/resourcetuner"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/test"
 
@@ -263,6 +264,11 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.MaxConcurrentWorkflowTaskExecutionSize = 2
 		options.MaxConcurrentActivityExecutionSize = 2
 		options.MaxConcurrentLocalActivityExecutionSize = 2
+	}
+	if strings.Contains(ts.T().Name(), "ResourceBasedSlotSupplier") {
+		tuner, err := resourcetuner.CreateResourceBasedTuner(0.5, 0.5)
+		ts.NoError(err)
+		options.Tuner = tuner
 	}
 
 	ts.worker = worker.New(ts.client, ts.taskQueueName, options)
@@ -3095,6 +3101,71 @@ func (ts *IntegrationTestSuite) TestSlotSupplierWontExceedLimits() {
 	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, actWorkertags, 2)
 	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, laWorkertags, 2)
 	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, wfWorkertags, 2)
+}
+
+func (ts *IntegrationTestSuite) TestResourceBasedSlotSupplierWorks() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	actWorkertags := []string{"worker_type", "ActivityWorker", "task_queue", ts.taskQueueName}
+	laWorkertags := []string{"worker_type", "LocalActivityWorker", "task_queue", ts.taskQueueName}
+	wfWorkertags := []string{"worker_type", "WorkflowWorker", "task_queue", ts.taskQueueName}
+
+	actRunning := atomic.Int32{}
+	laRunning := atomic.Int32{}
+	actStruct := &highWaterMarkActivities{currentlyRunning: &actRunning, maxConcurrent: 900}
+	laStruct := &highWaterMarkActivities{currentlyRunning: &laRunning, maxConcurrent: 900}
+
+	noExceedLimitsWf := func(ctx workflow.Context) error {
+		futures := make([]workflow.Future, 0)
+		for i := 0; i < 5; i++ {
+			ao := workflow.LocalActivityOptions{
+				StartToCloseTimeout: time.Minute,
+				RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3, InitialInterval: time.Millisecond, BackoffCoefficient: 1},
+			}
+			ctx = workflow.WithLocalActivityOptions(ctx, ao)
+			a := workflow.ExecuteLocalActivity(ctx, func(ctx context.Context, i int) error { return laStruct.DoActivity(ctx, i) }, i)
+			futures = append(futures, a)
+		}
+		for i := 0; i < 5; i++ {
+			ao := workflow.ActivityOptions{
+				StartToCloseTimeout: time.Minute,
+				RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3, InitialInterval: time.Millisecond, BackoffCoefficient: 1},
+			}
+			ctx = workflow.WithActivityOptions(ctx, ao)
+			a := workflow.ExecuteActivity(ctx, actStruct.DoActivity, i)
+			futures = append(futures, a)
+		}
+
+		for _, f := range futures {
+			err := f.Get(ctx, nil)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	ts.worker.RegisterWorkflow(noExceedLimitsWf)
+	ts.worker.RegisterActivity(actStruct)
+
+	wfRuns := make([]client.WorkflowRun, 0)
+	for i := 0; i < 1; i++ {
+		run, err := ts.client.ExecuteWorkflow(ctx,
+			ts.startWorkflowOptions("resource-based-slot-supplier"+strconv.Itoa(i)),
+			noExceedLimitsWf)
+		ts.NoError(err)
+		ts.NotNil(run)
+		ts.NoError(err)
+		wfRuns = append(wfRuns, run)
+	}
+
+	for _, run := range wfRuns {
+		ts.NoError(run.Get(ctx, nil))
+	}
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, actWorkertags, 0)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, laWorkertags, 0)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, wfWorkertags, 0)
 }
 
 func (ts *IntegrationTestSuite) TestTooFewParams() {

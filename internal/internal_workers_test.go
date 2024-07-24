@@ -121,7 +121,7 @@ type CountingSlotSupplier struct {
 	reserves, releases, uses atomic.Int32
 }
 
-func (c *CountingSlotSupplier) ReserveSlot(ctx context.Context) (*SlotPermit, error) {
+func (c *CountingSlotSupplier) ReserveSlot(ctx context.Context, reserveCtx SlotReserveContext) (*SlotPermit, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -129,7 +129,7 @@ func (c *CountingSlotSupplier) ReserveSlot(ctx context.Context) (*SlotPermit, er
 	return &SlotPermit{}, nil
 }
 
-func (c *CountingSlotSupplier) TryReserveSlot() *SlotPermit {
+func (c *CountingSlotSupplier) TryReserveSlot(SlotReserveContext) *SlotPermit {
 	c.reserves.Add(1)
 	return &SlotPermit{}
 }
@@ -142,7 +142,7 @@ func (c *CountingSlotSupplier) ReleaseSlot() {
 	c.releases.Add(1)
 }
 
-func (c *CountingSlotSupplier) maximumSlots() int {
+func (c *CountingSlotSupplier) MaximumSlots() int {
 	return 5
 }
 
@@ -177,7 +177,6 @@ func (s *WorkersTestSuite) TestWorkflowWorkerSlotSupplier() {
 		s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
 			Do(func(ctx, in interface{}, opts ...interface{}) {
 				<-unblockPollCh
-				println("polled")
 			}).
 			Return(task, nil).AnyTimes()
 		s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -208,6 +207,7 @@ func (s *WorkersTestSuite) TestWorkflowWorkerSlotSupplier() {
 
 		s.Equal(int32(1), wfCss.uses.Load())
 		// The number of reserves and releases should be equal
+		// TODO: Somehow still not always
 		s.Equal(wfCss.reserves.Load(), wfCss.releases.Load())
 		s.NoError(ctx.Err())
 	}

@@ -171,17 +171,18 @@ type (
 
 	// baseWorkerOptions options to configure base worker.
 	baseWorkerOptions struct {
-		pollerCount       int
-		pollerRate        int
-		slotSupplier      *trackingSlotSupplier
-		maxTaskPerSecond  float64
-		taskWorker        taskPoller
-		identity          string
-		workerType        string
-		stopTimeout       time.Duration
-		fatalErrCb        func(error)
-		userContextCancel context.CancelFunc
-		metricsHandler    metrics.Handler
+		pollerCount         int
+		pollerRate          int
+		slotSupplier        *trackingSlotSupplier
+		maxTaskPerSecond    float64
+		taskWorker          taskPoller
+		identity            string
+		workerType          string
+		stopTimeout         time.Duration
+		fatalErrCb          func(error)
+		userContextCancel   context.CancelFunc
+		metricsHandler      metrics.Handler
+		slotReservationData slotReservationData
 	}
 
 	// baseWorker that wraps worker activities.
@@ -351,10 +352,12 @@ func (bw *baseWorker) runPoller() {
 
 	for {
 		go func() {
-			s, err := bw.slotSupplier.ReserveSlot(ctx)
+			s, err := bw.slotSupplier.ReserveSlot(ctx, &bw.options.slotReservationData)
 			if err != nil {
 				if !errors.Is(err, context.Canceled) {
 					bw.logger.Error(fmt.Sprintf("Error while trying to reserve slot: %v", err))
+				} else {
+					close(reserveChan)
 				}
 				return
 			}
@@ -370,6 +373,11 @@ func (bw *baseWorker) runPoller() {
 			cancelfn()
 			return
 		case permit := <-reserveChan:
+			if permit == nil { // There was an error reserving a slot
+				// Avoid spamming reserve hard in the event it's constantly failing
+				time.Sleep(time.Second)
+				continue
+			}
 			if bw.sessionTokenBucket != nil {
 				bw.sessionTokenBucket.waitForAvailableToken()
 			}
@@ -382,7 +390,7 @@ func (bw *baseWorker) tryReserveSlot() *SlotPermit {
 	if bw.isStop() {
 		return nil
 	}
-	return bw.slotSupplier.TryReserveSlot()
+	return bw.slotSupplier.TryReserveSlot(&bw.options.slotReservationData)
 }
 
 func (bw *baseWorker) releaseSlot(permit *SlotPermit, reason string) {

@@ -78,26 +78,36 @@ type SlotPermit struct {
 	int
 }
 
+type SlotReserveContext interface {
+	TaskQueue() string
+	NumIssuedSlots() int
+}
+
 // SlotSupplier controls how slots are handed out for workflow and activity tasks as well as
 // local activities when used in conjunction with a WorkerTuner.
 //
 // Currently, you cannot implement your own slot supplier. You can use the provided
 // FixedSizeSlotSupplier and ResourceBasedSlotSupplier slot suppliers.
 type SlotSupplier interface {
-	// ReserveSlot is called before polling for new tasks. The implementation should block until a
-	// slot is available, then return a permit to use that slot. Implementations must be
+	// ReserveSlot is called before polling for new tasks. The implementation should block until
+	// a slot is available, then return a permit to use that slot. Implementations must be
 	// thread-safe.
-	ReserveSlot(ctx context.Context) (*SlotPermit, error)
-	TryReserveSlot() *SlotPermit
+	//
+	// Any returned error besides context.Canceled will be logged and the function will be retried.
+	ReserveSlot(ctx context.Context, reserveCtx SlotReserveContext) (*SlotPermit, error)
+	// TryReserveSlot is called when attempting to reserve slots for eager workflows and activities.
+	// It should return a permit if a slot is available, and nil otherwise. Implementations must be
+	// thread-safe.
+	TryReserveSlot(reserveCtx SlotReserveContext) *SlotPermit
 
 	MarkSlotUsed()
 
 	ReleaseSlot()
 
-	// maximumSlots returns the maximum number of slots that this supplier will ever issue.
+	// MaximumSlots returns the maximum number of slots that this supplier will ever issue.
 	// Implementations may return 0 if there is no well-defined upper limit. In such cases the
 	// available task slots metric will not be emitted.
-	maximumSlots() int
+	MaximumSlots() int
 }
 
 // FixedSizeSlotSupplier is a slot supplier that will only ever issue at most a fixed number of
@@ -116,7 +126,7 @@ func NewFixedSizeSlotSupplier(numSlots int) *FixedSizeSlotSupplier {
 	}
 }
 
-func (f *FixedSizeSlotSupplier) ReserveSlot(ctx context.Context) (*SlotPermit, error) {
+func (f *FixedSizeSlotSupplier) ReserveSlot(ctx context.Context, reserveCtx SlotReserveContext) (*SlotPermit, error) {
 	err := f.sem.Acquire(ctx, 1)
 	if err != nil {
 		return nil, fmt.Errorf("failed to acquire slot: %w", err)
@@ -124,7 +134,7 @@ func (f *FixedSizeSlotSupplier) ReserveSlot(ctx context.Context) (*SlotPermit, e
 
 	return &SlotPermit{}, nil
 }
-func (f *FixedSizeSlotSupplier) TryReserveSlot() *SlotPermit {
+func (f *FixedSizeSlotSupplier) TryReserveSlot(SlotReserveContext) *SlotPermit {
 	if f.sem.TryAcquire(1) {
 		return &SlotPermit{}
 	}
@@ -134,11 +144,25 @@ func (f *FixedSizeSlotSupplier) MarkSlotUsed() {}
 func (f *FixedSizeSlotSupplier) ReleaseSlot() {
 	f.sem.Release(1)
 }
-func (f *FixedSizeSlotSupplier) maximumSlots() int {
+func (f *FixedSizeSlotSupplier) MaximumSlots() int {
 	return f.NumSlots
 }
 
-type ResourceBasedSlotSupplier struct {
+type slotReservationData struct {
+	taskQueue string
+}
+
+type slotReserveContextImpl struct {
+	taskQueue   string
+	issuedSlots int
+}
+
+func (s slotReserveContextImpl) TaskQueue() string {
+	return s.taskQueue
+}
+
+func (s slotReserveContextImpl) NumIssuedSlots() int {
+	return s.issuedSlots
 }
 
 type trackingSlotSupplier struct {
@@ -162,8 +186,14 @@ func newTrackingSlotSupplier(inner SlotSupplier, metricsHandler metrics.Handler)
 	return tss
 }
 
-func (t *trackingSlotSupplier) ReserveSlot(ctx context.Context) (*SlotPermit, error) {
-	permit, err := t.inner.ReserveSlot(ctx)
+func (t *trackingSlotSupplier) ReserveSlot(
+	ctx context.Context,
+	data *slotReservationData,
+) (*SlotPermit, error) {
+	permit, err := t.inner.ReserveSlot(ctx, slotReserveContextImpl{
+		taskQueue:   data.taskQueue,
+		issuedSlots: int(t.issuedSlotsAtomic.Load()),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -174,8 +204,11 @@ func (t *trackingSlotSupplier) ReserveSlot(ctx context.Context) (*SlotPermit, er
 	t.publishMetrics(false)
 	return permit, nil
 }
-func (t *trackingSlotSupplier) TryReserveSlot() *SlotPermit {
-	permit := t.inner.TryReserveSlot()
+func (t *trackingSlotSupplier) TryReserveSlot(data *slotReservationData) *SlotPermit {
+	permit := t.inner.TryReserveSlot(slotReserveContextImpl{
+		taskQueue:   data.taskQueue,
+		issuedSlots: int(t.issuedSlotsAtomic.Load()),
+	})
 	if permit != nil {
 		t.issuedSlotsAtomic.Add(1)
 		t.publishMetrics(false)
@@ -210,8 +243,8 @@ func (t *trackingSlotSupplier) publishMetrics(lockAlreadyHeld bool) {
 		defer t.slotsMutex.Unlock()
 	}
 	usedSlots := len(t.usedSlots)
-	if t.inner.maximumSlots() != 0 {
-		t.taskSlotsAvailableGauge.Update(float64(t.inner.maximumSlots() - usedSlots))
+	if t.inner.MaximumSlots() != 0 {
+		t.taskSlotsAvailableGauge.Update(float64(t.inner.MaximumSlots() - usedSlots))
 	}
 	t.taskSlotsUsedGauge.Update(float64(usedSlots))
 }
