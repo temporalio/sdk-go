@@ -429,11 +429,6 @@ type (
 		// its value type must be registered on Temporal server side.
 		// For supported operations on different server versions see [Visibility].
 		//
-		// nil: leave any pre-existing assigned search attributes intact
-		// empty: remove any and all pre-existing assigned search attributes
-		// attributes present: replace any and all pre-existing assigned search attributes with the defined search
-		//                     attributes, i.e. upsert
-		//
 		// [Visibility]: https://docs.temporal.io/visibility
 		TypedSearchAttributes SearchAttributes
 	}
@@ -493,6 +488,11 @@ type (
 
 		// TypedSearchAttributes - Optional indexed info that can be used for querying via the List schedules APIs.
 		// The key and value type must be registered on Temporal server side.
+		//
+		// nil: leave any pre-existing assigned search attributes intact
+		// empty: remove any and all pre-existing assigned search attributes
+		// attributes present: replace any and all pre-existing assigned search attributes with the defined search
+		//                     attributes, i.e. upsert
 		TypedSearchAttributes *SearchAttributes
 	}
 
