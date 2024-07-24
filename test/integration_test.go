@@ -4986,8 +4986,8 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 
 	updateFunc := func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
 		return &client.ScheduleUpdate{
-			Schedule:         &input.Description.Schedule,
-			SearchAttributes: &sa,
+			Schedule:              &input.Description.Schedule,
+			TypedSearchAttributes: &sa,
 		}, nil
 	}
 	description, err := handle.Describe(ctx)
@@ -5002,7 +5002,56 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 		description2, err := handle.Describe(ctx)
 		ts.NoError(err)
 		ts.Equal(description.Schedule, description2.Schedule)
+		ts.Equal(1, description2.TypedSearchAttributes.Size())
+		returnedSa, _ := description2.TypedSearchAttributes.GetString(stringKey)
+		expectedSa, _ := sa.GetString(stringKey)
+		ts.Equal(expectedSa, returnedSa)
 		return len(description2.SearchAttributes.IndexedFields) == 1
+	}, time.Second, 100*time.Millisecond)
+
+	// nil search attributes should leave current search attributes untouched
+	updateFunc = func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+		return &client.ScheduleUpdate{
+			Schedule: &input.Description.Schedule,
+		}, nil
+	}
+
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: updateFunc,
+	})
+	ts.NoError(err)
+
+	ts.Eventually(func() bool {
+		description2, err := handle.Describe(ctx)
+		ts.NoError(err)
+		ts.Equal(1, description2.TypedSearchAttributes.Size())
+		returnedSa, _ := description2.TypedSearchAttributes.GetString(stringKey)
+		expectedSa, _ := sa.GetString(stringKey)
+		ts.Equal(expectedSa, returnedSa)
+		return len(description2.SearchAttributes.IndexedFields) == 1
+	}, time.Second, 100*time.Millisecond)
+
+	// empty search attributes should remove pre-existing search attributes
+	sa = temporal.NewSearchAttributes()
+	updateFunc = func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+		return &client.ScheduleUpdate{
+			Schedule:              &input.Description.Schedule,
+			TypedSearchAttributes: &sa,
+		}, nil
+	}
+
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: updateFunc,
+	})
+	ts.NoError(err)
+
+	ts.Eventually(func() bool {
+		description2, err := handle.Describe(ctx)
+		ts.NoError(err)
+		ts.Nil(description2.SearchAttributes)
+		ts.Empty(description2.TypedSearchAttributes)
+
+		return true
 	}, time.Second, 100*time.Millisecond)
 }
 

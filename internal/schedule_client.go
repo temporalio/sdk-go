@@ -416,12 +416,31 @@ type (
 		// Memo - Non-indexed user supplied information.
 		Memo *commonpb.Memo
 
-		// SearchAttributes - Indexed info that can be used in query of List schedules APIs. The key and value type must be registered on Temporal server side.
-		// Use GetSearchAttributes API to get valid key and corresponding value type.
+		// SearchAttributes - Specifies Search Attributes that will be attached to the schedule. Search Attributes
+		// are additional indexed information attributed to the schedule and used for search and visibility. The key and
+		// its value type must be registered on Temporal server side.
 		// For supported operations on different server versions see [Visibility].
+		//
+		// nil: leave any pre-existing assigned search attributes intact
+		// empty: remove any and all pre-existing assigned search attributes
+		// attributes present: replace any and all pre-existing assigned search attributes with the defined search
+		//                     attributes, i.e. upsert
 		//
 		// [Visibility]: https://docs.temporal.io/visibility
 		SearchAttributes *commonpb.SearchAttributes
+
+		// TypedSearchAttributes - Specifies Search Attributes that will be attached to the schedule. Search Attributes
+		// are additional indexed information attributed to the schedule and used for search and visibility. The key and
+		// its value type must be registered on Temporal server side.
+		// For supported operations on different server versions see [Visibility].
+		//
+		// nil: leave any pre-existing assigned search attributes intact
+		// empty: remove any and all pre-existing assigned search attributes
+		// attributes present: replace any and all pre-existing assigned search attributes with the defined search
+		//                     attributes, i.e. upsert
+		//
+		// [Visibility]: https://docs.temporal.io/visibility
+		TypedSearchAttributes SearchAttributes
 	}
 
 	// SchedulePolicies describes the current polcies of a schedule.
@@ -477,9 +496,9 @@ type (
 		// Schedule - New schedule to replace the existing schedule with
 		Schedule *Schedule
 
-		// SearchAttributes - Optional indexed info that can be used for querying via the List schedules APIs.
+		// TypedSearchAttributes - Optional indexed info that can be used for querying via the List schedules APIs.
 		// The key and value type must be registered on Temporal server side.
-		SearchAttributes *SearchAttributes
+		TypedSearchAttributes *SearchAttributes
 	}
 
 	// ScheduleUpdateInput describes the current state of the schedule to be updated.
