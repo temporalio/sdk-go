@@ -294,13 +294,24 @@ func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, options Sc
 	if err != nil {
 		return err
 	}
+
+	var newSA *commonpb.SearchAttributes
+	attributes := newSchedule.TypedSearchAttributes
+	if attributes != nil {
+		newSA, err = serializeTypedSearchAttributes(attributes.GetUntypedValues())
+		if err != nil {
+			return err
+		}
+	}
+
 	_, err = scheduleHandle.client.workflowService.UpdateSchedule(grpcCtx, &workflowservice.UpdateScheduleRequest{
-		Namespace:     scheduleHandle.client.namespace,
-		ScheduleId:    scheduleHandle.ID,
-		Schedule:      newSchedulePB,
-		ConflictToken: nil,
-		Identity:      scheduleHandle.client.identity,
-		RequestId:     uuid.New(),
+		Namespace:        scheduleHandle.client.namespace,
+		ScheduleId:       scheduleHandle.ID,
+		Schedule:         newSchedulePB,
+		ConflictToken:    nil,
+		Identity:         scheduleHandle.client.identity,
+		RequestId:        uuid.New(),
+		SearchAttributes: newSA,
 	})
 	return err
 }
@@ -484,6 +495,12 @@ func scheduleDescriptionFromPB(
 		return nil, err
 	}
 
+	var typedSearchAttributes SearchAttributes
+	searchAttributes := describeResponse.SearchAttributes
+	if searchAttributes != nil {
+		typedSearchAttributes = convertToTypedSearchAttributes(logger, searchAttributes.IndexedFields)
+	}
+
 	return &ScheduleDescription{
 		Schedule: Schedule{
 			Action: actionDescription,
@@ -510,8 +527,9 @@ func scheduleDescriptionFromPB(
 			CreatedAt:                     describeResponse.Info.GetCreateTime().AsTime(),
 			LastUpdateAt:                  describeResponse.Info.GetUpdateTime().AsTime(),
 		},
-		Memo:             describeResponse.Memo,
-		SearchAttributes: describeResponse.SearchAttributes,
+		Memo:                  describeResponse.Memo,
+		SearchAttributes:      searchAttributes,
+		TypedSearchAttributes: typedSearchAttributes,
 	}, nil
 }
 
