@@ -226,21 +226,6 @@ type (
 
 	// ReplayWorkflowHistoryOptions are options for replaying a workflow.
 	ReplayWorkflowHistoryOptions = internal.ReplayWorkflowHistoryOptions
-
-	// WorkerTuner allows for the dynamic customization of some aspects of worker behavior.
-	WorkerTuner = internal.WorkerTuner
-
-	// SlotPermit is a permit to use a slot.
-	SlotPermit = internal.SlotPermit
-
-	// SlotSupplier controls how slots are handed out for workflow and activity tasks as well as
-	// local activities when used in conjunction with a WorkerTuner.
-	//
-	// Currently, you cannot implement your own slot supplier. You can use the provided
-	// FixedSizeSlotSupplier and ResourceBasedSlotSupplier slot suppliers.
-	SlotSupplier = internal.SlotSupplier
-
-	SlotReserveContext = internal.SlotReserveContext
 )
 
 const (
@@ -319,14 +304,4 @@ func SetBinaryChecksum(checksum string) {
 // InterruptCh returns channel which will get data when system receives interrupt signal from OS. Pass it to worker.Run() func to stop worker with Ctrl+C.
 func InterruptCh() <-chan interface{} {
 	return internal.InterruptCh()
-}
-
-// CreateFixedSizeTuner creates a WorkerTuner that uses fixed size slot suppliers.
-func CreateFixedSizeTuner(numWorkflowSlots, numActivitySlots, numLocalActivitySlots int) WorkerTuner {
-	return internal.CreateFixedSizeTuner(numWorkflowSlots, numActivitySlots, numLocalActivitySlots)
-}
-
-// CreateCompositeTuner creates a WorkerTuner that uses a combination of slot suppliers.
-func CreateCompositeTuner(workflowSlotSupplier, activitySlotSupplier, localActivitySlotSupplier SlotSupplier) WorkerTuner {
-	return internal.CreateCompositeTuner(workflowSlotSupplier, activitySlotSupplier, localActivitySlotSupplier)
 }

@@ -3111,49 +3111,11 @@ func (ts *IntegrationTestSuite) TestResourceBasedSlotSupplierWorks() {
 	laWorkertags := []string{"worker_type", "LocalActivityWorker", "task_queue", ts.taskQueueName}
 	wfWorkertags := []string{"worker_type", "WorkflowWorker", "task_queue", ts.taskQueueName}
 
-	actRunning := atomic.Int32{}
-	laRunning := atomic.Int32{}
-	actStruct := &highWaterMarkActivities{currentlyRunning: &actRunning, maxConcurrent: 900}
-	laStruct := &highWaterMarkActivities{currentlyRunning: &laRunning, maxConcurrent: 900}
-
-	noExceedLimitsWf := func(ctx workflow.Context) error {
-		futures := make([]workflow.Future, 0)
-		for i := 0; i < 5; i++ {
-			ao := workflow.LocalActivityOptions{
-				StartToCloseTimeout: time.Minute,
-				RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3, InitialInterval: time.Millisecond, BackoffCoefficient: 1},
-			}
-			ctx = workflow.WithLocalActivityOptions(ctx, ao)
-			a := workflow.ExecuteLocalActivity(ctx, func(ctx context.Context, i int) error { return laStruct.DoActivity(ctx, i) }, i)
-			futures = append(futures, a)
-		}
-		for i := 0; i < 5; i++ {
-			ao := workflow.ActivityOptions{
-				StartToCloseTimeout: time.Minute,
-				RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3, InitialInterval: time.Millisecond, BackoffCoefficient: 1},
-			}
-			ctx = workflow.WithActivityOptions(ctx, ao)
-			a := workflow.ExecuteActivity(ctx, actStruct.DoActivity, i)
-			futures = append(futures, a)
-		}
-
-		for _, f := range futures {
-			err := f.Get(ctx, nil)
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-
-	ts.worker.RegisterWorkflow(noExceedLimitsWf)
-	ts.worker.RegisterActivity(actStruct)
-
 	wfRuns := make([]client.WorkflowRun, 0)
 	for i := 0; i < 1; i++ {
 		run, err := ts.client.ExecuteWorkflow(ctx,
 			ts.startWorkflowOptions("resource-based-slot-supplier"+strconv.Itoa(i)),
-			noExceedLimitsWf)
+			ts.workflows.RunsLocalAndNonlocalActsWithRetries, 2)
 		ts.NoError(err)
 		ts.NotNil(run)
 		ts.NoError(err)

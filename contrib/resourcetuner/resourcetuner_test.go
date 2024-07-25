@@ -44,9 +44,9 @@ func (f FakeSystemInfoSupplier) GetCpuUsage() (float64, error) {
 func TestPidDecisions(t *testing.T) {
 	fakeSupplier := &FakeSystemInfoSupplier{memUse: 0.5, cpuUse: 0.5}
 	rcOpts := DefaultResourceControllerOptions()
-	rcOpts.memTargetPercent = 0.8
-	rcOpts.cpuTargetPercent = 0.9
-	rc := newResourceController(rcOpts, fakeSupplier)
+	rcOpts.MemTargetPercent = 0.8
+	rcOpts.CpuTargetPercent = 0.9
+	rc := NewResourceControllerWithInfoSupplier(rcOpts, fakeSupplier)
 
 	for i := 0; i < 10; i++ {
 		decision, err := rc.pidDecision()

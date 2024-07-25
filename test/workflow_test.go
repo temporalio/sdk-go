@@ -3037,6 +3037,37 @@ func (w *Workflows) UpsertMemo(ctx workflow.Context, memo map[string]interface{}
 	return workflow.GetInfo(ctx).Memo, nil
 }
 
+func (w *Workflows) RunsLocalAndNonlocalActsWithRetries(ctx workflow.Context, actFailTimes int) error {
+	var activities *Activities
+	futures := make([]workflow.Future, 0)
+	for i := 0; i < 5; i++ {
+		ao := workflow.LocalActivityOptions{
+			StartToCloseTimeout: time.Minute,
+			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3, InitialInterval: time.Millisecond, BackoffCoefficient: 1},
+		}
+		ctx = workflow.WithLocalActivityOptions(ctx, ao)
+		a := workflow.ExecuteLocalActivity(ctx, activities.failNTimes, actFailTimes, i)
+		futures = append(futures, a)
+	}
+	for i := 0; i < 5; i++ {
+		ao := workflow.ActivityOptions{
+			StartToCloseTimeout: time.Minute,
+			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3, InitialInterval: time.Millisecond, BackoffCoefficient: 1},
+		}
+		ctx = workflow.WithActivityOptions(ctx, ao)
+		a := workflow.ExecuteActivity(ctx, activities.failNTimes, actFailTimes, i)
+		futures = append(futures, a)
+	}
+
+	for _, f := range futures {
+		err := f.Get(ctx, nil)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -3168,6 +3199,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.UpdateOrdering)
 	worker.RegisterWorkflow(w.UpdateSetHandlerOnly)
 	worker.RegisterWorkflow(w.Echo)
+	worker.RegisterWorkflow(w.RunsLocalAndNonlocalActsWithRetries)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {

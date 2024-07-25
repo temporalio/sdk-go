@@ -28,56 +28,30 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"go.temporal.io/sdk/internal/common/metrics"
-
 	"golang.org/x/sync/semaphore"
+
+	"go.temporal.io/sdk/internal/common/metrics"
 )
 
 // WorkerTuner allows for the dynamic customization of some aspects of worker behavior.
+//
+// WARNING: Custom implementations of SlotSupplier are currently experimental.
 type WorkerTuner interface {
 	GetWorkflowTaskSlotSupplier() SlotSupplier
 	GetActivityTaskSlotSupplier() SlotSupplier
 	GetLocalActivitySlotSupplier() SlotSupplier
 }
 
-// CompositeTuner allows you to build a tuner from multiple slot suppliers.
-type CompositeTuner struct {
-	workflowSlotSupplier      SlotSupplier
-	activitySlotSupplier      SlotSupplier
-	localActivitySlotSupplier SlotSupplier
-}
-
-func (c *CompositeTuner) GetWorkflowTaskSlotSupplier() SlotSupplier {
-	return c.workflowSlotSupplier
-}
-func (c *CompositeTuner) GetActivityTaskSlotSupplier() SlotSupplier {
-	return c.activitySlotSupplier
-}
-func (c *CompositeTuner) GetLocalActivitySlotSupplier() SlotSupplier {
-	return c.localActivitySlotSupplier
-}
-
-func CreateFixedSizeTuner(numWorkflowSlots, numActivitySlots, numLocalActivitySlots int) WorkerTuner {
-	return &CompositeTuner{
-		workflowSlotSupplier:      NewFixedSizeSlotSupplier(numWorkflowSlots),
-		activitySlotSupplier:      NewFixedSizeSlotSupplier(numActivitySlots),
-		localActivitySlotSupplier: NewFixedSizeSlotSupplier(numLocalActivitySlots),
-	}
-}
-
-func CreateCompositeTuner(workflowSlotSupplier, activitySlotSupplier, localActivitySlotSupplier SlotSupplier) WorkerTuner {
-	return &CompositeTuner{
-		workflowSlotSupplier:      workflowSlotSupplier,
-		activitySlotSupplier:      activitySlotSupplier,
-		localActivitySlotSupplier: localActivitySlotSupplier,
-	}
-}
-
+// SlotPermit is a permit to use a slot.
+//
+// WARNING: Custom implementations of SlotSupplier are currently experimental.
 type SlotPermit struct {
 	//lint:ignore U1000 pointless to guarantee uniqueness for now
 	int
 }
 
+// SlotReserveContext contains information that SlotSupplier instances can use during
+// reservation calls.
 type SlotReserveContext interface {
 	TaskQueue() string
 	NumIssuedSlots() int
@@ -88,6 +62,8 @@ type SlotReserveContext interface {
 //
 // Currently, you cannot implement your own slot supplier. You can use the provided
 // FixedSizeSlotSupplier and ResourceBasedSlotSupplier slot suppliers.
+//
+// WARNING: Custom implementations of SlotSupplier are currently experimental.
 type SlotSupplier interface {
 	// ReserveSlot is called before polling for new tasks. The implementation should block until
 	// a slot is available, then return a permit to use that slot. Implementations must be
@@ -110,6 +86,45 @@ type SlotSupplier interface {
 	MaximumSlots() int
 }
 
+// CompositeTuner allows you to build a tuner from multiple slot suppliers.
+//
+// WARNING: Custom implementations of SlotSupplier are currently experimental.
+type CompositeTuner struct {
+	workflowSlotSupplier      SlotSupplier
+	activitySlotSupplier      SlotSupplier
+	localActivitySlotSupplier SlotSupplier
+}
+
+func (c *CompositeTuner) GetWorkflowTaskSlotSupplier() SlotSupplier {
+	return c.workflowSlotSupplier
+}
+func (c *CompositeTuner) GetActivityTaskSlotSupplier() SlotSupplier {
+	return c.activitySlotSupplier
+}
+func (c *CompositeTuner) GetLocalActivitySlotSupplier() SlotSupplier {
+	return c.localActivitySlotSupplier
+}
+
+// CreateCompositeTuner creates a WorkerTuner that uses a combination of slot suppliers.
+//
+// WARNING: Custom implementations of SlotSupplier are currently experimental.
+func CreateCompositeTuner(workflowSlotSupplier, activitySlotSupplier, localActivitySlotSupplier SlotSupplier) WorkerTuner {
+	return &CompositeTuner{
+		workflowSlotSupplier:      workflowSlotSupplier,
+		activitySlotSupplier:      activitySlotSupplier,
+		localActivitySlotSupplier: localActivitySlotSupplier,
+	}
+}
+
+// CreateFixedSizeTuner creates a WorkerTuner that uses fixed size slot suppliers.
+func CreateFixedSizeTuner(numWorkflowSlots, numActivitySlots, numLocalActivitySlots int) WorkerTuner {
+	return &CompositeTuner{
+		workflowSlotSupplier:      NewFixedSizeSlotSupplier(numWorkflowSlots),
+		activitySlotSupplier:      NewFixedSizeSlotSupplier(numActivitySlots),
+		localActivitySlotSupplier: NewFixedSizeSlotSupplier(numLocalActivitySlots),
+	}
+}
+
 // FixedSizeSlotSupplier is a slot supplier that will only ever issue at most a fixed number of
 // slots.
 type FixedSizeSlotSupplier struct {
@@ -119,6 +134,7 @@ type FixedSizeSlotSupplier struct {
 	sem *semaphore.Weighted
 }
 
+// NewFixedSizeSlotSupplier creates a new FixedSizeSlotSupplier with the given number of slots.
 func NewFixedSizeSlotSupplier(numSlots int) *FixedSizeSlotSupplier {
 	return &FixedSizeSlotSupplier{
 		NumSlots: numSlots,
