@@ -207,7 +207,6 @@ func (s *WorkersTestSuite) TestWorkflowWorkerSlotSupplier() {
 
 		s.Equal(int32(1), wfCss.uses.Load())
 		// The number of reserves and releases should be equal
-		// TODO: Somehow still not always
 		s.Equal(wfCss.reserves.Load(), wfCss.releases.Load())
 		s.NoError(ctx.Err())
 	}

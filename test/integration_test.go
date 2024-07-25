@@ -266,7 +266,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.MaxConcurrentLocalActivityExecutionSize = 2
 	}
 	if strings.Contains(ts.T().Name(), "ResourceBasedSlotSupplier") {
-		tuner, err := resourcetuner.CreateResourceBasedTuner(0.5, 0.5)
+		tuner, err := resourcetuner.CreateResourceBasedTuner(0.9, 0.9)
 		ts.NoError(err)
 		options.Tuner = tuner
 	}

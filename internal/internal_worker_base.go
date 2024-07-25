@@ -351,7 +351,9 @@ func (bw *baseWorker) runPoller() {
 	reserveChan := make(chan *SlotPermit)
 
 	for {
+		bw.stopWG.Add(1)
 		go func() {
+			defer bw.stopWG.Done()
 			s, err := bw.slotSupplier.ReserveSlot(ctx, &bw.options.slotReservationData)
 			if err != nil {
 				if !errors.Is(err, context.Canceled) {

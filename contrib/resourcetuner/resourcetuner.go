@@ -47,10 +47,12 @@ func CreateResourceBasedTuner(targetCpu, targetMem float64) (worker.WorkerTuner,
 }
 
 type ResourceBasedSlotSupplier struct {
-	controller       *resourceController
-	minSlots         int
-	maxSlots         int
-	rampThrottle     time.Duration
+	controller   *resourceController
+	minSlots     int
+	maxSlots     int
+	rampThrottle time.Duration
+
+	lastIssuedMu     sync.Mutex
 	lastSlotIssuedAt time.Time
 }
 
@@ -59,7 +61,9 @@ func (r *ResourceBasedSlotSupplier) ReserveSlot(ctx context.Context, reserveCtx 
 		if reserveCtx.NumIssuedSlots() < r.minSlots {
 			return &worker.SlotPermit{}, nil
 		}
+		r.lastIssuedMu.Lock()
 		mustWaitFor := r.rampThrottle - time.Since(r.lastSlotIssuedAt)
+		r.lastIssuedMu.Unlock()
 		if mustWaitFor > 0 {
 			select {
 			case <-time.After(mustWaitFor):
@@ -81,6 +85,9 @@ func (r *ResourceBasedSlotSupplier) ReserveSlot(ctx context.Context, reserveCtx 
 }
 
 func (r *ResourceBasedSlotSupplier) TryReserveSlot(reserveCtx worker.SlotReserveContext) *worker.SlotPermit {
+	r.lastIssuedMu.Lock()
+	defer r.lastIssuedMu.Unlock()
+
 	numIssued := reserveCtx.NumIssuedSlots()
 	if numIssued < r.minSlots || (numIssued < r.maxSlots &&
 		time.Since(r.lastSlotIssuedAt) > r.rampThrottle) {
@@ -188,15 +195,21 @@ func (rc *resourceController) pidDecision() (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	elapsedTime := time.Since(rc.lastRefresh)
+	// This shouldn't be possible with real implementations, but if the elapsed time is 0 the
+	// PID controller can produce NaNs.
+	if elapsedTime <= 0 {
+		elapsedTime = 1 * time.Millisecond
+	}
 	rc.memPid.Update(pid.ControllerInput{
 		ReferenceSignal:  rc.options.memTargetPercent,
 		ActualSignal:     memUsage,
-		SamplingInterval: time.Since(rc.lastRefresh),
+		SamplingInterval: elapsedTime,
 	})
 	rc.cpuPid.Update(pid.ControllerInput{
 		ReferenceSignal:  rc.options.cpuTargetPercent,
 		ActualSignal:     cpuUsage,
-		SamplingInterval: time.Since(rc.lastRefresh),
+		SamplingInterval: elapsedTime,
 	})
 	rc.lastRefresh = time.Now()
 
