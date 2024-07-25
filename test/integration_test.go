@@ -5002,7 +5002,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 	})
 	ts.NoError(err)
 
-	ts.Eventually(func() bool {
+	ts.EventuallyWithT(func(c *assert.CollectT) {
 		description2, err := handle.Describe(ctx)
 		ts.NoError(err)
 		ts.Equal(description.Schedule, description2.Schedule)
@@ -5013,7 +5013,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 		returnedSa, _ = description2.TypedSearchAttributes.GetKeyword(keywordKey)
 		expectedSa, _ = sa.GetKeyword(keywordKey)
 		ts.Equal(expectedSa, returnedSa)
-		return len(description2.SearchAttributes.IndexedFields) == 2
+		ts.Equal(2, len(description2.SearchAttributes.IndexedFields))
 	}, time.Second, 100*time.Millisecond)
 
 	// nil search attributes should leave current search attributes untouched
@@ -5028,7 +5028,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 	})
 	ts.NoError(err)
 
-	ts.Eventually(func() bool {
+	ts.EventuallyWithT(func(c *assert.CollectT) {
 		description2, err := handle.Describe(ctx)
 		ts.NoError(err)
 		ts.Equal(2, description2.TypedSearchAttributes.Size())
@@ -5038,7 +5038,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 		returnedSa, _ = description2.TypedSearchAttributes.GetKeyword(keywordKey)
 		expectedSa, _ = sa.GetKeyword(keywordKey)
 		ts.Equal(expectedSa, returnedSa)
-		return len(description2.SearchAttributes.IndexedFields) == 2
+		ts.Equal(2, len(description2.SearchAttributes.IndexedFields))
 	}, time.Second, 100*time.Millisecond)
 
 	// updating a single search attribute on an existing collection acts as an upsert on the entire collection
@@ -5055,14 +5055,14 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 	})
 	ts.NoError(err)
 
-	ts.Eventually(func() bool {
+	ts.EventuallyWithT(func(c *assert.CollectT) {
 		description2, err := handle.Describe(ctx)
 		ts.NoError(err)
 		ts.Equal(1, description2.TypedSearchAttributes.Size())
 		returnedSa, _ := description2.TypedSearchAttributes.GetString(stringKey)
 		expectedSa, _ := newSa.GetString(stringKey)
 		ts.Equal(expectedSa, returnedSa)
-		return len(description2.SearchAttributes.IndexedFields) == 1
+		ts.Equal(1, len(description2.SearchAttributes.IndexedFields))
 	}, time.Second, 100*time.Millisecond)
 
 	// empty search attributes should remove pre-existing search attributes
@@ -5079,13 +5079,11 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 	})
 	ts.NoError(err)
 
-	ts.Eventually(func() bool {
+	ts.EventuallyWithT(func(c *assert.CollectT) {
 		description2, err := handle.Describe(ctx)
 		ts.NoError(err)
 		ts.Nil(description2.SearchAttributes)
 		ts.Empty(description2.TypedSearchAttributes)
-
-		return true
 	}, time.Second, 100*time.Millisecond)
 }
 
