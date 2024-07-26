@@ -348,6 +348,7 @@ func (bw *baseWorker) runPoller() {
 	bw.metricsHandler.Counter(metrics.PollerStartCounter).Inc(1)
 
 	ctx, cancelfn := context.WithCancel(context.Background())
+	defer cancelfn()
 	reserveChan := make(chan *SlotPermit)
 
 	for {
@@ -358,8 +359,7 @@ func (bw *baseWorker) runPoller() {
 			if err != nil {
 				if !errors.Is(err, context.Canceled) {
 					bw.logger.Error(fmt.Sprintf("Error while trying to reserve slot: %v", err))
-				} else {
-					close(reserveChan)
+					reserveChan <- nil
 				}
 				return
 			}
@@ -372,12 +372,13 @@ func (bw *baseWorker) runPoller() {
 
 		select {
 		case <-bw.stopCh:
-			cancelfn()
 			return
 		case permit := <-reserveChan:
 			if permit == nil { // There was an error reserving a slot
 				// Avoid spamming reserve hard in the event it's constantly failing
-				time.Sleep(time.Second)
+				if ctx.Err() == nil {
+					time.Sleep(time.Second)
+				}
 				continue
 			}
 			if bw.sessionTokenBucket != nil {

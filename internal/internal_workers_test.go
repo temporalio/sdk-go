@@ -26,6 +26,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -232,7 +233,6 @@ func (s *WorkersTestSuite) TestActivityWorkerSlotSupplier() {
 		s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
 			Do(func(ctx, in interface{}, opts ...interface{}) {
 				<-unblockPollCh
-				println("polled")
 			}).
 			Return(task, nil).AnyTimes()
 		s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -264,6 +264,73 @@ func (s *WorkersTestSuite) TestActivityWorkerSlotSupplier() {
 		// The number of reserves and releases should be equal
 		s.Equal(actCss.reserves.Load(), actCss.releases.Load())
 	}
+}
+
+type SometimesFailSlotSupplier struct {
+	failEveryN  int
+	currentSlot atomic.Int32
+}
+
+func (s *SometimesFailSlotSupplier) ReserveSlot(ctx context.Context, reserveCtx SlotReserveContext) (*SlotPermit, error) {
+	if int(s.currentSlot.Load())%s.failEveryN == 0 {
+		s.currentSlot.Add(1)
+		return nil, errors.New("ahhhhh fail")
+	}
+	return s.TryReserveSlot(reserveCtx), nil
+}
+func (s *SometimesFailSlotSupplier) TryReserveSlot(reserveCtx SlotReserveContext) *SlotPermit {
+	s.currentSlot.Add(1)
+	return &SlotPermit{}
+}
+func (s *SometimesFailSlotSupplier) MarkSlotUsed()     {}
+func (s *SometimesFailSlotSupplier) ReleaseSlot()      {}
+func (s *SometimesFailSlotSupplier) MaximumSlots() int { return 0 }
+
+func (s *WorkersTestSuite) TestErrorProneSlotSupplier() {
+	s.SetupTest()
+
+	task := &workflowservice.PollActivityTaskQueueResponse{
+		TaskToken:         []byte("test-token"),
+		WorkflowExecution: &commonpb.WorkflowExecution{WorkflowId: workflowID, RunId: runID},
+		WorkflowType:      &commonpb.WorkflowType{Name: workflowType},
+		ActivityId:        "activityID",
+		ActivityType:      &commonpb.ActivityType{Name: "activityType"},
+	}
+
+	unblockPollCh := make(chan struct{})
+	pollRespondedCh := make(chan struct{})
+	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
+	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		Do(func(ctx, in interface{}, opts ...interface{}) {
+			<-unblockPollCh
+		}).
+		Return(task, nil).AnyTimes()
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
+		Do(func(ctx, in interface{}, opts ...interface{}) {
+			pollRespondedCh <- struct{}{}
+		}).
+		Return(nil, nil).AnyTimes()
+
+	actCss := &SometimesFailSlotSupplier{failEveryN: 5}
+	executionParameters := workerExecutionParameters{
+		Namespace:                             DefaultNamespace,
+		TaskQueue:                             "testTaskQueue",
+		MaxConcurrentActivityTaskQueuePollers: 5,
+		Logger:                                ilog.NewDefaultLogger(),
+		Tuner:                                 CreateCompositeTuner(nil, actCss, nil),
+		WorkerStopTimeout:                     time.Second,
+	}
+	overrides := &workerOverrides{activityTaskHandler: newSampleActivityTaskHandler()}
+	a := &greeterActivity{}
+	registry := newRegistry()
+	registry.addActivityWithLock(a.ActivityType().Name, a)
+	activityWorker := newActivityWorker(s.service, executionParameters, overrides, registry, nil)
+	_ = activityWorker.Start()
+	for i := 0; i < 25; i++ {
+		unblockPollCh <- struct{}{}
+		<-pollRespondedCh
+	}
+	activityWorker.Stop()
 }
 
 func (s *WorkersTestSuite) TestActivityWorker() {

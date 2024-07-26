@@ -76,7 +76,7 @@ func defaultWorkflowResourceBasedSlotSupplierOptions() ResourceBasedSlotSupplier
 func defaultActivityResourceBasedSlotSupplierOptions() ResourceBasedSlotSupplierOptions {
 	return ResourceBasedSlotSupplierOptions{
 		MinSlots:     1,
-		MaxSlots:     1000,
+		MaxSlots:     10_000,
 		RampThrottle: 50 * time.Millisecond,
 	}
 }
