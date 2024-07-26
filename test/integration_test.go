@@ -5052,9 +5052,18 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 		err = handle.Delete(ctx)
 		ts.NoError(err)
 	}()
+
+	stringKey := temporal.NewSearchAttributeKeyString("CustomStringField")
+	keywordKey := temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
+	sa := temporal.NewSearchAttributes(
+		stringKey.ValueSet("CustomStringFieldValue"),
+		keywordKey.ValueSet("foo"),
+	)
+
 	updateFunc := func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
 		return &client.ScheduleUpdate{
-			Schedule: &input.Description.Schedule,
+			Schedule:              &input.Description.Schedule,
+			TypedSearchAttributes: &sa,
 		}, nil
 	}
 	description, err := handle.Describe(ctx)
@@ -5065,9 +5074,119 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 	})
 	ts.NoError(err)
 
-	description2, err := handle.Describe(ctx)
+	ts.EventuallyWithT(func(c *assert.CollectT) {
+		d, err := handle.Describe(ctx)
+		assert.NoError(c, err)
+		assert.Equal(c, description.Schedule, d.Schedule)
+		assert.Equal(c, 2, d.TypedSearchAttributes.Size())
+		returnedString, _ := d.TypedSearchAttributes.GetString(stringKey)
+		expectedString, _ := sa.GetString(stringKey)
+		assert.Equal(c, expectedString, returnedString)
+		returnedKeyword, _ := d.TypedSearchAttributes.GetKeyword(keywordKey)
+		expectedKeyword, _ := sa.GetKeyword(keywordKey)
+		assert.Equal(c, expectedKeyword, returnedKeyword)
+		assert.Equal(c, 2, len(d.SearchAttributes.IndexedFields))
+	}, time.Second, 100*time.Millisecond)
+
+	// nil search attributes should leave current search attributes untouched
+	updateFunc = func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+		return &client.ScheduleUpdate{
+			Schedule: &input.Description.Schedule,
+		}, nil
+	}
+
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: updateFunc,
+	})
 	ts.NoError(err)
-	ts.Equal(description.Schedule, description2.Schedule)
+
+	ts.EventuallyWithT(func(c *assert.CollectT) {
+		d, err := handle.Describe(ctx)
+		assert.NoError(c, err)
+		assert.Equal(c, 2, d.TypedSearchAttributes.Size())
+		returnedString, _ := d.TypedSearchAttributes.GetString(stringKey)
+		expectedString, _ := sa.GetString(stringKey)
+		assert.Equal(c, expectedString, returnedString)
+		returnedKeyword, _ := d.TypedSearchAttributes.GetKeyword(keywordKey)
+		expectedKeyword, _ := sa.GetKeyword(keywordKey)
+		assert.Equal(c, expectedKeyword, returnedKeyword)
+		assert.Equal(c, 2, len(d.SearchAttributes.IndexedFields))
+	}, time.Second, 100*time.Millisecond)
+
+	// Updating an attribute without affecting the others
+	updateFunc = func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+		newSa := temporal.NewSearchAttributes(
+			input.Description.TypedSearchAttributes.Copy(),
+			stringKey.ValueSet("Changed"),
+		)
+		return &client.ScheduleUpdate{
+			Schedule:              &input.Description.Schedule,
+			TypedSearchAttributes: &newSa,
+		}, nil
+	}
+
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: updateFunc,
+	})
+	ts.NoError(err)
+
+	ts.EventuallyWithT(func(c *assert.CollectT) {
+		d, err := handle.Describe(ctx)
+		assert.NoError(c, err)
+		assert.Equal(c, 2, d.TypedSearchAttributes.Size())
+		returnedString, _ := d.TypedSearchAttributes.GetString(stringKey)
+		expectedString, _ := temporal.NewSearchAttributes(stringKey.ValueSet("Changed")).GetString(stringKey)
+		assert.Equal(c, expectedString, returnedString)
+		returnedKeyword, _ := d.TypedSearchAttributes.GetKeyword(keywordKey)
+		expectedKeyword, _ := sa.GetKeyword(keywordKey)
+		assert.Equal(c, expectedKeyword, returnedKeyword)
+		assert.Equal(c, 2, len(d.SearchAttributes.IndexedFields))
+	}, time.Second, 100*time.Millisecond)
+
+	// updating a single search attribute on an existing collection acts as an upsert on the entire collection
+	newSa := temporal.NewSearchAttributes(stringKey.ValueSet("Changed"))
+	updateFunc = func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+		return &client.ScheduleUpdate{
+			Schedule:              &input.Description.Schedule,
+			TypedSearchAttributes: &newSa,
+		}, nil
+	}
+
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: updateFunc,
+	})
+	ts.NoError(err)
+
+	ts.EventuallyWithT(func(c *assert.CollectT) {
+		d, err := handle.Describe(ctx)
+		assert.NoError(c, err)
+		assert.Equal(c, 1, d.TypedSearchAttributes.Size())
+		returnedString, _ := d.TypedSearchAttributes.GetString(stringKey)
+		expectedString, _ := newSa.GetString(stringKey)
+		assert.Equal(c, expectedString, returnedString)
+		assert.Equal(c, 1, len(d.SearchAttributes.IndexedFields))
+	}, time.Second, 100*time.Millisecond)
+
+	// empty search attributes should remove pre-existing search attributes
+	sa = temporal.NewSearchAttributes()
+	updateFunc = func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+		return &client.ScheduleUpdate{
+			Schedule:              &input.Description.Schedule,
+			TypedSearchAttributes: &sa,
+		}, nil
+	}
+
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: updateFunc,
+	})
+	ts.NoError(err)
+
+	ts.EventuallyWithT(func(c *assert.CollectT) {
+		d, err := handle.Describe(ctx)
+		assert.NoError(c, err)
+		assert.Nil(c, d.SearchAttributes)
+		assert.Empty(c, d.TypedSearchAttributes)
+	}, time.Second, 100*time.Millisecond)
 }
 
 func (ts *IntegrationTestSuite) TestScheduleUpdateCancelUpdate() {
