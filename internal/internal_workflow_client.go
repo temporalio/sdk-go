@@ -52,6 +52,7 @@ import (
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/api/workflowservice/v1"
+
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/retry"
@@ -1592,6 +1593,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		WorkflowTaskTimeout:      durationpb.New(workflowTaskTimeout),
 		Identity:                 w.client.identity,
 		WorkflowIdReusePolicy:    in.Options.WorkflowIDReusePolicy,
+		WorkflowIdConflictPolicy: in.Options.WorkflowIDConflictPolicy,
 		RetryPolicy:              convertToPBRetryPolicy(in.Options.RetryPolicy),
 		CronSchedule:             in.Options.CronSchedule,
 		Memo:                     memo,
@@ -1745,6 +1747,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		Memo:                     memo,
 		SearchAttributes:         searchAttr,
 		WorkflowIdReusePolicy:    in.Options.WorkflowIDReusePolicy,
+		WorkflowIdConflictPolicy: in.Options.WorkflowIDConflictPolicy,
 		Header:                   header,
 	}
 

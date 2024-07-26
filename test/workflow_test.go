@@ -38,6 +38,7 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/temporal"
@@ -642,6 +643,13 @@ func (w *Workflows) IDReusePolicy(
 	}
 
 	return ans1 + ans2, nil
+}
+
+func (w *Workflows) IDConflictPolicy(
+	ctx workflow.Context,
+) error {
+	workflow.Await(ctx, func() bool { return false })
+	return nil
 }
 
 func (w *Workflows) ChildWorkflowWithRetryPolicy(ctx workflow.Context, expectedMaximumAttempts int, iterations int) error {
@@ -3063,6 +3071,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ContinueAsNewWithRetryPolicy)
 	worker.RegisterWorkflow(w.ContinueAsNewWithChildWF)
 	worker.RegisterWorkflow(w.IDReusePolicy)
+	worker.RegisterWorkflow(w.IDConflictPolicy)
 	worker.RegisterWorkflow(w.InspectActivityInfo)
 	worker.RegisterWorkflow(w.InspectLocalActivityInfo)
 	worker.RegisterWorkflow(w.LargeQueryResultWorkflow)
