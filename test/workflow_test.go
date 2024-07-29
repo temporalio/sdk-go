@@ -2641,6 +2641,24 @@ func (w *Workflows) UpdateRejectedWithOtherGoRoutine(ctx workflow.Context) error
 	return nil
 }
 
+func (w *Workflows) WorkflowWithRejectableUpdate(ctx workflow.Context) error {
+	workflow.SetUpdateHandlerWithOptions(ctx, "update",
+		func(ctx workflow.Context, _ bool) error {
+			return nil
+		}, workflow.UpdateHandlerOptions{
+			Validator: func(ctx workflow.Context, reject bool) error {
+				if reject {
+					return errors.New("test update rejected")
+				}
+				return nil
+			},
+		})
+	workflow.Await(ctx, func() bool {
+		return false
+	})
+	return nil
+}
+
 func (w *Workflows) UpdateOrdering(ctx workflow.Context) (int, error) {
 	updatesRan := 0
 	updateHandle := func(ctx workflow.Context) error {
@@ -3135,6 +3153,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.QueryTestWorkflow)
 	worker.RegisterWorkflow(w.UpdateWithMutex)
 	worker.RegisterWorkflow(w.UpdateWithSemaphore)
+	worker.RegisterWorkflow(w.WorkflowWithRejectableUpdate)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childWithRetryPolicy)

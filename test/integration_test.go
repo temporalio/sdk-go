@@ -3471,6 +3471,35 @@ func (ts *IntegrationTestSuite) TestUpdateRejected() {
 	ts.NoError(run.Get(ctx, nil))
 }
 
+func (ts *IntegrationTestSuite) TestUpdateRejectedDuplicated() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-update-rejected-duplicated")
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.WorkflowWithRejectableUpdate)
+	ts.NoError(err)
+	// Send an update we expect to be rejected before the first workflow task
+	handle, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+		Args:         []interface{}{true},
+	})
+	ts.NoError(err)
+	ts.Error(handle.Get(ctx, nil))
+	// Same update ID should be allowed to be reused after the first attempt is rejected
+	handle, err = ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+		Args:         []interface{}{false},
+	})
+	ts.NoError(err)
+	ts.NoError(handle.Get(ctx, nil))
+	ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID())
+}
+
 func (ts *IntegrationTestSuite) TestUpdateSettingHandlerInGoroutine() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
