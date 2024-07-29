@@ -31,6 +31,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/log"
 )
 
 // WorkerTuner allows for the dynamic customization of some aspects of worker behavior.
@@ -58,6 +59,7 @@ type SlotReserveContext interface {
 
 	TaskQueue() string
 	NumIssuedSlots() int
+	Logger() log.Logger
 }
 
 // SlotMarkUsedContext contains information that SlotSupplier instances can use during
@@ -253,12 +255,14 @@ func (f *FixedSizeSlotSupplier) MaxSlots() int {
 
 type slotReservationData struct {
 	taskQueue string
+	logger    log.Logger
 }
 
 type slotReserveContextImpl struct {
 	context.Context
 	taskQueue   string
 	issuedSlots int
+	logger      log.Logger
 }
 
 func (s slotReserveContextImpl) TaskQueue() string {
@@ -267,6 +271,10 @@ func (s slotReserveContextImpl) TaskQueue() string {
 
 func (s slotReserveContextImpl) NumIssuedSlots() int {
 	return s.issuedSlots
+}
+
+func (s slotReserveContextImpl) Logger() log.Logger {
+	return s.logger
 }
 
 type slotMarkUsedContextImpl struct {
@@ -319,6 +327,7 @@ func (t *trackingSlotSupplier) ReserveSlot(
 		Context:     ctx,
 		taskQueue:   data.taskQueue,
 		issuedSlots: int(t.issuedSlotsAtomic.Load()),
+		logger:      data.logger,
 	})
 	if err != nil {
 		return nil, err
@@ -335,6 +344,7 @@ func (t *trackingSlotSupplier) TryReserveSlot(data *slotReservationData) *SlotPe
 	permit := t.inner.TryReserveSlot(slotReserveContextImpl{
 		taskQueue:   data.taskQueue,
 		issuedSlots: int(t.issuedSlotsAtomic.Load()),
+		logger:      data.logger,
 	})
 	if permit != nil {
 		t.issuedSlotsAtomic.Add(1)

@@ -27,8 +27,6 @@ import (
 	"sync"
 	"time"
 
-	"go.temporal.io/sdk/internal"
-
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/mem"
 	"go.einride.tech/pid"
@@ -154,7 +152,7 @@ func (r *ResourceBasedSlotSupplier) ReserveSlot(ctx worker.SlotReserveContext) (
 	}
 }
 
-func (r *ResourceBasedSlotSupplier) TryReserveSlot(ctx internal.SlotReserveContext) *internal.SlotPermit {
+func (r *ResourceBasedSlotSupplier) TryReserveSlot(ctx worker.SlotReserveContext) *worker.SlotPermit {
 	r.lastIssuedMu.Lock()
 	defer r.lastIssuedMu.Unlock()
 
@@ -163,7 +161,7 @@ func (r *ResourceBasedSlotSupplier) TryReserveSlot(ctx internal.SlotReserveConte
 		time.Since(r.lastSlotIssuedAt) > r.options.RampThrottle) {
 		decision, err := r.controller.pidDecision()
 		if err != nil {
-			// TODO: log
+			ctx.Logger().Error("Error calculating resource usage", "error", err)
 			return nil
 		}
 		if decision {
@@ -174,8 +172,8 @@ func (r *ResourceBasedSlotSupplier) TryReserveSlot(ctx internal.SlotReserveConte
 	return nil
 }
 
-func (r *ResourceBasedSlotSupplier) MarkSlotUsed(internal.SlotMarkUsedContext) {}
-func (r *ResourceBasedSlotSupplier) ReleaseSlot(internal.SlotReleaseContext)   {}
+func (r *ResourceBasedSlotSupplier) MarkSlotUsed(worker.SlotMarkUsedContext) {}
+func (r *ResourceBasedSlotSupplier) ReleaseSlot(worker.SlotReleaseContext)   {}
 func (r *ResourceBasedSlotSupplier) MaxSlots() int {
 	return 0
 }

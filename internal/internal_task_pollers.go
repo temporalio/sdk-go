@@ -351,8 +351,8 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 	}
 	var taskErr error
 	defer func() {
-		// TODO: I had to add this check to avoid a panic in unit tests where this is nil.
-		//    Seems harmless to keep this, but, wanted to get another opinion.
+		// This check exists to avoid a panic in unit tests where this is nil. In non-mocked
+		// scenarios, this should never be nil.
 		if wfctx != nil {
 			wfctx.Unlock(taskErr)
 		}
