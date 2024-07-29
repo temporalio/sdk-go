@@ -61,10 +61,10 @@ func TestEagerActivityWrongTaskQueue(t *testing.T) {
 	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{taskQueue: "task-queue1"})
 	activityWorker := newActivityWorker(nil,
 		workerExecutionParameters{TaskQueue: "task-queue1",
-			Tuner: CreateFixedSizeTuner(
-				defaultMaxConcurrentTaskExecutionSize,
-				10,
-				defaultMaxConcurrentLocalActivityExecutionSize)},
+			Tuner: NewFixedSizeTuner(FixedSizeTunerOptions{
+				NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
+				NumActivitySlots:      10,
+				NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})},
 		nil, newRegistry(), nil)
 	activityWorker.worker.isWorkerStarted = true
 
@@ -83,10 +83,10 @@ func TestEagerActivityMaxPerTask(t *testing.T) {
 	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{taskQueue: "task-queue1"})
 	activityWorker := newActivityWorker(nil,
 		workerExecutionParameters{TaskQueue: "task-queue1",
-			Tuner: CreateFixedSizeTuner(
-				defaultMaxConcurrentTaskExecutionSize,
-				10,
-				defaultMaxConcurrentLocalActivityExecutionSize)},
+			Tuner: NewFixedSizeTuner(FixedSizeTunerOptions{
+				NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
+				NumActivitySlots:      10,
+				NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})},
 		nil, newRegistry(), nil)
 	activityWorker.worker.isWorkerStarted = true
 
@@ -107,7 +107,10 @@ func TestEagerActivityCounts(t *testing.T) {
 	// We'll create an eager activity executor with 3 max eager concurrent and 5
 	// max concurrent
 	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{taskQueue: "task-queue1", maxConcurrent: 3})
-	tuner := CreateFixedSizeTuner(defaultMaxConcurrentTaskExecutionSize, 5, defaultMaxConcurrentLocalActivityExecutionSize)
+	tuner := NewFixedSizeTuner(FixedSizeTunerOptions{
+		NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
+		NumActivitySlots:      5,
+		NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})
 	activityWorker := newActivityWorker(nil,
 		workerExecutionParameters{TaskQueue: "task-queue1", Tuner: tuner}, nil, newRegistry(), nil)
 	activityWorker.worker.isWorkerStarted = true

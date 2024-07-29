@@ -27,14 +27,12 @@ package test_test
 import (
 	"context"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"log"
 	"net"
 	"os"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/pborman/uuid"
@@ -47,7 +45,6 @@ import (
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
 	ilog "go.temporal.io/sdk/internal/log"
-	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -390,24 +387,3 @@ func (ts *ConfigAndClientSuiteBase) startWorkflowOptions(wfID string) client.Sta
 	}
 	return wfOptions
 }
-
-type SometimesFailSlotSupplier struct {
-	failOnceAfterSlot int
-	currentSlot       atomic.Int32
-	didFail           atomic.Bool
-}
-
-func (s *SometimesFailSlotSupplier) ReserveSlot(ctx context.Context, reserveCtx worker.SlotReserveContext) (*worker.SlotPermit, error) {
-	if int(s.currentSlot.Load()) >= s.failOnceAfterSlot && !s.didFail.Load() {
-		s.didFail.Store(true)
-		return nil, errors.New("ahhhhh fail")
-	}
-	return s.TryReserveSlot(reserveCtx), nil
-}
-func (s *SometimesFailSlotSupplier) TryReserveSlot(reserveCtx worker.SlotReserveContext) *worker.SlotPermit {
-	s.currentSlot.Add(1)
-	return &worker.SlotPermit{}
-}
-func (s *SometimesFailSlotSupplier) MarkSlotUsed()     {}
-func (s *SometimesFailSlotSupplier) ReleaseSlot()      {}
-func (s *SometimesFailSlotSupplier) MaximumSlots() int { return 0 }

@@ -260,10 +260,13 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 		params.FailureConverter = GetDefaultFailureConverter()
 	}
 	if params.Tuner == nil {
-		params.Tuner = CreateFixedSizeTuner(
-			defaultMaxConcurrentTaskExecutionSize,
-			defaultMaxConcurrentActivityExecutionSize,
-			defaultMaxConcurrentLocalActivityExecutionSize)
+		// Err cannot happen since these slot numbers are guaranteed valid
+		params.Tuner, _ = NewFixedSizeTuner(
+			FixedSizeTunerOptions{
+				NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
+				NumActivitySlots:      defaultMaxConcurrentActivityExecutionSize,
+				NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize,
+			})
 	}
 }
 
@@ -1849,7 +1852,7 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 	maxConcurrentWFT := options.MaxConcurrentWorkflowTaskExecutionSize
 	maxConcurrentAct := options.MaxConcurrentActivityExecutionSize
 	maxConcurrentLA := options.MaxConcurrentLocalActivityExecutionSize
-	if options.MaxConcurrentActivityExecutionSize == 0 {
+	if options.MaxConcurrentActivityExecutionSize <= 0 {
 		maxConcurrentAct = defaultMaxConcurrentActivityExecutionSize
 	}
 	if options.WorkerActivitiesPerSecond == 0 {
@@ -1858,13 +1861,13 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 	if options.MaxConcurrentActivityTaskPollers <= 0 {
 		options.MaxConcurrentActivityTaskPollers = defaultConcurrentPollRoutineSize
 	}
-	if options.MaxConcurrentWorkflowTaskExecutionSize == 0 {
+	if options.MaxConcurrentWorkflowTaskExecutionSize <= 0 {
 		maxConcurrentWFT = defaultMaxConcurrentTaskExecutionSize
 	}
 	if options.MaxConcurrentWorkflowTaskPollers <= 0 {
 		options.MaxConcurrentWorkflowTaskPollers = defaultConcurrentPollRoutineSize
 	}
-	if options.MaxConcurrentLocalActivityExecutionSize == 0 {
+	if options.MaxConcurrentLocalActivityExecutionSize <= 0 {
 		maxConcurrentLA = defaultMaxConcurrentLocalActivityExecutionSize
 	}
 	if options.WorkerLocalActivitiesPerSecond == 0 {
@@ -1903,7 +1906,12 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 		options.MaxHeartbeatThrottleInterval = defaultMaxHeartbeatThrottleInterval
 	}
 	if options.Tuner == nil {
-		options.Tuner = CreateFixedSizeTuner(maxConcurrentWFT, maxConcurrentAct, maxConcurrentLA)
+		// Err cannot happen since these slot numbers are guaranteed valid
+		options.Tuner, _ = NewFixedSizeTuner(FixedSizeTunerOptions{
+			NumWorkflowSlots:      maxConcurrentWFT,
+			NumActivitySlots:      maxConcurrentAct,
+			NumLocalActivitySlots: maxConcurrentLA})
+
 	}
 }
 

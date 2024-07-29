@@ -1,4 +1,4 @@
-module resourcetuner
+module go.temporal.io/sdk/contrib/resourcetuner
 
 go 1.21
 

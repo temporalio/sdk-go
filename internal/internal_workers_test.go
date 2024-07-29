@@ -143,7 +143,7 @@ func (c *CountingSlotSupplier) ReleaseSlot() {
 	c.releases.Add(1)
 }
 
-func (c *CountingSlotSupplier) MaximumSlots() int {
+func (c *CountingSlotSupplier) MaxSlots() int {
 	return 5
 }
 
@@ -196,8 +196,11 @@ func (s *WorkersTestSuite) TestWorkflowWorkerSlotSupplier() {
 			Logger:                                ilog.NewDefaultLogger(),
 			UserContext:                           ctx,
 			UserContextCancel:                     cancel,
-			Tuner:                                 CreateCompositeTuner(wfCss, nil, laCss),
-			WorkerStopTimeout:                     time.Second,
+			Tuner: NewCompositeTuner(CompositeTunerOptions{
+				WorkflowSlotSupplier:      wfCss,
+				ActivitySlotSupplier:      nil,
+				LocalActivitySlotSupplier: laCss}),
+			WorkerStopTimeout: time.Second,
 		}
 		overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 		workflowWorker := newWorkflowWorkerInternal(s.service, executionParameters, nil, overrides, newRegistry())
@@ -247,8 +250,11 @@ func (s *WorkersTestSuite) TestActivityWorkerSlotSupplier() {
 			TaskQueue:                             "testTaskQueue",
 			MaxConcurrentActivityTaskQueuePollers: 5,
 			Logger:                                ilog.NewDefaultLogger(),
-			Tuner:                                 CreateCompositeTuner(nil, actCss, nil),
-			WorkerStopTimeout:                     time.Second,
+			Tuner: NewCompositeTuner(CompositeTunerOptions{
+				WorkflowSlotSupplier:      nil,
+				ActivitySlotSupplier:      actCss,
+				LocalActivitySlotSupplier: nil}),
+			WorkerStopTimeout: time.Second,
 		}
 		overrides := &workerOverrides{activityTaskHandler: newSampleActivityTaskHandler()}
 		a := &greeterActivity{}
@@ -282,9 +288,9 @@ func (s *SometimesFailSlotSupplier) TryReserveSlot(reserveCtx SlotReserveContext
 	s.currentSlot.Add(1)
 	return &SlotPermit{}
 }
-func (s *SometimesFailSlotSupplier) MarkSlotUsed()     {}
-func (s *SometimesFailSlotSupplier) ReleaseSlot()      {}
-func (s *SometimesFailSlotSupplier) MaximumSlots() int { return 0 }
+func (s *SometimesFailSlotSupplier) MarkSlotUsed() {}
+func (s *SometimesFailSlotSupplier) ReleaseSlot()  {}
+func (s *SometimesFailSlotSupplier) MaxSlots() int { return 0 }
 
 func (s *WorkersTestSuite) TestErrorProneSlotSupplier() {
 	s.SetupTest()
@@ -317,8 +323,11 @@ func (s *WorkersTestSuite) TestErrorProneSlotSupplier() {
 		TaskQueue:                             "testTaskQueue",
 		MaxConcurrentActivityTaskQueuePollers: 5,
 		Logger:                                ilog.NewDefaultLogger(),
-		Tuner:                                 CreateCompositeTuner(nil, actCss, nil),
-		WorkerStopTimeout:                     time.Second,
+		Tuner: NewCompositeTuner(CompositeTunerOptions{
+			WorkflowSlotSupplier:      nil,
+			ActivitySlotSupplier:      actCss,
+			LocalActivitySlotSupplier: nil}),
+		WorkerStopTimeout: time.Second,
 	}
 	overrides := &workerOverrides{activityTaskHandler: newSampleActivityTaskHandler()}
 	a := &greeterActivity{}
@@ -385,10 +394,10 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 		Namespace:                             DefaultNamespace,
 		TaskQueue:                             "testTaskQueue",
 		MaxConcurrentActivityTaskQueuePollers: 5,
-		Tuner: CreateFixedSizeTuner(
-			defaultMaxConcurrentTaskExecutionSize,
-			2,
-			defaultMaxConcurrentLocalActivityExecutionSize),
+		Tuner: NewFixedSizeTuner(FixedSizeTunerOptions{
+			NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
+			NumActivitySlots:      2,
+			NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize}),
 		Logger:            ilog.NewDefaultLogger(),
 		UserContext:       ctx,
 		UserContextCancel: cancel,

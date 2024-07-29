@@ -46,8 +46,8 @@ type WorkerTuner interface {
 //
 // WARNING: Custom implementations of SlotSupplier are currently experimental.
 type SlotPermit struct {
-	//lint:ignore U1000 pointless to guarantee uniqueness for now
-	int
+	//lint:ignore U1000 pointless to guarantee pointers to SlotPermits are unique
+	_uniqueInt int
 }
 
 // SlotReserveContext contains information that SlotSupplier instances can use during
@@ -80,10 +80,10 @@ type SlotSupplier interface {
 
 	ReleaseSlot()
 
-	// MaximumSlots returns the maximum number of slots that this supplier will ever issue.
+	// MaxSlots returns the maximum number of slots that this supplier will ever issue.
 	// Implementations may return 0 if there is no well-defined upper limit. In such cases the
 	// available task slots metric will not be emitted.
-	MaximumSlots() int
+	MaxSlots() int
 }
 
 // CompositeTuner allows you to build a tuner from multiple slot suppliers.
@@ -105,24 +105,47 @@ func (c *CompositeTuner) GetLocalActivitySlotSupplier() SlotSupplier {
 	return c.localActivitySlotSupplier
 }
 
-// CreateCompositeTuner creates a WorkerTuner that uses a combination of slot suppliers.
-//
-// WARNING: Custom implementations of SlotSupplier are currently experimental.
-func CreateCompositeTuner(workflowSlotSupplier, activitySlotSupplier, localActivitySlotSupplier SlotSupplier) WorkerTuner {
-	return &CompositeTuner{
-		workflowSlotSupplier:      workflowSlotSupplier,
-		activitySlotSupplier:      activitySlotSupplier,
-		localActivitySlotSupplier: localActivitySlotSupplier,
-	}
+// CompositeTunerOptions are the options used by NewCompositeTuner.
+type CompositeTunerOptions struct {
+	WorkflowSlotSupplier      SlotSupplier
+	ActivitySlotSupplier      SlotSupplier
+	LocalActivitySlotSupplier SlotSupplier
 }
 
-// CreateFixedSizeTuner creates a WorkerTuner that uses fixed size slot suppliers.
-func CreateFixedSizeTuner(numWorkflowSlots, numActivitySlots, numLocalActivitySlots int) WorkerTuner {
+// NewCompositeTuner creates a WorkerTuner that uses a combination of slot suppliers.
+//
+// WARNING: Custom implementations of SlotSupplier are currently experimental.
+func NewCompositeTuner(options CompositeTunerOptions) (WorkerTuner, error) {
 	return &CompositeTuner{
-		workflowSlotSupplier:      NewFixedSizeSlotSupplier(numWorkflowSlots),
-		activitySlotSupplier:      NewFixedSizeSlotSupplier(numActivitySlots),
-		localActivitySlotSupplier: NewFixedSizeSlotSupplier(numLocalActivitySlots),
+		workflowSlotSupplier:      options.WorkflowSlotSupplier,
+		activitySlotSupplier:      options.ActivitySlotSupplier,
+		localActivitySlotSupplier: options.LocalActivitySlotSupplier,
+	}, nil
+}
+
+// FixedSizeTunerOptions are the options used by NewFixedSizeTuner.
+type FixedSizeTunerOptions struct {
+	NumWorkflowSlots      int
+	NumActivitySlots      int
+	NumLocalActivitySlots int
+}
+
+// NewFixedSizeTuner creates a WorkerTuner that uses fixed size slot suppliers.
+func NewFixedSizeTuner(options FixedSizeTunerOptions) (WorkerTuner, error) {
+	wfSS, err := NewFixedSizeSlotSupplier(options.NumWorkflowSlots)
+	if err != nil {
+		return nil, err
 	}
+	actSS, err := NewFixedSizeSlotSupplier(options.NumActivitySlots)
+	if err != nil {
+		return nil, err
+	}
+	laSS, err := NewFixedSizeSlotSupplier(options.NumLocalActivitySlots)
+	return &CompositeTuner{
+		workflowSlotSupplier:      wfSS,
+		activitySlotSupplier:      actSS,
+		localActivitySlotSupplier: laSS,
+	}, nil
 }
 
 // FixedSizeSlotSupplier is a slot supplier that will only ever issue at most a fixed number of
@@ -135,11 +158,14 @@ type FixedSizeSlotSupplier struct {
 }
 
 // NewFixedSizeSlotSupplier creates a new FixedSizeSlotSupplier with the given number of slots.
-func NewFixedSizeSlotSupplier(numSlots int) *FixedSizeSlotSupplier {
+func NewFixedSizeSlotSupplier(numSlots int) (*FixedSizeSlotSupplier, error) {
+	if numSlots <= 0 {
+		return nil, fmt.Errorf("NumSlots must be positive")
+	}
 	return &FixedSizeSlotSupplier{
 		NumSlots: numSlots,
 		sem:      semaphore.NewWeighted(int64(numSlots)),
-	}
+	}, nil
 }
 
 func (f *FixedSizeSlotSupplier) ReserveSlot(ctx context.Context, reserveCtx SlotReserveContext) (*SlotPermit, error) {
@@ -160,7 +186,7 @@ func (f *FixedSizeSlotSupplier) MarkSlotUsed() {}
 func (f *FixedSizeSlotSupplier) ReleaseSlot() {
 	f.sem.Release(1)
 }
-func (f *FixedSizeSlotSupplier) MaximumSlots() int {
+func (f *FixedSizeSlotSupplier) MaxSlots() int {
 	return f.NumSlots
 }
 
@@ -220,6 +246,7 @@ func (t *trackingSlotSupplier) ReserveSlot(
 	t.publishMetrics(false)
 	return permit, nil
 }
+
 func (t *trackingSlotSupplier) TryReserveSlot(data *slotReservationData) *SlotPermit {
 	permit := t.inner.TryReserveSlot(slotReserveContextImpl{
 		taskQueue:   data.taskQueue,
@@ -231,6 +258,7 @@ func (t *trackingSlotSupplier) TryReserveSlot(data *slotReservationData) *SlotPe
 	}
 	return permit
 }
+
 func (t *trackingSlotSupplier) MarkSlotUsed(permit *SlotPermit) {
 	if permit == nil {
 		return
@@ -241,6 +269,7 @@ func (t *trackingSlotSupplier) MarkSlotUsed(permit *SlotPermit) {
 	t.inner.MarkSlotUsed()
 	t.publishMetrics(true)
 }
+
 func (t *trackingSlotSupplier) ReleaseSlot(permit *SlotPermit, reason string) {
 	if permit == nil {
 		panic("Cannot release with nil permit")
@@ -253,14 +282,15 @@ func (t *trackingSlotSupplier) ReleaseSlot(permit *SlotPermit, reason string) {
 	delete(t.usedSlots, permit)
 	t.publishMetrics(true)
 }
+
 func (t *trackingSlotSupplier) publishMetrics(lockAlreadyHeld bool) {
 	if !lockAlreadyHeld {
 		t.slotsMutex.Lock()
 		defer t.slotsMutex.Unlock()
 	}
 	usedSlots := len(t.usedSlots)
-	if t.inner.MaximumSlots() != 0 {
-		t.taskSlotsAvailableGauge.Update(float64(t.inner.MaximumSlots() - usedSlots))
+	if t.inner.MaxSlots() != 0 {
+		t.taskSlotsAvailableGauge.Update(float64(t.inner.MaxSlots() - usedSlots))
 	}
 	t.taskSlotsUsedGauge.Update(float64(usedSlots))
 }

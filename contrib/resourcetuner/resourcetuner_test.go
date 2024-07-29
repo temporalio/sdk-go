@@ -46,7 +46,8 @@ func TestPidDecisions(t *testing.T) {
 	rcOpts := DefaultResourceControllerOptions()
 	rcOpts.MemTargetPercent = 0.8
 	rcOpts.CpuTargetPercent = 0.9
-	rc := NewResourceControllerWithInfoSupplier(rcOpts, fakeSupplier)
+	rcOpts.InfoSupplier = fakeSupplier
+	rc := NewResourceController(rcOpts)
 
 	for i := 0; i < 10; i++ {
 		decision, err := rc.pidDecision()

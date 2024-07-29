@@ -24,6 +24,7 @@ package resourcetuner
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -33,22 +34,34 @@ import (
 	"go.temporal.io/sdk/worker"
 )
 
-// CreateResourceBasedTuner creates a WorkerTuner that dynamically adjusts the number of slots based
+type ResourceBasedTunerOptions struct {
+	TargetMem float64
+	TargetCpu float64
+}
+
+// NewResourceBasedTuner creates a WorkerTuner that dynamically adjusts the number of slots based
 // on system resources. Specify the target CPU and memory usage as a value between 0 and 1.
 //
 // WARNING: Resource based tuning is currently experimental.
-func CreateResourceBasedTuner(targetCpu, targetMem float64) (worker.WorkerTuner, error) {
+func NewResourceBasedTuner(opts ResourceBasedTunerOptions) (worker.WorkerTuner, error) {
 	options := DefaultResourceControllerOptions()
-	options.MemTargetPercent = targetMem
-	options.CpuTargetPercent = targetCpu
-	controller := NewResourceControllerWithInfoSupplier(options, &psUtilSystemInfoSupplier{})
+	options.MemTargetPercent = opts.TargetMem
+	options.CpuTargetPercent = opts.TargetCpu
+	controller := NewResourceController(options)
 	wfSS := &ResourceBasedSlotSupplier{controller: controller,
 		options: defaultWorkflowResourceBasedSlotSupplierOptions()}
 	actSS := &ResourceBasedSlotSupplier{controller: controller,
 		options: defaultActivityResourceBasedSlotSupplierOptions()}
 	laSS := &ResourceBasedSlotSupplier{controller: controller,
 		options: defaultActivityResourceBasedSlotSupplierOptions()}
-	compositeTuner := worker.CreateCompositeTuner(wfSS, actSS, laSS)
+	compositeTuner, err := worker.NewCompositeTuner(worker.CompositeTunerOptions{
+		WorkflowSlotSupplier:      wfSS,
+		ActivitySlotSupplier:      actSS,
+		LocalActivitySlotSupplier: laSS,
+	})
+	if err != nil {
+		return nil, err
+	}
 	return compositeTuner, nil
 }
 
@@ -101,8 +114,14 @@ type ResourceBasedSlotSupplier struct {
 func NewResourceBasedSlotSupplier(
 	controller *ResourceController,
 	options ResourceBasedSlotSupplierOptions,
-) *ResourceBasedSlotSupplier {
-	return &ResourceBasedSlotSupplier{controller: controller, options: options}
+) (*ResourceBasedSlotSupplier, error) {
+	if options.MinSlots < 0 || options.MaxSlots < 0 || options.MinSlots > options.MaxSlots {
+		return nil, errors.New("MinSlots and Max slots must be non-negative and MinSlots must be less than or equal to MaxSlots")
+	}
+	if options.RampThrottle < 0 {
+		return nil, errors.New("RampThrottle must be non-negative")
+	}
+	return &ResourceBasedSlotSupplier{controller: controller, options: options}, nil
 }
 
 func (r *ResourceBasedSlotSupplier) ReserveSlot(ctx context.Context, reserveCtx worker.SlotReserveContext) (*worker.SlotPermit, error) {
@@ -113,6 +132,8 @@ func (r *ResourceBasedSlotSupplier) ReserveSlot(ctx context.Context, reserveCtx 
 		r.lastIssuedMu.Lock()
 		mustWaitFor := r.options.RampThrottle - time.Since(r.lastSlotIssuedAt)
 		r.lastIssuedMu.Unlock()
+		// Deal with last issued possibly being unset, or, on windows seemingly sometimes can
+		// have zero values if called rapidly enough.
 		if mustWaitFor > 0 {
 			select {
 			case <-time.After(mustWaitFor):
@@ -125,11 +146,7 @@ func (r *ResourceBasedSlotSupplier) ReserveSlot(ctx context.Context, reserveCtx 
 		if maybePermit != nil {
 			return maybePermit, nil
 		}
-		select {
-		case <-time.After(10 * time.Millisecond):
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -155,7 +172,7 @@ func (r *ResourceBasedSlotSupplier) TryReserveSlot(reserveCtx worker.SlotReserve
 
 func (r *ResourceBasedSlotSupplier) MarkSlotUsed() {}
 func (r *ResourceBasedSlotSupplier) ReleaseSlot()  {}
-func (r *ResourceBasedSlotSupplier) MaximumSlots() int {
+func (r *ResourceBasedSlotSupplier) MaxSlots() int {
 	return 0
 }
 
@@ -183,6 +200,9 @@ type ResourceControllerOptions struct {
 	// CpuTargetPercent is the target overall system CPU usage as value 0 and 1 that the controller
 	// will attempt to maintain.
 	CpuTargetPercent float64
+	// SystemInfoSupplier is the supplier that the controller will use to get system resources.
+	// Leave this nil to use the default implementation.
+	InfoSupplier SystemInfoSupplier
 
 	MemOutputThreshold float64
 	CpuOutputThreshold float64
@@ -234,18 +254,12 @@ type ResourceController struct {
 //
 // WARNING: Resource based tuning is currently experimental.
 func NewResourceController(options ResourceControllerOptions) *ResourceController {
-	return NewResourceControllerWithInfoSupplier(options, &psUtilSystemInfoSupplier{})
-}
-
-// NewResourceControllerWithInfoSupplier creates a new ResourceController with the provided options
-// and system information supplier. Only use this if you need to override the default system info
-// supplier.
-//
-// WARNING: Resource based tuning is currently experimental.
-func NewResourceControllerWithInfoSupplier(
-	options ResourceControllerOptions,
-	infoSupplier SystemInfoSupplier,
-) *ResourceController {
+	var infoSupplier SystemInfoSupplier
+	if options.InfoSupplier == nil {
+		infoSupplier = &psUtilSystemInfoSupplier{}
+	} else {
+		infoSupplier = options.InfoSupplier
+	}
 	return &ResourceController{
 		options:      options,
 		infoSupplier: infoSupplier,

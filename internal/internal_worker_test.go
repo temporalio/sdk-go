@@ -1710,9 +1710,9 @@ func (t *throwsOneErrSlotSupplier) ReserveSlot(ctx context.Context, reserveCtx S
 func (t *throwsOneErrSlotSupplier) TryReserveSlot(SlotReserveContext) *SlotPermit {
 	return &SlotPermit{}
 }
-func (t *throwsOneErrSlotSupplier) MarkSlotUsed()     {}
-func (t *throwsOneErrSlotSupplier) ReleaseSlot()      {}
-func (t *throwsOneErrSlotSupplier) MaximumSlots() int { return 100 }
+func (t *throwsOneErrSlotSupplier) MarkSlotUsed() {}
+func (t *throwsOneErrSlotSupplier) ReleaseSlot()  {}
+func (t *throwsOneErrSlotSupplier) MaxSlots() int { return 100 }
 
 func (s *internalWorkerTestSuite) TestSlotSupplierReturnsErrorCanContinue() {
 	// Create service endpoint
@@ -2621,10 +2621,10 @@ func TestWorkerOptionDefaults(t *testing.T) {
 		TaskQueue:                             taskQueue,
 		MaxConcurrentActivityTaskQueuePollers: defaultConcurrentPollRoutineSize,
 		MaxConcurrentWorkflowTaskQueuePollers: defaultConcurrentPollRoutineSize,
-		Tuner: CreateFixedSizeTuner(
-			defaultMaxConcurrentTaskExecutionSize,
-			defaultMaxConcurrentActivityExecutionSize,
-			defaultMaxConcurrentLocalActivityExecutionSize),
+		Tuner: NewFixedSizeTuner(FixedSizeTunerOptions{
+			NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
+			NumActivitySlots:      defaultMaxConcurrentActivityExecutionSize,
+			NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize}),
 		WorkerActivitiesPerSecond:      defaultTaskQueueActivitiesPerSecond,
 		TaskQueueActivitiesPerSecond:   defaultTaskQueueActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond: defaultWorkerLocalActivitiesPerSecond,
@@ -2684,10 +2684,10 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		TaskQueue:                             taskQueue,
 		MaxConcurrentActivityTaskQueuePollers: options.MaxConcurrentActivityTaskPollers,
 		MaxConcurrentWorkflowTaskQueuePollers: options.MaxConcurrentWorkflowTaskPollers,
-		Tuner: CreateFixedSizeTuner(
-			options.MaxConcurrentWorkflowTaskExecutionSize,
-			options.MaxConcurrentActivityExecutionSize,
-			options.MaxConcurrentLocalActivityExecutionSize),
+		Tuner: NewFixedSizeTuner(FixedSizeTunerOptions{
+			NumWorkflowSlots:      options.MaxConcurrentWorkflowTaskExecutionSize,
+			NumActivitySlots:      options.MaxConcurrentActivityExecutionSize,
+			NumLocalActivitySlots: options.MaxConcurrentLocalActivityExecutionSize}),
 		WorkerActivitiesPerSecond:      options.WorkerActivitiesPerSecond,
 		TaskQueueActivitiesPerSecond:   options.TaskQueueActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond: options.WorkerLocalActivitiesPerSecond,
@@ -2722,10 +2722,10 @@ func TestLocalActivityWorkerOnly(t *testing.T) {
 		TaskQueue:                             taskQueue,
 		MaxConcurrentActivityTaskQueuePollers: defaultConcurrentPollRoutineSize,
 		MaxConcurrentWorkflowTaskQueuePollers: defaultConcurrentPollRoutineSize,
-		Tuner: CreateFixedSizeTuner(
-			defaultMaxConcurrentTaskExecutionSize,
-			defaultMaxConcurrentActivityExecutionSize,
-			defaultMaxConcurrentLocalActivityExecutionSize),
+		Tuner: NewFixedSizeTuner(FixedSizeTunerOptions{
+			NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
+			NumActivitySlots:      defaultMaxConcurrentActivityExecutionSize,
+			NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize}),
 		WorkerActivitiesPerSecond:      defaultTaskQueueActivitiesPerSecond,
 		TaskQueueActivitiesPerSecond:   defaultTaskQueueActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond: defaultWorkerLocalActivitiesPerSecond,

@@ -66,7 +66,10 @@ func (ts *WorkerTunerTestSuite) TestFixedSizeWorkerTuner() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	tuner := worker.CreateFixedSizeTuner(10, 10, 5)
+	tuner, err := worker.NewFixedSizeTuner(worker.FixedSizeTunerOptions{
+		NumWorkflowSlots: 10, NumActivitySlots: 10, NumLocalActivitySlots: 5,
+	})
+	ts.NoError(err)
 
 	ts.runTheWorkflow(tuner, ctx)
 }
@@ -75,19 +78,24 @@ func (ts *WorkerTunerTestSuite) TestCompositeWorkerTuner() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	wfSS := worker.NewFixedSizeSlotSupplier(10)
+	wfSS, err := worker.NewFixedSizeSlotSupplier(10)
+	ts.NoError(err)
 	controllerOpts := resourcetuner.DefaultResourceControllerOptions()
 	controllerOpts.MemTargetPercent = 0.8
 	controllerOpts.CpuTargetPercent = 0.9
 	controller := resourcetuner.NewResourceController(controllerOpts)
-	actSS := resourcetuner.NewResourceBasedSlotSupplier(controller,
+	actSS, err := resourcetuner.NewResourceBasedSlotSupplier(controller,
 		resourcetuner.ResourceBasedSlotSupplierOptions{
 			MinSlots:     10,
 			MaxSlots:     20,
 			RampThrottle: 0,
 		})
-	laCss := worker.NewFixedSizeSlotSupplier(5)
-	tuner := worker.CreateCompositeTuner(wfSS, actSS, laCss)
+	ts.NoError(err)
+	laCss, err := worker.NewFixedSizeSlotSupplier(5)
+	ts.NoError(err)
+	tuner, err := worker.NewCompositeTuner(worker.CompositeTunerOptions{
+		WorkflowSlotSupplier: wfSS, ActivitySlotSupplier: actSS, LocalActivitySlotSupplier: laCss})
+	ts.NoError(err)
 
 	ts.runTheWorkflow(tuner, ctx)
 }

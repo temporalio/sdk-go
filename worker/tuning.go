@@ -45,17 +45,23 @@ type SlotSupplier = internal.SlotSupplier
 // reservation calls.
 type SlotReserveContext = internal.SlotReserveContext
 
-// CreateFixedSizeTuner creates a WorkerTuner that uses fixed size slot suppliers.
-func CreateFixedSizeTuner(numWorkflowSlots, numActivitySlots, numLocalActivitySlots int) WorkerTuner {
-	return internal.CreateFixedSizeTuner(numWorkflowSlots, numActivitySlots, numLocalActivitySlots)
+// FixedSizeTunerOptions are the options used by NewFixedSizeTuner.
+type FixedSizeTunerOptions = internal.FixedSizeTunerOptions
+
+// CompositeTunerOptions are the options used by NewCompositeTuner.
+type CompositeTunerOptions = internal.CompositeTunerOptions
+
+// NewFixedSizeTuner creates a WorkerTuner that uses fixed size slot suppliers.
+func NewFixedSizeTuner(opts FixedSizeTunerOptions) (WorkerTuner, error) {
+	return internal.NewFixedSizeTuner(opts)
 }
 
-// CreateCompositeTuner creates a WorkerTuner that uses a combination of slot suppliers.
-func CreateCompositeTuner(workflowSlotSupplier, activitySlotSupplier, localActivitySlotSupplier SlotSupplier) WorkerTuner {
-	return internal.CreateCompositeTuner(workflowSlotSupplier, activitySlotSupplier, localActivitySlotSupplier)
+// NewCompositeTuner creates a WorkerTuner that uses a combination of slot suppliers.
+func NewCompositeTuner(opts CompositeTunerOptions) (WorkerTuner, error) {
+	return internal.NewCompositeTuner(opts)
 }
 
 // NewFixedSizeSlotSupplier creates a new FixedSizeSlotSupplier with the given number of slots.
-func NewFixedSizeSlotSupplier(numSlots int) SlotSupplier {
+func NewFixedSizeSlotSupplier(numSlots int) (SlotSupplier, error) {
 	return internal.NewFixedSizeSlotSupplier(numSlots)
 }
