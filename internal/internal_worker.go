@@ -158,9 +158,6 @@ type (
 		// MaxConcurrentNexusTaskQueuePollers is the max number of pollers for the nexus task queue.
 		MaxConcurrentNexusTaskQueuePollers int
 
-		// Defines how many concurrent nexus task executions should be handled by this worker.
-		ConcurrentNexusTaskExecutionSize int
-
 		// User can provide an identity for the debuggability. If not provided the framework has
 		// a default option.
 		Identity string
@@ -1658,7 +1655,6 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		MaxConcurrentActivityTaskQueuePollers: options.MaxConcurrentActivityTaskPollers,
 		WorkerLocalActivitiesPerSecond:        options.WorkerLocalActivitiesPerSecond,
 		MaxConcurrentWorkflowTaskQueuePollers: options.MaxConcurrentWorkflowTaskPollers,
-		ConcurrentNexusTaskExecutionSize:      options.MaxConcurrentNexusTaskExecutionSize,
 		MaxConcurrentNexusTaskQueuePollers:    options.MaxConcurrentNexusTaskPollers,
 		Identity:                              client.identity,
 		WorkerBuildID:                         options.BuildID,
@@ -1845,13 +1841,15 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 	if options.Tuner != nil {
 		if options.MaxConcurrentWorkflowTaskExecutionSize != 0 ||
 			options.MaxConcurrentActivityExecutionSize != 0 ||
-			options.MaxConcurrentLocalActivityExecutionSize != 0 {
-			panic("cannot set MaxConcurrentWorkflowTaskExecutionSize, MaxConcurrentActivityExecutionSize, or MaxConcurrentLocalActivityExecutionSize with Tuner")
+			options.MaxConcurrentLocalActivityExecutionSize != 0 ||
+			options.MaxConcurrentNexusTaskExecutionSize != 0 {
+			panic("cannot set MaxConcurrentWorkflowTaskExecutionSize, MaxConcurrentActivityExecutionSize, MaxConcurrentLocalActivityExecutionSize, or MaxConcurrentNexusTaskExecutionSize with Tuner")
 		}
 	}
 	maxConcurrentWFT := options.MaxConcurrentWorkflowTaskExecutionSize
 	maxConcurrentAct := options.MaxConcurrentActivityExecutionSize
 	maxConcurrentLA := options.MaxConcurrentLocalActivityExecutionSize
+	maxConcurrentNexus := options.MaxConcurrentNexusTaskExecutionSize
 	if options.MaxConcurrentActivityExecutionSize <= 0 {
 		maxConcurrentAct = defaultMaxConcurrentActivityExecutionSize
 	}
@@ -1883,8 +1881,8 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 	if options.MaxConcurrentNexusTaskPollers <= 0 {
 		options.MaxConcurrentNexusTaskPollers = defaultConcurrentPollRoutineSize
 	}
-	if options.MaxConcurrentNexusTaskExecutionSize == 0 {
-		options.MaxConcurrentNexusTaskExecutionSize = defaultMaxConcurrentTaskExecutionSize
+	if options.MaxConcurrentNexusTaskExecutionSize <= 0 {
+		maxConcurrentNexus = defaultMaxConcurrentTaskExecutionSize
 	}
 	if options.StickyScheduleToStartTimeout.Seconds() == 0 {
 		options.StickyScheduleToStartTimeout = stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second
@@ -1910,7 +1908,8 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 		options.Tuner, _ = NewFixedSizeTuner(FixedSizeTunerOptions{
 			NumWorkflowSlots:      maxConcurrentWFT,
 			NumActivitySlots:      maxConcurrentAct,
-			NumLocalActivitySlots: maxConcurrentLA})
+			NumLocalActivitySlots: maxConcurrentLA,
+			NumNexusSlots:         maxConcurrentNexus})
 
 	}
 }

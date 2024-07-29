@@ -59,12 +59,14 @@ func TestEagerActivityNoActivityWorker(t *testing.T) {
 
 func TestEagerActivityWrongTaskQueue(t *testing.T) {
 	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{taskQueue: "task-queue1"})
+	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
+		NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
+		NumActivitySlots:      10,
+		NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})
+	require.NoError(t, err)
 	activityWorker := newActivityWorker(nil,
 		workerExecutionParameters{TaskQueue: "task-queue1",
-			Tuner: NewFixedSizeTuner(FixedSizeTunerOptions{
-				NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
-				NumActivitySlots:      10,
-				NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})},
+			Tuner: tuner},
 		nil, newRegistry(), nil)
 	activityWorker.worker.isWorkerStarted = true
 
@@ -81,12 +83,14 @@ func TestEagerActivityWrongTaskQueue(t *testing.T) {
 
 func TestEagerActivityMaxPerTask(t *testing.T) {
 	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{taskQueue: "task-queue1"})
+	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
+		NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
+		NumActivitySlots:      10,
+		NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})
+	require.NoError(t, err)
 	activityWorker := newActivityWorker(nil,
 		workerExecutionParameters{TaskQueue: "task-queue1",
-			Tuner: NewFixedSizeTuner(FixedSizeTunerOptions{
-				NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
-				NumActivitySlots:      10,
-				NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})},
+			Tuner: tuner},
 		nil, newRegistry(), nil)
 	activityWorker.worker.isWorkerStarted = true
 
@@ -107,10 +111,11 @@ func TestEagerActivityCounts(t *testing.T) {
 	// We'll create an eager activity executor with 3 max eager concurrent and 5
 	// max concurrent
 	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{taskQueue: "task-queue1", maxConcurrent: 3})
-	tuner := NewFixedSizeTuner(FixedSizeTunerOptions{
+	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
 		NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
 		NumActivitySlots:      5,
 		NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})
+	require.NoError(t, err)
 	activityWorker := newActivityWorker(nil,
 		workerExecutionParameters{TaskQueue: "task-queue1", Tuner: tuner}, nil, newRegistry(), nil)
 	activityWorker.worker.isWorkerStarted = true

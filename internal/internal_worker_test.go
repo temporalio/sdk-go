@@ -1701,7 +1701,7 @@ type throwsOneErrSlotSupplier struct {
 	didThrow atomic.Bool
 }
 
-func (t *throwsOneErrSlotSupplier) ReserveSlot(ctx context.Context, reserveCtx SlotReserveContext) (*SlotPermit, error) {
+func (t *throwsOneErrSlotSupplier) ReserveSlot(SlotReserveContext) (*SlotPermit, error) {
 	if t.didThrow.CompareAndSwap(false, true) {
 		return nil, errors.New("error")
 	}
@@ -1710,9 +1710,9 @@ func (t *throwsOneErrSlotSupplier) ReserveSlot(ctx context.Context, reserveCtx S
 func (t *throwsOneErrSlotSupplier) TryReserveSlot(SlotReserveContext) *SlotPermit {
 	return &SlotPermit{}
 }
-func (t *throwsOneErrSlotSupplier) MarkSlotUsed() {}
-func (t *throwsOneErrSlotSupplier) ReleaseSlot()  {}
-func (t *throwsOneErrSlotSupplier) MaxSlots() int { return 100 }
+func (t *throwsOneErrSlotSupplier) MarkSlotUsed(SlotMarkUsedContext) {}
+func (t *throwsOneErrSlotSupplier) ReleaseSlot(SlotReleaseContext)   {}
+func (t *throwsOneErrSlotSupplier) MaxSlots() int                    { return 100 }
 
 func (s *internalWorkerTestSuite) TestSlotSupplierReturnsErrorCanContinue() {
 	// Create service endpoint
@@ -2616,24 +2616,26 @@ func TestWorkerOptionDefaults(t *testing.T) {
 	require.NotNil(t, workflowWorker.executionParameters.MetricsHandler)
 	require.Nil(t, workflowWorker.executionParameters.ContextPropagators)
 
+	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
+		NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
+		NumActivitySlots:      defaultMaxConcurrentActivityExecutionSize,
+		NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})
+	require.NoError(t, err)
 	expected := workerExecutionParameters{
 		Namespace:                             DefaultNamespace,
 		TaskQueue:                             taskQueue,
 		MaxConcurrentActivityTaskQueuePollers: defaultConcurrentPollRoutineSize,
 		MaxConcurrentWorkflowTaskQueuePollers: defaultConcurrentPollRoutineSize,
-		Tuner: NewFixedSizeTuner(FixedSizeTunerOptions{
-			NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
-			NumActivitySlots:      defaultMaxConcurrentActivityExecutionSize,
-			NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize}),
-		WorkerActivitiesPerSecond:      defaultTaskQueueActivitiesPerSecond,
-		TaskQueueActivitiesPerSecond:   defaultTaskQueueActivitiesPerSecond,
-		WorkerLocalActivitiesPerSecond: defaultWorkerLocalActivitiesPerSecond,
-		StickyScheduleToStartTimeout:   stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second,
-		DataConverter:                  converter.GetDefaultDataConverter(),
-		Logger:                         workflowWorker.executionParameters.Logger,
-		MetricsHandler:                 workflowWorker.executionParameters.MetricsHandler,
-		Identity:                       workflowWorker.executionParameters.Identity,
-		UserContext:                    workflowWorker.executionParameters.UserContext,
+		Tuner:                                 tuner,
+		WorkerActivitiesPerSecond:             defaultTaskQueueActivitiesPerSecond,
+		TaskQueueActivitiesPerSecond:          defaultTaskQueueActivitiesPerSecond,
+		WorkerLocalActivitiesPerSecond:        defaultWorkerLocalActivitiesPerSecond,
+		StickyScheduleToStartTimeout:          stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second,
+		DataConverter:                         converter.GetDefaultDataConverter(),
+		Logger:                                workflowWorker.executionParameters.Logger,
+		MetricsHandler:                        workflowWorker.executionParameters.MetricsHandler,
+		Identity:                              workflowWorker.executionParameters.Identity,
+		UserContext:                           workflowWorker.executionParameters.UserContext,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
@@ -2680,23 +2682,25 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 	workflowWorker := aggWorker.workflowWorker
 	require.Len(t, workflowWorker.executionParameters.ContextPropagators, 0)
 
+	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
+		NumWorkflowSlots:      options.MaxConcurrentWorkflowTaskExecutionSize,
+		NumActivitySlots:      options.MaxConcurrentActivityExecutionSize,
+		NumLocalActivitySlots: options.MaxConcurrentLocalActivityExecutionSize})
+	require.NoError(t, err)
 	expected := workerExecutionParameters{
 		TaskQueue:                             taskQueue,
 		MaxConcurrentActivityTaskQueuePollers: options.MaxConcurrentActivityTaskPollers,
 		MaxConcurrentWorkflowTaskQueuePollers: options.MaxConcurrentWorkflowTaskPollers,
-		Tuner: NewFixedSizeTuner(FixedSizeTunerOptions{
-			NumWorkflowSlots:      options.MaxConcurrentWorkflowTaskExecutionSize,
-			NumActivitySlots:      options.MaxConcurrentActivityExecutionSize,
-			NumLocalActivitySlots: options.MaxConcurrentLocalActivityExecutionSize}),
-		WorkerActivitiesPerSecond:      options.WorkerActivitiesPerSecond,
-		TaskQueueActivitiesPerSecond:   options.TaskQueueActivitiesPerSecond,
-		WorkerLocalActivitiesPerSecond: options.WorkerLocalActivitiesPerSecond,
-		StickyScheduleToStartTimeout:   options.StickyScheduleToStartTimeout,
-		DataConverter:                  client.dataConverter,
-		FailureConverter:               client.failureConverter,
-		Logger:                         client.logger,
-		MetricsHandler:                 client.metricsHandler,
-		Identity:                       client.identity,
+		Tuner:                                 tuner,
+		WorkerActivitiesPerSecond:             options.WorkerActivitiesPerSecond,
+		TaskQueueActivitiesPerSecond:          options.TaskQueueActivitiesPerSecond,
+		WorkerLocalActivitiesPerSecond:        options.WorkerLocalActivitiesPerSecond,
+		StickyScheduleToStartTimeout:          options.StickyScheduleToStartTimeout,
+		DataConverter:                         client.dataConverter,
+		FailureConverter:                      client.failureConverter,
+		Logger:                                client.logger,
+		MetricsHandler:                        client.metricsHandler,
+		Identity:                              client.identity,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
@@ -2717,25 +2721,27 @@ func TestLocalActivityWorkerOnly(t *testing.T) {
 	require.NotNil(t, workflowWorker.executionParameters.MetricsHandler)
 	require.Nil(t, workflowWorker.executionParameters.ContextPropagators)
 
+	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
+		NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
+		NumActivitySlots:      defaultMaxConcurrentActivityExecutionSize,
+		NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})
+	require.NoError(t, err)
 	expected := workerExecutionParameters{
 		Namespace:                             DefaultNamespace,
 		TaskQueue:                             taskQueue,
 		MaxConcurrentActivityTaskQueuePollers: defaultConcurrentPollRoutineSize,
 		MaxConcurrentWorkflowTaskQueuePollers: defaultConcurrentPollRoutineSize,
-		Tuner: NewFixedSizeTuner(FixedSizeTunerOptions{
-			NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
-			NumActivitySlots:      defaultMaxConcurrentActivityExecutionSize,
-			NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize}),
-		WorkerActivitiesPerSecond:      defaultTaskQueueActivitiesPerSecond,
-		TaskQueueActivitiesPerSecond:   defaultTaskQueueActivitiesPerSecond,
-		WorkerLocalActivitiesPerSecond: defaultWorkerLocalActivitiesPerSecond,
-		StickyScheduleToStartTimeout:   stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second,
-		DataConverter:                  converter.GetDefaultDataConverter(),
-		FailureConverter:               GetDefaultFailureConverter(),
-		Logger:                         workflowWorker.executionParameters.Logger,
-		MetricsHandler:                 workflowWorker.executionParameters.MetricsHandler,
-		Identity:                       workflowWorker.executionParameters.Identity,
-		UserContext:                    workflowWorker.executionParameters.UserContext,
+		Tuner:                                 tuner,
+		WorkerActivitiesPerSecond:             defaultTaskQueueActivitiesPerSecond,
+		TaskQueueActivitiesPerSecond:          defaultTaskQueueActivitiesPerSecond,
+		WorkerLocalActivitiesPerSecond:        defaultWorkerLocalActivitiesPerSecond,
+		StickyScheduleToStartTimeout:          stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second,
+		DataConverter:                         converter.GetDefaultDataConverter(),
+		FailureConverter:                      GetDefaultFailureConverter(),
+		Logger:                                workflowWorker.executionParameters.Logger,
+		MetricsHandler:                        workflowWorker.executionParameters.MetricsHandler,
+		Identity:                              workflowWorker.executionParameters.Identity,
+		UserContext:                           workflowWorker.executionParameters.UserContext,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)

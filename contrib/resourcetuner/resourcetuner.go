@@ -23,10 +23,11 @@
 package resourcetuner
 
 import (
-	"context"
 	"errors"
 	"sync"
 	"time"
+
+	"go.temporal.io/sdk/internal"
 
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/mem"
@@ -54,10 +55,13 @@ func NewResourceBasedTuner(opts ResourceBasedTunerOptions) (worker.WorkerTuner, 
 		options: defaultActivityResourceBasedSlotSupplierOptions()}
 	laSS := &ResourceBasedSlotSupplier{controller: controller,
 		options: defaultActivityResourceBasedSlotSupplierOptions()}
+	nexusSS := &ResourceBasedSlotSupplier{controller: controller,
+		options: defaultWorkflowResourceBasedSlotSupplierOptions()}
 	compositeTuner, err := worker.NewCompositeTuner(worker.CompositeTunerOptions{
 		WorkflowSlotSupplier:      wfSS,
 		ActivitySlotSupplier:      actSS,
 		LocalActivitySlotSupplier: laSS,
+		NexusSlotSupplier:         nexusSS,
 	})
 	if err != nil {
 		return nil, err
@@ -124,9 +128,9 @@ func NewResourceBasedSlotSupplier(
 	return &ResourceBasedSlotSupplier{controller: controller, options: options}, nil
 }
 
-func (r *ResourceBasedSlotSupplier) ReserveSlot(ctx context.Context, reserveCtx worker.SlotReserveContext) (*worker.SlotPermit, error) {
+func (r *ResourceBasedSlotSupplier) ReserveSlot(ctx worker.SlotReserveContext) (*worker.SlotPermit, error) {
 	for {
-		if reserveCtx.NumIssuedSlots() < r.options.MinSlots {
+		if ctx.NumIssuedSlots() < r.options.MinSlots {
 			return &worker.SlotPermit{}, nil
 		}
 		r.lastIssuedMu.Lock()
@@ -142,7 +146,7 @@ func (r *ResourceBasedSlotSupplier) ReserveSlot(ctx context.Context, reserveCtx 
 			}
 		}
 
-		maybePermit := r.TryReserveSlot(reserveCtx)
+		maybePermit := r.TryReserveSlot(ctx)
 		if maybePermit != nil {
 			return maybePermit, nil
 		}
@@ -150,11 +154,11 @@ func (r *ResourceBasedSlotSupplier) ReserveSlot(ctx context.Context, reserveCtx 
 	}
 }
 
-func (r *ResourceBasedSlotSupplier) TryReserveSlot(reserveCtx worker.SlotReserveContext) *worker.SlotPermit {
+func (r *ResourceBasedSlotSupplier) TryReserveSlot(ctx internal.SlotReserveContext) *internal.SlotPermit {
 	r.lastIssuedMu.Lock()
 	defer r.lastIssuedMu.Unlock()
 
-	numIssued := reserveCtx.NumIssuedSlots()
+	numIssued := ctx.NumIssuedSlots()
 	if numIssued < r.options.MinSlots || (numIssued < r.options.MaxSlots &&
 		time.Since(r.lastSlotIssuedAt) > r.options.RampThrottle) {
 		decision, err := r.controller.pidDecision()
@@ -170,8 +174,8 @@ func (r *ResourceBasedSlotSupplier) TryReserveSlot(reserveCtx worker.SlotReserve
 	return nil
 }
 
-func (r *ResourceBasedSlotSupplier) MarkSlotUsed() {}
-func (r *ResourceBasedSlotSupplier) ReleaseSlot()  {}
+func (r *ResourceBasedSlotSupplier) MarkSlotUsed(internal.SlotMarkUsedContext) {}
+func (r *ResourceBasedSlotSupplier) ReleaseSlot(internal.SlotReleaseContext)   {}
 func (r *ResourceBasedSlotSupplier) MaxSlots() int {
 	return 0
 }

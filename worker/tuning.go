@@ -45,6 +45,14 @@ type SlotSupplier = internal.SlotSupplier
 // reservation calls.
 type SlotReserveContext = internal.SlotReserveContext
 
+// SlotMarkUsedContext contains information that SlotSupplier instances can use during
+// SlotSupplier.MarkSlotUsed calls.
+type SlotMarkUsedContext = internal.SlotMarkUsedContext
+
+// SlotReleaseContext contains information that SlotSupplier instances can use during
+// SlotSupplier.ReleaseSlot calls.
+type SlotReleaseContext = internal.SlotReleaseContext
+
 // FixedSizeTunerOptions are the options used by NewFixedSizeTuner.
 type FixedSizeTunerOptions = internal.FixedSizeTunerOptions
 

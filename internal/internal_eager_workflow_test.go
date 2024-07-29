@@ -40,7 +40,7 @@ func (e *eagerWorkerMock) tryReserveSlot() *SlotPermit {
 	return e.tryReserveSlotCallback()
 }
 
-func (e *eagerWorkerMock) releaseSlot(_ *SlotPermit, _ string) {
+func (e *eagerWorkerMock) releaseSlot(_ *SlotPermit, _ SlotReleaseReason) {
 	e.releaseCalled = true
 }
 

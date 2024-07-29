@@ -120,7 +120,7 @@ func (e *eagerActivityExecutor) handleResponse(
 	for i := 0; i < unfulfilledSlots; i++ {
 		unneededPermit := reservedPermits[len(reservedPermits)-1]
 		reservedPermits = reservedPermits[:len(reservedPermits)-1]
-		e.activityWorker.releaseSlot(unneededPermit, "never used")
+		e.activityWorker.releaseSlot(unneededPermit, SlotReleaseReasonUnused)
 	}
 
 	// Start each activity asynchronously

@@ -92,7 +92,7 @@ func (e *eagerWorkflowExecutor) handleResponse(response *workflowservice.PollWor
 // It will error if handleResponse was already called, as this would indicate misuse.
 func (e *eagerWorkflowExecutor) releaseUnused() {
 	if e.handledResponse.CompareAndSwap(false, true) {
-		e.worker.releaseSlot(e.permit, "eager wft release")
+		e.worker.releaseSlot(e.permit, SlotReleaseReasonUnused)
 	} else {
 		panic("trying to release an eagerWorkflowExecutor that was used")
 	}

@@ -64,11 +64,7 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 
 	workerType := "NexusWorker"
 	metricsHandler := params.MetricsHandler.WithTags(metrics.WorkerTags(workerType))
-	fss, err := NewFixedSizeSlotSupplier(opts.executionParameters.ConcurrentNexusTaskExecutionSize)
-	if err != nil {
-		return nil, err
-	}
-	tss := newTrackingSlotSupplier(fss, metricsHandler)
+	tss := newTrackingSlotSupplier(opts.executionParameters.Tuner.GetNexusSlotSupplier(), metricsHandler)
 
 	baseWorker := newBaseWorker(baseWorkerOptions{
 		pollerCount:         params.MaxConcurrentNexusTaskQueuePollers,

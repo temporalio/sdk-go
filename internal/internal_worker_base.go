@@ -366,7 +366,7 @@ func (bw *baseWorker) runPoller() {
 			select {
 			case reserveChan <- s:
 			case <-ctx.Done():
-				bw.releaseSlot(s, "worker shutting down")
+				bw.releaseSlot(s, SlotReleaseReasonUnused)
 			}
 		}()
 
@@ -396,7 +396,7 @@ func (bw *baseWorker) tryReserveSlot() *SlotPermit {
 	return bw.slotSupplier.TryReserveSlot(&bw.options.slotReservationData)
 }
 
-func (bw *baseWorker) releaseSlot(permit *SlotPermit, reason string) {
+func (bw *baseWorker) releaseSlot(permit *SlotPermit, reason SlotReleaseReason) {
 	bw.slotSupplier.ReleaseSlot(permit, reason)
 }
 
@@ -418,7 +418,7 @@ func (bw *baseWorker) processTaskAsync(eagerOrPolled eagerOrPolledTask) {
 		}
 
 		defer func() {
-			bw.releaseSlot(permit, "task processed")
+			bw.releaseSlot(permit, SlotReleaseReasonTaskProcessed)
 
 			if p := recover(); p != nil {
 				topLine := fmt.Sprintf("base worker for %s [panic]:", bw.options.workerType)
@@ -454,7 +454,7 @@ func (bw *baseWorker) runTaskDispatcher() {
 			_, isPolledTask := task.(*polledTask)
 			if isPolledTask && bw.taskLimiter.Wait(bw.limiterContext) != nil {
 				if bw.isStop() {
-					bw.releaseSlot(task.getPermit(), "worker shutting down")
+					bw.releaseSlot(task.getPermit(), SlotReleaseReasonUnused)
 					return
 				}
 			}
@@ -486,7 +486,7 @@ func (bw *baseWorker) pollTask(slotPermit *SlotPermit) {
 	didSendTask := false
 	defer func() {
 		if !didSendTask {
-			bw.releaseSlot(slotPermit, "empty poll or polling error")
+			bw.releaseSlot(slotPermit, SlotReleaseReasonUnused)
 		}
 	}()
 
