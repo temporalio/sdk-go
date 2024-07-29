@@ -52,7 +52,7 @@ const (
 	defaultCoroutineExitTimeout = 100 * time.Millisecond
 
 	panicIllegalAccessCoroutineState = "getState: illegal access from outside of workflow context"
-	unhandledUpdateWarningMessage    = "Workflow finished while update handlers are still running. This may have interrupted work that the" +
+	unhandledUpdateWarningMessage    = "TMPRL1102 Workflow finished while update handlers are still running. This may have interrupted work that the" +
 		" update handler was doing, and the client that sent the update will receive a 'workflow execution" +
 		" already completed' RPCError instead of the update result. You can wait for all update" +
 		" handlers to complete by using `workflow.Await(ctx, func() bool { return workflow.AllHandlersFinished(ctx) })`. Alternatively, if both you and the clients sending the update" +
