@@ -173,15 +173,16 @@ type (
 	baseWorkerOptions struct {
 		pollerCount         int
 		pollerRate          int
-		slotSupplier        *trackingSlotSupplier
+		slotSupplier        SlotSupplier
 		maxTaskPerSecond    float64
 		taskWorker          taskPoller
 		identity            string
-		workerType          string
+		logger              log.Logger
 		stopTimeout         time.Duration
 		fatalErrCb          func(error)
 		userContextCancel   context.CancelFunc
 		metricsHandler      metrics.Handler
+		sessionTokenBucket  *sessionTokenBucket
 		slotReservationData slotReservationData
 	}
 
@@ -272,19 +273,19 @@ func createPollResourceExhaustedRetryPolicy() backoff.RetryPolicy {
 
 func newBaseWorker(
 	options baseWorkerOptions,
-	logger log.Logger,
-	sessionTokenBucket *sessionTokenBucket,
 ) *baseWorker {
 	ctx, cancel := context.WithCancel(context.Background())
+	options.slotReservationData.logger = options.logger
+	tss := newTrackingSlotSupplier(options.slotSupplier, options.metricsHandler)
 	bw := &baseWorker{
 		options:        options,
 		stopCh:         make(chan struct{}),
 		taskLimiter:    rate.NewLimiter(rate.Limit(options.maxTaskPerSecond), 1),
 		retrier:        backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
-		logger:         log.With(logger, tagWorkerType, options.workerType),
+		logger:         options.logger,
 		metricsHandler: options.metricsHandler,
 
-		slotSupplier: options.slotSupplier,
+		slotSupplier: tss,
 		// No buffer, so pollers are only able to poll for new tasks after the previous one is
 		// dispatched.
 		taskQueueCh: make(chan eagerOrPolledTask),
@@ -295,7 +296,7 @@ func newBaseWorker(
 
 		limiterContext:       ctx,
 		limiterContextCancel: cancel,
-		sessionTokenBucket:   sessionTokenBucket,
+		sessionTokenBucket:   options.sessionTokenBucket,
 	}
 	// Set secondary retrier as resource exhausted
 	bw.retrier.SetSecondaryRetryPolicy(pollResourceExhaustedRetryPolicy)
@@ -421,7 +422,7 @@ func (bw *baseWorker) processTaskAsync(eagerOrPolled eagerOrPolledTask) {
 			bw.releaseSlot(permit, SlotReleaseReasonTaskProcessed)
 
 			if p := recover(); p != nil {
-				topLine := fmt.Sprintf("base worker for %s [panic]:", bw.options.workerType)
+				topLine := "base worker [panic]:"
 				st := getStackTraceRaw(topLine, 7, 0)
 				bw.logger.Error("Unhandled panic.",
 					"PanicError", fmt.Sprintf("%v", p),

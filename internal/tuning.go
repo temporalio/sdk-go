@@ -38,9 +38,13 @@ import (
 //
 // WARNING: Custom implementations of SlotSupplier are currently experimental.
 type WorkerTuner interface {
+	// GetWorkflowTaskSlotSupplier returns the SlotSupplier used for workflow tasks.
 	GetWorkflowTaskSlotSupplier() SlotSupplier
+	// GetActivityTaskSlotSupplier returns the SlotSupplier used for activity tasks.
 	GetActivityTaskSlotSupplier() SlotSupplier
+	// GetLocalActivitySlotSupplier returns the SlotSupplier used for local activities.
 	GetLocalActivitySlotSupplier() SlotSupplier
+	// GetNexusSlotSupplier returns the SlotSupplier used for nexus tasks.
 	GetNexusSlotSupplier() SlotSupplier
 }
 
@@ -48,23 +52,25 @@ type WorkerTuner interface {
 //
 // WARNING: Custom implementations of SlotSupplier are currently experimental.
 type SlotPermit struct {
-	//lint:ignore U1000 pointless to guarantee pointers to SlotPermits are unique
-	_uniqueInt int
+	// UserData is a field that can be used to store arbitrary on a permit by SlotSupplier
+	// implementations.
+	UserData any
+	// Specifically eager activities need to keep track of their own concurrent max separately and
+	// this helps them do that. It can be used for other specific use cases in the future.
+	extraReleaseCallback func()
 }
 
-// SlotReserveContext contains information that SlotSupplier instances can use during
+// SlotReservationInfo contains information that SlotSupplier instances can use during
 // reservation calls. It embeds a standard Context.
-type SlotReserveContext interface {
-	context.Context
-
+type SlotReservationInfo interface {
 	TaskQueue() string
 	NumIssuedSlots() int
 	Logger() log.Logger
 }
 
-// SlotMarkUsedContext contains information that SlotSupplier instances can use during
+// SlotMarkUsedInfo contains information that SlotSupplier instances can use during
 // SlotSupplier.MarkSlotUsed calls.
-type SlotMarkUsedContext interface {
+type SlotMarkUsedInfo interface {
 	// Permit returns the permit that is being marked as used.
 	Permit() *SlotPermit
 }
@@ -77,9 +83,9 @@ const (
 	SlotReleaseReasonUnused
 )
 
-// SlotReleaseContext contains information that SlotSupplier instances can use during
+// SlotReleaseInfo contains information that SlotSupplier instances can use during
 // SlotSupplier.ReleaseSlot calls.
-type SlotReleaseContext interface {
+type SlotReleaseInfo interface {
 	// Permit returns the permit that is being released.
 	Permit() *SlotPermit
 	// Reason returns the reason that the slot is being released.
@@ -96,22 +102,22 @@ type SlotSupplier interface {
 	// thread-safe.
 	//
 	// Any returned error besides context.Canceled will be logged and the function will be retried.
-	ReserveSlot(ctx SlotReserveContext) (*SlotPermit, error)
+	ReserveSlot(ctx context.Context, info SlotReservationInfo) (*SlotPermit, error)
 
 	// TryReserveSlot is called when attempting to reserve slots for eager workflows and activities.
 	// It should return a permit if a slot is available, and nil otherwise. Implementations must be
 	// thread-safe.
-	TryReserveSlot(ctx SlotReserveContext) *SlotPermit
+	TryReserveSlot(info SlotReservationInfo) *SlotPermit
 
 	// MarkSlotUsed is called once a slot is about to be used for actually processing a task.
 	// Because slots are reserved before task polling, not all reserved slots will be used.
 	// Implementations must be thread-safe.
-	MarkSlotUsed(ctx SlotMarkUsedContext)
+	MarkSlotUsed(info SlotMarkUsedInfo)
 
 	// ReleaseSlot is called when a slot is no longer needed, which is typically after the task
 	// has been processed, but may also be called upon shutdown or other situations where the
 	// slot is no longer needed. Implementations must be thread-safe.
-	ReleaseSlot(ctx SlotReleaseContext)
+	ReleaseSlot(info SlotReleaseInfo)
 
 	// MaxSlots returns the maximum number of slots that this supplier will ever issue.
 	// Implementations may return 0 if there is no well-defined upper limit. In such cases the
@@ -144,10 +150,14 @@ func (c *CompositeTuner) GetNexusSlotSupplier() SlotSupplier {
 
 // CompositeTunerOptions are the options used by NewCompositeTuner.
 type CompositeTunerOptions struct {
-	WorkflowSlotSupplier      SlotSupplier
-	ActivitySlotSupplier      SlotSupplier
+	// WorkflowSlotSupplier is the SlotSupplier used for workflow tasks.
+	WorkflowSlotSupplier SlotSupplier
+	// ActivitySlotSupplier is the SlotSupplier used for activity tasks.
+	ActivitySlotSupplier SlotSupplier
+	// LocalActivitySlotSupplier is the SlotSupplier used for local activities.
 	LocalActivitySlotSupplier SlotSupplier
-	NexusSlotSupplier         SlotSupplier
+	// NexusSlotSupplier is the SlotSupplier used for nexus tasks.
+	NexusSlotSupplier SlotSupplier
 }
 
 // NewCompositeTuner creates a WorkerTuner that uses a combination of slot suppliers.
@@ -164,10 +174,14 @@ func NewCompositeTuner(options CompositeTunerOptions) (WorkerTuner, error) {
 
 // FixedSizeTunerOptions are the options used by NewFixedSizeTuner.
 type FixedSizeTunerOptions struct {
-	NumWorkflowSlots      int
-	NumActivitySlots      int
+	// NumWorkflowSlots is the number of slots available for workflow tasks.
+	NumWorkflowSlots int
+	// NumActivitySlots is the number of slots available for activity tasks.
+	NumActivitySlots int
+	// NumLocalActivitySlots is the number of slots available for local activities.
 	NumLocalActivitySlots int
-	NumNexusSlots         int
+	// NumNexusSlots is the number of slots available for nexus tasks.
+	NumNexusSlots int
 }
 
 // NewFixedSizeTuner creates a WorkerTuner that uses fixed size slot suppliers.
@@ -228,7 +242,8 @@ func NewFixedSizeSlotSupplier(numSlots int) (*FixedSizeSlotSupplier, error) {
 	}, nil
 }
 
-func (f *FixedSizeSlotSupplier) ReserveSlot(ctx SlotReserveContext) (*SlotPermit, error) {
+func (f *FixedSizeSlotSupplier) ReserveSlot(ctx context.Context, _ SlotReservationInfo) (
+	*SlotPermit, error) {
 	err := f.sem.Acquire(ctx, 1)
 	if err != nil {
 		return nil, fmt.Errorf("failed to acquire slot: %w", err)
@@ -236,14 +251,14 @@ func (f *FixedSizeSlotSupplier) ReserveSlot(ctx SlotReserveContext) (*SlotPermit
 
 	return &SlotPermit{}, nil
 }
-func (f *FixedSizeSlotSupplier) TryReserveSlot(SlotReserveContext) *SlotPermit {
+func (f *FixedSizeSlotSupplier) TryReserveSlot(SlotReservationInfo) *SlotPermit {
 	if f.sem.TryAcquire(1) {
 		return &SlotPermit{}
 	}
 	return nil
 }
-func (f *FixedSizeSlotSupplier) MarkSlotUsed(SlotMarkUsedContext) {}
-func (f *FixedSizeSlotSupplier) ReleaseSlot(SlotReleaseContext) {
+func (f *FixedSizeSlotSupplier) MarkSlotUsed(SlotMarkUsedInfo) {}
+func (f *FixedSizeSlotSupplier) ReleaseSlot(SlotReleaseInfo) {
 	f.sem.Release(1)
 }
 func (f *FixedSizeSlotSupplier) MaxSlots() int {
@@ -255,22 +270,21 @@ type slotReservationData struct {
 	logger    log.Logger
 }
 
-type slotReserveContextImpl struct {
-	context.Context
+type slotReserveInfoImpl struct {
 	taskQueue   string
 	issuedSlots int
 	logger      log.Logger
 }
 
-func (s slotReserveContextImpl) TaskQueue() string {
+func (s slotReserveInfoImpl) TaskQueue() string {
 	return s.taskQueue
 }
 
-func (s slotReserveContextImpl) NumIssuedSlots() int {
+func (s slotReserveInfoImpl) NumIssuedSlots() int {
 	return s.issuedSlots
 }
 
-func (s slotReserveContextImpl) Logger() log.Logger {
+func (s slotReserveInfoImpl) Logger() log.Logger {
 	return s.logger
 }
 
@@ -320,8 +334,7 @@ func (t *trackingSlotSupplier) ReserveSlot(
 	ctx context.Context,
 	data *slotReservationData,
 ) (*SlotPermit, error) {
-	permit, err := t.inner.ReserveSlot(slotReserveContextImpl{
-		Context:     ctx,
+	permit, err := t.inner.ReserveSlot(ctx, slotReserveInfoImpl{
 		taskQueue:   data.taskQueue,
 		issuedSlots: int(t.issuedSlotsAtomic.Load()),
 		logger:      data.logger,
@@ -338,7 +351,7 @@ func (t *trackingSlotSupplier) ReserveSlot(
 }
 
 func (t *trackingSlotSupplier) TryReserveSlot(data *slotReservationData) *SlotPermit {
-	permit := t.inner.TryReserveSlot(slotReserveContextImpl{
+	permit := t.inner.TryReserveSlot(slotReserveInfoImpl{
 		taskQueue:   data.taskQueue,
 		issuedSlots: int(t.issuedSlotsAtomic.Load()),
 		logger:      data.logger,
@@ -376,6 +389,9 @@ func (t *trackingSlotSupplier) ReleaseSlot(permit *SlotPermit, reason SlotReleas
 	})
 	t.issuedSlotsAtomic.Add(-1)
 	delete(t.usedSlots, permit)
+	if permit.extraReleaseCallback != nil {
+		permit.extraReleaseCallback()
+	}
 	t.publishMetrics(true)
 }
 

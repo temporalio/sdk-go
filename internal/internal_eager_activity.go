@@ -24,6 +24,7 @@ package internal
 
 import (
 	"fmt"
+	"sync"
 
 	"go.temporal.io/api/workflowservice/v1"
 )
@@ -33,7 +34,9 @@ import (
 type eagerActivityExecutor struct {
 	eagerActivityExecutorOptions
 
-	activityWorker *baseWorker
+	activityWorker eagerWorker
+	heldSlotCount  int
+	countLock      sync.Mutex
 }
 
 type eagerActivityExecutorOptions struct {
@@ -90,13 +93,24 @@ func (e *eagerActivityExecutor) applyToRequest(
 
 func (e *eagerActivityExecutor) reserveOnePendingSlot() *SlotPermit {
 	// Confirm that, if we have a max, issued count isn't already there
-	if e.maxConcurrent > 0 &&
-		int(e.activityWorker.slotSupplier.issuedSlotsAtomic.Load()) >= e.maxConcurrent {
+	e.countLock.Lock()
+	defer e.countLock.Unlock()
+	// Confirm that, if we have a max, held count isn't already there
+	if e.maxConcurrent > 0 && e.heldSlotCount >= e.maxConcurrent {
 		// No more room
 		return nil
 	}
 	// Reserve a spot for our request via a non-blocking attempt
 	maybePermit := e.activityWorker.tryReserveSlot()
+	if maybePermit != nil {
+		// Ensure that on release we decrement the held count
+		maybePermit.extraReleaseCallback = func() {
+			e.countLock.Lock()
+			defer e.countLock.Unlock()
+			e.heldSlotCount--
+		}
+		e.heldSlotCount++
+	}
 	return maybePermit
 }
 

@@ -2904,11 +2904,17 @@ func (w *waitToProceedActivities) WaitToProceed(ctx context.Context) error {
 	return nil
 }
 
+func (w *waitToProceedActivities) JustTimeOut(ctx context.Context) error {
+	<-ctx.Done()
+	return nil
+}
+
 func (ts *IntegrationTestSuite) TestSlotSupplierIntraWFTMetrics() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
 	laWorkertags := []string{"worker_type", "LocalActivityWorker", "task_queue", ts.taskQueueName}
+	actWorkertags := []string{"worker_type", "ActivityWorker", "task_queue", ts.taskQueueName}
 	wfWorkertags := []string{"worker_type", "WorkflowWorker", "task_queue", ts.taskQueueName}
 
 	proceedActivity := make(chan string)
@@ -2926,6 +2932,24 @@ func (ts *IntegrationTestSuite) TestSlotSupplierIntraWFTMetrics() {
 
 		_ = a1.Get(ctx, nil)
 		_ = a2.Get(ctx, nil)
+
+		// Also verify that activities that time out release slots properly
+		ao = workflow.LocalActivityOptions{
+			StartToCloseTimeout: 200 * time.Millisecond,
+			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+		}
+		ctx = workflow.WithLocalActivityOptions(ctx, ao)
+		a3 := workflow.ExecuteLocalActivity(ctx, actStruct.JustTimeOut)
+		ao2 := workflow.ActivityOptions{
+			StartToCloseTimeout: 200 * time.Millisecond,
+			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+		}
+		ctx = workflow.WithActivityOptions(ctx, ao2)
+		a4 := workflow.ExecuteActivity(ctx, actStruct.JustTimeOut)
+
+		_ = a3.Get(ctx, nil)
+		_ = a4.Get(ctx, nil)
+
 		return nil
 	}
 
@@ -2959,6 +2983,7 @@ func (ts *IntegrationTestSuite) TestSlotSupplierIntraWFTMetrics() {
 	ts.NoError(run.Get(ctx, nil))
 	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, laWorkertags, 1000)
 	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, wfWorkertags, 1000)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, actWorkertags, 1000)
 }
 
 func (ts *IntegrationTestSuite) TestSlotSupplierWFTFailMetrics() {

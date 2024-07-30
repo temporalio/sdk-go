@@ -1701,18 +1701,18 @@ type throwsOneErrSlotSupplier struct {
 	didThrow atomic.Bool
 }
 
-func (t *throwsOneErrSlotSupplier) ReserveSlot(SlotReserveContext) (*SlotPermit, error) {
+func (t *throwsOneErrSlotSupplier) ReserveSlot(context.Context, SlotReservationInfo) (*SlotPermit, error) {
 	if t.didThrow.CompareAndSwap(false, true) {
 		return nil, errors.New("error")
 	}
 	return &SlotPermit{}, nil
 }
-func (t *throwsOneErrSlotSupplier) TryReserveSlot(SlotReserveContext) *SlotPermit {
+func (t *throwsOneErrSlotSupplier) TryReserveSlot(SlotReservationInfo) *SlotPermit {
 	return &SlotPermit{}
 }
-func (t *throwsOneErrSlotSupplier) MarkSlotUsed(SlotMarkUsedContext) {}
-func (t *throwsOneErrSlotSupplier) ReleaseSlot(SlotReleaseContext)   {}
-func (t *throwsOneErrSlotSupplier) MaxSlots() int                    { return 100 }
+func (t *throwsOneErrSlotSupplier) MarkSlotUsed(SlotMarkUsedInfo) {}
+func (t *throwsOneErrSlotSupplier) ReleaseSlot(SlotReleaseInfo)   {}
+func (t *throwsOneErrSlotSupplier) MaxSlots() int                 { return 100 }
 
 func (s *internalWorkerTestSuite) TestSlotSupplierReturnsErrorCanContinue() {
 	// Create service endpoint

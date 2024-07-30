@@ -319,26 +319,23 @@ func newWorkflowTaskWorkerInternal(
 	ensureRequiredParams(&params)
 	poller := newWorkflowTaskPoller(taskHandler, contextManager, service, params)
 	workerType := "WorkflowWorker"
+	logger := log.With(params.Logger, tagWorkerType, workerType)
 	metricsHandler := params.MetricsHandler.WithTags(metrics.WorkerTags(workerType))
-	tss := newTrackingSlotSupplier(params.Tuner.GetWorkflowTaskSlotSupplier(), metricsHandler)
 	worker := newBaseWorker(baseWorkerOptions{
 		pollerCount:      params.MaxConcurrentWorkflowTaskQueuePollers,
 		pollerRate:       defaultPollerRate,
-		slotSupplier:     tss,
+		slotSupplier:     params.Tuner.GetWorkflowTaskSlotSupplier(),
 		maxTaskPerSecond: defaultWorkerTaskExecutionRate,
 		taskWorker:       poller,
 		identity:         params.Identity,
-		workerType:       workerType,
+		logger:           logger,
 		stopTimeout:      params.WorkerStopTimeout,
 		fatalErrCb:       params.WorkerFatalErrorCallback,
 		metricsHandler:   metricsHandler,
 		slotReservationData: slotReservationData{
 			taskQueue: params.TaskQueue,
-			logger:    params.Logger,
 		},
 	},
-		params.Logger,
-		nil,
 	)
 
 	// laTunnel is the glue that hookup 3 parts
@@ -352,25 +349,22 @@ func newWorkflowTaskWorkerInternal(
 	// 2) local activity task poller will poll from laTunnel, and result will be pushed to laTunnel
 	localActivityTaskPoller := newLocalActivityPoller(params, laTunnel, interceptors)
 	workerType = "LocalActivityWorker"
+	logger = log.With(params.Logger, tagWorkerType, workerType)
 	metricsHandler = params.MetricsHandler.WithTags(metrics.WorkerTags(workerType))
-	tss = newTrackingSlotSupplier(params.Tuner.GetLocalActivitySlotSupplier(), metricsHandler)
 	localActivityWorker := newBaseWorker(baseWorkerOptions{
 		pollerCount:      1, // 1 poller (from local channel) is enough for local activity
-		slotSupplier:     tss,
+		slotSupplier:     params.Tuner.GetLocalActivitySlotSupplier(),
 		maxTaskPerSecond: params.WorkerLocalActivitiesPerSecond,
 		taskWorker:       localActivityTaskPoller,
 		identity:         params.Identity,
-		workerType:       workerType,
+		logger:           logger,
 		stopTimeout:      params.WorkerStopTimeout,
 		fatalErrCb:       params.WorkerFatalErrorCallback,
 		metricsHandler:   metricsHandler,
 		slotReservationData: slotReservationData{
 			taskQueue: params.TaskQueue,
-			logger:    params.Logger,
 		},
 	},
-		params.Logger,
-		nil,
 	)
 
 	// 3) the result pushed to laTunnel will be sent as task to workflow worker to process.
@@ -423,8 +417,6 @@ func newSessionWorker(service workflowservice.WorkflowServiceClient, params work
 
 	params.MaxConcurrentActivityTaskQueuePollers = 1
 	params.TaskQueue = creationTaskqueue
-	// Although we have session token bucket to limit session size across creation
-	// and recreation, we also limit it here for creation only
 	creationWorker := newActivityWorker(service, params, overrides, env, sessionEnvironment.GetTokenBucket())
 
 	return &sessionWorker{
@@ -472,28 +464,26 @@ func newActivityTaskWorker(taskHandler ActivityTaskHandler, service workflowserv
 
 	poller := newActivityTaskPoller(taskHandler, service, workerParams)
 	workerType := "ActivityWorker"
+	logger := log.With(workerParams.Logger, tagWorkerType, workerType)
 	metricsHandler := workerParams.MetricsHandler.WithTags(metrics.WorkerTags(workerType))
-	tss := newTrackingSlotSupplier(workerParams.Tuner.GetActivityTaskSlotSupplier(), metricsHandler)
 	base := newBaseWorker(
 		baseWorkerOptions{
-			pollerCount:       workerParams.MaxConcurrentActivityTaskQueuePollers,
-			pollerRate:        defaultPollerRate,
-			slotSupplier:      tss,
-			maxTaskPerSecond:  workerParams.WorkerActivitiesPerSecond,
-			taskWorker:        poller,
-			identity:          workerParams.Identity,
-			workerType:        workerType,
-			stopTimeout:       workerParams.WorkerStopTimeout,
-			fatalErrCb:        workerParams.WorkerFatalErrorCallback,
-			userContextCancel: workerParams.UserContextCancel,
-			metricsHandler:    metricsHandler,
+			pollerCount:        workerParams.MaxConcurrentActivityTaskQueuePollers,
+			pollerRate:         defaultPollerRate,
+			slotSupplier:       workerParams.Tuner.GetActivityTaskSlotSupplier(),
+			maxTaskPerSecond:   workerParams.WorkerActivitiesPerSecond,
+			taskWorker:         poller,
+			identity:           workerParams.Identity,
+			logger:             logger,
+			stopTimeout:        workerParams.WorkerStopTimeout,
+			fatalErrCb:         workerParams.WorkerFatalErrorCallback,
+			userContextCancel:  workerParams.UserContextCancel,
+			metricsHandler:     metricsHandler,
+			sessionTokenBucket: sessionTokenBucket,
 			slotReservationData: slotReservationData{
 				taskQueue: workerParams.TaskQueue,
-				logger:    workerParams.Logger,
 			},
 		},
-		workerParams.Logger,
-		sessionTokenBucket,
 	)
 
 	return &activityWorker{
@@ -1725,7 +1715,6 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	var activityWorker *activityWorker
 	if !options.LocalActivityWorkerOnly {
 		activityWorker = newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
-		// Set the activity worker on the eager executor
 		workerParams.eagerActivityExecutor.activityWorker = activityWorker.worker
 	}
 

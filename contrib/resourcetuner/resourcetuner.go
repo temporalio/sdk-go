@@ -23,6 +23,7 @@
 package resourcetuner
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"time"
@@ -126,9 +127,9 @@ func NewResourceBasedSlotSupplier(
 	return &ResourceBasedSlotSupplier{controller: controller, options: options}, nil
 }
 
-func (r *ResourceBasedSlotSupplier) ReserveSlot(ctx worker.SlotReserveContext) (*worker.SlotPermit, error) {
+func (r *ResourceBasedSlotSupplier) ReserveSlot(ctx context.Context, info worker.SlotReservationInfo) (*worker.SlotPermit, error) {
 	for {
-		if ctx.NumIssuedSlots() < r.options.MinSlots {
+		if info.NumIssuedSlots() < r.options.MinSlots {
 			return &worker.SlotPermit{}, nil
 		}
 		r.lastIssuedMu.Lock()
@@ -144,7 +145,7 @@ func (r *ResourceBasedSlotSupplier) ReserveSlot(ctx worker.SlotReserveContext) (
 			}
 		}
 
-		maybePermit := r.TryReserveSlot(ctx)
+		maybePermit := r.TryReserveSlot(info)
 		if maybePermit != nil {
 			return maybePermit, nil
 		}
@@ -152,7 +153,7 @@ func (r *ResourceBasedSlotSupplier) ReserveSlot(ctx worker.SlotReserveContext) (
 	}
 }
 
-func (r *ResourceBasedSlotSupplier) TryReserveSlot(ctx worker.SlotReserveContext) *worker.SlotPermit {
+func (r *ResourceBasedSlotSupplier) TryReserveSlot(ctx worker.SlotReservationInfo) *worker.SlotPermit {
 	r.lastIssuedMu.Lock()
 	defer r.lastIssuedMu.Unlock()
 
@@ -172,8 +173,8 @@ func (r *ResourceBasedSlotSupplier) TryReserveSlot(ctx worker.SlotReserveContext
 	return nil
 }
 
-func (r *ResourceBasedSlotSupplier) MarkSlotUsed(worker.SlotMarkUsedContext) {}
-func (r *ResourceBasedSlotSupplier) ReleaseSlot(worker.SlotReleaseContext)   {}
+func (r *ResourceBasedSlotSupplier) MarkSlotUsed(worker.SlotMarkUsedInfo) {}
+func (r *ResourceBasedSlotSupplier) ReleaseSlot(worker.SlotReleaseInfo)   {}
 func (r *ResourceBasedSlotSupplier) MaxSlots() int {
 	return 0
 }

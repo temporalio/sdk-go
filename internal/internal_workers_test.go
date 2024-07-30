@@ -122,7 +122,7 @@ type CountingSlotSupplier struct {
 	reserves, releases, uses atomic.Int32
 }
 
-func (c *CountingSlotSupplier) ReserveSlot(ctx SlotReserveContext) (*SlotPermit, error) {
+func (c *CountingSlotSupplier) ReserveSlot(ctx context.Context, _ SlotReservationInfo) (*SlotPermit, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
@@ -130,16 +130,16 @@ func (c *CountingSlotSupplier) ReserveSlot(ctx SlotReserveContext) (*SlotPermit,
 	return &SlotPermit{}, nil
 }
 
-func (c *CountingSlotSupplier) TryReserveSlot(SlotReserveContext) *SlotPermit {
+func (c *CountingSlotSupplier) TryReserveSlot(SlotReservationInfo) *SlotPermit {
 	c.reserves.Add(1)
 	return &SlotPermit{}
 }
 
-func (c *CountingSlotSupplier) MarkSlotUsed(SlotMarkUsedContext) {
+func (c *CountingSlotSupplier) MarkSlotUsed(SlotMarkUsedInfo) {
 	c.uses.Add(1)
 }
 
-func (c *CountingSlotSupplier) ReleaseSlot(SlotReleaseContext) {
+func (c *CountingSlotSupplier) ReleaseSlot(SlotReleaseInfo) {
 	c.releases.Add(1)
 }
 
@@ -281,20 +281,20 @@ type SometimesFailSlotSupplier struct {
 	currentSlot atomic.Int32
 }
 
-func (s *SometimesFailSlotSupplier) ReserveSlot(ctx SlotReserveContext) (*SlotPermit, error) {
+func (s *SometimesFailSlotSupplier) ReserveSlot(_ context.Context, info SlotReservationInfo) (*SlotPermit, error) {
 	if int(s.currentSlot.Load())%s.failEveryN == 0 {
 		s.currentSlot.Add(1)
 		return nil, errors.New("ahhhhh fail")
 	}
-	return s.TryReserveSlot(ctx), nil
+	return s.TryReserveSlot(info), nil
 }
-func (s *SometimesFailSlotSupplier) TryReserveSlot(SlotReserveContext) *SlotPermit {
+func (s *SometimesFailSlotSupplier) TryReserveSlot(SlotReservationInfo) *SlotPermit {
 	s.currentSlot.Add(1)
 	return &SlotPermit{}
 }
-func (s *SometimesFailSlotSupplier) MarkSlotUsed(SlotMarkUsedContext) {}
-func (s *SometimesFailSlotSupplier) ReleaseSlot(SlotReleaseContext)   {}
-func (s *SometimesFailSlotSupplier) MaxSlots() int                    { return 0 }
+func (s *SometimesFailSlotSupplier) MarkSlotUsed(SlotMarkUsedInfo) {}
+func (s *SometimesFailSlotSupplier) ReleaseSlot(SlotReleaseInfo)   {}
+func (s *SometimesFailSlotSupplier) MaxSlots() int                 { return 0 }
 
 func (s *WorkersTestSuite) TestErrorProneSlotSupplier() {
 	s.SetupTest()

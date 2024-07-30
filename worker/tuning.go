@@ -34,6 +34,8 @@ import (
 type WorkerTuner = internal.WorkerTuner
 
 // SlotPermit is a permit to use a slot.
+//
+// WARNING: Custom implementations of SlotSupplier are currently experimental.
 type SlotPermit = internal.SlotPermit
 
 // SlotSupplier controls how slots are handed out for workflow and activity tasks as well as
@@ -42,23 +44,23 @@ type SlotPermit = internal.SlotPermit
 // WARNING: Custom implementations of SlotSupplier are currently experimental.
 type SlotSupplier = internal.SlotSupplier
 
-// SlotReserveContext contains information that SlotSupplier instances can use during
+// SlotReservationInfo contains information that SlotSupplier instances can use during
 // reservation calls.
 //
 // WARNING: Custom implementations of SlotSupplier are currently experimental.
-type SlotReserveContext = internal.SlotReserveContext
+type SlotReservationInfo = internal.SlotReservationInfo
 
-// SlotMarkUsedContext contains information that SlotSupplier instances can use during
+// SlotMarkUsedInfo contains information that SlotSupplier instances can use during
 // SlotSupplier.MarkSlotUsed calls.
 //
 // WARNING: Custom implementations of SlotSupplier are currently experimental.
-type SlotMarkUsedContext = internal.SlotMarkUsedContext
+type SlotMarkUsedInfo = internal.SlotMarkUsedInfo
 
-// SlotReleaseContext contains information that SlotSupplier instances can use during
+// SlotReleaseInfo contains information that SlotSupplier instances can use during
 // SlotSupplier.ReleaseSlot calls.
 //
 // WARNING: Custom implementations of SlotSupplier are currently experimental.
-type SlotReleaseContext = internal.SlotReleaseContext
+type SlotReleaseInfo = internal.SlotReleaseInfo
 
 // FixedSizeTunerOptions are the options used by NewFixedSizeTuner.
 type FixedSizeTunerOptions = internal.FixedSizeTunerOptions

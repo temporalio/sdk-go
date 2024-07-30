@@ -110,7 +110,8 @@ func TestEagerActivityMaxPerTask(t *testing.T) {
 func TestEagerActivityCounts(t *testing.T) {
 	// We'll create an eager activity executor with 3 max eager concurrent and 5
 	// max concurrent
-	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{taskQueue: "task-queue1", maxConcurrent: 3})
+	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{taskQueue: "task-queue1",
+		maxConcurrent: 3})
 	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
 		NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
 		NumActivitySlots:      5,
@@ -138,7 +139,8 @@ func TestEagerActivityCounts(t *testing.T) {
 	addScheduleTaskCommand(req, "task-queue1")
 
 	// Apply to request and confirm only the proper 3 remain as true
-	require.Equal(t, 3, len(exec.applyToRequest(req)))
+	reservedPermits := exec.applyToRequest(req)
+	require.Equal(t, 3, len(reservedPermits))
 	require.False(t, req.Commands[0].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
 	require.False(t, req.Commands[1].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
 	require.True(t, req.Commands[2].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
@@ -160,7 +162,7 @@ func TestEagerActivityCounts(t *testing.T) {
 			{ActivityId: "activity2"},
 		},
 	}
-	exec.handleResponse(resp, []*SlotPermit{{}, {}, {}})
+	exec.handleResponse(resp, reservedPermits)
 
 	// Wait a bit until both tasks running
 	require.Eventually(t, func() bool {
