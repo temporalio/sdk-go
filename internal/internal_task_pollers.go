@@ -351,11 +351,7 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 	}
 	var taskErr error
 	defer func() {
-		// This check exists to avoid a panic in unit tests where this is nil. In non-mocked
-		// scenarios, this should never be nil.
-		if wfctx != nil {
-			wfctx.Unlock(taskErr)
-		}
+		wfctx.Unlock(taskErr)
 	}()
 
 	for {
