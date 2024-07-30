@@ -89,9 +89,6 @@ type SlotReleaseContext interface {
 // SlotSupplier controls how slots are handed out for workflow and activity tasks as well as
 // local activities when used in conjunction with a WorkerTuner.
 //
-// Currently, you cannot implement your own slot supplier. You can use the provided
-// FixedSizeSlotSupplier and ResourceBasedSlotSupplier slot suppliers.
-//
 // WARNING: Custom implementations of SlotSupplier are currently experimental.
 type SlotSupplier interface {
 	// ReserveSlot is called before polling for new tasks. The implementation should block until

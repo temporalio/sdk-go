@@ -263,6 +263,7 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 				NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
 				NumActivitySlots:      defaultMaxConcurrentActivityExecutionSize,
 				NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize,
+				NumNexusSlots:         defaultMaxConcurrentTaskExecutionSize,
 			})
 	}
 }

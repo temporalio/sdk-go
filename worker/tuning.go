@@ -29,6 +29,8 @@ import (
 )
 
 // WorkerTuner allows for the dynamic customization of some aspects of worker behavior.
+//
+// WARNING: Custom implementations of SlotSupplier are currently experimental.
 type WorkerTuner = internal.WorkerTuner
 
 // SlotPermit is a permit to use a slot.
@@ -37,36 +39,45 @@ type SlotPermit = internal.SlotPermit
 // SlotSupplier controls how slots are handed out for workflow and activity tasks as well as
 // local activities when used in conjunction with a WorkerTuner.
 //
-// Currently, you cannot implement your own slot supplier. You can use the provided
-// FixedSizeSlotSupplier and ResourceBasedSlotSupplier slot suppliers.
+// WARNING: Custom implementations of SlotSupplier are currently experimental.
 type SlotSupplier = internal.SlotSupplier
 
 // SlotReserveContext contains information that SlotSupplier instances can use during
 // reservation calls.
+//
+// WARNING: Custom implementations of SlotSupplier are currently experimental.
 type SlotReserveContext = internal.SlotReserveContext
 
 // SlotMarkUsedContext contains information that SlotSupplier instances can use during
 // SlotSupplier.MarkSlotUsed calls.
+//
+// WARNING: Custom implementations of SlotSupplier are currently experimental.
 type SlotMarkUsedContext = internal.SlotMarkUsedContext
 
 // SlotReleaseContext contains information that SlotSupplier instances can use during
 // SlotSupplier.ReleaseSlot calls.
+//
+// WARNING: Custom implementations of SlotSupplier are currently experimental.
 type SlotReleaseContext = internal.SlotReleaseContext
 
 // FixedSizeTunerOptions are the options used by NewFixedSizeTuner.
 type FixedSizeTunerOptions = internal.FixedSizeTunerOptions
 
 // CompositeTunerOptions are the options used by NewCompositeTuner.
+//
+// WARNING: Custom implementations of SlotSupplier are currently experimental.
 type CompositeTunerOptions = internal.CompositeTunerOptions
 
 // NewFixedSizeTuner creates a WorkerTuner that uses fixed size slot suppliers.
-func NewFixedSizeTuner(opts FixedSizeTunerOptions) (WorkerTuner, error) {
-	return internal.NewFixedSizeTuner(opts)
+func NewFixedSizeTuner(options FixedSizeTunerOptions) (WorkerTuner, error) {
+	return internal.NewFixedSizeTuner(options)
 }
 
 // NewCompositeTuner creates a WorkerTuner that uses a combination of slot suppliers.
-func NewCompositeTuner(opts CompositeTunerOptions) (WorkerTuner, error) {
-	return internal.NewCompositeTuner(opts)
+//
+// WARNING: Custom implementations of SlotSupplier are currently experimental.
+func NewCompositeTuner(options CompositeTunerOptions) (WorkerTuner, error) {
+	return internal.NewCompositeTuner(options)
 }
 
 // NewFixedSizeSlotSupplier creates a new FixedSizeSlotSupplier with the given number of slots.
