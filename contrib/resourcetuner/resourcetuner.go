@@ -335,7 +335,7 @@ func (p *psUtilSystemInfoSupplier) GetCpuUsage() (float64, error) {
 	if err := p.maybeRefresh(); err != nil {
 		return 0, err
 	}
-	return p.lastCpuUsage, nil
+	return p.lastCpuUsage / 100, nil
 }
 
 func (p *psUtilSystemInfoSupplier) maybeRefresh() error {
@@ -358,5 +358,6 @@ func (p *psUtilSystemInfoSupplier) maybeRefresh() error {
 	}
 	p.lastMemStat = memStat
 	p.lastCpuUsage = cpuUsage[0]
+	p.lastRefresh = time.Now()
 	return nil
 }

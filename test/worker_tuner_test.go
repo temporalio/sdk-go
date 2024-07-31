@@ -110,7 +110,7 @@ func (ts *WorkerTunerTestSuite) runTheWorkflow(tuner worker.WorkerTuner, ctx con
 
 	handle, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions(ts.T().Name()),
-		ts.workflows.RunsLocalAndNonlocalActsWithRetries, 2)
+		ts.workflows.RunsLocalAndNonlocalActsWithRetries, 5, 2)
 	ts.NoError(err)
 	ts.NoError(handle.Get(ctx, nil))
 }

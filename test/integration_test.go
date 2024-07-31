@@ -2909,6 +2909,11 @@ func (w *waitToProceedActivities) JustTimeOut(ctx context.Context) error {
 	return nil
 }
 
+func (w *waitToProceedActivities) JustPanic(_ context.Context) error {
+	panic("I panic")
+	return nil
+}
+
 func (ts *IntegrationTestSuite) TestSlotSupplierIntraWFTMetrics() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -2949,6 +2954,23 @@ func (ts *IntegrationTestSuite) TestSlotSupplierIntraWFTMetrics() {
 
 		_ = a3.Get(ctx, nil)
 		_ = a4.Get(ctx, nil)
+
+		// And that activities that panic release slots properly
+		ao = workflow.LocalActivityOptions{
+			StartToCloseTimeout: 200 * time.Millisecond,
+			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+		}
+		ctx = workflow.WithLocalActivityOptions(ctx, ao)
+		a5 := workflow.ExecuteLocalActivity(ctx, actStruct.JustPanic)
+		ao2 = workflow.ActivityOptions{
+			StartToCloseTimeout: 200 * time.Millisecond,
+			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+		}
+		ctx = workflow.WithActivityOptions(ctx, ao2)
+		a6 := workflow.ExecuteActivity(ctx, actStruct.JustPanic)
+
+		_ = a5.Get(ctx, nil)
+		_ = a6.Get(ctx, nil)
 
 		return nil
 	}
@@ -3143,7 +3165,34 @@ func (ts *IntegrationTestSuite) TestResourceBasedSlotSupplierWorks() {
 	for i := 0; i < 1; i++ {
 		run, err := ts.client.ExecuteWorkflow(ctx,
 			ts.startWorkflowOptions("resource-based-slot-supplier"+strconv.Itoa(i)),
-			ts.workflows.RunsLocalAndNonlocalActsWithRetries, 2)
+			ts.workflows.RunsLocalAndNonlocalActsWithRetries, 5, 2)
+		ts.NoError(err)
+		ts.NotNil(run)
+		ts.NoError(err)
+		wfRuns = append(wfRuns, run)
+	}
+
+	for _, run := range wfRuns {
+		ts.NoError(run.Get(ctx, nil))
+	}
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, actWorkertags, 0)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, laWorkertags, 0)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, wfWorkertags, 0)
+}
+
+func (ts *IntegrationTestSuite) TestResourceBasedSlotSupplierManyActs() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	actWorkertags := []string{"worker_type", "ActivityWorker", "task_queue", ts.taskQueueName}
+	laWorkertags := []string{"worker_type", "LocalActivityWorker", "task_queue", ts.taskQueueName}
+	wfWorkertags := []string{"worker_type", "WorkflowWorker", "task_queue", ts.taskQueueName}
+
+	wfRuns := make([]client.WorkflowRun, 0)
+	for i := 0; i < 1; i++ {
+		run, err := ts.client.ExecuteWorkflow(ctx,
+			ts.startWorkflowOptions("resource-based-slot-supplier"+strconv.Itoa(i)),
+			ts.workflows.RunsLocalAndNonlocalActsWithRetries, 200, 0)
 		ts.NoError(err)
 		ts.NotNil(run)
 		ts.NoError(err)
