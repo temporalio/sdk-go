@@ -63,9 +63,20 @@ type SlotPermit struct {
 // SlotReservationInfo contains information that SlotSupplier instances can use during
 // reservation calls. It embeds a standard Context.
 type SlotReservationInfo interface {
+	// TaskQueue returns the task queue for which a slot is being reserved. In the case of local
+	// activities, this is the same as the workflow's task queue.
 	TaskQueue() string
+	// WorkerBuildId returns the build ID of the worker that is reserving the slot.
+	WorkerBuildId() string
+	// WorkerBuildId returns the build ID of the worker that is reserving the slot.
+	WorkerIdentity() string
+	// NumIssuedSlots returns the number of slots that have already been issued by the supplier.
 	NumIssuedSlots() int
+	// Logger returns an appropriately tagged logger.
 	Logger() log.Logger
+	// MetricsHandler returns an appropriately tagged metrics handler that can be used to record
+	// custom metrics.
+	MetricsHandler() metrics.Handler
 }
 
 // SlotMarkUsedInfo contains information that SlotSupplier instances can use during
@@ -73,6 +84,11 @@ type SlotReservationInfo interface {
 type SlotMarkUsedInfo interface {
 	// Permit returns the permit that is being marked as used.
 	Permit() *SlotPermit
+	// Logger returns an appropriately tagged logger.
+	Logger() log.Logger
+	// MetricsHandler returns an appropriately tagged metrics handler that can be used to record
+	// custom metrics.
+	MetricsHandler() metrics.Handler
 }
 
 // SlotReleaseReason describes the reason that a slot is being released.
@@ -90,6 +106,11 @@ type SlotReleaseInfo interface {
 	Permit() *SlotPermit
 	// Reason returns the reason that the slot is being released.
 	Reason() SlotReleaseReason
+	// Logger returns an appropriately tagged logger.
+	Logger() log.Logger
+	// MetricsHandler returns an appropriately tagged metrics handler that can be used to record
+	// custom metrics.
+	MetricsHandler() metrics.Handler
 }
 
 // SlotSupplier controls how slots are handed out for workflow and activity tasks as well as
@@ -267,17 +288,27 @@ func (f *FixedSizeSlotSupplier) MaxSlots() int {
 
 type slotReservationData struct {
 	taskQueue string
-	logger    log.Logger
 }
 
 type slotReserveInfoImpl struct {
-	taskQueue   string
-	issuedSlots int
-	logger      log.Logger
+	taskQueue      string
+	workerBuildId  string
+	workerIdentity string
+	issuedSlots    int
+	logger         log.Logger
+	metrics        metrics.Handler
 }
 
 func (s slotReserveInfoImpl) TaskQueue() string {
 	return s.taskQueue
+}
+
+func (s slotReserveInfoImpl) WorkerBuildId() string {
+	return s.workerBuildId
+}
+
+func (s slotReserveInfoImpl) WorkerIdentity() string {
+	return s.workerIdentity
 }
 
 func (s slotReserveInfoImpl) NumIssuedSlots() int {
@@ -288,17 +319,33 @@ func (s slotReserveInfoImpl) Logger() log.Logger {
 	return s.logger
 }
 
+func (s slotReserveInfoImpl) MetricsHandler() metrics.Handler {
+	return s.metrics
+}
+
 type slotMarkUsedContextImpl struct {
-	permit *SlotPermit
+	permit  *SlotPermit
+	logger  log.Logger
+	metrics metrics.Handler
 }
 
 func (s slotMarkUsedContextImpl) Permit() *SlotPermit {
 	return s.permit
 }
 
+func (s slotMarkUsedContextImpl) Logger() log.Logger {
+	return s.logger
+}
+
+func (s slotMarkUsedContextImpl) MetricsHandler() metrics.Handler {
+	return s.metrics
+}
+
 type slotReleaseContextImpl struct {
-	permit *SlotPermit
-	reason SlotReleaseReason
+	permit  *SlotPermit
+	reason  SlotReleaseReason
+	logger  log.Logger
+	metrics metrics.Handler
 }
 
 func (s slotReleaseContextImpl) Permit() *SlotPermit {
@@ -309,23 +356,46 @@ func (s slotReleaseContextImpl) Reason() SlotReleaseReason {
 	return s.reason
 }
 
+func (s slotReleaseContextImpl) Logger() log.Logger {
+	return s.logger
+}
+
+func (s slotReleaseContextImpl) MetricsHandler() metrics.Handler {
+	return s.metrics
+}
+
 type trackingSlotSupplier struct {
-	inner SlotSupplier
+	inner          SlotSupplier
+	logger         log.Logger
+	metrics        metrics.Handler
+	workerBuildId  string
+	workerIdentity string
 
 	issuedSlotsAtomic atomic.Int32
 	slotsMutex        sync.Mutex
-	// Eventually the map values will be slot info once the API is exposed
+	// Values should eventually become slot info types
 	usedSlots               map[*SlotPermit]struct{}
 	taskSlotsAvailableGauge metrics.Gauge
 	taskSlotsUsedGauge      metrics.Gauge
 }
 
-func newTrackingSlotSupplier(inner SlotSupplier, metricsHandler metrics.Handler) *trackingSlotSupplier {
+type trackingSlotSupplierOptions struct {
+	logger         log.Logger
+	metricsHandler metrics.Handler
+	workerBuildId  string
+	workerIdentity string
+}
+
+func newTrackingSlotSupplier(inner SlotSupplier, options trackingSlotSupplierOptions) *trackingSlotSupplier {
 	tss := &trackingSlotSupplier{
 		inner:                   inner,
+		logger:                  options.logger,
+		metrics:                 options.metricsHandler,
+		workerBuildId:           options.workerBuildId,
+		workerIdentity:          options.workerIdentity,
 		usedSlots:               make(map[*SlotPermit]struct{}),
-		taskSlotsAvailableGauge: metricsHandler.Gauge(metrics.WorkerTaskSlotsAvailable),
-		taskSlotsUsedGauge:      metricsHandler.Gauge(metrics.WorkerTaskSlotsUsed),
+		taskSlotsAvailableGauge: options.metricsHandler.Gauge(metrics.WorkerTaskSlotsAvailable),
+		taskSlotsUsedGauge:      options.metricsHandler.Gauge(metrics.WorkerTaskSlotsUsed),
 	}
 	return tss
 }
@@ -335,9 +405,12 @@ func (t *trackingSlotSupplier) ReserveSlot(
 	data *slotReservationData,
 ) (*SlotPermit, error) {
 	permit, err := t.inner.ReserveSlot(ctx, slotReserveInfoImpl{
-		taskQueue:   data.taskQueue,
-		issuedSlots: int(t.issuedSlotsAtomic.Load()),
-		logger:      data.logger,
+		taskQueue:      data.taskQueue,
+		workerBuildId:  t.workerBuildId,
+		workerIdentity: t.workerIdentity,
+		issuedSlots:    int(t.issuedSlotsAtomic.Load()),
+		logger:         t.logger,
+		metrics:        t.metrics,
 	})
 	if err != nil {
 		return nil, err
@@ -352,9 +425,12 @@ func (t *trackingSlotSupplier) ReserveSlot(
 
 func (t *trackingSlotSupplier) TryReserveSlot(data *slotReservationData) *SlotPermit {
 	permit := t.inner.TryReserveSlot(slotReserveInfoImpl{
-		taskQueue:   data.taskQueue,
-		issuedSlots: int(t.issuedSlotsAtomic.Load()),
-		logger:      data.logger,
+		taskQueue:      data.taskQueue,
+		workerBuildId:  t.workerBuildId,
+		workerIdentity: t.workerIdentity,
+		issuedSlots:    int(t.issuedSlotsAtomic.Load()),
+		logger:         t.logger,
+		metrics:        t.metrics,
 	})
 	if permit != nil {
 		t.issuedSlotsAtomic.Add(1)
@@ -371,7 +447,9 @@ func (t *trackingSlotSupplier) MarkSlotUsed(permit *SlotPermit) {
 	defer t.slotsMutex.Unlock()
 	t.usedSlots[permit] = struct{}{}
 	t.inner.MarkSlotUsed(&slotMarkUsedContextImpl{
-		permit: permit,
+		permit:  permit,
+		logger:  t.logger,
+		metrics: t.metrics,
 	})
 	t.publishMetrics(true)
 }
@@ -384,8 +462,10 @@ func (t *trackingSlotSupplier) ReleaseSlot(permit *SlotPermit, reason SlotReleas
 	defer t.slotsMutex.Unlock()
 	_ = t.usedSlots[permit]
 	t.inner.ReleaseSlot(&slotReleaseContextImpl{
-		permit: permit,
-		reason: reason,
+		permit:  permit,
+		reason:  reason,
+		logger:  t.logger,
+		metrics: t.metrics,
 	})
 	t.issuedSlotsAtomic.Add(-1)
 	delete(t.usedSlots, permit)

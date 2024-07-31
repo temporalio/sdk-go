@@ -73,6 +73,7 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 		maxTaskPerSecond: defaultWorkerTaskExecutionRate,
 		taskWorker:       poller,
 		identity:         params.Identity,
+		buildId:          params.getBuildID(),
 		logger:           logger,
 		stopTimeout:      params.WorkerStopTimeout,
 		fatalErrCb:       params.WorkerFatalErrorCallback,

@@ -1724,7 +1724,11 @@ func (s *internalWorkerTestSuite) TestSlotSupplierReturnsErrorCanContinue() {
 	worker.RegisterActivity(testActivityNoResult)
 	worker.RegisterWorkflow(testWorkflowReturnStruct)
 	throwingSlotSupplier := &throwsOneErrSlotSupplier{}
-	worker.workflowWorker.worker.slotSupplier = newTrackingSlotSupplier(throwingSlotSupplier, metrics.NopHandler)
+	worker.workflowWorker.worker.slotSupplier = newTrackingSlotSupplier(throwingSlotSupplier,
+		trackingSlotSupplierOptions{
+			logger:         getLogger(),
+			metricsHandler: metrics.NopHandler,
+		})
 	err := worker.Start()
 	require.NoError(s.T(), err)
 	time.Sleep(time.Millisecond * 200)

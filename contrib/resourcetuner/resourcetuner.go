@@ -132,17 +132,20 @@ func (r *ResourceBasedSlotSupplier) ReserveSlot(ctx context.Context, info worker
 		if info.NumIssuedSlots() < r.options.MinSlots {
 			return &worker.SlotPermit{}, nil
 		}
-		r.lastIssuedMu.Lock()
-		mustWaitFor := r.options.RampThrottle - time.Since(r.lastSlotIssuedAt)
-		r.lastIssuedMu.Unlock()
-		// Deal with last issued possibly being unset, or, on windows seemingly sometimes can
-		// have zero values if called rapidly enough.
-		if mustWaitFor > 0 {
-			select {
-			case <-time.After(mustWaitFor):
-			case <-ctx.Done():
-				return nil, ctx.Err()
+		if r.options.RampThrottle > 0 {
+			r.lastIssuedMu.Lock()
+			mustWaitFor := r.options.RampThrottle - time.Since(r.lastSlotIssuedAt)
+			// Deal with last issued possibly being unset, or, on windows seemingly sometimes can
+			// have zero values if called rapidly enough.
+			if mustWaitFor > 0 {
+				select {
+				case <-time.After(mustWaitFor):
+				case <-ctx.Done():
+					r.lastIssuedMu.Unlock()
+					return nil, ctx.Err()
+				}
 			}
+			r.lastIssuedMu.Unlock()
 		}
 
 		maybePermit := r.TryReserveSlot(info)
@@ -153,16 +156,16 @@ func (r *ResourceBasedSlotSupplier) ReserveSlot(ctx context.Context, info worker
 	}
 }
 
-func (r *ResourceBasedSlotSupplier) TryReserveSlot(ctx worker.SlotReservationInfo) *worker.SlotPermit {
+func (r *ResourceBasedSlotSupplier) TryReserveSlot(info worker.SlotReservationInfo) *worker.SlotPermit {
 	r.lastIssuedMu.Lock()
 	defer r.lastIssuedMu.Unlock()
 
-	numIssued := ctx.NumIssuedSlots()
+	numIssued := info.NumIssuedSlots()
 	if numIssued < r.options.MinSlots || (numIssued < r.options.MaxSlots &&
 		time.Since(r.lastSlotIssuedAt) > r.options.RampThrottle) {
 		decision, err := r.controller.pidDecision()
 		if err != nil {
-			ctx.Logger().Error("Error calculating resource usage", "error", err)
+			info.Logger().Error("Error calculating resource usage", "error", err)
 			return nil
 		}
 		if decision {
@@ -295,6 +298,11 @@ func (rc *ResourceController) pidDecision() (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	if memUsage >= rc.options.MemTargetPercent {
+		// Never allow going over the memory target
+		return false, nil
+	}
+	//fmt.Printf("mem: %f, cpu: %f\n", memUsage, cpuUsage)
 	elapsedTime := time.Since(rc.lastRefresh)
 	// This shouldn't be possible with real implementations, but if the elapsed time is 0 the
 	// PID controller can produce NaNs.
@@ -348,12 +356,16 @@ func (p *psUtilSystemInfoSupplier) maybeRefresh() error {
 	if time.Since(p.lastRefresh) < 100*time.Millisecond {
 		return nil
 	}
-	memStat, err := mem.VirtualMemory()
+	ctx, cancelFn := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancelFn()
+	memStat, err := mem.VirtualMemoryWithContext(ctx)
 	if err != nil {
+		println("Refresh error: ", err)
 		return err
 	}
-	cpuUsage, err := cpu.Percent(0, false)
+	cpuUsage, err := cpu.PercentWithContext(ctx, 0, false)
 	if err != nil {
+		println("Refresh error: ", err)
 		return err
 	}
 	p.lastMemStat = memStat

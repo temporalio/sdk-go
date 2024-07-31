@@ -3181,7 +3181,7 @@ func (ts *IntegrationTestSuite) TestResourceBasedSlotSupplierWorks() {
 }
 
 func (ts *IntegrationTestSuite) TestResourceBasedSlotSupplierManyActs() {
-	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
 	defer cancel()
 
 	actWorkertags := []string{"worker_type", "ActivityWorker", "task_queue", ts.taskQueueName}
@@ -3190,8 +3190,10 @@ func (ts *IntegrationTestSuite) TestResourceBasedSlotSupplierManyActs() {
 
 	wfRuns := make([]client.WorkflowRun, 0)
 	for i := 0; i < 1; i++ {
+		opts := ts.startWorkflowOptions("resource-based-many-acts" + strconv.Itoa(i))
+		opts.WorkflowExecutionTimeout = 1 * time.Minute
 		run, err := ts.client.ExecuteWorkflow(ctx,
-			ts.startWorkflowOptions("resource-based-slot-supplier"+strconv.Itoa(i)),
+			opts,
 			ts.workflows.RunsLocalAndNonlocalActsWithRetries, 200, 0)
 		ts.NoError(err)
 		ts.NotNil(run)

@@ -177,6 +177,7 @@ type (
 		maxTaskPerSecond    float64
 		taskWorker          taskPoller
 		identity            string
+		buildId             string
 		logger              log.Logger
 		stopTimeout         time.Duration
 		fatalErrCb          func(error)
@@ -275,8 +276,12 @@ func newBaseWorker(
 	options baseWorkerOptions,
 ) *baseWorker {
 	ctx, cancel := context.WithCancel(context.Background())
-	options.slotReservationData.logger = options.logger
-	tss := newTrackingSlotSupplier(options.slotSupplier, options.metricsHandler)
+	tss := newTrackingSlotSupplier(options.slotSupplier, trackingSlotSupplierOptions{
+		logger:         options.logger,
+		metricsHandler: options.metricsHandler,
+		workerBuildId:  options.buildId,
+		workerIdentity: options.identity,
+	})
 	bw := &baseWorker{
 		options:        options,
 		stopCh:         make(chan struct{}),
