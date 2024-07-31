@@ -25,8 +25,6 @@ package internal
 import (
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/api/workflowservice/v1"
-	"go.temporal.io/sdk/internal/common/metrics"
-	"go.temporal.io/sdk/log"
 )
 
 type nexusWorkerOptions struct {
@@ -63,21 +61,19 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 		params,
 	)
 
-	workerType := "NexusWorker"
-	logger := log.With(params.Logger, tagWorkerType, workerType)
-	metricsHandler := params.MetricsHandler.WithTags(metrics.WorkerTags(workerType))
 	baseWorker := newBaseWorker(baseWorkerOptions{
 		pollerCount:      params.MaxConcurrentNexusTaskQueuePollers,
 		pollerRate:       defaultPollerRate,
 		slotSupplier:     params.Tuner.GetNexusSlotSupplier(),
 		maxTaskPerSecond: defaultWorkerTaskExecutionRate,
 		taskWorker:       poller,
+		workerType:       "NexusWorker",
 		identity:         params.Identity,
 		buildId:          params.getBuildID(),
-		logger:           logger,
+		logger:           params.Logger,
 		stopTimeout:      params.WorkerStopTimeout,
 		fatalErrCb:       params.WorkerFatalErrorCallback,
-		metricsHandler:   metricsHandler,
+		metricsHandler:   params.MetricsHandler,
 		slotReservationData: slotReservationData{
 			taskQueue: params.TaskQueue,
 		},

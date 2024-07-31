@@ -246,10 +246,8 @@ func NewFixedSizeTuner(options FixedSizeTunerOptions) (WorkerTuner, error) {
 // FixedSizeSlotSupplier is a slot supplier that will only ever issue at most a fixed number of
 // slots.
 type FixedSizeSlotSupplier struct {
-	// The maximum number of slots that this supplier will ever issue.
-	NumSlots int
-
-	sem *semaphore.Weighted
+	numSlots int
+	sem      *semaphore.Weighted
 }
 
 // NewFixedSizeSlotSupplier creates a new FixedSizeSlotSupplier with the given number of slots.
@@ -258,7 +256,7 @@ func NewFixedSizeSlotSupplier(numSlots int) (*FixedSizeSlotSupplier, error) {
 		return nil, fmt.Errorf("NumSlots must be positive")
 	}
 	return &FixedSizeSlotSupplier{
-		NumSlots: numSlots,
+		numSlots: numSlots,
 		sem:      semaphore.NewWeighted(int64(numSlots)),
 	}, nil
 }
@@ -283,7 +281,7 @@ func (f *FixedSizeSlotSupplier) ReleaseSlot(SlotReleaseInfo) {
 	f.sem.Release(1)
 }
 func (f *FixedSizeSlotSupplier) MaxSlots() int {
-	return f.NumSlots
+	return f.numSlots
 }
 
 type slotReservationData struct {

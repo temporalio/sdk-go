@@ -176,6 +176,7 @@ type (
 		slotSupplier        SlotSupplier
 		maxTaskPerSecond    float64
 		taskWorker          taskPoller
+		workerType          string
 		identity            string
 		buildId             string
 		logger              log.Logger
@@ -276,9 +277,11 @@ func newBaseWorker(
 	options baseWorkerOptions,
 ) *baseWorker {
 	ctx, cancel := context.WithCancel(context.Background())
+	logger := log.With(options.logger, tagWorkerType, options.workerType)
+	metricsHandler := options.metricsHandler.WithTags(metrics.WorkerTags(options.workerType))
 	tss := newTrackingSlotSupplier(options.slotSupplier, trackingSlotSupplierOptions{
-		logger:         options.logger,
-		metricsHandler: options.metricsHandler,
+		logger:         logger,
+		metricsHandler: metricsHandler,
 		workerBuildId:  options.buildId,
 		workerIdentity: options.identity,
 	})
@@ -287,8 +290,8 @@ func newBaseWorker(
 		stopCh:         make(chan struct{}),
 		taskLimiter:    rate.NewLimiter(rate.Limit(options.maxTaskPerSecond), 1),
 		retrier:        backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
-		logger:         options.logger,
-		metricsHandler: options.metricsHandler,
+		logger:         logger,
+		metricsHandler: metricsHandler,
 
 		slotSupplier: tss,
 		// No buffer, so pollers are only able to poll for new tasks after the previous one is

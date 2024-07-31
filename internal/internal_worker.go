@@ -127,6 +127,7 @@ type (
 	workerOverrides struct {
 		workflowTaskHandler WorkflowTaskHandler
 		activityTaskHandler ActivityTaskHandler
+		slotSupplier        SlotSupplier
 	}
 
 	// workerExecutionParameters defines worker configure/execution options.
@@ -318,21 +319,19 @@ func newWorkflowTaskWorkerInternal(
 ) *workflowWorker {
 	ensureRequiredParams(&params)
 	poller := newWorkflowTaskPoller(taskHandler, contextManager, service, params)
-	workerType := "WorkflowWorker"
-	logger := log.With(params.Logger, tagWorkerType, workerType)
-	metricsHandler := params.MetricsHandler.WithTags(metrics.WorkerTags(workerType))
 	worker := newBaseWorker(baseWorkerOptions{
 		pollerCount:      params.MaxConcurrentWorkflowTaskQueuePollers,
 		pollerRate:       defaultPollerRate,
 		slotSupplier:     params.Tuner.GetWorkflowTaskSlotSupplier(),
 		maxTaskPerSecond: defaultWorkerTaskExecutionRate,
 		taskWorker:       poller,
+		workerType:       "WorkflowWorker",
 		identity:         params.Identity,
 		buildId:          params.getBuildID(),
-		logger:           logger,
+		logger:           params.Logger,
 		stopTimeout:      params.WorkerStopTimeout,
 		fatalErrCb:       params.WorkerFatalErrorCallback,
-		metricsHandler:   metricsHandler,
+		metricsHandler:   params.MetricsHandler,
 		slotReservationData: slotReservationData{
 			taskQueue: params.TaskQueue,
 		},
@@ -349,20 +348,18 @@ func newWorkflowTaskWorkerInternal(
 
 	// 2) local activity task poller will poll from laTunnel, and result will be pushed to laTunnel
 	localActivityTaskPoller := newLocalActivityPoller(params, laTunnel, interceptors)
-	workerType = "LocalActivityWorker"
-	logger = log.With(params.Logger, tagWorkerType, workerType)
-	metricsHandler = params.MetricsHandler.WithTags(metrics.WorkerTags(workerType))
 	localActivityWorker := newBaseWorker(baseWorkerOptions{
 		pollerCount:      1, // 1 poller (from local channel) is enough for local activity
 		slotSupplier:     params.Tuner.GetLocalActivitySlotSupplier(),
 		maxTaskPerSecond: params.WorkerLocalActivitiesPerSecond,
 		taskWorker:       localActivityTaskPoller,
+		workerType:       "LocalActivityWorker",
 		identity:         params.Identity,
 		buildId:          params.getBuildID(),
-		logger:           logger,
+		logger:           params.Logger,
 		stopTimeout:      params.WorkerStopTimeout,
 		fatalErrCb:       params.WorkerFatalErrorCallback,
-		metricsHandler:   metricsHandler,
+		metricsHandler:   params.MetricsHandler,
 		slotReservationData: slotReservationData{
 			taskQueue: params.TaskQueue,
 		},
@@ -419,6 +416,10 @@ func newSessionWorker(service workflowservice.WorkflowServiceClient, params work
 
 	params.MaxConcurrentActivityTaskQueuePollers = 1
 	params.TaskQueue = creationTaskqueue
+	if overrides == nil {
+		overrides = &workerOverrides{}
+	}
+	overrides.slotSupplier, _ = NewFixedSizeSlotSupplier(maxConcurrentSessionExecutionSize)
 	creationWorker := newActivityWorker(service, params, overrides, env, sessionEnvironment.GetTokenBucket())
 
 	return &sessionWorker{
@@ -446,7 +447,13 @@ func (sw *sessionWorker) Stop() {
 	sw.activityWorker.Stop()
 }
 
-func newActivityWorker(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, overrides *workerOverrides, env *registry, sessionTokenBucket *sessionTokenBucket) *activityWorker {
+func newActivityWorker(
+	service workflowservice.WorkflowServiceClient,
+	params workerExecutionParameters,
+	overrides *workerOverrides,
+	env *registry,
+	sessionTokenBucket *sessionTokenBucket,
+) *activityWorker {
 	workerStopChannel := make(chan struct{}, 1)
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
 	ensureRequiredParams(&params)
@@ -458,44 +465,43 @@ func newActivityWorker(service workflowservice.WorkflowServiceClient, params wor
 	} else {
 		taskHandler = newActivityTaskHandler(service, params, env)
 	}
-	return newActivityTaskWorker(taskHandler, service, params, sessionTokenBucket, workerStopChannel)
-}
 
-func newActivityTaskWorker(taskHandler ActivityTaskHandler, service workflowservice.WorkflowServiceClient, workerParams workerExecutionParameters, sessionTokenBucket *sessionTokenBucket, stopC chan struct{}) (worker *activityWorker) {
-	ensureRequiredParams(&workerParams)
+	poller := newActivityTaskPoller(taskHandler, service, params)
+	var slotSupplier SlotSupplier
+	if overrides != nil && overrides.slotSupplier != nil {
+		slotSupplier = overrides.slotSupplier
+	} else {
+		slotSupplier = params.Tuner.GetActivityTaskSlotSupplier()
+	}
 
-	poller := newActivityTaskPoller(taskHandler, service, workerParams)
-	workerType := "ActivityWorker"
-	logger := log.With(workerParams.Logger, tagWorkerType, workerType)
-	metricsHandler := workerParams.MetricsHandler.WithTags(metrics.WorkerTags(workerType))
 	base := newBaseWorker(
 		baseWorkerOptions{
-			pollerCount:        workerParams.MaxConcurrentActivityTaskQueuePollers,
+			pollerCount:        params.MaxConcurrentActivityTaskQueuePollers,
 			pollerRate:         defaultPollerRate,
-			slotSupplier:       workerParams.Tuner.GetActivityTaskSlotSupplier(),
-			maxTaskPerSecond:   workerParams.WorkerActivitiesPerSecond,
+			slotSupplier:       slotSupplier,
+			maxTaskPerSecond:   params.WorkerActivitiesPerSecond,
 			taskWorker:         poller,
-			identity:           workerParams.Identity,
-			buildId:            workerParams.getBuildID(),
-			logger:             logger,
-			stopTimeout:        workerParams.WorkerStopTimeout,
-			fatalErrCb:         workerParams.WorkerFatalErrorCallback,
-			userContextCancel:  workerParams.UserContextCancel,
-			metricsHandler:     metricsHandler,
+			workerType:         "ActivityWorker",
+			identity:           params.Identity,
+			buildId:            params.getBuildID(),
+			logger:             params.Logger,
+			stopTimeout:        params.WorkerStopTimeout,
+			fatalErrCb:         params.WorkerFatalErrorCallback,
+			userContextCancel:  params.UserContextCancel,
+			metricsHandler:     params.MetricsHandler,
 			sessionTokenBucket: sessionTokenBucket,
 			slotReservationData: slotReservationData{
-				taskQueue: workerParams.TaskQueue,
+				taskQueue: params.TaskQueue,
 			},
 		},
 	)
-
 	return &activityWorker{
-		executionParameters: workerParams,
+		executionParameters: params,
 		workflowService:     service,
 		worker:              base,
 		poller:              poller,
-		identity:            workerParams.Identity,
-		stopC:               stopC,
+		identity:            params.Identity,
+		stopC:               workerStopChannel,
 	}
 }
 
