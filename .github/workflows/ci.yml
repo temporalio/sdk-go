@@ -131,10 +131,9 @@ jobs:
       version-is-repo-ref: true
 
   omes-image-build:
-    uses: temporalio/omes/.github/workflows/docker-images.yml@build-local-sdk-images
+    uses: temporalio/omes/.github/workflows/docker-images.yml@main
     with:
       lang: go
       sdk-repo-url: ${{github.event.pull_request.head.repo.full_name}}
       sdk-repo-ref: ${{github.event.pull_request.head.ref}}
-      omes-repo-ref: build-local-sdk-images
 
