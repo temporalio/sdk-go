@@ -135,8 +135,8 @@ jobs:
     secrets: inherit
     with:
       lang: go
-      sdk-repo-url: ${{github.event.pull_request.head.repo.full_name}}
-      sdk-repo-ref: ${{github.event.pull_request.head.ref}}
+      sdk-repo-url: ${{ github.event.pull_request.head.repo.full_name || 'temporalio/sdk-go' }}
+      sdk-repo-ref: ${{ github.event.pull_request.head.ref || github.ref }}
       # TODO: Remove once we have a good way of cleaning up sha-based pushed images
       docker-tag-ext: ci-latest
       do-push: true
