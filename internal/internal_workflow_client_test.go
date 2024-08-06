@@ -976,6 +976,155 @@ func (s *workflowRunSuite) TestGetWorkflowNoExtantWorkflowAndNoRunId() {
 	s.Equal("", workflowRunNoRunID.GetRunID())
 }
 
+func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_InvalidUpdateWorkflowOptions() {
+	_, err := PrepareUpdateWorkflowOperation(
+		UpdateWorkflowOptions{
+			// invalid
+		})
+	s.ErrorContains(err, "WaitForStage must be specified")
+}
+
+func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_NonMultiOperationError() {
+	s.workflowServiceClient.EXPECT().
+		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil, serviceerror.NewInternal("internal error")).Times(1)
+
+	updOp, err := PrepareUpdateWorkflowOperation(
+		UpdateWorkflowOptions{
+			UpdateName:   "update",
+			WaitForStage: WorkflowUpdateStageCompleted,
+		})
+	s.Nil(err)
+
+	_, err = s.workflowClient.ExecuteWorkflow(
+		context.Background(),
+		StartWorkflowOptions{
+			ID:                workflowID,
+			TaskQueue:         taskqueue,
+			WorkflowOperation: updOp,
+		}, workflowType,
+	)
+	s.ErrorContains(err, "internal error")
+}
+
+func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerResponseCountMismatch() {
+	s.workflowServiceClient.EXPECT().
+		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ExecuteMultiOperationResponse{
+			Responses: []*workflowservice.ExecuteMultiOperationResponse_Response{},
+		}, nil).Times(1)
+
+	updOp, err := PrepareUpdateWorkflowOperation(
+		UpdateWorkflowOptions{
+			UpdateName:   "update",
+			WaitForStage: WorkflowUpdateStageCompleted,
+		})
+	s.Nil(err)
+
+	s.PanicsWithValue("MultiOperation response from server is incomplete: 0 instead of 2",
+		func() {
+			_, _ = s.workflowClient.ExecuteWorkflow(
+				context.Background(),
+				StartWorkflowOptions{
+					ID:                workflowID,
+					TaskQueue:         taskqueue,
+					WorkflowOperation: updOp,
+				}, workflowType,
+			)
+		})
+}
+
+func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerErrorResponseCountMismatch() {
+	s.workflowServiceClient.EXPECT().
+		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil, serviceerror.NewMultiOperationExecution("Error", []error{})).Times(1)
+
+	updOp, err := PrepareUpdateWorkflowOperation(
+		UpdateWorkflowOptions{
+			UpdateName:   "update",
+			WaitForStage: WorkflowUpdateStageCompleted,
+		})
+	s.Nil(err)
+
+	s.PanicsWithValue("MultiOperation error response from server is incomplete: 0 instead of 2",
+		func() {
+			_, _ = s.workflowClient.ExecuteWorkflow(
+				context.Background(),
+				StartWorkflowOptions{
+					ID:                workflowID,
+					TaskQueue:         taskqueue,
+					WorkflowOperation: updOp,
+				}, workflowType,
+			)
+		})
+}
+
+func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerStartResponseTypeMismatch() {
+	s.workflowServiceClient.EXPECT().
+		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ExecuteMultiOperationResponse{
+			Responses: []*workflowservice.ExecuteMultiOperationResponse_Response{
+				{
+					Response: &workflowservice.ExecuteMultiOperationResponse_Response_UpdateWorkflow{}, // wrong!
+				},
+				nil,
+			},
+		}, nil).Times(1)
+
+	updOp, err := PrepareUpdateWorkflowOperation(
+		UpdateWorkflowOptions{
+			UpdateName:   "update",
+			WaitForStage: WorkflowUpdateStageCompleted,
+		})
+	s.Nil(err)
+
+	s.PanicsWithValue("StartOperation response has the wrong type: *workflowservice.ExecuteMultiOperationResponse_Response_UpdateWorkflow",
+		func() {
+			_, _ = s.workflowClient.ExecuteWorkflow(
+				context.Background(),
+				StartWorkflowOptions{
+					ID:                workflowID,
+					TaskQueue:         taskqueue,
+					WorkflowOperation: updOp,
+				}, workflowType,
+			)
+		})
+}
+
+func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerUpdateResponseTypeMismatch() {
+	s.workflowServiceClient.EXPECT().
+		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ExecuteMultiOperationResponse{
+			Responses: []*workflowservice.ExecuteMultiOperationResponse_Response{
+				{
+					Response: &workflowservice.ExecuteMultiOperationResponse_Response_StartWorkflow{},
+				},
+				{
+					Response: &workflowservice.ExecuteMultiOperationResponse_Response_StartWorkflow{}, // wrong!
+				},
+			},
+		}, nil).Times(1)
+
+	updOp, err := PrepareUpdateWorkflowOperation(
+		UpdateWorkflowOptions{
+			UpdateName:   "update",
+			WaitForStage: WorkflowUpdateStageCompleted,
+		})
+	s.Nil(err)
+
+	s.PanicsWithValue("UpdateOperation response has the wrong type: *workflowservice.ExecuteMultiOperationResponse_Response_StartWorkflow",
+		func() {
+			_, _ = s.workflowClient.ExecuteWorkflow(
+				context.Background(),
+				StartWorkflowOptions{
+					ID:                workflowID,
+					TaskQueue:         taskqueue,
+					WorkflowOperation: updOp,
+				}, workflowType,
+			)
+		})
+}
+
 func getGetWorkflowExecutionHistoryRequest(filterType enumspb.HistoryEventFilterType) *workflowservice.GetWorkflowExecutionHistoryRequest {
 	request := &workflowservice.GetWorkflowExecutionHistoryRequest{
 		Namespace: DefaultNamespace,

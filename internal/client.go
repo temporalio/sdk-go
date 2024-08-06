@@ -643,9 +643,18 @@ type (
 		// Optional: defaulted to Fail.
 		WorkflowIDConflictPolicy enumspb.WorkflowIdConflictPolicy
 
+		// WorkflowOperation - Operation to execute at Workflow Start. For example, see PrepareUpdateWorkflowOperation
+		// to perform Update-with-Start. Note that if the workflow is already running and WorkflowIDConflictPolicy is
+		// set to UseExisting, the start is skipped and only the operation is executed.
+		//
+		// Optional: defaults to nil.
+		WorkflowOperation StartWorkflowOperation
+
 		// When WorkflowExecutionErrorWhenAlreadyStarted is true, Client.ExecuteWorkflow will return an error if the
-		// workflow id has already been used and WorkflowIDReusePolicy would disallow a re-run. If it is set to false,
-		// rather than erroring a WorkflowRun instance representing the current or last run will be returned.
+		// workflow id has already been used and WorkflowIDReusePolicy or WorkflowIDConflictPolicy would
+		// disallow a re-run. If it is set to false, rather than erroring a WorkflowRun instance representing
+		// the current or last run will be returned. However, when WorkflowOperation is set, this field is ignored and
+		// WorkflowIDConflictPolicy UseExisting must be used instead to prevent erroring.
 		//
 		// Optional: defaults to false
 		WorkflowExecutionErrorWhenAlreadyStarted bool
@@ -711,6 +720,18 @@ type (
 		requestID string
 		// workflow completion callback. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
 		callbacks []*commonpb.Callback
+	}
+
+	// StartWorkflowOperation is a type of operation that can be executed as part of a workflow start.
+	StartWorkflowOperation interface {
+		isStartWorkflowOperation()
+	}
+
+	// UpdateWorkflowOperation is used to perform Update-with-Start.
+	// See PrepareUpdateWorkflowOperation for details.
+	UpdateWorkflowOperation struct {
+		WorkflowUpdateHandle
+		input *ClientUpdateWorkflowInput
 	}
 
 	// RetryPolicy defines the retry policy.
@@ -1002,6 +1023,26 @@ func DialCloudOperationsClient(ctx context.Context, options CloudOperationsClien
 		cloudServiceClient: cloudservice.NewCloudServiceClient(conn),
 	}, nil
 }
+
+// PrepareUpdateWorkflowOperation returns an UpdateWorkflowOperation that can be used to perform Update-with-Start,
+// or an error in case the update operation is invalid.
+func PrepareUpdateWorkflowOperation(options UpdateWorkflowOptions) (*UpdateWorkflowOperation, error) {
+	input, err := createUpdateWorkflowInput(options)
+	if err != nil {
+		return nil, err
+	}
+	return &UpdateWorkflowOperation{input: input}, nil
+}
+
+// Get blocks on the outcome of the update *after* it was executed via Client.ExecuteWorkflow.
+func (op *UpdateWorkflowOperation) Get(ctx context.Context, valuePtr interface{}) error {
+	if op.WorkflowUpdateHandle == nil {
+		return fmt.Errorf("update operation has not been executed")
+	}
+	return op.WorkflowUpdateHandle.Get(ctx, valuePtr)
+}
+
+func (op *UpdateWorkflowOperation) isStartWorkflowOperation() {}
 
 // NewNamespaceClient creates an instance of a namespace client, to manager lifecycle of namespaces.
 func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
