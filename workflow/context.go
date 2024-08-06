@@ -78,13 +78,14 @@ func WithValue(parent Context, key interface{}, val interface{}) Context {
 
 // NewDisconnectedContext returns a new context that won't propagate parent's cancellation to the new child context.
 // One common use case is to do cleanup work after workflow is canceled.
-//  err := workflow.ExecuteActivity(ctx, ActivityFoo).Get(ctx, &activityFooResult)
-//  if err != nil && temporal.IsCanceledError(ctx.Err()) {
-//    // activity failed, and workflow context is canceled
-//    disconnectedCtx, _ := workflow.NewDisconnectedContext(ctx);
-//    workflow.ExecuteActivity(disconnectedCtx, handleCancellationActivity).Get(disconnectedCtx, nil)
-//    return err // workflow return CanceledError
-//  }
+//
+//	err := workflow.ExecuteActivity(ctx, ActivityFoo).Get(ctx, &activityFooResult)
+//	if err != nil && temporal.IsCanceledError(ctx.Err()) {
+//	  // activity failed, and workflow context is canceled
+//	  disconnectedCtx, _ := workflow.NewDisconnectedContext(ctx);
+//	  workflow.ExecuteActivity(disconnectedCtx, handleCancellationActivity).Get(disconnectedCtx, nil)
+//	  return err // workflow return CanceledError
+//	}
 func NewDisconnectedContext(parent Context) (ctx Context, cancel CancelFunc) {
 	return internal.NewDisconnectedContext(parent)
 }

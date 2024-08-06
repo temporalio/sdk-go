@@ -31,7 +31,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
@@ -172,16 +171,21 @@ type (
 
 	// baseWorkerOptions options to configure base worker.
 	baseWorkerOptions struct {
-		pollerCount       int
-		pollerRate        int
-		maxConcurrentTask int
-		maxTaskPerSecond  float64
-		taskWorker        taskPoller
-		identity          string
-		workerType        string
-		stopTimeout       time.Duration
-		fatalErrCb        func(error)
-		userContextCancel context.CancelFunc
+		pollerCount         int
+		pollerRate          int
+		slotSupplier        SlotSupplier
+		maxTaskPerSecond    float64
+		taskWorker          taskPoller
+		workerType          string
+		identity            string
+		buildId             string
+		logger              log.Logger
+		stopTimeout         time.Duration
+		fatalErrCb          func(error)
+		userContextCancel   context.CancelFunc
+		metricsHandler      metrics.Handler
+		sessionTokenBucket  *sessionTokenBucket
+		slotReservationData slotReservationData
 	}
 
 	// baseWorker that wraps worker activities.
@@ -198,12 +202,8 @@ type (
 		logger               log.Logger
 		metricsHandler       metrics.Handler
 
-		// Must be atomically accessed
-		taskSlotsAvailable      int32
-		taskSlotsAvailableGauge metrics.Gauge
-
-		pollerRequestCh    chan struct{}
-		taskQueueCh        chan interface{}
+		slotSupplier       *trackingSlotSupplier
+		taskQueueCh        chan eagerOrPolledTask
 		eagerTaskQueueCh   chan eagerTask
 		fatalErrCb         func(error)
 		sessionTokenBucket *sessionTokenBucket
@@ -213,17 +213,35 @@ type (
 		lastPollTaskErrLock    sync.Mutex
 	}
 
+	eagerOrPolledTask interface {
+		getTask() taskForWorker
+		getPermit() *SlotPermit
+	}
+
 	polledTask struct {
-		task interface{}
+		task   taskForWorker
+		permit *SlotPermit
 	}
 
 	eagerTask struct {
 		// task to process.
-		task interface{}
-		// callback to run once the task is processed.
-		callback func()
+		task   taskForWorker
+		permit *SlotPermit
 	}
 )
+
+func (t *polledTask) getTask() taskForWorker {
+	return t.task
+}
+func (t *polledTask) getPermit() *SlotPermit {
+	return t.permit
+}
+func (t *eagerTask) getTask() taskForWorker {
+	return t.task
+}
+func (t *eagerTask) getPermit() *SlotPermit {
+	return t.permit
+}
 
 // SetRetryLongPollGracePeriod sets the amount of time a long poller retries on
 // fatal errors before it actually fails. For test use only,
@@ -257,32 +275,39 @@ func createPollResourceExhaustedRetryPolicy() backoff.RetryPolicy {
 
 func newBaseWorker(
 	options baseWorkerOptions,
-	logger log.Logger,
-	metricsHandler metrics.Handler,
-	sessionTokenBucket *sessionTokenBucket,
 ) *baseWorker {
 	ctx, cancel := context.WithCancel(context.Background())
+	logger := log.With(options.logger, tagWorkerType, options.workerType)
+	metricsHandler := options.metricsHandler.WithTags(metrics.WorkerTags(options.workerType))
+	tss := newTrackingSlotSupplier(options.slotSupplier, trackingSlotSupplierOptions{
+		logger:         logger,
+		metricsHandler: metricsHandler,
+		workerBuildId:  options.buildId,
+		workerIdentity: options.identity,
+	})
 	bw := &baseWorker{
-		options:            options,
-		stopCh:             make(chan struct{}),
-		taskLimiter:        rate.NewLimiter(rate.Limit(options.maxTaskPerSecond), 1),
-		retrier:            backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
-		logger:             log.With(logger, tagWorkerType, options.workerType),
-		metricsHandler:     metricsHandler.WithTags(metrics.WorkerTags(options.workerType)),
-		taskSlotsAvailable: int32(options.maxConcurrentTask),
-		pollerRequestCh:    make(chan struct{}, options.maxConcurrentTask),
-		taskQueueCh:        make(chan interface{}),                          // no buffer, so poller only able to poll new task after previous is dispatched.
-		eagerTaskQueueCh:   make(chan eagerTask, options.maxConcurrentTask), // allow enough capacity so that eager dispatch will not block
-		fatalErrCb:         options.fatalErrCb,
+		options:        options,
+		stopCh:         make(chan struct{}),
+		taskLimiter:    rate.NewLimiter(rate.Limit(options.maxTaskPerSecond), 1),
+		retrier:        backoff.NewConcurrentRetrier(pollOperationRetryPolicy),
+		logger:         logger,
+		metricsHandler: metricsHandler,
+
+		slotSupplier: tss,
+		// No buffer, so pollers are only able to poll for new tasks after the previous one is
+		// dispatched.
+		taskQueueCh: make(chan eagerOrPolledTask),
+		// Allow enough capacity so that eager dispatch will not block. There's an upper limit of
+		// 2k pending activities so this channel never needs to be larger than that.
+		eagerTaskQueueCh: make(chan eagerTask, 2000),
+		fatalErrCb:       options.fatalErrCb,
 
 		limiterContext:       ctx,
 		limiterContextCancel: cancel,
-		sessionTokenBucket:   sessionTokenBucket,
+		sessionTokenBucket:   options.sessionTokenBucket,
 	}
 	// Set secondary retrier as resource exhausted
 	bw.retrier.SetSecondaryRetryPolicy(pollResourceExhaustedRetryPolicy)
-	bw.taskSlotsAvailableGauge = bw.metricsHandler.Gauge(metrics.WorkerTaskSlotsAvailable)
-	bw.taskSlotsAvailableGauge.Update(float64(bw.taskSlotsAvailable))
 	if options.pollerRate > 0 {
 		bw.pollLimiter = rate.NewLimiter(rate.Limit(options.pollerRate), 1)
 	}
@@ -313,7 +338,6 @@ func (bw *baseWorker) Start() {
 	traceLog(func() {
 		bw.logger.Info("Started Worker",
 			"PollerCount", bw.options.pollerCount,
-			"MaxConcurrentTask", bw.options.maxConcurrentTask,
 			"MaxTaskPerSecond", bw.options.maxTaskPerSecond,
 		)
 	})
@@ -332,60 +356,104 @@ func (bw *baseWorker) runPoller() {
 	defer bw.stopWG.Done()
 	bw.metricsHandler.Counter(metrics.PollerStartCounter).Inc(1)
 
+	ctx, cancelfn := context.WithCancel(context.Background())
+	defer cancelfn()
+	reserveChan := make(chan *SlotPermit)
+
 	for {
+		bw.stopWG.Add(1)
+		go func() {
+			defer bw.stopWG.Done()
+			s, err := bw.slotSupplier.ReserveSlot(ctx, &bw.options.slotReservationData)
+			if err != nil {
+				if !errors.Is(err, context.Canceled) {
+					bw.logger.Error(fmt.Sprintf("Error while trying to reserve slot: %v", err))
+					select {
+					case reserveChan <- nil:
+					case <-ctx.Done():
+						return
+					}
+				}
+				return
+			}
+			select {
+			case reserveChan <- s:
+			case <-ctx.Done():
+				bw.releaseSlot(s, SlotReleaseReasonUnused)
+			}
+		}()
+
 		select {
 		case <-bw.stopCh:
 			return
-		case <-bw.pollerRequestCh:
+		case permit := <-reserveChan:
+			if permit == nil { // There was an error reserving a slot
+				// Avoid spamming reserve hard in the event it's constantly failing
+				if ctx.Err() == nil {
+					time.Sleep(time.Second)
+				}
+				continue
+			}
 			if bw.sessionTokenBucket != nil {
 				bw.sessionTokenBucket.waitForAvailableToken()
 			}
-			bw.pollTask()
+			bw.pollTask(permit)
 		}
 	}
 }
 
-func (bw *baseWorker) tryReserveSlot() bool {
+func (bw *baseWorker) tryReserveSlot() *SlotPermit {
 	if bw.isStop() {
-		return false
+		return nil
 	}
-	// Reserve a executor slot via a non-blocking attempt to take a poller
-	// request entry which essentially reserves a slot
-	select {
-	case <-bw.pollerRequestCh:
-		return true
-	default:
-		return false
-	}
+	return bw.slotSupplier.TryReserveSlot(&bw.options.slotReservationData)
 }
 
-func (bw *baseWorker) releaseSlot() {
-	// Like other sends to this channel, we assume there is room because we
-	// reserved it, so we make a blocking send.
-	bw.pollerRequestCh <- struct{}{}
+func (bw *baseWorker) releaseSlot(permit *SlotPermit, reason SlotReleaseReason) {
+	bw.slotSupplier.ReleaseSlot(permit, reason)
 }
 
 func (bw *baseWorker) pushEagerTask(task eagerTask) {
-	// Should always be non blocking if a slot was reserved.
+	// Should always be non-blocking. Slots are reserved before requesting eager tasks.
 	bw.eagerTaskQueueCh <- task
 }
 
-func (bw *baseWorker) processTaskAsync(task interface{}, callback func()) {
+func (bw *baseWorker) processTaskAsync(eagerOrPolled eagerOrPolledTask) {
 	bw.stopWG.Add(1)
 	go func() {
-		if callback != nil {
-			defer callback()
+		defer bw.stopWG.Done()
+
+		task := eagerOrPolled.getTask()
+		permit := eagerOrPolled.getPermit()
+
+		if !task.isEmpty() {
+			bw.slotSupplier.MarkSlotUsed(permit)
 		}
-		bw.processTask(task)
+
+		defer func() {
+			bw.releaseSlot(permit, SlotReleaseReasonTaskProcessed)
+
+			if p := recover(); p != nil {
+				topLine := "base worker [panic]:"
+				st := getStackTraceRaw(topLine, 7, 0)
+				bw.logger.Error("Unhandled panic.",
+					"PanicError", fmt.Sprintf("%v", p),
+					"PanicStack", st)
+			}
+		}()
+		err := bw.options.taskWorker.ProcessTask(task)
+		if err != nil {
+			if isClientSideError(err) {
+				bw.logger.Info("Task processing failed with client side error", tagError, err)
+			} else {
+				bw.logger.Info("Task processing failed with error", tagError, err)
+			}
+		}
 	}()
 }
 
 func (bw *baseWorker) runTaskDispatcher() {
 	defer bw.stopWG.Done()
-
-	for i := 0; i < bw.options.maxConcurrentTask; i++ {
-		bw.pollerRequestCh <- struct{}{}
-	}
 
 	for {
 		// wait for new task or worker stop
@@ -399,10 +467,11 @@ func (bw *baseWorker) runTaskDispatcher() {
 			_, isPolledTask := task.(*polledTask)
 			if isPolledTask && bw.taskLimiter.Wait(bw.limiterContext) != nil {
 				if bw.isStop() {
+					bw.releaseSlot(task.getPermit(), SlotReleaseReasonUnused)
 					return
 				}
 			}
-			bw.processTaskAsync(task, nil)
+			bw.processTaskAsync(task)
 		}
 	}
 }
@@ -415,18 +484,25 @@ func (bw *baseWorker) runEagerTaskDispatcher() {
 			// drain eager dispatch queue
 			for len(bw.eagerTaskQueueCh) > 0 {
 				eagerTask := <-bw.eagerTaskQueueCh
-				bw.processTaskAsync(eagerTask.task, eagerTask.callback)
+				bw.processTaskAsync(&eagerTask)
 			}
 			return
 		case eagerTask := <-bw.eagerTaskQueueCh:
-			bw.processTaskAsync(eagerTask.task, eagerTask.callback)
+			bw.processTaskAsync(&eagerTask)
 		}
 	}
 }
 
-func (bw *baseWorker) pollTask() {
+func (bw *baseWorker) pollTask(slotPermit *SlotPermit) {
 	var err error
-	var task interface{}
+	var task taskForWorker
+	didSendTask := false
+	defer func() {
+		if !didSendTask {
+			bw.releaseSlot(slotPermit, SlotReleaseReasonUnused)
+		}
+	}()
+
 	bw.retrier.Throttle(bw.stopCh)
 	if bw.pollLimiter == nil || bw.pollLimiter.Wait(bw.limiterContext) == nil {
 		task, err = bw.options.taskWorker.PollTask()
@@ -451,11 +527,10 @@ func (bw *baseWorker) pollTask() {
 
 	if task != nil {
 		select {
-		case bw.taskQueueCh <- &polledTask{task}:
+		case bw.taskQueueCh <- &polledTask{task: task, permit: slotPermit}:
+			didSendTask = true
 		case <-bw.stopCh:
 		}
-	} else {
-		bw.pollerRequestCh <- struct{}{} // poll failed, trigger a new poll
 	}
 }
 
@@ -495,44 +570,6 @@ func isNonRetriableError(err error) bool {
 		return true
 	}
 	return false
-}
-
-func (bw *baseWorker) processTask(task interface{}) {
-	defer bw.stopWG.Done()
-
-	// Update availability metric
-	bw.taskSlotsAvailableGauge.Update(float64(atomic.AddInt32(&bw.taskSlotsAvailable, -1)))
-	defer func() {
-		bw.taskSlotsAvailableGauge.Update(float64(atomic.AddInt32(&bw.taskSlotsAvailable, 1)))
-	}()
-
-	// If the task is from poller, after processing it we would need to request a new poll. Otherwise, the task is from
-	// local activity worker, we don't need a new poll from server.
-	polledTask, isPolledTask := task.(*polledTask)
-	if isPolledTask {
-		task = polledTask.task
-	}
-	defer func() {
-		if p := recover(); p != nil {
-			topLine := fmt.Sprintf("base worker for %s [panic]:", bw.options.workerType)
-			st := getStackTraceRaw(topLine, 7, 0)
-			bw.logger.Error("Unhandled panic.",
-				"PanicError", fmt.Sprintf("%v", p),
-				"PanicStack", st)
-		}
-
-		if isPolledTask {
-			bw.pollerRequestCh <- struct{}{}
-		}
-	}()
-	err := bw.options.taskWorker.ProcessTask(task)
-	if err != nil {
-		if isClientSideError(err) {
-			bw.logger.Info("Task processing failed with client side error", tagError, err)
-		} else {
-			bw.logger.Info("Task processing failed with error", tagError, err)
-		}
-	}
 }
 
 // Stop is a blocking call and cleans up all the resources associated with worker.

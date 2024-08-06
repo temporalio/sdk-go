@@ -43,7 +43,7 @@ func TestEagerActivityDisabled(t *testing.T) {
 	// Turns requests to false when disabled
 	var req workflowservice.RespondWorkflowTaskCompletedRequest
 	addScheduleTaskCommand(&req, "task-queue1")
-	require.Zero(t, exec.applyToRequest(&req))
+	require.Empty(t, exec.applyToRequest(&req))
 	require.False(t, req.Commands[0].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
 }
 
@@ -53,48 +53,55 @@ func TestEagerActivityNoActivityWorker(t *testing.T) {
 	// Turns requests to false without activity worker
 	var req workflowservice.RespondWorkflowTaskCompletedRequest
 	addScheduleTaskCommand(&req, "task-queue1")
-	require.Zero(t, exec.applyToRequest(&req))
+	require.Empty(t, exec.applyToRequest(&req))
 	require.False(t, req.Commands[0].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
 }
 
 func TestEagerActivityWrongTaskQueue(t *testing.T) {
 	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{taskQueue: "task-queue1"})
-	activityWorker := newActivityWorker(nil, workerExecutionParameters{TaskQueue: "task-queue1", ConcurrentActivityExecutionSize: 10}, nil, newRegistry(), nil)
+	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
+		NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
+		NumActivitySlots:      10,
+		NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})
+	require.NoError(t, err)
+	activityWorker := newActivityWorker(nil,
+		workerExecutionParameters{TaskQueue: "task-queue1",
+			Tuner: tuner},
+		nil, newRegistry(), nil)
 	activityWorker.worker.isWorkerStarted = true
 
 	exec.activityWorker = activityWorker.worker
-	// Fill up the poller request channel
-	for i := 0; i < 10; i++ {
-		activityWorker.worker.pollerRequestCh <- struct{}{}
-	}
 
 	// Turns requests to false when wrong task queue
 	var req workflowservice.RespondWorkflowTaskCompletedRequest
 	addScheduleTaskCommand(&req, "task-queue1")
 	addScheduleTaskCommand(&req, "task-queue2")
-	require.Equal(t, 1, exec.applyToRequest(&req))
+	require.Equal(t, 1, len(exec.applyToRequest(&req)))
 	require.True(t, req.Commands[0].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
 	require.False(t, req.Commands[1].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
 }
 
 func TestEagerActivityMaxPerTask(t *testing.T) {
 	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{taskQueue: "task-queue1"})
+	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
+		NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
+		NumActivitySlots:      10,
+		NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})
+	require.NoError(t, err)
 	activityWorker := newActivityWorker(nil,
-		workerExecutionParameters{TaskQueue: "task-queue1", ConcurrentActivityExecutionSize: 10}, nil, newRegistry(), nil)
+		workerExecutionParameters{TaskQueue: "task-queue1",
+			Tuner: tuner},
+		nil, newRegistry(), nil)
 	activityWorker.worker.isWorkerStarted = true
 
 	exec.activityWorker = activityWorker.worker
-	// Fill up the poller request channel
-	for i := 0; i < 10; i++ {
-		activityWorker.worker.pollerRequestCh <- struct{}{}
-	}
 
 	// Add 8, but it limits to only the first 3
 	var req workflowservice.RespondWorkflowTaskCompletedRequest
 	for i := 0; i < 8; i++ {
 		addScheduleTaskCommand(&req, "task-queue1")
 	}
-	require.Equal(t, 3, exec.applyToRequest(&req))
+	require.Equal(t, 3, len(exec.applyToRequest(&req)))
 	for i := 0; i < 8; i++ {
 		require.Equal(t, i < 3, req.Commands[i].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
 	}
@@ -103,18 +110,19 @@ func TestEagerActivityMaxPerTask(t *testing.T) {
 func TestEagerActivityCounts(t *testing.T) {
 	// We'll create an eager activity executor with 3 max eager concurrent and 5
 	// max concurrent
-	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{taskQueue: "task-queue1", maxConcurrent: 3})
+	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{taskQueue: "task-queue1",
+		maxConcurrent: 3})
+	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
+		NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
+		NumActivitySlots:      5,
+		NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})
+	require.NoError(t, err)
 	activityWorker := newActivityWorker(nil,
-		workerExecutionParameters{TaskQueue: "task-queue1", ConcurrentActivityExecutionSize: 5}, nil, newRegistry(), nil)
+		workerExecutionParameters{TaskQueue: "task-queue1", Tuner: tuner}, nil, newRegistry(), nil)
 	activityWorker.worker.isWorkerStarted = true
 	go activityWorker.worker.runEagerTaskDispatcher()
 
 	exec.activityWorker = activityWorker.worker
-	// Fill up the poller request channel
-	slotsCh := activityWorker.worker.pollerRequestCh
-	for i := 0; i < 5; i++ {
-		slotsCh <- struct{}{}
-	}
 	// Replace task processor
 	taskProcessor := newWaitingTaskProcessor()
 	activityWorker.worker.options.taskWorker = taskProcessor
@@ -131,7 +139,8 @@ func TestEagerActivityCounts(t *testing.T) {
 	addScheduleTaskCommand(req, "task-queue1")
 
 	// Apply to request and confirm only the proper 3 remain as true
-	require.Equal(t, 3, exec.applyToRequest(req))
+	reservedPermits := exec.applyToRequest(req)
+	require.Equal(t, 3, len(reservedPermits))
 	require.False(t, req.Commands[0].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
 	require.False(t, req.Commands[1].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
 	require.True(t, req.Commands[2].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
@@ -141,8 +150,10 @@ func TestEagerActivityCounts(t *testing.T) {
 	require.False(t, req.Commands[6].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
 
 	// Confirm counts
-	require.Equal(t, 3, exec.heldSlotCount)
-	require.Equal(t, 2, len(slotsCh))
+	tss := activityWorker.worker.slotSupplier
+	require.Equal(t, int32(3), tss.issuedSlotsAtomic.Load())
+	// None are used at this point
+	require.Equal(t, 0, len(tss.usedSlots))
 
 	// Pretend server only returned 2 eager activities
 	resp := &workflowservice.RespondWorkflowTaskCompletedResponse{
@@ -151,7 +162,7 @@ func TestEagerActivityCounts(t *testing.T) {
 			{ActivityId: "activity2"},
 		},
 	}
-	exec.handleResponse(resp, 3)
+	exec.handleResponse(resp, reservedPermits)
 
 	// Wait a bit until both tasks running
 	require.Eventually(t, func() bool {
@@ -159,43 +170,44 @@ func TestEagerActivityCounts(t *testing.T) {
 	}, 2*time.Second, 100*time.Millisecond)
 
 	// Confirm counts
-	require.Equal(t, 2, exec.heldSlotCount)
-	require.Equal(t, 3, len(slotsCh))
+	require.Equal(t, int32(2), tss.issuedSlotsAtomic.Load())
+	// Both are used
+	require.Equal(t, 2, len(tss.usedSlots))
 
 	// Try a request with two more eager and confirm only room for one
 	req = &workflowservice.RespondWorkflowTaskCompletedRequest{}
 	addScheduleTaskCommand(req, "task-queue1")
 	addScheduleTaskCommand(req, "task-queue1")
-	require.Equal(t, 1, exec.applyToRequest(req))
+	require.Equal(t, 1, len(exec.applyToRequest(req)))
 	require.True(t, req.Commands[0].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
 	require.False(t, req.Commands[1].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
-	require.Equal(t, 3, exec.heldSlotCount)
-	require.Equal(t, 2, len(slotsCh))
+	require.Equal(t, int32(3), tss.issuedSlotsAtomic.Load())
 
 	// Resolve that saying none came back
-	exec.handleResponse(nil, 1)
-	require.Equal(t, 2, exec.heldSlotCount)
-	require.Equal(t, 3, len(slotsCh))
+	exec.handleResponse(nil, []*SlotPermit{{}})
+	require.Equal(t, int32(2), tss.issuedSlotsAtomic.Load())
 
-	// Now fill up all remaining slots from the activity side and confirm we can't
+	// Now take all remaining slots from the activity side and confirm we can't
 	// reserve any eager
-	for len(slotsCh) > 0 {
-		<-slotsCh
+	for {
+		permit := tss.TryReserveSlot(&slotReservationData{taskQueue: "task-queue1"})
+		if permit == nil {
+			break
+		}
 	}
+
 	req = &workflowservice.RespondWorkflowTaskCompletedRequest{}
 	addScheduleTaskCommand(req, "task-queue1")
-	require.Equal(t, 0, exec.applyToRequest(req))
+	require.Empty(t, exec.applyToRequest(req))
 	require.False(t, req.Commands[0].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
-	require.Equal(t, 2, exec.heldSlotCount)
-	require.Equal(t, 0, len(slotsCh))
+	require.Equal(t, int32(5), tss.issuedSlotsAtomic.Load())
 
-	// Complete eager two and confirm counts get back right
+	// Complete eager two and confirm those are released. The three we took by hand from the
+	// slot supplier won't be released since no one but this test knows about them.
 	taskProcessor.completeCh <- struct{}{}
 	taskProcessor.completeCh <- struct{}{}
 	require.Eventually(t, func() bool {
-		exec.countLock.Lock()
-		defer exec.countLock.Unlock()
-		return exec.heldSlotCount == 0 && len(slotsCh) == 2
+		return int32(3) == tss.issuedSlotsAtomic.Load()
 	}, 2*time.Second, 100*time.Millisecond)
 }
 
@@ -225,7 +237,7 @@ func newWaitingTaskProcessor() *waitingTaskProcessor {
 	return &waitingTaskProcessor{completeCh: make(chan struct{})}
 }
 
-func (*waitingTaskProcessor) PollTask() (interface{}, error) {
+func (*waitingTaskProcessor) PollTask() (taskForWorker, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 

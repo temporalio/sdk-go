@@ -26,6 +26,7 @@ package internal
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -62,10 +63,20 @@ func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(
 }
 
 func (wth sampleWorkflowTaskHandler) GetOrCreateWorkflowContext(
-	task *workflowservice.PollWorkflowTaskQueueResponse,
-	historyIterator HistoryIterator,
+	_ *workflowservice.PollWorkflowTaskQueueResponse,
+	_ HistoryIterator,
 ) (*workflowExecutionContextImpl, error) {
-	return nil, nil
+	// This does the absolute bare minimum to avoid nil pointer dereferences in some unit tests.
+	retme := &workflowExecutionContextImpl{
+		mutex: sync.Mutex{},
+		wth: &workflowTaskHandlerImpl{
+			cache: NewWorkerCache(),
+		},
+	}
+	// The mutex is expected to already be locked in situations where unlock on the execution
+	// context is called.
+	retme.mutex.Lock()
+	return retme, nil
 }
 
 func newSampleWorkflowTaskHandler() *sampleWorkflowTaskHandler {

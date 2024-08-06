@@ -101,7 +101,8 @@ type (
 
 	// activityTask wraps a activity task.
 	activityTask struct {
-		task *workflowservice.PollActivityTaskQueueResponse
+		task   *workflowservice.PollActivityTaskQueueResponse
+		permit *SlotPermit
 	}
 
 	// workflowExecutionContextImpl is the cached workflow state for sticky execution

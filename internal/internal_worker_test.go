@@ -32,8 +32,11 @@ import (
 	"reflect"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"go.temporal.io/sdk/internal/common/metrics"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
@@ -1694,6 +1697,45 @@ func (s *internalWorkerTestSuite) TestCreateWorkerWithDataConverter() {
 	worker.Stop()
 }
 
+type throwsOneErrSlotSupplier struct {
+	didThrow atomic.Bool
+}
+
+func (t *throwsOneErrSlotSupplier) ReserveSlot(context.Context, SlotReservationInfo) (*SlotPermit, error) {
+	if t.didThrow.CompareAndSwap(false, true) {
+		return nil, errors.New("error")
+	}
+	return &SlotPermit{}, nil
+}
+func (t *throwsOneErrSlotSupplier) TryReserveSlot(SlotReservationInfo) *SlotPermit {
+	return &SlotPermit{}
+}
+func (t *throwsOneErrSlotSupplier) MarkSlotUsed(SlotMarkUsedInfo) {}
+func (t *throwsOneErrSlotSupplier) ReleaseSlot(SlotReleaseInfo)   {}
+func (t *throwsOneErrSlotSupplier) MaxSlots() int                 { return 100 }
+
+func (s *internalWorkerTestSuite) TestSlotSupplierReturnsErrorCanContinue() {
+	// Create service endpoint
+	mockCtrl := gomock.NewController(s.T())
+	service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+
+	worker := createWorker(service)
+	worker.RegisterActivity(testActivityNoResult)
+	worker.RegisterWorkflow(testWorkflowReturnStruct)
+	throwingSlotSupplier := &throwsOneErrSlotSupplier{}
+	worker.workflowWorker.worker.slotSupplier = newTrackingSlotSupplier(throwingSlotSupplier,
+		trackingSlotSupplierOptions{
+			logger:         getLogger(),
+			metricsHandler: metrics.NopHandler,
+		})
+	err := worker.Start()
+	require.NoError(s.T(), err)
+	time.Sleep(time.Millisecond * 200)
+	worker.Stop()
+	assert.True(s.T(), throwingSlotSupplier.didThrow.Load())
+}
+
 func (s *internalWorkerTestSuite) TestCreateWorkerRun() {
 	// Windows doesn't support signalling interrupt.
 	if runtime.GOOS == "windows" {
@@ -2578,14 +2620,17 @@ func TestWorkerOptionDefaults(t *testing.T) {
 	require.NotNil(t, workflowWorker.executionParameters.MetricsHandler)
 	require.Nil(t, workflowWorker.executionParameters.ContextPropagators)
 
+	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
+		NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
+		NumActivitySlots:      defaultMaxConcurrentActivityExecutionSize,
+		NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})
+	require.NoError(t, err)
 	expected := workerExecutionParameters{
 		Namespace:                             DefaultNamespace,
 		TaskQueue:                             taskQueue,
 		MaxConcurrentActivityTaskQueuePollers: defaultConcurrentPollRoutineSize,
 		MaxConcurrentWorkflowTaskQueuePollers: defaultConcurrentPollRoutineSize,
-		ConcurrentLocalActivityExecutionSize:  defaultMaxConcurrentLocalActivityExecutionSize,
-		ConcurrentActivityExecutionSize:       defaultMaxConcurrentActivityExecutionSize,
-		ConcurrentWorkflowTaskExecutionSize:   defaultMaxConcurrentTaskExecutionSize,
+		Tuner:                                 tuner,
 		WorkerActivitiesPerSecond:             defaultTaskQueueActivitiesPerSecond,
 		TaskQueueActivitiesPerSecond:          defaultTaskQueueActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond:        defaultWorkerLocalActivitiesPerSecond,
@@ -2641,13 +2686,16 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 	workflowWorker := aggWorker.workflowWorker
 	require.Len(t, workflowWorker.executionParameters.ContextPropagators, 0)
 
+	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
+		NumWorkflowSlots:      options.MaxConcurrentWorkflowTaskExecutionSize,
+		NumActivitySlots:      options.MaxConcurrentActivityExecutionSize,
+		NumLocalActivitySlots: options.MaxConcurrentLocalActivityExecutionSize})
+	require.NoError(t, err)
 	expected := workerExecutionParameters{
 		TaskQueue:                             taskQueue,
 		MaxConcurrentActivityTaskQueuePollers: options.MaxConcurrentActivityTaskPollers,
 		MaxConcurrentWorkflowTaskQueuePollers: options.MaxConcurrentWorkflowTaskPollers,
-		ConcurrentLocalActivityExecutionSize:  options.MaxConcurrentLocalActivityExecutionSize,
-		ConcurrentActivityExecutionSize:       options.MaxConcurrentActivityExecutionSize,
-		ConcurrentWorkflowTaskExecutionSize:   options.MaxConcurrentWorkflowTaskExecutionSize,
+		Tuner:                                 tuner,
 		WorkerActivitiesPerSecond:             options.WorkerActivitiesPerSecond,
 		TaskQueueActivitiesPerSecond:          options.TaskQueueActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond:        options.WorkerLocalActivitiesPerSecond,
@@ -2677,14 +2725,17 @@ func TestLocalActivityWorkerOnly(t *testing.T) {
 	require.NotNil(t, workflowWorker.executionParameters.MetricsHandler)
 	require.Nil(t, workflowWorker.executionParameters.ContextPropagators)
 
+	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
+		NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
+		NumActivitySlots:      defaultMaxConcurrentActivityExecutionSize,
+		NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})
+	require.NoError(t, err)
 	expected := workerExecutionParameters{
 		Namespace:                             DefaultNamespace,
 		TaskQueue:                             taskQueue,
 		MaxConcurrentActivityTaskQueuePollers: defaultConcurrentPollRoutineSize,
 		MaxConcurrentWorkflowTaskQueuePollers: defaultConcurrentPollRoutineSize,
-		ConcurrentLocalActivityExecutionSize:  defaultMaxConcurrentLocalActivityExecutionSize,
-		ConcurrentActivityExecutionSize:       defaultMaxConcurrentActivityExecutionSize,
-		ConcurrentWorkflowTaskExecutionSize:   defaultMaxConcurrentTaskExecutionSize,
+		Tuner:                                 tuner,
 		WorkerActivitiesPerSecond:             defaultTaskQueueActivitiesPerSecond,
 		TaskQueueActivitiesPerSecond:          defaultTaskQueueActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond:        defaultWorkerLocalActivitiesPerSecond,
@@ -2709,9 +2760,7 @@ func assertWorkerExecutionParamsEqual(t *testing.T, paramsA workerExecutionParam
 	require.Equal(t, paramsA.TaskQueue, paramsA.TaskQueue)
 	require.Equal(t, paramsA.Identity, paramsB.Identity)
 	require.Equal(t, paramsA.DataConverter, paramsB.DataConverter)
-	require.Equal(t, paramsA.ConcurrentLocalActivityExecutionSize, paramsB.ConcurrentLocalActivityExecutionSize)
-	require.Equal(t, paramsA.ConcurrentActivityExecutionSize, paramsB.ConcurrentActivityExecutionSize)
-	require.Equal(t, paramsA.ConcurrentWorkflowTaskExecutionSize, paramsB.ConcurrentWorkflowTaskExecutionSize)
+	require.Equal(t, paramsA.Tuner, paramsB.Tuner)
 	require.Equal(t, paramsA.WorkerActivitiesPerSecond, paramsB.WorkerActivitiesPerSecond)
 	require.Equal(t, paramsA.TaskQueueActivitiesPerSecond, paramsB.TaskQueueActivitiesPerSecond)
 	require.Equal(t, paramsA.StickyScheduleToStartTimeout, paramsB.StickyScheduleToStartTimeout)
