@@ -458,7 +458,6 @@ func (t *trackingSlotSupplier) ReleaseSlot(permit *SlotPermit, reason SlotReleas
 	}
 	t.slotsMutex.Lock()
 	defer t.slotsMutex.Unlock()
-	_ = t.usedSlots[permit]
 	t.inner.ReleaseSlot(&slotReleaseContextImpl{
 		permit:  permit,
 		reason:  reason,

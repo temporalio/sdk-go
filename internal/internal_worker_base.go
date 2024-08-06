@@ -368,7 +368,11 @@ func (bw *baseWorker) runPoller() {
 			if err != nil {
 				if !errors.Is(err, context.Canceled) {
 					bw.logger.Error(fmt.Sprintf("Error while trying to reserve slot: %v", err))
-					reserveChan <- nil
+					select {
+					case reserveChan <- nil:
+					case <-ctx.Done():
+						return
+					}
 				}
 				return
 			}
