@@ -646,7 +646,9 @@ type (
 
 		// WorkflowOperation - Operation to execute at Workflow Start. For example, see PrepareUpdateWorkflowOperation
 		// to perform Update-with-Start. Note that if the workflow is already running and WorkflowIDConflictPolicy is
-		// set to UseExisting, the start is skipped and only the operation is executed.
+		// set to UseExisting, the start is skipped and only the operation is executed. If instead the policy is set
+		// to Fail (the default), nothing is executed and an error will be returned (i.e. the option
+		// WorkflowExecutionErrorWhenAlreadyStarted is ignored).
 		//
 		// Optional: defaults to nil.
 		WorkflowOperation StartWorkflowOperation
@@ -655,7 +657,7 @@ type (
 		// workflow id has already been used and WorkflowIDReusePolicy or WorkflowIDConflictPolicy would
 		// disallow a re-run. If it is set to false, rather than erroring a WorkflowRun instance representing
 		// the current or last run will be returned. However, when WorkflowOperation is set, this field is ignored and
-		// WorkflowIDConflictPolicy UseExisting must be used instead to prevent erroring.
+		// the WorkflowIDConflictPolicy UseExisting must be used instead to prevent erroring.
 		//
 		// Optional: defaults to false
 		WorkflowExecutionErrorWhenAlreadyStarted bool
