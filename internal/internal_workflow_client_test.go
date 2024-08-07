@@ -982,6 +982,20 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_InvalidUpdateWorkflowOp
 			// invalid
 		})
 	s.ErrorContains(err, "WaitForStage must be specified")
+
+	_, err = PrepareUpdateWorkflowOperation(
+		UpdateWorkflowOptions{
+			WaitForStage: WorkflowUpdateStageCompleted,
+			RunID:        "invalid",
+		})
+	s.ErrorContains(err, "RunID is not allowed to be used on a prepared update operation")
+
+	_, err = PrepareUpdateWorkflowOperation(
+		UpdateWorkflowOptions{
+			WaitForStage:        WorkflowUpdateStageCompleted,
+			FirstExecutionRunID: "invalid",
+		})
+	s.ErrorContains(err, "FirstExecutionRunID is not allowed to be used on a prepared update operation")
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_NonMultiOperationError() {

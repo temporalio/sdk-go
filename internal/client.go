@@ -27,6 +27,7 @@ package internal
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -1030,6 +1031,12 @@ func PrepareUpdateWorkflowOperation(options UpdateWorkflowOptions) (*UpdateWorkf
 	input, err := createUpdateWorkflowInput(options)
 	if err != nil {
 		return nil, err
+	}
+	if options.RunID != "" {
+		return nil, errors.New("RunID is not allowed to be used on a prepared update operation")
+	}
+	if options.FirstExecutionRunID != "" {
+		return nil, errors.New("FirstExecutionRunID is not allowed to be used on a prepared update operation")
 	}
 	return &UpdateWorkflowOperation{input: input}, nil
 }
