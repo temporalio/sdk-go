@@ -733,8 +733,12 @@ type (
 	// UpdateWorkflowOperation is used to perform Update-with-Start.
 	// See PrepareUpdateWorkflowOperation for details.
 	UpdateWorkflowOperation struct {
-		WorkflowUpdateHandle
-		input *ClientUpdateWorkflowInput
+		input     *ClientUpdateWorkflowInput
+		executing atomic.Bool
+		done      atomic.Bool
+		doneCh    chan struct{}
+		handle    WorkflowUpdateHandle
+		err       error
 	}
 
 	// RetryPolicy defines the retry policy.
@@ -1040,15 +1044,37 @@ func PrepareUpdateWorkflowOperation(options UpdateWorkflowOptions) (*UpdateWorkf
 	if options.FirstExecutionRunID != "" {
 		return nil, errors.New("FirstExecutionRunID is not allowed to be used on a prepared update operation")
 	}
-	return &UpdateWorkflowOperation{input: input}, nil
+	return &UpdateWorkflowOperation{input: input, doneCh: make(chan struct{})}, nil
 }
 
-// Get blocks on the outcome of the update *after* it was executed via Client.ExecuteWorkflow.
-func (op *UpdateWorkflowOperation) Get(ctx context.Context, valuePtr interface{}) error {
-	if op.WorkflowUpdateHandle == nil {
-		return fmt.Errorf("update operation has not been executed")
+// Get blocks until a server response has been received; or the context deadline is exceeded.
+func (op *UpdateWorkflowOperation) Get(ctx context.Context) (WorkflowUpdateHandle, error) {
+	if op.done.Load() {
+		return op.handle, op.err
 	}
-	return op.WorkflowUpdateHandle.Get(ctx, valuePtr)
+	select {
+	case <-op.doneCh:
+		return op.handle, op.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (op *UpdateWorkflowOperation) execute() error {
+	if op.executing.Swap(true) {
+		return fmt.Errorf("was already executed")
+	}
+	return nil
+}
+
+func (op *UpdateWorkflowOperation) set(handle WorkflowUpdateHandle, err error) {
+	if op.done.Load() {
+		panic("handle has already been set")
+	}
+	op.handle = handle
+	op.err = err
+	op.done.Store(true)
+	close(op.doneCh)
 }
 
 func (op *UpdateWorkflowOperation) isStartWorkflowOperation() {}

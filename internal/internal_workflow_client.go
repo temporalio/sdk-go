@@ -1670,8 +1670,8 @@ func (w *workflowClientInterceptor) executeWorkflowWithOperation(
 	var withStartOp *workflowservice.ExecuteMultiOperationRequest_Operation
 	switch t := operation.(type) {
 	case *UpdateWorkflowOperation:
-		if t.WorkflowUpdateHandle != nil {
-			return nil, fmt.Errorf("%w: was already executed", errInvalidWorkflowOperation)
+		if err := t.execute(); err != nil {
+			return nil, fmt.Errorf("%w: %w", errInvalidWorkflowOperation, err)
 		}
 
 		updateReq, err := w.createUpdateWorkflowRequest(ctx, t.input)
@@ -1751,10 +1751,11 @@ func (w *workflowClientInterceptor) executeWorkflowWithOperation(
 			}
 		case *workflowservice.ExecuteMultiOperationRequest_Operation_UpdateWorkflow:
 			if opResp, ok := resp.(*workflowservice.ExecuteMultiOperationResponse_Response_UpdateWorkflow); ok {
-				operation.(*UpdateWorkflowOperation).WorkflowUpdateHandle, err = w.updateHandleFromResponse(
+				handle, err := w.updateHandleFromResponse(
 					context.Background(),
 					enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_UNSPECIFIED,
 					opResp.UpdateWorkflow)
+				operation.(*UpdateWorkflowOperation).set(handle, err)
 				if err != nil {
 					return nil, fmt.Errorf("%w: %w", errInvalidWorkflowOperation, err)
 				}
