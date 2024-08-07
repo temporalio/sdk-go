@@ -67,17 +67,15 @@ var (
 	_ NamespaceClient = (*namespaceClient)(nil)
 )
 
-const (
-	defaultGetHistoryTimeout = 65 * time.Second
-
-	defaultGetSystemInfoTimeout = 5 * time.Second
-
-	pollUpdateTimeout = 60 * time.Second
+var (
+	errInvalidWorkflowOperation = fmt.Errorf("invalid WorkflowOperation")
 )
 
-var (
-	maxListArchivedWorkflowTimeout = time.Minute * 3
-	errInvalidWorkflowOperation    = fmt.Errorf("invalid WorkflowOperation")
+const (
+	defaultGetHistoryTimeout       = 65 * time.Second
+	defaultGetSystemInfoTimeout    = 5 * time.Second
+	pollUpdateTimeout              = 60 * time.Second
+	maxListArchivedWorkflowTimeout = 3 * time.Minute
 )
 
 type (
