@@ -1700,62 +1700,63 @@ func (w *workflowClientInterceptor) executeWorkflowWithOperation(
 	}
 	multiResp, err := w.client.workflowService.ExecuteMultiOperation(ctx, &multiRequest)
 
-	// check error and response
 	var multiErr *serviceerror.MultiOperationExecution
-	if err == nil {
-		if len(multiResp.Responses) != len(multiRequest.Operations) {
-			panic(fmt.Sprintf("MultiOperation response from server is incomplete: %v instead of %v",
-				len(multiResp.Responses), len(multiRequest.Operations)))
-		}
-	} else if errors.As(err, &multiErr) {
+	if errors.As(err, &multiErr) {
 		if len(multiErr.OperationErrors()) != len(multiRequest.Operations) {
 			panic(fmt.Sprintf("MultiOperation error response from server is incomplete: %v instead of %v",
 				len(multiErr.OperationErrors()), len(multiRequest.Operations)))
 		}
-	} else {
+
+		var startErr error
+		var abortedErr *serviceerror.MultiOperationAborted
+		for i, opReq := range multiRequest.Operations {
+			// if an operation error is of type MultiOperationAborted, it means it was only aborted because
+			// of another operation's error and is therefore not interesting or helpful
+			opErr := multiErr.OperationErrors()[i]
+
+			switch t := opReq.Operation.(type) {
+			case *workflowservice.ExecuteMultiOperationRequest_Operation_StartWorkflow:
+				if !errors.As(opErr, &abortedErr) {
+					startErr = opErr
+				}
+			case *workflowservice.ExecuteMultiOperationRequest_Operation_UpdateWorkflow:
+				if !errors.As(opErr, &abortedErr) {
+					startErr = fmt.Errorf("%w: %w", errInvalidWorkflowOperation, opErr)
+				}
+			default:
+				// this would happen if a case statement for a newly added operation is missing
+				panic(fmt.Errorf("unsupported operation request type: %T", t))
+			}
+		}
+		return nil, startErr
+	} else if err != nil {
 		return nil, err
 	}
 
-	// extract errors or responses per operation
-	var startErr error
-	var abortedErr *serviceerror.MultiOperationAborted
+	if len(multiResp.Responses) != len(multiRequest.Operations) {
+		panic(fmt.Sprintf("MultiOperation response from server is incomplete: %v instead of %v",
+			len(multiResp.Responses), len(multiRequest.Operations)))
+	}
+
 	var startResp *workflowservice.StartWorkflowExecutionResponse
 	for i, opReq := range multiRequest.Operations {
+		resp := multiResp.Responses[i].Response
+
 		switch t := opReq.Operation.(type) {
 		case *workflowservice.ExecuteMultiOperationRequest_Operation_StartWorkflow:
-			if multiErr != nil {
-				if opErr := multiErr.OperationErrors()[i]; errors.As(opErr, &abortedErr) {
-					startErr = errInvalidWorkflowOperation
-				} else {
-					startErr = opErr
-				}
-				continue
-			}
-
-			resp := multiResp.Responses[i].Response
 			if opResp, ok := resp.(*workflowservice.ExecuteMultiOperationResponse_Response_StartWorkflow); ok {
 				startResp = opResp.StartWorkflow
 			} else {
 				panic(fmt.Sprintf("StartOperation response has the wrong type: %T", resp))
 			}
 		case *workflowservice.ExecuteMultiOperationRequest_Operation_UpdateWorkflow:
-			updOperation := operation.(*UpdateWorkflowOperation)
-
-			if multiErr != nil {
-				if opErr := multiErr.OperationErrors()[i]; !errors.As(opErr, &abortedErr) {
-					startErr = fmt.Errorf("%w: %w", startErr, opErr)
-				}
-				continue
-			}
-
-			resp := multiResp.Responses[i].Response
 			if opResp, ok := resp.(*workflowservice.ExecuteMultiOperationResponse_Response_UpdateWorkflow); ok {
-				updOperation.WorkflowUpdateHandle, err = w.updateHandleFromResponse(
+				operation.(*UpdateWorkflowOperation).WorkflowUpdateHandle, err = w.updateHandleFromResponse(
 					context.Background(),
 					enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_UNSPECIFIED,
 					opResp.UpdateWorkflow)
 				if err != nil {
-					return nil, fmt.Errorf("%w: %w", startErr, err)
+					return nil, fmt.Errorf("%w: %w", errInvalidWorkflowOperation, err)
 				}
 			} else {
 				panic(fmt.Sprintf("UpdateOperation response has the wrong type: %T", resp))
@@ -1765,7 +1766,7 @@ func (w *workflowClientInterceptor) executeWorkflowWithOperation(
 			panic(fmt.Errorf("unsupported operation request type: %T", t))
 		}
 	}
-	return startResp, startErr
+	return startResp, nil
 }
 
 func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *ClientSignalWorkflowInput) error {
