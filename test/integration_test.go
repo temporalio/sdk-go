@@ -3920,7 +3920,7 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 		ts.NoError(err)
 
 		var updateResult int
-		updHandle, err := updateOp.Get(context.Background())
+		updHandle, err := updateOp.Get(ctx)
 		ts.NoError(err)
 		ts.NoError(updHandle.Get(ctx, &updateResult))
 		ts.Equal(1, updateResult)
@@ -3950,7 +3950,7 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 		ts.Equal(run1.GetRunID(), run2.GetRunID())
 
 		var updateResult int
-		updHandle, err := updateOp.Get(context.Background())
+		updHandle, err := updateOp.Get(ctx)
 		ts.NoError(err)
 		ts.NoError(updHandle.Get(ctx, &updateResult))
 		ts.Equal(1, updateResult)
@@ -3971,7 +3971,7 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 		ts.NotNil(run)
 
 		var updateResult int
-		updHandle, err := updateOp.Get(context.Background())
+		updHandle, err := updateOp.Get(ctx)
 		ts.NoError(err)
 		err = updHandle.Get(ctx, &updateResult)
 		ts.ErrorContains(err, "addend must be non-negative")
