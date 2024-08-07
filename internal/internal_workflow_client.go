@@ -1721,7 +1721,7 @@ func (w *workflowClientInterceptor) executeWorkflowWithOperation(
 	var abortedErr *serviceerror.MultiOperationAborted
 	var startResp *workflowservice.StartWorkflowExecutionResponse
 	for i, opReq := range multiRequest.Operations {
-		switch opReq.Operation.(type) {
+		switch t := opReq.Operation.(type) {
 		case *workflowservice.ExecuteMultiOperationRequest_Operation_StartWorkflow:
 			if multiErr != nil {
 				if opErr := multiErr.OperationErrors()[i]; errors.As(opErr, &abortedErr) {
@@ -1760,6 +1760,9 @@ func (w *workflowClientInterceptor) executeWorkflowWithOperation(
 			} else {
 				panic(fmt.Sprintf("UpdateOperation response has the wrong type: %T", resp))
 			}
+		default:
+			// this would happen if a case statement for a newly added operation is missing
+			panic(fmt.Errorf("unsupported operation request type: %T", t))
 		}
 	}
 	return startResp, startErr
