@@ -182,7 +182,6 @@ type (
 		dataConverter    converter.DataConverter
 		failureConverter converter.FailureConverter
 		registry         *registry
-		startRequest     *workflowservice.StartWorkflowExecutionRequest
 	}
 
 	// HistoryEventIterator represents the interface for
@@ -1654,7 +1653,6 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		dataConverter:    w.client.dataConverter,
 		failureConverter: w.client.failureConverter,
 		registry:         w.client.registry,
-		startRequest:     startRequest,
 	}, nil
 }
 
