@@ -931,7 +931,9 @@ var MetricsNopHandler = metrics.NopHandler
 // PrepareUpdateWorkflowOperation returns an UpdateWorkflowOperation that can be used to perform Update-with-Start,
 // or an error in case the update operation is invalid. After executing Client.ExecuteWorkflow with the
 // UpdateWorkflowOperation in the start options, the update result can be obtained.
-var PrepareUpdateWorkflowOperation = internal.PrepareUpdateWorkflowOperation
+func PrepareUpdateWorkflowOperation(options UpdateWorkflowOptions) (*UpdateWorkflowOperation, error) {
+	return internal.PrepareUpdateWorkflowOperation(options)
+}
 
 // Dial creates an instance of a workflow client. This will attempt to connect
 // to the server eagerly and will return an error if the server is not
