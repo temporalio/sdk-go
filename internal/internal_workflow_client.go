@@ -68,6 +68,8 @@ var (
 )
 
 var (
+	errUnsupportedOperation     = fmt.Errorf("unsupported operation")
+	errInvalidServerResponse    = fmt.Errorf("invalid server response")
 	errInvalidWorkflowOperation = fmt.Errorf("invalid WithStartWorkflowOperation")
 )
 
@@ -1686,7 +1688,7 @@ func (w *workflowClientInterceptor) executeWorkflowWithOperation(
 			},
 		}
 	default:
-		return nil, fmt.Errorf("unsupported operation request type: %T", t)
+		return nil, fmt.Errorf("%w: %T", errUnsupportedOperation, t)
 	}
 
 	multiRequest := workflowservice.ExecuteMultiOperationRequest{
@@ -1701,8 +1703,8 @@ func (w *workflowClientInterceptor) executeWorkflowWithOperation(
 	var multiErr *serviceerror.MultiOperationExecution
 	if errors.As(err, &multiErr) {
 		if len(multiErr.OperationErrors()) != len(multiRequest.Operations) {
-			panic(fmt.Sprintf("MultiOperation error response from server is incomplete: %v instead of %v",
-				len(multiErr.OperationErrors()), len(multiRequest.Operations)))
+			return nil, fmt.Errorf("%w: %v instead of %v operation errors",
+				errInvalidServerResponse, len(multiErr.OperationErrors()), len(multiRequest.Operations))
 		}
 
 		var startErr error
@@ -1722,8 +1724,8 @@ func (w *workflowClientInterceptor) executeWorkflowWithOperation(
 					startErr = fmt.Errorf("%w: %w", errInvalidWorkflowOperation, opErr)
 				}
 			default:
-				// this would happen if a case statement for a newly added operation is missing
-				panic(fmt.Errorf("unsupported operation request type: %T", t))
+				// this would only happen if a case statement for a newly added operation is missing above
+				return nil, fmt.Errorf("%w: %T", errUnsupportedOperation, t)
 			}
 		}
 		return nil, startErr
@@ -1732,8 +1734,8 @@ func (w *workflowClientInterceptor) executeWorkflowWithOperation(
 	}
 
 	if len(multiResp.Responses) != len(multiRequest.Operations) {
-		panic(fmt.Sprintf("MultiOperation response from server is incomplete: %v instead of %v",
-			len(multiResp.Responses), len(multiRequest.Operations)))
+		return nil, fmt.Errorf("%w: %v instead of %v operation results",
+			errInvalidServerResponse, len(multiResp.Responses), len(multiRequest.Operations))
 	}
 
 	var startResp *workflowservice.StartWorkflowExecutionResponse
@@ -1745,7 +1747,7 @@ func (w *workflowClientInterceptor) executeWorkflowWithOperation(
 			if opResp, ok := resp.(*workflowservice.ExecuteMultiOperationResponse_Response_StartWorkflow); ok {
 				startResp = opResp.StartWorkflow
 			} else {
-				panic(fmt.Sprintf("StartOperation response has the wrong type: %T", resp))
+				return nil, fmt.Errorf("%w: StartWorkflow response has the wrong type %T", errInvalidServerResponse, resp)
 			}
 		case *workflowservice.ExecuteMultiOperationRequest_Operation_UpdateWorkflow:
 			if opResp, ok := resp.(*workflowservice.ExecuteMultiOperationResponse_Response_UpdateWorkflow); ok {
@@ -1758,11 +1760,11 @@ func (w *workflowClientInterceptor) executeWorkflowWithOperation(
 					return nil, fmt.Errorf("%w: %w", errInvalidWorkflowOperation, err)
 				}
 			} else {
-				panic(fmt.Sprintf("UpdateOperation response has the wrong type: %T", resp))
+				return nil, fmt.Errorf("%w: UpdateWorkflow response has the wrong type %T", errInvalidServerResponse, resp)
 			}
 		default:
-			// this would happen if a case statement for a newly added operation is missing
-			panic(fmt.Errorf("unsupported operation request type: %T", t))
+			// this would only happen if a case statement for a newly added operation is missing above
+			return nil, fmt.Errorf("%w: %T", errUnsupportedOperation, t)
 		}
 	}
 	return startResp, nil

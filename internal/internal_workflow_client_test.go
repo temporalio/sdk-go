@@ -1035,17 +1035,15 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerResponseCountMism
 		})
 	s.Nil(err)
 
-	s.PanicsWithValue("MultiOperation response from server is incomplete: 0 instead of 2",
-		func() {
-			_, _ = s.workflowClient.ExecuteWorkflow(
-				context.Background(),
-				StartWorkflowOptions{
-					ID:                         workflowID,
-					TaskQueue:                  taskqueue,
-					WithStartWorkflowOperation: updOp,
-				}, workflowType,
-			)
-		})
+	_, err = s.workflowClient.ExecuteWorkflow(
+		context.Background(),
+		StartWorkflowOptions{
+			ID:                         workflowID,
+			TaskQueue:                  taskqueue,
+			WithStartWorkflowOperation: updOp,
+		}, workflowType,
+	)
+	s.ErrorContains(err, "invalid server response: 0 instead of 2 operation results")
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerErrorResponseCountMismatch() {
@@ -1060,17 +1058,15 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerErrorResponseCoun
 		})
 	s.Nil(err)
 
-	s.PanicsWithValue("MultiOperation error response from server is incomplete: 0 instead of 2",
-		func() {
-			_, _ = s.workflowClient.ExecuteWorkflow(
-				context.Background(),
-				StartWorkflowOptions{
-					ID:                         workflowID,
-					TaskQueue:                  taskqueue,
-					WithStartWorkflowOperation: updOp,
-				}, workflowType,
-			)
-		})
+	_, err = s.workflowClient.ExecuteWorkflow(
+		context.Background(),
+		StartWorkflowOptions{
+			ID:                         workflowID,
+			TaskQueue:                  taskqueue,
+			WithStartWorkflowOperation: updOp,
+		}, workflowType,
+	)
+	s.ErrorContains(err, "invalid server response: 0 instead of 2 operation errors")
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerStartResponseTypeMismatch() {
@@ -1092,17 +1088,15 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerStartResponseType
 		})
 	s.Nil(err)
 
-	s.PanicsWithValue("StartOperation response has the wrong type: *workflowservice.ExecuteMultiOperationResponse_Response_UpdateWorkflow",
-		func() {
-			_, _ = s.workflowClient.ExecuteWorkflow(
-				context.Background(),
-				StartWorkflowOptions{
-					ID:                         workflowID,
-					TaskQueue:                  taskqueue,
-					WithStartWorkflowOperation: updOp,
-				}, workflowType,
-			)
-		})
+	_, err = s.workflowClient.ExecuteWorkflow(
+		context.Background(),
+		StartWorkflowOptions{
+			ID:                         workflowID,
+			TaskQueue:                  taskqueue,
+			WithStartWorkflowOperation: updOp,
+		}, workflowType,
+	)
+	s.ErrorContains(err, "invalid server response: StartWorkflow response has the wrong type *workflowservice.ExecuteMultiOperationResponse_Response_UpdateWorkflow")
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerUpdateResponseTypeMismatch() {
@@ -1126,17 +1120,15 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerUpdateResponseTyp
 		})
 	s.Nil(err)
 
-	s.PanicsWithValue("UpdateOperation response has the wrong type: *workflowservice.ExecuteMultiOperationResponse_Response_StartWorkflow",
-		func() {
-			_, _ = s.workflowClient.ExecuteWorkflow(
-				context.Background(),
-				StartWorkflowOptions{
-					ID:                         workflowID,
-					TaskQueue:                  taskqueue,
-					WithStartWorkflowOperation: updOp,
-				}, workflowType,
-			)
-		})
+	_, err = s.workflowClient.ExecuteWorkflow(
+		context.Background(),
+		StartWorkflowOptions{
+			ID:                         workflowID,
+			TaskQueue:                  taskqueue,
+			WithStartWorkflowOperation: updOp,
+		}, workflowType,
+	)
+	s.ErrorContains(err, "invalid server response: UpdateWorkflow response has the wrong type *workflowservice.ExecuteMultiOperationResponse_Response_StartWorkflow")
 }
 
 func getGetWorkflowExecutionHistoryRequest(filterType enumspb.HistoryEventFilterType) *workflowservice.GetWorkflowExecutionHistoryRequest {
