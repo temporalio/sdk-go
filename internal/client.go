@@ -733,11 +733,14 @@ type (
 	// UpdateWorkflowOperation is used to perform Update-with-Start.
 	// See NewUpdateWorkflowOperation for details.
 	UpdateWorkflowOperation struct {
-		input    *ClientUpdateWorkflowInput
+		input *ClientUpdateWorkflowInput
+		// flag to ensure the operation is only executed once
 		executed atomic.Bool
-		doneCh   chan struct{}
-		handle   WorkflowUpdateHandle
-		err      error
+		// channel to indicate that handle or err is available
+		doneCh chan struct{}
+		// handle and err cannot be accessed before doneCh is closed
+		handle WorkflowUpdateHandle
+		err    error
 	}
 
 	// RetryPolicy defines the retry policy.
