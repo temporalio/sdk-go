@@ -733,12 +733,12 @@ type (
 	// UpdateWorkflowOperation is used to perform Update-with-Start.
 	// See PrepareUpdateWorkflowOperation for details.
 	UpdateWorkflowOperation struct {
-		input     *ClientUpdateWorkflowInput
-		executing atomic.Bool
-		done      atomic.Bool
-		doneCh    chan struct{}
-		handle    WorkflowUpdateHandle
-		err       error
+		input    *ClientUpdateWorkflowInput
+		executed atomic.Bool
+		done     atomic.Bool
+		doneCh   chan struct{}
+		handle   WorkflowUpdateHandle
+		err      error
 	}
 
 	// RetryPolicy defines the retry policy.
@@ -1060,8 +1060,8 @@ func (op *UpdateWorkflowOperation) Get(ctx context.Context) (WorkflowUpdateHandl
 	}
 }
 
-func (op *UpdateWorkflowOperation) execute() error {
-	if op.executing.Swap(true) {
+func (op *UpdateWorkflowOperation) markExecuted() error {
+	if op.executed.Swap(true) {
 		return fmt.Errorf("was already executed")
 	}
 	return nil

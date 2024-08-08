@@ -1668,7 +1668,7 @@ func (w *workflowClientInterceptor) executeWorkflowWithOperation(
 	var withStartOp *workflowservice.ExecuteMultiOperationRequest_Operation
 	switch t := operation.(type) {
 	case *UpdateWorkflowOperation:
-		if err := t.execute(); err != nil {
+		if err := t.markExecuted(); err != nil {
 			return nil, fmt.Errorf("%w: %w", errInvalidWorkflowOperation, err)
 		}
 
