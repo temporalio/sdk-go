@@ -772,11 +772,12 @@ type UpdateWorkflowOptions struct {
 	UpdateID string
 
 	// WorkflowID is a required field indicating the workflow which should be
-	// updated.
+	// updated. However, it is optional when using UpdateWorkflowOperation.
 	WorkflowID string
 
 	// RunID is an optional field used to identify a specific run of the target
 	// workflow.  If RunID is not provided the latest run will be used.
+	// Note that it is incompatible with UpdateWorkflowOperation.
 	RunID string
 
 	// UpdateName is a required field which specifies the update you want to run.
@@ -796,6 +797,7 @@ type UpdateWorkflowOptions struct {
 	// FirstExecutionRunID specifies the RunID expected to identify the first
 	// run in the workflow execution chain. If this expectation does not match
 	// then the server will reject the update request with an error.
+	// Note that it is incompatible with UpdateWorkflowOperation.
 	FirstExecutionRunID string
 }
 

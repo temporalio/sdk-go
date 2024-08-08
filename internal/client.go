@@ -649,6 +649,7 @@ type (
 		// already running and WorkflowIDConflictPolicy is set to UseExisting, the start is skipped and only the
 		// operation is executed. If instead the policy is set to Fail (the default), nothing is executed and
 		// an error will be returned (i.e. the option WorkflowExecutionErrorWhenAlreadyStarted is ignored).
+		// This option will be ignored when used with Client.SignalWithStartWorkflow.
 		//
 		// Optional: defaults to nil.
 		WithStartOperation WithStartWorkflowOperation
@@ -1041,10 +1042,10 @@ func NewUpdateWorkflowOperation(options UpdateWorkflowOptions) (*UpdateWorkflowO
 		return nil, err
 	}
 	if options.RunID != "" {
-		return nil, errors.New("RunID is not allowed to be used on a prepared update operation")
+		return nil, errors.New("RunID is not allowed to be used on an UpdateWorkflowOperation")
 	}
 	if options.FirstExecutionRunID != "" {
-		return nil, errors.New("FirstExecutionRunID is not allowed to be used on a prepared update operation")
+		return nil, errors.New("FirstExecutionRunID is not allowed to be used on an UpdateWorkflowOperation")
 	}
 	return &UpdateWorkflowOperation{input: input, doneCh: make(chan struct{})}, nil
 }

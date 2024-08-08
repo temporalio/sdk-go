@@ -928,7 +928,7 @@ type MetricsTimer = metrics.Timer
 // MetricsNopHandler is a noop handler that does nothing with the metrics.
 var MetricsNopHandler = metrics.NopHandler
 
-// NewUpdateWorkflowOperation returns an UpdateWorkflowOperation that can be used to perform Update-with-Start,
+// NewUpdateWorkflowOperation returns an UpdateWorkflowOperation to perform Update-with-Start,
 // or an error in case the update operation is invalid. After executing Client.ExecuteWorkflow with the
 // UpdateWorkflowOperation in the start options, the update result can be obtained.
 func NewUpdateWorkflowOperation(options UpdateWorkflowOptions) (*UpdateWorkflowOperation, error) {
