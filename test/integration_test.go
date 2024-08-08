@@ -3977,7 +3977,7 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 		ts.ErrorContains(err, "addend must be non-negative")
 	})
 
-	ts.Run("receives update result in separate goroutine", func() {
+	ts.Run("receives update result in separate goroutines", func() {
 		updateOp, err := client.PrepareUpdateWorkflowOperation(
 			client.UpdateWorkflowOptions{
 				UpdateName:   "update",
@@ -3987,6 +3987,7 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 		ts.NoError(err)
 
 		done := make(chan struct{})
+		defer func() { done <- struct{}{} }()
 		go func() {
 			var updateResult int
 			updHandle, err := updateOp.Get(ctx)
@@ -3999,7 +4000,12 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 		startOptions := startOptionsWithOperation(updateOp)
 		_, err = ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
 		ts.NoError(err)
-		<-done
+
+		var updateResult int
+		updHandle, err := updateOp.Get(ctx)
+		ts.NoError(err)
+		ts.NoError(updHandle.Get(ctx, &updateResult))
+		ts.Equal(1, updateResult)
 	})
 
 	ts.Run("fails when start request is invalid", func() {

@@ -735,7 +735,6 @@ type (
 	UpdateWorkflowOperation struct {
 		input    *ClientUpdateWorkflowInput
 		executed atomic.Bool
-		done     atomic.Bool
 		doneCh   chan struct{}
 		handle   WorkflowUpdateHandle
 		err      error
@@ -1049,9 +1048,6 @@ func PrepareUpdateWorkflowOperation(options UpdateWorkflowOptions) (*UpdateWorkf
 
 // Get blocks until a server response has been received; or the context deadline is exceeded.
 func (op *UpdateWorkflowOperation) Get(ctx context.Context) (WorkflowUpdateHandle, error) {
-	if op.done.Load() {
-		return op.handle, op.err
-	}
 	select {
 	case <-op.doneCh:
 		return op.handle, op.err
@@ -1068,12 +1064,8 @@ func (op *UpdateWorkflowOperation) markExecuted() error {
 }
 
 func (op *UpdateWorkflowOperation) set(handle WorkflowUpdateHandle, err error) {
-	if op.done.Load() {
-		panic("handle has already been set")
-	}
 	op.handle = handle
 	op.err = err
-	op.done.Store(true)
 	close(op.doneCh)
 }
 
