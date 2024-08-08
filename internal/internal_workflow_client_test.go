@@ -1238,11 +1238,21 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithContextAwareDat
 	s.Equal(startResponse.GetRunId(), resp.GetRunID())
 }
 
-func (s *workflowClientTestSuite) TestSignalWithStartWorkflowAmbiguousID() {
-	_, err := s.client.SignalWithStartWorkflow(context.Background(), "workflow-id-1", "my-signal", "my-signal-value",
+func (s *workflowClientTestSuite) TestSignalWithStartWorkflowValidation() {
+	// ambiguous WorkflowID
+	_, err := s.client.SignalWithStartWorkflow(
+		context.Background(), "workflow-id-1", "my-signal", "my-signal-value",
 		StartWorkflowOptions{ID: "workflow-id-2"}, workflowType)
-	s.Error(err)
-	s.Contains(err.Error(), "workflow ID from options not used")
+	s.ErrorContains(err, "workflow ID from options not used")
+
+	// unsupported WithStartOperation
+	_, err = s.client.SignalWithStartWorkflow(
+		context.Background(), "workflow-id", "my-signal", "my-signal-value",
+		StartWorkflowOptions{
+			ID:                 "workflow-id",
+			WithStartOperation: &UpdateWorkflowOperation{},
+		}, workflowType)
+	s.ErrorContains(err, "option WithStartOperation is not allowed")
 }
 
 func (s *workflowClientTestSuite) TestStartWorkflow() {

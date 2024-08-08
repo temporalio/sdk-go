@@ -337,6 +337,9 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	if options.ID != "" && options.ID != workflowID {
 		return nil, fmt.Errorf("workflow ID from options not used, must be unset or match workflow ID parameter")
 	}
+	if options.WithStartOperation != nil {
+		return nil, fmt.Errorf("option WithStartOperation is not allowed")
+	}
 
 	// Default workflow ID to UUID
 	options.ID = workflowID
