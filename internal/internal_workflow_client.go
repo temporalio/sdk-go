@@ -1757,7 +1757,7 @@ func (w *workflowClientInterceptor) executeWorkflowWithOperation(
 		case *workflowservice.ExecuteMultiOperationRequest_Operation_UpdateWorkflow:
 			if opResp, ok := resp.(*workflowservice.ExecuteMultiOperationResponse_Response_UpdateWorkflow); ok {
 				handle, err := w.updateHandleFromResponse(
-					context.Background(),
+					ctx,
 					enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_UNSPECIFIED,
 					opResp.UpdateWorkflow)
 				operation.(*UpdateWorkflowOperation).set(handle, err)
