@@ -70,7 +70,7 @@ var (
 var (
 	errUnsupportedOperation     = fmt.Errorf("unsupported operation")
 	errInvalidServerResponse    = fmt.Errorf("invalid server response")
-	errInvalidWorkflowOperation = fmt.Errorf("invalid WithStartWorkflowOperation")
+	errInvalidWorkflowOperation = fmt.Errorf("invalid WithStartOperation")
 )
 
 const (
@@ -1610,7 +1610,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 	defer cancel()
 
 	var runID string
-	if in.Options.WithStartWorkflowOperation == nil {
+	if in.Options.WithStartOperation == nil {
 		response, err := w.client.workflowService.StartWorkflowExecution(grpcCtx, startRequest)
 
 		eagerWorkflowTask := response.GetEagerWorkflowTask()
@@ -1629,7 +1629,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 			runID = response.RunId
 		}
 	} else {
-		response, err := w.executeWorkflowWithOperation(grpcCtx, startRequest, in.Options.WithStartWorkflowOperation)
+		response, err := w.executeWorkflowWithOperation(grpcCtx, startRequest, in.Options.WithStartOperation)
 		if err != nil {
 			return nil, err
 		}

@@ -1013,9 +1013,9 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_NonMultiOperationError(
 	_, err = s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
-			ID:                         workflowID,
-			TaskQueue:                  taskqueue,
-			WithStartWorkflowOperation: updOp,
+			ID:                 workflowID,
+			TaskQueue:          taskqueue,
+			WithStartOperation: updOp,
 		}, workflowType,
 	)
 	s.ErrorContains(err, "internal error")
@@ -1038,9 +1038,9 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerResponseCountMism
 	_, err = s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
-			ID:                         workflowID,
-			TaskQueue:                  taskqueue,
-			WithStartWorkflowOperation: updOp,
+			ID:                 workflowID,
+			TaskQueue:          taskqueue,
+			WithStartOperation: updOp,
 		}, workflowType,
 	)
 	s.ErrorContains(err, "invalid server response: 0 instead of 2 operation results")
@@ -1061,9 +1061,9 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerErrorResponseCoun
 	_, err = s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
-			ID:                         workflowID,
-			TaskQueue:                  taskqueue,
-			WithStartWorkflowOperation: updOp,
+			ID:                 workflowID,
+			TaskQueue:          taskqueue,
+			WithStartOperation: updOp,
 		}, workflowType,
 	)
 	s.ErrorContains(err, "invalid server response: 0 instead of 2 operation errors")
@@ -1091,9 +1091,9 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerStartResponseType
 	_, err = s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
-			ID:                         workflowID,
-			TaskQueue:                  taskqueue,
-			WithStartWorkflowOperation: updOp,
+			ID:                 workflowID,
+			TaskQueue:          taskqueue,
+			WithStartOperation: updOp,
 		}, workflowType,
 	)
 	s.ErrorContains(err, "invalid server response: StartWorkflow response has the wrong type *workflowservice.ExecuteMultiOperationResponse_Response_UpdateWorkflow")
@@ -1123,9 +1123,9 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerUpdateResponseTyp
 	_, err = s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
-			ID:                         workflowID,
-			TaskQueue:                  taskqueue,
-			WithStartWorkflowOperation: updOp,
+			ID:                 workflowID,
+			TaskQueue:          taskqueue,
+			WithStartOperation: updOp,
 		}, workflowType,
 	)
 	s.ErrorContains(err, "invalid server response: UpdateWorkflow response has the wrong type *workflowservice.ExecuteMultiOperationResponse_Response_StartWorkflow")

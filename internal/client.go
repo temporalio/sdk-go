@@ -644,19 +644,19 @@ type (
 		// Optional: defaulted to Fail.
 		WorkflowIDConflictPolicy enumspb.WorkflowIdConflictPolicy
 
-		// WithStartWorkflowOperation - Operation to execute with Workflow Start.
+		// WithStartOperation - Operation to execute with Workflow Start.
 		// For example, see NewUpdateWorkflowOperation to perform Update-with-Start. Note that if the workflow is
 		// already running and WorkflowIDConflictPolicy is set to UseExisting, the start is skipped and only the
 		// operation is executed. If instead the policy is set to Fail (the default), nothing is executed and
 		// an error will be returned (i.e. the option WorkflowExecutionErrorWhenAlreadyStarted is ignored).
 		//
 		// Optional: defaults to nil.
-		WithStartWorkflowOperation WithStartWorkflowOperation
+		WithStartOperation WithStartWorkflowOperation
 
 		// When WorkflowExecutionErrorWhenAlreadyStarted is true, Client.ExecuteWorkflow will return an error if the
 		// workflow id has already been used and WorkflowIDReusePolicy or WorkflowIDConflictPolicy would
 		// disallow a re-run. If it is set to false, rather than erroring a WorkflowRun instance representing
-		// the current or last run will be returned. However, when WithStartWorkflowOperation is set, this field is ignored and
+		// the current or last run will be returned. However, when WithStartOperation is set, this field is ignored and
 		// the WorkflowIDConflictPolicy UseExisting must be used instead to prevent erroring.
 		//
 		// Optional: defaults to false

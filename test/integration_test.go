@@ -3902,7 +3902,7 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 	startOptionsWithOperation := func(op client.WithStartWorkflowOperation) client.StartWorkflowOptions {
 		startOptions := ts.startWorkflowOptions("test-update-with-start-" + uuid.New())
 		startOptions.EnableEagerStart = false // not allowed to use with update-with-start
-		startOptions.WithStartWorkflowOperation = op
+		startOptions.WithStartOperation = op
 		return startOptions
 	}
 
@@ -3943,7 +3943,7 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 			})
 		ts.NoError(err)
 
-		startOptions.WithStartWorkflowOperation = updateOp
+		startOptions.WithStartOperation = updateOp
 		startOptions.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING
 		run2, err := ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
 		ts.NoError(err)
@@ -4032,7 +4032,7 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 
 		startOptions := startOptionsWithOperation(updateOp)
 		_, err = ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
-		ts.ErrorContains(err, "invalid WithStartWorkflowOperation: ") // cutting off server message intentionally
+		ts.ErrorContains(err, "invalid WithStartOperation: ") // cutting off server message intentionally
 
 		updateOp, err = client.NewUpdateWorkflowOperation(
 			client.UpdateWorkflowOptions{
@@ -4044,7 +4044,7 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 
 		startOptions = startOptionsWithOperation(updateOp)
 		_, err = ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
-		ts.ErrorContains(err, "invalid WithStartWorkflowOperation: ") // cutting off server message intentionally
+		ts.ErrorContains(err, "invalid WithStartOperation: ") // cutting off server message intentionally
 	})
 
 	ts.Run("fails when workflow is already running", func() {
@@ -4060,7 +4060,7 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 			})
 		ts.NoError(err)
 
-		startOptions.WithStartWorkflowOperation = updateOp
+		startOptions.WithStartOperation = updateOp
 		// NOTE that WorkflowExecutionErrorWhenAlreadyStarted (defaults to false) has no impact
 		_, err = ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
 		ts.ErrorContains(err, "Workflow execution is already running")
@@ -4080,7 +4080,7 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 		ts.NoError(err)
 
 		_, err = ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
-		ts.ErrorContains(err, "invalid WithStartWorkflowOperation: was already executed")
+		ts.ErrorContains(err, "invalid WithStartOperation: was already executed")
 	})
 }
 
