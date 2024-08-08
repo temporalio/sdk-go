@@ -3987,7 +3987,7 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 		ts.NoError(err)
 
 		done := make(chan struct{})
-		defer func() { done <- struct{}{} }()
+		defer func() { <-done }()
 		go func() {
 			var updateResult int
 			updHandle, err := updateOp.Get(ctx)
