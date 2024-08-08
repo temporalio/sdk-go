@@ -68,7 +68,7 @@ var (
 )
 
 var (
-	errInvalidWorkflowOperation = fmt.Errorf("invalid WorkflowOperation")
+	errInvalidWorkflowOperation = fmt.Errorf("invalid WithStartWorkflowOperation")
 )
 
 const (
@@ -1608,7 +1608,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 	defer cancel()
 
 	var runID string
-	if in.Options.WorkflowOperation == nil {
+	if in.Options.WithStartWorkflowOperation == nil {
 		response, err := w.client.workflowService.StartWorkflowExecution(grpcCtx, startRequest)
 
 		eagerWorkflowTask := response.GetEagerWorkflowTask()
@@ -1627,7 +1627,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 			runID = response.RunId
 		}
 	} else {
-		response, err := w.executeWorkflowWithOperation(grpcCtx, startRequest, in.Options.WorkflowOperation)
+		response, err := w.executeWorkflowWithOperation(grpcCtx, startRequest, in.Options.WithStartWorkflowOperation)
 		if err != nil {
 			return nil, err
 		}
@@ -1657,7 +1657,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 func (w *workflowClientInterceptor) executeWorkflowWithOperation(
 	ctx context.Context,
 	startRequest *workflowservice.StartWorkflowExecutionRequest,
-	operation StartWorkflowOperation,
+	operation WithStartWorkflowOperation,
 ) (*workflowservice.StartWorkflowExecutionResponse, error) {
 	startOp := &workflowservice.ExecuteMultiOperationRequest_Operation{
 		Operation: &workflowservice.ExecuteMultiOperationRequest_Operation_StartWorkflow{

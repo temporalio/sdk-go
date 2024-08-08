@@ -644,19 +644,19 @@ type (
 		// Optional: defaulted to Fail.
 		WorkflowIDConflictPolicy enumspb.WorkflowIdConflictPolicy
 
-		// WorkflowOperation - Operation to execute at Workflow Start. For example, see PrepareUpdateWorkflowOperation
-		// to perform Update-with-Start. Note that if the workflow is already running and WorkflowIDConflictPolicy is
-		// set to UseExisting, the start is skipped and only the operation is executed. If instead the policy is set
-		// to Fail (the default), nothing is executed and an error will be returned (i.e. the option
-		// WorkflowExecutionErrorWhenAlreadyStarted is ignored).
+		// WithStartWorkflowOperation - Operation to execute with Workflow Start.
+		// For example, see PrepareUpdateWorkflowOperation to perform Update-with-Start. Note that if the workflow is
+		// already running and WorkflowIDConflictPolicy is set to UseExisting, the start is skipped and only the
+		// operation is executed. If instead the policy is set to Fail (the default), nothing is executed and
+		// an error will be returned (i.e. the option WorkflowExecutionErrorWhenAlreadyStarted is ignored).
 		//
 		// Optional: defaults to nil.
-		WorkflowOperation StartWorkflowOperation
+		WithStartWorkflowOperation WithStartWorkflowOperation
 
 		// When WorkflowExecutionErrorWhenAlreadyStarted is true, Client.ExecuteWorkflow will return an error if the
 		// workflow id has already been used and WorkflowIDReusePolicy or WorkflowIDConflictPolicy would
 		// disallow a re-run. If it is set to false, rather than erroring a WorkflowRun instance representing
-		// the current or last run will be returned. However, when WorkflowOperation is set, this field is ignored and
+		// the current or last run will be returned. However, when WithStartWorkflowOperation is set, this field is ignored and
 		// the WorkflowIDConflictPolicy UseExisting must be used instead to prevent erroring.
 		//
 		// Optional: defaults to false
@@ -725,9 +725,9 @@ type (
 		callbacks []*commonpb.Callback
 	}
 
-	// StartWorkflowOperation is a type of operation that can be executed as part of a workflow start.
-	StartWorkflowOperation interface {
-		isStartWorkflowOperation()
+	// WithStartWorkflowOperation is a type of operation that can be executed as part of a workflow start.
+	WithStartWorkflowOperation interface {
+		isWithStartWorkflowOperation()
 	}
 
 	// UpdateWorkflowOperation is used to perform Update-with-Start.
@@ -1077,7 +1077,7 @@ func (op *UpdateWorkflowOperation) set(handle WorkflowUpdateHandle, err error) {
 	close(op.doneCh)
 }
 
-func (op *UpdateWorkflowOperation) isStartWorkflowOperation() {}
+func (op *UpdateWorkflowOperation) isWithStartWorkflowOperation() {}
 
 // NewNamespaceClient creates an instance of a namespace client, to manager lifecycle of namespaces.
 func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {

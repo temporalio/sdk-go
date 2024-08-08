@@ -162,9 +162,9 @@ type (
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
 	StartWorkflowOptions = internal.StartWorkflowOptions
 
-	// StartWorkflowOperation is a type of operation that can be executed as part of a workflow start.
+	// WithStartWorkflowOperation is a type of operation that can be executed as part of a workflow start.
 	// For example, use PrepareUpdateWorkflowOperation to perform Update-with-Start.
-	StartWorkflowOperation = internal.StartWorkflowOperation
+	WithStartWorkflowOperation = internal.WithStartWorkflowOperation
 
 	// UpdateWorkflowOperation is used to perform Update-with-Start.
 	// See PrepareUpdateWorkflowOperation for details.

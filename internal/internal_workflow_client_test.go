@@ -1013,9 +1013,9 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_NonMultiOperationError(
 	_, err = s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
-			ID:                workflowID,
-			TaskQueue:         taskqueue,
-			WorkflowOperation: updOp,
+			ID:                         workflowID,
+			TaskQueue:                  taskqueue,
+			WithStartWorkflowOperation: updOp,
 		}, workflowType,
 	)
 	s.ErrorContains(err, "internal error")
@@ -1040,9 +1040,9 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerResponseCountMism
 			_, _ = s.workflowClient.ExecuteWorkflow(
 				context.Background(),
 				StartWorkflowOptions{
-					ID:                workflowID,
-					TaskQueue:         taskqueue,
-					WorkflowOperation: updOp,
+					ID:                         workflowID,
+					TaskQueue:                  taskqueue,
+					WithStartWorkflowOperation: updOp,
 				}, workflowType,
 			)
 		})
@@ -1065,9 +1065,9 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerErrorResponseCoun
 			_, _ = s.workflowClient.ExecuteWorkflow(
 				context.Background(),
 				StartWorkflowOptions{
-					ID:                workflowID,
-					TaskQueue:         taskqueue,
-					WorkflowOperation: updOp,
+					ID:                         workflowID,
+					TaskQueue:                  taskqueue,
+					WithStartWorkflowOperation: updOp,
 				}, workflowType,
 			)
 		})
@@ -1097,9 +1097,9 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerStartResponseType
 			_, _ = s.workflowClient.ExecuteWorkflow(
 				context.Background(),
 				StartWorkflowOptions{
-					ID:                workflowID,
-					TaskQueue:         taskqueue,
-					WorkflowOperation: updOp,
+					ID:                         workflowID,
+					TaskQueue:                  taskqueue,
+					WithStartWorkflowOperation: updOp,
 				}, workflowType,
 			)
 		})
@@ -1131,9 +1131,9 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerUpdateResponseTyp
 			_, _ = s.workflowClient.ExecuteWorkflow(
 				context.Background(),
 				StartWorkflowOptions{
-					ID:                workflowID,
-					TaskQueue:         taskqueue,
-					WorkflowOperation: updOp,
+					ID:                         workflowID,
+					TaskQueue:                  taskqueue,
+					WithStartWorkflowOperation: updOp,
 				}, workflowType,
 			)
 		})
