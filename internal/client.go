@@ -27,6 +27,7 @@ package internal
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -643,9 +644,21 @@ type (
 		// Optional: defaulted to Fail.
 		WorkflowIDConflictPolicy enumspb.WorkflowIdConflictPolicy
 
+		// WithStartOperation - Operation to execute with Workflow Start.
+		// For example, see NewUpdateWorkflowOperation to perform Update-with-Start. Note that if the workflow is
+		// already running and WorkflowIDConflictPolicy is set to UseExisting, the start is skipped and only the
+		// operation is executed. If instead the policy is set to Fail (the default), nothing is executed and
+		// an error will be returned (i.e. the option WorkflowExecutionErrorWhenAlreadyStarted is ignored).
+		// This option will be ignored when used with Client.SignalWithStartWorkflow.
+		//
+		// Optional: defaults to nil.
+		WithStartOperation WithStartWorkflowOperation
+
 		// When WorkflowExecutionErrorWhenAlreadyStarted is true, Client.ExecuteWorkflow will return an error if the
-		// workflow id has already been used and WorkflowIDReusePolicy would disallow a re-run. If it is set to false,
-		// rather than erroring a WorkflowRun instance representing the current or last run will be returned.
+		// workflow id has already been used and WorkflowIDReusePolicy or WorkflowIDConflictPolicy would
+		// disallow a re-run. If it is set to false, rather than erroring a WorkflowRun instance representing
+		// the current or last run will be returned. However, when WithStartOperation is set, this field is ignored and
+		// the WorkflowIDConflictPolicy UseExisting must be used instead to prevent erroring.
 		//
 		// Optional: defaults to false
 		WorkflowExecutionErrorWhenAlreadyStarted bool
@@ -711,6 +724,24 @@ type (
 		requestID string
 		// workflow completion callback. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
 		callbacks []*commonpb.Callback
+	}
+
+	// WithStartWorkflowOperation is a type of operation that can be executed as part of a workflow start.
+	WithStartWorkflowOperation interface {
+		isWithStartWorkflowOperation()
+	}
+
+	// UpdateWorkflowOperation is used to perform Update-with-Start.
+	// See NewUpdateWorkflowOperation for details.
+	UpdateWorkflowOperation struct {
+		input *ClientUpdateWorkflowInput
+		// flag to ensure the operation is only executed once
+		executed atomic.Bool
+		// channel to indicate that handle or err is available
+		doneCh chan struct{}
+		// handle and err cannot be accessed before doneCh is closed
+		handle WorkflowUpdateHandle
+		err    error
 	}
 
 	// RetryPolicy defines the retry policy.
@@ -1002,6 +1033,47 @@ func DialCloudOperationsClient(ctx context.Context, options CloudOperationsClien
 		cloudServiceClient: cloudservice.NewCloudServiceClient(conn),
 	}, nil
 }
+
+// NewUpdateWorkflowOperation returns an UpdateWorkflowOperation that can be used to perform Update-with-Start,
+// or an error in case the update operation is invalid.
+func NewUpdateWorkflowOperation(options UpdateWorkflowOptions) (*UpdateWorkflowOperation, error) {
+	input, err := createUpdateWorkflowInput(options)
+	if err != nil {
+		return nil, err
+	}
+	if options.RunID != "" {
+		return nil, errors.New("RunID is not allowed to be used on an UpdateWorkflowOperation")
+	}
+	if options.FirstExecutionRunID != "" {
+		return nil, errors.New("FirstExecutionRunID is not allowed to be used on an UpdateWorkflowOperation")
+	}
+	return &UpdateWorkflowOperation{input: input, doneCh: make(chan struct{})}, nil
+}
+
+// Get blocks until a server response has been received; or the context deadline is exceeded.
+func (op *UpdateWorkflowOperation) Get(ctx context.Context) (WorkflowUpdateHandle, error) {
+	select {
+	case <-op.doneCh:
+		return op.handle, op.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (op *UpdateWorkflowOperation) markExecuted() error {
+	if op.executed.Swap(true) {
+		return fmt.Errorf("was already executed")
+	}
+	return nil
+}
+
+func (op *UpdateWorkflowOperation) set(handle WorkflowUpdateHandle, err error) {
+	op.handle = handle
+	op.err = err
+	close(op.doneCh)
+}
+
+func (op *UpdateWorkflowOperation) isWithStartWorkflowOperation() {}
 
 // NewNamespaceClient creates an instance of a namespace client, to manager lifecycle of namespaces.
 func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {

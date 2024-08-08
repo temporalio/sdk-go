@@ -7,6 +7,8 @@ frontend.enableUpdateWorkflowExecution:
   - value: true
 frontend.enableUpdateWorkflowExecutionAsyncAccepted:
   - value: true
+frontend.enableExecuteMultiOperation:
+  - value: true
 system.enableEagerWorkflowStart:
   - value: true
 frontend.workerVersioningRuleAPIs:

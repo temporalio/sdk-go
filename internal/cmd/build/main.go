@@ -41,9 +41,10 @@ import (
 
 	_ "github.com/BurntSushi/toml"
 	_ "github.com/kisielk/errcheck/errcheck"
+	_ "honnef.co/go/tools/staticcheck"
+
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/testsuite"
-	_ "honnef.co/go/tools/staticcheck"
 )
 
 func main() {
@@ -145,6 +146,7 @@ func (b *builder) integrationTest() error {
 			},
 			LogLevel: "warn",
 			ExtraArgs: []string{
+				"--dynamic-config-value", "frontend.enableExecuteMultiOperation=true",
 				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecution=true",
 				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecutionAsyncAccepted=true",
 				"--dynamic-config-value", "frontend.workerVersioningRuleAPIs=true",
