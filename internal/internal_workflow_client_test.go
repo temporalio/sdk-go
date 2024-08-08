@@ -977,20 +977,20 @@ func (s *workflowRunSuite) TestGetWorkflowNoExtantWorkflowAndNoRunId() {
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_InvalidUpdateWorkflowOptions() {
-	_, err := PrepareUpdateWorkflowOperation(
+	_, err := NewUpdateWorkflowOperation(
 		UpdateWorkflowOptions{
 			// invalid
 		})
 	s.ErrorContains(err, "WaitForStage must be specified")
 
-	_, err = PrepareUpdateWorkflowOperation(
+	_, err = NewUpdateWorkflowOperation(
 		UpdateWorkflowOptions{
 			WaitForStage: WorkflowUpdateStageCompleted,
 			RunID:        "invalid",
 		})
 	s.ErrorContains(err, "RunID is not allowed to be used on a prepared update operation")
 
-	_, err = PrepareUpdateWorkflowOperation(
+	_, err = NewUpdateWorkflowOperation(
 		UpdateWorkflowOptions{
 			WaitForStage:        WorkflowUpdateStageCompleted,
 			FirstExecutionRunID: "invalid",
@@ -1003,7 +1003,7 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_NonMultiOperationError(
 		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(nil, serviceerror.NewInternal("internal error")).Times(1)
 
-	updOp, err := PrepareUpdateWorkflowOperation(
+	updOp, err := NewUpdateWorkflowOperation(
 		UpdateWorkflowOptions{
 			UpdateName:   "update",
 			WaitForStage: WorkflowUpdateStageCompleted,
@@ -1028,7 +1028,7 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerResponseCountMism
 			Responses: []*workflowservice.ExecuteMultiOperationResponse_Response{},
 		}, nil).Times(1)
 
-	updOp, err := PrepareUpdateWorkflowOperation(
+	updOp, err := NewUpdateWorkflowOperation(
 		UpdateWorkflowOptions{
 			UpdateName:   "update",
 			WaitForStage: WorkflowUpdateStageCompleted,
@@ -1051,7 +1051,7 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerErrorResponseCoun
 		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(nil, serviceerror.NewMultiOperationExecution("Error", []error{})).Times(1)
 
-	updOp, err := PrepareUpdateWorkflowOperation(
+	updOp, err := NewUpdateWorkflowOperation(
 		UpdateWorkflowOptions{
 			UpdateName:   "update",
 			WaitForStage: WorkflowUpdateStageCompleted,
@@ -1081,7 +1081,7 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerStartResponseType
 			},
 		}, nil).Times(1)
 
-	updOp, err := PrepareUpdateWorkflowOperation(
+	updOp, err := NewUpdateWorkflowOperation(
 		UpdateWorkflowOptions{
 			UpdateName:   "update",
 			WaitForStage: WorkflowUpdateStageCompleted,
@@ -1113,7 +1113,7 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerUpdateResponseTyp
 			},
 		}, nil).Times(1)
 
-	updOp, err := PrepareUpdateWorkflowOperation(
+	updOp, err := NewUpdateWorkflowOperation(
 		UpdateWorkflowOptions{
 			UpdateName:   "update",
 			WaitForStage: WorkflowUpdateStageCompleted,

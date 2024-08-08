@@ -3907,7 +3907,7 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 	}
 
 	ts.Run("sends update-with-start (no running workflow)", func() {
-		updateOp, err := client.PrepareUpdateWorkflowOperation(
+		updateOp, err := client.NewUpdateWorkflowOperation(
 			client.UpdateWorkflowOptions{
 				UpdateName:   "update",
 				Args:         []any{1},
@@ -3935,7 +3935,7 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 		run1, err := ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
 		ts.NoError(err)
 
-		updateOp, err := client.PrepareUpdateWorkflowOperation(
+		updateOp, err := client.NewUpdateWorkflowOperation(
 			client.UpdateWorkflowOptions{
 				UpdateName:   "update",
 				Args:         []any{1},
@@ -3957,7 +3957,7 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 	})
 
 	ts.Run("sends update-with-start but update is rejected", func() {
-		updateOp, err := client.PrepareUpdateWorkflowOperation(
+		updateOp, err := client.NewUpdateWorkflowOperation(
 			client.UpdateWorkflowOptions{
 				UpdateName:   "update",
 				Args:         []any{-1}, // rejected update payload
@@ -3978,7 +3978,7 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 	})
 
 	ts.Run("receives update result in separate goroutines", func() {
-		updateOp, err := client.PrepareUpdateWorkflowOperation(
+		updateOp, err := client.NewUpdateWorkflowOperation(
 			client.UpdateWorkflowOptions{
 				UpdateName:   "update",
 				Args:         []any{1},
@@ -4009,7 +4009,7 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 	})
 
 	ts.Run("fails when start request is invalid", func() {
-		updateOp, err := client.PrepareUpdateWorkflowOperation(
+		updateOp, err := client.NewUpdateWorkflowOperation(
 			client.UpdateWorkflowOptions{
 				UpdateName:   "update",
 				WaitForStage: client.WorkflowUpdateStageCompleted,
@@ -4023,7 +4023,7 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 	})
 
 	ts.Run("fails when update operation is invalid", func() {
-		updateOp, err := client.PrepareUpdateWorkflowOperation(
+		updateOp, err := client.NewUpdateWorkflowOperation(
 			client.UpdateWorkflowOptions{
 				UpdateName:   "", // invalid
 				WaitForStage: client.WorkflowUpdateStageCompleted,
@@ -4034,7 +4034,7 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 		_, err = ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
 		ts.ErrorContains(err, "invalid WithStartWorkflowOperation: ") // cutting off server message intentionally
 
-		updateOp, err = client.PrepareUpdateWorkflowOperation(
+		updateOp, err = client.NewUpdateWorkflowOperation(
 			client.UpdateWorkflowOptions{
 				WorkflowID:   "different", // does not match Start's
 				UpdateName:   "update",
@@ -4052,7 +4052,7 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 		_, err := ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
 		ts.NoError(err)
 
-		updateOp, err := client.PrepareUpdateWorkflowOperation(
+		updateOp, err := client.NewUpdateWorkflowOperation(
 			client.UpdateWorkflowOptions{
 				UpdateName:   "update",
 				Args:         []any{1},
@@ -4067,7 +4067,7 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 	})
 
 	ts.Run("fails when executed twice", func() {
-		updateOp, err := client.PrepareUpdateWorkflowOperation(
+		updateOp, err := client.NewUpdateWorkflowOperation(
 			client.UpdateWorkflowOptions{
 				UpdateName:   "update",
 				Args:         []any{1},

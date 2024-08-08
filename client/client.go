@@ -163,11 +163,11 @@ type (
 	StartWorkflowOptions = internal.StartWorkflowOptions
 
 	// WithStartWorkflowOperation is a type of operation that can be executed as part of a workflow start.
-	// For example, use PrepareUpdateWorkflowOperation to perform Update-with-Start.
+	// For example, use NewUpdateWorkflowOperation to perform Update-with-Start.
 	WithStartWorkflowOperation = internal.WithStartWorkflowOperation
 
 	// UpdateWorkflowOperation is used to perform Update-with-Start.
-	// See PrepareUpdateWorkflowOperation for details.
+	// See NewUpdateWorkflowOperation for details.
 	UpdateWorkflowOperation = internal.UpdateWorkflowOperation
 
 	// HistoryEventIterator is a iterator which can return history events.
@@ -928,11 +928,11 @@ type MetricsTimer = metrics.Timer
 // MetricsNopHandler is a noop handler that does nothing with the metrics.
 var MetricsNopHandler = metrics.NopHandler
 
-// PrepareUpdateWorkflowOperation returns an UpdateWorkflowOperation that can be used to perform Update-with-Start,
+// NewUpdateWorkflowOperation returns an UpdateWorkflowOperation that can be used to perform Update-with-Start,
 // or an error in case the update operation is invalid. After executing Client.ExecuteWorkflow with the
 // UpdateWorkflowOperation in the start options, the update result can be obtained.
-func PrepareUpdateWorkflowOperation(options UpdateWorkflowOptions) (*UpdateWorkflowOperation, error) {
-	return internal.PrepareUpdateWorkflowOperation(options)
+func NewUpdateWorkflowOperation(options UpdateWorkflowOptions) (*UpdateWorkflowOperation, error) {
+	return internal.NewUpdateWorkflowOperation(options)
 }
 
 // Dial creates an instance of a workflow client. This will attempt to connect
