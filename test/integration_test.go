@@ -4082,6 +4082,32 @@ func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
 		_, err = ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
 		ts.ErrorContains(err, "invalid WithStartOperation: was already executed")
 	})
+
+	ts.Run("propagates context", func() {
+		updateOp, err := client.NewUpdateWorkflowOperation(
+			client.UpdateWorkflowOptions{
+				UpdateName:   "update",
+				Args:         []any{1},
+				WaitForStage: client.WorkflowUpdateStageCompleted,
+			})
+		ts.NoError(err)
+
+		var propagatedValues []string
+		ctx := context.Background()
+		// Propagate values using different context propagators.
+		ctx = context.WithValue(ctx, contextKey(testContextKey1), "propagatedValue1")
+		ctx = context.WithValue(ctx, contextKey(testContextKey2), "propagatedValue2")
+		ctx = context.WithValue(ctx, contextKey(testContextKey3), "non-propagatedValue")
+		startOptions := startOptionsWithOperation(updateOp)
+		err = ts.executeWorkflowWithContextAndOption(ctx, startOptions, ts.workflows.ContextPropagator, &propagatedValues, true)
+		ts.NoError(err)
+
+		// One copy from workflow and one copy from activity * 2 for child workflow
+		ts.EqualValues([]string{
+			"propagatedValue1", "propagatedValue2", "activity_propagatedValue1", "activity_propagatedValue2",
+			"child_propagatedValue1", "child_propagatedValue2", "child_activity_propagatedValue1", "child_activity_propagatedValue2",
+		}, propagatedValues)
+	})
 }
 
 func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
