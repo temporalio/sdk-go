@@ -832,7 +832,6 @@ func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
 				TaskQueue: ts.taskQueueName,
 				TaskQueueTypes: []client.TaskQueueType{
 					client.TaskQueueTypeWorkflow,
-					client.TaskQueueTypeActivity,
 				},
 				ReportStats: true,
 			})
@@ -868,6 +867,23 @@ func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
 
 	// Wait for the wf to finish
 	ts.NoError(handle.Get(ctx, nil))
+
+	// Wait until the activity task goes to the TQ
+	ts.Eventually(
+		func() bool {
+			taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, client.DescribeTaskQueueEnhancedOptions{
+				TaskQueue: ts.taskQueueName,
+				TaskQueueTypes: []client.TaskQueueType{
+					client.TaskQueueTypeActivity,
+				},
+				ReportStats: true,
+			})
+			ts.NoError(err)
+			ts.Equal(1, len(taskQueueInfo.VersionsInfo))
+			return taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeActivity].Stats.TasksAddRate > 0
+		},
+		time.Second, 100*time.Millisecond,
+	)
 
 	// backlogs should be empty but the rates should be non-zero
 	fetchAndValidateStats(
