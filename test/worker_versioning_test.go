@@ -824,6 +824,9 @@ func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
 	handle, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("basic-wf"), ts.workflows.Basic)
 	ts.NoError(err)
 
+	// Give time for the task to be sent to the TQ
+	time.Sleep(500 * time.Millisecond)
+
 	// no workers yet, so only workflow should have a backlog
 	fetchAndValidateStats(
 		&client.TaskQueueStats{
