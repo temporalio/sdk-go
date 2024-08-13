@@ -816,6 +816,7 @@ func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
 		})
 		ts.NoError(err)
 		ts.Equal(1, len(taskQueueInfo.VersionsInfo))
+
 		ts.validateTaskQueueStats(expectedWorkflowStats, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats)
 		ts.validateTaskQueueStats(expectedActivityStats, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeActivity].Stats)
 	}
@@ -824,8 +825,23 @@ func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
 	handle, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("basic-wf"), ts.workflows.Basic)
 	ts.NoError(err)
 
-	// Give time for the task to be sent to the TQ
-	time.Sleep(500 * time.Millisecond)
+	// Wait until the task goes to the TQ
+	ts.Eventually(
+		func() bool {
+			taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, client.DescribeTaskQueueEnhancedOptions{
+				TaskQueue: ts.taskQueueName,
+				TaskQueueTypes: []client.TaskQueueType{
+					client.TaskQueueTypeWorkflow,
+					client.TaskQueueTypeActivity,
+				},
+				ReportStats: true,
+			})
+			ts.NoError(err)
+			ts.Equal(1, len(taskQueueInfo.VersionsInfo))
+			return taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats.ApproximateBacklogCount > 0
+		},
+		time.Second, 100*time.Millisecond,
+	)
 
 	// no workers yet, so only workflow should have a backlog
 	fetchAndValidateStats(
