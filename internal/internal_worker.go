@@ -1700,7 +1700,6 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		tagNamespace, client.namespace,
 		tagTaskQueue, taskQueue,
 		tagWorkerID, workerParams.Identity,
-		tagBuildID, workerParams.getBuildID(),
 	)
 	if workerParams.WorkerBuildID != "" {
 		// Add worker build ID to the logs if it's set by user
