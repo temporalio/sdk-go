@@ -95,6 +95,17 @@ type (
 		// default: 2
 		MaxConcurrentWorkflowTaskPollers int
 
+		// Optional: Sets the maximum concurrent nexus task executions this worker can have.
+		// The zero value of this uses the default value.
+		// default: defaultMaxConcurrentTaskExecutionSize(1k)
+		MaxConcurrentNexusTaskExecutionSize int
+
+		// Optional: Sets the maximum number of goroutines that will concurrently poll the
+		// temporal-server to retrieve nexus tasks. Changing this value will affect the
+		// rate at which the worker is able to consume tasks from a task queue.
+		// default: 2
+		MaxConcurrentNexusTaskPollers int
+
 		// Optional: Enable logging in replay.
 		// In the workflow code you can use workflow.GetLogger(ctx) to write logs. By default, the logger will skip log
 		// entry during replay mode so you won't see duplicate logs. This option will enable the logging in replay mode.
@@ -144,7 +155,7 @@ type (
 		// For now, if user doesn't specify one, a new uuid will be used as the resourceID.
 		// SessionResourceID string
 
-		// Optional: Sets the maximum number of concurrently running sessions the resource support.
+		// Optional: Sets the maximum number of concurrently running sessions the resource supports.
 		// default: 1000
 		MaxConcurrentSessionExecutionSize int
 
@@ -154,12 +165,12 @@ type (
 		// default: false
 		DisableWorkflowWorker bool
 
-		// Optional: If set to true worker would only handle workflow tasks and local activities.
+		// Optional: If set to true worker will only handle workflow tasks and local activities.
 		// Non-local activities will not be executed by this worker.
 		// default: false
 		LocalActivityWorkerOnly bool
 
-		// Optional: If set overwrites the client level Identify value.
+		// Optional: If set overwrites the client level Identity value.
 		// default: client identity
 		Identity string
 
@@ -239,6 +250,12 @@ type (
 		// NOTE: Experimental
 		// Note: Cannot be enabled at the same time as EnableSessionWorker
 		UseBuildIDForVersioning bool
+
+		// Optional: If set, use a custom tuner for this worker. See WorkerTuner for more.
+		// Mutually exclusive with MaxConcurrentWorkflowTaskExecutionSize,
+		// MaxConcurrentActivityExecutionSize, and MaxConcurrentLocalActivityExecutionSize.
+		// NOTE: Experimental
+		Tuner WorkerTuner
 	}
 )
 

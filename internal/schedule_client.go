@@ -416,12 +416,19 @@ type (
 		// Memo - Non-indexed user supplied information.
 		Memo *commonpb.Memo
 
-		// SearchAttributes - Indexed info that can be used in query of List schedules APIs. The key and value type must be registered on Temporal server side.
-		// Use GetSearchAttributes API to get valid key and corresponding value type.
+		// SearchAttributes - Additional indexed information used for search and visibility. The key and its value type
+		// are registered on Temporal server side.
 		// For supported operations on different server versions see [Visibility].
 		//
 		// [Visibility]: https://docs.temporal.io/visibility
 		SearchAttributes *commonpb.SearchAttributes
+
+		// TypedSearchAttributes - Additional indexed information used for search and visibility. The key and its value
+		// type are registered on Temporal server side.
+		// For supported operations on different server versions see [Visibility].
+		//
+		// [Visibility]: https://docs.temporal.io/visibility
+		TypedSearchAttributes SearchAttributes
 	}
 
 	// SchedulePolicies describes the current polcies of a schedule.
@@ -476,6 +483,15 @@ type (
 	ScheduleUpdate struct {
 		// Schedule - New schedule to replace the existing schedule with
 		Schedule *Schedule
+
+		// TypedSearchAttributes - Optional indexed info that can be used for querying via the List schedules APIs.
+		// The key and value type must be registered on Temporal server side.
+		//
+		// nil: leave any pre-existing assigned search attributes intact
+		// empty: remove any and all pre-existing assigned search attributes
+		// attributes present: replace any and all pre-existing assigned search attributes with the defined search
+		//                     attributes, i.e. upsert
+		TypedSearchAttributes *SearchAttributes
 	}
 
 	// ScheduleUpdateInput describes the current state of the schedule to be updated.
@@ -607,6 +623,10 @@ type (
 		// PageSize - How many results to fetch from the Server at a time.
 		// Optional: defaulted to 1000
 		PageSize int
+
+		// Query - Filter results using a SQL-like query.
+		// Optional
+		Query string
 	}
 
 	// ScheduleListIterator represents the interface for

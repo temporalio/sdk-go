@@ -650,6 +650,34 @@ func (t *TaskHandlersTestSuite) TestRespondsToWFTWithWorkerBinaryID() {
 	params.cache.getWorkflowCache().Delete(task.WorkflowExecution.RunId)
 }
 
+func (t *TaskHandlersTestSuite) TestStickyLegacyQueryTaskOnEvictedCache() {
+	taskQueue := "tq1"
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskStarted(3),
+	}
+	task := createWorkflowTask(testEvents, 0, "HelloWorld_Workflow")
+	params := t.getTestWorkerExecutionParams()
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	wftask := workflowTask{task: task}
+	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
+	wfctx.Unlock(nil)
+	wfctx.clearState()
+	// Now make the task look like a legacy query task on the sticky queue
+	task.History = &historypb.History{}
+	task.Query = &querypb.WorkflowQuery{}
+	wfQueryTask := workflowTask{task: task, historyIterator: &historyIteratorImpl{
+		iteratorFunc: func(nextToken []byte) (*historypb.History, []byte, error) {
+			return &historypb.History{Events: testEvents}, nil, nil
+		},
+	}}
+	wfctx = t.mustWorkflowContextImpl(&wfQueryTask, taskHandler)
+	t.NotNil(wfctx)
+	// clean up workflow left in cache
+	params.cache.getWorkflowCache().Delete(task.WorkflowExecution.RunId)
+}
+
 func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 	// Schedule an activity and see if we complete workflow.
 	taskQueue := "tq1"
@@ -2180,7 +2208,7 @@ func Test_NonDeterministicCheck(t *testing.T) {
 	// the command type count because the 1 ProtocolMessageCommand type can
 	// result in 3 different event types being created. As more protocols are
 	// added, this number will increase.
-	require.Equal(t, 17, commandEventTypeCount, "Every command type must have at least one matching event type. "+
+	require.Equal(t, 19, commandEventTypeCount, "Every command type must have at least one matching event type. "+
 		"If you add new command type, you need to update isCommandEvent() method to include that new event type as well.")
 }
 

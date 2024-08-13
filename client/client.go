@@ -480,8 +480,9 @@ type (
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
 	Client interface {
-		// ExecuteWorkflow starts a workflow execution and return a WorkflowRun instance and error
-		// The user can use this to start using a function or workflow type name.
+		// ExecuteWorkflow starts a workflow execution and returns a WorkflowRun instance or error
+		//
+		// This can be used to start a workflow using a function reference or workflow type name.
 		// Either by
 		//     ExecuteWorkflow(ctx, options, "workflowTypeName", arg1, arg2, arg3)
 		//     or
@@ -498,8 +499,8 @@ type (
 		//  - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
 		//    execution result to valuePtr, if workflow execution is a success, or return corresponding
 		//    error. This is a blocking API.
-		// NOTE: if the started workflow return ContinueAsNewError during the workflow execution, the
-		// return result of GetRunID() will be the started workflow run ID, not the new run ID caused by ContinueAsNewError,
+		// NOTE: if the started workflow returns ContinueAsNewError during the workflow execution, the
+		// returned result of GetRunID() will be the started workflow run ID, not the new run ID caused by ContinueAsNewError,
 		// however, Get(ctx context.Context, valuePtr interface{}) will return result from the run which did not return ContinueAsNewError.
 		// Say ExecuteWorkflow started a workflow, in its first run, has run ID "run ID 1", and returned ContinueAsNewError,
 		// the second run has run ID "run ID 2" and return some result other than ContinueAsNewError:

@@ -32,6 +32,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -60,6 +61,7 @@ import (
 
 	"go.temporal.io/sdk/contrib/opentelemetry"
 	sdkopentracing "go.temporal.io/sdk/contrib/opentracing"
+	"go.temporal.io/sdk/contrib/resourcetuner"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/test"
 
@@ -213,9 +215,15 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.tracer = newTracingInterceptor()
 	ts.inboundSignalInterceptor = newSignalInterceptor()
 	workerInterceptors = append(workerInterceptors, ts.tracer, ts.inboundSignalInterceptor)
+	panicPolicy := worker.FailWorkflow
+
+	if strings.Contains(ts.T().Name(), "TestSlotSupplierWFTFailMetrics") {
+		panicPolicy = worker.BlockWorkflow
+	}
+
 	options := worker.Options{
 		Interceptors:        workerInterceptors,
-		WorkflowPanicPolicy: worker.FailWorkflow,
+		WorkflowPanicPolicy: panicPolicy,
 	}
 
 	worker.SetStickyWorkflowCacheSize(ts.config.maxWorkflowCacheSize)
@@ -250,6 +258,20 @@ func (ts *IntegrationTestSuite) SetupTest() {
 
 	if strings.Contains(ts.T().Name(), "ReplayerWithInterceptor") {
 		options.Interceptors = append(options.Interceptors, &localActivityInterceptor{})
+	}
+
+	if strings.Contains(ts.T().Name(), "SlotSupplierWontExceedLimits") {
+		options.MaxConcurrentWorkflowTaskExecutionSize = 2
+		options.MaxConcurrentActivityExecutionSize = 2
+		options.MaxConcurrentLocalActivityExecutionSize = 2
+	}
+	if strings.Contains(ts.T().Name(), "ResourceBasedSlotSupplier") {
+		tuner, err := resourcetuner.NewResourceBasedTuner(resourcetuner.ResourceBasedTunerOptions{
+			TargetMem: 0.9,
+			TargetCpu: 0.9,
+		})
+		ts.NoError(err)
+		options.Tuner = tuner
 	}
 
 	ts.worker = worker.New(ts.client, ts.taskQueueName, options)
@@ -947,6 +969,43 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseIgnoreDuplicateWhileRunning()
 	ts.NoError(err)
 	ts.Equal(run1.GetID(), run3.GetID())
 	ts.NotEqual(run1.GetRunID(), run3.GetRunID())
+}
+
+func (ts *IntegrationTestSuite) TestWorkflowIDConflictPolicy() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	opts := ts.startWorkflowOptions("test-workflowidconflict-" + uuid.New())
+	opts.WorkflowExecutionErrorWhenAlreadyStarted = true
+
+	var alreadyStartedErr *serviceerror.WorkflowExecutionAlreadyStarted
+
+	// Start a workflow
+	run1, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.IDConflictPolicy)
+	ts.NoError(err)
+
+	// Confirm another fails by default
+	_, err = ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.IDConflictPolicy)
+	ts.ErrorAs(err, &alreadyStartedErr)
+
+	// Confirm fails if explicitly given that option
+	opts.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL
+	_, err = ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.IDConflictPolicy)
+	ts.ErrorAs(err, &alreadyStartedErr)
+
+	// Confirm gives back same WorkflowRun if requested
+	opts.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING
+	run2, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.IDConflictPolicy)
+	ts.Equal(run1.GetRunID(), run2.GetRunID())
+
+	// Confirm terminates and starts new if requested
+	opts.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_TERMINATE_EXISTING
+	run3, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.IDConflictPolicy)
+	ts.NotEqual(run1.GetRunID(), run3.GetRunID())
+
+	statusRun1, err := ts.client.DescribeWorkflowExecution(ctx, run1.GetID(), run1.GetRunID())
+	ts.NoError(err)
+	ts.Equal(statusRun1.WorkflowExecutionInfo.Status, enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED)
 }
 
 func (ts *IntegrationTestSuite) TestChildWFWithRetryPolicy_ShortLived() {
@@ -1919,6 +1978,41 @@ func (ts *IntegrationTestSuite) TestStartDelaySignalWithStart() {
 	ts.Equal(5*time.Second, event.GetWorkflowExecutionStartedEventAttributes().GetFirstWorkflowTaskBackoff().AsDuration())
 }
 
+func (ts *IntegrationTestSuite) TestSignalWithStartIdConflictPolicy() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var invalidArgErr *serviceerror.InvalidArgument
+	opts := ts.startWorkflowOptions("test-signalwithstart-workflowidconflict-" + uuid.New())
+
+	// Start a workflow
+	run1, err := ts.client.SignalWithStartWorkflow(ctx, opts.ID, "signal", true, opts, ts.workflows.IDConflictPolicy)
+	ts.NoError(err)
+
+	// Confirm gives back same WorkflowRun by default
+	run2, err := ts.client.SignalWithStartWorkflow(ctx, opts.ID, "signal", true, opts, ts.workflows.IDConflictPolicy)
+	ts.Equal(run1.GetRunID(), run2.GetRunID())
+
+	// Confirm gives back same WorkflowRun if requested explicitly
+	opts.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING
+	run3, err := ts.client.SignalWithStartWorkflow(ctx, opts.ID, "signal", true, opts, ts.workflows.IDConflictPolicy)
+	ts.Equal(run1.GetRunID(), run3.GetRunID())
+
+	// Confirm policy to fail is invalid
+	opts.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL
+	_, err = ts.client.SignalWithStartWorkflow(ctx, opts.ID, "signal", true, opts, ts.workflows.IDConflictPolicy)
+	ts.ErrorAs(err, &invalidArgErr)
+
+	// Confirm terminates and starts new if requested
+	opts.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_TERMINATE_EXISTING
+	run4, err := ts.client.SignalWithStartWorkflow(ctx, opts.ID, "signal", true, opts, ts.workflows.IDConflictPolicy)
+	ts.NotEqual(run1.GetRunID(), run4.GetRunID())
+
+	statusRun1, err := ts.client.DescribeWorkflowExecution(ctx, run1.GetID(), run1.GetRunID())
+	ts.NoError(err)
+	ts.Equal(statusRun1.WorkflowExecutionInfo.Status, enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED)
+}
+
 func (ts *IntegrationTestSuite) TestResetWorkflowExecution() {
 	var originalResult []string
 	err := ts.executeWorkflow("basic-reset-workflow-execution", ts.workflows.Basic, &originalResult)
@@ -2747,32 +2841,24 @@ func (ts *IntegrationTestSuite) TestSlotsAvailableCounter() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	assertActivitySlotsAvailableEventually := func(expected float64, tags ...string) {
-		// Try for two seconds
-		var lastCount float64
-		for start := time.Now(); time.Since(start) <= 2*time.Second; {
-			lastCount = ts.metricGauge(
-				metrics.WorkerTaskSlotsAvailable,
-				"worker_type", "ActivityWorker",
-				"task_queue", ts.taskQueueName,
-			)
-			if lastCount == expected {
-				return
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
-		// Will fail
-		ts.Equal(expected, lastCount)
-	}
+	actWorkertags := []string{"worker_type", "ActivityWorker", "task_queue", ts.taskQueueName}
+	wfWorkertags := []string{"worker_type", "WorkflowWorker", "task_queue", ts.taskQueueName}
+	laWorkertags := []string{"worker_type", "LocalActivityWorker", "task_queue", ts.taskQueueName}
 
 	// Confirm all available to start
-	assertActivitySlotsAvailableEventually(1000)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, actWorkertags, 1000)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, actWorkertags, 0)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, wfWorkertags, 1000)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, wfWorkertags, 0)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, laWorkertags, 1000)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, laWorkertags, 0)
 
 	// Start workflow and confirm reduced by one
 	run1, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-slots-available-counter-1"),
 		ts.workflows.ActivityHeartbeatUntilSignal)
 	ts.NoError(err)
-	assertActivitySlotsAvailableEventually(999)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, actWorkertags, 999)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, actWorkertags, 1)
 
 	// Start two more and confirm reduced by two
 	run2, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-slots-available-counter-2"),
@@ -2781,7 +2867,8 @@ func (ts *IntegrationTestSuite) TestSlotsAvailableCounter() {
 	run3, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-slots-available-counter-3"),
 		ts.workflows.ActivityHeartbeatUntilSignal)
 	ts.NoError(err)
-	assertActivitySlotsAvailableEventually(997)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, actWorkertags, 997)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, actWorkertags, 3)
 
 	// Signal the first and last to close and confirm increased by two
 	time.Sleep(2 * time.Second)
@@ -2789,12 +2876,337 @@ func (ts *IntegrationTestSuite) TestSlotsAvailableCounter() {
 	ts.NoError(ts.client.SignalWorkflow(ctx, run3.GetID(), run3.GetRunID(), "cancel", nil))
 	ts.NoError(run1.Get(ctx, nil))
 	ts.NoError(run3.Get(ctx, nil))
-	assertActivitySlotsAvailableEventually(999)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, actWorkertags, 999)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, actWorkertags, 1)
 
 	// Signal the middle to close and confirm increased by one
 	ts.NoError(ts.client.SignalWorkflow(ctx, run2.GetID(), run2.GetRunID(), "cancel", nil))
 	ts.NoError(run2.Get(ctx, nil))
-	assertActivitySlotsAvailableEventually(1000)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, actWorkertags, 1000)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, actWorkertags, 0)
+}
+
+type waitToProceedActivities struct {
+	startedChan chan struct{}
+	proceedChan chan string
+}
+
+func (w *waitToProceedActivities) WaitToProceed(ctx context.Context) error {
+	w.startedChan <- struct{}{}
+	select {
+	case action := <-w.proceedChan:
+		if action == "fail" {
+			return temporal.NewApplicationError("I fail", "")
+		}
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	return nil
+}
+
+func (w *waitToProceedActivities) JustTimeOut(ctx context.Context) error {
+	<-ctx.Done()
+	return nil
+}
+
+func (w *waitToProceedActivities) JustPanic(_ context.Context) error {
+	panic("I panic")
+	return nil
+}
+
+func (ts *IntegrationTestSuite) TestSlotSupplierIntraWFTMetrics() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	laWorkertags := []string{"worker_type", "LocalActivityWorker", "task_queue", ts.taskQueueName}
+	actWorkertags := []string{"worker_type", "ActivityWorker", "task_queue", ts.taskQueueName}
+	wfWorkertags := []string{"worker_type", "WorkflowWorker", "task_queue", ts.taskQueueName}
+
+	proceedActivity := make(chan string)
+	activityStarted := make(chan struct{})
+	actStruct := &waitToProceedActivities{proceedChan: proceedActivity, startedChan: activityStarted}
+
+	waitsToProceedWorkflow := func(ctx workflow.Context) error {
+		ao := workflow.LocalActivityOptions{
+			StartToCloseTimeout: time.Minute,
+			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 2, InitialInterval: time.Millisecond},
+		}
+		ctx = workflow.WithLocalActivityOptions(ctx, ao)
+		a1 := workflow.ExecuteLocalActivity(ctx, actStruct.WaitToProceed)
+		a2 := workflow.ExecuteLocalActivity(ctx, actStruct.WaitToProceed)
+
+		_ = a1.Get(ctx, nil)
+		_ = a2.Get(ctx, nil)
+
+		// Also verify that activities that time out release slots properly
+		ao = workflow.LocalActivityOptions{
+			StartToCloseTimeout: 200 * time.Millisecond,
+			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+		}
+		ctx = workflow.WithLocalActivityOptions(ctx, ao)
+		a3 := workflow.ExecuteLocalActivity(ctx, actStruct.JustTimeOut)
+		ao2 := workflow.ActivityOptions{
+			StartToCloseTimeout: 200 * time.Millisecond,
+			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+		}
+		ctx = workflow.WithActivityOptions(ctx, ao2)
+		a4 := workflow.ExecuteActivity(ctx, actStruct.JustTimeOut)
+
+		_ = a3.Get(ctx, nil)
+		_ = a4.Get(ctx, nil)
+
+		// And that activities that panic release slots properly
+		ao = workflow.LocalActivityOptions{
+			StartToCloseTimeout: 200 * time.Millisecond,
+			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+		}
+		ctx = workflow.WithLocalActivityOptions(ctx, ao)
+		a5 := workflow.ExecuteLocalActivity(ctx, actStruct.JustPanic)
+		ao2 = workflow.ActivityOptions{
+			StartToCloseTimeout: 200 * time.Millisecond,
+			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+		}
+		ctx = workflow.WithActivityOptions(ctx, ao2)
+		a6 := workflow.ExecuteActivity(ctx, actStruct.JustPanic)
+
+		_ = a5.Get(ctx, nil)
+		_ = a6.Get(ctx, nil)
+
+		return nil
+	}
+
+	ts.worker.RegisterWorkflow(waitsToProceedWorkflow)
+	ts.worker.RegisterActivity(actStruct)
+
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-slot-supplier-metrics"), waitsToProceedWorkflow)
+	ts.NoError(err)
+	ts.NotNil(run)
+	ts.NoError(err)
+
+	// Wait for the activities to start
+	<-activityStarted
+	<-activityStarted
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, laWorkertags, 2)
+	// wf task slot is in-use since the workflow task is still running while LA is executing
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, wfWorkertags, 1)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, laWorkertags, 998)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, wfWorkertags, 999)
+	// Make one pass and one fail
+	proceedActivity <- "pass"
+	proceedActivity <- "fail"
+	// Since it retries, need to unblock it again, but before we do that make sure only one
+	// slot is in use.
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, laWorkertags, 1)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, laWorkertags, 999)
+	<-activityStarted
+	proceedActivity <- "fail"
+
+	ts.NoError(run.Get(ctx, nil))
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, laWorkertags, 1000)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, wfWorkertags, 1000)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, actWorkertags, 1000)
+}
+
+func (ts *IntegrationTestSuite) TestSlotSupplierWFTFailMetrics() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	wfWorkertags := []string{"worker_type", "WorkflowWorker", "task_queue", ts.taskQueueName}
+	laWorkertags := []string{"worker_type", "LocalActivityWorker", "task_queue", ts.taskQueueName}
+
+	didFail := false
+	doOnce := sync.Once{}
+	actStarted := make(chan struct{})
+	actProceed := make(chan struct{})
+
+	waitsToProceedWorkflow := func(ctx workflow.Context) error {
+		ao := workflow.LocalActivityOptions{
+			StartToCloseTimeout: time.Minute,
+			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 2, InitialInterval: time.Millisecond},
+		}
+		ctx = workflow.WithLocalActivityOptions(ctx, ao)
+		a1 := workflow.ExecuteLocalActivity(ctx, func(ctx context.Context) error {
+			doOnce.Do(func() {
+				actStarted <- struct{}{}
+				<-actProceed
+			})
+			if activity.GetInfo(ctx).Attempt == 1 {
+				// Make sure the LA failing once is OK too
+				return temporal.NewApplicationError("fail once", "")
+			}
+			return nil
+		})
+		if !didFail {
+			didFail = true
+			panic("intentional wft failure")
+		}
+		_ = a1.Get(ctx, nil)
+		return nil
+	}
+
+	ts.worker.RegisterWorkflow(waitsToProceedWorkflow)
+
+	wfOptions := ts.startWorkflowOptions("test-slot-supplier-wft-fail-metrics")
+	run, err := ts.client.ExecuteWorkflow(ctx, wfOptions, waitsToProceedWorkflow)
+	ts.NoError(err)
+	ts.NotNil(run)
+	ts.NoError(err)
+
+	<-actStarted
+	// The workflow task will fail once and then pass
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, laWorkertags, 1)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, wfWorkertags, 1)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, laWorkertags, 999)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, wfWorkertags, 999)
+	actProceed <- struct{}{}
+
+	ts.NoError(run.Get(ctx, nil))
+	// make sure no permits were leaked
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, wfWorkertags, 1000)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, wfWorkertags, 0)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, laWorkertags, 1000)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, laWorkertags, 0)
+}
+
+type highWaterMarkActivities struct {
+	currentlyRunning *atomic.Int32
+	maxConcurrent    int
+}
+
+func (h *highWaterMarkActivities) DoActivity(ctx context.Context, index int) error {
+	nowRunning := h.currentlyRunning.Add(1)
+	defer h.currentlyRunning.Add(-1)
+
+	if nowRunning > int32(h.maxConcurrent) {
+		return temporal.NewNonRetryableApplicationError("too many running", "", nil)
+	}
+	if index%2 == 0 && activity.GetInfo(ctx).Attempt <= 2 {
+		return temporal.NewApplicationError("fail on purpose", "")
+	}
+	time.Sleep(500 * time.Millisecond)
+	return nil
+}
+
+func (ts *IntegrationTestSuite) TestSlotSupplierWontExceedLimits() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	actWorkertags := []string{"worker_type", "ActivityWorker", "task_queue", ts.taskQueueName}
+	laWorkertags := []string{"worker_type", "LocalActivityWorker", "task_queue", ts.taskQueueName}
+	wfWorkertags := []string{"worker_type", "WorkflowWorker", "task_queue", ts.taskQueueName}
+
+	actRunning := atomic.Int32{}
+	laRunning := atomic.Int32{}
+	actStruct := &highWaterMarkActivities{currentlyRunning: &actRunning, maxConcurrent: 2}
+	laStruct := &highWaterMarkActivities{currentlyRunning: &laRunning, maxConcurrent: 2}
+
+	noExceedLimitsWf := func(ctx workflow.Context) error {
+		futures := make([]workflow.Future, 0)
+		for i := 0; i < 5; i++ {
+			ao := workflow.LocalActivityOptions{
+				StartToCloseTimeout: time.Minute,
+				RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3, InitialInterval: time.Millisecond, BackoffCoefficient: 1},
+			}
+			ctx = workflow.WithLocalActivityOptions(ctx, ao)
+			a := workflow.ExecuteLocalActivity(ctx, func(ctx context.Context, i int) error { return laStruct.DoActivity(ctx, i) }, i)
+			futures = append(futures, a)
+		}
+		for i := 0; i < 5; i++ {
+			ao := workflow.ActivityOptions{
+				StartToCloseTimeout: time.Minute,
+				RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3, InitialInterval: time.Millisecond, BackoffCoefficient: 1},
+			}
+			ctx = workflow.WithActivityOptions(ctx, ao)
+			a := workflow.ExecuteActivity(ctx, actStruct.DoActivity, i)
+			futures = append(futures, a)
+		}
+
+		for _, f := range futures {
+			err := f.Get(ctx, nil)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	ts.worker.RegisterWorkflow(noExceedLimitsWf)
+	ts.worker.RegisterActivity(actStruct)
+
+	wfRuns := make([]client.WorkflowRun, 0)
+	for i := 0; i < 1; i++ {
+		run, err := ts.client.ExecuteWorkflow(ctx,
+			ts.startWorkflowOptions("slot-supplier-wont-exceed-limits-"+strconv.Itoa(i)),
+			noExceedLimitsWf)
+		ts.NoError(err)
+		ts.NotNil(run)
+		ts.NoError(err)
+		wfRuns = append(wfRuns, run)
+	}
+
+	for _, run := range wfRuns {
+		ts.NoError(run.Get(ctx, nil))
+	}
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, actWorkertags, 2)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, laWorkertags, 2)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsAvailable, wfWorkertags, 2)
+}
+
+func (ts *IntegrationTestSuite) TestResourceBasedSlotSupplierWorks() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	actWorkertags := []string{"worker_type", "ActivityWorker", "task_queue", ts.taskQueueName}
+	laWorkertags := []string{"worker_type", "LocalActivityWorker", "task_queue", ts.taskQueueName}
+	wfWorkertags := []string{"worker_type", "WorkflowWorker", "task_queue", ts.taskQueueName}
+
+	wfRuns := make([]client.WorkflowRun, 0)
+	for i := 0; i < 1; i++ {
+		run, err := ts.client.ExecuteWorkflow(ctx,
+			ts.startWorkflowOptions("resource-based-slot-supplier"+strconv.Itoa(i)),
+			ts.workflows.RunsLocalAndNonlocalActsWithRetries, 5, 2)
+		ts.NoError(err)
+		ts.NotNil(run)
+		ts.NoError(err)
+		wfRuns = append(wfRuns, run)
+	}
+
+	for _, run := range wfRuns {
+		ts.NoError(run.Get(ctx, nil))
+	}
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, actWorkertags, 0)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, laWorkertags, 0)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, wfWorkertags, 0)
+}
+
+func (ts *IntegrationTestSuite) TestResourceBasedSlotSupplierManyActs() {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+
+	actWorkertags := []string{"worker_type", "ActivityWorker", "task_queue", ts.taskQueueName}
+	laWorkertags := []string{"worker_type", "LocalActivityWorker", "task_queue", ts.taskQueueName}
+	wfWorkertags := []string{"worker_type", "WorkflowWorker", "task_queue", ts.taskQueueName}
+
+	wfRuns := make([]client.WorkflowRun, 0)
+	for i := 0; i < 1; i++ {
+		opts := ts.startWorkflowOptions("resource-based-many-acts" + strconv.Itoa(i))
+		opts.WorkflowExecutionTimeout = 1 * time.Minute
+		run, err := ts.client.ExecuteWorkflow(ctx,
+			opts,
+			ts.workflows.RunsLocalAndNonlocalActsWithRetries, 200, 0)
+		ts.NoError(err)
+		ts.NotNil(run)
+		ts.NoError(err)
+		wfRuns = append(wfRuns, run)
+	}
+
+	for _, run := range wfRuns {
+		ts.NoError(run.Get(ctx, nil))
+	}
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, actWorkertags, 0)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, laWorkertags, 0)
+	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, wfWorkertags, 0)
 }
 
 func (ts *IntegrationTestSuite) TestTooFewParams() {
@@ -3397,6 +3809,35 @@ func (ts *IntegrationTestSuite) TestUpdateRejected() {
 	ts.NoError(err)
 	ts.Error(handle.Get(ctx, nil))
 	ts.NoError(run.Get(ctx, nil))
+}
+
+func (ts *IntegrationTestSuite) TestUpdateRejectedDuplicated() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-update-rejected-duplicated")
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.WorkflowWithRejectableUpdate)
+	ts.NoError(err)
+	// Send an update we expect to be rejected before the first workflow task
+	handle, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+		Args:         []interface{}{true},
+	})
+	ts.NoError(err)
+	ts.Error(handle.Get(ctx, nil))
+	// Same update ID should be allowed to be reused after the first attempt is rejected
+	handle, err = ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+		Args:         []interface{}{false},
+	})
+	ts.NoError(err)
+	ts.NoError(handle.Get(ctx, nil))
+	ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID())
 }
 
 func (ts *IntegrationTestSuite) TestUpdateSettingHandlerInGoroutine() {
@@ -4896,13 +5337,19 @@ func (ts *IntegrationTestSuite) TestScheduleBackfill() {
 func (ts *IntegrationTestSuite) TestScheduleList() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	stringKey := temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
+
 	for i := 0; i < 5; i++ {
 		scheduleID := fmt.Sprintf("test-schedule-list-schedule-%d", i)
 		workflowID := fmt.Sprintf("test-schedule-list-workflow-%d", i)
+		attrId := stringKey.ValueSet(fmt.Sprintf("TestScheduleList-%d", i))
+
 		// Create a paused workflow
 		handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
-			ID:   scheduleID,
-			Spec: client.ScheduleSpec{},
+			ID:                    scheduleID,
+			Spec:                  client.ScheduleSpec{},
+			TypedSearchAttributes: temporal.NewSearchAttributes(attrId),
 			Action: &client.ScheduleWorkflowAction{
 				Workflow:                 ts.workflows.SimplestWorkflow,
 				ID:                       workflowID,
@@ -4928,6 +5375,34 @@ func (ts *IntegrationTestSuite) TestScheduleList() {
 	}
 	ts.GreaterOrEqual(5, len(events))
 	ts.NoError(err)
+
+	// TODO: unskip once https://github.com/temporalio/temporal/issues/6319 is fixed
+	if os.Getenv("DISABLE_SERVER_1_25_TESTS") != "" {
+		return
+	}
+	// query -- match
+	ts.Eventually(func() bool {
+		iter, err = ts.client.ScheduleClient().List(ctx, client.ScheduleListOptions{
+			PageSize: 1,
+			Query:    "CustomKeywordField = 'TestScheduleList-1'",
+		})
+		ts.NoError(err)
+		count := 0
+		for iter.HasNext() {
+			_, err = iter.Next()
+			ts.Nil(err)
+			count++
+		}
+		return count == 1
+	}, 10*time.Second, 100*time.Millisecond)
+
+	// query -- no match
+	iter, err = ts.client.ScheduleClient().List(ctx, client.ScheduleListOptions{
+		PageSize: 1,
+		Query:    "CustomKeywordField = 'TestScheduleList-DOES_NOT_EXIST'",
+	})
+	ts.NoError(err)
+	ts.False(iter.HasNext())
 }
 
 func (ts *IntegrationTestSuite) TestScheduleUpdate() {
@@ -4946,9 +5421,18 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 		err = handle.Delete(ctx)
 		ts.NoError(err)
 	}()
+
+	stringKey := temporal.NewSearchAttributeKeyString("CustomStringField")
+	keywordKey := temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
+	sa := temporal.NewSearchAttributes(
+		stringKey.ValueSet("CustomStringFieldValue"),
+		keywordKey.ValueSet("foo"),
+	)
+
 	updateFunc := func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
 		return &client.ScheduleUpdate{
-			Schedule: &input.Description.Schedule,
+			Schedule:              &input.Description.Schedule,
+			TypedSearchAttributes: &sa,
 		}, nil
 	}
 	description, err := handle.Describe(ctx)
@@ -4959,9 +5443,119 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 	})
 	ts.NoError(err)
 
-	description2, err := handle.Describe(ctx)
+	ts.EventuallyWithT(func(c *assert.CollectT) {
+		d, err := handle.Describe(ctx)
+		assert.NoError(c, err)
+		assert.Equal(c, description.Schedule, d.Schedule)
+		assert.Equal(c, 2, d.TypedSearchAttributes.Size())
+		returnedString, _ := d.TypedSearchAttributes.GetString(stringKey)
+		expectedString, _ := sa.GetString(stringKey)
+		assert.Equal(c, expectedString, returnedString)
+		returnedKeyword, _ := d.TypedSearchAttributes.GetKeyword(keywordKey)
+		expectedKeyword, _ := sa.GetKeyword(keywordKey)
+		assert.Equal(c, expectedKeyword, returnedKeyword)
+		assert.Equal(c, 2, len(d.SearchAttributes.IndexedFields))
+	}, time.Second, 100*time.Millisecond)
+
+	// nil search attributes should leave current search attributes untouched
+	updateFunc = func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+		return &client.ScheduleUpdate{
+			Schedule: &input.Description.Schedule,
+		}, nil
+	}
+
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: updateFunc,
+	})
 	ts.NoError(err)
-	ts.Equal(description.Schedule, description2.Schedule)
+
+	ts.EventuallyWithT(func(c *assert.CollectT) {
+		d, err := handle.Describe(ctx)
+		assert.NoError(c, err)
+		assert.Equal(c, 2, d.TypedSearchAttributes.Size())
+		returnedString, _ := d.TypedSearchAttributes.GetString(stringKey)
+		expectedString, _ := sa.GetString(stringKey)
+		assert.Equal(c, expectedString, returnedString)
+		returnedKeyword, _ := d.TypedSearchAttributes.GetKeyword(keywordKey)
+		expectedKeyword, _ := sa.GetKeyword(keywordKey)
+		assert.Equal(c, expectedKeyword, returnedKeyword)
+		assert.Equal(c, 2, len(d.SearchAttributes.IndexedFields))
+	}, time.Second, 100*time.Millisecond)
+
+	// Updating an attribute without affecting the others
+	updateFunc = func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+		newSa := temporal.NewSearchAttributes(
+			input.Description.TypedSearchAttributes.Copy(),
+			stringKey.ValueSet("Changed"),
+		)
+		return &client.ScheduleUpdate{
+			Schedule:              &input.Description.Schedule,
+			TypedSearchAttributes: &newSa,
+		}, nil
+	}
+
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: updateFunc,
+	})
+	ts.NoError(err)
+
+	ts.EventuallyWithT(func(c *assert.CollectT) {
+		d, err := handle.Describe(ctx)
+		assert.NoError(c, err)
+		assert.Equal(c, 2, d.TypedSearchAttributes.Size())
+		returnedString, _ := d.TypedSearchAttributes.GetString(stringKey)
+		expectedString, _ := temporal.NewSearchAttributes(stringKey.ValueSet("Changed")).GetString(stringKey)
+		assert.Equal(c, expectedString, returnedString)
+		returnedKeyword, _ := d.TypedSearchAttributes.GetKeyword(keywordKey)
+		expectedKeyword, _ := sa.GetKeyword(keywordKey)
+		assert.Equal(c, expectedKeyword, returnedKeyword)
+		assert.Equal(c, 2, len(d.SearchAttributes.IndexedFields))
+	}, time.Second, 100*time.Millisecond)
+
+	// updating a single search attribute on an existing collection acts as an upsert on the entire collection
+	newSa := temporal.NewSearchAttributes(stringKey.ValueSet("Changed"))
+	updateFunc = func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+		return &client.ScheduleUpdate{
+			Schedule:              &input.Description.Schedule,
+			TypedSearchAttributes: &newSa,
+		}, nil
+	}
+
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: updateFunc,
+	})
+	ts.NoError(err)
+
+	ts.EventuallyWithT(func(c *assert.CollectT) {
+		d, err := handle.Describe(ctx)
+		assert.NoError(c, err)
+		assert.Equal(c, 1, d.TypedSearchAttributes.Size())
+		returnedString, _ := d.TypedSearchAttributes.GetString(stringKey)
+		expectedString, _ := newSa.GetString(stringKey)
+		assert.Equal(c, expectedString, returnedString)
+		assert.Equal(c, 1, len(d.SearchAttributes.IndexedFields))
+	}, time.Second, 100*time.Millisecond)
+
+	// empty search attributes should remove pre-existing search attributes
+	sa = temporal.NewSearchAttributes()
+	updateFunc = func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+		return &client.ScheduleUpdate{
+			Schedule:              &input.Description.Schedule,
+			TypedSearchAttributes: &sa,
+		}, nil
+	}
+
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: updateFunc,
+	})
+	ts.NoError(err)
+
+	ts.EventuallyWithT(func(c *assert.CollectT) {
+		d, err := handle.Describe(ctx)
+		assert.NoError(c, err)
+		assert.Nil(c, d.SearchAttributes)
+		assert.Empty(c, d.TypedSearchAttributes)
+	}, time.Second, 100*time.Millisecond)
 }
 
 func (ts *IntegrationTestSuite) TestScheduleUpdateCancelUpdate() {
@@ -5517,6 +6111,20 @@ func (ts *IntegrationTestSuite) metricGauge(name string, tagFilterKeyValue ...st
 		}
 	}
 	return
+}
+
+func (ts *IntegrationTestSuite) assertMetricGaugeEventually(name string, tags []string, expected float64) {
+	// Try for two seconds
+	var lastCount float64
+	for start := time.Now(); time.Since(start) <= 2*time.Second; {
+		lastCount = ts.metricGauge(name, tags...)
+		if lastCount == expected {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	// Will fail
+	ts.Equal(expected, lastCount)
 }
 
 func (ts *IntegrationTestSuite) assertMetricCount(name string, value int64, tagFilterKeyValue ...string) {

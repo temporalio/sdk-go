@@ -38,6 +38,7 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/temporal"
@@ -642,6 +643,13 @@ func (w *Workflows) IDReusePolicy(
 	}
 
 	return ans1 + ans2, nil
+}
+
+func (w *Workflows) IDConflictPolicy(
+	ctx workflow.Context,
+) error {
+	workflow.Await(ctx, func() bool { return false })
+	return nil
 }
 
 func (w *Workflows) ChildWorkflowWithRetryPolicy(ctx workflow.Context, expectedMaximumAttempts int, iterations int) error {
@@ -2633,6 +2641,24 @@ func (w *Workflows) UpdateRejectedWithOtherGoRoutine(ctx workflow.Context) error
 	return nil
 }
 
+func (w *Workflows) WorkflowWithRejectableUpdate(ctx workflow.Context) error {
+	workflow.SetUpdateHandlerWithOptions(ctx, "update",
+		func(ctx workflow.Context, _ bool) error {
+			return nil
+		}, workflow.UpdateHandlerOptions{
+			Validator: func(ctx workflow.Context, reject bool) error {
+				if reject {
+					return errors.New("test update rejected")
+				}
+				return nil
+			},
+		})
+	workflow.Await(ctx, func() bool {
+		return false
+	})
+	return nil
+}
+
 func (w *Workflows) UpdateOrdering(ctx workflow.Context) (int, error) {
 	updatesRan := 0
 	updateHandle := func(ctx workflow.Context) error {
@@ -3011,6 +3037,37 @@ func (w *Workflows) UpsertMemo(ctx workflow.Context, memo map[string]interface{}
 	return workflow.GetInfo(ctx).Memo, nil
 }
 
+func (w *Workflows) RunsLocalAndNonlocalActsWithRetries(ctx workflow.Context, numOfEachActKind int, actFailTimes int) error {
+	var activities *Activities
+	futures := make([]workflow.Future, 0)
+	for i := 0; i < numOfEachActKind; i++ {
+		ao := workflow.LocalActivityOptions{
+			StartToCloseTimeout: time.Minute,
+			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3, InitialInterval: time.Millisecond, BackoffCoefficient: 1},
+		}
+		ctx = workflow.WithLocalActivityOptions(ctx, ao)
+		a := workflow.ExecuteLocalActivity(ctx, activities.failNTimes, actFailTimes, i)
+		futures = append(futures, a)
+	}
+	for i := 0; i < numOfEachActKind; i++ {
+		ao := workflow.ActivityOptions{
+			StartToCloseTimeout: time.Minute,
+			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3, InitialInterval: time.Millisecond, BackoffCoefficient: 1},
+		}
+		ctx = workflow.WithActivityOptions(ctx, ao)
+		a := workflow.ExecuteActivity(ctx, activities.failNTimes, actFailTimes, i)
+		futures = append(futures, a)
+	}
+
+	for _, f := range futures {
+		err := f.Get(ctx, nil)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -3063,6 +3120,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ContinueAsNewWithRetryPolicy)
 	worker.RegisterWorkflow(w.ContinueAsNewWithChildWF)
 	worker.RegisterWorkflow(w.IDReusePolicy)
+	worker.RegisterWorkflow(w.IDConflictPolicy)
 	worker.RegisterWorkflow(w.InspectActivityInfo)
 	worker.RegisterWorkflow(w.InspectLocalActivityInfo)
 	worker.RegisterWorkflow(w.LargeQueryResultWorkflow)
@@ -3126,6 +3184,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.QueryTestWorkflow)
 	worker.RegisterWorkflow(w.UpdateWithMutex)
 	worker.RegisterWorkflow(w.UpdateWithSemaphore)
+	worker.RegisterWorkflow(w.WorkflowWithRejectableUpdate)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childWithRetryPolicy)
@@ -3140,6 +3199,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.UpdateOrdering)
 	worker.RegisterWorkflow(w.UpdateSetHandlerOnly)
 	worker.RegisterWorkflow(w.Echo)
+	worker.RegisterWorkflow(w.RunsLocalAndNonlocalActsWithRetries)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {

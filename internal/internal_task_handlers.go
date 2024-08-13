@@ -101,7 +101,8 @@ type (
 
 	// activityTask wraps a activity task.
 	activityTask struct {
-		task *workflowservice.PollActivityTaskQueueResponse
+		task   *workflowservice.PollActivityTaskQueueResponse
+		permit *SlotPermit
 	}
 
 	// workflowExecutionContextImpl is the cached workflow state for sticky execution
@@ -340,7 +341,9 @@ func isCommandEvent(eventType enumspb.EventType) bool {
 		enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED,
 		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
 		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED,
-		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_REJECTED:
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_REJECTED,
+		enumspb.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED,
+		enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUESTED:
 		return true
 	default:
 		return false
@@ -767,14 +770,14 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 		if task.Query != nil && !isFullHistory && wth == workflowContext.wth && !workflowContext.IsDestroyed() {
 			// query task and we have a valid cached state
 			metricsHandler.Counter(metrics.StickyCacheHit).Inc(1)
-		} else if history.Events[0].GetEventId() == workflowContext.previousStartedEventID+1 && wth == workflowContext.wth && !workflowContext.IsDestroyed() {
+		} else if len(history.Events) > 0 && history.Events[0].GetEventId() == workflowContext.previousStartedEventID+1 && wth == workflowContext.wth && !workflowContext.IsDestroyed() {
 			// non query task and we have a valid cached state
 			metricsHandler.Counter(metrics.StickyCacheHit).Inc(1)
 		} else {
 			// possible another task already destroyed this context.
 			if !workflowContext.IsDestroyed() {
 				// non query task and cached state is missing events, we need to discard the cached state and build a new one.
-				if history.Events[0].GetEventId() != workflowContext.previousStartedEventID+1 {
+				if len(history.Events) > 0 && history.Events[0].GetEventId() != workflowContext.previousStartedEventID+1 {
 					wth.logger.Debug("Cached state staled, new task has unexpected events",
 						tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 						tagRunID, task.WorkflowExecution.GetRunId(),
@@ -1709,6 +1712,26 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, obes [
 			return false
 		}
 		return true
+
+	case enumspb.COMMAND_TYPE_SCHEDULE_NEXUS_OPERATION:
+		if e.GetEventType() != enumspb.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED {
+			return false
+		}
+		eventAttributes := e.GetNexusOperationScheduledEventAttributes()
+		commandAttributes := d.GetScheduleNexusOperationCommandAttributes()
+
+		return eventAttributes.GetService() == commandAttributes.GetService() &&
+			eventAttributes.GetOperation() == commandAttributes.GetOperation()
+
+	case enumspb.COMMAND_TYPE_REQUEST_CANCEL_NEXUS_OPERATION:
+		if e.GetEventType() != enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUESTED {
+			return false
+		}
+
+		eventAttributes := e.GetNexusOperationCancelRequestedEventAttributes()
+		commandAttributes := d.GetRequestCancelNexusOperationCommandAttributes()
+
+		return eventAttributes.GetScheduledEventId() == commandAttributes.GetScheduledEventId()
 	}
 
 	return false

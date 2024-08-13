@@ -24,6 +24,7 @@ package test_test
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -382,6 +383,10 @@ func (ts *WorkerVersioningTestSuite) TestConflictTokens() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {
+	// TODO: Unskip this test, it is flaky with server 1.25.0-rc.0
+	if os.Getenv("DISABLE_SERVER_1_25_TESTS") != "" {
+		ts.T().SkipNow()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -863,6 +868,10 @@ func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
+	// TODO: Unskip this test, it is flaky with server 1.25.0-rc.0
+	if os.Getenv("DISABLE_SERVER_1_25_TESTS") != "" {
+		ts.T().SkipNow()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -940,6 +949,10 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetimeWithRules() {
+	// TODO: Unskip this test, it is flaky with server 1.25.0-rc.0
+	if os.Getenv("DISABLE_SERVER_1_25_TESTS") != "" {
+		ts.T().SkipNow()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 

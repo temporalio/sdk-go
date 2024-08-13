@@ -52,6 +52,7 @@ import (
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/api/workflowservice/v1"
+
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/retry"
@@ -1583,7 +1584,6 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 	// run propagators to extract information about tracing and other stuff, store in headers field
 	startRequest := &workflowservice.StartWorkflowExecutionRequest{
 		Namespace:                w.client.namespace,
-		RequestId:                uuid.New(),
 		WorkflowId:               workflowID,
 		WorkflowType:             &commonpb.WorkflowType{Name: in.WorkflowType},
 		TaskQueue:                &taskqueuepb.TaskQueue{Name: in.Options.TaskQueue, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
@@ -1593,11 +1593,19 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		WorkflowTaskTimeout:      durationpb.New(workflowTaskTimeout),
 		Identity:                 w.client.identity,
 		WorkflowIdReusePolicy:    in.Options.WorkflowIDReusePolicy,
+		WorkflowIdConflictPolicy: in.Options.WorkflowIDConflictPolicy,
 		RetryPolicy:              convertToPBRetryPolicy(in.Options.RetryPolicy),
 		CronSchedule:             in.Options.CronSchedule,
 		Memo:                     memo,
 		SearchAttributes:         searchAttr,
 		Header:                   header,
+		CompletionCallbacks:      in.Options.callbacks,
+	}
+
+	if in.Options.requestID != "" {
+		startRequest.RequestId = in.Options.requestID
+	} else {
+		startRequest.RequestId = uuid.New()
 	}
 
 	var eagerExecutor *eagerWorkflowExecutor
@@ -1621,7 +1629,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 	if eagerWorkflowTask != nil && eagerExecutor != nil {
 		eagerExecutor.handleResponse(eagerWorkflowTask)
 	} else if eagerExecutor != nil {
-		eagerExecutor.release()
+		eagerExecutor.releaseUnused()
 	}
 	// Allow already-started error
 	var runID string
@@ -1739,6 +1747,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		Memo:                     memo,
 		SearchAttributes:         searchAttr,
 		WorkflowIdReusePolicy:    in.Options.WorkflowIDReusePolicy,
+		WorkflowIdConflictPolicy: in.Options.WorkflowIDConflictPolicy,
 		Header:                   header,
 	}
 

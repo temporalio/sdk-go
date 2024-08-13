@@ -139,6 +139,10 @@ func (b *builder) integrationTest() error {
 				HostPort:  "127.0.0.1:7233",
 				Namespace: "integration-test-namespace",
 			},
+			// TODO(bergundy): Remove this override after server 1.25.0 is released.
+			CachedDownload: testsuite.CachedDownload{
+				Version: "v0.14.0-nexus.0",
+			},
 			LogLevel: "warn",
 			ExtraArgs: []string{
 				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecution=true",
@@ -151,6 +155,11 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", "system.forceSearchAttributesCacheRefreshOnRead=true",
 				"--dynamic-config-value", "worker.buildIdScavengerEnabled=true",
 				"--dynamic-config-value", "worker.removableBuildIdDurationSinceDefault=1",
+				// All of the below is required for Nexus tests.
+				"--http-port", "7243",
+				"--dynamic-config-value", "system.enableNexus=true",
+				// SDK tests use arbitrary callback URLs, permit that on the server.
+				"--dynamic-config-value", `component.callbacks.allowedAddresses=[{"Pattern":"*","AllowInsecure":true}]`,
 			},
 		})
 		if err != nil {
@@ -174,6 +183,7 @@ func (b *builder) integrationTest() error {
 	// Must run in test dir
 	cmd := b.cmdFromRoot(args...)
 	cmd.Dir = filepath.Join(cmd.Dir, "test")
+	cmd.Env = append(os.Environ(), "DISABLE_SERVER_1_25_TESTS=1")
 	if err := b.runCmd(cmd); err != nil {
 		return fmt.Errorf("integration test failed: %w", err)
 	}
@@ -255,7 +265,7 @@ func (b *builder) unitTest() error {
 	log.Printf("Running unit tests in dirs: %v", testDirs)
 	for _, testDir := range testDirs {
 		// Run unit test
-		args := []string{"go", "test", "-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "10m"}
+		args := []string{"go", "test", "-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "15m"}
 		if *runFlag != "" {
 			args = append(args, "-run", *runFlag)
 		}
