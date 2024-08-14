@@ -147,12 +147,21 @@ type (
 		// those tasks only remain valid for a few seconds, they should not affect the result when backlog is older than
 		// few seconds.
 		ApproximateBacklogAge time.Duration
+		// Approximate *net* tasks per second added to the backlog, averaging the last 30 seconds. This is calculated as
+		// `TasksAddRate - TasksDispatchRate`.
+		// A positive value of `X` means the backlog is growing by about `X` tasks per second. A negative `-X` value means the
+		// backlog is shrinking by about `X` tasks per second.
+		//
+		// Special note for workflow task queue type: this metric does not count sticky queue tasks. However, because
+		// those tasks only remain valid for a few seconds, the inaccuracy becomes less significant as the backlog size
+		// or age grow.
+		BacklogIncreaseRate float32
 		// Approximate tasks per second added to the task queue, averaging the last 30 seconds. This includes both
 		// backlogged and sync-matched tasks, but excludes the Eagerly dispatched workflow and activity tasks (see
 		// documentation for `client.StartWorkflowOptions.EnableEagerStart` and `worker.Options.DisableEagerActivities`.)
 		//
 		// The difference between `TasksAddRate` and `TasksDispatchRate` is a reliable metric for the rate at which
-		// backlog grows/shrinks.
+		// backlog grows/shrinks. See `BacklogIncreaseRate`.
 		//
 		// Special note for workflow task queue type: this metric does not count sticky queue tasks. Hence, the reported
 		// value may be significantly lower than the actual number of workflow tasks added. Note that typically, only
@@ -165,7 +174,7 @@ type (
 		// documentation for `client.StartWorkflowOptions.EnableEagerStart` and `worker.Options.DisableEagerActivities`.)
 		//
 		// The difference between `TasksAddRate` and `TasksDispatchRate` is a reliable metric for the rate at which
-		// backlog grows/shrinks.
+		// backlog grows/shrinks. See `BacklogIncreaseRate`.
 		//
 		// Special note for workflow task queue type: this metric does not count sticky queue tasks. Hence, the reported
 		// value may be significantly lower than the actual number of workflow tasks dispatched. Note that typically, only
@@ -198,13 +207,6 @@ type (
 		VersionsInfo map[string]TaskQueueVersionInfo
 	}
 )
-
-// GetBacklogIncreaseRate returns approximate *net* tasks per second added to the backlog, averaging the last 30 seconds.
-// A positive value of `X` means the backlog is growing by about `X` tasks per second. A negative `-X` value means the
-// backlog is shrinking by about `X` tasks per second.
-func (s *TaskQueueStats) GetBacklogIncreaseRate() float32 {
-	return s.TasksAddRate - s.TasksDispatchRate
-}
 
 func (o *DescribeTaskQueueEnhancedOptions) validateAndConvertToProto(namespace string) (*workflowservice.DescribeTaskQueueRequest, error) {
 	if namespace == "" {
@@ -292,6 +294,7 @@ func statsFromResponse(stats *taskqueuepb.TaskQueueStats) *TaskQueueStats {
 		ApproximateBacklogAge:   stats.GetApproximateBacklogAge().AsDuration(),
 		TasksAddRate:            stats.TasksAddRate,
 		TasksDispatchRate:       stats.TasksDispatchRate,
+		BacklogIncreaseRate:     stats.TasksAddRate - stats.TasksDispatchRate,
 	}
 }
 
