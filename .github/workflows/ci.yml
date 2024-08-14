@@ -41,6 +41,8 @@ jobs:
       - name: Check
         run: go run . check
         working-directory: ./internal/cmd/build
+        env:
+          GOTOOLCHAIN: "local"
 
       - name: Unit test
         run: go run . unit-test -coverage=${{ matrix.uploadCoverage && 'true' || 'false' }}
