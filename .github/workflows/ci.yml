@@ -25,6 +25,8 @@ jobs:
             runsOn: macos-14
             
     runs-on: ${{ matrix.runsOn || matrix.os }}
+    env:
+      GOTOOLCHAIN: "local"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
