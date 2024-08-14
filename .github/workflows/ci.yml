@@ -11,7 +11,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
-        go-version: ["1.23", "1.22"]
+        go-version: ["oldstable", "stable"]
         include:
           - os: ubuntu-latest
             go-version: "stable"
@@ -25,6 +25,8 @@ jobs:
             runsOn: macos-14
             
     runs-on: ${{ matrix.runsOn || matrix.os }}
+    env:
+      GOTOOLCHAIN: 'local'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -40,8 +42,8 @@ jobs:
         run: go run . check
         working-directory: ./internal/cmd/build
         env:
-          GOTOOLCHAIN: ${{ matrix.go-version }}
-
+          GOTOOLCHAIN: 'local'
+  
       - name: Unit test
         run: go run . unit-test -coverage=${{ matrix.uploadCoverage && 'true' || 'false' }}
         working-directory: ./internal/cmd/build
