@@ -574,6 +574,16 @@ func TestWorkflowAllHandlersFinished(t *testing.T) {
 		}, time.Minute)
 
 		env.RegisterDelayedCallback(func() {
+			env.UpdateWorkflow("nonWarningHandler", "id_3", &updateCallback{
+				reject: func(err error) {
+					require.Fail(t, "update should not be rejected")
+				},
+				accept:   func() {},
+				complete: func(interface{}, error) {},
+			})
+		}, 2*time.Minute)
+
+		env.RegisterDelayedCallback(func() {
 			if completionType == "cancel" {
 				env.CancelWorkflow()
 			} else {
@@ -592,6 +602,20 @@ func TestWorkflowAllHandlersFinished(t *testing.T) {
 				}()
 				return Sleep(ctx, time.Hour)
 			}, UpdateHandlerOptions{})
+			if err != nil {
+				return 0, err
+			}
+
+			err = SetUpdateHandler(ctx, "nonWarningHandler", func(ctx Context) error {
+				inflightUpdates++
+				ranUpdates++
+				defer func() {
+					inflightUpdates--
+				}()
+				return Sleep(ctx, time.Hour)
+			}, UpdateHandlerOptions{
+				UnfinishedPolicy: HandlerUnfinishedPolicyAbandon,
+			})
 			if err != nil {
 				return 0, err
 			}
@@ -671,7 +695,7 @@ func TestWorkflowAllHandlersFinished(t *testing.T) {
 		var buf bytes.Buffer
 		result, err := runWf("complete", &buf)
 		require.NoError(t, err)
-		require.Equal(t, 2, result)
+		require.Equal(t, 3, result)
 		assertExpectedLogs(t, &buf, true)
 	})
 	t.Run("cancel", func(t *testing.T) {

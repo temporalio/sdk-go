@@ -48,7 +48,7 @@ import (
 // HandlerUnfinishedPolicy actions taken if a workflow completes with running handlers.
 //
 // Policy defining actions taken when a workflow exits while update or signal handlers are running.
-// The workflow exit may be due to successful return, failure, cancellation, or continue-as-new
+// The workflow exit may be due to successful return, cancellation, or continue-as-new
 type HandlerUnfinishedPolicy int
 
 const (
