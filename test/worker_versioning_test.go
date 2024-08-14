@@ -847,12 +847,14 @@ func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
 		&client.TaskQueueStats{
 			ApproximateBacklogCount: 1,
 			ApproximateBacklogAge:   time.Millisecond,
+			BacklogIncreaseRate:     1,
 			TasksAddRate:            1,
 			TasksDispatchRate:       0,
 		},
 		&client.TaskQueueStats{
 			ApproximateBacklogCount: 0,
 			ApproximateBacklogAge:   0,
+			BacklogIncreaseRate:     0,
 			TasksAddRate:            0,
 			TasksDispatchRate:       0,
 		},
@@ -873,12 +875,14 @@ func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
 		&client.TaskQueueStats{
 			ApproximateBacklogCount: 0,
 			ApproximateBacklogAge:   0,
+			BacklogIncreaseRate:     0,
 			TasksAddRate:            1,
 			TasksDispatchRate:       1,
 		},
 		&client.TaskQueueStats{
 			ApproximateBacklogCount: 0,
 			ApproximateBacklogAge:   0,
+			BacklogIncreaseRate:     0,
 			TasksAddRate:            1,
 			TasksDispatchRate:       1,
 		},
@@ -1070,7 +1074,10 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetimeWithR
 	ts.Equal("1.1", lastBuildID)
 }
 
-// validateTaskQueueStats compares expected vs actual stats. For age and rates, it treats all non-zero values the same.
+// validateTaskQueueStats compares expected vs actual stats.
+// For age and rates, it treats all non-zero values the same.
+// For BacklogIncreaseRate for non-zero expected values we only compare the sign (i.e. backlog grows or shrinks), while
+// zero expected value means "not specified".
 func (ts *WorkerVersioningTestSuite) validateTaskQueueStats(expected *client.TaskQueueStats, actual *internal.TaskQueueStats) {
 	if expected == nil {
 		ts.Nil(actual)
@@ -1092,5 +1099,10 @@ func (ts *WorkerVersioningTestSuite) validateTaskQueueStats(expected *client.Tas
 		ts.Equal(float32(0), actual.TasksDispatchRate)
 	} else {
 		ts.Greater(actual.TasksDispatchRate, float32(0))
+	}
+	if expected.BacklogIncreaseRate > 0 {
+		ts.Greater(actual.BacklogIncreaseRate, float32(0))
+	} else if expected.BacklogIncreaseRate < 0 {
+		ts.Less(actual.BacklogIncreaseRate, float32(0))
 	}
 }

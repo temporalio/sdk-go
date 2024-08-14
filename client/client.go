@@ -359,6 +359,7 @@ type (
 	TaskQueuePollerInfo = internal.TaskQueuePollerInfo
 
 	// TaskQueueStats contains statistics about task queue backlog and activity.
+	//
 	// For workflow task queue type, this result is partial because tasks sent to sticky queues are not included. Read
 	// comments above each metric to understand the impact of sticky queue exclusion on that metric accuracy.
 	TaskQueueStats = internal.TaskQueueStats
