@@ -804,6 +804,10 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersionsWithRules() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
+	if os.Getenv("DISABLE_BACKLOG_STATS_TESTS") != "" {
+		ts.T().SkipNow()
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
