@@ -1,14 +1,12 @@
 module go.temporal.io/sdk/internal/cmd/build
 
-go 1.21
-
-toolchain go1.21.1
+go 1.22.1
 
 require (
-	github.com/BurntSushi/toml v1.3.2
+	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c
 	github.com/kisielk/errcheck v1.7.0
 	go.temporal.io/sdk v1.26.0
-	honnef.co/go/tools v0.4.7
+	honnef.co/go/tools v0.5.0
 )
 
 require (
@@ -34,7 +32,7 @@ require (
 	golang.org/x/sys v0.22.0 // indirect
 	golang.org/x/text v0.16.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
-	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d // indirect
+	golang.org/x/tools v0.21.1-0.20240531212143-b6235391adb3 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240711142825-46eb208f015d // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240711142825-46eb208f015d // indirect
 	google.golang.org/grpc v1.65.0 // indirect
