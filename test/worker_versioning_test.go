@@ -24,10 +24,12 @@ package test_test
 
 import (
 	"context"
+	"math"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
@@ -826,8 +828,8 @@ func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
 	ts.NoError(err)
 
 	// Wait until the task goes to the TQ
-	ts.Eventually(
-		func() bool {
+	ts.EventuallyWithT(
+		func(t *assert.CollectT) {
 			taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, client.DescribeTaskQueueEnhancedOptions{
 				TaskQueue: ts.taskQueueName,
 				TaskQueueTypes: []client.TaskQueueType{
@@ -837,7 +839,9 @@ func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
 			})
 			ts.NoError(err)
 			ts.Equal(1, len(taskQueueInfo.VersionsInfo))
-			return taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats.ApproximateBacklogCount > 0
+			ts.NotNil(taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow])
+			ts.NotNil(taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats)
+			assert.Greater(t, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats.ApproximateBacklogCount, int64(0))
 		},
 		time.Second, 100*time.Millisecond,
 	)
@@ -1091,12 +1095,14 @@ func (ts *WorkerVersioningTestSuite) validateTaskQueueStats(expected *client.Tas
 		ts.Greater(actual.ApproximateBacklogAge, time.Duration(0))
 	}
 	if expected.TasksAddRate == 0 {
-		ts.Equal(float32(0), actual.TasksAddRate)
+		// TODO: do not accept NaN once the server code is fixed: https://github.com/temporalio/temporal/pull/6404
+		ts.True(float32(0) == actual.TasksAddRate || math.IsNaN(float64(actual.TasksAddRate)))
 	} else {
 		ts.Greater(actual.TasksAddRate, float32(0))
 	}
 	if expected.TasksDispatchRate == 0 {
-		ts.Equal(float32(0), actual.TasksDispatchRate)
+		// TODO: do not accept NaN once the server code is fixed: https://github.com/temporalio/temporal/pull/6404
+		ts.True(float32(0) == actual.TasksDispatchRate || math.IsNaN(float64(actual.TasksDispatchRate)))
 	} else {
 		ts.Greater(actual.TasksDispatchRate, float32(0))
 	}
