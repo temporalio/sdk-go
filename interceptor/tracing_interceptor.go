@@ -40,6 +40,7 @@ const (
 	workflowIDTagKey = "temporalWorkflowID"
 	runIDTagKey      = "temporalRunID"
 	activityIDTagKey = "temporalActivityID"
+	updateIDTagKey   = "temporalUpdateID"
 )
 
 // Tracer is an interface for tracing implementations as used by
@@ -545,6 +546,43 @@ func (t *tracingWorkflowInboundInterceptor) HandleQuery(
 	return val, err
 }
 
+func (t *tracingWorkflowInboundInterceptor) ValidateUpdate(
+	ctx workflow.Context,
+	in *UpdateInput,
+) error {
+	// Only add tracing if enabled and not replaying
+	if t.root.options.DisableUpdateTracing || workflow.IsReplaying(ctx) {
+		return t.Next.ValidateUpdate(ctx, in)
+	}
+	// Start span reading from header
+	info := workflow.GetInfo(ctx)
+	currentUpdateInfo := workflow.GetCurrentUpdateInfo(ctx)
+	span, ctx, err := t.root.startSpanFromWorkflowContext(ctx, &TracerStartSpanOptions{
+		Operation: "ValidateUpdate",
+		Name:      in.Name,
+		Tags: map[string]string{
+			workflowIDTagKey: info.WorkflowExecution.ID,
+			runIDTagKey:      info.WorkflowExecution.RunID,
+			updateIDTagKey:   currentUpdateInfo.ID,
+		},
+		FromHeader: true,
+		Time:       time.Now(),
+		// We intentionally do not set IdempotencyKey here because validation is not run on
+		// replay. When the tracing interceptor's span counter is reset between workflow
+		// replays, the validator will not be processed which could result in impotency key
+		// collisions with other requests.
+	})
+	if err != nil {
+		return err
+	}
+	var finishOpts TracerFinishSpanOptions
+	defer span.Finish(&finishOpts)
+
+	err = t.Next.ValidateUpdate(ctx, in)
+	finishOpts.Error = err
+	return err
+}
+
 func (t *tracingWorkflowInboundInterceptor) ExecuteUpdate(
 	ctx workflow.Context,
 	in *UpdateInput,
@@ -555,12 +593,14 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteUpdate(
 	}
 	// Start span reading from header
 	info := workflow.GetInfo(ctx)
+	currentUpdateInfo := workflow.GetCurrentUpdateInfo(ctx)
 	span, ctx, err := t.root.startSpanFromWorkflowContext(ctx, &TracerStartSpanOptions{
 		Operation: "ExecuteUpdate",
 		Name:      in.Name,
 		Tags: map[string]string{
 			workflowIDTagKey: info.WorkflowExecution.ID,
 			runIDTagKey:      info.WorkflowExecution.RunID,
+			updateIDTagKey:   currentUpdateInfo.ID,
 		},
 		FromHeader:     true,
 		Time:           time.Now(),
@@ -575,38 +615,6 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteUpdate(
 	val, err := t.Next.ExecuteUpdate(ctx, in)
 	finishOpts.Error = err
 	return val, err
-}
-
-func (t *tracingWorkflowInboundInterceptor) ValidateUpdate(
-	ctx workflow.Context,
-	in *UpdateInput,
-) error {
-	// Only add tracing if enabled and not replaying
-	if t.root.options.DisableUpdateTracing || workflow.IsReplaying(ctx) {
-		return t.Next.ValidateUpdate(ctx, in)
-	}
-	// Start span reading from header
-	info := workflow.GetInfo(ctx)
-	span, ctx, err := t.root.startSpanFromWorkflowContext(ctx, &TracerStartSpanOptions{
-		Operation: "ValidateUpdate",
-		Name:      in.Name,
-		Tags: map[string]string{
-			workflowIDTagKey: info.WorkflowExecution.ID,
-			runIDTagKey:      info.WorkflowExecution.RunID,
-		},
-		FromHeader:     true,
-		Time:           time.Now(),
-		IdempotencyKey: t.newIdempotencyKey(),
-	})
-	if err != nil {
-		return err
-	}
-	var finishOpts TracerFinishSpanOptions
-	defer span.Finish(&finishOpts)
-
-	err = t.Next.ValidateUpdate(ctx, in)
-	finishOpts.Error = err
-	return err
 }
 
 type tracingWorkflowOutboundInterceptor struct {
