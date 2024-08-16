@@ -336,7 +336,6 @@ type (
 	TaskQueueReachability = internal.TaskQueueReachability
 
 	// DescribeTaskQueueEnhancedOptions is the input to [Client.DescribeTaskQueueEnhanced].
-	// WARNING: Worker versioning is currently experimental.
 	DescribeTaskQueueEnhancedOptions = internal.DescribeTaskQueueEnhancedOptions
 
 	// TaskQueueVersionSelection is a task queue filter based on versioning.
@@ -345,23 +344,25 @@ type (
 	TaskQueueVersionSelection = internal.TaskQueueVersionSelection
 
 	// TaskQueueDescription is the response to [Client.DescribeTaskQueueEnhanced].
-	// WARNING: Worker versioning is currently experimental.
 	TaskQueueDescription = internal.TaskQueueDescription
 
 	// TaskQueueVersionInfo includes task queue information per Build ID.
 	// It is part of [Client.TaskQueueDescription].
-	// WARNING: Worker versioning is currently experimental.
 	TaskQueueVersionInfo = internal.TaskQueueVersionInfo
 
 	// TaskQueueTypeInfo specifies task queue information per task type and Build ID.
 	// It is included in [Client.TaskQueueVersionInfo].
-	// WARNING: Worker versioning is currently experimental.
 	TaskQueueTypeInfo = internal.TaskQueueTypeInfo
 
 	// TaskQueuePollerInfo provides information about a worker/client polling a task queue.
 	// It is used by [Client.TaskQueueTypeInfo].
-	// WARNING: Worker versioning is currently experimental.
 	TaskQueuePollerInfo = internal.TaskQueuePollerInfo
+
+	// TaskQueueStats contains statistics about task queue backlog and activity.
+	//
+	// For workflow task queue type, this result is partial because tasks sent to sticky queues are not included. Read
+	// comments above each metric to understand the impact of sticky queue exclusion on that metric accuracy.
+	TaskQueueStats = internal.TaskQueueStats
 
 	// WorkerVersionCapabilities includes a worker's build identifier
 	// and whether it is choosing to use the versioning feature.
