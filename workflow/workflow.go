@@ -554,6 +554,24 @@ func SetUpdateHandlerWithOptions(ctx Context, updateName string, handler interfa
 	return internal.SetUpdateHandler(ctx, updateName, handler, opts)
 }
 
+// GetCurrentDetails gets the current details for this workflow. This is simply
+// the value set by [SetCurrentDetails] or empty if never set. See that function
+// for more details.
+//
+// NOTE: Experimental
+func GetCurrentDetails(ctx Context) string {
+	return internal.GetCurrentDetails(ctx)
+}
+
+// SetCurrentDetails sets the current details for this workflow. This is
+// typically an arbitrary string in Temporal markdown format may be displayed in
+// the UI or CLI.
+//
+// NOTE: Experimental
+func SetCurrentDetails(ctx Context, details string) {
+	internal.SetCurrentDetails(ctx, details)
+}
+
 // IsReplaying returns whether the current workflow code is replaying.
 //
 // Warning! Never make commands, like schedule activity/childWorkflow/timer or send/wait on future/channel, based on

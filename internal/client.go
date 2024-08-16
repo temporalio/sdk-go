@@ -56,6 +56,9 @@ const (
 	// QueryTypeOpenSessions is the build in query type for Client.QueryWorkflow() call. Use this query type to get all open
 	// sessions in the workflow. The result will be a list of SessionInfo encoded in the EncodedValue.
 	QueryTypeOpenSessions string = "__open_sessions"
+
+	// QueryTypeWorkflowMetadata is the query name for the workflow metadata.
+	QueryTypeWorkflowMetadata string = "__temporal_workflow_metadata"
 )
 
 type (
@@ -706,6 +709,23 @@ type (
 		// of the delay will be ignored. A signal from signal with start will not trigger a workflow task.
 		// Cannot be set the same time as a CronSchedule.
 		StartDelay time.Duration
+
+		// Summary - Single-line summary for this workflow execution that will appear in UI/CLI. This can be in
+		// single-line Temporal markdown format.
+		//
+		// Optional: defaults to none/empty.
+		//
+		// NOTE: Experimental
+		Summary string
+
+		// Details - General details for this workflow execution that will appear in UI/CLI. This can be in Temporal
+		// markdown format and can span multiple lines. This is a fixed value on the workflow that cannot be updated.
+		// For details that can be updated, use SetCurrentDetails within the workflow.
+		//
+		// Optional: defaults to none/empty.
+		//
+		// NOTE: Experimental
+		Details string
 
 		// request ID. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
 		requestID string

@@ -258,6 +258,15 @@ func (w *WorkflowOutboundInterceptorBase) NewTimer(ctx Context, d time.Duration)
 	return w.Next.NewTimer(ctx, d)
 }
 
+// NewTimerWithOptions implements WorkflowOutboundInterceptor.NewTimerWithOptions.
+func (w *WorkflowOutboundInterceptorBase) NewTimerWithOptions(
+	ctx Context,
+	d time.Duration,
+	options TimerOptions,
+) Future {
+	return w.Next.NewTimerWithOptions(ctx, d, options)
+}
+
 // Sleep implements WorkflowOutboundInterceptor.Sleep.
 func (w *WorkflowOutboundInterceptorBase) Sleep(ctx Context, d time.Duration) (err error) {
 	return w.Next.Sleep(ctx, d)

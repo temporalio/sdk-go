@@ -34,6 +34,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/sdk/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/util"
@@ -90,6 +91,7 @@ type (
 	timerCommandStateMachine struct {
 		*commandStateMachineBase
 		attributes *commandpb.StartTimerCommandAttributes
+		summary    *commonpb.Payload
 	}
 
 	cancelTimerCommandStateMachine struct {
@@ -385,11 +387,15 @@ func (h *commandsHelper) newRequestCancelNexusOperationStateMachine(attributes *
 	}
 }
 
-func (h *commandsHelper) newTimerCommandStateMachine(attributes *commandpb.StartTimerCommandAttributes) *timerCommandStateMachine {
+func (h *commandsHelper) newTimerCommandStateMachine(
+	attributes *commandpb.StartTimerCommandAttributes,
+	summary *commonpb.Payload,
+) *timerCommandStateMachine {
 	base := h.newCommandStateMachineBase(commandTypeTimer, attributes.GetTimerId())
 	return &timerCommandStateMachine{
 		commandStateMachineBase: base,
 		attributes:              attributes,
+		summary:                 summary,
 	}
 }
 
@@ -692,6 +698,9 @@ func (d *timerCommandStateMachine) getCommand() *commandpb.Command {
 	case commandStateCreated, commandStateCanceledBeforeSent:
 		command := createNewCommand(enumspb.COMMAND_TYPE_START_TIMER)
 		command.Attributes = &commandpb.Command_StartTimerCommandAttributes{StartTimerCommandAttributes: d.attributes}
+		if d.summary != nil {
+			command.UserMetadata = &sdk.UserMetadata{Summary: d.summary}
+		}
 		return command
 	default:
 		return nil
@@ -1556,8 +1565,19 @@ func (h *commandsHelper) getSignalID(initiatedEventID int64) string {
 	return signalID
 }
 
-func (h *commandsHelper) startTimer(attributes *commandpb.StartTimerCommandAttributes) commandStateMachine {
-	command := h.newTimerCommandStateMachine(attributes)
+func (h *commandsHelper) startTimer(
+	attributes *commandpb.StartTimerCommandAttributes,
+	options TimerOptions,
+	dc converter.DataConverter,
+) commandStateMachine {
+	var summary *commonpb.Payload
+	if options.Summary != "" {
+		var err error
+		if summary, err = dc.ToPayload(options.Summary); err != nil {
+			panic(err)
+		}
+	}
+	command := h.newTimerCommandStateMachine(attributes, summary)
 	h.addCommand(command)
 	return command
 }

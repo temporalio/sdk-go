@@ -67,6 +67,9 @@ type (
 	// Semaphore is a counting semaphore.
 	// Use [workflow.NewSemaphore] method to create a Semaphore instance.
 	Semaphore = internal.Semaphore
+
+	// TimerOptions are options for [NewTimerWithOptions]
+	TimerOptions = internal.TimerOptions
 )
 
 // Await blocks the calling thread until condition() returns true.
@@ -186,8 +189,18 @@ func Now(ctx Context) time.Time {
 // this NewTimer() to get the timer, instead of Go's timer.NewTimer(). You can cancel the pending
 // timer by canceling the Context (using the context from workflow.WithCancel(ctx)) and that will cancel the timer. After the timer
 // is canceled, the returned Future becomes ready, and Future.Get() will return *CanceledError.
+//
+// To be able to set options like timer summary, use [NewTimerWithOptions].
 func NewTimer(ctx Context, d time.Duration) Future {
 	return internal.NewTimer(ctx, d)
+}
+
+// NewTimerWithOptions returns immediately and the future becomes ready after the specified duration d. Workflows must
+// use this NewTimerWithOptions() to get the timer, instead of Go's timer.NewTimer(). You can cancel the pending timer
+// by canceling the Context (using the context from workflow.WithCancel(ctx)) and that will cancel the timer. After the
+// timer is canceled, the returned Future becomes ready, and Future.Get() will return *CanceledError.
+func NewTimerWithOptions(ctx Context, d time.Duration, options TimerOptions) Future {
+	return internal.NewTimerWithOptions(ctx, d, options)
 }
 
 // Sleep pauses the current workflow for at least the duration d. A negative or zero duration causes Sleep to return
@@ -196,6 +209,8 @@ func NewTimer(ctx Context, d time.Duration) Future {
 // Sleep() returns nil if the duration d is passed, or *CanceledError if the ctx is canceled. There are two
 // reasons the ctx might be canceled: 1) your workflow code canceled the ctx (with workflow.WithCancel(ctx));
 // 2) your workflow itself was canceled by external request.
+//
+// To be able to set options like timer summary, use [NewTimerWithOptions] and wait on the future.
 func Sleep(ctx Context, d time.Duration) (err error) {
 	return internal.Sleep(ctx, d)
 }

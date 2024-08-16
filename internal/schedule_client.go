@@ -281,6 +281,23 @@ type (
 		//
 		// Deprecated - This is only for update of older search attributes. This may be removed in a future version.
 		UntypedSearchAttributes map[string]*commonpb.Payload
+
+		// Summary - Single-line summary for this workflow execution that will appear in UI/CLI. This can be in
+		// single-line Temporal markdown format.
+		//
+		// Optional: defaults to none/empty.
+		//
+		// NOTE: Experimental
+		Summary string
+
+		// Details - General details for this workflow execution that will appear in UI/CLI. This can be in Temporal
+		// markdown format and can span multiple lines. This is a fixed value on the workflow that cannot be updated.
+		// For details that can be updated, use SetCurrentDetails within the workflow.
+		//
+		// Optional: defaults to none/empty.
+		//
+		// NOTE: Experimental
+		Details string
 	}
 
 	// ScheduleOptions configure the parameters for creating a schedule.

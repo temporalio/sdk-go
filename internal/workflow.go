@@ -416,6 +416,20 @@ type (
 		// UnfinishedPolicy is the policy to apply when a workflow exits while
 		// the update handler is still running.
 		UnfinishedPolicy HandlerUnfinishedPolicy
+		// Description is a short description for this update.
+		//
+		// NOTE: Experimental
+		Description string
+	}
+
+	// TimerOptions are options set when creating a timer.
+	TimerOptions struct {
+		// Summary is a simple string identifying this timer. While it can be
+		// normal text, it is best to treat as a timer ID. This value will be
+		// visible in UI and CLI.
+		//
+		// NOTE: Experimental
+		Summary string
 	}
 )
 
@@ -601,7 +615,7 @@ func (wc *workflowEnvironmentInterceptor) HandleQuery(ctx Context, in *HandleQue
 	handler, ok := eo.queryHandlers[in.QueryType]
 	// Should never happen because its presence is checked before this call too
 	if !ok {
-		keys := []string{QueryTypeStackTrace, QueryTypeOpenSessions}
+		keys := []string{QueryTypeStackTrace, QueryTypeOpenSessions, QueryTypeWorkflowMetadata}
 		for k := range eo.queryHandlers {
 			keys = append(keys, k)
 		}
@@ -1218,13 +1232,33 @@ func (wc *workflowEnvironmentInterceptor) Now(ctx Context) time.Time {
 // this NewTimer() to get the timer instead of the Go lang library one(timer.NewTimer()). You can cancel the pending
 // timer by cancel the Context (using context from workflow.WithCancel(ctx)) and that will cancel the timer. After timer
 // is canceled, the returned Future become ready, and Future.Get() will return *CanceledError.
+//
+// To be able to set options like timer summary, use [NewTimerWithOptions].
 func NewTimer(ctx Context, d time.Duration) Future {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.NewTimer(ctx, d)
 }
 
+// NewTimerWithOptions returns immediately and the future becomes ready after the specified duration d. The workflow
+// needs to use this NewTimerWithOptions() to get the timer instead of the Go lang library one(timer.NewTimer()). You
+// can cancel the pending timer by cancel the Context (using context from workflow.WithCancel(ctx)) and that will cancel
+// the timer. After timer is canceled, the returned Future become ready, and Future.Get() will return *CanceledError.
+func NewTimerWithOptions(ctx Context, d time.Duration, options TimerOptions) Future {
+	assertNotInReadOnlyState(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
+	return i.NewTimerWithOptions(ctx, d, options)
+}
+
 func (wc *workflowEnvironmentInterceptor) NewTimer(ctx Context, d time.Duration) Future {
+	return wc.NewTimerWithOptions(ctx, d, TimerOptions{})
+}
+
+func (wc *workflowEnvironmentInterceptor) NewTimerWithOptions(
+	ctx Context,
+	d time.Duration,
+	options TimerOptions,
+) Future {
 	future, settable := NewFuture(ctx)
 	if d <= 0 {
 		settable.Set(true, nil)
@@ -1233,7 +1267,7 @@ func (wc *workflowEnvironmentInterceptor) NewTimer(ctx Context, d time.Duration)
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
-	timerID := wc.env.NewTimer(d, func(r *commonpb.Payloads, e error) {
+	timerID := wc.env.NewTimer(d, options, func(r *commonpb.Payloads, e error) {
 		settable.Set(nil, e)
 		if cancellable {
 			// future is done, we don't need cancellation anymore

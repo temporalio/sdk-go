@@ -91,6 +91,8 @@ jobs:
         env:
           # TODO(bergundy): Remove this flag once server 1.25.0 is out.
           DISABLE_NEXUS_TESTS: "1"
+          # TODO(cretz): Remove this flag once server 1.25.0 is out.
+          DISABLE_USER_METADATA_TESTS: "1"
         working-directory: ./internal/cmd/build
 
   cloud-test:

@@ -231,6 +231,9 @@ type WorkflowOutboundInterceptor interface {
 	// NewTimer intercepts workflow.NewTimer.
 	NewTimer(ctx Context, d time.Duration) Future
 
+	// NewTimer intercepts workflow.NewTimerWithOptions.
+	NewTimerWithOptions(ctx Context, d time.Duration, options TimerOptions) Future
+
 	// Sleep intercepts workflow.Sleep.
 	Sleep(ctx Context, d time.Duration) (err error)
 

@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"reflect"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -42,6 +43,7 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/sdk/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -226,6 +228,8 @@ type (
 		// runningUpdatesHandles is a map of update handlers that are currently running.
 		runningUpdatesHandles map[string]UpdateInfo
 		VersioningIntent      VersioningIntent
+		// currentDetails is the user-set string returned on metadata query.
+		currentDetails string
 	}
 
 	// ExecuteWorkflowParams parameters of the workflow invocation
@@ -599,12 +603,23 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 				return nil, err
 			}
 
+			// As a special case, we handle __temporal_workflow_metadata query
+			// here instead of in workflowExecutionEventHandlerImpl.ProcessQuery
+			// because we need the context environment to do so.
+			if queryType == QueryTypeWorkflowMetadata {
+				if result, err := getWorkflowMetadata(rootCtx); err != nil {
+					return nil, err
+				} else {
+					return encodeArg(getDataConverterFromWorkflowContext(rootCtx), result)
+				}
+			}
+
 			eo := getWorkflowEnvOptions(rootCtx)
 			// A handler must be present since it is needed for argument decoding,
 			// even if the interceptor intercepts query handling
 			handler, ok := eo.queryHandlers[queryType]
 			if !ok {
-				keys := []string{QueryTypeStackTrace, QueryTypeOpenSessions}
+				keys := []string{QueryTypeStackTrace, QueryTypeOpenSessions, QueryTypeWorkflowMetadata}
 				for k := range eo.queryHandlers {
 					keys = append(keys, k)
 				}
@@ -1565,6 +1580,79 @@ func (w *WorkflowOptions) getSignalChannel(ctx Context, signalName string) Recei
 // GetUnhandledSignalNames returns signal names that have unconsumed signals.
 func GetUnhandledSignalNames(ctx Context) []string {
 	return getWorkflowEnvOptions(ctx).getUnhandledSignalNames()
+}
+
+// GetCurrentDetails gets the previously-set current details.
+//
+// NOTE: Experimental
+func GetCurrentDetails(ctx Context) string {
+	return getWorkflowEnvOptions(ctx).currentDetails
+}
+
+// SetCurrentDetails sets the current details.
+//
+// NOTE: Experimental
+func SetCurrentDetails(ctx Context, details string) {
+	getWorkflowEnvOptions(ctx).currentDetails = details
+}
+
+func getWorkflowMetadata(ctx Context) (*sdk.WorkflowMetadata, error) {
+	info := GetWorkflowInfo(ctx)
+	eo := getWorkflowEnvOptions(ctx)
+	ret := &sdk.WorkflowMetadata{
+		Definition: &sdk.WorkflowDefinition{
+			Type: info.WorkflowType.Name,
+			QueryDefinitions: []*sdk.WorkflowInteractionDefinition{
+				{
+					Name:        QueryTypeStackTrace,
+					Description: "Current stack trace",
+				},
+				{
+					Name:        QueryTypeOpenSessions,
+					Description: "Open sessions on the workflow",
+				},
+				{
+					Name:        QueryTypeWorkflowMetadata,
+					Description: "Metadata about the workflow",
+				},
+			},
+		},
+		CurrentDetails: eo.currentDetails,
+	}
+	// Queries
+	for k := range eo.queryHandlers {
+		ret.Definition.QueryDefinitions = append(ret.Definition.QueryDefinitions, &sdk.WorkflowInteractionDefinition{
+			Name: k,
+			// TODO(cretz): Allow query descriptions?
+			// Description: ,
+		})
+	}
+	// Signals
+	// TODO(cretz): This is all signal channels asked for in workflow _and_ all ever sent, is that what we want? Or do
+	// we only want all ever asked for?
+	for k := range eo.signalChannels {
+		ret.Definition.SignalDefinitions = append(ret.Definition.SignalDefinitions, &sdk.WorkflowInteractionDefinition{
+			Name: k,
+			// TODO(cretz): Allow signal descriptions?
+			// Description: ,
+		})
+	}
+	// Updates
+	for k, v := range eo.updateHandlers {
+		ret.Definition.UpdateDefinitions = append(ret.Definition.UpdateDefinitions, &sdk.WorkflowInteractionDefinition{
+			Name:        k,
+			Description: v.description,
+		})
+	}
+	// Sort interaction definitions
+	sortWorkflowInteractionDefinitions(ret.Definition.QueryDefinitions)
+	sortWorkflowInteractionDefinitions(ret.Definition.SignalDefinitions)
+	sortWorkflowInteractionDefinitions(ret.Definition.UpdateDefinitions)
+	return ret, nil
+}
+
+func sortWorkflowInteractionDefinitions(defns []*sdk.WorkflowInteractionDefinition) {
+	sort.Slice(defns, func(i, j int) bool { return defns[i].Name < defns[j].Name })
 }
 
 // getUnhandledSignalNames returns signal names that have unconsumed signals.

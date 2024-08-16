@@ -43,7 +43,7 @@ func Test_TimerStateMachine_CancelBeforeSent(t *testing.T) {
 		TimerId: timerID,
 	}
 	h := newCommandsHelper()
-	d := h.startTimer(attributes)
+	d := h.startTimer(attributes, TimerOptions{}, converter.GetDefaultDataConverter())
 	require.Equal(t, commandStateCreated, d.getState())
 	h.cancelTimer(TimerID{timerID})
 	require.Equal(t, commandStateCanceledBeforeSent, d.getState())
@@ -60,7 +60,7 @@ func Test_TimerStateMachine_CancelAfterInitiated(t *testing.T) {
 		TimerId: timerID,
 	}
 	h := newCommandsHelper()
-	d := h.startTimer(attributes)
+	d := h.startTimer(attributes, TimerOptions{}, converter.GetDefaultDataConverter())
 	require.Equal(t, commandStateCreated, d.getState())
 	commands := h.getCommands(true)
 	require.Equal(t, commandStateCommandSent, d.getState())
@@ -86,7 +86,7 @@ func Test_TimerStateMachine_CompletedAfterCancel(t *testing.T) {
 		TimerId: timerID,
 	}
 	h := newCommandsHelper()
-	d := h.startTimer(attributes)
+	d := h.startTimer(attributes, TimerOptions{}, converter.GetDefaultDataConverter())
 	require.Equal(t, commandStateCreated, d.getState())
 	commands := h.getCommands(true)
 	require.Equal(t, commandStateCommandSent, d.getState())
@@ -114,7 +114,7 @@ func Test_TimerStateMachine_CompleteWithoutCancel(t *testing.T) {
 		TimerId: timerID,
 	}
 	h := newCommandsHelper()
-	d := h.startTimer(attributes)
+	d := h.startTimer(attributes, TimerOptions{}, converter.GetDefaultDataConverter())
 	require.Equal(t, commandStateCreated, d.getState())
 	commands := h.getCommands(true)
 	require.Equal(t, commandStateCommandSent, d.getState())
@@ -135,7 +135,7 @@ func Test_TimerCancelEventOrdering(t *testing.T) {
 		TimerId: timerID,
 	}
 	h := newCommandsHelper()
-	d := h.startTimer(attributes)
+	d := h.startTimer(attributes, TimerOptions{}, converter.GetDefaultDataConverter())
 	require.Equal(t, commandStateCreated, d.getState())
 	commands := h.getCommands(true)
 	require.Equal(t, commandStateCommandSent, d.getState())

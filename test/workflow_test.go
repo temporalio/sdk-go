@@ -3019,6 +3019,34 @@ func (w *Workflows) UpsertMemo(ctx workflow.Context, memo map[string]interface{}
 	return workflow.GetInfo(ctx).Memo, nil
 }
 
+func (w *Workflows) UserMetadata(ctx workflow.Context) error {
+	// Define an update and query handler
+	err := workflow.SetQueryHandler(ctx, "my-query-handler", func() (string, error) { return "done", nil })
+	if err != nil {
+		return err
+	}
+	err = workflow.SetUpdateHandlerWithOptions(
+		ctx,
+		"my-update-handler",
+		func(workflow.Context) error { return nil },
+		workflow.UpdateHandlerOptions{Description: "My update handler"},
+	)
+	if err != nil {
+		return err
+	}
+
+	// Set some initial current details
+	workflow.SetCurrentDetails(ctx, "current-details-1")
+
+	// Wait for signal and set something else
+	workflow.GetSignalChannel(ctx, "continue").Receive(ctx, nil)
+	workflow.SetCurrentDetails(ctx, "current-details-2")
+
+	// Run a short timer with a summary and return
+	return workflow.NewTimerWithOptions(
+		ctx, 1*time.Millisecond, workflow.TimerOptions{Summary: "my-timer"}).Get(ctx, nil)
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -3135,6 +3163,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.QueryTestWorkflow)
 	worker.RegisterWorkflow(w.UpdateWithMutex)
 	worker.RegisterWorkflow(w.UpdateWithSemaphore)
+	worker.RegisterWorkflow(w.UserMetadata)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childWithRetryPolicy)

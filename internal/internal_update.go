@@ -123,6 +123,7 @@ type (
 		validateFn       interface{}
 		name             string
 		unfinishedPolicy HandlerUnfinishedPolicy
+		description      string
 	}
 )
 
@@ -372,6 +373,7 @@ func newUpdateHandler(
 		validateFn:       validateFn,
 		name:             updateName,
 		unfinishedPolicy: opts.UnfinishedPolicy,
+		description:      opts.Description,
 	}, nil
 }
 
