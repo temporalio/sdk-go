@@ -113,6 +113,9 @@ type TracerOptions struct {
 	// DisableQueryTracing can be set to disable query tracing.
 	DisableQueryTracing bool
 
+	// DisableUpdateTracing can be set to disable update tracing.
+	DisableUpdateTracing bool
+
 	// AllowInvalidParentSpans will swallow errors interpreting parent
 	// spans from headers. Useful when migrating from one tracing library
 	// to another, while workflows/activities may be in progress.
@@ -348,6 +351,33 @@ func (t *tracingClientOutboundInterceptor) QueryWorkflow(
 	return val, err
 }
 
+func (t *tracingClientOutboundInterceptor) UpdateWorkflow(
+	ctx context.Context,
+	in *ClientUpdateWorkflowInput,
+) (client.WorkflowUpdateHandle, error) {
+	// Only add tracing if enabled
+	if t.root.options.DisableUpdateTracing {
+		return t.Next.UpdateWorkflow(ctx, in)
+	}
+	// Start span and write to header
+	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
+		Operation: "UpdateWorkflow",
+		Name:      in.UpdateName,
+		Tags:      map[string]string{workflowIDTagKey: in.WorkflowID},
+		ToHeader:  true,
+		Time:      time.Now(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	var finishOpts TracerFinishSpanOptions
+	defer span.Finish(&finishOpts)
+
+	val, err := t.Next.UpdateWorkflow(ctx, in)
+	finishOpts.Error = err
+	return val, err
+}
+
 type tracingActivityOutboundInterceptor struct {
 	ActivityOutboundInterceptorBase
 	root *tracingInterceptor
@@ -513,6 +543,70 @@ func (t *tracingWorkflowInboundInterceptor) HandleQuery(
 	val, err := t.Next.HandleQuery(ctx, in)
 	finishOpts.Error = err
 	return val, err
+}
+
+func (t *tracingWorkflowInboundInterceptor) ExecuteUpdate(
+	ctx workflow.Context,
+	in *UpdateInput,
+) (interface{}, error) {
+	// Only add tracing if enabled and not replaying
+	if t.root.options.DisableUpdateTracing || workflow.IsReplaying(ctx) {
+		return t.Next.ExecuteUpdate(ctx, in)
+	}
+	// Start span reading from header
+	info := workflow.GetInfo(ctx)
+	span, ctx, err := t.root.startSpanFromWorkflowContext(ctx, &TracerStartSpanOptions{
+		Operation: "ExecuteUpdate",
+		Name:      in.Name,
+		Tags: map[string]string{
+			workflowIDTagKey: info.WorkflowExecution.ID,
+			runIDTagKey:      info.WorkflowExecution.RunID,
+		},
+		FromHeader:     true,
+		Time:           time.Now(),
+		IdempotencyKey: t.newIdempotencyKey(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	var finishOpts TracerFinishSpanOptions
+	defer span.Finish(&finishOpts)
+
+	val, err := t.Next.ExecuteUpdate(ctx, in)
+	finishOpts.Error = err
+	return val, err
+}
+
+func (t *tracingWorkflowInboundInterceptor) ValidateUpdate(
+	ctx workflow.Context,
+	in *UpdateInput,
+) error {
+	// Only add tracing if enabled and not replaying
+	if t.root.options.DisableUpdateTracing || workflow.IsReplaying(ctx) {
+		return t.Next.ValidateUpdate(ctx, in)
+	}
+	// Start span reading from header
+	info := workflow.GetInfo(ctx)
+	span, ctx, err := t.root.startSpanFromWorkflowContext(ctx, &TracerStartSpanOptions{
+		Operation: "ValidateUpdate",
+		Name:      in.Name,
+		Tags: map[string]string{
+			workflowIDTagKey: info.WorkflowExecution.ID,
+			runIDTagKey:      info.WorkflowExecution.RunID,
+		},
+		FromHeader:     true,
+		Time:           time.Now(),
+		IdempotencyKey: t.newIdempotencyKey(),
+	})
+	if err != nil {
+		return err
+	}
+	var finishOpts TracerFinishSpanOptions
+	defer span.Finish(&finishOpts)
+
+	err = t.Next.ValidateUpdate(ctx, in)
+	finishOpts.Error = err
+	return err
 }
 
 type tracingWorkflowOutboundInterceptor struct {

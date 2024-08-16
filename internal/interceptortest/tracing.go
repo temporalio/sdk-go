@@ -39,6 +39,24 @@ import (
 
 var testWorkflowStartTime = time.Date(1969, 7, 20, 20, 17, 0, 0, time.UTC)
 
+type testUpdateCallbacks struct {
+	AcceptImpl   func()
+	RejectImpl   func(err error)
+	CompleteImpl func(success interface{}, err error)
+}
+
+// Accept implements internal.UpdateCallbacks.
+func (t *testUpdateCallbacks) Accept() {
+}
+
+// Complete implements internal.UpdateCallbacks.
+func (t *testUpdateCallbacks) Complete(success interface{}, err error) {
+}
+
+// Reject implements internal.UpdateCallbacks.
+func (t *testUpdateCallbacks) Reject(err error) {
+}
+
 // TestTracer is an interceptor.Tracer that returns finished spans.
 type TestTracer interface {
 	interceptor.Tracer
@@ -72,6 +90,18 @@ func RunTestWorkflow(t *testing.T, tracer interceptor.Tracer) {
 	})
 
 	env.SetStartTime(testWorkflowStartTime)
+
+	// Send an update
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflow("testUpdate", "updateID", &testUpdateCallbacks{
+			RejectImpl: func(err error) {
+			},
+			AcceptImpl: func() {
+			},
+			CompleteImpl: func(interface{}, error) {
+			},
+		})
+	}, 0*time.Second)
 
 	// Exec
 	env.ExecuteWorkflow(testWorkflow)
@@ -115,6 +145,12 @@ func RunTestWorkflowWithError(t *testing.T, tracer interceptor.Tracer) {
 func AssertSpanPropagation(t *testing.T, tracer TestTracer) {
 
 	require.Equal(t, []*SpanInfo{
+		Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "ValidateUpdate", Name: "testUpdate"})),
+		Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "ExecuteUpdate", Name: "testUpdate"}),
+			Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "StartActivity", Name: "testActivity"}),
+				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunActivity", Name: "testActivity"}))),
+			Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "StartActivity", Name: "testActivityLocal"}),
+				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunActivity", Name: "testActivityLocal"})))),
 		Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunWorkflow", Name: "testWorkflow"}),
 			Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "StartActivity", Name: "testActivity"}),
 				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunActivity", Name: "testActivity"}))),
@@ -137,6 +173,22 @@ func testWorkflowWithError(_ workflow.Context) error {
 }
 
 func testWorkflow(ctx workflow.Context) ([]string, error) {
+	var updateRan bool
+	err := workflow.SetUpdateHandler(ctx, "testUpdate", func(ctx workflow.Context) (string, error) {
+		defer func() { updateRan = true }()
+		_, err := workflowInternal(ctx, false)
+		if err != nil {
+			return "", err
+		}
+		return "updateID", nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	err = workflow.Await(ctx, func() bool { return updateRan })
+	if err != nil {
+		return nil, err
+	}
 	// Run code
 	ret, err := workflowInternal(ctx, false)
 	if err != nil {
