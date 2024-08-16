@@ -80,7 +80,7 @@ func TestSpanName(t *testing.T) {
 	interceptortest.RunTestWorkflow(t, testTracer)
 	// Ensure the naming scheme follows "temporal.${operation}"
 	require.Equal(t, "temporal.ValidateUpdate", testTracer.FinishedSpans()[0].Name)
-	require.Equal(t, "temporal.ExecuteUpdate", testTracer.FinishedSpans()[1].Name)
+	require.Equal(t, "temporal.HandleUpdate", testTracer.FinishedSpans()[1].Name)
 	require.Equal(t, "temporal.RunWorkflow", testTracer.FinishedSpans()[2].Name)
 
 }
