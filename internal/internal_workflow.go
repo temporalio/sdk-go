@@ -1382,8 +1382,8 @@ func (s *selectorImpl) Select(ctx Context) {
 					if readyBranch != nil {
 						return false
 					}
+					c.recValue = &v
 					readyBranch = func() {
-						c.recValue = &v
 						f(c, more)
 					}
 					return true
