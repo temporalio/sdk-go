@@ -146,7 +146,7 @@ func AssertSpanPropagation(t *testing.T, tracer TestTracer) {
 
 	require.Equal(t, []*SpanInfo{
 		Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "ValidateUpdate", Name: "testUpdate"})),
-		Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "ExecuteUpdate", Name: "testUpdate"}),
+		Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "HandleUpdate", Name: "testUpdate"}),
 			Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "StartActivity", Name: "testActivity"}),
 				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunActivity", Name: "testActivity"}))),
 			Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "StartActivity", Name: "testActivityLocal"}),

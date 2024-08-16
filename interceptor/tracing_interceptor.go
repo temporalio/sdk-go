@@ -595,7 +595,8 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteUpdate(
 	info := workflow.GetInfo(ctx)
 	currentUpdateInfo := workflow.GetCurrentUpdateInfo(ctx)
 	span, ctx, err := t.root.startSpanFromWorkflowContext(ctx, &TracerStartSpanOptions{
-		Operation: "ExecuteUpdate",
+		// Using operation name "HandleUpdate" to match other SDKs and by consistence with other operations
+		Operation: "HandleUpdate",
 		Name:      in.Name,
 		Tags: map[string]string{
 			workflowIDTagKey: info.WorkflowExecution.ID,
