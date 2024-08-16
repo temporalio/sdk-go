@@ -551,7 +551,7 @@ func (t *tracingWorkflowInboundInterceptor) ValidateUpdate(
 	in *UpdateInput,
 ) error {
 	// Only add tracing if enabled and not replaying
-	if t.root.options.DisableUpdateTracing || workflow.IsReplaying(ctx) {
+	if t.root.options.DisableUpdateTracing {
 		return t.Next.ValidateUpdate(ctx, in)
 	}
 	// Start span reading from header
@@ -588,7 +588,7 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteUpdate(
 	in *UpdateInput,
 ) (interface{}, error) {
 	// Only add tracing if enabled and not replaying
-	if t.root.options.DisableUpdateTracing || workflow.IsReplaying(ctx) {
+	if t.root.options.DisableUpdateTracing {
 		return t.Next.ExecuteUpdate(ctx, in)
 	}
 	// Start span reading from header
