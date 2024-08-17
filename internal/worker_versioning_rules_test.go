@@ -139,3 +139,23 @@ func Test_VersioningIntent(t *testing.T) {
 		})
 	}
 }
+
+func Test_WorkerVersioningRules_typed_nil(t *testing.T) {
+	ramp := &VersioningRampByPercentage{
+		Percentage: 45.0,
+	}
+	ramp = nil
+
+	u := UpdateWorkerVersioningRulesOptions{
+		TaskQueue: "myQueue",
+		Operation: &VersioningOperationInsertAssignmentRule{
+			RuleIndex: 0,
+			Rule: VersioningAssignmentRule{
+				TargetBuildID: "2.0",
+				Ramp:          ramp,
+			},
+		},
+	}
+	_, err := u.validateAndConvertToProto("my_namespace")
+	assert.NoError(t, err)
+}
