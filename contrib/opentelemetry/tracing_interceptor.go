@@ -26,6 +26,7 @@ package opentelemetry
 import (
 	"context"
 	"fmt"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
@@ -237,6 +238,7 @@ func (t *tracer) GetLogger(logger log.Logger, ref interceptor.TracerSpanRef) log
 	logger = log.With(logger,
 		"TraceID", span.SpanContext().TraceID(),
 		"SpanID", span.SpanContext().SpanID(),
+		"TraceFlags", span.SpanContext().TraceFlags(),
 	)
 
 	return logger

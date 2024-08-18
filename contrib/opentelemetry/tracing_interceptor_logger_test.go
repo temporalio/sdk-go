@@ -81,9 +81,7 @@ func TestLogFields(t *testing.T) {
 	span := rec.Ended()[0]
 	assert.Contains(t, buf.String(), "TraceID="+span.Parent().TraceID().String())
 	assert.Contains(t, buf.String(), "SpanID="+span.Parent().SpanID().String())
-
-	assert.Contains(t, buf.String(), "TraceID="+span.Parent().TraceID().String())
-	assert.Contains(t, buf.String(), "SpanID="+span.Parent().SpanID().String())
+	assert.Contains(t, buf.String(), "TraceFlags="+span.Parent().TraceFlags().String())
 }
 
 func testWorkflow(ctx workflow.Context) error {
