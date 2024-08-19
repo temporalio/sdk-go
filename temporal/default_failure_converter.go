@@ -32,7 +32,7 @@ type (
 	DefaultFailureConverterOptions = internal.DefaultFailureConverterOptions
 
 	// DefaultFailureConverter seralizes errors with the option to encode common parameters under Failure.EncodedAttributes.
-	DefaultFailureConverter        = internal.DefaultFailureConverter
+	DefaultFailureConverter = internal.DefaultFailureConverter
 )
 
 // NewDefaultFailureConverter creates new instance of DefaultFailureConverter.

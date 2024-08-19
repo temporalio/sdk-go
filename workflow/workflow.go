@@ -695,7 +695,7 @@ func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) erro
 //
 //	var intKey = temporal.NewSearchAttributeKeyInt64("CustomIntField")
 //	var boolKey = temporal.NewSearchAttributeKeyBool("CustomBoolField")
-//	var keywordKey = temporal.NewSearchAttributeKeyBool("CustomKeywordField")
+//	var keywordKey = temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
 //
 //	func MyWorkflow(ctx workflow.Context, input string) error {
 //		err = workflow.UpsertTypedSearchAttributes(ctx, intAttrKey.ValueSet(1), boolAttrKey.ValueSet(true))

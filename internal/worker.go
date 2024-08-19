@@ -155,7 +155,7 @@ type (
 		// For now, if user doesn't specify one, a new uuid will be used as the resourceID.
 		// SessionResourceID string
 
-		// Optional: Sets the maximum number of concurrently running sessions the resource support.
+		// Optional: Sets the maximum number of concurrently running sessions the resource supports.
 		// default: 1000
 		MaxConcurrentSessionExecutionSize int
 
@@ -165,12 +165,12 @@ type (
 		// default: false
 		DisableWorkflowWorker bool
 
-		// Optional: If set to true worker would only handle workflow tasks and local activities.
+		// Optional: If set to true worker will only handle workflow tasks and local activities.
 		// Non-local activities will not be executed by this worker.
 		// default: false
 		LocalActivityWorkerOnly bool
 
-		// Optional: If set overwrites the client level Identify value.
+		// Optional: If set overwrites the client level Identity value.
 		// default: client identity
 		Identity string
 
@@ -250,6 +250,12 @@ type (
 		// NOTE: Experimental
 		// Note: Cannot be enabled at the same time as EnableSessionWorker
 		UseBuildIDForVersioning bool
+
+		// Optional: If set, use a custom tuner for this worker. See WorkerTuner for more.
+		// Mutually exclusive with MaxConcurrentWorkflowTaskExecutionSize,
+		// MaxConcurrentActivityExecutionSize, and MaxConcurrentLocalActivityExecutionSize.
+		// NOTE: Experimental
+		Tuner WorkerTuner
 	}
 )
 

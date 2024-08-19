@@ -66,3 +66,12 @@ Run the unit tests:
 cd ./internal/cmd/build
 go run . unit-test
 ```
+
+## Updating go mod files
+
+Sometimes all go.mod files need to be tidied. For an easy way to do this on linux or (probably) mac,
+run:
+
+```bash
+find . -name go.mod -execdir go mod tidy \;
+```

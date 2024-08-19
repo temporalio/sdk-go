@@ -65,9 +65,13 @@ type (
 	// taskPoller interface to poll and process for task
 	taskPoller interface {
 		// PollTask polls for one new task
-		PollTask() (interface{}, error)
+		PollTask() (taskForWorker, error)
 		// ProcessTask processes a task
 		ProcessTask(interface{}) error
+	}
+
+	taskForWorker interface {
+		isEmpty() bool
 	}
 
 	// basePoller is the base class for all poller implementations
@@ -165,7 +169,7 @@ type (
 
 	localActivityTunnel struct {
 		taskCh   chan *localActivityTask
-		resultCh chan interface{}
+		resultCh chan eagerOrPolledTask
 		stopCh   <-chan struct{}
 	}
 )
@@ -193,7 +197,7 @@ func (npm *numPollerMetric) decrement() {
 func newLocalActivityTunnel(stopCh <-chan struct{}) *localActivityTunnel {
 	return &localActivityTunnel{
 		taskCh:   make(chan *localActivityTask, 100000),
-		resultCh: make(chan interface{}),
+		resultCh: make(chan eagerOrPolledTask),
 		stopCh:   stopCh,
 	}
 }
@@ -233,13 +237,13 @@ func (bp *basePoller) stopping() bool {
 
 // doPoll runs the given pollFunc in a separate go routine. Returns when either of the conditions are met:
 // - poll succeeds, poll fails or worker is stopping
-func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (interface{}, error)) (interface{}, error) {
+func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (taskForWorker, error)) (taskForWorker, error) {
 	if bp.stopping() {
 		return nil, errStop
 	}
 
 	var err error
-	var result interface{}
+	var result taskForWorker
 
 	doneC := make(chan struct{})
 	ctx, cancel := newGRPCContext(context.Background(), grpcTimeout(pollTaskServiceTimeOut), grpcLongPoll(true))
@@ -300,7 +304,7 @@ func newWorkflowTaskPoller(
 }
 
 // PollTask polls a new task
-func (wtp *workflowTaskPoller) PollTask() (interface{}, error) {
+func (wtp *workflowTaskPoller) PollTask() (taskForWorker, error) {
 	// Get the task.
 	workflowTask, err := wtp.doPoll(wtp.poll)
 	if err != nil {
@@ -346,7 +350,9 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 		return err
 	}
 	var taskErr error
-	defer func() { wfctx.Unlock(taskErr) }()
+	defer func() {
+		wfctx.Unlock(taskErr)
+	}()
 
 	for {
 		startTime := time.Now()
@@ -539,7 +545,7 @@ func newLocalActivityPoller(
 	}
 }
 
-func (latp *localActivityTaskPoller) PollTask() (interface{}, error) {
+func (latp *localActivityTaskPoller) PollTask() (taskForWorker, error) {
 	return latp.laTunnel.getTask(), nil
 }
 
@@ -584,7 +590,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 		return &localActivityResult{task: task, err: fmt.Errorf("failed building context: %w", err)}
 	}
 
-	// propagate context information into the local activity activity context from the headers
+	// propagate context information into the local activity context from the headers
 	ctx, err = contextWithHeaderPropagated(ctx, task.header, lath.contextPropagators)
 	if err != nil {
 		return &localActivityResult{task: task, err: err}
@@ -762,7 +768,7 @@ func (wtp *workflowTaskPoller) pollWorkflowTaskQueue(ctx context.Context, reques
 }
 
 // Poll for a single workflow task from the service
-func (wtp *workflowTaskPoller) poll(ctx context.Context) (interface{}, error) {
+func (wtp *workflowTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 	traceLog(func() {
 		wtp.logger.Debug("workflowTaskPoller::Poll")
 	})
@@ -932,7 +938,7 @@ func (atp *activityTaskPoller) pollActivityTaskQueue(ctx context.Context, reques
 }
 
 // Poll for a single activity task from the service
-func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
+func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 	traceLog(func() {
 		atp.logger.Debug("activityTaskPoller::Poll")
 	})
@@ -968,7 +974,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (interface{}, error) {
 }
 
 // PollTask polls a new task
-func (atp *activityTaskPoller) PollTask() (interface{}, error) {
+func (atp *activityTaskPoller) PollTask() (taskForWorker, error) {
 	// Get the task.
 	activityTask, err := atp.doPoll(atp.poll)
 	if err != nil {
@@ -1231,4 +1237,24 @@ func convertActivityResultToRespondRequestByID(
 		Failure:    failureConverter.ErrorToFailure(err),
 		Identity:   identity,
 	}
+}
+
+func (wft *workflowTask) isEmpty() bool {
+	return wft.task == nil
+}
+
+func (at *activityTask) isEmpty() bool {
+	return at.task == nil
+}
+
+func (*localActivityTask) isEmpty() bool {
+	return false
+}
+
+func (*eagerWorkflowTask) isEmpty() bool {
+	return false
+}
+
+func (nt *nexusTask) isEmpty() bool {
+	return nt.task == nil
 }

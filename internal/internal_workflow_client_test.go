@@ -1121,22 +1121,14 @@ func (s *workflowClientTestSuite) TestEagerStartWorkflowNotSupported() {
 	}
 
 	var processTask bool
-	var releaseSlot bool
-	client.eagerDispatcher = &eagerWorkflowDispatcher{
-		workersByTaskQueue: map[string][]eagerWorker{
-			taskqueue: {
-				&eagerWorkerMock{
-					tryReserveSlotCallback: func() bool { return true },
-					releaseSlotCallback: func() {
-						releaseSlot = true
-					},
-					processTaskAsyncCallback: func(task interface{}, callback func()) {
-						processTask = true
-						callback()
-					},
-				},
-			},
+	eagerMock := &eagerWorkerMock{
+		tryReserveSlotCallback: func() *SlotPermit { return &SlotPermit{} },
+		processTaskAsyncCallback: func(task eagerTask) {
+			processTask = true
 		},
+	}
+	client.eagerDispatcher = &eagerWorkflowDispatcher{
+		workersByTaskQueue: map[string][]eagerWorker{taskqueue: {eagerMock}},
 	}
 	s.True(ok)
 	options := StartWorkflowOptions{
@@ -1161,7 +1153,7 @@ func (s *workflowClientTestSuite) TestEagerStartWorkflowNotSupported() {
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 	s.False(processTask)
-	s.False(releaseSlot)
+	s.False(eagerMock.releaseCalled)
 }
 
 func (s *workflowClientTestSuite) TestEagerStartWorkflowNoWorker() {
@@ -1171,22 +1163,11 @@ func (s *workflowClientTestSuite) TestEagerStartWorkflowNoWorker() {
 	}
 
 	var processTask bool
-	var releaseSlot bool
+	eagerMock := &eagerWorkerMock{
+		tryReserveSlotCallback:   func() *SlotPermit { return nil },
+		processTaskAsyncCallback: func(task eagerTask) { processTask = true }}
 	client.eagerDispatcher = &eagerWorkflowDispatcher{
-		workersByTaskQueue: map[string][]eagerWorker{
-			taskqueue: {
-				&eagerWorkerMock{
-					tryReserveSlotCallback: func() bool { return false },
-					releaseSlotCallback: func() {
-						releaseSlot = true
-					},
-					processTaskAsyncCallback: func(task interface{}, callback func()) {
-						processTask = true
-						callback()
-					},
-				},
-			},
-		},
+		workersByTaskQueue: map[string][]eagerWorker{taskqueue: {eagerMock}},
 	}
 	s.True(ok)
 	options := StartWorkflowOptions{
@@ -1211,7 +1192,7 @@ func (s *workflowClientTestSuite) TestEagerStartWorkflowNoWorker() {
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 	s.False(processTask)
-	s.False(releaseSlot)
+	s.False(eagerMock.releaseCalled)
 }
 
 func (s *workflowClientTestSuite) TestEagerStartWorkflow() {
@@ -1221,23 +1202,11 @@ func (s *workflowClientTestSuite) TestEagerStartWorkflow() {
 	}
 
 	var processTask bool
-	var releaseSlot bool
+	eagerMock := &eagerWorkerMock{
+		tryReserveSlotCallback:   func() *SlotPermit { return &SlotPermit{} },
+		processTaskAsyncCallback: func(task eagerTask) { processTask = true }}
 	client.eagerDispatcher = &eagerWorkflowDispatcher{
-		workersByTaskQueue: map[string][]eagerWorker{
-			taskqueue: {
-				&eagerWorkerMock{
-					tryReserveSlotCallback: func() bool { return true },
-					releaseSlotCallback: func() {
-						releaseSlot = true
-					},
-					processTaskAsyncCallback: func(task interface{}, callback func()) {
-						processTask = true
-						callback()
-					},
-				},
-			},
-		},
-	}
+		workersByTaskQueue: map[string][]eagerWorker{taskqueue: {eagerMock}}}
 	s.True(ok)
 	options := StartWorkflowOptions{
 		ID:                       workflowID,
@@ -1261,7 +1230,9 @@ func (s *workflowClientTestSuite) TestEagerStartWorkflow() {
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 	s.True(processTask)
-	s.True(releaseSlot)
+	// Release will not have been called, since there is no real processor to call it
+	// when the task is done.
+	s.False(eagerMock.releaseCalled)
 }
 
 func (s *workflowClientTestSuite) TestEagerStartWorkflowStartRequestFail() {
@@ -1271,23 +1242,11 @@ func (s *workflowClientTestSuite) TestEagerStartWorkflowStartRequestFail() {
 	}
 
 	var processTask bool
-	var releaseSlot bool
+	eagerMock := &eagerWorkerMock{
+		tryReserveSlotCallback:   func() *SlotPermit { return &SlotPermit{} },
+		processTaskAsyncCallback: func(task eagerTask) { processTask = true }}
 	client.eagerDispatcher = &eagerWorkflowDispatcher{
-		workersByTaskQueue: map[string][]eagerWorker{
-			taskqueue: {
-				&eagerWorkerMock{
-					tryReserveSlotCallback: func() bool { return true },
-					releaseSlotCallback: func() {
-						releaseSlot = true
-					},
-					processTaskAsyncCallback: func(task interface{}, callback func()) {
-						processTask = true
-						callback()
-					},
-				},
-			},
-		},
-	}
+		workersByTaskQueue: map[string][]eagerWorker{taskqueue: {eagerMock}}}
 	s.True(ok)
 	options := StartWorkflowOptions{
 		ID:                       workflowID,
@@ -1306,7 +1265,7 @@ func (s *workflowClientTestSuite) TestEagerStartWorkflowStartRequestFail() {
 	s.Nil(resp)
 	s.Error(err)
 	s.False(processTask)
-	s.True(releaseSlot)
+	s.True(eagerMock.releaseCalled)
 }
 
 func (s *workflowClientTestSuite) TestExecuteWorkflowWithDataConverter() {

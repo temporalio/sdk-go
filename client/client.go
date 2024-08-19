@@ -336,7 +336,6 @@ type (
 	TaskQueueReachability = internal.TaskQueueReachability
 
 	// DescribeTaskQueueEnhancedOptions is the input to [Client.DescribeTaskQueueEnhanced].
-	// WARNING: Worker versioning is currently experimental.
 	DescribeTaskQueueEnhancedOptions = internal.DescribeTaskQueueEnhancedOptions
 
 	// TaskQueueVersionSelection is a task queue filter based on versioning.
@@ -345,23 +344,25 @@ type (
 	TaskQueueVersionSelection = internal.TaskQueueVersionSelection
 
 	// TaskQueueDescription is the response to [Client.DescribeTaskQueueEnhanced].
-	// WARNING: Worker versioning is currently experimental.
 	TaskQueueDescription = internal.TaskQueueDescription
 
 	// TaskQueueVersionInfo includes task queue information per Build ID.
 	// It is part of [Client.TaskQueueDescription].
-	// WARNING: Worker versioning is currently experimental.
 	TaskQueueVersionInfo = internal.TaskQueueVersionInfo
 
 	// TaskQueueTypeInfo specifies task queue information per task type and Build ID.
 	// It is included in [Client.TaskQueueVersionInfo].
-	// WARNING: Worker versioning is currently experimental.
 	TaskQueueTypeInfo = internal.TaskQueueTypeInfo
 
 	// TaskQueuePollerInfo provides information about a worker/client polling a task queue.
 	// It is used by [Client.TaskQueueTypeInfo].
-	// WARNING: Worker versioning is currently experimental.
 	TaskQueuePollerInfo = internal.TaskQueuePollerInfo
+
+	// TaskQueueStats contains statistics about task queue backlog and activity.
+	//
+	// For workflow task queue type, this result is partial because tasks sent to sticky queues are not included. Read
+	// comments above each metric to understand the impact of sticky queue exclusion on that metric accuracy.
+	TaskQueueStats = internal.TaskQueueStats
 
 	// WorkerVersionCapabilities includes a worker's build identifier
 	// and whether it is choosing to use the versioning feature.
@@ -480,8 +481,9 @@ type (
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
 	Client interface {
-		// ExecuteWorkflow starts a workflow execution and return a WorkflowRun instance and error
-		// The user can use this to start using a function or workflow type name.
+		// ExecuteWorkflow starts a workflow execution and returns a WorkflowRun instance or error
+		//
+		// This can be used to start a workflow using a function reference or workflow type name.
 		// Either by
 		//     ExecuteWorkflow(ctx, options, "workflowTypeName", arg1, arg2, arg3)
 		//     or
@@ -498,8 +500,8 @@ type (
 		//  - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
 		//    execution result to valuePtr, if workflow execution is a success, or return corresponding
 		//    error. This is a blocking API.
-		// NOTE: if the started workflow return ContinueAsNewError during the workflow execution, the
-		// return result of GetRunID() will be the started workflow run ID, not the new run ID caused by ContinueAsNewError,
+		// NOTE: if the started workflow returns ContinueAsNewError during the workflow execution, the
+		// returned result of GetRunID() will be the started workflow run ID, not the new run ID caused by ContinueAsNewError,
 		// however, Get(ctx context.Context, valuePtr interface{}) will return result from the run which did not return ContinueAsNewError.
 		// Say ExecuteWorkflow started a workflow, in its first run, has run ID "run ID 1", and returned ContinueAsNewError,
 		// the second run has run ID "run ID 2" and return some result other than ContinueAsNewError:

@@ -574,6 +574,16 @@ func TestWorkflowAllHandlersFinished(t *testing.T) {
 		}, time.Minute)
 
 		env.RegisterDelayedCallback(func() {
+			env.UpdateWorkflow("nonWarningHandler", "id_3", &updateCallback{
+				reject: func(err error) {
+					require.Fail(t, "update should not be rejected")
+				},
+				accept:   func() {},
+				complete: func(interface{}, error) {},
+			})
+		}, 2*time.Minute)
+
+		env.RegisterDelayedCallback(func() {
 			if completionType == "cancel" {
 				env.CancelWorkflow()
 			} else {
@@ -592,6 +602,20 @@ func TestWorkflowAllHandlersFinished(t *testing.T) {
 				}()
 				return Sleep(ctx, time.Hour)
 			}, UpdateHandlerOptions{})
+			if err != nil {
+				return 0, err
+			}
+
+			err = SetUpdateHandler(ctx, "nonWarningHandler", func(ctx Context) error {
+				inflightUpdates++
+				ranUpdates++
+				defer func() {
+					inflightUpdates--
+				}()
+				return Sleep(ctx, time.Hour)
+			}, UpdateHandlerOptions{
+				UnfinishedPolicy: HandlerUnfinishedPolicyAbandon,
+			})
 			if err != nil {
 				return 0, err
 			}
@@ -649,44 +673,48 @@ func TestWorkflowAllHandlersFinished(t *testing.T) {
 
 	}
 	// assertExpectedLogs asserts that the logs in the buffer are as expected
-	assertExpectedLogs := func(t *testing.T, buf *bytes.Buffer) {
+	assertExpectedLogs := func(t *testing.T, buf *bytes.Buffer, shouldWarn bool) {
 		logs := parseLogs(buf)
-		require.Len(t, logs, 1)
-		require.Equal(t, unhandledUpdateWarningMessage, logs[0]["msg"])
-		warnedUpdates := parseWarnedUpdates(logs[0]["Updates"])
-		require.Len(t, warnedUpdates, 2)
-		// Order of updates is not guaranteed
-		require.Equal(t, "update", warnedUpdates[0]["name"])
-		require.True(t, warnedUpdates[0]["id"] == "id_1" || warnedUpdates[0]["id"] == "id_2")
-		require.Equal(t, "update", warnedUpdates[1]["name"])
-		require.True(t, warnedUpdates[1]["id"] != warnedUpdates[0]["id"])
-		require.True(t, warnedUpdates[1]["id"] == "id_1" || warnedUpdates[1]["id"] == "id_2")
+		if shouldWarn {
+			require.Len(t, logs, 1)
+			require.Equal(t, unhandledUpdateWarningMessage, logs[0]["msg"])
+			warnedUpdates := parseWarnedUpdates(logs[0]["Updates"])
+			require.Len(t, warnedUpdates, 2)
+			// Order of updates is not guaranteed
+			require.Equal(t, "update", warnedUpdates[0]["name"])
+			require.True(t, warnedUpdates[0]["id"] == "id_1" || warnedUpdates[0]["id"] == "id_2")
+			require.Equal(t, "update", warnedUpdates[1]["name"])
+			require.True(t, warnedUpdates[1]["id"] != warnedUpdates[0]["id"])
+			require.True(t, warnedUpdates[1]["id"] == "id_1" || warnedUpdates[1]["id"] == "id_2")
+		} else {
+			require.Len(t, logs, 0)
+		}
 	}
 
 	t.Run("complete", func(t *testing.T) {
 		var buf bytes.Buffer
 		result, err := runWf("complete", &buf)
 		require.NoError(t, err)
-		require.Equal(t, 2, result)
-		assertExpectedLogs(t, &buf)
+		require.Equal(t, 3, result)
+		assertExpectedLogs(t, &buf, true)
 	})
 	t.Run("cancel", func(t *testing.T) {
 		var buf bytes.Buffer
 		_, err := runWf("cancel", &buf)
 		require.Error(t, err)
-		assertExpectedLogs(t, &buf)
+		assertExpectedLogs(t, &buf, true)
 	})
 	t.Run("failure", func(t *testing.T) {
 		var buf bytes.Buffer
 		_, err := runWf("failure", &buf)
 		require.Error(t, err)
-		assertExpectedLogs(t, &buf)
+		assertExpectedLogs(t, &buf, false)
 	})
 	t.Run("continue-as-new", func(t *testing.T) {
 		var buf bytes.Buffer
 		_, err := runWf("continue-as-new", &buf)
 		require.Error(t, err)
-		assertExpectedLogs(t, &buf)
+		assertExpectedLogs(t, &buf, true)
 	})
 }
 

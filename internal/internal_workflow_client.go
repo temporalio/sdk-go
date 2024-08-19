@@ -1635,7 +1635,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 	if eagerWorkflowTask != nil && eagerExecutor != nil {
 		eagerExecutor.handleResponse(eagerWorkflowTask)
 	} else if eagerExecutor != nil {
-		eagerExecutor.release()
+		eagerExecutor.releaseUnused()
 	}
 	// Allow already-started error
 	var runID string

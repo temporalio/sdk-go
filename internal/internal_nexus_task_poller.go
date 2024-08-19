@@ -45,6 +45,10 @@ type nexusTaskPoller struct {
 	numPollerMetric *numPollerMetric
 }
 
+type nexusTask struct {
+	task *workflowservice.PollNexusTaskQueueResponse
+}
+
 var _ taskPoller = &nexusTaskPoller{}
 
 func newNexusTaskPoller(
@@ -78,7 +82,7 @@ func (ntp *nexusTaskPoller) pollNexusTaskQueue(ctx context.Context, request *wor
 	return ntp.service.PollNexusTaskQueue(ctx, request)
 }
 
-func (ntp *nexusTaskPoller) poll(ctx context.Context) (interface{}, error) {
+func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 	traceLog(func() {
 		ntp.logger.Debug("nexusTaskPoller::Poll")
 	})
@@ -102,11 +106,11 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (interface{}, error) {
 		return nil, nil
 	}
 
-	return response, nil
+	return &nexusTask{task: response}, nil
 }
 
 // PollTask polls a new task
-func (ntp *nexusTaskPoller) PollTask() (any, error) {
+func (ntp *nexusTaskPoller) PollTask() (taskForWorker, error) {
 	return ntp.doPoll(ntp.poll)
 }
 
@@ -116,7 +120,7 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 		return errStop
 	}
 
-	response := task.(*workflowservice.PollNexusTaskQueueResponse)
+	response := task.(*nexusTask).task
 	if response.GetRequest() == nil {
 		// We didn't get a request, poll must have timed out.
 		traceLog(func() {
@@ -148,7 +152,7 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 		metricsHandler.Counter(metrics.NexusTaskExecutionFailedCounter).Inc(1)
 	}
 
-	// Let the poller machinary drop the task, nothing to report back.
+	// Let the poller machinery drop the task, nothing to report back.
 	// This is only expected due to context deadline errors.
 	if err != nil {
 		return err
