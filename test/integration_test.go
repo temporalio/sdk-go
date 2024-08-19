@@ -5562,16 +5562,20 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 	var metadata sdkpb.WorkflowMetadata
 	ts.NoError(val.Get(&metadata))
 	ts.Equal("current-details-1", metadata.CurrentDetails)
-	foundQuery := false
+	var queryDefn *sdkpb.WorkflowInteractionDefinition
 	for _, def := range metadata.Definition.QueryDefinitions {
-		if foundQuery = def.Name == "my-query-handler"; foundQuery {
+		if def.Name == "my-query-handler" {
+			ts.Nil(queryDefn)
+			queryDefn = def
 			break
 		}
 	}
-	ts.True(foundQuery)
+	ts.Equal("my-query-handler", queryDefn.Name)
+	ts.Equal("My query handler", queryDefn.Description)
+	ts.Equal("continue", metadata.Definition.SignalDefinitions[0].Name)
+	ts.Equal("My signal channel", metadata.Definition.SignalDefinitions[0].Description)
 	ts.Equal("my-update-handler", metadata.Definition.UpdateDefinitions[0].Name)
 	ts.Equal("My update handler", metadata.Definition.UpdateDefinitions[0].Description)
-	ts.Equal("continue", metadata.Definition.SignalDefinitions[0].Name)
 
 	// Send signal and confirm workflow completes successfully
 	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), "", "continue", nil))

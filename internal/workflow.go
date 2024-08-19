@@ -378,6 +378,10 @@ type (
 		// compatible build ID or not. See VersioningIntent.
 		// WARNING: Worker versioning is currently experimental
 		VersioningIntent VersioningIntent
+
+		// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
+		summary string
+		details string
 	}
 
 	// RegisterWorkflowOptions consists of options for registering a workflow
@@ -396,6 +400,26 @@ type (
 	localActivityContext struct {
 		fn       interface{}
 		isMethod bool
+	}
+
+	// SignalChannelOptions consists of options for a signal channel.
+	//
+	// NOTE: Experimental
+	SignalChannelOptions struct {
+		// Description is a short description for this signal.
+		//
+		// NOTE: Experimental
+		Description string
+	}
+
+	// QueryHandlerOptions consists of options for a query handler.
+	//
+	// NOTE: Experimental
+	QueryHandlerOptions struct {
+		// Description is a short description for this query.
+		//
+		// NOTE: Experimental
+		Description string
 	}
 
 	// UpdateHandlerOptions consists of options for executing a named workflow update.
@@ -1544,6 +1568,9 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.TypedSearchAttributes = cwo.TypedSearchAttributes
 	wfOptions.ParentClosePolicy = cwo.ParentClosePolicy
 	wfOptions.VersioningIntent = cwo.VersioningIntent
+	// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
+	wfOptions.summary = cwo.summary
+	wfOptions.details = cwo.details
 
 	return ctx1
 }
@@ -1570,6 +1597,9 @@ func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 		TypedSearchAttributes:    opts.TypedSearchAttributes,
 		ParentClosePolicy:        opts.ParentClosePolicy,
 		VersioningIntent:         opts.VersioningIntent,
+		// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
+		summary: opts.summary,
+		details: opts.details,
 	}
 }
 
@@ -1655,8 +1685,31 @@ func GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
 	return i.GetSignalChannel(ctx, signalName)
 }
 
+// GetSignalChannelWithOptions returns channel corresponding to the signal name.
+//
+// NOTE: Experimental
+func GetSignalChannelWithOptions(ctx Context, signalName string, options SignalChannelOptions) ReceiveChannel {
+	assertNotInReadOnlyState(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
+	return i.GetSignalChannelWithOptions(ctx, signalName, options)
+}
+
 func (wc *workflowEnvironmentInterceptor) GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
-	return getWorkflowEnvOptions(ctx).getSignalChannel(ctx, signalName)
+	return wc.GetSignalChannelWithOptions(ctx, signalName, SignalChannelOptions{})
+}
+
+func (wc *workflowEnvironmentInterceptor) GetSignalChannelWithOptions(
+	ctx Context,
+	signalName string,
+	options SignalChannelOptions,
+) ReceiveChannel {
+	eo := getWorkflowEnvOptions(ctx)
+	ch := eo.getSignalChannel(ctx, signalName)
+	// Add as a requested channel if not already done
+	if eo.requestedSignalChannels[signalName] == nil {
+		eo.requestedSignalChannels[signalName] = &requestedSignalChannel{options: options}
+	}
+	return ch
 }
 
 func newEncodedValue(value *commonpb.Payloads, dc converter.DataConverter) converter.EncodedValue {
@@ -1897,10 +1950,38 @@ func (wc *workflowEnvironmentInterceptor) GetVersion(ctx Context, changeID strin
 //	  currentState = "done"
 //	  return nil
 //	}
+//
+// See [SetQueryHandlerWithOptions] to set additional options.
 func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.SetQueryHandler(ctx, queryType, handler)
+}
+
+// SetQueryHandlerWithOptions is [SetQueryHandler] with extra options. See
+// [SetQueryHandler] documentation for details.
+//
+// NOTE: Experimental
+func SetQueryHandlerWithOptions(ctx Context, queryType string, handler interface{}, options QueryHandlerOptions) error {
+	assertNotInReadOnlyState(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
+	return i.SetQueryHandlerWithOptions(ctx, queryType, handler, options)
+}
+
+func (wc *workflowEnvironmentInterceptor) SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
+	return wc.SetQueryHandlerWithOptions(ctx, queryType, handler, QueryHandlerOptions{})
+}
+
+func (wc *workflowEnvironmentInterceptor) SetQueryHandlerWithOptions(
+	ctx Context,
+	queryType string,
+	handler interface{},
+	options QueryHandlerOptions,
+) error {
+	if strings.HasPrefix(queryType, "__") {
+		return errors.New("queryType starts with '__' is reserved for internal use")
+	}
+	return setQueryHandler(ctx, queryType, handler, options)
 }
 
 // SetUpdateHandler binds an update handler function to the specified
@@ -1931,13 +2012,6 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}, opts 
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.SetUpdateHandler(ctx, updateName, handler, opts)
-}
-
-func (wc *workflowEnvironmentInterceptor) SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
-	if strings.HasPrefix(queryType, "__") {
-		return errors.New("queryType starts with '__' is reserved for internal use")
-	}
-	return setQueryHandler(ctx, queryType, handler)
 }
 
 func (wc *workflowEnvironmentInterceptor) SetUpdateHandler(ctx Context, name string, handler interface{}, opts UpdateHandlerOptions) error {

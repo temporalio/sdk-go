@@ -353,7 +353,7 @@ func Test_ChildWorkflowStateMachine_Basic(t *testing.T) {
 	h := newCommandsHelper()
 
 	// start child workflow
-	d, err := h.startChildWorkflowExecution(attributes)
+	d, err := h.startChildWorkflowExecution(attributes, nil)
 	require.NoError(t, err)
 	require.Equal(t, commandStateCreated, d.getState())
 
@@ -392,7 +392,7 @@ func Test_ChildWorkflowStateMachine_CancelSucceed(t *testing.T) {
 	h := newCommandsHelper()
 
 	// start child workflow
-	d, err := h.startChildWorkflowExecution(attributes)
+	d, err := h.startChildWorkflowExecution(attributes, nil)
 	require.NoError(t, err)
 	// send command
 	_ = h.getCommands(true)
@@ -437,7 +437,7 @@ func Test_ChildWorkflowStateMachine_InvalidStates(t *testing.T) {
 	h := newCommandsHelper()
 
 	// start child workflow
-	d, err := h.startChildWorkflowExecution(attributes)
+	d, err := h.startChildWorkflowExecution(attributes, nil)
 	require.NoError(t, err)
 	require.Equal(t, commandStateCreated, d.getState())
 
@@ -514,7 +514,7 @@ func Test_ChildWorkflow_UnusualCancelationOrdering(t *testing.T) {
 	h := newCommandsHelper()
 
 	// start child workflow
-	_, err := h.startChildWorkflowExecution(attributes)
+	_, err := h.startChildWorkflowExecution(attributes, nil)
 	require.NoError(t, err)
 	// send command
 	h.getCommands(true)
@@ -548,7 +548,7 @@ func Test_ChildWorkflowStateMachine_CancelFailed(t *testing.T) {
 	h := newCommandsHelper()
 
 	// start child workflow
-	d, err := h.startChildWorkflowExecution(attributes)
+	d, err := h.startChildWorkflowExecution(attributes, nil)
 	require.NoError(t, err)
 	// send command
 	h.getCommands(true)

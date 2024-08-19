@@ -85,6 +85,19 @@ type (
 	// ContinueAsNewErrorOptions specifies optional attributes to be carried over to the next run.
 	ContinueAsNewErrorOptions = internal.ContinueAsNewErrorOptions
 
+	// SignalChannelOptions consists of options for a signal channel.
+	//
+	// NOTE: Experimental
+	SignalChannelOptions = internal.SignalChannelOptions
+
+	// QueryHandlerOptions consists of options for a query handler.
+	//
+	// NOTE: Experimental
+	QueryHandlerOptions = internal.QueryHandlerOptions
+
+	// UpdateHandlerOptions consists of options for executing a named workflow update.
+	//
+	// NOTE: Experimental
 	UpdateHandlerOptions = internal.UpdateHandlerOptions
 
 	// NOTE to maintainers, this interface definition is duplicated in the internal package to provide a better UX.
@@ -314,6 +327,14 @@ func GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
 	return internal.GetSignalChannel(ctx, signalName)
 }
 
+// GetSignalChannelWithOptions returns channel corresponding to the signal name.
+// Options will only apply to the first signal channel.
+//
+// NOTE: Experimental
+func GetSignalChannelWithOptions(ctx Context, signalName string, options SignalChannelOptions) ReceiveChannel {
+	return internal.GetSignalChannelWithOptions(ctx, signalName, options)
+}
+
 // SideEffect executes the provided function once, records its result into the workflow history. The recorded result on
 // history will be returned without executing the provided function during replay. This guarantees the deterministic
 // requirement for workflow as the exact same result will be returned in replay.
@@ -487,8 +508,18 @@ func GetVersion(ctx Context, changeID string, minSupported, maxSupported Version
 //	  currentState = "done"
 //	  return nil
 //	}
+//
+// See [SetQueryHandlerWithOptions] to set additional options.
 func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 	return internal.SetQueryHandler(ctx, queryType, handler)
+}
+
+// SetQueryHandlerWithOptions is [SetQueryHandler] with extra options. See
+// [SetQueryHandler] documentation for details.
+//
+// NOTE: Experimental
+func SetQueryHandlerWithOptions(ctx Context, queryType string, handler interface{}, options QueryHandlerOptions) error {
+	return internal.SetQueryHandlerWithOptions(ctx, queryType, handler, options)
 }
 
 // SetUpdateHandler forwards to SetUpdateHandlerWithOptions with an

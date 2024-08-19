@@ -223,11 +223,15 @@ type (
 		TypedSearchAttributes    SearchAttributes
 		ParentClosePolicy        enumspb.ParentClosePolicy
 		signalChannels           map[string]Channel
+		requestedSignalChannels  map[string]*requestedSignalChannel
 		queryHandlers            map[string]*queryHandler
 		updateHandlers           map[string]*updateHandler
 		// runningUpdatesHandles is a map of update handlers that are currently running.
 		runningUpdatesHandles map[string]UpdateInfo
 		VersioningIntent      VersioningIntent
+		// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
+		summary string
+		details string
 		// currentDetails is the user-set string returned on metadata query.
 		currentDetails string
 	}
@@ -279,10 +283,15 @@ type (
 		Set(value interface{}, err error)
 	}
 
+	requestedSignalChannel struct {
+		options SignalChannelOptions
+	}
+
 	queryHandler struct {
 		fn            interface{}
 		queryType     string
 		dataConverter converter.DataConverter
+		options       QueryHandlerOptions
 	}
 
 	// updateSchedulerImpl adapts the coro dispatcher to the UpdateScheduler interface
@@ -1538,6 +1547,7 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 		newOptions = *options
 	} else {
 		newOptions.signalChannels = make(map[string]Channel)
+		newOptions.requestedSignalChannels = make(map[string]*requestedSignalChannel)
 		newOptions.queryHandlers = make(map[string]*queryHandler)
 		newOptions.updateHandlers = make(map[string]*updateHandler)
 		newOptions.runningUpdatesHandles = make(map[string]UpdateInfo)
@@ -1620,21 +1630,17 @@ func getWorkflowMetadata(ctx Context) (*sdk.WorkflowMetadata, error) {
 		CurrentDetails: eo.currentDetails,
 	}
 	// Queries
-	for k := range eo.queryHandlers {
+	for k, v := range eo.queryHandlers {
 		ret.Definition.QueryDefinitions = append(ret.Definition.QueryDefinitions, &sdk.WorkflowInteractionDefinition{
-			Name: k,
-			// TODO(cretz): Allow query descriptions?
-			// Description: ,
+			Name:        k,
+			Description: v.options.Description,
 		})
 	}
 	// Signals
-	// TODO(cretz): This is all signal channels asked for in workflow _and_ all ever sent, is that what we want? Or do
-	// we only want all ever asked for?
-	for k := range eo.signalChannels {
+	for k, v := range eo.requestedSignalChannels {
 		ret.Definition.SignalDefinitions = append(ret.Definition.SignalDefinitions, &sdk.WorkflowInteractionDefinition{
-			Name: k,
-			// TODO(cretz): Allow signal descriptions?
-			// Description: ,
+			Name:        k,
+			Description: v.options.Description,
 		})
 	}
 	// Updates
@@ -1705,8 +1711,13 @@ func newDecodeFuture(ctx Context, fn interface{}) (Future, Settable) {
 }
 
 // setQueryHandler sets query handler for given queryType.
-func setQueryHandler(ctx Context, queryType string, handler interface{}) error {
-	qh := &queryHandler{fn: handler, queryType: queryType, dataConverter: getDataConverterFromWorkflowContext(ctx)}
+func setQueryHandler(ctx Context, queryType string, handler interface{}, options QueryHandlerOptions) error {
+	qh := &queryHandler{
+		fn:            handler,
+		queryType:     queryType,
+		dataConverter: getDataConverterFromWorkflowContext(ctx),
+		options:       options,
+	}
 	err := validateQueryHandlerFn(qh.fn)
 	if err != nil {
 		return err

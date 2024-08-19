@@ -90,8 +90,8 @@ type (
 
 	timerCommandStateMachine struct {
 		*commandStateMachineBase
-		attributes *commandpb.StartTimerCommandAttributes
-		summary    *commonpb.Payload
+		attributes    *commandpb.StartTimerCommandAttributes
+		startMetadata *sdk.UserMetadata
 	}
 
 	cancelTimerCommandStateMachine struct {
@@ -101,7 +101,8 @@ type (
 
 	childWorkflowCommandStateMachine struct {
 		*commandStateMachineBase
-		attributes *commandpb.StartChildWorkflowExecutionCommandAttributes
+		attributes    *commandpb.StartChildWorkflowExecutionCommandAttributes
+		startMetadata *sdk.UserMetadata
 	}
 
 	naiveCommandStateMachine struct {
@@ -389,13 +390,13 @@ func (h *commandsHelper) newRequestCancelNexusOperationStateMachine(attributes *
 
 func (h *commandsHelper) newTimerCommandStateMachine(
 	attributes *commandpb.StartTimerCommandAttributes,
-	summary *commonpb.Payload,
+	startMetadata *sdk.UserMetadata,
 ) *timerCommandStateMachine {
 	base := h.newCommandStateMachineBase(commandTypeTimer, attributes.GetTimerId())
 	return &timerCommandStateMachine{
 		commandStateMachineBase: base,
 		attributes:              attributes,
-		summary:                 summary,
+		startMetadata:           startMetadata,
 	}
 }
 
@@ -407,11 +408,15 @@ func (h *commandsHelper) newCancelTimerCommandStateMachine(attributes *commandpb
 	}
 }
 
-func (h *commandsHelper) newChildWorkflowCommandStateMachine(attributes *commandpb.StartChildWorkflowExecutionCommandAttributes) *childWorkflowCommandStateMachine {
+func (h *commandsHelper) newChildWorkflowCommandStateMachine(
+	attributes *commandpb.StartChildWorkflowExecutionCommandAttributes,
+	startMetadata *sdk.UserMetadata,
+) *childWorkflowCommandStateMachine {
 	base := h.newCommandStateMachineBase(commandTypeChildWorkflow, attributes.GetWorkflowId())
 	return &childWorkflowCommandStateMachine{
 		commandStateMachineBase: base,
 		attributes:              attributes,
+		startMetadata:           startMetadata,
 	}
 }
 
@@ -698,9 +703,7 @@ func (d *timerCommandStateMachine) getCommand() *commandpb.Command {
 	case commandStateCreated, commandStateCanceledBeforeSent:
 		command := createNewCommand(enumspb.COMMAND_TYPE_START_TIMER)
 		command.Attributes = &commandpb.Command_StartTimerCommandAttributes{StartTimerCommandAttributes: d.attributes}
-		if d.summary != nil {
-			command.UserMetadata = &sdk.UserMetadata{Summary: d.summary}
-		}
+		command.UserMetadata = d.startMetadata
 		return command
 	default:
 		return nil
@@ -723,6 +726,7 @@ func (d *childWorkflowCommandStateMachine) getCommand() *commandpb.Command {
 	case commandStateCreated:
 		command := createNewCommand(enumspb.COMMAND_TYPE_START_CHILD_WORKFLOW_EXECUTION)
 		command.Attributes = &commandpb.Command_StartChildWorkflowExecutionCommandAttributes{StartChildWorkflowExecutionCommandAttributes: d.attributes}
+		command.UserMetadata = d.startMetadata
 		return command
 	case commandStateCanceledAfterStarted:
 		command := createNewCommand(enumspb.COMMAND_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION)
@@ -1374,8 +1378,11 @@ func (h *commandsHelper) recordMutableSideEffectMarker(mutableSideEffectID strin
 // to server, and have it reject it - but here the command ID is exactly equal to the child's wf ID,
 // and changing that without potentially blowing up backwards compatability is difficult. So we
 // return the error eagerly locally, which is at least an improvement on panicking.
-func (h *commandsHelper) startChildWorkflowExecution(attributes *commandpb.StartChildWorkflowExecutionCommandAttributes) (commandStateMachine, error) {
-	command := h.newChildWorkflowCommandStateMachine(attributes)
+func (h *commandsHelper) startChildWorkflowExecution(
+	attributes *commandpb.StartChildWorkflowExecutionCommandAttributes,
+	startMetadata *sdk.UserMetadata,
+) (commandStateMachine, error) {
+	command := h.newChildWorkflowCommandStateMachine(attributes, startMetadata)
 	if h.commands[command.getID()] != nil {
 		return nil, &childWorkflowExistsWithId{id: attributes.WorkflowId}
 	}
@@ -1570,14 +1577,15 @@ func (h *commandsHelper) startTimer(
 	options TimerOptions,
 	dc converter.DataConverter,
 ) commandStateMachine {
-	var summary *commonpb.Payload
+	var startMetadata *sdk.UserMetadata
 	if options.Summary != "" {
+		startMetadata = &sdk.UserMetadata{}
 		var err error
-		if summary, err = dc.ToPayload(options.Summary); err != nil {
+		if startMetadata.Summary, err = dc.ToPayload(options.Summary); err != nil {
 			panic(err)
 		}
 	}
-	command := h.newTimerCommandStateMachine(attributes, summary)
+	command := h.newTimerCommandStateMachine(attributes, startMetadata)
 	h.addCommand(command)
 	return command
 }

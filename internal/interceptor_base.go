@@ -328,6 +328,17 @@ func (w *WorkflowOutboundInterceptorBase) GetSignalChannel(ctx Context, signalNa
 	return w.Next.GetSignalChannel(ctx, signalName)
 }
 
+// GetSignalChannelWithOptions implements WorkflowOutboundInterceptor.GetSignalChannelWithOptions.
+//
+// NOTE: Experimental
+func (w *WorkflowOutboundInterceptorBase) GetSignalChannelWithOptions(
+	ctx Context,
+	signalName string,
+	options SignalChannelOptions,
+) ReceiveChannel {
+	return w.Next.GetSignalChannelWithOptions(ctx, signalName, options)
+}
+
 // SideEffect implements WorkflowOutboundInterceptor.SideEffect.
 func (w *WorkflowOutboundInterceptorBase) SideEffect(
 	ctx Context,
@@ -359,6 +370,18 @@ func (w *WorkflowOutboundInterceptorBase) GetVersion(
 // SetQueryHandler implements WorkflowOutboundInterceptor.SetQueryHandler.
 func (w *WorkflowOutboundInterceptorBase) SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 	return w.Next.SetQueryHandler(ctx, queryType, handler)
+}
+
+// SetQueryHandlerWithOptions implements WorkflowOutboundInterceptor.SetQueryHandlerWithOptions.
+//
+// NOTE: Experimental
+func (w *WorkflowOutboundInterceptorBase) SetQueryHandlerWithOptions(
+	ctx Context,
+	queryType string,
+	handler interface{},
+	options QueryHandlerOptions,
+) error {
+	return w.Next.SetQueryHandlerWithOptions(ctx, queryType, handler, options)
 }
 
 // SetUpdateHandler implements WorkflowOutboundInterceptor.SetUpdateHandler.

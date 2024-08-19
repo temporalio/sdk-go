@@ -602,7 +602,13 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.InheritBuildId = determineInheritBuildIdFlagForCommand(
 		params.VersioningIntent, wc.workflowInfo.TaskQueueName, params.TaskQueueName)
 
-	command, err := wc.commandsHelper.startChildWorkflowExecution(attributes)
+	startMetadata, err := buildUserMetadata(params.summary, params.details, wc.dataConverter)
+	if err != nil {
+		callback(nil, err)
+		return
+	}
+
+	command, err := wc.commandsHelper.startChildWorkflowExecution(attributes, startMetadata)
 	if _, ok := err.(*childWorkflowExistsWithId); ok {
 		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
 			startedHandler(WorkflowExecution{}, &ChildWorkflowExecutionAlreadyStartedError{})

@@ -3021,7 +3021,12 @@ func (w *Workflows) UpsertMemo(ctx workflow.Context, memo map[string]interface{}
 
 func (w *Workflows) UserMetadata(ctx workflow.Context) error {
 	// Define an update and query handler
-	err := workflow.SetQueryHandler(ctx, "my-query-handler", func() (string, error) { return "done", nil })
+	err := workflow.SetQueryHandlerWithOptions(
+		ctx,
+		"my-query-handler",
+		func() (string, error) { return "done", nil },
+		workflow.QueryHandlerOptions{Description: "My query handler"},
+	)
 	if err != nil {
 		return err
 	}
@@ -3039,12 +3044,19 @@ func (w *Workflows) UserMetadata(ctx workflow.Context) error {
 	workflow.SetCurrentDetails(ctx, "current-details-1")
 
 	// Wait for signal and set something else
-	workflow.GetSignalChannel(ctx, "continue").Receive(ctx, nil)
+	workflow.GetSignalChannelWithOptions(
+		ctx,
+		"continue",
+		workflow.SignalChannelOptions{Description: "My signal channel"},
+	).Receive(ctx, nil)
 	workflow.SetCurrentDetails(ctx, "current-details-2")
 
 	// Run a short timer with a summary and return
 	return workflow.NewTimerWithOptions(
-		ctx, 1*time.Millisecond, workflow.TimerOptions{Summary: "my-timer"}).Get(ctx, nil)
+		ctx,
+		1*time.Millisecond,
+		workflow.TimerOptions{Summary: "my-timer"},
+	).Get(ctx, nil)
 }
 
 func (w *Workflows) register(worker worker.Worker) {
