@@ -232,7 +232,8 @@ type (
 		// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
 		summary string
 		details string
-		// currentDetails is the user-set string returned on metadata query.
+		// currentDetails is the user-set string returned on metadata query as
+		// WorkflowMetadata.current_details
 		currentDetails string
 	}
 
