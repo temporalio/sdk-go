@@ -166,8 +166,7 @@ type (
 		// Special note for workflow task queue type: this metric does not count sticky queue tasks. Hence, the reported
 		// value may be significantly lower than the actual number of workflow tasks added. Note that typically, only
 		// the first workflow task of each workflow goes to a normal queue, and the rest workflow tasks go to the sticky
-		// queue associated with a specific worker instance. Activity tasks always go to normal queues so their reported
-		// rate is accurate.
+		// queue associated with a specific worker instance. Activity tasks always go to normal queues.
 		TasksAddRate float32
 		// Approximate tasks per second dispatched to workers, averaging the last 30 seconds. This includes both
 		// backlogged and sync-matched tasks, but excludes the Eagerly dispatched workflow and activity tasks (see
@@ -179,8 +178,7 @@ type (
 		// Special note for workflow task queue type: this metric does not count sticky queue tasks. Hence, the reported
 		// value may be significantly lower than the actual number of workflow tasks dispatched. Note that typically, only
 		// the first workflow task of each workflow goes to a normal queue, and the rest workflow tasks go to the sticky
-		// queue associated with a specific worker instance. Activity tasks always go to normal queues so their reported
-		// rate is accurate.
+		// queue associated with a specific worker instance. Activity tasks always go to normal queues.
 		TasksDispatchRate float32
 	}
 
