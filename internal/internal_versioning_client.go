@@ -101,6 +101,8 @@ type (
 		// Include task reachability for the requested versions and all task types
 		// (task reachability is not reported per task type).
 		ReportTaskReachability bool
+		// Include task queue stats for requested task queue types and versions.
+		ReportStats bool
 	}
 
 	// WorkerVersionCapabilities includes a worker's build identifier
@@ -126,11 +128,68 @@ type (
 		WorkerVersionCapabilities *WorkerVersionCapabilities
 	}
 
+	// TaskQueueStats contains statistics about task queue backlog and activity.
+	//
+	// For workflow task queue type, this result is partial because tasks sent to sticky queues are not included. Read
+	// comments above each metric to understand the impact of sticky queue exclusion on that metric accuracy.
+	TaskQueueStats struct {
+		// The approximate number of tasks backlogged in this task queue. May count expired tasks but eventually
+		// converges to the right value. Can be relied upon for scaling decisions.
+		//
+		// Special note for workflow task queue type: this metric does not count sticky queue tasks. However, because
+		// those tasks only remain valid for a few seconds, the inaccuracy becomes less significant as the backlog size
+		// grows.
+		ApproximateBacklogCount int64
+		// Approximate age of the oldest task in the backlog based on the creation time of the task at the head of
+		// the queue. Can be relied upon for scaling decisions.
+		//
+		// Special note for workflow task queue type: this metric does not count sticky queue tasks. However, because
+		// those tasks only remain valid for a few seconds, they should not affect the result when backlog is older than
+		// few seconds.
+		ApproximateBacklogAge time.Duration
+		// Approximate *net* tasks per second added to the backlog, averaging the last 30 seconds. This is calculated as
+		// `TasksAddRate - TasksDispatchRate`.
+		// A positive value of `X` means the backlog is growing by about `X` tasks per second. A negative `-X` value means the
+		// backlog is shrinking by about `X` tasks per second.
+		//
+		// Special note for workflow task queue type: this metric does not count sticky queue tasks. However, because
+		// those tasks only remain valid for a few seconds, the inaccuracy becomes less significant as the backlog size
+		// or age grow.
+		BacklogIncreaseRate float32
+		// Approximate tasks per second added to the task queue, averaging the last 30 seconds. This includes both
+		// backlogged and sync-matched tasks, but excludes the Eagerly dispatched workflow and activity tasks (see
+		// documentation for `client.StartWorkflowOptions.EnableEagerStart` and `worker.Options.DisableEagerActivities`.)
+		//
+		// The difference between `TasksAddRate` and `TasksDispatchRate` is a reliable metric for the rate at which
+		// backlog grows/shrinks. See `BacklogIncreaseRate`.
+		//
+		// Special note for workflow task queue type: this metric does not count sticky queue tasks. Hence, the reported
+		// value may be significantly lower than the actual number of workflow tasks added. Note that typically, only
+		// the first workflow task of each workflow goes to a normal queue, and the rest workflow tasks go to the sticky
+		// queue associated with a specific worker instance. Activity tasks always go to normal queues so their reported
+		// rate is accurate.
+		TasksAddRate float32
+		// Approximate tasks per second dispatched to workers, averaging the last 30 seconds. This includes both
+		// backlogged and sync-matched tasks, but excludes the Eagerly dispatched workflow and activity tasks (see
+		// documentation for `client.StartWorkflowOptions.EnableEagerStart` and `worker.Options.DisableEagerActivities`.)
+		//
+		// The difference between `TasksAddRate` and `TasksDispatchRate` is a reliable metric for the rate at which
+		// backlog grows/shrinks. See `BacklogIncreaseRate`.
+		//
+		// Special note for workflow task queue type: this metric does not count sticky queue tasks. Hence, the reported
+		// value may be significantly lower than the actual number of workflow tasks dispatched. Note that typically, only
+		// the first workflow task of each workflow goes to a normal queue, and the rest workflow tasks go to the sticky
+		// queue associated with a specific worker instance. Activity tasks always go to normal queues so their reported
+		// rate is accurate.
+		TasksDispatchRate float32
+	}
+
 	// TaskQueueTypeInfo specifies task queue information per task type and Build ID.
 	// It is included in [TaskQueueVersionInfo].
 	TaskQueueTypeInfo struct {
 		// Poller details for this task queue category.
 		Pollers []TaskQueuePollerInfo
+		Stats   *TaskQueueStats
 	}
 
 	// TaskQueueVersionInfo includes task queue information per Build ID.
@@ -174,6 +233,7 @@ func (o *DescribeTaskQueueEnhancedOptions) validateAndConvertToProto(namespace s
 		TaskQueueTypes:         taskQueueTypes,
 		ReportPollers:          o.ReportPollers,
 		ReportTaskReachability: o.ReportTaskReachability,
+		ReportStats:            o.ReportStats,
 	}
 
 	return opt, nil
@@ -220,6 +280,21 @@ func taskQueueTypeInfoFromResponse(response *taskqueuepb.TaskQueueTypeInfo) Task
 
 	return TaskQueueTypeInfo{
 		Pollers: pollers,
+		Stats:   statsFromResponse(response.Stats),
+	}
+}
+
+func statsFromResponse(stats *taskqueuepb.TaskQueueStats) *TaskQueueStats {
+	if stats == nil {
+		return nil
+	}
+
+	return &TaskQueueStats{
+		ApproximateBacklogCount: stats.GetApproximateBacklogCount(),
+		ApproximateBacklogAge:   stats.GetApproximateBacklogAge().AsDuration(),
+		TasksAddRate:            stats.TasksAddRate,
+		TasksDispatchRate:       stats.TasksDispatchRate,
+		BacklogIncreaseRate:     stats.TasksAddRate - stats.TasksDispatchRate,
 	}
 }
 
