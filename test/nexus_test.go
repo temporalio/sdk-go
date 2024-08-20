@@ -44,6 +44,7 @@ import (
 	"go.temporal.io/api/operatorservice/v1"
 
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/temporal"
@@ -941,4 +942,87 @@ func TestWorkflowTestSuite_NexusSyncOperation_ClientMethods_Panic(t *testing.T) 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
 	require.Equal(t, "not implemented in the test environment", panicReason)
+}
+
+type nexusInterceptor struct {
+	interceptor.WorkerInterceptorBase
+	interceptor.WorkflowInboundInterceptorBase
+	interceptor.WorkflowOutboundInterceptorBase
+}
+
+func (i *nexusInterceptor) InterceptWorkflow(
+	ctx workflow.Context,
+	next interceptor.WorkflowInboundInterceptor,
+) interceptor.WorkflowInboundInterceptor {
+	i.WorkflowInboundInterceptorBase.Next = next
+	return i
+}
+
+func (i *nexusInterceptor) Init(outbound interceptor.WorkflowOutboundInterceptor) error {
+	i.WorkflowOutboundInterceptorBase.Next = outbound
+	return i.WorkflowInboundInterceptorBase.Next.Init(i)
+}
+
+func (i *nexusInterceptor) ExecuteNexusOperation(
+	ctx workflow.Context,
+	input interceptor.ExecuteNexusOperationInput,
+) workflow.NexusOperationFuture {
+	input.NexusHeader["test"] = "present"
+	return i.WorkflowOutboundInterceptorBase.Next.ExecuteNexusOperation(ctx, input)
+}
+
+func TestInterceptors(t *testing.T) {
+	if os.Getenv("DISABLE_NEXUS_TESTS") != "" {
+		t.SkipNow()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancel()
+	tc := newTestContext(t, ctx)
+
+	op := temporalnexus.NewSyncOperation("op", func(ctx context.Context, c client.Client, _ nexus.NoValue, opts nexus.StartOperationOptions) (string, error) {
+		return opts.Header["test"], nil
+	})
+
+	wf := func(ctx workflow.Context) error {
+		c := workflow.NewNexusClient(tc.endpoint, "test")
+		fut := c.ExecuteOperation(ctx, op, nil, workflow.NexusOperationOptions{})
+		var res string
+
+		var exec workflow.NexusOperationExecution
+		if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil {
+			return fmt.Errorf("expected start to succeed: %w", err)
+		}
+		if exec.OperationID != "" {
+			return fmt.Errorf("expected empty operation ID")
+		}
+		if err := fut.Get(ctx, &res); err != nil {
+			return err
+		}
+		// If the operation didn't fail the only expected result is "present" (header value injected by the interceptor).
+		if res != "present" {
+			return fmt.Errorf("unexpected result: %v", res)
+		}
+		return nil
+	}
+
+	w := worker.New(tc.client, tc.taskQueue, worker.Options{
+		Interceptors: []interceptor.WorkerInterceptor{
+			&nexusInterceptor{},
+		},
+	})
+	service := nexus.NewService("test")
+	require.NoError(t, service.Register(op))
+	w.RegisterNexusService(service)
+	w.RegisterWorkflow(wf)
+	require.NoError(t, w.Start())
+	t.Cleanup(w.Stop)
+
+	run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		TaskQueue: tc.taskQueue,
+		// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
+		// timeout to speed up the attempts.
+		WorkflowTaskTimeout: time.Second,
+	}, wf)
+	require.NoError(t, err)
+	require.NoError(t, run.Get(ctx, nil))
 }
