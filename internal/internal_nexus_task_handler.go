@@ -36,6 +36,7 @@ import (
 	"go.temporal.io/api/common/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -120,6 +121,7 @@ func (h *nexusTaskHandler) execute(task *workflowservice.PollNexusTaskQueueRespo
 	}
 	nctx := &NexusOperationContext{
 		Client:         h.client,
+		Namespace:      h.namespace,
 		TaskQueue:      h.taskQueueName,
 		MetricsHandler: metricsHandler,
 		Log:            log,
@@ -145,7 +147,12 @@ func (h *nexusTaskHandler) execute(task *workflowservice.PollNexusTaskQueueRespo
 	}
 }
 
-func (h *nexusTaskHandler) handleStartOperation(ctx context.Context, nctx *NexusOperationContext, req *nexuspb.StartOperationRequest, header nexus.Header) (*nexuspb.Response, *nexuspb.HandlerError, error) {
+func (h *nexusTaskHandler) handleStartOperation(
+	ctx context.Context,
+	nctx *NexusOperationContext,
+	req *nexuspb.StartOperationRequest,
+	header nexus.Header,
+) (*nexuspb.Response, *nexuspb.HandlerError, error) {
 	serializer := &payloadSerializer{
 		converter: h.dataConverter,
 		payload:   req.GetPayload(),
@@ -162,11 +169,23 @@ func (h *nexusTaskHandler) handleStartOperation(ctx context.Context, nctx *Nexus
 	if callbackHeader == nil {
 		callbackHeader = make(map[string]string)
 	}
+	var nexusLinks []nexus.Link
+	for _, link := range req.GetLinks() {
+		linkData, err := proto.Marshal(link)
+		if err != nil {
+			return nil, nil, err
+		}
+		nexusLinks = append(nexusLinks, nexus.Link{
+			Data: linkData,
+			Type: string(link.ProtoReflect().Descriptor().FullName()),
+		})
+	}
 	startOptions := nexus.StartOperationOptions{
 		RequestID:      req.RequestId,
 		CallbackURL:    req.Callback,
 		Header:         header,
 		CallbackHeader: callbackHeader,
+		Links:          nexusLinks,
 	}
 	var opres nexus.HandlerStartOperationResult[any]
 	var err error
@@ -217,11 +236,27 @@ func (h *nexusTaskHandler) handleStartOperation(ctx context.Context, nctx *Nexus
 	}
 	switch t := opres.(type) {
 	case *nexus.HandlerStartOperationResultAsync:
+		var links []*common.Link
+		for _, nexusLink := range t.Links {
+			switch nexusLink.Type {
+			case string((&common.Link{}).ProtoReflect().Descriptor().FullName()):
+				link := &common.Link{}
+				if err := proto.Unmarshal(nexusLink.Data, link); err != nil {
+					return nil, h.internalError(fmt.Errorf("cannot convert nexus async result links: %w", err)), nil
+				}
+				links = append(links, link)
+			default:
+				nctx.Log.Warn("ignoring unsupported link data type: %q", nexusLink.Type)
+			}
+		}
 		return &nexuspb.Response{
 			Variant: &nexuspb.Response_StartOperation{
 				StartOperation: &nexuspb.StartOperationResponse{
 					Variant: &nexuspb.StartOperationResponse_AsyncSuccess{
-						AsyncSuccess: &nexuspb.StartOperationResponse_Async{OperationId: t.OperationID},
+						AsyncSuccess: &nexuspb.StartOperationResponse_Async{
+							OperationId: t.OperationID,
+							Links:       links,
+						},
 					},
 				},
 			},
