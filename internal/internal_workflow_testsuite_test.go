@@ -1382,6 +1382,36 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockActivityWait() {
 	s.NoError(env.GetWorkflowError())
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_SignalLoss() {
+	workflowFn := func(ctx Context) error {
+		ch1 := GetSignalChannel(ctx, "test-signal")
+		ch2 := GetSignalChannel(ctx, "test-signal-2")
+		selector := NewSelector(ctx)
+		var s string
+		selector.AddReceive(ch1, func(c ReceiveChannel, more bool) {
+			c.Receive(ctx, &s)
+		})
+		selector.AddDefault(func() {
+			ch2.Receive(ctx, &s)
+		})
+		selector.Select(ctx)
+		if ch1.Len() == 0 && s == "s2" {
+			return errors.New("signal in ch1 lost")
+		}
+		return nil
+	}
+
+	// send a signal 5 seconds after workflow started
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow("test-signal", "s1")
+		env.SignalWorkflow("test-signal-2", "s2")
+	}, 5*time.Second)
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_MockActivityWaitFn() {
 	workflowFn := func(ctx Context) ([]string, error) {
 		ctx = WithActivityOptions(ctx, s.activityOptions)
