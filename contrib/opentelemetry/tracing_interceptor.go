@@ -26,6 +26,7 @@ package opentelemetry
 import (
 	"context"
 	"fmt"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
@@ -58,6 +59,9 @@ type TracerOptions struct {
 
 	// DisableBaggage can be set to disable baggage propagation.
 	DisableBaggage bool
+
+	// DisableLogging can be set to disable logging of span and trace IDs.
+	DisableLogging bool
 
 	// AllowInvalidParentSpans will swallow errors interpreting parent
 	// spans from headers. Useful when migrating from one tracing library
@@ -229,6 +233,10 @@ func (t *tracer) StartSpan(opts *interceptor.TracerStartSpanOptions) (intercepto
 }
 
 func (t *tracer) GetLogger(logger log.Logger, ref interceptor.TracerSpanRef) log.Logger {
+	if t.options.DisableLogging {
+		return logger
+	}
+
 	span, ok := ref.(*tracerSpan)
 	if !ok {
 		return logger
