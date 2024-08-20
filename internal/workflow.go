@@ -31,6 +31,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nexus-rpc/sdk-go/nexus"
 	"golang.org/x/exp/constraints"
 	"golang.org/x/exp/slices"
 
@@ -2273,16 +2274,22 @@ func (c nexusClient) Service() string {
 func (c nexusClient) ExecuteOperation(ctx Context, operation any, input any, options NexusOperationOptions) NexusOperationFuture {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
-	return i.ExecuteNexusOperation(ctx, c, operation, input, options)
+	return i.ExecuteNexusOperation(ctx, ExecuteNexusOperationInput{
+		Client:      c,
+		Operation:   operation,
+		Input:       input,
+		Options:     options,
+		NexusHeader: nexus.Header{},
+	})
 }
 
-func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Context, client NexusClient, operation any, input any, options NexusOperationOptions) (executeNexusOperationParams, error) {
+func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Context, input ExecuteNexusOperationInput) (executeNexusOperationParams, error) {
 	dc := WithWorkflowContext(ctx, wc.env.GetDataConverter())
 
 	var ok bool
 	var operationName string
-	if operationName, ok = operation.(string); ok {
-	} else if regOp, ok := operation.(interface{ Name() string }); ok {
+	if operationName, ok = input.Operation.(string); ok {
+	} else if regOp, ok := input.Operation.(interface{ Name() string }); ok {
 		operationName = regOp.Name()
 	} else {
 		return executeNexusOperationParams{}, fmt.Errorf("invalid 'operation' parameter, must be an OperationReference or a string")
@@ -2290,20 +2297,21 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 	// TODO(bergundy): Validate operation types against input once there's a good way to extract the generic types from
 	// OperationReference in the Nexus Go SDK.
 
-	payload, err := dc.ToPayload(input)
+	payload, err := dc.ToPayload(input.Input)
 	if err != nil {
 		return executeNexusOperationParams{}, err
 	}
 
 	return executeNexusOperationParams{
-		client:    client,
-		operation: operationName,
-		input:     payload,
-		options:   options,
+		client:      input.Client,
+		operation:   operationName,
+		input:       payload,
+		options:     input.Options,
+		nexusHeader: input.NexusHeader,
 	}, nil
 }
 
-func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, client NexusClient, operation any, input any, options NexusOperationOptions) NexusOperationFuture {
+func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, input ExecuteNexusOperationInput) NexusOperationFuture {
 	mainFuture, mainSettable := newDecodeFuture(ctx, nil /* this param is never used */)
 	executionFuture, executionSettable := NewFuture(ctx)
 	result := &nexusOperationFutureImpl{
@@ -2320,7 +2328,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, cli
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
-	params, err := wc.prepareNexusOperationParams(ctx, client, operation, input, options)
+	params, err := wc.prepareNexusOperationParams(ctx, input)
 	if err != nil {
 		executionSettable.Set(nil, err)
 		mainSettable.Set(nil, err)
@@ -2349,8 +2357,8 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, cli
 			if ctx.Err() == ErrCanceled && !mainFuture.IsReady() {
 				// Go back to the top of the interception chain.
 				getWorkflowOutboundInterceptor(ctx).RequestCancelNexusOperation(ctx, RequestCancelNexusOperationInput{
-					Client:    client,
-					Operation: operation,
+					Client:    input.Client,
+					Operation: input.Operation,
 					ID:        operationID,
 					seq:       seq,
 				})
