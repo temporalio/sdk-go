@@ -141,10 +141,7 @@ func Test_VersioningIntent(t *testing.T) {
 }
 
 func Test_WorkerVersioningRules_typed_nil(t *testing.T) {
-	ramp := &VersioningRampByPercentage{
-		Percentage: 45.0,
-	}
-	ramp = nil
+	var ramp *VersioningRampByPercentage
 
 	u := UpdateWorkerVersioningRulesOptions{
 		TaskQueue: "myQueue",
