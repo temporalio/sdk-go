@@ -38,38 +38,38 @@ type (
 
 	// Info contains information about a currently executing activity.
 	Info = internal.ActivityInfo
-
-	// RegisterOptions consists of options for registering an activity
+	//
+	// RegisterOptions consists of options for registering an activity.
 	RegisterOptions = internal.RegisterActivityOptions
 )
 
-// ErrResultPending is returned from activity's implementation to indicate the activity is not completed when
+// ErrResultPending is returned from activity's implementation to indicate the activity is not completed when the
 // activity method returns. Activity needs to be completed by Client.CompleteActivity() separately. For example, if an
-// activity require human interaction (like approve an expense report), the activity could return ErrResultPending
-// which indicate the activity is not done yet. Then, when the waited human action happened, it needs to trigger something
-// that could report the activity completed event to temporal server via Client.CompleteActivity() API.
+// activity requires human interaction (like approving an expense report), the activity could return ErrResultPending,
+// which indicates the activity is not done yet. Then, when the waited human action happened, it needs to trigger something
+// that could report the activity completed event to the temporal server via the Client.CompleteActivity() API.
 var ErrResultPending = internal.ErrActivityResultPending
 
-// GetInfo returns information about currently executing activity.
+// GetInfo returns information about the currently executing activity.
 func GetInfo(ctx context.Context) Info {
 	return internal.GetActivityInfo(ctx)
 }
 
-// GetLogger returns a logger that can be used in activity
+// GetLogger returns a logger that can be used in the activity.
 func GetLogger(ctx context.Context) log.Logger {
 	return internal.GetActivityLogger(ctx)
 }
 
-// GetMetricsHandler returns a metrics handler that can be used in activity
+// GetMetricsHandler returns a metrics handler that can be used in the activity.
 func GetMetricsHandler(ctx context.Context) metrics.Handler {
 	return internal.GetActivityMetricsHandler(ctx)
 }
 
-// RecordHeartbeat sends heartbeat for the currently executing activity
-// If the activity is either canceled (or) workflow/activity doesn't exist then we would cancel
+// RecordHeartbeat sends a heartbeat for the currently executing activity.
+// If the activity is either canceled or the workflow/activity doesn't exist, then we would cancel
 // the context with error context.Canceled.
 //
-// details - the details that you provided here can be seen in the workflow when it receives TimeoutError, you
+// details - The details that you provide here can be seen in the workflow when it receives TimeoutError. You
 // can check error with TimeoutType()/Details().
 //
 // Note: If using asynchronous activity completion,
@@ -78,34 +78,33 @@ func RecordHeartbeat(ctx context.Context, details ...interface{}) {
 	internal.RecordActivityHeartbeat(ctx, details...)
 }
 
-// HasHeartbeatDetails checks if there is heartbeat details from last attempt.
+// HasHeartbeatDetails checks if there are heartbeat details from the last attempt.
 func HasHeartbeatDetails(ctx context.Context) bool {
 	return internal.HasHeartbeatDetails(ctx)
 }
 
-// GetHeartbeatDetails extract heartbeat details from last failed attempt. This is used in combination with retry policy.
-// An activity could be scheduled with an optional retry policy on ActivityOptions. If the activity failed then server
-// would attempt to dispatch another activity task to retry according to the retry policy. If there was heartbeat
+// GetHeartbeatDetails extracts heartbeat details from the last failed attempt. This is used in combination with the retry policy.
+// An activity could be scheduled with an optional retry policy on ActivityOptions. If the activity failed, then server
+// would attempt to dispatch another activity task to retry according to the retry policy. If there were heartbeat
 // details reported by activity from the failed attempt, the details would be delivered along with the activity task for
-// retry attempt. Activity could extract the details by GetHeartbeatDetails() and resume from the progress.
+// the retry attempt. An activity can extract the details from GetHeartbeatDetails() and resume progress from there.
 // See TestActivityEnvironment.SetHeartbeatDetails() for unit test support.
 //
-// Note, values should not be reused for extraction here because merging on top
-// of existing values may result in unexpected behavior similar to
-// json.Unmarshal.
+// Note: Values should not be reused for extraction here because merging on top
+// of existing values may result in unexpected behavior similar to json.Unmarshal.
 func GetHeartbeatDetails(ctx context.Context, d ...interface{}) error {
 	return internal.GetHeartbeatDetails(ctx, d...)
 }
 
 // GetWorkerStopChannel returns a read-only channel. The closure of this channel indicates the activity worker is stopping.
 // When the worker is stopping, it will close this channel and wait until the worker stop timeout finishes. After the timeout
-// hit, the worker will cancel the activity context and then exit. The timeout can be defined by worker option: WorkerStopTimeout.
-// Use this channel to handle activity graceful exit when the activity worker stops.
+// hits, the worker will cancel the activity context and then exit. The timeout can be defined by worker option: WorkerStopTimeout.
+// Use this channel to handle a graceful activity exit when the activity worker stops.
 func GetWorkerStopChannel(ctx context.Context) <-chan struct{} {
 	return internal.GetWorkerStopChannel(ctx)
 }
 
-// IsActivity check if the context is an activity context from a normal or local activity.
+// IsActivity checks if the context is an activity context from a normal or local activity.
 func IsActivity(ctx context.Context) bool {
 	return internal.IsActivity(ctx)
 }
