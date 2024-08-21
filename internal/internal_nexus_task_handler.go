@@ -36,7 +36,6 @@ import (
 	"go.temporal.io/api/common/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
 	"go.temporal.io/api/workflowservice/v1"
-	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -171,13 +170,9 @@ func (h *nexusTaskHandler) handleStartOperation(
 	}
 	var nexusLinks []nexus.Link
 	for _, link := range req.GetLinks() {
-		linkData, err := proto.Marshal(link)
-		if err != nil {
-			return nil, nil, err
-		}
 		nexusLinks = append(nexusLinks, nexus.Link{
-			Data: linkData,
-			Type: string(link.ProtoReflect().Descriptor().FullName()),
+			Data: link.GetData(),
+			Type: link.GetType(),
 		})
 	}
 	startOptions := nexus.StartOperationOptions{
@@ -236,18 +231,12 @@ func (h *nexusTaskHandler) handleStartOperation(
 	}
 	switch t := opres.(type) {
 	case *nexus.HandlerStartOperationResultAsync:
-		var links []*common.Link
+		var links []*nexuspb.Link
 		for _, nexusLink := range t.Links {
-			switch nexusLink.Type {
-			case string((&common.Link{}).ProtoReflect().Descriptor().FullName()):
-				link := &common.Link{}
-				if err := proto.Unmarshal(nexusLink.Data, link); err != nil {
-					return nil, h.internalError(fmt.Errorf("cannot convert nexus async result links: %w", err)), nil
-				}
-				links = append(links, link)
-			default:
-				nctx.Log.Warn("ignoring unsupported link data type: %q", nexusLink.Type)
-			}
+			links = append(links, &nexuspb.Link{
+				Data: nexusLink.Data,
+				Type: nexusLink.Type,
+			})
 		}
 		return &nexuspb.Response{
 			Variant: &nexuspb.Response_StartOperation{

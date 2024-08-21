@@ -203,7 +203,11 @@ func (o *workflowRunOperation[I, O]) Name() string {
 	return o.options.Name
 }
 
-func (o *workflowRunOperation[I, O]) Start(ctx context.Context, input I, options nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[O], error) {
+func (o *workflowRunOperation[I, O]) Start(
+	ctx context.Context,
+	input I,
+	options nexus.StartOperationOptions,
+) (nexus.HandlerStartOperationResult[O], error) {
 	// Prevent the test env client from panicking when we try to use it from a workflow run operation.
 	ctx = context.WithValue(ctx, internal.IsWorkflowRunOpContextKey, true)
 

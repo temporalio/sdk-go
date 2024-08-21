@@ -56,8 +56,8 @@ github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZN
 github.com/prometheus/client_model v0.0.0-20190812154241-14fe0d1b01d4/go.mod h1:xMI15A0UPsDsEKsMN9yxemIoYk6Tm2C1GtYGdfGttqA=
 github.com/robfig/cron v1.2.0 h1:ZjScXvvxeQ63Dbyxy76Fj3AT3Ut0aKsyd2/tl3DTMuQ=
 github.com/robfig/cron v1.2.0/go.mod h1:JGuDeoQd7Z6yL4zQhZ3OPEVHB7fL6Ka6skscFHfmt2k=
-github.com/rodrigozhou/nexus-rpc-sdk-go v0.0.0-20240820230844-c7a6c4cf3d83 h1:YmW91vDyhld5/lyVhERHQKsznjrpmPKI3t/RQh2jDVo=
-github.com/rodrigozhou/nexus-rpc-sdk-go v0.0.0-20240820230844-c7a6c4cf3d83/go.mod h1:TpfkM2Cw0Rlk9drGkoiSMpFqflKTiQLWUNyKJjF8mKQ=
+github.com/rodrigozhou/nexus-rpc-sdk-go v0.0.0-20240821183033-e5054d0a14d7 h1:+h8FfySTF/QgvWJNYxTFwAP7lw8DOxUIBpLUNQKKgxc=
+github.com/rodrigozhou/nexus-rpc-sdk-go v0.0.0-20240821183033-e5054d0a14d7/go.mod h1:TpfkM2Cw0Rlk9drGkoiSMpFqflKTiQLWUNyKJjF8mKQ=
 github.com/rogpeppe/go-internal v1.11.0 h1:cWPaGQEPrBb5/AsnsZesgZZ9yb1OQ+GOISoDNXVBh4M=
 github.com/rogpeppe/go-internal v1.11.0/go.mod h1:ddIwULY96R17DhadqLgMfk9H9tvdUzkipdSkR5nkCZA=
 github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6MwdIuYE2rE=
@@ -74,8 +74,8 @@ github.com/stretchr/testify v1.9.0/go.mod h1:r2ic/lqez/lEtzL7wO/rwa5dbSLXVDPFyf8
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.3.5/go.mod h1:mwnBkeHKe2W/ZEtQ+71ViKU8L12m81fl3OWwC1Zlc8k=
-go.temporal.io/api v1.37.1-0.20240820161735-b85544bde489 h1:T6KRibKKr3o4xOkmP0jX/3o2JGHhJ/PD3wf+iBQfORQ=
-go.temporal.io/api v1.37.1-0.20240820161735-b85544bde489/go.mod h1:NYkQvBH1rBKI8EiXmtZGXi/Gf+NDbOBj6cVi0+Y+TnA=
+go.temporal.io/api v1.37.1-0.20240821170757-e7d24228ca2b h1:L3Y826uGs0mng6HFHJrHkbbwuyDwY9S0UEys64MCGiA=
+go.temporal.io/api v1.37.1-0.20240821170757-e7d24228ca2b/go.mod h1:NYkQvBH1rBKI8EiXmtZGXi/Gf+NDbOBj6cVi0+Y+TnA=
 go.uber.org/atomic v1.7.0/go.mod h1:fEN4uk6kAWBTFdckzkM89CLk9XfWZrxpCo0nPH17wJc=
 go.uber.org/goleak v1.1.10/go.mod h1:8a7PlsEVH3e/a/GLqe5IIrQx6GzcnRmZEufDUTk4A7A=
 go.uber.org/multierr v1.6.0/go.mod h1:cdWPpRnG4AhwMwsgIHip0KRBQjJy5kYEpYjJxpXp9iU=

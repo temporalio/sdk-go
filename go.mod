@@ -13,7 +13,7 @@ require (
 	github.com/pborman/uuid v1.2.1
 	github.com/robfig/cron v1.2.0
 	github.com/stretchr/testify v1.9.0
-	go.temporal.io/api v1.37.1-0.20240820161735-b85544bde489
+	go.temporal.io/api v1.37.1-0.20240821170757-e7d24228ca2b
 	golang.org/x/sync v0.8.0
 	golang.org/x/sys v0.24.0
 	golang.org/x/time v0.3.0
@@ -35,4 +35,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/nexus-rpc/sdk-go => github.com/rodrigozhou/nexus-rpc-sdk-go v0.0.0-20240820230844-c7a6c4cf3d83
+replace github.com/nexus-rpc/sdk-go => github.com/rodrigozhou/nexus-rpc-sdk-go v0.0.0-20240821183033-e5054d0a14d7

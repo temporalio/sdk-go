@@ -15,7 +15,7 @@ require (
 	go.opentelemetry.io/otel v1.28.0
 	go.opentelemetry.io/otel/sdk v1.28.0
 	go.opentelemetry.io/otel/trace v1.28.0
-	go.temporal.io/api v1.36.0
+	go.temporal.io/api v1.37.1-0.20240821170757-e7d24228ca2b
 	go.temporal.io/sdk v1.28.1
 	go.temporal.io/sdk/contrib/opentelemetry v0.1.0
 	go.temporal.io/sdk/contrib/opentracing v0.0.0-00010101000000-000000000000
@@ -67,3 +67,5 @@ replace (
 	go.temporal.io/sdk/contrib/resourcetuner => ../contrib/resourcetuner
 	go.temporal.io/sdk/contrib/tally => ../contrib/tally
 )
+
+replace github.com/nexus-rpc/sdk-go => github.com/rodrigozhou/nexus-rpc-sdk-go v0.0.0-20240821161802-40e8c3f6e7fd
