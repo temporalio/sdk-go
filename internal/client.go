@@ -645,7 +645,7 @@ type (
 		WorkflowIDConflictPolicy enumspb.WorkflowIdConflictPolicy
 
 		// WithStartOperation - Operation to execute with Workflow Start.
-		// For example, see NewUpdateWorkflowOperation to perform Update-with-Start. Note that if the workflow is
+		// For example, see NewUpdateWithStartWorkflowOperation to perform Update-with-Start. Note that if the workflow is
 		// already running and WorkflowIDConflictPolicy is set to UseExisting, the start is skipped and only the
 		// operation is executed. If instead the policy is set to Fail (the default), nothing is executed and
 		// an error will be returned (i.e. the option WorkflowExecutionErrorWhenAlreadyStarted is ignored).
@@ -731,9 +731,9 @@ type (
 		isWithStartWorkflowOperation()
 	}
 
-	// UpdateWorkflowOperation is used to perform Update-with-Start.
-	// See NewUpdateWorkflowOperation for details.
-	UpdateWorkflowOperation struct {
+	// UpdateWithStartWorkflowOperation is used to perform Update-with-Start.
+	// See NewUpdateWithStartWorkflowOperation for details.
+	UpdateWithStartWorkflowOperation struct {
 		input *ClientUpdateWorkflowInput
 		// flag to ensure the operation is only executed once
 		executed atomic.Bool
@@ -1034,24 +1034,27 @@ func DialCloudOperationsClient(ctx context.Context, options CloudOperationsClien
 	}, nil
 }
 
-// NewUpdateWorkflowOperation returns an UpdateWorkflowOperation that can be used to perform Update-with-Start,
-// or an error in case the update operation is invalid.
-func NewUpdateWorkflowOperation(options UpdateWorkflowOptions) (*UpdateWorkflowOperation, error) {
+// NewUpdateWithStartWorkflowOperation returns an UpdateWithStartWorkflowOperation that can be used to perform Update-with-Start.
+func NewUpdateWithStartWorkflowOperation(options UpdateWorkflowOptions) *UpdateWithStartWorkflowOperation {
+	res := &UpdateWithStartWorkflowOperation{doneCh: make(chan struct{})}
+
 	input, err := createUpdateWorkflowInput(options)
 	if err != nil {
-		return nil, err
-	}
-	if options.RunID != "" {
-		return nil, errors.New("RunID is not allowed to be used on an UpdateWorkflowOperation")
+		res.set(nil, err)
+	} else if options.RunID != "" {
+		res.set(nil, errors.New("RunID cannot be set because the workflow might not be running"))
 	}
 	if options.FirstExecutionRunID != "" {
-		return nil, errors.New("FirstExecutionRunID is not allowed to be used on an UpdateWorkflowOperation")
+		res.set(nil, errors.New("FirstExecutionRunID cannot be set because the workflow might not be running"))
+	} else {
+		res.input = input
 	}
-	return &UpdateWorkflowOperation{input: input, doneCh: make(chan struct{})}, nil
+
+	return res
 }
 
 // Get blocks until a server response has been received; or the context deadline is exceeded.
-func (op *UpdateWorkflowOperation) Get(ctx context.Context) (WorkflowUpdateHandle, error) {
+func (op *UpdateWithStartWorkflowOperation) Get(ctx context.Context) (WorkflowUpdateHandle, error) {
 	select {
 	case <-op.doneCh:
 		return op.handle, op.err
@@ -1060,20 +1063,20 @@ func (op *UpdateWorkflowOperation) Get(ctx context.Context) (WorkflowUpdateHandl
 	}
 }
 
-func (op *UpdateWorkflowOperation) markExecuted() error {
+func (op *UpdateWithStartWorkflowOperation) markExecuted() error {
 	if op.executed.Swap(true) {
 		return fmt.Errorf("was already executed")
 	}
 	return nil
 }
 
-func (op *UpdateWorkflowOperation) set(handle WorkflowUpdateHandle, err error) {
+func (op *UpdateWithStartWorkflowOperation) set(handle WorkflowUpdateHandle, err error) {
 	op.handle = handle
 	op.err = err
 	close(op.doneCh)
 }
 
-func (op *UpdateWorkflowOperation) isWithStartWorkflowOperation() {}
+func (op *UpdateWithStartWorkflowOperation) isWithStartWorkflowOperation() {}
 
 // NewNamespaceClient creates an instance of a namespace client, to manager lifecycle of namespaces.
 func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {

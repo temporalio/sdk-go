@@ -775,12 +775,12 @@ type UpdateWorkflowOptions struct {
 	UpdateID string
 
 	// WorkflowID is a required field indicating the workflow which should be
-	// updated. However, it is optional when using UpdateWorkflowOperation.
+	// updated. However, it is optional when using UpdateWithStartWorkflowOperation.
 	WorkflowID string
 
 	// RunID is an optional field used to identify a specific run of the target
 	// workflow.  If RunID is not provided the latest run will be used.
-	// Note that it is incompatible with UpdateWorkflowOperation.
+	// Note that it is incompatible with UpdateWithStartWorkflowOperation.
 	RunID string
 
 	// UpdateName is a required field which specifies the update you want to run.
@@ -800,7 +800,7 @@ type UpdateWorkflowOptions struct {
 	// FirstExecutionRunID specifies the RunID expected to identify the first
 	// run in the workflow execution chain. If this expectation does not match
 	// then the server will reject the update request with an error.
-	// Note that it is incompatible with UpdateWorkflowOperation.
+	// Note that it is incompatible with UpdateWithStartWorkflowOperation.
 	FirstExecutionRunID string
 }
 
@@ -1674,9 +1674,13 @@ func (w *workflowClientInterceptor) executeWorkflowWithOperation(
 
 	var withStartOp *workflowservice.ExecuteMultiOperationRequest_Operation
 	switch t := operation.(type) {
-	case *UpdateWorkflowOperation:
+	case *UpdateWithStartWorkflowOperation:
 		if err := t.markExecuted(); err != nil {
 			return nil, fmt.Errorf("%w: %w", errInvalidWorkflowOperation, err)
+		}
+
+		if t.err != nil {
+			return nil, fmt.Errorf("%w: %w", errInvalidWorkflowOperation, t.err)
 		}
 
 		updateReq, err := w.createUpdateWorkflowRequest(ctx, t.input)
@@ -1760,7 +1764,7 @@ func (w *workflowClientInterceptor) executeWorkflowWithOperation(
 					ctx,
 					enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_UNSPECIFIED,
 					opResp.UpdateWorkflow)
-				operation.(*UpdateWorkflowOperation).set(handle, err)
+				operation.(*UpdateWithStartWorkflowOperation).set(handle, err)
 				if err != nil {
 					return nil, fmt.Errorf("%w: %w", errInvalidWorkflowOperation, err)
 				}

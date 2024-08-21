@@ -976,41 +976,18 @@ func (s *workflowRunSuite) TestGetWorkflowNoExtantWorkflowAndNoRunId() {
 	s.Equal("", workflowRunNoRunID.GetRunID())
 }
 
-func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_InvalidUpdateWorkflowOptions() {
-	_, err := NewUpdateWorkflowOperation(
-		UpdateWorkflowOptions{
-			// invalid
-		})
-	s.ErrorContains(err, "WaitForStage must be specified")
-
-	_, err = NewUpdateWorkflowOperation(
-		UpdateWorkflowOptions{
-			WaitForStage: WorkflowUpdateStageCompleted,
-			RunID:        "invalid",
-		})
-	s.ErrorContains(err, "RunID is not allowed to be used on an UpdateWorkflowOperation")
-
-	_, err = NewUpdateWorkflowOperation(
-		UpdateWorkflowOptions{
-			WaitForStage:        WorkflowUpdateStageCompleted,
-			FirstExecutionRunID: "invalid",
-		})
-	s.ErrorContains(err, "FirstExecutionRunID is not allowed to be used on an UpdateWorkflowOperation")
-}
-
 func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_NonMultiOperationError() {
 	s.workflowServiceClient.EXPECT().
 		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(nil, serviceerror.NewInternal("internal error")).Times(1)
 
-	updOp, err := NewUpdateWorkflowOperation(
+	updOp := NewUpdateWithStartWorkflowOperation(
 		UpdateWorkflowOptions{
 			UpdateName:   "update",
 			WaitForStage: WorkflowUpdateStageCompleted,
 		})
-	s.Nil(err)
 
-	_, err = s.workflowClient.ExecuteWorkflow(
+	_, err := s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
 			ID:                 workflowID,
@@ -1028,14 +1005,13 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerResponseCountMism
 			Responses: []*workflowservice.ExecuteMultiOperationResponse_Response{},
 		}, nil).Times(1)
 
-	updOp, err := NewUpdateWorkflowOperation(
+	updOp := NewUpdateWithStartWorkflowOperation(
 		UpdateWorkflowOptions{
 			UpdateName:   "update",
 			WaitForStage: WorkflowUpdateStageCompleted,
 		})
-	s.Nil(err)
 
-	_, err = s.workflowClient.ExecuteWorkflow(
+	_, err := s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
 			ID:                 workflowID,
@@ -1051,14 +1027,13 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerErrorResponseCoun
 		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(nil, serviceerror.NewMultiOperationExecution("Error", []error{})).Times(1)
 
-	updOp, err := NewUpdateWorkflowOperation(
+	updOp := NewUpdateWithStartWorkflowOperation(
 		UpdateWorkflowOptions{
 			UpdateName:   "update",
 			WaitForStage: WorkflowUpdateStageCompleted,
 		})
-	s.Nil(err)
 
-	_, err = s.workflowClient.ExecuteWorkflow(
+	_, err := s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
 			ID:                 workflowID,
@@ -1081,14 +1056,13 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerStartResponseType
 			},
 		}, nil).Times(1)
 
-	updOp, err := NewUpdateWorkflowOperation(
+	updOp := NewUpdateWithStartWorkflowOperation(
 		UpdateWorkflowOptions{
 			UpdateName:   "update",
 			WaitForStage: WorkflowUpdateStageCompleted,
 		})
-	s.Nil(err)
 
-	_, err = s.workflowClient.ExecuteWorkflow(
+	_, err := s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
 			ID:                 workflowID,
@@ -1113,14 +1087,13 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerUpdateResponseTyp
 			},
 		}, nil).Times(1)
 
-	updOp, err := NewUpdateWorkflowOperation(
+	updOp := NewUpdateWithStartWorkflowOperation(
 		UpdateWorkflowOptions{
 			UpdateName:   "update",
 			WaitForStage: WorkflowUpdateStageCompleted,
 		})
-	s.Nil(err)
 
-	_, err = s.workflowClient.ExecuteWorkflow(
+	_, err := s.workflowClient.ExecuteWorkflow(
 		context.Background(),
 		StartWorkflowOptions{
 			ID:                 workflowID,
@@ -1250,7 +1223,7 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowValidation() {
 		context.Background(), "workflow-id", "my-signal", "my-signal-value",
 		StartWorkflowOptions{
 			ID:                 "workflow-id",
-			WithStartOperation: &UpdateWorkflowOperation{},
+			WithStartOperation: &UpdateWithStartWorkflowOperation{},
 		}, workflowType)
 	s.ErrorContains(err, "option WithStartOperation is not allowed")
 }
