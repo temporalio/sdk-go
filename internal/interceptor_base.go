@@ -393,12 +393,9 @@ func (w *WorkflowOutboundInterceptorBase) NewContinueAsNewError(
 // WorkflowOutboundInterceptor.ExecuteNexusOperation.
 func (w *WorkflowOutboundInterceptorBase) ExecuteNexusOperation(
 	ctx Context,
-	client NexusClient,
-	operation any,
-	input any,
-	options NexusOperationOptions,
+	input ExecuteNexusOperationInput,
 ) NexusOperationFuture {
-	return w.Next.ExecuteNexusOperation(ctx, client, operation, input, options)
+	return w.Next.ExecuteNexusOperation(ctx, input)
 }
 
 // RequestCancelNexusOperation implements
