@@ -45,6 +45,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/api/common/v1"
+	"go.temporal.io/api/enums/v1"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal"
@@ -241,6 +242,11 @@ func (o *workflowRunOperation[I, O]) Start(
 				Namespace:  nctx.Namespace,
 				WorkflowId: handle.ID(),
 				RunId:      handle.RunID(),
+				Event: &common.Link_WorkflowEvent_HistoryEvent_{
+					HistoryEvent: &common.Link_WorkflowEvent_HistoryEvent{
+						EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+					},
+				},
 			},
 		},
 	}

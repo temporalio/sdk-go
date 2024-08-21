@@ -40,7 +40,7 @@ require (
 	github.com/secure-systems-lab/go-securesystemslib v0.7.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/tinylib/msgp v1.1.8 // indirect
-	go.temporal.io/api v1.37.1-0.20240821170757-e7d24228ca2b // indirect
+	go.temporal.io/api v1.37.1-0.20240821213657-673e1c6e418c // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go4.org/intern v0.0.0-20230525184215-6c62f75575cb // indirect
 	go4.org/unsafe/assume-no-moving-gc v0.0.0-20230525183740-e7c30c78aeb2 // indirect
@@ -62,3 +62,5 @@ require (
 )
 
 replace go.temporal.io/sdk => ../../
+
+replace github.com/nexus-rpc/sdk-go => github.com/rodrigozhou/nexus-rpc-sdk-go v0.0.0-20240821183033-e5054d0a14d7

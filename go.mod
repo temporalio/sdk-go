@@ -13,7 +13,7 @@ require (
 	github.com/pborman/uuid v1.2.1
 	github.com/robfig/cron v1.2.0
 	github.com/stretchr/testify v1.9.0
-	go.temporal.io/api v1.37.1-0.20240821170757-e7d24228ca2b
+	go.temporal.io/api v1.37.1-0.20240821213657-673e1c6e418c
 	golang.org/x/sync v0.8.0
 	golang.org/x/sys v0.24.0
 	golang.org/x/time v0.3.0

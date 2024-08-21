@@ -78,8 +78,8 @@ github.com/stretchr/testify v1.9.0/go.mod h1:r2ic/lqez/lEtzL7wO/rwa5dbSLXVDPFyf8
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.3.5/go.mod h1:mwnBkeHKe2W/ZEtQ+71ViKU8L12m81fl3OWwC1Zlc8k=
-go.temporal.io/api v1.37.1-0.20240821170757-e7d24228ca2b h1:L3Y826uGs0mng6HFHJrHkbbwuyDwY9S0UEys64MCGiA=
-go.temporal.io/api v1.37.1-0.20240821170757-e7d24228ca2b/go.mod h1:NYkQvBH1rBKI8EiXmtZGXi/Gf+NDbOBj6cVi0+Y+TnA=
+go.temporal.io/api v1.37.1-0.20240821213657-673e1c6e418c h1:RZDjejj6dUfl/8mlN6D2Ndv4JFToq9P2aLsmgeLmSR0=
+go.temporal.io/api v1.37.1-0.20240821213657-673e1c6e418c/go.mod h1:NYkQvBH1rBKI8EiXmtZGXi/Gf+NDbOBj6cVi0+Y+TnA=
 go.uber.org/atomic v1.7.0/go.mod h1:fEN4uk6kAWBTFdckzkM89CLk9XfWZrxpCo0nPH17wJc=
 go.uber.org/goleak v1.1.10/go.mod h1:8a7PlsEVH3e/a/GLqe5IIrQx6GzcnRmZEufDUTk4A7A=
 go.uber.org/multierr v1.6.0/go.mod h1:cdWPpRnG4AhwMwsgIHip0KRBQjJy5kYEpYjJxpXp9iU=
