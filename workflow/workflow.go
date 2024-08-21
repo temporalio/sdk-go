@@ -309,7 +309,7 @@ func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 	return internal.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
 }
 
-// GetSignalChannel returns channel corresponding to the signal name.
+// GetSignalChannel returns the channel corresponding to the signal name.
 func GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
 	return internal.GetSignalChannel(ctx, signalName)
 }
