@@ -38,7 +38,7 @@ type (
 
 	// Info contains information about a currently executing activity.
 	Info = internal.ActivityInfo
-	//
+
 	// RegisterOptions consists of options for registering an activity.
 	RegisterOptions = internal.RegisterActivityOptions
 )
