@@ -47,6 +47,9 @@ type TracerOptions struct {
 	// DisableQueryTracing can be set to disable query tracing.
 	DisableQueryTracing bool
 
+	// DisableUpdateTracing can be set to disable update tracing.
+	DisableUpdateTracing bool
+
 	// OnFinish sets finish options.
 	// If unset, this will use [tracer.WithError]
 	// in case [interceptor.TracerFinishSpanOptions.Error] is non-nil and not [workflow.IsContinueAsNewError].
@@ -78,6 +81,7 @@ func NewTracer(opts TracerOptions) interceptor.Tracer {
 		opts: TracerOptions{
 			DisableSignalTracing: opts.DisableSignalTracing,
 			DisableQueryTracing:  opts.DisableQueryTracing,
+			DisableUpdateTracing: opts.DisableUpdateTracing,
 			OnFinish:             opts.OnFinish,
 		},
 	}
