@@ -5908,8 +5908,8 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 
 	// Start workflow with summary and details
 	opts := ts.startWorkflowOptions("test-user-metadata-" + uuid.New())
-	opts.Summary = "my-wf-summary"
-	opts.Details = "my-wf-details"
+	opts.StaticSummary = "my-wf-summary"
+	opts.StaticDetails = "my-wf-details"
 	run, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.UserMetadata)
 	ts.NoError(err)
 

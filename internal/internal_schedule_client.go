@@ -637,7 +637,7 @@ func convertToPBScheduleAction(
 			return nil, err
 		}
 
-		userMetadata, err := buildUserMetadata(action.summary, action.details, dataConverter)
+		userMetadata, err := buildUserMetadata(action.staticSummary, action.staticDetails, dataConverter)
 		if err != nil {
 			return nil, err
 		}

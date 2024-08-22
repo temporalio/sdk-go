@@ -283,8 +283,8 @@ type (
 		UntypedSearchAttributes map[string]*commonpb.Payload
 
 		// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
-		summary string
-		details string
+		staticSummary string
+		staticDetails string
 	}
 
 	// ScheduleOptions configure the parameters for creating a schedule.

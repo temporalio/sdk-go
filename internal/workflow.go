@@ -380,8 +380,8 @@ type (
 		VersioningIntent VersioningIntent
 
 		// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
-		summary string
-		details string
+		staticSummary string
+		staticDetails string
 	}
 
 	// RegisterWorkflowOptions consists of options for registering a workflow
@@ -1569,8 +1569,8 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.ParentClosePolicy = cwo.ParentClosePolicy
 	wfOptions.VersioningIntent = cwo.VersioningIntent
 	// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
-	wfOptions.summary = cwo.summary
-	wfOptions.details = cwo.details
+	wfOptions.staticSummary = cwo.staticSummary
+	wfOptions.staticDetails = cwo.staticDetails
 
 	return ctx1
 }
@@ -1598,8 +1598,8 @@ func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 		ParentClosePolicy:        opts.ParentClosePolicy,
 		VersioningIntent:         opts.VersioningIntent,
 		// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
-		summary: opts.summary,
-		details: opts.details,
+		staticSummary: opts.staticSummary,
+		staticDetails: opts.staticDetails,
 	}
 }
 

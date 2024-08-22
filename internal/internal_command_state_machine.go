@@ -1577,13 +1577,9 @@ func (h *commandsHelper) startTimer(
 	options TimerOptions,
 	dc converter.DataConverter,
 ) commandStateMachine {
-	var startMetadata *sdk.UserMetadata
-	if options.Summary != "" {
-		startMetadata = &sdk.UserMetadata{}
-		var err error
-		if startMetadata.Summary, err = dc.ToPayload(options.Summary); err != nil {
-			panic(err)
-		}
+	startMetadata, err := buildUserMetadata(options.Summary, "", dc)
+	if err != nil {
+		panic(err)
 	}
 	command := h.newTimerCommandStateMachine(attributes, startMetadata)
 	h.addCommand(command)

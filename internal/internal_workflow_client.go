@@ -1603,7 +1603,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		CompletionCallbacks:      in.Options.callbacks,
 	}
 
-	startRequest.UserMetadata, err = buildUserMetadata(in.Options.Summary, in.Options.Details, dataConverter)
+	startRequest.UserMetadata, err = buildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
 	if err != nil {
 		return nil, err
 	}
@@ -1761,7 +1761,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		signalWithStartRequest.WorkflowStartDelay = durationpb.New(in.Options.StartDelay)
 	}
 
-	signalWithStartRequest.UserMetadata, err = buildUserMetadata(in.Options.Summary, in.Options.Details, dataConverter)
+	signalWithStartRequest.UserMetadata, err = buildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
 	if err != nil {
 		return nil, err
 	}

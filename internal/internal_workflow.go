@@ -230,8 +230,8 @@ type (
 		runningUpdatesHandles map[string]UpdateInfo
 		VersioningIntent      VersioningIntent
 		// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
-		summary string
-		details string
+		staticSummary string
+		staticDetails string
 		// currentDetails is the user-set string returned on metadata query as
 		// WorkflowMetadata.current_details
 		currentDetails string
