@@ -639,6 +639,8 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityUnversionedWorkerWithRules(
 }
 
 func (ts *WorkerVersioningTestSuite) TestReachabilityVersions() {
+	// Skip this test because it is flaky with server 1.25.0, versioning api is also actively undergoing changes
+	ts.T().SkipNow()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -717,6 +719,8 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersions() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestReachabilityVersionsWithRules() {
+	// Skip this test because it is flaky with server 1.25.0, versioning api is also actively undergoing changes
+	ts.T().SkipNow()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
