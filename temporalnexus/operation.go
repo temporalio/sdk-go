@@ -47,7 +47,6 @@ import (
 	"go.temporal.io/api/enums/v1"
 
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
@@ -246,7 +245,7 @@ func (o *workflowRunOperation[I, O]) Start(
 			},
 		},
 	}
-	nexusLink := converter.ConvertLinkWorkflowEventToNexusLink(link)
+	nexusLink := ConvertLinkWorkflowEventToNexusLink(link)
 
 	return &nexus.HandlerStartOperationResultAsync{
 		OperationID: handle.ID(),
@@ -335,7 +334,7 @@ func ExecuteUntypedWorkflow[R any](
 	for _, nexusLink := range nexusOptions.Links {
 		switch nexusLink.Type {
 		case string((&common.Link_WorkflowEvent{}).ProtoReflect().Descriptor().FullName()):
-			link, err := converter.ConvertNexusLinkToLinkWorkflowEvent(nexusLink)
+			link, err := ConvertNexusLinkToLinkWorkflowEvent(nexusLink)
 			if err != nil {
 				return nil, err
 			}

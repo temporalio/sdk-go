@@ -169,7 +169,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 	if callbackHeader == nil {
 		callbackHeader = make(map[string]string)
 	}
-	var nexusLinks []nexus.Link
+	nexusLinks := make([]nexus.Link, 0, len(req.GetLinks()))
 	for _, link := range req.GetLinks() {
 		if link == nil {
 			continue
@@ -177,7 +177,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 		linkURL, err := url.Parse(link.GetUrl())
 		if err != nil {
 			nctx.Log.Error("failed to parse link url: %s", link.GetUrl(), tagError, err)
-			return nil, h.internalError(fmt.Errorf("failed to parse link url: %w", err)), nil
+			return nil, nexusHandlerError(nexus.HandlerErrorTypeBadRequest, "failed to parse link url"), nil
 		}
 		nexusLinks = append(nexusLinks, nexus.Link{
 			URL:  linkURL,

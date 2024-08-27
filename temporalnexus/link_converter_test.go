@@ -20,7 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package converter
+package temporalnexus_test
 
 import (
 	"net/url"
@@ -32,6 +32,7 @@ import (
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/sdk/temporalnexus"
 	"google.golang.org/protobuf/testing/protocmp"
 )
 
@@ -120,7 +121,7 @@ func TestConvertLinkWorkflowEventToNexusLink(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			output := ConvertLinkWorkflowEventToNexusLink(tc.input)
+			output := temporalnexus.ConvertLinkWorkflowEventToNexusLink(tc.input)
 			require.Equal(t, tc.output, output)
 			require.Equal(t, tc.outputURL, output.URL.String())
 		})
@@ -273,7 +274,7 @@ func TestConvertNexusLinkToLinkWorkflowEvent(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			output, err := ConvertNexusLinkToLinkWorkflowEvent(tc.input)
+			output, err := temporalnexus.ConvertNexusLinkToLinkWorkflowEvent(tc.input)
 			if tc.errMsg != "" {
 				require.ErrorContains(t, err, tc.errMsg)
 			} else {

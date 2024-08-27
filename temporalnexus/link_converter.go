@@ -20,7 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package converter
+package temporalnexus
 
 import (
 	"fmt"
@@ -47,11 +47,11 @@ const (
 )
 
 var (
-	rePatternNamespace  = fmt.Sprintf(`(?P<%s>[a-z0-9-.]+)`, urlPathNamespaceKey)
+	rePatternNamespace  = fmt.Sprintf(`(?P<%s>[^/]+)`, urlPathNamespaceKey)
 	rePatternWorkflowID = fmt.Sprintf(`(?P<%s>[^/]+)`, urlPathWorkflowIDKey)
-	rePatternRunID      = fmt.Sprintf(`(?P<%s>[a-zA-Z0-9-]+)`, urlPathRunIDKey)
+	rePatternRunID      = fmt.Sprintf(`(?P<%s>[^/]+)`, urlPathRunIDKey)
 	urlPathRE           = regexp.MustCompile(fmt.Sprintf(
-		`^/+namespaces/+%s/+workflows/+%s/+%s/+history/*$`,
+		`^/namespaces/%s/workflows/%s/%s/history/?$`,
 		rePatternNamespace,
 		rePatternWorkflowID,
 		rePatternRunID,
@@ -91,41 +91,47 @@ func ConvertNexusLinkToLinkWorkflowEvent(link nexus.Link) (*commonpb.Link_Workfl
 	}
 
 	if link.URL.Scheme != urlSchemeTemporalKey {
-		return nil, fmt.Errorf("failed to parse link to Link_WorkflowEvent")
+		return nil, fmt.Errorf(
+			"failed to parse link to Link_WorkflowEvent: invalid scheme: %s",
+			link.URL.Scheme,
+		)
 	}
 
 	matches := urlPathRE.FindStringSubmatch(link.URL.EscapedPath())
 	if len(matches) != 4 {
-		return nil, fmt.Errorf("failed to parse link to Link_WorkflowEvent")
+		return nil, fmt.Errorf("failed to parse link to Link_WorkflowEvent: malformed URL path")
 	}
 
 	var err error
 	we.Namespace, err = url.PathUnescape(matches[urlPathRE.SubexpIndex(urlPathNamespaceKey)])
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse link to Link_WorkflowEvent")
+		return nil, fmt.Errorf("failed to parse link to Link_WorkflowEvent: %w", err)
 	}
 
 	we.WorkflowId, err = url.PathUnescape(matches[urlPathRE.SubexpIndex(urlPathWorkflowIDKey)])
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse link to Link_WorkflowEvent")
+		return nil, fmt.Errorf("failed to parse link to Link_WorkflowEvent: %w", err)
 	}
 
 	we.RunId, err = url.PathUnescape(matches[urlPathRE.SubexpIndex(urlPathRunIDKey)])
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse link to Link_WorkflowEvent")
+		return nil, fmt.Errorf("failed to parse link to Link_WorkflowEvent: %w", err)
 	}
 
-	switch link.URL.Query().Get(linkWorkflowEventReferenceTypeKey) {
+	switch refType := link.URL.Query().Get(linkWorkflowEventReferenceTypeKey); refType {
 	case string((&commonpb.Link_WorkflowEvent_EventReference{}).ProtoReflect().Descriptor().Name()):
 		eventRef, err := convertURLQueryToLinkWorkflowEventEventReference(link.URL.Query())
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to parse link to Link_WorkflowEvent: %w", err)
 		}
 		we.Reference = &commonpb.Link_WorkflowEvent_EventRef{
 			EventRef: eventRef,
 		}
 	default:
-		// TODO(rodrigozhou): do we want to return an error here?
+		return nil, fmt.Errorf(
+			"failed to parse link to Link_WorkflowEvent: unknown reference type: %q",
+			refType,
+		)
 	}
 
 	return we, nil
