@@ -42,12 +42,12 @@ import (
 	"context"
 	"errors"
 
-	"github.com/gogo/protobuf/proto"
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
 
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
@@ -236,31 +236,21 @@ func (o *workflowRunOperation[I, O]) Start(
 	}
 
 	// Create the link information about the new workflow and return to the caller.
-	link := &common.Link{
-		Variant: &common.Link_WorkflowEvent_{
-			WorkflowEvent: &common.Link_WorkflowEvent{
-				Namespace:  nctx.Namespace,
-				WorkflowId: handle.ID(),
-				RunId:      handle.RunID(),
-				Event: &common.Link_WorkflowEvent_HistoryEvent_{
-					HistoryEvent: &common.Link_WorkflowEvent_HistoryEvent{
-						EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
-					},
-				},
+	link := &common.Link_WorkflowEvent{
+		Namespace:  nctx.Namespace,
+		WorkflowId: handle.ID(),
+		RunId:      handle.RunID(),
+		Reference: &common.Link_WorkflowEvent_EventRef{
+			EventRef: &common.Link_WorkflowEvent_EventReference{
+				EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
 			},
 		},
 	}
-	linkData, err := proto.Marshal(link)
-	if err != nil {
-		return nil, err
-	}
+	nexusLink := converter.ConvertLinkWorkflowEventToNexusLink(link)
 
 	return &nexus.HandlerStartOperationResultAsync{
 		OperationID: handle.ID(),
-		Links: []nexus.Link{{
-			Data: linkData,
-			Type: string(link.ProtoReflect().Descriptor().FullName()),
-		}},
+		Links:       []nexus.Link{nexusLink},
 	}, nil
 }
 
@@ -344,12 +334,16 @@ func ExecuteUntypedWorkflow[R any](
 	var links []*common.Link
 	for _, nexusLink := range nexusOptions.Links {
 		switch nexusLink.Type {
-		case string((&common.Link{}).ProtoReflect().Descriptor().FullName()):
-			var link common.Link
-			if err := proto.Unmarshal(nexusLink.Data, &link); err != nil {
+		case string((&common.Link_WorkflowEvent{}).ProtoReflect().Descriptor().FullName()):
+			link, err := converter.ConvertNexusLinkToLinkWorkflowEvent(nexusLink)
+			if err != nil {
 				return nil, err
 			}
-			links = append(links, &link)
+			links = append(links, &common.Link{
+				Variant: &common.Link_WorkflowEvent_{
+					WorkflowEvent: link,
+				},
+			})
 		default:
 			nctx.Log.Warn("ignoring unsupported link data type: %q", nexusLink.Type)
 		}

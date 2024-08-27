@@ -28,6 +28,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"reflect"
 	"runtime/debug"
 	"time"
@@ -170,8 +171,16 @@ func (h *nexusTaskHandler) handleStartOperation(
 	}
 	var nexusLinks []nexus.Link
 	for _, link := range req.GetLinks() {
+		if link == nil {
+			continue
+		}
+		linkURL, err := url.Parse(link.GetUrl())
+		if err != nil {
+			nctx.Log.Error("failed to parse link url: %s", link.GetUrl(), tagError, err)
+			return nil, h.internalError(fmt.Errorf("failed to parse link url: %w", err)), nil
+		}
 		nexusLinks = append(nexusLinks, nexus.Link{
-			Data: link.GetData(),
+			URL:  linkURL,
 			Type: link.GetType(),
 		})
 	}
@@ -234,7 +243,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 		var links []*nexuspb.Link
 		for _, nexusLink := range t.Links {
 			links = append(links, &nexuspb.Link{
-				Data: nexusLink.Data,
+				Url:  nexusLink.URL.String(),
 				Type: nexusLink.Type,
 			})
 		}
