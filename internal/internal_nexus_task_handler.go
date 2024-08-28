@@ -28,6 +28,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"reflect"
 	"runtime/debug"
 	"time"
@@ -120,6 +121,7 @@ func (h *nexusTaskHandler) execute(task *workflowservice.PollNexusTaskQueueRespo
 	}
 	nctx := &NexusOperationContext{
 		Client:         h.client,
+		Namespace:      h.namespace,
 		TaskQueue:      h.taskQueueName,
 		MetricsHandler: metricsHandler,
 		Log:            log,
@@ -145,7 +147,12 @@ func (h *nexusTaskHandler) execute(task *workflowservice.PollNexusTaskQueueRespo
 	}
 }
 
-func (h *nexusTaskHandler) handleStartOperation(ctx context.Context, nctx *NexusOperationContext, req *nexuspb.StartOperationRequest, header nexus.Header) (*nexuspb.Response, *nexuspb.HandlerError, error) {
+func (h *nexusTaskHandler) handleStartOperation(
+	ctx context.Context,
+	nctx *NexusOperationContext,
+	req *nexuspb.StartOperationRequest,
+	header nexus.Header,
+) (*nexuspb.Response, *nexuspb.HandlerError, error) {
 	serializer := &payloadSerializer{
 		converter: h.dataConverter,
 		payload:   req.GetPayload(),
@@ -162,11 +169,27 @@ func (h *nexusTaskHandler) handleStartOperation(ctx context.Context, nctx *Nexus
 	if callbackHeader == nil {
 		callbackHeader = make(map[string]string)
 	}
+	nexusLinks := make([]nexus.Link, 0, len(req.GetLinks()))
+	for _, link := range req.GetLinks() {
+		if link == nil {
+			continue
+		}
+		linkURL, err := url.Parse(link.GetUrl())
+		if err != nil {
+			nctx.Log.Error("failed to parse link url: %s", link.GetUrl(), tagError, err)
+			return nil, nexusHandlerError(nexus.HandlerErrorTypeBadRequest, "failed to parse link url"), nil
+		}
+		nexusLinks = append(nexusLinks, nexus.Link{
+			URL:  linkURL,
+			Type: link.GetType(),
+		})
+	}
 	startOptions := nexus.StartOperationOptions{
 		RequestID:      req.RequestId,
 		CallbackURL:    req.Callback,
 		Header:         header,
 		CallbackHeader: callbackHeader,
+		Links:          nexusLinks,
 	}
 	var opres nexus.HandlerStartOperationResult[any]
 	var err error
@@ -217,11 +240,21 @@ func (h *nexusTaskHandler) handleStartOperation(ctx context.Context, nctx *Nexus
 	}
 	switch t := opres.(type) {
 	case *nexus.HandlerStartOperationResultAsync:
+		var links []*nexuspb.Link
+		for _, nexusLink := range t.Links {
+			links = append(links, &nexuspb.Link{
+				Url:  nexusLink.URL.String(),
+				Type: nexusLink.Type,
+			})
+		}
 		return &nexuspb.Response{
 			Variant: &nexuspb.Response_StartOperation{
 				StartOperation: &nexuspb.StartOperationResponse{
 					Variant: &nexuspb.StartOperationResponse_AsyncSuccess{
-						AsyncSuccess: &nexuspb.StartOperationResponse_Async{OperationId: t.OperationID},
+						AsyncSuccess: &nexuspb.StartOperationResponse_Async{
+							OperationId: t.OperationID,
+							Links:       links,
+						},
 					},
 				},
 			},

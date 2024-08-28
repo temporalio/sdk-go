@@ -1600,6 +1600,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		SearchAttributes:         searchAttr,
 		Header:                   header,
 		CompletionCallbacks:      in.Options.callbacks,
+		Links:                    in.Options.links,
 	}
 
 	if in.Options.requestID != "" {
