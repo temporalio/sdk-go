@@ -20,6 +20,10 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
+// This file is duplicated in temporalio/temporal/components/nexusoperations/link_converter.go
+// Any changes here or there must be replicated. This is temporary until the
+// temporal repo updates to the most recent SDK version.
+
 package temporalnexus
 
 import (
@@ -51,7 +55,7 @@ var (
 	rePatternWorkflowID = fmt.Sprintf(`(?P<%s>[^/]+)`, urlPathWorkflowIDKey)
 	rePatternRunID      = fmt.Sprintf(`(?P<%s>[^/]+)`, urlPathRunIDKey)
 	urlPathRE           = regexp.MustCompile(fmt.Sprintf(
-		`^/namespaces/%s/workflows/%s/%s/history/?$`,
+		`^/namespaces/%s/workflows/%s/%s/history$`,
 		rePatternNamespace,
 		rePatternWorkflowID,
 		rePatternRunID,
