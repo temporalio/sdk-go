@@ -652,6 +652,8 @@ type (
 		// This option will be ignored when used with Client.SignalWithStartWorkflow.
 		//
 		// Optional: defaults to nil.
+		//
+		// NOTE: Experimental
 		WithStartOperation WithStartWorkflowOperation
 
 		// When WorkflowExecutionErrorWhenAlreadyStarted is true, Client.ExecuteWorkflow will return an error if the

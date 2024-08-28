@@ -164,10 +164,12 @@ type (
 
 	// WithStartWorkflowOperation is a type of operation that can be executed as part of a workflow start.
 	// For example, use NewUpdateWithStartWorkflowOperation to perform Update-with-Start.
+	// NOTE: Experimental
 	WithStartWorkflowOperation = internal.WithStartWorkflowOperation
 
 	// UpdateWithStartWorkflowOperation is used to perform Update-with-Start.
 	// See NewUpdateWithStartWorkflowOperation for details.
+	// NOTE: Experimental
 	UpdateWithStartWorkflowOperation = internal.UpdateWithStartWorkflowOperation
 
 	// HistoryEventIterator is a iterator which can return history events.
@@ -931,6 +933,7 @@ var MetricsNopHandler = metrics.NopHandler
 // NewUpdateWithStartWorkflowOperation returns an UpdateWithStartWorkflowOperation to perform Update-with-Start.
 // After executing Client.ExecuteWorkflow with the UpdateWithStartWorkflow in the start options,
 // the update result can be obtained.
+// NOTE: Experimental
 func NewUpdateWithStartWorkflowOperation(options UpdateWorkflowOptions) *UpdateWithStartWorkflowOperation {
 	return internal.NewUpdateWithStartWorkflowOperation(options)
 }
