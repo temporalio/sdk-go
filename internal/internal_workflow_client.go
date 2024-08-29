@@ -1592,6 +1592,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		SearchAttributes:         searchAttr,
 		Header:                   header,
 		CompletionCallbacks:      in.Options.callbacks,
+		Links:                    in.Options.links,
 	}
 
 	if in.Options.requestID != "" {
@@ -2010,7 +2011,7 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 			if ctx.Err() != nil {
 				return nil, NewWorkflowUpdateServiceTimeoutOrCanceledError(err)
 			}
-			if code := status.Code(err); code == codes.Canceled || code == codes.DeadlineExceeded {
+			if status := serviceerror.ToStatus(err); status.Code() == codes.Canceled || status.Code() == codes.DeadlineExceeded {
 				return nil, NewWorkflowUpdateServiceTimeoutOrCanceledError(err)
 			}
 			return nil, err

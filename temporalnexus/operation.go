@@ -44,6 +44,7 @@ import (
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/api/common/v1"
+	"go.temporal.io/api/enums/v1"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal"
@@ -202,9 +203,18 @@ func (o *workflowRunOperation[I, O]) Name() string {
 	return o.options.Name
 }
 
-func (o *workflowRunOperation[I, O]) Start(ctx context.Context, input I, options nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[O], error) {
+func (o *workflowRunOperation[I, O]) Start(
+	ctx context.Context,
+	input I,
+	options nexus.StartOperationOptions,
+) (nexus.HandlerStartOperationResult[O], error) {
 	// Prevent the test env client from panicking when we try to use it from a workflow run operation.
 	ctx = context.WithValue(ctx, internal.IsWorkflowRunOpContextKey, true)
+
+	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
+	if !ok {
+		return nil, nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
+	}
 
 	if o.options.Handler != nil {
 		handle, err := o.options.Handler(ctx, input, options)
@@ -223,7 +233,24 @@ func (o *workflowRunOperation[I, O]) Start(ctx context.Context, input I, options
 	if err != nil {
 		return nil, err
 	}
-	return &nexus.HandlerStartOperationResultAsync{OperationID: handle.ID()}, nil
+
+	// Create the link information about the new workflow and return to the caller.
+	link := &common.Link_WorkflowEvent{
+		Namespace:  nctx.Namespace,
+		WorkflowId: handle.ID(),
+		RunId:      handle.RunID(),
+		Reference: &common.Link_WorkflowEvent_EventRef{
+			EventRef: &common.Link_WorkflowEvent_EventReference{
+				EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+			},
+		},
+	}
+	nexusLink := ConvertLinkWorkflowEventToNexusLink(link)
+
+	return &nexus.HandlerStartOperationResultAsync{
+		OperationID: handle.ID(),
+		Links:       []nexus.Link{nexusLink},
+	}, nil
 }
 
 // WorkflowHandle is a readonly representation of a workflow run backing a Nexus operation.
@@ -302,6 +329,26 @@ func ExecuteUntypedWorkflow[R any](
 			},
 		})
 	}
+
+	var links []*common.Link
+	for _, nexusLink := range nexusOptions.Links {
+		switch nexusLink.Type {
+		case string((&common.Link_WorkflowEvent{}).ProtoReflect().Descriptor().FullName()):
+			link, err := ConvertNexusLinkToLinkWorkflowEvent(nexusLink)
+			if err != nil {
+				return nil, err
+			}
+			links = append(links, &common.Link{
+				Variant: &common.Link_WorkflowEvent_{
+					WorkflowEvent: link,
+				},
+			})
+		default:
+			nctx.Log.Warn("ignoring unsupported link data type: %q", nexusLink.Type)
+		}
+	}
+	internal.SetLinksOnStartWorkflowOptions(&startWorkflowOptions, links)
+
 	run, err := nctx.Client.ExecuteWorkflow(ctx, startWorkflowOptions, workflow, args...)
 	if err != nil {
 		return nil, err

@@ -1701,6 +1701,12 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		tagTaskQueue, taskQueue,
 		tagWorkerID, workerParams.Identity,
 	)
+	if workerParams.WorkerBuildID != "" {
+		// Add worker build ID to the logs if it's set by user
+		workerParams.Logger = log.With(workerParams.Logger,
+			tagBuildID, workerParams.WorkerBuildID,
+		)
+	}
 
 	processTestTags(&options, &workerParams)
 

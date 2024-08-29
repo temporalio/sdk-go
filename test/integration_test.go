@@ -177,8 +177,9 @@ func (ts *IntegrationTestSuite) SetupTest() {
 			sdktrace.WithSpanProcessor(ts.openTelemetrySpanRecorder)).Tracer("")
 		interceptor, err := opentelemetry.NewTracingInterceptor(opentelemetry.TracerOptions{
 			Tracer:               ts.openTelemetryTracer,
-			DisableSignalTracing: strings.HasSuffix(ts.T().Name(), "WithoutSignalsAndQueries"),
-			DisableQueryTracing:  strings.HasSuffix(ts.T().Name(), "WithoutSignalsAndQueries"),
+			DisableSignalTracing: strings.HasSuffix(ts.T().Name(), "WithoutMessages"),
+			DisableQueryTracing:  strings.HasSuffix(ts.T().Name(), "WithoutMessages"),
+			DisableUpdateTracing: strings.HasSuffix(ts.T().Name(), "WithoutMessages"),
 			DisableBaggage:       strings.HasSuffix(ts.T().Name(), "WithDisableBaggageOption"),
 		})
 		ts.NoError(err)
@@ -2532,11 +2533,11 @@ func (ts *IntegrationTestSuite) TestOpenTelemetryTracing() {
 	ts.testOpenTelemetryTracing(true)
 }
 
-func (ts *IntegrationTestSuite) TestOpenTelemetryTracingWithoutSignalsAndQueries() {
+func (ts *IntegrationTestSuite) TestOpenTelemetryTracingWithoutMessages() {
 	ts.testOpenTelemetryTracing(false)
 }
 
-func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withSignalAndQueryHeaders bool) {
+func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// Start a top-level span
@@ -2544,7 +2545,7 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withSignalAndQueryHeade
 
 	// Signal with start
 	run, err := ts.client.SignalWithStartWorkflow(ctx, "test-interceptor-open-telemetry", "start-signal",
-		nil, ts.startWorkflowOptions("test-interceptor-open-telemetry"), ts.workflows.SignalsAndQueries, true, true)
+		nil, ts.startWorkflowOptions("test-interceptor-open-telemetry"), ts.workflows.SignalsQueriesAndUpdate, true, true)
 	ts.NoError(err)
 
 	// Query
@@ -2553,6 +2554,16 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withSignalAndQueryHeade
 	var queryResp string
 	ts.NoError(val.Get(&queryResp))
 	ts.Equal("query-response", queryResp)
+
+	// Update
+	handle, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "workflow-update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
+	ts.NoError(err)
+	ts.NoError(handle.Get(ctx, nil))
 
 	// Finish signal
 	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish-signal", nil))
@@ -2565,15 +2576,18 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withSignalAndQueryHeade
 	// Span builder
 	span := func(name string, children ...*interceptortest.SpanInfo) *interceptortest.SpanInfo {
 		// If without signal-and-query headers, filter out those children in place
-		if !withSignalAndQueryHeaders {
+		if !withMessages {
 			n := 0
 			for _, child := range children {
-				isSignalOrQuery := strings.HasPrefix(child.Name, "SignalWorkflow:") ||
+				isMessage := strings.HasPrefix(child.Name, "SignalWorkflow:") ||
 					strings.HasPrefix(child.Name, "SignalChildWorkflow:") ||
 					strings.HasPrefix(child.Name, "HandleSignal:") ||
 					strings.HasPrefix(child.Name, "QueryWorkflow:") ||
-					strings.HasPrefix(child.Name, "HandleQuery:")
-				if !isSignalOrQuery {
+					strings.HasPrefix(child.Name, "HandleQuery:") ||
+					strings.HasPrefix(child.Name, "UpdateWorkflow:") ||
+					strings.HasPrefix(child.Name, "ValidateUpdate:") ||
+					strings.HasPrefix(child.Name, "HandleUpdate:")
+				if !isMessage {
 					children[n] = child
 					n++
 				}
@@ -2587,19 +2601,19 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withSignalAndQueryHeade
 	actual := interceptortest.Span("root-span")
 	ts.addOpenTelemetryChildren(rootSpan.SpanContext().SpanID(), actual, spans)
 	expected := span("root-span",
-		span("SignalWithStartWorkflow:SignalsAndQueries",
+		span("SignalWithStartWorkflow:SignalsQueriesAndUpdate",
 			span("HandleSignal:start-signal"),
-			span("RunWorkflow:SignalsAndQueries",
+			span("RunWorkflow:SignalsQueriesAndUpdate",
 				// Child workflow exec
-				span("StartChildWorkflow:SignalsAndQueries",
-					span("RunWorkflow:SignalsAndQueries",
+				span("StartChildWorkflow:SignalsQueriesAndUpdate",
+					span("RunWorkflow:SignalsQueriesAndUpdate",
 						// Activity inside child workflow
 						span("StartActivity:ExternalSignalsAndQueries",
 							span("RunActivity:ExternalSignalsAndQueries",
 								// Signal and query inside activity
-								span("SignalWithStartWorkflow:SignalsAndQueries",
+								span("SignalWithStartWorkflow:SignalsQueriesAndUpdate",
 									span("HandleSignal:start-signal"),
-									span("RunWorkflow:SignalsAndQueries"),
+									span("RunWorkflow:SignalsQueriesAndUpdate"),
 								),
 								span("QueryWorkflow:workflow-query",
 									span("HandleQuery:workflow-query"),
@@ -2620,9 +2634,9 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withSignalAndQueryHeade
 				// Activity in top-level
 				span("StartActivity:ExternalSignalsAndQueries",
 					span("RunActivity:ExternalSignalsAndQueries",
-						span("SignalWithStartWorkflow:SignalsAndQueries",
+						span("SignalWithStartWorkflow:SignalsQueriesAndUpdate",
 							span("HandleSignal:start-signal"),
-							span("RunWorkflow:SignalsAndQueries"),
+							span("RunWorkflow:SignalsQueriesAndUpdate"),
 						),
 						span("QueryWorkflow:workflow-query",
 							span("HandleQuery:workflow-query"),
@@ -2634,15 +2648,61 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withSignalAndQueryHeade
 				),
 			),
 		),
-		// Top-level query and signal
+		// Top-level query signal, and update
 		span("QueryWorkflow:workflow-query",
 			span("HandleQuery:workflow-query"),
+		),
+		span("UpdateWorkflow:workflow-update",
+			span("ValidateUpdate:workflow-update"),
+			span("HandleUpdate:workflow-update",
+				// Child workflow exec
+				span("StartChildWorkflow:SignalsQueriesAndUpdate",
+					span("RunWorkflow:SignalsQueriesAndUpdate",
+						// Activity inside child workflow
+						span("StartActivity:ExternalSignalsAndQueries",
+							span("RunActivity:ExternalSignalsAndQueries",
+								// Signal and query inside activity
+								span("SignalWithStartWorkflow:SignalsQueriesAndUpdate",
+									span("HandleSignal:start-signal"),
+									span("RunWorkflow:SignalsQueriesAndUpdate"),
+								),
+								span("QueryWorkflow:workflow-query",
+									span("HandleQuery:workflow-query"),
+								),
+								span("SignalWorkflow:finish-signal",
+									span("HandleSignal:finish-signal"),
+								),
+							),
+						),
+					),
+				),
+				span("SignalChildWorkflow:start-signal",
+					span("HandleSignal:start-signal"),
+				),
+				span("SignalChildWorkflow:finish-signal",
+					span("HandleSignal:finish-signal"),
+				),
+				// Activity in top-level
+				span("StartActivity:ExternalSignalsAndQueries",
+					span("RunActivity:ExternalSignalsAndQueries",
+						span("SignalWithStartWorkflow:SignalsQueriesAndUpdate",
+							span("HandleSignal:start-signal"),
+							span("RunWorkflow:SignalsQueriesAndUpdate"),
+						),
+						span("QueryWorkflow:workflow-query",
+							span("HandleQuery:workflow-query"),
+						),
+						span("SignalWorkflow:finish-signal",
+							span("HandleSignal:finish-signal"),
+						),
+					),
+				),
+			),
 		),
 		span("SignalWorkflow:finish-signal",
 			span("HandleSignal:finish-signal"),
 		),
 	)
-
 	ts.Equal(expected, actual)
 }
 

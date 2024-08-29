@@ -91,6 +91,8 @@ jobs:
         env:
           # TODO(bergundy): Remove this flag once server 1.25.0 is out.
           DISABLE_NEXUS_TESTS: "1"
+          # TODO(bergundy): Remove this flag too once server 1.25.0 is out. Thanks Roey! :)
+          DISABLE_BACKLOG_STATS_TESTS: "1"
         working-directory: ./internal/cmd/build
 
   cloud-test:
@@ -129,14 +131,3 @@ jobs:
       go-repo-path: ${{github.event.pull_request.head.repo.full_name}}
       version: ${{github.event.pull_request.head.ref}}
       version-is-repo-ref: true
-
-  omes-image-build:
-    uses: temporalio/omes/.github/workflows/docker-images.yml@main
-    secrets: inherit
-    with:
-      lang: go
-      sdk-repo-url: ${{ github.event.pull_request.head.repo.full_name || 'temporalio/sdk-go' }}
-      sdk-repo-ref: ${{ github.event.pull_request.head.ref || github.ref }}
-      # TODO: Remove once we have a good way of cleaning up sha-based pushed images
-      docker-tag-ext: ci-latest
-      do-push: true

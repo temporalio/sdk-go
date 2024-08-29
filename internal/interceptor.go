@@ -26,6 +26,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/nexus-rpc/sdk-go/nexus"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	updatepb "go.temporal.io/api/update/v1"
@@ -169,13 +170,29 @@ type HandleQueryInput struct {
 	Args      []interface{}
 }
 
+// ExecuteNexusOperationInput is the input to WorkflowOutboundInterceptor.ExecuteNexusOperation.
+//
+// NOTE: Experimental
+type ExecuteNexusOperationInput struct {
+	// Client to start the operation with.
+	Client NexusClient
+	// Operation name or OperationReference from the Nexus SDK.
+	Operation any
+	// Operation input.
+	Input any
+	// Options for starting the operation.
+	Options NexusOperationOptions
+	// Header to attach to the request.
+	NexusHeader nexus.Header
+}
+
 // RequestCancelNexusOperationInput is the input to WorkflowOutboundInterceptor.RequestCancelNexusOperation.
 //
 // NOTE: Experimental
 type RequestCancelNexusOperationInput struct {
 	// Client that was used to start the operation.
 	Client NexusClient
-	// Operation name.
+	// Operation name or OperationReference from the Nexus SDK.
 	Operation any
 	// Operation ID. May be empty if the operation is synchronous or has not started yet.
 	ID string
@@ -300,7 +317,7 @@ type WorkflowOutboundInterceptor interface {
 	// ExecuteNexusOperation intercepts NexusClient.ExecuteOperation.
 	//
 	// NOTE: Experimental
-	ExecuteNexusOperation(ctx Context, client NexusClient, operation any, input any, options NexusOperationOptions) NexusOperationFuture
+	ExecuteNexusOperation(ctx Context, input ExecuteNexusOperationInput) NexusOperationFuture
 	// RequestCancelNexusOperation intercepts Nexus Operation cancelation via context.
 	//
 	// NOTE: Experimental

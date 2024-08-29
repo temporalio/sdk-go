@@ -40,6 +40,7 @@ const (
 	workflowIDTagKey = "temporalWorkflowID"
 	runIDTagKey      = "temporalRunID"
 	activityIDTagKey = "temporalActivityID"
+	updateIDTagKey   = "temporalUpdateID"
 )
 
 // Tracer is an interface for tracing implementations as used by
@@ -112,6 +113,9 @@ type TracerOptions struct {
 
 	// DisableQueryTracing can be set to disable query tracing.
 	DisableQueryTracing bool
+
+	// DisableUpdateTracing can be set to disable update tracing.
+	DisableUpdateTracing bool
 
 	// AllowInvalidParentSpans will swallow errors interpreting parent
 	// spans from headers. Useful when migrating from one tracing library
@@ -348,6 +352,33 @@ func (t *tracingClientOutboundInterceptor) QueryWorkflow(
 	return val, err
 }
 
+func (t *tracingClientOutboundInterceptor) UpdateWorkflow(
+	ctx context.Context,
+	in *ClientUpdateWorkflowInput,
+) (client.WorkflowUpdateHandle, error) {
+	// Only add tracing if enabled
+	if t.root.options.DisableUpdateTracing {
+		return t.Next.UpdateWorkflow(ctx, in)
+	}
+	// Start span and write to header
+	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
+		Operation: "UpdateWorkflow",
+		Name:      in.UpdateName,
+		Tags:      map[string]string{workflowIDTagKey: in.WorkflowID},
+		ToHeader:  true,
+		Time:      time.Now(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	var finishOpts TracerFinishSpanOptions
+	defer span.Finish(&finishOpts)
+
+	val, err := t.Next.UpdateWorkflow(ctx, in)
+	finishOpts.Error = err
+	return val, err
+}
+
 type tracingActivityOutboundInterceptor struct {
 	ActivityOutboundInterceptorBase
 	root *tracingInterceptor
@@ -511,6 +542,78 @@ func (t *tracingWorkflowInboundInterceptor) HandleQuery(
 	defer span.Finish(&finishOpts)
 
 	val, err := t.Next.HandleQuery(ctx, in)
+	finishOpts.Error = err
+	return val, err
+}
+
+func (t *tracingWorkflowInboundInterceptor) ValidateUpdate(
+	ctx workflow.Context,
+	in *UpdateInput,
+) error {
+	// Only add tracing if enabled and not replaying
+	if t.root.options.DisableUpdateTracing {
+		return t.Next.ValidateUpdate(ctx, in)
+	}
+	// Start span reading from header
+	info := workflow.GetInfo(ctx)
+	currentUpdateInfo := workflow.GetCurrentUpdateInfo(ctx)
+	span, ctx, err := t.root.startSpanFromWorkflowContext(ctx, &TracerStartSpanOptions{
+		Operation: "ValidateUpdate",
+		Name:      in.Name,
+		Tags: map[string]string{
+			workflowIDTagKey: info.WorkflowExecution.ID,
+			runIDTagKey:      info.WorkflowExecution.RunID,
+			updateIDTagKey:   currentUpdateInfo.ID,
+		},
+		FromHeader: true,
+		Time:       time.Now(),
+		// We intentionally do not set IdempotencyKey here because validation is not run on
+		// replay. When the tracing interceptor's span counter is reset between workflow
+		// replays, the validator will not be processed which could result in impotency key
+		// collisions with other requests.
+	})
+	if err != nil {
+		return err
+	}
+	var finishOpts TracerFinishSpanOptions
+	defer span.Finish(&finishOpts)
+
+	err = t.Next.ValidateUpdate(ctx, in)
+	finishOpts.Error = err
+	return err
+}
+
+func (t *tracingWorkflowInboundInterceptor) ExecuteUpdate(
+	ctx workflow.Context,
+	in *UpdateInput,
+) (interface{}, error) {
+	// Only add tracing if enabled and not replaying
+	if t.root.options.DisableUpdateTracing {
+		return t.Next.ExecuteUpdate(ctx, in)
+	}
+	// Start span reading from header
+	info := workflow.GetInfo(ctx)
+	currentUpdateInfo := workflow.GetCurrentUpdateInfo(ctx)
+	span, ctx, err := t.root.startSpanFromWorkflowContext(ctx, &TracerStartSpanOptions{
+		// Using operation name "HandleUpdate" to match other SDKs and by consistence with other operations
+		Operation: "HandleUpdate",
+		Name:      in.Name,
+		Tags: map[string]string{
+			workflowIDTagKey: info.WorkflowExecution.ID,
+			runIDTagKey:      info.WorkflowExecution.RunID,
+			updateIDTagKey:   currentUpdateInfo.ID,
+		},
+		FromHeader:     true,
+		Time:           time.Now(),
+		IdempotencyKey: t.newIdempotencyKey(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	var finishOpts TracerFinishSpanOptions
+	defer span.Finish(&finishOpts)
+
+	val, err := t.Next.ExecuteUpdate(ctx, in)
 	finishOpts.Error = err
 	return val, err
 }

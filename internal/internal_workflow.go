@@ -682,7 +682,7 @@ func executeDispatcher(ctx Context, dispatcher dispatcher, timeout time.Duration
 	if len(us) > 0 {
 		env.GetLogger().Warn("Workflow has unhandled signals", "SignalNames", us)
 	}
-	//
+	// Warn if there are any update handlers still running
 	type warnUpdate struct {
 		Name string `json:"name"`
 		ID   string `json:"id"`
@@ -696,7 +696,11 @@ func executeDispatcher(ctx Context, dispatcher dispatcher, timeout time.Duration
 			})
 		}
 	}
-	if len(updatesToWarn) > 0 {
+
+	// Verify that the workflow did not fail. If it did we will not warn about unhandled updates.
+	var canceledErr *CanceledError
+	var contErr *ContinueAsNewError
+	if len(updatesToWarn) > 0 && (rp.error == nil || errors.As(rp.error, &canceledErr) || errors.As(rp.error, &contErr)) {
 		env.GetLogger().Warn(unhandledUpdateWarningMessage, "Updates", updatesToWarn)
 	}
 

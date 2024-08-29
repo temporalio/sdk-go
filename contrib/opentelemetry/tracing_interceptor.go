@@ -26,6 +26,7 @@ package opentelemetry
 import (
 	"context"
 	"fmt"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
@@ -55,6 +56,9 @@ type TracerOptions struct {
 
 	// DisableQueryTracing can be set to disable query tracing.
 	DisableQueryTracing bool
+
+	// DisableUpdateTracing can be set to disable update tracing.
+	DisableUpdateTracing bool
 
 	// DisableBaggage can be set to disable baggage propagation.
 	DisableBaggage bool
@@ -138,6 +142,7 @@ func (t *tracer) Options() interceptor.TracerOptions {
 		HeaderKey:               t.options.HeaderKey,
 		DisableSignalTracing:    t.options.DisableSignalTracing,
 		DisableQueryTracing:     t.options.DisableQueryTracing,
+		DisableUpdateTracing:    t.options.DisableUpdateTracing,
 		AllowInvalidParentSpans: t.options.AllowInvalidParentSpans,
 	}
 }

@@ -2304,40 +2304,58 @@ func (w *Workflows) BuildIDWorkflow(ctx workflow.Context) error {
 	return nil
 }
 
-func (w *Workflows) SignalsAndQueries(ctx workflow.Context, execChild, execActivity bool) error {
+func (w *Workflows) SignalsQueriesAndUpdate(ctx workflow.Context, execChild, execActivity bool) error {
+	execOperations := func(ctx workflow.Context) error {
+		// Run child if requested
+		if execChild {
+			fut := workflow.ExecuteChildWorkflow(ctx, w.SignalsQueriesAndUpdate, false, true)
+			// Signal child twice
+			if err := fut.SignalChildWorkflow(ctx, "start-signal", nil).Get(ctx, nil); err != nil {
+				return fmt.Errorf("failed signaling child with start: %w", err)
+			} else if err = fut.SignalChildWorkflow(ctx, "finish-signal", nil).Get(ctx, nil); err != nil {
+				return fmt.Errorf("failed signaling child with finish: %w", err)
+			}
+			// Wait for done
+			if err := fut.Get(ctx, nil); err != nil {
+				return fmt.Errorf("child failed: %w", err)
+			}
+		}
+
+		// Run activity if requested
+		if execActivity {
+			ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+			var a Activities
+			if err := workflow.ExecuteActivity(ctx, a.ExternalSignalsAndQueries).Get(ctx, nil); err != nil {
+				return fmt.Errorf("activity failed: %w", err)
+			}
+		}
+		return nil
+	}
 	// Add query handler
 	err := workflow.SetQueryHandler(ctx, "workflow-query", func() (string, error) { return "query-response", nil })
 	if err != nil {
 		return fmt.Errorf("failed setting query handler: %w", err)
 	}
+	// Add update handler
+	err = workflow.SetUpdateHandler(ctx, "workflow-update", func(ctx workflow.Context) (string, error) {
+		err := execOperations(ctx)
+		if err != nil {
+			return "", fmt.Errorf("failed executing operations: %w", err)
+		}
+		return "update-response", nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed setting update handler: %w", err)
+	}
 
 	// Wait for signal on start
 	workflow.GetSignalChannel(ctx, "start-signal").Receive(ctx, nil)
 
-	// Run child if requested
-	if execChild {
-		fut := workflow.ExecuteChildWorkflow(ctx, w.SignalsAndQueries, false, true)
-		// Signal child twice
-		if err := fut.SignalChildWorkflow(ctx, "start-signal", nil).Get(ctx, nil); err != nil {
-			return fmt.Errorf("failed signaling child with start: %w", err)
-		} else if err = fut.SignalChildWorkflow(ctx, "finish-signal", nil).Get(ctx, nil); err != nil {
-			return fmt.Errorf("failed signaling child with finish: %w", err)
-		}
-		// Wait for done
-		if err := fut.Get(ctx, nil); err != nil {
-			return fmt.Errorf("child failed: %w", err)
-		}
+	// Run some operations
+	err = execOperations(ctx)
+	if err != nil {
+		return err
 	}
-
-	// Run activity if requested
-	if execActivity {
-		ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
-		var a Activities
-		if err := workflow.ExecuteActivity(ctx, a.ExternalSignalsAndQueries).Get(ctx, nil); err != nil {
-			return fmt.Errorf("activity failed: %w", err)
-		}
-	}
-
 	// Wait for finish signal
 	workflow.GetSignalChannel(ctx, "finish-signal").Receive(ctx, nil)
 	return nil
@@ -3178,7 +3196,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.InterceptorCalls)
 	worker.RegisterWorkflow(w.WaitSignalToStart)
 	worker.RegisterWorkflow(w.BuildIDWorkflow)
-	worker.RegisterWorkflow(w.SignalsAndQueries)
+	worker.RegisterWorkflow(w.SignalsQueriesAndUpdate)
 	worker.RegisterWorkflow(w.CheckOpenTelemetryBaggage)
 	worker.RegisterWorkflow(w.AdvancedPostCancellation)
 	worker.RegisterWorkflow(w.AdvancedPostCancellationChildWithDone)

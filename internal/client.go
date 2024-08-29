@@ -717,8 +717,7 @@ type (
 		EnableEagerStart bool
 
 		// StartDelay - Time to wait before dispatching the first workflow task.
-		// If the workflow gets a signal before the delay, a workflow task will be dispatched and the rest
-		// of the delay will be ignored. A signal from signal with start will not trigger a workflow task.
+		// A signal from signal with start will not trigger a workflow task.
 		// Cannot be set the same time as a CronSchedule.
 		StartDelay time.Duration
 
@@ -726,6 +725,8 @@ type (
 		requestID string
 		// workflow completion callback. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
 		callbacks []*commonpb.Callback
+		// links. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
+		links     []*commonpb.Link
 	}
 
 	// WithStartWorkflowOperation is a type of operation that can be executed as part of a workflow start.
@@ -1217,4 +1218,10 @@ func SetRequestIDOnStartWorkflowOptions(opts *StartWorkflowOptions, requestID st
 // Callbacks are purposefully not exposed to users for the time being.
 func SetCallbacksOnStartWorkflowOptions(opts *StartWorkflowOptions, callbacks []*commonpb.Callback) {
 	opts.callbacks = callbacks
+}
+
+// SetLinksOnStartWorkflowOptions is an internal only method for setting links on StartWorkflowOptions.
+// Links are purposefully not exposed to users for the time being.
+func SetLinksOnStartWorkflowOptions(opts *StartWorkflowOptions, links []*commonpb.Link) {
+	opts.links = links
 }
