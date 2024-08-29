@@ -976,6 +976,134 @@ func (s *workflowRunSuite) TestGetWorkflowNoExtantWorkflowAndNoRunId() {
 	s.Equal("", workflowRunNoRunID.GetRunID())
 }
 
+func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_NonMultiOperationError() {
+	s.workflowServiceClient.EXPECT().
+		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil, serviceerror.NewInternal("internal error")).Times(1)
+
+	updOp := NewUpdateWithStartWorkflowOperation(
+		UpdateWorkflowOptions{
+			UpdateName:   "update",
+			WaitForStage: WorkflowUpdateStageCompleted,
+		})
+
+	_, err := s.workflowClient.ExecuteWorkflow(
+		context.Background(),
+		StartWorkflowOptions{
+			ID:                 workflowID,
+			TaskQueue:          taskqueue,
+			WithStartOperation: updOp,
+		}, workflowType,
+	)
+	s.ErrorContains(err, "internal error")
+}
+
+func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerResponseCountMismatch() {
+	s.workflowServiceClient.EXPECT().
+		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ExecuteMultiOperationResponse{
+			Responses: []*workflowservice.ExecuteMultiOperationResponse_Response{},
+		}, nil).Times(1)
+
+	updOp := NewUpdateWithStartWorkflowOperation(
+		UpdateWorkflowOptions{
+			UpdateName:   "update",
+			WaitForStage: WorkflowUpdateStageCompleted,
+		})
+
+	_, err := s.workflowClient.ExecuteWorkflow(
+		context.Background(),
+		StartWorkflowOptions{
+			ID:                 workflowID,
+			TaskQueue:          taskqueue,
+			WithStartOperation: updOp,
+		}, workflowType,
+	)
+	s.ErrorContains(err, "invalid server response: 0 instead of 2 operation results")
+}
+
+func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerErrorResponseCountMismatch() {
+	s.workflowServiceClient.EXPECT().
+		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil, serviceerror.NewMultiOperationExecution("Error", []error{})).Times(1)
+
+	updOp := NewUpdateWithStartWorkflowOperation(
+		UpdateWorkflowOptions{
+			UpdateName:   "update",
+			WaitForStage: WorkflowUpdateStageCompleted,
+		})
+
+	_, err := s.workflowClient.ExecuteWorkflow(
+		context.Background(),
+		StartWorkflowOptions{
+			ID:                 workflowID,
+			TaskQueue:          taskqueue,
+			WithStartOperation: updOp,
+		}, workflowType,
+	)
+	s.ErrorContains(err, "invalid server response: 0 instead of 2 operation errors")
+}
+
+func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerStartResponseTypeMismatch() {
+	s.workflowServiceClient.EXPECT().
+		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ExecuteMultiOperationResponse{
+			Responses: []*workflowservice.ExecuteMultiOperationResponse_Response{
+				{
+					Response: &workflowservice.ExecuteMultiOperationResponse_Response_UpdateWorkflow{}, // wrong!
+				},
+				nil,
+			},
+		}, nil).Times(1)
+
+	updOp := NewUpdateWithStartWorkflowOperation(
+		UpdateWorkflowOptions{
+			UpdateName:   "update",
+			WaitForStage: WorkflowUpdateStageCompleted,
+		})
+
+	_, err := s.workflowClient.ExecuteWorkflow(
+		context.Background(),
+		StartWorkflowOptions{
+			ID:                 workflowID,
+			TaskQueue:          taskqueue,
+			WithStartOperation: updOp,
+		}, workflowType,
+	)
+	s.ErrorContains(err, "invalid server response: StartWorkflow response has the wrong type *workflowservice.ExecuteMultiOperationResponse_Response_UpdateWorkflow")
+}
+
+func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerUpdateResponseTypeMismatch() {
+	s.workflowServiceClient.EXPECT().
+		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ExecuteMultiOperationResponse{
+			Responses: []*workflowservice.ExecuteMultiOperationResponse_Response{
+				{
+					Response: &workflowservice.ExecuteMultiOperationResponse_Response_StartWorkflow{},
+				},
+				{
+					Response: &workflowservice.ExecuteMultiOperationResponse_Response_StartWorkflow{}, // wrong!
+				},
+			},
+		}, nil).Times(1)
+
+	updOp := NewUpdateWithStartWorkflowOperation(
+		UpdateWorkflowOptions{
+			UpdateName:   "update",
+			WaitForStage: WorkflowUpdateStageCompleted,
+		})
+
+	_, err := s.workflowClient.ExecuteWorkflow(
+		context.Background(),
+		StartWorkflowOptions{
+			ID:                 workflowID,
+			TaskQueue:          taskqueue,
+			WithStartOperation: updOp,
+		}, workflowType,
+	)
+	s.ErrorContains(err, "invalid server response: UpdateWorkflow response has the wrong type *workflowservice.ExecuteMultiOperationResponse_Response_StartWorkflow")
+}
+
 func getGetWorkflowExecutionHistoryRequest(filterType enumspb.HistoryEventFilterType) *workflowservice.GetWorkflowExecutionHistoryRequest {
 	request := &workflowservice.GetWorkflowExecutionHistoryRequest{
 		Namespace: DefaultNamespace,
@@ -1083,11 +1211,21 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithContextAwareDat
 	s.Equal(startResponse.GetRunId(), resp.GetRunID())
 }
 
-func (s *workflowClientTestSuite) TestSignalWithStartWorkflowAmbiguousID() {
-	_, err := s.client.SignalWithStartWorkflow(context.Background(), "workflow-id-1", "my-signal", "my-signal-value",
+func (s *workflowClientTestSuite) TestSignalWithStartWorkflowValidation() {
+	// ambiguous WorkflowID
+	_, err := s.client.SignalWithStartWorkflow(
+		context.Background(), "workflow-id-1", "my-signal", "my-signal-value",
 		StartWorkflowOptions{ID: "workflow-id-2"}, workflowType)
-	s.Error(err)
-	s.Contains(err.Error(), "workflow ID from options not used")
+	s.ErrorContains(err, "workflow ID from options not used")
+
+	// unsupported WithStartOperation
+	_, err = s.client.SignalWithStartWorkflow(
+		context.Background(), "workflow-id", "my-signal", "my-signal-value",
+		StartWorkflowOptions{
+			ID:                 "workflow-id",
+			WithStartOperation: &UpdateWithStartWorkflowOperation{},
+		}, workflowType)
+	s.ErrorContains(err, "option WithStartOperation is not allowed")
 }
 
 func (s *workflowClientTestSuite) TestStartWorkflow() {

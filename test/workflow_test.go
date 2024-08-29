@@ -373,6 +373,30 @@ func (w *Workflows) UpdateInfoWorkflow(ctx workflow.Context) error {
 	return nil
 }
 
+func (w *Workflows) UpdateEntityWorkflow(ctx workflow.Context) (int, error) {
+	counter := 0
+
+	err := workflow.SetUpdateHandlerWithOptions(ctx, "update", func(ctx workflow.Context, add int) (int, error) {
+		workflow.Sleep(ctx, 1*time.Second) // force separate WFT for accept and complete
+		counter += add
+		return counter, nil
+	}, workflow.UpdateHandlerOptions{
+		Validator: func(ctx workflow.Context, i int) error {
+			if i < 0 {
+				return fmt.Errorf("addend must be non-negative (%v)", i)
+			}
+			return nil
+		},
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	workflow.Await(ctx, func() bool { return counter >= 1 })
+
+	return counter, nil
+}
+
 func (w *Workflows) UpdateWithValidatorWorkflow(ctx workflow.Context) error {
 	workflow.Go(ctx, func(ctx workflow.Context) {
 		_ = workflow.Sleep(ctx, time.Minute)
@@ -3161,6 +3185,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityStartToCloseTimeout)
 	worker.RegisterWorkflow(w.LocalActivityStaleCache)
 	worker.RegisterWorkflow(w.UpdateInfoWorkflow)
+	worker.RegisterWorkflow(w.UpdateEntityWorkflow)
 	worker.RegisterWorkflow(w.SignalWorkflow)
 	worker.RegisterWorkflow(w.CronWorkflow)
 	worker.RegisterWorkflow(w.ActivityTimeoutsWorkflow)
