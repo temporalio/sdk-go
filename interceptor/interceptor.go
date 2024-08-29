@@ -131,6 +131,11 @@ type HandleQueryInput = internal.HandleQueryInput
 // NOTE: Experimental
 type UpdateInput = internal.UpdateInput
 
+// ExecuteNexusOperationInput is the input to WorkflowOutboundInterceptor.ExecuteNexusOperation.
+//
+// NOTE: Experimental
+type ExecuteNexusOperationInput = internal.ExecuteNexusOperationInput
+
 // RequestCancelNexusOperationInput is the input to WorkflowOutboundInterceptor.RequestCancelNexusOperation.
 //
 // NOTE: Experimental

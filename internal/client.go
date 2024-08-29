@@ -27,6 +27,7 @@ package internal
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -646,9 +647,23 @@ type (
 		// Optional: defaulted to Fail.
 		WorkflowIDConflictPolicy enumspb.WorkflowIdConflictPolicy
 
+		// WithStartOperation - Operation to execute with Workflow Start.
+		// For example, see NewUpdateWithStartWorkflowOperation to perform Update-with-Start. Note that if the workflow is
+		// already running and WorkflowIDConflictPolicy is set to UseExisting, the start is skipped and only the
+		// operation is executed. If instead the policy is set to Fail (the default), nothing is executed and
+		// an error will be returned (i.e. the option WorkflowExecutionErrorWhenAlreadyStarted is ignored).
+		// This option will be ignored when used with Client.SignalWithStartWorkflow.
+		//
+		// Optional: defaults to nil.
+		//
+		// NOTE: Experimental
+		WithStartOperation WithStartWorkflowOperation
+
 		// When WorkflowExecutionErrorWhenAlreadyStarted is true, Client.ExecuteWorkflow will return an error if the
-		// workflow id has already been used and WorkflowIDReusePolicy would disallow a re-run. If it is set to false,
-		// rather than erroring a WorkflowRun instance representing the current or last run will be returned.
+		// workflow id has already been used and WorkflowIDReusePolicy or WorkflowIDConflictPolicy would
+		// disallow a re-run. If it is set to false, rather than erroring a WorkflowRun instance representing
+		// the current or last run will be returned. However, when WithStartOperation is set, this field is ignored and
+		// the WorkflowIDConflictPolicy UseExisting must be used instead to prevent erroring.
 		//
 		// Optional: defaults to false
 		WorkflowExecutionErrorWhenAlreadyStarted bool
@@ -730,6 +745,26 @@ type (
 		requestID string
 		// workflow completion callback. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
 		callbacks []*commonpb.Callback
+		// links. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
+		links     []*commonpb.Link
+	}
+
+	// WithStartWorkflowOperation is a type of operation that can be executed as part of a workflow start.
+	WithStartWorkflowOperation interface {
+		isWithStartWorkflowOperation()
+	}
+
+	// UpdateWithStartWorkflowOperation is used to perform Update-with-Start.
+	// See NewUpdateWithStartWorkflowOperation for details.
+	UpdateWithStartWorkflowOperation struct {
+		input *ClientUpdateWorkflowInput
+		// flag to ensure the operation is only executed once
+		executed atomic.Bool
+		// channel to indicate that handle or err is available
+		doneCh chan struct{}
+		// handle and err cannot be accessed before doneCh is closed
+		handle WorkflowUpdateHandle
+		err    error
 	}
 
 	// RetryPolicy defines the retry policy.
@@ -1022,6 +1057,50 @@ func DialCloudOperationsClient(ctx context.Context, options CloudOperationsClien
 	}, nil
 }
 
+// NewUpdateWithStartWorkflowOperation returns an UpdateWithStartWorkflowOperation that can be used to perform Update-with-Start.
+func NewUpdateWithStartWorkflowOperation(options UpdateWorkflowOptions) *UpdateWithStartWorkflowOperation {
+	res := &UpdateWithStartWorkflowOperation{doneCh: make(chan struct{})}
+
+	input, err := createUpdateWorkflowInput(options)
+	if err != nil {
+		res.set(nil, err)
+	} else if options.RunID != "" {
+		res.set(nil, errors.New("RunID cannot be set because the workflow might not be running"))
+	}
+	if options.FirstExecutionRunID != "" {
+		res.set(nil, errors.New("FirstExecutionRunID cannot be set because the workflow might not be running"))
+	} else {
+		res.input = input
+	}
+
+	return res
+}
+
+// Get blocks until a server response has been received; or the context deadline is exceeded.
+func (op *UpdateWithStartWorkflowOperation) Get(ctx context.Context) (WorkflowUpdateHandle, error) {
+	select {
+	case <-op.doneCh:
+		return op.handle, op.err
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (op *UpdateWithStartWorkflowOperation) markExecuted() error {
+	if op.executed.Swap(true) {
+		return fmt.Errorf("was already executed")
+	}
+	return nil
+}
+
+func (op *UpdateWithStartWorkflowOperation) set(handle WorkflowUpdateHandle, err error) {
+	op.handle = handle
+	op.err = err
+	close(op.doneCh)
+}
+
+func (op *UpdateWithStartWorkflowOperation) isWithStartWorkflowOperation() {}
+
 // NewNamespaceClient creates an instance of a namespace client, to manager lifecycle of namespaces.
 func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
 	// Initialize root tags
@@ -1159,4 +1238,10 @@ func SetRequestIDOnStartWorkflowOptions(opts *StartWorkflowOptions, requestID st
 // Callbacks are purposefully not exposed to users for the time being.
 func SetCallbacksOnStartWorkflowOptions(opts *StartWorkflowOptions, callbacks []*commonpb.Callback) {
 	opts.callbacks = callbacks
+}
+
+// SetLinksOnStartWorkflowOptions is an internal only method for setting links on StartWorkflowOptions.
+// Links are purposefully not exposed to users for the time being.
+func SetLinksOnStartWorkflowOptions(opts *StartWorkflowOptions, links []*commonpb.Link) {
+	opts.links = links
 }

@@ -39,14 +39,13 @@ import (
 	"testing"
 	"time"
 
-	"go.opentelemetry.io/otel/baggage"
-
 	"github.com/opentracing/opentracing-go"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"github.com/uber-go/tally/v4"
+	"go.opentelemetry.io/otel/baggage"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
@@ -179,8 +178,9 @@ func (ts *IntegrationTestSuite) SetupTest() {
 			sdktrace.WithSpanProcessor(ts.openTelemetrySpanRecorder)).Tracer("")
 		interceptor, err := opentelemetry.NewTracingInterceptor(opentelemetry.TracerOptions{
 			Tracer:               ts.openTelemetryTracer,
-			DisableSignalTracing: strings.HasSuffix(ts.T().Name(), "WithoutSignalsAndQueries"),
-			DisableQueryTracing:  strings.HasSuffix(ts.T().Name(), "WithoutSignalsAndQueries"),
+			DisableSignalTracing: strings.HasSuffix(ts.T().Name(), "WithoutMessages"),
+			DisableQueryTracing:  strings.HasSuffix(ts.T().Name(), "WithoutMessages"),
+			DisableUpdateTracing: strings.HasSuffix(ts.T().Name(), "WithoutMessages"),
 			DisableBaggage:       strings.HasSuffix(ts.T().Name(), "WithDisableBaggageOption"),
 		})
 		ts.NoError(err)
@@ -2534,11 +2534,11 @@ func (ts *IntegrationTestSuite) TestOpenTelemetryTracing() {
 	ts.testOpenTelemetryTracing(true)
 }
 
-func (ts *IntegrationTestSuite) TestOpenTelemetryTracingWithoutSignalsAndQueries() {
+func (ts *IntegrationTestSuite) TestOpenTelemetryTracingWithoutMessages() {
 	ts.testOpenTelemetryTracing(false)
 }
 
-func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withSignalAndQueryHeaders bool) {
+func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// Start a top-level span
@@ -2546,7 +2546,7 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withSignalAndQueryHeade
 
 	// Signal with start
 	run, err := ts.client.SignalWithStartWorkflow(ctx, "test-interceptor-open-telemetry", "start-signal",
-		nil, ts.startWorkflowOptions("test-interceptor-open-telemetry"), ts.workflows.SignalsAndQueries, true, true)
+		nil, ts.startWorkflowOptions("test-interceptor-open-telemetry"), ts.workflows.SignalsQueriesAndUpdate, true, true)
 	ts.NoError(err)
 
 	// Query
@@ -2555,6 +2555,16 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withSignalAndQueryHeade
 	var queryResp string
 	ts.NoError(val.Get(&queryResp))
 	ts.Equal("query-response", queryResp)
+
+	// Update
+	handle, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "workflow-update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
+	ts.NoError(err)
+	ts.NoError(handle.Get(ctx, nil))
 
 	// Finish signal
 	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish-signal", nil))
@@ -2567,15 +2577,18 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withSignalAndQueryHeade
 	// Span builder
 	span := func(name string, children ...*interceptortest.SpanInfo) *interceptortest.SpanInfo {
 		// If without signal-and-query headers, filter out those children in place
-		if !withSignalAndQueryHeaders {
+		if !withMessages {
 			n := 0
 			for _, child := range children {
-				isSignalOrQuery := strings.HasPrefix(child.Name, "SignalWorkflow:") ||
+				isMessage := strings.HasPrefix(child.Name, "SignalWorkflow:") ||
 					strings.HasPrefix(child.Name, "SignalChildWorkflow:") ||
 					strings.HasPrefix(child.Name, "HandleSignal:") ||
 					strings.HasPrefix(child.Name, "QueryWorkflow:") ||
-					strings.HasPrefix(child.Name, "HandleQuery:")
-				if !isSignalOrQuery {
+					strings.HasPrefix(child.Name, "HandleQuery:") ||
+					strings.HasPrefix(child.Name, "UpdateWorkflow:") ||
+					strings.HasPrefix(child.Name, "ValidateUpdate:") ||
+					strings.HasPrefix(child.Name, "HandleUpdate:")
+				if !isMessage {
 					children[n] = child
 					n++
 				}
@@ -2589,19 +2602,19 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withSignalAndQueryHeade
 	actual := interceptortest.Span("root-span")
 	ts.addOpenTelemetryChildren(rootSpan.SpanContext().SpanID(), actual, spans)
 	expected := span("root-span",
-		span("SignalWithStartWorkflow:SignalsAndQueries",
+		span("SignalWithStartWorkflow:SignalsQueriesAndUpdate",
 			span("HandleSignal:start-signal"),
-			span("RunWorkflow:SignalsAndQueries",
+			span("RunWorkflow:SignalsQueriesAndUpdate",
 				// Child workflow exec
-				span("StartChildWorkflow:SignalsAndQueries",
-					span("RunWorkflow:SignalsAndQueries",
+				span("StartChildWorkflow:SignalsQueriesAndUpdate",
+					span("RunWorkflow:SignalsQueriesAndUpdate",
 						// Activity inside child workflow
 						span("StartActivity:ExternalSignalsAndQueries",
 							span("RunActivity:ExternalSignalsAndQueries",
 								// Signal and query inside activity
-								span("SignalWithStartWorkflow:SignalsAndQueries",
+								span("SignalWithStartWorkflow:SignalsQueriesAndUpdate",
 									span("HandleSignal:start-signal"),
-									span("RunWorkflow:SignalsAndQueries"),
+									span("RunWorkflow:SignalsQueriesAndUpdate"),
 								),
 								span("QueryWorkflow:workflow-query",
 									span("HandleQuery:workflow-query"),
@@ -2622,9 +2635,9 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withSignalAndQueryHeade
 				// Activity in top-level
 				span("StartActivity:ExternalSignalsAndQueries",
 					span("RunActivity:ExternalSignalsAndQueries",
-						span("SignalWithStartWorkflow:SignalsAndQueries",
+						span("SignalWithStartWorkflow:SignalsQueriesAndUpdate",
 							span("HandleSignal:start-signal"),
-							span("RunWorkflow:SignalsAndQueries"),
+							span("RunWorkflow:SignalsQueriesAndUpdate"),
 						),
 						span("QueryWorkflow:workflow-query",
 							span("HandleQuery:workflow-query"),
@@ -2636,15 +2649,61 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withSignalAndQueryHeade
 				),
 			),
 		),
-		// Top-level query and signal
+		// Top-level query signal, and update
 		span("QueryWorkflow:workflow-query",
 			span("HandleQuery:workflow-query"),
+		),
+		span("UpdateWorkflow:workflow-update",
+			span("ValidateUpdate:workflow-update"),
+			span("HandleUpdate:workflow-update",
+				// Child workflow exec
+				span("StartChildWorkflow:SignalsQueriesAndUpdate",
+					span("RunWorkflow:SignalsQueriesAndUpdate",
+						// Activity inside child workflow
+						span("StartActivity:ExternalSignalsAndQueries",
+							span("RunActivity:ExternalSignalsAndQueries",
+								// Signal and query inside activity
+								span("SignalWithStartWorkflow:SignalsQueriesAndUpdate",
+									span("HandleSignal:start-signal"),
+									span("RunWorkflow:SignalsQueriesAndUpdate"),
+								),
+								span("QueryWorkflow:workflow-query",
+									span("HandleQuery:workflow-query"),
+								),
+								span("SignalWorkflow:finish-signal",
+									span("HandleSignal:finish-signal"),
+								),
+							),
+						),
+					),
+				),
+				span("SignalChildWorkflow:start-signal",
+					span("HandleSignal:start-signal"),
+				),
+				span("SignalChildWorkflow:finish-signal",
+					span("HandleSignal:finish-signal"),
+				),
+				// Activity in top-level
+				span("StartActivity:ExternalSignalsAndQueries",
+					span("RunActivity:ExternalSignalsAndQueries",
+						span("SignalWithStartWorkflow:SignalsQueriesAndUpdate",
+							span("HandleSignal:start-signal"),
+							span("RunWorkflow:SignalsQueriesAndUpdate"),
+						),
+						span("QueryWorkflow:workflow-query",
+							span("HandleQuery:workflow-query"),
+						),
+						span("SignalWorkflow:finish-signal",
+							span("HandleSignal:finish-signal"),
+						),
+					),
+				),
+			),
 		),
 		span("SignalWorkflow:finish-signal",
 			span("HandleSignal:finish-signal"),
 		),
 	)
-
 	ts.Equal(expected, actual)
 }
 
@@ -3895,6 +3954,240 @@ func (ts *IntegrationTestSuite) TestUpdateSettingHandlerInHandler() {
 	ts.NoError(err)
 	ts.NoError(handle.Get(ctx, nil))
 	ts.NoError(run.Get(ctx, nil))
+}
+
+func (ts *IntegrationTestSuite) TestExecuteWorkflowWithUpdate() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	startOptionsWithOperation := func(op client.WithStartWorkflowOperation) client.StartWorkflowOptions {
+		startOptions := ts.startWorkflowOptions("test-update-with-start-" + uuid.New())
+		startOptions.EnableEagerStart = false // not allowed to use with update-with-start
+		startOptions.WithStartOperation = op
+		return startOptions
+	}
+
+	ts.Run("sends update-with-start (no running workflow)", func() {
+		updateOp := client.NewUpdateWithStartWorkflowOperation(
+			client.UpdateWorkflowOptions{
+				UpdateName:   "update",
+				Args:         []any{1},
+				WaitForStage: client.WorkflowUpdateStageAccepted,
+			})
+
+		startOptions := startOptionsWithOperation(updateOp)
+		run, err := ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
+		ts.NoError(err)
+
+		var updateResult int
+		updHandle, err := updateOp.Get(ctx)
+		ts.NoError(err)
+		ts.NoError(updHandle.Get(ctx, &updateResult))
+		ts.Equal(1, updateResult)
+
+		var workflowResult int
+		ts.NoError(run.Get(ctx, &workflowResult))
+		ts.Equal(1, workflowResult)
+	})
+
+	ts.Run("sends update-with-start (already running workflow)", func() {
+		startOptions := startOptionsWithOperation(nil)
+		run1, err := ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
+		ts.NoError(err)
+
+		updateOp := client.NewUpdateWithStartWorkflowOperation(
+			client.UpdateWorkflowOptions{
+				UpdateName:   "update",
+				Args:         []any{1},
+				WaitForStage: client.WorkflowUpdateStageCompleted,
+			})
+
+		startOptions.WithStartOperation = updateOp
+		startOptions.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING
+		run2, err := ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
+		ts.NoError(err)
+		ts.Equal(run1.GetRunID(), run2.GetRunID())
+
+		var updateResult int
+		updHandle, err := updateOp.Get(ctx)
+		ts.NoError(err)
+		ts.NoError(updHandle.Get(ctx, &updateResult))
+		ts.Equal(1, updateResult)
+	})
+
+	ts.Run("sends update-with-start but update is rejected", func() {
+		updateOp := client.NewUpdateWithStartWorkflowOperation(
+			client.UpdateWorkflowOptions{
+				UpdateName:   "update",
+				Args:         []any{-1}, // rejected update payload
+				WaitForStage: client.WorkflowUpdateStageCompleted,
+			})
+
+		startOptions := startOptionsWithOperation(updateOp)
+		run, err := ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
+		ts.NoError(err)
+		ts.NotNil(run)
+
+		var updateResult int
+		updHandle, err := updateOp.Get(ctx)
+		ts.NoError(err)
+		err = updHandle.Get(ctx, &updateResult)
+		ts.ErrorContains(err, "addend must be non-negative")
+	})
+
+	ts.Run("receives update result in separate goroutines", func() {
+		updateOp := client.NewUpdateWithStartWorkflowOperation(
+			client.UpdateWorkflowOptions{
+				UpdateName:   "update",
+				Args:         []any{1},
+				WaitForStage: client.WorkflowUpdateStageAccepted,
+			})
+
+		done := make(chan struct{})
+		defer func() { <-done }()
+		go func() {
+			var updateResult int
+			updHandle, err := updateOp.Get(ctx)
+			ts.NoError(err)
+			ts.NoError(updHandle.Get(ctx, &updateResult))
+			ts.Equal(1, updateResult)
+			done <- struct{}{}
+		}()
+
+		startOptions := startOptionsWithOperation(updateOp)
+		_, err := ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
+		ts.NoError(err)
+
+		var updateResult int
+		updHandle, err := updateOp.Get(ctx)
+		ts.NoError(err)
+		ts.NoError(updHandle.Get(ctx, &updateResult))
+		ts.Equal(1, updateResult)
+	})
+
+	ts.Run("fails when start request is invalid", func() {
+		updateOp := client.NewUpdateWithStartWorkflowOperation(
+			client.UpdateWorkflowOptions{
+				UpdateName:   "update",
+				WaitForStage: client.WorkflowUpdateStageCompleted,
+			})
+
+		startOptions := startOptionsWithOperation(updateOp)
+		startOptions.CronSchedule = "invalid!"
+		_, err := ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
+		ts.Error(err)
+	})
+
+	ts.Run("fails when update operation is invalid", func() {
+		updateOp := client.NewUpdateWithStartWorkflowOperation(
+			client.UpdateWorkflowOptions{
+				// invalid
+			})
+
+		startOptions := startOptionsWithOperation(updateOp)
+		_, err := ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
+		ts.ErrorContains(err, "invalid WithStartOperation: WaitForStage must be specified")
+
+		updateOp = client.NewUpdateWithStartWorkflowOperation(
+			client.UpdateWorkflowOptions{
+				RunID:        "invalid",
+				WaitForStage: client.WorkflowUpdateStageCompleted,
+			})
+
+		startOptions = startOptionsWithOperation(updateOp)
+		_, err = ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
+		ts.ErrorContains(err, "invalid WithStartOperation: RunID cannot be set because the workflow might not be running")
+
+		updateOp = client.NewUpdateWithStartWorkflowOperation(
+			client.UpdateWorkflowOptions{
+				FirstExecutionRunID: "invalid",
+				WaitForStage:        client.WorkflowUpdateStageCompleted,
+			})
+
+		startOptions = startOptionsWithOperation(updateOp)
+		_, err = ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
+		ts.ErrorContains(err, "invalid WithStartOperation: FirstExecutionRunID cannot be set because the workflow might not be running")
+
+		updateOp = client.NewUpdateWithStartWorkflowOperation(
+			client.UpdateWorkflowOptions{
+				UpdateName:   "", // invalid
+				WaitForStage: client.WorkflowUpdateStageCompleted,
+			})
+
+		startOptions = startOptionsWithOperation(updateOp)
+		_, err = ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
+		ts.ErrorContains(err, "invalid WithStartOperation: ") // omitting server message intentionally
+
+		updateOp = client.NewUpdateWithStartWorkflowOperation(
+			client.UpdateWorkflowOptions{
+				WorkflowID:   "different", // does not match Start's
+				UpdateName:   "update",
+				WaitForStage: client.WorkflowUpdateStageCompleted,
+			})
+
+		startOptions = startOptionsWithOperation(updateOp)
+		_, err = ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
+		ts.ErrorContains(err, "invalid WithStartOperation: ") // omitting server message intentionally
+	})
+
+	ts.Run("fails when workflow is already running", func() {
+		startOptions := startOptionsWithOperation(nil)
+		_, err := ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
+		ts.NoError(err)
+
+		updateOp := client.NewUpdateWithStartWorkflowOperation(
+			client.UpdateWorkflowOptions{
+				UpdateName:   "update",
+				Args:         []any{1},
+				WaitForStage: client.WorkflowUpdateStageCompleted,
+			})
+
+		startOptions.WithStartOperation = updateOp
+		// NOTE that WorkflowExecutionErrorWhenAlreadyStarted (defaults to false) has no impact
+		_, err = ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
+		ts.ErrorContains(err, "Workflow execution is already running")
+	})
+
+	ts.Run("fails when executed twice", func() {
+		updateOp := client.NewUpdateWithStartWorkflowOperation(
+			client.UpdateWorkflowOptions{
+				UpdateName:   "update",
+				Args:         []any{1},
+				WaitForStage: client.WorkflowUpdateStageCompleted,
+			})
+
+		startOptions := startOptionsWithOperation(updateOp)
+		_, err := ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
+		ts.NoError(err)
+
+		_, err = ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
+		ts.ErrorContains(err, "invalid WithStartOperation: was already executed")
+	})
+
+	ts.Run("propagates context", func() {
+		updateOp := client.NewUpdateWithStartWorkflowOperation(
+			client.UpdateWorkflowOptions{
+				UpdateName:   "update",
+				Args:         []any{1},
+				WaitForStage: client.WorkflowUpdateStageCompleted,
+			})
+
+		var propagatedValues []string
+		ctx := context.Background()
+		// Propagate values using different context propagators.
+		ctx = context.WithValue(ctx, contextKey(testContextKey1), "propagatedValue1")
+		ctx = context.WithValue(ctx, contextKey(testContextKey2), "propagatedValue2")
+		ctx = context.WithValue(ctx, contextKey(testContextKey3), "non-propagatedValue")
+		startOptions := startOptionsWithOperation(updateOp)
+		err := ts.executeWorkflowWithContextAndOption(ctx, startOptions, ts.workflows.ContextPropagator, &propagatedValues, true)
+		ts.NoError(err)
+
+		// One copy from workflow and one copy from activity * 2 for child workflow
+		ts.EqualValues([]string{
+			"propagatedValue1", "propagatedValue2", "activity_propagatedValue1", "activity_propagatedValue2",
+			"child_propagatedValue1", "child_propagatedValue2", "child_activity_propagatedValue1", "child_activity_propagatedValue2",
+		}, propagatedValues)
+	})
 }
 
 func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {

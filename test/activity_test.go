@@ -366,7 +366,7 @@ func (a *Activities) ExternalSignalsAndQueries(ctx context.Context) error {
 	// Signal with start
 	workflowOpts := client.StartWorkflowOptions{TaskQueue: activity.GetInfo(ctx).TaskQueue}
 	run, err := a.client.SignalWithStartWorkflow(ctx, "test-external-signals-and-queries", "start-signal",
-		"signal-value", workflowOpts, new(Workflows).SignalsAndQueries, false, false)
+		"signal-value", workflowOpts, new(Workflows).SignalsQueriesAndUpdate, false, false)
 	if err != nil {
 		return err
 	}
