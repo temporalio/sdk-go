@@ -1957,8 +1957,12 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 			baseUpdateHandle: baseUpdateHandle{ref: resp.GetUpdateRef()},
 		}, nil
 	case *updatepb.Outcome_Failure:
+		err := w.client.failureConverter.FailureToError(v.Failure)
+		if desiredLifecycleStage == enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_ACCEPTED {
+			return nil, err
+		}
 		return &completedUpdateHandle{
-			err:              w.client.failureConverter.FailureToError(v.Failure),
+			err:              err,
 			baseUpdateHandle: baseUpdateHandle{ref: resp.GetUpdateRef()},
 		}, nil
 	case *updatepb.Outcome_Success:
