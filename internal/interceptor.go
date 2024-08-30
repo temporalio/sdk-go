@@ -248,6 +248,9 @@ type WorkflowOutboundInterceptor interface {
 	// NewTimer intercepts workflow.NewTimer.
 	NewTimer(ctx Context, d time.Duration) Future
 
+	// NewTimer intercepts workflow.NewTimerWithOptions.
+	NewTimerWithOptions(ctx Context, d time.Duration, options TimerOptions) Future
+
 	// Sleep intercepts workflow.Sleep.
 	Sleep(ctx Context, d time.Duration) (err error)
 
@@ -276,6 +279,11 @@ type WorkflowOutboundInterceptor interface {
 	// GetSignalChannel intercepts workflow.GetSignalChannel.
 	GetSignalChannel(ctx Context, signalName string) ReceiveChannel
 
+	// GetSignalChannelWithOptions intercepts workflow.GetSignalChannelWithOptions.
+	//
+	// NOTE: Experimental
+	GetSignalChannelWithOptions(ctx Context, signalName string, options SignalChannelOptions) ReceiveChannel
+
 	// SideEffect intercepts workflow.SideEffect.
 	SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedValue
 
@@ -292,6 +300,11 @@ type WorkflowOutboundInterceptor interface {
 
 	// SetQueryHandler intercepts workflow.SetQueryHandler.
 	SetQueryHandler(ctx Context, queryType string, handler interface{}) error
+
+	// SetQueryHandlerWithOptions intercepts workflow.SetQueryHandlerWithOptions.
+	//
+	// NOTE: Experimental
+	SetQueryHandlerWithOptions(ctx Context, queryType string, handler interface{}, options QueryHandlerOptions) error
 
 	// SetUpdateHandler intercepts workflow.SetUpdateHandler.
 	//

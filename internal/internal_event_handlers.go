@@ -602,7 +602,13 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.InheritBuildId = determineInheritBuildIdFlagForCommand(
 		params.VersioningIntent, wc.workflowInfo.TaskQueueName, params.TaskQueueName)
 
-	command, err := wc.commandsHelper.startChildWorkflowExecution(attributes)
+	startMetadata, err := buildUserMetadata(params.staticSummary, params.staticDetails, wc.dataConverter)
+	if err != nil {
+		callback(nil, err)
+		return
+	}
+
+	command, err := wc.commandsHelper.startChildWorkflowExecution(attributes, startMetadata)
 	if _, ok := err.(*childWorkflowExistsWithId); ok {
 		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
 			startedHandler(WorkflowExecution{}, &ChildWorkflowExecutionAlreadyStartedError{})
@@ -824,7 +830,7 @@ func (wc *workflowEnvironmentImpl) Now() time.Time {
 	return wc.currentReplayTime
 }
 
-func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback ResultHandler) *TimerID {
+func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, options TimerOptions, callback ResultHandler) *TimerID {
 	if d < 0 {
 		callback(nil, fmt.Errorf("negative duration provided %v", d))
 		return nil
@@ -839,7 +845,7 @@ func (wc *workflowEnvironmentImpl) NewTimer(d time.Duration, callback ResultHand
 	startTimerAttr.TimerId = timerID
 	startTimerAttr.StartToFireTimeout = durationpb.New(d)
 
-	command := wc.commandsHelper.startTimer(startTimerAttr)
+	command := wc.commandsHelper.startTimer(startTimerAttr, options, wc.GetDataConverter())
 	command.setData(&scheduledTimer{callback: callback})
 
 	wc.logger.Debug("NewTimer",
@@ -1392,6 +1398,11 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessQuery(
 		return weh.encodeArg(weh.StackTrace())
 	case QueryTypeOpenSessions:
 		return weh.encodeArg(weh.getOpenSessions())
+	case QueryTypeWorkflowMetadata:
+		// We are intentionally not handling this here but rather in the
+		// normal handler so it has access to the options/context as
+		// needed.
+		fallthrough
 	default:
 		result, err := weh.queryHandler(queryType, queryArgs, header)
 		if err != nil {

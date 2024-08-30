@@ -3079,6 +3079,46 @@ func (w *Workflows) UpsertMemo(ctx workflow.Context, memo map[string]interface{}
 	return workflow.GetInfo(ctx).Memo, nil
 }
 
+func (w *Workflows) UserMetadata(ctx workflow.Context) error {
+	// Define an update and query handler
+	err := workflow.SetQueryHandlerWithOptions(
+		ctx,
+		"my-query-handler",
+		func() (string, error) { return "done", nil },
+		workflow.QueryHandlerOptions{Description: "My query handler"},
+	)
+	if err != nil {
+		return err
+	}
+	err = workflow.SetUpdateHandlerWithOptions(
+		ctx,
+		"my-update-handler",
+		func(workflow.Context) error { return nil },
+		workflow.UpdateHandlerOptions{Description: "My update handler"},
+	)
+	if err != nil {
+		return err
+	}
+
+	// Set some initial current details
+	workflow.SetCurrentDetails(ctx, "current-details-1")
+
+	// Wait for signal and set something else
+	workflow.GetSignalChannelWithOptions(
+		ctx,
+		"continue",
+		workflow.SignalChannelOptions{Description: "My signal channel"},
+	).Receive(ctx, nil)
+	workflow.SetCurrentDetails(ctx, "current-details-2")
+
+	// Run a short timer with a summary and return
+	return workflow.NewTimerWithOptions(
+		ctx,
+		1*time.Millisecond,
+		workflow.TimerOptions{Summary: "my-timer"},
+	).Get(ctx, nil)
+}
+
 func (w *Workflows) RunsLocalAndNonlocalActsWithRetries(ctx workflow.Context, numOfEachActKind int, actFailTimes int) error {
 	var activities *Activities
 	futures := make([]workflow.Future, 0)
@@ -3227,6 +3267,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.QueryTestWorkflow)
 	worker.RegisterWorkflow(w.UpdateWithMutex)
 	worker.RegisterWorkflow(w.UpdateWithSemaphore)
+	worker.RegisterWorkflow(w.UserMetadata)
 	worker.RegisterWorkflow(w.WorkflowWithRejectableUpdate)
 
 	worker.RegisterWorkflow(w.child)

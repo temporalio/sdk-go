@@ -281,6 +281,10 @@ type (
 		//
 		// Deprecated - This is only for update of older search attributes. This may be removed in a future version.
 		UntypedSearchAttributes map[string]*commonpb.Payload
+
+		// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
+		staticSummary string
+		staticDetails string
 	}
 
 	// ScheduleOptions configure the parameters for creating a schedule.

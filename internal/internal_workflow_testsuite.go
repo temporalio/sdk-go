@@ -822,7 +822,7 @@ func (env *testWorkflowEnvironmentImpl) registerDelayedCallback(f func(), delayD
 		return
 	}
 	mainLoopCallback := func() {
-		env.newTimer(delayDuration, timerCallback, false)
+		env.newTimer(delayDuration, TimerOptions{}, timerCallback, false)
 	}
 	env.postCallback(mainLoopCallback, false)
 }
@@ -2092,7 +2092,12 @@ func newTestActivityTask(workflowID, runID, workflowTypeName, namespace string,
 	return task
 }
 
-func (env *testWorkflowEnvironmentImpl) newTimer(d time.Duration, callback ResultHandler, notifyListener bool) *TimerID {
+func (env *testWorkflowEnvironmentImpl) newTimer(
+	d time.Duration,
+	options TimerOptions,
+	callback ResultHandler,
+	notifyListener bool,
+) *TimerID {
 	nextID := env.nextID()
 	timerInfo := &TimerID{id: getStringID(nextID)}
 	timer := env.mockClock.AfterFunc(d, func() {
@@ -2119,8 +2124,12 @@ func (env *testWorkflowEnvironmentImpl) newTimer(d time.Duration, callback Resul
 	return timerInfo
 }
 
-func (env *testWorkflowEnvironmentImpl) NewTimer(d time.Duration, callback ResultHandler) *TimerID {
-	return env.newTimer(d, callback, true)
+func (env *testWorkflowEnvironmentImpl) NewTimer(
+	d time.Duration,
+	options TimerOptions,
+	callback ResultHandler,
+) *TimerID {
+	return env.newTimer(d, options, callback, true)
 }
 
 func (env *testWorkflowEnvironmentImpl) Now() time.Time {

@@ -379,6 +379,10 @@ type (
 		// compatible build ID or not. See VersioningIntent.
 		// WARNING: Worker versioning is currently experimental
 		VersioningIntent VersioningIntent
+
+		// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
+		staticSummary string
+		staticDetails string
 	}
 
 	// RegisterWorkflowOptions consists of options for registering a workflow
@@ -399,6 +403,26 @@ type (
 		isMethod bool
 	}
 
+	// SignalChannelOptions consists of options for a signal channel.
+	//
+	// NOTE: Experimental
+	SignalChannelOptions struct {
+		// Description is a short description for this signal.
+		//
+		// NOTE: Experimental
+		Description string
+	}
+
+	// QueryHandlerOptions consists of options for a query handler.
+	//
+	// NOTE: Experimental
+	QueryHandlerOptions struct {
+		// Description is a short description for this query.
+		//
+		// NOTE: Experimental
+		Description string
+	}
+
 	// UpdateHandlerOptions consists of options for executing a named workflow update.
 	//
 	// NOTE: Experimental
@@ -417,6 +441,20 @@ type (
 		// UnfinishedPolicy is the policy to apply when a workflow exits while
 		// the update handler is still running.
 		UnfinishedPolicy HandlerUnfinishedPolicy
+		// Description is a short description for this update.
+		//
+		// NOTE: Experimental
+		Description string
+	}
+
+	// TimerOptions are options set when creating a timer.
+	TimerOptions struct {
+		// Summary is a simple string identifying this timer. While it can be
+		// normal text, it is best to treat as a timer ID. This value will be
+		// visible in UI and CLI.
+		//
+		// NOTE: Experimental
+		Summary string
 	}
 )
 
@@ -602,7 +640,7 @@ func (wc *workflowEnvironmentInterceptor) HandleQuery(ctx Context, in *HandleQue
 	handler, ok := eo.queryHandlers[in.QueryType]
 	// Should never happen because its presence is checked before this call too
 	if !ok {
-		keys := []string{QueryTypeStackTrace, QueryTypeOpenSessions}
+		keys := []string{QueryTypeStackTrace, QueryTypeOpenSessions, QueryTypeWorkflowMetadata}
 		for k := range eo.queryHandlers {
 			keys = append(keys, k)
 		}
@@ -1219,13 +1257,33 @@ func (wc *workflowEnvironmentInterceptor) Now(ctx Context) time.Time {
 // this NewTimer() to get the timer instead of the Go lang library one(timer.NewTimer()). You can cancel the pending
 // timer by cancel the Context (using context from workflow.WithCancel(ctx)) and that will cancel the timer. After timer
 // is canceled, the returned Future become ready, and Future.Get() will return *CanceledError.
+//
+// To be able to set options like timer summary, use [NewTimerWithOptions].
 func NewTimer(ctx Context, d time.Duration) Future {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.NewTimer(ctx, d)
 }
 
+// NewTimerWithOptions returns immediately and the future becomes ready after the specified duration d. The workflow
+// needs to use this NewTimerWithOptions() to get the timer instead of the Go lang library one(timer.NewTimer()). You
+// can cancel the pending timer by cancel the Context (using context from workflow.WithCancel(ctx)) and that will cancel
+// the timer. After timer is canceled, the returned Future become ready, and Future.Get() will return *CanceledError.
+func NewTimerWithOptions(ctx Context, d time.Duration, options TimerOptions) Future {
+	assertNotInReadOnlyState(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
+	return i.NewTimerWithOptions(ctx, d, options)
+}
+
 func (wc *workflowEnvironmentInterceptor) NewTimer(ctx Context, d time.Duration) Future {
+	return wc.NewTimerWithOptions(ctx, d, TimerOptions{})
+}
+
+func (wc *workflowEnvironmentInterceptor) NewTimerWithOptions(
+	ctx Context,
+	d time.Duration,
+	options TimerOptions,
+) Future {
 	future, settable := NewFuture(ctx)
 	if d <= 0 {
 		settable.Set(true, nil)
@@ -1234,7 +1292,7 @@ func (wc *workflowEnvironmentInterceptor) NewTimer(ctx Context, d time.Duration)
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
-	timerID := wc.env.NewTimer(d, func(r *commonpb.Payloads, e error) {
+	timerID := wc.env.NewTimer(d, options, func(r *commonpb.Payloads, e error) {
 		settable.Set(nil, e)
 		if cancellable {
 			// future is done, we don't need cancellation anymore
@@ -1511,6 +1569,9 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.TypedSearchAttributes = cwo.TypedSearchAttributes
 	wfOptions.ParentClosePolicy = cwo.ParentClosePolicy
 	wfOptions.VersioningIntent = cwo.VersioningIntent
+	// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
+	wfOptions.staticSummary = cwo.staticSummary
+	wfOptions.staticDetails = cwo.staticDetails
 
 	return ctx1
 }
@@ -1537,6 +1598,9 @@ func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 		TypedSearchAttributes:    opts.TypedSearchAttributes,
 		ParentClosePolicy:        opts.ParentClosePolicy,
 		VersioningIntent:         opts.VersioningIntent,
+		// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
+		staticSummary: opts.staticSummary,
+		staticDetails: opts.staticDetails,
 	}
 }
 
@@ -1622,8 +1686,31 @@ func GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
 	return i.GetSignalChannel(ctx, signalName)
 }
 
+// GetSignalChannelWithOptions returns channel corresponding to the signal name.
+//
+// NOTE: Experimental
+func GetSignalChannelWithOptions(ctx Context, signalName string, options SignalChannelOptions) ReceiveChannel {
+	assertNotInReadOnlyState(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
+	return i.GetSignalChannelWithOptions(ctx, signalName, options)
+}
+
 func (wc *workflowEnvironmentInterceptor) GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
-	return getWorkflowEnvOptions(ctx).getSignalChannel(ctx, signalName)
+	return wc.GetSignalChannelWithOptions(ctx, signalName, SignalChannelOptions{})
+}
+
+func (wc *workflowEnvironmentInterceptor) GetSignalChannelWithOptions(
+	ctx Context,
+	signalName string,
+	options SignalChannelOptions,
+) ReceiveChannel {
+	eo := getWorkflowEnvOptions(ctx)
+	ch := eo.getSignalChannel(ctx, signalName)
+	// Add as a requested channel if not already done
+	if eo.requestedSignalChannels[signalName] == nil {
+		eo.requestedSignalChannels[signalName] = &requestedSignalChannel{options: options}
+	}
+	return ch
 }
 
 func newEncodedValue(value *commonpb.Payloads, dc converter.DataConverter) converter.EncodedValue {
@@ -1864,10 +1951,38 @@ func (wc *workflowEnvironmentInterceptor) GetVersion(ctx Context, changeID strin
 //	  currentState = "done"
 //	  return nil
 //	}
+//
+// See [SetQueryHandlerWithOptions] to set additional options.
 func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.SetQueryHandler(ctx, queryType, handler)
+}
+
+// SetQueryHandlerWithOptions is [SetQueryHandler] with extra options. See
+// [SetQueryHandler] documentation for details.
+//
+// NOTE: Experimental
+func SetQueryHandlerWithOptions(ctx Context, queryType string, handler interface{}, options QueryHandlerOptions) error {
+	assertNotInReadOnlyState(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
+	return i.SetQueryHandlerWithOptions(ctx, queryType, handler, options)
+}
+
+func (wc *workflowEnvironmentInterceptor) SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
+	return wc.SetQueryHandlerWithOptions(ctx, queryType, handler, QueryHandlerOptions{})
+}
+
+func (wc *workflowEnvironmentInterceptor) SetQueryHandlerWithOptions(
+	ctx Context,
+	queryType string,
+	handler interface{},
+	options QueryHandlerOptions,
+) error {
+	if strings.HasPrefix(queryType, "__") {
+		return errors.New("queryType starts with '__' is reserved for internal use")
+	}
+	return setQueryHandler(ctx, queryType, handler, options)
 }
 
 // SetUpdateHandler binds an update handler function to the specified
@@ -1898,13 +2013,6 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}, opts 
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.SetUpdateHandler(ctx, updateName, handler, opts)
-}
-
-func (wc *workflowEnvironmentInterceptor) SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
-	if strings.HasPrefix(queryType, "__") {
-		return errors.New("queryType starts with '__' is reserved for internal use")
-	}
-	return setQueryHandler(ctx, queryType, handler)
 }
 
 func (wc *workflowEnvironmentInterceptor) SetUpdateHandler(ctx Context, name string, handler interface{}, opts UpdateHandlerOptions) error {

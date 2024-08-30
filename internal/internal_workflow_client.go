@@ -48,6 +48,7 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/operatorservice/v1"
 	querypb "go.temporal.io/api/query/v1"
+	"go.temporal.io/api/sdk/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	updatepb "go.temporal.io/api/update/v1"
@@ -1595,6 +1596,11 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		Links:                    in.Options.links,
 	}
 
+	startRequest.UserMetadata, err = buildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
+	if err != nil {
+		return nil, err
+	}
+
 	if in.Options.requestID != "" {
 		startRequest.RequestId = in.Options.requestID
 	} else {
@@ -1872,6 +1878,11 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 
 	if in.Options.StartDelay != 0 {
 		signalWithStartRequest.WorkflowStartDelay = durationpb.New(in.Options.StartDelay)
+	}
+
+	signalWithStartRequest.UserMetadata, err = buildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
+	if err != nil {
+		return nil, err
 	}
 
 	var response *workflowservice.SignalWithStartWorkflowExecutionResponse
@@ -2232,4 +2243,27 @@ func (luh *lazyUpdateHandle) Get(ctx context.Context, valuePtr interface{}) erro
 
 func (q *queryRejectedError) Error() string {
 	return fmt.Sprintf("query rejected: %s", q.queryRejected.Status.String())
+}
+
+func buildUserMetadata(
+	summary string,
+	details string,
+	dataConverter converter.DataConverter,
+) (*sdk.UserMetadata, error) {
+	if summary == "" && details == "" {
+		return nil, nil
+	}
+	ret := &sdk.UserMetadata{}
+	var err error
+	if summary != "" {
+		if ret.Summary, err = dataConverter.ToPayload(summary); err != nil {
+			return nil, fmt.Errorf("failed converting summary to payload: %w", err)
+		}
+	}
+	if details != "" {
+		if ret.Details, err = dataConverter.ToPayload(details); err != nil {
+			return nil, fmt.Errorf("failed converting details to payload: %w", err)
+		}
+	}
+	return ret, nil
 }

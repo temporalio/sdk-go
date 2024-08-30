@@ -637,6 +637,11 @@ func convertToPBScheduleAction(
 			return nil, err
 		}
 
+		userMetadata, err := buildUserMetadata(action.staticSummary, action.staticDetails, dataConverter)
+		if err != nil {
+			return nil, err
+		}
+
 		return &schedulepb.ScheduleAction{
 			Action: &schedulepb.ScheduleAction_StartWorkflow{
 				StartWorkflow: &workflowpb.NewWorkflowExecutionInfo{
@@ -651,6 +656,7 @@ func convertToPBScheduleAction(
 					Memo:                     memo,
 					SearchAttributes:         searchAttrs,
 					Header:                   header,
+					UserMetadata:             userMetadata,
 				},
 			},
 		}, nil

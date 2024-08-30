@@ -65,6 +65,7 @@ import (
 	"go.temporal.io/sdk/test"
 
 	historypb "go.temporal.io/api/history/v1"
+	sdkpb "go.temporal.io/api/sdk/v1"
 
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
@@ -6188,6 +6189,81 @@ func (ts *IntegrationTestSuite) TestRequestFailureMetric() {
 	ts.assertMetricCount(metrics.TemporalRequestFailure, 1,
 		metrics.OperationTagName, "DescribeNamespace",
 		metrics.RequestFailureCode, "INVALID_ARGUMENT")
+}
+
+func (ts *IntegrationTestSuite) TestUserMetadata() {
+	// Skip this test if disabled
+	if os.Getenv("DISABLE_USER_METADATA_TESTS") != "" {
+		ts.T().SkipNow()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Start workflow with summary and details
+	opts := ts.startWorkflowOptions("test-user-metadata-" + uuid.New())
+	opts.StaticSummary = "my-wf-summary"
+	opts.StaticDetails = "my-wf-details"
+	run, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.UserMetadata)
+	ts.NoError(err)
+
+	// Confirm describing has the values set as expected
+	resp, err := ts.client.DescribeWorkflowExecution(ctx, run.GetID(), "")
+	ts.NoError(err)
+	var str string
+	ts.NoError(converter.GetDefaultDataConverter().FromPayload(
+		resp.ExecutionConfig.UserMetadata.Summary, &str))
+	ts.Equal("my-wf-summary", str)
+	ts.NoError(converter.GetDefaultDataConverter().FromPayload(
+		resp.ExecutionConfig.UserMetadata.Details, &str))
+	ts.Equal("my-wf-details", str)
+
+	// Send special query and confirm current details and query/update/signal
+	// info are present
+	val, err := ts.client.QueryWorkflow(ctx, run.GetID(), "", "__temporal_workflow_metadata")
+	ts.NoError(err)
+	var metadata sdkpb.WorkflowMetadata
+	ts.NoError(val.Get(&metadata))
+	ts.Equal("current-details-1", metadata.CurrentDetails)
+	var queryDefn *sdkpb.WorkflowInteractionDefinition
+	for _, def := range metadata.Definition.QueryDefinitions {
+		if def.Name == "my-query-handler" {
+			ts.Nil(queryDefn)
+			queryDefn = def
+			break
+		}
+	}
+	ts.Equal("my-query-handler", queryDefn.Name)
+	ts.Equal("My query handler", queryDefn.Description)
+	ts.Equal("continue", metadata.Definition.SignalDefinitions[0].Name)
+	ts.Equal("My signal channel", metadata.Definition.SignalDefinitions[0].Description)
+	ts.Equal("my-update-handler", metadata.Definition.UpdateDefinitions[0].Name)
+	ts.Equal("My update handler", metadata.Definition.UpdateDefinitions[0].Description)
+
+	// Send signal and confirm workflow completes successfully
+	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), "", "continue", nil))
+	ts.NoError(run.Get(ctx, nil))
+
+	// Confirm the query now has the updated details
+	val, err = ts.client.QueryWorkflow(ctx, run.GetID(), "", "__temporal_workflow_metadata")
+	ts.NoError(err)
+	ts.NoError(val.Get(&metadata))
+	ts.Equal("current-details-2", metadata.CurrentDetails)
+
+	// Confirm that the history has a timer with the proper summary
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	var timerEvent *historypb.HistoryEvent
+	for iter.HasNext() {
+		event, err := iter.Next()
+		ts.NoError(err)
+		if event.GetTimerStartedEventAttributes() != nil {
+			ts.Nil(timerEvent)
+			timerEvent = event
+		}
+	}
+	ts.NotNil(timerEvent)
+	ts.NoError(converter.GetDefaultDataConverter().FromPayload(
+		timerEvent.UserMetadata.Summary, &str))
+	ts.Equal("my-timer", str)
 }
 
 // executeWorkflow executes a given workflow and waits for the result

@@ -82,7 +82,7 @@ func (d *SingleActivityWorkflowDefinition) Execute(env bindings.WorkflowEnvironm
 		return converter.GetDefaultDataConverter().FromPayloads(input, &signalInput)
 	})
 	d.callbacks = append(d.callbacks, func() {
-		env.NewTimer(time.Second, d.addCallback(func(result *commonpb.Payloads, err error) {
+		env.NewTimer(time.Second, workflow.TimerOptions{}, d.addCallback(func(result *commonpb.Payloads, err error) {
 			input, _ := converter.GetDefaultDataConverter().ToPayloads("World")
 			parameters1 := bindings.ExecuteActivityParams{
 				ExecuteActivityOptions: bindings.ExecuteActivityOptions{
