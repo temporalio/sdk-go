@@ -43,7 +43,6 @@ const (
 	urlPathWorkflowIDKey = "workflowID"
 	urlPathRunIDKey      = "runID"
 	urlPathTemplate      = "/namespaces/%s/workflows/%s/%s/history"
-	urlTemplate          = "temporal://" + urlPathTemplate
 
 	linkWorkflowEventReferenceTypeKey = "referenceType"
 	linkEventReferenceEventIDKey      = "eventID"
@@ -63,6 +62,8 @@ var (
 )
 
 // ConvertLinkWorkflowEventToNexusLink converts a Link_WorkflowEvent type to Nexus Link.
+//
+// NOTE: Experimental
 func ConvertLinkWorkflowEventToNexusLink(we *commonpb.Link_WorkflowEvent) nexus.Link {
 	u := &url.URL{
 		Scheme: urlSchemeTemporalKey,
@@ -86,6 +87,8 @@ func ConvertLinkWorkflowEventToNexusLink(we *commonpb.Link_WorkflowEvent) nexus.
 }
 
 // ConvertNexusLinkToLinkWorkflowEvent converts a Nexus Link to Link_WorkflowEvent.
+//
+// NOTE: Experimental
 func ConvertNexusLinkToLinkWorkflowEvent(link nexus.Link) (*commonpb.Link_WorkflowEvent, error) {
 	we := &commonpb.Link_WorkflowEvent{}
 	if link.Type != string(we.ProtoReflect().Descriptor().FullName()) {
