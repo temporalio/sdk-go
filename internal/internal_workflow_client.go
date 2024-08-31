@@ -214,8 +214,8 @@ type (
 		paginate func(nexttoken []byte) (*workflowservice.GetWorkflowExecutionHistoryResponse, error)
 	}
 
-	// queryRejectedError is a wrapper for QueryRejected
-	queryRejectedError struct {
+	// QueryRejectedError is a wrapper for QueryRejected
+	QueryRejectedError struct {
 		queryRejected *querypb.QueryRejected
 	}
 )
@@ -924,9 +924,10 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 		QueryRejectCondition: request.QueryRejectCondition,
 	})
 	if err != nil {
-		if err, ok := err.(*queryRejectedError); ok {
+		var qerr *QueryRejectedError
+		if errors.As(err, &qerr) {
 			return &QueryWorkflowWithOptionsResponse{
-				QueryRejected: err.queryRejected,
+				QueryRejected: qerr.QueryRejected(),
 			}, nil
 		}
 		return nil, err
@@ -1994,7 +1995,7 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 	}
 
 	if resp.QueryRejected != nil {
-		return nil, &queryRejectedError{
+		return nil, &QueryRejectedError{
 			queryRejected: resp.QueryRejected,
 		}
 	}
@@ -2241,7 +2242,11 @@ func (luh *lazyUpdateHandle) Get(ctx context.Context, valuePtr interface{}) erro
 	return resp.Result.Get(valuePtr)
 }
 
-func (q *queryRejectedError) Error() string {
+func (q *QueryRejectedError) QueryRejected() *querypb.Rejected {
+	return q.queryRejected
+}
+
+func (q *QueryRejectedError) Error() string {
 	return fmt.Sprintf("query rejected: %s", q.queryRejected.Status.String())
 }
 

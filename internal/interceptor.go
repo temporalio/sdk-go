@@ -375,6 +375,7 @@ type ClientOutboundInterceptor interface {
 	TerminateWorkflow(context.Context, *ClientTerminateWorkflowInput) error
 
 	// QueryWorkflow intercepts client.Client.QueryWorkflow.
+	// If the query is rejected, QueryWorkflow will return an QueryRejectedError
 	// interceptor.Header will return a non-nil map for this context.
 	QueryWorkflow(context.Context, *ClientQueryWorkflowInput) (converter.EncodedValue, error)
 
