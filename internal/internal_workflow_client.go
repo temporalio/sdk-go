@@ -2242,7 +2242,7 @@ func (luh *lazyUpdateHandle) Get(ctx context.Context, valuePtr interface{}) erro
 	return resp.Result.Get(valuePtr)
 }
 
-func (q *QueryRejectedError) QueryRejected() *querypb.Rejected {
+func (q *QueryRejectedError) QueryRejected() *querypb.QueryRejected {
 	return q.queryRejected
 }
 
