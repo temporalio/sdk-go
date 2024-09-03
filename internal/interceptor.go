@@ -249,6 +249,8 @@ type WorkflowOutboundInterceptor interface {
 	NewTimer(ctx Context, d time.Duration) Future
 
 	// NewTimer intercepts workflow.NewTimerWithOptions.
+	//
+	// NOTE: Experimental
 	NewTimerWithOptions(ctx Context, d time.Duration, options TimerOptions) Future
 
 	// Sleep intercepts workflow.Sleep.
@@ -331,7 +333,8 @@ type WorkflowOutboundInterceptor interface {
 	//
 	// NOTE: Experimental
 	ExecuteNexusOperation(ctx Context, input ExecuteNexusOperationInput) NexusOperationFuture
-	// RequestCancelNexusOperation intercepts Nexus Operation cancelation via context.
+
+	// RequestCancelNexusOperation intercepts Nexus Operation cancellation via context.
 	//
 	// NOTE: Experimental
 	RequestCancelNexusOperation(ctx Context, input RequestCancelNexusOperationInput)

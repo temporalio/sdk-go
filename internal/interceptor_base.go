@@ -259,6 +259,8 @@ func (w *WorkflowOutboundInterceptorBase) NewTimer(ctx Context, d time.Duration)
 }
 
 // NewTimerWithOptions implements WorkflowOutboundInterceptor.NewTimerWithOptions.
+//
+// NOTE: Experimental
 func (w *WorkflowOutboundInterceptorBase) NewTimerWithOptions(
 	ctx Context,
 	d time.Duration,
