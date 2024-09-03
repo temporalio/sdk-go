@@ -201,8 +201,8 @@ func (w *WorkflowOutboundInterceptorBase) Await(ctx Context, condition func() bo
 }
 
 // AwaitWithTimeout implements WorkflowOutboundInterceptor.AwaitWithTimeout.
-func (w *WorkflowOutboundInterceptorBase) AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool) (bool, error) {
-	return w.Next.AwaitWithTimeout(ctx, timeout, condition)
+func (w *WorkflowOutboundInterceptorBase) AwaitWithTimeout(ctx Context, timeout time.Duration, options TimerOptions, condition func() bool) (bool, error) {
+	return w.Next.AwaitWithTimeout(ctx, timeout, options, condition)
 }
 
 // ExecuteLocalActivity implements WorkflowOutboundInterceptor.ExecuteLocalActivity.

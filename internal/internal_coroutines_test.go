@@ -1021,7 +1021,7 @@ func TestAwaitWithTimeoutNoTimeout(t *testing.T) {
 	flag := false
 	var awaitOk bool
 	d := createNewDispatcher(func(ctx Context) {
-		awaitOk, awaitWithTimeoutError = AwaitWithTimeout(ctx, time.Hour, func() bool { return flag })
+		awaitOk, awaitWithTimeoutError = AwaitWithTimeout(ctx, time.Hour, TimerOptions{"TestAwaitWithTimeoutNoTimeout"}, func() bool { return flag })
 	})
 	defer d.Close()
 	err := d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
@@ -1097,7 +1097,7 @@ func TestAwaitWithTimeoutCancellation(t *testing.T) {
 	interceptor, ctx := createRootTestContext()
 	ctx, cancelHandler := WithCancel(ctx)
 	d, _ := newDispatcher(ctx, interceptor, func(ctx Context) {
-		awaitOk, awaitWithTimeoutError = AwaitWithTimeout(ctx, time.Hour, func() bool { return false })
+		awaitOk, awaitWithTimeoutError = AwaitWithTimeout(ctx, time.Hour, TimerOptions{"TestAwaitWithTimeoutCancellation"}, func() bool { return false })
 	}, func() bool { return false })
 	defer d.Close()
 	err := d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)

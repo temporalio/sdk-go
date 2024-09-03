@@ -4036,7 +4036,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityDeadlineExceeded() {
 
 func (s *WorkflowTestSuiteUnitTest) Test_AwaitWithTimeoutTimeout() {
 	workflowFn := func(ctx Context) (bool, error) {
-		return AwaitWithTimeout(ctx, time.Second, func() bool { return false })
+		return AwaitWithTimeout(ctx, time.Second, TimerOptions{Summary: "Test_AwaitWithTimeoutTimeout"}, func() bool { return false })
 	}
 
 	env := s.NewTestWorkflowEnvironment()
