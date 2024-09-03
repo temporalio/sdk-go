@@ -220,10 +220,6 @@ type ScheduleClientCreateInput = internal.ScheduleClientCreateInput
 // ClientOutoundInterceptor.UpdateWorkflow.
 type ClientUpdateWorkflowInput = internal.ClientUpdateWorkflowInput
 
-// QueryRejectedError is a possible error that can be returned by
-// ClientOutboundInterceptor.QueryWorkflow to indicate that the query was rejected by the server.
-type QueryRejectedError = internal.QueryRejectedError
-
 // Header provides Temporal header information from the context for reading or
 // writing during specific interceptor calls.
 //

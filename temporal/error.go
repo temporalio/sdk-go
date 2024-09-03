@@ -158,6 +158,10 @@ type (
 
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
 	UnknownExternalWorkflowExecutionError = internal.UnknownExternalWorkflowExecutionError
+
+	// QueryRejectedError is a possible error that can be returned by
+	// ClientOutboundInterceptor.QueryWorkflow to indicate that the query was rejected by the server.
+	QueryRejectedError = internal.QueryRejectedError
 )
 
 var (
