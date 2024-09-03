@@ -229,9 +229,8 @@ type (
 		// runningUpdatesHandles is a map of update handlers that are currently running.
 		runningUpdatesHandles map[string]UpdateInfo
 		VersioningIntent      VersioningIntent
-		// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
-		staticSummary string
-		staticDetails string
+		StaticSummary         string
+		StaticDetails         string
 		// currentDetails is the user-set string returned on metadata query as
 		// WorkflowMetadata.current_details
 		currentDetails string
@@ -1166,6 +1165,7 @@ func (s *coroutineState) exit(timeout time.Duration) {
 			return true
 		}
 
+		// TODO?
 		timer := time.NewTimer(timeout)
 		defer timer.Stop()
 

@@ -380,9 +380,14 @@ type (
 		// WARNING: Worker versioning is currently experimental
 		VersioningIntent VersioningIntent
 
-		// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
-		staticSummary string
-		staticDetails string
+		// StaticSummary - Single-line fixed summary for this workflow execution that will appear in UI/CLI. This can be
+		// in single-line Temporal markdown format.
+		StaticSummary string
+
+		// StaticDetails - General fixed details for this workflow execution that will appear in UI/CLI. This can be in
+		// Temporal markdown format and can span multiple lines. This is a fixed value on the workflow that cannot be
+		// updated. For details that can be updated, use SetCurrentDetails within the workflow.
+		StaticDetails string
 	}
 
 	// RegisterWorkflowOptions consists of options for registering a workflow
@@ -494,7 +499,7 @@ func AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool)
 func (wc *workflowEnvironmentInterceptor) AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool) (ok bool, err error) {
 	state := getState(ctx)
 	defer state.unblocked()
-	timer := NewTimer(ctx, timeout)
+	timer := NewTimerWithOptions(ctx, timeout, TimerOptions{Summary: "AwaitWithTimeout"})
 	for !condition() {
 		doneCh := ctx.Done()
 		// TODO: Consider always returning a channel
@@ -1329,7 +1334,7 @@ func Sleep(ctx Context, d time.Duration) (err error) {
 }
 
 func (wc *workflowEnvironmentInterceptor) Sleep(ctx Context, d time.Duration) (err error) {
-	t := NewTimer(ctx, d)
+	t := NewTimerWithOptions(ctx, d, TimerOptions{Summary: "Sleep"})
 	err = t.Get(ctx, nil)
 	return
 }
@@ -1569,9 +1574,8 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.TypedSearchAttributes = cwo.TypedSearchAttributes
 	wfOptions.ParentClosePolicy = cwo.ParentClosePolicy
 	wfOptions.VersioningIntent = cwo.VersioningIntent
-	// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
-	wfOptions.staticSummary = cwo.staticSummary
-	wfOptions.staticDetails = cwo.staticDetails
+	wfOptions.StaticSummary = cwo.StaticSummary
+	wfOptions.StaticDetails = cwo.StaticDetails
 
 	return ctx1
 }
@@ -1598,9 +1602,8 @@ func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 		TypedSearchAttributes:    opts.TypedSearchAttributes,
 		ParentClosePolicy:        opts.ParentClosePolicy,
 		VersioningIntent:         opts.VersioningIntent,
-		// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
-		staticSummary: opts.staticSummary,
-		staticDetails: opts.staticDetails,
+		StaticSummary:            opts.StaticSummary,
+		StaticDetails:            opts.StaticDetails,
 	}
 }
 
