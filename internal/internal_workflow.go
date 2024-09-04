@@ -847,7 +847,7 @@ func (c *channelImpl) Receive(ctx Context, valuePtr interface{}) (more bool) {
 }
 
 func (c *channelImpl) ReceiveWithTimeout(ctx Context, timeout time.Duration, valuePtr interface{}) (ok, more bool) {
-	okAwait, err := AwaitWithTimeout(ctx, timeout, TimerOptions{"ReceiveWithTimeout"}, func() bool { return c.Len() > 0 })
+	okAwait, err := AwaitWithTimeout(ctx, timeout, func() bool { return c.Len() > 0 })
 	if err != nil { // context canceled
 		return false, true
 	}
@@ -1165,7 +1165,6 @@ func (s *coroutineState) exit(timeout time.Duration) {
 			return true
 		}
 
-		// TODO?
 		timer := time.NewTimer(timeout)
 		defer timer.Stop()
 
