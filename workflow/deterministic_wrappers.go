@@ -120,6 +120,8 @@ func AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool)
 //	workflow.AwaitWithTimeoutAndOptions(ctx, time.Hour, TimerOptions{"AwaitWithTimeoutAndOptions example"}, func() bool {
 //	  return count == 5
 //	})
+//
+// NOTE: Experimental
 func AwaitWithTimeoutAndOptions(ctx Context, timeout time.Duration, options TimerOptions, condition func() bool) (ok bool, err error) {
 	return internal.AwaitWithTimeoutAndOptions(ctx, timeout, options, condition)
 }

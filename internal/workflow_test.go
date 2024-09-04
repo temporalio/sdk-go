@@ -61,6 +61,8 @@ func TestGetChildWorkflowOptions(t *testing.T) {
 		},
 		ParentClosePolicy: enums.PARENT_CLOSE_POLICY_REQUEST_CANCEL,
 		VersioningIntent:  VersioningIntentDefault,
+		StaticSummary:     "foo",
+		StaticDetails:     "bar",
 	}
 
 	// Require test options to have non-zero value for each field. This ensures that we update tests (and the

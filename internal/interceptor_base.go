@@ -206,6 +206,8 @@ func (w *WorkflowOutboundInterceptorBase) AwaitWithTimeout(ctx Context, timeout 
 }
 
 // AwaitWithTimeoutAndOptions implements WorkflowOutboundInterceptor.AwaitWithTimeoutAndOptions.
+//
+// NOTE: Experimental
 func (w *WorkflowOutboundInterceptorBase) AwaitWithTimeoutAndOptions(ctx Context, timeout time.Duration, options TimerOptions, condition func() bool) (bool, error) {
 	return w.Next.AwaitWithTimeoutAndOptions(ctx, timeout, options, condition)
 }

@@ -382,11 +382,15 @@ type (
 
 		// StaticSummary - Single-line fixed summary for this workflow execution that will appear in UI/CLI. This can be
 		// in single-line Temporal markdown format.
+		//
+		// NOTE: Experimental
 		StaticSummary string
 
 		// StaticDetails - General fixed details for this workflow execution that will appear in UI/CLI. This can be in
 		// Temporal markdown format and can span multiple lines. This is a fixed value on the workflow that cannot be
 		// updated. For details that can be updated, use SetCurrentDetails within the workflow.
+		//
+		// NOTE: Experimental
 		StaticDetails string
 	}
 

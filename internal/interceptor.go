@@ -214,6 +214,8 @@ type WorkflowOutboundInterceptor interface {
 	AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool) (bool, error)
 
 	// AwaitWithTimeoutWithOptions intercepts workflow.AwaitWithTimeoutWithOptions.
+	//
+	// NOTE: Experimental
 	AwaitWithTimeoutAndOptions(ctx Context, timeout time.Duration, options TimerOptions, condition func() bool) (bool, error)
 
 	// ExecuteActivity intercepts workflow.ExecuteActivity.
