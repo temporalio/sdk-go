@@ -229,8 +229,9 @@ type (
 		// runningUpdatesHandles is a map of update handlers that are currently running.
 		runningUpdatesHandles map[string]UpdateInfo
 		VersioningIntent      VersioningIntent
-		StaticSummary         string
-		StaticDetails         string
+		// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
+		staticSummary string
+		staticDetails string
 		// currentDetails is the user-set string returned on metadata query as
 		// WorkflowMetadata.current_details
 		currentDetails string

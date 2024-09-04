@@ -380,18 +380,9 @@ type (
 		// WARNING: Worker versioning is currently experimental
 		VersioningIntent VersioningIntent
 
-		// StaticSummary - Single-line fixed summary for this workflow execution that will appear in UI/CLI. This can be
-		// in single-line Temporal markdown format.
-		//
-		// NOTE: Experimental
-		StaticSummary string
-
-		// StaticDetails - General fixed details for this workflow execution that will appear in UI/CLI. This can be in
-		// Temporal markdown format and can span multiple lines. This is a fixed value on the workflow that cannot be
-		// updated. For details that can be updated, use SetCurrentDetails within the workflow.
-		//
-		// NOTE: Experimental
-		StaticDetails string
+		// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
+		staticSummary string
+		staticDetails string
 	}
 
 	// RegisterWorkflowOptions consists of options for registering a workflow
@@ -1611,8 +1602,8 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.TypedSearchAttributes = cwo.TypedSearchAttributes
 	wfOptions.ParentClosePolicy = cwo.ParentClosePolicy
 	wfOptions.VersioningIntent = cwo.VersioningIntent
-	wfOptions.StaticSummary = cwo.StaticSummary
-	wfOptions.StaticDetails = cwo.StaticDetails
+	wfOptions.staticSummary = cwo.staticSummary
+	wfOptions.staticDetails = cwo.staticDetails
 
 	return ctx1
 }
@@ -1639,8 +1630,8 @@ func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 		TypedSearchAttributes:    opts.TypedSearchAttributes,
 		ParentClosePolicy:        opts.ParentClosePolicy,
 		VersioningIntent:         opts.VersioningIntent,
-		StaticSummary:            opts.StaticSummary,
-		StaticDetails:            opts.StaticDetails,
+		staticSummary:            opts.staticSummary,
+		staticDetails:            opts.staticDetails,
 	}
 }
 
