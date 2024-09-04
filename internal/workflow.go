@@ -494,23 +494,7 @@ func AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool)
 }
 
 func (wc *workflowEnvironmentInterceptor) AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool) (ok bool, err error) {
-	state := getState(ctx)
-	defer state.unblocked()
-	timer := NewTimerWithOptions(ctx, timeout, TimerOptions{Summary: "AwaitWithTimeout"})
-	for !condition() {
-		doneCh := ctx.Done()
-		// TODO: Consider always returning a channel
-		if doneCh != nil {
-			if _, more := doneCh.ReceiveAsyncWithMoreFlag(nil); !more {
-				return false, NewCanceledError("AwaitWithTimeout context canceled")
-			}
-		}
-		if timer.IsReady() {
-			return false, nil
-		}
-		state.yield("AwaitWithTimeout")
-	}
-	return true, nil
+	return wc.AwaitWithTimeoutAndOptions(ctx, timeout, TimerOptions{Summary: "AwaitWithTimeout"}, condition)
 }
 
 // AwaitWithTimeoutAndOptions blocks the calling thread until condition() returns true
