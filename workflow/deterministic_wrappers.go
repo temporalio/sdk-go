@@ -102,7 +102,7 @@ func Await(ctx Context, condition func() bool) error {
 // The following code will block until the captured count
 // variable is set to 5, or one hour passes.
 //
-//	workflow.AwaitWithTimeout(ctx, time.Hour, options, func() bool {
+//	workflow.AwaitWithTimeout(ctx, time.Hour, func() bool {
 //	  return count == 5
 //	})
 func AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool) (ok bool, err error) {
