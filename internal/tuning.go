@@ -417,7 +417,10 @@ func (t *trackingSlotSupplier) ReserveSlot(
 		return nil, fmt.Errorf("slot supplier returned nil permit")
 	}
 	t.issuedSlotsAtomic.Add(1)
-	t.publishMetrics(false)
+	t.slotsMutex.Lock()
+	usedSlots := len(t.usedSlots)
+	t.slotsMutex.Unlock()
+	t.publishMetrics(usedSlots)
 	return permit, nil
 }
 
@@ -432,7 +435,10 @@ func (t *trackingSlotSupplier) TryReserveSlot(data *slotReservationData) *SlotPe
 	})
 	if permit != nil {
 		t.issuedSlotsAtomic.Add(1)
-		t.publishMetrics(false)
+		t.slotsMutex.Lock()
+		usedSlots := len(t.usedSlots)
+		t.slotsMutex.Unlock()
+		t.publishMetrics(usedSlots)
 	}
 	return permit
 }
@@ -442,14 +448,15 @@ func (t *trackingSlotSupplier) MarkSlotUsed(permit *SlotPermit) {
 		panic("Cannot mark nil permit as used")
 	}
 	t.slotsMutex.Lock()
-	defer t.slotsMutex.Unlock()
 	t.usedSlots[permit] = struct{}{}
+	usedSlots := len(t.usedSlots)
+	t.slotsMutex.Unlock()
 	t.inner.MarkSlotUsed(&slotMarkUsedContextImpl{
 		permit:  permit,
 		logger:  t.logger,
 		metrics: t.metrics,
 	})
-	t.publishMetrics(true)
+	t.publishMetrics(usedSlots)
 }
 
 func (t *trackingSlotSupplier) ReleaseSlot(permit *SlotPermit, reason SlotReleaseReason) {
@@ -457,7 +464,9 @@ func (t *trackingSlotSupplier) ReleaseSlot(permit *SlotPermit, reason SlotReleas
 		panic("Cannot release with nil permit")
 	}
 	t.slotsMutex.Lock()
-	defer t.slotsMutex.Unlock()
+	delete(t.usedSlots, permit)
+	usedSlots := len(t.usedSlots)
+	t.slotsMutex.Unlock()
 	t.inner.ReleaseSlot(&slotReleaseContextImpl{
 		permit:  permit,
 		reason:  reason,
@@ -465,19 +474,13 @@ func (t *trackingSlotSupplier) ReleaseSlot(permit *SlotPermit, reason SlotReleas
 		metrics: t.metrics,
 	})
 	t.issuedSlotsAtomic.Add(-1)
-	delete(t.usedSlots, permit)
 	if permit.extraReleaseCallback != nil {
 		permit.extraReleaseCallback()
 	}
-	t.publishMetrics(true)
+	t.publishMetrics(usedSlots)
 }
 
-func (t *trackingSlotSupplier) publishMetrics(lockAlreadyHeld bool) {
-	if !lockAlreadyHeld {
-		t.slotsMutex.Lock()
-		defer t.slotsMutex.Unlock()
-	}
-	usedSlots := len(t.usedSlots)
+func (t *trackingSlotSupplier) publishMetrics(usedSlots int) {
 	if t.inner.MaxSlots() != 0 {
 		t.taskSlotsAvailableGauge.Update(float64(t.inner.MaxSlots() - usedSlots))
 	}
