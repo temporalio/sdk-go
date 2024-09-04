@@ -485,6 +485,26 @@ func (wc *workflowEnvironmentInterceptor) Await(ctx Context, condition func() bo
 	return nil
 }
 
+func (wc *workflowEnvironmentInterceptor) awaitWithOptions(ctx Context, timeout time.Duration, options TimerOptions, condition func() bool, functionName string) (ok bool, err error) {
+	state := getState(ctx)
+	defer state.unblocked()
+	timer := NewTimerWithOptions(ctx, timeout, options)
+	for !condition() {
+		doneCh := ctx.Done()
+		// TODO: Consider always returning a channel
+		if doneCh != nil {
+			if _, more := doneCh.ReceiveAsyncWithMoreFlag(nil); !more {
+				return false, NewCanceledError("%s context canceled", functionName)
+			}
+		}
+		if timer.IsReady() {
+			return false, nil
+		}
+		state.yield(functionName)
+	}
+	return true, nil
+}
+
 // AwaitWithTimeout blocks the calling thread until condition() returns true
 // Returns ok equals to false if timed out and err equals to CanceledError if the ctx is canceled.
 func AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool) (ok bool, err error) {
@@ -494,7 +514,7 @@ func AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool)
 }
 
 func (wc *workflowEnvironmentInterceptor) AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool) (ok bool, err error) {
-	return wc.AwaitWithTimeoutAndOptions(ctx, timeout, TimerOptions{Summary: "AwaitWithTimeout"}, condition)
+	return wc.awaitWithOptions(ctx, timeout, TimerOptions{Summary: "AwaitWithTimeout"}, condition, "AwaitWithTimeout")
 }
 
 // AwaitWithTimeoutAndOptions blocks the calling thread until condition() returns true
@@ -506,26 +526,7 @@ func AwaitWithTimeoutAndOptions(ctx Context, timeout time.Duration, options Time
 }
 
 func (wc *workflowEnvironmentInterceptor) AwaitWithTimeoutAndOptions(ctx Context, timeout time.Duration, options TimerOptions, condition func() bool) (ok bool, err error) {
-	state := getState(ctx)
-	defer state.unblocked()
-	if options.Summary == "" {
-		options.Summary = "AwaitWithTimeoutAndOptions"
-	}
-	timer := NewTimerWithOptions(ctx, timeout, options)
-	for !condition() {
-		doneCh := ctx.Done()
-		// TODO: Consider always returning a channel
-		if doneCh != nil {
-			if _, more := doneCh.ReceiveAsyncWithMoreFlag(nil); !more {
-				return false, NewCanceledError("AwaitWithTimeoutAndOptions context canceled")
-			}
-		}
-		if timer.IsReady() {
-			return false, nil
-		}
-		state.yield("AwaitWithTimeoutAndOptions")
-	}
-	return true, nil
+	return wc.awaitWithOptions(ctx, timeout, options, condition, "AwaitWithTimeoutAndOptions")
 }
 
 // NewChannel create new Channel instance
