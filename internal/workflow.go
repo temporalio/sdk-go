@@ -496,7 +496,7 @@ func AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool)
 func (wc *workflowEnvironmentInterceptor) AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool) (ok bool, err error) {
 	state := getState(ctx)
 	defer state.unblocked()
-	timer := NewTimerWithOptions(ctx, timeout, TimerOptions{"AwaitWithTimeout"})
+	timer := NewTimerWithOptions(ctx, timeout, TimerOptions{Summary: "AwaitWithTimeout"})
 	for !condition() {
 		doneCh := ctx.Done()
 		// TODO: Consider always returning a channel
@@ -1602,6 +1602,7 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.TypedSearchAttributes = cwo.TypedSearchAttributes
 	wfOptions.ParentClosePolicy = cwo.ParentClosePolicy
 	wfOptions.VersioningIntent = cwo.VersioningIntent
+	// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
 	wfOptions.staticSummary = cwo.staticSummary
 	wfOptions.staticDetails = cwo.staticDetails
 
@@ -1630,8 +1631,9 @@ func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 		TypedSearchAttributes:    opts.TypedSearchAttributes,
 		ParentClosePolicy:        opts.ParentClosePolicy,
 		VersioningIntent:         opts.VersioningIntent,
-		staticSummary:            opts.staticSummary,
-		staticDetails:            opts.staticDetails,
+		// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
+		staticSummary: opts.staticSummary,
+		staticDetails: opts.staticDetails,
 	}
 }
 
