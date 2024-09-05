@@ -72,6 +72,11 @@ type (
 	//
 	// NOTE: Experimental
 	TimerOptions = internal.TimerOptions
+
+	// AwaitOptions are options for [AwaitWithOptions]
+	//
+	// NOTE: Experimental
+	AwaitOptions = internal.AwaitOptions
 )
 
 // Await blocks the calling thread until condition() returns true.
@@ -122,7 +127,7 @@ func AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool)
 //	})
 //
 // NOTE: Experimental
-func AwaitWithOptions(ctx Context, options internal.AwaitOptions, condition func() bool) (ok bool, err error) {
+func AwaitWithOptions(ctx Context, options AwaitOptions, condition func() bool) (ok bool, err error) {
 	return internal.AwaitWithOptions(ctx, options, condition)
 }
 
