@@ -4048,6 +4048,21 @@ func (s *WorkflowTestSuiteUnitTest) Test_AwaitWithTimeoutTimeout() {
 	s.False(result)
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_AwaitWithOptionsTieout() {
+	options := AwaitOptions{Timeout: time.Second, TimerOptions: TimerOptions{Summary: "Test_AwaitWithOptionsTieout"}}
+	workflowFn := func(ctx Context) (bool, error) {
+		return AwaitWithOptions(ctx, options, func() bool { return false })
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	result := true
+	_ = env.GetWorkflowResult(&result)
+	s.False(result)
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_NoDetachedChildWait() {
 	// One cron+abandon and one request-cancel
 	childOptionSet := []ChildWorkflowOptions{
