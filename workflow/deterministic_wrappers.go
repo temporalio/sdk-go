@@ -111,19 +111,19 @@ func AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool)
 	return internal.AwaitWithTimeout(ctx, timeout, condition)
 }
 
-// AwaitWithTimeoutAndOptions blocks the calling thread until condition() returns true
+// AwaitWithOptions blocks the calling thread until condition() returns true
 // or blocking time exceeds the passed timeout value.
 // Returns ok=false if timed out, and err CanceledError if the ctx is canceled.
 // The following code will block until the captured count
 // variable is set to 5, or one hour passes.
 //
-//	workflow.AwaitWithTimeoutAndOptions(ctx, time.Hour, TimerOptions{"AwaitWithTimeoutAndOptions example"}, func() bool {
+//	workflow.AwaitWithOptions(ctx, options, func() bool {
 //	  return count == 5
 //	})
 //
 // NOTE: Experimental
-func AwaitWithTimeoutAndOptions(ctx Context, timeout time.Duration, options TimerOptions, condition func() bool) (ok bool, err error) {
-	return internal.AwaitWithTimeoutAndOptions(ctx, timeout, options, condition)
+func AwaitWithOptions(ctx Context, options internal.AwaitOptions, condition func() bool) (ok bool, err error) {
+	return internal.AwaitWithOptions(ctx, options, condition)
 }
 
 // NewChannel creates a new Channel instance
