@@ -37,6 +37,8 @@ import (
 	"go.temporal.io/api/common/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -231,6 +233,8 @@ func (h *nexusTaskHandler) handleStartOperation(
 				},
 			}, nil, nil
 		}
+		// Default to expose details for now. We may make this configurable eventually.
+		err = convertServiceError(convertApplicationError(err), true)
 		var handlerErr *nexus.HandlerError
 		if errors.As(err, &handlerErr) {
 			return nil, nexusHandlerErrorToProto(handlerErr), nil
@@ -302,6 +306,8 @@ func (h *nexusTaskHandler) handleCancelOperation(ctx context.Context, nctx *Nexu
 		return nil, nil, ctx.Err()
 	}
 	if err != nil {
+		// Default to expose details for now. We may make this configurable eventually.
+		err = convertServiceError(convertApplicationError(err), true)
 		var handlerErr *nexus.HandlerError
 		if errors.As(err, &handlerErr) {
 			return nil, nexusHandlerErrorToProto(handlerErr), nil
@@ -416,3 +422,93 @@ func (p *payloadSerializer) Serialize(v any) (*nexus.Content, error) {
 }
 
 var emptyReaderNopCloser = io.NopCloser(bytes.NewReader([]byte{}))
+
+// statusGetter represents Temporal serviceerrors which have a Status() method.
+type statusGetter interface {
+	Status() *status.Status
+}
+
+// convertServiceError converts a serviceerror into a Nexus HandlerError if possible.
+// If exposeDetails is true, the error message from the given error is exposed in the converted HandlerError, otherwise,
+// a default message with minimal information is attached to the returned error.
+// Roughly taken from https://github.com/googleapis/googleapis/blob/master/google/rpc/code.proto
+// and
+// https://github.com/grpc-ecosystem/grpc-gateway/blob/a7cf811e6ffabeaddcfb4ff65602c12671ff326e/runtime/errors.go#L56.
+func convertServiceError(err error, exposeDetails bool) error {
+	var st *status.Status
+	var stGetter statusGetter
+	if !errors.As(err, &stGetter) {
+		// Not a serviceerror, passthrough.
+		return err
+	}
+
+	st = stGetter.Status()
+	errMessage := err.Error()
+
+	switch st.Code() {
+	case codes.AlreadyExists, codes.Canceled, codes.InvalidArgument, codes.FailedPrecondition, codes.OutOfRange:
+		if !exposeDetails {
+			errMessage = "bad request"
+		}
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, errMessage)
+	case codes.Aborted, codes.Unavailable:
+		if !exposeDetails {
+			errMessage = "service unavailable"
+		}
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeUnavailable, errMessage)
+	case codes.DataLoss, codes.Internal, codes.Unknown:
+		if !exposeDetails {
+			errMessage = "internal error"
+		}
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, errMessage)
+	case codes.Unauthenticated:
+		if !exposeDetails {
+			errMessage = "authentication failed"
+		}
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeUnauthenticated, errMessage)
+	case codes.PermissionDenied:
+		if !exposeDetails {
+			errMessage = "permission denied"
+		}
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeUnauthorized, errMessage)
+	case codes.NotFound:
+		if !exposeDetails {
+			errMessage = "not found"
+		}
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeNotFound, errMessage)
+	case codes.ResourceExhausted:
+		if !exposeDetails {
+			errMessage = "resource exhausted"
+		}
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeResourceExhausted, errMessage)
+	case codes.Unimplemented:
+		if !exposeDetails {
+			errMessage = "not implemented"
+		}
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeNotImplemented, errMessage)
+	case codes.DeadlineExceeded:
+		if !exposeDetails {
+			errMessage = "request timeout"
+		}
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeDownstreamTimeout, errMessage)
+	}
+
+	// Default to internal error. This should only happen for codes.OK, which is unexpected for serviceerrors.
+	if !exposeDetails {
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
+	}
+	return err
+}
+
+// convertApplicationError converts a Temporal ApplicationError to a Nexus HandlerError, respecting the non_retryable
+// flag.
+func convertApplicationError(err error) error {
+	var appErr *ApplicationError
+	if errors.As(err, &appErr) {
+		if appErr.NonRetryable() {
+			return nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, appErr.Error())
+		}
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, appErr.Error())
+	}
+	return err
+}
