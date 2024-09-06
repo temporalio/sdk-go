@@ -6266,6 +6266,38 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 	ts.Equal("my-timer", str)
 }
 
+func (ts *IntegrationTestSuite) TestAwaitWithOptionsTimeout() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Start workflow
+	fmt.Println("start workflow")
+	opts := ts.startWorkflowOptions("test-await-options" + uuid.New())
+	_, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.AwaitWithOptions, 2, 1)
+	ts.NoError(err)
+
+	// TODO: Figure out how to query awaitwithoptions run
+	// resp, err := ts.client.DescribeWorkflowExecution(ctx, run.GetID(), "")
+	// ts.NoError(err)
+
+	// AwaitWithOptions
+	// iter := ts.client.GetWorkflowHistory(ctx, opts.ID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	// var timerEvent *historypb.HistoryEvent
+	// for iter.HasNext() {
+	// 	event, err1 := iter.Next()
+	// 	ts.NoError(err1)
+	// 	fmt.Println(event.String())
+	// 	if event.GetTimerStartedEventAttributes() != nil {
+	// 		ts.Nil(timerEvent)
+	// 		timerEvent = event
+	// 	}
+	// }
+	// ts.Equal("a", "b")
+
+	// TODO: One that times out?
+
+}
+
 // executeWorkflow executes a given workflow and waits for the result
 func (ts *IntegrationTestSuite) executeWorkflow(
 	wfID string, wfFunc interface{}, retValPtr interface{}, args ...interface{},
