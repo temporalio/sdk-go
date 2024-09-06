@@ -385,6 +385,12 @@ func (env *testWorkflowEnvironmentImpl) setContinuedExecutionRunID(rid string) {
 	env.workflowInfo.ContinuedExecutionRunID = rid
 }
 
+func (env *testWorkflowEnvironmentImpl) inOrderMockCalls(calls ...*MockCallWrapper) {
+	for i := 1; i < len(calls); i++ {
+		calls[i].NotBefore(calls[i-1])
+	}
+}
+
 func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(params *ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) (*testWorkflowEnvironmentImpl, error) {
 	// create a new test env
 	childEnv := newTestWorkflowEnvironmentImpl(env.testSuite, env.registry)
