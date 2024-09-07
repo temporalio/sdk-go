@@ -1990,8 +1990,8 @@ func (wc *workflowEnvironmentInterceptor) SetQueryHandlerWithOptions(
 // SetUpdateHandler binds an update handler function to the specified
 // name such that update invocations specifying that name will invoke the
 // handler.  The handler function can take as input any number of parameters so
-// long as they can be serialized/deserialized by the system. The handler can
-// take a workflow.Context as its first parameter but this is not required. The
+// long as they can be serialized/deserialized by the system. The handler must
+// take a workflow.Context as its first parameter. The
 // update handler must return either a single error or a single serializable
 // object along with a single error. The update handler function is invoked in
 // the context of the workflow and thus is subject to the same restrictions as
