@@ -522,7 +522,7 @@ func SetQueryHandlerWithOptions(ctx Context, queryType string, handler interface
 	return internal.SetQueryHandlerWithOptions(ctx, queryType, handler, options)
 }
 
-// SetUpdateHandler forwards to SetUpdateHandlerWithOptions with an
+// SetUpdateHandler forwards to SetUpdateHandlerWithOptions with a
 // zero-initialized UpdateHandlerOptions struct. See SetUpdateHandlerWithOptions
 // for more details.
 //
