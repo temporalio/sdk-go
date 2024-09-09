@@ -6272,7 +6272,6 @@ func (ts *IntegrationTestSuite) TestAwaitWithOptionsTimeout() {
 	var str string
 
 	// Start workflow
-	fmt.Println("start workflow")
 	opts := ts.startWorkflowOptions("test-await-options" + uuid.New())
 	run, err := ts.client.ExecuteWorkflow(ctx, opts,
 		ts.workflows.AwaitWithOptions)
