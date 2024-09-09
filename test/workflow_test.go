@@ -3119,14 +3119,13 @@ func (w *Workflows) UserMetadata(ctx workflow.Context) error {
 	).Get(ctx, nil)
 }
 
-func (w *Workflows) AwaitWithOptions(ctx workflow.Context, timeout time.Duration, sleepDuration time.Duration) (bool, error) {
+func (w *Workflows) AwaitWithOptions(ctx workflow.Context) (bool, error) {
 	options := workflow.AwaitOptions{
-		Timeout:      timeout,
-		TimerOptions: workflow.TimerOptions{Summary: "await-options-test"},
+		Timeout:      1 * time.Millisecond,
+		TimerOptions: workflow.TimerOptions{Summary: "await-timer"},
 	}
 
 	return workflow.AwaitWithOptions(ctx, options, func() bool {
-		time.Sleep(sleepDuration)
 		return true
 	})
 
