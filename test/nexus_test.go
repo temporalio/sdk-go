@@ -183,6 +183,8 @@ var syncOp = temporalnexus.NewSyncOperation("sync-op", func(ctx context.Context,
 				Message: "fail",
 			},
 		}
+	case "fmt-errorf":
+		return "", fmt.Errorf("arbitrary error message")
 	case "handlererror":
 		return "", nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, s)
 	case "already-started":
@@ -194,7 +196,7 @@ var syncOp = temporalnexus.NewSyncOperation("sync-op", func(ctx context.Context,
 			NonRetryable: true,
 		})
 	case "panic":
-		panic("panic")
+		panic("panic requested")
 	}
 	return "", nil
 })
@@ -254,6 +256,14 @@ func TestNexusSyncOperation(t *testing.T) {
 		require.ErrorAs(t, err, &unsuccessfulOperationErr)
 		require.Equal(t, nexus.OperationStateFailed, unsuccessfulOperationErr.State)
 		require.Equal(t, "fail", unsuccessfulOperationErr.Failure.Message)
+	})
+
+	t.Run("fmt-errorf", func(t *testing.T) {
+		tc.metricsHandler.Clear()
+		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "fmt-errorf", nexus.ExecuteOperationOptions{})
+		var unexpectedResponseErr *nexus.UnexpectedResponseError
+		require.ErrorAs(t, err, &unexpectedResponseErr)
+		require.Contains(t, unexpectedResponseErr.Message, `"500 Internal Server Error": arbitrary error message`)
 	})
 
 	t.Run("handlererror", func(t *testing.T) {
@@ -321,7 +331,7 @@ func TestNexusSyncOperation(t *testing.T) {
 		var unexpectedResponseErr *nexus.UnexpectedResponseError
 		require.ErrorAs(t, err, &unexpectedResponseErr)
 		require.Equal(t, 500, unexpectedResponseErr.Response.StatusCode)
-		require.Contains(t, unexpectedResponseErr.Message, "internal error")
+		require.Contains(t, unexpectedResponseErr.Message, "panic: panic requested")
 	})
 }
 
