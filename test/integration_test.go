@@ -6266,46 +6266,6 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 	ts.Equal("my-timer", str)
 }
 
-// prettifyString formats the given string to make it more readable
-func prettifyString(s string) string {
-	var builder strings.Builder
-
-	indent := 0
-	inQuote := false
-
-	for _, ch := range s {
-		switch ch {
-		case '{':
-			if !inQuote {
-				builder.WriteString("\n")
-				builder.WriteString(strings.Repeat("\t", indent))
-				indent++
-			}
-			builder.WriteRune(ch)
-		case '}':
-			if !inQuote {
-				indent--
-				builder.WriteString("\n")
-				builder.WriteString(strings.Repeat("\t", indent))
-			}
-			builder.WriteRune(ch)
-		case '"':
-			inQuote = !inQuote
-			builder.WriteRune(ch)
-		case ' ':
-			if !inQuote {
-				builder.WriteRune(ch)
-			} else {
-				builder.WriteRune(ch)
-			}
-		default:
-			builder.WriteRune(ch)
-		}
-	}
-
-	return builder.String()
-}
-
 func (ts *IntegrationTestSuite) TestAwaitWithOptionsTimeout() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -6327,7 +6287,6 @@ func (ts *IntegrationTestSuite) TestAwaitWithOptionsTimeout() {
 	for iter.HasNext() {
 		event, err1 := iter.Next()
 		ts.NoError(err1)
-		fmt.Println("event.String():\n", prettifyString(event.String()))
 		if event.GetTimerStartedEventAttributes() != nil {
 			ts.Nil(timerEvent)
 			timerEvent = event
@@ -6337,9 +6296,6 @@ func (ts *IntegrationTestSuite) TestAwaitWithOptionsTimeout() {
 	ts.NoError(converter.GetDefaultDataConverter().FromPayload(
 		timerEvent.UserMetadata.Summary, &str))
 	ts.Equal("await-timer", str)
-
-	// TODO: One that times out?
-
 }
 
 // executeWorkflow executes a given workflow and waits for the result
