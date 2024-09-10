@@ -458,6 +458,20 @@ type (
 		// NOTE: Experimental
 		Summary string
 	}
+
+	// AwaitOptions are options set when creating an await.
+	//
+	// NOTE: Experimental
+	AwaitOptions struct {
+		// Timeout is the await timeout if the await condition is not met.
+		//
+		// NOTE: Experimental
+		Timeout time.Duration
+		// TimerOptions are options set for the underlying timer created.
+		//
+		// NOTE: Experimental
+		TimerOptions TimerOptions
+	}
 )
 
 // Await blocks the calling thread until condition() returns true
@@ -485,6 +499,26 @@ func (wc *workflowEnvironmentInterceptor) Await(ctx Context, condition func() bo
 	return nil
 }
 
+func (wc *workflowEnvironmentInterceptor) awaitWithOptions(ctx Context, options AwaitOptions, condition func() bool, functionName string) (ok bool, err error) {
+	state := getState(ctx)
+	defer state.unblocked()
+	timer := NewTimerWithOptions(ctx, options.Timeout, options.TimerOptions)
+	for !condition() {
+		doneCh := ctx.Done()
+		// TODO: Consider always returning a channel
+		if doneCh != nil {
+			if _, more := doneCh.ReceiveAsyncWithMoreFlag(nil); !more {
+				return false, NewCanceledError("%s context canceled", functionName)
+			}
+		}
+		if timer.IsReady() {
+			return false, nil
+		}
+		state.yield(functionName)
+	}
+	return true, nil
+}
+
 // AwaitWithTimeout blocks the calling thread until condition() returns true
 // Returns ok equals to false if timed out and err equals to CanceledError if the ctx is canceled.
 func AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool) (ok bool, err error) {
@@ -494,23 +528,20 @@ func AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool)
 }
 
 func (wc *workflowEnvironmentInterceptor) AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool) (ok bool, err error) {
+	options := AwaitOptions{Timeout: timeout, TimerOptions: TimerOptions{Summary: "AwaitWithTimeout"}}
+	return wc.awaitWithOptions(ctx, options, condition, "AwaitWithTimeout")
+}
+
+// AwaitWithOptions blocks the calling thread until condition() returns true
+// Returns ok equals to false if timed out and err equals to CanceledError if the ctx is canceled.
+func AwaitWithOptions(ctx Context, options AwaitOptions, condition func() bool) (ok bool, err error) {
+	assertNotInReadOnlyState(ctx)
 	state := getState(ctx)
-	defer state.unblocked()
-	timer := NewTimer(ctx, timeout)
-	for !condition() {
-		doneCh := ctx.Done()
-		// TODO: Consider always returning a channel
-		if doneCh != nil {
-			if _, more := doneCh.ReceiveAsyncWithMoreFlag(nil); !more {
-				return false, NewCanceledError("AwaitWithTimeout context canceled")
-			}
-		}
-		if timer.IsReady() {
-			return false, nil
-		}
-		state.yield("AwaitWithTimeout")
-	}
-	return true, nil
+	return state.dispatcher.interceptor.AwaitWithOptions(ctx, options, condition)
+}
+
+func (wc *workflowEnvironmentInterceptor) AwaitWithOptions(ctx Context, options AwaitOptions, condition func() bool) (ok bool, err error) {
+	return wc.awaitWithOptions(ctx, options, condition, "AwaitWithOptions")
 }
 
 // NewChannel create new Channel instance
@@ -1331,7 +1362,7 @@ func Sleep(ctx Context, d time.Duration) (err error) {
 }
 
 func (wc *workflowEnvironmentInterceptor) Sleep(ctx Context, d time.Duration) (err error) {
-	t := NewTimer(ctx, d)
+	t := NewTimerWithOptions(ctx, d, TimerOptions{Summary: "Sleep"})
 	err = t.Get(ctx, nil)
 	return
 }

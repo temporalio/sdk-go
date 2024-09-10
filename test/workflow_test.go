@@ -3119,6 +3119,18 @@ func (w *Workflows) UserMetadata(ctx workflow.Context) error {
 	).Get(ctx, nil)
 }
 
+func (w *Workflows) AwaitWithOptions(ctx workflow.Context) (bool, error) {
+	options := workflow.AwaitOptions{
+		Timeout:      1 * time.Millisecond,
+		TimerOptions: workflow.TimerOptions{Summary: "await-timer"},
+	}
+
+	return workflow.AwaitWithOptions(ctx, options, func() bool {
+		return true
+	})
+
+}
+
 func (w *Workflows) RunsLocalAndNonlocalActsWithRetries(ctx workflow.Context, numOfEachActKind int, actFailTimes int) error {
 	var activities *Activities
 	futures := make([]workflow.Future, 0)
@@ -3268,6 +3280,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.UpdateWithMutex)
 	worker.RegisterWorkflow(w.UpdateWithSemaphore)
 	worker.RegisterWorkflow(w.UserMetadata)
+	worker.RegisterWorkflow(w.AwaitWithOptions)
 	worker.RegisterWorkflow(w.WorkflowWithRejectableUpdate)
 
 	worker.RegisterWorkflow(w.child)
