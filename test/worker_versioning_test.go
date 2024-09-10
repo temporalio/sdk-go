@@ -334,7 +334,7 @@ func (ts *WorkerVersioningTestSuite) TestCommitRules() {
 	ts.Equal(1, len(res.AssignmentRules))
 	ts.Equal("2.0", res.AssignmentRules[0].Rule.TargetBuildID)
 	_, ok := res.AssignmentRules[0].Rule.Ramp.(*client.VersioningRampByPercentage)
-	ts.Falsef(ok, "Still has a percentage ramp")
+	ts.Truef(ok, "Ramp at 100 but type isn't updated")
 }
 
 func (ts *WorkerVersioningTestSuite) TestConflictTokens() {
