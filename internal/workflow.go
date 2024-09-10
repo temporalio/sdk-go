@@ -448,6 +448,8 @@ type (
 	}
 
 	// TimerOptions are options set when creating a timer.
+	//
+	// NOTE: Experimental
 	TimerOptions struct {
 		// Summary is a simple string identifying this timer. While it can be
 		// normal text, it is best to treat as a timer ID. This value will be

@@ -69,6 +69,8 @@ type (
 	Semaphore = internal.Semaphore
 
 	// TimerOptions are options for [NewTimerWithOptions]
+	//
+	// NOTE: Experimental
 	TimerOptions = internal.TimerOptions
 )
 
@@ -199,6 +201,8 @@ func NewTimer(ctx Context, d time.Duration) Future {
 // use this NewTimerWithOptions() to get the timer, instead of Go's timer.NewTimer(). You can cancel the pending timer
 // by canceling the Context (using the context from workflow.WithCancel(ctx)) and that will cancel the timer. After the
 // timer is canceled, the returned Future becomes ready, and Future.Get() will return *CanceledError.
+//
+// NOTE: Experimental
 func NewTimerWithOptions(ctx Context, d time.Duration, options TimerOptions) Future {
 	return internal.NewTimerWithOptions(ctx, d, options)
 }

@@ -79,8 +79,8 @@ type (
 		BuildIDs []string
 		// Include the unversioned queue.
 		Unversioned bool
-		// Include all active versions. A version is active if it has had new
-		// tasks or polls recently.
+		// Include all active versions. A version is considered active if, in the last few minutes,
+		// it has had new tasks or polls, or it has been the subject of certain task queue API calls.
 		AllActive bool
 	}
 
