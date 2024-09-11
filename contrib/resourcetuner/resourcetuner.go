@@ -26,13 +26,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/containerd/cgroups/v3/cgroup2"
+	"github.com/containerd/cgroups/v3/cgroup2/stats"
 	"github.com/shirou/gopsutil/v4/cpu"
-	"github.com/shirou/gopsutil/v4/docker"
 	"github.com/shirou/gopsutil/v4/mem"
 	"go.einride.tech/pid"
 	"go.temporal.io/sdk/log"
@@ -40,8 +44,18 @@ import (
 )
 
 type ResourceBasedTunerOptions struct {
+	// TargetMem is the target overall system memory usage as value 0 and 1 that the controller will
+	// attempt to maintain. Must be set nonzero.
 	TargetMem float64
+	// TargetCpu is the target overall system CPU usage as value 0 and 1 that the controller will
+	// attempt to maintain. Must be set nonzero.
 	TargetCpu float64
+	// Passed to ResourceBasedSlotSupplierOptions.RampThrottle for activities.
+	// If not set, the default value is 50ms.
+	ActivityRampThrottle time.Duration
+	// Passed to ResourceBasedSlotSupplierOptions.RampThrottle for workflows.
+	// If not set, the default value is 0ms.
+	WorkflowRampThrottle time.Duration
 }
 
 // NewResourceBasedTuner creates a WorkerTuner that dynamically adjusts the number of slots based
@@ -55,10 +69,19 @@ func NewResourceBasedTuner(opts ResourceBasedTunerOptions) (worker.WorkerTuner, 
 	controller := NewResourceController(options)
 	wfSS := &ResourceBasedSlotSupplier{controller: controller,
 		options: defaultWorkflowResourceBasedSlotSupplierOptions()}
+	if opts.WorkflowRampThrottle != 0 {
+		wfSS.options.RampThrottle = opts.WorkflowRampThrottle
+	}
 	actSS := &ResourceBasedSlotSupplier{controller: controller,
 		options: defaultActivityResourceBasedSlotSupplierOptions()}
+	if opts.ActivityRampThrottle != 0 {
+		actSS.options.RampThrottle = opts.ActivityRampThrottle
+	}
 	laSS := &ResourceBasedSlotSupplier{controller: controller,
 		options: defaultActivityResourceBasedSlotSupplierOptions()}
+	if opts.ActivityRampThrottle != 0 {
+		laSS.options.RampThrottle = opts.ActivityRampThrottle
+	}
 	nexusSS := &ResourceBasedSlotSupplier{controller: controller,
 		options: defaultWorkflowResourceBasedSlotSupplierOptions()}
 	compositeTuner, err := worker.NewCompositeTuner(worker.CompositeTunerOptions{
@@ -168,7 +191,7 @@ func (r *ResourceBasedSlotSupplier) TryReserveSlot(info worker.SlotReservationIn
 	numIssued := info.NumIssuedSlots()
 	if numIssued < r.options.MinSlots || (numIssued < r.options.MaxSlots &&
 		time.Since(r.lastSlotIssuedAt) > r.options.RampThrottle) {
-		decision, err := r.controller.pidDecision()
+		decision, err := r.controller.pidDecision(info.Logger())
 		if err != nil {
 			info.Logger().Error("Error calculating resource usage", "error", err)
 			return nil
@@ -193,10 +216,14 @@ func (r *ResourceBasedSlotSupplier) MaxSlots() int {
 type SystemInfoSupplier interface {
 	// GetMemoryUsage returns the current system memory usage as a fraction of total memory between
 	// 0 and 1.
-	GetMemoryUsage() (float64, error)
+	GetMemoryUsage(infoContext *SystemInfoContext) (float64, error)
 	// GetCpuUsage returns the current system CPU usage as a fraction of total CPU usage between 0
 	// and 1.
-	GetCpuUsage() (float64, error)
+	GetCpuUsage(infoContext *SystemInfoContext) (float64, error)
+}
+
+type SystemInfoContext struct {
+	Logger log.Logger
 }
 
 // ResourceControllerOptions contains configurable parameters for a ResourceController.
@@ -267,7 +294,9 @@ type ResourceController struct {
 func NewResourceController(options ResourceControllerOptions) *ResourceController {
 	var infoSupplier SystemInfoSupplier
 	if options.InfoSupplier == nil {
-		infoSupplier = &psUtilSystemInfoSupplier{}
+		infoSupplier = &psUtilSystemInfoSupplier{
+			cgroupCpuCalc: &cgroupCpuCalc{},
+		}
 	} else {
 		infoSupplier = options.InfoSupplier
 	}
@@ -291,15 +320,15 @@ func NewResourceController(options ResourceControllerOptions) *ResourceControlle
 	}
 }
 
-func (rc *ResourceController) pidDecision() (bool, error) {
+func (rc *ResourceController) pidDecision(logger log.Logger) (bool, error) {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
 
-	memUsage, err := rc.infoSupplier.GetMemoryUsage()
+	memUsage, err := rc.infoSupplier.GetMemoryUsage(&SystemInfoContext{Logger: logger})
 	if err != nil {
 		return false, err
 	}
-	cpuUsage, err := rc.infoSupplier.GetCpuUsage()
+	cpuUsage, err := rc.infoSupplier.GetCpuUsage(&SystemInfoContext{Logger: logger})
 	if err != nil {
 		return false, err
 	}
@@ -307,7 +336,6 @@ func (rc *ResourceController) pidDecision() (bool, error) {
 		// Never allow going over the memory target
 		return false, nil
 	}
-	//fmt.Printf("mem: %f, cpu: %f\n", memUsage, cpuUsage)
 	elapsedTime := time.Since(rc.lastRefresh)
 	// This shouldn't be possible with real implementations, but if the elapsed time is 0 the
 	// PID controller can produce NaNs.
@@ -338,34 +366,33 @@ type psUtilSystemInfoSupplier struct {
 	lastMemStat  *mem.VirtualMemoryStat
 	lastCpuUsage float64
 
-	stopTryingToGetDockerInfo bool
-	dockerContainerId         string
-	lastCGroupMemState        *docker.CgroupMemStat
-	lastCGroupCpuUsage        float64
+	stopTryingToGetCGroupInfo bool
+	lastCGroupMemStat         *stats.MemoryStat
+	cgroupCpuCalc             *cgroupCpuCalc
 }
 
-func (p *psUtilSystemInfoSupplier) GetMemoryUsage() (float64, error) {
-	if err := p.maybeRefresh(); err != nil {
+func (p *psUtilSystemInfoSupplier) GetMemoryUsage(infoContext *SystemInfoContext) (float64, error) {
+	if err := p.maybeRefresh(infoContext); err != nil {
 		return 0, err
 	}
-	if p.lastCGroupMemState != nil {
-		return float64(p.lastCGroupMemState.MemUsageInBytes) / float64(p.lastCGroupMemState.MemMaxUsageInBytes), nil
+	if p.lastCGroupMemStat != nil {
+		return float64(p.lastCGroupMemStat.Usage) / float64(p.lastCGroupMemStat.UsageLimit), nil
 	}
 	return p.lastMemStat.UsedPercent / 100, nil
 }
 
-func (p *psUtilSystemInfoSupplier) GetCpuUsage() (float64, error) {
-	if err := p.maybeRefresh(); err != nil {
+func (p *psUtilSystemInfoSupplier) GetCpuUsage(infoContext *SystemInfoContext) (float64, error) {
+	if err := p.maybeRefresh(infoContext); err != nil {
 		return 0, err
 	}
 
-	if p.lastCGroupCpuUsage != 0 {
-		return p.lastCGroupCpuUsage, nil
+	if p.cgroupCpuCalc.lastCalculatedPercent != 0 {
+		return p.cgroupCpuCalc.lastCalculatedPercent, nil
 	}
 	return p.lastCpuUsage / 100, nil
 }
 
-func (p *psUtilSystemInfoSupplier) maybeRefresh() error {
+func (p *psUtilSystemInfoSupplier) maybeRefresh(infoContext *SystemInfoContext) error {
 	if time.Since(p.lastRefresh) < 100*time.Millisecond {
 		return nil
 	}
@@ -388,36 +415,111 @@ func (p *psUtilSystemInfoSupplier) maybeRefresh() error {
 
 	p.lastMemStat = memStat
 	p.lastCpuUsage = cpuUsage[0]
-	p.lastRefresh = time.Now()
 
-	// TODO: Fix printlns
-	if runtime.GOOS == "linux" && !p.stopTryingToGetDockerInfo {
-		if p.dockerContainerId == "" {
-			// hostname is container id typically
-			hostname, err := os.ReadFile("/etc/hostname")
-			if err != nil {
-				fmt.Printf("Failed to read hostname for docker %v\n", err)
-			} else {
-				p.dockerContainerId = string(hostname)
-			}
-		}
-		dockerMemStat, err := docker.CgroupMemDocker(p.dockerContainerId)
+	if runtime.GOOS == "linux" && !p.stopTryingToGetCGroupInfo {
+		err := p.updateCGroupStats()
 		if err != nil {
-			if os.IsNotExist(err) {
-				p.stopTryingToGetDockerInfo = true
-				return nil
+			// Don't care if not in a container
+			if !errors.Is(err, fs.ErrNotExist) {
+				infoContext.Logger.Warn("Failed to get cgroup stats. Won't try again.", "error", err)
 			}
-			fmt.Printf("Failed to get docker memory stats %v\n", err)
-		} else {
-			p.lastCGroupMemState = dockerMemStat
-		}
-		dockerCpuUsage, err := docker.CgroupCPUDocker(p.dockerContainerId)
-		if err != nil {
-			fmt.Printf("Failed to get docker cpu stats %v\n", err)
-		} else {
-			p.lastCGroupCpuUsage = dockerCpuUsage.Usage
+			p.stopTryingToGetCGroupInfo = true
 		}
 	}
 
+	p.lastRefresh = time.Now()
 	return nil
+}
+
+func (p *psUtilSystemInfoSupplier) updateCGroupStats() error {
+	control, err := cgroup2.Load("/")
+	if err != nil {
+		return fmt.Errorf("failed to get cgroup mem stats %v", err)
+	}
+	metrics, err := control.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to get cgroup mem stats %v", err)
+	}
+	// Only update if a limit has been set
+	if metrics.Memory.UsageLimit != 0 {
+		p.lastCGroupMemStat = metrics.Memory
+	}
+
+	err = p.cgroupCpuCalc.updateCpuUsage(metrics)
+	if err != nil {
+		return fmt.Errorf("failed to get cgroup cpu usage %v", err)
+	}
+	return nil
+}
+
+type cgroupCpuCalc struct {
+	lastRefresh           time.Time
+	lastCpuUsage          uint64
+	lastCalculatedPercent float64
+}
+
+// TODO: It's not clear to me this actually makes sense to do. Generally setting cpu limits in
+// k8s, for example, is considered a no-no. That said, if there _are_ limits, it makes sense to
+// try to avoid them so we don't oversubscribe tasks. Definitely needs real testing.
+func (p *cgroupCpuCalc) updateCpuUsage(metrics *stats.Metrics) error {
+	// Read CPU quota and period from cpu.max
+	cpuQuota, cpuPeriod, err := readCpuMax("/sys/fs/cgroup/cpu.max")
+	// We might simply be in a container with an unset cpu.max in which case we don't want to error
+	if err == nil {
+		// CPU usage calculation based on delta
+		currentCpuUsage := metrics.CPU.UsageUsec
+		now := time.Now()
+
+		if p.lastCpuUsage == 0 || p.lastRefresh.IsZero() {
+			p.lastCpuUsage = currentCpuUsage
+			p.lastRefresh = now
+			return nil
+		}
+
+		// Time passed between this and last check
+		timeDelta := now.Sub(p.lastRefresh).Microseconds() // Convert to microseconds
+
+		// Calculate CPU usage percentage based on the delta
+		cpuUsageDelta := float64(currentCpuUsage - p.lastCpuUsage)
+
+		if cpuQuota > 0 {
+			p.lastCalculatedPercent = cpuUsageDelta * float64(cpuPeriod) / float64(cpuQuota*timeDelta)
+		}
+
+		// Update for next call
+		p.lastCpuUsage = currentCpuUsage
+		p.lastRefresh = now
+	}
+
+	return nil
+}
+
+// readCpuMax reads the cpu.max file to get the CPU quota and period
+func readCpuMax(path string) (quota int64, period int64, err error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, 0, err
+	}
+	parts := strings.Fields(string(data))
+	if len(parts) != 2 {
+		return 0, 0, errors.New("invalid format in cpu.max")
+	}
+
+	// Parse the quota (first value)
+	if parts[0] == "max" {
+		quota = 0 // Unlimited quota
+	} else {
+		quota, err = strconv.ParseInt(parts[0], 10, 64)
+		if err != nil {
+			return 0, 0, err
+		}
+	}
+
+	// Parse the period (second value)
+	period, err = strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return quota, period, nil
 }
