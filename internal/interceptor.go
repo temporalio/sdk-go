@@ -213,6 +213,11 @@ type WorkflowOutboundInterceptor interface {
 	// AwaitWithTimeout intercepts workflow.AwaitWithTimeout.
 	AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool) (bool, error)
 
+	// AwaitWithOptions intercepts workflow.AwaitWithOptions.
+	//
+	// NOTE: Experimental
+	AwaitWithOptions(ctx Context, options AwaitOptions, condition func() bool) (bool, error)
+
 	// ExecuteActivity intercepts workflow.ExecuteActivity.
 	// interceptor.WorkflowHeader will return a non-nil map for this context.
 	ExecuteActivity(ctx Context, activityType string, args ...interface{}) Future

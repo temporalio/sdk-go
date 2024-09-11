@@ -6266,6 +6266,37 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 	ts.Equal("my-timer", str)
 }
 
+func (ts *IntegrationTestSuite) TestAwaitWithOptionsTimeout() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var str string
+
+	// Start workflow
+	opts := ts.startWorkflowOptions("test-await-options" + uuid.New())
+	run, err := ts.client.ExecuteWorkflow(ctx, opts,
+		ts.workflows.AwaitWithOptions)
+	ts.NoError(err)
+
+	// Confirm workflow has completed
+	ts.NoError(run.Get(ctx, nil))
+
+	// Confirm AwaitWithOptions's underlying timer has fired properly
+	iter := ts.client.GetWorkflowHistory(ctx, opts.ID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	var timerEvent *historypb.HistoryEvent
+	for iter.HasNext() {
+		event, err1 := iter.Next()
+		ts.NoError(err1)
+		if event.GetTimerStartedEventAttributes() != nil {
+			ts.Nil(timerEvent)
+			timerEvent = event
+		}
+	}
+	ts.NotNil(timerEvent)
+	ts.NoError(converter.GetDefaultDataConverter().FromPayload(
+		timerEvent.UserMetadata.Summary, &str))
+	ts.Equal("await-timer", str)
+}
+
 // executeWorkflow executes a given workflow and waits for the result
 func (ts *IntegrationTestSuite) executeWorkflow(
 	wfID string, wfFunc interface{}, retValPtr interface{}, args ...interface{},
