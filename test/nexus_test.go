@@ -42,6 +42,7 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
 	"go.temporal.io/api/operatorservice/v1"
+	"go.temporal.io/api/serviceerror"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/interceptor"
@@ -182,10 +183,20 @@ var syncOp = temporalnexus.NewSyncOperation("sync-op", func(ctx context.Context,
 				Message: "fail",
 			},
 		}
+	case "fmt-errorf":
+		return "", fmt.Errorf("arbitrary error message")
 	case "handlererror":
 		return "", nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, s)
+	case "already-started":
+		return "", serviceerror.NewWorkflowExecutionAlreadyStarted("faking workflow already started", "dont-care", "dont-care")
+	case "retryable-application-error":
+		return "", temporal.NewApplicationError("fake app error for test", "FakeTestError")
+	case "non-retryable-application-error":
+		return "", temporal.NewApplicationErrorWithOptions("fake app error for test", "FakeTestError", temporal.ApplicationErrorOptions{
+			NonRetryable: true,
+		})
 	case "panic":
-		panic("panic")
+		panic("panic requested")
 	}
 	return "", nil
 })
@@ -213,9 +224,8 @@ func TestNexusSyncOperation(t *testing.T) {
 
 	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
 	service := nexus.NewService("test")
-	require.NoError(t, service.Register(syncOp, workflowOp))
+	require.NoError(t, service.Register(syncOp))
 	w.RegisterNexusService(service)
-	w.RegisterWorkflow(waitForCancelWorkflow)
 	require.NoError(t, w.Start())
 	t.Cleanup(w.Stop)
 
@@ -248,6 +258,14 @@ func TestNexusSyncOperation(t *testing.T) {
 		require.Equal(t, "fail", unsuccessfulOperationErr.Failure.Message)
 	})
 
+	t.Run("fmt-errorf", func(t *testing.T) {
+		tc.metricsHandler.Clear()
+		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "fmt-errorf", nexus.ExecuteOperationOptions{})
+		var unexpectedResponseErr *nexus.UnexpectedResponseError
+		require.ErrorAs(t, err, &unexpectedResponseErr)
+		require.Contains(t, unexpectedResponseErr.Message, `"500 Internal Server Error": arbitrary error message`)
+	})
+
 	t.Run("handlererror", func(t *testing.T) {
 		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "handlererror", nexus.ExecuteOperationOptions{})
 		var unexpectedResponseErr *nexus.UnexpectedResponseError
@@ -263,12 +281,57 @@ func TestNexusSyncOperation(t *testing.T) {
 		}, time.Second*3, time.Millisecond*100)
 	})
 
+	t.Run("already-started", func(t *testing.T) {
+		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "already-started", nexus.ExecuteOperationOptions{})
+		var unexpectedResponseErr *nexus.UnexpectedResponseError
+		require.ErrorAs(t, err, &unexpectedResponseErr)
+		require.Equal(t, http.StatusBadRequest, unexpectedResponseErr.Response.StatusCode)
+		require.Contains(t, unexpectedResponseErr.Message, `"400 Bad Request": faking workflow already started`)
+
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
+			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
+			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
+			tc.requireCounter(t, metrics.NexusTaskExecutionFailedCounter, service.Name, syncOp.Name())
+		}, time.Second*3, time.Millisecond*100)
+	})
+
+	t.Run("retryable-application-error", func(t *testing.T) {
+		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "retryable-application-error", nexus.ExecuteOperationOptions{})
+		var unexpectedResponseErr *nexus.UnexpectedResponseError
+		require.ErrorAs(t, err, &unexpectedResponseErr)
+		require.Equal(t, http.StatusInternalServerError, unexpectedResponseErr.Response.StatusCode)
+		require.Contains(t, unexpectedResponseErr.Message, `"500 Internal Server Error": fake app error for test`)
+
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
+			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
+			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
+			tc.requireCounter(t, metrics.NexusTaskExecutionFailedCounter, service.Name, syncOp.Name())
+		}, time.Second*3, time.Millisecond*100)
+	})
+
+	t.Run("non-retryable-application-error", func(t *testing.T) {
+		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "non-retryable-application-error", nexus.ExecuteOperationOptions{})
+		var unexpectedResponseErr *nexus.UnexpectedResponseError
+		require.ErrorAs(t, err, &unexpectedResponseErr)
+		require.Equal(t, http.StatusBadRequest, unexpectedResponseErr.Response.StatusCode)
+		require.Contains(t, unexpectedResponseErr.Message, `"400 Bad Request": fake app error for test`)
+
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
+			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
+			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
+			tc.requireCounter(t, metrics.NexusTaskExecutionFailedCounter, service.Name, syncOp.Name())
+		}, time.Second*3, time.Millisecond*100)
+	})
+
 	t.Run("panic", func(t *testing.T) {
 		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "panic", nexus.ExecuteOperationOptions{})
 		var unexpectedResponseErr *nexus.UnexpectedResponseError
 		require.ErrorAs(t, err, &unexpectedResponseErr)
 		require.Equal(t, 500, unexpectedResponseErr.Response.StatusCode)
-		require.Contains(t, unexpectedResponseErr.Message, "internal error")
+		require.Contains(t, unexpectedResponseErr.Message, "panic: panic requested")
 	})
 }
 

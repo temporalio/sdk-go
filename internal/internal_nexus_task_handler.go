@@ -37,6 +37,8 @@ import (
 	"go.temporal.io/api/common/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -231,6 +233,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 				},
 			}, nil, nil
 		}
+		err = convertKnownErrors(err)
 		var handlerErr *nexus.HandlerError
 		if errors.As(err, &handlerErr) {
 			return nil, nexusHandlerErrorToProto(handlerErr), nil
@@ -302,6 +305,7 @@ func (h *nexusTaskHandler) handleCancelOperation(ctx context.Context, nctx *Nexu
 		return nil, nil, ctx.Err()
 	}
 	if err != nil {
+		err = convertKnownErrors(err)
 		var handlerErr *nexus.HandlerError
 		if errors.As(err, &handlerErr) {
 			return nil, nexusHandlerErrorToProto(handlerErr), nil
@@ -319,7 +323,7 @@ func (h *nexusTaskHandler) handleCancelOperation(ctx context.Context, nctx *Nexu
 
 func (h *nexusTaskHandler) internalError(err error) *nexuspb.HandlerError {
 	h.logger.Error("error processing nexus task", "error", err)
-	return nexusHandlerError(nexus.HandlerErrorTypeInternal, "internal error")
+	return nexusHandlerError(nexus.HandlerErrorTypeInternal, err.Error())
 }
 
 func (h *nexusTaskHandler) goContextForTask(nctx *NexusOperationContext, header nexus.Header) (context.Context, context.CancelFunc, *nexuspb.HandlerError) {
@@ -416,3 +420,65 @@ func (p *payloadSerializer) Serialize(v any) (*nexus.Content, error) {
 }
 
 var emptyReaderNopCloser = io.NopCloser(bytes.NewReader([]byte{}))
+
+// convertKnownErrors converts known errors to corresponding Nexus HandlerError.
+func convertKnownErrors(err error) error {
+	// Handle common errors returned from various client methods.
+	if workflowErr, ok := err.(*WorkflowExecutionError); ok {
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, workflowErr.Error())
+	}
+	if queryRejectedErr, ok := err.(*QueryRejectedError); ok {
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, queryRejectedErr.Error())
+	}
+
+	// Not using errors.As to be consistent ApplicationError checking with the rest of the SDK.
+	if appErr, ok := err.(*ApplicationError); ok {
+		if appErr.NonRetryable() {
+			return nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, appErr.Error())
+		}
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, appErr.Error())
+	}
+	return convertServiceError(err)
+}
+
+// convertServiceError converts a serviceerror into a Nexus HandlerError if possible.
+// If exposeDetails is true, the error message from the given error is exposed in the converted HandlerError, otherwise,
+// a default message with minimal information is attached to the returned error.
+// Roughly taken from https://github.com/googleapis/googleapis/blob/master/google/rpc/code.proto
+// and
+// https://github.com/grpc-ecosystem/grpc-gateway/blob/a7cf811e6ffabeaddcfb4ff65602c12671ff326e/runtime/errors.go#L56.
+func convertServiceError(err error) error {
+	var st *status.Status
+
+	// Temporal serviceerrors have a Status() method.
+	stGetter, ok := err.(interface{ Status() *status.Status })
+	if !ok {
+		// Not a serviceerror, passthrough.
+		return err
+	}
+
+	st = stGetter.Status()
+	errMessage := err.Error()
+
+	switch st.Code() {
+	case codes.AlreadyExists, codes.Canceled, codes.InvalidArgument, codes.FailedPrecondition, codes.OutOfRange:
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, errMessage)
+	case codes.Aborted, codes.Unavailable:
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeUnavailable, errMessage)
+	case codes.DataLoss, codes.Internal, codes.Unknown, codes.Unauthenticated, codes.PermissionDenied:
+		// Note that codes.Unauthenticated, codes.PermissionDenied have Nexus error types but we convert to internal
+		// because this is not a client auth error and happens when the handler fails to auth with Temporal and should
+		// be considered retryable.
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, errMessage)
+	case codes.NotFound:
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeNotFound, errMessage)
+	case codes.ResourceExhausted:
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeResourceExhausted, errMessage)
+	case codes.Unimplemented:
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeNotImplemented, errMessage)
+	case codes.DeadlineExceeded:
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeDownstreamTimeout, errMessage)
+	}
+
+	return err
+}
