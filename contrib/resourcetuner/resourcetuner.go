@@ -25,12 +25,17 @@ package resourcetuner
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"runtime"
 	"sync"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/cpu"
+	"github.com/shirou/gopsutil/v4/docker"
 	"github.com/shirou/gopsutil/v4/mem"
 	"go.einride.tech/pid"
+	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/worker"
 )
 
@@ -326,15 +331,25 @@ func (rc *ResourceController) pidDecision() (bool, error) {
 }
 
 type psUtilSystemInfoSupplier struct {
-	mu           sync.Mutex
+	logger      log.Logger
+	mu          sync.Mutex
+	lastRefresh time.Time
+
 	lastMemStat  *mem.VirtualMemoryStat
 	lastCpuUsage float64
-	lastRefresh  time.Time
+
+	stopTryingToGetDockerInfo bool
+	dockerContainerId         string
+	lastCGroupMemState        *docker.CgroupMemStat
+	lastCGroupCpuUsage        float64
 }
 
 func (p *psUtilSystemInfoSupplier) GetMemoryUsage() (float64, error) {
 	if err := p.maybeRefresh(); err != nil {
 		return 0, err
+	}
+	if p.lastCGroupMemState != nil {
+		return float64(p.lastCGroupMemState.MemUsageInBytes) / float64(p.lastCGroupMemState.MemMaxUsageInBytes), nil
 	}
 	return p.lastMemStat.UsedPercent / 100, nil
 }
@@ -342,6 +357,10 @@ func (p *psUtilSystemInfoSupplier) GetMemoryUsage() (float64, error) {
 func (p *psUtilSystemInfoSupplier) GetCpuUsage() (float64, error) {
 	if err := p.maybeRefresh(); err != nil {
 		return 0, err
+	}
+
+	if p.lastCGroupCpuUsage != 0 {
+		return p.lastCGroupCpuUsage, nil
 	}
 	return p.lastCpuUsage / 100, nil
 }
@@ -360,16 +379,45 @@ func (p *psUtilSystemInfoSupplier) maybeRefresh() error {
 	defer cancelFn()
 	memStat, err := mem.VirtualMemoryWithContext(ctx)
 	if err != nil {
-		println("Refresh error: ", err)
 		return err
 	}
 	cpuUsage, err := cpu.PercentWithContext(ctx, 0, false)
 	if err != nil {
-		println("Refresh error: ", err)
 		return err
 	}
+
 	p.lastMemStat = memStat
 	p.lastCpuUsage = cpuUsage[0]
 	p.lastRefresh = time.Now()
+
+	// TODO: Fix printlns
+	if runtime.GOOS == "linux" && !p.stopTryingToGetDockerInfo {
+		if p.dockerContainerId == "" {
+			// hostname is container id typically
+			hostname, err := os.ReadFile("/etc/hostname")
+			if err != nil {
+				fmt.Printf("Failed to read hostname for docker %v\n", err)
+			} else {
+				p.dockerContainerId = string(hostname)
+			}
+		}
+		dockerMemStat, err := docker.CgroupMemDocker(p.dockerContainerId)
+		if err != nil {
+			if os.IsNotExist(err) {
+				p.stopTryingToGetDockerInfo = true
+				return nil
+			}
+			fmt.Printf("Failed to get docker memory stats %v\n", err)
+		} else {
+			p.lastCGroupMemState = dockerMemStat
+		}
+		dockerCpuUsage, err := docker.CgroupCPUDocker(p.dockerContainerId)
+		if err != nil {
+			fmt.Printf("Failed to get docker cpu stats %v\n", err)
+		} else {
+			p.lastCGroupCpuUsage = dockerCpuUsage.Usage
+		}
+	}
+
 	return nil
 }
