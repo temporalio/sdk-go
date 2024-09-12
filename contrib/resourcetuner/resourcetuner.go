@@ -25,6 +25,7 @@ package resourcetuner
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -446,7 +447,7 @@ func (p *Cgroup2SystemInfoSupplier) maybeRefresh() error {
 	p.lastCpuUsage = currentCpuUsage
 	p.lastRefresh = now
 	p.lastCpuUsageFraction = cpuUsage
-	//fmt.Printf("CPU USAGE: %v\nMEMORY USAGE: %v\n", p.lastCpuUsageFraction, p.lastMemUsageFraction)
+	fmt.Printf("TIME: %s CPU USAGE: %v MEMORY USAGE: %v\n", time.Now().Format("2006-01-02 15:04:05.000"), p.lastCpuUsageFraction, p.lastMemUsageFraction)
 	return nil
 }
 
