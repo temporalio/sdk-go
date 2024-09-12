@@ -117,7 +117,7 @@ func (b *builder) integrationTest() error {
 	runFlag := flagSet.String("run", "", "Passed to go test as -run")
 	devServerFlag := flagSet.Bool("dev-server", false, "Use an embedded dev server")
 	coverageFileFlag := flagSet.String("coverage-file", "", "If set, enables coverage output to this filename")
-	junitFileFlag := flagSet.String("junitfile", "", "If set, a path prefix to which junit-style xml files should be written")
+	junitFileFlag := flagSet.String("junitfile", "junit-xml", "If set, a path prefix to which junit-style xml files should be written")
 	if err := flagSet.Parse(os.Args[2:]); err != nil {
 		return fmt.Errorf("failed parsing flags: %w", err)
 	}
@@ -172,10 +172,7 @@ func (b *builder) integrationTest() error {
 	}
 
 	// Run integration test
-	args := []string{"gotestsum", "-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "10m"}
-	if *junitFileFlag != "" {
-		args = append(args, "--junitfile", *junitFileFlag+"-integration-test.xml")
-	}
+	args := []string{"gotestsum", "--junitfile", *junitFileFlag + "-integration-test.xml", "--", "-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "10m"}
 	if *runFlag != "" {
 		args = append(args, "-run", *runFlag)
 	}
@@ -238,7 +235,7 @@ func (b *builder) unitTest() error {
 	flagSet := flag.NewFlagSet("unit-test", flag.ContinueOnError)
 	runFlag := flagSet.String("run", "", "Passed to go test as -run")
 	coverageFlag := flagSet.Bool("coverage", false, "If set, enables coverage output")
-	junitFileFlag := flagSet.String("junitfile", "", "If set, a path prefix to which junit-style xml files should be written")
+	junitFileFlag := flagSet.String("junitfile", "junit-xml", "If set, a path prefix to which junit-style xml files should be written")
 	if err := flagSet.Parse(os.Args[2:]); err != nil {
 		return fmt.Errorf("failed parsing flags: %w", err)
 	}
@@ -272,9 +269,10 @@ func (b *builder) unitTest() error {
 	log.Printf("Running unit tests in dirs: %v", testDirs)
 	for _, testDir := range testDirs {
 		// Run unit test
-		args := []string{"gotestsum", "-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "15m"}
-		if *junitFileFlag != "" {
-			args = append(args, "--junitfile", *junitFileFlag+strings.ReplaceAll(testDir, "/", "-")+"unit-test.xml")
+		args := []string{
+			"gotestsum",
+			"--junitfile", *junitFileFlag + strings.ReplaceAll(testDir, "/", "-") + "unit-test.xml", "--",
+			"-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "15m",
 		}
 		if *runFlag != "" {
 			args = append(args, "-run", *runFlag)
