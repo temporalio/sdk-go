@@ -41,18 +41,18 @@ jobs:
         working-directory: ./internal/cmd/build
 
       - name: Unit test
-        run: go run . unit-test -coverage=${{ matrix.uploadCoverage && 'true' || 'false' }}
+        run: go run . unit-test -coverage=${{ matrix.uploadCoverage && 'true' || 'false' }} -junit-file-stem ${{matrix.os}}-${{matrix.go-version}}
         working-directory: ./internal/cmd/build
 
       - name: Integration tests (without cache)
-        run: go run . integration-test -dev-server
+        run: go run . integration-test -dev-server -junit-file-stem ${{matrix.os}}-${{matrix.go-version}}-nocache
         working-directory: ./internal/cmd/build
         env:
           WORKFLOW_CACHE_SIZE: "0"
           TEMPORAL_COVERAGE_FILE: ${{ matrix.uploadCoverage && 'integ_test_zero_cache_cover.out' || '' }}
 
       - name: Integration tests (with cache)
-        run: go run . integration-test -dev-server
+        run: go run . integration-test -dev-server -junit-file-stem ${{matrix.os}}-${{matrix.go-version}}-cache
         working-directory: ./internal/cmd/build
         env:
           TEMPORAL_COVERAGE_FILE: ${{ matrix.uploadCoverage && 'integ_test_normal_cache_cover.out' || '' }}
@@ -69,6 +69,14 @@ jobs:
         with:
           file: coverage.out
           format: golang
+
+      - name: Upload junit-xml artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-xml--${{github.run_id}}--${{github.run_attempt}}--${{matrix.os}}-${{matrix.go-version}}
+          path: .build/junit-xml  # This path is also hardcoded in internal/cmd/build/main.go
+          retention-days: 14
 
       - name: Docker compose - checkout
         if: ${{ matrix.testDockerCompose }}
@@ -120,12 +128,28 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
+
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@latest
+
+      - name: Create junit-xml directory
+        run: mkdir junit-xml-cloud
+
       - name: Single integration test against cloud
-        run: 'go test -v --count 1 -p 1 . -run "TestIntegrationSuite/TestBasic$"'
+        run: 'gotestsum --junitfile ../junit-xml-cloud/${{matrix.go-version}}-integration.xml -- -v --count 1 -p 1 . -run "TestIntegrationSuite/TestBasic$"'
         working-directory: test
+
       - name: Cloud operations tests
-        run: 'go test -v --count 1 -p 1 . -run "TestCloudOperationsSuite/.*" -cloud-operations-tests'
+        run: 'gotestsum --junitfile ../junit-xml-cloud/${{matrix.go-version}}-cloud-operations.xml -- -v --count 1 -p 1 . -run "TestCloudOperationsSuite/.*" -cloud-operations-tests'
         working-directory: test
+
+      - name: Upload junit-xml artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-xml-cloud--${{github.run_id}}--${{github.run_attempt}}--${{matrix.go-version}}
+          path: junit-xml-cloud
+          retention-days: 14
 
   features-test:
     uses: temporalio/features/.github/workflows/go.yaml@main

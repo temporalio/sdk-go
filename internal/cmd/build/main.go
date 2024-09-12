@@ -54,6 +54,7 @@ func main() {
 }
 
 const coverageDir = ".build/coverage"
+const junitDir = ".build/junit-xml"
 
 type builder struct {
 	thisDir string
@@ -117,10 +118,15 @@ func (b *builder) integrationTest() error {
 	runFlag := flagSet.String("run", "", "Passed to go test as -run")
 	devServerFlag := flagSet.Bool("dev-server", false, "Use an embedded dev server")
 	coverageFileFlag := flagSet.String("coverage-file", "", "If set, enables coverage output to this filename")
+	junitFileStem := flagSet.String("junit-file-stem", "", "If set, an identifier to be used to construct junit xml output file names")
 	if err := flagSet.Parse(os.Args[2:]); err != nil {
 		return fmt.Errorf("failed parsing flags: %w", err)
 	}
 
+	gotestsum, err := b.getInstalledTool("gotest.tools/gotestsum")
+	if err != nil {
+		return fmt.Errorf("failed getting gotestsum: %w", err)
+	}
 	// Also accept coverage file as env var
 	if env := strings.TrimSpace(os.Getenv("TEMPORAL_COVERAGE_FILE")); *coverageFileFlag == "" && env != "" {
 		*coverageFileFlag = env
@@ -130,6 +136,13 @@ func (b *builder) integrationTest() error {
 	if *coverageFileFlag != "" {
 		if err := os.MkdirAll(filepath.Join(b.rootDir, coverageDir), 0777); err != nil {
 			return fmt.Errorf("failed creating coverage dir: %w", err)
+		}
+	}
+
+	// Create junit XML output dir if junit XML output requested
+	if *junitFileStem != "" {
+		if err := os.MkdirAll(filepath.Join(b.rootDir, junitDir), 0777); err != nil {
+			return fmt.Errorf("failed creating junit xml dir: %w", err)
 		}
 	}
 
@@ -171,7 +184,14 @@ func (b *builder) integrationTest() error {
 	}
 
 	// Run integration test
-	args := []string{"go", "test", "-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "10m"}
+	args := []string{
+		gotestsum,
+	}
+	if *junitFileStem != "" {
+		args = append(args, "--junitfile", filepath.Join(b.rootDir, junitDir, *junitFileStem+"-integration-test.xml"))
+	}
+	args = append(args, "--", "-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "10m")
+
 	if *runFlag != "" {
 		args = append(args, "-run", *runFlag)
 	}
@@ -234,14 +254,19 @@ func (b *builder) unitTest() error {
 	flagSet := flag.NewFlagSet("unit-test", flag.ContinueOnError)
 	runFlag := flagSet.String("run", "", "Passed to go test as -run")
 	coverageFlag := flagSet.Bool("coverage", false, "If set, enables coverage output")
+	junitFileStem := flagSet.String("junit-file-stem", "", "If set, an identifier to be used to construct junit xml output file names")
 	if err := flagSet.Parse(os.Args[2:]); err != nil {
 		return fmt.Errorf("failed parsing flags: %w", err)
 	}
 
+	gotestsum, err := b.getInstalledTool("gotest.tools/gotestsum")
+	if err != nil {
+		return fmt.Errorf("failed getting gotestsum: %w", err)
+	}
 	// Find every non ./test-prefixed package that has a test file
 	testDirMap := map[string]struct{}{}
 	var testDirs []string
-	err := fs.WalkDir(os.DirFS(b.rootDir), ".", func(p string, d fs.DirEntry, err error) error {
+	err = fs.WalkDir(os.DirFS(b.rootDir), ".", func(p string, d fs.DirEntry, err error) error {
 		if !strings.HasPrefix(p, "test") && strings.HasSuffix(p, "_test.go") {
 			dir := path.Dir(p)
 			if _, ok := testDirMap[dir]; !ok {
@@ -263,11 +288,24 @@ func (b *builder) unitTest() error {
 		}
 	}
 
+	// Create junit XML output dir if junit XML output requested
+	if *junitFileStem != "" {
+		if err := os.MkdirAll(filepath.Join(b.rootDir, junitDir), 0777); err != nil {
+			return fmt.Errorf("failed creating junit xml dir: %w", err)
+		}
+	}
+
 	// Run unit test for each dir
 	log.Printf("Running unit tests in dirs: %v", testDirs)
 	for _, testDir := range testDirs {
 		// Run unit test
-		args := []string{"go", "test", "-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "15m"}
+		args := []string{
+			gotestsum,
+		}
+		if *junitFileStem != "" {
+			args = append(args, "--junitfile", filepath.Join(b.rootDir, junitDir, *junitFileStem+"-"+strings.ReplaceAll(testDir, "/", "-")+"-unit-test.xml"))
+		}
+		args = append(args, "--", "-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "15m")
 		if *runFlag != "" {
 			args = append(args, "-run", *runFlag)
 		}
