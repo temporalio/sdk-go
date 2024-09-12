@@ -36,6 +36,9 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
+      - name: Install gotestsum
+        run: go install gotest.tools/gotestsum@latest
+
       - name: Create junit-xml directory
         run: mkdir junit-xml
 
