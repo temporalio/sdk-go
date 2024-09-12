@@ -36,23 +36,26 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
+      - name: Create junit-xml directory
+        run: mkdir junit-xml
+
       - name: Check
         run: go run . check
         working-directory: ./internal/cmd/build
 
       - name: Unit test
-        run: go run . unit-test -coverage=${{ matrix.uploadCoverage && 'true' || 'false' }}
+        run: go run . unit-test -coverage=${{ matrix.uploadCoverage && 'true' || 'false' }} -junitfile junit-xml/${{matrix.os}}-${{matrix.go-version}}
         working-directory: ./internal/cmd/build
 
       - name: Integration tests (without cache)
-        run: go run . integration-test -dev-server
+        run: go run . integration-test -dev-server -junitfile junit-xml/${{matrix.os}}-${{matrix.go-version}}-nocache
         working-directory: ./internal/cmd/build
         env:
           WORKFLOW_CACHE_SIZE: "0"
           TEMPORAL_COVERAGE_FILE: ${{ matrix.uploadCoverage && 'integ_test_zero_cache_cover.out' || '' }}
 
       - name: Integration tests (with cache)
-        run: go run . integration-test -dev-server
+        run: go run . integration-test -dev-server -junitfile junit-xml/${{matrix.os}}-${{matrix.go-version}}-cache
         working-directory: ./internal/cmd/build
         env:
           TEMPORAL_COVERAGE_FILE: ${{ matrix.uploadCoverage && 'integ_test_normal_cache_cover.out' || '' }}
@@ -69,6 +72,14 @@ jobs:
         with:
           file: coverage.out
           format: golang
+
+      - name: 'Upload junit-xml artifacts'
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-xml--${{github.run_id}}--${{github.run_attempt}}--${{matrix.os}}-${{matrix.go-version}}
+          path: junit-xml
+          retention-days: 14
 
       - name: Docker compose - checkout
         if: ${{ matrix.testDockerCompose }}

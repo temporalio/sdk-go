@@ -117,10 +117,15 @@ func (b *builder) integrationTest() error {
 	runFlag := flagSet.String("run", "", "Passed to go test as -run")
 	devServerFlag := flagSet.Bool("dev-server", false, "Use an embedded dev server")
 	coverageFileFlag := flagSet.String("coverage-file", "", "If set, enables coverage output to this filename")
+	junitFileFlag := flagSet.String("junitfile", "", "If set, a path prefix to which junit-style xml files should be written")
 	if err := flagSet.Parse(os.Args[2:]); err != nil {
 		return fmt.Errorf("failed parsing flags: %w", err)
 	}
 
+	gotestsum, err := b.getInstalledTool("gotest.tools/gotestsum")
+	if err != nil {
+		return fmt.Errorf("failed getting gotestsum: %w", err)
+	}
 	// Also accept coverage file as env var
 	if env := strings.TrimSpace(os.Getenv("TEMPORAL_COVERAGE_FILE")); *coverageFileFlag == "" && env != "" {
 		*coverageFileFlag = env
@@ -171,7 +176,10 @@ func (b *builder) integrationTest() error {
 	}
 
 	// Run integration test
-	args := []string{"go", "test", "-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "10m"}
+	args := []string{gotestsum, "-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "10m"}
+	if *junitFileFlag != "" {
+		args = append(args, "--junitfile", *junitFileFlag+"-integration-test.xml")
+	}
 	if *runFlag != "" {
 		args = append(args, "-run", *runFlag)
 	}
@@ -234,14 +242,19 @@ func (b *builder) unitTest() error {
 	flagSet := flag.NewFlagSet("unit-test", flag.ContinueOnError)
 	runFlag := flagSet.String("run", "", "Passed to go test as -run")
 	coverageFlag := flagSet.Bool("coverage", false, "If set, enables coverage output")
+	junitFileFlag := flagSet.String("junitfile", "", "If set, a path prefix to which junit-style xml files should be written")
 	if err := flagSet.Parse(os.Args[2:]); err != nil {
 		return fmt.Errorf("failed parsing flags: %w", err)
 	}
 
+	gotestsum, err := b.getInstalledTool("gotest.tools/gotestsum")
+	if err != nil {
+		return fmt.Errorf("failed getting gotestsum: %w", err)
+	}
 	// Find every non ./test-prefixed package that has a test file
 	testDirMap := map[string]struct{}{}
 	var testDirs []string
-	err := fs.WalkDir(os.DirFS(b.rootDir), ".", func(p string, d fs.DirEntry, err error) error {
+	err = fs.WalkDir(os.DirFS(b.rootDir), ".", func(p string, d fs.DirEntry, err error) error {
 		if !strings.HasPrefix(p, "test") && strings.HasSuffix(p, "_test.go") {
 			dir := path.Dir(p)
 			if _, ok := testDirMap[dir]; !ok {
@@ -267,7 +280,10 @@ func (b *builder) unitTest() error {
 	log.Printf("Running unit tests in dirs: %v", testDirs)
 	for _, testDir := range testDirs {
 		// Run unit test
-		args := []string{"go", "test", "-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "15m"}
+		args := []string{gotestsum, "-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "15m"}
+		if *junitFileFlag != "" {
+			args = append(args, "--junitfile", *junitFileFlag+strings.ReplaceAll(testDir, "/", "-")+"unit-test.xml")
+		}
 		if *runFlag != "" {
 			args = append(args, "-run", *runFlag)
 		}
