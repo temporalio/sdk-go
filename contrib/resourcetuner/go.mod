@@ -5,6 +5,7 @@ go 1.21
 toolchain go1.22.5
 
 require (
+	github.com/containerd/cgroups v1.1.0
 	github.com/containerd/cgroups/v3 v3.0.3
 	github.com/shirou/gopsutil/v4 v4.24.8
 	github.com/stretchr/testify v1.9.0

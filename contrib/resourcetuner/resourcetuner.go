@@ -25,17 +25,10 @@ package resourcetuner
 import (
 	"context"
 	"errors"
-	"fmt"
-	"io/fs"
-	"os"
 	"runtime"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/containerd/cgroups/v3/cgroup2"
-	"github.com/containerd/cgroups/v3/cgroup2/stats"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/mem"
 	"go.einride.tech/pid"
@@ -295,7 +288,7 @@ func NewResourceController(options ResourceControllerOptions) *ResourceControlle
 	var infoSupplier SystemInfoSupplier
 	if options.InfoSupplier == nil {
 		infoSupplier = &psUtilSystemInfoSupplier{
-			cgroupCpuCalc: &cgroupCpuCalc{},
+			cGroupInfo: newCGroupInfo(),
 		}
 	} else {
 		infoSupplier = options.InfoSupplier
@@ -367,16 +360,29 @@ type psUtilSystemInfoSupplier struct {
 	lastCpuUsage float64
 
 	stopTryingToGetCGroupInfo bool
-	lastCGroupMemStat         *stats.MemoryStat
-	cgroupCpuCalc             *cgroupCpuCalc
+	cGroupInfo                cGroupInfo
+}
+
+type cGroupInfo interface {
+	// Update requests an update of the cgroup stats. This is a no-op if not in a cgroup. Returns
+	// true if cgroup stats should continue to be updated, false if not in a cgroup or the returned
+	// error is considered unrecoverable.
+	Update() (bool, error)
+	// GetLastMemUsage returns last known memory usage as a fraction of the cgroup limit. 0 if not
+	// in a cgroup or limit is not set.
+	GetLastMemUsage() float64
+	// GetLastCPUUsage returns last known CPU usage as a fraction of the cgroup limit. 0 if not in a
+	// cgroup or limit is not set.
+	GetLastCPUUsage() float64
 }
 
 func (p *psUtilSystemInfoSupplier) GetMemoryUsage(infoContext *SystemInfoContext) (float64, error) {
 	if err := p.maybeRefresh(infoContext); err != nil {
 		return 0, err
 	}
-	if p.lastCGroupMemStat != nil {
-		return float64(p.lastCGroupMemStat.Usage) / float64(p.lastCGroupMemStat.UsageLimit), nil
+	lastCGroupMem := p.cGroupInfo.GetLastMemUsage()
+	if lastCGroupMem != 0 {
+		return lastCGroupMem, nil
 	}
 	return p.lastMemStat.UsedPercent / 100, nil
 }
@@ -386,8 +392,9 @@ func (p *psUtilSystemInfoSupplier) GetCpuUsage(infoContext *SystemInfoContext) (
 		return 0, err
 	}
 
-	if p.cgroupCpuCalc.lastCalculatedPercent != 0 {
-		return p.cgroupCpuCalc.lastCalculatedPercent, nil
+	lastCGroupCPU := p.cGroupInfo.GetLastCPUUsage()
+	if lastCGroupCPU != 0 {
+		return lastCGroupCPU, nil
 	}
 	return p.lastCpuUsage / 100, nil
 }
@@ -417,109 +424,13 @@ func (p *psUtilSystemInfoSupplier) maybeRefresh(infoContext *SystemInfoContext) 
 	p.lastCpuUsage = cpuUsage[0]
 
 	if runtime.GOOS == "linux" && !p.stopTryingToGetCGroupInfo {
-		err := p.updateCGroupStats()
+		continueUpdates, err := p.cGroupInfo.Update()
 		if err != nil {
-			// Don't care if not in a container
-			if !errors.Is(err, fs.ErrNotExist) {
-				infoContext.Logger.Warn("Failed to get cgroup stats. Won't try again.", "error", err)
-			}
-			p.stopTryingToGetCGroupInfo = true
+			infoContext.Logger.Warn("Failed to get cgroup stats", "error", err)
 		}
+		p.stopTryingToGetCGroupInfo = !continueUpdates
 	}
 
 	p.lastRefresh = time.Now()
 	return nil
-}
-
-func (p *psUtilSystemInfoSupplier) updateCGroupStats() error {
-	control, err := cgroup2.Load("/")
-	if err != nil {
-		return fmt.Errorf("failed to get cgroup mem stats %v", err)
-	}
-	metrics, err := control.Stat()
-	if err != nil {
-		return fmt.Errorf("failed to get cgroup mem stats %v", err)
-	}
-	// Only update if a limit has been set
-	if metrics.Memory.UsageLimit != 0 {
-		p.lastCGroupMemStat = metrics.Memory
-	}
-
-	err = p.cgroupCpuCalc.updateCpuUsage(metrics)
-	if err != nil {
-		return fmt.Errorf("failed to get cgroup cpu usage %v", err)
-	}
-	return nil
-}
-
-type cgroupCpuCalc struct {
-	lastRefresh           time.Time
-	lastCpuUsage          uint64
-	lastCalculatedPercent float64
-}
-
-// TODO: It's not clear to me this actually makes sense to do. Generally setting cpu limits in
-// k8s, for example, is considered a no-no. That said, if there _are_ limits, it makes sense to
-// try to avoid them so we don't oversubscribe tasks. Definitely needs real testing.
-func (p *cgroupCpuCalc) updateCpuUsage(metrics *stats.Metrics) error {
-	// Read CPU quota and period from cpu.max
-	cpuQuota, cpuPeriod, err := readCpuMax("/sys/fs/cgroup/cpu.max")
-	// We might simply be in a container with an unset cpu.max in which case we don't want to error
-	if err == nil {
-		// CPU usage calculation based on delta
-		currentCpuUsage := metrics.CPU.UsageUsec
-		now := time.Now()
-
-		if p.lastCpuUsage == 0 || p.lastRefresh.IsZero() {
-			p.lastCpuUsage = currentCpuUsage
-			p.lastRefresh = now
-			return nil
-		}
-
-		// Time passed between this and last check
-		timeDelta := now.Sub(p.lastRefresh).Microseconds() // Convert to microseconds
-
-		// Calculate CPU usage percentage based on the delta
-		cpuUsageDelta := float64(currentCpuUsage - p.lastCpuUsage)
-
-		if cpuQuota > 0 {
-			p.lastCalculatedPercent = cpuUsageDelta * float64(cpuPeriod) / float64(cpuQuota*timeDelta)
-		}
-
-		// Update for next call
-		p.lastCpuUsage = currentCpuUsage
-		p.lastRefresh = now
-	}
-
-	return nil
-}
-
-// readCpuMax reads the cpu.max file to get the CPU quota and period
-func readCpuMax(path string) (quota int64, period int64, err error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return 0, 0, err
-	}
-	parts := strings.Fields(string(data))
-	if len(parts) != 2 {
-		return 0, 0, errors.New("invalid format in cpu.max")
-	}
-
-	// Parse the quota (first value)
-	if parts[0] == "max" {
-		quota = 0 // Unlimited quota
-	} else {
-		quota, err = strconv.ParseInt(parts[0], 10, 64)
-		if err != nil {
-			return 0, 0, err
-		}
-	}
-
-	// Parse the period (second value)
-	period, err = strconv.ParseInt(parts[1], 10, 64)
-	if err != nil {
-		return 0, 0, err
-	}
-
-	return quota, period, nil
 }
