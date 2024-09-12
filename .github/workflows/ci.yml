@@ -70,7 +70,7 @@ jobs:
           file: coverage.out
           format: golang
 
-      - name: 'Upload junit-xml artifacts'
+      - name: Upload junit-xml artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
