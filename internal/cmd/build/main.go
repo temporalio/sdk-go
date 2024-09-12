@@ -122,6 +122,10 @@ func (b *builder) integrationTest() error {
 		return fmt.Errorf("failed parsing flags: %w", err)
 	}
 
+	gotestsum, err := b.getInstalledTool("gotest.tools/gotestsum")
+	if err != nil {
+		return fmt.Errorf("failed getting gotestsum: %w", err)
+	}
 	// Also accept coverage file as env var
 	if env := strings.TrimSpace(os.Getenv("TEMPORAL_COVERAGE_FILE")); *coverageFileFlag == "" && env != "" {
 		*coverageFileFlag = env
@@ -172,7 +176,12 @@ func (b *builder) integrationTest() error {
 	}
 
 	// Run integration test
-	args := []string{"gotestsum", "--junitfile", *junitFileFlag + "-integration-test.xml", "--", "-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "10m"}
+	args := []string{
+		gotestsum,
+		"--junitfile", *junitFileFlag + "-integration-test.xml",
+		"--",
+		"-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "10m",
+	}
 	if *runFlag != "" {
 		args = append(args, "-run", *runFlag)
 	}
@@ -240,10 +249,14 @@ func (b *builder) unitTest() error {
 		return fmt.Errorf("failed parsing flags: %w", err)
 	}
 
+	gotestsum, err := b.getInstalledTool("gotest.tools/gotestsum")
+	if err != nil {
+		return fmt.Errorf("failed getting gotestsum: %w", err)
+	}
 	// Find every non ./test-prefixed package that has a test file
 	testDirMap := map[string]struct{}{}
 	var testDirs []string
-	err := fs.WalkDir(os.DirFS(b.rootDir), ".", func(p string, d fs.DirEntry, err error) error {
+	err = fs.WalkDir(os.DirFS(b.rootDir), ".", func(p string, d fs.DirEntry, err error) error {
 		if !strings.HasPrefix(p, "test") && strings.HasSuffix(p, "_test.go") {
 			dir := path.Dir(p)
 			if _, ok := testDirMap[dir]; !ok {
@@ -270,8 +283,9 @@ func (b *builder) unitTest() error {
 	for _, testDir := range testDirs {
 		// Run unit test
 		args := []string{
-			"gotestsum",
-			"--junitfile", *junitFileFlag + strings.ReplaceAll(testDir, "/", "-") + "unit-test.xml", "--",
+			gotestsum,
+			"--junitfile", *junitFileFlag + strings.ReplaceAll(testDir, "/", "-") + "unit-test.xml",
+			"--",
 			"-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "15m",
 		}
 		if *runFlag != "" {
