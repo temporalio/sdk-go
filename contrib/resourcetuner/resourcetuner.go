@@ -25,6 +25,7 @@ package resourcetuner
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -384,39 +385,41 @@ type Cgroup2SystemInfoSupplier struct {
 	lastCpuUsage    uint64
 	lastRefresh     time.Time
 	lastCpuTotalUse float64
+
+	lastCpuUsageFraction float64
+	lastMemUsageFraction float64
 }
 
-func (p *Cgroup2SystemInfoSupplier) GetMemoryUsage() (float64, error) {
-	control, err := cgroup2.Load("/")
-	if err != nil {
-		return 0, err
+func (p *Cgroup2SystemInfoSupplier) maybeRefresh() error {
+	if time.Since(p.lastRefresh) < 100*time.Millisecond {
+		return nil
 	}
-	metrics, err := control.Stat()
-	if err != nil {
-		return 0, err
-	}
-	return float64(metrics.Memory.Usage) / float64(metrics.Memory.UsageLimit), nil
-}
-
-func (p *Cgroup2SystemInfoSupplier) GetCpuUsage() (float64, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-
+	// Double check refresh is still needed
+	if time.Since(p.lastRefresh) < 100*time.Millisecond {
+		return nil
+	}
 	control, err := cgroup2.Load("/")
 	if err != nil {
-		return 0, err
+		return err
 	}
-
-	// Fetch the cgroup stats
 	metrics, err := control.Stat()
 	if err != nil {
-		return 0, err
+		return err
+	}
+	p.lastMemUsageFraction = float64(metrics.Memory.Usage) / float64(metrics.Memory.UsageLimit)
+
+	// Fetch the cgroup stats
+	metrics, err = control.Stat()
+	if err != nil {
+		return err
 	}
 
 	// Read CPU quota and period from cpu.max
 	cpuQuota, cpuPeriod, err := readCpuMax("/sys/fs/cgroup/cpu.max")
 	if err != nil {
-		return 0, err
+		return err
 	}
 
 	// CPU usage calculation based on delta
@@ -426,7 +429,7 @@ func (p *Cgroup2SystemInfoSupplier) GetCpuUsage() (float64, error) {
 	if p.lastCpuUsage == 0 || p.lastRefresh.IsZero() {
 		p.lastCpuUsage = currentCpuUsage
 		p.lastRefresh = now
-		return 0, nil
+		return nil
 	}
 
 	// Time passed between this and last check
@@ -443,8 +446,23 @@ func (p *Cgroup2SystemInfoSupplier) GetCpuUsage() (float64, error) {
 	// Update for next call
 	p.lastCpuUsage = currentCpuUsage
 	p.lastRefresh = now
+	p.lastCpuUsageFraction = cpuUsage
+	fmt.Printf("CPU USAGE: %v\nMEMORY USAGE: %v\n", p.lastCpuUsageFraction, p.lastMemUsageFraction)
+	return nil
+}
 
-	return cpuUsage, nil
+func (p *Cgroup2SystemInfoSupplier) GetMemoryUsage() (float64, error) {
+	if err := p.maybeRefresh(); err != nil {
+		return 0, err
+	}
+	return p.lastMemUsageFraction / 100, nil
+}
+
+func (p *Cgroup2SystemInfoSupplier) GetCpuUsage() (float64, error) {
+	if err := p.maybeRefresh(); err != nil {
+		return 0, err
+	}
+	return p.lastCpuUsageFraction / 100, nil
 }
 
 // readCpuMax reads the cpu.max file to get the CPU quota and period
