@@ -75,7 +75,7 @@ jobs:
         if: always()
         with:
           name: junit-xml--${{github.run_id}}--${{github.run_attempt}}--${{matrix.os}}-${{matrix.go-version}}
-          path: .build/junit-xml
+          path: .build/junit-xml  # This path is also hardcoded in internal/cmd/build/main.go
           retention-days: 14
 
       - name: Docker compose - checkout
