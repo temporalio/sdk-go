@@ -140,9 +140,8 @@ func (b *builder) integrationTest() error {
 				HostPort:  "127.0.0.1:7233",
 				Namespace: "integration-test-namespace",
 			},
-			// TODO(bergundy): Remove this override after server 1.25.0 is released.
 			CachedDownload: testsuite.CachedDownload{
-				Version: "v0.14.0-nexus.0",
+				Version: "v1.1.0",
 			},
 			LogLevel: "warn",
 			ExtraArgs: []string{
