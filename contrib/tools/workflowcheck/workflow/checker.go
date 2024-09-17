@@ -197,7 +197,7 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 }
 
 // isWorkflowFunc checks if f has workflow.Context as a first parameter.
-func (c *Checker) isWorkflowFunc(f *ast.FuncDecl, pass *analysis.Pass) (b bool) {
+func isWorkflowFunc(f *ast.FuncDecl, pass *analysis.Pass) (b bool) {
 	if f.Type.Params == nil || len(f.Type.Params.List) == 0 {
 		return false
 	}
