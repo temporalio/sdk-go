@@ -218,7 +218,7 @@ func (c *Checker) isWorkflowFunc(f *ast.FuncDecl, pass *analysis.Pass) (b bool) 
 	named, _ := typeInfo.(*types.Named)
 	if named == nil {
 		if f.Name.Name == "WorkflowE" {
-			c.debugf("2. Found WorkflowE function %v", f.Name.Name)
+			c.debugf("2. Found WorkflowE function %v, %v", f.Name.Name, typeInfo)
 		}
 		return false
 	}
