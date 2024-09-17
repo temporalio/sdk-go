@@ -157,7 +157,7 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 	if _, err := c.Determinism.Run(pass); err != nil {
 		return err
 	}
-	c.debugf("Checking package %v", pass.Pkg.Path())
+	c.debugf("$ Checking package %v", pass.Pkg.Path())
 	lookupCache := determinism.NewPackageLookupCache(pass)
 	// Check every register workflow invocation
 	for _, file := range pass.Files {
@@ -175,7 +175,11 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 				}
 			}
 			funcDecl, _ := n.(*ast.FuncDecl)
-			if funcDecl == nil || isIgnored || !isWorkflowFunc(funcDecl, pass) {
+			if funcDecl == nil {
+				return true
+			}
+			c.debugf("Checking node %v", funcDecl.Name.Name)
+			if isIgnored || !isWorkflowFunc(funcDecl, pass) {
 				return true
 			}
 			fn, _ := pass.TypesInfo.ObjectOf(funcDecl.Name).(*types.Func)
