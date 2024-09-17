@@ -88,13 +88,6 @@ jobs:
       - name: Docker compose - integration tests
         if: ${{ matrix.testDockerCompose }}
         run: go run . integration-test
-        env:
-          # TODO(bergundy): Remove this flag once server 1.25.0 is out.
-          DISABLE_NEXUS_TESTS: "1"
-          # TODO(bergundy): Remove this flag too once server 1.25.0 is out. Thanks Roey! :)
-          DISABLE_BACKLOG_STATS_TESTS: "1"
-          # TODO(cretz): Remove this flag once server 1.25.0 is out.
-          DISABLE_USER_METADATA_TESTS: "1"
         working-directory: ./internal/cmd/build
 
   cloud-test:
