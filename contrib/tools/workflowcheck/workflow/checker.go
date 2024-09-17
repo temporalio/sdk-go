@@ -175,7 +175,7 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 				}
 			}
 			funcDecl, _ := n.(*ast.FuncDecl)
-			if funcDecl == nil || isIgnored || !isWorkflowFunc(funcDecl, pass) {
+			if funcDecl == nil || isIgnored || !c.isWorkflowFunc(funcDecl, pass) {
 				return true
 			}
 			fn, _ := pass.TypesInfo.ObjectOf(funcDecl.Name).(*types.Func)
@@ -197,17 +197,24 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 }
 
 // isWorkflowFunc checks if f has workflow.Context as a first parameter.
-func isWorkflowFunc(f *ast.FuncDecl, pass *analysis.Pass) bool {
+func (c *Checker) isWorkflowFunc(f *ast.FuncDecl, pass *analysis.Pass) (b bool) {
 	if f.Type.Params == nil || len(f.Type.Params.List) == 0 {
 		return false
 	}
 	firstParam := f.Type.Params.List[0]
 	typeInfo := pass.TypesInfo.TypeOf(firstParam.Type)
 	named, _ := typeInfo.(*types.Named)
-	if named == nil {
+	alias, _ := typeInfo.(*types.Alias)
+	if named == nil && alias == nil {
 		return false
 	}
-	obj := named.Obj()
+	var obj *types.TypeName
+	if named != nil {
+		obj = named.Obj()
+	}
+	if alias != nil {
+		obj = alias.Obj()
+	}
 	if obj.Pkg() == nil || obj.Name() != "Context" {
 		return false
 	}
