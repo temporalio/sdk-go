@@ -125,7 +125,7 @@ func (c *Checker) debugf(f string, v ...interface{}) {
 func (c *Checker) NewAnalyzer() *analysis.Analyzer {
 	a := &analysis.Analyzer{
 		Name:      "workflowcheck",
-		Doc:       "Analyzes all RegisterWorkflow functions for non-determinism",
+		Doc:       "Analyzes all Workflow functions for non-determinism",
 		Run:       func(p *analysis.Pass) (interface{}, error) { return nil, c.Run(p) },
 		FactTypes: []analysis.Fact{&determinism.PackageNonDeterminisms{}, &determinism.NonDeterminisms{}},
 	}
