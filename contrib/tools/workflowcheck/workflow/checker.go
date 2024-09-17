@@ -179,7 +179,7 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 				return true
 			}
 			c.debugf("Checking node %v", funcDecl.Name.Name)
-			if isIgnored || !isWorkflowFunc(funcDecl, pass) {
+			if isIgnored || !c.isWorkflowFunc(funcDecl, pass) {
 				return true
 			}
 			fn, _ := pass.TypesInfo.ObjectOf(funcDecl.Name).(*types.Func)
@@ -201,7 +201,12 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 }
 
 // isWorkflowFunc checks if f has workflow.Context as a first parameter.
-func isWorkflowFunc(f *ast.FuncDecl, pass *analysis.Pass) bool {
+func (c *Checker) isWorkflowFunc(f *ast.FuncDecl, pass *analysis.Pass) (b bool) {
+	defer func() {
+		if f.Name.Name == "WorkflowE" {
+			c.debugf("Found WorkflowE function %v, returning %b", f.Name.Name, b)
+		}
+	}()
 	if f.Type.Params == nil || len(f.Type.Params.List) == 0 {
 		return false
 	}
