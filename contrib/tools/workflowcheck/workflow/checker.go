@@ -175,7 +175,7 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 				}
 			}
 			funcDecl, _ := n.(*ast.FuncDecl)
-			if funcDecl == nil || isIgnored || !c.isWorkflowFunc(funcDecl, pass) {
+			if funcDecl == nil || isIgnored || !isWorkflowFunc(funcDecl, pass) {
 				return true
 			}
 			fn, _ := pass.TypesInfo.ObjectOf(funcDecl.Name).(*types.Func)
