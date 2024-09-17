@@ -175,11 +175,7 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 				}
 			}
 			funcDecl, _ := n.(*ast.FuncDecl)
-			if funcDecl == nil {
-				return true
-			}
-			c.debugf("Checking node %v", funcDecl.Name.Name)
-			if isIgnored || !c.isWorkflowFunc(funcDecl, pass) {
+			if funcDecl == nil || isIgnored || !c.isWorkflowFunc(funcDecl, pass) {
 				return true
 			}
 			fn, _ := pass.TypesInfo.ObjectOf(funcDecl.Name).(*types.Func)
@@ -225,7 +221,7 @@ func (c *Checker) isWorkflowFunc(f *ast.FuncDecl, pass *analysis.Pass) (b bool) 
 		obj = named.Obj()
 	}
 	if alias != nil {
-		obj = alias.Obj()
+		//obj = alias.Obj()
 	}
 	if obj.Pkg() == nil || obj.Name() != "Context" {
 		if f.Name.Name == "WorkflowE" {
