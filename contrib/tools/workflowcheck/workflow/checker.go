@@ -204,20 +204,29 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 func (c *Checker) isWorkflowFunc(f *ast.FuncDecl, pass *analysis.Pass) (b bool) {
 	defer func() {
 		if f.Name.Name == "WorkflowE" {
-			c.debugf("Found WorkflowE function %v, returning %b", f.Name.Name, b)
+			c.debugf("Found WorkflowE function %v", f.Name.Name)
 		}
 	}()
 	if f.Type.Params == nil || len(f.Type.Params.List) == 0 {
+		if f.Name.Name == "WorkflowE" {
+			c.debugf("1. Found WorkflowE function %v", f.Name.Name)
+		}
 		return false
 	}
 	firstParam := f.Type.Params.List[0]
 	typeInfo := pass.TypesInfo.TypeOf(firstParam.Type)
 	named, _ := typeInfo.(*types.Named)
 	if named == nil {
+		if f.Name.Name == "WorkflowE" {
+			c.debugf("2. Found WorkflowE function %v", f.Name.Name)
+		}
 		return false
 	}
 	obj := named.Obj()
 	if obj.Pkg() == nil || obj.Name() != "Context" {
+		if f.Name.Name == "WorkflowE" {
+			c.debugf("3. Found WorkflowE function %v", f.Name.Name)
+		}
 		return false
 	}
 	path := obj.Pkg().Path()
