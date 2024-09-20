@@ -60,7 +60,7 @@ the sole parameter it receives as part of its initialization as a parameter to t
 		}
 		ctx = workflow.WithActivityOptions(ctx, ao)
 
-		future := [workflow.ExecuteActivity](ctx, SimpleActivity, value)
+		future := workflow.ExecuteActivity(ctx, SimpleActivity, value)
 		var result string
 		if err := future.Get(ctx, &result); err != nil {
 			return err
