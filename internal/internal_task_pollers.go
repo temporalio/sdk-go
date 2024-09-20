@@ -41,6 +41,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 
@@ -68,6 +69,9 @@ type (
 		PollTask() (taskForWorker, error)
 		// ProcessTask processes a task
 		ProcessTask(interface{}) error
+		// Called when the poller will no longer be polled. Presently only useful for
+		// workflow workers.
+		Cleanup() error
 	}
 
 	taskForWorker interface {
@@ -301,6 +305,36 @@ func newWorkflowTaskPoller(
 		numNormalPollerMetric:        newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowTask),
 		numStickyPollerMetric:        newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowStickyTask),
 	}
+}
+
+// Best-effort attempt to indicate to Matching service that this workflow task
+// poller's sticky queue will no longer be polled. Should be called when the
+// poller is stopping. Failure to call ShutdownWorker is logged, but otherwise
+// ignored.
+func (wtp *workflowTaskPoller) Cleanup() error {
+	ctx := context.Background()
+	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(wtp.metricsHandler))
+	defer cancel()
+
+	_, err := wtp.service.ShutdownWorker(grpcCtx, &workflowservice.ShutdownWorkerRequest{
+		Namespace:       wtp.namespace,
+		StickyTaskQueue: getWorkerTaskQueue(wtp.stickyUUID),
+		Identity:        wtp.identity,
+		Reason:          "graceful shutdown",
+	})
+
+	// we ignore unimplemented
+	if _, isUnimplemented := err.(*serviceerror.Unimplemented); isUnimplemented {
+		return nil
+	}
+
+	if err != nil {
+		traceLog(func() {
+			wtp.logger.Debug("ShutdownWorker failed.", tagError, err)
+		})
+	}
+
+	return err
 }
 
 // PollTask polls a new task
@@ -543,6 +577,10 @@ func newLocalActivityPoller(
 		logger:     params.Logger,
 		laTunnel:   laTunnel,
 	}
+}
+
+func (latp *localActivityTaskPoller) Cleanup() error {
+	return nil
 }
 
 func (latp *localActivityTaskPoller) PollTask() (taskForWorker, error) {
@@ -971,6 +1009,10 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 	metricsHandler.Timer(metrics.ActivityScheduleToStartLatency).Record(scheduleToStartLatency)
 
 	return &activityTask{task: response}, nil
+}
+
+func (atp *activityTaskPoller) Cleanup() error {
+	return nil
 }
 
 // PollTask polls a new task

@@ -393,6 +393,12 @@ func (ww *workflowWorker) Start() error {
 
 // Stop the worker.
 func (ww *workflowWorker) Stop() {
+	// Best-effort cleanup, used to signal to the server that the sticky queue will
+	// no longer be polled. Errors are ignored.
+	defer func() {
+		_ = ww.poller.Cleanup()
+	}()
+
 	close(ww.stopC)
 	// TODO: remove the stop methods in favor of the workerStopChannel
 	ww.localActivityWorker.Stop()

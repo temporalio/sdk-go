@@ -1773,6 +1773,7 @@ func (s *internalWorkerTestSuite) TestNoActivitiesOrWorkflows() {
 	assert.NoError(t, w.Start())
 	assert.True(t, w.activityWorker.worker.isWorkerStarted)
 	assert.True(t, w.workflowWorker.worker.isWorkerStarted)
+	w.Stop()
 }
 
 func (s *internalWorkerTestSuite) TestStartWorkerAfterStopped() {
@@ -1854,6 +1855,9 @@ func createWorkerWithThrottle(
 	workflowTask := &workflowservice.PollWorkflowTaskQueueResponse{}
 	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(workflowTask, nil).AnyTimes()
 	service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+
+	service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
 
 	// Configure worker options.
 	workerOptions := WorkerOptions{
