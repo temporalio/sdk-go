@@ -125,7 +125,7 @@ func (c *Checker) debugf(f string, v ...interface{}) {
 func (c *Checker) NewAnalyzer() *analysis.Analyzer {
 	a := &analysis.Analyzer{
 		Name:      "workflowcheck",
-		Doc:       "Analyzes all RegisterWorkflow functions for non-determinism",
+		Doc:       "Analyzes all Workflow functions for non-determinism",
 		Run:       func(p *analysis.Pass) (interface{}, error) { return nil, c.Run(p) },
 		FactTypes: []analysis.Fact{&determinism.PackageNonDeterminisms{}, &determinism.NonDeterminisms{}},
 	}
@@ -197,17 +197,24 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 }
 
 // isWorkflowFunc checks if f has workflow.Context as a first parameter.
-func isWorkflowFunc(f *ast.FuncDecl, pass *analysis.Pass) bool {
+func isWorkflowFunc(f *ast.FuncDecl, pass *analysis.Pass) (b bool) {
 	if f.Type.Params == nil || len(f.Type.Params.List) == 0 {
 		return false
 	}
 	firstParam := f.Type.Params.List[0]
 	typeInfo := pass.TypesInfo.TypeOf(firstParam.Type)
 	named, _ := typeInfo.(*types.Named)
-	if named == nil {
+	alias, _ := typeInfo.(*types.Alias)
+	if named == nil && alias == nil {
 		return false
 	}
-	obj := named.Obj()
+	var obj *types.TypeName
+	if named != nil {
+		obj = named.Obj()
+	}
+	if alias != nil {
+		obj = alias.Obj()
+	}
 	if obj.Pkg() == nil || obj.Name() != "Context" {
 		return false
 	}
