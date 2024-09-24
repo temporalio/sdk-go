@@ -769,6 +769,16 @@ func IsContinueAsNewError(err error) bool {
 	return errors.As(err, &continueAsNewErr)
 }
 
+// PauseDeadlockDetector pauses the deadlock detector for all coroutines.
+func PauseDeadlockDetector(ctx Context) {
+	internal.PauseDeadlockDetector(ctx)
+}
+
+// ResumeDeadlockDetector resumes the deadlock detector for all coroutines.
+func ResumeDeadlockDetector(ctx Context) {
+	internal.ResumeDeadlockDetector(ctx)
+}
+
 // DataConverterWithoutDeadlockDetection returns a data converter that disables
 // workflow deadlock detection for each call on the data converter. This should
 // be used for advanced data converters that may perform remote calls or
