@@ -210,6 +210,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 		MaxConcurrentActivityTaskQueuePollers: 4,
 		MaxConcurrentWorkflowTaskQueuePollers: 4,
 		Logger:                                ilog.NewDefaultLogger(),
+		Namespace:                             namespace,
 	}
 
 	namespaceState := enumspb.NAMESPACE_STATE_REGISTERED
@@ -233,7 +234,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	// Launch worker.
 	workflowWorker := newWorkflowWorker(s.service, workflowExecutionParameters, nil, registry)
 	defer workflowWorker.Stop()
-	_ = workflowWorker.Start()
+	s.NoError(workflowWorker.Start())
 
 	// Create activity execution parameters.
 	activityExecutionParameters := workerExecutionParameters{
@@ -241,12 +242,13 @@ func (s *InterfacesTestSuite) TestInterface() {
 		MaxConcurrentActivityTaskQueuePollers: 10,
 		MaxConcurrentWorkflowTaskQueuePollers: 10,
 		Logger:                                ilog.NewDefaultLogger(),
+		Namespace:                             namespace,
 	}
 
 	// Register activity instances and launch the worker.
 	activityWorker := newActivityWorker(s.service, activityExecutionParameters, nil, registry, nil)
 	defer activityWorker.Stop()
-	_ = activityWorker.Start()
+	s.NoError(activityWorker.Start())
 
 	// Start a workflow.
 	workflowOptions := StartWorkflowOptions{
