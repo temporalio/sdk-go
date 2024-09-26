@@ -1783,7 +1783,7 @@ func (s *internalWorkerTestSuite) TestCleanupIsBestEffort() {
 	// set usual startup and polling mocks
 	service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
-	setupPollingMocks(namespace, service, 10)
+	setupPollingMocks(namespace, service, 0.0)
 
 	// ShutdownWorker will fail, but we expect Stop() to complete cleanly
 	service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -1792,7 +1792,7 @@ func (s *internalWorkerTestSuite) TestCleanupIsBestEffort() {
 	client := NewServiceClient(service, nil, ClientOptions{
 		Namespace: namespace,
 	})
-	worker := NewAggregatedWorker(client, "testGroup", WorkerOptions{})
+	worker := NewAggregatedWorker(client, "testGroupName2", WorkerOptions{})
 	worker.registry = newRegistry()
 
 	assert.NoError(s.T(), worker.Start())
@@ -1889,7 +1889,7 @@ func setupPollingMocks(namespace string, service *workflowservicemock.MockWorkfl
 
 	service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(namespaceDesc, nil).Do(
 		func(ctx context.Context, request *workflowservice.DescribeNamespaceRequest, opts ...grpc.CallOption) {
-
+			// log
 		}).AnyTimes()
 
 	activityTask := &workflowservice.PollActivityTaskQueueResponse{}
