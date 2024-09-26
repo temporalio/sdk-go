@@ -2369,6 +2369,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 
 	var opID string
 	if params.options.ScheduleToCloseTimeout > 0 {
+		// Timer to fail the nexus operation due to schedule to close timeout.
 		env.NewTimer(
 			params.options.ScheduleToCloseTimeout,
 			TimerOptions{},
@@ -2386,7 +2387,11 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 					},
 				))
 				env.postCallback(func() {
-					handle.startedCallback(opID, timeoutErr)
+					// For async operation, there are two scenarios:
+					// 1. operation already started: the callback has already been called with the operation id,
+					//    and calling again is no-op;
+					// 2. operation didn't start yet: there's no operation id to set.
+					handle.startedCallback("", timeoutErr)
 					handle.completedCallback(nil, timeoutErr)
 				}, true)
 			},
@@ -2424,8 +2429,8 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 				handle.completedCallback(v.SyncSuccess.GetPayload(), nil)
 			}, true)
 		case *nexuspb.StartOperationResponse_AsyncSuccess:
-			opID = v.AsyncSuccess.GetOperationId()
 			env.postCallback(func() {
+				opID = v.AsyncSuccess.GetOperationId()
 				handle.startedCallback(v.AsyncSuccess.GetOperationId(), nil)
 				if handle.cancelRequested {
 					handle.cancel()

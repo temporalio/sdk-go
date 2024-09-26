@@ -898,15 +898,17 @@ func TestWorkflowTestSuite_WorkflowRunOperation(t *testing.T) {
 }
 
 func TestWorkflowTestSuite_WorkflowRunOperation_ScheduleToCloseTimeout(t *testing.T) {
-	sleepDuration := 500 * time.Millisecond
+	handlerSleepDuration := 500 * time.Millisecond
 	handlerWF := func(ctx workflow.Context, _ nexus.NoValue) (nexus.NoValue, error) {
-		return nil, workflow.Sleep(ctx, sleepDuration)
+		return nil, workflow.Sleep(ctx, handlerSleepDuration)
 	}
 
+	opSleepDuration := 250 * time.Millisecond
 	op := temporalnexus.NewWorkflowRunOperation(
 		"op",
 		handlerWF,
 		func(ctx context.Context, _ nexus.NoValue, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+			time.Sleep(opSleepDuration)
 			return client.StartWorkflowOptions{ID: opts.RequestID}, nil
 		})
 
@@ -934,11 +936,15 @@ func TestWorkflowTestSuite_WorkflowRunOperation_ScheduleToCloseTimeout(t *testin
 	}{
 		{
 			name:                   "success",
-			scheduleToCloseTimeout: sleepDuration * 2,
+			scheduleToCloseTimeout: opSleepDuration + handlerSleepDuration + 100*time.Millisecond,
 		},
 		{
-			name:                   "timeout",
-			scheduleToCloseTimeout: sleepDuration / 2,
+			name:                   "timeout before operation start",
+			scheduleToCloseTimeout: opSleepDuration - 100*time.Millisecond,
+		},
+		{
+			name:                   "timeout after operation start",
+			scheduleToCloseTimeout: opSleepDuration + 100*time.Millisecond,
 		},
 	}
 
@@ -951,7 +957,7 @@ func TestWorkflowTestSuite_WorkflowRunOperation_ScheduleToCloseTimeout(t *testin
 			env.RegisterNexusService(service)
 			env.ExecuteWorkflow(callerWF, tc.scheduleToCloseTimeout)
 			require.True(t, env.IsWorkflowCompleted())
-			if tc.scheduleToCloseTimeout >= sleepDuration {
+			if tc.scheduleToCloseTimeout >= opSleepDuration+handlerSleepDuration {
 				require.NoError(t, env.GetWorkflowError())
 			} else {
 				var execErr *temporal.WorkflowExecutionError
@@ -963,7 +969,11 @@ func TestWorkflowTestSuite_WorkflowRunOperation_ScheduleToCloseTimeout(t *testin
 				require.Equal(t, "endpoint", opErr.Endpoint)
 				require.Equal(t, "test", opErr.Service)
 				require.Equal(t, op.Name(), opErr.Operation)
-				require.NotEmpty(t, opErr.OperationID)
+				if tc.scheduleToCloseTimeout < opSleepDuration {
+					require.Empty(t, opErr.OperationID)
+				} else {
+					require.NotEmpty(t, opErr.OperationID)
+				}
 				require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
 				err = opErr.Unwrap()
 				var timeoutErr *temporal.TimeoutError
