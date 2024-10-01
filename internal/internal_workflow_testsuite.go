@@ -2351,7 +2351,11 @@ func (env *testWorkflowEnvironmentImpl) newTestNexusTaskHandler() *nexusTaskHand
 	)
 }
 
-func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(params executeNexusOperationParams, callback func(*commonpb.Payload, error), startedHandler func(opID string, e error)) int64 {
+func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
+	params executeNexusOperationParams,
+	callback func(*commonpb.Payload, error),
+	startedHandler func(opID string, e error),
+) int64 {
 	seq := env.nextID()
 	taskHandler := env.newTestNexusTaskHandler()
 	handle := &testNexusOperationHandle{
@@ -2362,6 +2366,37 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(params executeNexu
 		onStarted:   startedHandler,
 	}
 	env.runningNexusOperations[seq] = handle
+
+	var opID string
+	if params.options.ScheduleToCloseTimeout > 0 {
+		// Timer to fail the nexus operation due to schedule to close timeout.
+		env.NewTimer(
+			params.options.ScheduleToCloseTimeout,
+			TimerOptions{},
+			func(result *commonpb.Payloads, err error) {
+				timeoutErr := env.failureConverter.FailureToError(nexusOperationFailure(
+					params,
+					opID,
+					&failurepb.Failure{
+						Message: "operation timed out",
+						FailureInfo: &failurepb.Failure_TimeoutFailureInfo{
+							TimeoutFailureInfo: &failurepb.TimeoutFailureInfo{
+								TimeoutType: enumspb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE,
+							},
+						},
+					},
+				))
+				env.postCallback(func() {
+					// For async operation, there are two scenarios:
+					// 1. operation already started: the callback has already been called with the operation id,
+					//    and calling again is no-op;
+					// 2. operation didn't start yet: there's no operation id to set.
+					handle.startedCallback("", timeoutErr)
+					handle.completedCallback(nil, timeoutErr)
+				}, true)
+			},
+		)
+	}
 
 	task := handle.newStartTask()
 	env.runningCount++
@@ -2385,31 +2420,32 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(params executeNexu
 				handle.completedCallback(nil, err)
 			}, true)
 			return
-		} else {
-			switch v := response.GetResponse().GetStartOperation().GetVariant().(type) {
-			case *nexuspb.StartOperationResponse_SyncSuccess:
-				env.postCallback(func() {
-					handle.startedCallback("", nil)
-					handle.completedCallback(v.SyncSuccess.GetPayload(), nil)
-				}, true)
-			case *nexuspb.StartOperationResponse_AsyncSuccess:
-				env.postCallback(func() {
-					handle.startedCallback(v.AsyncSuccess.GetOperationId(), nil)
-					if handle.cancelRequested {
-						handle.cancel()
-					}
-				}, true)
-			case *nexuspb.StartOperationResponse_OperationError:
-				err := env.failureConverter.FailureToError(
-					nexusOperationFailure(params, "", unsuccessfulOperationErrorToTemporalFailure(v.OperationError)),
-				)
-				env.postCallback(func() {
-					handle.startedCallback("", err)
-					handle.completedCallback(nil, err)
-				}, true)
-			default:
-				panic(fmt.Errorf("unknown response variant: %v", v))
-			}
+		}
+
+		switch v := response.GetResponse().GetStartOperation().GetVariant().(type) {
+		case *nexuspb.StartOperationResponse_SyncSuccess:
+			env.postCallback(func() {
+				handle.startedCallback("", nil)
+				handle.completedCallback(v.SyncSuccess.GetPayload(), nil)
+			}, true)
+		case *nexuspb.StartOperationResponse_AsyncSuccess:
+			env.postCallback(func() {
+				opID = v.AsyncSuccess.GetOperationId()
+				handle.startedCallback(v.AsyncSuccess.GetOperationId(), nil)
+				if handle.cancelRequested {
+					handle.cancel()
+				}
+			}, true)
+		case *nexuspb.StartOperationResponse_OperationError:
+			err := env.failureConverter.FailureToError(
+				nexusOperationFailure(params, "", unsuccessfulOperationErrorToTemporalFailure(v.OperationError)),
+			)
+			env.postCallback(func() {
+				handle.startedCallback("", err)
+				handle.completedCallback(nil, err)
+			}, true)
+		default:
+			panic(fmt.Errorf("unknown response variant: %v", v))
 		}
 	}()
 	return seq
@@ -2887,6 +2923,10 @@ func (h *testNexusOperationHandle) completedCallback(result *commonpb.Payload, e
 // startedCallback is a callback registered to handle operation start.
 // Must be called in a postCallback block.
 func (h *testNexusOperationHandle) startedCallback(opID string, e error) {
+	if h.started {
+		// Ignore duplciate starts.
+		return
+	}
 	h.operationID = opID
 	h.started = true
 	h.onStarted(opID, e)
