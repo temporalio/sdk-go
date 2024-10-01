@@ -1773,6 +1773,31 @@ func (s *internalWorkerTestSuite) TestNoActivitiesOrWorkflows() {
 	assert.NoError(t, w.Start())
 	assert.True(t, w.activityWorker.worker.isWorkerStarted)
 	assert.True(t, w.workflowWorker.worker.isWorkerStarted)
+	w.Stop()
+}
+
+func (s *internalWorkerTestSuite) TestCleanupIsBestEffort() {
+	namespace := "testNamespace"
+	service := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+
+	// set usual startup and polling mocks
+	service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+	setupPollingMocks(namespace, service, 0.0)
+
+	// ShutdownWorker will fail, but we expect Stop() to complete cleanly
+	service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil, &serviceerror.Internal{}).Times(1)
+
+	client := NewServiceClient(service, nil, ClientOptions{
+		Namespace: namespace,
+	})
+	worker := NewAggregatedWorker(client, "testGroupName2", WorkerOptions{})
+	worker.registry = newRegistry()
+
+	assert.NoError(s.T(), worker.Start())
+	assert.True(s.T(), worker.workflowWorker.worker.isWorkerStarted)
+	assert.NotPanics(s.T(), func() { worker.Stop() })
 }
 
 func (s *internalWorkerTestSuite) TestStartWorkerAfterStopped() {
@@ -1828,32 +1853,11 @@ func createWorkerWithThrottle(
 	service *workflowservicemock.MockWorkflowServiceClient, activitiesPerSecond float64, dc converter.DataConverter,
 ) *AggregatedWorker {
 	namespace := "testNamespace"
-	namespaceState := enumspb.NAMESPACE_STATE_REGISTERED
-	namespaceDesc := &workflowservice.DescribeNamespaceResponse{
-		NamespaceInfo: &namespacepb.NamespaceInfo{
-			Name:  namespace,
-			State: namespaceState,
-		},
-	}
-	// mocks
-	service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(namespaceDesc, nil).Do(
-		func(ctx context.Context, request *workflowservice.DescribeNamespaceRequest, opts ...grpc.CallOption) {
-			// log
-		}).AnyTimes()
 
-	activityTask := &workflowservice.PollActivityTaskQueueResponse{}
-	expectedActivitiesPerSecond := activitiesPerSecond
-	if expectedActivitiesPerSecond == 0.0 {
-		expectedActivitiesPerSecond = defaultTaskQueueActivitiesPerSecond
-	}
-	service.EXPECT().PollActivityTaskQueue(
-		gomock.Any(), ofPollActivityTaskQueueRequest(expectedActivitiesPerSecond), gomock.Any(),
-	).Return(activityTask, nil).AnyTimes()
-	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
+	setupPollingMocks(namespace, service, activitiesPerSecond)
 
-	workflowTask := &workflowservice.PollWorkflowTaskQueueResponse{}
-	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(workflowTask, nil).AnyTimes()
-	service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
 
 	// Configure worker options.
 	workerOptions := WorkerOptions{
@@ -1872,6 +1876,35 @@ func createWorkerWithThrottle(
 	client := NewServiceClient(service, nil, clientOptions)
 	worker := NewAggregatedWorker(client, "testGroupName2", workerOptions)
 	return worker
+}
+
+func setupPollingMocks(namespace string, service *workflowservicemock.MockWorkflowServiceClient, activitiesPerSecond float64) {
+	namespaceState := enumspb.NAMESPACE_STATE_REGISTERED
+	namespaceDesc := &workflowservice.DescribeNamespaceResponse{
+		NamespaceInfo: &namespacepb.NamespaceInfo{
+			Name:  namespace,
+			State: namespaceState,
+		},
+	}
+
+	service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(namespaceDesc, nil).Do(
+		func(ctx context.Context, request *workflowservice.DescribeNamespaceRequest, opts ...grpc.CallOption) {
+			// log
+		}).AnyTimes()
+
+	activityTask := &workflowservice.PollActivityTaskQueueResponse{}
+	expectedActivitiesPerSecond := activitiesPerSecond
+	if expectedActivitiesPerSecond == 0.0 {
+		expectedActivitiesPerSecond = defaultTaskQueueActivitiesPerSecond
+	}
+	service.EXPECT().PollActivityTaskQueue(
+		gomock.Any(), ofPollActivityTaskQueueRequest(expectedActivitiesPerSecond), gomock.Any(),
+	).Return(activityTask, nil).AnyTimes()
+	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
+
+	workflowTask := &workflowservice.PollWorkflowTaskQueueResponse{}
+	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(workflowTask, nil).AnyTimes()
+	service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 }
 
 func createWorkerWithDataConverter(service *workflowservicemock.MockWorkflowServiceClient) *AggregatedWorker {

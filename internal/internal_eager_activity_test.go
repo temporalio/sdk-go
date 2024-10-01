@@ -237,6 +237,10 @@ func newWaitingTaskProcessor() *waitingTaskProcessor {
 	return &waitingTaskProcessor{completeCh: make(chan struct{})}
 }
 
+func (*waitingTaskProcessor) Cleanup() error {
+	return nil
+}
+
 func (*waitingTaskProcessor) PollTask() (taskForWorker, error) {
 	return nil, fmt.Errorf("not implemented")
 }

@@ -100,6 +100,7 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, nil).AnyTimes()
 	s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	executionParameters := workerExecutionParameters{
@@ -185,6 +186,7 @@ func (s *WorkersTestSuite) TestWorkflowWorkerSlotSupplier() {
 				pollRespondedCh <- struct{}{}
 			}).
 			Return(nil, nil).AnyTimes()
+		s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		wfCss := &CountingSlotSupplier{}
@@ -434,6 +436,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 func (s *WorkersTestSuite) TestPollWorkflowTaskQueue_InternalServiceError() {
 	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, serviceerror.NewInternal("")).AnyTimes()
+	s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
 
 	executionParameters := workerExecutionParameters{
 		Namespace:                             DefaultNamespace,
@@ -559,6 +562,9 @@ func (s *WorkersTestSuite) TestLongRunningWorkflowTask() {
 			panic("unexpected RespondWorkflowTaskCompleted")
 		}
 	}).Times(2)
+
+	s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
 
 	clientOptions := ClientOptions{
 		Identity: "test-worker-identity",
@@ -689,6 +695,9 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 		}
 	}).Times(1)
 
+	s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
+
 	clientOptions := ClientOptions{
 		Identity: "test-worker-identity",
 	}
@@ -720,6 +729,9 @@ func (s *WorkersTestSuite) TestWorkerMultipleStop() {
 		Return(&workflowservice.PollWorkflowTaskQueueResponse{}, nil).AnyTimes()
 	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&workflowservice.PollActivityTaskQueueResponse{}, nil).AnyTimes()
+	s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
+
 	client := NewServiceClient(s.service, nil, ClientOptions{Identity: "multi-stop-identity"})
 	worker := NewAggregatedWorker(client, "multi-stop-tq", WorkerOptions{})
 	s.NoError(worker.Start())
