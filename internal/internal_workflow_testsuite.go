@@ -2354,6 +2354,17 @@ func (env *testWorkflowEnvironmentImpl) newTestNexusTaskHandler() *nexusTaskHand
 func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(params executeNexusOperationParams, callback func(*commonpb.Payload, error), startedHandler func(opID string, e error)) int64 {
 	seq := env.nextID()
 	taskHandler := env.newTestNexusTaskHandler()
+	// Use lower case header values to simulate how the Nexus SDK (used internally by the "real" server) would transmit
+	// these headers over the wire.
+	nexusHeader := make(map[string]string, len(params.nexusHeader))
+	for k, v := range params.nexusHeader {
+		nexusHeader[strings.ToLower(k)] = v
+	}
+	params.nexusHeader = nexusHeader
+	// The real server allows requests to take up to 10 seconds, mimic that behavior here.
+	// Note that if a user sets the Request-Timeout header, it gets overridden.
+	params.nexusHeader[strings.ToLower(nexus.HeaderRequestTimeout)] = "10s"
+
 	handle := &testNexusOperationHandle{
 		env:         env,
 		seq:         seq,

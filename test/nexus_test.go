@@ -735,6 +735,10 @@ func TestReplay(t *testing.T) {
 
 func TestWorkflowTestSuite_NexusSyncOperation(t *testing.T) {
 	op := nexus.NewSyncOperation("op", func(ctx context.Context, outcome string, opts nexus.StartOperationOptions) (string, error) {
+		dealine, ok := ctx.Deadline()
+		require.True(t, ok)
+		timeout := time.Until(dealine)
+		require.Greater(t, 10*time.Second, timeout)
 		require.NotPanicsf(t, func() {
 			temporalnexus.GetMetricsHandler(ctx)
 			temporalnexus.GetLogger(ctx)
