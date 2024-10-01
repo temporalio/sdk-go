@@ -27,9 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -77,7 +75,7 @@ func newTestContext(t *testing.T, ctx context.Context) *testContext {
 	require.NoError(t, err)
 
 	taskQueue := "sdk-go-nexus-test-tq-" + uuid.NewString()
-	endpoint := strings.ReplaceAll("sdk-go-nexus-test-ep-"+uuid.NewString(), "-", "_")
+	endpoint := "sdk-go-nexus-test-ep-" + uuid.NewString()
 	res, err := c.OperatorService().CreateNexusEndpoint(ctx, &operatorservice.CreateNexusEndpointRequest{
 		Spec: &nexuspb.EndpointSpec{
 			Name: endpoint,
@@ -214,9 +212,6 @@ var workflowOp = temporalnexus.NewWorkflowRunOperation(
 )
 
 func TestNexusSyncOperation(t *testing.T) {
-	if os.Getenv("DISABLE_NEXUS_TESTS") != "" {
-		t.SkipNow()
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
@@ -336,9 +331,6 @@ func TestNexusSyncOperation(t *testing.T) {
 }
 
 func TestNexusWorkflowRunOperation(t *testing.T) {
-	if os.Getenv("DISABLE_NEXUS_TESTS") != "" {
-		t.SkipNow()
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -377,9 +369,6 @@ func TestNexusWorkflowRunOperation(t *testing.T) {
 }
 
 func TestSyncOperationFromWorkflow(t *testing.T) {
-	if os.Getenv("DISABLE_NEXUS_TESTS") != "" {
-		t.SkipNow()
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -495,9 +484,6 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 }
 
 func TestAsyncOperationFromWorkflow(t *testing.T) {
-	if os.Getenv("DISABLE_NEXUS_TESTS") != "" {
-		t.SkipNow()
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -663,9 +649,6 @@ func TestAsyncOperationFromWorkflow(t *testing.T) {
 }
 
 func TestReplay(t *testing.T) {
-	if os.Getenv("DISABLE_NEXUS_TESTS") != "" {
-		t.SkipNow()
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -1035,9 +1018,6 @@ func (i *nexusInterceptor) ExecuteNexusOperation(
 }
 
 func TestInterceptors(t *testing.T) {
-	if os.Getenv("DISABLE_NEXUS_TESTS") != "" {
-		t.SkipNow()
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
 	tc := newTestContext(t, ctx)

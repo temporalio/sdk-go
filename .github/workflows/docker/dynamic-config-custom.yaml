@@ -21,3 +21,12 @@ worker.buildIdScavengerEnabled:
   - value: true
 worker.removableBuildIdDurationSinceDefault:
   - value: 1
+system.enableNexus:
+  - value: true
+component.nexusoperations.callback.endpoint.template:
+  - value: http://localhost:7243/namespaces/{{.NamespaceName}}/nexus/callback
+# SDK tests use arbitrary callback URLs, permit that on the server.
+component.callbacks.allowedAddresses:
+  - value:
+    - Pattern: "*"
+      AllowInsecure: true
