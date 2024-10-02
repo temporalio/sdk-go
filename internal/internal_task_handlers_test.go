@@ -2725,7 +2725,6 @@ func TestHistoryIterator(t *testing.T) {
 				WorkflowId: "test-workflow-id",
 				RunId:      "test-run-id",
 			},
-			3,
 			metrics.NopHandler,
 			"test-task-queue",
 		),
