@@ -109,6 +109,10 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 	return &nexusTask{task: response}, nil
 }
 
+func (ntp *nexusTaskPoller) Cleanup() error {
+	return nil
+}
+
 // PollTask polls a new task
 func (ntp *nexusTaskPoller) PollTask() (taskForWorker, error) {
 	return ntp.doPoll(ntp.poll)
