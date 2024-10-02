@@ -364,7 +364,7 @@ func (wtp *workflowTaskPoller) ProcessTask(task interface{}) error {
 	}
 }
 
-func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) (err error) {
+func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) (retErr error) {
 	if task.task == nil {
 		// We didn't have task, poll might have timeout.
 		traceLog(func() {
@@ -397,7 +397,7 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) (err erro
 				tagPanicError, fmt.Sprintf("%v", p),
 				tagPanicStack, st)
 			taskErr = newPanicError(p, st)
-			err = taskErr
+			retErr = taskErr
 		}
 		wfctx.Unlock(taskErr)
 	}()
