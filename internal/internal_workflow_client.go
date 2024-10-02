@@ -1744,8 +1744,8 @@ func (w *workflowClientInterceptor) executeWorkflowWithOperation(
 					errInvalidServerResponse, len(multiErr.OperationErrors()), len(multiRequest.Operations))
 			}
 
-			var startErr error
 			var abortedErr *serviceerror.MultiOperationAborted
+			startErr := errors.New("failed to start workflow")
 			for i, opReq := range multiRequest.Operations {
 				// if an operation error is of type MultiOperationAborted, it means it was only aborted because
 				// of another operation's error and is therefore not interesting or helpful
