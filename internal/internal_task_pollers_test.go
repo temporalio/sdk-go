@@ -397,9 +397,7 @@ func TestWFTPanicInTaskHandler(t *testing.T) {
 	wfType := commonpb.WorkflowType{Name: t.Name() + "-workflow-type"}
 	reg := newRegistry()
 	reg.RegisterWorkflowWithOptions(func(ctx Context) error {
-		return Await(ctx, func() bool {
-			return false
-		})
+		return nil
 	}, RegisterWorkflowOptions{
 		Name: wfType.Name,
 	})
@@ -424,10 +422,7 @@ func TestWFTPanicInTaskHandler(t *testing.T) {
 			WorkflowExecution: &wfe,
 			WorkflowType:      &wfType,
 			History:           &history,
-			// encode the task pseudo-ID into the token; 0 here and 1 for
-			// pollResp1 below. The mock will use this as an index into
-			// `completionChans` (above) to get a task-specific control channel.
-			TaskToken: codec.AppendUint32(nil, 0),
+			TaskToken:         codec.AppendUint32(nil, 0),
 		}
 		task0 = workflowTask{task: &pollResp0}
 	)
