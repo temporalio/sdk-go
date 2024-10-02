@@ -138,11 +138,15 @@ type (
 	}
 
 	historyIteratorImpl struct {
-		iteratorFunc   func(nextPageToken []byte) (*historypb.History, []byte, error)
-		execution      *commonpb.WorkflowExecution
-		nextPageToken  []byte
-		namespace      string
-		service        workflowservice.WorkflowServiceClient
+		iteratorFunc  func(nextPageToken []byte) (*historypb.History, []byte, error)
+		execution     *commonpb.WorkflowExecution
+		nextPageToken []byte
+		namespace     string
+		service       workflowservice.WorkflowServiceClient
+		// maxEventID is the maximum eventID that the iterator should return
+		// it is used to filter out events that are not needed
+		// for example, when polling for a workflow task, we only need events up to the startedEventID.
+		// If set to 0, it means return all events.
 		maxEventID     int64
 		metricsHandler metrics.Handler
 		taskQueue      string
