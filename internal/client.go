@@ -1083,7 +1083,7 @@ func (op *UpdateWithStartWorkflowOperation) Get(ctx context.Context) (WorkflowUp
 		return op.handle, op.err
 	case <-ctx.Done():
 		if !op.executed.Load() {
-			return nil, fmt.Errorf("%v: %v", ctx.Err(), fmt.Errorf("operation was not executed"))
+			return nil, fmt.Errorf("%w: %w", ctx.Err(), fmt.Errorf("operation was not executed"))
 		}
 		return nil, ctx.Err()
 	}
