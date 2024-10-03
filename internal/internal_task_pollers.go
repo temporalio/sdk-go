@@ -143,7 +143,6 @@ type (
 		nextPageToken  []byte
 		namespace      string
 		service        workflowservice.WorkflowServiceClient
-		maxEventID     int64
 		metricsHandler metrics.Handler
 		taskQueue      string
 	}
@@ -870,7 +869,6 @@ func (wtp *workflowTaskPoller) toWorkflowTask(response *workflowservice.PollWork
 		nextPageToken:  response.NextPageToken,
 		namespace:      wtp.namespace,
 		service:        wtp.service,
-		maxEventID:     response.GetStartedEventId(),
 		metricsHandler: wtp.metricsHandler,
 		taskQueue:      wtp.taskQueueName,
 	}
@@ -888,7 +886,6 @@ func (h *historyIteratorImpl) GetNextPage() (*historypb.History, error) {
 			h.service,
 			h.namespace,
 			h.execution,
-			h.maxEventID,
 			h.metricsHandler,
 			h.taskQueue,
 		)
@@ -915,7 +912,6 @@ func newGetHistoryPageFunc(
 	service workflowservice.WorkflowServiceClient,
 	namespace string,
 	execution *commonpb.WorkflowExecution,
-	atWorkflowTaskCompletedEventID int64,
 	metricsHandler metrics.Handler,
 	taskQueue string,
 ) func(nextPageToken []byte) (*historypb.History, []byte, error) {
@@ -944,18 +940,6 @@ func newGetHistoryPageFunc(
 			}
 		} else {
 			h = resp.History
-		}
-
-		size := len(h.Events)
-		if size > 0 && atWorkflowTaskCompletedEventID > 0 &&
-			h.Events[size-1].GetEventId() > atWorkflowTaskCompletedEventID {
-			first := h.Events[0].GetEventId() // eventIds start from 1
-			h.Events = h.Events[:atWorkflowTaskCompletedEventID-first+1]
-			if h.Events[len(h.Events)-1].GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
-				return nil, nil, fmt.Errorf("newGetHistoryPageFunc: atWorkflowTaskCompletedEventID(%v) "+
-					"points to event that is not WorkflowTaskCompleted", atWorkflowTaskCompletedEventID)
-			}
-			return h, nil, nil
 		}
 		return h, resp.NextPageToken, nil
 	}
