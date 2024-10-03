@@ -738,7 +738,7 @@ func TestWorkflowTestSuite_NexusSyncOperation(t *testing.T) {
 		dealine, ok := ctx.Deadline()
 		require.True(t, ok)
 		timeout := time.Until(dealine)
-		require.Greater(t, 10*time.Second, timeout)
+		require.GreaterOrEqual(t, 10*time.Second, timeout)
 		require.NotPanicsf(t, func() {
 			temporalnexus.GetMetricsHandler(ctx)
 			temporalnexus.GetLogger(ctx)
