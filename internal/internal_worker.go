@@ -1447,7 +1447,6 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 		execution:     task.WorkflowExecution,
 		namespace:     ReplayNamespace,
 		service:       service,
-		maxEventID:    task.GetStartedEventId(),
 		taskQueue:     taskQueue,
 	}
 	cache := NewWorkerCache()

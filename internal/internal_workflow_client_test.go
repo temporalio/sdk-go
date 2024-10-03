@@ -976,6 +976,147 @@ func (s *workflowRunSuite) TestGetWorkflowNoExtantWorkflowAndNoRunId() {
 	s.Equal("", workflowRunNoRunID.GetRunID())
 }
 
+func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_Retry() {
+	s.workflowServiceClient.EXPECT().
+		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ExecuteMultiOperationResponse{
+			Responses: []*workflowservice.ExecuteMultiOperationResponse_Response{
+				{
+					Response: &workflowservice.ExecuteMultiOperationResponse_Response_StartWorkflow{},
+				},
+				{
+					// 1st response: empty response, Update is not durable yet, client retries
+					Response: &workflowservice.ExecuteMultiOperationResponse_Response_UpdateWorkflow{},
+				},
+			},
+		}, nil).
+		Return(&workflowservice.ExecuteMultiOperationResponse{
+			Responses: []*workflowservice.ExecuteMultiOperationResponse_Response{
+				{
+					Response: &workflowservice.ExecuteMultiOperationResponse_Response_StartWorkflow{
+						StartWorkflow: &workflowservice.StartWorkflowExecutionResponse{
+							RunId: "RUN_ID",
+						},
+					},
+				},
+				{
+					// 2nd response: non-empty response, Update is durable
+					Response: &workflowservice.ExecuteMultiOperationResponse_Response_UpdateWorkflow{
+						UpdateWorkflow: &workflowservice.UpdateWorkflowExecutionResponse{
+							Stage: enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED,
+						},
+					},
+				},
+			},
+		}, nil)
+
+	updOp := NewUpdateWithStartWorkflowOperation(
+		UpdateWorkflowOptions{
+			UpdateName:   "update",
+			WaitForStage: WorkflowUpdateStageCompleted,
+		})
+
+	_, err := s.workflowClient.ExecuteWorkflow(
+		context.Background(),
+		StartWorkflowOptions{
+			ID:                 workflowID,
+			TaskQueue:          taskqueue,
+			WithStartOperation: updOp,
+		}, workflowType,
+	)
+	s.NoError(err)
+}
+
+func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_OperationNotExecuted() {
+	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.StartWorkflowExecutionResponse{
+			RunId: runID,
+		}, nil)
+
+	updOp := NewUpdateWithStartWorkflowOperation(
+		UpdateWorkflowOptions{
+			UpdateName:   "update",
+			WaitForStage: WorkflowUpdateStageCompleted,
+		})
+
+	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	_, err := s.workflowClient.ExecuteWorkflow(
+		ctxWithTimeout,
+		StartWorkflowOptions{
+			ID:        workflowID,
+			TaskQueue: taskqueue,
+			// WithStartOperation is not specified!
+		}, workflowType,
+	)
+	require.NoError(s.T(), err)
+
+	_, err = updOp.Get(ctxWithTimeout)
+	require.EqualError(s.T(), err, "context deadline exceeded: operation was not executed")
+}
+
+func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_Abort() {
+	tests := []struct {
+		name        string
+		expectedErr string
+		respFunc    func(ctx context.Context, in *workflowservice.ExecuteMultiOperationRequest, opts ...grpc.CallOption) (*workflowservice.ExecuteMultiOperationResponse, error)
+	}{
+		{
+			name:        "Timeout",
+			expectedErr: "context deadline exceeded",
+			respFunc: func(ctx context.Context, in *workflowservice.ExecuteMultiOperationRequest, opts ...grpc.CallOption) (*workflowservice.ExecuteMultiOperationResponse, error) {
+				<-ctx.Done()
+				return nil, ctx.Err()
+			},
+		},
+		{
+			name:        "Cancelled",
+			expectedErr: "was_cancelled",
+			respFunc: func(ctx context.Context, in *workflowservice.ExecuteMultiOperationRequest, opts ...grpc.CallOption) (*workflowservice.ExecuteMultiOperationResponse, error) {
+				return nil, serviceerror.NewCanceled("was_cancelled")
+			},
+		},
+		{
+			name:        "DeadlineExceeded",
+			expectedErr: "deadline_exceeded",
+			respFunc: func(ctx context.Context, in *workflowservice.ExecuteMultiOperationRequest, opts ...grpc.CallOption) (*workflowservice.ExecuteMultiOperationResponse, error) {
+				return nil, serviceerror.NewDeadlineExceeded("deadline_exceeded")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			s.workflowServiceClient.EXPECT().
+				ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(tt.respFunc)
+
+			updOp := NewUpdateWithStartWorkflowOperation(
+				UpdateWorkflowOptions{
+					UpdateName:   "update",
+					WaitForStage: WorkflowUpdateStageCompleted,
+				})
+
+			ctxWithTimeout, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer cancel()
+
+			_, err := s.workflowClient.ExecuteWorkflow(
+				ctxWithTimeout,
+				StartWorkflowOptions{
+					ID:                 workflowID,
+					TaskQueue:          taskqueue,
+					WithStartOperation: updOp,
+				}, workflowType,
+			)
+
+			var expectedErr *WorkflowUpdateServiceTimeoutOrCanceledError
+			require.ErrorAs(s.T(), err, &expectedErr)
+			require.ErrorContains(s.T(), err, tt.expectedErr)
+		})
+	}
+}
+
 func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_NonMultiOperationError() {
 	s.workflowServiceClient.EXPECT().
 		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).

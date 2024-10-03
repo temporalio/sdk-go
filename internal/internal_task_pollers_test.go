@@ -377,3 +377,58 @@ func TestWFTReset(t *testing.T) {
 	cachedExecution = cache.getWorkflowContext(runID)
 	require.True(t, originalCachedExecution == cachedExecution)
 }
+
+type panickingTaskHandler struct {
+	WorkflowTaskHandler
+}
+
+func (wth *panickingTaskHandler) ProcessWorkflowTask(
+	task *workflowTask,
+	wfctx *workflowExecutionContextImpl,
+	hb workflowTaskHeartbeatFunc,
+) (interface{}, error) {
+	panic("panickingTaskHandler")
+}
+
+func TestWFTPanicInTaskHandler(t *testing.T) {
+	cache := NewWorkerCache()
+	params := workerExecutionParameters{cache: cache}
+	ensureRequiredParams(&params)
+	wfType := commonpb.WorkflowType{Name: t.Name() + "-workflow-type"}
+	reg := newRegistry()
+	reg.RegisterWorkflowWithOptions(func(ctx Context) error {
+		return nil
+	}, RegisterWorkflowOptions{
+		Name: wfType.Name,
+	})
+	var (
+		taskQueue    = taskqueuepb.TaskQueue{Name: t.Name() + "task-queue"}
+		startedAttrs = historypb.WorkflowExecutionStartedEventAttributes{
+			TaskQueue: &taskQueue,
+		}
+		startedEvent     = createTestEventWorkflowExecutionStarted(1, &startedAttrs)
+		history          = historypb.History{Events: []*historypb.HistoryEvent{startedEvent}}
+		runID            = t.Name() + "-run-id"
+		wfID             = t.Name() + "-workflow-id"
+		wfe              = commonpb.WorkflowExecution{RunId: runID, WorkflowId: wfID}
+		ctrl             = gomock.NewController(t)
+		client           = workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+		innerTaskHandler = newWorkflowTaskHandler(params, nil, newRegistry())
+		taskHandler      = &panickingTaskHandler{WorkflowTaskHandler: innerTaskHandler}
+		contextManager   = taskHandler
+		codec            = binary.LittleEndian
+		pollResp0        = workflowservice.PollWorkflowTaskQueueResponse{
+			Attempt:           1,
+			WorkflowExecution: &wfe,
+			WorkflowType:      &wfType,
+			History:           &history,
+			TaskToken:         codec.AppendUint32(nil, 0),
+		}
+		task0 = workflowTask{task: &pollResp0}
+	)
+
+	poller := newWorkflowTaskPoller(taskHandler, contextManager, client, params)
+	require.Error(t, poller.processWorkflowTask(&task0))
+	// Workflow should not be in cache
+	require.Nil(t, cache.getWorkflowContext(runID))
+}

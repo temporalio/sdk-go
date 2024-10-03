@@ -746,7 +746,7 @@ type (
 		// workflow completion callback. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
 		callbacks []*commonpb.Callback
 		// links. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
-		links     []*commonpb.Link
+		links []*commonpb.Link
 	}
 
 	// WithStartWorkflowOperation is a type of operation that can be executed as part of a workflow start.
@@ -1082,6 +1082,9 @@ func (op *UpdateWithStartWorkflowOperation) Get(ctx context.Context) (WorkflowUp
 	case <-op.doneCh:
 		return op.handle, op.err
 	case <-ctx.Done():
+		if !op.executed.Load() {
+			return nil, fmt.Errorf("%w: %w", ctx.Err(), fmt.Errorf("operation was not executed"))
+		}
 		return nil, ctx.Err()
 	}
 }
