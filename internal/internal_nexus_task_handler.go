@@ -341,6 +341,7 @@ func (h *nexusTaskHandler) goContextForTask(nctx *NexusOperationContext, header 
 		if err != nil {
 			return nil, nil, nexusHandlerError(nexus.HandlerErrorTypeBadRequest, "cannot parse request timeout")
 		}
+
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		return ctx, cancel, nil
 	}

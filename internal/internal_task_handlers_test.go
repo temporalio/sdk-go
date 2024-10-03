@@ -2688,3 +2688,51 @@ func TestResetIfDestroyedTaskPrep(t *testing.T) {
 		requireContainsMsgWithID(t, task.Messages, wftNewMsgID)
 	})
 }
+
+func TestHistoryIterator(t *testing.T) {
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+	}
+
+	nextEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
+	}
+
+	ctx := context.Background()
+	mockCtrl := gomock.NewController(t)
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	mockService.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.GetWorkflowExecutionHistoryResponse{
+		History: &historypb.History{
+			Events: testEvents,
+		},
+		NextPageToken: []byte("token"),
+	}, nil)
+
+	mockService.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.GetWorkflowExecutionHistoryResponse{
+		History: &historypb.History{
+			Events: nextEvents,
+		},
+	}, nil)
+
+	historyIterator := &historyIteratorImpl{
+		iteratorFunc: newGetHistoryPageFunc(
+			ctx,
+			mockService,
+			"test-namespace",
+			&commonpb.WorkflowExecution{
+				WorkflowId: "test-workflow-id",
+				RunId:      "test-run-id",
+			},
+			metrics.NopHandler,
+			"test-task-queue",
+		),
+	}
+
+	_, err := historyIterator.GetNextPage()
+	require.NoError(t, err)
+	_, err = historyIterator.GetNextPage()
+	require.NoError(t, err)
+
+}
