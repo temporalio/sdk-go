@@ -1027,6 +1027,35 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_Retry() {
 	s.NoError(err)
 }
 
+func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_OperationNotExecuted() {
+	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.StartWorkflowExecutionResponse{
+			RunId: runID,
+		}, nil)
+
+	updOp := NewUpdateWithStartWorkflowOperation(
+		UpdateWorkflowOptions{
+			UpdateName:   "update",
+			WaitForStage: WorkflowUpdateStageCompleted,
+		})
+
+	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	_, err := s.workflowClient.ExecuteWorkflow(
+		ctxWithTimeout,
+		StartWorkflowOptions{
+			ID:        workflowID,
+			TaskQueue: taskqueue,
+			// WithStartOperation is not specified!
+		}, workflowType,
+	)
+	require.NoError(s.T(), err)
+
+	_, err = updOp.Get(ctxWithTimeout)
+	require.EqualError(s.T(), err, "context deadline exceeded: operation was not executed")
+}
+
 func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_Abort() {
 	tests := []struct {
 		name        string
