@@ -364,7 +364,7 @@ func (wtp *workflowTaskPoller) ProcessTask(task interface{}) error {
 	}
 }
 
-func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
+func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) (retErr error) {
 	if task.task == nil {
 		// We didn't have task, poll might have timeout.
 		traceLog(func() {
@@ -385,6 +385,20 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) error {
 	}
 	var taskErr error
 	defer func() {
+		// If we panic during processing the workflow task, we need to unlock the workflow context with an error to discard it.
+		if p := recover(); p != nil {
+			topLine := fmt.Sprintf("workflow task for %s [panic]:", wtp.taskQueueName)
+			st := getStackTraceRaw(topLine, 7, 0)
+			wtp.logger.Error("Workflow task processing panic.",
+				tagWorkflowID, task.task.WorkflowExecution.GetWorkflowId(),
+				tagRunID, task.task.WorkflowExecution.GetRunId(),
+				tagWorkerType, task.task.GetWorkflowType().Name,
+				tagAttempt, task.task.Attempt,
+				tagPanicError, fmt.Sprintf("%v", p),
+				tagPanicStack, st)
+			taskErr = newPanicError(p, st)
+			retErr = taskErr
+		}
 		wfctx.Unlock(taskErr)
 	}()
 
