@@ -43,6 +43,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
@@ -211,6 +212,10 @@ var workflowOp = temporalnexus.NewWorkflowRunOperation(
 	},
 )
 
+var syncPayloadOp = temporalnexus.NewSyncOperation("sync-payload-op", func(ctx context.Context, c client.Client, s string, o nexus.StartOperationOptions) (*common.Payload, error) {
+	return converter.GetDefaultDataConverter().ToPayload(s)
+})
+
 func TestNexusSyncOperation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
@@ -219,7 +224,7 @@ func TestNexusSyncOperation(t *testing.T) {
 
 	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
 	service := nexus.NewService("test")
-	require.NoError(t, service.Register(syncOp))
+	require.NoError(t, service.Register(syncOp, syncPayloadOp))
 	w.RegisterNexusService(service)
 	require.NoError(t, w.Start())
 	t.Cleanup(w.Stop)
@@ -328,6 +333,16 @@ func TestNexusSyncOperation(t *testing.T) {
 		require.Equal(t, 500, unexpectedResponseErr.Response.StatusCode)
 		require.Contains(t, unexpectedResponseErr.Message, "panic: panic requested")
 	})
+
+	t.Run("ok-payload", func(t *testing.T) {
+		tc.metricsHandler.Clear()
+		value, err := nc.ExecuteOperation(ctx, syncPayloadOp.Name(), "ok", nexus.ExecuteOperationOptions{})
+		require.NoError(t, err)
+		var result string
+		require.NoError(t, value.Consume(&result))
+		require.Equal(t, "ok", result)
+	})
+
 }
 
 func TestNexusWorkflowRunOperation(t *testing.T) {

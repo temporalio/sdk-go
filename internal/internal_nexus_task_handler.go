@@ -265,9 +265,14 @@ func (h *nexusTaskHandler) handleStartOperation(
 	default:
 		// *nexus.HandlerStartOperationResultSync is generic, we can't type switch unfortunately.
 		value := reflect.ValueOf(t).Elem().FieldByName("Value").Interface()
-		payload, err := h.dataConverter.ToPayload(value)
-		if err != nil {
-			return nil, h.internalError(fmt.Errorf("cannot convert nexus sync result: %w", err)), nil
+		var payload *common.Payload
+		var ok bool
+		// If the result is a Payload, pass it through.
+		if payload, ok = value.(*common.Payload); !ok {
+			payload, err = h.dataConverter.ToPayload(value)
+			if err != nil {
+				return nil, h.internalError(fmt.Errorf("cannot convert nexus sync result: %w", err)), nil
+			}
 		}
 		return &nexuspb.Response{
 			Variant: &nexuspb.Response_StartOperation{
