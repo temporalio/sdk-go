@@ -471,7 +471,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 		if failWorkflowTask.Cause == enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR {
 			failureReason = "NonDeterminismError"
 		}
-		metricsHandler.WithTags(metrics.WorkflowTaskFailedTags(failureReason)).Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
+		incrementWorkflowTaskFailureCounter(metricsHandler, failureReason)
 		completedRequest = failWorkflowTask
 	}
 
