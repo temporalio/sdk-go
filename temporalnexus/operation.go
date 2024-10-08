@@ -223,7 +223,7 @@ func (o *workflowRunOperation[I, O]) Start(
 		}
 		return &nexus.HandlerStartOperationResultAsync{
 			OperationID: handle.ID(),
-			Links:       []nexus.Link{handle.Link()},
+			Links:       []nexus.Link{handle.link()},
 		}, nil
 	}
 
@@ -239,7 +239,7 @@ func (o *workflowRunOperation[I, O]) Start(
 
 	return &nexus.HandlerStartOperationResultAsync{
 		OperationID: handle.ID(),
-		Links:       []nexus.Link{handle.Link()},
+		Links:       []nexus.Link{handle.link()},
 	}, nil
 }
 
@@ -252,8 +252,11 @@ type WorkflowHandle[T any] interface {
 	ID() string
 	// ID is the workflow's run ID.
 	RunID() string
+
+	/* Methods below intentionally not exposed, interface is not meant to be implementable outside of this package */
+
 	// Link to the WorkflowExecutionStarted event of the workflow represented by this handle.
-	Link() nexus.Link
+	link() nexus.Link
 }
 
 type workflowHandle[T any] struct {
@@ -270,7 +273,7 @@ func (h workflowHandle[T]) RunID() string {
 	return h.runID
 }
 
-func (h workflowHandle[T]) Link() nexus.Link {
+func (h workflowHandle[T]) link() nexus.Link {
 	// Create the link information about the new workflow and return to the caller.
 	link := &common.Link_WorkflowEvent{
 		Namespace:  h.namespace,
