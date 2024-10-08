@@ -1262,7 +1262,14 @@ func GetLogger(ctx Context) log.Logger {
 }
 
 func (wc *workflowEnvironmentInterceptor) GetLogger(ctx Context) log.Logger {
-	return wc.env.GetLogger()
+	logger := wc.env.GetLogger()
+	// Add update info to the logger if available
+	uc := ctx.Value(updateInfoContextKey)
+	if uc == nil {
+		return logger
+	}
+	updateInfo := uc.(*UpdateInfo)
+	return log.With(logger, tagUpdateID, updateInfo.ID, tagUpdateName, updateInfo.Name)
 }
 
 // GetMetricsHandler returns a metrics handler to be used in workflow's context
