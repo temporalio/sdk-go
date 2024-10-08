@@ -2689,7 +2689,7 @@ func TestResetIfDestroyedTaskPrep(t *testing.T) {
 	})
 }
 
-func TestHistoryIterator(t *testing.T) {
+func TestHistoryIteratorMaxEventID(t *testing.T) {
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
@@ -2725,6 +2725,7 @@ func TestHistoryIterator(t *testing.T) {
 				WorkflowId: "test-workflow-id",
 				RunId:      "test-run-id",
 			},
+			3,
 			metrics.NopHandler,
 			"test-task-queue",
 		),
@@ -2733,6 +2734,6 @@ func TestHistoryIterator(t *testing.T) {
 	_, err := historyIterator.GetNextPage()
 	require.NoError(t, err)
 	_, err = historyIterator.GetNextPage()
-	require.NoError(t, err)
+	require.Error(t, err)
 
 }
