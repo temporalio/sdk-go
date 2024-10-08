@@ -2408,6 +2408,12 @@ type nexusClient struct {
 //
 // NOTE: Experimental
 func NewNexusClient(endpoint, service string) NexusClient {
+	if endpoint == "" {
+		panic("endpoint must not be empty")
+	}
+	if service == "" {
+		panic("service must not be empty")
+	}
 	return nexusClient{endpoint, service}
 }
 

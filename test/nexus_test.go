@@ -648,6 +648,38 @@ func TestAsyncOperationFromWorkflow(t *testing.T) {
 	})
 }
 
+func TestNewNexusClientValidation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+	tc := newTestContext(t, ctx)
+
+	callerWorkflow := func(ctx workflow.Context, endpoint, service string) (err error) {
+		defer func() {
+			panicMessage := recover()
+			err = fmt.Errorf("recovered: %s", panicMessage)
+		}()
+		_ = workflow.NewNexusClient(endpoint, service)
+		return
+	}
+
+	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
+	w.RegisterWorkflow(callerWorkflow)
+	require.NoError(t, w.Start())
+	t.Cleanup(w.Stop)
+
+	opts := client.StartWorkflowOptions{
+		TaskQueue: tc.taskQueue,
+	}
+
+	run, err := tc.client.ExecuteWorkflow(ctx, opts, callerWorkflow, "", "service")
+	require.NoError(t, err)
+	require.ErrorContains(t, run.Get(ctx, nil), "recovered: endpoint must not be empty")
+
+	run, err = tc.client.ExecuteWorkflow(ctx, opts, callerWorkflow, "endpoint", "")
+	require.NoError(t, err)
+	require.ErrorContains(t, run.Get(ctx, nil), "recovered: service must not be empty")
+}
+
 func TestReplay(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
