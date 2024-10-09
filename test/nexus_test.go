@@ -251,6 +251,13 @@ func TestNexusSyncOperation(t *testing.T) {
 		require.ErrorAs(t, err, &unsuccessfulOperationErr)
 		require.Equal(t, nexus.OperationStateFailed, unsuccessfulOperationErr.State)
 		require.Equal(t, "fail", unsuccessfulOperationErr.Failure.Message)
+
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
+			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
+			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
+			tc.requireCounter(t, metrics.NexusTaskExecutionFailedCounter, service.Name, syncOp.Name())
+		}, time.Second*3, time.Millisecond*100)
 	})
 
 	t.Run("fmt-errorf", func(t *testing.T) {
@@ -259,6 +266,13 @@ func TestNexusSyncOperation(t *testing.T) {
 		var unexpectedResponseErr *nexus.UnexpectedResponseError
 		require.ErrorAs(t, err, &unexpectedResponseErr)
 		require.Contains(t, unexpectedResponseErr.Message, `"500 Internal Server Error": arbitrary error message`)
+
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
+			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
+			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
+			tc.requireCounter(t, metrics.NexusTaskExecutionFailedCounter, service.Name, syncOp.Name())
+		}, time.Second*3, time.Millisecond*100)
 	})
 
 	t.Run("handlererror", func(t *testing.T) {
@@ -327,6 +341,13 @@ func TestNexusSyncOperation(t *testing.T) {
 		require.ErrorAs(t, err, &unexpectedResponseErr)
 		require.Equal(t, 500, unexpectedResponseErr.Response.StatusCode)
 		require.Contains(t, unexpectedResponseErr.Message, "panic: panic requested")
+
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
+			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
+			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
+			tc.requireCounter(t, metrics.NexusTaskExecutionFailedCounter, service.Name, syncOp.Name())
+		}, time.Second*3, time.Millisecond*100)
 	})
 }
 
