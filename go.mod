@@ -4,6 +4,8 @@ go 1.21
 
 toolchain go1.21.1
 
+replace github.com/nexus-rpc/sdk-go => github.com/rodrigozhou/nexus-rpc-sdk-go v0.0.0-20241010051441-0e8da3d55f88
+
 require (
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a
 	github.com/gogo/protobuf v1.3.2

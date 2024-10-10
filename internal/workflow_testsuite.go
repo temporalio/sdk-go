@@ -66,6 +66,7 @@ type (
 	TestWorkflowEnvironment struct {
 		workflowMock mock.Mock
 		activityMock mock.Mock
+		nexusMock    mock.Mock
 		impl         *testWorkflowEnvironmentImpl
 	}
 
@@ -543,6 +544,63 @@ func (e *TestWorkflowEnvironment) OnUpsertMemo(attributes interface{}) *MockCall
 	return e.wrapWorkflowCall(call)
 }
 
+func (e *TestWorkflowEnvironment) OnNexusOperation(
+	service string,
+	operation string,
+	input any,
+	options any,
+) *MockCallWrapper {
+	var call *mock.Call
+	s, ok := e.impl.registry.nexusServices[service]
+	if !ok {
+		panic(fmt.Sprintf(
+			"nexus service %q is not registered with the TestWorkflowEnvironment",
+			service,
+		))
+	}
+	if _, ok := s.GetOperation(operation); !ok {
+		panic(fmt.Sprintf(
+			"nexus operation %q is not registered in service %q with the TestWorkflowEnvironment",
+			operation,
+			service,
+		))
+	}
+	call = e.nexusMock.On(service, operation, input, options)
+	return e.wrapNexusOperationCall(call)
+}
+
+func (e *TestWorkflowEnvironment) RegisterNexusAsyncOperationCompletion(
+	service string,
+	operation string,
+	operationID string,
+	result any,
+	err error,
+	delay time.Duration,
+) error {
+	s, ok := e.impl.registry.nexusServices[service]
+	if !ok {
+		panic(fmt.Sprintf(
+			"nexus service %q is not registered with the TestWorkflowEnvironment",
+			service,
+		))
+	}
+	if _, ok := s.GetOperation(operation); !ok {
+		panic(fmt.Sprintf(
+			"nexus operation %q is not registered in service %q with the TestWorkflowEnvironment",
+			operation,
+			service,
+		))
+	}
+	return e.impl.RegisterNexusAsyncOperationCompletion(
+		service,
+		operation,
+		operationID,
+		result,
+		err,
+		delay,
+	)
+}
+
 func (e *TestWorkflowEnvironment) wrapWorkflowCall(call *mock.Call) *MockCallWrapper {
 	callWrapper := &MockCallWrapper{call: call, env: e}
 	call.Run(e.impl.getWorkflowMockRunFn(callWrapper))
@@ -552,6 +610,12 @@ func (e *TestWorkflowEnvironment) wrapWorkflowCall(call *mock.Call) *MockCallWra
 func (e *TestWorkflowEnvironment) wrapActivityCall(call *mock.Call) *MockCallWrapper {
 	callWrapper := &MockCallWrapper{call: call, env: e}
 	call.Run(e.impl.getActivityMockRunFn(callWrapper))
+	return callWrapper
+}
+
+func (e *TestWorkflowEnvironment) wrapNexusOperationCall(call *mock.Call) *MockCallWrapper {
+	callWrapper := &MockCallWrapper{call: call, env: e}
+	call.Run(e.impl.getNexusOperationMockRunFn(callWrapper))
 	return callWrapper
 }
 
@@ -632,6 +696,7 @@ func (c *MockCallWrapper) NotBefore(calls ...*MockCallWrapper) *MockCallWrapper 
 func (e *TestWorkflowEnvironment) ExecuteWorkflow(workflowFn interface{}, args ...interface{}) {
 	e.impl.workflowMock = &e.workflowMock
 	e.impl.activityMock = &e.activityMock
+	e.impl.nexusMock = &e.nexusMock
 	e.impl.executeWorkflow(workflowFn, args...)
 }
 
