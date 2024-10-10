@@ -3194,8 +3194,8 @@ func (r *testNexusHandler) StartOperation(
 			service,
 		))
 	}
-	op, ok := s.GetOperation(operation)
-	if !ok {
+	op := s.Operation(operation)
+	if op == nil {
 		panic(fmt.Sprintf(
 			"nexus operation %q is not registered in service %q with the TestWorkflowEnvironment",
 			operation,
