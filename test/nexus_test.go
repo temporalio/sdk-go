@@ -44,6 +44,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
@@ -1303,6 +1304,65 @@ func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
 		require.True(t, env.IsWorkflowCompleted())
 		require.ErrorContains(t, env.GetWorkflowError(), "workflow operation failed")
 	})
+}
+
+func TestWorkflowTestSuite_NexusListeners(t *testing.T) {
+	startedListenerCalled := false
+	completedListenerCalled := false
+	handlerWf := func(ctx workflow.Context, _ nexus.NoValue) (nexus.NoValue, error) {
+		require.True(t, startedListenerCalled)
+		require.False(t, completedListenerCalled)
+		return nil, nil
+	}
+	op := temporalnexus.NewWorkflowRunOperation(
+		"op",
+		handlerWf,
+		func(
+			ctx context.Context,
+			_ nexus.NoValue,
+			opts nexus.StartOperationOptions,
+		) (client.StartWorkflowOptions, error) {
+			return client.StartWorkflowOptions{ID: opts.RequestID}, nil
+		},
+	)
+
+	callerWf := func(ctx workflow.Context) error {
+		client := workflow.NewNexusClient("endpoint", "test")
+		fut := client.ExecuteOperation(ctx, op, nil, workflow.NexusOperationOptions{})
+		var exec workflow.NexusOperationExecution
+		if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil {
+			return err
+		}
+		err := fut.Get(ctx, nil)
+		require.True(t, completedListenerCalled)
+		return err
+	}
+
+	service := nexus.NewService("test")
+	service.Register(op)
+
+	suite := testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(handlerWf)
+	env.RegisterWorkflow(callerWf)
+	env.RegisterNexusService(service)
+
+	env.SetOnNexusOperationStartedListener(
+		func(service, operation string, input converter.EncodedValue) {
+			startedListenerCalled = true
+		},
+	)
+	env.SetOnNexusOperationCompletedListener(
+		func(service, operation string, result converter.EncodedValue, err error) {
+			completedListenerCalled = true
+		},
+	)
+
+	env.ExecuteWorkflow(callerWf)
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.True(t, startedListenerCalled)
+	require.True(t, completedListenerCalled)
 }
 
 type nexusInterceptor struct {
