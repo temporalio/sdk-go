@@ -569,7 +569,7 @@ func (e *TestWorkflowEnvironment) OnUpsertMemo(attributes interface{}) *MockCall
 //			return client.StartWorkflowOptions{}, nil
 //		},
 //	)
-//	
+//
 //	func HelloHandlerWorkflow(_ workflow.Context, input HelloInput) (HelloOutput, error) {
 //		return HelloOutput{Message: "Hello " + input.Message}, nil
 //	}
@@ -587,7 +587,7 @@ func (e *TestWorkflowEnvironment) OnUpsertMemo(attributes interface{}) *MockCall
 //		},
 //		nil,
 //	)
-//	
+//
 //	t.RegisterNexusAsyncOperationCompletion(
 //		service,
 //		HelloOperation.Name(),
@@ -969,6 +969,27 @@ func (e *TestWorkflowEnvironment) SetOnLocalActivityCompletedListener(
 func (e *TestWorkflowEnvironment) SetOnLocalActivityCanceledListener(
 	listener func(activityInfo *ActivityInfo)) *TestWorkflowEnvironment {
 	e.impl.onLocalActivityCanceledListener = listener
+	return e
+}
+
+func (e *TestWorkflowEnvironment) SetOnNexusOperationStartedListener(
+	listener func(service string, operation string, input converter.EncodedValue),
+) *TestWorkflowEnvironment {
+	e.impl.onNexusOperationStartedListener = listener
+	return e
+}
+
+func (e *TestWorkflowEnvironment) SetOnNexusOperationCompletedListener(
+	listener func(service string, operation string, result converter.EncodedValue, err error),
+) *TestWorkflowEnvironment {
+	e.impl.onNexusOperationCompletedListener = listener
+	return e
+}
+
+func (e *TestWorkflowEnvironment) SetOnNexusOperationCanceledListener(
+	listener func(service string, operation string),
+) *TestWorkflowEnvironment {
+	e.impl.onNexusOperationCanceledListener = listener
 	return e
 }
 
