@@ -34,6 +34,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
@@ -1205,6 +1206,103 @@ func TestWorkflowTestSuite_NexusSyncOperation_ClientMethods_Panic(t *testing.T) 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
 	require.Equal(t, "not implemented in the test environment", panicReason)
+}
+
+func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
+	dummyOp := nexus.NewSyncOperation(
+		"dummy-operation",
+		func(ctx context.Context, name string, opts nexus.StartOperationOptions) (string, error) {
+			return "Hello " + name, nil
+		},
+	)
+
+	wf := func(ctx workflow.Context, name string) (string, error) {
+		client := workflow.NewNexusClient("endpoint", "test")
+		fut := client.ExecuteOperation(
+			ctx,
+			dummyOp,
+			name,
+			workflow.NexusOperationOptions{
+				ScheduleToCloseTimeout: 2 * time.Second,
+			},
+		)
+		var exec workflow.NexusOperationExecution
+		if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil {
+			return "", err
+		}
+		var res string
+		if err := fut.Get(ctx, &res); err != nil {
+			return "", err
+		}
+		return res, nil
+	}
+
+	service := nexus.NewService("test")
+	service.Register(dummyOp)
+
+	t.Run("mock result sync", func(t *testing.T) {
+		suite := testsuite.WorkflowTestSuite{}
+		env := suite.NewTestWorkflowEnvironment()
+		env.RegisterNexusService(service)
+		env.OnNexusOperation(
+			service,
+			dummyOp,
+			"Temporal",
+			workflow.NexusOperationOptions{
+				ScheduleToCloseTimeout: 2 * time.Second,
+			},
+		).Return(
+			&nexus.HandlerStartOperationResultSync[string]{
+				Value: "fake result",
+			},
+			nil,
+		)
+		env.ExecuteWorkflow(wf, "Temporal")
+		require.True(t, env.IsWorkflowCompleted())
+		require.NoError(t, env.GetWorkflowError())
+		var res string
+		require.NoError(t, env.GetWorkflowResult(&res))
+		require.Equal(t, "fake result", res)
+	})
+
+	t.Run("mock result async", func(t *testing.T) {
+		suite := testsuite.WorkflowTestSuite{}
+		env := suite.NewTestWorkflowEnvironment()
+		env.RegisterNexusService(service)
+		env.OnNexusOperation(service, dummyOp, "Temporal", mock.Anything).Return(
+			&nexus.HandlerStartOperationResultAsync{
+				OperationID: "operation-id",
+			},
+			nil,
+		)
+		env.RegisterNexusAsyncOperationCompletion(
+			service.Name,
+			dummyOp.Name(),
+			"operation-id",
+			"fake result",
+			nil,
+			0,
+		)
+		env.ExecuteWorkflow(wf, "Temporal")
+		require.True(t, env.IsWorkflowCompleted())
+		require.NoError(t, env.GetWorkflowError())
+		var res string
+		require.NoError(t, env.GetWorkflowResult(&res))
+		require.Equal(t, "fake result", res)
+	})
+
+	t.Run("mock error", func(t *testing.T) {
+		suite := testsuite.WorkflowTestSuite{}
+		env := suite.NewTestWorkflowEnvironment()
+		env.RegisterNexusService(service)
+		env.OnNexusOperation(service, dummyOp, "Temporal", mock.Anything).Return(
+			nil,
+			errors.New("workflow operation failed"),
+		)
+		env.ExecuteWorkflow(wf, "Temporal")
+		require.True(t, env.IsWorkflowCompleted())
+		require.ErrorContains(t, env.GetWorkflowError(), "workflow operation failed")
+	})
 }
 
 type nexusInterceptor struct {

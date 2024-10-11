@@ -3260,7 +3260,7 @@ func (r *testNexusHandler) StartOperation(
 
 		mockResult := mockRet[0]
 		ret, ok := mockResult.(nexus.HandlerStartOperationResult[any])
-		if !ok {
+		if mockResult != nil && !ok {
 			panic(fmt.Sprintf(
 				"mock of ExecuteNexusOperation has incorrect return type, expected nexus.HandlerStartOperationResult[T], but actual is %T (%v)",
 				mockResult,
