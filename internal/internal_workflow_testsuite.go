@@ -189,19 +189,22 @@ type (
 		expectedActivityMockCalls map[string]struct{}
 		expectedNexusMockCalls    map[string]struct{}
 
-		onActivityStartedListener        func(activityInfo *ActivityInfo, ctx context.Context, args converter.EncodedValues)
-		onActivityCompletedListener      func(activityInfo *ActivityInfo, result converter.EncodedValue, err error)
-		onActivityCanceledListener       func(activityInfo *ActivityInfo)
-		onLocalActivityStartedListener   func(activityInfo *ActivityInfo, ctx context.Context, args []interface{})
-		onLocalActivityCompletedListener func(activityInfo *ActivityInfo, result converter.EncodedValue, err error)
-		onLocalActivityCanceledListener  func(activityInfo *ActivityInfo)
-		onActivityHeartbeatListener      func(activityInfo *ActivityInfo, details converter.EncodedValues)
-		onChildWorkflowStartedListener   func(workflowInfo *WorkflowInfo, ctx Context, args converter.EncodedValues)
-		onChildWorkflowCompletedListener func(workflowInfo *WorkflowInfo, result converter.EncodedValue, err error)
-		onChildWorkflowCanceledListener  func(workflowInfo *WorkflowInfo)
-		onTimerScheduledListener         func(timerID string, duration time.Duration)
-		onTimerFiredListener             func(timerID string)
-		onTimerCanceledListener          func(timerID string)
+		onActivityStartedListener         func(activityInfo *ActivityInfo, ctx context.Context, args converter.EncodedValues)
+		onActivityCompletedListener       func(activityInfo *ActivityInfo, result converter.EncodedValue, err error)
+		onActivityCanceledListener        func(activityInfo *ActivityInfo)
+		onLocalActivityStartedListener    func(activityInfo *ActivityInfo, ctx context.Context, args []interface{})
+		onLocalActivityCompletedListener  func(activityInfo *ActivityInfo, result converter.EncodedValue, err error)
+		onLocalActivityCanceledListener   func(activityInfo *ActivityInfo)
+		onActivityHeartbeatListener       func(activityInfo *ActivityInfo, details converter.EncodedValues)
+		onChildWorkflowStartedListener    func(workflowInfo *WorkflowInfo, ctx Context, args converter.EncodedValues)
+		onChildWorkflowCompletedListener  func(workflowInfo *WorkflowInfo, result converter.EncodedValue, err error)
+		onChildWorkflowCanceledListener   func(workflowInfo *WorkflowInfo)
+		onTimerScheduledListener          func(timerID string, duration time.Duration)
+		onTimerFiredListener              func(timerID string)
+		onTimerCanceledListener           func(timerID string)
+		onNexusOperationStartedListener   func(service string, operation string, args converter.EncodedValue)
+		onNexusOperationCompletedListener func(service string, operation string, result converter.EncodedValue, err error)
+		onNexusOperationCanceledListener  func(service string, operation string)
 	}
 
 	// testWorkflowEnvironmentImpl is the environment that runs the workflow/activity unit tests.
@@ -2603,6 +2606,17 @@ func (env *testWorkflowEnvironmentImpl) resolveNexusOperation(seq int64, result 
 		} else {
 			handle.completedCallback(result, nil)
 		}
+		if env.onNexusOperationCompletedListener != nil {
+			env.onNexusOperationCompletedListener(
+				handle.params.client.Service(),
+				handle.params.operation,
+				newEncodedValue(
+					&commonpb.Payloads{Payloads: []*commonpb.Payload{result}},
+					env.GetDataConverter(),
+				),
+				err,
+			)
+		}
 	}, true)
 }
 
@@ -3147,6 +3161,9 @@ func (h *testNexusOperationHandle) cancel() {
 				h.completedCallback(nil, fmt.Errorf("operation cancelation handler failed: %v", failure.GetError().GetFailure().GetMessage()))
 			}
 			h.env.runningCount--
+			if h.env.onNexusOperationCanceledListener != nil {
+				h.env.onNexusOperationCanceledListener(h.params.client.Service(), h.params.operation)
+			}
 		}, false)
 	}()
 }
@@ -3225,6 +3242,22 @@ func (r *testNexusHandler) StartOperation(
 			ReadCloser: emptyReaderNopCloser,
 		},
 	)
+
+	if r.env.onNexusOperationStartedListener != nil {
+		waitCh := make(chan struct{})
+		r.env.postCallback(func() {
+			r.env.onNexusOperationStartedListener(
+				service,
+				operation,
+				newEncodedValue(
+					&commonpb.Payloads{Payloads: []*commonpb.Payload{payload}},
+					r.env.GetDataConverter(),
+				),
+			)
+			close(waitCh)
+		}, false)
+		<-waitCh // wait until listener returns
+	}
 
 	m := &mockWrapper{
 		env:           r.env,
