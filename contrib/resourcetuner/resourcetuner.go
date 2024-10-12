@@ -25,9 +25,13 @@ package resourcetuner
 import (
 	"context"
 	"errors"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/containerd/cgroups/v3/cgroup2"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/mem"
 	"go.einride.tech/pid"
@@ -262,7 +266,7 @@ type ResourceController struct {
 func NewResourceController(options ResourceControllerOptions) *ResourceController {
 	var infoSupplier SystemInfoSupplier
 	if options.InfoSupplier == nil {
-		infoSupplier = &psUtilSystemInfoSupplier{}
+		infoSupplier = &Cgroup2SystemInfoSupplier{}
 	} else {
 		infoSupplier = options.InfoSupplier
 	}
@@ -372,4 +376,103 @@ func (p *psUtilSystemInfoSupplier) maybeRefresh() error {
 	p.lastCpuUsage = cpuUsage[0]
 	p.lastRefresh = time.Now()
 	return nil
+}
+
+// Cgroup2SystemInfoSupplier implements SystemInfoSupplier to gather resource info from cgroup2
+type Cgroup2SystemInfoSupplier struct {
+	mu              sync.Mutex
+	lastCpuUsage    uint64
+	lastRefresh     time.Time
+	lastCpuTotalUse float64
+}
+
+func (p *Cgroup2SystemInfoSupplier) GetMemoryUsage() (float64, error) {
+	control, err := cgroup2.Load("/")
+	if err != nil {
+		return 0, err
+	}
+	metrics, err := control.Stat()
+	if err != nil {
+		return 0, err
+	}
+	return float64(metrics.Memory.Usage) / float64(metrics.Memory.UsageLimit), nil
+}
+
+func (p *Cgroup2SystemInfoSupplier) GetCpuUsage() (float64, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	control, err := cgroup2.Load("/")
+	if err != nil {
+		return 0, err
+	}
+
+	// Fetch the cgroup stats
+	metrics, err := control.Stat()
+	if err != nil {
+		return 0, err
+	}
+
+	// Read CPU quota and period from cpu.max
+	cpuQuota, cpuPeriod, err := readCpuMax("/sys/fs/cgroup/cpu.max")
+	if err != nil {
+		return 0, err
+	}
+
+	// CPU usage calculation based on delta
+	currentCpuUsage := metrics.CPU.UsageUsec
+	now := time.Now()
+
+	if p.lastCpuUsage == 0 || p.lastRefresh.IsZero() {
+		p.lastCpuUsage = currentCpuUsage
+		p.lastRefresh = now
+		return 0, nil
+	}
+
+	// Time passed between this and last check
+	timeDelta := now.Sub(p.lastRefresh).Microseconds() // Convert to microseconds
+
+	// Calculate CPU usage percentage based on the delta
+	cpuUsageDelta := float64(currentCpuUsage - p.lastCpuUsage)
+	var cpuUsage float64
+
+	if cpuQuota > 0 {
+		cpuUsage = cpuUsageDelta * float64(cpuPeriod) / float64(cpuQuota*timeDelta)
+	}
+
+	// Update for next call
+	p.lastCpuUsage = currentCpuUsage
+	p.lastRefresh = now
+
+	return cpuUsage, nil
+}
+
+// readCpuMax reads the cpu.max file to get the CPU quota and period
+func readCpuMax(path string) (quota int64, period int64, err error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, 0, err
+	}
+	parts := strings.Fields(string(data))
+	if len(parts) != 2 {
+		return 0, 0, errors.New("invalid format in cpu.max")
+	}
+
+	// Parse the quota (first value)
+	if parts[0] == "max" {
+		quota = 0 // Unlimited quota
+	} else {
+		quota, err = strconv.ParseInt(parts[0], 10, 64)
+		if err != nil {
+			return 0, 0, err
+		}
+	}
+
+	// Parse the period (second value)
+	period, err = strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return quota, period, nil
 }
