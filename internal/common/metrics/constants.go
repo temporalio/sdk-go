@@ -100,6 +100,7 @@ const (
 	ActivityTypeNameTagName   = "activity_type"
 	NexusServiceTagName       = "nexus_service"
 	NexusOperationTagName     = "nexus_operation"
+	FailureReasonTagName      = "failure_reason"
 	TaskQueueTagName          = "task_queue"
 	OperationTagName          = "operation"
 	CauseTagName              = "cause"
