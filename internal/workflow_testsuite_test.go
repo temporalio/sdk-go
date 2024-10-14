@@ -545,6 +545,22 @@ func TestAllHandlersFinished(t *testing.T) {
 	require.Equal(t, 2, result)
 }
 
+// parseLogs parses the logs from the buffer and returns the logs as a slice of maps
+func parseLogs(t *testing.T, buf *bytes.Buffer) []map[string]any {
+	var ms []map[string]any
+	for _, line := range bytes.Split(buf.Bytes(), []byte{'\n'}) {
+		if len(line) == 0 {
+			continue
+		}
+		var m map[string]any
+		err := json.Unmarshal(line, &m)
+		require.NoError(t, err)
+		fmt.Println(m)
+		ms = append(ms, m)
+	}
+	return ms
+}
+
 func TestWorkflowAllHandlersFinished(t *testing.T) {
 	// runWf runs a workflow that sends two updates and then signals the workflow to complete
 	runWf := func(completionType string, buf *bytes.Buffer) (int, error) {
@@ -648,21 +664,6 @@ func TestWorkflowAllHandlersFinished(t *testing.T) {
 		require.NoError(t, env.GetWorkflowResult(&result))
 		return result, nil
 	}
-	// parseLogs parses the logs from the buffer and returns the logs as a slice of maps
-	parseLogs := func(buf *bytes.Buffer) []map[string]any {
-		var ms []map[string]any
-		for _, line := range bytes.Split(buf.Bytes(), []byte{'\n'}) {
-			if len(line) == 0 {
-				continue
-			}
-			var m map[string]any
-			err := json.Unmarshal(line, &m)
-			require.NoError(t, err)
-			fmt.Println(m)
-			ms = append(ms, m)
-		}
-		return ms
-	}
 	// parseWarnedUpdates parses the warned updates from the logs and returns them as a slice of maps
 	parseWarnedUpdates := func(updates interface{}) []map[string]interface{} {
 		var warnedUpdates []map[string]interface{}
@@ -674,7 +675,7 @@ func TestWorkflowAllHandlersFinished(t *testing.T) {
 	}
 	// assertExpectedLogs asserts that the logs in the buffer are as expected
 	assertExpectedLogs := func(t *testing.T, buf *bytes.Buffer, shouldWarn bool) {
-		logs := parseLogs(buf)
+		logs := parseLogs(t, buf)
 		if shouldWarn {
 			require.Len(t, logs, 1)
 			require.Equal(t, unhandledUpdateWarningMessage, logs[0]["msg"])
@@ -716,6 +717,70 @@ func TestWorkflowAllHandlersFinished(t *testing.T) {
 		require.Error(t, err)
 		assertExpectedLogs(t, &buf, true)
 	})
+}
+
+func TestWorkflowUpdateLogger(t *testing.T) {
+	var suite WorkflowTestSuite
+	var buf bytes.Buffer
+	th := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
+	suite.SetLogger(log.NewStructuredLogger(slog.New(th)))
+	env := suite.NewTestWorkflowEnvironment()
+
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflow("logging_update", "id_1", &updateCallback{
+			reject: func(err error) {
+				require.Fail(t, "update should not be rejected")
+			},
+			accept:   func() {},
+			complete: func(interface{}, error) {},
+		})
+	}, 0)
+
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow("completion", nil)
+	}, time.Minute*2)
+
+	env.ExecuteWorkflow(func(ctx Context) (int, error) {
+		var ranUpdates int
+		err := SetUpdateHandler(ctx, "logging_update", func(ctx Context) error {
+			ranUpdates++
+			log := GetLogger(ctx)
+			log.Info("logging update handler")
+			return nil
+		}, UpdateHandlerOptions{
+			Validator: func(ctx Context) error {
+				log := GetLogger(ctx)
+				log.Info("logging update validator")
+				return nil
+			},
+		})
+		if err != nil {
+			return 0, err
+		}
+
+		var completeType string
+		s := NewSelector(ctx)
+		s.AddReceive(ctx.Done(), func(c ReceiveChannel, more bool) {
+			completeType = "cancel"
+		}).AddReceive(GetSignalChannel(ctx, "completion"), func(c ReceiveChannel, more bool) {
+			c.Receive(ctx, &completeType)
+		}).Select(ctx)
+		return ranUpdates, nil
+	})
+
+	require.NoError(t, env.GetWorkflowError())
+	var result int
+	require.NoError(t, env.GetWorkflowResult(&result))
+	// Verify logs
+	logs := parseLogs(t, &buf)
+	require.Len(t, logs, 2)
+	require.Equal(t, logs[0][tagUpdateName], "logging_update")
+	require.Equal(t, logs[0][tagUpdateID], "id_1")
+	require.Equal(t, logs[0]["msg"], "logging update validator")
+	require.Equal(t, logs[1][tagUpdateName], "logging_update")
+	require.Equal(t, logs[1][tagUpdateID], "id_1")
+	require.Equal(t, logs[1]["msg"], "logging update handler")
+
 }
 
 func TestWorkflowStartTimeInsideTestWorkflow(t *testing.T) {

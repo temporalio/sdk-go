@@ -794,7 +794,7 @@ type UpdateWorkflowOptions struct {
 	Args []interface{}
 
 	// WaitForStage is a required field which specifies which stage to wait until returning.
-	// See https://docs.temporal.io/workflows#update for more details.
+	// See https://docs.temporal.io/develop/go/message-passing#send-update-from-client for more details.
 	// NOTE: Specifying WorkflowUpdateStageAdmitted is not supported.
 	WaitForStage WorkflowUpdateStage
 

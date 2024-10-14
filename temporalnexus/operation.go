@@ -211,7 +211,7 @@ func (o *workflowRunOperation[I, O]) Start(
 	// Prevent the test env client from panicking when we try to use it from a workflow run operation.
 	ctx = context.WithValue(ctx, internal.IsWorkflowRunOpContextKey, true)
 
-	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
+	_, ok := internal.NexusOperationContextFromGoContext(ctx)
 	if !ok {
 		return nil, nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
 	}
@@ -221,7 +221,10 @@ func (o *workflowRunOperation[I, O]) Start(
 		if err != nil {
 			return nil, err
 		}
-		return &nexus.HandlerStartOperationResultAsync{OperationID: handle.ID()}, nil
+		return &nexus.HandlerStartOperationResultAsync{
+			OperationID: handle.ID(),
+			Links:       []nexus.Link{handle.link()},
+		}, nil
 	}
 
 	wfOpts, err := o.options.GetOptions(ctx, input, options)
@@ -234,22 +237,9 @@ func (o *workflowRunOperation[I, O]) Start(
 		return nil, err
 	}
 
-	// Create the link information about the new workflow and return to the caller.
-	link := &common.Link_WorkflowEvent{
-		Namespace:  nctx.Namespace,
-		WorkflowId: handle.ID(),
-		RunId:      handle.RunID(),
-		Reference: &common.Link_WorkflowEvent_EventRef{
-			EventRef: &common.Link_WorkflowEvent_EventReference{
-				EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
-			},
-		},
-	}
-	nexusLink := ConvertLinkWorkflowEventToNexusLink(link)
-
 	return &nexus.HandlerStartOperationResultAsync{
 		OperationID: handle.ID(),
-		Links:       []nexus.Link{nexusLink},
+		Links:       []nexus.Link{handle.link()},
 	}, nil
 }
 
@@ -262,11 +252,17 @@ type WorkflowHandle[T any] interface {
 	ID() string
 	// ID is the workflow's run ID.
 	RunID() string
+
+	/* Methods below intentionally not exposed, interface is not meant to be implementable outside of this package */
+
+	// Link to the WorkflowExecutionStarted event of the workflow represented by this handle.
+	link() nexus.Link
 }
 
 type workflowHandle[T any] struct {
-	id    string
-	runID string
+	namespace string
+	id        string
+	runID     string
 }
 
 func (h workflowHandle[T]) ID() string {
@@ -275,6 +271,22 @@ func (h workflowHandle[T]) ID() string {
 
 func (h workflowHandle[T]) RunID() string {
 	return h.runID
+}
+
+func (h workflowHandle[T]) link() nexus.Link {
+	// Create the link information about the new workflow and return to the caller.
+	link := &common.Link_WorkflowEvent{
+		Namespace:  h.namespace,
+		WorkflowId: h.ID(),
+		RunId:      h.RunID(),
+		Reference: &common.Link_WorkflowEvent_EventRef{
+			EventRef: &common.Link_WorkflowEvent_EventReference{
+				EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+			},
+		},
+	}
+	return ConvertLinkWorkflowEventToNexusLink(link)
+
 }
 
 // ExecuteWorkflow starts a workflow run for a [WorkflowRunOperationOptions] Handler, linking the execution chain to a
@@ -354,7 +366,8 @@ func ExecuteUntypedWorkflow[R any](
 		return nil, err
 	}
 	return workflowHandle[R]{
-		id:    run.GetID(),
-		runID: run.GetRunID(),
+		namespace: nctx.Namespace,
+		id:        run.GetID(),
+		runID:     run.GetRunID(),
 	}, nil
 }
