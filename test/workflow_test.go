@@ -2784,6 +2784,18 @@ func (w *Workflows) ForcedNonDeterminism(ctx workflow.Context, sameCommandButDif
 	return
 }
 
+func (w *Workflows) NonDeterminismReplay(ctx workflow.Context) error {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	var a Activities
+	var err error
+	if forcedNonDeterminismCounter == 0 {
+		err = workflow.ExecuteActivity(ctx, a.Sleep, 1*time.Millisecond).Get(ctx, nil)
+	} else {
+		err = workflow.Sleep(ctx, 1*time.Millisecond)
+	}
+	return err
+}
+
 func (w *Workflows) ScheduleTypedSearchAttributesWorkflow(ctx workflow.Context) (string, error) {
 	attributes := workflow.GetTypedSearchAttributes(ctx)
 
@@ -3259,6 +3271,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.SignalCounter)
 	worker.RegisterWorkflow(w.PanicOnSignal)
 	worker.RegisterWorkflow(w.ForcedNonDeterminism)
+	worker.RegisterWorkflow(w.NonDeterminismReplay)
 	worker.RegisterWorkflow(w.MutableSideEffect)
 	worker.RegisterWorkflow(w.HistoryLengths)
 	worker.RegisterWorkflow(w.HeartbeatSpecificCount)
