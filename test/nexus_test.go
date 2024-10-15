@@ -1304,6 +1304,63 @@ func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
 		require.True(t, env.IsWorkflowCompleted())
 		require.ErrorContains(t, env.GetWorkflowError(), "workflow operation failed")
 	})
+
+	t.Run("mock after ok", func(t *testing.T) {
+		suite := testsuite.WorkflowTestSuite{}
+		env := suite.NewTestWorkflowEnvironment()
+		env.RegisterNexusService(service)
+		env.OnNexusOperation(
+			service,
+			dummyOp,
+			"Temporal",
+			workflow.NexusOperationOptions{
+				ScheduleToCloseTimeout: 2 * time.Second,
+			},
+		).After(1*time.Second).Return(
+			&nexus.HandlerStartOperationResultSync[string]{
+				Value: "fake result",
+			},
+			nil,
+		)
+		env.ExecuteWorkflow(wf, "Temporal")
+		require.True(t, env.IsWorkflowCompleted())
+		require.NoError(t, env.GetWorkflowError())
+		var res string
+		require.NoError(t, env.GetWorkflowResult(&res))
+		require.Equal(t, "fake result", res)
+	})
+
+	t.Run("mock after timeout", func(t *testing.T) {
+		suite := testsuite.WorkflowTestSuite{}
+		env := suite.NewTestWorkflowEnvironment()
+		env.RegisterNexusService(service)
+		env.OnNexusOperation(
+			service,
+			dummyOp,
+			"Temporal",
+			workflow.NexusOperationOptions{
+				ScheduleToCloseTimeout: 2 * time.Second,
+			},
+		).After(3*time.Second).Return(
+			&nexus.HandlerStartOperationResultSync[string]{
+				Value: "fake result",
+			},
+			nil,
+		)
+		env.ExecuteWorkflow(wf, "Temporal")
+		require.True(t, env.IsWorkflowCompleted())
+		var execErr *temporal.WorkflowExecutionError
+		err := env.GetWorkflowError()
+		require.ErrorAs(t, err, &execErr)
+		var opErr *temporal.NexusOperationError
+		err = execErr.Unwrap()
+		require.ErrorAs(t, err, &opErr)
+		require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
+		err = opErr.Unwrap()
+		var timeoutErr *temporal.TimeoutError
+		require.ErrorAs(t, err, &timeoutErr)
+		require.Equal(t, "operation timed out", timeoutErr.Message())
+	})
 }
 
 func TestWorkflowTestSuite_NexusListeners(t *testing.T) {
