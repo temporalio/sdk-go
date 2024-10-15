@@ -2552,6 +2552,11 @@ func (env *testWorkflowEnvironmentImpl) RegisterNexusAsyncOperationCompletion(
 			return encodeErr
 		}
 	}
+
+	// Getting the locker to prevent race condition if this function is called while
+	// the test env is already running.
+	env.locker.Lock()
+	defer env.locker.Unlock()
 	env.setNexusAsyncOperationCompletionHandle(
 		service,
 		operation,
