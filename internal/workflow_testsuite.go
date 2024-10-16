@@ -66,6 +66,7 @@ type (
 	TestWorkflowEnvironment struct {
 		workflowMock mock.Mock
 		activityMock mock.Mock
+		nexusMock    mock.Mock
 		impl         *testWorkflowEnvironmentImpl
 	}
 
@@ -543,6 +544,143 @@ func (e *TestWorkflowEnvironment) OnUpsertMemo(attributes interface{}) *MockCall
 	return e.wrapWorkflowCall(call)
 }
 
+// OnNexusOperation setup a mock call for Nexus operation.
+// Parameter service must be Nexus service (*nexus.Service) or service name (string).
+// Parameter operation must be Nexus operation (nexus.RegisterableOperation) or operation name (string).
+// You must call Return() with appropriate parameters on the returned *MockCallWrapper instance. The
+// supplied parameters to Return() call must be an instance of nexus.HandlerStartOperationResult[T]
+// and an error. If your mock returns nexus.HandlerStartOperationResultAsync, you need to register the
+// completion of the async operation by calling RegisterNexusAsyncOperationCompletion.
+// Example: assume the Nexus operation you want to mock is as follows:
+//
+//	type (
+//		HelloInput struct {
+//			Message string
+//		}
+//		HelloOutput struct {
+//			Message string
+//		}
+//	)
+//
+//	var HelloOperation = temporalnexus.NewWorkflowRunOperation(
+//		"hello-operation",
+//		HelloHandlerWorkflow,
+//		func(ctx context.Context, input HelloInput, options nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+//			return client.StartWorkflowOptions{}, nil
+//		},
+//	)
+//
+//	func HelloHandlerWorkflow(_ workflow.Context, input HelloInput) (HelloOutput, error) {
+//		return HelloOutput{Message: "Hello " + input.Message}, nil
+//	}
+//
+// Then, you can mock workflow.NexusClient.ExecuteOperation as follows:
+//
+//	t.OnNexusOperation(
+//		service,
+//		HelloOperation,
+//		HelloInput{Message: "Temporal"},
+//		mock.Anything,
+//	).Return(
+//		&nexus.HandlerStartOperationResultAsync{
+//			OperationID: "hello-operation-id",
+//		},
+//		nil,
+//	)
+//
+//	t.RegisterNexusAsyncOperationCompletion(
+//		service,
+//		HelloOperation.Name(),
+//		"hello-operation-id",
+//		HelloOutput{Message: "Hello Temporal"},
+//		nil,
+//		1*time.Second,
+//	)
+func (e *TestWorkflowEnvironment) OnNexusOperation(
+	service any,
+	operation any,
+	input any,
+	options any,
+) *MockCallWrapper {
+	var s *nexus.Service
+	switch stp := service.(type) {
+	case *nexus.Service:
+		s = stp
+		if e.impl.registry.nexusServices[s.Name] == nil {
+			e.impl.RegisterNexusService(s)
+		}
+	case string:
+		s = e.impl.registry.nexusServices[stp]
+		if s == nil {
+			panic(fmt.Sprintf(
+				"nexus service %q is not registered with the TestWorkflowEnvironment",
+				service,
+			))
+		}
+	default:
+		panic("service must be *nexus.Service or string")
+	}
+
+	var op nexus.RegisterableOperation
+	switch otp := operation.(type) {
+	case nexus.RegisterableOperation:
+		op = otp
+		if s.Operation(op.Name()) == nil {
+			s.Register(op)
+		}
+	case string:
+		op = s.Operation(otp)
+		if op == nil {
+			panic(fmt.Sprintf(
+				"nexus operation %q is not registered in service %q with the TestWorkflowEnvironment",
+				operation,
+				service,
+			))
+		}
+	default:
+		panic("operation must be nexus.RegisterableOperation or string")
+	}
+
+	var call *mock.Call
+	call = e.nexusMock.On(s.Name, op.Name(), input, options)
+	return e.wrapNexusOperationCall(call)
+}
+
+// RegisterNexusAsyncOperationCompletion registers a delayed completion of an Nexus async operation.
+// The delay is counted from the moment the Nexus async operation starts. See the documentation of
+// OnNexusOperation for an example.
+func (e *TestWorkflowEnvironment) RegisterNexusAsyncOperationCompletion(
+	service string,
+	operation string,
+	operationID string,
+	result any,
+	err error,
+	delay time.Duration,
+) error {
+	s, ok := e.impl.registry.nexusServices[service]
+	if !ok {
+		panic(fmt.Sprintf(
+			"nexus service %q is not registered with the TestWorkflowEnvironment",
+			service,
+		))
+	}
+	if s.Operation(operation) == nil {
+		panic(fmt.Sprintf(
+			"nexus operation %q is not registered in service %q with the TestWorkflowEnvironment",
+			operation,
+			service,
+		))
+	}
+	return e.impl.RegisterNexusAsyncOperationCompletion(
+		service,
+		operation,
+		operationID,
+		result,
+		err,
+		delay,
+	)
+}
+
 func (e *TestWorkflowEnvironment) wrapWorkflowCall(call *mock.Call) *MockCallWrapper {
 	callWrapper := &MockCallWrapper{call: call, env: e}
 	call.Run(e.impl.getWorkflowMockRunFn(callWrapper))
@@ -552,6 +690,12 @@ func (e *TestWorkflowEnvironment) wrapWorkflowCall(call *mock.Call) *MockCallWra
 func (e *TestWorkflowEnvironment) wrapActivityCall(call *mock.Call) *MockCallWrapper {
 	callWrapper := &MockCallWrapper{call: call, env: e}
 	call.Run(e.impl.getActivityMockRunFn(callWrapper))
+	return callWrapper
+}
+
+func (e *TestWorkflowEnvironment) wrapNexusOperationCall(call *mock.Call) *MockCallWrapper {
+	callWrapper := &MockCallWrapper{call: call, env: e}
+	call.Run(e.impl.getNexusOperationMockRunFn(callWrapper))
 	return callWrapper
 }
 
@@ -632,6 +776,7 @@ func (c *MockCallWrapper) NotBefore(calls ...*MockCallWrapper) *MockCallWrapper 
 func (e *TestWorkflowEnvironment) ExecuteWorkflow(workflowFn interface{}, args ...interface{}) {
 	e.impl.workflowMock = &e.workflowMock
 	e.impl.activityMock = &e.activityMock
+	e.impl.nexusMock = &e.nexusMock
 	e.impl.executeWorkflow(workflowFn, args...)
 }
 
@@ -827,6 +972,27 @@ func (e *TestWorkflowEnvironment) SetOnLocalActivityCanceledListener(
 	return e
 }
 
+func (e *TestWorkflowEnvironment) SetOnNexusOperationStartedListener(
+	listener func(service string, operation string, input converter.EncodedValue),
+) *TestWorkflowEnvironment {
+	e.impl.onNexusOperationStartedListener = listener
+	return e
+}
+
+func (e *TestWorkflowEnvironment) SetOnNexusOperationCompletedListener(
+	listener func(service string, operation string, result converter.EncodedValue, err error),
+) *TestWorkflowEnvironment {
+	e.impl.onNexusOperationCompletedListener = listener
+	return e
+}
+
+func (e *TestWorkflowEnvironment) SetOnNexusOperationCanceledListener(
+	listener func(service string, operation string),
+) *TestWorkflowEnvironment {
+	e.impl.onNexusOperationCanceledListener = listener
+	return e
+}
+
 // IsWorkflowCompleted check if test is completed or not
 func (e *TestWorkflowEnvironment) IsWorkflowCompleted() bool {
 	return e.impl.isWorkflowCompleted
@@ -982,13 +1148,15 @@ func (e *TestWorkflowEnvironment) SetTypedSearchAttributesOnStart(searchAttribut
 	return nil
 }
 
-// AssertExpectations  asserts that everything specified with OnActivity
-// in fact called as expected.  Calls may have occurred in any order.
+// AssertExpectations asserts that everything specified with OnWorkflow, OnActivity, OnNexusOperation
+// was in fact called as expected. Calls may have occurred in any order.
 func (e *TestWorkflowEnvironment) AssertExpectations(t mock.TestingT) bool {
-	return e.workflowMock.AssertExpectations(t) && e.activityMock.AssertExpectations(t)
+	return e.workflowMock.AssertExpectations(t) &&
+		e.activityMock.AssertExpectations(t) &&
+		e.nexusMock.AssertExpectations(t)
 }
 
-// AssertCalled asserts that the method was called with the supplied arguments.
+// AssertCalled asserts that the method (workflow or activity) was called with the supplied arguments.
 // Useful to assert that an Activity was called from within a workflow with the expected arguments.
 // Since the first argument is a context, consider using mock.Anything for that argument.
 //
@@ -999,10 +1167,10 @@ func (e *TestWorkflowEnvironment) AssertExpectations(t mock.TestingT) bool {
 // It can produce a false result when an argument is a pointer type and the underlying value changed after calling the mocked method.
 func (e *TestWorkflowEnvironment) AssertCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {
 	dummyT := &testing.T{}
-	if !(e.workflowMock.AssertCalled(dummyT, methodName, arguments...) || e.activityMock.AssertCalled(dummyT, methodName, arguments...)) {
-		return e.workflowMock.AssertCalled(t, methodName, arguments...) && e.activityMock.AssertCalled(t, methodName, arguments...)
-	}
-	return true
+	return e.AssertWorkflowCalled(dummyT, methodName, arguments...) ||
+		e.AssertActivityCalled(dummyT, methodName, arguments...) ||
+		e.AssertWorkflowCalled(t, methodName, arguments...) ||
+		e.AssertActivityCalled(t, methodName, arguments...)
 }
 
 // AssertWorkflowCalled asserts that the workflow method was called with the supplied arguments.
@@ -1017,14 +1185,15 @@ func (e *TestWorkflowEnvironment) AssertActivityCalled(t mock.TestingT, methodNa
 	return e.activityMock.AssertCalled(t, methodName, arguments...)
 }
 
-// AssertNotCalled asserts that the method was not called with the given arguments.
+// AssertNotCalled asserts that the method (workflow or activity) was not called with the given arguments.
 // See AssertCalled for more info.
 func (e *TestWorkflowEnvironment) AssertNotCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {
 	dummyT := &testing.T{}
-	if !(e.workflowMock.AssertNotCalled(dummyT, methodName, arguments...) || e.activityMock.AssertNotCalled(dummyT, methodName, arguments...)) {
-		return e.workflowMock.AssertNotCalled(t, methodName, arguments...) && e.activityMock.AssertNotCalled(t, methodName, arguments...)
-	}
-	return true
+	// Calling the individual functions instead of negating AssertCalled so the error message is more clear.
+	return e.AssertWorkflowNotCalled(dummyT, methodName, arguments...) &&
+		e.AssertActivityNotCalled(dummyT, methodName, arguments...) &&
+		e.AssertWorkflowNotCalled(t, methodName, arguments...) &&
+		e.AssertActivityNotCalled(t, methodName, arguments...)
 }
 
 // AssertWorkflowNotCalled asserts that the workflow method was not called with the given arguments.
@@ -1041,13 +1210,13 @@ func (e *TestWorkflowEnvironment) AssertActivityNotCalled(t mock.TestingT, metho
 	return e.activityMock.AssertNotCalled(t, methodName, arguments...)
 }
 
-// AssertNumberOfCalls asserts that a method was called expectedCalls times.
+// AssertNumberOfCalls asserts that a method (workflow or activity) was called expectedCalls times.
 func (e *TestWorkflowEnvironment) AssertNumberOfCalls(t mock.TestingT, methodName string, expectedCalls int) bool {
 	dummyT := &testing.T{}
-	if !(e.workflowMock.AssertNumberOfCalls(dummyT, methodName, expectedCalls) || e.activityMock.AssertNumberOfCalls(dummyT, methodName, expectedCalls)) {
-		return e.workflowMock.AssertNumberOfCalls(t, methodName, expectedCalls) && e.activityMock.AssertNumberOfCalls(t, methodName, expectedCalls)
-	}
-	return true
+	return e.workflowMock.AssertNumberOfCalls(dummyT, methodName, expectedCalls) ||
+		e.activityMock.AssertNumberOfCalls(dummyT, methodName, expectedCalls) ||
+		e.workflowMock.AssertNumberOfCalls(t, methodName, expectedCalls) ||
+		e.activityMock.AssertNumberOfCalls(t, methodName, expectedCalls)
 }
 
 // AssertWorkflowNumberOfCalls asserts that a workflow method was called expectedCalls times.
@@ -1060,4 +1229,23 @@ func (e *TestWorkflowEnvironment) AssertWorkflowNumberOfCalls(t mock.TestingT, m
 // Special method for activities, doesn't assert workflow calls.
 func (e *TestWorkflowEnvironment) AssertActivityNumberOfCalls(t mock.TestingT, methodName string, expectedCalls int) bool {
 	return e.activityMock.AssertNumberOfCalls(t, methodName, expectedCalls)
+}
+
+// AssertNexusOperationCalled asserts that the Nexus operation was called with the supplied arguments.
+// Special method for Nexus operations only.
+func (e *TestWorkflowEnvironment) AssertNexusOperationCalled(t mock.TestingT, service string, operation string, input any, options any) bool {
+	return e.nexusMock.AssertCalled(t, service, operation, input, options)
+}
+
+// AssertNexusOperationNotCalled asserts that the Nexus operation was called with the supplied arguments.
+// Special method for Nexus operations only.
+// See AssertNexusOperationCalled for more info.
+func (e *TestWorkflowEnvironment) AssertNexusOperationNotCalled(t mock.TestingT, service string, operation string, input any, options any) bool {
+	return e.nexusMock.AssertNotCalled(t, service, operation, input, options)
+}
+
+// AssertNexusOperationNumberOfCalls asserts that a Nexus operation was called expectedCalls times.
+// Special method for Nexus operation only.
+func (e *TestWorkflowEnvironment) AssertNexusOperationNumberOfCalls(t mock.TestingT, service string, expectedCalls int) bool {
+	return e.nexusMock.AssertNumberOfCalls(t, service, expectedCalls)
 }

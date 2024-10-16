@@ -4,6 +4,8 @@ go 1.21
 
 toolchain go1.21.1
 
+replace github.com/nexus-rpc/sdk-go => github.com/rodrigozhou/nexus-rpc-sdk-go v0.0.0-20241010171754-174a70a8ca5d
+
 require (
 	github.com/golang/mock v1.6.0
 	github.com/google/uuid v1.6.0
