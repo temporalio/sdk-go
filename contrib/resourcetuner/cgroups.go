@@ -97,9 +97,6 @@ type cgroupCpuCalc struct {
 	lastCalculatedPercent float64
 }
 
-// TODO: It's not clear to me this actually makes sense to do. Generally setting cpu limits in
-// k8s, for example, is considered a no-no. That said, if there _are_ limits, it makes sense to
-// try to avoid them so we don't oversubscribe tasks. Definitely needs real testing.
 func (p *cgroupCpuCalc) updateCpuUsage(metrics *stats.Metrics) error {
 	// Read CPU quota and period from cpu.max
 	cpuQuota, cpuPeriod, err := readCpuMax("/sys/fs/cgroup/cpu.max")

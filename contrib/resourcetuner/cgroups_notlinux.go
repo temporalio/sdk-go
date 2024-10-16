@@ -26,6 +26,8 @@
 
 package resourcetuner
 
+import "errors"
+
 func newCGroupInfo() cGroupInfo {
 	return &cGroupInfoImpl{}
 }
@@ -34,7 +36,7 @@ type cGroupInfoImpl struct {
 }
 
 func (p *cGroupInfoImpl) Update() (bool, error) {
-	return false, nil
+	return false, errors.New("cgroup is not supported on this platform")
 }
 
 func (p *cGroupInfoImpl) GetLastMemUsage() float64 {
