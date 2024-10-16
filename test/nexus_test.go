@@ -1258,12 +1258,18 @@ func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
 			},
 			nil,
 		)
+
 		env.ExecuteWorkflow(wf, "Temporal")
 		require.True(t, env.IsWorkflowCompleted())
 		require.NoError(t, env.GetWorkflowError())
 		var res string
 		require.NoError(t, env.GetWorkflowResult(&res))
 		require.Equal(t, "fake result", res)
+
+		env.AssertExpectations(t)
+		env.AssertNexusOperationNumberOfCalls(t, service.Name, 1)
+		env.AssertNexusOperationCalled(t, service.Name, dummyOp.Name(), "Temporal", mock.Anything)
+		env.AssertNexusOperationNotCalled(t, service.Name, dummyOp.Name(), "random", mock.Anything)
 	})
 
 	t.Run("mock result async", func(t *testing.T) {
@@ -1284,6 +1290,7 @@ func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
 			nil,
 			0,
 		)
+
 		env.ExecuteWorkflow(wf, "Temporal")
 		require.True(t, env.IsWorkflowCompleted())
 		require.NoError(t, env.GetWorkflowError())
@@ -1300,6 +1307,7 @@ func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
 			nil,
 			errors.New("workflow operation failed"),
 		)
+
 		env.ExecuteWorkflow(wf, "Temporal")
 		require.True(t, env.IsWorkflowCompleted())
 		require.ErrorContains(t, env.GetWorkflowError(), "workflow operation failed")
@@ -1322,6 +1330,7 @@ func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
 			},
 			nil,
 		)
+
 		env.ExecuteWorkflow(wf, "Temporal")
 		require.True(t, env.IsWorkflowCompleted())
 		require.NoError(t, env.GetWorkflowError())
@@ -1347,6 +1356,7 @@ func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
 			},
 			nil,
 		)
+
 		env.ExecuteWorkflow(wf, "Temporal")
 		require.True(t, env.IsWorkflowCompleted())
 		var execErr *temporal.WorkflowExecutionError
