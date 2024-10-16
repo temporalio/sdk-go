@@ -1148,13 +1148,15 @@ func (e *TestWorkflowEnvironment) SetTypedSearchAttributesOnStart(searchAttribut
 	return nil
 }
 
-// AssertExpectations  asserts that everything specified with OnActivity
-// in fact called as expected.  Calls may have occurred in any order.
+// AssertExpectations asserts that everything specified with OnWorkflow, OnActivity, OnNexusOperation
+// was in fact called as expected. Calls may have occurred in any order.
 func (e *TestWorkflowEnvironment) AssertExpectations(t mock.TestingT) bool {
-	return e.workflowMock.AssertExpectations(t) && e.activityMock.AssertExpectations(t)
+	return e.workflowMock.AssertExpectations(t) &&
+		e.activityMock.AssertExpectations(t) &&
+		e.nexusMock.AssertExpectations(t)
 }
 
-// AssertCalled asserts that the method was called with the supplied arguments.
+// AssertCalled asserts that the method (workflow or activity) was called with the supplied arguments.
 // Useful to assert that an Activity was called from within a workflow with the expected arguments.
 // Since the first argument is a context, consider using mock.Anything for that argument.
 //
@@ -1165,10 +1167,10 @@ func (e *TestWorkflowEnvironment) AssertExpectations(t mock.TestingT) bool {
 // It can produce a false result when an argument is a pointer type and the underlying value changed after calling the mocked method.
 func (e *TestWorkflowEnvironment) AssertCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {
 	dummyT := &testing.T{}
-	if !(e.workflowMock.AssertCalled(dummyT, methodName, arguments...) || e.activityMock.AssertCalled(dummyT, methodName, arguments...)) {
-		return e.workflowMock.AssertCalled(t, methodName, arguments...) && e.activityMock.AssertCalled(t, methodName, arguments...)
-	}
-	return true
+	return e.AssertWorkflowCalled(dummyT, methodName, arguments...) ||
+		e.AssertActivityCalled(dummyT, methodName, arguments...) ||
+		e.AssertWorkflowCalled(t, methodName, arguments...) ||
+		e.AssertActivityCalled(t, methodName, arguments...)
 }
 
 // AssertWorkflowCalled asserts that the workflow method was called with the supplied arguments.
@@ -1183,14 +1185,15 @@ func (e *TestWorkflowEnvironment) AssertActivityCalled(t mock.TestingT, methodNa
 	return e.activityMock.AssertCalled(t, methodName, arguments...)
 }
 
-// AssertNotCalled asserts that the method was not called with the given arguments.
+// AssertNotCalled asserts that the method (workflow or activity) was not called with the given arguments.
 // See AssertCalled for more info.
 func (e *TestWorkflowEnvironment) AssertNotCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {
 	dummyT := &testing.T{}
-	if !(e.workflowMock.AssertNotCalled(dummyT, methodName, arguments...) || e.activityMock.AssertNotCalled(dummyT, methodName, arguments...)) {
-		return e.workflowMock.AssertNotCalled(t, methodName, arguments...) && e.activityMock.AssertNotCalled(t, methodName, arguments...)
-	}
-	return true
+	// Calling the individual functions instead of negating AssertCalled so the error message is more clear.
+	return e.AssertWorkflowNotCalled(dummyT, methodName, arguments...) &&
+		e.AssertActivityNotCalled(dummyT, methodName, arguments...) &&
+		e.AssertWorkflowNotCalled(t, methodName, arguments...) &&
+		e.AssertActivityNotCalled(t, methodName, arguments...)
 }
 
 // AssertWorkflowNotCalled asserts that the workflow method was not called with the given arguments.
@@ -1207,13 +1210,13 @@ func (e *TestWorkflowEnvironment) AssertActivityNotCalled(t mock.TestingT, metho
 	return e.activityMock.AssertNotCalled(t, methodName, arguments...)
 }
 
-// AssertNumberOfCalls asserts that a method was called expectedCalls times.
+// AssertNumberOfCalls asserts that a method (workflow or activity) was called expectedCalls times.
 func (e *TestWorkflowEnvironment) AssertNumberOfCalls(t mock.TestingT, methodName string, expectedCalls int) bool {
 	dummyT := &testing.T{}
-	if !(e.workflowMock.AssertNumberOfCalls(dummyT, methodName, expectedCalls) || e.activityMock.AssertNumberOfCalls(dummyT, methodName, expectedCalls)) {
-		return e.workflowMock.AssertNumberOfCalls(t, methodName, expectedCalls) && e.activityMock.AssertNumberOfCalls(t, methodName, expectedCalls)
-	}
-	return true
+	return e.workflowMock.AssertNumberOfCalls(dummyT, methodName, expectedCalls) ||
+		e.activityMock.AssertNumberOfCalls(dummyT, methodName, expectedCalls) ||
+		e.workflowMock.AssertNumberOfCalls(t, methodName, expectedCalls) ||
+		e.activityMock.AssertNumberOfCalls(t, methodName, expectedCalls)
 }
 
 // AssertWorkflowNumberOfCalls asserts that a workflow method was called expectedCalls times.
@@ -1226,4 +1229,23 @@ func (e *TestWorkflowEnvironment) AssertWorkflowNumberOfCalls(t mock.TestingT, m
 // Special method for activities, doesn't assert workflow calls.
 func (e *TestWorkflowEnvironment) AssertActivityNumberOfCalls(t mock.TestingT, methodName string, expectedCalls int) bool {
 	return e.activityMock.AssertNumberOfCalls(t, methodName, expectedCalls)
+}
+
+// AssertNexusOperationCalled asserts that the Nexus operation was called with the supplied arguments.
+// Special method for Nexus operations only.
+func (e *TestWorkflowEnvironment) AssertNexusOperationCalled(t mock.TestingT, service string, operation string, input any, options any) bool {
+	return e.nexusMock.AssertCalled(t, service, operation, input, options)
+}
+
+// AssertNexusOperationNotCalled asserts that the Nexus operation was called with the supplied arguments.
+// Special method for Nexus operations only.
+// See AssertNexusOperationCalled for more info.
+func (e *TestWorkflowEnvironment) AssertNexusOperationNotCalled(t mock.TestingT, service string, operation string, input any, options any) bool {
+	return e.nexusMock.AssertNotCalled(t, service, operation, input, options)
+}
+
+// AssertNexusOperationNumberOfCalls asserts that a Nexus operation was called expectedCalls times.
+// Special method for Nexus operation only.
+func (e *TestWorkflowEnvironment) AssertNexusOperationNumberOfCalls(t mock.TestingT, service string, expectedCalls int) bool {
+	return e.nexusMock.AssertNumberOfCalls(t, service, expectedCalls)
 }
