@@ -146,11 +146,12 @@ func (tc *testContext) requireTimer(t *assert.CollectT, metric, service, operati
 	}))
 }
 
-func (tc *testContext) requireCounter(t *assert.CollectT, metric, service, operation string) {
+func (tc *testContext) requireFailureCounter(t *assert.CollectT, service, operation, failureType string) {
 	assert.True(t, slices.ContainsFunc(tc.metricsHandler.Counters(), func(ct *metrics.CapturedCounter) bool {
-		return ct.Name == metric &&
+		return ct.Name == metrics.NexusTaskExecutionFailedCounter &&
 			ct.Tags[metrics.NexusServiceTagName] == service &&
-			ct.Tags[metrics.NexusOperationTagName] == operation
+			ct.Tags[metrics.NexusOperationTagName] == operation &&
+			ct.Tags[metrics.FailureReasonTagName] == failureType
 	}))
 }
 
@@ -256,7 +257,7 @@ func TestNexusSyncOperation(t *testing.T) {
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
-			tc.requireCounter(t, metrics.NexusTaskExecutionFailedCounter, service.Name, syncOp.Name())
+			tc.requireFailureCounter(t, service.Name, syncOp.Name(), "operation_failed")
 		}, time.Second*3, time.Millisecond*100)
 	})
 
@@ -271,7 +272,7 @@ func TestNexusSyncOperation(t *testing.T) {
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
-			tc.requireCounter(t, metrics.NexusTaskExecutionFailedCounter, service.Name, syncOp.Name())
+			tc.requireFailureCounter(t, service.Name, syncOp.Name(), "handler_error_INTERNAL")
 		}, time.Second*3, time.Millisecond*100)
 	})
 
@@ -286,7 +287,7 @@ func TestNexusSyncOperation(t *testing.T) {
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
-			tc.requireCounter(t, metrics.NexusTaskExecutionFailedCounter, service.Name, syncOp.Name())
+			tc.requireFailureCounter(t, service.Name, syncOp.Name(), "handler_error_BAD_REQUEST")
 		}, time.Second*3, time.Millisecond*100)
 	})
 
@@ -301,7 +302,7 @@ func TestNexusSyncOperation(t *testing.T) {
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
-			tc.requireCounter(t, metrics.NexusTaskExecutionFailedCounter, service.Name, syncOp.Name())
+			tc.requireFailureCounter(t, service.Name, syncOp.Name(), "handler_error_BAD_REQUEST")
 		}, time.Second*3, time.Millisecond*100)
 	})
 
@@ -316,7 +317,7 @@ func TestNexusSyncOperation(t *testing.T) {
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
-			tc.requireCounter(t, metrics.NexusTaskExecutionFailedCounter, service.Name, syncOp.Name())
+			tc.requireFailureCounter(t, service.Name, syncOp.Name(), "handler_error_INTERNAL")
 		}, time.Second*3, time.Millisecond*100)
 	})
 
@@ -331,7 +332,7 @@ func TestNexusSyncOperation(t *testing.T) {
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
-			tc.requireCounter(t, metrics.NexusTaskExecutionFailedCounter, service.Name, syncOp.Name())
+			tc.requireFailureCounter(t, service.Name, syncOp.Name(), "handler_error_BAD_REQUEST")
 		}, time.Second*3, time.Millisecond*100)
 	})
 
@@ -346,7 +347,7 @@ func TestNexusSyncOperation(t *testing.T) {
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
-			tc.requireCounter(t, metrics.NexusTaskExecutionFailedCounter, service.Name, syncOp.Name())
+			tc.requireFailureCounter(t, service.Name, syncOp.Name(), "handler_error_INTERNAL")
 		}, time.Second*3, time.Millisecond*100)
 	})
 }
