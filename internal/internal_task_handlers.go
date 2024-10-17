@@ -137,6 +137,7 @@ type (
 		identity                 string
 		workerBuildID            string
 		useBuildIDForVersioning  bool
+		deploymentName           string
 		enableLoggingInReplay    bool
 		registry                 *registry
 		laTunnel                 *localActivityTunnel
@@ -556,6 +557,7 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		identity:                 params.Identity,
 		workerBuildID:            params.getBuildID(),
 		useBuildIDForVersioning:  params.UseBuildIDForVersioning,
+		deploymentName:           params.DeploymentName,
 		enableLoggingInReplay:    params.EnableLoggingInReplay,
 		registry:                 registry,
 		workflowPanicPolicy:      params.WorkflowPanicPolicy,
@@ -1904,8 +1906,9 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			SdkVersion:    eventHandler.getNewSdkVersionAndReset(),
 		},
 		WorkerVersionStamp: &commonpb.WorkerVersionStamp{
-			BuildId:       wth.workerBuildID,
-			UseVersioning: wth.useBuildIDForVersioning,
+			BuildId:        wth.workerBuildID,
+			UseVersioning:  wth.useBuildIDForVersioning,
+			DeploymentName: wth.deploymentName,
 		},
 	}
 	if wth.capabilities != nil && wth.capabilities.BuildIdBasedVersioning {
@@ -1961,8 +1964,9 @@ func newActivityTaskHandlerWithCustomProvider(
 		defaultHeartbeatThrottleInterval: params.DefaultHeartbeatThrottleInterval,
 		maxHeartbeatThrottleInterval:     params.MaxHeartbeatThrottleInterval,
 		versionStamp: &commonpb.WorkerVersionStamp{
-			BuildId:       params.getBuildID(),
-			UseVersioning: params.UseBuildIDForVersioning,
+			BuildId:        params.getBuildID(),
+			UseVersioning:  params.UseBuildIDForVersioning,
+			DeploymentName: params.DeploymentName,
 		},
 	}
 }

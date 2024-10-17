@@ -251,6 +251,12 @@ type (
 		// Note: Cannot be enabled at the same time as EnableSessionWorker
 		UseBuildIDForVersioning bool
 
+		// Optional: Assign a Deployment Name to this worker, an identifier for Worker Versioning that
+		// groups task queues for the given BuildID.
+		// NOTE: Experimental
+		// Note: Both BuildID and UseBuildIDForVersioning need to also be set to enable the new Worker Versioning-3 feature.
+		DeploymentName string
+
 		// Optional: If set, use a custom tuner for this worker. See WorkerTuner for more.
 		// Mutually exclusive with MaxConcurrentWorkflowTaskExecutionSize,
 		// MaxConcurrentActivityExecutionSize, and MaxConcurrentLocalActivityExecutionSize.

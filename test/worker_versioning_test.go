@@ -638,6 +638,51 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityUnversionedWorkerWithRules(
 	ts.Equal(false, taskQueueTypeInfo.Pollers[0].WorkerVersionCapabilities.UseVersioning)
 }
 
+func (ts *WorkerVersioningTestSuite) TestDeploymentNameWorker() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		Identity:                "worker1",
+		BuildID:                 "b1",
+		UseBuildIDForVersioning: false,
+		DeploymentName:          "deploy1",
+	})
+	ts.workflows.register(worker1)
+	ts.NoError(worker1.Start())
+	defer worker1.Stop()
+
+	// Give time for worker pollers stats to show up
+	time.Sleep(2 * time.Second)
+
+	taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, client.DescribeTaskQueueEnhancedOptions{
+		TaskQueue: ts.taskQueueName,
+		Versions: &client.TaskQueueVersionSelection{
+			// `client.UnversionedBuildID` is an empty string
+			BuildIDs: []string{client.UnversionedBuildID},
+		},
+		TaskQueueTypes: []client.TaskQueueType{
+			client.TaskQueueTypeWorkflow,
+		},
+		ReportPollers:          true,
+		ReportTaskReachability: true,
+	})
+	ts.NoError(err)
+	ts.Equal(1, len(taskQueueInfo.VersionsInfo))
+
+	taskQueueVersionInfo, ok := taskQueueInfo.VersionsInfo[client.UnversionedBuildID]
+	ts.True(ok)
+	ts.Equal(client.BuildIDTaskReachability(client.BuildIDTaskReachabilityReachable), taskQueueVersionInfo.TaskReachability)
+
+	ts.Equal(1, len(taskQueueVersionInfo.TypesInfo))
+	taskQueueTypeInfo, ok := taskQueueVersionInfo.TypesInfo[client.TaskQueueTypeWorkflow]
+	ts.True(ok)
+	ts.True(len(taskQueueTypeInfo.Pollers) > 0)
+	ts.Equal("worker1", taskQueueTypeInfo.Pollers[0].Identity)
+	ts.Equal(false, taskQueueTypeInfo.Pollers[0].WorkerVersionCapabilities.UseVersioning)
+	ts.Equal("deploy1", taskQueueTypeInfo.Pollers[0].WorkerVersionCapabilities.DeploymentName)
+}
+
 func (ts *WorkerVersioningTestSuite) TestReachabilityVersions() {
 	// Skip this test because it is flaky with server 1.25.0, versioning api is also actively undergoing changes
 	ts.T().SkipNow()

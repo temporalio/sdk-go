@@ -94,7 +94,7 @@ func Test_TaskQueueDescription_fromProtoResponse(t *testing.T) {
 						TypesInfo: map[int32]*taskqueuepb.TaskQueueTypeInfo{
 							int32(enumspb.TASK_QUEUE_TYPE_WORKFLOW): {
 								Pollers: []*taskqueuepb.PollerInfo{
-									{LastAccessTime: nowProto, Identity: "me", RatePerSecond: 3.0, WorkerVersionCapabilities: &common.WorkerVersionCapabilities{BuildId: "1.0", UseVersioning: true}},
+									{LastAccessTime: nowProto, Identity: "me", RatePerSecond: 3.0, WorkerVersionCapabilities: &common.WorkerVersionCapabilities{BuildId: "1.0", UseVersioning: true, DeploymentName: "prod1"}},
 								},
 							},
 						},
@@ -108,7 +108,7 @@ func Test_TaskQueueDescription_fromProtoResponse(t *testing.T) {
 						TypesInfo: map[TaskQueueType]TaskQueueTypeInfo{
 							TaskQueueTypeWorkflow: {
 								Pollers: []TaskQueuePollerInfo{
-									{LastAccessTime: now, Identity: "me", RatePerSecond: 3.0, WorkerVersionCapabilities: &WorkerVersionCapabilities{BuildID: "1.0", UseVersioning: true}},
+									{LastAccessTime: now, Identity: "me", RatePerSecond: 3.0, WorkerVersionCapabilities: &WorkerVersionCapabilities{BuildID: "1.0", UseVersioning: true, DeploymentName: "prod1"}},
 								},
 							},
 						},
