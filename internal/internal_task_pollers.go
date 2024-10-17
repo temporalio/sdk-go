@@ -86,6 +86,8 @@ type (
 		workerBuildID string
 		// Whether the worker has opted in to the build-id based versioning feature
 		useBuildIDVersioning bool
+		// The worker's deployment name, an identifier in versioning-3 to group Task Queues for a given build ID
+		deploymentName string
 		// Server's capabilities
 		capabilities *workflowservice.GetSystemInfoResponse_Capabilities
 	}
@@ -289,6 +291,7 @@ func newWorkflowTaskPoller(
 			stopC:                params.WorkerStopChannel,
 			workerBuildID:        params.getBuildID(),
 			useBuildIDVersioning: params.UseBuildIDForVersioning,
+			deploymentName:       params.DeploymentName,
 			capabilities:         params.capabilities,
 		},
 		service:                      service,
@@ -562,8 +565,9 @@ func (wtp *workflowTaskPoller) errorToFailWorkflowTask(taskToken []byte, err err
 		BinaryChecksum: wtp.workerBuildID,
 		Namespace:      wtp.namespace,
 		WorkerVersion: &commonpb.WorkerVersionStamp{
-			BuildId:       wtp.workerBuildID,
-			UseVersioning: wtp.useBuildIDVersioning,
+			BuildId:        wtp.workerBuildID,
+			UseVersioning:  wtp.useBuildIDVersioning,
+			DeploymentName: wtp.deploymentName,
 		},
 	}
 
@@ -798,8 +802,9 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		Identity:       wtp.identity,
 		BinaryChecksum: wtp.workerBuildID,
 		WorkerVersionCapabilities: &commonpb.WorkerVersionCapabilities{
-			BuildId:       wtp.workerBuildID,
-			UseVersioning: wtp.useBuildIDVersioning,
+			BuildId:        wtp.workerBuildID,
+			UseVersioning:  wtp.useBuildIDVersioning,
+			DeploymentName: wtp.deploymentName,
 		},
 	}
 	if wtp.getCapabilities().BuildIdBasedVersioning {
@@ -953,7 +958,7 @@ func newGetHistoryPageFunc(
 		// a new workflow task or the server looses the workflow task if it is a speculative workflow task. In either
 		// case, the new workflow task could have events that are beyond the last event ID that the SDK expects to process.
 		// In such cases, the SDK should return error indicating that the workflow task is stale since the result will not be used.
-		if size > 0 && lastEventID > 0 && 
+		if size > 0 && lastEventID > 0 &&
 			h.Events[size-1].GetEventId() > lastEventID {
 			return nil, nil, fmt.Errorf("history contains events past expected last event ID (%v) "+
 				"likely this means the current workflow task is no longer valid", lastEventID)
@@ -971,6 +976,7 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 			stopC:                params.WorkerStopChannel,
 			workerBuildID:        params.getBuildID(),
 			useBuildIDVersioning: params.UseBuildIDForVersioning,
+			deploymentName:       params.DeploymentName,
 			capabilities:         params.capabilities,
 		},
 		taskHandler:         taskHandler,
@@ -1003,8 +1009,9 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 		Identity:          atp.identity,
 		TaskQueueMetadata: &taskqueuepb.TaskQueueMetadata{MaxTasksPerSecond: wrapperspb.Double(atp.activitiesPerSecond)},
 		WorkerVersionCapabilities: &commonpb.WorkerVersionCapabilities{
-			BuildId:       atp.workerBuildID,
-			UseVersioning: atp.useBuildIDVersioning,
+			BuildId:        atp.workerBuildID,
+			UseVersioning:  atp.useBuildIDVersioning,
+			DeploymentName: atp.deploymentName,
 		},
 	}
 
