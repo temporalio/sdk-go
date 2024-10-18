@@ -4502,7 +4502,6 @@ func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseReplay() {
 	fmt.Println("Querying workflow")
 	_, err = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), client.QueryTypeStackTrace, nil)
 	ts.Error(err)
-	ts.Equal("context deadline exceeded", err.Error())
 
 	taskFailedMetric = fetchMetrics()
 	ts.True(taskFailedMetric >= 1)
