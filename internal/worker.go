@@ -256,6 +256,12 @@ type (
 		// MaxConcurrentActivityExecutionSize, and MaxConcurrentLocalActivityExecutionSize.
 		// NOTE: Experimental
 		Tuner WorkerTuner
+
+		// Optional: The timeout for polling tasks defaults to 70 seconds if not specified
+		// Server returns empty task after dynamicconfig.MatchingLongPollExpirationInterval (default is 60 seconds).
+		// PollTaskTimeout should be dynamicconfig.MatchingLongPollExpirationInterval + some delta for full round trip to matching
+		// because empty task should be returned before timeout is expired (expired timeout counts against SLO).
+		PollTaskTimeout time.Duration
 	}
 )
 
