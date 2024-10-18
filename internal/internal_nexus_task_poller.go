@@ -157,8 +157,21 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 	// Internal error processing the task.
 	// Failure from user handler.
 	// Special case for the start response with operation error.
-	if err != nil || failure != nil || res.Response.GetStartOperation().GetOperationError() != nil {
-		metricsHandler.Counter(metrics.NexusTaskExecutionFailedCounter).Inc(1)
+	if err != nil {
+		metricsHandler.
+			WithTags(metrics.NexusTaskFailureTags("internal_sdk_error")).
+			Counter(metrics.NexusTaskExecutionFailedCounter).
+			Inc(1)
+	} else if failure != nil {
+		metricsHandler.
+			WithTags(metrics.NexusTaskFailureTags("handler_error_" + failure.GetError().GetErrorType())).
+			Counter(metrics.NexusTaskExecutionFailedCounter).
+			Inc(1)
+	} else if e := res.Response.GetStartOperation().GetOperationError(); e != nil {
+		metricsHandler.
+			WithTags(metrics.NexusTaskFailureTags("operation_" + e.GetOperationState())).
+			Counter(metrics.NexusTaskExecutionFailedCounter).
+			Inc(1)
 	}
 
 	// Let the poller machinery drop the task, nothing to report back.
