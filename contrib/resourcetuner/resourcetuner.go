@@ -25,18 +25,30 @@ package resourcetuner
 import (
 	"context"
 	"errors"
+	"runtime"
 	"sync"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/mem"
 	"go.einride.tech/pid"
+	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/worker"
 )
 
 type ResourceBasedTunerOptions struct {
+	// TargetMem is the target overall system memory usage as value 0 and 1 that the controller will
+	// attempt to maintain. Must be set nonzero.
 	TargetMem float64
+	// TargetCpu is the target overall system CPU usage as value 0 and 1 that the controller will
+	// attempt to maintain. Must be set nonzero.
 	TargetCpu float64
+	// Passed to ResourceBasedSlotSupplierOptions.RampThrottle for activities.
+	// If not set, the default value is 50ms.
+	ActivityRampThrottle time.Duration
+	// Passed to ResourceBasedSlotSupplierOptions.RampThrottle for workflows.
+	// If not set, the default value is 0ms.
+	WorkflowRampThrottle time.Duration
 }
 
 // NewResourceBasedTuner creates a WorkerTuner that dynamically adjusts the number of slots based
@@ -50,10 +62,19 @@ func NewResourceBasedTuner(opts ResourceBasedTunerOptions) (worker.WorkerTuner, 
 	controller := NewResourceController(options)
 	wfSS := &ResourceBasedSlotSupplier{controller: controller,
 		options: defaultWorkflowResourceBasedSlotSupplierOptions()}
+	if opts.WorkflowRampThrottle != 0 {
+		wfSS.options.RampThrottle = opts.WorkflowRampThrottle
+	}
 	actSS := &ResourceBasedSlotSupplier{controller: controller,
 		options: defaultActivityResourceBasedSlotSupplierOptions()}
+	if opts.ActivityRampThrottle != 0 {
+		actSS.options.RampThrottle = opts.ActivityRampThrottle
+	}
 	laSS := &ResourceBasedSlotSupplier{controller: controller,
 		options: defaultActivityResourceBasedSlotSupplierOptions()}
+	if opts.ActivityRampThrottle != 0 {
+		laSS.options.RampThrottle = opts.ActivityRampThrottle
+	}
 	nexusSS := &ResourceBasedSlotSupplier{controller: controller,
 		options: defaultWorkflowResourceBasedSlotSupplierOptions()}
 	compositeTuner, err := worker.NewCompositeTuner(worker.CompositeTunerOptions{
@@ -163,7 +184,7 @@ func (r *ResourceBasedSlotSupplier) TryReserveSlot(info worker.SlotReservationIn
 	numIssued := info.NumIssuedSlots()
 	if numIssued < r.options.MinSlots || (numIssued < r.options.MaxSlots &&
 		time.Since(r.lastSlotIssuedAt) > r.options.RampThrottle) {
-		decision, err := r.controller.pidDecision()
+		decision, err := r.controller.pidDecision(info.Logger())
 		if err != nil {
 			info.Logger().Error("Error calculating resource usage", "error", err)
 			return nil
@@ -188,10 +209,14 @@ func (r *ResourceBasedSlotSupplier) MaxSlots() int {
 type SystemInfoSupplier interface {
 	// GetMemoryUsage returns the current system memory usage as a fraction of total memory between
 	// 0 and 1.
-	GetMemoryUsage() (float64, error)
+	GetMemoryUsage(infoContext *SystemInfoContext) (float64, error)
 	// GetCpuUsage returns the current system CPU usage as a fraction of total CPU usage between 0
 	// and 1.
-	GetCpuUsage() (float64, error)
+	GetCpuUsage(infoContext *SystemInfoContext) (float64, error)
+}
+
+type SystemInfoContext struct {
+	Logger log.Logger
 }
 
 // ResourceControllerOptions contains configurable parameters for a ResourceController.
@@ -262,7 +287,9 @@ type ResourceController struct {
 func NewResourceController(options ResourceControllerOptions) *ResourceController {
 	var infoSupplier SystemInfoSupplier
 	if options.InfoSupplier == nil {
-		infoSupplier = &psUtilSystemInfoSupplier{}
+		infoSupplier = &psUtilSystemInfoSupplier{
+			cGroupInfo: newCGroupInfo(),
+		}
 	} else {
 		infoSupplier = options.InfoSupplier
 	}
@@ -286,15 +313,15 @@ func NewResourceController(options ResourceControllerOptions) *ResourceControlle
 	}
 }
 
-func (rc *ResourceController) pidDecision() (bool, error) {
+func (rc *ResourceController) pidDecision(logger log.Logger) (bool, error) {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
 
-	memUsage, err := rc.infoSupplier.GetMemoryUsage()
+	memUsage, err := rc.infoSupplier.GetMemoryUsage(&SystemInfoContext{Logger: logger})
 	if err != nil {
 		return false, err
 	}
-	cpuUsage, err := rc.infoSupplier.GetCpuUsage()
+	cpuUsage, err := rc.infoSupplier.GetCpuUsage(&SystemInfoContext{Logger: logger})
 	if err != nil {
 		return false, err
 	}
@@ -302,7 +329,6 @@ func (rc *ResourceController) pidDecision() (bool, error) {
 		// Never allow going over the memory target
 		return false, nil
 	}
-	//fmt.Printf("mem: %f, cpu: %f\n", memUsage, cpuUsage)
 	elapsedTime := time.Since(rc.lastRefresh)
 	// This shouldn't be possible with real implementations, but if the elapsed time is 0 the
 	// PID controller can produce NaNs.
@@ -326,27 +352,54 @@ func (rc *ResourceController) pidDecision() (bool, error) {
 }
 
 type psUtilSystemInfoSupplier struct {
-	mu           sync.Mutex
+	logger      log.Logger
+	mu          sync.Mutex
+	lastRefresh time.Time
+
 	lastMemStat  *mem.VirtualMemoryStat
 	lastCpuUsage float64
-	lastRefresh  time.Time
+
+	stopTryingToGetCGroupInfo bool
+	cGroupInfo                cGroupInfo
 }
 
-func (p *psUtilSystemInfoSupplier) GetMemoryUsage() (float64, error) {
-	if err := p.maybeRefresh(); err != nil {
+type cGroupInfo interface {
+	// Update requests an update of the cgroup stats. This is a no-op if not in a cgroup. Returns
+	// true if cgroup stats should continue to be updated, false if not in a cgroup or the returned
+	// error is considered unrecoverable.
+	Update() (bool, error)
+	// GetLastMemUsage returns last known memory usage as a fraction of the cgroup limit. 0 if not
+	// in a cgroup or limit is not set.
+	GetLastMemUsage() float64
+	// GetLastCPUUsage returns last known CPU usage as a fraction of the cgroup limit. 0 if not in a
+	// cgroup or limit is not set.
+	GetLastCPUUsage() float64
+}
+
+func (p *psUtilSystemInfoSupplier) GetMemoryUsage(infoContext *SystemInfoContext) (float64, error) {
+	if err := p.maybeRefresh(infoContext); err != nil {
 		return 0, err
+	}
+	lastCGroupMem := p.cGroupInfo.GetLastMemUsage()
+	if lastCGroupMem != 0 {
+		return lastCGroupMem, nil
 	}
 	return p.lastMemStat.UsedPercent / 100, nil
 }
 
-func (p *psUtilSystemInfoSupplier) GetCpuUsage() (float64, error) {
-	if err := p.maybeRefresh(); err != nil {
+func (p *psUtilSystemInfoSupplier) GetCpuUsage(infoContext *SystemInfoContext) (float64, error) {
+	if err := p.maybeRefresh(infoContext); err != nil {
 		return 0, err
+	}
+
+	lastCGroupCPU := p.cGroupInfo.GetLastCPUUsage()
+	if lastCGroupCPU != 0 {
+		return lastCGroupCPU, nil
 	}
 	return p.lastCpuUsage / 100, nil
 }
 
-func (p *psUtilSystemInfoSupplier) maybeRefresh() error {
+func (p *psUtilSystemInfoSupplier) maybeRefresh(infoContext *SystemInfoContext) error {
 	if time.Since(p.lastRefresh) < 100*time.Millisecond {
 		return nil
 	}
@@ -360,16 +413,24 @@ func (p *psUtilSystemInfoSupplier) maybeRefresh() error {
 	defer cancelFn()
 	memStat, err := mem.VirtualMemoryWithContext(ctx)
 	if err != nil {
-		println("Refresh error: ", err)
 		return err
 	}
 	cpuUsage, err := cpu.PercentWithContext(ctx, 0, false)
 	if err != nil {
-		println("Refresh error: ", err)
 		return err
 	}
+
 	p.lastMemStat = memStat
 	p.lastCpuUsage = cpuUsage[0]
+
+	if runtime.GOOS == "linux" && !p.stopTryingToGetCGroupInfo {
+		continueUpdates, err := p.cGroupInfo.Update()
+		if err != nil {
+			infoContext.Logger.Warn("Failed to get cgroup stats", "error", err)
+		}
+		p.stopTryingToGetCGroupInfo = !continueUpdates
+	}
+
 	p.lastRefresh = time.Now()
 	return nil
 }
