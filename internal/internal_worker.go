@@ -215,6 +215,9 @@ type (
 
 		MaxHeartbeatThrottleInterval time.Duration
 
+		// The timeout for polling tasks
+		PollTaskTimeout time.Duration
+
 		// Pointer to the shared worker cache
 		cache *WorkerCache
 
@@ -266,6 +269,9 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 				NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize,
 				NumNexusSlots:         defaultMaxConcurrentTaskExecutionSize,
 			})
+	}
+	if params.PollTaskTimeout.Seconds() == 0 {
+		params.PollTaskTimeout = defaultPollTaskTimeOutSeconds * time.Second
 	}
 }
 
@@ -1681,6 +1687,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		DeadlockDetectionTimeout:              options.DeadlockDetectionTimeout,
 		DefaultHeartbeatThrottleInterval:      options.DefaultHeartbeatThrottleInterval,
 		MaxHeartbeatThrottleInterval:          options.MaxHeartbeatThrottleInterval,
+		PollTaskTimeout:                       options.PollTaskTimeout,
 		cache:                                 cache,
 		eagerActivityExecutor: newEagerActivityExecutor(eagerActivityExecutorOptions{
 			disabled:      options.DisableEagerActivities,
@@ -1922,6 +1929,9 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 			NumLocalActivitySlots: maxConcurrentLA,
 			NumNexusSlots:         maxConcurrentNexus})
 
+	}
+	if options.PollTaskTimeout.Seconds() == 0 {
+		options.PollTaskTimeout = defaultPollTaskTimeOutSeconds * time.Second
 	}
 }
 
