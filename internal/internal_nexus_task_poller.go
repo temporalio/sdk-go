@@ -63,6 +63,7 @@ func newNexusTaskPoller(
 			workerBuildID:        params.getBuildID(),
 			useBuildIDVersioning: params.UseBuildIDForVersioning,
 			capabilities:         params.capabilities,
+			pollTaskTimeout:      params.PollTaskTimeout,
 		},
 		taskHandler:     taskHandler,
 		service:         service,
