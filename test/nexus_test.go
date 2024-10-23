@@ -194,6 +194,9 @@ var syncOp = temporalnexus.NewSyncOperation("sync-op", func(ctx context.Context,
 		return "", temporal.NewApplicationErrorWithOptions("fake app error for test", "FakeTestError", temporal.ApplicationErrorOptions{
 			NonRetryable: true,
 		})
+	case "timeout":
+		<-ctx.Done()
+		return "", ctx.Err()
 	case "panic":
 		panic("panic requested")
 	}
@@ -348,6 +351,20 @@ func TestNexusSyncOperation(t *testing.T) {
 			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
 			tc.requireFailureCounter(t, service.Name, syncOp.Name(), "handler_error_INTERNAL")
+		}, time.Second*3, time.Millisecond*100)
+	})
+
+	t.Run("timeout", func(t *testing.T) {
+		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "timeout", nexus.ExecuteOperationOptions{
+			// Force shorter timeout to speed up the test and get a response back.
+			Header: nexus.Header{nexus.HeaderRequestTimeout: "300ms"},
+		})
+		var unexpectedResponseErr *nexus.UnexpectedResponseError
+		require.ErrorAs(t, err, &unexpectedResponseErr)
+		require.Equal(t, nexus.StatusDownstreamTimeout, unexpectedResponseErr.Response.StatusCode)
+
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireFailureCounter(t, service.Name, syncOp.Name(), "timeout")
 		}, time.Second*3, time.Millisecond*100)
 	})
 }
