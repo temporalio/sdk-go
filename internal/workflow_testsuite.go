@@ -626,7 +626,9 @@ func (e *TestWorkflowEnvironment) OnNexusOperation(
 	case nexus.RegisterableOperation:
 		op = otp
 		if s.Operation(op.Name()) == nil {
-			s.Register(op)
+			if err := s.Register(op); err != nil {
+				panic(fmt.Sprintf("failed to register operation %q: %v", op.Name(), err))
+			}
 		}
 	case string:
 		op = s.Operation(otp)
@@ -641,8 +643,7 @@ func (e *TestWorkflowEnvironment) OnNexusOperation(
 		panic("operation must be nexus.RegisterableOperation or string")
 	}
 
-	var call *mock.Call
-	call = e.nexusMock.On(s.Name, op.Name(), input, options)
+	call := e.nexusMock.On(s.Name, op.Name(), input, options)
 	return e.wrapNexusOperationCall(call)
 }
 
