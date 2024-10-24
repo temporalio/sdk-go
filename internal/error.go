@@ -27,6 +27,7 @@ package internal
 import (
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"strings"
 	"time"
@@ -576,6 +577,10 @@ func (e *ApplicationError) Message() string {
 	return e.msg
 }
 
+func (e *ApplicationError) Format(s fmt.State, verb rune) {
+	formatError(e, s, verb, e.Unwrap())
+}
+
 // Type returns error type represented as string.
 // This type can be passed explicitly to ApplicationError constructor.
 // Also any other Go error is converted to ApplicationError and type is set automatically using reflection.
@@ -637,6 +642,10 @@ func (e *TimeoutError) TimeoutType() enumspb.TimeoutType {
 	return e.timeoutType
 }
 
+func (e *TimeoutError) Format(s fmt.State, verb rune) {
+	formatError(e, s, verb, e.Unwrap())
+}
+
 // HasLastHeartbeatDetails return if this error has strong typed detail data.
 func (e *TimeoutError) HasLastHeartbeatDetails() bool {
 	return e.lastHeartbeatDetails != nil && e.lastHeartbeatDetails.HasValues()
@@ -694,6 +703,10 @@ func (e *PanicError) StackTrace() string {
 	return e.stackTrace
 }
 
+func (e *PanicError) Format(s fmt.State, verb rune) {
+	formatError(e, s, verb, e.StackTrace())
+}
+
 // Error from error interface
 func (e *workflowPanicError) Error() string {
 	return fmt.Sprintf("%v", e.value)
@@ -702,6 +715,10 @@ func (e *workflowPanicError) Error() string {
 // StackTrace return stack trace of the panic
 func (e *workflowPanicError) StackTrace() string {
 	return e.stackTrace
+}
+
+func (e *workflowPanicError) Format(s fmt.State, verb rune) {
+	formatError(e, s, verb, e.StackTrace())
 }
 
 // Error from error interface
@@ -757,6 +774,10 @@ func (e *ServerError) Message() string {
 
 func (e *ServerError) Unwrap() error {
 	return e.cause
+}
+
+func (e *ServerError) Format(s fmt.State, verb rune) {
+	formatError(e, s, verb, e.Unwrap())
 }
 
 func (e *ActivityError) Error() string {
@@ -815,6 +836,10 @@ func (e *ChildWorkflowExecutionError) Error() string {
 	return msg
 }
 
+func (e *ChildWorkflowExecutionError) Format(s fmt.State, verb rune) {
+	formatError(e, s, verb, e.Unwrap())
+}
+
 func (e *ChildWorkflowExecutionError) message() string {
 	return "child workflow execution error"
 }
@@ -871,6 +896,24 @@ func (e *WorkflowExecutionError) Error() string {
 
 func (e *WorkflowExecutionError) Unwrap() error {
 	return e.cause
+}
+
+func formatError(e error, s fmt.State, verb rune, verboseValue any) {
+	switch verb {
+	case 'v':
+		if s.Flag('+') {
+			fmt.Fprintf(s, "%+v\n", verboseValue)
+			io.WriteString(s, e.Error())
+			return
+		}
+		fallthrough
+	case 's', 'q':
+		io.WriteString(s, e.Error())
+	}
+}
+
+func (e *WorkflowExecutionError) Format(s fmt.State, verb rune) {
+	formatError(e, s, verb, e.Unwrap())
 }
 
 func (e *ActivityNotRegisteredError) Error() string {
