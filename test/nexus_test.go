@@ -364,6 +364,9 @@ func TestNexusSyncOperation(t *testing.T) {
 		require.Equal(t, nexus.StatusDownstreamTimeout, unexpectedResponseErr.Response.StatusCode)
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			// NOTE metrics.NexusTaskEndToEndLatency isn't recorded on timeouts.
+			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
+			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
 			tc.requireFailureCounter(t, service.Name, syncOp.Name(), "timeout")
 		}, time.Second*3, time.Millisecond*100)
 	})
