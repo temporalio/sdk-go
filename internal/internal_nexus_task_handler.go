@@ -478,7 +478,7 @@ func convertServiceError(err error) error {
 	case codes.Unimplemented:
 		return nexus.HandlerErrorf(nexus.HandlerErrorTypeNotImplemented, errMessage)
 	case codes.DeadlineExceeded:
-		return nexus.HandlerErrorf(nexus.HandlerErrorTypeDownstreamTimeout, errMessage)
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeUpstreamTimeout, errMessage)
 	}
 
 	return err
