@@ -551,6 +551,191 @@ func TestBlockingSelect(t *testing.T) {
 	require.EqualValues(t, expected, history)
 }
 
+func TestSelectBlockingDefault(t *testing.T) {
+	// manually create a dispatcher to ensure sdkFlags are not set
+	var history []string
+	env := &workflowEnvironmentImpl{
+		sdkFlags:       &sdkFlags{},
+		commandsHelper: newCommandsHelper(),
+		dataConverter:  converter.GetDefaultDataConverter(),
+		workflowInfo: &WorkflowInfo{
+			Namespace:     "namespace:" + t.Name(),
+			TaskQueueName: "taskqueue:" + t.Name(),
+		},
+	}
+	interceptor, ctx, err := newWorkflowContext(env, nil)
+	require.NoError(t, err, "newWorkflowContext failed")
+	d, _ := newDispatcher(ctx, interceptor, func(ctx Context) {
+		c1 := NewChannel(ctx)
+		c2 := NewChannel(ctx)
+
+		Go(ctx, func(ctx Context) {
+			history = append(history, "add-one")
+			c1.Send(ctx, "one")
+			history = append(history, "add-one-done")
+
+		})
+
+		Go(ctx, func(ctx Context) {
+			history = append(history, "add-two")
+			c2.Send(ctx, "two")
+			history = append(history, "add-two-done")
+		})
+
+		selector := NewSelector(ctx)
+		var v string
+		selector.
+			AddReceive(c1, func(c ReceiveChannel, more bool) {
+				c.Receive(ctx, &v)
+				history = append(history, fmt.Sprintf("c1-%v", v))
+			}).
+			AddDefault(func() {
+				c2.Receive(ctx, &v)
+				history = append(history, fmt.Sprintf("c2-%v", v))
+			})
+		history = append(history, "select1")
+		require.False(t, selector.HasPending())
+		selector.Select(ctx)
+
+		// Default behavior this signal is lost
+		require.True(t, c1.Len() == 0 && v == "two")
+
+		history = append(history, "select2")
+		require.False(t, selector.HasPending())
+		history = append(history, "done")
+	}, func() bool { return false })
+	defer d.Close()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+	require.True(t, d.IsDone())
+
+	expected := []string{
+		"select1",
+		"add-one",
+		"add-one-done",
+		"add-two",
+		"add-two-done",
+		"c2-two",
+		"select2",
+		"done",
+	}
+	require.EqualValues(t, expected, history)
+}
+
+func TestSelectBlockingDefaultWithFlag(t *testing.T) {
+	// sdkFlags are set by default for tests
+	var history []string
+	d := createNewDispatcher(func(ctx Context) {
+		c1 := NewChannel(ctx)
+		c2 := NewChannel(ctx)
+
+		Go(ctx, func(ctx Context) {
+			history = append(history, "add-one")
+			c1.Send(ctx, "one")
+			history = append(history, "add-one-done")
+
+		})
+
+		Go(ctx, func(ctx Context) {
+			history = append(history, "add-two")
+			c2.Send(ctx, "two")
+			history = append(history, "add-two-done")
+		})
+
+		selector := NewSelector(ctx)
+		var v string
+		selector.
+			AddReceive(c1, func(c ReceiveChannel, more bool) {
+				c.Receive(ctx, &v)
+				history = append(history, fmt.Sprintf("c1-%v", v))
+			}).
+			AddDefault(func() {
+				c2.Receive(ctx, &v)
+				history = append(history, fmt.Sprintf("c2-%v", v))
+			})
+		history = append(history, "select1")
+		require.False(t, selector.HasPending())
+		selector.Select(ctx)
+
+		// Signal should not be lost
+		require.False(t, c1.Len() == 0 && v == "two")
+
+		history = append(history, "select2")
+		require.True(t, selector.HasPending())
+		selector.Select(ctx)
+		require.False(t, selector.HasPending())
+		history = append(history, "done")
+	})
+	defer d.Close()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+	require.True(t, d.IsDone())
+
+	expected := []string{
+		"select1",
+		"add-one",
+		"add-one-done",
+		"add-two",
+		"add-two-done",
+		"c2-two",
+		"select2",
+		"c1-one",
+		"done",
+	}
+	require.EqualValues(t, expected, history)
+}
+
+func TestSelectBlockingFuture(t *testing.T) {
+	var history []string
+	d := createNewDispatcher(func(ctx Context) {
+		// TODO
+		c1 := NewChannel(ctx)
+		selector := NewSelector(ctx)
+		var v string
+		selector.AddReceive(c1, func(c ReceiveChannel, more bool) {
+			c.Receive(ctx, &v)
+			history = append(history, fmt.Sprintf("c1-%v", v))
+		}).AddFuture(NewTimer(ctx, time.Second), func(f Future) {
+			f.Get(ctx, nil)
+			history = append(history, "future")
+		})
+
+		history = append(history, "select1")
+		require.False(t, selector.HasPending())
+		selector.Select(ctx)
+
+		// Signal should not be lost
+		require.False(t, c1.Len() == 0 && v == "two")
+
+		history = append(history, "select2")
+		require.True(t, selector.HasPending())
+		selector.Select(ctx)
+		require.False(t, selector.HasPending())
+		history = append(history, "done")
+	})
+	defer d.Close()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+	require.True(t, d.IsDone())
+
+	expected := []string{
+		// TODO
+	}
+	require.EqualValues(t, expected, history)
+}
+
+func TestSelectBlockingSend(t *testing.T) {
+	var history []string
+	d := createNewDispatcher(func(ctx Context) {
+		// TODO
+	})
+	defer d.Close()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+	require.True(t, d.IsDone())
+
+	expected := []string{
+		// TODO
+	}
+	require.EqualValues(t, expected, history)
+}
+
 func TestBlockingSelectAsyncSend(t *testing.T) {
 	var history []string
 	d := createNewDispatcher(func(ctx Context) {

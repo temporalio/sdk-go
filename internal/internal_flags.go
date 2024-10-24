@@ -47,7 +47,10 @@ const (
 	// SDKPriorityUpdateHandling will cause update request to be handled before the main workflow method.
 	// It will also cause the SDK to immediately handle updates when a handler is registered.
 	SDKPriorityUpdateHandling = 4
-	SDKFlagUnknown            = math.MaxUint32
+	// SDKFlagBlockedSelectorSignalReceive will cause a signal to not be lost
+	// when the Default path is blocked.
+	SDKFlagBlockedSelectorSignalReceive = 5
+	SDKFlagUnknown                      = math.MaxUint32
 )
 
 func sdkFlagFromUint(value uint32) sdkFlag {
@@ -62,6 +65,8 @@ func sdkFlagFromUint(value uint32) sdkFlag {
 		return SDKFlagProtocolMessageCommand
 	case uint32(SDKPriorityUpdateHandling):
 		return SDKPriorityUpdateHandling
+	case uint32(SDKFlagBlockedSelectorSignalReceive):
+		return SDKFlagBlockedSelectorSignalReceive
 	default:
 		return SDKFlagUnknown
 	}

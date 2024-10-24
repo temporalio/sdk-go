@@ -39,6 +39,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
+	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
@@ -4239,4 +4240,54 @@ func (s *WorkflowTestSuiteUnitTest) Test_SameWorkflowAndActivityNames() {
 
 	s.Require().True(env.IsWorkflowCompleted())
 	s.Require().NoError(env.GetWorkflowError())
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_SignalLoss() {
+	workflowFn := func(ctx Context) error {
+		ch1 := GetSignalChannel(ctx, "test-signal")
+		ch2 := GetSignalChannel(ctx, "test-signal-2")
+		selector := NewSelector(ctx)
+		var v string
+		selector.AddReceive(ch1, func(c ReceiveChannel, more bool) {
+			c.Receive(ctx, &v)
+			fmt.Println("received signal from ch1")
+		})
+		selector.AddDefault(func() {
+			ch2.Receive(ctx, &v)
+			fmt.Println("received signal from ch2")
+		})
+		selector.Select(ctx)
+		fmt.Println("ch1.Len()", ch1.Len(), "s", v)
+		// default behavior is this signal is lost
+		s.Require().True(ch1.Len() == 0 && "s2" == v)
+
+		return nil
+	}
+
+	// send a signal 5 seconds after workflow started
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterDelayedCallback(func() {
+		fmt.Println("sending signal to 1")
+		env.SignalWorkflow("test-signal", "s1")
+		fmt.Println("sending signal to 2")
+		env.SignalWorkflow("test-signal-2", "s2")
+	}, 5*time.Second)
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+}
+
+// Not sure we need this?
+func (s *WorkflowTestSuiteUnitTest) Test_SDKFlagBlockedSelectorSignalReceive() {
+	flags := newSDKFlags(&workflowservice.GetSystemInfoResponse_Capabilities{})
+	flags.set(SDKFlagBlockedSelectorSignalReceive)
+	fmt.Println("flags", flags)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_SelectBlockingFuture() {
+	// TODO
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_SelectBlockingSend() {
+	// TODO
 }
