@@ -181,7 +181,6 @@ type (
 		runningWorkflows       map[string]*testWorkflowHandle
 		runningNexusOperations map[int64]*testNexusOperationHandle
 		nexusAsyncOpHandle     map[string]*testNexusAsyncOperationHandle
-		nexusOperationID2SeqID map[string]int64
 
 		runningCount int
 
@@ -274,7 +273,6 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 			runningWorkflows:          make(map[string]*testWorkflowHandle),
 			runningNexusOperations:    make(map[int64]*testNexusOperationHandle),
 			nexusAsyncOpHandle:        make(map[string]*testNexusAsyncOperationHandle),
-			nexusOperationID2SeqID:    make(map[string]int64),
 			callbackChannel:           make(chan testCallbackHandle, 1000),
 			testTimeout:               3 * time.Second,
 			expectedWorkflowMockCalls: make(map[string]struct{}),
@@ -2479,7 +2477,6 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 				if handle.cancelRequested {
 					handle.cancel()
 				} else {
-					env.setNexusOperationID2SeqID(handle)
 					completionHandle := env.getNexusAsyncOperationCompletionHandle(
 						handle.params.client.Service(),
 						handle.params.operation,
@@ -2625,27 +2622,6 @@ func (env *testWorkflowEnvironmentImpl) resolveNexusOperation(seq int64, result 
 	}, true)
 }
 
-func (env *testWorkflowEnvironmentImpl) getNexusOperationSeqID(
-	service string,
-	operation string,
-	operationID string,
-) (int64, bool) {
-	uniqueOpID := env.makeUniqueNexusOperationID(service, operation, operationID)
-	seqID, ok := env.nexusOperationID2SeqID[uniqueOpID]
-	return seqID, ok
-}
-
-func (env *testWorkflowEnvironmentImpl) setNexusOperationID2SeqID(
-	handle *testNexusOperationHandle,
-) {
-	uniqueOpID := env.makeUniqueNexusOperationID(
-		handle.params.client.Service(),
-		handle.params.operation,
-		handle.operationID,
-	)
-	env.nexusOperationID2SeqID[uniqueOpID] = handle.seq
-}
-
 func (env *testWorkflowEnvironmentImpl) getNexusOperationHandle(
 	seqID int64,
 ) (*testNexusOperationHandle, bool) {
@@ -2661,16 +2637,6 @@ func (env *testWorkflowEnvironmentImpl) setNexusOperationHandle(
 }
 
 func (env *testWorkflowEnvironmentImpl) deleteNexusOperationHandle(seqID int64) {
-	handle, ok := env.getNexusOperationHandle(seqID)
-	if !ok {
-		return
-	}
-	opID := env.makeUniqueNexusOperationID(
-		handle.params.client.Service(),
-		handle.params.operation,
-		handle.operationID,
-	)
-	delete(env.nexusOperationID2SeqID, opID)
 	delete(env.runningNexusOperations, seqID)
 }
 
@@ -2680,10 +2646,6 @@ func (env *testWorkflowEnvironmentImpl) makeUniqueNexusOperationID(
 	operationID string,
 ) string {
 	return fmt.Sprintf("%s_%s_%s", service, operation, operationID)
-}
-
-func (env *testWorkflowEnvironmentImpl) makeUniqueNexusSeqID(seqID int64, runID string) string {
-	return fmt.Sprintf("%s_%d", runID, seqID)
 }
 
 func (env *testWorkflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler) {
@@ -3228,7 +3190,7 @@ func (r *testNexusHandler) StartOperation(
 	inputType := fn.Type.In(2)
 	ptr := reflect.New(inputType)
 	if err := input.Consume(ptr.Interface()); err != nil {
-		panic(fmt.Sprintf("mock of ExecuteNexusOperation failed to deserialize input"))
+		panic("mock of ExecuteNexusOperation failed to deserialize input")
 	}
 
 	// rebuild the input as *nexus.LazyValue
