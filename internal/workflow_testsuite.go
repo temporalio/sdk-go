@@ -546,12 +546,15 @@ func (e *TestWorkflowEnvironment) OnUpsertMemo(attributes interface{}) *MockCall
 
 // OnNexusOperation setup a mock call for Nexus operation.
 // Parameter service must be Nexus service (*nexus.Service) or service name (string).
-// Parameter operation must be Nexus operation (nexus.RegisterableOperation) or operation name (string).
-// You must call Return() with appropriate parameters on the returned *MockCallWrapper instance. The
-// supplied parameters to Return() call must be an instance of nexus.HandlerStartOperationResult[T]
-// and an error. If your mock returns nexus.HandlerStartOperationResultAsync, you need to register the
+// Parameter operation must be Nexus operation (nexus.RegisterableOperation), Nexus operation
+// reference (nexus.OperationReference), or operation name (string).
+// You must call Return() with appropriate parameters on the returned *MockCallWrapper instance.
+// The first parameter of Return() is the result of type nexus.HandlerStartOperationResult[T], ie.,
+// it must be *nexus.HandlerStartOperationResultSync[T] or *nexus.HandlerStartOperationResultAsync.
+// The second parameter of Return() is an error.
+// If your mock returns *nexus.HandlerStartOperationResultAsync, then you need to register the
 // completion of the async operation by calling RegisterNexusAsyncOperationCompletion.
-// Example: assume the Nexus operation you want to mock is as follows:
+// Example: assume the Nexus operation input/output types are as follows:
 //
 //	type (
 //		HelloInput struct {
@@ -562,35 +565,22 @@ func (e *TestWorkflowEnvironment) OnUpsertMemo(attributes interface{}) *MockCall
 //		}
 //	)
 //
-//	var HelloOperation = temporalnexus.NewWorkflowRunOperation(
-//		"hello-operation",
-//		HelloHandlerWorkflow,
-//		func(ctx context.Context, input HelloInput, options nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
-//			return client.StartWorkflowOptions{}, nil
-//		},
-//	)
-//
-//	func HelloHandlerWorkflow(_ workflow.Context, input HelloInput) (HelloOutput, error) {
-//		return HelloOutput{Message: "Hello " + input.Message}, nil
-//	}
-//
 // Then, you can mock workflow.NexusClient.ExecuteOperation as follows:
 //
 //	t.OnNexusOperation(
-//		service,
-//		HelloOperation,
+//		"my-service",
+//		nexus.NewOperationReference[HelloInput, HelloOutput]("hello-operation"),
 //		HelloInput{Message: "Temporal"},
-//		mock.Anything,
+//		mock.Anything, // NexusOperationOptions
 //	).Return(
 //		&nexus.HandlerStartOperationResultAsync{
 //			OperationID: "hello-operation-id",
 //		},
 //		nil,
 //	)
-//
 //	t.RegisterNexusAsyncOperationCompletion(
-//		service,
-//		HelloOperation.Name(),
+//		"service-name",
+//		"hello-operation",
 //		"hello-operation-id",
 //		HelloOutput{Message: "Hello Temporal"},
 //		nil,
@@ -612,38 +602,53 @@ func (e *TestWorkflowEnvironment) OnNexusOperation(
 	case string:
 		s = e.impl.registry.nexusServices[stp]
 		if s == nil {
-			panic(fmt.Sprintf(
-				"nexus service %q is not registered with the TestWorkflowEnvironment",
-				service,
-			))
+			s = nexus.NewService(stp)
+			e.RegisterNexusService(s)
 		}
 	default:
 		panic("service must be *nexus.Service or string")
 	}
 
-	var op nexus.RegisterableOperation
+	var opRef testNexusOperationReference
 	switch otp := operation.(type) {
-	case nexus.RegisterableOperation:
-		op = otp
-		if s.Operation(op.Name()) == nil {
-			if err := s.Register(op); err != nil {
-				panic(fmt.Sprintf("failed to register operation %q: %v", op.Name(), err))
-			}
-		}
+	case testNexusOperationReference:
+		// This case covers both nexus.RegisterableOperation and nexus.OperationReference.
+		// All nexus.RegisterableOperation embeds nexus.UnimplementedOperation which
+		// implements nexus.OperationReference.
+		opRef = otp
+		e.impl.registerNexusOperationReference(s.Name, opRef)
 	case string:
-		op = s.Operation(otp)
-		if op == nil {
-			panic(fmt.Sprintf(
-				"nexus operation %q is not registered in service %q with the TestWorkflowEnvironment",
-				operation,
-				service,
-			))
+		if op := s.Operation(otp); op != nil {
+			opRef = op.(testNexusOperationReference)
+			e.impl.registerNexusOperationReference(s.Name, opRef)
+		} else {
+			panic(fmt.Sprintf("operation %q not registered in service %q", otp, s.Name))
 		}
 	default:
-		panic("operation must be nexus.RegisterableOperation or string")
+		panic("operation must be nexus.RegisterableOperation, nexus.OperationReference, or string")
 	}
 
-	call := e.nexusMock.On(s.Name, op.Name(), input, options)
+	if input != mock.Anything {
+		if opRef.InputType() != reflect.TypeOf(input) {
+			panic(fmt.Sprintf(
+				"operation %q expects input type %s, got %T",
+				opRef.Name(),
+				opRef.InputType(),
+				input,
+			))
+		}
+	}
+
+	if options != mock.Anything {
+		if _, ok := options.(NexusOperationOptions); !ok {
+			panic(fmt.Sprintf(
+				"options must be an instance of NexusOperationOptions or mock.Anything, got %T",
+				options,
+			))
+		}
+	}
+
+	call := e.nexusMock.On(s.Name, opRef.Name(), input, options)
 	return e.wrapNexusOperationCall(call)
 }
 
@@ -658,18 +663,17 @@ func (e *TestWorkflowEnvironment) RegisterNexusAsyncOperationCompletion(
 	err error,
 	delay time.Duration,
 ) error {
-	s, ok := e.impl.registry.nexusServices[service]
-	if !ok {
+	if _, ok := e.impl.registry.nexusServices[service]; !ok {
 		panic(fmt.Sprintf(
 			"nexus service %q is not registered with the TestWorkflowEnvironment",
 			service,
 		))
 	}
-	if s.Operation(operation) == nil {
+	if _, ok := e.impl.nexusOperationRefs[service][operation]; !ok {
 		panic(fmt.Sprintf(
-			"nexus operation %q is not registered in service %q with the TestWorkflowEnvironment",
-			operation,
+			"nexus service %q operation %q has not been mocked with the TestWorkflowEnvironment",
 			service,
+			operation,
 		))
 	}
 	return e.impl.RegisterNexusAsyncOperationCompletion(
