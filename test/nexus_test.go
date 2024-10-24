@@ -267,9 +267,10 @@ func TestNexusSyncOperation(t *testing.T) {
 	t.Run("fmt-errorf", func(t *testing.T) {
 		tc.metricsHandler.Clear()
 		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "fmt-errorf", nexus.ExecuteOperationOptions{})
-		var unexpectedResponseErr *nexus.UnexpectedResponseError
-		require.ErrorAs(t, err, &unexpectedResponseErr)
-		require.Contains(t, unexpectedResponseErr.Message, `"500 Internal Server Error": arbitrary error message`)
+		var handlerErr *nexus.HandlerError
+		require.ErrorAs(t, err, &handlerErr)
+		require.Equal(t, nexus.HandlerErrorTypeInternal, handlerErr.Type)
+		require.Contains(t, handlerErr.Failure.Message, "arbitrary error message")
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
@@ -281,10 +282,10 @@ func TestNexusSyncOperation(t *testing.T) {
 
 	t.Run("handlererror", func(t *testing.T) {
 		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "handlererror", nexus.ExecuteOperationOptions{})
-		var unexpectedResponseErr *nexus.UnexpectedResponseError
-		require.ErrorAs(t, err, &unexpectedResponseErr)
-		require.Equal(t, http.StatusBadRequest, unexpectedResponseErr.Response.StatusCode)
-		require.Contains(t, unexpectedResponseErr.Message, `"400 Bad Request": handlererror`)
+		var handlerErr *nexus.HandlerError
+		require.ErrorAs(t, err, &handlerErr)
+		require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
+		require.Contains(t, handlerErr.Failure.Message, "handlererror")
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
@@ -296,10 +297,10 @@ func TestNexusSyncOperation(t *testing.T) {
 
 	t.Run("already-started", func(t *testing.T) {
 		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "already-started", nexus.ExecuteOperationOptions{})
-		var unexpectedResponseErr *nexus.UnexpectedResponseError
-		require.ErrorAs(t, err, &unexpectedResponseErr)
-		require.Equal(t, http.StatusBadRequest, unexpectedResponseErr.Response.StatusCode)
-		require.Contains(t, unexpectedResponseErr.Message, `"400 Bad Request": faking workflow already started`)
+		var handlerErr *nexus.HandlerError
+		require.ErrorAs(t, err, &handlerErr)
+		require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
+		require.Contains(t, handlerErr.Failure.Message, "faking workflow already started")
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
@@ -311,10 +312,10 @@ func TestNexusSyncOperation(t *testing.T) {
 
 	t.Run("retryable-application-error", func(t *testing.T) {
 		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "retryable-application-error", nexus.ExecuteOperationOptions{})
-		var unexpectedResponseErr *nexus.UnexpectedResponseError
-		require.ErrorAs(t, err, &unexpectedResponseErr)
-		require.Equal(t, http.StatusInternalServerError, unexpectedResponseErr.Response.StatusCode)
-		require.Contains(t, unexpectedResponseErr.Message, `"500 Internal Server Error": fake app error for test`)
+		var handlerErr *nexus.HandlerError
+		require.ErrorAs(t, err, &handlerErr)
+		require.Equal(t, nexus.HandlerErrorTypeInternal, handlerErr.Type)
+		require.Contains(t, handlerErr.Failure.Message, "fake app error for test")
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
@@ -326,10 +327,10 @@ func TestNexusSyncOperation(t *testing.T) {
 
 	t.Run("non-retryable-application-error", func(t *testing.T) {
 		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "non-retryable-application-error", nexus.ExecuteOperationOptions{})
-		var unexpectedResponseErr *nexus.UnexpectedResponseError
-		require.ErrorAs(t, err, &unexpectedResponseErr)
-		require.Equal(t, http.StatusBadRequest, unexpectedResponseErr.Response.StatusCode)
-		require.Contains(t, unexpectedResponseErr.Message, `"400 Bad Request": fake app error for test`)
+		var handlerErr *nexus.HandlerError
+		require.ErrorAs(t, err, &handlerErr)
+		require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
+		require.Contains(t, handlerErr.Failure.Message, "fake app error for test")
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
@@ -341,10 +342,10 @@ func TestNexusSyncOperation(t *testing.T) {
 
 	t.Run("panic", func(t *testing.T) {
 		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "panic", nexus.ExecuteOperationOptions{})
-		var unexpectedResponseErr *nexus.UnexpectedResponseError
-		require.ErrorAs(t, err, &unexpectedResponseErr)
-		require.Equal(t, 500, unexpectedResponseErr.Response.StatusCode)
-		require.Contains(t, unexpectedResponseErr.Message, "panic: panic requested")
+		var handlerErr *nexus.HandlerError
+		require.ErrorAs(t, err, &handlerErr)
+		require.Equal(t, nexus.HandlerErrorTypeInternal, handlerErr.Type)
+		require.Contains(t, handlerErr.Failure.Message, "panic: panic requested")
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
