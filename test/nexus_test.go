@@ -1210,15 +1210,17 @@ func TestWorkflowTestSuite_NexusSyncOperation_ClientMethods_Panic(t *testing.T) 
 }
 
 func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
+	serviceName := "test"
+	dummyOpName := "dummy-operation"
 	dummyOp := nexus.NewSyncOperation(
-		"dummy-operation",
+		dummyOpName,
 		func(ctx context.Context, name string, opts nexus.StartOperationOptions) (string, error) {
 			return "Hello " + name, nil
 		},
 	)
 
 	wf := func(ctx workflow.Context, name string) (string, error) {
-		client := workflow.NewNexusClient("endpoint", "test")
+		client := workflow.NewNexusClient("endpoint", serviceName)
 		fut := client.ExecuteOperation(
 			ctx,
 			dummyOp,
@@ -1238,7 +1240,7 @@ func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
 		return res, nil
 	}
 
-	service := nexus.NewService("test")
+	service := nexus.NewService(serviceName)
 	service.Register(dummyOp)
 
 	t.Run("mock result sync", func(t *testing.T) {
@@ -1291,6 +1293,28 @@ func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
 			0,
 		)
 
+		env.ExecuteWorkflow(wf, "Temporal")
+		require.True(t, env.IsWorkflowCompleted())
+		require.NoError(t, env.GetWorkflowError())
+		var res string
+		require.NoError(t, env.GetWorkflowResult(&res))
+		require.Equal(t, "fake result", res)
+	})
+
+	t.Run("mock operation reference", func(t *testing.T) {
+		suite := testsuite.WorkflowTestSuite{}
+		env := suite.NewTestWorkflowEnvironment()
+		env.OnNexusOperation(
+			serviceName,
+			nexus.NewOperationReference[string, string](dummyOpName),
+			"Temporal",
+			mock.Anything,
+		).Return(
+			&nexus.HandlerStartOperationResultSync[string]{
+				Value: "fake result",
+			},
+			nil,
+		)
 		env.ExecuteWorkflow(wf, "Temporal")
 		require.True(t, env.IsWorkflowCompleted())
 		require.NoError(t, env.GetWorkflowError())
