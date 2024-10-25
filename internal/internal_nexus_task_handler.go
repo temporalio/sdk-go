@@ -467,11 +467,11 @@ func convertServiceError(err error) error {
 	errMessage := err.Error()
 
 	switch st.Code() {
-	case codes.AlreadyExists, codes.Canceled, codes.InvalidArgument, codes.FailedPrecondition, codes.OutOfRange:
+	case codes.AlreadyExists, codes.InvalidArgument, codes.FailedPrecondition, codes.OutOfRange:
 		return nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, errMessage)
 	case codes.Aborted, codes.Unavailable:
 		return nexus.HandlerErrorf(nexus.HandlerErrorTypeUnavailable, errMessage)
-	case codes.DataLoss, codes.Internal, codes.Unknown, codes.Unauthenticated, codes.PermissionDenied:
+	case codes.Canceled, codes.DataLoss, codes.Internal, codes.Unknown, codes.Unauthenticated, codes.PermissionDenied:
 		// Note that codes.Unauthenticated, codes.PermissionDenied have Nexus error types but we convert to internal
 		// because this is not a client auth error and happens when the handler fails to auth with Temporal and should
 		// be considered retryable.
