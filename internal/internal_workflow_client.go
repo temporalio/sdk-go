@@ -1534,10 +1534,10 @@ type workflowClientInterceptor struct {
 	client *WorkflowClient
 }
 
-func (w *workflowClientInterceptor) ExecuteWorkflow(
+func (w *workflowClientInterceptor) createStartWorkflowRequest(
 	ctx context.Context,
 	in *ClientExecuteWorkflowInput,
-) (WorkflowRun, error) {
+) (*workflowservice.StartWorkflowExecutionRequest, error) {
 	// This is always set before interceptor is invoked
 	workflowID := in.Options.ID
 	if workflowID == "" {
@@ -1608,13 +1608,26 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		startRequest.RequestId = uuid.New()
 	}
 
+	if in.Options.StartDelay != 0 {
+		startRequest.WorkflowStartDelay = durationpb.New(in.Options.StartDelay)
+	}
+
+	return startRequest, nil
+}
+
+func (w *workflowClientInterceptor) ExecuteWorkflow(
+	ctx context.Context,
+	in *ClientExecuteWorkflowInput,
+) (WorkflowRun, error) {
+	startRequest, err := w.createStartWorkflowRequest(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	workflowID := startRequest.WorkflowId
+
 	var eagerExecutor *eagerWorkflowExecutor
 	if in.Options.EnableEagerStart && w.client.capabilities.GetEagerWorkflowStart() && w.client.eagerDispatcher != nil {
 		eagerExecutor = w.client.eagerDispatcher.applyToRequest(startRequest)
-	}
-
-	if in.Options.StartDelay != 0 {
-		startRequest.WorkflowStartDelay = durationpb.New(in.Options.StartDelay)
 	}
 
 	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(
