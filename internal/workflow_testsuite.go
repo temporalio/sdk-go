@@ -596,14 +596,14 @@ func (e *TestWorkflowEnvironment) OnNexusOperation(
 	switch stp := service.(type) {
 	case *nexus.Service:
 		s = stp
-		if e.impl.registry.nexusServices[s.Name] == nil {
+		if e.impl.registry.getNexusService(s.Name) == nil {
 			e.impl.RegisterNexusService(s)
 		}
 	case string:
-		s = e.impl.registry.nexusServices[stp]
+		s = e.impl.registry.getNexusService(stp)
 		if s == nil {
 			s = nexus.NewService(stp)
-			e.RegisterNexusService(s)
+			e.impl.RegisterNexusService(s)
 		}
 	default:
 		panic("service must be *nexus.Service or string")
@@ -616,17 +616,21 @@ func (e *TestWorkflowEnvironment) OnNexusOperation(
 		// All nexus.RegisterableOperation embeds nexus.UnimplementedOperation which
 		// implements nexus.OperationReference.
 		opRef = otp
-		e.impl.registerNexusOperationReference(s.Name, opRef)
+		if s.Operation(opRef.Name()) == nil {
+			if err := s.Register(newTestNexusOperation(opRef)); err != nil {
+				panic(fmt.Sprintf("cannot register operation %q: %v", opRef.Name(), err.Error()))
+			}
+		}
 	case string:
 		if op := s.Operation(otp); op != nil {
 			opRef = op.(testNexusOperationReference)
-			e.impl.registerNexusOperationReference(s.Name, opRef)
 		} else {
 			panic(fmt.Sprintf("operation %q not registered in service %q", otp, s.Name))
 		}
 	default:
 		panic("operation must be nexus.RegisterableOperation, nexus.OperationReference, or string")
 	}
+	e.impl.registerNexusOperationReference(s.Name, opRef)
 
 	if input != mock.Anything {
 		if opRef.InputType() != reflect.TypeOf(input) {
@@ -663,19 +667,6 @@ func (e *TestWorkflowEnvironment) RegisterNexusAsyncOperationCompletion(
 	err error,
 	delay time.Duration,
 ) error {
-	if _, ok := e.impl.registry.nexusServices[service]; !ok {
-		panic(fmt.Sprintf(
-			"nexus service %q is not registered with the TestWorkflowEnvironment",
-			service,
-		))
-	}
-	if _, ok := e.impl.nexusOperationRefs[service][operation]; !ok {
-		panic(fmt.Sprintf(
-			"nexus service %q operation %q has not been mocked with the TestWorkflowEnvironment",
-			service,
-			operation,
-		))
-	}
 	return e.impl.RegisterNexusAsyncOperationCompletion(
 		service,
 		operation,

@@ -2370,10 +2370,6 @@ func (env *testWorkflowEnvironmentImpl) executeChildWorkflowWithDelay(delayStart
 func (env *testWorkflowEnvironmentImpl) newTestNexusTaskHandler(
 	opHandle *testNexusOperationHandle,
 ) *nexusTaskHandler {
-	if len(env.registry.nexusServices) == 0 {
-		panic(fmt.Errorf("no nexus services registered"))
-	}
-
 	handler, err := newTestNexusHandler(env, opHandle)
 	if err != nil {
 		panic(fmt.Errorf("failed to create nexus handler: %w", err))
@@ -2552,20 +2548,16 @@ func (env *testWorkflowEnvironmentImpl) RegisterNexusAsyncOperationCompletion(
 ) error {
 	opRef := env.nexusOperationRefs[service][operation]
 	if opRef == nil {
-		panic(fmt.Sprintf(
-			"nexus service %q operation %q not mocked",
-			service,
-			operation,
-		))
+		return fmt.Errorf("nexus service %q operation %q not mocked", service, operation)
 	}
 	if reflect.TypeOf(result) != opRef.OutputType() {
-		panic(fmt.Sprintf(
+		return fmt.Errorf(
 			"nexus service %q operation %q expected result type %s, got %T",
 			service,
 			operation,
 			opRef.OutputType(),
 			result,
-		))
+		)
 	}
 
 	var data *commonpb.Payload
@@ -2575,6 +2567,11 @@ func (env *testWorkflowEnvironmentImpl) RegisterNexusAsyncOperationCompletion(
 		if encodeErr != nil {
 			return encodeErr
 		}
+	}
+
+	if err != nil {
+		// The handler workflow error needs to wrapped so it can be passed to the caller correctly.
+		err = NewApplicationError(err.Error(), "", true, err)
 	}
 
 	// Getting the locker to prevent race condition if this function is called while
@@ -3174,15 +3171,13 @@ func newTestNexusHandler(
 	env *testWorkflowEnvironmentImpl,
 	opHandle *testNexusOperationHandle,
 ) (nexus.Handler, error) {
+	nexusServices := env.registry.getRegisteredNexusServices()
+	if len(nexusServices) == 0 {
+		panic(fmt.Errorf("no nexus services registered"))
+	}
+
 	reg := nexus.NewServiceRegistry()
-	for _, service := range env.registry.nexusServices {
-		// register a dummy operation to make sure the service has at least 1 operation
-		_ = service.Register(nexus.NewSyncOperation(
-			"__internal__dummy",
-			func(_ context.Context, _ nexus.NoValue, _ nexus.StartOperationOptions) (nexus.NoValue, error) {
-				return nil, nil
-			},
-		))
+	for _, service := range nexusServices {
 		if err := reg.Register(service); err != nil {
 			return nil, fmt.Errorf("failed to register nexus service '%v': %w", service, err)
 		}
@@ -3205,8 +3200,8 @@ func (r *testNexusHandler) StartOperation(
 	input *nexus.LazyValue,
 	options nexus.StartOperationOptions,
 ) (nexus.HandlerStartOperationResult[any], error) {
-	s, ok := r.env.registry.nexusServices[service]
-	if !ok {
+	s := r.env.registry.getNexusService(service)
+	if s == nil {
 		panic(fmt.Sprintf(
 			"nexus service %q is not registered with the TestWorkflowEnvironment",
 			service,
@@ -3282,7 +3277,7 @@ func (r *testNexusHandler) StartOperation(
 		mockRetLen := len(mockRet)
 		if mockRetLen != 2 {
 			panic(fmt.Sprintf(
-				"mock of ExecuteNexusOperation has incorrect number of returns, expected 2, got %d",
+				"mock of ExecuteNexusOperation has incorrect number of return values, expected 2, got %d",
 				mockRetLen,
 			))
 		}
@@ -3366,13 +3361,44 @@ func (env *testWorkflowEnvironmentImpl) registerNexusOperationReference(
 	service string,
 	opRef testNexusOperationReference,
 ) {
+	if service == "" {
+		panic("tried to register a service with no name")
+	}
+	if opRef.Name() == "" {
+		panic("tried to register an operation with no name")
+	}
 	m := env.nexusOperationRefs[service]
 	if m == nil {
 		m = make(map[string]testNexusOperationReference)
 		env.nexusOperationRefs[service] = m
 	}
-	if opRef.Name() == "" {
-		panic("tried to register an operation with no name")
-	}
 	m[opRef.Name()] = opRef
+}
+
+// testNexusOperation implements nexus.RegisterableOperation and serves as dummy
+// operation that can be created from a testNexusOperationReference, so that
+// mocked Nexus operations can be registered in a Nexus service.
+type testNexusOperation struct {
+	nexus.UnimplementedOperation[any, any]
+	testNexusOperationReference
+}
+
+var _ nexus.RegisterableOperation = (*testNexusOperation)(nil)
+
+func (o *testNexusOperation) Name() string {
+	return o.testNexusOperationReference.Name()
+}
+
+func (o *testNexusOperation) InputType() reflect.Type {
+	return o.testNexusOperationReference.InputType()
+}
+
+func (o *testNexusOperation) OutputType() reflect.Type {
+	return o.testNexusOperationReference.OutputType()
+}
+
+func newTestNexusOperation(opRef testNexusOperationReference) *testNexusOperation {
+	return &testNexusOperation{
+		testNexusOperationReference: opRef,
+	}
 }

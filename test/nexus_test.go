@@ -1284,14 +1284,14 @@ func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
 			},
 			nil,
 		)
-		env.RegisterNexusAsyncOperationCompletion(
+		require.NoError(t, env.RegisterNexusAsyncOperationCompletion(
 			service.Name,
 			dummyOp.Name(),
 			"operation-id",
 			"fake result",
 			nil,
 			0,
-		)
+		))
 
 		env.ExecuteWorkflow(wf, "Temporal")
 		require.True(t, env.IsWorkflowCompleted())
@@ -1323,7 +1323,7 @@ func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
 		require.Equal(t, "fake result", res)
 	})
 
-	t.Run("mock error", func(t *testing.T) {
+	t.Run("mock error operation", func(t *testing.T) {
 		suite := testsuite.WorkflowTestSuite{}
 		env := suite.NewTestWorkflowEnvironment()
 		env.RegisterNexusService(service)
@@ -1335,6 +1335,36 @@ func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
 		env.ExecuteWorkflow(wf, "Temporal")
 		require.True(t, env.IsWorkflowCompleted())
 		require.ErrorContains(t, env.GetWorkflowError(), "workflow operation failed")
+	})
+
+	t.Run("mock error handler", func(t *testing.T) {
+		suite := testsuite.WorkflowTestSuite{}
+		env := suite.NewTestWorkflowEnvironment()
+		env.RegisterNexusService(service)
+		env.OnNexusOperation(service, dummyOp, "Temporal", mock.Anything).Return(
+			&nexus.HandlerStartOperationResultAsync{
+				OperationID: "operation-id",
+			},
+			nil,
+		)
+		require.NoError(t, env.RegisterNexusAsyncOperationCompletion(
+			serviceName,
+			dummyOpName,
+			"operation-id",
+			"",
+			errors.New("workflow handler failed"),
+			1*time.Second,
+		))
+
+		env.ExecuteWorkflow(wf, "Temporal")
+		require.True(t, env.IsWorkflowCompleted())
+		var execErr *temporal.WorkflowExecutionError
+		err := env.GetWorkflowError()
+		require.ErrorAs(t, err, &execErr)
+		var opErr *temporal.NexusOperationError
+		err = execErr.Unwrap()
+		require.ErrorAs(t, err, &opErr)
+		require.ErrorContains(t, opErr, "workflow handler failed")
 	})
 
 	t.Run("mock after ok", func(t *testing.T) {
