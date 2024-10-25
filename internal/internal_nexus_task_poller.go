@@ -158,8 +158,14 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 	// Failure from user handler.
 	// Special case for the start response with operation error.
 	if err != nil {
+		var failureTag string
+		if err == errNexusTaskTimeout {
+			failureTag = "timeout"
+		} else {
+			failureTag = "internal_sdk_error"
+		}
 		metricsHandler.
-			WithTags(metrics.NexusTaskFailureTags("internal_sdk_error")).
+			WithTags(metrics.NexusTaskFailureTags(failureTag)).
 			Counter(metrics.NexusTaskExecutionFailedCounter).
 			Inc(1)
 	} else if failure != nil {

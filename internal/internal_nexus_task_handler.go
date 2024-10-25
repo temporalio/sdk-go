@@ -45,6 +45,11 @@ import (
 	"go.temporal.io/sdk/log"
 )
 
+// errNexusTaskTimeout is returned when the Nexus task handler times out.
+// It is used instead of context.DeadlineExceeded to allow the poller to differentiate between Nexus task handler
+// timeout and other errors.
+var errNexusTaskTimeout = errors.New("nexus task timeout")
+
 func nexusHandlerError(t nexus.HandlerErrorType, message string) *nexuspb.HandlerError {
 	return &nexuspb.HandlerError{
 		ErrorType: string(t),
@@ -211,7 +216,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 		opres, err = h.nexusHandler.StartOperation(ctx, req.GetService(), req.GetOperation(), input, startOptions)
 	}()
 	if ctx.Err() != nil {
-		return nil, nil, ctx.Err()
+		return nil, nil, errNexusTaskTimeout
 	}
 	if err != nil {
 		var unsuccessfulOperationErr *nexus.UnsuccessfulOperationError
@@ -302,7 +307,7 @@ func (h *nexusTaskHandler) handleCancelOperation(ctx context.Context, nctx *Nexu
 		err = h.nexusHandler.CancelOperation(ctx, req.GetService(), req.GetOperation(), req.GetOperationId(), cancelOptions)
 	}()
 	if ctx.Err() != nil {
-		return nil, nil, ctx.Err()
+		return nil, nil, errNexusTaskTimeout
 	}
 	if err != nil {
 		err = convertKnownErrors(err)
@@ -478,7 +483,7 @@ func convertServiceError(err error) error {
 	case codes.Unimplemented:
 		return nexus.HandlerErrorf(nexus.HandlerErrorTypeNotImplemented, errMessage)
 	case codes.DeadlineExceeded:
-		return nexus.HandlerErrorf(nexus.HandlerErrorTypeDownstreamTimeout, errMessage)
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeUpstreamTimeout, errMessage)
 	}
 
 	return err
