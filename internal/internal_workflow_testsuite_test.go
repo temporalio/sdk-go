@@ -39,7 +39,6 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
-	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
@@ -4259,7 +4258,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalLoss() {
 		selector.Select(ctx)
 		fmt.Println("ch1.Len()", ch1.Len(), "s", v)
 		// default behavior is this signal is lost
-		s.Require().True(ch1.Len() == 0 && "s2" == v)
+		s.Require().True(ch1.Len() == 0 && v == "s2")
 
 		return nil
 	}
@@ -4275,19 +4274,4 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalLoss() {
 	env.ExecuteWorkflow(workflowFn)
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
-}
-
-// Not sure we need this?
-func (s *WorkflowTestSuiteUnitTest) Test_SDKFlagBlockedSelectorSignalReceive() {
-	flags := newSDKFlags(&workflowservice.GetSystemInfoResponse_Capabilities{})
-	flags.set(SDKFlagBlockedSelectorSignalReceive)
-	fmt.Println("flags", flags)
-}
-
-func (s *WorkflowTestSuiteUnitTest) Test_SelectBlockingFuture() {
-	// TODO
-}
-
-func (s *WorkflowTestSuiteUnitTest) Test_SelectBlockingSend() {
-	// TODO
 }

@@ -683,59 +683,6 @@ func TestSelectBlockingDefaultWithFlag(t *testing.T) {
 	require.EqualValues(t, expected, history)
 }
 
-func TestSelectBlockingFuture(t *testing.T) {
-	var history []string
-	d := createNewDispatcher(func(ctx Context) {
-		// TODO
-		c1 := NewChannel(ctx)
-		selector := NewSelector(ctx)
-		var v string
-		selector.AddReceive(c1, func(c ReceiveChannel, more bool) {
-			c.Receive(ctx, &v)
-			history = append(history, fmt.Sprintf("c1-%v", v))
-		}).AddFuture(NewTimer(ctx, time.Second), func(f Future) {
-			f.Get(ctx, nil)
-			history = append(history, "future")
-		})
-
-		history = append(history, "select1")
-		require.False(t, selector.HasPending())
-		selector.Select(ctx)
-
-		// Signal should not be lost
-		require.False(t, c1.Len() == 0 && v == "two")
-
-		history = append(history, "select2")
-		require.True(t, selector.HasPending())
-		selector.Select(ctx)
-		require.False(t, selector.HasPending())
-		history = append(history, "done")
-	})
-	defer d.Close()
-	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
-	require.True(t, d.IsDone())
-
-	expected := []string{
-		// TODO
-	}
-	require.EqualValues(t, expected, history)
-}
-
-func TestSelectBlockingSend(t *testing.T) {
-	var history []string
-	d := createNewDispatcher(func(ctx Context) {
-		// TODO
-	})
-	defer d.Close()
-	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
-	require.True(t, d.IsDone())
-
-	expected := []string{
-		// TODO
-	}
-	require.EqualValues(t, expected, history)
-}
-
 func TestBlockingSelectAsyncSend(t *testing.T) {
 	var history []string
 	d := createNewDispatcher(func(ctx Context) {
