@@ -121,6 +121,13 @@ type (
 		delay  time.Duration
 	}
 
+	// Interface for nexus.OperationReference without the types as generics.
+	testNexusOperationReference interface {
+		Name() string
+		InputType() reflect.Type
+		OutputType() reflect.Type
+	}
+
 	testCallbackHandle struct {
 		callback          func()
 		startWorkflowTask bool // start a new workflow task after callback() is handled.
@@ -181,6 +188,7 @@ type (
 		runningWorkflows       map[string]*testWorkflowHandle
 		runningNexusOperations map[int64]*testNexusOperationHandle
 		nexusAsyncOpHandle     map[string]*testNexusAsyncOperationHandle
+		nexusOperationRefs     map[string]map[string]testNexusOperationReference
 
 		runningCount int
 
@@ -273,6 +281,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 			runningWorkflows:          make(map[string]*testWorkflowHandle),
 			runningNexusOperations:    make(map[int64]*testNexusOperationHandle),
 			nexusAsyncOpHandle:        make(map[string]*testNexusAsyncOperationHandle),
+			nexusOperationRefs:        make(map[string]map[string]testNexusOperationReference),
 			callbackChannel:           make(chan testCallbackHandle, 1000),
 			testTimeout:               3 * time.Second,
 			expectedWorkflowMockCalls: make(map[string]struct{}),
@@ -2361,10 +2370,6 @@ func (env *testWorkflowEnvironmentImpl) executeChildWorkflowWithDelay(delayStart
 func (env *testWorkflowEnvironmentImpl) newTestNexusTaskHandler(
 	opHandle *testNexusOperationHandle,
 ) *nexusTaskHandler {
-	if len(env.registry.nexusServices) == 0 {
-		panic(fmt.Errorf("no nexus services registered"))
-	}
-
 	handler, err := newTestNexusHandler(env, opHandle)
 	if err != nil {
 		panic(fmt.Errorf("failed to create nexus handler: %w", err))
@@ -2476,25 +2481,8 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 				handle.startedCallback(opID, nil)
 				if handle.cancelRequested {
 					handle.cancel()
-				} else {
-					completionHandle := env.getNexusAsyncOperationCompletionHandle(
-						handle.params.client.Service(),
-						handle.params.operation,
-						opID,
-					)
-					if completionHandle != nil {
-						env.deleteNexusAsyncOperationCompletionHandle(
-							handle.params.client.Service(),
-							handle.params.operation,
-							opID,
-						)
-						env.registerDelayedCallback(
-							func() {
-								env.resolveNexusOperation(seq, completionHandle.result, completionHandle.err)
-							},
-							completionHandle.delay,
-						)
-					}
+				} else if handle.isMocked {
+					env.scheduleNexusAsyncOperationCompletion(handle)
 				}
 			}, true)
 		case *nexuspb.StartOperationResponse_OperationError:
@@ -2541,6 +2529,20 @@ func (env *testWorkflowEnvironmentImpl) RegisterNexusAsyncOperationCompletion(
 	err error,
 	delay time.Duration,
 ) error {
+	opRef := env.nexusOperationRefs[service][operation]
+	if opRef == nil {
+		return fmt.Errorf("nexus service %q operation %q not mocked", service, operation)
+	}
+	if reflect.TypeOf(result) != opRef.OutputType() {
+		return fmt.Errorf(
+			"nexus service %q operation %q expected result type %s, got %T",
+			service,
+			operation,
+			opRef.OutputType(),
+			result,
+		)
+	}
+
 	var data *commonpb.Payload
 	if result != nil {
 		var encodeErr error
@@ -2595,6 +2597,44 @@ func (env *testWorkflowEnvironmentImpl) deleteNexusAsyncOperationCompletionHandl
 	delete(env.nexusAsyncOpHandle, uniqueOpID)
 }
 
+func (env *testWorkflowEnvironmentImpl) scheduleNexusAsyncOperationCompletion(
+	handle *testNexusOperationHandle,
+) {
+	completionHandle := env.getNexusAsyncOperationCompletionHandle(
+		handle.params.client.Service(),
+		handle.params.operation,
+		handle.operationID,
+	)
+	if completionHandle == nil {
+		return
+	}
+	env.deleteNexusAsyncOperationCompletionHandle(
+		handle.params.client.Service(),
+		handle.params.operation,
+		handle.operationID,
+	)
+	var nexusErr error
+	if completionHandle.err != nil {
+		nexusErr = env.failureConverter.FailureToError(nexusOperationFailure(
+			handle.params,
+			handle.operationID,
+			&failurepb.Failure{
+				Message: completionHandle.err.Error(),
+				FailureInfo: &failurepb.Failure_ApplicationFailureInfo{
+					ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{
+						NonRetryable: true,
+					},
+				},
+			},
+		))
+	}
+	env.registerDelayedCallback(func() {
+		env.postCallback(func() {
+			handle.completedCallback(completionHandle.result, nexusErr)
+		}, true)
+	}, completionHandle.delay)
+}
+
 func (env *testWorkflowEnvironmentImpl) resolveNexusOperation(seq int64, result *commonpb.Payload, err error) {
 	env.postCallback(func() {
 		handle, ok := env.getNexusOperationHandle(seq)
@@ -2607,17 +2647,6 @@ func (env *testWorkflowEnvironmentImpl) resolveNexusOperation(seq int64, result 
 			handle.completedCallback(nil, err)
 		} else {
 			handle.completedCallback(result, nil)
-		}
-		if env.onNexusOperationCompletedListener != nil {
-			env.onNexusOperationCompletedListener(
-				handle.params.client.Service(),
-				handle.params.operation,
-				newEncodedValue(
-					&commonpb.Payloads{Payloads: []*commonpb.Payload{result}},
-					env.GetDataConverter(),
-				),
-				err,
-			)
 		}
 	}, true)
 }
@@ -3090,6 +3119,17 @@ func (h *testNexusOperationHandle) completedCallback(result *commonpb.Payload, e
 	h.done = true
 	h.env.deleteNexusOperationHandle(h.seq)
 	h.onCompleted(result, err)
+	if h.env.onNexusOperationCompletedListener != nil {
+		h.env.onNexusOperationCompletedListener(
+			h.params.client.Service(),
+			h.params.operation,
+			newEncodedValue(
+				&commonpb.Payloads{Payloads: []*commonpb.Payload{result}},
+				h.env.GetDataConverter(),
+			),
+			err,
+		)
+	}
 }
 
 // startedCallback is a callback registered to handle operation start.
@@ -3147,8 +3187,13 @@ func newTestNexusHandler(
 	env *testWorkflowEnvironmentImpl,
 	opHandle *testNexusOperationHandle,
 ) (nexus.Handler, error) {
+	nexusServices := env.registry.getRegisteredNexusServices()
+	if len(nexusServices) == 0 {
+		panic(fmt.Errorf("no nexus services registered"))
+	}
+
 	reg := nexus.NewServiceRegistry()
-	for _, service := range env.registry.nexusServices {
+	for _, service := range nexusServices {
 		if err := reg.Register(service); err != nil {
 			return nil, fmt.Errorf("failed to register nexus service '%v': %w", service, err)
 		}
@@ -3171,30 +3216,35 @@ func (r *testNexusHandler) StartOperation(
 	input *nexus.LazyValue,
 	options nexus.StartOperationOptions,
 ) (nexus.HandlerStartOperationResult[any], error) {
-	s, ok := r.env.registry.nexusServices[service]
-	if !ok {
+	s := r.env.registry.getNexusService(service)
+	if s == nil {
 		panic(fmt.Sprintf(
 			"nexus service %q is not registered with the TestWorkflowEnvironment",
 			service,
 		))
 	}
+
+	opRef := r.env.nexusOperationRefs[service][operation]
 	op := s.Operation(operation)
-	if op == nil {
-		panic(fmt.Sprintf(
-			"nexus operation %q is not registered in service %q with the TestWorkflowEnvironment",
-			operation,
-			service,
-		))
+	if opRef == nil {
+		if op == nil {
+			panic(fmt.Sprintf(
+				"nexus service %q operation %q not registered and not mocked",
+				service,
+				operation,
+			))
+		}
+		opRef = op.(testNexusOperationReference)
 	}
-	fn, _ := reflect.TypeOf(op).MethodByName("Start")
-	inputType := fn.Type.In(2)
-	ptr := reflect.New(inputType)
-	if err := input.Consume(ptr.Interface()); err != nil {
+
+	inputPtr := reflect.New(opRef.InputType())
+	err := input.Consume(inputPtr.Interface())
+	if err != nil {
 		panic("mock of ExecuteNexusOperation failed to deserialize input")
 	}
 
 	// rebuild the input as *nexus.LazyValue
-	payload, err := r.env.dataConverter.ToPayload(ptr.Elem().Interface())
+	payload, err := r.env.dataConverter.ToPayload(inputPtr.Elem().Interface())
 	if err != nil {
 		// this should not be possible
 		panic("mock of ExecuteNexusOperation failed to convert input to payload")
@@ -3229,47 +3279,61 @@ func (r *testNexusHandler) StartOperation(
 	m := &mockWrapper{
 		env:           r.env,
 		name:          service,
-		fn:            fn.Func.Interface(),
+		fn:            nil,
 		isWorkflow:    false,
 		dataConverter: r.env.dataConverter,
 	}
-	mockRet := m.getNexusMockReturn(ctx, operation, ptr.Elem().Interface(), r.opHandle.params.options)
+	mockRet := m.getNexusMockReturn(
+		ctx,
+		operation,
+		inputPtr.Elem().Interface(),
+		r.opHandle.params.options,
+	)
 	if mockRet != nil {
 		mockRetLen := len(mockRet)
 		if mockRetLen != 2 {
 			panic(fmt.Sprintf(
-				"mock of ExecuteNexusOperation has incorrect number of returns, expected 2, but actual is %d",
+				"mock of ExecuteNexusOperation has incorrect number of return values, expected 2, got %d",
 				mockRetLen,
 			))
 		}
 
-		// we already verified function either has 1 return value (error) or 2 return values (result, error)
-		var retErr error
-		mockErr := mockRet[mockRetLen-1] // last mock return must be error
-		if mockErr == nil {
-			retErr = nil
-		} else if err, ok := mockErr.(error); ok {
-			retErr = err
-		} else {
+		// we already verified function has 2 return values (result, error)
+		mockErr := mockRet[1] // last mock return must be error
+		if mockErr != nil {
+			if err, ok := mockErr.(error); ok {
+				return nil, err
+			}
 			panic(fmt.Sprintf(
-				"mock of ExecuteNexusOperation has incorrect return type, expected error, but actual is %T (%v)",
-				mockErr,
+				"mock of ExecuteNexusOperation has incorrect return type, expected error, got %T",
 				mockErr,
 			))
 		}
 
 		mockResult := mockRet[0]
-		ret, ok := mockResult.(nexus.HandlerStartOperationResult[any])
+		result, ok := mockResult.(nexus.HandlerStartOperationResult[any])
 		if mockResult != nil && !ok {
 			panic(fmt.Sprintf(
-				"mock of ExecuteNexusOperation has incorrect return type, expected nexus.HandlerStartOperationResult[T], but actual is %T (%v)",
-				mockResult,
+				"mock of ExecuteNexusOperation has incorrect return type, expected nexus.HandlerStartOperationResult[T], but actual is %T",
 				mockResult,
 			))
 		}
 
+		// If the result is nexus.HandlerStartOperationResultSync, check the result value type
+		// matches the operation return type.
+		value := reflect.ValueOf(result).Elem().FieldByName("Value")
+		if (value != reflect.Value{}) {
+			if value.Type() != opRef.OutputType() {
+				panic(fmt.Sprintf(
+					"mock of ExecuteNexusOperation has incorrect return type, operation expects to return %s, got %s",
+					opRef.OutputType(),
+					value.Type(),
+				))
+			}
+		}
+
 		r.opHandle.isMocked = true
-		return ret, retErr
+		return result, nil
 	}
 
 	return r.handler.StartOperation(ctx, service, operation, input, options)
@@ -3307,4 +3371,50 @@ func (r *testNexusHandler) GetOperationResult(
 	options nexus.GetOperationResultOptions,
 ) (any, error) {
 	return r.handler.GetOperationResult(ctx, service, operation, operationID, options)
+}
+
+func (env *testWorkflowEnvironmentImpl) registerNexusOperationReference(
+	service string,
+	opRef testNexusOperationReference,
+) {
+	if service == "" {
+		panic("tried to register a service with no name")
+	}
+	if opRef.Name() == "" {
+		panic("tried to register an operation with no name")
+	}
+	m := env.nexusOperationRefs[service]
+	if m == nil {
+		m = make(map[string]testNexusOperationReference)
+		env.nexusOperationRefs[service] = m
+	}
+	m[opRef.Name()] = opRef
+}
+
+// testNexusOperation implements nexus.RegisterableOperation and serves as dummy
+// operation that can be created from a testNexusOperationReference, so that
+// mocked Nexus operations can be registered in a Nexus service.
+type testNexusOperation struct {
+	nexus.UnimplementedOperation[any, any]
+	testNexusOperationReference
+}
+
+var _ nexus.RegisterableOperation = (*testNexusOperation)(nil)
+
+func (o *testNexusOperation) Name() string {
+	return o.testNexusOperationReference.Name()
+}
+
+func (o *testNexusOperation) InputType() reflect.Type {
+	return o.testNexusOperationReference.InputType()
+}
+
+func (o *testNexusOperation) OutputType() reflect.Type {
+	return o.testNexusOperationReference.OutputType()
+}
+
+func newTestNexusOperation(opRef testNexusOperationReference) *testNexusOperation {
+	return &testNexusOperation{
+		testNexusOperationReference: opRef,
+	}
 }
