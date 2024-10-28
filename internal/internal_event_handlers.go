@@ -978,6 +978,10 @@ func (wc *workflowEnvironmentImpl) TryUse(flag sdkFlag) bool {
 	return wc.sdkFlags.tryUse(flag, !wc.isReplay)
 }
 
+func (wc *workflowEnvironmentImpl) GetFlag(flag sdkFlag) bool {
+	return wc.sdkFlags.getFlag(flag)
+}
+
 func (wc *workflowEnvironmentImpl) QueueUpdate(name string, f func()) {
 	wc.bufferedUpdateRequests[name] = append(wc.bufferedUpdateRequests[name], f)
 }

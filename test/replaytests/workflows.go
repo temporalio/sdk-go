@@ -639,14 +639,14 @@ func SelectorBlockingDefaultWorkflow(ctx workflow.Context) error {
 		ch2.Receive(ctx, &s)
 	})
 	selector.Select(ctx)
-	if ch1.Len() == 0 && s == "two" {
-		logger.Info("Signal in ch1 lost")
-		return nil
-	} else {
+	if selector.HasPending() {
 		var result string
 		activity := workflow.ExecuteActivity(ctx, SelectorBlockingDefaultActivity, "Signal not lost")
 		activity.Get(ctx, &result)
 		logger.Info("Result", result)
+	} else {
+		logger.Info("Signal in ch1 lost")
+		return nil
 	}
 	return nil
 }

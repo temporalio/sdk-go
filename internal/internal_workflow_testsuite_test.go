@@ -4249,27 +4249,21 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalLoss() {
 		var v string
 		selector.AddReceive(ch1, func(c ReceiveChannel, more bool) {
 			c.Receive(ctx, &v)
-			fmt.Println("received signal from ch1")
 		})
 		selector.AddDefault(func() {
 			ch2.Receive(ctx, &v)
-			fmt.Println("received signal from ch2")
 		})
 		selector.Select(ctx)
-		fmt.Println("ch1.Len()", ch1.Len(), "s", v)
-		// testWorkflowEnvironmentImpl.TryUse always returns true for flags
-		// test for fixed behavior
 		s.Require().True(ch1.Len() == 1 && v == "s2")
+		s.Require().True(selector.HasPending())
 
 		return nil
 	}
 
-	// send a signal 5 seconds after workflow started
+	// send a signal after workflow has started
 	env := s.NewTestWorkflowEnvironment()
 	env.RegisterDelayedCallback(func() {
-		fmt.Println("sending signal to 1")
 		env.SignalWorkflow("test-signal", "s1")
-		fmt.Println("sending signal to 2")
 		env.SignalWorkflow("test-signal-2", "s2")
 	}, 5*time.Second)
 	env.ExecuteWorkflow(workflowFn)

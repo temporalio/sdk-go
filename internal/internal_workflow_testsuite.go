@@ -584,6 +584,10 @@ func (env *testWorkflowEnvironmentImpl) TryUse(flag sdkFlag) bool {
 	return true
 }
 
+func (env *testWorkflowEnvironmentImpl) GetFlag(flag sdkFlag) bool {
+	return true
+}
+
 func (env *testWorkflowEnvironmentImpl) QueueUpdate(name string, f func()) {
 	env.bufferedUpdateRequests[name] = append(env.bufferedUpdateRequests[name], f)
 }

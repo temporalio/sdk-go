@@ -110,6 +110,11 @@ func (sf *sdkFlags) tryUse(flag sdkFlag, record bool) bool {
 	}
 }
 
+// getFlag returns true if the flag is currently set.
+func (sf *sdkFlags) getFlag(flag sdkFlag) bool {
+	return sf.currentFlags[flag] || sf.newFlags[flag]
+}
+
 // set marks a flag as in current use regardless of replay status.
 func (sf *sdkFlags) set(flags ...sdkFlag) {
 	if !sf.capabilities.GetSdkMetadata() {
