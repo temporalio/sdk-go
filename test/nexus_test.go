@@ -1323,6 +1323,29 @@ func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
 		require.Equal(t, "fake result", res)
 	})
 
+	t.Run("mock operation reference existing service", func(t *testing.T) {
+		suite := testsuite.WorkflowTestSuite{}
+		env := suite.NewTestWorkflowEnvironment()
+		env.RegisterNexusService(service)
+		env.OnNexusOperation(
+			serviceName,
+			nexus.NewOperationReference[string, string](dummyOpName),
+			"Temporal",
+			mock.Anything,
+		).Return(
+			&nexus.HandlerStartOperationResultSync[string]{
+				Value: "fake result",
+			},
+			nil,
+		)
+		env.ExecuteWorkflow(wf, "Temporal")
+		require.True(t, env.IsWorkflowCompleted())
+		require.NoError(t, env.GetWorkflowError())
+		var res string
+		require.NoError(t, env.GetWorkflowResult(&res))
+		require.Equal(t, "fake result", res)
+	})
+
 	t.Run("mock error operation", func(t *testing.T) {
 		suite := testsuite.WorkflowTestSuite{}
 		env := suite.NewTestWorkflowEnvironment()
