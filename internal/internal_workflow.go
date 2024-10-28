@@ -1611,6 +1611,15 @@ func SetCurrentDetails(ctx Context, details string) {
 	getWorkflowEnvOptions(ctx).currentDetails = details
 }
 
+// SetVersioningBehavior sets the strategy to upgrade this workflow when the default Build ID
+// has changed, and Worker Versioning-3 has been enabled.
+//
+// NOTE: Experimental
+func SetVersioningBehavior(ctx Context, behavior VersioningBehavior) {
+	env := getWorkflowEnvironment(ctx)
+	env.WorkflowInfo().currentVersioningBehavior = behavior
+}
+
 func getWorkflowMetadata(ctx Context) (*sdk.WorkflowMetadata, error) {
 	info := GetWorkflowInfo(ctx)
 	eo := getWorkflowEnvOptions(ctx)

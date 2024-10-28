@@ -130,24 +130,25 @@ type (
 
 	// workflowTaskHandlerImpl is the implementation of WorkflowTaskHandler
 	workflowTaskHandlerImpl struct {
-		namespace                string
-		metricsHandler           metrics.Handler
-		ppMgr                    pressurePointMgr
-		logger                   log.Logger
-		identity                 string
-		workerBuildID            string
-		useBuildIDForVersioning  bool
-		deploymentName           string
-		enableLoggingInReplay    bool
-		registry                 *registry
-		laTunnel                 *localActivityTunnel
-		workflowPanicPolicy      WorkflowPanicPolicy
-		dataConverter            converter.DataConverter
-		failureConverter         converter.FailureConverter
-		contextPropagators       []ContextPropagator
-		cache                    *WorkerCache
-		deadlockDetectionTimeout time.Duration
-		capabilities             *workflowservice.GetSystemInfoResponse_Capabilities
+		namespace                 string
+		metricsHandler            metrics.Handler
+		ppMgr                     pressurePointMgr
+		logger                    log.Logger
+		identity                  string
+		workerBuildID             string
+		useBuildIDForVersioning   bool
+		deploymentName            string
+		defaultVersioningBehavior VersioningBehavior
+		enableLoggingInReplay     bool
+		registry                  *registry
+		laTunnel                  *localActivityTunnel
+		workflowPanicPolicy       WorkflowPanicPolicy
+		dataConverter             converter.DataConverter
+		failureConverter          converter.FailureConverter
+		contextPropagators        []ContextPropagator
+		cache                     *WorkerCache
+		deadlockDetectionTimeout  time.Duration
+		capabilities              *workflowservice.GetSystemInfoResponse_Capabilities
 	}
 
 	activityProvider func(name string) activity
@@ -550,23 +551,24 @@ func inferMessageFromAcceptedEvent(attrs *historypb.WorkflowExecutionUpdateAccep
 func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePointMgr, registry *registry) WorkflowTaskHandler {
 	ensureRequiredParams(&params)
 	return &workflowTaskHandlerImpl{
-		namespace:                params.Namespace,
-		logger:                   params.Logger,
-		ppMgr:                    ppMgr,
-		metricsHandler:           params.MetricsHandler,
-		identity:                 params.Identity,
-		workerBuildID:            params.getBuildID(),
-		useBuildIDForVersioning:  params.UseBuildIDForVersioning,
-		deploymentName:           params.DeploymentName,
-		enableLoggingInReplay:    params.EnableLoggingInReplay,
-		registry:                 registry,
-		workflowPanicPolicy:      params.WorkflowPanicPolicy,
-		dataConverter:            params.DataConverter,
-		failureConverter:         params.FailureConverter,
-		contextPropagators:       params.ContextPropagators,
-		cache:                    params.cache,
-		deadlockDetectionTimeout: params.DeadlockDetectionTimeout,
-		capabilities:             params.capabilities,
+		namespace:                 params.Namespace,
+		logger:                    params.Logger,
+		ppMgr:                     ppMgr,
+		metricsHandler:            params.MetricsHandler,
+		identity:                  params.Identity,
+		workerBuildID:             params.getBuildID(),
+		useBuildIDForVersioning:   params.UseBuildIDForVersioning,
+		deploymentName:            params.DeploymentName,
+		defaultVersioningBehavior: params.DefaultVersioningBehavior,
+		enableLoggingInReplay:     params.EnableLoggingInReplay,
+		registry:                  registry,
+		workflowPanicPolicy:       params.WorkflowPanicPolicy,
+		dataConverter:             params.DataConverter,
+		failureConverter:          params.FailureConverter,
+		contextPropagators:        params.ContextPropagators,
+		cache:                     params.cache,
+		deadlockDetectionTimeout:  params.DeadlockDetectionTimeout,
+		capabilities:              params.capabilities,
 	}
 }
 
@@ -1913,6 +1915,13 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	}
 	if wth.capabilities != nil && wth.capabilities.BuildIdBasedVersioning {
 		builtRequest.BinaryChecksum = ""
+	}
+	if wth.useBuildIDForVersioning && wth.deploymentName != "" {
+		if workflowContext.workflowInfo.currentVersioningBehavior != VersioningBehaviorUnspecified {
+			builtRequest.VersioningBehavior = VersioningBehaviorToProto(workflowContext.workflowInfo.currentVersioningBehavior)
+		} else {
+			builtRequest.VersioningBehavior = VersioningBehaviorToProto(wth.defaultVersioningBehavior)
+		}
 	}
 	return builtRequest
 }

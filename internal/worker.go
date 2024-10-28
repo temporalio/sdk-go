@@ -257,6 +257,13 @@ type (
 		// NOTE: Both BuildID and UseBuildIDForVersioning need to also be set to enable the new Worker Versioning-3 feature.
 		DeploymentName string
 
+		// Optional: Provides a default Versioning Behavior to workflows that do not set one in their first task
+		// (see workflow.SetVersioningBehavior).
+		// NOTE: Experimental
+		// NOTE: If the Worker Versioning-3 feature is on, and DefaultVersioningBehavior is unspecified,
+		// workflows that do not set the Versioning Behavior will fail in their first task.
+		DefaultVersioningBehavior VersioningBehavior
+
 		// Optional: If set, use a custom tuner for this worker. See WorkerTuner for more.
 		// Mutually exclusive with MaxConcurrentWorkflowTaskExecutionSize,
 		// MaxConcurrentActivityExecutionSize, and MaxConcurrentLocalActivityExecutionSize.

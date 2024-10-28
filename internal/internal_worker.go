@@ -170,6 +170,9 @@ type (
 		// The worker's deployment name, an identifier in versioning-3 to group Task Queues for a given build ID.
 		DeploymentName string
 
+		// The Versioning Behavior for workflows that do not set one in their first task.
+		DefaultVersioningBehavior VersioningBehavior
+
 		MetricsHandler metrics.Handler
 
 		Logger log.Logger
@@ -1668,6 +1671,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		WorkerBuildID:                         options.BuildID,
 		UseBuildIDForVersioning:               options.UseBuildIDForVersioning,
 		DeploymentName:                        options.DeploymentName,
+		DefaultVersioningBehavior:             options.DefaultVersioningBehavior,
 		MetricsHandler:                        client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue)),
 		Logger:                                client.logger,
 		EnableLoggingInReplay:                 options.EnableLoggingInReplay,

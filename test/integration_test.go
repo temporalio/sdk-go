@@ -6174,6 +6174,91 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateWorkflowActionMemo() {
 	}
 }
 
+func (ts *IntegrationTestSuite) TestVersioningBehaviorInRespondWorkflowTaskCompletedRequest() {
+	versioningBehaviorAll := make([]workflow.VersioningBehavior, 0)
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	// We are setting the default build ID with versioning-2 rules to test
+	// with existing servers. TODO(antlai-temporal) use versioning-3 APIs
+	// after there is a server release that supports versioning-3
+	res, err := ts.client.GetWorkerVersioningRules(ctx, client.GetWorkerVersioningOptions{
+		TaskQueue: ts.taskQueueName,
+	})
+	ts.NoError(err)
+
+	_, err = ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: res.ConflictToken,
+		Operation: &client.VersioningOperationInsertAssignmentRule{
+			RuleIndex: 0,
+			Rule: client.VersioningAssignmentRule{
+				TargetBuildID: "1.0",
+			},
+		},
+	})
+	ts.NoError(err)
+
+	c, err := client.Dial(client.Options{
+		HostPort:  ts.config.ServiceAddr,
+		Namespace: ts.config.Namespace,
+		ConnectionOptions: client.ConnectionOptions{
+			TLS: ts.config.TLS,
+			DialOptions: []grpc.DialOption{
+				grpc.WithUnaryInterceptor(func(
+					ctx context.Context,
+					method string,
+					req interface{},
+					reply interface{},
+					cc *grpc.ClientConn,
+					invoker grpc.UnaryInvoker,
+					opts ...grpc.CallOption,
+				) error {
+					if method == "/temporal.api.workflowservice.v1.WorkflowService/RespondWorkflowTaskCompleted" {
+						asReq := req.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+						behavior := internal.VersioningBehaviorFromProto(asReq.VersioningBehavior)
+						versioningBehaviorAll = append(versioningBehaviorAll, behavior)
+					}
+					return invoker(ctx, method, req, reply, cc, opts...)
+				}),
+			},
+		},
+	})
+	ts.NoError(err)
+	defer c.Close()
+
+	ts.worker.Stop()
+	ts.workerStopped = true
+	w := worker.New(c, ts.taskQueueName, worker.Options{
+		BuildID:                   "1.0",
+		UseBuildIDForVersioning:   true,
+		DeploymentName:            "deploy-test1",
+		DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
+	})
+	ts.registerWorkflowsAndActivities(w)
+	ts.Nil(w.Start())
+	defer w.Stop()
+
+	wfOpts := ts.startWorkflowOptions("test-default-versioning-behavior")
+	ts.NoError(ts.executeWorkflowWithOption(wfOpts, ts.workflows.Basic, nil))
+
+	ts.Equal(workflow.VersioningBehaviorAutoUpgrade, versioningBehaviorAll[0])
+	for i := 1; i < len(versioningBehaviorAll); i++ {
+		ts.True(versioningBehaviorAll[i] == workflow.VersioningBehaviorAutoUpgrade)
+	}
+
+	// Now override Worker defaults with an explicit setter in the workflow code
+	versioningBehaviorAll = nil
+
+	wfOpts = ts.startWorkflowOptions("test-override-versioning-behavior")
+	ts.NoError(ts.executeWorkflowWithOption(wfOpts,
+		ts.workflows.SetPinnedVersioningBehavior, nil))
+	ts.Equal(workflow.VersioningBehaviorPinned, versioningBehaviorAll[0])
+	for i := 1; i < len(versioningBehaviorAll); i++ {
+		ts.True(versioningBehaviorAll[i] == workflow.VersioningBehaviorPinned)
+	}
+}
+
 func (ts *IntegrationTestSuite) TestSendsCorrectMeteringData() {
 	nonfirstLAAttemptCounts := make([]uint32, 0)
 	c, err := client.Dial(client.Options{
