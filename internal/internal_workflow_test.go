@@ -1406,6 +1406,7 @@ type updateCallback struct {
 	accept   func()
 	reject   func(error)
 	complete func(interface{}, error)
+	env      *TestWorkflowEnvironment
 }
 
 func (uc *updateCallback) Accept() {
@@ -1417,6 +1418,12 @@ func (uc *updateCallback) Reject(err error) {
 }
 
 func (uc *updateCallback) Complete(success interface{}, err error) {
+	// Should the update be here? How do we know the ID corresponding to the update here?
+	// Can I somehow create a custom callback built into the framework that this function
+	// can write to with the result of success, and that can add to the map in env?
+	fmt.Println("[updateCallback] Complete() called")
+	// debug.PrintStack()
+	// uc.env.impl.updateMap["TODO"] = success
 	uc.complete(success, err)
 }
 

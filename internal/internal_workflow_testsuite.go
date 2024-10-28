@@ -208,6 +208,7 @@ type (
 		signalHandler         func(name string, input *commonpb.Payloads, header *commonpb.Header) error
 		queryHandler          func(string, *commonpb.Payloads, *commonpb.Header) (*commonpb.Payloads, error)
 		updateHandler         func(name string, id string, input *commonpb.Payloads, header *commonpb.Header, resp UpdateCallbacks)
+		updateMap             map[string]interface{}
 		startedHandler        func(r WorkflowExecution, e error)
 
 		isWorkflowCompleted bool
@@ -2178,7 +2179,10 @@ func (env *testWorkflowEnvironmentImpl) RegisterSignalHandler(
 func (env *testWorkflowEnvironmentImpl) RegisterUpdateHandler(
 	handler func(name string, id string, input *commonpb.Payloads, header *commonpb.Header, resp UpdateCallbacks),
 ) {
+	// debug.PrintStack()
+	fmt.Println("RegisterUpdateHandler is not implemented")
 	env.updateHandler = handler
+	env.updateMap = make(map[string]interface{})
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterQueryHandler(
@@ -2717,14 +2721,18 @@ func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...
 }
 
 func (env *testWorkflowEnvironmentImpl) updateWorkflow(name string, id string, uc UpdateCallbacks, args ...interface{}) {
+	fmt.Println("updateWorkflow")
 	data, err := encodeArgs(env.GetDataConverter(), args)
 	if err != nil {
 		panic(err)
 	}
+	// TODO: Somehow map uc to id
 	env.postCallback(func() {
 		// Do not send any headers on test invocations
 		env.updateHandler(name, id, data, nil, uc)
+		fmt.Println("after updateHandler")
 	}, true)
+	fmt.Println("after postCallback")
 }
 
 func (env *testWorkflowEnvironmentImpl) updateWorkflowByID(workflowID, name, id string, uc UpdateCallbacks, args ...interface{}) error {

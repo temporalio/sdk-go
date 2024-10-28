@@ -326,7 +326,9 @@ func defaultUpdateHandler(
 			}
 		}
 		callbacks.Accept()
+		fmt.Println("[defaultUpdateHandler] calling ExecuteUpdate")
 		success, err := envInterceptor.inboundInterceptor.ExecuteUpdate(ctx, &input)
+		fmt.Println("[defaultUpdateHandler] ExecuteUpdate completed")
 		callbacks.Complete(success, err)
 	}
 

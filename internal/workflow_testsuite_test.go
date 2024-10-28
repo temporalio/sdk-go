@@ -491,6 +491,70 @@ func TestWorkflowUpdateOrderAcceptReject(t *testing.T) {
 	require.Equal(t, "unknown update bad update. KnownUpdates=[update]", updateRejectionErr.Error())
 }
 
+func TestWorkflowDuplicateIDDedup(t *testing.T) {
+	var suite WorkflowTestSuite
+	// Test dev server rejects UpdateWorkflow with same ID
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflow("update", "id", &updateCallback{
+			reject: func(err error) {
+				require.Fail(t, "update should not be rejected")
+			},
+			accept: func() {
+				fmt.Println("[first] accepted")
+			},
+			complete: func(result interface{}, err error) {
+				fmt.Println("[first] completed")
+				fmt.Println("[first] result", result)
+				intResult, ok := result.(int)
+				fmt.Println("[first] first update result", intResult)
+				if !ok {
+					require.Fail(t, "result should be int")
+				} else {
+					require.Equal(t, 0, intResult)
+				}
+			},
+		}, 0)
+		fmt.Println("This should print first.")
+	}, 0)
+
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflow("update", "id", &updateCallback{
+			reject: func(err error) {
+				require.Fail(t, "update should not be rejected")
+			},
+			accept: func() {},
+			complete: func(result interface{}, err error) {
+				fmt.Println("[second] workflow completed")
+				fmt.Println("[second] result", result)
+				intResult, ok := result.(int)
+				fmt.Println("[second] update result", intResult)
+				if !ok {
+					require.Fail(t, "result should be int")
+				} else {
+					require.Equal(t, 0, intResult)
+				}
+			},
+			env: env,
+		}, 1) // if dedup, this be okay, even if we pass in 1 as arg, since it's deduping
+		fmt.Println("This should print second.")
+
+	}, 1*time.Millisecond)
+
+	env.ExecuteWorkflow(func(ctx Context) error {
+		err := SetUpdateHandler(ctx, "update", func(ctx Context, i int) (int, error) {
+			fmt.Println("[SetUpdateHandler] i", i)
+			return i, nil
+		}, UpdateHandlerOptions{})
+		if err != nil {
+			return err
+		}
+
+		return Sleep(ctx, time.Hour)
+	})
+	require.NoError(t, env.GetWorkflowError())
+}
+
 func TestAllHandlersFinished(t *testing.T) {
 	var suite WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
