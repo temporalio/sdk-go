@@ -4257,8 +4257,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalLoss() {
 		})
 		selector.Select(ctx)
 		fmt.Println("ch1.Len()", ch1.Len(), "s", v)
-		// default behavior is this signal is lost
-		s.Require().True(ch1.Len() == 0 && v == "s2")
+		// testWorkflowEnvironmentImpl.TryUse always returns true for flags
+		// test for fixed behavior
+		s.Require().True(ch1.Len() == 1 && v == "s2")
 
 		return nil
 	}
