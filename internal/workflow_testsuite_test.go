@@ -523,7 +523,9 @@ func TestWorkflowDuplicateIDDedup(t *testing.T) {
 			reject: func(err error) {
 				require.Fail(t, "update should not be rejected")
 			},
-			accept: func() {},
+			accept: func() {
+				fmt.Println("[second] accepted")
+			},
 			complete: func(result interface{}, err error) {
 				fmt.Println("[second] workflow completed")
 				fmt.Println("[second] result", result)
@@ -532,11 +534,12 @@ func TestWorkflowDuplicateIDDedup(t *testing.T) {
 				if !ok {
 					require.Fail(t, "result should be int")
 				} else {
+					// if dedup, this be okay, even if we pass in 1 as arg, since it's deduping,
+					// the result should match the first update's result, 0
 					require.Equal(t, 0, intResult)
 				}
 			},
-			env: env,
-		}, 1) // if dedup, this be okay, even if we pass in 1 as arg, since it's deduping
+		}, 1)
 		fmt.Println("This should print second.")
 
 	}, 1*time.Millisecond)
@@ -552,7 +555,9 @@ func TestWorkflowDuplicateIDDedup(t *testing.T) {
 
 		return Sleep(ctx, time.Hour)
 	})
-	require.NoError(t, env.GetWorkflowError())
+	var result int
+	require.NoError(t, env.GetWorkflowResult(&result))
+	// require.NoError(t, env.GetWorkflowError())
 }
 
 func TestAllHandlersFinished(t *testing.T) {
