@@ -909,6 +909,7 @@ func (e *TestWorkflowEnvironment) QueryWorkflow(queryType string, args ...interf
 
 // UpdateWorkflow sends an update to the currently running workflow.
 func (e *TestWorkflowEnvironment) UpdateWorkflow(updateName, updateID string, uc UpdateCallbacks, args ...interface{}) {
+	// here
 	e.impl.updateWorkflow(updateName, updateID, uc, args...)
 }
 

@@ -77,7 +77,10 @@ type (
 		// Complete is called for an update with the result of executing the
 		// update function. If the provided error is non-nil then the overall
 		// outcome is understood to be a failure.
-		Complete(success interface{}, err error)
+		Complete(success interface{}, err error) // not sure i should change the API here
+		// TODO: add an ID identity?
+		// no, it doesn't make sense to add it here
+
 	}
 
 	// UpdateScheduler allows an update state machine to spawn coroutines and
@@ -326,9 +329,11 @@ func defaultUpdateHandler(
 			}
 		}
 		callbacks.Accept()
-		fmt.Println("[defaultUpdateHandler] calling ExecuteUpdate")
+		fmt.Println("[defaultUpdateHandler] ExecuteUpdate")
 		success, err := envInterceptor.inboundInterceptor.ExecuteUpdate(ctx, &input)
-		fmt.Println("[defaultUpdateHandler] ExecuteUpdate completed")
+		fmt.Println("[defaultUpdateHandler] callbacks.Complete()")
+		// check stack here
+		// debug.PrintStack()
 		callbacks.Complete(success, err)
 	}
 

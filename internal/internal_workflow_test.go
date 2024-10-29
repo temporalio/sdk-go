@@ -1406,7 +1406,9 @@ type updateCallback struct {
 	accept   func()
 	reject   func(error)
 	complete func(interface{}, error)
-	env      *TestWorkflowEnvironment
+	// TODO: How do I capture env from this struct?
+	// it won't work to require env to be passed in
+	env *TestWorkflowEnvironment
 }
 
 func (uc *updateCallback) Accept() {
@@ -1423,7 +1425,14 @@ func (uc *updateCallback) Complete(success interface{}, err error) {
 	// can write to with the result of success, and that can add to the map in env?
 	fmt.Println("[updateCallback] Complete() called")
 	// debug.PrintStack()
-	// uc.env.impl.updateMap["TODO"] = success
+	fmt.Println("[updateCallback] currentUpdateId:", uc.env.impl.currentUpdateId)
+	if uc.env.impl.updateMap != nil {
+		uc.env.impl.updateMap[uc.env.impl.currentUpdateId] = success
+	} else {
+		fmt.Println("[updateCallback] UPDATEMAP IS NIL")
+	}
+	fmt.Println("[updateCallback] updateMap:", uc.env.impl.updateMap)
+
 	uc.complete(success, err)
 }
 

@@ -31,6 +31,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -498,12 +499,14 @@ func TestWorkflowDuplicateIDDedup(t *testing.T) {
 	env.RegisterDelayedCallback(func() {
 		env.UpdateWorkflow("update", "id", &updateCallback{
 			reject: func(err error) {
-				require.Fail(t, "update should not be rejected")
+				require.Fail(t, fmt.Sprintf("update should not be rejected, err: %v", err))
 			},
 			accept: func() {
+				debug.PrintStack()
 				fmt.Println("[first] accepted")
 			},
 			complete: func(result interface{}, err error) {
+				// debug.PrintStack()
 				fmt.Println("[first] completed")
 				fmt.Println("[first] result", result)
 				intResult, ok := result.(int)
@@ -514,6 +517,7 @@ func TestWorkflowDuplicateIDDedup(t *testing.T) {
 					require.Equal(t, 0, intResult)
 				}
 			},
+			env: env,
 		}, 0)
 		fmt.Println("This should print first.")
 	}, 0)
@@ -539,6 +543,7 @@ func TestWorkflowDuplicateIDDedup(t *testing.T) {
 					require.Equal(t, 0, intResult)
 				}
 			},
+			env: env,
 		}, 1)
 		fmt.Println("This should print second.")
 
@@ -550,14 +555,16 @@ func TestWorkflowDuplicateIDDedup(t *testing.T) {
 			return i, nil
 		}, UpdateHandlerOptions{})
 		if err != nil {
+			fmt.Println("ERROR")
 			return err
 		}
-
+		fmt.Println("[ExecuteWorkflow] before sleep")
 		return Sleep(ctx, time.Hour)
 	})
-	var result int
-	require.NoError(t, env.GetWorkflowResult(&result))
-	// require.NoError(t, env.GetWorkflowError())
+	// var result int
+	// require.NoError(t, env.GetWorkflowResult(&result))
+	require.NoError(t, env.GetWorkflowError())
+	require.True(t, false)
 }
 
 func TestAllHandlersFinished(t *testing.T) {

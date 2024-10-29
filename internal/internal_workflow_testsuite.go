@@ -230,6 +230,8 @@ type (
 
 		workflowFunctionExecuting bool
 		bufferedUpdateRequests    map[string][]func()
+
+		currentUpdateId string
 	}
 
 	testSessionEnvironmentImpl struct {
@@ -2180,9 +2182,9 @@ func (env *testWorkflowEnvironmentImpl) RegisterUpdateHandler(
 	handler func(name string, id string, input *commonpb.Payloads, header *commonpb.Header, resp UpdateCallbacks),
 ) {
 	// debug.PrintStack()
-	fmt.Println("RegisterUpdateHandler is not implemented")
+	fmt.Println("[RegisterUpdateHandler] registering handler")
 	env.updateHandler = handler
-	env.updateMap = make(map[string]interface{})
+
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterQueryHandler(
@@ -2721,18 +2723,36 @@ func (env *testWorkflowEnvironmentImpl) queryWorkflow(queryType string, args ...
 }
 
 func (env *testWorkflowEnvironmentImpl) updateWorkflow(name string, id string, uc UpdateCallbacks, args ...interface{}) {
-	fmt.Println("updateWorkflow")
+	fmt.Println("[testWorkflowEnvironmentImpl:updateWorkflow]")
 	data, err := encodeArgs(env.GetDataConverter(), args)
 	if err != nil {
 		panic(err)
 	}
-	// TODO: Somehow map uc to id
-	env.postCallback(func() {
-		// Do not send any headers on test invocations
-		env.updateHandler(name, id, data, nil, uc)
-		fmt.Println("after updateHandler")
-	}, true)
-	fmt.Println("after postCallback")
+	// Some way to capture state of the update
+	if env.updateMap == nil {
+		env.updateMap = make(map[string]interface{})
+	}
+
+	// check if id in map
+	if _, ok := env.updateMap[id]; ok {
+		// TODO: manually override success to complete?
+		// How do I do this?
+		env.postCallback(func() {
+			uc.Accept()
+			uc.Complete(env.updateMap[id], nil)
+		}, false)
+	} else {
+		env.currentUpdateId = id
+		// TODO: how do I return cached state?
+		env.postCallback(func() {
+			fmt.Println("[testWorkflowEnvironmentImpl:updateWorkflow] callback starting")
+			// Do not send any headers on test invocations
+			env.updateHandler(name, id, data, nil, uc)
+			fmt.Println("[testWorkflowEnvironmentImpl:updateWorkflow] after updateHandler")
+		}, true)
+		fmt.Println("[testWorkflowEnvironmentImpl:updateWorkflow] after postCallback")
+	}
+
 }
 
 func (env *testWorkflowEnvironmentImpl) updateWorkflowByID(workflowID, name, id string, uc UpdateCallbacks, args ...interface{}) error {
