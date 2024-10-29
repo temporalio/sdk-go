@@ -503,14 +503,9 @@ func TestWorkflowDuplicateIDDedup(t *testing.T) {
 			},
 			accept: func() {
 				debug.PrintStack()
-				fmt.Println("[first] accepted")
 			},
 			complete: func(result interface{}, err error) {
-				// debug.PrintStack()
-				fmt.Println("[first] completed")
-				fmt.Println("[first] result", result)
 				intResult, ok := result.(int)
-				fmt.Println("[first] first update result", intResult)
 				if !ok {
 					require.Fail(t, "result should be int")
 				} else {
@@ -519,7 +514,6 @@ func TestWorkflowDuplicateIDDedup(t *testing.T) {
 			},
 			env: env,
 		}, 0)
-		fmt.Println("This should print first.")
 	}, 0)
 
 	env.RegisterDelayedCallback(func() {
@@ -528,13 +522,9 @@ func TestWorkflowDuplicateIDDedup(t *testing.T) {
 				require.Fail(t, "update should not be rejected")
 			},
 			accept: func() {
-				fmt.Println("[second] accepted")
 			},
 			complete: func(result interface{}, err error) {
-				fmt.Println("[second] workflow completed")
-				fmt.Println("[second] result", result)
 				intResult, ok := result.(int)
-				fmt.Println("[second] update result", intResult)
 				if !ok {
 					require.Fail(t, "result should be int")
 				} else {
@@ -545,24 +535,18 @@ func TestWorkflowDuplicateIDDedup(t *testing.T) {
 			},
 			env: env,
 		}, 1)
-		fmt.Println("This should print second.")
 
 	}, 1*time.Millisecond)
 
 	env.ExecuteWorkflow(func(ctx Context) error {
 		err := SetUpdateHandler(ctx, "update", func(ctx Context, i int) (int, error) {
-			fmt.Println("[SetUpdateHandler] i", i)
 			return i, nil
 		}, UpdateHandlerOptions{})
 		if err != nil {
-			fmt.Println("ERROR")
 			return err
 		}
-		fmt.Println("[ExecuteWorkflow] before sleep")
 		return Sleep(ctx, time.Hour)
 	})
-	// var result int
-	// require.NoError(t, env.GetWorkflowResult(&result))
 	require.NoError(t, env.GetWorkflowError())
 	require.True(t, false)
 }

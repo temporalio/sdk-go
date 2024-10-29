@@ -1420,19 +1420,10 @@ func (uc *updateCallback) Reject(err error) {
 }
 
 func (uc *updateCallback) Complete(success interface{}, err error) {
-	// Should the update be here? How do we know the ID corresponding to the update here?
-	// Can I somehow create a custom callback built into the framework that this function
-	// can write to with the result of success, and that can add to the map in env?
-	fmt.Println("[updateCallback] Complete() called")
-	// debug.PrintStack()
-	fmt.Println("[updateCallback] currentUpdateId:", uc.env.impl.currentUpdateId)
+	// cache update result so we can dedup duplicate update IDs
 	if uc.env.impl.updateMap != nil {
 		uc.env.impl.updateMap[uc.env.impl.currentUpdateId] = success
-	} else {
-		fmt.Println("[updateCallback] UPDATEMAP IS NIL")
 	}
-	fmt.Println("[updateCallback] updateMap:", uc.env.impl.updateMap)
-
 	uc.complete(success, err)
 }
 
