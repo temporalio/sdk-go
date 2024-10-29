@@ -1406,9 +1406,7 @@ type updateCallback struct {
 	accept   func()
 	reject   func(error)
 	complete func(interface{}, error)
-	// TODO: How do I capture env from this struct?
-	// it won't work to require env to be passed in
-	env *TestWorkflowEnvironment
+	env      *TestWorkflowEnvironment
 }
 
 func (uc *updateCallback) Accept() {

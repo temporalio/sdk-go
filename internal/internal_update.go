@@ -77,10 +77,7 @@ type (
 		// Complete is called for an update with the result of executing the
 		// update function. If the provided error is non-nil then the overall
 		// outcome is understood to be a failure.
-		Complete(success interface{}, err error) // not sure i should change the API here
-		// TODO: add an ID identity?
-		// no, it doesn't make sense to add it here
-
+		Complete(success interface{}, err error)
 	}
 
 	// UpdateScheduler allows an update state machine to spawn coroutines and

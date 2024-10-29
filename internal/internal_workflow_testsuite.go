@@ -2182,7 +2182,6 @@ func (env *testWorkflowEnvironmentImpl) RegisterUpdateHandler(
 	handler func(name string, id string, input *commonpb.Payloads, header *commonpb.Header, resp UpdateCallbacks),
 ) {
 	env.updateHandler = handler
-
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterQueryHandler(
@@ -2725,20 +2724,19 @@ func (env *testWorkflowEnvironmentImpl) updateWorkflow(name string, id string, u
 	if err != nil {
 		panic(err)
 	}
-	// Some way to capture state of the update
 	if env.updateMap == nil {
 		env.updateMap = make(map[string]interface{})
 	}
 
 	// check for duplicate update ID
 	if _, ok := env.updateMap[id]; ok {
+		// return cached result
 		env.postCallback(func() {
 			uc.Accept()
 			uc.Complete(env.updateMap[id], nil)
 		}, false)
 	} else {
 		env.currentUpdateId = id
-		// return cached state
 		env.postCallback(func() {
 			// Do not send any headers on test invocations
 			env.updateHandler(name, id, data, nil, uc)

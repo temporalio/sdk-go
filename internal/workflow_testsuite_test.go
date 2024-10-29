@@ -31,7 +31,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"runtime/debug"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -502,7 +501,6 @@ func TestWorkflowDuplicateIDDedup(t *testing.T) {
 				require.Fail(t, fmt.Sprintf("update should not be rejected, err: %v", err))
 			},
 			accept: func() {
-				debug.PrintStack()
 			},
 			complete: func(result interface{}, err error) {
 				intResult, ok := result.(int)
@@ -519,7 +517,7 @@ func TestWorkflowDuplicateIDDedup(t *testing.T) {
 	env.RegisterDelayedCallback(func() {
 		env.UpdateWorkflow("update", "id", &updateCallback{
 			reject: func(err error) {
-				require.Fail(t, "update should not be rejected")
+				require.Fail(t, fmt.Sprintf("update should not be rejected, err: %v", err))
 			},
 			accept: func() {
 			},
@@ -548,7 +546,6 @@ func TestWorkflowDuplicateIDDedup(t *testing.T) {
 		return Sleep(ctx, time.Hour)
 	})
 	require.NoError(t, env.GetWorkflowError())
-	require.True(t, false)
 }
 
 func TestAllHandlersFinished(t *testing.T) {
