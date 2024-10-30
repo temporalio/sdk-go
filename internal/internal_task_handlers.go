@@ -1918,9 +1918,9 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	}
 	if wth.useBuildIDForVersioning && wth.deploymentName != "" {
 		if workflowContext.workflowInfo.currentVersioningBehavior != VersioningBehaviorUnspecified {
-			builtRequest.VersioningBehavior = VersioningBehaviorToProto(workflowContext.workflowInfo.currentVersioningBehavior)
+			builtRequest.VersioningBehavior = versioningBehaviorToProto(workflowContext.workflowInfo.currentVersioningBehavior)
 		} else {
-			builtRequest.VersioningBehavior = VersioningBehaviorToProto(wth.defaultVersioningBehavior)
+			builtRequest.VersioningBehavior = versioningBehaviorToProto(wth.defaultVersioningBehavior)
 		}
 	}
 	return builtRequest

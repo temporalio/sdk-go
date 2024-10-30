@@ -211,6 +211,10 @@ type (
 		ReplayWorkflowExecution(ctx context.Context, service workflowservice.WorkflowServiceClient, logger log.Logger, namespace string, execution workflow.Execution) error
 	}
 
+	// DeploymentOptions provides configuration to enable Worker Versioning.
+	// NOTE: Experimental
+	DeploymentOptions = internal.WorkerDeploymentOptions
+
 	// Options is used to configure a worker instance.
 	Options = internal.WorkerOptions
 

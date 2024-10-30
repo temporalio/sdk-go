@@ -1620,6 +1620,14 @@ func SetVersioningBehavior(ctx Context, behavior VersioningBehavior) {
 	env.WorkflowInfo().currentVersioningBehavior = behavior
 }
 
+// GetVersioningBehavior returns the last versioning behavior set with SetVersioningBehavior.
+//
+// NOTE: Experimental
+func GetVersioningBehavior(ctx Context) VersioningBehavior {
+	env := getWorkflowEnvironment(ctx)
+	return env.WorkflowInfo().currentVersioningBehavior
+}
+
 func getWorkflowMetadata(ctx Context) (*sdk.WorkflowMetadata, error) {
 	info := GetWorkflowInfo(ctx)
 	eo := getWorkflowEnvOptions(ctx)

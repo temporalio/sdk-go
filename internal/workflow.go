@@ -2555,7 +2555,7 @@ func (wc *workflowEnvironmentInterceptor) RequestCancelNexusOperation(ctx Contex
 	wc.env.RequestCancelNexusOperation(input.seq)
 }
 
-func VersioningBehaviorToProto(t VersioningBehavior) enumspb.VersioningBehavior {
+func versioningBehaviorToProto(t VersioningBehavior) enumspb.VersioningBehavior {
 	switch t {
 	case VersioningBehaviorUnspecified:
 		return enumspb.VERSIONING_BEHAVIOR_UNSPECIFIED
@@ -2565,18 +2565,5 @@ func VersioningBehaviorToProto(t VersioningBehavior) enumspb.VersioningBehavior 
 		return enumspb.VERSIONING_BEHAVIOR_AUTO_UPGRADE
 	default:
 		panic("unknown versioning behavior type")
-	}
-}
-
-func VersioningBehaviorFromProto(t enumspb.VersioningBehavior) VersioningBehavior {
-	switch t {
-	case enumspb.VERSIONING_BEHAVIOR_UNSPECIFIED:
-		return VersioningBehaviorUnspecified
-	case enumspb.VERSIONING_BEHAVIOR_PINNED:
-		return VersioningBehaviorPinned
-	case enumspb.VERSIONING_BEHAVIOR_AUTO_UPGRADE:
-		return VersioningBehaviorAutoUpgrade
-	default:
-		panic("unknown versioning behavior type from proto")
 	}
 }

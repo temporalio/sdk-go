@@ -6175,7 +6175,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateWorkflowActionMemo() {
 }
 
 func (ts *IntegrationTestSuite) TestVersioningBehaviorInRespondWorkflowTaskCompletedRequest() {
-	versioningBehaviorAll := make([]workflow.VersioningBehavior, 0)
+	versioningBehaviorAll := make([]enumspb.VersioningBehavior, 0)
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -6216,8 +6216,7 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorInRespondWorkflowTaskCompl
 				) error {
 					if method == "/temporal.api.workflowservice.v1.WorkflowService/RespondWorkflowTaskCompleted" {
 						asReq := req.(*workflowservice.RespondWorkflowTaskCompletedRequest)
-						behavior := internal.VersioningBehaviorFromProto(asReq.VersioningBehavior)
-						versioningBehaviorAll = append(versioningBehaviorAll, behavior)
+						versioningBehaviorAll = append(versioningBehaviorAll, asReq.VersioningBehavior)
 					}
 					return invoker(ctx, method, req, reply, cc, opts...)
 				}),
@@ -6230,10 +6229,12 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorInRespondWorkflowTaskCompl
 	ts.worker.Stop()
 	ts.workerStopped = true
 	w := worker.New(c, ts.taskQueueName, worker.Options{
-		BuildID:                   "1.0",
-		UseBuildIDForVersioning:   true,
-		DeploymentName:            "deploy-test1",
-		DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
+		DeploymentOptions: worker.DeploymentOptions{
+			BuildID:                   "1.0",
+			UseBuildIDForVersioning:   true,
+			DeploymentName:            "deploy-test1",
+			DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
+		},
 	})
 	ts.registerWorkflowsAndActivities(w)
 	ts.Nil(w.Start())
@@ -6242,9 +6243,9 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorInRespondWorkflowTaskCompl
 	wfOpts := ts.startWorkflowOptions("test-default-versioning-behavior")
 	ts.NoError(ts.executeWorkflowWithOption(wfOpts, ts.workflows.Basic, nil))
 
-	ts.Equal(workflow.VersioningBehaviorAutoUpgrade, versioningBehaviorAll[0])
+	ts.Equal(enumspb.VERSIONING_BEHAVIOR_AUTO_UPGRADE, versioningBehaviorAll[0])
 	for i := 1; i < len(versioningBehaviorAll); i++ {
-		ts.True(versioningBehaviorAll[i] == workflow.VersioningBehaviorAutoUpgrade)
+		ts.Equal(versioningBehaviorAll[i], enumspb.VERSIONING_BEHAVIOR_AUTO_UPGRADE)
 	}
 
 	// Now override Worker defaults with an explicit setter in the workflow code
@@ -6253,10 +6254,71 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorInRespondWorkflowTaskCompl
 	wfOpts = ts.startWorkflowOptions("test-override-versioning-behavior")
 	ts.NoError(ts.executeWorkflowWithOption(wfOpts,
 		ts.workflows.SetPinnedVersioningBehavior, nil))
-	ts.Equal(workflow.VersioningBehaviorPinned, versioningBehaviorAll[0])
+	ts.Equal(enumspb.VERSIONING_BEHAVIOR_PINNED, versioningBehaviorAll[0])
 	for i := 1; i < len(versioningBehaviorAll); i++ {
-		ts.True(versioningBehaviorAll[i] == workflow.VersioningBehaviorPinned)
+		ts.Equal(versioningBehaviorAll[i], enumspb.VERSIONING_BEHAVIOR_PINNED)
 	}
+
+	// Ensure other workflows not affected by override
+	versioningBehaviorAll = nil
+
+	wfOpts = ts.startWorkflowOptions("test-default-versioning-behavior-2")
+	ts.NoError(ts.executeWorkflowWithOption(wfOpts, ts.workflows.Basic, nil))
+
+	ts.Equal(enumspb.VERSIONING_BEHAVIOR_AUTO_UPGRADE, versioningBehaviorAll[0])
+	for i := 1; i < len(versioningBehaviorAll); i++ {
+		ts.Equal(versioningBehaviorAll[i], enumspb.VERSIONING_BEHAVIOR_AUTO_UPGRADE)
+	}
+}
+
+func (ts *IntegrationTestSuite) TestGetVersioningBehavior() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	// We are setting the default build ID with versioning-2 rules to test
+	// with existing servers. TODO(antlai-temporal) use versioning-3 APIs
+	// after there is a server release that supports versioning-3
+	res, err := ts.client.GetWorkerVersioningRules(ctx, client.GetWorkerVersioningOptions{
+		TaskQueue: ts.taskQueueName,
+	})
+	ts.NoError(err)
+
+	_, err = ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: res.ConflictToken,
+		Operation: &client.VersioningOperationInsertAssignmentRule{
+			RuleIndex: 0,
+			Rule: client.VersioningAssignmentRule{
+				TargetBuildID: "1.0",
+			},
+		},
+	})
+	ts.NoError(err)
+
+	ts.worker.Stop()
+	ts.workerStopped = true
+	w := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		DeploymentOptions: worker.DeploymentOptions{
+			BuildID:                   "1.0",
+			UseBuildIDForVersioning:   true,
+			DeploymentName:            "deploy-test1",
+			DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
+		},
+	})
+	ts.registerWorkflowsAndActivities(w)
+	ts.Nil(w.Start())
+	defer w.Stop()
+
+	wfOpts := ts.startWorkflowOptions("test-get-versioning-behavior")
+	run, err := ts.client.ExecuteWorkflow(ctx, wfOpts, ts.workflows.SetPinnedVersioningBehavior)
+	ts.NoError(err)
+	value, err := ts.client.QueryWorkflow(ctx, "test-get-versioning-behavior", run.GetRunID(),
+		"get-versioning-behavior")
+	ts.NoError(err)
+	ts.NotNil(value)
+	var behavior workflow.VersioningBehavior
+	ts.Nil(value.Get(&behavior))
+	ts.Equal(workflow.VersioningBehaviorPinned, behavior)
 }
 
 func (ts *IntegrationTestSuite) TestSendsCorrectMeteringData() {

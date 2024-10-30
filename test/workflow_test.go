@@ -74,10 +74,17 @@ func (w *Workflows) Basic(ctx workflow.Context) ([]string, error) {
 func (w *Workflows) SetPinnedVersioningBehavior(ctx workflow.Context) ([]string, error) {
 	workflow.SetVersioningBehavior(ctx, workflow.VersioningBehaviorPinned)
 
+	err := workflow.SetQueryHandler(ctx, "get-versioning-behavior", func(input []byte) (workflow.VersioningBehavior, error) {
+		return workflow.GetVersioningBehavior(ctx), nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 	var ans1 string
 	workflow.GetLogger(ctx).Info("calling ExecuteActivity")
-	err := workflow.ExecuteActivity(ctx, "Prefix_ToUpperWithDelay", "hello", time.Second).Get(ctx, &ans1)
+	err = workflow.ExecuteActivity(ctx, "Prefix_ToUpperWithDelay", "hello", time.Second).Get(ctx, &ans1)
 	if err != nil {
 		return nil, err
 	}

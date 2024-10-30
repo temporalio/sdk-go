@@ -30,6 +30,36 @@ import (
 )
 
 type (
+	// WorkerDeploymentOptions provides configuration to enable Worker Versioning.
+	// NOTE: Experimental
+	WorkerDeploymentOptions struct {
+		// Assign a BuildID to this worker. This replaces the deprecated binary checksum concept,
+		// and is used to provide a unique identifier for a set of worker code, and is necessary
+		// to opt in to the Worker Versioning feature. See UseBuildIDForVersioning.
+		// NOTE: Experimental
+		BuildID string
+
+		// If set, opts this worker into the Worker Versioning feature. It will only
+		// operate on workflows it claims to be compatible with. You must set BuildID if this flag
+		// is true.
+		// NOTE: Experimental
+		// Note: Cannot be enabled at the same time as WorkerOptions.EnableSessionWorker
+		UseBuildIDForVersioning bool
+
+		// Assign a Deployment Name to this worker, an identifier for Worker Versioning that
+		// groups task queues for the given BuildID.
+		// NOTE: Experimental
+		// NOTE: Both BuildID and UseBuildIDForVersioning need to also be set to enable the new Worker Versioning-3 feature.
+		DeploymentName string
+
+		// Optional: Provides a default Versioning Behavior to workflows that do not set one in their first task
+		// (see workflow.SetVersioningBehavior).
+		// NOTE: Experimental
+		// NOTE: If the Worker Versioning-3 feature is on, and DefaultVersioningBehavior is unspecified,
+		// workflows that do not set the Versioning Behavior will fail in their first task.
+		DefaultVersioningBehavior VersioningBehavior
+	}
+
 	// WorkerOptions is used to configure a worker instance.
 	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 	// subjected to change in the future.
@@ -238,31 +268,10 @@ type (
 		// workflow or activities.
 		DisableRegistrationAliasing bool
 
-		// Assign a BuildID to this worker. This replaces the deprecated binary checksum concept,
-		// and is used to provide a unique identifier for a set of worker code, and is necessary
-		// to opt in to the Worker Versioning feature. See UseBuildIDForVersioning.
+		// Optional: If set, configure Worker Versioning for this worker. See WorkerDeploymentOptions
+		// for more. This is incompatible with setting EnableSessionWorker.
 		// NOTE: Experimental
-		BuildID string
-
-		// Optional: If set, opts this worker into the Worker Versioning feature. It will only
-		// operate on workflows it claims to be compatible with. You must set BuildID if this flag
-		// is true.
-		// NOTE: Experimental
-		// Note: Cannot be enabled at the same time as EnableSessionWorker
-		UseBuildIDForVersioning bool
-
-		// Optional: Assign a Deployment Name to this worker, an identifier for Worker Versioning that
-		// groups task queues for the given BuildID.
-		// NOTE: Experimental
-		// NOTE: Both BuildID and UseBuildIDForVersioning need to also be set to enable the new Worker Versioning-3 feature.
-		DeploymentName string
-
-		// Optional: Provides a default Versioning Behavior to workflows that do not set one in their first task
-		// (see workflow.SetVersioningBehavior).
-		// NOTE: Experimental
-		// NOTE: If the Worker Versioning-3 feature is on, and DefaultVersioningBehavior is unspecified,
-		// workflows that do not set the Versioning Behavior will fail in their first task.
-		DefaultVersioningBehavior VersioningBehavior
+		DeploymentOptions WorkerDeploymentOptions
 
 		// Optional: If set, use a custom tuner for this worker. See WorkerTuner for more.
 		// Mutually exclusive with MaxConcurrentWorkflowTaskExecutionSize,

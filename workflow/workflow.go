@@ -639,6 +639,18 @@ func SetVersioningBehavior(ctx Context, behavior VersioningBehavior) {
 	internal.SetVersioningBehavior(ctx, behavior)
 }
 
+// GetVersioningBehavior returns the last versioning behavior set with
+// the SetVersioningBehavior method.
+//
+// When SetVersioningBehavior has not been called, it always returns
+// VersioningBehaviorUnspecified, ignoring any Worker
+// defaults to avoid non-deterministic errors.
+//
+// NOTE: Experimental
+func GetVersioningBehavior(ctx Context) VersioningBehavior {
+	return internal.GetVersioningBehavior(ctx)
+}
+
 // IsReplaying returns whether the current workflow code is replaying.
 //
 // Warning! Never make commands, like schedule activity/childWorkflow/timer or send/wait on future/channel, based on
