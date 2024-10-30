@@ -170,6 +170,9 @@ type (
 		// The worker's deployment name, an identifier in versioning-3 to group Task Queues for a given build ID.
 		DeploymentName string
 
+		// The Versioning Behavior for workflows that do not set one in their first task.
+		DefaultVersioningBehavior VersioningBehavior
+
 		MetricsHandler metrics.Handler
 
 		Logger log.Logger
@@ -1621,7 +1624,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 
 	// Sessions are not currently compatible with worker versioning
 	// See: https://github.com/temporalio/sdk-go/issues/1227
-	if options.EnableSessionWorker && options.UseBuildIDForVersioning {
+	if options.EnableSessionWorker && options.DeploymentOptions.UseBuildIDForVersioning {
 		panic("cannot set both EnableSessionWorker and UseBuildIDForVersioning")
 	}
 
@@ -1665,9 +1668,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		MaxConcurrentWorkflowTaskQueuePollers: options.MaxConcurrentWorkflowTaskPollers,
 		MaxConcurrentNexusTaskQueuePollers:    options.MaxConcurrentNexusTaskPollers,
 		Identity:                              client.identity,
-		WorkerBuildID:                         options.BuildID,
-		UseBuildIDForVersioning:               options.UseBuildIDForVersioning,
-		DeploymentName:                        options.DeploymentName,
+		WorkerBuildID:                         options.DeploymentOptions.BuildID,
+		UseBuildIDForVersioning:               options.DeploymentOptions.UseBuildIDForVersioning,
+		DeploymentName:                        options.DeploymentOptions.DeploymentName,
+		DefaultVersioningBehavior:             options.DeploymentOptions.DefaultVersioningBehavior,
 		MetricsHandler:                        client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue)),
 		Logger:                                client.logger,
 		EnableLoggingInReplay:                 options.EnableLoggingInReplay,

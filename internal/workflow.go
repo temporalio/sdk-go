@@ -59,6 +59,23 @@ const (
 	HandlerUnfinishedPolicyAbandon
 )
 
+// VersioningBehavior specifies when existing workflows could change their Build ID.
+// NOTE: Experimental
+type VersioningBehavior int
+
+const (
+	// Workflow versioning policy unknown. A default VersioningBehaviorUnspecified policy forces
+	// every workflow to explicitly set a VersioningBehavior different from VersioningBehaviorUnspecified.
+	VersioningBehaviorUnspecified VersioningBehavior = iota
+
+	// Workflow should be pinned to the current Build ID until manually moved.
+	VersioningBehaviorPinned
+
+	// Workflow automatically moves to the latest version (default Build ID of the task queue)
+	// when the next task is dispatched.
+	VersioningBehaviorAutoUpgrade
+)
+
 var (
 	errWorkflowIDNotSet              = errors.New("workflowId is not set")
 	errLocalActivityParamsBadRequest = errors.New("missing local activity parameters through context, check LocalActivityOptions")
@@ -1171,6 +1188,12 @@ type WorkflowInfo struct {
 	// which is currently or about to be executing. If no longer replaying will be set to the ID of
 	// this worker
 	currentTaskBuildID string
+	// currentVersioningBehavior, if not unspecified,  sets the strategy to upgrade
+	// this workflow when the default Build ID
+	// has changed, and Worker Versioning-3 has been enabled. Otherwise, the current Worker
+	// option DefaultVersioningBehavior will be used instead.
+	// NOTE: Experimental
+	currentVersioningBehavior VersioningBehavior
 
 	continueAsNewSuggested bool
 	currentHistorySize     int
@@ -2530,4 +2553,17 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 
 func (wc *workflowEnvironmentInterceptor) RequestCancelNexusOperation(ctx Context, input RequestCancelNexusOperationInput) {
 	wc.env.RequestCancelNexusOperation(input.seq)
+}
+
+func versioningBehaviorToProto(t VersioningBehavior) enumspb.VersioningBehavior {
+	switch t {
+	case VersioningBehaviorUnspecified:
+		return enumspb.VERSIONING_BEHAVIOR_UNSPECIFIED
+	case VersioningBehaviorPinned:
+		return enumspb.VERSIONING_BEHAVIOR_PINNED
+	case VersioningBehaviorAutoUpgrade:
+		return enumspb.VERSIONING_BEHAVIOR_AUTO_UPGRADE
+	default:
+		panic("unknown versioning behavior type")
+	}
 }

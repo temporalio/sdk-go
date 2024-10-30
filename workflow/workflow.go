@@ -35,6 +35,22 @@ import (
 	"golang.org/x/exp/constraints"
 )
 
+// VersioningBehavior specifies when existing workflows could change their Build ID.
+// NOTE: Experimental
+type VersioningBehavior = internal.VersioningBehavior
+
+const (
+	// Workflow versioning policy unknown.
+	VersioningBehaviorUnspecified = internal.VersioningBehaviorUnspecified
+
+	// Workflow should be pinned to the current Build ID until manually moved.
+	VersioningBehaviorPinned = internal.VersioningBehaviorPinned
+
+	// Workflow automatically moves to the latest version (default Build ID of the task queue)
+	// when the next task is dispatched.
+	VersioningBehaviorAutoUpgrade = internal.VersioningBehaviorAutoUpgrade
+)
+
 // HandlerUnfinishedPolicy defines the actions taken when a workflow exits while update handlers are
 // running. The workflow exit may be due to successful return, failure, cancellation, or
 // continue-as-new.
@@ -281,7 +297,7 @@ func GetCurrentUpdateInfo(ctx Context) *UpdateInfo {
 // GetLogger returns a logger to be used in workflow's context.
 // This logger does not record logs during replay.
 //
-// The logger may also extract additional fields from the context, such as update info 
+// The logger may also extract additional fields from the context, such as update info
 // if used in an update handler.
 func GetLogger(ctx Context) log.Logger {
 	return internal.GetLogger(ctx)
@@ -605,6 +621,34 @@ func GetCurrentDetails(ctx Context) string {
 // NOTE: Experimental
 func SetCurrentDetails(ctx Context, details string) {
 	internal.SetCurrentDetails(ctx, details)
+}
+
+// SetVersioningBehavior sets the strategy to upgrade this workflow when the default Build ID
+// has changed, and Worker Versioning-3 has been enabled.
+//
+// SetVersioningBehavior should be called during the first workflow task, and the context `ctx` should
+// be the original context workflow argument, or derived from this context.
+//
+// If not set, a default behavior provided in worker.Options.DefaultVersioningBehavior will be used.
+//
+// If not set, and the default behavior is also unspecified in the Worker, the first task of this workflow
+// will fail when Worker Versioning-3 has been enabled.
+//
+// NOTE: Experimental
+func SetVersioningBehavior(ctx Context, behavior VersioningBehavior) {
+	internal.SetVersioningBehavior(ctx, behavior)
+}
+
+// GetVersioningBehavior returns the last versioning behavior set with
+// the SetVersioningBehavior method.
+//
+// When SetVersioningBehavior has not been called, it always returns
+// VersioningBehaviorUnspecified, ignoring any Worker
+// defaults to avoid non-deterministic errors.
+//
+// NOTE: Experimental
+func GetVersioningBehavior(ctx Context) VersioningBehavior {
+	return internal.GetVersioningBehavior(ctx)
 }
 
 // IsReplaying returns whether the current workflow code is replaying.
