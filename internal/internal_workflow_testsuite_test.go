@@ -4254,8 +4254,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalLoss() {
 			ch2.Receive(ctx, &v)
 		})
 		selector.Select(ctx)
-		s.Require().True(ch1.Len() == 1 && v == "s2")
-		s.Require().True(selector.HasPending())
+		s.Require().True(ch1.Len() == 0 && v == "s2")
+		selector.Select(ctx)
 
 		return nil
 	}
@@ -4268,5 +4268,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalLoss() {
 	}, 5*time.Second)
 	env.ExecuteWorkflow(workflowFn)
 	s.True(env.IsWorkflowCompleted())
-	s.NoError(env.GetWorkflowError())
+	err := env.GetWorkflowError()
+	s.Error(err)
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+	s.Equal("deadline exceeded (type: ScheduleToClose)", workflowErr.cause.Error())
 }
