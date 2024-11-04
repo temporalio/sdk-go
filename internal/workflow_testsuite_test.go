@@ -280,6 +280,7 @@ func TestWorkflowIDUpdateWorkflowByID(t *testing.T) {
 			},
 			accept:   func() {},
 			complete: func(interface{}, error) {},
+			env:      env,
 		}, "input")
 		require.NoError(t, err)
 	}, time.Second)
@@ -322,6 +323,7 @@ func TestChildWorkflowUpdate(t *testing.T) {
 					require.Fail(t, "update failed", err)
 				}
 			},
+			env: env,
 		}, nil)
 		assert.NoError(t, err)
 	}, time.Second*5)
@@ -375,6 +377,7 @@ func TestWorkflowUpdateOrder(t *testing.T) {
 			},
 			accept:   func() {},
 			complete: func(interface{}, error) {},
+			env:      env,
 		})
 	}, 0)
 
@@ -415,6 +418,7 @@ func TestWorkflowNotRegisteredRejected(t *testing.T) {
 				require.Fail(t, "update should not be accepted")
 			},
 			complete: func(interface{}, error) {},
+			env:      env,
 		})
 	}, 0)
 
@@ -439,6 +443,7 @@ func TestWorkflowUpdateOrderAcceptReject(t *testing.T) {
 			},
 			accept:   func() {},
 			complete: func(interface{}, error) {},
+			env:      env,
 		})
 	}, 0)
 
@@ -452,6 +457,7 @@ func TestWorkflowUpdateOrderAcceptReject(t *testing.T) {
 				require.Fail(t, "update should not be rejected")
 			},
 			complete: func(interface{}, error) {},
+			env:      env,
 		})
 	}, 0)
 
@@ -462,6 +468,7 @@ func TestWorkflowUpdateOrderAcceptReject(t *testing.T) {
 			},
 			accept:   func() {},
 			complete: func(interface{}, error) {},
+			env:      env,
 		})
 	}, 0)
 
@@ -559,6 +566,7 @@ func TestAllHandlersFinished(t *testing.T) {
 			},
 			accept:   func() {},
 			complete: func(interface{}, error) {},
+			env:      env,
 		})
 	}, 0)
 
@@ -569,6 +577,7 @@ func TestAllHandlersFinished(t *testing.T) {
 			},
 			accept:   func() {},
 			complete: func(interface{}, error) {},
+			env:      env,
 		})
 	}, time.Minute)
 
@@ -617,6 +626,7 @@ func TestWorkflowAllHandlersFinished(t *testing.T) {
 				},
 				accept:   func() {},
 				complete: func(interface{}, error) {},
+				env:      env,
 			})
 		}, 0)
 
@@ -627,6 +637,7 @@ func TestWorkflowAllHandlersFinished(t *testing.T) {
 				},
 				accept:   func() {},
 				complete: func(interface{}, error) {},
+				env:      env,
 			})
 		}, time.Minute)
 
@@ -637,6 +648,7 @@ func TestWorkflowAllHandlersFinished(t *testing.T) {
 				},
 				accept:   func() {},
 				complete: func(interface{}, error) {},
+				env:      env,
 			})
 		}, 2*time.Minute)
 

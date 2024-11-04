@@ -1419,9 +1419,10 @@ func (uc *updateCallback) Reject(err error) {
 
 func (uc *updateCallback) Complete(success interface{}, err error) {
 	// cache update result so we can dedup duplicate update IDs
-	if uc.env.impl.updateMap != nil {
-		uc.env.impl.updateMap[uc.env.impl.currentUpdateId] = success
+	if uc.env == nil {
+		panic("env is needed in updateCallback to cache update results for deduping purposes")
 	}
+	uc.env.impl.updateMap[uc.env.impl.currentUpdateId] = updateResult{success, err}
 	uc.complete(success, err)
 }
 

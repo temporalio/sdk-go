@@ -143,6 +143,11 @@ type (
 		taskQueues map[string]struct{}
 	}
 
+	updateResult struct {
+		success interface{}
+		err     error
+	}
+
 	// testWorkflowEnvironmentShared is the shared data between parent workflow and child workflow test environments
 	testWorkflowEnvironmentShared struct {
 		locker    sync.Mutex
@@ -208,7 +213,7 @@ type (
 		signalHandler         func(name string, input *commonpb.Payloads, header *commonpb.Header) error
 		queryHandler          func(string, *commonpb.Payloads, *commonpb.Header) (*commonpb.Payloads, error)
 		updateHandler         func(name string, id string, input *commonpb.Payloads, header *commonpb.Header, resp UpdateCallbacks)
-		updateMap             map[string]interface{}
+		updateMap             map[string]updateResult
 		startedHandler        func(r WorkflowExecution, e error)
 
 		isWorkflowCompleted bool
@@ -2182,6 +2187,7 @@ func (env *testWorkflowEnvironmentImpl) RegisterUpdateHandler(
 	handler func(name string, id string, input *commonpb.Payloads, header *commonpb.Header, resp UpdateCallbacks),
 ) {
 	env.updateHandler = handler
+	env.updateMap = make(map[string]updateResult)
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterQueryHandler(
@@ -2724,16 +2730,13 @@ func (env *testWorkflowEnvironmentImpl) updateWorkflow(name string, id string, u
 	if err != nil {
 		panic(err)
 	}
-	if env.updateMap == nil {
-		env.updateMap = make(map[string]interface{})
-	}
 
 	// check for duplicate update ID
 	if _, ok := env.updateMap[id]; ok {
 		// return cached result
 		env.postCallback(func() {
 			uc.Accept()
-			uc.Complete(env.updateMap[id], nil)
+			uc.Complete(env.updateMap[id].success, env.updateMap[id].err)
 		}, false)
 	} else {
 		env.currentUpdateId = id
