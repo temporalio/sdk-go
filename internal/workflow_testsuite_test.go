@@ -273,15 +273,17 @@ func TestWorkflowIDUpdateWorkflowByID(t *testing.T) {
 	var suite WorkflowTestSuite
 	// Test UpdateWorkflowByID works with custom ID
 	env := suite.NewTestWorkflowEnvironment()
+	updateID := "id"
 	env.RegisterDelayedCallback(func() {
-		err := env.UpdateWorkflowByID("my-workflow-id", "update", "id", &updateCallback{
-			reject: func(err error) {
+		err := env.UpdateWorkflowByID("my-workflow-id", "update", updateID, newUpdateCallback(
+			env,
+			updateID,
+			func() {},
+			func(err error) {
 				require.Fail(t, "update should not be rejected")
 			},
-			accept:   func() {},
-			complete: func(interface{}, error) {},
-			env:      env,
-		}, "input")
+			func(interface{}, error) {},
+		), "input")
 		require.NoError(t, err)
 	}, time.Second)
 
@@ -500,7 +502,7 @@ func TestWorkflowUpdateOrderAcceptReject(t *testing.T) {
 
 func TestWorkflowDuplicateIDDedup(t *testing.T) {
 	var suite WorkflowTestSuite
-	// Test dev server rejects UpdateWorkflow with same ID
+	// Test dev server dedups UpdateWorkflow with same ID
 	env := suite.NewTestWorkflowEnvironment()
 	env.RegisterDelayedCallback(func() {
 		env.UpdateWorkflow("update", "id", &updateCallback{
@@ -517,7 +519,8 @@ func TestWorkflowDuplicateIDDedup(t *testing.T) {
 					require.Equal(t, 0, intResult)
 				}
 			},
-			env: env,
+			env:      env,
+			updateID: "id",
 		}, 0)
 	}, 0)
 
@@ -553,6 +556,7 @@ func TestWorkflowDuplicateIDDedup(t *testing.T) {
 		return Sleep(ctx, time.Hour)
 	})
 	require.NoError(t, env.GetWorkflowError())
+	require.True(t, false)
 }
 
 func TestAllHandlersFinished(t *testing.T) {
@@ -802,6 +806,7 @@ func TestWorkflowUpdateLogger(t *testing.T) {
 			},
 			accept:   func() {},
 			complete: func(interface{}, error) {},
+			env:      env,
 		})
 	}, 0)
 

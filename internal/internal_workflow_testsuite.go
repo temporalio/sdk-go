@@ -2750,6 +2750,8 @@ func (env *testWorkflowEnvironmentImpl) updateWorkflow(name string, id string, u
 			uc.Complete(env.updateMap[id].success, env.updateMap[id].err)
 		}, false)
 	} else {
+		// TODO: This doesn't account for multiple async updates
+		// would a UC -> ID map work? Would I have to use pointers?
 		env.currentUpdateId = id
 		env.postCallback(func() {
 			// Do not send any headers on test invocations
@@ -2768,6 +2770,7 @@ func (env *testWorkflowEnvironmentImpl) updateWorkflowByID(workflowID, name, id 
 		if err != nil {
 			panic(err)
 		}
+		// TODO: handle dedup
 		workflowHandle.env.postCallback(func() {
 			workflowHandle.env.updateHandler(name, id, data, nil, uc)
 		}, true)

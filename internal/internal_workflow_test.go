@@ -1407,6 +1407,18 @@ type updateCallback struct {
 	reject   func(error)
 	complete func(interface{}, error)
 	env      *TestWorkflowEnvironment
+	updateID string
+}
+
+// env and updateID are needed to cache update results for deduping purposes
+func newUpdateCallback(env *TestWorkflowEnvironment, updateID string, accept func(), reject func(error), complete func(interface{}, error)) *updateCallback {
+	return &updateCallback{
+		accept:   accept,
+		reject:   reject,
+		complete: complete,
+		env:      env,
+		updateID: updateID,
+	}
 }
 
 func (uc *updateCallback) Accept() {
