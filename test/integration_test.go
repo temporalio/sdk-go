@@ -4458,6 +4458,55 @@ func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch b
 	ts.True(taskFailedMetric >= 1)
 }
 
+func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseReplay() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	fetchMetrics := func() (localMetric int64) {
+		for _, counter := range ts.metricsHandler.Counters() {
+			counter := counter
+			if counter.Name == "temporal_workflow_task_execution_failed" && counter.Tags["failure_reason"] == "NonDeterminismError" {
+				localMetric = counter.Value()
+			}
+		}
+		return
+	}
+
+	// Confirm no metrics to start
+	taskFailedMetric := fetchMetrics()
+	ts.Zero(taskFailedMetric)
+
+	// Start workflow
+	forcedNonDeterminismCounter = 0
+	run, err := ts.client.ExecuteWorkflow(
+		ctx,
+		ts.startWorkflowOptions("test-non-determinism-failure-cause-replay-"+uuid.New()),
+		ts.workflows.NonDeterminismReplay,
+	)
+
+	ts.NoError(err)
+	defer func() { _ = ts.client.TerminateWorkflow(ctx, run.GetID(), run.GetRunID(), "", nil) }()
+	ts.NoError(run.Get(ctx, nil))
+
+	// Now, stop the worker and start a new one
+	ts.worker.Stop()
+	ts.workerStopped = true
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
+	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.NoError(nextWorker.Start())
+	defer nextWorker.Stop()
+
+	// Increase the determinism counter and send a tick to trigger replay
+	// non-determinism
+	forcedNonDeterminismCounter++
+	fmt.Println("Querying workflow")
+	_, err = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), client.QueryTypeStackTrace, nil)
+	ts.Error(err)
+
+	taskFailedMetric = fetchMetrics()
+	ts.True(taskFailedMetric >= 1)
+}
+
 func (ts *IntegrationTestSuite) TestDeterminismUpsertSearchAttributesConditional() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

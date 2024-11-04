@@ -251,6 +251,13 @@ func TestNexusSyncOperation(t *testing.T) {
 		require.ErrorAs(t, err, &unsuccessfulOperationErr)
 		require.Equal(t, nexus.OperationStateFailed, unsuccessfulOperationErr.State)
 		require.Equal(t, "fail", unsuccessfulOperationErr.Failure.Message)
+
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
+			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
+			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
+			tc.requireCounter(t, metrics.NexusTaskExecutionFailedCounter, service.Name, syncOp.Name())
+		}, time.Second*3, time.Millisecond*100)
 	})
 
 	t.Run("fmt-errorf", func(t *testing.T) {
@@ -259,6 +266,13 @@ func TestNexusSyncOperation(t *testing.T) {
 		var unexpectedResponseErr *nexus.UnexpectedResponseError
 		require.ErrorAs(t, err, &unexpectedResponseErr)
 		require.Contains(t, unexpectedResponseErr.Message, `"500 Internal Server Error": arbitrary error message`)
+
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
+			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
+			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
+			tc.requireCounter(t, metrics.NexusTaskExecutionFailedCounter, service.Name, syncOp.Name())
+		}, time.Second*3, time.Millisecond*100)
 	})
 
 	t.Run("handlererror", func(t *testing.T) {
@@ -327,6 +341,13 @@ func TestNexusSyncOperation(t *testing.T) {
 		require.ErrorAs(t, err, &unexpectedResponseErr)
 		require.Equal(t, 500, unexpectedResponseErr.Response.StatusCode)
 		require.Contains(t, unexpectedResponseErr.Message, "panic: panic requested")
+
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
+			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
+			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
+			tc.requireCounter(t, metrics.NexusTaskExecutionFailedCounter, service.Name, syncOp.Name())
+		}, time.Second*3, time.Millisecond*100)
 	})
 }
 
@@ -648,6 +669,38 @@ func TestAsyncOperationFromWorkflow(t *testing.T) {
 	})
 }
 
+func TestNewNexusClientValidation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+	tc := newTestContext(t, ctx)
+
+	callerWorkflow := func(ctx workflow.Context, endpoint, service string) (err error) {
+		defer func() {
+			panicMessage := recover()
+			err = fmt.Errorf("recovered: %s", panicMessage)
+		}()
+		_ = workflow.NewNexusClient(endpoint, service)
+		return
+	}
+
+	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
+	w.RegisterWorkflow(callerWorkflow)
+	require.NoError(t, w.Start())
+	t.Cleanup(w.Stop)
+
+	opts := client.StartWorkflowOptions{
+		TaskQueue: tc.taskQueue,
+	}
+
+	run, err := tc.client.ExecuteWorkflow(ctx, opts, callerWorkflow, "", "service")
+	require.NoError(t, err)
+	require.ErrorContains(t, run.Get(ctx, nil), "recovered: endpoint must not be empty")
+
+	run, err = tc.client.ExecuteWorkflow(ctx, opts, callerWorkflow, "endpoint", "")
+	require.NoError(t, err)
+	require.ErrorContains(t, run.Get(ctx, nil), "recovered: service must not be empty")
+}
+
 func TestReplay(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
@@ -735,6 +788,10 @@ func TestReplay(t *testing.T) {
 
 func TestWorkflowTestSuite_NexusSyncOperation(t *testing.T) {
 	op := nexus.NewSyncOperation("op", func(ctx context.Context, outcome string, opts nexus.StartOperationOptions) (string, error) {
+		dealine, ok := ctx.Deadline()
+		require.True(t, ok)
+		timeout := time.Until(dealine)
+		require.GreaterOrEqual(t, 10*time.Second, timeout)
 		require.NotPanicsf(t, func() {
 			temporalnexus.GetMetricsHandler(ctx)
 			temporalnexus.GetLogger(ctx)

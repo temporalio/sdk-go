@@ -138,11 +138,14 @@ type (
 	}
 
 	historyIteratorImpl struct {
-		iteratorFunc   func(nextPageToken []byte) (*historypb.History, []byte, error)
-		execution      *commonpb.WorkflowExecution
-		nextPageToken  []byte
-		namespace      string
-		service        workflowservice.WorkflowServiceClient
+		iteratorFunc  func(nextPageToken []byte) (*historypb.History, []byte, error)
+		execution     *commonpb.WorkflowExecution
+		nextPageToken []byte
+		namespace     string
+		service       workflowservice.WorkflowServiceClient
+		// maxEventID is the maximum eventID that the history iterator is expected to return.
+		// 0 means that the iterator will return all history events.
+		maxEventID     int64
 		metricsHandler metrics.Handler
 		taskQueue      string
 	}
@@ -471,7 +474,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 		if failWorkflowTask.Cause == enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR {
 			failureReason = "NonDeterminismError"
 		}
-		metricsHandler.WithTags(metrics.WorkflowTaskFailedTags(failureReason)).Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
+		incrementWorkflowTaskFailureCounter(metricsHandler, failureReason)
 		completedRequest = failWorkflowTask
 	}
 
@@ -869,6 +872,7 @@ func (wtp *workflowTaskPoller) toWorkflowTask(response *workflowservice.PollWork
 		nextPageToken:  response.NextPageToken,
 		namespace:      wtp.namespace,
 		service:        wtp.service,
+		maxEventID:     response.GetStartedEventId(),
 		metricsHandler: wtp.metricsHandler,
 		taskQueue:      wtp.taskQueueName,
 	}
@@ -886,6 +890,7 @@ func (h *historyIteratorImpl) GetNextPage() (*historypb.History, error) {
 			h.service,
 			h.namespace,
 			h.execution,
+			h.maxEventID,
 			h.metricsHandler,
 			h.taskQueue,
 		)
@@ -912,6 +917,7 @@ func newGetHistoryPageFunc(
 	service workflowservice.WorkflowServiceClient,
 	namespace string,
 	execution *commonpb.WorkflowExecution,
+	lastEventID int64,
 	metricsHandler metrics.Handler,
 	taskQueue string,
 ) func(nextPageToken []byte) (*historypb.History, []byte, error) {
@@ -941,6 +947,19 @@ func newGetHistoryPageFunc(
 		} else {
 			h = resp.History
 		}
+
+		size := len(h.Events)
+		// While the SDK is processing a workflow task, the workflow task could timeout and server would start
+		// a new workflow task or the server looses the workflow task if it is a speculative workflow task. In either
+		// case, the new workflow task could have events that are beyond the last event ID that the SDK expects to process.
+		// In such cases, the SDK should return error indicating that the workflow task is stale since the result will not be used.
+		if size > 0 && lastEventID > 0 && 
+			h.Events[size-1].GetEventId() > lastEventID {
+			return nil, nil, fmt.Errorf("history contains events past expected last event ID (%v) "+
+				"likely this means the current workflow task is no longer valid", lastEventID)
+
+		}
+
 		return h, resp.NextPageToken, nil
 	}
 }

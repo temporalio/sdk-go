@@ -278,7 +278,11 @@ func GetCurrentUpdateInfo(ctx Context) *UpdateInfo {
 	return internal.GetCurrentUpdateInfo(ctx)
 }
 
-// GetLogger returns a logger to be used in workflow's context
+// GetLogger returns a logger to be used in workflow's context.
+// This logger does not record logs during replay.
+//
+// The logger may also extract additional fields from the context, such as update info 
+// if used in an update handler.
 func GetLogger(ctx Context) log.Logger {
 	return internal.GetLogger(ctx)
 }

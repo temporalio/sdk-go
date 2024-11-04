@@ -152,7 +152,12 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 
 	// Execution latency (in-SDK processing time).
 	metricsHandler.Timer(metrics.NexusTaskExecutionLatency).Record(time.Since(executionStartTime))
-	if err != nil || failure != nil {
+
+	// Increment failure in all forms of errors:
+	// Internal error processing the task.
+	// Failure from user handler.
+	// Special case for the start response with operation error.
+	if err != nil || failure != nil || res.Response.GetStartOperation().GetOperationError() != nil {
 		metricsHandler.Counter(metrics.NexusTaskExecutionFailedCounter).Inc(1)
 	}
 
