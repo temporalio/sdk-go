@@ -1412,6 +1412,8 @@ func (env *testWorkflowEnvironmentImpl) getActivityHandle(activityID, runID stri
 }
 
 func (env *testWorkflowEnvironmentImpl) setActivityHandle(activityID, runID string, handle *testActivityHandle) {
+	env.locker.Lock()
+	defer env.locker.Unlock()
 	env.activities[env.makeUniqueActivityID(activityID, runID)] = handle
 }
 
