@@ -22,21 +22,27 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-package internal
+//go:build !linux
 
-// Below are the metadata which will be embedded as part of headers in every RPC call made by this client to Temporal server.
-// Update to the metadata below is typically done by the Temporal team as part of a major feature or behavior change.
+package resourcetuner
 
-const (
-	// SDKVersion is a semver (https://semver.org/) that represents the version of this Temporal GoSDK.
-	// Server validates if SDKVersion fits its supported range and rejects request if it doesn't.
-	SDKVersion = "1.30.0"
+import "errors"
 
-	// SDKName represents the name of the SDK.
-	SDKName = clientNameHeaderValue
+func newCGroupInfo() cGroupInfo {
+	return &cGroupInfoImpl{}
+}
 
-	// SupportedServerVersions is a semver rages (https://github.com/blang/semver#ranges) of server versions that
-	// are supported by this Temporal SDK.
-	// Server validates if its version fits into SupportedServerVersions range and rejects request if it doesn't.
-	SupportedServerVersions = ">=1.0.0 <2.0.0"
-)
+type cGroupInfoImpl struct {
+}
+
+func (p *cGroupInfoImpl) Update() (bool, error) {
+	return false, errors.New("cgroup is not supported on this platform")
+}
+
+func (p *cGroupInfoImpl) GetLastMemUsage() float64 {
+	return 0
+}
+
+func (p *cGroupInfoImpl) GetLastCPUUsage() float64 {
+	return 0
+}
