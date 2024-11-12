@@ -235,13 +235,18 @@ type (
 
 		workflowFunctionExecuting bool
 		bufferedUpdateRequests    map[string][]func()
-
-		currentUpdateId string
 	}
 
 	testSessionEnvironmentImpl struct {
 		*sessionEnvironmentImpl
 		testWorkflowEnvironment *testWorkflowEnvironmentImpl
+	}
+
+	// UpdateCallbacksWrapper is a wrapper to UpdateCallbacks. It allows us to dedup duplicate update IDs in the test environment.
+	updateCallbacksWrapper struct {
+		uc       UpdateCallbacks
+		env      *testWorkflowEnvironmentImpl
+		updateID string
 	}
 )
 
@@ -2742,20 +2747,19 @@ func (env *testWorkflowEnvironmentImpl) updateWorkflow(name string, id string, u
 		panic(err)
 	}
 
+	var ucWrapper = updateCallbacksWrapper{uc: uc, env: env, updateID: id}
+
 	// check for duplicate update ID
-	if _, ok := env.updateMap[id]; ok {
+	if result, ok := env.updateMap[id]; ok {
 		// return cached result
 		env.postCallback(func() {
-			uc.Accept()
-			uc.Complete(env.updateMap[id].success, env.updateMap[id].err)
+			ucWrapper.uc.Accept()
+			ucWrapper.uc.Complete(result.success, result.err)
 		}, false)
 	} else {
-		// TODO: This doesn't account for multiple async updates
-		// would a UC -> ID map work? Would I have to use pointers?
-		env.currentUpdateId = id
 		env.postCallback(func() {
 			// Do not send any headers on test invocations
-			env.updateHandler(name, id, data, nil, uc)
+			env.updateHandler(name, id, data, nil, ucWrapper)
 		}, true)
 	}
 
@@ -2770,10 +2774,21 @@ func (env *testWorkflowEnvironmentImpl) updateWorkflowByID(workflowID, name, id 
 		if err != nil {
 			panic(err)
 		}
-		// TODO: handle dedup
-		workflowHandle.env.postCallback(func() {
-			workflowHandle.env.updateHandler(name, id, data, nil, uc)
-		}, true)
+
+		var ucWrapper = updateCallbacksWrapper{uc: uc, env: env, updateID: id}
+
+		// Check for duplicate update ID
+		if result, ok := env.updateMap[id]; ok {
+			workflowHandle.env.postCallback(func() {
+				ucWrapper.uc.Accept()
+				ucWrapper.uc.Complete(result.success, result.err)
+			}, false)
+		} else {
+			workflowHandle.env.postCallback(func() {
+				workflowHandle.env.updateHandler(name, id, data, nil, ucWrapper)
+			}, true)
+		}
+
 		return nil
 	}
 
@@ -2993,4 +3008,21 @@ func (h *testNexusOperationHandle) cancel() {
 			h.env.runningCount--
 		}, false)
 	}()
+}
+
+func (uc updateCallbacksWrapper) Accept() {
+	uc.uc.Accept()
+}
+
+func (uc updateCallbacksWrapper) Reject(err error) {
+	uc.uc.Reject(err)
+}
+
+func (uc updateCallbacksWrapper) Complete(success interface{}, err error) {
+	// cache update result so we can dedup duplicate update IDs
+	if uc.env == nil {
+		panic("env is needed in updateCallback to cache update results for deduping purposes")
+	}
+	uc.env.updateMap[uc.updateID] = updateResult{success, err}
+	uc.uc.Complete(success, err)
 }

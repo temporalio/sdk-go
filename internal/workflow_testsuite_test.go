@@ -273,17 +273,14 @@ func TestWorkflowIDUpdateWorkflowByID(t *testing.T) {
 	var suite WorkflowTestSuite
 	// Test UpdateWorkflowByID works with custom ID
 	env := suite.NewTestWorkflowEnvironment()
-	updateID := "id"
 	env.RegisterDelayedCallback(func() {
-		err := env.UpdateWorkflowByID("my-workflow-id", "update", updateID, newUpdateCallback(
-			env,
-			updateID,
-			func() {},
-			func(err error) {
+		err := env.UpdateWorkflowByID("my-workflow-id", "update", "id", &updateCallback{
+			reject: func(err error) {
 				require.Fail(t, "update should not be rejected")
 			},
-			func(interface{}, error) {},
-		), "input")
+			accept:   func() {},
+			complete: func(interface{}, error) {},
+		}, "input")
 		require.NoError(t, err)
 	}, time.Second)
 
@@ -325,7 +322,6 @@ func TestChildWorkflowUpdate(t *testing.T) {
 					require.Fail(t, "update failed", err)
 				}
 			},
-			env: env,
 		}, nil)
 		assert.NoError(t, err)
 	}, time.Second*5)
@@ -379,7 +375,6 @@ func TestWorkflowUpdateOrder(t *testing.T) {
 			},
 			accept:   func() {},
 			complete: func(interface{}, error) {},
-			env:      env,
 		})
 	}, 0)
 
@@ -420,7 +415,6 @@ func TestWorkflowNotRegisteredRejected(t *testing.T) {
 				require.Fail(t, "update should not be accepted")
 			},
 			complete: func(interface{}, error) {},
-			env:      env,
 		})
 	}, 0)
 
@@ -445,7 +439,6 @@ func TestWorkflowUpdateOrderAcceptReject(t *testing.T) {
 			},
 			accept:   func() {},
 			complete: func(interface{}, error) {},
-			env:      env,
 		})
 	}, 0)
 
@@ -459,7 +452,6 @@ func TestWorkflowUpdateOrderAcceptReject(t *testing.T) {
 				require.Fail(t, "update should not be rejected")
 			},
 			complete: func(interface{}, error) {},
-			env:      env,
 		})
 	}, 0)
 
@@ -470,7 +462,6 @@ func TestWorkflowUpdateOrderAcceptReject(t *testing.T) {
 			},
 			accept:   func() {},
 			complete: func(interface{}, error) {},
-			env:      env,
 		})
 	}, 0)
 
@@ -519,8 +510,6 @@ func TestWorkflowDuplicateIDDedup(t *testing.T) {
 					require.Equal(t, 0, intResult)
 				}
 			},
-			env:      env,
-			updateID: "id",
 		}, 0)
 	}, 0)
 
@@ -541,7 +530,6 @@ func TestWorkflowDuplicateIDDedup(t *testing.T) {
 					require.Equal(t, 0, intResult)
 				}
 			},
-			env: env,
 		}, 1)
 
 	}, 1*time.Millisecond)
@@ -570,7 +558,6 @@ func TestAllHandlersFinished(t *testing.T) {
 			},
 			accept:   func() {},
 			complete: func(interface{}, error) {},
-			env:      env,
 		})
 	}, 0)
 
@@ -581,7 +568,6 @@ func TestAllHandlersFinished(t *testing.T) {
 			},
 			accept:   func() {},
 			complete: func(interface{}, error) {},
-			env:      env,
 		})
 	}, time.Minute)
 
@@ -646,7 +632,6 @@ func TestWorkflowAllHandlersFinished(t *testing.T) {
 				},
 				accept:   func() {},
 				complete: func(interface{}, error) {},
-				env:      env,
 			})
 		}, 0)
 
@@ -657,7 +642,6 @@ func TestWorkflowAllHandlersFinished(t *testing.T) {
 				},
 				accept:   func() {},
 				complete: func(interface{}, error) {},
-				env:      env,
 			})
 		}, time.Minute)
 
@@ -668,7 +652,6 @@ func TestWorkflowAllHandlersFinished(t *testing.T) {
 				},
 				accept:   func() {},
 				complete: func(interface{}, error) {},
-				env:      env,
 			})
 		}, 2*time.Minute)
 
@@ -806,7 +789,6 @@ func TestWorkflowUpdateLogger(t *testing.T) {
 			},
 			accept:   func() {},
 			complete: func(interface{}, error) {},
-			env:      env,
 		})
 	}, 0)
 
