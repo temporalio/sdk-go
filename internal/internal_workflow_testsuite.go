@@ -491,6 +491,10 @@ func (env *testWorkflowEnvironmentImpl) setIdentity(identity string) {
 	env.identity = identity
 }
 
+func (env *testWorkflowEnvironmentImpl) setWorkflowID(workflowID string) {
+	env.workflowInfo.WorkflowExecution.ID = workflowID
+}
+
 func (env *testWorkflowEnvironmentImpl) setDataConverter(dataConverter converter.DataConverter) {
 	env.dataConverter = dataConverter
 }

@@ -826,6 +826,12 @@ func (e *TestWorkflowEnvironment) SetIdentity(identity string) *TestWorkflowEnvi
 	return e
 }
 
+// SetWorkflowID sets the workflowID.
+func (e *TestWorkflowEnvironment) SetWorkflowID(workflowID string) *TestWorkflowEnvironment {
+	e.impl.setWorkflowID(workflowID)
+	return e
+}
+
 // SetDetachedChildWait, if true, will make ExecuteWorkflow wait on all child
 // workflows to complete even if their close policy is set to abandon or request
 // cancel, meaning they are "detached". If false, ExecuteWorkflow will block
