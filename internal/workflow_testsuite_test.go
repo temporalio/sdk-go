@@ -544,7 +544,6 @@ func TestWorkflowDuplicateIDDedup(t *testing.T) {
 		return Sleep(ctx, time.Hour)
 	})
 	require.NoError(t, env.GetWorkflowError())
-	require.True(t, false)
 }
 
 func TestAllHandlersFinished(t *testing.T) {
