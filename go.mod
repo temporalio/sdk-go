@@ -23,6 +23,8 @@ require (
 
 require github.com/google/go-cmp v0.6.0
 
+require github.com/antithesishq/antithesis-sdk-go v0.4.2 // indirect
+
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/google/uuid v1.6.0

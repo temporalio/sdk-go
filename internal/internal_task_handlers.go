@@ -36,6 +36,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -243,6 +244,7 @@ func (e workflowTaskHeartbeatError) Error() string {
 }
 
 func historyMismatchErrorf(f string, v ...interface{}) historyMismatchError {
+	assert.Unreachable("history mismatch", map[string]any{"message": fmt.Sprintf(f, v...)})
 	return historyMismatchError{message: fmt.Sprintf(f, v...)}
 }
 
