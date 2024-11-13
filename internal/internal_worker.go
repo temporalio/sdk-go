@@ -558,9 +558,7 @@ func (r *registry) RegisterWorkflowWithOptions(
 			panic("WorkflowDefinitionFactory must be registered with a name")
 		}
 		r.workflowFuncMap[options.Name] = factory
-		if options.VersioningBehavior != VersioningBehaviorUnspecified {
-			r.workflowVersioningBehaviorMap[options.Name] = options.VersioningBehavior
-		}
+		r.workflowVersioningBehaviorMap[options.Name] = options.VersioningBehavior
 		return
 	}
 	// Validate that it is a function
@@ -584,9 +582,8 @@ func (r *registry) RegisterWorkflowWithOptions(
 		}
 	}
 	r.workflowFuncMap[registerName] = wf
-	if options.VersioningBehavior != VersioningBehaviorUnspecified {
-		r.workflowVersioningBehaviorMap[registerName] = options.VersioningBehavior
-	}
+	r.workflowVersioningBehaviorMap[registerName] = options.VersioningBehavior
+
 	if len(alias) > 0 && r.workflowAliasMap != nil {
 		r.workflowAliasMap[fnName] = alias
 	}
@@ -787,8 +784,8 @@ func (r *registry) getWorkflowVersioningBehavior(wt WorkflowType) (VersioningBeh
 	}
 	r.Lock()
 	defer r.Unlock()
-	behavior, ok := r.workflowVersioningBehaviorMap[lookup]
-	return behavior, ok
+	behavior := r.workflowVersioningBehaviorMap[lookup]
+	return behavior, behavior != VersioningBehaviorUnspecified
 }
 
 // Validate function parameters.
