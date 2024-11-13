@@ -1920,7 +1920,12 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		if workflowContext.workflowInfo.currentVersioningBehavior != VersioningBehaviorUnspecified {
 			builtRequest.VersioningBehavior = versioningBehaviorToProto(workflowContext.workflowInfo.currentVersioningBehavior)
 		} else {
-			builtRequest.VersioningBehavior = versioningBehaviorToProto(wth.defaultVersioningBehavior)
+			workflowType := workflowContext.workflowInfo.WorkflowType
+			if behavior, ok := wth.registry.getWorkflowVersioningBehavior(workflowType); ok {
+				builtRequest.VersioningBehavior = versioningBehaviorToProto(behavior)
+			} else {
+				builtRequest.VersioningBehavior = versioningBehaviorToProto(wth.defaultVersioningBehavior)
+			}
 		}
 	}
 	return builtRequest

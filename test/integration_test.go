@@ -6271,6 +6271,100 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorInRespondWorkflowTaskCompl
 	}
 }
 
+func (ts *IntegrationTestSuite) TestVersioningBehaviorPerWorkflowType() {
+	versioningBehaviorAll := make([]enumspb.VersioningBehavior, 0)
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	// We are setting the default build ID with versioning-2 rules to test
+	// with existing servers. TODO(antlai-temporal) use versioning-3 APIs
+	// after there is a server release that supports versioning-3
+	res, err := ts.client.GetWorkerVersioningRules(ctx, client.GetWorkerVersioningOptions{
+		TaskQueue: ts.taskQueueName,
+	})
+	ts.NoError(err)
+
+	_, err = ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
+		TaskQueue:     ts.taskQueueName,
+		ConflictToken: res.ConflictToken,
+		Operation: &client.VersioningOperationInsertAssignmentRule{
+			RuleIndex: 0,
+			Rule: client.VersioningAssignmentRule{
+				TargetBuildID: "1.0",
+			},
+		},
+	})
+	ts.NoError(err)
+
+	c, err := client.Dial(client.Options{
+		HostPort:  ts.config.ServiceAddr,
+		Namespace: ts.config.Namespace,
+		ConnectionOptions: client.ConnectionOptions{
+			TLS: ts.config.TLS,
+			DialOptions: []grpc.DialOption{
+				grpc.WithUnaryInterceptor(func(
+					ctx context.Context,
+					method string,
+					req interface{},
+					reply interface{},
+					cc *grpc.ClientConn,
+					invoker grpc.UnaryInvoker,
+					opts ...grpc.CallOption,
+				) error {
+					if method == "/temporal.api.workflowservice.v1.WorkflowService/RespondWorkflowTaskCompleted" {
+						asReq := req.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+						versioningBehaviorAll = append(versioningBehaviorAll, asReq.VersioningBehavior)
+					}
+					return invoker(ctx, method, req, reply, cc, opts...)
+				}),
+			},
+		},
+	})
+	ts.NoError(err)
+	defer c.Close()
+
+	ts.worker.Stop()
+	ts.workerStopped = true
+	w := worker.New(c, ts.taskQueueName, worker.Options{
+		DeploymentOptions: worker.DeploymentOptions{
+			BuildID:                   "1.0",
+			UseBuildIDForVersioning:   true,
+			DeploymentName:            "deploy-test2",
+			DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
+		},
+	})
+
+	w.RegisterWorkflowWithOptions(ts.workflows.Basic, workflow.RegisterOptions{
+		VersioningBehavior: workflow.VersioningBehaviorPinned,
+	})
+	w.RegisterWorkflowWithOptions(ts.workflows.SetPinnedVersioningBehavior, workflow.RegisterOptions{
+		VersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
+	})
+	ts.activities.register(w)
+
+	ts.Nil(w.Start())
+	defer w.Stop()
+	wfOpts := ts.startWorkflowOptions("test-default-versioning-behavior-per-type")
+	ts.NoError(ts.executeWorkflowWithOption(wfOpts, ts.workflows.Basic, nil))
+
+	ts.Equal(enumspb.VERSIONING_BEHAVIOR_PINNED, versioningBehaviorAll[0])
+	for i := 1; i < len(versioningBehaviorAll); i++ {
+		ts.Equal(versioningBehaviorAll[i], enumspb.VERSIONING_BEHAVIOR_PINNED)
+	}
+
+	// Show that an explicit setter overrides workflow type default
+	versioningBehaviorAll = nil
+
+	wfOpts = ts.startWorkflowOptions("test-override-versioning-behavior-per-type")
+	ts.NoError(ts.executeWorkflowWithOption(wfOpts,
+		ts.workflows.SetPinnedVersioningBehavior, nil))
+
+	ts.Equal(enumspb.VERSIONING_BEHAVIOR_PINNED, versioningBehaviorAll[0])
+	for i := 1; i < len(versioningBehaviorAll); i++ {
+		ts.Equal(versioningBehaviorAll[i], enumspb.VERSIONING_BEHAVIOR_PINNED)
+	}
+}
+
 func (ts *IntegrationTestSuite) TestGetVersioningBehavior() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()

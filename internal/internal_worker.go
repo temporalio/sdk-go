@@ -530,12 +530,13 @@ func (aw *activityWorker) Stop() {
 
 type registry struct {
 	sync.Mutex
-	nexusServices    map[string]*nexus.Service
-	workflowFuncMap  map[string]interface{}
-	workflowAliasMap map[string]string
-	activityFuncMap  map[string]activity
-	activityAliasMap map[string]string
-	interceptors     []WorkerInterceptor
+	nexusServices                 map[string]*nexus.Service
+	workflowFuncMap               map[string]interface{}
+	workflowAliasMap              map[string]string
+	workflowVersioningBehaviorMap map[string]VersioningBehavior
+	activityFuncMap               map[string]activity
+	activityAliasMap              map[string]string
+	interceptors                  []WorkerInterceptor
 }
 
 type registryOptions struct {
@@ -557,6 +558,9 @@ func (r *registry) RegisterWorkflowWithOptions(
 			panic("WorkflowDefinitionFactory must be registered with a name")
 		}
 		r.workflowFuncMap[options.Name] = factory
+		if options.VersioningBehavior != VersioningBehaviorUnspecified {
+			r.workflowVersioningBehaviorMap[options.Name] = options.VersioningBehavior
+		}
 		return
 	}
 	// Validate that it is a function
@@ -580,6 +584,9 @@ func (r *registry) RegisterWorkflowWithOptions(
 		}
 	}
 	r.workflowFuncMap[registerName] = wf
+	if options.VersioningBehavior != VersioningBehaviorUnspecified {
+		r.workflowVersioningBehaviorMap[registerName] = options.VersioningBehavior
+	}
 	if len(alias) > 0 && r.workflowAliasMap != nil {
 		r.workflowAliasMap[fnName] = alias
 	}
@@ -773,6 +780,17 @@ func (r *registry) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, e
 	return newSyncWorkflowDefinition(executor), nil
 }
 
+func (r *registry) getWorkflowVersioningBehavior(wt WorkflowType) (VersioningBehavior, bool) {
+	lookup := wt.Name
+	if alias, ok := r.getWorkflowAlias(lookup); ok {
+		lookup = alias
+	}
+	r.Lock()
+	defer r.Unlock()
+	behavior, ok := r.workflowVersioningBehaviorMap[lookup]
+	return behavior, ok
+}
+
 // Validate function parameters.
 func validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
 	if fnType.Kind() != reflect.Func {
@@ -825,9 +843,10 @@ func newRegistry() *registry { return newRegistryWithOptions(registryOptions{}) 
 
 func newRegistryWithOptions(options registryOptions) *registry {
 	r := &registry{
-		workflowFuncMap: make(map[string]interface{}),
-		activityFuncMap: make(map[string]activity),
-		nexusServices:   make(map[string]*nexus.Service),
+		workflowFuncMap:               make(map[string]interface{}),
+		workflowVersioningBehaviorMap: make(map[string]VersioningBehavior),
+		activityFuncMap:               make(map[string]activity),
+		nexusServices:                 make(map[string]*nexus.Service),
 	}
 	if !options.disableAliasing {
 		r.workflowAliasMap = make(map[string]string)
