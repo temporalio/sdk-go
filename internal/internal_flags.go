@@ -53,6 +53,8 @@ const (
 	SDKFlagUnknown                      = math.MaxUint32
 )
 
+var unblockSelectorSignal bool
+
 func sdkFlagFromUint(value uint32) sdkFlag {
 	switch value {
 	case uint32(SDKFlagUnset):
@@ -140,4 +142,10 @@ func (sf *sdkFlags) gatherNewSDKFlags() []sdkFlag {
 		flags = append(flags, flag)
 	}
 	return flags
+}
+
+// SetUnblockSelectorSignal sets the flag to unblock the selector signal.
+// For test use only,
+func SetUnblockSelectorSignal() {
+	unblockSelectorSignal = true
 }

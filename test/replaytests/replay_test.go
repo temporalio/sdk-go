@@ -474,6 +474,16 @@ func (s *replayTestSuite) TestSelectorBlockingDefault() {
 	require.NoError(s.T(), err)
 }
 
+func (s *replayTestSuite) TestSelectorNonBlocking() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(SelectorBlockingDefaultWorkflow)
+	// Verify we can replay the new workflow that has the
+	// SDKFlagBlockedSelectorSignalReceive flag
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "selector-non-blocking.json")
+	s.NoError(err)
+	require.NoError(s.T(), err)
+}
+
 type captureConverter struct {
 	converter.DataConverter
 	toPayloads   []interface{}
