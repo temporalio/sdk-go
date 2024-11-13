@@ -413,6 +413,10 @@ type (
 		// inside a workflow as a child workflow.
 		Name                          string
 		DisableAlreadyRegisteredCheck bool
+		// Optional: Provides a default Versioning Behavior to workflows of this type.
+		// See workflow.SetVersioningBehavior to override this default.
+		// NOTE: Experimental
+		VersioningBehavior VersioningBehavior
 	}
 
 	localActivityContext struct {
