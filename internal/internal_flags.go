@@ -149,3 +149,9 @@ func (sf *sdkFlags) gatherNewSDKFlags() []sdkFlag {
 func SetUnblockSelectorSignal() {
 	unblockSelectorSignal = true
 }
+
+// UnsetUnblockSelectorSignal unsets the flag to unblock the selector signal.
+// For test use only,
+func UnsetUnblockSelectorSignal() {
+	unblockSelectorSignal = false
+}

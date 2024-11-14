@@ -3174,16 +3174,12 @@ func (w *Workflows) RunsLocalAndNonlocalActsWithRetries(ctx workflow.Context, nu
 	return nil
 }
 
-func (w *Workflows) SelectorBlockSignal(ctx workflow.Context, enableFlag bool) (string, error) {
+func (w *Workflows) SelectorBlockSignal(ctx workflow.Context) (string, error) {
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 	var logger = workflow.GetLogger(ctx)
 	logger.Info("calling ExecuteActivity")
 	ch1 := workflow.NewChannel(ctx)
 	ch2 := workflow.NewChannel(ctx)
-
-	if enableFlag {
-		internal.SetUnblockSelectorSignal()
-	}
 
 	workflow.Go(ctx, func(ctx workflow.Context) {
 		ch1.Send(ctx, "one")

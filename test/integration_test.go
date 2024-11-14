@@ -6606,7 +6606,7 @@ func (ts *IntegrationTestSuite) TestSelectorBlock() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	options := ts.startWorkflowOptions("test-selector-block")
-	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.SelectorBlockSignal, false)
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.SelectorBlockSignal)
 	ts.NoError(err)
 	var result string
 	ts.NoError(run.Get(ctx, &result))
@@ -6617,7 +6617,11 @@ func (ts *IntegrationTestSuite) TestSelectorNoBlock() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	options := ts.startWorkflowOptions("test-selector-block")
-	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.SelectorBlockSignal, true)
+
+	internal.SetUnblockSelectorSignal()
+	defer internal.UnsetUnblockSelectorSignal()
+
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.SelectorBlockSignal)
 	ts.NoError(err)
 	var result string
 	ts.NoError(run.Get(ctx, &result))
