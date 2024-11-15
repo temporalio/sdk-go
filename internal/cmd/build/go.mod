@@ -23,7 +23,7 @@ require (
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/stretchr/testify v1.9.0 // indirect
-	go.temporal.io/api v1.39.1-0.20241014184314-2fb1df995c55 // indirect
+	go.temporal.io/api v1.39.1-0.20241110233709-f3490ec44b20 // indirect
 	golang.org/x/exp v0.0.0-20240409090435-93d18d7e34b8 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20240409090435-93d18d7e34b8 // indirect
 	golang.org/x/mod v0.17.0 // indirect
