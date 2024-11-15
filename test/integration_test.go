@@ -6618,8 +6618,8 @@ func (ts *IntegrationTestSuite) TestSelectorNoBlock() {
 	defer cancel()
 	options := ts.startWorkflowOptions("test-selector-block")
 
-	internal.SetUnblockSelectorSignal()
-	defer internal.UnsetUnblockSelectorSignal()
+	internal.SetUnblockSelectorSignal(true)
+	defer internal.SetUnblockSelectorSignal(false)
 
 	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.SelectorBlockSignal)
 	ts.NoError(err)
