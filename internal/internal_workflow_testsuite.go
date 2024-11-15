@@ -2962,17 +2962,26 @@ func (env *testWorkflowEnvironmentImpl) updateWorkflowByID(workflowID, name, id 
 			panic(err)
 		}
 
+		if env.updateMap == nil {
+			env.updateMap = make(map[string]updateResult)
+		}
+
 		var ucWrapper = updateCallbacksWrapper{uc: uc, env: env, updateID: id}
 
 		// Check for duplicate update ID
 		if result, ok := env.updateMap[id]; ok {
+			result.mu.Lock()
 			workflowHandle.env.postCallback(func() {
 				ucWrapper.uc.Accept()
 				ucWrapper.uc.Complete(result.success, result.err)
+				defer result.mu.Unlock()
 			}, false)
 		} else {
+			env.updateMap[id] = updateResult{nil, nil, &sync.Mutex{}}
+			env.updateMap[id].mu.Lock()
 			workflowHandle.env.postCallback(func() {
 				workflowHandle.env.updateHandler(name, id, data, nil, ucWrapper)
+				defer env.updateMap[id].mu.Unlock()
 			}, true)
 		}
 
