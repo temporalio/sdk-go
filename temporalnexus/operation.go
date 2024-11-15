@@ -42,6 +42,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
@@ -324,12 +325,21 @@ func ExecuteUntypedWorkflow[R any](
 	if startWorkflowOptions.TaskQueue == "" {
 		startWorkflowOptions.TaskQueue = nctx.TaskQueue
 	}
+	if startWorkflowOptions.ID == "" {
+		startWorkflowOptions.ID = uuid.NewString()
+	}
 
 	if nexusOptions.RequestID != "" {
 		internal.SetRequestIDOnStartWorkflowOptions(&startWorkflowOptions, nexusOptions.RequestID)
 	}
 
 	if nexusOptions.CallbackURL != "" {
+		if nexusOptions.CallbackHeader == nil {
+			nexusOptions.CallbackHeader = make(nexus.Header)
+		}
+		if _, set := nexusOptions.CallbackHeader[nexus.HeaderOperationID]; !set {
+			nexusOptions.CallbackHeader[nexus.HeaderOperationID] = startWorkflowOptions.ID
+		}
 		internal.SetCallbacksOnStartWorkflowOptions(&startWorkflowOptions, []*common.Callback{
 			{
 				Variant: &common.Callback_Nexus_{
