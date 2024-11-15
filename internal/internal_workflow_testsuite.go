@@ -236,8 +236,7 @@ type (
 		queryHandler          func(string, *commonpb.Payloads, *commonpb.Header) (*commonpb.Payloads, error)
 		updateHandler         func(name string, id string, input *commonpb.Payloads, header *commonpb.Header, resp UpdateCallbacks)
 		updateMap             map[string]updateResult
-		// updateMapLock         map[string]sync.Mutex
-		startedHandler func(r WorkflowExecution, e error)
+		startedHandler        func(r WorkflowExecution, e error)
 
 		isWorkflowCompleted bool
 		testResult          converter.EncodedValue
