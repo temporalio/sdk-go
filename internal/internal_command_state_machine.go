@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -515,6 +516,7 @@ func (d stateMachineIllegalStatePanic) String() string {
 }
 
 func panicIllegalState(message string) {
+	assert.Unreachable("[SDK] Illegal state", map[string]any{"message": message})
 	panic(stateMachineIllegalStatePanic{message: message})
 }
 

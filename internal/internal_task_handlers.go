@@ -244,7 +244,7 @@ func (e workflowTaskHeartbeatError) Error() string {
 }
 
 func historyMismatchErrorf(f string, v ...interface{}) historyMismatchError {
-	assert.Unreachable("history mismatch", map[string]any{"message": fmt.Sprintf(f, v...)})
+	assert.Unreachable("[SDK] History mismatch", map[string]any{"message": fmt.Sprintf(f, v...)})
 	return historyMismatchError{message: fmt.Sprintf(f, v...)}
 }
 
