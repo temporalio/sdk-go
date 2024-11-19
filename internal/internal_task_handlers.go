@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"github.com/antithesishq/antithesis-sdk-go/assert"
+	"github.com/davecgh/go-spew/spew"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -244,7 +245,6 @@ func (e workflowTaskHeartbeatError) Error() string {
 }
 
 func historyMismatchErrorf(f string, v ...interface{}) historyMismatchError {
-	assert.Unreachable("[SDK] History mismatch", map[string]any{"message": fmt.Sprintf(f, v...)})
 	return historyMismatchError{message: fmt.Sprintf(f, v...)}
 }
 
@@ -1505,7 +1505,19 @@ func matchReplayWithHistory(
 	historyEvents []*historypb.HistoryEvent,
 	msgs []outboxEntry,
 	sdkFlags *sdkFlags,
-) error {
+) (retError error) {
+	defer func() {
+		var details map[string]any
+		if retError != nil {
+			details = map[string]any{
+				"error":          retError,
+				"replayCommands": spew.Sdump(replayCommands),
+				"historyEvents":  spew.Sdump(historyEvents),
+				"msgs":           spew.Sdump(msgs),
+			}
+		}
+		assert.Always(retError == nil, "[SDK] History mismatch", details)
+	}()
 	di := 0
 	hi := 0
 	hSize := len(historyEvents)
@@ -1539,10 +1551,16 @@ matchLoop:
 		}
 
 		if e == nil {
+			spew.Dump("replayCommands", replayCommands)
+			spew.Dump("historyEvents", historyEvents)
+			spew.Dump("msgs", msgs)
 			return historyMismatchErrorf("[TMPRL1100] nondeterministic workflow: extra replay command for %s", util.CommandToString(d))
 		}
 
 		if !isCommandMatchEvent(d, e, msgs) {
+			spew.Dump("replayCommands", replayCommands)
+			spew.Dump("historyEvents", historyEvents)
+			spew.Dump("msgs", msgs)
 			return historyMismatchErrorf("[TMPRL1100] nondeterministic workflow: history event is %s, replay command is %s",
 				util.HistoryEventToString(e), util.CommandToString(d))
 		}
