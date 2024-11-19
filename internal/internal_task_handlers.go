@@ -1509,11 +1509,26 @@ func matchReplayWithHistory(
 	defer func() {
 		var details map[string]any
 		if retError != nil {
+			var commands []string
+			for _, command := range replayCommands {
+				commands = append(commands, command.String())
+			}
+
+			var events []string
+			for _, event := range historyEvents {
+				events = append(events, event.String())
+			}
+
+			var messages []string
+			for _, msg := range msgs {
+				messages = append(messages, msg.msg.String())
+			}
+
 			details = map[string]any{
-				"error":          retError,
-				"replayCommands": spew.Sdump(replayCommands),
-				"historyEvents":  spew.Sdump(historyEvents),
-				"msgs":           spew.Sdump(msgs),
+				"error":    retError,
+				"commands": commands,
+				"events":   events,
+				"messages": messages,
 			}
 		}
 		assert.Always(retError == nil, "[SDK] History replay check succeeded", details)
