@@ -1516,7 +1516,7 @@ func matchReplayWithHistory(
 				"msgs":           spew.Sdump(msgs),
 			}
 		}
-		assert.Always(retError == nil, "[SDK] History mismatch", details)
+		assert.Always(retError == nil, "[SDK] History replay check succeeded", details)
 	}()
 	di := 0
 	hi := 0
