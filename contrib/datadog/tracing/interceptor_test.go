@@ -22,6 +22,7 @@
 package tracing
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -31,6 +32,9 @@ import (
 
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/interceptortest"
+	"go.temporal.io/sdk/testsuite"
+	"go.temporal.io/sdk/worker"
+	"go.temporal.io/sdk/workflow"
 )
 
 type testTracer struct {
@@ -133,11 +137,48 @@ func Test_OnFinishOption(t *testing.T) {
 		Tracer: impl,
 		mt:     mt,
 	}
-
 	interceptortest.RunTestWorkflowWithError(t, trc)
 
 	spans := trc.FinishedSpans()
 
 	require.Len(t, spans, 1)
 	require.Equal(t, "temporal.RunWorkflow", spans[0].Name)
+}
+
+func setCustomSpanTagWorkflow(ctx workflow.Context) error {
+	span, ok := SpanFromWorkflowContext(ctx)
+
+	if !ok {
+		return errors.New("Did not find span in workflow context")
+	}
+
+	span.SetTag("testTag", "testValue")
+	return nil
+}
+
+func Test_SpanFromWorkflowContext(t *testing.T) {
+	// Start the mock tracer.
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(setCustomSpanTagWorkflow)
+
+	impl := NewTracer(TracerOptions{})
+	testTracer := testTracer{
+		Tracer: impl,
+		mt:     mt,
+	}
+
+	// Set tracer interceptor
+	env.SetWorkerOptions(worker.Options{
+		Interceptors: []interceptor.WorkerInterceptor{interceptor.NewTracingInterceptor(testTracer)},
+	})
+
+	env.ExecuteWorkflow(setCustomSpanTagWorkflow)
+
+	require.True(t, env.IsWorkflowCompleted())
+	testSpan := mt.FinishedSpans()[0]
+	require.Equal(t, "testValue", testSpan.Tag("testTag"))
 }
