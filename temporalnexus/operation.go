@@ -204,6 +204,9 @@ func (o *workflowRunOperation[I, O]) Name() string {
 	return o.options.Name
 }
 
+// Start begins an async Nexus operation backed by a workflow.
+// The Operation ID returned in the response should not be modified because it is used for cancelation and reporting
+// completion.
 func (o *workflowRunOperation[I, O]) Start(
 	ctx context.Context,
 	input I,
