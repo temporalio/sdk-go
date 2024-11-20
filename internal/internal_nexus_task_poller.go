@@ -62,7 +62,7 @@ func newNexusTaskPoller(
 			stopC:                params.WorkerStopChannel,
 			workerBuildID:        params.getBuildID(),
 			useBuildIDVersioning: params.UseBuildIDForVersioning,
-			deploymentName:       params.DeploymentName,
+			deploymentSeriesName: params.DeploymentSeriesName,
 			capabilities:         params.capabilities,
 		},
 		taskHandler:     taskHandler,
@@ -92,9 +92,9 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 		TaskQueue: &taskqueuepb.TaskQueue{Name: ntp.taskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
 		Identity:  ntp.identity,
 		WorkerVersionCapabilities: &commonpb.WorkerVersionCapabilities{
-			BuildId:        ntp.workerBuildID,
-			UseVersioning:  ntp.useBuildIDVersioning,
-			DeploymentName: ntp.deploymentName,
+			BuildId:              ntp.workerBuildID,
+			UseVersioning:        ntp.useBuildIDVersioning,
+			DeploymentSeriesName: ntp.deploymentSeriesName,
 		},
 	}
 

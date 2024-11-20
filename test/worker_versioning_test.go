@@ -663,7 +663,7 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityUnversionedWorkerWithRules(
 	ts.Equal(false, taskQueueTypeInfo.Pollers[0].WorkerVersionCapabilities.UseVersioning)
 }
 
-func (ts *WorkerVersioningTestSuite) TestDeploymentNameWorker() {
+func (ts *WorkerVersioningTestSuite) TestDeploymentSeriesNameWorker() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -672,7 +672,7 @@ func (ts *WorkerVersioningTestSuite) TestDeploymentNameWorker() {
 		DeploymentOptions: worker.DeploymentOptions{
 			BuildID:                 "b1",
 			UseBuildIDForVersioning: false,
-			DeploymentName:          "deploy1",
+			DeploymentSeriesName:    "deploy1",
 		},
 	})
 	ts.workflows.register(worker1)
@@ -707,7 +707,7 @@ func (ts *WorkerVersioningTestSuite) TestDeploymentNameWorker() {
 	ts.True(len(taskQueueTypeInfo.Pollers) > 0)
 	ts.Equal("worker1", taskQueueTypeInfo.Pollers[0].Identity)
 	ts.Equal(false, taskQueueTypeInfo.Pollers[0].WorkerVersionCapabilities.UseVersioning)
-	ts.Equal("deploy1", taskQueueTypeInfo.Pollers[0].WorkerVersionCapabilities.DeploymentName)
+	ts.Equal("deploy1", taskQueueTypeInfo.Pollers[0].WorkerVersionCapabilities.DeploymentSeriesName)
 }
 
 func (ts *WorkerVersioningTestSuite) TestReachabilityVersions() {

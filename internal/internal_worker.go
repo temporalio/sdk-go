@@ -168,7 +168,7 @@ type (
 		// If true the worker is opting in to build ID based versioning.
 		UseBuildIDForVersioning bool
 		// The worker's deployment name, an identifier in versioning-3 to group Task Queues for a given build ID.
-		DeploymentName string
+		DeploymentSeriesName string
 
 		// The Versioning Behavior for workflows that do not set one in their first task.
 		DefaultVersioningBehavior VersioningBehavior
@@ -1686,7 +1686,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		Identity:                              client.identity,
 		WorkerBuildID:                         options.DeploymentOptions.BuildID,
 		UseBuildIDForVersioning:               options.DeploymentOptions.UseBuildIDForVersioning,
-		DeploymentName:                        options.DeploymentOptions.DeploymentName,
+		DeploymentSeriesName:                  options.DeploymentOptions.DeploymentSeriesName,
 		DefaultVersioningBehavior:             options.DeploymentOptions.DefaultVersioningBehavior,
 		MetricsHandler:                        client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue)),
 		Logger:                                client.logger,
