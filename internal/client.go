@@ -332,6 +332,16 @@ type (
 		//  - serviceerror.NotFound
 		DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error)
 
+		// UpdateWorkflowExecutionOptions partially overrides the WorkflowExecutionOptions of an existing workflow execution
+		// and returns the new WorkflowExecutionOptions after applying the changes.
+		// It is intended for building tools that can selectively apply ad-hoc workflow configuration changes.
+		// NOTE: Experimental
+		UpdateWorkflowExecutionOptions(ctx context.Context, options UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error)
+
+		// GetWorkflowExecutionOptions returns the current WorkflowExecutionOptions for an existing workflow.
+		// NOTE: Experimental
+		GetWorkflowExecutionOptions(ctx context.Context, request GetWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error)
+
 		// DescribeTaskQueue returns information about the target taskqueue, right now this API returns the
 		// pollers which polled this taskqueue in last few minutes.
 		// The errors it can return:

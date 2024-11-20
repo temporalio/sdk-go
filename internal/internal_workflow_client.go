@@ -1057,6 +1057,54 @@ func (wc *WorkflowClient) GetWorkerTaskReachability(ctx context.Context, options
 	return converted, nil
 }
 
+// GetWorkflowExecutionOptions returns the current WorkflowExecutionOptions for an existing workflow.
+// NOTE: Experimental
+func (wc *WorkflowClient) GetWorkflowExecutionOptions(ctx context.Context, request GetWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error) {
+	// no side-effects, i.e., GET, when UpdateMask is empty and WorkflowExecutionOptions is not nil
+	return wc.UpdateWorkflowExecutionOptions(ctx, UpdateWorkflowExecutionOptionsRequest{
+		WorkflowId:               request.WorkflowId,
+		RunId:                    request.RunId,
+		RequestId:                uuid.New(),
+		WorkflowExecutionOptions: WorkflowExecutionOptions{},
+		UpdatedFields:            []string{},
+	})
+}
+
+// UpdateWorkflowExecutionOptions partially overrides the WorkflowExecutionOptions of an existing workflow execution,
+// and returns the new WorkflowExecutionOptions after applying the changes.
+// It is intended for building tools that can selectively apply ad-hoc workflow configuration changes.
+// NOTE: Experimental
+func (wc *WorkflowClient) UpdateWorkflowExecutionOptions(ctx context.Context, request UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error) {
+	if err := wc.ensureInitialized(ctx); err != nil {
+		return WorkflowExecutionOptions{}, err
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+
+	if request.RequestId == "" {
+		request.RequestId = uuid.New()
+	}
+
+	requestMsg := &workflowservice.UpdateWorkflowExecutionOptionsRequest{
+		Namespace: wc.namespace,
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: request.WorkflowId,
+			RunId:      request.RunId,
+		},
+		RequestId:                request.RequestId,
+		WorkflowExecutionOptions: workflowExecutionOptionsToProto(request.WorkflowExecutionOptions),
+		UpdateMask:               workflowExecutionOptionsMaskToProto(request.UpdatedFields),
+	}
+
+	resp, err := wc.workflowService.UpdateWorkflowExecutionOptions(grpcCtx, requestMsg)
+	if err != nil {
+		return WorkflowExecutionOptions{}, err
+	}
+
+	return workflowExecutionOptionsFromProtoUpdateResponse(resp), nil
+}
+
 // DescribeTaskQueueEnhanced returns information about the target task queue, broken down by Build Id:
 //   - List of pollers
 //   - Workflow Reachability status

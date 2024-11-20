@@ -279,6 +279,19 @@ type (
 	// NOTE: Experimental
 	UpdateWorkflowOptions = internal.UpdateWorkflowOptions
 
+	// UpdateWorkflowExecutionOptionsRequest is a request for Client.UpdateWorkflowExecutionOptions.
+	// NOTE: Experimental
+	UpdateWorkflowExecutionOptionsRequest = internal.UpdateWorkflowExecutionOptionsRequest
+
+	// GetWorkflowExecutionOptionsRequest is a request for Client.GetWorkflowExecutionOptions.
+	// NOTE: Experimental
+	GetWorkflowExecutionOptionsRequest = internal.GetWorkflowExecutionOptionsRequest
+
+	// WorkflowExecutionOptions contains a set of properties of a running workflow
+	// that can be overriden using UpdateWorkflowExecutionOptions.
+	// NOTE: Experimental
+	WorkflowExecutionOptions = internal.WorkflowExecutionOptions
+
 	// WorkflowUpdateHandle represents a running or completed workflow
 	// execution update and gives the holder access to the outcome of the same.
 	// NOTE: Experimental
@@ -839,6 +852,16 @@ type (
 		//  - WorkflowUpdateServiceTimeoutOrCanceledError
 		// NOTE: Experimental
 		UpdateWorkflow(ctx context.Context, options UpdateWorkflowOptions) (WorkflowUpdateHandle, error)
+
+		// UpdateWorkflowExecutionOptions partially overrides the WorkflowExecutionOptions of an existing workflow execution
+		// and returns the new WorkflowExecutionOptions after applying the changes.
+		// It is intended for building tools that can selectively apply ad-hoc workflow configuration changes.
+		// NOTE: Experimental
+		UpdateWorkflowExecutionOptions(ctx context.Context, options UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error)
+
+		// GetWorkflowExecutionOptions returns the current WorkflowExecutionOptions of an existing workflow execution.
+		// NOTE: Experimental
+		GetWorkflowExecutionOptions(ctx context.Context, options GetWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error)
 
 		// GetWorkflowUpdateHandle creates a handle to the referenced update
 		// which can be polled for an outcome. Note that runID is optional and
