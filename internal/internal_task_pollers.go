@@ -565,8 +565,9 @@ func (wtp *workflowTaskPoller) errorToFailWorkflowTask(taskToken []byte, err err
 		BinaryChecksum: wtp.workerBuildID,
 		Namespace:      wtp.namespace,
 		WorkerVersion: &commonpb.WorkerVersionStamp{
-			BuildId:       wtp.workerBuildID,
-			UseVersioning: wtp.useBuildIDVersioning,
+			BuildId:              wtp.workerBuildID,
+			UseVersioning:        wtp.useBuildIDVersioning,
+			DeploymentSeriesName: wtp.deploymentSeriesName,
 		},
 	}
 

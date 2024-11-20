@@ -1908,8 +1908,9 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			SdkVersion:    eventHandler.getNewSdkVersionAndReset(),
 		},
 		WorkerVersionStamp: &commonpb.WorkerVersionStamp{
-			BuildId:       wth.workerBuildID,
-			UseVersioning: wth.useBuildIDForVersioning,
+			BuildId:              wth.workerBuildID,
+			UseVersioning:        wth.useBuildIDForVersioning,
+			DeploymentSeriesName: wth.deploymentSeriesName,
 		},
 	}
 	if wth.capabilities != nil && wth.capabilities.BuildIdBasedVersioning {
@@ -1977,8 +1978,9 @@ func newActivityTaskHandlerWithCustomProvider(
 		defaultHeartbeatThrottleInterval: params.DefaultHeartbeatThrottleInterval,
 		maxHeartbeatThrottleInterval:     params.MaxHeartbeatThrottleInterval,
 		versionStamp: &commonpb.WorkerVersionStamp{
-			BuildId:       params.getBuildID(),
-			UseVersioning: params.UseBuildIDForVersioning,
+			BuildId:              params.getBuildID(),
+			UseVersioning:        params.UseBuildIDForVersioning,
+			DeploymentSeriesName: params.DeploymentSeriesName,
 		},
 	}
 }
