@@ -37,7 +37,7 @@ require (
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	go.temporal.io/api v1.39.1-0.20241110233709-f3490ec44b20 // indirect
+	go.temporal.io/api v1.39.1-0.20241120053219-0cc8ea0e05ca // indirect
 	golang.org/x/exp v0.0.0-20231127185646-65229373498e // indirect
 	golang.org/x/net v0.28.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect

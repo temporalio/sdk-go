@@ -87,7 +87,7 @@ type (
 		// Whether the worker has opted in to the build-id based versioning feature
 		useBuildIDVersioning bool
 		// The worker's deployment name, an identifier in versioning-3 to group Task Queues for a given build ID
-		deploymentName string
+		deploymentSeriesName string
 		// Server's capabilities
 		capabilities *workflowservice.GetSystemInfoResponse_Capabilities
 	}
@@ -291,7 +291,7 @@ func newWorkflowTaskPoller(
 			stopC:                params.WorkerStopChannel,
 			workerBuildID:        params.getBuildID(),
 			useBuildIDVersioning: params.UseBuildIDForVersioning,
-			deploymentName:       params.DeploymentName,
+			deploymentSeriesName: params.DeploymentSeriesName,
 			capabilities:         params.capabilities,
 		},
 		service:                      service,
@@ -565,9 +565,9 @@ func (wtp *workflowTaskPoller) errorToFailWorkflowTask(taskToken []byte, err err
 		BinaryChecksum: wtp.workerBuildID,
 		Namespace:      wtp.namespace,
 		WorkerVersion: &commonpb.WorkerVersionStamp{
-			BuildId:        wtp.workerBuildID,
-			UseVersioning:  wtp.useBuildIDVersioning,
-			DeploymentName: wtp.deploymentName,
+			BuildId:              wtp.workerBuildID,
+			UseVersioning:        wtp.useBuildIDVersioning,
+			DeploymentSeriesName: wtp.deploymentSeriesName,
 		},
 	}
 
@@ -802,9 +802,9 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		Identity:       wtp.identity,
 		BinaryChecksum: wtp.workerBuildID,
 		WorkerVersionCapabilities: &commonpb.WorkerVersionCapabilities{
-			BuildId:        wtp.workerBuildID,
-			UseVersioning:  wtp.useBuildIDVersioning,
-			DeploymentName: wtp.deploymentName,
+			BuildId:              wtp.workerBuildID,
+			UseVersioning:        wtp.useBuildIDVersioning,
+			DeploymentSeriesName: wtp.deploymentSeriesName,
 		},
 	}
 	if wtp.getCapabilities().BuildIdBasedVersioning {
@@ -976,7 +976,7 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 			stopC:                params.WorkerStopChannel,
 			workerBuildID:        params.getBuildID(),
 			useBuildIDVersioning: params.UseBuildIDForVersioning,
-			deploymentName:       params.DeploymentName,
+			deploymentSeriesName: params.DeploymentSeriesName,
 			capabilities:         params.capabilities,
 		},
 		taskHandler:         taskHandler,
@@ -1009,9 +1009,9 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 		Identity:          atp.identity,
 		TaskQueueMetadata: &taskqueuepb.TaskQueueMetadata{MaxTasksPerSecond: wrapperspb.Double(atp.activitiesPerSecond)},
 		WorkerVersionCapabilities: &commonpb.WorkerVersionCapabilities{
-			BuildId:        atp.workerBuildID,
-			UseVersioning:  atp.useBuildIDVersioning,
-			DeploymentName: atp.deploymentName,
+			BuildId:              atp.workerBuildID,
+			UseVersioning:        atp.useBuildIDVersioning,
+			DeploymentSeriesName: atp.deploymentSeriesName,
 		},
 	}
 

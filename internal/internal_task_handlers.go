@@ -137,7 +137,7 @@ type (
 		identity                  string
 		workerBuildID             string
 		useBuildIDForVersioning   bool
-		deploymentName            string
+		deploymentSeriesName      string
 		defaultVersioningBehavior VersioningBehavior
 		enableLoggingInReplay     bool
 		registry                  *registry
@@ -558,7 +558,7 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		identity:                  params.Identity,
 		workerBuildID:             params.getBuildID(),
 		useBuildIDForVersioning:   params.UseBuildIDForVersioning,
-		deploymentName:            params.DeploymentName,
+		deploymentSeriesName:      params.DeploymentSeriesName,
 		defaultVersioningBehavior: params.DefaultVersioningBehavior,
 		enableLoggingInReplay:     params.EnableLoggingInReplay,
 		registry:                  registry,
@@ -1908,15 +1908,15 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			SdkVersion:    eventHandler.getNewSdkVersionAndReset(),
 		},
 		WorkerVersionStamp: &commonpb.WorkerVersionStamp{
-			BuildId:        wth.workerBuildID,
-			UseVersioning:  wth.useBuildIDForVersioning,
-			DeploymentName: wth.deploymentName,
+			BuildId:              wth.workerBuildID,
+			UseVersioning:        wth.useBuildIDForVersioning,
+			DeploymentSeriesName: wth.deploymentSeriesName,
 		},
 	}
 	if wth.capabilities != nil && wth.capabilities.BuildIdBasedVersioning {
 		builtRequest.BinaryChecksum = ""
 	}
-	if wth.useBuildIDForVersioning && wth.deploymentName != "" {
+	if wth.useBuildIDForVersioning && wth.deploymentSeriesName != "" {
 		if workflowContext.workflowInfo.currentVersioningBehavior != VersioningBehaviorUnspecified {
 			builtRequest.VersioningBehavior = versioningBehaviorToProto(workflowContext.workflowInfo.currentVersioningBehavior)
 		} else {
@@ -1978,9 +1978,9 @@ func newActivityTaskHandlerWithCustomProvider(
 		defaultHeartbeatThrottleInterval: params.DefaultHeartbeatThrottleInterval,
 		maxHeartbeatThrottleInterval:     params.MaxHeartbeatThrottleInterval,
 		versionStamp: &commonpb.WorkerVersionStamp{
-			BuildId:        params.getBuildID(),
-			UseVersioning:  params.UseBuildIDForVersioning,
-			DeploymentName: params.DeploymentName,
+			BuildId:              params.getBuildID(),
+			UseVersioning:        params.UseBuildIDForVersioning,
+			DeploymentSeriesName: params.DeploymentSeriesName,
 		},
 	}
 }
