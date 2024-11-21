@@ -237,7 +237,7 @@ type (
 		signalHandler         func(name string, input *commonpb.Payloads, header *commonpb.Header) error
 		queryHandler          func(string, *commonpb.Payloads, *commonpb.Header) (*commonpb.Payloads, error)
 		updateHandler         func(name string, id string, input *commonpb.Payloads, header *commonpb.Header, resp UpdateCallbacks)
-		updateMap             map[string]updateResult
+		updateMap             map[string]*updateResult
 		startedHandler        func(r WorkflowExecution, e error)
 
 		isWorkflowCompleted bool
@@ -2928,32 +2928,29 @@ func (env *testWorkflowEnvironmentImpl) updateWorkflow(name string, id string, u
 	}
 
 	if env.updateMap == nil {
-		env.updateMap = make(map[string]updateResult)
+		env.updateMap = make(map[string]*updateResult)
 	}
 
 	var ucWrapper = updateCallbacksWrapper{uc: uc, env: env, updateID: id}
 
 	// check for duplicate update ID
 	if result, ok := env.updateMap[id]; ok {
-		callback_func := func() {
-			ucWrapper.uc.Accept()
-			ucWrapper.uc.Complete(result.success, result.err)
-		}
 		if result.completed {
-			env.postCallback(callback_func, false)
+			env.postCallback(func() {
+				ucWrapper.uc.Accept()
+				ucWrapper.uc.Complete(result.success, result.err)
+			}, false)
 		} else {
 			result.callbacks = append(result.callbacks, ucWrapper)
 		}
 		env.updateMap[id] = result
 	} else {
-		env.updateMap[id] = updateResult{nil, nil, id, []updateCallbacksWrapper{}, false}
+		env.updateMap[id] = &updateResult{nil, nil, id, []updateCallbacksWrapper{}, false}
 		env.postCallback(func() {
 			// Do not send any headers on test invocations
 			env.updateHandler(name, id, data, nil, ucWrapper)
-			result = env.updateMap[id]
-			result.completed = true
-			env.updateMap[id] = result
-			defer env.updateMap[id].post_callbacks(env)
+			env.updateMap[id].completed = true
+			env.updateMap[id].post_callbacks(env)
 		}, true)
 	}
 
@@ -2970,33 +2967,28 @@ func (env *testWorkflowEnvironmentImpl) updateWorkflowByID(workflowID, name, id 
 		}
 
 		if env.updateMap == nil {
-			env.updateMap = make(map[string]updateResult)
+			env.updateMap = make(map[string]*updateResult)
 		}
 
 		var ucWrapper = updateCallbacksWrapper{uc: uc, env: env, updateID: id}
 
 		// Check for duplicate update ID
 		if result, ok := env.updateMap[id]; ok {
-			callback_func := func() {
-				ucWrapper.uc.Accept()
-				ucWrapper.uc.Complete(result.success, result.err)
-			}
 			if result.completed {
-				env.postCallback(callback_func, false)
+				env.postCallback(func() {
+					ucWrapper.uc.Accept()
+					ucWrapper.uc.Complete(result.success, result.err)
+				}, false)
 			} else {
 				result.callbacks = append(result.callbacks, ucWrapper)
 			}
 			env.updateMap[id] = result
 		} else {
-			env.updateMap[id] = updateResult{nil, nil, id, []updateCallbacksWrapper{}, false}
+			env.updateMap[id] = &updateResult{nil, nil, id, []updateCallbacksWrapper{}, false}
 			workflowHandle.env.postCallback(func() {
 				workflowHandle.env.updateHandler(name, id, data, nil, ucWrapper)
-				// TODO: make this into a pointer?
-				result = env.updateMap[id]
-				result.completed = true
-				env.updateMap[id] = result
-				// TODO: do we even need this defer?
-				defer env.updateMap[id].post_callbacks(env)
+				env.updateMap[id].completed = true
+				env.updateMap[id].post_callbacks(env)
 			}, true)
 		}
 

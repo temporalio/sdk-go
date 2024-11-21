@@ -492,64 +492,18 @@ func TestWorkflowUpdateOrderAcceptReject(t *testing.T) {
 }
 
 func TestWorkflowDuplicateIDDedup(t *testing.T) {
-	var suite WorkflowTestSuite
-	// Test dev server dedups UpdateWorkflow with same ID
-	env := suite.NewTestWorkflowEnvironment()
-	env.RegisterDelayedCallback(func() {
-		env.UpdateWorkflow("update", "id", &updateCallback{
-			reject: func(err error) {
-				require.Fail(t, fmt.Sprintf("update should not be rejected, err: %v", err))
-			},
-			accept: func() {
-			},
-			complete: func(result interface{}, err error) {
-				intResult, ok := result.(int)
-				if !ok {
-					require.Fail(t, "result should be int")
-				} else {
-					require.Equal(t, 0, intResult)
-				}
-			},
-		}, 0)
-	}, 0)
-
-	env.RegisterDelayedCallback(func() {
-		env.UpdateWorkflow("update", "id", &updateCallback{
-			reject: func(err error) {
-				require.Fail(t, fmt.Sprintf("update should not be rejected, err: %v", err))
-			},
-			accept: func() {
-			},
-			complete: func(result interface{}, err error) {
-				intResult, ok := result.(int)
-				if !ok {
-					require.Fail(t, "result should be int")
-				} else {
-					// if dedup, this be okay, even if we pass in 1 as arg, since it's deduping,
-					// the result should match the first update's result, 0
-					require.Equal(t, 0, intResult)
-				}
-			},
-		}, 1)
-
-	}, 1*time.Millisecond)
-
-	env.ExecuteWorkflow(func(ctx Context) error {
-		err := SetUpdateHandler(ctx, "update", func(ctx Context, i int) (int, error) {
-			return i, nil
-		}, UpdateHandlerOptions{})
-		if err != nil {
-			return err
-		}
-		return Sleep(ctx, time.Hour)
-	})
-	require.NoError(t, env.GetWorkflowError())
+	duplicateIDDedup(t, 1*time.Millisecond)
 }
 
 func TestWorkflowDuplicateIDDedupInterweave(t *testing.T) {
 	// The second update should be scheduled before the first update is complete.
 	// This causes the second update to be completed only after the first update
 	// is complete and its result is cached for the second update to dedup.
+	duplicateIDDedup(t, 0*time.Millisecond)
+
+}
+
+func duplicateIDDedup(t *testing.T, second_delay time.Duration) {
 	var suite WorkflowTestSuite
 	// Test dev server dedups UpdateWorkflow with same ID
 	env := suite.NewTestWorkflowEnvironment()
@@ -592,7 +546,7 @@ func TestWorkflowDuplicateIDDedupInterweave(t *testing.T) {
 			},
 		}, 1)
 
-	}, 0*time.Millisecond)
+	}, second_delay)
 
 	env.ExecuteWorkflow(func(ctx Context) error {
 		err := SetUpdateHandler(ctx, "update", func(ctx Context, i int) (int, error) {
@@ -604,7 +558,6 @@ func TestWorkflowDuplicateIDDedupInterweave(t *testing.T) {
 		return Sleep(ctx, time.Hour)
 	})
 	require.NoError(t, env.GetWorkflowError())
-	require.True(t, false)
 }
 
 func TestAllHandlersFinished(t *testing.T) {
