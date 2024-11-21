@@ -1098,7 +1098,6 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 	options.VersioningIntent = workflowOptionsFromCtx.VersioningIntent
 	options.StaticDetails = workflowOptionsFromCtx.StaticDetails
 	options.StaticSummary = workflowOptionsFromCtx.StaticSummary
-	fmt.Println("$$$$$ options", options)
 	header, err := workflowHeaderPropagated(ctx, options.ContextPropagators)
 	if err != nil {
 		executionSettable.Set(nil, err)

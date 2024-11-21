@@ -731,7 +731,6 @@ func (d *childWorkflowCommandStateMachine) getCommand() *commandpb.Command {
 		command := createNewCommand(enumspb.COMMAND_TYPE_START_CHILD_WORKFLOW_EXECUTION)
 		command.Attributes = &commandpb.Command_StartChildWorkflowExecutionCommandAttributes{StartChildWorkflowExecutionCommandAttributes: d.attributes}
 		command.UserMetadata = d.startMetadata
-		fmt.Println("command.UserMetadata", command.UserMetadata)
 		return command
 	case commandStateCanceledAfterStarted:
 		command := createNewCommand(enumspb.COMMAND_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION)
