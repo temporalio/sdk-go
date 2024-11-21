@@ -1511,17 +1511,17 @@ func matchReplayWithHistory(
 		if retError != nil {
 			var commands []string
 			for _, command := range replayCommands {
-				commands = append(commands, command.String())
+				commands = append(commands, command.CommandType.String())
 			}
 
 			var events []string
 			for _, event := range historyEvents {
-				events = append(events, event.String())
+				events = append(events, event.EventType.String())
 			}
 
 			var messages []string
 			for _, msg := range msgs {
-				messages = append(messages, msg.msg.String())
+				messages = append(messages, msg.msg.Body.String())
 			}
 
 			details = map[string]any{
