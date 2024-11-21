@@ -158,9 +158,11 @@ type (
 	}
 
 	updateResult struct {
-		success interface{}
-		err     error
-		mu      *sync.Mutex
+		success   interface{}
+		err       error
+		update_id string
+		callbacks []updateCallbacksWrapper
+		completed bool
 	}
 
 	// testWorkflowEnvironmentShared is the shared data between parent workflow and child workflow test environments
@@ -2933,20 +2935,29 @@ func (env *testWorkflowEnvironmentImpl) updateWorkflow(name string, id string, u
 
 	// check for duplicate update ID
 	if result, ok := env.updateMap[id]; ok {
-		result.mu.Lock()
-		// return cached result
-		env.postCallback(func() {
+		fmt.Println("[second] updateWorkflow", name, id)
+		callback_func := func() {
+			fmt.Println("[callback_func] calling accept and complete")
 			ucWrapper.uc.Accept()
 			ucWrapper.uc.Complete(result.success, result.err)
-			defer result.mu.Unlock()
-		}, false)
+		}
+		if result.completed {
+			fmt.Println("[completed] calling postCallback")
+			env.postCallback(callback_func, false)
+		} else {
+			result.callbacks = append(result.callbacks, ucWrapper)
+		}
+		env.updateMap[id] = result
 	} else {
-		env.updateMap[id] = updateResult{nil, nil, &sync.Mutex{}}
-		env.updateMap[id].mu.Lock()
+		fmt.Println("[first] updateWorkflow", name, id)
+		env.updateMap[id] = updateResult{nil, nil, id, []updateCallbacksWrapper{}, false}
 		env.postCallback(func() {
 			// Do not send any headers on test invocations
 			env.updateHandler(name, id, data, nil, ucWrapper)
-			defer env.updateMap[id].mu.Unlock()
+			result = env.updateMap[id]
+			result.completed = true
+			env.updateMap[id] = result
+			defer env.updateMap[id].post_callbacks(env)
 		}, true)
 	}
 
@@ -2970,18 +2981,27 @@ func (env *testWorkflowEnvironmentImpl) updateWorkflowByID(workflowID, name, id 
 
 		// Check for duplicate update ID
 		if result, ok := env.updateMap[id]; ok {
-			result.mu.Lock()
-			workflowHandle.env.postCallback(func() {
+			callback_func := func() {
 				ucWrapper.uc.Accept()
+				fmt.Println("using cached success and result")
 				ucWrapper.uc.Complete(result.success, result.err)
-				defer result.mu.Unlock()
-			}, false)
+			}
+			if result.completed {
+				env.postCallback(callback_func, false)
+			} else {
+				result.callbacks = append(result.callbacks, ucWrapper)
+			}
+			env.updateMap[id] = result
 		} else {
-			env.updateMap[id] = updateResult{nil, nil, &sync.Mutex{}}
-			env.updateMap[id].mu.Lock()
+			env.updateMap[id] = updateResult{nil, nil, id, []updateCallbacksWrapper{}, false}
 			workflowHandle.env.postCallback(func() {
 				workflowHandle.env.updateHandler(name, id, data, nil, ucWrapper)
-				defer env.updateMap[id].mu.Unlock()
+				// TODO: make this into a pointer?
+				result = env.updateMap[id]
+				result.completed = true
+				env.updateMap[id] = result
+				// TODO: do we even need this defer?
+				defer env.updateMap[id].post_callbacks(env)
 			}, true)
 		}
 
@@ -3139,13 +3159,21 @@ func (uc updateCallbacksWrapper) Complete(success interface{}, err error) {
 		panic("env is needed in updateCallback to cache update results for deduping purposes")
 	}
 	if result, ok := uc.env.updateMap[uc.updateID]; ok {
-		result.success = success
-		result.err = err
-		uc.env.updateMap[uc.updateID] = result
+		if result.success == nil && result.err == nil {
+			fmt.Println("[caching] success and result", success, err)
+			result.success = success
+			result.err = err
+			uc.env.updateMap[uc.updateID] = result
+			fmt.Println("[cachine] done")
+			uc.uc.Complete(success, err)
+		} else {
+			fmt.Println("ALREADY CACHED")
+			uc.uc.Complete(result.success, result.err)
+		}
+
 	} else {
 		panic("updateMap[updateID] should already be created from updateWorkflow()")
 	}
-	uc.uc.Complete(success, err)
 }
 
 func (h *testNexusOperationHandle) newStartTask() *workflowservice.PollNexusTaskQueueResponse {
@@ -3496,5 +3524,16 @@ func (o *testNexusOperation) OutputType() reflect.Type {
 func newTestNexusOperation(opRef testNexusOperationReference) *testNexusOperation {
 	return &testNexusOperation{
 		testNexusOperationReference: opRef,
+	}
+}
+
+func (res updateResult) post_callbacks(env *testWorkflowEnvironmentImpl) {
+	fmt.Println("[post_callbacks] res", res.update_id, "len(): ", len(res.callbacks))
+	for _, uc := range res.callbacks {
+		env.postCallback(func() {
+			fmt.Println("[post_callbacks] calling accept and complete")
+			uc.Accept()
+			uc.Complete(res.success, res.err)
+		}, false)
 	}
 }
