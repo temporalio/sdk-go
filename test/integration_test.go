@@ -6602,6 +6602,32 @@ func (ts *IntegrationTestSuite) getReportedOperationCount(metricName string, ope
 	return count
 }
 
+func (ts *IntegrationTestSuite) TestSelectorBlock() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-selector-block")
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.SelectorBlockSignal)
+	ts.NoError(err)
+	var result string
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal("hello", result)
+}
+
+func (ts *IntegrationTestSuite) TestSelectorNoBlock() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-selector-block")
+
+	internal.SetUnblockSelectorSignal(true)
+	defer internal.SetUnblockSelectorSignal(false)
+
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.SelectorBlockSignal)
+	ts.NoError(err)
+	var result string
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal("HELLO", result)
+}
+
 type coroutineCountingInterceptor struct {
 	interceptor.WorkerInterceptorBase
 	// Access via count()

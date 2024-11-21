@@ -3174,6 +3174,45 @@ func (w *Workflows) RunsLocalAndNonlocalActsWithRetries(ctx workflow.Context, nu
 	return nil
 }
 
+func (w *Workflows) SelectorBlockSignal(ctx workflow.Context) (string, error) {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	var logger = workflow.GetLogger(ctx)
+	logger.Info("calling ExecuteActivity")
+	ch1 := workflow.NewChannel(ctx)
+	ch2 := workflow.NewChannel(ctx)
+
+	workflow.Go(ctx, func(ctx workflow.Context) {
+		ch1.Send(ctx, "one")
+
+	})
+
+	workflow.Go(ctx, func(ctx workflow.Context) {
+		ch2.Send(ctx, "two")
+	})
+
+	selector := workflow.NewSelector(ctx)
+	var s string
+	selector.AddReceive(ch1, func(c workflow.ReceiveChannel, more bool) {
+		c.Receive(ctx, &s)
+	})
+	selector.AddDefault(func() {
+		ch2.Receive(ctx, &s)
+	})
+	selector.Select(ctx)
+
+	var hello = "hello"
+	if selector.HasPending() {
+		var result string
+		activity := workflow.ExecuteActivity(ctx, "Prefix_ToUpper", hello)
+		activity.Get(ctx, &result)
+		logger.Info("Result", result)
+		return result, nil
+	} else {
+		logger.Info("Signal in ch1 lost")
+	}
+	return hello, nil
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -3310,6 +3349,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.UpdateSetHandlerOnly)
 	worker.RegisterWorkflow(w.Echo)
 	worker.RegisterWorkflow(w.RunsLocalAndNonlocalActsWithRetries)
+	worker.RegisterWorkflow(w.SelectorBlockSignal)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {
