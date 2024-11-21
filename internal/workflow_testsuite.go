@@ -34,6 +34,7 @@ import (
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 
@@ -82,6 +83,15 @@ type (
 
 		runFn        func(args mock.Arguments)
 		waitDuration func() time.Duration
+	}
+
+	// TestUpdateCallback is a basic implementation of the UpdateCallbacks interface for testing purposes.
+	// Tests are welcome to implement their own version of this interface if they need to test more complex
+	// update logic. This is a simple implementation to make testing basic Workflow Updates easier.
+	TestUpdateCallback struct {
+		accept   func()
+		reject   func(error)
+		complete func(interface{}, error)
 	}
 )
 
@@ -767,6 +777,18 @@ func (c *MockCallWrapper) NotBefore(calls ...*MockCallWrapper) *MockCallWrapper 
 	return c
 }
 
+func (uc *TestUpdateCallback) Accept() {
+	uc.accept()
+}
+
+func (uc *TestUpdateCallback) Reject(err error) {
+	uc.reject(err)
+}
+
+func (uc *TestUpdateCallback) Complete(success interface{}, err error) {
+	uc.complete(success, err)
+}
+
 // ExecuteWorkflow executes a workflow, wait until workflow complete. It will fail the test if workflow is blocked and
 // cannot complete within TestTimeout (set by SetTestTimeout()).
 func (e *TestWorkflowEnvironment) ExecuteWorkflow(workflowFn interface{}, args ...interface{}) {
@@ -1077,6 +1099,17 @@ func (e *TestWorkflowEnvironment) UpdateWorkflow(updateName, updateID string, uc
 // UpdateWorkflowByID sends an update to a running workflow by its ID.
 func (e *TestWorkflowEnvironment) UpdateWorkflowByID(workflowID, updateName, updateID string, uc UpdateCallbacks, args interface{}) error {
 	return e.impl.updateWorkflowByID(workflowID, updateName, updateID, uc, args)
+}
+
+func (e *TestWorkflowEnvironment) UpdateWorkflowNoRejection(updateName string, updateID string, t mock.TestingT, args ...interface{}) {
+	uc := &TestUpdateCallback{
+		reject: func(err error) {
+			require.Fail(t, "update should not be rejected")
+		},
+		accept:   func() {},
+		complete: func(interface{}, error) {},
+	}
+	e.UpdateWorkflow(updateName, updateID, uc, args)
 }
 
 // QueryWorkflowByID queries a child workflow by its ID and returns the result synchronously
