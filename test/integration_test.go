@@ -6232,7 +6232,7 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorInRespondWorkflowTaskCompl
 		DeploymentOptions: worker.DeploymentOptions{
 			BuildID:                   "1.0",
 			UseBuildIDForVersioning:   true,
-			DeploymentName:            "deploy-test1",
+			DeploymentSeriesName:      "deploy-test1",
 			DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 		},
 	})
@@ -6329,7 +6329,7 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorPerWorkflowType() {
 		DeploymentOptions: worker.DeploymentOptions{
 			BuildID:                   "1.0",
 			UseBuildIDForVersioning:   true,
-			DeploymentName:            "deploy-test2",
+			DeploymentSeriesName:      "deploy-test2",
 			DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 		},
 	})
@@ -6395,7 +6395,7 @@ func (ts *IntegrationTestSuite) TestGetVersioningBehavior() {
 		DeploymentOptions: worker.DeploymentOptions{
 			BuildID:                   "1.0",
 			UseBuildIDForVersioning:   true,
-			DeploymentName:            "deploy-test1",
+			DeploymentSeriesName:      "deploy-test1",
 			DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 		},
 	})

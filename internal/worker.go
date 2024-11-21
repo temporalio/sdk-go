@@ -50,7 +50,7 @@ type (
 		// groups task queues for the given BuildID.
 		// NOTE: Experimental
 		// NOTE: Both BuildID and UseBuildIDForVersioning need to also be set to enable the new Worker Versioning-3 feature.
-		DeploymentName string
+		DeploymentSeriesName string
 
 		// Optional: Provides a default Versioning Behavior to workflows that do not set one in their first task
 		// (see workflow.SetVersioningBehavior).
