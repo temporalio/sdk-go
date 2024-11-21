@@ -39,6 +39,7 @@ import (
 	"github.com/pborman/uuid"
 
 	commonpb "go.temporal.io/api/common/v1"
+	deploymentpb "go.temporal.io/api/deployment/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/serviceerror"
@@ -565,9 +566,12 @@ func (wtp *workflowTaskPoller) errorToFailWorkflowTask(taskToken []byte, err err
 		BinaryChecksum: wtp.workerBuildID,
 		Namespace:      wtp.namespace,
 		WorkerVersion: &commonpb.WorkerVersionStamp{
-			BuildId:              wtp.workerBuildID,
-			UseVersioning:        wtp.useBuildIDVersioning,
-			DeploymentSeriesName: wtp.deploymentSeriesName,
+			BuildId:       wtp.workerBuildID,
+			UseVersioning: wtp.useBuildIDVersioning,
+		},
+		Deployment: &deploymentpb.Deployment{
+			BuildId:    wtp.workerBuildID,
+			SeriesName: wtp.deploymentSeriesName,
 		},
 	}
 
@@ -1182,6 +1186,7 @@ func convertActivityResultToRespondRequest(
 	namespace string,
 	cancelAllowed bool,
 	versionStamp *commonpb.WorkerVersionStamp,
+	deployment *deploymentpb.Deployment,
 ) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
@@ -1196,6 +1201,7 @@ func convertActivityResultToRespondRequest(
 			Identity:      identity,
 			Namespace:     namespace,
 			WorkerVersion: versionStamp,
+			Deployment:    deployment,
 		}
 	}
 
@@ -1209,6 +1215,7 @@ func convertActivityResultToRespondRequest(
 				Identity:      identity,
 				Namespace:     namespace,
 				WorkerVersion: versionStamp,
+				Deployment:    deployment,
 			}
 		}
 		if errors.Is(err, context.Canceled) {
@@ -1217,6 +1224,7 @@ func convertActivityResultToRespondRequest(
 				Identity:      identity,
 				Namespace:     namespace,
 				WorkerVersion: versionStamp,
+				Deployment:    deployment,
 			}
 		}
 	}
@@ -1233,6 +1241,7 @@ func convertActivityResultToRespondRequest(
 		Identity:      identity,
 		Namespace:     namespace,
 		WorkerVersion: versionStamp,
+		Deployment:    deployment,
 	}
 }
 

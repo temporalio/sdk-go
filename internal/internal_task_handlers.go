@@ -38,6 +38,7 @@ import (
 
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
+	deploymentpb "go.temporal.io/api/deployment/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
@@ -171,6 +172,7 @@ type (
 		defaultHeartbeatThrottleInterval time.Duration
 		maxHeartbeatThrottleInterval     time.Duration
 		versionStamp                     *commonpb.WorkerVersionStamp
+		deployment                       *deploymentpb.Deployment
 	}
 
 	// history wrapper method to help information about events.
@@ -1908,9 +1910,12 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			SdkVersion:    eventHandler.getNewSdkVersionAndReset(),
 		},
 		WorkerVersionStamp: &commonpb.WorkerVersionStamp{
-			BuildId:              wth.workerBuildID,
-			UseVersioning:        wth.useBuildIDForVersioning,
-			DeploymentSeriesName: wth.deploymentSeriesName,
+			BuildId:       wth.workerBuildID,
+			UseVersioning: wth.useBuildIDForVersioning,
+		},
+		Deployment: &deploymentpb.Deployment{
+			BuildId:    wth.workerBuildID,
+			SeriesName: wth.deploymentSeriesName,
 		},
 	}
 	if wth.capabilities != nil && wth.capabilities.BuildIdBasedVersioning {
@@ -1978,9 +1983,12 @@ func newActivityTaskHandlerWithCustomProvider(
 		defaultHeartbeatThrottleInterval: params.DefaultHeartbeatThrottleInterval,
 		maxHeartbeatThrottleInterval:     params.MaxHeartbeatThrottleInterval,
 		versionStamp: &commonpb.WorkerVersionStamp{
-			BuildId:              params.getBuildID(),
-			UseVersioning:        params.UseBuildIDForVersioning,
-			DeploymentSeriesName: params.DeploymentSeriesName,
+			BuildId:       params.getBuildID(),
+			UseVersioning: params.UseBuildIDForVersioning,
+		},
+		deployment: &deploymentpb.Deployment{
+			BuildId:    params.getBuildID(),
+			SeriesName: params.DeploymentSeriesName,
 		},
 	}
 }
@@ -2190,7 +2198,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		metricsHandler.Counter(metrics.UnregisteredActivityInvocationCounter).Inc(1)
 		return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil,
 			NewActivityNotRegisteredError(activityType, ath.getRegisteredActivityNames()),
-			ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp), nil
+			ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment), nil
 	}
 
 	// panic handler
@@ -2208,7 +2216,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			metricsHandler.Counter(metrics.ActivityTaskErrorCounter).Inc(1)
 			panicErr := newPanicError(p, st)
 			result = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr,
-				ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp)
+				ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment)
 		}
 	}()
 
@@ -2248,7 +2256,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		)
 	}
 	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err,
-		ath.dataConverter, ath.failureConverter, ath.namespace, isActivityCancel, ath.versionStamp), nil
+		ath.dataConverter, ath.failureConverter, ath.namespace, isActivityCancel, ath.versionStamp, ath.deployment), nil
 }
 
 func (ath *activityTaskHandlerImpl) getActivity(name string) activity {
