@@ -6241,10 +6241,6 @@ func (ts *IntegrationTestSuite) TestRequestFailureMetric() {
 }
 
 func (ts *IntegrationTestSuite) TestUserMetadata() {
-	// Skip this test if disabled
-	if os.Getenv("DISABLE_USER_METADATA_TESTS") != "" {
-		ts.T().SkipNow()
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -6301,6 +6297,8 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 	// Confirm that the history has a timer with the proper summary
 	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	var timerEvent *historypb.HistoryEvent
+	var activityEvent *historypb.HistoryEvent
+	var childWorkflowEvent *historypb.HistoryEvent
 	for iter.HasNext() {
 		event, err := iter.Next()
 		ts.NoError(err)
@@ -6308,11 +6306,35 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 			ts.Nil(timerEvent)
 			timerEvent = event
 		}
+
+		if event.GetActivityTaskScheduledEventAttributes() != nil {
+			ts.Nil(activityEvent)
+			activityEvent = event
+		}
+
+		if event.GetStartChildWorkflowExecutionInitiatedEventAttributes() != nil {
+			ts.Nil(childWorkflowEvent)
+			childWorkflowEvent = event
+		}
 	}
 	ts.NotNil(timerEvent)
 	ts.NoError(converter.GetDefaultDataConverter().FromPayload(
 		timerEvent.UserMetadata.Summary, &str))
 	ts.Equal("my-timer", str)
+
+	ts.NotNil(activityEvent)
+	ts.NoError(converter.GetDefaultDataConverter().FromPayload(
+		activityEvent.UserMetadata.Summary, &str))
+	ts.Equal("my-activity", str)
+
+	ts.NotNil(childWorkflowEvent)
+	fmt.Printf("childWorkflowEvent: %v\n", childWorkflowEvent.UserMetadata)
+	ts.NoError(converter.GetDefaultDataConverter().FromPayload(
+		childWorkflowEvent.UserMetadata.Summary, &str))
+	ts.Equal("my-child-wf-summary", str)
+	ts.NoError(converter.GetDefaultDataConverter().FromPayload(
+		childWorkflowEvent.UserMetadata.Details, &str))
+	ts.Equal("my-child-wf-details", str)
 }
 
 func (ts *IntegrationTestSuite) TestAwaitWithOptionsTimeout() {
