@@ -3092,6 +3092,7 @@ func (w *Workflows) UpsertMemo(ctx workflow.Context, memo map[string]interface{}
 }
 
 func (w *Workflows) UserMetadata(ctx workflow.Context) error {
+	var activities *Activities
 	// Define an update and query handler
 	err := workflow.SetQueryHandlerWithOptions(
 		ctx,
@@ -3122,6 +3123,29 @@ func (w *Workflows) UserMetadata(ctx workflow.Context) error {
 		workflow.SignalChannelOptions{Description: "My signal channel"},
 	).Receive(ctx, nil)
 	workflow.SetCurrentDetails(ctx, "current-details-2")
+
+	// Start an activity with a description
+	ao := workflow.ActivityOptions{
+		StartToCloseTimeout: time.Minute,
+		Summary:             "my-activity",
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+	var result string
+	err = workflow.ExecuteActivity(ctx, activities.EmptyActivity).Get(ctx, &result)
+	if err != nil {
+		return err
+	}
+
+	// Start a child workflow with a description
+	cwo := workflow.ChildWorkflowOptions{
+		StaticSummary: "my-child-wf-summary",
+		StaticDetails: "my-child-wf-details",
+	}
+	ctx = workflow.WithChildOptions(ctx, cwo)
+	err = workflow.ExecuteChildWorkflow(ctx, w.SimplestWorkflow).Get(ctx, nil)
+	if err != nil {
+		return err
+	}
 
 	// Run a short timer with a summary and return
 	return workflow.NewTimerWithOptions(
