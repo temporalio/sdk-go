@@ -33,6 +33,7 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
@@ -845,7 +846,10 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 
 	wtp.updateBacklog(request.TaskQueue.GetKind(), response.GetBacklogCountHint())
 
+	fmt.Println("PollWorkflowTaskQueue", protojson.Format(request))
+
 	task := wtp.toWorkflowTask(response)
+
 	traceLog(func() {
 		var firstEventID int64 = -1
 		if response.History != nil && len(response.History.Events) > 0 {
@@ -953,7 +957,7 @@ func newGetHistoryPageFunc(
 		// a new workflow task or the server looses the workflow task if it is a speculative workflow task. In either
 		// case, the new workflow task could have events that are beyond the last event ID that the SDK expects to process.
 		// In such cases, the SDK should return error indicating that the workflow task is stale since the result will not be used.
-		if size > 0 && lastEventID > 0 && 
+		if size > 0 && lastEventID > 0 &&
 			h.Events[size-1].GetEventId() > lastEventID {
 			return nil, nil, fmt.Errorf("history contains events past expected last event ID (%v) "+
 				"likely this means the current workflow task is no longer valid", lastEventID)
