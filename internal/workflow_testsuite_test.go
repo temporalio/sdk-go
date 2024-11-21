@@ -548,7 +548,8 @@ func TestWorkflowDuplicateIDDedup(t *testing.T) {
 
 func TestWorkflowDuplicateIDDedupInterweave(t *testing.T) {
 	// The second update should be scheduled before the first update is complete.
-	// This causes the second
+	// This causes the second update to be completed only after the first update
+	// is complete and its result is cached for the second update to dedup.
 	var suite WorkflowTestSuite
 	// Test dev server dedups UpdateWorkflow with same ID
 	env := suite.NewTestWorkflowEnvironment()
@@ -561,7 +562,6 @@ func TestWorkflowDuplicateIDDedupInterweave(t *testing.T) {
 				time.Sleep(100 * time.Millisecond)
 			},
 			complete: func(result interface{}, err error) {
-				fmt.Println("first complete")
 				intResult, ok := result.(int)
 				if !ok {
 					require.Fail(t, fmt.Sprintf("result should be int: %v", result))
@@ -572,7 +572,6 @@ func TestWorkflowDuplicateIDDedupInterweave(t *testing.T) {
 		}, 0)
 	}, 0)
 
-	// TODO: schedule second update before the first one finishes
 	env.RegisterDelayedCallback(func() {
 		env.UpdateWorkflow("update", "id", &updateCallback{
 			reject: func(err error) {
@@ -582,7 +581,6 @@ func TestWorkflowDuplicateIDDedupInterweave(t *testing.T) {
 
 			},
 			complete: func(result interface{}, err error) {
-				fmt.Println("second complete")
 				intResult, ok := result.(int)
 				if !ok {
 					require.Fail(t, fmt.Sprintf("result should be int: %v", result))

@@ -2935,21 +2935,17 @@ func (env *testWorkflowEnvironmentImpl) updateWorkflow(name string, id string, u
 
 	// check for duplicate update ID
 	if result, ok := env.updateMap[id]; ok {
-		fmt.Println("[second] updateWorkflow", name, id)
 		callback_func := func() {
-			fmt.Println("[callback_func] calling accept and complete")
 			ucWrapper.uc.Accept()
 			ucWrapper.uc.Complete(result.success, result.err)
 		}
 		if result.completed {
-			fmt.Println("[completed] calling postCallback")
 			env.postCallback(callback_func, false)
 		} else {
 			result.callbacks = append(result.callbacks, ucWrapper)
 		}
 		env.updateMap[id] = result
 	} else {
-		fmt.Println("[first] updateWorkflow", name, id)
 		env.updateMap[id] = updateResult{nil, nil, id, []updateCallbacksWrapper{}, false}
 		env.postCallback(func() {
 			// Do not send any headers on test invocations
@@ -2983,7 +2979,6 @@ func (env *testWorkflowEnvironmentImpl) updateWorkflowByID(workflowID, name, id 
 		if result, ok := env.updateMap[id]; ok {
 			callback_func := func() {
 				ucWrapper.uc.Accept()
-				fmt.Println("using cached success and result")
 				ucWrapper.uc.Complete(result.success, result.err)
 			}
 			if result.completed {
@@ -3160,14 +3155,11 @@ func (uc updateCallbacksWrapper) Complete(success interface{}, err error) {
 	}
 	if result, ok := uc.env.updateMap[uc.updateID]; ok {
 		if result.success == nil && result.err == nil {
-			fmt.Println("[caching] success and result", success, err)
 			result.success = success
 			result.err = err
 			uc.env.updateMap[uc.updateID] = result
-			fmt.Println("[cachine] done")
 			uc.uc.Complete(success, err)
 		} else {
-			fmt.Println("ALREADY CACHED")
 			uc.uc.Complete(result.success, result.err)
 		}
 
@@ -3528,10 +3520,8 @@ func newTestNexusOperation(opRef testNexusOperationReference) *testNexusOperatio
 }
 
 func (res updateResult) post_callbacks(env *testWorkflowEnvironmentImpl) {
-	fmt.Println("[post_callbacks] res", res.update_id, "len(): ", len(res.callbacks))
 	for _, uc := range res.callbacks {
 		env.postCallback(func() {
-			fmt.Println("[post_callbacks] calling accept and complete")
 			uc.Accept()
 			uc.Complete(res.success, res.err)
 		}, false)
