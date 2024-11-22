@@ -1057,14 +1057,13 @@ func (wc *WorkflowClient) GetWorkerTaskReachability(ctx context.Context, options
 	return converted, nil
 }
 
-// GetWorkflowExecutionOptions returns the current WorkflowExecutionOptions for an existing workflow.
+// GetWorkflowExecutionOptions returns the current WorkflowExecutionOptions of an existing workflow.
 // NOTE: Experimental
 func (wc *WorkflowClient) GetWorkflowExecutionOptions(ctx context.Context, request GetWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error) {
 	// no side-effects, i.e., GET, when UpdateMask is empty and WorkflowExecutionOptions is not nil
 	return wc.UpdateWorkflowExecutionOptions(ctx, UpdateWorkflowExecutionOptionsRequest{
 		WorkflowId:               request.WorkflowId,
 		RunId:                    request.RunId,
-		RequestId:                uuid.New(),
 		WorkflowExecutionOptions: WorkflowExecutionOptions{},
 		UpdatedFields:            []string{},
 	})
@@ -1082,17 +1081,12 @@ func (wc *WorkflowClient) UpdateWorkflowExecutionOptions(ctx context.Context, re
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
-	if request.RequestId == "" {
-		request.RequestId = uuid.New()
-	}
-
 	requestMsg := &workflowservice.UpdateWorkflowExecutionOptionsRequest{
 		Namespace: wc.namespace,
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: request.WorkflowId,
 			RunId:      request.RunId,
 		},
-		RequestId:                request.RequestId,
 		WorkflowExecutionOptions: workflowExecutionOptionsToProto(request.WorkflowExecutionOptions),
 		UpdateMask:               workflowExecutionOptionsMaskToProto(request.UpdatedFields),
 	}

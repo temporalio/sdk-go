@@ -287,10 +287,17 @@ type (
 	// NOTE: Experimental
 	GetWorkflowExecutionOptionsRequest = internal.GetWorkflowExecutionOptionsRequest
 
-	// WorkflowExecutionOptions contains a set of properties of a running workflow
+	// WorkflowExecutionOptions contains a set of properties of an existing workflow
 	// that can be overriden using UpdateWorkflowExecutionOptions.
 	// NOTE: Experimental
 	WorkflowExecutionOptions = internal.WorkflowExecutionOptions
+
+	// VersioningOverride is a property in WorkflowExecutionOptions that changes the versioning
+	// configuration of a specific workflow execution.
+	// If set, it takes precedence over the Versioning Behavior provided with workflow type registration, or
+	// default worker options.
+	// NOTE: Experimental
+	VersioningOverride = internal.VersioningOverride
 
 	// WorkflowUpdateHandle represents a running or completed workflow
 	// execution update and gives the holder access to the outcome of the same.

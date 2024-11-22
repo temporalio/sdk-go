@@ -87,7 +87,8 @@ type (
 		workerBuildID string
 		// Whether the worker has opted in to the build-id based versioning feature
 		useBuildIDVersioning bool
-		// The worker's deployment name, an identifier in versioning-3 to group Task Queues for a given build ID
+		// The worker's deployment series name, an identifier in Worker Versioning to link
+		// versions of the same worker service/application.
 		deploymentSeriesName string
 		// Server's capabilities
 		capabilities *workflowservice.GetSystemInfoResponse_Capabilities

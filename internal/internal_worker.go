@@ -165,9 +165,12 @@ type (
 
 		// The worker's build ID used for versioning, if one was set.
 		WorkerBuildID string
+
 		// If true the worker is opting in to build ID based versioning.
 		UseBuildIDForVersioning bool
-		// The worker's deployment name, an identifier in versioning-3 to group Task Queues for a given build ID.
+
+		// The worker's deployment series name, an identifier in versioning-3 to link versions of the same worker
+		// service/application.
 		DeploymentSeriesName string
 
 		// The Versioning Behavior for workflows that do not set one in their first task.
@@ -1640,7 +1643,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 
 	// Sessions are not currently compatible with worker versioning
 	// See: https://github.com/temporalio/sdk-go/issues/1227
-	if options.EnableSessionWorker && options.DeploymentOptions.UseBuildIDForVersioning {
+	if options.EnableSessionWorker && options.UseBuildIDForVersioning {
 		panic("cannot set both EnableSessionWorker and UseBuildIDForVersioning")
 	}
 
@@ -1684,8 +1687,8 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		MaxConcurrentWorkflowTaskQueuePollers: options.MaxConcurrentWorkflowTaskPollers,
 		MaxConcurrentNexusTaskQueuePollers:    options.MaxConcurrentNexusTaskPollers,
 		Identity:                              client.identity,
-		WorkerBuildID:                         options.DeploymentOptions.BuildID,
-		UseBuildIDForVersioning:               options.DeploymentOptions.UseBuildIDForVersioning,
+		WorkerBuildID:                         options.BuildID,
+		UseBuildIDForVersioning:               options.UseBuildIDForVersioning,
 		DeploymentSeriesName:                  options.DeploymentOptions.DeploymentSeriesName,
 		DefaultVersioningBehavior:             options.DeploymentOptions.DefaultVersioningBehavior,
 		MetricsHandler:                        client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue)),

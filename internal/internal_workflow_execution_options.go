@@ -25,7 +25,7 @@ package internal
 import (
 	"fmt"
 
-	commonpb "go.temporal.io/api/common/v1"
+	deploymentpb "go.temporal.io/api/deployment/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/protobuf/types/known/fieldmaskpb"
@@ -39,8 +39,6 @@ type (
 		WorkflowId string
 		// Running execution for a workflow ID. If empty string then it will pick the last running execution.
 		RunId string
-		// RequestId is an optional identifier to deduplicate requests.
-		RequestId string
 		// WorkflowExecutionOptions specifies options for a target workflow execution. Fields not in
 		// UpdatedFields are ignored.
 		WorkflowExecutionOptions WorkflowExecutionOptions
@@ -68,32 +66,35 @@ type (
 		VersioningOverride VersioningOverride
 	}
 
-	// VersioningOverride changes the Versioning Behavior of of a specific workflow execution. If set, it takes precedence
-	// over the Versioning Behavior provided with code annotations.
-	// To remove the override, the UpdateWorkflowExecutionOptionsRequest should include a default VersioningOverride value
-	// in WorkflowExecutionOptions, and a FieldMask that contains the string "VersioningOverride".
+	// VersioningOverride changes the versioning configuration of a specific workflow execution.
+	// If set, it takes precedence over the Versioning Behavior provided with workflow type registration or
+	// default worker options.
+	// To remove the override, the UpdateWorkflowExecutionOptionsRequest should include a default VersioningOverride
+	// value in WorkflowExecutionOptions, and a FieldMask that contains the string "VersioningOverride".
 	// NOTE: Experimental
 	VersioningOverride struct {
 		// The new Versioning Behavior. This field is required.
 		Behavior VersioningBehavior
-		// Identifies the Build ID and Deployment Name to pin the workflow to. Ignored when Behavior is not VersioningBehaviorPinned.
-		WorkerDeployment WorkerDeployment
+		// Identifies the Build ID and Deployment Series Name to pin the workflow to. Ignored when Behavior is not
+		// VersioningBehaviorPinned.
+		Deployment Deployment
 	}
 
-	// WorkerDeployment provides a Build ID and Deployment Name for the workflow.
+	// Deployment identifies a set of workers. This identifier combines the deployment series
+	// name with their Build ID.
 	// NOTE: Experimental
-	WorkerDeployment struct {
-		// Name of the deployment.
-		DeploymentName string
-		// Target Build ID for the deployment.
+	Deployment struct {
+		// Name of the deployment series. Different versions of the same worker service/application are
+		// linked together by sharing a series name.
+		SeriesName string
+		// Build ID for the worker's code and configuration version.
 		BuildId string
 	}
 )
 
 // Mapping WorkflowExecutionOptions field names to proto ones.
 var workflowExecutionOptionsMap map[string]string = map[string]string{
-	// TODO: change to "versioning_override" with API upgrade
-	"VersioningOverride": "versioning_behavior_override",
+	"VersioningOverride": "versioning_override",
 }
 
 func generateWorkflowExecutionOptionsPaths(mask []string) []string {
@@ -118,18 +119,18 @@ func workflowExecutionOptionsMaskToProto(mask []string) *fieldmaskpb.FieldMask {
 	return protoMask
 }
 
-func workerDeploymentToProto(d WorkerDeployment) *commonpb.WorkerDeployment {
-	return &commonpb.WorkerDeployment{
-		DeploymentName: d.DeploymentName,
-		BuildId:        d.BuildId,
+func workerDeploymentToProto(d Deployment) *deploymentpb.Deployment {
+	return &deploymentpb.Deployment{
+		SeriesName: d.SeriesName,
+		BuildId:    d.BuildId,
 	}
 }
 
 func workflowExecutionOptionsToProto(options WorkflowExecutionOptions) *workflowpb.WorkflowExecutionOptions {
 	return &workflowpb.WorkflowExecutionOptions{
-		VersioningBehaviorOverride: &commonpb.VersioningBehaviorOverride{
-			Behavior:         versioningBehaviorToProto(options.VersioningOverride.Behavior),
-			WorkerDeployment: workerDeploymentToProto(options.VersioningOverride.WorkerDeployment),
+		VersioningOverride: &workflowpb.VersioningOverride{
+			Behavior:   versioningBehaviorToProto(options.VersioningOverride.Behavior),
+			Deployment: workerDeploymentToProto(options.VersioningOverride.Deployment),
 		},
 	}
 }
@@ -139,14 +140,14 @@ func workflowExecutionOptionsFromProtoUpdateResponse(response *workflowservice.U
 		return WorkflowExecutionOptions{}
 	}
 
-	behaviorOverride := response.GetWorkflowExecutionOptions().GetVersioningBehaviorOverride()
+	versioningOverride := response.GetWorkflowExecutionOptions().GetVersioningOverride()
 
 	return WorkflowExecutionOptions{
 		VersioningOverride: VersioningOverride{
-			Behavior: VersioningBehavior(behaviorOverride.GetBehavior()),
-			WorkerDeployment: WorkerDeployment{
-				DeploymentName: behaviorOverride.GetWorkerDeployment().GetDeploymentName(),
-				BuildId:        behaviorOverride.GetWorkerDeployment().GetBuildId(),
+			Behavior: VersioningBehavior(versioningOverride.GetBehavior()),
+			Deployment: Deployment{
+				SeriesName: versioningOverride.GetDeployment().GetSeriesName(),
+				BuildId:    versioningOverride.GetDeployment().GetBuildId(),
 			},
 		},
 	}
