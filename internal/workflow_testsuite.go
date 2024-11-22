@@ -89,9 +89,9 @@ type (
 	// Tests are welcome to implement their own version of this interface if they need to test more complex
 	// update logic. This is a simple implementation to make testing basic Workflow Updates easier.
 	TestUpdateCallback struct {
-		accept   func()
-		reject   func(error)
-		complete func(interface{}, error)
+		OnAccept   func()
+		OnReject   func(error)
+		OnComplete func(interface{}, error)
 	}
 )
 
@@ -778,15 +778,15 @@ func (c *MockCallWrapper) NotBefore(calls ...*MockCallWrapper) *MockCallWrapper 
 }
 
 func (uc *TestUpdateCallback) Accept() {
-	uc.accept()
+	uc.OnAccept()
 }
 
 func (uc *TestUpdateCallback) Reject(err error) {
-	uc.reject(err)
+	uc.OnReject(err)
 }
 
 func (uc *TestUpdateCallback) Complete(success interface{}, err error) {
-	uc.complete(success, err)
+	uc.OnComplete(success, err)
 }
 
 // ExecuteWorkflow executes a workflow, wait until workflow complete. It will fail the test if workflow is blocked and
@@ -1103,11 +1103,11 @@ func (e *TestWorkflowEnvironment) UpdateWorkflowByID(workflowID, updateName, upd
 
 func (e *TestWorkflowEnvironment) UpdateWorkflowNoRejection(updateName string, updateID string, t mock.TestingT, args ...interface{}) {
 	uc := &TestUpdateCallback{
-		reject: func(err error) {
+		OnReject: func(err error) {
 			require.Fail(t, "update should not be rejected")
 		},
-		accept:   func() {},
-		complete: func(interface{}, error) {},
+		OnAccept:   func() {},
+		OnComplete: func(interface{}, error) {},
 	}
 	e.UpdateWorkflow(updateName, updateID, uc, args)
 }

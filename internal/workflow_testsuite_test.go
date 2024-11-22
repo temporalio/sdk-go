@@ -275,11 +275,11 @@ func TestWorkflowIDUpdateWorkflowByID(t *testing.T) {
 	env := suite.NewTestWorkflowEnvironment()
 	env.RegisterDelayedCallback(func() {
 		err := env.UpdateWorkflowByID("my-workflow-id", "update", "id", &TestUpdateCallback{
-			reject: func(err error) {
+			OnReject: func(err error) {
 				require.Fail(t, "update should not be rejected")
 			},
-			accept:   func() {},
-			complete: func(interface{}, error) {},
+			OnAccept:   func() {},
+			OnComplete: func(interface{}, error) {},
 		}, "input")
 		require.NoError(t, err)
 	}, time.Second)
@@ -312,12 +312,12 @@ func TestChildWorkflowUpdate(t *testing.T) {
 	})
 	env.RegisterDelayedCallback(func() {
 		err := env.UpdateWorkflowByID("child-workflow", "child-handler", "1", &TestUpdateCallback{
-			accept: func() {
+			OnAccept: func() {
 			},
-			reject: func(err error) {
+			OnReject: func(err error) {
 				require.Fail(t, "update failed", err)
 			},
-			complete: func(result interface{}, err error) {
+			OnComplete: func(result interface{}, err error) {
 				if err != nil {
 					require.Fail(t, "update failed", err)
 				}
@@ -402,13 +402,13 @@ func TestWorkflowNotRegisteredRejected(t *testing.T) {
 	var updateRejectionErr error
 	env.RegisterDelayedCallback(func() {
 		env.UpdateWorkflow("update", "id", &TestUpdateCallback{
-			reject: func(err error) {
+			OnReject: func(err error) {
 				updateRejectionErr = err
 			},
-			accept: func() {
+			OnAccept: func() {
 				require.Fail(t, "update should not be accepted")
 			},
-			complete: func(interface{}, error) {},
+			OnComplete: func(interface{}, error) {},
 		})
 	}, 0)
 
@@ -433,13 +433,13 @@ func TestWorkflowUpdateOrderAcceptReject(t *testing.T) {
 	var updateRejectionErr error
 	env.RegisterDelayedCallback(func() {
 		env.UpdateWorkflow("bad update", "2", &TestUpdateCallback{
-			reject: func(err error) {
+			OnReject: func(err error) {
 				updateRejectionErr = err
 			},
-			accept: func() {
+			OnAccept: func() {
 				require.Fail(t, "update should not be accepted")
 			},
-			complete: func(interface{}, error) {},
+			OnComplete: func(interface{}, error) {},
 		})
 	}, 0)
 
