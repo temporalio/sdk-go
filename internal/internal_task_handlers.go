@@ -37,7 +37,6 @@ import (
 	"time"
 
 	"github.com/antithesishq/antithesis-sdk-go/assert"
-	"github.com/davecgh/go-spew/spew"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -1566,16 +1565,10 @@ matchLoop:
 		}
 
 		if e == nil {
-			spew.Dump("replayCommands", replayCommands)
-			spew.Dump("historyEvents", historyEvents)
-			spew.Dump("msgs", msgs)
 			return historyMismatchErrorf("[TMPRL1100] nondeterministic workflow: extra replay command for %s", util.CommandToString(d))
 		}
 
 		if !isCommandMatchEvent(d, e, msgs) {
-			spew.Dump("replayCommands", replayCommands)
-			spew.Dump("historyEvents", historyEvents)
-			spew.Dump("msgs", msgs)
 			return historyMismatchErrorf("[TMPRL1100] nondeterministic workflow: history event is %s, replay command is %s",
 				util.HistoryEventToString(e), util.CommandToString(d))
 		}
