@@ -338,10 +338,6 @@ type (
 		// NOTE: Experimental
 		UpdateWorkflowExecutionOptions(ctx context.Context, options UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error)
 
-		// GetWorkflowExecutionOptions returns the current WorkflowExecutionOptions of an existing workflow.
-		// NOTE: Experimental
-		GetWorkflowExecutionOptions(ctx context.Context, request GetWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error)
-
 		// DescribeTaskQueue returns information about the target taskqueue, right now this API returns the
 		// pollers which polled this taskqueue in last few minutes.
 		// The errors it can return:

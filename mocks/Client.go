@@ -441,34 +441,6 @@ func (_m *Client) GetWorkflow(ctx context.Context, workflowID string, runID stri
 	return r0
 }
 
-// GetWorkflowExecutionOptions provides a mock function with given fields: ctx, options
-func (_m *Client) GetWorkflowExecutionOptions(ctx context.Context, options client.GetWorkflowExecutionOptionsRequest) (client.WorkflowExecutionOptions, error) {
-	ret := _m.Called(ctx, options)
-
-	if len(ret) == 0 {
-		panic("no return value specified for GetWorkflowExecutionOptions")
-	}
-
-	var r0 client.WorkflowExecutionOptions
-	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, client.GetWorkflowExecutionOptionsRequest) (client.WorkflowExecutionOptions, error)); ok {
-		return rf(ctx, options)
-	}
-	if rf, ok := ret.Get(0).(func(context.Context, client.GetWorkflowExecutionOptionsRequest) client.WorkflowExecutionOptions); ok {
-		r0 = rf(ctx, options)
-	} else {
-		r0 = ret.Get(0).(client.WorkflowExecutionOptions)
-	}
-
-	if rf, ok := ret.Get(1).(func(context.Context, client.GetWorkflowExecutionOptionsRequest) error); ok {
-		r1 = rf(ctx, options)
-	} else {
-		r1 = ret.Error(1)
-	}
-
-	return r0, r1
-}
-
 // GetWorkflowHistory provides a mock function with given fields: ctx, workflowID, runID, isLongPoll, filterType
 func (_m *Client) GetWorkflowHistory(ctx context.Context, workflowID string, runID string, isLongPoll bool, filterType enums.HistoryEventFilterType) client.HistoryEventIterator {
 	ret := _m.Called(ctx, workflowID, runID, isLongPoll, filterType)

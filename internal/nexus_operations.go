@@ -399,11 +399,6 @@ func (t *testSuiteClientForNexusOperations) UpdateWorkflowExecutionOptions(ctx c
 	panic("not implemented in the test environment")
 }
 
-// GetWorkflowExecutionOptions implements Client.
-func (t *testSuiteClientForNexusOperations) GetWorkflowExecutionOptions(ctx context.Context, options GetWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error) {
-	panic("not implemented in the test environment")
-}
-
 var _ Client = &testSuiteClientForNexusOperations{}
 
 // testEnvWorkflowRunForNexusOperations is a partial [WorkflowRun] implementation for the test workflow environment used

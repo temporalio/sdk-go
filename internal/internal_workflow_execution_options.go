@@ -50,15 +50,6 @@ type (
 		UpdatedFields []string
 	}
 
-	// GetWorkflowExecutionOptionsRequest is a request for Client.GetWorkflowExecutionOptions.
-	// NOTE: Experimental
-	GetWorkflowExecutionOptionsRequest struct {
-		// ID of the workflow.
-		WorkflowId string
-		// Running execution for a workflow ID. If empty string then it will pick the last running execution.
-		RunId string
-	}
-
 	// WorkflowExecutionOptions describes options for a workflow execution.
 	// NOTE: Experimental
 	WorkflowExecutionOptions struct {
