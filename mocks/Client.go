@@ -959,6 +959,34 @@ func (_m *Client) UpdateWorkflow(ctx context.Context, options client.UpdateWorkf
 	return r0, r1
 }
 
+// UpdateWorkflowExecutionOptions provides a mock function with given fields: ctx, options
+func (_m *Client) UpdateWorkflowExecutionOptions(ctx context.Context, options client.UpdateWorkflowExecutionOptionsRequest) (client.WorkflowExecutionOptions, error) {
+	ret := _m.Called(ctx, options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateWorkflowExecutionOptions")
+	}
+
+	var r0 client.WorkflowExecutionOptions
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, client.UpdateWorkflowExecutionOptionsRequest) (client.WorkflowExecutionOptions, error)); ok {
+		return rf(ctx, options)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, client.UpdateWorkflowExecutionOptionsRequest) client.WorkflowExecutionOptions); ok {
+		r0 = rf(ctx, options)
+	} else {
+		r0 = ret.Get(0).(client.WorkflowExecutionOptions)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, client.UpdateWorkflowExecutionOptionsRequest) error); ok {
+		r1 = rf(ctx, options)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // WorkflowService provides a mock function with given fields:
 func (_m *Client) WorkflowService() workflowservice.WorkflowServiceClient {
 	ret := _m.Called()

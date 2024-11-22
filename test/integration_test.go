@@ -6229,9 +6229,9 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorInRespondWorkflowTaskCompl
 	ts.worker.Stop()
 	ts.workerStopped = true
 	w := worker.New(c, ts.taskQueueName, worker.Options{
+		BuildID:                 "1.0",
+		UseBuildIDForVersioning: true,
 		DeploymentOptions: worker.DeploymentOptions{
-			BuildID:                   "1.0",
-			UseBuildIDForVersioning:   true,
 			DeploymentSeriesName:      "deploy-test1",
 			DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 		},
@@ -6326,9 +6326,9 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorPerWorkflowType() {
 	ts.worker.Stop()
 	ts.workerStopped = true
 	w := worker.New(c, ts.taskQueueName, worker.Options{
+		BuildID:                 "1.0",
+		UseBuildIDForVersioning: true,
 		DeploymentOptions: worker.DeploymentOptions{
-			BuildID:                   "1.0",
-			UseBuildIDForVersioning:   true,
 			DeploymentSeriesName:      "deploy-test2",
 			DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 		},
@@ -6392,9 +6392,9 @@ func (ts *IntegrationTestSuite) TestGetVersioningBehavior() {
 	ts.worker.Stop()
 	ts.workerStopped = true
 	w := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		BuildID:                 "1.0",
+		UseBuildIDForVersioning: true,
 		DeploymentOptions: worker.DeploymentOptions{
-			BuildID:                   "1.0",
-			UseBuildIDForVersioning:   true,
 			DeploymentSeriesName:      "deploy-test1",
 			DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 		},

@@ -1057,6 +1057,36 @@ func (wc *WorkflowClient) GetWorkerTaskReachability(ctx context.Context, options
 	return converted, nil
 }
 
+// UpdateWorkflowExecutionOptions partially overrides the WorkflowExecutionOptions of an existing workflow execution,
+// and returns the new WorkflowExecutionOptions after applying the changes.
+// It is intended for building tools that can selectively apply ad-hoc workflow configuration changes.
+// NOTE: Experimental
+func (wc *WorkflowClient) UpdateWorkflowExecutionOptions(ctx context.Context, request UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error) {
+	if err := wc.ensureInitialized(ctx); err != nil {
+		return WorkflowExecutionOptions{}, err
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+
+	requestMsg := &workflowservice.UpdateWorkflowExecutionOptionsRequest{
+		Namespace: wc.namespace,
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: request.WorkflowId,
+			RunId:      request.RunId,
+		},
+		WorkflowExecutionOptions: workflowExecutionOptionsToProto(request.WorkflowExecutionOptions),
+		UpdateMask:               workflowExecutionOptionsMaskToProto(request.UpdatedFields),
+	}
+
+	resp, err := wc.workflowService.UpdateWorkflowExecutionOptions(grpcCtx, requestMsg)
+	if err != nil {
+		return WorkflowExecutionOptions{}, err
+	}
+
+	return workflowExecutionOptionsFromProtoUpdateResponse(resp), nil
+}
+
 // DescribeTaskQueueEnhanced returns information about the target task queue, broken down by Build Id:
 //   - List of pollers
 //   - Workflow Reachability status

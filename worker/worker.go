@@ -215,6 +215,11 @@ type (
 	// NOTE: Experimental
 	DeploymentOptions = internal.WorkerDeploymentOptions
 
+	// Deployment identifies a set of workers. This identifier combines the deployment series
+	// name with their Build ID.
+	// NOTE: Experimental
+	Deployment = internal.Deployment
+
 	// Options is used to configure a worker instance.
 	Options = internal.WorkerOptions
 
