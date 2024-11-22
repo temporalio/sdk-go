@@ -492,19 +492,37 @@ func TestWorkflowUpdateOrderAcceptReject(t *testing.T) {
 }
 
 func TestWorkflowDuplicateIDDedup(t *testing.T) {
-	duplicateIDDedup(t, 1*time.Millisecond)
+	duplicateIDDedup(t, true, false, 1)
 }
 
 func TestWorkflowDuplicateIDDedupInterweave(t *testing.T) {
 	// The second update should be scheduled before the first update is complete.
 	// This causes the second update to be completed only after the first update
 	// is complete and its result is cached for the second update to dedup.
-	duplicateIDDedup(t, 0*time.Millisecond)
-
+	duplicateIDDedup(t, false, false, 1)
 }
 
-func duplicateIDDedup(t *testing.T, second_delay time.Duration) {
+func TestWorkflowDuplicateIDDedupWithSleep(t *testing.T) {
+	duplicateIDDedup(t, false, true, 1)
+}
+
+func TestWorkflowDuplicateIDDedupMore(t *testing.T) {
+	duplicateIDDedup(t, true, false, 50)
+}
+
+func TestWorkflowDuplicateIDDedupDelayAndSleep(t *testing.T) {
+	duplicateIDDedup(t, true, true, 50)
+}
+
+func duplicateIDDedup(t *testing.T, delay_second bool, with_sleep bool, additional int) {
 	var suite WorkflowTestSuite
+	var second_delay time.Duration
+	if delay_second {
+		second_delay = 1 * time.Second
+	} else {
+		second_delay = 0 * time.Second
+	}
+	additional_update_count := 0
 	// Test dev server dedups UpdateWorkflow with same ID
 	env := suite.NewTestWorkflowEnvironment()
 	env.RegisterDelayedCallback(func() {
@@ -512,13 +530,11 @@ func duplicateIDDedup(t *testing.T, second_delay time.Duration) {
 			reject: func(err error) {
 				require.Fail(t, fmt.Sprintf("update should not be rejected, err: %v", err))
 			},
-			accept: func() {
-				time.Sleep(100 * time.Millisecond)
-			},
+			accept: func() {},
 			complete: func(result interface{}, err error) {
 				intResult, ok := result.(int)
 				if !ok {
-					require.Fail(t, fmt.Sprintf("result should be int: %v", result))
+					require.Fail(t, fmt.Sprintf("result should be int: %v\nerr: %v", result, err))
 				} else {
 					require.Equal(t, 0, intResult)
 				}
@@ -526,30 +542,37 @@ func duplicateIDDedup(t *testing.T, second_delay time.Duration) {
 		}, 0)
 	}, 0)
 
-	env.RegisterDelayedCallback(func() {
-		env.UpdateWorkflow("update", "id", &updateCallback{
-			reject: func(err error) {
-				require.Fail(t, fmt.Sprintf("update should not be rejected, err: %v", err))
-			},
-			accept: func() {
+	for i := 0; i < additional; i++ {
+		env.RegisterDelayedCallback(func() {
+			env.UpdateWorkflow("update", "id", &updateCallback{
+				reject: func(err error) {
+					require.Fail(t, fmt.Sprintf("update should not be rejected, err: %v", err))
+				},
+				accept: func() {},
+				complete: func(result interface{}, err error) {
+					intResult, ok := result.(int)
+					if !ok {
+						require.Fail(t, fmt.Sprintf("result should be int: %v\nerr: %v", result, err))
+					} else {
+						// if dedup, this be okay, even if we pass in 1 as arg, since it's deduping,
+						// the result should match the first update's result, 0
+						require.Equal(t, 0, intResult)
+					}
+					additional_update_count += 1
+				},
+			}, 1)
 
-			},
-			complete: func(result interface{}, err error) {
-				intResult, ok := result.(int)
-				if !ok {
-					require.Fail(t, fmt.Sprintf("result should be int: %v", result))
-				} else {
-					// if dedup, this be okay, even if we pass in 1 as arg, since it's deduping,
-					// the result should match the first update's result, 0
-					require.Equal(t, 0, intResult)
-				}
-			},
-		}, 1)
-
-	}, second_delay)
+		}, second_delay)
+	}
 
 	env.ExecuteWorkflow(func(ctx Context) error {
 		err := SetUpdateHandler(ctx, "update", func(ctx Context, i int) (int, error) {
+			if with_sleep {
+				err := Sleep(ctx, time.Second)
+				if err != nil {
+					return 0, err
+				}
+			}
 			return i, nil
 		}, UpdateHandlerOptions{})
 		if err != nil {
@@ -558,6 +581,7 @@ func duplicateIDDedup(t *testing.T, second_delay time.Duration) {
 		return Sleep(ctx, time.Hour)
 	})
 	require.NoError(t, env.GetWorkflowError())
+	require.Equal(t, additional, additional_update_count)
 }
 
 func TestAllHandlersFinished(t *testing.T) {

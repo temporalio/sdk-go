@@ -2956,8 +2956,6 @@ func (env *testWorkflowEnvironmentImpl) updateWorkflow(name string, id string, u
 		env.postCallback(func() {
 			// Do not send any headers on test invocations
 			env.updateHandler(name, id, data, nil, ucWrapper)
-			env.updateMap[id].completed = true
-			env.updateMap[id].post_callbacks(env)
 		}, true)
 	}
 
@@ -2994,8 +2992,6 @@ func (env *testWorkflowEnvironmentImpl) updateWorkflowByID(workflowID, name, id 
 			env.updateMap[id] = &updateResult{nil, nil, id, []updateCallbacksWrapper{}, false}
 			workflowHandle.env.postCallback(func() {
 				workflowHandle.env.updateHandler(name, id, data, nil, ucWrapper)
-				env.updateMap[id].completed = true
-				env.updateMap[id].post_callbacks(env)
 			}, true)
 		}
 
@@ -3153,15 +3149,15 @@ func (uc updateCallbacksWrapper) Complete(success interface{}, err error) {
 		panic("env is needed in updateCallback to cache update results for deduping purposes")
 	}
 	if result, ok := uc.env.updateMap[uc.updateID]; ok {
-		if result.success == nil && result.err == nil {
+		if !result.completed {
 			result.success = success
 			result.err = err
-			uc.env.updateMap[uc.updateID] = result
 			uc.uc.Complete(success, err)
+			result.completed = true
+			result.post_callbacks(uc.env)
 		} else {
 			uc.uc.Complete(result.success, result.err)
 		}
-
 	} else {
 		panic("updateMap[updateID] should already be created from updateWorkflow()")
 	}
@@ -3518,11 +3514,12 @@ func newTestNexusOperation(opRef testNexusOperationReference) *testNexusOperatio
 	}
 }
 
-func (res updateResult) post_callbacks(env *testWorkflowEnvironmentImpl) {
+func (res *updateResult) post_callbacks(env *testWorkflowEnvironmentImpl) {
 	for _, uc := range res.callbacks {
 		env.postCallback(func() {
 			uc.Accept()
 			uc.Complete(res.success, res.err)
 		}, false)
 	}
+	res.callbacks = []updateCallbacksWrapper{}
 }
