@@ -1913,9 +1913,8 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			BuildId:       wth.workerBuildID,
 			UseVersioning: wth.useBuildIDForVersioning,
 		},
-		Deployment: &deploymentpb.Deployment{
-			BuildId:    wth.workerBuildID,
-			SeriesName: wth.deploymentSeriesName,
+		Capabilities: &workflowservice.RespondWorkflowTaskCompletedRequest_Capabilities{
+			DiscardSpeculativeWorkflowTaskWithEvents: true,
 		},
 	}
 	if wth.capabilities != nil && wth.capabilities.BuildIdBasedVersioning {
