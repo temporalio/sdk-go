@@ -222,6 +222,8 @@ type (
 		SearchAttributes         map[string]interface{}
 		TypedSearchAttributes    SearchAttributes
 		ParentClosePolicy        enumspb.ParentClosePolicy
+		StaticSummary            string
+		StaticDetails            string
 		signalChannels           map[string]Channel
 		requestedSignalChannels  map[string]*requestedSignalChannel
 		queryHandlers            map[string]*queryHandler
@@ -229,9 +231,6 @@ type (
 		// runningUpdatesHandles is a map of update handlers that are currently running.
 		runningUpdatesHandles map[string]UpdateInfo
 		VersioningIntent      VersioningIntent
-		// TODO(cretz): Expose once https://github.com/temporalio/temporal/issues/6412 is fixed
-		staticSummary string
-		staticDetails string
 		// currentDetails is the user-set string returned on metadata query as
 		// WorkflowMetadata.current_details
 		currentDetails string
