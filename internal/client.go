@@ -993,7 +993,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		workerInterceptors:       workerInterceptors,
 		excludeInternalFromRetry: options.ConnectionOptions.excludeInternalFromRetry,
 		eagerDispatcher: &eagerWorkflowDispatcher{
-			workersByTaskQueue: make(map[string]map[string]eagerWorker),
+			workersByTaskQueue: make(map[string]map[eagerWorker]struct{}),
 		},
 	}
 

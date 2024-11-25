@@ -50,11 +50,10 @@ func (e *eagerWorkerMock) pushEagerTask(task eagerTask) {
 
 func TestEagerWorkflowDispatchNoWorkerOnTaskQueue(t *testing.T) {
 	dispatcher := &eagerWorkflowDispatcher{
-		workersByTaskQueue: make(map[string]map[string]eagerWorker),
+		workersByTaskQueue: make(map[string]map[eagerWorker]struct{}),
 	}
 	dispatcher.registerWorker(&workflowWorker{
 		executionParameters: workerExecutionParameters{TaskQueue: "bad-task-queue"},
-		id:                  "worker-id",
 	})
 
 	request := &workflowservice.StartWorkflowExecutionRequest{
@@ -67,20 +66,20 @@ func TestEagerWorkflowDispatchNoWorkerOnTaskQueue(t *testing.T) {
 
 func TestEagerWorkflowDispatchAvailableWorker(t *testing.T) {
 	dispatcher := &eagerWorkflowDispatcher{
-		workersByTaskQueue: make(map[string]map[string]eagerWorker),
+		workersByTaskQueue: make(map[string]map[eagerWorker]struct{}),
 	}
 
 	availableWorker := &eagerWorkerMock{
 		tryReserveSlotCallback: func() *SlotPermit { return &SlotPermit{} },
 	}
-	dispatcher.workersByTaskQueue["task-queue"] = map[string]eagerWorker{
-		"1": &eagerWorkerMock{
+	dispatcher.workersByTaskQueue["task-queue"] = map[eagerWorker]struct{}{
+		&eagerWorkerMock{
 			tryReserveSlotCallback: func() *SlotPermit { return nil },
-		},
-		"2": &eagerWorkerMock{
+		}: {},
+		&eagerWorkerMock{
 			tryReserveSlotCallback: func() *SlotPermit { return nil },
-		},
-		"3": availableWorker,
+		}: {},
+		availableWorker: {},
 	}
 
 	request := &workflowservice.StartWorkflowExecutionRequest{

@@ -33,7 +33,7 @@ import (
 // eagerWorkflowDispatcher is responsible for finding an available worker for an eager workflow task.
 type eagerWorkflowDispatcher struct {
 	lock               sync.RWMutex
-	workersByTaskQueue map[string]map[string]eagerWorker
+	workersByTaskQueue map[string]map[eagerWorker]struct{}
 }
 
 // registerWorker registers a worker that can be used for eager workflow dispatch
@@ -42,16 +42,16 @@ func (e *eagerWorkflowDispatcher) registerWorker(worker *workflowWorker) {
 	defer e.lock.Unlock()
 	taskQueue := worker.executionParameters.TaskQueue
 	if e.workersByTaskQueue[taskQueue] == nil {
-		e.workersByTaskQueue[taskQueue] = make(map[string]eagerWorker)
+		e.workersByTaskQueue[taskQueue] = make(map[eagerWorker]struct{})
 	}
-	e.workersByTaskQueue[taskQueue][worker.id] = worker.worker
+	e.workersByTaskQueue[taskQueue][worker.worker] = struct{}{}
 }
 
 // deregisterWorker deregister a worker so that it will not be used for eager workflow dispatch
 func (e *eagerWorkflowDispatcher) deregisterWorker(worker *workflowWorker) {
 	e.lock.Lock()
 	defer e.lock.Unlock()
-	delete(e.workersByTaskQueue[worker.executionParameters.TaskQueue], worker.id)
+	delete(e.workersByTaskQueue[worker.executionParameters.TaskQueue], worker.worker)
 }
 
 // applyToRequest updates request if eager workflow dispatch is possible and returns the eagerWorkflowExecutor to use
@@ -61,7 +61,7 @@ func (e *eagerWorkflowDispatcher) applyToRequest(request *workflowservice.StartW
 	workers := e.workersByTaskQueue[request.GetTaskQueue().Name]
 	randWorkers := make([]eagerWorker, 0, len(workers))
 	// Copy the workers so we can release the lock.
-	for _, worker := range workers {
+	for worker := range workers {
 		randWorkers = append(randWorkers, worker)
 	}
 	e.lock.RUnlock()
