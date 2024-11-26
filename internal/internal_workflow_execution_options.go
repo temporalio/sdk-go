@@ -117,12 +117,33 @@ func workerDeploymentToProto(d Deployment) *deploymentpb.Deployment {
 	}
 }
 
+func versioningOverrideToProto(versioningOverride VersioningOverride) *workflowpb.VersioningOverride {
+	if (VersioningOverride{}) == versioningOverride {
+		return nil
+	}
+	return &workflowpb.VersioningOverride{
+		Behavior:   versioningBehaviorToProto(versioningOverride.Behavior),
+		Deployment: workerDeploymentToProto(versioningOverride.Deployment),
+	}
+}
+
+func versioningOverrideFromProto(versioningOverride *workflowpb.VersioningOverride) VersioningOverride {
+	if versioningOverride == nil {
+		return VersioningOverride{}
+	}
+
+	return VersioningOverride{
+		Behavior: VersioningBehavior(versioningOverride.GetBehavior()),
+		Deployment: Deployment{
+			SeriesName: versioningOverride.GetDeployment().GetSeriesName(),
+			BuildId:    versioningOverride.GetDeployment().GetBuildId(),
+		},
+	}
+}
+
 func workflowExecutionOptionsToProto(options WorkflowExecutionOptions) *workflowpb.WorkflowExecutionOptions {
 	return &workflowpb.WorkflowExecutionOptions{
-		VersioningOverride: &workflowpb.VersioningOverride{
-			Behavior:   versioningBehaviorToProto(options.VersioningOverride.Behavior),
-			Deployment: workerDeploymentToProto(options.VersioningOverride.Deployment),
-		},
+		VersioningOverride: versioningOverrideToProto(options.VersioningOverride),
 	}
 }
 
@@ -134,12 +155,6 @@ func workflowExecutionOptionsFromProtoUpdateResponse(response *workflowservice.U
 	versioningOverride := response.GetWorkflowExecutionOptions().GetVersioningOverride()
 
 	return WorkflowExecutionOptions{
-		VersioningOverride: VersioningOverride{
-			Behavior: VersioningBehavior(versioningOverride.GetBehavior()),
-			Deployment: Deployment{
-				SeriesName: versioningOverride.GetDeployment().GetSeriesName(),
-				BuildId:    versioningOverride.GetDeployment().GetBuildId(),
-			},
-		},
+		VersioningOverride: versioningOverrideFromProto(versioningOverride),
 	}
 }

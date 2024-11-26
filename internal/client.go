@@ -747,6 +747,14 @@ type (
 		// NOTE: Experimental
 		StaticDetails string
 
+		// VersioningOverride - Sets the versioning configuration of a specific workflow execution, ignoring current
+		// server or worker default policies. This enables running canary tests without affecting existing workflows.
+		// To unset the override after the workflow is running, use UpdateWorkflowExecutionOptions.
+		// Optional: defaults to no override.
+		//
+		// NOTE: Experimental
+		VersioningOverride VersioningOverride
+
 		// request ID. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
 		requestID string
 		// workflow completion callback. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
