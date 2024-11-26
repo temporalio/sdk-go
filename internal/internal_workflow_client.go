@@ -1625,6 +1625,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		Header:                   header,
 		CompletionCallbacks:      in.Options.callbacks,
 		Links:                    in.Options.links,
+		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
 	}
 
 	startRequest.UserMetadata, err = buildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
@@ -1929,6 +1930,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		WorkflowIdReusePolicy:    in.Options.WorkflowIDReusePolicy,
 		WorkflowIdConflictPolicy: in.Options.WorkflowIDConflictPolicy,
 		Header:                   header,
+		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
 	}
 
 	if in.Options.StartDelay != 0 {
