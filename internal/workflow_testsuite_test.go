@@ -508,12 +508,12 @@ func duplicateIDDedup(t *testing.T, delay_second bool, with_sleep bool, addition
 	// Test dev server dedups UpdateWorkflow with same ID
 	env := suite.NewTestWorkflowEnvironment()
 	env.RegisterDelayedCallback(func() {
-		env.UpdateWorkflow("update", "id", &updateCallback{
-			reject: func(err error) {
+		env.UpdateWorkflow("update", "id", &TestUpdateCallback{
+			OnReject: func(err error) {
 				require.Fail(t, fmt.Sprintf("update should not be rejected, err: %v", err))
 			},
-			accept: func() {},
-			complete: func(result interface{}, err error) {
+			OnAccept: func() {},
+			OnComplete: func(result interface{}, err error) {
 				intResult, ok := result.(int)
 				if !ok {
 					require.Fail(t, fmt.Sprintf("result should be int: %v\nerr: %v", result, err))
@@ -526,12 +526,12 @@ func duplicateIDDedup(t *testing.T, delay_second bool, with_sleep bool, addition
 
 	for i := 0; i < additional; i++ {
 		env.RegisterDelayedCallback(func() {
-			env.UpdateWorkflow("update", "id", &updateCallback{
-				reject: func(err error) {
+			env.UpdateWorkflow("update", "id", &TestUpdateCallback{
+				OnReject: func(err error) {
 					require.Fail(t, fmt.Sprintf("update should not be rejected, err: %v", err))
 				},
-				accept: func() {},
-				complete: func(result interface{}, err error) {
+				OnAccept: func() {},
+				OnComplete: func(result interface{}, err error) {
 					intResult, ok := result.(int)
 					if !ok {
 						require.Fail(t, fmt.Sprintf("result should be int: %v\nerr: %v", result, err))
