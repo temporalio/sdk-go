@@ -340,7 +340,7 @@ var (
 	ErrSkipScheduleUpdate = errors.New("skip schedule update")
 
 	// ErrMissingWorkflowID is returned when trying to start an async Nexus operation but no workflow ID is set on the request.
-	ErrMissingWorkflowID = errors.New("workflow ID is unset")
+	ErrMissingWorkflowID = errors.New("workflow ID is unset for Nexus operation")
 )
 
 // NewApplicationError create new instance of *ApplicationError with message, type, and optional details.
