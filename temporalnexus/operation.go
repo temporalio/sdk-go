@@ -339,8 +339,8 @@ func ExecuteUntypedWorkflow[R any](
 		if nexusOptions.CallbackHeader == nil {
 			nexusOptions.CallbackHeader = make(nexus.Header)
 		}
-		if _, set := nexusOptions.CallbackHeader[nexus.HeaderOperationID]; !set {
-			nexusOptions.CallbackHeader[nexus.HeaderOperationID] = startWorkflowOptions.ID
+		if idHeader := nexusOptions.CallbackHeader.Get(nexus.HeaderOperationID); idHeader == "" {
+			nexusOptions.CallbackHeader.Set(nexus.HeaderOperationID, startWorkflowOptions.ID)
 		}
 		internal.SetCallbacksOnStartWorkflowOptions(&startWorkflowOptions, []*common.Callback{
 			{
