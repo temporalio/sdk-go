@@ -1050,6 +1050,9 @@ func (aw *AggregatedWorker) start() error {
 			// stop workflow worker.
 			if !util.IsInterfaceNil(aw.workflowWorker) {
 				if aw.workflowWorker.worker.isWorkerStarted {
+					if aw.client.eagerDispatcher != nil {
+						aw.client.eagerDispatcher.deregisterWorker(aw.workflowWorker)
+					}
 					aw.workflowWorker.Stop()
 				}
 			}
@@ -1218,6 +1221,9 @@ func (aw *AggregatedWorker) Stop() {
 	}
 
 	if !util.IsInterfaceNil(aw.workflowWorker) {
+		if aw.client.eagerDispatcher != nil {
+			aw.client.eagerDispatcher.deregisterWorker(aw.workflowWorker)
+		}
 		aw.workflowWorker.Stop()
 	}
 	if !util.IsInterfaceNil(aw.activityWorker) {
