@@ -42,7 +42,6 @@ import (
 	"context"
 	"errors"
 
-	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
@@ -329,7 +328,7 @@ func ExecuteUntypedWorkflow[R any](
 		startWorkflowOptions.TaskQueue = nctx.TaskQueue
 	}
 	if startWorkflowOptions.ID == "" {
-		startWorkflowOptions.ID = uuid.NewString()
+		return nil, internal.ErrMissingWorkflowID
 	}
 
 	if nexusOptions.RequestID != "" {
