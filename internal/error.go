@@ -826,6 +826,41 @@ func (e *ChildWorkflowExecutionError) Unwrap() error {
 	return e.cause
 }
 
+// Namespace returns namespace of the child workflow.
+func (e *ChildWorkflowExecutionError) Namespace() string {
+	return e.namespace
+}
+
+// WorkflowId returns workflow ID of the child workflow.
+func (e *ChildWorkflowExecutionError) WorkflowID() string {
+	return e.workflowID
+}
+
+// RunID returns run ID of the child workflow.
+func (e *ChildWorkflowExecutionError) RunID() string {
+	return e.runID
+}
+
+// WorkflowType returns type of the child workflow.
+func (e *ChildWorkflowExecutionError) WorkflowType() string {
+	return e.workflowType
+}
+
+// InitiatedEventID returns event ID of the child workflow initiated event.
+func (e *ChildWorkflowExecutionError) InitiatedEventID() int64 {
+	return e.initiatedEventID
+}
+
+// StartedEventID returns event ID of the child workflow started event.
+func (e *ChildWorkflowExecutionError) StartedEventID() int64 {
+	return e.startedEventID
+}
+
+// RetryState returns details on why child workflow failed.
+func (e *ChildWorkflowExecutionError) RetryState() enumspb.RetryState {
+	return e.retryState
+}
+
 // Error implements the error interface.
 func (e *NexusOperationError) Error() string {
 	msg := fmt.Sprintf(
