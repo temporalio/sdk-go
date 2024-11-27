@@ -406,7 +406,7 @@ func TestNexusWorkflowRunOperation(t *testing.T) {
 	callback, ok := desc.Callbacks[0].Callback.Variant.(*common.Callback_Nexus_)
 	require.True(t, ok)
 	require.Equal(t, "http://localhost/test", callback.Nexus.Url)
-	require.Contains(t, callback.Nexus.Header, map[string]string{"test": "ok"})
+	require.Subset(t, callback.Nexus.Header, map[string]string{"test": "ok"})
 
 	run := tc.client.GetWorkflow(ctx, workflowID, "")
 	require.NoError(t, handle.Cancel(ctx, nexus.CancelOperationOptions{}))
