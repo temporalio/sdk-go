@@ -358,13 +358,13 @@ func (wc *WorkflowClient) NewWithStartWorkflowOperation(options StartWorkflowOpt
 	if options.WorkflowIDConflictPolicy == enumspb.WORKFLOW_ID_CONFLICT_POLICY_UNSPECIFIED {
 		return nil, errors.New("WorkflowIDConflictPolicy must be set in StartWorkflowOptions for Update-With-Start")
 	}
-	res := &WithStartWorkflowOperation{doneCh: make(chan struct{})}
+	op := &WithStartWorkflowOperation{doneCh: make(chan struct{})}
 	input, err := createStartWorkflowInput(options, workflow, args, wc.registry)
 	if err != nil {
 		return nil, err
 	}
-	res.input = input
-	return res, nil
+	op.input = input
+	return op, nil
 }
 
 // CancelWorkflow cancels a workflow in execution.  It allows workflow to properly clean up and gracefully close.
