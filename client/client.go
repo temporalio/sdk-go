@@ -163,7 +163,7 @@ type (
 	StartWorkflowOptions = internal.StartWorkflowOptions
 
 	// WithStartWorkflowOperation defines how to start a workflow when using Update-With-Start.
-	// See NewWithStartWorkflowOperation for details.
+	// See [Client.NewWithStartWorkflowOperation] for details.
 	// NOTE: Experimental
 	WithStartWorkflowOperation = internal.WithStartWorkflowOperation
 
