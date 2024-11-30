@@ -49,7 +49,7 @@ type Client struct {
 }
 
 // NewWithStartWorkflowOperation provides a mock function with given fields: options, workflow, args
-func (_m *Client) NewWithStartWorkflowOperation(options client.StartWorkflowOptions, workflow any, args ...interface{}) (*client.WithStartWorkflowOperation, error) {
+func (_m *Client) NewWithStartWorkflowOperation(options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (*client.WithStartWorkflowOperation, error) {
 	var _ca []interface{}
 	_ca = append(_ca, options, workflow)
 	_ca = append(_ca, args...)

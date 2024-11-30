@@ -354,7 +354,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	})
 }
 
-func (wc *WorkflowClient) NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow any, args ...interface{}) (*WithStartWorkflowOperation, error) {
+func (wc *WorkflowClient) NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) (*WithStartWorkflowOperation, error) {
 	if options.WorkflowIDConflictPolicy == enumspb.WORKFLOW_ID_CONFLICT_POLICY_UNSPECIFIED {
 		return nil, errors.New("WorkflowIDConflictPolicy must be set in StartWorkflowOptions for Update-With-Start")
 	}

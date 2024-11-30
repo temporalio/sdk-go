@@ -136,7 +136,7 @@ type (
 
 		// NewWithStartWorkflowOperation returns a WithStartWorkflowOperation to perform Update-with-Start.
 		// NOTE: Experimental
-		NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow any, args ...interface{}) (*WithStartWorkflowOperation, error)
+		NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) (*WithStartWorkflowOperation, error)
 
 		// CancelWorkflow cancels a workflow in execution
 		// - workflow ID of the workflow.
