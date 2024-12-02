@@ -382,7 +382,7 @@ func (t *tracingClientOutboundInterceptor) UpdateWorkflow(
 func (t *tracingClientOutboundInterceptor) UpdateWithStartWorkflow(
 	ctx context.Context,
 	in *ClientUpdateWorkflowInput,
-	startOperation *client.WithStartWorkflowOperation,
+	startOperation client.WithStartWorkflowOperation,
 ) (client.WorkflowUpdateHandle, error) {
 	// Only add tracing if enabled
 	if t.root.options.DisableUpdateTracing {

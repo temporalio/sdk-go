@@ -136,7 +136,7 @@ type (
 
 		// NewWithStartWorkflowOperation returns a WithStartWorkflowOperation to perform Update-with-Start.
 		// NOTE: Experimental
-		NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) (*WithStartWorkflowOperation, error)
+		NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WithStartWorkflowOperationInterface, error)
 
 		// CancelWorkflow cancels a workflow in execution
 		// - workflow ID of the workflow.
@@ -399,7 +399,7 @@ type (
 
 		// UpdateWithStartWorkflow issues an update request to the specified workflow execution, starting the workflow if appropriate.
 		// NOTE: Experimental
-		UpdateWithStartWorkflow(ctx context.Context, options UpdateWorkflowOptions, startOperation *WithStartWorkflowOperation) (WorkflowUpdateHandle, error)
+		UpdateWithStartWorkflow(ctx context.Context, options UpdateWorkflowOptions, startOperation WithStartWorkflowOperationInterface) (WorkflowUpdateHandle, error)
 
 		// GetWorkflowUpdateHandle creates a handle to the referenced update
 		// which can be polled for an outcome. Note that runID is optional and
@@ -749,6 +749,10 @@ type (
 	// WithStartWorkflowOperation defines how to start a workflow when using Update-With-Start.
 	// See NewWithStartWorkflowOperation for details.
 	// NOTE: Experimental
+	WithStartWorkflowOperationInterface interface {
+		Get(ctx context.Context) (WorkflowRun, error)
+	}
+
 	WithStartWorkflowOperation struct {
 		input *ClientExecuteWorkflowInput
 		// flag to ensure the operation is only executed once

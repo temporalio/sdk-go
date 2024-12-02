@@ -354,7 +354,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	})
 }
 
-func (wc *WorkflowClient) NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) (*WithStartWorkflowOperation, error) {
+func (wc *WorkflowClient) NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WithStartWorkflowOperationInterface, error) {
 	if options.WorkflowIDConflictPolicy == enumspb.WORKFLOW_ID_CONFLICT_POLICY_UNSPECIFIED {
 		return nil, errors.New("WorkflowIDConflictPolicy must be set in StartWorkflowOptions for Update-With-Start")
 	}
@@ -1180,7 +1180,7 @@ func (wc *WorkflowClient) UpdateWorkflow(
 func (wc *WorkflowClient) UpdateWithStartWorkflow(
 	ctx context.Context,
 	updateOptions UpdateWorkflowOptions,
-	startOperation *WithStartWorkflowOperation,
+	startOperation WithStartWorkflowOperationInterface,
 ) (WorkflowUpdateHandle, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return nil, err
@@ -1723,16 +1723,21 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 	ctx context.Context,
 	updateInput *ClientUpdateWorkflowInput,
-	startOperation *WithStartWorkflowOperation,
+	startOperation WithStartWorkflowOperationInterface,
 ) (WorkflowUpdateHandle, error) {
+	startOp, ok := startOperation.(*WithStartWorkflowOperation)
+	if !ok {
+		panic("startOperation must be created by NewWithStartWorkflowOperation")
+	}
+
 	// Create start request
-	if err := startOperation.markExecuted(); err != nil {
+	if err := startOp.markExecuted(); err != nil {
 		return nil, fmt.Errorf("%w: %w", errInvalidWithStartWorkflowOperation, err)
 	}
-	if startOperation.err != nil {
-		return nil, fmt.Errorf("%w: %w", errInvalidWithStartWorkflowOperation, startOperation.err)
+	if startOp.err != nil {
+		return nil, fmt.Errorf("%w: %w", errInvalidWithStartWorkflowOperation, startOp.err)
 	}
-	startReq, err := w.createStartWorkflowRequest(ctx, startOperation.input)
+	startReq, err := w.createStartWorkflowRequest(ctx, startOp.input)
 	if err != nil {
 		return nil, err
 	}
@@ -1749,21 +1754,21 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 	grpcCtx, cancel := newGRPCContext(
 		ctx,
 		grpcMetricsHandler(w.client.metricsHandler.WithTags(
-			metrics.RPCTags(startOperation.input.WorkflowType, metrics.NoneTagValue, startOperation.input.Options.TaskQueue))),
+			metrics.RPCTags(startOp.input.WorkflowType, metrics.NoneTagValue, startOp.input.Options.TaskQueue))),
 		defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
-		metricsHandler := w.client.metricsHandler.WithTags(metrics.RPCTags(startOperation.input.WorkflowType,
-			metrics.NoneTagValue, startOperation.input.Options.TaskQueue))
-		return w.client.getWorkflowHistory(fnCtx, startOperation.input.Options.ID, fnRunID, true,
+		metricsHandler := w.client.metricsHandler.WithTags(metrics.RPCTags(startOp.input.WorkflowType,
+			metrics.NoneTagValue, startOp.input.Options.TaskQueue))
+		return w.client.getWorkflowHistory(fnCtx, startOp.input.Options.ID, fnRunID, true,
 			enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, metricsHandler)
 	}
 	onStart := func(startResp *workflowservice.StartWorkflowExecutionResponse) {
 		runIDCell := util.PopulatedOnceCell(startResp.RunId)
-		startOperation.set(&workflowRunImpl{
-			workflowType:     startOperation.input.WorkflowType,
-			workflowID:       startOperation.input.Options.ID,
+		startOp.set(&workflowRunImpl{
+			workflowType:     startOp.input.WorkflowType,
+			workflowID:       startOp.input.Options.ID,
 			firstRunID:       startResp.RunId,
 			currentRunID:     &runIDCell,
 			iterFn:           iterFn,

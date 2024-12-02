@@ -165,7 +165,7 @@ type (
 	// WithStartWorkflowOperation defines how to start a workflow when using Update-With-Start.
 	// See [Client.NewWithStartWorkflowOperation] for details.
 	// NOTE: Experimental
-	WithStartWorkflowOperation = internal.WithStartWorkflowOperation
+	WithStartWorkflowOperation = internal.WithStartWorkflowOperationInterface
 
 	// HistoryEventIterator is a iterator which can return history events.
 	HistoryEventIterator = internal.HistoryEventIterator
@@ -562,7 +562,7 @@ type (
 		// NewWithStartWorkflowOperation returns a WithStartWorkflowOperation to perform Update-with-Start.
 		// Returns an error if the WorkflowIDConflictPolicy is not set, or if the workflow or arguments are invalid.
 		// NOTE: Experimental
-		NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) (*WithStartWorkflowOperation, error)
+		NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WithStartWorkflowOperation, error)
 
 		// CancelWorkflow request cancellation of a workflow in execution. Cancellation request closes the channel
 		// returned by the workflow.Context.Done() of the workflow that is target of the request.
@@ -843,7 +843,7 @@ type (
 		// UpdateWithStartWorkflow intercepts client.Client.UpdateWithStartWorkflow.
 		//
 		// NOTE: Experimental
-		UpdateWithStartWorkflow(ctx context.Context, options UpdateWorkflowOptions, startOperation *WithStartWorkflowOperation) (WorkflowUpdateHandle, error)
+		UpdateWithStartWorkflow(ctx context.Context, options UpdateWorkflowOptions, startOperation WithStartWorkflowOperation) (WorkflowUpdateHandle, error)
 
 		// GetWorkflowUpdateHandle creates a handle to the referenced update
 		// which can be polled for an outcome. Note that runID is optional and
