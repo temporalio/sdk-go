@@ -237,9 +237,11 @@ func newWorkflowExecutionEventHandler(
 	deadlockDetectionTimeout time.Duration,
 	capabilities *workflowservice.GetSystemInfoResponse_Capabilities,
 ) workflowExecutionEventHandler {
+	cmdHelper := newCommandsHelper()
+	cmdHelper.wfID = workflowInfo.WorkflowExecution.ID
 	context := &workflowEnvironmentImpl{
 		workflowInfo:                 workflowInfo,
-		commandsHelper:               newCommandsHelper(),
+		commandsHelper:               cmdHelper,
 		sideEffectResult:             make(map[int64]*commonpb.Payloads),
 		mutableSideEffect:            make(map[string]map[int]*commonpb.Payloads),
 		changeVersions:               make(map[string]Version),
@@ -871,12 +873,12 @@ func validateVersion(changeID string, version, minSupported, maxSupported Versio
 	if version < minSupported {
 		panicIllegalState(fmt.Sprintf("[TMPRL1100] Workflow code removed support of version %v. "+
 			"for \"%v\" changeID. The oldest supported version is %v",
-			version, changeID, minSupported))
+			version, changeID, minSupported), "N/A")
 	}
 	if version > maxSupported {
 		panicIllegalState(fmt.Sprintf("[TMPRL1100] Workflow code is too old to support version %v "+
 			"for \"%v\" changeID. The maximum supported version is %v",
-			version, changeID, maxSupported))
+			version, changeID, maxSupported), "N/A")
 	}
 }
 
@@ -951,7 +953,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 				keys = append(keys, k)
 			}
 			panicIllegalState(fmt.Sprintf("[TMPRL1100] No cached result found for side effectID=%v. KnownSideEffects=%v",
-				sideEffectID, keys))
+				sideEffectID, keys), wc.workflowInfo.WorkflowExecution.ID)
 		}
 
 		// Once the SideEffect has been consumed, we can free the referenced payload
@@ -1066,7 +1068,7 @@ func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interfa
 
 	if wc.isReplay {
 		// This should not happen
-		panicIllegalState(fmt.Sprintf("[TMPRL1100] Non deterministic workflow code change detected. MutableSideEffect API call doesn't have a correspondent event in the workflow history. MutableSideEffect ID: %s", id))
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] Non deterministic workflow code change detected. MutableSideEffect API call doesn't have a correspondent event in the workflow history. MutableSideEffect ID: %s", id), wc.workflowInfo.WorkflowExecution.ID)
 	}
 
 	return wc.recordMutableSideEffect(id, callCount, wc.encodeValue(f()))
@@ -1677,7 +1679,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 		if len(lamd.ActivityType) > 0 && lamd.ActivityType != la.params.ActivityType {
 			// history marker mismatch to the current code.
 			panicMsg := fmt.Sprintf("[TMPRL1100] code execute local activity %v, but history event found %v, markerData: %v", la.params.ActivityType, lamd.ActivityType, markerData)
-			panicIllegalState(panicMsg)
+			panicIllegalState(panicMsg, weh.workflowInfo.WorkflowExecution.ID)
 		}
 		weh.commandsHelper.recordLocalActivityMarker(lamd.ActivityID, details, failure)
 		if la.pastFirstWFT {

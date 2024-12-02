@@ -172,6 +172,7 @@ type (
 	}
 
 	commandsHelper struct {
+		wfID               string
 		nextCommandEventID int64
 		orderedCommands    *list.List
 		commands           map[commandID]*list.Element
@@ -516,14 +517,14 @@ func (d stateMachineIllegalStatePanic) String() string {
 	return d.message
 }
 
-func panicIllegalState(message string) {
-	assert.Unreachable("[SDK] Illegal state", map[string]any{"message": message})
+func panicIllegalState(message, wfID string) {
+	assert.Unreachable("[SDK] Illegal state", map[string]any{"message": message, wfID: wfID})
 	panic(stateMachineIllegalStatePanic{message: message})
 }
 
 func (d *commandStateMachineBase) failStateTransition(event string) {
 	// this is when we detect illegal state transition, likely due to ill history sequence or nondeterministic workflow code
-	panicIllegalState(fmt.Sprintf("[TMPRL1100] invalid state transition: attempt to %v, %v", event, d))
+	panicIllegalState(fmt.Sprintf("[TMPRL1100] invalid state transition: attempt to %v, %v", event, d), d.helper.wfID)
 }
 
 func (d *commandStateMachineBase) handleCommandSent() {
@@ -1076,7 +1077,7 @@ func (h *commandsHelper) getCommand(id commandID) commandStateMachine {
 		spew.Dump(h)
 		panicMsg := fmt.Sprintf("[TMPRL1100] unknown command %v, possible causes are nondeterministic workflow definition code"+
 			" or incompatible change in the workflow definition", id)
-		panicIllegalState(panicMsg)
+		panicIllegalState(panicMsg, h.wfID)
 	}
 	return command.Value.(commandStateMachine)
 }
@@ -1084,7 +1085,7 @@ func (h *commandsHelper) getCommand(id commandID) commandStateMachine {
 func (h *commandsHelper) addCommand(command commandStateMachine) {
 	if _, ok := h.commands[command.getID()]; ok {
 		panicMsg := fmt.Sprintf("[TMPRL1100] adding duplicate command %v", command)
-		panicIllegalState(panicMsg)
+		panicIllegalState(panicMsg, h.wfID)
 	}
 	element := h.orderedCommands.PushBack(command)
 	h.commands[command.getID()] = element
@@ -1113,7 +1114,7 @@ func (h *commandsHelper) removeCancelOfResolvedCommand(commandID commandID) {
 func (h *commandsHelper) moveCommandToBack(command commandStateMachine) {
 	elem := h.commands[command.getID()]
 	if elem == nil {
-		panicIllegalState(fmt.Sprintf("[TMPRL1100] moving command not present %v", command))
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] moving command not present %v", command), h.wfID)
 	}
 	h.orderedCommands.Remove(elem)
 	h.commands[command.getID()] = h.orderedCommands.PushBack(command)
@@ -1151,7 +1152,7 @@ func (h *commandsHelper) handleActivityTaskScheduled(activityID string, schedule
 	if _, ok := h.scheduledEventIDToActivityID[scheduledEventID]; !ok {
 		panicMsg := fmt.Sprintf("[TMPRL1100] lookup failed for scheduledEventID to activityID: scheduleEventID: %v, activityID: %v",
 			scheduledEventID, activityID)
-		panicIllegalState(panicMsg)
+		panicIllegalState(panicMsg, h.wfID)
 	}
 
 	command := h.getCommand(makeCommandID(commandTypeActivity, activityID))
@@ -1161,7 +1162,7 @@ func (h *commandsHelper) handleActivityTaskScheduled(activityID string, schedule
 func (h *commandsHelper) handleActivityTaskCancelRequested(scheduledEventID int64) {
 	activityID, ok := h.scheduledEventIDToActivityID[scheduledEventID]
 	if !ok {
-		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find activityID for the scheduledEventID: %v", scheduledEventID))
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find activityID for the scheduledEventID: %v", scheduledEventID), h.wfID)
 	}
 	command := h.getCommand(makeCommandID(commandTypeActivity, activityID))
 	command.handleCancelInitiatedEvent()
@@ -1186,12 +1187,12 @@ func (h *commandsHelper) getActivityAndScheduledEventIDs(event *historypb.Histor
 	case enumspb.EVENT_TYPE_ACTIVITY_TASK_TIMED_OUT:
 		scheduledEventID = event.GetActivityTaskTimedOutEventAttributes().GetScheduledEventId()
 	default:
-		panicIllegalState(fmt.Sprintf("[TMPRL1100] unexpected event type: %v", event.GetEventType()))
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] unexpected event type: %v", event.GetEventType()), h.wfID)
 	}
 
 	activityID, ok := h.scheduledEventIDToActivityID[scheduledEventID]
 	if !ok {
-		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find activityID for the event: %v", util.HistoryEventToString(event)))
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find activityID for the event: %v", util.HistoryEventToString(event)), h.wfID)
 	}
 	return activityID, scheduledEventID
 }
@@ -1208,7 +1209,7 @@ func (h *commandsHelper) scheduleNexusOperation(
 func (h *commandsHelper) handleNexusOperationScheduled(event *historypb.HistoryEvent) {
 	elem := h.nexusOperationsWithoutScheduledID.Front()
 	if elem == nil {
-		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event: %v", util.HistoryEventToString(event)))
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event: %v", util.HistoryEventToString(event)), h.wfID)
 	}
 	command := h.nexusOperationsWithoutScheduledID.Remove(elem).(*nexusOperationStateMachine)
 
@@ -1220,7 +1221,7 @@ func (h *commandsHelper) handleNexusOperationScheduled(event *historypb.HistoryE
 func (h *commandsHelper) handleNexusOperationStarted(scheduledEventID int64) commandStateMachine {
 	seq, ok := h.scheduledEventIDToNexusSeq[scheduledEventID]
 	if !ok {
-		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event ID: %v", scheduledEventID))
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event ID: %v", scheduledEventID), h.wfID)
 	}
 	command := h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
 	command.handleStartedEvent()
@@ -1230,7 +1231,7 @@ func (h *commandsHelper) handleNexusOperationStarted(scheduledEventID int64) com
 func (h *commandsHelper) handleNexusOperationCompleted(scheduledEventID int64) commandStateMachine {
 	seq, ok := h.scheduledEventIDToNexusSeq[scheduledEventID]
 	if !ok {
-		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event ID: %v", scheduledEventID))
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event ID: %v", scheduledEventID), h.wfID)
 	}
 	// We don't need this anymore, the state will not transition after completion.
 	delete(h.scheduledEventIDToNexusSeq, scheduledEventID)
@@ -1299,7 +1300,7 @@ func (h *commandsHelper) handleVersionMarker(eventID int64, changeID string, sea
 	if _, ok := h.versionMarkerLookup[eventID]; ok {
 		panicMsg := fmt.Sprintf("[TMPRL1100] marker event already exists for eventID in lookup: eventID: %v, changeID: %v",
 			eventID, changeID)
-		panicIllegalState(panicMsg)
+		panicIllegalState(panicMsg, h.wfID)
 	}
 
 	// During processing of a workflow task we reorder all GetVersion markers and process them first.
