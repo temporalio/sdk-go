@@ -275,9 +275,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.Tuner = tuner
 	}
 	if strings.Contains(ts.T().Name(), "SlotSuppliersWithSession") {
-		// TODO: Always works w/ max 3, but 2 only works with max pollers 1 (usually)
 		options.MaxConcurrentActivityExecutionSize = 1
-		options.MaxConcurrentActivityTaskPollers = 1
 		// Apparently this is on by default in these tests anyway, but to be explicit
 		options.EnableSessionWorker = true
 	}
