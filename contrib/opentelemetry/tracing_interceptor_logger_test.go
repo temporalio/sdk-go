@@ -86,6 +86,47 @@ func TestLogFields(t *testing.T) {
 	assert.Contains(t, buf.String(), "SpanID="+span.Parent().SpanID().String())
 }
 
+func TestLogWithCustomFieldNames(t *testing.T) {
+	var rec tracetest.SpanRecorder
+
+	tracer, err := opentelemetry.NewTracer(opentelemetry.TracerOptions{
+		Tracer:           sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(&rec)).Tracer(""),
+		TraceIDFieldName: "trace_id",
+		SpanIDFieldName:  "span_id",
+	})
+	require.NoError(t, err)
+
+	var suite testsuite.WorkflowTestSuite
+
+	buf := bytes.Buffer{}
+	slogger := slog.New(slog.NewTextHandler(&buf, nil))
+	suite.SetLogger(slogger)
+
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterActivity(testActivity)
+	env.RegisterWorkflow(testWorkflow)
+
+	// Set tracer interceptor
+	env.SetWorkerOptions(worker.Options{
+		Interceptors: []interceptor.WorkerInterceptor{interceptor.NewTracingInterceptor(tracer)},
+	})
+
+	var testWorkflowStartTime = time.Date(1969, 7, 20, 20, 17, 0, 0, time.UTC)
+	env.SetStartTime(testWorkflowStartTime)
+
+	// Exec
+	env.ExecuteWorkflow(testWorkflow)
+
+	// Ensure it doesn't introduce panic or else
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+
+	// Validate that the fields are present and properly set.
+	span := rec.Ended()[0]
+	assert.Contains(t, buf.String(), "trace_id="+span.Parent().TraceID().String())
+	assert.Contains(t, buf.String(), "span_id="+span.Parent().SpanID().String())
+}
+
 func testWorkflow(ctx workflow.Context) error {
 	logger := workflow.GetLogger(ctx)
 	logger.Info("inside a worflow")

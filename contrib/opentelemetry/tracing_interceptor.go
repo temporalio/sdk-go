@@ -86,6 +86,14 @@ type TracerOptions struct {
 	// SpanStarter is a callback to create spans. If not set, this creates normal
 	// OpenTelemetry spans calling Tracer.Start.
 	SpanStarter func(ctx context.Context, t trace.Tracer, spanName string, opts ...trace.SpanStartOption) trace.Span
+
+	// TraceIDFieldName is the name of the field used to represent the Trace ID
+	// If empty, a default name will be used.
+	TraceIDFieldName string
+
+	// SpanIDFieldName is the name of the field used to represent the Span ID
+	// If empty, a default name will be used.
+	SpanIDFieldName string
 }
 
 type spanContextKey struct{}
@@ -123,6 +131,14 @@ func NewTracer(options TracerOptions) (interceptor.Tracer, error) {
 			return span
 		}
 	}
+	// Ensure TraceIDFieldName and SpanIDFieldName have defaults if fields are empty
+	if options.TraceIDFieldName == "" {
+		options.TraceIDFieldName = "TraceID"
+	}
+	if options.SpanIDFieldName == "" {
+		options.SpanIDFieldName = "SpanID"
+	}
+
 	return &tracer{options: &options}, nil
 }
 
@@ -240,8 +256,8 @@ func (t *tracer) GetLogger(logger log.Logger, ref interceptor.TracerSpanRef) log
 	}
 
 	logger = log.With(logger,
-		"TraceID", span.SpanContext().TraceID(),
-		"SpanID", span.SpanContext().SpanID(),
+		t.options.TraceIDFieldName, span.SpanContext().TraceID(),
+		t.options.SpanIDFieldName, span.SpanContext().SpanID(),
 	)
 
 	return logger
