@@ -167,6 +167,26 @@ func (_m *Client) CountWorkflow(ctx context.Context, request *workflowservice.Co
 	return r0, r1
 }
 
+// DeploymentClient provides a mock function with given fields:
+func (_m *Client) DeploymentClient() client.DeploymentClient {
+	ret := _m.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeploymentClient")
+	}
+
+	var r0 client.DeploymentClient
+	if rf, ok := ret.Get(0).(func() client.DeploymentClient); ok {
+		r0 = rf()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(client.DeploymentClient)
+		}
+	}
+
+	return r0
+}
+
 // DescribeTaskQueue provides a mock function with given fields: ctx, taskqueue, taskqueueType
 func (_m *Client) DescribeTaskQueue(ctx context.Context, taskqueue string, taskqueueType enums.TaskQueueType) (*workflowservice.DescribeTaskQueueResponse, error) {
 	ret := _m.Called(ctx, taskqueue, taskqueueType)

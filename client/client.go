@@ -46,6 +46,36 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 )
 
+// DeploymentReachability specifies which category of tasks may reach a worker
+// associated with a deployment, simplifying safe decommission.
+// NOTE: Experimental
+type DeploymentReachability = internal.DeploymentReachability
+
+const (
+	// DeploymentReachabilityUnspecified - Reachability level not specified.
+	// NOTE: Experimental
+	DeploymentReachabilityUnspecified = internal.DeploymentReachabilityUnspecified
+
+	// DeploymentReachabilityReachable - The deployment is reachable by new
+	// and/or open workflows. The deployment cannot be decommissioned safely.
+	// NOTE: Experimental
+	DeploymentReachabilityReachable = internal.DeploymentReachabilityReachable
+
+	// DeploymentReachabilityClosedWorkflows - The deployment is not reachable
+	// by new or open workflows, but might be still needed by
+	// Queries sent to closed workflows. The deployment can be decommissioned
+	// safely if user does not query closed workflows.
+	// NOTE: Experimental
+	DeploymentReachabilityClosedWorkflows = internal.DeploymentReachabilityClosedWorkflows
+
+	// DeploymentReachabilityUnreachable - The deployment is not reachable by
+	// any workflow because all the workflows who needed this
+	// deployment are out of the retention period. The deployment can be
+	// decommissioned safely.
+	// NOTE: Experimental
+	DeploymentReachabilityUnreachable = internal.DeploymentReachabilityUnreachable
+)
+
 // TaskReachability specifies which category of tasks may reach a worker on a versioned task queue.
 // Used both in a reachability query and its response.
 //
@@ -278,6 +308,56 @@ type (
 	// sending an update to a workflow execution.
 	// NOTE: Experimental
 	UpdateWorkflowOptions = internal.UpdateWorkflowOptions
+
+	// Deployment identifies a set of workers. This identifier combines
+	// the deployment series name with their Build ID.
+	// NOTE: Experimental
+	Deployment = internal.Deployment
+
+	// DeploymentTaskQueueInfo describes properties of the Task Queues involved
+	// in a deployment.
+	// NOTE: Experimental
+	DeploymentTaskQueueInfo = internal.DeploymentTaskQueueInfo
+
+	// DeploymentInfo holds information associated with
+	// workers in this deployment.
+	// Workers can poll multiple task queues in a single deployment,
+	// which are listed in this message.
+	// NOTE: Experimental
+	DeploymentInfo = internal.DeploymentInfo
+
+	// DeploymentListEntry is a subset of fields from DeploymentInfo.
+	// NOTE: Experimental
+	DeploymentListEntry = internal.DeploymentListEntry
+
+	// DeploymentListIterator is an iterator for deployments.
+	// NOTE: Experimental
+	DeploymentListIterator = internal.DeploymentListIterator
+
+	// DeploymentListOptions are the parameters for configuring listing deployments.
+	// NOTE: Experimental
+	DeploymentListOptions = internal.DeploymentListOptions
+
+	// DeploymentReachabilityInfo extends DeploymentInfo with reachability information.
+	// NOTE: Experimental
+	DeploymentReachabilityInfo = internal.DeploymentReachabilityInfo
+
+	// DeploymentMetadataUpdate modifies user-defined metadata entries that describe
+	// a deployment.
+	// NOTE: Experimental
+	DeploymentMetadataUpdate = internal.DeploymentMetadataUpdate
+
+	// DeploymentSetCurrentOptions provides options for DeploymentClient.SetCurrent.
+	// NOTE: Experimental
+	DeploymentSetCurrentOptions = internal.DeploymentSetCurrentOptions
+
+	// DeploymentSetCurrentResponse is the response type for DeploymentClient.SetCurrent.
+	// NOTE: Experimental
+	DeploymentSetCurrentResponse = internal.DeploymentSetCurrentResponse
+
+	// DeploymentClient is the server interface to manage deployments.
+	// NOTE: Experimental
+	DeploymentClient = internal.DeploymentClient
 
 	// UpdateWorkflowExecutionOptionsRequest is a request for Client.UpdateWorkflowExecutionOptions.
 	// NOTE: Experimental
@@ -879,6 +959,9 @@ type (
 
 		// Schedule creates a new shedule client with the same gRPC connection as this client.
 		ScheduleClient() ScheduleClient
+
+		// DeploymentClient create a new deployment client with the same gRPC connection as this client.
+		DeploymentClient() DeploymentClient
 
 		// Close client and clean up underlying resources.
 		//
