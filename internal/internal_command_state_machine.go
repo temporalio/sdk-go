@@ -30,7 +30,6 @@ import (
 	"strconv"
 
 	"github.com/antithesishq/antithesis-sdk-go/assert"
-	"github.com/davecgh/go-spew/spew"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -1074,7 +1073,6 @@ func (h *commandsHelper) incrementNextCommandEventIDIfVersionMarker() {
 func (h *commandsHelper) getCommand(id commandID) commandStateMachine {
 	command, ok := h.commands[id]
 	if !ok {
-		spew.Dump(h)
 		panicMsg := fmt.Sprintf("[TMPRL1100] unknown command %v, possible causes are nondeterministic workflow definition code"+
 			" or incompatible change in the workflow definition", id)
 		panicIllegalState(panicMsg, h.wfID)
