@@ -43,9 +43,9 @@ type DeploymentClient struct {
 	mock.Mock
 }
 
-// Describe provides a mock function with given fields: ctx, deploymentID
-func (_m *DeploymentClient) Describe(ctx context.Context, deploymentID client.Deployment) (client.DeploymentInfo, error) {
-	ret := _m.Called(ctx, deploymentID)
+// Describe provides a mock function with given fields: ctx, options
+func (_m *DeploymentClient) Describe(ctx context.Context, options client.DeploymentDescribeOptions) (client.DeploymentInfo, error) {
+	ret := _m.Called(ctx, options)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Describe")
@@ -53,17 +53,17 @@ func (_m *DeploymentClient) Describe(ctx context.Context, deploymentID client.De
 
 	var r0 client.DeploymentInfo
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, client.Deployment) (client.DeploymentInfo, error)); ok {
-		return rf(ctx, deploymentID)
+	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentDescribeOptions) (client.DeploymentInfo, error)); ok {
+		return rf(ctx, options)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, client.Deployment) client.DeploymentInfo); ok {
-		r0 = rf(ctx, deploymentID)
+	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentDescribeOptions) client.DeploymentInfo); ok {
+		r0 = rf(ctx, options)
 	} else {
 		r0 = ret.Get(0).(client.DeploymentInfo)
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, client.Deployment) error); ok {
-		r1 = rf(ctx, deploymentID)
+	if rf, ok := ret.Get(1).(func(context.Context, client.DeploymentDescribeOptions) error); ok {
+		r1 = rf(ctx, options)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -71,9 +71,9 @@ func (_m *DeploymentClient) Describe(ctx context.Context, deploymentID client.De
 	return r0, r1
 }
 
-// GetCurrent provides a mock function with given fields: ctx, seriesName
-func (_m *DeploymentClient) GetCurrent(ctx context.Context, seriesName string) (client.DeploymentInfo, error) {
-	ret := _m.Called(ctx, seriesName)
+// GetCurrent provides a mock function with given fields: ctx, options
+func (_m *DeploymentClient) GetCurrent(ctx context.Context, options client.DeploymentGetCurrentOptions) (client.DeploymentInfo, error) {
+	ret := _m.Called(ctx, options)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetCurrent")
@@ -81,17 +81,17 @@ func (_m *DeploymentClient) GetCurrent(ctx context.Context, seriesName string) (
 
 	var r0 client.DeploymentInfo
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, string) (client.DeploymentInfo, error)); ok {
-		return rf(ctx, seriesName)
+	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentGetCurrentOptions) (client.DeploymentInfo, error)); ok {
+		return rf(ctx, options)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, string) client.DeploymentInfo); ok {
-		r0 = rf(ctx, seriesName)
+	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentGetCurrentOptions) client.DeploymentInfo); ok {
+		r0 = rf(ctx, options)
 	} else {
 		r0 = ret.Get(0).(client.DeploymentInfo)
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, string) error); ok {
-		r1 = rf(ctx, seriesName)
+	if rf, ok := ret.Get(1).(func(context.Context, client.DeploymentGetCurrentOptions) error); ok {
+		r1 = rf(ctx, options)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -99,9 +99,9 @@ func (_m *DeploymentClient) GetCurrent(ctx context.Context, seriesName string) (
 	return r0, r1
 }
 
-// GetReachability provides a mock function with given fields: ctx, deploymentID
-func (_m *DeploymentClient) GetReachability(ctx context.Context, deploymentID client.Deployment) (client.DeploymentReachabilityInfo, error) {
-	ret := _m.Called(ctx, deploymentID)
+// GetReachability provides a mock function with given fields: ctx, options
+func (_m *DeploymentClient) GetReachability(ctx context.Context, options client.DeploymentGetReachabilityOptions) (client.DeploymentReachabilityInfo, error) {
+	ret := _m.Called(ctx, options)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetReachability")
@@ -109,17 +109,17 @@ func (_m *DeploymentClient) GetReachability(ctx context.Context, deploymentID cl
 
 	var r0 client.DeploymentReachabilityInfo
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, client.Deployment) (client.DeploymentReachabilityInfo, error)); ok {
-		return rf(ctx, deploymentID)
+	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentGetReachabilityOptions) (client.DeploymentReachabilityInfo, error)); ok {
+		return rf(ctx, options)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, client.Deployment) client.DeploymentReachabilityInfo); ok {
-		r0 = rf(ctx, deploymentID)
+	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentGetReachabilityOptions) client.DeploymentReachabilityInfo); ok {
+		r0 = rf(ctx, options)
 	} else {
 		r0 = ret.Get(0).(client.DeploymentReachabilityInfo)
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, client.Deployment) error); ok {
-		r1 = rf(ctx, deploymentID)
+	if rf, ok := ret.Get(1).(func(context.Context, client.DeploymentGetReachabilityOptions) error); ok {
+		r1 = rf(ctx, options)
 	} else {
 		r1 = ret.Error(1)
 	}

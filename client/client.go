@@ -347,6 +347,18 @@ type (
 	// NOTE: Experimental
 	DeploymentMetadataUpdate = internal.DeploymentMetadataUpdate
 
+	// DeploymentDescribeOptions provides options for DeploymentClient.Describe.
+	// NOTE: Experimental
+	DeploymentDescribeOptions = internal.DeploymentDescribeOptions
+
+	// DeploymentGetReachabilityOptions provides options for DeploymentClient.GetReachability.
+	// NOTE: Experimental
+	DeploymentGetReachabilityOptions = internal.DeploymentGetReachabilityOptions
+
+	// DeploymentGetCurrentOptions provides options for DeploymentClient.GetCurrent.
+	// NOTE: Experimental
+	DeploymentGetCurrentOptions = internal.DeploymentGetCurrentOptions
+
 	// DeploymentSetCurrentOptions provides options for DeploymentClient.SetCurrent.
 	// NOTE: Experimental
 	DeploymentSetCurrentOptions = internal.DeploymentSetCurrentOptions

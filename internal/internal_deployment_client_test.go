@@ -84,7 +84,7 @@ func (d *deploymentClientTestSuite) TestSetCurrentDeployment() {
 		Do(func(_ interface{}, req *workflowservice.SetCurrentDeploymentRequest, _ ...interface{}) {
 			var resultMeta string
 			// verify the metadata
-			err := converter.GetDefaultDataConverter().FromPayload(req.UpdateMetadata.UpsertEntries["data1"], &resultMeta)
+			err := d.dataConverter.FromPayload(req.UpdateMetadata.UpsertEntries["data1"], &resultMeta)
 			d.NoError(err)
 			d.Equal("metadata 1", resultMeta)
 

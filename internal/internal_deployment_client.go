@@ -129,14 +129,18 @@ func deploymentReachabilityInfoFromProto(response *workflowservice.GetDeployment
 	}
 }
 
-func deploymentMetadataUpdateToProto(update DeploymentMetadataUpdate) *deployment.UpdateDeploymentMetadata {
+func deploymentMetadataUpdateToProto(dc converter.DataConverter, update DeploymentMetadataUpdate) *deployment.UpdateDeploymentMetadata {
 	upsertEntries := make(map[string]*common.Payload)
 
 	for k, v := range update.UpsertEntries {
 		if enc, ok := v.(*common.Payload); ok {
 			upsertEntries[k] = enc
 		} else {
-			metadataBytes, err := converter.GetDefaultDataConverter().ToPayload(v)
+			dataConverter := dc
+			if dataConverter == nil {
+				dataConverter = converter.GetDefaultDataConverter()
+			}
+			metadataBytes, err := dataConverter.ToPayload(v)
 			if err != nil {
 				panic(fmt.Sprintf("encode deployment metadata error: %v", err.Error()))
 			}
@@ -169,13 +173,13 @@ func (dc *deploymentClient) List(ctx context.Context, options DeploymentListOpti
 	}, nil
 }
 
-func (dc *deploymentClient) Describe(ctx context.Context, deploymentID Deployment) (DeploymentInfo, error) {
+func (dc *deploymentClient) Describe(ctx context.Context, options DeploymentDescribeOptions) (DeploymentInfo, error) {
 	if err := dc.workflowClient.ensureInitialized(ctx); err != nil {
 		return DeploymentInfo{}, err
 	}
 	request := &workflowservice.DescribeDeploymentRequest{
 		Namespace:  dc.workflowClient.namespace,
-		Deployment: deploymentToProto(deploymentID),
+		Deployment: deploymentToProto(options.Deployment),
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
@@ -188,14 +192,14 @@ func (dc *deploymentClient) Describe(ctx context.Context, deploymentID Deploymen
 	return deploymentInfoFromProto(resp.GetDeploymentInfo()), nil
 }
 
-func (dc *deploymentClient) GetReachability(ctx context.Context, deploymentID Deployment) (DeploymentReachabilityInfo, error) {
+func (dc *deploymentClient) GetReachability(ctx context.Context, options DeploymentGetReachabilityOptions) (DeploymentReachabilityInfo, error) {
 	if err := dc.workflowClient.ensureInitialized(ctx); err != nil {
 		return DeploymentReachabilityInfo{}, err
 	}
 
 	request := &workflowservice.GetDeploymentReachabilityRequest{
 		Namespace:  dc.workflowClient.namespace,
-		Deployment: deploymentToProto(deploymentID),
+		Deployment: deploymentToProto(options.Deployment),
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
@@ -208,13 +212,13 @@ func (dc *deploymentClient) GetReachability(ctx context.Context, deploymentID De
 	return deploymentReachabilityInfoFromProto(resp), nil
 }
 
-func (dc *deploymentClient) GetCurrent(ctx context.Context, seriesName string) (DeploymentInfo, error) {
+func (dc *deploymentClient) GetCurrent(ctx context.Context, options DeploymentGetCurrentOptions) (DeploymentInfo, error) {
 	if err := dc.workflowClient.ensureInitialized(ctx); err != nil {
 		return DeploymentInfo{}, err
 	}
 	request := &workflowservice.GetCurrentDeploymentRequest{
 		Namespace:  dc.workflowClient.namespace,
-		SeriesName: seriesName,
+		SeriesName: options.SeriesName,
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
@@ -230,11 +234,15 @@ func (dc *deploymentClient) SetCurrent(ctx context.Context, options DeploymentSe
 	if err := dc.workflowClient.ensureInitialized(ctx); err != nil {
 		return DeploymentSetCurrentResponse{}, err
 	}
+	identity := options.ClientIdentity
+	if identity == "" {
+		identity = dc.workflowClient.identity
+	}
 	request := &workflowservice.SetCurrentDeploymentRequest{
 		Namespace:      dc.workflowClient.namespace,
 		Deployment:     deploymentToProto(options.Deployment),
-		Identity:       options.ClientIdentity,
-		UpdateMetadata: deploymentMetadataUpdateToProto(options.MetadataUpdate),
+		Identity:       identity,
+		UpdateMetadata: deploymentMetadataUpdateToProto(dc.workflowClient.dataConverter, options.MetadataUpdate),
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()

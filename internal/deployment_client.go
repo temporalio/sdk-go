@@ -177,7 +177,8 @@ type (
 		// Deployment - An identifier for this deployment.
 		Deployment Deployment
 
-		// ClientIdentity - Optional: The identity of the client who initiated this request.
+		// ClientIdentity - The identity of the client who initiated this request.
+		// Optional: defaults to Client.Options.Identity.
 		ClientIdentity string
 
 		// MetadataUpdate - Optional: Changes to the user-defined metadata entries
@@ -195,12 +196,33 @@ type (
 		Previous DeploymentInfo
 	}
 
+	// DeploymentDescribeOptions provides options for DeploymentClient.Describe.
+	// NOTE: Experimental
+	DeploymentDescribeOptions struct {
+		// Deployment - Identifier that combines the deployment series name with their Build ID.
+		Deployment Deployment
+	}
+
+	// DeploymentGetReachabilityOptions provides options for DeploymentClient.GetReachability.
+	// NOTE: Experimental
+	DeploymentGetReachabilityOptions struct {
+		// Deployment - Identifier that combines the deployment series name with their Build ID.
+		Deployment Deployment
+	}
+
+	// DeploymentGetCurrentOptions provides options for DeploymentClient.GetCurrent.
+	// NOTE: Experimental
+	DeploymentGetCurrentOptions struct {
+		// SeriesName - Name of the deployment series.
+		SeriesName string
+	}
+
 	// DeploymentClient is the client that manages deployments.
 	// NOTE: Experimental
 	DeploymentClient interface {
 		// Describes an existing deployment.
 		// NOTE: Experimental
-		Describe(ctx context.Context, deploymentID Deployment) (DeploymentInfo, error)
+		Describe(ctx context.Context, options DeploymentDescribeOptions) (DeploymentInfo, error)
 
 		// List returns an iterator to enumerate deployments in the client's namespace.
 		// It can also optionally filter deployments by series name.
@@ -211,11 +233,11 @@ type (
 		// expensive, and results may be cached. Use the returned DeploymentReachabilityInfo.LastUpdateTime
 		// to estimate cache staleness.
 		// NOTE: Experimental
-		GetReachability(ctx context.Context, deploymentID Deployment) (DeploymentReachabilityInfo, error)
+		GetReachability(ctx context.Context, options DeploymentGetReachabilityOptions) (DeploymentReachabilityInfo, error)
 
 		// GetCurrent returns the current deployment for a given deployment series.
 		// NOTE: Experimental
-		GetCurrent(ctx context.Context, seriesName string) (DeploymentInfo, error)
+		GetCurrent(ctx context.Context, options DeploymentGetCurrentOptions) (DeploymentInfo, error)
 
 		// SetCurrent changes the current deployment for a given deployment series. It can also
 		// update metadata for this deployment.
