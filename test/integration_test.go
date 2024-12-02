@@ -274,6 +274,11 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		ts.NoError(err)
 		options.Tuner = tuner
 	}
+	if strings.Contains(ts.T().Name(), "SlotSuppliersWithSession") {
+		options.MaxConcurrentActivityExecutionSize = 1
+		// Apparently this is on by default in these tests anyway, but to be explicit
+		options.EnableSessionWorker = true
+	}
 
 	ts.worker = worker.New(ts.client, ts.taskQueueName, options)
 	ts.workerStopped = false
@@ -3267,6 +3272,27 @@ func (ts *IntegrationTestSuite) TestResourceBasedSlotSupplierManyActs() {
 	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, actWorkertags, 0)
 	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, laWorkertags, 0)
 	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, wfWorkertags, 0)
+}
+
+func (ts *IntegrationTestSuite) TestSlotSuppliersWithSessionAndOneConcurrentMax() {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+
+	// Activities time out without the fix, since obtaining a slot takes too long
+	wfRuns := make([]client.WorkflowRun, 0)
+	for i := 0; i < 3; i++ {
+		opts := ts.startWorkflowOptions("slot-suppliers-with-session" + strconv.Itoa(i))
+		opts.WorkflowExecutionTimeout = 1 * time.Minute
+		run, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.Echo, "hi")
+		ts.NoError(err)
+		ts.NotNil(run)
+		ts.NoError(err)
+		wfRuns = append(wfRuns, run)
+	}
+
+	for _, run := range wfRuns {
+		ts.NoError(run.Get(ctx, nil))
+	}
 }
 
 func (ts *IntegrationTestSuite) TestTooFewParams() {
