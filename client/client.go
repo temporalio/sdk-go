@@ -165,7 +165,7 @@ type (
 	// WithStartWorkflowOperation defines how to start a workflow when using Update-With-Start.
 	// See [Client.NewWithStartWorkflowOperation] for details.
 	// NOTE: Experimental
-	WithStartWorkflowOperation = internal.WithStartWorkflowOperationInterface
+	WithStartWorkflowOperation = internal.WithStartWorkflowOperation
 
 	// HistoryEventIterator is a iterator which can return history events.
 	HistoryEventIterator = internal.HistoryEventIterator

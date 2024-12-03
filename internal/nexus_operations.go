@@ -264,7 +264,7 @@ func (t *testSuiteClientForNexusOperations) ExecuteWorkflow(ctx context.Context,
 	return run, nil
 }
 
-func (t *testSuiteClientForNexusOperations) NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WithStartWorkflowOperationInterface, error) {
+func (t *testSuiteClientForNexusOperations) NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WithStartWorkflowOperation, error) {
 	panic("not implemented in the test environment")
 }
 
@@ -384,7 +384,7 @@ func (t *testSuiteClientForNexusOperations) UpdateWorkflow(ctx context.Context, 
 }
 
 // UpdateWithStartWorkflow implements Client.
-func (t *testSuiteClientForNexusOperations) UpdateWithStartWorkflow(ctx context.Context, options UpdateWorkflowOptions, startOperation WithStartWorkflowOperationInterface) (WorkflowUpdateHandle, error) {
+func (t *testSuiteClientForNexusOperations) UpdateWithStartWorkflow(ctx context.Context, options UpdateWorkflowOptions, startOperation WithStartWorkflowOperation) (WorkflowUpdateHandle, error) {
 	panic("unimplemented in the test environment")
 }
 

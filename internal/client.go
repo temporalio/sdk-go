@@ -136,7 +136,7 @@ type (
 
 		// NewWithStartWorkflowOperation returns a WithStartWorkflowOperation to perform Update-with-Start.
 		// NOTE: Experimental
-		NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WithStartWorkflowOperationInterface, error)
+		NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WithStartWorkflowOperation, error)
 
 		// CancelWorkflow cancels a workflow in execution
 		// - workflow ID of the workflow.
@@ -399,7 +399,7 @@ type (
 
 		// UpdateWithStartWorkflow issues an update request to the specified workflow execution, starting the workflow if appropriate.
 		// NOTE: Experimental
-		UpdateWithStartWorkflow(ctx context.Context, options UpdateWorkflowOptions, startOperation WithStartWorkflowOperationInterface) (WorkflowUpdateHandle, error)
+		UpdateWithStartWorkflow(ctx context.Context, options UpdateWorkflowOptions, startOperation WithStartWorkflowOperation) (WorkflowUpdateHandle, error)
 
 		// GetWorkflowUpdateHandle creates a handle to the referenced update
 		// which can be polled for an outcome. Note that runID is optional and
@@ -749,11 +749,11 @@ type (
 	// WithStartWorkflowOperation defines how to start a workflow when using Update-With-Start.
 	// See NewWithStartWorkflowOperation for details.
 	// NOTE: Experimental
-	WithStartWorkflowOperationInterface interface {
+	WithStartWorkflowOperation interface {
 		Get(ctx context.Context) (WorkflowRun, error)
 	}
 
-	WithStartWorkflowOperation struct {
+	WithStartWorkflowOperationImpl struct {
 		input *ClientExecuteWorkflowInput
 		// flag to ensure the operation is only executed once
 		executed atomic.Bool
@@ -1054,7 +1054,7 @@ func DialCloudOperationsClient(ctx context.Context, options CloudOperationsClien
 	}, nil
 }
 
-func (op *WithStartWorkflowOperation) Get(ctx context.Context) (WorkflowRun, error) {
+func (op *WithStartWorkflowOperationImpl) Get(ctx context.Context) (WorkflowRun, error) {
 	select {
 	case <-op.doneCh:
 		return op.workflowRun, op.err
@@ -1066,14 +1066,14 @@ func (op *WithStartWorkflowOperation) Get(ctx context.Context) (WorkflowRun, err
 	}
 }
 
-func (op *WithStartWorkflowOperation) markExecuted() error {
+func (op *WithStartWorkflowOperationImpl) markExecuted() error {
 	if op.executed.Swap(true) {
 		return fmt.Errorf("was already executed")
 	}
 	return nil
 }
 
-func (op *WithStartWorkflowOperation) set(workflowRun WorkflowRun, err error) {
+func (op *WithStartWorkflowOperationImpl) set(workflowRun WorkflowRun, err error) {
 	op.workflowRun = workflowRun
 	op.err = err
 	close(op.doneCh)
