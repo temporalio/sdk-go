@@ -234,14 +234,10 @@ func (dc *deploymentClient) SetCurrent(ctx context.Context, options DeploymentSe
 	if err := dc.workflowClient.ensureInitialized(ctx); err != nil {
 		return DeploymentSetCurrentResponse{}, err
 	}
-	identity := options.ClientIdentity
-	if identity == "" {
-		identity = dc.workflowClient.identity
-	}
 	request := &workflowservice.SetCurrentDeploymentRequest{
 		Namespace:      dc.workflowClient.namespace,
 		Deployment:     deploymentToProto(options.Deployment),
-		Identity:       identity,
+		Identity:       dc.workflowClient.identity,
 		UpdateMetadata: deploymentMetadataUpdateToProto(dc.workflowClient.dataConverter, options.MetadataUpdate),
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))

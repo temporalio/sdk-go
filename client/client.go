@@ -973,6 +973,7 @@ type (
 		ScheduleClient() ScheduleClient
 
 		// DeploymentClient create a new deployment client with the same gRPC connection as this client.
+		// NOTE: Experimental
 		DeploymentClient() DeploymentClient
 
 		// Close client and clean up underlying resources.

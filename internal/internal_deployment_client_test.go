@@ -72,7 +72,6 @@ func (d *deploymentClientTestSuite) TestSetCurrentDeployment() {
 			BuildID:    "bid1",
 			SeriesName: "series1",
 		},
-		ClientIdentity: "me",
 		MetadataUpdate: DeploymentMetadataUpdate{
 			UpsertEntries: metadata,
 			RemoveEntries: []string{"never"},

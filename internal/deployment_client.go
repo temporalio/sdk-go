@@ -177,10 +177,6 @@ type (
 		// Deployment - An identifier for this deployment.
 		Deployment Deployment
 
-		// ClientIdentity - The identity of the client who initiated this request.
-		// Optional: defaults to Client.Options.Identity.
-		ClientIdentity string
-
 		// MetadataUpdate - Optional: Changes to the user-defined metadata entries
 		// for this deployment.
 		MetadataUpdate DeploymentMetadataUpdate
