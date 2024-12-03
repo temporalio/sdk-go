@@ -994,6 +994,10 @@ func (aw *AggregatedWorker) RegisterWorkflow(w interface{}) {
 	if aw.workflowWorker == nil {
 		panic("workflow worker disabled, cannot register workflow")
 	}
+	if aw.executionParams.UseBuildIDForVersioning &&
+		aw.executionParams.DefaultVersioningBehavior == VersioningBehaviorUnspecified {
+		panic("workflow type does not have a versioning behavior")
+	}
 	aw.registry.RegisterWorkflow(w)
 }
 
@@ -1001,6 +1005,11 @@ func (aw *AggregatedWorker) RegisterWorkflow(w interface{}) {
 func (aw *AggregatedWorker) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
 	if aw.workflowWorker == nil {
 		panic("workflow worker disabled, cannot register workflow")
+	}
+	if options.VersioningBehavior == VersioningBehaviorUnspecified &&
+		aw.executionParams.UseBuildIDForVersioning &&
+		aw.executionParams.DefaultVersioningBehavior == VersioningBehaviorUnspecified {
+		panic("workflow type does not have a versioning behavior")
 	}
 	aw.registry.RegisterWorkflowWithOptions(w, options)
 }

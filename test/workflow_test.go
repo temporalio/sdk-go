@@ -70,34 +70,6 @@ func (w *Workflows) Basic(ctx workflow.Context) ([]string, error) {
 	return []string{"toUpperWithDelay", "toUpper"}, nil
 }
 
-// Similar to Basic, but setting the versioning behavior to pinned.
-func (w *Workflows) SetPinnedVersioningBehavior(ctx workflow.Context) ([]string, error) {
-	workflow.SetVersioningBehavior(ctx, workflow.VersioningBehaviorPinned)
-
-	err := workflow.SetQueryHandler(ctx, "get-versioning-behavior", func(input []byte) (workflow.VersioningBehavior, error) {
-		return workflow.GetVersioningBehavior(ctx), nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
-	var ans1 string
-	workflow.GetLogger(ctx).Info("calling ExecuteActivity")
-	err = workflow.ExecuteActivity(ctx, "Prefix_ToUpperWithDelay", "hello", time.Second).Get(ctx, &ans1)
-	if err != nil {
-		return nil, err
-	}
-	var ans2 string
-	if err := workflow.ExecuteActivity(ctx, "Prefix_ToUpper", ans1).Get(ctx, &ans2); err != nil {
-		return nil, err
-	}
-	if ans2 != "HELLO" {
-		return nil, fmt.Errorf("incorrect return value from activity: expected=%v,got=%v", "HELLO", ans2)
-	}
-	return []string{"toUpperWithDelay", "toUpper"}, nil
-}
-
 func (w *Workflows) Echo(ctx workflow.Context, message string) (string, error) {
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 	var ans1 string
@@ -3214,7 +3186,6 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityWaitForWorkerStop)
 	worker.RegisterWorkflow(w.ActivityHeartbeatUntilSignal)
 	worker.RegisterWorkflow(w.Basic)
-	worker.RegisterWorkflow(w.SetPinnedVersioningBehavior)
 	worker.RegisterWorkflow(w.Deadlocked)
 	worker.RegisterWorkflow(w.DeadlockedWithLocalActivity)
 	worker.RegisterWorkflow(w.Panicked)

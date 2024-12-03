@@ -623,34 +623,6 @@ func SetCurrentDetails(ctx Context, details string) {
 	internal.SetCurrentDetails(ctx, details)
 }
 
-// SetVersioningBehavior sets the strategy to upgrade this workflow when the default Build ID
-// has changed, and Worker Versioning-3 has been enabled.
-//
-// SetVersioningBehavior should be called during the first workflow task, and the context `ctx` should
-// be the original context workflow argument, or derived from this context.
-//
-// If not set, a default behavior provided in worker.Options.DefaultVersioningBehavior will be used.
-//
-// If not set, and the default behavior is also unspecified in the Worker, the first task of this workflow
-// will fail when Worker Versioning-3 has been enabled.
-//
-// NOTE: Experimental
-func SetVersioningBehavior(ctx Context, behavior VersioningBehavior) {
-	internal.SetVersioningBehavior(ctx, behavior)
-}
-
-// GetVersioningBehavior returns the last versioning behavior set with
-// the SetVersioningBehavior method.
-//
-// When SetVersioningBehavior has not been called, it always returns
-// VersioningBehaviorUnspecified, ignoring any Worker
-// defaults to avoid non-deterministic errors.
-//
-// NOTE: Experimental
-func GetVersioningBehavior(ctx Context) VersioningBehavior {
-	return internal.GetVersioningBehavior(ctx)
-}
-
 // IsReplaying returns whether the current workflow code is replaying.
 //
 // Warning! Never make commands, like schedule activity/childWorkflow/timer or send/wait on future/channel, based on
