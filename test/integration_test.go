@@ -3995,10 +3995,9 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 
 	ts.Run("sends update-with-start (no running workflow)", func() {
 		println(ctx)
-		startOp, err := ts.client.NewWithStartWorkflowOperation(
+		startOp := ts.client.NewWithStartWorkflowOperation(
 			startWorkflowOptions(), ts.workflows.UpdateEntityWorkflow,
 		)
-		ts.NoError(err)
 		updHandle, err := ts.client.UpdateWithStartWorkflow(ctx, client.UpdateWorkflowOptions{
 			UpdateName:   "update",
 			Args:         []any{1},
@@ -4025,8 +4024,7 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 		ts.NoError(err)
 
 		startOptions.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING
-		startOp, err := ts.client.NewWithStartWorkflowOperation(startOptions, ts.workflows.UpdateEntityWorkflow)
-		ts.NoError(err)
+		startOp := ts.client.NewWithStartWorkflowOperation(startOptions, ts.workflows.UpdateEntityWorkflow)
 
 		updHandle, err := ts.client.UpdateWithStartWorkflow(ctx, client.UpdateWorkflowOptions{
 			UpdateName:   "update",
@@ -4045,8 +4043,7 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 	})
 
 	ts.Run("sends update-with-start but update is rejected", func() {
-		startOp, err := ts.client.NewWithStartWorkflowOperation(startWorkflowOptions(), ts.workflows.UpdateEntityWorkflow)
-		ts.NoError(err)
+		startOp := ts.client.NewWithStartWorkflowOperation(startWorkflowOptions(), ts.workflows.UpdateEntityWorkflow)
 
 		updHandle, err := ts.client.UpdateWithStartWorkflow(ctx, client.UpdateWorkflowOptions{
 			UpdateName:   "update",
@@ -4066,8 +4063,7 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 
 	ts.Run("receives results in separate goroutines", func() {
 
-		startOp, err := ts.client.NewWithStartWorkflowOperation(startWorkflowOptions(), ts.workflows.UpdateEntityWorkflow)
-		ts.NoError(err)
+		startOp := ts.client.NewWithStartWorkflowOperation(startWorkflowOptions(), ts.workflows.UpdateEntityWorkflow)
 
 		done1 := make(chan struct{})
 		defer func() { <-done1 }()
@@ -4108,23 +4104,22 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 		startOptions := startWorkflowOptions()
 
 		startOptions.CronSchedule = "invalid!"
-		startOp, err := ts.client.NewWithStartWorkflowOperation(startOptions, ts.workflows.UpdateEntityWorkflow)
-		ts.NoError(err)
-		_, err = ts.client.UpdateWithStartWorkflow(ctx, updateOptions, startOp)
+		startOp := ts.client.NewWithStartWorkflowOperation(startOptions, ts.workflows.UpdateEntityWorkflow)
+		_, err := ts.client.UpdateWithStartWorkflow(ctx, updateOptions, startOp)
 		ts.Error(err)
 
 		startOptions.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_UNSPECIFIED
-		_, err = ts.client.NewWithStartWorkflowOperation(startOptions, ts.workflows.UpdateEntityWorkflow)
+		startOp = ts.client.NewWithStartWorkflowOperation(startOptions, ts.workflows.UpdateEntityWorkflow)
+		_, err = ts.client.UpdateWithStartWorkflow(ctx, updateOptions, startOp)
 		ts.ErrorContains(err, "WorkflowIDConflictPolicy must be set")
 	})
 
 	ts.Run("fails when update operation is invalid", func() {
 		startOptions := startWorkflowOptions()
 
-		startOp, err := ts.client.NewWithStartWorkflowOperation(startOptions, ts.workflows.UpdateEntityWorkflow)
-		ts.NoError(err)
+		startOp := ts.client.NewWithStartWorkflowOperation(startOptions, ts.workflows.UpdateEntityWorkflow)
 
-		_, err = ts.client.UpdateWithStartWorkflow(ctx,
+		_, err := ts.client.UpdateWithStartWorkflow(ctx,
 			client.UpdateWorkflowOptions{
 				// invalid
 			}, startOp)
@@ -4164,8 +4159,7 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 		startOptions := startWorkflowOptions()
 		_, err := ts.client.ExecuteWorkflow(ctx, startOptions, ts.workflows.UpdateEntityWorkflow)
 		ts.NoError(err)
-		startOp, err := ts.client.NewWithStartWorkflowOperation(startOptions, ts.workflows.UpdateEntityWorkflow)
-		ts.NoError(err)
+		startOp := ts.client.NewWithStartWorkflowOperation(startOptions, ts.workflows.UpdateEntityWorkflow)
 
 		_, err = ts.client.UpdateWithStartWorkflow(ctx,
 			client.UpdateWorkflowOptions{
@@ -4179,15 +4173,14 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 	})
 
 	ts.Run("fails when executed twice", func() {
-		startOp, err := ts.client.NewWithStartWorkflowOperation(startWorkflowOptions(), ts.workflows.UpdateEntityWorkflow)
-		ts.NoError(err)
+		startOp := ts.client.NewWithStartWorkflowOperation(startWorkflowOptions(), ts.workflows.UpdateEntityWorkflow)
 
 		updateOptions := client.UpdateWorkflowOptions{
 			UpdateName:   "update",
 			Args:         []any{1},
 			WaitForStage: client.WorkflowUpdateStageCompleted,
 		}
-		_, err = ts.client.UpdateWithStartWorkflow(ctx, updateOptions, startOp)
+		_, err := ts.client.UpdateWithStartWorkflow(ctx, updateOptions, startOp)
 		ts.NoError(err)
 
 		_, err = ts.client.UpdateWithStartWorkflow(ctx, updateOptions, startOp)
@@ -4195,8 +4188,7 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 	})
 
 	ts.Run("propagates context", func() {
-		startOp, err := ts.client.NewWithStartWorkflowOperation(startWorkflowOptions(), ts.workflows.ContextPropagator, true)
-		ts.NoError(err)
+		startOp := ts.client.NewWithStartWorkflowOperation(startWorkflowOptions(), ts.workflows.ContextPropagator, true)
 
 		ctx := context.Background()
 		// Propagate values using different context propagators.
@@ -4204,7 +4196,7 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 		ctx = context.WithValue(ctx, contextKey(testContextKey2), "propagatedValue2")
 		ctx = context.WithValue(ctx, contextKey(testContextKey3), "non-propagatedValue")
 
-		_, err = ts.client.UpdateWithStartWorkflow(ctx,
+		_, err := ts.client.UpdateWithStartWorkflow(ctx,
 			client.UpdateWorkflowOptions{
 				UpdateName:   "update",
 				Args:         []any{1},
