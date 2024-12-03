@@ -602,7 +602,7 @@ func (_m *Client) ListWorkflow(ctx context.Context, request *workflowservice.Lis
 }
 
 // NewWithStartWorkflowOperation provides a mock function with given fields: options, workflow, args
-func (_m *Client) NewWithStartWorkflowOperation(options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WithStartWorkflowOperation, error) {
+func (_m *Client) NewWithStartWorkflowOperation(options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) client.WithStartWorkflowOperation {
 	var _ca []interface{}
 	_ca = append(_ca, options, workflow)
 	_ca = append(_ca, args...)
@@ -613,10 +613,6 @@ func (_m *Client) NewWithStartWorkflowOperation(options client.StartWorkflowOpti
 	}
 
 	var r0 client.WithStartWorkflowOperation
-	var r1 error
-	if rf, ok := ret.Get(0).(func(client.StartWorkflowOptions, interface{}, ...interface{}) (client.WithStartWorkflowOperation, error)); ok {
-		return rf(options, workflow, args...)
-	}
 	if rf, ok := ret.Get(0).(func(client.StartWorkflowOptions, interface{}, ...interface{}) client.WithStartWorkflowOperation); ok {
 		r0 = rf(options, workflow, args...)
 	} else {
@@ -625,13 +621,7 @@ func (_m *Client) NewWithStartWorkflowOperation(options client.StartWorkflowOpti
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(client.StartWorkflowOptions, interface{}, ...interface{}) error); ok {
-		r1 = rf(options, workflow, args...)
-	} else {
-		r1 = ret.Error(1)
-	}
-
-	return r0, r1
+	return r0
 }
 
 // OperatorService provides a mock function with given fields:

@@ -1010,16 +1010,15 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_Retry() {
 			},
 		}, nil)
 
-	startOp, err := s.workflowClient.NewWithStartWorkflowOperation(
+	startOp := s.workflowClient.NewWithStartWorkflowOperation(
 		StartWorkflowOptions{
 			ID:                       workflowID,
 			WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
 			TaskQueue:                taskqueue,
 		}, workflowType,
 	)
-	s.NoError(err)
 
-	_, err = s.workflowClient.UpdateWithStartWorkflow(
+	_, err := s.workflowClient.UpdateWithStartWorkflow(
 		context.Background(),
 		UpdateWorkflowOptions{
 			UpdateName:   "update",
@@ -1031,19 +1030,18 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_Retry() {
 
 func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_OperationNotExecuted() {
 
-	startOp, err := s.workflowClient.NewWithStartWorkflowOperation(
+	startOp := s.workflowClient.NewWithStartWorkflowOperation(
 		StartWorkflowOptions{
 			ID:                       workflowID,
 			WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
 			TaskQueue:                taskqueue,
 		}, workflowType,
 	)
-	s.NoError(err)
 
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
-	_, err = startOp.Get(ctxWithTimeout)
+	_, err := startOp.Get(ctxWithTimeout)
 	require.EqualError(s.T(), err, "context deadline exceeded: operation was not executed")
 }
 
@@ -1083,19 +1081,18 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_Abort() {
 				ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
 				DoAndReturn(tt.respFunc)
 
-			startOp, err := s.workflowClient.NewWithStartWorkflowOperation(
+			startOp := s.workflowClient.NewWithStartWorkflowOperation(
 				StartWorkflowOptions{
 					ID:                       workflowID,
 					WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
 					TaskQueue:                taskqueue,
 				}, workflowType,
 			)
-			s.NoError(err)
 
 			ctxWithTimeout, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 			defer cancel()
 
-			_, err = s.workflowClient.UpdateWithStartWorkflow(
+			_, err := s.workflowClient.UpdateWithStartWorkflow(
 				ctxWithTimeout,
 				UpdateWorkflowOptions{
 					UpdateName:   "update",
@@ -1115,16 +1112,15 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_NonMultiOperationError(
 		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(nil, serviceerror.NewInternal("internal error")).Times(1)
 
-	startOp, err := s.workflowClient.NewWithStartWorkflowOperation(
+	startOp := s.workflowClient.NewWithStartWorkflowOperation(
 		StartWorkflowOptions{
 			ID:                       workflowID,
 			WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
 			TaskQueue:                taskqueue,
 		}, workflowType,
 	)
-	s.NoError(err)
 
-	_, err = s.workflowClient.UpdateWithStartWorkflow(
+	_, err := s.workflowClient.UpdateWithStartWorkflow(
 		context.Background(),
 		UpdateWorkflowOptions{
 			UpdateName:   "update",
@@ -1141,16 +1137,15 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerResponseCountMism
 			Responses: []*workflowservice.ExecuteMultiOperationResponse_Response{},
 		}, nil).Times(1)
 
-	startOp, err := s.workflowClient.NewWithStartWorkflowOperation(
+	startOp := s.workflowClient.NewWithStartWorkflowOperation(
 		StartWorkflowOptions{
 			ID:                       workflowID,
 			WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
 			TaskQueue:                taskqueue,
 		}, workflowType,
 	)
-	s.NoError(err)
 
-	_, err = s.workflowClient.UpdateWithStartWorkflow(
+	_, err := s.workflowClient.UpdateWithStartWorkflow(
 		context.Background(),
 		UpdateWorkflowOptions{
 			UpdateName:   "update",
@@ -1165,16 +1160,15 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerErrorResponseCoun
 		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(nil, serviceerror.NewMultiOperationExecution("Error", []error{})).Times(1)
 
-	startOp, err := s.workflowClient.NewWithStartWorkflowOperation(
+	startOp := s.workflowClient.NewWithStartWorkflowOperation(
 		StartWorkflowOptions{
 			ID:                       workflowID,
 			WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
 			TaskQueue:                taskqueue,
 		}, workflowType,
 	)
-	s.NoError(err)
 
-	_, err = s.workflowClient.UpdateWithStartWorkflow(
+	_, err := s.workflowClient.UpdateWithStartWorkflow(
 		context.Background(),
 		UpdateWorkflowOptions{
 			UpdateName:   "update",
@@ -1196,16 +1190,15 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerStartResponseType
 			},
 		}, nil).Times(1)
 
-	startOp, err := s.workflowClient.NewWithStartWorkflowOperation(
+	startOp := s.workflowClient.NewWithStartWorkflowOperation(
 		StartWorkflowOptions{
 			ID:                       workflowID,
 			WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
 			TaskQueue:                taskqueue,
 		}, workflowType,
 	)
-	s.NoError(err)
 
-	_, err = s.workflowClient.UpdateWithStartWorkflow(
+	_, err := s.workflowClient.UpdateWithStartWorkflow(
 		context.Background(),
 		UpdateWorkflowOptions{
 			UpdateName:   "update",
@@ -1233,16 +1226,15 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerUpdateResponseTyp
 			},
 		}, nil).Times(1)
 
-	startOp, err := s.workflowClient.NewWithStartWorkflowOperation(
+	startOp := s.workflowClient.NewWithStartWorkflowOperation(
 		StartWorkflowOptions{
 			ID:                       workflowID,
 			WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
 			TaskQueue:                taskqueue,
 		}, workflowType,
 	)
-	s.NoError(err)
 
-	_, err = s.workflowClient.UpdateWithStartWorkflow(
+	_, err := s.workflowClient.UpdateWithStartWorkflow(
 		context.Background(),
 		UpdateWorkflowOptions{
 			UpdateName:   "update",

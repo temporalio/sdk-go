@@ -354,17 +354,18 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	})
 }
 
-func (wc *WorkflowClient) NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WithStartWorkflowOperation, error) {
-	if options.WorkflowIDConflictPolicy == enumspb.WORKFLOW_ID_CONFLICT_POLICY_UNSPECIFIED {
-		return nil, errors.New("WorkflowIDConflictPolicy must be set in StartWorkflowOptions for Update-With-Start")
-	}
+func (wc *WorkflowClient) NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) WithStartWorkflowOperation {
 	op := &WithStartWorkflowOperationImpl{doneCh: make(chan struct{})}
+	if options.WorkflowIDConflictPolicy == enumspb.WORKFLOW_ID_CONFLICT_POLICY_UNSPECIFIED {
+		op.err = errors.New("WorkflowIDConflictPolicy must be set in StartWorkflowOptions for Update-With-Start")
+		return op
+	}
 	input, err := createStartWorkflowInput(options, workflow, args, wc.registry)
 	if err != nil {
-		return nil, err
+		op.err = err
 	}
 	op.input = input
-	return op, nil
+	return op
 }
 
 // CancelWorkflow cancels a workflow in execution.  It allows workflow to properly clean up and gracefully close.
@@ -1182,10 +1183,16 @@ func (wc *WorkflowClient) UpdateWithStartWorkflow(
 	updateOptions UpdateWorkflowOptions,
 	startOperation WithStartWorkflowOperation,
 ) (WorkflowUpdateHandle, error) {
+	startOp, ok := startOperation.(*WithStartWorkflowOperationImpl)
+	if !ok {
+		panic("startOperation must be created by NewWithStartWorkflowOperation")
+	}
+	if startOp.err != nil {
+		return nil, startOp.err
+	}
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return nil, err
 	}
-
 	if updateOptions.RunID != "" {
 		return nil, errors.New("invalid UpdateWorkflowOptions: RunID cannot be set for UpdateWithStartWorkflow because the workflow might not be running")
 	}

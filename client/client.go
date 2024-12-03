@@ -562,7 +562,7 @@ type (
 		// NewWithStartWorkflowOperation returns a WithStartWorkflowOperation to perform Update-with-Start.
 		// Returns an error if the WorkflowIDConflictPolicy is not set, or if the workflow or arguments are invalid.
 		// NOTE: Experimental
-		NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WithStartWorkflowOperation, error)
+		NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) WithStartWorkflowOperation
 
 		// CancelWorkflow request cancellation of a workflow in execution. Cancellation request closes the channel
 		// returned by the workflow.Context.Done() of the workflow that is target of the request.
