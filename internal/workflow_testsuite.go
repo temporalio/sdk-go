@@ -1091,7 +1091,9 @@ func (e *TestWorkflowEnvironment) QueryWorkflow(queryType string, args ...interf
 	return e.impl.queryWorkflow(queryType, args...)
 }
 
-// UpdateWorkflow sends an update to the currently running workflow.
+// UpdateWorkflow sends an update to the currently running workflow. The updateName is the name of the update handler
+// to be invoked. The updateID is a unique identifier for the update. If updateID is an empty string a UUID will be generated.
+// The update callbacks are used to handle the update. The args are the arguments to be passed to the update handler.
 func (e *TestWorkflowEnvironment) UpdateWorkflow(updateName, updateID string, uc UpdateCallbacks, args ...interface{}) {
 	e.impl.updateWorkflow(updateName, updateID, uc, args...)
 }
