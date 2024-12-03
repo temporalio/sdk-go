@@ -2933,6 +2933,9 @@ func (env *testWorkflowEnvironmentImpl) updateWorkflow(name string, id string, u
 	if err != nil {
 		panic(err)
 	}
+	if id == "" {
+		id = uuid.NewString()
+	}
 
 	if env.updateMap == nil {
 		env.updateMap = make(map[string]*updateResult)
