@@ -70,17 +70,6 @@ type (
 		// VersioningBehaviorPinned.
 		Deployment Deployment
 	}
-
-	// Deployment identifies a set of workers. This identifier combines the deployment series
-	// name with their Build ID.
-	// NOTE: Experimental
-	Deployment struct {
-		// Name of the deployment series. Different versions of the same worker service/application are
-		// linked together by sharing a series name.
-		SeriesName string
-		// Build ID for the worker's code and configuration version.
-		BuildId string
-	}
 )
 
 // Mapping WorkflowExecutionOptions field names to proto ones.
@@ -113,7 +102,7 @@ func workflowExecutionOptionsMaskToProto(mask []string) *fieldmaskpb.FieldMask {
 func workerDeploymentToProto(d Deployment) *deploymentpb.Deployment {
 	return &deploymentpb.Deployment{
 		SeriesName: d.SeriesName,
-		BuildId:    d.BuildId,
+		BuildId:    d.BuildID,
 	}
 }
 
@@ -136,7 +125,7 @@ func versioningOverrideFromProto(versioningOverride *workflowpb.VersioningOverri
 		Behavior: VersioningBehavior(versioningOverride.GetBehavior()),
 		Deployment: Deployment{
 			SeriesName: versioningOverride.GetDeployment().GetSeriesName(),
-			BuildId:    versioningOverride.GetDeployment().GetBuildId(),
+			BuildID:    versioningOverride.GetDeployment().GetBuildId(),
 		},
 	}
 }

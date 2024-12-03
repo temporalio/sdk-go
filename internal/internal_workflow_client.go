@@ -1298,6 +1298,13 @@ func (wc *WorkflowClient) ScheduleClient() ScheduleClient {
 	}
 }
 
+// DeploymentClient implements Client.DeploymentClient.
+func (wc *WorkflowClient) DeploymentClient() DeploymentClient {
+	return &deploymentClient{
+		workflowClient: wc,
+	}
+}
+
 // Close client and clean up underlying resources.
 func (wc *WorkflowClient) Close() {
 	// If there's a set of unclosed clients, we have to decrement it and then

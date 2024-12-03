@@ -61,7 +61,7 @@ func Test_WorkflowExecutionOptions_fromProtoResponse(t *testing.T) {
 					Behavior: VersioningBehaviorPinned,
 					Deployment: Deployment{
 						SeriesName: "my series",
-						BuildId:    "v1",
+						BuildID:    "v1",
 					},
 				},
 			},

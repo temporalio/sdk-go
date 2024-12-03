@@ -417,6 +417,9 @@ type (
 		// Schedule creates a new shedule client with the same gRPC connection as this client.
 		ScheduleClient() ScheduleClient
 
+		// DeploymentClient creates a new deployment client with the same gRPC connection as this client.
+		DeploymentClient() DeploymentClient
+
 		// Close client and clean up underlying resources.
 		Close()
 	}

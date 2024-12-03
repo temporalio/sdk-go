@@ -394,6 +394,11 @@ func (t *testSuiteClientForNexusOperations) WorkflowService() workflowservice.Wo
 	panic("not implemented in the test environment")
 }
 
+// DeploymentClient implements Client.
+func (t *testSuiteClientForNexusOperations) DeploymentClient() DeploymentClient {
+	panic("not implemented in the test environment")
+}
+
 // UpdateWorkflowExecutionOptions implements Client.
 func (t *testSuiteClientForNexusOperations) UpdateWorkflowExecutionOptions(ctx context.Context, options UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error) {
 	panic("not implemented in the test environment")
