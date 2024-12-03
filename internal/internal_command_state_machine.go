@@ -517,7 +517,7 @@ func (d stateMachineIllegalStatePanic) String() string {
 }
 
 func panicIllegalState(message, wfID string) {
-	assert.Unreachable("[SDK] Illegal state", map[string]any{"message": message, wfID: wfID})
+	assert.Unreachable("[SDK] Illegal state", map[string]any{"message": message, "workflow_id": wfID})
 	panic(stateMachineIllegalStatePanic{message: message})
 }
 
