@@ -59,6 +59,7 @@ var (
 		rePatternWorkflowID,
 		rePatternRunID,
 	))
+	eventReferenceType = string((&commonpb.Link_WorkflowEvent_EventReference{}).ProtoReflect().Descriptor().Name())
 )
 
 // ConvertLinkWorkflowEventToNexusLink converts a Link_WorkflowEvent type to Nexus Link.
@@ -128,7 +129,7 @@ func ConvertNexusLinkToLinkWorkflowEvent(link nexus.Link) (*commonpb.Link_Workfl
 	}
 
 	switch refType := link.URL.Query().Get(linkWorkflowEventReferenceTypeKey); refType {
-	case string((&commonpb.Link_WorkflowEvent_EventReference{}).ProtoReflect().Descriptor().Name()):
+	case eventReferenceType:
 		eventRef, err := convertURLQueryToLinkWorkflowEventEventReference(link.URL.Query())
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse link to Link_WorkflowEvent: %w", err)
@@ -148,11 +149,11 @@ func ConvertNexusLinkToLinkWorkflowEvent(link nexus.Link) (*commonpb.Link_Workfl
 
 func convertLinkWorkflowEventEventReferenceToURLQuery(eventRef *commonpb.Link_WorkflowEvent_EventReference) string {
 	values := url.Values{}
-	values.Set(linkWorkflowEventReferenceTypeKey, string(eventRef.ProtoReflect().Descriptor().Name()))
+	values.Set(linkWorkflowEventReferenceTypeKey, eventReferenceType)
 	if eventRef.GetEventId() > 0 {
 		values.Set(linkEventReferenceEventIDKey, strconv.FormatInt(eventRef.GetEventId(), 10))
 	}
-	values.Set(linkEventReferenceEventTypeKey, eventRef.GetEventType().String())
+	values.Set(linkEventReferenceEventTypeKey, enumspb.EventType_name[int32(eventRef.GetEventType())])
 	return values.Encode()
 }
 
