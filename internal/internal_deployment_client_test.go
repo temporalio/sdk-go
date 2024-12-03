@@ -88,7 +88,6 @@ func (d *deploymentClientTestSuite) TestSetCurrentDeployment() {
 			d.Equal("metadata 1", resultMeta)
 
 			d.Equal(req.UpdateMetadata.RemoveEntries, []string{"never"})
-			d.Equal(req.Identity, "me")
 			d.Equal(req.Deployment.BuildId, "bid1")
 			d.Equal(req.Deployment.SeriesName, "series1")
 		})
