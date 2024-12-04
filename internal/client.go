@@ -760,7 +760,7 @@ type (
 		Get(ctx context.Context) (WorkflowRun, error)
 	}
 
-	WithStartWorkflowOperationImpl struct {
+	withStartWorkflowOperationImpl struct {
 		input *ClientExecuteWorkflowInput
 		// flag to ensure the operation is only executed once
 		executed atomic.Bool
@@ -1061,7 +1061,7 @@ func DialCloudOperationsClient(ctx context.Context, options CloudOperationsClien
 	}, nil
 }
 
-func (op *WithStartWorkflowOperationImpl) Get(ctx context.Context) (WorkflowRun, error) {
+func (op *withStartWorkflowOperationImpl) Get(ctx context.Context) (WorkflowRun, error) {
 	select {
 	case <-op.doneCh:
 		return op.workflowRun, op.err
@@ -1073,14 +1073,14 @@ func (op *WithStartWorkflowOperationImpl) Get(ctx context.Context) (WorkflowRun,
 	}
 }
 
-func (op *WithStartWorkflowOperationImpl) markExecuted() error {
+func (op *withStartWorkflowOperationImpl) markExecuted() error {
 	if op.executed.Swap(true) {
 		return fmt.Errorf("was already executed")
 	}
 	return nil
 }
 
-func (op *WithStartWorkflowOperationImpl) set(workflowRun WorkflowRun, err error) {
+func (op *withStartWorkflowOperationImpl) set(workflowRun WorkflowRun, err error) {
 	op.workflowRun = workflowRun
 	op.err = err
 	close(op.doneCh)

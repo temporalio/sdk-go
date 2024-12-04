@@ -355,7 +355,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 }
 
 func (wc *WorkflowClient) NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) WithStartWorkflowOperation {
-	op := &WithStartWorkflowOperationImpl{doneCh: make(chan struct{})}
+	op := &withStartWorkflowOperationImpl{doneCh: make(chan struct{})}
 	if options.WorkflowIDConflictPolicy == enumspb.WORKFLOW_ID_CONFLICT_POLICY_UNSPECIFIED {
 		op.err = errors.New("WorkflowIDConflictPolicy must be set in StartWorkflowOptions for update-with-start")
 		return op
@@ -1190,7 +1190,7 @@ func (wc *WorkflowClient) UpdateWithStartWorkflow(
 	ctx context.Context,
 	options UpdateWithStartWorkflowOptions,
 ) (WorkflowUpdateHandle, error) {
-	startOp, ok := options.StartOperation.(*WithStartWorkflowOperationImpl)
+	startOp, ok := options.StartOperation.(*withStartWorkflowOperationImpl)
 	if !ok {
 		return nil, fmt.Errorf("%w: startOperation must be created by NewWithStartWorkflowOperation", errInvalidWithStartWorkflowOperation)
 	}
@@ -1739,7 +1739,7 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 	updateInput *ClientUpdateWorkflowInput,
 	startOperation WithStartWorkflowOperation,
 ) (WorkflowUpdateHandle, error) {
-	startOp, ok := startOperation.(*WithStartWorkflowOperationImpl)
+	startOp, ok := startOperation.(*withStartWorkflowOperationImpl)
 	if !ok {
 		return nil, fmt.Errorf("%w: startOperation must be created by NewWithStartWorkflowOperation", errInvalidWithStartWorkflowOperation)
 	}
