@@ -384,7 +384,7 @@ func (t *testSuiteClientForNexusOperations) UpdateWorkflow(ctx context.Context, 
 }
 
 // UpdateWithStartWorkflow implements Client.
-func (t *testSuiteClientForNexusOperations) UpdateWithStartWorkflow(ctx context.Context, options UpdateWorkflowOptions, startOperation WithStartWorkflowOperation) (WorkflowUpdateHandle, error) {
+func (t *testSuiteClientForNexusOperations) UpdateWithStartWorkflow(ctx context.Context, options UpdateWithStartWorkflowOptions) (WorkflowUpdateHandle, error) {
 	panic("unimplemented in the test environment")
 }
 

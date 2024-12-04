@@ -901,9 +901,9 @@ func (_m *Client) TerminateWorkflow(ctx context.Context, workflowID string, runI
 	return r0
 }
 
-// UpdateWithStartWorkflow provides a mock function with given fields: ctx, options, startOperation
-func (_m *Client) UpdateWithStartWorkflow(ctx context.Context, options client.UpdateWorkflowOptions, startOperation client.WithStartWorkflowOperation) (client.WorkflowUpdateHandle, error) {
-	ret := _m.Called(ctx, options, startOperation)
+// UpdateWithStartWorkflow provides a mock function with given fields: ctx, options
+func (_m *Client) UpdateWithStartWorkflow(ctx context.Context, options client.UpdateWithStartWorkflowOptions) (client.WorkflowUpdateHandle, error) {
+	ret := _m.Called(ctx, options)
 
 	if len(ret) == 0 {
 		panic("no return value specified for UpdateWithStartWorkflow")
@@ -911,19 +911,19 @@ func (_m *Client) UpdateWithStartWorkflow(ctx context.Context, options client.Up
 
 	var r0 client.WorkflowUpdateHandle
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, client.UpdateWorkflowOptions, client.WithStartWorkflowOperation) (client.WorkflowUpdateHandle, error)); ok {
-		return rf(ctx, options, startOperation)
+	if rf, ok := ret.Get(0).(func(context.Context, client.UpdateWithStartWorkflowOptions) (client.WorkflowUpdateHandle, error)); ok {
+		return rf(ctx, options)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, client.UpdateWorkflowOptions, client.WithStartWorkflowOperation) client.WorkflowUpdateHandle); ok {
-		r0 = rf(ctx, options, startOperation)
+	if rf, ok := ret.Get(0).(func(context.Context, client.UpdateWithStartWorkflowOptions) client.WorkflowUpdateHandle); ok {
+		r0 = rf(ctx, options)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(client.WorkflowUpdateHandle)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, client.UpdateWorkflowOptions, client.WithStartWorkflowOperation) error); ok {
-		r1 = rf(ctx, options, startOperation)
+	if rf, ok := ret.Get(1).(func(context.Context, client.UpdateWithStartWorkflowOptions) error); ok {
+		r1 = rf(ctx, options)
 	} else {
 		r1 = ret.Error(1)
 	}

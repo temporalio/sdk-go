@@ -134,7 +134,7 @@ type (
 		SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
 			options StartWorkflowOptions, workflow interface{}, workflowArgs ...interface{}) (WorkflowRun, error)
 
-		// NewWithStartWorkflowOperation returns a WithStartWorkflowOperation to perform Update-with-Start.
+		// NewWithStartWorkflowOperation returns a WithStartWorkflowOperation for use in UpdateWithStartWorkflow.
 		// NOTE: Experimental
 		NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) WithStartWorkflowOperation
 
@@ -397,9 +397,16 @@ type (
 		// NOTE: Experimental
 		UpdateWorkflow(ctx context.Context, options UpdateWorkflowOptions) (WorkflowUpdateHandle, error)
 
-		// UpdateWithStartWorkflow issues an update request to the specified workflow execution, starting the workflow if appropriate.
+		// UpdateWithStartWorkflow issues an update-with-start request. A
+		// WorkflowIDConflictPolicy must be set. If the specified workflow is
+		// not running, then a new workflow execution is started and the update
+		// is sent in the first workflow task. Alternatively if the specified
+		// workflow is running then, if the WorkflowIDConflictPolicy is
+		// USE_EXISTING, the update is issued against the specified workflow,
+		// and if the WorkflowIDConflictPolicy is FAIL, an error is returned.
+		//
 		// NOTE: Experimental
-		UpdateWithStartWorkflow(ctx context.Context, options UpdateWorkflowOptions, startOperation WithStartWorkflowOperation) (WorkflowUpdateHandle, error)
+		UpdateWithStartWorkflow(ctx context.Context, options UpdateWithStartWorkflowOptions) (WorkflowUpdateHandle, error)
 
 		// GetWorkflowUpdateHandle creates a handle to the referenced update
 		// which can be polled for an outcome. Note that runID is optional and
@@ -746,8 +753,8 @@ type (
 		links []*commonpb.Link
 	}
 
-	// WithStartWorkflowOperation defines how to start a workflow when using Update-With-Start.
-	// See NewWithStartWorkflowOperation for details.
+	// WithStartWorkflowOperation defines how to start a workflow when using UpdateWithStartWorkflow.
+	// See [NewWithStartWorkflowOperation] and [UpdateWithStartWorkflow].
 	// NOTE: Experimental
 	WithStartWorkflowOperation interface {
 		Get(ctx context.Context) (WorkflowRun, error)

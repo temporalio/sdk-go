@@ -357,7 +357,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 func (wc *WorkflowClient) NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) WithStartWorkflowOperation {
 	op := &WithStartWorkflowOperationImpl{doneCh: make(chan struct{})}
 	if options.WorkflowIDConflictPolicy == enumspb.WORKFLOW_ID_CONFLICT_POLICY_UNSPECIFIED {
-		op.err = errors.New("WorkflowIDConflictPolicy must be set in StartWorkflowOptions for Update-With-Start")
+		op.err = errors.New("WorkflowIDConflictPolicy must be set in StartWorkflowOptions for update-with-start")
 		return op
 	}
 	input, err := createStartWorkflowInput(options, workflow, args, wc.registry)
@@ -803,6 +803,14 @@ type UpdateWorkflowOptions struct {
 	FirstExecutionRunID string
 }
 
+// UpdateWithStartWorkflowOptions encapsulates the parameters for update-with-start.
+// See [UpdateWithStartWorkflow].
+// NOTE: Experimental
+type UpdateWithStartWorkflowOptions struct {
+	StartOperation WithStartWorkflowOperation
+	UpdateOptions  UpdateWorkflowOptions
+}
+
 // WorkflowUpdateHandle is a handle to a workflow execution update process. The
 // update may or may not have completed so an instance of this type functions
 // similar to a Future with respect to the outcome of the update. If the update
@@ -1180,12 +1188,11 @@ func (wc *WorkflowClient) UpdateWorkflow(
 
 func (wc *WorkflowClient) UpdateWithStartWorkflow(
 	ctx context.Context,
-	updateOptions UpdateWorkflowOptions,
-	startOperation WithStartWorkflowOperation,
+	options UpdateWithStartWorkflowOptions,
 ) (WorkflowUpdateHandle, error) {
-	startOp, ok := startOperation.(*WithStartWorkflowOperationImpl)
+	startOp, ok := options.StartOperation.(*WithStartWorkflowOperationImpl)
 	if !ok {
-		panic("startOperation must be created by NewWithStartWorkflowOperation")
+		return nil, errors.New("startOperation must be created by NewWithStartWorkflowOperation")
 	}
 	if startOp.err != nil {
 		return nil, startOp.err
@@ -1193,21 +1200,21 @@ func (wc *WorkflowClient) UpdateWithStartWorkflow(
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return nil, err
 	}
-	if updateOptions.RunID != "" {
+	if options.UpdateOptions.RunID != "" {
 		return nil, errors.New("invalid UpdateWorkflowOptions: RunID cannot be set for UpdateWithStartWorkflow because the workflow might not be running")
 	}
-	if updateOptions.FirstExecutionRunID != "" {
+	if options.UpdateOptions.FirstExecutionRunID != "" {
 		return nil, errors.New("invalid UpdateWorkflowOptions: FirstExecutionRunID cannot be set for UpdateWithStartWorkflow because the workflow might not be running")
 	}
 
-	updateInput, err := createUpdateWorkflowInput(updateOptions)
+	updateInput, err := createUpdateWorkflowInput(options.UpdateOptions)
 	if err != nil {
 		return nil, err
 	}
 
 	ctx = contextWithNewHeader(ctx)
 
-	return wc.interceptor.UpdateWithStartWorkflow(ctx, updateInput, startOperation)
+	return wc.interceptor.UpdateWithStartWorkflow(ctx, updateInput, startOp)
 }
 
 // CheckHealthRequest is a request for Client.CheckHealth.
