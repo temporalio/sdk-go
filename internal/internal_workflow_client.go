@@ -1743,13 +1743,13 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 	if !ok {
 		return nil, fmt.Errorf("%w: startOperation must be created by NewWithStartWorkflowOperation", errInvalidWithStartWorkflowOperation)
 	}
+	if startOp.err != nil {
+		return nil, fmt.Errorf("%w: %w", errInvalidWithStartWorkflowOperation, startOp.err)
+	}
 
 	// Create start request
 	if err := startOp.markExecuted(); err != nil {
 		return nil, fmt.Errorf("%w: %w", errInvalidWithStartWorkflowOperation, err)
-	}
-	if startOp.err != nil {
-		return nil, fmt.Errorf("%w: %w", errInvalidWithStartWorkflowOperation, startOp.err)
 	}
 	startReq, err := w.createStartWorkflowRequest(ctx, startOp.input)
 	if err != nil {
