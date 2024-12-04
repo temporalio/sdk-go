@@ -2536,14 +2536,18 @@ func (ts *IntegrationTestSuite) TestInterceptorStartWithSignal() {
 }
 
 func (ts *IntegrationTestSuite) TestOpenTelemetryTracing() {
-	ts.testOpenTelemetryTracing(true)
+	ts.testOpenTelemetryTracing(true, false)
+}
+
+func (ts *IntegrationTestSuite) TestOpenTelemetryTracingWithUpdateWithStart() {
+	ts.testOpenTelemetryTracing(true, true)
 }
 
 func (ts *IntegrationTestSuite) TestOpenTelemetryTracingWithoutMessages() {
-	ts.testOpenTelemetryTracing(false)
+	ts.testOpenTelemetryTracing(false, false)
 }
 
-func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool) {
+func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool, updateWithStart bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// Start a top-level span
@@ -2561,15 +2565,33 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool) {
 	ts.NoError(val.Get(&queryResp))
 	ts.Equal("query-response", queryResp)
 
-	// Update
-	handle, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
-		WorkflowID:   run.GetID(),
-		RunID:        run.GetRunID(),
-		UpdateName:   "workflow-update",
-		WaitForStage: client.WorkflowUpdateStageCompleted,
-	})
-	ts.NoError(err)
-	ts.NoError(handle.Get(ctx, nil))
+	if updateWithStart {
+		// UpdateWithStart
+		uwsStartOptions := ts.startWorkflowOptions(run.GetID())
+		uwsStartOptions.EnableEagerStart = false
+		uwsStartOptions.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING
+		startOp := ts.client.NewWithStartWorkflowOperation(uwsStartOptions, ts.workflows.SignalsQueriesAndUpdate, true, true)
+		updateHandle, err := ts.client.UpdateWithStartWorkflow(ctx, client.UpdateWithStartWorkflowOptions{
+			UpdateOptions: client.UpdateWorkflowOptions{
+				WorkflowID:   run.GetID(),
+				UpdateName:   "workflow-update",
+				WaitForStage: client.WorkflowUpdateStageCompleted,
+			},
+			StartOperation: startOp,
+		})
+		ts.NoError(err)
+		ts.NoError(updateHandle.Get(ctx, nil))
+	} else {
+		// Update
+		handle, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+			WorkflowID:   run.GetID(),
+			RunID:        run.GetRunID(),
+			UpdateName:   "workflow-update",
+			WaitForStage: client.WorkflowUpdateStageCompleted,
+		})
+		ts.NoError(err)
+		ts.NoError(handle.Get(ctx, nil))
+	}
 
 	// Finish signal
 	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish-signal", nil))
@@ -2578,6 +2600,11 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool) {
 	// Finish span and collect
 	rootSpan.End()
 	spans := ts.openTelemetrySpanRecorder.Ended()
+
+	updateOpName := "UpdateWorkflow"
+	if updateWithStart {
+		updateOpName = "UpdateWithStartWorkflow"
+	}
 
 	// Span builder
 	span := func(name string, children ...*interceptortest.SpanInfo) *interceptortest.SpanInfo {
@@ -2590,7 +2617,7 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool) {
 					strings.HasPrefix(child.Name, "HandleSignal:") ||
 					strings.HasPrefix(child.Name, "QueryWorkflow:") ||
 					strings.HasPrefix(child.Name, "HandleQuery:") ||
-					strings.HasPrefix(child.Name, "UpdateWorkflow:") ||
+					strings.HasPrefix(child.Name, fmt.Sprintf("%s:", updateOpName)) ||
 					strings.HasPrefix(child.Name, "ValidateUpdate:") ||
 					strings.HasPrefix(child.Name, "HandleUpdate:")
 				if !isMessage {
@@ -2658,7 +2685,7 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool) {
 		span("QueryWorkflow:workflow-query",
 			span("HandleQuery:workflow-query"),
 		),
-		span("UpdateWorkflow:workflow-update",
+		span(fmt.Sprintf("%s:workflow-update", updateOpName),
 			span("ValidateUpdate:workflow-update"),
 			span("HandleUpdate:workflow-update",
 				// Child workflow exec
