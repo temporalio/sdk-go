@@ -1192,7 +1192,7 @@ func (wc *WorkflowClient) UpdateWithStartWorkflow(
 ) (WorkflowUpdateHandle, error) {
 	startOp, ok := options.StartOperation.(*WithStartWorkflowOperationImpl)
 	if !ok {
-		return nil, errors.New("startOperation must be created by NewWithStartWorkflowOperation")
+		return nil, fmt.Errorf("%w: startOperation must be created by NewWithStartWorkflowOperation", errInvalidWithStartWorkflowOperation)
 	}
 	if startOp.err != nil {
 		return nil, startOp.err
@@ -1741,7 +1741,7 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 ) (WorkflowUpdateHandle, error) {
 	startOp, ok := startOperation.(*WithStartWorkflowOperationImpl)
 	if !ok {
-		panic("startOperation must be created by NewWithStartWorkflowOperation")
+		return nil, fmt.Errorf("%w: startOperation must be created by NewWithStartWorkflowOperation", errInvalidWithStartWorkflowOperation)
 	}
 
 	// Create start request
