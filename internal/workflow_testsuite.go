@@ -349,9 +349,14 @@ func (e *TestWorkflowEnvironment) SetContinuedExecutionRunID(rid string) {
 	e.impl.setContinuedExecutionRunID(rid)
 }
 
-// InOrderMockCalls declares that the given calls should occur in order.
+// InOrderMockCalls declares that the given calls should occur in order. Syntax sugar for NotBefore.
 func (e *TestWorkflowEnvironment) InOrderMockCalls(calls ...*MockCallWrapper) {
-	e.impl.inOrderMockCalls(calls...)
+	wrappedCalls := make([]*mock.Call, 0, len(calls))
+	for _, call := range calls {
+		wrappedCalls = append(wrappedCalls, call.call)
+	}
+
+	mock.InOrder(wrappedCalls...)
 }
 
 // OnActivity setup a mock call for activity. Parameter activity must be activity function (func) or activity name (string).
