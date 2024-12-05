@@ -1214,7 +1214,10 @@ func (wc *WorkflowClient) UpdateWithStartWorkflow(
 
 	ctx = contextWithNewHeader(ctx)
 
-	return wc.interceptor.UpdateWithStartWorkflow(ctx, updateInput, startOp)
+	return wc.interceptor.UpdateWithStartWorkflow(ctx, &ClientUpdateWithStartWorkflowInput{
+		UpdateInput:            updateInput,
+		StartWorkflowOperation: startOp,
+	})
 }
 
 // CheckHealthRequest is a request for Client.CheckHealth.
@@ -1736,10 +1739,9 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 
 func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 	ctx context.Context,
-	updateInput *ClientUpdateWorkflowInput,
-	startOperation WithStartWorkflowOperation,
+	in *ClientUpdateWithStartWorkflowInput,
 ) (WorkflowUpdateHandle, error) {
-	startOp, ok := startOperation.(*withStartWorkflowOperationImpl)
+	startOp, ok := in.StartWorkflowOperation.(*withStartWorkflowOperationImpl)
 	if !ok {
 		return nil, fmt.Errorf("%w: startOperation must be created by NewWithStartWorkflowOperation", errInvalidWithStartWorkflowOperation)
 	}
@@ -1757,7 +1759,7 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 	}
 
 	// Create update request
-	updateReq, err := w.createUpdateWorkflowRequest(ctx, updateInput)
+	updateReq, err := w.createUpdateWorkflowRequest(ctx, in.UpdateInput)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errInvalidWithStartWorkflowOperation, err)
 	}

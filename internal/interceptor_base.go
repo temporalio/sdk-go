@@ -487,10 +487,9 @@ func (c *ClientOutboundInterceptorBase) PollWorkflowUpdate(
 
 func (c *ClientOutboundInterceptorBase) UpdateWithStartWorkflow(
 	ctx context.Context,
-	in *ClientUpdateWorkflowInput,
-	startOperation WithStartWorkflowOperation,
+	in *ClientUpdateWithStartWorkflowInput,
 ) (WorkflowUpdateHandle, error) {
-	return c.Next.UpdateWithStartWorkflow(ctx, in, startOperation)
+	return c.Next.UpdateWithStartWorkflow(ctx, in)
 }
 
 // ExecuteWorkflow implements ClientOutboundInterceptor.ExecuteWorkflow.

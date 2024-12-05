@@ -381,18 +381,17 @@ func (t *tracingClientOutboundInterceptor) UpdateWorkflow(
 
 func (t *tracingClientOutboundInterceptor) UpdateWithStartWorkflow(
 	ctx context.Context,
-	in *ClientUpdateWorkflowInput,
-	startOperation client.WithStartWorkflowOperation,
+	in *ClientUpdateWithStartWorkflowInput,
 ) (client.WorkflowUpdateHandle, error) {
 	// Only add tracing if enabled
 	if t.root.options.DisableUpdateTracing {
-		return t.Next.UpdateWithStartWorkflow(ctx, in, startOperation)
+		return t.Next.UpdateWithStartWorkflow(ctx, in)
 	}
 	// Start span and write to header
 	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
 		Operation: "UpdateWithStartWorkflow",
-		Name:      in.UpdateName,
-		Tags:      map[string]string{workflowIDTagKey: in.WorkflowID, updateIDTagKey: in.UpdateID},
+		Name:      in.UpdateInput.UpdateName,
+		Tags:      map[string]string{workflowIDTagKey: in.UpdateInput.WorkflowID, updateIDTagKey: in.UpdateInput.UpdateID},
 		ToHeader:  true,
 		Time:      time.Now(),
 	})
@@ -402,7 +401,7 @@ func (t *tracingClientOutboundInterceptor) UpdateWithStartWorkflow(
 	var finishOpts TracerFinishSpanOptions
 	defer span.Finish(&finishOpts)
 
-	val, err := t.Next.UpdateWithStartWorkflow(ctx, in, startOperation)
+	val, err := t.Next.UpdateWithStartWorkflow(ctx, in)
 	finishOpts.Error = err
 	return val, err
 }

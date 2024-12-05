@@ -396,7 +396,7 @@ type ClientOutboundInterceptor interface {
 	// UpdateWithStartWorkflow intercepts client.Client.UpdateWithStartWorkflow.
 	//
 	// NOTE: Experimental
-	UpdateWithStartWorkflow(context.Context, *ClientUpdateWorkflowInput, WithStartWorkflowOperation) (WorkflowUpdateHandle, error)
+	UpdateWithStartWorkflow(context.Context, *ClientUpdateWithStartWorkflowInput) (WorkflowUpdateHandle, error)
 
 	// PollWorkflowUpdate requests the outcome of a specific update from the
 	// server.
@@ -419,6 +419,11 @@ type ClientUpdateWorkflowInput struct {
 	RunID               string
 	FirstExecutionRunID string
 	WaitForStage        WorkflowUpdateStage
+}
+
+type ClientUpdateWithStartWorkflowInput struct {
+	UpdateInput            *ClientUpdateWorkflowInput
+	StartWorkflowOperation WithStartWorkflowOperation
 }
 
 // ClientPollWorkflowUpdateInput is the input to
