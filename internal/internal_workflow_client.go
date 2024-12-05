@@ -508,7 +508,7 @@ func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 	// We do allow canceled error to be passed here
 	cancelAllowed := true
 	request := convertActivityResultToRespondRequest(wc.identity, taskToken,
-		data, err, wc.dataConverter, wc.failureConverter, wc.namespace, cancelAllowed, nil)
+		data, err, wc.dataConverter, wc.failureConverter, wc.namespace, cancelAllowed, nil, nil)
 	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
@@ -1057,6 +1057,36 @@ func (wc *WorkflowClient) GetWorkerTaskReachability(ctx context.Context, options
 	return converted, nil
 }
 
+// UpdateWorkflowExecutionOptions partially overrides the [WorkflowExecutionOptions] of an existing workflow execution,
+// and returns the new [WorkflowExecutionOptions] after applying the changes.
+// It is intended for building tools that can selectively apply ad-hoc workflow configuration changes.
+// NOTE: Experimental
+func (wc *WorkflowClient) UpdateWorkflowExecutionOptions(ctx context.Context, request UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error) {
+	if err := wc.ensureInitialized(ctx); err != nil {
+		return WorkflowExecutionOptions{}, err
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+
+	requestMsg := &workflowservice.UpdateWorkflowExecutionOptionsRequest{
+		Namespace: wc.namespace,
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: request.WorkflowId,
+			RunId:      request.RunId,
+		},
+		WorkflowExecutionOptions: workflowExecutionOptionsToProto(request.WorkflowExecutionOptions),
+		UpdateMask:               workflowExecutionOptionsMaskToProto(request.UpdatedFields),
+	}
+
+	resp, err := wc.workflowService.UpdateWorkflowExecutionOptions(grpcCtx, requestMsg)
+	if err != nil {
+		return WorkflowExecutionOptions{}, err
+	}
+
+	return workflowExecutionOptionsFromProtoUpdateResponse(resp), nil
+}
+
 // DescribeTaskQueueEnhanced returns information about the target task queue, broken down by Build Id:
 //   - List of pollers
 //   - Workflow Reachability status
@@ -1264,6 +1294,13 @@ func (wc *WorkflowClient) ensureInitialized(ctx context.Context) error {
 // ScheduleClient implements Client.ScheduleClient.
 func (wc *WorkflowClient) ScheduleClient() ScheduleClient {
 	return &scheduleClient{
+		workflowClient: wc,
+	}
+}
+
+// DeploymentClient implements [Client.DeploymentClient].
+func (wc *WorkflowClient) DeploymentClient() DeploymentClient {
+	return &deploymentClient{
 		workflowClient: wc,
 	}
 }
@@ -1595,6 +1632,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		Header:                   header,
 		CompletionCallbacks:      in.Options.callbacks,
 		Links:                    in.Options.links,
+		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
 	}
 
 	startRequest.UserMetadata, err = buildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
@@ -1899,6 +1937,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		WorkflowIdReusePolicy:    in.Options.WorkflowIDReusePolicy,
 		WorkflowIdConflictPolicy: in.Options.WorkflowIDConflictPolicy,
 		Header:                   header,
+		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
 	}
 
 	if in.Options.StartDelay != 0 {
