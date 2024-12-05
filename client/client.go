@@ -275,7 +275,7 @@ type (
 	UpdateWorkflowOptions = internal.UpdateWorkflowOptions
 
 	// UpdateWithStartWorkflowOptions encapsulates the parameters used by UpdateWithStartWorkflow.
-	// See [Client.UpdateWithStartWorkflow].
+	// See [Client.UpdateWithStartWorkflow] and [Client.NewWithStartWorkflowOperation].
 	// NOTE: Experimental
 	UpdateWithStartWorkflowOptions = internal.UpdateWithStartWorkflowOptions
 
@@ -846,13 +846,16 @@ type (
 		UpdateWorkflow(ctx context.Context, options UpdateWorkflowOptions) (WorkflowUpdateHandle, error)
 
 		// UpdateWithStartWorkflow issues an update-with-start request. A
-		// WorkflowIDConflictPolicy must be set. If the specified workflow is
-		// not running, then a new workflow execution is started and the update
-		// is sent in the first workflow task. Alternatively if the specified
-		// workflow is running then, if the WorkflowIDConflictPolicy is
-		// USE_EXISTING, the update is issued against the specified workflow,
-		// and if the WorkflowIDConflictPolicy is FAIL, an error is returned.
-		//
+		// WorkflowIDConflictPolicy must be set in the options. If the specified
+		// workflow execution is not running, then a new workflow execution is
+		// started and the update is sent in the first workflow task.
+		// Alternatively if the specified workflow execution is running then, if
+		// the WorkflowIDConflictPolicy is USE_EXISTING, the update is issued
+		// against the specified workflow, and if the WorkflowIDConflictPolicy
+		// is FAIL, an error is returned. The call will block until the update
+		// has reached the WaitForStage in the options. Note that this means
+		// that the call will not return successfully until the update has been
+		// delivered to the worker service.
 		// NOTE: Experimental
 		UpdateWithStartWorkflow(ctx context.Context, options UpdateWithStartWorkflowOptions) (WorkflowUpdateHandle, error)
 

@@ -803,8 +803,8 @@ type UpdateWorkflowOptions struct {
 	FirstExecutionRunID string
 }
 
-// UpdateWithStartWorkflowOptions encapsulates the parameters for update-with-start.
-// See [UpdateWithStartWorkflow].
+// UpdateWithStartWorkflowOptions encapsulates the parameters used by UpdateWithStartWorkflow.
+// See UpdateWithStartWorkflow and NewWithStartWorkflowOperation.
 // NOTE: Experimental
 type UpdateWithStartWorkflowOptions struct {
 	StartWorkflowOperation WithStartWorkflowOperation
