@@ -1176,7 +1176,7 @@ func (wc *WorkflowClient) UpdateWorkflow(
 		return nil, err
 	}
 
-	in, err := createUpdateWorkflowInput(options)
+	in, err := createUpdateWorkflowInput(&options)
 	if err != nil {
 		return nil, err
 	}
@@ -1207,15 +1207,10 @@ func (wc *WorkflowClient) UpdateWithStartWorkflow(
 		return nil, errors.New("invalid UpdateWorkflowOptions: FirstExecutionRunID cannot be set for UpdateWithStartWorkflow because the workflow might not be running")
 	}
 
-	updateInput, err := createUpdateWorkflowInput(options.UpdateOptions)
-	if err != nil {
-		return nil, err
-	}
-
 	ctx = contextWithNewHeader(ctx)
 
 	return wc.interceptor.UpdateWithStartWorkflow(ctx, &ClientUpdateWithStartWorkflowInput{
-		UpdateInput:            updateInput,
+		UpdateOptions:          &options.UpdateOptions,
 		StartWorkflowOperation: startOp,
 	})
 }
@@ -1758,8 +1753,13 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 		return nil, err
 	}
 
+	updateInput, err := createUpdateWorkflowInput(in.UpdateOptions)
+	if err != nil {
+		return nil, err
+	}
+
 	// Create update request
-	updateReq, err := w.createUpdateWorkflowRequest(ctx, in.UpdateInput)
+	updateReq, err := w.createUpdateWorkflowRequest(ctx, updateInput)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errInvalidWithStartWorkflowOperation, err)
 	}
@@ -2183,8 +2183,7 @@ func (w *workflowClientInterceptor) updateIsDurable(resp *workflowservice.Update
 		resp.GetStage() != enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_UNSPECIFIED
 }
 
-func createUpdateWorkflowInput(options UpdateWorkflowOptions) (*ClientUpdateWorkflowInput, error) {
-	// Default update ID
+func createUpdateWorkflowInput(options *UpdateWorkflowOptions) (*ClientUpdateWorkflowInput, error) {
 	updateID := options.UpdateID
 	if updateID == "" {
 		updateID = uuid.New()

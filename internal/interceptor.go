@@ -422,7 +422,7 @@ type ClientUpdateWorkflowInput struct {
 }
 
 type ClientUpdateWithStartWorkflowInput struct {
-	UpdateInput            *ClientUpdateWorkflowInput
+	UpdateOptions          *UpdateWorkflowOptions
 	StartWorkflowOperation WithStartWorkflowOperation
 }
 
