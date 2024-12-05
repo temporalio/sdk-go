@@ -39,6 +39,8 @@ type (
 
 	// VersioningRampByPercentage sends a proportion of the traffic to the target Build ID.
 	// WARNING: Worker versioning is currently experimental
+	//
+	// Exposed as: client:VersioningRampByPercentage
 	VersioningRampByPercentage struct {
 		// Percentage of traffic with a value in [0,100)
 		Percentage float32
@@ -47,6 +49,8 @@ type (
 	// VersioningAssignmentRule is a BuildID assigment rule for a task queue.
 	// Assignment rules only affect new workflows.
 	// WARNING: Worker versioning is currently experimental
+	//
+	// Exposed as: client:VersioningAssignmentRule
 	VersioningAssignmentRule struct {
 		// The BuildID of new workflows affected by this rule.
 		TargetBuildID string
@@ -57,6 +61,8 @@ type (
 	// VersioningAssignmentRuleWithTimestamp contains an assignment rule annotated
 	// by the server with its creation time.
 	// WARNING: Worker versioning is currently experimental
+	//
+	// Exposed as: client:VersioningAssignmentRuleWithTimestamp
 	VersioningAssignmentRuleWithTimestamp struct {
 		Rule VersioningAssignmentRule
 		// The time when the server created this rule.
@@ -66,6 +72,8 @@ type (
 	// VersioningAssignmentRule is a BuildID redirect rule for a task queue.
 	// It changes the behavior of currently running workflows and new ones.
 	// WARNING: Worker versioning is currently experimental
+	//
+	// Exposed as: client:VersioningRedirectRule
 	VersioningRedirectRule struct {
 		SourceBuildID string
 		TargetBuildID string
@@ -74,22 +82,28 @@ type (
 	// VersioningRedirectRuleWithTimestamp contains a redirect rule annotated
 	// by the server with its creation time.
 	// WARNING: Worker versioning is currently experimental
+	//
+	// Exposed as: client:VersioningRedirectRuleWithTimestamp
 	VersioningRedirectRuleWithTimestamp struct {
 		Rule VersioningRedirectRule
 		// The time when the server created this rule.
 		CreateTime time.Time
 	}
 
-	//VersioningConflictToken is a conflict token to serialize updates.
+	// VersioningConflictToken is a conflict token to serialize updates.
 	// An update with an old token fails with `serviceerror.FailedPrecondition`.
 	// The current token can be obtained with [GetWorkerVersioningRules], or returned by a successful [UpdateWorkerVersioningRules].
 	// WARNING: Worker versioning is currently experimental
+	//
+	// Exposed as: client:VersioningConflictToken
 	VersioningConflictToken struct {
 		token []byte
 	}
 
 	// UpdateWorkerVersioningRulesOptions is the input to [Client.UpdateWorkerVersioningRules].
 	// WARNING: Worker versioning is currently experimental
+	//
+	// Exposed as: client:UpdateWorkerVersioningRulesOptions
 	UpdateWorkerVersioningRulesOptions struct {
 		// The task queue to update the versioning rules of.
 		TaskQueue string
@@ -121,6 +135,8 @@ type (
 	// (index 0). If the given index is too larger the rule will be
 	// inserted at the end of the list.
 	// WARNING: Worker versioning is currently experimental
+	//
+	// Exposed as: client:VersioningOperationInsertAssignmentRule
 	VersioningOperationInsertAssignmentRule struct {
 		RuleIndex int32
 		Rule      VersioningAssignmentRule
@@ -132,6 +148,8 @@ type (
 	// the delete operation will be rejected. Set `force` to true to
 	// bypass this validation.
 	// WARNING: Worker versioning is currently experimental
+	//
+	// Exposed as: client:VersioningOperationReplaceAssignmentRule
 	VersioningOperationReplaceAssignmentRule struct {
 		RuleIndex int32
 		Rule      VersioningAssignmentRule
@@ -144,6 +162,8 @@ type (
 	// the delete operation will be rejected. Set `force` to true to
 	// bypass this validation.
 	// WARNING: Worker versioning is currently experimental
+	//
+	// Exposed as: client:VersioningOperationDeleteAssignmentRule
 	VersioningOperationDeleteAssignmentRule struct {
 		RuleIndex int32
 		Force     bool
@@ -153,6 +173,8 @@ type (
 	// that adds the rule to the list of redirect rules for this Task Queue. There
 	// can be at most one redirect rule for each distinct Source BuildID.
 	// WARNING: Worker versioning is currently experimental
+	//
+	// Exposed as: client:VersioningOperationAddRedirectRule
 	VersioningOperationAddRedirectRule struct {
 		Rule VersioningRedirectRule
 	}
@@ -160,6 +182,8 @@ type (
 	// VersioningOperationReplaceRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that replaces the routing rule with the given source BuildID.
 	// WARNING: Worker versioning is currently experimental
+	//
+	// Exposed as: client:VersioningOperationReplaceRedirectRule
 	VersioningOperationReplaceRedirectRule struct {
 		Rule VersioningRedirectRule
 	}
@@ -167,6 +191,8 @@ type (
 	// VersioningOperationDeleteRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that deletes the routing rule with the given source Build ID.
 	// WARNING: Worker versioning is currently experimental
+	//
+	// Exposed as: client:VersioningOperationDeleteRedirectRule
 	VersioningOperationDeleteRedirectRule struct {
 		SourceBuildID string
 	}
@@ -185,6 +211,8 @@ type (
 	// pollers have been seen recently for this Build ID. Use the `force`
 	// option to disable this validation.
 	// WARNING: Worker versioning is currently experimental
+	//
+	// Exposed as: client:VersioningOperationCommitBuildID
 	VersioningOperationCommitBuildID struct {
 		TargetBuildID string
 		Force         bool
@@ -271,6 +299,8 @@ func (uw *UpdateWorkerVersioningRulesOptions) validateAndConvertToProto(namespac
 
 // GetWorkerVersioningOptions is the input to [Client.GetWorkerVersioningRules].
 // WARNING: Worker versioning is currently experimental
+//
+// Exposed as: client:GetWorkerVersioningOptions
 type GetWorkerVersioningOptions struct {
 	// The task queue to get the versioning rules from.
 	TaskQueue string
@@ -294,6 +324,8 @@ func (gw *GetWorkerVersioningOptions) validateAndConvertToProto(namespace string
 
 // WorkerVersioningRules is the response for [Client.GetWorkerVersioningRules].
 // WARNING: Worker versioning is currently experimental
+//
+// Exposed as: client:WorkerVersioningRules
 type WorkerVersioningRules struct {
 	AssignmentRules []*VersioningAssignmentRuleWithTimestamp
 	RedirectRules   []*VersioningRedirectRuleWithTimestamp

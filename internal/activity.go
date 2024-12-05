@@ -39,11 +39,15 @@ import (
 
 type (
 	// ActivityType identifies an activity type.
+	//
+	// Exposed as: activity:Type
 	ActivityType struct {
 		Name string
 	}
 
 	// ActivityInfo contains information about a currently executing activity.
+	//
+	// Exposed as: activity:Info
 	ActivityInfo struct {
 		TaskToken         []byte
 		WorkflowType      *WorkflowType
@@ -61,6 +65,8 @@ type (
 	}
 
 	// RegisterActivityOptions consists of options for registering an activity.
+	//
+	// Exposed as: activity:RegisterOptions
 	RegisterActivityOptions struct {
 		// When an activity is a function the name is an actual activity type name.
 		// When an activity is part of a structure then each member of the structure becomes an activity with
@@ -81,6 +87,8 @@ type (
 	// ActivityOptions stores all activity-specific parameters that will be stored inside of a context.
 	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 	// subjected to change in the future.
+	//
+	// Exposed as: workflow:ActivityOptions
 	ActivityOptions struct {
 		// TaskQueue - Name of the task queue that the activity needs to be scheduled on.
 		// Optional: The default task queue with the same name as the workflow task queue.
@@ -88,7 +96,9 @@ type (
 
 		// ScheduleToCloseTimeout - Total time that a workflow is willing to wait for an Activity to complete.
 		// ScheduleToCloseTimeout limits the total time of an Activity's execution including retries
-		// 		(use StartToCloseTimeout to limit the time of a single attempt).
+		//
+		//	(use StartToCloseTimeout to limit the time of a single attempt).
+		//
 		// The zero value of this uses default value.
 		// Either this option or StartToCloseTimeout is required: Defaults to unlimited.
 		ScheduleToCloseTimeout time.Duration
@@ -160,6 +170,8 @@ type (
 	}
 
 	// LocalActivityOptions stores local activity specific parameters that will be stored inside of a context.
+	//
+	// Exposed as: workflow:LocalActivityOptions
 	LocalActivityOptions struct {
 		// ScheduleToCloseTimeout - The end to end timeout for the local activity, including retries.
 		// At least one of ScheduleToCloseTimeout or StartToCloseTimeout is required.
@@ -179,16 +191,22 @@ type (
 )
 
 // GetActivityInfo returns information about the currently executing activity.
+//
+// Exposed as: activity:GetInfo
 func GetActivityInfo(ctx context.Context) ActivityInfo {
 	return getActivityOutboundInterceptor(ctx).GetInfo(ctx)
 }
 
 // HasHeartbeatDetails checks if there are heartbeat details from last attempt.
+//
+// Exposed as: activity:HasHeartbeatDetails
 func HasHeartbeatDetails(ctx context.Context) bool {
 	return getActivityOutboundInterceptor(ctx).HasHeartbeatDetails(ctx)
 }
 
 // IsActivity checks if the context is an activity context from a normal or local activity.
+//
+// Exposed as: activity:IsActivity
 func IsActivity(ctx context.Context) bool {
 	a := ctx.Value(activityInterceptorContextKey)
 	return a != nil
@@ -202,16 +220,22 @@ func IsActivity(ctx context.Context) bool {
 //
 // Note: Values should not be reused for extraction here because merging on top
 // of existing values may result in unexpected behavior similar to json.Unmarshal.
+//
+// Exposed as: activity:GetHeartbeatDetails
 func GetHeartbeatDetails(ctx context.Context, d ...interface{}) error {
 	return getActivityOutboundInterceptor(ctx).GetHeartbeatDetails(ctx, d...)
 }
 
 // GetActivityLogger returns a logger that can be used in the activity.
+//
+// Exposed as: activity:GetLogger
 func GetActivityLogger(ctx context.Context) log.Logger {
 	return getActivityOutboundInterceptor(ctx).GetLogger(ctx)
 }
 
 // GetActivityMetricsHandler returns a metrics handler that can be used in the activity.
+//
+// Exposed as: activity:GetMetricsHandler
 func GetActivityMetricsHandler(ctx context.Context) metrics.Handler {
 	return getActivityOutboundInterceptor(ctx).GetMetricsHandler(ctx)
 }
@@ -220,6 +244,8 @@ func GetActivityMetricsHandler(ctx context.Context) metrics.Handler {
 // When the worker is stopping, it will close this channel and wait until the worker stop timeout finishes. After the timeout
 // hits, the worker will cancel the activity context and then exit. The timeout can be defined by worker option: WorkerStopTimeout.
 // Use this channel to handle a graceful activity exit when the activity worker stops.
+//
+// Exposed as: activity:GetWorkerStopChannel
 func GetWorkerStopChannel(ctx context.Context) <-chan struct{} {
 	return getActivityOutboundInterceptor(ctx).GetWorkerStopChannel(ctx)
 }
@@ -234,6 +260,8 @@ func GetWorkerStopChannel(ctx context.Context) <-chan struct{} {
 //
 // details - The details that you provided here can be seen in the workflow when it receives TimeoutError. You
 // can check error TimeoutType()/Details().
+//
+// Exposed as: activity:RecordHeartbeat
 func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 	getActivityOutboundInterceptor(ctx).RecordHeartbeat(ctx, details...)
 }

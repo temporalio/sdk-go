@@ -38,11 +38,15 @@ import (
 var defaultFailureConverter = NewDefaultFailureConverter(DefaultFailureConverterOptions{})
 
 // GetDefaultFailureConverter returns the default failure converter used by Temporal.
+//
+// Exposed as: temporal:GetDefaultFailureConverter
 func GetDefaultFailureConverter() converter.FailureConverter {
 	return defaultFailureConverter
 }
 
 // DefaultFailureConverterOptions are optional parameters for DefaultFailureConverter creation.
+//
+// Exposed as: temporal:DefaultFailureConverterOptions
 type DefaultFailureConverterOptions struct {
 	// Optional: Sets DataConverter to customize serialization/deserialization of fields.
 	// default: Default data converter
@@ -54,12 +58,16 @@ type DefaultFailureConverterOptions struct {
 }
 
 // DefaultFailureConverter seralizes errors with the option to encode common parameters under Failure.EncodedAttributes
+//
+// Exposed as: temporal:DefaultFailureConverter
 type DefaultFailureConverter struct {
 	dataConverter          converter.DataConverter
 	encodeCommonAttributes bool
 }
 
 // NewDefaultFailureConverter creates new instance of DefaultFailureConverter.
+//
+// Exposed as: temporal:NewDefaultFailureConverter
 func NewDefaultFailureConverter(opt DefaultFailureConverterOptions) *DefaultFailureConverter {
 	if opt.DataConverter == nil {
 		opt.DataConverter = converter.GetDefaultDataConverter()
@@ -163,10 +171,10 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 	case *NexusOperationError:
 		failureInfo := &failurepb.NexusOperationFailureInfo{
 			ScheduledEventId: err.ScheduledEventID,
-			Endpoint: err.Endpoint,
-			Service: err.Service,
-			Operation: err.Operation,
-			OperationId: err.OperationID,
+			Endpoint:         err.Endpoint,
+			Service:          err.Service,
+			Operation:        err.Operation,
+			OperationId:      err.OperationID,
 		}
 		failure.FailureInfo = &failurepb.Failure_NexusOperationExecutionFailureInfo{NexusOperationExecutionFailureInfo: failureInfo}
 	default: // All unknown errors are considered to be retryable ApplicationFailureInfo.

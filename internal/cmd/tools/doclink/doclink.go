@@ -89,7 +89,7 @@ func run() error {
 
 			res, err := processPublic(cfg, file)
 			if err != nil {
-				return fmt.Errorf("error while parsing public files: %v\n", err)
+				return fmt.Errorf("error while parsing public files: %v", err)
 			}
 
 			if len(res) > 0 {
@@ -107,7 +107,7 @@ func run() error {
 				} else {
 					for k, v := range res {
 						if _, exists := packageMap[k]; exists {
-							return fmt.Errorf("Collision detected for package '%s': key '%s' exists in both maps (%s and %s)\n", packageName, k, packageMap[k], v)
+							return fmt.Errorf("collision detected for package '%s': key '%s' exists in both maps (%s and %s)", packageName, k, packageMap[k], v)
 						}
 						packageMap[k] = v
 					}
@@ -118,7 +118,7 @@ func run() error {
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("Error walking the path %s: %v\n", cfg.rootDir, err)
+		return fmt.Errorf("error walking the path %s: %v", cfg.rootDir, err)
 	}
 
 	// Go through internal files and match the definitions of private/public pairings
@@ -146,7 +146,7 @@ func run() error {
 
 			err = processInternal(cfg, file, publicToInternal)
 			if err != nil {
-				return fmt.Errorf("error while parsing internal files: %v\n", err)
+				return fmt.Errorf("error while parsing internal files: %v", err)
 			}
 		}
 		return nil
@@ -366,11 +366,8 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 		line := strings.TrimSpace(scanner.Text())
 		if isValidDefinition(line, &inGroup, &inStruct) {
 			for packageName, pair := range pairs {
-				var entriesToDelete []string
 				for public, private := range pair {
-					if strings.HasPrefix(line, exposedAs) {
-						exposedLinks += strings.TrimPrefix(line, exposedAs)
-					} else if isValidDefinitionWithMatch(line, private, inGroup, inStruct) {
+					if isValidDefinitionWithMatch(line, private, inGroup, inStruct) {
 						missingDoc := true
 						if exposedLinks != "" {
 							if strings.Contains(exposedLinks, packageName+":"+public) {
@@ -386,7 +383,6 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 								missing = true
 								fmt.Printf("Missing doc in %s for internal:%s to %s:%s\n", file.Name(), private, packageName, public)
 							}
-							entriesToDelete = append(entriesToDelete, public)
 						}
 					}
 				}
@@ -395,6 +391,8 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 				newFile += "//\n" + exposedAs + strings.TrimSuffix(exposedLinks, ", ") + "\n"
 				exposedLinks = ""
 			}
+		} else if strings.HasPrefix(line, exposedAs) {
+			exposedLinks = strings.TrimPrefix(line, exposedAs)
 		}
 		newFile += line + "\n"
 
@@ -403,24 +401,24 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 	if changesMade {
 		absPath, err := filepath.Abs(file.Name())
 		if err != nil {
-			return fmt.Errorf("Error getting absolute path: %v\n", err)
+			return fmt.Errorf("error getting absolute path: %v", err)
 		}
 		tempFilePath := absPath + ".tmp"
 
 		formattedCode, err := format.Source([]byte(newFile))
 		//fmt.Println("[formattedCode]", string(formattedCode))
 		if err != nil {
-			return fmt.Errorf("Error formatting Go code: %v\n", err)
+			return fmt.Errorf("error formatting Go code: %v", err)
 
 		}
 		err = os.WriteFile(tempFilePath, formattedCode, 0644)
 		if err != nil {
-			return fmt.Errorf("Error writing to file: %v\n", err)
+			return fmt.Errorf("error writing to file: %v", err)
 
 		}
 		err = os.Rename(tempFilePath, absPath)
 		if err != nil {
-			return fmt.Errorf("Error renaming file: %v\n", err)
+			return fmt.Errorf("error renaming file: %v", err)
 		}
 	}
 

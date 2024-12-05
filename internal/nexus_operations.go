@@ -422,4 +422,5 @@ func (t *testEnvWorkflowRunForNexusOperations) GetWithOptions(ctx context.Contex
 	panic("not implemented in the test environment")
 }
 
+// Exposed as: client:WorkflowRun
 var _ WorkflowRun = &testEnvWorkflowRunForNexusOperations{}

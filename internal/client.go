@@ -48,14 +48,20 @@ import (
 
 const (
 	// DefaultNamespace is the namespace name which is used if not passed with options.
+	//
+	// Exposed as: client:DefaultNamespace
 	DefaultNamespace = "default"
 
 	// QueryTypeStackTrace is the build in query type for Client.QueryWorkflow() call. Use this query type to get the call
 	// stack of the workflow. The result will be a string encoded in the EncodedValue.
+	//
+	// Exposed as: client:QueryTypeStackTrace
 	QueryTypeStackTrace string = "__stack_trace"
 
 	// QueryTypeOpenSessions is the build in query type for Client.QueryWorkflow() call. Use this query type to get all open
 	// sessions in the workflow. The result will be a list of SessionInfo encoded in the EncodedValue.
+	//
+	// Exposed as: client:QueryTypeOpenSessions
 	QueryTypeOpenSessions string = "__open_sessions"
 
 	// QueryTypeWorkflowMetadata is the query name for the workflow metadata.
@@ -69,24 +75,27 @@ type (
 		// ExecuteWorkflow starts a workflow execution and return a WorkflowRun instance and error
 		// The user can use this to start using a function or workflow type name.
 		// Either by
-		//     ExecuteWorkflow(ctx, options, "workflowTypeName", arg1, arg2, arg3)
-		//     or
-		//     ExecuteWorkflow(ctx, options, workflowExecuteFn, arg1, arg2, arg3)
+		//
+		//	ExecuteWorkflow(ctx, options, "workflowTypeName", arg1, arg2, arg3)
+		//	or
+		//	ExecuteWorkflow(ctx, options, workflowExecuteFn, arg1, arg2, arg3)
+		//
 		// The errors it can return:
-		//  - serviceerror.NamespaceNotFound, if namespace does not exist
-		//  - serviceerror.InvalidArgument
-		//  - serviceerror.Internal
-		//  - serviceerror.Unavailable
+		//   - serviceerror.NamespaceNotFound, if namespace does not exist
+		//   - serviceerror.InvalidArgument
+		//   - serviceerror.Internal
+		//   - serviceerror.Unavailable
 		//
 		// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 		// subjected to change in the future.
 		//
 		// WorkflowRun has three methods:
-		//  - GetID() string: which return workflow ID (which is same as StartWorkflowOptions.ID if provided)
-		//  - GetRunID() string: which return the first started workflow run ID (please see below)
-		//  - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
-		//    execution result to valuePtr, if workflow execution is a success, or return corresponding
-		//    error. This is a blocking API.
+		//   - GetID() string: which return workflow ID (which is same as StartWorkflowOptions.ID if provided)
+		//   - GetRunID() string: which return the first started workflow run ID (please see below)
+		//   - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
+		//     execution result to valuePtr, if workflow execution is a success, or return corresponding
+		//     error. This is a blocking API.
+		//
 		// NOTE: if the started workflow return ContinueAsNewError during the workflow execution, the
 		// return result of GetRunID() will be the started workflow run ID, not the new run ID caused by ContinueAsNewError,
 		// however, Get(ctx context.Context, valuePtr interface{}) will return result from the run which did not return ContinueAsNewError.
@@ -101,11 +110,12 @@ type (
 		// - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
 		//
 		// WorkflowRun has three methods:
-		//  - GetID() string: which return workflow ID (which is same as StartWorkflowOptions.ID if provided)
-		//  - GetRunID() string: which return the first started workflow run ID (please see below)
-		//  - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
-		//    execution result to valuePtr, if workflow execution is a success, or return corresponding
-		//    error. This is a blocking API.
+		//   - GetID() string: which return workflow ID (which is same as StartWorkflowOptions.ID if provided)
+		//   - GetRunID() string: which return the first started workflow run ID (please see below)
+		//   - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
+		//     execution result to valuePtr, if workflow execution is a success, or return corresponding
+		//     error. This is a blocking API.
+		//
 		// NOTE: if the retrieved workflow returned ContinueAsNewError during the workflow execution, the
 		// return result of GetRunID() will be the retrieved workflow run ID, not the new run ID caused by ContinueAsNewError,
 		// however, Get(ctx context.Context, valuePtr interface{}) will return result from the run which did not return ContinueAsNewError.
@@ -116,9 +126,9 @@ type (
 		// - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
 		// - signalName name to identify the signal.
 		// The errors it can return:
-		//  - serviceerror.NotFound
-		//  - serviceerror.Internal
-		//  - serviceerror.Unavailable
+		//   - serviceerror.NotFound
+		//   - serviceerror.Internal
+		//   - serviceerror.Unavailable
 		SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error
 
 		// SignalWithStartWorkflow sends a signal to a running workflow.
@@ -128,10 +138,10 @@ type (
 		// - the workflowID parameter is used instead of options.ID. If the latter is present, it must match the workflowID.
 		// Note: options.WorkflowIDReusePolicy is default to AllowDuplicate.
 		// The errors it can return:
-		//  - serviceerror.NotFound
-		//  - serviceerror.InvalidArgument
-		//  - serviceerror.Internal
-		//  - serviceerror.Unavailable
+		//   - serviceerror.NotFound
+		//   - serviceerror.InvalidArgument
+		//   - serviceerror.Internal
+		//   - serviceerror.Unavailable
 		SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
 			options StartWorkflowOptions, workflow interface{}, workflowArgs ...interface{}) (WorkflowRun, error)
 
@@ -139,10 +149,10 @@ type (
 		// - workflow ID of the workflow.
 		// - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
 		// The errors it can return:
-		//  - serviceerror.NotFound
-		//  - serviceerror.InvalidArgument
-		//  - serviceerror.Internal
-		//  - serviceerror.Unavailable
+		//   - serviceerror.NotFound
+		//   - serviceerror.InvalidArgument
+		//   - serviceerror.Internal
+		//   - serviceerror.Unavailable
 		CancelWorkflow(ctx context.Context, workflowID string, runID string) error
 
 		// TerminateWorkflow terminates a workflow execution.
@@ -150,30 +160,32 @@ type (
 		// - workflow ID of the workflow.
 		// - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
 		// The errors it can return:
-		//  - serviceerror.NotFound
-		//  - serviceerror.InvalidArgument
-		//  - serviceerror.Internal
-		//  - serviceerror.Unavailable
+		//   - serviceerror.NotFound
+		//   - serviceerror.InvalidArgument
+		//   - serviceerror.Internal
+		//   - serviceerror.Unavailable
 		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error
 
 		// GetWorkflowHistory gets history events of a particular workflow
-		// - workflow ID of the workflow.
-		// - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
-		// - whether use long poll for tracking new events: when the workflow is running, there can be new events generated during iteration
-		//    of HistoryEventIterator, if isLongPoll == true, then iterator will do long poll, tracking new history event, i.e. the iteration
-		//   will not be finished until workflow is finished; if isLongPoll == false, then iterator will only return current history events.
-		// - whether return all history events or just the last event, which contains the workflow execution end result
+		//   - workflow ID of the workflow.
+		//   - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
+		//   - whether use long poll for tracking new events: when the workflow is running, there can be new events generated during iteration
+		//     of HistoryEventIterator, if isLongPoll == true, then iterator will do long poll, tracking new history event, i.e. the iteration
+		//     will not be finished until workflow is finished; if isLongPoll == false, then iterator will only return current history events.
+		//   - whether return all history events or just the last event, which contains the workflow execution end result
+		//
 		// Example:-
-		//  To iterate all events,
-		//    iter := GetWorkflowHistory(ctx, workflowID, runID, isLongPoll, filterType)
-		//    events := []*shared.HistoryEvent{}
-		//    for iter.HasNext() {
-		//      event, err := iter.Next()
-		//      if err != nil {
-		//        return err
-		//      }
-		//      events = append(events, event)
-		//    }
+		//
+		//	To iterate all events,
+		//	  iter := GetWorkflowHistory(ctx, workflowID, runID, isLongPoll, filterType)
+		//	  events := []*shared.HistoryEvent{}
+		//	  for iter.HasNext() {
+		//	    event, err := iter.Next()
+		//	    if err != nil {
+		//	      return err
+		//	    }
+		//	    events = append(events, event)
+		//	  }
 		GetWorkflowHistory(ctx context.Context, workflowID string, runID string, isLongPoll bool, filterType enumspb.HistoryEventFilterType) HistoryEventIterator
 
 		// CompleteActivity reports activity completed.
@@ -184,10 +196,12 @@ type (
 		// activity task failed event will be reported.
 		// An activity implementation should use GetActivityInfo(ctx).TaskToken function to get task token to use for completion.
 		// Example:-
-		//  To complete with a result.
-		//    CompleteActivity(token, "Done", nil)
-		//  To fail the activity with an error.
-		//      CompleteActivity(token, nil, temporal.NewApplicationError("reason", details)
+		//
+		//	To complete with a result.
+		//	  CompleteActivity(token, "Done", nil)
+		//	To fail the activity with an error.
+		//	    CompleteActivity(token, nil, temporal.NewApplicationError("reason", details)
+		//
 		// The activity can fail with below errors ApplicationError, TimeoutError, CanceledError.
 		CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error
 
@@ -201,55 +215,56 @@ type (
 		// An activity implementation should use activityID provided in ActivityOption to use for completion.
 		// namespace name, workflowID, activityID are required, runID is optional.
 		// The errors it can return:
-		//  - ApplicationError
-		//  - TimeoutError
-		//  - CanceledError
+		//   - ApplicationError
+		//   - TimeoutError
+		//   - CanceledError
 		CompleteActivityByID(ctx context.Context, namespace, workflowID, runID, activityID string, result interface{}, err error) error
 
 		// RecordActivityHeartbeat records heartbeat for an activity.
 		// details - is the progress you want to record along with heart beat for this activity.
 		// The errors it can return:
-		//  - serviceerror.NotFound
-		//  - serviceerror.Internal
-		//  - serviceerror.Unavailable
+		//   - serviceerror.NotFound
+		//   - serviceerror.Internal
+		//   - serviceerror.Unavailable
 		RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...interface{}) error
 
 		// RecordActivityHeartbeatByID records heartbeat for an activity.
 		// details - is the progress you want to record along with heart beat for this activity.
 		// The errors it can return:
-		//  - serviceerror.NotFound
-		//  - serviceerror.Internal
-		//  - serviceerror.Unavailable
+		//   - serviceerror.NotFound
+		//   - serviceerror.Internal
+		//   - serviceerror.Unavailable
 		RecordActivityHeartbeatByID(ctx context.Context, namespace, workflowID, runID, activityID string, details ...interface{}) error
 
 		// ListClosedWorkflow gets closed workflow executions based on request filters
 		// The errors it can return:
-		//  - serviceerror.InvalidArgument
-		//  - serviceerror.Internal
-		//  - serviceerror.Unavailable
-		//  - serviceerror.NamespaceNotFound
+		//   - serviceerror.InvalidArgument
+		//   - serviceerror.Internal
+		//   - serviceerror.Unavailable
+		//   - serviceerror.NamespaceNotFound
 		ListClosedWorkflow(ctx context.Context, request *workflowservice.ListClosedWorkflowExecutionsRequest) (*workflowservice.ListClosedWorkflowExecutionsResponse, error)
 
 		// ListOpenWorkflow gets open workflow executions based on request filters
 		// The errors it can return:
-		//  - serviceerror.InvalidArgument
-		//  - serviceerror.Internal
-		//  - serviceerror.Unavailable
-		//  - serviceerror.NamespaceNotFound
+		//   - serviceerror.InvalidArgument
+		//   - serviceerror.Internal
+		//   - serviceerror.Unavailable
+		//   - serviceerror.NamespaceNotFound
 		ListOpenWorkflow(ctx context.Context, request *workflowservice.ListOpenWorkflowExecutionsRequest) (*workflowservice.ListOpenWorkflowExecutionsResponse, error)
 
 		// ListWorkflow gets workflow executions based on query.The query is basically the SQL WHERE clause,
 		// examples:
-		//  - "(WorkflowID = 'wid1' or (WorkflowType = 'type2' and WorkflowID = 'wid2'))".
-		//  - "CloseTime between '2019-08-27T15:04:05+00:00' and '2019-08-28T15:04:05+00:00'".
-		//  - to list only open workflow use "CloseTime is null"
+		//   - "(WorkflowID = 'wid1' or (WorkflowType = 'type2' and WorkflowID = 'wid2'))".
+		//   - "CloseTime between '2019-08-27T15:04:05+00:00' and '2019-08-28T15:04:05+00:00'".
+		//   - to list only open workflow use "CloseTime is null"
+		//
 		// Retrieved workflow executions are sorted by StartTime in descending order when list open workflow,
 		// and sorted by CloseTime in descending order for other queries.
 		// For supported operations on different server versions see [Visibility].
 		// The errors it can return:
-		//  - serviceerror.InvalidArgument
-		//  - serviceerror.Internal
-		//  - serviceerror.Unavailable
+		//   - serviceerror.InvalidArgument
+		//   - serviceerror.Internal
+		//   - serviceerror.Unavailable
 		//
 		// [Visibility]: https://docs.temporal.io/visibility
 		ListWorkflow(ctx context.Context, request *workflowservice.ListWorkflowExecutionsRequest) (*workflowservice.ListWorkflowExecutionsResponse, error)
@@ -259,9 +274,9 @@ type (
 		// However, different visibility archivers have different limitations on the query. Please check the documentation of the visibility archiver used
 		// by your namespace to see what kind of queries are accept and whether retrieved workflow executions are ordered or not.
 		// The errors it can return:
-		//  - serviceerror.InvalidArgument
-		//  - serviceerror.Internal
-		//  - serviceerror.Unavailable
+		//   - serviceerror.InvalidArgument
+		//   - serviceerror.Internal
+		//   - serviceerror.Unavailable
 		ListArchivedWorkflow(ctx context.Context, request *workflowservice.ListArchivedWorkflowExecutionsRequest) (*workflowservice.ListArchivedWorkflowExecutionsResponse, error)
 
 		// ScanWorkflow gets workflow executions based on query. The query is basically the SQL WHERE clause
@@ -271,9 +286,10 @@ type (
 		// when retrieving millions of workflows.
 		// For supported operations on different server versions see [Visibility].
 		// The errors it can return:
-		//  - serviceerror.InvalidArgument
-		//  - serviceerror.Internal
-		//  - serviceerror.Unavailable
+		//   - serviceerror.InvalidArgument
+		//   - serviceerror.Internal
+		//   - serviceerror.Unavailable
+		//
 		// [Visibility]: https://docs.temporal.io/visibility
 		ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error)
 
@@ -281,9 +297,9 @@ type (
 		// (see ListWorkflow for query examples).
 		// For supported operations on different server versions see [Visibility].
 		// The errors it can return:
-		//  - serviceerror.InvalidArgument
-		//  - serviceerror.Internal
-		//  - serviceerror.Unavailable
+		//   - serviceerror.InvalidArgument
+		//   - serviceerror.Internal
+		//   - serviceerror.Unavailable
 		//
 		// [Visibility]: https://docs.temporal.io/visibility
 		CountWorkflow(ctx context.Context, request *workflowservice.CountWorkflowExecutionsRequest) (*workflowservice.CountWorkflowExecutionsResponse, error)
@@ -307,38 +323,38 @@ type (
 		// - queryType is the type of the query.
 		// - args... are the optional query parameters.
 		// The errors it can return:
-		//  - serviceerror.InvalidArgument
-		//  - serviceerror.Internal
-		//  - serviceerror.Unavailable
-		//  - serviceerror.NotFound
-		//  - serviceerror.QueryFailed
+		//   - serviceerror.InvalidArgument
+		//   - serviceerror.Internal
+		//   - serviceerror.Unavailable
+		//   - serviceerror.NotFound
+		//   - serviceerror.QueryFailed
 		QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.EncodedValue, error)
 
 		// QueryWorkflowWithOptions queries a given workflow execution and returns the query result synchronously.
 		// See QueryWorkflowWithOptionsRequest and QueryWorkflowWithOptionsResponse for more information.
 		// The errors it can return:
-		//  - serviceerror.InvalidArgument
-		//  - serviceerror.Internal
-		//  - serviceerror.Unavailable
-		//  - serviceerror.NotFound
-		//  - serviceerror.QueryFailed
+		//   - serviceerror.InvalidArgument
+		//   - serviceerror.Internal
+		//   - serviceerror.Unavailable
+		//   - serviceerror.NotFound
+		//   - serviceerror.QueryFailed
 		QueryWorkflowWithOptions(ctx context.Context, request *QueryWorkflowWithOptionsRequest) (*QueryWorkflowWithOptionsResponse, error)
 
 		// DescribeWorkflowExecution returns information about the specified workflow execution.
 		// The errors it can return:
-		//  - serviceerror.InvalidArgument
-		//  - serviceerror.Internal
-		//  - serviceerror.Unavailable
-		//  - serviceerror.NotFound
+		//   - serviceerror.InvalidArgument
+		//   - serviceerror.Internal
+		//   - serviceerror.Unavailable
+		//   - serviceerror.NotFound
 		DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error)
 
 		// DescribeTaskQueue returns information about the target taskqueue, right now this API returns the
 		// pollers which polled this taskqueue in last few minutes.
 		// The errors it can return:
-		//  - serviceerror.InvalidArgument
-		//  - serviceerror.Internal
-		//  - serviceerror.Unavailable
-		//  - serviceerror.NotFound
+		//   - serviceerror.InvalidArgument
+		//   - serviceerror.Internal
+		//   - serviceerror.Unavailable
+		//   - serviceerror.NotFound
 		DescribeTaskQueue(ctx context.Context, taskqueue string, taskqueueType enumspb.TaskQueueType) (*workflowservice.DescribeTaskQueueResponse, error)
 
 		// ResetWorkflowExecution reset an existing workflow execution to WorkflowTaskFinishEventId(exclusive).
@@ -361,6 +377,7 @@ type (
 		//   - List of pollers
 		//   - Workflow Reachability status
 		//   - Backlog info for Workflow and/or Activity tasks
+		//
 		// When not supported by the server, it returns an empty [TaskQueueDescription] if there is no information
 		// about the task queue, or an error when the response identifies an unsupported server.
 		// Note that using a sticky queue as target is not supported.
@@ -371,7 +388,8 @@ type (
 		// UpdateWorkerVersioningRules allows updating the worker-build-id based assignment and redirect rules for a given
 		// task queue. This is used in conjunction with workers who specify their build id and thus opt into the feature.
 		// The errors it can return:
-		//  - serviceerror.FailedPrecondition when the conflict token is invalid
+		//   - serviceerror.FailedPrecondition when the conflict token is invalid
+		//
 		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
 		UpdateWorkerVersioningRules(ctx context.Context, options UpdateWorkerVersioningRulesOptions) (*WorkerVersioningRules, error)
 
@@ -416,6 +434,8 @@ type (
 	}
 
 	// ClientOptions are optional parameters for Client creation.
+	//
+	// Exposed as: client:Options
 	ClientOptions struct {
 		// Optional: To set the host:port for this client to connect to.
 		// default: localhost:7233
@@ -429,10 +449,12 @@ type (
 		// A custom resolver can be created to provide multiple hosts in other ways. For example, to manually provide
 		// multiple IPs to round-robin across, a google.golang.org/grpc/resolver/manual resolver can be created and
 		// registered with google.golang.org/grpc/resolver with a custom scheme:
-		//    builder := manual.NewBuilderWithScheme("myresolver")
-		//    builder.InitialState(resolver.State{Addresses: []resolver.Address{{Addr: "1.2.3.4:1234"}, {Addr: "2.3.4.5:2345"}}})
-		//    resolver.Register(builder)
-		//    c, err := client.Dial(client.Options{HostPort: "myresolver:///ignoredvalue"})
+		//
+		//	builder := manual.NewBuilderWithScheme("myresolver")
+		//	builder.InitialState(resolver.State{Addresses: []resolver.Address{{Addr: "1.2.3.4:1234"}, {Addr: "2.3.4.5:2345"}}})
+		//	resolver.Register(builder)
+		//	c, err := client.Dial(client.Options{HostPort: "myresolver:///ignoredvalue"})
+		//
 		// Other more advanced resolvers can also be registered.
 		HostPort string
 
@@ -502,6 +524,8 @@ type (
 	// CloudOperationsClientOptions are parameters for CloudOperationsClient creation.
 	//
 	// WARNING: Cloud operations client is currently experimental.
+	//
+	// Exposed as: client:CloudOperationsClientOptions
 	CloudOperationsClientOptions struct {
 		// Optional: The credentials for this client. This is essentially required.
 		// See [go.temporal.io/sdk/client.NewAPIKeyStaticCredentials],
@@ -548,6 +572,8 @@ type (
 	}
 
 	// ConnectionOptions is provided by SDK consumers to control optional connection params.
+	//
+	// Exposed as: client:ConnectionOptions
 	ConnectionOptions struct {
 		// TLS configures connection level security credentials.
 		TLS *tls.Config
@@ -608,6 +634,8 @@ type (
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
 	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 	// subjected to change in the future.
+	//
+	// Exposed as: client:StartWorkflowOptions
 	StartWorkflowOptions struct {
 		// ID - The business identifier of the workflow execution.
 		// Optional: defaulted to a uuid.
@@ -758,6 +786,8 @@ type (
 
 	// UpdateWithStartWorkflowOperation is used to perform Update-with-Start.
 	// See NewUpdateWithStartWorkflowOperation for details.
+	//
+	// Exposed as: client:UpdateWithStartWorkflowOperation
 	UpdateWithStartWorkflowOperation struct {
 		input *ClientUpdateWorkflowInput
 		// flag to ensure the operation is only executed once
@@ -774,7 +804,10 @@ type (
 	// history only when the activity completes or "finally" timeouts/fails. And the started event only records the last
 	// started time. Because of that, to check an activity has started or not, you cannot rely on history events. Instead,
 	// you can use CLI to describe the workflow to see the status of the activity:
-	//     tctl --ns <namespace> wf desc -w <wf-id>
+	//
+	//	tctl --ns <namespace> wf desc -w <wf-id>
+	//
+	// Exposed as: temporal:RetryPolicy
 	RetryPolicy struct {
 		// Backoff interval for the first retry. If BackoffCoefficient is 1.0 then it is used for all retries.
 		// If not set or set to 0, a default interval of 1s will be used.
@@ -795,8 +828,8 @@ type (
 
 		// Non-Retriable errors. This is optional. Temporal server will stop retry if error type matches this list.
 		// Note:
-		//  - cancellation is not a failure, so it won't be retried,
-		//  - only StartToClose or Heartbeat timeouts are retryable.
+		//   - cancellation is not a failure, so it won't be retried,
+		//   - only StartToClose or Heartbeat timeouts are retryable.
 		NonRetryableErrorTypes []string
 	}
 
@@ -805,10 +838,10 @@ type (
 	NamespaceClient interface {
 		// Register a namespace with temporal server
 		// The errors it can throw:
-		//  - NamespaceAlreadyExistsError
-		//  - serviceerror.InvalidArgument
-		//  - serviceerror.Internal
-		//  - serviceerror.Unavailable
+		//   - NamespaceAlreadyExistsError
+		//   - serviceerror.InvalidArgument
+		//   - serviceerror.Internal
+		//   - serviceerror.Unavailable
 		Register(ctx context.Context, request *workflowservice.RegisterNamespaceRequest) error
 
 		// Describe a namespace. The namespace has 3 part of information
@@ -816,18 +849,18 @@ type (
 		// NamespaceConfiguration - Configuration like Workflow Execution Retention Period In Days, Whether to emit metrics.
 		// ReplicationConfiguration - replication config like clusters and active cluster name
 		// The errors it can throw:
-		//  - serviceerror.NamespaceNotFound
-		//  - serviceerror.InvalidArgument
-		//  - serviceerror.Internal
-		//  - serviceerror.Unavailable
+		//   - serviceerror.NamespaceNotFound
+		//   - serviceerror.InvalidArgument
+		//   - serviceerror.Internal
+		//   - serviceerror.Unavailable
 		Describe(ctx context.Context, name string) (*workflowservice.DescribeNamespaceResponse, error)
 
 		// Update a namespace.
 		// The errors it can throw:
-		//  - serviceerror.NamespaceNotFound
-		//  - serviceerror.InvalidArgument
-		//  - serviceerror.Internal
-		//  - serviceerror.Unavailable
+		//   - serviceerror.NamespaceNotFound
+		//   - serviceerror.InvalidArgument
+		//   - serviceerror.Internal
+		//   - serviceerror.Unavailable
 		Update(ctx context.Context, request *workflowservice.UpdateNamespaceRequest) error
 
 		// Close client and clean up underlying resources.
@@ -836,6 +869,8 @@ type (
 )
 
 // Credentials are optional credentials that can be specified in ClientOptions.
+//
+// Exposed as: client:Credentials
 type Credentials interface {
 	applyToOptions(*ConnectionOptions) error
 	// Can return nil to have no interceptor
@@ -843,12 +878,16 @@ type Credentials interface {
 }
 
 // DialClient creates a client and attempts to connect to the server.
+//
+// Exposed as: client:DialContext
 func DialClient(ctx context.Context, options ClientOptions) (Client, error) {
 	options.ConnectionOptions.disableEagerConnection = false
 	return NewClient(ctx, options)
 }
 
 // NewLazyClient creates a client and does not attempt to connect to the server.
+//
+// Exposed as: client:NewLazyClient
 func NewLazyClient(options ClientOptions) (Client, error) {
 	options.ConnectionOptions.disableEagerConnection = true
 	return NewClient(context.Background(), options)
@@ -857,12 +896,16 @@ func NewLazyClient(options ClientOptions) (Client, error) {
 // NewClient creates an instance of a workflow client
 //
 // Deprecated: Use DialClient or NewLazyClient instead.
+//
+// Exposed as: client:NewClient
 func NewClient(ctx context.Context, options ClientOptions) (Client, error) {
 	return newClient(ctx, options, nil)
 }
 
 // NewClientFromExisting creates a new client using the same connection as the
 // existing client.
+//
+// Exposed as: client:NewClientFromExistingWithContext
 func NewClientFromExisting(ctx context.Context, existingClient Client, options ClientOptions) (Client, error) {
 	existing, _ := existingClient.(*WorkflowClient)
 	if existing == nil {
@@ -1008,6 +1051,8 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 
 // DialCloudOperationsClient creates a cloud client to perform cloud-management
 // operations.
+//
+// Exposed as: client:DialCloudOperationsClient
 func DialCloudOperationsClient(ctx context.Context, options CloudOperationsClientOptions) (CloudOperationsClient, error) {
 	// Set defaults
 	if options.MetricsHandler == nil {
@@ -1060,6 +1105,8 @@ func DialCloudOperationsClient(ctx context.Context, options CloudOperationsClien
 }
 
 // NewUpdateWithStartWorkflowOperation returns an UpdateWithStartWorkflowOperation that can be used to perform Update-with-Start.
+//
+// Exposed as: client:NewUpdateWithStartWorkflowOperation
 func NewUpdateWithStartWorkflowOperation(options UpdateWorkflowOptions) *UpdateWithStartWorkflowOperation {
 	res := &UpdateWithStartWorkflowOperation{doneCh: make(chan struct{})}
 
@@ -1107,6 +1154,8 @@ func (op *UpdateWithStartWorkflowOperation) set(handle WorkflowUpdateHandle, err
 func (op *UpdateWithStartWorkflowOperation) isWithStartWorkflowOperation() {}
 
 // NewNamespaceClient creates an instance of a namespace client, to manager lifecycle of namespaces.
+//
+// Exposed as: client:NewNamespaceClient
 func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
 	// Initialize root tags
 	if options.MetricsHandler == nil {
@@ -1147,6 +1196,8 @@ func newNamespaceServiceClient(workflowServiceClient workflowservice.WorkflowSer
 //
 //	var result string // This need to be same type as the one passed to RecordHeartbeat
 //	NewValue(data).Get(&result)
+//
+// Exposed as: client:NewValue
 func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 	return newEncodedValue(data, nil)
 }
@@ -1159,16 +1210,20 @@ func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 //	var result1 string
 //	var result2 int // These need to be same type as those arguments passed to RecordHeartbeat
 //	NewValues(data).Get(&result1, &result2)
+//
+// Exposed as: client:NewValues
 func NewValues(data *commonpb.Payloads) converter.EncodedValues {
 	return newEncodedValues(data, nil)
 }
 
 type apiKeyCredentials func(context.Context) (string, error)
 
+// Exposed as: client:NewAPIKeyStaticCredentials
 func NewAPIKeyStaticCredentials(apiKey string) Credentials {
 	return NewAPIKeyDynamicCredentials(func(ctx context.Context) (string, error) { return apiKey, nil })
 }
 
+// Exposed as: client:NewAPIKeyDynamicCredentials
 func NewAPIKeyDynamicCredentials(apiKeyCallback func(context.Context) (string, error)) Credentials {
 	return apiKeyCredentials(apiKeyCallback)
 }
@@ -1199,6 +1254,7 @@ func (a apiKeyCredentials) gRPCIntercept(
 
 type mTLSCredentials tls.Certificate
 
+// Exposed as: client:NewMTLSCredentials
 func NewMTLSCredentials(certificate tls.Certificate) Credentials { return mTLSCredentials(certificate) }
 
 func (m mTLSCredentials) applyToOptions(opts *ConnectionOptions) error {
@@ -1216,11 +1272,15 @@ func (mTLSCredentials) gRPCInterceptor() grpc.UnaryClientInterceptor { return ni
 // WorkflowUpdateServiceTimeoutOrCanceledError is an error that occurs when an update call times out or is cancelled.
 //
 // Note, this is not related to any general concept of timing out or cancelling a running update, this is only related to the client call itself.
+//
+// Exposed as: client:WorkflowUpdateServiceTimeoutOrCanceledError
 type WorkflowUpdateServiceTimeoutOrCanceledError struct {
 	cause error
 }
 
 // NewWorkflowUpdateServiceTimeoutOrCanceledError creates a new WorkflowUpdateServiceTimeoutOrCanceledError.
+//
+// Exposed as: client:NewWorkflowUpdateServiceTimeoutOrCanceledError
 func NewWorkflowUpdateServiceTimeoutOrCanceledError(err error) *WorkflowUpdateServiceTimeoutOrCanceledError {
 	return &WorkflowUpdateServiceTimeoutOrCanceledError{
 		cause: err,

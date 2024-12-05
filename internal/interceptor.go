@@ -37,6 +37,8 @@ import (
 
 // Interceptor is a common interface for all interceptors. See documentation in
 // the interceptor package for more details.
+//
+// Exposed as: interceptor:Interceptor
 type Interceptor interface {
 	ClientInterceptor
 	WorkerInterceptor
@@ -44,6 +46,8 @@ type Interceptor interface {
 
 // WorkerInterceptor is a common interface for all interceptors. See
 // documentation in the interceptor package for more details.
+//
+// Exposed as: interceptor:WorkerInterceptor
 type WorkerInterceptor interface {
 	// InterceptActivity is called before each activity interception needed with
 	// the next interceptor in the chain.
@@ -59,6 +63,8 @@ type WorkerInterceptor interface {
 // ActivityInboundInterceptor is an interface for all activity calls originating
 // from the server. See documentation in the interceptor package for more
 // details.
+//
+// Exposed as: interceptor:ActivityInboundInterceptor
 type ActivityInboundInterceptor interface {
 	// Init is the first call of this interceptor. Implementations can change/wrap
 	// the outbound interceptor before calling Init on the next interceptor.
@@ -72,6 +78,8 @@ type ActivityInboundInterceptor interface {
 }
 
 // ExecuteActivityInput is the input to ActivityInboundInterceptor.ExecuteActivity.
+//
+// Exposed as: interceptor:ExecuteActivityInput
 type ExecuteActivityInput struct {
 	Args []interface{}
 }
@@ -79,6 +87,8 @@ type ExecuteActivityInput struct {
 // ActivityOutboundInterceptor is an interface for all activity calls
 // originating from the SDK. See documentation in the interceptor package for
 // more details.
+//
+// Exposed as: interceptor:ActivityOutboundInterceptor
 type ActivityOutboundInterceptor interface {
 	// GetInfo intercepts activity.GetInfo.
 	GetInfo(ctx context.Context) ActivityInfo
@@ -107,6 +117,8 @@ type ActivityOutboundInterceptor interface {
 // WorkflowInboundInterceptor is an interface for all workflow calls originating
 // from the server. See documentation in the interceptor package for more
 // details.
+//
+// Exposed as: interceptor:WorkflowInboundInterceptor
 type WorkflowInboundInterceptor interface {
 	// Init is the first call of this interceptor. Implementations can change/wrap
 	// the outbound interceptor before calling Init on the next interceptor.
@@ -146,11 +158,15 @@ type WorkflowInboundInterceptor interface {
 
 // ExecuteWorkflowInput is the input to
 // WorkflowInboundInterceptor.ExecuteWorkflow.
+//
+// Exposed as: interceptor:ExecuteWorkflowInput
 type ExecuteWorkflowInput struct {
 	Args []interface{}
 }
 
 // HandleSignalInput is the input to WorkflowInboundInterceptor.HandleSignal.
+//
+// Exposed as: interceptor:HandleSignalInput
 type HandleSignalInput struct {
 	SignalName string
 	// Arg is the signal argument. It is presented as a primitive payload since
@@ -159,12 +175,16 @@ type HandleSignalInput struct {
 }
 
 // UpdateInput carries the name and arguments of a workflow update invocation.
+//
+// Exposed as: interceptor:UpdateInput
 type UpdateInput struct {
 	Name string
 	Args []interface{}
 }
 
 // HandleQueryInput is the input to WorkflowInboundInterceptor.HandleQuery.
+//
+// Exposed as: interceptor:HandleQueryInput
 type HandleQueryInput struct {
 	QueryType string
 	Args      []interface{}
@@ -173,6 +193,8 @@ type HandleQueryInput struct {
 // ExecuteNexusOperationInput is the input to WorkflowOutboundInterceptor.ExecuteNexusOperation.
 //
 // NOTE: Experimental
+//
+// Exposed as: interceptor:ExecuteNexusOperationInput
 type ExecuteNexusOperationInput struct {
 	// Client to start the operation with.
 	Client NexusClient
@@ -189,6 +211,8 @@ type ExecuteNexusOperationInput struct {
 // RequestCancelNexusOperationInput is the input to WorkflowOutboundInterceptor.RequestCancelNexusOperation.
 //
 // NOTE: Experimental
+//
+// Exposed as: interceptor:RequestCancelNexusOperationInput
 type RequestCancelNexusOperationInput struct {
 	// Client that was used to start the operation.
 	Client NexusClient
@@ -203,6 +227,8 @@ type RequestCancelNexusOperationInput struct {
 // WorkflowOutboundInterceptor is an interface for all workflow calls
 // originating from the SDK. See documentation in the interceptor package for
 // more details.
+//
+// Exposed as: interceptor:WorkflowOutboundInterceptor
 type WorkflowOutboundInterceptor interface {
 	// Go intercepts workflow.Go.
 	Go(ctx Context, name string, f func(ctx Context)) Context
@@ -350,6 +376,8 @@ type WorkflowOutboundInterceptor interface {
 // ClientInterceptor for providing a ClientOutboundInterceptor to intercept
 // certain workflow-specific client calls from the SDK. See documentation in the
 // interceptor package for more details.
+//
+// Exposed as: interceptor:ClientInterceptor
 type ClientInterceptor interface {
 	// This is called on client creation if set via client options
 	InterceptClient(next ClientOutboundInterceptor) ClientOutboundInterceptor
@@ -360,6 +388,8 @@ type ClientInterceptor interface {
 // ClientOutboundInterceptor is an interface for certain workflow-specific calls
 // originating from the SDK. See documentation in the interceptor package for
 // more details.
+//
+// Exposed as: interceptor:ClientOutboundInterceptor
 type ClientOutboundInterceptor interface {
 	// ExecuteWorkflow intercepts client.Client.ExecuteWorkflow.
 	// interceptor.Header will return a non-nil map for this context.
@@ -406,6 +436,8 @@ type ClientOutboundInterceptor interface {
 // ClientOutboundInterceptor.UpdateWorkflow
 //
 // NOTE: Experimental
+//
+// Exposed as: interceptor:ClientUpdateWorkflowInput
 type ClientUpdateWorkflowInput struct {
 	UpdateID            string
 	WorkflowID          string
@@ -433,12 +465,16 @@ type ClientPollWorkflowUpdateOutput struct {
 
 // ScheduleClientCreateInput is the input to
 // ClientOutboundInterceptor.CreateSchedule.
+//
+// Exposed as: interceptor:ScheduleClientCreateInput
 type ScheduleClientCreateInput struct {
 	Options *ScheduleOptions
 }
 
 // ClientExecuteWorkflowInput is the input to
 // ClientOutboundInterceptor.ExecuteWorkflow.
+//
+// Exposed as: interceptor:ClientExecuteWorkflowInput
 type ClientExecuteWorkflowInput struct {
 	Options      *StartWorkflowOptions
 	WorkflowType string
@@ -447,6 +483,8 @@ type ClientExecuteWorkflowInput struct {
 
 // ClientSignalWorkflowInput is the input to
 // ClientOutboundInterceptor.SignalWorkflow.
+//
+// Exposed as: interceptor:ClientSignalWorkflowInput
 type ClientSignalWorkflowInput struct {
 	WorkflowID string
 	RunID      string
@@ -456,6 +494,8 @@ type ClientSignalWorkflowInput struct {
 
 // ClientSignalWithStartWorkflowInput is the input to
 // ClientOutboundInterceptor.SignalWithStartWorkflow.
+//
+// Exposed as: interceptor:ClientSignalWithStartWorkflowInput
 type ClientSignalWithStartWorkflowInput struct {
 	SignalName   string
 	SignalArg    interface{}
@@ -466,6 +506,8 @@ type ClientSignalWithStartWorkflowInput struct {
 
 // ClientCancelWorkflowInput is the input to
 // ClientOutboundInterceptor.CancelWorkflow.
+//
+// Exposed as: interceptor:ClientCancelWorkflowInput
 type ClientCancelWorkflowInput struct {
 	WorkflowID string
 	RunID      string
@@ -473,6 +515,8 @@ type ClientCancelWorkflowInput struct {
 
 // ClientTerminateWorkflowInput is the input to
 // ClientOutboundInterceptor.TerminateWorkflow.
+//
+// Exposed as: interceptor:ClientTerminateWorkflowInput
 type ClientTerminateWorkflowInput struct {
 	WorkflowID string
 	RunID      string
@@ -482,6 +526,8 @@ type ClientTerminateWorkflowInput struct {
 
 // ClientQueryWorkflowInput is the input to
 // ClientOutboundInterceptor.QueryWorkflow.
+//
+// Exposed as: interceptor:ClientQueryWorkflowInput
 type ClientQueryWorkflowInput struct {
 	WorkflowID           string
 	RunID                string

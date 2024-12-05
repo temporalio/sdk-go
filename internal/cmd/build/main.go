@@ -108,6 +108,10 @@ func (b *builder) check() error {
 	if err := b.runCmd(b.cmdFromRoot("go", "run", "./internal/cmd/tools/copyright/licensegen.go", "--verifyOnly")); err != nil {
 		return fmt.Errorf("copyright check failed: %w", err)
 	}
+	// Run doclink check
+	if err := b.runCmd(b.cmdFromRoot("go", "run", "./internal/cmd/tools/doclink/doclink.go")); err != nil {
+		return fmt.Errorf("copyright check failed: %w", err)
+	}
 	return nil
 }
 
