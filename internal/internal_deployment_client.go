@@ -95,7 +95,7 @@ func deploymentListEntryFromProto(deployment *deployment.DeploymentListInfo) *De
 	return &DeploymentListEntry{
 		Deployment: deploymentFromProto(deployment.GetDeployment()),
 		CreateTime: deployment.GetCreateTime().AsTime(),
-		Current:    deployment.GetIsCurrent(),
+		IsCurrent:  deployment.GetIsCurrent(),
 	}
 }
 
@@ -115,7 +115,7 @@ func deploymentInfoFromProto(deploymentInfo *deployment.DeploymentInfo) Deployme
 	return DeploymentInfo{
 		Deployment:     deploymentFromProto(deploymentInfo.GetDeployment()),
 		CreateTime:     deploymentInfo.GetCreateTime().AsTime(),
-		Current:        deploymentInfo.GetIsCurrent(),
+		IsCurrent:      deploymentInfo.GetIsCurrent(),
 		TaskQueuesInfo: deploymentTaskQueuesInfoFromProto(deploymentInfo.GetTaskQueueInfos()),
 		Metadata:       deploymentInfo.GetMetadata(),
 	}

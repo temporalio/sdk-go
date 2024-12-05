@@ -413,7 +413,9 @@ type (
 		// inside a workflow as a child workflow.
 		Name                          string
 		DisableAlreadyRegisteredCheck bool
-		// Optional: Provides a Versioning Behavior to workflows of this type.
+		// Optional: Provides a Versioning Behavior to workflows of this type. It is required
+		// when WorkerOptions does not specify DeploymentOptions.DefaultVersioningBehavior,
+		// DeploymentOptions.DeploymentSeriesName is set, and UseBuildIDForVersioning is true.
 		// NOTE: Experimental
 		VersioningBehavior VersioningBehavior
 	}
