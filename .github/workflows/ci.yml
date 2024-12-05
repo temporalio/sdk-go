@@ -20,7 +20,7 @@ jobs:
             # We only want to check docker compose on a single target
             testDockerCompose: true
           - os: macos-intel
-            runsOn: macos-12
+            runsOn: macos-13
           - os: macos-arm
             runsOn: macos-14
             

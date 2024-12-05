@@ -165,7 +165,7 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType enumspb.TimeoutType) {
 	context.commandsHelper.scheduledEventIDToActivityID[5] = activityID
 	di := h.newActivityCommandStateMachine(
 		5,
-		&commandpb.ScheduleActivityTaskCommandAttributes{ActivityId: activityID})
+		&commandpb.ScheduleActivityTaskCommandAttributes{ActivityId: activityID}, nil)
 	di.state = commandStateInitiated
 	di.setData(&scheduledActivity{
 		callback: func(r *commonpb.Payloads, e error) {

@@ -38,6 +38,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
 )
 
@@ -547,6 +548,254 @@ func TestBlockingSelect(t *testing.T) {
 		"c2-two",
 		"done",
 		"add-two-done",
+	}
+	require.EqualValues(t, expected, history)
+}
+
+func TestSelectBlockingDefault(t *testing.T) {
+	var history []string
+	env := &workflowEnvironmentImpl{
+		sdkFlags:       newSDKFlags(&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: true}),
+		commandsHelper: newCommandsHelper(),
+		dataConverter:  converter.GetDefaultDataConverter(),
+		workflowInfo: &WorkflowInfo{
+			Namespace:     "namespace:" + t.Name(),
+			TaskQueueName: "taskqueue:" + t.Name(),
+		},
+	}
+	// Verify that the flag is not set
+	require.False(t, env.GetFlag(SDKFlagBlockedSelectorSignalReceive))
+	interceptor, ctx, err := newWorkflowContext(env, nil)
+	require.NoError(t, err, "newWorkflowContext failed")
+	d, _ := newDispatcher(ctx, interceptor, func(ctx Context) {
+		c1 := NewChannel(ctx)
+		c2 := NewChannel(ctx)
+
+		Go(ctx, func(ctx Context) {
+			history = append(history, "add-one")
+			c1.Send(ctx, "one")
+			history = append(history, "add-one-done")
+
+		})
+
+		Go(ctx, func(ctx Context) {
+			history = append(history, "add-two")
+			c2.Send(ctx, "two")
+			history = append(history, "add-two-done")
+		})
+
+		selector := NewSelector(ctx)
+		var v string
+		selector.
+			AddReceive(c1, func(c ReceiveChannel, more bool) {
+				c.Receive(ctx, &v)
+				history = append(history, fmt.Sprintf("c1-%v", v))
+			}).
+			AddDefault(func() {
+				c2.Receive(ctx, &v)
+				history = append(history, fmt.Sprintf("c2-%v", v))
+			})
+		history = append(history, "select1")
+		selector.Select(ctx)
+
+		// Default behavior this signal is lost
+		require.True(t, c1.Len() == 0 && v == "two")
+
+		history = append(history, "select2")
+		selector.Select(ctx)
+		history = append(history, "done")
+	}, func() bool { return false })
+	defer d.Close()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+	require.False(t, d.IsDone())
+
+	expected := []string{
+		"select1",
+		"add-one",
+		"add-one-done",
+		"add-two",
+		"add-two-done",
+		"c2-two",
+		"select2",
+	}
+	require.EqualValues(t, expected, history)
+}
+
+func TestSelectBlockingDefaultWithFlag(t *testing.T) {
+	var history []string
+	env := &workflowEnvironmentImpl{
+		sdkFlags:       newSDKFlags(&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: true}),
+		commandsHelper: newCommandsHelper(),
+		dataConverter:  converter.GetDefaultDataConverter(),
+		workflowInfo: &WorkflowInfo{
+			Namespace:     "namespace:" + t.Name(),
+			TaskQueueName: "taskqueue:" + t.Name(),
+		},
+	}
+	require.True(t, env.TryUse(SDKFlagBlockedSelectorSignalReceive))
+	interceptor, ctx, err := newWorkflowContext(env, nil)
+	require.NoError(t, err, "newWorkflowContext failed")
+	d, _ := newDispatcher(ctx, interceptor, func(ctx Context) {
+		c1 := NewChannel(ctx)
+		c2 := NewChannel(ctx)
+
+		Go(ctx, func(ctx Context) {
+			history = append(history, "add-one")
+			c1.Send(ctx, "one")
+			history = append(history, "add-one-done")
+
+		})
+
+		Go(ctx, func(ctx Context) {
+			history = append(history, "add-two")
+			c2.Send(ctx, "two")
+			history = append(history, "add-two-done")
+		})
+
+		selector := NewSelector(ctx)
+		var v string
+		selector.
+			AddReceive(c1, func(c ReceiveChannel, more bool) {
+				c.Receive(ctx, &v)
+				history = append(history, fmt.Sprintf("c1-%v", v))
+			}).
+			AddDefault(func() {
+				c2.Receive(ctx, &v)
+				history = append(history, fmt.Sprintf("c2-%v", v))
+			})
+		history = append(history, "select1")
+		selector.Select(ctx)
+
+		// Signal should not be lost
+		require.False(t, c1.Len() == 0 && v == "two")
+
+		history = append(history, "select2")
+		selector.Select(ctx)
+		history = append(history, "done")
+	}, func() bool { return false })
+	defer d.Close()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+	require.True(t, d.IsDone())
+
+	expected := []string{
+		"select1",
+		"add-one",
+		"add-one-done",
+		"add-two",
+		"add-two-done",
+		"c2-two",
+		"select2",
+		"c1-one",
+		"done",
+	}
+
+	require.EqualValues(t, expected, history)
+}
+
+func TestBlockingSelectFuture(t *testing.T) {
+	var history []string
+	d := createNewDispatcher(func(ctx Context) {
+		c1 := NewChannel(ctx)
+		f1, s1 := NewFuture(ctx)
+
+		Go(ctx, func(ctx Context) {
+			history = append(history, "add-one")
+			c1.Send(ctx, "one")
+			history = append(history, "add-one-done")
+		})
+		Go(ctx, func(ctx Context) {
+			history = append(history, "add-two")
+			s1.SetValue("one-future")
+		})
+
+		selector := NewSelector(ctx)
+		selector.
+			AddReceive(c1, func(c ReceiveChannel, more bool) {
+				var v string
+				c.Receive(ctx, &v)
+				history = append(history, fmt.Sprintf("c1-%v", v))
+			}).
+			AddFuture(f1, func(f Future) {
+				var v string
+				err := f.Get(ctx, &v)
+				require.NoError(t, err)
+				history = append(history, fmt.Sprintf("f1-%v", v))
+			})
+		history = append(history, "select1")
+		selector.Select(ctx)
+		fmt.Println("select1 done", history)
+
+		history = append(history, "select2")
+		selector.Select(ctx)
+		history = append(history, "done")
+
+	})
+	defer d.Close()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+	require.True(t, d.IsDone(), strings.Join(history, "\n"))
+	expected := []string{
+		"select1",
+		"add-one",
+		"add-one-done",
+		"add-two",
+		"c1-one",
+		"select2",
+		"f1-one-future",
+		"done",
+	}
+	require.EqualValues(t, expected, history)
+}
+
+func TestBlockingSelectSend(t *testing.T) {
+	var history []string
+	d := createNewDispatcher(func(ctx Context) {
+		c1 := NewChannel(ctx)
+		c2 := NewChannel(ctx)
+
+		Go(ctx, func(ctx Context) {
+			history = append(history, "add-one")
+			c1.Send(ctx, "one")
+			history = append(history, "add-one-done")
+		})
+		Go(ctx, func(ctx Context) {
+			require.True(t, c2.Len() == 1)
+			history = append(history, "receiver")
+			var v string
+			more := c2.Receive(ctx, &v)
+			require.True(t, more)
+			history = append(history, fmt.Sprintf("c2-%v", v))
+			require.True(t, c2.Len() == 0)
+		})
+
+		selector := NewSelector(ctx)
+		selector.
+			AddReceive(c1, func(c ReceiveChannel, more bool) {
+				var v string
+				c.Receive(ctx, &v)
+				history = append(history, fmt.Sprintf("c1-%v", v))
+			}).
+			AddSend(c2, "two", func() { history = append(history, "send2") })
+		history = append(history, "select1")
+		selector.Select(ctx)
+
+		history = append(history, "select2")
+		selector.Select(ctx)
+		history = append(history, "done")
+
+	})
+	defer d.Close()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+	require.True(t, d.IsDone(), strings.Join(history, "\n"))
+	expected := []string{
+		"select1",
+		"add-one",
+		"add-one-done",
+		"receiver",
+		"c1-one",
+		"select2",
+		"send2",
+		"done",
+		"c2-two",
 	}
 	require.EqualValues(t, expected, history)
 }

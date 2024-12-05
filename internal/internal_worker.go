@@ -407,7 +407,7 @@ func (ww *workflowWorker) Stop() {
 	ww.worker.Stop()
 }
 
-func newSessionWorker(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, overrides *workerOverrides, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
+func newSessionWorker(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
 	if params.Identity == "" {
 		params.Identity = getWorkerIdentity(params.TaskQueue)
 	}
@@ -420,15 +420,14 @@ func newSessionWorker(service workflowservice.WorkflowServiceClient, params work
 	creationTaskqueue := getCreationTaskqueue(params.TaskQueue)
 	params.UserContext = context.WithValue(params.UserContext, sessionEnvironmentContextKey, sessionEnvironment)
 	params.TaskQueue = sessionEnvironment.GetResourceSpecificTaskqueue()
-	activityWorker := newActivityWorker(service, params, overrides, env, nil)
+	activityWorker := newActivityWorker(service, params,
+		&workerOverrides{slotSupplier: params.Tuner.GetSessionActivitySlotSupplier()}, env, nil)
 
 	params.MaxConcurrentActivityTaskQueuePollers = 1
 	params.TaskQueue = creationTaskqueue
-	if overrides == nil {
-		overrides = &workerOverrides{}
-	}
 	// Although we have session token bucket to limit session size across creation
 	// and recreation, we also limit it here for creation only
+	overrides := &workerOverrides{}
 	overrides.slotSupplier, _ = NewFixedSizeSlotSupplier(maxConcurrentSessionExecutionSize)
 	creationWorker := newActivityWorker(service, params, overrides, env, sessionEnvironment.GetTokenBucket())
 
@@ -791,6 +790,22 @@ func (r *registry) getWorkflowVersioningBehavior(wt WorkflowType) (VersioningBeh
 	return behavior, behavior != VersioningBehaviorUnspecified
 }
 
+func (r *registry) getNexusService(service string) *nexus.Service {
+	r.Lock()
+	defer r.Unlock()
+	return r.nexusServices[service]
+}
+
+func (r *registry) getRegisteredNexusServices() []*nexus.Service {
+	r.Lock()
+	defer r.Unlock()
+	result := make([]*nexus.Service, 0, len(r.nexusServices))
+	for _, s := range r.nexusServices {
+		result = append(result, s)
+	}
+	return result
+}
+
 // Validate function parameters.
 func validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
 	if fnType.Kind() != reflect.Func {
@@ -1069,6 +1084,9 @@ func (aw *AggregatedWorker) start() error {
 			// stop workflow worker.
 			if !util.IsInterfaceNil(aw.workflowWorker) {
 				if aw.workflowWorker.worker.isWorkerStarted {
+					if aw.client.eagerDispatcher != nil {
+						aw.client.eagerDispatcher.deregisterWorker(aw.workflowWorker)
+					}
 					aw.workflowWorker.Stop()
 				}
 			}
@@ -1093,7 +1111,7 @@ func (aw *AggregatedWorker) start() error {
 			return err
 		}
 	}
-	nexusServices := aw.registry.nexusServices
+	nexusServices := aw.registry.getRegisteredNexusServices()
 	if len(nexusServices) > 0 {
 		reg := nexus.NewServiceRegistry()
 		for _, service := range nexusServices {
@@ -1237,6 +1255,9 @@ func (aw *AggregatedWorker) Stop() {
 	}
 
 	if !util.IsInterfaceNil(aw.workflowWorker) {
+		if aw.client.eagerDispatcher != nil {
+			aw.client.eagerDispatcher.deregisterWorker(aw.workflowWorker)
+		}
 		aw.workflowWorker.Stop()
 	}
 	if !util.IsInterfaceNil(aw.activityWorker) {
@@ -1773,7 +1794,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 
 	var sessionWorker *sessionWorker
 	if options.EnableSessionWorker && !options.LocalActivityWorkerOnly {
-		sessionWorker = newSessionWorker(client.workflowService, workerParams, nil, registry, options.MaxConcurrentSessionExecutionSize)
+		sessionWorker = newSessionWorker(client.workflowService, workerParams, registry, options.MaxConcurrentSessionExecutionSize)
 		registry.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
 			Name: sessionCreationActivityName,
 		})

@@ -149,6 +149,14 @@ type (
 		// build ID or not. See temporal.VersioningIntent.
 		// WARNING: Worker versioning is currently experimental
 		VersioningIntent VersioningIntent
+
+		// Summary is a single-line summary for this activity that will appear in UI/CLI. This can be
+		// in single-line Temporal Markdown format.
+		//
+		// Optional: defaults to none/empty.
+		//
+		// NOTE: Experimental
+		Summary string
 	}
 
 	// LocalActivityOptions stores local activity specific parameters that will be stored inside of a context.
