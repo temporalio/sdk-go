@@ -1922,15 +1922,11 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		builtRequest.BinaryChecksum = ""
 	}
 	if wth.useBuildIDForVersioning && wth.deploymentSeriesName != "" {
-		if workflowContext.workflowInfo.currentVersioningBehavior != VersioningBehaviorUnspecified {
-			builtRequest.VersioningBehavior = versioningBehaviorToProto(workflowContext.workflowInfo.currentVersioningBehavior)
+		workflowType := workflowContext.workflowInfo.WorkflowType
+		if behavior, ok := wth.registry.getWorkflowVersioningBehavior(workflowType); ok {
+			builtRequest.VersioningBehavior = versioningBehaviorToProto(behavior)
 		} else {
-			workflowType := workflowContext.workflowInfo.WorkflowType
-			if behavior, ok := wth.registry.getWorkflowVersioningBehavior(workflowType); ok {
-				builtRequest.VersioningBehavior = versioningBehaviorToProto(behavior)
-			} else {
-				builtRequest.VersioningBehavior = versioningBehaviorToProto(wth.defaultVersioningBehavior)
-			}
+			builtRequest.VersioningBehavior = versioningBehaviorToProto(wth.defaultVersioningBehavior)
 		}
 	}
 	return builtRequest

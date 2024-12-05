@@ -413,8 +413,9 @@ type (
 		// inside a workflow as a child workflow.
 		Name                          string
 		DisableAlreadyRegisteredCheck bool
-		// Optional: Provides a default Versioning Behavior to workflows of this type.
-		// See workflow.SetVersioningBehavior to override this default.
+		// Optional: Provides a Versioning Behavior to workflows of this type. It is required
+		// when WorkerOptions does not specify DeploymentOptions.DefaultVersioningBehavior,
+		// DeploymentOptions.DeploymentSeriesName is set, and UseBuildIDForVersioning is true.
 		// NOTE: Experimental
 		VersioningBehavior VersioningBehavior
 	}
@@ -1192,12 +1193,6 @@ type WorkflowInfo struct {
 	// which is currently or about to be executing. If no longer replaying will be set to the ID of
 	// this worker
 	currentTaskBuildID string
-	// currentVersioningBehavior, if not unspecified,  sets the strategy to upgrade
-	// this workflow when the default Build ID
-	// has changed, and Worker Versioning-3 has been enabled. Otherwise, the current Worker
-	// option DefaultVersioningBehavior will be used instead.
-	// NOTE: Experimental
-	currentVersioningBehavior VersioningBehavior
 
 	continueAsNewSuggested bool
 	currentHistorySize     int

@@ -99,8 +99,8 @@ type (
 		// CreateTime - When this deployment was created.
 		CreateTime time.Time
 
-		// Current - Whether this deployment is the current one for its deployment series.
-		Current bool
+		// IsCurrent - Whether this deployment is the current one for its deployment series.
+		IsCurrent bool
 
 		// TaskQueuesInfo - List of task queues polled by workers in this deployment.
 		TaskQueuesInfo []DeploymentTaskQueueInfo
@@ -119,7 +119,7 @@ type (
 		CreateTime time.Time
 
 		// Whether this deployment is the current one for its deployment series.
-		Current bool
+		IsCurrent bool
 	}
 
 	// DeploymentListIterator is an iterator for deployments.
@@ -147,7 +147,7 @@ type (
 	// DeploymentReachabilityInfo extends DeploymentInfo with reachability information.
 	// NOTE: Experimental
 	DeploymentReachabilityInfo struct {
-		DeploymentInfo
+		DeploymentInfo DeploymentInfo
 
 		// Reachability - Kind of tasks that may reach a worker
 		// associated with a deployment.
