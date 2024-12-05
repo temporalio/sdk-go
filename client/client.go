@@ -830,8 +830,8 @@ type (
 		// returns a handle to the update. The call will block until the update
 		// has reached the WaitForStage in the options. Note that this means
 		// that the call will not return successfully until the update has been
-		// delivered to the worker service. Errors returned from the update
-		// handler or its validator will be exposed through the return value of
+		// delivered to a worker. Errors returned from the update handler or its
+		// validator will be exposed through the return value of
 		// WorkflowUpdateHandle.Get(). Errors that occur before the update is
 		// delivered to the workflow (e.g. if the required workflow ID field is
 		// missing from the UpdateWorkflowOptions) are returned directly from
