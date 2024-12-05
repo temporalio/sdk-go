@@ -1025,7 +1025,7 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_Retry() {
 				UpdateName:   "update",
 				WaitForStage: WorkflowUpdateStageCompleted,
 			},
-			StartOperation: startOp,
+			StartWorkflowOperation: startOp,
 		},
 	)
 	s.NoError(err)
@@ -1102,7 +1102,7 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_Abort() {
 						UpdateName:   "update",
 						WaitForStage: WorkflowUpdateStageCompleted,
 					},
-					StartOperation: startOp,
+					StartWorkflowOperation: startOp,
 				},
 			)
 
@@ -1133,7 +1133,7 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_NonMultiOperationError(
 				UpdateName:   "update",
 				WaitForStage: WorkflowUpdateStageCompleted,
 			},
-			StartOperation: startOp,
+			StartWorkflowOperation: startOp,
 		},
 	)
 	s.ErrorContains(err, "internal error")
@@ -1161,7 +1161,7 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerResponseCountMism
 				UpdateName:   "update",
 				WaitForStage: WorkflowUpdateStageCompleted,
 			},
-			StartOperation: startOp,
+			StartWorkflowOperation: startOp,
 		},
 	)
 	s.ErrorContains(err, "invalid server response: 0 instead of 2 operation results")
@@ -1187,7 +1187,7 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerErrorResponseCoun
 				UpdateName:   "update",
 				WaitForStage: WorkflowUpdateStageCompleted,
 			},
-			StartOperation: startOp,
+			StartWorkflowOperation: startOp,
 		},
 	)
 	s.ErrorContains(err, "invalid server response: 0 instead of 2 operation errors")
@@ -1220,7 +1220,7 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerStartResponseType
 				UpdateName:   "update",
 				WaitForStage: WorkflowUpdateStageCompleted,
 			},
-			StartOperation: startOp,
+			StartWorkflowOperation: startOp,
 		},
 	)
 	s.ErrorContains(err, "invalid server response: StartWorkflow response has the wrong type *workflowservice.ExecuteMultiOperationResponse_Response_UpdateWorkflow")
@@ -1259,7 +1259,7 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerUpdateResponseTyp
 				UpdateName:   "update",
 				WaitForStage: WorkflowUpdateStageCompleted,
 			},
-			StartOperation: startOp,
+			StartWorkflowOperation: startOp,
 		},
 	)
 	s.ErrorContains(err, "invalid server response: UpdateWorkflow response has the wrong type *workflowservice.ExecuteMultiOperationResponse_Response_StartWorkflow")

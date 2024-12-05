@@ -807,8 +807,8 @@ type UpdateWorkflowOptions struct {
 // See [UpdateWithStartWorkflow].
 // NOTE: Experimental
 type UpdateWithStartWorkflowOptions struct {
-	StartOperation WithStartWorkflowOperation
-	UpdateOptions  UpdateWorkflowOptions
+	StartWorkflowOperation WithStartWorkflowOperation
+	UpdateOptions          UpdateWorkflowOptions
 }
 
 // WorkflowUpdateHandle is a handle to a workflow execution update process. The
@@ -1190,7 +1190,7 @@ func (wc *WorkflowClient) UpdateWithStartWorkflow(
 	ctx context.Context,
 	options UpdateWithStartWorkflowOptions,
 ) (WorkflowUpdateHandle, error) {
-	startOp, ok := options.StartOperation.(*withStartWorkflowOperationImpl)
+	startOp, ok := options.StartWorkflowOperation.(*withStartWorkflowOperationImpl)
 	if !ok {
 		return nil, fmt.Errorf("%w: startOperation must be created by NewWithStartWorkflowOperation", errInvalidWithStartWorkflowOperation)
 	}

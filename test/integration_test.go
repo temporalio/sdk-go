@@ -2577,7 +2577,7 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool, upda
 				UpdateName:   "workflow-update",
 				WaitForStage: client.WorkflowUpdateStageCompleted,
 			},
-			StartOperation: startOp,
+			StartWorkflowOperation: startOp,
 		})
 		ts.NoError(err)
 		ts.NoError(updateHandle.Get(ctx, nil))
@@ -4031,7 +4031,7 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 				Args:         []any{1},
 				WaitForStage: client.WorkflowUpdateStageAccepted,
 			},
-			StartOperation: startOp,
+			StartWorkflowOperation: startOp,
 		})
 		ts.NoError(err)
 
@@ -4062,7 +4062,7 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 				Args:         []any{1},
 				WaitForStage: client.WorkflowUpdateStageCompleted,
 			},
-			StartOperation: startOp,
+			StartWorkflowOperation: startOp,
 		})
 		ts.NoError(err)
 
@@ -4084,7 +4084,7 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 				Args:         []any{-1}, // rejected update payload
 				WaitForStage: client.WorkflowUpdateStageCompleted,
 			},
-			StartOperation: startOp,
+			StartWorkflowOperation: startOp,
 		})
 		ts.NoError(err)
 
@@ -4116,7 +4116,7 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 				Args:         []any{1},
 				WaitForStage: client.WorkflowUpdateStageAccepted,
 			},
-			StartOperation: startOp,
+			StartWorkflowOperation: startOp,
 		})
 		ts.NoError(err)
 
@@ -4144,16 +4144,16 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 		startOptions.CronSchedule = "invalid!"
 		startOp := ts.client.NewWithStartWorkflowOperation(startOptions, ts.workflows.UpdateEntityWorkflow)
 		_, err := ts.client.UpdateWithStartWorkflow(ctx, client.UpdateWithStartWorkflowOptions{
-			UpdateOptions:  updateOptions,
-			StartOperation: startOp,
+			UpdateOptions:          updateOptions,
+			StartWorkflowOperation: startOp,
 		})
 		ts.Error(err)
 
 		startOptions.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_UNSPECIFIED
 		startOp = ts.client.NewWithStartWorkflowOperation(startOptions, ts.workflows.UpdateEntityWorkflow)
 		_, err = ts.client.UpdateWithStartWorkflow(ctx, client.UpdateWithStartWorkflowOptions{
-			UpdateOptions:  updateOptions,
-			StartOperation: startOp,
+			UpdateOptions:          updateOptions,
+			StartWorkflowOperation: startOp,
 		})
 		ts.ErrorContains(err, "WorkflowIDConflictPolicy must be set")
 	})
@@ -4167,7 +4167,7 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 			UpdateOptions: client.UpdateWorkflowOptions{
 				// invalid
 			},
-			StartOperation: startOp,
+			StartWorkflowOperation: startOp,
 		})
 		ts.ErrorContains(err, "WaitForStage must be specified")
 
@@ -4176,7 +4176,7 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 				RunID:        "invalid",
 				WaitForStage: client.WorkflowUpdateStageCompleted,
 			},
-			StartOperation: startOp,
+			StartWorkflowOperation: startOp,
 		})
 		ts.ErrorContains(err, "invalid UpdateWorkflowOptions: RunID cannot be set for UpdateWithStartWorkflow because the workflow might not be running")
 
@@ -4185,7 +4185,7 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 				FirstExecutionRunID: "invalid",
 				WaitForStage:        client.WorkflowUpdateStageCompleted,
 			},
-			StartOperation: startOp,
+			StartWorkflowOperation: startOp,
 		})
 		ts.ErrorContains(err, "invalid UpdateWorkflowOptions: FirstExecutionRunID cannot be set for UpdateWithStartWorkflow because the workflow might not be running")
 
@@ -4194,7 +4194,7 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 				UpdateName:   "", // invalid
 				WaitForStage: client.WorkflowUpdateStageCompleted,
 			},
-			StartOperation: startOp,
+			StartWorkflowOperation: startOp,
 		})
 		ts.ErrorContains(err, "invalid WithStartWorkflowOperation: ") // omitting server message intentionally
 
@@ -4204,7 +4204,7 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 				UpdateName:   "update",
 				WaitForStage: client.WorkflowUpdateStageCompleted,
 			},
-			StartOperation: startOp,
+			StartWorkflowOperation: startOp,
 		})
 		ts.ErrorContains(err, "invalid WithStartWorkflowOperation: ") // omitting server message intentionally
 	})
@@ -4221,7 +4221,7 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 				Args:         []any{1},
 				WaitForStage: client.WorkflowUpdateStageCompleted,
 			},
-			StartOperation: startOp,
+			StartWorkflowOperation: startOp,
 		})
 
 		// NOTE that WorkflowExecutionErrorWhenAlreadyStarted (defaults to false) has no impact
@@ -4237,14 +4237,14 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 			WaitForStage: client.WorkflowUpdateStageCompleted,
 		}
 		_, err := ts.client.UpdateWithStartWorkflow(ctx, client.UpdateWithStartWorkflowOptions{
-			UpdateOptions:  updateOptions,
-			StartOperation: startOp,
+			UpdateOptions:          updateOptions,
+			StartWorkflowOperation: startOp,
 		})
 		ts.NoError(err)
 
 		_, err = ts.client.UpdateWithStartWorkflow(ctx, client.UpdateWithStartWorkflowOptions{
-			UpdateOptions:  updateOptions,
-			StartOperation: startOp,
+			UpdateOptions:          updateOptions,
+			StartWorkflowOperation: startOp,
 		})
 		ts.ErrorContains(err, "invalid WithStartWorkflowOperation: was already executed")
 	})
@@ -4264,7 +4264,7 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 				Args:         []any{1},
 				WaitForStage: client.WorkflowUpdateStageCompleted,
 			},
-			StartOperation: startOp,
+			StartWorkflowOperation: startOp,
 		})
 		ts.NoError(err)
 
