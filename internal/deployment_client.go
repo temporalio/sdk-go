@@ -105,7 +105,7 @@ type (
 		// TaskQueuesInfo - List of task queues polled by workers in this deployment.
 		TaskQueuesInfo []DeploymentTaskQueueInfo
 
-		// Metadata - A user-defined set of key-values. Can be updated with `DeploymentClient.SetCurrent`.
+		// Metadata - A user-defined set of key-values. Can be updated with [DeploymentClient.SetCurrent].
 		Metadata map[string]*commonpb.Payload
 	}
 
@@ -144,9 +144,10 @@ type (
 		SeriesName string
 	}
 
-	// DeploymentReachabilityInfo extends DeploymentInfo with reachability information.
+	// DeploymentReachabilityInfo extends [DeploymentInfo] with reachability information.
 	// NOTE: Experimental
 	DeploymentReachabilityInfo struct {
+		// DeploymentInfo - Information about the deployment.
 		DeploymentInfo DeploymentInfo
 
 		// Reachability - Kind of tasks that may reach a worker
@@ -163,7 +164,7 @@ type (
 	// NOTE: Experimental
 	DeploymentMetadataUpdate struct {
 		// UpsertEntries - Metadata entries inserted or modified. When values are not
-		// of type *commonpb.Payload, the default data converter will be used to generate
+		// of type *commonpb.Payload, the client data converter will be used to generate
 		// payloads.
 		UpsertEntries map[string]interface{}
 
@@ -171,7 +172,7 @@ type (
 		RemoveEntries []string
 	}
 
-	// DeploymentSetCurrentOptions provides options for DeploymentClient.SetCurrent.
+	// DeploymentSetCurrentOptions provides options for [DeploymentClient.SetCurrent].
 	// NOTE: Experimental
 	DeploymentSetCurrentOptions struct {
 		// Deployment - An identifier for this deployment.
@@ -182,7 +183,7 @@ type (
 		MetadataUpdate DeploymentMetadataUpdate
 	}
 
-	// DeploymentSetCurrentResponse is the response type for DeploymentClient.SetCurrent.
+	// DeploymentSetCurrentResponse is the response type for [DeploymentClient.SetCurrent].
 	// NOTE: Experimental
 	DeploymentSetCurrentResponse struct {
 		// Current - Information about the current deployment after this operation.
@@ -192,21 +193,21 @@ type (
 		Previous DeploymentInfo
 	}
 
-	// DeploymentDescribeOptions provides options for DeploymentClient.Describe.
+	// DeploymentDescribeOptions provides options for [DeploymentClient.Describe].
 	// NOTE: Experimental
 	DeploymentDescribeOptions struct {
 		// Deployment - Identifier that combines the deployment series name with their Build ID.
 		Deployment Deployment
 	}
 
-	// DeploymentGetReachabilityOptions provides options for DeploymentClient.GetReachability.
+	// DeploymentGetReachabilityOptions provides options for [DeploymentClient.GetReachability].
 	// NOTE: Experimental
 	DeploymentGetReachabilityOptions struct {
 		// Deployment - Identifier that combines the deployment series name with their Build ID.
 		Deployment Deployment
 	}
 
-	// DeploymentGetCurrentOptions provides options for DeploymentClient.GetCurrent.
+	// DeploymentGetCurrentOptions provides options for [DeploymentClient.GetCurrent].
 	// NOTE: Experimental
 	DeploymentGetCurrentOptions struct {
 		// SeriesName - Name of the deployment series.
@@ -226,7 +227,7 @@ type (
 		List(ctx context.Context, options DeploymentListOptions) (DeploymentListIterator, error)
 
 		// GetReachability returns reachability information for a deployment. This operation is
-		// expensive, and results may be cached. Use the returned DeploymentReachabilityInfo.LastUpdateTime
+		// expensive, and results may be cached. Use the returned [DeploymentReachabilityInfo.LastUpdateTime]
 		// to estimate cache staleness.
 		// NOTE: Experimental
 		GetReachability(ctx context.Context, options DeploymentGetReachabilityOptions) (DeploymentReachabilityInfo, error)

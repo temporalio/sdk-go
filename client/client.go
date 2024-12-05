@@ -347,23 +347,23 @@ type (
 	// NOTE: Experimental
 	DeploymentMetadataUpdate = internal.DeploymentMetadataUpdate
 
-	// DeploymentDescribeOptions provides options for DeploymentClient.Describe.
+	// DeploymentDescribeOptions provides options for [DeploymentClient.Describe].
 	// NOTE: Experimental
 	DeploymentDescribeOptions = internal.DeploymentDescribeOptions
 
-	// DeploymentGetReachabilityOptions provides options for DeploymentClient.GetReachability.
+	// DeploymentGetReachabilityOptions provides options for [DeploymentClient.GetReachability].
 	// NOTE: Experimental
 	DeploymentGetReachabilityOptions = internal.DeploymentGetReachabilityOptions
 
-	// DeploymentGetCurrentOptions provides options for DeploymentClient.GetCurrent.
+	// DeploymentGetCurrentOptions provides options for [DeploymentClient.GetCurrent].
 	// NOTE: Experimental
 	DeploymentGetCurrentOptions = internal.DeploymentGetCurrentOptions
 
-	// DeploymentSetCurrentOptions provides options for DeploymentClient.SetCurrent.
+	// DeploymentSetCurrentOptions provides options for [DeploymentClient.SetCurrent].
 	// NOTE: Experimental
 	DeploymentSetCurrentOptions = internal.DeploymentSetCurrentOptions
 
-	// DeploymentSetCurrentResponse is the response type for DeploymentClient.SetCurrent.
+	// DeploymentSetCurrentResponse is the response type for [DeploymentClient.SetCurrent].
 	// NOTE: Experimental
 	DeploymentSetCurrentResponse = internal.DeploymentSetCurrentResponse
 
@@ -371,16 +371,16 @@ type (
 	// NOTE: Experimental
 	DeploymentClient = internal.DeploymentClient
 
-	// UpdateWorkflowExecutionOptionsRequest is a request for Client.UpdateWorkflowExecutionOptions.
+	// UpdateWorkflowExecutionOptionsRequest is a request for [Client.UpdateWorkflowExecutionOptions].
 	// NOTE: Experimental
 	UpdateWorkflowExecutionOptionsRequest = internal.UpdateWorkflowExecutionOptionsRequest
 
 	// WorkflowExecutionOptions contains a set of properties of an existing workflow
-	// that can be overriden using UpdateWorkflowExecutionOptions.
+	// that can be overriden using [UpdateWorkflowExecutionOptions].
 	// NOTE: Experimental
 	WorkflowExecutionOptions = internal.WorkflowExecutionOptions
 
-	// VersioningOverride is a property in WorkflowExecutionOptions that changes the versioning
+	// VersioningOverride is a property in [WorkflowExecutionOptions] that changes the versioning
 	// configuration of a specific workflow execution.
 	// If set, it takes precedence over the Versioning Behavior provided with workflow type registration, or
 	// default worker options.
@@ -948,10 +948,10 @@ type (
 		// NOTE: Experimental
 		UpdateWorkflow(ctx context.Context, options UpdateWorkflowOptions) (WorkflowUpdateHandle, error)
 
-		// UpdateWorkflowExecutionOptions partially overrides the WorkflowExecutionOptions of an existing workflow execution
-		// and returns the new WorkflowExecutionOptions after applying the changes.
+		// UpdateWorkflowExecutionOptions partially overrides the [WorkflowExecutionOptions] of an existing workflow execution
+		// and returns the new [WorkflowExecutionOptions] after applying the changes.
 		// It is intended for building tools that can selectively apply ad-hoc workflow configuration changes.
-		// Use DescribeWorkflowExecution to get the current WorkflowExecutionOptions without modifying them.
+		// Use [DescribeWorkflowExecution] to get the current [WorkflowExecutionOptions] without modifying them.
 		// NOTE: Experimental
 		UpdateWorkflowExecutionOptions(ctx context.Context, options UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error)
 

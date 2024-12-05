@@ -1057,8 +1057,8 @@ func (wc *WorkflowClient) GetWorkerTaskReachability(ctx context.Context, options
 	return converted, nil
 }
 
-// UpdateWorkflowExecutionOptions partially overrides the WorkflowExecutionOptions of an existing workflow execution,
-// and returns the new WorkflowExecutionOptions after applying the changes.
+// UpdateWorkflowExecutionOptions partially overrides the [WorkflowExecutionOptions] of an existing workflow execution,
+// and returns the new [WorkflowExecutionOptions] after applying the changes.
 // It is intended for building tools that can selectively apply ad-hoc workflow configuration changes.
 // NOTE: Experimental
 func (wc *WorkflowClient) UpdateWorkflowExecutionOptions(ctx context.Context, request UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error) {
@@ -1298,7 +1298,7 @@ func (wc *WorkflowClient) ScheduleClient() ScheduleClient {
 	}
 }
 
-// DeploymentClient implements Client.DeploymentClient.
+// DeploymentClient implements [Client.DeploymentClient].
 func (wc *WorkflowClient) DeploymentClient() DeploymentClient {
 	return &deploymentClient{
 		workflowClient: wc,

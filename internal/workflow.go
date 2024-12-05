@@ -64,15 +64,16 @@ const (
 type VersioningBehavior int
 
 const (
-	// Workflow versioning policy unknown. A default VersioningBehaviorUnspecified policy forces
-	// every workflow to explicitly set a VersioningBehavior different from VersioningBehaviorUnspecified.
+	// VersioningBehaviorUnspecified - Workflow versioning policy unknown.
+	//  A default [VersioningBehaviorUnspecified] policy forces
+	// every workflow to explicitly set a [VersioningBehavior] different from [VersioningBehaviorUnspecified].
 	VersioningBehaviorUnspecified VersioningBehavior = iota
 
-	// Workflow should be pinned to the current Build ID until manually moved.
+	// VersioningBehaviorPinned - Workflow should be pinned to the current Build ID until manually moved.
 	VersioningBehaviorPinned
 
-	// Workflow automatically moves to the latest version (default Build ID of the task queue)
-	// when the next task is dispatched.
+	// VersioningBehaviorAutoUpgrade - Workflow automatically moves to the latest
+	// version (default Build ID of the task queue) when the next task is dispatched.
 	VersioningBehaviorAutoUpgrade
 )
 
@@ -427,8 +428,8 @@ type (
 		Name                          string
 		DisableAlreadyRegisteredCheck bool
 		// Optional: Provides a Versioning Behavior to workflows of this type. It is required
-		// when WorkerOptions does not specify DeploymentOptions.DefaultVersioningBehavior,
-		// DeploymentOptions.DeploymentSeriesName is set, and UseBuildIDForVersioning is true.
+		// when WorkerOptions does not specify [DeploymentOptions.DefaultVersioningBehavior],
+		// [DeploymentOptions.DeploymentSeriesName] is set, and [UseBuildIDForVersioning] is true.
 		// NOTE: Experimental
 		VersioningBehavior VersioningBehavior
 	}

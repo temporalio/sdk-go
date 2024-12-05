@@ -31,7 +31,7 @@ import (
 
 type (
 	// WorkerDeploymentOptions provides configuration for Worker Versioning.
-	// NOTE: Both WorkerOptions.BuildID and WorkerOptions.UseBuildIDForVersioning need to be set for enabling
+	// NOTE: Both [WorkerOptions.BuildID] and [WorkerOptions.UseBuildIDForVersioning] need to be set for enabling
 	//  Worker Versioning.
 	// NOTE: Experimental
 	WorkerDeploymentOptions struct {
@@ -41,8 +41,9 @@ type (
 		DeploymentSeriesName string
 
 		// Optional: Provides a default Versioning Behavior to workflows that do not set one with the
-		// registration option workflow.RegisterOptions.VersioningBehavior.
-		// NOTE: When the Worker Versioning-3 feature is on, and DefaultVersioningBehavior is unspecified,
+		// registration option [RegisterWorkflowOptions.VersioningBehavior].
+		// NOTE: When the new Deployment-based Worker Versioning feature is on,
+		// and [DefaultVersioningBehavior] is unspecified,
 		// workflows that do not set the Versioning Behavior will fail at registration time.
 		// NOTE: Experimental
 		DefaultVersioningBehavior VersioningBehavior
@@ -258,7 +259,7 @@ type (
 
 		// Assign a BuildID to this worker. This replaces the deprecated binary checksum concept,
 		// and is used to provide a unique identifier for a set of worker code, and is necessary
-		// to opt in to the Worker Versioning feature. See UseBuildIDForVersioning.
+		// to opt in to the Worker Versioning feature. See [UseBuildIDForVersioning].
 		// NOTE: Experimental
 		BuildID string
 
@@ -266,11 +267,11 @@ type (
 		// operate on workflows it claims to be compatible with. You must set BuildID if this flag
 		// is true.
 		// NOTE: Experimental
-		// Note: Cannot be enabled at the same time as WorkerOptions.EnableSessionWorker
+		// Note: Cannot be enabled at the same time as [WorkerOptions.EnableSessionWorker]
 		UseBuildIDForVersioning bool
 
 		// Optional: If set it configures Worker Versioning for this worker. See WorkerDeploymentOptions
-		// for more. Both BuildID and UseBuildIDForVersioning need to be set to enable Worker Versioning.
+		// for more. Both [BuildID] and [UseBuildIDForVersioning] need to be set to enable Worker Versioning.
 		// NOTE: Experimental
 		DeploymentOptions WorkerDeploymentOptions
 

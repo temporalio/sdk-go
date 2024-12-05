@@ -38,8 +38,8 @@ type (
 		workflowClient *WorkflowClient
 	}
 
-	// deploymentListIteratorImpl is the implementation of DeploymentListIterator.
-	// Adapted from scheduleListIteratorImpl.
+	// deploymentListIteratorImpl is the implementation of [DeploymentListIterator].
+	// Adapted from [scheduleListIteratorImpl].
 	deploymentListIteratorImpl struct {
 		// nextDeploymentIndex - Local index to cached deployments.
 		nextDeploymentIndex int

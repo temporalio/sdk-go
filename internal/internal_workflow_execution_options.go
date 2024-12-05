@@ -32,7 +32,7 @@ import (
 )
 
 type (
-	// UpdateWorkflowExecutionOptionsRequest is a request for Client.UpdateWorkflowExecutionOptions.
+	// UpdateWorkflowExecutionOptionsRequest is a request for [Client.UpdateWorkflowExecutionOptions].
 	// NOTE: Experimental
 	UpdateWorkflowExecutionOptionsRequest struct {
 		// ID of the workflow.
@@ -40,13 +40,13 @@ type (
 		// Running execution for a workflow ID. If empty string then it will pick the last running execution.
 		RunId string
 		// WorkflowExecutionOptions specifies options for a target workflow execution. Fields not in
-		// UpdatedFields are ignored.
+		// [UpdatedFields] are ignored.
 		WorkflowExecutionOptions WorkflowExecutionOptions
-		// Field names in WorkflowExecutionOptions that will be updated.
-		// When it includes a field name, but the corresponding WorkflowExecutionOptions field has not been set,
+		// Field names in [WorkflowExecutionOptions] that will be updated.
+		// When it includes a field name, but the corresponding [WorkflowExecutionOptions] field has not been set,
 		// it will remove previous overrides for that field.
-		// It panics when it includes a field name not in WorkflowExecutionOptions.
-		// An empty UpdatedFields never modifies WorkflowExecutionOptions.
+		// It panics when it includes a field name not in [WorkflowExecutionOptions].
+		// An empty [UpdatedFields] never modifies [WorkflowExecutionOptions].
 		UpdatedFields []string
 	}
 
@@ -60,14 +60,14 @@ type (
 	// VersioningOverride changes the versioning configuration of a specific workflow execution.
 	// If set, it takes precedence over the Versioning Behavior provided with workflow type registration or
 	// default worker options.
-	// To remove the override, the UpdateWorkflowExecutionOptionsRequest should include a default VersioningOverride
-	// value in WorkflowExecutionOptions, and a FieldMask that contains the string "VersioningOverride".
+	// To remove the override, the [UpdateWorkflowExecutionOptionsRequest] should include a default [VersioningOverride]
+	// value in [WorkflowExecutionOptions], and a FieldMask that contains the string "VersioningOverride".
 	// NOTE: Experimental
 	VersioningOverride struct {
 		// The new Versioning Behavior. This field is required.
 		Behavior VersioningBehavior
 		// Identifies the Build ID and Deployment Series Name to pin the workflow to. Ignored when Behavior is not
-		// VersioningBehaviorPinned.
+		// [VersioningBehaviorPinned].
 		Deployment Deployment
 	}
 )

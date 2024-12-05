@@ -169,11 +169,11 @@ type (
 		// If true the worker is opting in to build ID based versioning.
 		UseBuildIDForVersioning bool
 
-		// The worker's deployment series name, an identifier in versioning-3 to link versions of the same worker
+		// The worker's deployment series name, an identifier for Worker Versioning that links versions of the same worker
 		// service/application.
 		DeploymentSeriesName string
 
-		// The Versioning Behavior for workflows that do not set one in their first task.
+		// The Versioning Behavior for workflows that do not set one when registering the workflow type.
 		DefaultVersioningBehavior VersioningBehavior
 
 		MetricsHandler metrics.Handler
