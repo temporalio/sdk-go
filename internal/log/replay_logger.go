@@ -49,13 +49,13 @@ func NewReplayLogger(logger log.Logger, isReplay *bool, enableLoggingInReplay *b
 }
 
 func (l *ReplayLogger) check() bool {
-	return !*l.isReplay || *l.enableLoggingInReplay
+	return true
 }
 
 // Debug writes message to the log if it is not a replay.
 func (l *ReplayLogger) Debug(msg string, keyvals ...interface{}) {
 	if l.check() {
-		l.logger.Debug(msg, keyvals...)
+		l.logger.Info(msg, keyvals...)
 	}
 }
 

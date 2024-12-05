@@ -55,7 +55,7 @@ func (l *DefaultLogger) println(level, msg string, keyvals []interface{}) {
 
 // Debug writes message to the log.
 func (l *DefaultLogger) Debug(msg string, keyvals ...interface{}) {
-	l.println("DEBUG", msg, keyvals)
+	l.println("INFO ", msg, keyvals)
 }
 
 // Info writes message to the log.

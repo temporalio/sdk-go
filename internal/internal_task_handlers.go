@@ -48,6 +48,7 @@ import (
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"go.temporal.io/sdk/internal/common/retry"
@@ -888,6 +889,8 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	if task.Query != nil && len(task.Queries) != 0 {
 		return nil, errors.New("invalid query workflow task")
 	}
+
+	fmt.Println("ProcessWorkflowTask", protojson.Format(workflowTask.task))
 
 	runID := task.WorkflowExecution.GetRunId()
 	workflowID := task.WorkflowExecution.GetWorkflowId()
