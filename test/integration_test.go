@@ -6201,29 +6201,25 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateWorkflowActionMemo() {
 }
 
 func (ts *IntegrationTestSuite) TestVersioningBehaviorInRespondWorkflowTaskCompletedRequest() {
+	if os.Getenv("DISABLE_DEPLOYMENT_TESTS") != "" {
+		ts.T().Skip("temporal server 1.26.2+ required")
+	}
 	versioningBehaviorAll := make([]enumspb.VersioningBehavior, 0)
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	// We are setting the default build ID with versioning-2 rules to test
-	// with existing servers. TODO(antlai-temporal) use versioning-3 APIs
-	// after there is a server release that supports versioning-3
-	res, err := ts.client.GetWorkerVersioningRules(ctx, client.GetWorkerVersioningOptions{
-		TaskQueue: ts.taskQueueName,
-	})
-	ts.NoError(err)
-
-	_, err = ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
-		TaskQueue:     ts.taskQueueName,
-		ConflictToken: res.ConflictToken,
-		Operation: &client.VersioningOperationInsertAssignmentRule{
-			RuleIndex: 0,
-			Rule: client.VersioningAssignmentRule{
-				TargetBuildID: "1.0",
-			},
+	seriesName := "deploy-test-" + uuid.New()
+	res, err := ts.client.DeploymentClient().SetCurrent(ctx, client.DeploymentSetCurrentOptions{
+		Deployment: client.Deployment{
+			BuildID:    "1.0",
+			SeriesName: seriesName,
 		},
 	})
 	ts.NoError(err)
+	ts.True(res.Current.IsCurrent)
+	ts.Equal(res.Current.Deployment.BuildID, "1.0")
+	ts.Equal(res.Current.Deployment.SeriesName, seriesName)
+	ts.Empty(res.Previous.Deployment)
 
 	c, err := client.Dial(client.Options{
 		HostPort:  ts.config.ServiceAddr,
@@ -6258,7 +6254,7 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorInRespondWorkflowTaskCompl
 		BuildID:                 "1.0",
 		UseBuildIDForVersioning: true,
 		DeploymentOptions: worker.DeploymentOptions{
-			DeploymentSeriesName:      "deploy-test1",
+			DeploymentSeriesName:      seriesName,
 			DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 		},
 	})
@@ -6276,29 +6272,26 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorInRespondWorkflowTaskCompl
 }
 
 func (ts *IntegrationTestSuite) TestVersioningBehaviorPerWorkflowType() {
+	if os.Getenv("DISABLE_DEPLOYMENT_TESTS") != "" {
+		ts.T().Skip("temporal server 1.26.2+ required")
+	}
 	versioningBehaviorAll := make([]enumspb.VersioningBehavior, 0)
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	// We are setting the default build ID with versioning-2 rules to test
-	// with existing servers. TODO(antlai-temporal) use versioning-3 APIs
-	// after there is a server release that supports versioning-3
-	res, err := ts.client.GetWorkerVersioningRules(ctx, client.GetWorkerVersioningOptions{
-		TaskQueue: ts.taskQueueName,
-	})
-	ts.NoError(err)
+	seriesName := "deploy-test-" + uuid.New()
 
-	_, err = ts.client.UpdateWorkerVersioningRules(ctx, client.UpdateWorkerVersioningRulesOptions{
-		TaskQueue:     ts.taskQueueName,
-		ConflictToken: res.ConflictToken,
-		Operation: &client.VersioningOperationInsertAssignmentRule{
-			RuleIndex: 0,
-			Rule: client.VersioningAssignmentRule{
-				TargetBuildID: "1.0",
-			},
+	res, err := ts.client.DeploymentClient().SetCurrent(ctx, client.DeploymentSetCurrentOptions{
+		Deployment: client.Deployment{
+			BuildID:    "1.0",
+			SeriesName: seriesName,
 		},
 	})
 	ts.NoError(err)
+	ts.True(res.Current.IsCurrent)
+	ts.Equal(res.Current.Deployment.BuildID, "1.0")
+	ts.Equal(res.Current.Deployment.SeriesName, seriesName)
+	ts.Empty(res.Previous.Deployment)
 
 	c, err := client.Dial(client.Options{
 		HostPort:  ts.config.ServiceAddr,
@@ -6333,7 +6326,7 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorPerWorkflowType() {
 		BuildID:                 "1.0",
 		UseBuildIDForVersioning: true,
 		DeploymentOptions: worker.DeploymentOptions{
-			DeploymentSeriesName:      "deploy-test2",
+			DeploymentSeriesName:      seriesName,
 			DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 		},
 	})
@@ -6355,6 +6348,11 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorPerWorkflowType() {
 }
 
 func (ts *IntegrationTestSuite) TestNoVersioningBehaviorPanics() {
+	if os.Getenv("DISABLE_DEPLOYMENT_TESTS") != "" {
+		ts.T().Skip("temporal server 1.26.2+ required")
+	}
+	seriesName := "deploy-test-" + uuid.New()
+
 	c, err := client.Dial(client.Options{
 		HostPort:  ts.config.ServiceAddr,
 		Namespace: ts.config.Namespace,
@@ -6371,7 +6369,7 @@ func (ts *IntegrationTestSuite) TestNoVersioningBehaviorPanics() {
 		BuildID:                 "1.0",
 		UseBuildIDForVersioning: true,
 		DeploymentOptions: worker.DeploymentOptions{
-			DeploymentSeriesName: "deploy-test1",
+			DeploymentSeriesName: seriesName,
 			// No DefaultVersioningBehavior
 		},
 	})

@@ -141,7 +141,7 @@ func (b *builder) integrationTest() error {
 				Namespace: "integration-test-namespace",
 			},
 			CachedDownload: testsuite.CachedDownload{
-				Version: "v1.1.0",
+				Version: "v1.2.0-versioning.0",
 			},
 			LogLevel: "warn",
 			ExtraArgs: []string{
@@ -156,6 +156,7 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", "system.forceSearchAttributesCacheRefreshOnRead=true",
 				"--dynamic-config-value", "worker.buildIdScavengerEnabled=true",
 				"--dynamic-config-value", "worker.removableBuildIdDurationSinceDefault=1",
+				"--dynamic-config-value", "system.enableDeployments=true",
 				// All of the below is required for Nexus tests.
 				"--http-port", "7243",
 				"--dynamic-config-value", "system.enableNexus=true",
