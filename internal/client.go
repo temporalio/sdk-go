@@ -757,6 +757,8 @@ type (
 	// See [NewWithStartWorkflowOperation] and [UpdateWithStartWorkflow].
 	// NOTE: Experimental
 	WithStartWorkflowOperation interface {
+		// Get returns the WorkflowRun that was targeted by the UpdateWithStartWorkflow call.
+		// This is a blocking API.
 		Get(ctx context.Context) (WorkflowRun, error)
 	}
 
