@@ -338,6 +338,9 @@ var (
 
 	// ErrSkipScheduleUpdate is used by a user if they want to skip updating a schedule.
 	ErrSkipScheduleUpdate = errors.New("skip schedule update")
+
+	// ErrMissingWorkflowID is returned when trying to start an async Nexus operation but no workflow ID is set on the request.
+	ErrMissingWorkflowID = errors.New("workflow ID is unset for Nexus operation")
 )
 
 // NewApplicationError create new instance of *ApplicationError with message, type, and optional details.
@@ -821,6 +824,41 @@ func (e *ChildWorkflowExecutionError) message() string {
 
 func (e *ChildWorkflowExecutionError) Unwrap() error {
 	return e.cause
+}
+
+// Namespace returns namespace of the child workflow.
+func (e *ChildWorkflowExecutionError) Namespace() string {
+	return e.namespace
+}
+
+// WorkflowId returns workflow ID of the child workflow.
+func (e *ChildWorkflowExecutionError) WorkflowID() string {
+	return e.workflowID
+}
+
+// RunID returns run ID of the child workflow.
+func (e *ChildWorkflowExecutionError) RunID() string {
+	return e.runID
+}
+
+// WorkflowType returns type of the child workflow.
+func (e *ChildWorkflowExecutionError) WorkflowType() string {
+	return e.workflowType
+}
+
+// InitiatedEventID returns event ID of the child workflow initiated event.
+func (e *ChildWorkflowExecutionError) InitiatedEventID() int64 {
+	return e.initiatedEventID
+}
+
+// StartedEventID returns event ID of the child workflow started event.
+func (e *ChildWorkflowExecutionError) StartedEventID() int64 {
+	return e.startedEventID
+}
+
+// RetryState returns details on why child workflow failed.
+func (e *ChildWorkflowExecutionError) RetryState() enumspb.RetryState {
+	return e.retryState
 }
 
 // Error implements the error interface.

@@ -274,6 +274,11 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		ts.NoError(err)
 		options.Tuner = tuner
 	}
+	if strings.Contains(ts.T().Name(), "SlotSuppliersWithSession") {
+		options.MaxConcurrentActivityExecutionSize = 1
+		// Apparently this is on by default in these tests anyway, but to be explicit
+		options.EnableSessionWorker = true
+	}
 
 	ts.worker = worker.New(ts.client, ts.taskQueueName, options)
 	ts.workerStopped = false
@@ -3269,6 +3274,27 @@ func (ts *IntegrationTestSuite) TestResourceBasedSlotSupplierManyActs() {
 	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, wfWorkertags, 0)
 }
 
+func (ts *IntegrationTestSuite) TestSlotSuppliersWithSessionAndOneConcurrentMax() {
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	defer cancel()
+
+	// Activities time out without the fix, since obtaining a slot takes too long
+	wfRuns := make([]client.WorkflowRun, 0)
+	for i := 0; i < 3; i++ {
+		opts := ts.startWorkflowOptions("slot-suppliers-with-session" + strconv.Itoa(i))
+		opts.WorkflowExecutionTimeout = 1 * time.Minute
+		run, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.Echo, "hi")
+		ts.NoError(err)
+		ts.NotNil(run)
+		ts.NoError(err)
+		wfRuns = append(wfRuns, run)
+	}
+
+	for _, run := range wfRuns {
+		ts.NoError(run.Get(ctx, nil))
+	}
+}
+
 func (ts *IntegrationTestSuite) TestTooFewParams() {
 	var res ParamsValue
 	// Only give first param
@@ -6241,10 +6267,6 @@ func (ts *IntegrationTestSuite) TestRequestFailureMetric() {
 }
 
 func (ts *IntegrationTestSuite) TestUserMetadata() {
-	// Skip this test if disabled
-	if os.Getenv("DISABLE_USER_METADATA_TESTS") != "" {
-		ts.T().SkipNow()
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -6301,6 +6323,8 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 	// Confirm that the history has a timer with the proper summary
 	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	var timerEvent *historypb.HistoryEvent
+	var activityEvent *historypb.HistoryEvent
+	var childWorkflowEvent *historypb.HistoryEvent
 	for iter.HasNext() {
 		event, err := iter.Next()
 		ts.NoError(err)
@@ -6308,11 +6332,35 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 			ts.Nil(timerEvent)
 			timerEvent = event
 		}
+
+		if event.GetActivityTaskScheduledEventAttributes() != nil {
+			ts.Nil(activityEvent)
+			activityEvent = event
+		}
+
+		if event.GetStartChildWorkflowExecutionInitiatedEventAttributes() != nil {
+			ts.Nil(childWorkflowEvent)
+			childWorkflowEvent = event
+		}
 	}
 	ts.NotNil(timerEvent)
 	ts.NoError(converter.GetDefaultDataConverter().FromPayload(
 		timerEvent.UserMetadata.Summary, &str))
 	ts.Equal("my-timer", str)
+
+	ts.NotNil(activityEvent)
+	ts.NoError(converter.GetDefaultDataConverter().FromPayload(
+		activityEvent.UserMetadata.Summary, &str))
+	ts.Equal("my-activity", str)
+
+	ts.NotNil(childWorkflowEvent)
+	fmt.Printf("childWorkflowEvent: %v\n", childWorkflowEvent.UserMetadata)
+	ts.NoError(converter.GetDefaultDataConverter().FromPayload(
+		childWorkflowEvent.UserMetadata.Summary, &str))
+	ts.Equal("my-child-wf-summary", str)
+	ts.NoError(converter.GetDefaultDataConverter().FromPayload(
+		childWorkflowEvent.UserMetadata.Details, &str))
+	ts.Equal("my-child-wf-details", str)
 }
 
 func (ts *IntegrationTestSuite) TestAwaitWithOptionsTimeout() {

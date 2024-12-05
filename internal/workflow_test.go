@@ -61,6 +61,8 @@ func TestGetChildWorkflowOptions(t *testing.T) {
 		},
 		ParentClosePolicy: enums.PARENT_CLOSE_POLICY_REQUEST_CANCEL,
 		VersioningIntent:  VersioningIntentDefault,
+		StaticSummary: "child workflow summary",
+		StaticDetails: "child workflow details",
 	}
 
 	// Require test options to have non-zero value for each field. This ensures that we update tests (and the
@@ -82,6 +84,7 @@ func TestGetActivityOptions(t *testing.T) {
 		RetryPolicy:            newTestRetryPolicy(),
 		DisableEagerExecution:  true,
 		VersioningIntent:       VersioningIntentDefault,
+		Summary: 			  "activity summary",
 	}
 
 	assertNonZero(t, opts)

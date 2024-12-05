@@ -46,6 +46,8 @@ type WorkerTuner interface {
 	GetLocalActivitySlotSupplier() SlotSupplier
 	// GetNexusSlotSupplier returns the SlotSupplier used for nexus tasks.
 	GetNexusSlotSupplier() SlotSupplier
+	// GetSessionActivitySlotSupplier returns the SlotSupplier used for activities within sessions.
+	GetSessionActivitySlotSupplier() SlotSupplier
 }
 
 // SlotPermit is a permit to use a slot.
@@ -150,10 +152,11 @@ type SlotSupplier interface {
 //
 // WARNING: Custom implementations of SlotSupplier are currently experimental.
 type CompositeTuner struct {
-	workflowSlotSupplier      SlotSupplier
-	activitySlotSupplier      SlotSupplier
-	localActivitySlotSupplier SlotSupplier
-	nexusSlotSupplier         SlotSupplier
+	workflowSlotSupplier        SlotSupplier
+	activitySlotSupplier        SlotSupplier
+	localActivitySlotSupplier   SlotSupplier
+	nexusSlotSupplier           SlotSupplier
+	sessionActivitySlotSupplier SlotSupplier
 }
 
 func (c *CompositeTuner) GetWorkflowTaskSlotSupplier() SlotSupplier {
@@ -168,6 +171,9 @@ func (c *CompositeTuner) GetLocalActivitySlotSupplier() SlotSupplier {
 func (c *CompositeTuner) GetNexusSlotSupplier() SlotSupplier {
 	return c.nexusSlotSupplier
 }
+func (c *CompositeTuner) GetSessionActivitySlotSupplier() SlotSupplier {
+	return c.sessionActivitySlotSupplier
+}
 
 // CompositeTunerOptions are the options used by NewCompositeTuner.
 type CompositeTunerOptions struct {
@@ -179,6 +185,8 @@ type CompositeTunerOptions struct {
 	LocalActivitySlotSupplier SlotSupplier
 	// NexusSlotSupplier is the SlotSupplier used for nexus tasks.
 	NexusSlotSupplier SlotSupplier
+	// SessionActivitySlotSupplier is the SlotSupplier used for activities within sessions.
+	SessionActivitySlotSupplier SlotSupplier
 }
 
 // NewCompositeTuner creates a WorkerTuner that uses a combination of slot suppliers.
@@ -186,10 +194,11 @@ type CompositeTunerOptions struct {
 // WARNING: Custom implementations of SlotSupplier are currently experimental.
 func NewCompositeTuner(options CompositeTunerOptions) (WorkerTuner, error) {
 	return &CompositeTuner{
-		workflowSlotSupplier:      options.WorkflowSlotSupplier,
-		activitySlotSupplier:      options.ActivitySlotSupplier,
-		localActivitySlotSupplier: options.LocalActivitySlotSupplier,
-		nexusSlotSupplier:         options.NexusSlotSupplier,
+		workflowSlotSupplier:        options.WorkflowSlotSupplier,
+		activitySlotSupplier:        options.ActivitySlotSupplier,
+		localActivitySlotSupplier:   options.LocalActivitySlotSupplier,
+		nexusSlotSupplier:           options.NexusSlotSupplier,
+		sessionActivitySlotSupplier: options.SessionActivitySlotSupplier,
 	}, nil
 }
 
@@ -235,11 +244,16 @@ func NewFixedSizeTuner(options FixedSizeTunerOptions) (WorkerTuner, error) {
 	if err != nil {
 		return nil, err
 	}
+	sessSS, err := NewFixedSizeSlotSupplier(options.NumActivitySlots)
+	if err != nil {
+		return nil, err
+	}
 	return &CompositeTuner{
-		workflowSlotSupplier:      wfSS,
-		activitySlotSupplier:      actSS,
-		localActivitySlotSupplier: laSS,
-		nexusSlotSupplier:         nexusSS,
+		workflowSlotSupplier:        wfSS,
+		activitySlotSupplier:        actSS,
+		localActivitySlotSupplier:   laSS,
+		nexusSlotSupplier:           nexusSS,
+		sessionActivitySlotSupplier: sessSS,
 	}, nil
 }
 

@@ -117,6 +117,7 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 	workflowWorker.Stop()
 
 	s.NoError(ctx.Err())
+
 }
 
 type CountingSlotSupplier struct {
@@ -736,6 +737,8 @@ func (s *WorkersTestSuite) TestWorkerMultipleStop() {
 	worker := NewAggregatedWorker(client, "multi-stop-tq", WorkerOptions{})
 	s.NoError(worker.Start())
 	worker.Stop()
+	// Verify stopping the worker removes it from the eager dispatcher
+	s.Empty(client.eagerDispatcher.workersByTaskQueue["multi-stop-tq"])
 	worker.Stop()
 }
 
