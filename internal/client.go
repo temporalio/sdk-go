@@ -47,14 +47,20 @@ import (
 
 const (
 	// DefaultNamespace is the namespace name which is used if not passed with options.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DefaultNamespace]
 	DefaultNamespace = "default"
 
 	// QueryTypeStackTrace is the build in query type for Client.QueryWorkflow() call. Use this query type to get the call
 	// stack of the workflow. The result will be a string encoded in the EncodedValue.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.QueryTypeStackTrace]
 	QueryTypeStackTrace string = "__stack_trace"
 
 	// QueryTypeOpenSessions is the build in query type for Client.QueryWorkflow() call. Use this query type to get all open
 	// sessions in the workflow. The result will be a list of SessionInfo encoded in the EncodedValue.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.QueryTypeOpenSessions]
 	QueryTypeOpenSessions string = "__open_sessions"
 
 	// QueryTypeWorkflowMetadata is the query name for the workflow metadata.
@@ -430,6 +436,8 @@ type (
 	}
 
 	// ClientOptions are optional parameters for Client creation.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.Options]
 	ClientOptions struct {
 		// Optional: To set the host:port for this client to connect to.
 		// default: localhost:7233
@@ -516,6 +524,8 @@ type (
 	// CloudOperationsClientOptions are parameters for CloudOperationsClient creation.
 	//
 	// WARNING: Cloud operations client is currently experimental.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.CloudOperationsClientOptions]
 	CloudOperationsClientOptions struct {
 		// Optional: The credentials for this client. This is essentially required.
 		// See [go.temporal.io/sdk/client.NewAPIKeyStaticCredentials],
@@ -562,6 +572,8 @@ type (
 	}
 
 	// ConnectionOptions is provided by SDK consumers to control optional connection params.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ConnectionOptions]
 	ConnectionOptions struct {
 		// TLS configures connection level security credentials.
 		TLS *tls.Config
@@ -622,6 +634,8 @@ type (
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
 	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 	// subjected to change in the future.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.StartWorkflowOptions]
 	StartWorkflowOptions struct {
 		// ID - The business identifier of the workflow execution.
 		// Optional: defaulted to a uuid.
@@ -779,6 +793,8 @@ type (
 	// started time. Because of that, to check an activity has started or not, you cannot rely on history events. Instead,
 	// you can use CLI to describe the workflow to see the status of the activity:
 	//     tctl --ns <namespace> wf desc -w <wf-id>
+	//
+	// Exposed as: [go.temporal.io/sdk/temporal.RetryPolicy]
 	RetryPolicy struct {
 		// Backoff interval for the first retry. If BackoffCoefficient is 1.0 then it is used for all retries.
 		// If not set or set to 0, a default interval of 1s will be used.
@@ -840,6 +856,8 @@ type (
 )
 
 // Credentials are optional credentials that can be specified in ClientOptions.
+//
+// Exposed as: [go.temporal.io/sdk/client.Credentials]
 type Credentials interface {
 	applyToOptions(*ConnectionOptions) error
 	// Can return nil to have no interceptor
@@ -847,12 +865,16 @@ type Credentials interface {
 }
 
 // DialClient creates a client and attempts to connect to the server.
+//
+// Exposed as: [go.temporal.io/sdk/client.DialContext]
 func DialClient(ctx context.Context, options ClientOptions) (Client, error) {
 	options.ConnectionOptions.disableEagerConnection = false
 	return NewClient(ctx, options)
 }
 
 // NewLazyClient creates a client and does not attempt to connect to the server.
+//
+// Exposed as: [go.temporal.io/sdk/client.NewLazyClient]
 func NewLazyClient(options ClientOptions) (Client, error) {
 	options.ConnectionOptions.disableEagerConnection = true
 	return NewClient(context.Background(), options)
@@ -861,12 +883,16 @@ func NewLazyClient(options ClientOptions) (Client, error) {
 // NewClient creates an instance of a workflow client
 //
 // Deprecated: Use DialClient or NewLazyClient instead.
+//
+// Exposed as: [go.temporal.io/sdk/client.NewClient]
 func NewClient(ctx context.Context, options ClientOptions) (Client, error) {
 	return newClient(ctx, options, nil)
 }
 
 // NewClientFromExisting creates a new client using the same connection as the
 // existing client.
+//
+// Exposed as: [go.temporal.io/sdk/client.NewClientFromExistingWithContext]
 func NewClientFromExisting(ctx context.Context, existingClient Client, options ClientOptions) (Client, error) {
 	existing, _ := existingClient.(*WorkflowClient)
 	if existing == nil {
@@ -1012,6 +1038,8 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 
 // DialCloudOperationsClient creates a cloud client to perform cloud-management
 // operations.
+//
+// Exposed as: [go.temporal.io/sdk/client.DialCloudOperationsClient]
 func DialCloudOperationsClient(ctx context.Context, options CloudOperationsClientOptions) (CloudOperationsClient, error) {
 	// Set defaults
 	if options.MetricsHandler == nil {
@@ -1089,6 +1117,8 @@ func (op *withStartWorkflowOperationImpl) set(workflowRun WorkflowRun, err error
 }
 
 // NewNamespaceClient creates an instance of a namespace client, to manager lifecycle of namespaces.
+//
+// Exposed as: [go.temporal.io/sdk/client.NewNamespaceClient]
 func NewNamespaceClient(options ClientOptions) (NamespaceClient, error) {
 	// Initialize root tags
 	if options.MetricsHandler == nil {
@@ -1129,6 +1159,8 @@ func newNamespaceServiceClient(workflowServiceClient workflowservice.WorkflowSer
 //
 //	var result string // This need to be same type as the one passed to RecordHeartbeat
 //	NewValue(data).Get(&result)
+//
+// Exposed as: [go.temporal.io/sdk/client.NewValue]
 func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 	return newEncodedValue(data, nil)
 }
@@ -1141,16 +1173,20 @@ func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 //	var result1 string
 //	var result2 int // These need to be same type as those arguments passed to RecordHeartbeat
 //	NewValues(data).Get(&result1, &result2)
+//
+// Exposed as: [go.temporal.io/sdk/client.NewValues]
 func NewValues(data *commonpb.Payloads) converter.EncodedValues {
 	return newEncodedValues(data, nil)
 }
 
 type apiKeyCredentials func(context.Context) (string, error)
 
+// Exposed as: [go.temporal.io/sdk/client.NewAPIKeyStaticCredentials]
 func NewAPIKeyStaticCredentials(apiKey string) Credentials {
 	return NewAPIKeyDynamicCredentials(func(ctx context.Context) (string, error) { return apiKey, nil })
 }
 
+// Exposed as: [go.temporal.io/sdk/client.NewAPIKeyDynamicCredentials]
 func NewAPIKeyDynamicCredentials(apiKeyCallback func(context.Context) (string, error)) Credentials {
 	return apiKeyCredentials(apiKeyCallback)
 }
@@ -1181,6 +1217,7 @@ func (a apiKeyCredentials) gRPCIntercept(
 
 type mTLSCredentials tls.Certificate
 
+// Exposed as: [go.temporal.io/sdk/client.NewMTLSCredentials]
 func NewMTLSCredentials(certificate tls.Certificate) Credentials { return mTLSCredentials(certificate) }
 
 func (m mTLSCredentials) applyToOptions(opts *ConnectionOptions) error {
@@ -1198,11 +1235,15 @@ func (mTLSCredentials) gRPCInterceptor() grpc.UnaryClientInterceptor { return ni
 // WorkflowUpdateServiceTimeoutOrCanceledError is an error that occurs when an update call times out or is cancelled.
 //
 // Note, this is not related to any general concept of timing out or cancelling a running update, this is only related to the client call itself.
+//
+// Exposed as: [go.temporal.io/sdk/client.WorkflowUpdateServiceTimeoutOrCanceledError]
 type WorkflowUpdateServiceTimeoutOrCanceledError struct {
 	cause error
 }
 
 // NewWorkflowUpdateServiceTimeoutOrCanceledError creates a new WorkflowUpdateServiceTimeoutOrCanceledError.
+//
+// Exposed as: [go.temporal.io/sdk/client.NewWorkflowUpdateServiceTimeoutOrCanceledError]
 func NewWorkflowUpdateServiceTimeoutOrCanceledError(err error) *WorkflowUpdateServiceTimeoutOrCanceledError {
 	return &WorkflowUpdateServiceTimeoutOrCanceledError{
 		cause: err,
