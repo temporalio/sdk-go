@@ -379,6 +379,33 @@ func (t *tracingClientOutboundInterceptor) UpdateWorkflow(
 	return val, err
 }
 
+func (t *tracingClientOutboundInterceptor) UpdateWithStartWorkflow(
+	ctx context.Context,
+	in *ClientUpdateWithStartWorkflowInput,
+) (client.WorkflowUpdateHandle, error) {
+	// Only add tracing if enabled
+	if t.root.options.DisableUpdateTracing {
+		return t.Next.UpdateWithStartWorkflow(ctx, in)
+	}
+	// Start span and write to header
+	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
+		Operation: "UpdateWithStartWorkflow",
+		Name:      in.UpdateOptions.UpdateName,
+		Tags:      map[string]string{workflowIDTagKey: in.UpdateOptions.WorkflowID, updateIDTagKey: in.UpdateOptions.UpdateID},
+		ToHeader:  true,
+		Time:      time.Now(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	var finishOpts TracerFinishSpanOptions
+	defer span.Finish(&finishOpts)
+
+	val, err := t.Next.UpdateWithStartWorkflow(ctx, in)
+	finishOpts.Error = err
+	return val, err
+}
+
 type tracingActivityOutboundInterceptor struct {
 	ActivityOutboundInterceptorBase
 	root *tracingInterceptor
