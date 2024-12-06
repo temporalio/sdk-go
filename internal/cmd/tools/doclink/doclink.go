@@ -363,21 +363,23 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 	var inGroup, exposedLinks string
 	var changesMade, inStruct bool
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if isValidDefinition(line, &inGroup, &inStruct) {
+		line := scanner.Text()
+		trimmedLine := strings.TrimSpace(line)
+		if isValidDefinition(trimmedLine, &inGroup, &inStruct) {
 			for packageName, pair := range pairs {
 				for public, private := range pair {
-					if isValidDefinitionWithMatch(line, private, inGroup, inStruct) {
+					if isValidDefinitionWithMatch(trimmedLine, private, inGroup, inStruct) {
+						docLink := fmt.Sprintf("[go.temporal.io/sdk/%s.%s]", packageName, public)
 						missingDoc := true
 						if exposedLinks != "" {
-							if strings.Contains(exposedLinks, packageName+":"+public) {
+							if strings.Contains(exposedLinks, docLink) {
 								missingDoc = false
 							}
 						}
 						if missingDoc {
 							if cfg.fix {
 								changesMade = true
-								exposedLinks += packageName + ":" + public + ", "
+								exposedLinks += docLink + ", "
 								fmt.Printf("Fixed doc in %s for internal:%s to %s:%s\n", file.Name(), private, packageName, public)
 							} else {
 								missing = true
@@ -391,8 +393,8 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 				newFile += "//\n" + exposedAs + strings.TrimSuffix(exposedLinks, ", ") + "\n"
 				exposedLinks = ""
 			}
-		} else if strings.HasPrefix(line, exposedAs) {
-			exposedLinks = strings.TrimPrefix(line, exposedAs)
+		} else if strings.HasPrefix(trimmedLine, exposedAs) {
+			exposedLinks = strings.TrimPrefix(trimmedLine, exposedAs)
 		}
 		newFile += line + "\n"
 
@@ -406,7 +408,6 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 		tempFilePath := absPath + ".tmp"
 
 		formattedCode, err := format.Source([]byte(newFile))
-		//fmt.Println("[formattedCode]", string(formattedCode))
 		if err != nil {
 			return fmt.Errorf("error formatting Go code: %v", err)
 

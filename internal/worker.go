@@ -34,7 +34,7 @@ type (
 	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 	// subjected to change in the future.
 	//
-	// Exposed as: worker:Options
+	// Exposed as: [go.temporal.io/sdk/worker.Options]
 	WorkerOptions struct {
 		// Optional: To set the maximum concurrent activity executions this worker can have.
 		// The zero value of this uses the default value.
@@ -266,7 +266,7 @@ type (
 // versioning (see workflow.GetVersion).
 // The default behavior is to block workflow execution until the problem is fixed.
 //
-// Exposed as: worker:WorkflowPanicPolicy
+// Exposed as: [go.temporal.io/sdk/worker.WorkflowPanicPolicy]
 type WorkflowPanicPolicy int
 
 const (
@@ -275,13 +275,13 @@ const (
 	// It is expected that after the problem is discovered and fixed the workflows are going to continue
 	// without any additional manual intervention.
 	//
-	// Exposed as: worker:BlockWorkflow
+	// Exposed as: [go.temporal.io/sdk/worker.BlockWorkflow]
 	BlockWorkflow WorkflowPanicPolicy = iota
 	// FailWorkflow immediately fails workflow execution if workflow code throws panic or detects non-determinism.
 	// This feature is convenient during development.
 	// WARNING: enabling this in production can cause all open workflows to fail on a single bug or bad deployment.
 	//
-	// Exposed as: worker:FailWorkflow
+	// Exposed as: [go.temporal.io/sdk/worker.FailWorkflow]
 	FailWorkflow
 )
 
@@ -301,7 +301,7 @@ func IsReplayNamespace(dn string) bool {
 //
 // options 	- configure any worker specific options.
 //
-// Exposed as: worker:New
+// Exposed as: [go.temporal.io/sdk/worker.New]
 func NewWorker(
 	client Client,
 	taskQueue string,

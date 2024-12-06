@@ -44,7 +44,7 @@ type (
 	// is called and can be used to uniquely identify a session.
 	// HostName specifies which host is executing the session
 	//
-	// Exposed as: workflow:SessionInfo
+	// Exposed as: [go.temporal.io/sdk/workflow.SessionInfo]
 	SessionInfo struct {
 		SessionID         string
 		HostName          string
@@ -57,19 +57,14 @@ type (
 
 	// SessionOptions specifies metadata for a session.
 	// ExecutionTimeout: required, no default
-	//
-	//	Specifies the maximum amount of time the session can run
-	//
+	//     Specifies the maximum amount of time the session can run
 	// CreationTimeout: required, no default
-	//
-	//	Specifies how long session creation can take before returning an error
-	//
+	//     Specifies how long session creation can take before returning an error
 	// HeartbeatTimeout: optional, default 20s
+	//     Specifies the heartbeat timeout. If heartbeat is not received by server
+	//     within the timeout, the session will be declared as failed
 	//
-	//	Specifies the heartbeat timeout. If heartbeat is not received by server
-	//	within the timeout, the session will be declared as failed
-	//
-	// Exposed as: workflow:SessionOptions
+	// Exposed as: [go.temporal.io/sdk/workflow.SessionOptions]
 	SessionOptions struct {
 		ExecutionTimeout time.Duration
 		CreationTimeout  time.Duration
@@ -113,11 +108,14 @@ type (
 
 // Session State enum
 const (
-	// Exposed as: workflow:SessionStateOpen
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.SessionStateOpen]
 	SessionStateOpen SessionState = iota
-	// Exposed as: workflow:SessionStateFailed
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.SessionStateFailed]
 	SessionStateFailed
-	// Exposed as: workflow:SessionStateClosed
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.SessionStateClosed]
 	SessionStateClosed
 )
 
@@ -138,7 +136,7 @@ var (
 	// ErrSessionFailed is the error returned when user tries to execute an activity but the
 	// session it belongs to has already failed
 	//
-	// Exposed as: workflow:ErrSessionFailed
+	// Exposed as: [go.temporal.io/sdk/workflow.ErrSessionFailed]
 	ErrSessionFailed            = errors.New("session has failed")
 	errFoundExistingOpenSession = errors.New("found exisiting open session in the context")
 )
@@ -196,7 +194,7 @@ var (
 //	   }
 //	   ... // execute more activities using sessionCtx
 //
-// Exposed as: workflow:CreateSession
+// Exposed as: [go.temporal.io/sdk/workflow.CreateSession]
 func CreateSession(ctx Context, sessionOptions *SessionOptions) (Context, error) {
 	options := getActivityOptions(ctx)
 	baseTaskqueue := options.TaskQueueName
@@ -215,7 +213,7 @@ func CreateSession(ctx Context, sessionOptions *SessionOptions) (Context, error)
 // one run, complete the current session, get recreateToken from sessionInfo by calling SessionInfo.GetRecreateToken()
 // and pass the token to the next run. In the new run, session can be recreated using that token.
 //
-// Exposed as: workflow:RecreateSession
+// Exposed as: [go.temporal.io/sdk/workflow.RecreateSession]
 func RecreateSession(ctx Context, recreateToken []byte, sessionOptions *SessionOptions) (Context, error) {
 	recreateParams, err := deserializeRecreateToken(recreateToken)
 	if err != nil {
@@ -232,7 +230,7 @@ func RecreateSession(ctx Context, recreateToken []byte, sessionOptions *SessionO
 // on the normal taskQueue (as user specified in ActivityOptions) and may be picked up by another worker since
 // it's not in a session.
 //
-// Exposed as: workflow:CompleteSession
+// Exposed as: [go.temporal.io/sdk/workflow.CompleteSession]
 func CompleteSession(ctx Context) {
 	sessionInfo := getSessionInfo(ctx)
 	if sessionInfo == nil || sessionInfo.SessionState != SessionStateOpen {
@@ -269,7 +267,7 @@ func CompleteSession(ctx Context) {
 //
 // This API will return nil if there's no sessionInfo in the context.
 //
-// Exposed as: workflow:GetSessionInfo
+// Exposed as: [go.temporal.io/sdk/workflow.GetSessionInfo]
 func GetSessionInfo(ctx Context) *SessionInfo {
 	info := getSessionInfo(ctx)
 	if info == nil {
@@ -345,9 +343,9 @@ func createSession(ctx Context, creationTaskqueue string, options *SessionOption
 	sessionInfo.completionCtx = completionCtx
 
 	// create sessionCtx as a child ctx as the completionCtx for two reasons:
-	//  1. completionCtx still needs the session information
-	//  2. When completing session, we need to cancel both creation activity and all user activities, but
-	//     we can't cancel the completionCtx.
+	//   1. completionCtx still needs the session information
+	//   2. When completing session, we need to cancel both creation activity and all user activities, but
+	//      we can't cancel the completionCtx.
 	sessionCtx, sessionCancelFunc := WithCancel(completionCtx)
 	creationCtx := WithActivityOptions(sessionCtx, ao)
 	creationFuture := ExecuteActivity(creationCtx, sessionCreationActivityName, sessionID)

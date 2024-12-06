@@ -43,71 +43,71 @@ If activity fails then *ActivityError is returned to the workflow code. The erro
 and actual error which caused activity failure. This internal error can be unwrapped using errors.Unwrap() or checked using errors.As().
 Below are the possible types of internal error:
 1) *ApplicationError: (this should be the most common one)
-*ApplicationError can be returned in two cases:
-- If activity implementation returns *ApplicationError by using NewApplicationError()/NewNonRetryableApplicationError() API.
-The error would contain a message and optional details. Workflow code could extract details to string typed variable, determine
-what kind of error it was, and take actions based on it. The details are encoded payload therefore, workflow code needs to know what
-the types of the encoded details are before extracting them.
-- If activity implementation returns errors other than from NewApplicationError() API. In this case GetOriginalType()
-will return original type of error represented as string. Workflow code could check this type to determine what kind of error it was
-and take actions based on the type. These errors are retryable by default, unless error type is specified in retry policy.
+	*ApplicationError can be returned in two cases:
+		- If activity implementation returns *ApplicationError by using NewApplicationError()/NewNonRetryableApplicationError() API.
+		  The error would contain a message and optional details. Workflow code could extract details to string typed variable, determine
+		  what kind of error it was, and take actions based on it. The details are encoded payload therefore, workflow code needs to know what
+          the types of the encoded details are before extracting them.
+		- If activity implementation returns errors other than from NewApplicationError() API. In this case GetOriginalType()
+		  will return original type of error represented as string. Workflow code could check this type to determine what kind of error it was
+		  and take actions based on the type. These errors are retryable by default, unless error type is specified in retry policy.
 2) *CanceledError:
-If activity was canceled, internal error will be an instance of *CanceledError. When activity cancels itself by
-returning NewCancelError() it would supply optional details which could be extracted by workflow code.
+	If activity was canceled, internal error will be an instance of *CanceledError. When activity cancels itself by
+	returning NewCancelError() it would supply optional details which could be extracted by workflow code.
 3) *TimeoutError:
-If activity was timed out (several timeout types), internal error will be an instance of *TimeoutError. The err contains
-details about what type of timeout it was.
+	If activity was timed out (several timeout types), internal error will be an instance of *TimeoutError. The err contains
+	details about what type of timeout it was.
 4) *PanicError:
-If activity code panic while executing, temporal activity worker will report it as activity failure to temporal server.
-The SDK will present that failure as *PanicError. The error contains a string	representation of the panic message and
-the call stack when panic was happen.
+	If activity code panic while executing, temporal activity worker will report it as activity failure to temporal server.
+	The SDK will present that failure as *PanicError. The error contains a string	representation of the panic message and
+	the call stack when panic was happen.
 Workflow code could handle errors based on different types of error. Below is sample code of how error handling looks like.
 
 err := workflow.ExecuteActivity(ctx, MyActivity, ...).Get(ctx, nil)
 if err != nil {
-var applicationErr *ApplicationError
-if errors.As(err, &applicationError) {
-// retrieve error message
-fmt.Println(applicationError.Error())
+	var applicationErr *ApplicationError
+	if errors.As(err, &applicationError) {
+		// retrieve error message
+		fmt.Println(applicationError.Error())
 
-// handle activity errors (created via NewApplicationError() API)
-var detailMsg string // assuming activity return error by NewApplicationError("message", true, "string details")
-applicationErr.Details(&detailMsg) // extract strong typed details
+		// handle activity errors (created via NewApplicationError() API)
+		var detailMsg string // assuming activity return error by NewApplicationError("message", true, "string details")
+		applicationErr.Details(&detailMsg) // extract strong typed details
 
-// handle activity errors (errors created other than using NewApplicationError() API)
-switch err.Type() {
-case "CustomErrTypeA":
-// handle CustomErrTypeA
-case CustomErrTypeB:
-// handle CustomErrTypeB
-default:
-// newer version of activity could return new errors that workflow was not aware of.
-}
-}
+		// handle activity errors (errors created other than using NewApplicationError() API)
+		switch err.Type() {
+		case "CustomErrTypeA":
+			// handle CustomErrTypeA
+		case CustomErrTypeB:
+			// handle CustomErrTypeB
+		default:
+			// newer version of activity could return new errors that workflow was not aware of.
+		}
+	}
 
-var canceledErr *CanceledError
-if errors.As(err, &canceledErr) {
-// handle cancellation
-}
+	var canceledErr *CanceledError
+	if errors.As(err, &canceledErr) {
+		// handle cancellation
+	}
 
-var timeoutErr *TimeoutError
-if errors.As(err, &timeoutErr) {
-// handle timeout, could check timeout type by timeoutErr.TimeoutType()
-switch err.TimeoutType() {
-case enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START:
-// Handle ScheduleToStart timeout.
-case enumspb.TIMEOUT_TYPE_START_TO_CLOSE:
-// Handle StartToClose timeout.
-case enumspb.TIMEOUT_TYPE_HEARTBEAT:
-// Handle heartbeat timeout.
-default:
-}
-}
+	var timeoutErr *TimeoutError
+	if errors.As(err, &timeoutErr) {
+		// handle timeout, could check timeout type by timeoutErr.TimeoutType()
+        switch err.TimeoutType() {
+        case enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START:
+			// Handle ScheduleToStart timeout.
+        case enumspb.TIMEOUT_TYPE_START_TO_CLOSE:
+            // Handle StartToClose timeout.
+        case enumspb.TIMEOUT_TYPE_HEARTBEAT:
+            // Handle heartbeat timeout.
+        default:
+        }
+	}
 
-var panicErr *PanicError
-if errors.As(err, &panicErr) {
-// handle panic, message and stack trace are available by panicErr.Error() and panicErr.StackTrace()
-}
+	var panicErr *PanicError
+	if errors.As(err, &panicErr) {
+		// handle panic, message and stack trace are available by panicErr.Error() and panicErr.StackTrace()
+	}
 }
 Errors from child workflow should be handled in a similar way, except that instance of *ChildWorkflowExecutionError is returned to
 workflow code. It might contain *ActivityError in case if error comes from activity (which in turn will contain on of the errors above),
@@ -122,7 +122,7 @@ type (
 	// ApplicationErrorOptions represents a combination of error attributes and additional requests.
 	// All fields are optional, providing flexibility in error customization.
 	//
-	// Exposed as: temporal:ApplicationErrorOptions
+	// Exposed as: [go.temporal.io/sdk/temporal.ApplicationErrorOptions]
 	ApplicationErrorOptions struct {
 		// NonRetryable indicates if the error should not be retried regardless of the retry policy.
 		NonRetryable bool
@@ -140,7 +140,7 @@ type (
 
 	// ApplicationError returned from activity implementations with message and optional details.
 	//
-	// Exposed as: temporal:ApplicationError
+	// Exposed as: [go.temporal.io/sdk/temporal.ApplicationError]
 	ApplicationError struct {
 		temporalError
 		msg            string
@@ -153,7 +153,7 @@ type (
 
 	// TimeoutError returned when activity or child workflow timed out.
 	//
-	// Exposed as: temporal:TimeoutError
+	// Exposed as: [go.temporal.io/sdk/temporal.TimeoutError]
 	TimeoutError struct {
 		temporalError
 		msg                  string
@@ -164,7 +164,7 @@ type (
 
 	// CanceledError returned when operation was canceled.
 	//
-	// Exposed as: temporal:CanceledError
+	// Exposed as: [go.temporal.io/sdk/temporal.CanceledError]
 	CanceledError struct {
 		temporalError
 		details converter.EncodedValues
@@ -172,14 +172,14 @@ type (
 
 	// TerminatedError returned when workflow was terminated.
 	//
-	// Exposed as: temporal:TerminatedError
+	// Exposed as: [go.temporal.io/sdk/temporal.TerminatedError]
 	TerminatedError struct {
 		temporalError
 	}
 
 	// PanicError contains information about panicked workflow/activity.
 	//
-	// Exposed as: temporal:PanicError
+	// Exposed as: [go.temporal.io/sdk/temporal.PanicError]
 	PanicError struct {
 		temporalError
 		value      interface{}
@@ -195,7 +195,7 @@ type (
 
 	// ContinueAsNewError contains information about how to continue the workflow as new.
 	//
-	// Exposed as: workflow:ContinueAsNewError
+	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewError]
 	ContinueAsNewError struct {
 		// params *ExecuteWorkflowParams
 		WorkflowType        *WorkflowType
@@ -218,16 +218,16 @@ type (
 		// If not set, the current workflow's retry policy will be carried over automatically.
 		//
 		// NOTES:
-		//  1. This is always nil when returned from a client as a workflow response.
-		//  2. Unlike other options that can be overridden using WithWorkflowTaskQueue, WithWorkflowRunTimeout, etc.
-		//     we can't introduce an option, say WithWorkflowRetryPolicy, for backward compatibility.
-		//     See #676 or IntegrationTestSuite::TestContinueAsNewWithWithChildWF for more details.
+		// 1. This is always nil when returned from a client as a workflow response.
+		// 2. Unlike other options that can be overridden using WithWorkflowTaskQueue, WithWorkflowRunTimeout, etc.
+		//    we can't introduce an option, say WithWorkflowRetryPolicy, for backward compatibility.
+		//    See #676 or IntegrationTestSuite::TestContinueAsNewWithWithChildWF for more details.
 		RetryPolicy *RetryPolicy
 	}
 
 	// ContinueAsNewErrorOptions specifies optional attributes to be carried over to the next run.
 	//
-	// Exposed as: workflow:ContinueAsNewErrorOptions
+	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewErrorOptions]
 	ContinueAsNewErrorOptions struct {
 		// RetryPolicy specifies the retry policy to be used for the next run.
 		// If nil, the current workflow's retry policy will be used.
@@ -239,7 +239,7 @@ type (
 
 	// ServerError can be returned from server.
 	//
-	// Exposed as: temporal:ServerError
+	// Exposed as: [go.temporal.io/sdk/temporal.ServerError]
 	ServerError struct {
 		temporalError
 		msg          string
@@ -250,7 +250,7 @@ type (
 	// ActivityError is returned from workflow when activity returned an error.
 	// Unwrap this error to get actual cause.
 	//
-	// Exposed as: temporal:ActivityError
+	// Exposed as: [go.temporal.io/sdk/temporal.ActivityError]
 	ActivityError struct {
 		temporalError
 		scheduledEventID int64
@@ -265,7 +265,7 @@ type (
 	// ChildWorkflowExecutionError is returned from workflow when child workflow returned an error.
 	// Unwrap this error to get actual cause.
 	//
-	// Exposed as: temporal:ChildWorkflowExecutionError
+	// Exposed as: [go.temporal.io/sdk/temporal.ChildWorkflowExecutionError]
 	ChildWorkflowExecutionError struct {
 		temporalError
 		namespace        string
@@ -282,7 +282,7 @@ type (
 	//
 	// NOTE: Experimental
 	//
-	// Exposed as: temporal:NexusOperationError
+	// Exposed as: [go.temporal.io/sdk/temporal.NexusOperationError]
 	NexusOperationError struct {
 		// The raw proto failure object this error was created from.
 		Failure *failurepb.Failure
@@ -313,7 +313,7 @@ type (
 	// WorkflowExecutionError is returned from workflow.
 	// Unwrap this error to get actual cause.
 	//
-	// Exposed as: temporal:WorkflowExecutionError
+	// Exposed as: [go.temporal.io/sdk/temporal.WorkflowExecutionError]
 	WorkflowExecutionError struct {
 		workflowID   string
 		runID        string
@@ -348,7 +348,7 @@ var (
 
 	// ErrNoData is returned when trying to extract strong typed data while there is no data available.
 	//
-	// Exposed as: temporal:ErrNoData
+	// Exposed as: [go.temporal.io/sdk/temporal.ErrNoData]
 	ErrNoData = errors.New("no data available")
 
 	// ErrTooManyArg is returned when trying to extract strong typed data with more arguments than available data.
@@ -360,17 +360,17 @@ var (
 	// which indicate the activity is not done yet. Then, when the waited human action happened, it needs to trigger something
 	// that could report the activity completed event to temporal server via Client.CompleteActivity() API.
 	//
-	// Exposed as: activity:ErrResultPending
+	// Exposed as: [go.temporal.io/sdk/activity.ErrResultPending]
 	ErrActivityResultPending = errors.New("not error: do not autocomplete, using Client.CompleteActivity() to complete")
 
 	// ErrScheduleAlreadyRunning is returned if there's already a running (not deleted) Schedule with the same ID
 	//
-	// Exposed as: temporal:ErrScheduleAlreadyRunning
+	// Exposed as: [go.temporal.io/sdk/temporal.ErrScheduleAlreadyRunning]
 	ErrScheduleAlreadyRunning = errors.New("schedule with this ID is already registered")
 
 	// ErrSkipScheduleUpdate is used by a user if they want to skip updating a schedule.
 	//
-	// Exposed as: temporal:ErrSkipScheduleUpdate
+	// Exposed as: [go.temporal.io/sdk/temporal.ErrSkipScheduleUpdate]
 	ErrSkipScheduleUpdate = errors.New("skip schedule update")
 
 	// ErrMissingWorkflowID is returned when trying to start an async Nexus operation but no workflow ID is set on the request.
@@ -386,7 +386,7 @@ func NewApplicationError(msg string, errType string, nonRetryable bool, cause er
 	)
 }
 
-// Exposed as: temporal:NewApplicationErrorWithOptions, temporal:NewNonRetryableApplicationError, temporal:NewApplicationErrorWithCause
+// Exposed as: [go.temporal.io/sdk/temporal.NewApplicationErrorWithOptions], [go.temporal.io/sdk/temporal.NewApplicationErrorWithCause], [go.temporal.io/sdk/temporal.NewApplicationError], [go.temporal.io/sdk/temporal.NewNonRetryableApplicationError]
 func NewApplicationErrorWithOptions(msg string, errType string, options ApplicationErrorOptions) error {
 	applicationErr := &ApplicationError{
 		msg:            msg,
@@ -412,7 +412,7 @@ func NewApplicationErrorWithOptions(msg string, errType string, options Applicat
 // NewTimeoutError creates TimeoutError instance.
 // Use NewHeartbeatTimeoutError to create heartbeat TimeoutError.
 //
-// Exposed as: temporal:NewTimeoutError
+// Exposed as: [go.temporal.io/sdk/temporal.NewTimeoutError]
 func NewTimeoutError(msg string, timeoutType enumspb.TimeoutType, cause error, lastHeartbeatDetails ...interface{}) error {
 	timeoutErr := &TimeoutError{
 		msg:         msg,
@@ -432,14 +432,14 @@ func NewTimeoutError(msg string, timeoutType enumspb.TimeoutType, cause error, l
 
 // NewHeartbeatTimeoutError creates TimeoutError instance.
 //
-// Exposed as: temporal:NewHeartbeatTimeoutError
+// Exposed as: [go.temporal.io/sdk/temporal.NewHeartbeatTimeoutError]
 func NewHeartbeatTimeoutError(details ...interface{}) error {
 	return NewTimeoutError("heartbeat timeout", enumspb.TIMEOUT_TYPE_HEARTBEAT, nil, details...)
 }
 
 // NewCanceledError creates CanceledError instance.
 //
-// Exposed as: temporal:NewCanceledError
+// Exposed as: [go.temporal.io/sdk/temporal.NewCanceledError]
 func NewCanceledError(details ...interface{}) error {
 	if len(details) == 1 {
 		if d, ok := details[0].(*EncodedValues); ok {
@@ -540,7 +540,7 @@ func IsCanceledError(err error) bool {
 //	 wfn - workflow function. for new execution it can be different from the currently running.
 //	 args - arguments for the new workflow.
 //
-// Exposed as: workflow:NewContinueAsNewError
+// Exposed as: [go.temporal.io/sdk/workflow.NewContinueAsNewError]
 func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) error {
 	i := getWorkflowOutboundInterceptor(ctx)
 	// Put header on context before executing
@@ -550,7 +550,7 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) er
 
 // NewContinueAsNewErrorWithOptions creates ContinueAsNewError instance with additional options.
 //
-// Exposed as: workflow:NewContinueAsNewErrorWithOptions
+// Exposed as: [go.temporal.io/sdk/workflow.NewContinueAsNewErrorWithOptions]
 func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOptions, wfn interface{}, args ...interface{}) error {
 	err := NewContinueAsNewError(ctx, wfn, args...)
 

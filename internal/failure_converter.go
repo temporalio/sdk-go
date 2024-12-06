@@ -39,14 +39,14 @@ var defaultFailureConverter = NewDefaultFailureConverter(DefaultFailureConverter
 
 // GetDefaultFailureConverter returns the default failure converter used by Temporal.
 //
-// Exposed as: temporal:GetDefaultFailureConverter
+// Exposed as: [go.temporal.io/sdk/temporal.GetDefaultFailureConverter]
 func GetDefaultFailureConverter() converter.FailureConverter {
 	return defaultFailureConverter
 }
 
 // DefaultFailureConverterOptions are optional parameters for DefaultFailureConverter creation.
 //
-// Exposed as: temporal:DefaultFailureConverterOptions
+// Exposed as: [go.temporal.io/sdk/temporal.DefaultFailureConverterOptions]
 type DefaultFailureConverterOptions struct {
 	// Optional: Sets DataConverter to customize serialization/deserialization of fields.
 	// default: Default data converter
@@ -59,7 +59,7 @@ type DefaultFailureConverterOptions struct {
 
 // DefaultFailureConverter seralizes errors with the option to encode common parameters under Failure.EncodedAttributes
 //
-// Exposed as: temporal:DefaultFailureConverter
+// Exposed as: [go.temporal.io/sdk/temporal.DefaultFailureConverter]
 type DefaultFailureConverter struct {
 	dataConverter          converter.DataConverter
 	encodeCommonAttributes bool
@@ -67,7 +67,7 @@ type DefaultFailureConverter struct {
 
 // NewDefaultFailureConverter creates new instance of DefaultFailureConverter.
 //
-// Exposed as: temporal:NewDefaultFailureConverter
+// Exposed as: [go.temporal.io/sdk/temporal.NewDefaultFailureConverter]
 func NewDefaultFailureConverter(opt DefaultFailureConverterOptions) *DefaultFailureConverter {
 	if opt.DataConverter == nil {
 		opt.DataConverter = converter.GetDefaultDataConverter()

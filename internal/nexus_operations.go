@@ -422,5 +422,5 @@ func (t *testEnvWorkflowRunForNexusOperations) GetWithOptions(ctx context.Contex
 	panic("not implemented in the test environment")
 }
 
-// Exposed as: client:WorkflowRun
+// Exposed as: [go.temporal.io/sdk/client.WorkflowRun]
 var _ WorkflowRun = &testEnvWorkflowRunForNexusOperations{}

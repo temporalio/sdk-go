@@ -39,7 +39,7 @@ import (
 //
 // Context's methods may be called by multiple goroutines simultaneously.
 //
-// Exposed as: workflow:Context
+// Exposed as: [go.temporal.io/sdk/workflow.Context]
 type Context interface {
 	// Deadline returns the time when work done on behalf of this context
 	// should be canceled.  Deadline returns ok==false when no deadline is
@@ -57,23 +57,23 @@ type Context interface {
 	//
 	// Done is provided for use in select statements:
 	//
-	//	 // Stream generates values with DoSomething and sends them to out
-	//	 // until DoSomething returns an error or ctx.Done is closed.
-	//	 func Stream(ctx Context, out Channel) (err error) {
-	//		for {
-	//			v, err := DoSomething(ctx)
-	//			if err != nil {
-	//				return err
-	//			}
-	//			s := NewSelector(ctx)
-	//			s.AddReceive(ctx.Done(),  func(v interface{}) { err = ctx.Err() })
-	//			s.AddReceive(v, func(v interface{}, more bool) { out.Send(ctx, v) })
-	//			s.Select(ctx)
-	//			if err != nil {
-	//				return err
-	//			}
+	//  // Stream generates values with DoSomething and sends them to out
+	//  // until DoSomething returns an error or ctx.Done is closed.
+	//  func Stream(ctx Context, out Channel) (err error) {
+	//	for {
+	//		v, err := DoSomething(ctx)
+	//		if err != nil {
+	//			return err
 	//		}
-	//	 }
+	//		s := NewSelector(ctx)
+	//		s.AddReceive(ctx.Done(),  func(v interface{}) { err = ctx.Err() })
+	//		s.AddReceive(v, func(v interface{}, more bool) { out.Send(ctx, v) })
+	//		s.Select(ctx)
+	//		if err != nil {
+	//			return err
+	//		}
+	//	}
+	//  }
 	//
 	// See http://blog.golang.org/pipelines for more examples of how to use
 	// a Done channel for cancellation.
@@ -103,33 +103,33 @@ type Context interface {
 	// Packages that define a Context key should provide type-safe accessors
 	// for the values stores using that key:
 	//
-	//	// Package user defines a User type that's stored in Contexts.
-	//	package user
+	// 	// Package user defines a User type that's stored in Contexts.
+	// 	package user
 	//
-	//	import "context"
+	// 	import "context"
 	//
-	//	// User is the type of value stored in the Contexts.
-	//	type User struct {...}
+	// 	// User is the type of value stored in the Contexts.
+	// 	type User struct {...}
 	//
-	//	// key is an unexported type for keys defined in this package.
-	//	// This prevents collisions with keys defined in other packages.
-	//	type key int
+	// 	// key is an unexported type for keys defined in this package.
+	// 	// This prevents collisions with keys defined in other packages.
+	// 	type key int
 	//
-	//	// userKey is the key for user.User values in Contexts.  It is
-	//	// unexported; clients use user.NewContext and user.FromContext
-	//	// instead of using this key directly.
-	//	var userKey key = 0
+	// 	// userKey is the key for user.User values in Contexts.  It is
+	// 	// unexported; clients use user.NewContext and user.FromContext
+	// 	// instead of using this key directly.
+	// 	var userKey key = 0
 	//
-	//	// NewContext returns a new Context that carries value u.
-	//	func NewContext(ctx context.Context, u *User) context.Context {
-	//		return context.WithValue(ctx, userKey, u)
-	//	}
+	// 	// NewContext returns a new Context that carries value u.
+	// 	func NewContext(ctx context.Context, u *User) context.Context {
+	// 		return context.WithValue(ctx, userKey, u)
+	// 	}
 	//
-	//	// FromContext returns the User value stored in ctx, if any.
-	//	func FromContext(ctx context.Context) (*User, bool) {
-	//		u, ok := ctx.Value(userKey).(*User)
-	//		return u, ok
-	//	}
+	// 	// FromContext returns the User value stored in ctx, if any.
+	// 	func FromContext(ctx context.Context) (*User, bool) {
+	// 		u, ok := ctx.Value(userKey).(*User)
+	// 		return u, ok
+	// 	}
 	Value(key interface{}) interface{}
 }
 
@@ -176,20 +176,20 @@ func Background() Context {
 
 // ErrCanceled is the error returned by Context.Err when the context is canceled.
 //
-// Exposed as: workflow:ErrCanceled
+// Exposed as: [go.temporal.io/sdk/workflow.ErrCanceled]
 var ErrCanceled = NewCanceledError()
 
 // ErrDeadlineExceeded is the error returned by Context.Err when the context's
 // deadline passes.
 //
-// Exposed as: workflow:ErrDeadlineExceeded
+// Exposed as: [go.temporal.io/sdk/workflow.ErrDeadlineExceeded]
 var ErrDeadlineExceeded = NewTimeoutError("deadline exceeded", enumspb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE, nil)
 
 // A CancelFunc tells an operation to abandon its work.
 // A CancelFunc does not wait for the work to stop.
 // After the first call, subsequent calls to a CancelFunc do nothing.
 //
-// Exposed as: workflow:CancelFunc
+// Exposed as: [go.temporal.io/sdk/workflow.CancelFunc]
 type CancelFunc func()
 
 // WithCancel returns a copy of parent with a new Done channel. The returned
@@ -199,7 +199,7 @@ type CancelFunc func()
 // Canceling this context releases resources associated with it, so code should
 // call cancel as soon as the operations running in this Context complete.
 //
-// Exposed as: workflow:WithCancel
+// Exposed as: [go.temporal.io/sdk/workflow.WithCancel]
 func WithCancel(parent Context) (ctx Context, cancel CancelFunc) {
 	c := newCancelCtx(parent)
 	propagateCancel(parent, c)
@@ -217,7 +217,7 @@ func WithCancel(parent Context) (ctx Context, cancel CancelFunc) {
 //	  return err // workflow return CanceledError
 //	}
 //
-// Exposed as: workflow:NewDisconnectedContext
+// Exposed as: [go.temporal.io/sdk/workflow.NewDisconnectedContext]
 func NewDisconnectedContext(parent Context) (ctx Context, cancel CancelFunc) {
 	c := newCancelCtx(parent)
 	return c, func() { c.cancel(true, ErrCanceled) }
@@ -354,7 +354,7 @@ func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 // Use context Values only for request-scoped data that transits processes and
 // APIs, not for passing optional parameters to functions.
 //
-// Exposed as: workflow:WithValue
+// Exposed as: [go.temporal.io/sdk/workflow.WithValue]
 func WithValue(parent Context, key interface{}, val interface{}) Context {
 	return &valueCtx{parent, key, val}
 }

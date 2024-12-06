@@ -36,7 +36,7 @@ type (
 	// equal to start. This means you can use a Range with start set to a value, and
 	// end and step unset (defaulting to 0) to represent a single value.
 	//
-	// Exposed as: client:ScheduleRange
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleRange]
 	ScheduleRange struct {
 		// Start of the range (inclusive)
 		Start int
@@ -55,7 +55,7 @@ type (
 	// corresponding fields of the timestamp, except for year: if year is missing,
 	// that means all years match. For all fields besides year, at least one Range must be present to match anything.
 	//
-	// Exposed as: client:ScheduleCalendarSpec
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleCalendarSpec]
 	ScheduleCalendarSpec struct {
 		// Second range to match (0-59).
 		//
@@ -98,7 +98,7 @@ type (
 
 	// ScheduleBackfill desribes a time periods and policy and takes Actions as if that time passed by right now, all at once.
 	//
-	// Exposed as: client:ScheduleBackfill
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleBackfill]
 	ScheduleBackfill struct {
 		// Start - start of the range to evaluate schedule in.
 		Start time.Time
@@ -112,16 +112,16 @@ type (
 
 	// ScheduleIntervalSpec - matches times that can be expressed as:
 	//
-	//	Epoch + (n * every) + offset
+	// 	Epoch + (n * every) + offset
 	//
-	//	where n is all integers ≥ 0.
+	// 	where n is all integers ≥ 0.
 	//
 	// For example, an `every` of 1 hour with `offset` of zero would match every hour, on the hour. The same `every` but an `offset`
 	// of 19 minutes would match every `xx:19:00`. An `every` of 28 days with `offset` zero would match `2022-02-17T00:00:00Z`
 	// (among other times). The same `every` with `offset` of 3 days, 5 hours, and 23 minutes would match `2022-02-20T05:23:00Z`
 	// instead.
 	//
-	// Exposed as: client:ScheduleIntervalSpec
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleIntervalSpec]
 	ScheduleIntervalSpec struct {
 		// Every - describes the period to repeat the interval.
 		Every time.Duration
@@ -136,7 +136,7 @@ type (
 	// never change, except that the definition of a time zone can change over time (most commonly, when daylight saving
 	// time policy changes for an area). To create a totally self-contained ScheduleSpec, use UTC.
 	//
-	// Exposed as: client:ScheduleSpec
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleSpec]
 	ScheduleSpec struct {
 		// Calendars - Calendar-based specifications of times
 		Calendars []ScheduleCalendarSpec
@@ -150,55 +150,56 @@ type (
 		//
 		// For example, `0 12 * * MON-WED,FRI` is every M/Tu/W/F at noon, and is equivalent to this ScheduleCalendarSpec:
 		//
-		//	client.ScheduleCalendarSpec{
-		//			Second: []ScheduleRange{{}},
-		//			Minute: []ScheduleRanges{{}},
-		//			Hour: []ScheduleRange{{
-		//				Start: 12,
-		//			}},
-		//			DayOfMonth: []ScheduleRange{
-		//				{
-		//					Start: 1,
-		//					End:   31,
-		//				},
-		//			},
-		//			Month: []ScheduleRange{
-		//				{
-		//					Start: 1,
-		//					End:   12,
-		//				},
-		//			},
-		//			DayOfWeek: []ScheduleRange{
-		//				{
-		//					Start: 1,
-		//					End: 3,
-		//				},
-		//				{
-		//					Start: 5,
-		//				},
-		//			},
-		//		}
+		// client.ScheduleCalendarSpec{
+		// 		Second: []ScheduleRange{{}},
+		// 		Minute: []ScheduleRanges{{}},
+		// 		Hour: []ScheduleRange{{
+		// 			Start: 12,
+		// 		}},
+		// 		DayOfMonth: []ScheduleRange{
+		// 			{
+		// 				Start: 1,
+		// 				End:   31,
+		// 			},
+		// 		},
+		// 		Month: []ScheduleRange{
+		// 			{
+		// 				Start: 1,
+		// 				End:   12,
+		// 			},
+		// 		},
+		// 		DayOfWeek: []ScheduleRange{
+		// 			{
+		// 				Start: 1,
+		//				End: 3,
+		// 			},
+		// 			{
+		// 				Start: 5,
+		// 			},
+		// 		},
+		// 	}
+		//
 		//
 		// The string can have 5, 6, or 7 fields, separated by spaces, and they are interpreted in the
 		// same way as a ScheduleCalendarSpec:
-		//   - 5 fields:         Minute, Hour, DayOfMonth, Month, DayOfWeek
-		//   - 6 fields:         Minute, Hour, DayOfMonth, Month, DayOfWeek, Year
-		//   - 7 fields: Second, Minute, Hour, DayOfMonth, Month, DayOfWeek, Year
+		//	- 5 fields:         Minute, Hour, DayOfMonth, Month, DayOfWeek
+		//	- 6 fields:         Minute, Hour, DayOfMonth, Month, DayOfWeek, Year
+		//	- 7 fields: Second, Minute, Hour, DayOfMonth, Month, DayOfWeek, Year
 		//
 		// Notes:
-		//   - If Year is not given, it defaults to *.
-		//   - If Second is not given, it defaults to 0.
-		//   - Shorthands @yearly, @monthly, @weekly, @daily, and @hourly are also
-		//     accepted instead of the 5-7 time fields.
-		//   - @every <interval>[/<phase>] is accepted and gets compiled into an
-		//     IntervalSpec instead. <interval> and <phase> should be a decimal integer
-		//     with a unit suffix s, m, h, or d.
-		//   - Optionally, the string can be preceded by CRON_TZ=<time zone name> or
-		//     TZ=<time zone name>, which will get copied to ScheduleSpec.TimeZoneName. (In which case the ScheduleSpec.TimeZone field should be left empty.)
-		//   - Optionally, "#" followed by a comment can appear at the end of the string.
-		//   - Note that the special case that some cron implementations have for
-		//     treating DayOfMonth and DayOfWeek as "or" instead of "and" when both
-		//     are set is not implemented.
+		//	- If Year is not given, it defaults to *.
+		//	- If Second is not given, it defaults to 0.
+		//	- Shorthands @yearly, @monthly, @weekly, @daily, and @hourly are also
+		//		accepted instead of the 5-7 time fields.
+		//	- @every <interval>[/<phase>] is accepted and gets compiled into an
+		//		IntervalSpec instead. <interval> and <phase> should be a decimal integer
+		//		with a unit suffix s, m, h, or d.
+		//	- Optionally, the string can be preceded by CRON_TZ=<time zone name> or
+		//		TZ=<time zone name>, which will get copied to ScheduleSpec.TimeZoneName. (In which case the ScheduleSpec.TimeZone field should be left empty.)
+		//	- Optionally, "#" followed by a comment can appear at the end of the string.
+		//	- Note that the special case that some cron implementations have for
+		//		treating DayOfMonth and DayOfWeek as "or" instead of "and" when both
+		//		are set is not implemented.
 		CronExpressions []string
 
 		// Skip - Any matching times will be skipped.
@@ -241,7 +242,7 @@ type (
 
 	// ScheduleWorkflowAction implements ScheduleAction to launch a workflow.
 	//
-	// Exposed as: client:ScheduleWorkflowAction
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleWorkflowAction]
 	ScheduleWorkflowAction struct {
 		// ID - The business identifier of the workflow execution.
 		// The workflow ID of the started workflow may not match this exactly,
@@ -300,7 +301,7 @@ type (
 
 	// ScheduleOptions configure the parameters for creating a schedule.
 	//
-	// Exposed as: client:ScheduleOptions
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleOptions]
 	ScheduleOptions struct {
 		// ID - The business identifier of the schedule.
 		ID string
@@ -384,7 +385,7 @@ type (
 
 	// ScheduleWorkflowExecution contains details on a workflows execution stared by a schedule.
 	//
-	// Exposed as: client:ScheduleWorkflowExecution
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleWorkflowExecution]
 	ScheduleWorkflowExecution struct {
 		// WorkflowID - The ID of the workflow execution
 		WorkflowID string
@@ -396,7 +397,7 @@ type (
 
 	// ScheduleInfo describes other information about a schedule.
 	//
-	// Exposed as: client:ScheduleInfo
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleInfo]
 	ScheduleInfo struct {
 		// NumActions - Number of actions taken by this schedule.
 		NumActions int
@@ -428,7 +429,7 @@ type (
 
 	// ScheduleDescription describes the current Schedule details from ScheduleHandle.Describe.
 	//
-	// Exposed as: client:ScheduleDescription
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleDescription]
 	ScheduleDescription struct {
 		// Schedule - Describes the modifiable fields of a schedule.
 		Schedule Schedule
@@ -456,7 +457,7 @@ type (
 
 	// SchedulePolicies describes the current polcies of a schedule.
 	//
-	// Exposed as: client:SchedulePolicies
+	// Exposed as: [go.temporal.io/sdk/client.SchedulePolicies]
 	SchedulePolicies struct {
 		// Overlap - Controls what happens when an Action would be started by a Schedule at the same time that an older Action is still
 		// running.
@@ -472,7 +473,7 @@ type (
 
 	// ScheduleState describes the current state of a schedule.
 	//
-	// Exposed as: client:ScheduleState
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleState]
 	ScheduleState struct {
 		// Note - Informative human-readable message with contextual notes, e.g. the reason
 		// a Schedule is paused. The system may overwrite this message on certain
@@ -493,7 +494,7 @@ type (
 
 	// Schedule describes a created schedule.
 	//
-	// Exposed as: client:Schedule
+	// Exposed as: [go.temporal.io/sdk/client.Schedule]
 	Schedule struct {
 		// Action - Which Action to take
 		Action ScheduleAction
@@ -510,7 +511,7 @@ type (
 
 	// ScheduleUpdate describes the desired new schedule from ScheduleHandle.Update.
 	//
-	// Exposed as: client:ScheduleUpdate
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleUpdate]
 	ScheduleUpdate struct {
 		// Schedule - New schedule to replace the existing schedule with
 		Schedule *Schedule
@@ -521,14 +522,13 @@ type (
 		// nil: leave any pre-existing assigned search attributes intact
 		// empty: remove any and all pre-existing assigned search attributes
 		// attributes present: replace any and all pre-existing assigned search attributes with the defined search
-		//
-		//	attributes, i.e. upsert
+		//                     attributes, i.e. upsert
 		TypedSearchAttributes *SearchAttributes
 	}
 
 	// ScheduleUpdateInput describes the current state of the schedule to be updated.
 	//
-	// Exposed as: client:ScheduleUpdateInput
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleUpdateInput]
 	ScheduleUpdateInput struct {
 		// Description - current description of the schedule
 		Description ScheduleDescription
@@ -536,7 +536,7 @@ type (
 
 	// ScheduleUpdateOptions configure the parameters for updating a schedule.
 	//
-	// Exposed as: client:ScheduleUpdateOptions
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleUpdateOptions]
 	ScheduleUpdateOptions struct {
 		// DoUpdate - Takes a description of the schedule and returns the new desired schedule.
 		// If update returns ErrSkipScheduleUpdate response and no update will occur.
@@ -546,7 +546,7 @@ type (
 
 	// ScheduleTriggerOptions configure the parameters for triggering a schedule.
 	//
-	// Exposed as: client:ScheduleTriggerOptions
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleTriggerOptions]
 	ScheduleTriggerOptions struct {
 		// Overlap - If specified, policy to override the schedules default overlap policy.
 		Overlap enumspb.ScheduleOverlapPolicy
@@ -554,7 +554,7 @@ type (
 
 	// SchedulePauseOptions configure the parameters for pausing a schedule.
 	//
-	// Exposed as: client:SchedulePauseOptions
+	// Exposed as: [go.temporal.io/sdk/client.SchedulePauseOptions]
 	SchedulePauseOptions struct {
 		// Note - Informative human-readable message with contextual notes.
 		// Optional: defaulted to 'Paused via Go SDK'
@@ -563,7 +563,7 @@ type (
 
 	// ScheduleUnpauseOptions configure the parameters for unpausing a schedule.
 	//
-	// Exposed as: client:ScheduleUnpauseOptions
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleUnpauseOptions]
 	ScheduleUnpauseOptions struct {
 		// Note - Informative human-readable message with contextual notes.
 		// Optional: defaulted to 'Unpaused via Go SDK'
@@ -572,7 +572,7 @@ type (
 
 	// ScheduleBackfillOptions configure the parameters for backfilling a schedule.
 	//
-	// Exposed as: client:ScheduleBackfillOptions
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleBackfillOptions]
 	ScheduleBackfillOptions struct {
 		// Backfill  - Time periods to backfill the schedule.
 		Backfill []ScheduleBackfill
@@ -612,7 +612,7 @@ type (
 
 	// ScheduleActionResult describes when a schedule action took place
 	//
-	// Exposed as: client:ScheduleActionResult
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleActionResult]
 	ScheduleActionResult struct {
 		// ScheduleTime - Time that the Action was scheduled for, including jitter.
 		ScheduleTime time.Time
@@ -627,7 +627,7 @@ type (
 
 	// ScheduleListEntry
 	//
-	// Exposed as: client:ScheduleListEntry
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleListEntry]
 	ScheduleListEntry struct {
 		// ID - The business identifier of the schedule.
 		ID string
@@ -668,7 +668,7 @@ type (
 
 	// ScheduleListOptions are the parameters for configuring listing schedules
 	//
-	// Exposed as: client:ScheduleListOptions
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleListOptions]
 	ScheduleListOptions struct {
 		// PageSize - How many results to fetch from the Server at a time.
 		// Optional: defaulted to 1000

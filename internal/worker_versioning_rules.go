@@ -40,7 +40,7 @@ type (
 	// VersioningRampByPercentage sends a proportion of the traffic to the target Build ID.
 	// WARNING: Worker versioning is currently experimental
 	//
-	// Exposed as: client:VersioningRampByPercentage
+	// Exposed as: [go.temporal.io/sdk/client.VersioningRampByPercentage]
 	VersioningRampByPercentage struct {
 		// Percentage of traffic with a value in [0,100)
 		Percentage float32
@@ -50,7 +50,7 @@ type (
 	// Assignment rules only affect new workflows.
 	// WARNING: Worker versioning is currently experimental
 	//
-	// Exposed as: client:VersioningAssignmentRule
+	// Exposed as: [go.temporal.io/sdk/client.VersioningAssignmentRule]
 	VersioningAssignmentRule struct {
 		// The BuildID of new workflows affected by this rule.
 		TargetBuildID string
@@ -62,7 +62,7 @@ type (
 	// by the server with its creation time.
 	// WARNING: Worker versioning is currently experimental
 	//
-	// Exposed as: client:VersioningAssignmentRuleWithTimestamp
+	// Exposed as: [go.temporal.io/sdk/client.VersioningAssignmentRuleWithTimestamp]
 	VersioningAssignmentRuleWithTimestamp struct {
 		Rule VersioningAssignmentRule
 		// The time when the server created this rule.
@@ -73,7 +73,7 @@ type (
 	// It changes the behavior of currently running workflows and new ones.
 	// WARNING: Worker versioning is currently experimental
 	//
-	// Exposed as: client:VersioningRedirectRule
+	// Exposed as: [go.temporal.io/sdk/client.VersioningRedirectRule]
 	VersioningRedirectRule struct {
 		SourceBuildID string
 		TargetBuildID string
@@ -83,19 +83,19 @@ type (
 	// by the server with its creation time.
 	// WARNING: Worker versioning is currently experimental
 	//
-	// Exposed as: client:VersioningRedirectRuleWithTimestamp
+	// Exposed as: [go.temporal.io/sdk/client.VersioningRedirectRuleWithTimestamp]
 	VersioningRedirectRuleWithTimestamp struct {
 		Rule VersioningRedirectRule
 		// The time when the server created this rule.
 		CreateTime time.Time
 	}
 
-	// VersioningConflictToken is a conflict token to serialize updates.
+	//VersioningConflictToken is a conflict token to serialize updates.
 	// An update with an old token fails with `serviceerror.FailedPrecondition`.
 	// The current token can be obtained with [GetWorkerVersioningRules], or returned by a successful [UpdateWorkerVersioningRules].
 	// WARNING: Worker versioning is currently experimental
 	//
-	// Exposed as: client:VersioningConflictToken
+	// Exposed as: [go.temporal.io/sdk/client.VersioningConflictToken]
 	VersioningConflictToken struct {
 		token []byte
 	}
@@ -103,7 +103,7 @@ type (
 	// UpdateWorkerVersioningRulesOptions is the input to [Client.UpdateWorkerVersioningRules].
 	// WARNING: Worker versioning is currently experimental
 	//
-	// Exposed as: client:UpdateWorkerVersioningRulesOptions
+	// Exposed as: [go.temporal.io/sdk/client.UpdateWorkerVersioningRulesOptions]
 	UpdateWorkerVersioningRulesOptions struct {
 		// The task queue to update the versioning rules of.
 		TaskQueue string
@@ -136,7 +136,7 @@ type (
 	// inserted at the end of the list.
 	// WARNING: Worker versioning is currently experimental
 	//
-	// Exposed as: client:VersioningOperationInsertAssignmentRule
+	// Exposed as: [go.temporal.io/sdk/client.VersioningOperationInsertAssignmentRule]
 	VersioningOperationInsertAssignmentRule struct {
 		RuleIndex int32
 		Rule      VersioningAssignmentRule
@@ -149,7 +149,7 @@ type (
 	// bypass this validation.
 	// WARNING: Worker versioning is currently experimental
 	//
-	// Exposed as: client:VersioningOperationReplaceAssignmentRule
+	// Exposed as: [go.temporal.io/sdk/client.VersioningOperationReplaceAssignmentRule]
 	VersioningOperationReplaceAssignmentRule struct {
 		RuleIndex int32
 		Rule      VersioningAssignmentRule
@@ -163,7 +163,7 @@ type (
 	// bypass this validation.
 	// WARNING: Worker versioning is currently experimental
 	//
-	// Exposed as: client:VersioningOperationDeleteAssignmentRule
+	// Exposed as: [go.temporal.io/sdk/client.VersioningOperationDeleteAssignmentRule]
 	VersioningOperationDeleteAssignmentRule struct {
 		RuleIndex int32
 		Force     bool
@@ -174,7 +174,7 @@ type (
 	// can be at most one redirect rule for each distinct Source BuildID.
 	// WARNING: Worker versioning is currently experimental
 	//
-	// Exposed as: client:VersioningOperationAddRedirectRule
+	// Exposed as: [go.temporal.io/sdk/client.VersioningOperationAddRedirectRule]
 	VersioningOperationAddRedirectRule struct {
 		Rule VersioningRedirectRule
 	}
@@ -183,7 +183,7 @@ type (
 	// that replaces the routing rule with the given source BuildID.
 	// WARNING: Worker versioning is currently experimental
 	//
-	// Exposed as: client:VersioningOperationReplaceRedirectRule
+	// Exposed as: [go.temporal.io/sdk/client.VersioningOperationReplaceRedirectRule]
 	VersioningOperationReplaceRedirectRule struct {
 		Rule VersioningRedirectRule
 	}
@@ -192,7 +192,7 @@ type (
 	// that deletes the routing rule with the given source Build ID.
 	// WARNING: Worker versioning is currently experimental
 	//
-	// Exposed as: client:VersioningOperationDeleteRedirectRule
+	// Exposed as: [go.temporal.io/sdk/client.VersioningOperationDeleteRedirectRule]
 	VersioningOperationDeleteRedirectRule struct {
 		SourceBuildID string
 	}
@@ -212,7 +212,7 @@ type (
 	// option to disable this validation.
 	// WARNING: Worker versioning is currently experimental
 	//
-	// Exposed as: client:VersioningOperationCommitBuildID
+	// Exposed as: [go.temporal.io/sdk/client.VersioningOperationCommitBuildID]
 	VersioningOperationCommitBuildID struct {
 		TargetBuildID string
 		Force         bool
@@ -300,7 +300,7 @@ func (uw *UpdateWorkerVersioningRulesOptions) validateAndConvertToProto(namespac
 // GetWorkerVersioningOptions is the input to [Client.GetWorkerVersioningRules].
 // WARNING: Worker versioning is currently experimental
 //
-// Exposed as: client:GetWorkerVersioningOptions
+// Exposed as: [go.temporal.io/sdk/client.GetWorkerVersioningOptions]
 type GetWorkerVersioningOptions struct {
 	// The task queue to get the versioning rules from.
 	TaskQueue string
@@ -325,7 +325,7 @@ func (gw *GetWorkerVersioningOptions) validateAndConvertToProto(namespace string
 // WorkerVersioningRules is the response for [Client.GetWorkerVersioningRules].
 // WARNING: Worker versioning is currently experimental
 //
-// Exposed as: client:WorkerVersioningRules
+// Exposed as: [go.temporal.io/sdk/client.WorkerVersioningRules]
 type WorkerVersioningRules struct {
 	AssignmentRules []*VersioningAssignmentRuleWithTimestamp
 	RedirectRules   []*VersioningRedirectRuleWithTimestamp

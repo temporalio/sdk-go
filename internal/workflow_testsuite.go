@@ -56,7 +56,7 @@ type (
 
 	// WorkflowTestSuite is the test suite to run unit tests for workflow/activity.
 	//
-	// Exposed as: testsuite:WorkflowTestSuite
+	// Exposed as: [go.temporal.io/sdk/testsuite.WorkflowTestSuite]
 	WorkflowTestSuite struct {
 		logger                      log.Logger
 		metricsHandler              metrics.Handler
@@ -67,7 +67,7 @@ type (
 
 	// TestWorkflowEnvironment is the environment that you use to test workflow
 	//
-	// Exposed as: testsuite:TestWorkflowEnvironment
+	// Exposed as: [go.temporal.io/sdk/testsuite.TestWorkflowEnvironment]
 	TestWorkflowEnvironment struct {
 		workflowMock mock.Mock
 		activityMock mock.Mock
@@ -77,14 +77,14 @@ type (
 
 	// TestActivityEnvironment is the environment that you use to test activity
 	//
-	// Exposed as: testsuite:TestActivityEnvironment
+	// Exposed as: [go.temporal.io/sdk/testsuite.TestActivityEnvironment]
 	TestActivityEnvironment struct {
 		impl *testWorkflowEnvironmentImpl
 	}
 
 	// MockCallWrapper is a wrapper to mock.Call. It offers the ability to wait on workflow's clock instead of wall clock.
 	//
-	// Exposed as: testsuite:MockCallWrapper
+	// Exposed as: [go.temporal.io/sdk/testsuite.MockCallWrapper]
 	MockCallWrapper struct {
 		call *mock.Call
 		env  *TestWorkflowEnvironment
@@ -97,7 +97,7 @@ type (
 	// Tests are welcome to implement their own version of this interface if they need to test more complex
 	// update logic. This is a simple implementation to make testing basic Workflow Updates easier.
 	//
-	// Exposed as: testsuite:TestUpdateCallback
+	// Exposed as: [go.temporal.io/sdk/testsuite.TestUpdateCallback]
 	TestUpdateCallback struct {
 		OnAccept   func()
 		OnReject   func(error)
@@ -417,7 +417,7 @@ func (e *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...inter
 // ErrMockStartChildWorkflowFailed is special error used to indicate the mocked child workflow should fail to start.
 // This error is also exposed as public as testsuite.ErrMockStartChildWorkflowFailed
 //
-// Exposed as: testsuite:ErrMockStartChildWorkflowFailed
+// Exposed as: [go.temporal.io/sdk/testsuite.ErrMockStartChildWorkflowFailed]
 var ErrMockStartChildWorkflowFailed = fmt.Errorf("start child workflow failed: %v", enumspb.START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_WORKFLOW_ALREADY_EXISTS)
 
 // OnWorkflow setup a mock call for workflow. Parameter workflow must be workflow function (func) or workflow name (string).

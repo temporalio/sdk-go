@@ -67,7 +67,7 @@ func ResumeDeadlockDetector(ctx Context) {
 // otherwise intentionally execute longer than the default deadlock detection
 // timeout.
 //
-// Exposed as: workflow:DataConverterWithoutDeadlockDetection
+// Exposed as: [go.temporal.io/sdk/workflow.DataConverterWithoutDeadlockDetection]
 func DataConverterWithoutDeadlockDetection(c converter.DataConverter) converter.DataConverter {
 	return &dataConverterWithoutDeadlock{underlying: c}
 }
@@ -174,7 +174,7 @@ type dataConverterWithoutDeadlock struct {
 	underlying converter.DataConverter
 }
 
-// Exposed as: workflow:ContextAware
+// Exposed as: [go.temporal.io/sdk/workflow.ContextAware]
 var _ ContextAware = &dataConverterWithoutDeadlock{}
 
 func (d *dataConverterWithoutDeadlock) ToPayload(value interface{}) (*commonpb.Payload, error) {
