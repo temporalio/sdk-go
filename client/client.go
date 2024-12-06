@@ -855,7 +855,7 @@ type (
 		// is FAIL, an error is returned. The call will block until the update
 		// has reached the WaitForStage in the options. Note that this means
 		// that the call will not return successfully until the update has been
-		// delivered to the worker service.
+		// delivered to a worker.
 		// NOTE: Experimental
 		UpdateWithStartWorkflow(ctx context.Context, options UpdateWithStartWorkflowOptions) (WorkflowUpdateHandle, error)
 
