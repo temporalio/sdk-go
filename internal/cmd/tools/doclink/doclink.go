@@ -132,7 +132,7 @@ func run() error {
 		if info.IsDir() && info.Name() != "internal" {
 			return filepath.SkipDir
 		}
-		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") && !strings.HasPrefix(path, "internal/internal_") {
+		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") && !strings.Contains(path, "internal_") {
 			file, err := os.Open(path)
 			if err != nil {
 				return fmt.Errorf("failed to read file %s: %v", path, err)
