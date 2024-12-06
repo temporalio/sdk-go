@@ -264,6 +264,10 @@ func (t *testSuiteClientForNexusOperations) ExecuteWorkflow(ctx context.Context,
 	return run, nil
 }
 
+func (t *testSuiteClientForNexusOperations) NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) WithStartWorkflowOperation {
+	panic("not implemented in the test environment")
+}
+
 // GetSearchAttributes implements Client.
 func (t *testSuiteClientForNexusOperations) GetSearchAttributes(ctx context.Context) (*workflowservice.GetSearchAttributesResponse, error) {
 	panic("not implemented in the test environment")
@@ -376,6 +380,11 @@ func (t *testSuiteClientForNexusOperations) TerminateWorkflow(ctx context.Contex
 
 // UpdateWorkflow implements Client.
 func (t *testSuiteClientForNexusOperations) UpdateWorkflow(ctx context.Context, options UpdateWorkflowOptions) (WorkflowUpdateHandle, error) {
+	panic("unimplemented in the test environment")
+}
+
+// UpdateWithStartWorkflow implements Client.
+func (t *testSuiteClientForNexusOperations) UpdateWithStartWorkflow(ctx context.Context, options UpdateWithStartWorkflowOptions) (WorkflowUpdateHandle, error) {
 	panic("unimplemented in the test environment")
 }
 
