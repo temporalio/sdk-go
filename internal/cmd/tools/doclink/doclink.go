@@ -170,7 +170,7 @@ func processPublic(cfg config, file *os.File) (map[string]string, error) {
 			for _, spec := range genDecl.Specs {
 				if typeSpec, typeOk := spec.(*ast.TypeSpec); typeOk {
 					name := typeSpec.Name.Name
-					if isPublic(name) {
+					if ast.IsExported(name) {
 						res := extractTypeValue(typeSpec.Type)
 						if len(res) > 0 {
 							publicToInternal[name] = res
@@ -182,7 +182,7 @@ func processPublic(cfg config, file *os.File) (map[string]string, error) {
 						return true
 					}
 					name := valueSpec.Names
-					if isPublic(name[0].Name) {
+					if ast.IsExported(name[0].Name) {
 						res := checkValueSpec(valueSpec)
 						if len(res) > 0 {
 							publicToInternal[name[0].Name] = res
@@ -191,7 +191,7 @@ func processPublic(cfg config, file *os.File) (map[string]string, error) {
 				}
 			}
 		}
-		if funcDecl, ok := n.(*ast.FuncDecl); ok && isPublic(funcDecl.Name.Name) {
+		if funcDecl, ok := n.(*ast.FuncDecl); ok && ast.IsExported(funcDecl.Name.Name) {
 			isWrapper := checkFunction(funcDecl)
 			if len(isWrapper) > 0 {
 				publicToInternal[funcDecl.Name.Name] = isWrapper
@@ -200,10 +200,6 @@ func processPublic(cfg config, file *os.File) (map[string]string, error) {
 		return true
 	})
 	return publicToInternal, nil
-}
-
-func isPublic(name string) bool {
-	return strings.ToUpper(string(name[0])) == string(name[0])
 }
 
 func extractTypeValue(expr ast.Expr) string {
