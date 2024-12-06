@@ -2566,7 +2566,6 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool, upda
 	ts.Equal("query-response", queryResp)
 
 	if updateWithStart {
-		// UpdateWithStart
 		uwsStartOptions := ts.startWorkflowOptions(run.GetID())
 		uwsStartOptions.EnableEagerStart = false
 		uwsStartOptions.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING
@@ -2582,7 +2581,6 @@ func (ts *IntegrationTestSuite) testOpenTelemetryTracing(withMessages bool, upda
 		ts.NoError(err)
 		ts.NoError(updateHandle.Get(ctx, nil))
 	} else {
-		// Update
 		handle, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
 			WorkflowID:   run.GetID(),
 			RunID:        run.GetRunID(),
@@ -4021,7 +4019,6 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 	}
 
 	ts.Run("sends update-with-start (no running workflow)", func() {
-		println(ctx)
 		startOp := ts.client.NewWithStartWorkflowOperation(
 			startWorkflowOptions(), ts.workflows.UpdateEntityWorkflow,
 		)
@@ -4034,8 +4031,6 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 			StartWorkflowOperation: startOp,
 		})
 		ts.NoError(err)
-
-		println(updHandle)
 
 		var updateResult int
 		ts.NoError(updHandle.Get(ctx, &updateResult))
