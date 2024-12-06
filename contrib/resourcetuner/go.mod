@@ -7,7 +7,7 @@ toolchain go1.22.5
 require (
 	github.com/containerd/cgroups/v3 v3.0.3
 	github.com/shirou/gopsutil/v4 v4.24.8
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	go.einride.tech/pid v0.1.3
 	go.temporal.io/sdk v1.29.1
 )

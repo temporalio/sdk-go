@@ -6,7 +6,7 @@ toolchain go1.21.1
 
 require (
 	github.com/opentracing/opentracing-go v1.2.0
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	go.temporal.io/sdk v1.12.0
 )
 
