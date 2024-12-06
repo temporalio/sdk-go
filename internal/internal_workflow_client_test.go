@@ -1113,30 +1113,80 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_Abort() {
 	}
 }
 
-func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_NonMultiOperationError() {
-	s.workflowServiceClient.EXPECT().
-		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(nil, serviceerror.NewInternal("internal error")).Times(1)
-
-	startOp := s.workflowClient.NewWithStartWorkflowOperation(
-		StartWorkflowOptions{
-			ID:                       workflowID,
-			WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
-			TaskQueue:                taskqueue,
-		}, workflowType,
-	)
-
-	_, err := s.workflowClient.UpdateWithStartWorkflow(
-		context.Background(),
-		UpdateWithStartWorkflowOptions{
-			UpdateOptions: UpdateWorkflowOptions{
-				UpdateName:   "update",
-				WaitForStage: WorkflowUpdateStageCompleted,
-			},
-			StartWorkflowOperation: startOp,
+func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_Errors() {
+	tests := []struct {
+		name        string
+		returnedErr error
+		expectedErr string
+	}{
+		{
+			name:        "NonMultiOperationError",
+			returnedErr: serviceerror.NewInternal("internal error"),
+			expectedErr: "internal error",
 		},
-	)
-	s.ErrorContains(err, "internal error")
+		{
+			name:        "CountMismatch",
+			returnedErr: serviceerror.NewMultiOperationExecution("Error", []error{}),
+			expectedErr: "invalid server response: 0 instead of 2 operation errors",
+		},
+		{
+			name: "NilErrors",
+			returnedErr: serviceerror.NewMultiOperationExecution("MultiOperation failed", []error{
+				nil, nil,
+			}),
+			expectedErr: "MultiOperation failed",
+		},
+		{
+			name: "StartOperationError",
+			returnedErr: serviceerror.NewMultiOperationExecution("MultiOperation failed", []error{
+				serviceerror.NewInvalidArgument("invalid Start"),
+				serviceerror.NewMultiOperationAborted("aborted Update"),
+			}),
+			expectedErr: "failed workflow start: invalid Start",
+		},
+		{
+			name: "UpdateOperationError_AbortedStart",
+			returnedErr: serviceerror.NewMultiOperationExecution("MultiOperation failed", []error{
+				serviceerror.NewMultiOperationAborted("aborted Start"),
+				serviceerror.NewInvalidArgument("invalid Update"),
+			}),
+			expectedErr: "failed workflow update: invalid Update",
+		},
+		{
+			name: "UpdateOperationError_SuccessfulStart",
+			returnedErr: serviceerror.NewMultiOperationExecution("MultiOperation failed", []error{
+				nil, // ie successful start
+				serviceerror.NewInvalidArgument("bad Update"),
+			}),
+			expectedErr: "failed workflow update: bad Update",
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			s.workflowServiceClient.EXPECT().
+				ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(nil, tt.returnedErr).Times(1)
+
+			_, err := s.workflowClient.UpdateWithStartWorkflow(
+				context.Background(),
+				UpdateWithStartWorkflowOptions{
+					UpdateOptions: UpdateWorkflowOptions{
+						UpdateName:   "update",
+						WaitForStage: WorkflowUpdateStageCompleted,
+					},
+					StartWorkflowOperation: s.workflowClient.NewWithStartWorkflowOperation(
+						StartWorkflowOptions{
+							ID:                       workflowID,
+							WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
+							TaskQueue:                taskqueue,
+						}, workflowType,
+					),
+				},
+			)
+			s.EqualError(err, tt.expectedErr)
+		})
+	}
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerResponseCountMismatch() {
@@ -1165,32 +1215,6 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerResponseCountMism
 		},
 	)
 	s.ErrorContains(err, "invalid server response: 0 instead of 2 operation results")
-}
-
-func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerErrorResponseCountMismatch() {
-	s.workflowServiceClient.EXPECT().
-		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(nil, serviceerror.NewMultiOperationExecution("Error", []error{})).Times(1)
-
-	startOp := s.workflowClient.NewWithStartWorkflowOperation(
-		StartWorkflowOptions{
-			ID:                       workflowID,
-			WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
-			TaskQueue:                taskqueue,
-		}, workflowType,
-	)
-
-	_, err := s.workflowClient.UpdateWithStartWorkflow(
-		context.Background(),
-		UpdateWithStartWorkflowOptions{
-			UpdateOptions: UpdateWorkflowOptions{
-				UpdateName:   "update",
-				WaitForStage: WorkflowUpdateStageCompleted,
-			},
-			StartWorkflowOperation: startOp,
-		},
-	)
-	s.ErrorContains(err, "invalid server response: 0 instead of 2 operation errors")
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_ServerStartResponseTypeMismatch() {
