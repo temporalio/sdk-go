@@ -831,14 +831,16 @@ type (
 		// API. If the check fails, an error is returned.
 		CheckHealth(ctx context.Context, request *CheckHealthRequest) (*CheckHealthResponse, error)
 
-		// UpdateWorkflow issues an update request to the
-		// specified workflow execution and returns a handle to the update that
-		// is running in in parallel with the calling thread. Errors returned
-		// from the server will be exposed through the return value of
-		// WorkflowUpdateHandle.Get(). Errors that occur before the
-		// update is requested (e.g. if the required workflow ID field is
-		// missing from the UpdateWorkflowOptions) are returned
-		// directly from this function call.
+		// UpdateWorkflow issues an update request to the specified workflow and
+		// returns a handle to the update. The call will block until the update
+		// has reached the WaitForStage in the options. Note that this means
+		// that the call will not return successfully until the update has been
+		// delivered to a worker. Errors returned from the update handler or its
+		// validator will be exposed through the return value of
+		// WorkflowUpdateHandle.Get(). Errors that occur before the update is
+		// delivered to the workflow (e.g. if the required workflow ID field is
+		// missing from the UpdateWorkflowOptions) are returned directly from
+		// this function call.
 		//
 		// The errors it can return:
 		//  - WorkflowUpdateServiceTimeoutOrCanceledError
