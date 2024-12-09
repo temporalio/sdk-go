@@ -1907,6 +1907,9 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			BuildId:       wth.workerBuildID,
 			UseVersioning: wth.useBuildIDForVersioning,
 		},
+		Capabilities: &workflowservice.RespondWorkflowTaskCompletedRequest_Capabilities{
+			DiscardSpeculativeWorkflowTaskWithEvents: true,
+		},
 	}
 	if wth.capabilities != nil && wth.capabilities.BuildIdBasedVersioning {
 		builtRequest.BinaryChecksum = ""
