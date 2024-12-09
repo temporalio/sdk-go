@@ -1,0 +1,68 @@
+name: Check api-go compatibility
+
+on:
+  workflow_dispatch:
+    inputs:
+      sdk_commit:
+        description: sdk-go commit to check
+        required: true
+        default: master
+      api_commit:
+        description: api-go commit to check
+        required: true
+        default: master
+
+jobs:
+  check-api-go-compatibility:
+    name: "Check api-go compatibility"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Generate token
+        id: generate_token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.TEMPORAL_CICD_APP_ID }}
+          private-key: ${{ secrets.TEMPORAL_CICD_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sdk_commit }}
+          token: ${{ steps.generate_token.outputs.token }}
+          persist-credentials: true
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Update api-go
+        env:
+          GH_TOKEN: ${{ steps.generate_token.outputs.token }}
+          API_COMMIT: ${{ inputs.api_commit }}
+        run: |
+          # check commit exists
+          gh api "/repos/temporalio/api-go/commits/${API_COMMIT}" || exit 1
+          # update all go.mod
+          for f in $(find . -iname go.mod); do
+            cd $(dirname $f)
+            go get go.temporal.io/api@${API_COMMIT}
+            go mod tidy
+            cd -
+          done
+
+      - name: Run check
+        run: go run . check
+        working-directory: ./internal/cmd/build
+
+      - name: Run unit test
+        run: go run . unit-test
+        working-directory: ./internal/cmd/build
+
+      - name: Run integration tests
+        run: go run . integration-test -dev-server
+        working-directory: ./internal/cmd/build
