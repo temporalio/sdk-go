@@ -312,7 +312,6 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 	replayer.RegisterWorkflow(testReplayWorkflow)
 	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
-	require.True(s.T(), false)
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_IncompleteWorkflowTask() {

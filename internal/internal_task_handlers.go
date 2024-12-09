@@ -1026,8 +1026,7 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 		_, wfPanicked := w.err.(*workflowPanicError)
 		return !wfPanicked && isInReplayer
 	}
-	completedTaskCommandIndex := -1
-	completedTask := false
+	completedTaskCommandIndex := 0
 
 	metricsHandler := w.wth.metricsHandler.WithTags(metrics.WorkflowTags(task.WorkflowType.GetName()))
 	start := time.Now()
@@ -1053,7 +1052,6 @@ ProcessEvents:
 		admittedUpdates := nextTask.admittedMsgs
 		if len(reorderedEvents) > 0 && isTaskCompletedEvent(reorderedEvents[0]) {
 			completedTaskCommandIndex = len(replayCommands)
-			completedTask = true
 		}
 		// Check if we are replaying so we know if we should use the messages in the WFT or the history
 		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
@@ -1209,9 +1207,6 @@ ProcessEvents:
 	// doesn't have a corresponding completed task.
 	if completedTaskCommandIndex >= 0 {
 		replayCommands = replayCommands[:completedTaskCommandIndex]
-	}
-	if !completedTask {
-		replayCommands = nil
 	}
 
 	// Non-deterministic error could happen in 2 different places:
