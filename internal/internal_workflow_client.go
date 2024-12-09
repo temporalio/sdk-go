@@ -1761,7 +1761,7 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 	// Create update request
 	updateReq, err := w.createUpdateWorkflowRequest(ctx, updateInput)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errInvalidWithStartWorkflowOperation, err)
+		return nil, err
 	}
 	if updateReq.WorkflowExecution.WorkflowId == "" {
 		updateReq.WorkflowExecution.WorkflowId = startReq.WorkflowId
@@ -1800,7 +1800,7 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 	}
 	handle, err := w.updateHandleFromResponse(ctx, updateReq.WaitPolicy.LifecycleStage, updateResp)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errInvalidWithStartWorkflowOperation, err)
+		return nil, err
 	}
 	return handle, nil
 }
@@ -1862,27 +1862,31 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 			}
 
 			var abortedErr *serviceerror.MultiOperationAborted
-			startErr := errors.New("failed to start workflow")
 			for i, opReq := range multiRequest.Operations {
 				// if an operation error is of type MultiOperationAborted, it means it was only aborted because
 				// of another operation's error and is therefore not interesting or helpful
 				opErr := multiErr.OperationErrors()[i]
+				if opErr == nil {
+					continue
+				}
 
 				switch t := opReq.Operation.(type) {
 				case *workflowservice.ExecuteMultiOperationRequest_Operation_StartWorkflow:
 					if !errors.As(opErr, &abortedErr) {
-						startErr = opErr
+						return nil, fmt.Errorf("failed workflow start: %w", opErr)
 					}
 				case *workflowservice.ExecuteMultiOperationRequest_Operation_UpdateWorkflow:
 					if !errors.As(opErr, &abortedErr) {
-						startErr = fmt.Errorf("%w: %w", errInvalidWithStartWorkflowOperation, opErr)
+						return nil, fmt.Errorf("failed workflow update: %w", opErr)
 					}
 				default:
 					// this would only happen if a case statement for a newly added operation is missing above
 					return nil, fmt.Errorf("%w: %T", errUnsupportedOperation, t)
 				}
 			}
-			return nil, startErr
+
+			// this should never happen
+			return nil, errors.New(multiErr.Error())
 		} else if err != nil {
 			return nil, err
 		}
