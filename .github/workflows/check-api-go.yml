@@ -1,0 +1,84 @@
+name: Check api-go compatibility
+
+on:
+  workflow_dispatch:
+    inputs:
+      sdk_ref:
+        description: sdk-go ref to check ("latest" for latest release tag)
+        required: true
+        default: latest
+      api_ref:
+        description: api-go ref to check
+        required: true
+        default: master
+  workflow_call:
+    inputs:
+      sdk_ref:
+        description: sdk-go ref to check ("latest" for latest release tag)
+        required: true
+        default: latest
+      api_ref:
+        description: api-go ref to check
+        required: true
+        default: master
+
+jobs:
+  check-api-go-compatibility:
+    name: "Check api-go compatibility"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Parse inputs
+        id: inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SDK_REF: ${{ inputs.sdk_ref }}
+          API_REF: ${{ inputs.api_ref }}
+        run: |
+          if [[ "$SDK_REF" == "latest" ]]; then
+            SDK_REF=$(gh api /repos/temporalio/sdk-go/releases/latest --jq '.name')
+          fi
+          if ! gh api "/repos/temporalio/sdk-go/commits/$SDK_REF"; then
+            echo "::error::Reference $SDK_REF not found in sdk-go"
+            exit 1
+          fi
+          if ! gh api "/repos/temporalio/api-go/commits/$API_REF"; then
+            echo "::error::Reference $API_REF not found in api-go"
+            exit 1
+          fi
+          echo "SDK_REF=$SDK_REF" >> "$GITHUB_OUTPUT"
+          echo "API_REF=$API_REF" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repo: temporalio/sdk-go
+          ref: ${{ steps.inputs.outputs.SDK_REF }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Update api-go
+        env:
+          API_REF: ${{ steps.inputs.outputs.API_REF }}
+        run: |
+          for f in $(find . -iname go.mod); do
+            cd $(dirname $f)
+            go get go.temporal.io/api@$API_REF
+            go mod tidy
+            cd -
+          done
+
+      - name: Run check
+        run: go run . check
+        working-directory: ./internal/cmd/build
+
+      - name: Run unit test
+        run: go run . unit-test
+        working-directory: ./internal/cmd/build
+
+      - name: Run integration tests
+        run: go run . integration-test -dev-server
+        working-directory: ./internal/cmd/build
