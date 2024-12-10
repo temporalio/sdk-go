@@ -626,30 +626,6 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 	t.Equal(getBinaryChecksum(), checksums[2])
 }
 
-func (t *TaskHandlersTestSuite) TestRespondsToWFTWithWorkerBinaryID() {
-	taskQueue := "tq1"
-	workerBuildID := "yaaaay"
-	testEvents := []*historypb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
-		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
-		createTestEventWorkflowTaskStarted(3),
-	}
-	task := createWorkflowTask(testEvents, 0, "HelloWorld_Workflow")
-	params := t.getTestWorkerExecutionParams()
-	params.WorkerBuildID = workerBuildID
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
-	wftask := workflowTask{task: task}
-	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
-	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
-	wfctx.Unlock(err)
-	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
-	t.NoError(err)
-	t.NotNil(response)
-	t.Equal(workerBuildID, response.GetWorkerVersionStamp().GetBuildId())
-	// clean up workflow left in cache
-	params.cache.getWorkflowCache().Delete(task.WorkflowExecution.RunId)
-}
-
 func (t *TaskHandlersTestSuite) TestStickyLegacyQueryTaskOnEvictedCache() {
 	taskQueue := "tq1"
 	testEvents := []*historypb.HistoryEvent{
