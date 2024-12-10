@@ -32,8 +32,8 @@ jobs:
         id: inputs
         env:
           GH_TOKEN: ${{ github.token }}
-          SDK_REF: ${{ inputs.sdk_ref }}
-          API_REF: ${{ inputs.api_ref }}
+          SDK_REF: ${{ github.event.inputs.sdk_ref }}
+          API_REF: ${{ github.event.inputs.api_ref }}
         run: |
           if [[ "$SDK_REF" == "latest" ]]; then
             SDK_REF=$(gh api /repos/temporalio/sdk-go/releases/latest --jq '.name')
@@ -52,7 +52,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          repo: temporalio/sdk-go
+          repository: temporalio/sdk-go
           ref: ${{ steps.inputs.outputs.SDK_REF }}
 
       - name: Setup Go
