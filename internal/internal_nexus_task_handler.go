@@ -210,13 +210,13 @@ func (h *nexusTaskHandler) handleStartOperation(
 	}()
 	if ctx.Err() != nil {
 		if !panic {
-			nctx.Log.Error("Context error while processing Nexus task", "error", ctx.Err())
+			nctx.Log.Error("Context error while processing Nexus task", tagError, ctx.Err())
 		}
 		return nil, nil, errNexusTaskTimeout
 	}
 	if err != nil {
 		if !panic {
-			nctx.Log.Error("Handler returned error while processing Nexus task", "error", err)
+			nctx.Log.Error("Handler returned error while processing Nexus task", tagError, err)
 		}
 		var unsuccessfulOperationErr *nexus.UnsuccessfulOperationError
 		err = convertKnownErrors(err)
@@ -274,7 +274,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 		value := reflect.ValueOf(t).Elem().FieldByName("Value").Interface()
 		payload, err := h.dataConverter.ToPayload(value)
 		if err != nil {
-			nctx.Log.Error("Cannot convert Nexus sync result", "error", err)
+			nctx.Log.Error("Cannot convert Nexus sync result", tagError, err)
 			protoErr, err := h.internalError(fmt.Errorf("cannot convert nexus sync result: %w", err))
 			return nil, protoErr, err
 		}
@@ -314,13 +314,13 @@ func (h *nexusTaskHandler) handleCancelOperation(ctx context.Context, nctx *Nexu
 	}()
 	if ctx.Err() != nil {
 		if !panic {
-			nctx.Log.Error("Context error while processing Nexus task", "error", ctx.Err())
+			nctx.Log.Error("Context error while processing Nexus task", tagError, ctx.Err())
 		}
 		return nil, nil, errNexusTaskTimeout
 	}
 	if err != nil {
 		if !panic {
-			nctx.Log.Error("Handler returned error while processing Nexus task", "error", err)
+			nctx.Log.Error("Handler returned error while processing Nexus task", tagError, err)
 		}
 		err = convertKnownErrors(err)
 		var handlerErr *nexus.HandlerError
