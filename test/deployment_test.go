@@ -24,6 +24,8 @@ package test_test
 
 import (
 	"context"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -83,6 +85,17 @@ func (ts *DeploymentTestSuite) waitForWorkflowRunning(ctx context.Context, handl
 		status := describeResp.WorkflowExecutionInfo.Status
 		return enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING == status
 	}, 10*time.Second, 300*time.Millisecond)
+}
+
+func (ts *DeploymentTestSuite) waitForReachability(ctx context.Context, deployment client.Deployment, target client.DeploymentReachability) {
+	ts.Eventually(func() bool {
+		info, err := ts.client.DeploymentClient().GetReachability(ctx, client.DeploymentGetReachabilityOptions{
+			Deployment: deployment,
+		})
+		ts.NoError(err)
+
+		return info.Reachability == target
+	}, 70*time.Second, 1000*time.Millisecond)
 }
 
 func (ts *DeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
@@ -432,4 +445,180 @@ func (ts *DeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 	ts.NoError(handle3.Get(ctx, &result))
 	// no override
 	ts.True(IsVersionOne(result))
+}
+
+func (ts *DeploymentTestSuite) TestListDeployments() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	seriesName1 := "deploy-test-" + uuid.New()
+	seriesName2 := "deploy-test-" + uuid.New()
+
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		BuildID:                 "1.0",
+		UseBuildIDForVersioning: true,
+		DeploymentOptions: worker.DeploymentOptions{
+			DeploymentSeriesName: seriesName1,
+		},
+	})
+	ts.NoError(worker1.Start())
+	defer worker1.Stop()
+
+	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		BuildID:                 "2.0",
+		UseBuildIDForVersioning: true,
+		DeploymentOptions: worker.DeploymentOptions{
+			DeploymentSeriesName: seriesName2,
+		},
+	})
+	ts.NoError(worker2.Start())
+	defer worker2.Stop()
+
+	worker3 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		BuildID:                 "3.0",
+		UseBuildIDForVersioning: true,
+		DeploymentOptions: worker.DeploymentOptions{
+			DeploymentSeriesName: seriesName2,
+		},
+	})
+	ts.NoError(worker3.Start())
+	defer worker3.Stop()
+
+	ts.Eventually(func() bool {
+		iter, err := ts.client.DeploymentClient().List(ctx, client.DeploymentListOptions{
+			SeriesName: seriesName2,
+			PageSize:   1,
+		})
+		ts.NoError(err)
+
+		var deployments []*client.DeploymentListEntry
+		for iter.HasNext() {
+			depl, err := iter.Next()
+			if err != nil {
+				return false
+			}
+			deployments = append(deployments, depl)
+		}
+
+		res := []string{}
+		for _, depl := range deployments {
+			if depl.IsCurrent {
+				return false
+			}
+			res = append(res, depl.Deployment.BuildID+depl.Deployment.SeriesName)
+		}
+		sort.Strings(res)
+		return reflect.DeepEqual(res, []string{"2.0" + seriesName2, "3.0" + seriesName2})
+	}, 10*time.Second, 300*time.Millisecond)
+
+}
+
+func (ts *DeploymentTestSuite) TestDeploymentReachability() {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+
+	seriesName := "deploy-test-" + uuid.New()
+
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		BuildID:                 "1.0",
+		UseBuildIDForVersioning: true,
+		DeploymentOptions: worker.DeploymentOptions{
+			DeploymentSeriesName: seriesName,
+		},
+	})
+	ts.NoError(worker1.Start())
+	defer worker1.Stop()
+
+	worker1.RegisterWorkflowWithOptions(ts.workflows.WaitSignalToStartVersionedOne, workflow.RegisterOptions{
+		Name:               "WaitSignalToStartVersioned",
+		VersioningBehavior: workflow.VersioningBehaviorPinned,
+	})
+
+	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		BuildID:                 "2.0",
+		UseBuildIDForVersioning: true,
+		DeploymentOptions: worker.DeploymentOptions{
+			DeploymentSeriesName: seriesName,
+		},
+	})
+	ts.NoError(worker2.Start())
+	defer worker2.Stop()
+
+	worker2.RegisterWorkflowWithOptions(ts.workflows.WaitSignalToStartVersionedTwo, workflow.RegisterOptions{
+		Name:               "WaitSignalToStartVersioned",
+		VersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
+	})
+
+	ts.NoError(worker2.Start())
+	defer worker2.Stop()
+
+	_, err := ts.client.DeploymentClient().SetCurrent(ctx, client.DeploymentSetCurrentOptions{
+		Deployment: client.Deployment{
+			BuildID:    "1.0",
+			SeriesName: seriesName,
+		},
+	})
+	ts.NoError(err)
+
+	handle1, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("1"), "WaitSignalToStartVersioned")
+	ts.NoError(err)
+
+	ts.waitForWorkflowRunning(ctx, handle1)
+
+	ts.waitForReachability(ctx, client.Deployment{
+		SeriesName: seriesName,
+		BuildID:    "1.0",
+	}, client.DeploymentReachabilityReachable)
+
+	ts.waitForReachability(ctx, client.Deployment{
+		SeriesName: seriesName,
+		BuildID:    "2.0",
+	}, client.DeploymentReachabilityUnreachable)
+
+	_, err = ts.client.DeploymentClient().SetCurrent(ctx, client.DeploymentSetCurrentOptions{
+		Deployment: client.Deployment{
+			BuildID:    "2.0",
+			SeriesName: seriesName,
+		},
+	})
+	ts.NoError(err)
+
+	// SetCurrent seems to be eventually consistent for auto-update workflows,
+	// even though GetCurrent returns the new version.
+	// TBD(antlai-temporal) verify with server team whether this is expected.
+	time.Sleep(1 * time.Second)
+
+	// Still a workflow executing
+	ts.waitForReachability(ctx, client.Deployment{
+		SeriesName: seriesName,
+		BuildID:    "1.0",
+	}, client.DeploymentReachabilityReachable)
+
+	// For new workflows
+	ts.waitForReachability(ctx, client.Deployment{
+		SeriesName: seriesName,
+		BuildID:    "2.0",
+	}, client.DeploymentReachabilityReachable)
+
+	ts.NoError(ts.client.SignalWorkflow(ctx, handle1.GetID(), handle1.GetRunID(), "start-signal", "prefix"))
+
+	var result string
+	ts.NoError(handle1.Get(ctx, &result))
+	// was Pinned
+	ts.True(IsVersionOne(result))
+
+	// This test eventually passes but it takes about 60 seconds.
+	// TODO(antlai-temporal): Re-enable after speeding up reachability cache refresh.
+	//
+	// No workflow executing
+	//ts.waitForReachability(ctx, client.Deployment{
+	//	SeriesName: seriesName,
+	//	BuildID:    "1.0",
+	//}, client.DeploymentReachabilityClosedWorkflows)
+
+	// For new workflows
+	ts.waitForReachability(ctx, client.Deployment{
+		SeriesName: seriesName,
+		BuildID:    "2.0",
+	}, client.DeploymentReachabilityReachable)
 }
