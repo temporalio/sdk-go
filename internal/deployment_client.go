@@ -68,7 +68,7 @@ type (
 		// service/application are linked together by sharing a series name.
 		SeriesName string
 
-		// BuildID - identifies the worker's code and configuration version.
+		// BuildID - Identifies the worker's code and configuration version.
 		BuildID string
 	}
 
@@ -102,8 +102,8 @@ type (
 		// IsCurrent - Whether this deployment is the current one for its deployment series.
 		IsCurrent bool
 
-		// TaskQueuesInfo - List of task queues polled by workers in this deployment.
-		TaskQueuesInfo []DeploymentTaskQueueInfo
+		// TaskQueuesInfos - List of task queues polled by workers in this deployment.
+		TaskQueuesInfos []DeploymentTaskQueueInfo
 
 		// Metadata - A user-defined set of key-values. Can be updated with [DeploymentClient.SetCurrent].
 		Metadata map[string]*commonpb.Payload
@@ -229,6 +229,8 @@ type (
 		// GetReachability returns reachability information for a deployment. This operation is
 		// expensive, and results may be cached. Use the returned [DeploymentReachabilityInfo.LastUpdateTime]
 		// to estimate cache staleness.
+		// When reachability is not required, always prefer [Describe] over [GetReachability]
+		// for the most up-to-date information.
 		// NOTE: Experimental
 		GetReachability(ctx context.Context, options DeploymentGetReachabilityOptions) (DeploymentReachabilityInfo, error)
 

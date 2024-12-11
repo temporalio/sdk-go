@@ -380,6 +380,11 @@ type (
 	// NOTE: Experimental
 	WorkflowExecutionOptions = internal.WorkflowExecutionOptions
 
+	// WorkflowExecutionOptionsChanges describes changes to [WorkflowExecutionOptions]
+	// in the [UpdateWorkflowExecutionOptions] API.
+	// NOTE: Experimental
+	WorkflowExecutionOptionsChanges = internal.WorkflowExecutionOptionsChanges
+
 	// VersioningOverride is a property in [WorkflowExecutionOptions] that changes the versioning
 	// configuration of a specific workflow execution.
 	// If set, it takes precedence over the Versioning Behavior provided with workflow type registration, or
@@ -951,7 +956,7 @@ type (
 		// UpdateWorkflowExecutionOptions partially overrides the [WorkflowExecutionOptions] of an existing workflow execution
 		// and returns the new [WorkflowExecutionOptions] after applying the changes.
 		// It is intended for building tools that can selectively apply ad-hoc workflow configuration changes.
-		// Use [DescribeWorkflowExecution] to get the current [WorkflowExecutionOptions] without modifying them.
+		// Use [DescribeWorkflowExecution] to get similar information without modifying options.
 		// NOTE: Experimental
 		UpdateWorkflowExecutionOptions(ctx context.Context, options UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error)
 

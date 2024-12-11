@@ -384,8 +384,8 @@ func (ts *DeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 	options, err := ts.client.UpdateWorkflowExecutionOptions(ctx, client.UpdateWorkflowExecutionOptionsRequest{
 		WorkflowId: handle1.GetID(),
 		RunId:      handle1.GetRunID(),
-		WorkflowExecutionOptions: client.WorkflowExecutionOptions{
-			VersioningOverride: client.VersioningOverride{
+		WorkflowExecutionOptionsChanges: client.WorkflowExecutionOptionsChanges{
+			VersioningOverride: &client.VersioningOverride{
 				Behavior: workflow.VersioningBehaviorPinned,
 				Deployment: client.Deployment{
 					SeriesName: seriesName,
@@ -393,7 +393,6 @@ func (ts *DeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 				},
 			},
 		},
-		UpdatedFields: []string{"VersioningOverride"},
 	})
 	ts.NoError(err)
 	ts.Equal(options.VersioningOverride.Deployment.BuildID, "2.0")
@@ -402,8 +401,8 @@ func (ts *DeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 	options, err = ts.client.UpdateWorkflowExecutionOptions(ctx, client.UpdateWorkflowExecutionOptionsRequest{
 		WorkflowId: handle2.GetID(),
 		RunId:      handle2.GetRunID(),
-		WorkflowExecutionOptions: client.WorkflowExecutionOptions{
-			VersioningOverride: client.VersioningOverride{
+		WorkflowExecutionOptionsChanges: client.WorkflowExecutionOptionsChanges{
+			VersioningOverride: &client.VersioningOverride{
 				Behavior: workflow.VersioningBehaviorPinned,
 				Deployment: client.Deployment{
 					SeriesName: seriesName,
@@ -411,7 +410,6 @@ func (ts *DeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 				},
 			},
 		},
-		UpdatedFields: []string{"VersioningOverride"},
 	})
 	ts.NoError(err)
 	ts.Equal(options.VersioningOverride.Deployment.BuildID, "2.0")
@@ -420,10 +418,9 @@ func (ts *DeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 	options, err = ts.client.UpdateWorkflowExecutionOptions(ctx, client.UpdateWorkflowExecutionOptionsRequest{
 		WorkflowId: handle2.GetID(),
 		RunId:      handle2.GetRunID(),
-		WorkflowExecutionOptions: client.WorkflowExecutionOptions{
-			VersioningOverride: client.VersioningOverride{},
+		WorkflowExecutionOptionsChanges: client.WorkflowExecutionOptionsChanges{
+			VersioningOverride: &client.VersioningOverride{},
 		},
-		UpdatedFields: []string{"VersioningOverride"},
 	})
 	ts.NoError(err)
 	ts.Equal(options.VersioningOverride, client.VersioningOverride{})

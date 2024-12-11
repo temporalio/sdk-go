@@ -56,13 +56,13 @@ type (
 )
 
 func (iter *deploymentListIteratorImpl) HasNext() bool {
-	if iter.err == nil {
-		if iter.response == nil ||
-			(iter.nextDeploymentIndex >= len(iter.response.Deployments) && len(iter.response.NextPageToken) > 0) {
-			iter.response, iter.err = iter.paginate(iter.response.GetNextPageToken())
-			iter.nextDeploymentIndex = 0
-		}
+	if iter.err == nil &&
+		(iter.response == nil ||
+			(iter.nextDeploymentIndex >= len(iter.response.Deployments) && len(iter.response.NextPageToken) > 0)) {
+		iter.response, iter.err = iter.paginate(iter.response.GetNextPageToken())
+		iter.nextDeploymentIndex = 0
 	}
+
 	return iter.nextDeploymentIndex < len(iter.response.GetDeployments()) || iter.err != nil
 }
 
@@ -113,11 +113,11 @@ func deploymentTaskQueuesInfoFromProto(tqsInfo []*deployment.DeploymentInfo_Task
 
 func deploymentInfoFromProto(deploymentInfo *deployment.DeploymentInfo) DeploymentInfo {
 	return DeploymentInfo{
-		Deployment:     deploymentFromProto(deploymentInfo.GetDeployment()),
-		CreateTime:     deploymentInfo.GetCreateTime().AsTime(),
-		IsCurrent:      deploymentInfo.GetIsCurrent(),
-		TaskQueuesInfo: deploymentTaskQueuesInfoFromProto(deploymentInfo.GetTaskQueueInfos()),
-		Metadata:       deploymentInfo.GetMetadata(),
+		Deployment:      deploymentFromProto(deploymentInfo.GetDeployment()),
+		CreateTime:      deploymentInfo.GetCreateTime().AsTime(),
+		IsCurrent:       deploymentInfo.GetIsCurrent(),
+		TaskQueuesInfos: deploymentTaskQueuesInfoFromProto(deploymentInfo.GetTaskQueueInfos()),
+		Metadata:        deploymentInfo.GetMetadata(),
 	}
 }
 
@@ -156,6 +156,10 @@ func deploymentMetadataUpdateToProto(dc converter.DataConverter, update Deployme
 
 func (dc *deploymentClient) List(ctx context.Context, options DeploymentListOptions) (DeploymentListIterator, error) {
 	paginate := func(nextToken []byte) (*workflowservice.ListDeploymentsResponse, error) {
+		if err := dc.workflowClient.ensureInitialized(ctx); err != nil {
+			return nil, err
+		}
+
 		grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		request := &workflowservice.ListDeploymentsRequest{

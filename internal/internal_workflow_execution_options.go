@@ -39,15 +39,8 @@ type (
 		WorkflowId string
 		// Running execution for a workflow ID. If empty string then it will pick the last running execution.
 		RunId string
-		// WorkflowExecutionOptions specifies options for a target workflow execution. Fields not in
-		// [UpdatedFields] are ignored.
-		WorkflowExecutionOptions WorkflowExecutionOptions
-		// Field names in [WorkflowExecutionOptions] that will be updated.
-		// When it includes a field name, but the corresponding [WorkflowExecutionOptions] field has not been set,
-		// it will remove previous overrides for that field.
-		// It panics when it includes a field name not in [WorkflowExecutionOptions].
-		// An empty [UpdatedFields] never modifies [WorkflowExecutionOptions].
-		UpdatedFields []string
+		// WorkflowExecutionOptionsChanges specifies changes to the options of a workflow execution.
+		WorkflowExecutionOptionsChanges WorkflowExecutionOptionsChanges
 	}
 
 	// WorkflowExecutionOptions describes options for a workflow execution.
@@ -57,11 +50,21 @@ type (
 		VersioningOverride VersioningOverride
 	}
 
+	// WorkflowExecutionOptionsChanges describes changes to the options of a workflow execution in [WorkflowExecutionOptions].
+	// An entry with a `nil` pointer means do not change.
+	// An entry with a pointer to an empty value means delete the entry, i.e., the empty value is a tombstone.
+	// An entry with a pointer to a non-empty value means replace the entry, i.e., there is no deep merging.
+	// NOTE: Experimental
+	WorkflowExecutionOptionsChanges struct {
+		VersioningOverride *VersioningOverride
+	}
+
 	// VersioningOverride changes the versioning configuration of a specific workflow execution.
 	// If set, it takes precedence over the Versioning Behavior provided with workflow type registration or
 	// default worker options.
-	// To remove the override, the [UpdateWorkflowExecutionOptionsRequest] should include a default [VersioningOverride]
-	// value in [WorkflowExecutionOptions], and a FieldMask that contains the string "VersioningOverride".
+	// To remove the override, the [UpdateWorkflowExecutionOptionsRequest] should include a pointer to
+	// an empty [VersioningOverride] value in [WorkflowExecutionOptionsChanges].
+	// See [WorkflowExecutionOptionsChanges] for details.
 	// NOTE: Experimental
 	VersioningOverride struct {
 		// The new Versioning Behavior. This field is required.
@@ -134,6 +137,16 @@ func workflowExecutionOptionsToProto(options WorkflowExecutionOptions) *workflow
 	return &workflowpb.WorkflowExecutionOptions{
 		VersioningOverride: versioningOverrideToProto(options.VersioningOverride),
 	}
+}
+
+func workflowExecutionOptionsChangesToProto(changes WorkflowExecutionOptionsChanges) (*workflowpb.WorkflowExecutionOptions, *fieldmaskpb.FieldMask) {
+	mask := []string{}
+	options := WorkflowExecutionOptions{}
+	if changes.VersioningOverride != nil {
+		mask = append(mask, "VersioningOverride")
+		options.VersioningOverride = *changes.VersioningOverride
+	}
+	return workflowExecutionOptionsToProto(options), workflowExecutionOptionsMaskToProto(mask)
 }
 
 func workflowExecutionOptionsFromProtoUpdateResponse(response *workflowservice.UpdateWorkflowExecutionOptionsResponse) WorkflowExecutionOptions {

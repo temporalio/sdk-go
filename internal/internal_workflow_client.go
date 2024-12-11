@@ -1069,14 +1069,15 @@ func (wc *WorkflowClient) UpdateWorkflowExecutionOptions(ctx context.Context, re
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
+	workflowExecutionOptions, updateMask := workflowExecutionOptionsChangesToProto(request.WorkflowExecutionOptionsChanges)
 	requestMsg := &workflowservice.UpdateWorkflowExecutionOptionsRequest{
 		Namespace: wc.namespace,
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: request.WorkflowId,
 			RunId:      request.RunId,
 		},
-		WorkflowExecutionOptions: workflowExecutionOptionsToProto(request.WorkflowExecutionOptions),
-		UpdateMask:               workflowExecutionOptionsMaskToProto(request.UpdatedFields),
+		WorkflowExecutionOptions: workflowExecutionOptions,
+		UpdateMask:               updateMask,
 	}
 
 	resp, err := wc.workflowService.UpdateWorkflowExecutionOptions(grpcCtx, requestMsg)
