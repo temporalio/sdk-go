@@ -24,6 +24,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"go.temporal.io/api/common/v1"
@@ -121,11 +122,23 @@ func deploymentInfoFromProto(deploymentInfo *deployment.DeploymentInfo) Deployme
 	}
 }
 
+func deploymentDescriptionFromProto(deploymentInfo *deployment.DeploymentInfo) DeploymentDescription {
+	return DeploymentDescription{
+		DeploymentInfo: deploymentInfoFromProto(deploymentInfo),
+	}
+}
+
 func deploymentReachabilityInfoFromProto(response *workflowservice.GetDeploymentReachabilityResponse) DeploymentReachabilityInfo {
 	return DeploymentReachabilityInfo{
 		DeploymentInfo: deploymentInfoFromProto(response.GetDeploymentInfo()),
 		Reachability:   DeploymentReachability(response.GetReachability()),
 		LastUpdateTime: response.GetLastUpdateTime().AsTime(),
+	}
+}
+
+func deploymentGetCurrentResponseFromProto(deploymentInfo *deployment.DeploymentInfo) DeploymentGetCurrentResponse {
+	return DeploymentGetCurrentResponse{
+		DeploymentInfo: deploymentInfoFromProto(deploymentInfo),
 	}
 }
 
@@ -159,7 +172,9 @@ func (dc *deploymentClient) List(ctx context.Context, options DeploymentListOpti
 		if err := dc.workflowClient.ensureInitialized(ctx); err != nil {
 			return nil, err
 		}
-
+		if dc.workflowClient.namespace == "" {
+			return nil, errors.New("missing namespace argument")
+		}
 		grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 		defer cancel()
 		request := &workflowservice.ListDeploymentsRequest{
@@ -177,10 +192,29 @@ func (dc *deploymentClient) List(ctx context.Context, options DeploymentListOpti
 	}, nil
 }
 
-func (dc *deploymentClient) Describe(ctx context.Context, options DeploymentDescribeOptions) (DeploymentInfo, error) {
-	if err := dc.workflowClient.ensureInitialized(ctx); err != nil {
-		return DeploymentInfo{}, err
+func validateDeployment(deployment Deployment) error {
+	if deployment.BuildID == "" {
+		return errors.New("missing build id in deployment argument")
 	}
+
+	if deployment.SeriesName == "" {
+		return errors.New("missing series name in deployment argument")
+	}
+
+	return nil
+}
+
+func (dc *deploymentClient) Describe(ctx context.Context, options DeploymentDescribeOptions) (DeploymentDescription, error) {
+	if err := dc.workflowClient.ensureInitialized(ctx); err != nil {
+		return DeploymentDescription{}, err
+	}
+	if dc.workflowClient.namespace == "" {
+		return DeploymentDescription{}, errors.New("missing namespace argument")
+	}
+	if err := validateDeployment(options.Deployment); err != nil {
+		return DeploymentDescription{}, err
+	}
+
 	request := &workflowservice.DescribeDeploymentRequest{
 		Namespace:  dc.workflowClient.namespace,
 		Deployment: deploymentToProto(options.Deployment),
@@ -190,14 +224,20 @@ func (dc *deploymentClient) Describe(ctx context.Context, options DeploymentDesc
 
 	resp, err := dc.workflowClient.workflowService.DescribeDeployment(grpcCtx, request)
 	if err != nil {
-		return DeploymentInfo{}, err
+		return DeploymentDescription{}, err
 	}
 
-	return deploymentInfoFromProto(resp.GetDeploymentInfo()), nil
+	return deploymentDescriptionFromProto(resp.GetDeploymentInfo()), nil
 }
 
 func (dc *deploymentClient) GetReachability(ctx context.Context, options DeploymentGetReachabilityOptions) (DeploymentReachabilityInfo, error) {
 	if err := dc.workflowClient.ensureInitialized(ctx); err != nil {
+		return DeploymentReachabilityInfo{}, err
+	}
+	if dc.workflowClient.namespace == "" {
+		return DeploymentReachabilityInfo{}, errors.New("missing namespace argument")
+	}
+	if err := validateDeployment(options.Deployment); err != nil {
 		return DeploymentReachabilityInfo{}, err
 	}
 
@@ -216,10 +256,17 @@ func (dc *deploymentClient) GetReachability(ctx context.Context, options Deploym
 	return deploymentReachabilityInfoFromProto(resp), nil
 }
 
-func (dc *deploymentClient) GetCurrent(ctx context.Context, options DeploymentGetCurrentOptions) (DeploymentInfo, error) {
+func (dc *deploymentClient) GetCurrent(ctx context.Context, options DeploymentGetCurrentOptions) (DeploymentGetCurrentResponse, error) {
 	if err := dc.workflowClient.ensureInitialized(ctx); err != nil {
-		return DeploymentInfo{}, err
+		return DeploymentGetCurrentResponse{}, err
 	}
+	if dc.workflowClient.namespace == "" {
+		return DeploymentGetCurrentResponse{}, errors.New("missing namespace argument")
+	}
+	if options.SeriesName == "" {
+		return DeploymentGetCurrentResponse{}, errors.New("missing series name argument")
+	}
+
 	request := &workflowservice.GetCurrentDeploymentRequest{
 		Namespace:  dc.workflowClient.namespace,
 		SeriesName: options.SeriesName,
@@ -229,15 +276,22 @@ func (dc *deploymentClient) GetCurrent(ctx context.Context, options DeploymentGe
 
 	resp, err := dc.workflowClient.workflowService.GetCurrentDeployment(grpcCtx, request)
 	if err != nil {
-		return DeploymentInfo{}, err
+		return DeploymentGetCurrentResponse{}, err
 	}
-	return deploymentInfoFromProto(resp.GetCurrentDeploymentInfo()), nil
+	return deploymentGetCurrentResponseFromProto(resp.GetCurrentDeploymentInfo()), nil
 }
 
 func (dc *deploymentClient) SetCurrent(ctx context.Context, options DeploymentSetCurrentOptions) (DeploymentSetCurrentResponse, error) {
 	if err := dc.workflowClient.ensureInitialized(ctx); err != nil {
 		return DeploymentSetCurrentResponse{}, err
 	}
+	if dc.workflowClient.namespace == "" {
+		return DeploymentSetCurrentResponse{}, errors.New("missing namespace argument")
+	}
+	if err := validateDeployment(options.Deployment); err != nil {
+		return DeploymentSetCurrentResponse{}, err
+	}
+
 	request := &workflowservice.SetCurrentDeploymentRequest{
 		Namespace:      dc.workflowClient.namespace,
 		Deployment:     deploymentToProto(options.Deployment),

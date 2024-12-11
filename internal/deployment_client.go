@@ -109,6 +109,13 @@ type (
 		Metadata map[string]*commonpb.Payload
 	}
 
+	// DeploymentDescription is the response type for [DeploymentClient.Describe].
+	// NOTE: Experimental
+	DeploymentDescription struct {
+		// DeploymentInfo - Information associated with workers in this deployment.
+		DeploymentInfo DeploymentInfo
+	}
+
 	// DeploymentListEntry is a subset of fields from DeploymentInfo
 	// NOTE: Experimental
 	DeploymentListEntry struct {
@@ -172,6 +179,13 @@ type (
 		RemoveEntries []string
 	}
 
+	// DeploymentGetCurrentResponse is the response type for [DeploymentClient.GetCurrent]
+	// NOTE: Experimental
+	DeploymentGetCurrentResponse struct {
+		// DeploymentInfo - Information about the current deployment.
+		DeploymentInfo DeploymentInfo
+	}
+
 	// DeploymentSetCurrentOptions provides options for [DeploymentClient.SetCurrent].
 	// NOTE: Experimental
 	DeploymentSetCurrentOptions struct {
@@ -219,7 +233,7 @@ type (
 	DeploymentClient interface {
 		// Describes an existing deployment.
 		// NOTE: Experimental
-		Describe(ctx context.Context, options DeploymentDescribeOptions) (DeploymentInfo, error)
+		Describe(ctx context.Context, options DeploymentDescribeOptions) (DeploymentDescription, error)
 
 		// List returns an iterator to enumerate deployments in the client's namespace.
 		// It can also optionally filter deployments by series name.
@@ -236,7 +250,7 @@ type (
 
 		// GetCurrent returns the current deployment for a given deployment series.
 		// NOTE: Experimental
-		GetCurrent(ctx context.Context, options DeploymentGetCurrentOptions) (DeploymentInfo, error)
+		GetCurrent(ctx context.Context, options DeploymentGetCurrentOptions) (DeploymentGetCurrentResponse, error)
 
 		// SetCurrent changes the current deployment for a given deployment series. It can also
 		// update metadata for this deployment.

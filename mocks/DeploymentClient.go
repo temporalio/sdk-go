@@ -44,22 +44,22 @@ type DeploymentClient struct {
 }
 
 // Describe provides a mock function with given fields: ctx, options
-func (_m *DeploymentClient) Describe(ctx context.Context, options client.DeploymentDescribeOptions) (client.DeploymentInfo, error) {
+func (_m *DeploymentClient) Describe(ctx context.Context, options client.DeploymentDescribeOptions) (client.DeploymentDescription, error) {
 	ret := _m.Called(ctx, options)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Describe")
 	}
 
-	var r0 client.DeploymentInfo
+	var r0 client.DeploymentDescription
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentDescribeOptions) (client.DeploymentInfo, error)); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentDescribeOptions) (client.DeploymentDescription, error)); ok {
 		return rf(ctx, options)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentDescribeOptions) client.DeploymentInfo); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentDescribeOptions) client.DeploymentDescription); ok {
 		r0 = rf(ctx, options)
 	} else {
-		r0 = ret.Get(0).(client.DeploymentInfo)
+		r0 = ret.Get(0).(client.DeploymentDescription)
 	}
 
 	if rf, ok := ret.Get(1).(func(context.Context, client.DeploymentDescribeOptions) error); ok {
@@ -72,22 +72,22 @@ func (_m *DeploymentClient) Describe(ctx context.Context, options client.Deploym
 }
 
 // GetCurrent provides a mock function with given fields: ctx, options
-func (_m *DeploymentClient) GetCurrent(ctx context.Context, options client.DeploymentGetCurrentOptions) (client.DeploymentInfo, error) {
+func (_m *DeploymentClient) GetCurrent(ctx context.Context, options client.DeploymentGetCurrentOptions) (client.DeploymentGetCurrentResponse, error) {
 	ret := _m.Called(ctx, options)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetCurrent")
 	}
 
-	var r0 client.DeploymentInfo
+	var r0 client.DeploymentGetCurrentResponse
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentGetCurrentOptions) (client.DeploymentInfo, error)); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentGetCurrentOptions) (client.DeploymentGetCurrentResponse, error)); ok {
 		return rf(ctx, options)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentGetCurrentOptions) client.DeploymentInfo); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentGetCurrentOptions) client.DeploymentGetCurrentResponse); ok {
 		r0 = rf(ctx, options)
 	} else {
-		r0 = ret.Get(0).(client.DeploymentInfo)
+		r0 = ret.Get(0).(client.DeploymentGetCurrentResponse)
 	}
 
 	if rf, ok := ret.Get(1).(func(context.Context, client.DeploymentGetCurrentOptions) error); ok {

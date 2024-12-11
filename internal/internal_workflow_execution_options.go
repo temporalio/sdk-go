@@ -23,8 +23,10 @@
 package internal
 
 import (
+	"errors"
 	"fmt"
 
+	commonpb "go.temporal.io/api/common/v1"
 	deploymentpb "go.temporal.io/api/deployment/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -159,4 +161,32 @@ func workflowExecutionOptionsFromProtoUpdateResponse(response *workflowservice.U
 	return WorkflowExecutionOptions{
 		VersioningOverride: versioningOverrideFromProto(versioningOverride),
 	}
+}
+
+func (r *UpdateWorkflowExecutionOptionsRequest) validateAndConvertToProto(namespace string) (*workflowservice.UpdateWorkflowExecutionOptionsRequest, error) {
+	if namespace == "" {
+		return nil, errors.New("missing namespace argument")
+	}
+
+	if r.WorkflowId == "" {
+		return nil, errors.New("missing workflow id argument")
+	}
+
+	if r.WorkflowExecutionOptionsChanges.VersioningOverride == nil {
+		return nil, errors.New("update with no changes")
+	}
+
+	workflowExecutionOptions, updateMask := workflowExecutionOptionsChangesToProto(r.WorkflowExecutionOptionsChanges)
+
+	requestMsg := &workflowservice.UpdateWorkflowExecutionOptionsRequest{
+		Namespace: namespace,
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: r.WorkflowId,
+			RunId:      r.RunId,
+		},
+		WorkflowExecutionOptions: workflowExecutionOptions,
+		UpdateMask:               updateMask,
+	}
+
+	return requestMsg, nil
 }

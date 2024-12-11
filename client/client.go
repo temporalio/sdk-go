@@ -351,6 +351,10 @@ type (
 	// NOTE: Experimental
 	DeploymentDescribeOptions = internal.DeploymentDescribeOptions
 
+	// DeploymentDescription is the response type for [DeploymentClient.Describe].
+	// NOTE: Experimental
+	DeploymentDescription = internal.DeploymentDescription
+
 	// DeploymentGetReachabilityOptions provides options for [DeploymentClient.GetReachability].
 	// NOTE: Experimental
 	DeploymentGetReachabilityOptions = internal.DeploymentGetReachabilityOptions
@@ -358,6 +362,10 @@ type (
 	// DeploymentGetCurrentOptions provides options for [DeploymentClient.GetCurrent].
 	// NOTE: Experimental
 	DeploymentGetCurrentOptions = internal.DeploymentGetCurrentOptions
+
+	// DeploymentGetCurrentResponse is the response type for [DeploymentClient.GetCurrent].
+	// NOTE: Experimental
+	DeploymentGetCurrentResponse = internal.DeploymentGetCurrentResponse
 
 	// DeploymentSetCurrentOptions provides options for [DeploymentClient.SetCurrent].
 	// NOTE: Experimental

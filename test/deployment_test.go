@@ -199,10 +199,20 @@ func (ts *DeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 	})
 	ts.NoError(err)
 
-	info, err := ts.client.DeploymentClient().GetCurrent(ctx, client.DeploymentGetCurrentOptions{
+	resp, err := ts.client.DeploymentClient().GetCurrent(ctx, client.DeploymentGetCurrentOptions{
 		SeriesName: seriesName,
 	})
-	ts.Equal(info.Deployment.BuildID, "3.0")
+	ts.NoError(err)
+	ts.Equal(resp.DeploymentInfo.Deployment.BuildID, "3.0")
+
+	desc, err := ts.client.DeploymentClient().Describe(ctx, client.DeploymentDescribeOptions{
+		Deployment: client.Deployment{
+			SeriesName: seriesName,
+			BuildID:    "3.0",
+		},
+	})
+	ts.NoError(err)
+	ts.True(desc.DeploymentInfo.IsCurrent)
 
 	// start workflow3 with 3.0, WaitSignalToStartVersionedTwo, auto-upgrade
 	handle3, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("3"), "WaitSignalToStartVersioned")
