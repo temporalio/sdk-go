@@ -2865,7 +2865,10 @@ func TestWorkerBuildIDAndSessionPanic(t *testing.T) {
 	var recovered interface{}
 	func() {
 		defer func() { recovered = recover() }()
-		worker := NewAggregatedWorker(&WorkflowClient{}, "some-task-queue", WorkerOptions{EnableSessionWorker: true, UseBuildIDForVersioning: true})
+		worker := NewAggregatedWorker(&WorkflowClient{}, "some-task-queue", WorkerOptions{
+			EnableSessionWorker:     true,
+			UseBuildIDForVersioning: true,
+		})
 		worker.RegisterWorkflow(testReplayWorkflow)
 	}()
 	require.Equal(t, "cannot set both EnableSessionWorker and UseBuildIDForVersioning", recovered)

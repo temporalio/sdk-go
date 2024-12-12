@@ -1719,6 +1719,67 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithMemoAndSearchAt
 	_, _ = s.client.SignalWithStartWorkflow(context.Background(), "wid", "signal", "value", options, wf)
 }
 
+func (s *workflowClientTestSuite) TestStartWorkflowWithVersioningOverride() {
+	versioningOverride := VersioningOverride{
+		Behavior: VersioningBehaviorPinned,
+		Deployment: Deployment{
+			BuildID:    "build1",
+			SeriesName: "deployment1",
+		},
+	}
+
+	options := StartWorkflowOptions{
+		ID:                       workflowID,
+		TaskQueue:                taskqueue,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
+		VersioningOverride:       versioningOverride,
+	}
+
+	wf := func(ctx Context) string {
+		panic("this is just a stub")
+	}
+	startResp := &workflowservice.StartWorkflowExecutionResponse{}
+
+	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
+		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
+			s.Equal(versioningBehaviorToProto(VersioningBehaviorPinned), req.VersioningOverride.GetBehavior())
+			s.Equal("build1", req.VersioningOverride.GetDeployment().GetBuildId())
+			s.Equal("deployment1", req.VersioningOverride.GetDeployment().GetSeriesName())
+		})
+	_, _ = s.client.ExecuteWorkflow(context.Background(), options, wf)
+}
+
+func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithVersioningOverride() {
+	versioningOverride := VersioningOverride{
+		Behavior: VersioningBehaviorPinned,
+		Deployment: Deployment{
+			BuildID:    "build1",
+			SeriesName: "deployment1",
+		},
+	}
+
+	options := StartWorkflowOptions{
+		ID:                       "wid",
+		TaskQueue:                taskqueue,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
+		VersioningOverride:       versioningOverride,
+	}
+	wf := func(ctx Context) string {
+		panic("this is just a stub")
+	}
+	startResp := &workflowservice.SignalWithStartWorkflowExecutionResponse{}
+
+	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
+		Do(func(_ interface{}, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...interface{}) {
+			s.Equal(versioningBehaviorToProto(VersioningBehaviorPinned), req.VersioningOverride.GetBehavior())
+			s.Equal("build1", req.VersioningOverride.GetDeployment().GetBuildId())
+			s.Equal("deployment1", req.VersioningOverride.GetDeployment().GetSeriesName())
+		})
+	_, _ = s.client.SignalWithStartWorkflow(context.Background(), "wid", "signal", "value", options, wf)
+}
+
 func (s *workflowClientTestSuite) TestGetWorkflowMemo() {
 	var input1 map[string]interface{}
 	result1, err := getWorkflowMemo(input1, s.dataConverter)
