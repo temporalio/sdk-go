@@ -24,6 +24,7 @@ package test_test
 
 import (
 	"context"
+	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -99,6 +100,9 @@ func (ts *DeploymentTestSuite) waitForReachability(ctx context.Context, deployme
 }
 
 func (ts *DeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
+	if os.Getenv("DISABLE_DEPLOYMENT_TESTS") != "" {
+		ts.T().Skip("temporal server 1.26.2+ required")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -246,6 +250,9 @@ func (ts *DeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 }
 
 func (ts *DeploymentTestSuite) TestPinnedOverrideInWorkflowOptions() {
+	if os.Getenv("DISABLE_DEPLOYMENT_TESTS") != "" {
+		ts.T().Skip("temporal server 1.26.2+ required")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -326,6 +333,9 @@ func (ts *DeploymentTestSuite) TestPinnedOverrideInWorkflowOptions() {
 }
 
 func (ts *DeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
+	if os.Getenv("DISABLE_DEPLOYMENT_TESTS") != "" {
+		ts.T().Skip("temporal server 1.26.2+ required")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -455,6 +465,9 @@ func (ts *DeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 }
 
 func (ts *DeploymentTestSuite) TestListDeployments() {
+	if os.Getenv("DISABLE_DEPLOYMENT_TESTS") != "" {
+		ts.T().Skip("temporal server 1.26.2+ required")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -521,6 +534,9 @@ func (ts *DeploymentTestSuite) TestListDeployments() {
 }
 
 func (ts *DeploymentTestSuite) TestDeploymentReachability() {
+	if os.Getenv("DISABLE_DEPLOYMENT_TESTS") != "" {
+		ts.T().Skip("temporal server 1.26.2+ required")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
 

@@ -916,6 +916,7 @@ func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
 				TaskQueue: ts.taskQueueName,
 				TaskQueueTypes: []client.TaskQueueType{
 					client.TaskQueueTypeWorkflow,
+					client.TaskQueueTypeActivity,
 				},
 				ReportStats: true,
 			})
@@ -923,6 +924,9 @@ func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
 			ts.Equal(1, len(taskQueueInfo.VersionsInfo))
 			ts.NotNil(taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow])
 			ts.NotNil(taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats)
+			ts.NotNil(taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeActivity])
+			ts.NotNil(taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeActivity].Stats)
+
 			assert.Greater(t, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats.ApproximateBacklogCount, int64(0))
 		},
 		time.Second, 100*time.Millisecond,
