@@ -551,6 +551,7 @@ func (ts *IntegrationTestSuite) TestActivityRetryOptionsChange() {
 }
 
 func (ts *IntegrationTestSuite) TestActivityRetryOnStartToCloseTimeout() {
+	ts.T().Skip("temporal server 1.26.2 has a bug reporting activity failures")
 	var expected []string
 	err := ts.executeWorkflow(
 		"test-activity-retry-on-start2close-timeout",
