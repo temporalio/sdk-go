@@ -65,6 +65,32 @@ const (
 	HandlerUnfinishedPolicyAbandon
 )
 
+// VersioningBehavior specifies when existing workflows could change their Build ID.
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/workflow.VersioningBehavior]
+type VersioningBehavior int
+
+const (
+	// VersioningBehaviorUnspecified - Workflow versioning policy unknown.
+	//  A default [VersioningBehaviorUnspecified] policy forces
+	// every workflow to explicitly set a [VersioningBehavior] different from [VersioningBehaviorUnspecified].
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.VersioningBehaviorUnspecified]
+	VersioningBehaviorUnspecified VersioningBehavior = iota
+
+	// VersioningBehaviorPinned - Workflow should be pinned to the current Build ID until manually moved.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.VersioningBehaviorPinned]
+	VersioningBehaviorPinned
+
+	// VersioningBehaviorAutoUpgrade - Workflow automatically moves to the latest
+	// version (default Build ID of the task queue) when the next task is dispatched.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.VersioningBehaviorAutoUpgrade]
+	VersioningBehaviorAutoUpgrade
+)
+
 var (
 	errWorkflowIDNotSet              = errors.New("workflowId is not set")
 	errLocalActivityParamsBadRequest = errors.New("missing local activity parameters through context, check LocalActivityOptions")
@@ -423,6 +449,11 @@ type (
 		// inside a workflow as a child workflow.
 		Name                          string
 		DisableAlreadyRegisteredCheck bool
+		// Optional: Provides a Versioning Behavior to workflows of this type. It is required
+		// when WorkerOptions does not specify [DeploymentOptions.DefaultVersioningBehavior],
+		// [DeploymentOptions.DeploymentSeriesName] is set, and [UseBuildIDForVersioning] is true.
+		// NOTE: Experimental
+		VersioningBehavior VersioningBehavior
 	}
 
 	localActivityContext struct {
@@ -2705,4 +2736,17 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 
 func (wc *workflowEnvironmentInterceptor) RequestCancelNexusOperation(ctx Context, input RequestCancelNexusOperationInput) {
 	wc.env.RequestCancelNexusOperation(input.seq)
+}
+
+func versioningBehaviorToProto(t VersioningBehavior) enumspb.VersioningBehavior {
+	switch t {
+	case VersioningBehaviorUnspecified:
+		return enumspb.VERSIONING_BEHAVIOR_UNSPECIFIED
+	case VersioningBehaviorPinned:
+		return enumspb.VERSIONING_BEHAVIOR_PINNED
+	case VersioningBehaviorAutoUpgrade:
+		return enumspb.VERSIONING_BEHAVIOR_AUTO_UPGRADE
+	default:
+		panic("unknown versioning behavior type")
+	}
 }

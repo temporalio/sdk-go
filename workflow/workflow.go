@@ -35,6 +35,22 @@ import (
 	"golang.org/x/exp/constraints"
 )
 
+// VersioningBehavior specifies when existing workflows could change their Build ID.
+// NOTE: Experimental
+type VersioningBehavior = internal.VersioningBehavior
+
+const (
+	// Workflow versioning policy unknown.
+	VersioningBehaviorUnspecified = internal.VersioningBehaviorUnspecified
+
+	// Workflow should be pinned to the current Build ID until manually moved.
+	VersioningBehaviorPinned = internal.VersioningBehaviorPinned
+
+	// Workflow automatically moves to the latest version (default Build ID of the task queue)
+	// when the next task is dispatched.
+	VersioningBehaviorAutoUpgrade = internal.VersioningBehaviorAutoUpgrade
+)
+
 // HandlerUnfinishedPolicy defines the actions taken when a workflow exits while update handlers are
 // running. The workflow exit may be due to successful return, failure, cancellation, or
 // continue-as-new.
