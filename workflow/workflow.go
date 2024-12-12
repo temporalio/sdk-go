@@ -74,8 +74,6 @@ type (
 	Info = internal.WorkflowInfo
 
 	// UpdateInfo information about a currently running update
-	//
-	// NOTE: Experimental
 	UpdateInfo = internal.UpdateInfo
 
 	// ContinueAsNewError can be returned by a workflow implementation function and indicates that
@@ -272,8 +270,6 @@ func GetTypedSearchAttributes(ctx Context) temporal.SearchAttributes {
 
 // GetCurrentUpdateInfo returns information about the currently running update if any
 // from the context.
-//
-// NOTE: Experimental
 func GetCurrentUpdateInfo(ctx Context) *UpdateInfo {
 	return internal.GetCurrentUpdateInfo(ctx)
 }
@@ -281,7 +277,7 @@ func GetCurrentUpdateInfo(ctx Context) *UpdateInfo {
 // GetLogger returns a logger to be used in workflow's context.
 // This logger does not record logs during replay.
 //
-// The logger may also extract additional fields from the context, such as update info 
+// The logger may also extract additional fields from the context, such as update info
 // if used in an update handler.
 func GetLogger(ctx Context) log.Logger {
 	return internal.GetLogger(ctx)
@@ -529,8 +525,6 @@ func SetQueryHandlerWithOptions(ctx Context, queryType string, handler interface
 // SetUpdateHandler forwards to SetUpdateHandlerWithOptions with an
 // zero-initialized UpdateHandlerOptions struct. See SetUpdateHandlerWithOptions
 // for more details.
-//
-// NOTE: Experimental
 func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error {
 	return SetUpdateHandlerWithOptions(ctx, updateName, handler, UpdateHandlerOptions{})
 }
@@ -583,8 +577,6 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error
 //		_ = ctx.Done().Receive(ctx, nil)
 //		return counter, nil
 //	}
-//
-// NOTE: Experimental
 func SetUpdateHandlerWithOptions(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions) error {
 	return internal.SetUpdateHandler(ctx, updateName, handler, opts)
 }

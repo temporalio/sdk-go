@@ -816,7 +816,6 @@ type UpdateWithStartWorkflowOptions struct {
 // similar to a Future with respect to the outcome of the update. If the update
 // is rejected or returns an error, the Get function on this type will return
 // that error through the output valuePtr.
-// NOTE: Experimental
 type WorkflowUpdateHandle interface {
 	// WorkflowID observes the update's workflow ID.
 	WorkflowID() string
@@ -833,7 +832,6 @@ type WorkflowUpdateHandle interface {
 
 // GetWorkflowUpdateHandleOptions encapsulates the parameters needed to unambiguously
 // refer to a Workflow Update.
-// NOTE: Experimental
 type GetWorkflowUpdateHandleOptions struct {
 	// WorkflowID of the target update
 	WorkflowID string
