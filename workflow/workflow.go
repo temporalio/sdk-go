@@ -90,8 +90,6 @@ type (
 	Info = internal.WorkflowInfo
 
 	// UpdateInfo information about a currently running update
-	//
-	// NOTE: Experimental
 	UpdateInfo = internal.UpdateInfo
 
 	// ContinueAsNewError can be returned by a workflow implementation function and indicates that
@@ -288,8 +286,6 @@ func GetTypedSearchAttributes(ctx Context) temporal.SearchAttributes {
 
 // GetCurrentUpdateInfo returns information about the currently running update if any
 // from the context.
-//
-// NOTE: Experimental
 func GetCurrentUpdateInfo(ctx Context) *UpdateInfo {
 	return internal.GetCurrentUpdateInfo(ctx)
 }
@@ -545,8 +541,6 @@ func SetQueryHandlerWithOptions(ctx Context, queryType string, handler interface
 // SetUpdateHandler forwards to SetUpdateHandlerWithOptions with an
 // zero-initialized UpdateHandlerOptions struct. See SetUpdateHandlerWithOptions
 // for more details.
-//
-// NOTE: Experimental
 func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error {
 	return SetUpdateHandlerWithOptions(ctx, updateName, handler, UpdateHandlerOptions{})
 }
@@ -599,8 +593,6 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error
 //		_ = ctx.Done().Receive(ctx, nil)
 //		return counter, nil
 //	}
-//
-// NOTE: Experimental
 func SetUpdateHandlerWithOptions(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions) error {
 	return internal.SetUpdateHandler(ctx, updateName, handler, opts)
 }

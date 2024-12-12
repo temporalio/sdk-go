@@ -487,8 +487,6 @@ type (
 
 	// UpdateHandlerOptions consists of options for executing a named workflow update.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/workflow.UpdateHandlerOptions]
 	UpdateHandlerOptions struct {
 		// Validator is an optional (i.e. can be left nil) func with exactly the
@@ -2214,8 +2212,6 @@ func (wc *workflowEnvironmentInterceptor) SetQueryHandlerWithOptions(
 // parameter. Validation handlers must only return a single error. Validation
 // handlers must be deterministic and can observe workflow state but must not
 // mutate workflow state in any way.
-//
-// NOTE: Experimental
 //
 // Exposed as: [go.temporal.io/sdk/workflow.SetUpdateHandlerWithOptions]
 func SetUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions) error {
