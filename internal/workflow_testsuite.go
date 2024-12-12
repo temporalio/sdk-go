@@ -55,6 +55,8 @@ type (
 	ErrorDetailsValues []interface{}
 
 	// WorkflowTestSuite is the test suite to run unit tests for workflow/activity.
+	//
+	// Exposed as: [go.temporal.io/sdk/testsuite.WorkflowTestSuite]
 	WorkflowTestSuite struct {
 		logger                      log.Logger
 		metricsHandler              metrics.Handler
@@ -64,6 +66,8 @@ type (
 	}
 
 	// TestWorkflowEnvironment is the environment that you use to test workflow
+	//
+	// Exposed as: [go.temporal.io/sdk/testsuite.TestWorkflowEnvironment]
 	TestWorkflowEnvironment struct {
 		workflowMock mock.Mock
 		activityMock mock.Mock
@@ -72,11 +76,15 @@ type (
 	}
 
 	// TestActivityEnvironment is the environment that you use to test activity
+	//
+	// Exposed as: [go.temporal.io/sdk/testsuite.TestActivityEnvironment]
 	TestActivityEnvironment struct {
 		impl *testWorkflowEnvironmentImpl
 	}
 
 	// MockCallWrapper is a wrapper to mock.Call. It offers the ability to wait on workflow's clock instead of wall clock.
+	//
+	// Exposed as: [go.temporal.io/sdk/testsuite.MockCallWrapper]
 	MockCallWrapper struct {
 		call *mock.Call
 		env  *TestWorkflowEnvironment
@@ -88,6 +96,8 @@ type (
 	// TestUpdateCallback is a basic implementation of the UpdateCallbacks interface for testing purposes.
 	// Tests are welcome to implement their own version of this interface if they need to test more complex
 	// update logic. This is a simple implementation to make testing basic Workflow Updates easier.
+	//
+	// Exposed as: [go.temporal.io/sdk/testsuite.TestUpdateCallback]
 	TestUpdateCallback struct {
 		OnAccept   func()
 		OnReject   func(error)
@@ -349,6 +359,16 @@ func (e *TestWorkflowEnvironment) SetContinuedExecutionRunID(rid string) {
 	e.impl.setContinuedExecutionRunID(rid)
 }
 
+// InOrderMockCalls declares that the given calls should occur in order. Syntax sugar for NotBefore.
+func (e *TestWorkflowEnvironment) InOrderMockCalls(calls ...*MockCallWrapper) {
+	wrappedCalls := make([]*mock.Call, 0, len(calls))
+	for _, call := range calls {
+		wrappedCalls = append(wrappedCalls, call.call)
+	}
+
+	mock.InOrder(wrappedCalls...)
+}
+
 // OnActivity setup a mock call for activity. Parameter activity must be activity function (func) or activity name (string).
 // You must call Return() with appropriate parameters on the returned *MockCallWrapper instance. The supplied parameters to
 // the Return() call should either be a function that has exact same signature as the mocked activity, or it should be
@@ -406,6 +426,8 @@ func (e *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...inter
 
 // ErrMockStartChildWorkflowFailed is special error used to indicate the mocked child workflow should fail to start.
 // This error is also exposed as public as testsuite.ErrMockStartChildWorkflowFailed
+//
+// Exposed as: [go.temporal.io/sdk/testsuite.ErrMockStartChildWorkflowFailed]
 var ErrMockStartChildWorkflowFailed = fmt.Errorf("start child workflow failed: %v", enumspb.START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_WORKFLOW_ALREADY_EXISTS)
 
 // OnWorkflow setup a mock call for workflow. Parameter workflow must be workflow function (func) or workflow name (string).

@@ -7,7 +7,7 @@ toolchain go1.22.5
 require (
 	github.com/containerd/cgroups/v3 v3.0.3
 	github.com/shirou/gopsutil/v4 v4.24.8
-	github.com/stretchr/testify v1.9.0
+	github.com/stretchr/testify v1.10.0
 	go.einride.tech/pid v0.1.3
 	go.temporal.io/sdk v1.29.1
 )
@@ -25,7 +25,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
-	github.com/nexus-rpc/sdk-go v0.0.12 // indirect
+	github.com/nexus-rpc/sdk-go v0.1.0 // indirect
 	github.com/opencontainers/runtime-spec v1.0.2 // indirect
 	github.com/pborman/uuid v1.2.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect

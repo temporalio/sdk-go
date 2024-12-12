@@ -32,16 +32,22 @@ import (
 // DeploymentReachability specifies which category of tasks may reach a worker
 // associated with a deployment, simplifying safe decommission.
 // NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/client.DeploymentReachability]
 type DeploymentReachability int
 
 const (
 	// DeploymentReachabilityUnspecified - Reachability level not specified.
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DeploymentReachabilityUnspecified]
 	DeploymentReachabilityUnspecified = iota
 
 	// DeploymentReachabilityReachable - The deployment is reachable by new
 	// and/or open workflows. The deployment cannot be decommissioned safely.
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DeploymentReachabilityReachable]
 	DeploymentReachabilityReachable
 
 	// DeploymentReachabilityClosedWorkflows - The deployment is not reachable
@@ -49,6 +55,8 @@ const (
 	// Queries sent to closed workflows. The deployment can be decommissioned
 	// safely if user does not query closed workflows.
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DeploymentReachabilityClosedWorkflows]
 	DeploymentReachabilityClosedWorkflows
 
 	// DeploymentReachabilityUnreachable - The deployment is not reachable by
@@ -56,6 +64,8 @@ const (
 	// deployment are out of the retention period. The deployment can be
 	// decommissioned safely.
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DeploymentReachabilityUnreachable]
 	DeploymentReachabilityUnreachable
 )
 
@@ -63,6 +73,8 @@ type (
 	// Deployment identifies a set of workers. This identifier combines
 	// the deployment series name with their Build ID.
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.Deployment]
 	Deployment struct {
 		// SeriesName - Name of the deployment series. Different versions of the same worker
 		// service/application are linked together by sharing a series name.
@@ -75,6 +87,8 @@ type (
 	// DeploymentTaskQueueInfo describes properties of the Task Queues involved
 	// in a deployment.
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DeploymentTaskQueueInfo]
 	DeploymentTaskQueueInfo struct {
 		// Name - Task queue name.
 		Name string
@@ -92,6 +106,8 @@ type (
 	// Workers can poll multiple task queues in a single deployment,
 	// which are listed in this message.
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DeploymentInfo]
 	DeploymentInfo struct {
 		// Deployment - An identifier for this deployment.
 		Deployment Deployment
@@ -111,6 +127,8 @@ type (
 
 	// DeploymentDescription is the response type for [DeploymentClient.Describe].
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DeploymentDescription]
 	DeploymentDescription struct {
 		// DeploymentInfo - Information associated with workers in this deployment.
 		DeploymentInfo DeploymentInfo
@@ -118,6 +136,8 @@ type (
 
 	// DeploymentListEntry is a subset of fields from DeploymentInfo
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DeploymentListEntry]
 	DeploymentListEntry struct {
 		// An identifier for this deployment.
 		Deployment Deployment
@@ -141,6 +161,8 @@ type (
 
 	// DeploymentListOptions are the parameters for configuring listing deployments.
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DeploymentListOptions]
 	DeploymentListOptions struct {
 		// PageSize - How many results to fetch from the Server at a time.
 		// Optional: defaulted to 1000
@@ -153,6 +175,8 @@ type (
 
 	// DeploymentReachabilityInfo extends [DeploymentInfo] with reachability information.
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DeploymentReachabilityInfo]
 	DeploymentReachabilityInfo struct {
 		// DeploymentInfo - Information about the deployment.
 		DeploymentInfo DeploymentInfo
@@ -169,6 +193,8 @@ type (
 	// DeploymentMetadataUpdate modifies user-defined metadata entries that describe
 	// a deployment.
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DeploymentMetadataUpdate]
 	DeploymentMetadataUpdate struct {
 		// UpsertEntries - Metadata entries inserted or modified. When values are not
 		// of type *commonpb.Payload, the client data converter will be used to generate
@@ -181,6 +207,8 @@ type (
 
 	// DeploymentGetCurrentResponse is the response type for [DeploymentClient.GetCurrent]
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DeploymentGetCurrentResponse]
 	DeploymentGetCurrentResponse struct {
 		// DeploymentInfo - Information about the current deployment.
 		DeploymentInfo DeploymentInfo
@@ -188,6 +216,8 @@ type (
 
 	// DeploymentSetCurrentOptions provides options for [DeploymentClient.SetCurrent].
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DeploymentSetCurrentOptions]
 	DeploymentSetCurrentOptions struct {
 		// Deployment - An identifier for this deployment.
 		Deployment Deployment
@@ -199,6 +229,8 @@ type (
 
 	// DeploymentSetCurrentResponse is the response type for [DeploymentClient.SetCurrent].
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DeploymentSetCurrentResponse]
 	DeploymentSetCurrentResponse struct {
 		// Current - Information about the current deployment after this operation.
 		Current DeploymentInfo
@@ -209,6 +241,8 @@ type (
 
 	// DeploymentDescribeOptions provides options for [DeploymentClient.Describe].
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DeploymentDescribeOptions]
 	DeploymentDescribeOptions struct {
 		// Deployment - Identifier that combines the deployment series name with their Build ID.
 		Deployment Deployment
@@ -216,6 +250,8 @@ type (
 
 	// DeploymentGetReachabilityOptions provides options for [DeploymentClient.GetReachability].
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DeploymentGetReachabilityOptions]
 	DeploymentGetReachabilityOptions struct {
 		// Deployment - Identifier that combines the deployment series name with their Build ID.
 		Deployment Deployment
@@ -223,6 +259,8 @@ type (
 
 	// DeploymentGetCurrentOptions provides options for [DeploymentClient.GetCurrent].
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DeploymentGetCurrentOptions]
 	DeploymentGetCurrentOptions struct {
 		// SeriesName - Name of the deployment series.
 		SeriesName string

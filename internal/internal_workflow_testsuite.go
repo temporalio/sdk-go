@@ -2405,6 +2405,7 @@ func (env *testWorkflowEnvironmentImpl) newTestNexusTaskHandler(
 		env.workflowInfo.TaskQueueName,
 		&testSuiteClientForNexusOperations{env: env},
 		env.dataConverter,
+		env.failureConverter,
 		env.logger,
 		env.metricsHandler,
 	)

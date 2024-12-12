@@ -111,13 +111,13 @@ func newTestContext(t *testing.T, ctx context.Context) *testContext {
 	return tc
 }
 
-func (tc *testContext) newNexusClient(t *testing.T, service string) *nexus.Client {
+func (tc *testContext) newNexusClient(t *testing.T, service string) *nexus.HTTPClient {
 	httpClient := http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: tc.testConfig.TLS,
 		},
 	}
-	nc, err := nexus.NewClient(nexus.ClientOptions{
+	nc, err := nexus.NewHTTPClient(nexus.HTTPClientOptions{
 		BaseURL: tc.endpointBaseURL,
 		Service: service,
 		HTTPCaller: func(r *http.Request) (*http.Response, error) {
@@ -178,12 +178,7 @@ var syncOp = temporalnexus.NewSyncOperation("sync-op", func(ctx context.Context,
 		}
 		return s, nil
 	case "fail":
-		return "", &nexus.UnsuccessfulOperationError{
-			State: nexus.OperationStateFailed,
-			Failure: nexus.Failure{
-				Message: "fail",
-			},
-		}
+		return "", nexus.NewFailedOperationError(errors.New("fail"))
 	case "fmt-errorf":
 		return "", fmt.Errorf("arbitrary error message")
 	case "handlererror":
@@ -256,7 +251,7 @@ func TestNexusSyncOperation(t *testing.T) {
 		var unsuccessfulOperationErr *nexus.UnsuccessfulOperationError
 		require.ErrorAs(t, err, &unsuccessfulOperationErr)
 		require.Equal(t, nexus.OperationStateFailed, unsuccessfulOperationErr.State)
-		require.Equal(t, "fail", unsuccessfulOperationErr.Failure.Message)
+		require.Equal(t, "fail", unsuccessfulOperationErr.Cause.Error())
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
@@ -272,7 +267,7 @@ func TestNexusSyncOperation(t *testing.T) {
 		var handlerErr *nexus.HandlerError
 		require.ErrorAs(t, err, &handlerErr)
 		require.Equal(t, nexus.HandlerErrorTypeInternal, handlerErr.Type)
-		require.Contains(t, handlerErr.Failure.Message, "arbitrary error message")
+		require.Contains(t, handlerErr.Cause.Error(), "arbitrary error message")
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
@@ -287,7 +282,7 @@ func TestNexusSyncOperation(t *testing.T) {
 		var handlerErr *nexus.HandlerError
 		require.ErrorAs(t, err, &handlerErr)
 		require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
-		require.Contains(t, handlerErr.Failure.Message, "handlererror")
+		require.Contains(t, handlerErr.Cause.Error(), "handlererror")
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
@@ -302,7 +297,7 @@ func TestNexusSyncOperation(t *testing.T) {
 		var handlerErr *nexus.HandlerError
 		require.ErrorAs(t, err, &handlerErr)
 		require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
-		require.Contains(t, handlerErr.Failure.Message, "faking workflow already started")
+		require.Contains(t, handlerErr.Cause.Error(), "faking workflow already started")
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
@@ -317,7 +312,7 @@ func TestNexusSyncOperation(t *testing.T) {
 		var handlerErr *nexus.HandlerError
 		require.ErrorAs(t, err, &handlerErr)
 		require.Equal(t, nexus.HandlerErrorTypeInternal, handlerErr.Type)
-		require.Contains(t, handlerErr.Failure.Message, "fake app error for test")
+		require.Contains(t, handlerErr.Cause.Error(), "fake app error for test")
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
@@ -329,10 +324,10 @@ func TestNexusSyncOperation(t *testing.T) {
 
 	t.Run("non-retryable-application-error", func(t *testing.T) {
 		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "non-retryable-application-error", nexus.ExecuteOperationOptions{})
-		var handlerErr *nexus.HandlerError
-		require.ErrorAs(t, err, &handlerErr)
-		require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
-		require.Contains(t, handlerErr.Failure.Message, "fake app error for test")
+		var opErr *nexus.UnsuccessfulOperationError
+		require.ErrorAs(t, err, &opErr)
+		require.Equal(t, nexus.OperationStateFailed, opErr.State)
+		require.Contains(t, opErr.Cause.Error(), "fake app error for test")
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
@@ -347,7 +342,7 @@ func TestNexusSyncOperation(t *testing.T) {
 		var handlerErr *nexus.HandlerError
 		require.ErrorAs(t, err, &handlerErr)
 		require.Equal(t, nexus.HandlerErrorTypeInternal, handlerErr.Type)
-		require.Contains(t, handlerErr.Failure.Message, "panic: panic requested")
+		require.Contains(t, handlerErr.Cause.Error(), "panic: panic requested")
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
@@ -427,16 +422,19 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 		switch outcome {
 		case "successful":
 			return outcome, nil
-		case "failed":
-			return "", &nexus.UnsuccessfulOperationError{
-				State:   nexus.OperationStateFailed,
-				Failure: nexus.Failure{Message: "failed for test"},
+		case "failed-plain-error":
+			return "", nexus.NewFailedOperationError(errors.New("failed for test"))
+		case "failed-app-error":
+			return "", nexus.NewFailedOperationError(temporal.NewApplicationError("failed with app error", "TestType", "foo"))
+		case "handler-plain-error":
+			return "", nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, "bad request")
+		case "handler-app-error":
+			return "", &nexus.HandlerError{
+				Type:  nexus.HandlerErrorTypeBadRequest,
+				Cause: temporal.NewApplicationError("failed with app error", "TestType", "foo"),
 			}
 		case "canceled":
-			return "", &nexus.UnsuccessfulOperationError{
-				State:   nexus.OperationStateCanceled,
-				Failure: nexus.Failure{Message: "canceled for test"},
-			}
+			return "", nexus.NewCanceledOperationError(errors.New("canceled for test"))
 		default:
 			panic(fmt.Errorf("unexpected outcome: %s", outcome))
 		}
@@ -483,13 +481,13 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 		require.NoError(t, run.Get(ctx, nil))
 	})
 
-	t.Run("OpFailed", func(t *testing.T) {
+	t.Run("OpFailedPlainError", func(t *testing.T) {
 		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 			TaskQueue: tc.taskQueue,
 			// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
 			// timeout to speed up the attempts.
 			WorkflowTaskTimeout: time.Second,
-		}, wf, "failed")
+		}, wf, "failed-plain-error")
 		require.NoError(t, err)
 		var execErr *temporal.WorkflowExecutionError
 		err = run.Get(ctx, nil)
@@ -539,6 +537,8 @@ func TestAsyncOperationFromWorkflow(t *testing.T) {
 			return action, nil
 		case "fail":
 			return "", fmt.Errorf("handler workflow failed in test")
+		case "fail-app-error":
+			return "", temporal.NewApplicationError("failed with app error", "TestType", "foo")
 		case "wait-for-cancel":
 			return "", workflow.Await(ctx, func() bool { return false })
 		default:
@@ -825,19 +825,9 @@ func TestWorkflowTestSuite_NexusSyncOperation(t *testing.T) {
 		case "ok":
 			return outcome, nil
 		case "failure":
-			return "", &nexus.UnsuccessfulOperationError{
-				State: nexus.OperationStateFailed,
-				Failure: nexus.Failure{
-					Message: "test operation failed",
-				},
-			}
+			return "", nexus.NewFailedOperationError(errors.New("test operation failed"))
 		case "handler-error":
-			return "", &nexus.HandlerError{
-				Type: nexus.HandlerErrorTypeBadRequest,
-				Failure: &nexus.Failure{
-					Message: "test operation failed",
-				},
-			}
+			return "", nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, "test operation failed")
 		}
 		panic(fmt.Errorf("invalid outcome: %q", outcome))
 	})

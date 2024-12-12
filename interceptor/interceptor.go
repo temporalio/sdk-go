@@ -220,6 +220,10 @@ type ScheduleClientCreateInput = internal.ScheduleClientCreateInput
 // ClientOutoundInterceptor.UpdateWorkflow.
 type ClientUpdateWorkflowInput = internal.ClientUpdateWorkflowInput
 
+// ClientUpdateWithStartWorkflowInput is input for
+// ClientOutboundInterceptor.UpdateWithStartWorkflow.
+type ClientUpdateWithStartWorkflowInput = internal.ClientUpdateWithStartWorkflowInput
+
 // Header provides Temporal header information from the context for reading or
 // writing during specific interceptor calls.
 //

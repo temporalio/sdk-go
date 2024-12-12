@@ -34,6 +34,8 @@ type (
 	// NOTE: Both [WorkerOptions.BuildID] and [WorkerOptions.UseBuildIDForVersioning] need to be set for enabling
 	//  Worker Versioning.
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.DeploymentOptions]
 	WorkerDeploymentOptions struct {
 		// Assign a deployment series name to this worker. Different versions of the same worker
 		// service/application are linked together by sharing a series name.
@@ -52,6 +54,8 @@ type (
 	// WorkerOptions is used to configure a worker instance.
 	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 	// subjected to change in the future.
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.Options]
 	WorkerOptions struct {
 		// Optional: To set the maximum concurrent activity executions this worker can have.
 		// The zero value of this uses the default value.
@@ -287,6 +291,8 @@ type (
 // code panicking which includes non backwards compatible changes to the workflow code without appropriate
 // versioning (see workflow.GetVersion).
 // The default behavior is to block workflow execution until the problem is fixed.
+//
+// Exposed as: [go.temporal.io/sdk/worker.WorkflowPanicPolicy]
 type WorkflowPanicPolicy int
 
 const (
@@ -294,10 +300,14 @@ const (
 	// This option causes workflow to get stuck in the workflow task retry loop.
 	// It is expected that after the problem is discovered and fixed the workflows are going to continue
 	// without any additional manual intervention.
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.BlockWorkflow]
 	BlockWorkflow WorkflowPanicPolicy = iota
 	// FailWorkflow immediately fails workflow execution if workflow code throws panic or detects non-determinism.
 	// This feature is convenient during development.
 	// WARNING: enabling this in production can cause all open workflows to fail on a single bug or bad deployment.
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.FailWorkflow]
 	FailWorkflow
 )
 
@@ -316,6 +326,8 @@ func IsReplayNamespace(dn string) bool {
 // hosted by a single worker process.
 //
 // options 	- configure any worker specific options.
+//
+// Exposed as: [go.temporal.io/sdk/worker.New]
 func NewWorker(
 	client Client,
 	taskQueue string,
