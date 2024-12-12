@@ -106,21 +106,16 @@ const (
 )
 
 // WorkflowUpdateStage indicates the stage of an update request.
-// NOTE: Experimental
 type WorkflowUpdateStage = internal.WorkflowUpdateStage
 
 const (
 	// WorkflowUpdateStageUnspecified indicates the wait stage was not specified
-	// NOTE: Experimental
 	WorkflowUpdateStageUnspecified = internal.WorkflowUpdateStageUnspecified
 	// WorkflowUpdateStageAdmitted indicates the update is admitted
-	// NOTE: Experimental
 	WorkflowUpdateStageAdmitted = internal.WorkflowUpdateStageAdmitted
 	// WorkflowUpdateStageAccepted indicates the update is accepted
-	// NOTE: Experimental
 	WorkflowUpdateStageAccepted = internal.WorkflowUpdateStageAccepted
 	// WorkflowUpdateStageCompleted indicates the update is completed
-	// NOTE: Experimental
 	WorkflowUpdateStageCompleted = internal.WorkflowUpdateStageCompleted
 )
 
@@ -271,7 +266,6 @@ type (
 
 	// UpdateWorkflowOptions encapsulates the parameters for
 	// sending an update to a workflow execution.
-	// NOTE: Experimental
 	UpdateWorkflowOptions = internal.UpdateWorkflowOptions
 
 	// UpdateWithStartWorkflowOptions encapsulates the parameters used by UpdateWithStartWorkflow.
@@ -281,12 +275,10 @@ type (
 
 	// WorkflowUpdateHandle represents a running or completed workflow
 	// execution update and gives the holder access to the outcome of the same.
-	// NOTE: Experimental
 	WorkflowUpdateHandle = internal.WorkflowUpdateHandle
 
 	// GetWorkflowUpdateHandleOptions encapsulates the parameters needed to unambiguously
 	// refer to a Workflow Update
-	// NOTE: Experimental
 	GetWorkflowUpdateHandleOptions = internal.GetWorkflowUpdateHandleOptions
 
 	// UpdateWorkerBuildIdCompatibilityOptions is the input to Client.UpdateWorkerBuildIdCompatibility.
@@ -488,7 +480,6 @@ type (
 	// WorkflowUpdateServiceTimeoutOrCanceledError is an error that occurs when an update call times out or is cancelled.
 	//
 	// Note, this is not related to any general concept of timing out or cancelling a running update, this is only related to the client call itself.
-	// NOTE: Experimental
 	WorkflowUpdateServiceTimeoutOrCanceledError = internal.WorkflowUpdateServiceTimeoutOrCanceledError
 
 	// Client is the client for starting and getting information about a workflow executions as well as
@@ -844,7 +835,6 @@ type (
 		//
 		// The errors it can return:
 		//  - WorkflowUpdateServiceTimeoutOrCanceledError
-		// NOTE: Experimental
 		UpdateWorkflow(ctx context.Context, options UpdateWorkflowOptions) (WorkflowUpdateHandle, error)
 
 		// UpdateWithStartWorkflow issues an update-with-start request. A
@@ -864,7 +854,6 @@ type (
 		// GetWorkflowUpdateHandle creates a handle to the referenced update
 		// which can be polled for an outcome. Note that runID is optional and
 		// if not specified the most recent runID will be used.
-		// NOTE: Experimental
 		GetWorkflowUpdateHandle(ref GetWorkflowUpdateHandleOptions) WorkflowUpdateHandle
 
 		// WorkflowService provides access to the underlying gRPC service. This should only be used for advanced use cases

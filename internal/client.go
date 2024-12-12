@@ -400,7 +400,6 @@ type (
 		// update is requested (e.g. if the required workflow ID field is
 		// missing from the UpdateWorkflowOptions) are returned
 		// directly from this function call.
-		// NOTE: Experimental
 		UpdateWorkflow(ctx context.Context, options UpdateWorkflowOptions) (WorkflowUpdateHandle, error)
 
 		// UpdateWithStartWorkflow issues an update-with-start request. A
@@ -417,7 +416,6 @@ type (
 		// GetWorkflowUpdateHandle creates a handle to the referenced update
 		// which can be polled for an outcome. Note that runID is optional and
 		// if not specified the most recent runID will be used.
-		// NOTE: Experimental
 		GetWorkflowUpdateHandle(GetWorkflowUpdateHandleOptions) WorkflowUpdateHandle
 
 		// WorkflowService provides access to the underlying gRPC service. This should only be used for advanced use cases
