@@ -538,6 +538,10 @@ func isPreloadMarkerEvent(event *historypb.HistoryEvent) bool {
 	return event.GetEventType() == enumspb.EVENT_TYPE_MARKER_RECORDED
 }
 
+func isTaskCompletedEvent(event *historypb.HistoryEvent) bool {
+	return event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED
+}
+
 func inferMessageFromAcceptedEvent(attrs *historypb.WorkflowExecutionUpdateAcceptedEventAttributes) *protocolpb.Message {
 	return &protocolpb.Message{
 		Id:                 attrs.GetAcceptedRequestMessageId(),
@@ -1028,6 +1032,7 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 		_, wfPanicked := w.err.(*workflowPanicError)
 		return !wfPanicked && isInReplayer
 	}
+	completedTaskCommandIndex := 0
 
 	metricsHandler := w.wth.metricsHandler.WithTags(metrics.WorkflowTags(task.WorkflowType.GetName()))
 	start := time.Now()
@@ -1051,6 +1056,9 @@ ProcessEvents:
 		binaryChecksum := nextTask.binaryChecksum
 		nextTaskBuildId := nextTask.buildID
 		admittedUpdates := nextTask.admittedMsgs
+		if len(reorderedEvents) > 0 && isTaskCompletedEvent(reorderedEvents[0]) {
+			completedTaskCommandIndex = len(replayCommands)
+		}
 		// Check if we are replaying so we know if we should use the messages in the WFT or the history
 		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
 		var msgs *eventMsgIndex
@@ -1199,6 +1207,12 @@ ProcessEvents:
 	if metricsTimer != nil {
 		metricsTimer.Record(time.Since(start))
 		metricsTimer = nil
+	}
+
+	// We do not want to run non-determinism checks on a task start that
+	// doesn't have a corresponding completed task.
+	if completedTaskCommandIndex >= 0 {
+		replayCommands = replayCommands[:completedTaskCommandIndex]
 	}
 
 	// Non-deterministic error could happen in 2 different places:
