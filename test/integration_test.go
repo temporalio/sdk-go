@@ -6904,3 +6904,38 @@ func (ts *InvalidUTF8Suite) TestBasic() {
 	// Go's JSON coding stack will replace invalid bytes with the unicode substitute char U+FFFD
 	ts.Equal("\n�\x01\n\x0ejunk\x12data", response)
 }
+
+func (ts *IntegrationTestSuite) TestPartialHistoryReplay() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Run the workflow
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-partial-history-replay"), ts.workflows.Basic)
+	ts.NotNil(run)
+	ts.NoError(err)
+	ts.NoError(run.Get(ctx, nil))
+
+	// Obtain history
+	var history historypb.History
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false,
+		enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		ts.NoError(err)
+		history.Events = append(history.Events, event)
+	}
+
+	for _ = range history.Events {
+		if len(history.Events) >= 3 {
+			fmt.Println("\n[REPLAY]")
+			for i, event := range history.Events {
+				fmt.Println("\t[event],", i, event)
+			}
+			replayer := worker.NewWorkflowReplayer()
+			replayer.RegisterWorkflow(ts.workflows.Basic)
+			ts.NoError(replayer.ReplayWorkflowHistory(nil, &history))
+			history.Events = history.Events[:len(history.Events)-1]
+		}
+	}
+}
