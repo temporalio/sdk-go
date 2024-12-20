@@ -651,11 +651,14 @@ func TestAsyncOperationFromWorkflow(t *testing.T) {
 			false,
 			enums.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT,
 		)
+		var nexusOperationScheduleEventID int64
 		var targetEvent *historypb.HistoryEvent
 		for iter.HasNext() {
 			event, err := iter.Next()
 			require.NoError(t, err)
-			if event.GetEventType() == enums.EVENT_TYPE_NEXUS_OPERATION_STARTED {
+			if event.GetEventType() == enums.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED {
+				nexusOperationScheduleEventID = event.GetEventId()
+			} else if event.GetEventType() == enums.EVENT_TYPE_NEXUS_OPERATION_STARTED {
 				targetEvent = event
 				break
 			}
@@ -700,7 +703,7 @@ func TestAsyncOperationFromWorkflow(t *testing.T) {
 				RunId:      run.GetRunID(),
 				Reference: &common.Link_WorkflowEvent_EventRef{
 					EventRef: &common.Link_WorkflowEvent_EventReference{
-						EventId:   5,
+						EventId:   nexusOperationScheduleEventID,
 						EventType: enums.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED,
 					},
 				},
