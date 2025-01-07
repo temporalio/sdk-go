@@ -4241,7 +4241,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_SameWorkflowAndActivityNames() {
 	s.Require().NoError(env.GetWorkflowError())
 }
 
-func (s *WorkflowTestSuiteUnitTest) Test_SignalNotLoss() {
+func (s *WorkflowTestSuiteUnitTest) Test_SignalNotLost() {
 	workflowFn := func(ctx Context) error {
 		ch1 := GetSignalChannel(ctx, "test-signal")
 		ch2 := GetSignalChannel(ctx, "test-signal-2")
