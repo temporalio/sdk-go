@@ -1637,14 +1637,12 @@ func (h *commandsHelper) handleChildWorkflowExecutionCanceled(workflowID string)
 }
 
 func (h *commandsHelper) getCommands(markAsSent bool) []*commandpb.Command {
-	fmt.Println("[getCommands] MarkAsSent:", markAsSent)
 	var result []*commandpb.Command
 	for curr := h.orderedCommands.Front(); curr != nil; {
 		next := curr.Next() // get next item here as we might need to remove curr in the loop
 		d := curr.Value.(commandStateMachine)
 		command := d.getCommand()
 		if command != nil {
-			fmt.Println("\t[command]", command)
 			result = append(result, command)
 		}
 

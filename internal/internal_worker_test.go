@@ -331,7 +331,6 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_IncompleteWorkflowTa
 	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
 	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflow)
-	fmt.Println("[ReplayWorkflowHistory]")
 	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
 }

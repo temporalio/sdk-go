@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1022,9 +1023,8 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 		_, wfPanicked := w.err.(*workflowPanicError)
 		return !wfPanicked && isInReplayer
 	}
-	completedTaskReplayCommandIndex := 0
-	completedTaskRespondCommandIndex := 0
-	replayPreIndex := 0
+
+	var wftCompletedIndex int64
 
 	metricsHandler := w.wth.metricsHandler.WithTags(metrics.WorkflowTags(task.WorkflowType.GetName()))
 	start := time.Now()
@@ -1049,37 +1049,15 @@ ProcessEvents:
 		nextTaskBuildId := nextTask.buildID
 		admittedUpdates := nextTask.admittedMsgs
 		// Only replay up to the last completed event
-		if len(reorderedEvents) > 0 && reorderedEvents[0].GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
-			// TODO: if reorderedEvents has activity after completed
-			hasActivity := false
-			for _, event := range reorderedEvents {
-				if event.GetEventType() == enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED {
-					hasActivity = true
-				}
-			}
-			fmt.Println("hasActivity: ", hasActivity)
-			if hasActivity {
-				completedTaskReplayCommandIndex = replayPreIndex
-			} else {
-				completedTaskReplayCommandIndex = len(replayCommands)
-			}
-			completedTaskRespondCommandIndex = len(respondEvents)
-			fmt.Println("CUT OFF", completedTaskReplayCommandIndex, completedTaskRespondCommandIndex)
-		}
-
-		fmt.Println("\n[reorderedEvents]")
-		for i, event := range reorderedEvents {
-			fmt.Println("\t[event]", event)
-			if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED && i != 0 {
-				fmt.Println("[paniccc] EVENT_TYPE_WORKFLOW_TASK_COMPLETED not at index 0,", i)
-				//panic(fmt.Sprintf("EVENT_TYPE_WORKFLOW_TASK_COMPLETED not at index 0, %d", i))
-				return nil, errors.New(fmt.Sprintf("EVENT_TYPE_WORKFLOW_TASK_COMPLETED not at index 0, %d", i))
-			}
-
-			if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED && i != len(reorderedEvents)-1 {
-				fmt.Println("[paniccc] EVENT_TYPE_WORKFLOW_TASK_STARTED not at last index of reorderedEvents,", i, len(reorderedEvents))
-				//panic(fmt.Sprintf("EVENT_TYPE_WORKFLOW_TASK_STARTED not at last index of reorderedEvents, %d", i))
-				return nil, errors.New(fmt.Sprintf("EVENT_TYPE_WORKFLOW_TASK_STARTED not at last index of reorderedEvents, %d, %d", i, len(reorderedEvents)))
+		if len(reorderedEvents) > 0 {
+			if reorderedEvents[len(reorderedEvents)-1].GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED {
+				wftCompletedIndex = reorderedEvents[len(reorderedEvents)-2].EventId
+			} else if reorderedEvents[len(reorderedEvents)-1].GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED || reorderedEvents[len(reorderedEvents)-1].GetEventType() == enumspb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED {
+				wftCompletedIndex = reorderedEvents[len(reorderedEvents)-1].EventId
+			} else
+			// If completed + task scheduled, that's a WFT heartbeat, does not complete sequence
+			if (len(reorderedEvents) == 1 && reorderedEvents[0].GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED) || (len(reorderedEvents) > 1 && reorderedEvents[0].GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED && reorderedEvents[1].GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED) {
+				wftCompletedIndex = reorderedEvents[0].EventId
 			}
 		}
 
@@ -1221,26 +1199,14 @@ ProcessEvents:
 				}
 			}
 		}
-		//eventsToReplay := nil
 		if isReplay {
-			// TODO: figure this out,
-			// 	Why is this returning COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK for activity_id:"11"
-			// 	when it's not a part of the reorderedEvents, and not a part of the replay history at all??
+			// TODO: Why does this have commands that aren't a part of history?
+			//  looks like both replayCommands and respondEvents sometimes hold events/commands that aren't a part of
+			//  the replay history
 			eventCommands := eventHandler.commandsHelper.getCommands(true)
 			if !skipReplayCheck {
-				replayPreIndex = len(replayCommands)
 				replayCommands = append(replayCommands, eventCommands...)
 				replayOutbox = append(replayOutbox, eventHandler.outbox...)
-
-				if len(eventCommands) > 0 {
-					fmt.Println("[eventCommands added to replayCommands]")
-				}
-				for _, cmd := range eventCommands {
-					fmt.Println("\t[eventCommands]", cmd)
-				}
-				//if reorderedEvents[0].GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
-				//	completedTaskReplayCommandIndex = len(replayCommands)
-				//}
 			}
 			eventHandler.outbox = nil
 		}
@@ -1253,10 +1219,19 @@ ProcessEvents:
 
 	// We do not want to run non-determinism checks on a task start that
 	// doesn't have a corresponding completed task.
-	if completedTaskReplayCommandIndex >= 0 {
-		replayCommands = replayCommands[:completedTaskReplayCommandIndex]
-		fmt.Println(completedTaskRespondCommandIndex)
-		//respondEvents = respondEvents[:completedTaskRespondCommandIndex]
+	for i, cmd := range replayCommands {
+		activityId, err := strconv.ParseInt(cmd.GetScheduleActivityTaskCommandAttributes().ActivityId, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		if activityId > wftCompletedIndex {
+			replayCommands = replayCommands[:i]
+		}
+	}
+	for i, event := range respondEvents {
+		if event.EventId > wftCompletedIndex {
+			respondEvents = respondEvents[:i]
+		}
 	}
 
 	// Non-deterministic error could happen in 2 different places:
@@ -1268,15 +1243,6 @@ ProcessEvents:
 	// with the panic error.
 	var workflowError error
 	if !skipReplayCheck && (!w.isWorkflowCompleted || shouldForceReplayCheck()) {
-		fmt.Println("\n[replayCommands]")
-		for replay := range replayCommands {
-			fmt.Println("\t[replay]", replayCommands[replay])
-		}
-		fmt.Println("[respondEvents]")
-		for respond := range respondEvents {
-			fmt.Println("\t[respond]", respondEvents[respond])
-		}
-		fmt.Println()
 		// check if commands from reply matches to the history events
 		if err := matchReplayWithHistory(replayCommands, respondEvents, replayOutbox, w.getEventHandler().sdkFlags); err != nil {
 			workflowError = err
@@ -2412,3 +2378,14 @@ func traceLog(fn func()) {
 		fn()
 	}
 }
+
+//func trimEventsToCompletedWFT(commands []*commandpb.Command) []*commandpb.Command {
+//	lastIndex := 0
+//	sawAnyCommandEvent := false
+//	// wftStartedEventIdToIndex
+//	for ix, command := range commands {
+//		last_index := ix
+//
+//		if
+//	}
+//}
