@@ -565,6 +565,9 @@ func TestSelectBlockingDefault(t *testing.T) {
 	}
 	// Verify that the flag is not set
 	require.False(t, env.GetFlag(SDKFlagBlockedSelectorSignalReceive))
+	unblockSelectorSignal = false
+	defer func() { unblockSelectorSignal = true }()
+
 	interceptor, ctx, err := newWorkflowContext(env, nil)
 	require.NoError(t, err, "newWorkflowContext failed")
 	d, _ := newDispatcher(ctx, interceptor, func(ctx Context) {
@@ -632,7 +635,9 @@ func TestSelectBlockingDefaultWithFlag(t *testing.T) {
 			TaskQueueName: "taskqueue:" + t.Name(),
 		},
 	}
+	require.True(t, unblockSelectorSignal)
 	require.True(t, env.TryUse(SDKFlagBlockedSelectorSignalReceive))
+
 	interceptor, ctx, err := newWorkflowContext(env, nil)
 	require.NoError(t, err, "newWorkflowContext failed")
 	d, _ := newDispatcher(ctx, interceptor, func(ctx Context) {

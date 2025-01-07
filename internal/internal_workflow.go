@@ -1430,6 +1430,7 @@ func (s *selectorImpl) Select(ctx Context) {
 					} else {
 						dropSignalFlag = env.GetFlag(SDKFlagBlockedSelectorSignalReceive)
 					}
+					fmt.Println("[dropSignalFlag]", dropSignalFlag)
 
 					if dropSignalFlag {
 						c.recValue = &v

@@ -4241,7 +4241,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_SameWorkflowAndActivityNames() {
 	s.Require().NoError(env.GetWorkflowError())
 }
 
-func (s *WorkflowTestSuiteUnitTest) Test_SignalLoss() {
+func (s *WorkflowTestSuiteUnitTest) Test_SignalNotLoss() {
 	workflowFn := func(ctx Context) error {
 		ch1 := GetSignalChannel(ctx, "test-signal")
 		ch2 := GetSignalChannel(ctx, "test-signal-2")
@@ -4254,8 +4254,11 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalLoss() {
 			ch2.Receive(ctx, &v)
 		})
 		selector.Select(ctx)
-		s.Require().True(ch1.Len() == 0 && v == "s2")
+		s.Require().Equal(ch1.Len(), 1)
+		s.Require().Equal(v, "s2")
 		selector.Select(ctx)
+		s.Require().Equal(ch1.Len(), 0)
+		s.Require().Equal(v, "s1")
 
 		return nil
 	}
@@ -4269,8 +4272,5 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalLoss() {
 	env.ExecuteWorkflow(workflowFn)
 	s.True(env.IsWorkflowCompleted())
 	err := env.GetWorkflowError()
-	s.Error(err)
-	var workflowErr *WorkflowExecutionError
-	s.True(errors.As(err, &workflowErr))
-	s.Equal("deadline exceeded (type: ScheduleToClose)", workflowErr.cause.Error())
+	s.NoError(err)
 }
