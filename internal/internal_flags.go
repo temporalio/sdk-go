@@ -53,7 +53,7 @@ const (
 	SDKFlagUnknown                      = math.MaxUint32
 )
 
-var unblockSelectorSignal bool
+var unblockSelectorSignal = true
 
 func sdkFlagFromUint(value uint32) sdkFlag {
 	switch value {
