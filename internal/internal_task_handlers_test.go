@@ -645,6 +645,7 @@ func (t *TaskHandlersTestSuite) TestRespondsToWFTWithWorkerBinaryID() {
 	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
+	//lint:ignore SA1019 ignore for SDK test
 	t.Equal(workerBuildID, response.GetWorkerVersionStamp().GetBuildId())
 	// clean up workflow left in cache
 	params.cache.getWorkflowCache().Delete(task.WorkflowExecution.RunId)

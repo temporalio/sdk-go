@@ -506,7 +506,7 @@ func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 	// We do allow canceled error to be passed here
 	cancelAllowed := true
 	request := convertActivityResultToRespondRequest(wc.identity, taskToken,
-		data, err, wc.dataConverter, wc.failureConverter, wc.namespace, cancelAllowed, nil)
+		data, err, wc.dataConverter, wc.failureConverter, wc.namespace, cancelAllowed, nil, nil)
 	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
@@ -816,7 +816,6 @@ type UpdateWithStartWorkflowOptions struct {
 // similar to a Future with respect to the outcome of the update. If the update
 // is rejected or returns an error, the Get function on this type will return
 // that error through the output valuePtr.
-// NOTE: Experimental
 type WorkflowUpdateHandle interface {
 	// WorkflowID observes the update's workflow ID.
 	WorkflowID() string
@@ -833,7 +832,6 @@ type WorkflowUpdateHandle interface {
 
 // GetWorkflowUpdateHandleOptions encapsulates the parameters needed to unambiguously
 // refer to a Workflow Update.
-// NOTE: Experimental
 type GetWorkflowUpdateHandleOptions struct {
 	// WorkflowID of the target update
 	WorkflowID string
@@ -1061,6 +1059,31 @@ func (wc *WorkflowClient) GetWorkerTaskReachability(ctx context.Context, options
 	}
 	converted := workerTaskReachabilityFromProtoResponse(resp)
 	return converted, nil
+}
+
+// UpdateWorkflowExecutionOptions partially overrides the [WorkflowExecutionOptions] of an existing workflow execution,
+// and returns the new [WorkflowExecutionOptions] after applying the changes.
+// It is intended for building tools that can selectively apply ad-hoc workflow configuration changes.
+// NOTE: Experimental
+func (wc *WorkflowClient) UpdateWorkflowExecutionOptions(ctx context.Context, request UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error) {
+	if err := wc.ensureInitialized(ctx); err != nil {
+		return WorkflowExecutionOptions{}, err
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+
+	requestMsg, err := request.validateAndConvertToProto(wc.namespace)
+	if err != nil {
+		return WorkflowExecutionOptions{}, err
+	}
+
+	resp, err := wc.workflowService.UpdateWorkflowExecutionOptions(grpcCtx, requestMsg)
+	if err != nil {
+		return WorkflowExecutionOptions{}, err
+	}
+
+	return workflowExecutionOptionsFromProtoUpdateResponse(resp), nil
 }
 
 // DescribeTaskQueueEnhanced returns information about the target task queue, broken down by Build Id:
@@ -1299,6 +1322,13 @@ func (wc *WorkflowClient) ensureInitialized(ctx context.Context) error {
 // ScheduleClient implements Client.ScheduleClient.
 func (wc *WorkflowClient) ScheduleClient() ScheduleClient {
 	return &scheduleClient{
+		workflowClient: wc,
+	}
+}
+
+// DeploymentClient implements [Client.DeploymentClient].
+func (wc *WorkflowClient) DeploymentClient() DeploymentClient {
+	return &deploymentClient{
 		workflowClient: wc,
 	}
 }
@@ -1653,6 +1683,7 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 		Header:                   header,
 		CompletionCallbacks:      in.Options.callbacks,
 		Links:                    in.Options.links,
+		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
 	}
 
 	startRequest.UserMetadata, err = buildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
@@ -1761,7 +1792,7 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 	// Create update request
 	updateReq, err := w.createUpdateWorkflowRequest(ctx, updateInput)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errInvalidWithStartWorkflowOperation, err)
+		return nil, err
 	}
 	if updateReq.WorkflowExecution.WorkflowId == "" {
 		updateReq.WorkflowExecution.WorkflowId = startReq.WorkflowId
@@ -1800,7 +1831,7 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 	}
 	handle, err := w.updateHandleFromResponse(ctx, updateReq.WaitPolicy.LifecycleStage, updateResp)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errInvalidWithStartWorkflowOperation, err)
+		return nil, err
 	}
 	return handle, nil
 }
@@ -1862,27 +1893,31 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 			}
 
 			var abortedErr *serviceerror.MultiOperationAborted
-			startErr := errors.New("failed to start workflow")
 			for i, opReq := range multiRequest.Operations {
 				// if an operation error is of type MultiOperationAborted, it means it was only aborted because
 				// of another operation's error and is therefore not interesting or helpful
 				opErr := multiErr.OperationErrors()[i]
+				if opErr == nil {
+					continue
+				}
 
 				switch t := opReq.Operation.(type) {
 				case *workflowservice.ExecuteMultiOperationRequest_Operation_StartWorkflow:
 					if !errors.As(opErr, &abortedErr) {
-						startErr = opErr
+						return nil, fmt.Errorf("failed workflow start: %w", opErr)
 					}
 				case *workflowservice.ExecuteMultiOperationRequest_Operation_UpdateWorkflow:
 					if !errors.As(opErr, &abortedErr) {
-						startErr = fmt.Errorf("%w: %w", errInvalidWithStartWorkflowOperation, opErr)
+						return nil, fmt.Errorf("failed workflow update: %w", opErr)
 					}
 				default:
 					// this would only happen if a case statement for a newly added operation is missing above
 					return nil, fmt.Errorf("%w: %T", errUnsupportedOperation, t)
 				}
 			}
-			return nil, startErr
+
+			// this should never happen
+			return nil, errors.New(multiErr.Error())
 		} else if err != nil {
 			return nil, err
 		}
@@ -2012,6 +2047,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		WorkflowIdReusePolicy:    in.Options.WorkflowIDReusePolicy,
 		WorkflowIdConflictPolicy: in.Options.WorkflowIDConflictPolicy,
 		Header:                   header,
+		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
 	}
 
 	if in.Options.StartDelay != 0 {

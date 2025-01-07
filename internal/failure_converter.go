@@ -26,6 +26,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/nexus-rpc/sdk-go/nexus"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -177,6 +178,11 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 			OperationId:      err.OperationID,
 		}
 		failure.FailureInfo = &failurepb.Failure_NexusOperationExecutionFailureInfo{NexusOperationExecutionFailureInfo: failureInfo}
+	case *nexus.HandlerError:
+		failureInfo := &failurepb.NexusHandlerFailureInfo{
+			Type: string(err.Type),
+		}
+		failure.FailureInfo = &failurepb.Failure_NexusHandlerFailureInfo{NexusHandlerFailureInfo: failureInfo}
 	default: // All unknown errors are considered to be retryable ApplicationFailureInfo.
 		failureInfo := &failurepb.ApplicationFailureInfo{
 			Type:         getErrType(err),
@@ -281,6 +287,11 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 			Service:          info.GetService(),
 			Operation:        info.GetOperation(),
 			OperationID:      info.GetOperationId(),
+		}
+	} else if info := failure.GetNexusHandlerFailureInfo(); info != nil {
+		err = &nexus.HandlerError{
+			Type:  nexus.HandlerErrorType(info.Type),
+			Cause: dfc.FailureToError(failure.GetCause()),
 		}
 	}
 

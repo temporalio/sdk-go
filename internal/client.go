@@ -341,6 +341,12 @@ type (
 		//  - serviceerror.NotFound
 		DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error)
 
+		// UpdateWorkflowExecutionOptions partially overrides the [WorkflowExecutionOptions] of an existing workflow execution
+		// and returns the new [WorkflowExecutionOptions] after applying the changes.
+		// It is intended for building tools that can selectively apply ad-hoc workflow configuration changes.
+		// NOTE: Experimental
+		UpdateWorkflowExecutionOptions(ctx context.Context, options UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error)
+
 		// DescribeTaskQueue returns information about the target taskqueue, right now this API returns the
 		// pollers which polled this taskqueue in last few minutes.
 		// The errors it can return:
@@ -400,7 +406,6 @@ type (
 		// update is requested (e.g. if the required workflow ID field is
 		// missing from the UpdateWorkflowOptions) are returned
 		// directly from this function call.
-		// NOTE: Experimental
 		UpdateWorkflow(ctx context.Context, options UpdateWorkflowOptions) (WorkflowUpdateHandle, error)
 
 		// UpdateWithStartWorkflow issues an update-with-start request. A
@@ -417,7 +422,6 @@ type (
 		// GetWorkflowUpdateHandle creates a handle to the referenced update
 		// which can be polled for an outcome. Note that runID is optional and
 		// if not specified the most recent runID will be used.
-		// NOTE: Experimental
 		GetWorkflowUpdateHandle(GetWorkflowUpdateHandleOptions) WorkflowUpdateHandle
 
 		// WorkflowService provides access to the underlying gRPC service. This should only be used for advanced use cases
@@ -430,6 +434,9 @@ type (
 
 		// Schedule creates a new shedule client with the same gRPC connection as this client.
 		ScheduleClient() ScheduleClient
+
+		// DeploymentClient creates a new deployment client with the same gRPC connection as this client.
+		DeploymentClient() DeploymentClient
 
 		// Close client and clean up underlying resources.
 		Close()
@@ -758,6 +765,14 @@ type (
 		//
 		// NOTE: Experimental
 		StaticDetails string
+
+		// VersioningOverride - Sets the versioning configuration of a specific workflow execution, ignoring current
+		// server or worker default policies. This enables running canary tests without affecting existing workflows.
+		// To unset the override after the workflow is running, use [UpdateWorkflowExecutionOptions].
+		// Optional: defaults to no override.
+		//
+		// NOTE: Experimental
+		VersioningOverride VersioningOverride
 
 		// request ID. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
 		requestID string
