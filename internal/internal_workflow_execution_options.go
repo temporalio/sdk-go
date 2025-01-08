@@ -105,6 +105,12 @@ func workflowExecutionOptionsMaskToProto(mask []string) *fieldmaskpb.FieldMask {
 }
 
 func workerDeploymentToProto(d Deployment) *deploymentpb.Deployment {
+	// Server 1.26.2 requires a nil Deployment pointer, and not just a pointer to an empty Deployment,
+	// to indicate that there is no Deployment.
+	// It is a server error to override versioning behavior to AutoUpgrade while providing a Deployment,
+	// and we need to replace it by nil. See https://github.com/temporalio/sdk-go/issues/1764.
+	//
+	// Future server versions may relax this requirement.
 	if (Deployment{}) == d {
 		return nil
 	}
