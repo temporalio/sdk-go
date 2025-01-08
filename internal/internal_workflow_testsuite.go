@@ -2408,6 +2408,7 @@ func (env *testWorkflowEnvironmentImpl) newTestNexusTaskHandler(
 		env.failureConverter,
 		env.logger,
 		env.metricsHandler,
+		env.registry,
 	)
 }
 

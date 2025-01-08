@@ -324,6 +324,12 @@ func ExecuteUntypedWorkflow[R any](
 	if !ok {
 		return nil, nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
 	}
+
+	workflowType, err := nctx.ResolveWorkflowName(workflow)
+	if err != nil {
+		panic(err)
+	}
+
 	if startWorkflowOptions.TaskQueue == "" {
 		startWorkflowOptions.TaskQueue = nctx.TaskQueue
 	}
@@ -373,7 +379,7 @@ func ExecuteUntypedWorkflow[R any](
 	}
 	internal.SetLinksOnStartWorkflowOptions(&startWorkflowOptions, links)
 
-	run, err := nctx.Client.ExecuteWorkflow(ctx, startWorkflowOptions, workflow, args...)
+	run, err := nctx.Client.ExecuteWorkflow(ctx, startWorkflowOptions, workflowType, args...)
 	if err != nil {
 		return nil, err
 	}
