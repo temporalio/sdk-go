@@ -492,7 +492,7 @@ func (ts *DeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 	ts.True(IsVersionOne(result))
 
 	ts.NoError(handle4.Get(ctx, &result))
-	// no override
+	// override + autoUpgrade
 	ts.True(IsVersionTwo(result))
 
 }
