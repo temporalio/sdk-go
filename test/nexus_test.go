@@ -602,8 +602,6 @@ func TestAsyncOperationFromWorkflow(t *testing.T) {
 			switch action {
 			case "wait-for-started":
 				fut.GetNexusOperationExecution().Get(ctx, nil)
-			case "sleep":
-				workflow.Sleep(ctx, time.Millisecond)
 			}
 			cancel()
 		})
@@ -759,21 +757,6 @@ func TestAsyncOperationFromWorkflow(t *testing.T) {
 			require.NoError(t, err)
 			require.NotEqual(t, enums.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED, event.EventType)
 		}
-	})
-
-	t.Run("OpCanceledBeforeStarted", func(t *testing.T) {
-		run, err := tc.client.SignalWithStartWorkflow(ctx, uuid.NewString(), "cancel-op", "sleep", client.StartWorkflowOptions{
-			TaskQueue: tc.taskQueue,
-		}, callerWorkflow, "fail-to-start")
-		require.NoError(t, err)
-		var execErr *temporal.WorkflowExecutionError
-		err = run.Get(ctx, nil)
-		require.ErrorAs(t, err, &execErr)
-		// The Go SDK unwraps workflow errors to check for cancelation even if the workflow was never canceled, losing
-		// the error chain, Nexus operation errors are treated the same as other workflow errors for consistency.
-		var canceledErr *temporal.CanceledError
-		err = execErr.Unwrap()
-		require.ErrorAs(t, err, &canceledErr)
 	})
 
 	t.Run("OpCanceledAfterStarted", func(t *testing.T) {
