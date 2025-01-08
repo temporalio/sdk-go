@@ -47,7 +47,11 @@ type NexusOperationContext struct {
 	TaskQueue           string
 	MetricsHandler      metrics.Handler
 	Log                 log.Logger
-	ResolveWorkflowName func(any) (string, error)
+	registry *registry
+}
+
+func (nc *NexusOperationContext) ResolveWorkflowName(wf any) (string, error) {
+	return getWorkflowFunctionName(nc.registry, wf)
 }
 
 type nexusOperationContextKeyType struct{}

@@ -396,9 +396,7 @@ func (h *nexusTaskHandler) newNexusOperationContext(response *workflowservice.Po
 		TaskQueue:      h.taskQueueName,
 		MetricsHandler: metricsHandler,
 		Log:            logger,
-		ResolveWorkflowName: func(a any) (string, error) {
-			return getWorkflowFunctionName(h.registry, a)
-		},
+		registry:       h.registry,
 	}, nil
 }
 
