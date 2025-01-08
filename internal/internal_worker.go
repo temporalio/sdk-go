@@ -1128,6 +1128,7 @@ func (aw *AggregatedWorker) start() error {
 			client:              aw.client,
 			workflowService:     aw.client.workflowService,
 			handler:             handler,
+			registry:            aw.registry,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create a nexus worker: %w", err)

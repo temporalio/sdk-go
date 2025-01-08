@@ -626,7 +626,7 @@ func TestAsyncOperationFromWorkflow(t *testing.T) {
 	service := nexus.NewService("test")
 	require.NoError(t, service.Register(op))
 	w.RegisterNexusService(service)
-	w.RegisterWorkflow(handlerWorkflow)
+	w.RegisterWorkflowWithOptions(handlerWorkflow, workflow.RegisterOptions{Name: "foo"})
 	w.RegisterWorkflow(callerWorkflow)
 	require.NoError(t, w.Start())
 	t.Cleanup(w.Stop)
@@ -693,6 +693,9 @@ func TestAsyncOperationFromWorkflow(t *testing.T) {
 			}
 		}
 		require.NotNil(t, targetEvent)
+		// Verify that calling by name works.
+		require.Equal(t, "foo", targetEvent.GetWorkflowExecutionStartedEventAttributes().WorkflowType.Name)
+		// Verify that links are properly attached.
 		require.Len(t, targetEvent.GetLinks(), 1)
 		require.True(t, proto.Equal(
 			&common.Link_WorkflowEvent{

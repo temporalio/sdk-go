@@ -42,11 +42,16 @@ import (
 
 // NexusOperationContext is an internal only struct that holds fields used by the temporalnexus functions.
 type NexusOperationContext struct {
-	Client         Client
-	Namespace      string
-	TaskQueue      string
-	MetricsHandler metrics.Handler
-	Log            log.Logger
+	Client              Client
+	Namespace           string
+	TaskQueue           string
+	MetricsHandler      metrics.Handler
+	Log                 log.Logger
+	registry *registry
+}
+
+func (nc *NexusOperationContext) ResolveWorkflowName(wf any) (string, error) {
+	return getWorkflowFunctionName(nc.registry, wf)
 }
 
 type nexusOperationContextKeyType struct{}
