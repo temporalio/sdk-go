@@ -105,6 +105,9 @@ func workflowExecutionOptionsMaskToProto(mask []string) *fieldmaskpb.FieldMask {
 }
 
 func workerDeploymentToProto(d Deployment) *deploymentpb.Deployment {
+	if (Deployment{}) == d {
+		return nil
+	}
 	return &deploymentpb.Deployment{
 		SeriesName: d.SeriesName,
 		BuildId:    d.BuildID,

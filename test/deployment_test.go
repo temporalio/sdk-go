@@ -344,10 +344,11 @@ func (ts *DeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 	// Two workers:
 	// 1) 1.0 with WaitSignalToStartVersionedOne (setCurrent)
 	// 2) 2.0 with WaitSignalToStartVersionedTwo
-	// Three workflows:
+	// Four workflows:
 	// 1) started with "1.0", manual override to "2.0", finish "2.0"
 	// 2) started with "1.0", manual override to "2.0", remove override, finish "1.0"
 	// 3) started with "1.0", no override, finishes with "1.0" unaffected
+	// 4) started with "1.0", manual override to auto-upgrade, finishes with "2.0"
 
 	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		BuildID:                 "1.0",
@@ -401,6 +402,11 @@ func (ts *DeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 	handle3, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("3"), "WaitSignalToStartVersioned")
 	ts.NoError(err)
 
+	handle4, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("4"), "WaitSignalToStartVersioned")
+	ts.NoError(err)
+
+	ts.waitForWorkflowRunning(ctx, handle4)
+
 	options, err := ts.client.UpdateWorkflowExecutionOptions(ctx, client.UpdateWorkflowExecutionOptionsRequest{
 		WorkflowId: handle1.GetID(),
 		RunId:      handle1.GetRunID(),
@@ -445,9 +451,31 @@ func (ts *DeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 	ts.NoError(err)
 	ts.Equal(options.VersioningOverride, client.VersioningOverride{})
 
+	// Add autoUpgrade to handle4
+	options, err = ts.client.UpdateWorkflowExecutionOptions(ctx, client.UpdateWorkflowExecutionOptionsRequest{
+		WorkflowId: handle4.GetID(),
+		RunId:      handle4.GetRunID(),
+		WorkflowExecutionOptionsChanges: client.WorkflowExecutionOptionsChanges{
+			VersioningOverride: &client.VersioningOverride{
+				Behavior: workflow.VersioningBehaviorAutoUpgrade,
+			},
+		},
+	})
+	ts.NoError(err)
+	ts.Equal(options.VersioningOverride.Deployment.BuildID, "")
+
+	_, err = ts.client.DeploymentClient().SetCurrent(ctx, client.DeploymentSetCurrentOptions{
+		Deployment: client.Deployment{
+			BuildID:    "2.0",
+			SeriesName: seriesName,
+		},
+	})
+	ts.NoError(err)
+
 	ts.NoError(ts.client.SignalWorkflow(ctx, handle1.GetID(), handle1.GetRunID(), "start-signal", "prefix"))
 	ts.NoError(ts.client.SignalWorkflow(ctx, handle2.GetID(), handle2.GetRunID(), "start-signal", "prefix"))
 	ts.NoError(ts.client.SignalWorkflow(ctx, handle3.GetID(), handle3.GetRunID(), "start-signal", "prefix"))
+	ts.NoError(ts.client.SignalWorkflow(ctx, handle4.GetID(), handle4.GetRunID(), "start-signal", "prefix"))
 
 	// Wait for all wfs to finish
 	var result string
@@ -462,6 +490,11 @@ func (ts *DeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 	ts.NoError(handle3.Get(ctx, &result))
 	// no override
 	ts.True(IsVersionOne(result))
+
+	ts.NoError(handle4.Get(ctx, &result))
+	// no override
+	ts.True(IsVersionTwo(result))
+
 }
 
 func (ts *DeploymentTestSuite) TestListDeployments() {

@@ -950,6 +950,7 @@ func (_m *Client) UpdateWithStartWorkflow(ctx context.Context, options client.Up
 
 	return r0, r1
 }
+
 // UpdateWorkerBuildIdCompatibility provides a mock function with given fields: ctx, options
 //
 //lint:ignore SA1019 ignore for SDK mocks
