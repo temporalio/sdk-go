@@ -71,6 +71,7 @@ type nexusTaskHandler struct {
 	failureConverter converter.FailureConverter
 	logger           log.Logger
 	metricsHandler   metrics.Handler
+	registry         *registry
 }
 
 func newNexusTaskHandler(
@@ -83,6 +84,7 @@ func newNexusTaskHandler(
 	failureConverter converter.FailureConverter,
 	logger log.Logger,
 	metricsHandler metrics.Handler,
+	registry *registry,
 ) *nexusTaskHandler {
 	return &nexusTaskHandler{
 		nexusHandler:     nexusHandler,
@@ -94,6 +96,7 @@ func newNexusTaskHandler(
 		taskQueueName:    taskQueueName,
 		client:           client,
 		metricsHandler:   metricsHandler,
+		registry:         registry,
 	}
 }
 
@@ -393,6 +396,9 @@ func (h *nexusTaskHandler) newNexusOperationContext(response *workflowservice.Po
 		TaskQueue:      h.taskQueueName,
 		MetricsHandler: metricsHandler,
 		Log:            logger,
+		ResolveWorkflowName: func(a any) (string, error) {
+			return getWorkflowFunctionName(h.registry, a)
+		},
 	}, nil
 }
 
