@@ -53,6 +53,8 @@ const (
 	SDKFlagUnknown                      = math.MaxUint32
 )
 
+// unblockSelectorSignal exists to allow us to configure the default behavior of
+// SDKFlagBlockedSelectorSignalReceive. This is primarily useful with tests.
 var unblockSelectorSignal = true
 
 func sdkFlagFromUint(value uint32) sdkFlag {
