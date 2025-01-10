@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1029,6 +1030,8 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 		return !wfPanicked && isInReplayer
 	}
 
+	var wftCompletedIndex int64
+
 	metricsHandler := w.wth.metricsHandler.WithTags(metrics.WorkflowTags(task.WorkflowType.GetName()))
 	start := time.Now()
 	// This is set to nil once recorded
@@ -1051,10 +1054,26 @@ ProcessEvents:
 		binaryChecksum := nextTask.binaryChecksum
 		nextTaskBuildId := nextTask.buildID
 		admittedUpdates := nextTask.admittedMsgs
+		// Only replay up to the last completed event
+		if len(reorderedEvents) > 0 {
+			if reorderedEvents[len(reorderedEvents)-1].GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED {
+				wftCompletedIndex = reorderedEvents[len(reorderedEvents)-2].EventId
+			} else if reorderedEvents[len(reorderedEvents)-1].GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED || reorderedEvents[len(reorderedEvents)-1].GetEventType() == enumspb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED {
+				wftCompletedIndex = reorderedEvents[len(reorderedEvents)-1].EventId
+			} else
+			// If completed + task scheduled, that's a WFT heartbeat, does not complete sequence
+			if (len(reorderedEvents) == 1 && reorderedEvents[0].GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED) || (len(reorderedEvents) > 1 && reorderedEvents[0].GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED && reorderedEvents[1].GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED) {
+				wftCompletedIndex = reorderedEvents[0].EventId
+			}
+		}
+
 		// Check if we are replaying so we know if we should use the messages in the WFT or the history
 		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
 		var msgs *eventMsgIndex
 		if isReplay {
+			//if reorderedEvents[0].GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
+			//	completedTaskReplayCommandIndex = len(replayCommands)
+			//}
 			admittedUpdatesByID := make(map[string]*protocolpb.Message, len(admittedUpdates))
 			for _, admittedUpdate := range admittedUpdates {
 				admittedUpdatesByID[admittedUpdate.GetProtocolInstanceId()] = admittedUpdate
@@ -1187,6 +1206,9 @@ ProcessEvents:
 			}
 		}
 		if isReplay {
+			// TODO: Why does this have commands that aren't a part of history?
+			//  looks like both replayCommands and respondEvents sometimes hold events/commands that aren't a part of
+			//  the replay history
 			eventCommands := eventHandler.commandsHelper.getCommands(true)
 			if !skipReplayCheck {
 				replayCommands = append(replayCommands, eventCommands...)
@@ -1199,6 +1221,23 @@ ProcessEvents:
 	if metricsTimer != nil {
 		metricsTimer.Record(time.Since(start))
 		metricsTimer = nil
+	}
+
+	// We do not want to run non-determinism checks on a task start that
+	// doesn't have a corresponding completed task.
+	for i, cmd := range replayCommands {
+		activityId, err := strconv.ParseInt(cmd.GetScheduleActivityTaskCommandAttributes().ActivityId, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		if activityId > wftCompletedIndex {
+			replayCommands = replayCommands[:i]
+		}
+	}
+	for i, event := range respondEvents {
+		if event.EventId > wftCompletedIndex {
+			respondEvents = respondEvents[:i]
+		}
 	}
 
 	// Non-deterministic error could happen in 2 different places:
@@ -2361,3 +2400,14 @@ func traceLog(fn func()) {
 		fn()
 	}
 }
+
+//func trimEventsToCompletedWFT(commands []*commandpb.Command) []*commandpb.Command {
+//	lastIndex := 0
+//	sawAnyCommandEvent := false
+//	// wftStartedEventIdToIndex
+//	for ix, command := range commands {
+//		last_index := ix
+//
+//		if
+//	}
+//}
