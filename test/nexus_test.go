@@ -379,8 +379,7 @@ func TestNexusSyncOperation(t *testing.T) {
 }
 
 func TestNexusSignalWorkflowOperation(t *testing.T) {
-	receiverID := "nexus-signal-receiver-" + uuid.NewString()
-	op := temporalnexus.NewSignalWorkflowOperation[string]("signal-op", receiverID, "", "nexus-signal")
+	op := temporalnexus.NewSignalWorkflowOperation("signal-operation")
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
@@ -396,14 +395,19 @@ func TestNexusSignalWorkflowOperation(t *testing.T) {
 	t.Cleanup(w.Stop)
 
 	run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
-		ID:        receiverID,
 		TaskQueue: tc.taskQueue,
 	}, waitForSignalWorkflow, "successful")
 	require.NoError(t, err)
 
 	nc := tc.newNexusClient(t, service.Name)
 
-	result, err := nexus.ExecuteOperation(ctx, nc, op, "nexus",
+	result, err := nexus.ExecuteOperation(ctx, nc, op,
+		temporalnexus.SignalWorkflowInput{
+			WorkflowID: run.GetID(),
+			RunID:      run.GetRunID(),
+			SignalName: "nexus-signal",
+			Arg:        "nexus",
+		},
 		nexus.ExecuteOperationOptions{
 			RequestID:      "test-request-id",
 			Header:         nexus.Header{"test": "ok"},
@@ -605,7 +609,7 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 
 func TestSignalOperationFromWorkflow(t *testing.T) {
 	receiverID := "nexus-signal-receiver-" + uuid.NewString()
-	op := temporalnexus.NewSignalWorkflowOperation[string]("signal-op", receiverID, "", "nexus-signal")
+	op := temporalnexus.NewSignalWorkflowOperation("signal-operation")
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
@@ -613,7 +617,11 @@ func TestSignalOperationFromWorkflow(t *testing.T) {
 
 	senderWF := func(ctx workflow.Context) error {
 		c := workflow.NewNexusClient(tc.endpoint, "test")
-		fut := c.ExecuteOperation(ctx, op, "nexus", workflow.NexusOperationOptions{})
+		fut := c.ExecuteOperation(ctx, op, temporalnexus.SignalWorkflowInput{
+			WorkflowID: receiverID,
+			SignalName: "nexus-signal",
+			Arg:        "nexus",
+		}, workflow.NexusOperationOptions{})
 
 		var exec workflow.NexusOperationExecution
 		if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil {

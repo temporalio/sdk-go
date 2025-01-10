@@ -518,6 +518,8 @@ type ClientExecuteWorkflowInput struct {
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientSignalWorkflowInput]
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientSignalWorkflowInput]
+//
+// Exposed as: [go.temporal.io/sdk/temporalnexus.SignalWorkflowInput]
 type ClientSignalWorkflowInput struct {
 	WorkflowID string
 	RunID      string
