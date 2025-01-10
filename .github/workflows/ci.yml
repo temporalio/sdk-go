@@ -23,7 +23,6 @@ jobs:
             runsOn: macos-13
           - os: macos-arm
             runsOn: macos-14
-
     runs-on: ${{ matrix.runsOn || matrix.os }}
     steps:
       - name: Checkout repository
