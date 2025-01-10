@@ -41,6 +41,8 @@ import (
 // Exposed as: [go.temporal.io/sdk/interceptor.Interceptor]
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.Interceptor]
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.Interceptor]
 type Interceptor interface {
 	ClientInterceptor
 	WorkerInterceptor
@@ -48,6 +50,8 @@ type Interceptor interface {
 
 // WorkerInterceptor is a common interface for all interceptors. See
 // documentation in the interceptor package for more details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.WorkerInterceptor]
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.WorkerInterceptor]
 //
@@ -71,6 +75,8 @@ type WorkerInterceptor interface {
 // Exposed as: [go.temporal.io/sdk/interceptor.ActivityInboundInterceptor]
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ActivityInboundInterceptor]
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ActivityInboundInterceptor]
 type ActivityInboundInterceptor interface {
 	// Init is the first call of this interceptor. Implementations can change/wrap
 	// the outbound interceptor before calling Init on the next interceptor.
@@ -88,6 +94,8 @@ type ActivityInboundInterceptor interface {
 // Exposed as: [go.temporal.io/sdk/interceptor.ExecuteActivityInput]
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ExecuteActivityInput]
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ExecuteActivityInput]
 type ExecuteActivityInput struct {
 	Args []interface{}
 }
@@ -95,6 +103,8 @@ type ExecuteActivityInput struct {
 // ActivityOutboundInterceptor is an interface for all activity calls
 // originating from the SDK. See documentation in the interceptor package for
 // more details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ActivityOutboundInterceptor]
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ActivityOutboundInterceptor]
 //
@@ -127,6 +137,8 @@ type ActivityOutboundInterceptor interface {
 // WorkflowInboundInterceptor is an interface for all workflow calls originating
 // from the server. See documentation in the interceptor package for more
 // details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.WorkflowInboundInterceptor]
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.WorkflowInboundInterceptor]
 //
@@ -170,11 +182,15 @@ type WorkflowInboundInterceptor interface {
 // Exposed as: [go.temporal.io/sdk/interceptor.ExecuteWorkflowInput]
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ExecuteWorkflowInput]
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ExecuteWorkflowInput]
 type ExecuteWorkflowInput struct {
 	Args []interface{}
 }
 
 // HandleSignalInput is the input to WorkflowInboundInterceptor.HandleSignal.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.HandleSignalInput]
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.HandleSignalInput]
 //
@@ -191,12 +207,16 @@ type HandleSignalInput struct {
 // Exposed as: [go.temporal.io/sdk/interceptor.UpdateInput]
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.UpdateInput]
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.UpdateInput]
 type UpdateInput struct {
 	Name string
 	Args []interface{}
 }
 
 // HandleQueryInput is the input to WorkflowInboundInterceptor.HandleQuery.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.HandleQueryInput]
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.HandleQueryInput]
 //
@@ -209,6 +229,8 @@ type HandleQueryInput struct {
 // ExecuteNexusOperationInput is the input to WorkflowOutboundInterceptor.ExecuteNexusOperation.
 //
 // NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ExecuteNexusOperationInput]
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ExecuteNexusOperationInput]
 //
@@ -233,6 +255,8 @@ type ExecuteNexusOperationInput struct {
 // Exposed as: [go.temporal.io/sdk/interceptor.RequestCancelNexusOperationInput]
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.RequestCancelNexusOperationInput]
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.RequestCancelNexusOperationInput]
 type RequestCancelNexusOperationInput struct {
 	// Client that was used to start the operation.
 	Client NexusClient
@@ -247,6 +271,8 @@ type RequestCancelNexusOperationInput struct {
 // WorkflowOutboundInterceptor is an interface for all workflow calls
 // originating from the SDK. See documentation in the interceptor package for
 // more details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.WorkflowOutboundInterceptor]
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.WorkflowOutboundInterceptor]
 //
@@ -398,6 +424,8 @@ type WorkflowOutboundInterceptor interface {
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientInterceptor]
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientInterceptor]
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientInterceptor]
 type ClientInterceptor interface {
 	// This is called on client creation if set via client options
 	InterceptClient(next ClientOutboundInterceptor) ClientOutboundInterceptor
@@ -408,6 +436,8 @@ type ClientInterceptor interface {
 // ClientOutboundInterceptor is an interface for certain workflow-specific calls
 // originating from the SDK. See documentation in the interceptor package for
 // more details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientOutboundInterceptor]
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientOutboundInterceptor]
 //
@@ -459,6 +489,8 @@ type ClientOutboundInterceptor interface {
 // ClientOutboundInterceptor.UpdateWorkflow
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientUpdateWorkflowInput]
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientUpdateWorkflowInput]
 type ClientUpdateWorkflowInput struct {
 	UpdateID            string
 	WorkflowID          string
@@ -469,6 +501,8 @@ type ClientUpdateWorkflowInput struct {
 	WaitForStage        WorkflowUpdateStage
 }
 
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientUpdateWithStartWorkflowInput]
+//
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientUpdateWithStartWorkflowInput]
 type ClientUpdateWithStartWorkflowInput struct {
 	UpdateOptions          *UpdateWorkflowOptions
@@ -496,12 +530,16 @@ type ClientPollWorkflowUpdateOutput struct {
 // Exposed as: [go.temporal.io/sdk/interceptor.ScheduleClientCreateInput]
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ScheduleClientCreateInput]
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ScheduleClientCreateInput]
 type ScheduleClientCreateInput struct {
 	Options *ScheduleOptions
 }
 
 // ClientExecuteWorkflowInput is the input to
 // ClientOutboundInterceptor.ExecuteWorkflow.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientExecuteWorkflowInput]
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientExecuteWorkflowInput]
 //
@@ -519,7 +557,7 @@ type ClientExecuteWorkflowInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientSignalWorkflowInput]
 //
-// Exposed as: [go.temporal.io/sdk/temporalnexus.SignalWorkflowInput]
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientSignalWorkflowInput][go.temporal.io/sdk/temporalnexus.SignalWorkflowInput]
 type ClientSignalWorkflowInput struct {
 	WorkflowID string
 	RunID      string
@@ -529,6 +567,8 @@ type ClientSignalWorkflowInput struct {
 
 // ClientSignalWithStartWorkflowInput is the input to
 // ClientOutboundInterceptor.SignalWithStartWorkflow.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientSignalWithStartWorkflowInput]
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientSignalWithStartWorkflowInput]
 //
@@ -547,6 +587,8 @@ type ClientSignalWithStartWorkflowInput struct {
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientCancelWorkflowInput]
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientCancelWorkflowInput]
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientCancelWorkflowInput]
 type ClientCancelWorkflowInput struct {
 	WorkflowID string
 	RunID      string
@@ -554,6 +596,8 @@ type ClientCancelWorkflowInput struct {
 
 // ClientTerminateWorkflowInput is the input to
 // ClientOutboundInterceptor.TerminateWorkflow.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientTerminateWorkflowInput]
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientTerminateWorkflowInput]
 //
@@ -567,6 +611,8 @@ type ClientTerminateWorkflowInput struct {
 
 // ClientQueryWorkflowInput is the input to
 // ClientOutboundInterceptor.QueryWorkflow.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientQueryWorkflowInput]
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientQueryWorkflowInput]
 //
