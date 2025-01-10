@@ -1972,7 +1972,7 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 		return err
 	}
 
-	links, _ := ctx.Value(NexusOperationRequestIDKey).([]*commonpb.Link)
+	links, _ := ctx.Value(NexusOperationLinksKey).([]*commonpb.Link)
 
 	request := &workflowservice.SignalWorkflowExecutionRequest{
 		Namespace: w.client.namespace,
