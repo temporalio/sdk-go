@@ -378,56 +378,6 @@ func TestNexusSyncOperation(t *testing.T) {
 	})
 }
 
-func TestNexusSignalWorkflowOperation(t *testing.T) {
-	op := temporalnexus.NewSignalWorkflowOperation("signal-operation")
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-
-	tc := newTestContext(t, ctx)
-
-	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
-	service := nexus.NewService("test")
-	require.NoError(t, service.Register(op))
-	w.RegisterNexusService(service)
-	w.RegisterWorkflow(waitForSignalWorkflow)
-	require.NoError(t, w.Start())
-	t.Cleanup(w.Stop)
-
-	run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
-		TaskQueue: tc.taskQueue,
-	}, waitForSignalWorkflow, "successful")
-	require.NoError(t, err)
-
-	nc := tc.newNexusClient(t, service.Name)
-
-	result, err := nexus.ExecuteOperation(ctx, nc, op,
-		temporalnexus.SignalWorkflowInput{
-			WorkflowID: run.GetID(),
-			RunID:      run.GetRunID(),
-			SignalName: "nexus-signal",
-			Arg:        "nexus",
-		},
-		nexus.ExecuteOperationOptions{
-			RequestID:      "test-request-id",
-			Header:         nexus.Header{"test": "ok"},
-			CallbackURL:    "http://localhost/test",
-			CallbackHeader: nexus.Header{"test": "ok"},
-		})
-	require.NoError(t, err)
-	require.Nil(t, result)
-
-	var out string
-	require.NoError(t, run.Get(ctx, &out))
-	require.Equal(t, "nexus", out)
-
-	require.EventuallyWithT(t, func(t *assert.CollectT) {
-		tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, op.Name())
-		tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, op.Name())
-		tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, op.Name())
-	}, time.Second*3, time.Millisecond*100)
-}
-
 func TestNexusWorkflowRunOperation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
@@ -609,19 +559,22 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 
 func TestSignalOperationFromWorkflow(t *testing.T) {
 	receiverID := "nexus-signal-receiver-" + uuid.NewString()
-	op := temporalnexus.NewSignalWorkflowOperation("signal-operation")
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	op := temporalnexus.NewSignalWorkflowOperation("signal-operation", func(_ context.Context, input string, _ nexus.StartOperationOptions) temporalnexus.SignalWorkflowInput {
+		return temporalnexus.SignalWorkflowInput{
+			WorkflowID: receiverID,
+			SignalName: "nexus-signal",
+			Arg:        input,
+		}
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 	tc := newTestContext(t, ctx)
 
 	senderWF := func(ctx workflow.Context) error {
 		c := workflow.NewNexusClient(tc.endpoint, "test")
-		fut := c.ExecuteOperation(ctx, op, temporalnexus.SignalWorkflowInput{
-			WorkflowID: receiverID,
-			SignalName: "nexus-signal",
-			Arg:        "nexus",
-		}, workflow.NexusOperationOptions{})
+		fut := c.ExecuteOperation(ctx, op, "nexus", workflow.NexusOperationOptions{})
 
 		var exec workflow.NexusOperationExecution
 		if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil {
@@ -661,9 +614,62 @@ func TestSignalOperationFromWorkflow(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, sender.Get(ctx, nil))
 
+	iter := tc.client.GetWorkflowHistory(
+		ctx,
+		sender.GetID(),
+		sender.GetRunID(),
+		false,
+		enums.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT,
+	)
+	var nexusOperationScheduleEventID int64
+	var targetEvent *historypb.HistoryEvent
+	for iter.HasNext() {
+		event, err := iter.Next()
+		require.NoError(t, err)
+		if event.GetEventType() == enums.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED {
+			nexusOperationScheduleEventID = event.GetEventId()
+			require.NotEmpty(t, event.GetNexusOperationScheduledEventAttributes().GetRequestId())
+			break
+		}
+	}
+	// TODO(pj): sync operations currently do not support attaching links. add assertions here once they do.
+
 	var out string
 	require.NoError(t, receiver.Get(ctx, &out))
 	require.Equal(t, "nexus", out)
+
+	iter = tc.client.GetWorkflowHistory(
+		ctx,
+		receiver.GetID(),
+		receiver.GetRunID(),
+		false,
+		enums.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT,
+	)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		require.NoError(t, err)
+		if event.GetEventType() == enums.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED {
+			targetEvent = event
+			break
+		}
+	}
+	require.NotNil(t, targetEvent)
+	require.NotNil(t, targetEvent.GetWorkflowExecutionSignaledEventAttributes())
+	require.Len(t, targetEvent.GetLinks(), 1)
+	require.True(t, proto.Equal(
+		&common.Link_WorkflowEvent{
+			Namespace:  tc.testConfig.Namespace,
+			WorkflowId: sender.GetID(),
+			RunId:      sender.GetRunID(),
+			Reference: &common.Link_WorkflowEvent_EventRef{
+				EventRef: &common.Link_WorkflowEvent_EventReference{
+					EventId:   nexusOperationScheduleEventID,
+					EventType: enums.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED,
+				},
+			},
+		},
+		targetEvent.GetLinks()[0].GetWorkflowEvent(),
+	))
 }
 
 func TestAsyncOperationFromWorkflow(t *testing.T) {

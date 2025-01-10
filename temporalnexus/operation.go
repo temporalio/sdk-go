@@ -94,13 +94,23 @@ func NewSyncOperation[I any, O any](
 }
 
 // SignalWorkflowInput is the input to a NewSignalWorkflowOperation.
-type SignalWorkflowInput = internal.ClientSignalWorkflowInput
+type SignalWorkflowInput struct {
+	WorkflowID string
+	RunID      string
+	SignalName string
+	Arg        any
+}
 
 // NewSignalWorkflowOperation is a helper for creating a synchronous nexus.Operation to deliver a signal.
 //
 // NOTE: Experimental
-func NewSignalWorkflowOperation(name string) nexus.Operation[SignalWorkflowInput, nexus.NoValue] {
-	return NewSyncOperation(name, func(ctx context.Context, c client.Client, in SignalWorkflowInput, options nexus.StartOperationOptions) (nexus.NoValue, error) {
+func NewSignalWorkflowOperation[T any](
+	name string,
+	getSignalInput func(context.Context, T, nexus.StartOperationOptions) SignalWorkflowInput,
+) nexus.Operation[T, nexus.NoValue] {
+	return NewSyncOperation(name, func(ctx context.Context, c client.Client, in T, options nexus.StartOperationOptions) (nexus.NoValue, error) {
+		signalInput := getSignalInput(ctx, in, options)
+
 		if options.RequestID != "" {
 			ctx = context.WithValue(ctx, internal.NexusOperationRequestIDKey, options.RequestID)
 		}
@@ -111,7 +121,7 @@ func NewSignalWorkflowOperation(name string) nexus.Operation[SignalWorkflowInput
 		}
 		ctx = context.WithValue(ctx, internal.NexusOperationLinksKey, links)
 
-		return nil, c.SignalWorkflow(ctx, in.WorkflowID, in.RunID, in.SignalName, in.Arg)
+		return nil, c.SignalWorkflow(ctx, signalInput.WorkflowID, signalInput.RunID, signalInput.SignalName, signalInput.Arg)
 	})
 }
 
