@@ -381,7 +381,7 @@ func TestNexusSyncOperation(t *testing.T) {
 func TestNexusSignalWorkflowOperation(t *testing.T) {
 	op := temporalnexus.NewSignalWorkflowOperation("signal-operation")
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
 	tc := newTestContext(t, ctx)
