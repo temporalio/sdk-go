@@ -6262,9 +6262,6 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateWorkflowActionMemo() {
 }
 
 func (ts *IntegrationTestSuite) TestVersioningBehaviorInRespondWorkflowTaskCompletedRequest() {
-	if os.Getenv("DISABLE_DEPLOYMENT_TESTS") != "" {
-		ts.T().Skip("temporal server 1.26.2+ required")
-	}
 	versioningBehaviorAll := make([]enumspb.VersioningBehavior, 0)
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -6333,9 +6330,6 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorInRespondWorkflowTaskCompl
 }
 
 func (ts *IntegrationTestSuite) TestVersioningBehaviorPerWorkflowType() {
-	if os.Getenv("DISABLE_DEPLOYMENT_TESTS") != "" {
-		ts.T().Skip("temporal server 1.26.2+ required")
-	}
 	versioningBehaviorAll := make([]enumspb.VersioningBehavior, 0)
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -6409,9 +6403,6 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorPerWorkflowType() {
 }
 
 func (ts *IntegrationTestSuite) TestNoVersioningBehaviorPanics() {
-	if os.Getenv("DISABLE_DEPLOYMENT_TESTS") != "" {
-		ts.T().Skip("temporal server 1.26.2+ required")
-	}
 	seriesName := "deploy-test-" + uuid.New()
 
 	c, err := client.Dial(client.Options{
