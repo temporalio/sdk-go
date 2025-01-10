@@ -45,7 +45,6 @@ import (
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
-
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -92,6 +91,20 @@ func NewSyncOperation[I any, O any](
 		name:    name,
 		handler: handler,
 	}
+}
+
+// NewSignalWorkflowOperation is a helper for creating a synchronous nexus.Operation to deliver a signal.
+//
+// NOTE: Experimental
+func NewSignalWorkflowOperation[I any](
+	name string,
+	workflowID string,
+	runID string,
+	signalName string,
+) nexus.Operation[I, nexus.NoValue] {
+	return NewSyncOperation(name, func(ctx context.Context, c client.Client, i I, options nexus.StartOperationOptions) (nexus.NoValue, error) {
+		return nil, c.SignalWorkflow(ctx, workflowID, runID, signalName, i)
+	})
 }
 
 func (o *syncOperation[I, O]) Name() string {

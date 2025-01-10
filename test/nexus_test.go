@@ -205,6 +205,13 @@ func waitForCancelWorkflow(ctx workflow.Context, ownID string) (string, error) {
 	return "", workflow.Await(ctx, func() bool { return false })
 }
 
+func waitForSignalWorkflow(ctx workflow.Context, _ string) (string, error) {
+	ch := workflow.GetSignalChannel(ctx, "nexus-signal")
+	var val string
+	ch.Receive(ctx, &val)
+	return val, ctx.Err()
+}
+
 var workflowOp = temporalnexus.NewWorkflowRunOperation(
 	"workflow-op",
 	waitForCancelWorkflow,
@@ -369,6 +376,52 @@ func TestNexusSyncOperation(t *testing.T) {
 			tc.requireFailureCounter(t, service.Name, syncOp.Name(), "timeout")
 		}, time.Second*3, time.Millisecond*100)
 	})
+}
+
+func TestNexusSignalWorkflowOperation(t *testing.T) {
+	receiverID := "nexus-signal-receiver-" + uuid.NewString()
+	op := temporalnexus.NewSignalWorkflowOperation[string]("signal-op", receiverID, "", "nexus-signal")
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	tc := newTestContext(t, ctx)
+
+	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
+	service := nexus.NewService("test")
+	require.NoError(t, service.Register(op))
+	w.RegisterNexusService(service)
+	w.RegisterWorkflow(waitForSignalWorkflow)
+	require.NoError(t, w.Start())
+	t.Cleanup(w.Stop)
+
+	run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID:        receiverID,
+		TaskQueue: tc.taskQueue,
+	}, waitForSignalWorkflow, "successful")
+	require.NoError(t, err)
+
+	nc := tc.newNexusClient(t, service.Name)
+
+	result, err := nexus.ExecuteOperation(ctx, nc, op, "nexus",
+		nexus.ExecuteOperationOptions{
+			RequestID:      "test-request-id",
+			Header:         nexus.Header{"test": "ok"},
+			CallbackURL:    "http://localhost/test",
+			CallbackHeader: nexus.Header{"test": "ok"},
+		})
+	require.NoError(t, err)
+	require.Nil(t, result)
+
+	var out string
+	require.NoError(t, run.Get(ctx, &out))
+	require.Equal(t, "nexus", out)
+
+	require.EventuallyWithT(t, func(t *assert.CollectT) {
+		tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, op.Name())
+		tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, op.Name())
+		tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, op.Name())
+	}, time.Second*3, time.Millisecond*100)
 }
 
 func TestNexusWorkflowRunOperation(t *testing.T) {
@@ -548,6 +601,55 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 		err = execErr.Unwrap()
 		require.ErrorAs(t, err, &canceledErr)
 	})
+}
+
+func TestSignalOperationFromWorkflow(t *testing.T) {
+	receiverID := "nexus-signal-receiver-" + uuid.NewString()
+	op := temporalnexus.NewSignalWorkflowOperation[string]("signal-op", receiverID, "", "nexus-signal")
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	tc := newTestContext(t, ctx)
+
+	senderWF := func(ctx workflow.Context) error {
+		c := workflow.NewNexusClient(tc.endpoint, "test")
+		fut := c.ExecuteOperation(ctx, op, "nexus", workflow.NexusOperationOptions{})
+
+		var exec workflow.NexusOperationExecution
+		if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil {
+			return fmt.Errorf("expected start to succeed: %w", err)
+		}
+		if exec.OperationID != "" {
+			return fmt.Errorf("expected empty operation ID")
+		}
+
+		return fut.Get(ctx, nil)
+	}
+
+	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
+	service := nexus.NewService("test")
+	require.NoError(t, service.Register(op))
+	w.RegisterNexusService(service)
+	w.RegisterWorkflow(waitForSignalWorkflow)
+	w.RegisterWorkflow(senderWF)
+	require.NoError(t, w.Start())
+	t.Cleanup(w.Stop)
+
+	receiver, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID:        receiverID,
+		TaskQueue: tc.taskQueue,
+	}, waitForSignalWorkflow, "successful")
+	require.NoError(t, err)
+
+	sender, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		TaskQueue: tc.taskQueue,
+	}, senderWF)
+	require.NoError(t, err)
+	require.NoError(t, sender.Get(ctx, nil))
+
+	var out string
+	require.NoError(t, receiver.Get(ctx, &out))
+	require.Equal(t, "nexus", out)
 }
 
 func TestAsyncOperationFromWorkflow(t *testing.T) {
