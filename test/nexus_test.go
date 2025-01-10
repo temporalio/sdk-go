@@ -646,6 +646,9 @@ func TestSignalOperationFromWorkflow(t *testing.T) {
 	receiver, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 		ID:        receiverID,
 		TaskQueue: tc.taskQueue,
+		// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
+		// timeout to speed up the attempts.
+		WorkflowTaskTimeout: time.Second,
 	}, waitForSignalWorkflow, "successful")
 	require.NoError(t, err)
 
