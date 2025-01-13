@@ -44,14 +44,14 @@ type (
 	}
 )
 
-var missing = false
+var changesNeeded = false
 
 func main() {
 	if err := run(); err != nil {
 		log.Fatal(err)
 	}
-	if missing {
-		log.Fatal("Missing documentation, see previous stdout for which objects. Re-run command with -fix to auto-generate missing docs.")
+	if changesNeeded {
+		log.Fatal("Changes needed, see previous stdout for which objects. Re-run command with -fix to auto-generate new docs.")
 	}
 }
 
@@ -354,47 +354,125 @@ func extractPackageName(file *os.File) (string, error) {
 // If mapping is identified, check if doc comment exists for such mapping.
 func processInternal(cfg config, file *os.File, pairs map[string]map[string]string) error {
 	scanner := bufio.NewScanner(file)
+	nextLine := scanner.Text()
 	newFile := ""
 	exposedAs := "// Exposed as: "
+	var commentBlock string
 	var inGroup, exposedLinks string
 	var changesMade, inStruct bool
 	for scanner.Scan() {
-		line := scanner.Text()
+		line := nextLine
+		nextLine = scanner.Text()
 		trimmedLine := strings.TrimSpace(line)
-		if isValidDefinition(trimmedLine, &inGroup, &inStruct) {
+		trimmedNextLine := strings.TrimSpace(nextLine)
+		// Keep track of code block, for when we check a valid definition below,
+		// gofmt will sometimes format links like "[Visibility]: https://sample.url"
+		// to the bottom of the doc string.
+		if strings.HasPrefix(trimmedLine, "//") {
+			commentBlock += trimmedLine + "\n"
+		} else {
+			commentBlock = ""
+		}
+		
+		// Check for old docs links to remove
+		if strings.Contains(trimmedNextLine, exposedAs) {
+			links := strings.Split(strings.TrimPrefix(trimmedNextLine, exposedAs), ", ")
+			var newLinks []string
+			for _, link := range links {
+				staleLink := true
+				for packageName, pair := range pairs {
+					for public, _ := range pair {
+						docLink := fmt.Sprintf("[go.temporal.io/sdk/%s.%s]", packageName, public)
+						if link == docLink {
+							staleLink = false
+						}
+					}
+				}
+
+				if !staleLink {
+					newLinks = append(newLinks, link)
+				} else {
+					if cfg.fix {
+						changesMade = true
+						fmt.Println("Removing stale doc link:", link)
+					} else {
+						changesNeeded = true
+						fmt.Println("Stale doc link:", link)
+					}
+				}
+			}
+			newTrimmedLine := exposedAs
+			for i := range newLinks {
+				newTrimmedLine += newLinks[i] + ", "
+			}
+			nextLine = strings.TrimSuffix(newTrimmedLine, ", ")
+			trimmedNextLine = nextLine
+		}
+
+		// Check for new doc links to add
+		if isValidDefinition(trimmedNextLine, &inGroup, &inStruct) {
+			// Find the "Exposed As" line in the doc comment
+			var lineFromCommentBlock string
+			comScanner := bufio.NewScanner(strings.NewReader(commentBlock))
+			for comScanner.Scan() {
+				tempLine := strings.TrimSpace(comScanner.Text())
+				if strings.HasPrefix(tempLine, exposedAs) {
+					lineFromCommentBlock = tempLine
+					break
+				}
+			}
+			// Check for new doc pairs
 			for packageName, pair := range pairs {
 				for public, private := range pair {
-					if isValidDefinitionWithMatch(trimmedLine, private, inGroup, inStruct) {
+					if isValidDefinitionWithMatch(trimmedNextLine, private, inGroup, inStruct) {
 						docLink := fmt.Sprintf("[go.temporal.io/sdk/%s.%s]", packageName, public)
-						missingDoc := true
-						if exposedLinks != "" {
-							if strings.Contains(exposedLinks, docLink) {
-								missingDoc = false
-							}
+						missingDoc := false
+						if lineFromCommentBlock == "" || !strings.Contains(lineFromCommentBlock, docLink) {
+							missingDoc = true
 						}
-						if missingDoc {
-							if cfg.fix {
+						if cfg.fix {
+							exposedLinks += docLink + ", "
+							if missingDoc {
 								changesMade = true
-								exposedLinks += docLink + ", "
-								fmt.Printf("Fixed doc in %s for internal:%s to %s:%s\n", file.Name(), private, packageName, public)
-							} else {
-								missing = true
+								fmt.Printf("Added doc in %s for internal:%s to %s:%s\n", file.Name(), private, packageName, public)
+							}
+						} else {
+							if missingDoc {
+								changesNeeded = true
 								fmt.Printf("Missing doc in %s for internal:%s to %s:%s\n", file.Name(), private, packageName, public)
 							}
 						}
+
 					}
 				}
 			}
 			if exposedLinks != "" {
-				newFile += "//\n" + exposedAs + strings.TrimSuffix(exposedLinks, ", ") + "\n"
+				updatedLine := exposedAs + strings.TrimSuffix(exposedLinks, ", ")
+
+				// If there is an existing "Exposed As" docstring
+				if lineFromCommentBlock != "" {
+					// The last line of commentBlock hasn't been written to newFile yet,
+					// so check if lineFromCommentBlock is that scenario
+					if lineFromCommentBlock == trimmedLine {
+						line = updatedLine
+					} else {
+						newFile = strings.Replace(newFile, lineFromCommentBlock, updatedLine, 1)
+					}
+				} else {
+					// Last line of existing docstring hasn't been written yet,
+					// write that line to newFile, then set the updatedLine to
+					// be the next line to be written to newFile
+					newFile += line + "\n"
+					line = "//\n" + updatedLine
+				}
 				exposedLinks = ""
+
 			}
-		} else if strings.HasPrefix(trimmedLine, exposedAs) {
-			exposedLinks = strings.TrimPrefix(trimmedLine, exposedAs)
 		}
 		newFile += line + "\n"
-
 	}
+
+	newFile += nextLine + "\n"
 
 	if changesMade {
 		absPath, err := filepath.Abs(file.Name())
@@ -469,6 +547,7 @@ func isValidDefinition(line string, inGroup *string, insideStruct *bool) bool {
 	return false
 }
 
+// Checks if `line` is a valid definition, and that definition is for `private`
 func isValidDefinitionWithMatch(line, private string, inGroup string, insideStruct bool) bool {
 	tokens := strings.Fields(line)
 	if strings.HasPrefix(line, "func "+private+"(") {
