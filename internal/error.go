@@ -386,7 +386,7 @@ func NewApplicationError(msg string, errType string, nonRetryable bool, cause er
 	)
 }
 
-// Exposed as: [go.temporal.io/sdk/temporal.NewApplicationErrorWithOptions], [go.temporal.io/sdk/temporal.NewApplicationErrorWithCause], [go.temporal.io/sdk/temporal.NewApplicationError], [go.temporal.io/sdk/temporal.NewNonRetryableApplicationError]
+// Exposed as: [go.temporal.io/sdk/temporal.NewApplicationError], [go.temporal.io/sdk/temporal.NewApplicationErrorWithOptions], [go.temporal.io/sdk/temporal.NewApplicationErrorWithCause], [go.temporal.io/sdk/temporal.NewNonRetryableApplicationError]
 func NewApplicationErrorWithOptions(msg string, errType string, options ApplicationErrorOptions) error {
 	applicationErr := &ApplicationError{
 		msg:            msg,
