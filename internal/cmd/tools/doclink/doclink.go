@@ -373,7 +373,7 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 		} else {
 			commentBlock = ""
 		}
-		
+
 		// Check for old docs links to remove
 		if strings.Contains(trimmedNextLine, exposedAs) {
 			links := strings.Split(strings.TrimPrefix(trimmedNextLine, exposedAs), ", ")
@@ -381,7 +381,7 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 			for _, link := range links {
 				staleLink := true
 				for packageName, pair := range pairs {
-					for public, _ := range pair {
+					for public := range pair {
 						docLink := fmt.Sprintf("[go.temporal.io/sdk/%s.%s]", packageName, public)
 						if link == docLink {
 							staleLink = false
