@@ -93,18 +93,24 @@ func NewSyncOperation[I any, O any](
 	}
 }
 
-// SignalWorkflowInput is the input to a NewSignalWorkflowOperation.
+// SignalWorkflowInput encapsulates the values required to send a signal to a workflow.
 type SignalWorkflowInput struct {
+	// WorkflowID is the ID of the workflow which will receive the signal. Required.
 	WorkflowID string
-	RunID      string
+	// RunID is the run ID of the workflow which will receive the signal. Optional. If empty, the signal will be
+	// delivered to the running execution of the indicated workflow ID.
+	RunID string
+	// SignalName is the name of the signal. Required.
 	SignalName string
-	Arg        any
+	// Arg is the payload attached to the signal. Optional.
+	Arg any
 }
 
-// NewSignalWorkflowOperation is a helper for creating a synchronous nexus.Operation to deliver a signal.
+// NewWorkflowSignalOperation is a helper for creating a synchronous nexus.Operation to deliver a signal, linking the
+// signal to a Nexus operation. Request ID from the Nexus options is propagated to the workflow to ensure idempotency.
 //
 // NOTE: Experimental
-func NewSignalWorkflowOperation[T any](
+func NewWorkflowSignalOperation[T any](
 	name string,
 	getSignalInput func(context.Context, T, nexus.StartOperationOptions) SignalWorkflowInput,
 ) nexus.Operation[T, nexus.NoValue] {

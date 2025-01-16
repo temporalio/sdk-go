@@ -560,7 +560,7 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 func TestSignalOperationFromWorkflow(t *testing.T) {
 	receiverID := "nexus-signal-receiver-" + uuid.NewString()
 
-	op := temporalnexus.NewSignalWorkflowOperation("signal-operation", func(_ context.Context, input string, _ nexus.StartOperationOptions) temporalnexus.SignalWorkflowInput {
+	op := temporalnexus.NewWorkflowSignalOperation("signal-operation", func(_ context.Context, input string, _ nexus.StartOperationOptions) temporalnexus.SignalWorkflowInput {
 		return temporalnexus.SignalWorkflowInput{
 			WorkflowID: receiverID,
 			SignalName: "nexus-signal",
@@ -632,7 +632,6 @@ func TestSignalOperationFromWorkflow(t *testing.T) {
 			break
 		}
 	}
-	// TODO(pj): sync operations currently do not support attaching links. add assertions here once they do.
 
 	var out string
 	require.NoError(t, receiver.Get(ctx, &out))
