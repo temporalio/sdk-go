@@ -245,8 +245,10 @@ func (bp *basePoller) stopping() bool {
 	}
 }
 
-// doPoll runs the given pollFunc in a separate go routine. Returns when either of the conditions are met:
-// - poll succeeds, poll fails or worker is stopping
+// doPoll runs the given pollFunc in a separate go routine. Returns when any of the conditions are met:
+//  - poll succeeds
+//  - poll fails
+//  - worker is stopping
 func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (taskForWorker, error)) (taskForWorker, error) {
 	if bp.stopping() {
 		return nil, errStop

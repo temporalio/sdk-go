@@ -51,7 +51,7 @@ the sole parameter it receives as part of its initialization as a parameter to t
 
 	func SimpleWorkflow(ctx workflow.Context, value string) error {
 		ao := workflow.ActivityOptions{
-			TaskQueue:               "sampleTaskQueue",
+			TaskQueue:              "sampleTaskQueue",
 			ScheduleToCloseTimeout: time.Second * 60,
 			ScheduleToStartTimeout: time.Second * 60,
 			StartToCloseTimeout:    time.Second * 60,
@@ -149,7 +149,7 @@ The primary responsibility of the workflow implementation is to schedule activit
 straightforward way to do that is via the library method [workflow.ExecuteActivity]:
 
 	ao := workflow.ActivityOptions{
-		TaskQueue:               "sampleTaskQueue",
+		TaskQueue:              "sampleTaskQueue",
 		ScheduleToCloseTimeout: time.Second * 60,
 		ScheduleToStartTimeout: time.Second * 60,
 		StartToCloseTimeout:    time.Second * 60,
