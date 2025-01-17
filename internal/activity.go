@@ -264,6 +264,13 @@ func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 	getActivityOutboundInterceptor(ctx).RecordHeartbeat(ctx, details...)
 }
 
+// GetClient returns a client that can be used to interact with the Temporal
+// service from an activity.
+func GetClient(ctx context.Context) Client {
+	activityEnv := getActivityEnv(ctx)
+	return activityEnv.serviceInvoker.GetClient(ClientOptions{Namespace: activityEnv.workflowNamespace})
+}
+
 // ServiceInvoker abstracts calls to the Temporal service from an activity implementation.
 // Implement to unit test activities.
 type ServiceInvoker interface {

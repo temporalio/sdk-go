@@ -26,7 +26,7 @@ package activity
 
 import (
 	"context"
-
+	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
@@ -107,4 +107,10 @@ func GetWorkerStopChannel(ctx context.Context) <-chan struct{} {
 // IsActivity checks if the context is an activity context from a normal or local activity.
 func IsActivity(ctx context.Context) bool {
 	return internal.IsActivity(ctx)
+}
+
+// GetClient returns a client that can be used to interact with the Temporal
+// service from an activity.
+func GetClient(ctx context.Context) client.Client {
+	return internal.GetClient(ctx)
 }
