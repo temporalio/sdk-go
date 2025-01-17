@@ -45,7 +45,6 @@ import (
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
-
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -92,6 +91,46 @@ func NewSyncOperation[I any, O any](
 		name:    name,
 		handler: handler,
 	}
+}
+
+// SignalWorkflowInput encapsulates the values required to send a signal to a workflow.
+//
+// NOTE: Experimental
+type SignalWorkflowInput struct {
+	// WorkflowID is the ID of the workflow which will receive the signal. Required.
+	WorkflowID string
+	// RunID is the run ID of the workflow which will receive the signal. Optional. If empty, the signal will be
+	// delivered to the running execution of the indicated workflow ID.
+	RunID string
+	// SignalName is the name of the signal. Required.
+	SignalName string
+	// Arg is the payload attached to the signal. Optional.
+	Arg any
+}
+
+// NewWorkflowSignalOperation is a helper for creating a synchronous nexus.Operation to deliver a signal, linking the
+// signal to a Nexus operation. Request ID from the Nexus options is propagated to the workflow to ensure idempotency.
+//
+// NOTE: Experimental
+func NewWorkflowSignalOperation[T any](
+	name string,
+	getSignalInput func(context.Context, T, nexus.StartOperationOptions) SignalWorkflowInput,
+) nexus.Operation[T, nexus.NoValue] {
+	return NewSyncOperation(name, func(ctx context.Context, c client.Client, in T, options nexus.StartOperationOptions) (nexus.NoValue, error) {
+		signalInput := getSignalInput(ctx, in, options)
+
+		if options.RequestID != "" {
+			ctx = context.WithValue(ctx, internal.NexusOperationRequestIDKey, options.RequestID)
+		}
+
+		links, err := convertNexusLinks(options.Links, GetLogger(ctx))
+		if err != nil {
+			return nil, err
+		}
+		ctx = context.WithValue(ctx, internal.NexusOperationLinksKey, links)
+
+		return nil, c.SignalWorkflow(ctx, signalInput.WorkflowID, signalInput.RunID, signalInput.SignalName, signalInput.Arg)
+	})
 }
 
 func (o *syncOperation[I, O]) Name() string {
@@ -360,22 +399,9 @@ func ExecuteUntypedWorkflow[R any](
 		})
 	}
 
-	var links []*common.Link
-	for _, nexusLink := range nexusOptions.Links {
-		switch nexusLink.Type {
-		case string((&common.Link_WorkflowEvent{}).ProtoReflect().Descriptor().FullName()):
-			link, err := ConvertNexusLinkToLinkWorkflowEvent(nexusLink)
-			if err != nil {
-				return nil, err
-			}
-			links = append(links, &common.Link{
-				Variant: &common.Link_WorkflowEvent_{
-					WorkflowEvent: link,
-				},
-			})
-		default:
-			nctx.Log.Warn("ignoring unsupported link data type: %q", nexusLink.Type)
-		}
+	links, err := convertNexusLinks(nexusOptions.Links, nctx.Log)
+	if err != nil {
+		return nil, err
 	}
 	internal.SetLinksOnStartWorkflowOptions(&startWorkflowOptions, links)
 
@@ -388,4 +414,25 @@ func ExecuteUntypedWorkflow[R any](
 		id:        run.GetID(),
 		runID:     run.GetRunID(),
 	}, nil
+}
+
+func convertNexusLinks(nexusLinks []nexus.Link, log log.Logger) ([]*common.Link, error) {
+	var links []*common.Link
+	for _, nexusLink := range nexusLinks {
+		switch nexusLink.Type {
+		case string((&common.Link_WorkflowEvent{}).ProtoReflect().Descriptor().FullName()):
+			link, err := ConvertNexusLinkToLinkWorkflowEvent(nexusLink)
+			if err != nil {
+				return nil, err
+			}
+			links = append(links, &common.Link{
+				Variant: &common.Link_WorkflowEvent_{
+					WorkflowEvent: link,
+				},
+			})
+		default:
+			log.Warn("ignoring unsupported link data type: %q", nexusLink.Type)
+		}
+	}
+	return links, nil
 }

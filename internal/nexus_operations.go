@@ -66,6 +66,14 @@ type isWorkflowRunOpContextKeyType struct{}
 // panic as we don't want to expose a partial client to sync operations.
 var IsWorkflowRunOpContextKey = isWorkflowRunOpContextKeyType{}
 
+type nexusOperationRequestIDKeyType struct{}
+
+var NexusOperationRequestIDKey = nexusOperationRequestIDKeyType{}
+
+type nexusOperationLinksKeyType struct{}
+
+var NexusOperationLinksKey = nexusOperationLinksKeyType{}
+
 // NexusOperationContextFromGoContext gets the [NexusOperationContext] associated with the given [context.Context].
 func NexusOperationContextFromGoContext(ctx context.Context) (nctx *NexusOperationContext, ok bool) {
 	nctx, ok = ctx.Value(nexusOperationContextKey).(*NexusOperationContext)
