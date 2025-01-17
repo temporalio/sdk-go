@@ -99,6 +99,7 @@ func (ts *DeploymentTestSuite) waitForReachability(ctx context.Context, deployme
 }
 
 func (ts *DeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
+	ts.T().Skip("temporal server 1.26.2 has a setCurrent bug, see https://github.com/temporalio/temporal/pull/6978")
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
