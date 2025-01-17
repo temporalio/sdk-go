@@ -42,12 +42,12 @@ import (
 
 // NexusOperationContext is an internal only struct that holds fields used by the temporalnexus functions.
 type NexusOperationContext struct {
-	Client              Client
-	Namespace           string
-	TaskQueue           string
-	MetricsHandler      metrics.Handler
-	Log                 log.Logger
-	registry *registry
+	Client         Client
+	Namespace      string
+	TaskQueue      string
+	MetricsHandler metrics.Handler
+	Log            log.Logger
+	registry       *registry
 }
 
 func (nc *NexusOperationContext) ResolveWorkflowName(wf any) (string, error) {
@@ -65,6 +65,14 @@ type isWorkflowRunOpContextKeyType struct{}
 // The fake test env client verifies this key is set on the context to decide whether it should execute a method or
 // panic as we don't want to expose a partial client to sync operations.
 var IsWorkflowRunOpContextKey = isWorkflowRunOpContextKeyType{}
+
+type nexusOperationRequestIDKeyType struct{}
+
+var NexusOperationRequestIDKey = nexusOperationRequestIDKeyType{}
+
+type nexusOperationLinksKeyType struct{}
+
+var NexusOperationLinksKey = nexusOperationLinksKeyType{}
 
 // NexusOperationContextFromGoContext gets the [NexusOperationContext] associated with the given [context.Context].
 func NexusOperationContextFromGoContext(ctx context.Context) (nctx *NexusOperationContext, ok bool) {
