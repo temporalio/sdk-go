@@ -5544,6 +5544,8 @@ func (ts *IntegrationTestSuite) TestScheduleDescribeState() {
 			TaskQueue:                ts.taskQueueName,
 			WorkflowExecutionTimeout: 15 * time.Second,
 			WorkflowTaskTimeout:      time.Second,
+			StaticSummary:            "summy",
+			StaticDetails:            "deets",
 		},
 		Overlap:          enumspb.SCHEDULE_OVERLAP_POLICY_SKIP,
 		CatchupWindow:    time.Minute,
@@ -5578,6 +5580,8 @@ func (ts *IntegrationTestSuite) TestScheduleDescribeState() {
 		ts.Equal("TwoParameterWorkflow", action.Workflow)
 		ts.Equal(expectedArg1Value, action.Args[0])
 		ts.Equal(expectedArg2Value, action.Args[1])
+		ts.Equal("summy", action.StaticSummary)
+		ts.Equal("deets", action.StaticDetails)
 	default:
 		ts.Fail("schedule action wrong type")
 	}
