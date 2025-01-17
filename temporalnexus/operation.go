@@ -94,6 +94,8 @@ func NewSyncOperation[I any, O any](
 }
 
 // SignalWorkflowInput encapsulates the values required to send a signal to a workflow.
+//
+// NOTE: Experimental
 type SignalWorkflowInput struct {
 	// WorkflowID is the ID of the workflow which will receive the signal. Required.
 	WorkflowID string
