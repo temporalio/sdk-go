@@ -538,7 +538,7 @@ func SetQueryHandlerWithOptions(ctx Context, queryType string, handler interface
 	return internal.SetQueryHandlerWithOptions(ctx, queryType, handler, options)
 }
 
-// SetUpdateHandler forwards to SetUpdateHandlerWithOptions with an
+// SetUpdateHandler forwards to SetUpdateHandlerWithOptions with a
 // zero-initialized UpdateHandlerOptions struct. See SetUpdateHandlerWithOptions
 // for more details.
 func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error {
@@ -548,14 +548,14 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error
 // SetUpdateHandlerWithOptions binds an update handler function to the specified
 // name such that update invocations specifying that name will invoke the
 // handler.  The handler function can take as input any number of parameters so
-// long as they can be serialized/deserialized by the system. The handler can
-// take a [workflow.Context] as its first parameter but this is not required. The
-// update handler must return either a single error or a single serializable
-// object along with a single error. The update handler function is invoked in
-// the context of the workflow and thus is subject to the same restrictions as
-// workflow code, namely, the update handler must be deterministic. As with
-// other workflow code, update code is free to invoke and wait on the results of
-// activities. Update handler code is free to mutate workflow state.
+// long as they can be serialized/deserialized by the system. The handler must
+// take a [workflow.Context] as its first parameter. The update handler must
+// return either a single error or a single serializable object along with a
+// single error. The update handler function is invoked in the context of the
+// workflow and thus is subject to the same restrictions as workflow code,
+// namely, the update handler must be deterministic. As with other workflow
+// code, update code is free to invoke and wait on the results of activities.
+// Update handler code is free to mutate workflow state.
 //
 // This registration can optionally specify (through UpdateHandlerOptions) an
 // update validation function. If provided, this function will be invoked before
@@ -575,11 +575,11 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error
 //		err := workflow.SetUpdateHandlerWithOptions(
 //			ctx,
 //			"add",
-//			func(val int) (int, error) { // Calls
+//			func(ctx workflow.Context, val int) (int, error) {
 //				counter += val // note that this mutates workflow state
 //				return counter, nil
 //			},
-//			UpdateHandlerOptions{
+//			workflow.UpdateHandlerOptions{
 //				Validator: func(val int) error {
 //					if val < 0 { // reject attempts to add negative values
 //						return fmt.Errorf("invalid addend: %v", val)
