@@ -6905,13 +6905,13 @@ func (ts *InvalidUTF8Suite) TestBasic() {
 	ts.Equal("\n�\x01\n\x0ejunk\x12data", response)
 }
 
-func (ts *IntegrationTestSuite) TestPartialHistoryReplay() {
+func (ts *IntegrationTestSuite) TestPartialHistoryReplayFuzzer() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Run the workflow
 	run, err := ts.client.ExecuteWorkflow(ctx,
-		ts.startWorkflowOptions("test-partial-history-replay"), ts.workflows.Basic)
+		ts.startWorkflowOptions("test-partial-history-replay-fuzzer"), ts.workflows.CommandsFuzz)
 	ts.NotNil(run)
 	ts.NoError(err)
 	ts.NoError(run.Get(ctx, nil))
@@ -6926,16 +6926,24 @@ func (ts *IntegrationTestSuite) TestPartialHistoryReplay() {
 		history.Events = append(history.Events, event)
 	}
 
-	for _ = range history.Events {
-		if len(history.Events) >= 3 {
-			fmt.Println("\n[REPLAY]")
-			for i, event := range history.Events {
-				fmt.Println("\t[event],", i, event)
-			}
-			replayer := worker.NewWorkflowReplayer()
-			replayer.RegisterWorkflow(ts.workflows.Basic)
-			ts.NoError(replayer.ReplayWorkflowHistory(nil, &history))
-			history.Events = history.Events[:len(history.Events)-1]
+	var startedPoints []int
+	for i, event := range history.Events {
+		if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED {
+			startedPoints = append(startedPoints, i)
 		}
+	}
+	startedPoints = append(startedPoints, len(history.Events)-1)
+
+	// Replay partial history, cutting off at each WFT_STARTED event
+	for i := len(startedPoints) - 1; i >= 0; i-- {
+		point := startedPoints[i]
+		history.Events = history.Events[:point+1]
+
+		replayer := worker.NewWorkflowReplayer()
+
+		ts.NoError(err)
+		replayer.RegisterWorkflow(ts.workflows.CommandsFuzz)
+		replayer.RegisterWorkflow(ts.workflows.childWorkflowWaitOnSignal)
+		ts.NoError(replayer.ReplayWorkflowHistory(nil, &history))
 	}
 }
