@@ -2279,6 +2279,18 @@ func (w *Workflows) WaitSignalToStart(ctx workflow.Context) (string, error) {
 	return value, nil
 }
 
+func (w *Workflows) WaitSignalToStartVersionedOne(ctx workflow.Context) (string, error) {
+	var value string
+	workflow.GetSignalChannel(ctx, "start-signal").Receive(ctx, &value)
+	return value + "_v1", nil
+}
+
+func (w *Workflows) WaitSignalToStartVersionedTwo(ctx workflow.Context) (string, error) {
+	var value string
+	workflow.GetSignalChannel(ctx, "start-signal").Receive(ctx, &value)
+	return value + "_v2", nil
+}
+
 func (w *Workflows) BuildIDWorkflow(ctx workflow.Context) error {
 	activityRan := false
 	_ = workflow.SetQueryHandler(ctx, "get-last-build-id", func() (string, error) {

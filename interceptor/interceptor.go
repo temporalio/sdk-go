@@ -127,8 +127,6 @@ type HandleQueryInput = internal.HandleQueryInput
 
 // UpdateInput is input for WorkflowInboundInterceptor.ExecuteUpdate
 // and WorkflowInboundInterceptor.ValidateUpdate.
-//
-// NOTE: Experimental
 type UpdateInput = internal.UpdateInput
 
 // ExecuteNexusOperationInput is the input to WorkflowOutboundInterceptor.ExecuteNexusOperation.

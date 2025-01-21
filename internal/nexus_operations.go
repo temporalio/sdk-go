@@ -47,6 +47,11 @@ type NexusOperationContext struct {
 	TaskQueue      string
 	MetricsHandler metrics.Handler
 	Log            log.Logger
+	registry       *registry
+}
+
+func (nc *NexusOperationContext) ResolveWorkflowName(wf any) (string, error) {
+	return getWorkflowFunctionName(nc.registry, wf)
 }
 
 type nexusOperationContextKeyType struct{}
@@ -60,6 +65,14 @@ type isWorkflowRunOpContextKeyType struct{}
 // The fake test env client verifies this key is set on the context to decide whether it should execute a method or
 // panic as we don't want to expose a partial client to sync operations.
 var IsWorkflowRunOpContextKey = isWorkflowRunOpContextKeyType{}
+
+type nexusOperationRequestIDKeyType struct{}
+
+var NexusOperationRequestIDKey = nexusOperationRequestIDKeyType{}
+
+type nexusOperationLinksKeyType struct{}
+
+var NexusOperationLinksKey = nexusOperationLinksKeyType{}
 
 // NexusOperationContextFromGoContext gets the [NexusOperationContext] associated with the given [context.Context].
 func NexusOperationContextFromGoContext(ctx context.Context) (nctx *NexusOperationContext, ok bool) {
@@ -400,6 +413,16 @@ func (t *testSuiteClientForNexusOperations) UpdateWorkerVersioningRules(ctx cont
 
 // WorkflowService implements Client.
 func (t *testSuiteClientForNexusOperations) WorkflowService() workflowservice.WorkflowServiceClient {
+	panic("not implemented in the test environment")
+}
+
+// DeploymentClient implements Client.
+func (t *testSuiteClientForNexusOperations) DeploymentClient() DeploymentClient {
+	panic("not implemented in the test environment")
+}
+
+// UpdateWorkflowExecutionOptions implements Client.
+func (t *testSuiteClientForNexusOperations) UpdateWorkflowExecutionOptions(ctx context.Context, options UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error) {
 	panic("not implemented in the test environment")
 }
 

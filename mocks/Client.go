@@ -167,6 +167,26 @@ func (_m *Client) CountWorkflow(ctx context.Context, request *workflowservice.Co
 	return r0, r1
 }
 
+// DeploymentClient provides a mock function with given fields:
+func (_m *Client) DeploymentClient() client.DeploymentClient {
+	ret := _m.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeploymentClient")
+	}
+
+	var r0 client.DeploymentClient
+	if rf, ok := ret.Get(0).(func() client.DeploymentClient); ok {
+		r0 = rf()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(client.DeploymentClient)
+		}
+	}
+
+	return r0
+}
+
 // DescribeTaskQueue provides a mock function with given fields: ctx, taskqueue, taskqueueType
 func (_m *Client) DescribeTaskQueue(ctx context.Context, taskqueue string, taskqueueType enums.TaskQueueType) (*workflowservice.DescribeTaskQueueResponse, error) {
 	ret := _m.Called(ctx, taskqueue, taskqueueType)
@@ -930,6 +950,7 @@ func (_m *Client) UpdateWithStartWorkflow(ctx context.Context, options client.Up
 
 	return r0, r1
 }
+
 // UpdateWorkerBuildIdCompatibility provides a mock function with given fields: ctx, options
 //
 //lint:ignore SA1019 ignore for SDK mocks
@@ -1003,6 +1024,34 @@ func (_m *Client) UpdateWorkflow(ctx context.Context, options client.UpdateWorkf
 	}
 
 	if rf, ok := ret.Get(1).(func(context.Context, client.UpdateWorkflowOptions) error); ok {
+		r1 = rf(ctx, options)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// UpdateWorkflowExecutionOptions provides a mock function with given fields: ctx, options
+func (_m *Client) UpdateWorkflowExecutionOptions(ctx context.Context, options client.UpdateWorkflowExecutionOptionsRequest) (client.WorkflowExecutionOptions, error) {
+	ret := _m.Called(ctx, options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateWorkflowExecutionOptions")
+	}
+
+	var r0 client.WorkflowExecutionOptions
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, client.UpdateWorkflowExecutionOptionsRequest) (client.WorkflowExecutionOptions, error)); ok {
+		return rf(ctx, options)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, client.UpdateWorkflowExecutionOptionsRequest) client.WorkflowExecutionOptions); ok {
+		r0 = rf(ctx, options)
+	} else {
+		r0 = ret.Get(0).(client.WorkflowExecutionOptions)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, client.UpdateWorkflowExecutionOptionsRequest) error); ok {
 		r1 = rf(ctx, options)
 	} else {
 		r1 = ret.Error(1)
