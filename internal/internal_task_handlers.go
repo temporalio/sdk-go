@@ -1435,9 +1435,6 @@ func (w *workflowExecutionContextImpl) clearCurrentTask() {
 }
 
 func (w *workflowExecutionContextImpl) skipReplayCheck() bool {
-	//fmt.Println("\nw.currentWorkflowTask.Query", w.currentWorkflowTask.Query)
-	//fmt.Println("isFullHistory(w.currentWorkflowTask.History)", isFullHistory(w.currentWorkflowTask.History))
-	//fmt.Println()
 	return w.currentWorkflowTask.Query != nil || !isFullHistory(w.currentWorkflowTask.History)
 }
 

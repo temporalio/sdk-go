@@ -941,7 +941,7 @@ func (w *Workflows) ChildWorkflowDuplicateGetExecutionStuckRepro(ctx workflow.Co
 	if err != nil {
 		return err
 	}
-	err = workflow.SignalExternalWorkflow(ctx, childWE.ID, childWE.RunID, "unblock", nil).Get(ctx, nil)
+	workflow.SignalExternalWorkflow(ctx, childWE.ID, childWE.RunID, "unblock", nil)
 	if err != nil {
 		return err
 	}
