@@ -26,7 +26,6 @@ package activity
 
 import (
 	"context"
-	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
@@ -111,6 +110,6 @@ func IsActivity(ctx context.Context) bool {
 
 // GetClient returns a client that can be used to interact with the Temporal
 // service from an activity.
-func GetClient(ctx context.Context) client.Client {
+func GetClient(ctx context.Context) internal.Client {
 	return internal.GetClient(ctx)
 }
