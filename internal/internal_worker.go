@@ -113,6 +113,7 @@ type (
 		worker              *baseWorker
 		identity            string
 		stopC               chan struct{}
+		client              WorkflowClient
 	}
 
 	// sessionWorker wraps the code for hosting session creation, completion and
@@ -407,7 +408,7 @@ func (ww *workflowWorker) Stop() {
 	ww.worker.Stop()
 }
 
-func newSessionWorker(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
+func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
 	if params.Identity == "" {
 		params.Identity = getWorkerIdentity(params.TaskQueue)
 	}
@@ -420,7 +421,7 @@ func newSessionWorker(service workflowservice.WorkflowServiceClient, params work
 	creationTaskqueue := getCreationTaskqueue(params.TaskQueue)
 	params.UserContext = context.WithValue(params.UserContext, sessionEnvironmentContextKey, sessionEnvironment)
 	params.TaskQueue = sessionEnvironment.GetResourceSpecificTaskqueue()
-	activityWorker := newActivityWorker(service, params,
+	activityWorker := newActivityWorker(client, params,
 		&workerOverrides{slotSupplier: params.Tuner.GetSessionActivitySlotSupplier()}, env, nil)
 
 	params.MaxConcurrentActivityTaskQueuePollers = 1
@@ -429,7 +430,7 @@ func newSessionWorker(service workflowservice.WorkflowServiceClient, params work
 	// and recreation, we also limit it here for creation only
 	overrides := &workerOverrides{}
 	overrides.slotSupplier, _ = NewFixedSizeSlotSupplier(maxConcurrentSessionExecutionSize)
-	creationWorker := newActivityWorker(service, params, overrides, env, sessionEnvironment.GetTokenBucket())
+	creationWorker := newActivityWorker(client, params, overrides, env, sessionEnvironment.GetTokenBucket())
 
 	return &sessionWorker{
 		creationWorker: creationWorker,
@@ -457,12 +458,13 @@ func (sw *sessionWorker) Stop() {
 }
 
 func newActivityWorker(
-	service workflowservice.WorkflowServiceClient,
+	client *WorkflowClient,
 	params workerExecutionParameters,
 	overrides *workerOverrides,
 	env *registry,
 	sessionTokenBucket *sessionTokenBucket,
 ) *activityWorker {
+	service := client.workflowService
 	workerStopChannel := make(chan struct{}, 1)
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
 	ensureRequiredParams(&params)
@@ -472,7 +474,7 @@ func newActivityWorker(
 	if overrides != nil && overrides.activityTaskHandler != nil {
 		taskHandler = overrides.activityTaskHandler
 	} else {
-		taskHandler = newActivityTaskHandler(service, params, env)
+		taskHandler = newActivityTaskHandler(client, params, env)
 	}
 
 	poller := newActivityTaskPoller(taskHandler, service, params)
@@ -1789,13 +1791,13 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	// activity types.
 	var activityWorker *activityWorker
 	if !options.LocalActivityWorkerOnly {
-		activityWorker = newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
+		activityWorker = newActivityWorker(client, workerParams, nil, registry, nil)
 		workerParams.eagerActivityExecutor.activityWorker = activityWorker.worker
 	}
 
 	var sessionWorker *sessionWorker
 	if options.EnableSessionWorker && !options.LocalActivityWorkerOnly {
-		sessionWorker = newSessionWorker(client.workflowService, workerParams, registry, options.MaxConcurrentSessionExecutionSize)
+		sessionWorker = newSessionWorker(client, workerParams, registry, options.MaxConcurrentSessionExecutionSize)
 		registry.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
 			Name: sessionCreationActivityName,
 		})

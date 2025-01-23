@@ -267,8 +267,7 @@ func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 // GetClient returns a client that can be used to interact with the Temporal
 // service from an activity.
 func GetClient(ctx context.Context) Client {
-	activityEnv := getActivityEnv(ctx)
-	return activityEnv.serviceInvoker.GetClient(ClientOptions{Namespace: activityEnv.workflowNamespace})
+	return getActivityEnv(ctx).client
 }
 
 // ServiceInvoker abstracts calls to the Temporal service from an activity implementation.
@@ -293,6 +292,7 @@ func WithActivityTask(
 	workerStopChannel <-chan struct{},
 	contextPropagators []ContextPropagator,
 	interceptors []WorkerInterceptor,
+	client *WorkflowClient,
 ) (context.Context, error) {
 	scheduled := task.GetScheduledTime().AsTime()
 	started := task.GetStartedTime().AsTime()
@@ -334,6 +334,7 @@ func WithActivityTask(
 		workflowNamespace:  task.WorkflowNamespace,
 		workerStopChannel:  workerStopChannel,
 		contextPropagators: contextPropagators,
+		client:             client,
 	})
 }
 
