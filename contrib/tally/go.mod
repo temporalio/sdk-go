@@ -24,7 +24,7 @@ require (
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/twmb/murmur3 v1.1.5 // indirect
-	go.temporal.io/api v1.43.2 // indirect
+	go.temporal.io/api v1.43.3-0.20250118014819-5f3ffd776804 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	golang.org/x/exp v0.0.0-20231127185646-65229373498e // indirect
 	golang.org/x/net v0.28.0 // indirect
