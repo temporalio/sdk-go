@@ -285,6 +285,97 @@ func (o *workflowRunOperation[I, O]) Start(
 	}, nil
 }
 
+type WorkflowSignalWithStartOperationInput[W, S any] struct {
+	WorkflowOptions client.StartWorkflowOptions
+	WorkflowArg     W
+	SignalName      string
+	SignalArg       S
+}
+
+type WorkflowSignalWithStartOperationOptions[I, W, S, O any] struct {
+	Name     string
+	Workflow func(workflow.Context, W) (O, error)
+	GetInput func(context.Context, I, nexus.StartOperationOptions) (WorkflowSignalWithStartOperationInput[W, S], error)
+	Handler  func(context.Context, I, nexus.StartOperationOptions) (WorkflowHandle[O], error)
+}
+
+type workflowSignalWithStartOperation[I, W, S, O any] struct {
+	nexus.UnimplementedOperation[I, O]
+
+	options WorkflowSignalWithStartOperationOptions[I, W, S, O]
+}
+
+func NewWorkflowSignalWithStartOperation[I, W, S, O any](
+	name string,
+	workflow func(workflow.Context, W) (O, error),
+	getInput func(context.Context, I, nexus.StartOperationOptions) (WorkflowSignalWithStartOperationInput[W, S], error),
+) nexus.Operation[I, O] {
+	return &workflowSignalWithStartOperation[I, W, S, O]{
+		options: WorkflowSignalWithStartOperationOptions[I, W, S, O]{
+			Name:     name,
+			Workflow: workflow,
+			GetInput: getInput,
+		},
+	}
+}
+
+func (o *workflowSignalWithStartOperation[I, W, S, O]) Name() string {
+	return o.options.Name
+}
+
+func (o *workflowSignalWithStartOperation[I, W, S, O]) Start(
+	ctx context.Context,
+	opInput I,
+	options nexus.StartOperationOptions,
+) (nexus.HandlerStartOperationResult[O], error) {
+	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
+	if !ok {
+		return nil, nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
+	}
+
+	if o.options.Handler != nil {
+		handle, err := o.options.Handler(ctx, opInput, options)
+		if err != nil {
+			return nil, err
+		}
+		return &nexus.HandlerStartOperationResultAsync{
+			OperationID: handle.ID(),
+			Links:       []nexus.Link{handle.link()},
+		}, nil
+	}
+
+	input, err := o.options.GetInput(ctx, opInput, options)
+	if err != nil {
+		return nil, err
+	}
+
+	workflowType, err := prepareWorkflowStartOptions(nctx, options, &input.WorkflowOptions, o.options.Workflow)
+	if err != nil {
+		return nil, err
+	}
+
+	run, err := nctx.Client.SignalWithStartWorkflow(ctx, input.WorkflowOptions.ID, input.SignalName, input.SignalArg, input.WorkflowOptions, workflowType, input.WorkflowArg)
+	if err != nil {
+		return nil, err
+	}
+
+	link := ConvertLinkWorkflowEventToNexusLink(&common.Link_WorkflowEvent{
+		Namespace:  nctx.Namespace,
+		WorkflowId: run.GetID(),
+		RunId:      run.GetRunID(),
+		Reference: &common.Link_WorkflowEvent_EventRef{
+			EventRef: &common.Link_WorkflowEvent_EventReference{
+				EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+			},
+		},
+	})
+
+	return &nexus.HandlerStartOperationResultAsync{
+		OperationID: run.GetID(),
+		Links:       []nexus.Link{link},
+	}, nil
+}
+
 // WorkflowHandle is a readonly representation of a workflow run backing a Nexus operation.
 // It's created via the [ExecuteWorkflow] and [ExecuteUntypedWorkflow] methods.
 //
@@ -328,7 +419,6 @@ func (h workflowHandle[T]) link() nexus.Link {
 		},
 	}
 	return ConvertLinkWorkflowEventToNexusLink(link)
-
 }
 
 // ExecuteWorkflow starts a workflow run for a [WorkflowRunOperationOptions] Handler, linking the execution chain to a
@@ -364,6 +454,28 @@ func ExecuteUntypedWorkflow[R any](
 		return nil, nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
 	}
 
+	workflowType, err := prepareWorkflowStartOptions(nctx, nexusOptions, &startWorkflowOptions, workflow)
+	if err != nil {
+		return nil, err
+	}
+
+	run, err := nctx.Client.ExecuteWorkflow(ctx, startWorkflowOptions, workflowType, args...)
+	if err != nil {
+		return nil, err
+	}
+	return workflowHandle[R]{
+		namespace: nctx.Namespace,
+		id:        run.GetID(),
+		runID:     run.GetRunID(),
+	}, nil
+}
+
+func prepareWorkflowStartOptions(
+	nctx *internal.NexusOperationContext,
+	nexusOptions nexus.StartOperationOptions,
+	startWorkflowOptions *client.StartWorkflowOptions,
+	workflow any,
+) (string, error) {
 	workflowType, err := nctx.ResolveWorkflowName(workflow)
 	if err != nil {
 		panic(err)
@@ -373,11 +485,11 @@ func ExecuteUntypedWorkflow[R any](
 		startWorkflowOptions.TaskQueue = nctx.TaskQueue
 	}
 	if startWorkflowOptions.ID == "" {
-		return nil, internal.ErrMissingWorkflowID
+		return "", internal.ErrMissingWorkflowID
 	}
 
 	if nexusOptions.RequestID != "" {
-		internal.SetRequestIDOnStartWorkflowOptions(&startWorkflowOptions, nexusOptions.RequestID)
+		internal.SetRequestIDOnStartWorkflowOptions(startWorkflowOptions, nexusOptions.RequestID)
 	}
 
 	if nexusOptions.CallbackURL != "" {
@@ -387,7 +499,7 @@ func ExecuteUntypedWorkflow[R any](
 		if idHeader := nexusOptions.CallbackHeader.Get(nexus.HeaderOperationID); idHeader == "" {
 			nexusOptions.CallbackHeader.Set(nexus.HeaderOperationID, startWorkflowOptions.ID)
 		}
-		internal.SetCallbacksOnStartWorkflowOptions(&startWorkflowOptions, []*common.Callback{
+		internal.SetCallbacksOnStartWorkflowOptions(startWorkflowOptions, []*common.Callback{
 			{
 				Variant: &common.Callback_Nexus_{
 					Nexus: &common.Callback_Nexus{
@@ -401,19 +513,11 @@ func ExecuteUntypedWorkflow[R any](
 
 	links, err := convertNexusLinks(nexusOptions.Links, nctx.Log)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	internal.SetLinksOnStartWorkflowOptions(&startWorkflowOptions, links)
+	internal.SetLinksOnStartWorkflowOptions(startWorkflowOptions, links)
 
-	run, err := nctx.Client.ExecuteWorkflow(ctx, startWorkflowOptions, workflowType, args...)
-	if err != nil {
-		return nil, err
-	}
-	return workflowHandle[R]{
-		namespace: nctx.Namespace,
-		id:        run.GetID(),
-		runID:     run.GetRunID(),
-	}, nil
+	return workflowType, nil
 }
 
 func convertNexusLinks(nexusLinks []nexus.Link, log log.Logger) ([]*common.Link, error) {
