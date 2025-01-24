@@ -93,46 +93,6 @@ func NewSyncOperation[I any, O any](
 	}
 }
 
-// SignalWorkflowInput encapsulates the values required to send a signal to a workflow.
-//
-// NOTE: Experimental
-type SignalWorkflowInput struct {
-	// WorkflowID is the ID of the workflow which will receive the signal. Required.
-	WorkflowID string
-	// RunID is the run ID of the workflow which will receive the signal. Optional. If empty, the signal will be
-	// delivered to the running execution of the indicated workflow ID.
-	RunID string
-	// SignalName is the name of the signal. Required.
-	SignalName string
-	// Arg is the payload attached to the signal. Optional.
-	Arg any
-}
-
-// NewWorkflowSignalOperation is a helper for creating a synchronous nexus.Operation to deliver a signal, linking the
-// signal to a Nexus operation. Request ID from the Nexus options is propagated to the workflow to ensure idempotency.
-//
-// NOTE: Experimental
-func NewWorkflowSignalOperation[T any](
-	name string,
-	getSignalInput func(context.Context, T, nexus.StartOperationOptions) SignalWorkflowInput,
-) nexus.Operation[T, nexus.NoValue] {
-	return NewSyncOperation(name, func(ctx context.Context, c client.Client, in T, options nexus.StartOperationOptions) (nexus.NoValue, error) {
-		signalInput := getSignalInput(ctx, in, options)
-
-		if options.RequestID != "" {
-			ctx = context.WithValue(ctx, internal.NexusOperationRequestIDKey, options.RequestID)
-		}
-
-		links, err := convertNexusLinks(options.Links, GetLogger(ctx))
-		if err != nil {
-			return nil, err
-		}
-		ctx = context.WithValue(ctx, internal.NexusOperationLinksKey, links)
-
-		return nil, c.SignalWorkflow(ctx, signalInput.WorkflowID, signalInput.RunID, signalInput.SignalName, signalInput.Arg)
-	})
-}
-
 func (o *syncOperation[I, O]) Name() string {
 	return o.name
 }
@@ -147,6 +107,176 @@ func (o *syncOperation[I, O]) Start(ctx context.Context, input I, options nexus.
 		return nil, err
 	}
 	return &nexus.HandlerStartOperationResultSync[O]{Value: out}, err
+}
+
+// WorkflowSignalInput encapsulates the values required to send a signal to a workflow.
+//
+// NOTE: Experimental
+type WorkflowSignalInput struct {
+	// WorkflowID is the ID of the workflow which will receive the signal. Required.
+	WorkflowID string
+	// RunID is the run ID of the workflow which will receive the signal. Optional. If empty, the signal will be
+	// delivered to the running execution of the indicated workflow ID.
+	RunID string
+	// SignalName is the name of the signal. Required.
+	SignalName string
+	// Arg is the payload attached to the signal. Optional.
+	Arg any
+}
+
+type WorkflowSignalOperationOptions[I, O any] struct {
+	// Name of the operation.
+	Name string
+
+	// GetSignalInput is a function to map the operation input to the parameters required to send a signal to a workflow.
+	// Mutually exclusive with Handler. See WorkflowSignalInput for details.
+	GetSignalInput func(context.Context, I, nexus.StartOperationOptions) (WorkflowSignalInput, error)
+
+	// Workflow and GetStartOptions should be set to indicate SignalWithStartWorkflowExecution should be used. Optional.
+	// If not set, SignalWorkflow will be used.
+	// Workflow function to map this operation to. The operation input maps directly to workflow input.
+	// The workflow name is resolved as it would when using this function in client.ExecuteOperation.
+	// GetOptions must be provided when setting this option. Mutually exclusive with Handler.
+	Workflow func(workflow.Context, I) (O, error)
+	// Options for starting the workflow. Must be set if Workflow is set. Mutually exclusive with Handler.
+	// If the options returned include a workflow ID, it must match the workflow ID set in the signal input. That
+	// workflow ID must be deterministically generated from the input in order for the operation to be idempotent as
+	// the request to start the operation may be retried. TaskQueue is optional and defaults to the current worker's
+	// task queue.
+	GetStartOptions func(context.Context, I, nexus.StartOperationOptions) (client.StartWorkflowOptions, error)
+
+	// Handler for starting a workflow with a different input than the operation. Mutually exclusive with
+	// GetSignalInput, Workflow and GetStartOptions.
+	Handler func(context.Context, I, nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[O], error)
+}
+
+type workflowSignalOperation[I, O any] struct {
+	nexus.UnimplementedOperation[I, O]
+
+	options WorkflowSignalOperationOptions[I, O]
+}
+
+// NewWorkflowSignalOperation is a helper for creating a synchronous nexus.Operation to deliver a signal, linking the
+// signal to a Nexus operation. Request ID from the Nexus options is propagated to the workflow to ensure idempotency.
+// The operation is complete as soon as the signal is delivered and returns no value.
+//
+// NOTE: Experimental
+func NewWorkflowSignalOperation[I any](
+	name string,
+	getSignalInput func(context.Context, I, nexus.StartOperationOptions) (WorkflowSignalInput, error),
+) nexus.Operation[I, nexus.NoValue] {
+	return &workflowSignalOperation[I, nexus.NoValue]{
+		options: WorkflowSignalOperationOptions[I, nexus.NoValue]{
+			Name:           name,
+			GetSignalInput: getSignalInput,
+		},
+	}
+}
+
+// NewWorkflowSignalWithStartOperation is a helper for creating a synchronous nexus.Operation to deliver a signal to a
+// workflow. If the indicated workflow is not running, a new run will be started. The workflow execution chain and
+// signal will be linked to a Nexus operation. Request ID from the Nexus options is propagated to the workflow to
+// ensure idempotency. The operation is complete as soon as the signal is delivered and returns no value.
+//
+// NOTE: Experimental
+func NewWorkflowSignalWithStartOperation[I any](
+	name string,
+	getSignalInput func(context.Context, I, nexus.StartOperationOptions) (WorkflowSignalInput, error),
+	workflow func(workflow.Context, I) (nexus.NoValue, error),
+	getStartOptions func(context.Context, I, nexus.StartOperationOptions) (client.StartWorkflowOptions, error),
+) nexus.Operation[I, nexus.NoValue] {
+	return &workflowSignalOperation[I, nexus.NoValue]{
+		options: WorkflowSignalOperationOptions[I, nexus.NoValue]{
+			Name:            name,
+			GetSignalInput:  getSignalInput,
+			Workflow:        workflow,
+			GetStartOptions: getStartOptions,
+		},
+	}
+}
+
+// NewWorkflowSignalOperationWithOptions maps an operation to a SignalWorkflow or SignalWithStartWorkflow request with
+// the given options. Returns an error if invalid options are provided.
+//
+// NOTE: Experimental
+func NewWorkflowSignalOperationWithOptions[I, O any](options WorkflowSignalOperationOptions[I, O]) (nexus.Operation[I, O], error) {
+	if options.Name == "" {
+		return nil, errors.New("invalid options: Name is required")
+	}
+	if options.GetSignalInput == nil && options.Handler == nil {
+		return nil, errors.New("invalid options: either GetSignalInput or Handler are required")
+	}
+	if options.Workflow != nil && options.GetStartOptions == nil || options.Workflow == nil && options.GetStartOptions != nil {
+		return nil, errors.New("invalid options: must provide both Workflow and GetOptions")
+	}
+	if options.Handler != nil && options.GetSignalInput != nil {
+		return nil, errors.New("invalid options: GetSignalInput is mutually exclusive with Handler")
+	}
+	return &workflowSignalOperation[I, O]{
+		options: options,
+	}, nil
+}
+
+func (o *workflowSignalOperation[I, O]) Name() string {
+	return o.options.Name
+}
+
+func (o *workflowSignalOperation[I, O]) Start(
+	ctx context.Context,
+	input I,
+	options nexus.StartOperationOptions,
+) (nexus.HandlerStartOperationResult[O], error) {
+	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
+	if !ok {
+		return nil, nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
+	}
+
+	if o.options.Handler != nil {
+		return o.options.Handler(ctx, input, options)
+	}
+
+	signalInput, err := o.options.GetSignalInput(ctx, input, options)
+	if err != nil {
+		return nil, err
+	}
+
+	if o.options.Workflow != nil {
+		// Caller has indicated SignalWithStartWorkflow should be used.
+		startOptions, err := o.options.GetStartOptions(ctx, input, options)
+		if err != nil {
+			return nil, err
+		}
+
+		if startOptions.ID != "" && startOptions.ID != signalInput.WorkflowID {
+			return nil, nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, "signal target workflow ID: %s does not match start workflow options ID: %s", signalInput.WorkflowID, startOptions.ID)
+		}
+
+		err = SignalWithStartUntypedWorkflow(ctx, options, startOptions, signalInput.SignalName, signalInput.Arg, o.options.Workflow, input)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		// Caller has indicated SignalWorkflow should be used.
+		// RequestID and Links must be propagated through context because the SignalWorkflow interface does not support
+		// passing them directly. For SignalWithStart they are passed in the StartWorkflowOptions.
+		if options.RequestID != "" {
+			ctx = context.WithValue(ctx, internal.NexusOperationRequestIDKey, options.RequestID)
+		}
+
+		links, err := convertNexusLinks(options.Links, GetLogger(ctx))
+		if err != nil {
+			return nil, err
+		}
+		ctx = context.WithValue(ctx, internal.NexusOperationLinksKey, links)
+
+		err = nctx.Client.SignalWorkflow(ctx, signalInput.WorkflowID, signalInput.RunID, signalInput.SignalName, signalInput.Arg)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// TODO(pj): return links
+	return &nexus.HandlerStartOperationResultSync[nexus.NoValue]{}, nil
 }
 
 // WorkflowRunOperationOptions are options for [NewWorkflowRunOperationWithOptions].
@@ -193,7 +323,7 @@ func NewWorkflowRunOperation[I, O any](
 	}
 }
 
-// NewWorkflowRunOperation map an operation to a workflow run with the given options.
+// NewWorkflowRunOperationWithOptions maps an operation to a workflow run with the given options.
 // Returns an error if invalid options are provided.
 //
 // NOTE: Experimental
@@ -215,7 +345,7 @@ func NewWorkflowRunOperationWithOptions[I, O any](options WorkflowRunOperationOp
 	}, nil
 }
 
-// MustNewWorkflowRunOperation map an operation to a workflow run with the given options.
+// MustNewWorkflowRunOperationWithOptions maps an operation to a workflow run with the given options.
 // Panics if invalid options are provided.
 //
 // NOTE: Experimental
@@ -364,6 +494,51 @@ func ExecuteUntypedWorkflow[R any](
 		return nil, nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
 	}
 
+	workflowType, err := prepareStartWorkflowOptions(nctx, nexusOptions, &startWorkflowOptions, workflow)
+	if err != nil {
+		return nil, err
+	}
+
+	run, err := nctx.Client.ExecuteWorkflow(ctx, startWorkflowOptions, workflowType, args...)
+	if err != nil {
+		return nil, err
+	}
+	return workflowHandle[R]{
+		namespace: nctx.Namespace,
+		id:        run.GetID(),
+		runID:     run.GetRunID(),
+	}, nil
+}
+
+func SignalWithStartUntypedWorkflow(
+	ctx context.Context,
+	nexusOptions nexus.StartOperationOptions,
+	startWorkflowOptions client.StartWorkflowOptions,
+	signalName string,
+	signalArg any,
+	workflow any,
+	args ...any,
+) error {
+	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
+	if !ok {
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
+	}
+
+	workflowType, err := prepareStartWorkflowOptions(nctx, nexusOptions, &startWorkflowOptions, workflow)
+	if err != nil {
+		return err
+	}
+
+	_, err = nctx.Client.SignalWithStartWorkflow(ctx, startWorkflowOptions.ID, signalName, signalArg, startWorkflowOptions, workflowType, args...)
+	return err
+}
+
+func prepareStartWorkflowOptions(
+	nctx *internal.NexusOperationContext,
+	nexusOptions nexus.StartOperationOptions,
+	startWorkflowOptions *client.StartWorkflowOptions,
+	workflow any,
+) (string, error) {
 	workflowType, err := nctx.ResolveWorkflowName(workflow)
 	if err != nil {
 		panic(err)
@@ -373,11 +548,11 @@ func ExecuteUntypedWorkflow[R any](
 		startWorkflowOptions.TaskQueue = nctx.TaskQueue
 	}
 	if startWorkflowOptions.ID == "" {
-		return nil, internal.ErrMissingWorkflowID
+		return "", internal.ErrMissingWorkflowID
 	}
 
 	if nexusOptions.RequestID != "" {
-		internal.SetRequestIDOnStartWorkflowOptions(&startWorkflowOptions, nexusOptions.RequestID)
+		internal.SetRequestIDOnStartWorkflowOptions(startWorkflowOptions, nexusOptions.RequestID)
 	}
 
 	if nexusOptions.CallbackURL != "" {
@@ -387,7 +562,7 @@ func ExecuteUntypedWorkflow[R any](
 		if idHeader := nexusOptions.CallbackHeader.Get(nexus.HeaderOperationID); idHeader == "" {
 			nexusOptions.CallbackHeader.Set(nexus.HeaderOperationID, startWorkflowOptions.ID)
 		}
-		internal.SetCallbacksOnStartWorkflowOptions(&startWorkflowOptions, []*common.Callback{
+		internal.SetCallbacksOnStartWorkflowOptions(startWorkflowOptions, []*common.Callback{
 			{
 				Variant: &common.Callback_Nexus_{
 					Nexus: &common.Callback_Nexus{
@@ -401,19 +576,11 @@ func ExecuteUntypedWorkflow[R any](
 
 	links, err := convertNexusLinks(nexusOptions.Links, nctx.Log)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	internal.SetLinksOnStartWorkflowOptions(&startWorkflowOptions, links)
+	internal.SetLinksOnStartWorkflowOptions(startWorkflowOptions, links)
 
-	run, err := nctx.Client.ExecuteWorkflow(ctx, startWorkflowOptions, workflowType, args...)
-	if err != nil {
-		return nil, err
-	}
-	return workflowHandle[R]{
-		namespace: nctx.Namespace,
-		id:        run.GetID(),
-		runID:     run.GetRunID(),
-	}, nil
+	return workflowType, nil
 }
 
 func convertNexusLinks(nexusLinks []nexus.Link, log log.Logger) ([]*common.Link, error) {

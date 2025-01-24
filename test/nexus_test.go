@@ -560,8 +560,8 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 func TestSignalOperationFromWorkflow(t *testing.T) {
 	receiverID := "nexus-signal-receiver-" + uuid.NewString()
 
-	op := temporalnexus.NewWorkflowSignalOperation("signal-operation", func(_ context.Context, input string, _ nexus.StartOperationOptions) temporalnexus.SignalWorkflowInput {
-		return temporalnexus.SignalWorkflowInput{
+	op := temporalnexus.NewWorkflowSignalOperation("signal-operation", func(_ context.Context, input string, _ nexus.StartOperationOptions) temporalnexus.WorkflowSignalInput {
+		return temporalnexus.WorkflowSignalInput{
 			WorkflowID: receiverID,
 			SignalName: "nexus-signal",
 			Arg:        input,
