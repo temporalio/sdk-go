@@ -429,6 +429,10 @@ func (a *activityEnvironmentInterceptor) GetWorkerStopChannel(ctx context.Contex
 	return a.env.workerStopChannel
 }
 
+func (a *activityEnvironmentInterceptor) GetClient(ctx context.Context) Client {
+	return a.env.client
+}
+
 // Needed so this can properly be considered an inbound interceptor
 func (a *activityEnvironmentInterceptor) mustEmbedActivityInboundInterceptorBase() {}
 

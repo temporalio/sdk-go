@@ -267,7 +267,8 @@ func (s *WorkersTestSuite) TestActivityWorkerSlotSupplier() {
 		a := &greeterActivity{}
 		registry := newRegistry()
 		registry.addActivityWithLock(a.ActivityType().Name, a)
-		activityWorker := newActivityWorker(s.service, executionParameters, overrides, registry, nil)
+		client := WorkflowClient{workflowService: s.service}
+		activityWorker := newActivityWorker(&client, executionParameters, overrides, registry, nil)
 		_ = activityWorker.Start()
 		unblockPollCh <- struct{}{}
 		<-pollRespondedCh
@@ -342,7 +343,8 @@ func (s *WorkersTestSuite) TestErrorProneSlotSupplier() {
 	a := &greeterActivity{}
 	registry := newRegistry()
 	registry.addActivityWithLock(a.ActivityType().Name, a)
-	activityWorker := newActivityWorker(s.service, executionParameters, overrides, registry, nil)
+	client := WorkflowClient{workflowService: s.service}
+	activityWorker := newActivityWorker(&client, executionParameters, overrides, registry, nil)
 	_ = activityWorker.Start()
 	for i := 0; i < 25; i++ {
 		unblockPollCh <- struct{}{}
@@ -366,7 +368,8 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	a := &greeterActivity{}
 	registry := newRegistry()
 	registry.addActivityWithLock(a.ActivityType().Name, a)
-	activityWorker := newActivityWorker(s.service, executionParameters, overrides, registry, nil)
+	client := WorkflowClient{workflowService: s.service}
+	activityWorker := newActivityWorker(&client, executionParameters, overrides, registry, nil)
 	_ = activityWorker.Start()
 	activityWorker.Stop()
 }
@@ -420,7 +423,8 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	a := &greeterActivity{}
 	registry := newRegistry()
 	registry.addActivityWithLock(a.ActivityType().Name, a)
-	worker := newActivityWorker(s.service, executionParameters, overrides, registry, nil)
+	client := WorkflowClient{workflowService: s.service}
+	worker := newActivityWorker(&client, executionParameters, overrides, registry, nil)
 	_ = worker.Start()
 	_ = activityTaskHandler.BlockedOnExecuteCalled()
 	go worker.Stop()

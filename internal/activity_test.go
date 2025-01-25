@@ -251,10 +251,9 @@ func (s *activityTestSuite) TestIsActivity() {
 }
 
 func (s *activityTestSuite) TestGetClient() {
-	ctx, cancel := context.WithCancel(context.Background())
-	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, metrics.NopHandler, cancel,
-		1*time.Second, make(chan struct{}), s.namespace)
-	ctx, _ = newActivityContext(ctx, nil, &activityEnvironment{serviceInvoker: invoker})
+	ctx := context.Background()
+	workflowClient := WorkflowClient{}
+	ctx, _ = newActivityContext(ctx, nil, &activityEnvironment{client: &workflowClient})
 	client := GetClient(ctx)
 	s.NotNil(client)
 }

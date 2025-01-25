@@ -266,8 +266,10 @@ func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 
 // GetClient returns a client that can be used to interact with the Temporal
 // service from an activity.
+//
+// Exposed as: [go.temporal.io/sdk/activity.GetClient]
 func GetClient(ctx context.Context) Client {
-	return getActivityEnv(ctx).client
+	return getActivityOutboundInterceptor(ctx).GetClient(ctx)
 }
 
 // ServiceInvoker abstracts calls to the Temporal service from an activity implementation.

@@ -113,7 +113,6 @@ type (
 		worker              *baseWorker
 		identity            string
 		stopC               chan struct{}
-		client              WorkflowClient
 	}
 
 	// sessionWorker wraps the code for hosting session creation, completion and
@@ -464,7 +463,10 @@ func newActivityWorker(
 	env *registry,
 	sessionTokenBucket *sessionTokenBucket,
 ) *activityWorker {
-	service := client.workflowService
+	var service workflowservice.WorkflowServiceClient
+	if client != nil {
+		service = client.workflowService
+	}
 	workerStopChannel := make(chan struct{}, 1)
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
 	ensureRequiredParams(&params)

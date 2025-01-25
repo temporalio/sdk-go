@@ -2095,11 +2095,12 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 
 	mockCtrl := gomock.NewController(t.T())
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	client := WorkflowClient{workflowService: mockService}
 
 	for i, d := range deadlineTests {
 		a.d = d.actWaitDuration
 		wep := t.getTestWorkerExecutionParams()
-		activityHandler := newActivityTaskHandler(mockService, wep, registry)
+		activityHandler := newActivityTaskHandler(&client, wep, registry)
 		pats := &workflowservice.PollActivityTaskQueueResponse{
 			Attempt:   1,
 			TaskToken: []byte("token"),
@@ -2156,7 +2157,8 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 	wep.UserContext = ctx
 	wep.UserContextCancel = cancel
 	wep.WorkerStopChannel = workerStopCh
-	activityHandler := newActivityTaskHandler(mockService, wep, registry)
+	client := WorkflowClient{workflowService: mockService}
+	activityHandler := newActivityTaskHandler(&client, wep, registry)
 	now := time.Now()
 	pats := &workflowservice.PollActivityTaskQueueResponse{
 		Attempt:   1,
