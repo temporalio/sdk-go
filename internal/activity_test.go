@@ -249,3 +249,12 @@ func (s *activityTestSuite) TestIsActivity() {
 	ctx, _ = newActivityContext(context.Background(), nil, &activityEnvironment{workerStopChannel: ch})
 	s.True(IsActivity(ctx))
 }
+
+func (s *activityTestSuite) TestGetClient() {
+	ctx, cancel := context.WithCancel(context.Background())
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, metrics.NopHandler, cancel,
+		1*time.Second, make(chan struct{}), s.namespace)
+	ctx, _ = newActivityContext(ctx, nil, &activityEnvironment{serviceInvoker: invoker})
+	client := GetClient(ctx)
+	s.NotNil(client)
+}

@@ -3249,6 +3249,17 @@ func (w *Workflows) SelectorBlockSignal(ctx workflow.Context) (string, error) {
 	return hello, nil
 }
 
+func (w *Workflows) WorkflowClientFromActivity(ctx workflow.Context) error {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	var activities *Activities
+	var result string
+	err := workflow.ExecuteActivity(ctx, activities.ClientFromActivity).Get(ctx, &result)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -3386,6 +3397,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.Echo)
 	worker.RegisterWorkflow(w.RunsLocalAndNonlocalActsWithRetries)
 	worker.RegisterWorkflow(w.SelectorBlockSignal)
+	worker.RegisterWorkflow(w.WorkflowClientFromActivity)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {

@@ -146,6 +146,7 @@ type (
 		workflowNamespace  string
 		workerStopChannel  <-chan struct{}
 		contextPropagators []ContextPropagator
+		client             *WorkflowClient
 	}
 
 	// context.WithValue need this type instead of basic type string to avoid lint error
