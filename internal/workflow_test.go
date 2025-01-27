@@ -63,6 +63,7 @@ func TestGetChildWorkflowOptions(t *testing.T) {
 		VersioningIntent:  VersioningIntentDefault,
 		StaticSummary:     "child workflow summary",
 		StaticDetails:     "child workflow details",
+		Priority:          newPriority(),
 	}
 
 	// Require test options to have non-zero value for each field. This ensures that we update tests (and the
@@ -85,6 +86,7 @@ func TestGetActivityOptions(t *testing.T) {
 		DisableEagerExecution:  true,
 		VersioningIntent:       VersioningIntentDefault,
 		Summary:                "activity summary",
+		Priority:               newPriority(),
 	}
 
 	assertNonZero(t, opts)
@@ -138,6 +140,16 @@ func newTestRetryPolicy() *RetryPolicy {
 		MaximumInterval:        3,
 		MaximumAttempts:        4,
 		NonRetryableErrorTypes: []string{"my_error"},
+	}
+}
+
+func newPriority() *commonpb.Priority {
+	return &commonpb.Priority{
+		PriorityKey:       1,
+		FairnessKey:       "key",
+		FairnessWeight:    1,
+		FairnessRateLimit: 1,
+		OrderingKey:       1,
 	}
 }
 

@@ -740,11 +740,12 @@ func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflo
 
 // QueryWorkflow queries a given workflow execution
 // workflowID and queryType are required, other parameters are optional.
-//  - workflow ID of the workflow.
-//  - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
-//  - taskQueue can be default(empty string). If empty string then it will pick the taskQueue of the running execution of that workflow ID.
-//  - queryType is the type of the query.
-//  - args... are the optional query parameters.
+//   - workflow ID of the workflow.
+//   - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
+//   - taskQueue can be default(empty string). If empty string then it will pick the taskQueue of the running execution of that workflow ID.
+//   - queryType is the type of the query.
+//   - args... are the optional query parameters.
+//
 // The errors it can return:
 //   - serviceerror.InvalidArgument
 //   - serviceerror.Internal
@@ -943,8 +944,9 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 
 // DescribeTaskQueue returns information about the target taskqueue, right now this API returns the
 // pollers which polled this taskqueue in last few minutes.
-//  - taskqueue name of taskqueue
-//  - taskqueueType type of taskqueue, can be workflow or activity
+//   - taskqueue name of taskqueue
+//   - taskqueueType type of taskqueue, can be workflow or activity
+//
 // The errors it can return:
 //   - serviceerror.InvalidArgument
 //   - serviceerror.Internal
@@ -1684,6 +1686,7 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 		CompletionCallbacks:      in.Options.callbacks,
 		Links:                    in.Options.links,
 		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
+		Priority:                 in.Options.Priority,
 	}
 
 	startRequest.UserMetadata, err = buildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
@@ -2056,6 +2059,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		WorkflowIdConflictPolicy: in.Options.WorkflowIDConflictPolicy,
 		Header:                   header,
 		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
+		Priority:                 in.Options.Priority,
 	}
 
 	if in.Options.StartDelay != 0 {

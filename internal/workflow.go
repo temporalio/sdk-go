@@ -434,6 +434,10 @@ type (
 		//
 		// NOTE: Experimental
 		StaticDetails string
+
+		// Priority - Optional priority and fairness settings that control relative ordering of
+		// task processing when tasks are backed up in a queue.
+		Priority *commonpb.Priority
 	}
 
 	// RegisterWorkflowOptions consists of options for registering a workflow
@@ -1746,6 +1750,7 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.VersioningIntent = cwo.VersioningIntent
 	wfOptions.StaticSummary = cwo.StaticSummary
 	wfOptions.StaticDetails = cwo.StaticDetails
+	wfOptions.Priority = cwo.Priority
 
 	return ctx1
 }
@@ -1768,6 +1773,7 @@ func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 		WaitForCancellation:      opts.WaitForCancellation,
 		WorkflowIDReusePolicy:    opts.WorkflowIDReusePolicy,
 		RetryPolicy:              convertFromPBRetryPolicy(opts.RetryPolicy),
+		Priority:                 opts.Priority,
 		CronSchedule:             opts.CronSchedule,
 		Memo:                     opts.Memo,
 		SearchAttributes:         opts.SearchAttributes,
@@ -2338,6 +2344,7 @@ func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	eap.RetryPolicy = convertToPBRetryPolicy(options.RetryPolicy)
 	eap.DisableEagerExecution = options.DisableEagerExecution
 	eap.VersioningIntent = options.VersioningIntent
+	eap.Priority = options.Priority
 	eap.Summary = options.Summary
 	return ctx1
 }
@@ -2401,6 +2408,7 @@ func GetActivityOptions(ctx Context) ActivityOptions {
 		RetryPolicy:            convertFromPBRetryPolicy(opts.RetryPolicy),
 		DisableEagerExecution:  opts.DisableEagerExecution,
 		VersioningIntent:       opts.VersioningIntent,
+		Priority:               opts.Priority,
 		Summary:                opts.Summary,
 	}
 }

@@ -774,6 +774,10 @@ type (
 		// NOTE: Experimental
 		VersioningOverride VersioningOverride
 
+		// Priority - Optional priority and fairness settings that control relative ordering of
+		// task processing when tasks are backed up in a queue.
+		Priority *commonpb.Priority
+
 		// request ID. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
 		requestID string
 		// workflow completion callback. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].

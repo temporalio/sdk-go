@@ -218,6 +218,7 @@ type (
 		WorkflowIDConflictPolicy enumspb.WorkflowIdConflictPolicy
 		DataConverter            converter.DataConverter
 		RetryPolicy              *commonpb.RetryPolicy
+		Priority                 *commonpb.Priority
 		CronSchedule             string
 		ContextPropagators       []ContextPropagator
 		Memo                     map[string]interface{}

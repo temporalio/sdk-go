@@ -74,6 +74,7 @@ type (
 		DisableEagerExecution  bool
 		VersioningIntent       VersioningIntent
 		Summary                string
+		Priority               *commonpb.Priority
 	}
 
 	// ExecuteLocalActivityOptions options for executing a local activity

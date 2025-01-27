@@ -661,6 +661,7 @@ func convertToPBScheduleAction(
 					Header:                   header,
 					UserMetadata:             userMetadata,
 					VersioningOverride:       versioningOverrideToProto(action.VersioningOverride),
+					Priority:                 action.Priority,
 				},
 			},
 		}, nil
