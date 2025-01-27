@@ -2,7 +2,7 @@
 name: Bug report
 about: Report a bug or unexpected behavior with the Temporal Go SDK
 title: ''
-labels: potential-bug
+labels: bug
 assignees: ''
 
 ---

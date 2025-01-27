@@ -89,7 +89,7 @@ func (b *builder) run() error {
 
 func (b *builder) check() error {
 	// Run go vet
-	if err := b.runCmd(b.cmdFromRoot("go", "vet", "-tags", "protolegacy", "./...")); err != nil {
+	if err := b.runCmd(b.cmdFromRoot("go", "vet", "./...")); err != nil {
 		return fmt.Errorf("go vet failed: %w", err)
 	}
 	// Run errcheck
@@ -175,7 +175,7 @@ func (b *builder) integrationTest() error {
 	}
 
 	// Run integration test
-	args := []string{"go", "test", "-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "10m"}
+	args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "10m"}
 	if *runFlag != "" {
 		args = append(args, "-run", *runFlag)
 	}
@@ -271,7 +271,7 @@ func (b *builder) unitTest() error {
 	log.Printf("Running unit tests in dirs: %v", testDirs)
 	for _, testDir := range testDirs {
 		// Run unit test
-		args := []string{"go", "test", "-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "15m"}
+		args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "15m"}
 		if *runFlag != "" {
 			args = append(args, "-run", *runFlag)
 		}
