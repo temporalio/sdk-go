@@ -109,7 +109,8 @@ func IsActivity(ctx context.Context) bool {
 }
 
 // GetClient returns a client that can be used to interact with the Temporal
-// service from an activity.
+// service from an activity. Return type internal.Client is the same underlying
+// type as client.Client.
 func GetClient(ctx context.Context) internal.Client {
 	return internal.GetClient(ctx)
 }
