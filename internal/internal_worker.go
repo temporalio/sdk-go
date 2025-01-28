@@ -241,8 +241,8 @@ type (
 var debugMode = os.Getenv("TEMPORAL_DEBUG") != ""
 
 // newWorkflowWorker returns an instance of the workflow worker.
-func newWorkflowWorker(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, ppMgr pressurePointMgr, registry *registry) *workflowWorker {
-	return newWorkflowWorkerInternal(service, params, ppMgr, nil, registry)
+func newWorkflowWorker(client *WorkflowClient, params workerExecutionParameters, ppMgr pressurePointMgr, registry *registry) *workflowWorker {
+	return newWorkflowWorkerInternal(client, params, ppMgr, nil, registry)
 }
 
 func ensureRequiredParams(params *workerExecutionParameters) {
@@ -303,7 +303,7 @@ func verifyNamespaceExist(
 	return err
 }
 
-func newWorkflowWorkerInternal(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, ppMgr pressurePointMgr, overrides *workerOverrides, registry *registry) *workflowWorker {
+func newWorkflowWorkerInternal(client *WorkflowClient, params workerExecutionParameters, ppMgr pressurePointMgr, overrides *workerOverrides, registry *registry) *workflowWorker {
 	workerStopChannel := make(chan struct{})
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
 	// Get a workflow task handler.
@@ -314,18 +314,22 @@ func newWorkflowWorkerInternal(service workflowservice.WorkflowServiceClient, pa
 	} else {
 		taskHandler = newWorkflowTaskHandler(params, ppMgr, registry)
 	}
-	return newWorkflowTaskWorkerInternal(taskHandler, taskHandler, service, params, workerStopChannel, registry.interceptors)
+	return newWorkflowTaskWorkerInternal(taskHandler, taskHandler, client, params, workerStopChannel, registry.interceptors)
 }
 
 func newWorkflowTaskWorkerInternal(
 	taskHandler WorkflowTaskHandler,
 	contextManager WorkflowContextManager,
-	service workflowservice.WorkflowServiceClient,
+	client *WorkflowClient,
 	params workerExecutionParameters,
 	stopC chan struct{},
 	interceptors []WorkerInterceptor,
 ) *workflowWorker {
 	ensureRequiredParams(&params)
+	var service workflowservice.WorkflowServiceClient
+	if client != nil {
+		service = client.workflowService
+	}
 	poller := newWorkflowTaskPoller(taskHandler, contextManager, service, params)
 	worker := newBaseWorker(baseWorkerOptions{
 		pollerCount:      params.MaxConcurrentWorkflowTaskQueuePollers,
@@ -355,7 +359,7 @@ func newWorkflowTaskWorkerInternal(
 	}
 
 	// 2) local activity task poller will poll from laTunnel, and result will be pushed to laTunnel
-	localActivityTaskPoller := newLocalActivityPoller(params, laTunnel, interceptors)
+	localActivityTaskPoller := newLocalActivityPoller(params, laTunnel, interceptors, client)
 	localActivityWorker := newBaseWorker(baseWorkerOptions{
 		pollerCount:      1, // 1 poller (from local channel) is enough for local activity
 		slotSupplier:     params.Tuner.GetLocalActivitySlotSupplier(),
@@ -1784,9 +1788,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	if !options.DisableWorkflowWorker {
 		testTags := getTestTags(options.BackgroundActivityContext)
 		if len(testTags) > 0 {
-			workflowWorker = newWorkflowWorkerWithPressurePoints(client.workflowService, workerParams, testTags, registry)
+			workflowWorker = newWorkflowWorkerWithPressurePoints(client, workerParams, testTags, registry)
 		} else {
-			workflowWorker = newWorkflowWorker(client.workflowService, workerParams, nil, registry)
+			workflowWorker = newWorkflowWorker(client, workerParams, nil, registry)
 		}
 	}
 

@@ -70,7 +70,7 @@ type (
 	TaskHandlersTestSuite struct {
 		suite.Suite
 		logger    log.Logger
-		service   *workflowservicemock.MockWorkflowServiceClient
+		client    *WorkflowClient
 		registry  *registry
 		namespace string
 	}
@@ -877,7 +877,7 @@ func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
 	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 	// will fail as it can't find laTunnel in newWorkerCache().
-	newWorkflowTaskWorkerInternal(taskHandler, taskHandler, t.service, params, make(chan struct{}), nil)
+	newWorkflowTaskWorkerInternal(taskHandler, taskHandler, t.client, params, make(chan struct{}), nil)
 	wftask := workflowTask{task: task}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -911,7 +911,7 @@ func (t *TaskHandlersTestSuite) TestWithMissingHistoryEvents() {
 			task := createWorkflowTask(testEvents, startEventID, "HelloWorld_Workflow")
 			// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 			// will fail as it can't find laTunnel in newWorkerCache().
-			newWorkflowTaskWorkerInternal(taskHandler, taskHandler, t.service, params, make(chan struct{}), nil)
+			newWorkflowTaskWorkerInternal(taskHandler, taskHandler, t.client, params, make(chan struct{}), nil)
 			wftask := workflowTask{task: task}
 			wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 			request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -965,7 +965,7 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 		task.StartedEventId = tc.startedEventID
 		// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 		// will fail as it can't find laTunnel in newWorkerCache().
-		newWorkflowTaskWorkerInternal(taskHandler, taskHandler, t.service, params, make(chan struct{}), nil)
+		newWorkflowTaskWorkerInternal(taskHandler, taskHandler, t.client, params, make(chan struct{}), nil)
 		wftask := workflowTask{task: task}
 		wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 		request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -1077,7 +1077,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	task = createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 	// will fail as it can't find laTunnel in newWorkerCache().
-	newWorkflowTaskWorkerInternal(taskHandler, taskHandler, t.service, params, stopC, nil)
+	newWorkflowTaskWorkerInternal(taskHandler, taskHandler, t.client, params, stopC, nil)
 	wftask = workflowTask{task: task}
 	wfctx = t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err = taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -1241,7 +1241,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_InvalidQueryTask() {
 	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	task.Query = &querypb.WorkflowQuery{}
 	task.Queries = map[string]*querypb.WorkflowQuery{"query_id": {}}
-	newWorkflowTaskWorkerInternal(taskHandler, taskHandler, t.service, params, make(chan struct{}), nil)
+	newWorkflowTaskWorkerInternal(taskHandler, taskHandler, t.client, params, make(chan struct{}), nil)
 	// query and queries are both specified so this is an invalid task
 	wftask := workflowTask{task: task}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
@@ -1845,7 +1845,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 	t.True(ok)
 	taskHandlerImpl.laTunnel = laTunnel
 
-	laTaskPoller := newLocalActivityPoller(params, laTunnel, nil)
+	laTaskPoller := newLocalActivityPoller(params, laTunnel, nil, nil)
 	go func() {
 		for {
 			task, _ := laTaskPoller.PollTask()
@@ -1927,7 +1927,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 	t.True(ok)
 	taskHandlerImpl.laTunnel = laTunnel
 
-	laTaskPoller := newLocalActivityPoller(params, laTunnel, nil)
+	laTaskPoller := newLocalActivityPoller(params, laTunnel, nil, nil)
 	doneCh := make(chan struct{})
 	go func() {
 		// laTaskPoller needs to poll the local activity and process it

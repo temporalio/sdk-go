@@ -3252,12 +3252,13 @@ func (w *Workflows) SelectorBlockSignal(ctx workflow.Context) (string, error) {
 func (w *Workflows) WorkflowClientFromActivity(ctx workflow.Context) error {
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 	var activities *Activities
-	var result string
-	err := workflow.ExecuteActivity(ctx, activities.ClientFromActivity).Get(ctx, &result)
+	err := workflow.ExecuteActivity(ctx, activities.ClientFromActivity).Get(ctx, nil)
 	if err != nil {
 		return err
 	}
-	return nil
+
+	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
+	return workflow.ExecuteLocalActivity(ctx, activities.ClientFromActivity).Get(ctx, nil)
 }
 
 func (w *Workflows) register(worker worker.Worker) {

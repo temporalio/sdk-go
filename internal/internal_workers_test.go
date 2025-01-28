@@ -112,7 +112,8 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 		UserContextCancel:                     cancel,
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
-	workflowWorker := newWorkflowWorkerInternal(s.service, executionParameters, nil, overrides, newRegistry())
+	client := &WorkflowClient{workflowService: s.service}
+	workflowWorker := newWorkflowWorkerInternal(client, executionParameters, nil, overrides, newRegistry())
 	_ = workflowWorker.Start()
 	workflowWorker.Stop()
 
@@ -208,7 +209,8 @@ func (s *WorkersTestSuite) TestWorkflowWorkerSlotSupplier() {
 			WorkerStopTimeout:                     time.Second,
 		}
 		overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
-		workflowWorker := newWorkflowWorkerInternal(s.service, executionParameters, nil, overrides, newRegistry())
+		client := &WorkflowClient{workflowService: s.service}
+		workflowWorker := newWorkflowWorkerInternal(client, executionParameters, nil, overrides, newRegistry())
 		_ = workflowWorker.Start()
 		unblockPollCh <- struct{}{}
 		<-pollRespondedCh
@@ -450,7 +452,8 @@ func (s *WorkersTestSuite) TestPollWorkflowTaskQueue_InternalServiceError() {
 		Logger:                                ilog.NewNopLogger(),
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
-	workflowWorker := newWorkflowWorkerInternal(s.service, executionParameters, nil, overrides, newRegistry())
+	client := &WorkflowClient{workflowService: s.service}
+	workflowWorker := newWorkflowWorkerInternal(client, executionParameters, nil, overrides, newRegistry())
 	_ = workflowWorker.Start()
 	workflowWorker.Stop()
 }

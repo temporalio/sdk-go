@@ -348,6 +348,7 @@ func WithLocalActivityTask(
 	metricsHandler metrics.Handler,
 	dataConverter converter.DataConverter,
 	interceptors []WorkerInterceptor,
+	client *WorkflowClient,
 ) (context.Context, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -393,6 +394,7 @@ func WithLocalActivityTask(
 		startedTime:       startedTime,
 		dataConverter:     dataConverter,
 		attempt:           task.attempt,
+		client:            client,
 	})
 }
 
