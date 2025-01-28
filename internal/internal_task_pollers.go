@@ -247,9 +247,9 @@ func (bp *basePoller) stopping() bool {
 }
 
 // doPoll runs the given pollFunc in a separate go routine. Returns when any of the conditions are met:
-//  - poll succeeds
-//  - poll fails
-//  - worker is stopping
+//   - poll succeeds
+//   - poll fails
+//   - worker is stopping
 func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (taskForWorker, error)) (taskForWorker, error) {
 	if bp.stopping() {
 		return nil, errStop
@@ -710,8 +710,9 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 		if time.Now().After(info.deadline) {
 			// If local activity takes longer than expected timeout, the context would already be DeadlineExceeded and
 			// the result would be discarded. Print a warning in this case.
-			lath.logger.Warn("LocalActivity takes too long to complete.",
+			lath.logger.Warn("LocalActivity completed after activity deadline.",
 				"LocalActivityID", task.activityID,
+				"ActivityDeadline", info.deadline,
 				"LocalActivityType", activityType,
 				"ScheduleToCloseTimeout", task.params.ScheduleToCloseTimeout,
 				"StartToCloseTimeout", task.params.StartToCloseTimeout,

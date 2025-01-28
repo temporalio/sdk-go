@@ -7,7 +7,7 @@ toolchain go1.21.1
 require (
 	github.com/golang/mock v1.6.0
 	github.com/google/uuid v1.6.0
-	github.com/nexus-rpc/sdk-go v0.1.0
+	github.com/nexus-rpc/sdk-go v0.1.1
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/pborman/uuid v1.2.1
 	github.com/stretchr/testify v1.10.0
@@ -15,7 +15,7 @@ require (
 	go.opentelemetry.io/otel v1.28.0
 	go.opentelemetry.io/otel/sdk v1.28.0
 	go.opentelemetry.io/otel/trace v1.28.0
-	go.temporal.io/api v1.43.0
+	go.temporal.io/api v1.43.2
 	go.temporal.io/sdk v1.29.1
 	go.temporal.io/sdk/contrib/opentelemetry v0.1.0
 	go.temporal.io/sdk/contrib/opentracing v0.0.0-00010101000000-000000000000

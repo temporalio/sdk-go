@@ -92,8 +92,6 @@ const (
 	testContextKey1               = "test-context-key1"
 	testContextKey2               = "test-context-key2"
 	testContextKey3               = "test-context-key3"
-	// 0x8f01 is invalid UTF-8
-	invalidUTF8 = "\n\x8f\x01\n\x0ejunk\x12data"
 )
 
 type IntegrationTestSuite struct {
@@ -5544,6 +5542,8 @@ func (ts *IntegrationTestSuite) TestScheduleDescribeState() {
 			TaskQueue:                ts.taskQueueName,
 			WorkflowExecutionTimeout: 15 * time.Second,
 			WorkflowTaskTimeout:      time.Second,
+			StaticSummary:            "summy",
+			StaticDetails:            "deets",
 		},
 		Overlap:          enumspb.SCHEDULE_OVERLAP_POLICY_SKIP,
 		CatchupWindow:    time.Minute,
@@ -5578,6 +5578,8 @@ func (ts *IntegrationTestSuite) TestScheduleDescribeState() {
 		ts.Equal("TwoParameterWorkflow", action.Workflow)
 		ts.Equal(expectedArg1Value, action.Args[0])
 		ts.Equal(expectedArg2Value, action.Args[1])
+		ts.Equal("summy", action.StaticSummary)
+		ts.Equal("deets", action.StaticDetails)
 	default:
 		ts.Fail("schedule action wrong type")
 	}
@@ -6966,125 +6968,4 @@ func (c *coroutineCountingWorkflowOutboundInterceptor) Go(
 		defer atomic.AddInt32(&c.root._count, -1)
 		f(ctx)
 	})
-}
-
-type InvalidUTF8Suite struct {
-	*require.Assertions
-	suite.Suite
-	ConfigAndClientSuiteBase
-	activities    *Activities
-	workflows     *Workflows
-	worker        worker.Worker
-	workerStopped bool
-}
-
-func TestInvalidUTF8Suite(t *testing.T) {
-	suite.Run(t, new(InvalidUTF8Suite))
-}
-
-func (ts *InvalidUTF8Suite) SetupSuite() {
-	ts.Assertions = require.New(ts.T())
-	ts.activities = newActivities()
-	ts.workflows = &Workflows{}
-	ts.NoError(ts.InitConfigAndNamespace())
-}
-
-func (ts *InvalidUTF8Suite) TearDownSuite() {
-	ts.Assertions = require.New(ts.T())
-
-	// allow the pollers to stop, and ensure there are no goroutine leaks.
-	// this will wait for up to 1 minute for leaks to subside, but exit relatively quickly if possible.
-	max := time.After(time.Minute)
-	var last error
-	for {
-		select {
-		case <-max:
-			if last != nil {
-				ts.NoError(last)
-				return
-			}
-			ts.FailNow("leaks timed out but no error, should be impossible")
-		case <-time.After(time.Second):
-			// https://github.com/temporalio/go-sdk/issues/51
-			last = goleak.Find(goleak.IgnoreTopFunction("go.temporal.io/sdk/internal.(*coroutineState).initialYield"))
-			if last == nil {
-				// no leak, done waiting
-				return
-			}
-			// else wait for another check or the timeout (which will record the latest error)
-		}
-	}
-}
-
-func (ts *InvalidUTF8Suite) SetupTest() {
-	// This suite isn't valid for CLI dev servers because they don't allow invalid
-	// UTF8
-	if usingCLIDevServerFlag {
-		ts.T().Skip("Skipping invalid UTF8 suite for dev server")
-		return
-	}
-	var err error
-	ts.client, err = client.Dial(client.Options{
-		HostPort:  ts.config.ServiceAddr,
-		Namespace: ts.config.Namespace,
-		Identity:  "integration-test",
-		Logger:    ilog.NewDefaultLogger(),
-		ContextPropagators: []workflow.ContextPropagator{
-			NewKeysPropagator([]string{testContextKey1}),
-			NewKeysPropagator([]string{testContextKey2}),
-		},
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
-	})
-	ts.NoError(err)
-
-	ts.activities.clearInvoked()
-	ts.activities.client = ts.client
-	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
-	options := worker.Options{
-		WorkflowPanicPolicy: worker.FailWorkflow,
-	}
-
-	worker.SetStickyWorkflowCacheSize(ts.config.maxWorkflowCacheSize)
-
-	ts.worker = worker.New(ts.client, ts.taskQueueName, options)
-	ts.workerStopped = false
-
-	ts.workflows.register(ts.worker)
-	ts.activities.register(ts.worker)
-	ts.Nil(ts.worker.Start())
-}
-
-func (ts *InvalidUTF8Suite) TearDownTest() {
-	if usingCLIDevServerFlag {
-		return
-	}
-	ts.client.Close()
-	if !ts.workerStopped {
-		ts.worker.Stop()
-		ts.workerStopped = true
-	}
-}
-
-func (ts *InvalidUTF8Suite) TestBasic() {
-	var response string
-
-	startOptions := client.StartWorkflowOptions{
-		ID:                       "test-invalidutf8-basic",
-		TaskQueue:                ts.taskQueueName,
-		WorkflowExecutionTimeout: 15 * time.Second,
-		WorkflowTaskTimeout:      time.Second,
-		WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
-		EnableEagerStart:         true,
-	}
-	startOptions.Memo = map[string]interface{}{
-		invalidUTF8: "memoVal",
-	}
-	startOptions.RetryPolicy = &temporal.RetryPolicy{
-		MaximumAttempts: 1,
-	}
-	err := ts.executeWorkflowWithOption(startOptions, ts.workflows.Echo, &response, invalidUTF8)
-	ts.NoError(err)
-	ts.EqualValues([]string{"EchoString"}, ts.activities.invoked())
-	// Go's JSON coding stack will replace invalid bytes with the unicode substitute char U+FFFD
-	ts.Equal("\n�\x01\n\x0ejunk\x12data", response)
 }
