@@ -73,7 +73,7 @@ func GetMetricsHandler(ctx context.Context) metrics.Handler {
 // can check error with TimeoutType()/Details().
 //
 // Note: If using asynchronous activity completion,
-// after returning [ErrResultPending] users should heartbeat with [client.Client.RecordActivityHeartbeat]
+// after returning [ErrResultPending] users should heartbeat with [github.com/temporalio/sdk-go/client.Client.RecordActivityHeartbeat]
 func RecordHeartbeat(ctx context.Context, details ...interface{}) {
 	internal.RecordActivityHeartbeat(ctx, details...)
 }

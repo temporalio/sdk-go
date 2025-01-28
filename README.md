@@ -80,7 +80,7 @@ If you're unsure then you should specify it anyways as there's no harm in doing 
 ### Incompatible proto/json encoding
 
 Proto enums will, when formatted to JSON, now be in SCREAMING_SNAKE_CASE rather than PascalCase.
-    * If trying to deserialize old JSON with PascalCase to proto use [go.temporal.io/api/temporalproto]
+    * If trying to deserialize old JSON with PascalCase to proto use [go.temporal.io/api/temporalproto](https://pkg.go.dev/go.temporal.io/api/temporalproto).
 
 If users used Temporal proto types in their Workflows, such as for activity output, users may need to modify the default data converter to handle these payloads.
 ``` go
