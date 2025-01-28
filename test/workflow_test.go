@@ -3296,7 +3296,6 @@ func (w *Workflows) CommandsFuzz(ctx workflow.Context) error {
 					Type:  k.GetValueType(),
 				}
 			}
-			workflow.GetLogger(ctx).Info(fmt.Sprintf("result %+v\n", result))
 		case 4:
 			// UpsertMemo
 			if err := workflow.UpsertMemo(ctx, map[string]interface{}{"TestMemo": "set"}); err != nil {
@@ -3315,7 +3314,6 @@ func (w *Workflows) CommandsFuzz(ctx workflow.Context) error {
 				return err
 
 			}
-			time.Sleep(time.Millisecond * 500)
 			err = workflow.SignalExternalWorkflow(ctx, childWE.ID, childWE.RunID, "unblock", nil).Get(ctx, nil)
 			if err != nil {
 				return err
