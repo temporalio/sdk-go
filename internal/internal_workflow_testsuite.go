@@ -2127,7 +2127,9 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskQueue str
 		return &activityExecutorWrapper{activityExecutor: ae, env: env}
 	}
 
-	taskHandler := newActivityTaskHandlerWithCustomProvider(env.service, params, registry, getActivity)
+	client := WorkflowClient{workflowService: env.service}
+
+	taskHandler := newActivityTaskHandlerWithCustomProvider(&client, params, registry, getActivity)
 	return taskHandler
 }
 

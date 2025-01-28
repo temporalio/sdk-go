@@ -232,7 +232,8 @@ func (s *InterfacesTestSuite) TestInterface() {
 
 	registry := newRegistry()
 	// Launch worker.
-	workflowWorker := newWorkflowWorker(s.service, workflowExecutionParameters, nil, registry)
+	client := &WorkflowClient{workflowService: s.service}
+	workflowWorker := newWorkflowWorker(client, workflowExecutionParameters, nil, registry)
 	defer workflowWorker.Stop()
 	s.NoError(workflowWorker.Start())
 
@@ -246,7 +247,7 @@ func (s *InterfacesTestSuite) TestInterface() {
 	}
 
 	// Register activity instances and launch the worker.
-	activityWorker := newActivityWorker(s.service, activityExecutionParameters, nil, registry, nil)
+	activityWorker := newActivityWorker(client, activityExecutionParameters, nil, registry, nil)
 	defer activityWorker.Stop()
 	s.NoError(activityWorker.Start())
 

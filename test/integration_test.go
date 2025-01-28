@@ -6635,6 +6635,11 @@ func (ts *IntegrationTestSuite) TestAwaitWithOptionsTimeout() {
 	ts.Equal("await-timer", str)
 }
 
+func (ts *IntegrationTestSuite) TestClientFromActivity() {
+	err := ts.executeWorkflow("client-from-activity", ts.workflows.WorkflowClientFromActivity, nil)
+	ts.NoError(err)
+}
+
 // executeWorkflow executes a given workflow and waits for the result
 func (ts *IntegrationTestSuite) executeWorkflow(
 	wfID string, wfFunc interface{}, retValPtr interface{}, args ...interface{},

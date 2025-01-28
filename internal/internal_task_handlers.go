@@ -158,7 +158,7 @@ type (
 	activityTaskHandlerImpl struct {
 		taskQueueName                    string
 		identity                         string
-		service                          workflowservice.WorkflowServiceClient
+		client                           *WorkflowClient
 		metricsHandler                   metrics.Handler
 		logger                           log.Logger
 		userContext                      context.Context
@@ -1949,15 +1949,15 @@ func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *historypb.Hi
 }
 
 func newActivityTaskHandler(
-	service workflowservice.WorkflowServiceClient,
+	client *WorkflowClient,
 	params workerExecutionParameters,
 	registry *registry,
 ) ActivityTaskHandler {
-	return newActivityTaskHandlerWithCustomProvider(service, params, registry, nil)
+	return newActivityTaskHandlerWithCustomProvider(client, params, registry, nil)
 }
 
 func newActivityTaskHandlerWithCustomProvider(
-	service workflowservice.WorkflowServiceClient,
+	client *WorkflowClient,
 	params workerExecutionParameters,
 	registry *registry,
 	activityProvider activityProvider,
@@ -1965,7 +1965,7 @@ func newActivityTaskHandlerWithCustomProvider(
 	return &activityTaskHandlerImpl{
 		taskQueueName:                    params.TaskQueue,
 		identity:                         params.Identity,
-		service:                          service,
+		client:                           client,
 		logger:                           params.Logger,
 		metricsHandler:                   params.MetricsHandler,
 		userContext:                      params.UserContext,
@@ -2168,14 +2168,14 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 
 	heartbeatThrottleInterval := ath.getHeartbeatThrottleInterval(t.GetHeartbeatTimeout().AsDuration())
 	invoker := newServiceInvoker(
-		t.TaskToken, ath.identity, ath.service, ath.metricsHandler, cancel, heartbeatThrottleInterval,
+		t.TaskToken, ath.identity, ath.client.workflowService, ath.metricsHandler, cancel, heartbeatThrottleInterval,
 		ath.workerStopCh, ath.namespace)
 
 	workflowType := t.WorkflowType.GetName()
 	activityType := t.ActivityType.GetName()
 	metricsHandler := ath.metricsHandler.WithTags(metrics.ActivityTags(workflowType, activityType, ath.taskQueueName))
 	ctx, err := WithActivityTask(canCtx, t, taskQueue, invoker, ath.logger, metricsHandler,
-		ath.dataConverter, ath.workerStopCh, ath.contextPropagators, ath.registry.interceptors)
+		ath.dataConverter, ath.workerStopCh, ath.contextPropagators, ath.registry.interceptors, ath.client)
 	if err != nil {
 		return nil, err
 	}

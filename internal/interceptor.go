@@ -111,6 +111,9 @@ type ActivityOutboundInterceptor interface {
 	// GetWorkerStopChannel intercepts activity.GetWorkerStopChannel.
 	GetWorkerStopChannel(ctx context.Context) <-chan struct{}
 
+	// GetClient intercepts activity.GetClient.
+	GetClient(ctx context.Context) Client
+
 	mustEmbedActivityOutboundInterceptorBase()
 }
 
