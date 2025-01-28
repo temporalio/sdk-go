@@ -314,7 +314,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 	require.NoError(s.T(), err)
 }
 
-func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_IncompleteWorkflowTask() {
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_IncompleteWorkflowExecution() {
 	taskQueue := "taskQueue1"
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
