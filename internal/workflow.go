@@ -1773,7 +1773,7 @@ func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 		WaitForCancellation:      opts.WaitForCancellation,
 		WorkflowIDReusePolicy:    opts.WorkflowIDReusePolicy,
 		RetryPolicy:              convertFromPBRetryPolicy(opts.RetryPolicy),
-		Priority:                 convertFromPBPolicy(opts.Priority),
+		Priority:                 convertFromPBPriority(opts.Priority),
 		CronSchedule:             opts.CronSchedule,
 		Memo:                     opts.Memo,
 		SearchAttributes:         opts.SearchAttributes,
@@ -2408,7 +2408,7 @@ func GetActivityOptions(ctx Context) ActivityOptions {
 		RetryPolicy:            convertFromPBRetryPolicy(opts.RetryPolicy),
 		DisableEagerExecution:  opts.DisableEagerExecution,
 		VersioningIntent:       opts.VersioningIntent,
-		Priority:               convertFromPBPolicy(opts.Priority),
+		Priority:               convertFromPBPriority(opts.Priority),
 		Summary:                opts.Summary,
 	}
 }
@@ -2527,25 +2527,17 @@ func convertToPBPriority(priority *Priority) *commonpb.Priority {
 	}
 
 	return &commonpb.Priority{
-		PriorityKey:       priority.PriorityKey,
-		FairnessKey:       priority.FairnessKey,
-		FairnessWeight:    priority.FairnessWeight,
-		FairnessRateLimit: priority.FairnessRateLimit,
-		OrderingKey:       priority.OrderingKey,
+		PriorityKey: int32(priority.PriorityKey),
 	}
 }
 
-func convertFromPBPolicy(priority *commonpb.Priority) *Priority {
+func convertFromPBPriority(priority *commonpb.Priority) *Priority {
 	if priority == nil {
 		return nil
 	}
 
 	return &Priority{
-		PriorityKey:       priority.PriorityKey,
-		FairnessKey:       priority.FairnessKey,
-		FairnessWeight:    priority.FairnessWeight,
-		FairnessRateLimit: priority.FairnessRateLimit,
-		OrderingKey:       priority.OrderingKey,
+		PriorityKey: int(priority.PriorityKey),
 	}
 }
 

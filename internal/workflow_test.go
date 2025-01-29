@@ -145,11 +145,7 @@ func newTestRetryPolicy() *RetryPolicy {
 
 func newPriority() *Priority {
 	return &Priority{
-		PriorityKey:       1,
-		FairnessKey:       "key",
-		FairnessWeight:    1,
-		FairnessRateLimit: 1,
-		OrderingKey:       1,
+		PriorityKey: 1,
 	}
 }
 
