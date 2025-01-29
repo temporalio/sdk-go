@@ -850,6 +850,8 @@ type (
 	// For all fields, the field not present or equal to zero/empty string means to
 	// inherit the value from the calling workflow, or if there is no calling
 	// workflow, then use the default value.
+	//
+	// Exposed as: [go.temporal.io/sdk/temporal.Priority]
 	Priority struct {
 		// PriorityKey is a positive integer from 1 to n, where smaller integers
 		// correspond to higher priorities (tasks run sooner). In general, tasks in
