@@ -166,7 +166,7 @@ type (
 		// NOTE: Experimental
 		Summary string
 
-		// Priority - Optional priority and fairness settings that control relative ordering of
+		// Priority - Optional priority settings that control relative ordering of
 		// task processing when tasks are backed up in a queue.
 		Priority *Priority
 	}
