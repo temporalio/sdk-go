@@ -143,8 +143,8 @@ func newTestRetryPolicy() *RetryPolicy {
 	}
 }
 
-func newPriority() *commonpb.Priority {
-	return &commonpb.Priority{
+func newPriority() *Priority {
+	return &Priority{
 		PriorityKey:       1,
 		FairnessKey:       "key",
 		FairnessWeight:    1,

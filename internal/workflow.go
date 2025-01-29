@@ -437,7 +437,7 @@ type (
 
 		// Priority - Optional priority and fairness settings that control relative ordering of
 		// task processing when tasks are backed up in a queue.
-		Priority *commonpb.Priority
+		Priority *Priority
 	}
 
 	// RegisterWorkflowOptions consists of options for registering a workflow
@@ -1750,7 +1750,7 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.VersioningIntent = cwo.VersioningIntent
 	wfOptions.StaticSummary = cwo.StaticSummary
 	wfOptions.StaticDetails = cwo.StaticDetails
-	wfOptions.Priority = cwo.Priority
+	wfOptions.Priority = convertToPBPriority(cwo.Priority)
 
 	return ctx1
 }
@@ -1773,7 +1773,7 @@ func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 		WaitForCancellation:      opts.WaitForCancellation,
 		WorkflowIDReusePolicy:    opts.WorkflowIDReusePolicy,
 		RetryPolicy:              convertFromPBRetryPolicy(opts.RetryPolicy),
-		Priority:                 opts.Priority,
+		Priority:                 convertFromPBPolicy(opts.Priority),
 		CronSchedule:             opts.CronSchedule,
 		Memo:                     opts.Memo,
 		SearchAttributes:         opts.SearchAttributes,
@@ -2344,7 +2344,7 @@ func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	eap.RetryPolicy = convertToPBRetryPolicy(options.RetryPolicy)
 	eap.DisableEagerExecution = options.DisableEagerExecution
 	eap.VersioningIntent = options.VersioningIntent
-	eap.Priority = options.Priority
+	eap.Priority = convertToPBPriority(options.Priority)
 	eap.Summary = options.Summary
 	return ctx1
 }
@@ -2408,7 +2408,7 @@ func GetActivityOptions(ctx Context) ActivityOptions {
 		RetryPolicy:            convertFromPBRetryPolicy(opts.RetryPolicy),
 		DisableEagerExecution:  opts.DisableEagerExecution,
 		VersioningIntent:       opts.VersioningIntent,
-		Priority:               opts.Priority,
+		Priority:               convertFromPBPolicy(opts.Priority),
 		Summary:                opts.Summary,
 	}
 }
@@ -2519,6 +2519,34 @@ func convertFromPBRetryPolicy(retryPolicy *commonpb.RetryPolicy) *RetryPolicy {
 	p.InitialInterval = retryPolicy.InitialInterval.AsDuration()
 
 	return &p
+}
+
+func convertToPBPriority(priority *Priority) *commonpb.Priority {
+	if priority == nil {
+		return nil
+	}
+
+	return &commonpb.Priority{
+		PriorityKey:       priority.PriorityKey,
+		FairnessKey:       priority.FairnessKey,
+		FairnessWeight:    priority.FairnessWeight,
+		FairnessRateLimit: priority.FairnessRateLimit,
+		OrderingKey:       priority.OrderingKey,
+	}
+}
+
+func convertFromPBPolicy(priority *commonpb.Priority) *Priority {
+	if priority == nil {
+		return nil
+	}
+
+	return &Priority{
+		PriorityKey:       priority.PriorityKey,
+		FairnessKey:       priority.FairnessKey,
+		FairnessWeight:    priority.FairnessWeight,
+		FairnessRateLimit: priority.FairnessRateLimit,
+		OrderingKey:       priority.OrderingKey,
+	}
 }
 
 // GetLastCompletionResultFromWorkflowInfo returns value of last completion result.

@@ -321,7 +321,7 @@ type (
 
 		// Priority - Optional priority and fairness settings that control relative ordering of
 		// task processing when tasks are backed up in a queue.
-		Priority *commonpb.Priority
+		Priority *Priority
 	}
 
 	// ScheduleOptions configure the parameters for creating a schedule.

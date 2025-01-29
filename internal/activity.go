@@ -168,7 +168,7 @@ type (
 
 		// Priority - Optional priority and fairness settings that control relative ordering of
 		// task processing when tasks are backed up in a queue.
-		Priority *commonpb.Priority
+		Priority *Priority
 	}
 
 	// LocalActivityOptions stores local activity specific parameters that will be stored inside of a context.

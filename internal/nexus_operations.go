@@ -241,7 +241,7 @@ func (t *testSuiteClientForNexusOperations) ExecuteWorkflow(ctx context.Context,
 				Memo:                     options.Memo,
 				CronSchedule:             options.CronSchedule,
 				RetryPolicy:              convertToPBRetryPolicy(options.RetryPolicy),
-				Priority:                 options.Priority,
+				Priority:                 convertToPBPriority(options.Priority),
 			},
 		}, func(result *commonpb.Payloads, wfErr error) {
 			ncb := callback.GetNexus()

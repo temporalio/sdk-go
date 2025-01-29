@@ -776,7 +776,7 @@ type (
 
 		// Priority - Optional priority and fairness settings that control relative ordering of
 		// task processing when tasks are backed up in a queue.
-		Priority *commonpb.Priority
+		Priority *Priority
 
 		// request ID. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
 		requestID string
@@ -837,6 +837,116 @@ type (
 		//  - cancellation is not a failure, so it won't be retried,
 		//  - only StartToClose or Heartbeat timeouts are retryable.
 		NonRetryableErrorTypes []string
+	}
+
+	// Priority contains metadata that controls relative ordering of task processing
+	// when tasks are backed up in a queue.
+	//
+	// Priority is attached to workflows and activities. By default, activities
+	// inherit Priority from the workflow that created them, but may override fields
+	// when an activity is started or modified.
+	//
+	// Despite being named "Priority", this message also contains fields that
+	// control "fairness" mechanisms.
+	//
+	// For all fields, the field not present or equal to zero/empty string means to
+	// inherit the value from the calling workflow, or if there is no calling
+	// workflow, then use the default value.
+	//
+	// For all fields other than fairness_key, the zero value isn't meaningful so
+	// there's no confusion between inherit/default and a meaningful value. For
+	// fairness_key, the empty string will be interpreted as "inherit". This means
+	// that if a workflow has a non-empty fairness key, you can't override the
+	// fairness key of its activity to the empty string.
+	//
+	// The overall semantics of Priority are:
+	//  1. First, consider "priority": higher priority (lower number) goes first.
+	//  2. Next, consider fairness: try to dispatch tasks for different fairness keys
+	//     in proportion to their weight.
+	//  3. Finally, tasks may be ordered by an additional ordering key.
+	//
+	// Applications may use any subset of mechanisms that are useful to them and
+	// leave the other fields to use default values.
+	//
+	// NOTE: Not all queues in the system may support the "full" semantics of all priority
+	// fields. (Currently only support in matching task queues is planned.)
+	Priority struct {
+		// Priority key is a positive integer from 1 to n, where smaller integers
+		// correspond to higher priorities (tasks run sooner). In general, tasks in
+		// a queue should be processed in close to priority order, although small
+		// deviations are possible.
+		//
+		// The maximum priority value (minimum priority) is determined by server
+		// configuration, and defaults to 5.
+		//
+		// If priority is not present (or zero), then the effective priority will be
+		// the default priority, which is is calculated by (min+max)/2. With the
+		// default max of 5, and min of 1, that comes out to 3.
+		PriorityKey int32
+
+		// Fairness key is a short string that's used as a key for a fairness
+		// balancing mechanism. It may correspond to a tenant id, or to a fixed
+		// string like "high" or "low". The default is the empty string.
+		//
+		// The fairness mechanism attempts to dispatch tasks for a given key in
+		// proportion to its weight. For example, using a thousand distinct tenant
+		// ids, each with a weight of 1.0 (the default) will result in each tenant
+		// getting a roughly equal share of task dispatch throughput.
+		//
+		// (Note: this does not imply equal share of worker capacity! Fairness
+		// decisions are made only at dispatch time based on queue statistics, not
+		// current worker load.)
+		//
+		// As another example, using keys "high" and "low" with weight 9.0 and 1.0
+		// respectively will prefer dispatching "high" tasks over "low" tasks at a
+		// 9:1 ratio, while allowing either key to use all worker capacity if the
+		// other is not present.
+		//
+		// All fairness mechanisms, including rate limits, are best-effort and
+		// probabilistic. The results may not match what a "perfect" algorithm with
+		// infinite resources would produce. The more unique keys are used, the less
+		// accurate the results will be.
+		//
+		// Fairness keys are limited to 64 bytes.
+		FairnessKey string
+
+		// Fairness weight for a task can come from multiple sources for
+		// flexibility. From highest to lowest precedence:
+		//  1. Weights for a small set of keys can be overridden in task queue
+		//     configuration with an API.
+		//  2. It can be attached to the workflow/activity in this field.
+		//  3. The default weight of 1.0 will be used.
+		//
+		// Note that if the weight for a key is attached in this field, for best
+		// results, the same weight should be used for the same key for a reasonable
+		// amount of time (minutes). It may change, but it may take some time for
+		// the change to be reflected.
+		//
+		// The recommended range of usable weights is [0.001, 1000].
+		FairnessWeight float32
+
+		// The fairness mechanism can also enforce rate limits per fairness key.
+		// Rate limits are specified in tasks dispatched per second.
+		// As with weights, rate limits can come from different sources:
+		//  1. Rate limits for a small set of keys can be overridden in task queue
+		//     configuration with an API.
+		//  2. It can be attached to the workflow/activity in this field.
+		//  3. The "default" rate limit for keys that are not overridden can be set
+		//     in task queue configuration also.
+		//  4. Otherwise, a very high rate limit will be applied.
+
+		FairnessRateLimit float32
+		// Ordering key is a positive integer from 1 to MaxInt64. After priority and
+		// fairness mechanisms are applied, tasks will be finally ordered by
+		// ordering_key. Note that fine-grained values are allowed here, as opposed
+		// to priority.
+		//
+		// For example, applications might use the start time of a workflow (in
+		// seconds since the unix epoch) as ordering key for the workflow and all
+		// activities in it. This will have the effect of prioritizing activities of
+		// workflows that were started earlier, encouring completing older workflows
+		// over making progress in newer ones.
+		OrderingKey int64
 	}
 
 	// NamespaceClient is the client for managing operations on the namespace.
