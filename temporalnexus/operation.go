@@ -382,6 +382,7 @@ func ExecuteUntypedWorkflow[R any](
 		}
 	}
 	internal.SetLinksOnStartWorkflowOptions(&startWorkflowOptions, links)
+	internal.SetOnConflictOptionsOnStartWorkflowOptions(&startWorkflowOptions)
 
 	run, err := GetClient(ctx).ExecuteWorkflow(ctx, startWorkflowOptions, workflowType, args...)
 	if err != nil {

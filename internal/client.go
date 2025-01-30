@@ -742,6 +742,14 @@ type (
 		callbacks []*commonpb.Callback
 		// links. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
 		links []*commonpb.Link
+
+		// OnConflictOptions - Optional workflow ID conflict options used in conjunction with conflict policy
+		// WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING. If onConflictOptions is set and a workflow is already
+		// running, the options specifies the actions to be taken on the running workflow. If not set or use
+		// together with any other WorkflowIDConflictPolicy, this parameter is ignored.
+		//
+		// NOTE: Only settable by the SDK -- e.g. [temporalnexus.workflowRunOperation].
+		onConflictOptions *OnConflictOptions
 	}
 
 	// WithStartWorkflowOperation defines how to start a workflow when using UpdateWithStartWorkflow.
@@ -1194,4 +1202,18 @@ func SetCallbacksOnStartWorkflowOptions(opts *StartWorkflowOptions, callbacks []
 // Links are purposefully not exposed to users for the time being.
 func SetLinksOnStartWorkflowOptions(opts *StartWorkflowOptions, links []*commonpb.Link) {
 	opts.links = links
+}
+
+// SetOnConflictOptionsOnStartWorkflowOptions is an internal only method for setting conflict
+// options on StartWorkflowOptions.
+// OnConflictOptions are purposefully not exposed to users for the time being.
+func SetOnConflictOptionsOnStartWorkflowOptions(opts *StartWorkflowOptions) {
+	if opts.WorkflowIDConflictPolicy == enumspb.WORKFLOW_ID_CONFLICT_POLICY_UNSPECIFIED {
+		opts.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING
+	}
+	opts.onConflictOptions = &OnConflictOptions{
+		AttachRequestID:           true,
+		AttachCompletionCallbacks: true,
+		AttachLinks:               true,
+	}
 }
