@@ -399,6 +399,7 @@ func ExecuteUntypedWorkflow[R any](
 		return nil, err
 	}
 	internal.SetLinksOnStartWorkflowOptions(&startWorkflowOptions, links)
+	internal.SetOnConflictOptionsOnStartWorkflowOptions(&startWorkflowOptions)
 
 	run, err := nctx.Client.ExecuteWorkflow(ctx, startWorkflowOptions, workflowType, args...)
 	if err != nil {

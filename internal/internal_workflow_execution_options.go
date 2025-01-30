@@ -75,6 +75,16 @@ type (
 		// [VersioningBehaviorPinned].
 		Deployment Deployment
 	}
+
+	// OnConflictOptions specifies the actions to be taken when using the workflow ID conflict policy
+	// USE_EXISTING.
+	//
+	// NOTE: Experimental
+	OnConflictOptions struct {
+		AttachRequestID           bool
+		AttachCompletionCallbacks bool
+		AttachLinks               bool
+	}
 )
 
 // Mapping WorkflowExecutionOptions field names to proto ones.
@@ -143,6 +153,17 @@ func versioningOverrideFromProto(versioningOverride *workflowpb.VersioningOverri
 			//lint:ignore SA1019 the server API was deprecated.
 			BuildID: versioningOverride.GetDeployment().GetBuildId(),
 		},
+	}
+}
+
+func onConflictOptionsToProto(onConflictOptions *OnConflictOptions) *workflowpb.OnConflictOptions {
+	if onConflictOptions == nil {
+		return nil
+	}
+	return &workflowpb.OnConflictOptions{
+		AttachRequestId:           onConflictOptions.AttachRequestID,
+		AttachCompletionCallbacks: onConflictOptions.AttachCompletionCallbacks,
+		AttachLinks:               onConflictOptions.AttachLinks,
 	}
 }
 
