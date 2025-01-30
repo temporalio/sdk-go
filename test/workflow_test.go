@@ -3304,7 +3304,7 @@ func (w *Workflows) CommandsFuzz(ctx workflow.Context) error {
 		case 5:
 			// Signal & ExecuteChildWorkflow
 			cwo := workflow.ChildWorkflowOptions{
-				WorkflowID: "ABC-SIMPLE-CHILD-WORKFLOW-ID-SIGNAL-FUZZ",
+				WorkflowID: "ABC-SIMPLE-CHILD-WORKFLOW-ID-SIGNAL-FUZZ" + strconv.Itoa(i),
 			}
 			childCtx := workflow.WithChildOptions(ctx, cwo)
 			child := workflow.ExecuteChildWorkflow(childCtx, w.childWorkflowWaitOnSignal)
