@@ -220,6 +220,19 @@ var workflowOp = temporalnexus.NewWorkflowRunOperation(
 	},
 )
 
+var signalWithStartOp = temporalnexus.NewWorkflowSignalWithStartOperation(
+	"signal-with-start-op",
+	waitForSignalWorkflow,
+	func(ctx context.Context, id string, options nexus.StartOperationOptions) (temporalnexus.WorkflowSignalWithStartOperationInput[string, string], error) {
+		return temporalnexus.WorkflowSignalWithStartOperationInput[string, string]{
+			WorkflowOptions: client.StartWorkflowOptions{ID: id},
+			WorkflowArg:     id,
+			SignalName:      "start-signal",
+			SignalArg:       id,
+		}, nil
+	},
+)
+
 func TestNexusSyncOperation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
@@ -406,6 +419,67 @@ func TestNexusWorkflowRunOperation(t *testing.T) {
 
 	workflowID := "nexus-handler-workflow-" + uuid.NewString()
 	result, err := nexus.StartOperation(ctx, nc, workflowOp, workflowID, nexus.StartOperationOptions{
+		CallbackURL:    "http://localhost/test",
+		CallbackHeader: nexus.Header{"test": "ok"},
+		Links:          []nexus.Link{temporalnexus.ConvertLinkWorkflowEventToNexusLink(link)},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result.Pending)
+	handle := result.Pending
+	require.Equal(t, workflowID, handle.ID)
+	desc, err := tc.client.DescribeWorkflowExecution(ctx, workflowID, "")
+	require.NoError(t, err)
+
+	require.Equal(t, 1, len(desc.Callbacks))
+	callback, ok := desc.Callbacks[0].Callback.Variant.(*common.Callback_Nexus_)
+	require.True(t, ok)
+	require.Equal(t, "http://localhost/test", callback.Nexus.Url)
+	require.Subset(t, callback.Nexus.Header, map[string]string{"test": "ok"})
+
+	iter := tc.client.GetWorkflowHistory(ctx, workflowID, "", false, enums.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		require.NoError(t, err)
+		if event.GetEventType() == enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED {
+			require.Len(t, event.GetLinks(), 1)
+			require.True(t, proto.Equal(link, event.GetLinks()[0].GetWorkflowEvent()))
+			break
+		}
+	}
+
+	run := tc.client.GetWorkflow(ctx, workflowID, "")
+	require.NoError(t, handle.Cancel(ctx, nexus.CancelOperationOptions{}))
+	require.ErrorContains(t, run.Get(ctx, nil), "canceled")
+}
+
+func TestNexusWorkflowSignalWithStartOperation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	tc := newTestContext(t, ctx)
+
+	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
+	service := nexus.NewService("test")
+	require.NoError(t, service.Register(signalWithStartOp))
+	w.RegisterNexusService(service)
+	w.RegisterWorkflow(waitForSignalWorkflow)
+	require.NoError(t, w.Start())
+	t.Cleanup(w.Stop)
+
+	nc := tc.newNexusClient(t, service.Name)
+
+	link := &common.Link_WorkflowEvent{
+		Namespace:  tc.testConfig.Namespace,
+		WorkflowId: "caller-wf-id",
+		RunId:      "caller-run-id",
+		Reference: &common.Link_WorkflowEvent_EventRef{
+			EventRef: &common.Link_WorkflowEvent_EventReference{
+				EventType: enums.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED,
+			},
+		},
+	}
+
+	workflowID := "nexus-handler-workflow-" + uuid.NewString()
+	result, err := nexus.StartOperation(ctx, nc, signalWithStartOp, workflowID, nexus.StartOperationOptions{
 		CallbackURL:    "http://localhost/test",
 		CallbackHeader: nexus.Header{"test": "ok"},
 		Links:          []nexus.Link{temporalnexus.ConvertLinkWorkflowEventToNexusLink(link)},
