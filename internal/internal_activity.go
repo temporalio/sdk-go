@@ -74,6 +74,7 @@ type (
 		DisableEagerExecution  bool
 		VersioningIntent       VersioningIntent
 		Summary                string
+		Priority               *commonpb.Priority
 	}
 
 	// ExecuteLocalActivityOptions options for executing a local activity
@@ -146,6 +147,7 @@ type (
 		workflowNamespace  string
 		workerStopChannel  <-chan struct{}
 		contextPropagators []ContextPropagator
+		priority           *commonpb.Priority
 	}
 
 	// context.WithValue need this type instead of basic type string to avoid lint error
@@ -382,6 +384,7 @@ func (a *activityEnvironmentInterceptor) GetInfo(ctx context.Context) ActivityIn
 		WorkflowType:      a.env.workflowType,
 		WorkflowNamespace: a.env.workflowNamespace,
 		IsLocalActivity:   a.env.isLocalActivity,
+		Priority:          convertFromPBPriority(a.env.priority),
 	}
 }
 

@@ -744,6 +744,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		Memo:                     attributes.Memo,
 		SearchAttributes:         attributes.SearchAttributes,
 		RetryPolicy:              convertFromPBRetryPolicy(attributes.RetryPolicy),
+		Priority:                 convertFromPBPriority(attributes.Priority),
 	}
 
 	return newWorkflowExecutionContext(workflowInfo, wth), nil
