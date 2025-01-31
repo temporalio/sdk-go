@@ -314,6 +314,27 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 	require.NoError(s.T(), err)
 }
 
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_IncompleteWorkflowExecution() {
+	taskQueue := "taskQueue1"
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflow"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
+		}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+	}
+
+	history := &historypb.History{Events: testEvents}
+	logger := getLogger()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
+	replayer.RegisterWorkflow(testReplayWorkflow)
+	err = replayer.ReplayWorkflowHistory(logger, history)
+	require.NoError(s.T(), err)
+}
+
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
 	taskQueue := "taskQueue1"
 	testEvents := []*historypb.HistoryEvent{
