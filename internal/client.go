@@ -844,8 +844,8 @@ type (
 	// server version.
 	//
 	// Priority is attached to workflows and activities. By default, activities
-	// inherit Priority from the workflow that created them, but may override fields
-	// when an activity is started or modified.
+	// and child workflows inherit Priority from the workflow that created them, but may
+	// override fields when an activity is started or modified.
 	//
 	// For all fields, the field not present or equal to zero/empty string means to
 	// inherit the value from the calling workflow, or if there is no calling
