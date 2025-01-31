@@ -144,7 +144,7 @@ type (
 	// NOTE: Experimental
 	NexusOperationFuture = internal.NexusOperationFuture
 
-	// NexusOperationExecution is the result of [NexusOperationFuture.GetNexusOperationExecution].
+	// NexusOperationExecution is the result of [internal.NexusOperationFuture.GetNexusOperationExecution].
 	//
 	// NOTE: Experimental
 	NexusOperationExecution = internal.NexusOperationExecution

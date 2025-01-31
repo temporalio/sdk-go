@@ -48,7 +48,7 @@ func NewMetricsHandler(scope tally.Scope) client.MetricsHandler {
 }
 
 // ScopeFromHandler returns the underlying scope of the handler. Callers may
-// need to check [workflow.IsReplaying] to avoid recording metrics during
+// need to check [github.com/temporalio/sdk-go/workflow.IsReplaying] to avoid recording metrics during
 // replay. If this handler was not created via this package, [github.com/uber-go/tally.NoopScope] is
 // returned.
 //
