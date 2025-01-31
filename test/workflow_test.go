@@ -30,6 +30,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	mathrand "math/rand/v2"
 	"reflect"
 	"strconv"
 	"strings"
@@ -2713,6 +2714,40 @@ func (w *Workflows) WorkflowWithRejectableUpdate(ctx workflow.Context) error {
 	return nil
 }
 
+func (w *Workflows) WorkflowWithUpdate(ctx workflow.Context) error {
+	workflow.SetUpdateHandlerWithOptions(ctx, "update",
+		func(ctx workflow.Context, count int) error {
+			for i := 0; i < count; i++ {
+				var i int
+				err := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+					return mathrand.IntN(4)
+				}).Get(&i)
+				if err != nil {
+					return err
+				}
+				if i == 0 {
+					workflow.NewTimer(ctx, time.Hour)
+				} else if i == 1 {
+					workflow.GetVersion(ctx, "change-id", workflow.DefaultVersion, 1)
+				} else if i == 2 {
+					ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+					var a *Activities
+					workflow.ExecuteActivity(ctx, a.WaitForWorkerStop, time.Hour)
+				}
+			}
+			return nil
+		}, workflow.UpdateHandlerOptions{
+			Validator: func(ctx workflow.Context, count int) error {
+				if count <= 0 {
+					return errors.New("test update rejected")
+				}
+				return nil
+			},
+		})
+	workflow.GetSignalChannel(ctx, "unblock").Receive(ctx, nil)
+	return nil
+}
+
 func (w *Workflows) UpdateOrdering(ctx workflow.Context) (int, error) {
 	updatesRan := 0
 	updateHandle := func(ctx workflow.Context) error {
@@ -3382,6 +3417,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.UserMetadata)
 	worker.RegisterWorkflow(w.AwaitWithOptions)
 	worker.RegisterWorkflow(w.WorkflowWithRejectableUpdate)
+	worker.RegisterWorkflow(w.WorkflowWithUpdate)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childWithRetryPolicy)

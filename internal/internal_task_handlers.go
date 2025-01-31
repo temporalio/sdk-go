@@ -1913,6 +1913,9 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			BuildId:       wth.workerBuildID,
 			UseVersioning: wth.useBuildIDForVersioning,
 		},
+		Capabilities: &workflowservice.RespondWorkflowTaskCompletedRequest_Capabilities{
+			DiscardSpeculativeWorkflowTaskWithEvents: true,
+		},
 		Deployment: &deploymentpb.Deployment{
 			BuildId:    wth.workerBuildID,
 			SeriesName: wth.deploymentSeriesName,

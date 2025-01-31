@@ -3950,6 +3950,61 @@ func (ts *IntegrationTestSuite) TestUpdateRejectedDuplicated() {
 	ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID())
 }
 
+func (ts *IntegrationTestSuite) TestSpeculativeUpdate() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-speculative-update")
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.WorkflowWithUpdate)
+	ts.NoError(err)
+	// Send a regular update
+	handle, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+		Args:         []interface{}{1},
+	})
+	ts.NoError(err)
+	ts.NoError(handle.Get(ctx, nil))
+
+	for i := 0; i < 5; i++ {
+		handle, err = ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+			WorkflowID:   run.GetID(),
+			RunID:        run.GetRunID(),
+			UpdateName:   "update",
+			WaitForStage: client.WorkflowUpdateStageCompleted,
+			Args:         []interface{}{0},
+		})
+		ts.NoError(err)
+		ts.Error(handle.Get(ctx, nil))
+	}
+
+	handle, err = ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+		Args:         []interface{}{12},
+	})
+	ts.NoError(err)
+	ts.NoError(handle.Get(ctx, nil))
+
+	for i := 0; i < 5; i++ {
+		handle, err = ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+			WorkflowID:   run.GetID(),
+			RunID:        run.GetRunID(),
+			UpdateName:   "update",
+			WaitForStage: client.WorkflowUpdateStageCompleted,
+			Args:         []interface{}{0},
+		})
+		ts.NoError(err)
+		ts.Error(handle.Get(ctx, nil))
+	}
+
+	ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "unblock", nil)
+	ts.NoError(run.Get(ctx, nil))
+}
+
 func (ts *IntegrationTestSuite) TestUpdateSettingHandlerInGoroutine() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
