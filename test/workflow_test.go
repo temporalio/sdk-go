@@ -3321,6 +3321,17 @@ func (w *Workflows) CommandsFuzz(ctx workflow.Context) error {
 		}
 	}
 	return nil
+
+func (w *Workflows) WorkflowClientFromActivity(ctx workflow.Context) error {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	var activities *Activities
+	err := workflow.ExecuteActivity(ctx, activities.ClientFromActivity).Get(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
+	return workflow.ExecuteLocalActivity(ctx, activities.ClientFromActivity).Get(ctx, nil)
 }
 
 func (w *Workflows) register(worker worker.Worker) {
@@ -3461,6 +3472,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.RunsLocalAndNonlocalActsWithRetries)
 	worker.RegisterWorkflow(w.SelectorBlockSignal)
 	worker.RegisterWorkflow(w.CommandsFuzz)
+	worker.RegisterWorkflow(w.WorkflowClientFromActivity)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {

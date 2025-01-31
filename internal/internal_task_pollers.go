@@ -168,6 +168,7 @@ type (
 		dataConverter      converter.DataConverter
 		contextPropagators []ContextPropagator
 		interceptors       []WorkerInterceptor
+		client             *WorkflowClient
 	}
 
 	localActivityResult struct {
@@ -589,6 +590,7 @@ func newLocalActivityPoller(
 	params workerExecutionParameters,
 	laTunnel *localActivityTunnel,
 	interceptors []WorkerInterceptor,
+	client *WorkflowClient,
 ) *localActivityTaskPoller {
 	handler := &localActivityTaskHandler{
 		userContext:        params.UserContext,
@@ -597,6 +599,7 @@ func newLocalActivityPoller(
 		dataConverter:      params.DataConverter,
 		contextPropagators: params.ContextPropagators,
 		interceptors:       interceptors,
+		client:             client,
 	}
 	return &localActivityTaskPoller{
 		basePoller: basePoller{metricsHandler: params.MetricsHandler, stopC: params.WorkerStopChannel},
@@ -650,7 +653,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 		)
 	})
 	ctx, err := WithLocalActivityTask(lath.userContext, task, lath.logger, lath.metricsHandler,
-		lath.dataConverter, lath.interceptors)
+		lath.dataConverter, lath.interceptors, lath.client)
 	if err != nil {
 		return &localActivityResult{task: task, err: fmt.Errorf("failed building context: %w", err)}
 	}
