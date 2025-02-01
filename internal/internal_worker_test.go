@@ -2949,3 +2949,40 @@ func TestAliasUnqualifiedNameClash(t *testing.T) {
 	require.Equal(t, "func3", executeWorkflow(false))
 	require.Equal(t, "func1", executeWorkflow(true))
 }
+
+func (s *internalWorkerTestSuite) TestReservedTemporalName() {
+	// workflow
+	worker := createWorker(s.service)
+	workflowFn := func(ctx Context) error { return nil }
+	err := runAndCatchPanic(func() {
+		worker.RegisterWorkflowWithOptions(workflowFn, RegisterWorkflowOptions{Name: "__temporal_workflow"})
+	})
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), temporalPrefixError)
+
+	// activity
+	activityFn := func() error {
+		return nil
+	}
+	err = runAndCatchPanic(func() {
+		worker.RegisterActivityWithOptions(activityFn, RegisterActivityOptions{Name: "__temporal_workflow"})
+	})
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), temporalPrefixError)
+
+	err = worker.Start()
+	require.NoError(s.T(), err)
+	worker.Stop()
+
+	// task queue
+	namespace := "testNamespace"
+	service := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	client := NewServiceClient(service, nil, ClientOptions{
+		Namespace: namespace,
+	})
+	err = runAndCatchPanic(func() {
+		_ = NewAggregatedWorker(client, "__temporal_task_queue", WorkerOptions{})
+	})
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), temporalPrefixError)
+}

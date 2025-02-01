@@ -3296,6 +3296,11 @@ func (w *Workflows) WorkflowClientFromActivity(ctx workflow.Context) error {
 	return workflow.ExecuteLocalActivity(ctx, activities.ClientFromActivity).Get(ctx, nil)
 }
 
+func (w *Workflows) WorkflowTemporalPrefixSignal(ctx workflow.Context) error {
+	_ = workflow.GetSignalChannel(ctx, "__temporal_signal").Receive(ctx, nil)
+	return nil
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -3435,6 +3440,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.RunsLocalAndNonlocalActsWithRetries)
 	worker.RegisterWorkflow(w.SelectorBlockSignal)
 	worker.RegisterWorkflow(w.WorkflowClientFromActivity)
+	worker.RegisterWorkflow(w.WorkflowTemporalPrefixSignal)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {

@@ -7024,3 +7024,17 @@ func (c *coroutineCountingWorkflowOutboundInterceptor) Go(
 		f(ctx)
 	})
 }
+
+func (ts *IntegrationTestSuite) TestTemporalPrefixSignal() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-temporal-prefix")
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.WorkflowTemporalPrefixSignal)
+	ts.NoError(err)
+
+	err = ts.client.SignalWorkflow(ctx, run.GetID(), "", "__temporal_signal", nil)
+	ts.NoError(err)
+
+	err = run.Get(ctx, nil)
+	ts.Error(err)
+}
