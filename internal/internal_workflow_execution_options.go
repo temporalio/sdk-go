@@ -164,17 +164,6 @@ func versioningOverrideFromProto(versioningOverride *workflowpb.VersioningOverri
 	}
 }
 
-func onConflictOptionsToProto(onConflictOptions *OnConflictOptions) *workflowpb.OnConflictOptions {
-	if onConflictOptions == nil {
-		return nil
-	}
-	return &workflowpb.OnConflictOptions{
-		AttachRequestId:           onConflictOptions.AttachRequestID,
-		AttachCompletionCallbacks: onConflictOptions.AttachCompletionCallbacks,
-		AttachLinks:               onConflictOptions.AttachLinks,
-	}
-}
-
 func workflowExecutionOptionsToProto(options WorkflowExecutionOptions) *workflowpb.WorkflowExecutionOptions {
 	return &workflowpb.WorkflowExecutionOptions{
 		VersioningOverride: versioningOverrideToProto(options.VersioningOverride),
@@ -229,4 +218,15 @@ func (r *UpdateWorkflowExecutionOptionsRequest) validateAndConvertToProto(namesp
 	}
 
 	return requestMsg, nil
+}
+
+func (o *OnConflictOptions) ToProto() *workflowpb.OnConflictOptions {
+	if o == nil {
+		return nil
+	}
+	return &workflowpb.OnConflictOptions{
+		AttachRequestId:           o.AttachRequestID,
+		AttachCompletionCallbacks: o.AttachCompletionCallbacks,
+		AttachLinks:               o.AttachLinks,
+	}
 }

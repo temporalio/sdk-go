@@ -1208,9 +1208,6 @@ func SetLinksOnStartWorkflowOptions(opts *StartWorkflowOptions, links []*commonp
 // options on StartWorkflowOptions.
 // OnConflictOptions are purposefully not exposed to users for the time being.
 func SetOnConflictOptionsOnStartWorkflowOptions(opts *StartWorkflowOptions) {
-	if opts.WorkflowIDConflictPolicy == enumspb.WORKFLOW_ID_CONFLICT_POLICY_UNSPECIFIED {
-		opts.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING
-	}
 	opts.onConflictOptions = &OnConflictOptions{
 		AttachRequestID:           true,
 		AttachCompletionCallbacks: true,
