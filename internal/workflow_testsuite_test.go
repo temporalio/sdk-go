@@ -395,6 +395,76 @@ func TestWorkflowUpdateOrder(t *testing.T) {
 	require.Equal(t, 1, result)
 }
 
+func TestWorkflowUpdateOrderWithOneArg(t *testing.T) {
+	var suite WorkflowTestSuite
+	// Test UpdateWorkflowByID works with custom ID and additional arguments
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflowNoRejection("update", "id", t, "args")
+	}, 0*time.Second)
+
+	env.ExecuteWorkflow(func(ctx Context) (int, error) {
+		var inflightUpdates int
+		var ranUpdates int
+		err := SetUpdateHandler(ctx, "update", func(ctx Context, args string) error {
+			inflightUpdates++
+			ranUpdates++
+			defer func() {
+				inflightUpdates--
+			}()
+
+			require.Equal(t, "args", args)
+
+			return Sleep(ctx, time.Hour)
+		}, UpdateHandlerOptions{})
+		if err != nil {
+			return 0, err
+		}
+		err = Await(ctx, func() bool { return inflightUpdates == 0 })
+		return ranUpdates, err
+	})
+
+	require.NoError(t, env.GetWorkflowError())
+	var result int
+	require.NoError(t, env.GetWorkflowResult(&result))
+	require.Equal(t, 1, result)
+}
+
+func TestWorkflowUpdateOrderWithMultiArgs(t *testing.T) {
+	var suite WorkflowTestSuite
+	// Test UpdateWorkflowByID works with custom ID and additional arguments
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflowNoRejection("update", "id", t, "args1", "args2")
+	}, 0)
+
+	env.ExecuteWorkflow(func(ctx Context) (int, error) {
+		var inflightUpdates int
+		var ranUpdates int
+		err := SetUpdateHandler(ctx, "update", func(ctx Context, args []string) error {
+			inflightUpdates++
+			ranUpdates++
+			defer func() {
+				inflightUpdates--
+			}()
+
+			require.Equal(t, args, []string{"args1", "args2"})
+
+			return Sleep(ctx, time.Hour)
+		}, UpdateHandlerOptions{})
+		if err != nil {
+			return 0, err
+		}
+		err = Await(ctx, func() bool { return inflightUpdates == 0 })
+		return ranUpdates, err
+	})
+
+	require.NoError(t, env.GetWorkflowError())
+	var result int
+	require.NoError(t, env.GetWorkflowResult(&result))
+	require.Equal(t, 1, result)
+}
+
 func TestWorkflowUpdateIdGeneration(t *testing.T) {
 	var suite WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
