@@ -557,6 +557,25 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 	})
 }
 
+func TestInvalidOperationInput(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+	tc := newTestContext(t, ctx)
+
+	wf := func(ctx workflow.Context) error {
+		c := workflow.NewNexusClient(tc.endpoint, "test")
+		fut := c.ExecuteOperation(ctx, workflowOp, 3456, workflow.NexusOperationOptions{})
+		return fut.Get(ctx, nil)
+	}
+	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
+	w.RegisterWorkflow(wf)
+	w.Start()
+	t.Cleanup(w.Stop)
+	run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{TaskQueue: tc.taskQueue}, wf)
+	require.NoError(t, err)
+	require.ErrorContains(t, run.Get(ctx, nil), `cannot assign argument of type int to type string for operation workflow-op`)
+}
+
 func TestSignalOperationFromWorkflow(t *testing.T) {
 	receiverID := "nexus-signal-receiver-" + uuid.NewString()
 
