@@ -102,7 +102,8 @@ the Temporal managed service.
 	}
 
 When the Activity times out due to a missed heartbeat, the last value of the details (progress in the above sample) is
-returned from the [github.com/temporalio/sdk-go/workflow.ExecuteActivity] function as the details field of [github.com/temporalio/sdk-go/temporal.TimeoutError] with TimeoutType_HEARTBEAT.
+returned from the [go.temporal.io/sdk/workflow.ExecuteActivity] function as the details field of
+[go.temporal.io/sdk/temporal.TimeoutError] with TimeoutType_HEARTBEAT.
 
 It is also possible to heartbeat an Activity from an external source:
 

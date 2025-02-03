@@ -552,9 +552,9 @@ The code below implements the unit tests for the SimpleWorkflow sample.
 
 First, we define a "test suite" struct that absorbs both the basic suite functionality from [testify]
 via suite.Suite and the suite functionality from the Temporal test
-framework via [github.com/temporalio/sdk-go/testsuite.WorkflowTestSuite]. Since every test in this suite will test our workflow we add a property to
+framework via [go.temporal.io/sdk/testsuite.WorkflowTestSuite]. Since every test in this suite will test our workflow we add a property to
 our struct to hold an instance of the test environment. This will allow us to initialize the test environment in a
-setup method. For testing workflows we use a [github.com/temporalio/sdk-go/testsuite.TestWorkflowEnvironment].
+setup method. For testing workflows we use a [go.temporal.io/sdk/testsuite.TestWorkflowEnvironment].
 
 We then implement a SetupTest method to setup a new test environment before each test. Doing so ensure that each test
 runs in it's own isolated sandbox. We also implement an AfterTest function where we assert that all mocks we setup were
