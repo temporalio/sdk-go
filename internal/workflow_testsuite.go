@@ -1134,11 +1134,7 @@ func (e *TestWorkflowEnvironment) UpdateWorkflowNoRejection(updateName string, u
 		OnComplete: func(interface{}, error) {},
 	}
 
-	if len(args) == 1 {
-		e.UpdateWorkflow(updateName, updateID, uc, args...)
-	} else {
-		e.UpdateWorkflow(updateName, updateID, uc, args)
-	}
+	e.UpdateWorkflow(updateName, updateID, uc, args...)
 }
 
 // QueryWorkflowByID queries a child workflow by its ID and returns the result synchronously

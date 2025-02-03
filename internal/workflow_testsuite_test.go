@@ -441,14 +441,15 @@ func TestWorkflowUpdateOrderWithMultiArgs(t *testing.T) {
 	env.ExecuteWorkflow(func(ctx Context) (int, error) {
 		var inflightUpdates int
 		var ranUpdates int
-		err := SetUpdateHandler(ctx, "update", func(ctx Context, args []string) error {
+		err := SetUpdateHandler(ctx, "update", func(ctx Context, args1, args2 string) error {
 			inflightUpdates++
 			ranUpdates++
 			defer func() {
 				inflightUpdates--
 			}()
 
-			require.Equal(t, args, []string{"args1", "args2"})
+			require.Equal(t, args1, "args1")
+			require.Equal(t, args2, "args2")
 
 			return Sleep(ctx, time.Hour)
 		}, UpdateHandlerOptions{})
