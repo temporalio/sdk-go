@@ -401,7 +401,7 @@ func TestWorkflowUpdateOrderWithOneArg(t *testing.T) {
 	env := suite.NewTestWorkflowEnvironment()
 	env.RegisterDelayedCallback(func() {
 		env.UpdateWorkflowNoRejection("update", "id", t, "args")
-	}, 0*time.Second)
+	}, 0)
 
 	env.ExecuteWorkflow(func(ctx Context) (int, error) {
 		var inflightUpdates int
