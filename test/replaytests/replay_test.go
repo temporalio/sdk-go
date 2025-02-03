@@ -484,6 +484,15 @@ func (s *replayTestSuite) TestSelectorNonBlocking() {
 	require.NoError(s.T(), err)
 }
 
+func (s *replayTestSuite) TestPartialReplayNonCommandEvent() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(TripWorkflow)
+	// Verify we can replay partial history that has ended on a non-command event
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "partial-replay-non-command-event.json")
+	s.NoError(err)
+	require.NoError(s.T(), err)
+}
+
 type captureConverter struct {
 	converter.DataConverter
 	toPayloads   []interface{}

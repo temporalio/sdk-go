@@ -1018,16 +1018,19 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 	var replayOutbox []outboxEntry
 	var replayCommands []*commandpb.Command
 	var respondEvents []*historypb.HistoryEvent
+	var partialHistory bool
 
 	taskMessages := workflowTask.task.GetMessages()
 	skipReplayCheck := w.skipReplayCheck()
+	isInReplayer := IsReplayNamespace(w.wth.namespace)
 	shouldForceReplayCheck := func() bool {
-		isInReplayer := IsReplayNamespace(w.wth.namespace)
 		// If we are in the replayer we should always check the history replay, even if the workflow is completed
 		// Skip if the workflow panicked to avoid potentially breaking old histories
 		_, wfPanicked := w.err.(*workflowPanicError)
 		return !wfPanicked && isInReplayer
 	}
+
+	curReplayCmdsIndex := -1
 
 	metricsHandler := w.wth.metricsHandler.WithTags(metrics.WorkflowTags(task.WorkflowType.GetName()))
 	start := time.Now()
@@ -1051,6 +1054,17 @@ ProcessEvents:
 		binaryChecksum := nextTask.binaryChecksum
 		nextTaskBuildId := nextTask.buildID
 		admittedUpdates := nextTask.admittedMsgs
+
+		// Peak ahead to confirm there are no more events
+		isLastWFTForPartialWFE := len(reorderedEvents) > 0 &&
+			reorderedEvents[len(reorderedEvents)-1].EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED &&
+			len(reorderedHistory.next) == 0 &&
+			isInReplayer
+		if isLastWFTForPartialWFE {
+			partialHistory = true
+			break ProcessEvents
+		}
+
 		// Check if we are replaying so we know if we should use the messages in the WFT or the history
 		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
 		var msgs *eventMsgIndex
@@ -1092,6 +1106,10 @@ ProcessEvents:
 		if len(reorderedEvents) == 0 {
 			break ProcessEvents
 		}
+		// Since replayCommands updates a loop early, keep track of index before the
+		// early update to handle replaying incomplete WFE
+		curReplayCmdsIndex = len(replayCommands)
+
 		if binaryChecksum == "" {
 			w.workflowInfo.BinaryChecksum = w.wth.workerBuildID
 		} else {
@@ -1194,6 +1212,10 @@ ProcessEvents:
 			}
 			eventHandler.outbox = nil
 		}
+	}
+
+	if partialHistory && curReplayCmdsIndex != -1 {
+		replayCommands = replayCommands[:curReplayCmdsIndex]
 	}
 
 	if metricsTimer != nil {
