@@ -542,10 +542,10 @@ func TestNamespaceInterceptor(t *testing.T) {
 	})
 	require.NoError(t, err)
 	defer client.Close()
-	// Verify namespace header is set in the context even though getSystemInfo doesn't have it on the request
+	// Verify namespace header is not set in the context
 	require.Equal(
 		t,
-		[]string{"test-namespace"},
+		[]string(nil),
 		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, temporalNamespaceHeaderKey),
 	)
 	// Verify namespace header is set on a request that does have namespace on the request
