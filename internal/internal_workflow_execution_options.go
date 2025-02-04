@@ -75,6 +75,16 @@ type (
 		// [VersioningBehaviorPinned].
 		Deployment Deployment
 	}
+
+	// OnConflictOptions specifies the actions to be taken when using the workflow ID conflict policy
+	// USE_EXISTING.
+	//
+	// NOTE: Experimental
+	OnConflictOptions struct {
+		AttachRequestID           bool
+		AttachCompletionCallbacks bool
+		AttachLinks               bool
+	}
 )
 
 // Mapping WorkflowExecutionOptions field names to proto ones.
@@ -198,4 +208,15 @@ func (r *UpdateWorkflowExecutionOptionsRequest) validateAndConvertToProto(namesp
 	}
 
 	return requestMsg, nil
+}
+
+func (o *OnConflictOptions) ToProto() *workflowpb.OnConflictOptions {
+	if o == nil {
+		return nil
+	}
+	return &workflowpb.OnConflictOptions{
+		AttachRequestId:           o.AttachRequestID,
+		AttachCompletionCallbacks: o.AttachCompletionCallbacks,
+		AttachLinks:               o.AttachLinks,
+	}
 }
