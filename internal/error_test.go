@@ -1245,3 +1245,44 @@ func Test_convertFailureToError_SaveFailure(t *testing.T) {
 	require.Equal("SomeJavaException", f2.GetCause().GetApplicationFailureInfo().GetType())
 	require.Equal(true, f2.GetCause().GetApplicationFailureInfo().GetNonRetryable())
 }
+
+func Test_verbose_error_formatting(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected string
+	}{
+		{
+			name:     "WorkflowExecutionError",
+			err:      NewWorkflowExecutionError("wid", "rid", "workflowType", newWorkflowPanicError("test message", "stack trace")),
+			expected: "stack trace\ntest message\nworkflow execution error (type: workflowType, workflowID: wid, runID: rid): test message",
+		},
+		{
+			name:     "ApplicationError",
+			err:      NewApplicationError("test message", "customType", true, errors.New("cause error"), "details", 2208),
+			expected: "cause error\ntest message (type: customType, retryable: false): cause error",
+		},
+		{
+			name:     "TimeoutError",
+			err:      NewTimeoutError("timeout", enumspb.TIMEOUT_TYPE_START_TO_CLOSE, errors.New("cause error")),
+			expected: "cause error\ntimeout (type: StartToClose): cause error",
+		},
+		{
+			name:     "ServerError",
+			err:      NewServerError("message", true, errors.New("cause error")),
+			expected: "cause error\nmessage: cause error",
+		},
+		{
+			name:     "ChildWorkflowExecutionError",
+			err:      NewChildWorkflowExecutionError("namespace", "wID", "rID", "wfType", 8, 22, enumspb.RETRY_STATE_NON_RETRYABLE_FAILURE, NewApplicationError("test message", "customType", true, errors.New("cause error"))),
+			expected: "cause error\ntest message (type: customType, retryable: false): cause error\nchild workflow execution error (type: wfType, workflowID: wID, runID: rID, initiatedEventID: 8, startedEventID: 22): test message (type: customType, retryable: false): cause error",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			str := fmt.Sprintf("%+v", test.err)
+			require.Equal(t, test.expected, str)
+		})
+	}
+}
