@@ -2564,7 +2564,12 @@ type NexusOperationOptions struct {
 type NexusOperationExecution struct {
 	// Operation ID as set by the Operation's handler. May be empty if the operation hasn't started yet or completed
 	// synchronously.
+	//
+	// Deprecated: Use OperationToken instead.
 	OperationID string
+	// Operation token as set by the Operation's handler. May be empty if the operation hasn't started yet or completed
+	// synchronously.
+	OperationToken string
 }
 
 // NexusOperationFuture represents the result of a Nexus Operation.
@@ -2576,7 +2581,7 @@ type NexusOperationFuture interface {
 	// For synchronous operations, this will be resolved at the same as the containing [NexusOperationFuture]. For
 	// asynchronous operations, this future is resolved independently.
 	// If the operation is unsuccessful, this future will contain the same error as the [NexusOperationFuture].
-	// Use this method to extract the Operation ID of an asynchronous operation. OperationID will be empty for
+	// Use this method to extract the Operation token of an asynchronous operation. OperationToken will be empty for
 	// synchronous operations.
 	//
 	// NOTE: Experimental
@@ -2584,7 +2589,7 @@ type NexusOperationFuture interface {
 	//  fut := nexusClient.ExecuteOperation(ctx, op, ...)
 	//  var exec workflow.NexusOperationExecution
 	//  if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err == nil {
-	//      // Nexus Operation started, OperationID is optionally set.
+	//      // Nexus Operation started, OperationToken is optionally set.
 	//  }
 	GetNexusOperationExecution() Future
 }
@@ -2710,7 +2715,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 		return result
 	}
 
-	var operationID string
+	var operationToken string
 	seq := wc.env.ExecuteNexusOperation(params, func(r *commonpb.Payload, e error) {
 		var payloads *commonpb.Payloads
 		if r != nil {
@@ -2721,9 +2726,12 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 			// future is done, we don't need cancellation anymore
 			ctxDone.removeReceiveCallback(cancellationCallback)
 		}
-	}, func(opID string, e error) {
-		operationID = opID
-		executionSettable.Set(NexusOperationExecution{opID}, e)
+	}, func(token string, e error) {
+		operationToken = token
+		executionSettable.Set(NexusOperationExecution{
+			OperationID:    operationToken,
+			OperationToken: operationToken,
+		}, e)
 	})
 
 	if cancellable {
@@ -2734,7 +2742,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 				getWorkflowOutboundInterceptor(ctx).RequestCancelNexusOperation(ctx, RequestCancelNexusOperationInput{
 					Client:    input.Client,
 					Operation: input.Operation,
-					ID:        operationID,
+					Token:     operationToken,
 					seq:       seq,
 				})
 			}
