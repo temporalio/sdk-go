@@ -221,7 +221,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 		if !panic {
 			nctx.Log.Error("Handler returned error while processing Nexus task", tagError, err)
 		}
-		var unsuccessfulOperationErr *nexus.UnsuccessfulOperationError
+		var unsuccessfulOperationErr *nexus.OperationError
 		err = convertKnownErrors(err)
 		if errors.As(err, &unsuccessfulOperationErr) {
 			failure, err := h.errorToFailure(unsuccessfulOperationErr.Cause)
@@ -260,13 +260,19 @@ func (h *nexusTaskHandler) handleStartOperation(
 				Type: nexusLink.Type,
 			})
 		}
+		token := t.OperationToken
+		//lint:ignore SA1019 this field might be set by users of older SDKs.
+		if t.OperationID != "" {
+			token = t.OperationID //lint:ignore SA1019 this field might be set by users of older SDKs.
+		}
 		return &nexuspb.Response{
 			Variant: &nexuspb.Response_StartOperation{
 				StartOperation: &nexuspb.StartOperationResponse{
 					Variant: &nexuspb.StartOperationResponse_AsyncSuccess{
 						AsyncSuccess: &nexuspb.StartOperationResponse_Async{
-							OperationId: t.OperationID,
-							Links:       links,
+							OperationToken: token,
+							OperationId:    token,
+							Links:          links,
 						},
 					},
 				},
@@ -313,7 +319,12 @@ func (h *nexusTaskHandler) handleCancelOperation(ctx context.Context, nctx *Nexu
 				nctx.Log.Error("Panic captured while handling Nexus task", tagStackTrace, string(debug.Stack()), tagError, err)
 			}
 		}()
-		err = h.nexusHandler.CancelOperation(ctx, req.GetService(), req.GetOperation(), req.GetOperationId(), cancelOptions)
+		token := req.GetOperationToken()
+		if token == "" {
+			// Support servers older than 1.27.0.
+			token = req.GetOperationId()
+		}
+		err = h.nexusHandler.CancelOperation(ctx, req.GetService(), req.GetOperation(), token, cancelOptions)
 	}()
 	if ctx.Err() != nil {
 		if !panic {
@@ -469,16 +480,13 @@ var emptyReaderNopCloser = io.NopCloser(bytes.NewReader([]byte{}))
 
 // convertKnownErrors converts known errors to corresponding Nexus HandlerError.
 func convertKnownErrors(err error) error {
-	// Handle common errors returned from various client methods.
-	if workflowErr, ok := err.(*WorkflowExecutionError); ok {
-		return nexus.NewFailedOperationError(workflowErr)
-	}
-	if queryRejectedErr, ok := err.(*QueryRejectedError); ok {
-		return nexus.NewFailedOperationError(queryRejectedErr)
-	}
 	// Not using errors.As to be consistent ApplicationError checking with the rest of the SDK.
 	if appErr, ok := err.(*ApplicationError); ok && appErr.NonRetryable() {
-		return nexus.NewFailedOperationError(appErr)
+		return &nexus.HandlerError{
+			// TODO(bergundy): Change this to a non retryable internal error after the 1.27.0 server release.
+			Type:  nexus.HandlerErrorTypeBadRequest,
+			Cause: appErr,
+		}
 	}
 	return convertServiceError(err)
 }
@@ -502,7 +510,10 @@ func convertServiceError(err error) error {
 	st = stGetter.Status()
 
 	switch st.Code() {
-	case codes.AlreadyExists, codes.InvalidArgument, codes.FailedPrecondition, codes.OutOfRange:
+	case codes.InvalidArgument:
+		return &nexus.HandlerError{Type: nexus.HandlerErrorTypeBadRequest, Cause: err}
+	case codes.AlreadyExists, codes.FailedPrecondition, codes.OutOfRange:
+		// TODO(bergundy): Change this to a non retryable internal error after the 1.27.0 server release.
 		return &nexus.HandlerError{Type: nexus.HandlerErrorTypeBadRequest, Cause: err}
 	case codes.Aborted, codes.Unavailable:
 		return &nexus.HandlerError{Type: nexus.HandlerErrorTypeUnavailable, Cause: err}

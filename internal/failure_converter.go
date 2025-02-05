@@ -170,12 +170,17 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 		}
 		failure.FailureInfo = &failurepb.Failure_ChildWorkflowExecutionFailureInfo{ChildWorkflowExecutionFailureInfo: failureInfo}
 	case *NexusOperationError:
+		var token = err.OperationToken
+		if token == "" {
+			token = err.OperationID
+		}
 		failureInfo := &failurepb.NexusOperationFailureInfo{
 			ScheduledEventId: err.ScheduledEventID,
 			Endpoint:         err.Endpoint,
 			Service:          err.Service,
 			Operation:        err.Operation,
-			OperationId:      err.OperationID,
+			OperationId:      token,
+			OperationToken:   token,
 		}
 		failure.FailureInfo = &failurepb.Failure_NexusOperationExecutionFailureInfo{NexusOperationExecutionFailureInfo: failureInfo}
 	case *nexus.HandlerError:
@@ -278,6 +283,10 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 			dfc.FailureToError(failure.GetCause()),
 		)
 	} else if info := failure.GetNexusOperationExecutionFailureInfo(); info != nil {
+		token := info.GetOperationToken()
+		if token == "" {
+			token = info.GetOperationId()
+		}
 		err = &NexusOperationError{
 			Message:          failure.Message,
 			Cause:            dfc.FailureToError(failure.GetCause()),
@@ -286,7 +295,8 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 			Endpoint:         info.GetEndpoint(),
 			Service:          info.GetService(),
 			Operation:        info.GetOperation(),
-			OperationID:      info.GetOperationId(),
+			OperationToken:   token,
+			OperationID:      token,
 		}
 	} else if info := failure.GetNexusHandlerFailureInfo(); info != nil {
 		err = &nexus.HandlerError{

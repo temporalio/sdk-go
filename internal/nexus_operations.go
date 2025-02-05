@@ -81,15 +81,16 @@ func NexusOperationContextFromGoContext(ctx context.Context) (nctx *NexusOperati
 }
 
 // nexusOperationFailure is a utility in use by the test environment.
-func nexusOperationFailure(params executeNexusOperationParams, operationID string, cause *failurepb.Failure) *failurepb.Failure {
+func nexusOperationFailure(params executeNexusOperationParams, token string, cause *failurepb.Failure) *failurepb.Failure {
 	return &failurepb.Failure{
 		Message: "nexus operation completed unsuccessfully",
 		FailureInfo: &failurepb.Failure_NexusOperationExecutionFailureInfo{
 			NexusOperationExecutionFailureInfo: &failurepb.NexusOperationFailureInfo{
-				Endpoint:    params.client.Endpoint(),
-				Service:     params.client.Service(),
-				Operation:   params.operation,
-				OperationId: operationID,
+				Endpoint:       params.client.Endpoint(),
+				Service:        params.client.Service(),
+				Operation:      params.operation,
+				OperationToken: token,
+				OperationId:    token, // Also populate ID for backwards compatiblity.
 			},
 		},
 		Cause: cause,
