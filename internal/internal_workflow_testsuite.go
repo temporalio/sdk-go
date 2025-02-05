@@ -106,7 +106,7 @@ type (
 		env             *testWorkflowEnvironmentImpl
 		seq             int64
 		params          executeNexusOperationParams
-		operationID     string
+		operationToken  string
 		cancelRequested bool
 		started         bool
 		done            bool
@@ -2504,7 +2504,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 			}, true)
 		case *nexuspb.StartOperationResponse_AsyncSuccess:
 			env.postCallback(func() {
-				opID = v.AsyncSuccess.GetOperationId()
+				opID = v.AsyncSuccess.GetOperationToken()
 				handle.startedCallback(opID, nil)
 				if handle.cancelRequested {
 					handle.cancel()
@@ -2551,7 +2551,7 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelNexusOperation(seq int64) {
 func (env *testWorkflowEnvironmentImpl) RegisterNexusAsyncOperationCompletion(
 	service string,
 	operation string,
-	operationID string,
+	token string,
 	result any,
 	err error,
 	delay time.Duration,
@@ -2586,7 +2586,7 @@ func (env *testWorkflowEnvironmentImpl) RegisterNexusAsyncOperationCompletion(
 	env.setNexusAsyncOperationCompletionHandle(
 		service,
 		operation,
-		operationID,
+		token,
 		&testNexusAsyncOperationHandle{
 			result: data,
 			err:    err,
@@ -2599,28 +2599,28 @@ func (env *testWorkflowEnvironmentImpl) RegisterNexusAsyncOperationCompletion(
 func (env *testWorkflowEnvironmentImpl) getNexusAsyncOperationCompletionHandle(
 	service string,
 	operation string,
-	operationID string,
+	token string,
 ) *testNexusAsyncOperationHandle {
-	uniqueOpID := env.makeUniqueNexusOperationID(service, operation, operationID)
+	uniqueOpID := env.makeUniqueNexusOperationToken(service, operation, token)
 	return env.nexusAsyncOpHandle[uniqueOpID]
 }
 
 func (env *testWorkflowEnvironmentImpl) setNexusAsyncOperationCompletionHandle(
 	service string,
 	operation string,
-	operationID string,
+	token string,
 	handle *testNexusAsyncOperationHandle,
 ) {
-	uniqueOpID := env.makeUniqueNexusOperationID(service, operation, operationID)
+	uniqueOpID := env.makeUniqueNexusOperationToken(service, operation, token)
 	env.nexusAsyncOpHandle[uniqueOpID] = handle
 }
 
 func (env *testWorkflowEnvironmentImpl) deleteNexusAsyncOperationCompletionHandle(
 	service string,
 	operation string,
-	operationID string,
+	token string,
 ) {
-	uniqueOpID := env.makeUniqueNexusOperationID(service, operation, operationID)
+	uniqueOpID := env.makeUniqueNexusOperationToken(service, operation, token)
 	delete(env.nexusAsyncOpHandle, uniqueOpID)
 }
 
@@ -2630,7 +2630,7 @@ func (env *testWorkflowEnvironmentImpl) scheduleNexusAsyncOperationCompletion(
 	completionHandle := env.getNexusAsyncOperationCompletionHandle(
 		handle.params.client.Service(),
 		handle.params.operation,
-		handle.operationID,
+		handle.operationToken,
 	)
 	if completionHandle == nil {
 		return
@@ -2638,13 +2638,13 @@ func (env *testWorkflowEnvironmentImpl) scheduleNexusAsyncOperationCompletion(
 	env.deleteNexusAsyncOperationCompletionHandle(
 		handle.params.client.Service(),
 		handle.params.operation,
-		handle.operationID,
+		handle.operationToken,
 	)
 	var nexusErr error
 	if completionHandle.err != nil {
 		nexusErr = env.failureConverter.FailureToError(nexusOperationFailure(
 			handle.params,
-			handle.operationID,
+			handle.operationToken,
 			&failurepb.Failure{
 				Message: completionHandle.err.Error(),
 				FailureInfo: &failurepb.Failure_ApplicationFailureInfo{
@@ -2670,7 +2670,7 @@ func (env *testWorkflowEnvironmentImpl) resolveNexusOperation(seq int64, result 
 		}
 		if err != nil {
 			failure := env.failureConverter.ErrorToFailure(err)
-			err = env.failureConverter.FailureToError(nexusOperationFailure(handle.params, handle.operationID, failure.GetCause()))
+			err = env.failureConverter.FailureToError(nexusOperationFailure(handle.params, handle.operationToken, failure.GetCause()))
 			handle.completedCallback(nil, err)
 		} else {
 			handle.completedCallback(result, nil)
@@ -2696,12 +2696,12 @@ func (env *testWorkflowEnvironmentImpl) deleteNexusOperationHandle(seqID int64) 
 	delete(env.runningNexusOperations, seqID)
 }
 
-func (env *testWorkflowEnvironmentImpl) makeUniqueNexusOperationID(
+func (env *testWorkflowEnvironmentImpl) makeUniqueNexusOperationToken(
 	service string,
 	operation string,
-	operationID string,
+	token string,
 ) string {
-	return fmt.Sprintf("%s_%s_%s", service, operation, operationID)
+	return fmt.Sprintf("%s_%s_%s", service, operation, token)
 }
 
 func (env *testWorkflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler) {
@@ -3202,9 +3202,9 @@ func (h *testNexusOperationHandle) newCancelTask() *workflowservice.PollNexusTas
 			Header:        h.params.nexusHeader,
 			Variant: &nexuspb.Request_CancelOperation{
 				CancelOperation: &nexuspb.CancelOperationRequest{
-					Service:     h.params.client.Service(),
-					Operation:   h.params.operation,
-					OperationId: h.operationID,
+					Service:        h.params.client.Service(),
+					Operation:      h.params.operation,
+					OperationToken: h.operationToken,
 				},
 			},
 		},
@@ -3241,7 +3241,7 @@ func (h *testNexusOperationHandle) startedCallback(opID string, e error) {
 		// Ignore duplciate starts.
 		return
 	}
-	h.operationID = opID
+	h.operationToken = opID
 	h.started = true
 	h.onStarted(opID, e)
 	h.env.runningCount--
@@ -3251,7 +3251,7 @@ func (h *testNexusOperationHandle) cancel() {
 	if h.done {
 		return
 	}
-	if h.started && h.operationID == "" {
+	if h.started && h.operationToken == "" {
 		panic(fmt.Errorf("incomplete operation has no operation ID: (%s, %s, %s)",
 			h.params.client.Endpoint(), h.params.client.Service(), h.params.operation))
 	}
@@ -3445,34 +3445,34 @@ func (r *testNexusHandler) CancelOperation(
 	ctx context.Context,
 	service string,
 	operation string,
-	operationID string,
+	token string,
 	options nexus.CancelOperationOptions,
 ) error {
 	if r.opHandle.isMocked {
 		// if the operation was mocked, then there's no workflow running
 		return nil
 	}
-	return r.handler.CancelOperation(ctx, service, operation, operationID, options)
+	return r.handler.CancelOperation(ctx, service, operation, token, options)
 }
 
 func (r *testNexusHandler) GetOperationInfo(
 	ctx context.Context,
 	service string,
 	operation string,
-	operationID string,
+	token string,
 	options nexus.GetOperationInfoOptions,
 ) (*nexus.OperationInfo, error) {
-	return r.handler.GetOperationInfo(ctx, service, operation, operationID, options)
+	return r.handler.GetOperationInfo(ctx, service, operation, token, options)
 }
 
 func (r *testNexusHandler) GetOperationResult(
 	ctx context.Context,
 	service string,
 	operation string,
-	operationID string,
+	token string,
 	options nexus.GetOperationResultOptions,
 ) (any, error) {
-	return r.handler.GetOperationResult(ctx, service, operation, operationID, options)
+	return r.handler.GetOperationResult(ctx, service, operation, token, options)
 }
 
 func (env *testWorkflowEnvironmentImpl) registerNexusOperationReference(

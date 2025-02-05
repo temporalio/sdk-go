@@ -60,8 +60,8 @@ func ExampleNexusClient() {
 		var exec workflow.NexusOperationExecution
 		// Optionally wait for the operation to be started.
 		_ = fut.GetNexusOperationExecution().Get(ctx, &exec)
-		// OperationID will be empty if the operation completed synchronously.
-		workflow.GetLogger(ctx).Info("operation started", "operationID", exec.OperationID)
+		// OperationToken will be empty if the operation completed synchronously.
+		workflow.GetLogger(ctx).Info("operation started", "token", exec.OperationToken)
 
 		// Get the result of the operation.
 		var output MyOutput
