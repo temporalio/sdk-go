@@ -861,7 +861,7 @@ type (
 		// The maximum priority value (minimum priority) is determined by server
 		// configuration, and defaults to 5.
 		//
-		// The default value is calculated by (min+max)/2. With the
+		// The default value when unset or 0 is calculated by (min+max)/2. With the
 		// default max of 5, and min of 1, that comes out to 3.
 		PriorityKey int
 	}
