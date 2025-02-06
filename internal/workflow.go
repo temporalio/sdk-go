@@ -2525,7 +2525,8 @@ func convertFromPBRetryPolicy(retryPolicy *commonpb.RetryPolicy) *RetryPolicy {
 func convertToPBPriority(priority Priority) *commonpb.Priority {
 	// If the priority only contains default values, return nil instead
 	// - since there's no need to send the default values to the server.
-	if priority.PriorityKey == 0 {
+	var defaultPriority Priority
+	if priority == defaultPriority {
 		return nil
 	}
 
