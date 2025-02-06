@@ -62,7 +62,7 @@ type (
 		Deadline          time.Time     // Time of activity timeout
 		Attempt           int32         // Attempt starts from 1, and increased by 1 for every retry if retry policy is specified.
 		IsLocalActivity   bool          // true if it is a local activity
-		Priority          *Priority
+		Priority          Priority
 	}
 
 	// RegisterActivityOptions consists of options for registering an activity.
@@ -169,7 +169,7 @@ type (
 
 		// Priority - Optional priority settings that control relative ordering of
 		// task processing when tasks are backed up in a queue.
-		Priority *Priority
+		Priority Priority
 	}
 
 	// LocalActivityOptions stores local activity specific parameters that will be stored inside of a context.

@@ -437,7 +437,7 @@ type (
 
 		// Priority - Optional priority settings that control relative ordering of
 		// task processing when tasks are backed up in a queue.
-		Priority *Priority
+		Priority Priority
 	}
 
 	// RegisterWorkflowOptions consists of options for registering a workflow
@@ -1271,7 +1271,7 @@ type WorkflowInfo struct {
 	// Deprecated: use [Workflow.GetTypedSearchAttributes] instead.
 	SearchAttributes *commonpb.SearchAttributes // Value can be decoded using defaultDataConverter.
 	RetryPolicy      *RetryPolicy
-	Priority         *Priority
+	Priority         Priority
 	// BinaryChecksum represents the value persisted by the last worker to complete a task in this workflow. It may be
 	// an explicitly set or implicitly derived binary checksum of the worker binary, or, if this worker has opted into
 	// build-id based versioning, is the explicitly set worker build id. If this is the first worker to operate on the
@@ -2522,8 +2522,10 @@ func convertFromPBRetryPolicy(retryPolicy *commonpb.RetryPolicy) *RetryPolicy {
 	return &p
 }
 
-func convertToPBPriority(priority *Priority) *commonpb.Priority {
-	if priority == nil {
+func convertToPBPriority(priority Priority) *commonpb.Priority {
+	// If the priority only contains default values, return nil instead
+	// - since there's no need to send the default values to the server.
+	if priority.PriorityKey == 0 {
 		return nil
 	}
 
@@ -2532,12 +2534,13 @@ func convertToPBPriority(priority *Priority) *commonpb.Priority {
 	}
 }
 
-func convertFromPBPriority(priority *commonpb.Priority) *Priority {
+func convertFromPBPriority(priority *commonpb.Priority) Priority {
+	// If the priority is nil, return the default value.
 	if priority == nil {
-		return nil
+		return Priority{}
 	}
 
-	return &Priority{
+	return Priority{
 		PriorityKey: int(priority.PriorityKey),
 	}
 }

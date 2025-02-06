@@ -143,8 +143,8 @@ func newTestRetryPolicy() *RetryPolicy {
 	}
 }
 
-func newPriority() *Priority {
-	return &Priority{
+func newPriority() Priority {
+	return Priority{
 		PriorityKey: 1,
 	}
 }
