@@ -1031,8 +1031,41 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_Retry() {
 	s.NoError(err)
 }
 
-func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_OperationNotExecuted() {
+func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_DefaultTimeout() {
+	var actualDeadline time.Time
+	expectedDeadline := time.Now().Add(pollUpdateTimeout)
+	s.workflowServiceClient.EXPECT().
+		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			ctx context.Context,
+			_ *workflowservice.ExecuteMultiOperationRequest,
+			_ ...grpc.CallOption,
+		) (*workflowservice.ExecuteMultiOperationResponse, error) {
+			actualDeadline, _ = ctx.Deadline()
+			return nil, errors.New("intentional error")
+		})
 
+	_, _ = s.workflowClient.UpdateWithStartWorkflow(
+		context.Background(),
+		UpdateWithStartWorkflowOptions{
+			UpdateOptions: UpdateWorkflowOptions{
+				UpdateName:   "update",
+				WaitForStage: WorkflowUpdateStageCompleted,
+			},
+			StartWorkflowOperation: s.workflowClient.NewWithStartWorkflowOperation(
+				StartWorkflowOptions{
+					ID:                       workflowID,
+					WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
+					TaskQueue:                taskqueue,
+				}, workflowType,
+			),
+		},
+	)
+
+	require.WithinDuration(s.T(), expectedDeadline, actualDeadline, 2*time.Second)
+}
+
+func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_OperationNotExecuted() {
 	startOp := s.workflowClient.NewWithStartWorkflowOperation(
 		StartWorkflowOptions{
 			ID:                       workflowID,
