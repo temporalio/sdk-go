@@ -41,6 +41,7 @@ package temporalnexus
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/api/common/v1"
@@ -87,6 +88,9 @@ func NewSyncOperation[I any, O any](
 	name string,
 	handler func(context.Context, client.Client, I, nexus.StartOperationOptions) (O, error),
 ) nexus.Operation[I, O] {
+	if strings.HasPrefix(name, "__temporal_") {
+		panic(errors.New("temporalnexus NewSyncOperation __temporal_ is an reserved prefix"))
+	}
 	return &syncOperation[I, O]{
 		name:    name,
 		handler: handler,
@@ -144,6 +148,9 @@ func NewWorkflowRunOperation[I, O any](
 	workflow func(workflow.Context, I) (O, error),
 	getOptions func(context.Context, I, nexus.StartOperationOptions) (client.StartWorkflowOptions, error),
 ) nexus.Operation[I, O] {
+	if strings.HasPrefix(name, "__temporal_") {
+		panic(errors.New("temporalnexus NewWorkflowRunOperation __temporal_ is an invalid name"))
+	}
 	return &workflowRunOperation[I, O]{
 		options: WorkflowRunOperationOptions[I, O]{
 			Name:       name,
@@ -160,6 +167,9 @@ func NewWorkflowRunOperation[I, O any](
 func NewWorkflowRunOperationWithOptions[I, O any](options WorkflowRunOperationOptions[I, O]) (nexus.Operation[I, O], error) {
 	if options.Name == "" {
 		return nil, errors.New("invalid options: Name is required")
+	}
+	if strings.HasPrefix(options.Name, "__temporal_") {
+		return nil, errors.New("invalid options: __temporal_ is a reserved prefix")
 	}
 	if options.Workflow == nil && options.GetOptions == nil && options.Handler == nil {
 		return nil, errors.New("invalid options: either GetOptions and Workflow, or Handler are required")

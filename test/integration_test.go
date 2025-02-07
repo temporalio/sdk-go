@@ -7025,6 +7025,18 @@ func (c *coroutineCountingWorkflowOutboundInterceptor) Go(
 	})
 }
 
+func (ts *IntegrationTestSuite) TestTemporalPrefixSignal() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-temporal-prefix")
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.WorkflowTemporalPrefixSignal)
+	ts.NoError(err)
+
+	// Trying to GetSignalChannel with a __temporal_ prefixed name should return an error
+	err = run.Get(ctx, nil)
+	ts.Error(err)
+}
+
 func (ts *IntegrationTestSuite) TestPartialHistoryReplayFuzzer() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
