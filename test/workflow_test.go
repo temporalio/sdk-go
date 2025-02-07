@@ -3284,6 +3284,79 @@ func (w *Workflows) SelectorBlockSignal(ctx workflow.Context) (string, error) {
 	return hello, nil
 }
 
+func (w *Workflows) CommandsFuzz(ctx workflow.Context) error {
+	var seed uint64
+	if err := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+		return time.Now().UnixNano()
+	}).Get(&seed); err != nil {
+		return err
+	}
+	rnd := mathrand.New(mathrand.NewPCG(seed, seed))
+
+	iterations := 10
+
+	for i := 0; i < iterations; i++ {
+		cmd := rnd.IntN(7)
+
+		switch cmd {
+		case 0:
+			// Version markers
+			_ = workflow.GetVersion(ctx, "random-id-1", workflow.DefaultVersion, 0)
+		case 1:
+			// Activity
+			ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+			var ans1 string
+			err := workflow.ExecuteActivity(ctx, "Prefix_ToUpperWithDelay", "hello", time.Second).Get(ctx, &ans1)
+			if err != nil {
+				return err
+			}
+		case 2:
+			// LocalActivity
+			laCtx := workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
+			_ = workflow.ExecuteLocalActivity(laCtx, LocalSleep, time.Millisecond*1).Get(laCtx, nil)
+		case 3:
+			// Search Attributes
+			tsa := workflow.GetTypedSearchAttributes(ctx)
+			var result testSearchAttributes
+			result.SearchAttributes = map[string]testSearchAttribute{}
+			for _, k := range workflow.DeterministicKeysFunc(tsa.GetUntypedValues(), func(a, b temporal.SearchAttributeKey) int {
+				if a.GetName() < b.GetName() {
+					return -1
+				}
+				return 1
+			}) {
+				result.SearchAttributes[k.GetName()] = testSearchAttribute{
+					Value: tsa.GetUntypedValues()[k],
+					Type:  k.GetValueType(),
+				}
+			}
+		case 4:
+			// UpsertMemo
+			if err := workflow.UpsertMemo(ctx, map[string]interface{}{"TestMemo": "set"}); err != nil {
+				return err
+			}
+		case 5:
+			// Signal & ExecuteChildWorkflow
+			cwo := workflow.ChildWorkflowOptions{
+				WorkflowID: "ABC-SIMPLE-CHILD-WORKFLOW-ID-SIGNAL-FUZZ" + strconv.Itoa(i),
+			}
+			childCtx := workflow.WithChildOptions(ctx, cwo)
+			child := workflow.ExecuteChildWorkflow(childCtx, w.childWorkflowWaitOnSignal)
+			var childWE workflow.Execution
+			err := child.GetChildWorkflowExecution().Get(ctx, &childWE)
+			if err != nil {
+				return err
+
+			}
+			err = workflow.SignalExternalWorkflow(ctx, childWE.ID, childWE.RunID, "unblock", nil).Get(ctx, nil)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (w *Workflows) WorkflowClientFromActivity(ctx workflow.Context) error {
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 	var activities *Activities
@@ -3434,6 +3507,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.Echo)
 	worker.RegisterWorkflow(w.RunsLocalAndNonlocalActsWithRetries)
 	worker.RegisterWorkflow(w.SelectorBlockSignal)
+	worker.RegisterWorkflow(w.CommandsFuzz)
 	worker.RegisterWorkflow(w.WorkflowClientFromActivity)
 }
 

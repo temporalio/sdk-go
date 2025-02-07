@@ -28,6 +28,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -2649,13 +2650,18 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 	var ok bool
 	var operationName string
 	if operationName, ok = input.Operation.(string); ok {
-	} else if regOp, ok := input.Operation.(interface{ Name() string }); ok {
+	} else if regOp, ok := input.Operation.(interface {
+		Name() string
+		InputType() reflect.Type
+	}); ok {
 		operationName = regOp.Name()
+		inputType := reflect.TypeOf(input.Input)
+		if inputType != nil && !inputType.AssignableTo(regOp.InputType()) {
+			return executeNexusOperationParams{}, fmt.Errorf("cannot assign argument of type %s to type %s for operation %s", inputType.Name(), regOp.InputType().Name(), operationName)
+		}
 	} else {
 		return executeNexusOperationParams{}, fmt.Errorf("invalid 'operation' parameter, must be an OperationReference or a string")
 	}
-	// TODO(bergundy): Validate operation types against input once there's a good way to extract the generic types from
-	// OperationReference in the Nexus Go SDK.
 
 	payload, err := dc.ToPayload(input.Input)
 	if err != nil {

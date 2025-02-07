@@ -129,13 +129,13 @@ func TestHeadersProvider_Error(t *testing.T) {
 
 func TestHeadersProvider_NotIncludedWhenNil(t *testing.T) {
 	interceptors := requiredInterceptors(&ClientOptions{}, nil)
-	require.Equal(t, 5, len(interceptors))
+	require.Equal(t, 6, len(interceptors))
 }
 
 func TestHeadersProvider_IncludedWithHeadersProvider(t *testing.T) {
 	opts := &ClientOptions{HeadersProvider: authHeadersProvider{token: "test-auth-token"}}
 	interceptors := requiredInterceptors(opts, nil)
-	require.Equal(t, 6, len(interceptors))
+	require.Equal(t, 7, len(interceptors))
 }
 
 func TestMissingGetServerInfo(t *testing.T) {
@@ -530,6 +530,33 @@ func TestCredentialsAPIKey(t *testing.T) {
 	)
 }
 
+func TestNamespaceInterceptor(t *testing.T) {
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+
+	// Fixed string
+	client, err := DialClient(context.Background(), ClientOptions{
+		Namespace: "test-namespace",
+		HostPort:  srv.addr,
+	})
+	require.NoError(t, err)
+	defer client.Close()
+	// Verify namespace header is not set in the context
+	require.Equal(
+		t,
+		[]string(nil),
+		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, temporalNamespaceHeaderKey),
+	)
+	// Verify namespace header is set on a request that does have namespace on the request
+	require.NoError(t, client.SignalWorkflow(context.Background(), "workflowid", "runid", "signalname", nil))
+	require.Equal(
+		t,
+		[]string{"test-namespace"},
+		metadata.ValueFromIncomingContext(srv.lastSignalWorkflowExecutionContext, temporalNamespaceHeaderKey),
+	)
+}
+
 func TestCredentialsMTLS(t *testing.T) {
 	// Just confirming option is set, not full end-to-end mTLS test
 
@@ -565,6 +592,7 @@ type testGRPCServer struct {
 	getSystemInfoRequestContext          context.Context
 	getSystemInfoResponse                workflowservice.GetSystemInfoResponse
 	getSystemInfoResponseError           error
+	lastSignalWorkflowExecutionContext   context.Context
 	signalWorkflowExecutionResponse      workflowservice.SignalWorkflowExecutionResponse
 	signalWorkflowExecutionResponseError error
 }
@@ -624,10 +652,11 @@ func (t *testGRPCServer) GetSystemInfo(
 }
 
 func (t *testGRPCServer) SignalWorkflowExecution(
-	context.Context,
-	*workflowservice.SignalWorkflowExecutionRequest,
+	ctx context.Context,
+	_ *workflowservice.SignalWorkflowExecutionRequest,
 ) (*workflowservice.SignalWorkflowExecutionResponse, error) {
 	atomic.AddInt32(&t.sigWfCount, 1)
+	t.lastSignalWorkflowExecutionContext = ctx
 	return &t.signalWorkflowExecutionResponse, t.signalWorkflowExecutionResponseError
 }
 
