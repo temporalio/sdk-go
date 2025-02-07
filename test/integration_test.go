@@ -7032,9 +7032,7 @@ func (ts *IntegrationTestSuite) TestTemporalPrefixSignal() {
 	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.WorkflowTemporalPrefixSignal)
 	ts.NoError(err)
 
-	err = ts.client.SignalWorkflow(ctx, run.GetID(), "", "__temporal_signal", nil)
-	ts.NoError(err)
-
+	// Trying to GetSignalChannel with a __temporal_ prefixed name should return an error
 	err = run.Get(ctx, nil)
 	ts.Error(err)
 }
