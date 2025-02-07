@@ -1121,10 +1121,12 @@ func (e *TestWorkflowEnvironment) UpdateWorkflow(updateName, updateID string, uc
 }
 
 // UpdateWorkflowByID sends an update to a running workflow by its ID.
-func (e *TestWorkflowEnvironment) UpdateWorkflowByID(workflowID, updateName, updateID string, uc UpdateCallbacks, args interface{}) error {
-	return e.impl.updateWorkflowByID(workflowID, updateName, updateID, uc, args)
+func (e *TestWorkflowEnvironment) UpdateWorkflowByID(workflowID, updateName, updateID string, uc UpdateCallbacks, args ...interface{}) error {
+	return e.impl.updateWorkflowByID(workflowID, updateName, updateID, uc, args...)
 }
 
+// UpdateWorkflowNoRejection is a convenience function that handles a common test scenario of only validating
+// that an update isn't rejected.
 func (e *TestWorkflowEnvironment) UpdateWorkflowNoRejection(updateName string, updateID string, t mock.TestingT, args ...interface{}) {
 	uc := &TestUpdateCallback{
 		OnReject: func(err error) {
