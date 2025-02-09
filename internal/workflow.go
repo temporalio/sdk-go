@@ -25,16 +25,16 @@
 package internal
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
-	"golang.org/x/exp/constraints"
-	"golang.org/x/exp/slices"
 
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -2524,7 +2524,7 @@ func GetLastCompletionResultFromWorkflowInfo(info *WorkflowInfo) *commonpb.Paylo
 
 // DeterministicKeys returns the keys of a map in deterministic (sorted) order. To be used in for
 // loops in workflows for deterministic iteration.
-func DeterministicKeys[K constraints.Ordered, V any](m map[K]V) []K {
+func DeterministicKeys[K cmp.Ordered, V any](m map[K]V) []K {
 	r := make([]K, 0, len(m))
 	for k := range m {
 		r = append(r, k)
