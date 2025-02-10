@@ -1679,6 +1679,7 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 		Links:                    in.Options.links,
 		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
 		OnConflictOptions:        in.Options.onConflictOptions.ToProto(),
+		Priority:                 convertToPBPriority(in.Options.Priority),
 	}
 
 	startRequest.UserMetadata, err = buildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
@@ -2054,6 +2055,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		WorkflowIdConflictPolicy: in.Options.WorkflowIDConflictPolicy,
 		Header:                   header,
 		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
+		Priority:                 convertToPBPriority(in.Options.Priority),
 	}
 
 	if in.Options.StartDelay != 0 {

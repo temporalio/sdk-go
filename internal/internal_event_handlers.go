@@ -593,6 +593,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.WorkflowIdReusePolicy = params.WorkflowIDReusePolicy
 	attributes.ParentClosePolicy = params.ParentClosePolicy
 	attributes.RetryPolicy = params.RetryPolicy
+	attributes.Priority = params.Priority
 	attributes.Header = params.Header
 	attributes.Memo = memo
 	attributes.SearchAttributes = searchAttr
@@ -758,6 +759,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	scheduleTaskAttr.RequestEagerExecution = !parameters.DisableEagerExecution
 	scheduleTaskAttr.UseWorkflowBuildId = determineInheritBuildIdFlagForCommand(
 		parameters.VersioningIntent, wc.workflowInfo.TaskQueueName, parameters.TaskQueueName)
+	scheduleTaskAttr.Priority = parameters.Priority
 
 	startMetadata, err := buildUserMetadata(parameters.Summary, "", wc.dataConverter)
 	if err != nil {
