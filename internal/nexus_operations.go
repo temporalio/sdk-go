@@ -114,29 +114,6 @@ func nexusOperationFailure(params executeNexusOperationParams, token string, cau
 	}
 }
 
-// apiFailureToNexusFailure converts an API proto Failure to a Nexus SDK Failure setting the metadata "type" field to
-// the proto fullname of the temporal API Failure message.
-// Mutates the failure temporarily, unsetting the Message field to avoid duplicating the information in the serialized
-// failure. Mutating was chosen over cloning for performance reasons since this function may be called frequently.
-func apiFailureToNexusFailure(failure *failurepb.Failure) (nexus.Failure, error) {
-	// Unset message so it's not serialized in the details.
-	var message string
-	message, failure.Message = failure.Message, ""
-	data, err := protojson.Marshal(failure)
-	failure.Message = message
-
-	if err != nil {
-		return nexus.Failure{}, err
-	}
-	return nexus.Failure{
-		Message: failure.GetMessage(),
-		Metadata: map[string]string{
-			"type": failureTypeString,
-		},
-		Details: data,
-	}, nil
-}
-
 // nexusFailureToAPIFailure converts a Nexus Failure to an API proto Failure.
 // If the failure metadata "type" field is set to the fullname of the temporal API Failure message, the failure is
 // reconstructed using protojson.Unmarshal on the failure details field.
@@ -467,6 +444,8 @@ func (t *testSuiteClientForNexusOperations) ResetWorkflowExecution(ctx context.C
 }
 
 // ScanWorkflow implements Client.
+//
+//lint:ignore SA1019 the server API was deprecated.
 func (t *testSuiteClientForNexusOperations) ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error) {
 	panic("not implemented in the test environment")
 }
