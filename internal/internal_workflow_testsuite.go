@@ -2155,6 +2155,7 @@ func newTestActivityTask(workflowID, runID, workflowTypeName, namespace string,
 		},
 		WorkflowNamespace: namespace,
 		Header:            attr.GetHeader(),
+		Priority:          attr.Priority,
 	}
 	return task
 }
