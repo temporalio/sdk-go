@@ -606,14 +606,14 @@ func (e *TestWorkflowEnvironment) OnUpsertMemo(attributes interface{}) *MockCall
 //		mock.Anything, // NexusOperationOptions
 //	).Return(
 //		&nexus.HandlerStartOperationResultAsync{
-//			OperationID: "hello-operation-id",
+//			OperationToken: "hello-operation-token",
 //		},
 //		nil,
 //	)
 //	t.RegisterNexusAsyncOperationCompletion(
 //		"service-name",
 //		"hello-operation",
-//		"hello-operation-id",
+//		"hello-operation-token",
 //		HelloOutput{Message: "Hello Temporal"},
 //		nil,
 //		1*time.Second,
@@ -694,7 +694,7 @@ func (e *TestWorkflowEnvironment) OnNexusOperation(
 func (e *TestWorkflowEnvironment) RegisterNexusAsyncOperationCompletion(
 	service string,
 	operation string,
-	operationID string,
+	token string,
 	result any,
 	err error,
 	delay time.Duration,
@@ -702,7 +702,7 @@ func (e *TestWorkflowEnvironment) RegisterNexusAsyncOperationCompletion(
 	return e.impl.RegisterNexusAsyncOperationCompletion(
 		service,
 		operation,
-		operationID,
+		token,
 		result,
 		err,
 		delay,
