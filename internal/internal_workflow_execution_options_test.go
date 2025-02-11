@@ -48,7 +48,8 @@ func Test_WorkflowExecutionOptions_fromProtoResponse(t *testing.T) {
 			response: &workflowservice.UpdateWorkflowExecutionOptionsResponse{
 				WorkflowExecutionOptions: &workflowpb.WorkflowExecutionOptions{
 					VersioningOverride: &workflowpb.VersioningOverride{
-						Behavior: enumspb.VersioningBehavior(VersioningBehaviorPinned),
+						Behavior:      enumspb.VersioningBehavior(VersioningBehaviorPinned),
+						PinnedVersion: "my series.v1",
 						Deployment: &deploymentpb.Deployment{
 							SeriesName: "my series",
 							BuildId:    "v1",
@@ -58,7 +59,8 @@ func Test_WorkflowExecutionOptions_fromProtoResponse(t *testing.T) {
 			},
 			want: WorkflowExecutionOptions{
 				VersioningOverride: VersioningOverride{
-					Behavior: VersioningBehaviorPinned,
+					Behavior:      VersioningBehaviorPinned,
+					PinnedVersion: "my series.v1",
 					Deployment: Deployment{
 						SeriesName: "my series",
 						BuildID:    "v1",
