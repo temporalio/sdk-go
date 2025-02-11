@@ -280,8 +280,6 @@ type (
 
 	// NexusOperationError is an error returned when a Nexus Operation has failed.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/temporal.NexusOperationError]
 	NexusOperationError struct {
 		// The raw proto failure object this error was created from.
