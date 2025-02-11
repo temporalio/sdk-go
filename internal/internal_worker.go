@@ -241,8 +241,8 @@ type (
 var debugMode = os.Getenv("TEMPORAL_DEBUG") != ""
 
 // newWorkflowWorker returns an instance of the workflow worker.
-func newWorkflowWorker(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, ppMgr pressurePointMgr, registry *registry) *workflowWorker {
-	return newWorkflowWorkerInternal(service, params, ppMgr, nil, registry)
+func newWorkflowWorker(client *WorkflowClient, params workerExecutionParameters, ppMgr pressurePointMgr, registry *registry) *workflowWorker {
+	return newWorkflowWorkerInternal(client, params, ppMgr, nil, registry)
 }
 
 func ensureRequiredParams(params *workerExecutionParameters) {
@@ -303,7 +303,7 @@ func verifyNamespaceExist(
 	return err
 }
 
-func newWorkflowWorkerInternal(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, ppMgr pressurePointMgr, overrides *workerOverrides, registry *registry) *workflowWorker {
+func newWorkflowWorkerInternal(client *WorkflowClient, params workerExecutionParameters, ppMgr pressurePointMgr, overrides *workerOverrides, registry *registry) *workflowWorker {
 	workerStopChannel := make(chan struct{})
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
 	// Get a workflow task handler.
@@ -314,18 +314,22 @@ func newWorkflowWorkerInternal(service workflowservice.WorkflowServiceClient, pa
 	} else {
 		taskHandler = newWorkflowTaskHandler(params, ppMgr, registry)
 	}
-	return newWorkflowTaskWorkerInternal(taskHandler, taskHandler, service, params, workerStopChannel, registry.interceptors)
+	return newWorkflowTaskWorkerInternal(taskHandler, taskHandler, client, params, workerStopChannel, registry.interceptors)
 }
 
 func newWorkflowTaskWorkerInternal(
 	taskHandler WorkflowTaskHandler,
 	contextManager WorkflowContextManager,
-	service workflowservice.WorkflowServiceClient,
+	client *WorkflowClient,
 	params workerExecutionParameters,
 	stopC chan struct{},
 	interceptors []WorkerInterceptor,
 ) *workflowWorker {
 	ensureRequiredParams(&params)
+	var service workflowservice.WorkflowServiceClient
+	if client != nil {
+		service = client.workflowService
+	}
 	poller := newWorkflowTaskPoller(taskHandler, contextManager, service, params)
 	worker := newBaseWorker(baseWorkerOptions{
 		pollerCount:      params.MaxConcurrentWorkflowTaskQueuePollers,
@@ -355,7 +359,7 @@ func newWorkflowTaskWorkerInternal(
 	}
 
 	// 2) local activity task poller will poll from laTunnel, and result will be pushed to laTunnel
-	localActivityTaskPoller := newLocalActivityPoller(params, laTunnel, interceptors)
+	localActivityTaskPoller := newLocalActivityPoller(params, laTunnel, interceptors, client)
 	localActivityWorker := newBaseWorker(baseWorkerOptions{
 		pollerCount:      1, // 1 poller (from local channel) is enough for local activity
 		slotSupplier:     params.Tuner.GetLocalActivitySlotSupplier(),
@@ -407,7 +411,7 @@ func (ww *workflowWorker) Stop() {
 	ww.worker.Stop()
 }
 
-func newSessionWorker(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
+func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
 	if params.Identity == "" {
 		params.Identity = getWorkerIdentity(params.TaskQueue)
 	}
@@ -420,7 +424,7 @@ func newSessionWorker(service workflowservice.WorkflowServiceClient, params work
 	creationTaskqueue := getCreationTaskqueue(params.TaskQueue)
 	params.UserContext = context.WithValue(params.UserContext, sessionEnvironmentContextKey, sessionEnvironment)
 	params.TaskQueue = sessionEnvironment.GetResourceSpecificTaskqueue()
-	activityWorker := newActivityWorker(service, params,
+	activityWorker := newActivityWorker(client, params,
 		&workerOverrides{slotSupplier: params.Tuner.GetSessionActivitySlotSupplier()}, env, nil)
 
 	params.MaxConcurrentActivityTaskQueuePollers = 1
@@ -429,7 +433,7 @@ func newSessionWorker(service workflowservice.WorkflowServiceClient, params work
 	// and recreation, we also limit it here for creation only
 	overrides := &workerOverrides{}
 	overrides.slotSupplier, _ = NewFixedSizeSlotSupplier(maxConcurrentSessionExecutionSize)
-	creationWorker := newActivityWorker(service, params, overrides, env, sessionEnvironment.GetTokenBucket())
+	creationWorker := newActivityWorker(client, params, overrides, env, sessionEnvironment.GetTokenBucket())
 
 	return &sessionWorker{
 		creationWorker: creationWorker,
@@ -457,12 +461,16 @@ func (sw *sessionWorker) Stop() {
 }
 
 func newActivityWorker(
-	service workflowservice.WorkflowServiceClient,
+	client *WorkflowClient,
 	params workerExecutionParameters,
 	overrides *workerOverrides,
 	env *registry,
 	sessionTokenBucket *sessionTokenBucket,
 ) *activityWorker {
+	var service workflowservice.WorkflowServiceClient
+	if client != nil {
+		service = client.workflowService
+	}
 	workerStopChannel := make(chan struct{}, 1)
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
 	ensureRequiredParams(&params)
@@ -472,7 +480,7 @@ func newActivityWorker(
 	if overrides != nil && overrides.activityTaskHandler != nil {
 		taskHandler = overrides.activityTaskHandler
 	} else {
-		taskHandler = newActivityTaskHandler(service, params, env)
+		taskHandler = newActivityTaskHandler(client, params, env)
 	}
 
 	poller := newActivityTaskPoller(taskHandler, service, params)
@@ -559,6 +567,9 @@ func (r *registry) RegisterWorkflowWithOptions(
 		if len(options.Name) == 0 {
 			panic("WorkflowDefinitionFactory must be registered with a name")
 		}
+		if strings.HasPrefix(options.Name, temporalPrefix) {
+			panic(temporalPrefixError)
+		}
 		r.workflowFuncMap[options.Name] = factory
 		r.workflowVersioningBehaviorMap[options.Name] = options.VersioningBehavior
 		return
@@ -573,6 +584,10 @@ func (r *registry) RegisterWorkflowWithOptions(
 	registerName := fnName
 	if len(alias) > 0 {
 		registerName = alias
+	}
+
+	if strings.HasPrefix(alias, temporalPrefix) || strings.HasPrefix(registerName, temporalPrefix) {
+		panic(temporalPrefixError)
 	}
 
 	r.Lock()
@@ -605,6 +620,9 @@ func (r *registry) RegisterActivityWithOptions(
 		if options.Name == "" {
 			panic("registration of activity interface requires name")
 		}
+		if strings.HasPrefix(options.Name, temporalPrefix) {
+			panic(temporalPrefixError)
+		}
 		r.addActivityWithLock(options.Name, a)
 		return
 	}
@@ -625,6 +643,10 @@ func (r *registry) RegisterActivityWithOptions(
 	registerName := fnName
 	if len(alias) > 0 {
 		registerName = alias
+	}
+
+	if strings.HasPrefix(alias, temporalPrefix) || strings.HasPrefix(registerName, temporalPrefix) {
+		panic(temporalPrefixError)
 	}
 
 	r.Lock()
@@ -1651,6 +1673,9 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (hist *histo
 
 // NewAggregatedWorker returns an instance to manage both activity and workflow workers
 func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options WorkerOptions) *AggregatedWorker {
+	if strings.HasPrefix(taskQueue, temporalPrefix) {
+		panic(temporalPrefixError)
+	}
 	setClientDefaults(client)
 	setWorkerOptionsDefaults(&options)
 	ctx := options.BackgroundActivityContext
@@ -1780,22 +1805,22 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	if !options.DisableWorkflowWorker {
 		testTags := getTestTags(options.BackgroundActivityContext)
 		if len(testTags) > 0 {
-			workflowWorker = newWorkflowWorkerWithPressurePoints(client.workflowService, workerParams, testTags, registry)
+			workflowWorker = newWorkflowWorkerWithPressurePoints(client, workerParams, testTags, registry)
 		} else {
-			workflowWorker = newWorkflowWorker(client.workflowService, workerParams, nil, registry)
+			workflowWorker = newWorkflowWorker(client, workerParams, nil, registry)
 		}
 	}
 
 	// activity types.
 	var activityWorker *activityWorker
 	if !options.LocalActivityWorkerOnly {
-		activityWorker = newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
+		activityWorker = newActivityWorker(client, workerParams, nil, registry, nil)
 		workerParams.eagerActivityExecutor.activityWorker = activityWorker.worker
 	}
 
 	var sessionWorker *sessionWorker
 	if options.EnableSessionWorker && !options.LocalActivityWorkerOnly {
-		sessionWorker = newSessionWorker(client.workflowService, workerParams, registry, options.MaxConcurrentSessionExecutionSize)
+		sessionWorker = newSessionWorker(client, workerParams, registry, options.MaxConcurrentSessionExecutionSize)
 		registry.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
 			Name: sessionCreationActivityName,
 		})

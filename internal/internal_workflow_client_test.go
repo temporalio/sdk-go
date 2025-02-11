@@ -1031,8 +1031,41 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_Retry() {
 	s.NoError(err)
 }
 
-func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_OperationNotExecuted() {
+func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_DefaultTimeout() {
+	var actualDeadline time.Time
+	expectedDeadline := time.Now().Add(pollUpdateTimeout)
+	s.workflowServiceClient.EXPECT().
+		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			ctx context.Context,
+			_ *workflowservice.ExecuteMultiOperationRequest,
+			_ ...grpc.CallOption,
+		) (*workflowservice.ExecuteMultiOperationResponse, error) {
+			actualDeadline, _ = ctx.Deadline()
+			return nil, errors.New("intentional error")
+		})
 
+	_, _ = s.workflowClient.UpdateWithStartWorkflow(
+		context.Background(),
+		UpdateWithStartWorkflowOptions{
+			UpdateOptions: UpdateWorkflowOptions{
+				UpdateName:   "update",
+				WaitForStage: WorkflowUpdateStageCompleted,
+			},
+			StartWorkflowOperation: s.workflowClient.NewWithStartWorkflowOperation(
+				StartWorkflowOptions{
+					ID:                       workflowID,
+					WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
+					TaskQueue:                taskqueue,
+				}, workflowType,
+			),
+		},
+	)
+
+	require.WithinDuration(s.T(), expectedDeadline, actualDeadline, 2*time.Second)
+}
+
+func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_OperationNotExecuted() {
 	startOp := s.workflowClient.NewWithStartWorkflowOperation(
 		StartWorkflowOptions{
 			ID:                       workflowID,
@@ -1744,7 +1777,9 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithVersioningOverride() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
 		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
 			s.Equal(versioningBehaviorToProto(VersioningBehaviorPinned), req.VersioningOverride.GetBehavior())
+			//lint:ignore SA1019 the server API was deprecated.
 			s.Equal("build1", req.VersioningOverride.GetDeployment().GetBuildId())
+			//lint:ignore SA1019 the server API was deprecated.
 			s.Equal("deployment1", req.VersioningOverride.GetDeployment().GetSeriesName())
 		})
 	_, _ = s.client.ExecuteWorkflow(context.Background(), options, wf)
@@ -1774,7 +1809,9 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithVersioningOverr
 	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
 		Do(func(_ interface{}, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...interface{}) {
 			s.Equal(versioningBehaviorToProto(VersioningBehaviorPinned), req.VersioningOverride.GetBehavior())
+			//lint:ignore SA1019 the server API was deprecated.
 			s.Equal("build1", req.VersioningOverride.GetDeployment().GetBuildId())
+			//lint:ignore SA1019 the server API was deprecated.
 			s.Equal("deployment1", req.VersioningOverride.GetDeployment().GetSeriesName())
 		})
 	_, _ = s.client.SignalWithStartWorkflow(context.Background(), "wid", "signal", "value", options, wf)
@@ -1893,9 +1930,12 @@ func (s *workflowClientTestSuite) TestListArchivedWorkflow() {
 }
 
 func (s *workflowClientTestSuite) TestScanWorkflow() {
+	//lint:ignore SA1019 the server API was deprecated.
 	request := &workflowservice.ScanWorkflowExecutionsRequest{}
+	//lint:ignore SA1019 the server API was deprecated.
 	response := &workflowservice.ScanWorkflowExecutionsResponse{}
 	s.service.EXPECT().ScanWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
+		//lint:ignore SA1019 the server API was deprecated.
 		Do(func(_ interface{}, req *workflowservice.ScanWorkflowExecutionsRequest, _ ...interface{}) {
 			s.Equal(DefaultNamespace, request.GetNamespace())
 		})
@@ -1905,6 +1945,7 @@ func (s *workflowClientTestSuite) TestScanWorkflow() {
 
 	request.Namespace = "another"
 	s.service.EXPECT().ScanWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewInvalidArgument("")).
+		//lint:ignore SA1019 the server API was deprecated.
 		Do(func(_ interface{}, req *workflowservice.ScanWorkflowExecutionsRequest, _ ...interface{}) {
 			s.Equal("another", request.GetNamespace())
 		})

@@ -41,6 +41,7 @@ package temporalnexus
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/api/common/v1"
@@ -70,6 +71,16 @@ func GetLogger(ctx context.Context) log.Logger {
 	return nctx.Log
 }
 
+// GetClient returns a client to be used in a Nexus operation's context, this is the same client that the worker was
+// created with. Client methods will panic when called from the test environment.
+func GetClient(ctx context.Context) client.Client {
+	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
+	if !ok {
+		panic("temporalnexus GetClient: Not a valid Nexus context")
+	}
+	return nctx.Client
+}
+
 type syncOperation[I, O any] struct {
 	nexus.UnimplementedOperation[I, O]
 
@@ -82,55 +93,18 @@ type syncOperation[I, O any] struct {
 // Sync operations are useful for exposing short-lived Temporal client requests, such as signals, queries, sync update,
 // list workflows, etc...
 //
-// NOTE: Experimental
+// Deprecated: Use nexus.NewSyncOperation and get the client via temporalnexus.GetClient
 func NewSyncOperation[I any, O any](
 	name string,
 	handler func(context.Context, client.Client, I, nexus.StartOperationOptions) (O, error),
 ) nexus.Operation[I, O] {
+	if strings.HasPrefix(name, "__temporal_") {
+		panic(errors.New("temporalnexus NewSyncOperation __temporal_ is an reserved prefix"))
+	}
 	return &syncOperation[I, O]{
 		name:    name,
 		handler: handler,
 	}
-}
-
-// SignalWorkflowInput encapsulates the values required to send a signal to a workflow.
-//
-// NOTE: Experimental
-type SignalWorkflowInput struct {
-	// WorkflowID is the ID of the workflow which will receive the signal. Required.
-	WorkflowID string
-	// RunID is the run ID of the workflow which will receive the signal. Optional. If empty, the signal will be
-	// delivered to the running execution of the indicated workflow ID.
-	RunID string
-	// SignalName is the name of the signal. Required.
-	SignalName string
-	// Arg is the payload attached to the signal. Optional.
-	Arg any
-}
-
-// NewWorkflowSignalOperation is a helper for creating a synchronous nexus.Operation to deliver a signal, linking the
-// signal to a Nexus operation. Request ID from the Nexus options is propagated to the workflow to ensure idempotency.
-//
-// NOTE: Experimental
-func NewWorkflowSignalOperation[T any](
-	name string,
-	getSignalInput func(context.Context, T, nexus.StartOperationOptions) SignalWorkflowInput,
-) nexus.Operation[T, nexus.NoValue] {
-	return NewSyncOperation(name, func(ctx context.Context, c client.Client, in T, options nexus.StartOperationOptions) (nexus.NoValue, error) {
-		signalInput := getSignalInput(ctx, in, options)
-
-		if options.RequestID != "" {
-			ctx = context.WithValue(ctx, internal.NexusOperationRequestIDKey, options.RequestID)
-		}
-
-		links, err := convertNexusLinks(options.Links, GetLogger(ctx))
-		if err != nil {
-			return nil, err
-		}
-		ctx = context.WithValue(ctx, internal.NexusOperationLinksKey, links)
-
-		return nil, c.SignalWorkflow(ctx, signalInput.WorkflowID, signalInput.RunID, signalInput.SignalName, signalInput.Arg)
-	})
 }
 
 func (o *syncOperation[I, O]) Name() string {
@@ -184,6 +158,9 @@ func NewWorkflowRunOperation[I, O any](
 	workflow func(workflow.Context, I) (O, error),
 	getOptions func(context.Context, I, nexus.StartOperationOptions) (client.StartWorkflowOptions, error),
 ) nexus.Operation[I, O] {
+	if strings.HasPrefix(name, "__temporal_") {
+		panic(errors.New("temporalnexus NewWorkflowRunOperation __temporal_ is an invalid name"))
+	}
 	return &workflowRunOperation[I, O]{
 		options: WorkflowRunOperationOptions[I, O]{
 			Name:       name,
@@ -200,6 +177,9 @@ func NewWorkflowRunOperation[I, O any](
 func NewWorkflowRunOperationWithOptions[I, O any](options WorkflowRunOperationOptions[I, O]) (nexus.Operation[I, O], error) {
 	if options.Name == "" {
 		return nil, errors.New("invalid options: Name is required")
+	}
+	if strings.HasPrefix(options.Name, "__temporal_") {
+		return nil, errors.New("invalid options: __temporal_ is a reserved prefix")
 	}
 	if options.Workflow == nil && options.GetOptions == nil && options.Handler == nil {
 		return nil, errors.New("invalid options: either GetOptions and Workflow, or Handler are required")
@@ -227,7 +207,7 @@ func MustNewWorkflowRunOperationWithOptions[I, O any](options WorkflowRunOperati
 	return op
 }
 
-func (*workflowRunOperation[I, O]) Cancel(ctx context.Context, id string, options nexus.CancelOperationOptions) error {
+func (*workflowRunOperation[I, O]) Cancel(ctx context.Context, token string, options nexus.CancelOperationOptions) error {
 	// Prevent the test env client from panicking when we try to use it from a workflow run operation.
 	ctx = context.WithValue(ctx, internal.IsWorkflowRunOpContextKey, true)
 
@@ -235,7 +215,16 @@ func (*workflowRunOperation[I, O]) Cancel(ctx context.Context, id string, option
 	if !ok {
 		return nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
 	}
-	return nctx.Client.CancelWorkflow(ctx, id, "")
+	var workflowID string
+	workflowRunToken, err := loadWorkflowRunOperationToken(token)
+	if err != nil {
+		// Assume token is a workflow ID as generated by older SDK versions.
+		workflowID = token
+	} else {
+		workflowID = workflowRunToken.WorkflowID
+	}
+
+	return nctx.Client.CancelWorkflow(ctx, workflowID, "")
 }
 
 func (o *workflowRunOperation[I, O]) Name() string {
@@ -263,9 +252,10 @@ func (o *workflowRunOperation[I, O]) Start(
 		if err != nil {
 			return nil, err
 		}
+		nexus.AddHandlerLinks(ctx, handle.link())
 		return &nexus.HandlerStartOperationResultAsync{
-			OperationID: handle.ID(),
-			Links:       []nexus.Link{handle.link()},
+			OperationToken: handle.token(),
+			OperationID:    handle.token(),
 		}, nil
 	}
 
@@ -279,9 +269,10 @@ func (o *workflowRunOperation[I, O]) Start(
 		return nil, err
 	}
 
+	nexus.AddHandlerLinks(ctx, handle.link())
 	return &nexus.HandlerStartOperationResultAsync{
-		OperationID: handle.ID(),
-		Links:       []nexus.Link{handle.link()},
+		OperationToken: handle.token(),
+		OperationID:    handle.token(),
 	}, nil
 }
 
@@ -299,12 +290,14 @@ type WorkflowHandle[T any] interface {
 
 	// Link to the WorkflowExecutionStarted event of the workflow represented by this handle.
 	link() nexus.Link
+	token() string // Cached operation token
 }
 
 type workflowHandle[T any] struct {
-	namespace string
-	id        string
-	runID     string
+	namespace   string
+	id          string
+	runID       string
+	cachedToken string
 }
 
 func (h workflowHandle[T]) ID() string {
@@ -328,7 +321,10 @@ func (h workflowHandle[T]) link() nexus.Link {
 		},
 	}
 	return ConvertLinkWorkflowEventToNexusLink(link)
+}
 
+func (h workflowHandle[T]) token() string {
+	return h.cachedToken
 }
 
 // ExecuteWorkflow starts a workflow run for a [WorkflowRunOperationOptions] Handler, linking the execution chain to a
@@ -380,13 +376,19 @@ func ExecuteUntypedWorkflow[R any](
 		internal.SetRequestIDOnStartWorkflowOptions(&startWorkflowOptions, nexusOptions.RequestID)
 	}
 
+	var encodedToken string
 	if nexusOptions.CallbackURL != "" {
 		if nexusOptions.CallbackHeader == nil {
 			nexusOptions.CallbackHeader = make(nexus.Header)
 		}
-		if idHeader := nexusOptions.CallbackHeader.Get(nexus.HeaderOperationID); idHeader == "" {
-			nexusOptions.CallbackHeader.Set(nexus.HeaderOperationID, startWorkflowOptions.ID)
+		encodedToken, err = generateWorkflowRunOperationToken(nctx.Namespace, startWorkflowOptions.ID)
+		if err != nil {
+			return nil, err
 		}
+
+		//lint:ignore SA1019 this field is expected to be populated by servers older than 1.27.0.
+		nexusOptions.CallbackHeader.Set(nexus.HeaderOperationID, encodedToken)
+		nexusOptions.CallbackHeader.Set(nexus.HeaderOperationToken, encodedToken)
 		internal.SetCallbacksOnStartWorkflowOptions(&startWorkflowOptions, []*common.Callback{
 			{
 				Variant: &common.Callback_Nexus_{
@@ -410,9 +412,10 @@ func ExecuteUntypedWorkflow[R any](
 		return nil, err
 	}
 	return workflowHandle[R]{
-		namespace: nctx.Namespace,
-		id:        run.GetID(),
-		runID:     run.GetRunID(),
+		namespace:   nctx.Namespace,
+		id:          run.GetID(),
+		runID:       run.GetRunID(),
+		cachedToken: encodedToken,
 	}, nil
 }
 

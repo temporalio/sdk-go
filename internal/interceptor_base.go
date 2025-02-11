@@ -144,6 +144,12 @@ func (a *ActivityOutboundInterceptorBase) GetWorkerStopChannel(ctx context.Conte
 	return a.Next.GetWorkerStopChannel(ctx)
 }
 
+// GetClient implements
+// ActivityOutboundInterceptor.GetClient
+func (a *ActivityOutboundInterceptorBase) GetClient(ctx context.Context) Client {
+	return a.Next.GetClient(ctx)
+}
+
 func (*ActivityOutboundInterceptorBase) mustEmbedActivityOutboundInterceptorBase() {}
 
 // WorkflowInboundInterceptorBase is a default implementation of

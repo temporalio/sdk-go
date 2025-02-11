@@ -35,6 +35,7 @@ import (
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -195,6 +196,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 	var opres nexus.HandlerStartOperationResult[any]
 	var err error
 	var panic bool
+	ctx = nexus.WithHandlerContext(ctx)
 	func() {
 		defer func() {
 			recovered := recover()
@@ -221,7 +223,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 		if !panic {
 			nctx.Log.Error("Handler returned error while processing Nexus task", tagError, err)
 		}
-		var unsuccessfulOperationErr *nexus.UnsuccessfulOperationError
+		var unsuccessfulOperationErr *nexus.OperationError
 		err = convertKnownErrors(err)
 		if errors.As(err, &unsuccessfulOperationErr) {
 			failure, err := h.errorToFailure(unsuccessfulOperationErr.Cause)
@@ -253,26 +255,41 @@ func (h *nexusTaskHandler) handleStartOperation(
 	}
 	switch t := opres.(type) {
 	case *nexus.HandlerStartOperationResultAsync:
-		var links []*nexuspb.Link
-		for _, nexusLink := range t.Links {
-			links = append(links, &nexuspb.Link{
+		nexusLinks := nexus.HandlerLinks(ctx)
+		links := make([]*nexuspb.Link, len(nexusLinks))
+		for i, nexusLink := range nexusLinks {
+			links[i] = &nexuspb.Link{
 				Url:  nexusLink.URL.String(),
 				Type: nexusLink.Type,
-			})
+			}
+		}
+		token := t.OperationToken
+		//lint:ignore SA1019 this field might be set by users of older SDKs.
+		if t.OperationID != "" {
+			token = t.OperationID //lint:ignore SA1019 this field might be set by users of older SDKs.
 		}
 		return &nexuspb.Response{
 			Variant: &nexuspb.Response_StartOperation{
 				StartOperation: &nexuspb.StartOperationResponse{
 					Variant: &nexuspb.StartOperationResponse_AsyncSuccess{
 						AsyncSuccess: &nexuspb.StartOperationResponse_Async{
-							OperationId: t.OperationID,
-							Links:       links,
+							OperationToken: token,
+							OperationId:    token,
+							Links:          links,
 						},
 					},
 				},
 			},
 		}, nil, nil
 	default:
+		nexusLinks := nexus.HandlerLinks(ctx)
+		links := make([]*nexuspb.Link, len(nexusLinks))
+		for i, nexusLink := range nexusLinks {
+			links[i] = &nexuspb.Link{
+				Url:  nexusLink.URL.String(),
+				Type: nexusLink.Type,
+			}
+		}
 		// *nexus.HandlerStartOperationResultSync is generic, we can't type switch unfortunately.
 		value := reflect.ValueOf(t).Elem().FieldByName("Value").Interface()
 		payload, err := h.dataConverter.ToPayload(value)
@@ -287,6 +304,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 					Variant: &nexuspb.StartOperationResponse_SyncSuccess{
 						SyncSuccess: &nexuspb.StartOperationResponse_Sync{
 							Payload: payload,
+							Links:   links,
 						},
 					},
 				},
@@ -313,7 +331,12 @@ func (h *nexusTaskHandler) handleCancelOperation(ctx context.Context, nctx *Nexu
 				nctx.Log.Error("Panic captured while handling Nexus task", tagStackTrace, string(debug.Stack()), tagError, err)
 			}
 		}()
-		err = h.nexusHandler.CancelOperation(ctx, req.GetService(), req.GetOperation(), req.GetOperationId(), cancelOptions)
+		token := req.GetOperationToken()
+		if token == "" {
+			// Support servers older than 1.27.0.
+			token = req.GetOperationId()
+		}
+		err = h.nexusHandler.CancelOperation(ctx, req.GetService(), req.GetOperation(), token, cancelOptions)
 	}()
 	if ctx.Err() != nil {
 		if !panic {
@@ -444,9 +467,17 @@ func (h *nexusTaskHandler) nexusHandlerErrorToProto(handlerErr *nexus.HandlerErr
 	if err != nil {
 		return nil, err
 	}
+	var retryBehavior enumspb.NexusHandlerErrorRetryBehavior
+	switch handlerErr.RetryBehavior {
+	case nexus.HandlerErrorRetryBehaviorRetryable:
+		retryBehavior = enumspb.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_RETRYABLE
+	case nexus.HandlerErrorRetryBehaviorNonRetryable:
+		retryBehavior = enumspb.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_NON_RETRYABLE
+	}
 	return &nexuspb.HandlerError{
-		ErrorType: string(handlerErr.Type),
-		Failure:   failure,
+		ErrorType:     string(handlerErr.Type),
+		Failure:       failure,
+		RetryBehavior: retryBehavior,
 	}, nil
 }
 
@@ -469,16 +500,13 @@ var emptyReaderNopCloser = io.NopCloser(bytes.NewReader([]byte{}))
 
 // convertKnownErrors converts known errors to corresponding Nexus HandlerError.
 func convertKnownErrors(err error) error {
-	// Handle common errors returned from various client methods.
-	if workflowErr, ok := err.(*WorkflowExecutionError); ok {
-		return nexus.NewFailedOperationError(workflowErr)
-	}
-	if queryRejectedErr, ok := err.(*QueryRejectedError); ok {
-		return nexus.NewFailedOperationError(queryRejectedErr)
-	}
 	// Not using errors.As to be consistent ApplicationError checking with the rest of the SDK.
 	if appErr, ok := err.(*ApplicationError); ok && appErr.NonRetryable() {
-		return nexus.NewFailedOperationError(appErr)
+		return &nexus.HandlerError{
+			// TODO(bergundy): Change this to a non retryable internal error after the 1.27.0 server release.
+			Type:  nexus.HandlerErrorTypeBadRequest,
+			Cause: appErr,
+		}
 	}
 	return convertServiceError(err)
 }
@@ -502,7 +530,10 @@ func convertServiceError(err error) error {
 	st = stGetter.Status()
 
 	switch st.Code() {
-	case codes.AlreadyExists, codes.InvalidArgument, codes.FailedPrecondition, codes.OutOfRange:
+	case codes.InvalidArgument:
+		return &nexus.HandlerError{Type: nexus.HandlerErrorTypeBadRequest, Cause: err}
+	case codes.AlreadyExists, codes.FailedPrecondition, codes.OutOfRange:
+		// TODO(bergundy): Change this to a non retryable internal error after the 1.27.0 server release.
 		return &nexus.HandlerError{Type: nexus.HandlerErrorTypeBadRequest, Cause: err}
 	case codes.Aborted, codes.Unavailable:
 		return &nexus.HandlerError{Type: nexus.HandlerErrorTypeUnavailable, Cause: err}

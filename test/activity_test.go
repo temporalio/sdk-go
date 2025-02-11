@@ -28,6 +28,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go.temporal.io/api/workflowservice/v1"
 	"strconv"
 	"strings"
 	"sync"
@@ -434,4 +435,19 @@ func (a *Activities) register(worker worker.Worker) {
 	// Check prefix
 	worker.RegisterActivityWithOptions(a.activities2, activity.RegisterOptions{Name: "Prefix_", DisableAlreadyRegisteredCheck: true})
 	worker.RegisterActivityWithOptions(a.InspectActivityInfo, activity.RegisterOptions{Name: "inspectActivityInfo"})
+}
+
+func (a *Activities) ClientFromActivity(ctx context.Context) error {
+	activityClient := activity.GetClient(ctx)
+	info := activity.GetInfo(ctx)
+	request := workflowservice.ListWorkflowExecutionsRequest{Namespace: info.WorkflowNamespace}
+	resp, err := activityClient.ListWorkflow(ctx, &request)
+	if err != nil {
+		return err
+	}
+
+	if len(resp.Executions) == 0 {
+		return fmt.Errorf("expected non-empty list of executions")
+	}
+	return nil
 }

@@ -168,6 +168,7 @@ type (
 		dataConverter      converter.DataConverter
 		contextPropagators []ContextPropagator
 		interceptors       []WorkerInterceptor
+		client             *WorkflowClient
 	}
 
 	localActivityResult struct {
@@ -246,9 +247,9 @@ func (bp *basePoller) stopping() bool {
 }
 
 // doPoll runs the given pollFunc in a separate go routine. Returns when any of the conditions are met:
-//  - poll succeeds
-//  - poll fails
-//  - worker is stopping
+//   - poll succeeds
+//   - poll fails
+//   - worker is stopping
 func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (taskForWorker, error)) (taskForWorker, error) {
 	if bp.stopping() {
 		return nil, errStop
@@ -589,6 +590,7 @@ func newLocalActivityPoller(
 	params workerExecutionParameters,
 	laTunnel *localActivityTunnel,
 	interceptors []WorkerInterceptor,
+	client *WorkflowClient,
 ) *localActivityTaskPoller {
 	handler := &localActivityTaskHandler{
 		userContext:        params.UserContext,
@@ -597,6 +599,7 @@ func newLocalActivityPoller(
 		dataConverter:      params.DataConverter,
 		contextPropagators: params.ContextPropagators,
 		interceptors:       interceptors,
+		client:             client,
 	}
 	return &localActivityTaskPoller{
 		basePoller: basePoller{metricsHandler: params.MetricsHandler, stopC: params.WorkerStopChannel},
@@ -650,7 +653,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 		)
 	})
 	ctx, err := WithLocalActivityTask(lath.userContext, task, lath.logger, lath.metricsHandler,
-		lath.dataConverter, lath.interceptors)
+		lath.dataConverter, lath.interceptors, lath.client)
 	if err != nil {
 		return &localActivityResult{task: task, err: fmt.Errorf("failed building context: %w", err)}
 	}
@@ -707,8 +710,9 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 		if time.Now().After(info.deadline) {
 			// If local activity takes longer than expected timeout, the context would already be DeadlineExceeded and
 			// the result would be discarded. Print a warning in this case.
-			lath.logger.Warn("LocalActivity takes too long to complete.",
+			lath.logger.Warn("LocalActivity completed after activity deadline.",
 				"LocalActivityID", task.activityID,
+				"ActivityDeadline", info.deadline,
 				"LocalActivityType", activityType,
 				"ScheduleToCloseTimeout", task.params.ScheduleToCloseTimeout,
 				"StartToCloseTimeout", task.params.StartToCloseTimeout,

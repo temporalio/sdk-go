@@ -92,8 +92,6 @@ const (
 	testContextKey1               = "test-context-key1"
 	testContextKey2               = "test-context-key2"
 	testContextKey3               = "test-context-key3"
-	// 0x8f01 is invalid UTF-8
-	invalidUTF8 = "\n\x8f\x01\n\x0ejunk\x12data"
 )
 
 type IntegrationTestSuite struct {
@@ -3952,6 +3950,61 @@ func (ts *IntegrationTestSuite) TestUpdateRejectedDuplicated() {
 	ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID())
 }
 
+func (ts *IntegrationTestSuite) TestSpeculativeUpdate() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-speculative-update")
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.WorkflowWithUpdate)
+	ts.NoError(err)
+	// Send a regular update
+	handle, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+		Args:         []interface{}{1},
+	})
+	ts.NoError(err)
+	ts.NoError(handle.Get(ctx, nil))
+
+	for i := 0; i < 5; i++ {
+		handle, err = ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+			WorkflowID:   run.GetID(),
+			RunID:        run.GetRunID(),
+			UpdateName:   "update",
+			WaitForStage: client.WorkflowUpdateStageCompleted,
+			Args:         []interface{}{0},
+		})
+		ts.NoError(err)
+		ts.Error(handle.Get(ctx, nil))
+	}
+
+	handle, err = ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+		Args:         []interface{}{12},
+	})
+	ts.NoError(err)
+	ts.NoError(handle.Get(ctx, nil))
+
+	for i := 0; i < 5; i++ {
+		handle, err = ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+			WorkflowID:   run.GetID(),
+			RunID:        run.GetRunID(),
+			UpdateName:   "update",
+			WaitForStage: client.WorkflowUpdateStageCompleted,
+			Args:         []interface{}{0},
+		})
+		ts.NoError(err)
+		ts.Error(handle.Get(ctx, nil))
+	}
+
+	ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "unblock", nil)
+	ts.NoError(run.Get(ctx, nil))
+}
+
 func (ts *IntegrationTestSuite) TestUpdateSettingHandlerInGoroutine() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -6637,6 +6690,11 @@ func (ts *IntegrationTestSuite) TestAwaitWithOptionsTimeout() {
 	ts.Equal("await-timer", str)
 }
 
+func (ts *IntegrationTestSuite) TestClientFromActivity() {
+	err := ts.executeWorkflow("client-from-activity", ts.workflows.WorkflowClientFromActivity, nil)
+	ts.NoError(err)
+}
+
 // executeWorkflow executes a given workflow and waits for the result
 func (ts *IntegrationTestSuite) executeWorkflow(
 	wfID string, wfFunc interface{}, retValPtr interface{}, args ...interface{},
@@ -6967,123 +7025,57 @@ func (c *coroutineCountingWorkflowOutboundInterceptor) Go(
 	})
 }
 
-type InvalidUTF8Suite struct {
-	*require.Assertions
-	suite.Suite
-	ConfigAndClientSuiteBase
-	activities    *Activities
-	workflows     *Workflows
-	worker        worker.Worker
-	workerStopped bool
+func (ts *IntegrationTestSuite) TestTemporalPrefixSignal() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-temporal-prefix")
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.WorkflowTemporalPrefixSignal)
+	ts.NoError(err)
+
+	// Trying to GetSignalChannel with a __temporal_ prefixed name should return an error
+	err = run.Get(ctx, nil)
+	ts.Error(err)
 }
 
-func TestInvalidUTF8Suite(t *testing.T) {
-	suite.Run(t, new(InvalidUTF8Suite))
-}
+func (ts *IntegrationTestSuite) TestPartialHistoryReplayFuzzer() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-func (ts *InvalidUTF8Suite) SetupSuite() {
-	ts.Assertions = require.New(ts.T())
-	ts.activities = newActivities()
-	ts.workflows = &Workflows{}
-	ts.NoError(ts.InitConfigAndNamespace())
-}
+	// Run the workflow
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-partial-history-replay-fuzzer"), ts.workflows.CommandsFuzz)
+	ts.NotNil(run)
+	ts.NoError(err)
+	ts.NoError(run.Get(ctx, nil))
 
-func (ts *InvalidUTF8Suite) TearDownSuite() {
-	ts.Assertions = require.New(ts.T())
+	// Obtain history
+	var history historypb.History
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false,
+		enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		ts.NoError(err)
+		history.Events = append(history.Events, event)
+	}
 
-	// allow the pollers to stop, and ensure there are no goroutine leaks.
-	// this will wait for up to 1 minute for leaks to subside, but exit relatively quickly if possible.
-	max := time.After(time.Minute)
-	var last error
-	for {
-		select {
-		case <-max:
-			if last != nil {
-				ts.NoError(last)
-				return
-			}
-			ts.FailNow("leaks timed out but no error, should be impossible")
-		case <-time.After(time.Second):
-			// https://github.com/temporalio/go-sdk/issues/51
-			last = goleak.Find(goleak.IgnoreTopFunction("go.temporal.io/sdk/internal.(*coroutineState).initialYield"))
-			if last == nil {
-				// no leak, done waiting
-				return
-			}
-			// else wait for another check or the timeout (which will record the latest error)
+	var startedPoints []int
+	for i, event := range history.Events {
+		if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED {
+			startedPoints = append(startedPoints, i)
 		}
 	}
-}
+	startedPoints = append(startedPoints, len(history.Events)-1)
 
-func (ts *InvalidUTF8Suite) SetupTest() {
-	// This suite isn't valid for CLI dev servers because they don't allow invalid
-	// UTF8
-	if usingCLIDevServerFlag {
-		ts.T().Skip("Skipping invalid UTF8 suite for dev server")
-		return
+	// Replay partial history, cutting off at each WFT_STARTED event
+	for i := len(startedPoints) - 1; i >= 0; i-- {
+		point := startedPoints[i]
+		history.Events = history.Events[:point+1]
+
+		replayer := worker.NewWorkflowReplayer()
+
+		ts.NoError(err)
+		replayer.RegisterWorkflow(ts.workflows.CommandsFuzz)
+		replayer.RegisterWorkflow(ts.workflows.childWorkflowWaitOnSignal)
+		ts.NoError(replayer.ReplayWorkflowHistory(nil, &history))
 	}
-	var err error
-	ts.client, err = client.Dial(client.Options{
-		HostPort:  ts.config.ServiceAddr,
-		Namespace: ts.config.Namespace,
-		Identity:  "integration-test",
-		Logger:    ilog.NewDefaultLogger(),
-		ContextPropagators: []workflow.ContextPropagator{
-			NewKeysPropagator([]string{testContextKey1}),
-			NewKeysPropagator([]string{testContextKey2}),
-		},
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
-	})
-	ts.NoError(err)
-
-	ts.activities.clearInvoked()
-	ts.activities.client = ts.client
-	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
-	options := worker.Options{
-		WorkflowPanicPolicy: worker.FailWorkflow,
-	}
-
-	worker.SetStickyWorkflowCacheSize(ts.config.maxWorkflowCacheSize)
-
-	ts.worker = worker.New(ts.client, ts.taskQueueName, options)
-	ts.workerStopped = false
-
-	ts.workflows.register(ts.worker)
-	ts.activities.register(ts.worker)
-	ts.Nil(ts.worker.Start())
-}
-
-func (ts *InvalidUTF8Suite) TearDownTest() {
-	if usingCLIDevServerFlag {
-		return
-	}
-	ts.client.Close()
-	if !ts.workerStopped {
-		ts.worker.Stop()
-		ts.workerStopped = true
-	}
-}
-
-func (ts *InvalidUTF8Suite) TestBasic() {
-	var response string
-
-	startOptions := client.StartWorkflowOptions{
-		ID:                       "test-invalidutf8-basic",
-		TaskQueue:                ts.taskQueueName,
-		WorkflowExecutionTimeout: 15 * time.Second,
-		WorkflowTaskTimeout:      time.Second,
-		WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
-		EnableEagerStart:         true,
-	}
-	startOptions.Memo = map[string]interface{}{
-		invalidUTF8: "memoVal",
-	}
-	startOptions.RetryPolicy = &temporal.RetryPolicy{
-		MaximumAttempts: 1,
-	}
-	err := ts.executeWorkflowWithOption(startOptions, ts.workflows.Echo, &response, invalidUTF8)
-	ts.NoError(err)
-	ts.EqualValues([]string{"EchoString"}, ts.activities.invoked())
-	// Go's JSON coding stack will replace invalid bytes with the unicode substitute char U+FFFD
-	ts.Equal("\n�\x01\n\x0ejunk\x12data", response)
 }

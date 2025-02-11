@@ -63,20 +63,6 @@ Go SDK version v1.26.0 switched from using https://github.com/gogo/protobuf to h
 * `time.Duration` will now be [durationpb.Duration](https://pkg.go.dev/google.golang.org/protobuf/types/known/durationpb)
 * V2-generated structs embed locks, so you cannot dereference them.
 
-### Invalid UTF-8
-
-Prior to SDK version v1.26.0 our protobuf code generator allowed invalid UTF-8 data to be stored as proto strings. This isn't actually allowed by the proto3 spec, so if you're using our SDK and think you may store arbitrary binary data in our strings you should set `-tags protolegacy` when building against our SDK.
-
-Example:
-
-``` shell
-$ go build -tags protolegacy myworker/main.go
-```
-
-If you see an error like `grpc: error unmarshalling request: string field contains invalid UTF-8` then you will need to enable this when building your code.
-
-If you're unsure then you should specify it anyways as there's no harm in doing so unless you relied on the protobuf compiler to ensure all strings were valid UTF-8.
-
 ### Incompatible proto/json encoding
 
 Proto enums will, when formatted to JSON, now be in SCREAMING_SNAKE_CASE rather than PascalCase.

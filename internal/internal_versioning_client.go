@@ -265,6 +265,7 @@ func pollerInfoFromResponse(response *taskqueuepb.PollerInfo) TaskQueuePollerInf
 		LastAccessTime:            lastAccessTime,
 		Identity:                  response.GetIdentity(),
 		RatePerSecond:             response.GetRatePerSecond(),
+		//lint:ignore SA1019 the server API was deprecated.
 		WorkerVersionCapabilities: workerVersionCapabilitiesFromResponse(response.GetWorkerVersionCapabilities()),
 	}
 }

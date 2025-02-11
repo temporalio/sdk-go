@@ -25,6 +25,7 @@
 package workflow
 
 import (
+	"cmp"
 	"errors"
 
 	"go.temporal.io/sdk/converter"
@@ -32,7 +33,6 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/temporal"
-	"golang.org/x/exp/constraints"
 )
 
 // VersioningBehavior specifies when existing workflows could change their Build ID.
@@ -545,19 +545,17 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error
 	return SetUpdateHandlerWithOptions(ctx, updateName, handler, UpdateHandlerOptions{})
 }
 
-// SetUpdateHandlerWithOptions binds an update handler function to the specified
-// name such that update invocations specifying that name will invoke the
-// handler.  The handler function can take as input any number of parameters so
-// long as they can be serialized/deserialized by the system. The handler can
-// take a [workflow.Context] as its first parameter but this is not required. The
-// update handler must return either a single error or a single serializable
-// object along with a single error. The update handler function is invoked in
-// the context of the workflow and thus is subject to the same restrictions as
-// workflow code, namely, the update handler must be deterministic. As with
-// other workflow code, update code is free to invoke and wait on the results of
-// activities. Update handler code is free to mutate workflow state.
+// SetUpdateHandlerWithOptions binds an update handler function to the specified name such that
+// update invocations specifying that name will invoke the handler. The handler function can take as
+// input any number of parameters so long as they can be serialized/deserialized by the system. The
+// handler must take a [workflow.Context] as its first parameter. The update handler must return
+// either a single error or a single serializable object along with a single error. The update
+// handler function is invoked in the context of the workflow and thus is subject to the same
+// restrictions as workflow code, namely, the update handler must be deterministic. As with other
+// workflow code, update code is free to invoke and wait on the results of activities. Update
+// handler code is free to mutate workflow state.
 //
-// This registration can optionally specify (through UpdateHandlerOptions) an
+
 // update validation function. If provided, this function will be invoked before
 // the update handler itself is invoked and if this function returns an error,
 // the update request will be considered to have been rejected and as such will
@@ -575,7 +573,7 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error
 //		err := workflow.SetUpdateHandlerWithOptions(
 //			ctx,
 //			"add",
-//			func(val int) (int, error) { // Calls
+//			func(ctx workflow.Context, val int) (int, error) { // Calls
 //				counter += val // note that this mutates workflow state
 //				return counter, nil
 //			},
@@ -792,7 +790,7 @@ func DataConverterWithoutDeadlockDetection(c converter.DataConverter) converter.
 
 // DeterministicKeys returns the keys of a map in deterministic (sorted) order. To be used in for
 // loops in workflows for deterministic iteration.
-func DeterministicKeys[K constraints.Ordered, V any](m map[K]V) []K {
+func DeterministicKeys[K cmp.Ordered, V any](m map[K]V) []K {
 	return internal.DeterministicKeys(m)
 }
 
