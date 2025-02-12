@@ -281,6 +281,7 @@ func (t *TestActivityEnvironment) SetWorkerStopChannel(c chan struct{}) {
 // SetOnActivityHeartbeatListener sets a listener that will be called when
 // activity heartbeat is called. ActivityInfo is defined in internal package,
 // use public type activity.Info instead.
+// Note: The provided listener may be called concurrently.
 //
 // Note: Due to internal caching by the activity system, this may not get called
 // for every heartbeat recorded. This is only called when the heartbeat would be
@@ -934,6 +935,7 @@ func (e *TestWorkflowEnvironment) SetOnActivityCanceledListener(
 
 // SetOnActivityHeartbeatListener sets a listener that will be called when activity heartbeat.
 // Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
+// Note: The provided listener may be called concurrently.
 //
 // Note: Due to internal caching by the activity system, this may not get called
 // for every heartbeat recorded. This is only called when the heartbeat would be
