@@ -492,8 +492,7 @@ OrderEvents:
 				break OrderEvents
 			}
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED,
-			enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT,
-			enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED:
+			enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT:
 			// Skip
 		default:
 			if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {

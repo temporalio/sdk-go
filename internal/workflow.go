@@ -1281,7 +1281,7 @@ type WorkflowInfo struct {
 	continueAsNewSuggested bool
 	currentHistorySize     int
 	currentHistoryLength   int
-	// TODO: add currentRunID string
+	// childWorkflowIDSeed is used to generate unique child workflow IDs
 	childWorkflowIDSeed string
 }
 

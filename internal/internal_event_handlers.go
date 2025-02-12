@@ -1197,7 +1197,6 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	weh.logger.Info(fmt.Sprintf("HistoryEvent: %v", event.GetEventType()))
 	switch event.GetEventType() {
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED:
-		weh.logger.Info(fmt.Sprintf("WorkflowExecutionStartedEventAttributes: %v", event.GetWorkflowExecutionStartedEventAttributes()))
 		err = weh.handleWorkflowExecutionStarted(event.GetWorkflowExecutionStartedEventAttributes())
 
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED:
@@ -1222,7 +1221,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	case enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT:
 		// No Operation
 	case enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED:
-		weh.logger.Info(fmt.Sprintf("WorkflowTaskFailedEventAttributes: %v", event.GetWorkflowTaskFailedEventAttributes()))
+		// update the childWorkflowIDSeed if the workflow was reset at this point.
 		attr := event.GetWorkflowTaskFailedEventAttributes()
 		if attr.GetCause() == enumspb.WORKFLOW_TASK_FAILED_CAUSE_RESET_WORKFLOW {
 			weh.workflowInfo.childWorkflowIDSeed = attr.GetNewRunId()
