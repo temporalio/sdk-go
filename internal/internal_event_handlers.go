@@ -561,7 +561,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error),
 ) {
 	if params.WorkflowID == "" {
-		params.WorkflowID = wc.workflowInfo.OriginalRunID + "_" + wc.GenerateSequenceID()
+		params.WorkflowID = wc.workflowInfo.childWorkflowIDSeed + "_" + wc.GenerateSequenceID()
 	}
 	memo, err := getWorkflowMemo(params.Memo, wc.dataConverter)
 	if err != nil {
@@ -1194,8 +1194,10 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 			tagEventType, event.GetEventType().String())
 	})
 
+	weh.logger.Info(fmt.Sprintf("HistoryEvent: %v", event.GetEventType()))
 	switch event.GetEventType() {
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED:
+		weh.logger.Info(fmt.Sprintf("WorkflowExecutionStartedEventAttributes: %v", event.GetWorkflowExecutionStartedEventAttributes()))
 		err = weh.handleWorkflowExecutionStarted(event.GetWorkflowExecutionStartedEventAttributes())
 
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED:
@@ -1220,6 +1222,11 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	case enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT:
 		// No Operation
 	case enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED:
+		weh.logger.Info(fmt.Sprintf("WorkflowTaskFailedEventAttributes: %v", event.GetWorkflowTaskFailedEventAttributes()))
+		attr := event.GetWorkflowTaskFailedEventAttributes()
+		if attr.GetCause() == enumspb.WORKFLOW_TASK_FAILED_CAUSE_RESET_WORKFLOW {
+			weh.workflowInfo.childWorkflowIDSeed = attr.GetNewRunId()
+		}
 		// No Operation
 	case enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED:
 		// No Operation
@@ -1456,6 +1463,11 @@ func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionStarted(
 	// replay sees the _final_ value of applied flags, not intermediate values
 	// as the value varies by WFT)
 	weh.sdkFlags.tryUse(SDKFlagProtocolMessageCommand, !weh.isReplay)
+
+	// Use the first execution run ID from the start event as the initial seed.
+	// First execution run ID stays the same for the entire chain of workflow resets.
+	// This helps us keep child workflow IDs consistent up until the next reset point.
+	weh.workflowInfo.childWorkflowIDSeed = attributes.GetFirstExecutionRunId()
 
 	// Invoke the workflow.
 	weh.workflowDefinition.Execute(weh, attributes.Header, attributes.Input)

@@ -1281,6 +1281,8 @@ type WorkflowInfo struct {
 	continueAsNewSuggested bool
 	currentHistorySize     int
 	currentHistoryLength   int
+	// TODO: add currentRunID string
+	childWorkflowIDSeed string
 }
 
 // UpdateInfo information about a currently running update
