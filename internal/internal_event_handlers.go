@@ -1194,7 +1194,6 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 			tagEventType, event.GetEventType().String())
 	})
 
-	weh.logger.Info(fmt.Sprintf("HistoryEvent: %v", event.GetEventType()))
 	switch event.GetEventType() {
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED:
 		err = weh.handleWorkflowExecutionStarted(event.GetWorkflowExecutionStartedEventAttributes())
