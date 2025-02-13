@@ -936,7 +936,7 @@ func TestWorkflowTestSuite_NexusSyncOperation(t *testing.T) {
 		switch outcome {
 		case "ok":
 			return outcome, nil
-		case "failure":
+		case "operation-error":
 			return "", nexus.NewOperationFailedError("test operation failed")
 		case "handler-error":
 			return "", nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, "test operation failed")
@@ -963,38 +963,69 @@ func TestWorkflowTestSuite_NexusSyncOperation(t *testing.T) {
 	service := nexus.NewService("test")
 	service.Register(op)
 
-	t.Run("ok", func(t *testing.T) {
-		suite := testsuite.WorkflowTestSuite{}
-		env := suite.NewTestWorkflowEnvironment()
-		env.RegisterNexusService(service)
-		env.ExecuteWorkflow(wf, "ok")
-		require.True(t, env.IsWorkflowCompleted())
-		require.NoError(t, env.GetWorkflowError())
-	})
+	cases := []struct {
+		outcome    string
+		checkError func(t *testing.T, err error)
+	}{
+		{
+			outcome: "ok",
+			checkError: func(t *testing.T, err error) {
+				require.NoError(t, err)
 
-	for _, outcome := range []string{"failure", "handler-error"} {
-		outcome := outcome // capture just in case.
-		t.Run(outcome, func(t *testing.T) {
+			},
+		},
+		{
+			outcome: "operation-error",
+			checkError: func(t *testing.T, err error) {
+				var execErr *temporal.WorkflowExecutionError
+				require.ErrorAs(t, err, &execErr)
+				var opErr *temporal.NexusOperationError
+				err = execErr.Unwrap()
+				require.ErrorAs(t, err, &opErr)
+				require.Equal(t, "endpoint", opErr.Endpoint)
+				require.Equal(t, "test", opErr.Service)
+				require.Equal(t, op.Name(), opErr.Operation)
+				require.Empty(t, opErr.OperationToken)
+				require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
+				err = opErr.Unwrap()
+				var appErr *temporal.ApplicationError
+				require.ErrorAs(t, err, &appErr)
+				require.Equal(t, "test operation failed", appErr.Message())
+			},
+		},
+		{
+			outcome: "handler-error",
+			checkError: func(t *testing.T, err error) {
+				var execErr *temporal.WorkflowExecutionError
+				require.ErrorAs(t, err, &execErr)
+				var opErr *temporal.NexusOperationError
+				err = execErr.Unwrap()
+				require.ErrorAs(t, err, &opErr)
+				require.Equal(t, "endpoint", opErr.Endpoint)
+				require.Equal(t, "test", opErr.Service)
+				require.Equal(t, op.Name(), opErr.Operation)
+				require.Empty(t, opErr.OperationToken)
+				require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
+				err = opErr.Unwrap()
+				var handlerErr *nexus.HandlerError
+				require.ErrorAs(t, err, &handlerErr)
+				require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
+				err = handlerErr.Unwrap()
+				var appErr *temporal.ApplicationError
+				require.ErrorAs(t, err, &appErr)
+				require.Equal(t, "test operation failed", appErr.Message())
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.outcome, func(t *testing.T) {
 			suite := testsuite.WorkflowTestSuite{}
 			env := suite.NewTestWorkflowEnvironment()
 			env.RegisterNexusService(service)
-			env.ExecuteWorkflow(wf, "failure")
+			env.ExecuteWorkflow(wf, tc.outcome)
 			require.True(t, env.IsWorkflowCompleted())
-			var execErr *temporal.WorkflowExecutionError
-			err := env.GetWorkflowError()
-			require.ErrorAs(t, err, &execErr)
-			var opErr *temporal.NexusOperationError
-			err = execErr.Unwrap()
-			require.ErrorAs(t, err, &opErr)
-			require.Equal(t, "endpoint", opErr.Endpoint)
-			require.Equal(t, "test", opErr.Service)
-			require.Equal(t, op.Name(), opErr.Operation)
-			require.Empty(t, opErr.OperationToken)
-			require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
-			err = opErr.Unwrap()
-			var appErr *temporal.ApplicationError
-			require.ErrorAs(t, err, &appErr)
-			require.Equal(t, "test operation failed", appErr.Message())
+			tc.checkError(t, env.GetWorkflowError())
 		})
 	}
 }
