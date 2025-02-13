@@ -195,6 +195,7 @@ func (npm *numPollerMetric) increment() {
 	npm.lock.Lock()
 	defer npm.lock.Unlock()
 	npm.numPollers += 1
+	fmt.Println("npm.numPollers - ", npm.numPollers)
 	npm.gauge.Update(float64(npm.numPollers))
 }
 
