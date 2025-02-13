@@ -174,6 +174,29 @@ func apiOperationErrorToNexusOperationError(opErr *nexuspb.UnsuccessfulOperation
 	}
 }
 
+func apiHandlerErrorToNexusHandlerError(apiErr *nexuspb.HandlerError, failureConverter converter.FailureConverter) (*nexus.HandlerError, error) {
+	var retryBehavior nexus.HandlerErrorRetryBehavior
+	// nolint:exhaustive // unspecified is the default
+	switch apiErr.GetRetryBehavior() {
+	case enums.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_RETRYABLE:
+		retryBehavior = nexus.HandlerErrorRetryBehaviorRetryable
+	case enums.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_NON_RETRYABLE:
+		retryBehavior = nexus.HandlerErrorRetryBehaviorNonRetryable
+	}
+
+	nexusErr := &nexus.HandlerError{
+		Type: nexus.HandlerErrorType(apiErr.GetErrorType()),
+		RetryBehavior: retryBehavior,
+	}
+
+	failure, err := nexusFailureToAPIFailure(protoFailureToNexusFailure(apiErr.GetFailure()), nexusErr.Retryable())
+	if err != nil {
+		return nil, err
+	}
+	nexusErr.Cause = failureConverter.FailureToError(failure)
+	return nexusErr, nil
+}
+
 func operationErrorToTemporalFailure(opErr *nexus.OperationError) (*failurepb.Failure, error) {
 	var nexusFailure nexus.Failure
 	failureErr, ok := opErr.Cause.(*nexus.FailureError)
