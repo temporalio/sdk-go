@@ -2831,6 +2831,14 @@ func (w *Workflows) ForcedNonDeterminism(ctx workflow.Context, sameCommandButDif
 	return
 }
 
+func (w *Workflows) NonDeterminismCommandNotFoundWorkflow(ctx workflow.Context) error {
+	workflow.SetUpdateHandler(ctx, "wait-for-wft-completion", func(ctx workflow.Context) error {
+		return nil
+	})
+	workflow.Sleep(ctx, 999*time.Hour)
+	return nil
+}
+
 func (w *Workflows) NonDeterminismReplay(ctx workflow.Context) error {
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 	var a Activities
@@ -3471,6 +3479,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.SignalCounter)
 	worker.RegisterWorkflow(w.PanicOnSignal)
 	worker.RegisterWorkflow(w.ForcedNonDeterminism)
+	worker.RegisterWorkflow(w.NonDeterminismCommandNotFoundWorkflow)
 	worker.RegisterWorkflow(w.NonDeterminismReplay)
 	worker.RegisterWorkflow(w.MutableSideEffect)
 	worker.RegisterWorkflow(w.HistoryLengths)
@@ -3496,7 +3505,6 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.AwaitWithOptions)
 	worker.RegisterWorkflow(w.WorkflowWithRejectableUpdate)
 	worker.RegisterWorkflow(w.WorkflowWithUpdate)
-
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childWithRetryPolicy)
 	worker.RegisterWorkflow(w.childWithCustomRetryPolicy)
