@@ -1225,7 +1225,6 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		if attr.GetCause() == enumspb.WORKFLOW_TASK_FAILED_CAUSE_RESET_WORKFLOW {
 			weh.workflowInfo.childWorkflowIDSeed = attr.GetNewRunId()
 		}
-		// No Operation
 	case enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED:
 		// No Operation
 	case enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED:
@@ -1461,11 +1460,6 @@ func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionStarted(
 	// replay sees the _final_ value of applied flags, not intermediate values
 	// as the value varies by WFT)
 	weh.sdkFlags.tryUse(SDKFlagProtocolMessageCommand, !weh.isReplay)
-
-	// Use the first execution run ID from the start event as the initial seed.
-	// First execution run ID stays the same for the entire chain of workflow resets.
-	// This helps us keep child workflow IDs consistent up until the next reset point.
-	weh.workflowInfo.childWorkflowIDSeed = attributes.GetFirstExecutionRunId()
 
 	// Invoke the workflow.
 	weh.workflowDefinition.Execute(weh, attributes.Header, attributes.Input)
