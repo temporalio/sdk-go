@@ -2,7 +2,7 @@
     "events": [
         {
             "eventId": "1",
-            "eventTime": "2025-02-13T20:04:01.908564Z",
+            "eventTime": "2025-02-13T21:55:05.549984Z",
             "eventType": "WorkflowExecutionStarted",
             "taskId": "1048576",
             "workflowExecutionStartedEventAttributes": {
@@ -16,9 +16,9 @@
                 "workflowExecutionTimeout": "0s",
                 "workflowRunTimeout": "0s",
                 "workflowTaskTimeout": "10s",
-                "originalExecutionRunId": "019500e9-42f4-7897-b0d3-726eac6ff3c6",
-                "identity": "18781@Chetans-MacBook-Pro.local@",
-                "firstExecutionRunId": "019500e9-42f4-7897-b0d3-726eac6ff3c6",
+                "originalExecutionRunId": "0195014e-f0cd-7efb-916a-ed234543d9b1",
+                "identity": "50567@Chetans-MacBook-Pro.local@",
+                "firstExecutionRunId": "0195014e-f0cd-7efb-916a-ed234543d9b1",
                 "attempt": 1,
                 "firstWorkflowTaskBackoff": "0s",
                 "header": {},
@@ -27,7 +27,7 @@
         },
         {
             "eventId": "2",
-            "eventTime": "2025-02-13T20:04:01.908657Z",
+            "eventTime": "2025-02-13T21:55:05.550096Z",
             "eventType": "WorkflowTaskScheduled",
             "taskId": "1048577",
             "workflowTaskScheduledEventAttributes": {
@@ -41,27 +41,71 @@
         },
         {
             "eventId": "3",
-            "eventTime": "2025-02-13T20:04:01.930346Z",
+            "eventTime": "2025-02-13T21:55:05.571533Z",
             "eventType": "WorkflowTaskStarted",
             "taskId": "1048582",
             "workflowTaskStartedEventAttributes": {
                 "scheduledEventId": "2",
-                "identity": "18680@Chetans-MacBook-Pro.local@",
-                "requestId": "893216a6-6421-470b-8267-451d2116ee5c",
+                "identity": "50541@Chetans-MacBook-Pro.local@",
+                "requestId": "e6ac69d4-8407-406c-8a54-ac35986d3cff",
                 "historySizeBytes": "297"
             }
         },
         {
             "eventId": "4",
-            "eventTime": "2025-02-13T20:04:01.963131Z",
-            "eventType": "WorkflowTaskCompleted",
-            "taskId": "1048586",
-            "workflowTaskCompletedEventAttributes": {
+            "eventTime": "2025-02-13T21:55:25.756043Z",
+            "eventType": "WorkflowTaskFailed",
+            "taskId": "1048650",
+            "workflowTaskFailedEventAttributes": {
                 "scheduledEventId": "2",
                 "startedEventId": "3",
-                "identity": "18680@Chetans-MacBook-Pro.local@",
+                "cause": "ResetWorkflow",
+                "failure": {
+                    "message": "chetan:testing reset",
+                    "resetWorkflowFailureInfo": {}
+                },
+                "identity": "history-service",
+                "baseRunId": "0195014e-f0cd-7efb-916a-ed234543d9b1",
+                "newRunId": "3129cd20-4f19-4066-aa0b-23dd7e363424"
+            }
+        },
+        {
+            "eventId": "5",
+            "eventTime": "2025-02-13T21:55:25.757915Z",
+            "eventType": "WorkflowTaskScheduled",
+            "taskId": "1048651",
+            "workflowTaskScheduledEventAttributes": {
+                "taskQueue": {
+                    "name": "child-workflow-test-queue",
+                    "kind": "Normal"
+                },
+                "startToCloseTimeout": "10s",
+                "attempt": 1
+            }
+        },
+        {
+            "eventId": "6",
+            "eventTime": "2025-02-13T21:55:25.772221Z",
+            "eventType": "WorkflowTaskStarted",
+            "taskId": "1048656",
+            "workflowTaskStartedEventAttributes": {
+                "scheduledEventId": "5",
+                "identity": "50541@Chetans-MacBook-Pro.local@",
+                "requestId": "9dea1650-f3db-4fc2-8dee-dd65a8250f11",
+                "historySizeBytes": "652"
+            }
+        },
+        {
+            "eventId": "7",
+            "eventTime": "2025-02-13T21:55:25.786888Z",
+            "eventType": "WorkflowTaskCompleted",
+            "taskId": "1048660",
+            "workflowTaskCompletedEventAttributes": {
+                "scheduledEventId": "5",
+                "startedEventId": "6",
+                "identity": "50541@Chetans-MacBook-Pro.local@",
                 "workerVersion": {
-                    "buildId": "6213b43af5b83a4356641f12cd89b58e"
+                    "buildId": "622ff21cd5fefabab2a70f9f04f5eabb"
                 },
                 "sdkMetadata": {
                     "langUsedFlags": [
@@ -74,14 +118,14 @@
             }
         },
         {
-            "eventId": "5",
-            "eventTime": "2025-02-13T20:04:01.963282Z",
+            "eventId": "8",
+            "eventTime": "2025-02-13T21:55:25.786933Z",
             "eventType": "StartChildWorkflowExecutionInitiated",
-            "taskId": "1048587",
+            "taskId": "1048661",
             "startChildWorkflowExecutionInitiatedEventAttributes": {
                 "namespace": "default",
-                "namespaceId": "5f71958a-e718-4740-9dab-be5c0502e822",
-                "workflowId": "019500e9-42f4-7897-b0d3-726eac6ff3c6_5",
+                "namespaceId": "a1576956-7d24-4a2b-8e6c-1477979b053e",
+                "workflowId": "3129cd20-4f19-4066-aa0b-23dd7e363424_8",
                 "workflowType": {
                     "name": "TestChildWorkflow"
                 },
@@ -103,24 +147,24 @@
                 "workflowRunTimeout": "0s",
                 "workflowTaskTimeout": "10s",
                 "parentClosePolicy": "Terminate",
-                "workflowTaskCompletedEventId": "4",
+                "workflowTaskCompletedEventId": "7",
                 "workflowIdReusePolicy": "AllowDuplicate",
                 "header": {},
                 "useCompatibleVersion": true
             }
         },
         {
-            "eventId": "6",
-            "eventTime": "2025-02-13T20:04:01.998775Z",
+            "eventId": "9",
+            "eventTime": "2025-02-13T21:55:25.811375Z",
             "eventType": "ChildWorkflowExecutionStarted",
-            "taskId": "1048591",
+            "taskId": "1048669",
             "childWorkflowExecutionStartedEventAttributes": {
                 "namespace": "default",
-                "namespaceId": "5f71958a-e718-4740-9dab-be5c0502e822",
-                "initiatedEventId": "5",
+                "namespaceId": "a1576956-7d24-4a2b-8e6c-1477979b053e",
+                "initiatedEventId": "8",
                 "workflowExecution": {
-                    "workflowId": "019500e9-42f4-7897-b0d3-726eac6ff3c6_5",
-                    "runId": "019500e9-4340-7b1f-bd78-c4e790f6ee75"
+                    "workflowId": "3129cd20-4f19-4066-aa0b-23dd7e363424_8",
+                    "runId": "0195014f-3fe8-75b4-9468-9eaa7bd7fce5"
                 },
                 "workflowType": {
                     "name": "TestChildWorkflow"
@@ -129,13 +173,13 @@
             }
         },
         {
-            "eventId": "7",
-            "eventTime": "2025-02-13T20:04:01.998785Z",
+            "eventId": "10",
+            "eventTime": "2025-02-13T21:55:25.811383Z",
             "eventType": "WorkflowTaskScheduled",
-            "taskId": "1048592",
+            "taskId": "1048670",
             "workflowTaskScheduledEventAttributes": {
                 "taskQueue": {
-                    "name": "Chetans-MacBook-Pro.local:9000c21f-2b60-4db6-ba6b-0fca943abea7",
+                    "name": "Chetans-MacBook-Pro.local:64ec3e04-335b-4ef7-9ff5-f237d8dbc95c",
                     "kind": "Sticky",
                     "normalName": "child-workflow-test-queue"
                 },
@@ -144,38 +188,38 @@
             }
         },
         {
-            "eventId": "8",
-            "eventTime": "2025-02-13T20:04:02.008738Z",
+            "eventId": "11",
+            "eventTime": "2025-02-13T21:55:25.822002Z",
             "eventType": "WorkflowTaskStarted",
-            "taskId": "1048597",
+            "taskId": "1048678",
             "workflowTaskStartedEventAttributes": {
-                "scheduledEventId": "7",
-                "identity": "18680@Chetans-MacBook-Pro.local@",
-                "requestId": "713e4b74-e3f6-4a24-bca6-543b7a83550a",
-                "historySizeBytes": "1104"
+                "scheduledEventId": "10",
+                "identity": "50541@Chetans-MacBook-Pro.local@",
+                "requestId": "08ae2fe6-2115-4daf-b748-d4ae04328166",
+                "historySizeBytes": "1459"
             }
         },
         {
-            "eventId": "9",
-            "eventTime": "2025-02-13T20:04:02.022741Z",
+            "eventId": "12",
+            "eventTime": "2025-02-13T21:55:25.842868Z",
             "eventType": "WorkflowTaskCompleted",
-            "taskId": "1048601",
+            "taskId": "1048685",
             "workflowTaskCompletedEventAttributes": {
-                "scheduledEventId": "7",
-                "startedEventId": "8",
-                "identity": "18680@Chetans-MacBook-Pro.local@",
+                "scheduledEventId": "10",
+                "startedEventId": "11",
+                "identity": "50541@Chetans-MacBook-Pro.local@",
                 "workerVersion": {
-                    "buildId": "6213b43af5b83a4356641f12cd89b58e"
+                    "buildId": "622ff21cd5fefabab2a70f9f04f5eabb"
                 },
                 "sdkMetadata": {},
                 "meteringMetadata": {}
             }
         },
         {
-            "eventId": "10",
-            "eventTime": "2025-02-13T20:04:04.106279Z",
+            "eventId": "13",
+            "eventTime": "2025-02-13T21:55:27.910532Z",
             "eventType": "ChildWorkflowExecutionCompleted",
-            "taskId": "1048603",
+            "taskId": "1048708",
             "childWorkflowExecutionCompletedEventAttributes": {
                 "result": {
                     "payloads": [
@@ -188,26 +232,26 @@
                     ]
                 },
                 "namespace": "default",
-                "namespaceId": "5f71958a-e718-4740-9dab-be5c0502e822",
+                "namespaceId": "a1576956-7d24-4a2b-8e6c-1477979b053e",
                 "workflowExecution": {
-                    "workflowId": "019500e9-42f4-7897-b0d3-726eac6ff3c6_5",
-                    "runId": "019500e9-4340-7b1f-bd78-c4e790f6ee75"
+                    "workflowId": "3129cd20-4f19-4066-aa0b-23dd7e363424_8",
+                    "runId": "0195014f-3fe8-75b4-9468-9eaa7bd7fce5"
                 },
                 "workflowType": {
                     "name": "TestChildWorkflow"
                 },
-                "initiatedEventId": "5",
-                "startedEventId": "6"
+                "initiatedEventId": "8",
+                "startedEventId": "9"
             }
         },
         {
-            "eventId": "11",
-            "eventTime": "2025-02-13T20:04:04.106293Z",
+            "eventId": "14",
+            "eventTime": "2025-02-13T21:55:27.910542Z",
             "eventType": "WorkflowTaskScheduled",
-            "taskId": "1048604",
+            "taskId": "1048709",
             "workflowTaskScheduledEventAttributes": {
                 "taskQueue": {
-                    "name": "Chetans-MacBook-Pro.local:9000c21f-2b60-4db6-ba6b-0fca943abea7",
+                    "name": "Chetans-MacBook-Pro.local:64ec3e04-335b-4ef7-9ff5-f237d8dbc95c",
                     "kind": "Sticky",
                     "normalName": "child-workflow-test-queue"
                 },
@@ -216,38 +260,38 @@
             }
         },
         {
-            "eventId": "12",
-            "eventTime": "2025-02-13T20:04:04.125989Z",
+            "eventId": "15",
+            "eventTime": "2025-02-13T21:55:27.924369Z",
             "eventType": "WorkflowTaskStarted",
-            "taskId": "1048608",
+            "taskId": "1048713",
             "workflowTaskStartedEventAttributes": {
-                "scheduledEventId": "11",
-                "identity": "18680@Chetans-MacBook-Pro.local@",
-                "requestId": "d481f043-cae6-422a-a4a6-e4dec5881cab",
-                "historySizeBytes": "1702"
+                "scheduledEventId": "14",
+                "identity": "50541@Chetans-MacBook-Pro.local@",
+                "requestId": "57b84006-6fdb-420a-8d2a-6dccf6e7277f",
+                "historySizeBytes": "2061"
             }
         },
         {
-            "eventId": "13",
-            "eventTime": "2025-02-13T20:04:04.143914Z",
+            "eventId": "16",
+            "eventTime": "2025-02-13T21:55:27.939558Z",
             "eventType": "WorkflowTaskCompleted",
-            "taskId": "1048612",
+            "taskId": "1048717",
             "workflowTaskCompletedEventAttributes": {
-                "scheduledEventId": "11",
-                "startedEventId": "12",
-                "identity": "18680@Chetans-MacBook-Pro.local@",
+                "scheduledEventId": "14",
+                "startedEventId": "15",
+                "identity": "50541@Chetans-MacBook-Pro.local@",
                 "workerVersion": {
-                    "buildId": "6213b43af5b83a4356641f12cd89b58e"
+                    "buildId": "622ff21cd5fefabab2a70f9f04f5eabb"
                 },
                 "sdkMetadata": {},
                 "meteringMetadata": {}
             }
         },
         {
-            "eventId": "14",
-            "eventTime": "2025-02-13T20:04:04.143951Z",
+            "eventId": "17",
+            "eventTime": "2025-02-13T21:55:27.939592Z",
             "eventType": "WorkflowExecutionCompleted",
-            "taskId": "1048613",
+            "taskId": "1048718",
             "workflowExecutionCompletedEventAttributes": {
                 "result": {
                     "payloads": [
@@ -259,7 +303,7 @@
                         }
                     ]
                 },
-                "workflowTaskCompletedEventId": "13"
+                "workflowTaskCompletedEventId": "16"
             }
         }
     ]
