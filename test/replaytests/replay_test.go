@@ -493,6 +493,24 @@ func (s *replayTestSuite) TestPartialReplayNonCommandEvent() {
 	require.NoError(s.T(), err)
 }
 
+func (s *replayTestSuite) TestResetWorkflowWithChildSuccess() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(ResetWorkflowWithChild)
+	// Verify we can replay workflow history containing StartChildWorkflowExecutionInitiated & ChildWorkflowExecutionCompleted events.
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "reset-workflow-with-child-success.json")
+	s.NoError(err)
+	require.NoError(s.T(), err)
+}
+
+func (s *replayTestSuite) TestResetWorkflowWithChildFailed() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(ResetWorkflowWithChild)
+	// Verify we can replay workflow history containing ChildWorkflowExecutionFailed event
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "reset-workflow-with-child-failed.json")
+	s.NoError(err)
+	require.NoError(s.T(), err)
+}
+
 type captureConverter struct {
 	converter.DataConverter
 	toPayloads   []interface{}

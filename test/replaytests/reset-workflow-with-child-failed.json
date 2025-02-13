@@ -1,0 +1,275 @@
+{
+    "events": [
+        {
+            "eventId": "1",
+            "eventTime": "2025-02-13T20:14:02.650135Z",
+            "eventType": "WorkflowExecutionStarted",
+            "taskId": "1048618",
+            "workflowExecutionStartedEventAttributes": {
+                "workflowType": {
+                    "name": "ResetWorkflowWithChild"
+                },
+                "taskQueue": {
+                    "name": "child-workflow-test-queue",
+                    "kind": "Normal"
+                },
+                "workflowExecutionTimeout": "0s",
+                "workflowRunTimeout": "0s",
+                "workflowTaskTimeout": "10s",
+                "originalExecutionRunId": "019500f2-6d9a-7207-8c9f-69cb0647bbae",
+                "identity": "23299@Chetans-MacBook-Pro.local@",
+                "firstExecutionRunId": "019500f2-6d9a-7207-8c9f-69cb0647bbae",
+                "attempt": 1,
+                "firstWorkflowTaskBackoff": "0s",
+                "header": {},
+                "workflowId": "parent-workflow-id"
+            }
+        },
+        {
+            "eventId": "2",
+            "eventTime": "2025-02-13T20:14:02.650219Z",
+            "eventType": "WorkflowTaskScheduled",
+            "taskId": "1048619",
+            "workflowTaskScheduledEventAttributes": {
+                "taskQueue": {
+                    "name": "child-workflow-test-queue",
+                    "kind": "Normal"
+                },
+                "startToCloseTimeout": "10s",
+                "attempt": 1
+            }
+        },
+        {
+            "eventId": "3",
+            "eventTime": "2025-02-13T20:14:02.704393Z",
+            "eventType": "WorkflowTaskStarted",
+            "taskId": "1048626",
+            "workflowTaskStartedEventAttributes": {
+                "scheduledEventId": "2",
+                "identity": "23259@Chetans-MacBook-Pro.local@",
+                "requestId": "323d0cf7-54d1-4604-9256-d5c90937403c",
+                "historySizeBytes": "594"
+            }
+        },
+        {
+            "eventId": "4",
+            "eventTime": "2025-02-13T20:14:02.728590Z",
+            "eventType": "WorkflowTaskCompleted",
+            "taskId": "1048630",
+            "workflowTaskCompletedEventAttributes": {
+                "scheduledEventId": "2",
+                "startedEventId": "3",
+                "identity": "23259@Chetans-MacBook-Pro.local@",
+                "workerVersion": {
+                    "buildId": "fb33118f3ecb446bcfc5091fbba8aa33"
+                },
+                "sdkMetadata": {
+                    "langUsedFlags": [
+                        3
+                    ],
+                    "sdkName": "temporal-go",
+                    "sdkVersion": "1.32.1"
+                },
+                "meteringMetadata": {}
+            }
+        },
+        {
+            "eventId": "5",
+            "eventTime": "2025-02-13T20:14:02.728670Z",
+            "eventType": "StartChildWorkflowExecutionInitiated",
+            "taskId": "1048631",
+            "startChildWorkflowExecutionInitiatedEventAttributes": {
+                "namespace": "default",
+                "namespaceId": "5f71958a-e718-4740-9dab-be5c0502e822",
+                "workflowId": "019500f2-6d9a-7207-8c9f-69cb0647bbae_5",
+                "workflowType": {
+                    "name": "TestChildWorkflow"
+                },
+                "taskQueue": {
+                    "name": "child-workflow-test-queue",
+                    "kind": "Normal"
+                },
+                "input": {
+                    "payloads": [
+                        {
+                            "metadata": {
+                                "encoding": "anNvbi9wbGFpbg=="
+                            },
+                            "data": "IkNISUxEIElOUFVUIg=="
+                        }
+                    ]
+                },
+                "workflowExecutionTimeout": "0s",
+                "workflowRunTimeout": "0s",
+                "workflowTaskTimeout": "10s",
+                "parentClosePolicy": "Terminate",
+                "workflowTaskCompletedEventId": "4",
+                "workflowIdReusePolicy": "AllowDuplicate",
+                "header": {},
+                "useCompatibleVersion": true
+            }
+        },
+        {
+            "eventId": "6",
+            "eventTime": "2025-02-13T20:14:02.753687Z",
+            "eventType": "ChildWorkflowExecutionStarted",
+            "taskId": "1048635",
+            "childWorkflowExecutionStartedEventAttributes": {
+                "namespace": "default",
+                "namespaceId": "5f71958a-e718-4740-9dab-be5c0502e822",
+                "initiatedEventId": "5",
+                "workflowExecution": {
+                    "workflowId": "019500f2-6d9a-7207-8c9f-69cb0647bbae_5",
+                    "runId": "019500f2-6df8-7320-8517-ccbd0eaaf3c7"
+                },
+                "workflowType": {
+                    "name": "TestChildWorkflow"
+                },
+                "header": {}
+            }
+        },
+        {
+            "eventId": "7",
+            "eventTime": "2025-02-13T20:14:02.753698Z",
+            "eventType": "WorkflowTaskScheduled",
+            "taskId": "1048636",
+            "workflowTaskScheduledEventAttributes": {
+                "taskQueue": {
+                    "name": "Chetans-MacBook-Pro.local:19ef4a77-99af-42ec-ae24-d5d1488aa955",
+                    "kind": "Sticky",
+                    "normalName": "child-workflow-test-queue"
+                },
+                "startToCloseTimeout": "10s",
+                "attempt": 1
+            }
+        },
+        {
+            "eventId": "8",
+            "eventTime": "2025-02-13T20:14:02.770381Z",
+            "eventType": "WorkflowTaskStarted",
+            "taskId": "1048641",
+            "workflowTaskStartedEventAttributes": {
+                "scheduledEventId": "7",
+                "identity": "23259@Chetans-MacBook-Pro.local@",
+                "requestId": "934c75ea-43bb-4673-b651-5ca0338acfc3",
+                "historySizeBytes": "1401"
+            }
+        },
+        {
+            "eventId": "9",
+            "eventTime": "2025-02-13T20:14:02.785845Z",
+            "eventType": "WorkflowTaskCompleted",
+            "taskId": "1048645",
+            "workflowTaskCompletedEventAttributes": {
+                "scheduledEventId": "7",
+                "startedEventId": "8",
+                "identity": "23259@Chetans-MacBook-Pro.local@",
+                "workerVersion": {
+                    "buildId": "fb33118f3ecb446bcfc5091fbba8aa33"
+                },
+                "sdkMetadata": {},
+                "meteringMetadata": {}
+            }
+        },
+        {
+            "eventId": "10",
+            "eventTime": "2025-02-13T20:14:02.803076Z",
+            "eventType": "ChildWorkflowExecutionFailed",
+            "taskId": "1048647",
+            "childWorkflowExecutionFailedEventAttributes": {
+                "failure": {
+                    "message": "Child workflow execution failed",
+                    "source": "GoSDK",
+                    "applicationFailureInfo": {}
+                },
+                "namespace": "default",
+                "namespaceId": "5f71958a-e718-4740-9dab-be5c0502e822",
+                "workflowExecution": {
+                    "workflowId": "019500f2-6d9a-7207-8c9f-69cb0647bbae_5",
+                    "runId": "019500f2-6df8-7320-8517-ccbd0eaaf3c7"
+                },
+                "workflowType": {
+                    "name": "TestChildWorkflow"
+                },
+                "initiatedEventId": "5",
+                "startedEventId": "6",
+                "retryState": "RetryPolicyNotSet"
+            }
+        },
+        {
+            "eventId": "11",
+            "eventTime": "2025-02-13T20:14:02.803084Z",
+            "eventType": "WorkflowTaskScheduled",
+            "taskId": "1048648",
+            "workflowTaskScheduledEventAttributes": {
+                "taskQueue": {
+                    "name": "Chetans-MacBook-Pro.local:19ef4a77-99af-42ec-ae24-d5d1488aa955",
+                    "kind": "Sticky",
+                    "normalName": "child-workflow-test-queue"
+                },
+                "startToCloseTimeout": "10s",
+                "attempt": 1
+            }
+        },
+        {
+            "eventId": "12",
+            "eventTime": "2025-02-13T20:14:02.842854Z",
+            "eventType": "WorkflowTaskStarted",
+            "taskId": "1048652",
+            "workflowTaskStartedEventAttributes": {
+                "scheduledEventId": "11",
+                "identity": "23259@Chetans-MacBook-Pro.local@",
+                "requestId": "6c3d79eb-1eef-4e5d-aa19-53fca86d8fe4",
+                "historySizeBytes": "1999"
+            }
+        },
+        {
+            "eventId": "13",
+            "eventTime": "2025-02-13T20:14:02.854644Z",
+            "eventType": "WorkflowTaskCompleted",
+            "taskId": "1048656",
+            "workflowTaskCompletedEventAttributes": {
+                "scheduledEventId": "11",
+                "startedEventId": "12",
+                "identity": "23259@Chetans-MacBook-Pro.local@",
+                "workerVersion": {
+                    "buildId": "fb33118f3ecb446bcfc5091fbba8aa33"
+                },
+                "sdkMetadata": {},
+                "meteringMetadata": {}
+            }
+        },
+        {
+            "eventId": "14",
+            "eventTime": "2025-02-13T20:14:02.854672Z",
+            "eventType": "WorkflowExecutionFailed",
+            "taskId": "1048657",
+            "workflowExecutionFailedEventAttributes": {
+                "failure": {
+                    "message": "child workflow execution error",
+                    "source": "GoSDK",
+                    "cause": {
+                        "message": "Child workflow execution failed",
+                        "source": "GoSDK",
+                        "applicationFailureInfo": {}
+                    },
+                    "childWorkflowExecutionFailureInfo": {
+                        "namespace": "default",
+                        "workflowExecution": {
+                            "workflowId": "019500f2-6d9a-7207-8c9f-69cb0647bbae_5",
+                            "runId": "019500f2-6df8-7320-8517-ccbd0eaaf3c7"
+                        },
+                        "workflowType": {
+                            "name": "TestChildWorkflow"
+                        },
+                        "initiatedEventId": "5",
+                        "startedEventId": "6",
+                        "retryState": "RetryPolicyNotSet"
+                    }
+                },
+                "retryState": "RetryPolicyNotSet",
+                "workflowTaskCompletedEventId": "13"
+            }
+        }
+    ]
+}
