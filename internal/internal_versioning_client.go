@@ -50,7 +50,7 @@ const (
 
 // BuildIDTaskReachability specifies which category of tasks may reach a versioned worker of a certain Build ID.
 //
-// Note: future activities who inherit their workflow's Build ID but not its task queue will not be
+// NOTE: future activities who inherit their workflow's Build ID but not its task queue will not be
 // accounted for reachability as server cannot know if they'll happen as they do not use
 // assignment rules of their task queue. Same goes for Child Workflows or Continue-As-New Workflows
 // who inherit the parent/previous workflow's Build ID but not its task queue. In those cases, make
@@ -156,7 +156,7 @@ type (
 	// WorkerDeploymentPollerOptions are Worker initialization settings
 	// related to Worker Deployment Versioning, which are propagated to the
 	// Temporal Server during polling.
-	// Note: Experimental
+	// NOTE: Experimental
 	WorkerDeploymentPollerOptions struct {
 		// DeploymentName - The name of the Worker Deployment.
 		DeploymentName string
@@ -177,6 +177,7 @@ type (
 		RatePerSecond float64
 		// Optional poller versioning capabilities. Available when a worker has opted into the
 		// worker versioning feature.
+		//
 		// Deprecated: Use [WorkerDeploymentPollerOptions]
 		WorkerVersionCapabilities *WorkerVersionCapabilities
 		// Optional poller worker deployment versioning options.
@@ -257,14 +258,14 @@ type (
 	// TaskQueueVersioningInfo provides worker deployment configuration for this
 	// task queue.
 	// It is part of [TaskQueueDescription].
-	// Note: Experimental
+	// NOTE: Experimental
 	TaskQueueVersioningInfo struct {
 		// CurrentVersion - Specifies which Deployment Version should receive new workflow
 		// executions, and tasks of existing non-pinned workflows.
 		// Can be one of the following:
 		// - A Deployment Version identifier in the form "<deployment_name>.<build_id>".
 		// - Or, the "__unversioned__" special value to represent all the unversioned workers
-		// Note: Experimental
+		// NOTE: Experimental
 		CurrentVersion string
 
 		// RampingVersion - When present, it means the traffic is being shifted from the Current
@@ -274,24 +275,25 @@ type (
 		// - Or, the "__unversioned__" special value, to represent all the unversioned workers
 		// Note that it is possible to ramp from one Version to another Version, or from unversioned
 		// workers to a particular Version, or from a particular Version to unversioned workers.
-		// Note: Experimental
+		// NOTE: Experimental
 		RampingVersion string
 
 		// RampingVersionPercentage - Percentage of tasks that are routed to the Ramping Version instead
 		// of the Current Version.
 		// Valid range: [0, 100]. A 100% value means the Ramping Version is receiving full traffic but
 		// not yet "promoted" to be the Current Version, likely due to pending validations.
-		// Note: Experimental
+		// NOTE: Experimental
 		RampingVersionPercentage float32
 
 		// UpdateTime - The last time versioning information of this Task Queue changed.
-		// Note: Experimental
+		// NOTE: Experimental
 		UpdateTime time.Time
 	}
 
 	// TaskQueueDescription is the response to [Client.DescribeTaskQueueEnhanced].
 	TaskQueueDescription struct {
 		// Task queue information for each Build ID. Empty string as key value means unversioned.
+		//
 		// Deprecated: Use [VersioningInfo]
 		VersionsInfo map[string]TaskQueueVersionInfo
 		// Specifies which Worker Deployment Version(s) Server routes this Task Queue's tasks to.

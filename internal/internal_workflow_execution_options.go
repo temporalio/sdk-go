@@ -73,6 +73,7 @@ type (
 		Behavior VersioningBehavior
 		// Identifies the Build ID and Deployment Series Name to pin the workflow to. Ignored when Behavior is not
 		// [VersioningBehaviorPinned].
+		//
 		// Deprecated: Use [PinnedVersion]
 		Deployment Deployment
 		// PinnedVersion - Identifies the Worker Deployment Version to pin the workflow to, using the format

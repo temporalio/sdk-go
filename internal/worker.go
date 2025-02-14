@@ -45,7 +45,7 @@ type (
 		// operate on workflows it claims to be compatible with. You must set [Version] if this flag
 		// is true.
 		// NOTE: Experimental
-		// Note: Cannot be enabled at the same time as [WorkerOptions.EnableSessionWorker]
+		// NOTE: Cannot be enabled at the same time as [WorkerOptions.EnableSessionWorker]
 		UseVersioning bool
 
 		// Assign a Deployment Version identifier to this worker. The format of this identifier
@@ -56,6 +56,7 @@ type (
 
 		// Assign a deployment series name to this worker. Different versions of the same worker
 		// service/application are linked together by sharing a series name.
+		//
 		// Deprecated: Use [Version].
 		DeploymentSeriesName string
 
@@ -111,7 +112,7 @@ type (
 		// The zero value of this uses the default value.
 		// default: 100k
 		//
-		// Note: Setting this to a non zero value will also disable eager activities.
+		// NOTE: Setting this to a non zero value will also disable eager activities.
 		TaskQueueActivitiesPerSecond float64
 
 		// Optional: Sets the maximum number of goroutines that will concurrently poll the
@@ -249,7 +250,7 @@ type (
 		// activities directly from the workflow task back to this worker which is
 		// faster than non-eager which may be dispatched to a separate worker.
 		//
-		// Note: Eager activities will automatically be disabled if TaskQueueActivitiesPerSecond is set.
+		// NOTE: Eager activities will automatically be disabled if TaskQueueActivitiesPerSecond is set.
 		DisableEagerActivities bool
 
 		// Optional: Maximum number of eager activities that can be running.
@@ -281,14 +282,16 @@ type (
 		// Assign a BuildID to this worker. This replaces the deprecated binary checksum concept,
 		// and is used to provide a unique identifier for a set of worker code, and is necessary
 		// to opt in to the Worker Versioning feature. See [UseBuildIDForVersioning].
+		//
 		// Deprecated: Use [WorkerDeploymentOptions.Version]
 		BuildID string
 
 		// If set, opts this worker into the Worker Versioning feature. It will only
 		// operate on workflows it claims to be compatible with. You must set BuildID if this flag
 		// is true.
+		//
 		// Deprecated: Use [WorkerDeploymentOptions.UseVersioning]
-		// Note: Cannot be enabled at the same time as [WorkerOptions.EnableSessionWorker]
+		// NOTE: Cannot be enabled at the same time as [WorkerOptions.EnableSessionWorker]
 		UseBuildIDForVersioning bool
 
 		// Optional: If set it configures Worker Versioning for this worker. See [WorkerDeploymentOptions]

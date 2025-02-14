@@ -48,16 +48,19 @@ import (
 
 // DeploymentReachability specifies which category of tasks may reach a worker
 // associated with a deployment, simplifying safe decommission.
+//
 // Deprecated: Use [WorkerDeploymentVersionDrainageStatus]
 type DeploymentReachability = internal.DeploymentReachability
 
 const (
 	// DeploymentReachabilityUnspecified - Reachability level not specified.
+	//
 	// Deprecated: Use [WorkerDeploymentVersionDrainageStatus]
 	DeploymentReachabilityUnspecified = internal.DeploymentReachabilityUnspecified
 
 	// DeploymentReachabilityReachable - The deployment is reachable by new
 	// and/or open workflows. The deployment cannot be decommissioned safely.
+	//
 	// Deprecated: Use [WorkerDeploymentVersionDrainageStatus]
 	DeploymentReachabilityReachable = internal.DeploymentReachabilityReachable
 
@@ -65,6 +68,7 @@ const (
 	// by new or open workflows, but might be still needed by
 	// Queries sent to closed workflows. The deployment can be decommissioned
 	// safely if user does not query closed workflows.
+	//
 	// Deprecated: Use [WorkerDeploymentVersionDrainageStatus]
 	DeploymentReachabilityClosedWorkflows = internal.DeploymentReachabilityClosedWorkflows
 
@@ -72,6 +76,7 @@ const (
 	// any workflow because all the workflows who needed this
 	// deployment are out of the retention period. The deployment can be
 	// decommissioned safely.
+	//
 	// Deprecated: Use [WorkerDeploymentVersionDrainageStatus]
 	DeploymentReachabilityUnreachable = internal.DeploymentReachabilityUnreachable
 )
@@ -165,7 +170,7 @@ const (
 )
 
 // BuildIDTaskReachability specifies which category of tasks may reach a versioned worker of a certain Build ID.
-// Note: future activities who inherit their workflow's Build ID but not its task queue will not be
+// NOTE: future activities who inherit their workflow's Build ID but not its task queue will not be
 // accounted for reachability as server cannot know if they'll happen as they do not use
 // assignment rules of their task queue. Same goes for Child Workflows or Continue-As-New Workflows
 // who inherit the parent/previous workflow's Build ID but not its task queue. In those cases, make
@@ -484,11 +489,13 @@ type (
 
 	// Deployment identifies a set of workers. This identifier combines
 	// the deployment series name with their Build ID.
+	//
 	// Deprecated: Use the new Worker Deployment API
 	Deployment = internal.Deployment
 
 	// DeploymentTaskQueueInfo describes properties of the Task Queues involved
 	// in a deployment.
+	//
 	// Deprecated: Use [WorkerDeploymentTaskQueueInfo]
 	DeploymentTaskQueueInfo = internal.DeploymentTaskQueueInfo
 
@@ -496,18 +503,22 @@ type (
 	// workers in this deployment.
 	// Workers can poll multiple task queues in a single deployment,
 	// which are listed in this message.
+	//
 	// Deprecated: Use [WorkerDeploymentInfo]
 	DeploymentInfo = internal.DeploymentInfo
 
 	// DeploymentListEntry is a subset of fields from DeploymentInfo.
+	//
 	// Deprecated: Use [WorkerDeploymentListEntry]
 	DeploymentListEntry = internal.DeploymentListEntry
 
 	// DeploymentListIterator is an iterator for deployments.
+	//
 	// Deprecated: Use [WorkerDeploymentListIterator]
 	DeploymentListIterator = internal.DeploymentListIterator
 
 	// DeploymentListOptions are the parameters for configuring listing deployments.
+	//
 	// Deprecated: Use [WorkerDeploymentListOptions]
 	DeploymentListOptions = internal.DeploymentListOptions
 
@@ -517,6 +528,7 @@ type (
 
 	// DeploymentMetadataUpdate modifies user-defined metadata entries that describe
 	// a deployment.
+	//
 	// Deprecated: Use [WorkerDeploymentMetadataUpdate]
 	DeploymentMetadataUpdate = internal.DeploymentMetadataUpdate
 
@@ -525,30 +537,37 @@ type (
 	DeploymentDescribeOptions = internal.DeploymentDescribeOptions
 
 	// DeploymentDescription is the response type for [DeploymentClient.Describe].
+	//
 	// Deprecated: Use [WorkerDeploymentDescribeResponse]
 	DeploymentDescription = internal.DeploymentDescription
 
 	// DeploymentGetReachabilityOptions provides options for [DeploymentClient.GetReachability].
+	//
 	// Deprecated: Use [WorkerDeploymentDescribeResponse]
 	DeploymentGetReachabilityOptions = internal.DeploymentGetReachabilityOptions
 
 	// DeploymentGetCurrentOptions provides options for [DeploymentClient.GetCurrent].
+	//
 	// Deprecated: Use [WorkerDeploymentDescribeOptions]
 	DeploymentGetCurrentOptions = internal.DeploymentGetCurrentOptions
 
 	// DeploymentGetCurrentResponse is the response type for [DeploymentClient.GetCurrent].
+	//
 	// Deprecated: Use [WorkerDeploymentDescribeResponse]
 	DeploymentGetCurrentResponse = internal.DeploymentGetCurrentResponse
 
 	// DeploymentSetCurrentOptions provides options for [DeploymentClient.SetCurrent].
+	//
 	// Deprecated: Use [WorkerDeploymentSetCurrentVersionOptions]
 	DeploymentSetCurrentOptions = internal.DeploymentSetCurrentOptions
 
 	// DeploymentSetCurrentResponse is the response type for [DeploymentClient.SetCurrent].
+	//
 	// Deprecated: Use [WorkerDeploymentSetCurrentVersionResponse]
 	DeploymentSetCurrentResponse = internal.DeploymentSetCurrentResponse
 
 	// DeploymentClient is the server interface to manage deployments.
+	//
 	// Deprecated: Use [WorkerDeploymentClient]
 	DeploymentClient = internal.DeploymentClient
 
@@ -653,13 +672,14 @@ type (
 
 	// TaskQueueVersionInfo includes task queue information per Build ID.
 	// It is part of [Client.TaskQueueDescription].
+	//
 	// Deprecated: Use [TaskQueueVersioningInfo]
 	TaskQueueVersionInfo = internal.TaskQueueVersionInfo
 
 	// TaskQueueVersioningInfo provides worker deployment configuration for this
 	// task queue.
 	// It is part of [Client.TaskQueueDescription].
-	// Note: Experimental
+	// NOTE: Experimental
 	TaskQueueVersioningInfo = internal.TaskQueueVersioningInfo
 
 	// TaskQueueTypeInfo specifies task queue information per task type and Build ID.
@@ -853,7 +873,7 @@ type (
 		//  - workflowID, signalName, signalArg are same as SignalWorkflow's parameters
 		//  - options, workflow, workflowArgs are same as StartWorkflow's parameters
 		//  - the workflowID parameter is used instead of options.ID. If the latter is present, it must match the workflowID.
-		// Note: options.WorkflowIDReusePolicy is default to AllowDuplicate in this API.
+		// NOTE: options.WorkflowIDReusePolicy is default to AllowDuplicate in this API.
 		// The errors it can return:
 		//  - serviceerror.NotFound
 		//  - serviceerror.InvalidArgument
@@ -959,7 +979,7 @@ type (
 
 		// ListClosedWorkflow gets closed workflow executions based on request filters.
 		// Retrieved workflow executions are sorted by close time in descending order.
-		// Note: heavy usage of this API may cause huge persistence pressure.
+		// NOTE: heavy usage of this API may cause huge persistence pressure.
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
 		//  - serviceerror.Internal
@@ -969,7 +989,7 @@ type (
 
 		// ListOpenWorkflow gets open workflow executions based on request filters.
 		// Retrieved workflow executions are sorted by start time in descending order.
-		// Note: heavy usage of this API may cause huge persistence pressure.
+		// NOTE: heavy usage of this API may cause huge persistence pressure.
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
 		//  - serviceerror.Internal
@@ -1182,6 +1202,7 @@ type (
 		ScheduleClient() ScheduleClient
 
 		// DeploymentClient create a new deployment client with the same gRPC connection as this client.
+		//
 		// Deprecated: use [WorkerDeploymentClient]
 		DeploymentClient() DeploymentClient
 
