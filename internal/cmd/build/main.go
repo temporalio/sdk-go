@@ -144,7 +144,8 @@ func (b *builder) integrationTest() error {
 				HostPort:  "127.0.0.1:7233",
 				Namespace: "integration-test-namespace",
 			},
-			LogLevel: "warn",
+			LogLevel:   "warn",
+			DBFilename: "temporal.sqlite",
 			ExtraArgs: []string{
 				"--dynamic-config-value", "frontend.enableExecuteMultiOperation=true",
 				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecution=true",
@@ -163,6 +164,8 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", "system.enableNexus=true",
 				// SDK tests use arbitrary callback URLs, permit that on the server.
 				"--dynamic-config-value", `component.callbacks.allowedAddresses=[{"Pattern":"*","AllowInsecure":true}]`,
+				"--sqlite-pragma", "journal_mode=WAL",
+				"--sqlite-pragma", "synchronous=OFF",
 			},
 		})
 		if err != nil {
