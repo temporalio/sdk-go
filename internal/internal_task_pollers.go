@@ -87,6 +87,8 @@ type (
 		workerBuildID string
 		// Whether the worker has opted in to the build-id based versioning feature
 		useBuildIDVersioning bool
+		// The worker's deployment version identifier.
+		workerDeploymentVersion string
 		// The worker's deployment series name, an identifier in Worker Versioning to link
 		// versions of the same worker service/application.
 		deploymentSeriesName string
@@ -292,12 +294,13 @@ func newWorkflowTaskPoller(
 ) *workflowTaskPoller {
 	return &workflowTaskPoller{
 		basePoller: basePoller{
-			metricsHandler:       params.MetricsHandler,
-			stopC:                params.WorkerStopChannel,
-			workerBuildID:        params.getBuildID(),
-			useBuildIDVersioning: params.UseBuildIDForVersioning,
-			deploymentSeriesName: params.DeploymentSeriesName,
-			capabilities:         params.capabilities,
+			metricsHandler:          params.MetricsHandler,
+			stopC:                   params.WorkerStopChannel,
+			workerBuildID:           params.getBuildID(),
+			useBuildIDVersioning:    params.UseBuildIDForVersioning,
+			workerDeploymentVersion: params.WorkerDeploymentVersion,
+			deploymentSeriesName:    params.DeploymentSeriesName,
+			capabilities:            params.capabilities,
 		},
 		service:                      service,
 		namespace:                    params.Namespace,
@@ -577,6 +580,10 @@ func (wtp *workflowTaskPoller) errorToFailWorkflowTask(taskToken []byte, err err
 			BuildId:    wtp.workerBuildID,
 			SeriesName: wtp.deploymentSeriesName,
 		},
+		DeploymentOptions: workerDeploymentOptionsToProto(
+			wtp.useBuildIDVersioning,
+			wtp.workerDeploymentVersion,
+		),
 	}
 
 	if wtp.getCapabilities().BuildIdBasedVersioning {
@@ -817,6 +824,10 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 			UseVersioning:        wtp.useBuildIDVersioning,
 			DeploymentSeriesName: wtp.deploymentSeriesName,
 		},
+		DeploymentOptions: workerDeploymentOptionsToProto(
+			wtp.useBuildIDVersioning,
+			wtp.workerDeploymentVersion,
+		),
 	}
 	if wtp.getCapabilities().BuildIdBasedVersioning {
 		builtRequest.BinaryChecksum = ""
@@ -983,12 +994,13 @@ func newGetHistoryPageFunc(
 func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowservice.WorkflowServiceClient, params workerExecutionParameters) *activityTaskPoller {
 	return &activityTaskPoller{
 		basePoller: basePoller{
-			metricsHandler:       params.MetricsHandler,
-			stopC:                params.WorkerStopChannel,
-			workerBuildID:        params.getBuildID(),
-			useBuildIDVersioning: params.UseBuildIDForVersioning,
-			deploymentSeriesName: params.DeploymentSeriesName,
-			capabilities:         params.capabilities,
+			metricsHandler:          params.MetricsHandler,
+			stopC:                   params.WorkerStopChannel,
+			workerBuildID:           params.getBuildID(),
+			useBuildIDVersioning:    params.UseBuildIDForVersioning,
+			workerDeploymentVersion: params.WorkerDeploymentVersion,
+			deploymentSeriesName:    params.DeploymentSeriesName,
+			capabilities:            params.capabilities,
 		},
 		taskHandler:         taskHandler,
 		service:             service,
@@ -1024,6 +1036,10 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 			UseVersioning:        atp.useBuildIDVersioning,
 			DeploymentSeriesName: atp.deploymentSeriesName,
 		},
+		DeploymentOptions: workerDeploymentOptionsToProto(
+			atp.useBuildIDVersioning,
+			atp.workerDeploymentVersion,
+		),
 	}
 
 	response, err := atp.pollActivityTaskQueue(ctx, request)
@@ -1194,6 +1210,7 @@ func convertActivityResultToRespondRequest(
 	cancelAllowed bool,
 	versionStamp *commonpb.WorkerVersionStamp,
 	deployment *deploymentpb.Deployment,
+	workerDeploymentOptions *deploymentpb.WorkerDeploymentOptions,
 ) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
@@ -1203,12 +1220,13 @@ func convertActivityResultToRespondRequest(
 
 	if err == nil {
 		return &workflowservice.RespondActivityTaskCompletedRequest{
-			TaskToken:     taskToken,
-			Result:        result,
-			Identity:      identity,
-			Namespace:     namespace,
-			WorkerVersion: versionStamp,
-			Deployment:    deployment,
+			TaskToken:         taskToken,
+			Result:            result,
+			Identity:          identity,
+			Namespace:         namespace,
+			WorkerVersion:     versionStamp,
+			Deployment:        deployment,
+			DeploymentOptions: workerDeploymentOptions,
 		}
 	}
 
@@ -1217,21 +1235,23 @@ func convertActivityResultToRespondRequest(
 		var canceledErr *CanceledError
 		if errors.As(err, &canceledErr) {
 			return &workflowservice.RespondActivityTaskCanceledRequest{
-				TaskToken:     taskToken,
-				Details:       convertErrDetailsToPayloads(canceledErr.details, dataConverter),
-				Identity:      identity,
-				Namespace:     namespace,
-				WorkerVersion: versionStamp,
-				Deployment:    deployment,
+				TaskToken:         taskToken,
+				Details:           convertErrDetailsToPayloads(canceledErr.details, dataConverter),
+				Identity:          identity,
+				Namespace:         namespace,
+				WorkerVersion:     versionStamp,
+				Deployment:        deployment,
+				DeploymentOptions: workerDeploymentOptions,
 			}
 		}
 		if errors.Is(err, context.Canceled) {
 			return &workflowservice.RespondActivityTaskCanceledRequest{
-				TaskToken:     taskToken,
-				Identity:      identity,
-				Namespace:     namespace,
-				WorkerVersion: versionStamp,
-				Deployment:    deployment,
+				TaskToken:         taskToken,
+				Identity:          identity,
+				Namespace:         namespace,
+				WorkerVersion:     versionStamp,
+				Deployment:        deployment,
+				DeploymentOptions: workerDeploymentOptions,
 			}
 		}
 	}
@@ -1243,12 +1263,13 @@ func convertActivityResultToRespondRequest(
 	}
 
 	return &workflowservice.RespondActivityTaskFailedRequest{
-		TaskToken:     taskToken,
-		Failure:       failureConverter.ErrorToFailure(err),
-		Identity:      identity,
-		Namespace:     namespace,
-		WorkerVersion: versionStamp,
-		Deployment:    deployment,
+		TaskToken:         taskToken,
+		Failure:           failureConverter.ErrorToFailure(err),
+		Identity:          identity,
+		Namespace:         namespace,
+		WorkerVersion:     versionStamp,
+		Deployment:        deployment,
+		DeploymentOptions: workerDeploymentOptions,
 	}
 }
 

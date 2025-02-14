@@ -1060,6 +1060,26 @@ func (_m *Client) UpdateWorkflowExecutionOptions(ctx context.Context, options cl
 	return r0, r1
 }
 
+// WorkerDeploymentClient provides a mock function with given fields:
+func (_m *Client) WorkerDeploymentClient() client.WorkerDeploymentClient {
+	ret := _m.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for WorkerDeploymentClient")
+	}
+
+	var r0 client.WorkerDeploymentClient
+	if rf, ok := ret.Get(0).(func() client.WorkerDeploymentClient); ok {
+		r0 = rf()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(client.WorkerDeploymentClient)
+		}
+	}
+
+	return r0
+}
+
 // WorkflowService provides a mock function with given fields:
 func (_m *Client) WorkflowService() workflowservice.WorkflowServiceClient {
 	ret := _m.Called()

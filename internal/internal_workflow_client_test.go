@@ -1721,7 +1721,8 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithMemoAndSearchAt
 
 func (s *workflowClientTestSuite) TestStartWorkflowWithVersioningOverride() {
 	versioningOverride := VersioningOverride{
-		Behavior: VersioningBehaviorPinned,
+		Behavior:      VersioningBehaviorPinned,
+		PinnedVersion: "deployment1.build1",
 		Deployment: Deployment{
 			BuildID:    "build1",
 			SeriesName: "deployment1",
@@ -1744,15 +1745,19 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithVersioningOverride() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
 		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
 			s.Equal(versioningBehaviorToProto(VersioningBehaviorPinned), req.VersioningOverride.GetBehavior())
+			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal("build1", req.VersioningOverride.GetDeployment().GetBuildId())
+			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal("deployment1", req.VersioningOverride.GetDeployment().GetSeriesName())
+			s.Equal("deployment1.build1", req.VersioningOverride.GetPinnedVersion())
 		})
 	_, _ = s.client.ExecuteWorkflow(context.Background(), options, wf)
 }
 
 func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithVersioningOverride() {
 	versioningOverride := VersioningOverride{
-		Behavior: VersioningBehaviorPinned,
+		Behavior:      VersioningBehaviorPinned,
+		PinnedVersion: "deployment1.build1",
 		Deployment: Deployment{
 			BuildID:    "build1",
 			SeriesName: "deployment1",
@@ -1774,8 +1779,11 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithVersioningOverr
 	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
 		Do(func(_ interface{}, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...interface{}) {
 			s.Equal(versioningBehaviorToProto(VersioningBehaviorPinned), req.VersioningOverride.GetBehavior())
+			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal("build1", req.VersioningOverride.GetDeployment().GetBuildId())
+			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal("deployment1", req.VersioningOverride.GetDeployment().GetSeriesName())
+			s.Equal("deployment1.build1", req.VersioningOverride.GetPinnedVersion())
 		})
 	_, _ = s.client.SignalWithStartWorkflow(context.Background(), "wid", "signal", "value", options, wf)
 }
