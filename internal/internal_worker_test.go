@@ -314,6 +314,27 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 	require.NoError(s.T(), err)
 }
 
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_IncompleteWorkflowExecution() {
+	taskQueue := "taskQueue1"
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflow"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
+		}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+	}
+
+	history := &historypb.History{Events: testEvents}
+	logger := getLogger()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
+	replayer.RegisterWorkflow(testReplayWorkflow)
+	err = replayer.ReplayWorkflowHistory(logger, history)
+	require.NoError(s.T(), err)
+}
+
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
 	taskQueue := "taskQueue1"
 	testEvents := []*historypb.HistoryEvent{
@@ -2865,7 +2886,10 @@ func TestWorkerBuildIDAndSessionPanic(t *testing.T) {
 	var recovered interface{}
 	func() {
 		defer func() { recovered = recover() }()
-		worker := NewAggregatedWorker(&WorkflowClient{}, "some-task-queue", WorkerOptions{EnableSessionWorker: true, UseBuildIDForVersioning: true})
+		worker := NewAggregatedWorker(&WorkflowClient{}, "some-task-queue", WorkerOptions{
+			EnableSessionWorker:     true,
+			UseBuildIDForVersioning: true,
+		})
 		worker.RegisterWorkflow(testReplayWorkflow)
 	}()
 	require.Equal(t, "cannot set both EnableSessionWorker and UseBuildIDForVersioning", recovered)
@@ -2945,4 +2969,41 @@ func TestAliasUnqualifiedNameClash(t *testing.T) {
 	// never want called. But with disabling alias, no problem.
 	require.Equal(t, "func3", executeWorkflow(false))
 	require.Equal(t, "func1", executeWorkflow(true))
+}
+
+func (s *internalWorkerTestSuite) TestReservedTemporalName() {
+	// workflow
+	worker := createWorker(s.service)
+	workflowFn := func(ctx Context) error { return nil }
+	err := runAndCatchPanic(func() {
+		worker.RegisterWorkflowWithOptions(workflowFn, RegisterWorkflowOptions{Name: "__temporal_workflow"})
+	})
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), temporalPrefixError)
+
+	// activity
+	activityFn := func() error {
+		return nil
+	}
+	err = runAndCatchPanic(func() {
+		worker.RegisterActivityWithOptions(activityFn, RegisterActivityOptions{Name: "__temporal_workflow"})
+	})
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), temporalPrefixError)
+
+	err = worker.Start()
+	require.NoError(s.T(), err)
+	worker.Stop()
+
+	// task queue
+	namespace := "testNamespace"
+	service := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	client := NewServiceClient(service, nil, ClientOptions{
+		Namespace: namespace,
+	})
+	err = runAndCatchPanic(func() {
+		_ = NewAggregatedWorker(client, "__temporal_task_queue", WorkerOptions{})
+	})
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), temporalPrefixError)
 }

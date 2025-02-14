@@ -85,7 +85,7 @@ type (
 	}
 
 	scheduledNexusOperation struct {
-		startedCallback   func(operationID string, err error)
+		startedCallback   func(token string, err error)
 		completedCallback func(result *commonpb.Payload, err error)
 		endpoint          string
 		service           string
@@ -602,7 +602,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.InheritBuildId = determineInheritBuildIdFlagForCommand(
 		params.VersioningIntent, wc.workflowInfo.TaskQueueName, params.TaskQueueName)
 
-	startMetadata, err := buildUserMetadata(params.staticSummary, params.staticDetails, wc.dataConverter)
+	startMetadata, err := buildUserMetadata(params.StaticSummary, params.StaticDetails, wc.dataConverter)
 	if err != nil {
 		callback(nil, err)
 		return
@@ -627,7 +627,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 		tagWorkflowType, params.WorkflowType.Name)
 }
 
-func (wc *workflowEnvironmentImpl) ExecuteNexusOperation(params executeNexusOperationParams, callback func(*commonpb.Payload, error), startedHandler func(opID string, e error)) int64 {
+func (wc *workflowEnvironmentImpl) ExecuteNexusOperation(params executeNexusOperationParams, callback func(*commonpb.Payload, error), startedHandler func(token string, e error)) int64 {
 	seq := wc.GenerateSequence()
 	scheduleTaskAttr := &commandpb.ScheduleNexusOperationCommandAttributes{
 		Endpoint:               params.client.Endpoint(),
@@ -759,7 +759,13 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	scheduleTaskAttr.UseWorkflowBuildId = determineInheritBuildIdFlagForCommand(
 		parameters.VersioningIntent, wc.workflowInfo.TaskQueueName, parameters.TaskQueueName)
 
-	command := wc.commandsHelper.scheduleActivityTask(scheduleID, scheduleTaskAttr)
+	startMetadata, err := buildUserMetadata(parameters.Summary, "", wc.dataConverter)
+	if err != nil {
+		callback(nil, err)
+		return ActivityID{}
+	}
+
+	command := wc.commandsHelper.scheduleActivityTask(scheduleID, scheduleTaskAttr, startMetadata)
 	command.setData(&scheduledActivity{
 		callback:             callback,
 		waitForCancelRequest: parameters.WaitForCancellation,
@@ -1912,7 +1918,11 @@ func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationStarted(event 
 	command := weh.commandsHelper.handleNexusOperationStarted(attributes.ScheduledEventId)
 	state := command.getData().(*scheduledNexusOperation)
 	if state.startedCallback != nil {
-		state.startedCallback(attributes.OperationId, nil)
+		token := attributes.OperationToken
+		if token == "" {
+			token = attributes.OperationId //lint:ignore SA1019 this field is sent by servers older than 1.27.0.
+		}
+		state.startedCallback(token, nil)
 		state.startedCallback = nil
 	}
 	return nil

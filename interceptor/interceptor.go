@@ -127,8 +127,6 @@ type HandleQueryInput = internal.HandleQueryInput
 
 // UpdateInput is input for WorkflowInboundInterceptor.ExecuteUpdate
 // and WorkflowInboundInterceptor.ValidateUpdate.
-//
-// NOTE: Experimental
 type UpdateInput = internal.UpdateInput
 
 // ExecuteNexusOperationInput is the input to WorkflowOutboundInterceptor.ExecuteNexusOperation.
@@ -219,6 +217,10 @@ type ScheduleClientCreateInput = internal.ScheduleClientCreateInput
 // ClientUpdateWorkflowInput is input for
 // ClientOutoundInterceptor.UpdateWorkflow.
 type ClientUpdateWorkflowInput = internal.ClientUpdateWorkflowInput
+
+// ClientUpdateWithStartWorkflowInput is input for
+// ClientOutboundInterceptor.UpdateWithStartWorkflow.
+type ClientUpdateWithStartWorkflowInput = internal.ClientUpdateWithStartWorkflowInput
 
 // Header provides Temporal header information from the context for reading or
 // writing during specific interceptor calls.

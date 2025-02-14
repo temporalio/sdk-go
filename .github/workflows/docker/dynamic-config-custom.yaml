@@ -17,6 +17,8 @@ frontend.workerVersioningDataAPIs:
   - value: true
 frontend.workerVersioningWorkflowAPIs:
   - value: true
+system.enableDeployments:
+  - value: true
 worker.buildIdScavengerEnabled:
   - value: true
 worker.removableBuildIdDurationSinceDefault:

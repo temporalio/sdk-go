@@ -26,10 +26,12 @@ import (
 	"errors"
 	"time"
 
+	"github.com/nexus-rpc/sdk-go/nexus"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 
 	"go.temporal.io/sdk/converter"
@@ -38,11 +40,15 @@ import (
 var defaultFailureConverter = NewDefaultFailureConverter(DefaultFailureConverterOptions{})
 
 // GetDefaultFailureConverter returns the default failure converter used by Temporal.
+//
+// Exposed as: [go.temporal.io/sdk/temporal.GetDefaultFailureConverter]
 func GetDefaultFailureConverter() converter.FailureConverter {
 	return defaultFailureConverter
 }
 
 // DefaultFailureConverterOptions are optional parameters for DefaultFailureConverter creation.
+//
+// Exposed as: [go.temporal.io/sdk/temporal.DefaultFailureConverterOptions]
 type DefaultFailureConverterOptions struct {
 	// Optional: Sets DataConverter to customize serialization/deserialization of fields.
 	// default: Default data converter
@@ -54,12 +60,16 @@ type DefaultFailureConverterOptions struct {
 }
 
 // DefaultFailureConverter seralizes errors with the option to encode common parameters under Failure.EncodedAttributes
+//
+// Exposed as: [go.temporal.io/sdk/temporal.DefaultFailureConverter]
 type DefaultFailureConverter struct {
 	dataConverter          converter.DataConverter
 	encodeCommonAttributes bool
 }
 
 // NewDefaultFailureConverter creates new instance of DefaultFailureConverter.
+//
+// Exposed as: [go.temporal.io/sdk/temporal.NewDefaultFailureConverter]
 func NewDefaultFailureConverter(opt DefaultFailureConverterOptions) *DefaultFailureConverter {
 	if opt.DataConverter == nil {
 		opt.DataConverter = converter.GetDefaultDataConverter()
@@ -161,14 +171,32 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 		}
 		failure.FailureInfo = &failurepb.Failure_ChildWorkflowExecutionFailureInfo{ChildWorkflowExecutionFailureInfo: failureInfo}
 	case *NexusOperationError:
+		var token = err.OperationToken
+		if token == "" {
+			token = err.OperationID
+		}
 		failureInfo := &failurepb.NexusOperationFailureInfo{
 			ScheduledEventId: err.ScheduledEventID,
-			Endpoint: err.Endpoint,
-			Service: err.Service,
-			Operation: err.Operation,
-			OperationId: err.OperationID,
+			Endpoint:         err.Endpoint,
+			Service:          err.Service,
+			Operation:        err.Operation,
+			OperationId:      token,
+			OperationToken:   token,
 		}
 		failure.FailureInfo = &failurepb.Failure_NexusOperationExecutionFailureInfo{NexusOperationExecutionFailureInfo: failureInfo}
+	case *nexus.HandlerError:
+		var retryBehavior enumspb.NexusHandlerErrorRetryBehavior
+		switch err.RetryBehavior {
+		case nexus.HandlerErrorRetryBehaviorRetryable:
+			retryBehavior = enumspb.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_RETRYABLE
+		case nexus.HandlerErrorRetryBehaviorNonRetryable:
+			retryBehavior = enumspb.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_NON_RETRYABLE
+		}
+		failureInfo := &failurepb.NexusHandlerFailureInfo{
+			Type:          string(err.Type),
+			RetryBehavior: retryBehavior,
+		}
+		failure.FailureInfo = &failurepb.Failure_NexusHandlerFailureInfo{NexusHandlerFailureInfo: failureInfo}
 	default: // All unknown errors are considered to be retryable ApplicationFailureInfo.
 		failureInfo := &failurepb.ApplicationFailureInfo{
 			Type:         getErrType(err),
@@ -264,6 +292,10 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 			dfc.FailureToError(failure.GetCause()),
 		)
 	} else if info := failure.GetNexusOperationExecutionFailureInfo(); info != nil {
+		token := info.GetOperationToken()
+		if token == "" {
+			token = info.GetOperationId()
+		}
 		err = &NexusOperationError{
 			Message:          failure.Message,
 			Cause:            dfc.FailureToError(failure.GetCause()),
@@ -272,7 +304,21 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 			Endpoint:         info.GetEndpoint(),
 			Service:          info.GetService(),
 			Operation:        info.GetOperation(),
-			OperationID:      info.GetOperationId(),
+			OperationToken:   token,
+			OperationID:      token,
+		}
+	} else if info := failure.GetNexusHandlerFailureInfo(); info != nil {
+		var retryBehavior nexus.HandlerErrorRetryBehavior
+		switch info.RetryBehavior {
+		case enumspb.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_RETRYABLE:
+			retryBehavior = nexus.HandlerErrorRetryBehaviorRetryable
+		case enumspb.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_NON_RETRYABLE:
+			retryBehavior = nexus.HandlerErrorRetryBehaviorNonRetryable
+		}
+		err = &nexus.HandlerError{
+			Type:          nexus.HandlerErrorType(info.Type),
+			Cause:         dfc.FailureToError(failure.GetCause()),
+			RetryBehavior: retryBehavior,
 		}
 	}
 

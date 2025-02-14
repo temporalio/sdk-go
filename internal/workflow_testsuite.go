@@ -34,6 +34,7 @@ import (
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 
@@ -54,6 +55,8 @@ type (
 	ErrorDetailsValues []interface{}
 
 	// WorkflowTestSuite is the test suite to run unit tests for workflow/activity.
+	//
+	// Exposed as: [go.temporal.io/sdk/testsuite.WorkflowTestSuite]
 	WorkflowTestSuite struct {
 		logger                      log.Logger
 		metricsHandler              metrics.Handler
@@ -63,6 +66,8 @@ type (
 	}
 
 	// TestWorkflowEnvironment is the environment that you use to test workflow
+	//
+	// Exposed as: [go.temporal.io/sdk/testsuite.TestWorkflowEnvironment]
 	TestWorkflowEnvironment struct {
 		workflowMock mock.Mock
 		activityMock mock.Mock
@@ -71,17 +76,32 @@ type (
 	}
 
 	// TestActivityEnvironment is the environment that you use to test activity
+	//
+	// Exposed as: [go.temporal.io/sdk/testsuite.TestActivityEnvironment]
 	TestActivityEnvironment struct {
 		impl *testWorkflowEnvironmentImpl
 	}
 
 	// MockCallWrapper is a wrapper to mock.Call. It offers the ability to wait on workflow's clock instead of wall clock.
+	//
+	// Exposed as: [go.temporal.io/sdk/testsuite.MockCallWrapper]
 	MockCallWrapper struct {
 		call *mock.Call
 		env  *TestWorkflowEnvironment
 
 		runFn        func(args mock.Arguments)
 		waitDuration func() time.Duration
+	}
+
+	// TestUpdateCallback is a basic implementation of the UpdateCallbacks interface for testing purposes.
+	// Tests are welcome to implement their own version of this interface if they need to test more complex
+	// update logic. This is a simple implementation to make testing basic Workflow Updates easier.
+	//
+	// Exposed as: [go.temporal.io/sdk/testsuite.TestUpdateCallback]
+	TestUpdateCallback struct {
+		OnAccept   func()
+		OnReject   func(error)
+		OnComplete func(interface{}, error)
 	}
 )
 
@@ -261,6 +281,7 @@ func (t *TestActivityEnvironment) SetWorkerStopChannel(c chan struct{}) {
 // SetOnActivityHeartbeatListener sets a listener that will be called when
 // activity heartbeat is called. ActivityInfo is defined in internal package,
 // use public type activity.Info instead.
+// Note: The provided listener may be called concurrently.
 //
 // Note: Due to internal caching by the activity system, this may not get called
 // for every heartbeat recorded. This is only called when the heartbeat would be
@@ -339,6 +360,16 @@ func (e *TestWorkflowEnvironment) SetContinuedExecutionRunID(rid string) {
 	e.impl.setContinuedExecutionRunID(rid)
 }
 
+// InOrderMockCalls declares that the given calls should occur in order. Syntax sugar for NotBefore.
+func (e *TestWorkflowEnvironment) InOrderMockCalls(calls ...*MockCallWrapper) {
+	wrappedCalls := make([]*mock.Call, 0, len(calls))
+	for _, call := range calls {
+		wrappedCalls = append(wrappedCalls, call.call)
+	}
+
+	mock.InOrder(wrappedCalls...)
+}
+
 // OnActivity setup a mock call for activity. Parameter activity must be activity function (func) or activity name (string).
 // You must call Return() with appropriate parameters on the returned *MockCallWrapper instance. The supplied parameters to
 // the Return() call should either be a function that has exact same signature as the mocked activity, or it should be
@@ -396,6 +427,8 @@ func (e *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...inter
 
 // ErrMockStartChildWorkflowFailed is special error used to indicate the mocked child workflow should fail to start.
 // This error is also exposed as public as testsuite.ErrMockStartChildWorkflowFailed
+//
+// Exposed as: [go.temporal.io/sdk/testsuite.ErrMockStartChildWorkflowFailed]
 var ErrMockStartChildWorkflowFailed = fmt.Errorf("start child workflow failed: %v", enumspb.START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_WORKFLOW_ALREADY_EXISTS)
 
 // OnWorkflow setup a mock call for workflow. Parameter workflow must be workflow function (func) or workflow name (string).
@@ -574,14 +607,14 @@ func (e *TestWorkflowEnvironment) OnUpsertMemo(attributes interface{}) *MockCall
 //		mock.Anything, // NexusOperationOptions
 //	).Return(
 //		&nexus.HandlerStartOperationResultAsync{
-//			OperationID: "hello-operation-id",
+//			OperationToken: "hello-operation-token",
 //		},
 //		nil,
 //	)
 //	t.RegisterNexusAsyncOperationCompletion(
 //		"service-name",
 //		"hello-operation",
-//		"hello-operation-id",
+//		"hello-operation-token",
 //		HelloOutput{Message: "Hello Temporal"},
 //		nil,
 //		1*time.Second,
@@ -662,7 +695,7 @@ func (e *TestWorkflowEnvironment) OnNexusOperation(
 func (e *TestWorkflowEnvironment) RegisterNexusAsyncOperationCompletion(
 	service string,
 	operation string,
-	operationID string,
+	token string,
 	result any,
 	err error,
 	delay time.Duration,
@@ -670,7 +703,7 @@ func (e *TestWorkflowEnvironment) RegisterNexusAsyncOperationCompletion(
 	return e.impl.RegisterNexusAsyncOperationCompletion(
 		service,
 		operation,
-		operationID,
+		token,
 		result,
 		err,
 		delay,
@@ -765,6 +798,18 @@ func (c *MockCallWrapper) NotBefore(calls ...*MockCallWrapper) *MockCallWrapper 
 	}
 	c.call.NotBefore(wrappedCalls...)
 	return c
+}
+
+func (uc *TestUpdateCallback) Accept() {
+	uc.OnAccept()
+}
+
+func (uc *TestUpdateCallback) Reject(err error) {
+	uc.OnReject(err)
+}
+
+func (uc *TestUpdateCallback) Complete(success interface{}, err error) {
+	uc.OnComplete(success, err)
 }
 
 // ExecuteWorkflow executes a workflow, wait until workflow complete. It will fail the test if workflow is blocked and
@@ -890,6 +935,7 @@ func (e *TestWorkflowEnvironment) SetOnActivityCanceledListener(
 
 // SetOnActivityHeartbeatListener sets a listener that will be called when activity heartbeat.
 // Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
+// Note: The provided listener may be called concurrently.
 //
 // Note: Due to internal caching by the activity system, this may not get called
 // for every heartbeat recorded. This is only called when the heartbeat would be
@@ -1069,14 +1115,30 @@ func (e *TestWorkflowEnvironment) QueryWorkflow(queryType string, args ...interf
 	return e.impl.queryWorkflow(queryType, args...)
 }
 
-// UpdateWorkflow sends an update to the currently running workflow.
+// UpdateWorkflow sends an update to the currently running workflow. The updateName is the name of the update handler
+// to be invoked. The updateID is a unique identifier for the update. If updateID is an empty string a UUID will be generated.
+// The update callbacks are used to handle the update. The args are the arguments to be passed to the update handler.
 func (e *TestWorkflowEnvironment) UpdateWorkflow(updateName, updateID string, uc UpdateCallbacks, args ...interface{}) {
 	e.impl.updateWorkflow(updateName, updateID, uc, args...)
 }
 
 // UpdateWorkflowByID sends an update to a running workflow by its ID.
-func (e *TestWorkflowEnvironment) UpdateWorkflowByID(workflowID, updateName, updateID string, uc UpdateCallbacks, args interface{}) error {
-	return e.impl.updateWorkflowByID(workflowID, updateName, updateID, uc, args)
+func (e *TestWorkflowEnvironment) UpdateWorkflowByID(workflowID, updateName, updateID string, uc UpdateCallbacks, args ...interface{}) error {
+	return e.impl.updateWorkflowByID(workflowID, updateName, updateID, uc, args...)
+}
+
+// UpdateWorkflowNoRejection is a convenience function that handles a common test scenario of only validating
+// that an update isn't rejected.
+func (e *TestWorkflowEnvironment) UpdateWorkflowNoRejection(updateName string, updateID string, t mock.TestingT, args ...interface{}) {
+	uc := &TestUpdateCallback{
+		OnReject: func(err error) {
+			require.Fail(t, "update should not be rejected")
+		},
+		OnAccept:   func() {},
+		OnComplete: func(interface{}, error) {},
+	}
+
+	e.UpdateWorkflow(updateName, updateID, uc, args...)
 }
 
 // QueryWorkflowByID queries a child workflow by its ID and returns the result synchronously

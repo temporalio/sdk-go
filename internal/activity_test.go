@@ -249,3 +249,11 @@ func (s *activityTestSuite) TestIsActivity() {
 	ctx, _ = newActivityContext(context.Background(), nil, &activityEnvironment{workerStopChannel: ch})
 	s.True(IsActivity(ctx))
 }
+
+func (s *activityTestSuite) TestGetClient() {
+	ctx := context.Background()
+	workflowClient := WorkflowClient{}
+	ctx, _ = newActivityContext(ctx, nil, &activityEnvironment{client: &workflowClient})
+	client := GetClient(ctx)
+	s.NotNil(client)
+}

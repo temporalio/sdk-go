@@ -25,6 +25,7 @@
 package workflow
 
 import (
+	"cmp"
 	"errors"
 
 	"go.temporal.io/sdk/converter"
@@ -32,7 +33,22 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/temporal"
-	"golang.org/x/exp/constraints"
+)
+
+// VersioningBehavior specifies when existing workflows could change their Build ID.
+// NOTE: Experimental
+type VersioningBehavior = internal.VersioningBehavior
+
+const (
+	// Workflow versioning policy unknown.
+	VersioningBehaviorUnspecified = internal.VersioningBehaviorUnspecified
+
+	// Workflow should be pinned to the current Build ID until manually moved.
+	VersioningBehaviorPinned = internal.VersioningBehaviorPinned
+
+	// Workflow automatically moves to the latest version (default Build ID of the task queue)
+	// when the next task is dispatched.
+	VersioningBehaviorAutoUpgrade = internal.VersioningBehaviorAutoUpgrade
 )
 
 // HandlerUnfinishedPolicy defines the actions taken when a workflow exits while update handlers are
@@ -74,8 +90,6 @@ type (
 	Info = internal.WorkflowInfo
 
 	// UpdateInfo information about a currently running update
-	//
-	// NOTE: Experimental
 	UpdateInfo = internal.UpdateInfo
 
 	// ContinueAsNewError can be returned by a workflow implementation function and indicates that
@@ -105,34 +119,22 @@ type (
 	// NexusClient is a client for executing Nexus Operations from a workflow.
 	NexusClient interface {
 		// The endpoint name this client uses.
-		//
-		// NOTE: Experimental
 		Endpoint() string
 		// The service name this client uses.
-		//
-		// NOTE: Experimental
 		Service() string
 
 		// ExecuteOperation executes a Nexus Operation.
 		// The operation argument can be a string, a [nexus.Operation] or a [nexus.OperationReference].
-		//
-		// NOTE: Experimental
 		ExecuteOperation(ctx Context, operation any, input any, options NexusOperationOptions) NexusOperationFuture
 	}
 
 	// NexusOperationOptions are options for starting a Nexus Operation from a Workflow.
-	//
-	// NOTE: Experimental
 	NexusOperationOptions = internal.NexusOperationOptions
 
 	// NexusOperationFuture represents the result of a Nexus Operation.
-	//
-	// NOTE: Experimental
 	NexusOperationFuture = internal.NexusOperationFuture
 
-	// NexusOperationExecution is the result of [NexusOperationFuture.GetNexusOperationExecution].
-	//
-	// NOTE: Experimental
+	// NexusOperationExecution is the result of [internal.NexusOperationFuture.GetNexusOperationExecution].
 	NexusOperationExecution = internal.NexusOperationExecution
 )
 
@@ -272,8 +274,6 @@ func GetTypedSearchAttributes(ctx Context) temporal.SearchAttributes {
 
 // GetCurrentUpdateInfo returns information about the currently running update if any
 // from the context.
-//
-// NOTE: Experimental
 func GetCurrentUpdateInfo(ctx Context) *UpdateInfo {
 	return internal.GetCurrentUpdateInfo(ctx)
 }
@@ -281,7 +281,7 @@ func GetCurrentUpdateInfo(ctx Context) *UpdateInfo {
 // GetLogger returns a logger to be used in workflow's context.
 // This logger does not record logs during replay.
 //
-// The logger may also extract additional fields from the context, such as update info 
+// The logger may also extract additional fields from the context, such as update info
 // if used in an update handler.
 func GetLogger(ctx Context) log.Logger {
 	return internal.GetLogger(ctx)
@@ -529,25 +529,21 @@ func SetQueryHandlerWithOptions(ctx Context, queryType string, handler interface
 // SetUpdateHandler forwards to SetUpdateHandlerWithOptions with an
 // zero-initialized UpdateHandlerOptions struct. See SetUpdateHandlerWithOptions
 // for more details.
-//
-// NOTE: Experimental
 func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error {
 	return SetUpdateHandlerWithOptions(ctx, updateName, handler, UpdateHandlerOptions{})
 }
 
-// SetUpdateHandlerWithOptions binds an update handler function to the specified
-// name such that update invocations specifying that name will invoke the
-// handler.  The handler function can take as input any number of parameters so
-// long as they can be serialized/deserialized by the system. The handler can
-// take a [workflow.Context] as its first parameter but this is not required. The
-// update handler must return either a single error or a single serializable
-// object along with a single error. The update handler function is invoked in
-// the context of the workflow and thus is subject to the same restrictions as
-// workflow code, namely, the update handler must be deterministic. As with
-// other workflow code, update code is free to invoke and wait on the results of
-// activities. Update handler code is free to mutate workflow state.
+// SetUpdateHandlerWithOptions binds an update handler function to the specified name such that
+// update invocations specifying that name will invoke the handler. The handler function can take as
+// input any number of parameters so long as they can be serialized/deserialized by the system. The
+// handler must take a [workflow.Context] as its first parameter. The update handler must return
+// either a single error or a single serializable object along with a single error. The update
+// handler function is invoked in the context of the workflow and thus is subject to the same
+// restrictions as workflow code, namely, the update handler must be deterministic. As with other
+// workflow code, update code is free to invoke and wait on the results of activities. Update
+// handler code is free to mutate workflow state.
 //
-// This registration can optionally specify (through UpdateHandlerOptions) an
+
 // update validation function. If provided, this function will be invoked before
 // the update handler itself is invoked and if this function returns an error,
 // the update request will be considered to have been rejected and as such will
@@ -565,7 +561,7 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error
 //		err := workflow.SetUpdateHandlerWithOptions(
 //			ctx,
 //			"add",
-//			func(val int) (int, error) { // Calls
+//			func(ctx workflow.Context, val int) (int, error) { // Calls
 //				counter += val // note that this mutates workflow state
 //				return counter, nil
 //			},
@@ -583,8 +579,6 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error
 //		_ = ctx.Done().Receive(ctx, nil)
 //		return counter, nil
 //	}
-//
-// NOTE: Experimental
 func SetUpdateHandlerWithOptions(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions) error {
 	return internal.SetUpdateHandler(ctx, updateName, handler, opts)
 }
@@ -784,7 +778,7 @@ func DataConverterWithoutDeadlockDetection(c converter.DataConverter) converter.
 
 // DeterministicKeys returns the keys of a map in deterministic (sorted) order. To be used in for
 // loops in workflows for deterministic iteration.
-func DeterministicKeys[K constraints.Ordered, V any](m map[K]V) []K {
+func DeterministicKeys[K cmp.Ordered, V any](m map[K]V) []K {
 	return internal.DeterministicKeys(m)
 }
 

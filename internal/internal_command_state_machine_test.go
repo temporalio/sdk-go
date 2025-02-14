@@ -165,7 +165,7 @@ func Test_ActivityStateMachine_CompleteWithoutCancel(t *testing.T) {
 
 	// schedule activity
 	scheduleID := h.getNextID()
-	d := h.scheduleActivityTask(scheduleID, attributes)
+	d := h.scheduleActivityTask(scheduleID, attributes, nil)
 	require.Equal(t, commandStateCreated, d.getState())
 	commands := h.getCommands(true)
 	require.Equal(t, commandStateCommandSent, d.getState())
@@ -192,7 +192,7 @@ func Test_ActivityStateMachine_CancelBeforeSent(t *testing.T) {
 
 	// schedule activity
 	scheduleID := h.getNextID()
-	d := h.scheduleActivityTask(scheduleID, attributes)
+	d := h.scheduleActivityTask(scheduleID, attributes, nil)
 	require.Equal(t, commandStateCreated, d.getState())
 
 	// Cancel before command sent. We will send the command and the cancellation.
@@ -215,7 +215,7 @@ func Test_ActivityStateMachine_CancelAfterSent(t *testing.T) {
 
 	// schedule activity
 	scheduleID := h.getNextID()
-	d := h.scheduleActivityTask(scheduleID, attributes)
+	d := h.scheduleActivityTask(scheduleID, attributes, nil)
 	require.Equal(t, commandStateCreated, d.getState())
 	commands := h.getCommands(true)
 	require.Equal(t, 1, len(commands))
@@ -251,7 +251,7 @@ func Test_ActivityStateMachine_CompletedAfterCancel(t *testing.T) {
 
 	// schedule activity
 	scheduleID := h.getNextID()
-	d := h.scheduleActivityTask(scheduleID, attributes)
+	d := h.scheduleActivityTask(scheduleID, attributes, nil)
 	require.Equal(t, commandStateCreated, d.getState())
 	commands := h.getCommands(true)
 	require.Equal(t, 1, len(commands))
@@ -287,7 +287,7 @@ func Test_ActivityStateMachine_CancelInitiated_After_CanceledBeforeSent(t *testi
 
 	// schedule activity
 	scheduleID := h.getNextID()
-	d := h.scheduleActivityTask(scheduleID, attributes)
+	d := h.scheduleActivityTask(scheduleID, attributes, nil)
 	require.Equal(t, commandStateCreated, d.getState())
 
 	// cancel activity before sent
@@ -324,7 +324,7 @@ func Test_ActivityStateMachine_PanicInvalidStateTransition(t *testing.T) {
 
 	// schedule activity
 	scheduleID := h.getNextID()
-	h.scheduleActivityTask(scheduleID, attributes)
+	h.scheduleActivityTask(scheduleID, attributes, nil)
 
 	// verify that using invalid activity id will panic
 	err := runAndCatchPanic(func() {

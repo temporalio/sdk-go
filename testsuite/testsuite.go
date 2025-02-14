@@ -42,6 +42,9 @@ type (
 
 	// MockCallWrapper is a wrapper to mock.Call. It offers the ability to wait on workflow's clock instead of wall clock.
 	MockCallWrapper = internal.MockCallWrapper
+
+	// TestUpdateCallback is a basic implementation of the UpdateCallbacks interface for testing purposes.
+	TestUpdateCallback = internal.TestUpdateCallback
 )
 
 // ErrMockStartChildWorkflowFailed is special error used to indicate the mocked child workflow should fail to start.

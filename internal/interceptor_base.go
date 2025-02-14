@@ -33,6 +33,8 @@ import (
 
 // InterceptorBase is a default implementation of Interceptor meant for
 // embedding. See documentation in the interceptor package for more details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.InterceptorBase]
 type InterceptorBase struct {
 	ClientInterceptorBase
 	WorkerInterceptorBase
@@ -40,8 +42,11 @@ type InterceptorBase struct {
 
 // WorkerInterceptorBase is a default implementation of WorkerInterceptor meant
 // for embedding. See documentation in the interceptor package for more details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.WorkerInterceptorBase]
 type WorkerInterceptorBase struct{}
 
+// Exposed as: [go.temporal.io/sdk/interceptor.WorkerInterceptor]
 var _ WorkerInterceptor = &WorkerInterceptorBase{}
 
 // InterceptActivity implements WorkerInterceptor.InterceptActivity.
@@ -65,10 +70,13 @@ func (*WorkerInterceptorBase) mustEmbedWorkerInterceptorBase() {}
 // ActivityInboundInterceptorBase is a default implementation of
 // ActivityInboundInterceptor meant for embedding. See documentation in the
 // interceptor package for more details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ActivityInboundInterceptorBase]
 type ActivityInboundInterceptorBase struct {
 	Next ActivityInboundInterceptor
 }
 
+// Exposed as: [go.temporal.io/sdk/interceptor.ActivityInboundInterceptor]
 var _ ActivityInboundInterceptor = &ActivityInboundInterceptorBase{}
 
 // Init implements ActivityInboundInterceptor.Init.
@@ -89,10 +97,13 @@ func (*ActivityInboundInterceptorBase) mustEmbedActivityInboundInterceptorBase()
 // ActivityOutboundInterceptorBase is a default implementation of
 // ActivityOutboundInterceptor meant for embedding. See documentation in the
 // interceptor package for more details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ActivityOutboundInterceptorBase]
 type ActivityOutboundInterceptorBase struct {
 	Next ActivityOutboundInterceptor
 }
 
+// Exposed as: [go.temporal.io/sdk/interceptor.ActivityOutboundInterceptor]
 var _ ActivityOutboundInterceptor = &ActivityOutboundInterceptorBase{}
 
 // GetInfo implements ActivityOutboundInterceptor.GetInfo.
@@ -133,15 +144,24 @@ func (a *ActivityOutboundInterceptorBase) GetWorkerStopChannel(ctx context.Conte
 	return a.Next.GetWorkerStopChannel(ctx)
 }
 
+// GetClient implements
+// ActivityOutboundInterceptor.GetClient
+func (a *ActivityOutboundInterceptorBase) GetClient(ctx context.Context) Client {
+	return a.Next.GetClient(ctx)
+}
+
 func (*ActivityOutboundInterceptorBase) mustEmbedActivityOutboundInterceptorBase() {}
 
 // WorkflowInboundInterceptorBase is a default implementation of
 // WorkflowInboundInterceptor meant for embedding. See documentation in the
 // interceptor package for more details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.WorkflowInboundInterceptorBase]
 type WorkflowInboundInterceptorBase struct {
 	Next WorkflowInboundInterceptor
 }
 
+// Exposed as: [go.temporal.io/sdk/interceptor.WorkflowInboundInterceptor]
 var _ WorkflowInboundInterceptor = &WorkflowInboundInterceptorBase{}
 
 // Init implements WorkflowInboundInterceptor.Init.
@@ -179,10 +199,13 @@ func (*WorkflowInboundInterceptorBase) mustEmbedWorkflowInboundInterceptorBase()
 // WorkflowOutboundInterceptorBase is a default implementation of
 // WorkflowOutboundInterceptor meant for embedding. See documentation in the
 // interceptor package for more details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.WorkflowOutboundInterceptorBase]
 type WorkflowOutboundInterceptorBase struct {
 	Next WorkflowOutboundInterceptor
 }
 
+// Exposed as: [go.temporal.io/sdk/interceptor.WorkflowOutboundInterceptor]
 var _ WorkflowOutboundInterceptor = &WorkflowOutboundInterceptorBase{}
 
 // Go implements WorkflowOutboundInterceptor.Go.
@@ -449,8 +472,11 @@ func (*WorkflowOutboundInterceptorBase) mustEmbedWorkflowOutboundInterceptorBase
 
 // ClientInterceptorBase is a default implementation of ClientInterceptor meant
 // for embedding. See documentation in the interceptor package for more details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientInterceptorBase]
 type ClientInterceptorBase struct{}
 
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientInterceptor]
 var _ ClientInterceptor = &ClientInterceptorBase{}
 
 // InterceptClient implements ClientInterceptor.InterceptClient.
@@ -465,10 +491,13 @@ func (*ClientInterceptorBase) mustEmbedClientInterceptorBase() {}
 // ClientOutboundInterceptorBase is a default implementation of
 // ClientOutboundInterceptor meant for embedding. See documentation in the
 // interceptor package for more details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientOutboundInterceptorBase]
 type ClientOutboundInterceptorBase struct {
 	Next ClientOutboundInterceptor
 }
 
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientOutboundInterceptor]
 var _ ClientOutboundInterceptor = &ClientOutboundInterceptorBase{}
 
 func (c *ClientOutboundInterceptorBase) UpdateWorkflow(
@@ -483,6 +512,13 @@ func (c *ClientOutboundInterceptorBase) PollWorkflowUpdate(
 	in *ClientPollWorkflowUpdateInput,
 ) (*ClientPollWorkflowUpdateOutput, error) {
 	return c.Next.PollWorkflowUpdate(ctx, in)
+}
+
+func (c *ClientOutboundInterceptorBase) UpdateWithStartWorkflow(
+	ctx context.Context,
+	in *ClientUpdateWithStartWorkflowInput,
+) (WorkflowUpdateHandle, error) {
+	return c.Next.UpdateWithStartWorkflow(ctx, in)
 }
 
 // ExecuteWorkflow implements ClientOutboundInterceptor.ExecuteWorkflow.

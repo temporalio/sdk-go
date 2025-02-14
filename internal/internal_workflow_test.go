@@ -1402,24 +1402,6 @@ func (s *WorkflowUnitTest) Test_MutatingFunctionsInQueries() {
 	s.NoError(env.GetWorkflowError())
 }
 
-type updateCallback struct {
-	accept   func()
-	reject   func(error)
-	complete func(interface{}, error)
-}
-
-func (uc *updateCallback) Accept() {
-	uc.accept()
-}
-
-func (uc *updateCallback) Reject(err error) {
-	uc.reject(err)
-}
-
-func (uc *updateCallback) Complete(success interface{}, err error) {
-	uc.complete(success, err)
-}
-
 func (s *WorkflowUnitTest) Test_MutatingFunctionsInUpdateValidator() {
 	env := s.NewTestWorkflowEnvironment()
 
@@ -1438,7 +1420,7 @@ func (s *WorkflowUnitTest) Test_MutatingFunctionsInUpdateValidator() {
 	}
 	env.RegisterWorkflow(wf)
 	env.RegisterDelayedCallback(func() {
-		env.UpdateWorkflow(updateType, "testID", &updateCallback{})
+		env.UpdateWorkflow(updateType, "testID", &TestUpdateCallback{})
 	}, time.Second)
 	env.ExecuteWorkflow(wf)
 	s.True(env.IsWorkflowCompleted())

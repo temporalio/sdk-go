@@ -51,7 +51,7 @@ the sole parameter it receives as part of its initialization as a parameter to t
 
 	func SimpleWorkflow(ctx workflow.Context, value string) error {
 		ao := workflow.ActivityOptions{
-			TaskQueue:               "sampleTaskQueue",
+			TaskQueue:              "sampleTaskQueue",
 			ScheduleToCloseTimeout: time.Second * 60,
 			ScheduleToStartTimeout: time.Second * 60,
 			StartToCloseTimeout:    time.Second * 60,
@@ -149,7 +149,7 @@ The primary responsibility of the workflow implementation is to schedule activit
 straightforward way to do that is via the library method [workflow.ExecuteActivity]:
 
 	ao := workflow.ActivityOptions{
-		TaskQueue:               "sampleTaskQueue",
+		TaskQueue:              "sampleTaskQueue",
 		ScheduleToCloseTimeout: time.Second * 60,
 		ScheduleToStartTimeout: time.Second * 60,
 		StartToCloseTimeout:    time.Second * 60,
@@ -381,7 +381,7 @@ Workflows that need to rerun periodically could naively be implemented as a big 
 logic of the workflow is inside the body of the for loop. The problem with this approach is that the history for that
 workflow will keep growing to a point where it reaches the maximum size enforced by the service.
 
-[ContinueAsNew] is the low level construct that enables implementing such workflows without the risk of failures down the
+ContinueAsNew is the low level construct that enables implementing such workflows without the risk of failures down the
 road. The operation atomically completes the current execution and starts a new execution of the workflow with the same
 workflow ID. The new execution will not carry over any history from the old execution. To trigger this behavior, the
 workflow function should terminate by returning the special ContinueAsNewError error:
@@ -552,9 +552,9 @@ The code below implements the unit tests for the SimpleWorkflow sample.
 
 First, we define a "test suite" struct that absorbs both the basic suite functionality from [testify]
 via suite.Suite and the suite functionality from the Temporal test
-framework via [testsuite.WorkflowTestSuite]. Since every test in this suite will test our workflow we add a property to
+framework via [go.temporal.io/sdk/testsuite.WorkflowTestSuite]. Since every test in this suite will test our workflow we add a property to
 our struct to hold an instance of the test environment. This will allow us to initialize the test environment in a
-setup method. For testing workflows we use a [testsuite.TestWorkflowEnvironment].
+setup method. For testing workflows we use a [go.temporal.io/sdk/testsuite.TestWorkflowEnvironment].
 
 We then implement a SetupTest method to setup a new test environment before each test. Doing so ensure that each test
 runs in it's own isolated sandbox. We also implement an AfterTest function where we assert that all mocks we setup were

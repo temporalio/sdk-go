@@ -400,7 +400,10 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {
 	})
 	ts.NoError(err)
 
-	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "1.0", UseBuildIDForVersioning: true})
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		BuildID:                 "1.0",
+		UseBuildIDForVersioning: true,
+	})
 	ts.workflows.register(worker1)
 	ts.NoError(worker1.Start())
 	defer worker1.Stop()
@@ -419,14 +422,20 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {
 		},
 	})
 	ts.NoError(err)
-	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "2.0", UseBuildIDForVersioning: true})
+	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		BuildID:                 "2.0",
+		UseBuildIDForVersioning: true,
+	})
 	ts.workflows.register(worker2)
 	ts.NoError(worker2.Start())
 	defer worker2.Stop()
 
 	// If we add the worker before the BuildID "2.0" has been registered, the worker poller ends up
 	// in the new versioning queue, and it only recovers after 1m timeout.
-	worker3 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "2.0", UseBuildIDForVersioning: true})
+	worker3 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		BuildID:                 "2.0",
+		UseBuildIDForVersioning: true,
+	})
 	ts.workflows.register(worker3)
 	ts.NoError(worker3.Start())
 	defer worker3.Stop()
@@ -471,11 +480,17 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasksWithRules() 
 	})
 	ts.NoError(err)
 
-	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "1.0", UseBuildIDForVersioning: true})
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		BuildID:                 "1.0",
+		UseBuildIDForVersioning: true,
+	})
 	ts.workflows.register(worker1)
 	ts.NoError(worker1.Start())
 	defer worker1.Stop()
-	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "2.0", UseBuildIDForVersioning: true})
+	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		BuildID:                 "2.0",
+		UseBuildIDForVersioning: true,
+	})
 	ts.workflows.register(worker2)
 	ts.NoError(worker2.Start())
 	defer worker2.Stop()
@@ -638,6 +653,53 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityUnversionedWorkerWithRules(
 	ts.Equal(false, taskQueueTypeInfo.Pollers[0].WorkerVersionCapabilities.UseVersioning)
 }
 
+func (ts *WorkerVersioningTestSuite) TestDeploymentSeriesNameWorker() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		Identity:                "worker1",
+		BuildID:                 "b1",
+		UseBuildIDForVersioning: false,
+		DeploymentOptions: worker.DeploymentOptions{
+			DeploymentSeriesName: "deploy1",
+		},
+	})
+	ts.workflows.register(worker1)
+	ts.NoError(worker1.Start())
+	defer worker1.Stop()
+
+	// Give time for worker pollers stats to show up
+	time.Sleep(2 * time.Second)
+
+	taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, client.DescribeTaskQueueEnhancedOptions{
+		TaskQueue: ts.taskQueueName,
+		Versions: &client.TaskQueueVersionSelection{
+			// `client.UnversionedBuildID` is an empty string
+			BuildIDs: []string{client.UnversionedBuildID},
+		},
+		TaskQueueTypes: []client.TaskQueueType{
+			client.TaskQueueTypeWorkflow,
+		},
+		ReportPollers:          true,
+		ReportTaskReachability: true,
+	})
+	ts.NoError(err)
+	ts.Equal(1, len(taskQueueInfo.VersionsInfo))
+
+	taskQueueVersionInfo, ok := taskQueueInfo.VersionsInfo[client.UnversionedBuildID]
+	ts.True(ok)
+	ts.Equal(client.BuildIDTaskReachability(client.BuildIDTaskReachabilityReachable), taskQueueVersionInfo.TaskReachability)
+
+	ts.Equal(1, len(taskQueueVersionInfo.TypesInfo))
+	taskQueueTypeInfo, ok := taskQueueVersionInfo.TypesInfo[client.TaskQueueTypeWorkflow]
+	ts.True(ok)
+	ts.True(len(taskQueueTypeInfo.Pollers) > 0)
+	ts.Equal("worker1", taskQueueTypeInfo.Pollers[0].Identity)
+	ts.Equal(false, taskQueueTypeInfo.Pollers[0].WorkerVersionCapabilities.UseVersioning)
+	ts.Equal("deploy1", taskQueueTypeInfo.Pollers[0].WorkerVersionCapabilities.DeploymentSeriesName)
+}
+
 func (ts *WorkerVersioningTestSuite) TestReachabilityVersions() {
 	// Skip this test because it is flaky with server 1.25.0, versioning api is also actively undergoing changes
 	ts.T().SkipNow()
@@ -655,7 +717,10 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersions() {
 	})
 	ts.NoError(err)
 
-	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: buildID1, UseBuildIDForVersioning: true})
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		BuildID:                 buildID1,
+		UseBuildIDForVersioning: true,
+	})
 	ts.workflows.register(worker1)
 	ts.NoError(worker1.Start())
 	defer worker1.Stop()
@@ -674,7 +739,10 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersions() {
 	ts.NoError(handle12.Get(ctx, nil))
 
 	// Start the second worker
-	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: buildID2, UseBuildIDForVersioning: true})
+	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		BuildID:                 buildID2,
+		UseBuildIDForVersioning: true,
+	})
 	ts.workflows.register(worker2)
 	ts.NoError(worker2.Start())
 	defer worker2.Stop()
@@ -744,7 +812,10 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersionsWithRules() {
 	})
 	ts.NoError(err)
 
-	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: buildID1, UseBuildIDForVersioning: true})
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		BuildID:                 buildID1,
+		UseBuildIDForVersioning: true,
+	})
 	ts.workflows.register(worker1)
 	ts.NoError(worker1.Start())
 	defer worker1.Stop()
@@ -763,7 +834,10 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersionsWithRules() {
 	ts.NoError(handle12.Get(ctx, nil))
 
 	// Start the second worker
-	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: buildID2, UseBuildIDForVersioning: true})
+	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		BuildID:                 buildID2,
+		UseBuildIDForVersioning: true,
+	})
 	ts.workflows.register(worker2)
 	ts.NoError(worker2.Start())
 	defer worker2.Stop()
@@ -842,6 +916,7 @@ func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
 				TaskQueue: ts.taskQueueName,
 				TaskQueueTypes: []client.TaskQueueType{
 					client.TaskQueueTypeWorkflow,
+					client.TaskQueueTypeActivity,
 				},
 				ReportStats: true,
 			})
@@ -849,6 +924,9 @@ func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
 			ts.Equal(1, len(taskQueueInfo.VersionsInfo))
 			ts.NotNil(taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow])
 			ts.NotNil(taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats)
+			ts.NotNil(taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeActivity])
+			ts.NotNil(taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeActivity].Stats)
+
 			assert.Greater(t, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats.ApproximateBacklogCount, int64(0))
 		},
 		time.Second, 100*time.Millisecond,
@@ -917,7 +995,10 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 	})
 	ts.NoError(err)
 
-	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "1.0", UseBuildIDForVersioning: true})
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		BuildID:                 "1.0",
+		UseBuildIDForVersioning: true,
+	})
 	ts.workflows.register(worker1)
 	ts.activities.register(worker1)
 	ts.NoError(worker1.Start())
@@ -951,7 +1032,10 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 	})
 	ts.NoError(err)
 
-	worker11 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "1.1", UseBuildIDForVersioning: true})
+	worker11 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		BuildID:                 "1.1",
+		UseBuildIDForVersioning: true,
+	})
 	ts.workflows.register(worker11)
 	ts.activities.register(worker11)
 	ts.NoError(worker11.Start())
@@ -1007,7 +1091,10 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetimeWithR
 	})
 	ts.NoError(err)
 
-	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "1.0", UseBuildIDForVersioning: true})
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		BuildID:                 "1.0",
+		UseBuildIDForVersioning: true,
+	})
 	ts.workflows.register(worker1)
 	ts.activities.register(worker1)
 	ts.NoError(worker1.Start())
@@ -1055,7 +1142,10 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetimeWithR
 	})
 	ts.NoError(err)
 
-	worker11 := worker.New(ts.client, ts.taskQueueName, worker.Options{BuildID: "1.1", UseBuildIDForVersioning: true})
+	worker11 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		BuildID:                 "1.1",
+		UseBuildIDForVersioning: true,
+	})
 	ts.workflows.register(worker11)
 	ts.activities.register(worker11)
 	ts.NoError(worker11.Start())

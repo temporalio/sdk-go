@@ -106,7 +106,7 @@ type (
 		env             *testWorkflowEnvironmentImpl
 		seq             int64
 		params          executeNexusOperationParams
-		operationID     string
+		operationToken  string
 		cancelRequested bool
 		started         bool
 		done            bool
@@ -155,6 +155,14 @@ type (
 	taskQueueSpecificActivity struct {
 		fn         interface{}
 		taskQueues map[string]struct{}
+	}
+
+	updateResult struct {
+		success   interface{}
+		err       error
+		update_id string
+		callbacks []updateCallbacksWrapper
+		completed bool
 	}
 
 	// testWorkflowEnvironmentShared is the shared data between parent workflow and child workflow test environments
@@ -229,6 +237,7 @@ type (
 		signalHandler         func(name string, input *commonpb.Payloads, header *commonpb.Header) error
 		queryHandler          func(string, *commonpb.Payloads, *commonpb.Header) (*commonpb.Payloads, error)
 		updateHandler         func(name string, id string, input *commonpb.Payloads, header *commonpb.Header, resp UpdateCallbacks)
+		updateMap             map[string]*updateResult
 		startedHandler        func(r WorkflowExecution, e error)
 
 		isWorkflowCompleted bool
@@ -257,6 +266,13 @@ type (
 	testSessionEnvironmentImpl struct {
 		*sessionEnvironmentImpl
 		testWorkflowEnvironment *testWorkflowEnvironmentImpl
+	}
+
+	// UpdateCallbacksWrapper is a wrapper to UpdateCallbacks. It allows us to dedup duplicate update IDs in the test environment.
+	updateCallbacksWrapper struct {
+		uc       UpdateCallbacks
+		env      *testWorkflowEnvironmentImpl
+		updateID string
 	}
 )
 
@@ -1167,7 +1183,7 @@ func (env *testWorkflowEnvironmentImpl) CompleteActivity(taskToken []byte, resul
 		// We do allow canceled error to be passed here
 		cancelAllowed := true
 		request := convertActivityResultToRespondRequest("test-identity", taskToken, data, err,
-			env.GetDataConverter(), env.GetFailureConverter(), defaultTestNamespace, cancelAllowed, nil)
+			env.GetDataConverter(), env.GetFailureConverter(), defaultTestNamespace, cancelAllowed, nil, nil)
 		env.handleActivityResult(activityID, request, activityHandle.activityType, env.GetDataConverter())
 	}, false /* do not auto schedule workflow task, because activity might be still pending */)
 
@@ -2111,7 +2127,9 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskQueue str
 		return &activityExecutorWrapper{activityExecutor: ae, env: env}
 	}
 
-	taskHandler := newActivityTaskHandlerWithCustomProvider(env.service, params, registry, getActivity)
+	client := WorkflowClient{workflowService: env.service}
+
+	taskHandler := newActivityTaskHandlerWithCustomProvider(&client, params, registry, getActivity)
 	return taskHandler
 }
 
@@ -2389,8 +2407,10 @@ func (env *testWorkflowEnvironmentImpl) newTestNexusTaskHandler(
 		env.workflowInfo.TaskQueueName,
 		&testSuiteClientForNexusOperations{env: env},
 		env.dataConverter,
+		env.failureConverter,
 		env.logger,
 		env.metricsHandler,
+		env.registry,
 	)
 }
 
@@ -2421,7 +2441,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 	taskHandler := env.newTestNexusTaskHandler(handle)
 	env.setNexusOperationHandle(seq, handle)
 
-	var opID string
+	var token string
 	if params.options.ScheduleToCloseTimeout > 0 {
 		// Timer to fail the nexus operation due to schedule to close timeout.
 		env.NewTimer(
@@ -2430,7 +2450,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 			func(result *commonpb.Payloads, err error) {
 				timeoutErr := env.failureConverter.FailureToError(nexusOperationFailure(
 					params,
-					opID,
+					token,
 					&failurepb.Failure{
 						Message: "operation timed out",
 						FailureInfo: &failurepb.Failure_TimeoutFailureInfo{
@@ -2484,8 +2504,8 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 			}, true)
 		case *nexuspb.StartOperationResponse_AsyncSuccess:
 			env.postCallback(func() {
-				opID = v.AsyncSuccess.GetOperationId()
-				handle.startedCallback(opID, nil)
+				token = v.AsyncSuccess.GetOperationToken()
+				handle.startedCallback(token, nil)
 				if handle.cancelRequested {
 					handle.cancel()
 				} else if handle.isMocked {
@@ -2493,8 +2513,16 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 				}
 			}, true)
 		case *nexuspb.StartOperationResponse_OperationError:
-			err := env.failureConverter.FailureToError(
-				nexusOperationFailure(params, "", unsuccessfulOperationErrorToTemporalFailure(v.OperationError)),
+			failure, err := operationErrorToTemporalFailure(apiOperationErrorToNexusOperationError(v.OperationError))
+			if err != nil {
+				env.postCallback(func() {
+					handle.startedCallback("", err)
+					handle.completedCallback(nil, err)
+				}, true)
+				return
+			}
+			err = env.failureConverter.FailureToError(
+				nexusOperationFailure(params, "", failure),
 			)
 			env.postCallback(func() {
 				handle.startedCallback("", err)
@@ -2531,7 +2559,7 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelNexusOperation(seq int64) {
 func (env *testWorkflowEnvironmentImpl) RegisterNexusAsyncOperationCompletion(
 	service string,
 	operation string,
-	operationID string,
+	token string,
 	result any,
 	err error,
 	delay time.Duration,
@@ -2566,7 +2594,7 @@ func (env *testWorkflowEnvironmentImpl) RegisterNexusAsyncOperationCompletion(
 	env.setNexusAsyncOperationCompletionHandle(
 		service,
 		operation,
-		operationID,
+		token,
 		&testNexusAsyncOperationHandle{
 			result: data,
 			err:    err,
@@ -2579,28 +2607,28 @@ func (env *testWorkflowEnvironmentImpl) RegisterNexusAsyncOperationCompletion(
 func (env *testWorkflowEnvironmentImpl) getNexusAsyncOperationCompletionHandle(
 	service string,
 	operation string,
-	operationID string,
+	token string,
 ) *testNexusAsyncOperationHandle {
-	uniqueOpID := env.makeUniqueNexusOperationID(service, operation, operationID)
+	uniqueOpID := env.makeUniqueNexusOperationToken(service, operation, token)
 	return env.nexusAsyncOpHandle[uniqueOpID]
 }
 
 func (env *testWorkflowEnvironmentImpl) setNexusAsyncOperationCompletionHandle(
 	service string,
 	operation string,
-	operationID string,
+	token string,
 	handle *testNexusAsyncOperationHandle,
 ) {
-	uniqueOpID := env.makeUniqueNexusOperationID(service, operation, operationID)
+	uniqueOpID := env.makeUniqueNexusOperationToken(service, operation, token)
 	env.nexusAsyncOpHandle[uniqueOpID] = handle
 }
 
 func (env *testWorkflowEnvironmentImpl) deleteNexusAsyncOperationCompletionHandle(
 	service string,
 	operation string,
-	operationID string,
+	token string,
 ) {
-	uniqueOpID := env.makeUniqueNexusOperationID(service, operation, operationID)
+	uniqueOpID := env.makeUniqueNexusOperationToken(service, operation, token)
 	delete(env.nexusAsyncOpHandle, uniqueOpID)
 }
 
@@ -2610,7 +2638,7 @@ func (env *testWorkflowEnvironmentImpl) scheduleNexusAsyncOperationCompletion(
 	completionHandle := env.getNexusAsyncOperationCompletionHandle(
 		handle.params.client.Service(),
 		handle.params.operation,
-		handle.operationID,
+		handle.operationToken,
 	)
 	if completionHandle == nil {
 		return
@@ -2618,13 +2646,13 @@ func (env *testWorkflowEnvironmentImpl) scheduleNexusAsyncOperationCompletion(
 	env.deleteNexusAsyncOperationCompletionHandle(
 		handle.params.client.Service(),
 		handle.params.operation,
-		handle.operationID,
+		handle.operationToken,
 	)
 	var nexusErr error
 	if completionHandle.err != nil {
 		nexusErr = env.failureConverter.FailureToError(nexusOperationFailure(
 			handle.params,
-			handle.operationID,
+			handle.operationToken,
 			&failurepb.Failure{
 				Message: completionHandle.err.Error(),
 				FailureInfo: &failurepb.Failure_ApplicationFailureInfo{
@@ -2650,7 +2678,7 @@ func (env *testWorkflowEnvironmentImpl) resolveNexusOperation(seq int64, result 
 		}
 		if err != nil {
 			failure := env.failureConverter.ErrorToFailure(err)
-			err = env.failureConverter.FailureToError(nexusOperationFailure(handle.params, handle.operationID, failure.GetCause()))
+			err = env.failureConverter.FailureToError(nexusOperationFailure(handle.params, handle.operationToken, failure.GetCause()))
 			handle.completedCallback(nil, err)
 		} else {
 			handle.completedCallback(result, nil)
@@ -2676,12 +2704,12 @@ func (env *testWorkflowEnvironmentImpl) deleteNexusOperationHandle(seqID int64) 
 	delete(env.runningNexusOperations, seqID)
 }
 
-func (env *testWorkflowEnvironmentImpl) makeUniqueNexusOperationID(
+func (env *testWorkflowEnvironmentImpl) makeUniqueNexusOperationToken(
 	service string,
 	operation string,
-	operationID string,
+	token string,
 ) string {
-	return fmt.Sprintf("%s_%s_%s", service, operation, operationID)
+	return fmt.Sprintf("%s_%s_%s", service, operation, token)
 }
 
 func (env *testWorkflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler) {
@@ -2917,10 +2945,35 @@ func (env *testWorkflowEnvironmentImpl) updateWorkflow(name string, id string, u
 	if err != nil {
 		panic(err)
 	}
-	env.postCallback(func() {
-		// Do not send any headers on test invocations
-		env.updateHandler(name, id, data, nil, uc)
-	}, true)
+	if id == "" {
+		id = uuid.NewString()
+	}
+
+	if env.updateMap == nil {
+		env.updateMap = make(map[string]*updateResult)
+	}
+
+	var ucWrapper = updateCallbacksWrapper{uc: uc, env: env, updateID: id}
+
+	// check for duplicate update ID
+	if result, ok := env.updateMap[id]; ok {
+		if result.completed {
+			env.postCallback(func() {
+				ucWrapper.uc.Accept()
+				ucWrapper.uc.Complete(result.success, result.err)
+			}, false)
+		} else {
+			result.callbacks = append(result.callbacks, ucWrapper)
+		}
+		env.updateMap[id] = result
+	} else {
+		env.updateMap[id] = &updateResult{nil, nil, id, []updateCallbacksWrapper{}, false}
+		env.postCallback(func() {
+			// Do not send any headers on test invocations
+			env.updateHandler(name, id, data, nil, ucWrapper)
+		}, true)
+	}
+
 }
 
 func (env *testWorkflowEnvironmentImpl) updateWorkflowByID(workflowID, name, id string, uc UpdateCallbacks, args ...interface{}) error {
@@ -2932,9 +2985,31 @@ func (env *testWorkflowEnvironmentImpl) updateWorkflowByID(workflowID, name, id 
 		if err != nil {
 			panic(err)
 		}
-		workflowHandle.env.postCallback(func() {
-			workflowHandle.env.updateHandler(name, id, data, nil, uc)
-		}, true)
+
+		if env.updateMap == nil {
+			env.updateMap = make(map[string]*updateResult)
+		}
+
+		var ucWrapper = updateCallbacksWrapper{uc: uc, env: env, updateID: id}
+
+		// Check for duplicate update ID
+		if result, ok := env.updateMap[id]; ok {
+			if result.completed {
+				env.postCallback(func() {
+					ucWrapper.uc.Accept()
+					ucWrapper.uc.Complete(result.success, result.err)
+				}, false)
+			} else {
+				result.callbacks = append(result.callbacks, ucWrapper)
+			}
+			env.updateMap[id] = result
+		} else {
+			env.updateMap[id] = &updateResult{nil, nil, id, []updateCallbacksWrapper{}, false}
+			workflowHandle.env.postCallback(func() {
+				workflowHandle.env.updateHandler(name, id, data, nil, ucWrapper)
+			}, true)
+		}
+
 		return nil
 	}
 
@@ -3075,6 +3150,34 @@ func mockFnGetVersion(string, Version, Version) Version {
 // make sure interface is implemented
 var _ WorkflowEnvironment = (*testWorkflowEnvironmentImpl)(nil)
 
+func (uc updateCallbacksWrapper) Accept() {
+	uc.uc.Accept()
+}
+
+func (uc updateCallbacksWrapper) Reject(err error) {
+	uc.uc.Reject(err)
+}
+
+func (uc updateCallbacksWrapper) Complete(success interface{}, err error) {
+	// cache update result so we can dedup duplicate update IDs
+	if uc.env == nil {
+		panic("env is needed in updateCallback to cache update results for deduping purposes")
+	}
+	if result, ok := uc.env.updateMap[uc.updateID]; ok {
+		if !result.completed {
+			result.success = success
+			result.err = err
+			uc.uc.Complete(success, err)
+			result.completed = true
+			result.post_callbacks(uc.env)
+		} else {
+			uc.uc.Complete(result.success, result.err)
+		}
+	} else {
+		panic("updateMap[updateID] should already be created from updateWorkflow()")
+	}
+}
+
 func (h *testNexusOperationHandle) newStartTask() *workflowservice.PollNexusTaskQueueResponse {
 	return &workflowservice.PollNexusTaskQueueResponse{
 		TaskToken: []byte{},
@@ -3107,9 +3210,9 @@ func (h *testNexusOperationHandle) newCancelTask() *workflowservice.PollNexusTas
 			Header:        h.params.nexusHeader,
 			Variant: &nexuspb.Request_CancelOperation{
 				CancelOperation: &nexuspb.CancelOperationRequest{
-					Service:     h.params.client.Service(),
-					Operation:   h.params.operation,
-					OperationId: h.operationID,
+					Service:        h.params.client.Service(),
+					Operation:      h.params.operation,
+					OperationToken: h.operationToken,
 				},
 			},
 		},
@@ -3141,14 +3244,14 @@ func (h *testNexusOperationHandle) completedCallback(result *commonpb.Payload, e
 
 // startedCallback is a callback registered to handle operation start.
 // Must be called in a postCallback block.
-func (h *testNexusOperationHandle) startedCallback(opID string, e error) {
+func (h *testNexusOperationHandle) startedCallback(token string, e error) {
 	if h.started {
 		// Ignore duplciate starts.
 		return
 	}
-	h.operationID = opID
+	h.operationToken = token
 	h.started = true
-	h.onStarted(opID, e)
+	h.onStarted(token, e)
 	h.env.runningCount--
 }
 
@@ -3156,7 +3259,7 @@ func (h *testNexusOperationHandle) cancel() {
 	if h.done {
 		return
 	}
-	if h.started && h.operationID == "" {
+	if h.started && h.operationToken == "" {
 		panic(fmt.Errorf("incomplete operation has no operation ID: (%s, %s, %s)",
 			h.params.client.Endpoint(), h.params.client.Service(), h.params.operation))
 	}
@@ -3350,34 +3453,34 @@ func (r *testNexusHandler) CancelOperation(
 	ctx context.Context,
 	service string,
 	operation string,
-	operationID string,
+	token string,
 	options nexus.CancelOperationOptions,
 ) error {
 	if r.opHandle.isMocked {
 		// if the operation was mocked, then there's no workflow running
 		return nil
 	}
-	return r.handler.CancelOperation(ctx, service, operation, operationID, options)
+	return r.handler.CancelOperation(ctx, service, operation, token, options)
 }
 
 func (r *testNexusHandler) GetOperationInfo(
 	ctx context.Context,
 	service string,
 	operation string,
-	operationID string,
+	token string,
 	options nexus.GetOperationInfoOptions,
 ) (*nexus.OperationInfo, error) {
-	return r.handler.GetOperationInfo(ctx, service, operation, operationID, options)
+	return r.handler.GetOperationInfo(ctx, service, operation, token, options)
 }
 
 func (r *testNexusHandler) GetOperationResult(
 	ctx context.Context,
 	service string,
 	operation string,
-	operationID string,
+	token string,
 	options nexus.GetOperationResultOptions,
 ) (any, error) {
-	return r.handler.GetOperationResult(ctx, service, operation, operationID, options)
+	return r.handler.GetOperationResult(ctx, service, operation, token, options)
 }
 
 func (env *testWorkflowEnvironmentImpl) registerNexusOperationReference(
@@ -3424,4 +3527,14 @@ func newTestNexusOperation(opRef testNexusOperationReference) *testNexusOperatio
 	return &testNexusOperation{
 		testNexusOperationReference: opRef,
 	}
+}
+
+func (res *updateResult) post_callbacks(env *testWorkflowEnvironmentImpl) {
+	for _, uc := range res.callbacks {
+		env.postCallback(func() {
+			uc.Accept()
+			uc.Complete(res.success, res.err)
+		}, false)
+	}
+	res.callbacks = []updateCallbacksWrapper{}
 }

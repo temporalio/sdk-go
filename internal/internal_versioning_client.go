@@ -113,6 +113,8 @@ type (
 		BuildID string
 		// Whether the worker is using the versioning feature.
 		UseVersioning bool
+		// An identifier to group task queues based on Build ID.
+		DeploymentSeriesName string
 	}
 
 	// TaskQueuePollerInfo provides information about a worker/client polling a task queue.
@@ -243,8 +245,9 @@ func workerVersionCapabilitiesFromResponse(response *common.WorkerVersionCapabil
 	}
 
 	return &WorkerVersionCapabilities{
-		BuildID:       response.GetBuildId(),
-		UseVersioning: response.GetUseVersioning(),
+		BuildID:              response.GetBuildId(),
+		UseVersioning:        response.GetUseVersioning(),
+		DeploymentSeriesName: response.GetDeploymentSeriesName(),
 	}
 }
 
@@ -262,6 +265,7 @@ func pollerInfoFromResponse(response *taskqueuepb.PollerInfo) TaskQueuePollerInf
 		LastAccessTime:            lastAccessTime,
 		Identity:                  response.GetIdentity(),
 		RatePerSecond:             response.GetRatePerSecond(),
+		//lint:ignore SA1019 the server API was deprecated.
 		WorkerVersionCapabilities: workerVersionCapabilitiesFromResponse(response.GetWorkerVersionCapabilities()),
 	}
 }

@@ -46,6 +46,36 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 )
 
+// DeploymentReachability specifies which category of tasks may reach a worker
+// associated with a deployment, simplifying safe decommission.
+// NOTE: Experimental
+type DeploymentReachability = internal.DeploymentReachability
+
+const (
+	// DeploymentReachabilityUnspecified - Reachability level not specified.
+	// NOTE: Experimental
+	DeploymentReachabilityUnspecified = internal.DeploymentReachabilityUnspecified
+
+	// DeploymentReachabilityReachable - The deployment is reachable by new
+	// and/or open workflows. The deployment cannot be decommissioned safely.
+	// NOTE: Experimental
+	DeploymentReachabilityReachable = internal.DeploymentReachabilityReachable
+
+	// DeploymentReachabilityClosedWorkflows - The deployment is not reachable
+	// by new or open workflows, but might be still needed by
+	// Queries sent to closed workflows. The deployment can be decommissioned
+	// safely if user does not query closed workflows.
+	// NOTE: Experimental
+	DeploymentReachabilityClosedWorkflows = internal.DeploymentReachabilityClosedWorkflows
+
+	// DeploymentReachabilityUnreachable - The deployment is not reachable by
+	// any workflow because all the workflows who needed this
+	// deployment are out of the retention period. The deployment can be
+	// decommissioned safely.
+	// NOTE: Experimental
+	DeploymentReachabilityUnreachable = internal.DeploymentReachabilityUnreachable
+)
+
 // TaskReachability specifies which category of tasks may reach a worker on a versioned task queue.
 // Used both in a reachability query and its response.
 //
@@ -106,21 +136,16 @@ const (
 )
 
 // WorkflowUpdateStage indicates the stage of an update request.
-// NOTE: Experimental
 type WorkflowUpdateStage = internal.WorkflowUpdateStage
 
 const (
 	// WorkflowUpdateStageUnspecified indicates the wait stage was not specified
-	// NOTE: Experimental
 	WorkflowUpdateStageUnspecified = internal.WorkflowUpdateStageUnspecified
 	// WorkflowUpdateStageAdmitted indicates the update is admitted
-	// NOTE: Experimental
 	WorkflowUpdateStageAdmitted = internal.WorkflowUpdateStageAdmitted
 	// WorkflowUpdateStageAccepted indicates the update is accepted
-	// NOTE: Experimental
 	WorkflowUpdateStageAccepted = internal.WorkflowUpdateStageAccepted
 	// WorkflowUpdateStageCompleted indicates the update is completed
-	// NOTE: Experimental
 	WorkflowUpdateStageCompleted = internal.WorkflowUpdateStageCompleted
 )
 
@@ -162,15 +187,10 @@ type (
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
 	StartWorkflowOptions = internal.StartWorkflowOptions
 
-	// WithStartWorkflowOperation is a type of operation that can be executed as part of a workflow start.
-	// For example, use NewUpdateWithStartWorkflowOperation to perform Update-with-Start.
+	// WithStartWorkflowOperation defines how to start a workflow when using UpdateWithStartWorkflow.
+	// See [client.Client.NewWithStartWorkflowOperation] and [client.Client.UpdateWithStartWorkflow].
 	// NOTE: Experimental
 	WithStartWorkflowOperation = internal.WithStartWorkflowOperation
-
-	// UpdateWithStartWorkflowOperation is used to perform Update-with-Start.
-	// See NewUpdateWithStartWorkflowOperation for details.
-	// NOTE: Experimental
-	UpdateWithStartWorkflowOperation = internal.UpdateWithStartWorkflowOperation
 
 	// HistoryEventIterator is a iterator which can return history events.
 	HistoryEventIterator = internal.HistoryEventIterator
@@ -276,17 +296,110 @@ type (
 
 	// UpdateWorkflowOptions encapsulates the parameters for
 	// sending an update to a workflow execution.
-	// NOTE: Experimental
 	UpdateWorkflowOptions = internal.UpdateWorkflowOptions
+
+	// UpdateWithStartWorkflowOptions encapsulates the parameters used by UpdateWithStartWorkflow.
+	// See [client.Client.UpdateWithStartWorkflow] and [client.Client.NewWithStartWorkflowOperation].
+	// NOTE: Experimental
+	UpdateWithStartWorkflowOptions = internal.UpdateWithStartWorkflowOptions
+
+	// Deployment identifies a set of workers. This identifier combines
+	// the deployment series name with their Build ID.
+	// NOTE: Experimental
+	Deployment = internal.Deployment
+
+	// DeploymentTaskQueueInfo describes properties of the Task Queues involved
+	// in a deployment.
+	// NOTE: Experimental
+	DeploymentTaskQueueInfo = internal.DeploymentTaskQueueInfo
+
+	// DeploymentInfo holds information associated with
+	// workers in this deployment.
+	// Workers can poll multiple task queues in a single deployment,
+	// which are listed in this message.
+	// NOTE: Experimental
+	DeploymentInfo = internal.DeploymentInfo
+
+	// DeploymentListEntry is a subset of fields from DeploymentInfo.
+	// NOTE: Experimental
+	DeploymentListEntry = internal.DeploymentListEntry
+
+	// DeploymentListIterator is an iterator for deployments.
+	// NOTE: Experimental
+	DeploymentListIterator = internal.DeploymentListIterator
+
+	// DeploymentListOptions are the parameters for configuring listing deployments.
+	// NOTE: Experimental
+	DeploymentListOptions = internal.DeploymentListOptions
+
+	// DeploymentReachabilityInfo extends DeploymentInfo with reachability information.
+	// NOTE: Experimental
+	DeploymentReachabilityInfo = internal.DeploymentReachabilityInfo
+
+	// DeploymentMetadataUpdate modifies user-defined metadata entries that describe
+	// a deployment.
+	// NOTE: Experimental
+	DeploymentMetadataUpdate = internal.DeploymentMetadataUpdate
+
+	// DeploymentDescribeOptions provides options for [internal.DeploymentClient.Describe].
+	// NOTE: Experimental
+	DeploymentDescribeOptions = internal.DeploymentDescribeOptions
+
+	// DeploymentDescription is the response type for [internal.DeploymentClient.Describe].
+	// NOTE: Experimental
+	DeploymentDescription = internal.DeploymentDescription
+
+	// DeploymentGetReachabilityOptions provides options for [internal.DeploymentClient.GetReachability].
+	// NOTE: Experimental
+	DeploymentGetReachabilityOptions = internal.DeploymentGetReachabilityOptions
+
+	// DeploymentGetCurrentOptions provides options for [internal.DeploymentClient.GetCurrent].
+	// NOTE: Experimental
+	DeploymentGetCurrentOptions = internal.DeploymentGetCurrentOptions
+
+	// DeploymentGetCurrentResponse is the response type for [internal.DeploymentClient.GetCurrent].
+	// NOTE: Experimental
+	DeploymentGetCurrentResponse = internal.DeploymentGetCurrentResponse
+
+	// DeploymentSetCurrentOptions provides options for [internal.DeploymentClient.SetCurrent].
+	// NOTE: Experimental
+	DeploymentSetCurrentOptions = internal.DeploymentSetCurrentOptions
+
+	// DeploymentSetCurrentResponse is the response type for [internal.DeploymentClient.SetCurrent].
+	// NOTE: Experimental
+	DeploymentSetCurrentResponse = internal.DeploymentSetCurrentResponse
+
+	// DeploymentClient is the server interface to manage deployments.
+	// NOTE: Experimental
+	DeploymentClient = internal.DeploymentClient
+
+	// UpdateWorkflowExecutionOptionsRequest is a request for [client.Client.UpdateWorkflowExecutionOptions].
+	// NOTE: Experimental
+	UpdateWorkflowExecutionOptionsRequest = internal.UpdateWorkflowExecutionOptionsRequest
+
+	// WorkflowExecutionOptions contains a set of properties of an existing workflow
+	// that can be overriden using [client.Client.UpdateWorkflowExecutionOptions].
+	// NOTE: Experimental
+	WorkflowExecutionOptions = internal.WorkflowExecutionOptions
+
+	// WorkflowExecutionOptionsChanges describes changes to [WorkflowExecutionOptions]
+	// in the [client.Client.UpdateWorkflowExecutionOptions] API.
+	// NOTE: Experimental
+	WorkflowExecutionOptionsChanges = internal.WorkflowExecutionOptionsChanges
+
+	// VersioningOverride is a property in [WorkflowExecutionOptions] that changes the versioning
+	// configuration of a specific workflow execution.
+	// If set, it takes precedence over the Versioning Behavior provided with workflow type registration, or
+	// default worker options.
+	// NOTE: Experimental
+	VersioningOverride = internal.VersioningOverride
 
 	// WorkflowUpdateHandle represents a running or completed workflow
 	// execution update and gives the holder access to the outcome of the same.
-	// NOTE: Experimental
 	WorkflowUpdateHandle = internal.WorkflowUpdateHandle
 
 	// GetWorkflowUpdateHandleOptions encapsulates the parameters needed to unambiguously
 	// refer to a Workflow Update
-	// NOTE: Experimental
 	GetWorkflowUpdateHandleOptions = internal.GetWorkflowUpdateHandleOptions
 
 	// UpdateWorkerBuildIdCompatibilityOptions is the input to Client.UpdateWorkerBuildIdCompatibility.
@@ -348,27 +461,27 @@ type (
 	// Deprecated: Replaced by the new worker versioning api.
 	TaskQueueReachability = internal.TaskQueueReachability
 
-	// DescribeTaskQueueEnhancedOptions is the input to [Client.DescribeTaskQueueEnhanced].
+	// DescribeTaskQueueEnhancedOptions is the input to [client.Client.DescribeTaskQueueEnhanced].
 	DescribeTaskQueueEnhancedOptions = internal.DescribeTaskQueueEnhancedOptions
 
 	// TaskQueueVersionSelection is a task queue filter based on versioning.
-	// It is an optional component of [Client.DescribeTaskQueueEnhancedOptions].
+	// It is an optional component of [DescribeTaskQueueEnhancedOptions].
 	// WARNING: Worker versioning is currently experimental.
 	TaskQueueVersionSelection = internal.TaskQueueVersionSelection
 
-	// TaskQueueDescription is the response to [Client.DescribeTaskQueueEnhanced].
+	// TaskQueueDescription is the response to [client.Client.DescribeTaskQueueEnhanced].
 	TaskQueueDescription = internal.TaskQueueDescription
 
 	// TaskQueueVersionInfo includes task queue information per Build ID.
-	// It is part of [Client.TaskQueueDescription].
+	// It is part of [TaskQueueDescription].
 	TaskQueueVersionInfo = internal.TaskQueueVersionInfo
 
 	// TaskQueueTypeInfo specifies task queue information per task type and Build ID.
-	// It is included in [Client.TaskQueueVersionInfo].
+	// It is included in [TaskQueueVersionInfo].
 	TaskQueueTypeInfo = internal.TaskQueueTypeInfo
 
 	// TaskQueuePollerInfo provides information about a worker/client polling a task queue.
-	// It is used by [Client.TaskQueueTypeInfo].
+	// It is used by [TaskQueueTypeInfo].
 	TaskQueuePollerInfo = internal.TaskQueuePollerInfo
 
 	// TaskQueueStats contains statistics about task queue backlog and activity.
@@ -379,18 +492,18 @@ type (
 
 	// WorkerVersionCapabilities includes a worker's build identifier
 	// and whether it is choosing to use the versioning feature.
-	// It is an optional component of [Client.TaskQueuePollerInfo].
+	// It is an optional component of [TaskQueuePollerInfo].
 	// WARNING: Worker versioning is currently experimental.
 	WorkerVersionCapabilities = internal.WorkerVersionCapabilities
 
-	// UpdateWorkerVersioningRulesOptions is the input to [Client.UpdateWorkerVersioningRules].
+	// UpdateWorkerVersioningRulesOptions is the input to [client.Client.UpdateWorkerVersioningRules].
 	// WARNING: Worker versioning is currently experimental.
 	UpdateWorkerVersioningRulesOptions = internal.UpdateWorkerVersioningRulesOptions
 
-	// VersioningConflictToken is a conflict token to serialize calls to Client.UpdateWorkerVersioningRules.
+	// VersioningConflictToken is a conflict token to serialize calls to [client.Client.UpdateWorkerVersioningRules].
 	// An update with an old token fails with `serviceerror.FailedPrecondition`.
-	// The current token can be obtained with [GetWorkerVersioningRules],
-	// or returned by a successful [UpdateWorkerVersioningRules].
+	// The current token can be obtained with [client.Client.GetWorkerVersioningRules],
+	// or returned by a successful [client.Client.UpdateWorkerVersioningRules].
 	// WARNING: Worker versioning is currently experimental.
 	VersioningConflictToken = internal.VersioningConflictToken
 
@@ -477,18 +590,17 @@ type (
 	// WARNING: Worker versioning is currently experimental.
 	VersioningOperationCommitBuildID = internal.VersioningOperationCommitBuildID
 
-	// GetWorkerVersioningOptions is the input to [Client.GetWorkerVersioningRules].
+	// GetWorkerVersioningOptions is the input to [client.Client.GetWorkerVersioningRules].
 	// WARNING: Worker versioning is currently experimental.
 	GetWorkerVersioningOptions = internal.GetWorkerVersioningOptions
 
-	// WorkerVersioningRules is the response for [Client.GetWorkerVersioningRules].
+	// WorkerVersioningRules is the response for [client.Client.GetWorkerVersioningRules].
 	// WARNING: Worker versioning is currently experimental.
 	WorkerVersioningRules = internal.WorkerVersioningRules
 
 	// WorkflowUpdateServiceTimeoutOrCanceledError is an error that occurs when an update call times out or is cancelled.
 	//
 	// Note, this is not related to any general concept of timing out or cancelling a running update, this is only related to the client call itself.
-	// NOTE: Experimental
 	WorkflowUpdateServiceTimeoutOrCanceledError = internal.WorkflowUpdateServiceTimeoutOrCanceledError
 
 	// Client is the client for starting and getting information about a workflow executions as well as
@@ -523,8 +635,8 @@ type (
 		ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error)
 
 		// GetWorkflow retrieves a workflow execution and return a WorkflowRun instance (described above)
-		// - workflow ID of the workflow.
-		// - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
+		//  - workflow ID of the workflow.
+		//  - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
 		//
 		// WorkflowRun has 2 methods:
 		//  - GetRunID() string: which return the first started workflow run ID (please see below)
@@ -541,9 +653,9 @@ type (
 		GetWorkflow(ctx context.Context, workflowID string, runID string) WorkflowRun
 
 		// SignalWorkflow sends a signals to a workflow in execution
-		// - workflow ID of the workflow.
-		// - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
-		// - signalName name to identify the signal.
+		//  - workflow ID of the workflow.
+		//  - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
+		//  - signalName name to identify the signal.
 		// The errors it can return:
 		//  - serviceerror.NotFound
 		//  - serviceerror.Internal
@@ -552,9 +664,9 @@ type (
 
 		// SignalWithStartWorkflow sends a signal to a running workflow.
 		// If the workflow is not running or not found, it starts the workflow and then sends the signal in transaction.
-		// - workflowID, signalName, signalArg are same as SignalWorkflow's parameters
-		// - options, workflow, workflowArgs are same as StartWorkflow's parameters
-		// - the workflowID parameter is used instead of options.ID. If the latter is present, it must match the workflowID.
+		//  - workflowID, signalName, signalArg are same as SignalWorkflow's parameters
+		//  - options, workflow, workflowArgs are same as StartWorkflow's parameters
+		//  - the workflowID parameter is used instead of options.ID. If the latter is present, it must match the workflowID.
 		// Note: options.WorkflowIDReusePolicy is default to AllowDuplicate in this API.
 		// The errors it can return:
 		//  - serviceerror.NotFound
@@ -564,10 +676,15 @@ type (
 		SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
 			options StartWorkflowOptions, workflow interface{}, workflowArgs ...interface{}) (WorkflowRun, error)
 
+		// NewWithStartWorkflowOperation returns a WithStartWorkflowOperation for use with UpdateWithStartWorkflow.
+		// See [client.Client.UpdateWithStartWorkflow].
+		// NOTE: Experimental
+		NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) WithStartWorkflowOperation
+
 		// CancelWorkflow request cancellation of a workflow in execution. Cancellation request closes the channel
 		// returned by the workflow.Context.Done() of the workflow that is target of the request.
-		// - workflow ID of the workflow.
-		// - runID can be default(empty string). if empty string then it will pick the currently running execution of that workflow ID.
+		//  - workflow ID of the workflow.
+		//  - runID can be default(empty string). if empty string then it will pick the currently running execution of that workflow ID.
 		// The errors it can return:
 		//  - serviceerror.NotFound
 		//  - serviceerror.InvalidArgument
@@ -578,8 +695,8 @@ type (
 		// TerminateWorkflow terminates a workflow execution. Terminate stops a workflow execution immediately without
 		// letting the workflow to perform any cleanup
 		// workflowID is required, other parameters are optional.
-		// - workflow ID of the workflow.
-		// - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
+		//  - workflow ID of the workflow.
+		//  - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
 		// The errors it can return:
 		//  - serviceerror.NotFound
 		//  - serviceerror.InvalidArgument
@@ -588,12 +705,12 @@ type (
 		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error
 
 		// GetWorkflowHistory gets history events of a particular workflow
-		// - workflow ID of the workflow.
-		// - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
-		// - whether use long poll for tracking new events: when the workflow is running, there can be new events generated during iteration
+		//  - workflow ID of the workflow.
+		//  - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
+		//  - whether use long poll for tracking new events: when the workflow is running, there can be new events generated during iteration
 		//    of HistoryEventIterator, if isLongPoll == true, then iterator will do long poll, tracking new history event, i.e. the iteration
 		//   will not be finished until workflow is finished; if isLongPoll == false, then iterator will only return current history events.
-		// - whether return all history events or just the last event, which contains the workflow execution end result
+		//  - whether return all history events or just the last event, which contains the workflow execution end result
 		// Example:-
 		//  To iterate all events,
 		//     iter := GetWorkflowHistory(ctx, workflowID, runID, isLongPoll, filterType)
@@ -707,7 +824,9 @@ type (
 		//  - serviceerror.InvalidArgument
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
-		ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error)
+		//
+		// Deprecated: Use ListWorkflow instead.
+		ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error) //lint:ignore SA1019 the server API was deprecated.
 
 		// CountWorkflow gets number of workflow executions based on query. The query is basically the SQL WHERE clause
 		// (see ListWorkflow for query examples).
@@ -733,10 +852,10 @@ type (
 		// to handle custom query types.
 		// See comments at workflow.SetQueryHandler(ctx Context, queryType string, handler interface{}) for more details
 		// on how to setup query handler within the target workflow.
-		// - workflowID is required.
-		// - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
-		// - queryType is the type of the query.
-		// - args... are the optional query parameters.
+		//  - workflowID is required.
+		//  - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
+		//  - queryType is the type of the query.
+		//  - args... are the optional query parameters.
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
 		//  - serviceerror.Internal
@@ -756,7 +875,7 @@ type (
 		QueryWorkflowWithOptions(ctx context.Context, request *QueryWorkflowWithOptionsRequest) (*QueryWorkflowWithOptionsResponse, error)
 
 		// DescribeWorkflowExecution returns information about the specified workflow execution.
-		// - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
+		//  - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
 		//
 		// The errors it can return:
 		//  - serviceerror.InvalidArgument
@@ -794,13 +913,13 @@ type (
 		// Allows you to update the worker-build-id based version sets for a particular task queue. This is used in
 		// conjunction with workers who specify their build id and thus opt into the feature.
 		//
-		// Deprecated: Use [UpdateWorkerVersioningRules] with the versioning api.
+		// Deprecated: Use [client.Client.UpdateWorkerVersioningRules] with the versioning api.
 		UpdateWorkerBuildIdCompatibility(ctx context.Context, options *UpdateWorkerBuildIdCompatibilityOptions) error
 
 		// GetWorkerBuildIdCompatibility
 		// Returns the worker-build-id based version sets for a particular task queue.
 		//
-		// Deprecated: Use [GetWorkerVersioningRules] with the versioning api.
+		// Deprecated: Use [client.Client.GetWorkerVersioningRules] with the versioning api.
 		GetWorkerBuildIdCompatibility(ctx context.Context, options *GetWorkerBuildIdCompatibilityOptions) (*WorkerBuildIDVersionSets, error)
 
 		// GetWorkerTaskReachability
@@ -826,24 +945,45 @@ type (
 		// API. If the check fails, an error is returned.
 		CheckHealth(ctx context.Context, request *CheckHealthRequest) (*CheckHealthResponse, error)
 
-		// UpdateWorkflow issues an update request to the
-		// specified workflow execution and returns a handle to the update that
-		// is running in in parallel with the calling thread. Errors returned
-		// from the server will be exposed through the return value of
-		// WorkflowUpdateHandle.Get(). Errors that occur before the
-		// update is requested (e.g. if the required workflow ID field is
-		// missing from the UpdateWorkflowOptions) are returned
-		// directly from this function call.
+		// UpdateWorkflow issues an update request to the specified workflow and
+		// returns a handle to the update. The call will block until the update
+		// has reached the WaitForStage in the options. Note that this means
+		// that the call will not return successfully until the update has been
+		// delivered to a worker. Errors returned from the update handler or its
+		// validator will be exposed through the return value of
+		// WorkflowUpdateHandle.Get(). Errors that occur before the update is
+		// delivered to the workflow (e.g. if the required workflow ID field is
+		// missing from the UpdateWorkflowOptions) are returned directly from
+		// this function call.
 		//
 		// The errors it can return:
 		//  - WorkflowUpdateServiceTimeoutOrCanceledError
-		// NOTE: Experimental
 		UpdateWorkflow(ctx context.Context, options UpdateWorkflowOptions) (WorkflowUpdateHandle, error)
+
+		// UpdateWorkflowExecutionOptions partially overrides the [WorkflowExecutionOptions] of an existing workflow execution
+		// and returns the new [WorkflowExecutionOptions] after applying the changes.
+		// It is intended for building tools that can selectively apply ad-hoc workflow configuration changes.
+		// Use [DescribeWorkflowExecution] to get similar information without modifying options.
+		// NOTE: Experimental
+		UpdateWorkflowExecutionOptions(ctx context.Context, options UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error)
+
+		// UpdateWithStartWorkflow issues an update-with-start request. A
+		// WorkflowIDConflictPolicy must be set in the options. If the specified
+		// workflow execution is not running, then a new workflow execution is
+		// started and the update is sent in the first workflow task.
+		// Alternatively if the specified workflow execution is running then, if
+		// the WorkflowIDConflictPolicy is USE_EXISTING, the update is issued
+		// against the specified workflow, and if the WorkflowIDConflictPolicy
+		// is FAIL, an error is returned. The call will block until the update
+		// has reached the WaitForStage in the options. Note that this means
+		// that the call will not return successfully until the update has been
+		// delivered to a worker.
+		// NOTE: Experimental
+		UpdateWithStartWorkflow(ctx context.Context, options UpdateWithStartWorkflowOptions) (WorkflowUpdateHandle, error)
 
 		// GetWorkflowUpdateHandle creates a handle to the referenced update
 		// which can be polled for an outcome. Note that runID is optional and
 		// if not specified the most recent runID will be used.
-		// NOTE: Experimental
 		GetWorkflowUpdateHandle(ref GetWorkflowUpdateHandleOptions) WorkflowUpdateHandle
 
 		// WorkflowService provides access to the underlying gRPC service. This should only be used for advanced use cases
@@ -856,6 +996,10 @@ type (
 
 		// Schedule creates a new shedule client with the same gRPC connection as this client.
 		ScheduleClient() ScheduleClient
+
+		// DeploymentClient create a new deployment client with the same gRPC connection as this client.
+		// NOTE: Experimental
+		DeploymentClient() DeploymentClient
 
 		// Close client and clean up underlying resources.
 		//
@@ -933,14 +1077,6 @@ type MetricsTimer = metrics.Timer
 
 // MetricsNopHandler is a noop handler that does nothing with the metrics.
 var MetricsNopHandler = metrics.NopHandler
-
-// NewUpdateWithStartWorkflowOperation returns an UpdateWithStartWorkflowOperation to perform Update-with-Start.
-// After executing Client.ExecuteWorkflow with the UpdateWithStartWorkflow in the start options,
-// the update result can be obtained.
-// NOTE: Experimental
-func NewUpdateWithStartWorkflowOperation(options UpdateWorkflowOptions) *UpdateWithStartWorkflowOperation {
-	return internal.NewUpdateWithStartWorkflowOperation(options)
-}
 
 // Dial creates an instance of a workflow client. This will attempt to connect
 // to the server eagerly and will return an error if the server is not
@@ -1028,7 +1164,7 @@ var (
 )
 
 // NewValue creates a new [converter.EncodedValue] which can be used to decode binary data returned by Temporal.  For example:
-// User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got response from calling Client.DescribeWorkflowExecution.
+// User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got response from calling [client.Client.DescribeWorkflowExecution].
 // The response contains binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
 //
@@ -1039,7 +1175,7 @@ func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 }
 
 // NewValues creates a new [converter.EncodedValues] which can be used to decode binary data returned by Temporal. For example:
-// User had Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got response from calling Client.DescribeWorkflowExecution.
+// User had Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got response from calling [client.Client.DescribeWorkflowExecution].
 // The response contains binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
 //

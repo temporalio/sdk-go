@@ -89,7 +89,7 @@ func (b *builder) run() error {
 
 func (b *builder) check() error {
 	// Run go vet
-	if err := b.runCmd(b.cmdFromRoot("go", "vet", "-tags", "protolegacy", "./...")); err != nil {
+	if err := b.runCmd(b.cmdFromRoot("go", "vet", "./...")); err != nil {
 		return fmt.Errorf("go vet failed: %w", err)
 	}
 	// Run errcheck
@@ -106,6 +106,10 @@ func (b *builder) check() error {
 	}
 	// Run copyright check
 	if err := b.runCmd(b.cmdFromRoot("go", "run", "./internal/cmd/tools/copyright/licensegen.go", "--verifyOnly")); err != nil {
+		return fmt.Errorf("copyright check failed: %w", err)
+	}
+	// Run doclink check
+	if err := b.runCmd(b.cmdFromRoot("go", "run", "./internal/cmd/tools/doclink/doclink.go")); err != nil {
 		return fmt.Errorf("copyright check failed: %w", err)
 	}
 	return nil
@@ -140,9 +144,6 @@ func (b *builder) integrationTest() error {
 				HostPort:  "127.0.0.1:7233",
 				Namespace: "integration-test-namespace",
 			},
-			CachedDownload: testsuite.CachedDownload{
-				Version: "v1.1.1",
-			},
 			LogLevel:   "warn",
 			DBFilename: "temporal.sqlite",
 			ExtraArgs: []string{
@@ -157,6 +158,7 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", "system.forceSearchAttributesCacheRefreshOnRead=true",
 				"--dynamic-config-value", "worker.buildIdScavengerEnabled=true",
 				"--dynamic-config-value", "worker.removableBuildIdDurationSinceDefault=1",
+				"--dynamic-config-value", "system.enableDeployments=true",
 				// All of the below is required for Nexus tests.
 				"--http-port", "7243",
 				"--dynamic-config-value", "system.enableNexus=true",
@@ -173,7 +175,7 @@ func (b *builder) integrationTest() error {
 	}
 
 	// Run integration test
-	args := []string{"go", "test", "-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "10m"}
+	args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "10m"}
 	if *runFlag != "" {
 		args = append(args, "-run", *runFlag)
 	}
@@ -269,7 +271,7 @@ func (b *builder) unitTest() error {
 	log.Printf("Running unit tests in dirs: %v", testDirs)
 	for _, testDir := range testDirs {
 		// Run unit test
-		args := []string{"go", "test", "-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "15m"}
+		args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "15m"}
 		if *runFlag != "" {
 			args = append(args, "-run", *runFlag)
 		}

@@ -77,11 +77,14 @@ func NewResourceBasedTuner(opts ResourceBasedTunerOptions) (worker.WorkerTuner, 
 	}
 	nexusSS := &ResourceBasedSlotSupplier{controller: controller,
 		options: defaultWorkflowResourceBasedSlotSupplierOptions()}
+	sessSS := &ResourceBasedSlotSupplier{controller: controller,
+		options: defaultActivityResourceBasedSlotSupplierOptions()}
 	compositeTuner, err := worker.NewCompositeTuner(worker.CompositeTunerOptions{
-		WorkflowSlotSupplier:      wfSS,
-		ActivitySlotSupplier:      actSS,
-		LocalActivitySlotSupplier: laSS,
-		NexusSlotSupplier:         nexusSS,
+		WorkflowSlotSupplier:        wfSS,
+		ActivitySlotSupplier:        actSS,
+		LocalActivitySlotSupplier:   laSS,
+		NexusSlotSupplier:           nexusSS,
+		SessionActivitySlotSupplier: sessSS,
 	})
 	if err != nil {
 		return nil, err

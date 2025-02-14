@@ -24,6 +24,7 @@ package internal
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 
@@ -34,6 +35,7 @@ import (
 	nexuspb "go.temporal.io/api/nexus/v1"
 	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -47,6 +49,11 @@ type NexusOperationContext struct {
 	TaskQueue      string
 	MetricsHandler metrics.Handler
 	Log            log.Logger
+	registry       *registry
+}
+
+func (nc *NexusOperationContext) ResolveWorkflowName(wf any) (string, error) {
+	return getWorkflowFunctionName(nc.registry, wf)
 }
 
 type nexusOperationContextKeyType struct{}
@@ -61,72 +68,155 @@ type isWorkflowRunOpContextKeyType struct{}
 // panic as we don't want to expose a partial client to sync operations.
 var IsWorkflowRunOpContextKey = isWorkflowRunOpContextKeyType{}
 
+type nexusOperationRequestIDKeyType struct{}
+
+var NexusOperationRequestIDKey = nexusOperationRequestIDKeyType{}
+
+type nexusOperationLinksKeyType struct{}
+
+var NexusOperationLinksKey = nexusOperationLinksKeyType{}
+
 // NexusOperationContextFromGoContext gets the [NexusOperationContext] associated with the given [context.Context].
 func NexusOperationContextFromGoContext(ctx context.Context) (nctx *NexusOperationContext, ok bool) {
 	nctx, ok = ctx.Value(nexusOperationContextKey).(*NexusOperationContext)
 	return
 }
 
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+// Most of the helpers in this section were duplicated from the server codebase at common/nexus/failure.go.
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+var failureTypeString = string((&failurepb.Failure{}).ProtoReflect().Descriptor().FullName())
+
+// ProtoFailureToNexusFailure converts a proto Nexus Failure to a Nexus SDK Failure.
+func protoFailureToNexusFailure(failure *nexuspb.Failure) nexus.Failure {
+	return nexus.Failure{
+		Message:  failure.GetMessage(),
+		Metadata: failure.GetMetadata(),
+		Details:  failure.GetDetails(),
+	}
+}
+
 // nexusOperationFailure is a utility in use by the test environment.
-func nexusOperationFailure(params executeNexusOperationParams, operationID string, cause *failurepb.Failure) *failurepb.Failure {
+func nexusOperationFailure(params executeNexusOperationParams, token string, cause *failurepb.Failure) *failurepb.Failure {
 	return &failurepb.Failure{
 		Message: "nexus operation completed unsuccessfully",
 		FailureInfo: &failurepb.Failure_NexusOperationExecutionFailureInfo{
 			NexusOperationExecutionFailureInfo: &failurepb.NexusOperationFailureInfo{
-				Endpoint:    params.client.Endpoint(),
-				Service:     params.client.Service(),
-				Operation:   params.operation,
-				OperationId: operationID,
+				Endpoint:       params.client.Endpoint(),
+				Service:        params.client.Service(),
+				Operation:      params.operation,
+				OperationToken: token,
+				OperationId:    token, // Also populate ID for backwards compatiblity.
 			},
 		},
 		Cause: cause,
 	}
 }
 
-// unsuccessfulOperationErrorToTemporalFailure is a utility in use by the test environment.
-// copied from the server codebase with a slight adaptation: https://github.com/temporalio/temporal/blob/7635cd7dbdc7dd3219f387e8fc66fa117f585ff6/common/nexus/failure.go#L69-L108
-func unsuccessfulOperationErrorToTemporalFailure(err *nexuspb.UnsuccessfulOperationError) *failurepb.Failure {
-	failure := &failurepb.Failure{
-		Message: err.Failure.Message,
-	}
-	if err.OperationState == string(nexus.OperationStateCanceled) {
-		failure.FailureInfo = &failurepb.Failure_CanceledFailureInfo{
-			CanceledFailureInfo: &failurepb.CanceledFailureInfo{
-				Details: nexusFailureMetadataToPayloads(err.Failure),
-			},
+// nexusFailureToAPIFailure converts a Nexus Failure to an API proto Failure.
+// If the failure metadata "type" field is set to the fullname of the temporal API Failure message, the failure is
+// reconstructed using protojson.Unmarshal on the failure details field.
+func nexusFailureToAPIFailure(failure nexus.Failure, retryable bool) (*failurepb.Failure, error) {
+	apiFailure := &failurepb.Failure{}
+
+	if failure.Metadata != nil && failure.Metadata["type"] == failureTypeString {
+		if err := protojson.Unmarshal(failure.Details, apiFailure); err != nil {
+			return nil, err
 		}
 	} else {
-		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{
+		payloads, err := nexusFailureMetadataToPayloads(failure)
+		if err != nil {
+			return nil, err
+		}
+		apiFailure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{
 			ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{
 				// Make up a type here, it's not part of the Nexus Failure spec.
-				Type:         "NexusOperationFailure",
-				Details:      nexusFailureMetadataToPayloads(err.Failure),
-				NonRetryable: true,
+				Type:         "NexusFailure",
+				Details:      payloads,
+				NonRetryable: !retryable,
 			},
 		}
 	}
-	return failure
+	// Ensure this always gets written.
+	apiFailure.Message = failure.Message
+	return apiFailure, nil
 }
 
-// nexusFailureMetadataToPayloads is a utility in use by the test environment.
-// copied from the server codebase with a slight adaptation: https://github.com/temporalio/temporal/blob/7635cd7dbdc7dd3219f387e8fc66fa117f585ff6/common/nexus/failure.go#L69-L108
-func nexusFailureMetadataToPayloads(failure *nexuspb.Failure) *commonpb.Payloads {
+func nexusFailureMetadataToPayloads(failure nexus.Failure) (*commonpb.Payloads, error) {
 	if len(failure.Metadata) == 0 && len(failure.Details) == 0 {
-		return nil
+		return nil, nil
 	}
-	metadata := make(map[string][]byte, len(failure.Metadata))
-	for k, v := range failure.Metadata {
-		metadata[k] = []byte(v)
+	// Delete before serializing.
+	failure.Message = ""
+	data, err := json.Marshal(failure)
+	if err != nil {
+		return nil, err
 	}
 	return &commonpb.Payloads{
 		Payloads: []*commonpb.Payload{
 			{
-				Metadata: metadata,
-				Data:     failure.Details,
+				Metadata: map[string][]byte{
+					"encoding": []byte("json/plain"),
+				},
+				Data: data,
 			},
+		},
+	}, err
+}
+
+func apiOperationErrorToNexusOperationError(opErr *nexuspb.UnsuccessfulOperationError) *nexus.OperationError {
+	return &nexus.OperationError{
+		State: nexus.OperationState(opErr.GetOperationState()),
+		Cause: &nexus.FailureError{
+			Failure: protoFailureToNexusFailure(opErr.GetFailure()),
 		},
 	}
 }
+
+func operationErrorToTemporalFailure(opErr *nexus.OperationError) (*failurepb.Failure, error) {
+	var nexusFailure nexus.Failure
+	failureErr, ok := opErr.Cause.(*nexus.FailureError)
+	if ok {
+		nexusFailure = failureErr.Failure
+	} else if opErr.Cause != nil {
+		nexusFailure = nexus.Failure{Message: opErr.Cause.Error()}
+	}
+
+	// Canceled must be translated into a CanceledFailure to match the SDK expectation.
+	if opErr.State == nexus.OperationStateCanceled {
+		if nexusFailure.Metadata != nil && nexusFailure.Metadata["type"] == failureTypeString {
+			temporalFailure, err := nexusFailureToAPIFailure(nexusFailure, false)
+			if err != nil {
+				return nil, err
+			}
+			if temporalFailure.GetCanceledFailureInfo() != nil {
+				// We already have a CanceledFailure, use it.
+				return temporalFailure, nil
+			}
+			// Fallback to encoding the Nexus failure into a Temporal canceled failure, we expect operations that end up
+			// as canceled to have a CanceledFailureInfo object.
+		}
+		payloads, err := nexusFailureMetadataToPayloads(nexusFailure)
+		if err != nil {
+			return nil, err
+		}
+		return &failurepb.Failure{
+			Message: nexusFailure.Message,
+			FailureInfo: &failurepb.Failure_CanceledFailureInfo{
+				CanceledFailureInfo: &failurepb.CanceledFailureInfo{
+					Details: payloads,
+				},
+			},
+		}, nil
+	}
+
+	return nexusFailureToAPIFailure(nexusFailure, false)
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
+// END Nexus failure section.
+///////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // testSuiteClientForNexusOperations is a partial [Client] implementation for the test workflow environment used to
 // support running the workflow run operation - and only this operation, all methods will panic when this client is
@@ -264,6 +354,10 @@ func (t *testSuiteClientForNexusOperations) ExecuteWorkflow(ctx context.Context,
 	return run, nil
 }
 
+func (t *testSuiteClientForNexusOperations) NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) WithStartWorkflowOperation {
+	panic("not implemented in the test environment")
+}
+
 // GetSearchAttributes implements Client.
 func (t *testSuiteClientForNexusOperations) GetSearchAttributes(ctx context.Context) (*workflowservice.GetSearchAttributesResponse, error) {
 	panic("not implemented in the test environment")
@@ -350,6 +444,8 @@ func (t *testSuiteClientForNexusOperations) ResetWorkflowExecution(ctx context.C
 }
 
 // ScanWorkflow implements Client.
+//
+//lint:ignore SA1019 the server API was deprecated.
 func (t *testSuiteClientForNexusOperations) ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error) {
 	panic("not implemented in the test environment")
 }
@@ -379,6 +475,11 @@ func (t *testSuiteClientForNexusOperations) UpdateWorkflow(ctx context.Context, 
 	panic("unimplemented in the test environment")
 }
 
+// UpdateWithStartWorkflow implements Client.
+func (t *testSuiteClientForNexusOperations) UpdateWithStartWorkflow(ctx context.Context, options UpdateWithStartWorkflowOptions) (WorkflowUpdateHandle, error) {
+	panic("unimplemented in the test environment")
+}
+
 // UpdateWorkerBuildIdCompatibility implements Client.
 func (t *testSuiteClientForNexusOperations) UpdateWorkerBuildIdCompatibility(ctx context.Context, options *UpdateWorkerBuildIdCompatibilityOptions) error {
 	panic("not implemented in the test environment")
@@ -391,6 +492,16 @@ func (t *testSuiteClientForNexusOperations) UpdateWorkerVersioningRules(ctx cont
 
 // WorkflowService implements Client.
 func (t *testSuiteClientForNexusOperations) WorkflowService() workflowservice.WorkflowServiceClient {
+	panic("not implemented in the test environment")
+}
+
+// DeploymentClient implements Client.
+func (t *testSuiteClientForNexusOperations) DeploymentClient() DeploymentClient {
+	panic("not implemented in the test environment")
+}
+
+// UpdateWorkflowExecutionOptions implements Client.
+func (t *testSuiteClientForNexusOperations) UpdateWorkflowExecutionOptions(ctx context.Context, options UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error) {
 	panic("not implemented in the test environment")
 }
 
@@ -422,4 +533,5 @@ func (t *testEnvWorkflowRunForNexusOperations) GetWithOptions(ctx context.Contex
 	panic("not implemented in the test environment")
 }
 
+// Exposed as: [go.temporal.io/sdk/client.WorkflowRun]
 var _ WorkflowRun = &testEnvWorkflowRunForNexusOperations{}

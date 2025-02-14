@@ -26,7 +26,6 @@ package activity
 
 import (
 	"context"
-
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
@@ -73,7 +72,7 @@ func GetMetricsHandler(ctx context.Context) metrics.Handler {
 // can check error with TimeoutType()/Details().
 //
 // Note: If using asynchronous activity completion,
-// after returning [ErrResultPending] users should heartbeat with [client.Client.RecordActivityHeartbeat]
+// after returning [ErrResultPending] users should heartbeat with [go.temporal.io/sdk/client.Client.RecordActivityHeartbeat]
 func RecordHeartbeat(ctx context.Context, details ...interface{}) {
 	internal.RecordActivityHeartbeat(ctx, details...)
 }
@@ -107,4 +106,11 @@ func GetWorkerStopChannel(ctx context.Context) <-chan struct{} {
 // IsActivity checks if the context is an activity context from a normal or local activity.
 func IsActivity(ctx context.Context) bool {
 	return internal.IsActivity(ctx)
+}
+
+// GetClient returns a client that can be used to interact with the Temporal
+// service from an activity. Return type internal.Client is the same underlying
+// type as client.Client.
+func GetClient(ctx context.Context) internal.Client {
+	return internal.GetClient(ctx)
 }

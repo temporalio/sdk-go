@@ -143,6 +143,20 @@ func (t *tracerImpl) ContextWithSpan(ctx context.Context, span interceptor.Trace
 	return tracer.ContextWithSpan(ctx, span.(*tracerSpan).Span)
 }
 
+// SpanFromWorkflowContext extracts the DataDog Span object from the workflow context.
+func SpanFromWorkflowContext(ctx workflow.Context) (ddtrace.Span, bool) {
+	val := ctx.Value(activeSpanContextKey)
+	if val == nil {
+		return tracer.SpanFromContext(nil)
+	}
+
+	if span, ok := val.(*tracerSpan); ok {
+		return span.Span, true
+	}
+
+	return tracer.SpanFromContext(nil)
+}
+
 func genSpanID(idempotencyKey string) uint64 {
 	h := fnv.New64()
 	// Write() always writes all bytes and never fails; the count and error result are for implementing io.Writer.

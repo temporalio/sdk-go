@@ -112,11 +112,13 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 		UserContextCancel:                     cancel,
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
-	workflowWorker := newWorkflowWorkerInternal(s.service, executionParameters, nil, overrides, newRegistry())
+	client := &WorkflowClient{workflowService: s.service}
+	workflowWorker := newWorkflowWorkerInternal(client, executionParameters, nil, overrides, newRegistry())
 	_ = workflowWorker.Start()
 	workflowWorker.Stop()
 
 	s.NoError(ctx.Err())
+
 }
 
 type CountingSlotSupplier struct {
@@ -207,7 +209,8 @@ func (s *WorkersTestSuite) TestWorkflowWorkerSlotSupplier() {
 			WorkerStopTimeout:                     time.Second,
 		}
 		overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
-		workflowWorker := newWorkflowWorkerInternal(s.service, executionParameters, nil, overrides, newRegistry())
+		client := &WorkflowClient{workflowService: s.service}
+		workflowWorker := newWorkflowWorkerInternal(client, executionParameters, nil, overrides, newRegistry())
 		_ = workflowWorker.Start()
 		unblockPollCh <- struct{}{}
 		<-pollRespondedCh
@@ -266,7 +269,8 @@ func (s *WorkersTestSuite) TestActivityWorkerSlotSupplier() {
 		a := &greeterActivity{}
 		registry := newRegistry()
 		registry.addActivityWithLock(a.ActivityType().Name, a)
-		activityWorker := newActivityWorker(s.service, executionParameters, overrides, registry, nil)
+		client := WorkflowClient{workflowService: s.service}
+		activityWorker := newActivityWorker(&client, executionParameters, overrides, registry, nil)
 		_ = activityWorker.Start()
 		unblockPollCh <- struct{}{}
 		<-pollRespondedCh
@@ -341,7 +345,8 @@ func (s *WorkersTestSuite) TestErrorProneSlotSupplier() {
 	a := &greeterActivity{}
 	registry := newRegistry()
 	registry.addActivityWithLock(a.ActivityType().Name, a)
-	activityWorker := newActivityWorker(s.service, executionParameters, overrides, registry, nil)
+	client := WorkflowClient{workflowService: s.service}
+	activityWorker := newActivityWorker(&client, executionParameters, overrides, registry, nil)
 	_ = activityWorker.Start()
 	for i := 0; i < 25; i++ {
 		unblockPollCh <- struct{}{}
@@ -365,7 +370,8 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	a := &greeterActivity{}
 	registry := newRegistry()
 	registry.addActivityWithLock(a.ActivityType().Name, a)
-	activityWorker := newActivityWorker(s.service, executionParameters, overrides, registry, nil)
+	client := WorkflowClient{workflowService: s.service}
+	activityWorker := newActivityWorker(&client, executionParameters, overrides, registry, nil)
 	_ = activityWorker.Start()
 	activityWorker.Stop()
 }
@@ -419,7 +425,8 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	a := &greeterActivity{}
 	registry := newRegistry()
 	registry.addActivityWithLock(a.ActivityType().Name, a)
-	worker := newActivityWorker(s.service, executionParameters, overrides, registry, nil)
+	client := WorkflowClient{workflowService: s.service}
+	worker := newActivityWorker(&client, executionParameters, overrides, registry, nil)
 	_ = worker.Start()
 	_ = activityTaskHandler.BlockedOnExecuteCalled()
 	go worker.Stop()
@@ -445,7 +452,8 @@ func (s *WorkersTestSuite) TestPollWorkflowTaskQueue_InternalServiceError() {
 		Logger:                                ilog.NewNopLogger(),
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
-	workflowWorker := newWorkflowWorkerInternal(s.service, executionParameters, nil, overrides, newRegistry())
+	client := &WorkflowClient{workflowService: s.service}
+	workflowWorker := newWorkflowWorkerInternal(client, executionParameters, nil, overrides, newRegistry())
 	_ = workflowWorker.Start()
 	workflowWorker.Stop()
 }
@@ -736,6 +744,8 @@ func (s *WorkersTestSuite) TestWorkerMultipleStop() {
 	worker := NewAggregatedWorker(client, "multi-stop-tq", WorkerOptions{})
 	s.NoError(worker.Start())
 	worker.Stop()
+	// Verify stopping the worker removes it from the eager dispatcher
+	s.Empty(client.eagerDispatcher.workersByTaskQueue["multi-stop-tq"])
 	worker.Stop()
 }
 
