@@ -2443,6 +2443,9 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 
 	var token string
 	if params.options.ScheduleToCloseTimeout > 0 {
+		// Propagate operation timeout to the handler via header.
+		params.nexusHeader[strings.ToLower(nexus.HeaderOperationTimeout)] = strconv.FormatInt(params.options.ScheduleToCloseTimeout.Milliseconds(), 10) + "ms"
+
 		// Timer to fail the nexus operation due to schedule to close timeout.
 		env.NewTimer(
 			params.options.ScheduleToCloseTimeout,
@@ -2676,7 +2679,7 @@ func (env *testWorkflowEnvironmentImpl) scheduleNexusAsyncOperationCompletion(
 	}, completionHandle.delay)
 }
 
-func (env *testWorkflowEnvironmentImpl) resolveNexusOperation(seq int64, result *commonpb.Payload, err error) {
+func (env *testWorkflowEnvironmentImpl) resolveNexusOperation(seq int64, token string, result *commonpb.Payload, err error) {
 	env.postCallback(func() {
 		handle, ok := env.getNexusOperationHandle(seq)
 		if !ok {
@@ -2685,10 +2688,11 @@ func (env *testWorkflowEnvironmentImpl) resolveNexusOperation(seq int64, result 
 		if err != nil {
 			failure := env.failureConverter.ErrorToFailure(err)
 			err = env.failureConverter.FailureToError(nexusOperationFailure(handle.params, handle.operationToken, failure.GetCause()))
-			handle.completedCallback(nil, err)
-		} else {
-			handle.completedCallback(result, nil)
 		}
+		// Populate the token in case the operation completes before it marked as started.
+		// startedCallback is idempotent and will be a noop in case the operation has already been marked as started.
+		handle.startedCallback(token, err)
+		handle.completedCallback(result, err)
 	}, true)
 }
 
