@@ -2131,7 +2131,6 @@ func (ts *IntegrationTestSuite) getChildInitEventsFromHistory(ctx context.Contex
 		if event.GetEventType() == enumspb.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED {
 			childIDs = append(childIDs, event.GetStartChildWorkflowExecutionInitiatedEventAttributes().GetWorkflowId())
 		}
-		fmt.Println(event.String())
 	}
 	return childIDs
 }
