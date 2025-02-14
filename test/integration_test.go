@@ -2040,6 +2040,102 @@ func (ts *IntegrationTestSuite) TestResetWorkflowExecution() {
 	ts.Equal(originalResult, newResult)
 }
 
+// TestResetWorkflowExecutionWithChildren tests the behavior of child workflow ID generation when a workflow with children is reset.
+// It repeatedly resets the workflow at different points in its execution and verifies that the child workflow IDs are generated correctly.
+func (ts *IntegrationTestSuite) TestResetWorkflowExecutionWithChildren() {
+	wfID := "reset-workflow-with-children"
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	// Start a workflow with 2 children.
+	options := ts.startWorkflowOptions(wfID)
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.WorkflowWithChildren)
+	ts.NoError(err)
+	var originalResult string
+	err = run.Get(ctx, &originalResult)
+	ts.NoError(err)
+
+	// save child init childIDs for later comparison.
+	childIDs := ts.getChildInitEventsFromHistory(ctx, wfID, run.GetRunID())
+	ts.Len(childIDs, 2)
+	child1IDBeforeReset := childIDs[0]
+	child2IDBeforeReset := childIDs[1]
+
+	resetRequest := &workflowservice.ResetWorkflowExecutionRequest{
+		Namespace: ts.config.Namespace,
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: wfID,
+			RunId:      run.GetRunID(),
+		},
+		Reason: "integration test",
+	}
+	// (reset #1) - resetting the workflow execution before both child workflows are started.
+	resetRequest.RequestId = "reset-request-1"
+	resetRequest.WorkflowTaskFinishEventId = 4
+	resp, err := ts.client.ResetWorkflowExecution(context.Background(), resetRequest)
+	ts.NoError(err)
+	// Wait for the new run to complete.
+	var resultAfterReset1 string
+	err = ts.client.GetWorkflow(context.Background(), wfID, resp.GetRunId()).Get(ctx, &resultAfterReset1)
+	ts.NoError(err)
+	ts.Equal(originalResult, resultAfterReset1)
+
+	childIDs = ts.getChildInitEventsFromHistory(ctx, wfID, resp.GetRunId())
+	ts.Len(childIDs, 2)
+	// both child workflow IDs should be different after reset.
+	ts.NotEqual(child1IDBeforeReset, childIDs[0])
+	ts.NotEqual(child2IDBeforeReset, childIDs[1])
+
+	// (reset #2) - resetting the workflow execution after child-1 but before child-2
+	resetRequest.RequestId = "reset-request-2"
+	resetRequest.WorkflowTaskFinishEventId = 13
+	resp, err = ts.client.ResetWorkflowExecution(context.Background(), resetRequest)
+	ts.NoError(err)
+	// Wait for the new run to complete.
+	var resultAfterReset2 string
+	err = ts.client.GetWorkflow(context.Background(), wfID, resp.GetRunId()).Get(ctx, &resultAfterReset2)
+	ts.NoError(err)
+	ts.Equal(originalResult, resultAfterReset2)
+
+	childIDs = ts.getChildInitEventsFromHistory(ctx, wfID, resp.GetRunId())
+	ts.Len(childIDs, 2)
+	ts.Equal(child1IDBeforeReset, childIDs[0])    // child-1 should be the same as before reset.
+	ts.NotEqual(child2IDBeforeReset, childIDs[1]) // child-2 should be different after reset.
+
+	// (reset #3) - resetting the workflow execution after child-1 but before child-2
+	resetRequest.RequestId = "reset-request-3"
+	resetRequest.WorkflowTaskFinishEventId = 22
+	resp, err = ts.client.ResetWorkflowExecution(context.Background(), resetRequest)
+	ts.NoError(err)
+	// Wait for the new run to complete.
+	var resultAfterReset3 string
+	err = ts.client.GetWorkflow(context.Background(), wfID, resp.GetRunId()).Get(ctx, &resultAfterReset3)
+	ts.NoError(err)
+	ts.Equal(originalResult, resultAfterReset3)
+
+	childIDs = ts.getChildInitEventsFromHistory(ctx, wfID, resp.GetRunId())
+	ts.Len(childIDs, 2)
+	// both child workflow IDs should be the same as before reset.
+	ts.Equal(child1IDBeforeReset, childIDs[0])
+	ts.Equal(child2IDBeforeReset, childIDs[1])
+}
+
+func (ts *IntegrationTestSuite) getChildInitEventsFromHistory(ctx context.Context, wfID string, runID string) []string {
+	iter := ts.client.GetWorkflowHistory(ctx, wfID, runID, false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	var childIDs []string
+	for iter.HasNext() {
+		event, err1 := iter.Next()
+		if err1 != nil {
+			break
+		}
+		if event.GetEventType() == enumspb.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED {
+			childIDs = append(childIDs, event.GetStartChildWorkflowExecutionInitiatedEventAttributes().GetWorkflowId())
+		}
+		fmt.Println(event.String())
+	}
+	return childIDs
+}
+
 func (ts *IntegrationTestSuite) TestResetWorkflowExecutionWithUpdate() {
 	ctx := context.Background()
 	wfId := "reset-workflow-execution-with-update"
