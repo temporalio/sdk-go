@@ -119,7 +119,7 @@ func (ts *WorkerDeploymentTestSuite) waitForDrainage(ctx context.Context, dHandl
 		fmt.Printf("drainage %v", desc.Info)
 		return err == nil && desc.Info.DrainageInfo != nil &&
 			desc.Info.DrainageInfo.DrainageStatus == target
-	}, 10*time.Second, 1000*time.Millisecond)
+	}, 310*time.Second, 1000*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
@@ -681,7 +681,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 
 	// Show 1.0) Draining and 2.0) not
 
-	//	ts.waitForDrainage(ctx, dHandle, deploymentName+".1.0", client.WorkerDeploymentVersionDrainageStatusDraining)
+	ts.waitForDrainage(ctx, dHandle, deploymentName+".1.0", client.WorkerDeploymentVersionDrainageStatusDraining)
 
 	desc, err = dHandle.DescribeVersion(ctx, client.WorkerDeploymentDescribeVersionOptions{
 		Version: deploymentName + ".2.0",
