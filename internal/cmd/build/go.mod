@@ -1,14 +1,12 @@
 module go.temporal.io/sdk/internal/cmd/build
 
-go 1.23
-
-toolchain go1.24.0
+go 1.22.1
 
 require (
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c
 	github.com/kisielk/errcheck v1.8.0
-	go.temporal.io/sdk v1.26.0
-	honnef.co/go/tools v0.6.0
+	go.temporal.io/sdk v1.32.1
+	honnef.co/go/tools v0.5.0
 )
 
 require (
