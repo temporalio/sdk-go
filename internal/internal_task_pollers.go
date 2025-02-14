@@ -194,12 +194,14 @@ func newNumPollerMetric(metricsHandler metrics.Handler, pollerType string) *numP
 func (npm *numPollerMetric) increment() {
 	npm.lock.Lock()
 	defer npm.lock.Unlock()
+	fmt.Println("npm.numPollers PRE - ", npm.numPollers)
 	npm.numPollers += 1
 	fmt.Println("npm.numPollers - ", npm.numPollers)
 	npm.gauge.Update(float64(npm.numPollers))
 }
 
 func (npm *numPollerMetric) decrement() {
+	fmt.Println("DECREMENTING numPollerMetric")
 	npm.lock.Lock()
 	defer npm.lock.Unlock()
 	npm.numPollers -= 1
@@ -856,6 +858,7 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 	defer wtp.release(request.TaskQueue.GetKind())
 
 	response, err := wtp.pollWorkflowTaskQueue(ctx, request)
+	wtp.logger.Debug("POLL", response, err)
 	if err != nil {
 		wtp.updateBacklog(request.TaskQueue.GetKind(), 0)
 		return nil, err
