@@ -2443,6 +2443,9 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 
 	var token string
 	if params.options.ScheduleToCloseTimeout > 0 {
+		// Propagate operation timeout to the handler via header.
+		params.nexusHeader[strings.ToLower(nexus.HeaderOperationTimeout)] = strconv.FormatInt(params.options.ScheduleToCloseTimeout.Milliseconds(), 10) + "ms"
+
 		// Timer to fail the nexus operation due to schedule to close timeout.
 		env.NewTimer(
 			params.options.ScheduleToCloseTimeout,
@@ -2481,14 +2484,19 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 			failure = taskHandler.fillInFailure(task.TaskToken, nexusHandlerError(nexus.HandlerErrorTypeInternal, err.Error()))
 		}
 		if failure != nil {
-			err := env.failureConverter.FailureToError(nexusOperationFailure(params, "", &failurepb.Failure{
-				Message: failure.GetError().GetFailure().GetMessage(),
-				FailureInfo: &failurepb.Failure_ApplicationFailureInfo{
-					ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{
-						NonRetryable: true,
-					},
-				},
-			}))
+			// Convert to a nexus HandlerError first to simulate the flow in the server.
+			var handlerErr error
+			handlerErr, err = apiHandlerErrorToNexusHandlerError(failure.GetError(), env.failureConverter)
+			if err != nil {
+				handlerErr = fmt.Errorf("unexpected error while trying to reconstruct Nexus handler error: %w", err)
+			}
+
+			// To simulate the server flow, convert to failure and then back to a Go error.
+			// This ensures that the error's `Failure` is set, the same way as it would outside of the test env.
+			err = env.failureConverter.FailureToError(
+				nexusOperationFailure(params, "", env.failureConverter.ErrorToFailure(handlerErr)),
+			)
+
 			env.postCallback(func() {
 				handle.startedCallback("", err)
 				handle.completedCallback(nil, err)
@@ -2515,6 +2523,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 		case *nexuspb.StartOperationResponse_OperationError:
 			failure, err := operationErrorToTemporalFailure(apiOperationErrorToNexusOperationError(v.OperationError))
 			if err != nil {
+				err = fmt.Errorf("unexpected error while trying to reconstruct Nexus operation error: %w", err)
 				env.postCallback(func() {
 					handle.startedCallback("", err)
 					handle.completedCallback(nil, err)
@@ -2670,7 +2679,7 @@ func (env *testWorkflowEnvironmentImpl) scheduleNexusAsyncOperationCompletion(
 	}, completionHandle.delay)
 }
 
-func (env *testWorkflowEnvironmentImpl) resolveNexusOperation(seq int64, result *commonpb.Payload, err error) {
+func (env *testWorkflowEnvironmentImpl) resolveNexusOperation(seq int64, token string, result *commonpb.Payload, err error) {
 	env.postCallback(func() {
 		handle, ok := env.getNexusOperationHandle(seq)
 		if !ok {
@@ -2679,10 +2688,11 @@ func (env *testWorkflowEnvironmentImpl) resolveNexusOperation(seq int64, result 
 		if err != nil {
 			failure := env.failureConverter.ErrorToFailure(err)
 			err = env.failureConverter.FailureToError(nexusOperationFailure(handle.params, handle.operationToken, failure.GetCause()))
-			handle.completedCallback(nil, err)
-		} else {
-			handle.completedCallback(result, nil)
 		}
+		// Populate the token in case the operation completes before it marked as started.
+		// startedCallback is idempotent and will be a noop in case the operation has already been marked as started.
+		handle.startedCallback(token, err)
+		handle.completedCallback(result, err)
 	}, true)
 }
 
