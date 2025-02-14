@@ -1122,6 +1122,9 @@ func TestWorkflowTestSuite_WorkflowRunOperation_ScheduleToCloseTimeout(t *testin
 		"op",
 		handlerWF,
 		func(ctx context.Context, _ nexus.NoValue, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+			if opts.Header.Get(nexus.HeaderOperationTimeout) == "" {
+				return client.StartWorkflowOptions{}, nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, "expected non empty operation timeout header")
+			}
 			time.Sleep(opSleepDuration)
 			return client.StartWorkflowOptions{ID: opts.RequestID}, nil
 		})
