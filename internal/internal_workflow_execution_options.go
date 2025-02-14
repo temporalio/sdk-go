@@ -138,10 +138,8 @@ func versioningOverrideFromProto(versioningOverride *workflowpb.VersioningOverri
 	return VersioningOverride{
 		Behavior: VersioningBehavior(versioningOverride.GetBehavior()),
 		Deployment: Deployment{
-			//lint:ignore SA1019 the server API was deprecated.
 			SeriesName: versioningOverride.GetDeployment().GetSeriesName(),
-			//lint:ignore SA1019 the server API was deprecated.
-			BuildID: versioningOverride.GetDeployment().GetBuildId(),
+			BuildID:    versioningOverride.GetDeployment().GetBuildId(),
 		},
 	}
 }

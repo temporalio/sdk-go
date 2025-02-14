@@ -30,7 +30,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	commandpb "go.temporal.io/api/command/v1"
@@ -1022,34 +1021,7 @@ func Test_convertErrorToFailure_ChildWorkflowExecutionError(t *testing.T) {
 	require.Equal(err.startedEventID, childWorkflowExecutionErr.startedEventID)
 }
 
-func Test_convertErrorToFailure_NexusHandlerError(t *testing.T) {
-	require := require.New(t)
-	fc := GetDefaultFailureConverter()
-
-	f := fc.ErrorToFailure(&nexus.HandlerError{
-		Type:          nexus.HandlerErrorTypeInternal,
-		Cause:         errors.New("custom cause"),
-		RetryBehavior: nexus.HandlerErrorRetryBehaviorNonRetryable,
-	})
-	require.Equal("handler error (INTERNAL): custom cause", f.GetMessage())
-	require.Equal(string(nexus.HandlerErrorTypeInternal), f.GetNexusHandlerFailureInfo().Type)
-	require.Equal(enumspb.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_NON_RETRYABLE, f.GetNexusHandlerFailureInfo().RetryBehavior)
-	require.Equal("", f.Cause.GetApplicationFailureInfo().Type)
-	require.Equal("custom cause", f.Cause.Message)
-
-	err := fc.FailureToError(f)
-	var handlerErr *nexus.HandlerError
-	require.ErrorAs(err, &handlerErr)
-	require.Equal(nexus.HandlerErrorTypeInternal, handlerErr.Type)
-	require.Equal(nexus.HandlerErrorRetryBehaviorNonRetryable, handlerErr.RetryBehavior)
-	require.Equal("handler error (INTERNAL): custom cause", handlerErr.Error())
-
-	var applicationErr *ApplicationError
-	require.ErrorAs(handlerErr.Cause, &applicationErr)
-	require.Equal("custom cause", applicationErr.Error())
-}
-
-func Test_convertErrorToFailure_UnknownError(t *testing.T) {
+func Test_convertErrorToFailure_UnknowError(t *testing.T) {
 	require := require.New(t)
 	fc := GetDefaultFailureConverter()
 

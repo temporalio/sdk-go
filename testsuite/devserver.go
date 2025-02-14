@@ -71,9 +71,6 @@ type DevServerOptions struct {
 	DBFilename string
 	// Whether to enable the UI.
 	EnableUI bool
-	// Override UI port if EnableUI is true.
-	// If not provided, a free port will be used.
-	UIPort string
 	// Log format - defaults to "pretty".
 	LogFormat string
 	// Log level - defaults to "warn".
@@ -160,9 +157,6 @@ func prepareCommand(options *DevServerOptions, host, port, namespace string) []s
 	}
 	if options.DBFilename != "" {
 		args = append(args, "--db-filename", options.DBFilename)
-	}
-	if options.UIPort != "" {
-		args = append(args, "--ui-port", options.UIPort)
 	}
 	return append(args, options.ExtraArgs...)
 }

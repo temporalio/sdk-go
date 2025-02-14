@@ -25,7 +25,6 @@
 package workflow
 
 import (
-	"cmp"
 	"errors"
 
 	"go.temporal.io/sdk/converter"
@@ -33,6 +32,7 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/temporal"
+	"golang.org/x/exp/constraints"
 )
 
 // VersioningBehavior specifies when existing workflows could change their Build ID.
@@ -119,22 +119,34 @@ type (
 	// NexusClient is a client for executing Nexus Operations from a workflow.
 	NexusClient interface {
 		// The endpoint name this client uses.
+		//
+		// NOTE: Experimental
 		Endpoint() string
 		// The service name this client uses.
+		//
+		// NOTE: Experimental
 		Service() string
 
 		// ExecuteOperation executes a Nexus Operation.
 		// The operation argument can be a string, a [nexus.Operation] or a [nexus.OperationReference].
+		//
+		// NOTE: Experimental
 		ExecuteOperation(ctx Context, operation any, input any, options NexusOperationOptions) NexusOperationFuture
 	}
 
 	// NexusOperationOptions are options for starting a Nexus Operation from a Workflow.
+	//
+	// NOTE: Experimental
 	NexusOperationOptions = internal.NexusOperationOptions
 
 	// NexusOperationFuture represents the result of a Nexus Operation.
+	//
+	// NOTE: Experimental
 	NexusOperationFuture = internal.NexusOperationFuture
 
-	// NexusOperationExecution is the result of [internal.NexusOperationFuture.GetNexusOperationExecution].
+	// NexusOperationExecution is the result of [NexusOperationFuture.GetNexusOperationExecution].
+	//
+	// NOTE: Experimental
 	NexusOperationExecution = internal.NexusOperationExecution
 )
 
@@ -778,7 +790,7 @@ func DataConverterWithoutDeadlockDetection(c converter.DataConverter) converter.
 
 // DeterministicKeys returns the keys of a map in deterministic (sorted) order. To be used in for
 // loops in workflows for deterministic iteration.
-func DeterministicKeys[K cmp.Ordered, V any](m map[K]V) []K {
+func DeterministicKeys[K constraints.Ordered, V any](m map[K]V) []K {
 	return internal.DeterministicKeys(m)
 }
 

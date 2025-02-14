@@ -136,7 +136,6 @@ func (tc *testContext) newNexusClient(t *testing.T, service string) *nexus.HTTPC
 				return res, err
 			}
 		},
-		UseOperationID: true, // TODO(bergundy): Remove this after tests run against server 1.27.0.
 	})
 	require.NoError(t, err)
 	return nc
@@ -159,7 +158,7 @@ func (tc *testContext) requireFailureCounter(t *assert.CollectT, service, operat
 	}))
 }
 
-var syncOp = nexus.NewSyncOperation("sync-op", func(ctx context.Context, s string, o nexus.StartOperationOptions) (string, error) {
+var syncOp = temporalnexus.NewSyncOperation("sync-op", func(ctx context.Context, c client.Client, s string, o nexus.StartOperationOptions) (string, error) {
 	switch s {
 	case "ok":
 		// Verify options are properly propagated.
@@ -180,14 +179,11 @@ var syncOp = nexus.NewSyncOperation("sync-op", func(ctx context.Context, s strin
 		}
 		return s, nil
 	case "fail":
-		return "", nexus.NewOperationFailedError("fail")
+		return "", nexus.NewFailedOperationError(errors.New("fail"))
 	case "fmt-errorf":
 		return "", fmt.Errorf("arbitrary error message")
 	case "handlererror":
-		return "", &nexus.HandlerError{
-			Type:  nexus.HandlerErrorTypeBadRequest,
-			Cause: errors.New(s),
-		}
+		return "", nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, s)
 	case "already-started":
 		return "", serviceerror.NewWorkflowExecutionAlreadyStarted("faking workflow already started", "dont-care", "dont-care")
 	case "retryable-application-error":
@@ -207,6 +203,13 @@ var syncOp = nexus.NewSyncOperation("sync-op", func(ctx context.Context, s strin
 
 func waitForCancelWorkflow(ctx workflow.Context, ownID string) (string, error) {
 	return "", workflow.Await(ctx, func() bool { return false })
+}
+
+func waitForSignalWorkflow(ctx workflow.Context, _ string) (string, error) {
+	ch := workflow.GetSignalChannel(ctx, "nexus-signal")
+	var val string
+	ch.Receive(ctx, &val)
+	return val, ctx.Err()
 }
 
 var workflowOp = temporalnexus.NewWorkflowRunOperation(
@@ -253,10 +256,10 @@ func TestNexusSyncOperation(t *testing.T) {
 	t.Run("fail", func(t *testing.T) {
 		tc.metricsHandler.Clear()
 		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "fail", nexus.ExecuteOperationOptions{})
-		var opErr *nexus.OperationError
-		require.ErrorAs(t, err, &opErr)
-		require.Equal(t, nexus.OperationStateFailed, opErr.State)
-		require.Equal(t, "fail", opErr.Cause.Error())
+		var unsuccessfulOperationErr *nexus.UnsuccessfulOperationError
+		require.ErrorAs(t, err, &unsuccessfulOperationErr)
+		require.Equal(t, nexus.OperationStateFailed, unsuccessfulOperationErr.State)
+		require.Equal(t, "fail", unsuccessfulOperationErr.Cause.Error())
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
@@ -329,10 +332,10 @@ func TestNexusSyncOperation(t *testing.T) {
 
 	t.Run("non-retryable-application-error", func(t *testing.T) {
 		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "non-retryable-application-error", nexus.ExecuteOperationOptions{})
-		var handlerErr *nexus.HandlerError
-		require.ErrorAs(t, err, &handlerErr)
-		require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
-		require.Contains(t, handlerErr.Cause.Error(), "fake app error for test")
+		var opErr *nexus.UnsuccessfulOperationError
+		require.ErrorAs(t, err, &opErr)
+		require.Equal(t, nexus.OperationStateFailed, opErr.State)
+		require.Contains(t, opErr.Cause.Error(), "fake app error for test")
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
@@ -410,7 +413,7 @@ func TestNexusWorkflowRunOperation(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result.Pending)
 	handle := result.Pending
-	require.NotEmpty(t, handle.Token)
+	require.Equal(t, workflowID, handle.ID)
 	desc, err := tc.client.DescribeWorkflowExecution(ctx, workflowID, "")
 	require.NoError(t, err)
 
@@ -441,23 +444,19 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 	defer cancel()
 	tc := newTestContext(t, ctx)
 
-	op := nexus.NewSyncOperation("op", func(ctx context.Context, outcome string, o nexus.StartOperationOptions) (string, error) {
+	op := temporalnexus.NewSyncOperation("op", func(ctx context.Context, c client.Client, outcome string, o nexus.StartOperationOptions) (string, error) {
 		require.NotPanicsf(t, func() {
 			temporalnexus.GetMetricsHandler(ctx)
 			temporalnexus.GetLogger(ctx)
-			temporalnexus.GetClient(ctx)
-		}, "Failed to get metrics handler, logger, or client from operation context.")
+		}, "Failed to get metrics handler or logger from operation context.")
 
 		switch outcome {
 		case "successful":
 			return outcome, nil
 		case "failed-plain-error":
-			return "", nexus.NewOperationFailedError("failed for test")
+			return "", nexus.NewFailedOperationError(errors.New("failed for test"))
 		case "failed-app-error":
-			return "", &nexus.OperationError{
-				State: nexus.OperationStateFailed,
-				Cause: temporal.NewApplicationError("failed with app error", "TestType", "foo"),
-			}
+			return "", nexus.NewFailedOperationError(temporal.NewApplicationError("failed with app error", "TestType", "foo"))
 		case "handler-plain-error":
 			return "", nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, "bad request")
 		case "handler-app-error":
@@ -481,7 +480,7 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 		if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil && outcome == "successful" {
 			return fmt.Errorf("expected start to succeed: %w", err)
 		}
-		if exec.OperationToken != "" {
+		if exec.OperationID != "" {
 			return fmt.Errorf("expected empty operation ID")
 		}
 		if err := fut.Get(ctx, &res); err != nil {
@@ -530,7 +529,7 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 		require.Equal(t, tc.endpoint, opErr.Endpoint)
 		require.Equal(t, "test", opErr.Service)
 		require.Equal(t, op.Name(), opErr.Operation)
-		require.Equal(t, "", opErr.OperationToken)
+		require.Equal(t, "", opErr.OperationID)
 		require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
 		require.Greater(t, opErr.ScheduledEventID, int64(0))
 		err = opErr.Unwrap()
@@ -636,7 +635,7 @@ func TestAsyncOperationFromWorkflow(t *testing.T) {
 		if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil && action != "fail-to-start" {
 			return fmt.Errorf("expected start to succeed: %w", err)
 		}
-		if exec.OperationToken == "" && action != "fail-to-start" {
+		if exec.OperationID == "" && action != "fail-to-start" {
 			return fmt.Errorf("expected non empty operation ID")
 		}
 		if err := fut.Get(ctx, &res); err != nil {
@@ -757,7 +756,7 @@ func TestAsyncOperationFromWorkflow(t *testing.T) {
 		require.Equal(t, tc.endpoint, opErr.Endpoint)
 		require.Equal(t, "test", opErr.Service)
 		require.Equal(t, op.Name(), opErr.Operation)
-		require.NotEmpty(t, opErr.OperationToken)
+		require.NotEmpty(t, opErr.OperationID)
 		require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
 		require.Greater(t, opErr.ScheduledEventID, int64(0))
 		err = opErr.Unwrap()
@@ -842,7 +841,7 @@ func TestReplay(t *testing.T) {
 	defer cancel()
 	tc := newTestContext(t, ctx)
 
-	op := nexus.NewSyncOperation("op", func(ctx context.Context, nv nexus.NoValue, soo nexus.StartOperationOptions) (nexus.NoValue, error) {
+	op := temporalnexus.NewSyncOperation("op", func(ctx context.Context, c client.Client, nv nexus.NoValue, soo nexus.StartOperationOptions) (nexus.NoValue, error) {
 		return nil, nil
 	})
 
@@ -936,8 +935,8 @@ func TestWorkflowTestSuite_NexusSyncOperation(t *testing.T) {
 		switch outcome {
 		case "ok":
 			return outcome, nil
-		case "operation-error":
-			return "", nexus.NewOperationFailedError("test operation failed")
+		case "failure":
+			return "", nexus.NewFailedOperationError(errors.New("test operation failed"))
 		case "handler-error":
 			return "", nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, "test operation failed")
 		}
@@ -963,69 +962,38 @@ func TestWorkflowTestSuite_NexusSyncOperation(t *testing.T) {
 	service := nexus.NewService("test")
 	service.Register(op)
 
-	cases := []struct {
-		outcome    string
-		checkError func(t *testing.T, err error)
-	}{
-		{
-			outcome: "ok",
-			checkError: func(t *testing.T, err error) {
-				require.NoError(t, err)
+	t.Run("ok", func(t *testing.T) {
+		suite := testsuite.WorkflowTestSuite{}
+		env := suite.NewTestWorkflowEnvironment()
+		env.RegisterNexusService(service)
+		env.ExecuteWorkflow(wf, "ok")
+		require.True(t, env.IsWorkflowCompleted())
+		require.NoError(t, env.GetWorkflowError())
+	})
 
-			},
-		},
-		{
-			outcome: "operation-error",
-			checkError: func(t *testing.T, err error) {
-				var execErr *temporal.WorkflowExecutionError
-				require.ErrorAs(t, err, &execErr)
-				var opErr *temporal.NexusOperationError
-				err = execErr.Unwrap()
-				require.ErrorAs(t, err, &opErr)
-				require.Equal(t, "endpoint", opErr.Endpoint)
-				require.Equal(t, "test", opErr.Service)
-				require.Equal(t, op.Name(), opErr.Operation)
-				require.Empty(t, opErr.OperationToken)
-				require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
-				err = opErr.Unwrap()
-				var appErr *temporal.ApplicationError
-				require.ErrorAs(t, err, &appErr)
-				require.Equal(t, "test operation failed", appErr.Message())
-			},
-		},
-		{
-			outcome: "handler-error",
-			checkError: func(t *testing.T, err error) {
-				var execErr *temporal.WorkflowExecutionError
-				require.ErrorAs(t, err, &execErr)
-				var opErr *temporal.NexusOperationError
-				err = execErr.Unwrap()
-				require.ErrorAs(t, err, &opErr)
-				require.Equal(t, "endpoint", opErr.Endpoint)
-				require.Equal(t, "test", opErr.Service)
-				require.Equal(t, op.Name(), opErr.Operation)
-				require.Empty(t, opErr.OperationToken)
-				require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
-				err = opErr.Unwrap()
-				var handlerErr *nexus.HandlerError
-				require.ErrorAs(t, err, &handlerErr)
-				require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
-				err = handlerErr.Unwrap()
-				var appErr *temporal.ApplicationError
-				require.ErrorAs(t, err, &appErr)
-				require.Equal(t, "test operation failed", appErr.Message())
-			},
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.outcome, func(t *testing.T) {
+	for _, outcome := range []string{"failure", "handler-error"} {
+		outcome := outcome // capture just in case.
+		t.Run(outcome, func(t *testing.T) {
 			suite := testsuite.WorkflowTestSuite{}
 			env := suite.NewTestWorkflowEnvironment()
 			env.RegisterNexusService(service)
-			env.ExecuteWorkflow(wf, tc.outcome)
+			env.ExecuteWorkflow(wf, "failure")
 			require.True(t, env.IsWorkflowCompleted())
-			tc.checkError(t, env.GetWorkflowError())
+			var execErr *temporal.WorkflowExecutionError
+			err := env.GetWorkflowError()
+			require.ErrorAs(t, err, &execErr)
+			var opErr *temporal.NexusOperationError
+			err = execErr.Unwrap()
+			require.ErrorAs(t, err, &opErr)
+			require.Equal(t, "endpoint", opErr.Endpoint)
+			require.Equal(t, "test", opErr.Service)
+			require.Equal(t, op.Name(), opErr.Operation)
+			require.Empty(t, opErr.OperationID)
+			require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
+			err = opErr.Unwrap()
+			var appErr *temporal.ApplicationError
+			require.ErrorAs(t, err, &appErr)
+			require.Equal(t, "test operation failed", appErr.Message())
 		})
 	}
 }
@@ -1057,7 +1025,7 @@ func TestWorkflowTestSuite_WorkflowRunOperation(t *testing.T) {
 		if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil {
 			return err
 		}
-		if exec.OperationToken == "" {
+		if exec.OperationID == "" {
 			return errors.New("got empty operation ID")
 		}
 
@@ -1122,9 +1090,6 @@ func TestWorkflowTestSuite_WorkflowRunOperation_ScheduleToCloseTimeout(t *testin
 		"op",
 		handlerWF,
 		func(ctx context.Context, _ nexus.NoValue, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
-			if opts.Header.Get(nexus.HeaderOperationTimeout) == "" {
-				return client.StartWorkflowOptions{}, nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, "expected non empty operation timeout header")
-			}
 			time.Sleep(opSleepDuration)
 			return client.StartWorkflowOptions{ID: opts.RequestID}, nil
 		})
@@ -1138,7 +1103,7 @@ func TestWorkflowTestSuite_WorkflowRunOperation_ScheduleToCloseTimeout(t *testin
 		if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil {
 			return err
 		}
-		if exec.OperationToken == "" {
+		if exec.OperationID == "" {
 			return errors.New("got empty operation ID")
 		}
 		return fut.Get(ctx, nil)
@@ -1187,9 +1152,9 @@ func TestWorkflowTestSuite_WorkflowRunOperation_ScheduleToCloseTimeout(t *testin
 				require.Equal(t, "test", opErr.Service)
 				require.Equal(t, op.Name(), opErr.Operation)
 				if tc.scheduleToCloseTimeout < opSleepDuration {
-					require.Empty(t, opErr.OperationToken)
+					require.Empty(t, opErr.OperationID)
 				} else {
-					require.NotEmpty(t, opErr.OperationToken)
+					require.NotEmpty(t, opErr.OperationID)
 				}
 				require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
 				err = opErr.Unwrap()
@@ -1207,7 +1172,7 @@ func TestWorkflowTestSuite_WorkflowRunOperation_WithCancel(t *testing.T) {
 		defer cancel()
 
 		client := workflow.NewNexusClient("endpoint", "test")
-		fut := client.ExecuteOperation(childCtx, workflowOp, "workflow-id", workflow.NexusOperationOptions{})
+		fut := client.ExecuteOperation(childCtx, workflowOp, "op-id", workflow.NexusOperationOptions{})
 		if cancelBeforeStarted {
 			cancel()
 		}
@@ -1215,8 +1180,8 @@ func TestWorkflowTestSuite_WorkflowRunOperation_WithCancel(t *testing.T) {
 		if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil {
 			return err
 		}
-		if exec.OperationToken == "" {
-			return errors.New("unexpected non empty operation token")
+		if exec.OperationID != "op-id" {
+			return fmt.Errorf("unexpected operation ID: %q", exec.OperationID)
 		}
 
 		if !cancelBeforeStarted {
@@ -1255,7 +1220,7 @@ func TestWorkflowTestSuite_WorkflowRunOperation_WithCancel(t *testing.T) {
 			require.Equal(t, "endpoint", opErr.Endpoint)
 			require.Equal(t, "test", opErr.Service)
 			require.Equal(t, workflowOp.Name(), opErr.Operation)
-			require.NotEmpty(t, opErr.OperationToken)
+			require.Equal(t, "op-id", opErr.OperationID)
 			require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
 			err = opErr.Unwrap()
 			var canceledError *temporal.CanceledError
@@ -1266,10 +1231,11 @@ func TestWorkflowTestSuite_WorkflowRunOperation_WithCancel(t *testing.T) {
 
 func TestWorkflowTestSuite_NexusSyncOperation_ScheduleToCloseTimeout(t *testing.T) {
 	sleepDuration := 500 * time.Millisecond
-	op := nexus.NewSyncOperation(
+	op := temporalnexus.NewSyncOperation(
 		"sync-op",
 		func(
 			ctx context.Context,
+			c client.Client,
 			_ nexus.NoValue,
 			opts nexus.StartOperationOptions,
 		) (nexus.NoValue, error) {
@@ -1323,7 +1289,7 @@ func TestWorkflowTestSuite_NexusSyncOperation_ScheduleToCloseTimeout(t *testing.
 				require.Equal(t, "endpoint", opErr.Endpoint)
 				require.Equal(t, "test", opErr.Service)
 				require.Equal(t, op.Name(), opErr.Operation)
-				require.Empty(t, opErr.OperationToken)
+				require.Empty(t, opErr.OperationID)
 				require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
 				err = opErr.Unwrap()
 				var timeoutErr *temporal.TimeoutError
@@ -1336,12 +1302,12 @@ func TestWorkflowTestSuite_NexusSyncOperation_ScheduleToCloseTimeout(t *testing.
 
 func TestWorkflowTestSuite_NexusSyncOperation_ClientMethods_Panic(t *testing.T) {
 	var panicReason any
-	op := nexus.NewSyncOperation("signal-op", func(ctx context.Context, _ nexus.NoValue, opts nexus.StartOperationOptions) (nexus.NoValue, error) {
+	op := temporalnexus.NewSyncOperation("signal-op", func(ctx context.Context, c client.Client, _ nexus.NoValue, opts nexus.StartOperationOptions) (nexus.NoValue, error) {
 		func() {
 			defer func() {
 				panicReason = recover()
 			}()
-			temporalnexus.GetClient(ctx).ExecuteWorkflow(ctx, client.StartWorkflowOptions{}, "test", "", "get-secret")
+			c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{}, "test", "", "get-secret")
 		}()
 		return nil, nil
 	})
@@ -1435,14 +1401,14 @@ func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
 		env.RegisterNexusService(service)
 		env.OnNexusOperation(service, dummyOp, "Temporal", mock.Anything).Return(
 			&nexus.HandlerStartOperationResultAsync{
-				OperationToken: "operation-token",
+				OperationID: "operation-id",
 			},
 			nil,
 		)
 		require.NoError(t, env.RegisterNexusAsyncOperationCompletion(
 			service.Name,
 			dummyOp.Name(),
-			"operation-token",
+			"operation-id",
 			"fake result",
 			nil,
 			0,
@@ -1521,14 +1487,14 @@ func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
 		env.RegisterNexusService(service)
 		env.OnNexusOperation(service, dummyOp, "Temporal", mock.Anything).Return(
 			&nexus.HandlerStartOperationResultAsync{
-				OperationToken: "operation-token",
+				OperationID: "operation-id",
 			},
 			nil,
 		)
 		require.NoError(t, env.RegisterNexusAsyncOperationCompletion(
 			serviceName,
 			dummyOpName,
-			"operation-token",
+			"operation-id",
 			"",
 			errors.New("workflow handler failed"),
 			1*time.Second,
@@ -1696,7 +1662,7 @@ func TestInterceptors(t *testing.T) {
 	defer cancel()
 	tc := newTestContext(t, ctx)
 
-	op := nexus.NewSyncOperation("op", func(ctx context.Context, _ nexus.NoValue, opts nexus.StartOperationOptions) (string, error) {
+	op := temporalnexus.NewSyncOperation("op", func(ctx context.Context, c client.Client, _ nexus.NoValue, opts nexus.StartOperationOptions) (string, error) {
 		return opts.Header["test"], nil
 	})
 
@@ -1709,8 +1675,8 @@ func TestInterceptors(t *testing.T) {
 		if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil {
 			return fmt.Errorf("expected start to succeed: %w", err)
 		}
-		if exec.OperationToken != "" {
-			return fmt.Errorf("expected empty operation token")
+		if exec.OperationID != "" {
+			return fmt.Errorf("expected empty operation ID")
 		}
 		if err := fut.Get(ctx, &res); err != nil {
 			return err

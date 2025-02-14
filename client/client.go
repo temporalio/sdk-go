@@ -188,7 +188,7 @@ type (
 	StartWorkflowOptions = internal.StartWorkflowOptions
 
 	// WithStartWorkflowOperation defines how to start a workflow when using UpdateWithStartWorkflow.
-	// See [client.Client.NewWithStartWorkflowOperation] and [client.Client.UpdateWithStartWorkflow].
+	// See [Client.NewWithStartWorkflowOperation] and [Client.UpdateWithStartWorkflow].
 	// NOTE: Experimental
 	WithStartWorkflowOperation = internal.WithStartWorkflowOperation
 
@@ -299,7 +299,7 @@ type (
 	UpdateWorkflowOptions = internal.UpdateWorkflowOptions
 
 	// UpdateWithStartWorkflowOptions encapsulates the parameters used by UpdateWithStartWorkflow.
-	// See [client.Client.UpdateWithStartWorkflow] and [client.Client.NewWithStartWorkflowOperation].
+	// See [Client.UpdateWithStartWorkflow] and [Client.NewWithStartWorkflowOperation].
 	// NOTE: Experimental
 	UpdateWithStartWorkflowOptions = internal.UpdateWithStartWorkflowOptions
 
@@ -341,31 +341,31 @@ type (
 	// NOTE: Experimental
 	DeploymentMetadataUpdate = internal.DeploymentMetadataUpdate
 
-	// DeploymentDescribeOptions provides options for [internal.DeploymentClient.Describe].
+	// DeploymentDescribeOptions provides options for [DeploymentClient.Describe].
 	// NOTE: Experimental
 	DeploymentDescribeOptions = internal.DeploymentDescribeOptions
 
-	// DeploymentDescription is the response type for [internal.DeploymentClient.Describe].
+	// DeploymentDescription is the response type for [DeploymentClient.Describe].
 	// NOTE: Experimental
 	DeploymentDescription = internal.DeploymentDescription
 
-	// DeploymentGetReachabilityOptions provides options for [internal.DeploymentClient.GetReachability].
+	// DeploymentGetReachabilityOptions provides options for [DeploymentClient.GetReachability].
 	// NOTE: Experimental
 	DeploymentGetReachabilityOptions = internal.DeploymentGetReachabilityOptions
 
-	// DeploymentGetCurrentOptions provides options for [internal.DeploymentClient.GetCurrent].
+	// DeploymentGetCurrentOptions provides options for [DeploymentClient.GetCurrent].
 	// NOTE: Experimental
 	DeploymentGetCurrentOptions = internal.DeploymentGetCurrentOptions
 
-	// DeploymentGetCurrentResponse is the response type for [internal.DeploymentClient.GetCurrent].
+	// DeploymentGetCurrentResponse is the response type for [DeploymentClient.GetCurrent].
 	// NOTE: Experimental
 	DeploymentGetCurrentResponse = internal.DeploymentGetCurrentResponse
 
-	// DeploymentSetCurrentOptions provides options for [internal.DeploymentClient.SetCurrent].
+	// DeploymentSetCurrentOptions provides options for [DeploymentClient.SetCurrent].
 	// NOTE: Experimental
 	DeploymentSetCurrentOptions = internal.DeploymentSetCurrentOptions
 
-	// DeploymentSetCurrentResponse is the response type for [internal.DeploymentClient.SetCurrent].
+	// DeploymentSetCurrentResponse is the response type for [DeploymentClient.SetCurrent].
 	// NOTE: Experimental
 	DeploymentSetCurrentResponse = internal.DeploymentSetCurrentResponse
 
@@ -373,17 +373,17 @@ type (
 	// NOTE: Experimental
 	DeploymentClient = internal.DeploymentClient
 
-	// UpdateWorkflowExecutionOptionsRequest is a request for [client.Client.UpdateWorkflowExecutionOptions].
+	// UpdateWorkflowExecutionOptionsRequest is a request for [Client.UpdateWorkflowExecutionOptions].
 	// NOTE: Experimental
 	UpdateWorkflowExecutionOptionsRequest = internal.UpdateWorkflowExecutionOptionsRequest
 
 	// WorkflowExecutionOptions contains a set of properties of an existing workflow
-	// that can be overriden using [client.Client.UpdateWorkflowExecutionOptions].
+	// that can be overriden using [UpdateWorkflowExecutionOptions].
 	// NOTE: Experimental
 	WorkflowExecutionOptions = internal.WorkflowExecutionOptions
 
 	// WorkflowExecutionOptionsChanges describes changes to [WorkflowExecutionOptions]
-	// in the [client.Client.UpdateWorkflowExecutionOptions] API.
+	// in the [UpdateWorkflowExecutionOptions] API.
 	// NOTE: Experimental
 	WorkflowExecutionOptionsChanges = internal.WorkflowExecutionOptionsChanges
 
@@ -461,27 +461,27 @@ type (
 	// Deprecated: Replaced by the new worker versioning api.
 	TaskQueueReachability = internal.TaskQueueReachability
 
-	// DescribeTaskQueueEnhancedOptions is the input to [client.Client.DescribeTaskQueueEnhanced].
+	// DescribeTaskQueueEnhancedOptions is the input to [Client.DescribeTaskQueueEnhanced].
 	DescribeTaskQueueEnhancedOptions = internal.DescribeTaskQueueEnhancedOptions
 
 	// TaskQueueVersionSelection is a task queue filter based on versioning.
-	// It is an optional component of [DescribeTaskQueueEnhancedOptions].
+	// It is an optional component of [Client.DescribeTaskQueueEnhancedOptions].
 	// WARNING: Worker versioning is currently experimental.
 	TaskQueueVersionSelection = internal.TaskQueueVersionSelection
 
-	// TaskQueueDescription is the response to [client.Client.DescribeTaskQueueEnhanced].
+	// TaskQueueDescription is the response to [Client.DescribeTaskQueueEnhanced].
 	TaskQueueDescription = internal.TaskQueueDescription
 
 	// TaskQueueVersionInfo includes task queue information per Build ID.
-	// It is part of [TaskQueueDescription].
+	// It is part of [Client.TaskQueueDescription].
 	TaskQueueVersionInfo = internal.TaskQueueVersionInfo
 
 	// TaskQueueTypeInfo specifies task queue information per task type and Build ID.
-	// It is included in [TaskQueueVersionInfo].
+	// It is included in [Client.TaskQueueVersionInfo].
 	TaskQueueTypeInfo = internal.TaskQueueTypeInfo
 
 	// TaskQueuePollerInfo provides information about a worker/client polling a task queue.
-	// It is used by [TaskQueueTypeInfo].
+	// It is used by [Client.TaskQueueTypeInfo].
 	TaskQueuePollerInfo = internal.TaskQueuePollerInfo
 
 	// TaskQueueStats contains statistics about task queue backlog and activity.
@@ -492,18 +492,18 @@ type (
 
 	// WorkerVersionCapabilities includes a worker's build identifier
 	// and whether it is choosing to use the versioning feature.
-	// It is an optional component of [TaskQueuePollerInfo].
+	// It is an optional component of [Client.TaskQueuePollerInfo].
 	// WARNING: Worker versioning is currently experimental.
 	WorkerVersionCapabilities = internal.WorkerVersionCapabilities
 
-	// UpdateWorkerVersioningRulesOptions is the input to [client.Client.UpdateWorkerVersioningRules].
+	// UpdateWorkerVersioningRulesOptions is the input to [Client.UpdateWorkerVersioningRules].
 	// WARNING: Worker versioning is currently experimental.
 	UpdateWorkerVersioningRulesOptions = internal.UpdateWorkerVersioningRulesOptions
 
-	// VersioningConflictToken is a conflict token to serialize calls to [client.Client.UpdateWorkerVersioningRules].
+	// VersioningConflictToken is a conflict token to serialize calls to Client.UpdateWorkerVersioningRules.
 	// An update with an old token fails with `serviceerror.FailedPrecondition`.
-	// The current token can be obtained with [client.Client.GetWorkerVersioningRules],
-	// or returned by a successful [client.Client.UpdateWorkerVersioningRules].
+	// The current token can be obtained with [GetWorkerVersioningRules],
+	// or returned by a successful [UpdateWorkerVersioningRules].
 	// WARNING: Worker versioning is currently experimental.
 	VersioningConflictToken = internal.VersioningConflictToken
 
@@ -590,11 +590,11 @@ type (
 	// WARNING: Worker versioning is currently experimental.
 	VersioningOperationCommitBuildID = internal.VersioningOperationCommitBuildID
 
-	// GetWorkerVersioningOptions is the input to [client.Client.GetWorkerVersioningRules].
+	// GetWorkerVersioningOptions is the input to [Client.GetWorkerVersioningRules].
 	// WARNING: Worker versioning is currently experimental.
 	GetWorkerVersioningOptions = internal.GetWorkerVersioningOptions
 
-	// WorkerVersioningRules is the response for [client.Client.GetWorkerVersioningRules].
+	// WorkerVersioningRules is the response for [Client.GetWorkerVersioningRules].
 	// WARNING: Worker versioning is currently experimental.
 	WorkerVersioningRules = internal.WorkerVersioningRules
 
@@ -677,7 +677,7 @@ type (
 			options StartWorkflowOptions, workflow interface{}, workflowArgs ...interface{}) (WorkflowRun, error)
 
 		// NewWithStartWorkflowOperation returns a WithStartWorkflowOperation for use with UpdateWithStartWorkflow.
-		// See [client.Client.UpdateWithStartWorkflow].
+		// See [Client.UpdateWithStartWorkflow].
 		// NOTE: Experimental
 		NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) WithStartWorkflowOperation
 
@@ -824,9 +824,7 @@ type (
 		//  - serviceerror.InvalidArgument
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
-		//
-		// Deprecated: Use ListWorkflow instead.
-		ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error) //lint:ignore SA1019 the server API was deprecated.
+		ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error)
 
 		// CountWorkflow gets number of workflow executions based on query. The query is basically the SQL WHERE clause
 		// (see ListWorkflow for query examples).
@@ -913,13 +911,13 @@ type (
 		// Allows you to update the worker-build-id based version sets for a particular task queue. This is used in
 		// conjunction with workers who specify their build id and thus opt into the feature.
 		//
-		// Deprecated: Use [client.Client.UpdateWorkerVersioningRules] with the versioning api.
+		// Deprecated: Use [UpdateWorkerVersioningRules] with the versioning api.
 		UpdateWorkerBuildIdCompatibility(ctx context.Context, options *UpdateWorkerBuildIdCompatibilityOptions) error
 
 		// GetWorkerBuildIdCompatibility
 		// Returns the worker-build-id based version sets for a particular task queue.
 		//
-		// Deprecated: Use [client.Client.GetWorkerVersioningRules] with the versioning api.
+		// Deprecated: Use [GetWorkerVersioningRules] with the versioning api.
 		GetWorkerBuildIdCompatibility(ctx context.Context, options *GetWorkerBuildIdCompatibilityOptions) (*WorkerBuildIDVersionSets, error)
 
 		// GetWorkerTaskReachability
@@ -1164,7 +1162,7 @@ var (
 )
 
 // NewValue creates a new [converter.EncodedValue] which can be used to decode binary data returned by Temporal.  For example:
-// User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got response from calling [client.Client.DescribeWorkflowExecution].
+// User had Activity.RecordHeartbeat(ctx, "my-heartbeat") and then got response from calling Client.DescribeWorkflowExecution.
 // The response contains binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
 //
@@ -1175,7 +1173,7 @@ func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 }
 
 // NewValues creates a new [converter.EncodedValues] which can be used to decode binary data returned by Temporal. For example:
-// User had Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got response from calling [client.Client.DescribeWorkflowExecution].
+// User had Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got response from calling Client.DescribeWorkflowExecution.
 // The response contains binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
 //
