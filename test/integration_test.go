@@ -2916,8 +2916,9 @@ func (ts *IntegrationTestSuite) TestNumPollersCounter() {
 		// Will fail
 		ts.Equal(expected, lastCount)
 	}
+	fmt.Println("ts.config.maxWorkflowCacheSize", ts.config.maxWorkflowCacheSize)
 	if ts.config.maxWorkflowCacheSize == 0 {
-		assertNumPollersEventually(2, "workflow_task")
+		assertNumPollersEventually(2, "workflow_task") // TODO: This is failing
 		assertNumPollersEventually(0, "workflow_sticky_task")
 	} else {
 		assertNumPollersEventually(1, "workflow_task")

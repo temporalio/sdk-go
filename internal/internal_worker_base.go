@@ -325,6 +325,7 @@ func (bw *baseWorker) Start() {
 
 	bw.metricsHandler.Counter(metrics.WorkerStartCounter).Inc(1)
 
+	bw.logger.Debug("starting worker with poller count", bw.options.pollerCount)
 	for i := 0; i < bw.options.pollerCount; i++ {
 		bw.stopWG.Add(1)
 		go bw.runPoller()
@@ -363,6 +364,7 @@ func (bw *baseWorker) runPoller() {
 	reserveChan := make(chan *SlotPermit)
 
 	for {
+		bw.logger.Debug("Reserving slot supplier")
 		bw.stopWG.Add(1)
 		go func() {
 			defer bw.stopWG.Done()
@@ -387,8 +389,10 @@ func (bw *baseWorker) runPoller() {
 
 		select {
 		case <-bw.stopCh:
+			bw.logger.Debug("bw.stopCh")
 			return
 		case permit := <-reserveChan:
+			bw.logger.Debug("permit", permit)
 			if permit == nil { // There was an error reserving a slot
 				// Avoid spamming reserve hard in the event it's constantly failing
 				if ctx.Err() == nil {
@@ -397,6 +401,7 @@ func (bw *baseWorker) runPoller() {
 				continue
 			}
 			if bw.sessionTokenBucket != nil {
+				fmt.Println("bw.sessionTokenBucket", bw.sessionTokenBucket)
 				bw.sessionTokenBucket.waitForAvailableToken()
 			}
 			bw.pollTask(permit)
@@ -504,6 +509,7 @@ func (bw *baseWorker) pollTask(slotPermit *SlotPermit) {
 			bw.releaseSlot(slotPermit, SlotReleaseReasonUnused)
 		}
 	}()
+	bw.logger.Debug("Polling task for slot", slotPermit)
 
 	bw.retrier.Throttle(bw.stopCh)
 	if bw.pollLimiter == nil || bw.pollLimiter.Wait(bw.limiterContext) == nil {
