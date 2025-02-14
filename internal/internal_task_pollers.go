@@ -840,7 +840,9 @@ func (wtp *workflowTaskPoller) pollWorkflowTaskQueue(ctx context.Context, reques
 		defer wtp.numStickyPollerMetric.decrement()
 	}
 
-	return wtp.service.PollWorkflowTaskQueue(ctx, request)
+	res, err := wtp.service.PollWorkflowTaskQueue(ctx, request)
+	wtp.logger.Debug("pollWorkflowTaskQueue response.TaskQueue", res, err)
+	return res, err
 }
 
 // Poll for a single workflow task from the service
