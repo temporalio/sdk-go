@@ -6,7 +6,7 @@ toolchain go1.23.6
 
 require (
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c
-	github.com/kisielk/errcheck v1.7.0
+	github.com/kisielk/errcheck v1.8.0
 	go.temporal.io/sdk v1.26.0
 	honnef.co/go/tools v0.5.0
 )
