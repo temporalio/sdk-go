@@ -174,6 +174,29 @@ func apiOperationErrorToNexusOperationError(opErr *nexuspb.UnsuccessfulOperation
 	}
 }
 
+func apiHandlerErrorToNexusHandlerError(apiErr *nexuspb.HandlerError, failureConverter converter.FailureConverter) (*nexus.HandlerError, error) {
+	var retryBehavior nexus.HandlerErrorRetryBehavior
+	// nolint:exhaustive // unspecified is the default
+	switch apiErr.GetRetryBehavior() {
+	case enums.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_RETRYABLE:
+		retryBehavior = nexus.HandlerErrorRetryBehaviorRetryable
+	case enums.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_NON_RETRYABLE:
+		retryBehavior = nexus.HandlerErrorRetryBehaviorNonRetryable
+	}
+
+	nexusErr := &nexus.HandlerError{
+		Type:          nexus.HandlerErrorType(apiErr.GetErrorType()),
+		RetryBehavior: retryBehavior,
+	}
+
+	failure, err := nexusFailureToAPIFailure(protoFailureToNexusFailure(apiErr.GetFailure()), nexusErr.Retryable())
+	if err != nil {
+		return nil, err
+	}
+	nexusErr.Cause = failureConverter.FailureToError(failure)
+	return nexusErr, nil
+}
+
 func operationErrorToTemporalFailure(opErr *nexus.OperationError) (*failurepb.Failure, error) {
 	var nexusFailure nexus.Failure
 	failureErr, ok := opErr.Cause.(*nexus.FailureError)
@@ -333,14 +356,24 @@ func (t *testSuiteClientForNexusOperations) ExecuteWorkflow(ctx context.Context,
 				panic(fmt.Errorf("unexpected operation sequence in callback header: %s: %w", seqStr, err))
 			}
 
+			// Send the operation token to account for a race when the completion comes in before the response to the
+			// StartOperation call is recorded.
+			// The token is extracted from the callback header which is attached in ExecuteUntypedWorkflow.
+			var operationToken string
+			if len(options.callbacks) == 1 {
+				if cbHeader := options.callbacks[0].GetNexus().GetHeader(); cbHeader != nil {
+					operationToken = cbHeader[nexus.HeaderOperationToken]
+				}
+			}
+
 			if wfErr != nil {
-				t.env.resolveNexusOperation(seq, nil, wfErr)
+				t.env.resolveNexusOperation(seq, operationToken, nil, wfErr)
 			} else {
 				var payload *commonpb.Payload
 				if len(result.GetPayloads()) > 0 {
 					payload = result.Payloads[0]
 				}
-				t.env.resolveNexusOperation(seq, payload, nil)
+				t.env.resolveNexusOperation(seq, operationToken, payload, nil)
 			}
 		}, func(r WorkflowExecution, err error) {
 			run.WorkflowExecution = r
