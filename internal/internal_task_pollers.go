@@ -194,14 +194,11 @@ func newNumPollerMetric(metricsHandler metrics.Handler, pollerType string) *numP
 func (npm *numPollerMetric) increment() {
 	npm.lock.Lock()
 	defer npm.lock.Unlock()
-	fmt.Println("npm.numPollers PRE - ", npm.numPollers)
 	npm.numPollers += 1
-	fmt.Println("npm.numPollers - ", npm.numPollers)
 	npm.gauge.Update(float64(npm.numPollers))
 }
 
 func (npm *numPollerMetric) decrement() {
-	//fmt.Println("DECREMENTING numPollerMetric", npm.numPollers)
 	npm.lock.Lock()
 	defer npm.lock.Unlock()
 	npm.numPollers -= 1
@@ -264,7 +261,6 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (taskForWorker, 
 	doneC := make(chan struct{})
 	ctx, cancel := newGRPCContext(context.Background(), grpcTimeout(pollTaskServiceTimeOut), grpcLongPoll(true))
 
-	fmt.Println("starting goroutine to call pollFunc()")
 	go func() {
 		result, err = pollFunc(ctx)
 		cancel()
@@ -354,14 +350,11 @@ func (wtp *workflowTaskPoller) Cleanup() error {
 // PollTask polls a new task
 func (wtp *workflowTaskPoller) PollTask() (taskForWorker, error) {
 	// Get the task.
-	wtp.logger.Debug("PollTask")
 	workflowTask, err := wtp.doPoll(wtp.poll)
 	if err != nil {
-		wtp.logger.Debug("PollTask failed.", tagError, err)
 		return nil, err
 	}
 
-	wtp.logger.Debug("PollTask succeeded", workflowTask)
 	return workflowTask, nil
 }
 
@@ -833,7 +826,6 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 
 // Poll the workflow task queue and update the num_poller metric
 func (wtp *workflowTaskPoller) pollWorkflowTaskQueue(ctx context.Context, request *workflowservice.PollWorkflowTaskQueueRequest) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
-	wtp.logger.Debug("pollWorkflowTaskQueue request.TaskQueue.GetKind()", request.TaskQueue.GetKind())
 	if request.TaskQueue.GetKind() == enumspb.TASK_QUEUE_KIND_NORMAL {
 		wtp.numNormalPollerMetric.increment()
 		defer wtp.numNormalPollerMetric.decrement()
@@ -842,9 +834,7 @@ func (wtp *workflowTaskPoller) pollWorkflowTaskQueue(ctx context.Context, reques
 		defer wtp.numStickyPollerMetric.decrement()
 	}
 
-	res, err := wtp.service.PollWorkflowTaskQueue(ctx, request)
-	wtp.logger.Debug("pollWorkflowTaskQueue response.TaskQueue", res, err)
-	return res, err
+	return wtp.service.PollWorkflowTaskQueue(ctx, request)
 }
 
 // Poll for a single workflow task from the service
@@ -852,13 +842,11 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 	traceLog(func() {
 		wtp.logger.Debug("workflowTaskPoller::Poll")
 	})
-	wtp.logger.Debug("workflowTaskPoller::Poll")
 
 	request := wtp.getNextPollRequest()
 	defer wtp.release(request.TaskQueue.GetKind())
 
 	response, err := wtp.pollWorkflowTaskQueue(ctx, request)
-	wtp.logger.Debug("POLL", response, err)
 	if err != nil {
 		wtp.updateBacklog(request.TaskQueue.GetKind(), 0)
 		return nil, err
