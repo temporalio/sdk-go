@@ -201,7 +201,7 @@ func (npm *numPollerMetric) increment() {
 }
 
 func (npm *numPollerMetric) decrement() {
-	fmt.Println("DECREMENTING numPollerMetric")
+	//fmt.Println("DECREMENTING numPollerMetric", npm.numPollers)
 	npm.lock.Lock()
 	defer npm.lock.Unlock()
 	npm.numPollers -= 1
