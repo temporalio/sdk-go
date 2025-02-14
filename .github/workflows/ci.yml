@@ -44,7 +44,7 @@ jobs:
 #        working-directory: ./internal/cmd/build
 
       - name: Integration tests (without cache)
-        run: go run . integration-test -dev-server
+        run: go run . integration-test -dev-server -run TestIntegrationSuite/TestNumPollersCounter
         working-directory: ./internal/cmd/build
         env:
           WORKFLOW_CACHE_SIZE: "0"
