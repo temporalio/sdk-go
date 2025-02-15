@@ -647,8 +647,11 @@ type (
 		// When WorkflowExecutionErrorWhenAlreadyStarted is true, Client.ExecuteWorkflow will return an error if the
 		// workflow id has already been used and WorkflowIDReusePolicy or WorkflowIDConflictPolicy would
 		// disallow a re-run. If it is set to false, rather than erroring a WorkflowRun instance representing
-		// the current or last run will be returned. However, when WithStartOperation is set, this field is ignored and
-		// the WorkflowIDConflictPolicy UseExisting must be used instead to prevent erroring.
+		// the current or last run will be returned. However, this field is ignored in the following cases:
+		// - when WithStartOperation is set;
+		// - in the Nexus WorkflowRunOperation.
+		// When this field is ignored, you must set WorkflowIDConflictPolicy to UseExisting to prevent
+		// erroring.
 		//
 		// Optional: defaults to false
 		WorkflowExecutionErrorWhenAlreadyStarted bool
