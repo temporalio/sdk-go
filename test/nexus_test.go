@@ -30,6 +30,7 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1505,6 +1506,137 @@ func TestWorkflowTestSuite_WorkflowRunOperation_WithCancel(t *testing.T) {
 			require.ErrorAs(t, err, &canceledError)
 		})
 	}
+}
+
+func TestWorkflowTestSuite_WorkflowRunOperation_MultipleCallers_NoAttachCallback(t *testing.T) {
+	handlerWorkflowID := uuid.NewString()
+	handlerWf := func(ctx workflow.Context, input string) (string, error) {
+		workflow.GetSignalChannel(ctx, "terminate").Receive(ctx, nil)
+		return "hello " + input, nil
+	}
+
+	op := temporalnexus.NewWorkflowRunOperation(
+		"op",
+		handlerWf,
+		func(ctx context.Context, input string, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+			return client.StartWorkflowOptions{ID: handlerWorkflowID}, nil
+		},
+	)
+
+	callerWf := func(ctx workflow.Context) (retError error) {
+		numCalls := 5
+		var cntOk atomic.Int32
+		var cntErr atomic.Int32
+
+		wg := workflow.NewWaitGroup(ctx)
+		execOpCh := workflow.NewChannel(ctx)
+		client := workflow.NewNexusClient("endpoint", "test")
+
+		for i := 0; i < numCalls; i++ {
+			wg.Add(1)
+			workflow.Go(ctx, func(ctx workflow.Context) {
+				defer wg.Done()
+				fut := client.ExecuteOperation(ctx, op, "caller", workflow.NexusOperationOptions{})
+				var exec workflow.NexusOperationExecution
+				err := fut.GetNexusOperationExecution().Get(ctx, &exec)
+				execOpCh.Send(ctx, nil)
+				if err != nil {
+					cntErr.Add(1)
+					require.ErrorContains(t, err, "Workflow execution already started")
+					return
+				}
+				cntOk.Add(1)
+				var res string
+				err = fut.Get(ctx, &res)
+				require.NoError(t, err)
+				require.Equal(t, "hello caller", res)
+			})
+		}
+
+		for i := 0; i < numCalls; i++ {
+			execOpCh.Receive(ctx, nil)
+		}
+
+		workflow.SignalExternalWorkflow(ctx, handlerWorkflowID, "", "terminate", nil).Get(ctx, nil)
+		wg.Wait(ctx)
+		require.EqualValues(t, 1, cntOk.Load())
+		require.EqualValues(t, numCalls-1, cntErr.Load())
+		return nil
+	}
+
+	service := nexus.NewService("test")
+	service.Register(op)
+
+	suite := testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(handlerWf)
+	env.RegisterNexusService(service)
+
+	env.ExecuteWorkflow(callerWf)
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+}
+
+func TestWorkflowTestSuite_WorkflowRunOperation_MultipleCallers_AttachCallback(t *testing.T) {
+	handlerWorkflowID := uuid.NewString()
+	handlerWf := func(ctx workflow.Context, input string) (string, error) {
+		workflow.GetSignalChannel(ctx, "terminate").Receive(ctx, nil)
+		return "hello " + input, nil
+	}
+
+	op := temporalnexus.NewWorkflowRunOperation(
+		"op",
+		handlerWf,
+		func(ctx context.Context, input string, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+			return client.StartWorkflowOptions{
+				ID:                       handlerWorkflowID,
+				WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
+			}, nil
+		},
+	)
+
+	callerWf := func(ctx workflow.Context) (retError error) {
+		numCalls := 5
+		wg := workflow.NewWaitGroup(ctx)
+		execOpCh := workflow.NewChannel(ctx)
+		client := workflow.NewNexusClient("endpoint", "test")
+
+		for i := 0; i < numCalls; i++ {
+			wg.Add(1)
+			workflow.Go(ctx, func(ctx workflow.Context) {
+				defer wg.Done()
+				fut := client.ExecuteOperation(ctx, op, "caller", workflow.NexusOperationOptions{})
+				var exec workflow.NexusOperationExecution
+				err := fut.GetNexusOperationExecution().Get(ctx, &exec)
+				execOpCh.Send(ctx, nil)
+				require.NoError(t, err)
+				var res string
+				err = fut.Get(ctx, &res)
+				require.NoError(t, err)
+				require.Equal(t, "hello caller", res)
+			})
+		}
+
+		for i := 0; i < numCalls; i++ {
+			execOpCh.Receive(ctx, nil)
+		}
+
+		workflow.SignalExternalWorkflow(ctx, handlerWorkflowID, "", "terminate", nil).Get(ctx, nil)
+		wg.Wait(ctx)
+		return nil
+	}
+
+	service := nexus.NewService("test")
+	service.Register(op)
+
+	suite := testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(handlerWf)
+	env.RegisterNexusService(service)
+
+	env.ExecuteWorkflow(callerWf)
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
 }
 
 func TestWorkflowTestSuite_NexusSyncOperation_ScheduleToCloseTimeout(t *testing.T) {
