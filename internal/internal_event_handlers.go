@@ -561,7 +561,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error),
 ) {
 	if params.WorkflowID == "" {
-		params.WorkflowID = wc.workflowInfo.childWorkflowIDSeed + "_" + wc.GenerateSequenceID()
+		params.WorkflowID = wc.workflowInfo.currentRunID + "_" + wc.GenerateSequenceID()
 	}
 	memo, err := getWorkflowMemo(params.Memo, wc.dataConverter)
 	if err != nil {
@@ -1223,7 +1223,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		// update the childWorkflowIDSeed if the workflow was reset at this point.
 		attr := event.GetWorkflowTaskFailedEventAttributes()
 		if attr.GetCause() == enumspb.WORKFLOW_TASK_FAILED_CAUSE_RESET_WORKFLOW {
-			weh.workflowInfo.childWorkflowIDSeed = attr.GetNewRunId()
+			weh.workflowInfo.currentRunID = attr.GetNewRunId()
 		}
 	case enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED:
 		// No Operation

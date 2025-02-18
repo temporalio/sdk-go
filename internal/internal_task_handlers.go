@@ -746,7 +746,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		// Use the original execution run ID from the start event as the initial seed.
 		// Original execution run ID stays the same for the entire chain of workflow resets.
 		// This helps us keep child workflow IDs consistent up until a reset-point is encountered.
-		childWorkflowIDSeed: attributes.GetOriginalExecutionRunId(),
+		currentRunID: attributes.GetOriginalExecutionRunId(),
 	}
 
 	return newWorkflowExecutionContext(workflowInfo, wth), nil
