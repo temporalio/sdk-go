@@ -25,6 +25,7 @@
 package internal
 
 import (
+	"fmt"
 	"runtime"
 	"sync"
 
@@ -87,6 +88,7 @@ func NewWorkerCache() *WorkerCache {
 	desiredWorkflowCacheSize := desiredWorkflowCacheSize
 	sharedWorkerCacheLock.Unlock()
 
+	fmt.Println("[NewWorkerCache] desiredWorkflowCacheSize", desiredWorkflowCacheSize)
 	return newWorkerCache(sharedWorkerCachePtr, &sharedWorkerCacheLock, desiredWorkflowCacheSize)
 }
 
