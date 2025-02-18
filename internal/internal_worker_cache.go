@@ -88,7 +88,6 @@ func NewWorkerCache() *WorkerCache {
 	desiredWorkflowCacheSize := desiredWorkflowCacheSize
 	sharedWorkerCacheLock.Unlock()
 
-	fmt.Println("[NewWorkerCache] desiredWorkflowCacheSize", desiredWorkflowCacheSize)
 	return newWorkerCache(sharedWorkerCachePtr, &sharedWorkerCacheLock, desiredWorkflowCacheSize)
 }
 
@@ -108,7 +107,6 @@ func newWorkerCache(storeIn *sharedWorkerCache, lock *sync.Mutex, cacheSize int)
 				wc.onEviction()
 			},
 		})
-		fmt.Println("[cacheSize]", cacheSize)
 		*storeIn = sharedWorkerCache{workflowCache: &newcache, workerRefcount: 0, maxWorkflowCacheSize: cacheSize}
 	}
 	storeIn.workerRefcount++
@@ -163,6 +161,5 @@ func (wc *WorkerCache) MaxWorkflowCacheSize() int {
 		fmt.Println("THIS SHOULD NOT BE HITTING, THIS MEANS WC == NIL")
 		return desiredWorkflowCacheSize
 	}
-	fmt.Println("wc.sharedCache.maxWorkflowCacheSize", wc.sharedCache.maxWorkflowCacheSize)
 	return wc.sharedCache.maxWorkflowCacheSize
 }

@@ -1736,6 +1736,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	// should take a pointer to this struct and wait for it to be populated when the worker is run.
 	var capabilities workflowservice.GetSystemInfoResponse_Capabilities
 
+	// TODO: Cache created here
 	cache := NewWorkerCache()
 	workerParams := workerExecutionParameters{
 		Namespace:                             client.namespace,
