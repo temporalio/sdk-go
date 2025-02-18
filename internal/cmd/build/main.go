@@ -144,6 +144,9 @@ func (b *builder) integrationTest() error {
 				HostPort:  "127.0.0.1:7233",
 				Namespace: "integration-test-namespace",
 			},
+			CachedDownload: testsuite.CachedDownload{
+				Version: "v1.3.0-versioning.0",
+			},
 			LogLevel: "warn",
 			ExtraArgs: []string{
 				"--dynamic-config-value", "frontend.enableExecuteMultiOperation=true",
