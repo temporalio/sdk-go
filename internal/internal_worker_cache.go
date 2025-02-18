@@ -108,6 +108,7 @@ func newWorkerCache(storeIn *sharedWorkerCache, lock *sync.Mutex, cacheSize int)
 				wc.onEviction()
 			},
 		})
+		fmt.Println("[cacheSize]", cacheSize)
 		*storeIn = sharedWorkerCache{workflowCache: &newcache, workerRefcount: 0, maxWorkflowCacheSize: cacheSize}
 	}
 	storeIn.workerRefcount++
@@ -159,7 +160,9 @@ func (wc *WorkerCache) removeWorkflowContext(runID string) {
 // MaxWorkflowCacheSize returns the maximum allowed size of the sticky cache
 func (wc *WorkerCache) MaxWorkflowCacheSize() int {
 	if wc == nil {
+		fmt.Println("THIS SHOULD NOT BE HITTING, THIS MEANS WC == NIL")
 		return desiredWorkflowCacheSize
 	}
+	fmt.Println("wc.sharedCache.maxWorkflowCacheSize", wc.sharedCache.maxWorkflowCacheSize)
 	return wc.sharedCache.maxWorkflowCacheSize
 }

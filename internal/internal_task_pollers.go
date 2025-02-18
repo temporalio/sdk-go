@@ -295,6 +295,7 @@ func newWorkflowTaskPoller(
 	service workflowservice.WorkflowServiceClient,
 	params workerExecutionParameters,
 ) *workflowTaskPoller {
+	params.Logger.Debug("params.cache.MaxWorkflowCacheSize()", params.cache.MaxWorkflowCacheSize())
 	return &workflowTaskPoller{
 		basePoller: basePoller{
 			metricsHandler:       params.MetricsHandler,
@@ -804,6 +805,7 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		Name: wtp.taskQueueName,
 		Kind: enumspb.TASK_QUEUE_KIND_NORMAL,
 	}
+	// TODO: This is 10,000 some reason...
 	wtp.logger.Debug("[getNextPollRequest] wtp.stickyCacheSize", wtp.stickyCacheSize)
 	if wtp.stickyCacheSize > 0 {
 		wtp.requestLock.Lock()

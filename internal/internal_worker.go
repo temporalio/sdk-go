@@ -330,7 +330,9 @@ func newWorkflowTaskWorkerInternal(
 	if client != nil {
 		service = client.workflowService
 	}
+	params.Logger.Debug("newWorkflowTaskWorkerInternal before cache", params.cache.MaxWorkflowCacheSize())
 	poller := newWorkflowTaskPoller(taskHandler, contextManager, service, params)
+	params.Logger.Debug("newWorkflowTaskWorkerInternal after cache", params.cache.MaxWorkflowCacheSize())
 	worker := newBaseWorker(baseWorkerOptions{
 		pollerCount:      params.MaxConcurrentWorkflowTaskQueuePollers,
 		pollerRate:       defaultPollerRate,
