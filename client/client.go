@@ -515,6 +515,7 @@ type (
 	DeploymentListOptions = internal.DeploymentListOptions
 
 	// DeploymentReachabilityInfo extends DeploymentInfo with reachability information.
+	//
 	// Deprecated: Use [WorkerDeploymentVersionDrainageInfo]
 	DeploymentReachabilityInfo = internal.DeploymentReachabilityInfo
 
@@ -525,6 +526,7 @@ type (
 	DeploymentMetadataUpdate = internal.DeploymentMetadataUpdate
 
 	// DeploymentDescribeOptions provides options for [DeploymentClient.Describe].
+	//
 	// Deprecated: Use [WorkerDeploymentDescribeOptions]
 	DeploymentDescribeOptions = internal.DeploymentDescribeOptions
 
