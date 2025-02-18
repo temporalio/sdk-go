@@ -67,6 +67,7 @@ func (_m *DeploymentClient) Describe(ctx context.Context, options client.Deploym
 		r0 = ret.Get(0).(client.DeploymentDescription)
 	}
 
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	if rf, ok := ret.Get(1).(func(context.Context, client.DeploymentDescribeOptions) error); ok {
 		r1 = rf(ctx, options)
 	} else {
@@ -121,6 +122,7 @@ func (_m *DeploymentClient) GetReachability(ctx context.Context, options client.
 		panic("no return value specified for GetReachability")
 	}
 
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	var r0 client.DeploymentReachabilityInfo
 	var r1 error
 	//lint:ignore SA1019 ignore deprecated versioning APIs
@@ -131,6 +133,7 @@ func (_m *DeploymentClient) GetReachability(ctx context.Context, options client.
 	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentGetReachabilityOptions) client.DeploymentReachabilityInfo); ok {
 		r0 = rf(ctx, options)
 	} else {
+		//lint:ignore SA1019 ignore deprecated versioning APIs
 		r0 = ret.Get(0).(client.DeploymentReachabilityInfo)
 	}
 
