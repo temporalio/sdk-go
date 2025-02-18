@@ -428,7 +428,11 @@ func (env *testWorkflowEnvironmentImpl) setContinuedExecutionRunID(rid string) {
 	env.workflowInfo.ContinuedExecutionRunID = rid
 }
 
-func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(params *ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) (*testWorkflowEnvironmentImpl, error) {
+func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(
+	params *ExecuteWorkflowParams,
+	callback ResultHandler,
+	startedHandler func(r WorkflowExecution, e error),
+) (*testWorkflowEnvironmentImpl, error) {
 	// create a new test env
 	childEnv := newTestWorkflowEnvironmentImpl(env.testSuite, env.registry)
 	childEnv.parentEnv = env
@@ -2379,6 +2383,17 @@ func (env *testWorkflowEnvironmentImpl) ExecuteChildWorkflow(params ExecuteWorkf
 func (env *testWorkflowEnvironmentImpl) executeChildWorkflowWithDelay(delayStart time.Duration, params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) {
 	childEnv, err := env.newTestWorkflowEnvironmentForChild(&params, callback, startedHandler)
 	if err != nil {
+		if _, isAlreadyStartedErr := err.(*serviceerror.WorkflowExecutionAlreadyStarted); isAlreadyStartedErr {
+			if params.WorkflowIDConflictPolicy == enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING {
+				if childWfHandler, ok := env.runningWorkflows[params.WorkflowID]; ok && !childWfHandler.env.isWorkflowCompleted {
+					if params.OnConflictOptions != nil && params.OnConflictOptions.AttachCompletionCallbacks {
+						childWfHandler.callback = childWfHandler.callback.wrap(callback)
+					}
+					startedHandler(childWfHandler.env.workflowInfo.WorkflowExecution, nil)
+					return
+				}
+			}
+		}
 		env.logger.Info("ExecuteChildWorkflow failed", tagError, err)
 		callback(nil, err)
 		startedHandler(WorkflowExecution{}, err)
@@ -2686,8 +2701,9 @@ func (env *testWorkflowEnvironmentImpl) resolveNexusOperation(seq int64, token s
 			panic(fmt.Errorf("no running operation found for sequence: %d", seq))
 		}
 		if err != nil {
+			err = convertKnownErrors(err)
 			failure := env.failureConverter.ErrorToFailure(err)
-			err = env.failureConverter.FailureToError(nexusOperationFailure(handle.params, handle.operationToken, failure.GetCause()))
+			err = env.failureConverter.FailureToError(nexusOperationFailure(handle.params, handle.operationToken, failure))
 		}
 		// Populate the token in case the operation completes before it marked as started.
 		// startedCallback is idempotent and will be a noop in case the operation has already been marked as started.
