@@ -1542,6 +1542,9 @@ func TestWorkflowTestSuite_WorkflowRunOperation_MultipleCallers_NoAttachCallback
 				execOpCh.Send(ctx, nil)
 				if err != nil {
 					cntErr.Add(1)
+					var handlerErr *nexus.HandlerError
+					require.ErrorAs(t, err, &handlerErr)
+					require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
 					require.ErrorContains(t, err, "Workflow execution already started")
 					return
 				}
