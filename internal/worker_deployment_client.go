@@ -551,6 +551,12 @@ type (
 		// with that name in this namespace, methods like WorkerDeploymentHandle.Describe()
 		// will return an error.
 		// NOTE: Experimental
+		//
+		// TODO(antlai-temporal): The following annotation is wrong but I cannot pass `check`
+		// without it. See https://github.com/temporalio/sdk-go/issues/1829. Delete annotations
+		// after doclink tool fixed.
+		//
+		// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentHandle]
 		GetHandle(name string) WorkerDeploymentHandle
 
 		// Delete removes the records of a Worker Deployment. A Deployment can only be
