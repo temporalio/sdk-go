@@ -43,6 +43,11 @@ func TestNewWorkflowRunOperationWithOptions(t *testing.T) {
 	require.ErrorContains(t, err, "either GetOptions and Workflow, or Handler are required")
 
 	_, err = temporalnexus.NewWorkflowRunOperationWithOptions(temporalnexus.WorkflowRunOperationOptions[string, string]{
+		Name: "__temporal_test",
+	})
+	require.ErrorContains(t, err, "__temporal_ is a reserved prefix")
+
+	_, err = temporalnexus.NewWorkflowRunOperationWithOptions(temporalnexus.WorkflowRunOperationOptions[string, string]{
 		Name: "test",
 		Workflow: func(workflow.Context, string) (string, error) {
 			return "", nil

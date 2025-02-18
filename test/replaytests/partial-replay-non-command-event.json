@@ -1,0 +1,150 @@
+{
+  "events": [
+    {
+      "eventId": "1",
+      "eventTime": "2025-01-21T21:13:17.763980Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "taskId": "1048587",
+      "workflowExecutionStartedEventAttributes": {
+        "workflowType": {
+          "name": "TripWorkflow"
+        },
+        "taskQueue": {
+          "name": "recovery",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "MA=="
+            }
+          ]
+        },
+        "workflowExecutionTimeout": "0s",
+        "workflowRunTimeout": "0s",
+        "workflowTaskTimeout": "10s",
+        "originalExecutionRunId": "7360b8c8-735b-4364-a950-9f8bb78c04e5",
+        "identity": "78486@Andrews-MacBook-Pro.local@",
+        "firstExecutionRunId": "7360b8c8-735b-4364-a950-9f8bb78c04e5",
+        "attempt": 1,
+        "firstWorkflowTaskBackoff": "0s",
+        "header": {},
+        "workflowId": "trip_workflow"
+      }
+    },
+    {
+      "eventId": "2",
+      "eventTime": "2025-01-21T21:13:17.764040Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1048588",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "recovery",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "3",
+      "eventTime": "2025-01-21T21:13:17.766282Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId": "1048593",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "78326@Andrews-MacBook-Pro.local@",
+        "requestId": "e116305f-6b36-414a-ac33-a1ca9c9a1640",
+        "historySizeBytes": "279",
+        "workerVersion": {
+          "buildId": "0f02752b442ba36079c7735a5ea5e1ee"
+        }
+      }
+    },
+    {
+      "eventId": "4",
+      "eventTime": "2025-01-21T21:13:17.768731Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId": "1048597",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "2",
+        "startedEventId": "3",
+        "identity": "78326@Andrews-MacBook-Pro.local@",
+        "workerVersion": {
+          "buildId": "0f02752b442ba36079c7735a5ea5e1ee"
+        },
+        "sdkMetadata": {
+          "langUsedFlags": [
+            3
+          ],
+          "sdkName": "temporal-go",
+          "sdkVersion": "1.31.0"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "5",
+      "eventTime": "2025-01-21T21:13:40.639292Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED",
+      "taskId": "1048600",
+      "workflowExecutionSignaledEventAttributes": {
+        "signalName": "trip_event",
+        "input": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "eyJJRCI6IiIsIlRvdGFsIjoxMH0="
+            }
+          ]
+        },
+        "identity": "78651@Andrews-MacBook-Pro.local@",
+        "header": {}
+      }
+    },
+    {
+      "eventId": "6",
+      "eventTime": "2025-01-21T21:13:40.639294Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1048601",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "Andrews-MacBook-Pro.local:1bee34bb-8c2b-4738-84b5-25f257233211",
+          "kind": "TASK_QUEUE_KIND_STICKY",
+          "normalName": "recovery"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "7",
+      "eventTime": "2025-01-21T21:13:45.641420Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT",
+      "taskId": "1048605",
+      "workflowTaskTimedOutEventAttributes": {
+        "scheduledEventId": "6",
+        "timeoutType": "TIMEOUT_TYPE_SCHEDULE_TO_START"
+      }
+    },
+    {
+      "eventId": "8",
+      "eventTime": "2025-01-21T21:13:45.641428Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1048606",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "recovery",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    }
+  ]
+}

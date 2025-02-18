@@ -567,6 +567,9 @@ func (r *registry) RegisterWorkflowWithOptions(
 		if len(options.Name) == 0 {
 			panic("WorkflowDefinitionFactory must be registered with a name")
 		}
+		if strings.HasPrefix(options.Name, temporalPrefix) {
+			panic(temporalPrefixError)
+		}
 		r.workflowFuncMap[options.Name] = factory
 		r.workflowVersioningBehaviorMap[options.Name] = options.VersioningBehavior
 		return
@@ -581,6 +584,10 @@ func (r *registry) RegisterWorkflowWithOptions(
 	registerName := fnName
 	if len(alias) > 0 {
 		registerName = alias
+	}
+
+	if strings.HasPrefix(alias, temporalPrefix) || strings.HasPrefix(registerName, temporalPrefix) {
+		panic(temporalPrefixError)
 	}
 
 	r.Lock()
@@ -613,6 +620,9 @@ func (r *registry) RegisterActivityWithOptions(
 		if options.Name == "" {
 			panic("registration of activity interface requires name")
 		}
+		if strings.HasPrefix(options.Name, temporalPrefix) {
+			panic(temporalPrefixError)
+		}
 		r.addActivityWithLock(options.Name, a)
 		return
 	}
@@ -633,6 +643,10 @@ func (r *registry) RegisterActivityWithOptions(
 	registerName := fnName
 	if len(alias) > 0 {
 		registerName = alias
+	}
+
+	if strings.HasPrefix(alias, temporalPrefix) || strings.HasPrefix(registerName, temporalPrefix) {
+		panic(temporalPrefixError)
 	}
 
 	r.Lock()
@@ -1659,6 +1673,9 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (hist *histo
 
 // NewAggregatedWorker returns an instance to manage both activity and workflow workers
 func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options WorkerOptions) *AggregatedWorker {
+	if strings.HasPrefix(taskQueue, temporalPrefix) {
+		panic(temporalPrefixError)
+	}
 	setClientDefaults(client)
 	setWorkerOptionsDefaults(&options)
 	ctx := options.BackgroundActivityContext

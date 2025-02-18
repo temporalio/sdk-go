@@ -27,8 +27,6 @@ import (
 	"time"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
-	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/temporalnexus"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -37,7 +35,7 @@ type MyOutput struct{}
 
 var myOperationRef = nexus.NewOperationReference[MyInput, MyOutput]("my-operation")
 
-var myOperation = temporalnexus.NewSyncOperation("my-operation", func(ctx context.Context, c client.Client, mi MyInput, soo nexus.StartOperationOptions) (MyOutput, error) {
+var myOperation = nexus.NewSyncOperation("my-operation", func(ctx context.Context, input MyInput, options nexus.StartOperationOptions) (MyOutput, error) {
 	return MyOutput{}, nil
 })
 
@@ -60,8 +58,8 @@ func ExampleNexusClient() {
 		var exec workflow.NexusOperationExecution
 		// Optionally wait for the operation to be started.
 		_ = fut.GetNexusOperationExecution().Get(ctx, &exec)
-		// OperationID will be empty if the operation completed synchronously.
-		workflow.GetLogger(ctx).Info("operation started", "operationID", exec.OperationID)
+		// OperationToken will be empty if the operation completed synchronously.
+		workflow.GetLogger(ctx).Info("operation started", "token", exec.OperationToken)
 
 		// Get the result of the operation.
 		var output MyOutput
