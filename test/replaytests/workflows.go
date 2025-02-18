@@ -656,3 +656,23 @@ func SelectorBlockingDefaultActivity(ctx context.Context, value string) (string,
 	logger.Info("Activity", "value", value)
 	return value + " was logged!", nil
 }
+
+func TripWorkflow(ctx workflow.Context, tripCounter int) error {
+	logger := workflow.GetLogger(ctx)
+	workflowID := workflow.GetInfo(ctx).WorkflowExecution.ID
+	logger.Info("Trip Workflow Started for User.",
+		"User", workflowID,
+		"TripCounter", tripCounter)
+
+	// TripCh to wait on trip completed event signals
+	tripCh := workflow.GetSignalChannel(ctx, "trip_event")
+	for i := 0; i < 10; i++ {
+		var trip int
+		tripCh.Receive(ctx, &trip)
+		logger.Info("Trip complete event received.", "Total", trip)
+		tripCounter++
+	}
+
+	logger.Info("Starting a new run.", "TripCounter", tripCounter)
+	return workflow.NewContinueAsNewError(ctx, "TripWorkflow", tripCounter)
+}

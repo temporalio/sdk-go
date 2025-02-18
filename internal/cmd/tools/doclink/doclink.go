@@ -87,7 +87,7 @@ func run() error {
 				}
 			}()
 
-			res, err := processPublic(cfg, file)
+			res, err := processPublic(file)
 			if err != nil {
 				return fmt.Errorf("error while parsing public files: %v", err)
 			}
@@ -158,7 +158,7 @@ func run() error {
 }
 
 // Traverse the AST of public packages to identify wrappers for internal objects
-func processPublic(cfg config, file *os.File) (map[string]string, error) {
+func processPublic(file *os.File) (map[string]string, error) {
 	fs := token.NewFileSet()
 	node, err := parser.ParseFile(fs, "", file, parser.AllErrors)
 	if err != nil {
@@ -357,9 +357,9 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 	nextLine := scanner.Text()
 	newFile := ""
 	exposedAs := "// Exposed as: "
-	var commentBlock string
-	var inGroup, exposedLinks string
-	var changesMade, inStruct bool
+	var inGroup, exposedLinks, commentBlock string
+	var changesMade, inStruct, inFunc bool
+	var leadingSpaces int
 	for scanner.Scan() {
 		line := nextLine
 		nextLine = scanner.Text()
@@ -409,8 +409,20 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 			trimmedNextLine = nextLine
 		}
 
+		// Check for function starting or closing
+		if strings.HasPrefix(trimmedLine, "func ") {
+			// only mark leadingSpaces and not inFunc here to allow us
+			// to run doc link checks on the function definition alone
+			// and not anything inside the function
+			leadingSpaces = len(line) - len(strings.TrimLeft(line, " "))
+		}
+		if inFunc && trimmedLine == "}" && leadingSpaces == len(line)-len(strings.TrimLeft(line, " ")) {
+			leadingSpaces = -1
+			inFunc = false
+		}
+
 		// Check for new doc links to add
-		if isValidDefinition(trimmedNextLine, &inGroup, &inStruct) {
+		if !inFunc && isValidDefinition(trimmedNextLine, &inGroup, &inStruct, &inFunc) {
 			// Find the "Exposed As" line in the doc comment
 			var lineFromCommentBlock string
 			comScanner := bufio.NewScanner(strings.NewReader(commentBlock))
@@ -500,11 +512,13 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 	return nil
 }
 
-func isValidDefinition(line string, inGroup *string, insideStruct *bool) bool {
+func isValidDefinition(line string, inGroup *string, insideStruct *bool, inFunc *bool) bool {
 	if strings.HasPrefix(line, "//") {
 		return false
 	}
+
 	if strings.HasPrefix(line, "func ") {
+		*inFunc = true
 		return true
 	}
 

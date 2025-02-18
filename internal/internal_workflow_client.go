@@ -661,6 +661,8 @@ func (wc *WorkflowClient) ListArchivedWorkflow(ctx context.Context, request *wor
 }
 
 // ScanWorkflow implementation
+//
+//lint:ignore SA1019 the server API was deprecated.
 func (wc *WorkflowClient) ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return nil, err
@@ -671,6 +673,7 @@ func (wc *WorkflowClient) ScanWorkflow(ctx context.Context, request *workflowser
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
+	//lint:ignore SA1019 the server API was deprecated.
 	response, err := wc.workflowService.ScanWorkflowExecutions(grpcCtx, request)
 	if err != nil {
 		return nil, err
@@ -1807,13 +1810,6 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 		updateReq.WorkflowExecution.WorkflowId = startReq.WorkflowId
 	}
 
-	grpcCtx, cancel := newGRPCContext(
-		ctx,
-		grpcMetricsHandler(w.client.metricsHandler.WithTags(
-			metrics.RPCTags(startOp.input.WorkflowType, metrics.NoneTagValue, startOp.input.Options.TaskQueue))),
-		defaultGrpcRetryParameters(ctx))
-	defer cancel()
-
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
 		metricsHandler := w.client.metricsHandler.WithTags(metrics.RPCTags(startOp.input.WorkflowType,
 			metrics.NoneTagValue, startOp.input.Options.TaskQueue))
@@ -1834,10 +1830,14 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 		}, nil)
 	}
 
-	updateResp, err := w.updateWithStartWorkflow(grpcCtx, startReq, updateReq, onStart)
+	metricsHandler := w.client.metricsHandler.WithTags(metrics.RPCTags(startOp.input.WorkflowType,
+		metrics.NoneTagValue, startOp.input.Options.TaskQueue))
+
+	updateResp, err := w.updateWithStartWorkflow(ctx, startReq, updateReq, onStart, metricsHandler)
 	if err != nil {
 		return nil, err
 	}
+
 	handle, err := w.updateHandleFromResponse(ctx, updateReq.WaitPolicy.LifecycleStage, updateResp)
 	if err != nil {
 		return nil, err
@@ -1854,6 +1854,7 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 	startRequest *workflowservice.StartWorkflowExecutionRequest,
 	updateRequest *workflowservice.UpdateWorkflowExecutionRequest,
 	onStart func(*workflowservice.StartWorkflowExecutionResponse),
+	rpcMetricsHandler metrics.Handler,
 ) (*workflowservice.UpdateWorkflowExecutionResponse, error) {
 	startOp := &workflowservice.ExecuteMultiOperationRequest_Operation{
 		Operation: &workflowservice.ExecuteMultiOperationRequest_Operation_StartWorkflow{
@@ -1877,7 +1878,12 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 	seenStart := false
 	for {
 		multiResp, err := func() (*workflowservice.ExecuteMultiOperationResponse, error) {
-			grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(pollUpdateTimeout), grpcLongPoll(true), defaultGrpcRetryParameters(ctx))
+			grpcCtx, cancel := newGRPCContext(
+				ctx,
+				grpcTimeout(pollUpdateTimeout),
+				grpcLongPoll(true),
+				grpcMetricsHandler(rpcMetricsHandler),
+				defaultGrpcRetryParameters(ctx))
 			defer cancel()
 
 			multiResp, err := w.client.workflowService.ExecuteMultiOperation(grpcCtx, &multiRequest)
@@ -2207,6 +2213,7 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 		resp, err = func() (*workflowservice.UpdateWorkflowExecutionResponse, error) {
 			grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(pollUpdateTimeout), grpcLongPoll(true), defaultGrpcRetryParameters(ctx))
 			defer cancel()
+
 			return w.client.workflowService.UpdateWorkflowExecution(grpcCtx, req)
 		}()
 		if err != nil {

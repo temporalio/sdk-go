@@ -284,7 +284,9 @@ type (
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
 		// [Visibility]: https://docs.temporal.io/visibility
-		ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error)
+		//
+		// Deprecated: Use ListWorkflow instead.
+		ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error) //lint:ignore SA1019 the server API was deprecated.
 
 		// CountWorkflow gets number of workflow executions based on query. The query is basically the SQL WHERE clause
 		// (see ListWorkflow for query examples).

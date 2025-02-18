@@ -121,9 +121,9 @@ func ExampleNewWorkflowRunOperationWithOptions() {
 }
 
 func ExampleNewSyncOperation() {
-	opRead := temporalnexus.NewSyncOperation("my-read-only-operation", func(ctx context.Context, c client.Client, input MyInput, opts nexus.StartOperationOptions) (MyQueryOutput, error) {
+	opRead := nexus.NewSyncOperation("my-read-only-operation", func(ctx context.Context, input MyInput, opts nexus.StartOperationOptions) (MyQueryOutput, error) {
 		var ret MyQueryOutput
-		res, err := c.QueryWorkflow(ctx, input.ID, "", "some-query", nil)
+		res, err := temporalnexus.GetClient(ctx).QueryWorkflow(ctx, input.ID, "", "some-query", nil)
 		if err != nil {
 			return ret, err
 		}
@@ -131,8 +131,8 @@ func ExampleNewSyncOperation() {
 	})
 
 	// Operations don't have to return values.
-	opWrite := temporalnexus.NewSyncOperation("my-write-operation", func(ctx context.Context, c client.Client, input MyInput, opts nexus.StartOperationOptions) (nexus.NoValue, error) {
-		return nil, c.SignalWorkflow(ctx, input.ID, "", "some-signal", nil)
+	opWrite := nexus.NewSyncOperation("my-write-operation", func(ctx context.Context, input MyInput, opts nexus.StartOperationOptions) (nexus.NoValue, error) {
+		return nil, temporalnexus.GetClient(ctx).SignalWorkflow(ctx, input.ID, "", "some-signal", nil)
 	})
 
 	service := nexus.NewService("my-service")

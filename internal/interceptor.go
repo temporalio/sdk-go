@@ -217,8 +217,8 @@ type RequestCancelNexusOperationInput struct {
 	Client NexusClient
 	// Operation name or OperationReference from the Nexus SDK.
 	Operation any
-	// Operation ID. May be empty if the operation is synchronous or has not started yet.
-	ID string
+	// Operation Token. May be empty if the operation is synchronous or has not started yet.
+	Token string
 	// seq number. For internal use only.
 	seq int64
 }

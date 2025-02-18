@@ -395,6 +395,110 @@ func TestWorkflowUpdateOrder(t *testing.T) {
 	require.Equal(t, 1, result)
 }
 
+func TestWorkflowUpdateOrderWithOneArg(t *testing.T) {
+	var suite WorkflowTestSuite
+	// Test UpdateWorkflowByID works with custom ID and additional arguments
+	env := suite.NewTestWorkflowEnvironment()
+	var callbacksRun int
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflowNoRejection("update", "no-rejection", t, "args")
+		callbacksRun++
+	}, 0)
+
+	env.RegisterDelayedCallback(func() {
+		uc := &TestUpdateCallback{
+			OnReject: func(err error) {
+				require.Fail(t, "update should not be rejected")
+			},
+			OnAccept:   func() {},
+			OnComplete: func(interface{}, error) {},
+		}
+		err := env.UpdateWorkflowByID("my-workflow-id", "update", "by-id", uc, "args")
+		require.NoError(t, err)
+		callbacksRun++
+	}, 0)
+
+	env.SetStartWorkflowOptions(StartWorkflowOptions{ID: "my-workflow-id"})
+	env.ExecuteWorkflow(func(ctx Context) (int, error) {
+		var inflightUpdates int
+		var ranUpdates int
+		err := SetUpdateHandler(ctx, "update", func(ctx Context, args string) error {
+			inflightUpdates++
+			ranUpdates++
+			defer func() {
+				inflightUpdates--
+			}()
+
+			require.Equal(t, "args", args)
+
+			return Sleep(ctx, time.Hour)
+		}, UpdateHandlerOptions{})
+		if err != nil {
+			return 0, err
+		}
+		err = Await(ctx, func() bool { return inflightUpdates == 0 && callbacksRun == 2 })
+		return ranUpdates, err
+	})
+
+	require.NoError(t, env.GetWorkflowError())
+	var result int
+	require.NoError(t, env.GetWorkflowResult(&result))
+	require.Equal(t, 2, result)
+}
+
+func TestWorkflowUpdateOrderWithMultiArgs(t *testing.T) {
+	var suite WorkflowTestSuite
+	var callbacksRun int
+	// Test UpdateWorkflowByID works with custom ID and additional arguments
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflowNoRejection("update", "no-rejection", t, "args1", "args2")
+		callbacksRun++
+	}, 0)
+
+	env.RegisterDelayedCallback(func() {
+		uc := &TestUpdateCallback{
+			OnReject: func(err error) {
+				require.Fail(t, "update should not be rejected")
+			},
+			OnAccept:   func() {},
+			OnComplete: func(interface{}, error) {},
+		}
+		err := env.UpdateWorkflowByID("my-workflow-id", "update", "by-id", uc, "args1", "args2")
+		require.NoError(t, err)
+		callbacksRun++
+	}, 0)
+
+	env.SetStartWorkflowOptions(StartWorkflowOptions{ID: "my-workflow-id"})
+
+	env.ExecuteWorkflow(func(ctx Context) (int, error) {
+		var inflightUpdates int
+		var ranUpdates int
+		err := SetUpdateHandler(ctx, "update", func(ctx Context, args1, args2 string) error {
+			inflightUpdates++
+			ranUpdates++
+			defer func() {
+				inflightUpdates--
+			}()
+
+			require.Equal(t, args1, "args1")
+			require.Equal(t, args2, "args2")
+
+			return Sleep(ctx, time.Hour)
+		}, UpdateHandlerOptions{})
+		if err != nil {
+			return 0, err
+		}
+		err = Await(ctx, func() bool { return inflightUpdates == 0 && callbacksRun == 2 })
+		return ranUpdates, err
+	})
+
+	require.NoError(t, env.GetWorkflowError())
+	var result int
+	require.NoError(t, env.GetWorkflowResult(&result))
+	require.Equal(t, 2, result)
+}
+
 func TestWorkflowUpdateIdGeneration(t *testing.T) {
 	var suite WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
