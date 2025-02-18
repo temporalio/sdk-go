@@ -114,12 +114,6 @@ func workerDeploymentListEntryFromProto(summary *workflowservice.ListWorkerDeplo
 	}
 }
 
-func workerDeploymentConflictTokenFromProto(token []byte) WorkerDeploymentConflictToken {
-	return WorkerDeploymentConflictToken{
-		token,
-	}
-}
-
 func workerDeploymentVersionSummariesFromProto(summaries []*deployment.WorkerDeploymentInfo_WorkerDeploymentVersionSummary) []WorkerDeploymentVersionSummary {
 	result := []WorkerDeploymentVersionSummary{}
 	for _, summary := range summaries {
@@ -198,7 +192,7 @@ func (h *workerDeploymentHandleImpl) Describe(ctx context.Context, options Worke
 	}
 
 	return WorkerDeploymentDescribeResponse{
-		ConflictToken: workerDeploymentConflictTokenFromProto(resp.GetConflictToken()),
+		ConflictToken: resp.GetConflictToken(),
 		Info:          workerDeploymentInfoFromProto(resp.GetWorkerDeploymentInfo()),
 	}, nil
 }
@@ -214,12 +208,17 @@ func (h *workerDeploymentHandleImpl) SetCurrentVersion(ctx context.Context, opti
 		return WorkerDeploymentSetCurrentVersionResponse{}, err
 	}
 
+	identity := h.workflowClient.identity
+	if options.Identity != "" {
+		identity = options.Identity
+	}
+
 	request := &workflowservice.SetWorkerDeploymentCurrentVersionRequest{
 		Namespace:               h.workflowClient.namespace,
 		DeploymentName:          h.Name,
 		Version:                 options.Version,
-		ConflictToken:           options.ConflictToken.Token(),
-		Identity:                options.Identity,
+		ConflictToken:           options.ConflictToken,
+		Identity:                identity,
 		IgnoreMissingTaskQueues: options.IgnoreMissingTaskQueues,
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
@@ -231,7 +230,7 @@ func (h *workerDeploymentHandleImpl) SetCurrentVersion(ctx context.Context, opti
 	}
 
 	return WorkerDeploymentSetCurrentVersionResponse{
-		ConflictToken:   workerDeploymentConflictTokenFromProto(resp.GetConflictToken()),
+		ConflictToken:   resp.GetConflictToken(),
 		PreviousVersion: resp.GetPreviousVersion(),
 	}, nil
 }
@@ -250,13 +249,18 @@ func (h *workerDeploymentHandleImpl) SetRampingVersion(ctx context.Context, opti
 		return WorkerDeploymentSetRampingVersionResponse{}, err
 	}
 
+	identity := h.workflowClient.identity
+	if options.Identity != "" {
+		identity = options.Identity
+	}
+
 	request := &workflowservice.SetWorkerDeploymentRampingVersionRequest{
 		Namespace:               h.workflowClient.namespace,
 		DeploymentName:          h.Name,
 		Version:                 options.Version,
 		Percentage:              options.Percentage,
-		ConflictToken:           options.ConflictToken.Token(),
-		Identity:                options.Identity,
+		ConflictToken:           options.ConflictToken,
+		Identity:                identity,
 		IgnoreMissingTaskQueues: options.IgnoreMissingTaskQueues,
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
@@ -268,7 +272,7 @@ func (h *workerDeploymentHandleImpl) SetRampingVersion(ctx context.Context, opti
 	}
 
 	return WorkerDeploymentSetRampingVersionResponse{
-		ConflictToken:      workerDeploymentConflictTokenFromProto(resp.GetConflictToken()),
+		ConflictToken:      resp.GetConflictToken(),
 		PreviousVersion:    resp.GetPreviousVersion(),
 		PreviousPercentage: resp.GetPreviousPercentage(),
 	}, nil
@@ -354,11 +358,16 @@ func (h *workerDeploymentHandleImpl) DeleteVersion(ctx context.Context, options 
 		return WorkerDeploymentDeleteVersionResponse{}, err
 	}
 
+	identity := h.workflowClient.identity
+	if options.Identity != "" {
+		identity = options.Identity
+	}
+
 	request := &workflowservice.DeleteWorkerDeploymentVersionRequest{
 		Namespace:    h.workflowClient.namespace,
 		Version:      options.Version,
 		SkipDrainage: options.SkipDrainage,
-		Identity:     options.Identity,
+		Identity:     identity,
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
@@ -458,10 +467,15 @@ func (wdc *workerDeploymentClient) Delete(ctx context.Context, options WorkerDep
 		return WorkerDeploymentDeleteResponse{}, errors.New("missing worker deployment name argument")
 	}
 
+	identity := wdc.workflowClient.identity
+	if options.Identity != "" {
+		identity = options.Identity
+	}
+
 	request := &workflowservice.DeleteWorkerDeploymentRequest{
 		Namespace:      wdc.workflowClient.namespace,
 		DeploymentName: options.Name,
-		Identity:       options.Identity,
+		Identity:       identity,
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
@@ -473,7 +487,7 @@ func (wdc *workerDeploymentClient) Delete(ctx context.Context, options WorkerDep
 	return WorkerDeploymentDeleteResponse{}, nil
 }
 
-func (wdc *workerDeploymentClient) GetHandle(ctx context.Context, name string) WorkerDeploymentHandle {
+func (wdc *workerDeploymentClient) GetHandle(name string) WorkerDeploymentHandle {
 	return &workerDeploymentHandleImpl{
 		Name:           name,
 		workflowClient: wdc.workflowClient,

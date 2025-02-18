@@ -361,14 +361,6 @@ type (
 	// NOTE: Experimental
 	UpdateWithStartWorkflowOptions = internal.UpdateWithStartWorkflowOptions
 
-	// WorkerDeploymentConflictToken is a conflict token to serialize operations on
-	// Worker Deployments. An operation with an old token fails with
-	// `serviceerror.FailedPrecondition`. The current token can be obtained with
-	// [WorkerDeploymentHandle.Describe], or returned by other successful Worker Deployment
-	// operations.
-	// NOTE: Experimental
-	WorkerDeploymentConflictToken = internal.WorkerDeploymentConflictToken
-
 	// WorkerDeploymentDescribeOptions provides options for [WorkerDeploymentHandle.Describe].
 	// NOTE: Experimental
 	WorkerDeploymentDescribeOptions = internal.WorkerDeploymentDescribeOptions

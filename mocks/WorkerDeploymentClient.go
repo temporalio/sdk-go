@@ -71,17 +71,17 @@ func (_m *WorkerDeploymentClient) Delete(ctx context.Context, options client.Wor
 	return r0, r1
 }
 
-// GetHandle provides a mock function with given fields: ctx, name
-func (_m *WorkerDeploymentClient) GetHandle(ctx context.Context, name string) client.WorkerDeploymentHandle {
-	ret := _m.Called(ctx, name)
+// GetHandle provides a mock function with given fields: name
+func (_m *WorkerDeploymentClient) GetHandle(name string) client.WorkerDeploymentHandle {
+	ret := _m.Called(name)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetHandle")
 	}
 
 	var r0 client.WorkerDeploymentHandle
-	if rf, ok := ret.Get(0).(func(context.Context, string) client.WorkerDeploymentHandle); ok {
-		r0 = rf(ctx, name)
+	if rf, ok := ret.Get(0).(func(string) client.WorkerDeploymentHandle); ok {
+		r0 = rf(name)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(client.WorkerDeploymentHandle)

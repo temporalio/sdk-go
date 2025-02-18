@@ -65,18 +65,6 @@ const (
 
 type (
 
-	// WorkerDeploymentConflictToken is a conflict token to serialize operations on
-	// Worker Deployments. An operation with an old token fails with
-	// `serviceerror.FailedPrecondition`. The current token can be obtained with
-	// [WorkerDeploymentHandle.Describe], or returned by other successful Worker Deployment
-	// operations.
-	// NOTE: Experimental
-	//
-	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentConflictToken]
-	WorkerDeploymentConflictToken struct {
-		token []byte
-	}
-
 	// WorkerDeploymentDescribeOptions provides options for [WorkerDeploymentHandle.Describe].
 	// NOTE: Experimental
 	//
@@ -135,7 +123,7 @@ type (
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentDescribeResponse]
 	WorkerDeploymentDescribeResponse struct {
 		// ConflictToken - Token to serialize Worker Deployment operations.
-		ConflictToken WorkerDeploymentConflictToken
+		ConflictToken []byte
 
 		// Info - Description of this Worker Deployment.
 		Info WorkerDeploymentInfo
@@ -151,15 +139,18 @@ type (
 		// or the "__unversioned__" special value, which represents all the unversioned workers.
 		Version string
 
-		// ConflictToken - Token to serialize Worker Deployment operations. Passing a non-nil
-		// conflict token will cause this request to fail if the
-		// Deployment's configuration has been modified between the API call that generated the
-		// token and this one.
+		// ConflictToken - Token to serialize Worker Deployment operations. Passing a non-empty
+		// conflict token will cause this request to fail with
+		// `serviceerror.FailedPrecondition` if the
+		// Deployment's configuration has been modified between the API call that
+		// generated the token and this one.
+		// The current token can be obtained with [WorkerDeploymentHandle.Describe],
+		// or returned by other successful Worker Deployment operations.
 		// Optional: defaulted to empty token, which bypasses conflict detection.
-		ConflictToken *WorkerDeploymentConflictToken
+		ConflictToken []byte
 
 		// Identity: The identity of the client who initiated this request.
-		// Optional: defaulted to empty string
+		// Optional: default to the identity of the underlying workflow client.
 		Identity string
 
 		// IgnoreMissingTaskQueues - Override protection against accidental removal of Task Queues.
@@ -182,7 +173,7 @@ type (
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentSetCurrentVersionResponse]
 	WorkerDeploymentSetCurrentVersionResponse struct {
 		// ConflictToken - Token to serialize Worker Deployment operations.
-		ConflictToken WorkerDeploymentConflictToken
+		ConflictToken []byte
 
 		// PreviousVersion - The Version that was current before executing this operation.
 		// It returns an identifier in the form of "<deployment_name>.<build_id>",
@@ -204,15 +195,18 @@ type (
 		// Percentage - Ramp percentage to set. Valid range: [0,100].
 		Percentage float32
 
-		// ConflictToken - Token to serialize Worker Deployment operations. Passing a non-nil
-		// conflict token will cause this request to fail if the
-		// Deployment's configuration has been modified between the API call that generated the
-		// token and this one.
+		// ConflictToken - Token to serialize Worker Deployment operations. Passing a non-empty
+		// conflict token will cause this request to fail with
+		// `serviceerror.FailedPrecondition` if the
+		// Deployment's configuration has been modified between the API call that
+		// generated the token and this one.
+		// The current token can be obtained with [WorkerDeploymentHandle.Describe],
+		// or returned by other successful Worker Deployment operations.
 		// Optional: defaulted to empty token, which bypasses conflict detection.
-		ConflictToken *WorkerDeploymentConflictToken
+		ConflictToken []byte
 
 		// Identity: The identity of the client who initiated this request.
-		// Optional: defaulted to empty string
+		// Optional: default to the identity of the underlying workflow client.
 		Identity string
 
 		// IgnoreMissingTaskQueues - Override protection against accidental removal of Task Queues.
@@ -235,7 +229,7 @@ type (
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentSetRampingVersionResponse]
 	WorkerDeploymentSetRampingVersionResponse struct {
 		// ConflictToken - Token to serialize Worker Deployment operations.
-		ConflictToken WorkerDeploymentConflictToken
+		ConflictToken []byte
 
 		// PreviousVersion - The Ramping Version before executing this operation.
 		// It returns an identifier in the form of "<deployment_name>.<build_id>",
@@ -348,7 +342,7 @@ type (
 		SkipDrainage bool
 
 		// Identity - The identity of the client who initiated this request.
-		// Optional: defaulted to empty string
+		// Optional: default to the identity of the underlying workflow client.
 		Identity string
 	}
 
@@ -530,7 +524,7 @@ type (
 		Name string
 
 		// Identity - The identity of the client who initiated this request.
-		// Optional: defaulted to empty string
+		// Optional: default to the identity of the underlying workflow client.
 		Identity string
 	}
 
@@ -557,7 +551,7 @@ type (
 		// with that name in this namespace, methods like WorkerDeploymentHandle.Describe()
 		// will return an error.
 		// NOTE: Experimental
-		GetHandle(ctx context.Context, name string) WorkerDeploymentHandle
+		GetHandle(name string) WorkerDeploymentHandle
 
 		// Delete removes the records of a Worker Deployment. A Deployment can only be
 		// deleted if it has no Version in it.
@@ -565,12 +559,3 @@ type (
 		Delete(ctx context.Context, options WorkerDeploymentDeleteOptions) (WorkerDeploymentDeleteResponse, error)
 	}
 )
-
-// Token returns an internal representation of this token, mostly for debugging purposes.
-// NOTE: Experimental
-func (c *WorkerDeploymentConflictToken) Token() []byte {
-	if c == nil {
-		return []byte{}
-	}
-	return c.token
-}

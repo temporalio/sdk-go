@@ -168,6 +168,8 @@ func (_m *Client) CountWorkflow(ctx context.Context, request *workflowservice.Co
 }
 
 // DeploymentClient provides a mock function with given fields:
+//
+//lint:ignore SA1019 ignore deprecated versioning APIs
 func (_m *Client) DeploymentClient() client.DeploymentClient {
 	ret := _m.Called()
 
@@ -175,11 +177,14 @@ func (_m *Client) DeploymentClient() client.DeploymentClient {
 		panic("no return value specified for DeploymentClient")
 	}
 
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	var r0 client.DeploymentClient
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	if rf, ok := ret.Get(0).(func() client.DeploymentClient); ok {
 		r0 = rf()
 	} else {
 		if ret.Get(0) != nil {
+			//lint:ignore SA1019 ignore deprecated versioning APIs
 			r0 = ret.Get(0).(client.DeploymentClient)
 		}
 	}

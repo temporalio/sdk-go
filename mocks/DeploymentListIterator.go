@@ -60,22 +60,27 @@ func (_m *DeploymentListIterator) HasNext() bool {
 }
 
 // Next provides a mock function with given fields:
+//
+//lint:ignore SA1019 ignore deprecated versioning APIs
 func (_m *DeploymentListIterator) Next() (*client.DeploymentListEntry, error) {
 	ret := _m.Called()
 
 	if len(ret) == 0 {
 		panic("no return value specified for Next")
 	}
-
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	var r0 *client.DeploymentListEntry
 	var r1 error
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	if rf, ok := ret.Get(0).(func() (*client.DeploymentListEntry, error)); ok {
 		return rf()
 	}
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	if rf, ok := ret.Get(0).(func() *client.DeploymentListEntry); ok {
 		r0 = rf()
 	} else {
 		if ret.Get(0) != nil {
+			//lint:ignore SA1019 ignore deprecated versioning APIs
 			r0 = ret.Get(0).(*client.DeploymentListEntry)
 		}
 	}

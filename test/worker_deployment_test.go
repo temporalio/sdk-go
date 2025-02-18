@@ -24,6 +24,7 @@ package test_test
 
 import (
 	"context"
+	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -133,6 +134,9 @@ func (ts *WorkerDeploymentTestSuite) runWorkflowAndCheckV1(ctx context.Context, 
 }
 
 func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
+	if os.Getenv("DISABLE_WORKER_DEPLOYMENT_TESTS") != "" {
+		ts.T().Skip("temporal server 1.27+ required")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -193,7 +197,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 
 	ts.NoError(worker3.Start())
 	defer worker3.Stop()
-	dHandle := ts.client.WorkerDeploymentClient().GetHandle(ctx, deploymentName)
+	dHandle := ts.client.WorkerDeploymentClient().GetHandle(deploymentName)
 
 	ts.waitForWorkerDeployment(ctx, dHandle)
 
@@ -204,7 +208,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 
 	response2, err := dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
 		Version:       deploymentName + ".1.0",
-		ConflictToken: &response1.ConflictToken,
+		ConflictToken: response1.ConflictToken,
 	})
 	ts.NoError(err)
 
@@ -218,7 +222,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 
 	response3, err := dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
 		Version:       deploymentName + ".2.0",
-		ConflictToken: &response2.ConflictToken,
+		ConflictToken: response2.ConflictToken,
 	})
 	ts.NoError(err)
 
@@ -235,7 +239,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 
 	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
 		Version:       deploymentName + ".3.0",
-		ConflictToken: &response3.ConflictToken,
+		ConflictToken: response3.ConflictToken,
 		Identity:      "client1",
 	})
 	ts.NoError(err)
@@ -288,6 +292,9 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 }
 
 func (ts *WorkerDeploymentTestSuite) TestPinnedOverrideInWorkflowOptions() {
+	if os.Getenv("DISABLE_WORKER_DEPLOYMENT_TESTS") != "" {
+		ts.T().Skip("temporal server 1.27+ required")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -329,7 +336,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedOverrideInWorkflowOptions() {
 	ts.NoError(worker2.Start())
 	defer worker2.Stop()
 
-	dHandle := ts.client.WorkerDeploymentClient().GetHandle(ctx, deploymentName)
+	dHandle := ts.client.WorkerDeploymentClient().GetHandle(deploymentName)
 
 	ts.waitForWorkerDeployment(ctx, dHandle)
 
@@ -340,7 +347,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedOverrideInWorkflowOptions() {
 
 	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
 		Version:       deploymentName + ".1.0",
-		ConflictToken: &response1.ConflictToken,
+		ConflictToken: response1.ConflictToken,
 	})
 	ts.NoError(err)
 
@@ -370,6 +377,9 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedOverrideInWorkflowOptions() {
 }
 
 func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
+	if os.Getenv("DISABLE_WORKER_DEPLOYMENT_TESTS") != "" {
+		ts.T().Skip("temporal server 1.27+ required")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -412,7 +422,7 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 
 	ts.NoError(worker2.Start())
 	defer worker2.Stop()
-	dHandle := ts.client.WorkerDeploymentClient().GetHandle(ctx, deploymentName)
+	dHandle := ts.client.WorkerDeploymentClient().GetHandle(deploymentName)
 
 	ts.waitForWorkerDeployment(ctx, dHandle)
 
@@ -423,7 +433,7 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 
 	response2, err := dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
 		Version:       deploymentName + ".1.0",
-		ConflictToken: &response1.ConflictToken,
+		ConflictToken: response1.ConflictToken,
 	})
 	ts.NoError(err)
 
@@ -499,7 +509,7 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 
 	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
 		Version:       deploymentName + ".2.0",
-		ConflictToken: &response2.ConflictToken,
+		ConflictToken: response2.ConflictToken,
 	})
 	ts.NoError(err)
 
@@ -528,6 +538,9 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 }
 
 func (ts *WorkerDeploymentTestSuite) TestListDeployments() {
+	if os.Getenv("DISABLE_WORKER_DEPLOYMENT_TESTS") != "" {
+		ts.T().Skip("temporal server 1.27+ required")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -592,6 +605,9 @@ func (ts *WorkerDeploymentTestSuite) TestListDeployments() {
 }
 
 func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
+	if os.Getenv("DISABLE_WORKER_DEPLOYMENT_TESTS") != "" {
+		ts.T().Skip("temporal server 1.27+ required")
+	}
 	// default VersionDrainageStatusVisibilityGracePeriod is 180 seconds
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Second)
 	defer cancel()
@@ -639,7 +655,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 
 	// SetCurrent to 1.0
 
-	dHandle := ts.client.WorkerDeploymentClient().GetHandle(ctx, deploymentName)
+	dHandle := ts.client.WorkerDeploymentClient().GetHandle(deploymentName)
 
 	ts.waitForWorkerDeployment(ctx, dHandle)
 
@@ -650,7 +666,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 
 	response2, err := dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
 		Version:       deploymentName + ".1.0",
-		ConflictToken: &response1.ConflictToken,
+		ConflictToken: response1.ConflictToken,
 	})
 	ts.NoError(err)
 
@@ -681,7 +697,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 	// SetCurrent to 2.0)
 	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
 		Version:       deploymentName + ".2.0",
-		ConflictToken: &response2.ConflictToken,
+		ConflictToken: response2.ConflictToken,
 	})
 	ts.NoError(err)
 
@@ -722,6 +738,9 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 }
 
 func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
+	if os.Getenv("DISABLE_WORKER_DEPLOYMENT_TESTS") != "" {
+		ts.T().Skip("temporal server 1.27+ required")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -768,7 +787,7 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 	ts.NoError(worker2.Start())
 	defer worker2.Stop()
 
-	dHandle := ts.client.WorkerDeploymentClient().GetHandle(ctx, deploymentName)
+	dHandle := ts.client.WorkerDeploymentClient().GetHandle(deploymentName)
 
 	ts.waitForWorkerDeployment(ctx, dHandle)
 
@@ -779,7 +798,7 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 
 	response2, err := dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
 		Version:       deploymentName + ".1.0",
-		ConflictToken: &response1.ConflictToken,
+		ConflictToken: response1.ConflictToken,
 	})
 	ts.NoError(err)
 
@@ -789,7 +808,7 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 
 	response3, err := dHandle.SetRampingVersion(ctx, client.WorkerDeploymentSetRampingVersionOptions{
 		Version:       deploymentName + ".2.0",
-		ConflictToken: &response2.ConflictToken,
+		ConflictToken: response2.ConflictToken,
 		Percentage:    float32(100.0),
 	})
 	ts.NoError(err)
@@ -800,7 +819,7 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 	// Ramp 0% to 2.0
 	response4, err := dHandle.SetRampingVersion(ctx, client.WorkerDeploymentSetRampingVersionOptions{
 		Version:       deploymentName + ".2.0",
-		ConflictToken: &response3.ConflictToken,
+		ConflictToken: response3.ConflictToken,
 		Percentage:    float32(0.0),
 	})
 	ts.NoError(err)
@@ -811,7 +830,7 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 	// Ramp 0% to 2.0
 	_, err = dHandle.SetRampingVersion(ctx, client.WorkerDeploymentSetRampingVersionOptions{
 		Version:       deploymentName + ".2.0",
-		ConflictToken: &response4.ConflictToken,
+		ConflictToken: response4.ConflictToken,
 		Percentage:    float32(50.0),
 	})
 	ts.NoError(err)
@@ -823,9 +842,12 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 }
 
 func (ts *WorkerDeploymentTestSuite) TestDeleteDeployment() {
+	if os.Getenv("DISABLE_WORKER_DEPLOYMENT_TESTS") != "" {
+		ts.T().Skip("temporal server 1.27+ required")
+	}
 	// TODO(antlai-temporal): find ways to speed up deletion
-	ts.T().Skip("Taking a very long time to detect no active pollers in server v1.27.0-128.4")
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Second)
+	ts.T().Skip("Taking over 5 min to detect no active pollers in server v1.27.0-128.4")
+	ctx, cancel := context.WithTimeout(context.Background(), 310*time.Second)
 	defer cancel()
 
 	deploymentName := "deploy-test-" + uuid.New()
@@ -839,7 +861,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeleteDeployment() {
 
 	ts.NoError(worker1.Start())
 
-	dHandle := ts.client.WorkerDeploymentClient().GetHandle(ctx, deploymentName)
+	dHandle := ts.client.WorkerDeploymentClient().GetHandle(deploymentName)
 
 	ts.waitForWorkerDeployment(ctx, dHandle)
 
@@ -851,7 +873,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeleteDeployment() {
 	ts.NoError(err)
 	ts.client = client2
 
-	dHandle = ts.client.WorkerDeploymentClient().GetHandle(ctx, deploymentName)
+	dHandle = ts.client.WorkerDeploymentClient().GetHandle(deploymentName)
 
 	// Delete version
 	ts.Eventually(func() bool {
@@ -865,7 +887,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeleteDeployment() {
 		resp, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
 		ts.NoError(err)
 		return len(resp.Info.VersionSummaries) == 0
-	}, 181*time.Second, 1000*time.Millisecond)
+	}, 305*time.Second, 1000*time.Millisecond)
 
 	// Delete deployment with no versions
 	_, err = ts.client.WorkerDeploymentClient().Delete(ctx, client.WorkerDeploymentDeleteOptions{
@@ -887,5 +909,5 @@ func (ts *WorkerDeploymentTestSuite) TestDeleteDeployment() {
 			}
 		}
 		return true
-	}, 181*time.Second, 1000*time.Millisecond)
+	}, 305*time.Second, 1000*time.Millisecond)
 }
