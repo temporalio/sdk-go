@@ -77,8 +77,8 @@ func newNexusTaskPoller(
 
 // Poll the nexus task queue and update the num_poller metric
 func (ntp *nexusTaskPoller) pollNexusTaskQueue(ctx context.Context, request *workflowservice.PollNexusTaskQueueRequest) (*workflowservice.PollNexusTaskQueueResponse, error) {
-	ntp.numPollerMetric.increment()
-	defer ntp.numPollerMetric.decrement()
+	ntp.numPollerMetric.increment(ntp.logger)
+	defer ntp.numPollerMetric.decrement(ntp.logger)
 
 	return ntp.service.PollNexusTaskQueue(ctx, request)
 }
