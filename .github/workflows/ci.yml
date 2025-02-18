@@ -87,6 +87,10 @@ jobs:
       - name: Docker compose - integration tests
         if: ${{ matrix.testDockerCompose }}
         run: go run . integration-test
+        env:
+          # TODO(antlai-temporal): Remove this flag once server 1.27 released.
+          DISABLE_WORKER_DEPLOYMENT_TESTS: "1"
+          DISABLE_SERVER_1_27_TESTS: "1"
         working-directory: ./internal/cmd/build
 
   cloud-test:

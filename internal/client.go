@@ -438,7 +438,12 @@ type (
 		ScheduleClient() ScheduleClient
 
 		// DeploymentClient creates a new deployment client with the same gRPC connection as this client.
+		//
+		// Deprecated: Use [WorkerDeploymentClient]
 		DeploymentClient() DeploymentClient
+
+		// WorkerDeploymentClient creates a new worker deployment client with the same gRPC connection as this client.
+		WorkerDeploymentClient() WorkerDeploymentClient
 
 		// Close client and clean up underlying resources.
 		Close()
