@@ -70,7 +70,6 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentDescribeOptions]
 	WorkerDeploymentDescribeOptions struct {
-		// Placeholder for future extensions.
 	}
 
 	// WorkerDeploymentVersionSummary provides a brief description of a Version.
@@ -352,7 +351,6 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentDeleteVersionResponse]
 	WorkerDeploymentDeleteVersionResponse struct {
-		// Placeholder for future extensions
 	}
 
 	// WorkerDeploymentMetadataUpdate modifies user-defined metadata entries that describe
@@ -533,7 +531,6 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentDeleteResponse]
 	WorkerDeploymentDeleteResponse struct {
-		// Placeholder for future extensions.
 	}
 
 	// WorkerDeploymentClient is the client that manages Worker Deployments.
