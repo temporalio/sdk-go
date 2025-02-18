@@ -309,7 +309,8 @@ func TestNexusSyncOperation(t *testing.T) {
 		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "already-started", nexus.ExecuteOperationOptions{})
 		var handlerErr *nexus.HandlerError
 		require.ErrorAs(t, err, &handlerErr)
-		require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
+		require.Equal(t, nexus.HandlerErrorTypeInternal, handlerErr.Type)
+		require.Equal(t, nexus.HandlerErrorRetryBehaviorNonRetryable, handlerErr.RetryBehavior)
 		require.Contains(t, handlerErr.Cause.Error(), "faking workflow already started")
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
@@ -339,7 +340,8 @@ func TestNexusSyncOperation(t *testing.T) {
 		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "non-retryable-application-error", nexus.ExecuteOperationOptions{})
 		var handlerErr *nexus.HandlerError
 		require.ErrorAs(t, err, &handlerErr)
-		require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
+		require.Equal(t, nexus.HandlerErrorTypeInternal, handlerErr.Type)
+		require.Equal(t, nexus.HandlerErrorRetryBehaviorNonRetryable, handlerErr.RetryBehavior)
 		require.Contains(t, handlerErr.Cause.Error(), "fake app error for test")
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
