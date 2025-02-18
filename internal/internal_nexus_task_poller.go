@@ -140,6 +140,14 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 		return nil
 	}
 
+	executionStartTime := time.Now()
+
+	// Schedule-to-start (from the time the request hit the frontend).
+	// Note that this metric does not include the service and operation name as they are not relevant when polling from
+	// the Nexus task queue.
+	scheduleToStartLatency := executionStartTime.Sub(response.GetRequest().GetScheduledTime().AsTime())
+	ntp.metricsHandler.WithTags(metrics.TaskQueueTags(ntp.taskQueueName)).Timer(metrics.NexusTaskScheduleToStartLatency).Record(scheduleToStartLatency)
+
 	nctx, handlerErr := ntp.taskHandler.newNexusOperationContext(response)
 	if handlerErr != nil {
 		// context wasn't propagated to us, use a background context.
@@ -147,12 +155,6 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 			context.Background(), ntp.taskHandler.fillInFailure(response.TaskToken, handlerErr))
 		return err
 	}
-
-	executionStartTime := time.Now()
-
-	// Schedule-to-start (from the time the request hit the frontend).
-	scheduleToStartLatency := executionStartTime.Sub(response.GetRequest().GetScheduledTime().AsTime())
-	nctx.MetricsHandler.Timer(metrics.NexusTaskScheduleToStartLatency).Record(scheduleToStartLatency)
 
 	// Process the nexus task.
 	res, failure, err := ntp.taskHandler.ExecuteContext(nctx, response)
