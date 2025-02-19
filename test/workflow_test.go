@@ -2831,11 +2831,15 @@ func (w *Workflows) ForcedNonDeterminism(ctx workflow.Context, sameCommandButDif
 	return
 }
 
+var shouldStartTimer = false
+
 func (w *Workflows) NonDeterminismCommandNotFoundWorkflow(ctx workflow.Context) error {
 	workflow.SetUpdateHandler(ctx, "wait-for-wft-completion", func(ctx workflow.Context) error {
 		return nil
 	})
-	workflow.Sleep(ctx, 999*time.Hour)
+	if shouldStartTimer {
+		workflow.Sleep(ctx, 999*time.Hour)
+	}
 	return nil
 }
 
