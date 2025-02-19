@@ -3388,6 +3388,12 @@ func (w *Workflows) WorkflowWithChildren(ctx workflow.Context) (string, error) {
 		return "", err
 	}
 
+	var result3 string
+	err = workflow.ExecuteChildWorkflow(ctx, w.child, "hello child-2", false).Get(ctx, &result3)
+	if err != nil {
+		return "", err
+	}
+
 	return "Parent Workflow Complete", nil
 }
 
