@@ -311,7 +311,7 @@ func TestNexusSyncOperation(t *testing.T) {
 		var handlerErr *nexus.HandlerError
 		require.ErrorAs(t, err, &handlerErr)
 		require.Equal(t, nexus.HandlerErrorTypeInternal, handlerErr.Type)
-		if os.Getenv("ENABLE_SERVER_1_27_TESTS") == "1" {
+		if os.Getenv("DISABLE_SERVER_1_27_TESTS") == "" {
 			require.Equal(t, nexus.HandlerErrorRetryBehaviorNonRetryable, handlerErr.RetryBehavior)
 		}
 		require.Contains(t, handlerErr.Cause.Error(), "faking workflow already started")
@@ -344,7 +344,7 @@ func TestNexusSyncOperation(t *testing.T) {
 		var handlerErr *nexus.HandlerError
 		require.ErrorAs(t, err, &handlerErr)
 		require.Equal(t, nexus.HandlerErrorTypeInternal, handlerErr.Type)
-		if os.Getenv("ENABLE_SERVER_1_27_TESTS") == "1" {
+		if os.Getenv("DISABLE_SERVER_1_27_TESTS") == "" {
 			require.Equal(t, nexus.HandlerErrorRetryBehaviorNonRetryable, handlerErr.RetryBehavior)
 		}
 		require.Contains(t, handlerErr.Cause.Error(), "fake app error for test")
