@@ -295,8 +295,6 @@ func newWorkflowTaskPoller(
 	service workflowservice.WorkflowServiceClient,
 	params workerExecutionParameters,
 ) *workflowTaskPoller {
-	cache_size := params.cache.MaxWorkflowCacheSize()
-	params.Logger.Debug("params.cache.MaxWorkflowCacheSize()", cache_size)
 	return &workflowTaskPoller{
 		basePoller: basePoller{
 			metricsHandler:       params.MetricsHandler,
@@ -317,7 +315,7 @@ func newWorkflowTaskPoller(
 		failureConverter:             params.FailureConverter,
 		stickyUUID:                   uuid.New(),
 		StickyScheduleToStartTimeout: params.StickyScheduleToStartTimeout,
-		stickyCacheSize:              cache_size,
+		stickyCacheSize:              params.cache.MaxWorkflowCacheSize(),
 		eagerActivityExecutor:        params.eagerActivityExecutor,
 		numNormalPollerMetric:        newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowTask),
 		numStickyPollerMetric:        newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowStickyTask),
