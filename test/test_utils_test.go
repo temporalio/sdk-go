@@ -75,24 +75,16 @@ func NewConfig() Config {
 	cfg := Config{
 		ServiceAddr:             client.DefaultHostPort,
 		ServiceHTTPAddr:         "localhost:7243",
-		maxWorkflowCacheSize:    10000,
+		maxWorkflowCacheSize:    getEnvCacheSize(),
 		Namespace:               "integration-test-namespace",
 		ShouldRegisterNamespace: true,
 	}
-	fmt.Println("maxWorkflowCacheSize is currently 10000")
+	fmt.Println("maxWorkflowCacheSize is", cfg.maxWorkflowCacheSize)
 	if addr := getEnvServiceAddr(); addr != "" {
 		cfg.ServiceAddr = addr
 	}
 	if addr := strings.TrimSpace(os.Getenv("SERVICE_HTTP_ADDR")); addr != "" {
 		cfg.ServiceHTTPAddr = addr
-	}
-	if siz := getEnvCacheSize(); siz != "" {
-		asInt, err := strconv.Atoi(siz)
-		if err != nil {
-			panic("Sticky cache size must be an integer, was: " + siz)
-		}
-		cfg.maxWorkflowCacheSize = asInt
-		fmt.Println("maxWorkflowCacheSize is now", asInt)
 	}
 
 	if debug := getDebug(); debug != "" {
@@ -117,9 +109,15 @@ func getEnvServiceAddr() string {
 	return strings.TrimSpace(os.Getenv("SERVICE_ADDR"))
 }
 
-func getEnvCacheSize() string {
-	// TODO: we should just verify that cachesize is an int here, so by default it's never 10,000?
-	return strings.ToLower(strings.TrimSpace(os.Getenv("WORKFLOW_CACHE_SIZE")))
+func getEnvCacheSize() int {
+	if siz := strings.ToLower(strings.TrimSpace(os.Getenv("WORKFLOW_CACHE_SIZE"))); siz != "" {
+		asInt, err := strconv.Atoi(siz)
+		if err != nil {
+			panic("Sticky cache size must be an integer, was: " + siz)
+		}
+		return asInt
+	}
+	return 10000
 }
 
 func getDebug() string {
