@@ -2056,7 +2056,7 @@ func (ts *IntegrationTestSuite) TestResetWorkflowExecutionWithChildren() {
 	ts.NoError(err)
 
 	// save child init childIDs for later comparison.
-	childIDs := ts.getChildInitEventsFromHistory(ctx, wfID, run.GetRunID())
+	childIDs := ts.getChildWFIDsFromHistory(ctx, wfID, run.GetRunID())
 	ts.Len(childIDs, 3)
 	child1IDBeforeReset := childIDs[0]
 	child2IDBeforeReset := childIDs[1]
@@ -2081,7 +2081,7 @@ func (ts *IntegrationTestSuite) TestResetWorkflowExecutionWithChildren() {
 	ts.NoError(err)
 	ts.Equal(originalResult, resultAfterReset1)
 
-	childIDsAfterReset1 := ts.getChildInitEventsFromHistory(ctx, wfID, resp.GetRunId())
+	childIDsAfterReset1 := ts.getChildWFIDsFromHistory(ctx, wfID, resp.GetRunId())
 	ts.Len(childIDsAfterReset1, 3)
 	// All 3 child workflow IDs should be different after reset.
 	ts.NotEqual(child1IDBeforeReset, childIDsAfterReset1[0])
@@ -2091,7 +2091,7 @@ func (ts *IntegrationTestSuite) TestResetWorkflowExecutionWithChildren() {
 	// (reset #2) - resetting the new workflow execution after child-1 but before child-2
 	resetRequest.RequestId = "reset-request-2"
 	resetRequest.WorkflowExecution.RunId = resp.GetRunId()
-	resetRequest.WorkflowTaskFinishEventId = 16
+	resetRequest.WorkflowTaskFinishEventId = ts.getWorkflowTaskFinishEventIdAfterChild(ctx, wfID, resp.GetRunId(), childIDsAfterReset1[0])
 	resp, err = ts.client.ResetWorkflowExecution(context.Background(), resetRequest)
 	ts.NoError(err)
 	// Wait for the new run to complete.
@@ -2100,7 +2100,7 @@ func (ts *IntegrationTestSuite) TestResetWorkflowExecutionWithChildren() {
 	ts.NoError(err)
 	ts.Equal(originalResult, resultAfterReset2)
 
-	childIDsAfterReset2 := ts.getChildInitEventsFromHistory(ctx, wfID, resp.GetRunId())
+	childIDsAfterReset2 := ts.getChildWFIDsFromHistory(ctx, wfID, resp.GetRunId())
 	ts.Len(childIDsAfterReset2, 3)
 	ts.Equal(childIDsAfterReset1[0], childIDsAfterReset2[0])    // child-1 should be the same as before reset.
 	ts.NotEqual(childIDsAfterReset1[1], childIDsAfterReset2[1]) // child-2 should be different after reset.
@@ -2109,7 +2109,7 @@ func (ts *IntegrationTestSuite) TestResetWorkflowExecutionWithChildren() {
 	// (reset #3) - resetting the new workflow execution after child-2 but before child-3
 	resetRequest.RequestId = "reset-request-3"
 	resetRequest.WorkflowExecution.RunId = resp.GetRunId()
-	resetRequest.WorkflowTaskFinishEventId = 27
+	resetRequest.WorkflowTaskFinishEventId = ts.getWorkflowTaskFinishEventIdAfterChild(ctx, wfID, resp.GetRunId(), childIDsAfterReset2[1])
 	resp, err = ts.client.ResetWorkflowExecution(context.Background(), resetRequest)
 	ts.NoError(err)
 	// Wait for the new run to complete.
@@ -2118,7 +2118,7 @@ func (ts *IntegrationTestSuite) TestResetWorkflowExecutionWithChildren() {
 	ts.NoError(err)
 	ts.Equal(originalResult, resultAfterReset3)
 
-	childIDsAfterReset3 := ts.getChildInitEventsFromHistory(ctx, wfID, resp.GetRunId())
+	childIDsAfterReset3 := ts.getChildWFIDsFromHistory(ctx, wfID, resp.GetRunId())
 	ts.Len(childIDsAfterReset3, 3)
 	// child-1 & child-2 workflow IDs should be the same as before reset. Child-3 should be different.
 	ts.Equal(childIDsAfterReset2[0], childIDsAfterReset3[0])
@@ -2129,17 +2129,17 @@ func (ts *IntegrationTestSuite) TestResetWorkflowExecutionWithChildren() {
 	// This should successfully replay all child events and not change the child workflow IDs from previous run.
 	resetRequest.RequestId = "reset-request-4"
 	resetRequest.WorkflowExecution.RunId = resp.GetRunId()
-	resetRequest.WorkflowTaskFinishEventId = 40
+	resetRequest.WorkflowTaskFinishEventId = ts.getWorkflowTaskFinishEventIdAfterChild(ctx, wfID, resp.GetRunId(), childIDsAfterReset3[2])
 	resp, err = ts.client.ResetWorkflowExecution(context.Background(), resetRequest)
 	ts.NoError(err)
-	childIDsFinal := ts.getChildInitEventsFromHistory(ctx, wfID, resp.GetRunId())
+	childIDsFinal := ts.getChildWFIDsFromHistory(ctx, wfID, resp.GetRunId())
 	ts.Len(childIDsFinal, 3)
 	ts.Equal(childIDsAfterReset3[0], childIDsFinal[0])
 	ts.Equal(childIDsAfterReset3[1], childIDsFinal[1])
 	ts.Equal(childIDsAfterReset3[2], childIDsFinal[2])
 }
 
-func (ts *IntegrationTestSuite) getChildInitEventsFromHistory(ctx context.Context, wfID string, runID string) []string {
+func (ts *IntegrationTestSuite) getChildWFIDsFromHistory(ctx context.Context, wfID string, runID string) []string {
 	iter := ts.client.GetWorkflowHistory(ctx, wfID, runID, false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	var childIDs []string
 	for iter.HasNext() {
@@ -2152,6 +2152,29 @@ func (ts *IntegrationTestSuite) getChildInitEventsFromHistory(ctx context.Contex
 		}
 	}
 	return childIDs
+}
+
+func (ts *IntegrationTestSuite) getWorkflowTaskFinishEventIdAfterChild(ctx context.Context, wfID string, runID string, childID string) int64 {
+	iter := ts.client.GetWorkflowHistory(ctx, wfID, runID, false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	childFound := false
+	for iter.HasNext() {
+		event, err := iter.Next()
+		if err != nil {
+			break
+		}
+		if event.GetEventType() == enumspb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_COMPLETED {
+			if event.GetChildWorkflowExecutionCompletedEventAttributes().GetWorkflowExecution().GetWorkflowId() == childID {
+				childFound = true
+			}
+		}
+		if !childFound {
+			continue
+		}
+		if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
+			return event.GetEventId()
+		}
+	}
+	return 0
 }
 
 func (ts *IntegrationTestSuite) TestResetWorkflowExecutionWithUpdate() {
