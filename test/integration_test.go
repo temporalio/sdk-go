@@ -225,8 +225,6 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		WorkflowPanicPolicy: panicPolicy,
 	}
 
-	worker.SetStickyWorkflowCacheSize(ts.config.maxWorkflowCacheSize)
-
 	if strings.Contains(ts.T().Name(), "Session") {
 		options.EnableSessionWorker = true
 		// Limit the session execution size

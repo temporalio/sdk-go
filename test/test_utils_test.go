@@ -45,6 +45,7 @@ import (
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
 	ilog "go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -75,7 +76,7 @@ func NewConfig() Config {
 	cfg := Config{
 		ServiceAddr:             client.DefaultHostPort,
 		ServiceHTTPAddr:         "localhost:7243",
-		maxWorkflowCacheSize:    getEnvCacheSize(),
+		maxWorkflowCacheSize:    10000,
 		Namespace:               "integration-test-namespace",
 		ShouldRegisterNamespace: true,
 	}
@@ -87,6 +88,14 @@ func NewConfig() Config {
 		cfg.ServiceHTTPAddr = addr
 	}
 
+	if siz := getEnvCacheSize(); siz != "" {
+		asInt, err := strconv.Atoi(siz)
+		if err != nil {
+			panic("Sticky cache size must be an integer, was: " + siz)
+		}
+		cfg.maxWorkflowCacheSize = asInt
+	}
+	worker.SetStickyWorkflowCacheSize(cfg.maxWorkflowCacheSize)
 	if debug := getDebug(); debug != "" {
 		cfg.Debug = debug == "true"
 	}
@@ -109,15 +118,8 @@ func getEnvServiceAddr() string {
 	return strings.TrimSpace(os.Getenv("SERVICE_ADDR"))
 }
 
-func getEnvCacheSize() int {
-	if siz := strings.ToLower(strings.TrimSpace(os.Getenv("WORKFLOW_CACHE_SIZE"))); siz != "" {
-		asInt, err := strconv.Atoi(siz)
-		if err != nil {
-			panic("Sticky cache size must be an integer, was: " + siz)
-		}
-		return asInt
-	}
-	return 10000
+func getEnvCacheSize() string {
+	return strings.ToLower(strings.TrimSpace(os.Getenv("WORKFLOW_CACHE_SIZE")))
 }
 
 func getDebug() string {
