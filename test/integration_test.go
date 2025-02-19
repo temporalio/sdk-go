@@ -251,7 +251,8 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.WorkflowPanicPolicy = worker.BlockWorkflow
 	}
 
-	if strings.Contains(ts.T().Name(), "GracefulActivityCompletion") {
+	if strings.Contains(ts.T().Name(), "GracefulActivityCompletion") ||
+		strings.Contains(ts.T().Name(), "GracefulLocalActivityCompletion") {
 		options.WorkerStopTimeout = 10 * time.Second
 	}
 
@@ -2255,6 +2256,60 @@ func (ts *IntegrationTestSuite) TestGracefulActivityCompletion() {
 	var s string
 	ts.NoError(converter.GetDefaultDataConverter().FromPayload(completed.Result.Payloads[0], &s))
 	ts.Equal("stopped", s)
+}
+
+func (ts *IntegrationTestSuite) TestGracefulLocalActivityCompletion() {
+	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	opts := ts.startWorkflowOptions("local-activity-stop-" + uuid.New())
+	opts.WorkflowTaskTimeout = 5 * time.Second
+
+	// Start workflow
+	//fmt.Println("start workflow")
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		opts,
+		ts.workflows.LocalActivityStop)
+	ts.NoError(err)
+
+	// Wait for activity to report started
+	//fmt.Println("\nWait for activity to report started")
+	time.Sleep(100 * time.Millisecond)
+	ts.NoError(ctx.Err())
+
+	// Stop the worker
+	time.Sleep(100 * time.Millisecond)
+	//time.Sleep(10 * time.Second)
+	fmt.Println("\n[Calling ts.worker.Stop()]")
+	ts.worker.Stop()
+	fmt.Println("[finished ts.worker.Stop()] done TODO: This shouldn't complete until LA finishes running.")
+	ts.workerStopped = true
+	time.Sleep(500 * time.Millisecond)
+
+	// Look for activity completed from the history
+	fmt.Println("\nLook for activity completed from the history")
+	var completed bool
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(),
+		false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for completed == false && iter.HasNext() {
+		event, err := iter.Next()
+		attributes := event.GetMarkerRecordedEventAttributes()
+		fmt.Println("[event]", event.EventType, event.Attributes)
+		//fmt.Println("\t", event)
+		ts.NoError(err)
+		if event.EventType == enumspb.EVENT_TYPE_MARKER_RECORDED && attributes.MarkerName == "LocalActivity" && attributes.GetFailure() == nil {
+			completed = true
+		}
+	}
+
+	// Confirm it stored "stopped"
+	fmt.Println("\nConfirm it stored \"stopped\"")
+	ts.True(completed)
+	//ts.Len(completed.GetResult().GetPayloads(), 1)
+	//var s string
+	//ts.NoError(converter.GetDefaultDataConverter().FromPayload(completed.Result.Payloads[0], &s))
+	//ts.Equal("stopped", s)
 }
 
 func (ts *IntegrationTestSuite) TestCancelChildAndExecuteActivityRace() {
