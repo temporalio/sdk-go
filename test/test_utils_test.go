@@ -79,6 +79,7 @@ func NewConfig() Config {
 		Namespace:               "integration-test-namespace",
 		ShouldRegisterNamespace: true,
 	}
+	fmt.Println("maxWorkflowCacheSize is currently 10000")
 	if addr := getEnvServiceAddr(); addr != "" {
 		cfg.ServiceAddr = addr
 	}
@@ -91,7 +92,9 @@ func NewConfig() Config {
 			panic("Sticky cache size must be an integer, was: " + siz)
 		}
 		cfg.maxWorkflowCacheSize = asInt
+		fmt.Println("maxWorkflowCacheSize is now", asInt)
 	}
+
 	if debug := getDebug(); debug != "" {
 		cfg.Debug = debug == "true"
 	}
@@ -115,6 +118,7 @@ func getEnvServiceAddr() string {
 }
 
 func getEnvCacheSize() string {
+	// TODO: we should just verify that cachesize is an int here, so by default it's never 10,000?
 	return strings.ToLower(strings.TrimSpace(os.Getenv("WORKFLOW_CACHE_SIZE")))
 }
 
