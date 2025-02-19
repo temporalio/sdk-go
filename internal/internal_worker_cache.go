@@ -107,6 +107,7 @@ func newWorkerCache(storeIn *sharedWorkerCache, lock *sync.Mutex, cacheSize int)
 				wc.onEviction()
 			},
 		})
+		fmt.Println("[cacheSize]", cacheSize)
 		*storeIn = sharedWorkerCache{workflowCache: &newcache, workerRefcount: 0, maxWorkflowCacheSize: cacheSize}
 	}
 	storeIn.workerRefcount++
