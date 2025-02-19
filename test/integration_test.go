@@ -2897,24 +2897,34 @@ func (ts *IntegrationTestSuite) waitForQueryTrue(run client.WorkflowRun, query s
 }
 
 func (ts *IntegrationTestSuite) TestNumPollersCounter() {
-	_, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	assertNumPollersEventually := func(expected float64, pollerType string, tags ...string) {
-		// Try for two seconds
-		var lastCount float64
-		for start := time.Now(); time.Since(start) <= 10*time.Second; {
-			lastCount = ts.metricGauge(
+	//_, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	//defer cancel()
+	//assertNumPollersEventually := func(expected float64, pollerType string, tags ...string) {
+	//	// Try for two seconds
+	//	var lastCount float64
+	//	for start := time.Now(); time.Since(start) <= 10*time.Second; {
+	//		lastCount = ts.metricGauge(
+	//			metrics.NumPoller,
+	//			"poller_type", pollerType,
+	//			"task_queue", ts.taskQueueName,
+	//		)
+	//		if lastCount == expected {
+	//			return
+	//		}
+	//		time.Sleep(50 * time.Millisecond)
+	//	}
+	//	// Will fail
+	//	ts.Equal(expected, lastCount)
+	//}
+	assertNumPollersEventually := func(expected float64, pollerType string) {
+		ts.Require().EventuallyWithT(func(t *assert.CollectT) {
+			lastCount := ts.metricGauge(
 				metrics.NumPoller,
 				"poller_type", pollerType,
 				"task_queue", ts.taskQueueName,
 			)
-			if lastCount == expected {
-				return
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
-		// Will fail
-		ts.Equal(expected, lastCount)
+			assert.Equal(t, expected, lastCount)
+		}, 10*time.Second, 50*time.Millisecond)
 	}
 	fmt.Println("ts.config.maxWorkflowCacheSize", ts.config.maxWorkflowCacheSize)
 	if ts.config.maxWorkflowCacheSize == 0 {
