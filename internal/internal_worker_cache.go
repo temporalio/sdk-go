@@ -161,5 +161,6 @@ func (wc *WorkerCache) MaxWorkflowCacheSize() int {
 		fmt.Println("THIS SHOULD NOT BE HITTING, THIS MEANS WC == NIL")
 		return desiredWorkflowCacheSize
 	}
+	fmt.Println("wc.sharedCache.maxWorkflowCacheSize", wc.sharedCache.maxWorkflowCacheSize)
 	return wc.sharedCache.maxWorkflowCacheSize
 }
