@@ -492,8 +492,7 @@ OrderEvents:
 				break OrderEvents
 			}
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED,
-			enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT,
-			enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED:
+			enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT:
 			// Skip
 		default:
 			if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
@@ -744,6 +743,10 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		Memo:                     attributes.Memo,
 		SearchAttributes:         attributes.SearchAttributes,
 		RetryPolicy:              convertFromPBRetryPolicy(attributes.RetryPolicy),
+		// Use the original execution run ID from the start event as the initial seed.
+		// Original execution run ID stays the same for the entire chain of workflow resets.
+		// This helps us keep child workflow IDs consistent up until a reset-point is encountered.
+		currentRunID: attributes.GetOriginalExecutionRunId(),
 	}
 
 	return newWorkflowExecutionContext(workflowInfo, wth), nil
