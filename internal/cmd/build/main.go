@@ -144,6 +144,9 @@ func (b *builder) integrationTest() error {
 				HostPort:  "127.0.0.1:7233",
 				Namespace: "integration-test-namespace",
 			},
+			CachedDownload: testsuite.CachedDownload{
+				Version: "v1.3.0-versioning.0",
+			},
 			LogLevel: "warn",
 			ExtraArgs: []string{
 				"--dynamic-config-value", "frontend.enableExecuteMultiOperation=true",
@@ -158,6 +161,9 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", "worker.buildIdScavengerEnabled=true",
 				"--dynamic-config-value", "worker.removableBuildIdDurationSinceDefault=1",
 				"--dynamic-config-value", "system.enableDeployments=true",
+				"--dynamic-config-value", "system.enableDeploymentVersions=true",
+				"--dynamic-config-value", "matching.wv.VersionDrainageStatusVisibilityGracePeriod=10",
+				"--dynamic-config-value", "matching.wv.VersionDrainageStatusRefreshInterval=1",
 				// All of the below is required for Nexus tests.
 				"--http-port", "7243",
 				"--dynamic-config-value", "system.enableNexus=true",

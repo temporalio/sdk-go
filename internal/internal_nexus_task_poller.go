@@ -58,12 +58,13 @@ func newNexusTaskPoller(
 ) *nexusTaskPoller {
 	return &nexusTaskPoller{
 		basePoller: basePoller{
-			metricsHandler:       params.MetricsHandler,
-			stopC:                params.WorkerStopChannel,
-			workerBuildID:        params.getBuildID(),
-			useBuildIDVersioning: params.UseBuildIDForVersioning,
-			deploymentSeriesName: params.DeploymentSeriesName,
-			capabilities:         params.capabilities,
+			metricsHandler:          params.MetricsHandler,
+			stopC:                   params.WorkerStopChannel,
+			workerBuildID:           params.getBuildID(),
+			useBuildIDVersioning:    params.UseBuildIDForVersioning,
+			workerDeploymentVersion: params.WorkerDeploymentVersion,
+			deploymentSeriesName:    params.DeploymentSeriesName,
+			capabilities:            params.capabilities,
 		},
 		taskHandler:     taskHandler,
 		service:         service,
@@ -96,6 +97,10 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 			UseVersioning:        ntp.useBuildIDVersioning,
 			DeploymentSeriesName: ntp.deploymentSeriesName,
 		},
+		DeploymentOptions: workerDeploymentOptionsToProto(
+			ntp.useBuildIDVersioning,
+			ntp.workerDeploymentVersion,
+		),
 	}
 
 	response, err := ntp.pollNexusTaskQueue(ctx, request)

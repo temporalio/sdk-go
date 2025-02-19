@@ -44,24 +44,30 @@ type DeploymentClient struct {
 }
 
 // Describe provides a mock function with given fields: ctx, options
+//
+//lint:ignore SA1019 ignore deprecated versioning APIs
 func (_m *DeploymentClient) Describe(ctx context.Context, options client.DeploymentDescribeOptions) (client.DeploymentDescription, error) {
 	ret := _m.Called(ctx, options)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Describe")
 	}
-
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	var r0 client.DeploymentDescription
 	var r1 error
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentDescribeOptions) (client.DeploymentDescription, error)); ok {
 		return rf(ctx, options)
 	}
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentDescribeOptions) client.DeploymentDescription); ok {
 		r0 = rf(ctx, options)
 	} else {
+		//lint:ignore SA1019 ignore deprecated versioning APIs
 		r0 = ret.Get(0).(client.DeploymentDescription)
 	}
 
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	if rf, ok := ret.Get(1).(func(context.Context, client.DeploymentDescribeOptions) error); ok {
 		r1 = rf(ctx, options)
 	} else {
@@ -72,6 +78,8 @@ func (_m *DeploymentClient) Describe(ctx context.Context, options client.Deploym
 }
 
 // GetCurrent provides a mock function with given fields: ctx, options
+//
+//lint:ignore SA1019 ignore deprecated versioning APIs
 func (_m *DeploymentClient) GetCurrent(ctx context.Context, options client.DeploymentGetCurrentOptions) (client.DeploymentGetCurrentResponse, error) {
 	ret := _m.Called(ctx, options)
 
@@ -79,17 +87,22 @@ func (_m *DeploymentClient) GetCurrent(ctx context.Context, options client.Deplo
 		panic("no return value specified for GetCurrent")
 	}
 
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	var r0 client.DeploymentGetCurrentResponse
 	var r1 error
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentGetCurrentOptions) (client.DeploymentGetCurrentResponse, error)); ok {
 		return rf(ctx, options)
 	}
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentGetCurrentOptions) client.DeploymentGetCurrentResponse); ok {
 		r0 = rf(ctx, options)
 	} else {
+		//lint:ignore SA1019 ignore deprecated versioning APIs
 		r0 = ret.Get(0).(client.DeploymentGetCurrentResponse)
 	}
 
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	if rf, ok := ret.Get(1).(func(context.Context, client.DeploymentGetCurrentOptions) error); ok {
 		r1 = rf(ctx, options)
 	} else {
@@ -100,6 +113,8 @@ func (_m *DeploymentClient) GetCurrent(ctx context.Context, options client.Deplo
 }
 
 // GetReachability provides a mock function with given fields: ctx, options
+//
+//lint:ignore SA1019 ignore deprecated versioning APIs
 func (_m *DeploymentClient) GetReachability(ctx context.Context, options client.DeploymentGetReachabilityOptions) (client.DeploymentReachabilityInfo, error) {
 	ret := _m.Called(ctx, options)
 
@@ -107,17 +122,22 @@ func (_m *DeploymentClient) GetReachability(ctx context.Context, options client.
 		panic("no return value specified for GetReachability")
 	}
 
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	var r0 client.DeploymentReachabilityInfo
 	var r1 error
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentGetReachabilityOptions) (client.DeploymentReachabilityInfo, error)); ok {
 		return rf(ctx, options)
 	}
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentGetReachabilityOptions) client.DeploymentReachabilityInfo); ok {
 		r0 = rf(ctx, options)
 	} else {
+		//lint:ignore SA1019 ignore deprecated versioning APIs
 		r0 = ret.Get(0).(client.DeploymentReachabilityInfo)
 	}
 
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	if rf, ok := ret.Get(1).(func(context.Context, client.DeploymentGetReachabilityOptions) error); ok {
 		r1 = rf(ctx, options)
 	} else {
@@ -128,26 +148,31 @@ func (_m *DeploymentClient) GetReachability(ctx context.Context, options client.
 }
 
 // List provides a mock function with given fields: ctx, options
+//
+//lint:ignore SA1019 ignore deprecated versioning APIs
 func (_m *DeploymentClient) List(ctx context.Context, options client.DeploymentListOptions) (client.DeploymentListIterator, error) {
 	ret := _m.Called(ctx, options)
 
 	if len(ret) == 0 {
 		panic("no return value specified for List")
 	}
-
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	var r0 client.DeploymentListIterator
 	var r1 error
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentListOptions) (client.DeploymentListIterator, error)); ok {
 		return rf(ctx, options)
 	}
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentListOptions) client.DeploymentListIterator); ok {
 		r0 = rf(ctx, options)
 	} else {
 		if ret.Get(0) != nil {
+			//lint:ignore SA1019 ignore deprecated versioning APIs
 			r0 = ret.Get(0).(client.DeploymentListIterator)
 		}
 	}
-
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	if rf, ok := ret.Get(1).(func(context.Context, client.DeploymentListOptions) error); ok {
 		r1 = rf(ctx, options)
 	} else {
@@ -158,24 +183,29 @@ func (_m *DeploymentClient) List(ctx context.Context, options client.DeploymentL
 }
 
 // SetCurrent provides a mock function with given fields: ctx, options
+//
+//lint:ignore SA1019 ignore deprecated versioning APIs
 func (_m *DeploymentClient) SetCurrent(ctx context.Context, options client.DeploymentSetCurrentOptions) (client.DeploymentSetCurrentResponse, error) {
 	ret := _m.Called(ctx, options)
 
 	if len(ret) == 0 {
 		panic("no return value specified for SetCurrent")
 	}
-
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	var r0 client.DeploymentSetCurrentResponse
 	var r1 error
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentSetCurrentOptions) (client.DeploymentSetCurrentResponse, error)); ok {
 		return rf(ctx, options)
 	}
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	if rf, ok := ret.Get(0).(func(context.Context, client.DeploymentSetCurrentOptions) client.DeploymentSetCurrentResponse); ok {
 		r0 = rf(ctx, options)
 	} else {
+		//lint:ignore SA1019 ignore deprecated versioning APIs
 		r0 = ret.Get(0).(client.DeploymentSetCurrentResponse)
 	}
-
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	if rf, ok := ret.Get(1).(func(context.Context, client.DeploymentSetCurrentOptions) error); ok {
 		r1 = rf(ctx, options)
 	} else {
