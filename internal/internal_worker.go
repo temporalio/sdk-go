@@ -1739,7 +1739,6 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	var capabilities workflowservice.GetSystemInfoResponse_Capabilities
 
 	// TODO: Cache created here
-	client.logger.Debug("Cache created here")
 	cache := NewWorkerCache()
 	workerParams := workerExecutionParameters{
 		Namespace:                             client.namespace,

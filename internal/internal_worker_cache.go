@@ -101,6 +101,7 @@ func newWorkerCache(storeIn *sharedWorkerCache, lock *sync.Mutex, cacheSize int)
 		panic("Provided sharedWorkerCache pointer must not be nil")
 	}
 
+	fmt.Println("storeIn.WorkerRefCount", storeIn.workerRefcount)
 	if storeIn.workerRefcount == 0 {
 		newcache := cache.New(cacheSize-1, &cache.Options{
 			RemovedFunc: func(cachedEntity interface{}) {
