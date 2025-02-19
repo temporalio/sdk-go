@@ -85,10 +85,10 @@ func PurgeStickyWorkflowCache() {
 // WorkerCache, shared caches will be cleared
 func NewWorkerCache() *WorkerCache {
 	sharedWorkerCacheLock.Lock()
-	desiredWorkflowCacheSize := desiredWorkflowCacheSize
+	cacheSize := desiredWorkflowCacheSize
 	sharedWorkerCacheLock.Unlock()
 
-	return newWorkerCache(sharedWorkerCachePtr, &sharedWorkerCacheLock, desiredWorkflowCacheSize)
+	return newWorkerCache(sharedWorkerCachePtr, &sharedWorkerCacheLock, cacheSize)
 }
 
 // This private version allows us to test functionality without affecting the global shared cache
