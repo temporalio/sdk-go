@@ -143,9 +143,16 @@ func (tc *testContext) newNexusClient(t *testing.T, service string) *nexus.HTTPC
 	return nc
 }
 
+func (tc *testContext) requireTaskQueueTimer(t *assert.CollectT, metric string) {
+	assert.True(t, slices.ContainsFunc(tc.metricsHandler.Timers(), func(ct *metrics.CapturedTimer) bool {
+		return ct.Name == metric && ct.Tags[metrics.TaskQueueTagName] == tc.taskQueue
+	}))
+}
+
 func (tc *testContext) requireTimer(t *assert.CollectT, metric, service, operation string) {
 	assert.True(t, slices.ContainsFunc(tc.metricsHandler.Timers(), func(ct *metrics.CapturedTimer) bool {
 		return ct.Name == metric &&
+			ct.Tags[metrics.TaskQueueTagName] == tc.taskQueue &&
 			ct.Tags[metrics.NexusServiceTagName] == service &&
 			ct.Tags[metrics.NexusOperationTagName] == operation
 	}))
@@ -245,8 +252,8 @@ func TestNexusSyncOperation(t *testing.T) {
 		require.Equal(t, "ok", result)
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTaskQueueTimer(t, metrics.NexusTaskScheduleToStartLatency)
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
-			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
 		}, time.Second*3, time.Millisecond*100)
 	})
@@ -260,8 +267,8 @@ func TestNexusSyncOperation(t *testing.T) {
 		require.Equal(t, "fail", opErr.Cause.Error())
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTaskQueueTimer(t, metrics.NexusTaskScheduleToStartLatency)
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
-			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
 			tc.requireFailureCounter(t, service.Name, syncOp.Name(), "operation_failed")
 		}, time.Second*3, time.Millisecond*100)
@@ -276,8 +283,8 @@ func TestNexusSyncOperation(t *testing.T) {
 		require.Contains(t, handlerErr.Cause.Error(), "arbitrary error message")
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTaskQueueTimer(t, metrics.NexusTaskScheduleToStartLatency)
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
-			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
 			tc.requireFailureCounter(t, service.Name, syncOp.Name(), "handler_error_INTERNAL")
 		}, time.Second*3, time.Millisecond*100)
@@ -291,8 +298,8 @@ func TestNexusSyncOperation(t *testing.T) {
 		require.Contains(t, handlerErr.Cause.Error(), "handlererror")
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTaskQueueTimer(t, metrics.NexusTaskScheduleToStartLatency)
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
-			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
 			tc.requireFailureCounter(t, service.Name, syncOp.Name(), "handler_error_BAD_REQUEST")
 		}, time.Second*3, time.Millisecond*100)
@@ -306,8 +313,8 @@ func TestNexusSyncOperation(t *testing.T) {
 		require.Contains(t, handlerErr.Cause.Error(), "faking workflow already started")
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTaskQueueTimer(t, metrics.NexusTaskScheduleToStartLatency)
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
-			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
 			tc.requireFailureCounter(t, service.Name, syncOp.Name(), "handler_error_BAD_REQUEST")
 		}, time.Second*3, time.Millisecond*100)
@@ -321,8 +328,8 @@ func TestNexusSyncOperation(t *testing.T) {
 		require.Contains(t, handlerErr.Cause.Error(), "fake app error for test")
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTaskQueueTimer(t, metrics.NexusTaskScheduleToStartLatency)
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
-			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
 			tc.requireFailureCounter(t, service.Name, syncOp.Name(), "handler_error_INTERNAL")
 		}, time.Second*3, time.Millisecond*100)
@@ -336,8 +343,8 @@ func TestNexusSyncOperation(t *testing.T) {
 		require.Contains(t, handlerErr.Cause.Error(), "fake app error for test")
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTaskQueueTimer(t, metrics.NexusTaskScheduleToStartLatency)
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
-			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
 			tc.requireFailureCounter(t, service.Name, syncOp.Name(), "handler_error_BAD_REQUEST")
 		}, time.Second*3, time.Millisecond*100)
@@ -351,8 +358,8 @@ func TestNexusSyncOperation(t *testing.T) {
 		require.Contains(t, handlerErr.Cause.Error(), "panic: panic requested")
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTaskQueueTimer(t, metrics.NexusTaskScheduleToStartLatency)
 			tc.requireTimer(t, metrics.NexusTaskEndToEndLatency, service.Name, syncOp.Name())
-			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
 			tc.requireFailureCounter(t, service.Name, syncOp.Name(), "handler_error_INTERNAL")
 		}, time.Second*3, time.Millisecond*100)
@@ -368,8 +375,8 @@ func TestNexusSyncOperation(t *testing.T) {
 		require.Equal(t, nexus.HandlerErrorTypeUpstreamTimeout, handlerErr.Type)
 
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTaskQueueTimer(t, metrics.NexusTaskScheduleToStartLatency)
 			// NOTE metrics.NexusTaskEndToEndLatency isn't recorded on timeouts.
-			tc.requireTimer(t, metrics.NexusTaskScheduleToStartLatency, service.Name, syncOp.Name())
 			tc.requireTimer(t, metrics.NexusTaskExecutionLatency, service.Name, syncOp.Name())
 			tc.requireFailureCounter(t, service.Name, syncOp.Name(), "timeout")
 		}, time.Second*3, time.Millisecond*100)
