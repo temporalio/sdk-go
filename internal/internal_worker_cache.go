@@ -66,6 +66,7 @@ var desiredWorkflowCacheSize = defaultStickyCacheSize
 // size of 10K (which may change) will be used.
 func SetStickyWorkflowCacheSize(cacheSize int) {
 	sharedWorkerCacheLock.Lock()
+	fmt.Println("SetStickyWorkflowCacheSize", cacheSize)
 	defer sharedWorkerCacheLock.Unlock()
 	desiredWorkflowCacheSize = cacheSize
 }
