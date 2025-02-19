@@ -134,7 +134,7 @@ func (ts *WorkerDeploymentTestSuite) runWorkflowAndCheckV1(ctx context.Context, 
 }
 
 func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
-	if os.Getenv("DISABLE_WORKER_DEPLOYMENT_TESTS") != "" {
+	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
 		ts.T().Skip("temporal server 1.27+ required")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -292,7 +292,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 }
 
 func (ts *WorkerDeploymentTestSuite) TestPinnedOverrideInWorkflowOptions() {
-	if os.Getenv("DISABLE_WORKER_DEPLOYMENT_TESTS") != "" {
+	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
 		ts.T().Skip("temporal server 1.27+ required")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
@@ -377,7 +377,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedOverrideInWorkflowOptions() {
 }
 
 func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
-	if os.Getenv("DISABLE_WORKER_DEPLOYMENT_TESTS") != "" {
+	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
 		ts.T().Skip("temporal server 1.27+ required")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
@@ -538,7 +538,7 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 }
 
 func (ts *WorkerDeploymentTestSuite) TestListDeployments() {
-	if os.Getenv("DISABLE_WORKER_DEPLOYMENT_TESTS") != "" {
+	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
 		ts.T().Skip("temporal server 1.27+ required")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
@@ -605,7 +605,7 @@ func (ts *WorkerDeploymentTestSuite) TestListDeployments() {
 }
 
 func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
-	if os.Getenv("DISABLE_WORKER_DEPLOYMENT_TESTS") != "" {
+	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
 		ts.T().Skip("temporal server 1.27+ required")
 	}
 	// default VersionDrainageStatusVisibilityGracePeriod is 180 seconds
@@ -738,7 +738,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 }
 
 func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
-	if os.Getenv("DISABLE_WORKER_DEPLOYMENT_TESTS") != "" {
+	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
 		ts.T().Skip("temporal server 1.27+ required")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
@@ -842,7 +842,7 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 }
 
 func (ts *WorkerDeploymentTestSuite) TestDeleteDeployment() {
-	if os.Getenv("DISABLE_WORKER_DEPLOYMENT_TESTS") != "" {
+	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
 		ts.T().Skip("temporal server 1.27+ required")
 	}
 	// TODO(antlai-temporal): find ways to speed up deletion
