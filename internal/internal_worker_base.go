@@ -325,7 +325,6 @@ func (bw *baseWorker) Start() {
 
 	bw.metricsHandler.Counter(metrics.WorkerStartCounter).Inc(1)
 
-	bw.logger.Debug("starting worker with poller count", bw.options.pollerCount)
 	for i := 0; i < bw.options.pollerCount; i++ {
 		bw.stopWG.Add(1)
 		go bw.runPoller()
@@ -364,7 +363,6 @@ func (bw *baseWorker) runPoller() {
 	reserveChan := make(chan *SlotPermit)
 
 	for {
-		bw.logger.Debug("Reserving slot supplier")
 		bw.stopWG.Add(1)
 		go func() {
 			defer bw.stopWG.Done()
@@ -508,7 +506,6 @@ func (bw *baseWorker) pollTask(slotPermit *SlotPermit) {
 			bw.releaseSlot(slotPermit, SlotReleaseReasonUnused)
 		}
 	}()
-	bw.logger.Debug("Polling task for slot", slotPermit)
 
 	bw.retrier.Throttle(bw.stopCh)
 	if bw.pollLimiter == nil || bw.pollLimiter.Wait(bw.limiterContext) == nil {
