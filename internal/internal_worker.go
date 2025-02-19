@@ -330,6 +330,8 @@ func newWorkflowTaskWorkerInternal(
 	if client != nil {
 		service = client.workflowService
 	}
+	// TODO: adding these prints in greatly reduce the chance of hitting the race
+	//  still need to figure out what is causing this race.
 	//params.Logger.Debug("newWorkflowTaskWorkerInternal before cache", params.cache.MaxWorkflowCacheSize())
 	poller := newWorkflowTaskPoller(taskHandler, contextManager, service, params)
 	//params.Logger.Debug("newWorkflowTaskWorkerInternal after cache", params.cache.MaxWorkflowCacheSize())
