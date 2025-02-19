@@ -1281,6 +1281,8 @@ type WorkflowInfo struct {
 	continueAsNewSuggested bool
 	currentHistorySize     int
 	currentHistoryLength   int
+	// currentRunID is the current run ID of the workflow task, deterministic over reset
+	currentRunID string
 }
 
 // UpdateInfo information about a currently running update
