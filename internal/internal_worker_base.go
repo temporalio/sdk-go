@@ -392,7 +392,6 @@ func (bw *baseWorker) runPoller() {
 			bw.logger.Debug("bw.stopCh")
 			return
 		case permit := <-reserveChan:
-			bw.logger.Debug("permit", permit)
 			if permit == nil { // There was an error reserving a slot
 				// Avoid spamming reserve hard in the event it's constantly failing
 				if ctx.Err() == nil {
