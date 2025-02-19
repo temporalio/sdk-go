@@ -80,14 +80,12 @@ func NewConfig() Config {
 		Namespace:               "integration-test-namespace",
 		ShouldRegisterNamespace: true,
 	}
-	fmt.Println("maxWorkflowCacheSize is", cfg.maxWorkflowCacheSize)
 	if addr := getEnvServiceAddr(); addr != "" {
 		cfg.ServiceAddr = addr
 	}
 	if addr := strings.TrimSpace(os.Getenv("SERVICE_HTTP_ADDR")); addr != "" {
 		cfg.ServiceHTTPAddr = addr
 	}
-
 	if siz := getEnvCacheSize(); siz != "" {
 		asInt, err := strconv.Atoi(siz)
 		if err != nil {

@@ -387,7 +387,6 @@ func (bw *baseWorker) runPoller() {
 
 		select {
 		case <-bw.stopCh:
-			bw.logger.Debug("bw.stopCh")
 			return
 		case permit := <-reserveChan:
 			if permit == nil { // There was an error reserving a slot
@@ -398,7 +397,6 @@ func (bw *baseWorker) runPoller() {
 				continue
 			}
 			if bw.sessionTokenBucket != nil {
-				fmt.Println("bw.sessionTokenBucket", bw.sessionTokenBucket)
 				bw.sessionTokenBucket.waitForAvailableToken()
 			}
 			bw.pollTask(permit)

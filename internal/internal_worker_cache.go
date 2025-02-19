@@ -25,7 +25,6 @@
 package internal
 
 import (
-	"fmt"
 	"runtime"
 	"sync"
 
@@ -66,7 +65,6 @@ var desiredWorkflowCacheSize = defaultStickyCacheSize
 // size of 10K (which may change) will be used.
 func SetStickyWorkflowCacheSize(cacheSize int) {
 	sharedWorkerCacheLock.Lock()
-	fmt.Println("SetStickyWorkflowCacheSize", cacheSize)
 	defer sharedWorkerCacheLock.Unlock()
 	desiredWorkflowCacheSize = cacheSize
 }
@@ -86,10 +84,10 @@ func PurgeStickyWorkflowCache() {
 // WorkerCache, shared caches will be cleared
 func NewWorkerCache() *WorkerCache {
 	sharedWorkerCacheLock.Lock()
-	cacheSize := desiredWorkflowCacheSize
+	desiredWorkflowCacheSize := desiredWorkflowCacheSize
 	sharedWorkerCacheLock.Unlock()
 
-	return newWorkerCache(sharedWorkerCachePtr, &sharedWorkerCacheLock, cacheSize)
+	return newWorkerCache(sharedWorkerCachePtr, &sharedWorkerCacheLock, desiredWorkflowCacheSize)
 }
 
 // This private version allows us to test functionality without affecting the global shared cache
@@ -101,7 +99,6 @@ func newWorkerCache(storeIn *sharedWorkerCache, lock *sync.Mutex, cacheSize int)
 		panic("Provided sharedWorkerCache pointer must not be nil")
 	}
 
-	fmt.Println("storeIn.WorkerRefCount", storeIn.workerRefcount)
 	if storeIn.workerRefcount == 0 {
 		newcache := cache.New(cacheSize-1, &cache.Options{
 			RemovedFunc: func(cachedEntity interface{}) {
@@ -109,7 +106,6 @@ func newWorkerCache(storeIn *sharedWorkerCache, lock *sync.Mutex, cacheSize int)
 				wc.onEviction()
 			},
 		})
-		fmt.Println("[cacheSize]", cacheSize)
 		*storeIn = sharedWorkerCache{workflowCache: &newcache, workerRefcount: 0, maxWorkflowCacheSize: cacheSize}
 	}
 	storeIn.workerRefcount++
@@ -161,9 +157,7 @@ func (wc *WorkerCache) removeWorkflowContext(runID string) {
 // MaxWorkflowCacheSize returns the maximum allowed size of the sticky cache
 func (wc *WorkerCache) MaxWorkflowCacheSize() int {
 	if wc == nil {
-		fmt.Println("THIS SHOULD NOT BE HITTING, THIS MEANS WC == NIL")
 		return desiredWorkflowCacheSize
 	}
-	fmt.Println("wc.sharedCache.maxWorkflowCacheSize", wc.sharedCache.maxWorkflowCacheSize)
 	return wc.sharedCache.maxWorkflowCacheSize
 }

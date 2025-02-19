@@ -759,7 +759,6 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 			workflowContext.laTunnel = wth.laTunnel
 		}
 		metricsHandler.Gauge(metrics.StickyCacheSize).Update(float64(wth.cache.getWorkflowCache().Size()))
-		wth.logger.Debug("float64(wth.cache.getWorkflowCache().Size())", float64(wth.cache.getWorkflowCache().Size()))
 	}()
 
 	runID := task.WorkflowExecution.GetRunId()
