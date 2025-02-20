@@ -2292,7 +2292,7 @@ func (ts *IntegrationTestSuite) TestGracefulLocalActivityCompletion() {
 	var completed bool
 	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(),
 		false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-	for completed == false && iter.HasNext() {
+	for iter.HasNext() {
 		event, err := iter.Next()
 		attributes := event.GetMarkerRecordedEventAttributes()
 		fmt.Println("[event]", event.EventType, event.Attributes)
