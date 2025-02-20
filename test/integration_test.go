@@ -2223,35 +2223,46 @@ func (ts *IntegrationTestSuite) TestGracefulActivityCompletion() {
 	defer cancel()
 
 	// Start workflow
+	fmt.Println("start workflow")
 	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-graceful-activity-completion-"+uuid.New()),
 		ts.workflows.ActivityWaitForWorkerStop, 10*time.Second)
+	fmt.Println("no err")
 	ts.NoError(err)
 
+	// TODO: This might be what I need to write the activity test
 	// Wait for activity to report started
+	fmt.Println("Wait for activity to report started")
 	for ts.activities.invokedCount("wait-for-worker-stop") == 0 && ctx.Err() == nil {
 		time.Sleep(100 * time.Millisecond)
 	}
 	ts.NoError(ctx.Err())
 
 	// Stop the worker
+	fmt.Println("Stop the worker")
 	ts.worker.Stop()
 	ts.workerStopped = true
 
 	// Look for activity completed from the history
+	fmt.Println("Look for activity completed from the history")
 	var completed *historypb.ActivityTaskCompletedEventAttributes
 	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(),
 		false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	for completed == nil && iter.HasNext() {
 		event, err := iter.Next()
 		ts.NoError(err)
+		fmt.Println("[event]", event.EventType, event.Attributes)
+
 		if event.EventType == enumspb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED {
+			fmt.Println("event", event)
 			completed = event.GetActivityTaskCompletedEventAttributes()
 		}
 	}
 
 	// Confirm it stored "stopped"
 	ts.NotNil(completed)
+	fmt.Println("completed.GetResult()", completed.GetResult())
+	fmt.Println("GetPayloads()", completed.GetResult().GetPayloads())
 	ts.Len(completed.GetResult().GetPayloads(), 1)
 	var s string
 	ts.NoError(converter.GetDefaultDataConverter().FromPayload(completed.Result.Payloads[0], &s))

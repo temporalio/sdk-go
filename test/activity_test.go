@@ -253,11 +253,7 @@ func (a *Activities) WaitForWorkerStop(ctx context.Context, timeout time.Duratio
 }
 
 func (a *Activities) ActivityStop(ctx context.Context) error {
-	//activity.GetLogger(ctx).Info("ActivityStop started")
-	fmt.Println("[ActivityStop] started")
-	time.Sleep(1 * time.Second)
-	//activity.GetLogger(ctx).Info("ActivityStop finished")
-	fmt.Println("[ActivityStop] finished")
+	time.Sleep(100 * time.Millisecond)
 	return ctx.Err()
 }
 

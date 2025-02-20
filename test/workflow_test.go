@@ -2164,14 +2164,19 @@ func (w *Workflows) ActivityWaitForWorkerStop(ctx workflow.Context, timeout time
 }
 
 func (w *Workflows) LocalActivityStop(ctx workflow.Context) error {
-
-	ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
-		StartToCloseTimeout: 1 * time.Minute,
-	})
-	err := workflow.ExecuteLocalActivity(ctx, "ActivityStop").Get(ctx, nil)
-	if err != nil {
-		workflow.GetLogger(ctx).Error("Activity failed.", "Error", err)
+	for {
+		for x := 0; x < 10; x++ {
+			ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+				StartToCloseTimeout: 1 * time.Minute,
+			})
+			err := workflow.ExecuteLocalActivity(ctx, "ActivityStop").Get(ctx, nil)
+			if err != nil {
+				workflow.GetLogger(ctx).Error("Activity failed.", "Error", err)
+			}
+		}
+		workflow.Sleep(ctx, 100*time.Millisecond)
 	}
+
 	return nil
 }
 
