@@ -30,7 +30,6 @@ import (
 	"net/http"
 	"os"
 	"slices"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1038,18 +1037,18 @@ func TestAsyncOperationFromWorkflow_MultipleCallers(t *testing.T) {
 	t.Cleanup(w.Stop)
 
 	testCases := []struct {
-		op          string
+		input       string
 		checkOutput func(t *testing.T, numCalls int, res CallerWfOutput)
 	}{
 		{
-			op: "conflict-policy-fail",
+			input: "conflict-policy-fail",
 			checkOutput: func(t *testing.T, numCalls int, res CallerWfOutput) {
 				require.EqualValues(t, 1, res.CntOk)
 				require.EqualValues(t, numCalls-1, res.CntErr)
 			},
 		},
 		{
-			op: "conflict-policy-use-existing",
+			input: "conflict-policy-use-existing",
 			checkOutput: func(t *testing.T, numCalls int, res CallerWfOutput) {
 				require.EqualValues(t, numCalls, res.CntOk)
 			},
@@ -1059,14 +1058,14 @@ func TestAsyncOperationFromWorkflow_MultipleCallers(t *testing.T) {
 	// number of concurrent Nexus operation calls
 	numCalls := 5
 	for _, tc := range testCases {
-		t.Run(tc.op, func(t *testing.T) {
+		t.Run(tc.input, func(t *testing.T) {
 			run, err := tctx.client.ExecuteWorkflow(
 				ctx,
 				client.StartWorkflowOptions{
 					TaskQueue: tctx.taskQueue,
 				},
 				callerWf,
-				tc.op,
+				tc.input,
 				numCalls,
 			)
 			require.NoError(t, err)
@@ -1641,7 +1640,7 @@ func TestWorkflowTestSuite_WorkflowRunOperation_WithCancel(t *testing.T) {
 	}
 }
 
-func TestWorkflowTestSuite_WorkflowRunOperation_MultipleCallers_NoAttachCallback(t *testing.T) {
+func TestWorkflowTestSuite_WorkflowRunOperation_MultipleCallers(t *testing.T) {
 	handlerWorkflowID := uuid.NewString()
 	handlerWf := func(ctx workflow.Context, input string) (string, error) {
 		workflow.GetSignalChannel(ctx, "terminate").Receive(ctx, nil)
@@ -1652,87 +1651,26 @@ func TestWorkflowTestSuite_WorkflowRunOperation_MultipleCallers_NoAttachCallback
 		"op",
 		handlerWf,
 		func(ctx context.Context, input string, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
-			return client.StartWorkflowOptions{ID: handlerWorkflowID}, nil
-		},
-	)
-
-	callerWf := func(ctx workflow.Context) (retError error) {
-		numCalls := 5
-		var cntOk atomic.Int32
-		var cntErr atomic.Int32
-
-		wg := workflow.NewWaitGroup(ctx)
-		execOpCh := workflow.NewChannel(ctx)
-		client := workflow.NewNexusClient("endpoint", "test")
-
-		for i := 0; i < numCalls; i++ {
-			wg.Add(1)
-			workflow.Go(ctx, func(ctx workflow.Context) {
-				defer wg.Done()
-				fut := client.ExecuteOperation(ctx, op, "caller", workflow.NexusOperationOptions{})
-				var exec workflow.NexusOperationExecution
-				err := fut.GetNexusOperationExecution().Get(ctx, &exec)
-				execOpCh.Send(ctx, nil)
-				if err != nil {
-					cntErr.Add(1)
-					var handlerErr *nexus.HandlerError
-					require.ErrorAs(t, err, &handlerErr)
-					require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
-					require.ErrorContains(t, err, "Workflow execution already started")
-					return
-				}
-				cntOk.Add(1)
-				var res string
-				err = fut.Get(ctx, &res)
-				require.NoError(t, err)
-				require.Equal(t, "hello caller", res)
-			})
-		}
-
-		for i := 0; i < numCalls; i++ {
-			execOpCh.Receive(ctx, nil)
-		}
-
-		workflow.SignalExternalWorkflow(ctx, handlerWorkflowID, "", "terminate", nil).Get(ctx, nil)
-		wg.Wait(ctx)
-		require.EqualValues(t, 1, cntOk.Load())
-		require.EqualValues(t, numCalls-1, cntErr.Load())
-		return nil
-	}
-
-	service := nexus.NewService("test")
-	service.Register(op)
-
-	suite := testsuite.WorkflowTestSuite{}
-	env := suite.NewTestWorkflowEnvironment()
-	env.RegisterWorkflow(handlerWf)
-	env.RegisterNexusService(service)
-
-	env.ExecuteWorkflow(callerWf)
-	require.True(t, env.IsWorkflowCompleted())
-	require.NoError(t, env.GetWorkflowError())
-}
-
-func TestWorkflowTestSuite_WorkflowRunOperation_MultipleCallers_AttachCallback(t *testing.T) {
-	handlerWorkflowID := uuid.NewString()
-	handlerWf := func(ctx workflow.Context, input string) (string, error) {
-		workflow.GetSignalChannel(ctx, "terminate").Receive(ctx, nil)
-		return "hello " + input, nil
-	}
-
-	op := temporalnexus.NewWorkflowRunOperation(
-		"op",
-		handlerWf,
-		func(ctx context.Context, input string, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+			var conflictPolicy enumspb.WorkflowIdConflictPolicy
+			if input == "conflict-policy-use-existing" {
+				conflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING
+			}
 			return client.StartWorkflowOptions{
 				ID:                       handlerWorkflowID,
-				WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
+				WorkflowIDConflictPolicy: conflictPolicy,
 			}, nil
 		},
 	)
 
-	callerWf := func(ctx workflow.Context) (retError error) {
-		numCalls := 5
+	type CallerWfOutput struct {
+		CntOk  int
+		CntErr int
+	}
+
+	callerWf := func(ctx workflow.Context, input string, numCalls int) (CallerWfOutput, error) {
+		output := CallerWfOutput{}
+		var retError error
+
 		wg := workflow.NewWaitGroup(ctx)
 		execOpCh := workflow.NewChannel(ctx)
 		client := workflow.NewNexusClient("endpoint", "test")
@@ -1741,15 +1679,31 @@ func TestWorkflowTestSuite_WorkflowRunOperation_MultipleCallers_AttachCallback(t
 			wg.Add(1)
 			workflow.Go(ctx, func(ctx workflow.Context) {
 				defer wg.Done()
-				fut := client.ExecuteOperation(ctx, op, "caller", workflow.NexusOperationOptions{})
+				fut := client.ExecuteOperation(ctx, op, input, workflow.NexusOperationOptions{})
 				var exec workflow.NexusOperationExecution
 				err := fut.GetNexusOperationExecution().Get(ctx, &exec)
 				execOpCh.Send(ctx, nil)
-				require.NoError(t, err)
+				if err != nil {
+					output.CntErr++
+					var handlerErr *nexus.HandlerError
+					var appErr *temporal.ApplicationError
+					if !errors.As(err, &handlerErr) {
+						retError = err
+					} else if !errors.As(handlerErr, &appErr) {
+						retError = err
+					} else if appErr.Type() != "WorkflowExecutionAlreadyStarted" {
+						retError = err
+					}
+					return
+				}
+				output.CntOk++
 				var res string
 				err = fut.Get(ctx, &res)
-				require.NoError(t, err)
-				require.Equal(t, "hello caller", res)
+				if err != nil {
+					retError = err
+				} else if res != "hello "+input {
+					retError = fmt.Errorf("unexpected result from handler workflow: %q", res)
+				}
 			})
 		}
 
@@ -1759,20 +1713,48 @@ func TestWorkflowTestSuite_WorkflowRunOperation_MultipleCallers_AttachCallback(t
 
 		workflow.SignalExternalWorkflow(ctx, handlerWorkflowID, "", "terminate", nil).Get(ctx, nil)
 		wg.Wait(ctx)
-		return nil
+		return output, retError
 	}
 
 	service := nexus.NewService("test")
-	service.Register(op)
+	service.MustRegister(op)
 
-	suite := testsuite.WorkflowTestSuite{}
-	env := suite.NewTestWorkflowEnvironment()
-	env.RegisterWorkflow(handlerWf)
-	env.RegisterNexusService(service)
+	testCases := []struct {
+		input       string
+		checkOutput func(t *testing.T, numCalls int, res CallerWfOutput)
+	}{
+		{
+			input: "conflict-policy-fail",
+			checkOutput: func(t *testing.T, numCalls int, res CallerWfOutput) {
+				require.EqualValues(t, 1, res.CntOk)
+				require.EqualValues(t, numCalls-1, res.CntErr)
+			},
+		},
+		{
+			input: "conflict-policy-use-existing",
+			checkOutput: func(t *testing.T, numCalls int, res CallerWfOutput) {
+				require.EqualValues(t, numCalls, res.CntOk)
+			},
+		},
+	}
 
-	env.ExecuteWorkflow(callerWf)
-	require.True(t, env.IsWorkflowCompleted())
-	require.NoError(t, env.GetWorkflowError())
+	// number of concurrent Nexus operation calls
+	numCalls := 5
+	for _, tc := range testCases {
+		t.Run(tc.input, func(t *testing.T) {
+			suite := testsuite.WorkflowTestSuite{}
+			env := suite.NewTestWorkflowEnvironment()
+			env.RegisterWorkflow(handlerWf)
+			env.RegisterNexusService(service)
+
+			env.ExecuteWorkflow(callerWf, tc.input, numCalls)
+			require.True(t, env.IsWorkflowCompleted())
+			require.NoError(t, env.GetWorkflowError())
+			var res CallerWfOutput
+			require.NoError(t, env.GetWorkflowResult(&res))
+			tc.checkOutput(t, numCalls, res)
+		})
+	}
 }
 
 func TestWorkflowTestSuite_NexusSyncOperation_ScheduleToCloseTimeout(t *testing.T) {
