@@ -503,9 +503,9 @@ func convertKnownErrors(err error) error {
 	// Not using errors.As to be consistent ApplicationError checking with the rest of the SDK.
 	if appErr, ok := err.(*ApplicationError); ok && appErr.NonRetryable() {
 		return &nexus.HandlerError{
-			// TODO(bergundy): Change this to a non retryable internal error after the 1.27.0 server release.
-			Type:  nexus.HandlerErrorTypeBadRequest,
-			Cause: appErr,
+			Type:          nexus.HandlerErrorTypeInternal,
+			Cause:         appErr,
+			RetryBehavior: nexus.HandlerErrorRetryBehaviorNonRetryable,
 		}
 	}
 	return convertServiceError(err)
@@ -533,8 +533,7 @@ func convertServiceError(err error) error {
 	case codes.InvalidArgument:
 		return &nexus.HandlerError{Type: nexus.HandlerErrorTypeBadRequest, Cause: err}
 	case codes.AlreadyExists, codes.FailedPrecondition, codes.OutOfRange:
-		// TODO(bergundy): Change this to a non retryable internal error after the 1.27.0 server release.
-		return &nexus.HandlerError{Type: nexus.HandlerErrorTypeBadRequest, Cause: err}
+		return &nexus.HandlerError{Type: nexus.HandlerErrorTypeInternal, Cause: err, RetryBehavior: nexus.HandlerErrorRetryBehaviorNonRetryable}
 	case codes.Aborted, codes.Unavailable:
 		return &nexus.HandlerError{Type: nexus.HandlerErrorTypeUnavailable, Cause: err}
 	case codes.Canceled, codes.DataLoss, codes.Internal, codes.Unknown, codes.Unauthenticated, codes.PermissionDenied:
