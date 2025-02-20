@@ -4607,8 +4607,6 @@ func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseCommandNotFound() 
 	defer cancel()
 
 	wfID := "test-non-determinism-failure-cause-command-not-found-" + uuid.New()
-	shouldStartTimer = true
-
 	// Client starts workflow via UpdateWithStart and waits for update response
 	// ("early return" pattern)
 	startWfOptions := ts.startWorkflowOptions(wfID)
