@@ -4770,8 +4770,7 @@ func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseCommandNotFound() 
 	var workflowErr *temporal.WorkflowExecutionError
 	ts.True(errors.As(err, &workflowErr))
 	ts.Contains(workflowErr.Error(),
-		"[TMPRL1100] During replay, workflow history (event ID 8) implies that a Timer command "+
-			"should have been emitted by the replayed code")
+		"[TMPRL1100] During replay, a matching Timer command was expected in history event position 8. However, the replayed code did not produce that.")
 }
 
 func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseReplay() {

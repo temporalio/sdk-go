@@ -1075,8 +1075,8 @@ func (h *commandsHelper) getCommand(id commandID) commandStateMachine {
 	command, ok := h.commands[id]
 	if !ok {
 		panicMsg := fmt.Sprintf(
-			"[TMPRL1100] During replay, workflow history (event ID %s) implies that a %v command should have been emitted by the replayed code, but no such command was emitted. "+
-				"Possible causes are nondeterministic workflow definition code, or an incompatible change in the workflow definition.", id.id, id.commandType)
+			"[TMPRL1100] During replay, a matching %v command was expected in history event position %s. However, the replayed code did not produce that. "+
+				"Possible causes are nondeterministic workflow definition code, or an incompatible change in the workflow definition.", id.commandType, id.id)
 		panicIllegalState(panicMsg)
 	}
 	return command.Value.(commandStateMachine)
