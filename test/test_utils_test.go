@@ -28,6 +28,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"go.temporal.io/sdk/worker"
 	"log"
 	"net"
 	"os"
@@ -92,6 +93,7 @@ func NewConfig() Config {
 		}
 		cfg.maxWorkflowCacheSize = asInt
 	}
+	worker.SetStickyWorkflowCacheSize(cfg.maxWorkflowCacheSize)
 	if debug := getDebug(); debug != "" {
 		cfg.Debug = debug == "true"
 	}
