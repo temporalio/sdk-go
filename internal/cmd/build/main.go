@@ -148,7 +148,7 @@ func (b *builder) integrationTest() error {
 				HostPort:  "127.0.0.1:7233",
 				Namespace: "integration-test-namespace",
 			},
-			LogLevel: "warn",
+			LogLevel: "error",
 			ExtraArgs: []string{
 				"--dynamic-config-value", "frontend.enableExecuteMultiOperation=true",
 				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecution=true",

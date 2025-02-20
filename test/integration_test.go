@@ -4717,11 +4717,57 @@ func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch b
 		return false
 	}, 10*time.Second, 300*time.Millisecond)
 
+	ts.T().Errorf("\n\n-----------------------------------\n%v\n\n-----------------------------------\n\n", taskFailed)
+
 	// Check the task has the expected cause
 	ts.NoError(histErr)
 	ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR, taskFailed.Cause)
 	taskFailedMetric = fetchMetrics()
 	ts.True(taskFailedMetric >= 1)
+}
+
+func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseCommandNotFound() {
+	// Create a situation in which, on replay, a TimerStarted event is
+	// encountered and yet the code emits no corresponding command.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	wfID := "test-non-determinism-failure-cause-command-not-found-" + uuid.New()
+	// Client starts workflow via UpdateWithStart and waits for update response
+	// ("early return" pattern)
+	startWfOptions := ts.startWorkflowOptions(wfID)
+	startWfOptions.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL
+	updHandle, err := ts.client.UpdateWithStartWorkflow(ctx, client.UpdateWithStartWorkflowOptions{
+		StartWorkflowOperation: ts.client.NewWithStartWorkflowOperation(startWfOptions, ts.workflows.NonDeterminismCommandNotFoundWorkflow),
+		UpdateOptions: client.UpdateWorkflowOptions{
+			WorkflowID:   wfID,
+			UpdateName:   "wait-for-wft-completion",
+			WaitForStage: client.WorkflowUpdateStageCompleted,
+		},
+	})
+	ts.NoError(err)
+
+	// WFT 1: workflow shouldStartTimer state is true, causing workflow to
+	// emit a StartTimer command; workflow sends update response.
+	ts.NoError(updHandle.Get(ctx, nil))
+	// Stop worker and start a new one in order to force full history replay.
+	ts.worker.Stop()
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{WorkflowPanicPolicy: internal.FailWorkflow})
+	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.NoError(nextWorker.Start())
+	defer nextWorker.Stop()
+	// Set shouldStartTimer=false and send second update in order to trigger a
+	// WFT.
+	shouldStartTimer = false
+	updHandle, err = ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   wfID,
+		UpdateName:   "wait-for-wft-completion",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
+	ts.NoError(err)
+	// WFT 2: full replay, NDE due to missing StartTimer command.
+	err = updHandle.Get(ctx, nil)
+	ts.T().Logf("\n\n-----------------------------------\n%v\n\n-----------------------------------\n\n", err)
 }
 
 func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseReplay() {
