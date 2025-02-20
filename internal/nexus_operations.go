@@ -453,6 +453,7 @@ func (t *testSuiteClientForNexusOperations) ExecuteWorkflow(ctx context.Context,
 	}
 
 	run := &testEnvWorkflowRunForNexusOperations{}
+	startedErrCh := make(chan error, 1)
 	doneCh := make(chan error)
 
 	var callback *commonpb.Callback
@@ -487,6 +488,14 @@ func (t *testSuiteClientForNexusOperations) ExecuteWorkflow(ctx context.Context,
 				RetryPolicy:              convertToPBRetryPolicy(options.RetryPolicy),
 			},
 		}, func(result *commonpb.Payloads, wfErr error) {
+			// This callback handles async completion of Nexus operations. If there was an error when
+			// starting the workflow, then the operation failed synchronously and this callback doesn't
+			// need to be executed.
+			startedErr := <-startedErrCh
+			if startedErr != nil {
+				return
+			}
+
 			ncb := callback.GetNexus()
 			if ncb == nil {
 				return
@@ -521,6 +530,8 @@ func (t *testSuiteClientForNexusOperations) ExecuteWorkflow(ctx context.Context,
 			}
 		}, func(r WorkflowExecution, err error) {
 			run.WorkflowExecution = r
+			startedErrCh <- err
+			close(startedErrCh)
 			doneCh <- err
 		})
 	}, false)

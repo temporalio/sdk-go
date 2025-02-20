@@ -478,15 +478,27 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(
 
 	childEnv.runTimeout = params.WorkflowRunTimeout
 	if workflowHandler, ok := env.runningWorkflows[params.WorkflowID]; ok {
+		alreadyStartedErr := serviceerror.NewWorkflowExecutionAlreadyStarted(
+			"Workflow execution already started",
+			"",
+			childEnv.workflowInfo.WorkflowExecution.RunID,
+		)
 		// duplicate workflow ID
 		if !workflowHandler.handled {
-			return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Workflow execution already started", "", "")
+			if params.WorkflowIDConflictPolicy == enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING {
+				if params.OnConflictOptions != nil && params.OnConflictOptions.AttachCompletionCallbacks {
+					workflowHandler.callback = workflowHandler.callback.wrap(callback)
+				}
+				startedHandler(workflowHandler.env.workflowInfo.WorkflowExecution, nil)
+				return nil, nil
+			}
+			return nil, alreadyStartedErr
 		}
 		if params.WorkflowIDReusePolicy == enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE {
-			return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Workflow execution already started", "", "")
+			return nil, alreadyStartedErr
 		}
 		if workflowHandler.err == nil && params.WorkflowIDReusePolicy == enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY {
-			return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Workflow execution already started", "", "")
+			return nil, alreadyStartedErr
 		}
 	}
 
@@ -2383,28 +2395,21 @@ func (env *testWorkflowEnvironmentImpl) ExecuteChildWorkflow(params ExecuteWorkf
 func (env *testWorkflowEnvironmentImpl) executeChildWorkflowWithDelay(delayStart time.Duration, params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) {
 	childEnv, err := env.newTestWorkflowEnvironmentForChild(&params, callback, startedHandler)
 	if err != nil {
-		if _, isAlreadyStartedErr := err.(*serviceerror.WorkflowExecutionAlreadyStarted); isAlreadyStartedErr {
-			if params.WorkflowIDConflictPolicy == enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING {
-				if childWfHandler, ok := env.runningWorkflows[params.WorkflowID]; ok && !childWfHandler.env.isWorkflowCompleted {
-					if params.OnConflictOptions != nil && params.OnConflictOptions.AttachCompletionCallbacks {
-						childWfHandler.callback = childWfHandler.callback.wrap(callback)
-					}
-					startedHandler(childWfHandler.env.workflowInfo.WorkflowExecution, nil)
-					return
-				}
-			}
-		}
 		env.logger.Info("ExecuteChildWorkflow failed", tagError, err)
-		callback(nil, err)
 		startedHandler(WorkflowExecution{}, err)
+		callback(nil, err)
 		return
 	}
 
-	env.logger.Info("ExecuteChildWorkflow", tagWorkflowType, params.WorkflowType.Name)
-	env.runningCount++
+	// childEnv can be nil when WorkflowIDConflictPolicy is USE_EXISTING and there's already a running
+	// workflow. This is only possible in the test environment for running Nexus handler workflow.
+	if childEnv != nil {
+		env.logger.Info("ExecuteChildWorkflow", tagWorkflowType, params.WorkflowType.Name)
+		env.runningCount++
 
-	// run child workflow in separate goroutinue
-	go childEnv.executeWorkflowInternal(delayStart, params.WorkflowType.Name, params.Input)
+		// run child workflow in separate goroutinue
+		go childEnv.executeWorkflowInternal(delayStart, params.WorkflowType.Name, params.Input)
+	}
 }
 
 func (env *testWorkflowEnvironmentImpl) newTestNexusTaskHandler(
@@ -2701,9 +2706,8 @@ func (env *testWorkflowEnvironmentImpl) resolveNexusOperation(seq int64, token s
 			panic(fmt.Errorf("no running operation found for sequence: %d", seq))
 		}
 		if err != nil {
-			err = convertKnownErrors(err)
 			failure := env.failureConverter.ErrorToFailure(err)
-			err = env.failureConverter.FailureToError(nexusOperationFailure(handle.params, handle.operationToken, failure))
+			err = env.failureConverter.FailureToError(nexusOperationFailure(handle.params, handle.operationToken, failure.GetCause()))
 		}
 		// Populate the token in case the operation completes before it marked as started.
 		// startedCallback is idempotent and will be a noop in case the operation has already been marked as started.
