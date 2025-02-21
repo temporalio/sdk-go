@@ -73,3 +73,5 @@ replace (
 	go.temporal.io/sdk/contrib/resourcetuner => ../contrib/resourcetuner
 	go.temporal.io/sdk/contrib/tally => ../contrib/tally
 )
+
+replace github.com/nexus-rpc/sdk-go => ../../nexus-sdk-go

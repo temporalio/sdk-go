@@ -67,7 +67,7 @@ func (*WorkerInterceptorBase) InterceptWorkflow(
 }
 
 // InterceptNexusOperation implements WorkerInterceptor.
-func (w *WorkerInterceptorBase) InterceptNexusOperation(ctx Context, next NexusOperationInboundInterceptor) NexusOperationInboundInterceptor {
+func (w *WorkerInterceptorBase) InterceptNexusOperation(ctx context.Context, next NexusOperationInboundInterceptor) NexusOperationInboundInterceptor {
 	return &NexusOperationInboundInterceptorBase{Next: next}
 }
 

@@ -3318,6 +3318,7 @@ func newTestNexusHandler(
 			return nil, fmt.Errorf("failed to register nexus service '%v': %w", service, err)
 		}
 	}
+	reg.Use(nexusMiddleware(env.registry.interceptors))
 	handler, err := reg.NewHandler()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create nexus handler: %w", err)

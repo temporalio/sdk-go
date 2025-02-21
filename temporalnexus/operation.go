@@ -55,30 +55,18 @@ import (
 
 // GetMetricsHandler returns a metrics handler to be used in a Nexus operation's context.
 func GetMetricsHandler(ctx context.Context) metrics.Handler {
-	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
-	if !ok {
-		panic("temporalnexus GetMetricsHandler: Not a valid Nexus context")
-	}
-	return nctx.MetricsHandler
+	return internal.GetNexusOperationMetricsHandler(ctx)
 }
 
 // GetLogger returns a logger to be used in a Nexus operation's context.
 func GetLogger(ctx context.Context) log.Logger {
-	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
-	if !ok {
-		panic("temporalnexus GetLogger: Not a valid Nexus context")
-	}
-	return nctx.Log
+	return internal.GetNexusOperationLogger(ctx)
 }
 
 // GetClient returns a client to be used in a Nexus operation's context, this is the same client that the worker was
 // created with. Client methods will panic when called from the test environment.
 func GetClient(ctx context.Context) client.Client {
-	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
-	if !ok {
-		panic("temporalnexus GetClient: Not a valid Nexus context")
-	}
-	return nctx.Client
+	return internal.GetNexusOperationClient(ctx)
 }
 
 type syncOperation[I, O any] struct {
@@ -112,11 +100,7 @@ func (o *syncOperation[I, O]) Name() string {
 }
 
 func (o *syncOperation[I, O]) Start(ctx context.Context, input I, options nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[O], error) {
-	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
-	if !ok {
-		return nil, nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
-	}
-	out, err := o.handler(ctx, nctx.Client, input, options)
+	out, err := o.handler(ctx, GetClient(ctx), input, options)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +176,7 @@ func NewWorkflowRunOperationWithOptions[I, O any](options WorkflowRunOperationOp
 // MustNewWorkflowRunOperation map an operation to a workflow run with the given options.
 // Panics if invalid options are provided.
 func MustNewWorkflowRunOperationWithOptions[I, O any](options WorkflowRunOperationOptions[I, O]) nexus.Operation[I, O] {
-	op, err := NewWorkflowRunOperationWithOptions[I, O](options)
+	op, err := NewWorkflowRunOperationWithOptions(options)
 	if err != nil {
 		panic(err)
 	}
@@ -203,10 +187,6 @@ func (*workflowRunOperation[I, O]) Cancel(ctx context.Context, token string, opt
 	// Prevent the test env client from panicking when we try to use it from a workflow run operation.
 	ctx = context.WithValue(ctx, internal.IsWorkflowRunOpContextKey, true)
 
-	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
-	if !ok {
-		return nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
-	}
 	var workflowID string
 	workflowRunToken, err := loadWorkflowRunOperationToken(token)
 	if err != nil {
@@ -223,7 +203,7 @@ func (*workflowRunOperation[I, O]) Cancel(ctx context.Context, token string, opt
 		workflowID = workflowRunToken.WorkflowID
 	}
 
-	return nctx.Client.CancelWorkflow(ctx, workflowID, "")
+	return GetClient(ctx).CancelWorkflow(ctx, workflowID, "")
 }
 
 func (o *workflowRunOperation[I, O]) Name() string {
@@ -394,13 +374,16 @@ func ExecuteUntypedWorkflow[R any](
 		})
 	}
 
-	links, err := convertNexusLinks(nexusOptions.Links, nctx.Log)
+	links, err := convertNexusLinks(nexusOptions.Links, GetLogger(ctx))
 	if err != nil {
-		return nil, err
+		return nil, &nexus.HandlerError{
+			Type:  nexus.HandlerErrorTypeBadRequest,
+			Cause: err,
+		}
 	}
 	internal.SetLinksOnStartWorkflowOptions(&startWorkflowOptions, links)
 
-	run, err := nctx.Client.ExecuteWorkflow(ctx, startWorkflowOptions, workflowType, args...)
+	run, err := GetClient(ctx).ExecuteWorkflow(ctx, startWorkflowOptions, workflowType, args...)
 	if err != nil {
 		return nil, err
 	}

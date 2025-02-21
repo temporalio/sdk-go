@@ -57,7 +57,7 @@ type WorkerInterceptor interface {
 	// the next interceptor in the chain.
 	InterceptWorkflow(ctx Context, next WorkflowInboundInterceptor) WorkflowInboundInterceptor
 
-	InterceptNexusOperation(ctx Context, next NexusOperationInboundInterceptor) NexusOperationInboundInterceptor
+	InterceptNexusOperation(ctx context.Context, next NexusOperationInboundInterceptor) NexusOperationInboundInterceptor
 
 	mustEmbedWorkerInterceptorBase()
 }
