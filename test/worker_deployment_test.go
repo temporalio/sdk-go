@@ -157,7 +157,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning: true,
-			Version:       deploymentName + ".1.0",
+			Version:       worker.NewDeploymentVersionFromString(deploymentName + ".1.0"),
 		},
 	})
 	worker1.RegisterWorkflowWithOptions(ts.workflows.WaitSignalToStartVersionedOne, workflow.RegisterOptions{
@@ -171,7 +171,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning: true,
-			Version:       deploymentName + ".2.0",
+			Version:       worker.NewDeploymentVersionFromString(deploymentName + ".2.0"),
 		},
 	})
 
@@ -186,7 +186,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 	worker3 := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning: true,
-			Version:       deploymentName + ".3.0",
+			Version:       worker.NewDeploymentVersionFromString(deploymentName + ".3.0"),
 		},
 	})
 
@@ -310,7 +310,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedOverrideInWorkflowOptions() {
 	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning: true,
-			Version:       deploymentName + ".1.0",
+			Version:       worker.NewDeploymentVersionFromString(deploymentName + ".1.0"),
 		},
 	})
 	worker1.RegisterWorkflowWithOptions(ts.workflows.WaitSignalToStartVersionedOne, workflow.RegisterOptions{
@@ -324,7 +324,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedOverrideInWorkflowOptions() {
 	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning: true,
-			Version:       deploymentName + ".2.0",
+			Version:       worker.DeploymentVersion{DeploymentName: deploymentName, BuildID: "2.0"},
 		},
 	})
 
@@ -397,7 +397,7 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning: true,
-			Version:       deploymentName + ".1.0",
+			Version:       worker.NewDeploymentVersionFromString(deploymentName + ".1.0"),
 		},
 	})
 	worker1.RegisterWorkflowWithOptions(ts.workflows.WaitSignalToStartVersionedOne, workflow.RegisterOptions{
@@ -411,7 +411,7 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning: true,
-			Version:       deploymentName + ".2.0",
+			Version:       worker.NewDeploymentVersionFromString(deploymentName + ".2.0"),
 		},
 	})
 
@@ -551,7 +551,7 @@ func (ts *WorkerDeploymentTestSuite) TestListDeployments() {
 	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning: true,
-			Version:       deploymentName1 + ".1.0",
+			Version:       worker.NewDeploymentVersionFromString(deploymentName1 + ".1.0"),
 		},
 	})
 	ts.NoError(worker1.Start())
@@ -560,7 +560,7 @@ func (ts *WorkerDeploymentTestSuite) TestListDeployments() {
 	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning: true,
-			Version:       deploymentName2 + ".2.0",
+			Version:       worker.NewDeploymentVersionFromString(deploymentName2 + ".2.0"),
 		},
 	})
 	ts.NoError(worker2.Start())
@@ -569,7 +569,7 @@ func (ts *WorkerDeploymentTestSuite) TestListDeployments() {
 	worker3 := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning: true,
-			Version:       deploymentName2 + ".3.0",
+			Version:       worker.NewDeploymentVersionFromString(deploymentName2 + ".3.0"),
 		},
 	})
 	ts.NoError(worker3.Start())
@@ -625,7 +625,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning: true,
-			Version:       deploymentName + ".1.0",
+			Version:       worker.NewDeploymentVersionFromString(deploymentName + ".1.0"),
 		},
 	})
 	ts.NoError(worker1.Start())
@@ -639,7 +639,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning: true,
-			Version:       deploymentName + ".2.0",
+			Version:       worker.NewDeploymentVersionFromString(deploymentName + ".2.0"),
 		},
 	})
 	ts.NoError(worker2.Start())
@@ -761,7 +761,7 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning: true,
-			Version:       deploymentName + ".1.0",
+			Version:       worker.NewDeploymentVersionFromString(deploymentName + ".1.0"),
 		},
 	})
 	worker1.RegisterWorkflowWithOptions(ts.workflows.WaitSignalToStartVersionedOne, workflow.RegisterOptions{
@@ -775,7 +775,7 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning: true,
-			Version:       deploymentName + ".2.0",
+			Version:       worker.NewDeploymentVersionFromString(deploymentName + ".2.0"),
 		},
 	})
 
@@ -855,7 +855,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeleteDeployment() {
 	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning: true,
-			Version:       deploymentName + ".1.0",
+			Version:       worker.NewDeploymentVersionFromString(deploymentName + ".1.0"),
 		},
 	})
 
