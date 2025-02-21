@@ -140,12 +140,13 @@ func (b *builder) integrationTest() error {
 	// Start dev server if wanted
 	if *devServerFlag {
 		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
+			// TODO: Use stable release once server 1.27.0 is out.
+			CachedDownload: testsuite.CachedDownload{
+				Version: "v1.3.0-versioning.0",
+			},
 			ClientOptions: &client.Options{
 				HostPort:  "127.0.0.1:7233",
 				Namespace: "integration-test-namespace",
-			},
-			CachedDownload: testsuite.CachedDownload{
-				Version: "v1.3.0-versioning.0",
 			},
 			LogLevel: "warn",
 			ExtraArgs: []string{
@@ -164,11 +165,8 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", "system.enableDeploymentVersions=true",
 				"--dynamic-config-value", "matching.wv.VersionDrainageStatusVisibilityGracePeriod=10",
 				"--dynamic-config-value", "matching.wv.VersionDrainageStatusRefreshInterval=1",
-				// All of the below is required for Nexus tests.
-				"--http-port", "7243",
-				"--dynamic-config-value", "system.enableNexus=true",
-				// SDK tests use arbitrary callback URLs, permit that on the server.
-				"--dynamic-config-value", `component.callbacks.allowedAddresses=[{"Pattern":"*","AllowInsecure":true}]`,
+				"--http-port", "7243", // Nexus tests use the HTTP port directly
+				"--dynamic-config-value", `component.callbacks.allowedAddresses=[{"Pattern":"*","AllowInsecure":true}]`, // SDK tests use arbitrary callback URLs, permit that on the server
 			},
 		})
 		if err != nil {
