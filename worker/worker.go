@@ -215,11 +215,6 @@ type (
 	// NOTE: Experimental
 	DeploymentOptions = internal.WorkerDeploymentOptions
 
-	// DeploymentVersion is an identifier for a Worker Deployment Version.
-	// This identifier combines a Deployment Name with a Build ID.
-	// NOTE: Experimental
-	DeploymentVersion = internal.WorkerDeploymentVersion
-
 	// Options is used to configure a worker instance.
 	Options = internal.WorkerOptions
 
@@ -313,12 +308,4 @@ func SetBinaryChecksum(checksum string) {
 // InterruptCh returns channel which will get data when system receives interrupt signal from OS. Pass it to worker.Run() func to stop worker with Ctrl+C.
 func InterruptCh() <-chan interface{} {
 	return internal.InterruptCh()
-}
-
-// NewDeploymentVersionFromString constructs a [DeploymentVersion] by parsing
-// a string with format YourDeploymentName.YourBuildID. The separator "." is
-// a reserved character that cannot be part of a Deployment Name.
-// NOTE: Experimental
-func NewDeploymentVersionFromString(version string) DeploymentVersion {
-	return internal.NewWorkerDeploymentVersionFromString(version)
 }

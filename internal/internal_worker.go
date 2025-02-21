@@ -1710,10 +1710,15 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("cannot set both EnableSessionWorker and UseBuildIDForVersioning")
 	}
 
-	// String() panics with a partially complete Version or invalid characters.
-	if options.DeploymentOptions.Version.String() != "" {
-		options.DeploymentOptions.DeploymentSeriesName = options.DeploymentOptions.Version.DeploymentName
-		options.BuildID = options.DeploymentOptions.Version.BuildID
+	if options.DeploymentOptions.Version != "" &&
+		!strings.Contains(options.DeploymentOptions.Version, ".") {
+		panic("version in DeploymentOptions not in the form \"<deployment_name>.<build_id>\"")
+	}
+
+	if options.DeploymentOptions.Version != "" {
+		splitVersion := strings.SplitN(options.DeploymentOptions.Version, ".", 2)
+		options.DeploymentOptions.DeploymentSeriesName = splitVersion[0]
+		options.BuildID = splitVersion[1]
 	}
 
 	// Need reference to result for fatal error handler
@@ -1759,7 +1764,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		WorkerBuildID:                         options.BuildID,
 		UseBuildIDForVersioning:               options.UseBuildIDForVersioning || options.DeploymentOptions.UseVersioning,
 		DeploymentSeriesName:                  options.DeploymentOptions.DeploymentSeriesName,
-		WorkerDeploymentVersion:               options.DeploymentOptions.Version.String(),
+		WorkerDeploymentVersion:               options.DeploymentOptions.Version,
 		DefaultVersioningBehavior:             options.DeploymentOptions.DefaultVersioningBehavior,
 		MetricsHandler:                        client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue)),
 		Logger:                                client.logger,

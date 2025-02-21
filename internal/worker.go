@@ -26,7 +26,6 @@ package internal
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -35,22 +34,6 @@ import (
 )
 
 type (
-	// WorkerDeploymentVersion is an identifier for a Worker Deployment Version.
-	// This identifier combines a Deployment Name with a Build ID.
-	// NOTE: Experimental
-	//
-	// Exposed as: [go.temporal.io/sdk/worker.DeploymentVersion]
-	WorkerDeploymentVersion struct {
-		// DeploymentName - An identifier for a Worker Deployment.
-		// NOTE: Experimental
-		DeploymentName string
-
-		// BuildID - Provides an identifier for a set of worker code and
-		// configuration.
-		// NOTE: Experimental
-		BuildID string
-	}
-
 	// WorkerDeploymentOptions provides configuration for Worker Deployment Versioning.
 	// NOTE: Both [WorkerDeploymentOptions.Version] and [WorkerDeploymentOptions.UseVersioning]
 	// need to be set for enabling Worker Deployment Versioning.
@@ -65,14 +48,11 @@ type (
 		// NOTE: Cannot be enabled at the same time as [WorkerOptions.EnableSessionWorker]
 		UseVersioning bool
 
-		// Assign a Deployment Version identifier to this worker. It combines a
-		// Deployment Name with a Build ID. The string representation of this
-		// identifier is "<deployment_name>.<build_id>", and
-		// [worker.NewDeploymentVersionFromString] is a helper constructor
-		// from a string. If [Version] is set, both [WorkerOptions.BuildID] and
+		// Assign a Deployment Version identifier to this worker. The format of this identifier
+		// is "<deployment_name>.<build_id>". If [Version] is set both [WorkerOptions.BuildID] and
 		// [DeploymentSeriesName] will be ignored.
 		// NOTE: Experimental
-		Version WorkerDeploymentVersion
+		Version string
 
 		// Assign a deployment series name to this worker. Different versions of the same worker
 		// service/application are linked together by sharing a series name.
@@ -378,48 +358,6 @@ func NewWorker(
 		panic("Client must be created with client.Dial() or client.NewLazyClient()")
 	}
 	return NewAggregatedWorker(workflowClient, taskQueue, options)
-}
-
-// NewWorkerDeploymentVersionFromString constructs a [worker.DeploymentVersion]
-// by parsing a string with format `YourDeploymentName.YourBuildID`.
-// The separator "." is a reserved character that cannot be part of a
-// Deployment Name.
-//
-// NOTE: Experimental
-//
-// Exposed as: [go.temporal.io/sdk/worker.NewDeploymentVersionFromString]
-func NewWorkerDeploymentVersionFromString(version string) WorkerDeploymentVersion {
-	splitVersion := strings.SplitN(version, ".", 2)
-	if len(splitVersion) != 2 {
-		panic("invalid format for worker deployment version, not \"<deployment_name>.<build_id>\"")
-	}
-	return WorkerDeploymentVersion{
-		DeploymentName: splitVersion[0],
-		BuildID:        splitVersion[1],
-	}
-}
-
-// String formats a Worker Deployment Version into a string of the form
-// `YourDeploymentName.YourBuildID`. If the Version is empty, it just returns
-// the empty string. It panics with a partially complete Deployment
-// Version, or when [worker.DeploymentVersion.DeploymentName] contains the
-// reserved character separator ".".
-//
-// NOTE: Experimental
-func (v *WorkerDeploymentVersion) String() string {
-	if v.DeploymentName == "" && v.BuildID == "" {
-		return ""
-	}
-	if v.DeploymentName == "" || v.BuildID == "" {
-		panic("invalid worker deployment version, missing fields")
-	}
-	if strings.Contains(v.DeploymentName, ".") {
-		panic(fmt.Sprintf(
-			"invalid worker deployment version, DeploymentName cannot contain reserved character `.`: %s ",
-			v.DeploymentName,
-		))
-	}
-	return fmt.Sprintf("%s.%s", v.DeploymentName, v.BuildID)
 }
 
 func workerDeploymentOptionsToProto(useVersioning bool, version string) *deploymentpb.WorkerDeploymentOptions {
