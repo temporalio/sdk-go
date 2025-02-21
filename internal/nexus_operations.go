@@ -161,7 +161,9 @@ func nexusMiddleware(interceptors []WorkerInterceptor) nexus.MiddlewareFunc {
 			interceptor := interceptors[i]
 			in = interceptor.InterceptNexusOperation(ctx, in)
 		}
-		in.Init(ctx, &nexusOperationEnvironment{})
+		if err := in.Init(ctx, &nexusOperationEnvironment{}); err != nil {
+			return nil, err
+		}
 		return newNexusHandler(in, root.outboundInterceptor), nil
 	}
 }
