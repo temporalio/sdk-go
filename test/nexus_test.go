@@ -59,6 +59,8 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
+const defaultNexusTestTimeout = 10 * time.Second
+
 type testContext struct {
 	client                               client.Client
 	metricsHandler                       *metrics.CapturingHandler
@@ -228,7 +230,7 @@ var workflowOp = temporalnexus.NewWorkflowRunOperation(
 )
 
 func TestNexusSyncOperation(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 
 	tc := newTestContext(t, ctx)
@@ -392,7 +394,7 @@ func TestNexusSyncOperation(t *testing.T) {
 }
 
 func TestNexusWorkflowRunOperation(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
 
@@ -453,7 +455,7 @@ func TestNexusWorkflowRunOperation(t *testing.T) {
 }
 
 func TestSyncOperationFromWorkflow(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
 
@@ -667,7 +669,7 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 }
 
 func TestInvalidOperationInput(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
 
@@ -686,7 +688,7 @@ func TestInvalidOperationInput(t *testing.T) {
 }
 
 func TestAsyncOperationFromWorkflow(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
 
@@ -947,7 +949,7 @@ func TestAsyncOperationFromWorkflow_MultipleCallers(t *testing.T) {
 	if os.Getenv("DISABLE_SERVER_1_27_TESTS") == "1" {
 		t.Skip()
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tctx := newTestContext(t, ctx)
 
@@ -1063,6 +1065,9 @@ func TestAsyncOperationFromWorkflow_MultipleCallers(t *testing.T) {
 				ctx,
 				client.StartWorkflowOptions{
 					TaskQueue: tctx.taskQueue,
+					// The endpoint registry may take a bit to propagate to the history service, use a shorter
+					// workflow task timeout to speed up the attempts.
+					WorkflowTaskTimeout: time.Second,
 				},
 				callerWf,
 				tc.input,
@@ -1128,7 +1133,7 @@ func (o *manualAsyncOp) Start(ctx context.Context, input nexus.NoValue, options 
 // TestAsyncOperationCompletionCustomFailureConverter tests the completion path when a failure is generated with a
 // custom failure converter.
 func TestAsyncOperationCompletionCustomFailureConverter(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
 
@@ -1182,7 +1187,7 @@ func TestAsyncOperationCompletionCustomFailureConverter(t *testing.T) {
 }
 
 func TestNewNexusClientValidation(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
 
@@ -1214,7 +1219,7 @@ func TestNewNexusClientValidation(t *testing.T) {
 }
 
 func TestReplay(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
 
