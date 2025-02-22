@@ -162,6 +162,9 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", "worker.buildIdScavengerEnabled=true",
 				"--dynamic-config-value", "worker.removableBuildIdDurationSinceDefault=1",
 				"--dynamic-config-value", "system.enableDeployments=true",
+				"--dynamic-config-value", "system.enableDeploymentVersions=true",
+				"--dynamic-config-value", "matching.wv.VersionDrainageStatusVisibilityGracePeriod=10",
+				"--dynamic-config-value", "matching.wv.VersionDrainageStatusRefreshInterval=1",
 				"--http-port", "7243", // Nexus tests use the HTTP port directly
 				"--dynamic-config-value", `component.callbacks.allowedAddresses=[{"Pattern":"*","AllowInsecure":true}]`, // SDK tests use arbitrary callback URLs, permit that on the server
 			},

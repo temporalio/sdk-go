@@ -498,7 +498,7 @@ func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 	// We do allow canceled error to be passed here
 	cancelAllowed := true
 	request := convertActivityResultToRespondRequest(wc.identity, taskToken,
-		data, err, wc.dataConverter, wc.failureConverter, wc.namespace, cancelAllowed, nil, nil)
+		data, err, wc.dataConverter, wc.failureConverter, wc.namespace, cancelAllowed, nil, nil, nil)
 	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
@@ -1326,6 +1326,13 @@ func (wc *WorkflowClient) ScheduleClient() ScheduleClient {
 // DeploymentClient implements [Client.DeploymentClient].
 func (wc *WorkflowClient) DeploymentClient() DeploymentClient {
 	return &deploymentClient{
+		workflowClient: wc,
+	}
+}
+
+// WorkerDeploymentClient implements [Client.WorkerDeploymentClient].
+func (wc *WorkflowClient) WorkerDeploymentClient() WorkerDeploymentClient {
+	return &workerDeploymentClient{
 		workflowClient: wc,
 	}
 }

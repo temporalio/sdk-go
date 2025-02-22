@@ -169,6 +169,11 @@ type (
 		// If true the worker is opting in to build ID based versioning.
 		UseBuildIDForVersioning bool
 
+		// The worker deployment version identifier of the form "<deployment_name>.<build_id>".
+		// If set, both the [WorkerBuildID] and the [DeploymentSeriesName] will be derived from it,
+		// ignoring previous values.
+		WorkerDeploymentVersion string
+
 		// The worker's deployment series name, an identifier for Worker Versioning that links versions of the same worker
 		// service/application.
 		DeploymentSeriesName string
@@ -1032,7 +1037,7 @@ func (aw *AggregatedWorker) RegisterWorkflow(w interface{}) {
 		panic("workflow worker disabled, cannot register workflow")
 	}
 	if aw.executionParams.UseBuildIDForVersioning &&
-		aw.executionParams.DeploymentSeriesName != "" &&
+		(aw.executionParams.DeploymentSeriesName != "" || aw.executionParams.WorkerDeploymentVersion != "") &&
 		aw.executionParams.DefaultVersioningBehavior == VersioningBehaviorUnspecified {
 		panic("workflow type does not have a versioning behavior")
 	}
@@ -1045,7 +1050,7 @@ func (aw *AggregatedWorker) RegisterWorkflowWithOptions(w interface{}, options R
 		panic("workflow worker disabled, cannot register workflow")
 	}
 	if options.VersioningBehavior == VersioningBehaviorUnspecified &&
-		aw.executionParams.DeploymentSeriesName != "" &&
+		(aw.executionParams.DeploymentSeriesName != "" || aw.executionParams.WorkerDeploymentVersion != "") &&
 		aw.executionParams.UseBuildIDForVersioning &&
 		aw.executionParams.DefaultVersioningBehavior == VersioningBehaviorUnspecified {
 		panic("workflow type does not have a versioning behavior")
@@ -1706,6 +1711,17 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("cannot set both EnableSessionWorker and UseBuildIDForVersioning")
 	}
 
+	if options.DeploymentOptions.Version != "" &&
+		!strings.Contains(options.DeploymentOptions.Version, ".") {
+		panic("version in DeploymentOptions not in the form \"<deployment_name>.<build_id>\"")
+	}
+
+	if options.DeploymentOptions.Version != "" {
+		splitVersion := strings.SplitN(options.DeploymentOptions.Version, ".", 2)
+		options.DeploymentOptions.DeploymentSeriesName = splitVersion[0]
+		options.BuildID = splitVersion[1]
+	}
+
 	// Need reference to result for fatal error handler
 	var aw *AggregatedWorker
 	fatalErrorCallback := func(err error) {
@@ -1747,8 +1763,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		MaxConcurrentNexusTaskQueuePollers:    options.MaxConcurrentNexusTaskPollers,
 		Identity:                              client.identity,
 		WorkerBuildID:                         options.BuildID,
-		UseBuildIDForVersioning:               options.UseBuildIDForVersioning,
+		UseBuildIDForVersioning:               options.UseBuildIDForVersioning || options.DeploymentOptions.UseVersioning,
 		DeploymentSeriesName:                  options.DeploymentOptions.DeploymentSeriesName,
+		WorkerDeploymentVersion:               options.DeploymentOptions.Version,
 		DefaultVersioningBehavior:             options.DeploymentOptions.DefaultVersioningBehavior,
 		MetricsHandler:                        client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue)),
 		Logger:                                client.logger,
