@@ -51,6 +51,7 @@ import (
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/temporalnexus"
 	"go.temporal.io/sdk/testsuite"
@@ -1906,26 +1907,52 @@ func TestWorkflowTestSuite_NexusListeners(t *testing.T) {
 	require.True(t, completedListenerCalled)
 }
 
-type nexusInterceptor struct {
+type workerInterceptor struct {
 	interceptor.WorkerInterceptorBase
+	logs []string // Store logs from the nexus interceptor when it pretends to be a logger.
+}
+
+type workflowInterceptor struct {
 	interceptor.WorkflowInboundInterceptorBase
 	interceptor.WorkflowOutboundInterceptorBase
 }
 
-func (i *nexusInterceptor) InterceptWorkflow(
+type nexusInterceptor struct {
+	interceptor.NexusOperationInboundInterceptorBase
+	interceptor.NexusOperationOutboundInterceptorBase
+	log.Logger // Also pretend to be a logger, we'll only implement Info to verify outbound interception.
+	parent     *workerInterceptor
+}
+
+func (i *workerInterceptor) InterceptWorkflow(
 	ctx workflow.Context,
 	next interceptor.WorkflowInboundInterceptor,
 ) interceptor.WorkflowInboundInterceptor {
-	i.WorkflowInboundInterceptorBase.Next = next
-	return i
+	return &workflowInterceptor{
+		WorkflowInboundInterceptorBase: interceptor.WorkflowInboundInterceptorBase{
+			Next: next,
+		},
+	}
 }
 
-func (i *nexusInterceptor) Init(outbound interceptor.WorkflowOutboundInterceptor) error {
+func (i *workerInterceptor) InterceptNexusOperation(
+	ctx context.Context,
+	next interceptor.NexusOperationInboundInterceptor,
+) interceptor.NexusOperationInboundInterceptor {
+	return &nexusInterceptor{
+		NexusOperationInboundInterceptorBase: interceptor.NexusOperationInboundInterceptorBase{
+			Next: next,
+		},
+		parent: i,
+	}
+}
+
+func (i *workflowInterceptor) Init(outbound interceptor.WorkflowOutboundInterceptor) error {
 	i.WorkflowOutboundInterceptorBase.Next = outbound
 	return i.WorkflowInboundInterceptorBase.Next.Init(i)
 }
 
-func (i *nexusInterceptor) ExecuteNexusOperation(
+func (i *workflowInterceptor) ExecuteNexusOperation(
 	ctx workflow.Context,
 	input interceptor.ExecuteNexusOperationInput,
 ) workflow.NexusOperationFuture {
@@ -1933,18 +1960,54 @@ func (i *nexusInterceptor) ExecuteNexusOperation(
 	return i.WorkflowOutboundInterceptorBase.Next.ExecuteNexusOperation(ctx, input)
 }
 
+func (i *nexusInterceptor) Init(ctx context.Context, outbound interceptor.NexusOperationOutboundInterceptor) error {
+	i.NexusOperationOutboundInterceptorBase.Next = outbound
+	info := nexus.ExtractHandlerInfo(ctx)
+	if h := info.Header.Get("test"); h != "present" {
+		return nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, `expected "test" header to be "present", got: %q`, h)
+	}
+	// Set for verification by the StartOperation interceptor method.
+	info.Header.Set("init", "done")
+	return i.NexusOperationInboundInterceptorBase.Next.Init(ctx, i)
+}
+
+func (i *nexusInterceptor) StartOperation(ctx context.Context, input interceptor.NexusStartOperationInput) (nexus.HandlerStartOperationResult[any], error) {
+	if h := input.Options.Header.Get("init"); h != "done" {
+		return nil, nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, `expected "init" header to be "done", got: %q`, h)
+	}
+	if in, ok := input.Input.(string); !ok || in != "input" {
+		return nil, nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, `expected input to be a string with value "input", got: string? (%v) %q`, ok, in)
+	}
+	// Set for verification by the StartOperation handler method.
+	input.Options.Header.Set("start", "done")
+	return i.NexusOperationInboundInterceptorBase.Next.StartOperation(ctx, input)
+}
+
+func (i *nexusInterceptor) GetLogger(ctx context.Context) log.Logger {
+	return i
+}
+
+// Info implements log.Logger.
+func (i *nexusInterceptor) Info(msg string, keyvals ...interface{}) {
+	i.parent.logs = append(i.parent.logs, msg)
+}
+
 func TestInterceptors(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
 	tc := newTestContext(t, ctx)
 
-	op := nexus.NewSyncOperation("op", func(ctx context.Context, _ nexus.NoValue, opts nexus.StartOperationOptions) (string, error) {
-		return opts.Header["test"], nil
+	op := nexus.NewSyncOperation("op", func(ctx context.Context, input string, opts nexus.StartOperationOptions) (string, error) {
+		if h := opts.Header.Get("start"); h != "done" {
+			return "", nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, `expected "start" header to be "done", got: %q`, h)
+		}
+		temporalnexus.GetLogger(ctx).Info("logged")
+		return input, nil
 	})
 
 	wf := func(ctx workflow.Context) error {
 		c := workflow.NewNexusClient(tc.endpoint, "test")
-		fut := c.ExecuteOperation(ctx, op, nil, workflow.NexusOperationOptions{})
+		fut := c.ExecuteOperation(ctx, op, "input", workflow.NexusOperationOptions{})
 		var res string
 
 		var exec workflow.NexusOperationExecution
@@ -1957,31 +2020,50 @@ func TestInterceptors(t *testing.T) {
 		if err := fut.Get(ctx, &res); err != nil {
 			return err
 		}
-		// If the operation didn't fail the only expected result is "present" (header value injected by the interceptor).
-		if res != "present" {
+		// If the operation didn't fail, the interceptors injected and verified the headers, the result should be an echo of the input provided.
+		if res != "input" {
 			return fmt.Errorf("unexpected result: %v", res)
 		}
 		return nil
 	}
 
-	w := worker.New(tc.client, tc.taskQueue, worker.Options{
-		Interceptors: []interceptor.WorkerInterceptor{
-			&nexusInterceptor{},
-		},
-	})
 	service := nexus.NewService("test")
-	require.NoError(t, service.Register(op))
-	w.RegisterNexusService(service)
-	w.RegisterWorkflow(wf)
-	require.NoError(t, w.Start())
-	t.Cleanup(w.Stop)
+	service.MustRegister(op)
 
-	run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
-		TaskQueue: tc.taskQueue,
-		// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
-		// timeout to speed up the attempts.
-		WorkflowTaskTimeout: time.Second,
-	}, wf)
-	require.NoError(t, err)
-	require.NoError(t, run.Get(ctx, nil))
+	t.Run("RealServer", func(t *testing.T) {
+		i := &workerInterceptor{}
+		w := worker.New(tc.client, tc.taskQueue, worker.Options{
+			Interceptors: []interceptor.WorkerInterceptor{i},
+		})
+		w.RegisterNexusService(service)
+		w.RegisterWorkflow(wf)
+		require.NoError(t, w.Start())
+		t.Cleanup(w.Stop)
+
+		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+			TaskQueue: tc.taskQueue,
+			// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
+			// timeout to speed up the attempts.
+			WorkflowTaskTimeout: time.Second,
+		}, wf)
+		require.NoError(t, err)
+		require.NoError(t, run.Get(ctx, nil))
+		require.Equal(t, []string{"logged"}, i.logs)
+	})
+
+	t.Run("TestEnv", func(t *testing.T) {
+		suite := testsuite.WorkflowTestSuite{}
+		env := suite.NewTestWorkflowEnvironment()
+		env.SetWorkerOptions(worker.Options{
+			Interceptors: []interceptor.WorkerInterceptor{
+				&workerInterceptor{},
+			},
+		})
+		env.RegisterNexusService(service)
+		env.RegisterWorkflow(wf)
+
+		env.ExecuteWorkflow(wf)
+		require.True(t, env.IsWorkflowCompleted())
+		require.NoError(t, env.GetWorkflowError())
+	})
 }

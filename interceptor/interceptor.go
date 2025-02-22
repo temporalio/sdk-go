@@ -222,6 +222,47 @@ type ClientUpdateWorkflowInput = internal.ClientUpdateWorkflowInput
 // ClientOutboundInterceptor.UpdateWithStartWorkflow.
 type ClientUpdateWithStartWorkflowInput = internal.ClientUpdateWithStartWorkflowInput
 
+// NexusOperationInboundInterceptor is an interface for intercepting Nexus operation method invocations.
+//
+// All implementations must embed [NexusOperationInboundInterceptorBase] to safely handle future changes.
+//
+// Note: Experimental
+type NexusOperationInboundInterceptor = internal.NexusOperationInboundInterceptor
+
+// NexusOperationInboundInterceptorBase is a default implementation of [NexusOperationInboundInterceptor] that
+// forwards calls to the next inbound interceptor and uses a [NexusOperationOutboundInterceptorBase] on Init.
+//
+// This must be embedded into all [NexusOperationInboundInterceptor] implementations to safely handle future changes.
+//
+// Note: Experimental
+type NexusOperationInboundInterceptorBase = internal.NexusOperationInboundInterceptorBase
+
+// NexusOperationOutboundInterceptor is an interface for intercepting methods in the temporalnexus package when called
+// from within a Nexus Operation handler.
+//
+// All implementations must embed [NexusOperationOutboundInterceptorBase] to safely handle future changes.
+//
+// Note: Experimental
+type NexusOperationOutboundInterceptor = internal.NexusOperationOutboundInterceptor
+
+// NexusOperationOutboundInterceptorBase is a default implementation of [NexusOperationOutboundInterceptor] that
+// forwards calls to the next outbound interceptor.
+//
+// This must be embedded into all [NexusOperationOutboundInterceptor] implementations to safely handle future changes.
+//
+// Note: Experimental
+type NexusOperationOutboundInterceptorBase = internal.NexusOperationOutboundInterceptorBase
+
+// NexusStartOperationInput is the input to NexusOperationInboundInterceptor.StartOperation.
+//
+// Note: Experimental
+type NexusStartOperationInput = internal.NexusStartOperationInput
+
+// NexusCancelOperationInput is the input to NexusOperationInboundInterceptor.CancelOperation.
+//
+// Note: Experimental
+type NexusCancelOperationInput = internal.NexusCancelOperationInput
+
 // Header provides Temporal header information from the context for reading or
 // writing during specific interceptor calls.
 //

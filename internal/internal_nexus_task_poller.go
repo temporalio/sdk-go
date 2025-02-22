@@ -155,7 +155,7 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 	res, failure, err := ntp.taskHandler.ExecuteContext(nctx, response)
 
 	// Execution latency (in-SDK processing time).
-	nctx.MetricsHandler.Timer(metrics.NexusTaskExecutionLatency).Record(time.Since(executionStartTime))
+	nctx.metricsHandler.Timer(metrics.NexusTaskExecutionLatency).Record(time.Since(executionStartTime))
 
 	// Increment failure in all forms of errors:
 	// Internal error processing the task.
@@ -168,18 +168,18 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 		} else {
 			failureTag = "internal_sdk_error"
 		}
-		nctx.Log.Error("Error processing nexus task", "error", err)
-		nctx.MetricsHandler.
+		nctx.log.Error("Error processing nexus task", "error", err)
+		nctx.metricsHandler.
 			WithTags(metrics.NexusTaskFailureTags(failureTag)).
 			Counter(metrics.NexusTaskExecutionFailedCounter).
 			Inc(1)
 	} else if failure != nil {
-		nctx.MetricsHandler.
+		nctx.metricsHandler.
 			WithTags(metrics.NexusTaskFailureTags("handler_error_" + failure.GetError().GetErrorType())).
 			Counter(metrics.NexusTaskExecutionFailedCounter).
 			Inc(1)
 	} else if e := res.Response.GetStartOperation().GetOperationError(); e != nil {
-		nctx.MetricsHandler.
+		nctx.metricsHandler.
 			WithTags(metrics.NexusTaskFailureTags("operation_" + e.GetOperationState())).
 			Counter(metrics.NexusTaskExecutionFailedCounter).
 			Inc(1)
@@ -199,7 +199,7 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 	}
 
 	// E2E latency, from frontend until we finished reporting completion.
-	nctx.MetricsHandler.
+	nctx.metricsHandler.
 		Timer(metrics.NexusTaskEndToEndLatency).
 		Record(time.Since(response.GetRequest().GetScheduledTime().AsTime()))
 	return nil

@@ -1141,6 +1141,7 @@ func (aw *AggregatedWorker) start() error {
 				return fmt.Errorf("failed to create a nexus worker: %w", err)
 			}
 		}
+		reg.Use(nexusMiddleware(aw.registry.interceptors))
 		handler, err := reg.NewHandler()
 		if err != nil {
 			return fmt.Errorf("failed to create a nexus worker: %w", err)

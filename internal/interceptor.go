@@ -57,6 +57,8 @@ type WorkerInterceptor interface {
 	// the next interceptor in the chain.
 	InterceptWorkflow(ctx Context, next WorkflowInboundInterceptor) WorkflowInboundInterceptor
 
+	InterceptNexusOperation(ctx context.Context, next NexusOperationInboundInterceptor) NexusOperationInboundInterceptor
+
 	mustEmbedWorkerInterceptorBase()
 }
 
@@ -534,4 +536,60 @@ type ClientQueryWorkflowInput struct {
 	QueryType            string
 	Args                 []interface{}
 	QueryRejectCondition enumspb.QueryRejectCondition
+}
+
+// NexusOutboundInterceptor intercepts Nexus operation method invocations. See documentation in the interceptor package
+// for more details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.NexusOperationInboundInterceptor]
+//
+// NOTE: Experimental
+type NexusOperationInboundInterceptor interface {
+	// Init is the first call of this interceptor. Implementations can change/wrap
+	// the outbound interceptor before calling Init on the next interceptor.
+	Init(ctx context.Context, outbound NexusOperationOutboundInterceptor) error
+
+	// StartOperation intercepts inbound Nexus StartOperation calls.
+	StartOperation(ctx context.Context, input NexusStartOperationInput) (nexus.HandlerStartOperationResult[any], error)
+	// StartOperation intercepts inbound Nexus CancelOperation calls.
+	CancelOperation(ctx context.Context, input NexusCancelOperationInput) error
+
+	mustEmbedNexusOperationInboundInterceptorBase()
+}
+
+// NexusOperationOutboundInterceptor intercepts methods exposed in the temporalnexus package. See documentation in the
+// interceptor package for more details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.NexusOperationOutboundInterceptor]
+//
+// Note: Experimental
+type NexusOperationOutboundInterceptor interface {
+	// GetClient intercepts temporalnexus.GetClient.
+	GetClient(ctx context.Context) Client
+	// GetLogger intercepts temporalnexus.GetLogger.
+	GetLogger(ctx context.Context) log.Logger
+	// GetMetricsHandler intercepts temporalnexus.GetMetricsHandler.
+	GetMetricsHandler(ctx context.Context) metrics.Handler
+
+	mustEmbedNexusOperationOutboundInterceptorBase()
+}
+
+// NexusStartOperationInput is the input to NexusOperationInboundInterceptor.StartOperation.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.NexusStartOperationInput]
+//
+// Note: Experimental
+type NexusStartOperationInput struct {
+	Input   any
+	Options nexus.StartOperationOptions
+}
+
+// NexusCancelOperationInput is the input to NexusOperationInboundInterceptor.CancelOperation.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.NexusCancelOperationInput]
+//
+// Note: Experimental
+type NexusCancelOperationInput struct {
+	Token   string
+	Options nexus.CancelOperationOptions
 }
