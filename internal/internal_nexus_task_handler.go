@@ -178,7 +178,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 		}
 		linkURL, err := url.Parse(link.GetUrl())
 		if err != nil {
-			nctx.Log.Error("Failed to parse link url: %s", link.GetUrl(), tagError, err)
+			nctx.log.Error("Failed to parse link url: %s", link.GetUrl(), tagError, err)
 			return nil, nexusHandlerError(nexus.HandlerErrorTypeBadRequest, "failed to parse link url"), nil
 		}
 		nexusLinks = append(nexusLinks, nexus.Link{
@@ -193,10 +193,14 @@ func (h *nexusTaskHandler) handleStartOperation(
 		CallbackHeader: callbackHeader,
 		Links:          nexusLinks,
 	}
+	ctx = nexus.WithHandlerContext(ctx, nexus.HandlerInfo{
+		Service:   req.GetService(),
+		Operation: req.GetOperation(),
+		Header:    header,
+	})
 	var opres nexus.HandlerStartOperationResult[any]
 	var err error
 	var panic bool
-	ctx = nexus.WithHandlerContext(ctx)
 	func() {
 		defer func() {
 			recovered := recover()
@@ -208,20 +212,20 @@ func (h *nexusTaskHandler) handleStartOperation(
 					err = fmt.Errorf("panic: %v", recovered)
 				}
 
-				nctx.Log.Error("Panic captured while handling Nexus task", tagStackTrace, string(debug.Stack()), tagError, err)
+				nctx.log.Error("Panic captured while handling Nexus task", tagStackTrace, string(debug.Stack()), tagError, err)
 			}
 		}()
 		opres, err = h.nexusHandler.StartOperation(ctx, req.GetService(), req.GetOperation(), input, startOptions)
 	}()
 	if ctx.Err() != nil {
 		if !panic {
-			nctx.Log.Error("Context error while processing Nexus task", tagError, ctx.Err())
+			nctx.log.Error("Context error while processing Nexus task", tagError, ctx.Err())
 		}
 		return nil, nil, errNexusTaskTimeout
 	}
 	if err != nil {
 		if !panic {
-			nctx.Log.Error("Handler returned error while processing Nexus task", tagError, err)
+			nctx.log.Error("Handler returned error while processing Nexus task", tagError, err)
 		}
 		var unsuccessfulOperationErr *nexus.OperationError
 		err = convertKnownErrors(err)
@@ -294,7 +298,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 		value := reflect.ValueOf(t).Elem().FieldByName("Value").Interface()
 		payload, err := h.dataConverter.ToPayload(value)
 		if err != nil {
-			nctx.Log.Error("Cannot convert Nexus sync result", tagError, err)
+			nctx.log.Error("Cannot convert Nexus sync result", tagError, err)
 			protoErr, err := h.internalError(fmt.Errorf("cannot convert nexus sync result: %w", err))
 			return nil, protoErr, err
 		}
@@ -315,6 +319,11 @@ func (h *nexusTaskHandler) handleStartOperation(
 
 func (h *nexusTaskHandler) handleCancelOperation(ctx context.Context, nctx *NexusOperationContext, req *nexuspb.CancelOperationRequest, header nexus.Header) (*nexuspb.Response, *nexuspb.HandlerError, error) {
 	cancelOptions := nexus.CancelOperationOptions{Header: header}
+	ctx = nexus.WithHandlerContext(ctx, nexus.HandlerInfo{
+		Service:   req.GetService(),
+		Operation: req.GetOperation(),
+		Header:    header,
+	})
 	var err error
 	var panic bool
 	func() {
@@ -328,7 +337,7 @@ func (h *nexusTaskHandler) handleCancelOperation(ctx context.Context, nctx *Nexu
 					err = fmt.Errorf("panic: %v", recovered)
 				}
 
-				nctx.Log.Error("Panic captured while handling Nexus task", tagStackTrace, string(debug.Stack()), tagError, err)
+				nctx.log.Error("Panic captured while handling Nexus task", tagStackTrace, string(debug.Stack()), tagError, err)
 			}
 		}()
 		token := req.GetOperationToken()
@@ -340,13 +349,13 @@ func (h *nexusTaskHandler) handleCancelOperation(ctx context.Context, nctx *Nexu
 	}()
 	if ctx.Err() != nil {
 		if !panic {
-			nctx.Log.Error("Context error while processing Nexus task", tagError, ctx.Err())
+			nctx.log.Error("Context error while processing Nexus task", tagError, ctx.Err())
 		}
 		return nil, nil, errNexusTaskTimeout
 	}
 	if err != nil {
 		if !panic {
-			nctx.Log.Error("Handler returned error while processing Nexus task", tagError, err)
+			nctx.log.Error("Handler returned error while processing Nexus task", tagError, err)
 		}
 		err = convertKnownErrors(err)
 		var handlerErr *nexus.HandlerError
@@ -414,11 +423,11 @@ func (h *nexusTaskHandler) newNexusOperationContext(response *workflowservice.Po
 	metricsHandler := h.metricsHandler.WithTags(metrics.NexusTags(service, operation, h.taskQueueName))
 
 	return &NexusOperationContext{
-		Client:         h.client,
+		client:         h.client,
 		Namespace:      h.namespace,
 		TaskQueue:      h.taskQueueName,
-		MetricsHandler: metricsHandler,
-		Log:            logger,
+		metricsHandler: metricsHandler,
+		log:            logger,
 		registry:       h.registry,
 	}, nil
 }

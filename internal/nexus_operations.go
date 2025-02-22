@@ -44,16 +44,92 @@ import (
 
 // NexusOperationContext is an internal only struct that holds fields used by the temporalnexus functions.
 type NexusOperationContext struct {
-	Client         Client
+	client         Client
 	Namespace      string
 	TaskQueue      string
-	MetricsHandler metrics.Handler
-	Log            log.Logger
+	metricsHandler metrics.Handler
+	log            log.Logger
 	registry       *registry
 }
 
 func (nc *NexusOperationContext) ResolveWorkflowName(wf any) (string, error) {
 	return getWorkflowFunctionName(nc.registry, wf)
+}
+
+type nexusOperationEnvironment struct {
+	NexusOperationOutboundInterceptorBase
+}
+
+func (nc *nexusOperationEnvironment) GetMetricsHandler(ctx context.Context) metrics.Handler {
+	nctx, ok := NexusOperationContextFromGoContext(ctx)
+	if !ok {
+		panic("temporalnexus GetMetricsHandler: Not a valid Nexus context")
+	}
+	return nctx.metricsHandler
+}
+
+// GetLogger returns a logger to be used in a Nexus operation's context.
+func (nc *nexusOperationEnvironment) GetLogger(ctx context.Context) log.Logger {
+	nctx, ok := NexusOperationContextFromGoContext(ctx)
+	if !ok {
+		panic("temporalnexus GetMetricsHandler: Not a valid Nexus context")
+	}
+	return nctx.log
+}
+
+// GetClient returns a client to be used in a Nexus operation's context, this is the same client that the worker was
+// created with. Client methods will panic when called from the test environment.
+func (nc *nexusOperationEnvironment) GetClient(ctx context.Context) Client {
+	nctx, ok := NexusOperationContextFromGoContext(ctx)
+	if !ok {
+		panic("temporalnexus GetMetricsHandler: Not a valid Nexus context")
+	}
+	return nctx.client
+}
+
+type nexusOperationOutboundInterceptorKeyType struct{}
+
+// nexusOperationOutboundInterceptorKey is a key for associating a [NexusOperationOutboundInterceptor] with a [context.Context].
+var nexusOperationOutboundInterceptorKey = nexusOperationOutboundInterceptorKeyType{}
+
+// nexusOperationOutboundInterceptorFromGoContext gets the [NexusOperationOutboundInterceptor] associated with the given [context.Context].
+func nexusOperationOutboundInterceptorFromGoContext(ctx context.Context) (nctx NexusOperationOutboundInterceptor, ok bool) {
+	nctx, ok = ctx.Value(nexusOperationOutboundInterceptorKey).(NexusOperationOutboundInterceptor)
+	return
+}
+
+// GetNexusOperationMetricsHandler returns a metrics handler to be used in a Nexus operation's context.
+//
+// Exposed as: [go.temporal.io/sdk/temporalnexus.GetMetricsHandler]
+func GetNexusOperationMetricsHandler(ctx context.Context) metrics.Handler {
+	interceptor, ok := nexusOperationOutboundInterceptorFromGoContext(ctx)
+	if !ok {
+		panic("temporalnexus GetMetricsHandler: Not a valid Nexus context")
+	}
+	return interceptor.GetMetricsHandler(ctx)
+}
+
+// GetNexusOperationLogger returns a logger to be used in a Nexus operation's context.
+//
+// Exposed as: [go.temporal.io/sdk/temporalnexus.GetLogger]
+func GetNexusOperationLogger(ctx context.Context) log.Logger {
+	interceptor, ok := nexusOperationOutboundInterceptorFromGoContext(ctx)
+	if !ok {
+		panic("temporalnexus GetLogger: Not a valid Nexus context")
+	}
+	return interceptor.GetLogger(ctx)
+}
+
+// GetNexusOperationClient returns a client to be used in a Nexus operation's context, this is the same client that the
+// worker was created with. Client methods will panic when called from the test environment.
+//
+// Exposed as: [go.temporal.io/sdk/temporalnexus.GetClient]
+func GetNexusOperationClient(ctx context.Context) Client {
+	interceptor, ok := nexusOperationOutboundInterceptorFromGoContext(ctx)
+	if !ok {
+		panic("temporalnexus GetClient: Not a valid Nexus context")
+	}
+	return interceptor.GetClient(ctx)
 }
 
 type nexusOperationContextKeyType struct{}
@@ -80,6 +156,72 @@ var NexusOperationLinksKey = nexusOperationLinksKeyType{}
 func NexusOperationContextFromGoContext(ctx context.Context) (nctx *NexusOperationContext, ok bool) {
 	nctx, ok = ctx.Value(nexusOperationContextKey).(*NexusOperationContext)
 	return
+}
+
+// nexusMiddleware constructs an adapter from Temporal WorkerInterceptors to a Nexus MiddlewareFunc.
+func nexusMiddleware(interceptors []WorkerInterceptor) nexus.MiddlewareFunc {
+	return func(ctx context.Context, next nexus.OperationHandler[any, any]) (nexus.OperationHandler[any, any], error) {
+		root := &nexusInterceptorToMiddlewareAdapter{handler: next}
+		var in NexusOperationInboundInterceptor = root
+		for i := len(interceptors) - 1; i >= 0; i-- {
+			interceptor := interceptors[i]
+			in = interceptor.InterceptNexusOperation(ctx, in)
+		}
+		if err := in.Init(ctx, &nexusOperationEnvironment{}); err != nil {
+			return nil, err
+		}
+		return newNexusHandler(in, root.outboundInterceptor), nil
+	}
+}
+
+// nexusMiddlewareToInterceptorAdapter is an adapter from the Nexus Handler interface to the Temporal interceptor interface.
+type nexusMiddlewareToInterceptorAdapter struct {
+	nexus.UnimplementedOperation[any, any]
+	inboundInterceptor  NexusOperationInboundInterceptor
+	outboundInterceptor NexusOperationOutboundInterceptor
+}
+
+func newNexusHandler(inbound NexusOperationInboundInterceptor, outbound NexusOperationOutboundInterceptor) nexus.OperationHandler[any, any] {
+	return &nexusMiddlewareToInterceptorAdapter{inboundInterceptor: inbound, outboundInterceptor: outbound}
+}
+
+func (h *nexusMiddlewareToInterceptorAdapter) Start(ctx context.Context, input any, options nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[any], error) {
+	ctx = context.WithValue(ctx, nexusOperationOutboundInterceptorKey, h.outboundInterceptor)
+	return h.inboundInterceptor.StartOperation(ctx, NexusStartOperationInput{
+		Input:   input,
+		Options: options,
+	})
+}
+
+func (h *nexusMiddlewareToInterceptorAdapter) Cancel(ctx context.Context, token string, options nexus.CancelOperationOptions) error {
+	ctx = context.WithValue(ctx, nexusOperationOutboundInterceptorKey, h.outboundInterceptor)
+	return h.inboundInterceptor.CancelOperation(ctx, NexusCancelOperationInput{
+		Token:   token,
+		Options: options,
+	})
+}
+
+// nexusInterceptorToMiddlewareAdapter is an adapter from the Temporal interceptor interface to the Nexus Handler interface.
+type nexusInterceptorToMiddlewareAdapter struct {
+	NexusOperationInboundInterceptorBase
+	handler             nexus.OperationHandler[any, any]
+	outboundInterceptor NexusOperationOutboundInterceptor
+}
+
+// CancelOperation implements NexusOperationInboundInterceptor.
+func (n *nexusInterceptorToMiddlewareAdapter) CancelOperation(ctx context.Context, input NexusCancelOperationInput) error {
+	return n.handler.Cancel(ctx, input.Token, input.Options)
+}
+
+// Init implements NexusOperationInboundInterceptor.
+func (n *nexusInterceptorToMiddlewareAdapter) Init(ctx context.Context, outbound NexusOperationOutboundInterceptor) error {
+	n.outboundInterceptor = outbound
+	return nil
+}
+
+// StartOperation implements NexusOperationInboundInterceptor.
+func (n *nexusInterceptorToMiddlewareAdapter) StartOperation(ctx context.Context, input NexusStartOperationInput) (nexus.HandlerStartOperationResult[any], error) {
+	return n.handler.Start(ctx, input.Input, input.Options)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////
