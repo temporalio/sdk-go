@@ -99,6 +99,8 @@ func nexusOperationOutboundInterceptorFromGoContext(ctx context.Context) (nctx N
 }
 
 // GetNexusOperationMetricsHandler returns a metrics handler to be used in a Nexus operation's context.
+//
+// Exposed as: [go.temporal.io/sdk/temporalnexus.GetMetricsHandler]
 func GetNexusOperationMetricsHandler(ctx context.Context) metrics.Handler {
 	interceptor, ok := nexusOperationOutboundInterceptorFromGoContext(ctx)
 	if !ok {
@@ -108,6 +110,8 @@ func GetNexusOperationMetricsHandler(ctx context.Context) metrics.Handler {
 }
 
 // GetNexusOperationLogger returns a logger to be used in a Nexus operation's context.
+//
+// Exposed as: [go.temporal.io/sdk/temporalnexus.GetLogger]
 func GetNexusOperationLogger(ctx context.Context) log.Logger {
 	interceptor, ok := nexusOperationOutboundInterceptorFromGoContext(ctx)
 	if !ok {
@@ -118,6 +122,8 @@ func GetNexusOperationLogger(ctx context.Context) log.Logger {
 
 // GetNexusOperationClient returns a client to be used in a Nexus operation's context, this is the same client that the
 // worker was created with. Client methods will panic when called from the test environment.
+//
+// Exposed as: [go.temporal.io/sdk/temporalnexus.GetClient]
 func GetNexusOperationClient(ctx context.Context) Client {
 	interceptor, ok := nexusOperationOutboundInterceptorFromGoContext(ctx)
 	if !ok {
