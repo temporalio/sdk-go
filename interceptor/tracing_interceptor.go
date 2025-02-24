@@ -33,7 +33,6 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/workflow"
 )
@@ -832,7 +831,7 @@ type tracingNexusOperationInboundInterceptor struct {
 }
 
 // CancelOperation implements internal.NexusOperationInboundInterceptor.
-func (t *tracingNexusOperationInboundInterceptor) CancelOperation(ctx context.Context, input internal.NexusCancelOperationInput) error {
+func (t *tracingNexusOperationInboundInterceptor) CancelOperation(ctx context.Context, input NexusCancelOperationInput) error {
 	info := nexus.ExtractHandlerInfo(ctx)
 	// Start span reading from header
 	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
@@ -854,7 +853,7 @@ func (t *tracingNexusOperationInboundInterceptor) CancelOperation(ctx context.Co
 }
 
 // StartOperation implements internal.NexusOperationInboundInterceptor.
-func (t *tracingNexusOperationInboundInterceptor) StartOperation(ctx context.Context, input internal.NexusStartOperationInput) (nexus.HandlerStartOperationResult[any], error) {
+func (t *tracingNexusOperationInboundInterceptor) StartOperation(ctx context.Context, input NexusStartOperationInput) (nexus.HandlerStartOperationResult[any], error) {
 	info := nexus.ExtractHandlerInfo(ctx)
 	// Start span reading from header
 	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
