@@ -428,7 +428,11 @@ func (env *testWorkflowEnvironmentImpl) setContinuedExecutionRunID(rid string) {
 	env.workflowInfo.ContinuedExecutionRunID = rid
 }
 
-func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(params *ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error)) (*testWorkflowEnvironmentImpl, error) {
+func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(
+	params *ExecuteWorkflowParams,
+	callback ResultHandler,
+	startedHandler func(r WorkflowExecution, e error),
+) (*testWorkflowEnvironmentImpl, error) {
 	// create a new test env
 	childEnv := newTestWorkflowEnvironmentImpl(env.testSuite, env.registry)
 	childEnv.parentEnv = env
@@ -474,15 +478,27 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(param
 
 	childEnv.runTimeout = params.WorkflowRunTimeout
 	if workflowHandler, ok := env.runningWorkflows[params.WorkflowID]; ok {
+		alreadyStartedErr := serviceerror.NewWorkflowExecutionAlreadyStarted(
+			"Workflow execution already started",
+			"",
+			childEnv.workflowInfo.WorkflowExecution.RunID,
+		)
 		// duplicate workflow ID
 		if !workflowHandler.handled {
-			return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Workflow execution already started", "", "")
+			if params.WorkflowIDConflictPolicy == enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING {
+				if params.OnConflictOptions != nil && params.OnConflictOptions.AttachCompletionCallbacks {
+					workflowHandler.callback = workflowHandler.callback.wrap(callback)
+				}
+				startedHandler(workflowHandler.env.workflowInfo.WorkflowExecution, nil)
+				return nil, nil
+			}
+			return nil, alreadyStartedErr
 		}
 		if params.WorkflowIDReusePolicy == enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE {
-			return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Workflow execution already started", "", "")
+			return nil, alreadyStartedErr
 		}
 		if workflowHandler.err == nil && params.WorkflowIDReusePolicy == enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY {
-			return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Workflow execution already started", "", "")
+			return nil, alreadyStartedErr
 		}
 	}
 
@@ -2380,16 +2396,20 @@ func (env *testWorkflowEnvironmentImpl) executeChildWorkflowWithDelay(delayStart
 	childEnv, err := env.newTestWorkflowEnvironmentForChild(&params, callback, startedHandler)
 	if err != nil {
 		env.logger.Info("ExecuteChildWorkflow failed", tagError, err)
-		callback(nil, err)
 		startedHandler(WorkflowExecution{}, err)
+		callback(nil, err)
 		return
 	}
 
-	env.logger.Info("ExecuteChildWorkflow", tagWorkflowType, params.WorkflowType.Name)
-	env.runningCount++
+	// childEnv can be nil when WorkflowIDConflictPolicy is USE_EXISTING and there's already a running
+	// workflow. This is only possible in the test environment for running Nexus handler workflow.
+	if childEnv != nil {
+		env.logger.Info("ExecuteChildWorkflow", tagWorkflowType, params.WorkflowType.Name)
+		env.runningCount++
 
-	// run child workflow in separate goroutinue
-	go childEnv.executeWorkflowInternal(delayStart, params.WorkflowType.Name, params.Input)
+		// run child workflow in separate goroutinue
+		go childEnv.executeWorkflowInternal(delayStart, params.WorkflowType.Name, params.Input)
+	}
 }
 
 func (env *testWorkflowEnvironmentImpl) newTestNexusTaskHandler(

@@ -214,7 +214,10 @@ type (
 		WorkflowID               string
 		WaitForCancellation      bool
 		WorkflowIDReusePolicy    enumspb.WorkflowIdReusePolicy
+		// WorkflowIDConflictPolicy and OnConflictOptions are only used in test environment for
+		// running Nexus operations as child workflow.
 		WorkflowIDConflictPolicy enumspb.WorkflowIdConflictPolicy
+		OnConflictOptions        *OnConflictOptions
 		DataConverter            converter.DataConverter
 		RetryPolicy              *commonpb.RetryPolicy
 		CronSchedule             string
