@@ -647,8 +647,11 @@ type (
 		// When WorkflowExecutionErrorWhenAlreadyStarted is true, Client.ExecuteWorkflow will return an error if the
 		// workflow id has already been used and WorkflowIDReusePolicy or WorkflowIDConflictPolicy would
 		// disallow a re-run. If it is set to false, rather than erroring a WorkflowRun instance representing
-		// the current or last run will be returned. However, when WithStartOperation is set, this field is ignored and
-		// the WorkflowIDConflictPolicy UseExisting must be used instead to prevent erroring.
+		// the current or last run will be returned. However, this field is ignored in the following cases:
+		// - when WithStartOperation is set;
+		// - in the Nexus WorkflowRunOperation.
+		// When this field is ignored, you must set WorkflowIDConflictPolicy to UseExisting to prevent
+		// erroring.
 		//
 		// Optional: defaults to false
 		WorkflowExecutionErrorWhenAlreadyStarted bool
@@ -742,6 +745,14 @@ type (
 		callbacks []*commonpb.Callback
 		// links. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
 		links []*commonpb.Link
+
+		// OnConflictOptions - Optional workflow ID conflict options used in conjunction with conflict policy
+		// WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING. If onConflictOptions is set and a workflow is already
+		// running, the options specifies the actions to be taken on the running workflow. If not set or use
+		// together with any other WorkflowIDConflictPolicy, this parameter is ignored.
+		//
+		// NOTE: Only settable by the SDK -- e.g. [temporalnexus.workflowRunOperation].
+		onConflictOptions *OnConflictOptions
 	}
 
 	// WithStartWorkflowOperation defines how to start a workflow when using UpdateWithStartWorkflow.
@@ -1194,4 +1205,15 @@ func SetCallbacksOnStartWorkflowOptions(opts *StartWorkflowOptions, callbacks []
 // Links are purposefully not exposed to users for the time being.
 func SetLinksOnStartWorkflowOptions(opts *StartWorkflowOptions, links []*commonpb.Link) {
 	opts.links = links
+}
+
+// SetOnConflictOptionsOnStartWorkflowOptions is an internal only method for setting conflict
+// options on StartWorkflowOptions.
+// OnConflictOptions are purposefully not exposed to users for the time being.
+func SetOnConflictOptionsOnStartWorkflowOptions(opts *StartWorkflowOptions) {
+	opts.onConflictOptions = &OnConflictOptions{
+		AttachRequestID:           true,
+		AttachCompletionCallbacks: true,
+		AttachLinks:               true,
+	}
 }

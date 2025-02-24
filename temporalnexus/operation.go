@@ -119,6 +119,11 @@ type WorkflowRunOperationOptions[I, O any] struct {
 	// The options returned must include a workflow ID that is deterministically generated from the input in order
 	// for the operation to be idempotent as the request to start the operation may be retried.
 	// TaskQueue is optional and defaults to the current worker's task queue.
+	// WorkflowExecutionErrorWhenAlreadyStarted is ignored and always set to true.
+	// WorkflowIDConflictPolicy is by default set to fail if a workflow is already running. That is,
+	// if a caller executes another operation that starts the same workflow, it will fail. You can set
+	// it to WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING to attach the caller's callback to the existing
+	// running workflow. This way, all attached callers will be notified when the workflow completes.
 	GetOptions func(context.Context, I, nexus.StartOperationOptions) (client.StartWorkflowOptions, error)
 	// Handler for starting a workflow with a different input than the operation. Mutually exclusive with Workflow
 	// and GetOptions.
@@ -382,6 +387,13 @@ func ExecuteUntypedWorkflow[R any](
 		}
 	}
 	internal.SetLinksOnStartWorkflowOptions(&startWorkflowOptions, links)
+	internal.SetOnConflictOptionsOnStartWorkflowOptions(&startWorkflowOptions)
+
+	// This makes sure that ExecuteWorkflow will respect the WorkflowIDConflictPolicy, ie., if the
+	// conflict policy is to fail (default value), then ExecuteWorkflow will return an error if the
+	// workflow already running. For Nexus, this ensures that operation has only started successfully
+	// when the callback has been attached to the workflow (new or existing running workflow).
+	startWorkflowOptions.WorkflowExecutionErrorWhenAlreadyStarted = true
 
 	run, err := GetClient(ctx).ExecuteWorkflow(ctx, startWorkflowOptions, workflowType, args...)
 	if err != nil {

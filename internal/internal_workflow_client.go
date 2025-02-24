@@ -1678,6 +1678,7 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 		CompletionCallbacks:      in.Options.callbacks,
 		Links:                    in.Options.links,
 		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
+		OnConflictOptions:        in.Options.onConflictOptions.ToProto(),
 	}
 
 	startRequest.UserMetadata, err = buildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
