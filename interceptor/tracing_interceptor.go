@@ -703,9 +703,9 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteChildWorkflow(
 	args ...interface{},
 ) workflow.ChildWorkflowFuture {
 	// Start span writing to header
-	span, ctx, err := t.startNonReplaySpan(ctx, "StartChildWorkflow", childWorkflowType, false, t.root.workflowHeaderWriter(ctx))
-	if err != nil {
-		return err
+	span, ctx, errFut := t.startNonReplaySpan(ctx, "StartChildWorkflow", childWorkflowType, false, t.root.workflowHeaderWriter(ctx))
+	if errFut != nil {
+		return childWorkflowFuture{errFut}
 	}
 	defer span.Finish(&TracerFinishSpanOptions{})
 
@@ -722,7 +722,7 @@ func (t *tracingWorkflowOutboundInterceptor) SignalExternalWorkflow(
 	// Start span writing to header if enabled
 	if !t.root.options.DisableSignalTracing {
 		var span TracerSpan
-		var futErr workflow.ChildWorkflowFuture
+		var futErr workflow.Future
 		span, ctx, futErr = t.startNonReplaySpan(ctx, "SignalExternalWorkflow", signalName, false, t.root.workflowHeaderWriter(ctx))
 		if futErr != nil {
 			return futErr
@@ -742,7 +742,7 @@ func (t *tracingWorkflowOutboundInterceptor) SignalChildWorkflow(
 	// Start span writing to header if enabled
 	if !t.root.options.DisableSignalTracing {
 		var span TracerSpan
-		var futErr workflow.ChildWorkflowFuture
+		var futErr workflow.Future
 		span, ctx, futErr = t.startNonReplaySpan(ctx, "SignalChildWorkflow", signalName, false, t.root.workflowHeaderWriter(ctx))
 		if futErr != nil {
 			return futErr
@@ -761,11 +761,11 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteNexusOperation(ctx workflow.
 	} else if regOp, ok := input.Operation.(interface{ Name() string }); ok {
 		operationName = regOp.Name()
 	} else {
-		return newErrFut(ctx, fmt.Errorf("unexpected operation type: %v", input.Operation))
+		return nexusOperationFuture{workflowFutureFromErr(ctx, fmt.Errorf("unexpected operation type: %v", input.Operation))}
 	}
-	span, ctx, err := t.startNonReplaySpan(ctx, "StartNexusOperation", input.Client.Service()+"/"+operationName, false, t.root.nexusHeaderWriter(input.NexusHeader))
-	if err != nil {
-		return err
+	span, ctx, futErr := t.startNonReplaySpan(ctx, "StartNexusOperation", input.Client.Service()+"/"+operationName, false, t.root.nexusHeaderWriter(input.NexusHeader))
+	if futErr != nil {
+		return nexusOperationFuture{futErr}
 	}
 	defer span.Finish(&TracerFinishSpanOptions{})
 
@@ -802,7 +802,7 @@ func (t *tracingWorkflowOutboundInterceptor) startNonReplaySpan(
 	name string,
 	dependedOn bool,
 	headerWriter func(TracerSpan) error,
-) (span TracerSpan, newCtx workflow.Context, futErr anyWorkflowFuture) {
+) (span TracerSpan, newCtx workflow.Context, futErr workflow.Future) {
 	// Noop span if replaying
 	if workflow.IsReplaying(ctx) {
 		return nopSpan{}, ctx, nil
@@ -820,7 +820,7 @@ func (t *tracingWorkflowOutboundInterceptor) startNonReplaySpan(
 		Time:     time.Now(),
 	}, t.root.workflowHeaderReader(ctx), headerWriter)
 	if err != nil {
-		return nopSpan{}, ctx, newErrFut(ctx, err)
+		return nopSpan{}, ctx, workflowFutureFromErr(ctx, err)
 	}
 	return span, newCtx, nil
 }
@@ -1023,26 +1023,27 @@ func (t *tracingInterceptor) writeSpanToNexusHeader(span TracerSpan, header nexu
 }
 
 func (t *tracingInterceptor) readSpanFromNexusHeader(header nexus.Header) (TracerSpanRef, error) {
-	return t.tracer.UnmarshalSpan(header)
+	// Ignore unmarshal errors, e.g. when an expected header isn't set.
+	// This works differently from non Nexus headers where the trace context is serialized entirely into a single
+	// payload and the presence of that payload implies a valid header.
+	span, _ := t.tracer.UnmarshalSpan(header)
+	return span, nil
 }
 
-type anyWorkflowFuture interface {
-	workflow.ChildWorkflowFuture
-	workflow.NexusOperationFuture
-}
-
-func newErrFut(ctx workflow.Context, err error) anyWorkflowFuture {
+func workflowFutureFromErr(ctx workflow.Context, err error) workflow.Future {
 	fut, set := workflow.NewFuture(ctx)
 	set.SetError(err)
-	return errFut{fut}
+	return fut
 }
 
-type errFut struct{ workflow.Future }
+type nexusOperationFuture struct{ workflow.Future }
 
-func (e errFut) GetNexusOperationExecution() workflow.Future { return e }
+func (e nexusOperationFuture) GetNexusOperationExecution() workflow.Future { return e }
 
-func (e errFut) GetChildWorkflowExecution() workflow.Future { return e }
+type childWorkflowFuture struct{ workflow.Future }
 
-func (e errFut) SignalChildWorkflow(ctx workflow.Context, signalName string, data interface{}) workflow.Future {
+func (e childWorkflowFuture) GetChildWorkflowExecution() workflow.Future { return e }
+
+func (e childWorkflowFuture) SignalChildWorkflow(ctx workflow.Context, signalName string, data interface{}) workflow.Future {
 	return e
 }
