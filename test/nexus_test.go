@@ -38,6 +38,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
@@ -47,6 +49,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/contrib/opentelemetry"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -68,7 +71,24 @@ type testContext struct {
 	taskQueue, endpoint, endpointBaseURL string
 }
 
-func newTestContext(t *testing.T, ctx context.Context) *testContext {
+type testContextOptions struct {
+	clientInterceptors []interceptor.ClientInterceptor
+}
+
+type testContextOption func(opts *testContextOptions)
+
+func withClientInterceptors(interceptors ...interceptor.ClientInterceptor) testContextOption {
+	return func(opts *testContextOptions) {
+		opts.clientInterceptors = append(opts.clientInterceptors, interceptors...)
+	}
+}
+
+func newTestContext(t *testing.T, ctx context.Context, optionFuncs ...testContextOption) *testContext {
+	options := &testContextOptions{}
+	for _, opt := range optionFuncs {
+		opt(options)
+	}
+
 	config := NewConfig()
 	require.NoError(t, WaitForTCP(time.Minute, config.ServiceAddr))
 
@@ -79,6 +99,7 @@ func newTestContext(t *testing.T, ctx context.Context) *testContext {
 		Logger:            ilog.NewDefaultLogger(),
 		ConnectionOptions: client.ConnectionOptions{TLS: config.TLS},
 		MetricsHandler:    metricsHandler,
+		Interceptors:      options.clientInterceptors,
 	})
 	require.NoError(t, err)
 
@@ -2341,4 +2362,51 @@ func TestInterceptors(t *testing.T) {
 		require.True(t, env.IsWorkflowCompleted())
 		require.NoError(t, env.GetWorkflowError())
 	})
+}
+
+func TestNexusTracingInterceptor(t *testing.T) {
+	openTelemetrySpanRecorder := tracetest.NewSpanRecorder()
+	openTelemetryTracer := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(openTelemetrySpanRecorder)).Tracer("")
+	interceptor, err := opentelemetry.NewTracingInterceptor(opentelemetry.TracerOptions{
+		Tracer: openTelemetryTracer,
+	})
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+	defer cancel()
+	tc := newTestContext(t, ctx, withClientInterceptors(interceptor))
+	workflowID := "nexus-handler-workflow-" + uuid.NewString()
+
+	wf := func(ctx workflow.Context) error {
+		c := workflow.NewNexusClient(tc.endpoint, "test")
+		opCtx, cancel := workflow.WithCancel(ctx)
+		defer cancel()
+		fut := c.ExecuteOperation(opCtx, workflowOp, workflowID, workflow.NexusOperationOptions{})
+		if err := fut.GetNexusOperationExecution().Get(ctx, nil); err != nil {
+			return fmt.Errorf("failed starting nexus operation: %w", err)
+		}
+		cancel()
+		if err := fut.Get(ctx, nil); err == nil || !errors.As(err, new(*temporal.CanceledError)) {
+			return fmt.Errorf("expected nexus operation to fail with a canceled error, got: %w", err)
+		}
+		return nil
+	}
+
+	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
+	service := nexus.NewService("test")
+	service.MustRegister(workflowOp)
+	w.RegisterNexusService(service)
+	w.RegisterWorkflow(wf)
+	w.RegisterWorkflow(waitForCancelWorkflow)
+	require.NoError(t, w.Start())
+	t.Cleanup(w.Stop)
+
+	run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		TaskQueue: tc.taskQueue,
+		// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
+		// timeout to speed up the attempts.
+		WorkflowTaskTimeout: time.Second,
+	}, wf)
+	require.NoError(t, err)
+	require.NoError(t, run.Get(ctx, nil))
 }
