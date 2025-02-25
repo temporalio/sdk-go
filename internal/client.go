@@ -641,14 +641,14 @@ type (
 
 		// WorkflowIDConflictPolicy - Specifies server behavior if a *running* workflow with the same id exists.
 		// This cannot be set if WorkflowIDReusePolicy is set to TerminateIfRunning.
-		// Optional: defaulted to Fail.
+		// Optional: defaulted to Fail - required when used in WithStartWorkflowOperation.
 		WorkflowIDConflictPolicy enumspb.WorkflowIdConflictPolicy
 
 		// When WorkflowExecutionErrorWhenAlreadyStarted is true, Client.ExecuteWorkflow will return an error if the
 		// workflow id has already been used and WorkflowIDReusePolicy or WorkflowIDConflictPolicy would
 		// disallow a re-run. If it is set to false, rather than erroring a WorkflowRun instance representing
 		// the current or last run will be returned. However, this field is ignored in the following cases:
-		// - when WithStartOperation is set;
+		// - in WithStartWorkflowOperation;
 		// - in the Nexus WorkflowRunOperation.
 		// When this field is ignored, you must set WorkflowIDConflictPolicy to UseExisting to prevent
 		// erroring.
@@ -675,7 +675,7 @@ type (
 		// │ │ │ │ │
 		// │ │ │ │ │
 		// * * * * *
-		// Cannot be set the same time as a StartDelay or WithStartOperation.
+		// Cannot be set the same time as a StartDelay or in WithStartWorkflowOperation.
 		CronSchedule string
 
 		// Memo - Optional non-indexed info that will be shown in list workflow.
@@ -701,7 +701,7 @@ type (
 		TypedSearchAttributes SearchAttributes
 
 		// EnableEagerStart - request eager execution for this workflow, if a local worker is available.
-		// Cannot be set the same time as a WithStartOperation.
+		// Cannot be set in WithStartWorkflowOperation.
 		//
 		// WARNING: Eager start does not respect worker versioning. An eagerly started workflow may run on
 		// any available local worker even if that worker is not in the default build ID set.
@@ -711,7 +711,7 @@ type (
 
 		// StartDelay - Time to wait before dispatching the first workflow task.
 		// A signal from signal with start will not trigger a workflow task.
-		// Cannot be set the same time as a CronSchedule or WithStartOperation.
+		// Cannot be set the same time as a CronSchedule or in WithStartWorkflowOperation.
 		StartDelay time.Duration
 
 		// StaticSummary - Single-line fixed summary for this workflow execution that will appear in UI/CLI. This can be
