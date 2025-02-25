@@ -27,11 +27,13 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/deployment/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // A reserved identifier of unversioned workers.
@@ -39,6 +41,15 @@ const WorkerDeploymentUnversioned = "__unversioned__"
 
 // A reserved separator for Worker Deployment Versions.
 const WorkerDeploymentVersionSeparator = "."
+
+// safeAsTime ensures that a nil proto timestamp makes `IsZero()` true.
+func safeAsTime(timestamp *timestamppb.Timestamp) time.Time {
+	if timestamp == nil {
+		return time.Time{}
+	} else {
+		return timestamp.AsTime()
+	}
+}
 
 type (
 	// WorkerDeploymentClient is the client for managing worker deployments.
@@ -100,16 +111,16 @@ func workerDeploymentRoutingConfigFromProto(routingConfig *deployment.RoutingCon
 		CurrentVersion:                      routingConfig.GetCurrentVersion(),
 		RampingVersion:                      routingConfig.GetRampingVersion(),
 		RampingVersionPercentage:            routingConfig.GetRampingVersionPercentage(),
-		CurrentVersionChangedTime:           routingConfig.GetCurrentVersionChangedTime().AsTime(),
-		RampingVersionChangedTime:           routingConfig.GetRampingVersionChangedTime().AsTime(),
-		RampingVersionPercentageChangedTime: routingConfig.GetRampingVersionPercentageChangedTime().AsTime(),
+		CurrentVersionChangedTime:           safeAsTime(routingConfig.GetCurrentVersionChangedTime()),
+		RampingVersionChangedTime:           safeAsTime(routingConfig.GetRampingVersionChangedTime()),
+		RampingVersionPercentageChangedTime: safeAsTime(routingConfig.GetRampingVersionPercentageChangedTime()),
 	}
 }
 
 func workerDeploymentListEntryFromProto(summary *workflowservice.ListWorkerDeploymentsResponse_WorkerDeploymentSummary) *WorkerDeploymentListEntry {
 	return &WorkerDeploymentListEntry{
 		Name:          summary.GetName(),
-		CreateTime:    summary.GetCreateTime().AsTime(),
+		CreateTime:    safeAsTime(summary.GetCreateTime()),
 		RoutingConfig: workerDeploymentRoutingConfigFromProto(summary.GetRoutingConfig()),
 	}
 }
@@ -119,7 +130,7 @@ func workerDeploymentVersionSummariesFromProto(summaries []*deployment.WorkerDep
 	for _, summary := range summaries {
 		result = append(result, WorkerDeploymentVersionSummary{
 			Version:        summary.GetVersion(),
-			CreateTime:     summary.CreateTime.AsTime(),
+			CreateTime:     safeAsTime(summary.CreateTime),
 			DrainageStatus: WorkerDeploymentVersionDrainageStatus(summary.GetDrainageStatus()),
 		})
 	}
@@ -133,7 +144,7 @@ func workerDeploymentInfoFromProto(info *deployment.WorkerDeploymentInfo) Worker
 
 	return WorkerDeploymentInfo{
 		Name:                 info.Name,
-		CreateTime:           info.CreateTime.AsTime(),
+		CreateTime:           safeAsTime(info.CreateTime),
 		VersionSummaries:     workerDeploymentVersionSummariesFromProto(info.VersionSummaries),
 		RoutingConfig:        workerDeploymentRoutingConfigFromProto(info.RoutingConfig),
 		LastModifierIdentity: info.LastModifierIdentity,
@@ -296,8 +307,8 @@ func workerDeploymentDrainageInfoFromProto(drainageInfo *deployment.VersionDrain
 	}
 	return &WorkerDeploymentVersionDrainageInfo{
 		DrainageStatus:  WorkerDeploymentVersionDrainageStatus(drainageInfo.Status),
-		LastChangedTime: drainageInfo.LastChangedTime.AsTime(),
-		LastCheckedTime: drainageInfo.LastCheckedTime.AsTime(),
+		LastChangedTime: safeAsTime(drainageInfo.LastChangedTime),
+		LastCheckedTime: safeAsTime(drainageInfo.LastCheckedTime),
 	}
 }
 
@@ -307,10 +318,10 @@ func workerDeploymentVersionInfoFromProto(info *deployment.WorkerDeploymentVersi
 	}
 	return WorkerDeploymentVersionInfo{
 		Version:            info.Version,
-		CreateTime:         info.CreateTime.AsTime(),
-		RoutingChangedTime: info.RoutingChangedTime.AsTime(),
-		CurrentSinceTime:   info.CurrentSinceTime.AsTime(),
-		RampingSinceTime:   info.RampingSinceTime.AsTime(),
+		CreateTime:         safeAsTime(info.CreateTime),
+		RoutingChangedTime: safeAsTime(info.RoutingChangedTime),
+		CurrentSinceTime:   safeAsTime(info.CurrentSinceTime),
+		RampingSinceTime:   safeAsTime(info.RampingSinceTime),
 		RampPercentage:     info.RampPercentage,
 		TaskQueuesInfos:    workerDeploymentTaskQueuesInfosFromProto(info.TaskQueueInfos),
 		DrainageInfo:       workerDeploymentDrainageInfoFromProto(info.DrainageInfo),
