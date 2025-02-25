@@ -167,6 +167,7 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", "matching.wv.VersionDrainageStatusRefreshInterval=1",
 				"--http-port", "7243", // Nexus tests use the HTTP port directly
 				"--dynamic-config-value", `component.callbacks.allowedAddresses=[{"Pattern":"*","AllowInsecure":true}]`, // SDK tests use arbitrary callback URLs, permit that on the server
+				"--dynamic-config-value", `system.refreshNexusEndpointsMinWait="0s"`, // Make Nexus tests faster
 			},
 		})
 		if err != nil {
