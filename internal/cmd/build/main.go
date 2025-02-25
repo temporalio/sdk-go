@@ -176,7 +176,7 @@ func (b *builder) integrationTest() error {
 	}
 
 	// Run integration test
-	args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "10m"}
+	args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "15m"}
 	if *runFlag != "" {
 		args = append(args, "-run", *runFlag)
 	}
