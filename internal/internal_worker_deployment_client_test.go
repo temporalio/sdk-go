@@ -28,6 +28,7 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
+	"go.temporal.io/api/deployment/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
@@ -146,4 +147,26 @@ func (d *workerDeploymentClientTestSuite) TestWorkerDeploymentIteratorError() {
 	event, err = iter.Next()
 	d.Nil(event)
 	d.NotNil(err)
+}
+
+// nil timestamps pass IsZero()
+func (d *workerDeploymentClientTestSuite) TestWorkerDeploymenNilTimestamp() {
+	request := &workflowservice.DescribeWorkerDeploymentRequest{
+		Namespace:      DefaultNamespace,
+		DeploymentName: "foo",
+	}
+
+	response := &workflowservice.DescribeWorkerDeploymentResponse{
+		ConflictToken: []byte{1, 2, 1, 2, 1, 1, 8},
+		WorkerDeploymentInfo: &deployment.WorkerDeploymentInfo{
+			Name:       "foo",
+			CreateTime: nil,
+		},
+	}
+
+	d.service.EXPECT().DescribeWorkerDeployment(gomock.Any(), request, gomock.Any()).Return(response, nil).Times(1)
+
+	dHandle := d.client.WorkerDeploymentClient().GetHandle("foo")
+	deployment, _ := dHandle.Describe(context.Background(), WorkerDeploymentDescribeOptions{})
+	d.True(deployment.Info.CreateTime.IsZero())
 }
