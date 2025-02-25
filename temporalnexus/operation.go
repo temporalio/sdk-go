@@ -53,8 +53,6 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-var errConflictPolicyUseExistingNotSupported = errors.New("workflow ID conflict policy UseExisting is not supported for Nexus WorkflowRunOperation")
-
 // GetMetricsHandler returns a metrics handler to be used in a Nexus operation's context.
 func GetMetricsHandler(ctx context.Context) metrics.Handler {
 	return internal.GetNexusOperationMetricsHandler(ctx)
@@ -396,7 +394,7 @@ func ExecuteUntypedWorkflow[R any](
 		return nil, &nexus.HandlerError{
 			Type:          nexus.HandlerErrorTypeInternal,
 			RetryBehavior: nexus.HandlerErrorRetryBehaviorNonRetryable,
-			Cause:         errConflictPolicyUseExistingNotSupported,
+			Cause:         errors.New("workflow ID conflict policy UseExisting is not supported for Nexus WorkflowRunOperation"),
 		}
 	}
 
