@@ -101,6 +101,12 @@ func Test_TaskQueueDescription_fromProtoResponse(t *testing.T) {
 						TaskReachability: enumspb.BUILD_ID_TASK_REACHABILITY_REACHABLE,
 					},
 				},
+				VersioningInfo: &taskqueuepb.TaskQueueVersioningInfo{
+					CurrentVersion:           "foo.build1",
+					RampingVersion:           "foo.build2",
+					RampingVersionPercentage: 3.0,
+					UpdateTime:               nowProto,
+				},
 			},
 			want: TaskQueueDescription{
 				VersionsInfo: map[string]TaskQueueVersionInfo{
@@ -114,6 +120,12 @@ func Test_TaskQueueDescription_fromProtoResponse(t *testing.T) {
 						},
 						TaskReachability: BuildIDTaskReachabilityReachable,
 					},
+				},
+				VersioningInfo: &TaskQueueVersioningInfo{
+					CurrentVersion:           "foo.build1",
+					RampingVersion:           "foo.build2",
+					RampingVersionPercentage: 3.0,
+					UpdateTime:               now,
 				},
 			},
 		},

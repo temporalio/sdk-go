@@ -2831,6 +2831,21 @@ func (w *Workflows) ForcedNonDeterminism(ctx workflow.Context, sameCommandButDif
 	return
 }
 
+var shouldEmitCommand = true
+
+func (w *Workflows) NonDeterminismCommandNotFoundWorkflow(ctx workflow.Context) error {
+	workflow.SetUpdateHandler(ctx, "wait-for-wft-completion", func(ctx workflow.Context) error {
+		return nil
+	})
+	if shouldEmitCommand {
+		_ = workflow.SideEffect(ctx, func(ctx workflow.Context) any {
+			return nil
+		}).Get(nil)
+	}
+	workflow.Sleep(ctx, 999*time.Hour)
+	return nil
+}
+
 func (w *Workflows) NonDeterminismReplay(ctx workflow.Context) error {
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 	var a Activities
@@ -3374,6 +3389,29 @@ func (w *Workflows) WorkflowTemporalPrefixSignal(ctx workflow.Context) error {
 	return nil
 }
 
+// WorkflowWithChildren starts two child workflows and waits for them to complete in sequence.
+func (w *Workflows) WorkflowWithChildren(ctx workflow.Context) (string, error) {
+	var result string
+	err := workflow.ExecuteChildWorkflow(ctx, w.child, "hello child-1", false).Get(ctx, &result)
+	if err != nil {
+		return "", err
+	}
+
+	var result2 string
+	err = workflow.ExecuteChildWorkflow(ctx, w.child, "hello child-2", false).Get(ctx, &result2)
+	if err != nil {
+		return "", err
+	}
+
+	var result3 string
+	err = workflow.ExecuteChildWorkflow(ctx, w.child, "hello child-2", false).Get(ctx, &result3)
+	if err != nil {
+		return "", err
+	}
+
+	return "Parent Workflow Complete", nil
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -3447,6 +3485,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.WorkflowWithParallelSideEffects)
 	worker.RegisterWorkflow(w.WorkflowWithParallelMutableSideEffects)
 	worker.RegisterWorkflow(w.WorkflowWithLocalActivityStartToCloseTimeout)
+	worker.RegisterWorkflow(w.WorkflowWithChildren)
 	worker.RegisterWorkflow(w.LocalActivityStaleCache)
 	worker.RegisterWorkflow(w.UpdateInfoWorkflow)
 	worker.RegisterWorkflow(w.UpdateEntityWorkflow)
@@ -3471,6 +3510,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.SignalCounter)
 	worker.RegisterWorkflow(w.PanicOnSignal)
 	worker.RegisterWorkflow(w.ForcedNonDeterminism)
+	worker.RegisterWorkflow(w.NonDeterminismCommandNotFoundWorkflow)
 	worker.RegisterWorkflow(w.NonDeterminismReplay)
 	worker.RegisterWorkflow(w.MutableSideEffect)
 	worker.RegisterWorkflow(w.HistoryLengths)

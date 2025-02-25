@@ -1281,6 +1281,8 @@ type WorkflowInfo struct {
 	continueAsNewSuggested bool
 	currentHistorySize     int
 	currentHistoryLength   int
+	// currentRunID is the current run ID of the workflow task, deterministic over reset
+	currentRunID string
 }
 
 // UpdateInfo information about a currently running update
@@ -2584,8 +2586,6 @@ type NexusOperationFuture interface {
 	// Use this method to extract the Operation token of an asynchronous operation. OperationToken will be empty for
 	// synchronous operations.
 	//
-	// NOTE: Experimental
-	//
 	//  fut := nexusClient.ExecuteOperation(ctx, op, ...)
 	//  var exec workflow.NexusOperationExecution
 	//  if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err == nil {
@@ -2598,18 +2598,12 @@ type NexusOperationFuture interface {
 // NOTE to maintainers, this interface definition is duplicated in the workflow package to provide a better UX.
 type NexusClient interface {
 	// The endpoint name this client uses.
-	//
-	// NOTE: Experimental
 	Endpoint() string
 	// The service name this client uses.
-	//
-	// NOTE: Experimental
 	Service() string
 
 	// ExecuteOperation executes a Nexus Operation.
 	// The operation argument can be a string, a [nexus.Operation] or a [nexus.OperationReference].
-	//
-	// NOTE: Experimental
 	ExecuteOperation(ctx Context, operation any, input any, options NexusOperationOptions) NexusOperationFuture
 }
 
@@ -2618,8 +2612,6 @@ type nexusClient struct {
 }
 
 // Create a [NexusClient] from an endpoint name and a service name.
-//
-// NOTE: Experimental
 //
 // Exposed as: [go.temporal.io/sdk/workflow.NewNexusClient]
 func NewNexusClient(endpoint, service string) NexusClient {

@@ -232,6 +232,13 @@ type (
 	}
 )
 
+func (h ResultHandler) wrap(callback ResultHandler) ResultHandler {
+	return func(result *commonpb.Payloads, err error) {
+		callback(result, err)
+		h(result, err)
+	}
+}
+
 func (t *polledTask) getTask() taskForWorker {
 	return t.task
 }

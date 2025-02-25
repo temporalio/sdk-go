@@ -225,8 +225,6 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		WorkflowPanicPolicy: panicPolicy,
 	}
 
-	worker.SetStickyWorkflowCacheSize(ts.config.maxWorkflowCacheSize)
-
 	if strings.Contains(ts.T().Name(), "Session") {
 		options.EnableSessionWorker = true
 		// Limit the session execution size
@@ -2040,6 +2038,143 @@ func (ts *IntegrationTestSuite) TestResetWorkflowExecution() {
 	ts.Equal(originalResult, newResult)
 }
 
+// TestResetWorkflowExecutionWithChildren tests the behavior of child workflow ID generation when a workflow with children is reset.
+// It repeatedly resets the workflow at different points in its execution and verifies that the child workflow IDs are generated correctly.
+func (ts *IntegrationTestSuite) TestResetWorkflowExecutionWithChildren() {
+	wfID := "reset-workflow-with-children"
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	// Start a workflow with 3 children.
+	options := ts.startWorkflowOptions(wfID)
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.WorkflowWithChildren)
+	ts.NoError(err)
+	var originalResult string
+	err = run.Get(ctx, &originalResult)
+	ts.NoError(err)
+
+	// save child init childIDs for later comparison.
+	childIDs := ts.getChildWFIDsFromHistory(ctx, wfID, run.GetRunID())
+	ts.Len(childIDs, 3)
+	child1IDBeforeReset := childIDs[0]
+	child2IDBeforeReset := childIDs[1]
+	child3IDBeforeReset := childIDs[2]
+
+	resetRequest := &workflowservice.ResetWorkflowExecutionRequest{
+		Namespace: ts.config.Namespace,
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: wfID,
+			RunId:      run.GetRunID(),
+		},
+		Reason: "integration test",
+	}
+	// (reset #1) - resetting the workflow execution before both child workflows are started.
+	resetRequest.RequestId = "reset-request-1"
+	resetRequest.WorkflowTaskFinishEventId = 4
+	resp, err := ts.client.ResetWorkflowExecution(context.Background(), resetRequest)
+	ts.NoError(err)
+	// Wait for the new run to complete.
+	var resultAfterReset1 string
+	err = ts.client.GetWorkflow(context.Background(), wfID, resp.GetRunId()).Get(ctx, &resultAfterReset1)
+	ts.NoError(err)
+	ts.Equal(originalResult, resultAfterReset1)
+
+	childIDsAfterReset1 := ts.getChildWFIDsFromHistory(ctx, wfID, resp.GetRunId())
+	ts.Len(childIDsAfterReset1, 3)
+	// All 3 child workflow IDs should be different after reset.
+	ts.NotEqual(child1IDBeforeReset, childIDsAfterReset1[0])
+	ts.NotEqual(child2IDBeforeReset, childIDsAfterReset1[1])
+	ts.NotEqual(child3IDBeforeReset, childIDsAfterReset1[2])
+
+	// (reset #2) - resetting the new workflow execution after child-1 but before child-2
+	resetRequest.RequestId = "reset-request-2"
+	resetRequest.WorkflowExecution.RunId = resp.GetRunId()
+	resetRequest.WorkflowTaskFinishEventId = ts.getWorkflowTaskFinishEventIdAfterChild(ctx, wfID, resp.GetRunId(), childIDsAfterReset1[0])
+	resp, err = ts.client.ResetWorkflowExecution(context.Background(), resetRequest)
+	ts.NoError(err)
+	// Wait for the new run to complete.
+	var resultAfterReset2 string
+	err = ts.client.GetWorkflow(context.Background(), wfID, resp.GetRunId()).Get(ctx, &resultAfterReset2)
+	ts.NoError(err)
+	ts.Equal(originalResult, resultAfterReset2)
+
+	childIDsAfterReset2 := ts.getChildWFIDsFromHistory(ctx, wfID, resp.GetRunId())
+	ts.Len(childIDsAfterReset2, 3)
+	ts.Equal(childIDsAfterReset1[0], childIDsAfterReset2[0])    // child-1 should be the same as before reset.
+	ts.NotEqual(childIDsAfterReset1[1], childIDsAfterReset2[1]) // child-2 should be different after reset.
+	ts.NotEqual(childIDsAfterReset1[2], childIDsAfterReset2[2]) // Child-3 should be different after reset.
+
+	// (reset #3) - resetting the new workflow execution after child-2 but before child-3
+	resetRequest.RequestId = "reset-request-3"
+	resetRequest.WorkflowExecution.RunId = resp.GetRunId()
+	resetRequest.WorkflowTaskFinishEventId = ts.getWorkflowTaskFinishEventIdAfterChild(ctx, wfID, resp.GetRunId(), childIDsAfterReset2[1])
+	resp, err = ts.client.ResetWorkflowExecution(context.Background(), resetRequest)
+	ts.NoError(err)
+	// Wait for the new run to complete.
+	var resultAfterReset3 string
+	err = ts.client.GetWorkflow(context.Background(), wfID, resp.GetRunId()).Get(ctx, &resultAfterReset3)
+	ts.NoError(err)
+	ts.Equal(originalResult, resultAfterReset3)
+
+	childIDsAfterReset3 := ts.getChildWFIDsFromHistory(ctx, wfID, resp.GetRunId())
+	ts.Len(childIDsAfterReset3, 3)
+	// child-1 & child-2 workflow IDs should be the same as before reset. Child-3 should be different.
+	ts.Equal(childIDsAfterReset2[0], childIDsAfterReset3[0])
+	ts.Equal(childIDsAfterReset2[1], childIDsAfterReset3[1])
+	ts.NotEqual(childIDsAfterReset2[2], childIDsAfterReset3[2])
+
+	// (reset #3) - resetting the new workflow execution one last time after child-3
+	// This should successfully replay all child events and not change the child workflow IDs from previous run.
+	resetRequest.RequestId = "reset-request-4"
+	resetRequest.WorkflowExecution.RunId = resp.GetRunId()
+	resetRequest.WorkflowTaskFinishEventId = ts.getWorkflowTaskFinishEventIdAfterChild(ctx, wfID, resp.GetRunId(), childIDsAfterReset3[2])
+	resp, err = ts.client.ResetWorkflowExecution(context.Background(), resetRequest)
+	ts.NoError(err)
+	childIDsFinal := ts.getChildWFIDsFromHistory(ctx, wfID, resp.GetRunId())
+	ts.Len(childIDsFinal, 3)
+	ts.Equal(childIDsAfterReset3[0], childIDsFinal[0])
+	ts.Equal(childIDsAfterReset3[1], childIDsFinal[1])
+	ts.Equal(childIDsAfterReset3[2], childIDsFinal[2])
+}
+
+func (ts *IntegrationTestSuite) getChildWFIDsFromHistory(ctx context.Context, wfID string, runID string) []string {
+	iter := ts.client.GetWorkflowHistory(ctx, wfID, runID, false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	var childIDs []string
+	for iter.HasNext() {
+		event, err1 := iter.Next()
+		if err1 != nil {
+			break
+		}
+		if event.GetEventType() == enumspb.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED {
+			childIDs = append(childIDs, event.GetStartChildWorkflowExecutionInitiatedEventAttributes().GetWorkflowId())
+		}
+	}
+	return childIDs
+}
+
+func (ts *IntegrationTestSuite) getWorkflowTaskFinishEventIdAfterChild(ctx context.Context, wfID string, runID string, childID string) int64 {
+	iter := ts.client.GetWorkflowHistory(ctx, wfID, runID, false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	childFound := false
+	for iter.HasNext() {
+		event, err := iter.Next()
+		if err != nil {
+			break
+		}
+		if event.GetEventType() == enumspb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_COMPLETED {
+			if event.GetChildWorkflowExecutionCompletedEventAttributes().GetWorkflowExecution().GetWorkflowId() == childID {
+				childFound = true
+			}
+		}
+		if !childFound {
+			continue
+		}
+		if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
+			return event.GetEventId()
+		}
+	}
+	return 0
+}
+
 func (ts *IntegrationTestSuite) TestResetWorkflowExecutionWithUpdate() {
 	ctx := context.Background()
 	wfId := "reset-workflow-execution-with-update"
@@ -2897,24 +3032,15 @@ func (ts *IntegrationTestSuite) waitForQueryTrue(run client.WorkflowRun, query s
 }
 
 func (ts *IntegrationTestSuite) TestNumPollersCounter() {
-	_, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	assertNumPollersEventually := func(expected float64, pollerType string, tags ...string) {
-		// Try for two seconds
-		var lastCount float64
-		for start := time.Now(); time.Since(start) <= 10*time.Second; {
-			lastCount = ts.metricGauge(
+	assertNumPollersEventually := func(expected float64, pollerType string) {
+		ts.Require().EventuallyWithT(func(t *assert.CollectT) {
+			lastCount := ts.metricGauge(
 				metrics.NumPoller,
 				"poller_type", pollerType,
 				"task_queue", ts.taskQueueName,
 			)
-			if lastCount == expected {
-				return
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
-		// Will fail
-		ts.Equal(expected, lastCount)
+			assert.Equal(t, expected, lastCount)
+		}, 10*time.Second, 50*time.Millisecond)
 	}
 	if ts.config.maxWorkflowCacheSize == 0 {
 		assertNumPollersEventually(2, "workflow_task")
@@ -4596,6 +4722,55 @@ func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch b
 	ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR, taskFailed.Cause)
 	taskFailedMetric = fetchMetrics()
 	ts.True(taskFailedMetric >= 1)
+}
+
+func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseCommandNotFound() {
+	// Create a situation in which, on replay, an event (MARKER_RECORDED) is encountered and yet the
+	// code emits no corresponding command.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	wfID := "test-non-determinism-failure-cause-command-not-found-" + uuid.New()
+	// Start workflow via UpdateWithStart and wait for update response
+	startWfOptions := ts.startWorkflowOptions(wfID)
+	startWfOptions.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL
+	startWfOp := ts.client.NewWithStartWorkflowOperation(startWfOptions, ts.workflows.NonDeterminismCommandNotFoundWorkflow)
+	updHandle, err := ts.client.UpdateWithStartWorkflow(ctx, client.UpdateWithStartWorkflowOptions{
+		StartWorkflowOperation: startWfOp,
+		UpdateOptions: client.UpdateWorkflowOptions{
+			WorkflowID:   wfID,
+			UpdateName:   "wait-for-wft-completion",
+			WaitForStage: client.WorkflowUpdateStageCompleted,
+		},
+	})
+	ts.NoError(err)
+
+	// WFT 1: workflow shouldEmitCommand is true, workflow accepts and completes update and emits a
+	// RecordMarker command.
+	ts.NoError(updHandle.Get(ctx, nil))
+	// Stop worker and start a new one in order to force full history replay.
+	ts.worker.Stop()
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{WorkflowPanicPolicy: internal.FailWorkflow})
+	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.NoError(nextWorker.Start())
+	defer nextWorker.Stop()
+	// Set shouldEmitCommand=false and send second update in order to trigger a WFT.
+	shouldEmitCommand = false
+	_, err = ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   wfID,
+		UpdateName:   "wait-for-wft-completion",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
+	ts.Error(err)
+	run, err := startWfOp.Get(ctx)
+	ts.NoError(err)
+	// WFT 2: full replay, NDE due to missing RecordMarker command.
+	err = run.Get(ctx, nil)
+	ts.Error(err)
+	var workflowErr *temporal.WorkflowExecutionError
+	ts.True(errors.As(err, &workflowErr))
+	ts.Contains(workflowErr.Error(),
+		"[TMPRL1100] During replay, a matching Timer command was expected in history event position 8. However, the replayed code did not produce that.")
 }
 
 func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseReplay() {
