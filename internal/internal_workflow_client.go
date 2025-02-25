@@ -42,7 +42,6 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	"go.temporal.io/api/cloud/cloudservice/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
@@ -104,13 +103,6 @@ type (
 		// The pointer value is shared across multiple clients. If non-nil, only
 		// access/mutate atomically.
 		unclosedClients *int32
-	}
-
-	// cloudOperationsClient is the client for managing cloud.
-	cloudOperationsClient struct {
-		conn               *grpc.ClientConn
-		logger             log.Logger
-		cloudServiceClient cloudservice.CloudServiceClient
 	}
 
 	// namespaceClient is the client for managing namespaces.
@@ -506,7 +498,7 @@ func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 	// We do allow canceled error to be passed here
 	cancelAllowed := true
 	request := convertActivityResultToRespondRequest(wc.identity, taskToken,
-		data, err, wc.dataConverter, wc.failureConverter, wc.namespace, cancelAllowed, nil, nil)
+		data, err, wc.dataConverter, wc.failureConverter, wc.namespace, cancelAllowed, nil, nil, nil)
 	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
@@ -1338,6 +1330,13 @@ func (wc *WorkflowClient) DeploymentClient() DeploymentClient {
 	}
 }
 
+// WorkerDeploymentClient implements [Client.WorkerDeploymentClient].
+func (wc *WorkflowClient) WorkerDeploymentClient() WorkerDeploymentClient {
+	return &workerDeploymentClient{
+		workflowClient: wc,
+	}
+}
+
 // Close client and clean up underlying resources.
 func (wc *WorkflowClient) Close() {
 	// If there's a set of unclosed clients, we have to decrement it and then
@@ -1359,16 +1358,6 @@ func (wc *WorkflowClient) Close() {
 		if err := wc.conn.Close(); err != nil {
 			wc.logger.Warn("unable to close connection", tagError, err)
 		}
-	}
-}
-
-func (c *cloudOperationsClient) CloudService() cloudservice.CloudServiceClient {
-	return c.cloudServiceClient
-}
-
-func (c *cloudOperationsClient) Close() {
-	if err := c.conn.Close(); err != nil {
-		c.logger.Warn("unable to close connection", tagError, err)
 	}
 }
 
@@ -1689,6 +1678,7 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 		CompletionCallbacks:      in.Options.callbacks,
 		Links:                    in.Options.links,
 		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
+		OnConflictOptions:        in.Options.onConflictOptions.ToProto(),
 	}
 
 	startRequest.UserMetadata, err = buildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)

@@ -176,7 +176,7 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextCommands() {
 		createTestEventWorkflowTaskStarted(3),
 		{
 			EventId:   4,
-			EventType: enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED,
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT,
 		},
 		{
 			EventId:   5,
@@ -278,7 +278,7 @@ func (s *PollLayerInterfacesTestSuite) TestMessageCommands() {
 		createTestEventWorkflowTaskStarted(3),
 		{
 			EventId:   4,
-			EventType: enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED,
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT,
 		},
 		createTestEventWorkflowTaskScheduled(5, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
 		createTestEventWorkflowTaskStarted(6),
