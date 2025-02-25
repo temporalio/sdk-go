@@ -40,6 +40,7 @@ import (
 	"github.com/stretchr/testify/require"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 	"go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
@@ -53,6 +54,7 @@ import (
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/internal/interceptortest"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/temporal"
@@ -2396,7 +2398,7 @@ func TestNexusTracingInterceptor(t *testing.T) {
 	service := nexus.NewService("test")
 	service.MustRegister(workflowOp)
 	w.RegisterNexusService(service)
-	w.RegisterWorkflow(wf)
+	w.RegisterWorkflowWithOptions(wf, workflow.RegisterOptions{Name: "caller"})
 	w.RegisterWorkflow(waitForCancelWorkflow)
 	require.NoError(t, w.Start())
 	t.Cleanup(w.Stop)
@@ -2406,7 +2408,30 @@ func TestNexusTracingInterceptor(t *testing.T) {
 		// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
 		// timeout to speed up the attempts.
 		WorkflowTaskTimeout: time.Second,
-	}, wf)
+	}, "caller")
 	require.NoError(t, err)
 	require.NoError(t, run.Get(ctx, nil))
+
+	require.Len(t, openTelemetrySpanRecorder.Ended(), 7) // Ensure all started spans ended
+	require.Equal(t, []*interceptortest.SpanInfo{
+		interceptortest.Span("StartWorkflow:caller",
+			interceptortest.Span("RunWorkflow:caller",
+				interceptortest.Span("StartNexusOperation:test/workflow-op",
+					interceptortest.Span("RunStartNexusOperationHandler:test/workflow-op",
+						interceptortest.Span("StartWorkflow:waitForCancelWorkflow",
+							interceptortest.Span("RunWorkflow:waitForCancelWorkflow")))))),
+		// Note that the span is not attached since the server as of 1.27 does not propagate headers to the cancel
+		// request.  This assertion will have to change once the server fixes this behavior. It's left here as a
+		// reminder.
+		interceptortest.Span("RunCancelNexusOperationHandler:test/workflow-op"),
+	}, spanChildren(openTelemetrySpanRecorder.Ended(), trace.SpanID{}))
+}
+
+func spanChildren(spans []sdktrace.ReadOnlySpan, parentID trace.SpanID) (ret []*interceptortest.SpanInfo) {
+	for _, s := range spans {
+		if s.Parent().SpanID() == parentID {
+			ret = append(ret, interceptortest.Span(s.Name(), spanChildren(spans, s.SpanContext().SpanID())...))
+		}
+	}
+	return
 }
