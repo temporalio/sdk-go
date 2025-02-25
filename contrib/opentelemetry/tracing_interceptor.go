@@ -148,6 +148,11 @@ func (t *tracer) Options() interceptor.TracerOptions {
 }
 
 func (t *tracer) UnmarshalSpan(m map[string]string) (interceptor.TracerSpanRef, error) {
+	if _, ok := m["traceparent"]; !ok {
+		// If there is no span, return nothing, but don't error out. This is
+		// a legitimate place where a span does not exist in the headers
+		return nil, nil
+	}
 	ctx := t.options.TextMapPropagator.Extract(context.Background(), textMapCarrier(m))
 	spanCtx := trace.SpanContextFromContext(ctx)
 	if !spanCtx.IsValid() {

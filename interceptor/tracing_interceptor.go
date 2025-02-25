@@ -1023,11 +1023,7 @@ func (t *tracingInterceptor) writeSpanToNexusHeader(span TracerSpan, header nexu
 }
 
 func (t *tracingInterceptor) readSpanFromNexusHeader(header nexus.Header) (TracerSpanRef, error) {
-	// Ignore unmarshal errors, e.g. when an expected header isn't set.
-	// This works differently from non Nexus headers where the trace context is serialized entirely into a single
-	// payload and the presence of that payload implies a valid header.
-	span, _ := t.tracer.UnmarshalSpan(header)
-	return span, nil
+	return t.tracer.UnmarshalSpan(header)
 }
 
 func workflowFutureFromErr(ctx workflow.Context, err error) workflow.Future {
