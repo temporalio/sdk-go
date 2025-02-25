@@ -35,21 +35,26 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
+	"github.com/opentracing/opentracing-go/mocktracer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 	"go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
 	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/serviceerror"
-	"google.golang.org/protobuf/proto"
-
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/contrib/opentelemetry"
+	"go.temporal.io/sdk/contrib/opentracing"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/internal/interceptortest"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/temporal"
@@ -57,6 +62,7 @@ import (
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
+	"google.golang.org/protobuf/proto"
 )
 
 const defaultNexusTestTimeout = 10 * time.Second
@@ -68,7 +74,24 @@ type testContext struct {
 	taskQueue, endpoint, endpointBaseURL string
 }
 
-func newTestContext(t *testing.T, ctx context.Context) *testContext {
+type testContextOptions struct {
+	clientInterceptors []interceptor.ClientInterceptor
+}
+
+type testContextOption func(opts *testContextOptions)
+
+func withClientInterceptors(interceptors ...interceptor.ClientInterceptor) testContextOption {
+	return func(opts *testContextOptions) {
+		opts.clientInterceptors = append(opts.clientInterceptors, interceptors...)
+	}
+}
+
+func newTestContext(t *testing.T, ctx context.Context, optionFuncs ...testContextOption) *testContext {
+	options := &testContextOptions{}
+	for _, opt := range optionFuncs {
+		opt(options)
+	}
+
 	config := NewConfig()
 	require.NoError(t, WaitForTCP(time.Minute, config.ServiceAddr))
 
@@ -79,6 +102,7 @@ func newTestContext(t *testing.T, ctx context.Context) *testContext {
 		Logger:            ilog.NewDefaultLogger(),
 		ConnectionOptions: client.ConnectionOptions{TLS: config.TLS},
 		MetricsHandler:    metricsHandler,
+		Interceptors:      options.clientInterceptors,
 	})
 	require.NoError(t, err)
 
@@ -2341,4 +2365,126 @@ func TestInterceptors(t *testing.T) {
 		require.True(t, env.IsWorkflowCompleted())
 		require.NoError(t, env.GetWorkflowError())
 	})
+}
+
+type opentracingTracer struct {
+	interceptor.Tracer
+	mock *mocktracer.MockTracer
+}
+
+func (t *opentracingTracer) FinishedSpans() []*interceptortest.SpanInfo {
+	return t.spanChildren(t.mock.FinishedSpans(), 0)
+}
+
+func (t *opentracingTracer) spanChildren(spans []*mocktracer.MockSpan, parentID int) (ret []*interceptortest.SpanInfo) {
+	for _, s := range spans {
+		if s.ParentID == parentID {
+			ret = append(ret, interceptortest.Span(s.OperationName, t.spanChildren(spans, s.SpanContext.SpanID)...))
+		}
+	}
+	return
+}
+
+type otelTracer struct {
+	interceptor.Tracer
+	rec *tracetest.SpanRecorder
+}
+
+func (t *otelTracer) FinishedSpans() []*interceptortest.SpanInfo {
+	return t.spanChildren(t.rec.Ended(), trace.SpanID{})
+}
+
+func (t *otelTracer) spanChildren(spans []sdktrace.ReadOnlySpan, parentID trace.SpanID) (ret []*interceptortest.SpanInfo) {
+	for _, s := range spans {
+		if s.Parent().SpanID() == parentID {
+			ret = append(ret, interceptortest.Span(s.Name(), t.spanChildren(spans, s.SpanContext().SpanID())...))
+		}
+	}
+	return
+}
+
+func TestNexusTracingInterceptor(t *testing.T) {
+	t.Skip("this test is flaky in CI and needs to be restructured")
+	cases := []struct {
+		name   string
+		tracer func(t *testing.T) interceptortest.TestTracer
+	}{
+		{
+			name: "OTel",
+			tracer: func(t *testing.T) interceptortest.TestTracer {
+				rec := tracetest.NewSpanRecorder()
+				tracer, err := opentelemetry.NewTracer(opentelemetry.TracerOptions{
+					Tracer: sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec)).Tracer(""),
+				})
+				require.NoError(t, err)
+				return &otelTracer{tracer, rec}
+			},
+		},
+		{
+			name: "OpenTracing",
+			tracer: func(t *testing.T) interceptortest.TestTracer {
+				mock := mocktracer.New()
+				tracer, err := opentracing.NewTracer(opentracing.TracerOptions{Tracer: mock})
+				require.NoError(t, err)
+
+				return &opentracingTracer{Tracer: tracer, mock: mock}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
+			defer cancel()
+			tracer := tc.tracer(t)
+			tc := newTestContext(t, ctx, withClientInterceptors(interceptor.NewTracingInterceptor(tracer)))
+			workflowID := "nexus-handler-workflow-" + uuid.NewString()
+
+			wf := func(ctx workflow.Context) error {
+				c := workflow.NewNexusClient(tc.endpoint, "test")
+				opCtx, cancel := workflow.WithCancel(ctx)
+				defer cancel()
+				fut := c.ExecuteOperation(opCtx, workflowOp, workflowID, workflow.NexusOperationOptions{})
+				if err := fut.GetNexusOperationExecution().Get(ctx, nil); err != nil {
+					return fmt.Errorf("failed starting nexus operation: %w", err)
+				}
+				cancel()
+				if err := fut.Get(ctx, nil); err == nil || !errors.As(err, new(*temporal.CanceledError)) {
+					return fmt.Errorf("expected nexus operation to fail with a canceled error, got: %w", err)
+				}
+				return nil
+			}
+
+			w := worker.New(tc.client, tc.taskQueue, worker.Options{})
+			service := nexus.NewService("test")
+			service.MustRegister(workflowOp)
+			w.RegisterNexusService(service)
+			w.RegisterWorkflowWithOptions(wf, workflow.RegisterOptions{Name: "caller"})
+			w.RegisterWorkflow(waitForCancelWorkflow)
+			require.NoError(t, w.Start())
+			t.Cleanup(w.Stop)
+
+			run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+				TaskQueue: tc.taskQueue,
+				// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
+				// timeout to speed up the attempts.
+				WorkflowTaskTimeout: time.Second,
+			}, "caller")
+			require.NoError(t, err)
+			require.NoError(t, run.Get(ctx, nil))
+
+			require.Equal(t, []*interceptortest.SpanInfo{
+				interceptortest.Span("StartWorkflow:caller",
+					interceptortest.Span("RunWorkflow:caller",
+						interceptortest.Span("StartNexusOperation:test/workflow-op",
+							interceptortest.Span("RunStartNexusOperationHandler:test/workflow-op",
+								interceptortest.Span("StartWorkflow:waitForCancelWorkflow",
+									interceptortest.Span("RunWorkflow:waitForCancelWorkflow")))))),
+				// Note that the span is not attached since the server as of 1.27 does not propagate headers to the cancel
+				// request.  This assertion will have to change once the server fixes this behavior. It's left here as a
+				// reminder.
+				interceptortest.Span("RunCancelNexusOperationHandler:test/workflow-op"),
+			}, tracer.FinishedSpans())
+		})
+	}
 }

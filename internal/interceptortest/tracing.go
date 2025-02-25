@@ -29,9 +29,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/require"
 
+	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/interceptor"
+	"go.temporal.io/sdk/temporal"
+	"go.temporal.io/sdk/temporalnexus"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
@@ -83,6 +87,15 @@ func RunTestWorkflow(t *testing.T, tracer interceptor.Tracer) {
 	env.RegisterActivity(testActivityLocal)
 	env.RegisterWorkflow(testWorkflow)
 	env.RegisterWorkflow(testWorkflowChild)
+	env.RegisterWorkflow(testWaitForCancelWorkflow)
+	op := temporalnexus.NewWorkflowRunOperation("op", testWaitForCancelWorkflow, func(ctx context.Context, input nexus.NoValue, options nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+		return client.StartWorkflowOptions{
+			ID: options.RequestID,
+		}, nil
+	})
+	service := nexus.NewService("test")
+	service.MustRegister(op)
+	env.RegisterNexusService(service)
 
 	// Set tracer interceptor
 	env.SetWorkerOptions(worker.Options{
@@ -111,7 +124,7 @@ func RunTestWorkflow(t *testing.T, tracer interceptor.Tracer) {
 	require.NoError(t, env.GetWorkflowError())
 	var result []string
 	require.NoError(t, env.GetWorkflowResult(&result))
-	require.Equal(t, []string{"work", "act", "act-local", "work-child", "act", "act-local"}, result)
+	require.Equal(t, []string{"work", "act", "act-local", "work-child", "act", "act-local", "nexus-op"}, result)
 
 	// Query workflow
 	val, err := env.QueryWorkflow("my-query", nil)
@@ -151,6 +164,8 @@ func AssertSpanPropagation(t *testing.T, tracer TestTracer) {
 				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunActivity", Name: "testActivity"}))),
 			Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "StartActivity", Name: "testActivityLocal"}),
 				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunActivity", Name: "testActivityLocal"})))),
+		// This is the workflow that gets started from the nexus workflow run operation.
+		Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunWorkflow", Name: "testWaitForCancelWorkflow"})),
 		Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunWorkflow", Name: "testWorkflow"}),
 			Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "StartActivity", Name: "testActivity"}),
 				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunActivity", Name: "testActivity"}))),
@@ -163,7 +178,11 @@ func AssertSpanPropagation(t *testing.T, tracer TestTracer) {
 					Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "StartActivity", Name: "testActivityLocal"}),
 						Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunActivity", Name: "testActivityLocal"}))))),
 			Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "SignalChildWorkflow", Name: "my-signal"}),
-				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "HandleSignal", Name: "my-signal"})))),
+				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "HandleSignal", Name: "my-signal"}))),
+			Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "StartNexusOperation", Name: "test/op"}),
+				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunStartNexusOperationHandler", Name: "test/op"})),
+				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunCancelNexusOperationHandler", Name: "test/op"})),
+			)),
 		Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "HandleQuery", Name: "my-query"})),
 	}, tracer.FinishedSpans())
 }
@@ -209,7 +228,25 @@ func testWorkflow(ctx workflow.Context) ([]string, error) {
 		ret = append(ret, temp...)
 	}
 
+	nc := workflow.NewNexusClient("test-endpoint", "test")
+	opCtx, cancel := workflow.WithCancel(ctx)
+	defer cancel()
+	fut := nc.ExecuteOperation(opCtx, "op", nil, workflow.NexusOperationOptions{})
+	if err := fut.GetNexusOperationExecution().Get(ctx, nil); err != nil {
+		return nil, fmt.Errorf("failed starting nexus operation: %w", err)
+	}
+
+	cancel()
+	if err := fut.Get(ctx, nil); err == nil || !errors.As(err, new(*temporal.CanceledError)) {
+		return nil, fmt.Errorf("expected nexus operation to fail with a canceled error, got: %w", err)
+	}
+	ret = append(ret, "nexus-op")
+
 	return append([]string{"work"}, ret...), nil
+}
+
+func testWaitForCancelWorkflow(ctx workflow.Context, input nexus.NoValue) (nexus.NoValue, error) {
+	return nil, workflow.Await(ctx, func() bool { return false })
 }
 
 func testWorkflowChild(ctx workflow.Context) (ret []string, err error) {
