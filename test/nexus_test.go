@@ -2404,7 +2404,9 @@ func (t *otelTracer) spanChildren(spans []sdktrace.ReadOnlySpan, parentID trace.
 }
 
 func TestNexusTracingInterceptor(t *testing.T) {
-	t.Skip("this test is flaky in CI and needs to be restructured")
+	if os.Getenv("WORKFLOW_CACHE_SIZE") == "0" {
+		t.Skip("TestNexusTracingInterceptor not supported with 0 workflow cache size")
+	}
 	cases := []struct {
 		name   string
 		tracer func(t *testing.T) interceptortest.TestTracer
