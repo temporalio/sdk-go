@@ -1454,7 +1454,7 @@ func (iter *historyEventIteratorImpl) HasNext() bool {
 func (iter *historyEventIteratorImpl) Next() (*historypb.HistoryEvent, error) {
 	// if caller call the Next() when iteration is over, just return nil, nil
 	if !iter.HasNext() {
-		panic("HistoryEventIterator Next() called without checking HasNext()")
+		return nil, nil
 	}
 
 	// we have cached events
