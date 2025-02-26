@@ -286,6 +286,27 @@ func (s *historyEventIteratorSuite) TestIterator_NoError_EmptyPage() {
 	s.Equal(2, len(events))
 }
 
+func (s *historyEventIteratorSuite) TestIterator_NoError_EmptyPageNoHasHasNext() {
+	filterType := enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT
+	request := getGetWorkflowExecutionHistoryRequest(filterType)
+	response := &workflowservice.GetWorkflowExecutionHistoryResponse{
+		History: &historypb.History{
+			Events: []*historypb.HistoryEvent{},
+		},
+		NextPageToken: nil,
+	}
+
+	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request, gomock.Any()).Return(response, nil).Times(1)
+
+	times := 0
+	iter := s.wfClient.GetWorkflowHistory(context.Background(), workflowID, runID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for event, err := iter.Next(); event != nil; event, err = iter.Next() {
+		s.Nil(err)
+		s.Nil(event)
+	}
+	s.Equal(times, 0)
+}
+
 func (s *historyEventIteratorSuite) TestIteratorError() {
 	filterType := enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT
 	request1 := getGetWorkflowExecutionHistoryRequest(filterType)
