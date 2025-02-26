@@ -295,16 +295,19 @@ func (s *historyEventIteratorSuite) TestIterator_NoError_EmptyPageNoHasHasNext()
 		},
 		NextPageToken: nil,
 	}
+	defer func() {
+		if r := recover(); r == nil {
+			s.Fail("expected panic")
+		} else {
+			s.Equal("HistoryEventIterator Next() called without checking HasNext()", r)
+		}
+	}()
 
 	s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), request, gomock.Any()).Return(response, nil).Times(1)
 
-	times := 0
-	iter := s.wfClient.GetWorkflowHistory(context.Background(), workflowID, runID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-	for event, err := iter.Next(); event != nil; event, err = iter.Next() {
-		s.Nil(err)
-		s.Nil(event)
-	}
-	s.Equal(times, 0)
+	iter := s.wfClient.GetWorkflowHistory(context.Background(), workflowID, runID, true, filterType)
+	s.False(iter.HasNext())
+	_, _ = iter.Next()
 }
 
 func (s *historyEventIteratorSuite) TestIteratorError() {

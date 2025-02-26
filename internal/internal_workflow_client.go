@@ -1451,10 +1451,12 @@ func (iter *historyEventIteratorImpl) HasNext() bool {
 	return false
 }
 
+// Next returns the next history event.
+// If next is called with not more events, it will panic.
+// Call [historyEventIteratorImpl.HasNext] to check if there are more events.
 func (iter *historyEventIteratorImpl) Next() (*historypb.HistoryEvent, error) {
-	// if caller call the Next() when iteration is over, just return nil, nil
 	if !iter.HasNext() {
-		return nil, nil
+		panic("HistoryEventIterator Next() called without checking HasNext()")
 	}
 
 	// we have cached events
