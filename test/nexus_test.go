@@ -30,6 +30,7 @@ import (
 	"net/http"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -70,6 +71,7 @@ const defaultNexusTestTimeout = 10 * time.Second
 type testContext struct {
 	client                               client.Client
 	metricsHandler                       *metrics.CapturingHandler
+	logger                               *ilog.MemoryLogger
 	testConfig                           Config
 	taskQueue, endpoint, endpointBaseURL string
 }
@@ -96,10 +98,11 @@ func newTestContext(t *testing.T, ctx context.Context, optionFuncs ...testContex
 	require.NoError(t, WaitForTCP(time.Minute, config.ServiceAddr))
 
 	metricsHandler := metrics.NewCapturingHandler()
+	logger := ilog.NewMemoryLogger()
 	c, err := client.DialContext(ctx, client.Options{
 		HostPort:          config.ServiceAddr,
 		Namespace:         config.Namespace,
-		Logger:            ilog.NewDefaultLogger(),
+		Logger:            logger,
 		ConnectionOptions: client.ConnectionOptions{TLS: config.TLS},
 		MetricsHandler:    metricsHandler,
 		Interceptors:      options.clientInterceptors,
@@ -133,6 +136,7 @@ func newTestContext(t *testing.T, ctx context.Context, optionFuncs ...testContex
 		client:          c,
 		testConfig:      config,
 		metricsHandler:  metricsHandler,
+		logger:          logger,
 		taskQueue:       taskQueue,
 		endpoint:        endpoint,
 		endpointBaseURL: endpointBaseURL,
@@ -192,6 +196,16 @@ func (tc *testContext) requireFailureCounter(t *assert.CollectT, service, operat
 			ct.Tags[metrics.NexusServiceTagName] == service &&
 			ct.Tags[metrics.NexusOperationTagName] == operation &&
 			ct.Tags[metrics.FailureReasonTagName] == failureType
+	}))
+}
+
+func (tc *testContext) requireLogTags(t *assert.CollectT, message, service, operation string) {
+	assert.True(t, slices.ContainsFunc(tc.logger.Lines(), func(line string) bool {
+		return strings.Contains(line, message) &&
+			strings.Contains(line, "NexusService") &&
+			strings.Contains(line, service) &&
+			strings.Contains(line, "NexusOperation") &&
+			strings.Contains(line, operation)
 	}))
 }
 
@@ -483,12 +497,17 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 	defer cancel()
 	tc := newTestContext(t, ctx)
 
+	testTimerName := "user-timer"
 	op := nexus.NewSyncOperation("op", func(ctx context.Context, outcome string, o nexus.StartOperationOptions) (string, error) {
 		require.NotPanicsf(t, func() {
-			temporalnexus.GetMetricsHandler(ctx)
-			temporalnexus.GetLogger(ctx)
 			temporalnexus.GetClient(ctx)
-		}, "Failed to get metrics handler, logger, or client from operation context.")
+		}, "Failed to get client from operation context.")
+
+		mh := temporalnexus.GetMetricsHandler(ctx)
+		mh.Timer(testTimerName).Record(time.Second)
+
+		l := temporalnexus.GetLogger(ctx)
+		l.Info(outcome)
 
 		switch outcome {
 		case "successful":
@@ -545,6 +564,7 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 	t.Cleanup(w.Stop)
 
 	t.Run("OpSuccessful", func(t *testing.T) {
+		tc.metricsHandler.Clear()
 		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 			TaskQueue: tc.taskQueue,
 			// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
@@ -553,9 +573,14 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 		}, wf, "successful")
 		require.NoError(t, err)
 		require.NoError(t, run.Get(ctx, nil))
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTimer(t, testTimerName, service.Name, op.Name())
+			tc.requireLogTags(t, "successful", service.Name, op.Name())
+		}, time.Second*3, time.Millisecond*100)
 	})
 
 	t.Run("OpFailedPlainError", func(t *testing.T) {
+		tc.metricsHandler.Clear()
 		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 			TaskQueue: tc.taskQueue,
 			// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
@@ -579,9 +604,14 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 		var appErr *temporal.ApplicationError
 		require.ErrorAs(t, err, &appErr)
 		require.Equal(t, "failed for test", appErr.Message())
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTimer(t, testTimerName, service.Name, op.Name())
+			tc.requireLogTags(t, "operation-plain-error", service.Name, op.Name())
+		}, time.Second*3, time.Millisecond*100)
 	})
 
 	t.Run("OpFailedAppError", func(t *testing.T) {
+		tc.metricsHandler.Clear()
 		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 			TaskQueue: tc.taskQueue,
 			// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
@@ -609,9 +639,14 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 		var detail string
 		require.NoError(t, appErr.Details(&detail))
 		require.Equal(t, "foo", detail)
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTimer(t, testTimerName, service.Name, op.Name())
+			tc.requireLogTags(t, "operation-app-error", service.Name, op.Name())
+		}, time.Second*3, time.Millisecond*100)
 	})
 
 	t.Run("OpHandlerPlainError", func(t *testing.T) {
+		tc.metricsHandler.Clear()
 		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 			TaskQueue: tc.taskQueue,
 			// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
@@ -638,9 +673,14 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 		var appErr *temporal.ApplicationError
 		require.ErrorAs(t, handlerErr.Cause, &appErr)
 		require.Equal(t, "bad request", appErr.Message())
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTimer(t, testTimerName, service.Name, op.Name())
+			tc.requireLogTags(t, "handler-plain-error", service.Name, op.Name())
+		}, time.Second*3, time.Millisecond*100)
 	})
 
 	t.Run("OpHandlerAppError", func(t *testing.T) {
+		tc.metricsHandler.Clear()
 		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 			TaskQueue: tc.taskQueue,
 			// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
@@ -671,9 +711,14 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 		var detail string
 		require.NoError(t, appErr.Details(&detail))
 		require.Equal(t, "foo", detail)
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTimer(t, testTimerName, service.Name, op.Name())
+			tc.requireLogTags(t, "handler-app-error", service.Name, op.Name())
+		}, time.Second*3, time.Millisecond*100)
 	})
 
 	t.Run("OpCanceled", func(t *testing.T) {
+		tc.metricsHandler.Clear()
 		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 			TaskQueue: tc.taskQueue,
 			// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
@@ -689,6 +734,10 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 		var canceledErr *temporal.CanceledError
 		err = execErr.Unwrap()
 		require.ErrorAs(t, err, &canceledErr)
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTimer(t, testTimerName, service.Name, op.Name())
+			tc.requireLogTags(t, "canceled", service.Name, op.Name())
+		}, time.Second*3, time.Millisecond*100)
 	})
 }
 
