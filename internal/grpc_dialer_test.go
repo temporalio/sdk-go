@@ -36,7 +36,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pborman/uuid"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/api/common/v1"
@@ -371,7 +371,7 @@ func TestCustomResolver(t *testing.T) {
 	defer s2.Stop()
 
 	// Register resolver for both IPs and create client using it
-	scheme := "test-resolve-" + uuid.New()
+	scheme := "test-resolve-" + uuid.NewString()
 	builder := manual.NewBuilderWithScheme(scheme)
 	builder.InitialState(resolver.State{Addresses: []resolver.Address{{Addr: s1.addr}, {Addr: s2.addr}}})
 	resolver.Register(builder)
@@ -396,7 +396,7 @@ func TestCustomResolver(t *testing.T) {
 	}
 	var peerOut peer.Peer
 	for len(connected) < 2 {
-		req.RequestId = uuid.New()
+		req.RequestId = uuid.NewString()
 		_, err := client.WorkflowService().SignalWorkflowExecution(context.Background(), &req, grpc.Peer(&peerOut))
 		if err == nil {
 			connected[peerOut.Addr] = struct{}{}

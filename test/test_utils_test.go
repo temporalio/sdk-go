@@ -28,7 +28,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"go.temporal.io/sdk/worker"
 	"log"
 	"net"
 	"os"
@@ -36,7 +35,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pborman/uuid"
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	enumspb "go.temporal.io/api/enums/v1"
@@ -46,6 +45,7 @@ import (
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
 	ilog "go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -69,7 +69,7 @@ type (
 	}
 )
 
-var taskQueuePrefix = "tq-" + uuid.New()
+var taskQueuePrefix = "tq-" + uuid.NewString()
 
 // NewConfig creates new Config instance
 func NewConfig() Config {

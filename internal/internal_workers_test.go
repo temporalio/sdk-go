@@ -32,7 +32,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
-	"github.com/pborman/uuid"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -387,7 +387,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 			RunId:      "rID",
 		},
 		ActivityType:           &commonpb.ActivityType{Name: "test"},
-		ActivityId:             uuid.New(),
+		ActivityId:             uuid.NewString(),
 		ScheduledTime:          timestamppb.New(now),
 		ScheduleToCloseTimeout: durationpb.New(1 * time.Second),
 		StartedTime:            timestamppb.New(now),
