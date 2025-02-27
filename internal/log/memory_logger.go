@@ -82,7 +82,9 @@ func (l *MemoryLoggerWithoutWith) Error(msg string, keyvals ...interface{}) {
 func (l *MemoryLoggerWithoutWith) Lines() []string {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
-	return *l.lines
+	ret := make([]string, len(*l.lines))
+	copy(ret, *l.lines)
+	return ret
 }
 
 type MemoryLogger struct {
