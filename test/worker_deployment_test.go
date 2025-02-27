@@ -31,7 +31,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pborman/uuid"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -140,7 +140,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	deploymentName := "deploy-test-" + uuid.New()
+	deploymentName := "deploy-test-" + uuid.NewString()
 
 	// Start three workers:
 	// 1.0) AutoUpgrade, WaitSignalToStartVersionedOne
@@ -298,7 +298,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedOverrideInWorkflowOptions() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	deploymentName := "deploy-test-" + uuid.New()
+	deploymentName := "deploy-test-" + uuid.NewString()
 
 	// Two workers:
 	// 1) 1.0 with WaitSignalToStartVersionedOne (setCurrent)
@@ -383,7 +383,7 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	deploymentName := "deploy-test-" + uuid.New()
+	deploymentName := "deploy-test-" + uuid.NewString()
 
 	// Two workers:
 	// 1) 1.0 with WaitSignalToStartVersionedOne (setCurrent)
@@ -544,7 +544,7 @@ func (ts *WorkerDeploymentTestSuite) TestListDeployments() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	uuid := uuid.New()
+	uuid := uuid.NewString()
 	deploymentName1 := uuid + "-deploy-test1"
 	deploymentName2 := uuid + "-deploy-test2"
 
@@ -612,7 +612,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Second)
 	defer cancel()
 
-	deploymentName := "deploy-test-" + uuid.New()
+	deploymentName := "deploy-test-" + uuid.NewString()
 
 	// Start two workers:
 	// 1.0) Pinned and 2.0) AutoUpgrade
@@ -744,7 +744,7 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	deploymentName := "deploy-test-" + uuid.New()
+	deploymentName := "deploy-test-" + uuid.NewString()
 
 	// Two workers:
 	// 1.0) and 2.0) both pinned by default
@@ -837,7 +837,7 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 
 	// very likely probability (1-2^33) of success
 	ts.Eventually(func() bool {
-		return !ts.runWorkflowAndCheckV1(ctx, uuid.New())
+		return !ts.runWorkflowAndCheckV1(ctx, uuid.NewString())
 	}, 10*time.Second, 300*time.Millisecond)
 }
 
@@ -850,7 +850,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeleteDeployment() {
 	ctx, cancel := context.WithTimeout(context.Background(), 310*time.Second)
 	defer cancel()
 
-	deploymentName := "deploy-test-" + uuid.New()
+	deploymentName := "deploy-test-" + uuid.NewString()
 
 	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{

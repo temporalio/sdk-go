@@ -31,7 +31,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/pborman/uuid"
+	"github.com/google/uuid"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	schedulepb "go.temporal.io/api/schedule/v1"
@@ -131,7 +131,7 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 	startRequest := &workflowservice.CreateScheduleRequest{
 		Namespace:  w.client.namespace,
 		ScheduleId: ID,
-		RequestId:  uuid.New(),
+		RequestId:  uuid.NewString(),
 		Schedule: &schedulepb.Schedule{
 			Spec:   convertToPBScheduleSpec(&in.Options.Spec),
 			Action: action,
@@ -256,7 +256,7 @@ func (scheduleHandle *scheduleHandleImpl) Backfill(ctx context.Context, options 
 			BackfillRequest: convertToPBBackfillList(options.Backfill),
 		},
 		Identity:  scheduleHandle.client.identity,
-		RequestId: uuid.New(),
+		RequestId: uuid.NewString(),
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
@@ -311,7 +311,7 @@ func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, options Sc
 		Schedule:         newSchedulePB,
 		ConflictToken:    nil,
 		Identity:         scheduleHandle.client.identity,
-		RequestId:        uuid.New(),
+		RequestId:        uuid.NewString(),
 		SearchAttributes: newSA,
 	})
 	return err
@@ -342,7 +342,7 @@ func (scheduleHandle *scheduleHandleImpl) Trigger(ctx context.Context, options S
 			},
 		},
 		Identity:  scheduleHandle.client.identity,
-		RequestId: uuid.New(),
+		RequestId: uuid.NewString(),
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
@@ -362,7 +362,7 @@ func (scheduleHandle *scheduleHandleImpl) Pause(ctx context.Context, options Sch
 			Pause: pauseNote,
 		},
 		Identity:  scheduleHandle.client.identity,
-		RequestId: uuid.New(),
+		RequestId: uuid.NewString(),
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
@@ -382,7 +382,7 @@ func (scheduleHandle *scheduleHandleImpl) Unpause(ctx context.Context, options S
 			Unpause: unpauseNote,
 		},
 		Identity:  scheduleHandle.client.identity,
-		RequestId: uuid.New(),
+		RequestId: uuid.NewString(),
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
@@ -598,7 +598,7 @@ func convertToPBScheduleAction(
 
 		// Default workflow ID
 		if action.ID == "" {
-			action.ID = uuid.New()
+			action.ID = uuid.NewString()
 		}
 
 		// Validate function and get name
