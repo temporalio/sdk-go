@@ -9,7 +9,6 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/nexus-rpc/sdk-go v0.3.0
 	github.com/opentracing/opentracing-go v1.2.0
-	github.com/pborman/uuid v1.2.1
 	github.com/stretchr/testify v1.10.0
 	github.com/uber-go/tally/v4 v4.1.1
 	go.opentelemetry.io/otel v1.28.0

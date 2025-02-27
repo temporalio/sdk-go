@@ -30,7 +30,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pborman/uuid"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -103,7 +103,7 @@ func (ts *DeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	seriesName := "deploy-test-" + uuid.New()
+	seriesName := "deploy-test-" + uuid.NewString()
 
 	// Start three workers:
 	// 1.0) AutoUpgrade, WaitSignalToStartVersionedOne
@@ -250,7 +250,7 @@ func (ts *DeploymentTestSuite) TestPinnedOverrideInWorkflowOptions() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	seriesName := "deploy-test-" + uuid.New()
+	seriesName := "deploy-test-" + uuid.NewString()
 
 	// Two workers:
 	// 1) 1.0 with WaitSignalToStartVersionedOne (setCurrent)
@@ -330,7 +330,7 @@ func (ts *DeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	seriesName := "deploy-test-" + uuid.New()
+	seriesName := "deploy-test-" + uuid.NewString()
 
 	// Two workers:
 	// 1) 1.0 with WaitSignalToStartVersionedOne (setCurrent)
@@ -485,15 +485,14 @@ func (ts *DeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 	ts.NoError(handle4.Get(ctx, &result))
 	// override + autoUpgrade
 	ts.True(IsVersionTwo(result))
-
 }
 
 func (ts *DeploymentTestSuite) TestListDeployments() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	seriesName1 := "deploy-test-" + uuid.New()
-	seriesName2 := "deploy-test-" + uuid.New()
+	seriesName1 := "deploy-test-" + uuid.NewString()
+	seriesName2 := "deploy-test-" + uuid.NewString()
 
 	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		BuildID:                 "1.0",
@@ -558,7 +557,7 @@ func (ts *DeploymentTestSuite) TestDeploymentReachability() {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
 
-	seriesName := "deploy-test-" + uuid.New()
+	seriesName := "deploy-test-" + uuid.NewString()
 
 	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		BuildID:                 "1.0",

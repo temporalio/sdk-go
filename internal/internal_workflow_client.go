@@ -35,7 +35,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/pborman/uuid"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -321,7 +321,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	// Default workflow ID to UUID
 	options.ID = workflowID
 	if options.ID == "" {
-		options.ID = uuid.New()
+		options.ID = uuid.NewString()
 	}
 
 	// Validate function and get name
@@ -977,7 +977,7 @@ func (wc *WorkflowClient) ResetWorkflowExecution(ctx context.Context, request *w
 	}
 
 	if request != nil && request.GetRequestId() == "" {
-		request.RequestId = uuid.New()
+		request.RequestId = uuid.NewString()
 	}
 
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
@@ -1600,7 +1600,7 @@ func createStartWorkflowInput(
 	registry *registry,
 ) (*ClientExecuteWorkflowInput, error) {
 	if options.ID == "" {
-		options.ID = uuid.New()
+		options.ID = uuid.NewString()
 	}
 	if err := validateFunctionArgs(workflow, args, true); err != nil {
 		return nil, err
@@ -1689,7 +1689,7 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 	if in.Options.requestID != "" {
 		startRequest.RequestId = in.Options.requestID
 	} else {
-		startRequest.RequestId = uuid.New()
+		startRequest.RequestId = uuid.NewString()
 	}
 
 	if in.Options.StartDelay != 0 {
@@ -1988,7 +1988,7 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 	if requestID, ok := ctx.Value(NexusOperationRequestIDKey).(string); ok && requestID != "" {
 		request.RequestId = requestID
 	} else {
-		request.RequestId = uuid.New()
+		request.RequestId = uuid.NewString()
 	}
 
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
@@ -2035,7 +2035,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 
 	signalWithStartRequest := &workflowservice.SignalWithStartWorkflowExecutionRequest{
 		Namespace:                w.client.namespace,
-		RequestId:                uuid.New(),
+		RequestId:                uuid.NewString(),
 		WorkflowId:               in.Options.ID,
 		WorkflowType:             &commonpb.WorkflowType{Name: in.WorkflowType},
 		TaskQueue:                &taskqueuepb.TaskQueue{Name: in.Options.TaskQueue, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
@@ -2099,7 +2099,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 func (w *workflowClientInterceptor) CancelWorkflow(ctx context.Context, in *ClientCancelWorkflowInput) error {
 	request := &workflowservice.RequestCancelWorkflowExecutionRequest{
 		Namespace: w.client.namespace,
-		RequestId: uuid.New(),
+		RequestId: uuid.NewString(),
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: in.WorkflowID,
 			RunId:      in.RunID,
@@ -2229,7 +2229,7 @@ func (w *workflowClientInterceptor) updateIsDurable(resp *workflowservice.Update
 func createUpdateWorkflowInput(options *UpdateWorkflowOptions) (*ClientUpdateWorkflowInput, error) {
 	updateID := options.UpdateID
 	if updateID == "" {
-		updateID = uuid.New()
+		updateID = uuid.NewString()
 	}
 
 	if options.WaitForStage == WorkflowUpdateStageUnspecified {
