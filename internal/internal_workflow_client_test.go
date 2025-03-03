@@ -1582,6 +1582,29 @@ func (s *workflowClientTestSuite) TestEagerStartWorkflowStartRequestFail() {
 	s.True(eagerMock.releaseCalled)
 }
 
+func (s *workflowClientTestSuite) TestStartWorkflowStartRequestWithPriority() {
+	client, ok := s.client.(*WorkflowClient)
+	s.True(ok)
+
+	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		Do(func(_ any, req *workflowservice.StartWorkflowExecutionRequest, args ...any) {
+			require.Equal(s.T(), &commonpb.Priority{PriorityKey: 1}, req.Priority)
+		}).
+		Return(&workflowservice.StartWorkflowExecutionResponse{}, nil)
+
+	options := StartWorkflowOptions{
+		ID:                       workflowID,
+		TaskQueue:                taskqueue,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
+		Priority:                 Priority{PriorityKey: 1},
+	}
+	f1 := func(ctx Context, r []byte) string {
+		panic("this is just a stub")
+	}
+	_, _ = client.ExecuteWorkflow(context.Background(), options, f1, []byte("test"))
+}
+
 func (s *workflowClientTestSuite) TestExecuteWorkflowWithDataConverter() {
 	dc := iconverter.NewTestDataConverter()
 	s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
