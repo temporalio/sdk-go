@@ -27,7 +27,9 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	commonpb "go.temporal.io/api/common/v1"
 	schedulepb "go.temporal.io/api/schedule/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
@@ -110,6 +112,27 @@ func (s *scheduleClientTestSuite) TestCreateScheduleNoID() {
 
 	_, err := s.client.ScheduleClient().Create(context.Background(), options)
 	s.NotNil(err)
+}
+
+func (s *scheduleClientTestSuite) TestCreateScheduleWithPriority() {
+	s.service.EXPECT().CreateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).
+		Do(func(_ any, req *workflowservice.CreateScheduleRequest, args ...any) {
+			require.Equal(s.T(),
+				&commonpb.Priority{PriorityKey: 1},
+				req.GetSchedule().GetAction().GetStartWorkflow().Priority)
+		}).
+		Return(&workflowservice.CreateScheduleResponse{}, nil).Times(1)
+
+	options := ScheduleOptions{
+		ID: scheduleID,
+		Action: &ScheduleWorkflowAction{
+			Workflow: func(ctx Context) string {
+				panic("this is just a stub")
+			},
+			Priority: Priority{PriorityKey: 1},
+		},
+	}
+	_, _ = s.client.ScheduleClient().Create(context.Background(), options)
 }
 
 func (s *scheduleClientTestSuite) TestCreateScheduleWithMemoAndSearchAttr() {

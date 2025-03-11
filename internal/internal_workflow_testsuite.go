@@ -719,6 +719,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	scheduleTaskAttr.ScheduleToStartTimeout = durationpb.New(parameters.ScheduleToStartTimeout)
 	scheduleTaskAttr.HeartbeatTimeout = durationpb.New(parameters.HeartbeatTimeout)
 	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
+	scheduleTaskAttr.Priority = parameters.Priority
 	scheduleTaskAttr.Header = parameters.Header
 
 	workflowType := env.workflowInfo.WorkflowType.Name
@@ -1244,6 +1245,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 	scheduleTaskAttr.ScheduleToStartTimeout = durationpb.New(parameters.ScheduleToStartTimeout)
 	scheduleTaskAttr.HeartbeatTimeout = durationpb.New(parameters.HeartbeatTimeout)
 	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
+	scheduleTaskAttr.Priority = parameters.Priority
 	scheduleTaskAttr.Header = parameters.Header
 	err := env.validateActivityScheduleAttributes(scheduleTaskAttr, env.WorkflowInfo().WorkflowRunTimeout)
 	if err != nil {

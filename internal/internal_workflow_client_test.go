@@ -1437,6 +1437,23 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowValidation() {
 	s.ErrorContains(err, "workflow ID from options not used")
 }
 
+func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithPriority() {
+	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		Do(func(_ any, req *workflowservice.SignalWithStartWorkflowExecutionRequest, args ...any) {
+			require.Equal(s.T(), &commonpb.Priority{PriorityKey: 1}, req.Priority)
+		}).
+		Return(&workflowservice.SignalWithStartWorkflowExecutionResponse{}, nil)
+
+	client, ok := s.client.(*WorkflowClient)
+	s.True(ok)
+
+	options := StartWorkflowOptions{
+		Priority: Priority{PriorityKey: 1},
+	}
+	_, _ = client.SignalWithStartWorkflow(context.Background(),
+		workflowID, "my signal", []byte("test"), options, workflowType)
+}
+
 func (s *workflowClientTestSuite) TestStartWorkflow() {
 	client, ok := s.client.(*WorkflowClient)
 	s.True(ok)
@@ -1613,6 +1630,23 @@ func (s *workflowClientTestSuite) TestEagerStartWorkflowStartRequestFail() {
 	s.Error(err)
 	s.False(processTask)
 	s.True(eagerMock.releaseCalled)
+}
+
+func (s *workflowClientTestSuite) TestStartWorkflowStartWithPriority() {
+	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		Do(func(_ any, req *workflowservice.StartWorkflowExecutionRequest, args ...any) {
+			require.Equal(s.T(), &commonpb.Priority{PriorityKey: 1}, req.Priority)
+		}).
+		Return(&workflowservice.StartWorkflowExecutionResponse{}, nil)
+
+	client, ok := s.client.(*WorkflowClient)
+	s.True(ok)
+
+	options := StartWorkflowOptions{
+		ID:       workflowID,
+		Priority: Priority{PriorityKey: 1},
+	}
+	_, _ = client.ExecuteWorkflow(context.Background(), options, workflowType, []byte("test"))
 }
 
 func (s *workflowClientTestSuite) TestExecuteWorkflowWithDataConverter() {
