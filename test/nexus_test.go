@@ -1082,11 +1082,9 @@ func TestAsyncOperationFromWorkflow_MultipleCallers(t *testing.T) {
 		{
 			input: "conflict-policy-use-existing",
 			checkOutput: func(t *testing.T, numCalls int, res CallerWfOutput, err error) {
-				// TODO(rodrigozhou): assert NotError and remove the comments below after UseExisting is
-				// unblocked.
-				require.ErrorContains(t, err, "workflow ID conflict policy UseExisting is not supported for Nexus WorkflowRunOperation")
-				// require.EqualValues(t, numCalls, res.CntOk)
-				// require.EqualValues(t, 0, res.CntErr)
+				require.NoError(t, err)
+				require.EqualValues(t, numCalls, res.CntOk)
+				require.EqualValues(t, 0, res.CntErr)
 			},
 		},
 	}
@@ -1779,11 +1777,9 @@ func TestWorkflowTestSuite_WorkflowRunOperation_MultipleCallers(t *testing.T) {
 		{
 			input: "conflict-policy-use-existing",
 			checkOutput: func(t *testing.T, numCalls int, res CallerWfOutput, err error) {
-				// TODO(rodrigozhou): assert NotError and remove the comments below after UseExisting is
-				// unblocked.
-				require.ErrorContains(t, err, "workflow ID conflict policy UseExisting is not supported for Nexus WorkflowRunOperation")
-				// require.EqualValues(t, numCalls, res.CntOk)
-				// require.EqualValues(t, 0, res.CntErr)
+				require.NoError(t, err)
+				require.EqualValues(t, numCalls, res.CntOk)
+				require.EqualValues(t, 0, res.CntErr)
 			},
 		},
 	}
