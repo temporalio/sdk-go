@@ -757,7 +757,7 @@ func TestInvalidOperationInput(t *testing.T) {
 	t.Cleanup(w.Stop)
 	run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{TaskQueue: tc.taskQueue}, wf)
 	require.NoError(t, err)
-	require.ErrorContains(t, run.Get(ctx, nil), `cannot assign argument of type int to type string for operation workflow-op`)
+	require.ErrorContains(t, run.Get(ctx, nil), `cannot assign argument of type "int" to type "string" for operation "workflow-op"`)
 }
 
 func TestAsyncOperationFromWorkflow(t *testing.T) {
