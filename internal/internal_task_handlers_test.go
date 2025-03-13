@@ -34,7 +34,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
-	"github.com/pborman/uuid"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"google.golang.org/protobuf/proto"
@@ -428,7 +428,7 @@ func createTestUpsertWorkflowSearchAttributesForChangeVersion(eventID int64, wor
 
 func createTestProtocolMessageUpdateRequest(ID string, eventID int64, request *updatepb.Request) *protocolpb.Message {
 	return &protocolpb.Message{
-		Id:                 uuid.New(),
+		Id:                 uuid.NewString(),
 		ProtocolInstanceId: ID,
 		SequencingId:       &protocolpb.Message_EventId{EventId: eventID},
 		Body:               protocol.MustMarshalAny(request),
@@ -464,7 +464,7 @@ func createWorkflowTaskWithQueries(
 		History:                &historypb.History{Events: eventsCopy},
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: "fake-workflow-id",
-			RunId:      uuid.New(),
+			RunId:      uuid.NewString(),
 		},
 		Queries: queries,
 	}
@@ -730,7 +730,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_Sticky() {
 	taskQueue := "sticky-tq"
 	execution := &commonpb.WorkflowExecution{
 		WorkflowId: "fake-workflow-id",
-		RunId:      uuid.New(),
+		RunId:      uuid.NewString(),
 	}
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
@@ -1170,7 +1170,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	parentID := "parentID"
 	parentRunID := "parentRun"
 	cronSchedule := "5 4 * * *"
-	continuedRunID := uuid.New()
+	continuedRunID := uuid.NewString()
 	parentExecution := &commonpb.WorkflowExecution{
 		WorkflowId: parentID,
 		RunId:      parentRunID,
@@ -2109,7 +2109,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 				RunId:      "rID",
 			},
 			ActivityType:           &commonpb.ActivityType{Name: d.ActivityType},
-			ActivityId:             uuid.New(),
+			ActivityId:             uuid.NewString(),
 			ScheduledTime:          timestamppb.New(d.ScheduleTS),
 			ScheduleToCloseTimeout: durationpb.New(d.ScheduleDuration),
 			StartedTime:            timestamppb.New(d.StartTS),
@@ -2168,7 +2168,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 			RunId:      "rID",
 		},
 		ActivityType:           &commonpb.ActivityType{Name: "test"},
-		ActivityId:             uuid.New(),
+		ActivityId:             uuid.NewString(),
 		ScheduledTime:          timestamppb.New(now),
 		ScheduleToCloseTimeout: durationpb.New(1 * time.Second),
 		StartedTime:            timestamppb.New(now),
