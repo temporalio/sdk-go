@@ -42,6 +42,7 @@ type PayloadCodecGRPCClientInterceptorOptions struct {
 
 // NewPayloadCodecGRPCClientInterceptor returns a GRPC Client Interceptor that will mimic the encoding
 // that the SDK system would perform when configured with a matching EncodingDataConverter.
+//
 // Note: This approach does not support use cases that rely on the ContextAware DataConverter interface as
 // workflow context is not available at the GRPC level.
 func NewPayloadCodecGRPCClientInterceptor(options PayloadCodecGRPCClientInterceptorOptions) (grpc.UnaryClientInterceptor, error) {

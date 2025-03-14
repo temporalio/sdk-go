@@ -224,6 +224,7 @@ func (t *TestActivityEnvironment) ExecuteLocalActivity(activityFn interface{}, a
 // SetWorkerOptions sets the WorkerOptions that will be use by TestActivityEnvironment. TestActivityEnvironment will
 // use options of BackgroundActivityContext, MaxConcurrentSessionExecutionSize, and WorkflowInterceptorChainFactories on the WorkerOptions.
 // Other options are ignored.
+//
 // Note: WorkerOptions is defined in internal package, use public type worker.Options instead.
 func (t *TestActivityEnvironment) SetWorkerOptions(options WorkerOptions) *TestActivityEnvironment {
 	t.impl.setWorkerOptions(options)
@@ -281,6 +282,7 @@ func (t *TestActivityEnvironment) SetWorkerStopChannel(c chan struct{}) {
 // SetOnActivityHeartbeatListener sets a listener that will be called when
 // activity heartbeat is called. ActivityInfo is defined in internal package,
 // use public type activity.Info instead.
+//
 // Note: The provided listener may be called concurrently.
 //
 // Note: Due to internal caching by the activity system, this may not get called
@@ -563,6 +565,7 @@ func (e *TestWorkflowEnvironment) OnUpsertSearchAttributes(attributes interface{
 // OnUpsertTypedSearchAttributes setup a mock for workflow.UpsertTypedSearchAttributes call.
 // If mock is not setup, the UpsertTypedSearchAttributes call will only validate input attributes.
 // If mock is setup, all UpsertTypedSearchAttributes calls in workflow have to be mocked.
+//
 // Note: The mock is called with a temporal.SearchAttributes constructed from the inputs to workflow.UpsertTypedSearchAttributes.
 func (e *TestWorkflowEnvironment) OnUpsertTypedSearchAttributes(attributes interface{}) *MockCallWrapper {
 	call := e.workflowMock.On(mockMethodForUpsertTypedSearchAttributes, attributes)
@@ -829,6 +832,7 @@ func (e *TestWorkflowEnvironment) Now() time.Time {
 // SetWorkerOptions sets the WorkerOptions that will be use by TestActivityEnvironment. TestActivityEnvironment will
 // use options of BackgroundActivityContext, MaxConcurrentSessionExecutionSize, and WorkflowInterceptorChainFactories on the WorkerOptions.
 // Other options are ignored.
+//
 // Note: WorkerOptions is defined in internal package, use public type worker.Options instead.
 func (e *TestWorkflowEnvironment) SetWorkerOptions(options WorkerOptions) *TestWorkflowEnvironment {
 	e.impl.setWorkerOptions(options)
@@ -910,6 +914,7 @@ func (e *TestWorkflowEnvironment) SetWorkflowRunTimeout(runTimeout time.Duration
 }
 
 // SetOnActivityStartedListener sets a listener that will be called before activity starts execution.
+//
 // Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
 func (e *TestWorkflowEnvironment) SetOnActivityStartedListener(
 	listener func(activityInfo *ActivityInfo, ctx context.Context, args converter.EncodedValues)) *TestWorkflowEnvironment {
@@ -918,6 +923,7 @@ func (e *TestWorkflowEnvironment) SetOnActivityStartedListener(
 }
 
 // SetOnActivityCompletedListener sets a listener that will be called after an activity is completed.
+//
 // Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
 func (e *TestWorkflowEnvironment) SetOnActivityCompletedListener(
 	listener func(activityInfo *ActivityInfo, result converter.EncodedValue, err error)) *TestWorkflowEnvironment {
@@ -926,6 +932,7 @@ func (e *TestWorkflowEnvironment) SetOnActivityCompletedListener(
 }
 
 // SetOnActivityCanceledListener sets a listener that will be called after an activity is canceled.
+//
 // Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
 func (e *TestWorkflowEnvironment) SetOnActivityCanceledListener(
 	listener func(activityInfo *ActivityInfo)) *TestWorkflowEnvironment {
@@ -934,7 +941,9 @@ func (e *TestWorkflowEnvironment) SetOnActivityCanceledListener(
 }
 
 // SetOnActivityHeartbeatListener sets a listener that will be called when activity heartbeat.
+//
 // Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
+//
 // Note: The provided listener may be called concurrently.
 //
 // Note: Due to internal caching by the activity system, this may not get called
@@ -948,6 +957,7 @@ func (e *TestWorkflowEnvironment) SetOnActivityHeartbeatListener(
 }
 
 // SetOnChildWorkflowStartedListener sets a listener that will be called before a child workflow starts execution.
+//
 // Note: WorkflowInfo is defined in internal package, use public type workflow.Info instead.
 func (e *TestWorkflowEnvironment) SetOnChildWorkflowStartedListener(
 	listener func(workflowInfo *WorkflowInfo, ctx Context, args converter.EncodedValues)) *TestWorkflowEnvironment {
@@ -956,6 +966,7 @@ func (e *TestWorkflowEnvironment) SetOnChildWorkflowStartedListener(
 }
 
 // SetOnChildWorkflowCompletedListener sets a listener that will be called after a child workflow is completed.
+//
 // Note: WorkflowInfo is defined in internal package, use public type workflow.Info instead.
 func (e *TestWorkflowEnvironment) SetOnChildWorkflowCompletedListener(
 	listener func(workflowInfo *WorkflowInfo, result converter.EncodedValue, err error)) *TestWorkflowEnvironment {
@@ -964,6 +975,7 @@ func (e *TestWorkflowEnvironment) SetOnChildWorkflowCompletedListener(
 }
 
 // SetOnChildWorkflowCanceledListener sets a listener that will be called when a child workflow is canceled.
+//
 // Note: WorkflowInfo is defined in internal package, use public type workflow.Info instead.
 func (e *TestWorkflowEnvironment) SetOnChildWorkflowCanceledListener(
 	listener func(workflowInfo *WorkflowInfo)) *TestWorkflowEnvironment {
@@ -991,6 +1003,7 @@ func (e *TestWorkflowEnvironment) SetOnTimerCanceledListener(listener func(timer
 }
 
 // SetOnLocalActivityStartedListener sets a listener that will be called before local activity starts execution.
+//
 // Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
 func (e *TestWorkflowEnvironment) SetOnLocalActivityStartedListener(
 	listener func(activityInfo *ActivityInfo, ctx context.Context, args []interface{})) *TestWorkflowEnvironment {
@@ -999,6 +1012,7 @@ func (e *TestWorkflowEnvironment) SetOnLocalActivityStartedListener(
 }
 
 // SetOnLocalActivityCompletedListener sets a listener that will be called after local activity is completed.
+//
 // Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
 func (e *TestWorkflowEnvironment) SetOnLocalActivityCompletedListener(
 	listener func(activityInfo *ActivityInfo, result converter.EncodedValue, err error)) *TestWorkflowEnvironment {
@@ -1007,6 +1021,7 @@ func (e *TestWorkflowEnvironment) SetOnLocalActivityCompletedListener(
 }
 
 // SetOnLocalActivityCanceledListener sets a listener that will be called after local activity is canceled.
+//
 // Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
 func (e *TestWorkflowEnvironment) SetOnLocalActivityCanceledListener(
 	listener func(activityInfo *ActivityInfo)) *TestWorkflowEnvironment {
