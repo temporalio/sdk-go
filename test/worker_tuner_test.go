@@ -100,6 +100,35 @@ func (ts *WorkerTunerTestSuite) TestCompositeWorkerTuner() {
 	ts.runTheWorkflow(tuner, ctx)
 }
 
+func (ts *WorkerTunerTestSuite) TestResourceBasedSmallSlots() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	wfSS, err := worker.NewFixedSizeSlotSupplier(10)
+	ts.NoError(err)
+	controllerOpts := resourcetuner.DefaultResourceControllerOptions()
+	controllerOpts.MemTargetPercent = 0.8
+	controllerOpts.CpuTargetPercent = 0.9
+	controller := resourcetuner.NewResourceController(controllerOpts)
+	actSS, err := resourcetuner.NewResourceBasedSlotSupplier(controller,
+		resourcetuner.ResourceBasedSlotSupplierOptions{
+			MinSlots:     1,
+			MaxSlots:     4,
+			RampThrottle: 0,
+		})
+	ts.NoError(err)
+	laCss, err := worker.NewFixedSizeSlotSupplier(5)
+	ts.NoError(err)
+	tuner, err := worker.NewCompositeTuner(worker.CompositeTunerOptions{
+		WorkflowSlotSupplier: wfSS, ActivitySlotSupplier: actSS, LocalActivitySlotSupplier: laCss})
+	ts.NoError(err)
+
+	// The bug this is verifying was triggered by a race, so run this a bunch to verify it's not hit
+	for i := 0; i < 10; i++ {
+		ts.runTheWorkflow(tuner, ctx)
+	}
+}
+
 func (ts *WorkerTunerTestSuite) runTheWorkflow(tuner worker.WorkerTuner, ctx context.Context) {
 	workerOptions := worker.Options{Tuner: tuner}
 	myWorker := worker.New(ts.client, ts.taskQueueName, workerOptions)
