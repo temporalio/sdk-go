@@ -2663,7 +2663,7 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 		operationName = regOp.Name()
 		inputType := reflect.TypeOf(input.Input)
 		if inputType != nil && !inputType.AssignableTo(regOp.InputType()) {
-			return executeNexusOperationParams{}, fmt.Errorf("cannot assign argument of type %s to type %s for operation %s", inputType.Name(), regOp.InputType().Name(), operationName)
+			return executeNexusOperationParams{}, fmt.Errorf("cannot assign argument of type %q to type %q for operation %q", inputType, regOp.InputType(), operationName)
 		}
 	} else {
 		return executeNexusOperationParams{}, fmt.Errorf("invalid 'operation' parameter, must be an OperationReference or a string")
