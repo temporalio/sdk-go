@@ -328,7 +328,7 @@ type slotReserveInfoImpl struct {
 	taskQueue      string
 	workerBuildId  string
 	workerIdentity string
-	issuedSlots    int
+	issuedSlots    *atomic.Int32
 	logger         log.Logger
 	metrics        metrics.Handler
 }
@@ -346,7 +346,7 @@ func (s slotReserveInfoImpl) WorkerIdentity() string {
 }
 
 func (s slotReserveInfoImpl) NumIssuedSlots() int {
-	return s.issuedSlots
+	return int(s.issuedSlots.Load())
 }
 
 func (s slotReserveInfoImpl) Logger() log.Logger {
@@ -442,7 +442,7 @@ func (t *trackingSlotSupplier) ReserveSlot(
 		taskQueue:      data.taskQueue,
 		workerBuildId:  t.workerBuildId,
 		workerIdentity: t.workerIdentity,
-		issuedSlots:    int(t.issuedSlotsAtomic.Load()),
+		issuedSlots:    &t.issuedSlotsAtomic,
 		logger:         t.logger,
 		metrics:        t.metrics,
 	})
@@ -465,7 +465,7 @@ func (t *trackingSlotSupplier) TryReserveSlot(data *slotReservationData) *SlotPe
 		taskQueue:      data.taskQueue,
 		workerBuildId:  t.workerBuildId,
 		workerIdentity: t.workerIdentity,
-		issuedSlots:    int(t.issuedSlotsAtomic.Load()),
+		issuedSlots:    &t.issuedSlotsAtomic,
 		logger:         t.logger,
 		metrics:        t.metrics,
 	})
