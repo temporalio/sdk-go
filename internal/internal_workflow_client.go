@@ -223,6 +223,7 @@ type (
 //
 // The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
+//
 // NOTE: the context.Context should have a fairly large timeout, since workflow execution may take a while to be finished
 func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
@@ -789,6 +790,7 @@ type UpdateWorkflowOptions struct {
 
 	// WaitForStage is a required field which specifies which stage to wait until returning.
 	// See https://docs.temporal.io/develop/go/message-passing#send-update-from-client for more details.
+	//
 	// NOTE: Specifying WorkflowUpdateStageAdmitted is not supported.
 	WaitForStage WorkflowUpdateStage
 
@@ -801,6 +803,7 @@ type UpdateWorkflowOptions struct {
 
 // UpdateWithStartWorkflowOptions encapsulates the parameters used by UpdateWithStartWorkflow.
 // See UpdateWithStartWorkflow and NewWithStartWorkflowOperation.
+//
 // NOTE: Experimental
 type UpdateWithStartWorkflowOptions struct {
 	StartWorkflowOperation WithStartWorkflowOperation
@@ -1061,6 +1064,7 @@ func (wc *WorkflowClient) GetWorkerTaskReachability(ctx context.Context, options
 // UpdateWorkflowExecutionOptions partially overrides the [WorkflowExecutionOptions] of an existing workflow execution,
 // and returns the new [WorkflowExecutionOptions] after applying the changes.
 // It is intended for building tools that can selectively apply ad-hoc workflow configuration changes.
+//
 // NOTE: Experimental
 func (wc *WorkflowClient) UpdateWorkflowExecutionOptions(ctx context.Context, request UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {

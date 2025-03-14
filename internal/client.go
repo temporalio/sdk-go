@@ -92,6 +92,7 @@ type (
 		//  - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
 		//    execution result to valuePtr, if workflow execution is a success, or return corresponding
 		//    error. This is a blocking API.
+		//
 		// NOTE: If the started workflow returns ContinueAsNewError during the workflow execution, the
 		// returned result of GetRunID() will be the started workflow run ID, not the new run ID caused by ContinueAsNewError.
 		// However, Get(ctx context.Context, valuePtr interface{}) will return result from the run which did not return ContinueAsNewError.
@@ -112,6 +113,7 @@ type (
 		//  - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
 		//    execution result to valuePtr, if workflow execution is a success, or return corresponding
 		//    error. This is a blocking API.
+		//
 		// NOTE: if the retrieved workflow returned ContinueAsNewError during the workflow execution, the
 		// return result of GetRunID() will be the retrieved workflow run ID, not the new run ID caused by ContinueAsNewError,
 		// however, Get(ctx context.Context, valuePtr interface{}) will return result from the run which did not return ContinueAsNewError.
@@ -142,6 +144,7 @@ type (
 			options StartWorkflowOptions, workflow interface{}, workflowArgs ...interface{}) (WorkflowRun, error)
 
 		// NewWithStartWorkflowOperation returns a WithStartWorkflowOperation for use in UpdateWithStartWorkflow.
+		//
 		// NOTE: Experimental
 		NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) WithStartWorkflowOperation
 
@@ -347,6 +350,7 @@ type (
 		// UpdateWorkflowExecutionOptions partially overrides the [WorkflowExecutionOptions] of an existing workflow execution
 		// and returns the new [WorkflowExecutionOptions] after applying the changes.
 		// It is intended for building tools that can selectively apply ad-hoc workflow configuration changes.
+		//
 		// NOTE: Experimental
 		UpdateWorkflowExecutionOptions(ctx context.Context, options UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error)
 
@@ -455,6 +459,7 @@ type (
 	// Exposed as: [go.temporal.io/sdk/client.Options]
 	ClientOptions struct {
 		// Optional: To set the host:port for this client to connect to.
+		//
 		// default: localhost:7233
 		//
 		// This is a gRPC address and therefore can also support a special-formatted address of "<resolver>:///<value>" that
@@ -474,6 +479,7 @@ type (
 		HostPort string
 
 		// Optional: To set the namespace name for this client to work with.
+		//
 		// default: default
 		Namespace string
 
@@ -481,31 +487,38 @@ type (
 		Credentials Credentials
 
 		// Optional: Logger framework can use to log.
+		//
 		// default: default logger provided.
 		Logger log.Logger
 
 		// Optional: Metrics handler for reporting metrics.
+		//
 		// default: no metrics.
 		MetricsHandler metrics.Handler
 
 		// Optional: Sets an identify that can be used to track this host for debugging.
+		//
 		// default: default identity that include hostname, groupName and process ID.
 		Identity string
 
 		// Optional: Sets DataConverter to customize serialization/deserialization of arguments in Temporal
+		//
 		// default: defaultDataConverter, an combination of google protobuf converter, gogo protobuf converter and json converter
 		DataConverter converter.DataConverter
 
 		// Optional: Sets FailureConverter to customize serialization/deserialization of errors.
+		//
 		// default: temporal.DefaultFailureConverter, does not encode any fields of the error. Use temporal.NewDefaultFailureConverter
 		// options to configure or create a custom converter.
 		FailureConverter converter.FailureConverter
 
 		// Optional: Sets ContextPropagators that allows users to control the context information passed through a workflow
+		//
 		// default: nil
 		ContextPropagators []ContextPropagator
 
 		// Optional: Sets options for server connection that allow users to control features of connections such as TLS settings.
+		//
 		// default: no extra options
 		ConnectionOptions ConnectionOptions
 
@@ -559,12 +572,14 @@ type (
 		// After a duration of this time if the client doesn't see any activity it
 		// pings the server to see if the transport is still alive.
 		// If set below 10s, a minimum value of 10s will be used instead.
+		//
 		// default: 30s
 		KeepAliveTime time.Duration
 
 		// After having pinged for keepalive check, the client waits for a duration
 		// of Timeout and if no activity is seen even after that the connection is
 		// closed.
+		//
 		// default: 15s
 		KeepAliveTimeout time.Duration
 
@@ -575,6 +590,7 @@ type (
 		// if true, when there are no active RPCs, Time and Timeout will be ignored and no
 		// keepalive pings will be sent.
 		// If false, client sends keepalive pings even with no active RPCs
+		//
 		// default: false
 		DisableKeepAlivePermitWithoutStream bool
 
@@ -609,12 +625,14 @@ type (
 	// Exposed as: [go.temporal.io/sdk/client.StartWorkflowOptions]
 	StartWorkflowOptions struct {
 		// ID - The business identifier of the workflow execution.
+		//
 		// Optional: defaulted to a uuid.
 		ID string
 
 		// TaskQueue - The workflow tasks of the workflow are scheduled on the queue with this name.
 		// This is also the name of the activity task queue on which activities are scheduled.
 		// The workflow author can choose to override this using activity options.
+		//
 		// Mandatory: No default.
 		TaskQueue string
 
@@ -622,27 +640,32 @@ type (
 		// It includes retries and continue as new. Use WorkflowRunTimeout to limit execution time
 		// of a single workflow run.
 		// The resolution is seconds.
+		//
 		// Optional: defaulted to unlimited.
 		WorkflowExecutionTimeout time.Duration
 
 		// WorkflowRunTimeout - The timeout for duration of a single workflow run.
 		// The resolution is seconds.
+		//
 		// Optional: defaulted to WorkflowExecutionTimeout.
 		WorkflowRunTimeout time.Duration
 
 		// WorkflowTaskTimeout - The timeout for processing workflow task from the time the worker
 		// pulled this task. If a workflow task is lost, it is retried after this timeout.
 		// The resolution is seconds.
+		//
 		// Optional: defaulted to 10 secs.
 		WorkflowTaskTimeout time.Duration
 
 		// WorkflowIDReusePolicy - Specifies server behavior if a *completed* workflow with the same id exists.
 		// This can be useful for dedupe logic if set to RejectDuplicate
+		//
 		// Optional: defaulted to AllowDuplicate.
 		WorkflowIDReusePolicy enumspb.WorkflowIdReusePolicy
 
 		// WorkflowIDConflictPolicy - Specifies server behavior if a *running* workflow with the same id exists.
 		// This cannot be set if WorkflowIDReusePolicy is set to TerminateIfRunning.
+		//
 		// Optional: defaulted to Fail - required when used in WithStartWorkflowOperation.
 		WorkflowIDConflictPolicy enumspb.WorkflowIdConflictPolicy
 
@@ -736,6 +759,7 @@ type (
 		// VersioningOverride - Sets the versioning configuration of a specific workflow execution, ignoring current
 		// server or worker default policies. This enables running canary tests without affecting existing workflows.
 		// To unset the override after the workflow is running, use [UpdateWorkflowExecutionOptions].
+		//
 		// Optional: defaults to no override.
 		//
 		// NOTE: Experimental
@@ -759,6 +783,7 @@ type (
 
 	// WithStartWorkflowOperation defines how to start a workflow when using UpdateWithStartWorkflow.
 	// See [NewWithStartWorkflowOperation] and [UpdateWithStartWorkflow].
+	//
 	// NOTE: Experimental
 	WithStartWorkflowOperation interface {
 		// Get returns the WorkflowRun that was targeted by the UpdateWithStartWorkflow call.
@@ -804,6 +829,7 @@ type (
 		MaximumAttempts int32
 
 		// Non-Retriable errors. This is optional. Temporal server will stop retry if error type matches this list.
+		//
 		// Note:
 		//  - cancellation is not a failure, so it won't be retried,
 		//  - only StartToClose or Heartbeat timeouts are retryable.
