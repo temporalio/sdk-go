@@ -78,7 +78,8 @@ type SlotReservationInfo interface {
 	WorkerBuildId() string
 	// WorkerBuildId returns the build ID of the worker that is reserving the slot.
 	WorkerIdentity() string
-	// NumIssuedSlots returns the number of slots that have already been issued by the supplier.
+	// NumIssuedSlots returns the current number of slots that have already been issued by the
+	// supplier. This value may change over the course of the reservation.
 	NumIssuedSlots() int
 	// Logger returns an appropriately tagged logger.
 	Logger() log.Logger
