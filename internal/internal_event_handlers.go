@@ -404,6 +404,7 @@ func (wc *workflowEnvironmentImpl) TypedSearchAttributes() SearchAttributes {
 }
 
 func (wc *workflowEnvironmentImpl) Complete(result *commonpb.Payloads, err error) {
+	fmt.Printf("YYY %+v\n", err)
 	wc.completeHandler(result, err)
 }
 
