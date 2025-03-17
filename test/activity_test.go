@@ -252,11 +252,6 @@ func (a *Activities) WaitForWorkerStop(ctx context.Context, timeout time.Duratio
 	}
 }
 
-func (a *Activities) ActivityStop(ctx context.Context) error {
-	time.Sleep(100 * time.Millisecond)
-	return ctx.Err()
-}
-
 func (a *Activities) WaitForManualStop(context.Context) error {
 	if a.manualStopContext == nil {
 		return fmt.Errorf("no manual context set")

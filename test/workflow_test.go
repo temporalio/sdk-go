@@ -2163,23 +2163,6 @@ func (w *Workflows) ActivityWaitForWorkerStop(ctx workflow.Context, timeout time
 	return s, err
 }
 
-func (w *Workflows) LocalActivityStop(ctx workflow.Context) error {
-	for {
-		for x := 0; x < 10; x++ {
-			ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
-				StartToCloseTimeout: 1 * time.Minute,
-			})
-			err := workflow.ExecuteLocalActivity(ctx, "ActivityStop").Get(ctx, nil)
-			if err != nil {
-				workflow.GetLogger(ctx).Error("Activity failed.", "Error", err)
-			}
-		}
-		workflow.Sleep(ctx, 100*time.Millisecond)
-	}
-
-	return nil
-}
-
 func (w *Workflows) ActivityHeartbeatUntilSignal(ctx workflow.Context) error {
 	ch := workflow.GetSignalChannel(ctx, "cancel")
 	actCtx, actCancel := workflow.WithCancel(workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
@@ -3526,7 +3509,6 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.SelectorBlockSignal)
 	worker.RegisterWorkflow(w.CommandsFuzz)
 	worker.RegisterWorkflow(w.WorkflowClientFromActivity)
-	worker.RegisterWorkflow(w.LocalActivityStop)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {
