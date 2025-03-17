@@ -49,9 +49,11 @@ type MetricsHandlerOptions struct {
 	// meter provider using the name "temporal-sdk-go".
 	Meter metric.Meter
 	// InitialAttributes to set on the handler
+	//
 	// Optional: Defaults to the empty set.
 	InitialAttributes attribute.Set
 	// OnError Callback to invoke if the provided meter returns an error.
+	//
 	// Optional: Defaults to panicking on any error.
 	OnError func(error)
 }
