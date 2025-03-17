@@ -662,7 +662,7 @@ type (
 		//
 		// NOTE: WorkflowExecutionErrorWhenAlreadyStarted will affect if Client.ExecuteWorkflow returns an error
 		// when a re-run would be disallowed. See its docstring for more information.
-    //
+		//
 		// Optional: defaulted to AllowDuplicate.
 		WorkflowIDReusePolicy enumspb.WorkflowIdReusePolicy
 
@@ -671,8 +671,8 @@ type (
 		//
 		// NOTE: WorkflowExecutionErrorWhenAlreadyStarted will affect if Client.ExecuteWorkflow returns an error
 		// when a re-run would be disallowed. See its docstring for more information.
-    //
- 		// Optional: defaulted to Fail - required when used in WithStartWorkflowOperation.
+		//
+		// Optional: defaulted to Fail - required when used in WithStartWorkflowOperation.
 		WorkflowIDConflictPolicy enumspb.WorkflowIdConflictPolicy
 
 		// When WorkflowExecutionErrorWhenAlreadyStarted is true, Client.ExecuteWorkflow will return an error if the
