@@ -660,13 +660,19 @@ type (
 		// WorkflowIDReusePolicy - Specifies server behavior if a *completed* workflow with the same id exists.
 		// This can be useful for dedupe logic if set to RejectDuplicate
 		//
+		// NOTE: WorkflowExecutionErrorWhenAlreadyStarted will affect if Client.ExecuteWorkflow returns an error
+		// when a re-run would be disallowed. See its docstring for more information.
+    //
 		// Optional: defaulted to AllowDuplicate.
 		WorkflowIDReusePolicy enumspb.WorkflowIdReusePolicy
 
 		// WorkflowIDConflictPolicy - Specifies server behavior if a *running* workflow with the same id exists.
 		// This cannot be set if WorkflowIDReusePolicy is set to TerminateIfRunning.
 		//
-		// Optional: defaulted to Fail - required when used in WithStartWorkflowOperation.
+		// NOTE: WorkflowExecutionErrorWhenAlreadyStarted will affect if Client.ExecuteWorkflow returns an error
+		// when a re-run would be disallowed. See its docstring for more information.
+    //
+ 		// Optional: defaulted to Fail - required when used in WithStartWorkflowOperation.
 		WorkflowIDConflictPolicy enumspb.WorkflowIdConflictPolicy
 
 		// When WorkflowExecutionErrorWhenAlreadyStarted is true, Client.ExecuteWorkflow will return an error if the
