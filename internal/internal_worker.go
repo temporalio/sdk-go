@@ -102,6 +102,7 @@ type (
 		localActivityWorker *baseWorker
 		identity            string
 		stopC               chan struct{}
+		localActivityStopC  chan struct{}
 	}
 
 	// ActivityWorker wraps the code for hosting activity types.
@@ -304,6 +305,8 @@ func verifyNamespaceExist(
 }
 
 func newWorkflowWorkerInternal(client *WorkflowClient, params workerExecutionParameters, ppMgr pressurePointMgr, overrides *workerOverrides, registry *registry) *workflowWorker {
+	// TODO: refactor this to allow local activities complete
+	//   maybe new channel that closes when local activity worker closes.
 	workerStopChannel := make(chan struct{})
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
 	// Get a workflow task handler.
@@ -351,7 +354,8 @@ func newWorkflowTaskWorkerInternal(
 	)
 
 	// laTunnel is the glue that hookup 3 parts
-	laTunnel := newLocalActivityTunnel(params.WorkerStopChannel)
+	localActivityStopChannel := make(chan struct{})
+	laTunnel := newLocalActivityTunnel(getReadOnlyChannel(localActivityStopChannel))
 
 	// 1) workflow handler will send local activity task to laTunnel
 	if handlerImpl, ok := taskHandler.(*workflowTaskHandlerImpl); ok {
@@ -389,6 +393,7 @@ func newWorkflowTaskWorkerInternal(
 		localActivityWorker: localActivityWorker,
 		identity:            params.Identity,
 		stopC:               stopC,
+		localActivityStopC:  localActivityStopChannel,
 	}
 }
 
@@ -407,8 +412,11 @@ func (ww *workflowWorker) Start() error {
 func (ww *workflowWorker) Stop() {
 	close(ww.stopC)
 	// TODO: remove the stop methods in favor of the workerStopChannel
+	ww.worker.Stop() // TODO: Moving worker stop first causes an infinite loop
+	ww.worker.logger.Debug("worker stopped, stopping localActivityWorker")
+	close(ww.localActivityStopC)
 	ww.localActivityWorker.Stop()
-	ww.worker.Stop()
+	//ww.worker.Stop()
 }
 
 func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {

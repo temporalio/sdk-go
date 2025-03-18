@@ -251,6 +251,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.WorkflowPanicPolicy = worker.BlockWorkflow
 	}
 
+	//if strings.Contains(ts.T().Name(), "GracefulActivityCompletion") {
 	if strings.Contains(ts.T().Name(), "GracefulActivityCompletion") ||
 		strings.Contains(ts.T().Name(), "GracefulLocalActivityCompletion") {
 		options.WorkerStopTimeout = 10 * time.Second
@@ -2223,35 +2224,46 @@ func (ts *IntegrationTestSuite) TestGracefulActivityCompletion() {
 	defer cancel()
 
 	// Start workflow
+	fmt.Println("start workflow")
 	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-graceful-activity-completion-"+uuid.New()),
 		ts.workflows.ActivityWaitForWorkerStop, 10*time.Second)
+	fmt.Println("no err")
 	ts.NoError(err)
 
+	// TODO: This might be what I need to write the activity test
 	// Wait for activity to report started
+	fmt.Println("Wait for activity to report started")
 	for ts.activities.invokedCount("wait-for-worker-stop") == 0 && ctx.Err() == nil {
 		time.Sleep(100 * time.Millisecond)
 	}
 	ts.NoError(ctx.Err())
 
 	// Stop the worker
+	fmt.Println("Stop the worker")
 	ts.worker.Stop()
 	ts.workerStopped = true
 
 	// Look for activity completed from the history
+	fmt.Println("Look for activity completed from the history")
 	var completed *historypb.ActivityTaskCompletedEventAttributes
 	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(),
 		false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	for completed == nil && iter.HasNext() {
 		event, err := iter.Next()
 		ts.NoError(err)
+		fmt.Println("[event]", event.EventType, event.Attributes)
+
 		if event.EventType == enumspb.EVENT_TYPE_ACTIVITY_TASK_COMPLETED {
+			fmt.Println("event", event)
 			completed = event.GetActivityTaskCompletedEventAttributes()
 		}
 	}
 
 	// Confirm it stored "stopped"
 	ts.NotNil(completed)
+	fmt.Println("completed.GetResult()", completed.GetResult())
+	fmt.Println("GetPayloads()", completed.GetResult().GetPayloads())
 	ts.Len(completed.GetResult().GetPayloads(), 1)
 	var s string
 	ts.NoError(converter.GetDefaultDataConverter().FromPayload(completed.Result.Payloads[0], &s))
@@ -2262,50 +2274,87 @@ func (ts *IntegrationTestSuite) TestGracefulLocalActivityCompletion() {
 	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	//var stopped bool
+	localActivityFn := func(ctx context.Context) error {
+		fmt.Println("[LA] started")
+		time.Sleep(100 * time.Millisecond)
+		fmt.Println("[LA] completed")
+		return ctx.Err()
+	}
 
-	opts := ts.startWorkflowOptions("local-activity-stop-" + uuid.New())
-	opts.WorkflowTaskTimeout = 5 * time.Second
+	workflowFn := func(ctx workflow.Context) error {
+		fmt.Println("[WF] started")
+		//for !stopped {
+		ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+			StartToCloseTimeout: 1 * time.Minute,
+		})
+		localActivity := workflow.ExecuteLocalActivity(ctx, localActivityFn)
+		fmt.Println("[WF] LA started")
+		err := localActivity.Get(ctx, nil)
+		if err != nil {
+			workflow.GetLogger(ctx).Error("Activity failed.", "Error", err)
+		}
+		//}
+		ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+			StartToCloseTimeout: 1 * time.Minute,
+		})
+		localActivity = workflow.ExecuteLocalActivity(ctx, localActivityFn)
+		fmt.Println("[WF] second LA started")
+		err = localActivity.Get(ctx, nil)
+		if err != nil {
+			workflow.GetLogger(ctx).Error("Activity failed.", "Error", err)
+		}
+
+		return nil
+
+	}
+
+	workflowID := "local-activity-stop-" + uuid.New()
+	ts.worker.RegisterWorkflowWithOptions(workflowFn, workflow.RegisterOptions{Name: "local-activity-stop"})
+	startOptions := client.StartWorkflowOptions{
+		ID:                  workflowID,
+		TaskQueue:           ts.taskQueueName,
+		WorkflowTaskTimeout: 5 * time.Second,
+	}
 
 	// Start workflow
-	//fmt.Println("start workflow")
-	run, err := ts.client.ExecuteWorkflow(ctx,
-		opts,
-		ts.workflows.LocalActivityStop)
+	//err := ts.executeWorkflowWithOption(startOptions, workflowFn, nil)
+	run, err := ts.client.ExecuteWorkflow(ctx, startOptions, workflowFn)
 	ts.NoError(err)
-
-	// Wait for activity to report started
-	//fmt.Println("\nWait for activity to report started")
-	time.Sleep(100 * time.Millisecond)
-	ts.NoError(ctx.Err())
 
 	// Stop the worker
 	time.Sleep(100 * time.Millisecond)
 	//time.Sleep(10 * time.Second)
 	fmt.Println("\n[Calling ts.worker.Stop()]")
 	ts.worker.Stop()
+	//stopped = true
 	fmt.Println("[finished ts.worker.Stop()] done TODO: This shouldn't complete until LA finishes running.")
 	ts.workerStopped = true
 	time.Sleep(500 * time.Millisecond)
 
 	// Look for activity completed from the history
 	fmt.Println("\nLook for activity completed from the history")
-	var completed bool
+	var laCompleted, wfeCompleted bool
 	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(),
 		false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	for iter.HasNext() {
 		event, err := iter.Next()
-		attributes := event.GetMarkerRecordedEventAttributes()
 		fmt.Println("[event]", event.EventType, event.Attributes)
-		//fmt.Println("\t", event)
 		ts.NoError(err)
+		attributes := event.GetMarkerRecordedEventAttributes()
 		if event.EventType == enumspb.EVENT_TYPE_MARKER_RECORDED && attributes.MarkerName == "LocalActivity" && attributes.GetFailure() == nil {
-			completed = true
+			laCompleted = true
+		}
+		if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED {
+			wfeCompleted = true
 		}
 	}
 
 	// Confirm it stored "stopped"
 	fmt.Println("\nConfirm it stored \"stopped\"")
-	ts.True(completed)
+	ts.True(laCompleted)
+	fmt.Println("LA completed, checking for WFE completed")
+	ts.True(wfeCompleted)
 	//ts.Len(completed.GetResult().GetPayloads(), 1)
 	//var s string
 	//ts.NoError(converter.GetDefaultDataConverter().FromPayload(completed.Result.Payloads[0], &s))
