@@ -25,6 +25,7 @@ package opentracing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/opentracing/opentracing-go"
@@ -111,6 +112,11 @@ func (t *tracer) Options() interceptor.TracerOptions {
 
 func (t *tracer) UnmarshalSpan(m map[string]string) (interceptor.TracerSpanRef, error) {
 	ctx, err := t.options.Tracer.Extract(opentracing.TextMap, opentracing.TextMapCarrier(m))
+	if errors.Is(err, opentracing.ErrSpanContextNotFound) {
+		// If there is no span, return nothing, but don't error out. This is
+		// a legitimate place where a span does not exist in the headers
+		return nil, nil
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -44,8 +44,8 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
-	"github.com/pborman/uuid"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
@@ -169,6 +169,11 @@ type (
 
 		// If true the worker is opting in to build ID based versioning.
 		UseBuildIDForVersioning bool
+
+		// The worker deployment version identifier of the form "<deployment_name>.<build_id>".
+		// If set, both the [WorkerBuildID] and the [DeploymentSeriesName] will be derived from it,
+		// ignoring previous values.
+		WorkerDeploymentVersion string
 
 		// The worker's deployment series name, an identifier for Worker Versioning that links versions of the same worker
 		// service/application.
@@ -425,7 +430,7 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 	}
 	// For now resourceID is hidden from user so we will always create a unique one for each worker.
 	if params.SessionResourceID == "" {
-		params.SessionResourceID = uuid.New()
+		params.SessionResourceID = uuid.NewString()
 	}
 	sessionEnvironment := newSessionEnvironment(params.SessionResourceID, maxConcurrentSessionExecutionSize)
 
@@ -575,6 +580,9 @@ func (r *registry) RegisterWorkflowWithOptions(
 		if len(options.Name) == 0 {
 			panic("WorkflowDefinitionFactory must be registered with a name")
 		}
+		if strings.HasPrefix(options.Name, temporalPrefix) {
+			panic(temporalPrefixError)
+		}
 		r.workflowFuncMap[options.Name] = factory
 		r.workflowVersioningBehaviorMap[options.Name] = options.VersioningBehavior
 		return
@@ -589,6 +597,10 @@ func (r *registry) RegisterWorkflowWithOptions(
 	registerName := fnName
 	if len(alias) > 0 {
 		registerName = alias
+	}
+
+	if strings.HasPrefix(alias, temporalPrefix) || strings.HasPrefix(registerName, temporalPrefix) {
+		panic(temporalPrefixError)
 	}
 
 	r.Lock()
@@ -621,6 +633,9 @@ func (r *registry) RegisterActivityWithOptions(
 		if options.Name == "" {
 			panic("registration of activity interface requires name")
 		}
+		if strings.HasPrefix(options.Name, temporalPrefix) {
+			panic(temporalPrefixError)
+		}
 		r.addActivityWithLock(options.Name, a)
 		return
 	}
@@ -641,6 +656,10 @@ func (r *registry) RegisterActivityWithOptions(
 	registerName := fnName
 	if len(alias) > 0 {
 		registerName = alias
+	}
+
+	if strings.HasPrefix(alias, temporalPrefix) || strings.HasPrefix(registerName, temporalPrefix) {
+		panic(temporalPrefixError)
 	}
 
 	r.Lock()
@@ -1026,7 +1045,7 @@ func (aw *AggregatedWorker) RegisterWorkflow(w interface{}) {
 		panic("workflow worker disabled, cannot register workflow")
 	}
 	if aw.executionParams.UseBuildIDForVersioning &&
-		aw.executionParams.DeploymentSeriesName != "" &&
+		(aw.executionParams.DeploymentSeriesName != "" || aw.executionParams.WorkerDeploymentVersion != "") &&
 		aw.executionParams.DefaultVersioningBehavior == VersioningBehaviorUnspecified {
 		panic("workflow type does not have a versioning behavior")
 	}
@@ -1039,7 +1058,7 @@ func (aw *AggregatedWorker) RegisterWorkflowWithOptions(w interface{}, options R
 		panic("workflow worker disabled, cannot register workflow")
 	}
 	if options.VersioningBehavior == VersioningBehaviorUnspecified &&
-		aw.executionParams.DeploymentSeriesName != "" &&
+		(aw.executionParams.DeploymentSeriesName != "" || aw.executionParams.WorkerDeploymentVersion != "") &&
 		aw.executionParams.UseBuildIDForVersioning &&
 		aw.executionParams.DefaultVersioningBehavior == VersioningBehaviorUnspecified {
 		panic("workflow type does not have a versioning behavior")
@@ -1135,6 +1154,7 @@ func (aw *AggregatedWorker) start() error {
 				return fmt.Errorf("failed to create a nexus worker: %w", err)
 			}
 		}
+		reg.Use(nexusMiddleware(aw.registry.interceptors))
 		handler, err := reg.NewHandler()
 		if err != nil {
 			return fmt.Errorf("failed to create a nexus worker: %w", err)
@@ -1490,7 +1510,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 	}
 	workflowType := attr.WorkflowType
 	execution := &commonpb.WorkflowExecution{
-		RunId:      uuid.NewRandom().String(),
+		RunId:      uuid.NewString(),
 		WorkflowId: "ReplayId",
 	}
 	if originalExecution.ID != "" {
@@ -1667,6 +1687,9 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (hist *histo
 
 // NewAggregatedWorker returns an instance to manage both activity and workflow workers
 func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options WorkerOptions) *AggregatedWorker {
+	if strings.HasPrefix(taskQueue, temporalPrefix) {
+		panic(temporalPrefixError)
+	}
 	setClientDefaults(client)
 	setWorkerOptionsDefaults(&options)
 	ctx := options.BackgroundActivityContext
@@ -1694,6 +1717,17 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	// See: https://github.com/temporalio/sdk-go/issues/1227
 	if options.EnableSessionWorker && options.UseBuildIDForVersioning {
 		panic("cannot set both EnableSessionWorker and UseBuildIDForVersioning")
+	}
+
+	if options.DeploymentOptions.Version != "" &&
+		!strings.Contains(options.DeploymentOptions.Version, ".") {
+		panic("version in DeploymentOptions not in the form \"<deployment_name>.<build_id>\"")
+	}
+
+	if options.DeploymentOptions.Version != "" {
+		splitVersion := strings.SplitN(options.DeploymentOptions.Version, ".", 2)
+		options.DeploymentOptions.DeploymentSeriesName = splitVersion[0]
+		options.BuildID = splitVersion[1]
 	}
 
 	// Need reference to result for fatal error handler
@@ -1737,8 +1771,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		MaxConcurrentNexusTaskQueuePollers:    options.MaxConcurrentNexusTaskPollers,
 		Identity:                              client.identity,
 		WorkerBuildID:                         options.BuildID,
-		UseBuildIDForVersioning:               options.UseBuildIDForVersioning,
+		UseBuildIDForVersioning:               options.UseBuildIDForVersioning || options.DeploymentOptions.UseVersioning,
 		DeploymentSeriesName:                  options.DeploymentOptions.DeploymentSeriesName,
+		WorkerDeploymentVersion:               options.DeploymentOptions.Version,
 		DefaultVersioningBehavior:             options.DeploymentOptions.DefaultVersioningBehavior,
 		MetricsHandler:                        client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue)),
 		Logger:                                client.logger,

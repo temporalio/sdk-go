@@ -39,8 +39,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/opentracing/opentracing-go"
-	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -224,8 +224,6 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		Interceptors:        workerInterceptors,
 		WorkflowPanicPolicy: panicPolicy,
 	}
-
-	worker.SetStickyWorkflowCacheSize(ts.config.maxWorkflowCacheSize)
 
 	if strings.Contains(ts.T().Name(), "Session") {
 		options.EnableSessionWorker = true
@@ -695,7 +693,7 @@ func (ts *IntegrationTestSuite) TestCancellation() {
 }
 
 func (ts *IntegrationTestSuite) TestCascadingCancellation() {
-	workflowID := "test-cascading-cancellation-" + uuid.New()
+	workflowID := "test-cascading-cancellation-" + uuid.NewString()
 	childWorkflowID := workflowID + "-child"
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -844,7 +842,7 @@ func (ts *IntegrationTestSuite) TestSignalWorkflowWithStubbornGrpcError() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicateNoChildWorkflow() {
-	specialstr := uuid.New()
+	specialstr := uuid.NewString()
 	wfOpts := ts.startWorkflowOptions("test-workflow-id-reuse-reject-dupes-no-children-" + specialstr)
 	wfOpts.WorkflowIDReusePolicy = enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE
 	wfOpts.WorkflowExecutionErrorWhenAlreadyStarted = true
@@ -876,7 +874,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicate() {
 		"test-workflowidreuse-reject-duplicate",
 		ts.workflows.IDReusePolicy,
 		&result,
-		uuid.New(),
+		uuid.NewString(),
 		enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE,
 		false,
 		false,
@@ -895,7 +893,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly1() {
 		"test-workflowidreuse-reject-duplicate-failed-only1",
 		ts.workflows.IDReusePolicy,
 		&result,
-		uuid.New(),
+		uuid.NewString(),
 		enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
 		false,
 		false,
@@ -914,7 +912,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly2() {
 		"test-workflowidreuse-reject-duplicate-failed-only2",
 		ts.workflows.IDReusePolicy,
 		&result,
-		uuid.New(),
+		uuid.NewString(),
 		enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
 		false,
 		true,
@@ -929,7 +927,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicate() {
 		"test-workflowidreuse-allow-duplicate",
 		ts.workflows.IDReusePolicy,
 		&result,
-		uuid.New(),
+		uuid.NewString(),
 		enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
 		false,
 		false,
@@ -943,7 +941,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseIgnoreDuplicateWhileRunning()
 	defer cancel()
 
 	// Start two workflows with the same ID but different params
-	opts := ts.startWorkflowOptions("test-workflow-id-reuse-ignore-dupes-" + uuid.New())
+	opts := ts.startWorkflowOptions("test-workflow-id-reuse-ignore-dupes-" + uuid.NewString())
 	run1, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.WaitSignalReturnParam, "run1")
 	ts.NoError(err)
 	run2, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.WaitSignalReturnParam, "run2")
@@ -981,7 +979,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDConflictPolicy() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	opts := ts.startWorkflowOptions("test-workflowidconflict-" + uuid.New())
+	opts := ts.startWorkflowOptions("test-workflowidconflict-" + uuid.NewString())
 	opts.WorkflowExecutionErrorWhenAlreadyStarted = true
 
 	var alreadyStartedErr *serviceerror.WorkflowExecutionAlreadyStarted
@@ -1388,7 +1386,6 @@ func (ts *IntegrationTestSuite) TestActivityTimeoutsWorkflow() {
 	ts.Error(ts.executeWorkflow("test-activity-timeout-workflow", ts.workflows.ActivityTimeoutsWorkflow, nil, workflow.ActivityOptions{
 		ScheduleToStartTimeout: 5 * time.Second,
 	}))
-
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowWithParallelSideEffectsUsingReplay() {
@@ -1989,7 +1986,7 @@ func (ts *IntegrationTestSuite) TestSignalWithStartIdConflictPolicy() {
 	defer cancel()
 
 	var invalidArgErr *serviceerror.InvalidArgument
-	opts := ts.startWorkflowOptions("test-signalwithstart-workflowidconflict-" + uuid.New())
+	opts := ts.startWorkflowOptions("test-signalwithstart-workflowidconflict-" + uuid.NewString())
 
 	// Start a workflow
 	run1, err := ts.client.SignalWithStartWorkflow(ctx, opts.ID, "signal", true, opts, ts.workflows.IDConflictPolicy)
@@ -2039,6 +2036,143 @@ func (ts *IntegrationTestSuite) TestResetWorkflowExecution() {
 	err = newWf.Get(context.Background(), &newResult)
 	ts.NoError(err)
 	ts.Equal(originalResult, newResult)
+}
+
+// TestResetWorkflowExecutionWithChildren tests the behavior of child workflow ID generation when a workflow with children is reset.
+// It repeatedly resets the workflow at different points in its execution and verifies that the child workflow IDs are generated correctly.
+func (ts *IntegrationTestSuite) TestResetWorkflowExecutionWithChildren() {
+	wfID := "reset-workflow-with-children"
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	// Start a workflow with 3 children.
+	options := ts.startWorkflowOptions(wfID)
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.WorkflowWithChildren)
+	ts.NoError(err)
+	var originalResult string
+	err = run.Get(ctx, &originalResult)
+	ts.NoError(err)
+
+	// save child init childIDs for later comparison.
+	childIDs := ts.getChildWFIDsFromHistory(ctx, wfID, run.GetRunID())
+	ts.Len(childIDs, 3)
+	child1IDBeforeReset := childIDs[0]
+	child2IDBeforeReset := childIDs[1]
+	child3IDBeforeReset := childIDs[2]
+
+	resetRequest := &workflowservice.ResetWorkflowExecutionRequest{
+		Namespace: ts.config.Namespace,
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: wfID,
+			RunId:      run.GetRunID(),
+		},
+		Reason: "integration test",
+	}
+	// (reset #1) - resetting the workflow execution before both child workflows are started.
+	resetRequest.RequestId = "reset-request-1"
+	resetRequest.WorkflowTaskFinishEventId = 4
+	resp, err := ts.client.ResetWorkflowExecution(context.Background(), resetRequest)
+	ts.NoError(err)
+	// Wait for the new run to complete.
+	var resultAfterReset1 string
+	err = ts.client.GetWorkflow(context.Background(), wfID, resp.GetRunId()).Get(ctx, &resultAfterReset1)
+	ts.NoError(err)
+	ts.Equal(originalResult, resultAfterReset1)
+
+	childIDsAfterReset1 := ts.getChildWFIDsFromHistory(ctx, wfID, resp.GetRunId())
+	ts.Len(childIDsAfterReset1, 3)
+	// All 3 child workflow IDs should be different after reset.
+	ts.NotEqual(child1IDBeforeReset, childIDsAfterReset1[0])
+	ts.NotEqual(child2IDBeforeReset, childIDsAfterReset1[1])
+	ts.NotEqual(child3IDBeforeReset, childIDsAfterReset1[2])
+
+	// (reset #2) - resetting the new workflow execution after child-1 but before child-2
+	resetRequest.RequestId = "reset-request-2"
+	resetRequest.WorkflowExecution.RunId = resp.GetRunId()
+	resetRequest.WorkflowTaskFinishEventId = ts.getWorkflowTaskFinishEventIdAfterChild(ctx, wfID, resp.GetRunId(), childIDsAfterReset1[0])
+	resp, err = ts.client.ResetWorkflowExecution(context.Background(), resetRequest)
+	ts.NoError(err)
+	// Wait for the new run to complete.
+	var resultAfterReset2 string
+	err = ts.client.GetWorkflow(context.Background(), wfID, resp.GetRunId()).Get(ctx, &resultAfterReset2)
+	ts.NoError(err)
+	ts.Equal(originalResult, resultAfterReset2)
+
+	childIDsAfterReset2 := ts.getChildWFIDsFromHistory(ctx, wfID, resp.GetRunId())
+	ts.Len(childIDsAfterReset2, 3)
+	ts.Equal(childIDsAfterReset1[0], childIDsAfterReset2[0])    // child-1 should be the same as before reset.
+	ts.NotEqual(childIDsAfterReset1[1], childIDsAfterReset2[1]) // child-2 should be different after reset.
+	ts.NotEqual(childIDsAfterReset1[2], childIDsAfterReset2[2]) // Child-3 should be different after reset.
+
+	// (reset #3) - resetting the new workflow execution after child-2 but before child-3
+	resetRequest.RequestId = "reset-request-3"
+	resetRequest.WorkflowExecution.RunId = resp.GetRunId()
+	resetRequest.WorkflowTaskFinishEventId = ts.getWorkflowTaskFinishEventIdAfterChild(ctx, wfID, resp.GetRunId(), childIDsAfterReset2[1])
+	resp, err = ts.client.ResetWorkflowExecution(context.Background(), resetRequest)
+	ts.NoError(err)
+	// Wait for the new run to complete.
+	var resultAfterReset3 string
+	err = ts.client.GetWorkflow(context.Background(), wfID, resp.GetRunId()).Get(ctx, &resultAfterReset3)
+	ts.NoError(err)
+	ts.Equal(originalResult, resultAfterReset3)
+
+	childIDsAfterReset3 := ts.getChildWFIDsFromHistory(ctx, wfID, resp.GetRunId())
+	ts.Len(childIDsAfterReset3, 3)
+	// child-1 & child-2 workflow IDs should be the same as before reset. Child-3 should be different.
+	ts.Equal(childIDsAfterReset2[0], childIDsAfterReset3[0])
+	ts.Equal(childIDsAfterReset2[1], childIDsAfterReset3[1])
+	ts.NotEqual(childIDsAfterReset2[2], childIDsAfterReset3[2])
+
+	// (reset #3) - resetting the new workflow execution one last time after child-3
+	// This should successfully replay all child events and not change the child workflow IDs from previous run.
+	resetRequest.RequestId = "reset-request-4"
+	resetRequest.WorkflowExecution.RunId = resp.GetRunId()
+	resetRequest.WorkflowTaskFinishEventId = ts.getWorkflowTaskFinishEventIdAfterChild(ctx, wfID, resp.GetRunId(), childIDsAfterReset3[2])
+	resp, err = ts.client.ResetWorkflowExecution(context.Background(), resetRequest)
+	ts.NoError(err)
+	childIDsFinal := ts.getChildWFIDsFromHistory(ctx, wfID, resp.GetRunId())
+	ts.Len(childIDsFinal, 3)
+	ts.Equal(childIDsAfterReset3[0], childIDsFinal[0])
+	ts.Equal(childIDsAfterReset3[1], childIDsFinal[1])
+	ts.Equal(childIDsAfterReset3[2], childIDsFinal[2])
+}
+
+func (ts *IntegrationTestSuite) getChildWFIDsFromHistory(ctx context.Context, wfID string, runID string) []string {
+	iter := ts.client.GetWorkflowHistory(ctx, wfID, runID, false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	var childIDs []string
+	for iter.HasNext() {
+		event, err1 := iter.Next()
+		if err1 != nil {
+			break
+		}
+		if event.GetEventType() == enumspb.EVENT_TYPE_START_CHILD_WORKFLOW_EXECUTION_INITIATED {
+			childIDs = append(childIDs, event.GetStartChildWorkflowExecutionInitiatedEventAttributes().GetWorkflowId())
+		}
+	}
+	return childIDs
+}
+
+func (ts *IntegrationTestSuite) getWorkflowTaskFinishEventIdAfterChild(ctx context.Context, wfID string, runID string, childID string) int64 {
+	iter := ts.client.GetWorkflowHistory(ctx, wfID, runID, false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	childFound := false
+	for iter.HasNext() {
+		event, err := iter.Next()
+		if err != nil {
+			break
+		}
+		if event.GetEventType() == enumspb.EVENT_TYPE_CHILD_WORKFLOW_EXECUTION_COMPLETED {
+			if event.GetChildWorkflowExecutionCompletedEventAttributes().GetWorkflowExecution().GetWorkflowId() == childID {
+				childFound = true
+			}
+		}
+		if !childFound {
+			continue
+		}
+		if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
+			return event.GetEventId()
+		}
+	}
+	return 0
 }
 
 func (ts *IntegrationTestSuite) TestResetWorkflowExecutionWithUpdate() {
@@ -2224,7 +2358,7 @@ func (ts *IntegrationTestSuite) TestGracefulActivityCompletion() {
 
 	// Start workflow
 	run, err := ts.client.ExecuteWorkflow(ctx,
-		ts.startWorkflowOptions("test-graceful-activity-completion-"+uuid.New()),
+		ts.startWorkflowOptions("test-graceful-activity-completion-"+uuid.NewString()),
 		ts.workflows.ActivityWaitForWorkerStop, 10*time.Second)
 	ts.NoError(err)
 
@@ -2890,7 +3024,7 @@ func (ts *IntegrationTestSuite) TestAdvancedPostCancellation() {
 
 	assertPostCancellation := func(in *AdvancedPostCancellationInput) {
 		// Start workflow
-		run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-advanced-post-cancellation-"+uuid.New()),
+		run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-advanced-post-cancellation-"+uuid.NewString()),
 			ts.workflows.AdvancedPostCancellation, in)
 		ts.NoError(err)
 
@@ -2936,7 +3070,7 @@ func (ts *IntegrationTestSuite) TestAdvancedPostCancellationChildWithDone() {
 	defer cancel()
 
 	// Start workflow
-	startOpts := ts.startWorkflowOptions("test-advanced-post-cancellation-child-with-done-" + uuid.New())
+	startOpts := ts.startWorkflowOptions("test-advanced-post-cancellation-child-with-done-" + uuid.NewString())
 	run, err := ts.client.ExecuteWorkflow(ctx, startOpts, ts.workflows.AdvancedPostCancellationChildWithDone)
 	ts.NoError(err)
 
@@ -2967,24 +3101,15 @@ func (ts *IntegrationTestSuite) waitForQueryTrue(run client.WorkflowRun, query s
 }
 
 func (ts *IntegrationTestSuite) TestNumPollersCounter() {
-	_, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	assertNumPollersEventually := func(expected float64, pollerType string, tags ...string) {
-		// Try for two seconds
-		var lastCount float64
-		for start := time.Now(); time.Since(start) <= 10*time.Second; {
-			lastCount = ts.metricGauge(
+	assertNumPollersEventually := func(expected float64, pollerType string) {
+		ts.Require().EventuallyWithT(func(t *assert.CollectT) {
+			lastCount := ts.metricGauge(
 				metrics.NumPoller,
 				"poller_type", pollerType,
 				"task_queue", ts.taskQueueName,
 			)
-			if lastCount == expected {
-				return
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
-		// Will fail
-		ts.Equal(expected, lastCount)
+			assert.Equal(t, expected, lastCount)
+		}, 10*time.Second, 50*time.Millisecond)
 	}
 	if ts.config.maxWorkflowCacheSize == 0 {
 		assertNumPollersEventually(2, "workflow_task")
@@ -3410,7 +3535,7 @@ func (ts *IntegrationTestSuite) TestTallyScopeAccess() {
 
 	ts.worker.RegisterWorkflow(tallyScopeAccessWorkflow)
 	run, err := ts.client.ExecuteWorkflow(context.TODO(),
-		ts.startWorkflowOptions("tally-scope-access-"+uuid.New()), tallyScopeAccessWorkflow)
+		ts.startWorkflowOptions("tally-scope-access-"+uuid.NewString()), tallyScopeAccessWorkflow)
 	ts.NoError(err)
 	ts.NoError(run.Get(context.TODO(), nil))
 
@@ -3434,7 +3559,7 @@ func (ts *IntegrationTestSuite) TestTallyScopeAccess() {
 
 func (ts *IntegrationTestSuite) TestActivityOnlyWorker() {
 	// Start worker
-	taskQueue := "test-activity-only-queue-" + uuid.New()
+	taskQueue := "test-activity-only-queue-" + uuid.NewString()
 	activityOnlyWorker := worker.New(ts.client, taskQueue, worker.Options{DisableWorkflowWorker: true})
 	a := newActivities()
 	activityOnlyWorker.RegisterActivity(a.activities2.ToUpper)
@@ -4136,7 +4261,7 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 	defer cancel()
 
 	startWorkflowOptions := func() client.StartWorkflowOptions {
-		opts := ts.startWorkflowOptions("test-update-with-start-" + uuid.New())
+		opts := ts.startWorkflowOptions("test-update-with-start-" + uuid.NewString())
 		opts.EnableEagerStart = false                                            // not allowed to use with update-with-start
 		opts.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL // required for update-with-start
 		return opts
@@ -4217,7 +4342,6 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 	})
 
 	ts.Run("receives results in separate goroutines", func() {
-
 		startOp := ts.client.NewWithStartWorkflowOperation(startWorkflowOptions(), ts.workflows.UpdateEntityWorkflow)
 
 		done1 := make(chan struct{})
@@ -4445,7 +4569,7 @@ func (ts *IntegrationTestSuite) TestQueryOnlyCoroutineUsage() {
 	// Start the workflow that should run forever, send 5 signals, and wait until
 	// all received
 	run, err := ts.client.ExecuteWorkflow(ctx,
-		ts.startWorkflowOptions("test-query-only-coroutine-"+uuid.New()),
+		ts.startWorkflowOptions("test-query-only-coroutine-"+uuid.NewString()),
 		ts.workflows.SignalCounter,
 	)
 	ts.NoError(err)
@@ -4620,7 +4744,7 @@ func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch b
 	forcedNonDeterminismCounter = 0
 	run, err := ts.client.ExecuteWorkflow(
 		ctx,
-		ts.startWorkflowOptions("test-non-determinism-failure-cause-"+uuid.New()),
+		ts.startWorkflowOptions("test-non-determinism-failure-cause-"+uuid.NewString()),
 		ts.workflows.ForcedNonDeterminism,
 		historyMismatch,
 	)
@@ -4668,6 +4792,55 @@ func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch b
 	ts.True(taskFailedMetric >= 1)
 }
 
+func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseCommandNotFound() {
+	// Create a situation in which, on replay, an event (MARKER_RECORDED) is encountered and yet the
+	// code emits no corresponding command.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	wfID := "test-non-determinism-failure-cause-command-not-found-" + uuid.NewString()
+	// Start workflow via UpdateWithStart and wait for update response
+	startWfOptions := ts.startWorkflowOptions(wfID)
+	startWfOptions.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL
+	startWfOp := ts.client.NewWithStartWorkflowOperation(startWfOptions, ts.workflows.NonDeterminismCommandNotFoundWorkflow)
+	updHandle, err := ts.client.UpdateWithStartWorkflow(ctx, client.UpdateWithStartWorkflowOptions{
+		StartWorkflowOperation: startWfOp,
+		UpdateOptions: client.UpdateWorkflowOptions{
+			WorkflowID:   wfID,
+			UpdateName:   "wait-for-wft-completion",
+			WaitForStage: client.WorkflowUpdateStageCompleted,
+		},
+	})
+	ts.NoError(err)
+
+	// WFT 1: workflow shouldEmitCommand is true, workflow accepts and completes update and emits a
+	// RecordMarker command.
+	ts.NoError(updHandle.Get(ctx, nil))
+	// Stop worker and start a new one in order to force full history replay.
+	ts.worker.Stop()
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{WorkflowPanicPolicy: internal.FailWorkflow})
+	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.NoError(nextWorker.Start())
+	defer nextWorker.Stop()
+	// Set shouldEmitCommand=false and send second update in order to trigger a WFT.
+	shouldEmitCommand = false
+	_, err = ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   wfID,
+		UpdateName:   "wait-for-wft-completion",
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
+	ts.Error(err)
+	run, err := startWfOp.Get(ctx)
+	ts.NoError(err)
+	// WFT 2: full replay, NDE due to missing RecordMarker command.
+	err = run.Get(ctx, nil)
+	ts.Error(err)
+	var workflowErr *temporal.WorkflowExecutionError
+	ts.True(errors.As(err, &workflowErr))
+	ts.Contains(workflowErr.Error(),
+		"[TMPRL1100] During replay, a matching Timer command was expected in history event position 8. However, the replayed code did not produce that.")
+}
+
 func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseReplay() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -4690,7 +4863,7 @@ func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseReplay() {
 	forcedNonDeterminismCounter = 0
 	run, err := ts.client.ExecuteWorkflow(
 		ctx,
-		ts.startWorkflowOptions("test-non-determinism-failure-cause-replay-"+uuid.New()),
+		ts.startWorkflowOptions("test-non-determinism-failure-cause-replay-"+uuid.NewString()),
 		ts.workflows.NonDeterminismReplay,
 	)
 
@@ -4722,7 +4895,7 @@ func (ts *IntegrationTestSuite) TestDeterminismUpsertSearchAttributesConditional
 	defer cancel()
 
 	maxTicks := 3
-	options := ts.startWorkflowOptions("test-determinism-upsert-search-attributes-conidtional-" + uuid.New())
+	options := ts.startWorkflowOptions("test-determinism-upsert-search-attributes-conidtional-" + uuid.NewString())
 	options.SearchAttributes = map[string]interface{}{
 		"CustomKeywordField": "unset",
 	}
@@ -4745,7 +4918,7 @@ func (ts *IntegrationTestSuite) TestLocalActivityWorkerRestart() {
 	defer cancel()
 
 	maxTicks := 3
-	options := ts.startWorkflowOptions("test-local-activity-worker-restart-" + uuid.New())
+	options := ts.startWorkflowOptions("test-local-activity-worker-restart-" + uuid.NewString())
 
 	run, err := ts.client.ExecuteWorkflow(
 		ctx,
@@ -4781,7 +4954,7 @@ func (ts *IntegrationTestSuite) TestLocalActivityStaleCache() {
 	defer cancel()
 
 	maxTicks := 3
-	options := ts.startWorkflowOptions("test-local-activity-stale-cache-" + uuid.New())
+	options := ts.startWorkflowOptions("test-local-activity-stale-cache-" + uuid.NewString())
 
 	run, err := ts.client.ExecuteWorkflow(
 		ctx,
@@ -4817,7 +4990,7 @@ func (ts *IntegrationTestSuite) TestDeterminismUpsertMemoConditional() {
 	defer cancel()
 
 	maxTicks := 3
-	options := ts.startWorkflowOptions("test-determinism-upsert-search-attributes-conidtional-" + uuid.New())
+	options := ts.startWorkflowOptions("test-determinism-upsert-search-attributes-conidtional-" + uuid.NewString())
 	options.Memo = map[string]interface{}{
 		"TestMemo": "unset",
 	}
@@ -4937,7 +5110,7 @@ func (ts *IntegrationTestSuite) TestReplayerWithInterceptor() {
 
 	// Do basic test
 	var expected []string
-	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-replayer-interceptor-"+uuid.New()),
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-replayer-interceptor-"+uuid.NewString()),
 		ts.workflows.Basic)
 	ts.NoError(err)
 	ts.NoError(run.Get(ctx, &expected))
@@ -6393,7 +6566,7 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorInRespondWorkflowTaskCompl
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	seriesName := "deploy-test-" + uuid.New()
+	seriesName := "deploy-test-" + uuid.NewString()
 	res, err := ts.client.DeploymentClient().SetCurrent(ctx, client.DeploymentSetCurrentOptions{
 		Deployment: client.Deployment{
 			BuildID:    "1.0",
@@ -6461,7 +6634,7 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorPerWorkflowType() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	seriesName := "deploy-test-" + uuid.New()
+	seriesName := "deploy-test-" + uuid.NewString()
 
 	res, err := ts.client.DeploymentClient().SetCurrent(ctx, client.DeploymentSetCurrentOptions{
 		Deployment: client.Deployment{
@@ -6530,7 +6703,7 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorPerWorkflowType() {
 }
 
 func (ts *IntegrationTestSuite) TestNoVersioningBehaviorPanics() {
-	seriesName := "deploy-test-" + uuid.New()
+	seriesName := "deploy-test-" + uuid.NewString()
 
 	c, err := client.Dial(client.Options{
 		HostPort:  ts.config.ServiceAddr,
@@ -6637,7 +6810,7 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 	defer cancel()
 
 	// Start workflow with summary and details
-	opts := ts.startWorkflowOptions("test-user-metadata-" + uuid.New())
+	opts := ts.startWorkflowOptions("test-user-metadata-" + uuid.NewString())
 	opts.StaticSummary = "my-wf-summary"
 	opts.StaticDetails = "my-wf-details"
 	run, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.UserMetadata)
@@ -6735,7 +6908,7 @@ func (ts *IntegrationTestSuite) TestAwaitWithOptionsTimeout() {
 	var str string
 
 	// Start workflow
-	opts := ts.startWorkflowOptions("test-await-options" + uuid.New())
+	opts := ts.startWorkflowOptions("test-await-options" + uuid.NewString())
 	run, err := ts.client.ExecuteWorkflow(ctx, opts,
 		ts.workflows.AwaitWithOptions)
 	ts.NoError(err)
@@ -7093,6 +7266,18 @@ func (c *coroutineCountingWorkflowOutboundInterceptor) Go(
 		defer atomic.AddInt32(&c.root._count, -1)
 		f(ctx)
 	})
+}
+
+func (ts *IntegrationTestSuite) TestTemporalPrefixSignal() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	options := ts.startWorkflowOptions("test-temporal-prefix")
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.WorkflowTemporalPrefixSignal)
+	ts.NoError(err)
+
+	// Trying to GetSignalChannel with a __temporal_ prefixed name should return an error
+	err = run.Get(ctx, nil)
+	ts.Error(err)
 }
 
 func (ts *IntegrationTestSuite) TestPartialHistoryReplayFuzzer() {

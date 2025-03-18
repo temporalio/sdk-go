@@ -168,6 +168,8 @@ func (_m *Client) CountWorkflow(ctx context.Context, request *workflowservice.Co
 }
 
 // DeploymentClient provides a mock function with given fields:
+//
+//lint:ignore SA1019 ignore deprecated versioning APIs
 func (_m *Client) DeploymentClient() client.DeploymentClient {
 	ret := _m.Called()
 
@@ -175,11 +177,14 @@ func (_m *Client) DeploymentClient() client.DeploymentClient {
 		panic("no return value specified for DeploymentClient")
 	}
 
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	var r0 client.DeploymentClient
+	//lint:ignore SA1019 ignore deprecated versioning APIs
 	if rf, ok := ret.Get(0).(func() client.DeploymentClient); ok {
 		r0 = rf()
 	} else {
 		if ret.Get(0) != nil {
+			//lint:ignore SA1019 ignore deprecated versioning APIs
 			r0 = ret.Get(0).(client.DeploymentClient)
 		}
 	}
@@ -800,6 +805,8 @@ func (_m *Client) ResetWorkflowExecution(ctx context.Context, request *workflows
 }
 
 // ScanWorkflow provides a mock function with given fields: ctx, request
+//
+//lint:ignore SA1019 the server API was deprecated.
 func (_m *Client) ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error) {
 	ret := _m.Called(ctx, request)
 
@@ -807,19 +814,24 @@ func (_m *Client) ScanWorkflow(ctx context.Context, request *workflowservice.Sca
 		panic("no return value specified for ScanWorkflow")
 	}
 
+	//lint:ignore SA1019 the server API was deprecated.
 	var r0 *workflowservice.ScanWorkflowExecutionsResponse
 	var r1 error
+	//lint:ignore SA1019 the server API was deprecated.
 	if rf, ok := ret.Get(0).(func(context.Context, *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error)); ok {
 		return rf(ctx, request)
 	}
+	//lint:ignore SA1019 the server API was deprecated.
 	if rf, ok := ret.Get(0).(func(context.Context, *workflowservice.ScanWorkflowExecutionsRequest) *workflowservice.ScanWorkflowExecutionsResponse); ok {
 		r0 = rf(ctx, request)
 	} else {
 		if ret.Get(0) != nil {
+			//lint:ignore SA1019 the server API was deprecated.
 			r0 = ret.Get(0).(*workflowservice.ScanWorkflowExecutionsResponse)
 		}
 	}
 
+	//lint:ignore SA1019 the server API was deprecated.
 	if rf, ok := ret.Get(1).(func(context.Context, *workflowservice.ScanWorkflowExecutionsRequest) error); ok {
 		r1 = rf(ctx, request)
 	} else {
@@ -1058,6 +1070,26 @@ func (_m *Client) UpdateWorkflowExecutionOptions(ctx context.Context, options cl
 	}
 
 	return r0, r1
+}
+
+// WorkerDeploymentClient provides a mock function with given fields:
+func (_m *Client) WorkerDeploymentClient() client.WorkerDeploymentClient {
+	ret := _m.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for WorkerDeploymentClient")
+	}
+
+	var r0 client.WorkerDeploymentClient
+	if rf, ok := ret.Get(0).(func() client.WorkerDeploymentClient); ok {
+		r0 = rf()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(client.WorkerDeploymentClient)
+		}
+	}
+
+	return r0
 }
 
 // WorkflowService provides a mock function with given fields:

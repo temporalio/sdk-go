@@ -30,9 +30,8 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
-	github.com/nexus-rpc/sdk-go v0.1.1 // indirect
+	github.com/nexus-rpc/sdk-go v0.3.0 // indirect
 	github.com/outcaste-io/ristretto v0.2.3 // indirect
-	github.com/pborman/uuid v1.2.1 // indirect
 	github.com/philhofer/fwd v1.1.2 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
@@ -40,11 +39,10 @@ require (
 	github.com/secure-systems-lab/go-securesystemslib v0.7.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/tinylib/msgp v1.1.8 // indirect
-	go.temporal.io/api v1.43.2 // indirect
+	go.temporal.io/api v1.44.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go4.org/intern v0.0.0-20230525184215-6c62f75575cb // indirect
 	go4.org/unsafe/assume-no-moving-gc v0.0.0-20230525183740-e7c30c78aeb2 // indirect
-	golang.org/x/exp v0.0.0-20231127185646-65229373498e // indirect
 	golang.org/x/mod v0.17.0 // indirect
 	golang.org/x/net v0.28.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect

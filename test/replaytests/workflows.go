@@ -676,3 +676,25 @@ func TripWorkflow(ctx workflow.Context, tripCounter int) error {
 	logger.Info("Starting a new run.", "TripCounter", tripCounter)
 	return workflow.NewContinueAsNewError(ctx, "TripWorkflow", tripCounter)
 }
+
+// TestWorkflowWithChild is a test workflow that executes a child workflow and returns the result from it.
+func ResetWorkflowWithChild(ctx workflow.Context) (string, error) {
+	logger := workflow.GetLogger(ctx)
+
+	logger.Info("Starting workflow with child...")
+	cwo := workflow.ChildWorkflowOptions{
+		ParentClosePolicy:     enums.PARENT_CLOSE_POLICY_TERMINATE,
+		WorkflowIDReusePolicy: enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
+	}
+	ctx = workflow.WithChildOptions(ctx, cwo)
+	child := workflow.ExecuteChildWorkflow(ctx, "TestChildWorkflow", "CHILD INPUT")
+
+	var result string
+	if err := child.Get(ctx, &result); err != nil {
+		logger.Error("Child execution failed: " + err.Error())
+		return "", err
+	}
+
+	logger.Info("Child execution completed with result: " + result)
+	return result, nil
+}

@@ -41,6 +41,7 @@ package temporalnexus
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/api/common/v1"
@@ -54,20 +55,18 @@ import (
 
 // GetMetricsHandler returns a metrics handler to be used in a Nexus operation's context.
 func GetMetricsHandler(ctx context.Context) metrics.Handler {
-	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
-	if !ok {
-		panic("temporalnexus GetMetricsHandler: Not a valid Nexus context")
-	}
-	return nctx.MetricsHandler
+	return internal.GetNexusOperationMetricsHandler(ctx)
 }
 
 // GetLogger returns a logger to be used in a Nexus operation's context.
 func GetLogger(ctx context.Context) log.Logger {
-	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
-	if !ok {
-		panic("temporalnexus GetLogger: Not a valid Nexus context")
-	}
-	return nctx.Log
+	return internal.GetNexusOperationLogger(ctx)
+}
+
+// GetClient returns a client to be used in a Nexus operation's context, this is the same client that the worker was
+// created with. Client methods will panic when called from the test environment.
+func GetClient(ctx context.Context) client.Client {
+	return internal.GetNexusOperationClient(ctx)
 }
 
 type syncOperation[I, O any] struct {
@@ -82,55 +81,18 @@ type syncOperation[I, O any] struct {
 // Sync operations are useful for exposing short-lived Temporal client requests, such as signals, queries, sync update,
 // list workflows, etc...
 //
-// NOTE: Experimental
+// Deprecated: Use nexus.NewSyncOperation and get the client via temporalnexus.GetClient
 func NewSyncOperation[I any, O any](
 	name string,
 	handler func(context.Context, client.Client, I, nexus.StartOperationOptions) (O, error),
 ) nexus.Operation[I, O] {
+	if strings.HasPrefix(name, "__temporal_") {
+		panic(errors.New("temporalnexus NewSyncOperation __temporal_ is an reserved prefix"))
+	}
 	return &syncOperation[I, O]{
 		name:    name,
 		handler: handler,
 	}
-}
-
-// SignalWorkflowInput encapsulates the values required to send a signal to a workflow.
-//
-// NOTE: Experimental
-type SignalWorkflowInput struct {
-	// WorkflowID is the ID of the workflow which will receive the signal. Required.
-	WorkflowID string
-	// RunID is the run ID of the workflow which will receive the signal. Optional. If empty, the signal will be
-	// delivered to the running execution of the indicated workflow ID.
-	RunID string
-	// SignalName is the name of the signal. Required.
-	SignalName string
-	// Arg is the payload attached to the signal. Optional.
-	Arg any
-}
-
-// NewWorkflowSignalOperation is a helper for creating a synchronous nexus.Operation to deliver a signal, linking the
-// signal to a Nexus operation. Request ID from the Nexus options is propagated to the workflow to ensure idempotency.
-//
-// NOTE: Experimental
-func NewWorkflowSignalOperation[T any](
-	name string,
-	getSignalInput func(context.Context, T, nexus.StartOperationOptions) SignalWorkflowInput,
-) nexus.Operation[T, nexus.NoValue] {
-	return NewSyncOperation(name, func(ctx context.Context, c client.Client, in T, options nexus.StartOperationOptions) (nexus.NoValue, error) {
-		signalInput := getSignalInput(ctx, in, options)
-
-		if options.RequestID != "" {
-			ctx = context.WithValue(ctx, internal.NexusOperationRequestIDKey, options.RequestID)
-		}
-
-		links, err := convertNexusLinks(options.Links, GetLogger(ctx))
-		if err != nil {
-			return nil, err
-		}
-		ctx = context.WithValue(ctx, internal.NexusOperationLinksKey, links)
-
-		return nil, c.SignalWorkflow(ctx, signalInput.WorkflowID, signalInput.RunID, signalInput.SignalName, signalInput.Arg)
-	})
 }
 
 func (o *syncOperation[I, O]) Name() string {
@@ -138,11 +100,7 @@ func (o *syncOperation[I, O]) Name() string {
 }
 
 func (o *syncOperation[I, O]) Start(ctx context.Context, input I, options nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[O], error) {
-	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
-	if !ok {
-		return nil, nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
-	}
-	out, err := o.handler(ctx, nctx.Client, input, options)
+	out, err := o.handler(ctx, GetClient(ctx), input, options)
 	if err != nil {
 		return nil, err
 	}
@@ -150,8 +108,6 @@ func (o *syncOperation[I, O]) Start(ctx context.Context, input I, options nexus.
 }
 
 // WorkflowRunOperationOptions are options for [NewWorkflowRunOperationWithOptions].
-//
-// NOTE: Experimental
 type WorkflowRunOperationOptions[I, O any] struct {
 	// Operation name.
 	Name string
@@ -163,6 +119,11 @@ type WorkflowRunOperationOptions[I, O any] struct {
 	// The options returned must include a workflow ID that is deterministically generated from the input in order
 	// for the operation to be idempotent as the request to start the operation may be retried.
 	// TaskQueue is optional and defaults to the current worker's task queue.
+	// WorkflowExecutionErrorWhenAlreadyStarted is ignored and always set to true.
+	// WorkflowIDConflictPolicy is by default set to fail if a workflow is already running. That is,
+	// if a caller executes another operation that starts the same workflow, it will fail. You can set
+	// it to WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING to attach the caller's callback to the existing
+	// running workflow. This way, all attached callers will be notified when the workflow completes.
 	GetOptions func(context.Context, I, nexus.StartOperationOptions) (client.StartWorkflowOptions, error)
 	// Handler for starting a workflow with a different input than the operation. Mutually exclusive with Workflow
 	// and GetOptions.
@@ -177,13 +138,14 @@ type workflowRunOperation[I, O any] struct {
 }
 
 // NewWorkflowRunOperation maps an operation to a workflow run.
-//
-// NOTE: Experimental
 func NewWorkflowRunOperation[I, O any](
 	name string,
 	workflow func(workflow.Context, I) (O, error),
 	getOptions func(context.Context, I, nexus.StartOperationOptions) (client.StartWorkflowOptions, error),
 ) nexus.Operation[I, O] {
+	if strings.HasPrefix(name, "__temporal_") {
+		panic(errors.New("temporalnexus NewWorkflowRunOperation __temporal_ is an invalid name"))
+	}
 	return &workflowRunOperation[I, O]{
 		options: WorkflowRunOperationOptions[I, O]{
 			Name:       name,
@@ -195,11 +157,12 @@ func NewWorkflowRunOperation[I, O any](
 
 // NewWorkflowRunOperation map an operation to a workflow run with the given options.
 // Returns an error if invalid options are provided.
-//
-// NOTE: Experimental
 func NewWorkflowRunOperationWithOptions[I, O any](options WorkflowRunOperationOptions[I, O]) (nexus.Operation[I, O], error) {
 	if options.Name == "" {
 		return nil, errors.New("invalid options: Name is required")
+	}
+	if strings.HasPrefix(options.Name, "__temporal_") {
+		return nil, errors.New("invalid options: __temporal_ is a reserved prefix")
 	}
 	if options.Workflow == nil && options.GetOptions == nil && options.Handler == nil {
 		return nil, errors.New("invalid options: either GetOptions and Workflow, or Handler are required")
@@ -217,25 +180,35 @@ func NewWorkflowRunOperationWithOptions[I, O any](options WorkflowRunOperationOp
 
 // MustNewWorkflowRunOperation map an operation to a workflow run with the given options.
 // Panics if invalid options are provided.
-//
-// NOTE: Experimental
 func MustNewWorkflowRunOperationWithOptions[I, O any](options WorkflowRunOperationOptions[I, O]) nexus.Operation[I, O] {
-	op, err := NewWorkflowRunOperationWithOptions[I, O](options)
+	op, err := NewWorkflowRunOperationWithOptions(options)
 	if err != nil {
 		panic(err)
 	}
 	return op
 }
 
-func (*workflowRunOperation[I, O]) Cancel(ctx context.Context, id string, options nexus.CancelOperationOptions) error {
+func (*workflowRunOperation[I, O]) Cancel(ctx context.Context, token string, options nexus.CancelOperationOptions) error {
 	// Prevent the test env client from panicking when we try to use it from a workflow run operation.
 	ctx = context.WithValue(ctx, internal.IsWorkflowRunOpContextKey, true)
 
-	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
-	if !ok {
-		return nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
+	var workflowID string
+	workflowRunToken, err := loadWorkflowRunOperationToken(token)
+	if err != nil {
+		if errors.Is(err, errFallbackToWorkflowID) {
+			// Assume token is a workflow ID as generated by older SDK versions.
+			workflowID = token
+		} else {
+			return &nexus.HandlerError{
+				Type:  nexus.HandlerErrorTypeBadRequest,
+				Cause: err,
+			}
+		}
+	} else {
+		workflowID = workflowRunToken.WorkflowID
 	}
-	return nctx.Client.CancelWorkflow(ctx, id, "")
+
+	return GetClient(ctx).CancelWorkflow(ctx, workflowID, "")
 }
 
 func (o *workflowRunOperation[I, O]) Name() string {
@@ -263,9 +236,10 @@ func (o *workflowRunOperation[I, O]) Start(
 		if err != nil {
 			return nil, err
 		}
+		nexus.AddHandlerLinks(ctx, handle.link())
 		return &nexus.HandlerStartOperationResultAsync{
-			OperationID: handle.ID(),
-			Links:       []nexus.Link{handle.link()},
+			OperationToken: handle.token(),
+			OperationID:    handle.token(),
 		}, nil
 	}
 
@@ -279,16 +253,15 @@ func (o *workflowRunOperation[I, O]) Start(
 		return nil, err
 	}
 
+	nexus.AddHandlerLinks(ctx, handle.link())
 	return &nexus.HandlerStartOperationResultAsync{
-		OperationID: handle.ID(),
-		Links:       []nexus.Link{handle.link()},
+		OperationToken: handle.token(),
+		OperationID:    handle.token(),
 	}, nil
 }
 
 // WorkflowHandle is a readonly representation of a workflow run backing a Nexus operation.
 // It's created via the [ExecuteWorkflow] and [ExecuteUntypedWorkflow] methods.
-//
-// NOTE: Experimental
 type WorkflowHandle[T any] interface {
 	// ID is the workflow's ID.
 	ID() string
@@ -299,12 +272,14 @@ type WorkflowHandle[T any] interface {
 
 	// Link to the WorkflowExecutionStarted event of the workflow represented by this handle.
 	link() nexus.Link
+	token() string // Cached operation token
 }
 
 type workflowHandle[T any] struct {
-	namespace string
-	id        string
-	runID     string
+	namespace   string
+	id          string
+	runID       string
+	cachedToken string
 }
 
 func (h workflowHandle[T]) ID() string {
@@ -328,14 +303,15 @@ func (h workflowHandle[T]) link() nexus.Link {
 		},
 	}
 	return ConvertLinkWorkflowEventToNexusLink(link)
+}
 
+func (h workflowHandle[T]) token() string {
+	return h.cachedToken
 }
 
 // ExecuteWorkflow starts a workflow run for a [WorkflowRunOperationOptions] Handler, linking the execution chain to a
 // Nexus operation (subsequent runs started from continue-as-new and retries).
 // Automatically propagates the callback and request ID from the nexus options to the workflow.
-//
-// NOTE: Experimental
 func ExecuteWorkflow[I, O any, WF func(workflow.Context, I) (O, error)](
 	ctx context.Context,
 	nexusOptions nexus.StartOperationOptions,
@@ -350,8 +326,6 @@ func ExecuteWorkflow[I, O any, WF func(workflow.Context, I) (O, error)](
 // Nexus operation.
 // Useful for invoking workflows that don't follow the single argument - single return type signature.
 // See [ExecuteWorkflow] for more information.
-//
-// NOTE: Experimental
 func ExecuteUntypedWorkflow[R any](
 	ctx context.Context,
 	nexusOptions nexus.StartOperationOptions,
@@ -380,13 +354,19 @@ func ExecuteUntypedWorkflow[R any](
 		internal.SetRequestIDOnStartWorkflowOptions(&startWorkflowOptions, nexusOptions.RequestID)
 	}
 
+	var encodedToken string
 	if nexusOptions.CallbackURL != "" {
 		if nexusOptions.CallbackHeader == nil {
 			nexusOptions.CallbackHeader = make(nexus.Header)
 		}
-		if idHeader := nexusOptions.CallbackHeader.Get(nexus.HeaderOperationID); idHeader == "" {
-			nexusOptions.CallbackHeader.Set(nexus.HeaderOperationID, startWorkflowOptions.ID)
+		encodedToken, err = generateWorkflowRunOperationToken(nctx.Namespace, startWorkflowOptions.ID)
+		if err != nil {
+			return nil, err
 		}
+
+		//lint:ignore SA1019 this field is expected to be populated by servers older than 1.27.0.
+		nexusOptions.CallbackHeader.Set(nexus.HeaderOperationID, encodedToken)
+		nexusOptions.CallbackHeader.Set(nexus.HeaderOperationToken, encodedToken)
 		internal.SetCallbacksOnStartWorkflowOptions(&startWorkflowOptions, []*common.Callback{
 			{
 				Variant: &common.Callback_Nexus_{
@@ -399,20 +379,31 @@ func ExecuteUntypedWorkflow[R any](
 		})
 	}
 
-	links, err := convertNexusLinks(nexusOptions.Links, nctx.Log)
+	links, err := convertNexusLinks(nexusOptions.Links, GetLogger(ctx))
 	if err != nil {
-		return nil, err
+		return nil, &nexus.HandlerError{
+			Type:  nexus.HandlerErrorTypeBadRequest,
+			Cause: err,
+		}
 	}
 	internal.SetLinksOnStartWorkflowOptions(&startWorkflowOptions, links)
+	internal.SetOnConflictOptionsOnStartWorkflowOptions(&startWorkflowOptions)
 
-	run, err := nctx.Client.ExecuteWorkflow(ctx, startWorkflowOptions, workflowType, args...)
+	// This makes sure that ExecuteWorkflow will respect the WorkflowIDConflictPolicy, ie., if the
+	// conflict policy is to fail (default value), then ExecuteWorkflow will return an error if the
+	// workflow already running. For Nexus, this ensures that operation has only started successfully
+	// when the callback has been attached to the workflow (new or existing running workflow).
+	startWorkflowOptions.WorkflowExecutionErrorWhenAlreadyStarted = true
+
+	run, err := GetClient(ctx).ExecuteWorkflow(ctx, startWorkflowOptions, workflowType, args...)
 	if err != nil {
 		return nil, err
 	}
 	return workflowHandle[R]{
-		namespace: nctx.Namespace,
-		id:        run.GetID(),
-		runID:     run.GetRunID(),
+		namespace:   nctx.Namespace,
+		id:          run.GetID(),
+		runID:       run.GetRunID(),
+		cachedToken: encodedToken,
 	}, nil
 }
 

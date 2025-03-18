@@ -138,6 +138,7 @@ type (
 		identity                  string
 		workerBuildID             string
 		useBuildIDForVersioning   bool
+		workerDeploymentVersion   string
 		deploymentSeriesName      string
 		defaultVersioningBehavior VersioningBehavior
 		enableLoggingInReplay     bool
@@ -173,6 +174,7 @@ type (
 		maxHeartbeatThrottleInterval     time.Duration
 		versionStamp                     *commonpb.WorkerVersionStamp
 		deployment                       *deploymentpb.Deployment
+		workerDeploymentOptions          *deploymentpb.WorkerDeploymentOptions
 	}
 
 	// history wrapper method to help information about events.
@@ -492,8 +494,7 @@ OrderEvents:
 				break OrderEvents
 			}
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED,
-			enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT,
-			enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED:
+			enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT:
 			// Skip
 		default:
 			if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
@@ -560,6 +561,7 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		identity:                  params.Identity,
 		workerBuildID:             params.getBuildID(),
 		useBuildIDForVersioning:   params.UseBuildIDForVersioning,
+		workerDeploymentVersion:   params.WorkerDeploymentVersion,
 		deploymentSeriesName:      params.DeploymentSeriesName,
 		defaultVersioningBehavior: params.DefaultVersioningBehavior,
 		enableLoggingInReplay:     params.EnableLoggingInReplay,
@@ -744,6 +746,10 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		Memo:                     attributes.Memo,
 		SearchAttributes:         attributes.SearchAttributes,
 		RetryPolicy:              convertFromPBRetryPolicy(attributes.RetryPolicy),
+		// Use the original execution run ID from the start event as the initial seed.
+		// Original execution run ID stays the same for the entire chain of workflow resets.
+		// This helps us keep child workflow IDs consistent up until a reset-point is encountered.
+		currentRunID: attributes.GetOriginalExecutionRunId(),
 	}
 
 	return newWorkflowExecutionContext(workflowInfo, wth), nil
@@ -1942,11 +1948,16 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			BuildId:    wth.workerBuildID,
 			SeriesName: wth.deploymentSeriesName,
 		},
+		DeploymentOptions: workerDeploymentOptionsToProto(
+			wth.useBuildIDForVersioning,
+			wth.workerDeploymentVersion,
+		),
 	}
 	if wth.capabilities != nil && wth.capabilities.BuildIdBasedVersioning {
 		builtRequest.BinaryChecksum = ""
 	}
-	if wth.useBuildIDForVersioning && wth.deploymentSeriesName != "" {
+	if (wth.useBuildIDForVersioning && wth.deploymentSeriesName != "") ||
+		wth.workerDeploymentVersion != "" {
 		workflowType := workflowContext.workflowInfo.WorkflowType
 		if behavior, ok := wth.registry.getWorkflowVersioningBehavior(workflowType); ok {
 			builtRequest.VersioningBehavior = versioningBehaviorToProto(behavior)
@@ -2011,6 +2022,10 @@ func newActivityTaskHandlerWithCustomProvider(
 			BuildId:    params.getBuildID(),
 			SeriesName: params.DeploymentSeriesName,
 		},
+		workerDeploymentOptions: workerDeploymentOptionsToProto(
+			params.UseBuildIDForVersioning,
+			params.WorkerDeploymentVersion,
+		),
 	}
 }
 
@@ -2219,7 +2234,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		metricsHandler.Counter(metrics.UnregisteredActivityInvocationCounter).Inc(1)
 		return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil,
 			NewActivityNotRegisteredError(activityType, ath.getRegisteredActivityNames()),
-			ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment), nil
+			ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions), nil
 	}
 
 	// panic handler
@@ -2237,7 +2252,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			metricsHandler.Counter(metrics.ActivityTaskErrorCounter).Inc(1)
 			panicErr := newPanicError(p, st)
 			result = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr,
-				ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment)
+				ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions)
 		}
 	}()
 
@@ -2277,7 +2292,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		)
 	}
 	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err,
-		ath.dataConverter, ath.failureConverter, ath.namespace, isActivityCancel, ath.versionStamp, ath.deployment), nil
+		ath.dataConverter, ath.failureConverter, ath.namespace, isActivityCancel, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions), nil
 }
 
 func (ath *activityTaskHandlerImpl) getActivity(name string) activity {

@@ -35,14 +35,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/pborman/uuid"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	"go.temporal.io/api/cloud/cloudservice/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
@@ -104,13 +103,6 @@ type (
 		// The pointer value is shared across multiple clients. If non-nil, only
 		// access/mutate atomically.
 		unclosedClients *int32
-	}
-
-	// cloudOperationsClient is the client for managing cloud.
-	cloudOperationsClient struct {
-		conn               *grpc.ClientConn
-		logger             log.Logger
-		cloudServiceClient cloudservice.CloudServiceClient
 	}
 
 	// namespaceClient is the client for managing namespaces.
@@ -329,7 +321,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	// Default workflow ID to UUID
 	options.ID = workflowID
 	if options.ID == "" {
-		options.ID = uuid.New()
+		options.ID = uuid.NewString()
 	}
 
 	// Validate function and get name
@@ -506,7 +498,7 @@ func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 	// We do allow canceled error to be passed here
 	cancelAllowed := true
 	request := convertActivityResultToRespondRequest(wc.identity, taskToken,
-		data, err, wc.dataConverter, wc.failureConverter, wc.namespace, cancelAllowed, nil, nil)
+		data, err, wc.dataConverter, wc.failureConverter, wc.namespace, cancelAllowed, nil, nil, nil)
 	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
@@ -661,6 +653,8 @@ func (wc *WorkflowClient) ListArchivedWorkflow(ctx context.Context, request *wor
 }
 
 // ScanWorkflow implementation
+//
+//lint:ignore SA1019 the server API was deprecated.
 func (wc *WorkflowClient) ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return nil, err
@@ -671,6 +665,7 @@ func (wc *WorkflowClient) ScanWorkflow(ctx context.Context, request *workflowser
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
+	//lint:ignore SA1019 the server API was deprecated.
 	response, err := wc.workflowService.ScanWorkflowExecutions(grpcCtx, request)
 	if err != nil {
 		return nil, err
@@ -982,7 +977,7 @@ func (wc *WorkflowClient) ResetWorkflowExecution(ctx context.Context, request *w
 	}
 
 	if request != nil && request.GetRequestId() == "" {
-		request.RequestId = uuid.New()
+		request.RequestId = uuid.NewString()
 	}
 
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
@@ -1335,6 +1330,13 @@ func (wc *WorkflowClient) DeploymentClient() DeploymentClient {
 	}
 }
 
+// WorkerDeploymentClient implements [Client.WorkerDeploymentClient].
+func (wc *WorkflowClient) WorkerDeploymentClient() WorkerDeploymentClient {
+	return &workerDeploymentClient{
+		workflowClient: wc,
+	}
+}
+
 // Close client and clean up underlying resources.
 func (wc *WorkflowClient) Close() {
 	// If there's a set of unclosed clients, we have to decrement it and then
@@ -1356,16 +1358,6 @@ func (wc *WorkflowClient) Close() {
 		if err := wc.conn.Close(); err != nil {
 			wc.logger.Warn("unable to close connection", tagError, err)
 		}
-	}
-}
-
-func (c *cloudOperationsClient) CloudService() cloudservice.CloudServiceClient {
-	return c.cloudServiceClient
-}
-
-func (c *cloudOperationsClient) Close() {
-	if err := c.conn.Close(); err != nil {
-		c.logger.Warn("unable to close connection", tagError, err)
 	}
 }
 
@@ -1608,7 +1600,7 @@ func createStartWorkflowInput(
 	registry *registry,
 ) (*ClientExecuteWorkflowInput, error) {
 	if options.ID == "" {
-		options.ID = uuid.New()
+		options.ID = uuid.NewString()
 	}
 	if err := validateFunctionArgs(workflow, args, true); err != nil {
 		return nil, err
@@ -1686,6 +1678,7 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 		CompletionCallbacks:      in.Options.callbacks,
 		Links:                    in.Options.links,
 		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
+		OnConflictOptions:        in.Options.onConflictOptions.ToProto(),
 	}
 
 	startRequest.UserMetadata, err = buildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
@@ -1696,7 +1689,7 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 	if in.Options.requestID != "" {
 		startRequest.RequestId = in.Options.requestID
 	} else {
-		startRequest.RequestId = uuid.New()
+		startRequest.RequestId = uuid.NewString()
 	}
 
 	if in.Options.StartDelay != 0 {
@@ -1995,7 +1988,7 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 	if requestID, ok := ctx.Value(NexusOperationRequestIDKey).(string); ok && requestID != "" {
 		request.RequestId = requestID
 	} else {
-		request.RequestId = uuid.New()
+		request.RequestId = uuid.NewString()
 	}
 
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
@@ -2042,7 +2035,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 
 	signalWithStartRequest := &workflowservice.SignalWithStartWorkflowExecutionRequest{
 		Namespace:                w.client.namespace,
-		RequestId:                uuid.New(),
+		RequestId:                uuid.NewString(),
 		WorkflowId:               in.Options.ID,
 		WorkflowType:             &commonpb.WorkflowType{Name: in.WorkflowType},
 		TaskQueue:                &taskqueuepb.TaskQueue{Name: in.Options.TaskQueue, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
@@ -2106,7 +2099,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 func (w *workflowClientInterceptor) CancelWorkflow(ctx context.Context, in *ClientCancelWorkflowInput) error {
 	request := &workflowservice.RequestCancelWorkflowExecutionRequest{
 		Namespace: w.client.namespace,
-		RequestId: uuid.New(),
+		RequestId: uuid.NewString(),
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: in.WorkflowID,
 			RunId:      in.RunID,
@@ -2236,7 +2229,7 @@ func (w *workflowClientInterceptor) updateIsDurable(resp *workflowservice.Update
 func createUpdateWorkflowInput(options *UpdateWorkflowOptions) (*ClientUpdateWorkflowInput, error) {
 	updateID := options.UpdateID
 	if updateID == "" {
-		updateID = uuid.New()
+		updateID = uuid.NewString()
 	}
 
 	if options.WaitForStage == WorkflowUpdateStageUnspecified {

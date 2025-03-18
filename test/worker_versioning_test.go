@@ -35,7 +35,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/internal"
 
-	"github.com/pborman/uuid"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"go.temporal.io/sdk/client"
@@ -537,7 +537,7 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityUnreachable() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	buildID := uuid.New()
+	buildID := uuid.NewString()
 	compatibility, err := ts.client.GetWorkerTaskReachability(ctx, &client.GetWorkerTaskReachabilityOptions{
 		BuildIDs:   []string{buildID},
 		TaskQueues: []string{ts.taskQueueName},
@@ -556,7 +556,7 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityUnreachableWithRules() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	buildID := uuid.New()
+	buildID := uuid.NewString()
 
 	taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, client.DescribeTaskQueueEnhancedOptions{
 		TaskQueue: ts.taskQueueName,
@@ -706,8 +706,8 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersions() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	buildID1 := uuid.New()
-	buildID2 := uuid.New()
+	buildID1 := uuid.NewString()
+	buildID2 := uuid.NewString()
 
 	err := ts.client.UpdateWorkerBuildIdCompatibility(ctx, &client.UpdateWorkerBuildIdCompatibilityOptions{
 		TaskQueue: ts.taskQueueName,
@@ -792,8 +792,8 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersionsWithRules() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	buildID1 := uuid.New()
-	buildID2 := uuid.New()
+	buildID1 := uuid.NewString()
+	buildID2 := uuid.NewString()
 
 	result, err := ts.client.GetWorkerVersioningRules(ctx, client.GetWorkerVersioningOptions{
 		TaskQueue: ts.taskQueueName,

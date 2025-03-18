@@ -158,11 +158,12 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", "worker.buildIdScavengerEnabled=true",
 				"--dynamic-config-value", "worker.removableBuildIdDurationSinceDefault=1",
 				"--dynamic-config-value", "system.enableDeployments=true",
-				// All of the below is required for Nexus tests.
-				"--http-port", "7243",
-				"--dynamic-config-value", "system.enableNexus=true",
-				// SDK tests use arbitrary callback URLs, permit that on the server.
-				"--dynamic-config-value", `component.callbacks.allowedAddresses=[{"Pattern":"*","AllowInsecure":true}]`,
+				"--dynamic-config-value", "system.enableDeploymentVersions=true",
+				"--dynamic-config-value", "matching.wv.VersionDrainageStatusVisibilityGracePeriod=10",
+				"--dynamic-config-value", "matching.wv.VersionDrainageStatusRefreshInterval=1",
+				"--http-port", "7243", // Nexus tests use the HTTP port directly
+				"--dynamic-config-value", `component.callbacks.allowedAddresses=[{"Pattern":"*","AllowInsecure":true}]`, // SDK tests use arbitrary callback URLs, permit that on the server
+				"--dynamic-config-value", `system.refreshNexusEndpointsMinWait="0s"`, // Make Nexus tests faster
 			},
 		})
 		if err != nil {
@@ -172,7 +173,7 @@ func (b *builder) integrationTest() error {
 	}
 
 	// Run integration test
-	args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "10m"}
+	args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "15m"}
 	if *runFlag != "" {
 		args = append(args, "-run", *runFlag)
 	}
