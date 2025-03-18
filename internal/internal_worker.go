@@ -1328,6 +1328,7 @@ type WorkflowReplayerOptions struct {
 	FailureConverter converter.FailureConverter
 
 	// Optional: Sets ContextPropagators that allows users to control the context information passed through a workflow
+	//
 	// default: nil
 	ContextPropagators []ContextPropagator
 
@@ -1344,6 +1345,7 @@ type WorkflowReplayerOptions struct {
 	// In the workflow code you can use workflow.GetLogger(ctx) to write logs. By default, the logger will skip log
 	// entry during replay mode so you won't see duplicate logs. This option will enable the logging in replay mode.
 	// This is only useful for debugging purpose.
+	//
 	// default: false
 	EnableLoggingInReplay bool
 
