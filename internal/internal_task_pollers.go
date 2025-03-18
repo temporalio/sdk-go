@@ -214,35 +214,19 @@ func newLocalActivityTunnel(stopCh <-chan struct{}) *localActivityTunnel {
 }
 
 func (lat *localActivityTunnel) getTask() *localActivityTask {
-	fmt.Println("[lat getTask]")
 	select {
 	case task := <-lat.taskCh:
 		return task
-	case <-lat.stopCh: // TODO: shouldn't be worker stop channel
-		fmt.Println("[lat getTask] stopCh closed")
-		if len(lat.taskCh) > 0 {
-			task := <-lat.taskCh
-			fmt.Println("[lat getTask] task drained:", task)
-			return task
-		}
+	case <-lat.stopCh:
 		return nil
-
-		//task := <-lat.taskCh
-		//fmt.Println("[lat getTask] task drained:", task)
-		//return task
 	}
 }
 
 func (lat *localActivityTunnel) sendTask(task *localActivityTask) bool {
-	fmt.Println("[lat sendTask]")
 	select {
 	case lat.taskCh <- task:
 		return true
 	case <-lat.stopCh:
-		// TODO: Gets hit once, towards the top of asdf.txt
-		//fmt.Println("[lat sendTask] stopCh closed, still send task?")
-		////lat.taskCh <- task
-		//return true
 		return false
 	}
 }
@@ -268,7 +252,6 @@ func (bp *basePoller) stopping() bool {
 //   - worker is stopping
 func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (taskForWorker, error)) (taskForWorker, error) {
 	if bp.stopping() {
-		fmt.Println("[bp doPoll] stopping")
 		return nil, errStop
 	}
 
@@ -289,7 +272,6 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (taskForWorker, 
 		return result, err
 	case <-bp.stopC:
 		cancel()
-		fmt.Println("[bp doPoll] bp.StopC closed")
 		return nil, errStop
 	}
 }
@@ -379,7 +361,6 @@ func (wtp *workflowTaskPoller) PollTask() (taskForWorker, error) {
 // ProcessTask processes a task which could be workflow task or local activity result
 func (wtp *workflowTaskPoller) ProcessTask(task interface{}) error {
 	if wtp.stopping() {
-		wtp.logger.Debug("[wtp ProcessTask] stopping, task:", task)
 		return errStop
 	}
 
@@ -637,16 +618,10 @@ func (latp *localActivityTaskPoller) PollTask() (taskForWorker, error) {
 }
 
 func (latp *localActivityTaskPoller) ProcessTask(task interface{}) error {
-	// TODO: Is this causing this infinite loop while stopping?
-	// 	even if latp is stopping, we should still process LAs, shouldn't we?
-	//
-	// TODO: When this gets commented out, we call executeLocalActivityTask when task is nil
 	if latp.stopping() && task == nil {
-		latp.logger.Debug("[LA ProcessTask] stopping, task:", task)
 		return errStop
 	}
 
-	latp.logger.Debug("[LA ProcessTask] task", task)
 	result := latp.handler.executeLocalActivityTask(task.(*localActivityTask))
 	// We need to send back the local activity result to unblock workflowTaskPoller.processWorkflowTask() which is
 	// synchronously listening on the laResultCh. We also want to make sure we don't block here forever in case
@@ -654,19 +629,14 @@ func (latp *localActivityTaskPoller) ProcessTask(task interface{}) error {
 	// before returning from workflowTaskPoller.processWorkflowTask().
 	select {
 	case result.task.workflowTask.laResultCh <- result:
-		latp.logger.Warn("Send result to laResultCh")
 		return nil
 	case <-result.task.workflowTask.doneCh:
 		// processWorkflowTask() already returns, just drop this local activity result.
-		// TODO: This does not seem to be hitting anywhere
-		latp.logger.Warn("[LA ProcessTask] case <-result.task.workflowTask.doneCh. Still try to send result to laRresultCh!")
-		result.task.workflowTask.laResultCh <- result
 		return nil
 	}
 }
 
 func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivityTask) (result *localActivityResult) {
-	lath.logger.Debug("[LA executeLocalActivityTask] task:", task)
 	workflowType := task.params.WorkflowInfo.WorkflowType.Name
 	activityType := task.params.ActivityType
 	metricsHandler := lath.metricsHandler.WithTags(metrics.LocalActivityTags(workflowType, activityType))
@@ -777,7 +747,6 @@ WaitResult:
 		}
 	case <-doneCh:
 		// local activity completed
-		lath.logger.Warn("LocalActivity completed.")
 	}
 
 	if err == nil {
@@ -785,7 +754,6 @@ WaitResult:
 			Timer(metrics.LocalActivitySucceedEndToEndLatency).
 			Record(time.Since(task.params.ScheduledTime))
 	}
-	lath.logger.Debug("[LA executeLocalActivityTask] LA complete, laResult:", laResult, "err:", err, "task", task)
 	return &localActivityResult{result: laResult, err: err, task: task}
 }
 

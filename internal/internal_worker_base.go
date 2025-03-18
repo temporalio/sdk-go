@@ -426,8 +426,6 @@ func (bw *baseWorker) processTaskAsync(eagerOrPolled eagerOrPolledTask) {
 		defer bw.stopWG.Done()
 
 		task := eagerOrPolled.getTask()
-		bw.logger.Debug("[bw processTaskAsync] eagerOrPolled.getTask()", task)
-
 		permit := eagerOrPolled.getPermit()
 
 		if !task.isEmpty() {
@@ -465,13 +463,6 @@ func (bw *baseWorker) runTaskDispatcher() {
 		case <-bw.stopCh:
 			// Currently we can drop any tasks received when closing.
 			// https://github.com/temporalio/sdk-go/issues/1197
-			//bw.logger.Debug("[bw] Drain what we would have dropped:")
-			//for len(bw.taskQueueCh) > 0 {
-			//	task := <-bw.taskQueueCh
-			//	bw.logger.Debug("[bw] task drained:", task)
-			//	bw.processTaskAsync(task)
-			//}
-			bw.logger.Debug("[bw] Currently we can drop any tasks received when closing.")
 			return
 		case task := <-bw.taskQueueCh:
 			// for non-polled-task (local activity result as task or eager task), we don't need to rate limit
@@ -482,7 +473,6 @@ func (bw *baseWorker) runTaskDispatcher() {
 					return
 				}
 			}
-			bw.logger.Debug("[bw] taskQueue task", task)
 			bw.processTaskAsync(task)
 		}
 	}

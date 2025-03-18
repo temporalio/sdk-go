@@ -980,7 +980,6 @@ processWorkflowLoop:
 
 					case lar := <-workflowTask.laResultCh:
 						// local activity result ready
-						wth.logger.Warn("[wth ProcessWorkflowTask] local activity result ready")
 						response, err = workflowContext.ProcessLocalActivityResult(workflowTask, lar)
 						if err == nil && response == nil {
 							// workflow task is not done yet, still waiting for more local activities
@@ -1381,7 +1380,6 @@ func (w *workflowExecutionContextImpl) CompleteWorkflowTask(workflowTask *workfl
 
 	// w.laTunnel could be nil for worker.ReplayHistory() because there is no worker started, in that case we don't
 	// care about the pending local activities, and just return because the result is ignored anyway by the caller.
-	fmt.Println("[CompleteWorkflowTask] w.hasPendingLocalActivityWork", w.hasPendingLocalActivityWork(), " w.laTunnel != nil", w.laTunnel != nil)
 	if w.hasPendingLocalActivityWork() && w.laTunnel != nil {
 		if len(eventHandler.unstartedLaTasks) > 0 {
 			// start new local activity tasks
@@ -1393,7 +1391,6 @@ func (w *workflowExecutionContextImpl) CompleteWorkflowTask(workflowTask *workfl
 
 				task.scheduledTime = time.Now()
 
-				fmt.Println("[CompleteWorkflowTask] Sending task to laTunnel")
 				if !w.laTunnel.sendTask(task) {
 					unstartedLaTasks[activityID] = struct{}{}
 					task.wc = nil
