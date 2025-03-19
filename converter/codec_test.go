@@ -291,3 +291,71 @@ func TestRemoteDataConverter(t *testing.T) {
 	require.NotEqual(t, unencodedPayload, localEncodedPayload)
 	require.True(t, proto.Equal(localEncodedPayload, remoteEncodedPayload))
 }
+
+func TestRawValueCompositeDataConverter(t *testing.T) {
+	require := require.New(t)
+
+	defaultConv := converter.GetDefaultDataConverter()
+	origPayload, err := defaultConv.ToPayload("test raw value")
+	require.NoError(err)
+
+	rv := converter.RawValue{Payload: origPayload}
+	// To/FromPayload
+	payload, err := defaultConv.ToPayload(rv)
+	require.NoError(err)
+	require.True(proto.Equal(rv.Payload, payload))
+
+	var decodedRV converter.RawValue
+	err = defaultConv.FromPayload(payload, &decodedRV)
+	require.NoError(err)
+
+	require.True(proto.Equal(origPayload, decodedRV.Payload))
+
+	// To/FromPayloads
+	payloads, err := defaultConv.ToPayloads(rv)
+	require.NoError(err)
+	require.Len(payloads.Payloads, 1)
+	require.True(proto.Equal(origPayload, payloads.Payloads[0]))
+
+	err = defaultConv.FromPayloads(payloads, &decodedRV)
+	require.NoError(err)
+
+	// Confirm the payload inside RawValue matches original
+	require.True(proto.Equal(origPayload, decodedRV.Payload))
+}
+
+func TestRawValueCodec(t *testing.T) {
+	require := require.New(t)
+	defaultConv := converter.GetDefaultDataConverter()
+	// Create Zlib compression converter
+	zlibConv := converter.NewCodecDataConverter(
+		defaultConv,
+		converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}),
+	)
+
+	// To/FromPayload
+	data := "test raw value"
+	dataPayload, err := defaultConv.ToPayload(data)
+	rawValue := converter.RawValue{Payload: dataPayload}
+	require.NoError(err)
+
+	compPayload, err := zlibConv.ToPayload(rawValue)
+	require.NoError(err)
+	require.Equal("binary/zlib", string(compPayload.Metadata[converter.MetadataEncoding]))
+	require.NotEqual(rawValue.Payload, compPayload)
+
+	newData := reflect.New(reflect.TypeOf(data)).Interface()
+	require.NoError(zlibConv.FromPayload(compPayload, newData))
+	require.Equal(data, reflect.ValueOf(newData).Elem().Interface())
+
+	// To/FromPayloads
+	compPayloads, err := zlibConv.ToPayloads(rawValue)
+	require.NoError(err)
+
+	require.Len(compPayloads.Payloads, 1)
+	require.NotEqual(rawValue.Payload, compPayloads.Payloads[0])
+
+	newData = reflect.New(reflect.TypeOf(data)).Interface()
+	require.NoError(zlibConv.FromPayloads(compPayloads, newData))
+	require.Equal(data, reflect.ValueOf(newData).Elem().Interface())
+}
