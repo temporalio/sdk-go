@@ -43,9 +43,9 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/api/common/v1"
-	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -280,6 +280,7 @@ type workflowHandle[T any] struct {
 	id          string
 	runID       string
 	cachedToken string
+	requestID   string
 }
 
 func (h workflowHandle[T]) ID() string {
@@ -291,14 +292,14 @@ func (h workflowHandle[T]) RunID() string {
 }
 
 func (h workflowHandle[T]) link() nexus.Link {
-	// Create the link information about the new workflow and return to the caller.
+	// Create the link information about the workflow and return to the caller.
 	link := &common.Link_WorkflowEvent{
 		Namespace:  h.namespace,
 		WorkflowId: h.ID(),
 		RunId:      h.RunID(),
-		Reference: &common.Link_WorkflowEvent_EventRef{
-			EventRef: &common.Link_WorkflowEvent_EventReference{
-				EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+		Reference: &common.Link_WorkflowEvent_RequestIdRef{
+			RequestIdRef: &common.Link_WorkflowEvent_RequestIdReference{
+				RequestId: h.requestID,
 			},
 		},
 	}
@@ -350,9 +351,13 @@ func ExecuteUntypedWorkflow[R any](
 		return nil, internal.ErrMissingWorkflowID
 	}
 
-	if nexusOptions.RequestID != "" {
-		internal.SetRequestIDOnStartWorkflowOptions(&startWorkflowOptions, nexusOptions.RequestID)
+	requestID := nexusOptions.RequestID
+	if requestID == "" {
+		// Assigning a random UUID so the workflowHandle is able to create the link to the workflow.
+		// Client.ExecuteWorkflow already does the same, so this is just assigning an UUID ahead.
+		requestID = uuid.NewString()
 	}
+	internal.SetRequestIDOnStartWorkflowOptions(&startWorkflowOptions, requestID)
 
 	var encodedToken string
 	if nexusOptions.CallbackURL != "" {
@@ -404,6 +409,7 @@ func ExecuteUntypedWorkflow[R any](
 		id:          run.GetID(),
 		runID:       run.GetRunID(),
 		cachedToken: encodedToken,
+		requestID:   requestID,
 	}, nil
 }
 
