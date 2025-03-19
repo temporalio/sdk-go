@@ -878,10 +878,10 @@ func TestAsyncOperationFromWorkflow(t *testing.T) {
 		require.Equal(t, handlerWfID, link.GetWorkflowEvent().GetWorkflowId())
 		require.NotEmpty(t, link.GetWorkflowEvent().GetRunId())
 		require.True(t, proto.Equal(
-			&common.Link_WorkflowEvent_EventReference{
-				EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+			&common.Link_WorkflowEvent_RequestIdReference{
+				RequestId: handlerWfID,
 			},
-			link.GetWorkflowEvent().GetEventRef(),
+			link.GetWorkflowEvent().GetRequestIdRef(),
 		))
 		handlerRunID := link.GetWorkflowEvent().GetRunId()
 
