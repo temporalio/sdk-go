@@ -59,3 +59,8 @@ type (
 		Payload *commonpb.Payload
 	}
 )
+
+// NewRawValue creates a new RawValue instance.
+func NewRawValue(payload *commonpb.Payload) RawValue {
+	return RawValue{Payload: payload}
+}

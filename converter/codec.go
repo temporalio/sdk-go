@@ -238,7 +238,7 @@ func (e *CodecDataConverter) FromPayload(payload *commonpb.Payload, valuePtr int
 
 	rawValue, ok := valuePtr.(*RawValue)
 	if ok {
-		*rawValue = RawValue{Payload: decodedPayloads[0]}
+		*rawValue = NewRawValue(decodedPayloads[0])
 		return nil
 	}
 
@@ -264,7 +264,7 @@ func (e *CodecDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs
 		rawValue, ok := valuePtrs[i].(*RawValue)
 		if ok {
 			isRawValue = true
-			*rawValue = RawValue{Payload: payload}
+			*rawValue = NewRawValue(payload)
 		}
 	}
 	if isRawValue {

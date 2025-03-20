@@ -299,7 +299,7 @@ func TestRawValueCompositeDataConverter(t *testing.T) {
 	origPayload, err := defaultConv.ToPayload("test raw value")
 	require.NoError(err)
 
-	rv := converter.RawValue{Payload: origPayload}
+	rv := converter.NewRawValue(origPayload)
 	// To/FromPayload
 	payload, err := defaultConv.ToPayload(rv)
 	require.NoError(err)
@@ -336,7 +336,7 @@ func TestRawValueCodec(t *testing.T) {
 	// To/FromPayload
 	data := "test raw value"
 	dataPayload, err := defaultConv.ToPayload(data)
-	rawValue := converter.RawValue{Payload: dataPayload}
+	rawValue := converter.NewRawValue(dataPayload)
 	require.NoError(err)
 
 	compPayload, err := zlibConv.ToPayload(rawValue)

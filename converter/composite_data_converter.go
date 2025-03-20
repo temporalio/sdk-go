@@ -97,7 +97,7 @@ func (dc *CompositeDataConverter) FromPayloads(payloads *commonpb.Payloads, valu
 		}
 		rawValue, ok := valuePtrs[i].(*RawValue)
 		if ok {
-			*rawValue = RawValue{Payload: payload}
+			*rawValue = NewRawValue(payload)
 		} else {
 			err := dc.FromPayload(payload, valuePtrs[i])
 			if err != nil {
@@ -138,7 +138,7 @@ func (dc *CompositeDataConverter) FromPayload(payload *commonpb.Payload, valuePt
 
 	rawValue, ok := valuePtr.(*RawValue)
 	if ok {
-		*rawValue = RawValue{Payload: payload}
+		*rawValue = NewRawValue(payload)
 		return nil
 	}
 
