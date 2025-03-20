@@ -2469,7 +2469,7 @@ func (ts *IntegrationTestSuite) TestLocalActivityTaskTimeoutHeartbeat() {
 
 	localActivityFn := func(ctx context.Context) error {
 		// wait for worker shutdown to be started and WorkflowTaskTimeout to be hit
-		time.Sleep(3 * time.Second)
+		time.Sleep(1500 * time.Millisecond) // 1.5 seconds
 		return ctx.Err()
 	}
 
@@ -2492,39 +2492,39 @@ func (ts *IntegrationTestSuite) TestLocalActivityTaskTimeoutHeartbeat() {
 	startOptions := client.StartWorkflowOptions{
 		ID:                  workflowID,
 		TaskQueue:           ts.taskQueueName,
-		WorkflowTaskTimeout: 2 * time.Second,
+		WorkflowTaskTimeout: 1 * time.Second,
 	}
 
 	// Start workflow
 	run, err := ts.client.ExecuteWorkflow(ctx, startOptions, workflowFn)
 	ts.NoError(err)
 
-	//// Stop the worker
+	// Stop the worker
 	time.Sleep(100 * time.Millisecond)
 	ts.worker.Stop()
 	ts.workerStopped = true
-	// Allow time for LA to complete
-	time.Sleep(4 * time.Second)
 
 	// Look for activity completed from the history
-	var laCompleted int
+	var laCompleted, started int
 	var wfeCompleted bool
 	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(),
-		false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	for iter.HasNext() {
 		event, err := iter.Next()
 		ts.NoError(err)
 		attributes := event.GetMarkerRecordedEventAttributes()
 		if event.EventType == enumspb.EVENT_TYPE_MARKER_RECORDED && attributes.MarkerName == "LocalActivity" && attributes.GetFailure() == nil {
 			laCompleted++
-		}
-		if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED {
+		} else if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED {
+			started++
+		} else if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED {
 			wfeCompleted = true
 		}
 	}
 
 	// Confirm local activity and WFE completed
 	ts.Equal(1, laCompleted)
+	ts.Equal(2, started)
 	ts.True(wfeCompleted)
 }
 
