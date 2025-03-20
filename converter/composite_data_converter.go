@@ -65,7 +65,7 @@ func (dc *CompositeDataConverter) ToPayloads(values ...interface{}) (*commonpb.P
 	for _, v := range values {
 		rawValue, ok := v.(RawValue)
 		if ok {
-			rawValuePayloads = append(rawValuePayloads, rawValue.Payload)
+			rawValuePayloads = append(rawValuePayloads, rawValue.Payload())
 		}
 	}
 	if len(rawValuePayloads) > 0 {
@@ -113,7 +113,7 @@ func (dc *CompositeDataConverter) FromPayloads(payloads *commonpb.Payloads, valu
 func (dc *CompositeDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
 	rawValue, ok := value.(RawValue)
 	if ok {
-		return rawValue.Payload, nil
+		return rawValue.Payload(), nil
 	}
 
 	for _, enc := range dc.orderedEncodings {

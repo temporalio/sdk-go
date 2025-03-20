@@ -176,7 +176,7 @@ func (e *CodecDataConverter) ToPayload(value interface{}) (*commonpb.Payload, er
 
 	var payload *commonpb.Payload
 	if ok {
-		payload = rawValue.Payload
+		payload = rawValue.Payload()
 	} else {
 		var err error
 		payload, err = e.parent.ToPayload(value)
@@ -204,7 +204,7 @@ func (e *CodecDataConverter) ToPayloads(value ...interface{}) (*commonpb.Payload
 	for _, v := range value {
 		rawValue, ok := v.(RawValue)
 		if ok {
-			rawValuePayloads = append(rawValuePayloads, rawValue.Payload)
+			rawValuePayloads = append(rawValuePayloads, rawValue.Payload())
 		}
 	}
 

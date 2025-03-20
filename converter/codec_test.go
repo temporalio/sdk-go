@@ -303,13 +303,13 @@ func TestRawValueCompositeDataConverter(t *testing.T) {
 	// To/FromPayload
 	payload, err := defaultConv.ToPayload(rv)
 	require.NoError(err)
-	require.True(proto.Equal(rv.Payload, payload))
+	require.True(proto.Equal(rv.Payload(), payload))
 
 	var decodedRV converter.RawValue
 	err = defaultConv.FromPayload(payload, &decodedRV)
 	require.NoError(err)
 
-	require.True(proto.Equal(origPayload, decodedRV.Payload))
+	require.True(proto.Equal(origPayload, decodedRV.Payload()))
 
 	// To/FromPayloads
 	payloads, err := defaultConv.ToPayloads(rv)
@@ -321,7 +321,7 @@ func TestRawValueCompositeDataConverter(t *testing.T) {
 	require.NoError(err)
 
 	// Confirm the payload inside RawValue matches original
-	require.True(proto.Equal(origPayload, decodedRV.Payload))
+	require.True(proto.Equal(origPayload, decodedRV.Payload()))
 }
 
 func TestRawValueCodec(t *testing.T) {
@@ -342,7 +342,7 @@ func TestRawValueCodec(t *testing.T) {
 	compPayload, err := zlibConv.ToPayload(rawValue)
 	require.NoError(err)
 	require.Equal("binary/zlib", string(compPayload.Metadata[converter.MetadataEncoding]))
-	require.NotEqual(rawValue.Payload, compPayload)
+	require.False(proto.Equal(rawValue.Payload(), compPayload))
 
 	newData := reflect.New(reflect.TypeOf(data)).Interface()
 	require.NoError(zlibConv.FromPayload(compPayload, newData))
@@ -353,9 +353,24 @@ func TestRawValueCodec(t *testing.T) {
 	require.NoError(err)
 
 	require.Len(compPayloads.Payloads, 1)
-	require.NotEqual(rawValue.Payload, compPayloads.Payloads[0])
+	require.False(proto.Equal(rawValue.Payload(), compPayloads.Payloads[0]))
 
 	newData = reflect.New(reflect.TypeOf(data)).Interface()
 	require.NoError(zlibConv.FromPayloads(compPayloads, newData))
 	require.Equal(data, reflect.ValueOf(newData).Elem().Interface())
+}
+
+func TestRawValueJsonConverter(t *testing.T) {
+	data := "test raw value"
+	defaultConv := converter.GetDefaultDataConverter()
+	dataPayload, err := defaultConv.ToPayload(data)
+	require.NoError(t, err)
+	rawValue := converter.NewRawValue(dataPayload)
+
+	jsonConverter := converter.NewJSONPayloadConverter()
+	_, err = jsonConverter.ToPayload(rawValue)
+	require.Error(t, err)
+
+	err = jsonConverter.FromPayload(dataPayload, &rawValue)
+	require.Error(t, err)
 }
