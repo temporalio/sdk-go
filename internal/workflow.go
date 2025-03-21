@@ -2566,7 +2566,18 @@ func AllHandlersFinished(ctx Context) bool {
 //
 // Exposed as: [go.temporal.io/sdk/workflow.NexusOperationOptions]
 type NexusOperationOptions struct {
+	// ScheduleToCloseTimeout - The end to end timeout for the Nexus Operation
+	//
+	// Optional: defaults to the maximum allowed by the Temporal server.
 	ScheduleToCloseTimeout time.Duration
+
+	// StaticSummary is a single-line fixed summary for this Nexus Operation that will appear in UI/CLI. This can be
+	// in single-line Temporal Markdown format.
+	//
+	// Optional: defaults to none/empty.
+	//
+	// NOTE: Experimental
+	Summary string
 }
 
 // NexusOperationExecution is the result of NexusOperationFuture.GetNexusOperationExecution.
