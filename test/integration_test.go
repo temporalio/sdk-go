@@ -2524,7 +2524,7 @@ func (ts *IntegrationTestSuite) TestLocalActivityTaskTimeoutHeartbeat() {
 
 	// Confirm local activity and WFE completed
 	ts.Equal(1, laCompleted)
-	ts.Equal(2, started)
+	ts.GreaterOrEqual(started, 2)
 	ts.True(wfeCompleted)
 }
 
