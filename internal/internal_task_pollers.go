@@ -625,7 +625,7 @@ func (latp *localActivityTaskPoller) PollTask() (taskForWorker, error) {
 }
 
 func (latp *localActivityTaskPoller) ProcessTask(task interface{}) error {
-	if latp.stopping() {
+	if latp.stopping() && (task == nil || task.(*localActivityTask) == nil) {
 		return errStop
 	}
 
