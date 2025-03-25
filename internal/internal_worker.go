@@ -360,6 +360,8 @@ func newWorkflowTaskWorkerInternal(
 	// we need to allow pending local activities to finish running for that workflow task.
 	// After all pending local activities are handled, we then close the local activity stop channel.
 	laStopChannel := make(chan struct{})
+	laParams := params
+	laParams.WorkerStopChannel = laStopChannel
 
 	// laTunnel is the glue that hookup 3 parts
 	laTunnel := newLocalActivityTunnel(getReadOnlyChannel(laStopChannel))
@@ -370,19 +372,19 @@ func newWorkflowTaskWorkerInternal(
 	}
 
 	// 2) local activity task poller will poll from laTunnel, and result will be pushed to laTunnel
-	localActivityTaskPoller := newLocalActivityPoller(params, laTunnel, interceptors, client)
+	localActivityTaskPoller := newLocalActivityPoller(laParams, laTunnel, interceptors, client)
 	localActivityWorker := newBaseWorker(baseWorkerOptions{
 		pollerCount:      1, // 1 poller (from local channel) is enough for local activity
-		slotSupplier:     params.Tuner.GetLocalActivitySlotSupplier(),
-		maxTaskPerSecond: params.WorkerLocalActivitiesPerSecond,
+		slotSupplier:     laParams.Tuner.GetLocalActivitySlotSupplier(),
+		maxTaskPerSecond: laParams.WorkerLocalActivitiesPerSecond,
 		taskWorker:       localActivityTaskPoller,
 		workerType:       "LocalActivityWorker",
-		identity:         params.Identity,
-		buildId:          params.getBuildID(),
-		logger:           params.Logger,
-		stopTimeout:      params.WorkerStopTimeout,
-		fatalErrCb:       params.WorkerFatalErrorCallback,
-		metricsHandler:   params.MetricsHandler,
+		identity:         laParams.Identity,
+		buildId:          laParams.getBuildID(),
+		logger:           laParams.Logger,
+		stopTimeout:      laParams.WorkerStopTimeout,
+		fatalErrCb:       laParams.WorkerFatalErrorCallback,
+		metricsHandler:   laParams.MetricsHandler,
 		slotReservationData: slotReservationData{
 			taskQueue: params.TaskQueue,
 		},
