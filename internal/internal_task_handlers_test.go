@@ -1840,7 +1840,9 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 	defer close(stopCh)
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
-	laTunnel := newLocalActivityTunnel(params.WorkerStopChannel)
+	laStopCh := make(chan struct{})
+	defer close(laStopCh)
+	laTunnel := newLocalActivityTunnel(laStopCh)
 	taskHandlerImpl, ok := taskHandler.(*workflowTaskHandlerImpl)
 	t.True(ok)
 	taskHandlerImpl.laTunnel = laTunnel
