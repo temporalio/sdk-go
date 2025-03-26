@@ -235,7 +235,8 @@ func LoadClientConfigProfile(options LoadClientConfigProfileOptions) (ClientConf
 		if err != nil {
 			return ClientConfigProfile{}, err
 		}
-		// Find profile or fail. The one situation where we don't fail here is if the profile is not user-set
+		// Find user-set profile or use the default. Only fail if the profile was set and not found (if unset and not
+		// found, that's ok).
 		profile := options.ConfigFileProfile
 		profileUnset := false
 		if profile == "" {

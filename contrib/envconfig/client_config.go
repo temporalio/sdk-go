@@ -44,6 +44,7 @@ import (
 //
 // WARNING: Environment configuration is currently experimental.
 type ClientConfig struct {
+	// Profiles, keyed by profile name.
 	Profiles map[string]*ClientConfigProfile
 }
 
