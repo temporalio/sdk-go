@@ -35,7 +35,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/pborman/uuid"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -223,6 +223,7 @@ type (
 //
 // The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
+//
 // NOTE: the context.Context should have a fairly large timeout, since workflow execution may take a while to be finished
 func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
@@ -321,7 +322,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	// Default workflow ID to UUID
 	options.ID = workflowID
 	if options.ID == "" {
-		options.ID = uuid.New()
+		options.ID = uuid.NewString()
 	}
 
 	// Validate function and get name
@@ -789,6 +790,7 @@ type UpdateWorkflowOptions struct {
 
 	// WaitForStage is a required field which specifies which stage to wait until returning.
 	// See https://docs.temporal.io/develop/go/message-passing#send-update-from-client for more details.
+	//
 	// NOTE: Specifying WorkflowUpdateStageAdmitted is not supported.
 	WaitForStage WorkflowUpdateStage
 
@@ -801,6 +803,7 @@ type UpdateWorkflowOptions struct {
 
 // UpdateWithStartWorkflowOptions encapsulates the parameters used by UpdateWithStartWorkflow.
 // See UpdateWithStartWorkflow and NewWithStartWorkflowOperation.
+//
 // NOTE: Experimental
 type UpdateWithStartWorkflowOptions struct {
 	StartWorkflowOperation WithStartWorkflowOperation
@@ -977,7 +980,7 @@ func (wc *WorkflowClient) ResetWorkflowExecution(ctx context.Context, request *w
 	}
 
 	if request != nil && request.GetRequestId() == "" {
-		request.RequestId = uuid.New()
+		request.RequestId = uuid.NewString()
 	}
 
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
@@ -1061,6 +1064,7 @@ func (wc *WorkflowClient) GetWorkerTaskReachability(ctx context.Context, options
 // UpdateWorkflowExecutionOptions partially overrides the [WorkflowExecutionOptions] of an existing workflow execution,
 // and returns the new [WorkflowExecutionOptions] after applying the changes.
 // It is intended for building tools that can selectively apply ad-hoc workflow configuration changes.
+//
 // NOTE: Experimental
 func (wc *WorkflowClient) UpdateWorkflowExecutionOptions(ctx context.Context, request UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
@@ -1600,7 +1604,7 @@ func createStartWorkflowInput(
 	registry *registry,
 ) (*ClientExecuteWorkflowInput, error) {
 	if options.ID == "" {
-		options.ID = uuid.New()
+		options.ID = uuid.NewString()
 	}
 	if err := validateFunctionArgs(workflow, args, true); err != nil {
 		return nil, err
@@ -1689,7 +1693,7 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 	if in.Options.requestID != "" {
 		startRequest.RequestId = in.Options.requestID
 	} else {
-		startRequest.RequestId = uuid.New()
+		startRequest.RequestId = uuid.NewString()
 	}
 
 	if in.Options.StartDelay != 0 {
@@ -1988,7 +1992,7 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 	if requestID, ok := ctx.Value(NexusOperationRequestIDKey).(string); ok && requestID != "" {
 		request.RequestId = requestID
 	} else {
-		request.RequestId = uuid.New()
+		request.RequestId = uuid.NewString()
 	}
 
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
@@ -2035,7 +2039,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 
 	signalWithStartRequest := &workflowservice.SignalWithStartWorkflowExecutionRequest{
 		Namespace:                w.client.namespace,
-		RequestId:                uuid.New(),
+		RequestId:                uuid.NewString(),
 		WorkflowId:               in.Options.ID,
 		WorkflowType:             &commonpb.WorkflowType{Name: in.WorkflowType},
 		TaskQueue:                &taskqueuepb.TaskQueue{Name: in.Options.TaskQueue, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
@@ -2099,7 +2103,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 func (w *workflowClientInterceptor) CancelWorkflow(ctx context.Context, in *ClientCancelWorkflowInput) error {
 	request := &workflowservice.RequestCancelWorkflowExecutionRequest{
 		Namespace: w.client.namespace,
-		RequestId: uuid.New(),
+		RequestId: uuid.NewString(),
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: in.WorkflowID,
 			RunId:      in.RunID,
@@ -2229,7 +2233,7 @@ func (w *workflowClientInterceptor) updateIsDurable(resp *workflowservice.Update
 func createUpdateWorkflowInput(options *UpdateWorkflowOptions) (*ClientUpdateWorkflowInput, error) {
 	updateID := options.UpdateID
 	if updateID == "" {
-		updateID = uuid.New()
+		updateID = uuid.NewString()
 	}
 
 	if options.WaitForStage == WorkflowUpdateStageUnspecified {

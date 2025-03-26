@@ -212,6 +212,7 @@ type (
 	}
 
 	// DeploymentOptions provides configuration to enable Worker Versioning.
+	//
 	// NOTE: Experimental
 	DeploymentOptions = internal.WorkerDeploymentOptions
 

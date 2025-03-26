@@ -39,8 +39,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/opentracing/opentracing-go"
-	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -249,7 +249,9 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.WorkflowPanicPolicy = worker.BlockWorkflow
 	}
 
-	if strings.Contains(ts.T().Name(), "GracefulActivityCompletion") {
+	if strings.Contains(ts.T().Name(), "GracefulActivityCompletion") ||
+		strings.Contains(ts.T().Name(), "GracefulLocalActivityCompletion") ||
+		strings.Contains(ts.T().Name(), "TestLocalActivityTaskTimeoutHeartbeat") {
 		options.WorkerStopTimeout = 10 * time.Second
 	}
 
@@ -692,7 +694,7 @@ func (ts *IntegrationTestSuite) TestCancellation() {
 }
 
 func (ts *IntegrationTestSuite) TestCascadingCancellation() {
-	workflowID := "test-cascading-cancellation-" + uuid.New()
+	workflowID := "test-cascading-cancellation-" + uuid.NewString()
 	childWorkflowID := workflowID + "-child"
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -841,7 +843,7 @@ func (ts *IntegrationTestSuite) TestSignalWorkflowWithStubbornGrpcError() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicateNoChildWorkflow() {
-	specialstr := uuid.New()
+	specialstr := uuid.NewString()
 	wfOpts := ts.startWorkflowOptions("test-workflow-id-reuse-reject-dupes-no-children-" + specialstr)
 	wfOpts.WorkflowIDReusePolicy = enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE
 	wfOpts.WorkflowExecutionErrorWhenAlreadyStarted = true
@@ -873,7 +875,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseRejectDuplicate() {
 		"test-workflowidreuse-reject-duplicate",
 		ts.workflows.IDReusePolicy,
 		&result,
-		uuid.New(),
+		uuid.NewString(),
 		enumspb.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE,
 		false,
 		false,
@@ -892,7 +894,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly1() {
 		"test-workflowidreuse-reject-duplicate-failed-only1",
 		ts.workflows.IDReusePolicy,
 		&result,
-		uuid.New(),
+		uuid.NewString(),
 		enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
 		false,
 		false,
@@ -911,7 +913,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicateFailedOnly2() {
 		"test-workflowidreuse-reject-duplicate-failed-only2",
 		ts.workflows.IDReusePolicy,
 		&result,
-		uuid.New(),
+		uuid.NewString(),
 		enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
 		false,
 		true,
@@ -926,7 +928,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseAllowDuplicate() {
 		"test-workflowidreuse-allow-duplicate",
 		ts.workflows.IDReusePolicy,
 		&result,
-		uuid.New(),
+		uuid.NewString(),
 		enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
 		false,
 		false,
@@ -940,7 +942,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDReuseIgnoreDuplicateWhileRunning()
 	defer cancel()
 
 	// Start two workflows with the same ID but different params
-	opts := ts.startWorkflowOptions("test-workflow-id-reuse-ignore-dupes-" + uuid.New())
+	opts := ts.startWorkflowOptions("test-workflow-id-reuse-ignore-dupes-" + uuid.NewString())
 	run1, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.WaitSignalReturnParam, "run1")
 	ts.NoError(err)
 	run2, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.WaitSignalReturnParam, "run2")
@@ -978,7 +980,7 @@ func (ts *IntegrationTestSuite) TestWorkflowIDConflictPolicy() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	opts := ts.startWorkflowOptions("test-workflowidconflict-" + uuid.New())
+	opts := ts.startWorkflowOptions("test-workflowidconflict-" + uuid.NewString())
 	opts.WorkflowExecutionErrorWhenAlreadyStarted = true
 
 	var alreadyStartedErr *serviceerror.WorkflowExecutionAlreadyStarted
@@ -1385,7 +1387,6 @@ func (ts *IntegrationTestSuite) TestActivityTimeoutsWorkflow() {
 	ts.Error(ts.executeWorkflow("test-activity-timeout-workflow", ts.workflows.ActivityTimeoutsWorkflow, nil, workflow.ActivityOptions{
 		ScheduleToStartTimeout: 5 * time.Second,
 	}))
-
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowWithParallelSideEffectsUsingReplay() {
@@ -1986,7 +1987,7 @@ func (ts *IntegrationTestSuite) TestSignalWithStartIdConflictPolicy() {
 	defer cancel()
 
 	var invalidArgErr *serviceerror.InvalidArgument
-	opts := ts.startWorkflowOptions("test-signalwithstart-workflowidconflict-" + uuid.New())
+	opts := ts.startWorkflowOptions("test-signalwithstart-workflowidconflict-" + uuid.NewString())
 
 	// Start a workflow
 	run1, err := ts.client.SignalWithStartWorkflow(ctx, opts.ID, "signal", true, opts, ts.workflows.IDConflictPolicy)
@@ -2358,7 +2359,7 @@ func (ts *IntegrationTestSuite) TestGracefulActivityCompletion() {
 
 	// Start workflow
 	run, err := ts.client.ExecuteWorkflow(ctx,
-		ts.startWorkflowOptions("test-graceful-activity-completion-"+uuid.New()),
+		ts.startWorkflowOptions("test-graceful-activity-completion-"+uuid.NewString()),
 		ts.workflows.ActivityWaitForWorkerStop, 10*time.Second)
 	ts.NoError(err)
 
@@ -2390,6 +2391,141 @@ func (ts *IntegrationTestSuite) TestGracefulActivityCompletion() {
 	var s string
 	ts.NoError(converter.GetDefaultDataConverter().FromPayload(completed.Result.Payloads[0], &s))
 	ts.Equal("stopped", s)
+}
+
+func (ts *IntegrationTestSuite) TestGracefulLocalActivityCompletion() {
+	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	localActivityFn := func(ctx context.Context) error {
+		time.Sleep(100 * time.Millisecond)
+		return ctx.Err()
+	}
+
+	workflowFn := func(ctx workflow.Context) error {
+		ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+			StartToCloseTimeout: 1 * time.Minute,
+		})
+		localActivity := workflow.ExecuteLocalActivity(ctx, localActivityFn)
+		err := localActivity.Get(ctx, nil)
+		if err != nil {
+			workflow.GetLogger(ctx).Error("Activity failed.", "Error", err)
+		}
+
+		localActivity = workflow.ExecuteLocalActivity(ctx, localActivityFn)
+		err = localActivity.Get(ctx, nil)
+		if err != nil {
+			workflow.GetLogger(ctx).Error("Second activity failed.", "Error", err)
+		}
+
+		return nil
+
+	}
+
+	workflowID := "local-activity-stop-" + uuid.NewString()
+	ts.worker.RegisterWorkflowWithOptions(workflowFn, workflow.RegisterOptions{Name: "local-activity-stop"})
+	startOptions := client.StartWorkflowOptions{
+		ID:                  workflowID,
+		TaskQueue:           ts.taskQueueName,
+		WorkflowTaskTimeout: 5 * time.Second,
+	}
+
+	// Start workflow
+	run, err := ts.client.ExecuteWorkflow(ctx, startOptions, workflowFn)
+	ts.NoError(err)
+
+	// Stop the worker
+	time.Sleep(100 * time.Millisecond)
+	ts.worker.Stop()
+	ts.workerStopped = true
+	time.Sleep(500 * time.Millisecond)
+
+	// Look for activity completed from the history
+	var laCompleted int
+	var wfeCompleted bool
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(),
+		false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		ts.NoError(err)
+		attributes := event.GetMarkerRecordedEventAttributes()
+		if event.EventType == enumspb.EVENT_TYPE_MARKER_RECORDED && attributes.MarkerName == "LocalActivity" && attributes.GetFailure() == nil {
+			laCompleted++
+		}
+		if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED {
+			wfeCompleted = true
+		}
+	}
+
+	// Confirm local activity and WFE completed
+	ts.Equal(2, laCompleted)
+	ts.True(wfeCompleted)
+}
+
+func (ts *IntegrationTestSuite) TestLocalActivityTaskTimeoutHeartbeat() {
+	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	localActivityFn := func(ctx context.Context) error {
+		// wait for worker shutdown to be started and WorkflowTaskTimeout to be hit
+		time.Sleep(1500 * time.Millisecond) // 1.5 seconds
+		return ctx.Err()
+	}
+
+	workflowFn := func(ctx workflow.Context) error {
+		ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+			StartToCloseTimeout: 1 * time.Minute,
+		})
+		localActivity := workflow.ExecuteLocalActivity(ctx, localActivityFn)
+		err := localActivity.Get(ctx, nil)
+		if err != nil {
+			workflow.GetLogger(ctx).Error("Activity failed.", "Error", err)
+		}
+
+		return nil
+
+	}
+
+	workflowID := "local-activity-task-timeout-heartbeat" + uuid.NewString()
+	ts.worker.RegisterWorkflowWithOptions(workflowFn, workflow.RegisterOptions{Name: "local-activity-task-timeout-heartbeat"})
+	startOptions := client.StartWorkflowOptions{
+		ID:                  workflowID,
+		TaskQueue:           ts.taskQueueName,
+		WorkflowTaskTimeout: 1 * time.Second,
+	}
+
+	// Start workflow
+	run, err := ts.client.ExecuteWorkflow(ctx, startOptions, workflowFn)
+	ts.NoError(err)
+
+	// Stop the worker
+	time.Sleep(100 * time.Millisecond)
+	ts.worker.Stop()
+	ts.workerStopped = true
+
+	// Look for activity completed from the history
+	var laCompleted, started int
+	var wfeCompleted bool
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(),
+		true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		ts.NoError(err)
+		attributes := event.GetMarkerRecordedEventAttributes()
+		if event.EventType == enumspb.EVENT_TYPE_MARKER_RECORDED && attributes.MarkerName == "LocalActivity" && attributes.GetFailure() == nil {
+			laCompleted++
+		} else if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED {
+			started++
+		} else if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED {
+			wfeCompleted = true
+		}
+	}
+
+	// Confirm local activity and WFE completed
+	ts.Equal(1, laCompleted)
+	ts.GreaterOrEqual(started, 2)
+	ts.True(wfeCompleted)
 }
 
 func (ts *IntegrationTestSuite) TestCancelChildAndExecuteActivityRace() {
@@ -2955,7 +3091,7 @@ func (ts *IntegrationTestSuite) TestAdvancedPostCancellation() {
 
 	assertPostCancellation := func(in *AdvancedPostCancellationInput) {
 		// Start workflow
-		run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-advanced-post-cancellation-"+uuid.New()),
+		run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-advanced-post-cancellation-"+uuid.NewString()),
 			ts.workflows.AdvancedPostCancellation, in)
 		ts.NoError(err)
 
@@ -3001,7 +3137,7 @@ func (ts *IntegrationTestSuite) TestAdvancedPostCancellationChildWithDone() {
 	defer cancel()
 
 	// Start workflow
-	startOpts := ts.startWorkflowOptions("test-advanced-post-cancellation-child-with-done-" + uuid.New())
+	startOpts := ts.startWorkflowOptions("test-advanced-post-cancellation-child-with-done-" + uuid.NewString())
 	run, err := ts.client.ExecuteWorkflow(ctx, startOpts, ts.workflows.AdvancedPostCancellationChildWithDone)
 	ts.NoError(err)
 
@@ -3466,7 +3602,7 @@ func (ts *IntegrationTestSuite) TestTallyScopeAccess() {
 
 	ts.worker.RegisterWorkflow(tallyScopeAccessWorkflow)
 	run, err := ts.client.ExecuteWorkflow(context.TODO(),
-		ts.startWorkflowOptions("tally-scope-access-"+uuid.New()), tallyScopeAccessWorkflow)
+		ts.startWorkflowOptions("tally-scope-access-"+uuid.NewString()), tallyScopeAccessWorkflow)
 	ts.NoError(err)
 	ts.NoError(run.Get(context.TODO(), nil))
 
@@ -3490,7 +3626,7 @@ func (ts *IntegrationTestSuite) TestTallyScopeAccess() {
 
 func (ts *IntegrationTestSuite) TestActivityOnlyWorker() {
 	// Start worker
-	taskQueue := "test-activity-only-queue-" + uuid.New()
+	taskQueue := "test-activity-only-queue-" + uuid.NewString()
 	activityOnlyWorker := worker.New(ts.client, taskQueue, worker.Options{DisableWorkflowWorker: true})
 	a := newActivities()
 	activityOnlyWorker.RegisterActivity(a.activities2.ToUpper)
@@ -4192,7 +4328,7 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 	defer cancel()
 
 	startWorkflowOptions := func() client.StartWorkflowOptions {
-		opts := ts.startWorkflowOptions("test-update-with-start-" + uuid.New())
+		opts := ts.startWorkflowOptions("test-update-with-start-" + uuid.NewString())
 		opts.EnableEagerStart = false                                            // not allowed to use with update-with-start
 		opts.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL // required for update-with-start
 		return opts
@@ -4273,7 +4409,6 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 	})
 
 	ts.Run("receives results in separate goroutines", func() {
-
 		startOp := ts.client.NewWithStartWorkflowOperation(startWorkflowOptions(), ts.workflows.UpdateEntityWorkflow)
 
 		done1 := make(chan struct{})
@@ -4501,7 +4636,7 @@ func (ts *IntegrationTestSuite) TestQueryOnlyCoroutineUsage() {
 	// Start the workflow that should run forever, send 5 signals, and wait until
 	// all received
 	run, err := ts.client.ExecuteWorkflow(ctx,
-		ts.startWorkflowOptions("test-query-only-coroutine-"+uuid.New()),
+		ts.startWorkflowOptions("test-query-only-coroutine-"+uuid.NewString()),
 		ts.workflows.SignalCounter,
 	)
 	ts.NoError(err)
@@ -4676,7 +4811,7 @@ func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch b
 	forcedNonDeterminismCounter = 0
 	run, err := ts.client.ExecuteWorkflow(
 		ctx,
-		ts.startWorkflowOptions("test-non-determinism-failure-cause-"+uuid.New()),
+		ts.startWorkflowOptions("test-non-determinism-failure-cause-"+uuid.NewString()),
 		ts.workflows.ForcedNonDeterminism,
 		historyMismatch,
 	)
@@ -4730,7 +4865,7 @@ func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseCommandNotFound() 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	wfID := "test-non-determinism-failure-cause-command-not-found-" + uuid.New()
+	wfID := "test-non-determinism-failure-cause-command-not-found-" + uuid.NewString()
 	// Start workflow via UpdateWithStart and wait for update response
 	startWfOptions := ts.startWorkflowOptions(wfID)
 	startWfOptions.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL
@@ -4795,7 +4930,7 @@ func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseReplay() {
 	forcedNonDeterminismCounter = 0
 	run, err := ts.client.ExecuteWorkflow(
 		ctx,
-		ts.startWorkflowOptions("test-non-determinism-failure-cause-replay-"+uuid.New()),
+		ts.startWorkflowOptions("test-non-determinism-failure-cause-replay-"+uuid.NewString()),
 		ts.workflows.NonDeterminismReplay,
 	)
 
@@ -4827,7 +4962,7 @@ func (ts *IntegrationTestSuite) TestDeterminismUpsertSearchAttributesConditional
 	defer cancel()
 
 	maxTicks := 3
-	options := ts.startWorkflowOptions("test-determinism-upsert-search-attributes-conidtional-" + uuid.New())
+	options := ts.startWorkflowOptions("test-determinism-upsert-search-attributes-conidtional-" + uuid.NewString())
 	options.SearchAttributes = map[string]interface{}{
 		"CustomKeywordField": "unset",
 	}
@@ -4850,7 +4985,7 @@ func (ts *IntegrationTestSuite) TestLocalActivityWorkerRestart() {
 	defer cancel()
 
 	maxTicks := 3
-	options := ts.startWorkflowOptions("test-local-activity-worker-restart-" + uuid.New())
+	options := ts.startWorkflowOptions("test-local-activity-worker-restart-" + uuid.NewString())
 
 	run, err := ts.client.ExecuteWorkflow(
 		ctx,
@@ -4886,7 +5021,7 @@ func (ts *IntegrationTestSuite) TestLocalActivityStaleCache() {
 	defer cancel()
 
 	maxTicks := 3
-	options := ts.startWorkflowOptions("test-local-activity-stale-cache-" + uuid.New())
+	options := ts.startWorkflowOptions("test-local-activity-stale-cache-" + uuid.NewString())
 
 	run, err := ts.client.ExecuteWorkflow(
 		ctx,
@@ -4922,7 +5057,7 @@ func (ts *IntegrationTestSuite) TestDeterminismUpsertMemoConditional() {
 	defer cancel()
 
 	maxTicks := 3
-	options := ts.startWorkflowOptions("test-determinism-upsert-search-attributes-conidtional-" + uuid.New())
+	options := ts.startWorkflowOptions("test-determinism-upsert-search-attributes-conidtional-" + uuid.NewString())
 	options.Memo = map[string]interface{}{
 		"TestMemo": "unset",
 	}
@@ -5042,7 +5177,7 @@ func (ts *IntegrationTestSuite) TestReplayerWithInterceptor() {
 
 	// Do basic test
 	var expected []string
-	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-replayer-interceptor-"+uuid.New()),
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-replayer-interceptor-"+uuid.NewString()),
 		ts.workflows.Basic)
 	ts.NoError(err)
 	ts.NoError(run.Get(ctx, &expected))
@@ -6498,7 +6633,7 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorInRespondWorkflowTaskCompl
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	seriesName := "deploy-test-" + uuid.New()
+	seriesName := "deploy-test-" + uuid.NewString()
 	res, err := ts.client.DeploymentClient().SetCurrent(ctx, client.DeploymentSetCurrentOptions{
 		Deployment: client.Deployment{
 			BuildID:    "1.0",
@@ -6566,7 +6701,7 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorPerWorkflowType() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	seriesName := "deploy-test-" + uuid.New()
+	seriesName := "deploy-test-" + uuid.NewString()
 
 	res, err := ts.client.DeploymentClient().SetCurrent(ctx, client.DeploymentSetCurrentOptions{
 		Deployment: client.Deployment{
@@ -6635,7 +6770,7 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorPerWorkflowType() {
 }
 
 func (ts *IntegrationTestSuite) TestNoVersioningBehaviorPanics() {
-	seriesName := "deploy-test-" + uuid.New()
+	seriesName := "deploy-test-" + uuid.NewString()
 
 	c, err := client.Dial(client.Options{
 		HostPort:  ts.config.ServiceAddr,
@@ -6742,7 +6877,7 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 	defer cancel()
 
 	// Start workflow with summary and details
-	opts := ts.startWorkflowOptions("test-user-metadata-" + uuid.New())
+	opts := ts.startWorkflowOptions("test-user-metadata-" + uuid.NewString())
 	opts.StaticSummary = "my-wf-summary"
 	opts.StaticDetails = "my-wf-details"
 	run, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.UserMetadata)
@@ -6840,7 +6975,7 @@ func (ts *IntegrationTestSuite) TestAwaitWithOptionsTimeout() {
 	var str string
 
 	// Start workflow
-	opts := ts.startWorkflowOptions("test-await-options" + uuid.New())
+	opts := ts.startWorkflowOptions("test-await-options" + uuid.NewString())
 	run, err := ts.client.ExecuteWorkflow(ctx, opts,
 		ts.workflows.AwaitWithOptions)
 	ts.NoError(err)
