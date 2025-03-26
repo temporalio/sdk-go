@@ -102,6 +102,7 @@ type (
 		localActivityWorker *baseWorker
 		identity            string
 		stopC               chan struct{}
+		localActivityStopC  chan struct{}
 	}
 
 	// ActivityWorker wraps the code for hosting activity types.
@@ -355,8 +356,15 @@ func newWorkflowTaskWorkerInternal(
 	},
 	)
 
+	// We want a separate stop channel for local activities because when a worker shuts down,
+	// we need to allow pending local activities to finish running for that workflow task.
+	// After all pending local activities are handled, we then close the local activity stop channel.
+	laStopChannel := make(chan struct{})
+	laParams := params
+	laParams.WorkerStopChannel = laStopChannel
+
 	// laTunnel is the glue that hookup 3 parts
-	laTunnel := newLocalActivityTunnel(params.WorkerStopChannel)
+	laTunnel := newLocalActivityTunnel(getReadOnlyChannel(laStopChannel))
 
 	// 1) workflow handler will send local activity task to laTunnel
 	if handlerImpl, ok := taskHandler.(*workflowTaskHandlerImpl); ok {
@@ -364,19 +372,19 @@ func newWorkflowTaskWorkerInternal(
 	}
 
 	// 2) local activity task poller will poll from laTunnel, and result will be pushed to laTunnel
-	localActivityTaskPoller := newLocalActivityPoller(params, laTunnel, interceptors, client)
+	localActivityTaskPoller := newLocalActivityPoller(laParams, laTunnel, interceptors, client)
 	localActivityWorker := newBaseWorker(baseWorkerOptions{
 		pollerCount:      1, // 1 poller (from local channel) is enough for local activity
-		slotSupplier:     params.Tuner.GetLocalActivitySlotSupplier(),
-		maxTaskPerSecond: params.WorkerLocalActivitiesPerSecond,
+		slotSupplier:     laParams.Tuner.GetLocalActivitySlotSupplier(),
+		maxTaskPerSecond: laParams.WorkerLocalActivitiesPerSecond,
 		taskWorker:       localActivityTaskPoller,
 		workerType:       "LocalActivityWorker",
-		identity:         params.Identity,
-		buildId:          params.getBuildID(),
-		logger:           params.Logger,
-		stopTimeout:      params.WorkerStopTimeout,
-		fatalErrCb:       params.WorkerFatalErrorCallback,
-		metricsHandler:   params.MetricsHandler,
+		identity:         laParams.Identity,
+		buildId:          laParams.getBuildID(),
+		logger:           laParams.Logger,
+		stopTimeout:      laParams.WorkerStopTimeout,
+		fatalErrCb:       laParams.WorkerFatalErrorCallback,
+		metricsHandler:   laParams.MetricsHandler,
 		slotReservationData: slotReservationData{
 			taskQueue: params.TaskQueue,
 		},
@@ -394,6 +402,7 @@ func newWorkflowTaskWorkerInternal(
 		localActivityWorker: localActivityWorker,
 		identity:            params.Identity,
 		stopC:               stopC,
+		localActivityStopC:  laStopChannel,
 	}
 }
 
@@ -412,8 +421,9 @@ func (ww *workflowWorker) Start() error {
 func (ww *workflowWorker) Stop() {
 	close(ww.stopC)
 	// TODO: remove the stop methods in favor of the workerStopChannel
-	ww.localActivityWorker.Stop()
 	ww.worker.Stop()
+	close(ww.localActivityStopC)
+	ww.localActivityWorker.Stop()
 }
 
 func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
@@ -1320,6 +1330,7 @@ type WorkflowReplayerOptions struct {
 	FailureConverter converter.FailureConverter
 
 	// Optional: Sets ContextPropagators that allows users to control the context information passed through a workflow
+	//
 	// default: nil
 	ContextPropagators []ContextPropagator
 
@@ -1336,6 +1347,7 @@ type WorkflowReplayerOptions struct {
 	// In the workflow code you can use workflow.GetLogger(ctx) to write logs. By default, the logger will skip log
 	// entry during replay mode so you won't see duplicate logs. This option will enable the logging in replay mode.
 	// This is only useful for debugging purpose.
+	//
 	// default: false
 	EnableLoggingInReplay bool
 
