@@ -2398,13 +2398,15 @@ func (ts *IntegrationTestSuite) TestGracefulLocalActivityCompletion() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	localActivityFn := func(ctx context.Context) error {
-		time.Sleep(100 * time.Millisecond)
+		fmt.Println("Local activity started")
+		time.Sleep(300 * time.Millisecond)
 		return ctx.Err()
 	}
 
 	workflowFn := func(ctx workflow.Context) error {
 		ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
-			StartToCloseTimeout: 1 * time.Minute,
+			ScheduleToCloseTimeout: 2 * time.Second,
+			StartToCloseTimeout:    1 * time.Second,
 		})
 		localActivity := workflow.ExecuteLocalActivity(ctx, localActivityFn)
 		err := localActivity.Get(ctx, nil)
