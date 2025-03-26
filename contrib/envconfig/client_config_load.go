@@ -50,11 +50,11 @@ func MustLoadDefaultClientOptions() client.Options {
 //
 // WARNING: Environment configuration is currently experimental.
 func LoadDefaultClientOptions() (client.Options, error) {
-	return LoadClientOptions(LoadClientOptionsOptions{})
+	return LoadClientOptions(LoadClientOptionsRequest{})
 }
 
-// LoadClientOptionsOptions are options for [LoadClientOptions].
-type LoadClientOptionsOptions struct {
+// LoadClientOptionsRequest are options for [LoadClientOptions].
+type LoadClientOptionsRequest struct {
 	// Override the file path to use to load the TOML file for config. Defaults to TEMPORAL_CONFIG_FILE environment
 	// variable or if that is unset/empty, defaults to [os.UserConfigDir]/temporal/temporal.toml. If ConfigFileData is
 	// set, this cannot be set and no file loading from disk occurs. Ignored if DisableFile is true.
@@ -91,11 +91,11 @@ type LoadClientOptionsOptions struct {
 
 // LoadClientOptions loads client options from file and then applies environment variable overrides. This will not fail
 // if the config file does not exist. This is effectively a shortcut for [LoadClientConfigProfile] +
-// [ClientConfigProfile.ToClientOptions]. See [LoadClientOptionsOptions] and [ClientConfigProfile] on how files and
+// [ClientConfigProfile.ToClientOptions]. See [LoadClientOptionsRequest] and [ClientConfigProfile] on how files and
 // environment variables are applied.
 //
 // WARNING: Environment configuration is currently experimental.
-func LoadClientOptions(options LoadClientOptionsOptions) (client.Options, error) {
+func LoadClientOptions(options LoadClientOptionsRequest) (client.Options, error) {
 	// Load profile
 	prof, err := LoadClientConfigProfile(LoadClientConfigProfileOptions{
 		ConfigFilePath:    options.ConfigFilePath,
@@ -111,7 +111,7 @@ func LoadClientOptions(options LoadClientOptionsOptions) (client.Options, error)
 	}
 
 	// Convert to client options
-	return prof.ToClientOptions(ToClientOptionsOptions{IncludeRemoteCodec: options.IncludeRemoteCodec})
+	return prof.ToClientOptions(ToClientOptionsRequest{IncludeRemoteCodec: options.IncludeRemoteCodec})
 }
 
 // [LoadClientConfigOptions] are options for [LoadClientConfig].
@@ -212,7 +212,7 @@ type LoadClientConfigProfileOptions struct {
 
 // LoadClientConfigProfile loads a specific client config profile from file and then applies environment variable
 // overrides. This will not fail if the config file does not exist. This is effectively a shortcut for
-// [LoadClientConfig] + [ClientConfigProfile.ApplyEnvVars]. See [LoadClientOptionsOptions] and [ClientConfigProfile] on
+// [LoadClientConfig] + [ClientConfigProfile.ApplyEnvVars]. See [LoadClientOptionsRequest] and [ClientConfigProfile] on
 // how files and environment variables are applied.
 //
 // WARNING: Environment configuration is currently experimental.

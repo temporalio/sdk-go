@@ -45,7 +45,7 @@ namespace = "my-namespace"`))
 	require.NoError(t, err)
 
 	// Explicitly set
-	opts, err := envconfig.LoadClientOptions(envconfig.LoadClientOptionsOptions{
+	opts, err := envconfig.LoadClientOptions(envconfig.LoadClientOptionsRequest{
 		ConfigFilePath: f.Name(),
 		EnvLookup:      EnvLookupMap{},
 	})
@@ -54,7 +54,7 @@ namespace = "my-namespace"`))
 	require.Equal(t, "my-namespace", opts.Namespace)
 
 	// From env
-	opts, err = envconfig.LoadClientOptions(envconfig.LoadClientOptionsOptions{
+	opts, err = envconfig.LoadClientOptions(envconfig.LoadClientOptionsRequest{
 		EnvLookup: EnvLookupMap{"TEMPORAL_CONFIG_FILE": f.Name()},
 	})
 	require.NoError(t, err)
@@ -64,7 +64,7 @@ namespace = "my-namespace"`))
 
 func TestLoadClientOptionsAPIKeyTLS(t *testing.T) {
 	// Since API key is present, TLS defaults to present
-	opts, err := envconfig.LoadClientOptions(envconfig.LoadClientOptionsOptions{
+	opts, err := envconfig.LoadClientOptions(envconfig.LoadClientOptionsRequest{
 		ConfigFileData: []byte(`
 		[profile.default]
 		api_key = "my-api-key"`),
@@ -75,7 +75,7 @@ func TestLoadClientOptionsAPIKeyTLS(t *testing.T) {
 	require.NotNil(t, opts.ConnectionOptions.TLS)
 
 	// But when API key is not present, neither should TLS be
-	opts, err = envconfig.LoadClientOptions(envconfig.LoadClientOptionsOptions{
+	opts, err = envconfig.LoadClientOptions(envconfig.LoadClientOptionsRequest{
 		ConfigFileData: []byte(`
 		[profile.default]
 		address = "whatever"`),
