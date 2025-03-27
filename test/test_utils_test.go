@@ -235,11 +235,12 @@ func (ts *ConfigAndClientSuiteBase) InitConfigAndNamespace() error {
 		return err
 	}
 	if ts.config.ShouldRegisterNamespace {
-		if err = ts.registerNamespace(); err != nil {
-			return fmt.Errorf("unable to register namespace: %w", err)
-		} else if err = ts.ensureSearchAttributes(); err != nil {
-			return fmt.Errorf("unable to ensure search attributes: %w", err)
-		}
+		panic("Not implemented")
+		// if err = ts.registerNamespace(); err != nil {
+		// 	return fmt.Errorf("unable to register namespace: %w", err)
+		// } else if err = ts.ensureSearchAttributes(); err != nil {
+		// 	return fmt.Errorf("unable to ensure search attributes: %w", err)
+		// }
 	}
 	return nil
 }
@@ -255,10 +256,13 @@ func (ts *ConfigAndClientSuiteBase) InitClient() error {
 
 func (ts *ConfigAndClientSuiteBase) newClient() (client.Client, error) {
 	return client.Dial(client.Options{
-		HostPort:          ts.config.ServiceAddr,
-		Namespace:         ts.config.Namespace,
-		Logger:            ilog.NewDefaultLogger(),
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+		HostPort:  ts.config.ServiceAddr,
+		Namespace: ts.config.Namespace,
+		Logger:    ilog.NewDefaultLogger(),
+		ConnectionOptions: client.ConnectionOptions{
+			TLS:                  ts.config.TLS,
+			GetSystemInfoTimeout: ctxTimeout,
+		},
 	})
 }
 
