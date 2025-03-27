@@ -28,7 +28,7 @@ package internal
 
 import (
 	"context"
-	"crypto/md5"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -1235,7 +1235,7 @@ func initBinaryChecksumLocked() error {
 		_ = f.Close() // error is unimportant as it is read-only
 	}()
 
-	h := md5.New()
+	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return err
 	}
