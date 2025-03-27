@@ -36,6 +36,7 @@ import (
 )
 
 // VersioningBehavior specifies when existing workflows could change their Build ID.
+//
 // NOTE: Experimental
 type VersioningBehavior = internal.VersioningBehavior
 
@@ -543,7 +544,7 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error
 // workflow code, update code is free to invoke and wait on the results of activities. Update
 // handler code is free to mutate workflow state.
 //
-
+// This registration can optionally specify (through UpdateHandlerOptions) an
 // update validation function. If provided, this function will be invoked before
 // the update handler itself is invoked and if this function returns an error,
 // the update request will be considered to have been rejected and as such will

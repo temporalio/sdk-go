@@ -91,6 +91,7 @@ type (
 	// Exposed as: [go.temporal.io/sdk/workflow.ActivityOptions]
 	ActivityOptions struct {
 		// TaskQueue - Name of the task queue that the activity needs to be scheduled on.
+		//
 		// Optional: The default task queue with the same name as the workflow task queue.
 		TaskQueue string
 
@@ -107,6 +108,7 @@ type (
 		// better to rely on the default value.
 		// ScheduleToStartTimeout is always non-retryable. Retrying after this timeout doesn't make sense, as it would
 		// just put the Activity Task back into the same Task Queue.
+		//
 		// Optional: Defaults to unlimited.
 		ScheduleToStartTimeout time.Duration
 
@@ -124,11 +126,13 @@ type (
 
 		// WaitForCancellation - Whether to wait for canceled activity to be completed(
 		// activity can be failed, completed, cancel accepted)
+		//
 		// Optional: default false
 		WaitForCancellation bool
 
 		// ActivityID - Business level activity ID, this is not needed for most of the cases if you have
 		// to specify this then talk to the temporal team. This is something will be done in the future.
+		//
 		// Optional: default empty string
 		ActivityID string
 
@@ -182,6 +186,7 @@ type (
 		StartToCloseTimeout time.Duration
 
 		// RetryPolicy - Specify how to retry activity if error happens.
+		//
 		// Optional: default is to retry according to the default retry policy up to ScheduleToCloseTimeout
 		// with 1sec initial delay between retries and 2x backoff.
 		RetryPolicy *RetryPolicy
