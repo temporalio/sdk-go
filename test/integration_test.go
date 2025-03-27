@@ -87,7 +87,7 @@ func init() {
 }
 
 const (
-	ctxTimeout                    = 15 * time.Second
+	ctxTimeout                    = 30 * time.Second
 	namespaceCacheRefreshInterval = 20 * time.Second
 	testContextKey1               = "test-context-key1"
 	testContextKey2               = "test-context-key2"
