@@ -7389,3 +7389,25 @@ func (ts *IntegrationTestSuite) TestPartialHistoryReplayFuzzer() {
 		ts.NoError(replayer.ReplayWorkflowHistory(nil, &history))
 	}
 }
+
+func (ts *IntegrationTestSuite) TestRawValue() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	value := "new_value_1"
+	payload, _ := converter.GetDefaultDataConverter().ToPayload(value)
+
+	val := converter.NewRawValue(payload)
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-raw-value"), ts.workflows.WorkflowRawValue, val)
+	ts.NotNil(run)
+	ts.NoError(err)
+	var returnValue converter.RawValue
+	ts.NoError(run.Get(ctx, &returnValue))
+
+	ts.Equal(payload.Data, returnValue.Payload().Data)
+
+	var newValue string
+	err = converter.GetDefaultDataConverter().FromPayload(returnValue.Payload(), &newValue)
+	ts.NoError(err)
+	ts.Equal(newValue, value)
+}
