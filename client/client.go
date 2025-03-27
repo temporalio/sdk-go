@@ -1036,7 +1036,7 @@ type (
 		ListOpenWorkflow(ctx context.Context, request *workflowservice.ListOpenWorkflowExecutionsRequest) (*workflowservice.ListOpenWorkflowExecutionsResponse, error)
 
 		// ListWorkflow gets workflow executions based on query. The query is basically the SQL WHERE clause, examples:
-		//  - "(WorkflowID = 'wid1' or (WorkflowType = 'type2' and WorkflowID = 'wid2'))".
+		//  - "(WorkflowId = 'wid1' or (WorkflowType = 'type2' and WorkflowId = 'wid2'))".
 		//  - "CloseTime between '2019-08-27T15:04:05+00:00' and '2019-08-28T15:04:05+00:00'".
 		//  - to list only open workflow use "CloseTime is null"
 		// For supported operations on different server versions see https://docs.temporal.io/visibility.
