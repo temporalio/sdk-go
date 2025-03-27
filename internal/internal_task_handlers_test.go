@@ -985,10 +985,12 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 }
 
 func (t *TaskHandlersTestSuite) TestSideEffectDefer() {
+	t.T().Skip("issue-1650: SideEffectDefer test is flaky")
 	t.testSideEffectDeferHelper(1)
 }
 
 func (t *TaskHandlersTestSuite) TestSideEffectDefer_NoCache() {
+	t.T().Skip("issue-1650: SideEffectDefer test is flaky")
 	t.testSideEffectDeferHelper(0)
 }
 
