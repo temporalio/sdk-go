@@ -96,6 +96,7 @@ jobs:
     strategy:
       matrix:
         go-version: ["oldstable", "stable"]
+        fips: [true, false]
       # Try to avoid running tests in parallel to avoid workflow ID conflict
       max-parallel: 1
     # Only supported in non-fork runs, since secrets are not available in forks.
@@ -106,6 +107,8 @@ jobs:
       TEMPORAL_NAMESPACE: sdk-ci.a2dd6
       TEMPORAL_CLIENT_CERT: ${{ secrets.TEMPORAL_CLIENT_CERT }}
       TEMPORAL_CLIENT_KEY: ${{ secrets.TEMPORAL_CLIENT_KEY }}
+      GODEBUG: ${{ matrix.fips && 'fips140=only' || '' }}
+
     steps:
       - uses: actions/checkout@v4
         with:
