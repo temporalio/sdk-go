@@ -57,7 +57,7 @@ func initBinaryChecksumLocked() error {
 
 	var h hash.Hash
 	if fips140.Enabled() {
-		h := sha256.New()
+		h = sha256.New()
 		if _, err := io.Copy(h, f); err != nil {
 			return err
 		}
