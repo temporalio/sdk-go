@@ -638,7 +638,13 @@ func (wc *workflowEnvironmentImpl) ExecuteNexusOperation(params executeNexusOper
 		NexusHeader:            params.nexusHeader,
 	}
 
-	command := wc.commandsHelper.scheduleNexusOperation(seq, scheduleTaskAttr)
+	startMetadata, err := buildUserMetadata(params.options.Summary, "", wc.dataConverter)
+	if err != nil {
+		callback(nil, err)
+		return 0
+	}
+
+	command := wc.commandsHelper.scheduleNexusOperation(seq, scheduleTaskAttr, startMetadata)
 	command.setData(&scheduledNexusOperation{
 		startedCallback:   startedHandler,
 		completedCallback: callback,

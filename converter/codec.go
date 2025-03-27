@@ -133,6 +133,9 @@ func (*zlibCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, err
 // CodecDataConverter is a DataConverter that wraps an underlying data
 // converter and supports chained encoding of just the payload without regard
 // for serialization to/from actual types.
+//
+// CodecDataConverter provides support for RawValue handling, where it skips the
+// parent data converter and directly encodes/decodes the RawValue payload.
 type CodecDataConverter struct {
 	parent DataConverter
 	codecs []PayloadCodec
@@ -176,7 +179,7 @@ func (e *CodecDataConverter) ToPayload(value interface{}) (*commonpb.Payload, er
 
 	var payload *commonpb.Payload
 	if ok {
-		payload = rawValue.Payload
+		payload = rawValue.Payload()
 	} else {
 		var err error
 		payload, err = e.parent.ToPayload(value)
@@ -200,11 +203,10 @@ func (e *CodecDataConverter) ToPayload(value interface{}) (*commonpb.Payload, er
 func (e *CodecDataConverter) ToPayloads(value ...interface{}) (*commonpb.Payloads, error) {
 	var payloads *commonpb.Payloads
 	var rawValuePayloads []*commonpb.Payload
-	fmt.Println("len(value)", value)
 	for _, v := range value {
 		rawValue, ok := v.(RawValue)
 		if ok {
-			rawValuePayloads = append(rawValuePayloads, rawValue.Payload)
+			rawValuePayloads = append(rawValuePayloads, rawValue.Payload())
 		}
 	}
 

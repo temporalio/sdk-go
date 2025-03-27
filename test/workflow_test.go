@@ -3412,6 +3412,15 @@ func (w *Workflows) WorkflowWithChildren(ctx workflow.Context) (string, error) {
 	return "Parent Workflow Complete", nil
 }
 
+func (w *Workflows) WorkflowRawValue(ctx workflow.Context, value converter.RawValue) (converter.RawValue, error) {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	var returnVal converter.RawValue
+	var activities *Activities
+	err := workflow.ExecuteActivity(ctx, activities.RawValueActivity, value).Get(ctx, &returnVal)
+	fmt.Println("err", err)
+	return returnVal, err
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -3555,6 +3564,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.CommandsFuzz)
 	worker.RegisterWorkflow(w.WorkflowClientFromActivity)
 	worker.RegisterWorkflow(w.WorkflowTemporalPrefixSignal)
+	worker.RegisterWorkflow(w.WorkflowRawValue)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {

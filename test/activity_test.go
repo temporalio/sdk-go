@@ -29,6 +29,7 @@ import (
 	"errors"
 	"fmt"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/converter"
 	"strconv"
 	"strings"
 	"sync"
@@ -450,4 +451,9 @@ func (a *Activities) ClientFromActivity(ctx context.Context) error {
 		return fmt.Errorf("expected non-empty list of executions")
 	}
 	return nil
+}
+
+func (a *Activities) RawValueActivity(ctx context.Context, value converter.RawValue) (converter.RawValue, error) {
+	activity.GetLogger(ctx).Info("RawValue value", value.Payload())
+	return value, nil
 }

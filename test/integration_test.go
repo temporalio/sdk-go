@@ -249,7 +249,9 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.WorkflowPanicPolicy = worker.BlockWorkflow
 	}
 
-	if strings.Contains(ts.T().Name(), "GracefulActivityCompletion") {
+	if strings.Contains(ts.T().Name(), "GracefulActivityCompletion") ||
+		strings.Contains(ts.T().Name(), "GracefulLocalActivityCompletion") ||
+		strings.Contains(ts.T().Name(), "TestLocalActivityTaskTimeoutHeartbeat") {
 		options.WorkerStopTimeout = 10 * time.Second
 	}
 
@@ -2389,6 +2391,141 @@ func (ts *IntegrationTestSuite) TestGracefulActivityCompletion() {
 	var s string
 	ts.NoError(converter.GetDefaultDataConverter().FromPayload(completed.Result.Payloads[0], &s))
 	ts.Equal("stopped", s)
+}
+
+func (ts *IntegrationTestSuite) TestGracefulLocalActivityCompletion() {
+	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	localActivityFn := func(ctx context.Context) error {
+		time.Sleep(100 * time.Millisecond)
+		return ctx.Err()
+	}
+
+	workflowFn := func(ctx workflow.Context) error {
+		ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+			StartToCloseTimeout: 1 * time.Minute,
+		})
+		localActivity := workflow.ExecuteLocalActivity(ctx, localActivityFn)
+		err := localActivity.Get(ctx, nil)
+		if err != nil {
+			workflow.GetLogger(ctx).Error("Activity failed.", "Error", err)
+		}
+
+		localActivity = workflow.ExecuteLocalActivity(ctx, localActivityFn)
+		err = localActivity.Get(ctx, nil)
+		if err != nil {
+			workflow.GetLogger(ctx).Error("Second activity failed.", "Error", err)
+		}
+
+		return nil
+
+	}
+
+	workflowID := "local-activity-stop-" + uuid.NewString()
+	ts.worker.RegisterWorkflowWithOptions(workflowFn, workflow.RegisterOptions{Name: "local-activity-stop"})
+	startOptions := client.StartWorkflowOptions{
+		ID:                  workflowID,
+		TaskQueue:           ts.taskQueueName,
+		WorkflowTaskTimeout: 5 * time.Second,
+	}
+
+	// Start workflow
+	run, err := ts.client.ExecuteWorkflow(ctx, startOptions, workflowFn)
+	ts.NoError(err)
+
+	// Stop the worker
+	time.Sleep(100 * time.Millisecond)
+	ts.worker.Stop()
+	ts.workerStopped = true
+	time.Sleep(500 * time.Millisecond)
+
+	// Look for activity completed from the history
+	var laCompleted int
+	var wfeCompleted bool
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(),
+		false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		ts.NoError(err)
+		attributes := event.GetMarkerRecordedEventAttributes()
+		if event.EventType == enumspb.EVENT_TYPE_MARKER_RECORDED && attributes.MarkerName == "LocalActivity" && attributes.GetFailure() == nil {
+			laCompleted++
+		}
+		if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED {
+			wfeCompleted = true
+		}
+	}
+
+	// Confirm local activity and WFE completed
+	ts.Equal(2, laCompleted)
+	ts.True(wfeCompleted)
+}
+
+func (ts *IntegrationTestSuite) TestLocalActivityTaskTimeoutHeartbeat() {
+	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	localActivityFn := func(ctx context.Context) error {
+		// wait for worker shutdown to be started and WorkflowTaskTimeout to be hit
+		time.Sleep(1500 * time.Millisecond) // 1.5 seconds
+		return ctx.Err()
+	}
+
+	workflowFn := func(ctx workflow.Context) error {
+		ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+			StartToCloseTimeout: 1 * time.Minute,
+		})
+		localActivity := workflow.ExecuteLocalActivity(ctx, localActivityFn)
+		err := localActivity.Get(ctx, nil)
+		if err != nil {
+			workflow.GetLogger(ctx).Error("Activity failed.", "Error", err)
+		}
+
+		return nil
+
+	}
+
+	workflowID := "local-activity-task-timeout-heartbeat" + uuid.NewString()
+	ts.worker.RegisterWorkflowWithOptions(workflowFn, workflow.RegisterOptions{Name: "local-activity-task-timeout-heartbeat"})
+	startOptions := client.StartWorkflowOptions{
+		ID:                  workflowID,
+		TaskQueue:           ts.taskQueueName,
+		WorkflowTaskTimeout: 1 * time.Second,
+	}
+
+	// Start workflow
+	run, err := ts.client.ExecuteWorkflow(ctx, startOptions, workflowFn)
+	ts.NoError(err)
+
+	// Stop the worker
+	time.Sleep(100 * time.Millisecond)
+	ts.worker.Stop()
+	ts.workerStopped = true
+
+	// Look for activity completed from the history
+	var laCompleted, started int
+	var wfeCompleted bool
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(),
+		true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		ts.NoError(err)
+		attributes := event.GetMarkerRecordedEventAttributes()
+		if event.EventType == enumspb.EVENT_TYPE_MARKER_RECORDED && attributes.MarkerName == "LocalActivity" && attributes.GetFailure() == nil {
+			laCompleted++
+		} else if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED {
+			started++
+		} else if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED {
+			wfeCompleted = true
+		}
+	}
+
+	// Confirm local activity and WFE completed
+	ts.Equal(1, laCompleted)
+	ts.GreaterOrEqual(started, 2)
+	ts.True(wfeCompleted)
 }
 
 func (ts *IntegrationTestSuite) TestCancelChildAndExecuteActivityRace() {
@@ -7251,4 +7388,26 @@ func (ts *IntegrationTestSuite) TestPartialHistoryReplayFuzzer() {
 		replayer.RegisterWorkflow(ts.workflows.childWorkflowWaitOnSignal)
 		ts.NoError(replayer.ReplayWorkflowHistory(nil, &history))
 	}
+}
+
+func (ts *IntegrationTestSuite) TestRawValue() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	value := "new_value_1"
+	payload, _ := converter.GetDefaultDataConverter().ToPayload(value)
+
+	val := converter.NewRawValue(payload)
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-raw-value"), ts.workflows.WorkflowRawValue, val)
+	ts.NotNil(run)
+	ts.NoError(err)
+	var returnValue converter.RawValue
+	ts.NoError(run.Get(ctx, &returnValue))
+
+	ts.Equal(payload.Data, returnValue.Payload().Data)
+
+	var newValue string
+	err = converter.GetDefaultDataConverter().FromPayload(returnValue.Payload(), &newValue)
+	ts.NoError(err)
+	ts.Equal(newValue, value)
 }

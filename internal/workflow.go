@@ -67,6 +67,7 @@ const (
 )
 
 // VersioningBehavior specifies when existing workflows could change their Build ID.
+//
 // NOTE: Experimental
 //
 // Exposed as: [go.temporal.io/sdk/workflow.VersioningBehavior]
@@ -330,25 +331,30 @@ type (
 	// Exposed as: [go.temporal.io/sdk/workflow.ChildWorkflowOptions]
 	ChildWorkflowOptions struct {
 		// Namespace of the child workflow.
+		//
 		// Optional: the current workflow (parent)'s namespace will be used if this is not provided.
 		Namespace string
 
 		// WorkflowID of the child workflow to be scheduled.
+		//
 		// Optional: an auto generated workflowID will be used if this is not provided.
 		WorkflowID string
 
 		// TaskQueue that the child workflow needs to be scheduled on.
+		//
 		// Optional: the parent workflow task queue will be used if this is not provided.
 		TaskQueue string
 
 		// WorkflowExecutionTimeout - The end to end timeout for the child workflow execution including retries
 		// and continue as new.
+		//
 		// Optional: defaults to unlimited.
 		WorkflowExecutionTimeout time.Duration
 
 		// WorkflowRunTimeout - The timeout for a single run of the child workflow execution. Each retry or
 		// continue as new should obey this timeout. Use WorkflowExecutionTimeout to specify how long the parent
 		// is willing to wait for the child completion.
+		//
 		// Optional: defaults to WorkflowExecutionTimeout
 		WorkflowRunTimeout time.Duration
 
@@ -360,6 +366,7 @@ type (
 
 		// WaitForCancellation - Whether to wait for canceled child workflow to be ended (child workflow can be ended
 		// as: completed/failed/timedout/terminated/canceled)
+		//
 		// Optional: default false
 		WaitForCancellation bool
 
@@ -368,6 +375,7 @@ type (
 		WorkflowIDReusePolicy enumspb.WorkflowIdReusePolicy
 
 		// RetryPolicy specify how to retry child workflow if error happens.
+		//
 		// Optional: default is no retry
 		RetryPolicy *RetryPolicy
 
@@ -453,6 +461,7 @@ type (
 		// Optional: Provides a Versioning Behavior to workflows of this type. It is required
 		// when WorkerOptions does not specify [DeploymentOptions.DefaultVersioningBehavior],
 		// [DeploymentOptions.DeploymentSeriesName] is set, and [UseBuildIDForVersioning] is true.
+		//
 		// NOTE: Experimental
 		VersioningBehavior VersioningBehavior
 	}
@@ -2557,7 +2566,18 @@ func AllHandlersFinished(ctx Context) bool {
 //
 // Exposed as: [go.temporal.io/sdk/workflow.NexusOperationOptions]
 type NexusOperationOptions struct {
+	// ScheduleToCloseTimeout - The end to end timeout for the Nexus Operation
+	//
+	// Optional: defaults to the maximum allowed by the Temporal server.
 	ScheduleToCloseTimeout time.Duration
+
+	// StaticSummary is a single-line fixed summary for this Nexus Operation that will appear in UI/CLI. This can be
+	// in single-line Temporal Markdown format.
+	//
+	// Optional: defaults to none/empty.
+	//
+	// NOTE: Experimental
+	Summary string
 }
 
 // NexusOperationExecution is the result of NexusOperationFuture.GetNexusOperationExecution.
