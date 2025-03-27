@@ -149,6 +149,8 @@ func (b *builder) integrationTest() error {
 			ExtraArgs: []string{
 				"--sqlite-pragma", "journal_mode=WAL",
 				"--sqlite-pragma", "synchronous=OFF",
+				"--search-attribute", "CustomKeywordField=Keyword",
+				"--search-attribute", "CustomStringField=Text",
 				"--dynamic-config-value", "frontend.enableExecuteMultiOperation=true",
 				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecution=true",
 				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecutionAsyncAccepted=true",
@@ -190,6 +192,7 @@ func (b *builder) integrationTest() error {
 	// Must run in test dir
 	cmd := b.cmdFromRoot(args...)
 	cmd.Dir = filepath.Join(cmd.Dir, "test")
+	cmd.Env = append(os.Environ(), "TEMPORAL_NAMESPACE=integration-test-namespace")
 	cmd.Env = append(os.Environ(), "DISABLE_SERVER_1_25_TESTS=1")
 	if err := b.runCmd(cmd); err != nil {
 		return fmt.Errorf("integration test failed: %w", err)

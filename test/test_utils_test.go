@@ -285,7 +285,7 @@ func (ts *ConfigAndClientSuiteBase) registerNamespace() error {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("unable to register namespace: %w", err)
+		return fmt.Errorf("unable to call register namespace: %w", err)
 	}
 	time.Sleep(namespaceCacheRefreshInterval) // wait for namespace cache refresh on temporal-server
 	err = ts.InitClient()
