@@ -544,12 +544,20 @@ func convertToPBSchedule(ctx context.Context, client *WorkflowClient, schedule *
 	if err != nil {
 		return nil, err
 	}
+
+	var catchupWindow *durationpb.Duration
+	if schedule.Policy.CatchupWindow != 0 {
+		// Convert to nil so the server uses the default
+		// catchup window.
+		catchupWindow = durationpb.New(schedule.Policy.CatchupWindow)
+	}
+
 	return &schedulepb.Schedule{
 		Spec:   convertToPBScheduleSpec(schedule.Spec),
 		Action: action,
 		Policies: &schedulepb.SchedulePolicies{
 			OverlapPolicy:  schedule.Policy.Overlap,
-			CatchupWindow:  durationpb.New(schedule.Policy.CatchupWindow),
+			CatchupWindow:  catchupWindow,
 			PauseOnFailure: schedule.Policy.PauseOnFailure,
 		},
 		State: &schedulepb.ScheduleState{
