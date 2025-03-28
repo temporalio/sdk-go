@@ -235,12 +235,11 @@ func (ts *ConfigAndClientSuiteBase) InitConfigAndNamespace() error {
 		return err
 	}
 	if ts.config.ShouldRegisterNamespace {
-		panic("Not implemented")
-		// if err = ts.registerNamespace(); err != nil {
-		// 	return fmt.Errorf("unable to register namespace: %w", err)
-		// } else if err = ts.ensureSearchAttributes(); err != nil {
-		// 	return fmt.Errorf("unable to ensure search attributes: %w", err)
-		// }
+		if err = ts.registerNamespace(); err != nil {
+			return fmt.Errorf("unable to register namespace: %w", err)
+		} else if err = ts.ensureSearchAttributes(); err != nil {
+			return fmt.Errorf("unable to ensure search attributes: %w", err)
+		}
 	}
 	return nil
 }

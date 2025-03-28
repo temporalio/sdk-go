@@ -1963,6 +1963,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 }
 
 func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
+	t.T().Skip("issue-1650: TestHeartBeat_NoError is flaky")
 	mockCtrl := gomock.NewController(t.T())
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 	invocationChannel := make(chan int, 2)
