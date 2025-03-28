@@ -1415,19 +1415,9 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessQuery(
 ) (*commonpb.Payloads, error) {
 	switch queryType {
 	case QueryTypeStackTrace:
-		// Use raw value built from default converter because we don't want to use user-conversion
-		payload, err := converter.GetDefaultDataConverter().ToPayload(weh.StackTrace())
-		if err != nil {
-			return nil, err
-		}
-		return weh.encodeArg(converter.NewRawValue(payload))
+		return weh.encodeArg(weh.StackTrace())
 	case QueryTypeOpenSessions:
-		// Use raw value built from default converter because we don't want to use user-conversion
-		payload, err := converter.GetDefaultDataConverter().ToPayload(weh.getOpenSessions())
-		if err != nil {
-			return nil, err
-		}
-		return weh.encodeArg(converter.NewRawValue(payload))
+		return weh.encodeArg(weh.getOpenSessions())
 	case QueryTypeWorkflowMetadata:
 		// We are intentionally not handling this here but rather in the
 		// normal handler so it has access to the options/context as
