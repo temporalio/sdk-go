@@ -144,8 +144,13 @@ func (b *builder) integrationTest() error {
 				HostPort:  "127.0.0.1:7233",
 				Namespace: "integration-test-namespace",
 			},
-			LogLevel: "warn",
+			DBFilename: "temporal.sqlite",
+			LogLevel:   "warn",
 			ExtraArgs: []string{
+				"--sqlite-pragma", "journal_mode=WAL",
+				"--sqlite-pragma", "synchronous=OFF",
+				"--search-attribute", "CustomKeywordField=Keyword",
+				"--search-attribute", "CustomStringField=Text",
 				"--dynamic-config-value", "frontend.enableExecuteMultiOperation=true",
 				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecution=true",
 				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecutionAsyncAccepted=true",
@@ -174,6 +179,7 @@ func (b *builder) integrationTest() error {
 
 	// Run integration test
 	args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "15m"}
+	env := append(os.Environ(), "DISABLE_SERVER_1_25_TESTS=1")
 	if *runFlag != "" {
 		args = append(args, "-run", *runFlag)
 	}
@@ -182,12 +188,13 @@ func (b *builder) integrationTest() error {
 	}
 	if *devServerFlag {
 		args = append(args, "-using-cli-dev-server")
+		env = append(env, "TEMPORAL_NAMESPACE=integration-test-namespace")
 	}
 	args = append(args, "./...")
 	// Must run in test dir
 	cmd := b.cmdFromRoot(args...)
 	cmd.Dir = filepath.Join(cmd.Dir, "test")
-	cmd.Env = append(os.Environ(), "DISABLE_SERVER_1_25_TESTS=1")
+	cmd.Env = env
 	if err := b.runCmd(cmd); err != nil {
 		return fmt.Errorf("integration test failed: %w", err)
 	}
