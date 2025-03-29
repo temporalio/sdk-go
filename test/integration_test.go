@@ -6230,6 +6230,8 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 	)
 
 	updateFunc := func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+		// Set the catchup window to 0 to verify that update treats zero as unset.
+		input.Description.Schedule.Policy.CatchupWindow = 0 * time.Second
 		return &client.ScheduleUpdate{
 			Schedule:              &input.Description.Schedule,
 			TypedSearchAttributes: &sa,
@@ -6237,6 +6239,8 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 	}
 	description, err := handle.Describe(ctx)
 	ts.NoError(err)
+	// Since the CatchupWindow was set to 0, the server should set it to the default value.
+	ts.Equal(365*24*time.Hour, description.Schedule.Policy.CatchupWindow)
 
 	err = handle.Update(ctx, client.ScheduleUpdateOptions{
 		DoUpdate: updateFunc,
