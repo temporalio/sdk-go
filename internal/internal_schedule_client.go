@@ -547,8 +547,7 @@ func convertToPBSchedule(ctx context.Context, client *WorkflowClient, schedule *
 
 	var catchupWindow *durationpb.Duration
 	if schedule.Policy.CatchupWindow != 0 {
-		// Convert to nil so the server uses the default
-		// catchup window.
+		// Only convert non-zero CatchWindow so server treats 0 as nil and uses the default catchup window.
 		catchupWindow = durationpb.New(schedule.Policy.CatchupWindow)
 	}
 
