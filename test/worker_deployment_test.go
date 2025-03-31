@@ -34,7 +34,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	"go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
@@ -131,6 +133,115 @@ func (ts *WorkerDeploymentTestSuite) runWorkflowAndCheckV1(ctx context.Context, 
 	ts.NoError(handle1.Get(ctx, &result))
 
 	return IsWorkerVersionOne(result)
+}
+
+func (ts *WorkerDeploymentTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
+	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
+		ts.T().Skip("temporal server 1.27+ required")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	deploymentName := "deploy-test-" + uuid.NewString()
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		DeploymentOptions: worker.DeploymentOptions{
+			UseVersioning: true,
+			Version:       deploymentName + ".1.0",
+		},
+	})
+	worker1.RegisterWorkflowWithOptions(ts.workflows.BuildIDWorkflow, workflow.RegisterOptions{
+		Name:               "BuildIDWorkflow",
+		VersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
+	})
+	worker1.RegisterActivity(ts.activities)
+
+	ts.NoError(worker1.Start())
+
+	dHandle := ts.client.WorkerDeploymentClient().GetHandle(deploymentName)
+
+	ts.waitForWorkerDeployment(ctx, dHandle)
+
+	response1, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
+	ts.NoError(err)
+
+	ts.waitForWorkerDeploymentVersion(ctx, dHandle, deploymentName+".1.0")
+
+	response2, err := dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
+		Version:       deploymentName + ".1.0",
+		ConflictToken: response1.ConflictToken,
+	})
+	ts.NoError(err)
+
+	// start workflow1 with 1.0, BuildIDWorkflow, auto-upgrade
+	wfHandle, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("evolving-wf-1"), "BuildIDWorkflow")
+	ts.NoError(err)
+
+	ts.waitForWorkflowRunning(ctx, wfHandle)
+
+	// Query to see that the build ID is 1.0
+	res, err := ts.client.QueryWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "get-last-build-id", nil)
+	var lastBuildID string
+	ts.NoError(err)
+	ts.NoError(res.Get(&lastBuildID))
+	ts.Equal("1.0", lastBuildID)
+
+	// Make sure we've got to the activity
+	ts.Eventually(func() bool {
+		var didRun bool
+		res, err := ts.client.QueryWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "activity-ran", nil)
+		ts.NoError(err)
+		ts.NoError(res.Get(&didRun))
+		return didRun
+	}, time.Second*10, time.Millisecond*100)
+	worker1.Stop()
+
+	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		DeploymentOptions: worker.DeploymentOptions{
+			UseVersioning: true,
+			Version:       deploymentName + ".2.0",
+		},
+	})
+	worker2.RegisterWorkflowWithOptions(ts.workflows.BuildIDWorkflow, workflow.RegisterOptions{
+		Name:               "BuildIDWorkflow",
+		VersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
+	})
+	worker2.RegisterActivity(ts.activities)
+
+	ts.NoError(worker2.Start())
+	defer worker2.Stop()
+
+	ts.waitForWorkerDeploymentVersion(ctx, dHandle, deploymentName+".2.0")
+
+	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
+		Version:       deploymentName + ".2.0",
+		ConflictToken: response2.ConflictToken,
+	})
+	ts.NoError(err)
+
+	_, err = ts.client.WorkflowService().ResetStickyTaskQueue(ctx, &workflowservice.ResetStickyTaskQueueRequest{
+		Namespace: ts.config.Namespace,
+		Execution: &common.WorkflowExecution{
+			WorkflowId: wfHandle.GetID(),
+		},
+	})
+	ts.NoError(err)
+
+	// The current task, with the new worker, should still be 1.0 since no new tasks have happened
+	enval, err := ts.client.QueryWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "get-last-build-id", nil)
+	ts.NoError(err)
+	ts.NoError(enval.Get(&lastBuildID))
+	ts.Equal("1.0", lastBuildID)
+
+	// finish the workflow under 1.1
+	ts.NoError(ts.client.SignalWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "finish", ""))
+	ts.NoError(wfHandle.Get(ctx, nil))
+
+	// Post completion it should have the value of the last task
+	enval, err = ts.client.QueryWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "get-last-build-id", nil)
+	ts.NoError(err)
+	ts.NoError(enval.Get(&lastBuildID))
+	ts.Equal("2.0", lastBuildID)
 }
 
 func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {

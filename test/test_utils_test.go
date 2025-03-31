@@ -236,9 +236,9 @@ func (ts *ConfigAndClientSuiteBase) InitConfigAndNamespace() error {
 	}
 	if ts.config.ShouldRegisterNamespace {
 		if err = ts.registerNamespace(); err != nil {
-			return err
+			return fmt.Errorf("unable to register namespace: %w", err)
 		} else if err = ts.ensureSearchAttributes(); err != nil {
-			return err
+			return fmt.Errorf("unable to ensure search attributes: %w", err)
 		}
 	}
 	return nil
@@ -255,10 +255,13 @@ func (ts *ConfigAndClientSuiteBase) InitClient() error {
 
 func (ts *ConfigAndClientSuiteBase) newClient() (client.Client, error) {
 	return client.Dial(client.Options{
-		HostPort:          ts.config.ServiceAddr,
-		Namespace:         ts.config.Namespace,
-		Logger:            ilog.NewDefaultLogger(),
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+		HostPort:  ts.config.ServiceAddr,
+		Namespace: ts.config.Namespace,
+		Logger:    ilog.NewDefaultLogger(),
+		ConnectionOptions: client.ConnectionOptions{
+			TLS:                  ts.config.TLS,
+			GetSystemInfoTimeout: ctxTimeout,
+		},
 	})
 }
 
@@ -272,7 +275,7 @@ func (ts *ConfigAndClientSuiteBase) registerNamespace() error {
 		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to create namespace client: %w", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -285,12 +288,12 @@ func (ts *ConfigAndClientSuiteBase) registerNamespace() error {
 		return nil
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to call register namespace: %w", err)
 	}
 	time.Sleep(namespaceCacheRefreshInterval) // wait for namespace cache refresh on temporal-server
 	err = ts.InitClient()
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to create client: %w", err)
 	}
 	// below is used to guarantee namespace is ready
 	var dummyReturn string
@@ -317,7 +320,7 @@ func (ts *ConfigAndClientSuiteBase) ensureSearchAttributes() error {
 	// goroutine leak detector.
 	client, err := ts.newClient()
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to create client: %w", err)
 	}
 	defer client.Close()
 

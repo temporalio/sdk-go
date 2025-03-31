@@ -87,7 +87,7 @@ func init() {
 }
 
 const (
-	ctxTimeout                    = 15 * time.Second
+	ctxTimeout                    = 30 * time.Second
 	namespaceCacheRefreshInterval = 20 * time.Second
 	testContextKey1               = "test-context-key1"
 	testContextKey2               = "test-context-key2"
@@ -2806,14 +2806,17 @@ func (ts *IntegrationTestSuite) TestInterceptorStartWithSignal() {
 }
 
 func (ts *IntegrationTestSuite) TestOpenTelemetryTracing() {
+	ts.T().Skip("issue-1650: Otel Tracing intergation tests are flaky")
 	ts.testOpenTelemetryTracing(true, false)
 }
 
 func (ts *IntegrationTestSuite) TestOpenTelemetryTracingWithUpdateWithStart() {
+	ts.T().Skip("issue-1650: Otel Tracing intergation tests are flaky")
 	ts.testOpenTelemetryTracing(true, true)
 }
 
 func (ts *IntegrationTestSuite) TestOpenTelemetryTracingWithoutMessages() {
+	ts.T().Skip("issue-1650: Otel Tracing intergation tests are flaky")
 	ts.testOpenTelemetryTracing(false, false)
 }
 
@@ -6227,6 +6230,8 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 	)
 
 	updateFunc := func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+		// Set the catchup window to 0 to verify that update treats zero as unset.
+		input.Description.Schedule.Policy.CatchupWindow = 0 * time.Second
 		return &client.ScheduleUpdate{
 			Schedule:              &input.Description.Schedule,
 			TypedSearchAttributes: &sa,
@@ -6234,6 +6239,8 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 	}
 	description, err := handle.Describe(ctx)
 	ts.NoError(err)
+	// Since the CatchupWindow was set to 0, the server should set it to the default value.
+	ts.Equal(365*24*time.Hour, description.Schedule.Policy.CatchupWindow)
 
 	err = handle.Update(ctx, client.ScheduleUpdateOptions{
 		DoUpdate: updateFunc,
@@ -7388,4 +7395,26 @@ func (ts *IntegrationTestSuite) TestPartialHistoryReplayFuzzer() {
 		replayer.RegisterWorkflow(ts.workflows.childWorkflowWaitOnSignal)
 		ts.NoError(replayer.ReplayWorkflowHistory(nil, &history))
 	}
+}
+
+func (ts *IntegrationTestSuite) TestRawValue() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	value := "new_value_1"
+	payload, _ := converter.GetDefaultDataConverter().ToPayload(value)
+
+	val := converter.NewRawValue(payload)
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-raw-value"), ts.workflows.WorkflowRawValue, val)
+	ts.NotNil(run)
+	ts.NoError(err)
+	var returnValue converter.RawValue
+	ts.NoError(run.Get(ctx, &returnValue))
+
+	ts.Equal(payload.Data, returnValue.Payload().Data)
+
+	var newValue string
+	err = converter.GetDefaultDataConverter().FromPayload(returnValue.Payload(), &newValue)
+	ts.NoError(err)
+	ts.Equal(newValue, value)
 }

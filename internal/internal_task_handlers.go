@@ -500,6 +500,10 @@ OrderEvents:
 			if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
 				bidStr := event.GetWorkflowTaskCompletedEventAttributes().
 					GetWorkerVersion().GetBuildId()
+				version := event.GetWorkflowTaskCompletedEventAttributes().GetWorkerDeploymentVersion()
+				if splitVersion := strings.SplitN(version, ".", 2); len(splitVersion) == 2 {
+					bidStr = splitVersion[1]
+				}
 				taskEvents.buildID = &bidStr
 			} else if isPreloadMarkerEvent(event) {
 				taskEvents.markers = append(taskEvents.markers, event)
