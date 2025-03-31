@@ -1365,6 +1365,11 @@ func (wc *WorkflowClient) Close() {
 	}
 }
 
+// Namespace returns the configured namespace of the Temporal client
+func (wc *WorkflowClient) Namespace() string {
+	return wc.namespace
+}
+
 // Register a namespace with temporal server
 // The errors it can throw:
 //   - NamespaceAlreadyExistsError

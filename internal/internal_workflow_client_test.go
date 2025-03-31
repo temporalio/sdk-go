@@ -2478,3 +2478,11 @@ func TestUpdate(t *testing.T) {
 		require.NoError(t, err)
 	})
 }
+
+func (s *workflowClientTestSuite) TestNamespace() {
+	dc := NewContextAwareDataConverter(converter.GetDefaultDataConverter())
+	s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+	client, ok := s.client.(*WorkflowClient)
+	s.Require().True(ok)
+	s.Equal(DefaultNamespace, client.Namespace())
+}
