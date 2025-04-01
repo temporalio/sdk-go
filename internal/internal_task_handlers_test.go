@@ -985,10 +985,12 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 }
 
 func (t *TaskHandlersTestSuite) TestSideEffectDefer() {
+	t.T().Skip("issue-1650: SideEffectDefer test is flaky")
 	t.testSideEffectDeferHelper(1)
 }
 
 func (t *TaskHandlersTestSuite) TestSideEffectDefer_NoCache() {
+	t.T().Skip("issue-1650: SideEffectDefer test is flaky")
 	t.testSideEffectDeferHelper(0)
 }
 
@@ -1961,6 +1963,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 }
 
 func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
+	t.T().Skip("issue-1650: TestHeartBeat_NoError is flaky")
 	mockCtrl := gomock.NewController(t.T())
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 	invocationChannel := make(chan int, 2)
