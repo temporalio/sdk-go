@@ -1100,7 +1100,7 @@ func (aw *AggregatedWorker) start() error {
 		return err
 	}
 	// Populate the capabilities. This should be the only time it is written too.
-	capabilities, err := aw.client.loadCapabilities(context.Background(), defaultGetSystemInfoTimeout)
+	capabilities, err := aw.client.loadCapabilities(context.Background())
 	if err != nil {
 		return err
 	}

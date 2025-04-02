@@ -174,6 +174,7 @@ func (s *historyEventIteratorSuite) SetupTest() {
 		workflowService:          s.workflowServiceClient,
 		namespace:                DefaultNamespace,
 		excludeInternalFromRetry: &atomic.Bool{},
+		getSystemInfoTimeout:     defaultGetSystemInfoTimeout,
 	}
 }
 
