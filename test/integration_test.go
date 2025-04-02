@@ -7418,3 +7418,40 @@ func (ts *IntegrationTestSuite) TestRawValue() {
 	ts.NoError(err)
 	ts.Equal(newValue, value)
 }
+
+func (ts *IntegrationTestSuite) TestRawValueQueryMetadata() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// data converter with no proto support
+	dc := converter.NewCompositeDataConverter(
+		converter.NewNilPayloadConverter(),
+		converter.NewByteSlicePayloadConverter(),
+		converter.NewJSONPayloadConverter(),
+	)
+	zlibConv := converter.NewCodecDataConverter(dc, converter.NewZlibCodec(converter.ZlibCodecOptions{}))
+	c, err := client.Dial(client.Options{
+		HostPort:          ts.config.ServiceAddr,
+		Namespace:         ts.config.Namespace,
+		Logger:            ilog.NewDefaultLogger(),
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+		DataConverter:     zlibConv,
+	})
+	defer c.Close()
+	ts.NoError(err)
+
+	run, err := c.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-raw-value-query-metadata"), ts.workflows.Basic)
+	ts.NoError(err)
+
+	value, err := c.QueryWorkflow(ctx, "test-raw-value-query-metadata", run.GetRunID(), "__temporal_workflow_metadata")
+	ts.NoError(err)
+	ts.NotNil(value)
+
+	var rawValue converter.RawValue
+	ts.NoError(value.Get(&rawValue))
+
+	var metadata sdkpb.WorkflowMetadata
+	err = converter.GetDefaultDataConverter().FromPayload(rawValue.Payload(), &metadata)
+	ts.NoError(err)
+	ts.Equal("Basic", metadata.Definition.Type)
+	ts.Equal(3, len(metadata.Definition.QueryDefinitions))
+}
