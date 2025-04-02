@@ -968,13 +968,13 @@ func newClient(ctx context.Context, options ClientOptions, existing *WorkflowCli
 	// the new connection. Otherwise, only load server capabilities eagerly if not
 	// disabled.
 	if existing != nil {
-		if client.capabilities, err = existing.loadCapabilities(ctx, options.ConnectionOptions.GetSystemInfoTimeout); err != nil {
+		if client.capabilities, err = existing.loadCapabilities(ctx); err != nil {
 			return nil, err
 		}
 		client.unclosedClients = existing.unclosedClients
 	} else {
 		if !options.ConnectionOptions.disableEagerConnection {
-			if _, err := client.loadCapabilities(ctx, options.ConnectionOptions.GetSystemInfoTimeout); err != nil {
+			if _, err := client.loadCapabilities(ctx); err != nil {
 				client.Close()
 				return nil, err
 			}
@@ -1023,6 +1023,10 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		options.ConnectionOptions.excludeInternalFromRetry = &atomic.Bool{}
 	}
 
+	if options.ConnectionOptions.GetSystemInfoTimeout == 0 {
+		options.ConnectionOptions.GetSystemInfoTimeout = defaultGetSystemInfoTimeout
+	}
+
 	// Collect set of applicable worker interceptors
 	var workerInterceptors []WorkerInterceptor
 	for _, interceptor := range options.Interceptors {
@@ -1047,6 +1051,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		eagerDispatcher: &eagerWorkflowDispatcher{
 			workersByTaskQueue: make(map[string]map[eagerWorker]struct{}),
 		},
+		getSystemInfoTimeout: options.ConnectionOptions.GetSystemInfoTimeout,
 	}
 
 	// Create outbound interceptor by wrapping backwards through chain

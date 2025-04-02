@@ -99,6 +99,7 @@ type (
 		capabilities             *workflowservice.GetSystemInfoResponse_Capabilities
 		capabilitiesLock         sync.RWMutex
 		eagerDispatcher          *eagerWorkflowDispatcher
+		getSystemInfoTimeout     time.Duration
 
 		// The pointer value is shared across multiple clients. If non-nil, only
 		// access/mutate atomically.
@@ -1275,7 +1276,7 @@ func (wc *WorkflowClient) OperatorService() operatorservice.OperatorServiceClien
 }
 
 // Get capabilities, lazily fetching from server if not already obtained.
-func (wc *WorkflowClient) loadCapabilities(ctx context.Context, getSystemInfoTimeout time.Duration) (*workflowservice.GetSystemInfoResponse_Capabilities, error) {
+func (wc *WorkflowClient) loadCapabilities(ctx context.Context) (*workflowservice.GetSystemInfoResponse_Capabilities, error) {
 	// While we want to memoize the result here, we take care not to lock during
 	// the call. This means that in racy situations where this is called multiple
 	// times at once, it may result in multiple calls. This is far more preferable
@@ -1288,10 +1289,7 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context, getSystemInfoTim
 	}
 
 	// Fetch the capabilities
-	if getSystemInfoTimeout == 0 {
-		getSystemInfoTimeout = defaultGetSystemInfoTimeout
-	}
-	grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(getSystemInfoTimeout))
+	grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(wc.getSystemInfoTimeout))
 	defer cancel()
 	resp, err := wc.workflowService.GetSystemInfo(grpcCtx, &workflowservice.GetSystemInfoRequest{})
 	// We ignore unimplemented
@@ -1316,7 +1314,7 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context, getSystemInfoTim
 
 func (wc *WorkflowClient) ensureInitialized(ctx context.Context) error {
 	// Just loading the capabilities is enough
-	_, err := wc.loadCapabilities(ctx, defaultGetSystemInfoTimeout)
+	_, err := wc.loadCapabilities(ctx)
 	return err
 }
 
