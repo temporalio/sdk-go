@@ -117,6 +117,8 @@ func WithRetryPolicy(ctx Context, retryPolicy temporal.RetryPolicy) Context {
 // WithPriority makes a copy of the current context and updates
 // the Priority field in its activity options. An empty activity
 // options will be created if it does not exist in the original context.
+//
+// WARNING: Task queue priority is currently experimental.
 func WithPriority(ctx Context, priority temporal.Priority) Context {
 	return internal.WithPriority(ctx, priority)
 }

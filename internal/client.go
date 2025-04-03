@@ -773,6 +773,8 @@ type (
 
 		// Priority - Optional priority settings that control relative ordering of
 		// task processing when tasks are backed up in a queue.
+		//
+		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
 
 		// request ID. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
@@ -857,6 +859,8 @@ type (
 	// For all fields, the field not present or equal to zero/empty string means to
 	// inherit the value from the calling workflow, or if there is no calling
 	// workflow, then use the default value.
+	//
+	// WARNING: Task queue priority is currently experimental.
 	//
 	// Exposed as: [go.temporal.io/sdk/temporal.Priority]
 	Priority struct {

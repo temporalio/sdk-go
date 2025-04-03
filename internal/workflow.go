@@ -446,6 +446,8 @@ type (
 
 		// Priority - Optional priority settings that control relative ordering of
 		// task processing when tasks are backed up in a queue.
+		//
+		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
 	}
 
@@ -1281,8 +1283,10 @@ type WorkflowInfo struct {
 	// Deprecated: use [Workflow.GetTypedSearchAttributes] instead.
 	SearchAttributes *commonpb.SearchAttributes // Value can be decoded using defaultDataConverter.
 	RetryPolicy      *RetryPolicy
-	// Priority settings that control relative ordering of task processing when tasks are backed up in a queue.
+	// Priority settings that control relative ordering of task processing when workflow tasks are backed up in a queue.
 	// If no priority is set, the default value is the zero value.
+	//
+	// WARNING: Task queue priority is currently experimental.
 	Priority Priority
 	// BinaryChecksum represents the value persisted by the last worker to complete a task in this workflow. It may be
 	// an explicitly set or implicitly derived binary checksum of the worker binary, or, if this worker has opted into
