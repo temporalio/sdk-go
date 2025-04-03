@@ -3547,7 +3547,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.LongRunningActivityWithHB)
 	worker.RegisterWorkflow(w.RetryTimeoutStableErrorWorkflow)
 	worker.RegisterWorkflow(w.SimplestWorkflow)
-	worker.RegisterWorkflow(w.PriorityWorkflow)
+	worker.RegisterWorkflow(w.PriorityChildWorkflow)
 	worker.RegisterWorkflow(w.TwoParameterWorkflow)
 	worker.RegisterWorkflow(w.ThreeParameterWorkflow)
 	worker.RegisterWorkflow(w.WaitSignalReturnParam)
