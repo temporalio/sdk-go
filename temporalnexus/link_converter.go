@@ -47,6 +47,7 @@ const (
 	linkWorkflowEventReferenceTypeKey = "referenceType"
 	linkEventReferenceEventIDKey      = "eventID"
 	linkEventReferenceEventTypeKey    = "eventType"
+	linkEventReferenceRequestIDKey    = "requestID"
 )
 
 var (
@@ -59,7 +60,8 @@ var (
 		rePatternWorkflowID,
 		rePatternRunID,
 	))
-	eventReferenceType = string((&commonpb.Link_WorkflowEvent_EventReference{}).ProtoReflect().Descriptor().Name())
+	eventReferenceType     = string((&commonpb.Link_WorkflowEvent_EventReference{}).ProtoReflect().Descriptor().Name())
+	requestIDReferenceType = string((&commonpb.Link_WorkflowEvent_RequestIdReference{}).ProtoReflect().Descriptor().Name())
 )
 
 // ConvertLinkWorkflowEventToNexusLink converts a Link_WorkflowEvent type to Nexus Link.
@@ -80,6 +82,8 @@ func ConvertLinkWorkflowEventToNexusLink(we *commonpb.Link_WorkflowEvent) nexus.
 	switch ref := we.GetReference().(type) {
 	case *commonpb.Link_WorkflowEvent_EventRef:
 		u.RawQuery = convertLinkWorkflowEventEventReferenceToURLQuery(ref.EventRef)
+	case *commonpb.Link_WorkflowEvent_RequestIdRef:
+		u.RawQuery = convertLinkWorkflowEventRequestIdReferenceToURLQuery(ref.RequestIdRef)
 	}
 	return nexus.Link{
 		URL:  u,
@@ -137,6 +141,11 @@ func ConvertNexusLinkToLinkWorkflowEvent(link nexus.Link) (*commonpb.Link_Workfl
 		we.Reference = &commonpb.Link_WorkflowEvent_EventRef{
 			EventRef: eventRef,
 		}
+	case requestIDReferenceType:
+		requestIDRef := convertURLQueryToLinkWorkflowEventRequestIdReference(link.URL.Query())
+		we.Reference = &commonpb.Link_WorkflowEvent_RequestIdRef{
+			RequestIdRef: requestIDRef,
+		}
 	default:
 		return nil, fmt.Errorf(
 			"failed to parse link to Link_WorkflowEvent: unknown reference type: %q",
@@ -172,4 +181,17 @@ func convertURLQueryToLinkWorkflowEventEventReference(queryValues url.Values) (*
 		return nil, err
 	}
 	return eventRef, nil
+}
+
+func convertLinkWorkflowEventRequestIdReferenceToURLQuery(requestIDRef *commonpb.Link_WorkflowEvent_RequestIdReference) string {
+	values := url.Values{}
+	values.Set(linkWorkflowEventReferenceTypeKey, requestIDReferenceType)
+	values.Set(linkEventReferenceRequestIDKey, requestIDRef.GetRequestId())
+	return values.Encode()
+}
+
+func convertURLQueryToLinkWorkflowEventRequestIdReference(queryValues url.Values) *commonpb.Link_WorkflowEvent_RequestIdReference {
+	return &commonpb.Link_WorkflowEvent_RequestIdReference{
+		RequestId: queryValues.Get(linkEventReferenceRequestIDKey),
+	}
 }
