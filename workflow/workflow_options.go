@@ -71,6 +71,11 @@ func WithDataConverter(ctx Context, dc converter.DataConverter) Context {
 	return internal.WithDataConverter(ctx, dc)
 }
 
+// WithWorkflowPriority adds a priority to the context.
+func WithWorkflowPriority(ctx Context, priority internal.Priority) Context {
+	return internal.WithWorkflowPriority(ctx, priority)
+}
+
 // GetChildWorkflowOptions returns all workflow options present on the context.
 func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 	return internal.GetChildWorkflowOptions(ctx)

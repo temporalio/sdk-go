@@ -1869,6 +1869,15 @@ func WithDataConverter(ctx Context, dc converter.DataConverter) Context {
 	return ctx1
 }
 
+// WithPriority adds a priority to the context.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.WithWorkflowPriority]
+func WithWorkflowPriority(ctx Context, priority Priority) Context {
+	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
+	getWorkflowEnvOptions(ctx1).Priority = convertToPBPriority(priority)
+	return ctx1
+}
+
 // WithWorkflowVersioningIntent is used to set the VersioningIntent before constructing a
 // ContinueAsNewError with NewContinueAsNewError.
 // WARNING: Worker versioning is currently experimental
@@ -2503,6 +2512,15 @@ func WithWaitForCancellation(ctx Context, wait bool) Context {
 func WithRetryPolicy(ctx Context, retryPolicy RetryPolicy) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
 	getActivityOptions(ctx1).RetryPolicy = convertToPBRetryPolicy(&retryPolicy)
+	return ctx1
+}
+
+// WithPriority adds priority to the copy of the context.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.WithPriority]
+func WithPriority(ctx Context, priority Priority) Context {
+	ctx1 := setActivityParametersIfNotExist(ctx)
+	getActivityOptions(ctx1).Priority = convertToPBPriority(priority)
 	return ctx1
 }
 
