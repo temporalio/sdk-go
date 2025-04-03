@@ -193,6 +193,8 @@ func (b *builder) integrationTest() error {
 	if *devServerFlag {
 		args = append(args, "-using-cli-dev-server")
 		env = append(env, "TEMPORAL_NAMESPACE=integration-test-namespace")
+	} else {
+		args = append(args, "DISABLE_PRIORITY_TESTS=1")
 	}
 	args = append(args, "./...")
 	// Must run in test dir

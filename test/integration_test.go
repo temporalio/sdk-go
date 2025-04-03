@@ -6977,6 +6977,9 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 }
 
 func (ts *IntegrationTestSuite) TestTaskQueuePriority() {
+	if os.Getenv("DISABLE_PRIORITY_TESTS") != "" {
+		ts.T().SkipNow()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
