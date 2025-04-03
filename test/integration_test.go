@@ -6988,7 +6988,7 @@ func (ts *IntegrationTestSuite) TestTaskQueuePriority() {
 	run, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.PriorityWorkflow)
 	ts.NoError(err)
 	var priority int
-	run.Get(ctx, &priority)
+	ts.NoError(run.Get(ctx, &priority))
 	ts.Equal(1, priority)
 }
 

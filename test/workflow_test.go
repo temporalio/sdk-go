@@ -3241,17 +3241,17 @@ func (w *Workflows) PriorityWorkflow(ctx workflow.Context) (int, error) {
 	}
 	// Verify the activity returned the expected priority
 	if result != 5 {
-		return 0, fmt.Errorf("activity did not return expected value %d == %d", 5, result)
+		return 0, fmt.Errorf("activity did not return expected value %d != %d", 5, result)
 	}
 	// Clear the activity priority
-	workflow.WithPriority(ctx, temporal.Priority{})
+	ctx = workflow.WithPriority(ctx, temporal.Priority{})
 	err = workflow.ExecuteActivity(ctx, activities.PriorityActivity).Get(ctx, &result)
 	if err != nil {
 		return 0, err
 	}
 	// Verify the activity returned the expected priority
 	if result != workflowPriority {
-		return 0, fmt.Errorf("activity did not return expected value %d == %d", workflowPriority, result)
+		return 0, fmt.Errorf("activity did not return expected value %d != %d", workflowPriority, result)
 	}
 
 	// Start a child workflow with a priority
@@ -3261,23 +3261,23 @@ func (w *Workflows) PriorityWorkflow(ctx workflow.Context) (int, error) {
 		},
 	}
 	ctx = workflow.WithChildOptions(ctx, cwo)
-	err = workflow.ExecuteChildWorkflow(ctx, w.SimplestWorkflow).Get(ctx, &result)
+	err = workflow.ExecuteChildWorkflow(ctx, w.PriorityChildWorkflow).Get(ctx, &result)
 	if err != nil {
 		return 0, err
 	}
 	// Verify the child workflow returned the expected priority
 	if result != 3 {
-		return 0, fmt.Errorf("child workflow did not return expected value %d == %d", 3, result)
+		return 0, fmt.Errorf("child workflow did not return expected value %d != %d", 3, result)
 	}
 	// Clear the child workflow priority
-	workflow.WithWorkflowPriority(ctx, temporal.Priority{})
-	err = workflow.ExecuteChildWorkflow(ctx, w.SimplestWorkflow).Get(ctx, &result)
+	ctx = workflow.WithWorkflowPriority(ctx, temporal.Priority{})
+	err = workflow.ExecuteChildWorkflow(ctx, w.PriorityChildWorkflow).Get(ctx, &result)
 	if err != nil {
 		return 0, err
 	}
-	// Verify the activity returned the expected priority
+	// Verify the child workflow returned the expected priority
 	if result != workflowPriority {
-		return 0, fmt.Errorf("activity did not return expected value %d == %d", workflowPriority, result)
+		return 0, fmt.Errorf("child workflow did not return expected value %d != %d", workflowPriority, result)
 	}
 
 	// Run a short timer with a summary and return
