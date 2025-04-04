@@ -1261,6 +1261,9 @@ type (
 		// underlying connection. Only the final close of all existing clients will
 		// close the underlying connection.
 		Close()
+
+		// Namespace returns the configured namespace of the Temporal client
+		Namespace() string
 	}
 
 	// NamespaceClient is the client for managing operations on the namespace.
