@@ -998,15 +998,19 @@ type (
 
 		// RecordActivityHeartbeat records heartbeat for an activity.
 		// taskToken - is the value of the binary "TaskToken" field of the "ActivityInfo" struct retrieved inside the activity.
-		// details - is the progress you want to record along with heart beat for this activity.
-		// The errors it can return:
+		// details - is the progress you want to record along with heart beat for this activity. If the activity is canceled,
+		// the error returned will be a CanceledError. If the activity is paused by the server, the error returned will be a
+		// ErrActivityPaused.
+		// Otherwise the errors it can return:
 		//  - serviceerror.NotFound
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
 		RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...interface{}) error
 
 		// RecordActivityHeartbeatByID records heartbeat for an activity.
-		// details - is the progress you want to record along with heart beat for this activity.
+		// details - is the progress you want to record along with heart beat for this activity. If the activity is canceled,
+		// the error returned will be a CanceledError. If the activity is paused by the server, the error returned will be a
+		// ErrActivityPaused.
 		// The errors it can return:
 		//  - serviceerror.NotFound
 		//  - serviceerror.Internal
