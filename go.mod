@@ -14,12 +14,12 @@ require (
 	github.com/nexus-rpc/sdk-go v0.3.0
 	github.com/robfig/cron v1.2.0
 	github.com/stretchr/testify v1.10.0
-	go.temporal.io/api v1.44.1
+	go.temporal.io/api v1.46.0
 	golang.org/x/sync v0.8.0
 	golang.org/x/sys v0.24.0
 	golang.org/x/time v0.3.0
 	google.golang.org/grpc v1.66.0
-	google.golang.org/protobuf v1.34.2
+	google.golang.org/protobuf v1.36.5
 )
 
 require (

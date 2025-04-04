@@ -754,6 +754,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		// Original execution run ID stays the same for the entire chain of workflow resets.
 		// This helps us keep child workflow IDs consistent up until a reset-point is encountered.
 		currentRunID: attributes.GetOriginalExecutionRunId(),
+		Priority:     convertFromPBPriority(attributes.Priority),
 	}
 
 	return newWorkflowExecutionContext(workflowInfo, wth), nil

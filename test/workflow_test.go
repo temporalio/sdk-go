@@ -1223,6 +1223,10 @@ func (w *Workflows) SimplestWorkflow(_ workflow.Context) (string, error) {
 	return "hello", nil
 }
 
+func (w *Workflows) PriorityChildWorkflow(ctx workflow.Context) (int, error) {
+	return workflow.GetInfo(ctx).Priority.PriorityKey, nil
+}
+
 func (w *Workflows) TwoParameterWorkflow(_ workflow.Context, _ string, _ string) (string, error) {
 	return "TwoParameterWorkflow", nil
 }
@@ -3217,6 +3221,69 @@ func (w *Workflows) UserMetadata(ctx workflow.Context) error {
 	).Get(ctx, nil)
 }
 
+func (w *Workflows) PriorityWorkflow(ctx workflow.Context) (int, error) {
+	workflowPriority := workflow.GetInfo(ctx).Priority.PriorityKey
+	var activities *Activities
+
+	// Start an activity with a priority
+	ao := workflow.ActivityOptions{
+		StartToCloseTimeout:   time.Minute,
+		DisableEagerExecution: true,
+		Priority: temporal.Priority{
+			PriorityKey: 5,
+		},
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+	var result int
+	err := workflow.ExecuteActivity(ctx, activities.PriorityActivity).Get(ctx, &result)
+	if err != nil {
+		return 0, err
+	}
+	// Verify the activity returned the expected priority
+	if result != 5 {
+		return 0, fmt.Errorf("activity did not return expected value %d != %d", 5, result)
+	}
+	// Clear the activity priority
+	ctx = workflow.WithPriority(ctx, temporal.Priority{})
+	err = workflow.ExecuteActivity(ctx, activities.PriorityActivity).Get(ctx, &result)
+	if err != nil {
+		return 0, err
+	}
+	// Verify the activity returned the expected priority
+	if result != workflowPriority {
+		return 0, fmt.Errorf("activity did not return expected value %d != %d", workflowPriority, result)
+	}
+
+	// Start a child workflow with a priority
+	cwo := workflow.ChildWorkflowOptions{
+		Priority: temporal.Priority{
+			PriorityKey: 3,
+		},
+	}
+	ctx = workflow.WithChildOptions(ctx, cwo)
+	err = workflow.ExecuteChildWorkflow(ctx, w.PriorityChildWorkflow).Get(ctx, &result)
+	if err != nil {
+		return 0, err
+	}
+	// Verify the child workflow returned the expected priority
+	if result != 3 {
+		return 0, fmt.Errorf("child workflow did not return expected value %d != %d", 3, result)
+	}
+	// Clear the child workflow priority
+	ctx = workflow.WithWorkflowPriority(ctx, temporal.Priority{})
+	err = workflow.ExecuteChildWorkflow(ctx, w.PriorityChildWorkflow).Get(ctx, &result)
+	if err != nil {
+		return 0, err
+	}
+	// Verify the child workflow returned the expected priority
+	if result != workflowPriority {
+		return 0, fmt.Errorf("child workflow did not return expected value %d != %d", workflowPriority, result)
+	}
+
+	// Run a short timer with a summary and return
+	return workflowPriority, nil
+}
+
 func (w *Workflows) AwaitWithOptions(ctx workflow.Context) (bool, error) {
 	options := workflow.AwaitOptions{
 		Timeout:      1 * time.Millisecond,
@@ -3480,6 +3547,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.LongRunningActivityWithHB)
 	worker.RegisterWorkflow(w.RetryTimeoutStableErrorWorkflow)
 	worker.RegisterWorkflow(w.SimplestWorkflow)
+	worker.RegisterWorkflow(w.PriorityChildWorkflow)
 	worker.RegisterWorkflow(w.TwoParameterWorkflow)
 	worker.RegisterWorkflow(w.ThreeParameterWorkflow)
 	worker.RegisterWorkflow(w.WaitSignalReturnParam)
@@ -3542,6 +3610,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.UpdateWithMutex)
 	worker.RegisterWorkflow(w.UpdateWithSemaphore)
 	worker.RegisterWorkflow(w.UserMetadata)
+	worker.RegisterWorkflow(w.PriorityWorkflow)
 	worker.RegisterWorkflow(w.AwaitWithOptions)
 	worker.RegisterWorkflow(w.WorkflowWithRejectableUpdate)
 	worker.RegisterWorkflow(w.WorkflowWithUpdate)

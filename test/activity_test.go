@@ -28,16 +28,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go.temporal.io/api/workflowservice/v1"
-	"go.temporal.io/sdk/converter"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel/baggage"
+	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 )
@@ -109,6 +109,11 @@ func (a *Activities) ActivityToBeCanceled(ctx context.Context) (string, error) {
 func (a *Activities) EmptyActivity(ctx context.Context) error {
 	a.append("EmptyActivity")
 	return nil
+}
+
+func (a *Activities) PriorityActivity(ctx context.Context) (int, error) {
+	a.append("PriorityActivity")
+	return activity.GetInfo(ctx).Priority.PriorityKey, nil
 }
 
 func (a *Activities) HeartbeatAndSleep(ctx context.Context, seq int, delay time.Duration) (int, error) {

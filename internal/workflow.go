@@ -443,6 +443,12 @@ type (
 		//
 		// NOTE: Experimental
 		StaticDetails string
+
+		// Priority - Optional priority settings that control relative ordering of
+		// task processing when tasks are backed up in a queue.
+		//
+		// WARNING: Task queue priority is currently experimental.
+		Priority Priority
 	}
 
 	// RegisterWorkflowOptions consists of options for registering a workflow
@@ -1277,6 +1283,11 @@ type WorkflowInfo struct {
 	// Deprecated: use [Workflow.GetTypedSearchAttributes] instead.
 	SearchAttributes *commonpb.SearchAttributes // Value can be decoded using defaultDataConverter.
 	RetryPolicy      *RetryPolicy
+	// Priority settings that control relative ordering of task processing when workflow tasks are backed up in a queue.
+	// If no priority is set, the default value is the zero value.
+	//
+	// WARNING: Task queue priority is currently experimental.
+	Priority Priority
 	// BinaryChecksum represents the value persisted by the last worker to complete a task in this workflow. It may be
 	// an explicitly set or implicitly derived binary checksum of the worker binary, or, if this worker has opted into
 	// build-id based versioning, is the explicitly set worker build id. If this is the first worker to operate on the
@@ -1758,6 +1769,7 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.VersioningIntent = cwo.VersioningIntent
 	wfOptions.StaticSummary = cwo.StaticSummary
 	wfOptions.StaticDetails = cwo.StaticDetails
+	wfOptions.Priority = convertToPBPriority(cwo.Priority)
 
 	return ctx1
 }
@@ -1780,6 +1792,7 @@ func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 		WaitForCancellation:      opts.WaitForCancellation,
 		WorkflowIDReusePolicy:    opts.WorkflowIDReusePolicy,
 		RetryPolicy:              convertFromPBRetryPolicy(opts.RetryPolicy),
+		Priority:                 convertFromPBPriority(opts.Priority),
 		CronSchedule:             opts.CronSchedule,
 		Memo:                     opts.Memo,
 		SearchAttributes:         opts.SearchAttributes,
@@ -1859,6 +1872,15 @@ func WithDataConverter(ctx Context, dc converter.DataConverter) Context {
 	}
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	getWorkflowEnvOptions(ctx1).DataConverter = dc
+	return ctx1
+}
+
+// WithPriority adds a priority to the context.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.WithWorkflowPriority]
+func WithWorkflowPriority(ctx Context, priority Priority) Context {
+	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
+	getWorkflowEnvOptions(ctx1).Priority = convertToPBPriority(priority)
 	return ctx1
 }
 
@@ -2353,6 +2375,7 @@ func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	eap.RetryPolicy = convertToPBRetryPolicy(options.RetryPolicy)
 	eap.DisableEagerExecution = options.DisableEagerExecution
 	eap.VersioningIntent = options.VersioningIntent
+	eap.Priority = convertToPBPriority(options.Priority)
 	eap.Summary = options.Summary
 	return ctx1
 }
@@ -2416,6 +2439,7 @@ func GetActivityOptions(ctx Context) ActivityOptions {
 		RetryPolicy:            convertFromPBRetryPolicy(opts.RetryPolicy),
 		DisableEagerExecution:  opts.DisableEagerExecution,
 		VersioningIntent:       opts.VersioningIntent,
+		Priority:               convertFromPBPriority(opts.Priority),
 		Summary:                opts.Summary,
 	}
 }
@@ -2497,6 +2521,15 @@ func WithRetryPolicy(ctx Context, retryPolicy RetryPolicy) Context {
 	return ctx1
 }
 
+// WithPriority adds priority to the copy of the context.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.WithPriority]
+func WithPriority(ctx Context, priority Priority) Context {
+	ctx1 := setActivityParametersIfNotExist(ctx)
+	getActivityOptions(ctx1).Priority = convertToPBPriority(priority)
+	return ctx1
+}
+
 func convertToPBRetryPolicy(retryPolicy *RetryPolicy) *commonpb.RetryPolicy {
 	if retryPolicy == nil {
 		return nil
@@ -2526,6 +2559,32 @@ func convertFromPBRetryPolicy(retryPolicy *commonpb.RetryPolicy) *RetryPolicy {
 	p.InitialInterval = retryPolicy.InitialInterval.AsDuration()
 
 	return &p
+}
+
+func convertToPBPriority(priority Priority) *commonpb.Priority {
+	// If the priority only contains default values, return nil instead
+	// - since there's no need to send the default values to the server.
+	//
+	// Exposed as: [go.temporal.io/sdk/temporal.Priority]
+	var defaultPriority Priority
+	if priority == defaultPriority {
+		return nil
+	}
+
+	return &commonpb.Priority{
+		PriorityKey: int32(priority.PriorityKey),
+	}
+}
+
+func convertFromPBPriority(priority *commonpb.Priority) Priority {
+	// If the priority is nil, return the default value.
+	if priority == nil {
+		return Priority{}
+	}
+
+	return Priority{
+		PriorityKey: int(priority.PriorityKey),
+	}
 }
 
 // GetLastCompletionResultFromWorkflowInfo returns value of last completion result.

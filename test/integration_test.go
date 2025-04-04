@@ -6976,6 +6976,25 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 	ts.Equal("my-child-wf-details", str)
 }
 
+func (ts *IntegrationTestSuite) TestTaskQueuePriority() {
+	if os.Getenv("DISABLE_PRIORITY_TESTS") != "" {
+		ts.T().SkipNow()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Start workflow with a priority
+	opts := ts.startWorkflowOptions("test-task-queue-priority-" + uuid.NewString())
+	opts.Priority = temporal.Priority{
+		PriorityKey: 1,
+	}
+	run, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.PriorityWorkflow)
+	ts.NoError(err)
+	var priority int
+	ts.NoError(run.Get(ctx, &priority))
+	ts.Equal(1, priority)
+}
+
 func (ts *IntegrationTestSuite) TestAwaitWithOptionsTimeout() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
