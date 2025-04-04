@@ -194,7 +194,7 @@ func (b *builder) integrationTest() error {
 		args = append(args, "-using-cli-dev-server")
 		env = append(env, "TEMPORAL_NAMESPACE=integration-test-namespace")
 	} else {
-		args = append(args, "DISABLE_PRIORITY_TESTS=1")
+		env = append(args, "DISABLE_PRIORITY_TESTS=1")
 	}
 	args = append(args, "./...")
 	// Must run in test dir
