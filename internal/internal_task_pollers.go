@@ -1254,6 +1254,16 @@ func convertActivityResultToRespondRequest(
 				DeploymentOptions: workerDeploymentOptions,
 			}
 		}
+		if errors.Is(err, ErrActivityPaused) {
+			return &workflowservice.RespondActivityTaskCanceledRequest{
+				TaskToken:         taskToken,
+				Identity:          identity,
+				Namespace:         namespace,
+				WorkerVersion:     versionStamp,
+				Deployment:        deployment,
+				DeploymentOptions: workerDeploymentOptions,
+			}
+		}
 	}
 
 	// If a canceled error is returned but it wasn't allowed, we have to wrap in

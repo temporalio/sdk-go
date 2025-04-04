@@ -604,6 +604,41 @@ func (ts *IntegrationTestSuite) TestHeartbeatOnActivityFailure() {
 	ts.Equal(6, heartbeatCounts)
 }
 
+func (ts *IntegrationTestSuite) TestActivityPause() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	// Run ActivityHeartbeat workflow, this workflow will call
+	// ActivityToBePaused activity twice, the first call will test pausing an activity successfully
+	// and the second call will test completing the activity after it is resumed
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-activity-pause"), ts.workflows.ActivityHeartbeat)
+	ts.NoError(err)
+	// Wait for the workflow to finish
+	var result string
+	err = run.Get(ctx, &result)
+	ts.NoError(err)
+	// Check the result
+	ts.Equal("I am stopped by Pause", result)
+	// Verify that the activity was called twice
+	expectedActivities := []string{"ActivityToBePaused", "ActivityToBePaused"}
+	ts.EqualValues(expectedActivities, ts.activities.invoked())
+	// Describe the workflow execution
+	desc, err := ts.client.WorkflowService().DescribeWorkflowExecution(ctx, &workflowservice.DescribeWorkflowExecutionRequest{
+		Namespace: ts.config.Namespace,
+		Execution: &commonpb.WorkflowExecution{
+			WorkflowId: run.GetID(),
+			RunId:      run.GetRunID(),
+		},
+	})
+	ts.NoError(err)
+	// Check the workflow still has one paused pending activity
+	ts.Len(desc.GetPendingActivities(), 1)
+	ts.Equal(desc.GetPendingActivities()[0].GetActivityType().GetName(), "ActivityToBePaused")
+	ts.Equal(desc.GetPendingActivities()[0].GetAttempt(), int32(1))
+	ts.Nil(desc.GetPendingActivities()[0].GetLastFailure()) // Verify that the activity paused successfully
+	ts.True(desc.GetPendingActivities()[0].GetPaused())
+}
+
 func (ts *IntegrationTestSuite) TestContinueAsNew() {
 	var result int
 	err := ts.executeWorkflow("test-continueasnew", ts.workflows.ContinueAsNew, &result, 4, ts.taskQueueName)
