@@ -39,6 +39,11 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
+var (
+	// ErrWorkerShutdown is returned when the worker is shutdown.
+	ErrWorkerShutdown = internal.ErrWorkerShutdown
+)
+
 type (
 	// Worker hosts workflow and activity implementations.
 	// Use worker.New(...) to create an instance.

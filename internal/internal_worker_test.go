@@ -2693,7 +2693,7 @@ func TestWorkerOptionDefaults(t *testing.T) {
 		Logger:                                workflowWorker.executionParameters.Logger,
 		MetricsHandler:                        workflowWorker.executionParameters.MetricsHandler,
 		Identity:                              workflowWorker.executionParameters.Identity,
-		UserContext:                           workflowWorker.executionParameters.UserContext,
+		BackgroundContext:                     workflowWorker.executionParameters.BackgroundContext,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
@@ -2799,7 +2799,7 @@ func TestLocalActivityWorkerOnly(t *testing.T) {
 		Logger:                                workflowWorker.executionParameters.Logger,
 		MetricsHandler:                        workflowWorker.executionParameters.MetricsHandler,
 		Identity:                              workflowWorker.executionParameters.Identity,
-		UserContext:                           workflowWorker.executionParameters.UserContext,
+		BackgroundContext:                     workflowWorker.executionParameters.BackgroundContext,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)

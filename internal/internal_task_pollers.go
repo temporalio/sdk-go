@@ -164,7 +164,7 @@ type (
 	}
 
 	localActivityTaskHandler struct {
-		userContext        context.Context
+		backgroundContext  context.Context
 		metricsHandler     metrics.Handler
 		logger             log.Logger
 		dataConverter      converter.DataConverter
@@ -600,7 +600,7 @@ func newLocalActivityPoller(
 	client *WorkflowClient,
 ) *localActivityTaskPoller {
 	handler := &localActivityTaskHandler{
-		userContext:        params.UserContext,
+		backgroundContext:  params.BackgroundContext,
 		metricsHandler:     params.MetricsHandler,
 		logger:             params.Logger,
 		dataConverter:      params.DataConverter,
@@ -659,7 +659,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 			tagAttempt, task.attempt,
 		)
 	})
-	ctx, err := WithLocalActivityTask(lath.userContext, task, lath.logger, lath.metricsHandler,
+	ctx, err := WithLocalActivityTask(lath.backgroundContext, task, lath.logger, lath.metricsHandler,
 		lath.dataConverter, lath.interceptors, lath.client)
 	if err != nil {
 		return &localActivityResult{task: task, err: fmt.Errorf("failed building context: %w", err)}
