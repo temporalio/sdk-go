@@ -424,7 +424,9 @@ func (c *collector) applyFacts() PackageNonDeterminisms {
 	}
 
 	// Export package fact
-	c.pass.ExportPackageFact(&p)
+	if len(c.pass.Files) != 0 {
+		c.pass.ExportPackageFact(&p)
+	}
 	return p
 }
 
