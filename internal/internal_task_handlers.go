@@ -162,7 +162,7 @@ type (
 		client                           *WorkflowClient
 		metricsHandler                   metrics.Handler
 		logger                           log.Logger
-		userContext                      context.Context
+		backgroundContext                context.Context
 		registry                         *registry
 		activityProvider                 activityProvider
 		dataConverter                    converter.DataConverter
@@ -2009,7 +2009,7 @@ func newActivityTaskHandlerWithCustomProvider(
 		client:                           client,
 		logger:                           params.Logger,
 		metricsHandler:                   params.MetricsHandler,
-		userContext:                      params.UserContext,
+		backgroundContext:                params.BackgroundContext,
 		registry:                         registry,
 		activityProvider:                 activityProvider,
 		dataConverter:                    params.DataConverter,
@@ -2040,7 +2040,8 @@ type temporalInvoker struct {
 	service        workflowservice.WorkflowServiceClient
 	metricsHandler metrics.Handler
 	taskToken      []byte
-	cancelHandler  func()
+	// cancelHandler is called when the activity is canceled by a heartbeat request.
+	cancelHandler func()
 	// Amount of time to wait between each pending heartbeat send
 	heartbeatThrottleInterval time.Duration
 	hbBatchEndTimer           *time.Timer // Whether we started a batch of operations that need to be reported in the cycle. This gets started on a user call.
@@ -2203,8 +2204,8 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			tagAttempt, t.Attempt,
 		)
 	})
-
-	rootCtx := ath.userContext
+	// The root context is only cancelled when the worker is finished shutting down.
+	rootCtx := ath.backgroundContext
 	if rootCtx == nil {
 		rootCtx = context.Background()
 	}
@@ -2273,7 +2274,8 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 
 	output, err := activityImplementation.Execute(ctx, t.Input)
 	// Check if context canceled at a higher level before we cancel it ourselves
-	isActivityCancel := ctx.Err() == context.Canceled
+	// TODO : check if the cause of the context cancellation is from the server
+	isActivityCanceled := ctx.Err() == context.Canceled
 
 	dlCancelFunc()
 	if <-ctx.Done(); ctx.Err() == context.DeadlineExceeded {
@@ -2297,7 +2299,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		)
 	}
 	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err,
-		ath.dataConverter, ath.failureConverter, ath.namespace, isActivityCancel, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions), nil
+		ath.dataConverter, ath.failureConverter, ath.namespace, isActivityCanceled, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions), nil
 }
 
 func (ath *activityTaskHandlerImpl) getActivity(name string) activity {

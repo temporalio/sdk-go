@@ -188,10 +188,10 @@ type (
 		EnableLoggingInReplay bool
 
 		// Context to store user provided key/value pairs
-		UserContext context.Context
+		BackgroundContext context.Context
 
 		// Context cancel function to cancel user context
-		UserContextCancel context.CancelFunc
+		BackgroundContextCancel context.CancelCauseFunc
 
 		StickyScheduleToStartTimeout time.Duration
 
@@ -435,7 +435,7 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 	sessionEnvironment := newSessionEnvironment(params.SessionResourceID, maxConcurrentSessionExecutionSize)
 
 	creationTaskqueue := getCreationTaskqueue(params.TaskQueue)
-	params.UserContext = context.WithValue(params.UserContext, sessionEnvironmentContextKey, sessionEnvironment)
+	params.BackgroundContext = context.WithValue(params.BackgroundContext, sessionEnvironmentContextKey, sessionEnvironment)
 	params.TaskQueue = sessionEnvironment.GetResourceSpecificTaskqueue()
 	activityWorker := newActivityWorker(client, params,
 		&workerOverrides{slotSupplier: params.Tuner.GetSessionActivitySlotSupplier()}, env, nil)
@@ -506,20 +506,20 @@ func newActivityWorker(
 
 	base := newBaseWorker(
 		baseWorkerOptions{
-			pollerCount:        params.MaxConcurrentActivityTaskQueuePollers,
-			pollerRate:         defaultPollerRate,
-			slotSupplier:       slotSupplier,
-			maxTaskPerSecond:   params.WorkerActivitiesPerSecond,
-			taskWorker:         poller,
-			workerType:         "ActivityWorker",
-			identity:           params.Identity,
-			buildId:            params.getBuildID(),
-			logger:             params.Logger,
-			stopTimeout:        params.WorkerStopTimeout,
-			fatalErrCb:         params.WorkerFatalErrorCallback,
-			userContextCancel:  params.UserContextCancel,
-			metricsHandler:     params.MetricsHandler,
-			sessionTokenBucket: sessionTokenBucket,
+			pollerCount:             params.MaxConcurrentActivityTaskQueuePollers,
+			pollerRate:              defaultPollerRate,
+			slotSupplier:            slotSupplier,
+			maxTaskPerSecond:        params.WorkerActivitiesPerSecond,
+			taskWorker:              poller,
+			workerType:              "ActivityWorker",
+			identity:                params.Identity,
+			buildId:                 params.getBuildID(),
+			logger:                  params.Logger,
+			stopTimeout:             params.WorkerStopTimeout,
+			fatalErrCb:              params.WorkerFatalErrorCallback,
+			backgroundContextCancel: params.BackgroundContextCancel,
+			metricsHandler:          params.MetricsHandler,
+			sessionTokenBucket:      sessionTokenBucket,
 			slotReservationData: slotReservationData{
 				taskQueue: params.TaskQueue,
 			},
@@ -1668,7 +1668,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	backgroundActivityContext, backgroundActivityContextCancel := context.WithCancel(ctx)
+	backgroundActivityContext, backgroundActivityContextCancel := context.WithCancelCause(ctx)
 
 	// If max-concurrent workflow pollers is 1, the worker will only do
 	// sticky-queue requests and never regular-queue requests. We disallow the
@@ -1750,8 +1750,8 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		MetricsHandler:                        client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue)),
 		Logger:                                client.logger,
 		EnableLoggingInReplay:                 options.EnableLoggingInReplay,
-		UserContext:                           backgroundActivityContext,
-		UserContextCancel:                     backgroundActivityContextCancel,
+		BackgroundContext:                     backgroundActivityContext,
+		BackgroundContextCancel:               backgroundActivityContextCancel,
 		StickyScheduleToStartTimeout:          options.StickyScheduleToStartTimeout,
 		TaskQueueActivitiesPerSecond:          options.TaskQueueActivitiesPerSecond,
 		WorkflowPanicPolicy:                   options.WorkflowPanicPolicy,

@@ -102,14 +102,14 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 	s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 	executionParameters := workerExecutionParameters{
 		Namespace:                             DefaultNamespace,
 		TaskQueue:                             "testTaskQueue",
 		MaxConcurrentWorkflowTaskQueuePollers: 5,
 		Logger:                                ilog.NewDefaultLogger(),
-		UserContext:                           ctx,
-		UserContextCancel:                     cancel,
+		BackgroundContext:                     ctx,
+		BackgroundContextCancel:               cancel,
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	client := &WorkflowClient{workflowService: s.service}
@@ -190,7 +190,7 @@ func (s *WorkersTestSuite) TestWorkflowWorkerSlotSupplier() {
 			Return(nil, nil).AnyTimes()
 		s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancelCause(context.Background())
 		wfCss := &CountingSlotSupplier{}
 		laCss := &CountingSlotSupplier{}
 		tuner, err := NewCompositeTuner(CompositeTunerOptions{
@@ -203,8 +203,8 @@ func (s *WorkersTestSuite) TestWorkflowWorkerSlotSupplier() {
 			TaskQueue:                             taskQueue,
 			MaxConcurrentWorkflowTaskQueuePollers: 5,
 			Logger:                                ilog.NewDefaultLogger(),
-			UserContext:                           ctx,
-			UserContextCancel:                     cancel,
+			BackgroundContext:                     ctx,
+			BackgroundContextCancel:               cancel,
 			Tuner:                                 tuner,
 			WorkerStopTimeout:                     time.Second,
 		}
@@ -403,7 +403,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
 
 	stopC := make(chan struct{})
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
 		NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
 		NumActivitySlots:      2,
@@ -415,8 +415,8 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 		MaxConcurrentActivityTaskQueuePollers: 5,
 		Tuner:                                 tuner,
 		Logger:                                ilog.NewDefaultLogger(),
-		UserContext:                           ctx,
-		UserContextCancel:                     cancel,
+		BackgroundContext:                     ctx,
+		BackgroundContextCancel:               cancel,
 		WorkerStopTimeout:                     time.Second * 2,
 		WorkerStopChannel:                     stopC,
 	}
@@ -438,6 +438,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 	<-ctx.Done()
 	err = ctx.Err()
 	s.Error(err)
+	s.ErrorIs(context.Cause(ctx), ErrWorkerShutdown)
 }
 
 func (s *WorkersTestSuite) TestPollWorkflowTaskQueue_InternalServiceError() {
