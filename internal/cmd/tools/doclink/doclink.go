@@ -34,6 +34,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 )
 
 type (
@@ -358,13 +359,15 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 	newFile := ""
 	exposedAs := "// Exposed as: "
 	var inGroup, exposedLinks, commentBlock string
-	var changesMade, inStruct, inFunc bool
-	var leadingSpaces int
+	var changesMade, inStruct, inFunc, inInterface bool
+	var funcSpaces, interfaceSpaces int
 	for scanner.Scan() {
 		line := nextLine
 		nextLine = scanner.Text()
 		trimmedLine := strings.TrimSpace(line)
 		trimmedNextLine := strings.TrimSpace(nextLine)
+		// NOTE: This makes an assumption that Go files are either using just tabs or just spaces.
+		indentSize := len(line) - len(strings.TrimLeftFunc(line, unicode.IsSpace))
 		// Keep track of code block, for when we check a valid definition below,
 		// gofmt will sometimes format links like "[Visibility]: https://sample.url"
 		// to the bottom of the doc string.
@@ -409,27 +412,15 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 			trimmedNextLine = nextLine
 		}
 
-		// Check for function starting or closing
-		if strings.HasPrefix(trimmedLine, "func ") {
-			// only mark leadingSpaces and not inFunc here to allow us
-			// to run doc link checks on the function definition alone
-			// and not anything inside the function
-			leadingSpaces = len(line) - len(strings.TrimLeft(line, " "))
-		}
-		if inFunc && trimmedLine == "}" && leadingSpaces == len(line)-len(strings.TrimLeft(line, " ")) {
-			leadingSpaces = -1
-			inFunc = false
-		}
-
 		// Check for new doc links to add
-		if !inFunc && isValidDefinition(trimmedNextLine, &inGroup, &inStruct, &inFunc) {
+		if !inFunc && !inInterface && isValidDefinition(trimmedNextLine, &inGroup, &inStruct) {
 			// Find the "Exposed As" line in the doc comment
-			var lineFromCommentBlock string
+			var existingDoclink string
 			comScanner := bufio.NewScanner(strings.NewReader(commentBlock))
 			for comScanner.Scan() {
 				tempLine := strings.TrimSpace(comScanner.Text())
 				if strings.HasPrefix(tempLine, exposedAs) {
-					lineFromCommentBlock = tempLine
+					existingDoclink = tempLine
 					break
 				}
 			}
@@ -439,7 +430,7 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 					if isValidDefinitionWithMatch(trimmedNextLine, private, inGroup, inStruct) {
 						docLink := fmt.Sprintf("[go.temporal.io/sdk/%s.%s]", packageName, public)
 						missingDoc := false
-						if lineFromCommentBlock == "" || !strings.Contains(lineFromCommentBlock, docLink) {
+						if existingDoclink == "" || !strings.Contains(existingDoclink, docLink) {
 							missingDoc = true
 						}
 						if cfg.fix {
@@ -462,13 +453,13 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 				updatedLine := exposedAs + strings.TrimSuffix(exposedLinks, ", ")
 
 				// If there is an existing "Exposed As" docstring
-				if lineFromCommentBlock != "" {
+				if existingDoclink != "" {
 					// The last line of commentBlock hasn't been written to newFile yet,
-					// so check if lineFromCommentBlock is that scenario
-					if lineFromCommentBlock == trimmedLine {
+					// so check if existingDoclink is that scenario
+					if existingDoclink == trimmedLine {
 						line = updatedLine
 					} else {
-						newFile = strings.Replace(newFile, lineFromCommentBlock, updatedLine, 1)
+						newFile = strings.Replace(newFile, existingDoclink, updatedLine, 1)
 					}
 				} else {
 					// Last line of existing docstring hasn't been written yet,
@@ -481,6 +472,24 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 
 			}
 		}
+
+		// update inFunc after we actually check for doclinks to allow us to check
+		// a function's definition, without checking anything inside the function
+		if strings.HasPrefix(trimmedLine, "func ") {
+			funcSpaces = indentSize
+			inFunc = true
+		} else if inFunc && trimmedLine == "}" && funcSpaces == indentSize {
+			funcSpaces = -1
+			inFunc = false
+		}
+		if strings.HasSuffix(trimmedLine, "interface {") {
+			interfaceSpaces = indentSize
+			inInterface = true
+		} else if inInterface && trimmedLine == "}" && interfaceSpaces == indentSize {
+			interfaceSpaces = -1
+			inInterface = false
+		}
+
 		newFile += line + "\n"
 	}
 
@@ -512,14 +521,9 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 	return nil
 }
 
-func isValidDefinition(line string, inGroup *string, insideStruct *bool, inFunc *bool) bool {
+func isValidDefinition(line string, inGroup *string, insideStruct *bool) bool {
 	if strings.HasPrefix(line, "//") {
 		return false
-	}
-
-	if strings.HasPrefix(line, "func ") {
-		*inFunc = true
-		return true
 	}
 
 	if strings.HasSuffix(line, "struct {") {
@@ -578,7 +582,7 @@ func isValidDefinitionWithMatch(line, private string, inGroup string, insideStru
 	}
 
 	if insideStruct {
-		fmt.Println("should never hit")
+		panic("should never hit")
 		return false
 	}
 
