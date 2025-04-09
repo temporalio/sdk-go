@@ -657,32 +657,33 @@ type (
 		// Optional: defaulted to 10 secs.
 		WorkflowTaskTimeout time.Duration
 
-		// WorkflowIDReusePolicy - Specifies server behavior if a *completed* workflow with the same id exists.
-		// This can be useful for dedupe logic if set to RejectDuplicate
-		//
-		// NOTE: WorkflowExecutionErrorWhenAlreadyStarted will affect if Client.ExecuteWorkflow returns an error
-		// when a re-run would be disallowed. See its docstring for more information.
-		//
-		// Optional: defaulted to AllowDuplicate.
-		WorkflowIDReusePolicy enumspb.WorkflowIdReusePolicy
-
 		// WorkflowIDConflictPolicy - Specifies server behavior if a *running* workflow with the same id exists.
 		// This cannot be set if WorkflowIDReusePolicy is set to TerminateIfRunning.
 		//
 		// NOTE: WorkflowExecutionErrorWhenAlreadyStarted will affect if Client.ExecuteWorkflow returns an error
 		// when a re-run would be disallowed. See its docstring for more information.
 		//
-		// Optional: defaulted to Fail - required when used in WithStartWorkflowOperation.
+		// Optional: defaults to Fail (but required when used in WithStartWorkflowOperation).
 		WorkflowIDConflictPolicy enumspb.WorkflowIdConflictPolicy
 
-		// When WorkflowExecutionErrorWhenAlreadyStarted is true, Client.ExecuteWorkflow will return an error if the
+		// WorkflowIDReusePolicy - Specifies server behavior if a *running* workflow with the same id does not exist but
+		// a *completed* workflow with the same id does exist.
+		// This can be useful for dedupe logic if set to RejectDuplicate.
+		//
+		// NOTE: WorkflowExecutionErrorWhenAlreadyStarted will affect if Client.ExecuteWorkflow returns an error
+		// when a re-run would be disallowed. See its docstring for more information.
+		//
+		// Optional: defaults to AllowDuplicate.
+		WorkflowIDReusePolicy enumspb.WorkflowIdReusePolicy
+
+		// WorkflowExecutionErrorWhenAlreadyStarted - when set to true, Client.ExecuteWorkflow will return an error if the
 		// workflow id has already been used and WorkflowIDReusePolicy or WorkflowIDConflictPolicy would
-		// disallow a re-run. If it is set to false, rather than erroring a WorkflowRun instance representing
+		// disallow a re-run. When set to false, rather than erroring, a WorkflowRun instance representing
 		// the current or last run will be returned. However, this field is ignored in the following cases:
 		// - in WithStartWorkflowOperation;
 		// - in the Nexus WorkflowRunOperation.
-		// When this field is ignored, you must set WorkflowIDConflictPolicy to UseExisting to prevent
-		// erroring.
+		// When this field is ignored, you can set WorkflowIDConflictPolicy to UseExisting to receive the current run in
+		// the case where a *running* workflow with the same id exists.
 		//
 		// Optional: defaults to false
 		WorkflowExecutionErrorWhenAlreadyStarted bool
