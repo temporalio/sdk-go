@@ -7474,3 +7474,32 @@ func (ts *IntegrationTestSuite) TestRawValueQueryMetadata() {
 	ts.Equal("Basic", metadata.Definition.Type)
 	ts.Equal(3, len(metadata.Definition.QueryDefinitions))
 }
+
+func (ts *IntegrationTestSuite) TestActivityCancelServer() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	options := client.StartWorkflowOptions{
+		ID:                       "test-activity-cancel" + uuid.NewString(),
+		TaskQueue:                ts.taskQueueName,
+		WorkflowExecutionTimeout: 6 * time.Second,
+		WorkflowTaskTimeout:      time.Second,
+		WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
+		EnableEagerStart:         true,
+	}
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.WorkflowReactToCancel)
+
+	// Give the workflow time to run and run activity
+	time.Sleep(100 * time.Millisecond)
+	ts.worker.Stop()
+	ts.workerStopped = true
+	// Now create a new worker on that same task queue to resume the work of the
+	// activity retry
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
+	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.NoError(nextWorker.Start())
+	defer nextWorker.Stop()
+
+	err = run.Get(ctx, nil)
+	ts.NoError(err)
+}

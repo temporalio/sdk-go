@@ -3488,6 +3488,20 @@ func (w *Workflows) WorkflowRawValue(ctx workflow.Context, value converter.RawVa
 	return returnVal, err
 }
 
+func (w *Workflows) WorkflowReactToCancel(ctx workflow.Context) error {
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		ScheduleToCloseTimeout: 30 * time.Second,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval:    1 * time.Second,
+			BackoffCoefficient: 1.0,
+			MaximumAttempts:    3,
+		},
+	})
+	var activities *Activities
+	_ = workflow.ExecuteActivity(ctx, activities.ReactToCancel, time.Second*2).Get(ctx, nil)
+	return nil
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -3634,6 +3648,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.WorkflowClientFromActivity)
 	worker.RegisterWorkflow(w.WorkflowTemporalPrefixSignal)
 	worker.RegisterWorkflow(w.WorkflowRawValue)
+	worker.RegisterWorkflow(w.WorkflowReactToCancel)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {

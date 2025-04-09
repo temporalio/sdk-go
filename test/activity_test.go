@@ -462,3 +462,12 @@ func (a *Activities) RawValueActivity(ctx context.Context, value converter.RawVa
 	activity.GetLogger(ctx).Info("RawValue value", value.Payload())
 	return value, nil
 }
+
+func (a *Activities) ReactToCancel(ctx context.Context) error {
+	select {
+	case <-time.After(1 * time.Second):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
