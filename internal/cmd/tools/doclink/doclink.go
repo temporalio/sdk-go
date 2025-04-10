@@ -583,7 +583,6 @@ func isValidDefinitionWithMatch(line, private string, inGroup string, insideStru
 
 	if insideStruct {
 		panic("should never hit")
-		return false
 	}
 
 	if inGroup == "const" || inGroup == "var" {
