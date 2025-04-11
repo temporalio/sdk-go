@@ -42,6 +42,10 @@ const (
 	runIDTagKey      = "temporalRunID"
 	activityIDTagKey = "temporalActivityID"
 	updateIDTagKey   = "temporalUpdateID"
+	activityTypeTagKey = "temporalActivityType"
+	workflowTypeTagKey = "temporalWorkflowType"
+	namespaceTagKey    = "temporalNamespace"
+	taskQueueTagKey    = "temporalTaskQueue"
 )
 
 // Tracer is an interface for tracing implementations as used by
@@ -453,6 +457,10 @@ func (t *tracingActivityInboundInterceptor) ExecuteActivity(
 			workflowIDTagKey: info.WorkflowExecution.ID,
 			runIDTagKey:      info.WorkflowExecution.RunID,
 			activityIDTagKey: info.ActivityID,
+			activityTypeTagKey: info.ActivityType.Name,
+			namespaceTagKey:    info.WorkflowNamespace,
+			taskQueueTagKey:    info.TaskQueue,
+			workflowTypeTagKey: info.WorkflowType.Name,
 		},
 		FromHeader: true,
 		Time:       info.StartedTime,
@@ -503,6 +511,9 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteWorkflow(
 		Tags: map[string]string{
 			workflowIDTagKey: t.info.WorkflowExecution.ID,
 			runIDTagKey:      t.info.WorkflowExecution.RunID,
+			workflowTypeTagKey: t.info.WorkflowType.Name,
+			namespaceTagKey:    t.info.Namespace,
+			taskQueueTagKey:    t.info.TaskQueueName,
 		},
 		FromHeader:     true,
 		Time:           t.info.WorkflowStartTime,
@@ -639,6 +650,9 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteUpdate(
 			workflowIDTagKey: info.WorkflowExecution.ID,
 			runIDTagKey:      info.WorkflowExecution.RunID,
 			updateIDTagKey:   currentUpdateInfo.ID,
+			workflowTypeTagKey: t.info.WorkflowType.Name,
+			namespaceTagKey:    t.info.Namespace,
+			taskQueueTagKey:    t.info.TaskQueueName,
 		},
 		FromHeader:     true,
 		Time:           time.Now(),
