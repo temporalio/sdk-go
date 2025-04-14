@@ -731,6 +731,30 @@ func duplicateIDDedup(t *testing.T, delay_second bool, with_sleep bool, addition
 	require.Equal(t, additional, additional_update_count)
 }
 
+func TestWorkflowUpdateMissingCallbackFields(t *testing.T) {
+	var suite WorkflowTestSuite
+
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflow("update", "id", &TestUpdateCallback{
+			// Purposely omit OnAccept to ensure Update doesn't panic
+			OnReject:   func(err error) {},
+			OnComplete: func(result interface{}, err error) {},
+		}, 0)
+	}, 0)
+
+	env.ExecuteWorkflow(func(ctx Context) error {
+		err := SetUpdateHandler(ctx, "update", func(ctx Context) error {
+			return nil
+		}, UpdateHandlerOptions{})
+		if err != nil {
+			return err
+		}
+		return Sleep(ctx, time.Hour)
+	})
+	require.NoError(t, env.GetWorkflowError())
+}
+
 func TestAllHandlersFinished(t *testing.T) {
 	var suite WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()

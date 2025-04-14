@@ -97,6 +97,8 @@ type (
 	// Tests are welcome to implement their own version of this interface if they need to test more complex
 	// update logic. This is a simple implementation to make testing basic Workflow Updates easier.
 	//
+	// Note: If any of the three fields are omitted, a no-op implementation will be used by default.
+	//
 	// Exposed as: [go.temporal.io/sdk/testsuite.TestUpdateCallback]
 	TestUpdateCallback struct {
 		OnAccept   func()
@@ -804,15 +806,21 @@ func (c *MockCallWrapper) NotBefore(calls ...*MockCallWrapper) *MockCallWrapper 
 }
 
 func (uc *TestUpdateCallback) Accept() {
-	uc.OnAccept()
+	if uc.OnAccept != nil {
+		uc.OnAccept()
+	}
 }
 
 func (uc *TestUpdateCallback) Reject(err error) {
-	uc.OnReject(err)
+	if uc.OnReject != nil {
+		uc.OnReject(err)
+	}
 }
 
 func (uc *TestUpdateCallback) Complete(success interface{}, err error) {
-	uc.OnComplete(success, err)
+	if uc.OnComplete != nil {
+		uc.OnComplete(success, err)
+	}
 }
 
 // ExecuteWorkflow executes a workflow, wait until workflow complete. It will fail the test if workflow is blocked and
