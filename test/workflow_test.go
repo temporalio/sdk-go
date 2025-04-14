@@ -493,6 +493,23 @@ func (w *Workflows) ActivityHeartbeatWithRetry(ctx workflow.Context) (heartbeatC
 	return
 }
 
+func (w *Workflows) ActivityHeartbeat(ctx workflow.Context) (string, error) {
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 4 * time.Second,
+		HeartbeatTimeout:    2 * time.Second,
+	})
+
+	var activities *Activities
+	_ = workflow.ExecuteActivity(ctx, activities.ActivityToBePaused, false)
+	err := workflow.Sleep(ctx, 1*time.Second)
+	if err != nil {
+		return "", err
+	}
+	var result string
+	err = workflow.ExecuteActivity(ctx, activities.ActivityToBePaused, true).Get(ctx, &result)
+	return result, err
+}
+
 func (w *Workflows) ContinueAsNew(ctx workflow.Context, count int, taskQueue string) (int, error) {
 	tq := workflow.GetInfo(ctx).TaskQueueName
 	if tq != taskQueue {
@@ -3492,6 +3509,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
 	worker.RegisterWorkflow(w.ActivityHeartbeatWithRetry)
+	worker.RegisterWorkflow(w.ActivityHeartbeat)
 	worker.RegisterWorkflow(w.ActivityRetryOnError)
 	worker.RegisterWorkflow(w.CallUnregisteredActivityRetry)
 	worker.RegisterWorkflow(w.ActivityRetryOnHBTimeout)
