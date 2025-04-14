@@ -69,7 +69,7 @@ const (
 )
 
 var (
-	// ErrActivityPaused is returned from and activity heartbeat or the cause of an activity's context to indicate that the activity is paused.
+	// ErrActivityPaused is returned from an activity heartbeat or the cause of an activity's context to indicate that the activity is paused.
 	//
 	// WARNING: Activity pause is currently experimental
 	ErrActivityPaused = errors.New("activity paused")

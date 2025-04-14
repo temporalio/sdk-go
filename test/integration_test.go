@@ -635,7 +635,8 @@ func (ts *IntegrationTestSuite) TestActivityPause() {
 	ts.Len(desc.GetPendingActivities(), 1)
 	ts.Equal(desc.GetPendingActivities()[0].GetActivityType().GetName(), "ActivityToBePaused")
 	ts.Equal(desc.GetPendingActivities()[0].GetAttempt(), int32(1))
-	ts.Nil(desc.GetPendingActivities()[0].GetLastFailure()) // Verify that the activity paused successfully
+	// TODO: Update when https://github.com/temporalio/temporal/pull/7572 is released
+	ts.Nil(desc.GetPendingActivities()[0].GetLastFailure())
 	ts.True(desc.GetPendingActivities()[0].GetPaused())
 }
 

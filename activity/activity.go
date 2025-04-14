@@ -50,7 +50,7 @@ type (
 // that could report the activity completed event to the temporal server via the Client.CompleteActivity() API.
 var ErrResultPending = internal.ErrActivityResultPending
 
-// ErrActivityPaused is returned from and activity heartbeat or the cause of an activity's context to indicate that the activity is paused.
+// ErrActivityPaused is returned from an activity heartbeat or the cause of an activity's context to indicate that the activity is paused.
 //
 // WARNING: Activity pause is currently experimental
 var ErrActivityPaused = internal.ErrActivityPaused
