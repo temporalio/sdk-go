@@ -64,7 +64,7 @@ func (s *activityTestSuite) TearDownTest() {
 }
 
 func (s *activityTestSuite) TestActivityHeartbeat() {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, metrics.NopHandler, cancel,
 		1*time.Second, make(chan struct{}), s.namespace)
 	ctx, _ = newActivityContext(ctx, nil, &activityEnvironment{serviceInvoker: invoker})
@@ -76,7 +76,7 @@ func (s *activityTestSuite) TestActivityHeartbeat() {
 }
 
 func (s *activityTestSuite) TestActivityHeartbeat_InternalError() {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, metrics.NopHandler, cancel,
 		1*time.Second, make(chan struct{}), s.namespace)
 	ctx, _ = newActivityContext(ctx, nil, &activityEnvironment{
@@ -93,7 +93,7 @@ func (s *activityTestSuite) TestActivityHeartbeat_InternalError() {
 }
 
 func (s *activityTestSuite) TestActivityHeartbeat_CancelRequested() {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, metrics.NopHandler, cancel,
 		1*time.Second, make(chan struct{}), s.namespace)
 	ctx, _ = newActivityContext(ctx, nil, &activityEnvironment{
@@ -108,8 +108,25 @@ func (s *activityTestSuite) TestActivityHeartbeat_CancelRequested() {
 	require.Equal(s.T(), ctx.Err(), context.Canceled)
 }
 
+func (s *activityTestSuite) TestActivityHeartbeat_PauseRequested() {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, metrics.NopHandler, cancel,
+		1*time.Second, make(chan struct{}), s.namespace)
+	ctx, _ = newActivityContext(ctx, nil, &activityEnvironment{
+		serviceInvoker: invoker,
+		logger:         getLogger()})
+
+	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.RecordActivityTaskHeartbeatResponse{ActivityPaused: true}, nil).Times(1)
+
+	RecordActivityHeartbeat(ctx, "testDetails")
+	<-ctx.Done()
+	require.Equal(s.T(), ctx.Err(), context.Canceled)
+	require.ErrorIs(s.T(), context.Cause(ctx), ErrActivityPaused)
+}
+
 func (s *activityTestSuite) TestActivityHeartbeat_EntityNotExist() {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, metrics.NopHandler, cancel,
 		1*time.Second, make(chan struct{}), s.namespace)
 	ctx, _ = newActivityContext(ctx, nil, &activityEnvironment{
@@ -125,7 +142,7 @@ func (s *activityTestSuite) TestActivityHeartbeat_EntityNotExist() {
 }
 
 func (s *activityTestSuite) TestActivityHeartbeat_SuppressContinousInvokes() {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, metrics.NopHandler, cancel,
 		2*time.Second, make(chan struct{}), s.namespace)
 	ctx, _ = newActivityContext(ctx, nil, &activityEnvironment{
@@ -210,7 +227,7 @@ func (s *activityTestSuite) TestActivityHeartbeat_SuppressContinousInvokes() {
 }
 
 func (s *activityTestSuite) TestActivityHeartbeat_WorkerStop() {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 	workerStopChannel := make(chan struct{})
 	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, metrics.NopHandler, cancel,
 		5*time.Second, workerStopChannel, s.namespace)

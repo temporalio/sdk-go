@@ -268,8 +268,6 @@ func GetWorkerStopChannel(ctx context.Context) <-chan struct{} {
 // If the activity is either canceled or workflow/activity doesn't exist, then we would cancel
 // the context with error context.Canceled.
 //
-//	TODO: we don't have a way to distinguish between the two cases when context is canceled because
-//	context doesn't support overriding value of ctx.Error.
 //	TODO: Implement automatic heartbeating with cancellation through ctx.
 //
 // details - The details that you provided here can be seen in the workflow when it receives TimeoutError. You

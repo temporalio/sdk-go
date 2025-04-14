@@ -34,10 +34,12 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/baggage"
+	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/converter"
+
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 )
@@ -94,13 +96,34 @@ func ErrorWithNextDelay(_ context.Context, delay time.Duration) error {
 	})
 }
 
-func (a *Activities) ActivityToBeCanceled(ctx context.Context) (string, error) {
-	a.append("ActivityToBeCanceled")
+func (a *Activities) ActivityToBePaused(ctx context.Context, completeOnPause bool) (string, error) {
+	a.append("ActivityToBePaused")
+	info := activity.GetInfo(ctx)
+	go func() {
+		// Pause the activity
+		activity.GetClient(ctx).WorkflowService().PauseActivity(context.Background(), &workflowservice.PauseActivityRequest{
+			Namespace: info.WorkflowNamespace,
+			Execution: &commonpb.WorkflowExecution{
+				WorkflowId: info.WorkflowExecution.ID,
+				RunId:      info.WorkflowExecution.RunID,
+			},
+			Activity: &workflowservice.PauseActivityRequest_Id{
+				Id: info.ActivityID,
+			},
+		})
+	}()
 	for {
 		select {
 		case <-time.After(1 * time.Second):
 			activity.RecordHeartbeat(ctx, "")
 		case <-ctx.Done():
+			if errors.Is(context.Cause(ctx), activity.ErrActivityPaused) {
+				if completeOnPause {
+					return "I am stopped by Pause", nil
+				}
+				return "", context.Cause(ctx)
+
+			}
 			return "I am canceled by Done", nil
 		}
 	}

@@ -26,6 +26,7 @@ package activity
 
 import (
 	"context"
+
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
@@ -49,6 +50,11 @@ type (
 // that could report the activity completed event to the temporal server via the Client.CompleteActivity() API.
 var ErrResultPending = internal.ErrActivityResultPending
 
+// ErrActivityPaused is returned from an activity heartbeat or the cause of an activity's context to indicate that the activity is paused.
+//
+// WARNING: Activity pause is currently experimental
+var ErrActivityPaused = internal.ErrActivityPaused
+
 // GetInfo returns information about the currently executing activity.
 func GetInfo(ctx context.Context) Info {
 	return internal.GetActivityInfo(ctx)
@@ -66,7 +72,18 @@ func GetMetricsHandler(ctx context.Context) metrics.Handler {
 
 // RecordHeartbeat sends a heartbeat for the currently executing activity.
 // If the activity is either canceled or the workflow/activity doesn't exist, then we would cancel
-// the context with error context.Canceled.
+// the context with error [context.Canceled]. The [context.Cause] will be set based on the reason
+// for the cancellation.
+//
+// For example, if the activity is requested to be paused by the Server:
+//
+//		func MyActivity(ctx context.Context) error {
+//			activity.RecordHeartbeat(ctx, "")
+//			// assume the activity is paused by the server
+//			activity.RecordHeartbeat(ctx, "some details")
+//			context.Cause(ctx) // Will return activity.ErrActivityPaused
+//	     	return ctx.Err() // Will return context.Canceled
+//		}
 //
 // details - The details that you provide here can be seen in the workflow when it receives TimeoutError. You
 // can check error with TimeoutType()/Details().

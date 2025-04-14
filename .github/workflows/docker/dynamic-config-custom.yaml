@@ -38,3 +38,5 @@ component.callbacks.allowedAddresses:
   - value:
     - Pattern: "*"
       AllowInsecure: true
+frontend.activityAPIsEnabled:
+  - value: true

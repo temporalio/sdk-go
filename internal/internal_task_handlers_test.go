@@ -2013,7 +2013,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewNotFound(""))
 
 	temporalInvoker := newServiceInvoker(
-		nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, func() {}, 0,
+		nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, func(err error) {}, 0,
 		make(chan struct{}), t.namespace)
 
 	ctx, err := newActivityContext(context.Background(), nil, &activityEnvironment{serviceInvoker: temporalInvoker, logger: t.logger})
@@ -2031,7 +2031,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithNamespaceNotActiveE
 	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewNamespaceNotActive("fake_namespace", "current_cluster", "active_cluster"))
 
 	called := false
-	cancelHandler := func() { called = true }
+	cancelHandler := func(err error) { called = true }
 
 	temporalInvoker := newServiceInvoker(
 		nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, cancelHandler,
