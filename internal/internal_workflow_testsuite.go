@@ -1197,9 +1197,9 @@ func (env *testWorkflowEnvironmentImpl) CompleteActivity(taskToken []byte, resul
 			return
 		}
 		// We do allow canceled error to be passed here
-		cancelReason := context.Canceled
+		cancelAllowed := true
 		request := convertActivityResultToRespondRequest("test-identity", taskToken, data, err,
-			env.GetDataConverter(), env.GetFailureConverter(), defaultTestNamespace, cancelReason, nil, nil, nil)
+			env.GetDataConverter(), env.GetFailureConverter(), defaultTestNamespace, cancelAllowed, nil, nil, nil)
 		env.handleActivityResult(activityID, request, activityHandle.activityType, env.GetDataConverter())
 	}, false /* do not auto schedule workflow task, because activity might be still pending */)
 

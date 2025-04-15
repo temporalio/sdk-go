@@ -1207,7 +1207,7 @@ func convertActivityResultToRespondRequest(
 	dataConverter converter.DataConverter,
 	failureConverter converter.FailureConverter,
 	namespace string,
-	cancelReason error,
+	cancelAllowed bool,
 	versionStamp *commonpb.WorkerVersionStamp,
 	deployment *deploymentpb.Deployment,
 	workerDeploymentOptions *deploymentpb.WorkerDeploymentOptions,
@@ -1231,7 +1231,7 @@ func convertActivityResultToRespondRequest(
 	}
 
 	// Only respond with canceled if allowed
-	if cancelReason != nil {
+	if cancelAllowed {
 		var canceledErr *CanceledError
 		if errors.As(err, &canceledErr) {
 			return &workflowservice.RespondActivityTaskCanceledRequest{
@@ -1247,21 +1247,6 @@ func convertActivityResultToRespondRequest(
 		if errors.Is(err, context.Canceled) {
 			// Cancels that don't originate from the server will have separate cancel reasons, like
 			// ErrWorkerShutdown or ErrActivityPaused
-			if !errors.Is(cancelReason, context.Canceled) {
-				// Cancellations that don't come from the server should be wrapped in an
-				// Application Error, so we don't waste time waiting for the
-				// activity to timeout from the server side.
-				err = fmt.Errorf("activity canceled due to worker shutdown")
-				return &workflowservice.RespondActivityTaskFailedRequest{
-					TaskToken:         taskToken,
-					Failure:           failureConverter.ErrorToFailure(err),
-					Identity:          identity,
-					Namespace:         namespace,
-					WorkerVersion:     versionStamp,
-					Deployment:        deployment,
-					DeploymentOptions: workerDeploymentOptions,
-				}
-			}
 			return &workflowservice.RespondActivityTaskCanceledRequest{
 				TaskToken:         taskToken,
 				Identity:          identity,

@@ -2251,7 +2251,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		metricsHandler.Counter(metrics.UnregisteredActivityInvocationCounter).Inc(1)
 		return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil,
 			NewActivityNotRegisteredError(activityType, ath.getRegisteredActivityNames()),
-			ath.dataConverter, ath.failureConverter, ath.namespace, nil, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions), nil
+			ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions), nil
 	}
 
 	// panic handler
@@ -2269,7 +2269,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			metricsHandler.Counter(metrics.ActivityTaskErrorCounter).Inc(1)
 			panicErr := newPanicError(p, st)
 			result = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr,
-				ath.dataConverter, ath.failureConverter, ath.namespace, nil, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions)
+				ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions)
 		}
 	}()
 
@@ -2285,10 +2285,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 
 	output, err := activityImplementation.Execute(ctx, t.Input)
 	// Check if context canceled at a higher level before we cancel it ourselves
-	var cancelReason error
-	if ctx.Err() == context.Canceled {
-		cancelReason = context.Cause(ctx)
-	}
+	isActivityCanceled := ctx.Err() == context.Canceled && errors.Is(context.Cause(ctx), context.Canceled)
 
 	dlCancelFunc()
 	if <-ctx.Done(); ctx.Err() == context.DeadlineExceeded {
@@ -2312,7 +2309,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		)
 	}
 	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err,
-		ath.dataConverter, ath.failureConverter, ath.namespace, cancelReason, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions), nil
+		ath.dataConverter, ath.failureConverter, ath.namespace, isActivityCanceled, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions), nil
 }
 
 func (ath *activityTaskHandlerImpl) getActivity(name string) activity {
