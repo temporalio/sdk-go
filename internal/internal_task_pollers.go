@@ -1207,11 +1207,10 @@ func convertActivityResultToRespondRequest(
 	dataConverter converter.DataConverter,
 	failureConverter converter.FailureConverter,
 	namespace string,
-	cancelAllowed bool,
+	cancelReason error,
 	versionStamp *commonpb.WorkerVersionStamp,
 	deployment *deploymentpb.Deployment,
 	workerDeploymentOptions *deploymentpb.WorkerDeploymentOptions,
-	canceledFromWorkerShutdown bool,
 ) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
@@ -1232,7 +1231,7 @@ func convertActivityResultToRespondRequest(
 	}
 
 	// Only respond with canceled if allowed
-	if cancelAllowed {
+	if cancelReason != nil {
 		var canceledErr *CanceledError
 		if errors.As(err, &canceledErr) {
 			return &workflowservice.RespondActivityTaskCanceledRequest{
@@ -1246,10 +1245,12 @@ func convertActivityResultToRespondRequest(
 			}
 		}
 		if errors.Is(err, context.Canceled) {
-			// Cancelation due to worker shutdown should be wrapped in an
-			// Application Error, so we don't waste time waiting for the
-			// activity to timeout from the server side.
-			if canceledFromWorkerShutdown {
+			// Cancels that don't originate from the server will have separate cancel reasons, like
+			// ErrWorkerShutdown or ErrActivityPaused
+			if !errors.Is(cancelReason, context.Canceled) {
+				// Cancellations that don't come from the server should be wrapped in an
+				// Application Error, so we don't waste time waiting for the
+				// activity to timeout from the server side.
 				err = fmt.Errorf("activity canceled due to worker shutdown")
 				return &workflowservice.RespondActivityTaskFailedRequest{
 					TaskToken:         taskToken,

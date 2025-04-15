@@ -498,9 +498,9 @@ func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 	}
 
 	// We do allow canceled error to be passed here
-	cancelAllowed := true
+	cancelReason := context.Canceled
 	request := convertActivityResultToRespondRequest(wc.identity, taskToken,
-		data, err, wc.dataConverter, wc.failureConverter, wc.namespace, cancelAllowed, nil, nil, nil, false)
+		data, err, wc.dataConverter, wc.failureConverter, wc.namespace, cancelReason, nil, nil, nil)
 	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
