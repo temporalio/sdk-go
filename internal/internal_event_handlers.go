@@ -87,6 +87,7 @@ type (
 	scheduledNexusOperation struct {
 		startedCallback   func(token string, err error)
 		completedCallback func(result *commonpb.Payload, err error)
+		cancellationType  NexusOperationCancellationType
 		endpoint          string
 		service           string
 		operation         string
@@ -649,6 +650,7 @@ func (wc *workflowEnvironmentImpl) ExecuteNexusOperation(params executeNexusOper
 	command.setData(&scheduledNexusOperation{
 		startedCallback:   startedHandler,
 		completedCallback: callback,
+		cancellationType:  params.options.CancellationType,
 		endpoint:          params.client.Endpoint(),
 		service:           params.client.Service(),
 		operation:         params.operation,
@@ -666,17 +668,24 @@ func (wc *workflowEnvironmentImpl) ExecuteNexusOperation(params executeNexusOper
 func (wc *workflowEnvironmentImpl) RequestCancelNexusOperation(seq int64) {
 	command := wc.commandsHelper.requestCancelNexusOperation(seq)
 	data := command.getData().(*scheduledNexusOperation)
+	cancelCmd := command.(*nexusOperationStateMachine).cancelation
 
-	// Make sure to unblock the futures.
-	if command.getState() == commandStateCreated || command.getState() == commandStateCommandSent {
-		if data.startedCallback != nil {
-			data.startedCallback("", ErrCanceled)
-			data.startedCallback = nil
+	// Make sure to unblock the futures if the caller has indicated they do not want to wait.
+	if cancelCmd.getState() == commandStateCreated || cancelCmd.getState() == commandStateCommandSent || cancelCmd.getState() == commandStateInitiated {
+		switch data.cancellationType {
+		case NexusOperationCancellationTypeAbandon, NexusOperationCancellationTypeTryCancel, NexusOperationCancellationTypeUnspecified:
+			if data.startedCallback != nil {
+				data.startedCallback("", ErrCanceled)
+				data.startedCallback = nil
+			}
+			if data.completedCallback != nil {
+				data.completedCallback(nil, ErrCanceled)
+				data.completedCallback = nil
+			}
+		case NexusOperationCancellationTypeWaitRequested, NexusOperationCancellationTypeWaitCompleted:
+			// No-op. Futures should be unblocked when the cancellation request is received or the operation completes.
 		}
-		if data.completedCallback != nil {
-			data.completedCallback(nil, ErrCanceled)
-			data.completedCallback = nil
-		}
+
 	}
 	wc.logger.Debug("RequestCancelNexusOperation",
 		tagNexusEndpoint, data.endpoint,
@@ -1359,6 +1368,9 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		err = weh.handleNexusOperationCompleted(event)
 	case enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUESTED:
 		weh.commandsHelper.handleNexusOperationCancelRequested(event.GetNexusOperationCancelRequestedEventAttributes().GetScheduledEventId())
+	case enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_COMPLETED,
+		enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_FAILED:
+		err = weh.handleNexusOperationCancelRequestDelivered(event)
 
 	default:
 		if event.WorkerMayIgnore {
@@ -1981,6 +1993,44 @@ func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationCompleted(even
 		state.completedCallback(result, err)
 		state.completedCallback = nil
 	}
+	return nil
+}
+
+func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationCancelRequestDelivered(event *historypb.HistoryEvent) error {
+	var scheduledEventID int64
+	var failure *failurepb.Failure
+
+	switch event.EventType {
+	case enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_COMPLETED:
+		attrs := event.GetNexusOperationCancelRequestCompletedEventAttributes()
+		scheduledEventID = attrs.GetScheduledEventId()
+	case enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_FAILED:
+		attrs := event.GetNexusOperationCancelRequestFailedEventAttributes()
+		scheduledEventID = attrs.GetScheduledEventId()
+		failure = attrs.GetFailure()
+	default:
+		// This is only called internally and should never happen.
+		panic(fmt.Errorf("invalid event type, not a Nexus Operation cancel request resolution: %v", event.EventType))
+	}
+
+	command := weh.commandsHelper.handleNexusOperationCancelRequestDelivered(scheduledEventID)
+	state := command.getData().(*scheduledNexusOperation)
+	err := ErrCanceled
+	if failure != nil {
+		err = weh.failureConverter.FailureToError(failure)
+	}
+
+	if state.cancellationType == NexusOperationCancellationTypeWaitRequested {
+		if state.startedCallback != nil {
+			state.startedCallback("", err)
+			state.startedCallback = nil
+		}
+		if state.completedCallback != nil {
+			state.completedCallback(&commonpb.Payload{}, err)
+			state.completedCallback = nil
+		}
+	}
+
 	return nil
 }
 

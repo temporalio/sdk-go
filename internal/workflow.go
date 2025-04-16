@@ -93,6 +93,40 @@ const (
 	VersioningBehaviorAutoUpgrade
 )
 
+// NexusOperationCancellationType specifies what action should be taken for a Nexus operation when the
+// caller is cancelled.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.NexusOperationCancellationType]
+type NexusOperationCancellationType int
+
+const (
+	// Nexus operation cancellation type is unknown.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.NexusOperationCancellationTypeUnspecified]
+	NexusOperationCancellationTypeUnspecified NexusOperationCancellationType = iota
+
+	// Do not request cancellation of the Nexus operation.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.NexusOperationCancellationTypeAbandon]
+	NexusOperationCancellationTypeAbandon
+
+	// Initiate a cancellation request for the Nexus operation and immediately report cancellation
+	// to the caller. Default.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.NexusOperationCancellationTypeTryCancel]
+	NexusOperationCancellationTypeTryCancel
+
+	// Request cancellation of the Nexus operation and wait for confirmation that the request was received.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.NexusOperationCancellationTypeWaitRequested]
+	NexusOperationCancellationTypeWaitRequested
+
+	// Wait for the Nexus operation to complete.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.NexusOperationCancellationTypeWaitCompleted]
+	NexusOperationCancellationTypeWaitCompleted
+)
+
 var (
 	errWorkflowIDNotSet              = errors.New("workflowId is not set")
 	errLocalActivityParamsBadRequest = errors.New("missing local activity parameters through context, check LocalActivityOptions")
@@ -2503,7 +2537,7 @@ func WithHeartbeatTimeout(ctx Context, d time.Duration) Context {
 	return ctx1
 }
 
-// WithWaitForCancellation adds wait for the cacellation to the copy of the context.
+// WithWaitForCancellation adds wait for the cancellation to the copy of the context.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.WithWaitForCancellation]
 func WithWaitForCancellation(ctx Context, wait bool) Context {
@@ -2630,6 +2664,11 @@ type NexusOperationOptions struct {
 	// Optional: defaults to the maximum allowed by the Temporal server.
 	ScheduleToCloseTimeout time.Duration
 
+	// CancellationType - Indicates what action should be taken when the caller is cancelled.
+	//
+	// Optional: defaults to NexusOperationCancellationTypeTryCancel.
+	CancellationType NexusOperationCancellationType
+
 	// StaticSummary is a single-line fixed summary for this Nexus Operation that will appear in UI/CLI. This can be
 	// in single-line Temporal Markdown format.
 	//
@@ -2753,6 +2792,10 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 		return executeNexusOperationParams{}, err
 	}
 
+	if input.Options.CancellationType == NexusOperationCancellationTypeUnspecified {
+		input.Options.CancellationType = NexusOperationCancellationTypeTryCancel
+	}
+
 	return executeNexusOperationParams{
 		client:      input.Client,
 		operation:   operationName,
@@ -2770,7 +2813,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 		executionFuture:  executionFuture.(*futureImpl),
 	}
 
-	// Immediately return if the context has an error without spawning the child workflow
+	// Immediately return if the context has an error without spawning the Nexus operation.
 	if ctx.Err() != nil {
 		executionSettable.Set(nil, ctx.Err())
 		mainSettable.Set(nil, ctx.Err())
@@ -2809,13 +2852,21 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 		cancellationCallback.fn = func(v any, _ bool) bool {
 			assertNotInReadOnlyStateCancellation(ctx)
 			if ctx.Err() == ErrCanceled && !mainFuture.IsReady() {
-				// Go back to the top of the interception chain.
-				getWorkflowOutboundInterceptor(ctx).RequestCancelNexusOperation(ctx, RequestCancelNexusOperationInput{
-					Client:    input.Client,
-					Operation: input.Operation,
-					Token:     operationToken,
-					seq:       seq,
-				})
+				if input.Options.CancellationType == NexusOperationCancellationTypeAbandon {
+					// Caller has indicated we should not send the cancel request, so just mark futures as done.
+					mainSettable.Set(nil, ErrCanceled)
+					if !executionFuture.IsReady() {
+						executionSettable.Set(nil, ErrCanceled)
+					}
+				} else {
+					// Go back to the top of the interception chain.
+					getWorkflowOutboundInterceptor(ctx).RequestCancelNexusOperation(ctx, RequestCancelNexusOperationInput{
+						Client:    input.Client,
+						Operation: input.Operation,
+						Token:     operationToken,
+						seq:       seq,
+					})
+				}
 			}
 			return false
 		}
