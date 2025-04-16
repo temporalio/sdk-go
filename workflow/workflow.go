@@ -67,6 +67,28 @@ const (
 	HandlerUnfinishedPolicyAbandon = internal.HandlerUnfinishedPolicyAbandon
 )
 
+// NexusOperationCancellationType specifies what action should be taken for a Nexus operation when the
+// caller is cancelled.
+type NexusOperationCancellationType = internal.NexusOperationCancellationType
+
+const (
+	// Nexus operation cancellation type is unknown.
+	NexusOperationCancellationTypeUnspecified NexusOperationCancellationType = iota
+
+	// Do not request cancellation of the Nexus operation.
+	NexusOperationCancellationTypeAbandon
+
+	// Initiate a cancellation request for the Nexus operation and immediately report cancellation
+	// to the caller. Default.
+	NexusOperationCancellationTypeTryCancel
+
+	// Request cancellation of the Nexus operation and wait for confirmation that the request was received.
+	NexusOperationCancellationTypeWaitRequested
+
+	// Wait for the Nexus operation to complete.
+	NexusOperationCancellationTypeWaitCompleted
+)
+
 type (
 
 	// ChildWorkflowFuture represents the result of a child workflow execution
