@@ -1245,8 +1245,6 @@ func convertActivityResultToRespondRequest(
 			}
 		}
 		if errors.Is(err, context.Canceled) {
-			// Cancels that don't originate from the server will have separate cancel reasons, like
-			// ErrWorkerShutdown or ErrActivityPaused
 			return &workflowservice.RespondActivityTaskCanceledRequest{
 				TaskToken:         taskToken,
 				Identity:          identity,
