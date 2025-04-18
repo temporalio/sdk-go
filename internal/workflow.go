@@ -2630,7 +2630,7 @@ type NexusOperationOptions struct {
 	// Optional: defaults to the maximum allowed by the Temporal server.
 	ScheduleToCloseTimeout time.Duration
 
-	// StaticSummary is a single-line fixed summary for this Nexus Operation that will appear in UI/CLI. This can be
+	// Summary is a single-line fixed summary for this Nexus Operation that will appear in UI/CLI. This can be
 	// in single-line Temporal Markdown format.
 	//
 	// Optional: defaults to none/empty.
