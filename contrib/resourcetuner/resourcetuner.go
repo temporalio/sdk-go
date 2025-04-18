@@ -61,24 +61,24 @@ func NewResourceBasedTuner(opts ResourceBasedTunerOptions) (worker.WorkerTuner, 
 	options.CpuTargetPercent = opts.TargetCpu
 	controller := NewResourceController(options)
 	wfSS := &ResourceBasedSlotSupplier{controller: controller,
-		options: defaultWorkflowResourceBasedSlotSupplierOptions()}
+		options: DefaultWorkflowResourceBasedSlotSupplierOptions()}
 	if opts.WorkflowRampThrottle != 0 {
 		wfSS.options.RampThrottle = opts.WorkflowRampThrottle
 	}
 	actSS := &ResourceBasedSlotSupplier{controller: controller,
-		options: defaultActivityResourceBasedSlotSupplierOptions()}
+		options: DefaultActivityResourceBasedSlotSupplierOptions()}
 	if opts.ActivityRampThrottle != 0 {
 		actSS.options.RampThrottle = opts.ActivityRampThrottle
 	}
 	laSS := &ResourceBasedSlotSupplier{controller: controller,
-		options: defaultActivityResourceBasedSlotSupplierOptions()}
+		options: DefaultActivityResourceBasedSlotSupplierOptions()}
 	if opts.ActivityRampThrottle != 0 {
 		laSS.options.RampThrottle = opts.ActivityRampThrottle
 	}
 	nexusSS := &ResourceBasedSlotSupplier{controller: controller,
-		options: defaultWorkflowResourceBasedSlotSupplierOptions()}
+		options: DefaultWorkflowResourceBasedSlotSupplierOptions()}
 	sessSS := &ResourceBasedSlotSupplier{controller: controller,
-		options: defaultActivityResourceBasedSlotSupplierOptions()}
+		options: DefaultActivityResourceBasedSlotSupplierOptions()}
 	compositeTuner, err := worker.NewCompositeTuner(worker.CompositeTunerOptions{
 		WorkflowSlotSupplier:        wfSS,
 		ActivitySlotSupplier:        actSS,
@@ -106,14 +106,14 @@ type ResourceBasedSlotSupplierOptions struct {
 	RampThrottle time.Duration
 }
 
-func defaultWorkflowResourceBasedSlotSupplierOptions() ResourceBasedSlotSupplierOptions {
+func DefaultWorkflowResourceBasedSlotSupplierOptions() ResourceBasedSlotSupplierOptions {
 	return ResourceBasedSlotSupplierOptions{
 		MinSlots:     5,
 		MaxSlots:     1000,
 		RampThrottle: 0 * time.Second,
 	}
 }
-func defaultActivityResourceBasedSlotSupplierOptions() ResourceBasedSlotSupplierOptions {
+func DefaultActivityResourceBasedSlotSupplierOptions() ResourceBasedSlotSupplierOptions {
 	return ResourceBasedSlotSupplierOptions{
 		MinSlots:     1,
 		MaxSlots:     10_000,
