@@ -735,6 +735,22 @@ func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflo
 	return response, nil
 }
 
+// DescribeWorkflow returns information about the specified workflow execution.
+func (wc *WorkflowClient) DescribeWorkflow(ctx context.Context, workflowID, runID string) (*WorkflowExecutionDescription, error) {
+	if err := wc.ensureInitialized(ctx); err != nil {
+		return nil, err
+	}
+
+	response, err := wc.interceptor.DescribeWorkflow(ctx, &ClientDescribeWorkflowInput{
+		WorkflowID: workflowID,
+		RunID:      runID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return response.Response, nil
+}
+
 // QueryWorkflow queries a given workflow execution
 // workflowID and queryType are required, other parameters are optional.
 //   - workflow ID of the workflow.
@@ -899,6 +915,27 @@ type QueryWorkflowWithOptionsResponse struct {
 
 	// QueryRejected contains information about the query rejection.
 	QueryRejected *querypb.QueryRejected
+}
+
+type WorkflowExecutionMetadata struct {
+	WorkflowExecution       WorkflowExecution
+	WorkflowType            WorkflowType
+	TaskQueueName           string
+	Status                  enumspb.WorkflowExecutionStatus
+	Memo                    *commonpb.Memo // Value can be decoded using data converter (defaultDataConverter, or custom one if set).
+	TypedSearchAttributes   SearchAttributes
+	ParentWorkflowExecution *WorkflowExecution
+	RootWorkflowExecution   *WorkflowExecution
+	WorkflowStartTime       time.Time
+	WorkflowCloseTime       *time.Time
+	ExecutionTime           *time.Time
+	HistoryLength           int
+}
+
+type WorkflowExecutionDescription struct {
+	WorkflowExecutionMetadata
+	StaticSummary string
+	StaticDetails string
 }
 
 // QueryWorkflowWithOptions queries a given workflow execution and returns the query result synchronously.
@@ -2139,6 +2176,97 @@ func (w *workflowClientInterceptor) TerminateWorkflow(ctx context.Context, in *C
 	defer cancel()
 	_, err = w.client.workflowService.TerminateWorkflowExecution(grpcCtx, request)
 	return err
+}
+
+func (w *workflowClientInterceptor) DescribeWorkflow(
+	ctx context.Context,
+	in *ClientDescribeWorkflowInput,
+) (*ClientDescribeWorkflowOutput, error) {
+
+	req := &workflowservice.DescribeWorkflowExecutionRequest{
+		Namespace: w.client.namespace,
+		Execution: &commonpb.WorkflowExecution{
+			WorkflowId: in.WorkflowID,
+			RunId:      in.RunID,
+		},
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	resp, err := w.client.workflowService.DescribeWorkflowExecution(grpcCtx, req)
+	if err != nil {
+		return nil, err
+	}
+	info := resp.GetWorkflowExecutionInfo()
+
+	var closeTime *time.Time
+	if info.GetCloseTime().IsValid() {
+		t := info.GetCloseTime().AsTime()
+		closeTime = &t
+	}
+	var executionTime *time.Time
+	if info.GetExecutionTime().IsValid() {
+		t := info.GetExecutionTime().AsTime()
+		executionTime = &t
+	}
+
+	var parentWorkflowExecution *WorkflowExecution
+	if info.ParentExecution != nil {
+		parentWorkflowExecution = &WorkflowExecution{
+			ID:    info.GetParentExecution().GetWorkflowId(),
+			RunID: info.GetParentExecution().GetRunId(),
+		}
+	}
+
+	var rootWorkflowExecution *WorkflowExecution
+	if info.RootExecution != nil {
+		rootWorkflowExecution = &WorkflowExecution{
+			ID:    info.GetRootExecution().GetWorkflowId(),
+			RunID: info.GetRootExecution().GetRunId(),
+		}
+	}
+
+	m := WorkflowExecutionMetadata{
+		WorkflowExecution: WorkflowExecution{
+			ID:    info.GetExecution().GetWorkflowId(),
+			RunID: info.GetExecution().GetRunId(),
+		},
+		WorkflowType: WorkflowType{
+			Name: info.GetType().GetName(),
+		},
+		TaskQueueName:           info.GetTaskQueue(),
+		Memo:                    info.Memo,
+		TypedSearchAttributes:   convertToTypedSearchAttributes(w.client.logger, info.GetSearchAttributes().IndexedFields),
+		Status:                  info.GetStatus(),
+		ParentWorkflowExecution: parentWorkflowExecution,
+		RootWorkflowExecution:   rootWorkflowExecution,
+		WorkflowStartTime:       info.GetStartTime().AsTime(),
+		ExecutionTime:           executionTime,
+		WorkflowCloseTime:       closeTime,
+		HistoryLength:           int(info.GetHistoryLength()),
+	}
+	var staticSummary string
+	var staticDetails string
+	if resp.GetExecutionConfig().UserMetadata != nil {
+		userMetadata := resp.GetExecutionConfig().GetUserMetadata()
+		err := w.client.dataConverter.FromPayload(userMetadata.Summary, &staticSummary)
+		if err != nil {
+			return nil, err
+		}
+		err = w.client.dataConverter.FromPayload(userMetadata.Details, &staticDetails)
+		if err != nil {
+			return nil, err
+		}
+	}
+	o := &WorkflowExecutionDescription{
+		WorkflowExecutionMetadata: m,
+		StaticSummary:             staticSummary,
+		StaticDetails:             staticDetails,
+	}
+
+	return &ClientDescribeWorkflowOutput{
+		Response: o,
+	}, nil
 }
 
 func (w *workflowClientInterceptor) QueryWorkflow(

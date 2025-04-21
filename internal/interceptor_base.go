@@ -567,6 +567,14 @@ func (c *ClientOutboundInterceptorBase) QueryWorkflow(
 	return c.Next.QueryWorkflow(ctx, in)
 }
 
+// QueryWorkflow implements ClientOutboundInterceptor.DescribeWorkflow.
+func (c *ClientOutboundInterceptorBase) DescribeWorkflow(
+	ctx context.Context,
+	in *ClientDescribeWorkflowInput,
+) (*ClientDescribeWorkflowOutput, error) {
+	return c.Next.DescribeWorkflow(ctx, in)
+}
+
 // ExecuteWorkflow implements ClientOutboundInterceptor.CreateSchedule.
 func (c *ClientOutboundInterceptorBase) CreateSchedule(ctx context.Context, in *ScheduleClientCreateInput) (ScheduleHandle, error) {
 	return c.Next.CreateSchedule(ctx, in)

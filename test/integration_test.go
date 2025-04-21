@@ -745,7 +745,7 @@ func (ts *IntegrationTestSuite) TestCascadingCancellation() {
 	started := make(chan bool, 1)
 	go func() {
 		for {
-			_, err := ts.client.DescribeWorkflowExecution(ctx, childWorkflowID, "")
+			_, err := ts.client.DescribeWorkflow(ctx, childWorkflowID, "")
 			if err == nil {
 				break
 			}
@@ -765,9 +765,9 @@ func (ts *IntegrationTestSuite) TestCascadingCancellation() {
 	var canceledErr *temporal.CanceledError
 	ts.True(errors.As(err, &canceledErr))
 
-	resp, err := ts.client.DescribeWorkflowExecution(ctx, childWorkflowID, "")
+	resp, err := ts.client.DescribeWorkflow(ctx, childWorkflowID, "")
 	ts.NoError(err)
-	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_CANCELED, resp.GetWorkflowExecutionInfo().GetStatus())
+	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_CANCELED, resp.Status)
 }
 
 func (ts *IntegrationTestSuite) TestStackTraceQuery() {
@@ -1045,9 +1045,9 @@ func (ts *IntegrationTestSuite) TestWorkflowIDConflictPolicy() {
 	run3, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.IDConflictPolicy)
 	ts.NotEqual(run1.GetRunID(), run3.GetRunID())
 
-	statusRun1, err := ts.client.DescribeWorkflowExecution(ctx, run1.GetID(), run1.GetRunID())
+	statusRun1, err := ts.client.DescribeWorkflow(ctx, run1.GetID(), run1.GetRunID())
 	ts.NoError(err)
-	ts.Equal(statusRun1.WorkflowExecutionInfo.Status, enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED)
+	ts.Equal(statusRun1.Status, enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED)
 }
 
 func (ts *IntegrationTestSuite) TestChildWFWithRetryPolicy_ShortLived() {
@@ -1116,11 +1116,10 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyTerminate() {
 	err := ts.executeWorkflow("test-childwf-parent-close-policy", ts.workflows.ChildWorkflowSuccessWithParentClosePolicyTerminate, &childWorkflowID)
 	ts.NoError(err)
 	for {
-		resp, err := ts.client.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
+		resp, err := ts.client.DescribeWorkflow(context.Background(), childWorkflowID, "")
 		ts.NoError(err)
-		info := resp.WorkflowExecutionInfo
-		if info.CloseTime != nil {
-			ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED, info.GetStatus(), info)
+		if resp.WorkflowCloseTime != nil {
+			ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED, resp.Status, resp)
 			break
 		}
 		time.Sleep(time.Millisecond * 500)
@@ -1133,11 +1132,10 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 	ts.NoError(err)
 
 	for {
-		resp, err := ts.client.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
+		resp, err := ts.client.DescribeWorkflow(context.Background(), childWorkflowID, "")
 		ts.NoError(err)
-		info := resp.WorkflowExecutionInfo
-		if info.CloseTime != nil {
-			ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED, info.GetStatus(), info)
+		if resp.WorkflowCloseTime != nil {
+			ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED, resp.Status, resp)
 			break
 		}
 		time.Sleep(time.Millisecond * 500)
@@ -5281,7 +5279,7 @@ func (ts *IntegrationTestSuite) TestMultiNamespaceClient() {
 	defer cancel()
 
 	// Make simple call to describe an execution
-	_, _ = ts.client.DescribeWorkflowExecution(ctx, "id-that-does-not-exist", "")
+	_, _ = ts.client.DescribeWorkflow(ctx, "id-that-does-not-exist", "")
 
 	// Confirm count on our namespace but not on the other
 	ts.assertMetricCount(metrics.TemporalRequest, 1,
@@ -5295,7 +5293,7 @@ func (ts *IntegrationTestSuite) TestMultiNamespaceClient() {
 	newClient, err := client.NewClientFromExisting(ts.client, client.Options{Namespace: "some-other-namespace"})
 	ts.NoError(err)
 	defer newClient.Close()
-	_, _ = newClient.DescribeWorkflowExecution(ctx, "id-that-does-not-exist", "")
+	_, _ = newClient.DescribeWorkflow(ctx, "id-that-does-not-exist", "")
 
 	// Confirm there was no count change to other namespace but there is now a
 	// request for this one
@@ -5380,12 +5378,12 @@ func (ts *IntegrationTestSuite) TestUpsertMemoFromNil() {
 	time.Sleep(2 * time.Second)
 
 	// Query ES for memo
-	resp, err := ts.client.DescribeWorkflowExecution(ctx, wfid, "")
+	resp, err := ts.client.DescribeWorkflow(ctx, wfid, "")
 	ts.NoError(err)
 	ts.NotNil(resp)
 
 	// workflow execution info matches memo in ES and correct
-	ts.Equal(resp.WorkflowExecutionInfo.Memo, memo)
+	ts.Equal(resp.Memo, memo)
 	ts.Equal(expectedMemo, memo)
 }
 
@@ -5434,12 +5432,12 @@ func (ts *IntegrationTestSuite) TestUpsertMemoFromEmptyMap() {
 	time.Sleep(2 * time.Second)
 
 	// Query ES for memo
-	resp, err := ts.client.DescribeWorkflowExecution(ctx, wfid, "")
+	resp, err := ts.client.DescribeWorkflow(ctx, wfid, "")
 	ts.NoError(err)
 	ts.NotNil(resp)
 
 	// workflow execution info matches memo in ES and correct
-	ts.Equal(resp.WorkflowExecutionInfo.Memo, memo)
+	ts.Equal(resp.Memo, memo)
 	ts.Equal(expectedMemo, memo)
 }
 
@@ -5491,12 +5489,12 @@ func (ts *IntegrationTestSuite) TestUpsertMemoWithExistingMemo() {
 	time.Sleep(2 * time.Second)
 
 	// Query ES for memo
-	resp, err := ts.client.DescribeWorkflowExecution(ctx, wfid, "")
+	resp, err := ts.client.DescribeWorkflow(ctx, wfid, "")
 	ts.NoError(err)
 	ts.NotNil(resp)
 
 	// workflow execution info matches memo in ES and correct
-	ts.Equal(resp.WorkflowExecutionInfo.Memo, memo)
+	ts.Equal(resp.Memo, memo)
 	ts.Equal(expectedMemo, memo)
 }
 
@@ -6940,15 +6938,11 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 	ts.NoError(err)
 
 	// Confirm describing has the values set as expected
-	resp, err := ts.client.DescribeWorkflowExecution(ctx, run.GetID(), "")
+	// Confirm the workflow description has the expected details
+	desc, err := ts.client.DescribeWorkflow(ctx, run.GetID(), run.GetRunID())
 	ts.NoError(err)
-	var str string
-	ts.NoError(converter.GetDefaultDataConverter().FromPayload(
-		resp.ExecutionConfig.UserMetadata.Summary, &str))
-	ts.Equal("my-wf-summary", str)
-	ts.NoError(converter.GetDefaultDataConverter().FromPayload(
-		resp.ExecutionConfig.UserMetadata.Details, &str))
-	ts.Equal("my-wf-details", str)
+	ts.Equal("my-wf-summary", desc.StaticSummary)
+	ts.Equal("my-wf-details", desc.StaticDetails)
 
 	// Send special query and confirm current details and query/update/signal
 	// info are present
@@ -6982,6 +6976,12 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 	ts.NoError(val.Get(&metadata))
 	ts.Equal("current-details-2", metadata.CurrentDetails)
 
+	// Confirm the workflow description has the expected details
+	desc, err = ts.client.DescribeWorkflow(ctx, run.GetID(), run.GetRunID())
+	ts.NoError(err)
+	ts.Equal("my-wf-summary", desc.StaticSummary)
+	ts.Equal("my-wf-details", desc.StaticDetails)
+
 	// Confirm that the history has a timer with the proper summary
 	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	var timerEvent *historypb.HistoryEvent
@@ -7006,6 +7006,7 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 		}
 	}
 	ts.NotNil(timerEvent)
+	var str string
 	ts.NoError(converter.GetDefaultDataConverter().FromPayload(
 		timerEvent.UserMetadata.Summary, &str))
 	ts.Equal("my-timer", str)

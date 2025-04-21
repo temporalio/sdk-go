@@ -390,6 +390,11 @@ type testSuiteClientForNexusOperations struct {
 	env *testWorkflowEnvironmentImpl
 }
 
+// DescribeWorkflow implements Client.
+func (t *testSuiteClientForNexusOperations) DescribeWorkflow(ctx context.Context, workflowID string, runID string) (*WorkflowExecutionDescription, error) {
+	panic("not implemented in the test environment")
+}
+
 // CancelWorkflow implements Client.
 func (t *testSuiteClientForNexusOperations) CancelWorkflow(ctx context.Context, workflowID string, runID string) error {
 	if set, ok := ctx.Value(IsWorkflowRunOpContextKey).(bool); !ok || !set {
