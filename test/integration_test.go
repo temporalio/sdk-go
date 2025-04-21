@@ -6941,8 +6941,12 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 	// Confirm the workflow description has the expected details
 	desc, err := ts.client.DescribeWorkflow(ctx, run.GetID(), run.GetRunID())
 	ts.NoError(err)
-	ts.Equal("my-wf-summary", desc.StaticSummary)
-	ts.Equal("my-wf-details", desc.StaticDetails)
+	summary, err := desc.GetStaticSummary()
+	ts.NoError(err)
+	ts.Equal("my-wf-summary", summary)
+	details, err := desc.GetStaticDetails()
+	ts.NoError(err)
+	ts.Equal("my-wf-details", details)
 
 	// Send special query and confirm current details and query/update/signal
 	// info are present
@@ -6979,8 +6983,12 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 	// Confirm the workflow description has the expected details
 	desc, err = ts.client.DescribeWorkflow(ctx, run.GetID(), run.GetRunID())
 	ts.NoError(err)
-	ts.Equal("my-wf-summary", desc.StaticSummary)
-	ts.Equal("my-wf-details", desc.StaticDetails)
+	summary, err = desc.GetStaticSummary()
+	ts.NoError(err)
+	ts.Equal("my-wf-summary", summary)
+	details, err = desc.GetStaticDetails()
+	ts.NoError(err)
+	ts.Equal("my-wf-details", details)
 
 	// Confirm that the history has a timer with the proper summary
 	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)

@@ -918,24 +918,64 @@ type QueryWorkflowWithOptionsResponse struct {
 }
 
 type WorkflowExecutionMetadata struct {
-	WorkflowExecution       WorkflowExecution
-	WorkflowType            WorkflowType
-	TaskQueueName           string
-	Status                  enumspb.WorkflowExecutionStatus
-	Memo                    *commonpb.Memo // Value can be decoded using data converter (defaultDataConverter, or custom one if set).
-	TypedSearchAttributes   SearchAttributes
+	// WorkflowExecution is the unique identifier for the workflow execution
+	WorkflowExecution WorkflowExecution
+	// WorkflowType is the type of the workflow execution
+	WorkflowType WorkflowType
+	// TaskQueueName is the name of the task queue
+	TaskQueueName string
+	// Status is the status of the workflow execution
+	Status enumspb.WorkflowExecutionStatus
+	// Memo is the current memo of the workflow execution
+	// Values can be decoded using data converter (defaultDataConverter, or custom one if set).
+	Memo *commonpb.Memo
+	// TypedSearchAttributes is the current search attributes of the workflow execution
+	TypedSearchAttributes SearchAttributes
+	// ParentWorkflowExecution is the parent workflow execution
+	// This field is only set if the workflow execution is a child of another workflow execution
 	ParentWorkflowExecution *WorkflowExecution
-	RootWorkflowExecution   *WorkflowExecution
-	WorkflowStartTime       time.Time
-	WorkflowCloseTime       *time.Time
-	ExecutionTime           *time.Time
-	HistoryLength           int
+	// RootWorkflowExecution is the root workflow execution
+	RootWorkflowExecution *WorkflowExecution
+	// WorkflowStartTime is the time when the workflow execution started
+	WorkflowStartTime time.Time
+	// WorkflowCloseTime is the time when the workflow execution closed
+	// This field is only set if the workflow execution is closed
+	WorkflowCloseTime *time.Time
+	// ExecutionTime is the time when the workflow execution started or should start
+	ExecutionTime *time.Time
+	// HistoryLength is the number of history events in the workflow execution
+	HistoryLength int
 }
 
 type WorkflowExecutionDescription struct {
 	WorkflowExecutionMetadata
-	StaticSummary string
-	StaticDetails string
+	dc                   converter.DataConverter
+	staticSummaryPayload *commonpb.Payload
+	staticDetailsPayload *commonpb.Payload
+}
+
+// GetStaticSummary returns the summary set on workflow start.
+//
+// NOTE: Experimental
+func (w *WorkflowExecutionDescription) GetStaticSummary() (string, error) {
+	if w.staticSummaryPayload == nil {
+		return "", nil
+	}
+	var summary string
+	err := w.dc.FromPayload(w.staticSummaryPayload, &summary)
+	return summary, err
+}
+
+// GetStaticDetails returns the details set on workflow start.
+//
+// NOTE: Experimental
+func (w *WorkflowExecutionDescription) GetStaticDetails() (string, error) {
+	if w.staticDetailsPayload == nil {
+		return "", nil
+	}
+	var details string
+	err := w.dc.FromPayload(w.staticDetailsPayload, &details)
+	return details, err
 }
 
 // QueryWorkflowWithOptions queries a given workflow execution and returns the query result synchronously.
@@ -2245,23 +2285,11 @@ func (w *workflowClientInterceptor) DescribeWorkflow(
 		WorkflowCloseTime:       closeTime,
 		HistoryLength:           int(info.GetHistoryLength()),
 	}
-	var staticSummary string
-	var staticDetails string
-	if resp.GetExecutionConfig().UserMetadata != nil {
-		userMetadata := resp.GetExecutionConfig().GetUserMetadata()
-		err := w.client.dataConverter.FromPayload(userMetadata.Summary, &staticSummary)
-		if err != nil {
-			return nil, err
-		}
-		err = w.client.dataConverter.FromPayload(userMetadata.Details, &staticDetails)
-		if err != nil {
-			return nil, err
-		}
-	}
 	o := &WorkflowExecutionDescription{
 		WorkflowExecutionMetadata: m,
-		StaticSummary:             staticSummary,
-		StaticDetails:             staticDetails,
+		dc:                        w.client.dataConverter,
+		staticSummaryPayload:      resp.GetExecutionConfig().GetUserMetadata().Summary,
+		staticDetailsPayload:      resp.GetExecutionConfig().GetUserMetadata().Details,
 	}
 
 	return &ClientDescribeWorkflowOutput{
