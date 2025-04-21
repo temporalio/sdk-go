@@ -7511,7 +7511,7 @@ func (ts *IntegrationTestSuite) TestRawValueQueryMetadata() {
 	ts.Equal(3, len(metadata.Definition.QueryDefinitions))
 }
 
-func (ts *IntegrationTestSuite) TestActivityCancelServer() {
+func (ts *IntegrationTestSuite) TestActivityCancelFromWorkerShutdown() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -7521,7 +7521,6 @@ func (ts *IntegrationTestSuite) TestActivityCancelServer() {
 		WorkflowExecutionTimeout: 6 * time.Second,
 		WorkflowTaskTimeout:      time.Second,
 		WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
-		EnableEagerStart:         true,
 	}
 	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.WorkflowReactToCancel)
 

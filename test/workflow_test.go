@@ -3506,16 +3506,17 @@ func (w *Workflows) WorkflowRawValue(ctx workflow.Context, value converter.RawVa
 }
 
 func (w *Workflows) WorkflowReactToCancel(ctx workflow.Context) error {
+	var activities *Activities
 	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		ScheduleToCloseTimeout: 30 * time.Second,
+		ScheduleToCloseTimeout: 5 * time.Second,
 		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval:    1 * time.Second,
-			BackoffCoefficient: 1.0,
-			MaximumAttempts:    3,
+			MaximumAttempts: 2,
 		},
 	})
-	var activities *Activities
-	_ = workflow.ExecuteActivity(ctx, activities.ReactToCancel, time.Second*2).Get(ctx, nil)
+	err := workflow.ExecuteActivity(ctx, activities.ReactToCancel).Get(ctx, nil)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
