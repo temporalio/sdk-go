@@ -5263,6 +5263,18 @@ func (ts *IntegrationTestSuite) TestHistoryLength() {
 	ts.Equal(expected, actual)
 }
 
+func (ts *IntegrationTestSuite) TestRootWorkflow() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-root-workflow-length"),
+		ts.workflows.RootWorkflow)
+	ts.NoError(err)
+	var result string
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal("empty test-root-workflow-length", result)
+}
+
 func (ts *IntegrationTestSuite) TestMultiNamespaceClient() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

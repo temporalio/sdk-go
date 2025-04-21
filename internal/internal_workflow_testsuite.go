@@ -469,6 +469,11 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(
 	childEnv.workflowInfo.CronSchedule = cronSchedule
 	childEnv.workflowInfo.ParentWorkflowNamespace = env.workflowInfo.Namespace
 	childEnv.workflowInfo.ParentWorkflowExecution = &env.workflowInfo.WorkflowExecution
+	if env.workflowInfo.RootWorkflowExecution == nil {
+		childEnv.workflowInfo.RootWorkflowExecution = &env.workflowInfo.WorkflowExecution
+	} else {
+		childEnv.workflowInfo.ParentWorkflowExecution = env.workflowInfo.RootWorkflowExecution
+	}
 
 	searchAttrs, err := serializeSearchAttributes(params.SearchAttributes, params.TypedSearchAttributes)
 	if err != nil {
