@@ -1136,7 +1136,7 @@ type (
 		//  - serviceerror.NotFound
 		DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error)
 
-		// DescribeWorkflowExecution returns information about the specified workflow execution.
+		// DescribeWorkflow returns information about the specified workflow execution.
 		//  - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
 		//
 		// The errors it can return:
