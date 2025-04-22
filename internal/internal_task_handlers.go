@@ -1894,7 +1894,9 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		}}
 	} else if workflowContext.err != nil {
 		// Workflow failures
-		metricsHandler.Counter(metrics.WorkflowFailedCounter).Inc(1)
+		if !IsBenignApplicationError(workflowContext.err) {
+			metricsHandler.Counter(metrics.WorkflowFailedCounter).Inc(1)
+		}
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION)
 		failure := wth.failureConverter.ErrorToFailure(workflowContext.err)
 		closeCommand.Attributes = &commandpb.Command_FailWorkflowExecutionCommandAttributes{FailWorkflowExecutionCommandAttributes: &commandpb.FailWorkflowExecutionCommandAttributes{

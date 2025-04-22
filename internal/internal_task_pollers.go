@@ -482,13 +482,8 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 			failureReason = "NonDeterminismError"
 		}
 
-		logFunc := wtp.logger.Warn // Default to Warn
-		if IsBenignApplicationError(taskErr) {
-			logFunc = wtp.logger.Debug // Downgrade to Debug for benign application errors
-		} else {
-			incrementWorkflowTaskFailureCounter(metricsHandler, failureReason)
-		}
-		logFunc("Failed to process workflow task.",
+		incrementWorkflowTaskFailureCounter(metricsHandler, failureReason)
+		wtp.logger.Warn("Failed to process workflow task.",
 			tagWorkflowType, task.WorkflowType.GetName(),
 			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 			tagRunID, task.WorkflowExecution.GetRunId(),
