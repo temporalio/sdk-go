@@ -3524,15 +3524,29 @@ func (w *Workflows) WorkflowRawValue(ctx workflow.Context, value converter.RawVa
 	return returnVal, err
 }
 
-func (w *Workflows) WorkflowReactToCancel(ctx workflow.Context) error {
+func (w *Workflows) WorkflowReactToCancel(ctx workflow.Context, localActivity bool) error {
 	var activities *Activities
-	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		ScheduleToCloseTimeout: 5 * time.Second,
-		RetryPolicy: &temporal.RetryPolicy{
-			MaximumAttempts: 2,
-		},
-	})
-	err := workflow.ExecuteActivity(ctx, activities.ReactToCancel).Get(ctx, nil)
+	var err error
+	// Allow for 2 attempts so when a worker shuts down and a 2nd one is created,
+	// it can use the 2nd attempt to complete the activity.
+	retryPolicy := temporal.RetryPolicy{
+		MaximumAttempts: 2,
+	}
+
+	if localActivity {
+		ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+			ScheduleToCloseTimeout: 5 * time.Second,
+			RetryPolicy:            &retryPolicy,
+		})
+		err = workflow.ExecuteLocalActivity(ctx, activities.Sleep, 1*time.Second).Get(ctx, nil)
+	} else {
+		ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+			ScheduleToCloseTimeout: 5 * time.Second,
+			RetryPolicy:            &retryPolicy,
+		})
+		err = workflow.ExecuteActivity(ctx, activities.Sleep, 1*time.Second).Get(ctx, nil)
+	}
+
 	if err != nil {
 		return err
 	}

@@ -7534,7 +7534,7 @@ func (ts *IntegrationTestSuite) TestActivityCancelFromWorkerShutdown() {
 		WorkflowTaskTimeout:      time.Second,
 		WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
 	}
-	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.WorkflowReactToCancel)
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.WorkflowReactToCancel, false)
 
 	// Give the workflow time to run and run activity
 	time.Sleep(100 * time.Millisecond)
@@ -7548,5 +7548,55 @@ func (ts *IntegrationTestSuite) TestActivityCancelFromWorkerShutdown() {
 	defer nextWorker.Stop()
 
 	err = run.Get(ctx, nil)
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		if err != nil {
+			break
+		}
+		fmt.Println("[event]", event)
+	}
 	ts.NoError(err)
+}
+
+func (ts *IntegrationTestSuite) TestLocalActivityCancelFromWorkerShutdown() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	options := client.StartWorkflowOptions{
+		ID:                       "test-local-activity-cancel" + uuid.NewString(),
+		TaskQueue:                ts.taskQueueName,
+		WorkflowExecutionTimeout: 6 * time.Second,
+		WorkflowTaskTimeout:      2 * time.Second,
+		WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
+	}
+
+	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.WorkflowReactToCancel, true)
+
+	// Give the workflow time to run and run activity
+	time.Sleep(100 * time.Millisecond)
+	ts.worker.Stop()
+	ts.workerStopped = true
+	// Now create a new worker on that same task queue to resume the work of the
+	// activity retry
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
+	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.NoError(nextWorker.Start())
+	defer nextWorker.Stop()
+
+	err = run.Get(ctx, nil)
+	var laCompleted int
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		if err != nil {
+			break
+		}
+		attributes := event.GetMarkerRecordedEventAttributes()
+		if event.EventType == enumspb.EVENT_TYPE_MARKER_RECORDED && attributes.MarkerName == "LocalActivity" && attributes.GetFailure() == nil {
+			laCompleted++
+		}
+	}
+	ts.NoError(err)
+	ts.Equal(1, laCompleted)
 }

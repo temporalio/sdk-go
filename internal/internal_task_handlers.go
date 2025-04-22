@@ -1009,6 +1009,10 @@ processWorkflowLoop:
 					case lar := <-workflowTask.laResultCh:
 						// local activity result ready
 						response, err = workflowContext.ProcessLocalActivityResult(workflowTask, lar)
+						var appErr *ApplicationError
+						if errors.As(lar.err, &appErr) {
+							break processWorkflowLoop
+						}
 						if err == nil && response == nil {
 							// workflow task is not done yet, still waiting for more local activities
 							continue waitLocalActivityLoop
@@ -2295,6 +2299,9 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 
 	output, err := activityImplementation.Execute(ctx, t.Input)
 	// Check if context canceled at a higher level before we cancel it ourselves
+
+	// Cancels that don't originate from the server will have separate cancel reasons, like
+	// ErrWorkerShutdown or ErrActivityPaused
 	isActivityCanceled := ctx.Err() == context.Canceled && errors.Is(context.Cause(ctx), &CanceledError{})
 
 	dlCancelFunc()
