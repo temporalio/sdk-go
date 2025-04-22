@@ -474,19 +474,26 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 ) (response *workflowservice.RespondWorkflowTaskCompletedResponse, err error) {
 	metricsHandler := wtp.metricsHandler.WithTags(metrics.WorkflowTags(task.WorkflowType.GetName()))
 	if taskErr != nil {
-		wtp.logger.Warn("Failed to process workflow task.",
+		failWorkflowTask := wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)
+		completedRequest = failWorkflowTask
+
+		failureReason := "WorkflowError"
+		if failWorkflowTask.Cause == enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR {
+			failureReason = "NonDeterminismError"
+		}
+
+		logFunc := wtp.logger.Warn // Default to Warn
+		if IsBenignApplicationError(taskErr) {
+			logFunc = wtp.logger.Debug // Downgrade to Debug for benign application errors
+		} else {
+			incrementWorkflowTaskFailureCounter(metricsHandler, failureReason)
+		}
+		logFunc("Failed to process workflow task.",
 			tagWorkflowType, task.WorkflowType.GetName(),
 			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 			tagRunID, task.WorkflowExecution.GetRunId(),
 			tagAttempt, task.Attempt,
 			tagError, taskErr)
-		failWorkflowTask := wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)
-		failureReason := "WorkflowError"
-		if failWorkflowTask.Cause == enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR {
-			failureReason = "NonDeterminismError"
-		}
-		incrementWorkflowTaskFailureCounter(metricsHandler, failureReason)
-		completedRequest = failWorkflowTask
 	}
 
 	metricsHandler.Timer(metrics.WorkflowTaskExecutionLatency).Record(time.Since(startTime))
@@ -705,7 +712,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 				metricsHandler.Counter(metrics.LocalActivityErrorCounter).Inc(1)
 				err = newPanicError(p, st)
 			}
-			if err != nil {
+			if err != nil && !IsBenignApplicationError(err) {
 				metricsHandler.Counter(metrics.LocalActivityFailedCounter).Inc(1)
 				metricsHandler.Counter(metrics.LocalActivityExecutionFailedCounter).Inc(1)
 			}
@@ -1104,8 +1111,10 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 		return err
 	}
 	// in case if activity execution failed, request should be of type RespondActivityTaskFailedRequest
-	if _, ok := request.(*workflowservice.RespondActivityTaskFailedRequest); ok {
-		activityMetricsHandler.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
+	if req, ok := request.(*workflowservice.RespondActivityTaskFailedRequest); ok {
+		if !isBenignProtoApplicationFailure(req.Failure) {
+			activityMetricsHandler.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
+		}
 	}
 	activityMetricsHandler.Timer(metrics.ActivityExecutionLatency).Record(time.Since(executionStartTime))
 

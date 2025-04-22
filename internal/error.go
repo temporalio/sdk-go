@@ -119,6 +119,9 @@ Workflow consumers will get an instance of *WorkflowExecutionError. This error w
 */
 
 type (
+	// Category of the error. Maps to logging/metrics behaviours.
+	ApplicationErrorCategory string
+
 	// ApplicationErrorOptions represents a combination of error attributes and additional requests.
 	// All fields are optional, providing flexibility in error customization.
 	//
@@ -137,6 +140,7 @@ type (
 		//
 		// NOTE: This option is supported by Temporal Server >= v1.24.2 older version will ignore this value.
 		NextRetryDelay time.Duration
+		Category       ApplicationErrorCategory
 	}
 
 	// ApplicationError returned from activity implementations with message and optional details.
@@ -150,6 +154,7 @@ type (
 		cause          error
 		details        converter.EncodedValues
 		nextRetryDelay time.Duration
+		category       ApplicationErrorCategory
 	}
 
 	// TimeoutError returned when activity or child workflow timed out.
@@ -380,6 +385,11 @@ var (
 	ErrMissingWorkflowID = errors.New("workflow ID is unset for Nexus operation")
 )
 
+const (
+	// ErrorCategoryBenign indicates an error that is expected under normal operation and should not trigger alerts.
+	ErrorCategoryBenign ApplicationErrorCategory = "benign"
+)
+
 // NewApplicationError create new instance of *ApplicationError with message, type, and optional details.
 func NewApplicationError(msg string, errType string, nonRetryable bool, cause error, details ...interface{}) error {
 	return NewApplicationErrorWithOptions(
@@ -397,6 +407,7 @@ func NewApplicationErrorWithOptions(msg string, errType string, options Applicat
 		cause:          options.Cause,
 		nonRetryable:   options.NonRetryable,
 		nextRetryDelay: options.NextRetryDelay,
+		category:       options.Category,
 	}
 	// When return error to user, use EncodedValues as details and data is ready to be decoded by calling Get
 	details := options.Details
@@ -660,6 +671,11 @@ func (e *ApplicationError) Unwrap() error {
 // NextRetryDelay returns the delay to wait before retrying the activity.
 // a zero value means to use the activities retry policy.
 func (e *ApplicationError) NextRetryDelay() time.Duration { return e.nextRetryDelay }
+
+// Category returns the ApplicationErrorCategory of the error.
+func (e *ApplicationError) Category() ApplicationErrorCategory {
+	return e.category
+}
 
 // Error from error interface
 func (e *TimeoutError) Error() string {
@@ -1028,4 +1044,43 @@ func getErrType(err error) string {
 	}
 
 	return t.Name()
+}
+
+func applicationErrorCategoryToProto(category ApplicationErrorCategory) enumspb.ApplicationErrorCategory {
+	switch category {
+	case ErrorCategoryBenign:
+		return enumspb.APPLICATION_ERROR_CATEGORY_BENIGN
+	case "":
+		// Zero value maps to unspecified
+		return enumspb.APPLICATION_ERROR_CATEGORY_UNSPECIFIED
+	default:
+		// Fallback to unspecified if unknown case
+		return enumspb.APPLICATION_ERROR_CATEGORY_UNSPECIFIED
+	}
+}
+
+func applicationErrorCategoryFromProto(category enumspb.ApplicationErrorCategory) ApplicationErrorCategory {
+	switch category {
+	case enumspb.APPLICATION_ERROR_CATEGORY_BENIGN:
+		return ErrorCategoryBenign
+	case enumspb.APPLICATION_ERROR_CATEGORY_UNSPECIFIED:
+		// Unspecified maps to zero value
+		return ""
+	default:
+		// Fallback to zero value if unknown case
+		return ""
+	}
+}
+
+func IsBenignApplicationError(err error) bool {
+	var appError *ApplicationError
+	return errors.As(err, &appError) && appError.Category() == ErrorCategoryBenign
+}
+
+func isBenignProtoApplicationFailure(failure *failurepb.Failure) bool {
+	if failure == nil {
+		return false
+	}
+	appFailureInfo := failure.GetApplicationFailureInfo()
+	return appFailureInfo != nil && appFailureInfo.GetCategory() == enumspb.APPLICATION_ERROR_CATEGORY_BENIGN
 }
