@@ -747,14 +747,14 @@ func Test_convertErrorToFailure_ApplicationErrorWithExtraRequests(t *testing.T) 
 	require.True(errors.As(err2, &applicationErr))
 	require.Equal("cause error", applicationErr.Error())
 
-	err := NewApplicationErrorWithOptions(
+	err = NewApplicationErrorWithOptions(
 		"another message",
 		"another customType",
 		ApplicationErrorOptions{
 			Category: "",
 		},
 	)
-	f := fc.ErrorToFailure(err)
+	f = fc.ErrorToFailure(err)
 	require.Equal(enumspb.APPLICATION_ERROR_CATEGORY_UNSPECIFIED, f.GetApplicationFailureInfo().GetCategory())
 }
 
@@ -1176,7 +1176,7 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 	require.Equal("message (type: CoolError, retryable: true)", coolErr.Error())
 	require.Equal("CoolError", coolErr.Type())
 	require.Equal(false, coolErr.NonRetryable())
-	require.Equal("", coolErr.Category())
+	require.Equal(ApplicationErrorCategory(""), coolErr.Category())
 }
 
 func Test_convertFailureToError_CanceledFailure(t *testing.T) {

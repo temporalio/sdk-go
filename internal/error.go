@@ -387,7 +387,7 @@ var (
 
 const (
 	// ErrorCategoryBenign indicates an error that is expected under normal operation and should not trigger alerts.
-	ErrorCategoryBenign ApplicationErrorCategory = "benign"
+	ErrorCategoryBenign ApplicationErrorCategory = "BENIGN"
 )
 
 // NewApplicationError create new instance of *ApplicationError with message, type, and optional details.
