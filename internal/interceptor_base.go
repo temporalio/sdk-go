@@ -567,7 +567,7 @@ func (c *ClientOutboundInterceptorBase) QueryWorkflow(
 	return c.Next.QueryWorkflow(ctx, in)
 }
 
-// QueryWorkflow implements ClientOutboundInterceptor.DescribeWorkflow.
+// DescribeWorkflow implements ClientOutboundInterceptor.DescribeWorkflow.
 func (c *ClientOutboundInterceptorBase) DescribeWorkflow(
 	ctx context.Context,
 	in *ClientDescribeWorkflowInput,

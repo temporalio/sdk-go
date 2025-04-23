@@ -269,8 +269,8 @@ type (
 	// QueryWorkflowWithOptionsResponse defines the response to QueryWorkflowWithOptions.
 	QueryWorkflowWithOptionsResponse = internal.QueryWorkflowWithOptionsResponse
 
-	// DescribeWorkflowExecution defines the response to DescribeWorkflow.
-	DescribeWorkflowExecution = internal.WorkflowExecutionDescription
+	// WorkflowExecutionDescription defines the response to DescribeWorkflow.
+	WorkflowExecutionDescription = internal.WorkflowExecutionDescription
 
 	// CheckHealthRequest is a request for Client.CheckHealth.
 	CheckHealthRequest = internal.CheckHealthRequest
@@ -1144,7 +1144,7 @@ type (
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
 		//  - serviceerror.NotFound
-		DescribeWorkflow(ctx context.Context, workflowID, runID string) (*DescribeWorkflowExecution, error)
+		DescribeWorkflow(ctx context.Context, workflowID, runID string) (*WorkflowExecutionDescription, error)
 
 		// DescribeTaskQueue returns information about the target taskqueue, right now this API returns the
 		// pollers which polled this taskqueue in last few minutes.
