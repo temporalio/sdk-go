@@ -22,7 +22,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
-	go.temporal.io/api v1.48.0 // indirect
+	go.temporal.io/api v1.48.1-0.20250426005355-d6c89de822db // indirect
 	golang.org/x/net v0.36.0 // indirect
 	golang.org/x/sync v0.11.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect

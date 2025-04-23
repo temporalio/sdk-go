@@ -140,6 +140,52 @@ func TestConvertLinkWorkflowEventToNexusLink(t *testing.T) {
 			},
 			outputURL: "temporal:///namespaces/ns/workflows/wf-id/run-id/history?eventType=EVENT_TYPE_WORKFLOW_EXECUTION_STARTED&referenceType=EventReference",
 		},
+		{
+			name: "valid request id",
+			input: &commonpb.Link_WorkflowEvent{
+				Namespace:  "ns",
+				WorkflowId: "wf-id",
+				RunId:      "run-id",
+				Reference: &commonpb.Link_WorkflowEvent_RequestIdRef{
+					RequestIdRef: &commonpb.Link_WorkflowEvent_RequestIdReference{
+						RequestId: "request-id",
+					},
+				},
+			},
+			output: nexus.Link{
+				URL: &url.URL{
+					Scheme:   "temporal",
+					Path:     "/namespaces/ns/workflows/wf-id/run-id/history",
+					RawPath:  "/namespaces/ns/workflows/wf-id/run-id/history",
+					RawQuery: "referenceType=RequestIdReference&requestID=request-id",
+				},
+				Type: "temporal.api.common.v1.Link.WorkflowEvent",
+			},
+			outputURL: "temporal:///namespaces/ns/workflows/wf-id/run-id/history?referenceType=RequestIdReference&requestID=request-id",
+		},
+		{
+			name: "valid request id empty",
+			input: &commonpb.Link_WorkflowEvent{
+				Namespace:  "ns",
+				WorkflowId: "wf-id",
+				RunId:      "run-id",
+				Reference: &commonpb.Link_WorkflowEvent_RequestIdRef{
+					RequestIdRef: &commonpb.Link_WorkflowEvent_RequestIdReference{
+						RequestId: "",
+					},
+				},
+			},
+			output: nexus.Link{
+				URL: &url.URL{
+					Scheme:   "temporal",
+					Path:     "/namespaces/ns/workflows/wf-id/run-id/history",
+					RawPath:  "/namespaces/ns/workflows/wf-id/run-id/history",
+					RawQuery: "referenceType=RequestIdReference&requestID=",
+				},
+				Type: "temporal.api.common.v1.Link.WorkflowEvent",
+			},
+			outputURL: "temporal:///namespaces/ns/workflows/wf-id/run-id/history?referenceType=RequestIdReference&requestID=",
+		},
 	}
 
 	for _, tc := range cases {
@@ -301,6 +347,50 @@ func TestConvertNexusLinkToLinkWorkflowEvent(t *testing.T) {
 				Type: "temporal.api.common.v1.Link.WorkflowEvent",
 			},
 			errMsg: "failed to parse link to Link_WorkflowEvent",
+		},
+		{
+			name: "valid request id",
+			input: nexus.Link{
+				URL: &url.URL{
+					Scheme:   "temporal",
+					Path:     "/namespaces/ns/workflows/wf-id/run-id/history",
+					RawPath:  "/namespaces/ns/workflows/wf-id/run-id/history",
+					RawQuery: "referenceType=RequestIdReference&requestID=request-id",
+				},
+				Type: "temporal.api.common.v1.Link.WorkflowEvent",
+			},
+			output: &commonpb.Link_WorkflowEvent{
+				Namespace:  "ns",
+				WorkflowId: "wf-id",
+				RunId:      "run-id",
+				Reference: &commonpb.Link_WorkflowEvent_RequestIdRef{
+					RequestIdRef: &commonpb.Link_WorkflowEvent_RequestIdReference{
+						RequestId: "request-id",
+					},
+				},
+			},
+		},
+		{
+			name: "valid request id empty",
+			input: nexus.Link{
+				URL: &url.URL{
+					Scheme:   "temporal",
+					Path:     "/namespaces/ns/workflows/wf-id/run-id/history",
+					RawPath:  "/namespaces/ns/workflows/wf-id/run-id/history",
+					RawQuery: "referenceType=RequestIdReference&requestID=",
+				},
+				Type: "temporal.api.common.v1.Link.WorkflowEvent",
+			},
+			output: &commonpb.Link_WorkflowEvent{
+				Namespace:  "ns",
+				WorkflowId: "wf-id",
+				RunId:      "run-id",
+				Reference: &commonpb.Link_WorkflowEvent_RequestIdRef{
+					RequestIdRef: &commonpb.Link_WorkflowEvent_RequestIdReference{
+						RequestId: "",
+					},
+				},
+			},
 		},
 	}
 
