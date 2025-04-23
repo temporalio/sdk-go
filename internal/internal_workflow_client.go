@@ -2288,8 +2288,8 @@ func (w *workflowClientInterceptor) DescribeWorkflow(
 	o := &WorkflowExecutionDescription{
 		WorkflowExecutionMetadata: m,
 		dc:                        w.client.dataConverter,
-		staticSummaryPayload:      resp.GetExecutionConfig().GetUserMetadata().Summary,
-		staticDetailsPayload:      resp.GetExecutionConfig().GetUserMetadata().Details,
+		staticSummaryPayload:      resp.GetExecutionConfig().GetUserMetadata().GetSummary(),
+		staticDetailsPayload:      resp.GetExecutionConfig().GetUserMetadata().GetDetails(),
 	}
 
 	return &ClientDescribeWorkflowOutput{
