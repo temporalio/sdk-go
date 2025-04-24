@@ -1009,6 +1009,14 @@ processWorkflowLoop:
 					case lar := <-workflowTask.laResultCh:
 						// local activity result ready
 						response, err = workflowContext.ProcessLocalActivityResult(workflowTask, lar)
+						// When local activity is canceled due to non-server cancel, we break loop here
+						// to avoid heartbeating after local activity is no longer being run
+						var appErr *ApplicationError
+						if errors.As(lar.err, &appErr) {
+							if appErr.errType == ErrCanceled.Error() {
+								break processWorkflowLoop
+							}
+						}
 						if err == nil && response == nil {
 							// workflow task is not done yet, still waiting for more local activities
 							continue waitLocalActivityLoop
@@ -2295,8 +2303,10 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 
 	output, err := activityImplementation.Execute(ctx, t.Input)
 	// Check if context canceled at a higher level before we cancel it ourselves
-	// TODO : check if the cause of the context cancellation is from the server
-	isActivityCanceled := ctx.Err() == context.Canceled
+
+	// Cancels that don't originate from the server will have separate cancel reasons, like
+	// ErrWorkerShutdown or ErrActivityPaused
+	isActivityCanceled := ctx.Err() == context.Canceled && errors.Is(context.Cause(ctx), &CanceledError{})
 
 	dlCancelFunc()
 	if <-ctx.Done(); ctx.Err() == context.DeadlineExceeded {
