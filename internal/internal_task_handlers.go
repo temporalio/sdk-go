@@ -1894,7 +1894,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		}}
 	} else if workflowContext.err != nil {
 		// Workflow failures
-		if !IsBenignApplicationError(workflowContext.err) {
+		if !isBenignApplicationError(workflowContext.err) {
 			metricsHandler.Counter(metrics.WorkflowFailedCounter).Inc(1)
 		}
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION)
@@ -2314,7 +2314,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	}
 	if err != nil && err != ErrActivityResultPending {
 		logFunc := ath.logger.Error // Default to Error
-		if IsBenignApplicationError(err) {
+		if isBenignApplicationError(err) {
 			logFunc = ath.logger.Debug // Downgrade to Debug for benign application errors
 		}
 		logFunc("Activity error.",

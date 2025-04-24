@@ -7533,7 +7533,7 @@ func (ts *IntegrationTestSuite) TestWorkflowTaskFailureMetric_BenignHandling() {
 			"Benign failure",
 			"",
 			temporal.ApplicationErrorOptions{
-				Category: internal.ErrorCategoryBenign,
+				Category: temporal.ApplicationErrorCategoryBenign,
 			},
 		)
 	}
@@ -7554,7 +7554,7 @@ func (ts *IntegrationTestSuite) TestWorkflowTaskFailureMetric_BenignHandling() {
 	ts.Error(err)
 	var appErr *temporal.ApplicationError
 	ts.True(errors.As(err, &appErr))
-	ts.False(internal.IsBenignApplicationError(err))
+	ts.False(appErr.Category() == temporal.ApplicationErrorCategoryBenign)
 	ts.Equal("Non-benign failure", appErr.Error())
 
 	// Expect initial count to have incremented because the workflow failed with non-benign err.
@@ -7573,7 +7573,7 @@ func (ts *IntegrationTestSuite) TestWorkflowTaskFailureMetric_BenignHandling() {
 	// Expect a benign application error.
 	ts.Error(err)
 	ts.True(errors.As(err, &appErr))
-	ts.True(internal.IsBenignApplicationError(err))
+	ts.True(appErr.Category() == temporal.ApplicationErrorCategoryBenign)
 	// Expect count to not have incremented because the workflow failed with benign err.
 	ts.assertMetricCount(metrics.WorkflowFailedCounter, currCount)
 }
@@ -7582,7 +7582,7 @@ func (ts *IntegrationTestSuite) TestActivityFailureMetric_BenignHandling() {
 	actWithAppErr := func(ctx context.Context, isBenign bool) error {
 		if isBenign {
 			return temporal.NewApplicationErrorWithOptions("Benign act failure", "",
-				temporal.ApplicationErrorOptions{Category: internal.ErrorCategoryBenign})
+				temporal.ApplicationErrorOptions{Category: temporal.ApplicationErrorCategoryBenign})
 		}
 		return temporal.NewApplicationError("Non-benign act failure", "", false, nil)
 	}
@@ -7630,7 +7630,7 @@ func (ts *IntegrationTestSuite) TestActivityFailureMetric_BenignHandling() {
 	ts.Error(err)
 	ts.True(errors.As(err, &appErr))
 	// Expect non-benign error
-	ts.False(internal.IsBenignApplicationError(err))
+	ts.False(appErr.Category() == temporal.ApplicationErrorCategoryBenign)
 	// Expect warn log for activity failure
 	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
 		return strings.Contains(line, "ERROR") && strings.Contains(line, "Activity error.")
@@ -7651,7 +7651,7 @@ func (ts *IntegrationTestSuite) TestActivityFailureMetric_BenignHandling() {
 	ts.Error(err)
 	ts.True(errors.As(err, &appErr))
 	// Expect benign error
-	ts.True(internal.IsBenignApplicationError(err))
+	ts.True(appErr.Category() == temporal.ApplicationErrorCategoryBenign)
 	// Expect debug log for activity failure
 	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
 		return strings.Contains(line, "DEBUG") && strings.Contains(line, "Activity error.")
@@ -7665,7 +7665,7 @@ func (ts *IntegrationTestSuite) TestLocalActivityFailureMetric_BenignHandling() 
 	localActWithAppErr := func(ctx context.Context, isBenign bool) error {
 		if isBenign {
 			return temporal.NewApplicationErrorWithOptions("Benign local act failure", "",
-				temporal.ApplicationErrorOptions{Category: internal.ErrorCategoryBenign})
+				temporal.ApplicationErrorOptions{Category: temporal.ApplicationErrorCategoryBenign})
 		}
 		return temporal.NewApplicationError("Non-benign local act failure", "", false, nil)
 	}
@@ -7696,7 +7696,7 @@ func (ts *IntegrationTestSuite) TestLocalActivityFailureMetric_BenignHandling() 
 	ts.Error(err)
 	ts.True(errors.As(err, &appErr))
 	// Expect non-benign error
-	ts.False(internal.IsBenignApplicationError(err))
+	ts.False(appErr.Category() == temporal.ApplicationErrorCategoryBenign)
 
 	// Expect initial count to have incremented because the activity failed with non-benign err.
 	currCount++
@@ -7713,7 +7713,7 @@ func (ts *IntegrationTestSuite) TestLocalActivityFailureMetric_BenignHandling() 
 	ts.Error(err)
 	ts.True(errors.As(err, &appErr))
 	// Expect benign error
-	ts.True(internal.IsBenignApplicationError(err))
+	ts.True(appErr.Category() == temporal.ApplicationErrorCategoryBenign)
 
 	// Expect count to remain unchanged
 	ts.assertMetricCount(metrics.LocalActivityExecutionFailedCounter, currCount)

@@ -119,9 +119,6 @@ Workflow consumers will get an instance of *WorkflowExecutionError. This error w
 */
 
 type (
-	// Category of the error. Maps to logging/metrics behaviours.
-	ApplicationErrorCategory string
-
 	// ApplicationErrorOptions represents a combination of error attributes and additional requests.
 	// All fields are optional, providing flexibility in error customization.
 	//
@@ -140,7 +137,8 @@ type (
 		//
 		// NOTE: This option is supported by Temporal Server >= v1.24.2 older version will ignore this value.
 		NextRetryDelay time.Duration
-		Category       ApplicationErrorCategory
+		// Category of the error. Maps to logging/metrics behaviours.
+		Category ApplicationErrorCategory
 	}
 
 	// ApplicationError returned from activity implementations with message and optional details.
@@ -385,9 +383,21 @@ var (
 	ErrMissingWorkflowID = errors.New("workflow ID is unset for Nexus operation")
 )
 
+// ApplicationErrorCategory sets the category of the error. The category of the error
+// maps to logging/metrics behaviours.
+//
+// Exposed as: [go.temporal.io/sdk/temporal.ApplicationErrorCategory]
+type ApplicationErrorCategory int
+
 const (
-	// ErrorCategoryBenign indicates an error that is expected under normal operation and should not trigger alerts.
-	ErrorCategoryBenign ApplicationErrorCategory = "BENIGN"
+	// ApplicationErrorCategoryUnspecified represents an error with an unspecified category.
+	//
+	// Exposed as: [go.temporal.io/sdk/temporal.ApplicationErrorCategoryUnspecified]
+	ApplicationErrorCategoryUnspecified ApplicationErrorCategory = iota
+	// ApplicationErrorCategoryBenign indicates an error that is expected under normal operation and should not trigger alerts.
+	//
+	// Exposed as: [go.temporal.io/sdk/temporal.ApplicationErrorCategoryBenign]
+	ApplicationErrorCategoryBenign
 )
 
 // NewApplicationError create new instance of *ApplicationError with message, type, and optional details.
@@ -1046,35 +1056,9 @@ func getErrType(err error) string {
 	return t.Name()
 }
 
-func applicationErrorCategoryToProto(category ApplicationErrorCategory) enumspb.ApplicationErrorCategory {
-	switch category {
-	case ErrorCategoryBenign:
-		return enumspb.APPLICATION_ERROR_CATEGORY_BENIGN
-	case "":
-		// Zero value maps to unspecified
-		return enumspb.APPLICATION_ERROR_CATEGORY_UNSPECIFIED
-	default:
-		// Fallback to unspecified if unknown case
-		return enumspb.APPLICATION_ERROR_CATEGORY_UNSPECIFIED
-	}
-}
-
-func applicationErrorCategoryFromProto(category enumspb.ApplicationErrorCategory) ApplicationErrorCategory {
-	switch category {
-	case enumspb.APPLICATION_ERROR_CATEGORY_BENIGN:
-		return ErrorCategoryBenign
-	case enumspb.APPLICATION_ERROR_CATEGORY_UNSPECIFIED:
-		// Unspecified maps to zero value
-		return ""
-	default:
-		// Fallback to zero value if unknown case
-		return ""
-	}
-}
-
-func IsBenignApplicationError(err error) bool {
+func isBenignApplicationError(err error) bool {
 	var appError *ApplicationError
-	return errors.As(err, &appError) && appError.Category() == ErrorCategoryBenign
+	return errors.As(err, &appError) && appError.Category() == ApplicationErrorCategoryBenign
 }
 
 func isBenignProtoApplicationFailure(failure *failurepb.Failure) bool {

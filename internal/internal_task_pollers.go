@@ -474,21 +474,19 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 ) (response *workflowservice.RespondWorkflowTaskCompletedResponse, err error) {
 	metricsHandler := wtp.metricsHandler.WithTags(metrics.WorkflowTags(task.WorkflowType.GetName()))
 	if taskErr != nil {
-		failWorkflowTask := wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)
-		completedRequest = failWorkflowTask
-
-		failureReason := "WorkflowError"
-		if failWorkflowTask.Cause == enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR {
-			failureReason = "NonDeterminismError"
-		}
-
-		incrementWorkflowTaskFailureCounter(metricsHandler, failureReason)
 		wtp.logger.Warn("Failed to process workflow task.",
 			tagWorkflowType, task.WorkflowType.GetName(),
 			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 			tagRunID, task.WorkflowExecution.GetRunId(),
 			tagAttempt, task.Attempt,
 			tagError, taskErr)
+		failWorkflowTask := wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)
+		failureReason := "WorkflowError"
+		if failWorkflowTask.Cause == enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR {
+			failureReason = "NonDeterminismError"
+		}
+		incrementWorkflowTaskFailureCounter(metricsHandler, failureReason)
+		completedRequest = failWorkflowTask
 	}
 
 	metricsHandler.Timer(metrics.WorkflowTaskExecutionLatency).Record(time.Since(startTime))
@@ -707,7 +705,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 				metricsHandler.Counter(metrics.LocalActivityErrorCounter).Inc(1)
 				err = newPanicError(p, st)
 			}
-			if err != nil && !IsBenignApplicationError(err) {
+			if err != nil && !isBenignApplicationError(err) {
 				metricsHandler.Counter(metrics.LocalActivityFailedCounter).Inc(1)
 				metricsHandler.Counter(metrics.LocalActivityExecutionFailedCounter).Inc(1)
 			}

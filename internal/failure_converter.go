@@ -115,7 +115,7 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 			NonRetryable:   err.NonRetryable(),
 			Details:        convertErrDetailsToPayloads(err.details, dfc.dataConverter),
 			NextRetryDelay: delay,
-			Category:       applicationErrorCategoryToProto(err.Category()),
+			Category:       enumspb.ApplicationErrorCategory(err.Category()),
 		}
 		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: failureInfo}
 	case *CanceledError:
@@ -251,7 +251,7 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 					Cause:          dfc.FailureToError(failure.GetCause()),
 					Details:        []interface{}{details},
 					NextRetryDelay: nextRetryDelay,
-					Category:       applicationErrorCategoryFromProto(applicationFailureInfo.GetCategory()),
+					Category:       ApplicationErrorCategory(applicationFailureInfo.GetCategory()),
 				},
 			)
 		}

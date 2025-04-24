@@ -723,7 +723,7 @@ func Test_convertErrorToFailure_ApplicationErrorWithExtraRequests(t *testing.T) 
 			NonRetryable: true,
 			Cause:        errors.New("cause error"),
 			Details:      []interface{}{"details", 2208},
-			Category:     ErrorCategoryBenign,
+			Category:     ApplicationErrorCategoryBenign,
 		},
 	)
 	f := fc.ErrorToFailure(err)
@@ -741,7 +741,7 @@ func Test_convertErrorToFailure_ApplicationErrorWithExtraRequests(t *testing.T) 
 	var applicationErr *ApplicationError
 	require.True(errors.As(err2, &applicationErr))
 	require.Equal("message (type: customType, retryable: false): cause error", applicationErr.Error())
-	require.Equal(ErrorCategoryBenign, applicationErr.Category())
+	require.Equal(ApplicationErrorCategoryBenign, applicationErr.Category())
 
 	err2 = errors.Unwrap(err2)
 	require.True(errors.As(err2, &applicationErr))
@@ -751,7 +751,7 @@ func Test_convertErrorToFailure_ApplicationErrorWithExtraRequests(t *testing.T) 
 		"another message",
 		"another customType",
 		ApplicationErrorOptions{
-			Category: "",
+			Category: ApplicationErrorCategoryUnspecified,
 		},
 	)
 	f = fc.ErrorToFailure(err)
@@ -1134,7 +1134,7 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 	require.Equal("message (type: MyCoolType, retryable: false): cause message (type: UnknownType, retryable: true)", applicationErr.Error())
 	require.Equal("MyCoolType", applicationErr.Type())
 	require.Equal(true, applicationErr.NonRetryable())
-	require.Equal(ErrorCategoryBenign, applicationErr.Category())
+	require.Equal(ApplicationErrorCategoryBenign, applicationErr.Category())
 	var str string
 	var n int
 	require.NoError(applicationErr.Details(&str, &n))
@@ -1176,7 +1176,7 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 	require.Equal("message (type: CoolError, retryable: true)", coolErr.Error())
 	require.Equal("CoolError", coolErr.Type())
 	require.Equal(false, coolErr.NonRetryable())
-	require.Equal(ApplicationErrorCategory(""), coolErr.Category())
+	require.Equal(ApplicationErrorCategoryUnspecified, coolErr.Category())
 }
 
 func Test_convertFailureToError_CanceledFailure(t *testing.T) {
