@@ -745,7 +745,7 @@ WaitResult:
 				return &localActivityResult{err: ErrCanceled, task: task}
 			}
 			// Non-server initiated cancelations
-			return &localActivityResult{err: NewApplicationError(context.Cause(ctx).Error(), context.Cause(ctx).Error(), false, nil), task: task}
+			return &localActivityResult{err: NewApplicationError(context.Cause(ctx).Error(), ErrCanceled.Error(), false, nil), task: task}
 		} else if ctx.Err() == context.DeadlineExceeded {
 			if task.params.ScheduleToCloseTimeout != 0 && time.Now().After(info.scheduledTime.Add(task.params.ScheduleToCloseTimeout)) {
 				return &localActivityResult{err: ErrDeadlineExceeded, task: task}
