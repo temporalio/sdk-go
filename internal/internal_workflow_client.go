@@ -917,6 +917,7 @@ type QueryWorkflowWithOptionsResponse struct {
 	QueryRejected *querypb.QueryRejected
 }
 
+// WorkflowExecutionMetadata contains common information about a workflow execution.
 type WorkflowExecutionMetadata struct {
 	// WorkflowExecution is the unique identifier for the workflow execution
 	WorkflowExecution WorkflowExecution
@@ -947,6 +948,7 @@ type WorkflowExecutionMetadata struct {
 	HistoryLength int
 }
 
+// WorkflowExecutionDescription defines the response to DescribeWorkflow.
 type WorkflowExecutionDescription struct {
 	WorkflowExecutionMetadata
 	dc                   converter.DataConverter

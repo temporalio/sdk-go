@@ -272,6 +272,9 @@ type (
 	// WorkflowExecutionDescription defines the response to DescribeWorkflow.
 	WorkflowExecutionDescription = internal.WorkflowExecutionDescription
 
+	// WorkflowExecutionMetadata defines common workflow information across multiple calls.
+	WorkflowExecutionMetadata = internal.WorkflowExecutionMetadata
+
 	// CheckHealthRequest is a request for Client.CheckHealth.
 	CheckHealthRequest = internal.CheckHealthRequest
 
