@@ -1057,8 +1057,8 @@ func getErrType(err error) string {
 }
 
 func isBenignApplicationError(err error) bool {
-	var appError *ApplicationError
-	return errors.As(err, &appError) && appError.Category() == ApplicationErrorCategoryBenign
+	appError, _ := err.(*ApplicationError)
+	return appError != nil && appError.Category() == ApplicationErrorCategoryBenign
 }
 
 func isBenignProtoApplicationFailure(failure *failurepb.Failure) bool {
