@@ -275,7 +275,7 @@ func NewHeartbeatTimeoutError(details ...interface{}) error {
 }
 
 // ApplicationErrorCategory sets the category of the error. The category of the error
-// maps to logging/metrics behaviours.
+// maps to logging/metrics SDK behaviours, does not impact server-side logging/metrics.
 type ApplicationErrorCategory = internal.ApplicationErrorCategory
 
 const (
