@@ -32,6 +32,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -7521,4 +7522,199 @@ func (ts *IntegrationTestSuite) TestRawValueQueryMetadata() {
 	ts.NoError(err)
 	ts.Equal("Basic", metadata.Definition.Type)
 	ts.Equal(3, len(metadata.Definition.QueryDefinitions))
+}
+
+func (ts *IntegrationTestSuite) TestWorkflowTaskFailureMetric_BenignHandling() {
+	wfWithApplicationErr := func(ctx workflow.Context, isBenign bool) error {
+		if !isBenign {
+			return temporal.NewApplicationError("Non-benign failure", "", false, nil)
+		}
+		return temporal.NewApplicationErrorWithOptions(
+			"Benign failure",
+			"",
+			temporal.ApplicationErrorOptions{
+				Category: temporal.ApplicationErrorCategoryBenign,
+			},
+		)
+	}
+
+	ts.worker.RegisterWorkflow(wfWithApplicationErr)
+	currCount := ts.metricCount(metrics.WorkflowFailedCounter)
+
+	runNonBenign, err := ts.client.ExecuteWorkflow(
+		context.Background(),
+		ts.startWorkflowOptions("test-non-benign-failure-metric"),
+		wfWithApplicationErr,
+		false,
+	)
+	ts.NoError(err)
+	// Wait for completion
+	err = runNonBenign.Get(context.Background(), nil)
+	// Expect a non-benign application error.
+	ts.Error(err)
+	var appErr *temporal.ApplicationError
+	ts.True(errors.As(err, &appErr))
+	ts.False(appErr.Category() == temporal.ApplicationErrorCategoryBenign)
+	ts.Equal("Non-benign failure", appErr.Error())
+
+	// Expect initial count to have incremented because the workflow failed with non-benign err.
+	currCount++
+	ts.assertMetricCount(metrics.WorkflowFailedCounter, currCount)
+
+	runBenign, err := ts.client.ExecuteWorkflow(
+		context.Background(),
+		ts.startWorkflowOptions("test-benign-failure-metric"),
+		wfWithApplicationErr,
+		true,
+	)
+	ts.NoError(err)
+	// Wait for completion
+	err = runBenign.Get(context.Background(), nil)
+	// Expect a benign application error.
+	ts.Error(err)
+	ts.True(errors.As(err, &appErr))
+	ts.True(appErr.Category() == temporal.ApplicationErrorCategoryBenign)
+	// Expect count to not have incremented because the workflow failed with benign err.
+	ts.assertMetricCount(metrics.WorkflowFailedCounter, currCount)
+}
+
+func (ts *IntegrationTestSuite) TestActivityFailureMetric_BenignHandling() {
+	actWithAppErr := func(ctx context.Context, isBenign bool) error {
+		if isBenign {
+			return temporal.NewApplicationErrorWithOptions("Benign act failure", "",
+				temporal.ApplicationErrorOptions{Category: temporal.ApplicationErrorCategoryBenign})
+		}
+		return temporal.NewApplicationError("Non-benign act failure", "", false, nil)
+	}
+
+	wfWithAppErrActivity := func(ctx workflow.Context, isBenign bool) error {
+		ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+			StartToCloseTimeout: 3 * time.Second,
+			// Don't retry
+			RetryPolicy: &temporal.RetryPolicy{MaximumAttempts: 1},
+		})
+		return workflow.ExecuteActivity(ctx, actWithAppErr, isBenign).Get(ctx, nil)
+	}
+
+	// Configure client/worker with logger, capture logs
+	logger := ilog.NewMemoryLogger()
+	c, err := client.Dial(client.Options{
+		HostPort:          ts.config.ServiceAddr,
+		Namespace:         ts.config.Namespace,
+		Logger:            logger,
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+		MetricsHandler:    ts.metricsHandler,
+	})
+	ts.NoError(err)
+	defer c.Close()
+
+	testWorker := worker.New(c, ts.taskQueueName, worker.Options{})
+	testWorker.RegisterActivity(actWithAppErr)
+	testWorker.RegisterWorkflow(wfWithAppErrActivity)
+	err = testWorker.Start()
+	ts.NoError(err)
+	defer testWorker.Stop()
+
+	var appErr *temporal.ApplicationError
+	currCount := ts.metricCount(metrics.ActivityExecutionFailedCounter)
+
+	runNonBenign, err := c.ExecuteWorkflow(
+		context.Background(),
+		ts.startWorkflowOptions(ts.T().Name()+"-non-benign-err"),
+		wfWithAppErrActivity,
+		false,
+	)
+	ts.NoError(err)
+	// Wait for completion
+	err = runNonBenign.Get(context.Background(), nil)
+	ts.Error(err)
+	ts.True(errors.As(err, &appErr))
+	// Expect non-benign error
+	ts.False(appErr.Category() == temporal.ApplicationErrorCategoryBenign)
+	// Expect warn log for activity failure
+	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
+		return strings.Contains(line, "ERROR") && strings.Contains(line, "Activity error.")
+	}))
+
+	// Expect initial count to have incremented because the activity failed with non-benign err.
+	currCount++
+	ts.assertMetricCount(metrics.ActivityExecutionFailedCounter, currCount)
+
+	runBenign, err := c.ExecuteWorkflow(
+		context.Background(),
+		ts.startWorkflowOptions(ts.T().Name()+"-benign-err"),
+		wfWithAppErrActivity, true,
+	)
+	ts.NoError(err)
+	// Wait for completion
+	err = runBenign.Get(context.Background(), nil)
+	ts.Error(err)
+	ts.True(errors.As(err, &appErr))
+	// Expect benign error
+	ts.True(appErr.Category() == temporal.ApplicationErrorCategoryBenign)
+	// Expect debug log for activity failure
+	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
+		return strings.Contains(line, "DEBUG") && strings.Contains(line, "Activity error.")
+	}))
+
+	// Expect count to not have incremented because the activity failed with benign err.
+	ts.assertMetricCount(metrics.ActivityExecutionFailedCounter, currCount)
+}
+
+func (ts *IntegrationTestSuite) TestLocalActivityFailureMetric_BenignHandling() {
+	localActWithAppErr := func(ctx context.Context, isBenign bool) error {
+		if isBenign {
+			return temporal.NewApplicationErrorWithOptions("Benign local act failure", "",
+				temporal.ApplicationErrorOptions{Category: temporal.ApplicationErrorCategoryBenign})
+		}
+		return temporal.NewApplicationError("Non-benign local act failure", "", false, nil)
+	}
+
+	wfWithLocalActAppErr := func(ctx workflow.Context, isBenign bool) error {
+		ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+			ScheduleToCloseTimeout: 3 * time.Second,
+			// Don't retry
+			RetryPolicy: &temporal.RetryPolicy{MaximumAttempts: 1},
+		})
+		return workflow.ExecuteLocalActivity(ctx, localActWithAppErr, isBenign).Get(ctx, nil)
+	}
+
+	ts.worker.RegisterActivity(localActWithAppErr)
+	ts.worker.RegisterWorkflow(wfWithLocalActAppErr)
+
+	var appErr *temporal.ApplicationError
+	currCount := ts.metricCount(metrics.LocalActivityExecutionFailedCounter)
+
+	runNonBenign, err := ts.client.ExecuteWorkflow(
+		context.Background(),
+		ts.startWorkflowOptions(ts.T().Name()+"-non-benign-err"),
+		wfWithLocalActAppErr, false,
+	)
+	ts.NoError(err)
+	// Wait for completion
+	err = runNonBenign.Get(context.Background(), nil)
+	ts.Error(err)
+	ts.True(errors.As(err, &appErr))
+	// Expect non-benign error
+	ts.False(appErr.Category() == temporal.ApplicationErrorCategoryBenign)
+
+	// Expect initial count to have incremented because the activity failed with non-benign err.
+	currCount++
+	ts.assertMetricCount(metrics.LocalActivityExecutionFailedCounter, currCount)
+
+	runBenign, err := ts.client.ExecuteWorkflow(
+		context.Background(),
+		ts.startWorkflowOptions(ts.T().Name()+"-benign-err"),
+		wfWithLocalActAppErr, true,
+	)
+	ts.NoError(err)
+	// Wait for completion
+	err = runBenign.Get(context.Background(), nil)
+	ts.Error(err)
+	ts.True(errors.As(err, &appErr))
+	// Expect benign error
+	ts.True(appErr.Category() == temporal.ApplicationErrorCategoryBenign)
+
+	// Expect count to remain unchanged
+	ts.assertMetricCount(metrics.LocalActivityExecutionFailedCounter, currCount)
 }

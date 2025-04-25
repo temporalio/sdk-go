@@ -705,7 +705,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 				metricsHandler.Counter(metrics.LocalActivityErrorCounter).Inc(1)
 				err = newPanicError(p, st)
 			}
-			if err != nil {
+			if err != nil && !isBenignApplicationError(err) {
 				metricsHandler.Counter(metrics.LocalActivityFailedCounter).Inc(1)
 				metricsHandler.Counter(metrics.LocalActivityExecutionFailedCounter).Inc(1)
 			}
@@ -1104,8 +1104,10 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 		return err
 	}
 	// in case if activity execution failed, request should be of type RespondActivityTaskFailedRequest
-	if _, ok := request.(*workflowservice.RespondActivityTaskFailedRequest); ok {
-		activityMetricsHandler.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
+	if req, ok := request.(*workflowservice.RespondActivityTaskFailedRequest); ok {
+		if !isBenignProtoApplicationFailure(req.Failure) {
+			activityMetricsHandler.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
+		}
 	}
 	activityMetricsHandler.Timer(metrics.ActivityExecutionLatency).Record(time.Since(executionStartTime))
 
