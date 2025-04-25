@@ -739,9 +739,15 @@ WaitResult:
 
 		// context is done
 		if ctx.Err() == context.Canceled {
-			metricsHandler.Counter(metrics.LocalActivityCanceledCounter).Inc(1)
-			metricsHandler.Counter(metrics.LocalActivityExecutionCanceledCounter).Inc(1)
-			return &localActivityResult{err: ErrCanceled, task: task}
+			if errors.Is(context.Cause(ctx), &CanceledError{}) {
+				metricsHandler.Counter(metrics.LocalActivityCanceledCounter).Inc(1)
+				metricsHandler.Counter(metrics.LocalActivityExecutionCanceledCounter).Inc(1)
+				return &localActivityResult{err: ErrCanceled, task: task}
+			}
+			// Non-server initiated cancellations
+			// Note: We send ErrCanceled as the errType, so we can catch this scenario of cancellation
+			// when handling the result
+			return &localActivityResult{err: NewApplicationError(context.Cause(ctx).Error(), ErrCanceled.Error(), false, nil), task: task}
 		} else if ctx.Err() == context.DeadlineExceeded {
 			if task.params.ScheduleToCloseTimeout != 0 && time.Now().After(info.scheduledTime.Add(task.params.ScheduleToCloseTimeout)) {
 				return &localActivityResult{err: ErrDeadlineExceeded, task: task}
