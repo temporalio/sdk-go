@@ -136,6 +136,10 @@ func (*zlibCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, err
 //
 // CodecDataConverter provides support for RawValue handling, where it skips the
 // parent data converter and directly encodes/decodes the RawValue payload.
+//
+// Note: This RawValue support is only if all values passed in are RawValue.
+// If there is a mix of RawValue and other types, the RawValue handling is delegated
+// to the underlying converter.
 type CodecDataConverter struct {
 	parent DataConverter
 	codecs []PayloadCodec
@@ -210,7 +214,7 @@ func (e *CodecDataConverter) ToPayloads(value ...interface{}) (*commonpb.Payload
 		}
 	}
 
-	if len(rawValuePayloads) > 0 {
+	if len(rawValuePayloads) == len(value) {
 		payloads = &commonpb.Payloads{Payloads: rawValuePayloads}
 	} else {
 		var err error
@@ -258,18 +262,18 @@ func (e *CodecDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs
 		return err
 	}
 
-	var isRawValue bool
+	var rawValueCount int
 	for i, payload := range decodedPayloads {
 		if i >= len(valuePtrs) {
 			break
 		}
 		rawValue, ok := valuePtrs[i].(*RawValue)
 		if ok {
-			isRawValue = true
+			rawValueCount++
 			*rawValue = NewRawValue(payload)
 		}
 	}
-	if isRawValue {
+	if rawValueCount == len(decodedPayloads) {
 		return nil
 	}
 
