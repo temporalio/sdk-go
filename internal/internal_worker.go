@@ -583,6 +583,8 @@ func (r *registry) RegisterWorkflowWithOptions(
 		if strings.HasPrefix(options.Name, temporalPrefix) {
 			panic(temporalPrefixError)
 		}
+		r.Lock()
+		defer r.Unlock()
 		r.workflowFuncMap[options.Name] = factory
 		r.workflowVersioningBehaviorMap[options.Name] = options.VersioningBehavior
 		return
