@@ -273,3 +273,14 @@ func NewTimeoutError(timeoutType enumspb.TimeoutType, lastErr error, details ...
 func NewHeartbeatTimeoutError(details ...interface{}) error {
 	return internal.NewHeartbeatTimeoutError(details...)
 }
+
+// ApplicationErrorCategory sets the category of the error. The category of the error
+// maps to logging/metrics SDK behaviours, does not impact server-side logging/metrics.
+type ApplicationErrorCategory = internal.ApplicationErrorCategory
+
+const (
+	// ApplicationErrorCategoryUnspecified represents an error with an unspecified category.
+	ApplicationErrorCategoryUnspecified = internal.ApplicationErrorCategoryUnspecified
+	// ApplicationErrorCategoryBenign indicates an error that is expected under normal operation and should not trigger alerts.
+	ApplicationErrorCategoryBenign = internal.ApplicationErrorCategoryBenign
+)
