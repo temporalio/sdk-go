@@ -1798,6 +1798,10 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		runID = response.RunId
 	}
 
+	if responseInfo := in.Options.responseInfo; responseInfo != nil {
+		responseInfo.Link = response.GetLink()
+	}
+
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
 		metricsHandler := w.client.metricsHandler.WithTags(metrics.RPCTags(in.WorkflowType,
 			metrics.NoneTagValue, in.Options.TaskQueue))

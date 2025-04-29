@@ -452,6 +452,47 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_RawHistory_Success() {
 	s.Equal(workflowResult, decodedResult)
 }
 
+func (s *workflowRunSuite) TestExecuteWorkflow_StartWorkflowResponseInfo() {
+	link := &commonpb.Link{
+		Variant: &commonpb.Link_WorkflowEvent_{
+			WorkflowEvent: &commonpb.Link_WorkflowEvent{
+				Namespace:  DefaultNamespace,
+				WorkflowId: workflowID,
+				RunId:      runID,
+				Reference: &commonpb.Link_WorkflowEvent_EventRef{
+					EventRef: &commonpb.Link_WorkflowEvent_EventReference{
+						EventId:   1,
+						EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+					},
+				},
+			},
+		},
+	}
+	createResponse := &workflowservice.StartWorkflowExecutionResponse{
+		RunId:   runID,
+		Started: true,
+		Link:    link,
+	}
+	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any()).
+		Return(createResponse, nil).Times(1)
+
+	responseInfo := &startWorkflowResponseInfo{}
+	_, err := s.workflowClient.ExecuteWorkflow(
+		context.Background(),
+		StartWorkflowOptions{
+			ID:                                       workflowID,
+			TaskQueue:                                taskqueue,
+			WorkflowExecutionTimeout:                 timeoutInSeconds * time.Second,
+			WorkflowTaskTimeout:                      timeoutInSeconds * time.Second,
+			WorkflowIDReusePolicy:                    workflowIDReusePolicy,
+			WorkflowExecutionErrorWhenAlreadyStarted: true,
+			responseInfo:                             responseInfo,
+		}, workflowType,
+	)
+	s.NoError(err)
+	s.Equal(link, responseInfo.Link)
+}
+
 func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedError() {
 	mockerr := serviceerror.NewWorkflowExecutionAlreadyStarted("Already Started", "", runID)
 	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
