@@ -56,8 +56,9 @@ type (
 
 	// RawValue is a representation of an unconverted, raw payload.
 	//
-	// This type can be used as a paramter or return type in workflows and activities to pass through
-	// a raw payload. Encoding/decoding of the payload is still done by the system.
+	// This type can be used as a parameter or return type in workflows and activities to pass through
+	// a raw payload. Encoding/decoding of the payload is still done by the system. A RawValue enabled
+	// payload converter is required for this.
 	RawValue struct {
 		payload *commonpb.Payload
 	}
