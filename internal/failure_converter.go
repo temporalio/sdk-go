@@ -175,9 +175,6 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 		failure.FailureInfo = &failurepb.Failure_ChildWorkflowExecutionFailureInfo{ChildWorkflowExecutionFailureInfo: failureInfo}
 	case *NexusOperationError:
 		var token = err.OperationToken
-		if token == "" {
-			token = err.OperationID
-		}
 		failureInfo := &failurepb.NexusOperationFailureInfo{
 			ScheduledEventId: err.ScheduledEventID,
 			Endpoint:         err.Endpoint,
@@ -309,7 +306,6 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 			Service:          info.GetService(),
 			Operation:        info.GetOperation(),
 			OperationToken:   token,
-			OperationID:      token,
 		}
 	} else if info := failure.GetNexusHandlerFailureInfo(); info != nil {
 		var retryBehavior nexus.HandlerErrorRetryBehavior

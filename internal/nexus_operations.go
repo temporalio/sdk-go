@@ -249,7 +249,7 @@ func nexusOperationFailure(params executeNexusOperationParams, token string, cau
 				Service:        params.client.Service(),
 				Operation:      params.operation,
 				OperationToken: token,
-				OperationId:    token, // Also populate ID for backwards compatiblity.
+				OperationId:    token, // Also populate ID for backwards compatibility.
 			},
 		},
 		Cause: cause,
