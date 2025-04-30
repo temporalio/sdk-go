@@ -91,7 +91,5 @@ func TestCompositeDataConverter_MixedValues(t *testing.T) {
 	require.Equal(i, outInt)
 	require.Equal(f, outFloat)
 	require.Equal(b, outBytes)
-	require.Equal([]byte("custom"), outRaw.Payload().Metadata["encoding"])
-	require.Equal([]byte("custom raw data"), outRaw.Payload().Data)
 	require.True(proto.Equal(origPayload, outRaw.Payload()))
 }
