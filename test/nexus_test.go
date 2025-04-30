@@ -169,7 +169,6 @@ func (tc *testContext) newNexusClient(t *testing.T, service string) *nexus.HTTPC
 				return res, err
 			}
 		},
-		UseOperationID: true, // TODO(bergundy): Remove this after tests run against server 1.27.0.
 	})
 	require.NoError(t, err)
 	return nc
