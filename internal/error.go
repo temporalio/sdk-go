@@ -298,10 +298,6 @@ type (
 		Service string
 		// Operation name.
 		Operation string
-		// Operation ID - may be empty if the operation completed synchronously.
-		//
-		// Deprecated: Use OperationToken instead.
-		OperationID string
 		// Operation token - may be empty if the operation completed synchronously.
 		OperationToken string
 		// Chained cause - typically an ApplicationError or a CanceledError.

@@ -2645,11 +2645,6 @@ type NexusOperationOptions struct {
 //
 // Exposed as: [go.temporal.io/sdk/workflow.NexusOperationExecution]
 type NexusOperationExecution struct {
-	// Operation ID as set by the Operation's handler. May be empty if the operation hasn't started yet or completed
-	// synchronously.
-	//
-	// Deprecated: Use OperationToken instead.
-	OperationID string
 	// Operation token as set by the Operation's handler. May be empty if the operation hasn't started yet or completed
 	// synchronously.
 	OperationToken string
@@ -2802,7 +2797,6 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 	}, func(token string, e error) {
 		operationToken = token
 		executionSettable.Set(NexusOperationExecution{
-			OperationID:    operationToken,
 			OperationToken: operationToken,
 		}, e)
 	})
