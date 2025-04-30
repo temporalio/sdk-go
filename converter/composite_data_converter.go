@@ -61,25 +61,20 @@ func (dc *CompositeDataConverter) ToPayloads(values ...interface{}) (*commonpb.P
 	if len(values) == 0 {
 		return nil, nil
 	}
-	var rawValuePayloads []*commonpb.Payload
-	for _, v := range values {
-		rawValue, ok := v.(RawValue)
-		if ok {
-			rawValuePayloads = append(rawValuePayloads, rawValue.Payload())
-		}
-	}
-	if len(rawValuePayloads) > 0 {
-		return &commonpb.Payloads{Payloads: rawValuePayloads}, nil
-	}
 
 	result := &commonpb.Payloads{}
 	for i, value := range values {
-		payload, err := dc.ToPayload(value)
-		if err != nil {
-			return nil, fmt.Errorf("values[%d]: %w", i, err)
-		}
+		rawValue, ok := value.(RawValue)
+		if ok {
+			result.Payloads = append(result.Payloads, rawValue.Payload())
+		} else {
+			payload, err := dc.ToPayload(value)
+			if err != nil {
+				return nil, fmt.Errorf("values[%d]: %w", i, err)
+			}
 
-		result.Payloads = append(result.Payloads, payload)
+			result.Payloads = append(result.Payloads, payload)
+		}
 	}
 
 	return result, nil
