@@ -102,28 +102,28 @@ type NexusOperationCancellationType int
 const (
 	// Nexus operation cancellation type is unknown.
 	//
-	// Exposed as: [go.temporal.io/sdk/workflow.NexusOperationCancellationTypeUnspecified]
+	// Exposed as:
 	NexusOperationCancellationTypeUnspecified NexusOperationCancellationType = iota
 
 	// Do not request cancellation of the Nexus operation.
 	//
-	// Exposed as: [go.temporal.io/sdk/workflow.NexusOperationCancellationTypeAbandon]
+	// Exposed as:
 	NexusOperationCancellationTypeAbandon
 
 	// Initiate a cancellation request for the Nexus operation and immediately report cancellation
 	// to the caller. Default.
 	//
-	// Exposed as: [go.temporal.io/sdk/workflow.NexusOperationCancellationTypeTryCancel]
+	// Exposed as:
 	NexusOperationCancellationTypeTryCancel
 
 	// Request cancellation of the Nexus operation and wait for confirmation that the request was received.
 	//
-	// Exposed as: [go.temporal.io/sdk/workflow.NexusOperationCancellationTypeWaitRequested]
+	// Exposed as:
 	NexusOperationCancellationTypeWaitRequested
 
 	// Wait for the Nexus operation to complete.
 	//
-	// Exposed as: [go.temporal.io/sdk/workflow.NexusOperationCancellationTypeWaitCompleted]
+	// Exposed as:
 	NexusOperationCancellationTypeWaitCompleted
 )
 
@@ -2103,7 +2103,7 @@ func (wc *workflowEnvironmentInterceptor) MutableSideEffect(ctx Context, id stri
 
 // DefaultVersion is a version returned by GetVersion for code that wasn't versioned before
 //
-// Exposed as: [go.temporal.io/sdk/workflow.Version], [go.temporal.io/sdk/workflow.DefaultVersion]
+// Exposed as: [go.temporal.io/sdk/workflow.DefaultVersion], [go.temporal.io/sdk/workflow.Version]
 const DefaultVersion Version = -1
 
 // TemporalChangeVersion is used as search attributes key to find workflows with specific change version.
