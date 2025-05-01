@@ -2,12 +2,12 @@
   "events": [
     {
       "eventId": "1",
-      "eventTime": "2025-05-01T12:36:24.966480Z",
+      "eventTime": "2025-05-01T20:51:16.759226Z",
       "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
       "taskId": "1048587",
       "workflowExecutionStartedEventAttributes": {
         "workflowType": {
-          "name": "CancelNexusOperationWorkflow"
+          "name": "CancelNexusOperationAfterStartWorkflow"
         },
         "taskQueue": {
           "name": "replay-test-tq",
@@ -16,18 +16,18 @@
         "workflowExecutionTimeout": "0s",
         "workflowRunTimeout": "0s",
         "workflowTaskTimeout": "10s",
-        "originalExecutionRunId": "85ff9aab-0a5b-4456-a9e3-dad61fd31c3a",
-        "identity": "32472@PJs-Laptop.local@",
-        "firstExecutionRunId": "85ff9aab-0a5b-4456-a9e3-dad61fd31c3a",
+        "originalExecutionRunId": "635d57ee-5c74-4b76-8dc3-526f9a2a08e3",
+        "identity": "55158@PJs-Laptop.local@",
+        "firstExecutionRunId": "635d57ee-5c74-4b76-8dc3-526f9a2a08e3",
         "attempt": 1,
         "firstWorkflowTaskBackoff": "0s",
         "header": {},
-        "workflowId": "nexus-operation-cancelled"
+        "workflowId": "nexus-operation-cancelled-after-start"
       }
     },
     {
       "eventId": "2",
-      "eventTime": "2025-05-01T12:36:24.966595Z",
+      "eventTime": "2025-05-01T20:51:16.759338Z",
       "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
       "taskId": "1048588",
       "workflowTaskScheduledEventAttributes": {
@@ -41,30 +41,30 @@
     },
     {
       "eventId": "3",
-      "eventTime": "2025-05-01T12:36:24.982147Z",
+      "eventTime": "2025-05-01T20:51:16.766501Z",
       "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
       "taskId": "1048593",
       "workflowTaskStartedEventAttributes": {
         "scheduledEventId": "2",
-        "identity": "32472@PJs-Laptop.local@",
-        "requestId": "6a6fcaa7-01ef-4df4-ba7a-cc14995a8a58",
-        "historySizeBytes": "279",
+        "identity": "55158@PJs-Laptop.local@",
+        "requestId": "78826ad2-a4f4-4575-8e6c-7f9b37d45b30",
+        "historySizeBytes": "301",
         "workerVersion": {
-          "buildId": "27b2a29fdca589e0a9c87454996b7009"
+          "buildId": "3a4bfa5ff60b2688e84aed32498bb1a8"
         }
       }
     },
     {
       "eventId": "4",
-      "eventTime": "2025-05-01T12:36:24.988627Z",
+      "eventTime": "2025-05-01T20:51:16.770100Z",
       "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
       "taskId": "1048597",
       "workflowTaskCompletedEventAttributes": {
         "scheduledEventId": "2",
         "startedEventId": "3",
-        "identity": "32472@PJs-Laptop.local@",
+        "identity": "55158@PJs-Laptop.local@",
         "workerVersion": {
-          "buildId": "27b2a29fdca589e0a9c87454996b7009"
+          "buildId": "3a4bfa5ff60b2688e84aed32498bb1a8"
         },
         "sdkMetadata": {
           "langUsedFlags": [
@@ -75,13 +75,13 @@
         },
         "meteringMetadata": {},
         "deployment": {
-          "buildId": "27b2a29fdca589e0a9c87454996b7009"
+          "buildId": "3a4bfa5ff60b2688e84aed32498bb1a8"
         }
       }
     },
     {
       "eventId": "5",
-      "eventTime": "2025-05-01T12:36:24.988738Z",
+      "eventTime": "2025-05-01T20:51:16.770181Z",
       "eventType": "EVENT_TYPE_NEXUS_OPERATION_SCHEDULED",
       "taskId": "1048598",
       "nexusOperationScheduledEventAttributes": {
@@ -90,18 +90,19 @@
         "operation": "wait-on-signal-op",
         "input": {
           "metadata": {
-            "encoding": "YmluYXJ5L251bGw="
-          }
+            "encoding": "anNvbi9wbGFpbg=="
+          },
+          "data": "IndhaXQtZm9yLWNhbmNlbCI="
         },
         "scheduleToCloseTimeout": "0s",
         "workflowTaskCompletedEventId": "4",
-        "requestId": "97f24808-eec2-47a6-8ae8-85a9527c78b6",
-        "endpointId": "035cb00d-fa95-4f45-a5d2-12c338fad5b6"
+        "requestId": "b203fd4c-5685-4867-9a19-5c9b2accfe08",
+        "endpointId": "bf288ef7-05a5-4d6b-a3bd-8de44d253e89"
       }
     },
     {
       "eventId": "6",
-      "eventTime": "2025-05-01T12:36:24.994946Z",
+      "eventTime": "2025-05-01T20:51:16.775070Z",
       "eventType": "EVENT_TYPE_NEXUS_OPERATION_STARTED",
       "taskId": "1048611",
       "links": [
@@ -109,7 +110,7 @@
           "workflowEvent": {
             "namespace": "replay-test-namespace",
             "workflowId": "nexus-handler-wait-for-cancel",
-            "runId": "f3290585-a6bf-4352-909a-656933c81898",
+            "runId": "ea8aca74-d4d5-494d-9821-07d015923b3c",
             "eventRef": {
               "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED"
             }
@@ -119,17 +120,17 @@
       "nexusOperationStartedEventAttributes": {
         "scheduledEventId": "5",
         "operationId": "eyJ2IjowLCJ0IjoxLCJucyI6InJlcGxheS10ZXN0LW5hbWVzcGFjZSIsIndpZCI6Im5leHVzLWhhbmRsZXItd2FpdC1mb3ItY2FuY2VsIn0",
-        "requestId": "97f24808-eec2-47a6-8ae8-85a9527c78b6"
+        "requestId": "b203fd4c-5685-4867-9a19-5c9b2accfe08"
       }
     },
     {
       "eventId": "7",
-      "eventTime": "2025-05-01T12:36:24.994970Z",
+      "eventTime": "2025-05-01T20:51:16.775096Z",
       "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
       "taskId": "1048612",
       "workflowTaskScheduledEventAttributes": {
         "taskQueue": {
-          "name": "PJs-Laptop.local:ed98678a-1a9e-4d80-a307-3010213d3e51",
+          "name": "PJs-Laptop.local:18b6daba-a77a-4e62-ab80-d6cd8f522e37",
           "kind": "TASK_QUEUE_KIND_STICKY",
           "normalName": "replay-test-tq"
         },
@@ -139,41 +140,41 @@
     },
     {
       "eventId": "8",
-      "eventTime": "2025-05-01T12:36:24.996188Z",
+      "eventTime": "2025-05-01T20:51:16.775983Z",
       "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
       "taskId": "1048617",
       "workflowTaskStartedEventAttributes": {
         "scheduledEventId": "7",
-        "identity": "32472@PJs-Laptop.local@",
-        "requestId": "3140b28c-18d9-4f44-bc9f-431630678776",
-        "historySizeBytes": "1142",
+        "identity": "55158@PJs-Laptop.local@",
+        "requestId": "790cade7-551f-4a57-8f6d-8fff2967b238",
+        "historySizeBytes": "1182",
         "workerVersion": {
-          "buildId": "27b2a29fdca589e0a9c87454996b7009"
+          "buildId": "3a4bfa5ff60b2688e84aed32498bb1a8"
         }
       }
     },
     {
       "eventId": "9",
-      "eventTime": "2025-05-01T12:36:24.997442Z",
+      "eventTime": "2025-05-01T20:51:16.777607Z",
       "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
       "taskId": "1048624",
       "workflowTaskCompletedEventAttributes": {
         "scheduledEventId": "7",
         "startedEventId": "8",
-        "identity": "32472@PJs-Laptop.local@",
+        "identity": "55158@PJs-Laptop.local@",
         "workerVersion": {
-          "buildId": "27b2a29fdca589e0a9c87454996b7009"
+          "buildId": "3a4bfa5ff60b2688e84aed32498bb1a8"
         },
         "sdkMetadata": {},
         "meteringMetadata": {},
         "deployment": {
-          "buildId": "27b2a29fdca589e0a9c87454996b7009"
+          "buildId": "3a4bfa5ff60b2688e84aed32498bb1a8"
         }
       }
     },
     {
       "eventId": "10",
-      "eventTime": "2025-05-01T12:36:24.997465Z",
+      "eventTime": "2025-05-01T20:51:16.777627Z",
       "eventType": "EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUESTED",
       "taskId": "1048625",
       "nexusOperationCancelRequestedEventAttributes": {
@@ -183,7 +184,7 @@
     },
     {
       "eventId": "11",
-      "eventTime": "2025-05-01T12:36:25.003489Z",
+      "eventTime": "2025-05-01T20:51:16.784772Z",
       "eventType": "EVENT_TYPE_NEXUS_OPERATION_CANCELED",
       "taskId": "1048644",
       "nexusOperationCanceledEventAttributes": {
@@ -213,17 +214,17 @@
             "operationId": "eyJ2IjowLCJ0IjoxLCJucyI6InJlcGxheS10ZXN0LW5hbWVzcGFjZSIsIndpZCI6Im5leHVzLWhhbmRsZXItd2FpdC1mb3ItY2FuY2VsIn0"
           }
         },
-        "requestId": "97f24808-eec2-47a6-8ae8-85a9527c78b6"
+        "requestId": "b203fd4c-5685-4867-9a19-5c9b2accfe08"
       }
     },
     {
       "eventId": "12",
-      "eventTime": "2025-05-01T12:36:25.003518Z",
+      "eventTime": "2025-05-01T20:51:16.784846Z",
       "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
       "taskId": "1048645",
       "workflowTaskScheduledEventAttributes": {
         "taskQueue": {
-          "name": "PJs-Laptop.local:ed98678a-1a9e-4d80-a307-3010213d3e51",
+          "name": "PJs-Laptop.local:18b6daba-a77a-4e62-ab80-d6cd8f522e37",
           "kind": "TASK_QUEUE_KIND_STICKY",
           "normalName": "replay-test-tq"
         },
@@ -233,55 +234,104 @@
     },
     {
       "eventId": "13",
-      "eventTime": "2025-05-01T12:36:25.004427Z",
+      "eventTime": "2025-05-01T20:51:16.785599Z",
       "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
       "taskId": "1048649",
       "workflowTaskStartedEventAttributes": {
         "scheduledEventId": "12",
-        "identity": "32472@PJs-Laptop.local@",
-        "requestId": "bb98731d-ebd7-4843-b6f7-a68d944b92a4",
-        "historySizeBytes": "1899",
+        "identity": "55158@PJs-Laptop.local@",
+        "requestId": "99174466-3da1-4430-8288-3367b8fd9995",
+        "historySizeBytes": "1941",
         "workerVersion": {
-          "buildId": "27b2a29fdca589e0a9c87454996b7009"
+          "buildId": "3a4bfa5ff60b2688e84aed32498bb1a8"
         }
       }
     },
     {
       "eventId": "14",
-      "eventTime": "2025-05-01T12:36:25.006464Z",
+      "eventTime": "2025-05-01T20:51:16.787019Z",
       "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
       "taskId": "1048653",
       "workflowTaskCompletedEventAttributes": {
         "scheduledEventId": "12",
         "startedEventId": "13",
-        "identity": "32472@PJs-Laptop.local@",
+        "identity": "55158@PJs-Laptop.local@",
         "workerVersion": {
-          "buildId": "27b2a29fdca589e0a9c87454996b7009"
+          "buildId": "3a4bfa5ff60b2688e84aed32498bb1a8"
         },
         "sdkMetadata": {},
         "meteringMetadata": {},
         "deployment": {
-          "buildId": "27b2a29fdca589e0a9c87454996b7009"
+          "buildId": "3a4bfa5ff60b2688e84aed32498bb1a8"
         }
       }
     },
     {
       "eventId": "15",
-      "eventTime": "2025-05-01T12:36:25.006484Z",
-      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED",
+      "eventTime": "2025-05-01T20:51:16.787079Z",
+      "eventType": "EVENT_TYPE_MARKER_RECORDED",
       "taskId": "1048654",
-      "workflowExecutionCanceledEventAttributes": {
-        "workflowTaskCompletedEventId": "14",
+      "markerRecordedEventAttributes": {
+        "markerName": "MutableSideEffect",
         "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "Im54cy1jYW5jZWwtYWZ0ZXItc3RhcnQtaWQi"
+              },
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wcm90b2J1Zg==",
+                  "messageType": "dGVtcG9yYWwuYXBpLmNvbW1vbi52MS5QYXlsb2Fkcw=="
+                },
+                "data": "eyJwYXlsb2FkcyI6W3sibWV0YWRhdGEiOnsiZW5jb2RpbmciOiJhbk52Ymk5d2JHRnBiZz09In0sICJkYXRhIjoiSW1KaU9XUmxaRFkwTFRrNVpEVXROR0ppWVMxaE16azJMV1EwTVRrMk0ySTBNMk0zTlNJPSJ9XX0="
+              }
+            ]
+          },
+          "mutable-side-effect-call-counter": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "MQ=="
+              }
+            ]
+          },
+          "side-effect-id": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "Im54cy1jYW5jZWwtYWZ0ZXItc3RhcnQtaWRfMTUi"
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "14"
+      }
+    },
+    {
+      "eventId": "16",
+      "eventTime": "2025-05-01T20:51:16.787105Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED",
+      "taskId": "1048655",
+      "workflowExecutionCompletedEventAttributes": {
+        "result": {
           "payloads": [
             {
               "metadata": {
                 "encoding": "anNvbi9wbGFpbg=="
               },
-              "data": "IkF3YWl0IGNvbnRleHQgY2FuY2VsZWQi"
+              "data": "ImJiOWRlZDY0LTk5ZDUtNGJiYS1hMzk2LWQ0MTk2M2I0M2M3NSI="
             }
           ]
-        }
+        },
+        "workflowTaskCompletedEventId": "14"
       }
     }
   ]

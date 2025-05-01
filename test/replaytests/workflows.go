@@ -412,7 +412,7 @@ func VersionAndMutableSideEffectWorkflow(ctx workflow.Context, name string) (str
 	v := workflow.GetVersion(ctx, "mutable-side-effect-bug", workflow.DefaultVersion, 1)
 	if v == 1 {
 		var err error
-		uid, err = generateUUID(ctx)
+		uid, err = generateUUID(ctx, "generate-random-uuid")
 		if err != nil {
 			logger.Error("failed to generated uuid", "Error", err)
 			return "", err
@@ -435,10 +435,10 @@ func VersionAndMutableSideEffectWorkflow(ctx workflow.Context, name string) (str
 	return uid, nil
 }
 
-func generateUUID(ctx workflow.Context) (string, error) {
+func generateUUID(ctx workflow.Context, sideEffectID string) (string, error) {
 	var generatedUUID string
 
-	err := workflow.MutableSideEffect(ctx, "generate-random-uuid", func(ctx workflow.Context) interface{} {
+	err := workflow.MutableSideEffect(ctx, sideEffectID, func(ctx workflow.Context) interface{} {
 		return uuid.NewString()
 	}, func(a, b interface{}) bool {
 		return a.(string) == b.(string)
@@ -702,27 +702,65 @@ func ResetWorkflowWithChild(ctx workflow.Context) (string, error) {
 	return result, nil
 }
 
-func WaitForCancelWorkflow(ctx workflow.Context, _ nexus.NoValue) (nexus.NoValue, error) {
+func NexusCancelHandlerWorkflow(ctx workflow.Context, action string) (nexus.NoValue, error) {
+	if action == "succeed" {
+		return nil, nil
+	}
 	return nil, workflow.Await(ctx, func() bool { return false })
 }
 
-var WaitOnSignalOp = temporalnexus.NewWorkflowRunOperation(
+var CancelOp = temporalnexus.NewWorkflowRunOperation(
 	"wait-on-signal-op",
-	WaitForCancelWorkflow,
-	func(ctx context.Context, _ nexus.NoValue, soo nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
-		return client.StartWorkflowOptions{}, nil
+	NexusCancelHandlerWorkflow,
+	func(ctx context.Context, action string, soo nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+		if action == "delay-start" {
+			time.Sleep(1 * time.Second)
+		}
+		return client.StartWorkflowOptions{
+			ID: "nexus-handler-wait-for-cancel",
+		}, nil
 	},
 )
 
-func CancelNexusOperationWorkflow(ctx workflow.Context) error {
+func CancelNexusOperationBeforeSentWorkflow(ctx workflow.Context) (string, error) {
+	nc := workflow.NewNexusClient("replay-endpoint", "replay-service")
+	opCtx, cancel := workflow.NewDisconnectedContext(ctx)
+	cancel()
+	op := nc.ExecuteOperation(opCtx, CancelOp, "fail-to-send", workflow.NexusOperationOptions{})
+	_ = op.Get(ctx, nil)
+	return generateUUID(ctx, "nxs-cancel-before-sent-id")
+}
+
+func CancelNexusOperationBeforeStartWorkflow(ctx workflow.Context) (string, error) {
+	nc := workflow.NewNexusClient("replay-endpoint", "replay-service")
+	opCtx, cancel := workflow.NewDisconnectedContext(ctx)
+	op := nc.ExecuteOperation(opCtx, CancelOp, "delay-start", workflow.NexusOperationOptions{})
+	if err := workflow.Sleep(ctx, 200*time.Millisecond); err != nil {
+		// Wait for scheduled event to be recorded
+		return "", err
+	}
+	cancel()
+	_ = op.Get(ctx, nil)
+	return generateUUID(ctx, "nxs-cancel-before-start-id")
+}
+
+func CancelNexusOperationAfterStartWorkflow(ctx workflow.Context) (string, error) {
 	nc := workflow.NewNexusClient("replay-endpoint", "replay-service")
 	opCtx, cancel := workflow.WithCancel(ctx)
-
-	op := nc.ExecuteOperation(opCtx, WaitOnSignalOp, nil, workflow.NexusOperationOptions{})
+	op := nc.ExecuteOperation(opCtx, CancelOp, "wait-for-cancel", workflow.NexusOperationOptions{})
 	if err := op.GetNexusOperationExecution().Get(opCtx, nil); err != nil {
-		return err
+		return "", err
 	}
-
 	cancel()
-	return op.Get(ctx, nil)
+	_ = op.Get(ctx, nil)
+	return generateUUID(ctx, "nxs-cancel-after-start-id")
+}
+
+func CancelNexusOperationAfterCompleteWorkflow(ctx workflow.Context) (string, error) {
+	nc := workflow.NewNexusClient("replay-endpoint", "replay-service")
+	opCtx, cancel := workflow.WithCancel(ctx)
+	op := nc.ExecuteOperation(opCtx, CancelOp, "succeed", workflow.NexusOperationOptions{})
+	_ = op.Get(opCtx, nil)
+	cancel()
+	return generateUUID(ctx, "nxs-cancel-after-complete-id")
 }

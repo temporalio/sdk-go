@@ -511,11 +511,24 @@ func (s *replayTestSuite) TestResetWorkflowAfterChildComplete() {
 	require.NoError(s.T(), err)
 }
 
-func (s *replayTestSuite) TestCancelledNexusOperation() {
+func (s *replayTestSuite) TestCancelNexusOperation() {
 	replayer := worker.NewWorkflowReplayer()
-	replayer.RegisterWorkflow(CancelNexusOperationWorkflow)
-	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "nexus-operation-cancelled.json")
-	s.NoError(err)
+
+	replayer.RegisterWorkflow(CancelNexusOperationBeforeSentWorkflow)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "nexus-cancel-before-sent.json")
+	s.NoErrorf(err, "Encountered error replaying cancel before schedule Nexus operation command is sent")
+
+	replayer.RegisterWorkflow(CancelNexusOperationBeforeStartWorkflow)
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "nexus-cancel-before-start.json")
+	s.NoErrorf(err, "Encountered error replaying cancel before Nexus operation is started")
+
+	replayer.RegisterWorkflow(CancelNexusOperationAfterStartWorkflow)
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "nexus-cancel-after-start.json")
+	s.NoErrorf(err, "Encountered error replaying cancel after Nexus operation is started")
+
+	replayer.RegisterWorkflow(CancelNexusOperationAfterCompleteWorkflow)
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "nexus-cancel-after-complete.json")
+	s.NoErrorf(err, "Encountered error replaying cancel after Nexus operation is completed")
 }
 
 type captureConverter struct {

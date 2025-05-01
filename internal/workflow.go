@@ -100,30 +100,30 @@ const (
 type NexusOperationCancellationType int
 
 const (
-	// Nexus operation cancellation type is unknown.
+	// NexusOperationCancellationTypeUnspecified - Nexus operation cancellation type is unknown.
 	//
-	// Exposed as:
+	// Exposed as: [go.temporal.io/sdk/workflow.NexusOperationCancellationTypeUnspecified]
 	NexusOperationCancellationTypeUnspecified NexusOperationCancellationType = iota
 
-	// Do not request cancellation of the Nexus operation.
+	// NexusOperationCancellationTypeAbandon - Do not request cancellation of the Nexus operation.
 	//
-	// Exposed as:
+	// Exposed as: [go.temporal.io/sdk/workflow.NexusOperationCancellationTypeAbandon]
 	NexusOperationCancellationTypeAbandon
 
-	// Initiate a cancellation request for the Nexus operation and immediately report cancellation
+	// NexusOperationCancellationTypeTryCancel - Initiate a cancellation request for the Nexus operation and immediately report cancellation
 	// to the caller.
 	//
-	// Exposed as:
+	// Exposed as: [go.temporal.io/sdk/workflow.NexusOperationCancellationTypeTryCancel]
 	NexusOperationCancellationTypeTryCancel
 
-	// Request cancellation of the Nexus operation and wait for confirmation that the request was received.
+	// NexusOperationCancellationTypeWaitRequested - Request cancellation of the Nexus operation and wait for confirmation that the request was received.
 	//
-	// Exposed as:
+	// Exposed as: [go.temporal.io/sdk/workflow.NexusOperationCancellationTypeWaitRequested]
 	NexusOperationCancellationTypeWaitRequested
 
-	// Wait for the Nexus operation to complete. Default.
+	// NexusOperationCancellationTypeWaitCompleted - Wait for the Nexus operation to complete. Default.
 	//
-	// Exposed as:
+	// Exposed as: [go.temporal.io/sdk/workflow.NexusOperationCancellationTypeWaitCompleted]
 	NexusOperationCancellationTypeWaitCompleted
 )
 

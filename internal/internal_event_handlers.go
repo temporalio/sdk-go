@@ -1361,7 +1361,6 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		err = weh.handleNexusOperationCompleted(event)
 	case enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUESTED:
 		err = weh.handleNexusOperationCancelRequested(event)
-		//weh.commandsHelper.handleNexusOperationCancelRequested(event.GetNexusOperationCancelRequestedEventAttributes().GetScheduledEventId())
 	case enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_COMPLETED,
 		enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_FAILED:
 		err = weh.handleNexusOperationCancelRequestDelivered(event)
