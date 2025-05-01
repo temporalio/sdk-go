@@ -669,22 +669,16 @@ func (wc *workflowEnvironmentImpl) RequestCancelNexusOperation(seq int64) {
 	command := wc.commandsHelper.requestCancelNexusOperation(seq)
 	data := command.getData().(*scheduledNexusOperation)
 
-	// Make sure to unblock the futures if the caller has indicated they do not want to wait.
+	// Make sure to unblock the futures.
 	if command.getState() == commandStateCreated || command.getState() == commandStateCommandSent {
-		switch data.cancellationType {
-		case NexusOperationCancellationTypeAbandon, NexusOperationCancellationTypeTryCancel, NexusOperationCancellationTypeUnspecified:
-			if data.startedCallback != nil {
-				data.startedCallback("", ErrCanceled)
-				data.startedCallback = nil
-			}
-			if data.completedCallback != nil {
-				data.completedCallback(nil, ErrCanceled)
-				data.completedCallback = nil
-			}
-		case NexusOperationCancellationTypeWaitRequested, NexusOperationCancellationTypeWaitCompleted:
-			// No-op. Futures should be unblocked when the cancellation request is received or the operation completes.
+		if data.startedCallback != nil {
+			data.startedCallback("", ErrCanceled)
+			data.startedCallback = nil
 		}
-
+		if data.completedCallback != nil {
+			data.completedCallback(nil, ErrCanceled)
+			data.completedCallback = nil
+		}
 	}
 	wc.logger.Debug("RequestCancelNexusOperation",
 		tagNexusEndpoint, data.endpoint,
