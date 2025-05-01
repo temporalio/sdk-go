@@ -174,6 +174,7 @@ func (b *builder) integrationTest() error {
 				"--http-port", "7243", // Nexus tests use the HTTP port directly
 				"--dynamic-config-value", `component.callbacks.allowedAddresses=[{"Pattern":"*","AllowInsecure":true}]`, // SDK tests use arbitrary callback URLs, permit that on the server
 				"--dynamic-config-value", `system.refreshNexusEndpointsMinWait="0s"`, // Make Nexus tests faster
+				"--dynamic-config-value", `component.nexusoperations.recordCancelRequestCompletionEvents=true`, // Defaults to false until after OSS 1.28 is released
 			},
 		})
 		if err != nil {

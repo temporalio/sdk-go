@@ -2282,6 +2282,7 @@ func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
 			"Temporal",
 			workflow.NexusOperationOptions{
 				ScheduleToCloseTimeout: 2 * time.Second,
+				CancellationType:       workflow.NexusOperationCancellationTypeWaitCompleted,
 			},
 		).Return(
 			&nexus.HandlerStartOperationResultSync[string]{
@@ -2429,6 +2430,7 @@ func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
 			"Temporal",
 			workflow.NexusOperationOptions{
 				ScheduleToCloseTimeout: 2 * time.Second,
+				CancellationType:       workflow.NexusOperationCancellationTypeWaitCompleted,
 			},
 		).After(1*time.Second).Return(
 			&nexus.HandlerStartOperationResultSync[string]{
@@ -2455,6 +2457,7 @@ func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
 			"Temporal",
 			workflow.NexusOperationOptions{
 				ScheduleToCloseTimeout: 2 * time.Second,
+				CancellationType:       workflow.NexusOperationCancellationTypeWaitCompleted,
 			},
 		).After(3*time.Second).Return(
 			&nexus.HandlerStartOperationResultSync[string]{
