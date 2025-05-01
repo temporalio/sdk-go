@@ -1257,9 +1257,15 @@ func (h *commandsHelper) handleNexusOperationCompleted(scheduledEventID int64) c
 	return command
 }
 
-func (h *commandsHelper) handleNexusOperationCancelRequested(scheduledEventID int64) {
-	command := h.getCommand(makeCommandID(commandTypeRequestCancelNexusOperation, strconv.FormatInt(scheduledEventID, 10)))
-	command.handleInitiatedEvent()
+func (h *commandsHelper) handleNexusOperationCancelRequested(scheduledEventID int64) commandStateMachine {
+	seq, ok := h.scheduledEventIDToNexusSeq[scheduledEventID]
+	if !ok {
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event ID: %v", scheduledEventID))
+	}
+	command := h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+	sm := command.(*nexusOperationStateMachine)
+	sm.cancelation.handleInitiatedEvent()
+	return command
 }
 
 func (h *commandsHelper) handleNexusOperationCancelRequestDelivered(scheduledEventID int64) commandStateMachine {

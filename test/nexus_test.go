@@ -1117,11 +1117,11 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 		})
 		opStarted <- fut.GetNexusOperationExecution().Get(ctx, nil)
 
-		if cancellation == workflow.NexusOperationCancellationTypeWaitRequested {
+		if cancellation == workflow.NexusOperationCancellationTypeTryCancel || cancellation == workflow.NexusOperationCancellationTypeWaitRequested {
 			disconCtx, _ := workflow.NewDisconnectedContext(ctx) // Use disconnected ctx so it is not auto canceled.
 			workflow.Go(disconCtx, func(ctx workflow.Context) {
 				// Wake up the caller so it is not waiting for the operation to complete to get the next WFT.
-				_ = workflow.Sleep(ctx, 100*time.Millisecond)
+				_ = workflow.Sleep(ctx, 20*time.Millisecond)
 			})
 		}
 
@@ -1192,27 +1192,31 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 		var canceledErr *temporal.CanceledError
 		require.ErrorAs(t, err, &canceledErr)
 
-		// Verify the Nexus operation future was unblocked.
-		require.False(t, (<-opUnblocked).IsZero())
-
-		// Verify that the RequestCancelNexusOperation event was recorded.
+		// Verify operation future was unblocked after cancel command was recorded.
+		unblocked := <-opUnblocked
 		callerHist := tc.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		var callerCloseEvent *historypb.HistoryEvent
 		foundRequestedEvent := false
 		for callerHist.HasNext() {
 			event, err := callerHist.Next()
 			require.NoError(t, err)
 			if event.EventType == enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUESTED {
 				foundRequestedEvent = true
-				break
+				require.Greater(t, unblocked, event.EventTime.AsTime().UTC())
 			}
+			callerCloseEvent = event
 		}
 		require.True(t, foundRequestedEvent)
 
-		handlerDesc, err := tc.client.DescribeWorkflowExecution(ctx, handlerID, "")
-		require.NoError(t, err)
-		require.Equal(t, enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING, handlerDesc.WorkflowExecutionInfo.Status)
-
-		require.NoError(t, tc.client.TerminateWorkflow(ctx, handlerID, "", "test"))
+		// Verify that caller completed before the handler.
+		var handlerCloseEvent *historypb.HistoryEvent
+		var handlerHist client.HistoryEventIterator
+		require.Eventuallyf(t, func() bool {
+			handlerHist = tc.client.GetWorkflowHistory(ctx, handlerID, "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT)
+			handlerCloseEvent, err = handlerHist.Next()
+			return handlerCloseEvent != nil && err == nil
+		}, 5*time.Second, 200*time.Millisecond, "timed out waiting for handler wf close event")
+		require.Greater(t, handlerCloseEvent.EventTime.AsTime().UTC(), callerCloseEvent.EventTime.AsTime().UTC())
 	})
 
 	t.Run("WaitRequested", func(t *testing.T) {

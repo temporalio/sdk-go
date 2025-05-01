@@ -1360,7 +1360,8 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		enumspb.EVENT_TYPE_NEXUS_OPERATION_TIMED_OUT:
 		err = weh.handleNexusOperationCompleted(event)
 	case enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUESTED:
-		weh.commandsHelper.handleNexusOperationCancelRequested(event.GetNexusOperationCancelRequestedEventAttributes().GetScheduledEventId())
+		err = weh.handleNexusOperationCancelRequested(event)
+		//weh.commandsHelper.handleNexusOperationCancelRequested(event.GetNexusOperationCancelRequestedEventAttributes().GetScheduledEventId())
 	case enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_COMPLETED,
 		enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_FAILED:
 		err = weh.handleNexusOperationCancelRequestDelivered(event)
@@ -1989,6 +1990,26 @@ func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationCompleted(even
 	return nil
 }
 
+func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationCancelRequested(event *historypb.HistoryEvent) error {
+	attrs := event.GetNexusOperationCancelRequestedEventAttributes()
+	scheduledEventId := attrs.GetScheduledEventId()
+
+	command := weh.commandsHelper.handleNexusOperationCancelRequested(scheduledEventId)
+	state := command.getData().(*scheduledNexusOperation)
+	err := ErrCanceled
+	if state.cancellationType == NexusOperationCancellationTypeTryCancel {
+		if state.startedCallback != nil {
+			state.startedCallback("", err)
+			state.startedCallback = nil
+		}
+		if state.completedCallback != nil {
+			state.completedCallback(nil, err)
+			state.completedCallback = nil
+		}
+	}
+	return nil
+}
+
 func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationCancelRequestDelivered(event *historypb.HistoryEvent) error {
 	var scheduledEventID int64
 	var failure *failurepb.Failure
@@ -2025,7 +2046,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationCancelRequestD
 			state.startedCallback = nil
 		}
 		if state.completedCallback != nil {
-			state.completedCallback(&commonpb.Payload{}, err)
+			state.completedCallback(nil, err)
 			state.completedCallback = nil
 		}
 	}
