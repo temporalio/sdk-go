@@ -511,6 +511,13 @@ func (s *replayTestSuite) TestResetWorkflowAfterChildComplete() {
 	require.NoError(s.T(), err)
 }
 
+func (s *replayTestSuite) TestCancelledNexusOperation() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(CancelNexusOperationWorkflow)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "nexus-operation-cancelled.json")
+	s.NoError(err)
+}
+
 type captureConverter struct {
 	converter.DataConverter
 	toPayloads   []interface{}

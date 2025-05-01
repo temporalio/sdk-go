@@ -668,10 +668,9 @@ func (wc *workflowEnvironmentImpl) ExecuteNexusOperation(params executeNexusOper
 func (wc *workflowEnvironmentImpl) RequestCancelNexusOperation(seq int64) {
 	command := wc.commandsHelper.requestCancelNexusOperation(seq)
 	data := command.getData().(*scheduledNexusOperation)
-	cancelCmd := command.(*nexusOperationStateMachine).cancelation
 
 	// Make sure to unblock the futures if the caller has indicated they do not want to wait.
-	if cancelCmd.getState() == commandStateCreated || cancelCmd.getState() == commandStateCommandSent || cancelCmd.getState() == commandStateInitiated {
+	if command.getState() == commandStateCreated || command.getState() == commandStateCommandSent {
 		switch data.cancellationType {
 		case NexusOperationCancellationTypeAbandon, NexusOperationCancellationTypeTryCancel, NexusOperationCancellationTypeUnspecified:
 			if data.startedCallback != nil {
@@ -2011,6 +2010,12 @@ func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationCancelRequestD
 	default:
 		// This is only called internally and should never happen.
 		panic(fmt.Errorf("invalid event type, not a Nexus Operation cancel request resolution: %v", event.EventType))
+	}
+
+	if scheduledEventID == 0 {
+		// API version 1.47.0 was released without the ScheduledEventID field on these events, so if we got this event
+		// without that field populated, then just ignore and fall back to default WaitCompleted behavior.
+		return nil
 	}
 
 	command := weh.commandsHelper.handleNexusOperationCancelRequestDelivered(scheduledEventID)

@@ -31,6 +31,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nexus-rpc/sdk-go/nexus"
+	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/temporalnexus"
 
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -697,4 +700,29 @@ func ResetWorkflowWithChild(ctx workflow.Context) (string, error) {
 
 	logger.Info("Child execution completed with result: " + result)
 	return result, nil
+}
+
+func WaitForCancelWorkflow(ctx workflow.Context, _ nexus.NoValue) (nexus.NoValue, error) {
+	return nil, workflow.Await(ctx, func() bool { return false })
+}
+
+var WaitOnSignalOp = temporalnexus.NewWorkflowRunOperation(
+	"wait-on-signal-op",
+	WaitForCancelWorkflow,
+	func(ctx context.Context, _ nexus.NoValue, soo nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+		return client.StartWorkflowOptions{}, nil
+	},
+)
+
+func CancelNexusOperationWorkflow(ctx workflow.Context) error {
+	nc := workflow.NewNexusClient("replay-endpoint", "replay-service")
+	opCtx, cancel := workflow.WithCancel(ctx)
+
+	op := nc.ExecuteOperation(opCtx, WaitOnSignalOp, nil, workflow.NexusOperationOptions{})
+	if err := op.GetNexusOperationExecution().Get(opCtx, nil); err != nil {
+		return err
+	}
+
+	cancel()
+	return op.Get(ctx, nil)
 }

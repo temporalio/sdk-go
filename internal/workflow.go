@@ -2668,7 +2668,7 @@ type NexusOperationOptions struct {
 
 	// CancellationType - Indicates what action should be taken when the caller is cancelled.
 	//
-	// Optional: defaults to NexusOperationCancellationTypeTryCancel.
+	// Optional: defaults to NexusOperationCancellationTypeWaitCompleted.
 	CancellationType NexusOperationCancellationType
 
 	// Summary is a single-line fixed summary for this Nexus Operation that will appear in UI/CLI. This can be
@@ -2790,7 +2790,7 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 	}
 
 	if input.Options.CancellationType == NexusOperationCancellationTypeUnspecified {
-		input.Options.CancellationType = NexusOperationCancellationTypeTryCancel
+		input.Options.CancellationType = NexusOperationCancellationTypeWaitCompleted
 	}
 
 	return executeNexusOperationParams{
