@@ -87,6 +87,9 @@ type (
 	// RegisterOptions consists of options for registering a workflow
 	RegisterOptions = internal.RegisterWorkflowOptions
 
+	// DynamicRegisterOptions consists of options for registering a dynamic workflow
+	DynamicRegisterOptions = internal.DynamicRegisterOptions
+
 	// Info information about currently executing workflow
 	Info = internal.WorkflowInfo
 

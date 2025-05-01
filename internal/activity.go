@@ -89,6 +89,10 @@ type (
 		SkipInvalidStructFunctions bool
 	}
 
+	// RegisterDynamicActivityOptions consists of options for registering a dynamic activity.
+	RegisterDynamicActivityOptions struct {
+	}
+
 	// ActivityOptions stores all activity-specific parameters that will be stored inside of a context.
 	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 	// subjected to change in the future.

@@ -472,6 +472,22 @@ type (
 		VersioningBehavior VersioningBehavior
 	}
 
+	// DynamicRegisterOptions consists of options for registering a dynamic workflow
+	DynamicRegisterOptions struct {
+		// Allows dynamic options to be loaded for a workflow.
+		LoadDynamicOptions func(ctx Context) (DynamicWorkflowOptions, error)
+	}
+
+	// DynamicWorkflowOptions are options for a dynamic workflow.
+	DynamicWorkflowOptions struct {
+		// Optional: Provides a Versioning Behavior to workflows of this type. It is required
+		// when WorkerOptions does not specify [DeploymentOptions.DefaultVersioningBehavior],
+		// [DeploymentOptions.DeploymentSeriesName] is set, and [UseBuildIDForVersioning] is true.
+		//
+		// NOTE: Experimental
+		VersioningBehavior VersioningBehavior
+	}
+
 	localActivityContext struct {
 		fn       interface{}
 		isMethod bool
