@@ -45,8 +45,9 @@ const (
 	urlPathTemplate      = "/namespaces/%s/workflows/%s/%s/history"
 
 	linkWorkflowEventReferenceTypeKey = "referenceType"
-	linkEventReferenceEventIDKey      = "eventID"
-	linkEventReferenceEventTypeKey    = "eventType"
+	linkEventIDKey                    = "eventID"
+	linkEventTypeKey                  = "eventType"
+	linkRequestIDKey                  = "requestID"
 )
 
 var (
@@ -59,7 +60,8 @@ var (
 		rePatternWorkflowID,
 		rePatternRunID,
 	))
-	eventReferenceType = string((&commonpb.Link_WorkflowEvent_EventReference{}).ProtoReflect().Descriptor().Name())
+	eventReferenceType     = string((&commonpb.Link_WorkflowEvent_EventReference{}).ProtoReflect().Descriptor().Name())
+	requestIDReferenceType = string((&commonpb.Link_WorkflowEvent_RequestIdReference{}).ProtoReflect().Descriptor().Name())
 )
 
 // ConvertLinkWorkflowEventToNexusLink converts a Link_WorkflowEvent type to Nexus Link.
@@ -80,6 +82,8 @@ func ConvertLinkWorkflowEventToNexusLink(we *commonpb.Link_WorkflowEvent) nexus.
 	switch ref := we.GetReference().(type) {
 	case *commonpb.Link_WorkflowEvent_EventRef:
 		u.RawQuery = convertLinkWorkflowEventEventReferenceToURLQuery(ref.EventRef)
+	case *commonpb.Link_WorkflowEvent_RequestIdRef:
+		u.RawQuery = convertLinkWorkflowEventRequestIdReferenceToURLQuery(ref.RequestIdRef)
 	}
 	return nexus.Link{
 		URL:  u,
@@ -137,6 +141,14 @@ func ConvertNexusLinkToLinkWorkflowEvent(link nexus.Link) (*commonpb.Link_Workfl
 		we.Reference = &commonpb.Link_WorkflowEvent_EventRef{
 			EventRef: eventRef,
 		}
+	case requestIDReferenceType:
+		requestIDRef, err := convertURLQueryToLinkWorkflowEventRequestIdReference(link.URL.Query())
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse link to Link_WorkflowEvent: %w", err)
+		}
+		we.Reference = &commonpb.Link_WorkflowEvent_RequestIdRef{
+			RequestIdRef: requestIDRef,
+		}
 	default:
 		return nil, fmt.Errorf(
 			"failed to parse link to Link_WorkflowEvent: unknown reference type: %q",
@@ -151,25 +163,45 @@ func convertLinkWorkflowEventEventReferenceToURLQuery(eventRef *commonpb.Link_Wo
 	values := url.Values{}
 	values.Set(linkWorkflowEventReferenceTypeKey, eventReferenceType)
 	if eventRef.GetEventId() > 0 {
-		values.Set(linkEventReferenceEventIDKey, strconv.FormatInt(eventRef.GetEventId(), 10))
+		values.Set(linkEventIDKey, strconv.FormatInt(eventRef.GetEventId(), 10))
 	}
-	values.Set(linkEventReferenceEventTypeKey, enumspb.EventType_name[int32(eventRef.GetEventType())])
+	values.Set(linkEventTypeKey, enumspb.EventType_name[int32(eventRef.GetEventType())])
 	return values.Encode()
 }
 
 func convertURLQueryToLinkWorkflowEventEventReference(queryValues url.Values) (*commonpb.Link_WorkflowEvent_EventReference, error) {
 	var err error
 	eventRef := &commonpb.Link_WorkflowEvent_EventReference{}
-	eventIDValue := queryValues.Get(linkEventReferenceEventIDKey)
+	eventIDValue := queryValues.Get(linkEventIDKey)
 	if eventIDValue != "" {
-		eventRef.EventId, err = strconv.ParseInt(queryValues.Get(linkEventReferenceEventIDKey), 10, 64)
+		eventRef.EventId, err = strconv.ParseInt(queryValues.Get(linkEventIDKey), 10, 64)
 		if err != nil {
 			return nil, err
 		}
 	}
-	eventRef.EventType, err = enumspb.EventTypeFromString(queryValues.Get(linkEventReferenceEventTypeKey))
+	eventRef.EventType, err = enumspb.EventTypeFromString(queryValues.Get(linkEventTypeKey))
 	if err != nil {
 		return nil, err
 	}
 	return eventRef, nil
+}
+
+func convertLinkWorkflowEventRequestIdReferenceToURLQuery(requestIDRef *commonpb.Link_WorkflowEvent_RequestIdReference) string {
+	values := url.Values{}
+	values.Set(linkWorkflowEventReferenceTypeKey, requestIDReferenceType)
+	values.Set(linkRequestIDKey, requestIDRef.GetRequestId())
+	values.Set(linkEventTypeKey, enumspb.EventType_name[int32(requestIDRef.GetEventType())])
+	return values.Encode()
+}
+
+func convertURLQueryToLinkWorkflowEventRequestIdReference(queryValues url.Values) (*commonpb.Link_WorkflowEvent_RequestIdReference, error) {
+	var err error
+	requestIDRef := &commonpb.Link_WorkflowEvent_RequestIdReference{
+		RequestId: queryValues.Get(linkRequestIDKey),
+	}
+	requestIDRef.EventType, err = enumspb.EventTypeFromString(queryValues.Get(linkEventTypeKey))
+	if err != nil {
+		return nil, err
+	}
+	return requestIDRef, nil
 }
