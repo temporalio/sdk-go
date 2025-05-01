@@ -744,6 +744,8 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 	return nil
 }
 
+// NOTE: structs cannot be registered
+// TODO: Fix DynamicRegisterOptions
 func (r *registry) RegisterDynamicActivity(af interface{}, options DynamicRegisterOptions) {
 	// Support direct registration of activity
 	a, ok := af.(activity)
@@ -760,6 +762,9 @@ func (r *registry) RegisterDynamicActivity(af interface{}, options DynamicRegist
 	}
 	r.Lock()
 	defer r.Unlock()
+	if r.dynamicActivity != nil {
+		panic("dynamic activity already registered")
+	}
 	r.dynamicActivity = &activityExecutor{name: "", fn: af}
 
 }
@@ -907,14 +912,6 @@ func validateFnFormat(fnType reflect.Type, isWorkflow, isDynamic bool) error {
 		if !isWorkflowContext(fnType.In(0)) {
 			return fmt.Errorf("expected first argument to be workflow.Context but found %s", fnType.In(0))
 		}
-		if isDynamic {
-			// TODO: clean up condition?
-			if fnType.NumIn() != 2 || !fnType.IsVariadic() || fnType.In(1).Kind() != reflect.Slice || fnType.In(1).Elem() == reflect.TypeOf((*EncodedValue)(nil)).Elem() {
-				return fmt.Errorf(
-					"expected function to have two arguments, first being workflow.Context and second being a variadic argument of EncodedValue type",
-				)
-			}
-		}
 	} else {
 		// For activities, check that workflow context is not accidentally provided
 		// Activities registered with structs will have their receiver as the first argument so confirm it is not
@@ -923,6 +920,21 @@ func validateFnFormat(fnType reflect.Type, isWorkflow, isDynamic bool) error {
 			if isWorkflowContext(fnType.In(i)) {
 				return fmt.Errorf("unexpected use of workflow context for an activity")
 			}
+		}
+	}
+
+	if isDynamic {
+		if fnType.NumIn() != 2 {
+			return fmt.Errorf(
+				"expected function to have two arguments, first being workflow.Context and second being a variadic argument of EncodedValue type, found %d arguments", fnType.NumIn(),
+			)
+		}
+		if !fnType.IsVariadic() {
+			return fmt.Errorf("expected function to a variadic function")
+		}
+
+		if fnType.In(1).Kind() != reflect.Slice || !fnType.In(1).Elem().Implements(reflect.TypeOf((*converter.EncodedValue)(nil)).Elem()) {
+			return fmt.Errorf("expected function to have a variadic argument of EncodedValue type, got %s", fnType.In(1).Elem())
 		}
 	}
 
@@ -1130,6 +1142,7 @@ func (aw *AggregatedWorker) RegisterDynamicWorkflow(w interface{}, options Dynam
 	if aw.workflowWorker == nil {
 		panic("workflow worker disabled, cannot register workflow")
 	}
+	// TODO: (versioning check?)
 	aw.registry.RegisterDynamicWorkflow(w, options)
 }
 
@@ -1143,6 +1156,8 @@ func (aw *AggregatedWorker) RegisterActivityWithOptions(a interface{}, options R
 	aw.registry.RegisterActivityWithOptions(a, options)
 }
 
+// RegisterDynamicActivity registers the dynamic activity function with options.
+// Registering activities via a structure is not supported for dynamic activities.
 func (aw *AggregatedWorker) RegisterDynamicActivity(a interface{}, options DynamicRegisterOptions) {
 	aw.registry.RegisterDynamicActivity(a, options)
 }

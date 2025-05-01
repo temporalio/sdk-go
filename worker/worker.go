@@ -159,7 +159,7 @@ type (
 		// worker.RegisterActivityWithOptions(barActivity, RegisterActivityOptions{DisableAlreadyRegisteredCheck: true})
 		RegisterActivityWithOptions(a interface{}, options activity.RegisterOptions)
 
-		// RegisterDynamicActivity registers the dynamic activity function or struct pointer with options.
+		// RegisterDynamicActivity registers the dynamic activity function with options.
 		// Registering activities via a structure is not supported for dynamic activities.
 		RegisterDynamicActivity(a interface{}, options activity.DynamicRegisterOptions)
 	}

@@ -91,6 +91,7 @@ type (
 
 	// RegisterDynamicActivityOptions consists of options for registering a dynamic activity.
 	RegisterDynamicActivityOptions struct {
+		// TODO: blank since no versioning for activities?
 	}
 
 	// ActivityOptions stores all activity-specific parameters that will be stored inside of a context.
