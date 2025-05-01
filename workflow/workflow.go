@@ -79,13 +79,13 @@ const (
 	NexusOperationCancellationTypeAbandon
 
 	// Initiate a cancellation request for the Nexus operation and immediately report cancellation
-	// to the caller. Default.
+	// to the caller.
 	NexusOperationCancellationTypeTryCancel
 
 	// Request cancellation of the Nexus operation and wait for confirmation that the request was received.
 	NexusOperationCancellationTypeWaitRequested
 
-	// Wait for the Nexus operation to complete.
+	// Wait for the Nexus operation to complete. Default.
 	NexusOperationCancellationTypeWaitCompleted
 )
 
