@@ -1121,7 +1121,7 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 			disconCtx, _ := workflow.NewDisconnectedContext(ctx) // Use disconnected ctx so it is not auto canceled.
 			workflow.Go(disconCtx, func(ctx workflow.Context) {
 				// Wake up the caller so it is not waiting for the operation to complete to get the next WFT.
-				_ = workflow.Sleep(ctx, 20*time.Millisecond)
+				_ = workflow.Sleep(ctx, time.Millisecond)
 			})
 		}
 
@@ -1135,7 +1135,7 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 	service := nexus.NewService("test")
 	require.NoError(t, service.Register(op))
 	w.RegisterNexusService(service)
-	w.RegisterWorkflowWithOptions(handlerWf, workflow.RegisterOptions{Name: "foo"})
+	w.RegisterWorkflow(handlerWf)
 	w.RegisterWorkflow(callerWf)
 	require.NoError(t, w.Start())
 	t.Cleanup(w.Stop)
