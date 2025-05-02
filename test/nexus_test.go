@@ -1108,7 +1108,7 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 		},
 	)
 
-	opStarted := make(chan error)
+	opStarted := make(chan error, 1)
 	opUnblocked := make(chan time.Time, 1)
 	callerWf := func(ctx workflow.Context, cancellation workflow.NexusOperationCancellationType) error {
 		c := workflow.NewNexusClient(tc.endpoint, "test")
@@ -1159,7 +1159,8 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 		require.ErrorAs(t, err, &canceledErr)
 
 		// Verify the Nexus operation future was unblocked.
-		require.False(t, (<-opUnblocked).IsZero())
+		unblocked := <-opUnblocked
+		require.False(t, unblocked.IsZero())
 
 		// Verify that caller never sent a cancellation request.
 		history := tc.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
