@@ -240,7 +240,6 @@ func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 		return nil, err
 	}
 
-
 	// Run via interceptor
 	return wc.interceptor.ExecuteWorkflow(ctx, in)
 }

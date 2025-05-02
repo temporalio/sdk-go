@@ -80,11 +80,7 @@ func decodeArgsToRawValues(dc converter.DataConverter, fnType reflect.Type, data
 	}
 
 	// Unmarshal
-	fmt.Println("fnType.NumIn()", fnType.NumIn())
-	fmt.Println("len(pointers)", len(pointers))
-	fmt.Println("fnType.In(1)", fnType.In(1))
-	fmt.Println("fnType.In(1) == reflect.TypeOf((*converter.EncodedValues)(nil))", fnType.In(1) == reflect.TypeOf((*converter.EncodedValues)(nil)).Elem())
-	//
+
 	// Dynamic workflows take in a single EncodedValues, encode all data into single EncodedValues
 	if fnType.NumIn() == 2 && len(pointers) == 1 && fnType.In(1) == reflect.TypeOf((*converter.EncodedValues)(nil)).Elem() {
 		return []interface{}{newEncodedValues(data, dc)}, nil

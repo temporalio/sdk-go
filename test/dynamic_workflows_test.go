@@ -29,12 +29,13 @@ import (
 	"fmt"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 	"testing"
+	"time"
 )
 
 type DynamicWorkflowTestSuite struct {
@@ -67,26 +68,22 @@ func (ts *DynamicWorkflowTestSuite) SetupTest() {
 }
 
 func DynamicWorkflow(ctx workflow.Context, args converter.EncodedValues) (converter.EncodedValues, error) {
-	fmt.Println("[DynamicWorkflow]")
-
 	var result string
 	info := workflow.GetInfo(ctx)
+
+	var arg1, arg2 string
+	err := args.Get(&arg1, &arg2)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode arguments: %w", err)
+	}
+
 	if info.WorkflowType.Name == "dynamic-activity" {
-		ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{})
-		err := workflow.ExecuteActivity(ctx, "random-activity-name").Get(ctx, result)
+		ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{StartToCloseTimeout: 10 * time.Second})
+		err := workflow.ExecuteActivity(ctx, "random-activity-name", arg1, arg2).Get(ctx, &result)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		var arg1, arg2 string
-		err := args.Get(&arg1, &arg2)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode arguments: %w", err)
-		}
-		fmt.Println("[DynamicWorkflow] arg1", arg1)
-		fmt.Println("[DynamicWorkflow] arg2", arg2)
-		fmt.Println("[DynamicWorkflow] info.WorkflowType", info.WorkflowType)
-
 		result = fmt.Sprintf("%s - %s - %s", info.WorkflowType.Name, arg1, arg2)
 	}
 
@@ -99,27 +96,24 @@ func DynamicWorkflow(ctx workflow.Context, args converter.EncodedValues) (conver
 	return encodedValue, nil
 }
 
-//func DynamicActivity(ctx context.Context, args converter.EncodedValues) (string, error) {
-//	//if len(args) != 2 {
-//	//	return nil, fmt.Errorf("expected 2 arguments, got %d", len(args))
-//	//}
-//
-//	var arg1 string
-//	err := args[0].Get(&arg1)
-//	if err != nil {
-//		return "", fmt.Errorf("failed to decode first argument: %w", err)
-//	}
-//	var arg2 string
-//	err = args[1].Get(&arg2)
-//	if err != nil {
-//		return "", fmt.Errorf("failed to decode second argument: %w", err)
-//	}
-//
-//	info := activity.GetInfo(ctx)
-//	result := fmt.Sprintf("%s - %s - %s", info.WorkflowType, arg1, arg2)
-//	return result, nil
-//
-//}
+func DynamicActivity(ctx context.Context, args converter.EncodedValues) (converter.EncodedValues, error) {
+	var arg1, arg2 string
+	err := args.Get(&arg1, &arg2)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode arguments: %w", err)
+	}
+
+	info := activity.GetInfo(ctx)
+	result := fmt.Sprintf("%s - %s - %s", info.WorkflowType.Name, arg1, arg2)
+
+	dc := converter.GetDefaultDataConverter()
+	payloads, err := dc.ToPayloads(result)
+	if err != nil {
+		return nil, err
+	}
+	encodedValue := client.NewValues(payloads)
+	return encodedValue, nil
+}
 
 func (ts *WorkerVersioningTestSuite) TestBasicDynamicWorkflowActivity() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
@@ -127,8 +121,7 @@ func (ts *WorkerVersioningTestSuite) TestBasicDynamicWorkflowActivity() {
 
 	w := worker.New(ts.client, ts.taskQueueName, worker.Options{})
 	w.RegisterDynamicWorkflow(DynamicWorkflow, workflow.DynamicRegisterOptions{})
-	//w.RegisterDynamicActivity(DynamicActivity, activity.DynamicRegisterOptions{})
-	fmt.Println("w", w)
+	w.RegisterDynamicActivity(DynamicActivity, activity.DynamicRegisterOptions{})
 
 	err := w.Start()
 	ts.NoError(err)
@@ -138,22 +131,14 @@ func (ts *WorkerVersioningTestSuite) TestBasicDynamicWorkflowActivity() {
 	ts.NoError(err)
 	var result string
 	err = handle.Get(ctx, &result)
-	fmt.Println("err", err)
-	fmt.Println("result", result)
 	ts.NoError(err)
 	ts.Equal("some-workflow - apple - pear", result)
-	//
-	//handle, err = ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("hi1"), "dynamic-activity", "grape", "cherry")
-	//ts.NoError(err)
-	//err = handle.Get(ctx, &result)
-	//ts.NoError(err)
-	//ts.Equal("random-activity-name - grape - cherry", result)
-	iter := ts.client.GetWorkflowHistory(ctx, handle.GetID(), "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-	for iter.HasNext() {
-		event, err := iter.Next()
-		ts.NoError(err)
-		fmt.Println("event", event)
-	}
+
+	handle, err = ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("hi1"), "dynamic-activity", "grape", "cherry")
+	ts.NoError(err)
+	err = handle.Get(ctx, &result)
+	ts.NoError(err)
+	ts.Equal("dynamic-activity - grape - cherry", result)
 }
 
 // TODO: Query

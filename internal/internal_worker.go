@@ -562,7 +562,7 @@ type registry struct {
 	// TODO: Group into 1 dynamic struct?
 	dynamicWorkflow interface{}
 	dynamicOptions  DynamicRegisterOptions
-	dynamicActivity interface{}
+	dynamicActivity activity
 	interceptors    []WorkerInterceptor
 }
 
@@ -840,8 +840,13 @@ func (r *registry) addActivityWithLock(fnName string, a activity) {
 func (r *registry) GetActivity(fnName string) (activity, bool) {
 	r.Lock()
 	defer r.Unlock()
-	a, ok := r.activityFuncMap[fnName]
-	return a, ok
+	if a, ok := r.activityFuncMap[fnName]; ok {
+		return a, ok
+	}
+	if r.dynamicActivity != nil {
+		return r.dynamicActivity, true
+	}
+	return nil, false
 }
 
 // TODO: turn into activity object?
@@ -1078,8 +1083,12 @@ func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, args []in
 	var serializedResult *commonpb.Payloads
 	if result != nil {
 		// As a special case, if the result is already a payload, just use it
-		var ok bool
-		if serializedResult, ok = result.(*commonpb.Payloads); !ok {
+		fmt.Println("\tresult", result)
+
+		// Dynamic activities always return EncodedValues, skip encoding because result should already be encoded
+		if encodedValue, ok := result.(*EncodedValues); ok {
+			serializedResult = encodedValue.values
+		} else if serializedResult, ok = result.(*commonpb.Payloads); !ok {
 			var err error
 			if serializedResult, err = encodeArg(dataConverter, result); err != nil {
 				return nil, err
