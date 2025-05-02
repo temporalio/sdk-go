@@ -1025,6 +1025,7 @@ func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*com
 	// Execute and serialize result
 	result, err := envInterceptor.inboundInterceptor.ExecuteWorkflow(ctx, &ExecuteWorkflowInput{Args: args})
 	var serializedResult *commonpb.Payloads
+	// Dynamic workflows always return EncodedValues, skip encoding because result should already be encoded
 	if encodedValue, ok := result.(*EncodedValues); ok {
 		serializedResult = encodedValue.values
 	} else if err == nil && result != nil {

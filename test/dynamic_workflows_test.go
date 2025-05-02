@@ -87,7 +87,7 @@ func DynamicWorkflow(ctx workflow.Context, args converter.EncodedValues) (conver
 		fmt.Println("[DynamicWorkflow] arg2", arg2)
 		fmt.Println("[DynamicWorkflow] info.WorkflowType", info.WorkflowType)
 
-		result = fmt.Sprintf("%s - %s - %s", info.WorkflowType, arg1, arg2)
+		result = fmt.Sprintf("%s - %s - %s", info.WorkflowType.Name, arg1, arg2)
 	}
 
 	dc := converter.GetDefaultDataConverter()
