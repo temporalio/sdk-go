@@ -165,7 +165,7 @@ func convertLinkWorkflowEventEventReferenceToURLQuery(eventRef *commonpb.Link_Wo
 	if eventRef.GetEventId() > 0 {
 		values.Set(linkEventIDKey, strconv.FormatInt(eventRef.GetEventId(), 10))
 	}
-	values.Set(linkEventTypeKey, enumspb.EventType_name[int32(eventRef.GetEventType())])
+	values.Set(linkEventTypeKey, eventRef.GetEventType().String())
 	return values.Encode()
 }
 
@@ -190,7 +190,7 @@ func convertLinkWorkflowEventRequestIdReferenceToURLQuery(requestIDRef *commonpb
 	values := url.Values{}
 	values.Set(linkWorkflowEventReferenceTypeKey, requestIDReferenceType)
 	values.Set(linkRequestIDKey, requestIDRef.GetRequestId())
-	values.Set(linkEventTypeKey, enumspb.EventType_name[int32(requestIDRef.GetEventType())])
+	values.Set(linkEventTypeKey, requestIDRef.GetEventType().String())
 	return values.Encode()
 }
 
