@@ -1086,7 +1086,7 @@ func TestAsyncOperationFromWorkflow(t *testing.T) {
 }
 
 func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
 
@@ -1094,7 +1094,7 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 		err := workflow.Await(ctx, func() bool { return false })
 		// Delay completion after receiving cancellation so that assertions on end time aren't flakey.
 		disconCtx, _ := workflow.NewDisconnectedContext(ctx)
-		_ = workflow.Sleep(disconCtx, 1*time.Second)
+		_ = workflow.Sleep(disconCtx, time.Second)
 		return "", err
 	}
 
@@ -1115,7 +1115,9 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 		fut := c.ExecuteOperation(ctx, op, "", workflow.NexusOperationOptions{
 			CancellationType: cancellation,
 		})
-		opStarted <- fut.GetNexusOperationExecution().Get(ctx, nil)
+		workflow.NewSelector(ctx).AddFuture(fut.GetNexusOperationExecution(), func(f workflow.Future) {
+			opStarted <- f.Get(ctx, nil)
+		}).Select(ctx)
 
 		if cancellation == workflow.NexusOperationCancellationTypeTryCancel || cancellation == workflow.NexusOperationCancellationTypeWaitRequested {
 			disconCtx, _ := workflow.NewDisconnectedContext(ctx) // Use disconnected ctx so it is not auto canceled.
