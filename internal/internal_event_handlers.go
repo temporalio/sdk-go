@@ -1456,6 +1456,7 @@ func (weh *workflowExecutionEventHandlerImpl) Close() {
 func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionStarted(
 	attributes *historypb.WorkflowExecutionStartedEventAttributes,
 ) (err error) {
+	fmt.Println("(weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionStarted")
 	weh.workflowDefinition, err = weh.registry.getWorkflowDefinition(
 		weh.workflowInfo.WorkflowType,
 	)

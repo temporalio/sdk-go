@@ -227,6 +227,8 @@ type (
 //
 // NOTE: the context.Context should have a fairly large timeout, since workflow execution may take a while to be finished
 func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error) {
+	fmt.Println("[(wc *WorkflowClient) ExecuteWorkflow]")
+	// ExecuteWorkflow starts here
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return nil, err
 	}
@@ -238,6 +240,16 @@ func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWork
 	if err != nil {
 		return nil, err
 	}
+
+	// TODO: use registry to check for dynamic workflow, and existing workflow?
+	// TODO: What happens today when calling a workflow not registered?
+	//case reflect.String:
+	//	fnName = reflect.ValueOf(workflowFunc).String()
+	//	case reflect.Func:
+	//	fnName, _ = getFunctionName(workflowFunc)
+	//	if alias, ok := r.getWorkflowAlias(fnName); ok {
+	//	fnName = alias
+	//	}
 
 	// Run via interceptor
 	return wc.interceptor.ExecuteWorkflow(ctx, in)
@@ -1597,12 +1609,14 @@ type workflowClientInterceptor struct {
 	client *WorkflowClient
 }
 
+// TODO: Does this need to handle dynamic workflows?
 func createStartWorkflowInput(
 	options StartWorkflowOptions,
 	workflow interface{},
 	args []interface{},
 	registry *registry,
 ) (*ClientExecuteWorkflowInput, error) {
+	// use registry to check for defined workflow?
 	if options.ID == "" {
 		options.ID = uuid.NewString()
 	}
@@ -1610,6 +1624,9 @@ func createStartWorkflowInput(
 		return nil, err
 	}
 	workflowType, err := getWorkflowFunctionName(registry, workflow)
+	//fmt.Println("workflowType", workflowType) // works
+	// TODO: check validity of workflow name?
+
 	if err != nil {
 		return nil, err
 	}
@@ -1708,6 +1725,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 	ctx context.Context,
 	in *ClientExecuteWorkflowInput,
 ) (WorkflowRun, error) {
+	fmt.Println("[(w *workflowClientInterceptor) ExecuteWorkflow(]")
 	startRequest, err := w.createStartWorkflowRequest(ctx, in)
 	if err != nil {
 		return nil, err
@@ -1718,6 +1736,8 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 	if in.Options.EnableEagerStart && w.client.capabilities.GetEagerWorkflowStart() && w.client.eagerDispatcher != nil {
 		eagerExecutor = w.client.eagerDispatcher.applyToRequest(startRequest)
 	}
+	// TODO: somehow handle dynamic workflows here?
+	//  I think it makes more sense to happen before calling the interceptor
 
 	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(
 		w.client.metricsHandler.WithTags(metrics.RPCTags(in.WorkflowType, metrics.NoneTagValue, in.Options.TaskQueue))),
@@ -1726,6 +1746,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 
 	var runID string
 	response, err := w.client.workflowService.StartWorkflowExecution(grpcCtx, startRequest)
+	fmt.Println("response", response)
 
 	eagerWorkflowTask := response.GetEagerWorkflowTask()
 	if eagerWorkflowTask != nil && eagerExecutor != nil {

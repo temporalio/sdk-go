@@ -81,6 +81,8 @@ func decodeArgsToRawValues(dc converter.DataConverter, fnType reflect.Type, data
 
 	// Unmarshal
 	if err := dc.FromPayloads(data, pointers...); err != nil {
+		fmt.Println("errerererere", err)
+
 		return nil, err
 	}
 

@@ -791,10 +791,28 @@ func (r *registry) getWorkflowAlias(fnName string) (string, bool) {
 }
 
 func (r *registry) getWorkflowFn(fnName string) (interface{}, bool) {
+	fmt.Println("(r *registry) getWorkflowFn(fnName string)")
 	r.Lock()
 	defer r.Unlock()
-	fn, ok := r.workflowFuncMap[fnName]
-	return fn, ok
+	if fn, ok := r.workflowFuncMap[fnName]; ok {
+		return fn, ok
+	}
+
+	if r.dynamicWorkflow != nil {
+		return r.dynamicWorkflow, true
+	}
+	return nil, false
+}
+
+// TODO: public?
+// TODO: not used atm
+func (r *registry) getDynamicWorkflowFn() (interface{}, error) {
+	r.Lock()
+	defer r.Unlock()
+	if r.dynamicWorkflow == nil {
+		return nil, errors.New("no dynamic workflow registered")
+	}
+	return r.dynamicWorkflow, nil
 }
 
 func (r *registry) getRegisteredWorkflowTypes() []string {
@@ -825,6 +843,17 @@ func (r *registry) GetActivity(fnName string) (activity, bool) {
 	defer r.Unlock()
 	a, ok := r.activityFuncMap[fnName]
 	return a, ok
+}
+
+// TODO: turn into activity object?
+// TODO: public?
+func (r *registry) getDynamicActivity() (interface{}, error) {
+	r.Lock()
+	defer r.Unlock()
+	if r.dynamicActivity == nil {
+		return nil, errors.New("no dynamic workflow registered")
+	}
+	return r.dynamicActivity, nil
 }
 
 func (r *registry) getActivityNoLock(fnName string) (activity, bool) {
@@ -862,6 +891,7 @@ func (r *registry) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, e
 		supported := strings.Join(r.getRegisteredWorkflowTypes(), ", ")
 		return nil, fmt.Errorf("unable to find workflow type: %v. Supported types: [%v]", lookup, supported)
 	}
+	// TODO: What is this WorkflowDefinitionFactory?
 	wdf, ok := wf.(WorkflowDefinitionFactory)
 	if ok {
 		return wdf.NewWorkflowDefinition(), nil
@@ -933,6 +963,8 @@ func validateFnFormat(fnType reflect.Type, isWorkflow, isDynamic bool) error {
 			return fmt.Errorf("expected function to a variadic function")
 		}
 
+		fmt.Println("fnType.In(1).Elem().Kind() = ", fnType.In(1).Elem().Kind())
+		fmt.Println("fnType.In(1).Kind()", fnType.In(1).Kind())
 		if fnType.In(1).Kind() != reflect.Slice || !fnType.In(1).Elem().Implements(reflect.TypeOf((*converter.EncodedValue)(nil)).Elem()) {
 			return fmt.Errorf("expected function to have a variadic argument of EncodedValue type, got %s", fnType.In(1).Elem())
 		}
@@ -2000,6 +2032,7 @@ func getActivityFunctionName(r *registry, i interface{}) string {
 }
 
 func getWorkflowFunctionName(r *registry, workflowFunc interface{}) (string, error) {
+	// This function only returns the name, it doesn't validate whether the name is valid
 	fnName := ""
 	fType := reflect.TypeOf(workflowFunc)
 	switch getKind(fType) {
