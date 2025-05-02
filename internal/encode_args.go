@@ -80,9 +80,10 @@ func decodeArgsToRawValues(dc converter.DataConverter, fnType reflect.Type, data
 	}
 
 	// Unmarshal
+	if fnType.NumIn() == 2 && len(pointers) == 1 && fnType.In(1) == reflect.TypeOf((*converter.EncodedValues)(nil)).Elem() {
+		return []interface{}{newEncodedValues(data, dc)}, nil
+	}
 	if err := dc.FromPayloads(data, pointers...); err != nil {
-		fmt.Println("errerererere", err)
-
 		return nil, err
 	}
 

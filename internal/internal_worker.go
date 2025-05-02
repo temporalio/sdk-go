@@ -791,7 +791,6 @@ func (r *registry) getWorkflowAlias(fnName string) (string, bool) {
 }
 
 func (r *registry) getWorkflowFn(fnName string) (interface{}, bool) {
-	fmt.Println("(r *registry) getWorkflowFn(fnName string)")
 	r.Lock()
 	defer r.Unlock()
 	if fn, ok := r.workflowFuncMap[fnName]; ok {
@@ -959,14 +958,8 @@ func validateFnFormat(fnType reflect.Type, isWorkflow, isDynamic bool) error {
 				"expected function to have two arguments, first being workflow.Context and second being a variadic argument of EncodedValue type, found %d arguments", fnType.NumIn(),
 			)
 		}
-		if !fnType.IsVariadic() {
-			return fmt.Errorf("expected function to a variadic function")
-		}
-
-		fmt.Println("fnType.In(1).Elem().Kind() = ", fnType.In(1).Elem().Kind())
-		fmt.Println("fnType.In(1).Kind()", fnType.In(1).Kind())
-		if fnType.In(1).Kind() != reflect.Slice || !fnType.In(1).Elem().Implements(reflect.TypeOf((*converter.EncodedValue)(nil)).Elem()) {
-			return fmt.Errorf("expected function to have a variadic argument of EncodedValue type, got %s", fnType.In(1).Elem())
+		if !fnType.In(1).Implements(reflect.TypeOf((*converter.EncodedValues)(nil)).Elem()) {
+			return fmt.Errorf("expected function to EncodedValues as second argument, got %s", fnType.In(1).Elem())
 		}
 	}
 
@@ -1032,7 +1025,9 @@ func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*com
 	// Execute and serialize result
 	result, err := envInterceptor.inboundInterceptor.ExecuteWorkflow(ctx, &ExecuteWorkflowInput{Args: args})
 	var serializedResult *commonpb.Payloads
-	if err == nil && result != nil {
+	if encodedValue, ok := result.(*EncodedValues); ok {
+		serializedResult = encodedValue.values
+	} else if err == nil && result != nil {
 		serializedResult, err = encodeArg(dataConverter, result)
 	}
 	return serializedResult, err
@@ -2032,7 +2027,6 @@ func getActivityFunctionName(r *registry, i interface{}) string {
 }
 
 func getWorkflowFunctionName(r *registry, workflowFunc interface{}) (string, error) {
-	// This function only returns the name, it doesn't validate whether the name is valid
 	fnName := ""
 	fType := reflect.TypeOf(workflowFunc)
 	switch getKind(fType) {
