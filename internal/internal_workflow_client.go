@@ -227,7 +227,6 @@ type (
 //
 // NOTE: the context.Context should have a fairly large timeout, since workflow execution may take a while to be finished
 func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error) {
-	// ExecuteWorkflow starts here
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return nil, err
 	}
@@ -1598,14 +1597,12 @@ type workflowClientInterceptor struct {
 	client *WorkflowClient
 }
 
-// TODO: Does this need to handle dynamic workflows?
 func createStartWorkflowInput(
 	options StartWorkflowOptions,
 	workflow interface{},
 	args []interface{},
 	registry *registry,
 ) (*ClientExecuteWorkflowInput, error) {
-	// use registry to check for defined workflow?
 	if options.ID == "" {
 		options.ID = uuid.NewString()
 	}
@@ -1613,8 +1610,6 @@ func createStartWorkflowInput(
 		return nil, err
 	}
 	workflowType, err := getWorkflowFunctionName(registry, workflow)
-	//fmt.Println("workflowType", workflowType) // works
-	// TODO: check validity of workflow name?
 
 	if err != nil {
 		return nil, err

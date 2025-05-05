@@ -1,34 +1,13 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package test_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
@@ -115,13 +94,13 @@ func DynamicActivity(ctx context.Context, args converter.EncodedValues) (convert
 	return encodedValue, nil
 }
 
-func (ts *WorkerVersioningTestSuite) TestBasicDynamicWorkflowActivity() {
+func (ts *DynamicWorkflowTestSuite) TestBasicDynamicWorkflowActivity() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
 	w := worker.New(ts.client, ts.taskQueueName, worker.Options{})
 	w.RegisterDynamicWorkflow(DynamicWorkflow, workflow.DynamicRegisterOptions{})
-	w.RegisterDynamicActivity(DynamicActivity, activity.DynamicRegisterOptions{})
+	w.RegisterDynamicActivity(DynamicActivity)
 
 	err := w.Start()
 	ts.NoError(err)
@@ -141,7 +120,116 @@ func (ts *WorkerVersioningTestSuite) TestBasicDynamicWorkflowActivity() {
 	ts.Equal("dynamic-activity - grape - cherry", result)
 }
 
-// TODO: Query
-// TODO: Signal
-// TODO: Update
-// TODO: Versioning per type
+func (ts *DynamicWorkflowTestSuite) waitForWorkerDeployment(ctx context.Context, dHandle client.WorkerDeploymentHandle) {
+	ts.Eventually(func() bool {
+		_, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
+		return err == nil
+	}, 10*time.Second, 300*time.Millisecond)
+}
+
+func (ts *DynamicWorkflowTestSuite) waitForWorkerDeploymentVersion(ctx context.Context, dHandle client.WorkerDeploymentHandle, version string) {
+	ts.Eventually(func() bool {
+		d, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
+		if err != nil {
+			return false
+		}
+		for _, v := range d.Info.VersionSummaries {
+			if v.Version == version {
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 300*time.Millisecond)
+}
+
+func EmptyDynamic(ctx workflow.Context, args converter.EncodedValues) (converter.EncodedValues, error) {
+	encodedValue := client.NewValues(nil)
+	return encodedValue, nil
+}
+
+func (ts *DynamicWorkflowTestSuite) getVersionFromHistory(ctx context.Context, handle client.WorkflowRun) (enumspb.VersioningBehavior, error) {
+	iter := ts.client.GetWorkflowHistory(ctx, handle.GetID(), handle.GetRunID(), true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		ts.NoError(err)
+		if event.GetWorkflowTaskCompletedEventAttributes() != nil {
+			return event.GetWorkflowTaskCompletedEventAttributes().VersioningBehavior, nil
+		}
+	}
+	return enumspb.VERSIONING_BEHAVIOR_UNSPECIFIED, errors.New("versioning behavior not found")
+}
+
+func (ts *DynamicWorkflowTestSuite) TestBasicDynamicWorkflowActivityWithVersioning() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	deploymentName := "deploy-test-" + uuid.NewString()
+	w := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		DeploymentOptions: worker.DeploymentOptions{
+			UseVersioning: true,
+			Version:       deploymentName + ".1.0",
+		},
+	})
+	w.RegisterDynamicWorkflow(EmptyDynamic, workflow.DynamicRegisterOptions{
+		LoadDynamicOptions: func(name string) (workflow.DynamicWorkflowOptions, error) {
+			var options workflow.DynamicWorkflowOptions
+			switch name {
+			case "some-workflow":
+				options.VersioningBehavior = workflow.VersioningBehaviorAutoUpgrade
+			case "behavior-pinned":
+				options.VersioningBehavior = workflow.VersioningBehaviorPinned
+			default:
+				options.VersioningBehavior = workflow.VersioningBehaviorUnspecified
+			}
+			return options, nil
+		},
+	})
+
+	err := w.Start()
+	ts.NoError(err)
+	defer w.Stop()
+
+	dHandle := ts.client.WorkerDeploymentClient().GetHandle(deploymentName)
+
+	ts.waitForWorkerDeployment(ctx, dHandle)
+
+	response1, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
+	ts.NoError(err)
+
+	ts.waitForWorkerDeploymentVersion(ctx, dHandle, deploymentName+".1.0")
+
+	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
+		Version:       deploymentName + ".1.0",
+		ConflictToken: response1.ConflictToken,
+	})
+	ts.NoError(err)
+
+	var result string
+	handle1, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("hi"), "some-workflow")
+	ts.NoError(err)
+
+	err = handle1.Get(ctx, &result)
+	ts.NoError(err)
+
+	handle2, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("hi"), "behavior-pinned")
+	ts.NoError(err)
+
+	err = handle2.Get(ctx, &result)
+	ts.NoError(err)
+	handle3, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("hi"), "random-name")
+	ts.NoError(err)
+
+	err = handle3.Get(ctx, &result)
+	ts.NoError(err)
+
+	var version enumspb.VersioningBehavior
+	version, err = ts.getVersionFromHistory(ctx, handle1)
+	ts.NoError(err)
+	ts.Equal(enumspb.VERSIONING_BEHAVIOR_AUTO_UPGRADE, version)
+	version, err = ts.getVersionFromHistory(ctx, handle2)
+	ts.NoError(err)
+	ts.Equal(enumspb.VERSIONING_BEHAVIOR_PINNED, version)
+	version, err = ts.getVersionFromHistory(ctx, handle3)
+	ts.NoError(err)
+	ts.Equal(enumspb.VERSIONING_BEHAVIOR_UNSPECIFIED, version)
+}

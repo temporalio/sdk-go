@@ -2251,8 +2251,8 @@ func (env *testWorkflowEnvironmentImpl) RegisterActivityWithOptions(a interface{
 	env.registry.RegisterActivityWithOptions(a, options)
 }
 
-func (env *testWorkflowEnvironmentImpl) RegisterDynamicActivity(w interface{}, options DynamicRegisterOptions) {
-	env.registry.RegisterDynamicActivity(w, options)
+func (env *testWorkflowEnvironmentImpl) RegisterDynamicActivity(w interface{}) {
+	env.registry.RegisterDynamicActivity(w)
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterNexusService(s *nexus.Service) {

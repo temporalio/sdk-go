@@ -332,11 +332,11 @@ func (e *TestWorkflowEnvironment) RegisterActivityWithOptions(a interface{}, opt
 }
 
 // RegisterDynamicActivity registers the dynamic activity implementation with the TestWorkflowEnvironment
-func (e *TestWorkflowEnvironment) RegisterDynamicActivity(a interface{}, options DynamicRegisterOptions) {
+func (e *TestWorkflowEnvironment) RegisterDynamicActivity(a interface{}) {
 	if len(e.workflowMock.ExpectedCalls) > 0 {
 		panic("RegisterDynamicActivity calls cannot follow mock related ones like OnWorkflow or similar")
 	}
-	e.impl.RegisterDynamicActivity(a, options)
+	e.impl.RegisterDynamicActivity(a)
 }
 
 // RegisterNexusService registers a Nexus Service with the TestWorkflowEnvironment.

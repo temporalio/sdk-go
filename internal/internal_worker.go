@@ -559,11 +559,10 @@ type registry struct {
 	workflowVersioningBehaviorMap map[string]VersioningBehavior
 	activityFuncMap               map[string]activity
 	activityAliasMap              map[string]string
-	// TODO: Group into 1 dynamic struct?
-	dynamicWorkflow interface{}
-	dynamicOptions  DynamicRegisterOptions
-	dynamicActivity activity
-	interceptors    []WorkerInterceptor
+	dynamicWorkflow               interface{}
+	dynamicOptions                DynamicRegisterOptions
+	dynamicActivity               activity
+	interceptors                  []WorkerInterceptor
 }
 
 type registryOptions struct {
@@ -744,9 +743,7 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 	return nil
 }
 
-// NOTE: structs cannot be registered
-// TODO: Fix DynamicRegisterOptions
-func (r *registry) RegisterDynamicActivity(af interface{}, options DynamicRegisterOptions) {
+func (r *registry) RegisterDynamicActivity(af interface{}) {
 	// Support direct registration of activity
 	a, ok := af.(activity)
 	if ok {
@@ -803,17 +800,6 @@ func (r *registry) getWorkflowFn(fnName string) (interface{}, bool) {
 	return nil, false
 }
 
-// TODO: public?
-// TODO: not used atm
-func (r *registry) getDynamicWorkflowFn() (interface{}, error) {
-	r.Lock()
-	defer r.Unlock()
-	if r.dynamicWorkflow == nil {
-		return nil, errors.New("no dynamic workflow registered")
-	}
-	return r.dynamicWorkflow, nil
-}
-
 func (r *registry) getRegisteredWorkflowTypes() []string {
 	r.Lock()
 	defer r.Unlock()
@@ -847,17 +833,6 @@ func (r *registry) GetActivity(fnName string) (activity, bool) {
 		return r.dynamicActivity, true
 	}
 	return nil, false
-}
-
-// TODO: turn into activity object?
-// TODO: public?
-func (r *registry) getDynamicActivity() (interface{}, error) {
-	r.Lock()
-	defer r.Unlock()
-	if r.dynamicActivity == nil {
-		return nil, errors.New("no dynamic workflow registered")
-	}
-	return r.dynamicActivity, nil
 }
 
 func (r *registry) getActivityNoLock(fnName string) (activity, bool) {
@@ -895,7 +870,6 @@ func (r *registry) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, e
 		supported := strings.Join(r.getRegisteredWorkflowTypes(), ", ")
 		return nil, fmt.Errorf("unable to find workflow type: %v. Supported types: [%v]", lookup, supported)
 	}
-	// TODO: What is this WorkflowDefinitionFactory?
 	wdf, ok := wf.(WorkflowDefinitionFactory)
 	if ok {
 		return wdf.NewWorkflowDefinition(), nil
@@ -911,8 +885,15 @@ func (r *registry) getWorkflowVersioningBehavior(wt WorkflowType) (VersioningBeh
 	}
 	r.Lock()
 	defer r.Unlock()
-	behavior := r.workflowVersioningBehaviorMap[lookup]
-	return behavior, behavior != VersioningBehaviorUnspecified
+	if behavior, ok := r.workflowVersioningBehaviorMap[lookup]; ok {
+		return behavior, behavior != VersioningBehaviorUnspecified
+	}
+	if r.dynamicOptions.LoadDynamicOptions != nil {
+		if behavior, err := r.dynamicOptions.LoadDynamicOptions(lookup); err == nil {
+			return behavior.VersioningBehavior, true
+		}
+	}
+	return VersioningBehaviorUnspecified, false
 }
 
 func (r *registry) getNexusService(service string) *nexus.Service {
@@ -960,7 +941,7 @@ func validateFnFormat(fnType reflect.Type, isWorkflow, isDynamic bool) error {
 	if isDynamic {
 		if fnType.NumIn() != 2 {
 			return fmt.Errorf(
-				"expected function to have two arguments, first being workflow.Context and second being a variadic argument of EncodedValue type, found %d arguments", fnType.NumIn(),
+				"expected function to have two arguments, first being workflow.Context and second being an EncodedValues type, found %d arguments", fnType.NumIn(),
 			)
 		}
 		if !fnType.In(1).Implements(reflect.TypeOf((*converter.EncodedValues)(nil)).Elem()) {
@@ -1082,13 +1063,13 @@ func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, args []in
 	result, resultErr := interceptor.ExecuteActivity(ctx, &ExecuteActivityInput{Args: args})
 	var serializedResult *commonpb.Payloads
 	if result != nil {
-		// As a special case, if the result is already a payload, just use it
-		fmt.Println("\tresult", result)
 
 		// Dynamic activities always return EncodedValues, skip encoding because result should already be encoded
 		if encodedValue, ok := result.(*EncodedValues); ok {
 			serializedResult = encodedValue.values
-		} else if serializedResult, ok = result.(*commonpb.Payloads); !ok {
+		} else
+		// As a special case, if the result is already a payload, just use it
+		if serializedResult, ok = result.(*commonpb.Payloads); !ok {
 			var err error
 			if serializedResult, err = encodeArg(dataConverter, result); err != nil {
 				return nil, err
@@ -1179,7 +1160,11 @@ func (aw *AggregatedWorker) RegisterDynamicWorkflow(w interface{}, options Dynam
 	if aw.workflowWorker == nil {
 		panic("workflow worker disabled, cannot register workflow")
 	}
-	// TODO: (versioning check?)
+	if options.LoadDynamicOptions == nil && aw.executionParams.UseBuildIDForVersioning &&
+		(aw.executionParams.DeploymentSeriesName != "" || aw.executionParams.WorkerDeploymentVersion != "") &&
+		aw.executionParams.DefaultVersioningBehavior == VersioningBehaviorUnspecified {
+		panic("dynamic workflow does not have a versioning behavior")
+	}
 	aw.registry.RegisterDynamicWorkflow(w, options)
 }
 
@@ -1195,8 +1180,8 @@ func (aw *AggregatedWorker) RegisterActivityWithOptions(a interface{}, options R
 
 // RegisterDynamicActivity registers the dynamic activity function with options.
 // Registering activities via a structure is not supported for dynamic activities.
-func (aw *AggregatedWorker) RegisterDynamicActivity(a interface{}, options DynamicRegisterOptions) {
-	aw.registry.RegisterDynamicActivity(a, options)
+func (aw *AggregatedWorker) RegisterDynamicActivity(a interface{}) {
+	aw.registry.RegisterDynamicActivity(a)
 }
 
 func (aw *AggregatedWorker) RegisterNexusService(service *nexus.Service) {

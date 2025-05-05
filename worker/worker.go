@@ -161,7 +161,7 @@ type (
 
 		// RegisterDynamicActivity registers the dynamic activity function with options.
 		// Registering activities via a structure is not supported for dynamic activities.
-		RegisterDynamicActivity(a interface{}, options activity.DynamicRegisterOptions)
+		RegisterDynamicActivity(a interface{})
 	}
 
 	// NexusServiceRegistry exposes Nexus Service registration functions.
