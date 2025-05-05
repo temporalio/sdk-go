@@ -13,8 +13,6 @@ const (
 	operationTokenTypeWorkflowRun = operationTokenType(1)
 )
 
-var errFallbackToWorkflowID = errors.New("fall back to workflow ID as token")
-
 // workflowRunOperationToken is the decoded form of the workflow run operation token.
 type workflowRunOperationToken struct {
 	// Version of the token, by default we assume we're on version 1, this field is not emitted as part of the output,
@@ -46,10 +44,10 @@ func loadWorkflowRunOperationToken(data string) (workflowRunOperationToken, erro
 	}
 	b, err := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(data)
 	if err != nil {
-		return token, fmt.Errorf("%w: failed to decode token: %w", errFallbackToWorkflowID, err)
+		return token, fmt.Errorf("failed to decode token: %w", err)
 	}
 	if err := json.Unmarshal(b, &token); err != nil {
-		return token, fmt.Errorf("%w: failed to unmarshal workflow run operation token: %w", errFallbackToWorkflowID, err)
+		return token, fmt.Errorf("failed to unmarshal workflow run operation token: %w", err)
 	}
 	if token.Type != operationTokenTypeWorkflowRun {
 		return token, fmt.Errorf("invalid workflow token type: %v, expected: %v", token.Type, operationTokenTypeWorkflowRun)

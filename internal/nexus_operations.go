@@ -227,7 +227,7 @@ func nexusOperationFailure(params executeNexusOperationParams, token string, cau
 				Service:        params.client.Service(),
 				Operation:      params.operation,
 				OperationToken: token,
-				OperationId:    token, // Also populate ID for backwards compatiblity.
+				OperationId:    token, // Also populate ID for backwards compatibility.
 			},
 		},
 		Cause: cause,
@@ -366,6 +366,11 @@ func operationErrorToTemporalFailure(opErr *nexus.OperationError) (*failurepb.Fa
 // passed to sync operations.
 type testSuiteClientForNexusOperations struct {
 	env *testWorkflowEnvironmentImpl
+}
+
+// DescribeWorkflow implements Client.
+func (t *testSuiteClientForNexusOperations) DescribeWorkflow(ctx context.Context, workflowID string, runID string) (*WorkflowExecutionDescription, error) {
+	panic("not implemented in the test environment")
 }
 
 // CancelWorkflow implements Client.

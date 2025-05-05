@@ -3136,6 +3136,25 @@ func (w *Workflows) HistoryLengths(ctx workflow.Context, activityCount int) (len
 	return
 }
 
+func (w *Workflows) RootWorkflow(ctx workflow.Context) (string, error) {
+	var result string
+	if workflow.GetInfo(ctx).RootWorkflowExecution == nil {
+		result += "empty"
+	} else {
+		result += workflow.GetInfo(ctx).RootWorkflowExecution.ID
+	}
+	if workflow.GetInfo(ctx).ParentWorkflowExecution == nil {
+		result += " "
+		var childResult string
+		err := workflow.ExecuteChildWorkflow(ctx, w.RootWorkflow).Get(ctx, &childResult)
+		if err != nil {
+			return "", err
+		}
+		result += childResult
+	}
+	return result, nil
+}
+
 func (w *Workflows) HeartbeatSpecificCount(ctx workflow.Context, interval time.Duration, count int) error {
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptionsWithRetry())
 	var activities *Activities
@@ -3585,6 +3604,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.NonDeterminismReplay)
 	worker.RegisterWorkflow(w.MutableSideEffect)
 	worker.RegisterWorkflow(w.HistoryLengths)
+	worker.RegisterWorkflow(w.RootWorkflow)
 	worker.RegisterWorkflow(w.HeartbeatSpecificCount)
 	worker.RegisterWorkflow(w.UpsertMemo)
 	worker.RegisterWorkflow(w.UpsertTypedSearchAttributesWorkflow)

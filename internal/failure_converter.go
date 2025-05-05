@@ -93,6 +93,7 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 			NonRetryable:   err.NonRetryable(),
 			Details:        convertErrDetailsToPayloads(err.details, dfc.dataConverter),
 			NextRetryDelay: delay,
+			Category:       enumspb.ApplicationErrorCategory(err.Category()),
 		}
 		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: failureInfo}
 	case *CanceledError:
@@ -152,9 +153,6 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 		failure.FailureInfo = &failurepb.Failure_ChildWorkflowExecutionFailureInfo{ChildWorkflowExecutionFailureInfo: failureInfo}
 	case *NexusOperationError:
 		var token = err.OperationToken
-		if token == "" {
-			token = err.OperationID
-		}
 		failureInfo := &failurepb.NexusOperationFailureInfo{
 			ScheduledEventId: err.ScheduledEventID,
 			Endpoint:         err.Endpoint,
@@ -228,6 +226,7 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 					Cause:          dfc.FailureToError(failure.GetCause()),
 					Details:        []interface{}{details},
 					NextRetryDelay: nextRetryDelay,
+					Category:       ApplicationErrorCategory(applicationFailureInfo.GetCategory()),
 				},
 			)
 		}
@@ -285,7 +284,6 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 			Service:          info.GetService(),
 			Operation:        info.GetOperation(),
 			OperationToken:   token,
-			OperationID:      token,
 		}
 	} else if info := failure.GetNexusHandlerFailureInfo(); info != nil {
 		var retryBehavior nexus.HandlerErrorRetryBehavior

@@ -690,15 +690,21 @@ func convertFromPBScheduleAction(
 			}
 		}
 
-		var convertedSummary *string = new(string)
-		err := dc.FromPayload(workflow.GetUserMetadata().GetSummary(), convertedSummary)
-		if err != nil {
-			return nil, fmt.Errorf("could not decode user metadata summary: %w", err)
-		}
-		var convertedDetails *string = new(string)
-		err = dc.FromPayload(workflow.GetUserMetadata().GetDetails(), convertedDetails)
-		if err != nil {
-			return nil, fmt.Errorf("could not decode user metadata details: %w", err)
+		var convertedSummary = new(string)
+		var convertedDetails = new(string)
+		if workflow.GetUserMetadata() != nil {
+			if workflow.GetUserMetadata().GetSummary() != nil {
+				err := dc.FromPayload(workflow.GetUserMetadata().GetSummary(), convertedSummary)
+				if err != nil {
+					return nil, fmt.Errorf("could not decode user metadata summary: %w", err)
+				}
+			}
+			if workflow.GetUserMetadata().GetDetails() != nil {
+				err := dc.FromPayload(workflow.GetUserMetadata().GetDetails(), convertedDetails)
+				if err != nil {
+					return nil, fmt.Errorf("could not decode user metadata details: %w", err)
+				}
+			}
 		}
 
 		return &ScheduleWorkflowAction{

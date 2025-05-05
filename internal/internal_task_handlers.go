@@ -709,6 +709,15 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 			RunID: attributes.ParentWorkflowExecution.GetRunId(),
 		}
 	}
+
+	var rootWorkflowExecution *WorkflowExecution
+	if attributes.RootWorkflowExecution != nil {
+		rootWorkflowExecution = &WorkflowExecution{
+			ID:    attributes.RootWorkflowExecution.GetWorkflowId(),
+			RunID: attributes.RootWorkflowExecution.GetRunId(),
+		}
+	}
+
 	workflowInfo := &WorkflowInfo{
 		WorkflowExecution: WorkflowExecution{
 			ID:    workflowID,
@@ -730,6 +739,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		ContinuedExecutionRunID:  attributes.ContinuedExecutionRunId,
 		ParentWorkflowNamespace:  attributes.ParentWorkflowNamespace,
 		ParentWorkflowExecution:  parentWorkflowExecution,
+		RootWorkflowExecution:    rootWorkflowExecution,
 		Memo:                     attributes.Memo,
 		SearchAttributes:         attributes.SearchAttributes,
 		RetryPolicy:              convertFromPBRetryPolicy(attributes.RetryPolicy),
@@ -1860,7 +1870,9 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		}}
 	} else if workflowContext.err != nil {
 		// Workflow failures
-		metricsHandler.Counter(metrics.WorkflowFailedCounter).Inc(1)
+		if !isBenignApplicationError(workflowContext.err) {
+			metricsHandler.Counter(metrics.WorkflowFailedCounter).Inc(1)
+		}
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION)
 		failure := wth.failureConverter.ErrorToFailure(workflowContext.err)
 		closeCommand.Attributes = &commandpb.Command_FailWorkflowExecutionCommandAttributes{FailWorkflowExecutionCommandAttributes: &commandpb.FailWorkflowExecutionCommandAttributes{
@@ -2277,7 +2289,11 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		return nil, ctx.Err()
 	}
 	if err != nil && err != ErrActivityResultPending {
-		ath.logger.Error("Activity error.",
+		logFunc := ath.logger.Error // Default to Error
+		if isBenignApplicationError(err) {
+			logFunc = ath.logger.Debug // Downgrade to Debug for benign application errors
+		}
+		logFunc("Activity error.",
 			tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
 			tagRunID, t.WorkflowExecution.GetRunId(),
 			tagActivityType, activityType,

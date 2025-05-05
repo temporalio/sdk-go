@@ -323,6 +323,14 @@ type (
 		//  - serviceerror.NotFound
 		DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error)
 
+		// DescribeWorkflow returns information about the specified workflow execution.
+		// The errors it can return:
+		//  - serviceerror.InvalidArgument
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
+		//  - serviceerror.NotFound
+		DescribeWorkflow(ctx context.Context, workflowID, runID string) (*WorkflowExecutionDescription, error)
+
 		// UpdateWorkflowExecutionOptions partially overrides the [WorkflowExecutionOptions] of an existing workflow execution
 		// and returns the new [WorkflowExecutionOptions] after applying the changes.
 		// It is intended for building tools that can selectively apply ad-hoc workflow configuration changes.

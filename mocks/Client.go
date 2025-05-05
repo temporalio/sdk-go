@@ -1048,6 +1048,36 @@ func (_m *Client) UpdateWorkflowExecutionOptions(ctx context.Context, options cl
 	return r0, r1
 }
 
+// DescribeWorkflow implements client.Client.
+func (_m *Client) DescribeWorkflow(ctx context.Context, workflowID string, runID string) (*client.WorkflowExecutionDescription, error) {
+	ret := _m.Called(ctx, workflowID, runID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DescribeWorkflow")
+	}
+
+	var r0 *client.WorkflowExecutionDescription
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, string) (*client.WorkflowExecutionDescription, error)); ok {
+		return rf(ctx, workflowID, runID)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, string, string) *client.WorkflowExecutionDescription); ok {
+		r0 = rf(ctx, workflowID, runID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*client.WorkflowExecutionDescription)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, string, string) error); ok {
+		r1 = rf(ctx, workflowID, runID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // WorkerDeploymentClient provides a mock function with given fields:
 func (_m *Client) WorkerDeploymentClient() client.WorkerDeploymentClient {
 	ret := _m.Called()

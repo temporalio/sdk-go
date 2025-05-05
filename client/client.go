@@ -245,6 +245,12 @@ type (
 	// QueryWorkflowWithOptionsResponse defines the response to QueryWorkflowWithOptions.
 	QueryWorkflowWithOptionsResponse = internal.QueryWorkflowWithOptionsResponse
 
+	// WorkflowExecutionDescription defines the response to DescribeWorkflow.
+	WorkflowExecutionDescription = internal.WorkflowExecutionDescription
+
+	// WorkflowExecutionMetadata defines common workflow information across multiple calls.
+	WorkflowExecutionMetadata = internal.WorkflowExecutionMetadata
+
 	// CheckHealthRequest is a request for Client.CheckHealth.
 	CheckHealthRequest = internal.CheckHealthRequest
 
@@ -1108,6 +1114,16 @@ type (
 		//  - serviceerror.Unavailable
 		//  - serviceerror.NotFound
 		DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error)
+
+		// DescribeWorkflow returns information about the specified workflow execution.
+		//  - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
+		//
+		// The errors it can return:
+		//  - serviceerror.InvalidArgument
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
+		//  - serviceerror.NotFound
+		DescribeWorkflow(ctx context.Context, workflowID, runID string) (*WorkflowExecutionDescription, error)
 
 		// DescribeTaskQueue returns information about the target taskqueue, right now this API returns the
 		// pollers which polled this taskqueue in last few minutes.

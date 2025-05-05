@@ -711,6 +711,22 @@ func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflo
 	return response, nil
 }
 
+// DescribeWorkflow returns information about the specified workflow execution.
+func (wc *WorkflowClient) DescribeWorkflow(ctx context.Context, workflowID, runID string) (*WorkflowExecutionDescription, error) {
+	if err := wc.ensureInitialized(ctx); err != nil {
+		return nil, err
+	}
+
+	response, err := wc.interceptor.DescribeWorkflow(ctx, &ClientDescribeWorkflowInput{
+		WorkflowID: workflowID,
+		RunID:      runID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return response.Response, nil
+}
+
 // QueryWorkflow queries a given workflow execution
 // workflowID and queryType are required, other parameters are optional.
 //   - workflow ID of the workflow.
@@ -875,6 +891,69 @@ type QueryWorkflowWithOptionsResponse struct {
 
 	// QueryRejected contains information about the query rejection.
 	QueryRejected *querypb.QueryRejected
+}
+
+// WorkflowExecutionMetadata contains common information about a workflow execution.
+type WorkflowExecutionMetadata struct {
+	// WorkflowExecution is the unique identifier for the workflow execution
+	WorkflowExecution WorkflowExecution
+	// WorkflowType is the type of the workflow execution
+	WorkflowType WorkflowType
+	// TaskQueueName is the name of the task queue
+	TaskQueueName string
+	// Status is the status of the workflow execution
+	Status enumspb.WorkflowExecutionStatus
+	// Memo is the current memo of the workflow execution
+	// Values can be decoded using data converter (defaultDataConverter, or custom one if set).
+	Memo *commonpb.Memo
+	// TypedSearchAttributes is the current search attributes of the workflow execution
+	TypedSearchAttributes SearchAttributes
+	// ParentWorkflowExecution is the parent workflow execution
+	// This field is only set if the workflow execution is a child of another workflow execution
+	ParentWorkflowExecution *WorkflowExecution
+	// RootWorkflowExecution is the root workflow execution
+	RootWorkflowExecution *WorkflowExecution
+	// WorkflowStartTime is the time when the workflow execution started
+	WorkflowStartTime time.Time
+	// WorkflowCloseTime is the time when the workflow execution closed
+	// This field is only set if the workflow execution is closed
+	WorkflowCloseTime *time.Time
+	// ExecutionTime is the time when the workflow execution started or should start
+	ExecutionTime *time.Time
+	// HistoryLength is the number of history events in the workflow execution
+	HistoryLength int
+}
+
+// WorkflowExecutionDescription defines the response to DescribeWorkflow.
+type WorkflowExecutionDescription struct {
+	WorkflowExecutionMetadata
+	dc                   converter.DataConverter
+	staticSummaryPayload *commonpb.Payload
+	staticDetailsPayload *commonpb.Payload
+}
+
+// GetStaticSummary returns the summary set on workflow start.
+//
+// NOTE: Experimental
+func (w *WorkflowExecutionDescription) GetStaticSummary() (string, error) {
+	if w.staticSummaryPayload == nil {
+		return "", nil
+	}
+	var summary string
+	err := w.dc.FromPayload(w.staticSummaryPayload, &summary)
+	return summary, err
+}
+
+// GetStaticDetails returns the details set on workflow start.
+//
+// NOTE: Experimental
+func (w *WorkflowExecutionDescription) GetStaticDetails() (string, error) {
+	if w.staticDetailsPayload == nil {
+		return "", nil
+	}
+	var details string
+	err := w.dc.FromPayload(w.staticDetailsPayload, &details)
+	return details, err
 }
 
 // QueryWorkflowWithOptions queries a given workflow execution and returns the query result synchronously.
@@ -2115,6 +2194,85 @@ func (w *workflowClientInterceptor) TerminateWorkflow(ctx context.Context, in *C
 	defer cancel()
 	_, err = w.client.workflowService.TerminateWorkflowExecution(grpcCtx, request)
 	return err
+}
+
+func (w *workflowClientInterceptor) DescribeWorkflow(
+	ctx context.Context,
+	in *ClientDescribeWorkflowInput,
+) (*ClientDescribeWorkflowOutput, error) {
+
+	req := &workflowservice.DescribeWorkflowExecutionRequest{
+		Namespace: w.client.namespace,
+		Execution: &commonpb.WorkflowExecution{
+			WorkflowId: in.WorkflowID,
+			RunId:      in.RunID,
+		},
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	resp, err := w.client.workflowService.DescribeWorkflowExecution(grpcCtx, req)
+	if err != nil {
+		return nil, err
+	}
+	info := resp.GetWorkflowExecutionInfo()
+
+	var closeTime *time.Time
+	if info.GetCloseTime().IsValid() {
+		t := info.GetCloseTime().AsTime()
+		closeTime = &t
+	}
+	var executionTime *time.Time
+	if info.GetExecutionTime().IsValid() {
+		t := info.GetExecutionTime().AsTime()
+		executionTime = &t
+	}
+
+	var parentWorkflowExecution *WorkflowExecution
+	if info.ParentExecution != nil {
+		parentWorkflowExecution = &WorkflowExecution{
+			ID:    info.GetParentExecution().GetWorkflowId(),
+			RunID: info.GetParentExecution().GetRunId(),
+		}
+	}
+
+	var rootWorkflowExecution *WorkflowExecution
+	if info.RootExecution != nil {
+		rootWorkflowExecution = &WorkflowExecution{
+			ID:    info.GetRootExecution().GetWorkflowId(),
+			RunID: info.GetRootExecution().GetRunId(),
+		}
+	}
+
+	m := WorkflowExecutionMetadata{
+		WorkflowExecution: WorkflowExecution{
+			ID:    info.GetExecution().GetWorkflowId(),
+			RunID: info.GetExecution().GetRunId(),
+		},
+		WorkflowType: WorkflowType{
+			Name: info.GetType().GetName(),
+		},
+		TaskQueueName:           info.GetTaskQueue(),
+		Memo:                    info.Memo,
+		TypedSearchAttributes:   convertToTypedSearchAttributes(w.client.logger, info.GetSearchAttributes().IndexedFields),
+		Status:                  info.GetStatus(),
+		ParentWorkflowExecution: parentWorkflowExecution,
+		RootWorkflowExecution:   rootWorkflowExecution,
+		WorkflowStartTime:       info.GetStartTime().AsTime(),
+		ExecutionTime:           executionTime,
+		WorkflowCloseTime:       closeTime,
+		HistoryLength:           int(info.GetHistoryLength()),
+	}
+	o := &WorkflowExecutionDescription{
+		WorkflowExecutionMetadata: m,
+		dc:                        w.client.dataConverter,
+		staticSummaryPayload:      resp.GetExecutionConfig().GetUserMetadata().GetSummary(),
+		staticDetailsPayload:      resp.GetExecutionConfig().GetUserMetadata().GetDetails(),
+	}
+
+	return &ClientDescribeWorkflowOutput{
+		Response: o,
+	}, nil
 }
 
 func (w *workflowClientInterceptor) QueryWorkflow(

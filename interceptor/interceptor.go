@@ -188,6 +188,14 @@ type ClientTerminateWorkflowInput = internal.ClientTerminateWorkflowInput
 // ClientOutboundInterceptor.QueryWorkflow.
 type ClientQueryWorkflowInput = internal.ClientQueryWorkflowInput
 
+// ClientDescribeWorkflowInput is input for
+// ClientOutboundInterceptor.DescribeWorkflow.
+type ClientDescribeWorkflowInput = internal.ClientDescribeWorkflowInput
+
+// ClientDescribeWorkflowOutput is output for
+// ClientOutboundInterceptor.DescribeWorkflow.
+type ClientDescribeWorkflowOutput = internal.ClientDescribeWorkflowOutput
+
 // ScheduleClientCreateInput is input for
 // ScheduleClientInterceptor.CreateSchedule.
 type ScheduleClientCreateInput = internal.ScheduleClientCreateInput

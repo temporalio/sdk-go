@@ -405,6 +405,9 @@ type ClientOutboundInterceptor interface {
 	// server.
 	PollWorkflowUpdate(context.Context, *ClientPollWorkflowUpdateInput) (*ClientPollWorkflowUpdateOutput, error)
 
+	// DescribeWorkflow intercepts client.Client.DescribeWorkflow.
+	DescribeWorkflow(context.Context, *ClientDescribeWorkflowInput) (*ClientDescribeWorkflowOutput, error)
+
 	mustEmbedClientOutboundInterceptorBase()
 }
 
@@ -514,6 +517,23 @@ type ClientQueryWorkflowInput struct {
 	QueryType            string
 	Args                 []interface{}
 	QueryRejectCondition enumspb.QueryRejectCondition
+}
+
+// ClientDescribeWorkflowInput is the input to
+// ClientOutboundInterceptor.DescribeWorkflow.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientDescribeWorkflowInput]
+type ClientDescribeWorkflowInput struct {
+	WorkflowID string
+	RunID      string
+}
+
+// ClientDescribeWorkflowInput is the output to
+// ClientOutboundInterceptor.DescribeWorkflow.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientDescribeWorkflowOutput]
+type ClientDescribeWorkflowOutput struct {
+	Response *WorkflowExecutionDescription
 }
 
 // NexusOutboundInterceptor intercepts Nexus operation method invocations. See documentation in the interceptor package

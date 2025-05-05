@@ -1165,6 +1165,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 		Input:                    lastCompletionResult,
 		TaskQueue:                &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
 		ParentWorkflowExecution:  parentExecution,
+		RootWorkflowExecution:    parentExecution,
 		CronSchedule:             cronSchedule,
 		ContinuedExecutionRunId:  continuedRunID,
 		ParentWorkflowNamespace:  parentNamespace,
@@ -1197,6 +1198,8 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	t.EqualValues(testWorkflowTaskTaskqueue, result.TaskQueueName)
 	t.EqualValues(parentID, result.ParentWorkflowExecution.ID)
 	t.EqualValues(parentRunID, result.ParentWorkflowExecution.RunID)
+	t.EqualValues(parentID, result.RootWorkflowExecution.ID)
+	t.EqualValues(parentRunID, result.RootWorkflowExecution.RunID)
 	t.EqualValues(cronSchedule, result.CronSchedule)
 	t.EqualValues(continuedRunID, result.ContinuedExecutionRunID)
 	t.EqualValues(parentNamespace, result.ParentWorkflowNamespace)

@@ -1255,7 +1255,9 @@ type WorkflowInfo struct {
 	ContinuedExecutionRunID string
 	ParentWorkflowNamespace string
 	ParentWorkflowExecution *WorkflowExecution
-	Memo                    *commonpb.Memo // Value can be decoded using data converter (defaultDataConverter, or custom one if set).
+	// RootWorkflowExecution is the first workflow execution in the chain of workflows. If a workflow is itself a root workflow, then this field is nil.
+	RootWorkflowExecution *WorkflowExecution
+	Memo                  *commonpb.Memo // Value can be decoded using data converter (defaultDataConverter, or custom one if set).
 	// Deprecated: use [Workflow.GetTypedSearchAttributes] instead.
 	SearchAttributes *commonpb.SearchAttributes // Value can be decoded using defaultDataConverter.
 	RetryPolicy      *RetryPolicy
@@ -2606,7 +2608,7 @@ type NexusOperationOptions struct {
 	// Optional: defaults to the maximum allowed by the Temporal server.
 	ScheduleToCloseTimeout time.Duration
 
-	// StaticSummary is a single-line fixed summary for this Nexus Operation that will appear in UI/CLI. This can be
+	// Summary is a single-line fixed summary for this Nexus Operation that will appear in UI/CLI. This can be
 	// in single-line Temporal Markdown format.
 	//
 	// Optional: defaults to none/empty.
@@ -2619,11 +2621,6 @@ type NexusOperationOptions struct {
 //
 // Exposed as: [go.temporal.io/sdk/workflow.NexusOperationExecution]
 type NexusOperationExecution struct {
-	// Operation ID as set by the Operation's handler. May be empty if the operation hasn't started yet or completed
-	// synchronously.
-	//
-	// Deprecated: Use OperationToken instead.
-	OperationID string
 	// Operation token as set by the Operation's handler. May be empty if the operation hasn't started yet or completed
 	// synchronously.
 	OperationToken string
@@ -2776,7 +2773,6 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 	}, func(token string, e error) {
 		operationToken = token
 		executionSettable.Set(NexusOperationExecution{
-			OperationID:    operationToken,
 			OperationToken: operationToken,
 		}, e)
 	})
