@@ -1122,11 +1122,11 @@ func runCancellationTypeTest(ctx context.Context, tc *testContext, cancellationT
 	}, callerWf, cancellationType)
 	require.NoError(t, err)
 	require.Eventuallyf(t, func() bool {
-		id := handlerID.Load().(string)
-		if id == "" {
+		id := handlerID.Load()
+		if id == nil {
 			return false
 		}
-		_, descErr := tc.client.DescribeWorkflow(ctx, id, "")
+		_, descErr := tc.client.DescribeWorkflow(ctx, id.(string), "")
 		return descErr == nil
 	}, 2*time.Second, 20*time.Millisecond, "timed out waiting for handler wf to start")
 	require.NoError(t, tc.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
