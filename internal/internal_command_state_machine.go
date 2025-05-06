@@ -136,7 +136,8 @@ type (
 	// requestCancelNexusOperationStateMachine is the state machine for the RequestCancelNexusOperation command.
 	// Valid transitions:
 	// commandStateCreated -> commandStateCommandSent
-	// commandStateCommandSent - (NexusOperationCancelRequested) -> commandStateCompleted
+	// commandStateCommandSent - (NexusOperationCancelRequested) -> commandStateInitiated
+	// commandStateInitiated - (NexusOperationCancelRequest(Completed|Failed)) -> commandStateCompleted
 	requestCancelNexusOperationStateMachine struct {
 		*commandStateMachineBase
 		attributes *commandpb.RequestCancelNexusOperationCommandAttributes
@@ -945,7 +946,7 @@ func (sm *nexusOperationStateMachine) handleCompletionEvent() {
 		commandStateStarted:
 		sm.moveState(commandStateCompleted, eventCompletion)
 	default:
-		sm.failStateTransition(eventStarted)
+		sm.failStateTransition(eventCompletion)
 	}
 }
 
@@ -979,12 +980,22 @@ func (d *requestCancelNexusOperationStateMachine) getCommand() *commandpb.Comman
 	}
 }
 
-func (d *requestCancelNexusOperationStateMachine) handleCompletionEvent() {
-	if d.state != commandStateCommandSent && d.state != commandStateCreated {
-		d.failStateTransition(eventCompletion)
-		return
+func (d *requestCancelNexusOperationStateMachine) handleInitiatedEvent() {
+	switch d.state {
+	case commandStateCommandSent:
+		d.moveState(commandStateInitiated, eventInitiated)
+	default:
+		d.failStateTransition(eventInitiated)
 	}
-	d.moveState(commandStateCompleted, eventCompletion)
+}
+
+func (d *requestCancelNexusOperationStateMachine) handleCompletionEvent() {
+	switch d.state {
+	case commandStateCreated, commandStateInitiated:
+		d.moveState(commandStateCompleted, eventCompletion)
+	default:
+		d.failStateTransition(eventCompletion)
+	}
 }
 
 func newCommandsHelper() *commandsHelper {
@@ -1222,9 +1233,26 @@ func (h *commandsHelper) handleNexusOperationCompleted(scheduledEventID int64) c
 	return command
 }
 
-func (h *commandsHelper) handleNexusOperationCancelRequested(scheduledEventID int64) {
-	command := h.getCommand(makeCommandID(commandTypeRequestCancelNexusOperation, strconv.FormatInt(scheduledEventID, 10)))
-	command.handleCompletionEvent()
+func (h *commandsHelper) handleNexusOperationCancelRequested(scheduledEventID int64) commandStateMachine {
+	seq, ok := h.scheduledEventIDToNexusSeq[scheduledEventID]
+	if !ok {
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event ID: %v", scheduledEventID))
+	}
+	command := h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+	sm := command.(*nexusOperationStateMachine)
+	sm.cancelation.handleInitiatedEvent()
+	return command
+}
+
+func (h *commandsHelper) handleNexusOperationCancelRequestDelivered(scheduledEventID int64) commandStateMachine {
+	seq, ok := h.scheduledEventIDToNexusSeq[scheduledEventID]
+	if !ok {
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event ID: %v", scheduledEventID))
+	}
+	command := h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+	sm := command.(*nexusOperationStateMachine)
+	sm.cancelation.handleCompletionEvent()
+	return command
 }
 
 func (h *commandsHelper) requestCancelNexusOperation(seq int64) commandStateMachine {

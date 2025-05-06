@@ -9,6 +9,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1063,6 +1064,210 @@ func TestAsyncOperationFromWorkflow(t *testing.T) {
 	})
 }
 
+func runCancellationTypeTest(ctx context.Context, tc *testContext, cancellationType workflow.NexusOperationCancellationType, t *testing.T) (client.WorkflowRun, string, time.Time) {
+	handlerWf := func(ctx workflow.Context, ownID string) (string, error) {
+		err := workflow.Await(ctx, func() bool { return false })
+		// Delay completion after receiving cancellation so that assertions on end time aren't flakey.
+		disconCtx, _ := workflow.NewDisconnectedContext(ctx)
+		_ = workflow.Sleep(disconCtx, time.Second)
+		return "", err
+	}
+
+	handlerID := atomic.Value{}
+	op := temporalnexus.NewWorkflowRunOperation(
+		"workflow-op",
+		handlerWf,
+		func(ctx context.Context, _ string, soo nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+			handlerID.Store(soo.RequestID)
+			return client.StartWorkflowOptions{ID: soo.RequestID}, nil
+		},
+	)
+
+	var unblockedTime time.Time
+	callerWf := func(ctx workflow.Context, cancellation workflow.NexusOperationCancellationType) error {
+		c := workflow.NewNexusClient(tc.endpoint, "test")
+		fut := c.ExecuteOperation(ctx, op, "", workflow.NexusOperationOptions{
+			CancellationType: cancellation,
+		})
+
+		if err := fut.GetNexusOperationExecution().Get(ctx, nil); err != nil {
+			return err
+		}
+
+		if cancellation == workflow.NexusOperationCancellationTypeTryCancel || cancellation == workflow.NexusOperationCancellationTypeWaitRequested {
+			disconCtx, _ := workflow.NewDisconnectedContext(ctx) // Use disconnected ctx so it is not auto canceled.
+			workflow.Go(disconCtx, func(ctx workflow.Context) {
+				// Wake up the caller so it is not waiting for the operation to complete to get the next WFT.
+				_ = workflow.Sleep(ctx, time.Millisecond)
+			})
+		}
+
+		_ = fut.Get(ctx, nil)
+		unblockedTime = workflow.Now(ctx).UTC()
+		return workflow.Await(ctx, func() bool { return false })
+	}
+
+	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
+	service := nexus.NewService("test")
+	require.NoError(t, service.Register(op))
+	w.RegisterNexusService(service)
+	w.RegisterWorkflow(handlerWf)
+	w.RegisterWorkflow(callerWf)
+	require.NoError(t, w.Start())
+	t.Cleanup(w.Stop)
+
+	run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		TaskQueue:           tc.taskQueue,
+		WorkflowTaskTimeout: time.Second,
+	}, callerWf, cancellationType)
+	require.NoError(t, err)
+	require.Eventuallyf(t, func() bool {
+		id := handlerID.Load()
+		if id == nil {
+			return false
+		}
+		_, descErr := tc.client.DescribeWorkflow(ctx, id.(string), "")
+		return descErr == nil
+	}, 2*time.Second, 20*time.Millisecond, "timed out waiting for handler wf to start")
+	require.NoError(t, tc.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+
+	err = run.Get(ctx, nil)
+	var execErr *temporal.WorkflowExecutionError
+	require.ErrorAs(t, err, &execErr)
+	err = execErr.Unwrap()
+	var canceledErr *temporal.CanceledError
+	require.ErrorAs(t, err, &canceledErr)
+
+	return run, handlerID.Load().(string), unblockedTime
+}
+
+func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
+	if os.Getenv("DISABLE_SERVER_1_27_TESTS") == "1" {
+		t.Skip()
+	}
+
+	t.Run("Abandon", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
+		defer cancel()
+		tc := newTestContext(t, ctx)
+
+		callerRun, handlerID, unblockedTime := runCancellationTypeTest(ctx, tc, workflow.NexusOperationCancellationTypeAbandon, t)
+		require.NotZero(t, unblockedTime)
+
+		// Verify that caller never sent a cancellation request.
+		history := tc.client.GetWorkflowHistory(ctx, callerRun.GetID(), callerRun.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		for history.HasNext() {
+			event, err := history.Next()
+			require.NoError(t, err)
+			require.NotEqual(t, enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCEL_REQUESTED, event.EventType)
+			require.NotEqual(t, enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_COMPLETED, event.EventType)
+			require.NotEqual(t, enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_FAILED, event.EventType)
+		}
+
+		handlerDesc, err := tc.client.DescribeWorkflowExecution(ctx, handlerID, "")
+		require.NoError(t, err)
+		require.Equal(t, enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING, handlerDesc.WorkflowExecutionInfo.Status)
+
+		require.NoError(t, tc.client.TerminateWorkflow(ctx, handlerID, "", "test"))
+	})
+
+	t.Run("TryCancel", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
+		defer cancel()
+		tc := newTestContext(t, ctx)
+		callerRun, handlerID, unblockedTime := runCancellationTypeTest(ctx, tc, workflow.NexusOperationCancellationTypeTryCancel, t)
+
+		// Verify operation future was unblocked after cancel command was recorded.
+		callerHist := tc.client.GetWorkflowHistory(ctx, callerRun.GetID(), callerRun.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		var callerCloseEvent *historypb.HistoryEvent
+		foundRequestedEvent := false
+		for callerHist.HasNext() {
+			event, err := callerHist.Next()
+			require.NoError(t, err)
+			if event.EventType == enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUESTED {
+				foundRequestedEvent = true
+				require.Greater(t, unblockedTime, event.EventTime.AsTime().UTC())
+			}
+			callerCloseEvent = event
+		}
+		require.True(t, foundRequestedEvent)
+
+		// Verify that caller completed before the handler.
+		var err error
+		var handlerCloseEvent *historypb.HistoryEvent
+		require.Eventuallyf(t, func() bool {
+			handlerHist := tc.client.GetWorkflowHistory(ctx, handlerID, "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT)
+			handlerCloseEvent, err = handlerHist.Next()
+			return handlerCloseEvent != nil && err == nil
+		}, 5*time.Second, 200*time.Millisecond, "timed out waiting for handler wf close event")
+		require.Greater(t, handlerCloseEvent.EventTime.AsTime().UTC(), callerCloseEvent.EventTime.AsTime().UTC())
+	})
+
+	t.Run("WaitRequested", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
+		defer cancel()
+		tc := newTestContext(t, ctx)
+		callerRun, handlerID, unblockedTime := runCancellationTypeTest(ctx, tc, workflow.NexusOperationCancellationTypeWaitRequested, t)
+
+		// Verify operation future was unblocked after cancel request was delivered.
+		callerHist := tc.client.GetWorkflowHistory(ctx, callerRun.GetID(), callerRun.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		var callerCloseEvent *historypb.HistoryEvent
+		foundRequestCompleted := false
+		for callerHist.HasNext() {
+			event, err := callerHist.Next()
+			require.NoError(t, err)
+			if event.EventType == enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_COMPLETED {
+				foundRequestCompleted = true
+				require.Greater(t, unblockedTime, event.EventTime.AsTime().UTC())
+			}
+			callerCloseEvent = event
+		}
+		require.True(t, foundRequestCompleted)
+
+		// Verify that caller completed before the handler.
+		var err error
+		var handlerCloseEvent *historypb.HistoryEvent
+		require.Eventuallyf(t, func() bool {
+			handlerHist := tc.client.GetWorkflowHistory(ctx, handlerID, "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT)
+			handlerCloseEvent, err = handlerHist.Next()
+			return handlerCloseEvent != nil && err == nil
+		}, 5*time.Second, 200*time.Millisecond, "timed out waiting for handler wf close event")
+		require.Greater(t, handlerCloseEvent.EventTime.AsTime().UTC(), callerCloseEvent.EventTime.AsTime().UTC())
+	})
+
+	t.Run("WaitCompleted", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
+		defer cancel()
+		tc := newTestContext(t, ctx)
+		callerRun, handlerID, unblockedTime := runCancellationTypeTest(ctx, tc, workflow.NexusOperationCancellationTypeWaitCompleted, t)
+
+		// Verify operation future was unblocked after operation was cancelled.
+		callerHist := tc.client.GetWorkflowHistory(ctx, callerRun.GetID(), callerRun.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		var callerCloseEvent *historypb.HistoryEvent
+		foundCancelledEvent := false
+		for callerHist.HasNext() {
+			event, err := callerHist.Next()
+			require.NoError(t, err)
+			if event.EventType == enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCELED {
+				foundCancelledEvent = true
+				require.Greater(t, unblockedTime, event.EventTime.AsTime().UTC())
+			}
+			callerCloseEvent = event
+		}
+		require.True(t, foundCancelledEvent)
+
+		// Verify that caller completed after the handler.
+		var err error
+		var handlerCloseEvent *historypb.HistoryEvent
+		require.Eventuallyf(t, func() bool {
+			handlerHist := tc.client.GetWorkflowHistory(ctx, handlerID, "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT)
+			handlerCloseEvent, err = handlerHist.Next()
+			return handlerCloseEvent != nil && err == nil
+		}, 500*time.Millisecond, 50*time.Millisecond, "timed out waiting for handler wf close event")
+		require.Greater(t, callerCloseEvent.EventTime.AsTime(), handlerCloseEvent.EventTime.AsTime())
+	})
+}
+
 func TestAsyncOperationFromWorkflow_MultipleCallers(t *testing.T) {
 	if os.Getenv("DISABLE_SERVER_1_27_TESTS") == "1" {
 		t.Skip()
@@ -2040,6 +2245,7 @@ func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
 			"Temporal",
 			workflow.NexusOperationOptions{
 				ScheduleToCloseTimeout: 2 * time.Second,
+				CancellationType:       workflow.NexusOperationCancellationTypeWaitCompleted,
 			},
 		).Return(
 			&nexus.HandlerStartOperationResultSync[string]{
@@ -2187,6 +2393,7 @@ func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
 			"Temporal",
 			workflow.NexusOperationOptions{
 				ScheduleToCloseTimeout: 2 * time.Second,
+				CancellationType:       workflow.NexusOperationCancellationTypeWaitCompleted,
 			},
 		).After(1*time.Second).Return(
 			&nexus.HandlerStartOperationResultSync[string]{
@@ -2213,6 +2420,7 @@ func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
 			"Temporal",
 			workflow.NexusOperationOptions{
 				ScheduleToCloseTimeout: 2 * time.Second,
+				CancellationType:       workflow.NexusOperationCancellationTypeWaitCompleted,
 			},
 		).After(3*time.Second).Return(
 			&nexus.HandlerStartOperationResultSync[string]{
