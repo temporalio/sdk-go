@@ -9,6 +9,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1072,12 +1073,12 @@ func runCancellationTypeTest(ctx context.Context, tc *testContext, cancellationT
 		return "", err
 	}
 
-	handlerID := ""
+	handlerID := atomic.Value{}
 	op := temporalnexus.NewWorkflowRunOperation(
 		"workflow-op",
 		handlerWf,
 		func(ctx context.Context, _ string, soo nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
-			handlerID = soo.RequestID
+			handlerID.Store(soo.RequestID)
 			return client.StartWorkflowOptions{ID: soo.RequestID}, nil
 		},
 	)
@@ -1121,10 +1122,11 @@ func runCancellationTypeTest(ctx context.Context, tc *testContext, cancellationT
 	}, callerWf, cancellationType)
 	require.NoError(t, err)
 	require.Eventuallyf(t, func() bool {
-		if handlerID == "" {
+		id := handlerID.Load().(string)
+		if id == "" {
 			return false
 		}
-		_, descErr := tc.client.DescribeWorkflow(ctx, handlerID, "")
+		_, descErr := tc.client.DescribeWorkflow(ctx, id, "")
 		return descErr == nil
 	}, 2*time.Second, 20*time.Millisecond, "timed out waiting for handler wf to start")
 	require.NoError(t, tc.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
@@ -1136,7 +1138,7 @@ func runCancellationTypeTest(ctx context.Context, tc *testContext, cancellationT
 	var canceledErr *temporal.CanceledError
 	require.ErrorAs(t, err, &canceledErr)
 
-	return run, handlerID, unblockedTime
+	return run, handlerID.Load().(string), unblockedTime
 }
 
 func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
