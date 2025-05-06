@@ -1144,6 +1144,7 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 
 	t.Run("Abandon", func(t *testing.T) {
 		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+			ID:                  uuid.NewString(),
 			TaskQueue:           tc.taskQueue,
 			WorkflowTaskTimeout: time.Second,
 		}, callerWf, workflow.NexusOperationCancellationTypeAbandon)
@@ -1181,6 +1182,7 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 
 	t.Run("TryCancel", func(t *testing.T) {
 		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+			ID:                  uuid.NewString(),
 			TaskQueue:           tc.taskQueue,
 			WorkflowTaskTimeout: time.Second,
 		}, callerWf, workflow.NexusOperationCancellationTypeTryCancel)
@@ -1224,6 +1226,7 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 
 	t.Run("WaitRequested", func(t *testing.T) {
 		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+			ID:                  uuid.NewString(),
 			TaskQueue:           tc.taskQueue,
 			WorkflowTaskTimeout: time.Second,
 		}, callerWf, workflow.NexusOperationCancellationTypeWaitRequested)
@@ -1267,6 +1270,7 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 
 	t.Run("WaitCompleted", func(t *testing.T) {
 		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+			ID:                  uuid.NewString(),
 			TaskQueue:           tc.taskQueue,
 			WorkflowTaskTimeout: time.Second,
 		}, callerWf, workflow.NexusOperationCancellationTypeWaitCompleted)
