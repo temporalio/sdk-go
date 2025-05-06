@@ -1142,6 +1142,10 @@ func runCancellationTypeTest(ctx context.Context, tc *testContext, cancellationT
 }
 
 func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
+	if os.Getenv("DISABLE_SERVER_1_27_TESTS") == "1" {
+		t.Skip()
+	}
+
 	t.Run("Abandon", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 		defer cancel()
