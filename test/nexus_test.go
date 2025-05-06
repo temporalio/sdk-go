@@ -1086,8 +1086,10 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 		},
 	)
 
-	opStarted := make(chan error)
-	opUnblocked := make(chan time.Time)
+	//opStarted := make(chan error)
+	var opStarted chan error
+	//opUnblocked := make(chan time.Time)
+	var opUnblocked chan time.Time
 	callerWf := func(ctx workflow.Context, cancellation workflow.NexusOperationCancellationType) error {
 		c := workflow.NewNexusClient(tc.endpoint, "test")
 		fut := c.ExecuteOperation(ctx, op, "", workflow.NexusOperationOptions{
@@ -1121,6 +1123,13 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 	t.Cleanup(w.Stop)
 
 	t.Run("Abandon", func(t *testing.T) {
+		startedC := make(chan error)
+		opStarted = startedC
+		defer close(startedC)
+		unblockedC := make(chan time.Time)
+		opUnblocked = unblockedC
+		defer close(unblockedC)
+
 		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 			TaskQueue:           tc.taskQueue,
 			WorkflowTaskTimeout: time.Second,
@@ -1158,6 +1167,13 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 	})
 
 	t.Run("TryCancel", func(t *testing.T) {
+		startedC := make(chan error)
+		opStarted = startedC
+		defer close(startedC)
+		unblockedC := make(chan time.Time)
+		opUnblocked = unblockedC
+		defer close(unblockedC)
+
 		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 			TaskQueue:           tc.taskQueue,
 			WorkflowTaskTimeout: time.Second,
@@ -1201,6 +1217,13 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 	})
 
 	t.Run("WaitRequested", func(t *testing.T) {
+		startedC := make(chan error)
+		opStarted = startedC
+		defer close(startedC)
+		unblockedC := make(chan time.Time)
+		opUnblocked = unblockedC
+		defer close(unblockedC)
+
 		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 			TaskQueue:           tc.taskQueue,
 			WorkflowTaskTimeout: time.Second,
@@ -1244,6 +1267,13 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 	})
 
 	t.Run("WaitCompleted", func(t *testing.T) {
+		startedC := make(chan error)
+		opStarted = startedC
+		defer close(startedC)
+		unblockedC := make(chan time.Time)
+		opUnblocked = unblockedC
+		defer close(unblockedC)
+
 		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 			TaskQueue:           tc.taskQueue,
 			WorkflowTaskTimeout: time.Second,
