@@ -1082,19 +1082,16 @@ func runCancellationTypeTest(ctx context.Context, tc *testContext, cancellationT
 		},
 	)
 
-	opStarted := make(chan error)
-	defer close(opStarted)
-	opUnblocked := make(chan time.Time)
-	defer close(opUnblocked)
-
+	var unblockedTime time.Time
 	callerWf := func(ctx workflow.Context, cancellation workflow.NexusOperationCancellationType) error {
 		c := workflow.NewNexusClient(tc.endpoint, "test")
 		fut := c.ExecuteOperation(ctx, op, "", workflow.NexusOperationOptions{
 			CancellationType: cancellation,
 		})
-		workflow.NewSelector(ctx).AddFuture(fut.GetNexusOperationExecution(), func(f workflow.Future) {
-			opStarted <- f.Get(ctx, nil)
-		}).Select(ctx)
+
+		if err := fut.GetNexusOperationExecution().Get(ctx, nil); err != nil {
+			return err
+		}
 
 		if cancellation == workflow.NexusOperationCancellationTypeTryCancel || cancellation == workflow.NexusOperationCancellationTypeWaitRequested {
 			disconCtx, _ := workflow.NewDisconnectedContext(ctx) // Use disconnected ctx so it is not auto canceled.
@@ -1104,9 +1101,8 @@ func runCancellationTypeTest(ctx context.Context, tc *testContext, cancellationT
 			})
 		}
 
-		workflow.NewSelector(ctx).AddFuture(fut, func(f workflow.Future) {
-			opUnblocked <- workflow.Now(ctx).UTC()
-		}).Select(ctx)
+		_ = fut.Get(ctx, nil)
+		unblockedTime = workflow.Now(ctx).UTC()
 		return workflow.Await(ctx, func() bool { return false })
 	}
 
@@ -1124,10 +1120,15 @@ func runCancellationTypeTest(ctx context.Context, tc *testContext, cancellationT
 		WorkflowTaskTimeout: time.Second,
 	}, callerWf, cancellationType)
 	require.NoError(t, err)
-	require.NoError(t, <-opStarted)
+	require.Eventuallyf(t, func() bool {
+		if handlerID == "" {
+			return false
+		}
+		_, descErr := tc.client.DescribeWorkflow(ctx, handlerID, "")
+		return descErr == nil
+	}, 2*time.Second, 20*time.Millisecond, "timed out waiting for handler wf to start")
 	require.NoError(t, tc.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 
-	unblocked := <-opUnblocked
 	err = run.Get(ctx, nil)
 	var execErr *temporal.WorkflowExecutionError
 	require.ErrorAs(t, err, &execErr)
@@ -1135,7 +1136,7 @@ func runCancellationTypeTest(ctx context.Context, tc *testContext, cancellationT
 	var canceledErr *temporal.CanceledError
 	require.ErrorAs(t, err, &canceledErr)
 
-	return run, handlerID, unblocked
+	return run, handlerID, unblockedTime
 }
 
 func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
@@ -1146,6 +1147,7 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 
 		callerRun, handlerID, unblockedTime := runCancellationTypeTest(ctx, tc, workflow.NexusOperationCancellationTypeAbandon, t)
 		require.NotZero(t, unblockedTime)
+
 		// Verify that caller never sent a cancellation request.
 		history := tc.client.GetWorkflowHistory(ctx, callerRun.GetID(), callerRun.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 		for history.HasNext() {
