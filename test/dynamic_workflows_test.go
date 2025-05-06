@@ -46,52 +46,40 @@ func (ts *DynamicWorkflowTestSuite) SetupTest() {
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
 }
 
-func DynamicWorkflow(ctx workflow.Context, args converter.EncodedValues) (converter.EncodedValues, error) {
+func DynamicWorkflow(ctx workflow.Context, args converter.EncodedValues) (string, error) {
 	var result string
 	info := workflow.GetInfo(ctx)
 
 	var arg1, arg2 string
 	err := args.Get(&arg1, &arg2)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode arguments: %w", err)
+		return "", fmt.Errorf("failed to decode arguments: %w", err)
 	}
 
 	if info.WorkflowType.Name == "dynamic-activity" {
 		ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{StartToCloseTimeout: 10 * time.Second})
 		err := workflow.ExecuteActivity(ctx, "random-activity-name", arg1, arg2).Get(ctx, &result)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 	} else {
 		result = fmt.Sprintf("%s - %s - %s", info.WorkflowType.Name, arg1, arg2)
 	}
 
-	dc := converter.GetDefaultDataConverter()
-	payloads, err := dc.ToPayloads(result)
-	if err != nil {
-		return nil, err
-	}
-	encodedValue := client.NewValues(payloads)
-	return encodedValue, nil
+	return result, nil
 }
 
-func DynamicActivity(ctx context.Context, args converter.EncodedValues) (converter.EncodedValues, error) {
+func DynamicActivity(ctx context.Context, args converter.EncodedValues) (string, error) {
 	var arg1, arg2 string
 	err := args.Get(&arg1, &arg2)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode arguments: %w", err)
+		return "", fmt.Errorf("failed to decode arguments: %w", err)
 	}
 
 	info := activity.GetInfo(ctx)
 	result := fmt.Sprintf("%s - %s - %s", info.WorkflowType.Name, arg1, arg2)
 
-	dc := converter.GetDefaultDataConverter()
-	payloads, err := dc.ToPayloads(result)
-	if err != nil {
-		return nil, err
-	}
-	encodedValue := client.NewValues(payloads)
-	return encodedValue, nil
+	return result, nil
 }
 
 func (ts *DynamicWorkflowTestSuite) TestBasicDynamicWorkflowActivity() {
@@ -100,7 +88,7 @@ func (ts *DynamicWorkflowTestSuite) TestBasicDynamicWorkflowActivity() {
 
 	w := worker.New(ts.client, ts.taskQueueName, worker.Options{})
 	w.RegisterDynamicWorkflow(DynamicWorkflow, workflow.DynamicRegisterOptions{})
-	w.RegisterDynamicActivity(DynamicActivity)
+	w.RegisterDynamicActivity(DynamicActivity, activity.DynamicRegisterOptions{})
 
 	err := w.Start()
 	ts.NoError(err)
@@ -171,9 +159,9 @@ func (ts *DynamicWorkflowTestSuite) TestBasicDynamicWorkflowActivityWithVersioni
 		},
 	})
 	w.RegisterDynamicWorkflow(EmptyDynamic, workflow.DynamicRegisterOptions{
-		LoadDynamicOptions: func(name string) (workflow.DynamicWorkflowOptions, error) {
-			var options workflow.DynamicWorkflowOptions
-			switch name {
+		LoadDynamicOptions: func(details workflow.LoadDynamicOptionsDetails) (workflow.DynamicWorkflowConfig, error) {
+			var options workflow.DynamicWorkflowConfig
+			switch details.WorkflowType.Name {
 			case "some-workflow":
 				options.VersioningBehavior = workflow.VersioningBehaviorAutoUpgrade
 			case "behavior-pinned":

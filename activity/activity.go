@@ -43,7 +43,7 @@ type (
 	RegisterOptions = internal.RegisterActivityOptions
 
 	// DynamicRegisterOptions consists of options for registering a dynamic activity.
-	DynamicRegisterOptions = internal.DynamicRegisterOptions
+	DynamicRegisterOptions = internal.DynamicRegisterActivityOptions
 )
 
 // ErrResultPending is returned from activity's implementation to indicate the activity is not completed when the

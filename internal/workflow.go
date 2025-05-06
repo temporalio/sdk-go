@@ -472,18 +472,28 @@ type (
 		VersioningBehavior VersioningBehavior
 	}
 
-	// DynamicRegisterOptions consists of options for registering a dynamic workflow
+	// LoadDynamicOptionsDetails is used as input to the LoadDynamicOptions callback for dynamic workflows
 	//
-	// Exposed as: [go.temporal.io/sdk/workflow.DynamicRegisterOptions], [go.temporal.io/sdk/activity.DynamicRegisterOptions]
-	DynamicRegisterOptions struct {
-		// Allows dynamic options to be loaded for a workflow.
-		LoadDynamicOptions func(name string) (DynamicWorkflowOptions, error)
+	// Exposed as: [go.temporal.io/sdk/workflow.LoadDynamicOptionsDetails]
+	LoadDynamicOptionsDetails struct {
+		WorkflowType WorkflowType
 	}
 
-	// DynamicWorkflowOptions are options for a dynamic workflow.
+	// DynamicRegisterOptions consists of options for registering a dynamic workflow
 	//
-	// Exposed as: [go.temporal.io/sdk/workflow.DynamicWorkflowOptions]
-	DynamicWorkflowOptions struct {
+	// Exposed as: [go.temporal.io/sdk/workflow.DynamicRegisterOptions]
+	DynamicRegisterWorkflowOptions struct {
+		// Allows dynamic options to be loaded for a workflow.
+		LoadDynamicOptions func(details LoadDynamicOptionsDetails) (DynamicWorkflowConfig, error)
+	}
+
+	// DynamicRegisterActivityOptions consists of options for registering a dynamic activity
+	DynamicRegisterActivityOptions struct{}
+
+	// DynamicWorkflowConfig are options for a dynamic workflow.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.DynamicWorkflowConfig]
+	DynamicWorkflowConfig struct {
 		// Optional: Provides a Versioning Behavior to workflows of this type. It is required
 		// when WorkerOptions does not specify [DeploymentOptions.DefaultVersioningBehavior],
 		// [DeploymentOptions.DeploymentSeriesName] is set, and [UseBuildIDForVersioning] is true.
@@ -2087,7 +2097,7 @@ func (wc *workflowEnvironmentInterceptor) MutableSideEffect(ctx Context, id stri
 
 // DefaultVersion is a version returned by GetVersion for code that wasn't versioned before
 //
-// Exposed as: [go.temporal.io/sdk/workflow.Version], [go.temporal.io/sdk/workflow.DefaultVersion]
+// Exposed as: [go.temporal.io/sdk/workflow.DefaultVersion], [go.temporal.io/sdk/workflow.Version]
 const DefaultVersion Version = -1
 
 // TemporalChangeVersion is used as search attributes key to find workflows with specific change version.

@@ -3013,9 +3013,9 @@ func (s *internalWorkerTestSuite) TestRegisterMultipleDynamicWorkflow() {
 	env := suite.NewTestWorkflowEnvironment()
 	workflowFn1 := func(ctx Context, values EncodedValues) (EncodedValues, error) { return EncodedValues{}, nil }
 	workflowFn2 := func(ctx Context, values EncodedValues) (EncodedValues, error) { return EncodedValues{}, nil }
-	env.RegisterDynamicWorkflow(workflowFn1, DynamicRegisterOptions{})
+	env.RegisterDynamicWorkflow(workflowFn1, DynamicRegisterWorkflowOptions{})
 	err := runAndCatchPanic(func() {
-		env.RegisterDynamicWorkflow(workflowFn2, DynamicRegisterOptions{})
+		env.RegisterDynamicWorkflow(workflowFn2, DynamicRegisterWorkflowOptions{})
 	})
 	require.Error(s.T(), err)
 	require.Contains(s.T(), err.Error(), "dynamic workflow already registered")
@@ -3027,9 +3027,9 @@ func (s *internalWorkerTestSuite) TestRegisterMultipleDynamicWorkflow() {
 	activityFn2 := func(ctx context.Context, values EncodedValues) (EncodedValues, error) {
 		return EncodedValues{}, nil
 	}
-	env.RegisterDynamicActivity(activityFn1)
+	env.RegisterDynamicActivity(activityFn1, DynamicRegisterActivityOptions{})
 	err = runAndCatchPanic(func() {
-		env.RegisterDynamicActivity(activityFn2)
+		env.RegisterDynamicActivity(activityFn2, DynamicRegisterActivityOptions{})
 	})
 	require.Error(s.T(), err)
 	require.Contains(s.T(), err.Error(), "dynamic activity already registered")
