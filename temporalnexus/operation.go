@@ -289,6 +289,14 @@ func ExecuteUntypedWorkflow[R any](
 		internal.SetRequestIDOnStartWorkflowOptions(&startWorkflowOptions, nexusOptions.RequestID)
 	}
 
+	links, err := convertNexusLinks(nexusOptions.Links, GetLogger(ctx))
+	if err != nil {
+		return nil, &nexus.HandlerError{
+			Type:  nexus.HandlerErrorTypeBadRequest,
+			Cause: err,
+		}
+	}
+
 	var encodedToken string
 	if nexusOptions.CallbackURL != "" {
 		if nexusOptions.CallbackHeader == nil {
@@ -310,17 +318,13 @@ func ExecuteUntypedWorkflow[R any](
 						Header: nexusOptions.CallbackHeader,
 					},
 				},
+				Links: links,
 			},
 		})
 	}
 
-	links, err := convertNexusLinks(nexusOptions.Links, GetLogger(ctx))
-	if err != nil {
-		return nil, &nexus.HandlerError{
-			Type:  nexus.HandlerErrorTypeBadRequest,
-			Cause: err,
-		}
-	}
+	// Links are duplicated in startWorkflowOptions to backwards compatibility with older servers that
+	// don't support links in callbacks.
 	internal.SetLinksOnStartWorkflowOptions(&startWorkflowOptions, links)
 	internal.SetOnConflictOptionsOnStartWorkflowOptions(&startWorkflowOptions)
 
