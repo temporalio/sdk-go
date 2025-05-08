@@ -286,6 +286,14 @@ func (e *TestWorkflowEnvironment) RegisterWorkflowWithOptions(w interface{}, opt
 	e.impl.RegisterWorkflowWithOptions(w, options)
 }
 
+// RegisterDynamicWorkflow registers a dynamic workflow implementation with the TestWorkflowEnvironment
+func (e *TestWorkflowEnvironment) RegisterDynamicWorkflow(w interface{}, options DynamicRegisterWorkflowOptions) {
+	if len(e.workflowMock.ExpectedCalls) > 0 {
+		panic("RegisterDynamicWorkflow calls cannot follow mock related ones like OnWorkflow or similar")
+	}
+	e.impl.RegisterDynamicWorkflow(w, options)
+}
+
 // RegisterActivity registers activity implementation with TestWorkflowEnvironment
 func (e *TestWorkflowEnvironment) RegisterActivity(a interface{}) {
 	e.impl.RegisterActivity(a)
@@ -299,7 +307,15 @@ func (e *TestWorkflowEnvironment) RegisterActivityWithOptions(a interface{}, opt
 	e.impl.RegisterActivityWithOptions(a, options)
 }
 
-// RegisterWorkflow registers a Nexus Service with the TestWorkflowEnvironment.
+// RegisterDynamicActivity registers the dynamic activity implementation with the TestWorkflowEnvironment
+func (e *TestWorkflowEnvironment) RegisterDynamicActivity(a interface{}, options DynamicRegisterActivityOptions) {
+	if len(e.workflowMock.ExpectedCalls) > 0 {
+		panic("RegisterDynamicActivity calls cannot follow mock related ones like OnWorkflow or similar")
+	}
+	e.impl.RegisterDynamicActivity(a, options)
+}
+
+// RegisterNexusService registers a Nexus Service with the TestWorkflowEnvironment.
 func (e *TestWorkflowEnvironment) RegisterNexusService(s *nexus.Service) {
 	e.impl.RegisterNexusService(s)
 }
@@ -382,7 +398,7 @@ func (e *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...inter
 	switch fType.Kind() {
 	case reflect.Func:
 		fnType := reflect.TypeOf(activity)
-		if err := validateFnFormat(fnType, false); err != nil {
+		if err := validateFnFormat(fnType, false, false); err != nil {
 			panic(err)
 		}
 		fnName := getActivityFunctionName(e.impl.registry, activity)
@@ -440,7 +456,7 @@ func (e *TestWorkflowEnvironment) OnWorkflow(workflow interface{}, args ...inter
 	var call *mock.Call
 	switch fType.Kind() {
 	case reflect.Func:
-		if err := validateFnFormat(fType, true); err != nil {
+		if err := validateFnFormat(fType, true, false); err != nil {
 			panic(err)
 		}
 		fnName, _ := getWorkflowFunctionName(e.impl.registry, workflow)

@@ -472,6 +472,36 @@ type (
 		VersioningBehavior VersioningBehavior
 	}
 
+	// LoadDynamicOptionsDetails is used as input to the LoadDynamicOptions callback for dynamic workflows
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.LoadDynamicOptionsDetails]
+	LoadDynamicOptionsDetails struct {
+		WorkflowType WorkflowType
+	}
+
+	// DynamicRegisterOptions consists of options for registering a dynamic workflow
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.DynamicRegisterOptions]
+	DynamicRegisterWorkflowOptions struct {
+		// Allows dynamic options to be loaded for a workflow.
+		LoadDynamicOptions func(details LoadDynamicOptionsDetails) (DynamicWorkflowConfig, error)
+	}
+
+	// DynamicRegisterActivityOptions consists of options for registering a dynamic activity
+	DynamicRegisterActivityOptions struct{}
+
+	// DynamicWorkflowConfig are options for a dynamic workflow.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.DynamicWorkflowConfig]
+	DynamicWorkflowConfig struct {
+		// Optional: Provides a Versioning Behavior to workflows of this type. It is required
+		// when WorkerOptions does not specify [DeploymentOptions.DefaultVersioningBehavior],
+		// [DeploymentOptions.DeploymentSeriesName] is set, and [UseBuildIDForVersioning] is true.
+		//
+		// NOTE: Experimental
+		VersioningBehavior VersioningBehavior
+	}
+
 	localActivityContext struct {
 		fn       interface{}
 		isMethod bool

@@ -1665,6 +1665,7 @@ func createStartWorkflowInput(
 		return nil, err
 	}
 	workflowType, err := getWorkflowFunctionName(registry, workflow)
+
 	if err != nil {
 		return nil, err
 	}

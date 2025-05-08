@@ -2219,6 +2219,10 @@ func (env *testWorkflowEnvironmentImpl) RegisterWorkflowWithOptions(w interface{
 	env.registry.RegisterWorkflowWithOptions(w, options)
 }
 
+func (env *testWorkflowEnvironmentImpl) RegisterDynamicWorkflow(w interface{}, options DynamicRegisterWorkflowOptions) {
+	env.registry.RegisterDynamicWorkflow(w, options)
+}
+
 func (env *testWorkflowEnvironmentImpl) RegisterActivity(a interface{}) {
 	env.registry.RegisterActivityWithOptions(a, RegisterActivityOptions{DisableAlreadyRegisteredCheck: true})
 }
@@ -2226,6 +2230,10 @@ func (env *testWorkflowEnvironmentImpl) RegisterActivity(a interface{}) {
 func (env *testWorkflowEnvironmentImpl) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) {
 	options.DisableAlreadyRegisteredCheck = true
 	env.registry.RegisterActivityWithOptions(a, options)
+}
+
+func (env *testWorkflowEnvironmentImpl) RegisterDynamicActivity(w interface{}, options DynamicRegisterActivityOptions) {
+	env.registry.RegisterDynamicActivity(w, options)
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterNexusService(s *nexus.Service) {
