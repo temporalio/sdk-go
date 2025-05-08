@@ -214,6 +214,7 @@ type workflowHandle[T any] struct {
 	namespace   string
 	id          string
 	runID       string
+	wfEventLink *common.Link
 	cachedToken string
 }
 
@@ -226,16 +227,19 @@ func (h workflowHandle[T]) RunID() string {
 }
 
 func (h workflowHandle[T]) link() nexus.Link {
-	// Create the link information about the new workflow and return to the caller.
-	link := &common.Link_WorkflowEvent{
-		Namespace:  h.namespace,
-		WorkflowId: h.ID(),
-		RunId:      h.RunID(),
-		Reference: &common.Link_WorkflowEvent_EventRef{
-			EventRef: &common.Link_WorkflowEvent_EventReference{
-				EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+	// Create the link information about the workflow and return to the caller.
+	link := h.wfEventLink.GetWorkflowEvent()
+	if link == nil {
+		link = &common.Link_WorkflowEvent{
+			Namespace:  h.namespace,
+			WorkflowId: h.ID(),
+			RunId:      h.RunID(),
+			Reference: &common.Link_WorkflowEvent_EventRef{
+				EventRef: &common.Link_WorkflowEvent_EventReference{
+					EventType: enums.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+				},
 			},
-		},
+		}
 	}
 	return ConvertLinkWorkflowEventToNexusLink(link)
 }
@@ -327,6 +331,7 @@ func ExecuteUntypedWorkflow[R any](
 	// don't support links in callbacks.
 	internal.SetLinksOnStartWorkflowOptions(&startWorkflowOptions, links)
 	internal.SetOnConflictOptionsOnStartWorkflowOptions(&startWorkflowOptions)
+	responseInfo := internal.SetResponseInfoOnStartWorkflowOptions(&startWorkflowOptions)
 
 	// This makes sure that ExecuteWorkflow will respect the WorkflowIDConflictPolicy, ie., if the
 	// conflict policy is to fail (default value), then ExecuteWorkflow will return an error if the
@@ -342,6 +347,7 @@ func ExecuteUntypedWorkflow[R any](
 		namespace:   nctx.Namespace,
 		id:          run.GetID(),
 		runID:       run.GetRunID(),
+		wfEventLink: responseInfo.Link,
 		cachedToken: encodedToken,
 	}, nil
 }

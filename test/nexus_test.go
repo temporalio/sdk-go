@@ -459,8 +459,10 @@ func TestNexusWorkflowRunOperation(t *testing.T) {
 		event, err := iter.Next()
 		require.NoError(t, err)
 		if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED {
-			require.Len(t, event.GetLinks(), 1)
-			require.True(t, proto.Equal(link, event.GetLinks()[0].GetWorkflowEvent()))
+			completionCallbacks := event.GetWorkflowExecutionStartedEventAttributes().GetCompletionCallbacks()
+			require.Len(t, completionCallbacks, 1)
+			require.Len(t, completionCallbacks[0].GetLinks(), 1)
+			require.True(t, proto.Equal(link, completionCallbacks[0].GetLinks()[0].GetWorkflowEvent()))
 			break
 		}
 	}
@@ -923,12 +925,7 @@ func TestAsyncOperationFromWorkflow(t *testing.T) {
 		require.Equal(t, tc.testConfig.Namespace, link.GetWorkflowEvent().GetNamespace())
 		require.Equal(t, handlerWfID, link.GetWorkflowEvent().GetWorkflowId())
 		require.NotEmpty(t, link.GetWorkflowEvent().GetRunId())
-		require.True(t, proto.Equal(
-			&common.Link_WorkflowEvent_EventReference{
-				EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
-			},
-			link.GetWorkflowEvent().GetEventRef(),
-		))
+		require.Equal(t, enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED, link.GetWorkflowEvent().GetEventRef().GetEventType())
 		handlerRunID := link.GetWorkflowEvent().GetRunId()
 
 		// Check the link is added in the handler workflow.
@@ -952,21 +949,21 @@ func TestAsyncOperationFromWorkflow(t *testing.T) {
 		// Verify that calling by name works.
 		require.Equal(t, "foo", targetEvent.GetWorkflowExecutionStartedEventAttributes().WorkflowType.Name)
 		// Verify that links are properly attached.
-		require.Len(t, targetEvent.GetLinks(), 1)
-		require.True(t, proto.Equal(
-			&common.Link_WorkflowEvent{
-				Namespace:  tc.testConfig.Namespace,
-				WorkflowId: run.GetID(),
-				RunId:      run.GetRunID(),
-				Reference: &common.Link_WorkflowEvent_EventRef{
-					EventRef: &common.Link_WorkflowEvent_EventReference{
-						EventId:   nexusOperationScheduleEventID,
-						EventType: enumspb.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED,
-					},
+		completionCallbacks := targetEvent.GetWorkflowExecutionStartedEventAttributes().GetCompletionCallbacks()
+		require.Len(t, completionCallbacks, 1)
+		expectedLink := &common.Link_WorkflowEvent{
+			Namespace:  tc.testConfig.Namespace,
+			WorkflowId: run.GetID(),
+			RunId:      run.GetRunID(),
+			Reference: &common.Link_WorkflowEvent_EventRef{
+				EventRef: &common.Link_WorkflowEvent_EventReference{
+					EventId:   nexusOperationScheduleEventID,
+					EventType: enumspb.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED,
 				},
 			},
-			targetEvent.GetLinks()[0].GetWorkflowEvent(),
-		))
+		}
+		require.Len(t, completionCallbacks[0].GetLinks(), 1)
+		require.True(t, proto.Equal(expectedLink, completionCallbacks[0].GetLinks()[0].GetWorkflowEvent()))
 	})
 
 	t.Run("OpFailed", func(t *testing.T) {
@@ -1276,7 +1273,10 @@ func TestAsyncOperationFromWorkflow_MultipleCallers(t *testing.T) {
 	defer cancel()
 	tctx := newTestContext(t, ctx)
 
-	handlerWorkflowID := uuid.NewString()
+	handlerWfIDSuffix := uuid.NewString()
+	getHandlerWfID := func(tcName string) string {
+		return tcName + "-" + handlerWfIDSuffix
+	}
 	handlerWf := func(ctx workflow.Context, input string) (string, error) {
 		workflow.GetSignalChannel(ctx, "terminate").Receive(ctx, nil)
 		return "hello " + input, nil
@@ -1285,13 +1285,13 @@ func TestAsyncOperationFromWorkflow_MultipleCallers(t *testing.T) {
 	op := temporalnexus.NewWorkflowRunOperation(
 		"op",
 		handlerWf,
-		func(ctx context.Context, input string, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+		func(ctx context.Context, tcName string, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
 			var conflictPolicy enumspb.WorkflowIdConflictPolicy
-			if input == "conflict-policy-use-existing" {
+			if tcName == "conflict-policy-use-existing" {
 				conflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING
 			}
 			return client.StartWorkflowOptions{
-				ID:                       handlerWorkflowID,
+				ID:                       getHandlerWfID(tcName),
 				WorkflowIDConflictPolicy: conflictPolicy,
 			}, nil
 		},
@@ -1302,7 +1302,7 @@ func TestAsyncOperationFromWorkflow_MultipleCallers(t *testing.T) {
 		CntErr int
 	}
 
-	callerWf := func(ctx workflow.Context, input string, numCalls int) (CallerWfOutput, error) {
+	callerWf := func(ctx workflow.Context, tcName string, numCalls int) (CallerWfOutput, error) {
 		output := CallerWfOutput{}
 		var retError error
 
@@ -1314,7 +1314,7 @@ func TestAsyncOperationFromWorkflow_MultipleCallers(t *testing.T) {
 			wg.Add(1)
 			workflow.Go(ctx, func(ctx workflow.Context) {
 				defer wg.Done()
-				fut := client.ExecuteOperation(ctx, op, input, workflow.NexusOperationOptions{})
+				fut := client.ExecuteOperation(ctx, op, tcName, workflow.NexusOperationOptions{})
 				var exec workflow.NexusOperationExecution
 				err := fut.GetNexusOperationExecution().Get(ctx, &exec)
 				if err != nil {
@@ -1339,7 +1339,7 @@ func TestAsyncOperationFromWorkflow_MultipleCallers(t *testing.T) {
 				err = fut.Get(ctx, &res)
 				if err != nil {
 					retError = err
-				} else if res != "hello "+input {
+				} else if res != "hello "+tcName {
 					retError = fmt.Errorf("unexpected result from handler workflow: %q", res)
 				}
 			})
@@ -1351,7 +1351,7 @@ func TestAsyncOperationFromWorkflow_MultipleCallers(t *testing.T) {
 
 		if output.CntOk > 0 {
 			// signal handler workflow so it will complete
-			workflow.SignalExternalWorkflow(ctx, handlerWorkflowID, "", "terminate", nil).Get(ctx, nil)
+			workflow.SignalExternalWorkflow(ctx, getHandlerWfID(tcName), "", "terminate", nil).Get(ctx, nil)
 		}
 		wg.Wait(ctx)
 		return output, retError
@@ -1366,48 +1366,84 @@ func TestAsyncOperationFromWorkflow_MultipleCallers(t *testing.T) {
 	require.NoError(t, w.Start())
 	t.Cleanup(w.Stop)
 
+	// number of concurrent Nexus operation calls
+	numCalls := 5
+
 	testCases := []struct {
-		input       string
-		checkOutput func(t *testing.T, numCalls int, res CallerWfOutput, err error)
+		name        string
+		expectedOk  int
+		expectedErr int
 	}{
 		{
-			input: "conflict-policy-fail",
-			checkOutput: func(t *testing.T, numCalls int, res CallerWfOutput, err error) {
-				require.NoError(t, err)
-				require.EqualValues(t, 1, res.CntOk)
-				require.EqualValues(t, numCalls-1, res.CntErr)
-			},
+			name:        "conflict-policy-fail",
+			expectedOk:  1,
+			expectedErr: numCalls - 1,
 		},
 		{
-			input: "conflict-policy-use-existing",
-			checkOutput: func(t *testing.T, numCalls int, res CallerWfOutput, err error) {
-				require.NoError(t, err)
-				require.EqualValues(t, numCalls, res.CntOk)
-				require.EqualValues(t, 0, res.CntErr)
-			},
+			name:        "conflict-policy-use-existing",
+			expectedOk:  numCalls,
+			expectedErr: 0,
 		},
 	}
 
-	// number of concurrent Nexus operation calls
-	numCalls := 5
 	for _, tc := range testCases {
-		t.Run(tc.input, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
+			callerWfID := uuid.NewString()
 			run, err := tctx.client.ExecuteWorkflow(
 				ctx,
 				client.StartWorkflowOptions{
+					ID:        callerWfID,
 					TaskQueue: tctx.taskQueue,
 					// The endpoint registry may take a bit to propagate to the history service, use a shorter
 					// workflow task timeout to speed up the attempts.
 					WorkflowTaskTimeout: time.Second,
 				},
 				callerWf,
-				tc.input,
+				tc.name,
 				numCalls,
 			)
 			require.NoError(t, err)
 			var res CallerWfOutput
 			err = run.Get(ctx, &res)
-			tc.checkOutput(t, numCalls, res, err)
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedOk, res.CntOk)
+			require.Equal(t, tc.expectedErr, res.CntErr)
+
+			cntEventRefLinks := 0
+			cntRequestIDRefLinks := 0
+			iter := tctx.client.GetWorkflowHistory(
+				context.Background(),
+				callerWfID,
+				"",
+				false,
+				enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT,
+			)
+			for iter.HasNext() {
+				event, err := iter.Next()
+				require.NoError(t, err)
+				if event.GetEventType() != enumspb.EVENT_TYPE_NEXUS_OPERATION_STARTED {
+					continue
+				}
+				require.Len(t, event.GetLinks(), 1)
+				link := event.GetLinks()[0].GetWorkflowEvent()
+				require.NotNil(t, link)
+				require.Equal(t, tctx.testConfig.Namespace, link.GetNamespace())
+				require.Equal(t, getHandlerWfID(tc.name), link.GetWorkflowId())
+				switch link.Reference.(type) {
+				case *common.Link_WorkflowEvent_EventRef:
+					cntEventRefLinks++
+					require.Equal(t, int64(1), link.GetEventRef().GetEventId())
+					require.Equal(t, enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED, link.GetEventRef().GetEventType())
+				case *common.Link_WorkflowEvent_RequestIdRef:
+					cntRequestIDRefLinks++
+					require.NotEmpty(t, link.GetRequestIdRef().GetRequestId())
+					require.Equal(t, enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_OPTIONS_UPDATED, link.GetRequestIdRef().GetEventType())
+				default:
+					require.Fail(t, fmt.Sprintf("Unexpected link reference type: %T", link.Reference))
+				}
+			}
+			require.Equal(t, 1, cntEventRefLinks)
+			require.Equal(t, tc.expectedOk-1, cntRequestIDRefLinks)
 		})
 	}
 }

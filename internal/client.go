@@ -762,6 +762,10 @@ type (
 		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
 
+		// responseInfo - Optional pointer to store information of StartWorkflowExecution response.
+		// Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
+		responseInfo *startWorkflowResponseInfo
+
 		// request ID. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
 		requestID string
 		// workflow completion callback. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
@@ -776,6 +780,13 @@ type (
 		//
 		// NOTE: Only settable by the SDK -- e.g. [temporalnexus.workflowRunOperation].
 		onConflictOptions *OnConflictOptions
+	}
+
+	// startWorkflowResponseInfo can be passed to StartWorkflowOptions to receive additional information
+	// of StartWorkflowExecution response.
+	startWorkflowResponseInfo struct {
+		// Link to the workflow event.
+		Link *commonpb.Link
 	}
 
 	// WithStartWorkflowOperation defines how to start a workflow when using UpdateWithStartWorkflow.
@@ -1275,4 +1286,14 @@ func SetOnConflictOptionsOnStartWorkflowOptions(opts *StartWorkflowOptions) {
 		AttachCompletionCallbacks: true,
 		AttachLinks:               true,
 	}
+}
+
+// SetResponseInfoOnStartWorkflowOptions is an internal only method for setting start workflow
+// response info object pointer on StartWorkflowOptions and return the object pointer.
+// StartWorkflowResponseInfo is purposefully not exposed to users for the time being.
+func SetResponseInfoOnStartWorkflowOptions(opts *StartWorkflowOptions) *startWorkflowResponseInfo {
+	if opts.responseInfo == nil {
+		opts.responseInfo = &startWorkflowResponseInfo{}
+	}
+	return opts.responseInfo
 }
