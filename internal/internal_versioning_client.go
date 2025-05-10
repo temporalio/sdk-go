@@ -352,7 +352,7 @@ func pollerInfoFromResponse(response *taskqueuepb.PollerInfo) TaskQueuePollerInf
 
 	lastAccessTime := time.Time{}
 	if response.GetLastAccessTime() != nil {
-		lastAccessTime = response.GetLastAccessTime().AsTime()
+		lastAccessTime = safeAsTime(response.GetLastAccessTime())
 	}
 
 	return TaskQueuePollerInfo{
@@ -388,7 +388,7 @@ func statsFromResponse(stats *taskqueuepb.TaskQueueStats) *TaskQueueStats {
 
 	return &TaskQueueStats{
 		ApproximateBacklogCount: stats.GetApproximateBacklogCount(),
-		ApproximateBacklogAge:   stats.GetApproximateBacklogAge().AsDuration(),
+		ApproximateBacklogAge:   safeAsDuration(stats.GetApproximateBacklogAge()),
 		TasksAddRate:            stats.TasksAddRate,
 		TasksDispatchRate:       stats.TasksDispatchRate,
 		BacklogIncreaseRate:     stats.TasksAddRate - stats.TasksDispatchRate,
@@ -429,7 +429,7 @@ func taskQueueVersioningInfoFromResponse(info *taskqueuepb.TaskQueueVersioningIn
 		CurrentVersion:           info.CurrentVersion,
 		RampingVersion:           info.RampingVersion,
 		RampingVersionPercentage: info.RampingVersionPercentage,
-		UpdateTime:               info.UpdateTime.AsTime(),
+		UpdateTime:               safeAsTime(info.UpdateTime),
 	}
 }
 

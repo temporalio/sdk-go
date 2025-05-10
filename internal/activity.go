@@ -286,11 +286,11 @@ func WithActivityTask(
 	interceptors []WorkerInterceptor,
 	client *WorkflowClient,
 ) (context.Context, error) {
-	scheduled := task.GetScheduledTime().AsTime()
-	started := task.GetStartedTime().AsTime()
-	scheduleToCloseTimeout := task.GetScheduleToCloseTimeout().AsDuration()
-	startToCloseTimeout := task.GetStartToCloseTimeout().AsDuration()
-	heartbeatTimeout := task.GetHeartbeatTimeout().AsDuration()
+	scheduled := safeAsTime(task.GetScheduledTime())
+	started := safeAsTime(task.GetStartedTime())
+	scheduleToCloseTimeout := safeAsDuration(task.GetScheduleToCloseTimeout())
+	startToCloseTimeout := safeAsDuration(task.GetStartToCloseTimeout())
+	heartbeatTimeout := safeAsDuration(task.GetHeartbeatTimeout())
 	deadline := calculateActivityDeadline(scheduled, started, scheduleToCloseTimeout, startToCloseTimeout)
 
 	logger = log.With(logger,

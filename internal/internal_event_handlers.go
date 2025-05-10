@@ -1194,7 +1194,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		// No Operation
 	case enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED:
 		// Set replay clock.
-		weh.SetCurrentReplayTime(event.GetEventTime().AsTime())
+		weh.SetCurrentReplayTime(safeAsTime(event.GetEventTime()))
 		// Update workflow info fields
 		weh.workflowInfo.currentHistoryLength = int(event.EventId)
 		weh.workflowInfo.continueAsNewSuggested = event.GetWorkflowTaskStartedEventAttributes().GetSuggestContinueAsNew()

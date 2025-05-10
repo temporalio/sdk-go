@@ -2557,8 +2557,8 @@ func convertFromPBRetryPolicy(retryPolicy *commonpb.RetryPolicy) *RetryPolicy {
 		NonRetryableErrorTypes: retryPolicy.NonRetryableErrorTypes,
 	}
 
-	p.MaximumInterval = retryPolicy.MaximumInterval.AsDuration()
-	p.InitialInterval = retryPolicy.InitialInterval.AsDuration()
+	p.MaximumInterval = safeAsDuration(retryPolicy.MaximumInterval)
+	p.InitialInterval = safeAsDuration(retryPolicy.InitialInterval)
 
 	return &p
 }

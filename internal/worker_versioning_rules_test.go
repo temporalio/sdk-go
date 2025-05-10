@@ -11,7 +11,7 @@ import (
 
 func Test_WorkerVersioningRules_fromProtoGetResponse(t *testing.T) {
 	nowProto := timestamppb.Now()
-	timestamp := nowProto.AsTime()
+	timestamp := safeAsTime(nowProto)
 	tests := []struct {
 		name     string
 		response *workflowservice.GetWorkerVersioningRulesResponse

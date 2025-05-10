@@ -1597,10 +1597,10 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 			TaskQueueName: attributes.GetTaskQueue().GetName(),
 		}
 		if attributes.WorkflowRunTimeout != nil {
-			err.WorkflowRunTimeout = attributes.WorkflowRunTimeout.AsDuration()
+			err.WorkflowRunTimeout = safeAsDuration(attributes.WorkflowRunTimeout)
 		}
 		if attributes.WorkflowTaskTimeout != nil {
-			err.WorkflowTaskTimeout = attributes.WorkflowTaskTimeout.AsDuration()
+			err.WorkflowTaskTimeout = safeAsDuration(attributes.WorkflowTaskTimeout)
 		}
 		return err
 	default:
@@ -2223,12 +2223,12 @@ func (w *workflowClientInterceptor) DescribeWorkflow(
 
 	var closeTime *time.Time
 	if info.GetCloseTime().IsValid() {
-		t := info.GetCloseTime().AsTime()
+		t := safeAsTime(info.GetCloseTime())
 		closeTime = &t
 	}
 	var executionTime *time.Time
 	if info.GetExecutionTime().IsValid() {
-		t := info.GetExecutionTime().AsTime()
+		t := safeAsTime(info.GetExecutionTime())
 		executionTime = &t
 	}
 
@@ -2262,7 +2262,7 @@ func (w *workflowClientInterceptor) DescribeWorkflow(
 		Status:                  info.GetStatus(),
 		ParentWorkflowExecution: parentWorkflowExecution,
 		RootWorkflowExecution:   rootWorkflowExecution,
-		WorkflowStartTime:       info.GetStartTime().AsTime(),
+		WorkflowStartTime:       safeAsTime(info.GetStartTime()),
 		ExecutionTime:           executionTime,
 		WorkflowCloseTime:       closeTime,
 		HistoryLength:           int(info.GetHistoryLength()),

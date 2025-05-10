@@ -1274,7 +1274,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 }
 
 func minDur(a *durationpb.Duration, b *durationpb.Duration) *durationpb.Duration {
-	ad, bd := a.AsDuration(), b.AsDuration()
+	ad, bd := safeAsDuration(a), safeAsDuration(b)
 	if ad < bd {
 		return a
 	}
@@ -1317,14 +1317,14 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 	}
 
 	// Only attempt to deduce and fill in unspecified timeouts only when all timeouts are non-negative.
-	if attributes.GetScheduleToCloseTimeout().AsDuration() < 0 || attributes.GetScheduleToStartTimeout().AsDuration() < 0 ||
-		attributes.GetStartToCloseTimeout().AsDuration() < 0 || attributes.GetHeartbeatTimeout().AsDuration() < 0 {
+	if safeAsDuration(attributes.GetScheduleToCloseTimeout()) < 0 || safeAsDuration(attributes.GetScheduleToStartTimeout()) < 0 ||
+		safeAsDuration(attributes.GetStartToCloseTimeout()) < 0 || safeAsDuration(attributes.GetHeartbeatTimeout()) < 0 {
 		return serviceerror.NewInvalidArgument("A valid timeout may not be negative.")
 	}
 
-	validScheduleToClose := attributes.GetScheduleToCloseTimeout().AsDuration() > 0
-	validScheduleToStart := attributes.GetScheduleToStartTimeout().AsDuration() > 0
-	validStartToClose := attributes.GetStartToCloseTimeout().AsDuration() > 0
+	validScheduleToClose := safeAsDuration(attributes.GetScheduleToCloseTimeout()) > 0
+	validScheduleToStart := safeAsDuration(attributes.GetScheduleToStartTimeout()) > 0
+	validStartToClose := safeAsDuration(attributes.GetStartToCloseTimeout()) > 0
 
 	if validScheduleToClose {
 		if validScheduleToStart {
@@ -1349,16 +1349,16 @@ func (env *testWorkflowEnvironmentImpl) validateActivityScheduleAttributes(
 	}
 	// ensure activity timeout never larger than workflow timeout
 	if runTimeout > 0 {
-		if attributes.GetScheduleToCloseTimeout().AsDuration() > runTimeout {
+		if safeAsDuration(attributes.GetScheduleToCloseTimeout()) > runTimeout {
 			attributes.ScheduleToCloseTimeout = durationpb.New(runTimeout)
 		}
-		if attributes.GetScheduleToStartTimeout().AsDuration() > runTimeout {
+		if safeAsDuration(attributes.GetScheduleToStartTimeout()) > runTimeout {
 			attributes.ScheduleToStartTimeout = durationpb.New(runTimeout)
 		}
-		if attributes.GetStartToCloseTimeout().AsDuration() > runTimeout {
+		if safeAsDuration(attributes.GetStartToCloseTimeout()) > runTimeout {
 			attributes.StartToCloseTimeout = durationpb.New(runTimeout)
 		}
-		if attributes.GetHeartbeatTimeout().AsDuration() > runTimeout {
+		if safeAsDuration(attributes.GetHeartbeatTimeout()) > runTimeout {
 			attributes.HeartbeatTimeout = durationpb.New(runTimeout)
 		}
 	}
@@ -1408,16 +1408,16 @@ func (env *testWorkflowEnvironmentImpl) validateRetryPolicy(policy *commonpb.Ret
 		// rest of the arguments is pointless
 		return nil
 	}
-	if policy.GetInitialInterval().AsDuration() < 0 {
+	if safeAsDuration(policy.GetInitialInterval()) < 0 {
 		return serviceerror.NewInvalidArgument("InitialInterval cannot be negative on retry policy.")
 	}
 	if policy.GetBackoffCoefficient() < 1 {
 		return serviceerror.NewInvalidArgument("BackoffCoefficient cannot be less than 1 on retry policy.")
 	}
-	if policy.GetMaximumInterval().AsDuration() < 0 {
+	if safeAsDuration(policy.GetMaximumInterval()) < 0 {
 		return serviceerror.NewInvalidArgument("MaximumInterval cannot be negative on retry policy.")
 	}
-	if policy.GetMaximumInterval().AsDuration() > 0 && policy.GetMaximumInterval().AsDuration() < policy.GetInitialInterval().AsDuration() {
+	if safeAsDuration(policy.GetMaximumInterval()) > 0 && safeAsDuration(policy.GetMaximumInterval()) < safeAsDuration(policy.GetInitialInterval()) {
 		return serviceerror.NewInvalidArgument("MaximumInterval cannot be less than InitialInterval on retry policy.")
 	}
 	if policy.GetMaximumAttempts() < 0 {
@@ -1506,9 +1506,9 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 
 func fromProtoRetryPolicy(p *commonpb.RetryPolicy) *RetryPolicy {
 	return &RetryPolicy{
-		InitialInterval:        p.GetInitialInterval().AsDuration(),
+		InitialInterval:        safeAsDuration(p.GetInitialInterval()),
 		BackoffCoefficient:     p.GetBackoffCoefficient(),
-		MaximumInterval:        p.GetMaximumInterval().AsDuration(),
+		MaximumInterval:        safeAsDuration(p.GetMaximumInterval()),
 		MaximumAttempts:        p.GetMaximumAttempts(),
 		NonRetryableErrorTypes: p.NonRetryableErrorTypes,
 	}
@@ -1529,10 +1529,10 @@ func ensureDefaultRetryPolicy(parameters *ExecuteActivityParams) {
 		parameters.RetryPolicy = &commonpb.RetryPolicy{}
 	}
 
-	if parameters.RetryPolicy.InitialInterval == nil || parameters.RetryPolicy.InitialInterval.AsDuration() == 0 {
+	if parameters.RetryPolicy.InitialInterval == nil || safeAsDuration(parameters.RetryPolicy.InitialInterval) == 0 {
 		parameters.RetryPolicy.InitialInterval = durationpb.New(time.Second)
 	}
-	if parameters.RetryPolicy.MaximumInterval == nil || parameters.RetryPolicy.MaximumInterval.AsDuration() == 0 {
+	if parameters.RetryPolicy.MaximumInterval == nil || safeAsDuration(parameters.RetryPolicy.MaximumInterval) == 0 {
 		parameters.RetryPolicy.MaximumInterval = parameters.RetryPolicy.InitialInterval
 	}
 	if parameters.RetryPolicy.BackoffCoefficient == 0 {

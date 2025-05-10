@@ -53,7 +53,7 @@ func Test_DetectEnhancedNotSupported_fromProtoResponse(t *testing.T) {
 
 func Test_TaskQueueDescription_fromProtoResponse(t *testing.T) {
 	nowProto := timestamppb.Now()
-	now := nowProto.AsTime()
+	now := safeAsTime(nowProto)
 	tests := []struct {
 		name     string
 		response *workflowservice.DescribeTaskQueueResponse

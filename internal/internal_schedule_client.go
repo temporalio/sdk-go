@@ -419,8 +419,8 @@ func convertFromPBScheduleSpec(scheduleSpec *schedulepb.ScheduleSpec) *ScheduleS
 	intervals := make([]ScheduleIntervalSpec, len(scheduleSpec.GetInterval()))
 	for i, s := range scheduleSpec.GetInterval() {
 		intervals[i] = ScheduleIntervalSpec{
-			Every:  s.Interval.AsDuration(),
-			Offset: s.Phase.AsDuration(),
+			Every:  safeAsDuration(s.Interval),
+			Offset: safeAsDuration(s.Phase),
 		}
 	}
 
@@ -428,12 +428,12 @@ func convertFromPBScheduleSpec(scheduleSpec *schedulepb.ScheduleSpec) *ScheduleS
 
 	startAt := time.Time{}
 	if scheduleSpec.GetStartTime() != nil {
-		startAt = scheduleSpec.GetStartTime().AsTime()
+		startAt = safeAsTime(scheduleSpec.GetStartTime())
 	}
 
 	endAt := time.Time{}
 	if scheduleSpec.GetEndTime() != nil {
-		endAt = scheduleSpec.GetEndTime().AsTime()
+		endAt = safeAsTime(scheduleSpec.GetEndTime())
 	}
 
 	return &ScheduleSpec{
@@ -442,7 +442,7 @@ func convertFromPBScheduleSpec(scheduleSpec *schedulepb.ScheduleSpec) *ScheduleS
 		Skip:         skip,
 		StartAt:      startAt,
 		EndAt:        endAt,
-		Jitter:       scheduleSpec.GetJitter().AsDuration(),
+		Jitter:       safeAsDuration(scheduleSpec.GetJitter()),
 		TimeZoneName: scheduleSpec.GetTimezoneName(),
 	}
 }
@@ -468,7 +468,7 @@ func scheduleDescriptionFromPB(
 
 	nextActionTimes := make([]time.Time, len(describeResponse.Info.GetFutureActionTimes()))
 	for i, t := range describeResponse.Info.GetFutureActionTimes() {
-		nextActionTimes[i] = t.AsTime()
+		nextActionTimes[i] = safeAsTime(t)
 	}
 
 	actionDescription, err := convertFromPBScheduleAction(logger, dc, describeResponse.Schedule.Action)
@@ -488,7 +488,7 @@ func scheduleDescriptionFromPB(
 			Spec:   convertFromPBScheduleSpec(describeResponse.Schedule.Spec),
 			Policy: &SchedulePolicies{
 				Overlap:        describeResponse.Schedule.Policies.GetOverlapPolicy(),
-				CatchupWindow:  describeResponse.Schedule.Policies.GetCatchupWindow().AsDuration(),
+				CatchupWindow:  safeAsDuration(describeResponse.Schedule.Policies.GetCatchupWindow()),
 				PauseOnFailure: describeResponse.Schedule.Policies.GetPauseOnFailure(),
 			},
 			State: &ScheduleState{
@@ -505,8 +505,8 @@ func scheduleDescriptionFromPB(
 			RunningWorkflows:              runningWorkflows,
 			RecentActions:                 recentActions,
 			NextActionTimes:               nextActionTimes,
-			CreatedAt:                     describeResponse.Info.GetCreateTime().AsTime(),
-			LastUpdateAt:                  describeResponse.Info.GetUpdateTime().AsTime(),
+			CreatedAt:                     safeAsTime(describeResponse.Info.GetCreateTime()),
+			LastUpdateAt:                  safeAsTime(describeResponse.Info.GetUpdateTime()),
 		},
 		Memo:                  describeResponse.Memo,
 		SearchAttributes:      searchAttributes,
@@ -553,7 +553,7 @@ func convertFromPBScheduleListEntry(schedule *schedulepb.ScheduleListEntry) *Sch
 
 	nextActionTimes := make([]time.Time, len(schedule.Info.GetFutureActionTimes()))
 	for i, t := range schedule.Info.GetFutureActionTimes() {
-		nextActionTimes[i] = t.AsTime()
+		nextActionTimes[i] = safeAsTime(t)
 	}
 
 	return &ScheduleListEntry{
@@ -712,9 +712,9 @@ func convertFromPBScheduleAction(
 			Workflow:                 workflow.WorkflowType.GetName(),
 			Args:                     args,
 			TaskQueue:                workflow.TaskQueue.GetName(),
-			WorkflowExecutionTimeout: workflow.GetWorkflowExecutionTimeout().AsDuration(),
-			WorkflowRunTimeout:       workflow.GetWorkflowRunTimeout().AsDuration(),
-			WorkflowTaskTimeout:      workflow.GetWorkflowTaskTimeout().AsDuration(),
+			WorkflowExecutionTimeout: safeAsDuration(workflow.GetWorkflowExecutionTimeout()),
+			WorkflowRunTimeout:       safeAsDuration(workflow.GetWorkflowRunTimeout()),
+			WorkflowTaskTimeout:      safeAsDuration(workflow.GetWorkflowTaskTimeout()),
 			RetryPolicy:              convertFromPBRetryPolicy(workflow.RetryPolicy),
 			Memo:                     memos,
 			TypedSearchAttributes:    searchAttrs,
@@ -842,8 +842,8 @@ func convertFromPBScheduleActionResultList(aa []*schedulepb.ScheduleActionResult
 			}
 		}
 		recentActions[i] = ScheduleActionResult{
-			ScheduleTime:        a.GetScheduleTime().AsTime(),
-			ActualTime:          a.GetActualTime().AsTime(),
+			ScheduleTime:        safeAsTime(a.GetScheduleTime()),
+			ActualTime:          safeAsTime(a.GetActualTime()),
 			StartWorkflowResult: workflowExecution,
 		}
 	}

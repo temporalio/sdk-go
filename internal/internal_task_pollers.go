@@ -864,7 +864,7 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 	metricsHandler := wtp.metricsHandler.WithTags(metrics.WorkflowTags(response.WorkflowType.GetName()))
 	metricsHandler.Counter(metrics.WorkflowTaskQueuePollSucceedCounter).Inc(1)
 
-	scheduleToStartLatency := response.GetStartedTime().AsTime().Sub(response.GetScheduledTime().AsTime())
+	scheduleToStartLatency := safeAsTime(response.GetStartedTime()).Sub(safeAsTime(response.GetScheduledTime()))
 	metricsHandler.Timer(metrics.WorkflowTaskScheduleToStartLatency).Record(scheduleToStartLatency)
 	return task, nil
 }
@@ -1032,7 +1032,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 	activityType := response.ActivityType.GetName()
 	metricsHandler := atp.metricsHandler.WithTags(metrics.ActivityTags(workflowType, activityType, atp.taskQueueName))
 
-	scheduleToStartLatency := response.GetStartedTime().AsTime().Sub(response.GetCurrentAttemptScheduledTime().AsTime())
+	scheduleToStartLatency := safeAsTime(response.GetStartedTime()).Sub(safeAsTime(response.GetCurrentAttemptScheduledTime()))
 	metricsHandler.Timer(metrics.ActivityScheduleToStartLatency).Record(scheduleToStartLatency)
 
 	return &activityTask{task: response}, nil
@@ -1103,7 +1103,7 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 	if _, ok := request.(*workflowservice.RespondActivityTaskCompletedRequest); ok {
 		activityMetricsHandler.
 			Timer(metrics.ActivitySucceedEndToEndLatency).
-			Record(time.Since(activityTask.task.GetScheduledTime().AsTime()))
+			Record(time.Since(safeAsTime(activityTask.task.GetScheduledTime())))
 	}
 	return nil
 }
