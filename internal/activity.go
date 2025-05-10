@@ -287,7 +287,7 @@ func WithActivityTask(
 	client *WorkflowClient,
 ) (context.Context, error) {
 	scheduled := task.GetScheduledTime().AsTime()
-	started := task.GetStartedTime().AsTime()
+	started := time.Now()
 	scheduleToCloseTimeout := task.GetScheduleToCloseTimeout().AsDuration()
 	startToCloseTimeout := task.GetStartToCloseTimeout().AsDuration()
 	heartbeatTimeout := task.GetHeartbeatTimeout().AsDuration()
