@@ -315,7 +315,7 @@ func WithActivityTask(
 		deadline:         deadline,
 		heartbeatTimeout: heartbeatTimeout,
 		scheduledTime:    scheduled,
-		startedTime:      started,
+		startedTime:      task.GetStartedTime().AsTime(),
 		taskQueue:        taskQueue,
 		dataConverter:    dataConverter,
 		attempt:          task.GetAttempt(),
