@@ -287,11 +287,11 @@ func WithActivityTask(
 	client *WorkflowClient,
 ) (context.Context, error) {
 	scheduled := task.GetScheduledTime().AsTime()
-	started := time.Now()
+	started := task.GetStartedTime().AsTime()
 	scheduleToCloseTimeout := task.GetScheduleToCloseTimeout().AsDuration()
 	startToCloseTimeout := task.GetStartToCloseTimeout().AsDuration()
 	heartbeatTimeout := task.GetHeartbeatTimeout().AsDuration()
-	deadline := calculateActivityDeadline(scheduled, started, scheduleToCloseTimeout, startToCloseTimeout)
+	deadline := calculateActivityDeadline(scheduled, scheduleToCloseTimeout, startToCloseTimeout)
 
 	logger = log.With(logger,
 		tagActivityID, task.ActivityId,
@@ -315,7 +315,7 @@ func WithActivityTask(
 		deadline:         deadline,
 		heartbeatTimeout: heartbeatTimeout,
 		scheduledTime:    scheduled,
-		startedTime:      task.GetStartedTime().AsTime(),
+		startedTime:      started,
 		taskQueue:        taskQueue,
 		dataConverter:    dataConverter,
 		attempt:          task.GetAttempt(),
@@ -365,7 +365,7 @@ func WithLocalActivityTask(
 	if scheduleToCloseTimeout == 0 {
 		scheduleToCloseTimeout = startToCloseTimeout
 	}
-	deadline := calculateActivityDeadline(task.scheduledTime, startedTime, scheduleToCloseTimeout, startToCloseTimeout)
+	deadline := calculateActivityDeadline(task.scheduledTime, scheduleToCloseTimeout, startToCloseTimeout)
 	if task.attempt > 1 && !task.expireTime.IsZero() && task.expireTime.Before(deadline) {
 		// this is attempt and expire time is before SCHEDULE_TO_CLOSE timeout
 		deadline = task.expireTime
@@ -417,8 +417,8 @@ func newActivityContext(
 	return ctx, nil
 }
 
-func calculateActivityDeadline(scheduled, started time.Time, scheduleToCloseTimeout, startToCloseTimeout time.Duration) time.Time {
-	startToCloseDeadline := started.Add(startToCloseTimeout)
+func calculateActivityDeadline(scheduled time.Time, scheduleToCloseTimeout, startToCloseTimeout time.Duration) time.Time {
+	startToCloseDeadline := time.Now().Add(startToCloseTimeout)
 	if scheduleToCloseTimeout > 0 {
 		scheduleToCloseDeadline := scheduled.Add(scheduleToCloseTimeout)
 		// Minimum of the two deadlines.
