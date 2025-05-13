@@ -419,8 +419,8 @@ func convertFromPBScheduleSpec(scheduleSpec *schedulepb.ScheduleSpec) *ScheduleS
 	intervals := make([]ScheduleIntervalSpec, len(scheduleSpec.GetInterval()))
 	for i, s := range scheduleSpec.GetInterval() {
 		intervals[i] = ScheduleIntervalSpec{
-			Every:  safeAsDuration(s.Interval),
-			Offset: safeAsDuration(s.Phase),
+			Every:  s.Interval.AsDuration(),
+			Offset: s.Phase.AsDuration(),
 		}
 	}
 
@@ -442,7 +442,7 @@ func convertFromPBScheduleSpec(scheduleSpec *schedulepb.ScheduleSpec) *ScheduleS
 		Skip:         skip,
 		StartAt:      startAt,
 		EndAt:        endAt,
-		Jitter:       safeAsDuration(scheduleSpec.GetJitter()),
+		Jitter:       scheduleSpec.GetJitter().AsDuration(),
 		TimeZoneName: scheduleSpec.GetTimezoneName(),
 	}
 }
@@ -488,7 +488,7 @@ func scheduleDescriptionFromPB(
 			Spec:   convertFromPBScheduleSpec(describeResponse.Schedule.Spec),
 			Policy: &SchedulePolicies{
 				Overlap:        describeResponse.Schedule.Policies.GetOverlapPolicy(),
-				CatchupWindow:  safeAsDuration(describeResponse.Schedule.Policies.GetCatchupWindow()),
+				CatchupWindow:  describeResponse.Schedule.Policies.GetCatchupWindow().AsDuration(),
 				PauseOnFailure: describeResponse.Schedule.Policies.GetPauseOnFailure(),
 			},
 			State: &ScheduleState{
@@ -712,9 +712,9 @@ func convertFromPBScheduleAction(
 			Workflow:                 workflow.WorkflowType.GetName(),
 			Args:                     args,
 			TaskQueue:                workflow.TaskQueue.GetName(),
-			WorkflowExecutionTimeout: safeAsDuration(workflow.GetWorkflowExecutionTimeout()),
-			WorkflowRunTimeout:       safeAsDuration(workflow.GetWorkflowRunTimeout()),
-			WorkflowTaskTimeout:      safeAsDuration(workflow.GetWorkflowTaskTimeout()),
+			WorkflowExecutionTimeout: workflow.GetWorkflowExecutionTimeout().AsDuration(),
+			WorkflowRunTimeout:       workflow.GetWorkflowRunTimeout().AsDuration(),
+			WorkflowTaskTimeout:      workflow.GetWorkflowTaskTimeout().AsDuration(),
 			RetryPolicy:              convertFromPBRetryPolicy(workflow.RetryPolicy),
 			Memo:                     memos,
 			TypedSearchAttributes:    searchAttrs,

@@ -388,7 +388,7 @@ func statsFromResponse(stats *taskqueuepb.TaskQueueStats) *TaskQueueStats {
 
 	return &TaskQueueStats{
 		ApproximateBacklogCount: stats.GetApproximateBacklogCount(),
-		ApproximateBacklogAge:   safeAsDuration(stats.GetApproximateBacklogAge()),
+		ApproximateBacklogAge:   stats.GetApproximateBacklogAge().AsDuration(),
 		TasksAddRate:            stats.TasksAddRate,
 		TasksDispatchRate:       stats.TasksDispatchRate,
 		BacklogIncreaseRate:     stats.TasksAddRate - stats.TasksDispatchRate,

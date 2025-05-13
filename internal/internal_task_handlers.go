@@ -727,9 +727,9 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		FirstRunID:               attributes.FirstExecutionRunId,
 		WorkflowType:             WorkflowType{Name: task.WorkflowType.GetName()},
 		TaskQueueName:            taskQueue.GetName(),
-		WorkflowExecutionTimeout: safeAsDuration(attributes.GetWorkflowExecutionTimeout()),
-		WorkflowRunTimeout:       safeAsDuration(attributes.GetWorkflowRunTimeout()),
-		WorkflowTaskTimeout:      safeAsDuration(attributes.GetWorkflowTaskTimeout()),
+		WorkflowExecutionTimeout: attributes.GetWorkflowExecutionTimeout().AsDuration(),
+		WorkflowRunTimeout:       attributes.GetWorkflowRunTimeout().AsDuration(),
+		WorkflowTaskTimeout:      attributes.GetWorkflowTaskTimeout().AsDuration(),
 		Namespace:                wth.namespace,
 		Attempt:                  attributes.GetAttempt(),
 		WorkflowStartTime:        safeAsTime(startedEvent.GetEventTime()),
@@ -2211,7 +2211,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	canCtx, cancel := context.WithCancelCause(rootCtx)
 	defer cancel(nil)
 
-	heartbeatThrottleInterval := ath.getHeartbeatThrottleInterval(safeAsDuration(t.GetHeartbeatTimeout()))
+	heartbeatThrottleInterval := ath.getHeartbeatThrottleInterval(t.GetHeartbeatTimeout().AsDuration())
 	invoker := newServiceInvoker(
 		t.TaskToken, ath.identity, ath.client.workflowService, ath.metricsHandler, cancel, heartbeatThrottleInterval,
 		ath.workerStopCh, ath.namespace)

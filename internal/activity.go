@@ -288,9 +288,9 @@ func WithActivityTask(
 ) (context.Context, error) {
 	scheduled := safeAsTime(task.GetScheduledTime())
 	started := safeAsTime(task.GetStartedTime())
-	scheduleToCloseTimeout := safeAsDuration(task.GetScheduleToCloseTimeout())
-	startToCloseTimeout := safeAsDuration(task.GetStartToCloseTimeout())
-	heartbeatTimeout := safeAsDuration(task.GetHeartbeatTimeout())
+	scheduleToCloseTimeout := task.GetScheduleToCloseTimeout().AsDuration()
+	startToCloseTimeout := task.GetStartToCloseTimeout().AsDuration()
+	heartbeatTimeout := task.GetHeartbeatTimeout().AsDuration()
 	deadline := calculateActivityDeadline(scheduled, started, scheduleToCloseTimeout, startToCloseTimeout)
 
 	logger = log.With(logger,

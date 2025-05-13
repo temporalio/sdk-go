@@ -11,7 +11,6 @@ import (
 	"go.temporal.io/api/deployment/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
-	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -27,15 +26,6 @@ func safeAsTime(timestamp *timestamppb.Timestamp) time.Time {
 		return time.Time{}
 	} else {
 		return timestamp.AsTime()
-	}
-}
-
-// safeAsDuration ensures that a nil proto duration makes `AsDuration()` return 0.
-func safeAsDuration(duration *durationpb.Duration) time.Duration {
-	if duration == nil {
-		return time.Duration(0)
-	} else {
-		return duration.AsDuration()
 	}
 }
 

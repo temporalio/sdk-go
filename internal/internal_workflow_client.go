@@ -1597,10 +1597,10 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 			TaskQueueName: attributes.GetTaskQueue().GetName(),
 		}
 		if attributes.WorkflowRunTimeout != nil {
-			err.WorkflowRunTimeout = safeAsDuration(attributes.WorkflowRunTimeout)
+			err.WorkflowRunTimeout = attributes.WorkflowRunTimeout.AsDuration()
 		}
 		if attributes.WorkflowTaskTimeout != nil {
-			err.WorkflowTaskTimeout = safeAsDuration(attributes.WorkflowTaskTimeout)
+			err.WorkflowTaskTimeout = attributes.WorkflowTaskTimeout.AsDuration()
 		}
 		return err
 	default:
