@@ -357,7 +357,7 @@ func versioningAssignmentRuleFromProto(rule *taskqueuepb.BuildIdAssignmentRule, 
 	}
 
 	if timestamp != nil {
-		result.CreateTime = safeAsTime(timestamp)
+		result.CreateTime = timestamp.AsTime()
 	}
 	return result
 }
@@ -375,7 +375,7 @@ func versioningRedirectRuleFromProto(rule *taskqueuepb.CompatibleBuildIdRedirect
 	}
 
 	if timestamp != nil {
-		result.CreateTime = safeAsTime(timestamp)
+		result.CreateTime = timestamp.AsTime()
 	}
 	return result
 }

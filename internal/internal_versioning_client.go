@@ -350,10 +350,7 @@ func pollerInfoFromResponse(response *taskqueuepb.PollerInfo) TaskQueuePollerInf
 		return TaskQueuePollerInfo{}
 	}
 
-	lastAccessTime := time.Time{}
-	if response.GetLastAccessTime() != nil {
-		lastAccessTime = safeAsTime(response.GetLastAccessTime())
-	}
+	lastAccessTime := safeAsTime(response.GetLastAccessTime())
 
 	return TaskQueuePollerInfo{
 		LastAccessTime: lastAccessTime,

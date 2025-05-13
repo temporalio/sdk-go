@@ -2223,12 +2223,12 @@ func (w *workflowClientInterceptor) DescribeWorkflow(
 
 	var closeTime *time.Time
 	if info.GetCloseTime().IsValid() {
-		t := safeAsTime(info.GetCloseTime())
+		t := info.GetCloseTime().AsTime()
 		closeTime = &t
 	}
 	var executionTime *time.Time
 	if info.GetExecutionTime().IsValid() {
-		t := safeAsTime(info.GetExecutionTime())
+		t := info.GetExecutionTime().AsTime()
 		executionTime = &t
 	}
 

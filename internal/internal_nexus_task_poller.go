@@ -123,7 +123,7 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 	// Schedule-to-start (from the time the request hit the frontend).
 	// Note that this metric does not include the service and operation name as they are not relevant when polling from
 	// the Nexus task queue.
-	scheduleToStartLatency := executionStartTime.Sub(safeAsTime(response.GetRequest().GetScheduledTime()))
+	scheduleToStartLatency := executionStartTime.Sub(response.GetRequest().GetScheduledTime().AsTime())
 	ntp.metricsHandler.WithTags(metrics.TaskQueueTags(ntp.taskQueueName)).Timer(metrics.NexusTaskScheduleToStartLatency).Record(scheduleToStartLatency)
 
 	nctx, handlerErr := ntp.taskHandler.newNexusOperationContext(response)
@@ -184,7 +184,7 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 	// E2E latency, from frontend until we finished reporting completion.
 	nctx.metricsHandler.
 		Timer(metrics.NexusTaskEndToEndLatency).
-		Record(time.Since(safeAsTime(response.GetRequest().GetScheduledTime())))
+		Record(time.Since(response.GetRequest().GetScheduledTime().AsTime()))
 	return nil
 }
 

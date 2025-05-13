@@ -426,15 +426,8 @@ func convertFromPBScheduleSpec(scheduleSpec *schedulepb.ScheduleSpec) *ScheduleS
 
 	skip := convertFromPBScheduleCalendarSpecList(scheduleSpec.GetExcludeStructuredCalendar())
 
-	startAt := time.Time{}
-	if scheduleSpec.GetStartTime() != nil {
-		startAt = safeAsTime(scheduleSpec.GetStartTime())
-	}
-
-	endAt := time.Time{}
-	if scheduleSpec.GetEndTime() != nil {
-		endAt = safeAsTime(scheduleSpec.GetEndTime())
-	}
+	startAt := safeAsTime(scheduleSpec.GetStartTime())
+	endAt := safeAsTime(scheduleSpec.GetEndTime())
 
 	return &ScheduleSpec{
 		Calendars:    calendars,
