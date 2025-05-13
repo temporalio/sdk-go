@@ -632,8 +632,13 @@ func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (
 		supported := strings.Join(env.registry.getRegisteredWorkflowTypes(), ", ")
 		return nil, fmt.Errorf("unable to find workflow type: %v. Supported types: [%v]", wt.Name, supported)
 	}
+	var dynamic bool
+	if d, ok := wf.(string); ok && d == "dynamic" {
+		wf = env.registry.dynamicWorkflow
+		dynamic = true
+	}
 	wd := &workflowExecutorWrapper{
-		workflowExecutor: &workflowExecutor{workflowType: wt.Name, fn: wf, interceptors: env.registry.interceptors},
+		workflowExecutor: &workflowExecutor{workflowType: wt.Name, fn: wf, interceptors: env.registry.interceptors, dynamic: dynamic},
 		env:              env,
 	}
 	return newSyncWorkflowDefinition(wd), nil
@@ -2128,7 +2133,8 @@ func (env *testWorkflowEnvironmentImpl) newTestActivityTaskHandler(taskQueue str
 		if !ok {
 			return nil
 		}
-		ae := &activityExecutor{name: activity.ActivityType().Name, fn: activity.GetFunction()}
+		dynamic := activity == env.registry.dynamicActivity
+		ae := &activityExecutor{name: activity.ActivityType().Name, fn: activity.GetFunction(), dynamic: dynamic}
 
 		if env.sessionEnvironment != nil {
 			// Special handling for session creation and completion activities.

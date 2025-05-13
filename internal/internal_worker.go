@@ -836,9 +836,16 @@ func (r *registry) getActivityNoLock(fnName string) (activity, bool) {
 func (r *registry) getRegisteredActivities() []activity {
 	r.Lock()
 	defer r.Unlock()
-	activities := make([]activity, 0, len(r.activityFuncMap))
+	numActivities := len(r.activityFuncMap)
+	if r.dynamicActivity != nil {
+		numActivities++
+	}
+	activities := make([]activity, 0, numActivities)
 	for _, a := range r.activityFuncMap {
 		activities = append(activities, a)
+	}
+	if r.dynamicActivity != nil {
+		activities = append(activities, r.dynamicActivity)
 	}
 	return activities
 }

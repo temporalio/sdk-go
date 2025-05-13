@@ -484,16 +484,16 @@ type (
 	// Exposed as: [go.temporal.io/sdk/workflow.DynamicRegisterOptions]
 	DynamicRegisterWorkflowOptions struct {
 		// Allows dynamic options to be loaded for a workflow.
-		LoadDynamicOptions func(details LoadDynamicOptionsDetails) (DynamicWorkflowConfig, error)
+		LoadDynamicOptions func(details LoadDynamicOptionsDetails) (RegisterDynamicWorkflowOptions, error)
 	}
 
 	// DynamicRegisterActivityOptions consists of options for registering a dynamic activity
 	DynamicRegisterActivityOptions struct{}
 
-	// DynamicWorkflowConfig are options for a dynamic workflow.
+	// RegisterDynamicWorkflowOptions are options for a dynamic workflow.
 	//
-	// Exposed as: [go.temporal.io/sdk/workflow.DynamicWorkflowConfig]
-	DynamicWorkflowConfig struct {
+	// Exposed as: [go.temporal.io/sdk/workflow.RegisterDynamicWorkflowOptions]
+	RegisterDynamicWorkflowOptions struct {
 		// Optional: Provides a Versioning Behavior to workflows of this type. It is required
 		// when WorkerOptions does not specify [DeploymentOptions.DefaultVersioningBehavior],
 		// [DeploymentOptions.DeploymentSeriesName] is set, and [UseBuildIDForVersioning] is true.

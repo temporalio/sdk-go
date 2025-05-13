@@ -1206,3 +1206,53 @@ func (c testFailureConverter) FailureToError(failure *failurepb.Failure) error {
 	}
 	return c.fallback.FailureToError(failure)
 }
+
+func DynamicWorkflow(ctx Context, args converter.EncodedValues) (string, error) {
+	var result string
+	info := GetWorkflowInfo(ctx)
+
+	var arg1, arg2 string
+	err := args.Get(&arg1, &arg2)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode arguments: %w", err)
+	}
+
+	if info.WorkflowType.Name == "dynamic-activity" {
+		ctx = WithActivityOptions(ctx, ActivityOptions{StartToCloseTimeout: 10 * time.Second})
+		err := ExecuteActivity(ctx, "random-activity-name", arg1, arg2).Get(ctx, &result)
+		if err != nil {
+			return "", err
+		}
+	} else {
+		result = fmt.Sprintf("%s - %s - %s", info.WorkflowType.Name, arg1, arg2)
+	}
+
+	return result, nil
+}
+
+func DynamicActivity(ctx context.Context, args converter.EncodedValues) (string, error) {
+	var arg1, arg2 string
+	err := args.Get(&arg1, &arg2)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode arguments: %w", err)
+	}
+
+	info := GetActivityInfo(ctx)
+	result := fmt.Sprintf("%s - %s - %s", info.WorkflowType.Name, arg1, arg2)
+
+	return result, nil
+}
+
+func TestDynamicWorkflows(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+	env.RegisterDynamicActivity(DynamicActivity, DynamicRegisterActivityOptions{})
+	env.RegisterDynamicWorkflow(DynamicWorkflow, DynamicRegisterWorkflowOptions{})
+
+	env.ExecuteWorkflow("dynamic-activity", "grape", "cherry")
+	require.NoError(t, env.GetWorkflowError())
+	var result string
+	err := env.GetWorkflowResult(&result)
+	require.NoError(t, err)
+	require.Equal(t, "dynamic-activity - grape - cherry", result)
+}
