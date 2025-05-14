@@ -630,6 +630,12 @@ func (latp *localActivityTaskPoller) ProcessTask(task interface{}) error {
 	}
 
 	result := latp.handler.executeLocalActivityTask(task.(*localActivityTask))
+
+	// If shutdown is initiated after we begin local activity execution, there is no need to send result back to
+	// laResultCh, as both workers receive shutdown from top down.
+	if latp.stopping() {
+		return errStop
+	}
 	// We need to send back the local activity result to unblock workflowTaskPoller.processWorkflowTask() which is
 	// synchronously listening on the laResultCh. We also want to make sure we don't block here forever in case
 	// processWorkflowTask() already returns and nobody is receiving from laResultCh. We guarantee that doneCh is closed
@@ -739,15 +745,9 @@ WaitResult:
 
 		// context is done
 		if ctx.Err() == context.Canceled {
-			if errors.Is(context.Cause(ctx), &CanceledError{}) {
-				metricsHandler.Counter(metrics.LocalActivityCanceledCounter).Inc(1)
-				metricsHandler.Counter(metrics.LocalActivityExecutionCanceledCounter).Inc(1)
-				return &localActivityResult{err: ErrCanceled, task: task}
-			}
-			// Non-server initiated cancellations
-			// Note: We send ErrCanceled as the errType, so we can catch this scenario of cancellation
-			// when handling the result
-			return &localActivityResult{err: NewApplicationError(context.Cause(ctx).Error(), ErrCanceled.Error(), false, nil), task: task}
+			metricsHandler.Counter(metrics.LocalActivityCanceledCounter).Inc(1)
+			metricsHandler.Counter(metrics.LocalActivityExecutionCanceledCounter).Inc(1)
+			return &localActivityResult{err: ErrCanceled, task: task}
 		} else if ctx.Err() == context.DeadlineExceeded {
 			if task.params.ScheduleToCloseTimeout != 0 && time.Now().After(info.scheduledTime.Add(task.params.ScheduleToCloseTimeout)) {
 				return &localActivityResult{err: ErrDeadlineExceeded, task: task}
