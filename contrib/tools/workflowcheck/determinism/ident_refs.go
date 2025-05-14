@@ -26,7 +26,6 @@ var DefaultIdentRefs = IdentRefs{
 	"fmt.Sscan":                 false,
 	"fmt.Sscanf":                false,
 	"fmt.Sscanln":               false,
-	"(go.temporal.io/sdk/internal.SearchAttributes).Copy": false,
 	// We are considering the global pseudorandom as non-deterministic by default
 	// since it's global (even if they set a seed), but we allow use of a manually
 	// instantiated random instance that may have a localized, fixed seed
