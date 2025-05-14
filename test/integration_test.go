@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package test_test
 
 import (
@@ -32,6 +8,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -635,8 +612,12 @@ func (ts *IntegrationTestSuite) TestActivityPause() {
 	ts.Len(desc.GetPendingActivities(), 1)
 	ts.Equal(desc.GetPendingActivities()[0].GetActivityType().GetName(), "ActivityToBePaused")
 	ts.Equal(desc.GetPendingActivities()[0].GetAttempt(), int32(1))
-	// TODO: Update when https://github.com/temporalio/temporal/pull/7572 is released
-	ts.Nil(desc.GetPendingActivities()[0].GetLastFailure())
+	if os.Getenv("DISABLE_SERVER_1_27_TESTS") == "1" {
+		ts.Nil(desc.GetPendingActivities()[0].GetLastFailure())
+	} else {
+		ts.NotNil(desc.GetPendingActivities()[0].GetLastFailure())
+		ts.Equal(desc.GetPendingActivities()[0].GetLastFailure().GetMessage(), "activity paused")
+	}
 	ts.True(desc.GetPendingActivities()[0].GetPaused())
 }
 
@@ -744,7 +725,7 @@ func (ts *IntegrationTestSuite) TestCascadingCancellation() {
 	started := make(chan bool, 1)
 	go func() {
 		for {
-			_, err := ts.client.DescribeWorkflowExecution(ctx, childWorkflowID, "")
+			_, err := ts.client.DescribeWorkflow(ctx, childWorkflowID, "")
 			if err == nil {
 				break
 			}
@@ -764,9 +745,9 @@ func (ts *IntegrationTestSuite) TestCascadingCancellation() {
 	var canceledErr *temporal.CanceledError
 	ts.True(errors.As(err, &canceledErr))
 
-	resp, err := ts.client.DescribeWorkflowExecution(ctx, childWorkflowID, "")
+	resp, err := ts.client.DescribeWorkflow(ctx, childWorkflowID, "")
 	ts.NoError(err)
-	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_CANCELED, resp.GetWorkflowExecutionInfo().GetStatus())
+	ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_CANCELED, resp.Status)
 }
 
 func (ts *IntegrationTestSuite) TestStackTraceQuery() {
@@ -1044,9 +1025,9 @@ func (ts *IntegrationTestSuite) TestWorkflowIDConflictPolicy() {
 	run3, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.IDConflictPolicy)
 	ts.NotEqual(run1.GetRunID(), run3.GetRunID())
 
-	statusRun1, err := ts.client.DescribeWorkflowExecution(ctx, run1.GetID(), run1.GetRunID())
+	statusRun1, err := ts.client.DescribeWorkflow(ctx, run1.GetID(), run1.GetRunID())
 	ts.NoError(err)
-	ts.Equal(statusRun1.WorkflowExecutionInfo.Status, enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED)
+	ts.Equal(statusRun1.Status, enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED)
 }
 
 func (ts *IntegrationTestSuite) TestChildWFWithRetryPolicy_ShortLived() {
@@ -1115,11 +1096,10 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyTerminate() {
 	err := ts.executeWorkflow("test-childwf-parent-close-policy", ts.workflows.ChildWorkflowSuccessWithParentClosePolicyTerminate, &childWorkflowID)
 	ts.NoError(err)
 	for {
-		resp, err := ts.client.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
+		resp, err := ts.client.DescribeWorkflow(context.Background(), childWorkflowID, "")
 		ts.NoError(err)
-		info := resp.WorkflowExecutionInfo
-		if info.CloseTime != nil {
-			ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED, info.GetStatus(), info)
+		if resp.WorkflowCloseTime != nil {
+			ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED, resp.Status, resp)
 			break
 		}
 		time.Sleep(time.Millisecond * 500)
@@ -1132,11 +1112,10 @@ func (ts *IntegrationTestSuite) TestChildWFWithParentClosePolicyAbandon() {
 	ts.NoError(err)
 
 	for {
-		resp, err := ts.client.DescribeWorkflowExecution(context.Background(), childWorkflowID, "")
+		resp, err := ts.client.DescribeWorkflow(context.Background(), childWorkflowID, "")
 		ts.NoError(err)
-		info := resp.WorkflowExecutionInfo
-		if info.CloseTime != nil {
-			ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED, info.GetStatus(), info)
+		if resp.WorkflowCloseTime != nil {
+			ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED, resp.Status, resp)
 			break
 		}
 		time.Sleep(time.Millisecond * 500)
@@ -5263,12 +5242,24 @@ func (ts *IntegrationTestSuite) TestHistoryLength() {
 	ts.Equal(expected, actual)
 }
 
+func (ts *IntegrationTestSuite) TestRootWorkflow() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-root-workflow-length"),
+		ts.workflows.RootWorkflow)
+	ts.NoError(err)
+	var result string
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal("empty test-root-workflow-length", result)
+}
+
 func (ts *IntegrationTestSuite) TestMultiNamespaceClient() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	// Make simple call to describe an execution
-	_, _ = ts.client.DescribeWorkflowExecution(ctx, "id-that-does-not-exist", "")
+	_, _ = ts.client.DescribeWorkflow(ctx, "id-that-does-not-exist", "")
 
 	// Confirm count on our namespace but not on the other
 	ts.assertMetricCount(metrics.TemporalRequest, 1,
@@ -5282,7 +5273,7 @@ func (ts *IntegrationTestSuite) TestMultiNamespaceClient() {
 	newClient, err := client.NewClientFromExisting(ts.client, client.Options{Namespace: "some-other-namespace"})
 	ts.NoError(err)
 	defer newClient.Close()
-	_, _ = newClient.DescribeWorkflowExecution(ctx, "id-that-does-not-exist", "")
+	_, _ = newClient.DescribeWorkflow(ctx, "id-that-does-not-exist", "")
 
 	// Confirm there was no count change to other namespace but there is now a
 	// request for this one
@@ -5367,12 +5358,12 @@ func (ts *IntegrationTestSuite) TestUpsertMemoFromNil() {
 	time.Sleep(2 * time.Second)
 
 	// Query ES for memo
-	resp, err := ts.client.DescribeWorkflowExecution(ctx, wfid, "")
+	resp, err := ts.client.DescribeWorkflow(ctx, wfid, "")
 	ts.NoError(err)
 	ts.NotNil(resp)
 
 	// workflow execution info matches memo in ES and correct
-	ts.Equal(resp.WorkflowExecutionInfo.Memo, memo)
+	ts.Equal(resp.Memo, memo)
 	ts.Equal(expectedMemo, memo)
 }
 
@@ -5421,12 +5412,12 @@ func (ts *IntegrationTestSuite) TestUpsertMemoFromEmptyMap() {
 	time.Sleep(2 * time.Second)
 
 	// Query ES for memo
-	resp, err := ts.client.DescribeWorkflowExecution(ctx, wfid, "")
+	resp, err := ts.client.DescribeWorkflow(ctx, wfid, "")
 	ts.NoError(err)
 	ts.NotNil(resp)
 
 	// workflow execution info matches memo in ES and correct
-	ts.Equal(resp.WorkflowExecutionInfo.Memo, memo)
+	ts.Equal(resp.Memo, memo)
 	ts.Equal(expectedMemo, memo)
 }
 
@@ -5478,12 +5469,12 @@ func (ts *IntegrationTestSuite) TestUpsertMemoWithExistingMemo() {
 	time.Sleep(2 * time.Second)
 
 	// Query ES for memo
-	resp, err := ts.client.DescribeWorkflowExecution(ctx, wfid, "")
+	resp, err := ts.client.DescribeWorkflow(ctx, wfid, "")
 	ts.NoError(err)
 	ts.NotNil(resp)
 
 	// workflow execution info matches memo in ES and correct
-	ts.Equal(resp.WorkflowExecutionInfo.Memo, memo)
+	ts.Equal(resp.Memo, memo)
 	ts.Equal(expectedMemo, memo)
 }
 
@@ -6927,15 +6918,15 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 	ts.NoError(err)
 
 	// Confirm describing has the values set as expected
-	resp, err := ts.client.DescribeWorkflowExecution(ctx, run.GetID(), "")
+	// Confirm the workflow description has the expected details
+	desc, err := ts.client.DescribeWorkflow(ctx, run.GetID(), run.GetRunID())
 	ts.NoError(err)
-	var str string
-	ts.NoError(converter.GetDefaultDataConverter().FromPayload(
-		resp.ExecutionConfig.UserMetadata.Summary, &str))
-	ts.Equal("my-wf-summary", str)
-	ts.NoError(converter.GetDefaultDataConverter().FromPayload(
-		resp.ExecutionConfig.UserMetadata.Details, &str))
-	ts.Equal("my-wf-details", str)
+	summary, err := desc.GetStaticSummary()
+	ts.NoError(err)
+	ts.Equal("my-wf-summary", summary)
+	details, err := desc.GetStaticDetails()
+	ts.NoError(err)
+	ts.Equal("my-wf-details", details)
 
 	// Send special query and confirm current details and query/update/signal
 	// info are present
@@ -6969,6 +6960,16 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 	ts.NoError(val.Get(&metadata))
 	ts.Equal("current-details-2", metadata.CurrentDetails)
 
+	// Confirm the workflow description has the expected details
+	desc, err = ts.client.DescribeWorkflow(ctx, run.GetID(), run.GetRunID())
+	ts.NoError(err)
+	summary, err = desc.GetStaticSummary()
+	ts.NoError(err)
+	ts.Equal("my-wf-summary", summary)
+	details, err = desc.GetStaticDetails()
+	ts.NoError(err)
+	ts.Equal("my-wf-details", details)
+
 	// Confirm that the history has a timer with the proper summary
 	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	var timerEvent *historypb.HistoryEvent
@@ -6993,6 +6994,7 @@ func (ts *IntegrationTestSuite) TestUserMetadata() {
 		}
 	}
 	ts.NotNil(timerEvent)
+	var str string
 	ts.NoError(converter.GetDefaultDataConverter().FromPayload(
 		timerEvent.UserMetadata.Summary, &str))
 	ts.Equal("my-timer", str)
@@ -7509,4 +7511,199 @@ func (ts *IntegrationTestSuite) TestRawValueQueryMetadata() {
 	ts.NoError(err)
 	ts.Equal("Basic", metadata.Definition.Type)
 	ts.Equal(3, len(metadata.Definition.QueryDefinitions))
+}
+
+func (ts *IntegrationTestSuite) TestWorkflowTaskFailureMetric_BenignHandling() {
+	wfWithApplicationErr := func(ctx workflow.Context, isBenign bool) error {
+		if !isBenign {
+			return temporal.NewApplicationError("Non-benign failure", "", false, nil)
+		}
+		return temporal.NewApplicationErrorWithOptions(
+			"Benign failure",
+			"",
+			temporal.ApplicationErrorOptions{
+				Category: temporal.ApplicationErrorCategoryBenign,
+			},
+		)
+	}
+
+	ts.worker.RegisterWorkflow(wfWithApplicationErr)
+	currCount := ts.metricCount(metrics.WorkflowFailedCounter)
+
+	runNonBenign, err := ts.client.ExecuteWorkflow(
+		context.Background(),
+		ts.startWorkflowOptions("test-non-benign-failure-metric"),
+		wfWithApplicationErr,
+		false,
+	)
+	ts.NoError(err)
+	// Wait for completion
+	err = runNonBenign.Get(context.Background(), nil)
+	// Expect a non-benign application error.
+	ts.Error(err)
+	var appErr *temporal.ApplicationError
+	ts.True(errors.As(err, &appErr))
+	ts.False(appErr.Category() == temporal.ApplicationErrorCategoryBenign)
+	ts.Equal("Non-benign failure", appErr.Error())
+
+	// Expect initial count to have incremented because the workflow failed with non-benign err.
+	currCount++
+	ts.assertMetricCount(metrics.WorkflowFailedCounter, currCount)
+
+	runBenign, err := ts.client.ExecuteWorkflow(
+		context.Background(),
+		ts.startWorkflowOptions("test-benign-failure-metric"),
+		wfWithApplicationErr,
+		true,
+	)
+	ts.NoError(err)
+	// Wait for completion
+	err = runBenign.Get(context.Background(), nil)
+	// Expect a benign application error.
+	ts.Error(err)
+	ts.True(errors.As(err, &appErr))
+	ts.True(appErr.Category() == temporal.ApplicationErrorCategoryBenign)
+	// Expect count to not have incremented because the workflow failed with benign err.
+	ts.assertMetricCount(metrics.WorkflowFailedCounter, currCount)
+}
+
+func (ts *IntegrationTestSuite) TestActivityFailureMetric_BenignHandling() {
+	actWithAppErr := func(ctx context.Context, isBenign bool) error {
+		if isBenign {
+			return temporal.NewApplicationErrorWithOptions("Benign act failure", "",
+				temporal.ApplicationErrorOptions{Category: temporal.ApplicationErrorCategoryBenign})
+		}
+		return temporal.NewApplicationError("Non-benign act failure", "", false, nil)
+	}
+
+	wfWithAppErrActivity := func(ctx workflow.Context, isBenign bool) error {
+		ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+			StartToCloseTimeout: 3 * time.Second,
+			// Don't retry
+			RetryPolicy: &temporal.RetryPolicy{MaximumAttempts: 1},
+		})
+		return workflow.ExecuteActivity(ctx, actWithAppErr, isBenign).Get(ctx, nil)
+	}
+
+	// Configure client/worker with logger, capture logs
+	logger := ilog.NewMemoryLogger()
+	c, err := client.Dial(client.Options{
+		HostPort:          ts.config.ServiceAddr,
+		Namespace:         ts.config.Namespace,
+		Logger:            logger,
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+		MetricsHandler:    ts.metricsHandler,
+	})
+	ts.NoError(err)
+	defer c.Close()
+
+	testWorker := worker.New(c, ts.taskQueueName, worker.Options{})
+	testWorker.RegisterActivity(actWithAppErr)
+	testWorker.RegisterWorkflow(wfWithAppErrActivity)
+	err = testWorker.Start()
+	ts.NoError(err)
+	defer testWorker.Stop()
+
+	var appErr *temporal.ApplicationError
+	currCount := ts.metricCount(metrics.ActivityExecutionFailedCounter)
+
+	runNonBenign, err := c.ExecuteWorkflow(
+		context.Background(),
+		ts.startWorkflowOptions(ts.T().Name()+"-non-benign-err"),
+		wfWithAppErrActivity,
+		false,
+	)
+	ts.NoError(err)
+	// Wait for completion
+	err = runNonBenign.Get(context.Background(), nil)
+	ts.Error(err)
+	ts.True(errors.As(err, &appErr))
+	// Expect non-benign error
+	ts.False(appErr.Category() == temporal.ApplicationErrorCategoryBenign)
+	// Expect warn log for activity failure
+	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
+		return strings.Contains(line, "ERROR") && strings.Contains(line, "Activity error.")
+	}))
+
+	// Expect initial count to have incremented because the activity failed with non-benign err.
+	currCount++
+	ts.assertMetricCount(metrics.ActivityExecutionFailedCounter, currCount)
+
+	runBenign, err := c.ExecuteWorkflow(
+		context.Background(),
+		ts.startWorkflowOptions(ts.T().Name()+"-benign-err"),
+		wfWithAppErrActivity, true,
+	)
+	ts.NoError(err)
+	// Wait for completion
+	err = runBenign.Get(context.Background(), nil)
+	ts.Error(err)
+	ts.True(errors.As(err, &appErr))
+	// Expect benign error
+	ts.True(appErr.Category() == temporal.ApplicationErrorCategoryBenign)
+	// Expect debug log for activity failure
+	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
+		return strings.Contains(line, "DEBUG") && strings.Contains(line, "Activity error.")
+	}))
+
+	// Expect count to not have incremented because the activity failed with benign err.
+	ts.assertMetricCount(metrics.ActivityExecutionFailedCounter, currCount)
+}
+
+func (ts *IntegrationTestSuite) TestLocalActivityFailureMetric_BenignHandling() {
+	localActWithAppErr := func(ctx context.Context, isBenign bool) error {
+		if isBenign {
+			return temporal.NewApplicationErrorWithOptions("Benign local act failure", "",
+				temporal.ApplicationErrorOptions{Category: temporal.ApplicationErrorCategoryBenign})
+		}
+		return temporal.NewApplicationError("Non-benign local act failure", "", false, nil)
+	}
+
+	wfWithLocalActAppErr := func(ctx workflow.Context, isBenign bool) error {
+		ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+			ScheduleToCloseTimeout: 3 * time.Second,
+			// Don't retry
+			RetryPolicy: &temporal.RetryPolicy{MaximumAttempts: 1},
+		})
+		return workflow.ExecuteLocalActivity(ctx, localActWithAppErr, isBenign).Get(ctx, nil)
+	}
+
+	ts.worker.RegisterActivity(localActWithAppErr)
+	ts.worker.RegisterWorkflow(wfWithLocalActAppErr)
+
+	var appErr *temporal.ApplicationError
+	currCount := ts.metricCount(metrics.LocalActivityExecutionFailedCounter)
+
+	runNonBenign, err := ts.client.ExecuteWorkflow(
+		context.Background(),
+		ts.startWorkflowOptions(ts.T().Name()+"-non-benign-err"),
+		wfWithLocalActAppErr, false,
+	)
+	ts.NoError(err)
+	// Wait for completion
+	err = runNonBenign.Get(context.Background(), nil)
+	ts.Error(err)
+	ts.True(errors.As(err, &appErr))
+	// Expect non-benign error
+	ts.False(appErr.Category() == temporal.ApplicationErrorCategoryBenign)
+
+	// Expect initial count to have incremented because the activity failed with non-benign err.
+	currCount++
+	ts.assertMetricCount(metrics.LocalActivityExecutionFailedCounter, currCount)
+
+	runBenign, err := ts.client.ExecuteWorkflow(
+		context.Background(),
+		ts.startWorkflowOptions(ts.T().Name()+"-benign-err"),
+		wfWithLocalActAppErr, true,
+	)
+	ts.NoError(err)
+	// Wait for completion
+	err = runBenign.Get(context.Background(), nil)
+	ts.Error(err)
+	ts.True(errors.As(err, &appErr))
+	// Expect benign error
+	ts.True(appErr.Category() == temporal.ApplicationErrorCategoryBenign)
+
+	// Expect count to remain unchanged
+	ts.assertMetricCount(metrics.LocalActivityExecutionFailedCounter, currCount)
 }

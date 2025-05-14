@@ -14,9 +14,9 @@ require (
 	github.com/nexus-rpc/sdk-go v0.3.0
 	github.com/robfig/cron v1.2.0
 	github.com/stretchr/testify v1.10.0
-	go.temporal.io/api v1.46.0
-	golang.org/x/sync v0.11.0
-	golang.org/x/sys v0.30.0
+	go.temporal.io/api v1.49.0
+	golang.org/x/sync v0.13.0
+	golang.org/x/sys v0.32.0
 	golang.org/x/time v0.3.0
 	google.golang.org/grpc v1.66.0
 	google.golang.org/protobuf v1.36.5
@@ -27,8 +27,8 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
-	golang.org/x/net v0.36.0 // indirect
-	golang.org/x/text v0.22.0 // indirect
+	golang.org/x/net v0.39.0 // indirect
+	golang.org/x/text v0.24.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240827150818-7e3bb234dfed // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240827150818-7e3bb234dfed // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
