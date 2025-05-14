@@ -538,7 +538,7 @@ type registry struct {
 	dynamicWorkflow               interface{}
 	dynamicWorkflowOptions        DynamicRegisterWorkflowOptions
 	dynamicActivity               activity
-	dynamicActivityOptions        DynamicRegisterActivityOptions
+	_                             DynamicRegisterActivityOptions
 	interceptors                  []WorkerInterceptor
 }
 
