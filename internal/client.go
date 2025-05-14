@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -786,6 +762,10 @@ type (
 		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
 
+		// responseInfo - Optional pointer to store information of StartWorkflowExecution response.
+		// Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
+		responseInfo *startWorkflowResponseInfo
+
 		// request ID. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
 		requestID string
 		// workflow completion callback. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
@@ -800,6 +780,13 @@ type (
 		//
 		// NOTE: Only settable by the SDK -- e.g. [temporalnexus.workflowRunOperation].
 		onConflictOptions *OnConflictOptions
+	}
+
+	// startWorkflowResponseInfo can be passed to StartWorkflowOptions to receive additional information
+	// of StartWorkflowExecution response.
+	startWorkflowResponseInfo struct {
+		// Link to the workflow event.
+		Link *commonpb.Link
 	}
 
 	// WithStartWorkflowOperation defines how to start a workflow when using UpdateWithStartWorkflow.
@@ -1299,4 +1286,14 @@ func SetOnConflictOptionsOnStartWorkflowOptions(opts *StartWorkflowOptions) {
 		AttachCompletionCallbacks: true,
 		AttachLinks:               true,
 	}
+}
+
+// SetResponseInfoOnStartWorkflowOptions is an internal only method for setting start workflow
+// response info object pointer on StartWorkflowOptions and return the object pointer.
+// StartWorkflowResponseInfo is purposefully not exposed to users for the time being.
+func SetResponseInfoOnStartWorkflowOptions(opts *StartWorkflowOptions) *startWorkflowResponseInfo {
+	if opts.responseInfo == nil {
+		opts.responseInfo = &startWorkflowResponseInfo{}
+	}
+	return opts.responseInfo
 }
