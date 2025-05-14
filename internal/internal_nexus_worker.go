@@ -42,25 +42,31 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 		params,
 	)
 
-	baseWorker := newBaseWorker(baseWorkerOptions{
-		pollerCount:      params.MaxConcurrentNexusTaskQueuePollers,
+	bwo := baseWorkerOptions{
 		pollerRate:       defaultPollerRate,
 		slotSupplier:     params.Tuner.GetNexusSlotSupplier(),
 		maxTaskPerSecond: defaultWorkerTaskExecutionRate,
-		taskWorker:       poller,
-		workerType:       "NexusWorker",
-		identity:         params.Identity,
-		buildId:          params.getBuildID(),
-		logger:           params.Logger,
-		stopTimeout:      params.WorkerStopTimeout,
-		fatalErrCb:       params.WorkerFatalErrorCallback,
-		metricsHandler:   params.MetricsHandler,
+		taskWorkers: []taskWorker{
+			newTaskWorker(
+				poller,
+				opts.executionParameters.Logger,
+				params.NexusTaskPollerBehavior),
+		},
+		taskProcessor:  poller,
+		workerType:     "NexusWorker",
+		identity:       params.Identity,
+		buildId:        params.getBuildID(),
+		logger:         params.Logger,
+		stopTimeout:    params.WorkerStopTimeout,
+		fatalErrCb:     params.WorkerFatalErrorCallback,
+		metricsHandler: params.MetricsHandler,
 		slotReservationData: slotReservationData{
 			taskQueue: params.TaskQueue,
 		},
 		isInternalWorker: params.isInternalWorker(),
-	},
-	)
+	}
+
+	baseWorker := newBaseWorker(bwo)
 
 	return &nexusWorker{
 		executionParameters: opts.executionParameters,
