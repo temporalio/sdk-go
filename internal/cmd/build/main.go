@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package main
 
 import (
@@ -104,13 +80,9 @@ func (b *builder) check() error {
 	} else if err := b.runCmd(b.cmdFromRoot(staticCheck, "./...")); err != nil {
 		return fmt.Errorf("staticcheck failed: %w", err)
 	}
-	// Run copyright check
-	if err := b.runCmd(b.cmdFromRoot("go", "run", "./internal/cmd/tools/copyright/licensegen.go", "--verifyOnly")); err != nil {
-		return fmt.Errorf("copyright check failed: %w", err)
-	}
 	// Run doclink check
 	if err := b.runCmd(b.cmdFromRoot("go", "run", "./internal/cmd/tools/doclink/doclink.go")); err != nil {
-		return fmt.Errorf("copyright check failed: %w", err)
+		return fmt.Errorf("doclink check failed: %w", err)
 	}
 	return nil
 }
@@ -141,7 +113,7 @@ func (b *builder) integrationTest() error {
 	if *devServerFlag {
 		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
 			CachedDownload: testsuite.CachedDownload{
-				Version: "v1.3.1-priority.0",
+				Version: "v1.3.1-nexus-links.0",
 			},
 			ClientOptions: &client.Options{
 				HostPort:  "127.0.0.1:7233",
@@ -174,6 +146,8 @@ func (b *builder) integrationTest() error {
 				"--http-port", "7243", // Nexus tests use the HTTP port directly
 				"--dynamic-config-value", `component.callbacks.allowedAddresses=[{"Pattern":"*","AllowInsecure":true}]`, // SDK tests use arbitrary callback URLs, permit that on the server
 				"--dynamic-config-value", `system.refreshNexusEndpointsMinWait="0s"`, // Make Nexus tests faster
+				"--dynamic-config-value", `component.nexusoperations.recordCancelRequestCompletionEvents=true`, // Defaults to false until after OSS 1.28 is released
+				"--dynamic-config-value", `history.enableRequestIdRefLinks=true`,
 			},
 		})
 		if err != nil {
