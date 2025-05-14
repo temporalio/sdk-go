@@ -562,6 +562,7 @@ type registry struct {
 	dynamicWorkflow               interface{}
 	dynamicWorkflowOptions        DynamicRegisterWorkflowOptions
 	dynamicActivity               activity
+	dynamicActivityOptions        DynamicRegisterActivityOptions
 	interceptors                  []WorkerInterceptor
 }
 
@@ -893,9 +894,9 @@ func (r *registry) getWorkflowVersioningBehavior(wt WorkflowType) (VersioningBeh
 	if behavior, ok := r.workflowVersioningBehaviorMap[lookup]; ok {
 		return behavior, behavior != VersioningBehaviorUnspecified
 	}
-	if r.dynamicWorkflowOptions.LoadDynamicOptions != nil {
-		config := LoadDynamicOptionsDetails{WorkflowType: wt}
-		if behavior, err := r.dynamicWorkflowOptions.LoadDynamicOptions(config); err == nil {
+	if r.dynamicWorkflowOptions.LoadDynamicRuntimeOptions != nil {
+		config := LoadDynamicRuntimeOptionsDetails{WorkflowType: wt}
+		if behavior, err := r.dynamicWorkflowOptions.LoadDynamicRuntimeOptions(config); err == nil {
 			return behavior.VersioningBehavior, true
 		}
 	}
@@ -1082,11 +1083,8 @@ func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, args []in
 	result, resultErr := interceptor.ExecuteActivity(ctx, &ExecuteActivityInput{Args: args})
 	var serializedResult *commonpb.Payloads
 	if result != nil {
-		// Dynamic activities always return EncodedValues, skip encoding because result should already be encoded
-		if encodedValue, ok := result.(*EncodedValues); ok {
-			serializedResult = encodedValue.values
-		} else
 		// As a special case, if the result is already a payload, just use it
+		var ok bool
 		if serializedResult, ok = result.(*commonpb.Payloads); !ok {
 			var err error
 			if serializedResult, err = encodeArg(dataConverter, result); err != nil {
@@ -1178,7 +1176,7 @@ func (aw *AggregatedWorker) RegisterDynamicWorkflow(w interface{}, options Dynam
 	if aw.workflowWorker == nil {
 		panic("workflow worker disabled, cannot register workflow")
 	}
-	if options.LoadDynamicOptions == nil && aw.executionParams.UseBuildIDForVersioning &&
+	if options.LoadDynamicRuntimeOptions == nil && aw.executionParams.UseBuildIDForVersioning &&
 		(aw.executionParams.DeploymentSeriesName != "" || aw.executionParams.WorkerDeploymentVersion != "") &&
 		aw.executionParams.DefaultVersioningBehavior == VersioningBehaviorUnspecified {
 		panic("dynamic workflow does not have a versioning behavior")

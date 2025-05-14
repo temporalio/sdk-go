@@ -130,9 +130,8 @@ func (ts *DynamicWorkflowTestSuite) waitForWorkerDeploymentVersion(ctx context.C
 	}, 10*time.Second, 300*time.Millisecond)
 }
 
-func EmptyDynamic(ctx workflow.Context, args converter.EncodedValues) (converter.EncodedValues, error) {
-	encodedValue := client.NewValues(nil)
-	return encodedValue, nil
+func EmptyDynamic(ctx workflow.Context, args converter.EncodedValues) error {
+	return nil
 }
 
 func (ts *DynamicWorkflowTestSuite) getVersionFromHistory(ctx context.Context, handle client.WorkflowRun) (enumspb.VersioningBehavior, error) {
@@ -159,8 +158,8 @@ func (ts *DynamicWorkflowTestSuite) TestBasicDynamicWorkflowActivityWithVersioni
 		},
 	})
 	w.RegisterDynamicWorkflow(EmptyDynamic, workflow.DynamicRegisterOptions{
-		LoadDynamicOptions: func(details workflow.LoadDynamicOptionsDetails) (workflow.RegisterDynamicWorkflowOptions, error) {
-			var options workflow.RegisterDynamicWorkflowOptions
+		LoadDynamicRuntimeOptions: func(details workflow.LoadDynamicRuntimeOptionsDetails) (workflow.DynamicRuntimeWorkflowOptions, error) {
+			var options workflow.DynamicRuntimeWorkflowOptions
 			switch details.WorkflowType.Name {
 			case "some-workflow":
 				options.VersioningBehavior = workflow.VersioningBehaviorAutoUpgrade
