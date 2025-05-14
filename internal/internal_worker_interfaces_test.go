@@ -182,11 +182,11 @@ func (s *InterfacesTestSuite) TestInterface() {
 	namespace := "testNamespace"
 	// Workflow execution parameters.
 	workflowExecutionParameters := workerExecutionParameters{
-		TaskQueue:                             "testTaskQueue",
-		MaxConcurrentActivityTaskQueuePollers: 4,
-		MaxConcurrentWorkflowTaskQueuePollers: 4,
-		Logger:                                ilog.NewDefaultLogger(),
-		Namespace:                             namespace,
+		TaskQueue:                  "testTaskQueue",
+		ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(4),
+		WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(4),
+		Logger:                     ilog.NewDefaultLogger(),
+		Namespace:                  namespace,
 	}
 
 	namespaceState := enumspb.NAMESPACE_STATE_REGISTERED
@@ -215,11 +215,11 @@ func (s *InterfacesTestSuite) TestInterface() {
 
 	// Create activity execution parameters.
 	activityExecutionParameters := workerExecutionParameters{
-		TaskQueue:                             "testTaskQueue",
-		MaxConcurrentActivityTaskQueuePollers: 10,
-		MaxConcurrentWorkflowTaskQueuePollers: 10,
-		Logger:                                ilog.NewDefaultLogger(),
-		Namespace:                             namespace,
+		TaskQueue:                  "testTaskQueue",
+		ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(10),
+		WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(10),
+		Logger:                     ilog.NewDefaultLogger(),
+		Namespace:                  namespace,
 	}
 
 	// Register activity instances and launch the worker.

@@ -39,19 +39,36 @@ const (
 	ratioToForceCompleteWorkflowTaskComplete = 0.8
 )
 
+type workflowTaskPollerMode int
+
+const (
+	Mixed workflowTaskPollerMode = iota
+	NonSticky
+	Sticky
+)
+
 type (
-	// taskPoller interface to poll and process for task
+	// taskPoller interface to poll for tasks
 	taskPoller interface {
 		// PollTask polls for one new task
 		PollTask() (taskForWorker, error)
-		// ProcessTask processes a task
-		ProcessTask(interface{}) error
 		// Called when the poller will no longer be polled. Presently only useful for
 		// workflow workers.
 		Cleanup() error
 	}
 
+	// taskProcessor interface to process tasks
+	taskProcessor interface {
+		// ProcessTask processes a task
+		ProcessTask(interface{}) error
+	}
+
+	pollerScaleDecision struct {
+		pollRequestDeltaSuggestion int
+	}
+
 	taskForWorker interface {
+		scaleDecision() (pollerScaleDecision, bool)
 		isEmpty() bool
 	}
 
@@ -76,8 +93,36 @@ type (
 		gauge      metrics.Gauge
 	}
 
-	// workflowTaskPoller implements polling/processing a workflow task
 	workflowTaskPoller struct {
+		basePoller
+		mode             workflowTaskPollerMode
+		namespace        string
+		taskQueueName    string
+		identity         string
+		service          workflowservice.WorkflowServiceClient
+		taskHandler      WorkflowTaskHandler
+		contextManager   WorkflowContextManager
+		logger           log.Logger
+		dataConverter    converter.DataConverter
+		failureConverter converter.FailureConverter
+
+		stickyUUID                   string
+		StickyScheduleToStartTimeout time.Duration
+
+		pendingRegularPollCount int
+		pendingStickyPollCount  int
+		stickyBacklog           int64
+		requestLock             sync.Mutex
+		stickyCacheSize         int
+		eagerActivityExecutor   *eagerActivityExecutor
+
+		numNormalPollerMetric *numPollerMetric
+		numStickyPollerMetric *numPollerMetric
+	}
+
+	// workflowTaskProcessor implements processing of a workflow task and can create
+	// workflow task pollers
+	workflowTaskProcessor struct {
 		basePoller
 		namespace        string
 		taskQueueName    string
@@ -262,14 +307,14 @@ func (bp *basePoller) getDeploymentName() string {
 	return bp.workerDeploymentVersion.DeploymentName
 }
 
-// newWorkflowTaskPoller creates a new workflow task poller which must have a one to one relationship to workflow worker
-func newWorkflowTaskPoller(
+// newWorkflowTaskProcessor creates a new workflow task poller which must have a one to one relationship to workflow worker
+func newWorkflowTaskProcessor(
 	taskHandler WorkflowTaskHandler,
 	contextManager WorkflowContextManager,
 	service workflowservice.WorkflowServiceClient,
 	params workerExecutionParameters,
-) *workflowTaskPoller {
-	return &workflowTaskPoller{
+) *workflowTaskProcessor {
+	return &workflowTaskProcessor{
 		basePoller: basePoller{
 			metricsHandler:          params.MetricsHandler,
 			stopC:                   params.WorkerStopChannel,
@@ -337,8 +382,33 @@ func (wtp *workflowTaskPoller) PollTask() (taskForWorker, error) {
 	return workflowTask, nil
 }
 
+func (wtp *workflowTaskProcessor) createPoller(mode workflowTaskPollerMode) taskPoller {
+	return &workflowTaskPoller{
+		basePoller:                   wtp.basePoller,
+		mode:                         mode,
+		namespace:                    wtp.namespace,
+		taskQueueName:                wtp.taskQueueName,
+		identity:                     wtp.identity,
+		service:                      wtp.service,
+		taskHandler:                  wtp.taskHandler,
+		contextManager:               wtp.contextManager,
+		logger:                       wtp.logger,
+		dataConverter:                wtp.dataConverter,
+		failureConverter:             wtp.failureConverter,
+		stickyUUID:                   wtp.stickyUUID,
+		StickyScheduleToStartTimeout: wtp.StickyScheduleToStartTimeout,
+		pendingRegularPollCount:      wtp.pendingRegularPollCount,
+		pendingStickyPollCount:       wtp.pendingStickyPollCount,
+		stickyBacklog:                wtp.stickyBacklog,
+		stickyCacheSize:              wtp.stickyCacheSize,
+		eagerActivityExecutor:        wtp.eagerActivityExecutor,
+		numNormalPollerMetric:        wtp.numNormalPollerMetric,
+		numStickyPollerMetric:        wtp.numStickyPollerMetric,
+	}
+}
+
 // ProcessTask processes a task which could be workflow task or local activity result
-func (wtp *workflowTaskPoller) ProcessTask(task interface{}) error {
+func (wtp *workflowTaskProcessor) ProcessTask(task interface{}) error {
 	if wtp.stopping() {
 		return errStop
 	}
@@ -353,7 +423,7 @@ func (wtp *workflowTaskPoller) ProcessTask(task interface{}) error {
 	}
 }
 
-func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) (retErr error) {
+func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retErr error) {
 	if task.task == nil {
 		// We didn't have task, poll might have timeout.
 		traceLog(func() {
@@ -442,7 +512,7 @@ func (wtp *workflowTaskPoller) processWorkflowTask(task *workflowTask) (retErr e
 	}
 }
 
-func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
+func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 	completedRequest interface{},
 	taskErr error,
 	task *workflowservice.PollWorkflowTaskQueueResponse,
@@ -471,7 +541,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompletedWithMetrics(
 	return
 }
 
-func (wtp *workflowTaskPoller) RespondTaskCompleted(
+func (wtp *workflowTaskProcessor) RespondTaskCompleted(
 	completedRequest interface{},
 	task *workflowservice.PollWorkflowTaskQueueResponse,
 ) (response *workflowservice.RespondWorkflowTaskCompletedResponse, err error) {
@@ -527,7 +597,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(
 	return
 }
 
-func (wtp *workflowTaskPoller) errorToFailWorkflowTask(taskToken []byte, err error) *workflowservice.RespondWorkflowTaskFailedRequest {
+func (wtp *workflowTaskProcessor) errorToFailWorkflowTask(taskToken []byte, err error) *workflowservice.RespondWorkflowTaskFailedRequest {
 	cause := enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
 	// If it was a panic due to a bad state machine or if it was a history
 	// mismatch error, mark as non-deterministic
@@ -784,7 +854,14 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		Name: wtp.taskQueueName,
 		Kind: enumspb.TASK_QUEUE_KIND_NORMAL,
 	}
-	if wtp.stickyCacheSize > 0 {
+
+	if wtp.mode == NonSticky {
+		// Do nothing, taskQueue is already set to non-sticky
+	} else if wtp.mode == Sticky {
+		taskQueue.Name = getWorkerTaskQueue(wtp.stickyUUID)
+		taskQueue.Kind = enumspb.TASK_QUEUE_KIND_STICKY
+		taskQueue.NormalName = wtp.taskQueueName
+	} else if wtp.mode == Mixed && wtp.stickyCacheSize > 0 {
 		wtp.requestLock.Lock()
 		if wtp.stickyBacklog > 0 || wtp.pendingStickyPollCount <= wtp.pendingRegularPollCount {
 			wtp.pendingStickyPollCount++
@@ -795,6 +872,8 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 			wtp.pendingRegularPollCount++
 		}
 		wtp.requestLock.Unlock()
+	} else {
+		panic("unknown workflow task poller mode")
 	}
 
 	builtRequest := &workflowservice.PollWorkflowTaskQueueRequest{
@@ -878,6 +957,23 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 }
 
 func (wtp *workflowTaskPoller) toWorkflowTask(response *workflowservice.PollWorkflowTaskQueueResponse) *workflowTask {
+	historyIterator := &historyIteratorImpl{
+		execution:      response.WorkflowExecution,
+		nextPageToken:  response.NextPageToken,
+		namespace:      wtp.namespace,
+		service:        wtp.service,
+		maxEventID:     response.GetStartedEventId(),
+		metricsHandler: wtp.metricsHandler,
+		taskQueue:      wtp.taskQueueName,
+	}
+	task := &workflowTask{
+		task:            response,
+		historyIterator: historyIterator,
+	}
+	return task
+}
+
+func (wtp *workflowTaskProcessor) toWorkflowTask(response *workflowservice.PollWorkflowTaskQueueResponse) *workflowTask {
 	historyIterator := &historyIteratorImpl{
 		execution:      response.WorkflowExecution,
 		nextPageToken:  response.NextPageToken,
@@ -1331,18 +1427,53 @@ func (wft *workflowTask) isEmpty() bool {
 	return wft.task == nil
 }
 
+func (wft *workflowTask) scaleDecision() (pollerScaleDecision, bool) {
+	if wft.task == nil || wft.task.PollerScalingDecision == nil {
+		return pollerScaleDecision{}, false
+	}
+	return pollerScaleDecision{
+		pollRequestDeltaSuggestion: int(wft.task.PollerScalingDecision.PollRequestDeltaSuggestion),
+	}, true
+}
+
 func (at *activityTask) isEmpty() bool {
 	return at.task == nil
+}
+
+func (at *activityTask) scaleDecision() (pollerScaleDecision, bool) {
+	if at.task == nil || at.task.PollerScalingDecision == nil {
+		return pollerScaleDecision{}, false
+	}
+	return pollerScaleDecision{
+		pollRequestDeltaSuggestion: int(at.task.PollerScalingDecision.PollRequestDeltaSuggestion),
+	}, true
 }
 
 func (*localActivityTask) isEmpty() bool {
 	return false
 }
 
+func (*localActivityTask) scaleDecision() (pollerScaleDecision, bool) {
+	return pollerScaleDecision{}, false
+}
+
 func (*eagerWorkflowTask) isEmpty() bool {
 	return false
 }
 
+func (*eagerWorkflowTask) scaleDecision() (pollerScaleDecision, bool) {
+	return pollerScaleDecision{}, false
+}
+
 func (nt *nexusTask) isEmpty() bool {
 	return nt.task == nil
+}
+
+func (nt *nexusTask) scaleDecision() (pollerScaleDecision, bool) {
+	if nt.task == nil || nt.task.PollerScalingDecision == nil {
+		return pollerScaleDecision{}, false
+	}
+	return pollerScaleDecision{
+		pollRequestDeltaSuggestion: int(nt.task.PollerScalingDecision.PollRequestDeltaSuggestion),
+	}, true
 }

@@ -212,6 +212,9 @@ type (
 	// Options is used to configure a worker instance.
 	Options = internal.WorkerOptions
 
+	// PollerBehavior is used to configure the behavior of the poller.
+	PollerBehavior = internal.PollerBehavior
+
 	// WorkflowPanicPolicy is used for configuring how worker deals with workflow
 	// code panicking which includes non backwards compatible changes to the workflow code without appropriate
 	// versioning (see [workflow.GetVersion]).
@@ -302,4 +305,18 @@ func SetBinaryChecksum(checksum string) {
 // InterruptCh returns channel which will get data when system receives interrupt signal from OS. Pass it to worker.Run() func to stop worker with Ctrl+C.
 func InterruptCh() <-chan interface{} {
 	return internal.InterruptCh()
+}
+
+func NewPollerBehaviorSimpleMaximum(
+	maximumConcurrentPollers int,
+) PollerBehavior {
+	return internal.NewPollerBehaviorSimpleMaximum(maximumConcurrentPollers)
+}
+
+func NewPollerBehaviorAutoscaling(
+	initialNumberOfPollers int,
+	minimumConcurrentPollers int,
+	maximumConcurrentPollers int,
+) PollerBehavior {
+	return internal.NewPollerBehaviorAutoscaling(initialNumberOfPollers, minimumConcurrentPollers, maximumConcurrentPollers)
 }

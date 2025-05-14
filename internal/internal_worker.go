@@ -72,7 +72,6 @@ type (
 	workflowWorker struct {
 		executionParameters workerExecutionParameters
 		workflowService     workflowservice.WorkflowServiceClient
-		poller              taskPoller // taskPoller to poll and process the tasks.
 		worker              *baseWorker
 		localActivityWorker *baseWorker
 		identity            string
@@ -120,20 +119,11 @@ type (
 		// Defines rate limiting on number of activity tasks that can be executed per second per worker.
 		WorkerActivitiesPerSecond float64
 
-		// MaxConcurrentActivityTaskQueuePollers is the max number of pollers for activity task queue.
-		MaxConcurrentActivityTaskQueuePollers int
-
-		// MaxConcurrentWorkflowTaskQueuePollers is the max number of pollers for workflow task queue.
-		MaxConcurrentWorkflowTaskQueuePollers int
-
 		// Defines rate limiting on number of local activities that can be executed per second per worker.
 		WorkerLocalActivitiesPerSecond float64
 
 		// TaskQueueActivitiesPerSecond is the throttling limit for activity tasks controlled by the server.
 		TaskQueueActivitiesPerSecond float64
-
-		// MaxConcurrentNexusTaskQueuePollers is the max number of pollers for the nexus task queue.
-		MaxConcurrentNexusTaskQueuePollers int
 
 		// User can provide an identity for the debuggability. If not provided the framework has
 		// a default option.
@@ -198,6 +188,12 @@ type (
 		DefaultHeartbeatThrottleInterval time.Duration
 
 		MaxHeartbeatThrottleInterval time.Duration
+
+		WorkflowTaskPollerBehavior PollerBehavior
+
+		ActivityTaskPollerBehavior PollerBehavior
+
+		NexusTaskPollerBehavior PollerBehavior
 
 		// Pointer to the shared worker cache
 		cache *WorkerCache
@@ -323,13 +319,29 @@ func newWorkflowTaskWorkerInternal(
 	if client != nil {
 		service = client.workflowService
 	}
-	poller := newWorkflowTaskPoller(taskHandler, contextManager, service, params)
-	worker := newBaseWorker(baseWorkerOptions{
-		pollerCount:      params.MaxConcurrentWorkflowTaskQueuePollers,
+	taskProcessor := newWorkflowTaskProcessor(taskHandler, contextManager, service, params)
+
+	var taskWorkers []taskWorker
+	switch params.WorkflowTaskPollerBehavior.(type) {
+	case *PollerBehaviorSimpleMaximum:
+		taskWorkers = []taskWorker{
+			newTaskWorker(taskProcessor.createPoller(Mixed), params.Logger, params.WorkflowTaskPollerBehavior),
+		}
+	case *PollerBehaviorAutoscaling:
+		taskWorkers = []taskWorker{
+			newTaskWorker(taskProcessor.createPoller(NonSticky), params.Logger, params.WorkflowTaskPollerBehavior),
+		}
+		if taskProcessor.stickyCacheSize > 0 {
+			taskWorkers = append(taskWorkers, newTaskWorker(taskProcessor.createPoller(Sticky), params.Logger, params.WorkflowTaskPollerBehavior))
+		}
+	}
+
+	bwo := baseWorkerOptions{
 		pollerRate:       defaultPollerRate,
 		slotSupplier:     params.Tuner.GetWorkflowTaskSlotSupplier(),
 		maxTaskPerSecond: defaultWorkerTaskExecutionRate,
-		taskWorker:       poller,
+		taskWorkers:      taskWorkers,
+		taskProcessor:    taskProcessor,
 		workerType:       "WorkflowWorker",
 		identity:         params.Identity,
 		buildId:          params.getBuildID(),
@@ -340,9 +352,9 @@ func newWorkflowTaskWorkerInternal(
 		slotReservationData: slotReservationData{
 			taskQueue: params.TaskQueue,
 		},
-		isInternalWorker: params.isInternalWorker(),
-	},
-	)
+	}
+
+	worker := newBaseWorker(bwo)
 
 	// We want a separate stop channel for local activities because when a worker shuts down,
 	// we need to allow pending local activities to finish running for that workflow task.
@@ -362,17 +374,19 @@ func newWorkflowTaskWorkerInternal(
 	// 2) local activity task poller will poll from laTunnel, and result will be pushed to laTunnel
 	localActivityTaskPoller := newLocalActivityPoller(laParams, laTunnel, interceptors, client)
 	localActivityWorker := newBaseWorker(baseWorkerOptions{
-		pollerCount:      1, // 1 poller (from local channel) is enough for local activity
 		slotSupplier:     laParams.Tuner.GetLocalActivitySlotSupplier(),
 		maxTaskPerSecond: laParams.WorkerLocalActivitiesPerSecond,
-		taskWorker:       localActivityTaskPoller,
-		workerType:       "LocalActivityWorker",
-		identity:         laParams.Identity,
-		buildId:          laParams.getBuildID(),
-		logger:           laParams.Logger,
-		stopTimeout:      laParams.WorkerStopTimeout,
-		fatalErrCb:       laParams.WorkerFatalErrorCallback,
-		metricsHandler:   laParams.MetricsHandler,
+		taskWorkers: []taskWorker{
+			newTaskWorker(localActivityTaskPoller, params.Logger, NewPollerBehaviorSimpleMaximum(1)),
+		},
+		taskProcessor:  localActivityTaskPoller,
+		workerType:     "LocalActivityWorker",
+		identity:       laParams.Identity,
+		buildId:        laParams.getBuildID(),
+		logger:         laParams.Logger,
+		stopTimeout:    laParams.WorkerStopTimeout,
+		fatalErrCb:     laParams.WorkerFatalErrorCallback,
+		metricsHandler: laParams.MetricsHandler,
 		slotReservationData: slotReservationData{
 			taskQueue: params.TaskQueue,
 		},
@@ -385,7 +399,6 @@ func newWorkflowTaskWorkerInternal(
 	return &workflowWorker{
 		executionParameters: params,
 		workflowService:     service,
-		poller:              poller,
 		worker:              worker,
 		localActivityWorker: localActivityWorker,
 		identity:            params.Identity,
@@ -430,7 +443,7 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 	activityWorker := newActivityWorker(client, params,
 		&workerOverrides{slotSupplier: params.Tuner.GetSessionActivitySlotSupplier()}, env, nil)
 
-	params.MaxConcurrentActivityTaskQueuePollers = 1
+	params.ActivityTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(1)
 	params.TaskQueue = creationTaskqueue
 	// Although we have session token bucket to limit session size across creation
 	// and recreation, we also limit it here for creation only
@@ -494,28 +507,29 @@ func newActivityWorker(
 		slotSupplier = params.Tuner.GetActivityTaskSlotSupplier()
 	}
 
-	base := newBaseWorker(
-		baseWorkerOptions{
-			pollerCount:             params.MaxConcurrentActivityTaskQueuePollers,
-			pollerRate:              defaultPollerRate,
-			slotSupplier:            slotSupplier,
-			maxTaskPerSecond:        params.WorkerActivitiesPerSecond,
-			taskWorker:              poller,
-			workerType:              "ActivityWorker",
-			identity:                params.Identity,
-			buildId:                 params.getBuildID(),
-			logger:                  params.Logger,
-			stopTimeout:             params.WorkerStopTimeout,
-			fatalErrCb:              params.WorkerFatalErrorCallback,
-			backgroundContextCancel: params.BackgroundContextCancel,
-			metricsHandler:          params.MetricsHandler,
-			sessionTokenBucket:      sessionTokenBucket,
-			slotReservationData: slotReservationData{
-				taskQueue: params.TaskQueue,
-			},
-			isInternalWorker: params.isInternalWorker(),
+	bwo := baseWorkerOptions{
+		pollerRate:       defaultPollerRate,
+		slotSupplier:     slotSupplier,
+		maxTaskPerSecond: params.WorkerActivitiesPerSecond,
+		taskWorkers: []taskWorker{
+			newTaskWorker(poller, params.Logger, params.ActivityTaskPollerBehavior),
 		},
-	)
+		taskProcessor:           poller,
+		workerType:              "ActivityWorker",
+		identity:                params.Identity,
+		buildId:                 params.getBuildID(),
+		logger:                  params.Logger,
+		stopTimeout:             params.WorkerStopTimeout,
+		fatalErrCb:              params.WorkerFatalErrorCallback,
+		backgroundContextCancel: params.BackgroundContextCancel,
+		metricsHandler:          params.MetricsHandler,
+		sessionTokenBucket:      sessionTokenBucket,
+		slotReservationData: slotReservationData{
+			taskQueue: params.TaskQueue,
+		},
+	}
+
+	base := newBaseWorker(bwo)
 	return &activityWorker{
 		executionParameters: params,
 		workflowService:     service,
@@ -1859,42 +1873,70 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 
 	cache := NewWorkerCache()
 	workerParams := workerExecutionParameters{
-		Namespace:                             client.namespace,
-		TaskQueue:                             taskQueue,
-		Tuner:                                 options.Tuner,
-		WorkerActivitiesPerSecond:             options.WorkerActivitiesPerSecond,
-		MaxConcurrentActivityTaskQueuePollers: options.MaxConcurrentActivityTaskPollers,
-		WorkerLocalActivitiesPerSecond:        options.WorkerLocalActivitiesPerSecond,
-		MaxConcurrentWorkflowTaskQueuePollers: options.MaxConcurrentWorkflowTaskPollers,
-		MaxConcurrentNexusTaskQueuePollers:    options.MaxConcurrentNexusTaskPollers,
-		Identity:                              client.identity,
-		WorkerBuildID:                         options.BuildID,
-		UseBuildIDForVersioning:               options.UseBuildIDForVersioning || options.DeploymentOptions.UseVersioning,
-		WorkerDeploymentVersion:               workerDeploymentVersion,
-		DefaultVersioningBehavior:             options.DeploymentOptions.DefaultVersioningBehavior,
-		MetricsHandler:                        client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue)),
-		Logger:                                client.logger,
-		EnableLoggingInReplay:                 options.EnableLoggingInReplay,
-		BackgroundContext:                     backgroundActivityContext,
-		BackgroundContextCancel:               backgroundActivityContextCancel,
-		StickyScheduleToStartTimeout:          options.StickyScheduleToStartTimeout,
-		TaskQueueActivitiesPerSecond:          options.TaskQueueActivitiesPerSecond,
-		WorkflowPanicPolicy:                   options.WorkflowPanicPolicy,
-		DataConverter:                         client.dataConverter,
-		FailureConverter:                      client.failureConverter,
-		WorkerStopTimeout:                     options.WorkerStopTimeout,
-		WorkerFatalErrorCallback:              fatalErrorCallback,
-		ContextPropagators:                    client.contextPropagators,
-		DeadlockDetectionTimeout:              options.DeadlockDetectionTimeout,
-		DefaultHeartbeatThrottleInterval:      options.DefaultHeartbeatThrottleInterval,
-		MaxHeartbeatThrottleInterval:          options.MaxHeartbeatThrottleInterval,
-		cache:                                 cache,
+		Namespace:                        client.namespace,
+		TaskQueue:                        taskQueue,
+		Tuner:                            options.Tuner,
+		WorkerActivitiesPerSecond:        options.WorkerActivitiesPerSecond,
+		WorkerLocalActivitiesPerSecond:   options.WorkerLocalActivitiesPerSecond,
+		Identity:                         client.identity,
+		WorkerBuildID:                    options.BuildID,
+		UseBuildIDForVersioning:          options.UseBuildIDForVersioning || options.DeploymentOptions.UseVersioning,
+		DeploymentSeriesName:             options.DeploymentOptions.DeploymentSeriesName,
+		WorkerDeploymentVersion:          options.DeploymentOptions.Version,
+		DefaultVersioningBehavior:        options.DeploymentOptions.DefaultVersioningBehavior,
+		MetricsHandler:                   client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue)),
+		Logger:                           client.logger,
+		EnableLoggingInReplay:            options.EnableLoggingInReplay,
+		BackgroundContext:                backgroundActivityContext,
+		BackgroundContextCancel:          backgroundActivityContextCancel,
+		StickyScheduleToStartTimeout:     options.StickyScheduleToStartTimeout,
+		TaskQueueActivitiesPerSecond:     options.TaskQueueActivitiesPerSecond,
+		WorkflowPanicPolicy:              options.WorkflowPanicPolicy,
+		DataConverter:                    client.dataConverter,
+		FailureConverter:                 client.failureConverter,
+		WorkerStopTimeout:                options.WorkerStopTimeout,
+		WorkerFatalErrorCallback:         fatalErrorCallback,
+		ContextPropagators:               client.contextPropagators,
+		DeadlockDetectionTimeout:         options.DeadlockDetectionTimeout,
+		DefaultHeartbeatThrottleInterval: options.DefaultHeartbeatThrottleInterval,
+		MaxHeartbeatThrottleInterval:     options.MaxHeartbeatThrottleInterval,
+		cache:                            cache,
 		eagerActivityExecutor: newEagerActivityExecutor(eagerActivityExecutorOptions{
 			disabled:      options.DisableEagerActivities,
 			taskQueue:     taskQueue,
 			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
 		}),
 		capabilities: &capabilities,
+	}
+
+	if options.MaxConcurrentWorkflowTaskExecutionSize != 0 && options.WorkflowTaskPollerBehavior != nil {
+		panic("cannot set both MaxConcurrentWorkflowTaskExecutionSize and WorkflowTaskPollerBehavior")
+	} else if options.MaxConcurrentWorkflowTaskPollers != 0 {
+		workerParams.WorkflowTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(options.MaxConcurrentWorkflowTaskPollers)
+	} else if options.WorkflowTaskPollerBehavior != nil {
+		workerParams.WorkflowTaskPollerBehavior = options.WorkflowTaskPollerBehavior
+	} else {
+		panic("must set either MaxConcurrentWorkflowTaskPollers or WorkflowTaskPollerBehavior")
+	}
+
+	if options.MaxConcurrentActivityTaskPollers != 0 && options.ActivityTaskPollerBehavior != nil {
+		panic("cannot set both MaxConcurrentActivityTaskExecutionSize and ActivityTaskPollerBehavior")
+	} else if options.MaxConcurrentActivityTaskPollers != 0 {
+		workerParams.ActivityTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(options.MaxConcurrentActivityTaskPollers)
+	} else if options.ActivityTaskPollerBehavior != nil {
+		workerParams.ActivityTaskPollerBehavior = options.ActivityTaskPollerBehavior
+	} else {
+		panic("must set either MaxConcurrentActivityTaskPollers or ActivityTaskPollerBehavior")
+	}
+
+	if options.MaxConcurrentNexusTaskPollers != 0 && options.NexusTaskPollerBehavior != nil {
+		panic("cannot set both MaxConcurrentNexusTaskExecutionSize and NexusTaskPollerBehavior")
+	} else if options.MaxConcurrentNexusTaskPollers != 0 {
+		workerParams.NexusTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(options.MaxConcurrentNexusTaskPollers)
+	} else if options.NexusTaskPollerBehavior != nil {
+		workerParams.NexusTaskPollerBehavior = options.NexusTaskPollerBehavior
+	} else {
+		panic("must set either MaxConcurrentNexusTaskPollers or NexusTaskPollerBehavior")
 	}
 
 	if options.Identity != "" {
@@ -1975,8 +2017,8 @@ func processTestTags(wOptions *WorkerOptions, ep *workerExecutionParameters) {
 				switch key {
 				case workerOptionsConfigConcurrentPollRoutineSize:
 					if size, err := strconv.Atoi(val); err == nil {
-						ep.MaxConcurrentActivityTaskQueuePollers = size
-						ep.MaxConcurrentWorkflowTaskQueuePollers = size
+						ep.ActivityTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(size)
+						ep.WorkflowTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(size)
 					}
 				}
 			}
@@ -2075,13 +2117,13 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 		options.WorkerActivitiesPerSecond = defaultWorkerActivitiesPerSecond
 	}
 	if options.MaxConcurrentActivityTaskPollers <= 0 {
-		options.MaxConcurrentActivityTaskPollers = defaultConcurrentPollRoutineSize
+		options.ActivityTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(defaultConcurrentPollRoutineSize)
 	}
 	if options.MaxConcurrentWorkflowTaskExecutionSize <= 0 {
 		maxConcurrentWFT = defaultMaxConcurrentTaskExecutionSize
 	}
 	if options.MaxConcurrentWorkflowTaskPollers <= 0 {
-		options.MaxConcurrentWorkflowTaskPollers = defaultConcurrentPollRoutineSize
+		options.WorkflowTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(defaultConcurrentPollRoutineSize)
 	}
 	if options.MaxConcurrentLocalActivityExecutionSize <= 0 {
 		maxConcurrentLA = defaultMaxConcurrentLocalActivityExecutionSize
@@ -2097,7 +2139,7 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 		options.DisableEagerActivities = true
 	}
 	if options.MaxConcurrentNexusTaskPollers <= 0 {
-		options.MaxConcurrentNexusTaskPollers = defaultConcurrentPollRoutineSize
+		options.NexusTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(defaultConcurrentPollRoutineSize)
 	}
 	if options.MaxConcurrentNexusTaskExecutionSize <= 0 {
 		maxConcurrentNexus = defaultMaxConcurrentTaskExecutionSize
