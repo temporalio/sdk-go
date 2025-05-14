@@ -32,7 +32,7 @@ const (
 	// LocalHostPort is a default host:port for worker and client to connect to.
 	//
 	// Exposed as: [go.temporal.io/sdk/client.DefaultHostPort]
-	LocalHostPort = "localhost:7233"
+	LocalHostPort = "127.0.0.1:7233"
 
 	// defaultServiceConfig is a default gRPC connection service config which enables DNS round-robin between IPs.
 	defaultServiceConfig = `{"loadBalancingConfig": [{"round_robin":{}}]}`
