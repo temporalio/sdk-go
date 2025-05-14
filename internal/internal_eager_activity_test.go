@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -103,7 +102,7 @@ func TestEagerActivityCounts(t *testing.T) {
 	exec.activityWorker = activityWorker.worker
 	// Replace task processor
 	taskProcessor := newWaitingTaskProcessor()
-	activityWorker.worker.options.taskWorker = taskProcessor
+	activityWorker.worker.options.taskProcessor = taskProcessor
 
 	// Request 2 commands on wrong task queue then 5 commands on proper task queue
 	// but have 2nd request disabled
@@ -213,14 +212,6 @@ type waitingTaskProcessor struct {
 
 func newWaitingTaskProcessor() *waitingTaskProcessor {
 	return &waitingTaskProcessor{completeCh: make(chan struct{})}
-}
-
-func (*waitingTaskProcessor) Cleanup() error {
-	return nil
-}
-
-func (*waitingTaskProcessor) PollTask() (taskForWorker, error) {
-	return nil, fmt.Errorf("not implemented")
 }
 
 func (w *waitingTaskProcessor) ProcessTask(interface{}) error {

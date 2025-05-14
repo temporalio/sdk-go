@@ -80,12 +80,12 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 
 	ctx, cancel := context.WithCancelCause(context.Background())
 	executionParameters := workerExecutionParameters{
-		Namespace:                             DefaultNamespace,
-		TaskQueue:                             "testTaskQueue",
-		MaxConcurrentWorkflowTaskQueuePollers: 5,
-		Logger:                                ilog.NewDefaultLogger(),
-		BackgroundContext:                     ctx,
-		BackgroundContextCancel:               cancel,
+		Namespace:                  DefaultNamespace,
+		TaskQueue:                  "testTaskQueue",
+		WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(5),
+		Logger:                     ilog.NewDefaultLogger(),
+		BackgroundContext:          ctx,
+		BackgroundContextCancel:    cancel,
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	client := &WorkflowClient{workflowService: s.service}
@@ -175,14 +175,14 @@ func (s *WorkersTestSuite) TestWorkflowWorkerSlotSupplier() {
 			LocalActivitySlotSupplier: laCss})
 		s.NoError(err)
 		executionParameters := workerExecutionParameters{
-			Namespace:                             DefaultNamespace,
-			TaskQueue:                             taskQueue,
-			MaxConcurrentWorkflowTaskQueuePollers: 5,
-			Logger:                                ilog.NewDefaultLogger(),
-			BackgroundContext:                     ctx,
-			BackgroundContextCancel:               cancel,
-			Tuner:                                 tuner,
-			WorkerStopTimeout:                     time.Second,
+			Namespace:                  DefaultNamespace,
+			TaskQueue:                  taskQueue,
+			WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(5),
+			Logger:                     ilog.NewDefaultLogger(),
+			BackgroundContext:          ctx,
+			BackgroundContextCancel:    cancel,
+			Tuner:                      tuner,
+			WorkerStopTimeout:          time.Second,
 		}
 		overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 		client := &WorkflowClient{workflowService: s.service}
@@ -234,12 +234,12 @@ func (s *WorkersTestSuite) TestActivityWorkerSlotSupplier() {
 			LocalActivitySlotSupplier: nil})
 		s.NoError(err)
 		executionParameters := workerExecutionParameters{
-			Namespace:                             DefaultNamespace,
-			TaskQueue:                             "testTaskQueue",
-			MaxConcurrentActivityTaskQueuePollers: 5,
-			Logger:                                ilog.NewDefaultLogger(),
-			Tuner:                                 tuner,
-			WorkerStopTimeout:                     time.Second,
+			Namespace:                  DefaultNamespace,
+			TaskQueue:                  "testTaskQueue",
+			ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(5),
+			Logger:                     ilog.NewDefaultLogger(),
+			Tuner:                      tuner,
+			WorkerStopTimeout:          time.Second,
 		}
 		overrides := &workerOverrides{activityTaskHandler: newSampleActivityTaskHandler()}
 		a := &greeterActivity{}
@@ -310,12 +310,12 @@ func (s *WorkersTestSuite) TestErrorProneSlotSupplier() {
 		LocalActivitySlotSupplier: nil})
 	s.NoError(err)
 	executionParameters := workerExecutionParameters{
-		Namespace:                             DefaultNamespace,
-		TaskQueue:                             "testTaskQueue",
-		MaxConcurrentActivityTaskQueuePollers: 5,
-		Logger:                                ilog.NewDefaultLogger(),
-		Tuner:                                 tuner,
-		WorkerStopTimeout:                     time.Second,
+		Namespace:                  DefaultNamespace,
+		TaskQueue:                  "testTaskQueue",
+		ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(5),
+		Logger:                     ilog.NewDefaultLogger(),
+		Tuner:                      tuner,
+		WorkerStopTimeout:          time.Second,
 	}
 	overrides := &workerOverrides{activityTaskHandler: newSampleActivityTaskHandler()}
 	a := &greeterActivity{}
@@ -337,10 +337,10 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
-		Namespace:                             DefaultNamespace,
-		TaskQueue:                             "testTaskQueue",
-		MaxConcurrentActivityTaskQueuePollers: 5,
-		Logger:                                ilog.NewDefaultLogger(),
+		Namespace:                  DefaultNamespace,
+		TaskQueue:                  "testTaskQueue",
+		ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(5),
+		Logger:                     ilog.NewDefaultLogger(),
 	}
 	overrides := &workerOverrides{activityTaskHandler: newSampleActivityTaskHandler()}
 	a := &greeterActivity{}
@@ -386,15 +386,15 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 		NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})
 	s.NoError(err)
 	executionParameters := workerExecutionParameters{
-		Namespace:                             DefaultNamespace,
-		TaskQueue:                             "testTaskQueue",
-		MaxConcurrentActivityTaskQueuePollers: 5,
-		Tuner:                                 tuner,
-		Logger:                                ilog.NewDefaultLogger(),
-		BackgroundContext:                     ctx,
-		BackgroundContextCancel:               cancel,
-		WorkerStopTimeout:                     time.Second * 2,
-		WorkerStopChannel:                     stopC,
+		Namespace:                  DefaultNamespace,
+		TaskQueue:                  "testTaskQueue",
+		ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(5),
+		Tuner:                      tuner,
+		Logger:                     ilog.NewDefaultLogger(),
+		BackgroundContext:          ctx,
+		BackgroundContextCancel:    cancel,
+		WorkerStopTimeout:          time.Second * 2,
+		WorkerStopChannel:          stopC,
 	}
 	activityTaskHandler := newNoResponseActivityTaskHandler()
 	overrides := &workerOverrides{activityTaskHandler: activityTaskHandler}
@@ -423,10 +423,10 @@ func (s *WorkersTestSuite) TestPollWorkflowTaskQueue_InternalServiceError() {
 	s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
 
 	executionParameters := workerExecutionParameters{
-		Namespace:                             DefaultNamespace,
-		TaskQueue:                             "testWorkflowTaskQueue",
-		MaxConcurrentWorkflowTaskQueuePollers: 5,
-		Logger:                                ilog.NewNopLogger(),
+		Namespace:                  DefaultNamespace,
+		TaskQueue:                  "testWorkflowTaskQueue",
+		WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(5),
+		Logger:                     ilog.NewNopLogger(),
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	client := &WorkflowClient{workflowService: s.service}
