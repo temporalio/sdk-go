@@ -158,8 +158,8 @@ func (ts *DynamicWorkflowTestSuite) TestBasicDynamicWorkflowActivityWithVersioni
 		},
 	})
 	w.RegisterDynamicWorkflow(EmptyDynamic, workflow.DynamicRegisterOptions{
-		LoadDynamicRuntimeOptions: func(details workflow.LoadDynamicRuntimeOptionsDetails) (workflow.DynamicRuntimeWorkflowOptions, error) {
-			var options workflow.DynamicRuntimeWorkflowOptions
+		LoadDynamicRuntimeOptions: func(details workflow.LoadDynamicRuntimeOptionsDetails) (workflow.DynamicRuntimeOptions, error) {
+			var options workflow.DynamicRuntimeOptions
 			switch details.WorkflowType.Name {
 			case "some-workflow":
 				options.VersioningBehavior = workflow.VersioningBehaviorAutoUpgrade
