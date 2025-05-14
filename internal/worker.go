@@ -8,7 +8,30 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 )
 
+var (
+	_ PollerBehavior = (*PollerBehaviorSimpleMaximum)(nil)
+	_ PollerBehavior = (*PollerBehaviorAutoscaling)(nil)
+)
+
 type (
+	PollerBehaviorSimpleMaximum struct {
+		// MaximumNumberOfPollers is the maximum number of pollers the worker is allowed to start.
+		MaximumNumberOfPollers int
+	}
+
+	PollerBehaviorAutoscaling struct {
+		// InitialNumberOfPollers is the initial number of pollers to start.
+		InitialNumberOfPollers int
+		// MaximumNumberOfPollers is the maximum number of pollers the worker is allowed scale up to.
+		MaximumNumberOfPollers int
+		// MinimumNumberOfPollers is the minimum number of pollers the worker is allowed scale down to.
+		MinimumNumberOfPollers int
+	}
+
+	PollerBehavior interface {
+		isPollerBehavior()
+	}
+
 	// WorkerDeploymentOptions provides configuration for Worker Deployment Versioning.
 	//
 	// NOTE: [WorkerDeploymentOptions.UseVersioning] must be set to enable Worker Deployment
@@ -303,6 +326,12 @@ type (
 		//
 		// NOTE: Experimental
 		Tuner WorkerTuner
+
+		WorkflowTaskPollerBehavior PollerBehavior
+
+		ActivityTaskPollerBehavior PollerBehavior
+
+		NexusTaskPollerBehavior PollerBehavior
 	}
 )
 
@@ -374,4 +403,33 @@ func workerDeploymentOptionsToProto(useVersioning bool, version WorkerDeployment
 		}
 	}
 	return nil
+}
+
+// isPollerBehavior implements PollerBehavior.
+func (p *PollerBehaviorSimpleMaximum) isPollerBehavior() {
+}
+
+// isPollerBehavior implements PollerBehavior.
+func (p *PollerBehaviorAutoscaling) isPollerBehavior() {
+}
+
+
+func NewPollerBehaviorSimpleMaximum(
+	maximumNumberOfPollers int,
+) PollerBehavior {
+	return &PollerBehaviorSimpleMaximum{
+		MaximumNumberOfPollers: maximumNumberOfPollers,
+	}
+}
+
+func NewPollerBehaviorAutoscaling(
+	initialNumberOfPollers int,
+	minimumNumberOfPollers int,
+	maximumNumberOfPollers int,
+) PollerBehavior {
+	return &PollerBehaviorAutoscaling{
+		InitialNumberOfPollers: initialNumberOfPollers,
+		MinimumNumberOfPollers: minimumNumberOfPollers,
+		MaximumNumberOfPollers: maximumNumberOfPollers,
+	}
 }

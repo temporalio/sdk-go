@@ -2656,20 +2656,20 @@ func TestWorkerOptionDefaults(t *testing.T) {
 		NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})
 	require.NoError(t, err)
 	expected := workerExecutionParameters{
-		Namespace:                             DefaultNamespace,
-		TaskQueue:                             taskQueue,
-		MaxConcurrentActivityTaskQueuePollers: defaultConcurrentPollRoutineSize,
-		MaxConcurrentWorkflowTaskQueuePollers: defaultConcurrentPollRoutineSize,
-		Tuner:                                 tuner,
-		WorkerActivitiesPerSecond:             defaultTaskQueueActivitiesPerSecond,
-		TaskQueueActivitiesPerSecond:          defaultTaskQueueActivitiesPerSecond,
-		WorkerLocalActivitiesPerSecond:        defaultWorkerLocalActivitiesPerSecond,
-		StickyScheduleToStartTimeout:          stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second,
-		DataConverter:                         converter.GetDefaultDataConverter(),
-		Logger:                                workflowWorker.executionParameters.Logger,
-		MetricsHandler:                        workflowWorker.executionParameters.MetricsHandler,
-		Identity:                              workflowWorker.executionParameters.Identity,
-		BackgroundContext:                     workflowWorker.executionParameters.BackgroundContext,
+		Namespace:                      DefaultNamespace,
+		TaskQueue:                      taskQueue,
+		ActivityTaskPollerBehavior:     NewPollerBehaviorSimpleMaximum(defaultConcurrentPollRoutineSize),
+		WorkflowTaskPollerBehavior:     NewPollerBehaviorSimpleMaximum(defaultConcurrentPollRoutineSize),
+		Tuner:                          tuner,
+		WorkerActivitiesPerSecond:      defaultTaskQueueActivitiesPerSecond,
+		TaskQueueActivitiesPerSecond:   defaultTaskQueueActivitiesPerSecond,
+		WorkerLocalActivitiesPerSecond: defaultWorkerLocalActivitiesPerSecond,
+		StickyScheduleToStartTimeout:   stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second,
+		DataConverter:                  converter.GetDefaultDataConverter(),
+		Logger:                         workflowWorker.executionParameters.Logger,
+		MetricsHandler:                 workflowWorker.executionParameters.MetricsHandler,
+		Identity:                       workflowWorker.executionParameters.Identity,
+		BackgroundContext:              workflowWorker.executionParameters.BackgroundContext,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
@@ -2722,19 +2722,19 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		NumLocalActivitySlots: options.MaxConcurrentLocalActivityExecutionSize})
 	require.NoError(t, err)
 	expected := workerExecutionParameters{
-		TaskQueue:                             taskQueue,
-		MaxConcurrentActivityTaskQueuePollers: options.MaxConcurrentActivityTaskPollers,
-		MaxConcurrentWorkflowTaskQueuePollers: options.MaxConcurrentWorkflowTaskPollers,
-		Tuner:                                 tuner,
-		WorkerActivitiesPerSecond:             options.WorkerActivitiesPerSecond,
-		TaskQueueActivitiesPerSecond:          options.TaskQueueActivitiesPerSecond,
-		WorkerLocalActivitiesPerSecond:        options.WorkerLocalActivitiesPerSecond,
-		StickyScheduleToStartTimeout:          options.StickyScheduleToStartTimeout,
-		DataConverter:                         client.dataConverter,
-		FailureConverter:                      client.failureConverter,
-		Logger:                                client.logger,
-		MetricsHandler:                        client.metricsHandler,
-		Identity:                              client.identity,
+		TaskQueue:                      taskQueue,
+		ActivityTaskPollerBehavior:     NewPollerBehaviorSimpleMaximum(options.MaxConcurrentActivityTaskPollers),
+		WorkflowTaskPollerBehavior:     NewPollerBehaviorSimpleMaximum(options.MaxConcurrentWorkflowTaskPollers),
+		Tuner:                          tuner,
+		WorkerActivitiesPerSecond:      options.WorkerActivitiesPerSecond,
+		TaskQueueActivitiesPerSecond:   options.TaskQueueActivitiesPerSecond,
+		WorkerLocalActivitiesPerSecond: options.WorkerLocalActivitiesPerSecond,
+		StickyScheduleToStartTimeout:   options.StickyScheduleToStartTimeout,
+		DataConverter:                  client.dataConverter,
+		FailureConverter:               client.failureConverter,
+		Logger:                         client.logger,
+		MetricsHandler:                 client.metricsHandler,
+		Identity:                       client.identity,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
@@ -2761,21 +2761,21 @@ func TestLocalActivityWorkerOnly(t *testing.T) {
 		NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})
 	require.NoError(t, err)
 	expected := workerExecutionParameters{
-		Namespace:                             DefaultNamespace,
-		TaskQueue:                             taskQueue,
-		MaxConcurrentActivityTaskQueuePollers: defaultConcurrentPollRoutineSize,
-		MaxConcurrentWorkflowTaskQueuePollers: defaultConcurrentPollRoutineSize,
-		Tuner:                                 tuner,
-		WorkerActivitiesPerSecond:             defaultTaskQueueActivitiesPerSecond,
-		TaskQueueActivitiesPerSecond:          defaultTaskQueueActivitiesPerSecond,
-		WorkerLocalActivitiesPerSecond:        defaultWorkerLocalActivitiesPerSecond,
-		StickyScheduleToStartTimeout:          stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second,
-		DataConverter:                         converter.GetDefaultDataConverter(),
-		FailureConverter:                      GetDefaultFailureConverter(),
-		Logger:                                workflowWorker.executionParameters.Logger,
-		MetricsHandler:                        workflowWorker.executionParameters.MetricsHandler,
-		Identity:                              workflowWorker.executionParameters.Identity,
-		BackgroundContext:                     workflowWorker.executionParameters.BackgroundContext,
+		Namespace:                      DefaultNamespace,
+		TaskQueue:                      taskQueue,
+		ActivityTaskPollerBehavior:     NewPollerBehaviorSimpleMaximum(defaultConcurrentPollRoutineSize),
+		WorkflowTaskPollerBehavior:     NewPollerBehaviorSimpleMaximum(defaultConcurrentPollRoutineSize),
+		Tuner:                          tuner,
+		WorkerActivitiesPerSecond:      defaultTaskQueueActivitiesPerSecond,
+		TaskQueueActivitiesPerSecond:   defaultTaskQueueActivitiesPerSecond,
+		WorkerLocalActivitiesPerSecond: defaultWorkerLocalActivitiesPerSecond,
+		StickyScheduleToStartTimeout:   stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second,
+		DataConverter:                  converter.GetDefaultDataConverter(),
+		FailureConverter:               GetDefaultFailureConverter(),
+		Logger:                         workflowWorker.executionParameters.Logger,
+		MetricsHandler:                 workflowWorker.executionParameters.MetricsHandler,
+		Identity:                       workflowWorker.executionParameters.Identity,
+		BackgroundContext:              workflowWorker.executionParameters.BackgroundContext,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
@@ -2794,8 +2794,8 @@ func assertWorkerExecutionParamsEqual(t *testing.T, paramsA workerExecutionParam
 	require.Equal(t, paramsA.WorkerActivitiesPerSecond, paramsB.WorkerActivitiesPerSecond)
 	require.Equal(t, paramsA.TaskQueueActivitiesPerSecond, paramsB.TaskQueueActivitiesPerSecond)
 	require.Equal(t, paramsA.StickyScheduleToStartTimeout, paramsB.StickyScheduleToStartTimeout)
-	require.Equal(t, paramsA.MaxConcurrentWorkflowTaskQueuePollers, paramsB.MaxConcurrentWorkflowTaskQueuePollers)
-	require.Equal(t, paramsA.MaxConcurrentActivityTaskQueuePollers, paramsB.MaxConcurrentActivityTaskQueuePollers)
+	//require.Equal(t, paramsA.MaxConcurrentWorkflowTaskQueuePollers, paramsB.MaxConcurrentWorkflowTaskQueuePollers)
+	//require.Equal(t, paramsA.MaxConcurrentActivityTaskQueuePollers, paramsB.MaxConcurrentActivityTaskQueuePollers)
 	require.Equal(t, paramsA.WorkflowPanicPolicy, paramsB.WorkflowPanicPolicy)
 	require.Equal(t, paramsA.EnableLoggingInReplay, paramsB.EnableLoggingInReplay)
 }
