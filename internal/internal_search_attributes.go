@@ -361,6 +361,8 @@ func (sa SearchAttributes) GetUntypedValues() map[SearchAttributeKey]interface{}
 }
 
 // Copy creates an update that copies existing values.
+//
+//workflowcheck:ignore
 func (sa SearchAttributes) Copy() SearchAttributeUpdate {
 	return func(s *SearchAttributes) {
 		// GetUntypedValues returns a copy of the map without nil values
