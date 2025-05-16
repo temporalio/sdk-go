@@ -606,6 +606,12 @@ func (latp *localActivityTaskPoller) ProcessTask(task interface{}) error {
 	}
 
 	result := latp.handler.executeLocalActivityTask(task.(*localActivityTask))
+
+	// If shutdown is initiated after we begin local activity execution, there is no need to send result back to
+	// laResultCh, as both workers receive shutdown from top down.
+	if latp.stopping() {
+		return errStop
+	}
 	// We need to send back the local activity result to unblock workflowTaskPoller.processWorkflowTask() which is
 	// synchronously listening on the laResultCh. We also want to make sure we don't block here forever in case
 	// processWorkflowTask() already returns and nobody is receiving from laResultCh. We guarantee that doneCh is closed
