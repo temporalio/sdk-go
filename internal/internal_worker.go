@@ -535,6 +535,10 @@ type registry struct {
 	workflowVersioningBehaviorMap map[string]VersioningBehavior
 	activityFuncMap               map[string]activity
 	activityAliasMap              map[string]string
+	dynamicWorkflow               interface{}
+	dynamicWorkflowOptions        DynamicRegisterWorkflowOptions
+	dynamicActivity               activity
+	_                             DynamicRegisterActivityOptions
 	interceptors                  []WorkerInterceptor
 }
 
@@ -567,7 +571,7 @@ func (r *registry) RegisterWorkflowWithOptions(
 	}
 	// Validate that it is a function
 	fnType := reflect.TypeOf(wf)
-	if err := validateFnFormat(fnType, true); err != nil {
+	if err := validateFnFormat(fnType, true, false); err != nil {
 		panic(err)
 	}
 	fnName, _ := getFunctionName(wf)
@@ -595,6 +599,29 @@ func (r *registry) RegisterWorkflowWithOptions(
 	if len(alias) > 0 && r.workflowAliasMap != nil {
 		r.workflowAliasMap[fnName] = alias
 	}
+}
+
+func (r *registry) RegisterDynamicWorkflow(wf interface{}, options DynamicRegisterWorkflowOptions) {
+	r.Lock()
+	defer r.Unlock()
+	// Support direct registration of WorkflowDefinition
+	factory, ok := wf.(WorkflowDefinitionFactory)
+	if ok {
+		r.dynamicWorkflow = factory
+		r.dynamicWorkflowOptions = options
+		return
+	}
+
+	// Validate that it is a function
+	fnType := reflect.TypeOf(wf)
+	if err := validateFnFormat(fnType, true, true); err != nil {
+		panic(err)
+	}
+	if r.dynamicWorkflow != nil {
+		panic("dynamic workflow already registered")
+	}
+	r.dynamicWorkflow = wf
+	r.dynamicWorkflowOptions = options
 }
 
 func (r *registry) RegisterActivity(af interface{}) {
@@ -626,7 +653,7 @@ func (r *registry) RegisterActivityWithOptions(
 		}
 		return
 	}
-	if err := validateFnFormat(fnType, false); err != nil {
+	if err := validateFnFormat(fnType, false, false); err != nil {
 		panic(err)
 	}
 	fnName, _ := getFunctionName(af)
@@ -669,7 +696,7 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 			continue
 		}
 		name := method.Name
-		if err := validateFnFormat(method.Type, false); err != nil {
+		if err := validateFnFormat(method.Type, false, false); err != nil {
 			if options.SkipInvalidStructFunctions {
 				continue
 			}
@@ -689,6 +716,26 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 		return fmt.Errorf("no activities (public methods) found at %v structure", structType.Name())
 	}
 	return nil
+}
+
+func (r *registry) RegisterDynamicActivity(af interface{}, options DynamicRegisterActivityOptions) {
+	r.Lock()
+	defer r.Unlock()
+	// Support direct registration of activity
+	a, ok := af.(activity)
+	if ok {
+		r.dynamicActivity = a
+		return
+	}
+	// Validate that it is a function
+	fnType := reflect.TypeOf(af)
+	if err := validateFnFormat(fnType, false, true); err != nil {
+		panic(err)
+	}
+	if r.dynamicActivity != nil {
+		panic("dynamic activity already registered")
+	}
+	r.dynamicActivity = &activityExecutor{name: "", fn: af, dynamic: true}
 }
 
 func (r *registry) RegisterNexusService(service *nexus.Service) {
@@ -715,8 +762,14 @@ func (r *registry) getWorkflowAlias(fnName string) (string, bool) {
 func (r *registry) getWorkflowFn(fnName string) (interface{}, bool) {
 	r.Lock()
 	defer r.Unlock()
-	fn, ok := r.workflowFuncMap[fnName]
-	return fn, ok
+	if fn, ok := r.workflowFuncMap[fnName]; ok {
+		return fn, ok
+	}
+
+	if r.dynamicWorkflow != nil {
+		return "dynamic", true
+	}
+	return nil, false
 }
 
 func (r *registry) getRegisteredWorkflowTypes() []string {
@@ -745,8 +798,13 @@ func (r *registry) addActivityWithLock(fnName string, a activity) {
 func (r *registry) GetActivity(fnName string) (activity, bool) {
 	r.Lock()
 	defer r.Unlock()
-	a, ok := r.activityFuncMap[fnName]
-	return a, ok
+	if a, ok := r.activityFuncMap[fnName]; ok {
+		return a, ok
+	}
+	if r.dynamicActivity != nil {
+		return r.dynamicActivity, true
+	}
+	return nil, false
 }
 
 func (r *registry) getActivityNoLock(fnName string) (activity, bool) {
@@ -757,9 +815,16 @@ func (r *registry) getActivityNoLock(fnName string) (activity, bool) {
 func (r *registry) getRegisteredActivities() []activity {
 	r.Lock()
 	defer r.Unlock()
-	activities := make([]activity, 0, len(r.activityFuncMap))
+	numActivities := len(r.activityFuncMap)
+	if r.dynamicActivity != nil {
+		numActivities++
+	}
+	activities := make([]activity, 0, numActivities)
 	for _, a := range r.activityFuncMap {
 		activities = append(activities, a)
+	}
+	if r.dynamicActivity != nil {
+		activities = append(activities, r.dynamicActivity)
 	}
 	return activities
 }
@@ -788,7 +853,12 @@ func (r *registry) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, e
 	if ok {
 		return wdf.NewWorkflowDefinition(), nil
 	}
-	executor := &workflowExecutor{workflowType: lookup, fn: wf, interceptors: r.interceptors}
+	var dynamic bool
+	if d, ok := wf.(string); ok && d == "dynamic" {
+		wf = r.dynamicWorkflow
+		dynamic = true
+	}
+	executor := &workflowExecutor{workflowType: lookup, fn: wf, interceptors: r.interceptors, dynamic: dynamic}
 	return newSyncWorkflowDefinition(executor), nil
 }
 
@@ -799,8 +869,16 @@ func (r *registry) getWorkflowVersioningBehavior(wt WorkflowType) (VersioningBeh
 	}
 	r.Lock()
 	defer r.Unlock()
-	behavior := r.workflowVersioningBehaviorMap[lookup]
-	return behavior, behavior != VersioningBehaviorUnspecified
+	if behavior, ok := r.workflowVersioningBehaviorMap[lookup]; ok {
+		return behavior, behavior != VersioningBehaviorUnspecified
+	}
+	if r.dynamicWorkflowOptions.LoadDynamicRuntimeOptions != nil {
+		config := LoadDynamicRuntimeOptionsDetails{WorkflowType: wt}
+		if behavior, err := r.dynamicWorkflowOptions.LoadDynamicRuntimeOptions(config); err == nil {
+			return behavior.VersioningBehavior, true
+		}
+	}
+	return VersioningBehaviorUnspecified, false
 }
 
 func (r *registry) getNexusService(service string) *nexus.Service {
@@ -820,7 +898,7 @@ func (r *registry) getRegisteredNexusServices() []*nexus.Service {
 }
 
 // Validate function parameters.
-func validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
+func validateFnFormat(fnType reflect.Type, isWorkflow, isDynamic bool) error {
 	if fnType.Kind() != reflect.Func {
 		return fmt.Errorf("expected a func as input but was %s", fnType.Kind())
 	}
@@ -842,6 +920,17 @@ func validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
 			if isWorkflowContext(fnType.In(i)) {
 				return fmt.Errorf("unexpected use of workflow context for an activity")
 			}
+		}
+	}
+
+	if isDynamic {
+		if fnType.NumIn() != 2 {
+			return fmt.Errorf(
+				"expected function to have two arguments, first being workflow.Context and second being an EncodedValues type, found %d arguments", fnType.NumIn(),
+			)
+		}
+		if fnType.In(1) != reflect.TypeOf((*converter.EncodedValues)(nil)).Elem() {
+			return fmt.Errorf("expected function to EncodedValues as second argument, got %s", fnType.In(1).Elem())
 		}
 	}
 
@@ -888,17 +977,25 @@ type workflowExecutor struct {
 	workflowType string
 	fn           interface{}
 	interceptors []WorkerInterceptor
+	dynamic      bool
 }
 
 func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*commonpb.Payloads, error) {
 	dataConverter := WithWorkflowContext(ctx, getWorkflowEnvOptions(ctx).DataConverter)
 	fnType := reflect.TypeOf(we.fn)
 
-	args, err := decodeArgsToRawValues(dataConverter, fnType, input)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"unable to decode the workflow function input payload with error: %w, function name: %v",
-			err, we.workflowType)
+	var args []interface{}
+	var err error
+	if we.dynamic {
+		// Dynamic workflows take in a single EncodedValues, encode all data into single EncodedValues
+		args = []interface{}{newEncodedValues(input, dataConverter)}
+	} else {
+		args, err = decodeArgsToRawValues(dataConverter, fnType, input)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"unable to decode the workflow function input payload with error: %w, function name: %v",
+				err, we.workflowType)
+		}
 	}
 
 	envInterceptor := getWorkflowEnvironmentInterceptor(ctx)
@@ -918,6 +1015,7 @@ type activityExecutor struct {
 	name             string
 	fn               interface{}
 	skipInterceptors bool
+	dynamic          bool
 }
 
 func (ae *activityExecutor) ActivityType() ActivityType {
@@ -932,11 +1030,18 @@ func (ae *activityExecutor) Execute(ctx context.Context, input *commonpb.Payload
 	fnType := reflect.TypeOf(ae.fn)
 	dataConverter := getDataConverterFromActivityCtx(ctx)
 
-	args, err := decodeArgsToRawValues(dataConverter, fnType, input)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"unable to decode the activity function input payload with error: %w for function name: %v",
-			err, ae.name)
+	var args []interface{}
+	var err error
+	if ae.dynamic {
+		// Dynamic activities take in a single EncodedValues, encode all data into single EncodedValues
+		args = []interface{}{newEncodedValues(input, dataConverter)}
+	} else {
+		args, err = decodeArgsToRawValues(dataConverter, fnType, input)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"unable to decode the activity function input payload with error: %w for function name: %v",
+				err, ae.name)
+		}
 	}
 
 	return ae.ExecuteWithActualArgs(ctx, args)
@@ -1044,6 +1149,19 @@ func (aw *AggregatedWorker) RegisterWorkflowWithOptions(w interface{}, options R
 	aw.registry.RegisterWorkflowWithOptions(w, options)
 }
 
+// RegisterDynamicWorkflow registers dynamic workflow implementation with the AggregatedWorker
+func (aw *AggregatedWorker) RegisterDynamicWorkflow(w interface{}, options DynamicRegisterWorkflowOptions) {
+	if aw.workflowWorker == nil {
+		panic("workflow worker disabled, cannot register workflow")
+	}
+	if options.LoadDynamicRuntimeOptions == nil && aw.executionParams.UseBuildIDForVersioning &&
+		(aw.executionParams.DeploymentSeriesName != "" || aw.executionParams.WorkerDeploymentVersion != "") &&
+		aw.executionParams.DefaultVersioningBehavior == VersioningBehaviorUnspecified {
+		panic("dynamic workflow does not have a versioning behavior")
+	}
+	aw.registry.RegisterDynamicWorkflow(w, options)
+}
+
 // RegisterActivity registers activity implementation with the AggregatedWorker
 func (aw *AggregatedWorker) RegisterActivity(a interface{}) {
 	aw.registry.RegisterActivity(a)
@@ -1052,6 +1170,12 @@ func (aw *AggregatedWorker) RegisterActivity(a interface{}) {
 // RegisterActivityWithOptions registers activity implementation with the AggregatedWorker
 func (aw *AggregatedWorker) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) {
 	aw.registry.RegisterActivityWithOptions(a, options)
+}
+
+// RegisterDynamicActivity registers the dynamic activity function with options.
+// Registering activities via a structure is not supported for dynamic activities.
+func (aw *AggregatedWorker) RegisterDynamicActivity(a interface{}, options DynamicRegisterActivityOptions) {
+	aw.registry.RegisterDynamicActivity(a, options)
 }
 
 func (aw *AggregatedWorker) RegisterNexusService(service *nexus.Service) {
@@ -1332,6 +1456,11 @@ func (aw *WorkflowReplayer) RegisterWorkflow(w interface{}) {
 // RegisterWorkflowWithOptions registers workflow function with custom workflow name to replay
 func (aw *WorkflowReplayer) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
 	aw.registry.RegisterWorkflowWithOptions(w, options)
+}
+
+// RegisterDynamicWorkflow registers a dynamic workflow function to replay
+func (aw *WorkflowReplayer) RegisterDynamicWorkflow(w interface{}, options DynamicRegisterWorkflowOptions) {
+	aw.registry.RegisterDynamicWorkflow(w, options)
 }
 
 // ReplayWorkflowHistoryWithOptions executes a single workflow task for the given history.
