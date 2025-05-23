@@ -103,7 +103,7 @@ deterministic and repeatable within an execution context.
 
 Coroutine related constructs:
 
-  - [workflow.Go] : This is a replacement for the the go statement
+  - [workflow.Go] : This is a replacement for the go statement
   - [workflow.Channel] : This is a replacement for the native chan type. Temporal
     provides support for both buffered and unbuffered channels
   - [workflow.Selector] : This is a replacement for the select statement
@@ -532,8 +532,8 @@ framework via [go.temporal.io/sdk/testsuite.WorkflowTestSuite]. Since every test
 our struct to hold an instance of the test environment. This will allow us to initialize the test environment in a
 setup method. For testing workflows we use a [go.temporal.io/sdk/testsuite.TestWorkflowEnvironment].
 
-We then implement a SetupTest method to setup a new test environment before each test. Doing so ensure that each test
-runs in it's own isolated sandbox. We also implement an AfterTest function where we assert that all mocks we setup were
+We then implement a SetupTest method to set up a new test environment before each test. Doing so ensures that each test
+runs in its own isolated sandbox. We also implement an AfterTest function where we assert that all mocks we set up were
 indeed called by invoking s.env.AssertExpectations(s.T()).
 
 Finally, we create a regular test function recognized by "go test" and pass the struct to suite.Run.

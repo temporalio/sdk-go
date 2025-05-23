@@ -4147,7 +4147,7 @@ func (ts *IntegrationTestSuite) testUpdateOrderingCancel(cancelWf bool) {
 		}()
 	}
 
-	// Server does not support admitted so we have to send the update in a seperate goroutine
+	// The server does not support admitted updates, so we send the update in a separate goroutine
 	time.Sleep(5 * time.Second)
 	// Now create a new worker on that same task queue to resume the work of the
 	// workflow
