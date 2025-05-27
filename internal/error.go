@@ -113,7 +113,7 @@ type (
 		//
 		// NOTE: This option is supported by Temporal Server >= v1.24.2 older version will ignore this value.
 		NextRetryDelay time.Duration
-		// Category of the error. Maps to logging/metrics behaviours.
+		// Category of the error. Maps to logging/metrics behaviors.
 		Category ApplicationErrorCategory
 	}
 
@@ -356,7 +356,7 @@ var (
 )
 
 // ApplicationErrorCategory sets the category of the error. The category of the error
-// maps to logging/metrics behaviours.
+// maps to logging/metrics behaviors.
 //
 // Exposed as: [go.temporal.io/sdk/temporal.ApplicationErrorCategory]
 type ApplicationErrorCategory int
