@@ -1319,9 +1319,6 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED:
 		// No Operation
 
-	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_REJECTED:
-		// No Operation
-
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED:
 		// No Operation
 
