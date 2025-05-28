@@ -72,6 +72,8 @@ const (
 // NexusOperationCancellationType specifies what action should be taken for a Nexus operation when the
 // caller is cancelled.
 //
+// NOTE: Experimental
+//
 // Exposed as: [go.temporal.io/sdk/workflow.NexusOperationCancellationType]
 type NexusOperationCancellationType int
 
@@ -2665,6 +2667,8 @@ type NexusOperationOptions struct {
 	// CancellationType - Indicates what action should be taken when the caller is cancelled.
 	//
 	// Optional: defaults to NexusOperationCancellationTypeWaitCompleted.
+	//
+	// NOTE: Experimental
 	CancellationType NexusOperationCancellationType
 
 	// Summary is a single-line fixed summary for this Nexus Operation that will appear in UI/CLI. This can be
