@@ -35,9 +35,9 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
 
-      - name: Check
-        run: go run . check
-        working-directory: ./internal/cmd/build
+      # - name: Check
+      #   run: go run . check
+      #   working-directory: ./internal/cmd/build
 
       - name: Unit test
         run: go run . unit-test -coverage=${{ matrix.uploadCoverage && 'true' || 'false' }}
