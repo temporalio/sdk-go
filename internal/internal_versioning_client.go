@@ -350,10 +350,7 @@ func pollerInfoFromResponse(response *taskqueuepb.PollerInfo) TaskQueuePollerInf
 		return TaskQueuePollerInfo{}
 	}
 
-	lastAccessTime := time.Time{}
-	if response.GetLastAccessTime() != nil {
-		lastAccessTime = response.GetLastAccessTime().AsTime()
-	}
+	lastAccessTime := safeAsTime(response.GetLastAccessTime())
 
 	return TaskQueuePollerInfo{
 		LastAccessTime: lastAccessTime,
@@ -429,7 +426,7 @@ func taskQueueVersioningInfoFromResponse(info *taskqueuepb.TaskQueueVersioningIn
 		CurrentVersion:           info.CurrentVersion,
 		RampingVersion:           info.RampingVersion,
 		RampingVersionPercentage: info.RampingVersionPercentage,
-		UpdateTime:               info.UpdateTime.AsTime(),
+		UpdateTime:               safeAsTime(info.UpdateTime),
 	}
 }
 
