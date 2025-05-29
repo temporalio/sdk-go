@@ -563,6 +563,7 @@ func (wtp *workflowTaskPoller) errorToFailWorkflowTask(taskToken []byte, err err
 	}
 
 	if wtp.getCapabilities().BuildIdBasedVersioning {
+		//lint:ignore SA1019 ignore deprecated versioning APIs
 		builtRequest.BinaryChecksum = ""
 	}
 
@@ -806,6 +807,7 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		),
 	}
 	if wtp.getCapabilities().BuildIdBasedVersioning {
+		//lint:ignore SA1019 ignore deprecated versioning APIs
 		builtRequest.BinaryChecksum = ""
 	}
 	return builtRequest

@@ -135,6 +135,7 @@ func versioningOverrideFromProto(versioningOverride *workflowpb.VersioningOverri
 	}
 
 	return VersioningOverride{
+		//lint:ignore SA1019 ignore deprecated versioning APIs
 		Behavior: VersioningBehavior(versioningOverride.GetBehavior()),
 		Deployment: Deployment{
 			//lint:ignore SA1019 ignore deprecated versioning APIs
@@ -142,6 +143,7 @@ func versioningOverrideFromProto(versioningOverride *workflowpb.VersioningOverri
 			//lint:ignore SA1019 ignore deprecated versioning APIs
 			BuildID: versioningOverride.GetDeployment().GetBuildId(),
 		},
+		//lint:ignore SA1019 ignore deprecated versioning APIs
 		PinnedVersion: versioningOverride.GetPinnedVersion(),
 	}
 }
