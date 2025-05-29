@@ -277,7 +277,7 @@ func (eh *history) isNextWorkflowTaskFailed() (task finishedTask, err error) {
 		var flags []sdkFlag
 		if nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
 			completedAttrs := nextEvent.GetWorkflowTaskCompletedEventAttributes()
-			binaryChecksum = completedAttrs.BinaryChecksum
+			binaryChecksum = completedAttrs.BinaryChecksum //lint:ignore SA1019 ignore deprecated versioning APIs
 			for _, flag := range completedAttrs.GetSdkMetadata().GetLangUsedFlags() {
 				f := sdkFlagFromUint(flag)
 				if !f.isValid() {
@@ -481,8 +481,10 @@ OrderEvents:
 			// Skip
 		default:
 			if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
+				//lint:ignore SA1019 ignore deprecated versioning APIs
 				bidStr := event.GetWorkflowTaskCompletedEventAttributes().
 					GetWorkerVersion().GetBuildId()
+				//lint:ignore SA1019 ignore deprecated versioning APIs
 				version := event.GetWorkflowTaskCompletedEventAttributes().GetWorkerDeploymentVersion()
 				if splitVersion := strings.SplitN(version, ".", 2); len(splitVersion) == 2 {
 					bidStr = splitVersion[1]
@@ -1964,6 +1966,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		),
 	}
 	if wth.capabilities != nil && wth.capabilities.BuildIdBasedVersioning {
+		//lint:ignore SA1019 ignore deprecated versioning APIs
 		builtRequest.BinaryChecksum = ""
 	}
 	if (wth.useBuildIDForVersioning && wth.deploymentSeriesName != "") ||

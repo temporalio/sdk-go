@@ -86,7 +86,9 @@ func workerDeploymentRoutingConfigFromProto(routingConfig *deployment.RoutingCon
 	}
 
 	return WorkerDeploymentRoutingConfig{
-		CurrentVersion:                      routingConfig.GetCurrentVersion(),
+		//lint:ignore SA1019 ignore deprecated versioning APIs
+		CurrentVersion: routingConfig.GetCurrentVersion(),
+		//lint:ignore SA1019 ignore deprecated versioning APIs
 		RampingVersion:                      routingConfig.GetRampingVersion(),
 		RampingVersionPercentage:            routingConfig.GetRampingVersionPercentage(),
 		CurrentVersionChangedTime:           safeAsTime(routingConfig.GetCurrentVersionChangedTime()),
@@ -107,6 +109,7 @@ func workerDeploymentVersionSummariesFromProto(summaries []*deployment.WorkerDep
 	result := []WorkerDeploymentVersionSummary{}
 	for _, summary := range summaries {
 		result = append(result, WorkerDeploymentVersionSummary{
+			//lint:ignore SA1019 ignore deprecated versioning APIs
 			Version:        summary.GetVersion(),
 			CreateTime:     safeAsTime(summary.CreateTime),
 			DrainageStatus: WorkerDeploymentVersionDrainageStatus(summary.GetDrainageStatus()),
@@ -219,7 +222,8 @@ func (h *workerDeploymentHandleImpl) SetCurrentVersion(ctx context.Context, opti
 	}
 
 	return WorkerDeploymentSetCurrentVersionResponse{
-		ConflictToken:   resp.GetConflictToken(),
+		ConflictToken: resp.GetConflictToken(),
+		//lint:ignore SA1019 ignore deprecated versioning APIs
 		PreviousVersion: resp.GetPreviousVersion(),
 	}, nil
 }
@@ -261,7 +265,8 @@ func (h *workerDeploymentHandleImpl) SetRampingVersion(ctx context.Context, opti
 	}
 
 	return WorkerDeploymentSetRampingVersionResponse{
-		ConflictToken:      resp.GetConflictToken(),
+		ConflictToken: resp.GetConflictToken(),
+		//lint:ignore SA1019 ignore deprecated versioning APIs
 		PreviousVersion:    resp.GetPreviousVersion(),
 		PreviousPercentage: resp.GetPreviousPercentage(),
 	}, nil
@@ -295,6 +300,7 @@ func workerDeploymentVersionInfoFromProto(info *deployment.WorkerDeploymentVersi
 		return WorkerDeploymentVersionInfo{}
 	}
 	return WorkerDeploymentVersionInfo{
+		//lint:ignore SA1019 ignore deprecated versioning APIs
 		Version:            info.Version,
 		CreateTime:         safeAsTime(info.CreateTime),
 		RoutingChangedTime: safeAsTime(info.RoutingChangedTime),

@@ -1819,11 +1819,13 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithVersioningOverride() {
 
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
 		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
+			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal(versioningBehaviorToProto(VersioningBehaviorPinned), req.VersioningOverride.GetBehavior())
 			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal("build1", req.VersioningOverride.GetDeployment().GetBuildId())
 			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal("deployment1", req.VersioningOverride.GetDeployment().GetSeriesName())
+			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal("deployment1.build1", req.VersioningOverride.GetPinnedVersion())
 		})
 	_, _ = s.client.ExecuteWorkflow(context.Background(), options, wf)
@@ -1853,11 +1855,13 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithVersioningOverr
 
 	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
 		Do(func(_ interface{}, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...interface{}) {
+			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal(versioningBehaviorToProto(VersioningBehaviorPinned), req.VersioningOverride.GetBehavior())
 			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal("build1", req.VersioningOverride.GetDeployment().GetBuildId())
 			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal("deployment1", req.VersioningOverride.GetDeployment().GetSeriesName())
+			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal("deployment1.build1", req.VersioningOverride.GetPinnedVersion())
 		})
 	_, _ = s.client.SignalWithStartWorkflow(context.Background(), "wid", "signal", "value", options, wf)

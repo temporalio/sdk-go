@@ -426,7 +426,9 @@ func taskQueueVersioningInfoFromResponse(info *taskqueuepb.TaskQueueVersioningIn
 	}
 
 	return &TaskQueueVersioningInfo{
-		CurrentVersion:           info.CurrentVersion,
+		//lint:ignore SA1019 ignore deprecated versioning APIs
+		CurrentVersion: info.CurrentVersion,
+		//lint:ignore SA1019 ignore deprecated versioning APIs
 		RampingVersion:           info.RampingVersion,
 		RampingVersionPercentage: info.RampingVersionPercentage,
 		UpdateTime:               info.UpdateTime.AsTime(),
