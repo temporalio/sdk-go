@@ -1232,3 +1232,61 @@ func TestDynamicWorkflows(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "dynamic-activity - grape - cherry", result)
 }
+
+func SleepHour(ctx Context) error {
+	Sleep(ctx, time.Hour)
+	return nil
+}
+
+func SleepThenCancel(ctx Context) error {
+	selector := NewSelector(ctx)
+	var activationWorkflow *WorkflowExecution
+	selector.AddReceive(GetSignalChannel(ctx, "activate"), func(c ReceiveChannel, more bool) {
+		c.Receive(ctx, nil)
+		GetLogger(ctx).Info("Received activation signal")
+		if activationWorkflow != nil {
+			RequestCancelExternalWorkflow(ctx, activationWorkflow.ID, activationWorkflow.RunID)
+		}
+
+		cwf := ExecuteChildWorkflow(
+			ctx,
+			SleepHour,
+		)
+
+		var res WorkflowExecution
+		if err := cwf.GetChildWorkflowExecution().Get(ctx, &res); err != nil {
+			GetLogger(ctx).Error("Failed to start child workflow", "error", err)
+			return
+		}
+		activationWorkflow = &res
+
+		selector.AddFuture(cwf, func(f Future) {
+			if err := f.Get(ctx, nil); err != nil {
+				GetLogger(ctx).Error("Child workflow failed", "error", err)
+			} else {
+				GetLogger(ctx).Info("Child workflow completed successfully")
+			}
+			activationWorkflow = nil
+		})
+	})
+
+	for selector.HasPending() || activationWorkflow != nil {
+		selector.Select(ctx)
+	}
+	return nil
+}
+
+func TestRequestCancelExternalWorkflowInSelector(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(SleepHour)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow("activate", nil)
+	}, 0)
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow("activate", nil)
+	}, time.Second)
+	env.ExecuteWorkflow(SleepThenCancel)
+	require.NoError(t, env.GetWorkflowError())
+	env.IsWorkflowCompleted()
+}
