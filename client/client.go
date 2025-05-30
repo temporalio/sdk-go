@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 //go:generate mockgen -copyright_file ../LICENSE -package client -source client.go -destination client_mock.go
 
 // Package client is used by external programs to communicate with Temporal service.
@@ -268,6 +244,12 @@ type (
 
 	// QueryWorkflowWithOptionsResponse defines the response to QueryWorkflowWithOptions.
 	QueryWorkflowWithOptionsResponse = internal.QueryWorkflowWithOptionsResponse
+
+	// WorkflowExecutionDescription defines the response to DescribeWorkflow.
+	WorkflowExecutionDescription = internal.WorkflowExecutionDescription
+
+	// WorkflowExecutionMetadata defines common workflow information across multiple calls.
+	WorkflowExecutionMetadata = internal.WorkflowExecutionMetadata
 
 	// CheckHealthRequest is a request for Client.CheckHealth.
 	CheckHealthRequest = internal.CheckHealthRequest
@@ -1133,6 +1115,16 @@ type (
 		//  - serviceerror.NotFound
 		DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error)
 
+		// DescribeWorkflow returns information about the specified workflow execution.
+		//  - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
+		//
+		// The errors it can return:
+		//  - serviceerror.InvalidArgument
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
+		//  - serviceerror.NotFound
+		DescribeWorkflow(ctx context.Context, workflowID, runID string) (*WorkflowExecutionDescription, error)
+
 		// DescribeTaskQueue returns information about the target taskqueue, right now this API returns the
 		// pollers which polled this taskqueue in last few minutes.
 		// The errors it can return:
@@ -1411,8 +1403,8 @@ func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 }
 
 // NewValues creates a new [converter.EncodedValues] which can be used to decode binary data returned by Temporal. For example:
-// User had Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got response from calling [client.Client.DescribeWorkflowExecution].
-// The response contains binary field PendingActivityInfo.HeartbeatDetails,
+// User has Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got a response from calling [client.Client.DescribeWorkflowExecution].
+// The response contains the binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
 //
 //	var result1 string

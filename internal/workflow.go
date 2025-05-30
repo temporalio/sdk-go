@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -91,6 +67,32 @@ const (
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.VersioningBehaviorAutoUpgrade]
 	VersioningBehaviorAutoUpgrade
+)
+
+// NexusOperationCancellationType specifies what action should be taken for a Nexus operation when the
+// caller is cancelled.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/workflow.NexusOperationCancellationType]
+type NexusOperationCancellationType int
+
+const (
+	// NexusOperationCancellationTypeUnspecified - Nexus operation cancellation type is unknown.
+	NexusOperationCancellationTypeUnspecified NexusOperationCancellationType = iota
+
+	// NexusOperationCancellationTypeAbandon - Do not request cancellation of the Nexus operation.
+	NexusOperationCancellationTypeAbandon
+
+	// NexusOperationCancellationTypeTryCancel - Initiate a cancellation request for the Nexus operation and immediately report cancellation
+	// to the caller.
+	NexusOperationCancellationTypeTryCancel
+
+	// NexusOperationCancellationTypeWaitRequested - Request cancellation of the Nexus operation and wait for confirmation that the request was received.
+	NexusOperationCancellationTypeWaitRequested
+
+	// NexusOperationCancellationTypeWaitCompleted - Wait for the Nexus operation to complete. Default.
+	NexusOperationCancellationTypeWaitCompleted
 )
 
 var (
@@ -464,6 +466,36 @@ type (
 		// inside a workflow as a child workflow.
 		Name                          string
 		DisableAlreadyRegisteredCheck bool
+		// Optional: Provides a Versioning Behavior to workflows of this type. It is required
+		// when WorkerOptions does not specify [DeploymentOptions.DefaultVersioningBehavior],
+		// [DeploymentOptions.DeploymentSeriesName] is set, and [UseBuildIDForVersioning] is true.
+		//
+		// NOTE: Experimental
+		VersioningBehavior VersioningBehavior
+	}
+
+	// LoadDynamicRuntimeOptionsDetails is used as input to the LoadDynamicRuntimeOptions callback for dynamic workflows
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.LoadDynamicRuntimeOptionsDetails]
+	LoadDynamicRuntimeOptionsDetails struct {
+		WorkflowType WorkflowType
+	}
+
+	// DynamicRegisterWorkflowOptions consists of options for registering a dynamic workflow
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.DynamicRegisterOptions]
+	DynamicRegisterWorkflowOptions struct {
+		// Allows dynamic options to be loaded for a workflow.
+		LoadDynamicRuntimeOptions func(details LoadDynamicRuntimeOptionsDetails) (DynamicRuntimeWorkflowOptions, error)
+	}
+
+	// DynamicRegisterActivityOptions consists of options for registering a dynamic activity
+	DynamicRegisterActivityOptions struct{}
+
+	// DynamicRuntimeWorkflowOptions are options for a dynamic workflow.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.DynamicRuntimeOptions]
+	DynamicRuntimeWorkflowOptions struct {
 		// Optional: Provides a Versioning Behavior to workflows of this type. It is required
 		// when WorkerOptions does not specify [DeploymentOptions.DefaultVersioningBehavior],
 		// [DeploymentOptions.DeploymentSeriesName] is set, and [UseBuildIDForVersioning] is true.
@@ -2069,7 +2101,7 @@ func (wc *workflowEnvironmentInterceptor) MutableSideEffect(ctx Context, id stri
 
 // DefaultVersion is a version returned by GetVersion for code that wasn't versioned before
 //
-// Exposed as: [go.temporal.io/sdk/workflow.Version], [go.temporal.io/sdk/workflow.DefaultVersion]
+// Exposed as: [go.temporal.io/sdk/workflow.DefaultVersion], [go.temporal.io/sdk/workflow.Version]
 const DefaultVersion Version = -1
 
 // TemporalChangeVersion is used as search attributes key to find workflows with specific change version.
@@ -2505,7 +2537,7 @@ func WithHeartbeatTimeout(ctx Context, d time.Duration) Context {
 	return ctx1
 }
 
-// WithWaitForCancellation adds wait for the cacellation to the copy of the context.
+// WithWaitForCancellation adds wait for the cancellation to the copy of the context.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.WithWaitForCancellation]
 func WithWaitForCancellation(ctx Context, wait bool) Context {
@@ -2632,6 +2664,13 @@ type NexusOperationOptions struct {
 	// Optional: defaults to the maximum allowed by the Temporal server.
 	ScheduleToCloseTimeout time.Duration
 
+	// CancellationType - Indicates what action should be taken when the caller is cancelled.
+	//
+	// Optional: defaults to NexusOperationCancellationTypeWaitCompleted.
+	//
+	// NOTE: Experimental
+	CancellationType NexusOperationCancellationType
+
 	// Summary is a single-line fixed summary for this Nexus Operation that will appear in UI/CLI. This can be
 	// in single-line Temporal Markdown format.
 	//
@@ -2645,11 +2684,6 @@ type NexusOperationOptions struct {
 //
 // Exposed as: [go.temporal.io/sdk/workflow.NexusOperationExecution]
 type NexusOperationExecution struct {
-	// Operation ID as set by the Operation's handler. May be empty if the operation hasn't started yet or completed
-	// synchronously.
-	//
-	// Deprecated: Use OperationToken instead.
-	OperationID string
 	// Operation token as set by the Operation's handler. May be empty if the operation hasn't started yet or completed
 	// synchronously.
 	OperationToken string
@@ -2755,6 +2789,10 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 		return executeNexusOperationParams{}, err
 	}
 
+	if input.Options.CancellationType == NexusOperationCancellationTypeUnspecified {
+		input.Options.CancellationType = NexusOperationCancellationTypeWaitCompleted
+	}
+
 	return executeNexusOperationParams{
 		client:      input.Client,
 		operation:   operationName,
@@ -2772,7 +2810,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 		executionFuture:  executionFuture.(*futureImpl),
 	}
 
-	// Immediately return if the context has an error without spawning the child workflow
+	// Immediately return if the context has an error without spawning the Nexus operation.
 	if ctx.Err() != nil {
 		executionSettable.Set(nil, ctx.Err())
 		mainSettable.Set(nil, ctx.Err())
@@ -2802,7 +2840,6 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 	}, func(token string, e error) {
 		operationToken = token
 		executionSettable.Set(NexusOperationExecution{
-			OperationID:    operationToken,
 			OperationToken: operationToken,
 		}, e)
 	})
@@ -2811,13 +2848,21 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 		cancellationCallback.fn = func(v any, _ bool) bool {
 			assertNotInReadOnlyStateCancellation(ctx)
 			if ctx.Err() == ErrCanceled && !mainFuture.IsReady() {
-				// Go back to the top of the interception chain.
-				getWorkflowOutboundInterceptor(ctx).RequestCancelNexusOperation(ctx, RequestCancelNexusOperationInput{
-					Client:    input.Client,
-					Operation: input.Operation,
-					Token:     operationToken,
-					seq:       seq,
-				})
+				if input.Options.CancellationType == NexusOperationCancellationTypeAbandon {
+					// Caller has indicated we should not send the cancel request, so just mark futures as done.
+					mainSettable.Set(nil, ErrCanceled)
+					if !executionFuture.IsReady() {
+						executionSettable.Set(nil, ErrCanceled)
+					}
+				} else {
+					// Go back to the top of the interception chain.
+					getWorkflowOutboundInterceptor(ctx).RequestCancelNexusOperation(ctx, RequestCancelNexusOperationInput{
+						Client:    input.Client,
+						Operation: input.Operation,
+						Token:     operationToken,
+						seq:       seq,
+					})
+				}
 			}
 			return false
 		}

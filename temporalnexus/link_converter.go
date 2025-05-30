@@ -1,25 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2024 Temporal Technologies Inc.  All rights reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 // This file is duplicated in temporalio/temporal/components/nexusoperations/link_converter.go
 // Any changes here or there must be replicated. This is temporary until the
 // temporal repo updates to the most recent SDK version.
@@ -45,8 +23,9 @@ const (
 	urlPathTemplate      = "/namespaces/%s/workflows/%s/%s/history"
 
 	linkWorkflowEventReferenceTypeKey = "referenceType"
-	linkEventReferenceEventIDKey      = "eventID"
-	linkEventReferenceEventTypeKey    = "eventType"
+	linkEventIDKey                    = "eventID"
+	linkEventTypeKey                  = "eventType"
+	linkRequestIDKey                  = "requestID"
 )
 
 var (
@@ -59,7 +38,8 @@ var (
 		rePatternWorkflowID,
 		rePatternRunID,
 	))
-	eventReferenceType = string((&commonpb.Link_WorkflowEvent_EventReference{}).ProtoReflect().Descriptor().Name())
+	eventReferenceType     = string((&commonpb.Link_WorkflowEvent_EventReference{}).ProtoReflect().Descriptor().Name())
+	requestIDReferenceType = string((&commonpb.Link_WorkflowEvent_RequestIdReference{}).ProtoReflect().Descriptor().Name())
 )
 
 // ConvertLinkWorkflowEventToNexusLink converts a Link_WorkflowEvent type to Nexus Link.
@@ -80,6 +60,8 @@ func ConvertLinkWorkflowEventToNexusLink(we *commonpb.Link_WorkflowEvent) nexus.
 	switch ref := we.GetReference().(type) {
 	case *commonpb.Link_WorkflowEvent_EventRef:
 		u.RawQuery = convertLinkWorkflowEventEventReferenceToURLQuery(ref.EventRef)
+	case *commonpb.Link_WorkflowEvent_RequestIdRef:
+		u.RawQuery = convertLinkWorkflowEventRequestIdReferenceToURLQuery(ref.RequestIdRef)
 	}
 	return nexus.Link{
 		URL:  u,
@@ -137,6 +119,14 @@ func ConvertNexusLinkToLinkWorkflowEvent(link nexus.Link) (*commonpb.Link_Workfl
 		we.Reference = &commonpb.Link_WorkflowEvent_EventRef{
 			EventRef: eventRef,
 		}
+	case requestIDReferenceType:
+		requestIDRef, err := convertURLQueryToLinkWorkflowEventRequestIdReference(link.URL.Query())
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse link to Link_WorkflowEvent: %w", err)
+		}
+		we.Reference = &commonpb.Link_WorkflowEvent_RequestIdRef{
+			RequestIdRef: requestIDRef,
+		}
 	default:
 		return nil, fmt.Errorf(
 			"failed to parse link to Link_WorkflowEvent: unknown reference type: %q",
@@ -151,25 +141,45 @@ func convertLinkWorkflowEventEventReferenceToURLQuery(eventRef *commonpb.Link_Wo
 	values := url.Values{}
 	values.Set(linkWorkflowEventReferenceTypeKey, eventReferenceType)
 	if eventRef.GetEventId() > 0 {
-		values.Set(linkEventReferenceEventIDKey, strconv.FormatInt(eventRef.GetEventId(), 10))
+		values.Set(linkEventIDKey, strconv.FormatInt(eventRef.GetEventId(), 10))
 	}
-	values.Set(linkEventReferenceEventTypeKey, enumspb.EventType_name[int32(eventRef.GetEventType())])
+	values.Set(linkEventTypeKey, eventRef.GetEventType().String())
 	return values.Encode()
 }
 
 func convertURLQueryToLinkWorkflowEventEventReference(queryValues url.Values) (*commonpb.Link_WorkflowEvent_EventReference, error) {
 	var err error
 	eventRef := &commonpb.Link_WorkflowEvent_EventReference{}
-	eventIDValue := queryValues.Get(linkEventReferenceEventIDKey)
+	eventIDValue := queryValues.Get(linkEventIDKey)
 	if eventIDValue != "" {
-		eventRef.EventId, err = strconv.ParseInt(queryValues.Get(linkEventReferenceEventIDKey), 10, 64)
+		eventRef.EventId, err = strconv.ParseInt(queryValues.Get(linkEventIDKey), 10, 64)
 		if err != nil {
 			return nil, err
 		}
 	}
-	eventRef.EventType, err = enumspb.EventTypeFromString(queryValues.Get(linkEventReferenceEventTypeKey))
+	eventRef.EventType, err = enumspb.EventTypeFromString(queryValues.Get(linkEventTypeKey))
 	if err != nil {
 		return nil, err
 	}
 	return eventRef, nil
+}
+
+func convertLinkWorkflowEventRequestIdReferenceToURLQuery(requestIDRef *commonpb.Link_WorkflowEvent_RequestIdReference) string {
+	values := url.Values{}
+	values.Set(linkWorkflowEventReferenceTypeKey, requestIDReferenceType)
+	values.Set(linkRequestIDKey, requestIDRef.GetRequestId())
+	values.Set(linkEventTypeKey, requestIDRef.GetEventType().String())
+	return values.Encode()
+}
+
+func convertURLQueryToLinkWorkflowEventRequestIdReference(queryValues url.Values) (*commonpb.Link_WorkflowEvent_RequestIdReference, error) {
+	var err error
+	requestIDRef := &commonpb.Link_WorkflowEvent_RequestIdReference{
+		RequestId: queryValues.Get(linkRequestIDKey),
+	}
+	requestIDRef.EventType, err = enumspb.EventTypeFromString(queryValues.Get(linkEventTypeKey))
+	if err != nil {
+		return nil, err
+	}
+	return requestIDRef, nil
 }

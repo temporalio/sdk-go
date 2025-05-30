@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package workflow
 
 import (
@@ -37,10 +13,10 @@ type (
 	//
 	// HostName specifies which host is executing the session
 	//
-	// SessionState specifies the current know state of the session.
+	// SessionState specifies the current known state of the session.
 	//
 	// Note: Sessions have an inherently stale view of the worker they are running on. Session
-	// state may be stale up the the SessionOptions.HeartbeatTimeout. SessionOptions.HeartbeatTimeout
+	// state may be stale up to the SessionOptions.HeartbeatTimeout. SessionOptions.HeartbeatTimeout
 	// should be less than half the activity timeout for the state to be accurate when checking after activity failure.
 	SessionInfo = internal.SessionInfo
 

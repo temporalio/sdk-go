@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 // All code in this file is private to the package.
@@ -630,6 +606,12 @@ func (latp *localActivityTaskPoller) ProcessTask(task interface{}) error {
 	}
 
 	result := latp.handler.executeLocalActivityTask(task.(*localActivityTask))
+
+	// If shutdown is initiated after we begin local activity execution, there is no need to send result back to
+	// laResultCh, as both workers receive shutdown from top down.
+	if latp.stopping() {
+		return errStop
+	}
 	// We need to send back the local activity result to unblock workflowTaskPoller.processWorkflowTask() which is
 	// synchronously listening on the laResultCh. We also want to make sure we don't block here forever in case
 	// processWorkflowTask() already returns and nobody is receiving from laResultCh. We guarantee that doneCh is closed
@@ -705,7 +687,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 				metricsHandler.Counter(metrics.LocalActivityErrorCounter).Inc(1)
 				err = newPanicError(p, st)
 			}
-			if err != nil {
+			if err != nil && !isBenignApplicationError(err) {
 				metricsHandler.Counter(metrics.LocalActivityFailedCounter).Inc(1)
 				metricsHandler.Counter(metrics.LocalActivityExecutionFailedCounter).Inc(1)
 			}
@@ -1108,8 +1090,10 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 		return err
 	}
 	// in case if activity execution failed, request should be of type RespondActivityTaskFailedRequest
-	if _, ok := request.(*workflowservice.RespondActivityTaskFailedRequest); ok {
-		activityMetricsHandler.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
+	if req, ok := request.(*workflowservice.RespondActivityTaskFailedRequest); ok {
+		if !isBenignProtoApplicationFailure(req.Failure) {
+			activityMetricsHandler.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
+		}
 	}
 	activityMetricsHandler.Timer(metrics.ActivityExecutionLatency).Record(time.Since(executionStartTime))
 

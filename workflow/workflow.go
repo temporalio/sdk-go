@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package workflow
 
 import (
@@ -67,6 +43,28 @@ const (
 	HandlerUnfinishedPolicyAbandon = internal.HandlerUnfinishedPolicyAbandon
 )
 
+// NexusOperationCancellationType specifies what action should be taken for a Nexus operation when the
+// caller is cancelled.
+type NexusOperationCancellationType = internal.NexusOperationCancellationType
+
+const (
+	// Nexus operation cancellation type is unknown.
+	NexusOperationCancellationTypeUnspecified NexusOperationCancellationType = iota
+
+	// Do not request cancellation of the Nexus operation.
+	NexusOperationCancellationTypeAbandon
+
+	// Initiate a cancellation request for the Nexus operation and immediately report cancellation
+	// to the caller.
+	NexusOperationCancellationTypeTryCancel
+
+	// Request cancellation of the Nexus operation and wait for confirmation that the request was received.
+	NexusOperationCancellationTypeWaitRequested
+
+	// Wait for the Nexus operation to complete. Default.
+	NexusOperationCancellationTypeWaitCompleted
+)
+
 type (
 
 	// ChildWorkflowFuture represents the result of a child workflow execution
@@ -86,6 +84,16 @@ type (
 
 	// RegisterOptions consists of options for registering a workflow
 	RegisterOptions = internal.RegisterWorkflowOptions
+
+	// LoadDynamicRuntimeOptionsDetails is used as input to the LoadDynamicRuntimeOptions callback for dynamic workflows
+	LoadDynamicRuntimeOptionsDetails = internal.LoadDynamicRuntimeOptionsDetails
+
+	// DynamicRegisterOptions consists of options for registering a dynamic workflow
+	DynamicRegisterOptions = internal.DynamicRegisterWorkflowOptions
+
+	// DynamicRuntimeOptions consists of options for a dynamic workflow that
+	// are decided on a per-workflow type basis.
+	DynamicRuntimeOptions = internal.DynamicRuntimeWorkflowOptions
 
 	// Info information about currently executing workflow
 	Info = internal.WorkflowInfo

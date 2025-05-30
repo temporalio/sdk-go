@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 // All code in this file is private to the package.
@@ -605,7 +581,7 @@ func (w *workflowExecutionContextImpl) Lock() {
 	w.mutex.Lock()
 }
 
-// Unlock cleans up after the provided error and it's own internal view of the
+// Unlock cleans up after the provided error and its own internal view of the
 // workflow error state by clearing itself and removing itself from cache as
 // needed. It is an error to call this function without having called the Lock
 // function first and the behavior is undefined. Regardless of the error
@@ -615,7 +591,7 @@ func (w *workflowExecutionContextImpl) Unlock(err error) {
 	if err != nil || w.err != nil || w.isWorkflowCompleted ||
 		(w.wth.cache.MaxWorkflowCacheSize() <= 0 && !w.hasPendingLocalActivityWork()) {
 		// TODO: in case of closed, it assumes the close command always succeed. need server side change to return
-		// error to indicate the close failure case. This should be rare case. For now, always remove the cache, and
+		// error to indicate the close failure case. This should be a rare case. For now, always remove the cache, and
 		// if the close command failed, the next command will have to rebuild the state.
 		if w.wth.cache.getWorkflowCache().Exist(w.workflowInfo.WorkflowExecution.RunID) {
 			w.wth.cache.removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID)
@@ -963,17 +939,27 @@ processWorkflowLoop:
 							heartbeatTimer = nil
 						}
 
-						// force complete, call the workflow task heartbeat function
-						workflowTask, err = heartbeatFunc(
-							workflowContext.CompleteWorkflowTask(workflowTask, false),
-							startTime,
-						)
-						if err != nil {
-							errRet = &workflowTaskHeartbeatError{Message: fmt.Sprintf("error sending workflow task heartbeat %v", err)}
+						// For non-graceful shutdown, the LA worker stops before this function, so there
+						// is no need to continue heartbeating. Instead, we can exit early, giving up
+						// the slot this function takes, a little sooner.
+						select {
+						case <-workflowContext.laTunnel.stopCh:
+							// stopCh closed means worker is shutting down and there's
+							// no need for LA heartbeat
 							return
-						}
-						if workflowTask == nil {
-							return
+						default:
+							// force complete, call the workflow task heartbeat function
+							workflowTask, err = heartbeatFunc(
+								workflowContext.CompleteWorkflowTask(workflowTask, false),
+								startTime,
+							)
+							if err != nil {
+								errRet = &workflowTaskHeartbeatError{Message: fmt.Sprintf("error sending workflow task heartbeat %v", err)}
+								return
+							}
+							if workflowTask == nil {
+								return
+							}
 						}
 
 						continue processWorkflowLoop
@@ -1902,7 +1888,9 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		}}
 	} else if workflowContext.err != nil {
 		// Workflow failures
-		metricsHandler.Counter(metrics.WorkflowFailedCounter).Inc(1)
+		if !isBenignApplicationError(workflowContext.err) {
+			metricsHandler.Counter(metrics.WorkflowFailedCounter).Inc(1)
+		}
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION)
 		failure := wth.failureConverter.ErrorToFailure(workflowContext.err)
 		closeCommand.Attributes = &commandpb.Command_FailWorkflowExecutionCommandAttributes{FailWorkflowExecutionCommandAttributes: &commandpb.FailWorkflowExecutionCommandAttributes{
@@ -2321,7 +2309,11 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		return nil, ctx.Err()
 	}
 	if err != nil && err != ErrActivityResultPending {
-		ath.logger.Error("Activity error.",
+		logFunc := ath.logger.Error // Default to Error
+		if isBenignApplicationError(err) {
+			logFunc = ath.logger.Debug // Downgrade to Debug for benign application errors
+		}
+		logFunc("Activity error.",
 			tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
 			tagRunID, t.WorkflowExecution.GetRunId(),
 			tagActivityType, activityType,
