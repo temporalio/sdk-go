@@ -156,20 +156,19 @@ func (h *workerDeploymentHandleImpl) validate() error {
 	return nil
 }
 
-func (h *workerDeploymentHandleImpl) validateVersion(version string, noUnversioned bool) error {
-	if version == WorkerDeploymentUnversioned {
-		if noUnversioned {
-			return fmt.Errorf("invalid version argument %v", WorkerDeploymentUnversioned)
-		} else {
-			return nil
-		}
-	}
-	prefix := h.Name + WorkerDeploymentVersionSeparator
-	if !strings.HasPrefix(version, prefix) {
-		return fmt.Errorf("invalid version argument %v, prefix should be %v", version, prefix)
+func (h *workerDeploymentHandleImpl) validateBuildID(buildId string, noUnversioned bool) error {
+	if (buildId == "") && noUnversioned {
+		return fmt.Errorf("BuildID cannot be empty")
 	}
 
 	return nil
+}
+
+func (h *workerDeploymentHandleImpl) buildIdToVersionStr(buildId string) string {
+	if buildId == "" {
+		return WorkerDeploymentUnversioned
+	}
+	return h.Name + WorkerDeploymentVersionSeparator + buildId
 }
 
 func (h *workerDeploymentHandleImpl) Describe(ctx context.Context, options WorkerDeploymentDescribeOptions) (WorkerDeploymentDescribeResponse, error) {
@@ -202,9 +201,6 @@ func (h *workerDeploymentHandleImpl) SetCurrentVersion(ctx context.Context, opti
 	if err := h.validate(); err != nil {
 		return WorkerDeploymentSetCurrentVersionResponse{}, err
 	}
-	if err := h.validateVersion(options.Version, false); err != nil {
-		return WorkerDeploymentSetCurrentVersionResponse{}, err
-	}
 	if err := h.workflowClient.ensureInitialized(ctx); err != nil {
 		return WorkerDeploymentSetCurrentVersionResponse{}, err
 	}
@@ -217,7 +213,8 @@ func (h *workerDeploymentHandleImpl) SetCurrentVersion(ctx context.Context, opti
 	request := &workflowservice.SetWorkerDeploymentCurrentVersionRequest{
 		Namespace:               h.workflowClient.namespace,
 		DeploymentName:          h.Name,
-		Version:                 options.Version,
+		Version:                 h.buildIdToVersionStr(options.BuildID),
+		BuildId:                 options.BuildID,
 		ConflictToken:           options.ConflictToken,
 		Identity:                identity,
 		IgnoreMissingTaskQueues: options.IgnoreMissingTaskQueues,
@@ -242,12 +239,6 @@ func (h *workerDeploymentHandleImpl) SetRampingVersion(ctx context.Context, opti
 	if err := h.validate(); err != nil {
 		return WorkerDeploymentSetRampingVersionResponse{}, err
 	}
-	// Empty string removes the ramp
-	if options.Version != "" {
-		if err := h.validateVersion(options.Version, false); err != nil {
-			return WorkerDeploymentSetRampingVersionResponse{}, err
-		}
-	}
 	if err := h.workflowClient.ensureInitialized(ctx); err != nil {
 		return WorkerDeploymentSetRampingVersionResponse{}, err
 	}
@@ -260,7 +251,8 @@ func (h *workerDeploymentHandleImpl) SetRampingVersion(ctx context.Context, opti
 	request := &workflowservice.SetWorkerDeploymentRampingVersionRequest{
 		Namespace:               h.workflowClient.namespace,
 		DeploymentName:          h.Name,
-		Version:                 options.Version,
+		Version:                 h.buildIdToVersionStr(options.BuildID),
+		BuildId:                 options.BuildID,
 		Percentage:              options.Percentage,
 		ConflictToken:           options.ConflictToken,
 		Identity:                identity,
@@ -334,7 +326,7 @@ func (h *workerDeploymentHandleImpl) DescribeVersion(ctx context.Context, option
 	if err := h.validate(); err != nil {
 		return WorkerDeploymentVersionDescription{}, err
 	}
-	if err := h.validateVersion(options.Version, true); err != nil {
+	if err := h.validateBuildID(options.BuildID, true); err != nil {
 		return WorkerDeploymentVersionDescription{}, err
 	}
 	if err := h.workflowClient.ensureInitialized(ctx); err != nil {
@@ -343,7 +335,11 @@ func (h *workerDeploymentHandleImpl) DescribeVersion(ctx context.Context, option
 
 	request := &workflowservice.DescribeWorkerDeploymentVersionRequest{
 		Namespace: h.workflowClient.namespace,
-		Version:   options.Version,
+		Version:   h.buildIdToVersionStr(options.BuildID),
+		DeploymentVersion: &deployment.WorkerDeploymentVersion{
+			BuildId:        options.BuildID,
+			DeploymentName: h.Name,
+		},
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
@@ -362,7 +358,7 @@ func (h *workerDeploymentHandleImpl) DeleteVersion(ctx context.Context, options 
 	if err := h.validate(); err != nil {
 		return WorkerDeploymentDeleteVersionResponse{}, err
 	}
-	if err := h.validateVersion(options.Version, true); err != nil {
+	if err := h.validateBuildID(options.BuildID, true); err != nil {
 		return WorkerDeploymentDeleteVersionResponse{}, err
 	}
 	if err := h.workflowClient.ensureInitialized(ctx); err != nil {
@@ -375,8 +371,12 @@ func (h *workerDeploymentHandleImpl) DeleteVersion(ctx context.Context, options 
 	}
 
 	request := &workflowservice.DeleteWorkerDeploymentVersionRequest{
-		Namespace:    h.workflowClient.namespace,
-		Version:      options.Version,
+		Namespace: h.workflowClient.namespace,
+		Version:   h.buildIdToVersionStr(options.BuildID),
+		DeploymentVersion: &deployment.WorkerDeploymentVersion{
+			BuildId:        options.BuildID,
+			DeploymentName: h.Name,
+		},
 		SkipDrainage: options.SkipDrainage,
 		Identity:     identity,
 	}
@@ -417,7 +417,7 @@ func (h *workerDeploymentHandleImpl) UpdateVersionMetadata(ctx context.Context, 
 	if err := h.validate(); err != nil {
 		return WorkerDeploymentUpdateVersionMetadataResponse{}, err
 	}
-	if err := h.validateVersion(options.Version, true); err != nil {
+	if err := h.validateBuildID(options.Version, true); err != nil {
 		return WorkerDeploymentUpdateVersionMetadataResponse{}, err
 	}
 	if err := h.workflowClient.ensureInitialized(ctx); err != nil {

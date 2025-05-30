@@ -11,7 +11,7 @@ import (
 //
 // NOTE: Experimental
 //
-// Exposed as: [go.temporal.io/sdk/worker.WorkerDeploymentVersion]
+// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentVersion], [go.temporal.io/sdk/worker.WorkerDeploymentVersion]
 type WorkerDeploymentVersion struct {
 	// The name of the deployment this worker version belongs to
 	DeploymentName string

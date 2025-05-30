@@ -121,9 +121,9 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentSetCurrentVersionOptions]
 	WorkerDeploymentSetCurrentVersionOptions struct {
-		// Version - A Deployment Version identifier in the form of "<deployment_name>.<build_id>",
-		// or the "__unversioned__" special value, which represents all the unversioned workers.
-		Version string
+		// BuildID - A Build ID within this deployment to set as the current version. If empty, the
+		// current version will target unversioned workers.
+		BuildID string
 
 		// ConflictToken - Token to serialize Worker Deployment operations. Passing a non-empty
 		// conflict token will cause this request to fail with
@@ -176,10 +176,9 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentSetRampingVersionOptions]
 	WorkerDeploymentSetRampingVersionOptions struct {
-		// Version - A Deployment Version identifier in the form of "<deployment_name>.<build_id>",
-		// or the "__unversioned__" special value, which represents all the unversioned workers,
-		// or the empty string to unset the Ramping Version.
-		Version string
+		// BuildID - A Build ID within this deployment to set as the ramping version. If empty, the
+		// current version will target unversioned workers.
+		BuildID string
 
 		// Percentage - Ramp percentage to set. Valid range: [0,100].
 		Percentage float32
@@ -238,8 +237,8 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentDescribeVersionOptions]
 	WorkerDeploymentDescribeVersionOptions struct {
-		// Version - A Deployment Version identifier in the form of "<deployment_name>.<build_id>".
-		Version string
+		// BuildID - A Build ID within this deployment to describe.
+		BuildID string
 	}
 
 	// WorkerDeploymentTaskQueueInfo describes properties of the Task Queues involved
@@ -263,7 +262,6 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentVersionDrainageInfo]
 	WorkerDeploymentVersionDrainageInfo struct {
-
 		// DrainageStatus - The Worker Deployment Version drainage status to guarantee safe
 		// decommission of this Version.
 		DrainageStatus WorkerDeploymentVersionDrainageStatus
@@ -331,9 +329,8 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentDeleteVersionOptions]
 	WorkerDeploymentDeleteVersionOptions struct {
-		// Version - Identifier in the form of "<deployment_name>.<build_id>" for the Version
-		// to be deleted.
-		Version string
+		// BuildID - A Build ID within this deployment to delete.
+		BuildID string
 
 		// SkipDrainage - Force deletion even if the Version is still draining.
 		//

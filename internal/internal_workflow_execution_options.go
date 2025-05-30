@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 
+	deploymentpb "go.temporal.io/api/deployment/v1"
+
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
@@ -32,14 +34,21 @@ type (
 		VersioningOverride VersioningOverride
 	}
 
-	// WorkflowExecutionOptionsChanges describes changes to the options of a workflow execution in [WorkflowExecutionOptions].
-	// An entry with a `nil` pointer means do not change.
-	// An entry with a pointer to an empty value means delete the entry, i.e., the empty value is a tombstone.
-	// An entry with a pointer to a non-empty value means replace the entry, i.e., there is no deep merging.
+	// WorkflowExecutionOptionsChanges describes changes to the options of a workflow execution in
+	// [WorkflowExecutionOptions]. An entry with a `nil` pointer means do not change.
 	//
 	// NOTE: Experimental
 	WorkflowExecutionOptionsChanges struct {
-		VersioningOverride *VersioningOverride
+		VersioningOverride *VersioningOverrideChange
+	}
+
+	// VersioningOverrideChange sets or removes a versioning override when used with
+	// [WorkflowExecutionOptionsChanges].
+	//
+	// NOTE: Experimental
+	VersioningOverrideChange struct {
+		// Set the override entry if non-nil. If nil, remove any previously set override.
+		Value VersioningOverride
 	}
 
 	// VersioningOverride changes the versioning configuration of a specific workflow execution.
@@ -125,6 +134,10 @@ func versioningOverrideToProto(versioningOverride VersioningOverride) *workflowp
 		return &workflowpb.VersioningOverride{
 			Behavior:      versioningBehaviorToProto(behavior),
 			PinnedVersion: v.Version.ToCanonicalString(),
+			Deployment: &deploymentpb.Deployment{
+				SeriesName: v.Version.DeploymentName,
+				BuildId:    v.Version.BuildId,
+			},
 			Override: &workflowpb.VersioningOverride_Pinned{
 				Pinned: &workflowpb.VersioningOverride_PinnedOverride{
 					Behavior: workflowpb.VersioningOverride_PINNED_OVERRIDE_BEHAVIOR_PINNED,
@@ -195,7 +208,7 @@ func workflowExecutionOptionsChangesToProto(changes WorkflowExecutionOptionsChan
 	options := WorkflowExecutionOptions{}
 	if changes.VersioningOverride != nil {
 		mask = append(mask, "VersioningOverride")
-		options.VersioningOverride = *changes.VersioningOverride
+		options.VersioningOverride = changes.VersioningOverride.Value
 	}
 	return workflowExecutionOptionsToProto(options), workflowExecutionOptionsMaskToProto(mask)
 }

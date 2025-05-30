@@ -2,7 +2,7 @@
 
 [Temporal](https://github.com/temporalio/temporal) is a distributed, scalable, durable, and highly available orchestration engine used to execute asynchronous long-running business logic in a scalable and resilient way.
 
-"Temporal Go SDK" is the framework for authoring workflows and activities using Go language.
+"Temporal Go SDK" is Temporal's framework for authoring workflows and activities using the Go language.
 
 ## How to use
 
@@ -14,7 +14,7 @@ git clone https://github.com/temporalio/sdk-go.git
 
 See [samples](https://github.com/temporalio/samples-go) to get started.
 
-Documentation is available [here](https://docs.temporal.io). 
+Documentation is available [here](https://docs.temporal.io).
 You can also find the API documentation [here](https://pkg.go.dev/go.temporal.io/sdk).
 
 ## Using slog
@@ -75,7 +75,7 @@ If users used Temporal proto types in their Workflows, such as for activity outp
 	}),
 ```
 
-While upgrading from Go SDK version `< 1.26.0` to a version `>= 1.26.0` users may want to also bias towards using 
+While upgrading from Go SDK version `< 1.26.0` to a version `>= 1.26.0` users may want to also bias towards using
 proto binary to avoid any potential incompatibilities due to having clients serialize messages with incompatible `proto/json` format.
 
 On clients running Go SDK `< 1.26.0`
@@ -103,7 +103,7 @@ converter.NewCompositeDataConverter(
 	)
 ```
 
-Note: Payloads encoded with `proto/binary` will not be readable in the Temporal web UI. 
+Note: Payloads encoded with `proto/binary` will not be readable in the Temporal web UI.
 
 ## License
 MIT License, please see [LICENSE](LICENSE) for details.
