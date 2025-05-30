@@ -85,6 +85,16 @@ type (
 	// RegisterOptions consists of options for registering a workflow
 	RegisterOptions = internal.RegisterWorkflowOptions
 
+	// LoadDynamicRuntimeOptionsDetails is used as input to the LoadDynamicRuntimeOptions callback for dynamic workflows
+	LoadDynamicRuntimeOptionsDetails = internal.LoadDynamicRuntimeOptionsDetails
+
+	// DynamicRegisterOptions consists of options for registering a dynamic workflow
+	DynamicRegisterOptions = internal.DynamicRegisterWorkflowOptions
+
+	// DynamicRuntimeOptions consists of options for a dynamic workflow that
+	// are decided on a per-workflow type basis.
+	DynamicRuntimeOptions = internal.DynamicRuntimeWorkflowOptions
+
 	// Info information about currently executing workflow
 	Info = internal.WorkflowInfo
 

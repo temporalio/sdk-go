@@ -59,10 +59,10 @@ func (f sdkFlag) isValid() bool {
 // sdkFlags represents all the flags that are currently set in a workflow execution.
 type sdkFlags struct {
 	capabilities *workflowservice.GetSystemInfoResponse_Capabilities
-	// Flags that have been recieved from the server
+	// Flags that have been received from the server
 	currentFlags map[sdkFlag]bool
 	// Flags that have been set this WFT that have not been sent to the server.
-	// Keep track of them sepratly so we know what to send to the server.
+	// Keep track of them separately so we know what to send to the server.
 	newFlags map[sdkFlag]bool
 }
 
@@ -123,7 +123,7 @@ func (sf *sdkFlags) gatherNewSDKFlags() []sdkFlag {
 }
 
 // SetUnblockSelectorSignal toggles the flag to unblock the selector signal.
-// For test use only,
+// For test use only.
 func SetUnblockSelectorSignal(unblockSignal bool) {
 	unblockSelectorSignal = unblockSignal
 }
