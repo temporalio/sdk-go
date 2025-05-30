@@ -6,12 +6,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/serviceerror"
 	"golang.org/x/time/rate"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"go.temporal.io/sdk/internal/common/retry"
 
@@ -538,6 +541,14 @@ func (bw *baseWorker) logPollTaskError(err error) {
 		bw.lastPollTaskErrStarted = time.Now()
 		return
 	}
+
+	// Ignore connection loss on server shutdown. This helps with quiescing spurious error messages
+	// upon server shutdown (where server is using the SDK).
+	st, ok := status.FromError(err)
+	if ok && st.Code() == codes.Unavailable && strings.Contains(st.Message(), "graceful_stop") {
+		return
+	}
+
 	// Log the error as warn if it doesn't match the last error seen or its over
 	// the time since
 	if err.Error() != bw.lastPollTaskErrMessage || time.Since(bw.lastPollTaskErrStarted) > lastPollTaskErrSuppressTime {

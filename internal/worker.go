@@ -359,8 +359,8 @@ func NewWorker(
 	return NewAggregatedWorker(workflowClient, taskQueue, options)
 }
 
-func workerDeploymentOptionsToProto(useVersioning bool, version *WorkerDeploymentVersion) *deploymentpb.WorkerDeploymentOptions {
-	if version != nil {
+func workerDeploymentOptionsToProto(useVersioning bool, version WorkerDeploymentVersion) *deploymentpb.WorkerDeploymentOptions {
+	if (version != WorkerDeploymentVersion{}) {
 		var workerVersioningMode enumspb.WorkerVersioningMode
 		if useVersioning {
 			workerVersioningMode = enumspb.WORKER_VERSIONING_MODE_VERSIONED

@@ -488,6 +488,11 @@ type (
 	// NOTE: Experimental
 	WorkerDeploymentDeleteResponse = internal.WorkerDeploymentDeleteResponse
 
+	// WorkerDeploymentVersion represents a specific version of a worker in a deployment.
+	//
+	// NOTE: Experimental
+	WorkerDeploymentVersion = internal.WorkerDeploymentVersion
+
 	// WorkerDeploymentClient is the client that manages Worker Deployments.
 	//
 	// NOTE: Experimental
@@ -596,13 +601,31 @@ type (
 	// NOTE: Experimental
 	WorkflowExecutionOptionsChanges = internal.WorkflowExecutionOptionsChanges
 
+	// VersioningOverrideChange sets or removes a versioning override when used with
+	// [WorkflowExecutionOptionsChanges].
+	//
+	// NOTE: Experimental
+	VersioningOverrideChange = internal.VersioningOverrideChange
+
 	// VersioningOverride is a property in [WorkflowExecutionOptions] that changes the versioning
 	// configuration of a specific workflow execution.
-	// If set, it takes precedence over the Versioning Behavior provided with workflow type registration, or
-	// default worker options.
+	//
+	// If set, it takes precedence over the Versioning Behavior provided with workflow type
+	// registration, or default worker options.
 	//
 	// NOTE: Experimental
 	VersioningOverride = internal.VersioningOverride
+
+	// PinnedVersioningOverride means the workflow will be pinned to a specific deployment version.
+	//
+	// NOTE: Experimental
+	PinnedVersioningOverride = internal.PinnedVersioningOverride
+
+	// AutoUpgradeVersioningOverride means the workflow will auto-upgrade to the current deployment
+	// version on the next workflow task.
+	//
+	// NOTE: Experimental
+	AutoUpgradeVersioningOverride = internal.AutoUpgradeVersioningOverride
 
 	// WorkflowUpdateHandle represents a running or completed workflow
 	// execution update and gives the holder access to the outcome of the same.

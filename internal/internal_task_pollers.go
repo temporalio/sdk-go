@@ -64,7 +64,7 @@ type (
 		// Whether the worker has opted in to the build-id based versioning feature
 		useBuildIDVersioning bool
 		// The worker's deployment version identifier.
-		workerDeploymentVersion *WorkerDeploymentVersion
+		workerDeploymentVersion WorkerDeploymentVersion
 		// Server's capabilities
 		capabilities *workflowservice.GetSystemInfoResponse_Capabilities
 	}
@@ -259,9 +259,6 @@ func (bp *basePoller) getCapabilities() *workflowservice.GetSystemInfoResponse_C
 }
 
 func (bp *basePoller) getDeploymentName() string {
-	if bp.workerDeploymentVersion == nil {
-		return ""
-	}
 	return bp.workerDeploymentVersion.DeploymentName
 }
 

@@ -121,7 +121,7 @@ type (
 		identity                  string
 		workerBuildID             string
 		useBuildIDForVersioning   bool
-		workerDeploymentVersion   *WorkerDeploymentVersion
+		workerDeploymentVersion   WorkerDeploymentVersion
 		defaultVersioningBehavior VersioningBehavior
 		enableLoggingInReplay     bool
 		registry                  *registry
@@ -1929,7 +1929,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	}
 
 	seriesName := ""
-	if wth.workerDeploymentVersion != nil {
+	if (wth.workerDeploymentVersion != WorkerDeploymentVersion{}) {
 		seriesName = wth.workerDeploymentVersion.DeploymentName
 	}
 	builtRequest := &workflowservice.RespondWorkflowTaskCompletedRequest{
@@ -1968,7 +1968,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		//lint:ignore SA1019 ignore deprecated versioning APIs
 		builtRequest.BinaryChecksum = ""
 	}
-	if wth.useBuildIDForVersioning || wth.workerDeploymentVersion != nil {
+	if wth.useBuildIDForVersioning || (wth.workerDeploymentVersion != WorkerDeploymentVersion{}) {
 		workflowType := workflowContext.workflowInfo.WorkflowType
 		if behavior, ok := wth.registry.getWorkflowVersioningBehavior(workflowType); ok {
 			builtRequest.VersioningBehavior = versioningBehaviorToProto(behavior)
@@ -2010,7 +2010,7 @@ func newActivityTaskHandlerWithCustomProvider(
 	activityProvider activityProvider,
 ) ActivityTaskHandler {
 	seriesName := ""
-	if params.WorkerDeploymentVersion != nil {
+	if (params.WorkerDeploymentVersion != WorkerDeploymentVersion{}) {
 		seriesName = params.WorkerDeploymentVersion.DeploymentName
 	}
 	return &activityTaskHandlerImpl{

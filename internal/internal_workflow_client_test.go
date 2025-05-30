@@ -1825,6 +1825,9 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithVersioningOverride() {
 			s.Equal("deployment1", req.VersioningOverride.GetDeployment().GetSeriesName())
 			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal("deployment1.build1", req.VersioningOverride.GetPinnedVersion())
+
+			s.Equal("deployment1", req.VersioningOverride.GetPinned().GetVersion().DeploymentName)
+			s.Equal("build1", req.VersioningOverride.GetPinned().GetVersion().BuildId)
 		})
 	_, _ = s.client.ExecuteWorkflow(context.Background(), options, wf)
 }
@@ -1859,6 +1862,9 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithVersioningOverr
 			s.Equal("deployment1", req.VersioningOverride.GetDeployment().GetSeriesName())
 			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal("deployment1.build1", req.VersioningOverride.GetPinnedVersion())
+
+			s.Equal("deployment1", req.VersioningOverride.GetPinned().GetVersion().DeploymentName)
+			s.Equal("build1", req.VersioningOverride.GetPinned().GetVersion().BuildId)
 		})
 	_, _ = s.client.SignalWithStartWorkflow(context.Background(), "wid", "signal", "value", options, wf)
 }
