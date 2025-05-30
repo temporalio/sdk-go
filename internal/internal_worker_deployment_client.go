@@ -86,10 +86,12 @@ func workerDeploymentRoutingConfigFromProto(routingConfig *deployment.RoutingCon
 	}
 
 	return WorkerDeploymentRoutingConfig{
-		//lint:ignore SA1019 ignore deprecated versioning APIs
-		CurrentVersion: routingConfig.GetCurrentVersion(),
-		//lint:ignore SA1019 ignore deprecated versioning APIs
-		RampingVersion:                      routingConfig.GetRampingVersion(),
+		CurrentVersion: workerDeploymentVersionFromProtoOrString(
+			//lint:ignore SA1019 ignore deprecated versioning APIs
+			routingConfig.CurrentDeploymentVersion, routingConfig.CurrentVersion),
+		RampingVersion: workerDeploymentVersionFromProtoOrString(
+			//lint:ignore SA1019 ignore deprecated versioning APIs
+			routingConfig.RampingDeploymentVersion, routingConfig.RampingVersion),
 		RampingVersionPercentage:            routingConfig.GetRampingVersionPercentage(),
 		CurrentVersionChangedTime:           safeAsTime(routingConfig.GetCurrentVersionChangedTime()),
 		RampingVersionChangedTime:           safeAsTime(routingConfig.GetRampingVersionChangedTime()),
@@ -108,9 +110,16 @@ func workerDeploymentListEntryFromProto(summary *workflowservice.ListWorkerDeplo
 func workerDeploymentVersionSummariesFromProto(summaries []*deployment.WorkerDeploymentInfo_WorkerDeploymentVersionSummary) []WorkerDeploymentVersionSummary {
 	result := []WorkerDeploymentVersionSummary{}
 	for _, summary := range summaries {
-		result = append(result, WorkerDeploymentVersionSummary{
+		version := workerDeploymentVersionFromProtoOrString(
 			//lint:ignore SA1019 ignore deprecated versioning APIs
-			Version:        summary.GetVersion(),
+			summary.DeploymentVersion, summary.Version)
+		if version == nil {
+			// Shouldn't receive any summary like this
+			continue
+		}
+
+		result = append(result, WorkerDeploymentVersionSummary{
+			Version:        *version,
 			CreateTime:     safeAsTime(summary.CreateTime),
 			DrainageStatus: WorkerDeploymentVersionDrainageStatus(summary.GetDrainageStatus()),
 		})
@@ -223,8 +232,9 @@ func (h *workerDeploymentHandleImpl) SetCurrentVersion(ctx context.Context, opti
 
 	return WorkerDeploymentSetCurrentVersionResponse{
 		ConflictToken: resp.GetConflictToken(),
-		//lint:ignore SA1019 ignore deprecated versioning APIs
-		PreviousVersion: resp.GetPreviousVersion(),
+		PreviousVersion: workerDeploymentVersionFromProtoOrString(
+			//lint:ignore SA1019 ignore deprecated versioning APIs
+			resp.PreviousDeploymentVersion, resp.PreviousVersion),
 	}, nil
 }
 
@@ -266,8 +276,9 @@ func (h *workerDeploymentHandleImpl) SetRampingVersion(ctx context.Context, opti
 
 	return WorkerDeploymentSetRampingVersionResponse{
 		ConflictToken: resp.GetConflictToken(),
-		//lint:ignore SA1019 ignore deprecated versioning APIs
-		PreviousVersion:    resp.GetPreviousVersion(),
+		PreviousVersion: workerDeploymentVersionFromProtoOrString(
+			//lint:ignore SA1019 ignore deprecated versioning APIs
+			resp.PreviousDeploymentVersion, resp.PreviousVersion),
 		PreviousPercentage: resp.GetPreviousPercentage(),
 	}, nil
 
@@ -299,9 +310,14 @@ func workerDeploymentVersionInfoFromProto(info *deployment.WorkerDeploymentVersi
 	if info == nil {
 		return WorkerDeploymentVersionInfo{}
 	}
+	//lint:ignore SA1019 ignore deprecated versioning APIs
+	version := workerDeploymentVersionFromProtoOrString(info.DeploymentVersion, info.Version)
+	if version == nil {
+		// Should never happen unless server is sending junk data
+		version = &WorkerDeploymentVersion{}
+	}
 	return WorkerDeploymentVersionInfo{
-		//lint:ignore SA1019 ignore deprecated versioning APIs
-		Version:            info.Version,
+		Version:            *version,
 		CreateTime:         safeAsTime(info.CreateTime),
 		RoutingChangedTime: safeAsTime(info.RoutingChangedTime),
 		CurrentSinceTime:   safeAsTime(info.CurrentSinceTime),

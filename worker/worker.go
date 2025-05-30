@@ -204,6 +204,11 @@ type (
 	// NOTE: Experimental
 	DeploymentOptions = internal.WorkerDeploymentOptions
 
+	// WorkerDeploymentVersion represents a specific version of a worker in a deployment.
+	//
+	// NOTE: Experimental
+	WorkerDeploymentVersion = internal.WorkerDeploymentVersion
+
 	// Options is used to configure a worker instance.
 	Options = internal.WorkerOptions
 

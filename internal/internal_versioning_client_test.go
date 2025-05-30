@@ -100,8 +100,8 @@ func Test_TaskQueueDescription_fromProtoResponse(t *testing.T) {
 					},
 				},
 				VersioningInfo: &TaskQueueVersioningInfo{
-					CurrentVersion:           "foo.build1",
-					RampingVersion:           "foo.build2",
+					CurrentVersion:           &WorkerDeploymentVersion{DeploymentName: "foo", BuildId: "build1"},
+					RampingVersion:           &WorkerDeploymentVersion{DeploymentName: "foo", BuildId: "build2"},
 					RampingVersionPercentage: 3.0,
 					UpdateTime:               now,
 				},

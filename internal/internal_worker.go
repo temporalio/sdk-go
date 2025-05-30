@@ -144,14 +144,10 @@ type (
 		// If true the worker is opting in to build ID based versioning.
 		UseBuildIDForVersioning bool
 
-		// The worker deployment version identifier of the form "<deployment_name>.<build_id>".
+		// The worker deployment version identifier.
 		// If set, both the [WorkerBuildID] and the [DeploymentSeriesName] will be derived from it,
 		// ignoring previous values.
-		WorkerDeploymentVersion string
-
-		// The worker's deployment series name, an identifier for Worker Versioning that links versions of the same worker
-		// service/application.
-		DeploymentSeriesName string
+		WorkerDeploymentVersion *WorkerDeploymentVersion
 
 		// The Versioning Behavior for workflows that do not set one when registering the workflow type.
 		DefaultVersioningBehavior VersioningBehavior
@@ -1128,7 +1124,7 @@ func (aw *AggregatedWorker) RegisterWorkflow(w interface{}) {
 		panic("workflow worker disabled, cannot register workflow")
 	}
 	if aw.executionParams.UseBuildIDForVersioning &&
-		(aw.executionParams.DeploymentSeriesName != "" || aw.executionParams.WorkerDeploymentVersion != "") &&
+		aw.executionParams.WorkerDeploymentVersion != nil &&
 		aw.executionParams.DefaultVersioningBehavior == VersioningBehaviorUnspecified {
 		panic("workflow type does not have a versioning behavior")
 	}
@@ -1141,7 +1137,7 @@ func (aw *AggregatedWorker) RegisterWorkflowWithOptions(w interface{}, options R
 		panic("workflow worker disabled, cannot register workflow")
 	}
 	if options.VersioningBehavior == VersioningBehaviorUnspecified &&
-		(aw.executionParams.DeploymentSeriesName != "" || aw.executionParams.WorkerDeploymentVersion != "") &&
+		aw.executionParams.WorkerDeploymentVersion != nil &&
 		aw.executionParams.UseBuildIDForVersioning &&
 		aw.executionParams.DefaultVersioningBehavior == VersioningBehaviorUnspecified {
 		panic("workflow type does not have a versioning behavior")
@@ -1155,7 +1151,7 @@ func (aw *AggregatedWorker) RegisterDynamicWorkflow(w interface{}, options Dynam
 		panic("workflow worker disabled, cannot register workflow")
 	}
 	if options.LoadDynamicRuntimeOptions == nil && aw.executionParams.UseBuildIDForVersioning &&
-		(aw.executionParams.DeploymentSeriesName != "" || aw.executionParams.WorkerDeploymentVersion != "") &&
+		aw.executionParams.WorkerDeploymentVersion != nil &&
 		aw.executionParams.DefaultVersioningBehavior == VersioningBehaviorUnspecified {
 		panic("dynamic workflow does not have a versioning behavior")
 	}
@@ -1798,16 +1794,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("cannot set both EnableSessionWorker and UseBuildIDForVersioning")
 	}
 
-	if options.DeploymentOptions.Version != "" &&
-		!strings.Contains(options.DeploymentOptions.Version, ".") {
-		panic("version in DeploymentOptions not in the form \"<deployment_name>.<build_id>\"")
-	}
-
-	if options.DeploymentOptions.Version != "" {
-		splitVersion := strings.SplitN(options.DeploymentOptions.Version, ".", 2)
-		options.DeploymentOptions.DeploymentSeriesName = splitVersion[0]
-		options.BuildID = splitVersion[1]
-	}
+	options.BuildID = options.DeploymentOptions.Version.BuildId
 
 	// Need reference to result for fatal error handler
 	var aw *AggregatedWorker
@@ -1837,6 +1824,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	// All worker systems that depend on the capabilities to process workflow/activity tasks
 	// should take a pointer to this struct and wait for it to be populated when the worker is run.
 	var capabilities workflowservice.GetSystemInfoResponse_Capabilities
+	var workerDeploymentVersion *WorkerDeploymentVersion
+	if (options.DeploymentOptions.Version != WorkerDeploymentVersion{}) {
+		workerDeploymentVersion = &options.DeploymentOptions.Version
+	}
 
 	cache := NewWorkerCache()
 	workerParams := workerExecutionParameters{
@@ -1851,8 +1842,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		Identity:                              client.identity,
 		WorkerBuildID:                         options.BuildID,
 		UseBuildIDForVersioning:               options.UseBuildIDForVersioning || options.DeploymentOptions.UseVersioning,
-		DeploymentSeriesName:                  options.DeploymentOptions.DeploymentSeriesName,
-		WorkerDeploymentVersion:               options.DeploymentOptions.Version,
+		WorkerDeploymentVersion:               workerDeploymentVersion,
 		DefaultVersioningBehavior:             options.DeploymentOptions.DefaultVersioningBehavior,
 		MetricsHandler:                        client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue)),
 		Logger:                                client.logger,

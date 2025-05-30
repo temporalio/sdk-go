@@ -77,8 +77,9 @@ const (
 	WorkerVersioningModeUnversioned
 
 	// WorkerVersioningModeVersioned - Workers with this mode are part of a
-	// Worker Deployment Version which is identified as
-	// "<deployment_name>.<build_id>".
+	// Worker Deployment Version which is a combination of a deployment name
+	// and a build id.
+	//
 	// Each Deployment Version is distinguished from other Versions for task
 	// routing, and users can configure the Temporal Server to send tasks to a
 	// particular Version.
@@ -245,24 +246,21 @@ type (
 	// NOTE: Experimental
 	TaskQueueVersioningInfo struct {
 		// CurrentVersion - Specifies which Deployment Version should receive new workflow
-		// executions, and tasks of existing non-pinned workflows.
-		// Can be one of the following:
-		// - A Deployment Version identifier in the form "<deployment_name>.<build_id>".
-		// - Or, the "__unversioned__" special value to represent all the unversioned workers
+		// executions, and tasks of existing non-pinned workflows. If nil, all unversioned workers
+		// are the target.
 		//
 		// NOTE: Experimental
-		CurrentVersion string
+		CurrentVersion *WorkerDeploymentVersion
 
 		// RampingVersion - When present, it means the traffic is being shifted from the Current
-		// Version to the Ramping Version.
-		// Can be one of the following:
-		// - A Deployment Version identifier in the form "<deployment_name>.<build_id>".
-		// - Or, the "__unversioned__" special value, to represent all the unversioned workers
+		// Version to the Ramping Version. If nil, all unversioned workers are the target, if the
+		// percentage is nonzero.
+		//
 		// Note that it is possible to ramp from one Version to another Version, or from unversioned
 		// workers to a particular Version, or from a particular Version to unversioned workers.
 		//
 		// NOTE: Experimental
-		RampingVersion string
+		RampingVersion *WorkerDeploymentVersion
 
 		// RampingVersionPercentage - Percentage of tasks that are routed to the Ramping Version instead
 		// of the Current Version.
@@ -424,12 +422,29 @@ func taskQueueVersioningInfoFromResponse(info *taskqueuepb.TaskQueueVersioningIn
 	if info == nil {
 		return nil
 	}
+	var currentVersion *WorkerDeploymentVersion
+	if info.GetCurrentDeploymentVersion() != nil {
+		p := workerDeploymentVersionFromProto(info.GetCurrentDeploymentVersion())
+		currentVersion = &p
+	}
+	if currentVersion == nil {
+		//lint:ignore SA1019 ignore deprecated versioning APIs
+		currentVersion = workerDeploymentVersionFromString(info.CurrentVersion)
+	}
+
+	var rampingVersion *WorkerDeploymentVersion
+	if info.GetRampingDeploymentVersion() != nil {
+		p := workerDeploymentVersionFromProto(info.GetRampingDeploymentVersion())
+		rampingVersion = &p
+	}
+	if rampingVersion == nil {
+		//lint:ignore SA1019 ignore deprecated versioning APIs
+		rampingVersion = workerDeploymentVersionFromString(info.RampingVersion)
+	}
 
 	return &TaskQueueVersioningInfo{
-		//lint:ignore SA1019 ignore deprecated versioning APIs
-		CurrentVersion: info.CurrentVersion,
-		//lint:ignore SA1019 ignore deprecated versioning APIs
-		RampingVersion:           info.RampingVersion,
+		CurrentVersion:           currentVersion,
+		RampingVersion:           rampingVersion,
 		RampingVersionPercentage: info.RampingVersionPercentage,
 		UpdateTime:               info.UpdateTime.AsTime(),
 	}

@@ -1795,12 +1795,10 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithMemoAndSearchAt
 }
 
 func (s *workflowClientTestSuite) TestStartWorkflowWithVersioningOverride() {
-	versioningOverride := VersioningOverride{
-		Behavior:      VersioningBehaviorPinned,
-		PinnedVersion: "deployment1.build1",
-		Deployment: Deployment{
-			BuildID:    "build1",
-			SeriesName: "deployment1",
+	versioningOverride := &PinnedVersioningOverride{
+		Version: WorkerDeploymentVersion{
+			DeploymentName: "deployment1",
+			BuildId:        "build1",
 		},
 	}
 
@@ -1832,12 +1830,10 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithVersioningOverride() {
 }
 
 func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithVersioningOverride() {
-	versioningOverride := VersioningOverride{
-		Behavior:      VersioningBehaviorPinned,
-		PinnedVersion: "deployment1.build1",
-		Deployment: Deployment{
-			BuildID:    "build1",
-			SeriesName: "deployment1",
+	versioningOverride := &PinnedVersioningOverride{
+		Version: WorkerDeploymentVersion{
+			DeploymentName: "deployment1",
+			BuildId:        "build1",
 		},
 	}
 
