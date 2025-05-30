@@ -61,8 +61,8 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentVersionSummary]
 	WorkerDeploymentVersionSummary struct {
-		// Version - Identifier in the form of "<deployment_name>.<build_id>" for this Version.
-		Version string
+		// Version - The version
+		Version WorkerDeploymentVersion
 
 		// CreateTime - When this Deployment Version was created.
 		CreateTime time.Time
@@ -165,10 +165,8 @@ type (
 		// ConflictToken - Token to serialize Worker Deployment operations.
 		ConflictToken []byte
 
-		// PreviousVersion - The Version that was current before executing this operation.
-		// It returns an identifier in the form of "<deployment_name>.<build_id>",
-		// or the "__unversioned__" special value, which represents all the unversioned workers.
-		PreviousVersion string
+		// PreviousVersion - The Version that was current before executing this operation, if any.
+		PreviousVersion *WorkerDeploymentVersion
 	}
 
 	// WorkerDeploymentSetRampingVersionOptions provides options for
@@ -226,10 +224,8 @@ type (
 		// ConflictToken - Token to serialize Worker Deployment operations.
 		ConflictToken []byte
 
-		// PreviousVersion - The Ramping Version before executing this operation.
-		// It returns an identifier in the form of "<deployment_name>.<build_id>",
-		// or the "__unversioned__" special value, which represents all the unversioned workers.
-		PreviousVersion string
+		// PreviousVersion - The Ramping Version before executing this operation, if any.
+		PreviousVersion *WorkerDeploymentVersion
 
 		// PreviousPercentage - The Ramping Version Percentage before executing this operation.
 		PreviousPercentage float32
@@ -286,8 +282,8 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentVersionInfo]
 	WorkerDeploymentVersionInfo struct {
-		// Version - A Deployment Version identifier in the form of "<deployment_name>.<build_id>".
-		Version string
+		// Version - A Deployment Version identifier.
+		Version WorkerDeploymentVersion
 
 		// CreateTime - When this Deployment Version was created.
 		CreateTime time.Time
@@ -468,20 +464,17 @@ type (
 	WorkerDeploymentRoutingConfig struct {
 		// CurrentVersion - Specifies which Deployment Version should receive new workflow
 		// executions and tasks of existing unversioned or AutoUpgrade workflows.
-		// Can be one of the following:
-		// - A Deployment Version identifier in the form of "<deployment_name>.<build_id>".
-		// - Or, the "__unversioned__" special value, to represent all the unversioned workers.
-		CurrentVersion string
+		// If nil, all unversioned workers are the target.
+		CurrentVersion *WorkerDeploymentVersion
 
 		// RampingVersion - Specifies that some traffic is being shifted from the CurrentVersion
 		// to this Version. RampingVersion should always be different from CurrentVersion.
-		// Can be one of the following:
-		// - A Deployment Version identifier in the form of "<deployment_name>.<build_id>".
-		// - Or, the "__unversioned__" special value, to represent all the unversioned workers.
+		// If nil, all unversioned workers are the target, if the percentage is nonzero.
+		//
 		// Note that it is possible to ramp from one Version to another Version,
 		// or from unversioned workers to a particular Version, or from a particular Version to
 		// unversioned workers.
-		RampingVersion string
+		RampingVersion *WorkerDeploymentVersion
 
 		// RampingVersionPercentage - Percentage of tasks that are routed to the RampingVersion
 		// instead of the Current Version.

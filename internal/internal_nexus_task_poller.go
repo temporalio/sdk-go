@@ -41,7 +41,6 @@ func newNexusTaskPoller(
 			workerBuildID:           params.getBuildID(),
 			useBuildIDVersioning:    params.UseBuildIDForVersioning,
 			workerDeploymentVersion: params.WorkerDeploymentVersion,
-			deploymentSeriesName:    params.DeploymentSeriesName,
 			capabilities:            params.capabilities,
 		},
 		taskHandler:     taskHandler,
@@ -73,7 +72,7 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 		WorkerVersionCapabilities: &commonpb.WorkerVersionCapabilities{
 			BuildId:              ntp.workerBuildID,
 			UseVersioning:        ntp.useBuildIDVersioning,
-			DeploymentSeriesName: ntp.deploymentSeriesName,
+			DeploymentSeriesName: ntp.workerDeploymentVersion.DeploymentName,
 		},
 		DeploymentOptions: workerDeploymentOptionsToProto(
 			ntp.useBuildIDVersioning,
