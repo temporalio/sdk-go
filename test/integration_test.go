@@ -228,7 +228,8 @@ func (ts *IntegrationTestSuite) SetupTest() {
 
 	if strings.Contains(ts.T().Name(), "GracefulActivityCompletion") ||
 		strings.Contains(ts.T().Name(), "GracefulLocalActivityCompletion") ||
-		strings.Contains(ts.T().Name(), "TestLocalActivityTaskTimeoutHeartbeat") {
+		strings.Contains(ts.T().Name(), "LocalActivityCompleteWithinGracefulShutdown") ||
+		strings.Contains(ts.T().Name(), "LocalActivityTaskTimeoutHeartbeat") {
 		options.WorkerStopTimeout = 10 * time.Second
 	}
 
@@ -7706,4 +7707,144 @@ func (ts *IntegrationTestSuite) TestLocalActivityFailureMetric_BenignHandling() 
 
 	// Expect count to remain unchanged
 	ts.assertMetricCount(metrics.LocalActivityExecutionFailedCounter, currCount)
+}
+
+func (ts *IntegrationTestSuite) TestLocalActivityWorkerShutdownNoHeartbeat() {
+	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	localActivityFn := func(ctx context.Context) error {
+		// TODO: Use GetWorkerStopChannel once https://github.com/temporalio/sdk-go/issues/1963 is fixed
+		//  in this place and other similar tests
+		time.Sleep(300 * time.Millisecond)
+		return ctx.Err()
+	}
+	workflowFn := func(ctx workflow.Context) error {
+		ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+			ScheduleToCloseTimeout: 1 * time.Second,
+			StartToCloseTimeout:    500 * time.Millisecond,
+		})
+
+		localActivity := workflow.ExecuteLocalActivity(ctx, localActivityFn)
+		err := localActivity.Get(ctx, nil)
+		if err != nil {
+			workflow.GetLogger(ctx).Error("Activity failed.", "Error", err)
+		}
+		localActivity = workflow.ExecuteLocalActivity(ctx, localActivityFn)
+		err = localActivity.Get(ctx, nil)
+		if err != nil {
+			workflow.GetLogger(ctx).Error("Second activity failed.", "Error", err)
+		}
+		return nil
+	}
+	workflowID := "local-activity-stop-" + uuid.NewString()
+	ts.worker.RegisterWorkflowWithOptions(workflowFn, workflow.RegisterOptions{Name: "local-activity-stop"})
+	startOptions := client.StartWorkflowOptions{
+		ID:                  workflowID,
+		TaskQueue:           ts.taskQueueName,
+		WorkflowTaskTimeout: 1 * time.Second,
+	}
+
+	// Start workflow
+	run, err := ts.client.ExecuteWorkflow(ctx, startOptions, workflowFn)
+	ts.NoError(err)
+	// Stop the worker
+	time.Sleep(100 * time.Millisecond)
+	ts.worker.Stop()
+	ts.workerStopped = true
+	time.Sleep(1500 * time.Millisecond)
+
+	// Look for any Local Activity heartbeat from the history
+	var wftStarted int
+	var wftTimedOut int
+	var wfeCompleted bool
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(),
+		false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		ts.NoError(err)
+		if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED {
+			wftStarted++
+		}
+		if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT {
+			wftTimedOut++
+		}
+		if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED {
+			wfeCompleted = true
+		}
+	}
+
+	// Confirm no heartbeats from local activity
+	ts.Equal(1, wftStarted)
+	ts.Equal(1, wftTimedOut)
+	ts.False(wfeCompleted)
+}
+
+func (ts *IntegrationTestSuite) TestLocalActivityCompleteWithinGracefulShutdown() {
+	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	localActivityFn := func(ctx context.Context) error {
+		time.Sleep(300 * time.Millisecond)
+		return ctx.Err()
+	}
+	workflowFn := func(ctx workflow.Context) error {
+		ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+			ScheduleToCloseTimeout: 1 * time.Second,
+			StartToCloseTimeout:    500 * time.Millisecond,
+		})
+
+		localActivity := workflow.ExecuteLocalActivity(ctx, localActivityFn)
+		err := localActivity.Get(ctx, nil)
+		if err != nil {
+			workflow.GetLogger(ctx).Error("Activity failed.", "Error", err)
+		}
+		localActivity = workflow.ExecuteLocalActivity(ctx, localActivityFn)
+		err = localActivity.Get(ctx, nil)
+		if err != nil {
+			workflow.GetLogger(ctx).Error("Second activity failed.", "Error", err)
+		}
+		return nil
+	}
+	workflowID := "local-activity-stop-" + uuid.NewString()
+	ts.worker.RegisterWorkflowWithOptions(workflowFn, workflow.RegisterOptions{Name: "local-activity-stop"})
+	startOptions := client.StartWorkflowOptions{
+		ID:                  workflowID,
+		TaskQueue:           ts.taskQueueName,
+		WorkflowTaskTimeout: 1 * time.Second,
+	}
+
+	// Start workflow
+	run, err := ts.client.ExecuteWorkflow(ctx, startOptions, workflowFn)
+	ts.NoError(err)
+	// Stop the worker
+	time.Sleep(100 * time.Millisecond)
+	ts.worker.Stop()
+	ts.workerStopped = true
+	time.Sleep(1200 * time.Millisecond)
+
+	// Look for any Local Activity heartbeat from the history
+	var wftStarted, laCompleted int
+	var wfeCompleted bool
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(),
+		false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		ts.NoError(err)
+		if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED {
+			wftStarted++
+		}
+		attributes := event.GetMarkerRecordedEventAttributes()
+		if event.EventType == enumspb.EVENT_TYPE_MARKER_RECORDED && attributes.MarkerName == "LocalActivity" && attributes.GetFailure() == nil {
+			laCompleted++
+		}
+		if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED {
+			wfeCompleted = true
+		}
+	}
+
+	// Confirm no heartbeats from local activity
+	ts.Equal(1, wftStarted)
+	ts.Equal(2, laCompleted)
+	ts.True(wfeCompleted)
 }

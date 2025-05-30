@@ -939,17 +939,27 @@ processWorkflowLoop:
 							heartbeatTimer = nil
 						}
 
-						// force complete, call the workflow task heartbeat function
-						workflowTask, err = heartbeatFunc(
-							workflowContext.CompleteWorkflowTask(workflowTask, false),
-							startTime,
-						)
-						if err != nil {
-							errRet = &workflowTaskHeartbeatError{Message: fmt.Sprintf("error sending workflow task heartbeat %v", err)}
+						// For non-graceful shutdown, the LA worker stops before this function, so there
+						// is no need to continue heartbeating. Instead, we can exit early, giving up
+						// the slot this function takes, a little sooner.
+						select {
+						case <-workflowContext.laTunnel.stopCh:
+							// stopCh closed means worker is shutting down and there's
+							// no need for LA heartbeat
 							return
-						}
-						if workflowTask == nil {
-							return
+						default:
+							// force complete, call the workflow task heartbeat function
+							workflowTask, err = heartbeatFunc(
+								workflowContext.CompleteWorkflowTask(workflowTask, false),
+								startTime,
+							)
+							if err != nil {
+								errRet = &workflowTaskHeartbeatError{Message: fmt.Sprintf("error sending workflow task heartbeat %v", err)}
+								return
+							}
+							if workflowTask == nil {
+								return
+							}
 						}
 
 						continue processWorkflowLoop
