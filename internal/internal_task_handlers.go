@@ -939,6 +939,9 @@ processWorkflowLoop:
 							heartbeatTimer = nil
 						}
 
+						// For non-graceful shutdown, the LA worker stops before this function, so there
+						// is no need to continue heartbeating. Instead, we can exit early, giving up
+						// the slot this function takes, a little sooner.
 						select {
 						case <-workflowContext.laTunnel.stopCh:
 							// stopCh closed means worker is shutting down and there's

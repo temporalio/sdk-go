@@ -7714,6 +7714,8 @@ func (ts *IntegrationTestSuite) TestLocalActivityWorkerShutdownNoHeartbeat() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	localActivityFn := func(ctx context.Context) error {
+		// TODO: Use GetWorkerStopChannel once https://github.com/temporalio/sdk-go/issues/1963 is fixed
+		//  in this place and other similar tests
 		time.Sleep(300 * time.Millisecond)
 		return ctx.Err()
 	}
