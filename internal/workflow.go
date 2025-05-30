@@ -85,7 +85,8 @@ const (
 	NexusOperationCancellationTypeAbandon
 
 	// NexusOperationCancellationTypeTryCancel - Initiate a cancellation request for the Nexus operation and immediately report cancellation
-	// to the caller.
+	// to the caller. Note that it doesn't guarantee that cancellation is delivered to the operation if calling workflow exits before the delivery is done.
+	// If you want to ensure that cancellation is delivered to the operation, use NexusOperationCancellationTypeWaitRequested.
 	NexusOperationCancellationTypeTryCancel
 
 	// NexusOperationCancellationTypeWaitRequested - Request cancellation of the Nexus operation and wait for confirmation that the request was received.
