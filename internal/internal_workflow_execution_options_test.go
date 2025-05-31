@@ -36,15 +36,12 @@ func Test_WorkflowExecutionOptions_fromProtoResponse(t *testing.T) {
 				},
 			},
 			want: WorkflowExecutionOptions{
-				VersioningOverride: VersioningOverride{
-					Behavior:      VersioningBehaviorPinned,
-					PinnedVersion: "my series.v1",
-					Deployment: Deployment{
-						SeriesName: "my series",
-						BuildID:    "v1",
+				VersioningOverride: &PinnedVersioningOverride{
+					Version: WorkerDeploymentVersion{
+						DeploymentName: "my series",
+						BuildId:        "v1",
 					},
-				},
-			},
+				}},
 		},
 	}
 
