@@ -364,18 +364,18 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 	ts.Equal(deploymentName, desc.Info.Name)
 
 	ts.Equal("client1", desc.Info.LastModifierIdentity)
-	ts.Equal(deploymentName+".3.0", desc.Info.RoutingConfig.CurrentVersion)
-	ts.Equal("", desc.Info.RoutingConfig.RampingVersion)
+	ts.Equal(v3, *desc.Info.RoutingConfig.CurrentVersion)
+	ts.Nil(desc.Info.RoutingConfig.RampingVersion)
 	ts.Equal(float32(0.0), desc.Info.RoutingConfig.RampingVersionPercentage)
 	ts.Equal(3, len(desc.Info.VersionSummaries))
 	sort.Slice(desc.Info.VersionSummaries, func(i, j int) bool {
 		return desc.Info.VersionSummaries[i].Version.BuildId < desc.Info.VersionSummaries[j].Version.BuildId
 	})
-	ts.Equal(deploymentName+".1.0", desc.Info.VersionSummaries[0].Version)
+	ts.Equal(v1, desc.Info.VersionSummaries[0].Version)
 	ts.Equal(client.WorkerDeploymentVersionDrainageStatus(client.WorkerDeploymentVersionDrainageStatusDraining), desc.Info.VersionSummaries[0].DrainageStatus)
-	ts.Equal(deploymentName+".2.0", desc.Info.VersionSummaries[1].Version)
+	ts.Equal(v2, desc.Info.VersionSummaries[1].Version)
 	ts.Equal(client.WorkerDeploymentVersionDrainageStatus(client.WorkerDeploymentVersionDrainageStatusDraining), desc.Info.VersionSummaries[0].DrainageStatus)
-	ts.Equal(deploymentName+".3.0", desc.Info.VersionSummaries[2].Version)
+	ts.Equal(v3, desc.Info.VersionSummaries[2].Version)
 	// current/ramping shows as unspecified
 	ts.Equal(client.WorkerDeploymentVersionDrainageStatus(client.WorkerDeploymentVersionDrainageStatusUnspecified), desc.Info.VersionSummaries[2].DrainageStatus)
 
@@ -594,7 +594,7 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 		},
 	})
 	ts.NoError(err)
-	ts.Equal(options.VersioningOverride, v2Override)
+	ts.Equal(options.VersioningOverride, &v2Override)
 
 	// Add and remove override to handle2
 	options, err = ts.client.UpdateWorkflowExecutionOptions(ctx, client.UpdateWorkflowExecutionOptionsRequest{
@@ -605,7 +605,7 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 		},
 	})
 	ts.NoError(err)
-	ts.Equal(options.VersioningOverride, v2Override)
+	ts.Equal(options.VersioningOverride, &v2Override)
 
 	// Now delete it
 	options, err = ts.client.UpdateWorkflowExecutionOptions(ctx, client.UpdateWorkflowExecutionOptionsRequest{
@@ -616,7 +616,7 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 		},
 	})
 	ts.NoError(err)
-	ts.Equal(options.VersioningOverride, nil)
+	ts.Nil(options.VersioningOverride)
 
 	// Add autoUpgrade to handle4
 	options, err = ts.client.UpdateWorkflowExecutionOptions(ctx, client.UpdateWorkflowExecutionOptionsRequest{
@@ -628,7 +628,7 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 		},
 	})
 	ts.NoError(err)
-	ts.Equal(options.VersioningOverride, client.AutoUpgradeVersioningOverride{})
+	ts.Equal(options.VersioningOverride, &client.AutoUpgradeVersioningOverride{})
 
 	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
 		BuildID:       v2.BuildId,

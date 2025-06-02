@@ -1793,7 +1793,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("cannot set both EnableSessionWorker and UseBuildIDForVersioning")
 	}
 
-	options.BuildID = options.DeploymentOptions.Version.BuildId
+	if (options.DeploymentOptions.Version != WorkerDeploymentVersion{}) {
+		options.BuildID = options.DeploymentOptions.Version.BuildId
+	}
 
 	// Need reference to result for fatal error handler
 	var aw *AggregatedWorker
