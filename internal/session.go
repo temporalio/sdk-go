@@ -421,7 +421,7 @@ func sessionCreationActivity(ctx context.Context, sessionID string) error {
 			// originate from the server as non-retryable errors. See retrypolicy in createSession() above.
 			if !(ctx.Err() == context.Canceled && errors.Is(context.Cause(ctx), &CanceledError{})) {
 				return NewApplicationErrorWithOptions(
-					"context canceled due to worker shutdown", "sessionCreationActivity",
+					"session failed due to worker shutdown", "SessionWorkerShutdown",
 					ApplicationErrorOptions{NonRetryable: true, Cause: ctx.Err()})
 
 			}

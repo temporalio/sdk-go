@@ -995,14 +995,6 @@ processWorkflowLoop:
 					case lar := <-workflowTask.laResultCh:
 						// local activity result ready
 						response, err = workflowContext.ProcessLocalActivityResult(workflowTask, lar)
-						// When local activity is canceled due to non-server cancel, we break loop here
-						// to avoid heartbeating after local activity is no longer being run
-						var appErr *ApplicationError
-						if errors.As(lar.err, &appErr) {
-							if appErr.errType == ErrCanceled.Error() {
-								break processWorkflowLoop
-							}
-						}
 						if err == nil && response == nil {
 							// workflow task is not done yet, still waiting for more local activities
 							continue waitLocalActivityLoop
