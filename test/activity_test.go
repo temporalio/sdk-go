@@ -463,7 +463,7 @@ func (a *Activities) RawValueActivity(ctx context.Context, value converter.RawVa
 }
 
 func (a *Activities) CancelActivity(ctx context.Context) error {
-	t := time.NewTicker(100 * time.Millisecond)
+	t := time.NewTicker(200 * time.Millisecond)
 	defer t.Stop()
 	select {
 	case <-ctx.Done():
