@@ -461,3 +461,13 @@ func (a *Activities) RawValueActivity(ctx context.Context, value converter.RawVa
 	activity.GetLogger(ctx).Info("RawValue value", value.Payload())
 	return value, nil
 }
+
+func (a *Activities) CancelActivity(ctx context.Context) error {
+	t := time.NewTicker(100 * time.Millisecond)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+	case <-t.C:
+	}
+	return ctx.Err()
+}
