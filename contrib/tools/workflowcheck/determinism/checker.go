@@ -448,7 +448,7 @@ func (p *PackageLookupCache) PackageNonDeterminisms(pkg *types.Package) PackageN
 	if pkg == nil {
 		return nil
 	}
-	// The import has to be done under lock too since it's not concurrency safe
+	// The import must also be done under lock because it is not concurrency-safe
 	p.packageNonDeterminismsLock.Lock()
 	defer p.packageNonDeterminismsLock.Unlock()
 	ret, exists := p.packageNonDeterminisms[pkg]

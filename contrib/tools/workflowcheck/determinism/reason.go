@@ -127,7 +127,7 @@ func (r *ReasonFuncCall) String() string {
 
 func (r *ReasonFuncCall) PackageName() string {
 	pkgPrefixedName := r.FuncName
-	// If there is a ending paren it's a method, take the receiver as the name
+	// If there is an ending parenthesis, it's a method; take the receiver as the name
 	if endParen := strings.Index(r.FuncName, ")"); endParen >= 0 {
 		pkgPrefixedName = strings.TrimLeft(r.FuncName[:endParen], "(*")
 	}
