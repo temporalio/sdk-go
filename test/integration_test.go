@@ -6713,7 +6713,7 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorInRespondWorkflowTaskCompl
 	w := worker.New(c, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning: true,
-			Version: client.WorkerDeploymentVersion{
+			Version: worker.WorkerDeploymentVersion{
 				DeploymentName: seriesName,
 				BuildId:        "1.0",
 			},
@@ -6784,7 +6784,7 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorPerWorkflowType() {
 	w := worker.New(c, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning: true,
-			Version: client.WorkerDeploymentVersion{
+			Version: worker.WorkerDeploymentVersion{
 				DeploymentName: seriesName,
 				BuildId:        "1.0",
 			},
@@ -6826,7 +6826,7 @@ func (ts *IntegrationTestSuite) TestNoVersioningBehaviorPanics() {
 	w := worker.New(c, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning: true,
-			Version: client.WorkerDeploymentVersion{
+			Version: worker.WorkerDeploymentVersion{
 				DeploymentName: seriesName,
 				BuildId:        "1.0",
 			},

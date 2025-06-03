@@ -488,11 +488,6 @@ type (
 	// NOTE: Experimental
 	WorkerDeploymentDeleteResponse = internal.WorkerDeploymentDeleteResponse
 
-	// WorkerDeploymentVersion represents a specific version of a worker in a deployment.
-	//
-	// NOTE: Experimental
-	WorkerDeploymentVersion = internal.WorkerDeploymentVersion
-
 	// WorkerDeploymentClient is the client that manages Worker Deployments.
 	//
 	// NOTE: Experimental

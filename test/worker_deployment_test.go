@@ -69,7 +69,7 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkerDeployment(ctx context.Context
 func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentVersion(
 	ctx context.Context,
 	dHandle client.WorkerDeploymentHandle,
-	version client.WorkerDeploymentVersion,
+	version worker.WorkerDeploymentVersion,
 ) {
 	ts.Eventually(func() bool {
 		d, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
@@ -126,11 +126,11 @@ func (ts *WorkerDeploymentTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 	defer cancel()
 
 	deploymentName := "deploy-test-" + uuid.NewString()
-	v1 := client.WorkerDeploymentVersion{
+	v1 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
 		BuildId:        "1.0",
 	}
-	v2 := client.WorkerDeploymentVersion{
+	v2 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
 		BuildId:        "2.0",
 	}
@@ -243,15 +243,15 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 	defer cancel()
 
 	deploymentName := "deploy-test-" + uuid.NewString()
-	v1 := client.WorkerDeploymentVersion{
+	v1 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
 		BuildId:        "1.0",
 	}
-	v2 := client.WorkerDeploymentVersion{
+	v2 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
 		BuildId:        "2.0",
 	}
-	v3 := client.WorkerDeploymentVersion{
+	v3 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
 		BuildId:        "3.0",
 	}
@@ -413,11 +413,11 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedOverrideInWorkflowOptions() {
 	defer cancel()
 
 	deploymentName := "deploy-test-" + uuid.NewString()
-	v1 := client.WorkerDeploymentVersion{
+	v1 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
 		BuildId:        "1.0",
 	}
-	v2 := client.WorkerDeploymentVersion{
+	v2 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
 		BuildId:        "2.0",
 	}
@@ -505,11 +505,11 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 	defer cancel()
 
 	deploymentName := "deploy-test-" + uuid.NewString()
-	v1 := client.WorkerDeploymentVersion{
+	v1 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
 		BuildId:        "1.0",
 	}
-	v2 := client.WorkerDeploymentVersion{
+	v2 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
 		BuildId:        "2.0",
 	}
@@ -670,15 +670,15 @@ func (ts *WorkerDeploymentTestSuite) TestListDeployments() {
 	uuid := uuid.NewString()
 	deploymentName1 := uuid + "-deploy-test1"
 	deploymentName2 := uuid + "-deploy-test2"
-	v1 := client.WorkerDeploymentVersion{
+	v1 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName1,
 		BuildId:        "1.0",
 	}
-	v2 := client.WorkerDeploymentVersion{
+	v2 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName2,
 		BuildId:        "2.0",
 	}
-	v3 := client.WorkerDeploymentVersion{
+	v3 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName2,
 		BuildId:        "3.0",
 	}
@@ -748,11 +748,11 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 	defer cancel()
 
 	deploymentName := "deploy-test-" + uuid.NewString()
-	v1 := client.WorkerDeploymentVersion{
+	v1 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
 		BuildId:        "1.0",
 	}
-	v2 := client.WorkerDeploymentVersion{
+	v2 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
 		BuildId:        "2.0",
 	}
@@ -888,11 +888,11 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 	defer cancel()
 
 	deploymentName := "deploy-test-" + uuid.NewString()
-	v1 := client.WorkerDeploymentVersion{
+	v1 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
 		BuildId:        "1.0",
 	}
-	v2 := client.WorkerDeploymentVersion{
+	v2 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
 		BuildId:        "2.0",
 	}
@@ -1002,7 +1002,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeleteDeployment() {
 	defer cancel()
 
 	deploymentName := "deploy-test-" + uuid.NewString()
-	v1 := client.WorkerDeploymentVersion{
+	v1 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
 		BuildId:        "1.0",
 	}

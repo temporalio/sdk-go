@@ -119,7 +119,7 @@ func (ts *DynamicWorkflowTestSuite) waitForWorkerDeployment(ctx context.Context,
 func (ts *DynamicWorkflowTestSuite) waitForWorkerDeploymentVersion(
 	ctx context.Context,
 	dHandle client.WorkerDeploymentHandle,
-	version client.WorkerDeploymentVersion,
+	version worker.WorkerDeploymentVersion,
 ) {
 	ts.Eventually(func() bool {
 		d, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
@@ -156,7 +156,7 @@ func (ts *DynamicWorkflowTestSuite) TestBasicDynamicWorkflowActivityWithVersioni
 	defer cancel()
 
 	deploymentName := "deploy-test-" + uuid.NewString()
-	v1 := client.WorkerDeploymentVersion{
+	v1 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
 		BuildId:        "1.0",
 	}

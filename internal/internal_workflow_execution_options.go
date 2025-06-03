@@ -39,6 +39,7 @@ type (
 	//
 	// NOTE: Experimental
 	WorkflowExecutionOptionsChanges struct {
+		// If non-nil, change the versioning override.
 		VersioningOverride *VersioningOverrideChange
 	}
 
@@ -133,7 +134,7 @@ func versioningOverrideToProto(versioningOverride VersioningOverride) *workflowp
 	case *PinnedVersioningOverride:
 		return &workflowpb.VersioningOverride{
 			Behavior:      versioningBehaviorToProto(behavior),
-			PinnedVersion: v.Version.ToCanonicalString(),
+			PinnedVersion: v.Version.toCanonicalString(),
 			Deployment: &deploymentpb.Deployment{
 				SeriesName: v.Version.DeploymentName,
 				BuildId:    v.Version.BuildId,

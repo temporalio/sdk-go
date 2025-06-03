@@ -170,6 +170,7 @@ type (
 		metricsHandler          metrics.Handler
 		sessionTokenBucket      *sessionTokenBucket
 		slotReservationData     slotReservationData
+		isInternalWorker        bool
 	}
 
 	// baseWorker that wraps worker activities.
@@ -544,9 +545,11 @@ func (bw *baseWorker) logPollTaskError(err error) {
 
 	// Ignore connection loss on server shutdown. This helps with quiescing spurious error messages
 	// upon server shutdown (where server is using the SDK).
-	st, ok := status.FromError(err)
-	if ok && st.Code() == codes.Unavailable && strings.Contains(st.Message(), "graceful_stop") {
-		return
+	if bw.options.isInternalWorker {
+		st, ok := status.FromError(err)
+		if ok && st.Code() == codes.Unavailable && strings.Contains(st.Message(), "graceful_stop") {
+			return
+		}
 	}
 
 	// Log the error as warn if it doesn't match the last error seen or its over
