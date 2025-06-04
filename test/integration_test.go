@@ -7715,6 +7715,66 @@ func (ts *IntegrationTestSuite) TestLocalActivityFailureMetric_BenignHandling() 
 	ts.assertMetricCount(metrics.LocalActivityExecutionFailedCounter, currCount)
 }
 
+func (ts *IntegrationTestSuite) TestActivityCancelFromWorkerShutdown() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-activity-cancel"), ts.workflows.WorkflowReactToCancel, false)
+	ts.NoError(err)
+
+	// Give the workflow time to run and run activity
+	time.Sleep(100 * time.Millisecond)
+	ts.worker.Stop()
+	ts.workerStopped = true
+	// Now create a new worker on that same task queue to resume the work of the
+	// activity retry
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
+	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.NoError(nextWorker.Start())
+	defer nextWorker.Stop()
+
+	err = run.Get(ctx, nil)
+	ts.NoError(err)
+}
+
+func (ts *IntegrationTestSuite) TestLocalActivityCancelFromWorkerShutdown() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-local-activity-cancel"), ts.workflows.WorkflowReactToCancel, true)
+	ts.NoError(err)
+
+	// Give the workflow time to run and run activity
+	time.Sleep(100 * time.Millisecond)
+	ts.worker.Stop()
+	ts.workerStopped = true
+	// Now create a new worker on that same task queue to resume the work of the
+	// activity retry
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
+	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.NoError(nextWorker.Start())
+	defer nextWorker.Stop()
+
+	err = run.Get(ctx, nil)
+	ts.NoError(err)
+
+	timeout_count := 0
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		if err != nil {
+			break
+		}
+
+		// WFT timeout should come from first worker stopping and LA being canceled
+		if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT {
+			timeout_count++
+		}
+	}
+
+	ts.Equal(1, timeout_count)
+}
+
 func (ts *IntegrationTestSuite) TestLocalActivityWorkerShutdownNoHeartbeat() {
 	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
 	ctx, cancel := context.WithCancel(context.Background())

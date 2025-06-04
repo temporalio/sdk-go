@@ -2298,8 +2298,10 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 
 	output, err := activityImplementation.Execute(ctx, t.Input)
 	// Check if context canceled at a higher level before we cancel it ourselves
-	// TODO : check if the cause of the context cancellation is from the server
-	isActivityCanceled := ctx.Err() == context.Canceled
+
+	// Cancels that don't originate from the server will have separate cancel reasons, like
+	// ErrWorkerShutdown or ErrActivityPaused
+	isActivityCanceled := ctx.Err() == context.Canceled && errors.Is(context.Cause(ctx), &CanceledError{})
 
 	dlCancelFunc()
 	if <-ctx.Done(); ctx.Err() == context.DeadlineExceeded {
