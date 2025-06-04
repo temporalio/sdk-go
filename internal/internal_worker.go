@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
 	commonpb "go.temporal.io/api/common/v1"
+	deploymentpb "go.temporal.io/api/deployment/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/temporalproto"
@@ -144,14 +145,9 @@ type (
 		// If true the worker is opting in to build ID based versioning.
 		UseBuildIDForVersioning bool
 
-		// The worker deployment version identifier of the form "<deployment_name>.<build_id>".
-		// If set, both the [WorkerBuildID] and the [DeploymentSeriesName] will be derived from it,
-		// ignoring previous values.
-		WorkerDeploymentVersion string
-
-		// The worker's deployment series name, an identifier for Worker Versioning that links versions of the same worker
-		// service/application.
-		DeploymentSeriesName string
+		// The worker deployment version identifier.
+		// If non-empty, the [WorkerBuildID] from it, ignoring any previous value.
+		WorkerDeploymentVersion WorkerDeploymentVersion
 
 		// The Versioning Behavior for workflows that do not set one when registering the workflow type.
 		DefaultVersioningBehavior VersioningBehavior
@@ -216,6 +212,18 @@ type (
 		// LastEventID, if set, will only load history up to this ID (inclusive).
 		LastEventID int64
 	}
+
+	// Represents the version of a specific worker deployment.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.WorkerDeploymentVersion]
+	WorkerDeploymentVersion struct {
+		// The name of the deployment this worker version belongs to
+		DeploymentName string
+		// The build id specific to this worker
+		BuildId string
+	}
 )
 
 var debugMode = os.Getenv("TEMPORAL_DEBUG") != ""
@@ -264,6 +272,11 @@ func (params *workerExecutionParameters) getBuildID() string {
 		return params.WorkerBuildID
 	}
 	return getBinaryChecksum()
+}
+
+// Returns true if this worker is part of our system namespace or per-namespace system task queue
+func (params *workerExecutionParameters) isInternalWorker() bool {
+	return params.Namespace == "temporal-system" || params.TaskQueue == "temporal-sys-per-ns-tq"
 }
 
 // verifyNamespaceExist does a DescribeNamespace operation on the specified namespace with backoff/retry
@@ -327,6 +340,7 @@ func newWorkflowTaskWorkerInternal(
 		slotReservationData: slotReservationData{
 			taskQueue: params.TaskQueue,
 		},
+		isInternalWorker: params.isInternalWorker(),
 	},
 	)
 
@@ -499,6 +513,7 @@ func newActivityWorker(
 			slotReservationData: slotReservationData{
 				taskQueue: params.TaskQueue,
 			},
+			isInternalWorker: params.isInternalWorker(),
 		},
 	)
 	return &activityWorker{
@@ -1128,7 +1143,7 @@ func (aw *AggregatedWorker) RegisterWorkflow(w interface{}) {
 		panic("workflow worker disabled, cannot register workflow")
 	}
 	if aw.executionParams.UseBuildIDForVersioning &&
-		(aw.executionParams.DeploymentSeriesName != "" || aw.executionParams.WorkerDeploymentVersion != "") &&
+		(aw.executionParams.WorkerDeploymentVersion != WorkerDeploymentVersion{}) &&
 		aw.executionParams.DefaultVersioningBehavior == VersioningBehaviorUnspecified {
 		panic("workflow type does not have a versioning behavior")
 	}
@@ -1141,7 +1156,7 @@ func (aw *AggregatedWorker) RegisterWorkflowWithOptions(w interface{}, options R
 		panic("workflow worker disabled, cannot register workflow")
 	}
 	if options.VersioningBehavior == VersioningBehaviorUnspecified &&
-		(aw.executionParams.DeploymentSeriesName != "" || aw.executionParams.WorkerDeploymentVersion != "") &&
+		(aw.executionParams.WorkerDeploymentVersion != WorkerDeploymentVersion{}) &&
 		aw.executionParams.UseBuildIDForVersioning &&
 		aw.executionParams.DefaultVersioningBehavior == VersioningBehaviorUnspecified {
 		panic("workflow type does not have a versioning behavior")
@@ -1155,7 +1170,7 @@ func (aw *AggregatedWorker) RegisterDynamicWorkflow(w interface{}, options Dynam
 		panic("workflow worker disabled, cannot register workflow")
 	}
 	if options.LoadDynamicRuntimeOptions == nil && aw.executionParams.UseBuildIDForVersioning &&
-		(aw.executionParams.DeploymentSeriesName != "" || aw.executionParams.WorkerDeploymentVersion != "") &&
+		(aw.executionParams.WorkerDeploymentVersion != WorkerDeploymentVersion{}) &&
 		aw.executionParams.DefaultVersioningBehavior == VersioningBehaviorUnspecified {
 		panic("dynamic workflow does not have a versioning behavior")
 	}
@@ -1798,15 +1813,12 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("cannot set both EnableSessionWorker and UseBuildIDForVersioning")
 	}
 
-	if options.DeploymentOptions.Version != "" &&
-		!strings.Contains(options.DeploymentOptions.Version, ".") {
-		panic("version in DeploymentOptions not in the form \"<deployment_name>.<build_id>\"")
+	if (options.DeploymentOptions.Version != WorkerDeploymentVersion{}) {
+		options.BuildID = options.DeploymentOptions.Version.BuildId
 	}
-
-	if options.DeploymentOptions.Version != "" {
-		splitVersion := strings.SplitN(options.DeploymentOptions.Version, ".", 2)
-		options.DeploymentOptions.DeploymentSeriesName = splitVersion[0]
-		options.BuildID = splitVersion[1]
+	if !options.DeploymentOptions.UseVersioning &&
+		options.DeploymentOptions.DefaultVersioningBehavior != VersioningBehaviorUnspecified {
+		panic("cannot set both DeploymentOptions.DefaultVersioningBehavior if DeploymentOptions.UseBuildIDForVersioning is false")
 	}
 
 	// Need reference to result for fatal error handler
@@ -1837,6 +1849,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	// All worker systems that depend on the capabilities to process workflow/activity tasks
 	// should take a pointer to this struct and wait for it to be populated when the worker is run.
 	var capabilities workflowservice.GetSystemInfoResponse_Capabilities
+	workerDeploymentVersion := WorkerDeploymentVersion{}
+	if (options.DeploymentOptions.Version != WorkerDeploymentVersion{}) {
+		workerDeploymentVersion = options.DeploymentOptions.Version
+	}
 
 	cache := NewWorkerCache()
 	workerParams := workerExecutionParameters{
@@ -1851,8 +1867,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		Identity:                              client.identity,
 		WorkerBuildID:                         options.BuildID,
 		UseBuildIDForVersioning:               options.UseBuildIDForVersioning || options.DeploymentOptions.UseVersioning,
-		DeploymentSeriesName:                  options.DeploymentOptions.DeploymentSeriesName,
-		WorkerDeploymentVersion:               options.DeploymentOptions.Version,
+		WorkerDeploymentVersion:               workerDeploymentVersion,
 		DefaultVersioningBehavior:             options.DeploymentOptions.DefaultVersioningBehavior,
 		MetricsHandler:                        client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue)),
 		Logger:                                client.logger,
@@ -2194,4 +2209,42 @@ func executeFunction(fn interface{}, args []interface{}) (interface{}, error) {
 		res = retValues[0].Interface()
 	}
 	return res, err
+}
+
+func workerDeploymentVersionFromProto(wd *deploymentpb.WorkerDeploymentVersion) WorkerDeploymentVersion {
+	return WorkerDeploymentVersion{
+		DeploymentName: wd.DeploymentName,
+		BuildId:        wd.BuildId,
+	}
+}
+
+func (wd *WorkerDeploymentVersion) toProto() *deploymentpb.WorkerDeploymentVersion {
+	return &deploymentpb.WorkerDeploymentVersion{
+		DeploymentName: wd.DeploymentName,
+		BuildId:        wd.BuildId,
+	}
+}
+
+func (wd *WorkerDeploymentVersion) toCanonicalString() string {
+	return fmt.Sprintf("%s.%s", wd.DeploymentName, wd.BuildId)
+}
+
+func workerDeploymentVersionFromString(version string) *WorkerDeploymentVersion {
+	if splitVersion := strings.SplitN(version, ".", 2); len(splitVersion) == 2 {
+		return &WorkerDeploymentVersion{
+			DeploymentName: splitVersion[0],
+			BuildId:        splitVersion[1],
+		}
+	}
+	return nil
+}
+
+func workerDeploymentVersionFromProtoOrString(wd *deploymentpb.WorkerDeploymentVersion, fallback string) *WorkerDeploymentVersion {
+	if wd == nil {
+		return workerDeploymentVersionFromString(fallback)
+	}
+	return &WorkerDeploymentVersion{
+		DeploymentName: wd.DeploymentName,
+		BuildId:        wd.BuildId,
+	}
 }

@@ -124,6 +124,8 @@ jobs:
   features-test:
     uses: temporalio/features/.github/workflows/go.yaml@main
     with:
+      # TODO: Set back once https://github.com/temporalio/features/pull/631 is merged
+      features-repo-ref: "versioning-breaking-changes"
       go-repo-path: ${{github.event.pull_request.head.repo.full_name}}
       version: ${{github.event.pull_request.head.ref}}
       version-is-repo-ref: true

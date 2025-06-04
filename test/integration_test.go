@@ -6711,10 +6711,12 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorInRespondWorkflowTaskCompl
 	ts.worker.Stop()
 	ts.workerStopped = true
 	w := worker.New(c, ts.taskQueueName, worker.Options{
-		BuildID:                 "1.0",
-		UseBuildIDForVersioning: true,
 		DeploymentOptions: worker.DeploymentOptions{
-			DeploymentSeriesName:      seriesName,
+			UseVersioning: true,
+			Version: worker.WorkerDeploymentVersion{
+				DeploymentName: seriesName,
+				BuildId:        "1.0",
+			},
 			DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 		},
 	})
@@ -6780,10 +6782,12 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorPerWorkflowType() {
 	ts.worker.Stop()
 	ts.workerStopped = true
 	w := worker.New(c, ts.taskQueueName, worker.Options{
-		BuildID:                 "1.0",
-		UseBuildIDForVersioning: true,
 		DeploymentOptions: worker.DeploymentOptions{
-			DeploymentSeriesName:      seriesName,
+			UseVersioning: true,
+			Version: worker.WorkerDeploymentVersion{
+				DeploymentName: seriesName,
+				BuildId:        "1.0",
+			},
 			DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 		},
 	})
@@ -6820,10 +6824,12 @@ func (ts *IntegrationTestSuite) TestNoVersioningBehaviorPanics() {
 	ts.worker.Stop()
 	ts.workerStopped = true
 	w := worker.New(c, ts.taskQueueName, worker.Options{
-		BuildID:                 "1.0",
-		UseBuildIDForVersioning: true,
 		DeploymentOptions: worker.DeploymentOptions{
-			DeploymentSeriesName: seriesName,
+			UseVersioning: true,
+			Version: worker.WorkerDeploymentVersion{
+				DeploymentName: seriesName,
+				BuildId:        "1.0",
+			},
 			// No DefaultVersioningBehavior
 		},
 	})

@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"testing"
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -13,8 +16,6 @@ import (
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
-	"testing"
-	"time"
 )
 
 type DynamicWorkflowTestSuite struct {
@@ -115,7 +116,11 @@ func (ts *DynamicWorkflowTestSuite) waitForWorkerDeployment(ctx context.Context,
 	}, 10*time.Second, 300*time.Millisecond)
 }
 
-func (ts *DynamicWorkflowTestSuite) waitForWorkerDeploymentVersion(ctx context.Context, dHandle client.WorkerDeploymentHandle, version string) {
+func (ts *DynamicWorkflowTestSuite) waitForWorkerDeploymentVersion(
+	ctx context.Context,
+	dHandle client.WorkerDeploymentHandle,
+	version worker.WorkerDeploymentVersion,
+) {
 	ts.Eventually(func() bool {
 		d, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
 		if err != nil {
@@ -151,10 +156,14 @@ func (ts *DynamicWorkflowTestSuite) TestBasicDynamicWorkflowActivityWithVersioni
 	defer cancel()
 
 	deploymentName := "deploy-test-" + uuid.NewString()
+	v1 := worker.WorkerDeploymentVersion{
+		DeploymentName: deploymentName,
+		BuildId:        "1.0",
+	}
 	w := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning: true,
-			Version:       deploymentName + ".1.0",
+			Version:       v1,
 		},
 	})
 	w.RegisterDynamicWorkflow(EmptyDynamic, workflow.DynamicRegisterOptions{
@@ -183,10 +192,10 @@ func (ts *DynamicWorkflowTestSuite) TestBasicDynamicWorkflowActivityWithVersioni
 	response1, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
 	ts.NoError(err)
 
-	ts.waitForWorkerDeploymentVersion(ctx, dHandle, deploymentName+".1.0")
+	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v1)
 
 	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
-		Version:       deploymentName + ".1.0",
+		BuildID:       v1.BuildId,
 		ConflictToken: response1.ConflictToken,
 	})
 	ts.NoError(err)
