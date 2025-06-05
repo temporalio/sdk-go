@@ -6714,10 +6714,12 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorInRespondWorkflowTaskCompl
 	ts.worker.Stop()
 	ts.workerStopped = true
 	w := worker.New(c, ts.taskQueueName, worker.Options{
-		BuildID:                 "1.0",
-		UseBuildIDForVersioning: true,
 		DeploymentOptions: worker.DeploymentOptions{
-			DeploymentSeriesName:      seriesName,
+			UseVersioning: true,
+			Version: worker.WorkerDeploymentVersion{
+				DeploymentName: seriesName,
+				BuildId:        "1.0",
+			},
 			DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 		},
 	})
@@ -6783,10 +6785,12 @@ func (ts *IntegrationTestSuite) TestVersioningBehaviorPerWorkflowType() {
 	ts.worker.Stop()
 	ts.workerStopped = true
 	w := worker.New(c, ts.taskQueueName, worker.Options{
-		BuildID:                 "1.0",
-		UseBuildIDForVersioning: true,
 		DeploymentOptions: worker.DeploymentOptions{
-			DeploymentSeriesName:      seriesName,
+			UseVersioning: true,
+			Version: worker.WorkerDeploymentVersion{
+				DeploymentName: seriesName,
+				BuildId:        "1.0",
+			},
 			DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 		},
 	})
@@ -6823,10 +6827,12 @@ func (ts *IntegrationTestSuite) TestNoVersioningBehaviorPanics() {
 	ts.worker.Stop()
 	ts.workerStopped = true
 	w := worker.New(c, ts.taskQueueName, worker.Options{
-		BuildID:                 "1.0",
-		UseBuildIDForVersioning: true,
 		DeploymentOptions: worker.DeploymentOptions{
-			DeploymentSeriesName: seriesName,
+			UseVersioning: true,
+			Version: worker.WorkerDeploymentVersion{
+				DeploymentName: seriesName,
+				BuildId:        "1.0",
+			},
 			// No DefaultVersioningBehavior
 		},
 	})
@@ -7710,6 +7716,66 @@ func (ts *IntegrationTestSuite) TestLocalActivityFailureMetric_BenignHandling() 
 
 	// Expect count to remain unchanged
 	ts.assertMetricCount(metrics.LocalActivityExecutionFailedCounter, currCount)
+}
+
+func (ts *IntegrationTestSuite) TestActivityCancelFromWorkerShutdown() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-activity-cancel"), ts.workflows.WorkflowReactToCancel, false)
+	ts.NoError(err)
+
+	// Give the workflow time to run and run activity
+	time.Sleep(100 * time.Millisecond)
+	ts.worker.Stop()
+	ts.workerStopped = true
+	// Now create a new worker on that same task queue to resume the work of the
+	// activity retry
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
+	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.NoError(nextWorker.Start())
+	defer nextWorker.Stop()
+
+	err = run.Get(ctx, nil)
+	ts.NoError(err)
+}
+
+func (ts *IntegrationTestSuite) TestLocalActivityCancelFromWorkerShutdown() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-local-activity-cancel"), ts.workflows.WorkflowReactToCancel, true)
+	ts.NoError(err)
+
+	// Give the workflow time to run and run activity
+	time.Sleep(100 * time.Millisecond)
+	ts.worker.Stop()
+	ts.workerStopped = true
+	// Now create a new worker on that same task queue to resume the work of the
+	// activity retry
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
+	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.NoError(nextWorker.Start())
+	defer nextWorker.Stop()
+
+	err = run.Get(ctx, nil)
+	ts.NoError(err)
+
+	timeout_count := 0
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		if err != nil {
+			break
+		}
+
+		// WFT timeout should come from first worker stopping and LA being canceled
+		if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT {
+			timeout_count++
+		}
+	}
+
+	ts.Equal(1, timeout_count)
 }
 
 func (ts *IntegrationTestSuite) TestLocalActivityWorkerShutdownNoHeartbeat() {

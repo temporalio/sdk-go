@@ -64,10 +64,7 @@ type (
 		// Whether the worker has opted in to the build-id based versioning feature
 		useBuildIDVersioning bool
 		// The worker's deployment version identifier.
-		workerDeploymentVersion string
-		// The worker's deployment series name, an identifier in Worker Versioning to link
-		// versions of the same worker service/application.
-		deploymentSeriesName string
+		workerDeploymentVersion WorkerDeploymentVersion
 		// Server's capabilities
 		capabilities *workflowservice.GetSystemInfoResponse_Capabilities
 	}
@@ -263,6 +260,10 @@ func (bp *basePoller) getCapabilities() *workflowservice.GetSystemInfoResponse_C
 	return bp.capabilities
 }
 
+func (bp *basePoller) getDeploymentName() string {
+	return bp.workerDeploymentVersion.DeploymentName
+}
+
 // newWorkflowTaskPoller creates a new workflow task poller which must have a one to one relationship to workflow worker
 func newWorkflowTaskPoller(
 	taskHandler WorkflowTaskHandler,
@@ -277,7 +278,6 @@ func newWorkflowTaskPoller(
 			workerBuildID:           params.getBuildID(),
 			useBuildIDVersioning:    params.UseBuildIDForVersioning,
 			workerDeploymentVersion: params.WorkerDeploymentVersion,
-			deploymentSeriesName:    params.DeploymentSeriesName,
 			capabilities:            params.capabilities,
 		},
 		service:                      service,
@@ -556,7 +556,7 @@ func (wtp *workflowTaskPoller) errorToFailWorkflowTask(taskToken []byte, err err
 		},
 		Deployment: &deploymentpb.Deployment{
 			BuildId:    wtp.workerBuildID,
-			SeriesName: wtp.deploymentSeriesName,
+			SeriesName: wtp.getDeploymentName(),
 		},
 		DeploymentOptions: workerDeploymentOptionsToProto(
 			wtp.useBuildIDVersioning,
@@ -565,6 +565,7 @@ func (wtp *workflowTaskPoller) errorToFailWorkflowTask(taskToken []byte, err err
 	}
 
 	if wtp.getCapabilities().BuildIdBasedVersioning {
+		//lint:ignore SA1019 ignore deprecated versioning APIs
 		builtRequest.BinaryChecksum = ""
 	}
 
@@ -809,7 +810,7 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		WorkerVersionCapabilities: &commonpb.WorkerVersionCapabilities{
 			BuildId:              wtp.workerBuildID,
 			UseVersioning:        wtp.useBuildIDVersioning,
-			DeploymentSeriesName: wtp.deploymentSeriesName,
+			DeploymentSeriesName: wtp.getDeploymentName(),
 		},
 		DeploymentOptions: workerDeploymentOptionsToProto(
 			wtp.useBuildIDVersioning,
@@ -817,6 +818,7 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		),
 	}
 	if wtp.getCapabilities().BuildIdBasedVersioning {
+		//lint:ignore SA1019 ignore deprecated versioning APIs
 		builtRequest.BinaryChecksum = ""
 	}
 	return builtRequest
@@ -986,7 +988,6 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 			workerBuildID:           params.getBuildID(),
 			useBuildIDVersioning:    params.UseBuildIDForVersioning,
 			workerDeploymentVersion: params.WorkerDeploymentVersion,
-			deploymentSeriesName:    params.DeploymentSeriesName,
 			capabilities:            params.capabilities,
 		},
 		taskHandler:         taskHandler,
@@ -1021,7 +1022,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 		WorkerVersionCapabilities: &commonpb.WorkerVersionCapabilities{
 			BuildId:              atp.workerBuildID,
 			UseVersioning:        atp.useBuildIDVersioning,
-			DeploymentSeriesName: atp.deploymentSeriesName,
+			DeploymentSeriesName: atp.getDeploymentName(),
 		},
 		DeploymentOptions: workerDeploymentOptionsToProto(
 			atp.useBuildIDVersioning,

@@ -121,8 +121,7 @@ type (
 		identity                  string
 		workerBuildID             string
 		useBuildIDForVersioning   bool
-		workerDeploymentVersion   string
-		deploymentSeriesName      string
+		workerDeploymentVersion   WorkerDeploymentVersion
 		defaultVersioningBehavior VersioningBehavior
 		enableLoggingInReplay     bool
 		registry                  *registry
@@ -277,6 +276,7 @@ func (eh *history) isNextWorkflowTaskFailed() (task finishedTask, err error) {
 		var flags []sdkFlag
 		if nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
 			completedAttrs := nextEvent.GetWorkflowTaskCompletedEventAttributes()
+			//lint:ignore SA1019 ignore deprecated versioning APIs
 			binaryChecksum = completedAttrs.BinaryChecksum
 			for _, flag := range completedAttrs.GetSdkMetadata().GetLangUsedFlags() {
 				f := sdkFlagFromUint(flag)
@@ -482,10 +482,18 @@ OrderEvents:
 		default:
 			if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
 				bidStr := event.GetWorkflowTaskCompletedEventAttributes().
-					GetWorkerVersion().GetBuildId()
-				version := event.GetWorkflowTaskCompletedEventAttributes().GetWorkerDeploymentVersion()
-				if splitVersion := strings.SplitN(version, ".", 2); len(splitVersion) == 2 {
-					bidStr = splitVersion[1]
+					GetDeploymentVersion().GetBuildId()
+				if bidStr == "" {
+					//lint:ignore SA1019 ignore deprecated versioning APIs
+					version := event.GetWorkflowTaskCompletedEventAttributes().GetWorkerDeploymentVersion()
+					if splitVersion := strings.SplitN(version, ".", 2); len(splitVersion) == 2 {
+						bidStr = splitVersion[1]
+					}
+				}
+				if bidStr == "" {
+					//lint:ignore SA1019 ignore deprecated versioning APIs
+					bidStr = event.GetWorkflowTaskCompletedEventAttributes().
+						GetWorkerVersion().GetBuildId()
 				}
 				taskEvents.buildID = &bidStr
 			} else if isPreloadMarkerEvent(event) {
@@ -549,7 +557,6 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		workerBuildID:             params.getBuildID(),
 		useBuildIDForVersioning:   params.UseBuildIDForVersioning,
 		workerDeploymentVersion:   params.WorkerDeploymentVersion,
-		deploymentSeriesName:      params.DeploymentSeriesName,
 		defaultVersioningBehavior: params.DefaultVersioningBehavior,
 		enableLoggingInReplay:     params.EnableLoggingInReplay,
 		registry:                  registry,
@@ -1931,6 +1938,10 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		langUsedFlags = append(langUsedFlags, uint32(flag))
 	}
 
+	seriesName := ""
+	if (wth.workerDeploymentVersion != WorkerDeploymentVersion{}) {
+		seriesName = wth.workerDeploymentVersion.DeploymentName
+	}
 	builtRequest := &workflowservice.RespondWorkflowTaskCompletedRequest{
 		TaskToken:                  task.TaskToken,
 		Commands:                   commands,
@@ -1956,7 +1967,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		},
 		Deployment: &deploymentpb.Deployment{
 			BuildId:    wth.workerBuildID,
-			SeriesName: wth.deploymentSeriesName,
+			SeriesName: seriesName,
 		},
 		DeploymentOptions: workerDeploymentOptionsToProto(
 			wth.useBuildIDForVersioning,
@@ -1964,10 +1975,10 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		),
 	}
 	if wth.capabilities != nil && wth.capabilities.BuildIdBasedVersioning {
+		//lint:ignore SA1019 ignore deprecated versioning APIs
 		builtRequest.BinaryChecksum = ""
 	}
-	if (wth.useBuildIDForVersioning && wth.deploymentSeriesName != "") ||
-		wth.workerDeploymentVersion != "" {
+	if wth.useBuildIDForVersioning || (wth.workerDeploymentVersion != WorkerDeploymentVersion{}) {
 		workflowType := workflowContext.workflowInfo.WorkflowType
 		if behavior, ok := wth.registry.getWorkflowVersioningBehavior(workflowType); ok {
 			builtRequest.VersioningBehavior = versioningBehaviorToProto(behavior)
@@ -2008,6 +2019,10 @@ func newActivityTaskHandlerWithCustomProvider(
 	registry *registry,
 	activityProvider activityProvider,
 ) ActivityTaskHandler {
+	seriesName := ""
+	if (params.WorkerDeploymentVersion != WorkerDeploymentVersion{}) {
+		seriesName = params.WorkerDeploymentVersion.DeploymentName
+	}
 	return &activityTaskHandlerImpl{
 		taskQueueName:                    params.TaskQueue,
 		identity:                         params.Identity,
@@ -2030,7 +2045,7 @@ func newActivityTaskHandlerWithCustomProvider(
 		},
 		deployment: &deploymentpb.Deployment{
 			BuildId:    params.getBuildID(),
-			SeriesName: params.DeploymentSeriesName,
+			SeriesName: seriesName,
 		},
 		workerDeploymentOptions: workerDeploymentOptionsToProto(
 			params.UseBuildIDForVersioning,
@@ -2283,8 +2298,10 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 
 	output, err := activityImplementation.Execute(ctx, t.Input)
 	// Check if context canceled at a higher level before we cancel it ourselves
-	// TODO : check if the cause of the context cancellation is from the server
-	isActivityCanceled := ctx.Err() == context.Canceled
+
+	// Cancels that don't originate from the server will have separate cancel reasons, like
+	// ErrWorkerShutdown or ErrActivityPaused
+	isActivityCanceled := ctx.Err() == context.Canceled && errors.Is(context.Cause(ctx), &CanceledError{})
 
 	dlCancelFunc()
 	if <-ctx.Done(); ctx.Err() == context.DeadlineExceeded {
