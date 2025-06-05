@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
 	commonpb "go.temporal.io/api/common/v1"
+	deploymentpb "go.temporal.io/api/deployment/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/temporalproto"
@@ -144,14 +145,9 @@ type (
 		// If true the worker is opting in to build ID based versioning.
 		UseBuildIDForVersioning bool
 
-		// The worker deployment version identifier of the form "<deployment_name>.<build_id>".
-		// If set, both the [WorkerBuildID] and the [DeploymentSeriesName] will be derived from it,
-		// ignoring previous values.
-		WorkerDeploymentVersion string
-
-		// The worker's deployment series name, an identifier for Worker Versioning that links versions of the same worker
-		// service/application.
-		DeploymentSeriesName string
+		// The worker deployment version identifier.
+		// If non-empty, the [WorkerBuildID] from it, ignoring any previous value.
+		WorkerDeploymentVersion WorkerDeploymentVersion
 
 		// The Versioning Behavior for workflows that do not set one when registering the workflow type.
 		DefaultVersioningBehavior VersioningBehavior
@@ -216,6 +212,18 @@ type (
 		// LastEventID, if set, will only load history up to this ID (inclusive).
 		LastEventID int64
 	}
+
+	// Represents the version of a specific worker deployment.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.WorkerDeploymentVersion]
+	WorkerDeploymentVersion struct {
+		// The name of the deployment this worker version belongs to
+		DeploymentName string
+		// The build id specific to this worker
+		BuildId string
+	}
 )
 
 var debugMode = os.Getenv("TEMPORAL_DEBUG") != ""
@@ -264,6 +272,11 @@ func (params *workerExecutionParameters) getBuildID() string {
 		return params.WorkerBuildID
 	}
 	return getBinaryChecksum()
+}
+
+// Returns true if this worker is part of our system namespace or per-namespace system task queue
+func (params *workerExecutionParameters) isInternalWorker() bool {
+	return params.Namespace == "temporal-system" || params.TaskQueue == "temporal-sys-per-ns-tq"
 }
 
 // verifyNamespaceExist does a DescribeNamespace operation on the specified namespace with backoff/retry
@@ -327,6 +340,7 @@ func newWorkflowTaskWorkerInternal(
 		slotReservationData: slotReservationData{
 			taskQueue: params.TaskQueue,
 		},
+		isInternalWorker: params.isInternalWorker(),
 	},
 	)
 
@@ -499,6 +513,7 @@ func newActivityWorker(
 			slotReservationData: slotReservationData{
 				taskQueue: params.TaskQueue,
 			},
+			isInternalWorker: params.isInternalWorker(),
 		},
 	)
 	return &activityWorker{
@@ -535,6 +550,10 @@ type registry struct {
 	workflowVersioningBehaviorMap map[string]VersioningBehavior
 	activityFuncMap               map[string]activity
 	activityAliasMap              map[string]string
+	dynamicWorkflow               interface{}
+	dynamicWorkflowOptions        DynamicRegisterWorkflowOptions
+	dynamicActivity               activity
+	_                             DynamicRegisterActivityOptions
 	interceptors                  []WorkerInterceptor
 }
 
@@ -567,7 +586,7 @@ func (r *registry) RegisterWorkflowWithOptions(
 	}
 	// Validate that it is a function
 	fnType := reflect.TypeOf(wf)
-	if err := validateFnFormat(fnType, true); err != nil {
+	if err := validateFnFormat(fnType, true, false); err != nil {
 		panic(err)
 	}
 	fnName, _ := getFunctionName(wf)
@@ -595,6 +614,29 @@ func (r *registry) RegisterWorkflowWithOptions(
 	if len(alias) > 0 && r.workflowAliasMap != nil {
 		r.workflowAliasMap[fnName] = alias
 	}
+}
+
+func (r *registry) RegisterDynamicWorkflow(wf interface{}, options DynamicRegisterWorkflowOptions) {
+	r.Lock()
+	defer r.Unlock()
+	// Support direct registration of WorkflowDefinition
+	factory, ok := wf.(WorkflowDefinitionFactory)
+	if ok {
+		r.dynamicWorkflow = factory
+		r.dynamicWorkflowOptions = options
+		return
+	}
+
+	// Validate that it is a function
+	fnType := reflect.TypeOf(wf)
+	if err := validateFnFormat(fnType, true, true); err != nil {
+		panic(err)
+	}
+	if r.dynamicWorkflow != nil {
+		panic("dynamic workflow already registered")
+	}
+	r.dynamicWorkflow = wf
+	r.dynamicWorkflowOptions = options
 }
 
 func (r *registry) RegisterActivity(af interface{}) {
@@ -626,7 +668,7 @@ func (r *registry) RegisterActivityWithOptions(
 		}
 		return
 	}
-	if err := validateFnFormat(fnType, false); err != nil {
+	if err := validateFnFormat(fnType, false, false); err != nil {
 		panic(err)
 	}
 	fnName, _ := getFunctionName(af)
@@ -669,7 +711,7 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 			continue
 		}
 		name := method.Name
-		if err := validateFnFormat(method.Type, false); err != nil {
+		if err := validateFnFormat(method.Type, false, false); err != nil {
 			if options.SkipInvalidStructFunctions {
 				continue
 			}
@@ -689,6 +731,26 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 		return fmt.Errorf("no activities (public methods) found at %v structure", structType.Name())
 	}
 	return nil
+}
+
+func (r *registry) RegisterDynamicActivity(af interface{}, options DynamicRegisterActivityOptions) {
+	r.Lock()
+	defer r.Unlock()
+	// Support direct registration of activity
+	a, ok := af.(activity)
+	if ok {
+		r.dynamicActivity = a
+		return
+	}
+	// Validate that it is a function
+	fnType := reflect.TypeOf(af)
+	if err := validateFnFormat(fnType, false, true); err != nil {
+		panic(err)
+	}
+	if r.dynamicActivity != nil {
+		panic("dynamic activity already registered")
+	}
+	r.dynamicActivity = &activityExecutor{name: "", fn: af, dynamic: true}
 }
 
 func (r *registry) RegisterNexusService(service *nexus.Service) {
@@ -715,8 +777,14 @@ func (r *registry) getWorkflowAlias(fnName string) (string, bool) {
 func (r *registry) getWorkflowFn(fnName string) (interface{}, bool) {
 	r.Lock()
 	defer r.Unlock()
-	fn, ok := r.workflowFuncMap[fnName]
-	return fn, ok
+	if fn, ok := r.workflowFuncMap[fnName]; ok {
+		return fn, ok
+	}
+
+	if r.dynamicWorkflow != nil {
+		return "dynamic", true
+	}
+	return nil, false
 }
 
 func (r *registry) getRegisteredWorkflowTypes() []string {
@@ -745,8 +813,13 @@ func (r *registry) addActivityWithLock(fnName string, a activity) {
 func (r *registry) GetActivity(fnName string) (activity, bool) {
 	r.Lock()
 	defer r.Unlock()
-	a, ok := r.activityFuncMap[fnName]
-	return a, ok
+	if a, ok := r.activityFuncMap[fnName]; ok {
+		return a, ok
+	}
+	if r.dynamicActivity != nil {
+		return r.dynamicActivity, true
+	}
+	return nil, false
 }
 
 func (r *registry) getActivityNoLock(fnName string) (activity, bool) {
@@ -757,9 +830,16 @@ func (r *registry) getActivityNoLock(fnName string) (activity, bool) {
 func (r *registry) getRegisteredActivities() []activity {
 	r.Lock()
 	defer r.Unlock()
-	activities := make([]activity, 0, len(r.activityFuncMap))
+	numActivities := len(r.activityFuncMap)
+	if r.dynamicActivity != nil {
+		numActivities++
+	}
+	activities := make([]activity, 0, numActivities)
 	for _, a := range r.activityFuncMap {
 		activities = append(activities, a)
+	}
+	if r.dynamicActivity != nil {
+		activities = append(activities, r.dynamicActivity)
 	}
 	return activities
 }
@@ -788,7 +868,12 @@ func (r *registry) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, e
 	if ok {
 		return wdf.NewWorkflowDefinition(), nil
 	}
-	executor := &workflowExecutor{workflowType: lookup, fn: wf, interceptors: r.interceptors}
+	var dynamic bool
+	if d, ok := wf.(string); ok && d == "dynamic" {
+		wf = r.dynamicWorkflow
+		dynamic = true
+	}
+	executor := &workflowExecutor{workflowType: lookup, fn: wf, interceptors: r.interceptors, dynamic: dynamic}
 	return newSyncWorkflowDefinition(executor), nil
 }
 
@@ -799,8 +884,16 @@ func (r *registry) getWorkflowVersioningBehavior(wt WorkflowType) (VersioningBeh
 	}
 	r.Lock()
 	defer r.Unlock()
-	behavior := r.workflowVersioningBehaviorMap[lookup]
-	return behavior, behavior != VersioningBehaviorUnspecified
+	if behavior, ok := r.workflowVersioningBehaviorMap[lookup]; ok {
+		return behavior, behavior != VersioningBehaviorUnspecified
+	}
+	if r.dynamicWorkflowOptions.LoadDynamicRuntimeOptions != nil {
+		config := LoadDynamicRuntimeOptionsDetails{WorkflowType: wt}
+		if behavior, err := r.dynamicWorkflowOptions.LoadDynamicRuntimeOptions(config); err == nil {
+			return behavior.VersioningBehavior, true
+		}
+	}
+	return VersioningBehaviorUnspecified, false
 }
 
 func (r *registry) getNexusService(service string) *nexus.Service {
@@ -820,7 +913,7 @@ func (r *registry) getRegisteredNexusServices() []*nexus.Service {
 }
 
 // Validate function parameters.
-func validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
+func validateFnFormat(fnType reflect.Type, isWorkflow, isDynamic bool) error {
 	if fnType.Kind() != reflect.Func {
 		return fmt.Errorf("expected a func as input but was %s", fnType.Kind())
 	}
@@ -842,6 +935,17 @@ func validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
 			if isWorkflowContext(fnType.In(i)) {
 				return fmt.Errorf("unexpected use of workflow context for an activity")
 			}
+		}
+	}
+
+	if isDynamic {
+		if fnType.NumIn() != 2 {
+			return fmt.Errorf(
+				"expected function to have two arguments, first being workflow.Context and second being an EncodedValues type, found %d arguments", fnType.NumIn(),
+			)
+		}
+		if fnType.In(1) != reflect.TypeOf((*converter.EncodedValues)(nil)).Elem() {
+			return fmt.Errorf("expected function to EncodedValues as second argument, got %s", fnType.In(1).Elem())
 		}
 	}
 
@@ -888,17 +992,25 @@ type workflowExecutor struct {
 	workflowType string
 	fn           interface{}
 	interceptors []WorkerInterceptor
+	dynamic      bool
 }
 
 func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*commonpb.Payloads, error) {
 	dataConverter := WithWorkflowContext(ctx, getWorkflowEnvOptions(ctx).DataConverter)
 	fnType := reflect.TypeOf(we.fn)
 
-	args, err := decodeArgsToRawValues(dataConverter, fnType, input)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"unable to decode the workflow function input payload with error: %w, function name: %v",
-			err, we.workflowType)
+	var args []interface{}
+	var err error
+	if we.dynamic {
+		// Dynamic workflows take in a single EncodedValues, encode all data into single EncodedValues
+		args = []interface{}{newEncodedValues(input, dataConverter)}
+	} else {
+		args, err = decodeArgsToRawValues(dataConverter, fnType, input)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"unable to decode the workflow function input payload with error: %w, function name: %v",
+				err, we.workflowType)
+		}
 	}
 
 	envInterceptor := getWorkflowEnvironmentInterceptor(ctx)
@@ -918,6 +1030,7 @@ type activityExecutor struct {
 	name             string
 	fn               interface{}
 	skipInterceptors bool
+	dynamic          bool
 }
 
 func (ae *activityExecutor) ActivityType() ActivityType {
@@ -932,11 +1045,18 @@ func (ae *activityExecutor) Execute(ctx context.Context, input *commonpb.Payload
 	fnType := reflect.TypeOf(ae.fn)
 	dataConverter := getDataConverterFromActivityCtx(ctx)
 
-	args, err := decodeArgsToRawValues(dataConverter, fnType, input)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"unable to decode the activity function input payload with error: %w for function name: %v",
-			err, ae.name)
+	var args []interface{}
+	var err error
+	if ae.dynamic {
+		// Dynamic activities take in a single EncodedValues, encode all data into single EncodedValues
+		args = []interface{}{newEncodedValues(input, dataConverter)}
+	} else {
+		args, err = decodeArgsToRawValues(dataConverter, fnType, input)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"unable to decode the activity function input payload with error: %w for function name: %v",
+				err, ae.name)
+		}
 	}
 
 	return ae.ExecuteWithActualArgs(ctx, args)
@@ -1023,7 +1143,7 @@ func (aw *AggregatedWorker) RegisterWorkflow(w interface{}) {
 		panic("workflow worker disabled, cannot register workflow")
 	}
 	if aw.executionParams.UseBuildIDForVersioning &&
-		(aw.executionParams.DeploymentSeriesName != "" || aw.executionParams.WorkerDeploymentVersion != "") &&
+		(aw.executionParams.WorkerDeploymentVersion != WorkerDeploymentVersion{}) &&
 		aw.executionParams.DefaultVersioningBehavior == VersioningBehaviorUnspecified {
 		panic("workflow type does not have a versioning behavior")
 	}
@@ -1036,12 +1156,25 @@ func (aw *AggregatedWorker) RegisterWorkflowWithOptions(w interface{}, options R
 		panic("workflow worker disabled, cannot register workflow")
 	}
 	if options.VersioningBehavior == VersioningBehaviorUnspecified &&
-		(aw.executionParams.DeploymentSeriesName != "" || aw.executionParams.WorkerDeploymentVersion != "") &&
+		(aw.executionParams.WorkerDeploymentVersion != WorkerDeploymentVersion{}) &&
 		aw.executionParams.UseBuildIDForVersioning &&
 		aw.executionParams.DefaultVersioningBehavior == VersioningBehaviorUnspecified {
 		panic("workflow type does not have a versioning behavior")
 	}
 	aw.registry.RegisterWorkflowWithOptions(w, options)
+}
+
+// RegisterDynamicWorkflow registers dynamic workflow implementation with the AggregatedWorker
+func (aw *AggregatedWorker) RegisterDynamicWorkflow(w interface{}, options DynamicRegisterWorkflowOptions) {
+	if aw.workflowWorker == nil {
+		panic("workflow worker disabled, cannot register workflow")
+	}
+	if options.LoadDynamicRuntimeOptions == nil && aw.executionParams.UseBuildIDForVersioning &&
+		(aw.executionParams.WorkerDeploymentVersion != WorkerDeploymentVersion{}) &&
+		aw.executionParams.DefaultVersioningBehavior == VersioningBehaviorUnspecified {
+		panic("dynamic workflow does not have a versioning behavior")
+	}
+	aw.registry.RegisterDynamicWorkflow(w, options)
 }
 
 // RegisterActivity registers activity implementation with the AggregatedWorker
@@ -1052,6 +1185,12 @@ func (aw *AggregatedWorker) RegisterActivity(a interface{}) {
 // RegisterActivityWithOptions registers activity implementation with the AggregatedWorker
 func (aw *AggregatedWorker) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) {
 	aw.registry.RegisterActivityWithOptions(a, options)
+}
+
+// RegisterDynamicActivity registers the dynamic activity function with options.
+// Registering activities via a structure is not supported for dynamic activities.
+func (aw *AggregatedWorker) RegisterDynamicActivity(a interface{}, options DynamicRegisterActivityOptions) {
+	aw.registry.RegisterDynamicActivity(a, options)
 }
 
 func (aw *AggregatedWorker) RegisterNexusService(service *nexus.Service) {
@@ -1332,6 +1471,11 @@ func (aw *WorkflowReplayer) RegisterWorkflow(w interface{}) {
 // RegisterWorkflowWithOptions registers workflow function with custom workflow name to replay
 func (aw *WorkflowReplayer) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
 	aw.registry.RegisterWorkflowWithOptions(w, options)
+}
+
+// RegisterDynamicWorkflow registers a dynamic workflow function to replay
+func (aw *WorkflowReplayer) RegisterDynamicWorkflow(w interface{}, options DynamicRegisterWorkflowOptions) {
+	aw.registry.RegisterDynamicWorkflow(w, options)
 }
 
 // ReplayWorkflowHistoryWithOptions executes a single workflow task for the given history.
@@ -1669,15 +1813,12 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("cannot set both EnableSessionWorker and UseBuildIDForVersioning")
 	}
 
-	if options.DeploymentOptions.Version != "" &&
-		!strings.Contains(options.DeploymentOptions.Version, ".") {
-		panic("version in DeploymentOptions not in the form \"<deployment_name>.<build_id>\"")
+	if (options.DeploymentOptions.Version != WorkerDeploymentVersion{}) {
+		options.BuildID = options.DeploymentOptions.Version.BuildId
 	}
-
-	if options.DeploymentOptions.Version != "" {
-		splitVersion := strings.SplitN(options.DeploymentOptions.Version, ".", 2)
-		options.DeploymentOptions.DeploymentSeriesName = splitVersion[0]
-		options.BuildID = splitVersion[1]
+	if !options.DeploymentOptions.UseVersioning &&
+		options.DeploymentOptions.DefaultVersioningBehavior != VersioningBehaviorUnspecified {
+		panic("cannot set both DeploymentOptions.DefaultVersioningBehavior if DeploymentOptions.UseBuildIDForVersioning is false")
 	}
 
 	// Need reference to result for fatal error handler
@@ -1708,6 +1849,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	// All worker systems that depend on the capabilities to process workflow/activity tasks
 	// should take a pointer to this struct and wait for it to be populated when the worker is run.
 	var capabilities workflowservice.GetSystemInfoResponse_Capabilities
+	workerDeploymentVersion := WorkerDeploymentVersion{}
+	if (options.DeploymentOptions.Version != WorkerDeploymentVersion{}) {
+		workerDeploymentVersion = options.DeploymentOptions.Version
+	}
 
 	cache := NewWorkerCache()
 	workerParams := workerExecutionParameters{
@@ -1722,8 +1867,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		Identity:                              client.identity,
 		WorkerBuildID:                         options.BuildID,
 		UseBuildIDForVersioning:               options.UseBuildIDForVersioning || options.DeploymentOptions.UseVersioning,
-		DeploymentSeriesName:                  options.DeploymentOptions.DeploymentSeriesName,
-		WorkerDeploymentVersion:               options.DeploymentOptions.Version,
+		WorkerDeploymentVersion:               workerDeploymentVersion,
 		DefaultVersioningBehavior:             options.DeploymentOptions.DefaultVersioningBehavior,
 		MetricsHandler:                        client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue)),
 		Logger:                                client.logger,
@@ -2065,4 +2209,42 @@ func executeFunction(fn interface{}, args []interface{}) (interface{}, error) {
 		res = retValues[0].Interface()
 	}
 	return res, err
+}
+
+func workerDeploymentVersionFromProto(wd *deploymentpb.WorkerDeploymentVersion) WorkerDeploymentVersion {
+	return WorkerDeploymentVersion{
+		DeploymentName: wd.DeploymentName,
+		BuildId:        wd.BuildId,
+	}
+}
+
+func (wd *WorkerDeploymentVersion) toProto() *deploymentpb.WorkerDeploymentVersion {
+	return &deploymentpb.WorkerDeploymentVersion{
+		DeploymentName: wd.DeploymentName,
+		BuildId:        wd.BuildId,
+	}
+}
+
+func (wd *WorkerDeploymentVersion) toCanonicalString() string {
+	return fmt.Sprintf("%s.%s", wd.DeploymentName, wd.BuildId)
+}
+
+func workerDeploymentVersionFromString(version string) *WorkerDeploymentVersion {
+	if splitVersion := strings.SplitN(version, ".", 2); len(splitVersion) == 2 {
+		return &WorkerDeploymentVersion{
+			DeploymentName: splitVersion[0],
+			BuildId:        splitVersion[1],
+		}
+	}
+	return nil
+}
+
+func workerDeploymentVersionFromProtoOrString(wd *deploymentpb.WorkerDeploymentVersion, fallback string) *WorkerDeploymentVersion {
+	if wd == nil {
+		return workerDeploymentVersionFromString(fallback)
+	}
+	return &WorkerDeploymentVersion{
+		DeploymentName: wd.DeploymentName,
+		BuildId:        wd.BuildId,
+	}
 }

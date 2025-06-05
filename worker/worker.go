@@ -80,6 +80,9 @@ type (
 		// This method panics if workflowFunc doesn't comply with the expected format or tries to register the same workflow
 		// type name twice. Use workflow.RegisterOptions.DisableAlreadyRegisteredCheck to allow multiple registrations.
 		RegisterWorkflowWithOptions(w interface{}, options workflow.RegisterOptions)
+
+		// RegisterDynamicWorkflow registers the dynamic workflow function with options.
+		RegisterDynamicWorkflow(w interface{}, options workflow.DynamicRegisterOptions)
 	}
 
 	// ActivityRegistry exposes activity registration functions to consumers.
@@ -131,6 +134,10 @@ type (
 		// which might be useful for integration tests.
 		// worker.RegisterActivityWithOptions(barActivity, RegisterActivityOptions{DisableAlreadyRegisteredCheck: true})
 		RegisterActivityWithOptions(a interface{}, options activity.RegisterOptions)
+
+		// RegisterDynamicActivity registers the dynamic activity function with options.
+		// Registering activities via a structure is not supported for dynamic activities.
+		RegisterDynamicActivity(a interface{}, options activity.DynamicRegisterOptions)
 	}
 
 	// NexusServiceRegistry exposes Nexus Service registration functions.
@@ -196,6 +203,11 @@ type (
 	//
 	// NOTE: Experimental
 	DeploymentOptions = internal.WorkerDeploymentOptions
+
+	// WorkerDeploymentVersion represents a specific version of a worker in a deployment.
+	//
+	// NOTE: Experimental
+	WorkerDeploymentVersion = internal.WorkerDeploymentVersion
 
 	// Options is used to configure a worker instance.
 	Options = internal.WorkerOptions

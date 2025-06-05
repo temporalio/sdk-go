@@ -2,7 +2,6 @@ package internal
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	deploymentpb "go.temporal.io/api/deployment/v1"
@@ -12,8 +11,8 @@ import (
 type (
 	// WorkerDeploymentOptions provides configuration for Worker Deployment Versioning.
 	//
-	// NOTE: Both [WorkerDeploymentOptions.Version] and [WorkerDeploymentOptions.UseVersioning]
-	// need to be set for enabling Worker Deployment Versioning.
+	// NOTE: [WorkerDeploymentOptions.UseVersioning] must be set to enable Worker Deployment
+	// Versioning.
 	//
 	// NOTE: Experimental
 	//
@@ -28,25 +27,19 @@ type (
 		// NOTE: Cannot be enabled at the same time as [WorkerOptions.EnableSessionWorker]
 		UseVersioning bool
 
-		// Assign a Deployment Version identifier to this worker. The format of this identifier
-		// is "<deployment_name>.<build_id>". If [Version] is set both [WorkerOptions.BuildID] and
-		// [DeploymentSeriesName] will be ignored.
+		// Assign a Deployment Version identifier to this worker. If [Version] is set
+		// [WorkerOptions.BuildID] will be ignored.
 		//
 		// NOTE: Experimental
-		Version string
+		Version WorkerDeploymentVersion
 
-		// Assign a deployment series name to this worker. Different versions of the same worker
-		// service/application are linked together by sharing a series name.
+		// Optional: Provides a default Versioning Behavior to workflows that do not set one with
+		// the registration option [RegisterWorkflowOptions.VersioningBehavior]. It is an error to
+		// set this without [UseVersioning] being true.
 		//
-		// Deprecated: Use [Version].
-		DeploymentSeriesName string
-
-		// Optional: Provides a default Versioning Behavior to workflows that do not set one with the
-		// registration option [RegisterWorkflowOptions.VersioningBehavior].
-		//
-		// NOTE: When the new Deployment-based Worker Versioning feature is on,
-		// and [DefaultVersioningBehavior] is unspecified,
-		// workflows that do not set the Versioning Behavior will fail at registration time.
+		// NOTE: When the new Deployment-based Worker Versioning feature is on, and
+		// [DefaultVersioningBehavior] is unspecified, workflows that do not set the Versioning
+		// Behavior will fail at registration time.
 		//
 		// NOTE: Experimental
 		DefaultVersioningBehavior VersioningBehavior
@@ -366,12 +359,8 @@ func NewWorker(
 	return NewAggregatedWorker(workflowClient, taskQueue, options)
 }
 
-func workerDeploymentOptionsToProto(useVersioning bool, version string) *deploymentpb.WorkerDeploymentOptions {
-	if version != "" {
-		splitVersion := strings.SplitN(version, ".", 2)
-		if len(splitVersion) != 2 {
-			panic("invalid format for worker deployment version, not \"<deployment_name>.<build_id>\"")
-		}
+func workerDeploymentOptionsToProto(useVersioning bool, version WorkerDeploymentVersion) *deploymentpb.WorkerDeploymentOptions {
+	if (version != WorkerDeploymentVersion{}) {
 		var workerVersioningMode enumspb.WorkerVersioningMode
 		if useVersioning {
 			workerVersioningMode = enumspb.WORKER_VERSIONING_MODE_VERSIONED
@@ -379,8 +368,8 @@ func workerDeploymentOptionsToProto(useVersioning bool, version string) *deploym
 			workerVersioningMode = enumspb.WORKER_VERSIONING_MODE_UNVERSIONED
 		}
 		return &deploymentpb.WorkerDeploymentOptions{
-			DeploymentName:       splitVersion[0],
-			BuildId:              splitVersion[1],
+			DeploymentName:       version.DeploymentName,
+			BuildId:              version.BuildId,
 			WorkerVersioningMode: workerVersioningMode,
 		}
 	}

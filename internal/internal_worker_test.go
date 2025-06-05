@@ -2983,3 +2983,30 @@ func (s *internalWorkerTestSuite) TestReservedTemporalName() {
 	require.Error(s.T(), err)
 	require.Contains(s.T(), err.Error(), temporalPrefixError)
 }
+
+func (s *internalWorkerTestSuite) TestRegisterMultipleDynamicWorkflow() {
+	var suite WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	workflowFn1 := func(ctx Context, values converter.EncodedValues) error { return nil }
+	workflowFn2 := func(ctx Context, values converter.EncodedValues) error { return nil }
+	env.RegisterDynamicWorkflow(workflowFn1, DynamicRegisterWorkflowOptions{})
+	err := runAndCatchPanic(func() {
+		env.RegisterDynamicWorkflow(workflowFn2, DynamicRegisterWorkflowOptions{})
+	})
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), "dynamic workflow already registered")
+
+	// activity
+	activityFn1 := func(ctx context.Context, values converter.EncodedValues) error {
+		return nil
+	}
+	activityFn2 := func(ctx context.Context, values converter.EncodedValues) error {
+		return nil
+	}
+	env.RegisterDynamicActivity(activityFn1, DynamicRegisterActivityOptions{})
+	err = runAndCatchPanic(func() {
+		env.RegisterDynamicActivity(activityFn2, DynamicRegisterActivityOptions{})
+	})
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), "dynamic activity already registered")
+}

@@ -72,6 +72,8 @@ const (
 // NexusOperationCancellationType specifies what action should be taken for a Nexus operation when the
 // caller is cancelled.
 //
+// NOTE: Experimental
+//
 // Exposed as: [go.temporal.io/sdk/workflow.NexusOperationCancellationType]
 type NexusOperationCancellationType int
 
@@ -83,7 +85,8 @@ const (
 	NexusOperationCancellationTypeAbandon
 
 	// NexusOperationCancellationTypeTryCancel - Initiate a cancellation request for the Nexus operation and immediately report cancellation
-	// to the caller.
+	// to the caller. Note that it doesn't guarantee that cancellation is delivered to the operation if calling workflow exits before the delivery is done.
+	// If you want to ensure that cancellation is delivered to the operation, use NexusOperationCancellationTypeWaitRequested.
 	NexusOperationCancellationTypeTryCancel
 
 	// NexusOperationCancellationTypeWaitRequested - Request cancellation of the Nexus operation and wait for confirmation that the request was received.
@@ -464,6 +467,36 @@ type (
 		// inside a workflow as a child workflow.
 		Name                          string
 		DisableAlreadyRegisteredCheck bool
+		// Optional: Provides a Versioning Behavior to workflows of this type. It is required
+		// when WorkerOptions does not specify [DeploymentOptions.DefaultVersioningBehavior],
+		// [DeploymentOptions.DeploymentSeriesName] is set, and [UseBuildIDForVersioning] is true.
+		//
+		// NOTE: Experimental
+		VersioningBehavior VersioningBehavior
+	}
+
+	// LoadDynamicRuntimeOptionsDetails is used as input to the LoadDynamicRuntimeOptions callback for dynamic workflows
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.LoadDynamicRuntimeOptionsDetails]
+	LoadDynamicRuntimeOptionsDetails struct {
+		WorkflowType WorkflowType
+	}
+
+	// DynamicRegisterWorkflowOptions consists of options for registering a dynamic workflow
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.DynamicRegisterOptions]
+	DynamicRegisterWorkflowOptions struct {
+		// Allows dynamic options to be loaded for a workflow.
+		LoadDynamicRuntimeOptions func(details LoadDynamicRuntimeOptionsDetails) (DynamicRuntimeWorkflowOptions, error)
+	}
+
+	// DynamicRegisterActivityOptions consists of options for registering a dynamic activity
+	DynamicRegisterActivityOptions struct{}
+
+	// DynamicRuntimeWorkflowOptions are options for a dynamic workflow.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.DynamicRuntimeOptions]
+	DynamicRuntimeWorkflowOptions struct {
 		// Optional: Provides a Versioning Behavior to workflows of this type. It is required
 		// when WorkerOptions does not specify [DeploymentOptions.DefaultVersioningBehavior],
 		// [DeploymentOptions.DeploymentSeriesName] is set, and [UseBuildIDForVersioning] is true.
@@ -2635,6 +2668,8 @@ type NexusOperationOptions struct {
 	// CancellationType - Indicates what action should be taken when the caller is cancelled.
 	//
 	// Optional: defaults to NexusOperationCancellationTypeWaitCompleted.
+	//
+	// NOTE: Experimental
 	CancellationType NexusOperationCancellationType
 
 	// Summary is a single-line fixed summary for this Nexus Operation that will appear in UI/CLI. This can be

@@ -13,10 +13,10 @@ type (
 	//
 	// HostName specifies which host is executing the session
 	//
-	// SessionState specifies the current know state of the session.
+	// SessionState specifies the current known state of the session.
 	//
 	// Note: Sessions have an inherently stale view of the worker they are running on. Session
-	// state may be stale up the the SessionOptions.HeartbeatTimeout. SessionOptions.HeartbeatTimeout
+	// state may be stale up to the SessionOptions.HeartbeatTimeout. SessionOptions.HeartbeatTimeout
 	// should be less than half the activity timeout for the state to be accurate when checking after activity failure.
 	SessionInfo = internal.SessionInfo
 

@@ -107,8 +107,9 @@ const (
 	WorkerVersioningModeUnversioned = internal.WorkerVersioningModeUnversioned
 
 	// WorkerVersioningModeVersioned - Workers with this mode are part of a
-	// Worker Deployment Version which is identified as
-	// "<deployment_name>.<build_id>".
+	// Worker Deployment Version which is a combination of a deployment name
+	// and a build id.
+	//
 	// Each Deployment Version is distinguished from other Versions for task
 	// routing, and users can configure the Temporal Server to send tasks to a
 	// particular Version.
@@ -595,13 +596,31 @@ type (
 	// NOTE: Experimental
 	WorkflowExecutionOptionsChanges = internal.WorkflowExecutionOptionsChanges
 
+	// VersioningOverrideChange sets or removes a versioning override when used with
+	// [WorkflowExecutionOptionsChanges].
+	//
+	// NOTE: Experimental
+	VersioningOverrideChange = internal.VersioningOverrideChange
+
 	// VersioningOverride is a property in [WorkflowExecutionOptions] that changes the versioning
 	// configuration of a specific workflow execution.
-	// If set, it takes precedence over the Versioning Behavior provided with workflow type registration, or
-	// default worker options.
+	//
+	// If set, it takes precedence over the Versioning Behavior provided with workflow type
+	// registration, or default worker options.
 	//
 	// NOTE: Experimental
 	VersioningOverride = internal.VersioningOverride
+
+	// PinnedVersioningOverride means the workflow will be pinned to a specific deployment version.
+	//
+	// NOTE: Experimental
+	PinnedVersioningOverride = internal.PinnedVersioningOverride
+
+	// AutoUpgradeVersioningOverride means the workflow will auto-upgrade to the current deployment
+	// version on the next workflow task.
+	//
+	// NOTE: Experimental
+	AutoUpgradeVersioningOverride = internal.AutoUpgradeVersioningOverride
 
 	// WorkflowUpdateHandle represents a running or completed workflow
 	// execution update and gives the holder access to the outcome of the same.
@@ -1403,8 +1422,8 @@ func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 }
 
 // NewValues creates a new [converter.EncodedValues] which can be used to decode binary data returned by Temporal. For example:
-// User had Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got response from calling [client.Client.DescribeWorkflowExecution].
-// The response contains binary field PendingActivityInfo.HeartbeatDetails,
+// User has Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got a response from calling [client.Client.DescribeWorkflowExecution].
+// The response contains the binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
 //
 //	var result1 string
