@@ -134,9 +134,10 @@ type (
 
 	localActivityTaskPoller struct {
 		basePoller
-		handler  *localActivityTaskHandler
-		logger   log.Logger
-		laTunnel *localActivityTunnel
+		handler      *localActivityTaskHandler
+		logger       log.Logger
+		laTunnel     *localActivityTunnel
+		workerStopCh <-chan struct{}
 	}
 
 	localActivityTaskHandler struct {
@@ -147,6 +148,7 @@ type (
 		contextPropagators []ContextPropagator
 		interceptors       []WorkerInterceptor
 		client             *WorkflowClient
+		workerStopChannel  <-chan struct{}
 	}
 
 	localActivityResult struct {
@@ -574,6 +576,7 @@ func newLocalActivityPoller(
 	laTunnel *localActivityTunnel,
 	interceptors []WorkerInterceptor,
 	client *WorkflowClient,
+	workerStopCh <-chan struct{},
 ) *localActivityTaskPoller {
 	handler := &localActivityTaskHandler{
 		backgroundContext:  params.BackgroundContext,
@@ -583,12 +586,14 @@ func newLocalActivityPoller(
 		contextPropagators: params.ContextPropagators,
 		interceptors:       interceptors,
 		client:             client,
+		workerStopChannel:  workerStopCh,
 	}
 	return &localActivityTaskPoller{
-		basePoller: basePoller{metricsHandler: params.MetricsHandler, stopC: params.WorkerStopChannel},
-		handler:    handler,
-		logger:     params.Logger,
-		laTunnel:   laTunnel,
+		basePoller:   basePoller{metricsHandler: params.MetricsHandler, stopC: params.WorkerStopChannel},
+		handler:      handler,
+		logger:       params.Logger,
+		laTunnel:     laTunnel,
+		workerStopCh: workerStopCh,
 	}
 }
 
@@ -642,7 +647,7 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 		)
 	})
 	ctx, err := WithLocalActivityTask(lath.backgroundContext, task, lath.logger, lath.metricsHandler,
-		lath.dataConverter, lath.interceptors, lath.client)
+		lath.dataConverter, lath.interceptors, lath.client, lath.workerStopChannel)
 	if err != nil {
 		return &localActivityResult{task: task, err: fmt.Errorf("failed building context: %w", err)}
 	}

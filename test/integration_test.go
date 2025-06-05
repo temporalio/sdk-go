@@ -2414,6 +2414,8 @@ func (ts *IntegrationTestSuite) TestGracefulLocalActivityCompletion() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	localActivityFn := func(ctx context.Context) error {
+		// There is a slight delay between when workerStopChannel closes and when backgroundContextCancel is canceled
+		<-activity.GetWorkerStopChannel(ctx)
 		time.Sleep(100 * time.Millisecond)
 		return ctx.Err()
 	}
@@ -2485,6 +2487,7 @@ func (ts *IntegrationTestSuite) TestLocalActivityTaskTimeoutHeartbeat() {
 
 	localActivityFn := func(ctx context.Context) error {
 		// wait for worker shutdown to be started and WorkflowTaskTimeout to be hit
+		<-activity.GetWorkerStopChannel(ctx)
 		time.Sleep(1500 * time.Millisecond) // 1.5 seconds
 		return ctx.Err()
 	}
@@ -7714,9 +7717,9 @@ func (ts *IntegrationTestSuite) TestLocalActivityWorkerShutdownNoHeartbeat() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	localActivityFn := func(ctx context.Context) error {
-		// TODO: Use GetWorkerStopChannel once https://github.com/temporalio/sdk-go/issues/1963 is fixed
-		//  in this place and other similar tests
-		time.Sleep(300 * time.Millisecond)
+		// There is a slight delay between when workerStopChannel closes and when backgroundContextCancel is canceled
+		<-activity.GetWorkerStopChannel(ctx)
+		time.Sleep(100 * time.Millisecond)
 		return ctx.Err()
 	}
 	workflowFn := func(ctx workflow.Context) error {
@@ -7785,7 +7788,9 @@ func (ts *IntegrationTestSuite) TestLocalActivityCompleteWithinGracefulShutdown(
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	localActivityFn := func(ctx context.Context) error {
-		time.Sleep(300 * time.Millisecond)
+		// There is a slight delay between when workerStopChannel closes and when backgroundContextCancel is canceled
+		<-activity.GetWorkerStopChannel(ctx)
+		time.Sleep(100 * time.Millisecond)
 		return ctx.Err()
 	}
 	workflowFn := func(ctx workflow.Context) error {
