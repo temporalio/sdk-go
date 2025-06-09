@@ -20,6 +20,8 @@ const WorkerDeploymentUnversioned = "__unversioned__"
 // A reserved separator for Worker Deployment Versions.
 const WorkerDeploymentVersionSeparator = "."
 
+var errBuildIdCantBeEmpty = fmt.Errorf("BuildID cannot be empty")
+
 // safeAsTime ensures that a nil proto timestamp makes `IsZero()` true.
 func safeAsTime(timestamp *timestamppb.Timestamp) time.Time {
 	if timestamp == nil {
@@ -151,14 +153,6 @@ func (h *workerDeploymentHandleImpl) validate() error {
 	}
 	if h.workflowClient.namespace == "" {
 		return errors.New("missing namespace argument in handle")
-	}
-
-	return nil
-}
-
-func (h *workerDeploymentHandleImpl) validateBuildID(buildId string, noUnversioned bool) error {
-	if (buildId == "") && noUnversioned {
-		return fmt.Errorf("BuildID cannot be empty")
 	}
 
 	return nil
@@ -326,8 +320,8 @@ func (h *workerDeploymentHandleImpl) DescribeVersion(ctx context.Context, option
 	if err := h.validate(); err != nil {
 		return WorkerDeploymentVersionDescription{}, err
 	}
-	if err := h.validateBuildID(options.BuildID, true); err != nil {
-		return WorkerDeploymentVersionDescription{}, err
+	if options.BuildID == "" {
+		return WorkerDeploymentVersionDescription{}, errBuildIdCantBeEmpty
 	}
 	if err := h.workflowClient.ensureInitialized(ctx); err != nil {
 		return WorkerDeploymentVersionDescription{}, err
@@ -358,8 +352,8 @@ func (h *workerDeploymentHandleImpl) DeleteVersion(ctx context.Context, options 
 	if err := h.validate(); err != nil {
 		return WorkerDeploymentDeleteVersionResponse{}, err
 	}
-	if err := h.validateBuildID(options.BuildID, true); err != nil {
-		return WorkerDeploymentDeleteVersionResponse{}, err
+	if options.BuildID == "" {
+		return WorkerDeploymentDeleteVersionResponse{}, errBuildIdCantBeEmpty
 	}
 	if err := h.workflowClient.ensureInitialized(ctx); err != nil {
 		return WorkerDeploymentDeleteVersionResponse{}, err
@@ -417,18 +411,19 @@ func (h *workerDeploymentHandleImpl) UpdateVersionMetadata(ctx context.Context, 
 	if err := h.validate(); err != nil {
 		return WorkerDeploymentUpdateVersionMetadataResponse{}, err
 	}
-	if err := h.validateBuildID(options.Version, true); err != nil {
-		return WorkerDeploymentUpdateVersionMetadataResponse{}, err
+	if options.Version.BuildId == "" {
+		return WorkerDeploymentUpdateVersionMetadataResponse{}, errBuildIdCantBeEmpty
 	}
 	if err := h.workflowClient.ensureInitialized(ctx); err != nil {
 		return WorkerDeploymentUpdateVersionMetadataResponse{}, err
 	}
 
 	request := &workflowservice.UpdateWorkerDeploymentVersionMetadataRequest{
-		Namespace:     h.workflowClient.namespace,
-		Version:       options.Version,
-		UpsertEntries: workerDeploymentUpsertEntriesMetadataToProto(h.workflowClient.dataConverter, options.MetadataUpdate),
-		RemoveEntries: options.MetadataUpdate.RemoveEntries,
+		Namespace:         h.workflowClient.namespace,
+		Version:           options.Version.toCanonicalString(),
+		DeploymentVersion: options.Version.toProto(),
+		UpsertEntries:     workerDeploymentUpsertEntriesMetadataToProto(h.workflowClient.dataConverter, options.MetadataUpdate),
+		RemoveEntries:     options.MetadataUpdate.RemoveEntries,
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
