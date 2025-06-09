@@ -1,31 +1,10 @@
-// The MIT License
-//
-// Copyright (c) 2021 Temporal Technologies Inc.  All rights reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
 	"context"
 	"time"
 
+	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
@@ -63,6 +42,11 @@ func (*WorkerInterceptorBase) InterceptWorkflow(
 	next WorkflowInboundInterceptor,
 ) WorkflowInboundInterceptor {
 	return &WorkflowInboundInterceptorBase{Next: next}
+}
+
+// InterceptNexusOperation implements WorkerInterceptor.
+func (w *WorkerInterceptorBase) InterceptNexusOperation(ctx context.Context, next NexusOperationInboundInterceptor) NexusOperationInboundInterceptor {
+	return &NexusOperationInboundInterceptorBase{Next: next}
 }
 
 func (*WorkerInterceptorBase) mustEmbedWorkerInterceptorBase() {}
@@ -142,6 +126,12 @@ func (a *ActivityOutboundInterceptorBase) GetHeartbeatDetails(ctx context.Contex
 // ActivityOutboundInterceptor.GetWorkerStopChannel.
 func (a *ActivityOutboundInterceptorBase) GetWorkerStopChannel(ctx context.Context) <-chan struct{} {
 	return a.Next.GetWorkerStopChannel(ctx)
+}
+
+// GetClient implements
+// ActivityOutboundInterceptor.GetClient
+func (a *ActivityOutboundInterceptorBase) GetClient(ctx context.Context) Client {
+	return a.Next.GetClient(ctx)
 }
 
 func (*ActivityOutboundInterceptorBase) mustEmbedActivityOutboundInterceptorBase() {}
@@ -555,9 +545,73 @@ func (c *ClientOutboundInterceptorBase) QueryWorkflow(
 	return c.Next.QueryWorkflow(ctx, in)
 }
 
+// DescribeWorkflow implements ClientOutboundInterceptor.DescribeWorkflow.
+func (c *ClientOutboundInterceptorBase) DescribeWorkflow(
+	ctx context.Context,
+	in *ClientDescribeWorkflowInput,
+) (*ClientDescribeWorkflowOutput, error) {
+	return c.Next.DescribeWorkflow(ctx, in)
+}
+
 // ExecuteWorkflow implements ClientOutboundInterceptor.CreateSchedule.
 func (c *ClientOutboundInterceptorBase) CreateSchedule(ctx context.Context, in *ScheduleClientCreateInput) (ScheduleHandle, error) {
 	return c.Next.CreateSchedule(ctx, in)
 }
 
 func (*ClientOutboundInterceptorBase) mustEmbedClientOutboundInterceptorBase() {}
+
+// NexusOperationInboundInterceptorBase is a default implementation of [NexusOperationInboundInterceptor] that
+// forwards calls to the next inbound interceptor.
+//
+// Note: Experimental
+type NexusOperationInboundInterceptorBase struct {
+	Next NexusOperationInboundInterceptor
+}
+
+// CancelOperation implements NexusOperationInboundInterceptor.
+func (n *NexusOperationInboundInterceptorBase) CancelOperation(ctx context.Context, input NexusCancelOperationInput) error {
+	return n.Next.CancelOperation(ctx, input)
+}
+
+// Init implements NexusOperationInboundInterceptor.
+func (n *NexusOperationInboundInterceptorBase) Init(ctx context.Context, outbound NexusOperationOutboundInterceptor) error {
+	return n.Next.Init(ctx, outbound)
+}
+
+// StartOperation implements NexusOperationInboundInterceptor.
+func (n *NexusOperationInboundInterceptorBase) StartOperation(ctx context.Context, input NexusStartOperationInput) (nexus.HandlerStartOperationResult[any], error) {
+	return n.Next.StartOperation(ctx, input)
+}
+
+// mustEmbedNexusOperationInboundInterceptorBase implements NexusOperationInboundInterceptor.
+func (n *NexusOperationInboundInterceptorBase) mustEmbedNexusOperationInboundInterceptorBase() {}
+
+var _ NexusOperationInboundInterceptor = &NexusOperationInboundInterceptorBase{}
+
+// NexusOperationOutboundInterceptorBase is a default implementation of [NexusOperationOutboundInterceptor] that
+// forwards calls to the next outbound interceptor.
+//
+// Note: Experimental
+type NexusOperationOutboundInterceptorBase struct {
+	Next NexusOperationOutboundInterceptor
+}
+
+// GetClient implements NexusOperationOutboundInterceptor.
+func (n *NexusOperationOutboundInterceptorBase) GetClient(ctx context.Context) Client {
+	return n.Next.GetClient(ctx)
+}
+
+// GetLogger implements NexusOperationOutboundInterceptor.
+func (n *NexusOperationOutboundInterceptorBase) GetLogger(ctx context.Context) log.Logger {
+	return n.Next.GetLogger(ctx)
+}
+
+// GetMetricsHandler implements NexusOperationOutboundInterceptor.
+func (n *NexusOperationOutboundInterceptorBase) GetMetricsHandler(ctx context.Context) metrics.Handler {
+	return n.Next.GetMetricsHandler(ctx)
+}
+
+// mustEmbedNexusOperationOutboundInterceptorBase implements NexusOperationOutboundInterceptor.
+func (n *NexusOperationOutboundInterceptorBase) mustEmbedNexusOperationOutboundInterceptorBase() {}
+
+var _ NexusOperationOutboundInterceptor = &NexusOperationOutboundInterceptorBase{}

@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -303,6 +279,27 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 		createTestEventWorkflowExecutionCompleted(11, &historypb.WorkflowExecutionCompletedEventAttributes{
 			WorkflowTaskCompletedEventId: 10,
 		}),
+	}
+
+	history := &historypb.History{Events: testEvents}
+	logger := getLogger()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
+	replayer.RegisterWorkflow(testReplayWorkflow)
+	err = replayer.ReplayWorkflowHistory(logger, history)
+	require.NoError(s.T(), err)
+}
+
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_IncompleteWorkflowExecution() {
+	taskQueue := "taskQueue1"
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflow"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
+		}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
 	}
 
 	history := &historypb.History{Events: testEvents}
@@ -2672,7 +2669,7 @@ func TestWorkerOptionDefaults(t *testing.T) {
 		Logger:                                workflowWorker.executionParameters.Logger,
 		MetricsHandler:                        workflowWorker.executionParameters.MetricsHandler,
 		Identity:                              workflowWorker.executionParameters.Identity,
-		UserContext:                           workflowWorker.executionParameters.UserContext,
+		BackgroundContext:                     workflowWorker.executionParameters.BackgroundContext,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
@@ -2778,7 +2775,7 @@ func TestLocalActivityWorkerOnly(t *testing.T) {
 		Logger:                                workflowWorker.executionParameters.Logger,
 		MetricsHandler:                        workflowWorker.executionParameters.MetricsHandler,
 		Identity:                              workflowWorker.executionParameters.Identity,
-		UserContext:                           workflowWorker.executionParameters.UserContext,
+		BackgroundContext:                     workflowWorker.executionParameters.BackgroundContext,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
@@ -2948,4 +2945,68 @@ func TestAliasUnqualifiedNameClash(t *testing.T) {
 	// never want called. But with disabling alias, no problem.
 	require.Equal(t, "func3", executeWorkflow(false))
 	require.Equal(t, "func1", executeWorkflow(true))
+}
+
+func (s *internalWorkerTestSuite) TestReservedTemporalName() {
+	// workflow
+	worker := createWorker(s.service)
+	workflowFn := func(ctx Context) error { return nil }
+	err := runAndCatchPanic(func() {
+		worker.RegisterWorkflowWithOptions(workflowFn, RegisterWorkflowOptions{Name: "__temporal_workflow"})
+	})
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), temporalPrefixError)
+
+	// activity
+	activityFn := func() error {
+		return nil
+	}
+	err = runAndCatchPanic(func() {
+		worker.RegisterActivityWithOptions(activityFn, RegisterActivityOptions{Name: "__temporal_workflow"})
+	})
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), temporalPrefixError)
+
+	err = worker.Start()
+	require.NoError(s.T(), err)
+	worker.Stop()
+
+	// task queue
+	namespace := "testNamespace"
+	service := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	client := NewServiceClient(service, nil, ClientOptions{
+		Namespace: namespace,
+	})
+	err = runAndCatchPanic(func() {
+		_ = NewAggregatedWorker(client, "__temporal_task_queue", WorkerOptions{})
+	})
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), temporalPrefixError)
+}
+
+func (s *internalWorkerTestSuite) TestRegisterMultipleDynamicWorkflow() {
+	var suite WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	workflowFn1 := func(ctx Context, values converter.EncodedValues) error { return nil }
+	workflowFn2 := func(ctx Context, values converter.EncodedValues) error { return nil }
+	env.RegisterDynamicWorkflow(workflowFn1, DynamicRegisterWorkflowOptions{})
+	err := runAndCatchPanic(func() {
+		env.RegisterDynamicWorkflow(workflowFn2, DynamicRegisterWorkflowOptions{})
+	})
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), "dynamic workflow already registered")
+
+	// activity
+	activityFn1 := func(ctx context.Context, values converter.EncodedValues) error {
+		return nil
+	}
+	activityFn2 := func(ctx context.Context, values converter.EncodedValues) error {
+		return nil
+	}
+	env.RegisterDynamicActivity(activityFn1, DynamicRegisterActivityOptions{})
+	err = runAndCatchPanic(func() {
+		env.RegisterDynamicActivity(activityFn2, DynamicRegisterActivityOptions{})
+	})
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), "dynamic activity already registered")
 }

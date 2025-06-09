@@ -1,25 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2022 Temporal Technologies Inc.  All rights reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package testsuite
 
 import (
@@ -71,6 +49,9 @@ type DevServerOptions struct {
 	DBFilename string
 	// Whether to enable the UI.
 	EnableUI bool
+	// Override UI port if EnableUI is true.
+	// If not provided, a free port will be used.
+	UIPort string
 	// Log format - defaults to "pretty".
 	LogFormat string
 	// Log level - defaults to "warn".
@@ -157,6 +138,9 @@ func prepareCommand(options *DevServerOptions, host, port, namespace string) []s
 	}
 	if options.DBFilename != "" {
 		args = append(args, "--db-filename", options.DBFilename)
+	}
+	if options.UIPort != "" {
+		args = append(args, "--ui-port", options.UIPort)
 	}
 	return append(args, options.ExtraArgs...)
 }

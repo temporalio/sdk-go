@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -35,14 +11,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/pborman/uuid"
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	"go.temporal.io/api/cloud/cloudservice/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
@@ -100,17 +75,11 @@ type (
 		capabilities             *workflowservice.GetSystemInfoResponse_Capabilities
 		capabilitiesLock         sync.RWMutex
 		eagerDispatcher          *eagerWorkflowDispatcher
+		getSystemInfoTimeout     time.Duration
 
 		// The pointer value is shared across multiple clients. If non-nil, only
 		// access/mutate atomically.
 		unclosedClients *int32
-	}
-
-	// cloudOperationsClient is the client for managing cloud.
-	cloudOperationsClient struct {
-		conn               *grpc.ClientConn
-		logger             log.Logger
-		cloudServiceClient cloudservice.CloudServiceClient
 	}
 
 	// namespaceClient is the client for managing namespaces.
@@ -231,6 +200,7 @@ type (
 //
 // The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 // subjected to change in the future.
+//
 // NOTE: the context.Context should have a fairly large timeout, since workflow execution may take a while to be finished
 func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
@@ -329,7 +299,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	// Default workflow ID to UUID
 	options.ID = workflowID
 	if options.ID == "" {
-		options.ID = uuid.New()
+		options.ID = uuid.NewString()
 	}
 
 	// Validate function and get name
@@ -506,7 +476,7 @@ func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 	// We do allow canceled error to be passed here
 	cancelAllowed := true
 	request := convertActivityResultToRespondRequest(wc.identity, taskToken,
-		data, err, wc.dataConverter, wc.failureConverter, wc.namespace, cancelAllowed, nil, nil)
+		data, err, wc.dataConverter, wc.failureConverter, wc.namespace, cancelAllowed, nil, nil, nil)
 	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
@@ -661,6 +631,8 @@ func (wc *WorkflowClient) ListArchivedWorkflow(ctx context.Context, request *wor
 }
 
 // ScanWorkflow implementation
+//
+//lint:ignore SA1019 the server API was deprecated.
 func (wc *WorkflowClient) ScanWorkflow(ctx context.Context, request *workflowservice.ScanWorkflowExecutionsRequest) (*workflowservice.ScanWorkflowExecutionsResponse, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return nil, err
@@ -671,6 +643,7 @@ func (wc *WorkflowClient) ScanWorkflow(ctx context.Context, request *workflowser
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
+	//lint:ignore SA1019 the server API was deprecated.
 	response, err := wc.workflowService.ScanWorkflowExecutions(grpcCtx, request)
 	if err != nil {
 		return nil, err
@@ -738,13 +711,30 @@ func (wc *WorkflowClient) DescribeWorkflowExecution(ctx context.Context, workflo
 	return response, nil
 }
 
+// DescribeWorkflow returns information about the specified workflow execution.
+func (wc *WorkflowClient) DescribeWorkflow(ctx context.Context, workflowID, runID string) (*WorkflowExecutionDescription, error) {
+	if err := wc.ensureInitialized(ctx); err != nil {
+		return nil, err
+	}
+
+	response, err := wc.interceptor.DescribeWorkflow(ctx, &ClientDescribeWorkflowInput{
+		WorkflowID: workflowID,
+		RunID:      runID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return response.Response, nil
+}
+
 // QueryWorkflow queries a given workflow execution
 // workflowID and queryType are required, other parameters are optional.
-// - workflow ID of the workflow.
-// - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
-// - taskQueue can be default(empty string). If empty string then it will pick the taskQueue of the running execution of that workflow ID.
-// - queryType is the type of the query.
-// - args... are the optional query parameters.
+//   - workflow ID of the workflow.
+//   - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
+//   - taskQueue can be default(empty string). If empty string then it will pick the taskQueue of the running execution of that workflow ID.
+//   - queryType is the type of the query.
+//   - args... are the optional query parameters.
+//
 // The errors it can return:
 //   - serviceerror.InvalidArgument
 //   - serviceerror.Internal
@@ -793,6 +783,7 @@ type UpdateWorkflowOptions struct {
 
 	// WaitForStage is a required field which specifies which stage to wait until returning.
 	// See https://docs.temporal.io/develop/go/message-passing#send-update-from-client for more details.
+	//
 	// NOTE: Specifying WorkflowUpdateStageAdmitted is not supported.
 	WaitForStage WorkflowUpdateStage
 
@@ -805,6 +796,7 @@ type UpdateWorkflowOptions struct {
 
 // UpdateWithStartWorkflowOptions encapsulates the parameters used by UpdateWithStartWorkflow.
 // See UpdateWithStartWorkflow and NewWithStartWorkflowOperation.
+//
 // NOTE: Experimental
 type UpdateWithStartWorkflowOptions struct {
 	StartWorkflowOperation WithStartWorkflowOperation
@@ -901,6 +893,69 @@ type QueryWorkflowWithOptionsResponse struct {
 	QueryRejected *querypb.QueryRejected
 }
 
+// WorkflowExecutionMetadata contains common information about a workflow execution.
+type WorkflowExecutionMetadata struct {
+	// WorkflowExecution is the unique identifier for the workflow execution
+	WorkflowExecution WorkflowExecution
+	// WorkflowType is the type of the workflow execution
+	WorkflowType WorkflowType
+	// TaskQueueName is the name of the task queue
+	TaskQueueName string
+	// Status is the status of the workflow execution
+	Status enumspb.WorkflowExecutionStatus
+	// Memo is the current memo of the workflow execution
+	// Values can be decoded using data converter (defaultDataConverter, or custom one if set).
+	Memo *commonpb.Memo
+	// TypedSearchAttributes is the current search attributes of the workflow execution
+	TypedSearchAttributes SearchAttributes
+	// ParentWorkflowExecution is the parent workflow execution
+	// This field is only set if the workflow execution is a child of another workflow execution
+	ParentWorkflowExecution *WorkflowExecution
+	// RootWorkflowExecution is the root workflow execution
+	RootWorkflowExecution *WorkflowExecution
+	// WorkflowStartTime is the time when the workflow execution started
+	WorkflowStartTime time.Time
+	// WorkflowCloseTime is the time when the workflow execution closed
+	// This field is only set if the workflow execution is closed
+	WorkflowCloseTime *time.Time
+	// ExecutionTime is the time when the workflow execution started or should start
+	ExecutionTime *time.Time
+	// HistoryLength is the number of history events in the workflow execution
+	HistoryLength int
+}
+
+// WorkflowExecutionDescription defines the response to DescribeWorkflow.
+type WorkflowExecutionDescription struct {
+	WorkflowExecutionMetadata
+	dc                   converter.DataConverter
+	staticSummaryPayload *commonpb.Payload
+	staticDetailsPayload *commonpb.Payload
+}
+
+// GetStaticSummary returns the summary set on workflow start.
+//
+// NOTE: Experimental
+func (w *WorkflowExecutionDescription) GetStaticSummary() (string, error) {
+	if w.staticSummaryPayload == nil {
+		return "", nil
+	}
+	var summary string
+	err := w.dc.FromPayload(w.staticSummaryPayload, &summary)
+	return summary, err
+}
+
+// GetStaticDetails returns the details set on workflow start.
+//
+// NOTE: Experimental
+func (w *WorkflowExecutionDescription) GetStaticDetails() (string, error) {
+	if w.staticDetailsPayload == nil {
+		return "", nil
+	}
+	var details string
+	err := w.dc.FromPayload(w.staticDetailsPayload, &details)
+	return details, err
+}
+
 // QueryWorkflowWithOptions queries a given workflow execution and returns the query result synchronously.
 // See QueryWorkflowWithOptionsRequest and QueryWorkflowWithOptionsResult for more information.
 // The errors it can return:
@@ -943,8 +998,9 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 
 // DescribeTaskQueue returns information about the target taskqueue, right now this API returns the
 // pollers which polled this taskqueue in last few minutes.
-// - taskqueue name of taskqueue
-// - taskqueueType type of taskqueue, can be workflow or activity
+//   - taskqueue name of taskqueue
+//   - taskqueueType type of taskqueue, can be workflow or activity
+//
 // The errors it can return:
 //   - serviceerror.InvalidArgument
 //   - serviceerror.Internal
@@ -980,7 +1036,7 @@ func (wc *WorkflowClient) ResetWorkflowExecution(ctx context.Context, request *w
 	}
 
 	if request != nil && request.GetRequestId() == "" {
-		request.RequestId = uuid.New()
+		request.RequestId = uuid.NewString()
 	}
 
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
@@ -1064,6 +1120,7 @@ func (wc *WorkflowClient) GetWorkerTaskReachability(ctx context.Context, options
 // UpdateWorkflowExecutionOptions partially overrides the [WorkflowExecutionOptions] of an existing workflow execution,
 // and returns the new [WorkflowExecutionOptions] after applying the changes.
 // It is intended for building tools that can selectively apply ad-hoc workflow configuration changes.
+//
 // NOTE: Experimental
 func (wc *WorkflowClient) UpdateWorkflowExecutionOptions(ctx context.Context, request UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
@@ -1274,7 +1331,7 @@ func (wc *WorkflowClient) OperatorService() operatorservice.OperatorServiceClien
 }
 
 // Get capabilities, lazily fetching from server if not already obtained.
-func (wc *WorkflowClient) loadCapabilities(ctx context.Context, getSystemInfoTimeout time.Duration) (*workflowservice.GetSystemInfoResponse_Capabilities, error) {
+func (wc *WorkflowClient) loadCapabilities(ctx context.Context) (*workflowservice.GetSystemInfoResponse_Capabilities, error) {
 	// While we want to memoize the result here, we take care not to lock during
 	// the call. This means that in racy situations where this is called multiple
 	// times at once, it may result in multiple calls. This is far more preferable
@@ -1287,10 +1344,7 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context, getSystemInfoTim
 	}
 
 	// Fetch the capabilities
-	if getSystemInfoTimeout == 0 {
-		getSystemInfoTimeout = defaultGetSystemInfoTimeout
-	}
-	grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(getSystemInfoTimeout))
+	grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(wc.getSystemInfoTimeout))
 	defer cancel()
 	resp, err := wc.workflowService.GetSystemInfo(grpcCtx, &workflowservice.GetSystemInfoRequest{})
 	// We ignore unimplemented
@@ -1315,7 +1369,7 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context, getSystemInfoTim
 
 func (wc *WorkflowClient) ensureInitialized(ctx context.Context) error {
 	// Just loading the capabilities is enough
-	_, err := wc.loadCapabilities(ctx, defaultGetSystemInfoTimeout)
+	_, err := wc.loadCapabilities(ctx)
 	return err
 }
 
@@ -1329,6 +1383,13 @@ func (wc *WorkflowClient) ScheduleClient() ScheduleClient {
 // DeploymentClient implements [Client.DeploymentClient].
 func (wc *WorkflowClient) DeploymentClient() DeploymentClient {
 	return &deploymentClient{
+		workflowClient: wc,
+	}
+}
+
+// WorkerDeploymentClient implements [Client.WorkerDeploymentClient].
+func (wc *WorkflowClient) WorkerDeploymentClient() WorkerDeploymentClient {
+	return &workerDeploymentClient{
 		workflowClient: wc,
 	}
 }
@@ -1354,16 +1415,6 @@ func (wc *WorkflowClient) Close() {
 		if err := wc.conn.Close(); err != nil {
 			wc.logger.Warn("unable to close connection", tagError, err)
 		}
-	}
-}
-
-func (c *cloudOperationsClient) CloudService() cloudservice.CloudServiceClient {
-	return c.cloudServiceClient
-}
-
-func (c *cloudOperationsClient) Close() {
-	if err := c.conn.Close(); err != nil {
-		c.logger.Warn("unable to close connection", tagError, err)
 	}
 }
 
@@ -1453,8 +1504,10 @@ func (iter *historyEventIteratorImpl) HasNext() bool {
 	return false
 }
 
+// Next returns the next history event.
+// If next is called with not more events, it will panic.
+// Call [historyEventIteratorImpl.HasNext] to check if there are more events.
 func (iter *historyEventIteratorImpl) Next() (*historypb.HistoryEvent, error) {
-	// if caller call the Next() when iteration is over, just return nil, nil
 	if !iter.HasNext() {
 		panic("HistoryEventIterator Next() called without checking HasNext()")
 	}
@@ -1606,12 +1659,13 @@ func createStartWorkflowInput(
 	registry *registry,
 ) (*ClientExecuteWorkflowInput, error) {
 	if options.ID == "" {
-		options.ID = uuid.New()
+		options.ID = uuid.NewString()
 	}
 	if err := validateFunctionArgs(workflow, args, true); err != nil {
 		return nil, err
 	}
 	workflowType, err := getWorkflowFunctionName(registry, workflow)
+
 	if err != nil {
 		return nil, err
 	}
@@ -1684,6 +1738,8 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 		CompletionCallbacks:      in.Options.callbacks,
 		Links:                    in.Options.links,
 		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
+		OnConflictOptions:        in.Options.onConflictOptions.ToProto(),
+		Priority:                 convertToPBPriority(in.Options.Priority),
 	}
 
 	startRequest.UserMetadata, err = buildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
@@ -1694,7 +1750,7 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 	if in.Options.requestID != "" {
 		startRequest.RequestId = in.Options.requestID
 	} else {
-		startRequest.RequestId = uuid.New()
+		startRequest.RequestId = uuid.NewString()
 	}
 
 	if in.Options.StartDelay != 0 {
@@ -1741,6 +1797,10 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		return nil, err
 	} else {
 		runID = response.RunId
+	}
+
+	if responseInfo := in.Options.responseInfo; responseInfo != nil {
+		responseInfo.Link = response.GetLink()
 	}
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
@@ -1798,13 +1858,6 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 		updateReq.WorkflowExecution.WorkflowId = startReq.WorkflowId
 	}
 
-	grpcCtx, cancel := newGRPCContext(
-		ctx,
-		grpcMetricsHandler(w.client.metricsHandler.WithTags(
-			metrics.RPCTags(startOp.input.WorkflowType, metrics.NoneTagValue, startOp.input.Options.TaskQueue))),
-		defaultGrpcRetryParameters(ctx))
-	defer cancel()
-
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
 		metricsHandler := w.client.metricsHandler.WithTags(metrics.RPCTags(startOp.input.WorkflowType,
 			metrics.NoneTagValue, startOp.input.Options.TaskQueue))
@@ -1825,10 +1878,14 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 		}, nil)
 	}
 
-	updateResp, err := w.updateWithStartWorkflow(grpcCtx, startReq, updateReq, onStart)
+	metricsHandler := w.client.metricsHandler.WithTags(metrics.RPCTags(startOp.input.WorkflowType,
+		metrics.NoneTagValue, startOp.input.Options.TaskQueue))
+
+	updateResp, err := w.updateWithStartWorkflow(ctx, startReq, updateReq, onStart, metricsHandler)
 	if err != nil {
 		return nil, err
 	}
+
 	handle, err := w.updateHandleFromResponse(ctx, updateReq.WaitPolicy.LifecycleStage, updateResp)
 	if err != nil {
 		return nil, err
@@ -1845,6 +1902,7 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 	startRequest *workflowservice.StartWorkflowExecutionRequest,
 	updateRequest *workflowservice.UpdateWorkflowExecutionRequest,
 	onStart func(*workflowservice.StartWorkflowExecutionResponse),
+	rpcMetricsHandler metrics.Handler,
 ) (*workflowservice.UpdateWorkflowExecutionResponse, error) {
 	startOp := &workflowservice.ExecuteMultiOperationRequest_Operation{
 		Operation: &workflowservice.ExecuteMultiOperationRequest_Operation_StartWorkflow{
@@ -1868,7 +1926,12 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 	seenStart := false
 	for {
 		multiResp, err := func() (*workflowservice.ExecuteMultiOperationResponse, error) {
-			grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(pollUpdateTimeout), grpcLongPoll(true), defaultGrpcRetryParameters(ctx))
+			grpcCtx, cancel := newGRPCContext(
+				ctx,
+				grpcTimeout(pollUpdateTimeout),
+				grpcLongPoll(true),
+				grpcMetricsHandler(rpcMetricsHandler),
+				defaultGrpcRetryParameters(ctx))
 			defer cancel()
 
 			multiResp, err := w.client.workflowService.ExecuteMultiOperation(grpcCtx, &multiRequest)
@@ -1972,9 +2035,10 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 		return err
 	}
 
+	links, _ := ctx.Value(NexusOperationLinksKey).([]*commonpb.Link)
+
 	request := &workflowservice.SignalWorkflowExecutionRequest{
 		Namespace: w.client.namespace,
-		RequestId: uuid.New(),
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: in.WorkflowID,
 			RunId:      in.RunID,
@@ -1983,6 +2047,13 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 		Input:      input,
 		Identity:   w.client.identity,
 		Header:     header,
+		Links:      links,
+	}
+
+	if requestID, ok := ctx.Value(NexusOperationRequestIDKey).(string); ok && requestID != "" {
+		request.RequestId = requestID
+	} else {
+		request.RequestId = uuid.NewString()
 	}
 
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
@@ -2029,7 +2100,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 
 	signalWithStartRequest := &workflowservice.SignalWithStartWorkflowExecutionRequest{
 		Namespace:                w.client.namespace,
-		RequestId:                uuid.New(),
+		RequestId:                uuid.NewString(),
 		WorkflowId:               in.Options.ID,
 		WorkflowType:             &commonpb.WorkflowType{Name: in.WorkflowType},
 		TaskQueue:                &taskqueuepb.TaskQueue{Name: in.Options.TaskQueue, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
@@ -2048,6 +2119,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		WorkflowIdConflictPolicy: in.Options.WorkflowIDConflictPolicy,
 		Header:                   header,
 		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
+		Priority:                 convertToPBPriority(in.Options.Priority),
 	}
 
 	if in.Options.StartDelay != 0 {
@@ -2093,7 +2165,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 func (w *workflowClientInterceptor) CancelWorkflow(ctx context.Context, in *ClientCancelWorkflowInput) error {
 	request := &workflowservice.RequestCancelWorkflowExecutionRequest{
 		Namespace: w.client.namespace,
-		RequestId: uuid.New(),
+		RequestId: uuid.NewString(),
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: in.WorkflowID,
 			RunId:      in.RunID,
@@ -2127,6 +2199,85 @@ func (w *workflowClientInterceptor) TerminateWorkflow(ctx context.Context, in *C
 	defer cancel()
 	_, err = w.client.workflowService.TerminateWorkflowExecution(grpcCtx, request)
 	return err
+}
+
+func (w *workflowClientInterceptor) DescribeWorkflow(
+	ctx context.Context,
+	in *ClientDescribeWorkflowInput,
+) (*ClientDescribeWorkflowOutput, error) {
+
+	req := &workflowservice.DescribeWorkflowExecutionRequest{
+		Namespace: w.client.namespace,
+		Execution: &commonpb.WorkflowExecution{
+			WorkflowId: in.WorkflowID,
+			RunId:      in.RunID,
+		},
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	resp, err := w.client.workflowService.DescribeWorkflowExecution(grpcCtx, req)
+	if err != nil {
+		return nil, err
+	}
+	info := resp.GetWorkflowExecutionInfo()
+
+	var closeTime *time.Time
+	if info.GetCloseTime().IsValid() {
+		t := info.GetCloseTime().AsTime()
+		closeTime = &t
+	}
+	var executionTime *time.Time
+	if info.GetExecutionTime().IsValid() {
+		t := info.GetExecutionTime().AsTime()
+		executionTime = &t
+	}
+
+	var parentWorkflowExecution *WorkflowExecution
+	if info.ParentExecution != nil {
+		parentWorkflowExecution = &WorkflowExecution{
+			ID:    info.GetParentExecution().GetWorkflowId(),
+			RunID: info.GetParentExecution().GetRunId(),
+		}
+	}
+
+	var rootWorkflowExecution *WorkflowExecution
+	if info.RootExecution != nil {
+		rootWorkflowExecution = &WorkflowExecution{
+			ID:    info.GetRootExecution().GetWorkflowId(),
+			RunID: info.GetRootExecution().GetRunId(),
+		}
+	}
+
+	m := WorkflowExecutionMetadata{
+		WorkflowExecution: WorkflowExecution{
+			ID:    info.GetExecution().GetWorkflowId(),
+			RunID: info.GetExecution().GetRunId(),
+		},
+		WorkflowType: WorkflowType{
+			Name: info.GetType().GetName(),
+		},
+		TaskQueueName:           info.GetTaskQueue(),
+		Memo:                    info.Memo,
+		TypedSearchAttributes:   convertToTypedSearchAttributes(w.client.logger, info.GetSearchAttributes().IndexedFields),
+		Status:                  info.GetStatus(),
+		ParentWorkflowExecution: parentWorkflowExecution,
+		RootWorkflowExecution:   rootWorkflowExecution,
+		WorkflowStartTime:       info.GetStartTime().AsTime(),
+		ExecutionTime:           executionTime,
+		WorkflowCloseTime:       closeTime,
+		HistoryLength:           int(info.GetHistoryLength()),
+	}
+	o := &WorkflowExecutionDescription{
+		WorkflowExecutionMetadata: m,
+		dc:                        w.client.dataConverter,
+		staticSummaryPayload:      resp.GetExecutionConfig().GetUserMetadata().GetSummary(),
+		staticDetailsPayload:      resp.GetExecutionConfig().GetUserMetadata().GetDetails(),
+	}
+
+	return &ClientDescribeWorkflowOutput{
+		Response: o,
+	}, nil
 }
 
 func (w *workflowClientInterceptor) QueryWorkflow(
@@ -2190,6 +2341,7 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 		resp, err = func() (*workflowservice.UpdateWorkflowExecutionResponse, error) {
 			grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(pollUpdateTimeout), grpcLongPoll(true), defaultGrpcRetryParameters(ctx))
 			defer cancel()
+
 			return w.client.workflowService.UpdateWorkflowExecution(grpcCtx, req)
 		}()
 		if err != nil {
@@ -2222,7 +2374,7 @@ func (w *workflowClientInterceptor) updateIsDurable(resp *workflowservice.Update
 func createUpdateWorkflowInput(options *UpdateWorkflowOptions) (*ClientUpdateWorkflowInput, error) {
 	updateID := options.UpdateID
 	if updateID == "" {
-		updateID = uuid.New()
+		updateID = uuid.NewString()
 	}
 
 	if options.WaitForStage == WorkflowUpdateStageUnspecified {

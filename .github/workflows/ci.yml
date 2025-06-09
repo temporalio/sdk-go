@@ -23,7 +23,6 @@ jobs:
             runsOn: macos-13
           - os: macos-arm
             runsOn: macos-14
-            
     runs-on: ${{ matrix.runsOn || matrix.os }}
     steps:
       - name: Checkout repository
@@ -89,14 +88,16 @@ jobs:
         if: ${{ matrix.testDockerCompose }}
         run: go run . integration-test
         env:
-          # TODO(antlai-temporal): Remove this flag once server 1.26.2 released.
-          DISABLE_DEPLOYMENT_TESTS: "1"
+          # TODO(antlai-temporal): Remove this flag once server 1.27 released.
+          DISABLE_SERVER_1_27_TESTS: "1"
+          DISABLE_PRIORITY_TESTS: "1"
         working-directory: ./internal/cmd/build
 
   cloud-test:
     strategy:
       matrix:
         go-version: ["oldstable", "stable"]
+        fips: [true, false]
       # Try to avoid running tests in parallel to avoid workflow ID conflict
       max-parallel: 1
     # Only supported in non-fork runs, since secrets are not available in forks.
@@ -107,8 +108,8 @@ jobs:
       TEMPORAL_NAMESPACE: sdk-ci.a2dd6
       TEMPORAL_CLIENT_CERT: ${{ secrets.TEMPORAL_CLIENT_CERT }}
       TEMPORAL_CLIENT_KEY: ${{ secrets.TEMPORAL_CLIENT_KEY }}
-      TEMPORAL_CLIENT_CLOUD_API_KEY: ${{ secrets.TEMPORAL_CLIENT_CLOUD_API_KEY }}
-      TEMPORAL_CLIENT_CLOUD_API_VERSION: 2024-05-13-00
+      GODEBUG: ${{ matrix.fips && 'fips140=only' || '' }}
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -119,13 +120,12 @@ jobs:
       - name: Single integration test against cloud
         run: 'go test -v --count 1 -p 1 . -run "TestIntegrationSuite/TestBasic$"'
         working-directory: test
-      - name: Cloud operations tests
-        run: 'go test -v --count 1 -p 1 . -run "TestCloudOperationsSuite/.*" -cloud-operations-tests'
-        working-directory: test
 
   features-test:
     uses: temporalio/features/.github/workflows/go.yaml@main
     with:
+      # TODO: Set back once https://github.com/temporalio/features/pull/631 is merged
+      features-repo-ref: "versioning-breaking-changes"
       go-repo-path: ${{github.event.pull_request.head.repo.full_name}}
       version: ${{github.event.pull_request.head.ref}}
       version-is-repo-ref: true

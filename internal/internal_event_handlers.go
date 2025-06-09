@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 // All code in this file is private to the package.
@@ -85,8 +61,9 @@ type (
 	}
 
 	scheduledNexusOperation struct {
-		startedCallback   func(operationID string, err error)
+		startedCallback   func(token string, err error)
 		completedCallback func(result *commonpb.Payload, err error)
+		cancellationType  NexusOperationCancellationType
 		endpoint          string
 		service           string
 		operation         string
@@ -561,7 +538,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error),
 ) {
 	if params.WorkflowID == "" {
-		params.WorkflowID = wc.workflowInfo.WorkflowExecution.RunID + "_" + wc.GenerateSequenceID()
+		params.WorkflowID = wc.workflowInfo.currentRunID + "_" + wc.GenerateSequenceID()
 	}
 	memo, err := getWorkflowMemo(params.Memo, wc.dataConverter)
 	if err != nil {
@@ -593,6 +570,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.WorkflowIdReusePolicy = params.WorkflowIDReusePolicy
 	attributes.ParentClosePolicy = params.ParentClosePolicy
 	attributes.RetryPolicy = params.RetryPolicy
+	attributes.Priority = params.Priority
 	attributes.Header = params.Header
 	attributes.Memo = memo
 	attributes.SearchAttributes = searchAttr
@@ -627,7 +605,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 		tagWorkflowType, params.WorkflowType.Name)
 }
 
-func (wc *workflowEnvironmentImpl) ExecuteNexusOperation(params executeNexusOperationParams, callback func(*commonpb.Payload, error), startedHandler func(opID string, e error)) int64 {
+func (wc *workflowEnvironmentImpl) ExecuteNexusOperation(params executeNexusOperationParams, callback func(*commonpb.Payload, error), startedHandler func(token string, e error)) int64 {
 	seq := wc.GenerateSequence()
 	scheduleTaskAttr := &commandpb.ScheduleNexusOperationCommandAttributes{
 		Endpoint:               params.client.Endpoint(),
@@ -638,10 +616,17 @@ func (wc *workflowEnvironmentImpl) ExecuteNexusOperation(params executeNexusOper
 		NexusHeader:            params.nexusHeader,
 	}
 
-	command := wc.commandsHelper.scheduleNexusOperation(seq, scheduleTaskAttr)
+	startMetadata, err := buildUserMetadata(params.options.Summary, "", wc.dataConverter)
+	if err != nil {
+		callback(nil, err)
+		return 0
+	}
+
+	command := wc.commandsHelper.scheduleNexusOperation(seq, scheduleTaskAttr, startMetadata)
 	command.setData(&scheduledNexusOperation{
 		startedCallback:   startedHandler,
 		completedCallback: callback,
+		cancellationType:  params.options.CancellationType,
 		endpoint:          params.client.Endpoint(),
 		service:           params.client.Service(),
 		operation:         params.operation,
@@ -758,6 +743,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	scheduleTaskAttr.RequestEagerExecution = !parameters.DisableEagerExecution
 	scheduleTaskAttr.UseWorkflowBuildId = determineInheritBuildIdFlagForCommand(
 		parameters.VersioningIntent, wc.workflowInfo.TaskQueueName, parameters.TaskQueueName)
+	scheduleTaskAttr.Priority = parameters.Priority
 
 	startMetadata, err := buildUserMetadata(parameters.Summary, "", wc.dataConverter)
 	if err != nil {
@@ -1220,7 +1206,11 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	case enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT:
 		// No Operation
 	case enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED:
-		// No Operation
+		// update the childWorkflowIDSeed if the workflow was reset at this point.
+		attr := event.GetWorkflowTaskFailedEventAttributes()
+		if attr.GetCause() == enumspb.WORKFLOW_TASK_FAILED_CAUSE_RESET_WORKFLOW {
+			weh.workflowInfo.currentRunID = attr.GetNewRunId()
+		}
 	case enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED:
 		// No Operation
 	case enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED:
@@ -1346,7 +1336,10 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		enumspb.EVENT_TYPE_NEXUS_OPERATION_TIMED_OUT:
 		err = weh.handleNexusOperationCompleted(event)
 	case enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUESTED:
-		weh.commandsHelper.handleNexusOperationCancelRequested(event.GetNexusOperationCancelRequestedEventAttributes().GetScheduledEventId())
+		err = weh.handleNexusOperationCancelRequested(event)
+	case enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_COMPLETED,
+		enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_FAILED:
+		err = weh.handleNexusOperationCancelRequestDelivered(event)
 
 	default:
 		if event.WorkerMayIgnore {
@@ -1682,7 +1675,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 	if la, ok := weh.pendingLaTasks[lamd.ActivityID]; ok {
 		if len(lamd.ActivityType) > 0 && lamd.ActivityType != la.params.ActivityType {
 			// history marker mismatch to the current code.
-			panicMsg := fmt.Sprintf("[TMPRL1100] code execute local activity %v, but history event found %v, markerData: %v", la.params.ActivityType, lamd.ActivityType, markerData)
+			panicMsg := fmt.Sprintf("[TMPRL1100] code executed local activity %v, but history event found %v, markerData: %v", la.params.ActivityType, lamd.ActivityType, markerData)
 			panicIllegalState(panicMsg)
 		}
 		weh.commandsHelper.recordLocalActivityMarker(lamd.ActivityID, details, failure)
@@ -1918,7 +1911,11 @@ func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationStarted(event 
 	command := weh.commandsHelper.handleNexusOperationStarted(attributes.ScheduledEventId)
 	state := command.getData().(*scheduledNexusOperation)
 	if state.startedCallback != nil {
-		state.startedCallback(attributes.OperationId, nil)
+		token := attributes.OperationToken
+		if token == "" {
+			token = attributes.OperationId //lint:ignore SA1019 this field is sent by servers older than 1.27.0.
+		}
+		state.startedCallback(token, nil)
 		state.startedCallback = nil
 	}
 	return nil
@@ -1965,6 +1962,70 @@ func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationCompleted(even
 		state.completedCallback(result, err)
 		state.completedCallback = nil
 	}
+	return nil
+}
+
+func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationCancelRequested(event *historypb.HistoryEvent) error {
+	attrs := event.GetNexusOperationCancelRequestedEventAttributes()
+	scheduledEventId := attrs.GetScheduledEventId()
+
+	command := weh.commandsHelper.handleNexusOperationCancelRequested(scheduledEventId)
+	state := command.getData().(*scheduledNexusOperation)
+	err := ErrCanceled
+	if state.cancellationType == NexusOperationCancellationTypeTryCancel {
+		if state.startedCallback != nil {
+			state.startedCallback("", err)
+			state.startedCallback = nil
+		}
+		if state.completedCallback != nil {
+			state.completedCallback(nil, err)
+			state.completedCallback = nil
+		}
+	}
+	return nil
+}
+
+func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationCancelRequestDelivered(event *historypb.HistoryEvent) error {
+	var scheduledEventID int64
+	var failure *failurepb.Failure
+
+	switch event.EventType {
+	case enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_COMPLETED:
+		attrs := event.GetNexusOperationCancelRequestCompletedEventAttributes()
+		scheduledEventID = attrs.GetScheduledEventId()
+	case enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_FAILED:
+		attrs := event.GetNexusOperationCancelRequestFailedEventAttributes()
+		scheduledEventID = attrs.GetScheduledEventId()
+		failure = attrs.GetFailure()
+	default:
+		// This is only called internally and should never happen.
+		panic(fmt.Errorf("invalid event type, not a Nexus Operation cancel request resolution: %v", event.EventType))
+	}
+
+	if scheduledEventID == 0 {
+		// API version 1.47.0 was released without the ScheduledEventID field on these events, so if we got this event
+		// without that field populated, then just ignore and fall back to default WaitCompleted behavior.
+		return nil
+	}
+
+	command := weh.commandsHelper.handleNexusOperationCancelRequestDelivered(scheduledEventID)
+	state := command.getData().(*scheduledNexusOperation)
+	err := ErrCanceled
+	if failure != nil {
+		err = weh.failureConverter.FailureToError(failure)
+	}
+
+	if state.cancellationType == NexusOperationCancellationTypeWaitRequested {
+		if state.startedCallback != nil {
+			state.startedCallback("", err)
+			state.startedCallback = nil
+		}
+		if state.completedCallback != nil {
+			state.completedCallback(nil, err)
+			state.completedCallback = nil
+		}
+	}
+
 	return nil
 }
 

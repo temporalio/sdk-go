@@ -17,6 +17,14 @@ frontend.workerVersioningDataAPIs:
   - value: true
 frontend.workerVersioningWorkflowAPIs:
   - value: true
+system.enableDeployments:
+  - value: true
+system.enableDeploymentVersions:
+  - value: true
+matching.wv.VersionDrainageStatusVisibilityGracePeriod:
+  - value: 10
+matching.wv.VersionDrainageStatusRefreshInterval:
+  - value: 1    
 worker.buildIdScavengerEnabled:
   - value: true
 worker.removableBuildIdDurationSinceDefault:
@@ -30,3 +38,7 @@ component.callbacks.allowedAddresses:
   - value:
     - Pattern: "*"
       AllowInsecure: true
+component.nexusoperations.recordCancelRequestCompletionEvents:
+  - value: true
+frontend.activityAPIsEnabled:
+  - value: true

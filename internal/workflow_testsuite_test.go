@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -395,6 +371,110 @@ func TestWorkflowUpdateOrder(t *testing.T) {
 	require.Equal(t, 1, result)
 }
 
+func TestWorkflowUpdateOrderWithOneArg(t *testing.T) {
+	var suite WorkflowTestSuite
+	// Test UpdateWorkflowByID works with custom ID and additional arguments
+	env := suite.NewTestWorkflowEnvironment()
+	var callbacksRun int
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflowNoRejection("update", "no-rejection", t, "args")
+		callbacksRun++
+	}, 0)
+
+	env.RegisterDelayedCallback(func() {
+		uc := &TestUpdateCallback{
+			OnReject: func(err error) {
+				require.Fail(t, "update should not be rejected")
+			},
+			OnAccept:   func() {},
+			OnComplete: func(interface{}, error) {},
+		}
+		err := env.UpdateWorkflowByID("my-workflow-id", "update", "by-id", uc, "args")
+		require.NoError(t, err)
+		callbacksRun++
+	}, 0)
+
+	env.SetStartWorkflowOptions(StartWorkflowOptions{ID: "my-workflow-id"})
+	env.ExecuteWorkflow(func(ctx Context) (int, error) {
+		var inflightUpdates int
+		var ranUpdates int
+		err := SetUpdateHandler(ctx, "update", func(ctx Context, args string) error {
+			inflightUpdates++
+			ranUpdates++
+			defer func() {
+				inflightUpdates--
+			}()
+
+			require.Equal(t, "args", args)
+
+			return Sleep(ctx, time.Hour)
+		}, UpdateHandlerOptions{})
+		if err != nil {
+			return 0, err
+		}
+		err = Await(ctx, func() bool { return inflightUpdates == 0 && callbacksRun == 2 })
+		return ranUpdates, err
+	})
+
+	require.NoError(t, env.GetWorkflowError())
+	var result int
+	require.NoError(t, env.GetWorkflowResult(&result))
+	require.Equal(t, 2, result)
+}
+
+func TestWorkflowUpdateOrderWithMultiArgs(t *testing.T) {
+	var suite WorkflowTestSuite
+	var callbacksRun int
+	// Test UpdateWorkflowByID works with custom ID and additional arguments
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflowNoRejection("update", "no-rejection", t, "args1", "args2")
+		callbacksRun++
+	}, 0)
+
+	env.RegisterDelayedCallback(func() {
+		uc := &TestUpdateCallback{
+			OnReject: func(err error) {
+				require.Fail(t, "update should not be rejected")
+			},
+			OnAccept:   func() {},
+			OnComplete: func(interface{}, error) {},
+		}
+		err := env.UpdateWorkflowByID("my-workflow-id", "update", "by-id", uc, "args1", "args2")
+		require.NoError(t, err)
+		callbacksRun++
+	}, 0)
+
+	env.SetStartWorkflowOptions(StartWorkflowOptions{ID: "my-workflow-id"})
+
+	env.ExecuteWorkflow(func(ctx Context) (int, error) {
+		var inflightUpdates int
+		var ranUpdates int
+		err := SetUpdateHandler(ctx, "update", func(ctx Context, args1, args2 string) error {
+			inflightUpdates++
+			ranUpdates++
+			defer func() {
+				inflightUpdates--
+			}()
+
+			require.Equal(t, args1, "args1")
+			require.Equal(t, args2, "args2")
+
+			return Sleep(ctx, time.Hour)
+		}, UpdateHandlerOptions{})
+		if err != nil {
+			return 0, err
+		}
+		err = Await(ctx, func() bool { return inflightUpdates == 0 && callbacksRun == 2 })
+		return ranUpdates, err
+	})
+
+	require.NoError(t, env.GetWorkflowError())
+	var result int
+	require.NoError(t, env.GetWorkflowResult(&result))
+	require.Equal(t, 2, result)
+}
+
 func TestWorkflowUpdateIdGeneration(t *testing.T) {
 	var suite WorkflowTestSuite
 	env := suite.NewTestWorkflowEnvironment()
@@ -625,6 +705,30 @@ func duplicateIDDedup(t *testing.T, delay_second bool, with_sleep bool, addition
 	})
 	require.NoError(t, env.GetWorkflowError())
 	require.Equal(t, additional, additional_update_count)
+}
+
+func TestWorkflowUpdateMissingCallbackFields(t *testing.T) {
+	var suite WorkflowTestSuite
+
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflow("update", "id", &TestUpdateCallback{
+			// Purposely omit OnAccept to ensure Update doesn't panic
+			OnReject:   func(err error) {},
+			OnComplete: func(result interface{}, err error) {},
+		}, 0)
+	}, 0)
+
+	env.ExecuteWorkflow(func(ctx Context) error {
+		err := SetUpdateHandler(ctx, "update", func(ctx Context) error {
+			return nil
+		}, UpdateHandlerOptions{})
+		if err != nil {
+			return err
+		}
+		return Sleep(ctx, time.Hour)
+	})
+	require.NoError(t, env.GetWorkflowError())
 }
 
 func TestAllHandlersFinished(t *testing.T) {
@@ -1077,4 +1181,54 @@ func (c testFailureConverter) FailureToError(failure *failurepb.Failure) error {
 		return testCustomError{}
 	}
 	return c.fallback.FailureToError(failure)
+}
+
+func DynamicWorkflow(ctx Context, args converter.EncodedValues) (string, error) {
+	var result string
+	info := GetWorkflowInfo(ctx)
+
+	var arg1, arg2 string
+	err := args.Get(&arg1, &arg2)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode arguments: %w", err)
+	}
+
+	if info.WorkflowType.Name == "dynamic-activity" {
+		ctx = WithActivityOptions(ctx, ActivityOptions{StartToCloseTimeout: 10 * time.Second})
+		err := ExecuteActivity(ctx, "random-activity-name", arg1, arg2).Get(ctx, &result)
+		if err != nil {
+			return "", err
+		}
+	} else {
+		result = fmt.Sprintf("%s - %s - %s", info.WorkflowType.Name, arg1, arg2)
+	}
+
+	return result, nil
+}
+
+func DynamicActivity(ctx context.Context, args converter.EncodedValues) (string, error) {
+	var arg1, arg2 string
+	err := args.Get(&arg1, &arg2)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode arguments: %w", err)
+	}
+
+	info := GetActivityInfo(ctx)
+	result := fmt.Sprintf("%s - %s - %s", info.WorkflowType.Name, arg1, arg2)
+
+	return result, nil
+}
+
+func TestDynamicWorkflows(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+	env.RegisterDynamicActivity(DynamicActivity, DynamicRegisterActivityOptions{})
+	env.RegisterDynamicWorkflow(DynamicWorkflow, DynamicRegisterWorkflowOptions{})
+
+	env.ExecuteWorkflow("dynamic-activity", "grape", "cherry")
+	require.NoError(t, env.GetWorkflowError())
+	var result string
+	err := env.GetWorkflowResult(&result)
+	require.NoError(t, err)
+	require.Equal(t, "dynamic-activity - grape - cherry", result)
 }

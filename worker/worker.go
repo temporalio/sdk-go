@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 // Package worker contains functions to manage lifecycle of a Temporal client side worker.
 package worker
 
@@ -37,6 +13,11 @@ import (
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/workflow"
+)
+
+var (
+	// ErrWorkerShutdown is returned when the worker is shutdown.
+	ErrWorkerShutdown = internal.ErrWorkerShutdown
 )
 
 type (
@@ -99,6 +80,9 @@ type (
 		// This method panics if workflowFunc doesn't comply with the expected format or tries to register the same workflow
 		// type name twice. Use workflow.RegisterOptions.DisableAlreadyRegisteredCheck to allow multiple registrations.
 		RegisterWorkflowWithOptions(w interface{}, options workflow.RegisterOptions)
+
+		// RegisterDynamicWorkflow registers the dynamic workflow function with options.
+		RegisterDynamicWorkflow(w interface{}, options workflow.DynamicRegisterOptions)
 	}
 
 	// ActivityRegistry exposes activity registration functions to consumers.
@@ -150,6 +134,10 @@ type (
 		// which might be useful for integration tests.
 		// worker.RegisterActivityWithOptions(barActivity, RegisterActivityOptions{DisableAlreadyRegisteredCheck: true})
 		RegisterActivityWithOptions(a interface{}, options activity.RegisterOptions)
+
+		// RegisterDynamicActivity registers the dynamic activity function with options.
+		// Registering activities via a structure is not supported for dynamic activities.
+		RegisterDynamicActivity(a interface{}, options activity.DynamicRegisterOptions)
 	}
 
 	// NexusServiceRegistry exposes Nexus Service registration functions.
@@ -212,8 +200,14 @@ type (
 	}
 
 	// DeploymentOptions provides configuration to enable Worker Versioning.
+	//
 	// NOTE: Experimental
 	DeploymentOptions = internal.WorkerDeploymentOptions
+
+	// WorkerDeploymentVersion represents a specific version of a worker in a deployment.
+	//
+	// NOTE: Experimental
+	WorkerDeploymentVersion = internal.WorkerDeploymentVersion
 
 	// Options is used to configure a worker instance.
 	Options = internal.WorkerOptions

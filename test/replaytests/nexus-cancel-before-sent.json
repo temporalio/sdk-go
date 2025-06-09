@@ -1,0 +1,151 @@
+{
+  "events": [
+    {
+      "eventId": "1",
+      "eventTime": "2025-05-01T20:39:08.315074Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "taskId": "1048587",
+      "workflowExecutionStartedEventAttributes": {
+        "workflowType": {
+          "name": "CancelNexusOperationBeforeSentWorkflow"
+        },
+        "taskQueue": {
+          "name": "replay-test-tq",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "workflowExecutionTimeout": "0s",
+        "workflowRunTimeout": "0s",
+        "workflowTaskTimeout": "10s",
+        "originalExecutionRunId": "e9475c35-ba0a-4fed-a3ed-05a9a4f7e0f7",
+        "identity": "54801@PJs-Laptop.local@",
+        "firstExecutionRunId": "e9475c35-ba0a-4fed-a3ed-05a9a4f7e0f7",
+        "attempt": 1,
+        "firstWorkflowTaskBackoff": "0s",
+        "header": {},
+        "workflowId": "nexus-operation-cancelled-before-sent"
+      }
+    },
+    {
+      "eventId": "2",
+      "eventTime": "2025-05-01T20:39:08.315177Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1048588",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "replay-test-tq",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "3",
+      "eventTime": "2025-05-01T20:39:08.322158Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId": "1048593",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "54801@PJs-Laptop.local@",
+        "requestId": "3f75d44b-6b7a-418e-a3a9-8cd33359604c",
+        "historySizeBytes": "301",
+        "workerVersion": {
+          "buildId": "042d7d1d0ecab575cf4cc62612475027"
+        }
+      }
+    },
+    {
+      "eventId": "4",
+      "eventTime": "2025-05-01T20:39:08.326347Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId": "1048597",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "2",
+        "startedEventId": "3",
+        "identity": "54801@PJs-Laptop.local@",
+        "workerVersion": {
+          "buildId": "042d7d1d0ecab575cf4cc62612475027"
+        },
+        "sdkMetadata": {
+          "langUsedFlags": [
+            3
+          ],
+          "sdkName": "temporal-go",
+          "sdkVersion": "1.34.0"
+        },
+        "meteringMetadata": {},
+        "deployment": {
+          "buildId": "042d7d1d0ecab575cf4cc62612475027"
+        }
+      }
+    },
+    {
+      "eventId": "5",
+      "eventTime": "2025-05-01T20:39:08.326409Z",
+      "eventType": "EVENT_TYPE_MARKER_RECORDED",
+      "taskId": "1048598",
+      "markerRecordedEventAttributes": {
+        "markerName": "MutableSideEffect",
+        "details": {
+          "data": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "Im54cy1jYW5jZWwtYmVmb3JlLXNlbnQtaWQi"
+              },
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wcm90b2J1Zg==",
+                  "messageType": "dGVtcG9yYWwuYXBpLmNvbW1vbi52MS5QYXlsb2Fkcw=="
+                },
+                "data": "eyJwYXlsb2FkcyI6W3sibWV0YWRhdGEiOnsiZW5jb2RpbmciOiJhbk52Ymk5d2JHRnBiZz09In0sImRhdGEiOiJJbVF4TTJReU1UZGhMVGswTlRrdE5EUmhNeTFoTnpsakxXTXdNREF6TTJJellqTTBPU0k9In1dfQ=="
+              }
+            ]
+          },
+          "mutable-side-effect-call-counter": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "MQ=="
+              }
+            ]
+          },
+          "side-effect-id": {
+            "payloads": [
+              {
+                "metadata": {
+                  "encoding": "anNvbi9wbGFpbg=="
+                },
+                "data": "Im54cy1jYW5jZWwtYmVmb3JlLXNlbnQtaWRfNSI="
+              }
+            ]
+          }
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "6",
+      "eventTime": "2025-05-01T20:39:08.326434Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED",
+      "taskId": "1048599",
+      "workflowExecutionCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "ImQxM2QyMTdhLTk0NTktNDRhMy1hNzljLWMwMDAzM2IzYjM0OSI="
+            }
+          ]
+        },
+        "workflowTaskCompletedEventId": "4"
+      }
+    }
+  ]
+}

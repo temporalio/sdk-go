@@ -1,30 +1,7 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package workflow
 
 import (
+	"cmp"
 	"errors"
 
 	"go.temporal.io/sdk/converter"
@@ -32,10 +9,10 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/temporal"
-	"golang.org/x/exp/constraints"
 )
 
 // VersioningBehavior specifies when existing workflows could change their Build ID.
+//
 // NOTE: Experimental
 type VersioningBehavior = internal.VersioningBehavior
 
@@ -66,6 +43,28 @@ const (
 	HandlerUnfinishedPolicyAbandon = internal.HandlerUnfinishedPolicyAbandon
 )
 
+// NexusOperationCancellationType specifies what action should be taken for a Nexus operation when the
+// caller is cancelled.
+type NexusOperationCancellationType = internal.NexusOperationCancellationType
+
+const (
+	// Nexus operation cancellation type is unknown.
+	NexusOperationCancellationTypeUnspecified NexusOperationCancellationType = iota
+
+	// Do not request cancellation of the Nexus operation.
+	NexusOperationCancellationTypeAbandon
+
+	// Initiate a cancellation request for the Nexus operation and immediately report cancellation
+	// to the caller.
+	NexusOperationCancellationTypeTryCancel
+
+	// Request cancellation of the Nexus operation and wait for confirmation that the request was received.
+	NexusOperationCancellationTypeWaitRequested
+
+	// Wait for the Nexus operation to complete. Default.
+	NexusOperationCancellationTypeWaitCompleted
+)
+
 type (
 
 	// ChildWorkflowFuture represents the result of a child workflow execution
@@ -85,6 +84,16 @@ type (
 
 	// RegisterOptions consists of options for registering a workflow
 	RegisterOptions = internal.RegisterWorkflowOptions
+
+	// LoadDynamicRuntimeOptionsDetails is used as input to the LoadDynamicRuntimeOptions callback for dynamic workflows
+	LoadDynamicRuntimeOptionsDetails = internal.LoadDynamicRuntimeOptionsDetails
+
+	// DynamicRegisterOptions consists of options for registering a dynamic workflow
+	DynamicRegisterOptions = internal.DynamicRegisterWorkflowOptions
+
+	// DynamicRuntimeOptions consists of options for a dynamic workflow that
+	// are decided on a per-workflow type basis.
+	DynamicRuntimeOptions = internal.DynamicRuntimeWorkflowOptions
 
 	// Info information about currently executing workflow
 	Info = internal.WorkflowInfo
@@ -119,34 +128,22 @@ type (
 	// NexusClient is a client for executing Nexus Operations from a workflow.
 	NexusClient interface {
 		// The endpoint name this client uses.
-		//
-		// NOTE: Experimental
 		Endpoint() string
 		// The service name this client uses.
-		//
-		// NOTE: Experimental
 		Service() string
 
 		// ExecuteOperation executes a Nexus Operation.
 		// The operation argument can be a string, a [nexus.Operation] or a [nexus.OperationReference].
-		//
-		// NOTE: Experimental
 		ExecuteOperation(ctx Context, operation any, input any, options NexusOperationOptions) NexusOperationFuture
 	}
 
 	// NexusOperationOptions are options for starting a Nexus Operation from a Workflow.
-	//
-	// NOTE: Experimental
 	NexusOperationOptions = internal.NexusOperationOptions
 
 	// NexusOperationFuture represents the result of a Nexus Operation.
-	//
-	// NOTE: Experimental
 	NexusOperationFuture = internal.NexusOperationFuture
 
-	// NexusOperationExecution is the result of [NexusOperationFuture.GetNexusOperationExecution].
-	//
-	// NOTE: Experimental
+	// NexusOperationExecution is the result of [internal.NexusOperationFuture.GetNexusOperationExecution].
 	NexusOperationExecution = internal.NexusOperationExecution
 )
 
@@ -215,6 +212,9 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 // • Local activity is for short living activities (usually finishes within seconds).
 //
 // • Local activity cannot heartbeat.
+//
+// WARNING: Technically, an anonymous function can be used as a local activity, but this is not recommended as their name
+// is generated by the Go runtime and is not deterministic. This is only allowed for backward compatibility.
 //
 // Context can be used to pass the settings for this local activity.
 // For now there is only one setting for timeout to be set:
@@ -545,17 +545,15 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error
 	return SetUpdateHandlerWithOptions(ctx, updateName, handler, UpdateHandlerOptions{})
 }
 
-// SetUpdateHandlerWithOptions binds an update handler function to the specified
-// name such that update invocations specifying that name will invoke the
-// handler.  The handler function can take as input any number of parameters so
-// long as they can be serialized/deserialized by the system. The handler can
-// take a [workflow.Context] as its first parameter but this is not required. The
-// update handler must return either a single error or a single serializable
-// object along with a single error. The update handler function is invoked in
-// the context of the workflow and thus is subject to the same restrictions as
-// workflow code, namely, the update handler must be deterministic. As with
-// other workflow code, update code is free to invoke and wait on the results of
-// activities. Update handler code is free to mutate workflow state.
+// SetUpdateHandlerWithOptions binds an update handler function to the specified name such that
+// update invocations specifying that name will invoke the handler. The handler function can take as
+// input any number of parameters so long as they can be serialized/deserialized by the system. The
+// handler must take a [workflow.Context] as its first parameter. The update handler must return
+// either a single error or a single serializable object along with a single error. The update
+// handler function is invoked in the context of the workflow and thus is subject to the same
+// restrictions as workflow code, namely, the update handler must be deterministic. As with other
+// workflow code, update code is free to invoke and wait on the results of activities. Update
+// handler code is free to mutate workflow state.
 //
 // This registration can optionally specify (through UpdateHandlerOptions) an
 // update validation function. If provided, this function will be invoked before
@@ -575,7 +573,7 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error
 //		err := workflow.SetUpdateHandlerWithOptions(
 //			ctx,
 //			"add",
-//			func(val int) (int, error) { // Calls
+//			func(ctx workflow.Context, val int) (int, error) { // Calls
 //				counter += val // note that this mutates workflow state
 //				return counter, nil
 //			},
@@ -792,7 +790,7 @@ func DataConverterWithoutDeadlockDetection(c converter.DataConverter) converter.
 
 // DeterministicKeys returns the keys of a map in deterministic (sorted) order. To be used in for
 // loops in workflows for deterministic iteration.
-func DeterministicKeys[K constraints.Ordered, V any](m map[K]V) []K {
+func DeterministicKeys[K cmp.Ordered, V any](m map[K]V) []K {
 	return internal.DeterministicKeys(m)
 }
 

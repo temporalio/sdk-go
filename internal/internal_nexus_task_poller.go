@@ -1,25 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2024 Temporal Technologies Inc.  All rights reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -58,12 +36,12 @@ func newNexusTaskPoller(
 ) *nexusTaskPoller {
 	return &nexusTaskPoller{
 		basePoller: basePoller{
-			metricsHandler:       params.MetricsHandler,
-			stopC:                params.WorkerStopChannel,
-			workerBuildID:        params.getBuildID(),
-			useBuildIDVersioning: params.UseBuildIDForVersioning,
-			deploymentSeriesName: params.DeploymentSeriesName,
-			capabilities:         params.capabilities,
+			metricsHandler:          params.MetricsHandler,
+			stopC:                   params.WorkerStopChannel,
+			workerBuildID:           params.getBuildID(),
+			useBuildIDVersioning:    params.UseBuildIDForVersioning,
+			workerDeploymentVersion: params.WorkerDeploymentVersion,
+			capabilities:            params.capabilities,
 		},
 		taskHandler:     taskHandler,
 		service:         service,
@@ -94,8 +72,12 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 		WorkerVersionCapabilities: &commonpb.WorkerVersionCapabilities{
 			BuildId:              ntp.workerBuildID,
 			UseVersioning:        ntp.useBuildIDVersioning,
-			DeploymentSeriesName: ntp.deploymentSeriesName,
+			DeploymentSeriesName: ntp.workerDeploymentVersion.DeploymentName,
 		},
+		DeploymentOptions: workerDeploymentOptionsToProto(
+			ntp.useBuildIDVersioning,
+			ntp.workerDeploymentVersion,
+		),
 	}
 
 	response, err := ntp.pollNexusTaskQueue(ctx, request)
@@ -135,6 +117,14 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 		return nil
 	}
 
+	executionStartTime := time.Now()
+
+	// Schedule-to-start (from the time the request hit the frontend).
+	// Note that this metric does not include the service and operation name as they are not relevant when polling from
+	// the Nexus task queue.
+	scheduleToStartLatency := executionStartTime.Sub(response.GetRequest().GetScheduledTime().AsTime())
+	ntp.metricsHandler.WithTags(metrics.TaskQueueTags(ntp.taskQueueName)).Timer(metrics.NexusTaskScheduleToStartLatency).Record(scheduleToStartLatency)
+
 	nctx, handlerErr := ntp.taskHandler.newNexusOperationContext(response)
 	if handlerErr != nil {
 		// context wasn't propagated to us, use a background context.
@@ -143,17 +133,11 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 		return err
 	}
 
-	executionStartTime := time.Now()
-
-	// Schedule-to-start (from the time the request hit the frontend).
-	scheduleToStartLatency := executionStartTime.Sub(response.GetRequest().GetScheduledTime().AsTime())
-	nctx.MetricsHandler.Timer(metrics.NexusTaskScheduleToStartLatency).Record(scheduleToStartLatency)
-
 	// Process the nexus task.
 	res, failure, err := ntp.taskHandler.ExecuteContext(nctx, response)
 
 	// Execution latency (in-SDK processing time).
-	nctx.MetricsHandler.Timer(metrics.NexusTaskExecutionLatency).Record(time.Since(executionStartTime))
+	nctx.metricsHandler.Timer(metrics.NexusTaskExecutionLatency).Record(time.Since(executionStartTime))
 
 	// Increment failure in all forms of errors:
 	// Internal error processing the task.
@@ -166,18 +150,18 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 		} else {
 			failureTag = "internal_sdk_error"
 		}
-		nctx.Log.Error("Error processing nexus task", "error", err)
-		nctx.MetricsHandler.
+		nctx.log.Error("Error processing nexus task", "error", err)
+		nctx.metricsHandler.
 			WithTags(metrics.NexusTaskFailureTags(failureTag)).
 			Counter(metrics.NexusTaskExecutionFailedCounter).
 			Inc(1)
 	} else if failure != nil {
-		nctx.MetricsHandler.
+		nctx.metricsHandler.
 			WithTags(metrics.NexusTaskFailureTags("handler_error_" + failure.GetError().GetErrorType())).
 			Counter(metrics.NexusTaskExecutionFailedCounter).
 			Inc(1)
 	} else if e := res.Response.GetStartOperation().GetOperationError(); e != nil {
-		nctx.MetricsHandler.
+		nctx.metricsHandler.
 			WithTags(metrics.NexusTaskFailureTags("operation_" + e.GetOperationState())).
 			Counter(metrics.NexusTaskExecutionFailedCounter).
 			Inc(1)
@@ -197,7 +181,7 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 	}
 
 	// E2E latency, from frontend until we finished reporting completion.
-	nctx.MetricsHandler.
+	nctx.metricsHandler.
 		Timer(metrics.NexusTaskEndToEndLatency).
 		Record(time.Since(response.GetRequest().GetScheduledTime().AsTime()))
 	return nil

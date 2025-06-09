@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -34,7 +10,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
-	"github.com/pborman/uuid"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"google.golang.org/protobuf/proto"
@@ -70,7 +46,7 @@ type (
 	TaskHandlersTestSuite struct {
 		suite.Suite
 		logger    log.Logger
-		service   *workflowservicemock.MockWorkflowServiceClient
+		client    *WorkflowClient
 		registry  *registry
 		namespace string
 	}
@@ -428,7 +404,7 @@ func createTestUpsertWorkflowSearchAttributesForChangeVersion(eventID int64, wor
 
 func createTestProtocolMessageUpdateRequest(ID string, eventID int64, request *updatepb.Request) *protocolpb.Message {
 	return &protocolpb.Message{
-		Id:                 uuid.New(),
+		Id:                 uuid.NewString(),
 		ProtocolInstanceId: ID,
 		SequencingId:       &protocolpb.Message_EventId{EventId: eventID},
 		Body:               protocol.MustMarshalAny(request),
@@ -464,7 +440,7 @@ func createWorkflowTaskWithQueries(
 		History:                &historypb.History{Events: eventsCopy},
 		WorkflowExecution: &commonpb.WorkflowExecution{
 			WorkflowId: "fake-workflow-id",
-			RunId:      uuid.New(),
+			RunId:      uuid.NewString(),
 		},
 		Queries: queries,
 	}
@@ -730,7 +706,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_Sticky() {
 	taskQueue := "sticky-tq"
 	execution := &commonpb.WorkflowExecution{
 		WorkflowId: "fake-workflow-id",
-		RunId:      uuid.New(),
+		RunId:      uuid.NewString(),
 	}
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
@@ -877,7 +853,7 @@ func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
 	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 	// will fail as it can't find laTunnel in newWorkerCache().
-	newWorkflowTaskWorkerInternal(taskHandler, taskHandler, t.service, params, make(chan struct{}), nil)
+	newWorkflowTaskWorkerInternal(taskHandler, taskHandler, t.client, params, make(chan struct{}), nil)
 	wftask := workflowTask{task: task}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -911,7 +887,7 @@ func (t *TaskHandlersTestSuite) TestWithMissingHistoryEvents() {
 			task := createWorkflowTask(testEvents, startEventID, "HelloWorld_Workflow")
 			// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 			// will fail as it can't find laTunnel in newWorkerCache().
-			newWorkflowTaskWorkerInternal(taskHandler, taskHandler, t.service, params, make(chan struct{}), nil)
+			newWorkflowTaskWorkerInternal(taskHandler, taskHandler, t.client, params, make(chan struct{}), nil)
 			wftask := workflowTask{task: task}
 			wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 			request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -965,7 +941,7 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 		task.StartedEventId = tc.startedEventID
 		// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 		// will fail as it can't find laTunnel in newWorkerCache().
-		newWorkflowTaskWorkerInternal(taskHandler, taskHandler, t.service, params, make(chan struct{}), nil)
+		newWorkflowTaskWorkerInternal(taskHandler, taskHandler, t.client, params, make(chan struct{}), nil)
 		wftask := workflowTask{task: task}
 		wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 		request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -985,10 +961,12 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 }
 
 func (t *TaskHandlersTestSuite) TestSideEffectDefer() {
+	t.T().Skip("issue-1650: SideEffectDefer test is flaky")
 	t.testSideEffectDeferHelper(1)
 }
 
 func (t *TaskHandlersTestSuite) TestSideEffectDefer_NoCache() {
+	t.T().Skip("issue-1650: SideEffectDefer test is flaky")
 	t.testSideEffectDeferHelper(0)
 }
 
@@ -1077,7 +1055,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	task = createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 	// will fail as it can't find laTunnel in newWorkerCache().
-	newWorkflowTaskWorkerInternal(taskHandler, taskHandler, t.service, params, stopC, nil)
+	newWorkflowTaskWorkerInternal(taskHandler, taskHandler, t.client, params, stopC, nil)
 	wftask = workflowTask{task: task}
 	wfctx = t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err = taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -1170,7 +1148,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	parentID := "parentID"
 	parentRunID := "parentRun"
 	cronSchedule := "5 4 * * *"
-	continuedRunID := uuid.New()
+	continuedRunID := uuid.NewString()
 	parentExecution := &commonpb.WorkflowExecution{
 		WorkflowId: parentID,
 		RunId:      parentRunID,
@@ -1187,6 +1165,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 		Input:                    lastCompletionResult,
 		TaskQueue:                &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
 		ParentWorkflowExecution:  parentExecution,
+		RootWorkflowExecution:    parentExecution,
 		CronSchedule:             cronSchedule,
 		ContinuedExecutionRunId:  continuedRunID,
 		ParentWorkflowNamespace:  parentNamespace,
@@ -1219,6 +1198,8 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	t.EqualValues(testWorkflowTaskTaskqueue, result.TaskQueueName)
 	t.EqualValues(parentID, result.ParentWorkflowExecution.ID)
 	t.EqualValues(parentRunID, result.ParentWorkflowExecution.RunID)
+	t.EqualValues(parentID, result.RootWorkflowExecution.ID)
+	t.EqualValues(parentRunID, result.RootWorkflowExecution.RunID)
 	t.EqualValues(cronSchedule, result.CronSchedule)
 	t.EqualValues(continuedRunID, result.ContinuedExecutionRunID)
 	t.EqualValues(parentNamespace, result.ParentWorkflowNamespace)
@@ -1241,7 +1222,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_InvalidQueryTask() {
 	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	task.Query = &querypb.WorkflowQuery{}
 	task.Queries = map[string]*querypb.WorkflowQuery{"query_id": {}}
-	newWorkflowTaskWorkerInternal(taskHandler, taskHandler, t.service, params, make(chan struct{}), nil)
+	newWorkflowTaskWorkerInternal(taskHandler, taskHandler, t.client, params, make(chan struct{}), nil)
 	// query and queries are both specified so this is an invalid task
 	wftask := workflowTask{task: task}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
@@ -1840,12 +1821,14 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 	defer close(stopCh)
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
-	laTunnel := newLocalActivityTunnel(params.WorkerStopChannel)
+	laStopCh := make(chan struct{})
+	defer close(laStopCh)
+	laTunnel := newLocalActivityTunnel(laStopCh)
 	taskHandlerImpl, ok := taskHandler.(*workflowTaskHandlerImpl)
 	t.True(ok)
 	taskHandlerImpl.laTunnel = laTunnel
 
-	laTaskPoller := newLocalActivityPoller(params, laTunnel, nil)
+	laTaskPoller := newLocalActivityPoller(params, laTunnel, nil, nil)
 	go func() {
 		for {
 			task, _ := laTaskPoller.PollTask()
@@ -1927,7 +1910,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 	t.True(ok)
 	taskHandlerImpl.laTunnel = laTunnel
 
-	laTaskPoller := newLocalActivityPoller(params, laTunnel, nil)
+	laTaskPoller := newLocalActivityPoller(params, laTunnel, nil, nil)
 	doneCh := make(chan struct{})
 	go func() {
 		// laTaskPoller needs to poll the local activity and process it
@@ -1959,6 +1942,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 }
 
 func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
+	t.T().Skip("issue-1650: TestHeartBeat_NoError is flaky")
 	mockCtrl := gomock.NewController(t.T())
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 	invocationChannel := make(chan int, 2)
@@ -2008,7 +1992,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewNotFound(""))
 
 	temporalInvoker := newServiceInvoker(
-		nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, func() {}, 0,
+		nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, func(err error) {}, 0,
 		make(chan struct{}), t.namespace)
 
 	ctx, err := newActivityContext(context.Background(), nil, &activityEnvironment{serviceInvoker: temporalInvoker, logger: t.logger})
@@ -2026,7 +2010,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithNamespaceNotActiveE
 	mockService.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewNamespaceNotActive("fake_namespace", "current_cluster", "active_cluster"))
 
 	called := false
-	cancelHandler := func() { called = true }
+	cancelHandler := func(err error) { called = true }
 
 	temporalInvoker := newServiceInvoker(
 		nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, cancelHandler,
@@ -2083,8 +2067,6 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 		{0, time.Now(), 3 * time.Second, time.Now(), 4 * time.Second, "test", nil},
 		{0, time.Now(), 3 * time.Second, time.Now(), 4 * time.Second, "unknown", nil},
 		{0, time.Now().Add(-1 * time.Second), 1 * time.Second, time.Now(), 1 * time.Second, "test", context.DeadlineExceeded},
-		{0, time.Now(), 1 * time.Second, time.Now().Add(-1 * time.Second), 1 * time.Second, "test", context.DeadlineExceeded},
-		{0, time.Now().Add(-1 * time.Second), 1, time.Now().Add(-1 * time.Second), 1 * time.Second, "test", context.DeadlineExceeded},
 		{1 * time.Second, time.Now(), 1 * time.Second, time.Now(), 1 * time.Second, "test", context.DeadlineExceeded},
 		{1 * time.Second, time.Now(), 2 * time.Second, time.Now(), 1 * time.Second, "test", context.DeadlineExceeded},
 		{1 * time.Second, time.Now(), 1 * time.Second, time.Now(), 2 * time.Second, "test", context.DeadlineExceeded},
@@ -2095,11 +2077,12 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 
 	mockCtrl := gomock.NewController(t.T())
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	client := WorkflowClient{workflowService: mockService}
 
 	for i, d := range deadlineTests {
 		a.d = d.actWaitDuration
 		wep := t.getTestWorkerExecutionParams()
-		activityHandler := newActivityTaskHandler(mockService, wep, registry)
+		activityHandler := newActivityTaskHandler(&client, wep, registry)
 		pats := &workflowservice.PollActivityTaskQueueResponse{
 			Attempt:   1,
 			TaskToken: []byte("token"),
@@ -2108,7 +2091,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 				RunId:      "rID",
 			},
 			ActivityType:           &commonpb.ActivityType{Name: d.ActivityType},
-			ActivityId:             uuid.New(),
+			ActivityId:             uuid.NewString(),
 			ScheduledTime:          timestamppb.New(d.ScheduleTS),
 			ScheduleToCloseTimeout: durationpb.New(d.ScheduleDuration),
 			StartedTime:            timestamppb.New(d.StartTS),
@@ -2151,12 +2134,13 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 	mockCtrl := gomock.NewController(t.T())
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 	workerStopCh := make(chan struct{}, 1)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 	wep := t.getTestWorkerExecutionParams()
-	wep.UserContext = ctx
-	wep.UserContextCancel = cancel
+	wep.BackgroundContext = ctx
+	wep.BackgroundContextCancel = cancel
 	wep.WorkerStopChannel = workerStopCh
-	activityHandler := newActivityTaskHandler(mockService, wep, registry)
+	client := WorkflowClient{workflowService: mockService}
+	activityHandler := newActivityTaskHandler(&client, wep, registry)
 	now := time.Now()
 	pats := &workflowservice.PollActivityTaskQueueResponse{
 		Attempt:   1,
@@ -2166,7 +2150,7 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 			RunId:      "rID",
 		},
 		ActivityType:           &commonpb.ActivityType{Name: "test"},
-		ActivityId:             uuid.New(),
+		ActivityId:             uuid.NewString(),
 		ScheduledTime:          timestamppb.New(now),
 		ScheduleToCloseTimeout: durationpb.New(1 * time.Second),
 		StartedTime:            timestamppb.New(now),

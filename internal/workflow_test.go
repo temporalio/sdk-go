@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -61,8 +37,9 @@ func TestGetChildWorkflowOptions(t *testing.T) {
 		},
 		ParentClosePolicy: enums.PARENT_CLOSE_POLICY_REQUEST_CANCEL,
 		VersioningIntent:  VersioningIntentDefault,
-		StaticSummary: "child workflow summary",
-		StaticDetails: "child workflow details",
+		StaticSummary:     "child workflow summary",
+		StaticDetails:     "child workflow details",
+		Priority:          newPriority(),
 	}
 
 	// Require test options to have non-zero value for each field. This ensures that we update tests (and the
@@ -84,7 +61,8 @@ func TestGetActivityOptions(t *testing.T) {
 		RetryPolicy:            newTestRetryPolicy(),
 		DisableEagerExecution:  true,
 		VersioningIntent:       VersioningIntentDefault,
-		Summary: 			  "activity summary",
+		Summary:                "activity summary",
+		Priority:               newPriority(),
 	}
 
 	assertNonZero(t, opts)
@@ -138,6 +116,12 @@ func newTestRetryPolicy() *RetryPolicy {
 		MaximumInterval:        3,
 		MaximumAttempts:        4,
 		NonRetryableErrorTypes: []string{"my_error"},
+	}
+}
+
+func newPriority() Priority {
+	return Priority{
+		PriorityKey: 1,
 	}
 }
 

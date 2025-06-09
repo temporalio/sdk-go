@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -62,6 +38,11 @@ type (
 		Deadline          time.Time     // Time of activity timeout
 		Attempt           int32         // Attempt starts from 1, and increased by 1 for every retry if retry policy is specified.
 		IsLocalActivity   bool          // true if it is a local activity
+		// Priority settings that control relative ordering of task processing when activity tasks are backed up in a queue.
+		// If no priority is set, the default value is the zero value.
+		//
+		// WARNING: Task queue priority is currently experimental.
+		Priority Priority
 	}
 
 	// RegisterActivityOptions consists of options for registering an activity.
@@ -91,6 +72,7 @@ type (
 	// Exposed as: [go.temporal.io/sdk/workflow.ActivityOptions]
 	ActivityOptions struct {
 		// TaskQueue - Name of the task queue that the activity needs to be scheduled on.
+		//
 		// Optional: The default task queue with the same name as the workflow task queue.
 		TaskQueue string
 
@@ -107,6 +89,7 @@ type (
 		// better to rely on the default value.
 		// ScheduleToStartTimeout is always non-retryable. Retrying after this timeout doesn't make sense, as it would
 		// just put the Activity Task back into the same Task Queue.
+		//
 		// Optional: Defaults to unlimited.
 		ScheduleToStartTimeout time.Duration
 
@@ -124,11 +107,13 @@ type (
 
 		// WaitForCancellation - Whether to wait for canceled activity to be completed(
 		// activity can be failed, completed, cancel accepted)
+		//
 		// Optional: default false
 		WaitForCancellation bool
 
 		// ActivityID - Business level activity ID, this is not needed for most of the cases if you have
 		// to specify this then talk to the temporal team. This is something will be done in the future.
+		//
 		// Optional: default empty string
 		ActivityID string
 
@@ -136,10 +121,10 @@ type (
 		// More details are available at docs.temporal.io.
 		// RetryPolicy is optional. If one is not specified, a default RetryPolicy is provided by the server.
 		// The default RetryPolicy provided by the server specifies:
-		// - InitialInterval of 1 second
-		// - BackoffCoefficient of 2.0
-		// - MaximumInterval of 100 x InitialInterval
-		// - MaximumAttempts of 0 (unlimited)
+		//  - InitialInterval of 1 second
+		//  - BackoffCoefficient of 2.0
+		//  - MaximumInterval of 100 x InitialInterval
+		//  - MaximumAttempts of 0 (unlimited)
 		// To disable retries, set MaximumAttempts to 1.
 		// The default RetryPolicy provided by the server can be overridden by the dynamic config.
 		RetryPolicy *RetryPolicy
@@ -165,6 +150,12 @@ type (
 		//
 		// NOTE: Experimental
 		Summary string
+
+		// Priority - Optional priority settings that control relative ordering of
+		// task processing when tasks are backed up in a queue.
+		//
+		// WARNING: Task queue priority is currently experimental.
+		Priority Priority
 	}
 
 	// LocalActivityOptions stores local activity specific parameters that will be stored inside of a context.
@@ -182,6 +173,7 @@ type (
 		StartToCloseTimeout time.Duration
 
 		// RetryPolicy - Specify how to retry activity if error happens.
+		//
 		// Optional: default is to retry according to the default retry policy up to ScheduleToCloseTimeout
 		// with 1sec initial delay between retries and 2x backoff.
 		RetryPolicy *RetryPolicy
@@ -252,8 +244,6 @@ func GetWorkerStopChannel(ctx context.Context) <-chan struct{} {
 // If the activity is either canceled or workflow/activity doesn't exist, then we would cancel
 // the context with error context.Canceled.
 //
-//	TODO: we don't have a way to distinguish between the two cases when context is canceled because
-//	context doesn't support overriding value of ctx.Error.
 //	TODO: Implement automatic heartbeating with cancellation through ctx.
 //
 // details - The details that you provided here can be seen in the workflow when it receives TimeoutError. You
@@ -262,6 +252,14 @@ func GetWorkerStopChannel(ctx context.Context) <-chan struct{} {
 // Exposed as: [go.temporal.io/sdk/activity.RecordHeartbeat]
 func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
 	getActivityOutboundInterceptor(ctx).RecordHeartbeat(ctx, details...)
+}
+
+// GetClient returns a client that can be used to interact with the Temporal
+// service from an activity.
+//
+// Exposed as: [go.temporal.io/sdk/activity.GetClient]
+func GetClient(ctx context.Context) Client {
+	return getActivityOutboundInterceptor(ctx).GetClient(ctx)
 }
 
 // ServiceInvoker abstracts calls to the Temporal service from an activity implementation.
@@ -286,13 +284,14 @@ func WithActivityTask(
 	workerStopChannel <-chan struct{},
 	contextPropagators []ContextPropagator,
 	interceptors []WorkerInterceptor,
+	client *WorkflowClient,
 ) (context.Context, error) {
 	scheduled := task.GetScheduledTime().AsTime()
 	started := task.GetStartedTime().AsTime()
 	scheduleToCloseTimeout := task.GetScheduleToCloseTimeout().AsDuration()
 	startToCloseTimeout := task.GetStartToCloseTimeout().AsDuration()
 	heartbeatTimeout := task.GetHeartbeatTimeout().AsDuration()
-	deadline := calculateActivityDeadline(scheduled, started, scheduleToCloseTimeout, startToCloseTimeout)
+	deadline := calculateActivityDeadline(scheduled, scheduleToCloseTimeout, startToCloseTimeout)
 
 	logger = log.With(logger,
 		tagActivityID, task.ActivityId,
@@ -320,6 +319,7 @@ func WithActivityTask(
 		taskQueue:        taskQueue,
 		dataConverter:    dataConverter,
 		attempt:          task.GetAttempt(),
+		priority:         task.GetPriority(),
 		heartbeatDetails: task.HeartbeatDetails,
 		workflowType: &WorkflowType{
 			Name: task.WorkflowType.GetName(),
@@ -327,6 +327,7 @@ func WithActivityTask(
 		workflowNamespace:  task.WorkflowNamespace,
 		workerStopChannel:  workerStopChannel,
 		contextPropagators: contextPropagators,
+		client:             client,
 	})
 }
 
@@ -338,6 +339,7 @@ func WithLocalActivityTask(
 	metricsHandler metrics.Handler,
 	dataConverter converter.DataConverter,
 	interceptors []WorkerInterceptor,
+	client *WorkflowClient,
 ) (context.Context, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -363,7 +365,7 @@ func WithLocalActivityTask(
 	if scheduleToCloseTimeout == 0 {
 		scheduleToCloseTimeout = startToCloseTimeout
 	}
-	deadline := calculateActivityDeadline(task.scheduledTime, startedTime, scheduleToCloseTimeout, startToCloseTimeout)
+	deadline := calculateActivityDeadline(task.scheduledTime, scheduleToCloseTimeout, startToCloseTimeout)
 	if task.attempt > 1 && !task.expireTime.IsZero() && task.expireTime.Before(deadline) {
 		// this is attempt and expire time is before SCHEDULE_TO_CLOSE timeout
 		deadline = task.expireTime
@@ -383,6 +385,7 @@ func WithLocalActivityTask(
 		startedTime:       startedTime,
 		dataConverter:     dataConverter,
 		attempt:           task.attempt,
+		client:            client,
 	})
 }
 
@@ -414,8 +417,8 @@ func newActivityContext(
 	return ctx, nil
 }
 
-func calculateActivityDeadline(scheduled, started time.Time, scheduleToCloseTimeout, startToCloseTimeout time.Duration) time.Time {
-	startToCloseDeadline := started.Add(startToCloseTimeout)
+func calculateActivityDeadline(scheduled time.Time, scheduleToCloseTimeout, startToCloseTimeout time.Duration) time.Time {
+	startToCloseDeadline := time.Now().Add(startToCloseTimeout)
 	if scheduleToCloseTimeout > 0 {
 		scheduleToCloseDeadline := scheduled.Add(scheduleToCloseTimeout)
 		// Minimum of the two deadlines.

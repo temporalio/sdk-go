@@ -1,35 +1,9 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 // All code in this file is private to the package.
 
 import (
 	"context"
-	"crypto/md5"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -44,9 +18,10 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
-	"github.com/pborman/uuid"
 	commonpb "go.temporal.io/api/common/v1"
+	deploymentpb "go.temporal.io/api/deployment/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/temporalproto"
@@ -102,6 +77,7 @@ type (
 		localActivityWorker *baseWorker
 		identity            string
 		stopC               chan struct{}
+		localActivityStopC  chan struct{}
 	}
 
 	// ActivityWorker wraps the code for hosting activity types.
@@ -169,9 +145,9 @@ type (
 		// If true the worker is opting in to build ID based versioning.
 		UseBuildIDForVersioning bool
 
-		// The worker's deployment series name, an identifier for Worker Versioning that links versions of the same worker
-		// service/application.
-		DeploymentSeriesName string
+		// The worker deployment version identifier.
+		// If non-empty, the [WorkerBuildID] from it, ignoring any previous value.
+		WorkerDeploymentVersion WorkerDeploymentVersion
 
 		// The Versioning Behavior for workflows that do not set one when registering the workflow type.
 		DefaultVersioningBehavior VersioningBehavior
@@ -184,10 +160,10 @@ type (
 		EnableLoggingInReplay bool
 
 		// Context to store user provided key/value pairs
-		UserContext context.Context
+		BackgroundContext context.Context
 
 		// Context cancel function to cancel user context
-		UserContextCancel context.CancelFunc
+		BackgroundContextCancel context.CancelCauseFunc
 
 		StickyScheduleToStartTimeout time.Duration
 
@@ -236,13 +212,25 @@ type (
 		// LastEventID, if set, will only load history up to this ID (inclusive).
 		LastEventID int64
 	}
+
+	// Represents the version of a specific worker deployment.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.WorkerDeploymentVersion]
+	WorkerDeploymentVersion struct {
+		// The name of the deployment this worker version belongs to
+		DeploymentName string
+		// The build id specific to this worker
+		BuildId string
+	}
 )
 
 var debugMode = os.Getenv("TEMPORAL_DEBUG") != ""
 
 // newWorkflowWorker returns an instance of the workflow worker.
-func newWorkflowWorker(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, ppMgr pressurePointMgr, registry *registry) *workflowWorker {
-	return newWorkflowWorkerInternal(service, params, ppMgr, nil, registry)
+func newWorkflowWorker(client *WorkflowClient, params workerExecutionParameters, ppMgr pressurePointMgr, registry *registry) *workflowWorker {
+	return newWorkflowWorkerInternal(client, params, ppMgr, nil, registry)
 }
 
 func ensureRequiredParams(params *workerExecutionParameters) {
@@ -286,6 +274,11 @@ func (params *workerExecutionParameters) getBuildID() string {
 	return getBinaryChecksum()
 }
 
+// Returns true if this worker is part of our system namespace or per-namespace system task queue
+func (params *workerExecutionParameters) isInternalWorker() bool {
+	return params.Namespace == "temporal-system" || params.TaskQueue == "temporal-sys-per-ns-tq"
+}
+
 // verifyNamespaceExist does a DescribeNamespace operation on the specified namespace with backoff/retry
 func verifyNamespaceExist(
 	client workflowservice.WorkflowServiceClient,
@@ -303,7 +296,7 @@ func verifyNamespaceExist(
 	return err
 }
 
-func newWorkflowWorkerInternal(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, ppMgr pressurePointMgr, overrides *workerOverrides, registry *registry) *workflowWorker {
+func newWorkflowWorkerInternal(client *WorkflowClient, params workerExecutionParameters, ppMgr pressurePointMgr, overrides *workerOverrides, registry *registry) *workflowWorker {
 	workerStopChannel := make(chan struct{})
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
 	// Get a workflow task handler.
@@ -314,18 +307,22 @@ func newWorkflowWorkerInternal(service workflowservice.WorkflowServiceClient, pa
 	} else {
 		taskHandler = newWorkflowTaskHandler(params, ppMgr, registry)
 	}
-	return newWorkflowTaskWorkerInternal(taskHandler, taskHandler, service, params, workerStopChannel, registry.interceptors)
+	return newWorkflowTaskWorkerInternal(taskHandler, taskHandler, client, params, workerStopChannel, registry.interceptors)
 }
 
 func newWorkflowTaskWorkerInternal(
 	taskHandler WorkflowTaskHandler,
 	contextManager WorkflowContextManager,
-	service workflowservice.WorkflowServiceClient,
+	client *WorkflowClient,
 	params workerExecutionParameters,
 	stopC chan struct{},
 	interceptors []WorkerInterceptor,
 ) *workflowWorker {
 	ensureRequiredParams(&params)
+	var service workflowservice.WorkflowServiceClient
+	if client != nil {
+		service = client.workflowService
+	}
 	poller := newWorkflowTaskPoller(taskHandler, contextManager, service, params)
 	worker := newBaseWorker(baseWorkerOptions{
 		pollerCount:      params.MaxConcurrentWorkflowTaskQueuePollers,
@@ -343,11 +340,19 @@ func newWorkflowTaskWorkerInternal(
 		slotReservationData: slotReservationData{
 			taskQueue: params.TaskQueue,
 		},
+		isInternalWorker: params.isInternalWorker(),
 	},
 	)
 
+	// We want a separate stop channel for local activities because when a worker shuts down,
+	// we need to allow pending local activities to finish running for that workflow task.
+	// After all pending local activities are handled, we then close the local activity stop channel.
+	laStopChannel := make(chan struct{})
+	laParams := params
+	laParams.WorkerStopChannel = laStopChannel
+
 	// laTunnel is the glue that hookup 3 parts
-	laTunnel := newLocalActivityTunnel(params.WorkerStopChannel)
+	laTunnel := newLocalActivityTunnel(getReadOnlyChannel(laStopChannel))
 
 	// 1) workflow handler will send local activity task to laTunnel
 	if handlerImpl, ok := taskHandler.(*workflowTaskHandlerImpl); ok {
@@ -355,19 +360,19 @@ func newWorkflowTaskWorkerInternal(
 	}
 
 	// 2) local activity task poller will poll from laTunnel, and result will be pushed to laTunnel
-	localActivityTaskPoller := newLocalActivityPoller(params, laTunnel, interceptors)
+	localActivityTaskPoller := newLocalActivityPoller(laParams, laTunnel, interceptors, client)
 	localActivityWorker := newBaseWorker(baseWorkerOptions{
 		pollerCount:      1, // 1 poller (from local channel) is enough for local activity
-		slotSupplier:     params.Tuner.GetLocalActivitySlotSupplier(),
-		maxTaskPerSecond: params.WorkerLocalActivitiesPerSecond,
+		slotSupplier:     laParams.Tuner.GetLocalActivitySlotSupplier(),
+		maxTaskPerSecond: laParams.WorkerLocalActivitiesPerSecond,
 		taskWorker:       localActivityTaskPoller,
 		workerType:       "LocalActivityWorker",
-		identity:         params.Identity,
-		buildId:          params.getBuildID(),
-		logger:           params.Logger,
-		stopTimeout:      params.WorkerStopTimeout,
-		fatalErrCb:       params.WorkerFatalErrorCallback,
-		metricsHandler:   params.MetricsHandler,
+		identity:         laParams.Identity,
+		buildId:          laParams.getBuildID(),
+		logger:           laParams.Logger,
+		stopTimeout:      laParams.WorkerStopTimeout,
+		fatalErrCb:       laParams.WorkerFatalErrorCallback,
+		metricsHandler:   laParams.MetricsHandler,
 		slotReservationData: slotReservationData{
 			taskQueue: params.TaskQueue,
 		},
@@ -385,6 +390,7 @@ func newWorkflowTaskWorkerInternal(
 		localActivityWorker: localActivityWorker,
 		identity:            params.Identity,
 		stopC:               stopC,
+		localActivityStopC:  laStopChannel,
 	}
 }
 
@@ -403,24 +409,25 @@ func (ww *workflowWorker) Start() error {
 func (ww *workflowWorker) Stop() {
 	close(ww.stopC)
 	// TODO: remove the stop methods in favor of the workerStopChannel
-	ww.localActivityWorker.Stop()
 	ww.worker.Stop()
+	close(ww.localActivityStopC)
+	ww.localActivityWorker.Stop()
 }
 
-func newSessionWorker(service workflowservice.WorkflowServiceClient, params workerExecutionParameters, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
+func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
 	if params.Identity == "" {
 		params.Identity = getWorkerIdentity(params.TaskQueue)
 	}
 	// For now resourceID is hidden from user so we will always create a unique one for each worker.
 	if params.SessionResourceID == "" {
-		params.SessionResourceID = uuid.New()
+		params.SessionResourceID = uuid.NewString()
 	}
 	sessionEnvironment := newSessionEnvironment(params.SessionResourceID, maxConcurrentSessionExecutionSize)
 
 	creationTaskqueue := getCreationTaskqueue(params.TaskQueue)
-	params.UserContext = context.WithValue(params.UserContext, sessionEnvironmentContextKey, sessionEnvironment)
+	params.BackgroundContext = context.WithValue(params.BackgroundContext, sessionEnvironmentContextKey, sessionEnvironment)
 	params.TaskQueue = sessionEnvironment.GetResourceSpecificTaskqueue()
-	activityWorker := newActivityWorker(service, params,
+	activityWorker := newActivityWorker(client, params,
 		&workerOverrides{slotSupplier: params.Tuner.GetSessionActivitySlotSupplier()}, env, nil)
 
 	params.MaxConcurrentActivityTaskQueuePollers = 1
@@ -429,7 +436,7 @@ func newSessionWorker(service workflowservice.WorkflowServiceClient, params work
 	// and recreation, we also limit it here for creation only
 	overrides := &workerOverrides{}
 	overrides.slotSupplier, _ = NewFixedSizeSlotSupplier(maxConcurrentSessionExecutionSize)
-	creationWorker := newActivityWorker(service, params, overrides, env, sessionEnvironment.GetTokenBucket())
+	creationWorker := newActivityWorker(client, params, overrides, env, sessionEnvironment.GetTokenBucket())
 
 	return &sessionWorker{
 		creationWorker: creationWorker,
@@ -457,12 +464,16 @@ func (sw *sessionWorker) Stop() {
 }
 
 func newActivityWorker(
-	service workflowservice.WorkflowServiceClient,
+	client *WorkflowClient,
 	params workerExecutionParameters,
 	overrides *workerOverrides,
 	env *registry,
 	sessionTokenBucket *sessionTokenBucket,
 ) *activityWorker {
+	var service workflowservice.WorkflowServiceClient
+	if client != nil {
+		service = client.workflowService
+	}
 	workerStopChannel := make(chan struct{}, 1)
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
 	ensureRequiredParams(&params)
@@ -472,7 +483,7 @@ func newActivityWorker(
 	if overrides != nil && overrides.activityTaskHandler != nil {
 		taskHandler = overrides.activityTaskHandler
 	} else {
-		taskHandler = newActivityTaskHandler(service, params, env)
+		taskHandler = newActivityTaskHandler(client, params, env)
 	}
 
 	poller := newActivityTaskPoller(taskHandler, service, params)
@@ -485,23 +496,24 @@ func newActivityWorker(
 
 	base := newBaseWorker(
 		baseWorkerOptions{
-			pollerCount:        params.MaxConcurrentActivityTaskQueuePollers,
-			pollerRate:         defaultPollerRate,
-			slotSupplier:       slotSupplier,
-			maxTaskPerSecond:   params.WorkerActivitiesPerSecond,
-			taskWorker:         poller,
-			workerType:         "ActivityWorker",
-			identity:           params.Identity,
-			buildId:            params.getBuildID(),
-			logger:             params.Logger,
-			stopTimeout:        params.WorkerStopTimeout,
-			fatalErrCb:         params.WorkerFatalErrorCallback,
-			userContextCancel:  params.UserContextCancel,
-			metricsHandler:     params.MetricsHandler,
-			sessionTokenBucket: sessionTokenBucket,
+			pollerCount:             params.MaxConcurrentActivityTaskQueuePollers,
+			pollerRate:              defaultPollerRate,
+			slotSupplier:            slotSupplier,
+			maxTaskPerSecond:        params.WorkerActivitiesPerSecond,
+			taskWorker:              poller,
+			workerType:              "ActivityWorker",
+			identity:                params.Identity,
+			buildId:                 params.getBuildID(),
+			logger:                  params.Logger,
+			stopTimeout:             params.WorkerStopTimeout,
+			fatalErrCb:              params.WorkerFatalErrorCallback,
+			backgroundContextCancel: params.BackgroundContextCancel,
+			metricsHandler:          params.MetricsHandler,
+			sessionTokenBucket:      sessionTokenBucket,
 			slotReservationData: slotReservationData{
 				taskQueue: params.TaskQueue,
 			},
+			isInternalWorker: params.isInternalWorker(),
 		},
 	)
 	return &activityWorker{
@@ -538,6 +550,10 @@ type registry struct {
 	workflowVersioningBehaviorMap map[string]VersioningBehavior
 	activityFuncMap               map[string]activity
 	activityAliasMap              map[string]string
+	dynamicWorkflow               interface{}
+	dynamicWorkflowOptions        DynamicRegisterWorkflowOptions
+	dynamicActivity               activity
+	_                             DynamicRegisterActivityOptions
 	interceptors                  []WorkerInterceptor
 }
 
@@ -559,13 +575,18 @@ func (r *registry) RegisterWorkflowWithOptions(
 		if len(options.Name) == 0 {
 			panic("WorkflowDefinitionFactory must be registered with a name")
 		}
+		if strings.HasPrefix(options.Name, temporalPrefix) {
+			panic(temporalPrefixError)
+		}
+		r.Lock()
+		defer r.Unlock()
 		r.workflowFuncMap[options.Name] = factory
 		r.workflowVersioningBehaviorMap[options.Name] = options.VersioningBehavior
 		return
 	}
 	// Validate that it is a function
 	fnType := reflect.TypeOf(wf)
-	if err := validateFnFormat(fnType, true); err != nil {
+	if err := validateFnFormat(fnType, true, false); err != nil {
 		panic(err)
 	}
 	fnName, _ := getFunctionName(wf)
@@ -573,6 +594,10 @@ func (r *registry) RegisterWorkflowWithOptions(
 	registerName := fnName
 	if len(alias) > 0 {
 		registerName = alias
+	}
+
+	if strings.HasPrefix(alias, temporalPrefix) || strings.HasPrefix(registerName, temporalPrefix) {
+		panic(temporalPrefixError)
 	}
 
 	r.Lock()
@@ -591,6 +616,29 @@ func (r *registry) RegisterWorkflowWithOptions(
 	}
 }
 
+func (r *registry) RegisterDynamicWorkflow(wf interface{}, options DynamicRegisterWorkflowOptions) {
+	r.Lock()
+	defer r.Unlock()
+	// Support direct registration of WorkflowDefinition
+	factory, ok := wf.(WorkflowDefinitionFactory)
+	if ok {
+		r.dynamicWorkflow = factory
+		r.dynamicWorkflowOptions = options
+		return
+	}
+
+	// Validate that it is a function
+	fnType := reflect.TypeOf(wf)
+	if err := validateFnFormat(fnType, true, true); err != nil {
+		panic(err)
+	}
+	if r.dynamicWorkflow != nil {
+		panic("dynamic workflow already registered")
+	}
+	r.dynamicWorkflow = wf
+	r.dynamicWorkflowOptions = options
+}
+
 func (r *registry) RegisterActivity(af interface{}) {
 	r.RegisterActivityWithOptions(af, RegisterActivityOptions{})
 }
@@ -605,6 +653,9 @@ func (r *registry) RegisterActivityWithOptions(
 		if options.Name == "" {
 			panic("registration of activity interface requires name")
 		}
+		if strings.HasPrefix(options.Name, temporalPrefix) {
+			panic(temporalPrefixError)
+		}
 		r.addActivityWithLock(options.Name, a)
 		return
 	}
@@ -617,7 +668,7 @@ func (r *registry) RegisterActivityWithOptions(
 		}
 		return
 	}
-	if err := validateFnFormat(fnType, false); err != nil {
+	if err := validateFnFormat(fnType, false, false); err != nil {
 		panic(err)
 	}
 	fnName, _ := getFunctionName(af)
@@ -625,6 +676,10 @@ func (r *registry) RegisterActivityWithOptions(
 	registerName := fnName
 	if len(alias) > 0 {
 		registerName = alias
+	}
+
+	if strings.HasPrefix(alias, temporalPrefix) || strings.HasPrefix(registerName, temporalPrefix) {
+		panic(temporalPrefixError)
 	}
 
 	r.Lock()
@@ -656,7 +711,7 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 			continue
 		}
 		name := method.Name
-		if err := validateFnFormat(method.Type, false); err != nil {
+		if err := validateFnFormat(method.Type, false, false); err != nil {
 			if options.SkipInvalidStructFunctions {
 				continue
 			}
@@ -676,6 +731,26 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 		return fmt.Errorf("no activities (public methods) found at %v structure", structType.Name())
 	}
 	return nil
+}
+
+func (r *registry) RegisterDynamicActivity(af interface{}, options DynamicRegisterActivityOptions) {
+	r.Lock()
+	defer r.Unlock()
+	// Support direct registration of activity
+	a, ok := af.(activity)
+	if ok {
+		r.dynamicActivity = a
+		return
+	}
+	// Validate that it is a function
+	fnType := reflect.TypeOf(af)
+	if err := validateFnFormat(fnType, false, true); err != nil {
+		panic(err)
+	}
+	if r.dynamicActivity != nil {
+		panic("dynamic activity already registered")
+	}
+	r.dynamicActivity = &activityExecutor{name: "", fn: af, dynamic: true}
 }
 
 func (r *registry) RegisterNexusService(service *nexus.Service) {
@@ -702,8 +777,14 @@ func (r *registry) getWorkflowAlias(fnName string) (string, bool) {
 func (r *registry) getWorkflowFn(fnName string) (interface{}, bool) {
 	r.Lock()
 	defer r.Unlock()
-	fn, ok := r.workflowFuncMap[fnName]
-	return fn, ok
+	if fn, ok := r.workflowFuncMap[fnName]; ok {
+		return fn, ok
+	}
+
+	if r.dynamicWorkflow != nil {
+		return "dynamic", true
+	}
+	return nil, false
 }
 
 func (r *registry) getRegisteredWorkflowTypes() []string {
@@ -732,8 +813,13 @@ func (r *registry) addActivityWithLock(fnName string, a activity) {
 func (r *registry) GetActivity(fnName string) (activity, bool) {
 	r.Lock()
 	defer r.Unlock()
-	a, ok := r.activityFuncMap[fnName]
-	return a, ok
+	if a, ok := r.activityFuncMap[fnName]; ok {
+		return a, ok
+	}
+	if r.dynamicActivity != nil {
+		return r.dynamicActivity, true
+	}
+	return nil, false
 }
 
 func (r *registry) getActivityNoLock(fnName string) (activity, bool) {
@@ -744,9 +830,16 @@ func (r *registry) getActivityNoLock(fnName string) (activity, bool) {
 func (r *registry) getRegisteredActivities() []activity {
 	r.Lock()
 	defer r.Unlock()
-	activities := make([]activity, 0, len(r.activityFuncMap))
+	numActivities := len(r.activityFuncMap)
+	if r.dynamicActivity != nil {
+		numActivities++
+	}
+	activities := make([]activity, 0, numActivities)
 	for _, a := range r.activityFuncMap {
 		activities = append(activities, a)
+	}
+	if r.dynamicActivity != nil {
+		activities = append(activities, r.dynamicActivity)
 	}
 	return activities
 }
@@ -775,7 +868,12 @@ func (r *registry) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, e
 	if ok {
 		return wdf.NewWorkflowDefinition(), nil
 	}
-	executor := &workflowExecutor{workflowType: lookup, fn: wf, interceptors: r.interceptors}
+	var dynamic bool
+	if d, ok := wf.(string); ok && d == "dynamic" {
+		wf = r.dynamicWorkflow
+		dynamic = true
+	}
+	executor := &workflowExecutor{workflowType: lookup, fn: wf, interceptors: r.interceptors, dynamic: dynamic}
 	return newSyncWorkflowDefinition(executor), nil
 }
 
@@ -786,8 +884,16 @@ func (r *registry) getWorkflowVersioningBehavior(wt WorkflowType) (VersioningBeh
 	}
 	r.Lock()
 	defer r.Unlock()
-	behavior := r.workflowVersioningBehaviorMap[lookup]
-	return behavior, behavior != VersioningBehaviorUnspecified
+	if behavior, ok := r.workflowVersioningBehaviorMap[lookup]; ok {
+		return behavior, behavior != VersioningBehaviorUnspecified
+	}
+	if r.dynamicWorkflowOptions.LoadDynamicRuntimeOptions != nil {
+		config := LoadDynamicRuntimeOptionsDetails{WorkflowType: wt}
+		if behavior, err := r.dynamicWorkflowOptions.LoadDynamicRuntimeOptions(config); err == nil {
+			return behavior.VersioningBehavior, true
+		}
+	}
+	return VersioningBehaviorUnspecified, false
 }
 
 func (r *registry) getNexusService(service string) *nexus.Service {
@@ -807,7 +913,7 @@ func (r *registry) getRegisteredNexusServices() []*nexus.Service {
 }
 
 // Validate function parameters.
-func validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
+func validateFnFormat(fnType reflect.Type, isWorkflow, isDynamic bool) error {
 	if fnType.Kind() != reflect.Func {
 		return fmt.Errorf("expected a func as input but was %s", fnType.Kind())
 	}
@@ -829,6 +935,17 @@ func validateFnFormat(fnType reflect.Type, isWorkflow bool) error {
 			if isWorkflowContext(fnType.In(i)) {
 				return fmt.Errorf("unexpected use of workflow context for an activity")
 			}
+		}
+	}
+
+	if isDynamic {
+		if fnType.NumIn() != 2 {
+			return fmt.Errorf(
+				"expected function to have two arguments, first being workflow.Context and second being an EncodedValues type, found %d arguments", fnType.NumIn(),
+			)
+		}
+		if fnType.In(1) != reflect.TypeOf((*converter.EncodedValues)(nil)).Elem() {
+			return fmt.Errorf("expected function to EncodedValues as second argument, got %s", fnType.In(1).Elem())
 		}
 	}
 
@@ -875,17 +992,25 @@ type workflowExecutor struct {
 	workflowType string
 	fn           interface{}
 	interceptors []WorkerInterceptor
+	dynamic      bool
 }
 
 func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*commonpb.Payloads, error) {
 	dataConverter := WithWorkflowContext(ctx, getWorkflowEnvOptions(ctx).DataConverter)
 	fnType := reflect.TypeOf(we.fn)
 
-	args, err := decodeArgsToRawValues(dataConverter, fnType, input)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"unable to decode the workflow function input payload with error: %w, function name: %v",
-			err, we.workflowType)
+	var args []interface{}
+	var err error
+	if we.dynamic {
+		// Dynamic workflows take in a single EncodedValues, encode all data into single EncodedValues
+		args = []interface{}{newEncodedValues(input, dataConverter)}
+	} else {
+		args, err = decodeArgsToRawValues(dataConverter, fnType, input)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"unable to decode the workflow function input payload with error: %w, function name: %v",
+				err, we.workflowType)
+		}
 	}
 
 	envInterceptor := getWorkflowEnvironmentInterceptor(ctx)
@@ -905,6 +1030,7 @@ type activityExecutor struct {
 	name             string
 	fn               interface{}
 	skipInterceptors bool
+	dynamic          bool
 }
 
 func (ae *activityExecutor) ActivityType() ActivityType {
@@ -919,11 +1045,18 @@ func (ae *activityExecutor) Execute(ctx context.Context, input *commonpb.Payload
 	fnType := reflect.TypeOf(ae.fn)
 	dataConverter := getDataConverterFromActivityCtx(ctx)
 
-	args, err := decodeArgsToRawValues(dataConverter, fnType, input)
-	if err != nil {
-		return nil, fmt.Errorf(
-			"unable to decode the activity function input payload with error: %w for function name: %v",
-			err, ae.name)
+	var args []interface{}
+	var err error
+	if ae.dynamic {
+		// Dynamic activities take in a single EncodedValues, encode all data into single EncodedValues
+		args = []interface{}{newEncodedValues(input, dataConverter)}
+	} else {
+		args, err = decodeArgsToRawValues(dataConverter, fnType, input)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"unable to decode the activity function input payload with error: %w for function name: %v",
+				err, ae.name)
+		}
 	}
 
 	return ae.ExecuteWithActualArgs(ctx, args)
@@ -1010,7 +1143,7 @@ func (aw *AggregatedWorker) RegisterWorkflow(w interface{}) {
 		panic("workflow worker disabled, cannot register workflow")
 	}
 	if aw.executionParams.UseBuildIDForVersioning &&
-		aw.executionParams.DeploymentSeriesName != "" &&
+		(aw.executionParams.WorkerDeploymentVersion != WorkerDeploymentVersion{}) &&
 		aw.executionParams.DefaultVersioningBehavior == VersioningBehaviorUnspecified {
 		panic("workflow type does not have a versioning behavior")
 	}
@@ -1023,12 +1156,25 @@ func (aw *AggregatedWorker) RegisterWorkflowWithOptions(w interface{}, options R
 		panic("workflow worker disabled, cannot register workflow")
 	}
 	if options.VersioningBehavior == VersioningBehaviorUnspecified &&
-		aw.executionParams.DeploymentSeriesName != "" &&
+		(aw.executionParams.WorkerDeploymentVersion != WorkerDeploymentVersion{}) &&
 		aw.executionParams.UseBuildIDForVersioning &&
 		aw.executionParams.DefaultVersioningBehavior == VersioningBehaviorUnspecified {
 		panic("workflow type does not have a versioning behavior")
 	}
 	aw.registry.RegisterWorkflowWithOptions(w, options)
+}
+
+// RegisterDynamicWorkflow registers dynamic workflow implementation with the AggregatedWorker
+func (aw *AggregatedWorker) RegisterDynamicWorkflow(w interface{}, options DynamicRegisterWorkflowOptions) {
+	if aw.workflowWorker == nil {
+		panic("workflow worker disabled, cannot register workflow")
+	}
+	if options.LoadDynamicRuntimeOptions == nil && aw.executionParams.UseBuildIDForVersioning &&
+		(aw.executionParams.WorkerDeploymentVersion != WorkerDeploymentVersion{}) &&
+		aw.executionParams.DefaultVersioningBehavior == VersioningBehaviorUnspecified {
+		panic("dynamic workflow does not have a versioning behavior")
+	}
+	aw.registry.RegisterDynamicWorkflow(w, options)
 }
 
 // RegisterActivity registers activity implementation with the AggregatedWorker
@@ -1039,6 +1185,12 @@ func (aw *AggregatedWorker) RegisterActivity(a interface{}) {
 // RegisterActivityWithOptions registers activity implementation with the AggregatedWorker
 func (aw *AggregatedWorker) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) {
 	aw.registry.RegisterActivityWithOptions(a, options)
+}
+
+// RegisterDynamicActivity registers the dynamic activity function with options.
+// Registering activities via a structure is not supported for dynamic activities.
+func (aw *AggregatedWorker) RegisterDynamicActivity(a interface{}, options DynamicRegisterActivityOptions) {
+	aw.registry.RegisterDynamicActivity(a, options)
 }
 
 func (aw *AggregatedWorker) RegisterNexusService(service *nexus.Service) {
@@ -1065,7 +1217,7 @@ func (aw *AggregatedWorker) start() error {
 		return err
 	}
 	// Populate the capabilities. This should be the only time it is written too.
-	capabilities, err := aw.client.loadCapabilities(context.Background(), defaultGetSystemInfoTimeout)
+	capabilities, err := aw.client.loadCapabilities(context.Background())
 	if err != nil {
 		return err
 	}
@@ -1119,6 +1271,7 @@ func (aw *AggregatedWorker) start() error {
 				return fmt.Errorf("failed to create a nexus worker: %w", err)
 			}
 		}
+		reg.Use(nexusMiddleware(aw.registry.interceptors))
 		handler, err := reg.NewHandler()
 		if err != nil {
 			return fmt.Errorf("failed to create a nexus worker: %w", err)
@@ -1128,6 +1281,7 @@ func (aw *AggregatedWorker) start() error {
 			client:              aw.client,
 			workflowService:     aw.client.workflowService,
 			handler:             handler,
+			registry:            aw.registry,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create a nexus worker: %w", err)
@@ -1175,36 +1329,6 @@ func initBinaryChecksum() error {
 	defer binaryChecksumLock.Unlock()
 
 	return initBinaryChecksumLocked()
-}
-
-// callers MUST hold binaryChecksumLock before calling
-func initBinaryChecksumLocked() error {
-	if len(binaryChecksum) > 0 {
-		return nil
-	}
-
-	exec, err := os.Executable()
-	if err != nil {
-		return err
-	}
-
-	f, err := os.Open(exec)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = f.Close() // error is unimportant as it is read-only
-	}()
-
-	h := md5.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return err
-	}
-
-	checksum := h.Sum(nil)
-	binaryChecksum = hex.EncodeToString(checksum[:])
-
-	return nil
 }
 
 func getBinaryChecksum() string {
@@ -1291,6 +1415,7 @@ type WorkflowReplayerOptions struct {
 	FailureConverter converter.FailureConverter
 
 	// Optional: Sets ContextPropagators that allows users to control the context information passed through a workflow
+	//
 	// default: nil
 	ContextPropagators []ContextPropagator
 
@@ -1307,6 +1432,7 @@ type WorkflowReplayerOptions struct {
 	// In the workflow code you can use workflow.GetLogger(ctx) to write logs. By default, the logger will skip log
 	// entry during replay mode so you won't see duplicate logs. This option will enable the logging in replay mode.
 	// This is only useful for debugging purpose.
+	//
 	// default: false
 	EnableLoggingInReplay bool
 
@@ -1345,6 +1471,11 @@ func (aw *WorkflowReplayer) RegisterWorkflow(w interface{}) {
 // RegisterWorkflowWithOptions registers workflow function with custom workflow name to replay
 func (aw *WorkflowReplayer) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
 	aw.registry.RegisterWorkflowWithOptions(w, options)
+}
+
+// RegisterDynamicWorkflow registers a dynamic workflow function to replay
+func (aw *WorkflowReplayer) RegisterDynamicWorkflow(w interface{}, options DynamicRegisterWorkflowOptions) {
+	aw.registry.RegisterDynamicWorkflow(w, options)
 }
 
 // ReplayWorkflowHistoryWithOptions executes a single workflow task for the given history.
@@ -1473,7 +1604,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 	}
 	workflowType := attr.WorkflowType
 	execution := &commonpb.WorkflowExecution{
-		RunId:      uuid.NewRandom().String(),
+		RunId:      uuid.NewString(),
 		WorkflowId: "ReplayId",
 	}
 	if originalExecution.ID != "" {
@@ -1650,13 +1781,16 @@ func extractHistoryFromFile(jsonfileName string, lastEventID int64) (hist *histo
 
 // NewAggregatedWorker returns an instance to manage both activity and workflow workers
 func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options WorkerOptions) *AggregatedWorker {
+	if strings.HasPrefix(taskQueue, temporalPrefix) {
+		panic(temporalPrefixError)
+	}
 	setClientDefaults(client)
 	setWorkerOptionsDefaults(&options)
 	ctx := options.BackgroundActivityContext
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	backgroundActivityContext, backgroundActivityContextCancel := context.WithCancel(ctx)
+	backgroundActivityContext, backgroundActivityContextCancel := context.WithCancelCause(ctx)
 
 	// If max-concurrent workflow pollers is 1, the worker will only do
 	// sticky-queue requests and never regular-queue requests. We disallow the
@@ -1677,6 +1811,14 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	// See: https://github.com/temporalio/sdk-go/issues/1227
 	if options.EnableSessionWorker && options.UseBuildIDForVersioning {
 		panic("cannot set both EnableSessionWorker and UseBuildIDForVersioning")
+	}
+
+	if (options.DeploymentOptions.Version != WorkerDeploymentVersion{}) {
+		options.BuildID = options.DeploymentOptions.Version.BuildId
+	}
+	if !options.DeploymentOptions.UseVersioning &&
+		options.DeploymentOptions.DefaultVersioningBehavior != VersioningBehaviorUnspecified {
+		panic("cannot set both DeploymentOptions.DefaultVersioningBehavior if DeploymentOptions.UseBuildIDForVersioning is false")
 	}
 
 	// Need reference to result for fatal error handler
@@ -1707,6 +1849,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	// All worker systems that depend on the capabilities to process workflow/activity tasks
 	// should take a pointer to this struct and wait for it to be populated when the worker is run.
 	var capabilities workflowservice.GetSystemInfoResponse_Capabilities
+	workerDeploymentVersion := WorkerDeploymentVersion{}
+	if (options.DeploymentOptions.Version != WorkerDeploymentVersion{}) {
+		workerDeploymentVersion = options.DeploymentOptions.Version
+	}
 
 	cache := NewWorkerCache()
 	workerParams := workerExecutionParameters{
@@ -1720,14 +1866,14 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		MaxConcurrentNexusTaskQueuePollers:    options.MaxConcurrentNexusTaskPollers,
 		Identity:                              client.identity,
 		WorkerBuildID:                         options.BuildID,
-		UseBuildIDForVersioning:               options.UseBuildIDForVersioning,
-		DeploymentSeriesName:                  options.DeploymentOptions.DeploymentSeriesName,
+		UseBuildIDForVersioning:               options.UseBuildIDForVersioning || options.DeploymentOptions.UseVersioning,
+		WorkerDeploymentVersion:               workerDeploymentVersion,
 		DefaultVersioningBehavior:             options.DeploymentOptions.DefaultVersioningBehavior,
 		MetricsHandler:                        client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue)),
 		Logger:                                client.logger,
 		EnableLoggingInReplay:                 options.EnableLoggingInReplay,
-		UserContext:                           backgroundActivityContext,
-		UserContextCancel:                     backgroundActivityContextCancel,
+		BackgroundContext:                     backgroundActivityContext,
+		BackgroundContextCancel:               backgroundActivityContextCancel,
 		StickyScheduleToStartTimeout:          options.StickyScheduleToStartTimeout,
 		TaskQueueActivitiesPerSecond:          options.TaskQueueActivitiesPerSecond,
 		WorkflowPanicPolicy:                   options.WorkflowPanicPolicy,
@@ -1779,22 +1925,22 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	if !options.DisableWorkflowWorker {
 		testTags := getTestTags(options.BackgroundActivityContext)
 		if len(testTags) > 0 {
-			workflowWorker = newWorkflowWorkerWithPressurePoints(client.workflowService, workerParams, testTags, registry)
+			workflowWorker = newWorkflowWorkerWithPressurePoints(client, workerParams, testTags, registry)
 		} else {
-			workflowWorker = newWorkflowWorker(client.workflowService, workerParams, nil, registry)
+			workflowWorker = newWorkflowWorker(client, workerParams, nil, registry)
 		}
 	}
 
 	// activity types.
 	var activityWorker *activityWorker
 	if !options.LocalActivityWorkerOnly {
-		activityWorker = newActivityWorker(client.workflowService, workerParams, nil, registry, nil)
+		activityWorker = newActivityWorker(client, workerParams, nil, registry, nil)
 		workerParams.eagerActivityExecutor.activityWorker = activityWorker.worker
 	}
 
 	var sessionWorker *sessionWorker
 	if options.EnableSessionWorker && !options.LocalActivityWorkerOnly {
-		sessionWorker = newSessionWorker(client.workflowService, workerParams, registry, options.MaxConcurrentSessionExecutionSize)
+		sessionWorker = newSessionWorker(client, workerParams, registry, options.MaxConcurrentSessionExecutionSize)
 		registry.RegisterActivityWithOptions(sessionCreationActivity, RegisterActivityOptions{
 			Name: sessionCreationActivityName,
 		})
@@ -2063,4 +2209,42 @@ func executeFunction(fn interface{}, args []interface{}) (interface{}, error) {
 		res = retValues[0].Interface()
 	}
 	return res, err
+}
+
+func workerDeploymentVersionFromProto(wd *deploymentpb.WorkerDeploymentVersion) WorkerDeploymentVersion {
+	return WorkerDeploymentVersion{
+		DeploymentName: wd.DeploymentName,
+		BuildId:        wd.BuildId,
+	}
+}
+
+func (wd *WorkerDeploymentVersion) toProto() *deploymentpb.WorkerDeploymentVersion {
+	return &deploymentpb.WorkerDeploymentVersion{
+		DeploymentName: wd.DeploymentName,
+		BuildId:        wd.BuildId,
+	}
+}
+
+func (wd *WorkerDeploymentVersion) toCanonicalString() string {
+	return fmt.Sprintf("%s.%s", wd.DeploymentName, wd.BuildId)
+}
+
+func workerDeploymentVersionFromString(version string) *WorkerDeploymentVersion {
+	if splitVersion := strings.SplitN(version, ".", 2); len(splitVersion) == 2 {
+		return &WorkerDeploymentVersion{
+			DeploymentName: splitVersion[0],
+			BuildId:        splitVersion[1],
+		}
+	}
+	return nil
+}
+
+func workerDeploymentVersionFromProtoOrString(wd *deploymentpb.WorkerDeploymentVersion, fallback string) *WorkerDeploymentVersion {
+	if wd == nil {
+		return workerDeploymentVersionFromString(fallback)
+	}
+	return &WorkerDeploymentVersion{
+		DeploymentName: wd.DeploymentName,
+		BuildId:        wd.BuildId,
+	}
 }

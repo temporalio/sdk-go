@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 /*
 Package workflow contains functions and types used to implement Temporal workflows.
 
@@ -51,7 +27,7 @@ the sole parameter it receives as part of its initialization as a parameter to t
 
 	func SimpleWorkflow(ctx workflow.Context, value string) error {
 		ao := workflow.ActivityOptions{
-			TaskQueue:               "sampleTaskQueue",
+			TaskQueue:              "sampleTaskQueue",
 			ScheduleToCloseTimeout: time.Second * 60,
 			ScheduleToStartTimeout: time.Second * 60,
 			StartToCloseTimeout:    time.Second * 60,
@@ -127,7 +103,7 @@ deterministic and repeatable within an execution context.
 
 Coroutine related constructs:
 
-  - [workflow.Go] : This is a replacement for the the go statement
+  - [workflow.Go] : This is a replacement for the go statement
   - [workflow.Channel] : This is a replacement for the native chan type. Temporal
     provides support for both buffered and unbuffered channels
   - [workflow.Selector] : This is a replacement for the select statement
@@ -149,7 +125,7 @@ The primary responsibility of the workflow implementation is to schedule activit
 straightforward way to do that is via the library method [workflow.ExecuteActivity]:
 
 	ao := workflow.ActivityOptions{
-		TaskQueue:               "sampleTaskQueue",
+		TaskQueue:              "sampleTaskQueue",
 		ScheduleToCloseTimeout: time.Second * 60,
 		ScheduleToStartTimeout: time.Second * 60,
 		StartToCloseTimeout:    time.Second * 60,
@@ -381,7 +357,7 @@ Workflows that need to rerun periodically could naively be implemented as a big 
 logic of the workflow is inside the body of the for loop. The problem with this approach is that the history for that
 workflow will keep growing to a point where it reaches the maximum size enforced by the service.
 
-[ContinueAsNew] is the low level construct that enables implementing such workflows without the risk of failures down the
+ContinueAsNew is the low level construct that enables implementing such workflows without the risk of failures down the
 road. The operation atomically completes the current execution and starts a new execution of the workflow with the same
 workflow ID. The new execution will not carry over any history from the old execution. To trigger this behavior, the
 workflow function should terminate by returning the special ContinueAsNewError error:
@@ -552,12 +528,12 @@ The code below implements the unit tests for the SimpleWorkflow sample.
 
 First, we define a "test suite" struct that absorbs both the basic suite functionality from [testify]
 via suite.Suite and the suite functionality from the Temporal test
-framework via [testsuite.WorkflowTestSuite]. Since every test in this suite will test our workflow we add a property to
+framework via [go.temporal.io/sdk/testsuite.WorkflowTestSuite]. Since every test in this suite will test our workflow we add a property to
 our struct to hold an instance of the test environment. This will allow us to initialize the test environment in a
-setup method. For testing workflows we use a [testsuite.TestWorkflowEnvironment].
+setup method. For testing workflows we use a [go.temporal.io/sdk/testsuite.TestWorkflowEnvironment].
 
-We then implement a SetupTest method to setup a new test environment before each test. Doing so ensure that each test
-runs in it's own isolated sandbox. We also implement an AfterTest function where we assert that all mocks we setup were
+We then implement a SetupTest method to set up a new test environment before each test. Doing so ensures that each test
+runs in its own isolated sandbox. We also implement an AfterTest function where we assert that all mocks we set up were
 indeed called by invoking s.env.AssertExpectations(s.T()).
 
 Finally, we create a regular test function recognized by "go test" and pass the struct to suite.Run.

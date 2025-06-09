@@ -1,39 +1,16 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
-	"golang.org/x/exp/constraints"
-	"golang.org/x/exp/slices"
 
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -66,6 +43,7 @@ const (
 )
 
 // VersioningBehavior specifies when existing workflows could change their Build ID.
+//
 // NOTE: Experimental
 //
 // Exposed as: [go.temporal.io/sdk/workflow.VersioningBehavior]
@@ -89,6 +67,33 @@ const (
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.VersioningBehaviorAutoUpgrade]
 	VersioningBehaviorAutoUpgrade
+)
+
+// NexusOperationCancellationType specifies what action should be taken for a Nexus operation when the
+// caller is cancelled.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/workflow.NexusOperationCancellationType]
+type NexusOperationCancellationType int
+
+const (
+	// NexusOperationCancellationTypeUnspecified - Nexus operation cancellation type is unknown.
+	NexusOperationCancellationTypeUnspecified NexusOperationCancellationType = iota
+
+	// NexusOperationCancellationTypeAbandon - Do not request cancellation of the Nexus operation.
+	NexusOperationCancellationTypeAbandon
+
+	// NexusOperationCancellationTypeTryCancel - Initiate a cancellation request for the Nexus operation and immediately report cancellation
+	// to the caller. Note that it doesn't guarantee that cancellation is delivered to the operation if calling workflow exits before the delivery is done.
+	// If you want to ensure that cancellation is delivered to the operation, use NexusOperationCancellationTypeWaitRequested.
+	NexusOperationCancellationTypeTryCancel
+
+	// NexusOperationCancellationTypeWaitRequested - Request cancellation of the Nexus operation and wait for confirmation that the request was received.
+	NexusOperationCancellationTypeWaitRequested
+
+	// NexusOperationCancellationTypeWaitCompleted - Wait for the Nexus operation to complete. Default.
+	NexusOperationCancellationTypeWaitCompleted
 )
 
 var (
@@ -329,25 +334,30 @@ type (
 	// Exposed as: [go.temporal.io/sdk/workflow.ChildWorkflowOptions]
 	ChildWorkflowOptions struct {
 		// Namespace of the child workflow.
+		//
 		// Optional: the current workflow (parent)'s namespace will be used if this is not provided.
 		Namespace string
 
 		// WorkflowID of the child workflow to be scheduled.
+		//
 		// Optional: an auto generated workflowID will be used if this is not provided.
 		WorkflowID string
 
 		// TaskQueue that the child workflow needs to be scheduled on.
+		//
 		// Optional: the parent workflow task queue will be used if this is not provided.
 		TaskQueue string
 
 		// WorkflowExecutionTimeout - The end to end timeout for the child workflow execution including retries
 		// and continue as new.
+		//
 		// Optional: defaults to unlimited.
 		WorkflowExecutionTimeout time.Duration
 
 		// WorkflowRunTimeout - The timeout for a single run of the child workflow execution. Each retry or
 		// continue as new should obey this timeout. Use WorkflowExecutionTimeout to specify how long the parent
 		// is willing to wait for the child completion.
+		//
 		// Optional: defaults to WorkflowExecutionTimeout
 		WorkflowRunTimeout time.Duration
 
@@ -359,6 +369,7 @@ type (
 
 		// WaitForCancellation - Whether to wait for canceled child workflow to be ended (child workflow can be ended
 		// as: completed/failed/timedout/terminated/canceled)
+		//
 		// Optional: default false
 		WaitForCancellation bool
 
@@ -367,6 +378,7 @@ type (
 		WorkflowIDReusePolicy enumspb.WorkflowIdReusePolicy
 
 		// RetryPolicy specify how to retry child workflow if error happens.
+		//
 		// Optional: default is no retry
 		RetryPolicy *RetryPolicy
 
@@ -434,6 +446,12 @@ type (
 		//
 		// NOTE: Experimental
 		StaticDetails string
+
+		// Priority - Optional priority settings that control relative ordering of
+		// task processing when tasks are backed up in a queue.
+		//
+		// WARNING: Task queue priority is currently experimental.
+		Priority Priority
 	}
 
 	// RegisterWorkflowOptions consists of options for registering a workflow
@@ -452,6 +470,37 @@ type (
 		// Optional: Provides a Versioning Behavior to workflows of this type. It is required
 		// when WorkerOptions does not specify [DeploymentOptions.DefaultVersioningBehavior],
 		// [DeploymentOptions.DeploymentSeriesName] is set, and [UseBuildIDForVersioning] is true.
+		//
+		// NOTE: Experimental
+		VersioningBehavior VersioningBehavior
+	}
+
+	// LoadDynamicRuntimeOptionsDetails is used as input to the LoadDynamicRuntimeOptions callback for dynamic workflows
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.LoadDynamicRuntimeOptionsDetails]
+	LoadDynamicRuntimeOptionsDetails struct {
+		WorkflowType WorkflowType
+	}
+
+	// DynamicRegisterWorkflowOptions consists of options for registering a dynamic workflow
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.DynamicRegisterOptions]
+	DynamicRegisterWorkflowOptions struct {
+		// Allows dynamic options to be loaded for a workflow.
+		LoadDynamicRuntimeOptions func(details LoadDynamicRuntimeOptionsDetails) (DynamicRuntimeWorkflowOptions, error)
+	}
+
+	// DynamicRegisterActivityOptions consists of options for registering a dynamic activity
+	DynamicRegisterActivityOptions struct{}
+
+	// DynamicRuntimeWorkflowOptions are options for a dynamic workflow.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.DynamicRuntimeOptions]
+	DynamicRuntimeWorkflowOptions struct {
+		// Optional: Provides a Versioning Behavior to workflows of this type. It is required
+		// when WorkerOptions does not specify [DeploymentOptions.DefaultVersioningBehavior],
+		// [DeploymentOptions.DeploymentSeriesName] is set, and [UseBuildIDForVersioning] is true.
+		//
 		// NOTE: Experimental
 		VersioningBehavior VersioningBehavior
 	}
@@ -1263,10 +1312,17 @@ type WorkflowInfo struct {
 	ContinuedExecutionRunID string
 	ParentWorkflowNamespace string
 	ParentWorkflowExecution *WorkflowExecution
-	Memo                    *commonpb.Memo // Value can be decoded using data converter (defaultDataConverter, or custom one if set).
+	// RootWorkflowExecution is the first workflow execution in the chain of workflows. If a workflow is itself a root workflow, then this field is nil.
+	RootWorkflowExecution *WorkflowExecution
+	Memo                  *commonpb.Memo // Value can be decoded using data converter (defaultDataConverter, or custom one if set).
 	// Deprecated: use [Workflow.GetTypedSearchAttributes] instead.
 	SearchAttributes *commonpb.SearchAttributes // Value can be decoded using defaultDataConverter.
 	RetryPolicy      *RetryPolicy
+	// Priority settings that control relative ordering of task processing when workflow tasks are backed up in a queue.
+	// If no priority is set, the default value is the zero value.
+	//
+	// WARNING: Task queue priority is currently experimental.
+	Priority Priority
 	// BinaryChecksum represents the value persisted by the last worker to complete a task in this workflow. It may be
 	// an explicitly set or implicitly derived binary checksum of the worker binary, or, if this worker has opted into
 	// build-id based versioning, is the explicitly set worker build id. If this is the first worker to operate on the
@@ -1280,6 +1336,8 @@ type WorkflowInfo struct {
 	continueAsNewSuggested bool
 	currentHistorySize     int
 	currentHistoryLength   int
+	// currentRunID is the current run ID of the workflow task, deterministic over reset
+	currentRunID string
 }
 
 // UpdateInfo information about a currently running update
@@ -1746,6 +1804,7 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.VersioningIntent = cwo.VersioningIntent
 	wfOptions.StaticSummary = cwo.StaticSummary
 	wfOptions.StaticDetails = cwo.StaticDetails
+	wfOptions.Priority = convertToPBPriority(cwo.Priority)
 
 	return ctx1
 }
@@ -1768,6 +1827,7 @@ func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 		WaitForCancellation:      opts.WaitForCancellation,
 		WorkflowIDReusePolicy:    opts.WorkflowIDReusePolicy,
 		RetryPolicy:              convertFromPBRetryPolicy(opts.RetryPolicy),
+		Priority:                 convertFromPBPriority(opts.Priority),
 		CronSchedule:             opts.CronSchedule,
 		Memo:                     opts.Memo,
 		SearchAttributes:         opts.SearchAttributes,
@@ -1850,6 +1910,15 @@ func WithDataConverter(ctx Context, dc converter.DataConverter) Context {
 	return ctx1
 }
 
+// WithPriority adds a priority to the context.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.WithWorkflowPriority]
+func WithWorkflowPriority(ctx Context, priority Priority) Context {
+	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
+	getWorkflowEnvOptions(ctx1).Priority = convertToPBPriority(priority)
+	return ctx1
+}
+
 // WithWorkflowVersioningIntent is used to set the VersioningIntent before constructing a
 // ContinueAsNewError with NewContinueAsNewError.
 // WARNING: Worker versioning is currently experimental
@@ -1897,6 +1966,9 @@ func (wc *workflowEnvironmentInterceptor) GetSignalChannelWithOptions(
 	signalName string,
 	options SignalChannelOptions,
 ) ReceiveChannel {
+	if strings.HasPrefix(signalName, temporalPrefix) {
+		panic(temporalPrefixError)
+	}
 	eo := getWorkflowEnvOptions(ctx)
 	ch := eo.getSignalChannel(ctx, signalName)
 	// Add as a requested channel if not already done
@@ -2030,7 +2102,7 @@ func (wc *workflowEnvironmentInterceptor) MutableSideEffect(ctx Context, id stri
 
 // DefaultVersion is a version returned by GetVersion for code that wasn't versioned before
 //
-// Exposed as: [go.temporal.io/sdk/workflow.Version], [go.temporal.io/sdk/workflow.DefaultVersion]
+// Exposed as: [go.temporal.io/sdk/workflow.DefaultVersion], [go.temporal.io/sdk/workflow.Version]
 const DefaultVersion Version = -1
 
 // TemporalChangeVersion is used as search attributes key to find workflows with specific change version.
@@ -2338,6 +2410,7 @@ func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	eap.RetryPolicy = convertToPBRetryPolicy(options.RetryPolicy)
 	eap.DisableEagerExecution = options.DisableEagerExecution
 	eap.VersioningIntent = options.VersioningIntent
+	eap.Priority = convertToPBPriority(options.Priority)
 	eap.Summary = options.Summary
 	return ctx1
 }
@@ -2401,6 +2474,7 @@ func GetActivityOptions(ctx Context) ActivityOptions {
 		RetryPolicy:            convertFromPBRetryPolicy(opts.RetryPolicy),
 		DisableEagerExecution:  opts.DisableEagerExecution,
 		VersioningIntent:       opts.VersioningIntent,
+		Priority:               convertFromPBPriority(opts.Priority),
 		Summary:                opts.Summary,
 	}
 }
@@ -2464,7 +2538,7 @@ func WithHeartbeatTimeout(ctx Context, d time.Duration) Context {
 	return ctx1
 }
 
-// WithWaitForCancellation adds wait for the cacellation to the copy of the context.
+// WithWaitForCancellation adds wait for the cancellation to the copy of the context.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.WithWaitForCancellation]
 func WithWaitForCancellation(ctx Context, wait bool) Context {
@@ -2479,6 +2553,15 @@ func WithWaitForCancellation(ctx Context, wait bool) Context {
 func WithRetryPolicy(ctx Context, retryPolicy RetryPolicy) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
 	getActivityOptions(ctx1).RetryPolicy = convertToPBRetryPolicy(&retryPolicy)
+	return ctx1
+}
+
+// WithPriority adds priority to the copy of the context.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.WithPriority]
+func WithPriority(ctx Context, priority Priority) Context {
+	ctx1 := setActivityParametersIfNotExist(ctx)
+	getActivityOptions(ctx1).Priority = convertToPBPriority(priority)
 	return ctx1
 }
 
@@ -2513,6 +2596,32 @@ func convertFromPBRetryPolicy(retryPolicy *commonpb.RetryPolicy) *RetryPolicy {
 	return &p
 }
 
+func convertToPBPriority(priority Priority) *commonpb.Priority {
+	// If the priority only contains default values, return nil instead
+	// - since there's no need to send the default values to the server.
+	//
+	// Exposed as: [go.temporal.io/sdk/temporal.Priority]
+	var defaultPriority Priority
+	if priority == defaultPriority {
+		return nil
+	}
+
+	return &commonpb.Priority{
+		PriorityKey: int32(priority.PriorityKey),
+	}
+}
+
+func convertFromPBPriority(priority *commonpb.Priority) Priority {
+	// If the priority is nil, return the default value.
+	if priority == nil {
+		return Priority{}
+	}
+
+	return Priority{
+		PriorityKey: int(priority.PriorityKey),
+	}
+}
+
 // GetLastCompletionResultFromWorkflowInfo returns value of last completion result.
 func GetLastCompletionResultFromWorkflowInfo(info *WorkflowInfo) *commonpb.Payloads {
 	return info.lastCompletionResult
@@ -2520,7 +2629,7 @@ func GetLastCompletionResultFromWorkflowInfo(info *WorkflowInfo) *commonpb.Paylo
 
 // DeterministicKeys returns the keys of a map in deterministic (sorted) order. To be used in for
 // loops in workflows for deterministic iteration.
-func DeterministicKeys[K constraints.Ordered, V any](m map[K]V) []K {
+func DeterministicKeys[K cmp.Ordered, V any](m map[K]V) []K {
 	r := make([]K, 0, len(m))
 	for k := range m {
 		r = append(r, k)
@@ -2551,16 +2660,34 @@ func AllHandlersFinished(ctx Context) bool {
 //
 // Exposed as: [go.temporal.io/sdk/workflow.NexusOperationOptions]
 type NexusOperationOptions struct {
+	// ScheduleToCloseTimeout - The end to end timeout for the Nexus Operation
+	//
+	// Optional: defaults to the maximum allowed by the Temporal server.
 	ScheduleToCloseTimeout time.Duration
+
+	// CancellationType - Indicates what action should be taken when the caller is cancelled.
+	//
+	// Optional: defaults to NexusOperationCancellationTypeWaitCompleted.
+	//
+	// NOTE: Experimental
+	CancellationType NexusOperationCancellationType
+
+	// Summary is a single-line fixed summary for this Nexus Operation that will appear in UI/CLI. This can be
+	// in single-line Temporal Markdown format.
+	//
+	// Optional: defaults to none/empty.
+	//
+	// NOTE: Experimental
+	Summary string
 }
 
 // NexusOperationExecution is the result of NexusOperationFuture.GetNexusOperationExecution.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.NexusOperationExecution]
 type NexusOperationExecution struct {
-	// Operation ID as set by the Operation's handler. May be empty if the operation hasn't started yet or completed
+	// Operation token as set by the Operation's handler. May be empty if the operation hasn't started yet or completed
 	// synchronously.
-	OperationID string
+	OperationToken string
 }
 
 // NexusOperationFuture represents the result of a Nexus Operation.
@@ -2572,15 +2699,13 @@ type NexusOperationFuture interface {
 	// For synchronous operations, this will be resolved at the same as the containing [NexusOperationFuture]. For
 	// asynchronous operations, this future is resolved independently.
 	// If the operation is unsuccessful, this future will contain the same error as the [NexusOperationFuture].
-	// Use this method to extract the Operation ID of an asynchronous operation. OperationID will be empty for
+	// Use this method to extract the Operation token of an asynchronous operation. OperationToken will be empty for
 	// synchronous operations.
-	//
-	// NOTE: Experimental
 	//
 	//  fut := nexusClient.ExecuteOperation(ctx, op, ...)
 	//  var exec workflow.NexusOperationExecution
 	//  if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err == nil {
-	//      // Nexus Operation started, OperationID is optionally set.
+	//      // Nexus Operation started, OperationToken is optionally set.
 	//  }
 	GetNexusOperationExecution() Future
 }
@@ -2589,18 +2714,12 @@ type NexusOperationFuture interface {
 // NOTE to maintainers, this interface definition is duplicated in the workflow package to provide a better UX.
 type NexusClient interface {
 	// The endpoint name this client uses.
-	//
-	// NOTE: Experimental
 	Endpoint() string
 	// The service name this client uses.
-	//
-	// NOTE: Experimental
 	Service() string
 
 	// ExecuteOperation executes a Nexus Operation.
 	// The operation argument can be a string, a [nexus.Operation] or a [nexus.OperationReference].
-	//
-	// NOTE: Experimental
 	ExecuteOperation(ctx Context, operation any, input any, options NexusOperationOptions) NexusOperationFuture
 }
 
@@ -2610,8 +2729,6 @@ type nexusClient struct {
 
 // Create a [NexusClient] from an endpoint name and a service name.
 //
-// NOTE: Experimental
-//
 // Exposed as: [go.temporal.io/sdk/workflow.NewNexusClient]
 func NewNexusClient(endpoint, service string) NexusClient {
 	if endpoint == "" {
@@ -2619,6 +2736,12 @@ func NewNexusClient(endpoint, service string) NexusClient {
 	}
 	if service == "" {
 		panic("service must not be empty")
+	}
+	if strings.HasPrefix(endpoint, temporalPrefix) {
+		panic("endpoint cannot use reserved __temporal_ prefix")
+	}
+	if strings.HasPrefix(service, temporalPrefix) {
+		panic("service cannot use reserved __temporal_ prefix")
 	}
 	return nexusClient{endpoint, service}
 }
@@ -2649,17 +2772,26 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 	var ok bool
 	var operationName string
 	if operationName, ok = input.Operation.(string); ok {
-	} else if regOp, ok := input.Operation.(interface{ Name() string }); ok {
+	} else if regOp, ok := input.Operation.(interface {
+		Name() string
+		InputType() reflect.Type
+	}); ok {
 		operationName = regOp.Name()
+		inputType := reflect.TypeOf(input.Input)
+		if inputType != nil && !inputType.AssignableTo(regOp.InputType()) {
+			return executeNexusOperationParams{}, fmt.Errorf("cannot assign argument of type %q to type %q for operation %q", inputType, regOp.InputType(), operationName)
+		}
 	} else {
 		return executeNexusOperationParams{}, fmt.Errorf("invalid 'operation' parameter, must be an OperationReference or a string")
 	}
-	// TODO(bergundy): Validate operation types against input once there's a good way to extract the generic types from
-	// OperationReference in the Nexus Go SDK.
 
 	payload, err := dc.ToPayload(input.Input)
 	if err != nil {
 		return executeNexusOperationParams{}, err
+	}
+
+	if input.Options.CancellationType == NexusOperationCancellationTypeUnspecified {
+		input.Options.CancellationType = NexusOperationCancellationTypeWaitCompleted
 	}
 
 	return executeNexusOperationParams{
@@ -2679,7 +2811,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 		executionFuture:  executionFuture.(*futureImpl),
 	}
 
-	// Immediately return if the context has an error without spawning the child workflow
+	// Immediately return if the context has an error without spawning the Nexus operation.
 	if ctx.Err() != nil {
 		executionSettable.Set(nil, ctx.Err())
 		mainSettable.Set(nil, ctx.Err())
@@ -2695,7 +2827,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 		return result
 	}
 
-	var operationID string
+	var operationToken string
 	seq := wc.env.ExecuteNexusOperation(params, func(r *commonpb.Payload, e error) {
 		var payloads *commonpb.Payloads
 		if r != nil {
@@ -2706,22 +2838,32 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 			// future is done, we don't need cancellation anymore
 			ctxDone.removeReceiveCallback(cancellationCallback)
 		}
-	}, func(opID string, e error) {
-		operationID = opID
-		executionSettable.Set(NexusOperationExecution{opID}, e)
+	}, func(token string, e error) {
+		operationToken = token
+		executionSettable.Set(NexusOperationExecution{
+			OperationToken: operationToken,
+		}, e)
 	})
 
 	if cancellable {
 		cancellationCallback.fn = func(v any, _ bool) bool {
 			assertNotInReadOnlyStateCancellation(ctx)
 			if ctx.Err() == ErrCanceled && !mainFuture.IsReady() {
-				// Go back to the top of the interception chain.
-				getWorkflowOutboundInterceptor(ctx).RequestCancelNexusOperation(ctx, RequestCancelNexusOperationInput{
-					Client:    input.Client,
-					Operation: input.Operation,
-					ID:        operationID,
-					seq:       seq,
-				})
+				if input.Options.CancellationType == NexusOperationCancellationTypeAbandon {
+					// Caller has indicated we should not send the cancel request, so just mark futures as done.
+					mainSettable.Set(nil, ErrCanceled)
+					if !executionFuture.IsReady() {
+						executionSettable.Set(nil, ErrCanceled)
+					}
+				} else {
+					// Go back to the top of the interception chain.
+					getWorkflowOutboundInterceptor(ctx).RequestCancelNexusOperation(ctx, RequestCancelNexusOperationInput{
+						Client:    input.Client,
+						Operation: input.Operation,
+						Token:     operationToken,
+						seq:       seq,
+					})
+				}
 			}
 			return false
 		}

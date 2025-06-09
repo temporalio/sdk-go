@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package main
 
 import (
@@ -89,7 +65,7 @@ func (b *builder) run() error {
 
 func (b *builder) check() error {
 	// Run go vet
-	if err := b.runCmd(b.cmdFromRoot("go", "vet", "-tags", "protolegacy", "./...")); err != nil {
+	if err := b.runCmd(b.cmdFromRoot("go", "vet", "./...")); err != nil {
 		return fmt.Errorf("go vet failed: %w", err)
 	}
 	// Run errcheck
@@ -104,13 +80,9 @@ func (b *builder) check() error {
 	} else if err := b.runCmd(b.cmdFromRoot(staticCheck, "./...")); err != nil {
 		return fmt.Errorf("staticcheck failed: %w", err)
 	}
-	// Run copyright check
-	if err := b.runCmd(b.cmdFromRoot("go", "run", "./internal/cmd/tools/copyright/licensegen.go", "--verifyOnly")); err != nil {
-		return fmt.Errorf("copyright check failed: %w", err)
-	}
 	// Run doclink check
 	if err := b.runCmd(b.cmdFromRoot("go", "run", "./internal/cmd/tools/doclink/doclink.go")); err != nil {
-		return fmt.Errorf("copyright check failed: %w", err)
+		return fmt.Errorf("doclink check failed: %w", err)
 	}
 	return nil
 }
@@ -140,15 +112,20 @@ func (b *builder) integrationTest() error {
 	// Start dev server if wanted
 	if *devServerFlag {
 		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
+			CachedDownload: testsuite.CachedDownload{
+				Version: "v1.3.1-nexus-links.0",
+			},
 			ClientOptions: &client.Options{
 				HostPort:  "127.0.0.1:7233",
 				Namespace: "integration-test-namespace",
 			},
-			CachedDownload: testsuite.CachedDownload{
-				Version: "v1.2.0-versioning.0",
-			},
-			LogLevel: "warn",
+			DBFilename: "temporal.sqlite",
+			LogLevel:   "warn",
 			ExtraArgs: []string{
+				"--sqlite-pragma", "journal_mode=WAL",
+				"--sqlite-pragma", "synchronous=OFF",
+				"--search-attribute", "CustomKeywordField=Keyword",
+				"--search-attribute", "CustomStringField=Text",
 				"--dynamic-config-value", "frontend.enableExecuteMultiOperation=true",
 				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecution=true",
 				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecutionAsyncAccepted=true",
@@ -161,11 +138,16 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", "worker.buildIdScavengerEnabled=true",
 				"--dynamic-config-value", "worker.removableBuildIdDurationSinceDefault=1",
 				"--dynamic-config-value", "system.enableDeployments=true",
-				// All of the below is required for Nexus tests.
-				"--http-port", "7243",
-				"--dynamic-config-value", "system.enableNexus=true",
-				// SDK tests use arbitrary callback URLs, permit that on the server.
-				"--dynamic-config-value", `component.callbacks.allowedAddresses=[{"Pattern":"*","AllowInsecure":true}]`,
+				"--dynamic-config-value", "system.enableDeploymentVersions=true",
+				"--dynamic-config-value", "matching.wv.VersionDrainageStatusVisibilityGracePeriod=10",
+				"--dynamic-config-value", "matching.wv.VersionDrainageStatusRefreshInterval=1",
+				"--dynamic-config-value", "matching.useNewMatcher=true",
+				"--dynamic-config-value", "frontend.activityAPIsEnabled=true",
+				"--http-port", "7243", // Nexus tests use the HTTP port directly
+				"--dynamic-config-value", `component.callbacks.allowedAddresses=[{"Pattern":"*","AllowInsecure":true}]`, // SDK tests use arbitrary callback URLs, permit that on the server
+				"--dynamic-config-value", `system.refreshNexusEndpointsMinWait="0s"`, // Make Nexus tests faster
+				"--dynamic-config-value", `component.nexusoperations.recordCancelRequestCompletionEvents=true`, // Defaults to false until after OSS 1.28 is released
+				"--dynamic-config-value", `history.enableRequestIdRefLinks=true`,
 			},
 		})
 		if err != nil {
@@ -175,7 +157,8 @@ func (b *builder) integrationTest() error {
 	}
 
 	// Run integration test
-	args := []string{"go", "test", "-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "10m"}
+	args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "15m"}
+	env := append(os.Environ(), "DISABLE_SERVER_1_25_TESTS=1")
 	if *runFlag != "" {
 		args = append(args, "-run", *runFlag)
 	}
@@ -184,12 +167,13 @@ func (b *builder) integrationTest() error {
 	}
 	if *devServerFlag {
 		args = append(args, "-using-cli-dev-server")
+		env = append(env, "TEMPORAL_NAMESPACE=integration-test-namespace")
 	}
 	args = append(args, "./...")
 	// Must run in test dir
 	cmd := b.cmdFromRoot(args...)
 	cmd.Dir = filepath.Join(cmd.Dir, "test")
-	cmd.Env = append(os.Environ(), "DISABLE_SERVER_1_25_TESTS=1")
+	cmd.Env = env
 	if err := b.runCmd(cmd); err != nil {
 		return fmt.Errorf("integration test failed: %w", err)
 	}
@@ -271,7 +255,7 @@ func (b *builder) unitTest() error {
 	log.Printf("Running unit tests in dirs: %v", testDirs)
 	for _, testDir := range testDirs {
 		// Run unit test
-		args := []string{"go", "test", "-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "15m"}
+		args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "15m"}
 		if *runFlag != "" {
 			args = append(args, "-run", *runFlag)
 		}

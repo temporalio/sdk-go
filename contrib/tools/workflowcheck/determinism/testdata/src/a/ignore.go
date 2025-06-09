@@ -15,8 +15,9 @@ func IgnoreAboveLine() { // want IgnoreAboveLine:"calls non-deterministic functi
 	fmt.Println("Do not ignore this")
 }
 
-//workflowcheck:ignore
 // IgnoreEntireFunction can have a Godoc comment too
+//
+//workflowcheck:ignore
 func IgnoreEntireFunction() {
 	fmt.Print("Do not ignore this")
 	fmt.Printf("Ignore this")

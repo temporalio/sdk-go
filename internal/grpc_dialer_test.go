@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -36,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pborman/uuid"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/api/common/v1"
@@ -129,13 +105,13 @@ func TestHeadersProvider_Error(t *testing.T) {
 
 func TestHeadersProvider_NotIncludedWhenNil(t *testing.T) {
 	interceptors := requiredInterceptors(&ClientOptions{}, nil)
-	require.Equal(t, 5, len(interceptors))
+	require.Equal(t, 6, len(interceptors))
 }
 
 func TestHeadersProvider_IncludedWithHeadersProvider(t *testing.T) {
 	opts := &ClientOptions{HeadersProvider: authHeadersProvider{token: "test-auth-token"}}
 	interceptors := requiredInterceptors(opts, nil)
-	require.Equal(t, 6, len(interceptors))
+	require.Equal(t, 7, len(interceptors))
 }
 
 func TestMissingGetServerInfo(t *testing.T) {
@@ -371,7 +347,7 @@ func TestCustomResolver(t *testing.T) {
 	defer s2.Stop()
 
 	// Register resolver for both IPs and create client using it
-	scheme := "test-resolve-" + uuid.New()
+	scheme := "test-resolve-" + uuid.NewString()
 	builder := manual.NewBuilderWithScheme(scheme)
 	builder.InitialState(resolver.State{Addresses: []resolver.Address{{Addr: s1.addr}, {Addr: s2.addr}}})
 	resolver.Register(builder)
@@ -396,7 +372,7 @@ func TestCustomResolver(t *testing.T) {
 	}
 	var peerOut peer.Peer
 	for len(connected) < 2 {
-		req.RequestId = uuid.New()
+		req.RequestId = uuid.NewString()
 		_, err := client.WorkflowService().SignalWorkflowExecution(context.Background(), &req, grpc.Peer(&peerOut))
 		if err == nil {
 			connected[peerOut.Addr] = struct{}{}
@@ -530,6 +506,33 @@ func TestCredentialsAPIKey(t *testing.T) {
 	)
 }
 
+func TestNamespaceInterceptor(t *testing.T) {
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+
+	// Fixed string
+	client, err := DialClient(context.Background(), ClientOptions{
+		Namespace: "test-namespace",
+		HostPort:  srv.addr,
+	})
+	require.NoError(t, err)
+	defer client.Close()
+	// Verify namespace header is not set in the context
+	require.Equal(
+		t,
+		[]string(nil),
+		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, temporalNamespaceHeaderKey),
+	)
+	// Verify namespace header is set on a request that does have namespace on the request
+	require.NoError(t, client.SignalWorkflow(context.Background(), "workflowid", "runid", "signalname", nil))
+	require.Equal(
+		t,
+		[]string{"test-namespace"},
+		metadata.ValueFromIncomingContext(srv.lastSignalWorkflowExecutionContext, temporalNamespaceHeaderKey),
+	)
+}
+
 func TestCredentialsMTLS(t *testing.T) {
 	// Just confirming option is set, not full end-to-end mTLS test
 
@@ -565,6 +568,7 @@ type testGRPCServer struct {
 	getSystemInfoRequestContext          context.Context
 	getSystemInfoResponse                workflowservice.GetSystemInfoResponse
 	getSystemInfoResponseError           error
+	lastSignalWorkflowExecutionContext   context.Context
 	signalWorkflowExecutionResponse      workflowservice.SignalWorkflowExecutionResponse
 	signalWorkflowExecutionResponseError error
 }
@@ -624,10 +628,11 @@ func (t *testGRPCServer) GetSystemInfo(
 }
 
 func (t *testGRPCServer) SignalWorkflowExecution(
-	context.Context,
-	*workflowservice.SignalWorkflowExecutionRequest,
+	ctx context.Context,
+	_ *workflowservice.SignalWorkflowExecutionRequest,
 ) (*workflowservice.SignalWorkflowExecutionResponse, error) {
 	atomic.AddInt32(&t.sigWfCount, 1)
+	t.lastSignalWorkflowExecutionContext = ctx
 	return &t.signalWorkflowExecutionResponse, t.signalWorkflowExecutionResponseError
 }
 
