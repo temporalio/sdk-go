@@ -1234,8 +1234,7 @@ func TestDynamicWorkflows(t *testing.T) {
 }
 
 func SleepHour(ctx Context) error {
-	Sleep(ctx, time.Hour)
-	return nil
+	return Sleep(ctx, time.Hour)
 }
 
 func SleepThenCancel(ctx Context) error {
