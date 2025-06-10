@@ -375,9 +375,8 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentUpdateVersionMetadataOptions]
 	WorkerDeploymentUpdateVersionMetadataOptions struct {
-		// Version - Identifier in the form of "<deployment_name>.<build_id>" for the Version
-		// to be updated.
-		Version string
+		// Version - the deployment version to target.
+		Version WorkerDeploymentVersion
 
 		// MetadataUpdate - Changes to the user-defined metadata entries for this Version.
 		MetadataUpdate WorkerDeploymentMetadataUpdate
