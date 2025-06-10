@@ -58,6 +58,7 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 		slotReservationData: slotReservationData{
 			taskQueue: params.TaskQueue,
 		},
+		isInternalWorker: params.isInternalWorker(),
 	},
 	)
 

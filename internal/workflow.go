@@ -85,7 +85,8 @@ const (
 	NexusOperationCancellationTypeAbandon
 
 	// NexusOperationCancellationTypeTryCancel - Initiate a cancellation request for the Nexus operation and immediately report cancellation
-	// to the caller.
+	// to the caller. Note that it doesn't guarantee that cancellation is delivered to the operation if calling workflow exits before the delivery is done.
+	// If you want to ensure that cancellation is delivered to the operation, use NexusOperationCancellationTypeWaitRequested.
 	NexusOperationCancellationTypeTryCancel
 
 	// NexusOperationCancellationTypeWaitRequested - Request cancellation of the Nexus operation and wait for confirmation that the request was received.
@@ -426,6 +427,9 @@ type (
 
 		// VersioningIntent specifies whether this child workflow should run on a worker with a
 		// compatible build ID or not. See VersioningIntent.
+		//
+		// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+		//
 		// WARNING: Worker versioning is currently experimental
 		VersioningIntent VersioningIntent
 

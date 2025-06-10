@@ -286,7 +286,7 @@ func createSession(ctx Context, creationTaskqueue string, options *SessionOption
 
 	taskqueueChan := GetSignalChannel(ctx, sessionID) // use sessionID as channel name
 	// Retry is only needed when creating new session and the error returned is
-	// NewApplicationError(errTooManySessionsMsg). Therefore we make sure to
+	// NewApplicationError(errTooManySessionsMsg). Therefore, we make sure to
 	// disable retrying for start-to-close and heartbeat timeouts which can occur
 	// when attempting to retry a create-session on a different worker.
 	retryPolicy := &RetryPolicy{
@@ -417,6 +417,14 @@ func sessionCreationActivity(ctx context.Context, sessionID string) error {
 		select {
 		case <-ctx.Done():
 			sessionEnv.CompleteSession(sessionID)
+			// Because of how session creation configures retryPolicy, we need to wrap context cancels that don't
+			// originate from the server as non-retryable errors. See retrypolicy in createSession() above.
+			if !(ctx.Err() == context.Canceled && errors.Is(context.Cause(ctx), &CanceledError{})) {
+				return NewApplicationErrorWithOptions(
+					"session failed due to worker shutdown", "SessionWorkerShutdown",
+					ApplicationErrorOptions{NonRetryable: true, Cause: ctx.Err()})
+
+			}
 			return ctx.Err()
 		case <-ticker.C:
 			heartbeatOp := func() error {
