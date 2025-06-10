@@ -61,6 +61,8 @@ func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 
 // WithWorkflowVersioningIntent is used to set the VersioningIntent before constructing a
 // ContinueAsNewError with NewContinueAsNewError.
+//
+// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
 func WithWorkflowVersioningIntent(ctx Context, intent temporal.VersioningIntent) Context {
 	return internal.WithWorkflowVersioningIntent(ctx, intent)
 }
