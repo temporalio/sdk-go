@@ -784,6 +784,7 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 		logger:             env.logger,
 		interceptors:       env.registry.interceptors,
 		contextPropagators: env.contextPropagators,
+		workerStopChannel:  env.workerStopChannel,
 	}
 
 	result := taskHandler.executeLocalActivityTask(task)
@@ -1578,6 +1579,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocal
 		dataConverter:      env.dataConverter,
 		contextPropagators: env.contextPropagators,
 		interceptors:       env.registry.interceptors,
+		workerStopChannel:  env.workerStopChannel,
 	}
 
 	env.localActivities[activityID] = task
