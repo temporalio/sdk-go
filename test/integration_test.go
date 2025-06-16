@@ -2414,9 +2414,7 @@ func (ts *IntegrationTestSuite) TestGracefulLocalActivityCompletion() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	localActivityFn := func(ctx context.Context) error {
-		// There is a slight delay between when workerStopChannel closes and when backgroundContextCancel is canceled
 		<-activity.GetWorkerStopChannel(ctx)
-		time.Sleep(100 * time.Millisecond)
 		return ctx.Err()
 	}
 
@@ -7779,12 +7777,9 @@ func (ts *IntegrationTestSuite) TestLocalActivityCancelFromWorkerShutdown() {
 }
 
 func (ts *IntegrationTestSuite) TestLocalActivityWorkerShutdownNoHeartbeat() {
-	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	localActivityFn := func(ctx context.Context) error {
-		// There is a slight delay between when workerStopChannel closes and when backgroundContextCancel is canceled
-		<-activity.GetWorkerStopChannel(ctx)
 		time.Sleep(100 * time.Millisecond)
 		return ctx.Err()
 	}
@@ -7854,9 +7849,7 @@ func (ts *IntegrationTestSuite) TestLocalActivityCompleteWithinGracefulShutdown(
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	localActivityFn := func(ctx context.Context) error {
-		// There is a slight delay between when workerStopChannel closes and when backgroundContextCancel is canceled
 		<-activity.GetWorkerStopChannel(ctx)
-		time.Sleep(100 * time.Millisecond)
 		return ctx.Err()
 	}
 	workflowFn := func(ctx workflow.Context) error {
