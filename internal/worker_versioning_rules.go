@@ -40,7 +40,9 @@ type (
 
 	// VersioningAssignmentRuleWithTimestamp contains an assignment rule annotated
 	// by the server with its creation time.
+	//
 	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	//
 	// WARNING: Worker versioning is currently experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningAssignmentRuleWithTimestamp]
@@ -52,7 +54,9 @@ type (
 
 	// VersioningAssignmentRule is a BuildID redirect rule for a task queue.
 	// It changes the behavior of currently running workflows and new ones.
+	//
 	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	//
 	// WARNING: Worker versioning is currently experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningRedirectRule]
@@ -65,6 +69,8 @@ type (
 	// by the server with its creation time.
 	// WARNING: Worker versioning is currently experimental
 	//
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningRedirectRuleWithTimestamp]
 	VersioningRedirectRuleWithTimestamp struct {
 		Rule VersioningRedirectRule
@@ -75,7 +81,9 @@ type (
 	// VersioningConflictToken is a conflict token to serialize updates.
 	// An update with an old token fails with `serviceerror.FailedPrecondition`.
 	// The current token can be obtained with [GetWorkerVersioningRules], or returned by a successful [UpdateWorkerVersioningRules].
+	//
 	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	//
 	// WARNING: Worker versioning is currently experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningConflictToken]
@@ -84,7 +92,9 @@ type (
 	}
 
 	// UpdateWorkerVersioningRulesOptions is the input to [Client.UpdateWorkerVersioningRules].
+	//
 	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	//
 	// WARNING: Worker versioning is currently experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.UpdateWorkerVersioningRulesOptions]
@@ -120,7 +130,9 @@ type (
 	// By default, the new rule is inserted at the beginning of the list
 	// (index 0). If the given index is too larger the rule will be
 	// inserted at the end of the list.
+	//
 	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	//
 	// WARNING: Worker versioning is currently experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningOperationInsertAssignmentRule]
@@ -134,7 +146,9 @@ type (
 	// unconditional rule, i.e., no hint filter or ramp, is enforced, otherwise
 	// the delete operation will be rejected. Set `force` to true to
 	// bypass this validation.
+	//
 	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	//
 	// WARNING: Worker versioning is currently experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningOperationReplaceAssignmentRule]
@@ -149,7 +163,9 @@ type (
 	// unconditional rule, i.e., no hint filter or ramp, is enforced, otherwise
 	// the delete operation will be rejected. Set `force` to true to
 	// bypass this validation.
+	//
 	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	//
 	// WARNING: Worker versioning is currently experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningOperationDeleteAssignmentRule]
@@ -161,7 +177,9 @@ type (
 	// VersioningOperationAddRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that adds the rule to the list of redirect rules for this Task Queue. There
 	// can be at most one redirect rule for each distinct Source BuildID.
+	//
 	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	//
 	// WARNING: Worker versioning is currently experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningOperationAddRedirectRule]
@@ -171,7 +189,9 @@ type (
 
 	// VersioningOperationReplaceRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that replaces the routing rule with the given source BuildID.
+	//
 	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	//
 	// WARNING: Worker versioning is currently experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningOperationReplaceRedirectRule]
@@ -181,7 +201,9 @@ type (
 
 	// VersioningOperationDeleteRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that deletes the routing rule with the given source Build ID.
+	//
 	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	//
 	// WARNING: Worker versioning is currently experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningOperationDeleteRedirectRule]
@@ -202,7 +224,9 @@ type (
 	// To prevent committing invalid Build IDs, we reject the request if no
 	// pollers have been seen recently for this Build ID. Use the `force`
 	// option to disable this validation.
+	//
 	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	//
 	// WARNING: Worker versioning is currently experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningOperationCommitBuildID]
@@ -214,7 +238,9 @@ type (
 
 // Token
 // Returns an internal representation of this token, mostly for debugging purposes.
+//
 // Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+//
 // WARNING: Worker versioning is currently experimental
 func (c *VersioningConflictToken) Token() []byte {
 	return c.token
@@ -292,7 +318,9 @@ func (uw *UpdateWorkerVersioningRulesOptions) validateAndConvertToProto(namespac
 }
 
 // GetWorkerVersioningOptions is the input to [Client.GetWorkerVersioningRules].
+//
 // Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+//
 // WARNING: Worker versioning is currently experimental
 //
 // Exposed as: [go.temporal.io/sdk/client.GetWorkerVersioningOptions]
@@ -318,7 +346,9 @@ func (gw *GetWorkerVersioningOptions) validateAndConvertToProto(namespace string
 }
 
 // WorkerVersioningRules is the response for [Client.GetWorkerVersioningRules].
+//
 // Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+//
 // WARNING: Worker versioning is currently experimental
 //
 // Exposed as: [go.temporal.io/sdk/client.WorkerVersioningRules]

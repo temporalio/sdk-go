@@ -393,6 +393,8 @@ func (_m *Client) GetWorkerTaskReachability(ctx context.Context, options *client
 }
 
 // GetWorkerVersioningRules provides a mock function with given fields: ctx, options
+//
+//lint:ignore SA1019 ignore for SDK mocks
 func (_m *Client) GetWorkerVersioningRules(ctx context.Context, options client.GetWorkerVersioningOptions) (*client.WorkerVersioningRules, error) {
 	ret := _m.Called(ctx, options)
 
@@ -400,19 +402,24 @@ func (_m *Client) GetWorkerVersioningRules(ctx context.Context, options client.G
 		panic("no return value specified for GetWorkerVersioningRules")
 	}
 
+	//lint:ignore SA1019 ignore for SDK mocks
 	var r0 *client.WorkerVersioningRules
 	var r1 error
+	//lint:ignore SA1019 ignore for SDK mocks
 	if rf, ok := ret.Get(0).(func(context.Context, client.GetWorkerVersioningOptions) (*client.WorkerVersioningRules, error)); ok {
 		return rf(ctx, options)
 	}
+	//lint:ignore SA1019 ignore for SDK mocks
 	if rf, ok := ret.Get(0).(func(context.Context, client.GetWorkerVersioningOptions) *client.WorkerVersioningRules); ok {
 		r0 = rf(ctx, options)
 	} else {
 		if ret.Get(0) != nil {
+			//lint:ignore SA1019 ignore for SDK mocks
 			r0 = ret.Get(0).(*client.WorkerVersioningRules)
 		}
 	}
 
+	//lint:ignore SA1019 ignore for SDK mocks
 	if rf, ok := ret.Get(1).(func(context.Context, client.GetWorkerVersioningOptions) error); ok {
 		r1 = rf(ctx, options)
 	} else {
@@ -961,6 +968,8 @@ func (_m *Client) UpdateWorkerBuildIdCompatibility(ctx context.Context, options 
 }
 
 // UpdateWorkerVersioningRules provides a mock function with given fields: ctx, options
+//
+//lint:ignore SA1019 ignore for SDK mocks
 func (_m *Client) UpdateWorkerVersioningRules(ctx context.Context, options client.UpdateWorkerVersioningRulesOptions) (*client.WorkerVersioningRules, error) {
 	ret := _m.Called(ctx, options)
 
@@ -968,19 +977,24 @@ func (_m *Client) UpdateWorkerVersioningRules(ctx context.Context, options clien
 		panic("no return value specified for UpdateWorkerVersioningRules")
 	}
 
+	//lint:ignore SA1019 ignore for SDK mocks
 	var r0 *client.WorkerVersioningRules
 	var r1 error
+	//lint:ignore SA1019 ignore for SDK mocks
 	if rf, ok := ret.Get(0).(func(context.Context, client.UpdateWorkerVersioningRulesOptions) (*client.WorkerVersioningRules, error)); ok {
 		return rf(ctx, options)
 	}
+	//lint:ignore SA1019 ignore for SDK mocks
 	if rf, ok := ret.Get(0).(func(context.Context, client.UpdateWorkerVersioningRulesOptions) *client.WorkerVersioningRules); ok {
 		r0 = rf(ctx, options)
 	} else {
 		if ret.Get(0) != nil {
+			//lint:ignore SA1019 ignore for SDK mocks
 			r0 = ret.Get(0).(*client.WorkerVersioningRules)
 		}
 	}
 
+	//lint:ignore SA1019 ignore for SDK mocks
 	if rf, ok := ret.Get(1).(func(context.Context, client.UpdateWorkerVersioningRulesOptions) error); ok {
 		r1 = rf(ctx, options)
 	} else {
