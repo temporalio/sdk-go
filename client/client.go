@@ -756,7 +756,7 @@ type (
 	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
 	//
 	// WARNING: Worker versioning is currently experimental.
-	VersioningRampByPercentage = internal.VersioningRampByPercentage
+	VersioningRampByPercentage = internal.VersioningRampByPercentage //lint:ignore SA1019 transitioning to Worker Deployments
 
 	// VersioningAssignmentRule is a BuildID  assigment rule for a task queue.
 	// Assignment rules only affect new workflows.
@@ -764,7 +764,7 @@ type (
 	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
 	//
 	// WARNING: Worker versioning is currently experimental.
-	VersioningAssignmentRule = internal.VersioningAssignmentRule
+	VersioningAssignmentRule = internal.VersioningAssignmentRule //lint:ignore SA1019 transitioning to Worker Deployments
 
 	// VersioningAssignmentRuleWithTimestamp contains an assignment rule annotated
 	// by the server with its creation time.

@@ -16,7 +16,9 @@ type (
 	}
 
 	// VersioningRampByPercentage sends a proportion of the traffic to the target Build ID.
+         //
 	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	//
 	// WARNING: Worker versioning is currently experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningRampByPercentage]
@@ -27,7 +29,9 @@ type (
 
 	// VersioningAssignmentRule is a BuildID assigment rule for a task queue.
 	// Assignment rules only affect new workflows.
+         //
 	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	//
 	// WARNING: Worker versioning is currently experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningAssignmentRule]
