@@ -16,8 +16,8 @@ type (
 	}
 
 	// VersioningRampByPercentage sends a proportion of the traffic to the target Build ID.
-         //
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	//
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental
 	//
@@ -29,8 +29,8 @@ type (
 
 	// VersioningAssignmentRule is a BuildID assigment rule for a task queue.
 	// Assignment rules only affect new workflows.
-         //
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	//
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental
 	//
@@ -45,7 +45,7 @@ type (
 	// VersioningAssignmentRuleWithTimestamp contains an assignment rule annotated
 	// by the server with its creation time.
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental
 	//
@@ -59,7 +59,7 @@ type (
 	// VersioningAssignmentRule is a BuildID redirect rule for a task queue.
 	// It changes the behavior of currently running workflows and new ones.
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental
 	//
@@ -73,7 +73,7 @@ type (
 	// by the server with its creation time.
 	// WARNING: Worker versioning is currently experimental
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningRedirectRuleWithTimestamp]
 	VersioningRedirectRuleWithTimestamp struct {
@@ -86,7 +86,7 @@ type (
 	// An update with an old token fails with `serviceerror.FailedPrecondition`.
 	// The current token can be obtained with [GetWorkerVersioningRules], or returned by a successful [UpdateWorkerVersioningRules].
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental
 	//
@@ -97,7 +97,7 @@ type (
 
 	// UpdateWorkerVersioningRulesOptions is the input to [Client.UpdateWorkerVersioningRules].
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental
 	//
@@ -122,7 +122,7 @@ type (
 	//   - [VersioningOperationDeleteRedirectRule]
 	//   - [VersioningOperationCommitBuildID]
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	VersioningOperation interface {
 		validateOp() error
 	}
@@ -135,7 +135,7 @@ type (
 	// (index 0). If the given index is too larger the rule will be
 	// inserted at the end of the list.
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental
 	//
@@ -151,7 +151,7 @@ type (
 	// the delete operation will be rejected. Set `force` to true to
 	// bypass this validation.
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental
 	//
@@ -168,7 +168,7 @@ type (
 	// the delete operation will be rejected. Set `force` to true to
 	// bypass this validation.
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental
 	//
@@ -182,7 +182,7 @@ type (
 	// that adds the rule to the list of redirect rules for this Task Queue. There
 	// can be at most one redirect rule for each distinct Source BuildID.
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental
 	//
@@ -194,7 +194,7 @@ type (
 	// VersioningOperationReplaceRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that replaces the routing rule with the given source BuildID.
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental
 	//
@@ -206,7 +206,7 @@ type (
 	// VersioningOperationDeleteRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that deletes the routing rule with the given source Build ID.
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental
 	//
@@ -229,7 +229,7 @@ type (
 	// pollers have been seen recently for this Build ID. Use the `force`
 	// option to disable this validation.
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental
 	//
@@ -243,7 +243,7 @@ type (
 // Token
 // Returns an internal representation of this token, mostly for debugging purposes.
 //
-// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 //
 // WARNING: Worker versioning is currently experimental
 func (c *VersioningConflictToken) Token() []byte {
@@ -323,7 +323,7 @@ func (uw *UpdateWorkerVersioningRulesOptions) validateAndConvertToProto(namespac
 
 // GetWorkerVersioningOptions is the input to [Client.GetWorkerVersioningRules].
 //
-// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 //
 // WARNING: Worker versioning is currently experimental
 //
@@ -351,7 +351,7 @@ func (gw *GetWorkerVersioningOptions) validateAndConvertToProto(namespace string
 
 // WorkerVersioningRules is the response for [Client.GetWorkerVersioningRules].
 //
-// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 //
 // WARNING: Worker versioning is currently experimental
 //

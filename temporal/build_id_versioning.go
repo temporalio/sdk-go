@@ -5,7 +5,7 @@ import "go.temporal.io/sdk/internal"
 // VersioningIntent indicates whether the user intends certain commands to be run on
 // a compatible worker build ID version or not.
 //
-// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 //
 // WARNING: Worker versioning is currently experimental
 //

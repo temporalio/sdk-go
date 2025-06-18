@@ -735,7 +735,7 @@ type (
 
 	// UpdateWorkerVersioningRulesOptions is the input to [client.Client.UpdateWorkerVersioningRules].
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental.
 	UpdateWorkerVersioningRulesOptions = internal.UpdateWorkerVersioningRulesOptions //lint:ignore SA1019 transitioning to Worker Deployments
@@ -745,7 +745,7 @@ type (
 	// The current token can be obtained with [client.Client.GetWorkerVersioningRules],
 	// or returned by a successful [client.Client.UpdateWorkerVersioningRules].
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental.
 	VersioningConflictToken = internal.VersioningConflictToken //lint:ignore SA1019 transitioning to Worker Deployments
@@ -753,7 +753,7 @@ type (
 	// VersioningRampByPercentage is a VersionRamp that sends a proportion of the traffic
 	// to the target Build ID.
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental.
 	VersioningRampByPercentage = internal.VersioningRampByPercentage //lint:ignore SA1019 transitioning to Worker Deployments
@@ -761,7 +761,7 @@ type (
 	// VersioningAssignmentRule is a BuildID  assigment rule for a task queue.
 	// Assignment rules only affect new workflows.
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental.
 	VersioningAssignmentRule = internal.VersioningAssignmentRule //lint:ignore SA1019 transitioning to Worker Deployments
@@ -769,7 +769,7 @@ type (
 	// VersioningAssignmentRuleWithTimestamp contains an assignment rule annotated
 	// by the server with its creation time.
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental.
 	VersioningAssignmentRuleWithTimestamp = internal.VersioningAssignmentRuleWithTimestamp //lint:ignore SA1019 transitioning to Worker Deployments
@@ -777,7 +777,7 @@ type (
 	// VersioningAssignmentRule is a BuildID redirect rule for a task queue.
 	// It changes the behavior of currently running workflows and new ones.
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental.
 	VersioningRedirectRule = internal.VersioningRedirectRule //lint:ignore SA1019 transitioning to Worker Deployments
@@ -785,7 +785,7 @@ type (
 	// VersioningRedirectRuleWithTimestamp contains a redirect rule annotated
 	// by the server with its creation time.
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental.
 	VersioningRedirectRuleWithTimestamp = internal.VersioningRedirectRuleWithTimestamp //lint:ignore SA1019 transitioning to Worker Deployments
@@ -798,7 +798,7 @@ type (
 	// (index 0). If the given index is too larger the rule will be
 	// inserted at the end of the list.
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental.
 	VersioningOperationInsertAssignmentRule = internal.VersioningOperationInsertAssignmentRule //lint:ignore SA1019 transitioning to Worker Deployments
@@ -809,7 +809,7 @@ type (
 	// the delete operation will be rejected. Set `force` to true to
 	// bypass this validation.
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental.
 	VersioningOperationReplaceAssignmentRule = internal.VersioningOperationReplaceAssignmentRule //lint:ignore SA1019 transitioning to Worker Deployments
@@ -820,7 +820,7 @@ type (
 	// the delete operation will be rejected. Set `force` to true to
 	// bypass this validation.
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental.
 	VersioningOperationDeleteAssignmentRule = internal.VersioningOperationDeleteAssignmentRule //lint:ignore SA1019 transitioning to Worker Deployments
@@ -829,7 +829,7 @@ type (
 	// that adds the rule to the list of redirect rules for this Task Queue. There
 	// can be at most one redirect rule for each distinct Source BuildID.
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental.
 	VersioningOperationAddRedirectRule = internal.VersioningOperationAddRedirectRule //lint:ignore SA1019 transitioning to Worker Deployments
@@ -837,7 +837,7 @@ type (
 	// VersioningOperationReplaceRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that replaces the routing rule with the given source BuildID.
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental.
 	VersioningOperationReplaceRedirectRule = internal.VersioningOperationReplaceRedirectRule //lint:ignore SA1019 transitioning to Worker Deployments
@@ -845,7 +845,7 @@ type (
 	// VersioningOperationDeleteRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that deletes the routing rule with the given source Build ID.
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental.
 	VersioningOperationDeleteRedirectRule = internal.VersioningOperationDeleteRedirectRule //lint:ignore SA1019 transitioning to Worker Deployments
@@ -864,21 +864,21 @@ type (
 	// pollers have been seen recently for this Build ID. Use the `force`
 	// option to disable this validation.
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental.
 	VersioningOperationCommitBuildID = internal.VersioningOperationCommitBuildID //lint:ignore SA1019 transitioning to Worker Deployments
 
 	// GetWorkerVersioningOptions is the input to [client.Client.GetWorkerVersioningRules].
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental.
 	GetWorkerVersioningOptions = internal.GetWorkerVersioningOptions //lint:ignore SA1019 transitioning to Worker Deployments
 
 	// WorkerVersioningRules is the response for [client.Client.GetWorkerVersioningRules].
 	//
-	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 	//
 	// WARNING: Worker versioning is currently experimental.
 	WorkerVersioningRules = internal.WorkerVersioningRules //lint:ignore SA1019 transitioning to Worker Deployments
@@ -1242,7 +1242,7 @@ type (
 		// The errors it can return:
 		//  - serviceerror.FailedPrecondition when the conflict token is invalid
 		//
-		// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+		// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 		//
 		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
 		UpdateWorkerVersioningRules(ctx context.Context, options UpdateWorkerVersioningRulesOptions) (*WorkerVersioningRules, error)
@@ -1250,7 +1250,7 @@ type (
 		// GetWorkerVersioningRules
 		// Returns the worker-build-id assignment and redirect rules for a task queue.
 		//
-		// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+		// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 		//
 		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
 		GetWorkerVersioningRules(ctx context.Context, options GetWorkerVersioningOptions) (*WorkerVersioningRules, error)
