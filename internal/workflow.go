@@ -428,7 +428,7 @@ type (
 		// VersioningIntent specifies whether this child workflow should run on a worker with a
 		// compatible build ID or not. See VersioningIntent.
 		//
-		// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning
+		// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
 		//
 		// WARNING: Worker versioning is currently experimental
 		VersioningIntent VersioningIntent
