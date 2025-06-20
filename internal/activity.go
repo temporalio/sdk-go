@@ -340,6 +340,7 @@ func WithLocalActivityTask(
 	dataConverter converter.DataConverter,
 	interceptors []WorkerInterceptor,
 	client *WorkflowClient,
+	workerStopChannel <-chan struct{},
 ) (context.Context, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -386,6 +387,7 @@ func WithLocalActivityTask(
 		dataConverter:     dataConverter,
 		attempt:           task.attempt,
 		client:            client,
+		workerStopChannel: workerStopChannel,
 	})
 }
 

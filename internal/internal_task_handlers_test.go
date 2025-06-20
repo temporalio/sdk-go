@@ -1828,7 +1828,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 	t.True(ok)
 	taskHandlerImpl.laTunnel = laTunnel
 
-	laTaskPoller := newLocalActivityPoller(params, laTunnel, nil, nil)
+	laTaskPoller := newLocalActivityPoller(params, laTunnel, nil, nil, stopCh)
 	go func() {
 		for {
 			task, _ := laTaskPoller.PollTask()
@@ -1910,7 +1910,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 	t.True(ok)
 	taskHandlerImpl.laTunnel = laTunnel
 
-	laTaskPoller := newLocalActivityPoller(params, laTunnel, nil, nil)
+	laTaskPoller := newLocalActivityPoller(params, laTunnel, nil, nil, stopCh)
 	doneCh := make(chan struct{})
 	go func() {
 		// laTaskPoller needs to poll the local activity and process it
