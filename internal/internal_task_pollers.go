@@ -528,18 +528,7 @@ func (wtp *workflowTaskPoller) RespondTaskCompleted(
 }
 
 func (wtp *workflowTaskPoller) errorToFailWorkflowTask(taskToken []byte, err error) *workflowservice.RespondWorkflowTaskFailedRequest {
-	cause := enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
-	// If it was a panic due to a bad state machine or if it was a history
-	// mismatch error, mark as non-deterministic
-	if panicErr, _ := err.(*workflowPanicError); panicErr != nil {
-		if _, badStateMachine := panicErr.value.(stateMachineIllegalStatePanic); badStateMachine {
-			cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
-		}
-	} else if _, mismatch := err.(historyMismatchError); mismatch {
-		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
-	} else if _, unknown := err.(unknownSdkFlagError); unknown {
-		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
-	}
+	cause := errToWorkflowTaskFailedCause(err)
 
 	builtRequest := &workflowservice.RespondWorkflowTaskFailedRequest{
 		TaskToken:      taskToken,
@@ -1345,4 +1334,23 @@ func (*eagerWorkflowTask) isEmpty() bool {
 
 func (nt *nexusTask) isEmpty() bool {
 	return nt.task == nil
+}
+
+func errToWorkflowTaskFailedCause(err error) enumspb.WorkflowTaskFailedCause {
+	if err != nil {
+		cause := enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
+		// If it was a panic due to a bad state machine or if it was a history
+		// mismatch error, mark as non-deterministic
+		if panicErr, _ := err.(*workflowPanicError); panicErr != nil {
+			if _, badStateMachine := panicErr.value.(stateMachineIllegalStatePanic); badStateMachine {
+				cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
+			}
+		} else if _, mismatch := err.(historyMismatchError); mismatch {
+			cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
+		} else if _, unknown := err.(unknownSdkFlagError); unknown {
+			cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
+		}
+		return cause
+	}
+	return enumspb.WORKFLOW_TASK_FAILED_CAUSE_UNSPECIFIED
 }
