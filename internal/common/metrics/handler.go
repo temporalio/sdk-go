@@ -11,7 +11,8 @@ import "time"
 // handler. A handler may implement "Unwrap() Handler" if it wraps a handler.
 type Handler interface {
 	// WithTags returns a new handler with the given tags set for each metric
-	// created from it.
+	// created from it. Old tags from the previous handler are either preserved
+	// or overwritten, if an existing key is also present in the new tag set.
 	WithTags(map[string]string) Handler
 
 	// Counter obtains a counter for the given name.
