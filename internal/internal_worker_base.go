@@ -160,7 +160,6 @@ type (
 		// due to limited slots, rate limiting, or poller autoscaling.
 		pollerCount                  int
 		taskPoller                   taskPoller
-		pollerAutoscalingEnable      bool
 		pollerAutoscalerReportHandle *pollScalerReportHandle
 		pollerSemaphore              *pollerSemaphore
 	}
@@ -363,7 +362,7 @@ func (bw *baseWorker) Start() {
 			go bw.runPoller(taskWorker)
 		}
 
-		if taskWorker.pollerAutoscalingEnable {
+		if taskWorker.pollerAutoscalerReportHandle != nil {
 			bw.stopWG.Add(1)
 			go func() {
 				defer bw.stopWG.Done()
@@ -835,7 +834,6 @@ func newTaskWorker(
 	}
 	switch p := pollerBehavior.(type) {
 	case *PollerBehaviorAutoscaling:
-		tw.pollerAutoscalingEnable = true
 		tw.pollerCount = p.InitialNumberOfPollers
 		tw.pollerSemaphore = newPollerSemaphore(p.InitialNumberOfPollers)
 		tw.pollerAutoscalerReportHandle = newPollScalerReportHandle(pollScalerReportHandleOptions{
