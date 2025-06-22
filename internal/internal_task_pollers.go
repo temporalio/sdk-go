@@ -854,13 +854,13 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		Kind: enumspb.TASK_QUEUE_KIND_NORMAL,
 	}
 
-	if wtp.mode == NonSticky {
+	if wtp.mode == NonSticky || wtp.stickyCacheSize <= 0 {
 		// Do nothing, taskQueue is already set to non-sticky
 	} else if wtp.mode == Sticky {
 		taskQueue.Name = getWorkerTaskQueue(wtp.stickyUUID)
 		taskQueue.Kind = enumspb.TASK_QUEUE_KIND_STICKY
 		taskQueue.NormalName = wtp.taskQueueName
-	} else if wtp.mode == Mixed && wtp.stickyCacheSize > 0 {
+	} else if wtp.mode == Mixed {
 		wtp.requestLock.Lock()
 		if wtp.stickyBacklog > 0 || wtp.pendingStickyPollCount <= wtp.pendingRegularPollCount {
 			wtp.pendingStickyPollCount++
