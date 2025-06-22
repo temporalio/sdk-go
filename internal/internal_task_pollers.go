@@ -140,7 +140,6 @@ type (
 		pendingRegularPollCount int
 		pendingStickyPollCount  int
 		stickyBacklog           int64
-		requestLock             sync.Mutex
 		stickyCacheSize         int
 		eagerActivityExecutor   *eagerActivityExecutor
 
