@@ -326,11 +326,11 @@ func newWorkflowTaskWorkerInternal(
 
 	var taskWorkers []scalableTaskPoller
 	switch params.WorkflowTaskPollerBehavior.(type) {
-	case *PollerBehaviorSimpleMaximum:
+	case *pollerBehaviorSimpleMaximum:
 		taskWorkers = []scalableTaskPoller{
 			newScalableTaskPoller(taskProcessor.createPoller(Mixed), params.Logger, params.WorkflowTaskPollerBehavior),
 		}
-	case *PollerBehaviorAutoscaling:
+	case *pollerBehaviorAutoscaling:
 		taskWorkers = []scalableTaskPoller{
 			newScalableTaskPoller(taskProcessor.createPoller(NonSticky), params.Logger, params.WorkflowTaskPollerBehavior),
 		}
