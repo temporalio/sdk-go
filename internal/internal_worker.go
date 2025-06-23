@@ -1908,8 +1908,8 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		capabilities: &capabilities,
 	}
 
-	if options.MaxConcurrentWorkflowTaskExecutionSize != 0 && options.WorkflowTaskPollerBehavior != nil {
-		panic("cannot set both MaxConcurrentWorkflowTaskExecutionSize and WorkflowTaskPollerBehavior")
+	if options.MaxConcurrentWorkflowTaskPollers != 0 && options.WorkflowTaskPollerBehavior != nil {
+		panic("cannot set both MaxConcurrentWorkflowTaskPollers and WorkflowTaskPollerBehavior")
 	} else if options.MaxConcurrentWorkflowTaskPollers != 0 {
 		workerParams.WorkflowTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(options.MaxConcurrentWorkflowTaskPollers)
 	} else if options.WorkflowTaskPollerBehavior != nil {
@@ -1919,7 +1919,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	if options.MaxConcurrentActivityTaskPollers != 0 && options.ActivityTaskPollerBehavior != nil {
-		panic("cannot set both MaxConcurrentActivityTaskExecutionSize and ActivityTaskPollerBehavior")
+		panic("cannot set both MaxConcurrentActivityTaskPollers and ActivityTaskPollerBehavior")
 	} else if options.MaxConcurrentActivityTaskPollers != 0 {
 		workerParams.ActivityTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(options.MaxConcurrentActivityTaskPollers)
 	} else if options.ActivityTaskPollerBehavior != nil {
