@@ -865,7 +865,7 @@ func newScalableTaskPoller(
 		taskPoller: poller,
 	}
 	switch p := pollerBehavior.(type) {
-	case *PollerBehaviorAutoscaling:
+	case *pollerBehaviorAutoscaling:
 		tw.pollerCount = p.initialNumberOfPollers
 		tw.pollerSemaphore = newPollerSemaphore(p.initialNumberOfPollers)
 		tw.pollerAutoscalerReportHandle = newPollScalerReportHandle(pollScalerReportHandleOptions{
@@ -877,7 +877,7 @@ func newScalableTaskPoller(
 				tw.pollerSemaphore.updatePermits(newTarget)
 			},
 		})
-	case *PollerBehaviorSimpleMaximum:
+	case *pollerBehaviorSimpleMaximum:
 		tw.pollerCount = p.maximumNumberOfPollers
 	}
 	return tw
