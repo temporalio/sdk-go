@@ -189,10 +189,13 @@ type (
 
 		MaxHeartbeatThrottleInterval time.Duration
 
+		// WorkflowTaskPollerBehavior defines the behavior of the workflow task poller.
 		WorkflowTaskPollerBehavior PollerBehavior
 
+		// ActivityTaskPollerBehavior defines the behavior of the activity task poller.
 		ActivityTaskPollerBehavior PollerBehavior
 
+		// NexusTaskPollerBehavior defines the behavior of the nexus task poller.
 		NexusTaskPollerBehavior PollerBehavior
 
 		// Pointer to the shared worker cache
@@ -321,18 +324,18 @@ func newWorkflowTaskWorkerInternal(
 	}
 	taskProcessor := newWorkflowTaskProcessor(taskHandler, contextManager, service, params)
 
-	var taskWorkers []taskWorker
+	var taskWorkers []scalableTaskPoller
 	switch params.WorkflowTaskPollerBehavior.(type) {
 	case *PollerBehaviorSimpleMaximum:
-		taskWorkers = []taskWorker{
-			newTaskWorker(taskProcessor.createPoller(Mixed), params.Logger, params.WorkflowTaskPollerBehavior),
+		taskWorkers = []scalableTaskPoller{
+			newScalableTaskPoller(taskProcessor.createPoller(Mixed), params.Logger, params.WorkflowTaskPollerBehavior),
 		}
 	case *PollerBehaviorAutoscaling:
-		taskWorkers = []taskWorker{
-			newTaskWorker(taskProcessor.createPoller(NonSticky), params.Logger, params.WorkflowTaskPollerBehavior),
+		taskWorkers = []scalableTaskPoller{
+			newScalableTaskPoller(taskProcessor.createPoller(NonSticky), params.Logger, params.WorkflowTaskPollerBehavior),
 		}
 		if taskProcessor.stickyCacheSize > 0 {
-			taskWorkers = append(taskWorkers, newTaskWorker(taskProcessor.createPoller(Sticky), params.Logger, params.WorkflowTaskPollerBehavior))
+			taskWorkers = append(taskWorkers, newScalableTaskPoller(taskProcessor.createPoller(Sticky), params.Logger, params.WorkflowTaskPollerBehavior))
 		}
 	}
 
@@ -340,7 +343,7 @@ func newWorkflowTaskWorkerInternal(
 		pollerRate:       defaultPollerRate,
 		slotSupplier:     params.Tuner.GetWorkflowTaskSlotSupplier(),
 		maxTaskPerSecond: defaultWorkerTaskExecutionRate,
-		taskWorkers:      taskWorkers,
+		taskPollers:      taskWorkers,
 		taskProcessor:    taskProcessor,
 		workerType:       "WorkflowWorker",
 		identity:         params.Identity,
@@ -376,8 +379,8 @@ func newWorkflowTaskWorkerInternal(
 	localActivityWorker := newBaseWorker(baseWorkerOptions{
 		slotSupplier:     laParams.Tuner.GetLocalActivitySlotSupplier(),
 		maxTaskPerSecond: laParams.WorkerLocalActivitiesPerSecond,
-		taskWorkers: []taskWorker{
-			newTaskWorker(localActivityTaskPoller, params.Logger, NewPollerBehaviorSimpleMaximum(1)),
+		taskPollers: []scalableTaskPoller{
+			newScalableTaskPoller(localActivityTaskPoller, params.Logger, NewPollerBehaviorSimpleMaximum(1)),
 		},
 		taskProcessor:  localActivityTaskPoller,
 		workerType:     "LocalActivityWorker",
@@ -511,8 +514,8 @@ func newActivityWorker(
 		pollerRate:       defaultPollerRate,
 		slotSupplier:     slotSupplier,
 		maxTaskPerSecond: params.WorkerActivitiesPerSecond,
-		taskWorkers: []taskWorker{
-			newTaskWorker(poller, params.Logger, params.ActivityTaskPollerBehavior),
+		taskPollers: []scalableTaskPoller{
+			newScalableTaskPoller(poller, params.Logger, params.ActivityTaskPollerBehavior),
 		},
 		taskProcessor:           poller,
 		workerType:              "ActivityWorker",

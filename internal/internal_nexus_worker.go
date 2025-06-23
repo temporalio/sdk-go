@@ -46,8 +46,8 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 		pollerRate:       defaultPollerRate,
 		slotSupplier:     params.Tuner.GetNexusSlotSupplier(),
 		maxTaskPerSecond: defaultWorkerTaskExecutionRate,
-		taskWorkers: []taskWorker{
-			newTaskWorker(
+		taskPollers: []scalableTaskPoller{
+			newScalableTaskPoller(
 				poller,
 				opts.executionParameters.Logger,
 				params.NexusTaskPollerBehavior),
