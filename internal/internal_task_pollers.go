@@ -840,14 +840,15 @@ func (wtp *workflowTaskPoller) updateBacklog(taskQueueKind enumspb.TaskQueueKind
 	wtp.requestLock.Unlock()
 }
 
-// getNextPollRequest returns appropriate next poll request based on poller configuration.
+// getNextPollRequest returns appropriate next poll request based on poller configuration and mode.
 // Simple rules:
-//  1. if sticky execution is disabled, always poll for regular task queue
-//  2. otherwise:
-//     2.1) if sticky task queue has backlog, always prefer to process sticky task first
-//     2.2) poll from the task queue that has less pending requests (prefer sticky when they are the same).
-//
-// TODO: make this more smart to auto adjust based on poll latency
+//  1. if mode is NonSticky, always poll from regular task queue
+//  2. if mode is Sticky, always poll from sticky task queue
+//  3. if mode is Mixed
+//     3.1. sticky execution is disabled, always poll for regular task queue
+//     3.2. otherwise:
+//     3.2.1) if sticky task queue has backlog, always prefer to process sticky task first
+//     3.2.2) poll from the task queue that has less pending requests (prefer sticky when they are the same).
 func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.PollWorkflowTaskQueueRequest) {
 	taskQueue := &taskqueuepb.TaskQueue{
 		Name: wtp.taskQueueName,
