@@ -155,8 +155,8 @@ type (
 		Close()
 	}
 
-	taskWorker struct {
-		taskWorkerType string
+	scalableTaskPoller struct {
+		taskPollerType string
 		// pollerCount is the number of pollers tasks to start. There may be less than this
 		// due to limited slots, rate limiting, or poller autoscaling.
 		pollerCount                  int
@@ -170,7 +170,7 @@ type (
 		pollerRate              int
 		slotSupplier            SlotSupplier
 		maxTaskPerSecond        float64
-		taskWorkers             []taskWorker
+		taskPollers             []scalableTaskPoller
 		taskProcessor           taskProcessor
 		workerType              string
 		identity                string
@@ -257,11 +257,11 @@ type (
 		bs         chan barrier
 	}
 
+	// pollerBalancer is used to balance the number of poll requests from different poller types
 	pollerBalancer struct {
 		pollerCount   map[string]int
 		pollerBarrier map[string]barrier
-
-		mu sync.Mutex
+		mu            sync.Mutex
 	}
 )
 
@@ -354,7 +354,7 @@ func newBaseWorker(
 		bw.pollLimiter = rate.NewLimiter(rate.Limit(options.pollerRate), 1)
 	}
 	// If we have multiple task workers, we need to balance the pollers
-	if len(options.taskWorkers) > 1 {
+	if len(options.taskPollers) > 1 {
 		bw.pollerBalancer = &pollerBalancer{
 			pollerCount:   make(map[string]int),
 			pollerBarrier: make(map[string]barrier),
@@ -372,9 +372,9 @@ func (bw *baseWorker) Start() {
 
 	bw.metricsHandler.Counter(metrics.WorkerStartCounter).Inc(1)
 
-	for _, taskWorker := range bw.options.taskWorkers {
+	for _, taskWorker := range bw.options.taskPollers {
 		if bw.pollerBalancer != nil {
-			bw.pollerBalancer.registerPoller(taskWorker.taskWorkerType)
+			bw.pollerBalancer.registerPollerType(taskWorker.taskPollerType)
 		}
 
 		for i := 0; i < taskWorker.pollerCount; i++ {
@@ -414,7 +414,7 @@ func (bw *baseWorker) isStop() bool {
 	}
 }
 
-func (bw *baseWorker) runPoller(taskWorker taskWorker) {
+func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 	defer bw.stopWG.Done()
 	// TODO(quinn): with poller autoscaling, this metric doesn't make a lot of sense
 	// since the number of pollers can go up and down.
@@ -435,7 +435,7 @@ func (bw *baseWorker) runPoller(taskWorker taskWorker) {
 			}
 			// Call the balancer to make sure one poller type doesn't starve the others of slots.
 			if bw.pollerBalancer != nil {
-				if bw.pollerBalancer.balance(bw.limiterContext, taskWorker.taskWorkerType) != nil {
+				if bw.pollerBalancer.balance(bw.limiterContext, taskWorker.taskPollerType) != nil {
 					return true
 				}
 			}
@@ -477,11 +477,11 @@ func (bw *baseWorker) runPoller(taskWorker taskWorker) {
 					bw.sessionTokenBucket.waitForAvailableToken()
 				}
 				if bw.pollerBalancer != nil {
-					bw.pollerBalancer.addPoller(taskWorker.taskWorkerType)
+					bw.pollerBalancer.incrementPoller(taskWorker.taskPollerType)
 				}
 				bw.pollTask(taskWorker, permit)
 				if bw.pollerBalancer != nil {
-					bw.pollerBalancer.removePoller(taskWorker.taskWorkerType)
+					bw.pollerBalancer.decrementPoller(taskWorker.taskPollerType)
 				}
 			}
 			return false
@@ -582,7 +582,7 @@ func (bw *baseWorker) runEagerTaskDispatcher() {
 	}
 }
 
-func (bw *baseWorker) pollTask(taskWorker taskWorker, slotPermit *SlotPermit) {
+func (bw *baseWorker) pollTask(taskWorker scalableTaskPoller, slotPermit *SlotPermit) {
 	var err error
 	var task taskForWorker
 	didSendTask := false
@@ -686,7 +686,7 @@ func (bw *baseWorker) Stop() {
 	close(bw.stopCh)
 	bw.limiterContextCancel()
 
-	for _, taskWorker := range bw.options.taskWorkers {
+	for _, taskWorker := range bw.options.taskPollers {
 		err := taskWorker.taskPoller.Cleanup()
 		if err != nil {
 			bw.logger.Error("Couldn't cleanup task worker", tagError, err)
@@ -859,30 +859,32 @@ func (ps *pollerSemaphore) updatePermits(maxPermits int) {
 	ps.bs <- b
 }
 
-func newTaskWorker(
-	poller taskPoller, logger log.Logger, pollerBehavior PollerBehavior) taskWorker {
-	tw := taskWorker{
+func newScalableTaskPoller(
+	poller taskPoller, logger log.Logger, pollerBehavior PollerBehavior) scalableTaskPoller {
+	tw := scalableTaskPoller{
 		taskPoller: poller,
 	}
 	switch p := pollerBehavior.(type) {
 	case *PollerBehaviorAutoscaling:
-		tw.pollerCount = p.InitialNumberOfPollers
-		tw.pollerSemaphore = newPollerSemaphore(p.InitialNumberOfPollers)
+		tw.pollerCount = p.initialNumberOfPollers
+		tw.pollerSemaphore = newPollerSemaphore(p.initialNumberOfPollers)
 		tw.pollerAutoscalerReportHandle = newPollScalerReportHandle(pollScalerReportHandleOptions{
-			initialPollerCount: p.InitialNumberOfPollers,
-			maxPollerCount:     p.MaximumNumberOfPollers,
-			minPollerCount:     p.MinimumNumberOfPollers,
+			initialPollerCount: p.initialNumberOfPollers,
+			maxPollerCount:     p.maximumNumberOfPollers,
+			minPollerCount:     p.minimumNumberOfPollers,
 			logger:             logger,
 			scaleCallback: func(newTarget int) {
 				tw.pollerSemaphore.updatePermits(newTarget)
 			},
 		})
 	case *PollerBehaviorSimpleMaximum:
-		tw.pollerCount = p.MaximumNumberOfPollers
+		tw.pollerCount = p.maximumNumberOfPollers
 	}
 	return tw
 }
 
+// balance checks if the poller type is balanced with other poller types. The goal is to ensure that
+// at least one poller of each type is running before allowing any poller of the given type to increase.
 func (pb *pollerBalancer) balance(ctx context.Context, pollerType string) error {
 	pb.mu.Lock()
 	// If there are no pollers of this type, we can skip balancing.
@@ -923,7 +925,7 @@ func (pb *pollerBalancer) balance(ctx context.Context, pollerType string) error 
 	}
 }
 
-func (pb *pollerBalancer) registerPoller(pollerType string) {
+func (pb *pollerBalancer) registerPollerType(pollerType string) {
 	pb.mu.Lock()
 	defer pb.mu.Unlock()
 	if _, ok := pb.pollerCount[pollerType]; !ok {
@@ -932,7 +934,7 @@ func (pb *pollerBalancer) registerPoller(pollerType string) {
 	}
 }
 
-func (pb *pollerBalancer) addPoller(pollerType string) {
+func (pb *pollerBalancer) incrementPoller(pollerType string) {
 	pb.mu.Lock()
 	defer pb.mu.Unlock()
 	if pb.pollerCount[pollerType] == 0 {
@@ -942,7 +944,7 @@ func (pb *pollerBalancer) addPoller(pollerType string) {
 	pb.pollerCount[pollerType]++
 }
 
-func (pb *pollerBalancer) removePoller(pollerType string) {
+func (pb *pollerBalancer) decrementPoller(pollerType string) {
 	pb.mu.Lock()
 	defer pb.mu.Unlock()
 	pb.pollerCount[pollerType]--
