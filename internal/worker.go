@@ -9,17 +9,17 @@ import (
 )
 
 var (
-	_ PollerBehavior = (*PollerBehaviorSimpleMaximum)(nil)
-	_ PollerBehavior = (*PollerBehaviorAutoscaling)(nil)
+	_ PollerBehavior = (*pollerBehaviorSimpleMaximum)(nil)
+	_ PollerBehavior = (*pollerBehaviorAutoscaling)(nil)
 )
 
 type (
-	PollerBehaviorSimpleMaximum struct {
+	pollerBehaviorSimpleMaximum struct {
 		// maximumNumberOfPollers is the maximum number of pollers the worker is allowed to start.
 		maximumNumberOfPollers int
 	}
 
-	PollerBehaviorAutoscaling struct {
+	pollerBehaviorAutoscaling struct {
 		// initialNumberOfPollers is the initial number of pollers to start.
 		initialNumberOfPollers int
 		// maximumNumberOfPollers is the maximum number of pollers the worker is allowed scale up to.
@@ -332,10 +332,22 @@ type (
 		// NOTE: Experimental
 		Tuner WorkerTuner
 
+		// Optional: If set, the worker will use the provided poller behavior when polling for workflow tasks.
+		// This is mutually exclusive with MaxConcurrentWorkflowTaskPollers.
+		//
+		// NOTE: Experimental
 		WorkflowTaskPollerBehavior PollerBehavior
 
+		// Optional: If set, the worker will use the provided poller behavior when polling for activity tasks.
+		// This is mutually exclusive with MaxConcurrentActivityTaskPollers.
+		//
+		// NOTE: Experimental
 		ActivityTaskPollerBehavior PollerBehavior
 
+		// Optional: If set, the worker will use the provided poller behavior when polling for nexus tasks.
+		// This is mutually exclusive with MaxConcurrentNexusTaskPollers.
+		//
+		// NOTE: Experimental
 		NexusTaskPollerBehavior PollerBehavior
 	}
 )
@@ -411,11 +423,11 @@ func workerDeploymentOptionsToProto(useVersioning bool, version WorkerDeployment
 }
 
 // isPollerBehavior implements PollerBehavior.
-func (p *PollerBehaviorSimpleMaximum) isPollerBehavior() {
+func (p *pollerBehaviorSimpleMaximum) isPollerBehavior() {
 }
 
 // isPollerBehavior implements PollerBehavior.
-func (p *PollerBehaviorAutoscaling) isPollerBehavior() {
+func (p *pollerBehaviorAutoscaling) isPollerBehavior() {
 }
 
 // NewPollerBehaviorSimpleMaximum creates a PollerBehavior that allows the worker to start up to a maximum number of pollers.
@@ -426,7 +438,7 @@ func (p *PollerBehaviorAutoscaling) isPollerBehavior() {
 func NewPollerBehaviorSimpleMaximum(
 	maximumNumberOfPollers int,
 ) PollerBehavior {
-	return &PollerBehaviorSimpleMaximum{
+	return &pollerBehaviorSimpleMaximum{
 		maximumNumberOfPollers: maximumNumberOfPollers,
 	}
 }
@@ -442,7 +454,7 @@ func NewPollerBehaviorAutoscaling(
 	minimumNumberOfPollers int,
 	maximumNumberOfPollers int,
 ) PollerBehavior {
-	return &PollerBehaviorAutoscaling{
+	return &pollerBehaviorAutoscaling{
 		initialNumberOfPollers: initialNumberOfPollers,
 		minimumNumberOfPollers: minimumNumberOfPollers,
 		maximumNumberOfPollers: maximumNumberOfPollers,
