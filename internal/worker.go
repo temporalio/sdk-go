@@ -28,6 +28,11 @@ type (
 		MinimumNumberOfPollers int
 	}
 
+	// PollerBehavior is used to configure the behavior of the poller.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.PollerBehavior]
 	PollerBehavior interface {
 		isPollerBehavior()
 	}
@@ -413,7 +418,9 @@ func (p *PollerBehaviorSimpleMaximum) isPollerBehavior() {
 func (p *PollerBehaviorAutoscaling) isPollerBehavior() {
 }
 
-
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/worker.NewPollerBehaviorSimpleMaximum]
 func NewPollerBehaviorSimpleMaximum(
 	maximumNumberOfPollers int,
 ) PollerBehavior {
@@ -422,6 +429,9 @@ func NewPollerBehaviorSimpleMaximum(
 	}
 }
 
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/worker.NewPollerBehaviorAutoscaling]
 func NewPollerBehaviorAutoscaling(
 	initialNumberOfPollers int,
 	minimumNumberOfPollers int,
