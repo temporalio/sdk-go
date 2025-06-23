@@ -309,7 +309,7 @@ func InterruptCh() <-chan interface{} {
 	return internal.InterruptCh()
 }
 
-// NewPollerBehaviorSimpleMaximum
+// NewPollerBehaviorSimpleMaximum creates a PollerBehavior that allows the worker to start up to a maximum number of pollers.
 //
 // NOTE: Experimental
 func NewPollerBehaviorSimpleMaximum(
@@ -318,7 +318,8 @@ func NewPollerBehaviorSimpleMaximum(
 	return internal.NewPollerBehaviorSimpleMaximum(maximumConcurrentPollers)
 }
 
-// NewPollerBehaviorAutoscaling
+// NewPollerBehaviorAutoscaling creates a PollerBehavior that allows the worker to scale the number of pollers within a given range.
+// based on the workflow and feedback from the server.
 //
 // NOTE: Experimental
 func NewPollerBehaviorAutoscaling(

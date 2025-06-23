@@ -15,17 +15,17 @@ var (
 
 type (
 	PollerBehaviorSimpleMaximum struct {
-		// MaximumNumberOfPollers is the maximum number of pollers the worker is allowed to start.
-		MaximumNumberOfPollers int
+		// maximumNumberOfPollers is the maximum number of pollers the worker is allowed to start.
+		maximumNumberOfPollers int
 	}
 
 	PollerBehaviorAutoscaling struct {
-		// InitialNumberOfPollers is the initial number of pollers to start.
-		InitialNumberOfPollers int
-		// MaximumNumberOfPollers is the maximum number of pollers the worker is allowed scale up to.
-		MaximumNumberOfPollers int
-		// MinimumNumberOfPollers is the minimum number of pollers the worker is allowed scale down to.
-		MinimumNumberOfPollers int
+		// initialNumberOfPollers is the initial number of pollers to start.
+		initialNumberOfPollers int
+		// maximumNumberOfPollers is the maximum number of pollers the worker is allowed scale up to.
+		maximumNumberOfPollers int
+		// minimumNumberOfPollers is the minimum number of pollers the worker is allowed scale down to.
+		minimumNumberOfPollers int
 	}
 
 	// PollerBehavior is used to configure the behavior of the poller.
@@ -418,6 +418,8 @@ func (p *PollerBehaviorSimpleMaximum) isPollerBehavior() {
 func (p *PollerBehaviorAutoscaling) isPollerBehavior() {
 }
 
+// NewPollerBehaviorSimpleMaximum creates a PollerBehavior that allows the worker to start up to a maximum number of pollers.
+//
 // NOTE: Experimental
 //
 // Exposed as: [go.temporal.io/sdk/worker.NewPollerBehaviorSimpleMaximum]
@@ -425,10 +427,13 @@ func NewPollerBehaviorSimpleMaximum(
 	maximumNumberOfPollers int,
 ) PollerBehavior {
 	return &PollerBehaviorSimpleMaximum{
-		MaximumNumberOfPollers: maximumNumberOfPollers,
+		maximumNumberOfPollers: maximumNumberOfPollers,
 	}
 }
 
+// NewPollerBehaviorAutoscaling creates a PollerBehavior that allows the worker to scale the number of pollers within a given range.
+// based on the workflow and feedback from the server.
+//
 // NOTE: Experimental
 //
 // Exposed as: [go.temporal.io/sdk/worker.NewPollerBehaviorAutoscaling]
@@ -438,8 +443,8 @@ func NewPollerBehaviorAutoscaling(
 	maximumNumberOfPollers int,
 ) PollerBehavior {
 	return &PollerBehaviorAutoscaling{
-		InitialNumberOfPollers: initialNumberOfPollers,
-		MinimumNumberOfPollers: minimumNumberOfPollers,
-		MaximumNumberOfPollers: maximumNumberOfPollers,
+		initialNumberOfPollers: initialNumberOfPollers,
+		minimumNumberOfPollers: minimumNumberOfPollers,
+		maximumNumberOfPollers: maximumNumberOfPollers,
 	}
 }
