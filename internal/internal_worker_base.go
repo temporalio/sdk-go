@@ -160,6 +160,7 @@ type (
 	}
 
 	taskWorker struct {
+		taskWorkerType string
 		// pollerCount is the number of pollers tasks to start. There may be less than this
 		// due to limited slots, rate limiting, or poller autoscaling.
 		pollerCount                  int
@@ -207,6 +208,7 @@ type (
 		eagerTaskQueueCh   chan eagerTask
 		fatalErrCb         func(error)
 		sessionTokenBucket *sessionTokenBucket
+		pollerBalancer     *pollerBalancer
 
 		lastPollTaskErrMessage string
 		lastPollTaskErrStarted time.Time
@@ -257,6 +259,13 @@ type (
 		maxPermits int
 		permits    int
 		bs         chan barrier
+	}
+
+	pollerBalancer struct {
+		pollerCount   map[string]int
+		pollerBarrier map[string]barrier
+
+		mu sync.Mutex
 	}
 )
 
@@ -348,6 +357,13 @@ func newBaseWorker(
 	if options.pollerRate > 0 {
 		bw.pollLimiter = rate.NewLimiter(rate.Limit(options.pollerRate), 1)
 	}
+	// If we have multiple task workers, we need to balance the pollers
+	if len(options.taskWorkers) > 1 {
+		bw.pollerBalancer = &pollerBalancer{
+			pollerCount:   make(map[string]int),
+			pollerBarrier: make(map[string]barrier),
+		}
+	}
 
 	return bw
 }
@@ -361,6 +377,10 @@ func (bw *baseWorker) Start() {
 	bw.metricsHandler.Counter(metrics.WorkerStartCounter).Inc(1)
 
 	for _, taskWorker := range bw.options.taskWorkers {
+		if bw.pollerBalancer != nil {
+			bw.pollerBalancer.registerPoller(taskWorker.taskWorkerType)
+		}
+
 		for i := 0; i < taskWorker.pollerCount; i++ {
 			bw.stopWG.Add(1)
 			go bw.runPoller(taskWorker)
@@ -417,6 +437,12 @@ func (bw *baseWorker) runPoller(taskWorker taskWorker) {
 				}
 				defer taskWorker.pollerSemaphore.release()
 			}
+			// Call the balancer to make sure one poller type doesn't starve the others of slots.
+			if bw.pollerBalancer != nil {
+				if bw.pollerBalancer.balance(bw.limiterContext, taskWorker.taskWorkerType) != nil {
+					return true
+				}
+			}
 
 			bw.stopWG.Add(1)
 			go func() {
@@ -454,7 +480,13 @@ func (bw *baseWorker) runPoller(taskWorker taskWorker) {
 				if bw.sessionTokenBucket != nil {
 					bw.sessionTokenBucket.waitForAvailableToken()
 				}
+				if bw.pollerBalancer != nil {
+					bw.pollerBalancer.addPoller(taskWorker.taskWorkerType)
+				}
 				bw.pollTask(taskWorker, permit)
+				if bw.pollerBalancer != nil {
+					bw.pollerBalancer.removePoller(taskWorker.taskWorkerType)
+				}
 			}
 			return false
 		}() {
@@ -853,4 +885,69 @@ func newTaskWorker(
 		tw.pollerCount = p.MaximumNumberOfPollers
 	}
 	return tw
+}
+
+func (pb *pollerBalancer) balance(ctx context.Context, pollerType string) error {
+	pb.mu.Lock()
+	// If there are no pollers of this type, we can skip balancing.
+	if pb.pollerCount[pollerType] <= 0 {
+		pb.mu.Unlock()
+		return nil
+	}
+	for {
+		var b barrier
+		// Check if all other poller types have at least one poller running.
+		for pt, count := range pb.pollerCount {
+			if pt == pollerType {
+				if count <= 0 {
+					pb.mu.Unlock()
+					return nil
+				}
+				continue
+			}
+			if count == 0 {
+				b = pb.pollerBarrier[pt]
+				break
+			}
+		}
+		pb.mu.Unlock()
+		// If all other poller types have at least one poller running, we are balanced
+		if b == nil {
+			return nil
+		}
+		// If we have a barrier that means that at least one other poller type has no pollers running.
+		// We need to wait for that poller type to start a poller before we can continue.
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-b:
+			pb.mu.Lock()
+			continue
+		}
+	}
+}
+
+func (pb *pollerBalancer) registerPoller(pollerType string) {
+	pb.mu.Lock()
+	defer pb.mu.Unlock()
+	if _, ok := pb.pollerCount[pollerType]; !ok {
+		pb.pollerCount[pollerType] = 0
+		pb.pollerBarrier[pollerType] = make(barrier)
+	}
+}
+
+func (pb *pollerBalancer) addPoller(pollerType string) {
+	pb.mu.Lock()
+	defer pb.mu.Unlock()
+	if pb.pollerCount[pollerType] == 0 {
+		close(pb.pollerBarrier[pollerType])
+		pb.pollerBarrier[pollerType] = make(barrier)
+	}
+	pb.pollerCount[pollerType]++
+}
+
+func (pb *pollerBalancer) removePoller(pollerType string) {
+	pb.mu.Lock()
+	defer pb.mu.Unlock()
+	pb.pollerCount[pollerType]--
 }
