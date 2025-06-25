@@ -187,7 +187,7 @@ type (
 //
 // If the activity failed to complete then the future get error would indicate the failure.
 // The error will be of type *ActivityError. It will have important activity information and actual error that caused
-// activity failure. Use errors.Unwrap to get this error or errors.As to check it type which can be one of
+// activity failure. Use errors.Unwrap to get this error or errors.As to check its type which can be one of
 // *ApplicationError, *TimeoutError, *CanceledError, or *PanicError.
 //
 // You can cancel the pending activity using context(workflow.WithCancel(ctx)) and that will fail the activity with

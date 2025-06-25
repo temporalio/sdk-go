@@ -1390,6 +1390,9 @@ func (aw *AggregatedWorker) Stop() {
 	if !util.IsInterfaceNil(aw.sessionWorker) {
 		aw.sessionWorker.Stop()
 	}
+	if !util.IsInterfaceNil(aw.nexusWorker) {
+		aw.nexusWorker.Stop()
+	}
 
 	aw.logger.Info("Stopped Worker")
 }
