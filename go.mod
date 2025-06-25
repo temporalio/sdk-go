@@ -14,7 +14,7 @@ require (
 	github.com/nexus-rpc/sdk-go v0.3.0
 	github.com/robfig/cron v1.2.0
 	github.com/stretchr/testify v1.10.0
-	go.temporal.io/api v1.49.1
+	go.temporal.io/api v1.50.1-0.20250625152634-34d23b4cdd1f
 	golang.org/x/sync v0.13.0
 	golang.org/x/sys v0.32.0
 	golang.org/x/time v0.3.0
@@ -34,4 +34,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace go.temporal.io/api => ../api-go
+// replace go.temporal.io/api => ../api-go
