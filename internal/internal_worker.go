@@ -324,18 +324,18 @@ func newWorkflowTaskWorkerInternal(
 	}
 	taskProcessor := newWorkflowTaskProcessor(taskHandler, contextManager, service, params)
 
-	var taskWorkers []scalableTaskPoller
+	var scalableTaskPollers []scalableTaskPoller
 	switch params.WorkflowTaskPollerBehavior.(type) {
 	case *pollerBehaviorSimpleMaximum:
-		taskWorkers = []scalableTaskPoller{
+		scalableTaskPollers = []scalableTaskPoller{
 			newScalableTaskPoller(taskProcessor.createPoller(Mixed), params.Logger, params.WorkflowTaskPollerBehavior),
 		}
 	case *pollerBehaviorAutoscaling:
-		taskWorkers = []scalableTaskPoller{
+		scalableTaskPollers = []scalableTaskPoller{
 			newScalableTaskPoller(taskProcessor.createPoller(NonSticky), params.Logger, params.WorkflowTaskPollerBehavior),
 		}
 		if taskProcessor.stickyCacheSize > 0 {
-			taskWorkers = append(taskWorkers, newScalableTaskPoller(taskProcessor.createPoller(Sticky), params.Logger, params.WorkflowTaskPollerBehavior))
+			scalableTaskPollers = append(scalableTaskPollers, newScalableTaskPoller(taskProcessor.createPoller(Sticky), params.Logger, params.WorkflowTaskPollerBehavior))
 		}
 	}
 
@@ -343,7 +343,7 @@ func newWorkflowTaskWorkerInternal(
 		pollerRate:       defaultPollerRate,
 		slotSupplier:     params.Tuner.GetWorkflowTaskSlotSupplier(),
 		maxTaskPerSecond: defaultWorkerTaskExecutionRate,
-		taskPollers:      taskWorkers,
+		taskPollers:      scalableTaskPollers,
 		taskProcessor:    taskProcessor,
 		workerType:       "WorkflowWorker",
 		identity:         params.Identity,
