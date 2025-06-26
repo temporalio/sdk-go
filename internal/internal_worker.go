@@ -360,7 +360,7 @@ func newWorkflowTaskWorkerInternal(
 	}
 
 	// 2) local activity task poller will poll from laTunnel, and result will be pushed to laTunnel
-	localActivityTaskPoller := newLocalActivityPoller(laParams, laTunnel, interceptors, client)
+	localActivityTaskPoller := newLocalActivityPoller(laParams, laTunnel, interceptors, client, stopC)
 	localActivityWorker := newBaseWorker(baseWorkerOptions{
 		pollerCount:      1, // 1 poller (from local channel) is enough for local activity
 		slotSupplier:     laParams.Tuner.GetLocalActivitySlotSupplier(),
