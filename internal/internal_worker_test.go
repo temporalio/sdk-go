@@ -2794,8 +2794,9 @@ func assertWorkerExecutionParamsEqual(t *testing.T, paramsA workerExecutionParam
 	require.Equal(t, paramsA.WorkerActivitiesPerSecond, paramsB.WorkerActivitiesPerSecond)
 	require.Equal(t, paramsA.TaskQueueActivitiesPerSecond, paramsB.TaskQueueActivitiesPerSecond)
 	require.Equal(t, paramsA.StickyScheduleToStartTimeout, paramsB.StickyScheduleToStartTimeout)
-	//require.Equal(t, paramsA.MaxConcurrentWorkflowTaskQueuePollers, paramsB.MaxConcurrentWorkflowTaskQueuePollers)
-	//require.Equal(t, paramsA.MaxConcurrentActivityTaskQueuePollers, paramsB.MaxConcurrentActivityTaskQueuePollers)
+	require.Equal(t, paramsA.WorkflowTaskPollerBehavior, paramsB.WorkflowTaskPollerBehavior)
+	require.Equal(t, paramsA.ActivityTaskPollerBehavior, paramsB.ActivityTaskPollerBehavior)
+	require.Equal(t, paramsA.NexusTaskPollerBehavior, paramsB.NexusTaskPollerBehavior)
 	require.Equal(t, paramsA.WorkflowPanicPolicy, paramsB.WorkflowPanicPolicy)
 	require.Equal(t, paramsA.EnableLoggingInReplay, paramsB.EnableLoggingInReplay)
 }
