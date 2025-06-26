@@ -845,7 +845,7 @@ func (wtp *workflowTaskPoller) updateBacklog(taskQueueKind enumspb.TaskQueueKind
 //  1. if mode is NonSticky, always poll from regular task queue
 //  2. if mode is Sticky, always poll from sticky task queue
 //  3. if mode is Mixed
-//     3.1. sticky execution is disabled, always poll for regular task queue
+//     3.1. if sticky execution is disabled, always poll for regular task queue
 //     3.2. otherwise:
 //     3.2.1) if sticky task queue has backlog, always prefer to process sticky task first
 //     3.2.2) poll from the task queue that has less pending requests (prefer sticky when they are the same).

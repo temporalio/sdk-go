@@ -128,6 +128,8 @@ type (
 		// temporal-server to retrieve activity tasks. Changing this value will affect the
 		// rate at which the worker is able to consume tasks from a task queue.
 		//
+		// NOTE: This option is mutually exclusive with WorkflowTaskPollerBehavior.
+		//
 		// default: 2
 		MaxConcurrentActivityTaskPollers int
 
@@ -145,6 +147,8 @@ type (
 		// internal logic where pollers alternate between stick and non-sticky queues, this
 		// value cannot be 1 and will panic if set to that value.
 		//
+		// NOTE: This option is mutually exclusive with WorkflowTaskPollerBehavior.
+		//
 		// default: 2
 		MaxConcurrentWorkflowTaskPollers int
 
@@ -157,6 +161,8 @@ type (
 		// Optional: Sets the maximum number of goroutines that will concurrently poll the
 		// temporal-server to retrieve nexus tasks. Changing this value will affect the
 		// rate at which the worker is able to consume tasks from a task queue.
+		//
+		// NOTE: This option is mutually exclusive with NexusTaskPollerBehavior.
 		//
 		// default: 2
 		MaxConcurrentNexusTaskPollers int
@@ -335,17 +341,23 @@ type (
 		// Optional: If set, the worker will use the provided poller behavior when polling for workflow tasks.
 		// This is mutually exclusive with MaxConcurrentWorkflowTaskPollers.
 		//
+		// NOTE: This option is mutually exclusive with MaxConcurrentWorkflowTaskPollers.
+		//
 		// NOTE: Experimental
 		WorkflowTaskPollerBehavior PollerBehavior
 
 		// Optional: If set, the worker will use the provided poller behavior when polling for activity tasks.
 		// This is mutually exclusive with MaxConcurrentActivityTaskPollers.
 		//
+		// NOTE: This option is mutually exclusive with MaxConcurrentActivityTaskPollers.
+		//
 		// NOTE: Experimental
 		ActivityTaskPollerBehavior PollerBehavior
 
 		// Optional: If set, the worker will use the provided poller behavior when polling for nexus tasks.
 		// This is mutually exclusive with MaxConcurrentNexusTaskPollers.
+		//
+		// NOTE: This option is mutually exclusive with MaxConcurrentNexusTaskPollers.
 		//
 		// NOTE: Experimental
 		NexusTaskPollerBehavior PollerBehavior
