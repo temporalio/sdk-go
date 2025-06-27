@@ -37,6 +37,41 @@ type (
 		isPollerBehavior()
 	}
 
+	// PollerBehaviorAutoscalingOptions is the options for NewPollerBehaviorAutoscaling.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.PollerBehaviorAutoscalingOptions]
+	PollerBehaviorAutoscalingOptions struct {
+		// InitialNumberOfPollers is the initial number of pollers to start.
+		//
+		// Default: 5
+		InitialNumberOfPollers int
+
+		// MinimumNumberOfPollers is the minimum number of pollers the worker is allowed scale down to.
+		//
+		// Default: 1
+		MinimumNumberOfPollers int
+
+		// MaximumNumberOfPollers is the maximum number of pollers the worker is allowed scale up to.
+		//
+		// Default: 100
+		MaximumNumberOfPollers int
+	}
+
+	// PollerBehaviorSimpleMaximumOptions is the options for NewPollerBehaviorSimpleMaximum.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.PollerBehaviorSimpleMaximumOptions]
+	PollerBehaviorSimpleMaximumOptions struct {
+		// MaximumNumberOfPollers is the maximum number of pollers the worker is allowed
+		// to start.
+		//
+		// Default: 2
+		MaximumNumberOfPollers int
+	}
+
 	// WorkerDeploymentOptions provides configuration for Worker Deployment Versioning.
 	//
 	// NOTE: [WorkerDeploymentOptions.UseVersioning] must be set to enable Worker Deployment
@@ -448,10 +483,13 @@ func (p *pollerBehaviorAutoscaling) isPollerBehavior() {
 //
 // Exposed as: [go.temporal.io/sdk/worker.NewPollerBehaviorSimpleMaximum]
 func NewPollerBehaviorSimpleMaximum(
-	maximumNumberOfPollers int,
+	options PollerBehaviorSimpleMaximumOptions,
 ) PollerBehavior {
+	if options.MaximumNumberOfPollers <= 0 {
+		options.MaximumNumberOfPollers = 2 // Default maximum number of pollers.
+	}
 	return &pollerBehaviorSimpleMaximum{
-		maximumNumberOfPollers: maximumNumberOfPollers,
+		maximumNumberOfPollers: options.MaximumNumberOfPollers,
 	}
 }
 
@@ -462,10 +500,20 @@ func NewPollerBehaviorSimpleMaximum(
 //
 // Exposed as: [go.temporal.io/sdk/worker.NewPollerBehaviorAutoscaling]
 func NewPollerBehaviorAutoscaling(
-	initialNumberOfPollers int,
-	minimumNumberOfPollers int,
-	maximumNumberOfPollers int,
+	options PollerBehaviorAutoscalingOptions,
 ) PollerBehavior {
+	initialNumberOfPollers := options.InitialNumberOfPollers
+	if initialNumberOfPollers <= 0 {
+		initialNumberOfPollers = 5 // Default initial number of pollers.
+	}
+	minimumNumberOfPollers := options.MinimumNumberOfPollers
+	if minimumNumberOfPollers <= 0 {
+		minimumNumberOfPollers = 1 // Default minimum number of pollers.
+	}
+	maximumNumberOfPollers := options.MaximumNumberOfPollers
+	if maximumNumberOfPollers <= 0 {
+		maximumNumberOfPollers = 100 // Default maximum number of pollers.
+	}
 	return &pollerBehaviorAutoscaling{
 		initialNumberOfPollers: initialNumberOfPollers,
 		minimumNumberOfPollers: minimumNumberOfPollers,

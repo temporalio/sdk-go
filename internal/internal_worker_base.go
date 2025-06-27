@@ -22,6 +22,7 @@ import (
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
+	internallog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
 )
 
@@ -712,10 +713,14 @@ func (bw *baseWorker) Stop() {
 }
 
 func newPollScalerReportHandle(options pollScalerReportHandleOptions) *pollScalerReportHandle {
+	logger := options.logger
+	if logger == nil {
+		logger = internallog.NewNopLogger()
+	}
 	psr := &pollScalerReportHandle{
 		maxPollerCount: options.maxPollerCount,
 		minPollerCount: options.minPollerCount,
-		logger:         options.logger,
+		logger:         logger,
 		scaleCallback:  options.scaleCallback,
 	}
 	psr.target.Store(int64(options.initialPollerCount))
@@ -777,17 +782,20 @@ func (prh *pollScalerReportHandle) updateTarget(f func(int64) int64) {
 }
 
 func (prh *pollScalerReportHandle) handleError(err error) {
-	_, resourceExhausted := err.(*serviceerror.ResourceExhausted)
-	if resourceExhausted {
-		prh.updateTarget(func(target int64) int64 {
-			return target / 2
-		})
-	} else {
-		prh.updateTarget(func(target int64) int64 {
-			return target - 1
-		})
+	// If we have never seen a scaling decision, we don't want to scale down
+	// on errors, because we might never scale up again.
+	if prh.everSawScalingDecision.Load() {
+		_, resourceExhausted := err.(*serviceerror.ResourceExhausted)
+		if resourceExhausted {
+			prh.updateTarget(func(target int64) int64 {
+				return target / 2
+			})
+		} else {
+			prh.updateTarget(func(target int64) int64 {
+				return target - 1
+			})
+		}
 	}
-
 }
 
 func (prh *pollScalerReportHandle) run(stopCh <-chan struct{}) {
@@ -801,13 +809,17 @@ func (prh *pollScalerReportHandle) run(stopCh <-chan struct{}) {
 	for {
 		select {
 		case <-ticker.C:
-			ingestedThisPeriod := prh.ingestedThisPeriod.Swap(0)
-			ingestedLastPeriod := prh.ingestedLastPeriod.Swap(ingestedThisPeriod)
-			prh.scaleUpAllowed.Store(float64(ingestedThisPeriod) >= float64(ingestedLastPeriod)*1.1)
+			prh.newPeriod()
 		case <-stopCh:
 			return
 		}
 	}
+}
+
+func (prh *pollScalerReportHandle) newPeriod() {
+	ingestedThisPeriod := prh.ingestedThisPeriod.Swap(0)
+	ingestedLastPeriod := prh.ingestedLastPeriod.Swap(ingestedThisPeriod)
+	prh.scaleUpAllowed.Store(float64(ingestedThisPeriod) >= float64(ingestedLastPeriod)*1.1)
 }
 
 func newPollerSemaphore(maxPermits int) *pollerSemaphore {
