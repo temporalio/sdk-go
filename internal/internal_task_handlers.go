@@ -1822,9 +1822,11 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 ) interface{} {
 	// for query task
 	if task.Query != nil {
+		cause := errToWorkflowTaskFailedCause(workflowContext.err)
 		queryCompletedRequest := &workflowservice.RespondQueryTaskCompletedRequest{
 			TaskToken: task.TaskToken,
 			Namespace: wth.namespace,
+			Cause:     cause,
 		}
 		var panicErr *PanicError
 		if errors.As(workflowContext.err, &panicErr) {
