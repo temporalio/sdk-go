@@ -58,6 +58,10 @@ type (
 		Backoff time.Duration
 	}
 
+	LocalActivityMarkerParams struct {
+		Summary string
+	}
+
 	executeNexusOperationParams struct {
 		client      NexusClient
 		operation   string

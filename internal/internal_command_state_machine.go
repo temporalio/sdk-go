@@ -411,8 +411,8 @@ func (h *commandsHelper) newNaiveCommandStateMachine(commandType commandType, id
 	}
 }
 
-func (h *commandsHelper) newMarkerCommandStateMachine(id string, attributes *commandpb.RecordMarkerCommandAttributes) *markerCommandStateMachine {
-	d := createNewCommand(enumspb.COMMAND_TYPE_RECORD_MARKER)
+func (h *commandsHelper) newMarkerCommandStateMachine(id string, attributes *commandpb.RecordMarkerCommandAttributes, userMetadata *sdk.UserMetadata) *markerCommandStateMachine {
+	d := createNewCommandWithMetadata(enumspb.COMMAND_TYPE_RECORD_MARKER, userMetadata)
 	d.Attributes = &commandpb.Command_RecordMarkerCommandAttributes{RecordMarkerCommandAttributes: attributes}
 	return &markerCommandStateMachine{
 		naiveCommandStateMachine: h.newNaiveCommandStateMachine(commandTypeMarker, id, d),
@@ -1301,7 +1301,7 @@ func (h *commandsHelper) recordVersionMarker(changeID string, version Version, d
 		recordMarker.Details[versionSearchAttributeUpdatedName] = searchAttributeWasUpdatedPayload
 	}
 
-	command := h.newMarkerCommandStateMachine(markerID, recordMarker)
+	command := h.newMarkerCommandStateMachine(markerID, recordMarker, nil)
 	h.addCommand(command)
 	return command
 }
@@ -1336,19 +1336,19 @@ func (h *commandsHelper) recordSideEffectMarker(sideEffectID int64, data *common
 			sideEffectMarkerDataName: data,
 		},
 	}
-	command := h.newMarkerCommandStateMachine(markerID, attributes)
+	command := h.newMarkerCommandStateMachine(markerID, attributes, nil)
 	h.addCommand(command)
 	return command
 }
 
-func (h *commandsHelper) recordLocalActivityMarker(activityID string, details map[string]*commonpb.Payloads, failure *failurepb.Failure) commandStateMachine {
+func (h *commandsHelper) recordLocalActivityMarker(activityID string, details map[string]*commonpb.Payloads, failure *failurepb.Failure, metadata *sdk.UserMetadata) commandStateMachine {
 	markerID := fmt.Sprintf("%v_%v", localActivityMarkerName, activityID)
 	attributes := &commandpb.RecordMarkerCommandAttributes{
 		MarkerName: localActivityMarkerName,
 		Failure:    failure,
 		Details:    details,
 	}
-	command := h.newMarkerCommandStateMachine(markerID, attributes)
+	command := h.newMarkerCommandStateMachine(markerID, attributes, metadata)
 	// LocalActivity marker is added only when it completes and schedule logic never relies on GenerateSequence to
 	// create a unique activity id like in the case of ExecuteActivity.  This causes the problem as we only perform
 	// the check to increment counter to account for GetVersion special handling as part of it.  This will result
@@ -1383,7 +1383,7 @@ func (h *commandsHelper) recordMutableSideEffectMarker(mutableSideEffectID strin
 			mutableSideEffectCallCounterName: mutableSideEffectCounterPayload,
 		},
 	}
-	command := h.newMarkerCommandStateMachine(markerID, attributes)
+	command := h.newMarkerCommandStateMachine(markerID, attributes, nil)
 	h.addCommand(command)
 	return command
 }

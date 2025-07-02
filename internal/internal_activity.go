@@ -58,6 +58,7 @@ type (
 		ScheduleToCloseTimeout time.Duration
 		StartToCloseTimeout    time.Duration
 		RetryPolicy            *RetryPolicy
+		Summary                string
 	}
 
 	// ExecuteActivityParams parameters for executing an activity

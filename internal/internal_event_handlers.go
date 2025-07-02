@@ -1603,7 +1603,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 				}
 			}
 		case localActivityMarkerName:
-			err = weh.handleLocalActivityMarker(attributes.GetDetails(), attributes.GetFailure())
+			err = weh.handleLocalActivityMarker(attributes.GetDetails(), attributes.GetFailure(), LocalActivityMarkerParams{})
 		case mutableSideEffectMarkerName:
 			var sideEffectIDWithCounterPayload, sideEffectDataPayload *commonpb.Payloads
 			if sideEffectIDWithCounterPayload = attributes.GetDetails()[sideEffectMarkerIDName]; sideEffectIDWithCounterPayload == nil {
@@ -1660,7 +1660,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleMarkerRecorded(
 	return nil
 }
 
-func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details map[string]*commonpb.Payloads, failure *failurepb.Failure) error {
+func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details map[string]*commonpb.Payloads, failure *failurepb.Failure, params LocalActivityMarkerParams) error {
 	var markerData *commonpb.Payloads
 	var ok bool
 	if markerData, ok = details[localActivityMarkerDataName]; !ok {
@@ -1678,7 +1678,11 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 			panicMsg := fmt.Sprintf("[TMPRL1100] code executed local activity %v, but history event found %v, markerData: %v", la.params.ActivityType, lamd.ActivityType, markerData)
 			panicIllegalState(panicMsg)
 		}
-		weh.commandsHelper.recordLocalActivityMarker(lamd.ActivityID, details, failure)
+		startMetadata, err := buildUserMetadata(la.params.Summary, "", weh.dataConverter)
+		if err != nil {
+			return err
+		}
+		weh.commandsHelper.recordLocalActivityMarker(lamd.ActivityID, details, failure, startMetadata)
 		if la.pastFirstWFT {
 			weh.completedLaAttemptsThisWFT += la.attemptsThisWFT
 		}

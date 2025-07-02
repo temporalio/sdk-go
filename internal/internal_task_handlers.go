@@ -2382,6 +2382,13 @@ func createNewCommand(commandType enumspb.CommandType) *commandpb.Command {
 	}
 }
 
+func createNewCommandWithMetadata(commandType enumspb.CommandType, metadata *sdk.UserMetadata) *commandpb.Command {
+	return &commandpb.Command{
+		CommandType:  commandType,
+		UserMetadata: metadata,
+	}
+}
+
 func recordActivityHeartbeat(ctx context.Context, service workflowservice.WorkflowServiceClient, metricsHandler metrics.Handler,
 	identity string, taskToken []byte, details *commonpb.Payloads,
 ) error {
