@@ -74,6 +74,7 @@ func TestGetLocalActivityOptions(t *testing.T) {
 		ScheduleToCloseTimeout: time.Minute,
 		StartToCloseTimeout:    time.Hour,
 		RetryPolicy:            newTestRetryPolicy(),
+		Summary:                "local activity summary",
 	}
 
 	assertNonZero(t, opts)
