@@ -25,19 +25,21 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/activity.Info]
 	ActivityInfo struct {
-		TaskToken         []byte
-		WorkflowType      *WorkflowType
-		WorkflowNamespace string
-		WorkflowExecution WorkflowExecution
-		ActivityID        string
-		ActivityType      ActivityType
-		TaskQueue         string
-		HeartbeatTimeout  time.Duration // Maximum time between heartbeats. 0 means no heartbeat needed.
-		ScheduledTime     time.Time     // Time of activity scheduled by a workflow
-		StartedTime       time.Time     // Time of activity start
-		Deadline          time.Time     // Time of activity timeout
-		Attempt           int32         // Attempt starts from 1, and increased by 1 for every retry if retry policy is specified.
-		IsLocalActivity   bool          // true if it is a local activity
+		TaskToken              []byte
+		WorkflowType           *WorkflowType
+		WorkflowNamespace      string
+		WorkflowExecution      WorkflowExecution
+		ActivityID             string
+		ActivityType           ActivityType
+		TaskQueue              string
+		HeartbeatTimeout       time.Duration // Maximum time between heartbeats. 0 means no heartbeat needed.
+		ScheduleToCloseTimeout time.Duration // Schedule to close timeout set by the activity options.
+		StartToCloseTimeout    time.Duration // Start to close timeout set by the activity options.
+		ScheduledTime          time.Time     // Time of activity scheduled by a workflow
+		StartedTime            time.Time     // Time of activity start
+		Deadline               time.Time     // Time of activity timeout
+		Attempt                int32         // Attempt starts from 1, and increased by 1 for every retry if retry policy is specified.
+		IsLocalActivity        bool          // true if it is a local activity
 		// Priority settings that control relative ordering of task processing when activity tasks are backed up in a queue.
 		// If no priority is set, the default value is the zero value.
 		//
@@ -318,17 +320,19 @@ func WithActivityTask(
 		workflowExecution: WorkflowExecution{
 			RunID: task.WorkflowExecution.RunId,
 			ID:    task.WorkflowExecution.WorkflowId},
-		logger:           logger,
-		metricsHandler:   metricsHandler,
-		deadline:         deadline,
-		heartbeatTimeout: heartbeatTimeout,
-		scheduledTime:    scheduled,
-		startedTime:      started,
-		taskQueue:        taskQueue,
-		dataConverter:    dataConverter,
-		attempt:          task.GetAttempt(),
-		priority:         task.GetPriority(),
-		heartbeatDetails: task.HeartbeatDetails,
+		logger:                 logger,
+		metricsHandler:         metricsHandler,
+		deadline:               deadline,
+		heartbeatTimeout:       heartbeatTimeout,
+		scheduleToCloseTimeout: scheduleToCloseTimeout,
+		startToCloseTimeout:    startToCloseTimeout,
+		scheduledTime:          scheduled,
+		startedTime:            started,
+		taskQueue:              taskQueue,
+		dataConverter:          dataConverter,
+		attempt:                task.GetAttempt(),
+		priority:               task.GetPriority(),
+		heartbeatDetails:       task.HeartbeatDetails,
 		workflowType: &WorkflowType{
 			Name: task.WorkflowType.GetName(),
 		},
