@@ -380,7 +380,11 @@ func newWorkflowTaskWorkerInternal(
 		slotSupplier:     laParams.Tuner.GetLocalActivitySlotSupplier(),
 		maxTaskPerSecond: laParams.WorkerLocalActivitiesPerSecond,
 		taskPollers: []scalableTaskPoller{
-			newScalableTaskPoller(localActivityTaskPoller, params.Logger, NewPollerBehaviorSimpleMaximum(1)),
+			newScalableTaskPoller(localActivityTaskPoller, params.Logger, NewPollerBehaviorSimpleMaximum(
+				PollerBehaviorSimpleMaximumOptions{
+					MaximumNumberOfPollers: 2,
+				},
+			)),
 		},
 		taskProcessor:  localActivityTaskPoller,
 		workerType:     "LocalActivityWorker",
@@ -446,7 +450,11 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 	activityWorker := newActivityWorker(client, params,
 		&workerOverrides{slotSupplier: params.Tuner.GetSessionActivitySlotSupplier()}, env, nil)
 
-	params.ActivityTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(1)
+	params.ActivityTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(
+		PollerBehaviorSimpleMaximumOptions{
+			MaximumNumberOfPollers: 1,
+		},
+	)
 	params.TaskQueue = creationTaskqueue
 	// Although we have session token bucket to limit session size across creation
 	// and recreation, we also limit it here for creation only
@@ -1914,7 +1922,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	if options.MaxConcurrentWorkflowTaskPollers != 0 && options.WorkflowTaskPollerBehavior != nil {
 		panic("cannot set both MaxConcurrentWorkflowTaskPollers and WorkflowTaskPollerBehavior")
 	} else if options.MaxConcurrentWorkflowTaskPollers != 0 {
-		workerParams.WorkflowTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(options.MaxConcurrentWorkflowTaskPollers)
+		workerParams.WorkflowTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{
+			MaximumNumberOfPollers: options.MaxConcurrentWorkflowTaskPollers,
+		})
 	} else if options.WorkflowTaskPollerBehavior != nil {
 		workerParams.WorkflowTaskPollerBehavior = options.WorkflowTaskPollerBehavior
 	} else {
@@ -1924,7 +1934,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	if options.MaxConcurrentActivityTaskPollers != 0 && options.ActivityTaskPollerBehavior != nil {
 		panic("cannot set both MaxConcurrentActivityTaskPollers and ActivityTaskPollerBehavior")
 	} else if options.MaxConcurrentActivityTaskPollers != 0 {
-		workerParams.ActivityTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(options.MaxConcurrentActivityTaskPollers)
+		workerParams.ActivityTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{
+			MaximumNumberOfPollers: options.MaxConcurrentActivityTaskPollers,
+		})
 	} else if options.ActivityTaskPollerBehavior != nil {
 		workerParams.ActivityTaskPollerBehavior = options.ActivityTaskPollerBehavior
 	} else {
@@ -1934,7 +1946,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	if options.MaxConcurrentNexusTaskPollers != 0 && options.NexusTaskPollerBehavior != nil {
 		panic("cannot set both MaxConcurrentNexusTaskExecutionSize and NexusTaskPollerBehavior")
 	} else if options.MaxConcurrentNexusTaskPollers != 0 {
-		workerParams.NexusTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(options.MaxConcurrentNexusTaskPollers)
+		workerParams.NexusTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{
+			MaximumNumberOfPollers: options.MaxConcurrentNexusTaskPollers,
+		})
 	} else if options.NexusTaskPollerBehavior != nil {
 		workerParams.NexusTaskPollerBehavior = options.NexusTaskPollerBehavior
 	} else {
