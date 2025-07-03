@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1771,7 +1772,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_Message_Admitted_Paged() {
 func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 	backoffInterval := 10 * time.Millisecond
 	workflowComplete := false
-	laFailures := 0
+	var laFailures atomic.Uint64
 
 	retryLocalActivityWorkflowFunc := func(ctx Context, input []byte) error {
 		ao := LocalActivityOptions{
@@ -1786,11 +1787,11 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 		ctx = WithLocalActivityOptions(ctx, ao)
 
 		err := ExecuteLocalActivity(ctx, func() error {
-			if laFailures > 2 {
+			if laFailures.Load() > 2 {
 				return nil
 			}
-			laFailures++
-			return errors.New("fail number " + strconv.Itoa(laFailures))
+			laFailures.Add(1)
+			return errors.New("fail number " + strconv.Itoa(int(laFailures.Load())))
 		}).Get(ctx, nil)
 		workflowComplete = true
 		return err
@@ -1834,7 +1835,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 			task, _ := laTaskPoller.PollTask()
 			_ = laTaskPoller.ProcessTask(task)
 			// Quit after we've polled enough times
-			if laFailures == 4 {
+			if laFailures.Load() == 4 {
 				return
 			}
 		}
