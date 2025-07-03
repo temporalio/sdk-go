@@ -2400,7 +2400,11 @@ func (w *workflowClientInterceptor) createUpdateWorkflowRequest(
 	ctx context.Context,
 	in *ClientUpdateWorkflowInput,
 ) (*workflowservice.UpdateWorkflowExecutionRequest, error) {
-	argPayloads, err := w.client.dataConverter.ToPayloads(in.Args...)
+	dataConverter := WithContext(ctx, w.client.dataConverter)
+	if dataConverter == nil {
+		dataConverter = converter.GetDefaultDataConverter()
+	}
+	argPayloads, err := dataConverter.ToPayloads(in.Args...)
 	if err != nil {
 		return nil, err
 	}
