@@ -7696,3 +7696,48 @@ func (ts *IntegrationTestSuite) TestLocalActivityCompleteWithinGracefulShutdown(
 	ts.Equal(2, laCompleted)
 	ts.True(wfeCompleted)
 }
+
+func (ts *IntegrationTestSuite) TestLocalActivitySummary() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	localActivityFn := func(ctx context.Context) error {
+		return nil
+	}
+	summaryStr := "This is a summary"
+	workflowFn := func(ctx workflow.Context) error {
+		ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+			ScheduleToCloseTimeout: 1 * time.Second,
+			Summary:                summaryStr,
+		})
+		localActivity := workflow.ExecuteLocalActivity(ctx, localActivityFn)
+		err := localActivity.Get(ctx, nil)
+		if err != nil {
+			workflow.GetLogger(ctx).Error("Activity failed.", "Error", err)
+		}
+
+		return nil
+	}
+
+	workflowID := "local-activity-summary-" + uuid.NewString()
+	ts.worker.RegisterWorkflowWithOptions(workflowFn, workflow.RegisterOptions{Name: "local-activity-summary"})
+	startOptions := client.StartWorkflowOptions{
+		ID:                  workflowID,
+		TaskQueue:           ts.taskQueueName,
+		WorkflowTaskTimeout: 1 * time.Second,
+	}
+
+	run, err := ts.client.ExecuteWorkflow(ctx, startOptions, workflowFn)
+	ts.NoError(err)
+
+	var summary string
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		ts.NoError(err)
+		attributes := event.GetMarkerRecordedEventAttributes()
+		if event.EventType == enumspb.EVENT_TYPE_MARKER_RECORDED && attributes.MarkerName == "LocalActivity" && attributes.GetFailure() == nil {
+			ts.NoError(converter.GetDefaultDataConverter().FromPayload(event.UserMetadata.Summary, &summary))
+		}
+	}
+	ts.Equal(summaryStr, summary)
+}

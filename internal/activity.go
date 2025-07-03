@@ -177,6 +177,14 @@ type (
 		// Optional: default is to retry according to the default retry policy up to ScheduleToCloseTimeout
 		// with 1sec initial delay between retries and 2x backoff.
 		RetryPolicy *RetryPolicy
+
+		// Summary is a single-line summary for this activity that will appear in UI/CLI. This can be
+		// in single-line Temporal Markdown format.
+		//
+		// Optional: defaults to none/empty.
+		//
+		// NOTE: Experimental
+		Summary string
 	}
 )
 

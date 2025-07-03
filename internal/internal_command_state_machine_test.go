@@ -120,7 +120,7 @@ func Test_TimerCancelEventOrdering(t *testing.T) {
 	require.Equal(t, attributes, commands[0].GetStartTimerCommandAttributes())
 	h.handleTimerStarted(timerID)
 	require.Equal(t, commandStateInitiated, d.getState())
-	m := h.recordLocalActivityMarker(localActivityID, map[string]*commonpb.Payloads{}, nil)
+	m := h.recordLocalActivityMarker(localActivityID, map[string]*commonpb.Payloads{}, nil, nil)
 	require.Equal(t, commandStateCreated, m.getState())
 	h.cancelTimer(TimerID{timerID})
 	require.Equal(t, commandStateCanceledAfterInitiated, d.getState())

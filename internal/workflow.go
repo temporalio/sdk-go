@@ -2430,6 +2430,7 @@ func WithLocalActivityOptions(ctx Context, options LocalActivityOptions) Context
 	opts.ScheduleToCloseTimeout = options.ScheduleToCloseTimeout
 	opts.StartToCloseTimeout = options.StartToCloseTimeout
 	opts.RetryPolicy = applyRetryPolicyDefaultsForLocalActivity(options.RetryPolicy)
+	opts.Summary = options.Summary
 	return ctx1
 }
 
@@ -2494,6 +2495,7 @@ func GetLocalActivityOptions(ctx Context) LocalActivityOptions {
 		ScheduleToCloseTimeout: opts.ScheduleToCloseTimeout,
 		StartToCloseTimeout:    opts.StartToCloseTimeout,
 		RetryPolicy:            opts.RetryPolicy,
+		Summary:                opts.Summary,
 	}
 }
 
