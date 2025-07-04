@@ -104,28 +104,30 @@ type (
 	}
 
 	activityEnvironment struct {
-		taskToken          []byte
-		workflowExecution  WorkflowExecution
-		activityID         string
-		activityType       ActivityType
-		serviceInvoker     ServiceInvoker
-		logger             log.Logger
-		metricsHandler     metrics.Handler
-		isLocalActivity    bool
-		heartbeatTimeout   time.Duration
-		deadline           time.Time
-		scheduledTime      time.Time
-		startedTime        time.Time
-		taskQueue          string
-		dataConverter      converter.DataConverter
-		attempt            int32 // starts from 1.
-		heartbeatDetails   *commonpb.Payloads
-		workflowType       *WorkflowType
-		workflowNamespace  string
-		workerStopChannel  <-chan struct{}
-		contextPropagators []ContextPropagator
-		client             *WorkflowClient
-		priority           *commonpb.Priority
+		taskToken              []byte
+		workflowExecution      WorkflowExecution
+		activityID             string
+		activityType           ActivityType
+		serviceInvoker         ServiceInvoker
+		logger                 log.Logger
+		metricsHandler         metrics.Handler
+		isLocalActivity        bool
+		heartbeatTimeout       time.Duration
+		scheduleToCloseTimeout time.Duration
+		startToCloseTimeout    time.Duration
+		deadline               time.Time
+		scheduledTime          time.Time
+		startedTime            time.Time
+		taskQueue              string
+		dataConverter          converter.DataConverter
+		attempt                int32 // starts from 1.
+		heartbeatDetails       *commonpb.Payloads
+		workflowType           *WorkflowType
+		workflowNamespace      string
+		workerStopChannel      <-chan struct{}
+		contextPropagators     []ContextPropagator
+		client                 *WorkflowClient
+		priority               *commonpb.Priority
 	}
 
 	// context.WithValue need this type instead of basic type string to avoid lint error
@@ -349,20 +351,22 @@ func (a *activityEnvironmentInterceptor) ExecuteActivity(
 
 func (a *activityEnvironmentInterceptor) GetInfo(ctx context.Context) ActivityInfo {
 	return ActivityInfo{
-		ActivityID:        a.env.activityID,
-		ActivityType:      a.env.activityType,
-		TaskToken:         a.env.taskToken,
-		WorkflowExecution: a.env.workflowExecution,
-		HeartbeatTimeout:  a.env.heartbeatTimeout,
-		Deadline:          a.env.deadline,
-		ScheduledTime:     a.env.scheduledTime,
-		StartedTime:       a.env.startedTime,
-		TaskQueue:         a.env.taskQueue,
-		Attempt:           a.env.attempt,
-		WorkflowType:      a.env.workflowType,
-		WorkflowNamespace: a.env.workflowNamespace,
-		IsLocalActivity:   a.env.isLocalActivity,
-		Priority:          convertFromPBPriority(a.env.priority),
+		ActivityID:             a.env.activityID,
+		ActivityType:           a.env.activityType,
+		TaskToken:              a.env.taskToken,
+		WorkflowExecution:      a.env.workflowExecution,
+		HeartbeatTimeout:       a.env.heartbeatTimeout,
+		ScheduleToCloseTimeout: a.env.scheduleToCloseTimeout,
+		StartToCloseTimeout:    a.env.startToCloseTimeout,
+		Deadline:               a.env.deadline,
+		ScheduledTime:          a.env.scheduledTime,
+		StartedTime:            a.env.startedTime,
+		TaskQueue:              a.env.taskQueue,
+		Attempt:                a.env.attempt,
+		WorkflowType:           a.env.workflowType,
+		WorkflowNamespace:      a.env.workflowNamespace,
+		IsLocalActivity:        a.env.isLocalActivity,
+		Priority:               convertFromPBPriority(a.env.priority),
 	}
 }
 
