@@ -1471,6 +1471,36 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithContextAwareDat
 	s.Equal(startResponse.GetRunId(), resp.GetRunID())
 }
 
+func (s *workflowClientTestSuite) TestUpdateWorkflowWithContextAwareDataConverter() {
+	dc := NewContextAwareDataConverter(converter.GetDefaultDataConverter())
+	s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+	client, ok := s.client.(*WorkflowClient)
+	s.True(ok)
+
+	input := "test"
+
+	updateResponse := &workflowservice.UpdateWorkflowExecutionResponse{
+		Stage: enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED,
+		Outcome: &updatepb.Outcome{
+			Value: &updatepb.Outcome_Success{},
+		},
+	}
+	s.service.EXPECT().UpdateWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(updateResponse, nil).Do(func(_ interface{}, req *workflowservice.UpdateWorkflowExecutionRequest, _ ...interface{}) {
+		dc := client.dataConverter
+		inputs := dc.ToStrings(req.GetRequest().GetInput().Args)
+		s.Equal("\"te?t\"", inputs[0])
+	})
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, ContextAwareDataConverterContextKey, "s")
+
+	_, err := s.client.UpdateWorkflow(ctx, UpdateWorkflowOptions{
+		UpdateName:   "my-update",
+		WaitForStage: WorkflowUpdateStageCompleted,
+		Args:         []interface{}{input},
+	})
+	s.Nil(err)
+}
+
 func (s *workflowClientTestSuite) TestSignalWithStartWorkflowValidation() {
 	// ambiguous WorkflowID
 	_, err := s.client.SignalWithStartWorkflow(
