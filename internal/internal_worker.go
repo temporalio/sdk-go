@@ -1147,6 +1147,10 @@ func (aw *AggregatedWorker) RegisterWorkflow(w interface{}) {
 		aw.executionParams.DefaultVersioningBehavior == VersioningBehaviorUnspecified {
 		panic("workflow type does not have a versioning behavior")
 	}
+	_, ok := w.(WorkflowDefinitionFactory)
+	if ok {
+		aw.logger.Warn("It is recommended to only use structures to define activity functions. In some cases, struct workflow functions may cause NDE errors.")
+	}
 	aw.registry.RegisterWorkflow(w)
 }
 
