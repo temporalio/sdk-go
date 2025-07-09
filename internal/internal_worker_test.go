@@ -2656,10 +2656,18 @@ func TestWorkerOptionDefaults(t *testing.T) {
 		NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})
 	require.NoError(t, err)
 	expected := workerExecutionParameters{
-		Namespace:                      DefaultNamespace,
-		TaskQueue:                      taskQueue,
-		ActivityTaskPollerBehavior:     NewPollerBehaviorSimpleMaximum(defaultConcurrentPollRoutineSize),
-		WorkflowTaskPollerBehavior:     NewPollerBehaviorSimpleMaximum(defaultConcurrentPollRoutineSize),
+		Namespace: DefaultNamespace,
+		TaskQueue: taskQueue,
+		ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(
+			PollerBehaviorSimpleMaximumOptions{
+				MaximumNumberOfPollers: defaultConcurrentPollRoutineSize,
+			},
+		),
+		WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(
+			PollerBehaviorSimpleMaximumOptions{
+				MaximumNumberOfPollers: defaultConcurrentPollRoutineSize,
+			},
+		),
 		Tuner:                          tuner,
 		WorkerActivitiesPerSecond:      defaultTaskQueueActivitiesPerSecond,
 		TaskQueueActivitiesPerSecond:   defaultTaskQueueActivitiesPerSecond,
@@ -2722,9 +2730,13 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		NumLocalActivitySlots: options.MaxConcurrentLocalActivityExecutionSize})
 	require.NoError(t, err)
 	expected := workerExecutionParameters{
-		TaskQueue:                      taskQueue,
-		ActivityTaskPollerBehavior:     NewPollerBehaviorSimpleMaximum(options.MaxConcurrentActivityTaskPollers),
-		WorkflowTaskPollerBehavior:     NewPollerBehaviorSimpleMaximum(options.MaxConcurrentWorkflowTaskPollers),
+		TaskQueue: taskQueue,
+		ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{
+			MaximumNumberOfPollers: options.MaxConcurrentActivityTaskPollers,
+		}),
+		WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{
+			MaximumNumberOfPollers: options.MaxConcurrentWorkflowTaskPollers,
+		}),
 		Tuner:                          tuner,
 		WorkerActivitiesPerSecond:      options.WorkerActivitiesPerSecond,
 		TaskQueueActivitiesPerSecond:   options.TaskQueueActivitiesPerSecond,
@@ -2761,10 +2773,18 @@ func TestLocalActivityWorkerOnly(t *testing.T) {
 		NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})
 	require.NoError(t, err)
 	expected := workerExecutionParameters{
-		Namespace:                      DefaultNamespace,
-		TaskQueue:                      taskQueue,
-		ActivityTaskPollerBehavior:     NewPollerBehaviorSimpleMaximum(defaultConcurrentPollRoutineSize),
-		WorkflowTaskPollerBehavior:     NewPollerBehaviorSimpleMaximum(defaultConcurrentPollRoutineSize),
+		Namespace: DefaultNamespace,
+		TaskQueue: taskQueue,
+		ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(
+			PollerBehaviorSimpleMaximumOptions{
+				MaximumNumberOfPollers: defaultConcurrentPollRoutineSize,
+			},
+		),
+		WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(
+			PollerBehaviorSimpleMaximumOptions{
+				MaximumNumberOfPollers: defaultConcurrentPollRoutineSize,
+			},
+		),
 		Tuner:                          tuner,
 		WorkerActivitiesPerSecond:      defaultTaskQueueActivitiesPerSecond,
 		TaskQueueActivitiesPerSecond:   defaultTaskQueueActivitiesPerSecond,

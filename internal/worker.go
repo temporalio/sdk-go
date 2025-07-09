@@ -486,7 +486,7 @@ func NewPollerBehaviorSimpleMaximum(
 	options PollerBehaviorSimpleMaximumOptions,
 ) PollerBehavior {
 	if options.MaximumNumberOfPollers <= 0 {
-		options.MaximumNumberOfPollers = 2 // Default maximum number of pollers.
+		options.MaximumNumberOfPollers = defaultConcurrentPollRoutineSize // Default maximum number of pollers.
 	}
 	return &pollerBehaviorSimpleMaximum{
 		maximumNumberOfPollers: options.MaximumNumberOfPollers,
@@ -504,15 +504,15 @@ func NewPollerBehaviorAutoscaling(
 ) PollerBehavior {
 	initialNumberOfPollers := options.InitialNumberOfPollers
 	if initialNumberOfPollers <= 0 {
-		initialNumberOfPollers = 5 // Default initial number of pollers.
+		initialNumberOfPollers = defaultAutoscalingInitialNumberOfPollers // Default initial number of pollers.
 	}
 	minimumNumberOfPollers := options.MinimumNumberOfPollers
 	if minimumNumberOfPollers <= 0 {
-		minimumNumberOfPollers = 1 // Default minimum number of pollers.
+		minimumNumberOfPollers = defaultAutoscalingMinimumNumberOfPollers // Default minimum number of pollers.
 	}
 	maximumNumberOfPollers := options.MaximumNumberOfPollers
 	if maximumNumberOfPollers <= 0 {
-		maximumNumberOfPollers = 100 // Default maximum number of pollers.
+		maximumNumberOfPollers = defaultAutoscalingMaximumNumberOfPollers // Default maximum number of pollers.
 	}
 	return &pollerBehaviorAutoscaling{
 		initialNumberOfPollers: initialNumberOfPollers,
