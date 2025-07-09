@@ -42,6 +42,10 @@ const (
 	// center. And the poll API latency is about 5ms. With 2 poller, we could achieve around 300~400 RPS.
 	defaultConcurrentPollRoutineSize = 2
 
+	defaultAutoscalingInitialNumberOfPollers = 5   // Default initial number of pollers when using autoscaling.
+	defaultAutoscalingMinimumNumberOfPollers = 1   // Default minimum number of pollers when using autoscaling.
+	defaultAutoscalingMaximumNumberOfPollers = 100 // Default maximum number of pollers when using autoscaling.
+
 	defaultMaxConcurrentActivityExecutionSize = 1000   // Large concurrent activity execution size (1k)
 	defaultWorkerActivitiesPerSecond          = 100000 // Large activity executions/sec (unlimited)
 
@@ -1919,9 +1923,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		capabilities: &capabilities,
 	}
 
-	if options.MaxConcurrentWorkflowTaskPollers != 0 && options.WorkflowTaskPollerBehavior != nil {
-		panic("cannot set both MaxConcurrentWorkflowTaskPollers and WorkflowTaskPollerBehavior")
-	} else if options.MaxConcurrentWorkflowTaskPollers != 0 {
+	if options.MaxConcurrentWorkflowTaskPollers != 0 {
 		workerParams.WorkflowTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{
 			MaximumNumberOfPollers: options.MaxConcurrentWorkflowTaskPollers,
 		})
@@ -1931,9 +1933,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("must set either MaxConcurrentWorkflowTaskPollers or WorkflowTaskPollerBehavior")
 	}
 
-	if options.MaxConcurrentActivityTaskPollers != 0 && options.ActivityTaskPollerBehavior != nil {
-		panic("cannot set both MaxConcurrentActivityTaskPollers and ActivityTaskPollerBehavior")
-	} else if options.MaxConcurrentActivityTaskPollers != 0 {
+	if options.MaxConcurrentActivityTaskPollers != 0 {
 		workerParams.ActivityTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{
 			MaximumNumberOfPollers: options.MaxConcurrentActivityTaskPollers,
 		})
@@ -1943,9 +1943,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("must set either MaxConcurrentActivityTaskPollers or ActivityTaskPollerBehavior")
 	}
 
-	if options.MaxConcurrentNexusTaskPollers != 0 && options.NexusTaskPollerBehavior != nil {
-		panic("cannot set both MaxConcurrentNexusTaskExecutionSize and NexusTaskPollerBehavior")
-	} else if options.MaxConcurrentNexusTaskPollers != 0 {
+	if options.MaxConcurrentNexusTaskPollers != 0 {
 		workerParams.NexusTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{
 			MaximumNumberOfPollers: options.MaxConcurrentNexusTaskPollers,
 		})
@@ -2033,8 +2031,16 @@ func processTestTags(wOptions *WorkerOptions, ep *workerExecutionParameters) {
 				switch key {
 				case workerOptionsConfigConcurrentPollRoutineSize:
 					if size, err := strconv.Atoi(val); err == nil {
-						ep.ActivityTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(size)
-						ep.WorkflowTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(size)
+						ep.ActivityTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(
+							PollerBehaviorSimpleMaximumOptions{
+								MaximumNumberOfPollers: size,
+							},
+						)
+						ep.WorkflowTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(
+							PollerBehaviorSimpleMaximumOptions{
+								MaximumNumberOfPollers: size,
+							},
+						)
 					}
 				}
 			}
@@ -2132,14 +2138,18 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 	if options.WorkerActivitiesPerSecond == 0 {
 		options.WorkerActivitiesPerSecond = defaultWorkerActivitiesPerSecond
 	}
-	if options.MaxConcurrentActivityTaskPollers <= 0 {
-		options.ActivityTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(defaultConcurrentPollRoutineSize)
+	if options.MaxConcurrentActivityTaskPollers != 0 && options.ActivityTaskPollerBehavior != nil {
+		panic("cannot set both MaxConcurrentActivityTaskPollers and ActivityTaskPollerBehavior")
+	} else if options.ActivityTaskPollerBehavior == nil && options.MaxConcurrentActivityTaskPollers <= 0 {
+		options.MaxConcurrentActivityTaskPollers = defaultConcurrentPollRoutineSize
 	}
 	if options.MaxConcurrentWorkflowTaskExecutionSize <= 0 {
 		maxConcurrentWFT = defaultMaxConcurrentTaskExecutionSize
 	}
-	if options.MaxConcurrentWorkflowTaskPollers <= 0 {
-		options.WorkflowTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(defaultConcurrentPollRoutineSize)
+	if options.MaxConcurrentWorkflowTaskPollers != 0 && options.WorkflowTaskPollerBehavior != nil {
+		panic("cannot set both MaxConcurrentWorkflowTaskPollers and WorkflowTaskPollerBehavior")
+	} else if options.WorkflowTaskPollerBehavior == nil && options.MaxConcurrentWorkflowTaskPollers <= 0 {
+		options.MaxConcurrentWorkflowTaskPollers = defaultConcurrentPollRoutineSize
 	}
 	if options.MaxConcurrentLocalActivityExecutionSize <= 0 {
 		maxConcurrentLA = defaultMaxConcurrentLocalActivityExecutionSize
@@ -2154,8 +2164,10 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 		// the server does not rate limit eager activities.
 		options.DisableEagerActivities = true
 	}
-	if options.MaxConcurrentNexusTaskPollers <= 0 {
-		options.NexusTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(defaultConcurrentPollRoutineSize)
+	if options.MaxConcurrentNexusTaskPollers != 0 && options.NexusTaskPollerBehavior != nil {
+		panic("cannot set both MaxConcurrentNexusTaskExecutionSize and NexusTaskPollerBehavior")
+	} else if options.NexusTaskPollerBehavior == nil && options.MaxConcurrentNexusTaskPollers <= 0 {
+		options.MaxConcurrentNexusTaskPollers = defaultConcurrentPollRoutineSize
 	}
 	if options.MaxConcurrentNexusTaskExecutionSize <= 0 {
 		maxConcurrentNexus = defaultMaxConcurrentTaskExecutionSize
