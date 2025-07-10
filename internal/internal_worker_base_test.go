@@ -41,19 +41,77 @@ func newTestTask(delta int) *testTask {
 	}
 }
 
-func (s *PollScalerReportHandleSuite) TestResourceExhausted() {
-	suggestion := 0
+type emptyTask struct{}
+
+func newEmptyTask() *emptyTask {
+	return &emptyTask{}
+}
+
+// isEmpty implements taskForWorker.
+func (t *emptyTask) isEmpty() bool {
+	return true
+}
+
+// scaleDecision implements taskForWorker.
+func (t *emptyTask) scaleDecision() (pollerScaleDecision, bool) {
+	return pollerScaleDecision{}, false
+}
+
+func (s *PollScalerReportHandleSuite) TestErrorScaleDown() {
+	targetSuggestion := 0
 	ps := newPollScalerReportHandle(pollScalerReportHandleOptions{
-		initialPollerCount: 4,
+		initialPollerCount: 8,
 		maxPollerCount:     10,
 		minPollerCount:     2,
-		scaleCallback: func(delta int) {
-			suggestion = delta
+		scaleCallback: func(suggestion int) {
+			targetSuggestion = suggestion
 		},
 	})
 	ps.handleTask(newTestTask(0))
-	ps.newPeriod()
 	ps.handleError(serviceerror.NewResourceExhausted(enumspb.RESOURCE_EXHAUSTED_CAUSE_CONCURRENT_LIMIT, ""))
-	assert.Equal(s.T(), 2, suggestion, "should not suggest scaling down on resource exhausted error")
+	assert.Equal(s.T(), 4, targetSuggestion, "should suggest scaling down on resource exhausted error")
+	// Non resource exhausted errors should scale down by 1
+	ps.handleError(serviceerror.NewInternal("test error"))
+	assert.Equal(s.T(), 3, targetSuggestion)
+	ps.handleError(serviceerror.NewInternal("test error"))
+	assert.Equal(s.T(), 2, targetSuggestion)
+	// We should not scale down below minPollerCount
+	ps.handleError(serviceerror.NewInternal("test error"))
+	assert.Equal(s.T(), 2, targetSuggestion)
+	ps.handleError(serviceerror.NewResourceExhausted(enumspb.RESOURCE_EXHAUSTED_CAUSE_CONCURRENT_LIMIT, ""))
+	assert.Equal(s.T(), 2, targetSuggestion)
+}
+
+func (s *PollScalerReportHandleSuite) TestScaleDownOnEmptyTask() {
+	targetSuggestion := 0
+	ps := newPollScalerReportHandle(pollScalerReportHandleOptions{
+		initialPollerCount: 8,
+		maxPollerCount:     10,
+		minPollerCount:     2,
+		scaleCallback: func(suggestion int) {
+			targetSuggestion = suggestion
+		},
+	})
+	ps.handleTask(newTestTask(0))
+	ps.handleTask(newEmptyTask())
+	assert.Equal(s.T(), 7, targetSuggestion)
+}
+
+func (s *PollScalerReportHandleSuite) TestScaleUpOnDelay() {
+	targetSuggestion := 0
+	ps := newPollScalerReportHandle(pollScalerReportHandleOptions{
+		initialPollerCount: 8,
+		maxPollerCount:     10,
+		minPollerCount:     2,
+		scaleCallback: func(suggestion int) {
+			targetSuggestion = suggestion
+		},
+	})
+	ps.handleTask(newTestTask(10))
+	assert.Equal(s.T(), 0, targetSuggestion)
+	ps.newPeriod()
+	ps.handleTask(newTestTask(100))
+	// We should scale up to but not past the max poller count
+	assert.Equal(s.T(), 10, targetSuggestion)
 
 }
