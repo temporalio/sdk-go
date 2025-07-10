@@ -2,6 +2,7 @@ package temporalnexus
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -18,6 +19,22 @@ func TestEncodeDecodeWorkflowRunOperationToken(t *testing.T) {
 	decoded, err := loadWorkflowRunOperationToken(token)
 	require.NoError(t, err)
 	require.Equal(t, wrt, decoded)
+}
+
+func TestEncodeWorkflowRunOperationTokenDoesNotIncludeVersion(t *testing.T) {
+	data, err := generateWorkflowRunOperationToken("ns", "w")
+	require.NoError(t, err)
+
+	b, err := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(data)
+	require.NoError(t, err)
+
+	var token map[string]interface{}
+	err = json.Unmarshal(b, &token)
+	require.NoError(t, err)
+	require.NotContains(t, token, "v", "version field should not be present in the token")
+	require.Equal(t, 1.0, token["t"], "token type should be workflow run")
+	require.Equal(t, "ns", token["ns"], "namespace name should match")
+	require.Equal(t, "w", token["wid"], "workflow ID should match")
 }
 
 func TestDecodeWorkflowRunOperationTokenErrors(t *testing.T) {
