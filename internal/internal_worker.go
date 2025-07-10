@@ -1149,7 +1149,7 @@ func (aw *AggregatedWorker) RegisterWorkflow(w interface{}) {
 	}
 	fnName := runtime.FuncForPC(reflect.ValueOf(w).Pointer()).Name()
 	if strings.HasSuffix(fnName, "-fm") {
-		aw.logger.Warn("Registering workflow" + fnName + ". It is recommended to only use struct methods to define activity functions. In some cases, struct methods as workflows may cause NDE errors.")
+		aw.logger.Warn("Registering workflow" + fnName + ". It is recommended to only use struct methods to define activity functions. In some cases, struct methods as workflows may cause non-deterministic errors.")
 	}
 	aw.registry.RegisterWorkflow(w)
 }
