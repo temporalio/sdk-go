@@ -41,6 +41,12 @@ type TracerOptions struct {
 	// DisableBaggage can be set to disable baggage propagation.
 	DisableBaggage bool
 
+	// EnableSpanLinks can be set to enable span links for spans disconnected from their parent span.
+	EnableSpanLinks bool
+
+	// DisconnectContinueAsNew can be set to disconnect ContinueAsNew workflows from their parent span.
+	DisconnectContinueAsNewWorkflows bool
+
 	// AllowInvalidParentSpans will swallow errors interpreting parent
 	// spans from headers. Useful when migrating from one tracing library
 	// to another, while workflows/activities may be in progress.
@@ -116,12 +122,14 @@ func NewTracingInterceptor(options TracerOptions) (interceptor.Interceptor, erro
 
 func (t *tracer) Options() interceptor.TracerOptions {
 	return interceptor.TracerOptions{
-		SpanContextKey:          t.options.SpanContextKey,
-		HeaderKey:               t.options.HeaderKey,
-		DisableSignalTracing:    t.options.DisableSignalTracing,
-		DisableQueryTracing:     t.options.DisableQueryTracing,
-		DisableUpdateTracing:    t.options.DisableUpdateTracing,
-		AllowInvalidParentSpans: t.options.AllowInvalidParentSpans,
+		SpanContextKey:                   t.options.SpanContextKey,
+		HeaderKey:                        t.options.HeaderKey,
+		DisableSignalTracing:             t.options.DisableSignalTracing,
+		DisableQueryTracing:              t.options.DisableQueryTracing,
+		DisableUpdateTracing:             t.options.DisableUpdateTracing,
+		EnableSpanLinks:                  t.options.EnableSpanLinks,
+		DisconnectContinueAsNewWorkflows: t.options.DisconnectContinueAsNewWorkflows,
+		AllowInvalidParentSpans:          t.options.AllowInvalidParentSpans,
 	}
 }
 
@@ -175,8 +183,11 @@ func (t *tracer) ContextWithSpan(ctx context.Context, span interceptor.TracerSpa
 
 func (t *tracer) StartSpan(opts *interceptor.TracerStartSpanOptions) (interceptor.TracerSpan, error) {
 	// Create context with parent
-	var parent trace.SpanContext
-	var bag baggage.Baggage
+	var (
+		parent trace.SpanContext
+		bag    baggage.Baggage
+	)
+
 	switch optParent := opts.Parent.(type) {
 	case nil:
 	case *tracerSpan:
@@ -188,7 +199,9 @@ func (t *tracer) StartSpan(opts *interceptor.TracerStartSpanOptions) (intercepto
 	default:
 		return nil, fmt.Errorf("unrecognized parent type %T", optParent)
 	}
+
 	ctx := context.Background()
+
 	if parent.IsValid() {
 		ctx = trace.ContextWithSpanContext(ctx, parent)
 		if !t.options.DisableBaggage {
@@ -196,17 +209,38 @@ func (t *tracer) StartSpan(opts *interceptor.TracerStartSpanOptions) (intercepto
 		}
 	}
 
-	// Create span
-	span := t.options.SpanStarter(ctx, t.options.Tracer, opts.Operation+":"+opts.Name, trace.WithTimestamp(opts.Time))
+	var spanOpts []trace.SpanStartOption
 
-	// Set tags
+	spanOpts = append(spanOpts, trace.WithTimestamp(opts.Time))
+
 	if len(opts.Tags) > 0 {
-		attrs := make([]attribute.KeyValue, 0, len(opts.Tags))
+		attrs := make([]attribute.KeyValue, len(opts.Tags))
 		for k, v := range opts.Tags {
 			attrs = append(attrs, attribute.String(k, v))
 		}
-		span.SetAttributes(attrs...)
+		spanOpts = append(spanOpts, trace.WithAttributes(attrs...))
 	}
+
+	// New span created and linked to parent
+	if t.options.EnableSpanLinks {
+		if opts.Link != nil {
+			var spanCtx trace.SpanContext
+			switch ref := opts.Link.(type) {
+			case *tracerSpan:
+				spanCtx = ref.SpanContext()
+			case *tracerSpanRef:
+				spanCtx = ref.SpanContext
+			}
+
+			if spanCtx.IsValid() {
+				link := trace.Link{SpanContext: spanCtx}
+				spanOpts = append(spanOpts, trace.WithLinks(link))
+			}
+		}
+	}
+
+	// Start the new span
+	span := t.options.SpanStarter(ctx, t.options.Tracer, opts.Operation+":"+opts.Name, spanOpts...)
 
 	tSpan := &tracerSpan{Span: span}
 	if !t.options.DisableBaggage {
