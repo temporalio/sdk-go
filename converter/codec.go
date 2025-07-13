@@ -157,7 +157,7 @@ func (e *CodecDataConverter) ToPayload(value interface{}) (*commonpb.Payload, er
 
 	encodedPayloads, err := e.encode([]*commonpb.Payload{payload})
 	if err != nil {
-		return payload, nil
+		return payload, err
 	}
 	if len(encodedPayloads) != 1 {
 		return payload, fmt.Errorf("received %d payloads from codec, expected 1", len(encodedPayloads))
