@@ -1238,53 +1238,30 @@ func SleepHour(ctx Context) error {
 }
 
 func SleepThenCancel(ctx Context) error {
-	selector := NewSelector(ctx)
-	var activationWorkflow *WorkflowExecution
-	selector.AddReceive(GetSignalChannel(ctx, "activate"), func(c ReceiveChannel, more bool) {
-		c.Receive(ctx, nil)
-		GetLogger(ctx).Info("Received activation signal")
-		if activationWorkflow != nil {
-			RequestCancelExternalWorkflow(ctx, activationWorkflow.ID, activationWorkflow.RunID)
-		}
-
-		cwf := ExecuteChildWorkflow(
-			ctx,
-			SleepHour,
-		)
-
-		var res WorkflowExecution
-		if err := cwf.GetChildWorkflowExecution().Get(ctx, &res); err != nil {
-			GetLogger(ctx).Error("Failed to start child workflow", "error", err)
-			return
-		}
-		activationWorkflow = &res
-
-		selector.AddFuture(cwf, func(f Future) {
-			if err := f.Get(ctx, nil); err != nil {
-				GetLogger(ctx).Error("Child workflow failed", "error", err)
-			} else {
-				GetLogger(ctx).Info("Child workflow completed successfully")
-			}
-			activationWorkflow = nil
-		})
-	})
-
-	for selector.HasPending() || activationWorkflow != nil {
-		selector.Select(ctx)
+	cwf := ExecuteChildWorkflow(
+		ctx,
+		SleepHour,
+	)
+	var res WorkflowExecution
+	if err := cwf.GetChildWorkflowExecution().Get(ctx, &res); err != nil {
+		return err
 	}
-	return nil
+
+	// Canceling an external workflow that causes a timer to cancel used to fail due to
+	// "illegal access from outside of workflow context"
+	err := RequestCancelExternalWorkflow(ctx, res.ID, res.RunID).Get(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	// Give the workflow time to finish canceling the child workflow
+	return Sleep(ctx, 1*time.Second)
 }
 
 func TestRequestCancelExternalWorkflowInSelector(t *testing.T) {
 	testSuite := &WorkflowTestSuite{}
 	env := testSuite.NewTestWorkflowEnvironment()
 	env.RegisterWorkflow(SleepHour)
-	env.RegisterDelayedCallback(func() {
-		env.SignalWorkflow("activate", nil)
-	}, 0)
-	env.RegisterDelayedCallback(func() {
-		env.SignalWorkflow("activate", nil)
-	}, time.Second)
 	env.ExecuteWorkflow(SleepThenCancel)
 	require.NoError(t, env.GetWorkflowError())
 	env.IsWorkflowCompleted()

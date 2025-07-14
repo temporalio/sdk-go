@@ -2281,23 +2281,20 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelChildWorkflow(_, workflowID
 
 func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback ResultHandler) {
 	if env.workflowInfo.WorkflowExecution.ID == workflowID {
-		// cancel current workflow from within workflow context
-		if sd, ok := env.workflowDef.(*syncWorkflowDefinition); ok {
-			env.postCallback(func() {
-				sd.dispatcher.NewCoroutine(sd.rootCtx, "cancel-self", true, func(ctx Context) {
-					env.workflowCancelHandler()
-				})
-				if env.isChildWorkflow() && env.onChildWorkflowCanceledListener != nil {
-					env.onChildWorkflowCanceledListener(env.workflowInfo)
-				}
-			}, true)
+		// The way testWorkflowEnvironment is setup today, we close the child workflow dispatcher before calling
+		// the workflowCancelHandler. A larger refactor would be needed to handle this similar to non-test code.
+		// Maybe worth doing when https://github.com/temporalio/go-sdk/issues/50 is tackled.
+		if sd, ok := env.workflowDef.(*syncWorkflowDefinition); ok && env.isChildWorkflow() {
+			sd.dispatcher.NewCoroutine(sd.rootCtx, "cancel-self", true, func(ctx Context) {
+				env.workflowCancelHandler()
+			})
 		} else {
 			env.workflowCancelHandler()
-			if env.isChildWorkflow() && env.onChildWorkflowCanceledListener != nil {
-				env.postCallback(func() {
-					env.onChildWorkflowCanceledListener(env.workflowInfo)
-				}, false)
-			}
+		}
+		if env.isChildWorkflow() && env.onChildWorkflowCanceledListener != nil {
+			env.postCallback(func() {
+				env.onChildWorkflowCanceledListener(env.workflowInfo)
+			}, false)
 		}
 		return
 	} else if childHandle, ok := env.runningWorkflows[workflowID]; ok && !childHandle.handled {
