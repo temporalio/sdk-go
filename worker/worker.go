@@ -212,7 +212,7 @@ type (
 	// Options is used to configure a worker instance.
 	Options = internal.WorkerOptions
 
-	// PollerBehaviorAutoscalingOptions is the options for NewPollerBehaviorAutoscaling.
+	// PollerBehavior is used to configure the behavior of the poller.
 	//
 	// NOTE: Experimental
 	PollerBehavior = internal.PollerBehavior
