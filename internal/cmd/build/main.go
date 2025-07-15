@@ -20,6 +20,7 @@ import (
 	_ "honnef.co/go/tools/staticcheck"
 
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 )
 
@@ -109,6 +110,13 @@ func (b *builder) integrationTest() error {
 		}
 	}
 
+	customKeyField := temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
+	customStringField := temporal.NewSearchAttributeKeyString("CustomStringField")
+	searchAttributes := temporal.NewSearchAttributes(
+		customKeyField.ValueSet("Keyword"),
+		customStringField.ValueSet("Text"),
+	)
+
 	// Start dev server if wanted
 	if *devServerFlag {
 		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
@@ -116,13 +124,12 @@ func (b *builder) integrationTest() error {
 				HostPort:  "127.0.0.1:7233",
 				Namespace: "integration-test-namespace",
 			},
-			DBFilename: "temporal.sqlite",
-			LogLevel:   "warn",
+			DBFilename:       "temporal.sqlite",
+			LogLevel:         "warn",
+			SearchAttributes: searchAttributes,
 			ExtraArgs: []string{
 				"--sqlite-pragma", "journal_mode=WAL",
 				"--sqlite-pragma", "synchronous=OFF",
-				"--search-attribute", "CustomKeywordField=Keyword",
-				"--search-attribute", "CustomStringField=Text",
 				"--dynamic-config-value", "frontend.enableExecuteMultiOperation=true",
 				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecution=true",
 				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecutionAsyncAccepted=true",
