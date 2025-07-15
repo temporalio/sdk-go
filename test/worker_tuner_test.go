@@ -49,7 +49,7 @@ func (ts *WorkerTunerTestSuite) TestFixedSizeWorkerTuner() {
 	})
 	ts.NoError(err)
 
-	ts.runTheWorkflow(tuner, ctx)
+	ts.runTheWorkflow(worker.Options{Tuner: tuner}, ctx)
 }
 
 func (ts *WorkerTunerTestSuite) TestCompositeWorkerTuner() {
@@ -75,7 +75,35 @@ func (ts *WorkerTunerTestSuite) TestCompositeWorkerTuner() {
 		WorkflowSlotSupplier: wfSS, ActivitySlotSupplier: actSS, LocalActivitySlotSupplier: laCss})
 	ts.NoError(err)
 
-	ts.runTheWorkflow(tuner, ctx)
+	ts.runTheWorkflow(worker.Options{Tuner: tuner}, ctx)
+}
+
+func (ts *WorkerTunerTestSuite) TestPollerBehaviorAutoscalingScaler() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	ts.runTheWorkflow(worker.Options{
+		WorkflowTaskPollerBehavior: worker.NewPollerBehaviorAutoscaling(
+			worker.PollerBehaviorAutoscalingOptions{},
+		),
+		ActivityTaskPollerBehavior: worker.NewPollerBehaviorAutoscaling(
+			worker.PollerBehaviorAutoscalingOptions{},
+		),
+	}, ctx)
+}
+
+func (ts *WorkerTunerTestSuite) TestPollerBehaviorSimpleMaximumScaler() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	ts.runTheWorkflow(worker.Options{
+		WorkflowTaskPollerBehavior: worker.NewPollerBehaviorSimpleMaximum(
+			worker.PollerBehaviorSimpleMaximumOptions{},
+		),
+		ActivityTaskPollerBehavior: worker.NewPollerBehaviorSimpleMaximum(
+			worker.PollerBehaviorSimpleMaximumOptions{},
+		),
+	}, ctx)
 }
 
 func (ts *WorkerTunerTestSuite) TestResourceBasedSmallSlots() {
@@ -103,12 +131,11 @@ func (ts *WorkerTunerTestSuite) TestResourceBasedSmallSlots() {
 
 	// The bug this is verifying was triggered by a race, so run this a bunch to verify it's not hit
 	for i := 0; i < 10; i++ {
-		ts.runTheWorkflow(tuner, ctx)
+		ts.runTheWorkflow(worker.Options{Tuner: tuner}, ctx)
 	}
 }
 
-func (ts *WorkerTunerTestSuite) runTheWorkflow(tuner worker.WorkerTuner, ctx context.Context) {
-	workerOptions := worker.Options{Tuner: tuner}
+func (ts *WorkerTunerTestSuite) runTheWorkflow(workerOptions worker.Options, ctx context.Context) {
 	myWorker := worker.New(ts.client, ts.taskQueueName, workerOptions)
 	ts.workflows.register(myWorker)
 	ts.activities.register(myWorker)

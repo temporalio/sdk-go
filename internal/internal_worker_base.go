@@ -421,8 +421,7 @@ func (bw *baseWorker) isStop() bool {
 
 func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 	defer bw.stopWG.Done()
-	// TODO(quinn): with poller autoscaling, this metric doesn't make a lot of sense
-	// since the number of pollers can go up and down.
+	// Note: With poller autoscaling, this metric doesn't make a lot of sense since the number of pollers can go up and down.
 	bw.metricsHandler.Counter(metrics.PollerStartCounter).Inc(1)
 
 	ctx, cancelfn := context.WithCancel(context.Background())
@@ -430,7 +429,6 @@ func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 	reserveChan := make(chan *SlotPermit)
 
 	for {
-		// TODO(quinn): is there a way we can refactor this to avoid the function?
 		if func() bool {
 			if taskWorker.pollerSemaphore != nil {
 				if taskWorker.pollerSemaphore.acquire(bw.limiterContext) != nil {
@@ -735,7 +733,6 @@ func (prh *pollScalerReportHandle) handleTask(task taskForWorker) {
 	if sd, ok := task.scaleDecision(); ok {
 		prh.everSawScalingDecision.Store(true)
 		ds := sd.pollRequestDeltaSuggestion
-		prh.logger.Debug("Received scale decision", "delta", ds)
 		if ds > 0 {
 			if prh.scaleUpAllowed.Load() {
 				prh.updateTarget(func(target int64) int64 {
@@ -750,7 +747,6 @@ func (prh *pollScalerReportHandle) handleTask(task taskForWorker) {
 	} else if task.isEmpty() && prh.everSawScalingDecision.Load() {
 		// We want to avoid scaling down on empty polls if the server has never made any
 		// scaling decisions - otherwise we might never scale up again.
-		prh.logger.Debug("Received empty task")
 		prh.updateTarget(func(target int64) int64 {
 			return target - 1
 		})
