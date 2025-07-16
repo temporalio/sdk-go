@@ -99,5 +99,17 @@ func TestStartDevServer_SearchAttributes(t *testing.T) {
 
 	describe, err := c.DescribeWorkflow(context.Background(), run.GetID(), run.GetRunID())
 	require.NoError(t, err)
-	require.Equal(t, describe.TypedSearchAttributes, sa)
+	saTime, found := sa.GetTime(attrTime)
+	require.True(t, found)
+	describeTime, found := describe.TypedSearchAttributes.GetTime(attrTime)
+	require.True(t, found)
+	// Time in Go must be compared with time.Equal to accurately compare time equality
+	require.True(t, saTime.Equal(describeTime))
+
+	untypedSa := sa.GetUntypedValues()
+	for key, val := range describe.TypedSearchAttributes.GetUntypedValues() {
+		if key != attrTime {
+			require.Equal(t, untypedSa[key], val)
+		}
+	}
 }

@@ -234,7 +234,7 @@ func (b *builder) unitTest() error {
 	testDirMap := map[string]struct{}{}
 	var testDirs []string
 	err := fs.WalkDir(os.DirFS(b.rootDir), ".", func(p string, d fs.DirEntry, err error) error {
-		if !strings.HasPrefix(p, "test") && strings.HasSuffix(p, "_test.go") {
+		if (!strings.HasPrefix(p, "test") || strings.HasPrefix(p, "testsuite")) && strings.HasSuffix(p, "_test.go") {
 			dir := path.Dir(p)
 			if _, ok := testDirMap[dir]; !ok {
 				testDirMap[dir] = struct{}{}
