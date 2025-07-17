@@ -319,3 +319,39 @@ func TestRawValueJsonConverter(t *testing.T) {
 	err = jsonConverter.FromPayload(dataPayload, &rawValue)
 	require.Error(t, err)
 }
+
+// errorCodecOnEncode is a codec that always returns an error on encode.
+type errorCodecOnEncode struct {
+	err error
+}
+
+func (c *errorCodecOnEncode) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	return nil, c.err
+}
+
+func (c *errorCodecOnEncode) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	return payloads, nil
+}
+
+func TestCodecDataConverter_ToPayload_EncodeError(t *testing.T) {
+	require := require.New(t)
+
+	// Codec that always fails encoding
+	errCodec := &errorCodecOnEncode{err: fmt.Errorf("some encode error")}
+
+	// Converter with the failing codec
+	conv := NewCodecDataConverter(
+		GetDefaultDataConverter(),
+		errCodec,
+	)
+
+	// Try to convert, should fail.
+	originalPayload, err := GetDefaultDataConverter().ToPayload("foo")
+	require.NoError(err)
+
+	payload, err := conv.ToPayload("foo")
+	require.Error(err)
+	require.EqualError(err, "some encode error")
+	// Also assert that the original payload is returned on error.
+	require.True(proto.Equal(originalPayload, payload))
+}
