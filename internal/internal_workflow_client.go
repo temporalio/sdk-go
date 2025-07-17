@@ -796,8 +796,6 @@ type UpdateWorkflowOptions struct {
 
 // UpdateWithStartWorkflowOptions encapsulates the parameters used by UpdateWithStartWorkflow.
 // See UpdateWithStartWorkflow and NewWithStartWorkflowOperation.
-//
-// NOTE: Experimental
 type UpdateWithStartWorkflowOptions struct {
 	StartWorkflowOperation WithStartWorkflowOperation
 	UpdateOptions          UpdateWorkflowOptions

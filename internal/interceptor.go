@@ -397,8 +397,6 @@ type ClientOutboundInterceptor interface {
 	UpdateWorkflow(context.Context, *ClientUpdateWorkflowInput) (WorkflowUpdateHandle, error)
 
 	// UpdateWithStartWorkflow intercepts client.Client.UpdateWithStartWorkflow.
-	//
-	// NOTE: Experimental
 	UpdateWithStartWorkflow(context.Context, *ClientUpdateWithStartWorkflowInput) (WorkflowUpdateHandle, error)
 
 	// PollWorkflowUpdate requests the outcome of a specific update from the

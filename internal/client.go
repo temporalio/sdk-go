@@ -120,8 +120,6 @@ type (
 			options StartWorkflowOptions, workflow interface{}, workflowArgs ...interface{}) (WorkflowRun, error)
 
 		// NewWithStartWorkflowOperation returns a WithStartWorkflowOperation for use in UpdateWithStartWorkflow.
-		//
-		// NOTE: Experimental
 		NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) WithStartWorkflowOperation
 
 		// CancelWorkflow cancels a workflow in execution
@@ -406,8 +404,6 @@ type (
 		// workflow is running then, if the WorkflowIDConflictPolicy is
 		// USE_EXISTING, the update is issued against the specified workflow,
 		// and if the WorkflowIDConflictPolicy is FAIL, an error is returned.
-		//
-		// NOTE: Experimental
 		UpdateWithStartWorkflow(ctx context.Context, options UpdateWithStartWorkflowOptions) (WorkflowUpdateHandle, error)
 
 		// GetWorkflowUpdateHandle creates a handle to the referenced update
@@ -791,8 +787,6 @@ type (
 
 	// WithStartWorkflowOperation defines how to start a workflow when using UpdateWithStartWorkflow.
 	// See [NewWithStartWorkflowOperation] and [UpdateWithStartWorkflow].
-	//
-	// NOTE: Experimental
 	WithStartWorkflowOperation interface {
 		// Get returns the WorkflowRun that was targeted by the UpdateWithStartWorkflow call.
 		// This is a blocking API.
