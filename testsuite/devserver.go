@@ -23,6 +23,7 @@ import (
 	"go.temporal.io/sdk/internal"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
+	"go.temporal.io/sdk/temporal"
 )
 
 // Cached download of the dev server.
@@ -56,6 +57,8 @@ type DevServerOptions struct {
 	LogFormat string
 	// Log level - defaults to "warn".
 	LogLevel string
+	// Search Attributes to register with the dev server.
+	SearchAttributes temporal.SearchAttributes
 	// Additional arguments to the dev server.
 	ExtraArgs []string
 	// Where to redirect stdout and stderr, if nil they will be redirected to the current process.
@@ -141,6 +144,9 @@ func prepareCommand(options *DevServerOptions, host, port, namespace string) []s
 	}
 	if options.UIPort != "" {
 		args = append(args, "--ui-port", options.UIPort)
+	}
+	for searchAttribute := range options.SearchAttributes.GetUntypedValues() {
+		args = append(args, "--search-attribute", searchAttribute.GetName()+"="+searchAttribute.GetValueType().String())
 	}
 	return append(args, options.ExtraArgs...)
 }
