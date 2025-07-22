@@ -421,6 +421,9 @@ const (
 	//
 	// Exposed as: [go.temporal.io/sdk/worker.FailWorkflow]
 	FailWorkflow
+	// RestartWorkflow immediately restarts the workflow execution if workflow code throws panic or detects non-determinism.
+	// This feature is convenient if the workflows are finite state machines
+	RestartWorkflow
 )
 
 // ReplayNamespace is namespace for replay because startEvent doesn't contain it

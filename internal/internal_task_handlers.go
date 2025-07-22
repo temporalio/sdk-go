@@ -1304,6 +1304,16 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 			w.getEventHandler().Complete(nil, NewApplicationError(
 				"Workflow failed on panic due to FailWorkflow workflow panic policy",
 				"", false, workflowError))
+		case RestartWorkflow:
+			// return an error to restart the workflow
+			// TODO: Get Workflow Context and inputs somehow and have a full ContinueAsNewError
+			// current error only works if the workflow does not have any input
+			w.getEventHandler().Complete(nil, &ContinueAsNewError{
+				WorkflowType:        &w.workflowInfo.WorkflowType,
+				TaskQueueName:       w.workflowInfo.TaskQueueName,
+				WorkflowRunTimeout:  w.workflowInfo.WorkflowRunTimeout,
+				WorkflowTaskTimeout: w.workflowInfo.WorkflowTaskTimeout,
+			})
 		case BlockWorkflow:
 			// return error here will be convert to WorkflowTaskFailed for the first time, and ignored for subsequent
 			// attempts which will cause WorkflowTaskTimeout and server will retry forever until issue got fixed or
