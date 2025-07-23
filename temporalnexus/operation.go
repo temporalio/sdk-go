@@ -68,6 +68,10 @@ type WorkflowRunOperationOptions[I, O any] struct {
 	// Handler for starting a workflow with a different input than the operation. Mutually exclusive with Workflow
 	// and GetOptions.
 	Handler func(context.Context, I, nexus.StartOperationOptions) (WorkflowHandle[O], error)
+	// Start with signal
+	StartSignalName string
+	// Signal argument
+	StartSignalArg interface{}
 }
 
 // NOTE: not implementing GetInfo and GetResult just yet, they're not part of the supported methods in Temporal.
@@ -182,8 +186,7 @@ func (o *workflowRunOperation[I, O]) Start(
 	if err != nil {
 		return nil, err
 	}
-
-	handle, err := ExecuteWorkflow(ctx, options, wfOpts, o.options.Workflow, input)
+	handle, err := ExecuteWorkflow(ctx, options, wfOpts, o.options.StartSignalName, o.options.StartSignalArg, o.options.Workflow, input)
 	if err != nil {
 		return nil, err
 	}
@@ -255,10 +258,12 @@ func ExecuteWorkflow[I, O any, WF func(workflow.Context, I) (O, error)](
 	ctx context.Context,
 	nexusOptions nexus.StartOperationOptions,
 	startWorkflowOptions client.StartWorkflowOptions,
+	signalName string,
+	signalArg interface{},
 	workflow WF,
 	arg I,
 ) (WorkflowHandle[O], error) {
-	return ExecuteUntypedWorkflow[O](ctx, nexusOptions, startWorkflowOptions, workflow, arg)
+	return ExecuteUntypedWorkflow[O](ctx, nexusOptions, startWorkflowOptions, signalName, signalArg, workflow, arg)
 }
 
 // ExecuteUntypedWorkflow starts a workflow with by function reference or string name, linking the execution chain to a
@@ -269,6 +274,8 @@ func ExecuteUntypedWorkflow[R any](
 	ctx context.Context,
 	nexusOptions nexus.StartOperationOptions,
 	startWorkflowOptions client.StartWorkflowOptions,
+	signalName string,
+	signalArg interface{},
 	workflow any,
 	args ...any,
 ) (WorkflowHandle[R], error) {
@@ -339,7 +346,14 @@ func ExecuteUntypedWorkflow[R any](
 	// when the callback has been attached to the workflow (new or existing running workflow).
 	startWorkflowOptions.WorkflowExecutionErrorWhenAlreadyStarted = true
 
-	run, err := GetClient(ctx).ExecuteWorkflow(ctx, startWorkflowOptions, workflowType, args...)
+	var run client.WorkflowRun
+
+	if signalName == "" {
+		run, err = GetClient(ctx).ExecuteWorkflow(ctx, startWorkflowOptions, workflowType, args...)
+	} else {
+		run, err = GetClient(ctx).SignalWithStartWorkflow(ctx, startWorkflowOptions.ID, signalName, signalArg, startWorkflowOptions, workflowType, args...)
+	}
+
 	if err != nil {
 		return nil, err
 	}
