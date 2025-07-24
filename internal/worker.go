@@ -8,7 +8,70 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 )
 
+var (
+	_ PollerBehavior = (*pollerBehaviorSimpleMaximum)(nil)
+	_ PollerBehavior = (*pollerBehaviorAutoscaling)(nil)
+)
+
 type (
+	pollerBehaviorSimpleMaximum struct {
+		// maximumNumberOfPollers is the maximum number of pollers the worker is allowed to start.
+		maximumNumberOfPollers int
+	}
+
+	pollerBehaviorAutoscaling struct {
+		// initialNumberOfPollers is the initial number of pollers to start.
+		initialNumberOfPollers int
+		// maximumNumberOfPollers is the maximum number of pollers the worker is allowed scale up to.
+		maximumNumberOfPollers int
+		// minimumNumberOfPollers is the minimum number of pollers the worker is allowed scale down to.
+		minimumNumberOfPollers int
+	}
+
+	// PollerBehavior is used to configure the behavior of the poller.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.PollerBehavior]
+	PollerBehavior interface {
+		isPollerBehavior()
+	}
+
+	// PollerBehaviorAutoscalingOptions is the options for NewPollerBehaviorAutoscaling.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.PollerBehaviorAutoscalingOptions]
+	PollerBehaviorAutoscalingOptions struct {
+		// InitialNumberOfPollers is the initial number of pollers to start.
+		//
+		// Default: 5
+		InitialNumberOfPollers int
+
+		// MinimumNumberOfPollers is the minimum number of pollers the worker is allowed scale down to.
+		//
+		// Default: 1
+		MinimumNumberOfPollers int
+
+		// MaximumNumberOfPollers is the maximum number of pollers the worker is allowed scale up to.
+		//
+		// Default: 100
+		MaximumNumberOfPollers int
+	}
+
+	// PollerBehaviorSimpleMaximumOptions is the options for NewPollerBehaviorSimpleMaximum.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.PollerBehaviorSimpleMaximumOptions]
+	PollerBehaviorSimpleMaximumOptions struct {
+		// MaximumNumberOfPollers is the maximum number of pollers the worker is allowed
+		// to start.
+		//
+		// Default: 2
+		MaximumNumberOfPollers int
+	}
+
 	// WorkerDeploymentOptions provides configuration for Worker Deployment Versioning.
 	//
 	// NOTE: [WorkerDeploymentOptions.UseVersioning] must be set to enable Worker Deployment
@@ -100,6 +163,8 @@ type (
 		// temporal-server to retrieve activity tasks. Changing this value will affect the
 		// rate at which the worker is able to consume tasks from a task queue.
 		//
+		// NOTE: This option is mutually exclusive with WorkflowTaskPollerBehavior.
+		//
 		// default: 2
 		MaxConcurrentActivityTaskPollers int
 
@@ -117,6 +182,8 @@ type (
 		// internal logic where pollers alternate between stick and non-sticky queues, this
 		// value cannot be 1 and will panic if set to that value.
 		//
+		// NOTE: This option is mutually exclusive with WorkflowTaskPollerBehavior.
+		//
 		// default: 2
 		MaxConcurrentWorkflowTaskPollers int
 
@@ -129,6 +196,8 @@ type (
 		// Optional: Sets the maximum number of goroutines that will concurrently poll the
 		// temporal-server to retrieve nexus tasks. Changing this value will affect the
 		// rate at which the worker is able to consume tasks from a task queue.
+		//
+		// NOTE: This option is mutually exclusive with NexusTaskPollerBehavior.
 		//
 		// default: 2
 		MaxConcurrentNexusTaskPollers int
@@ -303,6 +372,30 @@ type (
 		//
 		// NOTE: Experimental
 		Tuner WorkerTuner
+
+		// Optional: If set, the worker will use the provided poller behavior when polling for workflow tasks.
+		// This is mutually exclusive with MaxConcurrentWorkflowTaskPollers.
+		//
+		// NOTE: This option is mutually exclusive with MaxConcurrentWorkflowTaskPollers.
+		//
+		// NOTE: Experimental
+		WorkflowTaskPollerBehavior PollerBehavior
+
+		// Optional: If set, the worker will use the provided poller behavior when polling for activity tasks.
+		// This is mutually exclusive with MaxConcurrentActivityTaskPollers.
+		//
+		// NOTE: This option is mutually exclusive with MaxConcurrentActivityTaskPollers.
+		//
+		// NOTE: Experimental
+		ActivityTaskPollerBehavior PollerBehavior
+
+		// Optional: If set, the worker will use the provided poller behavior when polling for nexus tasks.
+		// This is mutually exclusive with MaxConcurrentNexusTaskPollers.
+		//
+		// NOTE: This option is mutually exclusive with MaxConcurrentNexusTaskPollers.
+		//
+		// NOTE: Experimental
+		NexusTaskPollerBehavior PollerBehavior
 	}
 )
 
@@ -374,4 +467,56 @@ func workerDeploymentOptionsToProto(useVersioning bool, version WorkerDeployment
 		}
 	}
 	return nil
+}
+
+// isPollerBehavior implements PollerBehavior.
+func (p *pollerBehaviorSimpleMaximum) isPollerBehavior() {
+}
+
+// isPollerBehavior implements PollerBehavior.
+func (p *pollerBehaviorAutoscaling) isPollerBehavior() {
+}
+
+// NewPollerBehaviorSimpleMaximum creates a PollerBehavior that allows the worker to start up to a maximum number of pollers.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/worker.NewPollerBehaviorSimpleMaximum]
+func NewPollerBehaviorSimpleMaximum(
+	options PollerBehaviorSimpleMaximumOptions,
+) PollerBehavior {
+	if options.MaximumNumberOfPollers <= 0 {
+		options.MaximumNumberOfPollers = defaultConcurrentPollRoutineSize // Default maximum number of pollers.
+	}
+	return &pollerBehaviorSimpleMaximum{
+		maximumNumberOfPollers: options.MaximumNumberOfPollers,
+	}
+}
+
+// NewPollerBehaviorAutoscaling creates a PollerBehavior that allows the worker to scale the number of pollers within a given range.
+// based on the workflow and feedback from the server.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/worker.NewPollerBehaviorAutoscaling]
+func NewPollerBehaviorAutoscaling(
+	options PollerBehaviorAutoscalingOptions,
+) PollerBehavior {
+	initialNumberOfPollers := options.InitialNumberOfPollers
+	if initialNumberOfPollers <= 0 {
+		initialNumberOfPollers = defaultAutoscalingInitialNumberOfPollers // Default initial number of pollers.
+	}
+	minimumNumberOfPollers := options.MinimumNumberOfPollers
+	if minimumNumberOfPollers <= 0 {
+		minimumNumberOfPollers = defaultAutoscalingMinimumNumberOfPollers // Default minimum number of pollers.
+	}
+	maximumNumberOfPollers := options.MaximumNumberOfPollers
+	if maximumNumberOfPollers <= 0 {
+		maximumNumberOfPollers = defaultAutoscalingMaximumNumberOfPollers // Default maximum number of pollers.
+	}
+	return &pollerBehaviorAutoscaling{
+		initialNumberOfPollers: initialNumberOfPollers,
+		minimumNumberOfPollers: minimumNumberOfPollers,
+		maximumNumberOfPollers: maximumNumberOfPollers,
+	}
 }
