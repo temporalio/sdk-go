@@ -81,7 +81,7 @@ func ExampleNewWorkflowRunOperationWithOptions() {
 					// Workflow ID is required and must be deterministically generated from the input in order
 					// for the operation to be idempotent as the request to start the operation may be retried.
 					ID: input.ID,
-				}, MyHandlerWorkflowWithAlternativeInput, MyWorkflowInput{})
+				}, "", nil, MyHandlerWorkflowWithAlternativeInput, MyWorkflowInput{})
 			},
 		})
 

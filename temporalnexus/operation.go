@@ -346,17 +346,17 @@ func ExecuteUntypedWorkflow[R any](
 	// when the callback has been attached to the workflow (new or existing running workflow).
 	startWorkflowOptions.WorkflowExecutionErrorWhenAlreadyStarted = true
 
-	var run client.WorkflowRun
-
-	if signalName == "" {
-		run, err = GetClient(ctx).ExecuteWorkflow(ctx, startWorkflowOptions, workflowType, args...)
-	} else {
-		run, err = GetClient(ctx).SignalWithStartWorkflow(ctx, startWorkflowOptions.ID, signalName, signalArg, startWorkflowOptions, workflowType, args...)
-	}
-
+	client := GetClient(ctx)
+	run, err := client.ExecuteWorkflow(ctx, startWorkflowOptions, workflowType, args...)
 	if err != nil {
 		return nil, err
 	}
+	if signalName != "" {
+		if err = client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), signalName, signalArg); err != nil {
+			return nil, err
+		}
+	}
+
 	return workflowHandle[R]{
 		namespace:   nctx.Namespace,
 		id:          run.GetID(),
