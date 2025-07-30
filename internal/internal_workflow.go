@@ -78,8 +78,8 @@ type (
 		errOnce    Once
 		err        error
 		mu         Mutex
-		panicValue any  // = PanicError | PanicValue; non-nil if some Group.Go coroutine panicked.
-		abnormal   bool // some Group.Go coroutine terminated abnormally (panic or goexit).
+		panicValue any  // = PanicError | PanicValue; non-nil if some ErrGroup.Go coroutine panicked.
+		abnormal   bool // some ErrGroup.Go coroutine terminated abnormally (panic or goexit).
 	}
 
 	token struct{}
@@ -92,8 +92,8 @@ type (
 	}
 
 	// PanicValue wraps a value that does not implement the error interface,
-	// recovered from an unhandled panic when calling a function passed to Go or
-	// TryGo.
+	// recovered from an unhandled panic when calling a function passed to ErrGroup.Go or
+	// ErrGroup.TryGo.
 	panicValue struct {
 		Recovered any
 		Stack     []byte // result of call to [debug.Stack]
