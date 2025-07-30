@@ -26,6 +26,8 @@ type WorkflowUnitTest struct {
 	activityOptions ActivityOptions
 }
 
+type Counter int
+
 func (s *WorkflowUnitTest) SetupSuite() {
 	s.activityOptions = ActivityOptions{
 		ScheduleToStartTimeout: time.Minute,
@@ -1589,4 +1591,411 @@ func TestStackTraceInvalidDepthBounded(t *testing.T) {
 	// because we show the full trace when bounds are wrong
 	lines = strings.Split(getStackTrace("mycoroutine", "success", 100), "\n")
 	require.True(t, len(lines) > 3 && len(lines) < 100)
+}
+
+func (s *WorkflowUnitTest) Test_Once() {
+	env := s.NewTestWorkflowEnvironment()
+
+	testWorkflow := func(ctx Context) error {
+		counter := new(Counter)
+		once := NewOnce(ctx)
+		c := NewChannel(ctx)
+
+		const N = 10
+		for range N {
+			Go(ctx, func(ctx Context) {
+				if err := once.Do(ctx, func() { counter.Increment() }); err != nil {
+					s.FailNow("fail", "Once.Do failed: %v", err)
+				}
+
+				if v := *counter; v != 1 {
+					s.FailNow("fail", "Once.Do failed inside run: %d is not 1", v)
+				}
+				c.Send(ctx, true)
+			})
+		}
+
+		for range N {
+			var x bool
+			c.Receive(ctx, &x)
+		}
+
+		if *counter != 1 {
+			s.FailNow("fail", "Once.Do failed outside run: %d is not 1", *counter)
+		}
+
+		return nil
+	}
+
+	env.ExecuteWorkflow(testWorkflow)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	s.True(env.AssertExpectations(s.T()))
+}
+
+func (s *WorkflowUnitTest) Test_OncePanic() {
+	env := s.NewTestWorkflowEnvironment()
+
+	testWorkflow := func(ctx Context) error {
+		once := NewOnce(ctx)
+		func() {
+			defer func() {
+				if r := recover(); r == nil {
+					s.FailNow("fail", "Once.Do did not panic")
+				}
+			}()
+
+			if err := once.Do(ctx, func() {
+				panic("failed")
+			}); err != nil {
+				s.FailNow("fail", "Once.Do failed: %v", err)
+			}
+		}()
+
+		if err := once.Do(ctx, func() {
+			s.FailNow("fail", "Once.Do called twice")
+		}); err != nil {
+			s.FailNow("fail", "Once.Do failed: %v", err)
+		}
+
+		return nil
+	}
+
+	env.ExecuteWorkflow(testWorkflow)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	s.True(env.AssertExpectations(s.T()))
+}
+
+func (o *Counter) Increment() {
+	*o++
+}
+
+func (s *WorkflowUnitTest) Test_ZeroGroup() {
+	env := s.NewTestWorkflowEnvironment()
+
+	testWorkflow := func(ctx Context) error {
+		err1 := errors.New("errgroup_test: 1")
+		err2 := errors.New("errgroup_test: 2")
+
+		cases := []struct {
+			errs []error
+		}{
+			{errs: []error{}},
+			{errs: []error{nil}},
+			{errs: []error{err1}},
+			{errs: []error{err1, nil}},
+			{errs: []error{err1, nil, err2}},
+		}
+
+		for _, tc := range cases {
+			g, _ := NewErrGroup(ctx)
+
+			var firstErr error
+			for i, err := range tc.errs {
+				g.Go(func(Context) error { return err })
+
+				if firstErr == nil && err != nil {
+					firstErr = err
+				}
+
+				if gErr := g.Wait(); !errors.Is(gErr, firstErr) {
+					s.FailNow("fail",
+						"after %T.Go(func() error { return err }) for err in %v\ng.Wait() = %v; want %v",
+						g, tc.errs[:i+1], err, firstErr,
+					)
+				}
+			}
+		}
+
+		return nil
+	}
+
+	env.ExecuteWorkflow(testWorkflow)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	s.True(env.AssertExpectations(s.T()))
+}
+
+func (s *WorkflowUnitTest) Test_WithContext() {
+	env := s.NewTestWorkflowEnvironment()
+
+	testWorkflow := func(ctx Context) error {
+		errDoom := errors.New("group_test: doomed")
+
+		cases := []struct {
+			errs []error
+			want error
+		}{
+			{errs: nil, want: nil},
+			{errs: []error{nil}, want: nil},
+			{errs: []error{errDoom}, want: errDoom},
+			{errs: []error{errDoom, nil}, want: errDoom},
+		}
+
+		for _, tc := range cases {
+			g, gCtx := NewErrGroup(ctx)
+
+			for _, err := range tc.errs {
+				g.Go(func(Context) error { return err })
+			}
+
+			if err := g.Wait(); !errors.Is(err, tc.want) {
+				s.FailNow("fail", "after %T.Go(func() error { return err }) for err in %v\ng.Wait() = %v; want %v",
+					g, tc.errs, err, tc.want,
+				)
+			}
+
+			canceled := false
+			selector := NewSelector(gCtx)
+			selector.AddReceive(gCtx.Done(), func(c ReceiveChannel, more bool) {
+				canceled = true
+			})
+			selector.Select(gCtx)
+
+			if !canceled {
+				s.FailNow("failed", "after %T.Go(func() error { return err }) for err in %v\nctx.Done() was not closed",
+					g, tc.errs,
+				)
+			}
+		}
+
+		return nil
+	}
+
+	env.ExecuteWorkflow(testWorkflow)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	s.True(env.AssertExpectations(s.T()))
+}
+
+func (s *WorkflowUnitTest) Test_TryGo() {
+	env := s.NewTestWorkflowEnvironment()
+
+	testWorkflow := func(ctx Context) error {
+		g, _ := NewErrGroup(ctx)
+		n := 42
+		g.SetLimit(42)
+		ch := NewChannel(ctx)
+
+		fn := func(ctx Context) error {
+			ch.Send(ctx, struct{}{})
+			return nil
+		}
+		for i := range n {
+			if !g.TryGo(fn) {
+				s.FailNow("fail", "TryGo should succeed but got fail at %d-th call.", i)
+			}
+		}
+		if g.TryGo(fn) {
+			s.FailNow("fail", "TryGo is expected to fail but succeeded.")
+		}
+
+		Go(ctx, func(Context) {
+			for range n {
+				var x struct{}
+				ch.Receive(ctx, &x)
+			}
+		})
+		s.Require().NoError(g.Wait())
+
+		if !g.TryGo(fn) {
+			s.FailNow("fail", "TryGo should success but got fail after all goroutines.")
+		}
+		Go(ctx, func(Context) {
+			var x struct{}
+			ch.Receive(ctx, &x)
+		})
+
+		s.Require().NoError(g.Wait())
+
+		// Switch limit.
+		g.SetLimit(1)
+		if !g.TryGo(fn) {
+			s.FailNow("TryGo should success but got failed.")
+		}
+		if g.TryGo(fn) {
+			s.FailNow("TryGo should fail but succeeded.")
+		}
+		Go(ctx, func(Context) {
+			var x struct{}
+			ch.Receive(ctx, &x)
+		})
+		s.Require().NoError(g.Wait())
+
+		// Block all calls.
+		g.SetLimit(0)
+		for range 1024 {
+			if g.TryGo(fn) {
+				s.FailNow("TryGo should fail but got succeded.")
+			}
+		}
+		s.Require().NoError(g.Wait())
+		return nil
+	}
+
+	env.ExecuteWorkflow(testWorkflow)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	s.True(env.AssertExpectations(s.T()))
+}
+
+func (s *WorkflowUnitTest) Test_GoLimit() {
+	env := s.NewTestWorkflowEnvironment()
+
+	testWorkflow := func(ctx Context) error {
+		const limit = 10
+
+		g, _ := NewErrGroup(ctx)
+		g.SetLimit(limit)
+		var active int32
+		for i := 0; i <= 1<<10; i++ {
+			g.Go(func(ctx Context) error {
+				n := atomic.AddInt32(&active, 1)
+				if n > limit {
+					return fmt.Errorf("saw %d active goroutines; want ≤ %d", n, limit)
+				}
+				if err := Sleep(ctx, 1*time.Microsecond); err != nil {
+					s.FailNow(err.Error())
+				}
+				atomic.AddInt32(&active, -1)
+				return nil
+			})
+		}
+		if err := g.Wait(); err != nil {
+			s.FailNow(err.Error())
+		}
+		return nil
+	}
+
+	env.ExecuteWorkflow(testWorkflow)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	s.True(env.AssertExpectations(s.T()))
+}
+
+func (s *WorkflowUnitTest) Test_CancelCause() {
+	env := s.NewTestWorkflowEnvironment()
+
+	testWorkflow := func(ctx Context) error {
+		errDoom := errors.New("group_test: doomed")
+
+		cases := []struct {
+			errs []error
+			want error
+		}{
+			{want: nil},
+			{errs: []error{nil}, want: nil},
+			{errs: []error{errDoom}, want: errDoom},
+			{errs: []error{errDoom, nil}, want: errDoom},
+		}
+
+		for _, tc := range cases {
+			g, gCtx := NewErrGroup(ctx)
+
+			for _, err := range tc.errs {
+				g.TryGo(func(Context) error { return err })
+			}
+
+			if err := g.Wait(); !errors.Is(err, tc.want) {
+				s.FailNow("fail", "after %T.TryGo(func() error { return err }) for err in %v\n"+
+					"g.Wait() = %v; want %v",
+					g, tc.errs, err, tc.want)
+			}
+
+			if tc.want == nil {
+				var canceledErr *CanceledError
+				err := gCtx.Err()
+				if !errors.As(err, &canceledErr) {
+					s.FailNow("fail", "after %T.TryGo(func() error { return err }) for err in %v\n"+
+						"context.Cause(ctx) = %v; tc.want %v",
+						g, tc.errs, err, tc.want)
+				}
+			}
+		}
+
+		return nil
+	}
+
+	env.ExecuteWorkflow(testWorkflow)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	s.True(env.AssertExpectations(s.T()))
+}
+
+func (s *WorkflowUnitTest) Test_Panic_1() {
+	env := s.NewTestWorkflowEnvironment()
+
+	testWorkflow := func(ctx Context) error {
+		g, _ := NewErrGroup(ctx)
+
+		p := errors.New("oh no")
+		g.Go(func(ctx Context) error {
+			panic(p)
+		})
+
+		defer func() {
+			err := recover()
+			if err == nil {
+				s.FailNow("should propagate panic through Wait")
+			}
+			pe, ok := err.(panicError)
+			if !ok {
+				s.FailNow("fail", "type should is errgroup.PanicError, but is %T", err)
+			}
+			if !errors.Is(pe.Recovered, p) {
+				s.FailNow("fail", "got %v, want %v", pe.Recovered, p)
+			}
+			if !strings.Contains(pe.Error(), "Test_Panic_1.func") {
+				s.T().Log(pe.Error())
+				s.FailNow("stack trace incomplete, does not contain TestPanic.func")
+			}
+		}()
+
+		s.Require().NoError(g.Wait())
+
+		return nil
+	}
+
+	env.ExecuteWorkflow(testWorkflow)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	s.True(env.AssertExpectations(s.T()))
+}
+
+func (s *WorkflowUnitTest) Test_Panic_2() {
+	env := s.NewTestWorkflowEnvironment()
+
+	testWorkflow := func(ctx Context) error {
+		g, _ := NewErrGroup(ctx)
+		g.Go(func(Context) error {
+			panic(1)
+		})
+		defer func() {
+			err := recover()
+			if err == nil {
+				s.FailNow("should propagate panic through Wait")
+			}
+			pe, ok := err.(panicValue)
+			if !ok {
+				s.FailNow("fail", "type should is errgroup.PanicValue, but is %T", err)
+			}
+			if pe.Recovered != 1 {
+				s.FailNow("fail", "got %v, want %v", pe.Recovered, 1)
+			}
+			if !strings.Contains(string(pe.Stack), "Test_Panic_2.func") {
+				s.T().Log(string(pe.Stack))
+				s.FailNow("stack trace incomplete")
+			}
+		}()
+
+		s.Require().NoError(g.Wait())
+
+		return nil
+	}
+
+	env.ExecuteWorkflow(testWorkflow)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	s.True(env.AssertExpectations(s.T()))
 }

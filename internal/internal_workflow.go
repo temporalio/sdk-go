@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"reflect"
 	"runtime"
+	"runtime/debug"
 	"slices"
 	"sort"
 	"strings"
@@ -65,6 +66,67 @@ type (
 		waiting  bool     // indicates whether WaitGroup.Wait() has been called yet for the WaitGroup
 		future   Future   // future to signal that all awaited members of the WaitGroup have completed
 		settable Settable // used to unblock the future when all coroutines have completed
+	}
+
+	// A group is a collection of Temporal workflow goroutines working on subtasks that are part of
+	// the same overall task. A group should not be reused for different tasks.
+	errGroupImpl struct {
+		ctx        Context
+		cancel     CancelFunc
+		wg         WaitGroup
+		sem        Channel
+		errOnce    Once
+		err        error
+		mu         Mutex
+		panicValue any  // = PanicError | PanicValue; non-nil if some Group.Go coroutine panicked.
+		abnormal   bool // some Group.Go coroutine terminated abnormally (panic or goexit).
+	}
+
+	token struct{}
+
+	// PanicError wraps an error recovered from an unhandled panic
+	// when calling a function passed to Go or TryGo.
+	panicError struct {
+		Recovered error
+		Stack     []byte // result of call to [debug.Stack]
+	}
+
+	// PanicValue wraps a value that does not implement the error interface,
+	// recovered from an unhandled panic when calling a function passed to Go or
+	// TryGo.
+	panicValue struct {
+		Recovered any
+		Stack     []byte // result of call to [debug.Stack]
+	}
+
+	// noCopy may be added to structs which must not be copied
+	// after the first use.
+	//
+	// See https://golang.org/issues/8005#issuecomment-190753527
+	// for details.
+	//
+	// Note that it must not be embedded, due to the Lock and Unlock methods.
+	noCopy struct{}
+
+	// Once is an object that will perform exactly one action.
+	//
+	// A Once must not be copied after first use.
+	//
+	// In the terminology of [the Go memory model],
+	// the return from f “synchronizes before”
+	// the return from any call of Once.Do(f).
+	//
+	// [the Go memory model]: https://go.dev/ref/mem
+	onceImpl struct {
+		_ noCopy
+
+		// done indicates whether the action has been performed.
+		// It is first in the struct because it is used in the hot path.
+		// The hot path is inlined at every call site.
+		// Placing done first allows more compact instructions on some architectures (amd64/386),
+		// and fewer instructions (to calculate offset) on other architectures.
+		done atomic.Uint32
+		m    Mutex
 	}
 
 	// Implements Mutex interface
@@ -296,6 +358,8 @@ const (
 var _ Channel = (*channelImpl)(nil)
 var _ Selector = (*selectorImpl)(nil)
 var _ WaitGroup = (*waitGroupImpl)(nil)
+var _ ErrGroup = (*errGroupImpl)(nil)
+var _ Once = (*onceImpl)(nil)
 var _ dispatcher = (*dispatcherImpl)(nil)
 
 // 1MB buffer to fit combined stack trace of all active goroutines
@@ -1978,4 +2042,216 @@ func (s *semaphoreImpl) Release(n int64) {
 
 func incrementWorkflowTaskFailureCounter(metricsHandler metrics.Handler, failureReason string) {
 	metricsHandler.WithTags(metrics.WorkflowTaskFailedTags(failureReason)).Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
+}
+
+// Do calls the function f if and only if Do is being called for the
+// first time for this instance of [once]. In other words, given
+//
+//	var once Once
+//
+// if once.Do(f) is called multiple times, only the first call will invoke f,
+// even if f has a different value in each invocation. A new instance of
+// Once is required for each function to execute.
+//
+// Do is intended for initialization that must be run exactly once. Since f
+// is niladic, it may be necessary to use a function literal to capture the
+// arguments to a function to be invoked by Do:
+//
+//	config.once.Do(func() { config.init(filename) })
+//
+// Because no call to Do returns until the one call to f returns, if f causes
+// Do to be called, it will deadlock.
+//
+// If f panics, Do considers it to have returned; future calls of Do return
+// without calling f.
+func (o *onceImpl) Do(ctx Context, f func()) error {
+	// Note: Here is an incorrect implementation of Do:
+	//
+	//	if o.done.CompareAndSwap(0, 1) {
+	//		f()
+	//	}
+	//
+	// Do guarantees that when it returns, f has finished.
+	// This implementation would not implement that guarantee:
+	// given two simultaneous calls, the winner of the cas would
+	// call f, and the second would return immediately, without
+	// waiting for the first's call to f to complete.
+	// This is why the slow path falls back to a mutex, and why
+	// the o.done.Store must be delayed until after f returns.
+
+	if o.done.Load() == 0 {
+		// Outlined slow-path to allow inlining of the fast-path.
+		if err := o.doSlow(ctx, f); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (o *onceImpl) doSlow(ctx Context, f func()) error {
+	if err := o.m.Lock(ctx); err != nil {
+		return err
+	}
+
+	defer o.m.Unlock()
+	if o.done.Load() == 0 {
+		defer o.done.Store(1)
+		f()
+	}
+
+	return nil
+}
+
+// Lock is a no-op used by -copylocks checker from `go vet`.
+func (*noCopy) Lock()   {}
+func (*noCopy) Unlock() {}
+
+func (g *errGroupImpl) done() {
+	if g.sem != nil {
+		var x token
+		g.sem.Receive(g.ctx, &x)
+	}
+	g.wg.Done()
+}
+
+func (g *errGroupImpl) add(ctx Context, f func(Context) error) {
+	g.wg.Add(1)
+	Go(ctx, func(ctx Context) {
+		defer g.done()
+		normalReturn := false
+		defer func() {
+			if normalReturn {
+				return
+			}
+			v := recover()
+
+			if err := g.mu.Lock(g.ctx); err != nil {
+				g.cancel()
+			}
+
+			defer g.mu.Unlock()
+			if !g.abnormal {
+				if g.cancel != nil {
+					g.cancel()
+				}
+				g.abnormal = true
+			}
+			if v != nil && g.panicValue == nil {
+				switch v := v.(type) {
+				case error:
+					g.panicValue = panicError{
+						Recovered: v,
+						Stack:     debug.Stack(),
+					}
+				default:
+					g.panicValue = panicValue{
+						Recovered: v,
+						Stack:     debug.Stack(),
+					}
+				}
+			}
+		}()
+
+		err := f(ctx)
+		normalReturn = true
+		if err != nil {
+			if innerErr := g.errOnce.Do(g.ctx, func() {
+				g.err = err
+				if g.cancel != nil {
+					g.cancel()
+				}
+			}); innerErr != nil {
+				if g.cancel != nil {
+					g.cancel()
+				}
+			}
+		}
+	})
+}
+
+// Wait blocks until all function calls from the Go method have returned
+// normally, then returns the first non-nil error (if any) from them.
+//
+// If any of the calls panics, Wait panics with a [PanicValue];
+// and if any of them calls [runtime.Goexit], Wait calls runtime.Goexit.
+func (g *errGroupImpl) Wait() error {
+	g.wg.Wait(g.ctx)
+	if g.cancel != nil {
+		g.cancel()
+	}
+	if g.panicValue != nil {
+		panic(g.panicValue)
+	}
+	if g.abnormal {
+		runtime.Goexit()
+	}
+	return g.err
+}
+
+// Go calls the given function in a new coroutine.
+//
+// The first call to Go must happen before a Wait.
+// It blocks until the new coroutine can be added without the number of
+// goroutines in the group exceeding the configured limit.
+//
+// The first coroutine in the group that returns a non-nil error, panics, or
+// invokes [runtime.Goexit] will cancel the associated Context, if any.
+func (g *errGroupImpl) Go(f func(Context) error) {
+	if g.sem != nil {
+		g.sem.Send(g.ctx, token{})
+	}
+
+	g.add(g.ctx, f)
+}
+
+// TryGo calls the given function in a new coroutine only if the number of
+// active goroutines in the group is currently below the configured limit.
+//
+// The return value reports whether the coroutine was started.
+func (g *errGroupImpl) TryGo(f func(Context) error) bool {
+	if g.sem != nil {
+		if canStart := g.sem.SendAsync(token{}); !canStart {
+			return false
+		}
+	}
+
+	g.add(g.ctx, f)
+	return true
+}
+
+// SetLimit limits the number of active goroutines in this group to at most n.
+// A negative value indicates no limit.
+// A limit of zero will prevent any new goroutines from being added.
+//
+// Any subsequent call to the Go method will block until it can add an active
+// coroutine without exceeding the configured limit.
+//
+// The limit must not be modified while any goroutines in the group are active.
+func (g *errGroupImpl) SetLimit(n int) {
+	if n < 0 {
+		g.sem = nil
+		return
+	}
+	if g.sem != nil && g.sem.Len() != 0 {
+		panic(fmt.Errorf("errgroup: modify limit while %v goroutines in the group are still active", g.sem.Len()))
+	}
+
+	g.sem = NewBufferedChannel(g.ctx, n)
+}
+
+func (p panicError) Error() string {
+	if len(p.Stack) > 0 {
+		return fmt.Sprintf("recovered from temporal.ErrGroup: %v\n%s", p.Recovered, p.Stack)
+	}
+	return fmt.Sprintf("recovered from temporal.ErrGroup: %v", p.Recovered)
+}
+
+func (p panicError) Unwrap() error { return p.Recovered }
+
+func (p panicValue) String() string {
+	if len(p.Stack) > 0 {
+		return fmt.Sprintf("recovered from temporal.ErrGroup: %v\n%s", p.Recovered, p.Stack)
+	}
+	return fmt.Sprintf("recovered from temporal.ErrGroup: %v", p.Recovered)
 }

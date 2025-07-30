@@ -224,6 +224,23 @@ type (
 		Wait(ctx Context)
 	}
 
+	// ErrGroup must be used instead of native go sync.Group by
+	// workflow code. Use workflow.NewWaitGroup(ctx) method to create
+	// a new WaitGroup instance
+	ErrGroup interface {
+		Wait() error
+		Go(f func(Context) error)
+		TryGo(f func(Context) error) bool
+		SetLimit(n int)
+	}
+
+	// ErrGroup must be used instead of native go sync.Once by
+	// workflow code. Use workflow.NewOnce(ctx) method to create
+	// a new Once instance
+	Once interface {
+		Do(ctx Context, f func()) error
+	}
+
 	// Mutex must be used instead of native go sync.Mutex by
 	// workflow code. Use workflow.NewMutex(ctx) method to create
 	// a new Mutex instance
@@ -728,6 +745,29 @@ func NewWaitGroup(ctx Context) WaitGroup {
 	assertNotInReadOnlyState(ctx)
 	f, s := NewFuture(ctx)
 	return &waitGroupImpl{future: f, settable: s}
+}
+
+// NewErrGroup creates a new ErrGroup instance.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.NewErrGroup]
+func NewErrGroup(ctx Context) (ErrGroup, Context) {
+	ctx, cancel := WithCancel(ctx)
+	return &errGroupImpl{
+		cancel:  cancel,
+		wg:      NewWaitGroup(ctx),
+		ctx:     ctx,
+		mu:      NewMutex(ctx),
+		errOnce: NewOnce(ctx),
+	}, ctx
+}
+
+// NewOnce creates a new Once instance.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.NewOnce]
+func NewOnce(ctx Context) Once {
+	return &onceImpl{
+		m: NewMutex(ctx),
+	}
 }
 
 // NewMutex creates a new Mutex instance.

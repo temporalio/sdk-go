@@ -35,6 +35,13 @@ type (
 	// coroutines to finish
 	WaitGroup = internal.WaitGroup
 
+	// WaitGroup is used to wait for a collection of
+	// fallible coroutines to finish, stopping on the first error.
+	ErrGroup = internal.ErrGroup
+
+	// Once is used run a function just once.
+	Once = internal.Once
+
 	// Mutex is a mutual exclusion lock.
 	// Mutex must be used instead of native go mutex by workflow code.
 	// Use [workflow.NewMutex] method to create a Mutex instance.
@@ -143,6 +150,16 @@ func NewNamedSelector(ctx Context, name string) Selector {
 // NewWaitGroup creates a new WaitGroup instance.
 func NewWaitGroup(ctx Context) WaitGroup {
 	return internal.NewWaitGroup(ctx)
+}
+
+// NewWaitGroup creates a new WaitGroup instance.
+func NewErrGroup(ctx Context) (ErrGroup, Context) {
+	return internal.NewErrGroup(ctx)
+}
+
+// NewChannel creates a new Once instance
+func NewOnce(ctx Context) Once {
+	return internal.NewOnce(ctx)
 }
 
 // NewMutex creates a new Mutex instance. A mutex can be used
