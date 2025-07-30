@@ -162,6 +162,9 @@ type (
 		// RegisterWorkflowWithOptions registers workflow that is going to be replayed with user provided name
 		RegisterWorkflowWithOptions(w interface{}, options workflow.RegisterOptions)
 
+		// RegisterDynamicWorkflow registers dynamic workflow that is going to be replayed
+		RegisterDynamicWorkflow(w interface{}, options workflow.DynamicRegisterOptions)
+
 		// ReplayWorkflowHistory executes a single workflow task for the given json history file.
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 		// The logger is an optional parameter. Defaults to the noop logger.
@@ -240,6 +243,8 @@ type (
 	// ReplayWorkflowHistoryOptions are options for replaying a workflow.
 	ReplayWorkflowHistoryOptions = internal.ReplayWorkflowHistoryOptions
 )
+
+var _ WorkflowRegistry = (WorkflowReplayer)(nil)
 
 const (
 	// BlockWorkflow is the default WorkflowPanicPolicy policy for handling workflow panics and detected non-determinism.
