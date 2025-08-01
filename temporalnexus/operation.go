@@ -339,7 +339,7 @@ func ExecuteUntypedWorkflow[R any](
 
 	// Links are duplicated in startWorkflowOptions to backwards compatibility with older servers that
 	// don't support links in callbacks.
-	internal.SetLinksOnStartWorkflowOptions(&startWorkflowOptions, links)
+	// internal.SetLinksOnStartWorkflowOptions(&startWorkflowOptions, links)
 	internal.SetOnConflictOptionsOnStartWorkflowOptions(&startWorkflowOptions)
 	responseInfo := internal.SetResponseInfoOnStartWorkflowOptions(&startWorkflowOptions)
 

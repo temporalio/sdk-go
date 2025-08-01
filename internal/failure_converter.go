@@ -1,10 +1,13 @@
 package internal
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -70,6 +73,18 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 		if fh.failure() != nil {
 			return fh.failure()
 		}
+	} else if opErr, ok := err.(*nexus.OperationError); ok && opErr.OriginalFailure != nil {
+		f, err := nexusFailureToTemporalFailure(*opErr.OriginalFailure)
+		if err != nil {
+			return nil
+		}
+		return f
+	} else if opErr, ok := err.(*nexus.HandlerError); ok && opErr.OriginalFailure != nil {
+		f, err := nexusFailureToTemporalFailure(*opErr.OriginalFailure)
+		if err != nil {
+			return nil
+		}
+		return f
 	}
 
 	failure := &failurepb.Failure{
@@ -175,6 +190,13 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 			RetryBehavior: retryBehavior,
 		}
 		failure.FailureInfo = &failurepb.Failure_NexusHandlerFailureInfo{NexusHandlerFailureInfo: failureInfo}
+		failure.Message = err.Message
+	case *nexus.OperationError:
+		failureInfo := &failurepb.NexusSDKOperationFailureInfo{
+			State: string(err.State),
+		}
+		failure.FailureInfo = &failurepb.Failure_NexusSdkOperationFailureInfo{NexusSdkOperationFailureInfo: failureInfo}
+		failure.Message = err.Message
 	default: // All unknown errors are considered to be retryable ApplicationFailureInfo.
 		failureInfo := &failurepb.ApplicationFailureInfo{
 			Type:         getErrType(err),
@@ -294,10 +316,31 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 		case enumspb.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_NON_RETRYABLE:
 			retryBehavior = nexus.HandlerErrorRetryBehaviorNonRetryable
 		}
+		originalFailure, err := temporalFailureToNexusFailure(failure)
+		if err != nil {
+			// TODO
+			panic("failed to convert Nexus SDK Operation Failure to Nexus Failure: " + err.Error())
+		}
 		err = &nexus.HandlerError{
-			Type:          nexus.HandlerErrorType(info.Type),
-			Cause:         dfc.FailureToError(failure.GetCause()),
-			RetryBehavior: retryBehavior,
+			Message:         failure.Message,
+			StackTrace:      failure.StackTrace,
+			Type:            nexus.HandlerErrorType(info.Type),
+			RetryBehavior:   retryBehavior,
+			Cause:           dfc.FailureToError(failure.GetCause()),
+			OriginalFailure: originalFailure,
+		}
+	} else if info := failure.GetNexusSdkOperationFailureInfo(); info != nil {
+		originalFailure, err := temporalFailureToNexusFailure(failure)
+		if err != nil {
+			// TODO
+			panic("failed to convert Nexus SDK Operation Failure to Nexus Failure: " + err.Error())
+		}
+		err = &nexus.OperationError{
+			Message:         failure.Message,
+			StackTrace:      failure.StackTrace,
+			State:           nexus.OperationState(info.State),
+			Cause:           dfc.FailureToError(failure.GetCause()),
+			OriginalFailure: originalFailure,
 		}
 	}
 
@@ -311,4 +354,183 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 	}
 
 	return err
+}
+
+type serializedOperationError struct {
+	State string `json:"state,omitempty"`
+	// Bytes as base64 encoded string.
+	EncodedAttributes string `json:"encodedAttributes,omitempty"`
+}
+
+type serializedHandlerError struct {
+	Type              string `json:"type,omitempty"`
+	RetryableOverride *bool  `json:"retryableOverride,omitempty"`
+	// Bytes as base64 encoded string.
+	EncodedAttributes string `json:"encodedAttributes,omitempty"`
+}
+
+// nexusFailureToTemporalFailure converts a Nexus Failure to a Temporal API proto Failure.
+func nexusFailureToTemporalFailure(f nexus.Failure) (*failurepb.Failure, error) {
+	apiFailure := &failurepb.Failure{
+		Message:    f.Message,
+		StackTrace: f.StackTrace,
+	}
+
+	if f.Metadata != nil {
+		switch f.Metadata["type"] {
+		case failureTypeString:
+			if err := protojson.Unmarshal(f.Details, apiFailure); err != nil {
+				return nil, err
+			}
+			// Restore these fields as they are not included in the marshalled failure.
+			// TODO: is this required? Unmarshal should not touch these fields.
+			apiFailure.Message = f.Message
+			apiFailure.StackTrace = f.StackTrace
+			return apiFailure, nil
+		case "nexus.OperationError":
+			var se serializedOperationError
+			err := json.Unmarshal(f.Details, &se)
+			if err != nil {
+				return nil, fmt.Errorf("failed to deserialize OperationError: %w", err)
+			}
+			apiFailure.FailureInfo = &failurepb.Failure_NexusSdkOperationFailureInfo{
+				NexusSdkOperationFailureInfo: &failurepb.NexusSDKOperationFailureInfo{
+					State: se.State,
+				},
+			}
+			if err := protojson.Unmarshal([]byte(se.EncodedAttributes), apiFailure.EncodedAttributes); err != nil {
+				return nil, fmt.Errorf("failed to deserialize OperationError attributes: %w", err)
+			}
+			if f.Cause != nil {
+				apiFailure.Cause, err = nexusFailureToTemporalFailure(*f.Cause)
+				if err != nil {
+					return nil, err
+				}
+			}
+			return apiFailure, nil
+		case "nexus.HandlerError":
+			var se serializedHandlerError
+			err := json.Unmarshal(f.Details, &se)
+			if err != nil {
+				return nil, fmt.Errorf("failed to deserialize HandlerError: %w", err)
+			}
+			var retryBehavior enumspb.NexusHandlerErrorRetryBehavior
+			if se.RetryableOverride == nil {
+				retryBehavior = enumspb.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_UNSPECIFIED
+			} else if *se.RetryableOverride {
+				retryBehavior = enumspb.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_RETRYABLE
+			} else {
+				retryBehavior = enumspb.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_NON_RETRYABLE
+			}
+			apiFailure.FailureInfo = &failurepb.Failure_NexusHandlerFailureInfo{
+				NexusHandlerFailureInfo: &failurepb.NexusHandlerFailureInfo{
+					Type:          se.Type,
+					RetryBehavior: retryBehavior,
+				},
+			}
+			if err := protojson.Unmarshal([]byte(se.EncodedAttributes), apiFailure.EncodedAttributes); err != nil {
+				return nil, fmt.Errorf("failed to deserialize HandlerError attributes: %w", err)
+			}
+			if f.Cause != nil {
+				apiFailure.Cause, err = nexusFailureToTemporalFailure(*f.Cause)
+				if err != nil {
+					return nil, err
+				}
+			}
+			return apiFailure, nil
+		}
+	}
+
+	// TODO: consider a special failurepb defintion for generic Nexus failures.
+	payloads, err := nexusFailureMetadataToPayloads(f)
+	if err != nil {
+		return nil, err
+	}
+	apiFailure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{
+		ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{
+			// Make up a type here, it's not part of the Nexus Failure spec.
+			Type:    "NexusFailure",
+			Details: payloads,
+		},
+	}
+	return apiFailure, nil
+}
+
+func temporalFailureToNexusFailure(f *failurepb.Failure) (*nexus.Failure, error) {
+	if f == nil {
+		return nil, nil
+	}
+	nexusFailure := &nexus.Failure{
+		Message:    f.Message,
+		StackTrace: f.StackTrace,
+	}
+
+	if info := f.GetNexusHandlerFailureInfo(); info != nil {
+		var retryableOverride *bool
+		switch info.RetryBehavior {
+		case enumspb.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_RETRYABLE:
+			retryableOverride = new(bool)
+			*retryableOverride = true
+		case enumspb.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_NON_RETRYABLE:
+			retryableOverride = new(bool)
+			*retryableOverride = false
+		}
+		encodedAttributes, err := protojson.Marshal(f.EncodedAttributes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to serialize HandlerError attributes: %w", err)
+		}
+		se := serializedHandlerError{
+			Type:              info.Type,
+			RetryableOverride: retryableOverride,
+			EncodedAttributes: string(encodedAttributes),
+		}
+		details, err := json.Marshal(&se)
+		if err != nil {
+			return nil, fmt.Errorf("failed to deserialize HandlerError: %w", err)
+		}
+		nexusFailure.Metadata = map[string]string{"type": "nexus.HandlerError"}
+		nexusFailure.Details = details
+
+		if f.Cause != nil {
+			nexusFailure.Cause, err = temporalFailureToNexusFailure(f.Cause)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else if info := f.GetNexusSdkOperationFailureInfo(); info != nil {
+		encodedAttributes, err := protojson.Marshal(f.EncodedAttributes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to serialize OperationError attributes: %w", err)
+		}
+		se := serializedOperationError{
+			State:             info.State,
+			EncodedAttributes: string(encodedAttributes),
+		}
+		details, err := json.Marshal(&se)
+		if err != nil {
+			return nil, fmt.Errorf("failed to deserialize OperationError: %w", err)
+		}
+		nexusFailure.Metadata = map[string]string{"type": "nexus.OperationError"}
+		nexusFailure.Details = details
+
+		if f.Cause != nil {
+			nexusFailure.Cause, err = temporalFailureToNexusFailure(f.Cause)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		nexusFailure.Metadata = map[string]string{"type": failureTypeString}
+		f.Message, f.StackTrace = "", ""
+		details, err := protojson.Marshal(f)
+		if err != nil {
+			return nil, err
+		}
+		nexusFailure.Details = details
+		// Restore these fields as they are not included in the marshalled failure.
+		f.Message = nexusFailure.Message
+		f.StackTrace = nexusFailure.StackTrace
+	}
+
+	return nexusFailure, nil
 }

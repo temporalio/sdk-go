@@ -277,6 +277,7 @@ func nexusOperationFailure(params executeNexusOperationParams, token string, cau
 // nexusFailureToAPIFailure converts a Nexus Failure to an API proto Failure.
 // If the failure metadata "type" field is set to the fullname of the temporal API Failure message, the failure is
 // reconstructed using protojson.Unmarshal on the failure details field.
+// TODO: Remove this
 func nexusFailureToAPIFailure(failure nexus.Failure, retryable bool) (*failurepb.Failure, error) {
 	apiFailure := &failurepb.Failure{}
 
@@ -303,6 +304,7 @@ func nexusFailureToAPIFailure(failure nexus.Failure, retryable bool) (*failurepb
 	return apiFailure, nil
 }
 
+// TODO: move this to failure_converter.go?
 func nexusFailureMetadataToPayloads(failure nexus.Failure) (*commonpb.Payloads, error) {
 	if len(failure.Metadata) == 0 && len(failure.Details) == 0 {
 		return nil, nil
