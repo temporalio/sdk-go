@@ -312,8 +312,6 @@ func WithActivityTask(
 		tagRunID, task.WorkflowExecution.RunId,
 	)
 
-	logger.Warn("!!! Task priority", task.GetPriority())
-
 	return newActivityContext(ctx, interceptors, &activityEnvironment{
 		taskToken:      task.TaskToken,
 		serviceInvoker: invoker,
