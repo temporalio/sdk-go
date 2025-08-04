@@ -110,9 +110,9 @@ func (a *Activities) EmptyActivity(ctx context.Context) error {
 	return nil
 }
 
-func (a *Activities) PriorityActivity(ctx context.Context) (int, error) {
+func (a *Activities) PriorityActivity(ctx context.Context) (temporal.Priority, error) {
 	a.append("PriorityActivity")
-	return activity.GetInfo(ctx).Priority.PriorityKey, nil
+	return activity.GetInfo(ctx).Priority, nil
 }
 
 func (a *Activities) HeartbeatAndSleep(ctx context.Context, seq int, delay time.Duration) (int, error) {
