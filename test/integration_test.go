@@ -6813,7 +6813,9 @@ func (ts *IntegrationTestSuite) TestTaskQueuePriority() {
 	// Start workflow with a priority
 	opts := ts.startWorkflowOptions("test-task-queue-priority-" + uuid.NewString())
 	opts.Priority = temporal.Priority{
-		PriorityKey: 1,
+		PriorityKey:    1,
+		FairnessKey:    "superfair",
+		FairnessWeight: 3.14,
 	}
 	run, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.PriorityWorkflow)
 	ts.NoError(err)

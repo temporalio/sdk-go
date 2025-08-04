@@ -1216,8 +1216,8 @@ func (w *Workflows) SimplestWorkflow(_ workflow.Context) (string, error) {
 	return "hello", nil
 }
 
-func (w *Workflows) PriorityChildWorkflow(ctx workflow.Context) (int, error) {
-	return workflow.GetInfo(ctx).Priority.PriorityKey, nil
+func (w *Workflows) PriorityChildWorkflow(ctx workflow.Context) (temporal.Priority, error) {
+	return workflow.GetInfo(ctx).Priority, nil
 }
 
 func (w *Workflows) TwoParameterWorkflow(_ workflow.Context, _ string, _ string) (string, error) {
@@ -3235,6 +3235,7 @@ func (w *Workflows) UserMetadata(ctx workflow.Context) error {
 
 func (w *Workflows) PriorityWorkflow(ctx workflow.Context) (int, error) {
 	workflowPriority := workflow.GetInfo(ctx).Priority.PriorityKey
+	workflow.GetLogger(ctx).Warn("!!!!!!", "priority", workflow.GetInfo(ctx).Priority)
 	var activities *Activities
 
 	// Start an activity with a priority
@@ -3242,18 +3243,25 @@ func (w *Workflows) PriorityWorkflow(ctx workflow.Context) (int, error) {
 		StartToCloseTimeout:   time.Minute,
 		DisableEagerExecution: true,
 		Priority: temporal.Priority{
-			PriorityKey: 5,
+			PriorityKey:    5,
+			FairnessKey:    "fair-activity",
+			FairnessWeight: 4.2,
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-	var result int
+	var result temporal.Priority
 	err := workflow.ExecuteActivity(ctx, activities.PriorityActivity).Get(ctx, &result)
 	if err != nil {
 		return 0, err
 	}
-	// Verify the activity returned the expected priority
-	if result != 5 {
-		return 0, fmt.Errorf("activity did not return expected value %d != %d", 5, result)
+	if result.PriorityKey != 5 {
+		return 0, fmt.Errorf("activity did not return expected priority %d != %d", 5, result.PriorityKey)
+	}
+	if result.FairnessKey != "fair-activity" {
+		return 0, fmt.Errorf("activity did not return expected fairness key %s != %s", "fair-activity", result.FairnessKey)
+	}
+	if result.FairnessWeight != 4.20 {
+		return 0, fmt.Errorf("activity did not return expected fairness weight %f != %f", 4.20, result.FairnessWeight)
 	}
 	// Clear the activity priority
 	ctx = workflow.WithPriority(ctx, temporal.Priority{})
@@ -3261,15 +3269,16 @@ func (w *Workflows) PriorityWorkflow(ctx workflow.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	// Verify the activity returned the expected priority
-	if result != workflowPriority {
-		return 0, fmt.Errorf("activity did not return expected value %d != %d", workflowPriority, result)
+	if result.PriorityKey != workflowPriority {
+		return 0, fmt.Errorf("activity did not return expected priority %d != %d", workflowPriority, result.PriorityKey)
 	}
 
 	// Start a child workflow with a priority
 	cwo := workflow.ChildWorkflowOptions{
 		Priority: temporal.Priority{
-			PriorityKey: 3,
+			PriorityKey:    3,
+			FairnessKey:    "fair-child",
+			FairnessWeight: 1.1,
 		},
 	}
 	ctx = workflow.WithChildOptions(ctx, cwo)
@@ -3277,9 +3286,14 @@ func (w *Workflows) PriorityWorkflow(ctx workflow.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	// Verify the child workflow returned the expected priority
-	if result != 3 {
-		return 0, fmt.Errorf("child workflow did not return expected value %d != %d", 3, result)
+	if result.PriorityKey != 3 {
+		return 0, fmt.Errorf("child workflow did not return expected priority %d != %d", 3, result.PriorityKey)
+	}
+	if result.FairnessKey != "fair-child" {
+		return 0, fmt.Errorf("child workflow did not return expected fairness key %s != %s", "fair-child", result.FairnessKey)
+	}
+	if result.FairnessWeight != 1.1 {
+		return 0, fmt.Errorf("child workflow did not return expected fairness weight %f != %f", 1.1, result.FairnessWeight)
 	}
 	// Clear the child workflow priority
 	ctx = workflow.WithWorkflowPriority(ctx, temporal.Priority{})
@@ -3287,9 +3301,8 @@ func (w *Workflows) PriorityWorkflow(ctx workflow.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	// Verify the child workflow returned the expected priority
-	if result != workflowPriority {
-		return 0, fmt.Errorf("child workflow did not return expected value %d != %d", workflowPriority, result)
+	if result.PriorityKey != workflowPriority {
+		return 0, fmt.Errorf("child workflow did not return expected priority %d != %d", workflowPriority, result.PriorityKey)
 	}
 
 	// Run a short timer with a summary and return
