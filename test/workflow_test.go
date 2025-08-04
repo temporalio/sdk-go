@@ -3235,7 +3235,6 @@ func (w *Workflows) UserMetadata(ctx workflow.Context) error {
 
 func (w *Workflows) PriorityWorkflow(ctx workflow.Context) (int, error) {
 	workflowPriority := workflow.GetInfo(ctx).Priority.PriorityKey
-	workflow.GetLogger(ctx).Warn("!!!!!!", "priority", workflow.GetInfo(ctx).Priority)
 	var activities *Activities
 
 	// Start an activity with a priority
