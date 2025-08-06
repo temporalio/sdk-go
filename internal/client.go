@@ -865,6 +865,28 @@ type (
 		// The default value when unset or 0 is calculated by (min+max)/2. With the
 		// default max of 5, and min of 1, that comes out to 3.
 		PriorityKey int
+
+		// FairnessKey is a short string that's used as a key for a fairness
+		// balancing mechanism. It may correspond to a tenant id, or to a fixed
+		// string like "high" or "low". The default is the empty string.
+		//
+		// The fairness mechanism attempts to dispatch tasks for a given key in
+		// proportion to its weight. For example, using a thousand distinct tenant
+		// ids, each with a weight of 1.0 (the default) will result in each tenant
+		// getting a roughly equal share of task dispatch throughput.
+		//
+		// Fairness keys are limited to 64 bytes.
+		FairnessKey string
+
+		// FairnessWeight for a task can come from multiple sources for
+		// flexibility. From highest to lowest precedence:
+		// 1. Weights for a small set of keys can be overridden in task queue
+		//    configuration with an API.
+		// 2. It can be attached to the workflow/activity in this field.
+		// 3. The default weight of 1.0 will be used.
+		//
+		// Weight values are clamped to the range [0.001, 1000].
+		FairnessWeight float32
 	}
 
 	// NamespaceClient is the client for managing operations on the namespace.
