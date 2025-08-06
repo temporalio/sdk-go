@@ -1156,7 +1156,7 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 		for history.HasNext() {
 			event, err := history.Next()
 			require.NoError(t, err)
-			require.NotEqual(t, enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCEL_REQUESTED, event.EventType)
+			require.NotEqual(t, enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUESTED, event.EventType)
 			require.NotEqual(t, enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_COMPLETED, event.EventType)
 			require.NotEqual(t, enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_FAILED, event.EventType)
 		}
