@@ -1061,24 +1061,48 @@ func TestAsyncOperationFromWorkflow(t *testing.T) {
 	})
 }
 
-func runCancellationTypeTest(ctx context.Context, tc *testContext, cancellationType workflow.NexusOperationCancellationType, t *testing.T) (client.WorkflowRun, string, time.Time) {
+// cancelTypeOp is a wrapper for a workflow run operation that delays responding to the cancel request so that time
+// based assertions aren't flakey.
+type cancelTypeOp struct {
+	nexus.UnimplementedOperation[string, string]
+	workflowRunOp nexus.Operation[string, string]
+	cancelDelay   time.Duration
+}
+
+func (o *cancelTypeOp) Name() string {
+	return o.workflowRunOp.Name()
+}
+
+func (o *cancelTypeOp) Start(ctx context.Context, input string, options nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[string], error) {
+	return o.workflowRunOp.Start(ctx, input, options)
+}
+
+func (o *cancelTypeOp) Cancel(ctx context.Context, token string, options nexus.CancelOperationOptions) error {
+	time.Sleep(o.cancelDelay)
+	return o.workflowRunOp.Cancel(ctx, token, options)
+}
+
+func runCancellationTypeTest(ctx context.Context, tc *testContext, cancellationType workflow.NexusOperationCancellationType, cancelDelay time.Duration, t *testing.T) (client.WorkflowRun, string, time.Time) {
 	handlerWf := func(ctx workflow.Context, ownID string) (string, error) {
 		err := workflow.Await(ctx, func() bool { return false })
 		// Delay completion after receiving cancellation so that assertions on end time aren't flakey.
 		disconCtx, _ := workflow.NewDisconnectedContext(ctx)
-		_ = workflow.Sleep(disconCtx, time.Second)
+		_ = workflow.Sleep(disconCtx, 2*time.Second)
 		return "", err
 	}
 
 	handlerID := atomic.Value{}
-	op := temporalnexus.NewWorkflowRunOperation(
-		"workflow-op",
-		handlerWf,
-		func(ctx context.Context, _ string, soo nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
-			handlerID.Store(soo.RequestID)
-			return client.StartWorkflowOptions{ID: soo.RequestID}, nil
-		},
-	)
+	op := &cancelTypeOp{
+		cancelDelay: cancelDelay,
+		workflowRunOp: temporalnexus.NewWorkflowRunOperation(
+			"workflow-op",
+			handlerWf,
+			func(ctx context.Context, _ string, soo nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+				handlerID.Store(soo.RequestID)
+				return client.StartWorkflowOptions{ID: soo.RequestID}, nil
+			},
+		),
+	}
 
 	var unblockedTime time.Time
 	callerWf := func(ctx workflow.Context, cancellation workflow.NexusOperationCancellationType) error {
@@ -1148,7 +1172,7 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 		defer cancel()
 		tc := newTestContext(t, ctx)
 
-		callerRun, handlerID, unblockedTime := runCancellationTypeTest(ctx, tc, workflow.NexusOperationCancellationTypeAbandon, t)
+		callerRun, handlerID, unblockedTime := runCancellationTypeTest(ctx, tc, workflow.NexusOperationCancellationTypeAbandon, 0, t)
 		require.NotZero(t, unblockedTime)
 
 		// Verify that caller never sent a cancellation request.
@@ -1172,7 +1196,7 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 		defer cancel()
 		tc := newTestContext(t, ctx)
-		callerRun, handlerID, unblockedTime := runCancellationTypeTest(ctx, tc, workflow.NexusOperationCancellationTypeTryCancel, t)
+		callerRun, handlerID, unblockedTime := runCancellationTypeTest(ctx, tc, workflow.NexusOperationCancellationTypeTryCancel, time.Second, t)
 
 		// Verify operation future was unblocked after cancel command was recorded.
 		callerHist := tc.client.GetWorkflowHistory(ctx, callerRun.GetID(), callerRun.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
@@ -1185,6 +1209,8 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 				foundRequestedEvent = true
 				require.Greater(t, unblockedTime, event.EventTime.AsTime().UTC())
 			}
+			require.NotEqual(t, enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_COMPLETED, event.EventType)
+			require.NotEqual(t, enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_FAILED, event.EventType)
 			callerCloseEvent = event
 		}
 		require.True(t, foundRequestedEvent)
@@ -1204,7 +1230,7 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 		defer cancel()
 		tc := newTestContext(t, ctx)
-		callerRun, handlerID, unblockedTime := runCancellationTypeTest(ctx, tc, workflow.NexusOperationCancellationTypeWaitRequested, t)
+		callerRun, handlerID, unblockedTime := runCancellationTypeTest(ctx, tc, workflow.NexusOperationCancellationTypeWaitRequested, 0, t)
 
 		// Verify operation future was unblocked after cancel request was delivered.
 		callerHist := tc.client.GetWorkflowHistory(ctx, callerRun.GetID(), callerRun.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
@@ -1236,7 +1262,7 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 		defer cancel()
 		tc := newTestContext(t, ctx)
-		callerRun, handlerID, unblockedTime := runCancellationTypeTest(ctx, tc, workflow.NexusOperationCancellationTypeWaitCompleted, t)
+		callerRun, handlerID, unblockedTime := runCancellationTypeTest(ctx, tc, workflow.NexusOperationCancellationTypeWaitCompleted, 0, t)
 
 		// Verify operation future was unblocked after operation was cancelled.
 		callerHist := tc.client.GetWorkflowHistory(ctx, callerRun.GetID(), callerRun.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
