@@ -208,14 +208,14 @@ func TestEagerAndLazyClient(t *testing.T) {
 
 	// Confirm eager dial fails
 	_, err = DialClient(context.Background(), ClientOptions{HostPort: srv.addr})
-	require.EqualError(t, err, "failed reaching server: some server failure")
+	require.EqualError(t, err, "failed reaching server for namespace \"default\": some server failure")
 
 	// Confirm lazy dial succeeds but fails signal workflow
 	c, err := NewLazyClient(ClientOptions{HostPort: srv.addr})
 	require.NoError(t, err)
 	defer c.Close()
 	err = c.SignalWorkflow(context.Background(), "workflow1", "", "my-signal", nil)
-	require.EqualError(t, err, "failed reaching server: some server failure")
+	require.EqualError(t, err, "failed reaching server for namespace \"default\": some server failure")
 
 	// But if we call again without a sys info response error, it will succeed
 	srv.getSystemInfoResponseError = nil
@@ -267,7 +267,7 @@ func TestCheckHealth(t *testing.T) {
 	// Confirm fail if can't init
 	srv.getSystemInfoResponseError = fmt.Errorf("some server failure")
 	_, err = c.CheckHealth(context.Background(), nil)
-	require.EqualError(t, err, "failed reaching server: some server failure")
+	require.EqualError(t, err, "failed reaching server for namespace \"default\": some server failure")
 
 	// Now if it can init, but health not registered
 	srv.getSystemInfoResponseError = nil
@@ -287,6 +287,16 @@ func TestCheckHealth(t *testing.T) {
 		grpc_health_v1.HealthCheckResponse_SERVING)
 	_, err = c.CheckHealth(context.Background(), nil)
 	require.NoError(t, err)
+}
+
+func TestHandshakeFailureErrorMessage(t *testing.T) {
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+	srv.getSystemInfoResponseError = fmt.Errorf("transport: authentication handshake failed: some handshake err")
+
+	_, err = DialClient(context.Background(), ClientOptions{HostPort: srv.addr})
+	require.EqualError(t, err, "failed reaching server for namespace \"default\": authentication handshake failed. Ensure this namespace exists and your connection is configured correctly")
 }
 
 func TestDialOptions(t *testing.T) {

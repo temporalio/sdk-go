@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -1347,7 +1348,13 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context) (*workflowservic
 	resp, err := wc.workflowService.GetSystemInfo(grpcCtx, &workflowservice.GetSystemInfoRequest{})
 	// We ignore unimplemented
 	if _, isUnimplemented := err.(*serviceerror.Unimplemented); err != nil && !isUnimplemented {
-		return nil, fmt.Errorf("failed reaching server: %w", err)
+		if strings.Contains(err.Error(), "transport: authentication handshake failed") {
+			return nil, fmt.Errorf(
+				"failed reaching server for namespace %q: authentication handshake failed. Ensure this namespace exists and your connection is configured correctly",
+				wc.namespace,
+			)
+		}
+		return nil, fmt.Errorf("failed reaching server for namespace %q: %w", wc.namespace, err)
 	}
 	if resp != nil && resp.Capabilities != nil {
 		capabilities = resp.Capabilities
