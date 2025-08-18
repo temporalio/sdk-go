@@ -7745,3 +7745,85 @@ func (ts *IntegrationTestSuite) TestLocalActivitySummary() {
 	}
 	ts.Equal(summaryStr, summary)
 }
+
+func (ts *IntegrationTestSuite) TestGrpcMessageTooLarge() {
+	assertGrpcErrorInHistoryOnce := func(ctx context.Context, run client.WorkflowRun) {
+		found := false
+		iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		for iter.HasNext() {
+			event, err := iter.Next()
+			ts.NoError(err)
+			if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED {
+				if found {
+					ts.Fail("Found more than 1 workflow task failed event in history")
+				} else {
+					found = true
+				}
+				ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE, event.GetWorkflowTaskFailedEventAttributes().Cause)
+			}
+		}
+		ts.True(found, "Workflow task failed event not found in history")
+	}
+
+	veryLargeData := strings.Repeat("Very Large Data ", 500_000) // circa 8MB, double the default 4MB limit
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	activityFn := func(ctx context.Context, arg string) error {
+		ts.FailNow("Activity should not start executing")
+		return nil
+	}
+
+	failureInWorkflowTaskWorkflowFn := func(ctx workflow.Context, success bool) error {
+		if success {
+			return workflow.ExecuteActivity(ctx, activityFn, veryLargeData).Get(ctx, nil)
+		} else {
+			return errors.New(veryLargeData)
+		}
+	}
+
+	failureInQueryTaskWorkflowFn := func(ctx workflow.Context) error {
+		return workflow.SetQueryHandler(ctx, "some-query", func(success bool) (string, error) {
+			if success {
+				return veryLargeData, nil
+			} else {
+				return "", errors.New(veryLargeData)
+			}
+		})
+	}
+
+	ts.worker.RegisterWorkflow(failureInWorkflowTaskWorkflowFn)
+	ts.worker.RegisterWorkflow(failureInQueryTaskWorkflowFn)
+	ts.worker.RegisterActivity(activityFn)
+	startOptions := client.StartWorkflowOptions{
+		TaskQueue:           ts.taskQueueName,
+		WorkflowTaskTimeout: 1000 * time.Second,
+		WorkflowRunTimeout:  1000 * time.Second,
+	}
+
+	// Testcase: activity start too large
+	run, err := ts.client.ExecuteWorkflow(ctx, startOptions, failureInWorkflowTaskWorkflowFn, true)
+	ts.NoError(err)
+	err = run.Get(ctx, nil)
+	ts.Error(err)
+	assertGrpcErrorInHistoryOnce(ctx, run)
+
+	// Testcase: workflow error too large
+	run, err = ts.client.ExecuteWorkflow(ctx, startOptions, failureInWorkflowTaskWorkflowFn, false)
+	ts.NoError(err)
+	err = run.Get(ctx, nil)
+	ts.Error(err)
+	assertGrpcErrorInHistoryOnce(ctx, run)
+
+	// Testcase: query result too large
+	run, err = ts.client.ExecuteWorkflow(ctx, startOptions, failureInWorkflowTaskWorkflowFn)
+	ts.NoError(err)
+	err = run.Get(ctx, nil)
+	ts.Error(err)
+
+	// Testcase: query error too large
+	run, err = ts.client.ExecuteWorkflow(ctx, startOptions, failureInWorkflowTaskWorkflowFn)
+	ts.NoError(err)
+	err = run.Get(ctx, nil)
+	ts.Error(err)
+}

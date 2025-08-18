@@ -6,11 +6,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"strings"
 	"sync"
 	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -1546,6 +1547,6 @@ func isGrpcMessageTooLargeError(err error) bool {
 	return grpcStatus != nil &&
 		grpcStatus.Code() == codes.ResourceExhausted &&
 		(strings.HasPrefix(grpcStatus.Message(), "grpc: received message larger than max") ||
-			strings.HasPrefix(grpcStatus.Message(), "grpc: received message larger than max") ||
-			strings.HasPrefix(grpcStatus.Message(), "grpc: received message larger than max"))
+			strings.HasPrefix(grpcStatus.Message(), "grpc: message after decompression larger than max") ||
+			strings.HasPrefix(grpcStatus.Message(), "grpc: received message after decompression larger than max"))
 }
