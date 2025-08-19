@@ -832,7 +832,7 @@ func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
 		ts.NoError(err)
 		ts.Equal(1, len(taskQueueInfo.VersionsInfo))
 
-		// TODO: Fix to work with newer response format
+		// TODO: Fix to work with newer response format - https://github.com/temporalio/sdk-go/issues/2025
 		// ts.validateTaskQueueStats(expectedWorkflowStats, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats)
 		// ts.validateTaskQueueStats(expectedActivityStats, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeActivity].Stats)
 	}
