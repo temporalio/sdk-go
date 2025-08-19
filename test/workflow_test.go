@@ -3529,6 +3529,24 @@ func (w *Workflows) WorkflowReactToCancel(ctx workflow.Context, localActivity bo
 	return nil
 }
 
+// NilContextWorkflow calls ExecuteActivity with a nil context to ensure safety.
+func (w *Workflows) NilContextWorkflow(ctx workflow.Context) (string, error) {
+    var a Activities
+    var nilCtx workflow.Context = nil
+    future := workflow.ExecuteActivity(nilCtx, a.SimpleActivity)
+    var result string
+    err := future.Get(ctx, &result)
+    if err != nil {
+        return "", err
+    }
+    return result, nil
+}
+
+// SimpleActivity is a minimal Activity that returns "ok".
+func (a *Activities) SimpleActivity() (string, error) {
+    return "ok", nil
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -3678,6 +3696,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.WorkflowTemporalPrefixSignal)
 	worker.RegisterWorkflow(w.WorkflowRawValue)
 	worker.RegisterWorkflow(w.WorkflowReactToCancel)
+	worker.RegisterWorkflow(w.NilContextWorkflow)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {

@@ -7741,3 +7741,23 @@ func (ts *IntegrationTestSuite) TestLocalActivitySummary() {
 	}
 	ts.Equal(summaryStr, summary)
 }
+
+func (ts *IntegrationTestSuite) TestNilContextWorkflow() {
+    w := &Workflows{}
+    w.register(ts.worker)
+
+    err := ts.worker.Start()
+    ts.NoError(err)
+    defer ts.worker.Stop()
+
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+
+    run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-nil-context"), w.NilContextWorkflow)
+    ts.NoError(err)
+
+    var result string
+    err = run.Get(ctx, &result)
+    ts.NoError(err)
+    ts.Equal("ok", result)
+}
