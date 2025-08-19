@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	commandpb "go.temporal.io/api/command/v1"
@@ -23,7 +24,6 @@ import (
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"go.temporal.io/sdk/internal/common/retry"
@@ -2069,6 +2069,7 @@ type temporalInvoker struct {
 	closeCh                   chan struct{}
 	workerStopChannel         <-chan struct{}
 	namespace                 string
+	excludeInternalFromRetry  *atomic.Bool
 }
 
 func (i *temporalInvoker) Heartbeat(ctx context.Context, details *commonpb.Payloads, skipBatching bool) error {
@@ -2162,8 +2163,7 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 		// Transient errors are getting retried for the duration of the heartbeat timeout.
 		// The fact that error has been returned means that activity should now be timed out, hence we should
 		// propagate cancellation to the handler.
-		statusErr, _ := status.FromError(err)
-		if retry.IsStatusCodeRetryable(statusErr) {
+		if retry.IsRetryable(err, i.excludeInternalFromRetry) {
 			i.cancelHandler(err)
 			isActivityCanceled = true
 		}
@@ -2204,6 +2204,7 @@ func newServiceInvoker(
 	heartbeatThrottleInterval time.Duration,
 	workerStopChannel <-chan struct{},
 	namespace string,
+	excludeInternalFromRetry *atomic.Bool,
 ) ServiceInvoker {
 	return &temporalInvoker{
 		taskToken:                 taskToken,
@@ -2215,6 +2216,7 @@ func newServiceInvoker(
 		closeCh:                   make(chan struct{}),
 		workerStopChannel:         workerStopChannel,
 		namespace:                 namespace,
+		excludeInternalFromRetry:  excludeInternalFromRetry,
 	}
 }
 
@@ -2239,7 +2241,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	heartbeatThrottleInterval := ath.getHeartbeatThrottleInterval(t.GetHeartbeatTimeout().AsDuration())
 	invoker := newServiceInvoker(
 		t.TaskToken, ath.identity, ath.client.workflowService, ath.metricsHandler, cancel, heartbeatThrottleInterval,
-		ath.workerStopCh, ath.namespace)
+		ath.workerStopCh, ath.namespace, ath.client.excludeInternalFromRetry)
 
 	workflowType := t.WorkflowType.GetName()
 	activityType := t.ActivityType.GetName()

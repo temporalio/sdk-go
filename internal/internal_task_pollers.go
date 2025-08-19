@@ -6,10 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
+	"go.temporal.io/sdk/internal/common/retry"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -1546,7 +1546,5 @@ func isGrpcMessageTooLargeError(err error) bool {
 	grpcStatus := status.Convert(err)
 	return grpcStatus != nil &&
 		grpcStatus.Code() == codes.ResourceExhausted &&
-		(strings.HasPrefix(grpcStatus.Message(), "grpc: received message larger than max") ||
-			strings.HasPrefix(grpcStatus.Message(), "grpc: message after decompression larger than max") ||
-			strings.HasPrefix(grpcStatus.Message(), "grpc: received message after decompression larger than max"))
+		retry.HasGrpcMessageTooLargeErrorMessage(grpcStatus)
 }
