@@ -2612,7 +2612,9 @@ func convertToPBPriority(priority Priority) *commonpb.Priority {
 	}
 
 	return &commonpb.Priority{
-		PriorityKey: int32(priority.PriorityKey),
+		PriorityKey:    int32(priority.PriorityKey),
+		FairnessKey:    priority.FairnessKey,
+		FairnessWeight: priority.FairnessWeight,
 	}
 }
 
@@ -2623,7 +2625,9 @@ func convertFromPBPriority(priority *commonpb.Priority) Priority {
 	}
 
 	return Priority{
-		PriorityKey: int(priority.PriorityKey),
+		PriorityKey:    int(priority.PriorityKey),
+		FairnessKey:    priority.FairnessKey,
+		FairnessWeight: priority.FairnessWeight,
 	}
 }
 

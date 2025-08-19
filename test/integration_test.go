@@ -611,7 +611,9 @@ func (ts *IntegrationTestSuite) TestActivityPause() {
 	// Check the workflow still has one paused pending activity
 	ts.Len(desc.GetPendingActivities(), 1)
 	ts.Equal(desc.GetPendingActivities()[0].GetActivityType().GetName(), "ActivityToBePaused")
-	ts.Equal(desc.GetPendingActivities()[0].GetAttempt(), int32(1))
+	// This can be 1 or 2 depending on server version
+	ts.GreaterOrEqual(desc.GetPendingActivities()[0].GetAttempt(), int32(1))
+	ts.LessOrEqual(desc.GetPendingActivities()[0].GetAttempt(), int32(2))
 	ts.NotNil(desc.GetPendingActivities()[0].GetLastFailure())
 	ts.Equal(desc.GetPendingActivities()[0].GetLastFailure().GetMessage(), "activity paused")
 	ts.True(desc.GetPendingActivities()[0].GetPaused())
@@ -6813,7 +6815,9 @@ func (ts *IntegrationTestSuite) TestTaskQueuePriority() {
 	// Start workflow with a priority
 	opts := ts.startWorkflowOptions("test-task-queue-priority-" + uuid.NewString())
 	opts.Priority = temporal.Priority{
-		PriorityKey: 1,
+		PriorityKey:    1,
+		FairnessKey:    "superfair",
+		FairnessWeight: 3.14,
 	}
 	run, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.PriorityWorkflow)
 	ts.NoError(err)
