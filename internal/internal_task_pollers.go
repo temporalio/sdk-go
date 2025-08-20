@@ -10,9 +10,6 @@ import (
 	"time"
 
 	"go.temporal.io/sdk/internal/common/retry"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
@@ -630,8 +627,7 @@ func (wtp *workflowTaskProcessor) reportGrpcMessageTooLarge(
 	sendErr error,
 ) (emitFailMetric bool, err error) {
 	switch completedRequest.(type) {
-	case *workflowservice.RespondWorkflowTaskCompletedRequest:
-	case *workflowservice.RespondWorkflowTaskFailedRequest:
+	case *workflowservice.RespondWorkflowTaskCompletedRequest, *workflowservice.RespondWorkflowTaskFailedRequest:
 		emitFailMetric = true
 		request := wtp.errorToFailWorkflowTask(task.TaskToken, sendErr)
 		request.Cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE
@@ -640,9 +636,9 @@ func (wtp *workflowTaskProcessor) reportGrpcMessageTooLarge(
 		request := &workflowservice.RespondQueryTaskCompletedRequest{
 			TaskToken:     task.TaskToken,
 			CompletedType: enumspb.QUERY_RESULT_TYPE_FAILED,
-			ErrorMessage:  err.Error(),
+			ErrorMessage:  sendErr.Error(),
 			Namespace:     wtp.namespace,
-			Failure:       wtp.failureConverter.ErrorToFailure(err),
+			Failure:       wtp.failureConverter.ErrorToFailure(sendErr),
 			Cause:         enumspb.WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE,
 		}
 		_, err = wtp.sendTaskCompletedRequest(request, task)
@@ -1543,8 +1539,6 @@ func (nt *nexusTask) scaleDecision() (pollerScaleDecision, bool) {
 }
 
 func isGrpcMessageTooLargeError(err error) bool {
-	grpcStatus := status.Convert(err)
-	return grpcStatus != nil &&
-		grpcStatus.Code() == codes.ResourceExhausted &&
-		retry.HasGrpcMessageTooLargeErrorMessage(grpcStatus)
+	serviceErr, ok := err.(*serviceerror.ResourceExhausted)
+	return ok && serviceErr.Cause == retry.RESOURCE_EXHAUSTED_CAUSE_EXT_GRPC_MESSAGE_TOO_LARGE
 }

@@ -7783,7 +7783,7 @@ func (ts *IntegrationTestSuite) TestGrpcMessageTooLarge() {
 	}
 
 	failureInQueryTaskWorkflowFn := func(ctx workflow.Context) error {
-		return workflow.SetQueryHandler(ctx, "some-query", func(success bool) (string, error) {
+		return workflow.SetQueryHandler(ctx, "too-large-query", func(success bool) (string, error) {
 			if success {
 				return veryLargeData, nil
 			} else {
@@ -7797,33 +7797,34 @@ func (ts *IntegrationTestSuite) TestGrpcMessageTooLarge() {
 	ts.worker.RegisterActivity(activityFn)
 	startOptions := client.StartWorkflowOptions{
 		TaskQueue:           ts.taskQueueName,
-		WorkflowTaskTimeout: 1000 * time.Second,
-		WorkflowRunTimeout:  1000 * time.Second,
+		WorkflowTaskTimeout: 300 * time.Millisecond,
+		WorkflowRunTimeout:  1 * time.Second,
 	}
 
-	// Testcase: activity start too large
-	run, err := ts.client.ExecuteWorkflow(ctx, startOptions, failureInWorkflowTaskWorkflowFn, true)
-	ts.NoError(err)
-	err = run.Get(ctx, nil)
-	ts.Error(err)
-	assertGrpcErrorInHistoryOnce(ctx, run)
+	ts.Run("Activity start too large", func() {
+		run, err := ts.client.ExecuteWorkflow(ctx, startOptions, failureInWorkflowTaskWorkflowFn, true)
+		ts.NoError(err)
+		err = run.Get(ctx, nil)
+		ts.Error(err)
+		assertGrpcErrorInHistoryOnce(ctx, run)
+	})
 
-	// Testcase: workflow error too large
-	run, err = ts.client.ExecuteWorkflow(ctx, startOptions, failureInWorkflowTaskWorkflowFn, false)
-	ts.NoError(err)
-	err = run.Get(ctx, nil)
-	ts.Error(err)
-	assertGrpcErrorInHistoryOnce(ctx, run)
+	ts.Run("Workflow failure too large", func() {
+		run, err := ts.client.ExecuteWorkflow(ctx, startOptions, failureInWorkflowTaskWorkflowFn, true)
+		ts.NoError(err)
+		err = run.Get(ctx, nil)
+		ts.Error(err)
+		assertGrpcErrorInHistoryOnce(ctx, run)
+	})
 
-	// Testcase: query result too large
-	run, err = ts.client.ExecuteWorkflow(ctx, startOptions, failureInWorkflowTaskWorkflowFn)
-	ts.NoError(err)
-	err = run.Get(ctx, nil)
-	ts.Error(err)
+	// successful query case is tested by TestLargeQueryResultError
 
-	// Testcase: query error too large
-	run, err = ts.client.ExecuteWorkflow(ctx, startOptions, failureInWorkflowTaskWorkflowFn)
-	ts.NoError(err)
-	err = run.Get(ctx, nil)
-	ts.Error(err)
+	ts.Run("Query failure too large", func() {
+		run, err := ts.client.ExecuteWorkflow(ctx, startOptions, failureInQueryTaskWorkflowFn)
+		ts.NoError(err)
+		ts.NoError(run.Get(ctx, nil))
+		_, err = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "too-large-query", false)
+		ts.Error(err)
+		ts.Contains(err.Error(), "grpc: received message larger than max")
+	})
 }
