@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	commandpb "go.temporal.io/api/command/v1"
@@ -2069,6 +2070,7 @@ type temporalInvoker struct {
 	closeCh                   chan struct{}
 	workerStopChannel         <-chan struct{}
 	namespace                 string
+	excludeInternalFromRetry  *atomic.Bool // borrowed from client in order to tell if internal errors are retriable
 }
 
 func (i *temporalInvoker) Heartbeat(ctx context.Context, details *commonpb.Payloads, skipBatching bool) error {
@@ -2163,7 +2165,7 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 		// The fact that error has been returned means that activity should now be timed out, hence we should
 		// propagate cancellation to the handler.
 		statusErr, _ := status.FromError(err)
-		if retry.IsStatusCodeRetryable(statusErr) {
+		if retry.IsRetryable(statusErr, i.excludeInternalFromRetry) {
 			i.cancelHandler(err)
 			isActivityCanceled = true
 		}
@@ -2204,6 +2206,7 @@ func newServiceInvoker(
 	heartbeatThrottleInterval time.Duration,
 	workerStopChannel <-chan struct{},
 	namespace string,
+	excludeInternalFromRetry *atomic.Bool,
 ) ServiceInvoker {
 	return &temporalInvoker{
 		taskToken:                 taskToken,
@@ -2215,6 +2218,7 @@ func newServiceInvoker(
 		closeCh:                   make(chan struct{}),
 		workerStopChannel:         workerStopChannel,
 		namespace:                 namespace,
+		excludeInternalFromRetry:  excludeInternalFromRetry,
 	}
 }
 
@@ -2239,7 +2243,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	heartbeatThrottleInterval := ath.getHeartbeatThrottleInterval(t.GetHeartbeatTimeout().AsDuration())
 	invoker := newServiceInvoker(
 		t.TaskToken, ath.identity, ath.client.workflowService, ath.metricsHandler, cancel, heartbeatThrottleInterval,
-		ath.workerStopCh, ath.namespace)
+		ath.workerStopCh, ath.namespace, ath.client.excludeInternalFromRetry)
 
 	workflowType := t.WorkflowType.GetName()
 	activityType := t.ActivityType.GetName()

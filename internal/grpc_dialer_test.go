@@ -105,13 +105,13 @@ func TestHeadersProvider_Error(t *testing.T) {
 
 func TestHeadersProvider_NotIncludedWhenNil(t *testing.T) {
 	interceptors := requiredInterceptors(&ClientOptions{}, nil)
-	require.Equal(t, 6, len(interceptors))
+	require.Equal(t, 7, len(interceptors))
 }
 
 func TestHeadersProvider_IncludedWithHeadersProvider(t *testing.T) {
 	opts := &ClientOptions{HeadersProvider: authHeadersProvider{token: "test-auth-token"}}
 	interceptors := requiredInterceptors(opts, nil)
-	require.Equal(t, 7, len(interceptors))
+	require.Equal(t, 8, len(interceptors))
 }
 
 func TestMissingGetServerInfo(t *testing.T) {
