@@ -2253,6 +2253,7 @@ func (ts *IntegrationTestSuite) TestWorkflowExecutionUpdateDeadline() {
 		ts.startWorkflowOptions(wfId), ts.workflows.UpdateBasicWorkflow)
 	ts.NoError(err)
 
+	timeBefore := time.Now()
 	updateCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	_, err = ts.client.UpdateWorkflow(updateCtx, client.UpdateWorkflowOptions{
@@ -2262,10 +2263,13 @@ func (ts *IntegrationTestSuite) TestWorkflowExecutionUpdateDeadline() {
 		Args:         []interface{}{10 * time.Second},
 		WaitForStage: client.WorkflowUpdateStageCompleted,
 	})
+	timeAfter := time.Now()
 	ts.Error(err)
 	var rpcErr *client.WorkflowUpdateServiceTimeoutOrCanceledError
 	ts.ErrorAs(err, &rpcErr)
-	ts.Contains(err.Error(), "context deadline exceeded")
+	// Server may decide to terminate connection on timeout, and sometimes that gets caught before client-side timeout.
+	// So we don't know which error we'll receive, but we can check that time has actually passed before the error, with some safety margin.
+	ts.GreaterOrEqual(timeAfter.Sub(timeBefore), 4_900*time.Millisecond)
 	// Complete workflow
 	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
 }
