@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package replaytests
 
 import (
@@ -31,6 +7,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nexus-rpc/sdk-go/nexus"
+	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/temporalnexus"
 
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -409,7 +388,7 @@ func VersionAndMutableSideEffectWorkflow(ctx workflow.Context, name string) (str
 	v := workflow.GetVersion(ctx, "mutable-side-effect-bug", workflow.DefaultVersion, 1)
 	if v == 1 {
 		var err error
-		uid, err = generateUUID(ctx)
+		uid, err = generateUUID(ctx, "generate-random-uuid")
 		if err != nil {
 			logger.Error("failed to generated uuid", "Error", err)
 			return "", err
@@ -432,10 +411,10 @@ func VersionAndMutableSideEffectWorkflow(ctx workflow.Context, name string) (str
 	return uid, nil
 }
 
-func generateUUID(ctx workflow.Context) (string, error) {
+func generateUUID(ctx workflow.Context, sideEffectID string) (string, error) {
 	var generatedUUID string
 
-	err := workflow.MutableSideEffect(ctx, "generate-random-uuid", func(ctx workflow.Context) interface{} {
+	err := workflow.MutableSideEffect(ctx, sideEffectID, func(ctx workflow.Context) interface{} {
 		return uuid.NewString()
 	}, func(a, b interface{}) bool {
 		return a.(string) == b.(string)
@@ -697,4 +676,67 @@ func ResetWorkflowWithChild(ctx workflow.Context) (string, error) {
 
 	logger.Info("Child execution completed with result: " + result)
 	return result, nil
+}
+
+func NexusCancelHandlerWorkflow(ctx workflow.Context, action string) (nexus.NoValue, error) {
+	if action == "succeed" {
+		return nil, nil
+	}
+	return nil, workflow.Await(ctx, func() bool { return false })
+}
+
+var CancelOp = temporalnexus.NewWorkflowRunOperation(
+	"wait-on-signal-op",
+	NexusCancelHandlerWorkflow,
+	func(ctx context.Context, action string, soo nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+		if action == "delay-start" {
+			time.Sleep(1 * time.Second)
+		}
+		return client.StartWorkflowOptions{
+			ID: "nexus-handler-wait-for-cancel",
+		}, nil
+	},
+)
+
+func CancelNexusOperationBeforeSentWorkflow(ctx workflow.Context) (string, error) {
+	nc := workflow.NewNexusClient("replay-endpoint", "replay-service")
+	opCtx, cancel := workflow.NewDisconnectedContext(ctx)
+	cancel()
+	op := nc.ExecuteOperation(opCtx, CancelOp, "fail-to-send", workflow.NexusOperationOptions{})
+	_ = op.Get(ctx, nil)
+	return generateUUID(ctx, "nxs-cancel-before-sent-id")
+}
+
+func CancelNexusOperationBeforeStartWorkflow(ctx workflow.Context) (string, error) {
+	nc := workflow.NewNexusClient("replay-endpoint", "replay-service")
+	opCtx, cancel := workflow.NewDisconnectedContext(ctx)
+	op := nc.ExecuteOperation(opCtx, CancelOp, "delay-start", workflow.NexusOperationOptions{})
+	if err := workflow.Sleep(ctx, 200*time.Millisecond); err != nil {
+		// Wait for scheduled event to be recorded
+		return "", err
+	}
+	cancel()
+	_ = op.Get(ctx, nil)
+	return generateUUID(ctx, "nxs-cancel-before-start-id")
+}
+
+func CancelNexusOperationAfterStartWorkflow(ctx workflow.Context) (string, error) {
+	nc := workflow.NewNexusClient("replay-endpoint", "replay-service")
+	opCtx, cancel := workflow.WithCancel(ctx)
+	op := nc.ExecuteOperation(opCtx, CancelOp, "wait-for-cancel", workflow.NexusOperationOptions{})
+	if err := op.GetNexusOperationExecution().Get(opCtx, nil); err != nil {
+		return "", err
+	}
+	cancel()
+	_ = op.Get(ctx, nil)
+	return generateUUID(ctx, "nxs-cancel-after-start-id")
+}
+
+func CancelNexusOperationAfterCompleteWorkflow(ctx workflow.Context) (string, error) {
+	nc := workflow.NewNexusClient("replay-endpoint", "replay-service")
+	opCtx, cancel := workflow.WithCancel(ctx)
+	op := nc.ExecuteOperation(opCtx, CancelOp, "succeed", workflow.NexusOperationOptions{})
+	_ = op.Get(opCtx, nil)
+	cancel()
+	return generateUUID(ctx, "nxs-cancel-after-complete-id")
 }

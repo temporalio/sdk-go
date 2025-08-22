@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -4241,7 +4217,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_SameWorkflowAndActivityNames() {
 	s.Require().NoError(env.GetWorkflowError())
 }
 
-func (s *WorkflowTestSuiteUnitTest) Test_SignalLoss() {
+func (s *WorkflowTestSuiteUnitTest) Test_SignalNotLost() {
 	workflowFn := func(ctx Context) error {
 		ch1 := GetSignalChannel(ctx, "test-signal")
 		ch2 := GetSignalChannel(ctx, "test-signal-2")
@@ -4254,8 +4230,11 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalLoss() {
 			ch2.Receive(ctx, &v)
 		})
 		selector.Select(ctx)
-		s.Require().True(ch1.Len() == 0 && v == "s2")
+		s.Require().Equal(ch1.Len(), 1)
+		s.Require().Equal(v, "s2")
 		selector.Select(ctx)
+		s.Require().Equal(ch1.Len(), 0)
+		s.Require().Equal(v, "s1")
 
 		return nil
 	}
@@ -4269,8 +4248,5 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalLoss() {
 	env.ExecuteWorkflow(workflowFn)
 	s.True(env.IsWorkflowCompleted())
 	err := env.GetWorkflowError()
-	s.Error(err)
-	var workflowErr *WorkflowExecutionError
-	s.True(errors.As(err, &workflowErr))
-	s.Equal("deadline exceeded (type: ScheduleToClose)", workflowErr.cause.Error())
+	s.NoError(err)
 }

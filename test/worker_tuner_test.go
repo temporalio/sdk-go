@@ -1,25 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2022 Temporal Technologies Inc.  All rights reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package test_test
 
 import (
@@ -71,7 +49,7 @@ func (ts *WorkerTunerTestSuite) TestFixedSizeWorkerTuner() {
 	})
 	ts.NoError(err)
 
-	ts.runTheWorkflow(tuner, ctx)
+	ts.runTheWorkflow(worker.Options{Tuner: tuner}, ctx)
 }
 
 func (ts *WorkerTunerTestSuite) TestCompositeWorkerTuner() {
@@ -97,11 +75,67 @@ func (ts *WorkerTunerTestSuite) TestCompositeWorkerTuner() {
 		WorkflowSlotSupplier: wfSS, ActivitySlotSupplier: actSS, LocalActivitySlotSupplier: laCss})
 	ts.NoError(err)
 
-	ts.runTheWorkflow(tuner, ctx)
+	ts.runTheWorkflow(worker.Options{Tuner: tuner}, ctx)
 }
 
-func (ts *WorkerTunerTestSuite) runTheWorkflow(tuner worker.WorkerTuner, ctx context.Context) {
-	workerOptions := worker.Options{Tuner: tuner}
+func (ts *WorkerTunerTestSuite) TestPollerBehaviorAutoscalingScaler() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	ts.runTheWorkflow(worker.Options{
+		WorkflowTaskPollerBehavior: worker.NewPollerBehaviorAutoscaling(
+			worker.PollerBehaviorAutoscalingOptions{},
+		),
+		ActivityTaskPollerBehavior: worker.NewPollerBehaviorAutoscaling(
+			worker.PollerBehaviorAutoscalingOptions{},
+		),
+	}, ctx)
+}
+
+func (ts *WorkerTunerTestSuite) TestPollerBehaviorSimpleMaximumScaler() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	ts.runTheWorkflow(worker.Options{
+		WorkflowTaskPollerBehavior: worker.NewPollerBehaviorSimpleMaximum(
+			worker.PollerBehaviorSimpleMaximumOptions{},
+		),
+		ActivityTaskPollerBehavior: worker.NewPollerBehaviorSimpleMaximum(
+			worker.PollerBehaviorSimpleMaximumOptions{},
+		),
+	}, ctx)
+}
+
+func (ts *WorkerTunerTestSuite) TestResourceBasedSmallSlots() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	wfSS, err := worker.NewFixedSizeSlotSupplier(10)
+	ts.NoError(err)
+	controllerOpts := resourcetuner.DefaultResourceControllerOptions()
+	controllerOpts.MemTargetPercent = 0.8
+	controllerOpts.CpuTargetPercent = 0.9
+	controller := resourcetuner.NewResourceController(controllerOpts)
+	actSS, err := resourcetuner.NewResourceBasedSlotSupplier(controller,
+		resourcetuner.ResourceBasedSlotSupplierOptions{
+			MinSlots:     1,
+			MaxSlots:     4,
+			RampThrottle: 0,
+		})
+	ts.NoError(err)
+	laCss, err := worker.NewFixedSizeSlotSupplier(5)
+	ts.NoError(err)
+	tuner, err := worker.NewCompositeTuner(worker.CompositeTunerOptions{
+		WorkflowSlotSupplier: wfSS, ActivitySlotSupplier: actSS, LocalActivitySlotSupplier: laCss})
+	ts.NoError(err)
+
+	// The bug this is verifying was triggered by a race, so run this a bunch to verify it's not hit
+	for i := 0; i < 10; i++ {
+		ts.runTheWorkflow(worker.Options{Tuner: tuner}, ctx)
+	}
+}
+
+func (ts *WorkerTunerTestSuite) runTheWorkflow(workerOptions worker.Options, ctx context.Context) {
 	myWorker := worker.New(ts.client, ts.taskQueueName, workerOptions)
 	ts.workflows.register(myWorker)
 	ts.activities.register(myWorker)

@@ -1,31 +1,8 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package activity
 
 import (
 	"context"
+
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
@@ -40,6 +17,9 @@ type (
 
 	// RegisterOptions consists of options for registering an activity.
 	RegisterOptions = internal.RegisterActivityOptions
+
+	// DynamicRegisterOptions consists of options for registering a dynamic activity.
+	DynamicRegisterOptions = internal.DynamicRegisterActivityOptions
 )
 
 // ErrResultPending is returned from activity's implementation to indicate the activity is not completed when the
@@ -48,6 +28,11 @@ type (
 // which indicates the activity is not done yet. Then, when the waited human action happened, it needs to trigger something
 // that could report the activity completed event to the temporal server via the Client.CompleteActivity() API.
 var ErrResultPending = internal.ErrActivityResultPending
+
+// ErrActivityPaused is returned from an activity heartbeat or the cause of an activity's context to indicate that the activity is paused.
+//
+// WARNING: Activity pause is currently experimental
+var ErrActivityPaused = internal.ErrActivityPaused
 
 // GetInfo returns information about the currently executing activity.
 func GetInfo(ctx context.Context) Info {
@@ -66,7 +51,18 @@ func GetMetricsHandler(ctx context.Context) metrics.Handler {
 
 // RecordHeartbeat sends a heartbeat for the currently executing activity.
 // If the activity is either canceled or the workflow/activity doesn't exist, then we would cancel
-// the context with error context.Canceled.
+// the context with error [context.Canceled]. The [context.Cause] will be set based on the reason
+// for the cancellation.
+//
+// For example, if the activity is requested to be paused by the Server:
+//
+//		func MyActivity(ctx context.Context) error {
+//			activity.RecordHeartbeat(ctx, "")
+//			// assume the activity is paused by the server
+//			activity.RecordHeartbeat(ctx, "some details")
+//			context.Cause(ctx) // Will return activity.ErrActivityPaused
+//	     	return ctx.Err() // Will return context.Canceled
+//		}
 //
 // details - The details that you provide here can be seen in the workflow when it receives TimeoutError. You
 // can check error with TimeoutType()/Details().

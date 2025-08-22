@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -723,6 +699,7 @@ func Test_convertErrorToFailure_ApplicationErrorWithExtraRequests(t *testing.T) 
 			NonRetryable: true,
 			Cause:        errors.New("cause error"),
 			Details:      []interface{}{"details", 2208},
+			Category:     ApplicationErrorCategoryBenign,
 		},
 	)
 	f := fc.ErrorToFailure(err)
@@ -734,15 +711,27 @@ func Test_convertErrorToFailure_ApplicationErrorWithExtraRequests(t *testing.T) 
 	require.Equal("cause error", f.GetCause().GetMessage())
 	require.Equal("", f.GetCause().GetApplicationFailureInfo().GetType())
 	require.Nil(f.GetCause().GetCause())
+	require.Equal(enumspb.APPLICATION_ERROR_CATEGORY_BENIGN, f.GetApplicationFailureInfo().GetCategory())
 
 	err2 := fc.FailureToError(f)
 	var applicationErr *ApplicationError
 	require.True(errors.As(err2, &applicationErr))
 	require.Equal("message (type: customType, retryable: false): cause error", applicationErr.Error())
+	require.Equal(ApplicationErrorCategoryBenign, applicationErr.Category())
 
 	err2 = errors.Unwrap(err2)
 	require.True(errors.As(err2, &applicationErr))
 	require.Equal("cause error", applicationErr.Error())
+
+	err = NewApplicationErrorWithOptions(
+		"another message",
+		"another customType",
+		ApplicationErrorOptions{
+			Category: ApplicationErrorCategoryUnspecified,
+		},
+	)
+	f = fc.ErrorToFailure(err)
+	require.Equal(enumspb.APPLICATION_ERROR_CATEGORY_UNSPECIFIED, f.GetApplicationFailureInfo().GetCategory())
 }
 
 func Test_convertErrorToFailure_EncodeMessage(t *testing.T) {
@@ -1104,6 +1093,7 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 			Type:         "MyCoolType",
 			NonRetryable: true,
 			Details:      details,
+			Category:     enumspb.APPLICATION_ERROR_CATEGORY_BENIGN,
 		}},
 		Cause: &failurepb.Failure{
 			Message: "cause message",
@@ -1120,6 +1110,7 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 	require.Equal("message (type: MyCoolType, retryable: false): cause message (type: UnknownType, retryable: true)", applicationErr.Error())
 	require.Equal("MyCoolType", applicationErr.Type())
 	require.Equal(true, applicationErr.NonRetryable())
+	require.Equal(ApplicationErrorCategoryBenign, applicationErr.Category())
 	var str string
 	var n int
 	require.NoError(applicationErr.Details(&str, &n))
@@ -1149,8 +1140,9 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 	f = &failurepb.Failure{
 		Message: "message",
 		FailureInfo: &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{
-			Type:    "CoolError",
-			Details: details,
+			Type:     "CoolError",
+			Details:  details,
+			Category: enumspb.APPLICATION_ERROR_CATEGORY_UNSPECIFIED,
 		}},
 	}
 
@@ -1160,6 +1152,7 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 	require.Equal("message (type: CoolError, retryable: true)", coolErr.Error())
 	require.Equal("CoolError", coolErr.Type())
 	require.Equal(false, coolErr.NonRetryable())
+	require.Equal(ApplicationErrorCategoryUnspecified, coolErr.Category())
 }
 
 func Test_convertFailureToError_CanceledFailure(t *testing.T) {

@@ -38,3 +38,7 @@ component.callbacks.allowedAddresses:
   - value:
     - Pattern: "*"
       AllowInsecure: true
+component.nexusoperations.recordCancelRequestCompletionEvents:
+  - value: true
+frontend.activityAPIsEnabled:
+  - value: true
