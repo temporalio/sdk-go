@@ -166,7 +166,7 @@ func IsRetryable(status *status.Status, excludeInternalFromRetry *atomic.Bool) b
 }
 
 // RESOURCE_EXHAUSTED_CAUSE_EXT_GRPC_MESSAGE_TOO_LARGE is an extension to the ResourceExhaustedCause enum to mark gRPC message too large errors.
-const RESOURCE_EXHAUSTED_CAUSE_EXT_GRPC_MESSAGE_TOO_LARGE enumspb.ResourceExhaustedCause = 101 // TODO: add the cause to the upstream API repo and remove this
+const RESOURCE_EXHAUSTED_CAUSE_EXT_GRPC_MESSAGE_TOO_LARGE enumspb.ResourceExhaustedCause = 101 // TODO: add the cause to the upstream API repo and remove this (see https://github.com/temporalio/sdk-go/issues/2030)
 
 // SetGrpcMessageTooLargeErrorCauseInterceptor adds appropriate error details if the error cause is gRPC message being too large.
 func SetGrpcMessageTooLargeErrorCauseInterceptor(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
