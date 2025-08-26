@@ -1099,7 +1099,6 @@ func waitGroupWorkflowTest(ctx Context, n int) (int, error) {
 			var result int
 			err = ExecuteChildWorkflow(ctx, sleepWorkflow, t).Get(ctx, &result)
 			results = append(results, result)
-			waitGroup.Done()
 		})
 	}
 
