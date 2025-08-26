@@ -1093,10 +1093,9 @@ func waitGroupWorkflowTest(ctx Context, n int) (int, error) {
 	var err error
 	results := make([]int, 0, n)
 	waitGroup := NewWaitGroup(ctx)
-	for i := 0; i < n; i++ {
-		waitGroup.Add(1)
+	for i := range n {
 		t := time.Second * time.Duration(i+1)
-		Go(ctx, func(ctx Context) {
+		waitGroup.Go(ctx, func(ctx Context) {
 			var result int
 			err = ExecuteChildWorkflow(ctx, sleepWorkflow, t).Get(ctx, &result)
 			results = append(results, result)
