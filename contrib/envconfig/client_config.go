@@ -39,7 +39,7 @@ type ClientConfigProfile struct {
 	TLS *ClientConfigTLS
 	// Optional client codec config.
 	Codec *ClientConfigCodec
-	// GRPCAuthority will set the :authority pseudoheader the grpc clients.
+	// GRPCAuthority will set the :authority pseudoheader on grpc clients.
 	//
 	// This is useful in situations where you might need to route through an intermediate proxy.
 	GRPCAuthority string
