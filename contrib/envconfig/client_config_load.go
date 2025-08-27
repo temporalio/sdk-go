@@ -362,6 +362,10 @@ func (c *ClientConfigProfile) ApplyEnvVars(env EnvLookup) error {
 		c.Codec.Auth = s
 	}
 
+	if s, ok := env.LookupEnv("TEMPORAL_GRPC_AUTHORITY"); ok {
+		c.GRPCAuthority = s
+	}
+
 	// GRPC meta requires crawling the envs to find
 	for _, v := range env.Environ() {
 		if strings.HasPrefix(v, "TEMPORAL_GRPC_META_") {

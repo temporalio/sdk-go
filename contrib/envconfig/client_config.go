@@ -39,6 +39,10 @@ type ClientConfigProfile struct {
 	TLS *ClientConfigTLS
 	// Optional client codec config.
 	Codec *ClientConfigCodec
+	// GRPCAuthority will set the :authority pseudoheader the grpc clients.
+	//
+	// This is useful in situations where you might need to route through an intermediate proxy.
+	GRPCAuthority string
 	// Client gRPC metadata (aka headers). When loading from TOML and env var, or writing to TOML, the keys are
 	// lowercased and hyphens are replaced with underscores. This is used for deduplicating/overriding too, so manually
 	// set values that are not normalized may not get overridden with [ClientConfigProfile.ApplyEnvVars].
@@ -123,6 +127,9 @@ func (c *ClientConfigProfile) ToClientOptions(options ToClientOptionsRequest) (c
 		if opts.DataConverter, err = c.Codec.toDataConverter(c.Namespace); err != nil {
 			return client.Options{}, fmt.Errorf("invalid codec: %w", err)
 		}
+	}
+	if c.GRPCAuthority != "" {
+		opts.ConnectionOptions.Authority = c.GRPCAuthority
 	}
 	if len(c.GRPCMeta) > 0 {
 		opts.HeadersProvider = fixedHeaders(c.GRPCMeta)
