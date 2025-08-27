@@ -7751,6 +7751,7 @@ func (ts *IntegrationTestSuite) TestLocalActivitySummary() {
 }
 
 func (ts *IntegrationTestSuite) TestGrpcMessageTooLarge() {
+	ts.T().Skip("issue-2033: Test is flaky")
 	assertGrpcErrorInHistoryOnce := func(ctx context.Context, run client.WorkflowRun) {
 		found := false
 		iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
