@@ -139,7 +139,7 @@ func requiredInterceptors(
 		// Performs retries *IF* retry options are set for the call.
 		grpc_retry.UnaryClientInterceptor(),
 		// Prevents retrying grpc message too large errors, while allowing retries of other resource exhausted errors.
-		retry.SetGrpcMessageTooLargeErrorCauseInterceptor,
+		retry.GrpcMessageTooLargeErrorInterceptor,
 		// Report metrics for every call made to the server.
 		metrics.NewGRPCInterceptor(clientOptions.MetricsHandler, attemptSuffix, clientOptions.DisableErrorCodeMetricTags),
 	}
