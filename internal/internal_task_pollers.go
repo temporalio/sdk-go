@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"go.temporal.io/sdk/internal/common/retry"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
@@ -520,6 +521,9 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 	startTime time.Time,
 ) (response *workflowservice.RespondWorkflowTaskCompletedResponse, err error) {
 	metricsHandler := wtp.metricsHandler.WithTags(metrics.WorkflowTags(task.WorkflowType.GetName()))
+
+	emitFailMetric := false
+	var failureReason string
 	if taskErr != nil {
 		wtp.logger.Warn("Failed to process workflow task.",
 			tagWorkflowType, task.WorkflowType.GetName(),
@@ -527,22 +531,41 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 			tagRunID, task.WorkflowExecution.GetRunId(),
 			tagAttempt, task.Attempt,
 			tagError, taskErr)
+		emitFailMetric = true
 		failWorkflowTask := wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)
-		failureReason := "WorkflowError"
+		failureReason = "WorkflowError"
 		if failWorkflowTask.Cause == enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR {
 			failureReason = "NonDeterminismError"
 		}
-		incrementWorkflowTaskFailureCounter(metricsHandler, failureReason)
 		completedRequest = failWorkflowTask
 	}
 
 	metricsHandler.Timer(metrics.WorkflowTaskExecutionLatency).Record(time.Since(startTime))
 
-	response, err = wtp.RespondTaskCompleted(completedRequest, task)
+	response, err = wtp.sendTaskCompletedRequest(completedRequest, task)
+
+	if isGrpcMessageTooLargeError(err) {
+		secondEmitFailMetric, secondErr := wtp.reportGrpcMessageTooLarge(completedRequest, task, err)
+		if secondEmitFailMetric {
+			emitFailMetric = true
+			// Overwriting the original failure reason for metrics purposes
+			failureReason = "GrpcMessageTooLarge"
+		}
+		// We already know the first error was GRPC message too large, if there was another error when reporting the first error
+		// to the server it's probably more interesting for the user.
+		if secondErr != nil {
+			err = secondErr
+		}
+	}
+
+	if emitFailMetric {
+		incrementWorkflowTaskFailureCounter(metricsHandler, failureReason)
+	}
+
 	return
 }
 
-func (wtp *workflowTaskProcessor) RespondTaskCompleted(
+func (wtp *workflowTaskProcessor) sendTaskCompletedRequest(
 	completedRequest interface{},
 	task *workflowservice.PollWorkflowTaskQueueResponse,
 ) (response *workflowservice.RespondWorkflowTaskCompletedResponse, err error) {
@@ -598,6 +621,34 @@ func (wtp *workflowTaskProcessor) RespondTaskCompleted(
 	return
 }
 
+func (wtp *workflowTaskProcessor) reportGrpcMessageTooLarge(
+	completedRequest interface{},
+	task *workflowservice.PollWorkflowTaskQueueResponse,
+	sendErr error,
+) (emitFailMetric bool, err error) {
+	switch completedRequest.(type) {
+	case *workflowservice.RespondWorkflowTaskCompletedRequest, *workflowservice.RespondWorkflowTaskFailedRequest:
+		emitFailMetric = true
+		request := wtp.errorToFailWorkflowTask(task.TaskToken, sendErr)
+		request.Cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE
+		_, err = wtp.sendTaskCompletedRequest(request, task)
+	case *workflowservice.RespondQueryTaskCompletedRequest:
+		request := &workflowservice.RespondQueryTaskCompletedRequest{
+			TaskToken:     task.TaskToken,
+			CompletedType: enumspb.QUERY_RESULT_TYPE_FAILED,
+			ErrorMessage:  sendErr.Error(),
+			Namespace:     wtp.namespace,
+			Failure:       wtp.failureConverter.ErrorToFailure(sendErr),
+			Cause:         enumspb.WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE,
+		}
+		_, err = wtp.sendTaskCompletedRequest(request, task)
+	default:
+		// should not happen
+		panic("unknown request type from ProcessWorkflowTask()")
+	}
+	return
+}
+
 func (wtp *workflowTaskProcessor) errorToFailWorkflowTask(taskToken []byte, err error) *workflowservice.RespondWorkflowTaskFailedRequest {
 	cause := enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
 	// If it was a panic due to a bad state machine or if it was a history
@@ -612,6 +663,10 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTask(taskToken []byte, err 
 		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
 	}
 
+	return wtp.errorToFailWorkflowTaskWithCause(taskToken, err, cause)
+}
+
+func (wtp *workflowTaskProcessor) errorToFailWorkflowTaskWithCause(taskToken []byte, err error, cause enumspb.WorkflowTaskFailedCause) *workflowservice.RespondWorkflowTaskFailedRequest {
 	builtRequest := &workflowservice.RespondWorkflowTaskFailedRequest{
 		TaskToken:      taskToken,
 		Cause:          cause,
@@ -1481,4 +1536,9 @@ func (nt *nexusTask) scaleDecision() (pollerScaleDecision, bool) {
 	return pollerScaleDecision{
 		pollRequestDeltaSuggestion: int(nt.task.PollerScalingDecision.PollRequestDeltaSuggestion),
 	}, true
+}
+
+func isGrpcMessageTooLargeError(err error) bool {
+	serviceErr, ok := err.(*serviceerror.ResourceExhausted)
+	return ok && serviceErr.Cause == retry.RESOURCE_EXHAUSTED_CAUSE_EXT_GRPC_MESSAGE_TOO_LARGE
 }

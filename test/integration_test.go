@@ -611,7 +611,9 @@ func (ts *IntegrationTestSuite) TestActivityPause() {
 	// Check the workflow still has one paused pending activity
 	ts.Len(desc.GetPendingActivities(), 1)
 	ts.Equal(desc.GetPendingActivities()[0].GetActivityType().GetName(), "ActivityToBePaused")
-	ts.Equal(desc.GetPendingActivities()[0].GetAttempt(), int32(1))
+	// This can be 1 or 2 depending on server version
+	ts.GreaterOrEqual(desc.GetPendingActivities()[0].GetAttempt(), int32(1))
+	ts.LessOrEqual(desc.GetPendingActivities()[0].GetAttempt(), int32(2))
 	ts.NotNil(desc.GetPendingActivities()[0].GetLastFailure())
 	ts.Equal(desc.GetPendingActivities()[0].GetLastFailure().GetMessage(), "activity paused")
 	ts.True(desc.GetPendingActivities()[0].GetPaused())
@@ -2251,6 +2253,7 @@ func (ts *IntegrationTestSuite) TestWorkflowExecutionUpdateDeadline() {
 		ts.startWorkflowOptions(wfId), ts.workflows.UpdateBasicWorkflow)
 	ts.NoError(err)
 
+	timeBefore := time.Now()
 	updateCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	_, err = ts.client.UpdateWorkflow(updateCtx, client.UpdateWorkflowOptions{
@@ -2260,10 +2263,13 @@ func (ts *IntegrationTestSuite) TestWorkflowExecutionUpdateDeadline() {
 		Args:         []interface{}{10 * time.Second},
 		WaitForStage: client.WorkflowUpdateStageCompleted,
 	})
+	timeAfter := time.Now()
 	ts.Error(err)
 	var rpcErr *client.WorkflowUpdateServiceTimeoutOrCanceledError
 	ts.ErrorAs(err, &rpcErr)
-	ts.Contains(err.Error(), "context deadline exceeded")
+	// Server may decide to terminate connection on timeout, and sometimes that gets caught before client-side timeout.
+	// So we don't know which error we'll receive, but we can check that time has actually passed before the error, with some safety margin.
+	ts.GreaterOrEqual(timeAfter.Sub(timeBefore), 4_900*time.Millisecond)
 	// Complete workflow
 	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", "finished"))
 }
@@ -6813,7 +6819,9 @@ func (ts *IntegrationTestSuite) TestTaskQueuePriority() {
 	// Start workflow with a priority
 	opts := ts.startWorkflowOptions("test-task-queue-priority-" + uuid.NewString())
 	opts.Priority = temporal.Priority{
-		PriorityKey: 1,
+		PriorityKey:    1,
+		FairnessKey:    "superfair",
+		FairnessWeight: 3.14,
 	}
 	run, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.PriorityWorkflow)
 	ts.NoError(err)
@@ -7740,4 +7748,88 @@ func (ts *IntegrationTestSuite) TestLocalActivitySummary() {
 		}
 	}
 	ts.Equal(summaryStr, summary)
+}
+
+func (ts *IntegrationTestSuite) TestGrpcMessageTooLarge() {
+	ts.T().Skip("issue-2033: Test is flaky")
+	assertGrpcErrorInHistoryOnce := func(ctx context.Context, run client.WorkflowRun) {
+		found := false
+		iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		for iter.HasNext() {
+			event, err := iter.Next()
+			ts.NoError(err)
+			if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED {
+				if found {
+					ts.Fail("Found more than 1 workflow task failed event in history")
+				} else {
+					found = true
+				}
+				ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE, event.GetWorkflowTaskFailedEventAttributes().Cause)
+			}
+		}
+		ts.True(found, "Workflow task failed event not found in history")
+	}
+
+	veryLargeData := strings.Repeat("Very Large Data ", 500_000) // circa 8MB, double the default 4MB limit
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	activityFn := func(ctx context.Context, arg string) error {
+		ts.FailNow("Activity should not start executing")
+		return nil
+	}
+
+	failureInWorkflowTaskWorkflowFn := func(ctx workflow.Context, success bool) error {
+		if success {
+			return workflow.ExecuteActivity(ctx, activityFn, veryLargeData).Get(ctx, nil)
+		} else {
+			return errors.New(veryLargeData)
+		}
+	}
+
+	failureInQueryTaskWorkflowFn := func(ctx workflow.Context) error {
+		return workflow.SetQueryHandler(ctx, "too-large-query", func(success bool) (string, error) {
+			if success {
+				return veryLargeData, nil
+			} else {
+				return "", errors.New(veryLargeData)
+			}
+		})
+	}
+
+	ts.worker.RegisterWorkflow(failureInWorkflowTaskWorkflowFn)
+	ts.worker.RegisterWorkflow(failureInQueryTaskWorkflowFn)
+	ts.worker.RegisterActivity(activityFn)
+	startOptions := client.StartWorkflowOptions{
+		TaskQueue:           ts.taskQueueName,
+		WorkflowTaskTimeout: 300 * time.Millisecond,
+		WorkflowRunTimeout:  1 * time.Second,
+	}
+
+	ts.Run("Activity start too large", func() {
+		run, err := ts.client.ExecuteWorkflow(ctx, startOptions, failureInWorkflowTaskWorkflowFn, true)
+		ts.NoError(err)
+		err = run.Get(ctx, nil)
+		ts.Error(err)
+		assertGrpcErrorInHistoryOnce(ctx, run)
+	})
+
+	ts.Run("Workflow failure too large", func() {
+		run, err := ts.client.ExecuteWorkflow(ctx, startOptions, failureInWorkflowTaskWorkflowFn, true)
+		ts.NoError(err)
+		err = run.Get(ctx, nil)
+		ts.Error(err)
+		assertGrpcErrorInHistoryOnce(ctx, run)
+	})
+
+	// successful query case is tested by TestLargeQueryResultError
+
+	ts.Run("Query failure too large", func() {
+		run, err := ts.client.ExecuteWorkflow(ctx, startOptions, failureInQueryTaskWorkflowFn)
+		ts.NoError(err)
+		ts.NoError(run.Get(ctx, nil))
+		_, err = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "too-large-query", false)
+		ts.Error(err)
+		ts.Contains(err.Error(), "grpc: received message larger than max")
+	})
 }

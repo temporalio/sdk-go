@@ -321,6 +321,7 @@ func (h *nexusTaskHandler) handleCancelOperation(ctx context.Context, nctx *Nexu
 		token := req.GetOperationToken()
 		if token == "" {
 			// Support servers older than 1.27.0.
+			//lint:ignore SA1019 ignore deprecated
 			token = req.GetOperationId()
 		}
 		err = h.nexusHandler.CancelOperation(ctx, req.GetService(), req.GetOperation(), token, cancelOptions)

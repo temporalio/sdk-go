@@ -273,6 +273,7 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 	} else if info := failure.GetNexusOperationExecutionFailureInfo(); info != nil {
 		token := info.GetOperationToken()
 		if token == "" {
+			//lint:ignore SA1019 ignore deprecated old operation id
 			token = info.GetOperationId()
 		}
 		err = &NexusOperationError{

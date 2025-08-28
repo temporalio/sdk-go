@@ -219,8 +219,22 @@ type (
 	// workflow code. Use workflow.NewWaitGroup(ctx) method to create
 	// a new WaitGroup instance
 	WaitGroup interface {
+		// Add adds delta, which may be negative, to the WaitGroup task counter.
+		// If the counter becomes zero, all goroutines blocked on WaitGroup.Wait are released.
+		// If the counter goes negative, Add panics.
+		//
+		// Callers should prefer WaitGroup.Go.
 		Add(delta int)
+		// Done decrements the WaitGroup task counter by one.
+		// It is equivalent to Add(-1).
+		//
+		// Callers should prefer WaitGroup.Go.
 		Done()
+		// Go calls f in a new goroutine and adds that task to the WaitGroup.
+		// When f returns, the task is removed from the WaitGroup.
+		Go(ctx Context, f func(Context))
+		// Wait blocks and waits for specified number of coroutines to
+		// finish executing and then unblocks once the counter has reached 0.
 		Wait(ctx Context)
 	}
 
@@ -2612,7 +2626,9 @@ func convertToPBPriority(priority Priority) *commonpb.Priority {
 	}
 
 	return &commonpb.Priority{
-		PriorityKey: int32(priority.PriorityKey),
+		PriorityKey:    int32(priority.PriorityKey),
+		FairnessKey:    priority.FairnessKey,
+		FairnessWeight: priority.FairnessWeight,
 	}
 }
 
@@ -2623,7 +2639,9 @@ func convertFromPBPriority(priority *commonpb.Priority) Priority {
 	}
 
 	return Priority{
-		PriorityKey: int(priority.PriorityKey),
+		PriorityKey:    int(priority.PriorityKey),
+		FairnessKey:    priority.FairnessKey,
+		FairnessWeight: priority.FairnessWeight,
 	}
 }
 

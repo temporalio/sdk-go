@@ -577,6 +577,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	if len(params.CronSchedule) > 0 {
 		attributes.CronSchedule = params.CronSchedule
 	}
+	//lint:ignore SA1019 ignore deprecated old versioning APIs
 	attributes.InheritBuildId = determineInheritBuildIdFlagForCommand(
 		params.VersioningIntent, wc.workflowInfo.TaskQueueName, params.TaskQueueName)
 
@@ -1270,6 +1271,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		err = weh.handleWorkflowExecutionSignaled(event.GetWorkflowExecutionSignaledEventAttributes())
 
 	case enumspb.EVENT_TYPE_SIGNAL_EXTERNAL_WORKFLOW_EXECUTION_INITIATED:
+		//lint:ignore SA1019 ignore deprecated control
 		signalID := event.GetSignalExternalWorkflowExecutionInitiatedEventAttributes().Control
 		weh.commandsHelper.handleSignalExternalWorkflowExecutionInitiated(event.GetEventId(), signalID)
 
@@ -2049,6 +2051,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleRequestCancelExternalWorkflo
 	// for cancellation of external workflow, we have to use cancellation ID
 	attribute := event.GetRequestCancelExternalWorkflowExecutionInitiatedEventAttributes()
 	workflowID := attribute.WorkflowExecution.GetWorkflowId()
+	//lint:ignore SA1019 ignore deprecated control
 	cancellationID := attribute.Control
 	weh.commandsHelper.handleRequestCancelExternalWorkflowExecutionInitiated(event.GetEventId(), workflowID, cancellationID)
 	return nil

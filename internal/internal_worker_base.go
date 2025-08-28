@@ -772,7 +772,9 @@ func (prh *pollScalerReportHandle) updateTarget(f func(int64) int64) {
 	}
 	permits := int(newTarget)
 	if prh.scaleCallback != nil {
-		prh.logger.Debug("Updating number of permits", "permits", permits)
+		traceLog(func() {
+			prh.logger.Debug("Updating number of permits", "permits", permits)
+		})
 		prh.scaleCallback(permits)
 	}
 }

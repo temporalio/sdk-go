@@ -1907,6 +1907,14 @@ func (wg *waitGroupImpl) Wait(ctx Context) {
 	wg.future, wg.settable = NewFuture(ctx)
 }
 
+func (wg *waitGroupImpl) Go(ctx Context, f func(Context)) {
+	wg.Add(1)
+	Go(ctx, func(ctx Context) {
+		defer wg.Done()
+		f(ctx)
+	})
+}
+
 // Spawn starts a new coroutine with Dispatcher.NewCoroutine
 func (us updateSchedulerImpl) Spawn(ctx Context, name string, highPriority bool, f func(Context)) Context {
 	return us.dispatcher.NewCoroutine(ctx, name, highPriority, f)

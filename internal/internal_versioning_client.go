@@ -411,7 +411,9 @@ func taskQueueVersionInfoFromResponse(response *taskqueuepb.TaskQueueVersionInfo
 
 func detectTaskQueueEnhancedNotSupported(response *workflowservice.DescribeTaskQueueResponse) error {
 	// A server before 1.24 returns a non-enhanced proto, which only fills `pollers` and `taskQueueStatus` fields
+	//lint:ignore SA1019 ignore deprecated old versioning APIs
 	if len(response.GetVersionsInfo()) == 0 &&
+		//lint:ignore SA1019 ignore deprecated old versioning APIs
 		(len(response.GetPollers()) > 0 || response.GetTaskQueueStatus() != nil) {
 		return errors.New("server does not support `DescribeTaskQueueEnhanced`")
 	}
@@ -455,7 +457,9 @@ func taskQueueDescriptionFromResponse(response *workflowservice.DescribeTaskQueu
 		return TaskQueueDescription{}
 	}
 
+	//lint:ignore SA1019 ignore deprecated old versioning APIs
 	versionsInfo := make(map[string]TaskQueueVersionInfo, len(response.GetVersionsInfo()))
+	//lint:ignore SA1019 ignore deprecated old versioning APIs
 	for buildID, vInfo := range response.GetVersionsInfo() {
 		versionsInfo[buildID] = taskQueueVersionInfoFromResponse(vInfo)
 	}

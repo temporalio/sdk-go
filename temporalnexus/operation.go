@@ -308,14 +308,13 @@ func ExecuteUntypedWorkflow[R any](
 		}
 	}
 
-	var encodedToken string
+	encodedToken, err := generateWorkflowRunOperationToken(nctx.Namespace, startWorkflowOptions.ID)
+	if err != nil {
+		return nil, err
+	}
 	if nexusOptions.CallbackURL != "" {
 		if nexusOptions.CallbackHeader == nil {
 			nexusOptions.CallbackHeader = make(nexus.Header)
-		}
-		encodedToken, err = generateWorkflowRunOperationToken(nctx.Namespace, startWorkflowOptions.ID)
-		if err != nil {
-			return nil, err
 		}
 
 		//lint:ignore SA1019 this field is expected to be populated by servers older than 1.27.0.

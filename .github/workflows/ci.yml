@@ -108,7 +108,7 @@ jobs:
       TEMPORAL_NAMESPACE: sdk-ci.a2dd6
       TEMPORAL_CLIENT_CERT: ${{ secrets.TEMPORAL_CLIENT_CERT }}
       TEMPORAL_CLIENT_KEY: ${{ secrets.TEMPORAL_CLIENT_KEY }}
-      GODEBUG: ${{ matrix.fips && 'fips140=only' || '' }}
+      GODEBUG: ${{ matrix.fips && 'fips140=on' || '' }}
 
     steps:
       - uses: actions/checkout@v4
