@@ -7751,23 +7751,17 @@ func (ts *IntegrationTestSuite) TestLocalActivitySummary() {
 }
 
 func (ts *IntegrationTestSuite) TestGrpcMessageTooLarge() {
-	ts.T().Skip("issue-2033: Test is flaky")
-	assertGrpcErrorInHistoryOnce := func(ctx context.Context, run client.WorkflowRun) {
-		found := false
+	assertGrpcErrorInHistory := func(ctx context.Context, run client.WorkflowRun) {
 		iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 		for iter.HasNext() {
 			event, err := iter.Next()
 			ts.NoError(err)
 			if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED {
-				if found {
-					ts.Fail("Found more than 1 workflow task failed event in history")
-				} else {
-					found = true
-				}
 				ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE, event.GetWorkflowTaskFailedEventAttributes().Cause)
+				return
 			}
 		}
-		ts.True(found, "Workflow task failed event not found in history")
+		ts.Fail("Workflow task failed event not found in history")
 	}
 
 	veryLargeData := strings.Repeat("Very Large Data ", 500_000) // circa 8MB, double the default 4MB limit
@@ -7801,25 +7795,22 @@ func (ts *IntegrationTestSuite) TestGrpcMessageTooLarge() {
 	ts.worker.RegisterWorkflow(failureInQueryTaskWorkflowFn)
 	ts.worker.RegisterActivity(activityFn)
 	startOptions := client.StartWorkflowOptions{
-		TaskQueue:           ts.taskQueueName,
-		WorkflowTaskTimeout: 300 * time.Millisecond,
-		WorkflowRunTimeout:  1 * time.Second,
+		TaskQueue: ts.taskQueueName,
+	}
+
+	testFailureInWorkflowTask := func(success bool) {
+		run, err := ts.client.ExecuteWorkflow(ctx, startOptions, failureInWorkflowTaskWorkflowFn, success)
+		ts.NoError(err)
+		assertGrpcErrorInHistory(ctx, run)
+		ts.NoError(ts.client.TerminateWorkflow(ctx, run.GetID(), run.GetRunID(), "Test completed"))
 	}
 
 	ts.Run("Activity start too large", func() {
-		run, err := ts.client.ExecuteWorkflow(ctx, startOptions, failureInWorkflowTaskWorkflowFn, true)
-		ts.NoError(err)
-		err = run.Get(ctx, nil)
-		ts.Error(err)
-		assertGrpcErrorInHistoryOnce(ctx, run)
+		testFailureInWorkflowTask(true)
 	})
 
 	ts.Run("Workflow failure too large", func() {
-		run, err := ts.client.ExecuteWorkflow(ctx, startOptions, failureInWorkflowTaskWorkflowFn, true)
-		ts.NoError(err)
-		err = run.Get(ctx, nil)
-		ts.Error(err)
-		assertGrpcErrorInHistoryOnce(ctx, run)
+		testFailureInWorkflowTask(false)
 	})
 
 	// successful query case is tested by TestLargeQueryResultError

@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"time"
 
@@ -199,6 +200,9 @@ func headersProviderInterceptor(headersProvider HeadersProvider) grpc.UnaryClien
 
 func errorInterceptor(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 	err := invoker(ctx, method, req, reply, cc, opts...)
-	err = serviceerror.FromStatus(status.Convert(err))
+	var grpcMessageTooLargeErr *retry.GrpcMessageTooLargeError
+	if !errors.As(err, &grpcMessageTooLargeErr) {
+		err = serviceerror.FromStatus(status.Convert(err))
+	}
 	return err
 }
