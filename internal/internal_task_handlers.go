@@ -24,7 +24,6 @@ import (
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"go.temporal.io/sdk/internal/common/retry"
@@ -2164,8 +2163,7 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 		// Transient errors are getting retried for the duration of the heartbeat timeout.
 		// The fact that error has been returned means that activity should now be timed out, hence we should
 		// propagate cancellation to the handler.
-		statusErr, _ := status.FromError(err)
-		if retry.IsRetryable(statusErr, i.excludeInternalFromRetry) {
+		if retry.IsRetryable(err, i.excludeInternalFromRetry) {
 			i.cancelHandler(err)
 			isActivityCanceled = true
 		}
