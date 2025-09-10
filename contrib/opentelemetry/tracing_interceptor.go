@@ -196,8 +196,13 @@ func (t *tracer) StartSpan(opts *interceptor.TracerStartSpanOptions) (intercepto
 		}
 	}
 
+	spanKind := trace.SpanKindServer
+	if opts.Outbound {
+		spanKind = trace.SpanKindClient
+	}
+
 	// Create span
-	span := t.options.SpanStarter(ctx, t.options.Tracer, opts.Operation+":"+opts.Name, trace.WithTimestamp(opts.Time))
+	span := t.options.SpanStarter(ctx, t.options.Tracer, opts.Operation+":"+opts.Name, trace.WithTimestamp(opts.Time), trace.WithSpanKind(spanKind))
 
 	// Set tags
 	if len(opts.Tags) > 0 {
