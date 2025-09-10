@@ -3,6 +3,7 @@ package opentelemetry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"go.opentelemetry.io/otel"
@@ -14,6 +15,7 @@ import (
 
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/log"
+	"go.temporal.io/sdk/temporal"
 )
 
 // DefaultTextMapPropagator is the default OpenTelemetry TextMapPropagator used
@@ -246,10 +248,20 @@ type tracerSpan struct {
 }
 
 func (t *tracerSpan) Finish(opts *interceptor.TracerFinishSpanOptions) {
-	if opts.Error != nil {
+	if opts.Error != nil && !isBenignApplicationError(opts.Error) {
 		t.SetStatus(codes.Error, opts.Error.Error())
 	}
 	t.End()
+}
+
+func isBenignApplicationError(err error) bool {
+	var appErr *temporal.ApplicationError
+	if temporal.IsApplicationError(err) {
+		if errors.As(err, &appErr) {
+			return appErr.Category() == temporal.ApplicationErrorCategoryBenign
+		}
+	}
+	return false
 }
 
 type textMapCarrier map[string]string
