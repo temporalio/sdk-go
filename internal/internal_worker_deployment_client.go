@@ -411,7 +411,7 @@ func (h *workerDeploymentHandleImpl) UpdateVersionMetadata(ctx context.Context, 
 	if err := h.validate(); err != nil {
 		return WorkerDeploymentUpdateVersionMetadataResponse{}, err
 	}
-	if options.Version.BuildId == "" {
+	if options.Version.BuildID == "" {
 		return WorkerDeploymentUpdateVersionMetadataResponse{}, errBuildIdCantBeEmpty
 	}
 	if err := h.workflowClient.ensureInitialized(ctx); err != nil {

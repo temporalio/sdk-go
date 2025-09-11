@@ -1828,7 +1828,7 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithVersioningOverride() {
 	versioningOverride := &PinnedVersioningOverride{
 		Version: WorkerDeploymentVersion{
 			DeploymentName: "deployment1",
-			BuildId:        "build1",
+			BuildID:        "build1",
 		},
 	}
 
@@ -1866,7 +1866,7 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithVersioningOverr
 	versioningOverride := &PinnedVersioningOverride{
 		Version: WorkerDeploymentVersion{
 			DeploymentName: "deployment1",
-			BuildId:        "build1",
+			BuildID:        "build1",
 		},
 	}
 
