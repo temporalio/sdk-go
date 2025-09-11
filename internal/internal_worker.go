@@ -2069,6 +2069,9 @@ func isError(inType reflect.Type) bool {
 }
 
 func getFunctionName(i interface{}) (name string, isMethod bool) {
+	if s, ok := i.(fmt.Stringer); ok {
+		return s.String(), false
+	}
 	if fullName, ok := i.(string); ok {
 		return fullName, false
 	}
