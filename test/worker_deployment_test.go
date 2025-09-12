@@ -129,11 +129,11 @@ func (ts *WorkerDeploymentTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 	deploymentName := "deploy-test-" + uuid.NewString()
 	v1 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
-		BuildId:        "1.0",
+		BuildID:        "1.0",
 	}
 	v2 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
-		BuildId:        "2.0",
+		BuildID:        "2.0",
 	}
 
 	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
@@ -160,7 +160,7 @@ func (ts *WorkerDeploymentTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v1)
 
 	response2, err := dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
-		BuildID:       v1.BuildId,
+		BuildID:       v1.BuildID,
 		ConflictToken: response1.ConflictToken,
 	})
 	ts.NoError(err)
@@ -206,7 +206,7 @@ func (ts *WorkerDeploymentTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v2)
 
 	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
-		BuildID:       v2.BuildId,
+		BuildID:       v2.BuildID,
 		ConflictToken: response2.ConflictToken,
 	})
 	ts.NoError(err)
@@ -246,15 +246,15 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 	deploymentName := "deploy-test-" + uuid.NewString()
 	v1 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
-		BuildId:        "1.0",
+		BuildID:        "1.0",
 	}
 	v2 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
-		BuildId:        "2.0",
+		BuildID:        "2.0",
 	}
 	v3 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
-		BuildId:        "3.0",
+		BuildID:        "3.0",
 	}
 
 	// Start three workers:
@@ -322,7 +322,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v1)
 
 	response2, err := dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
-		BuildID:       v1.BuildId,
+		BuildID:       v1.BuildID,
 		ConflictToken: response1.ConflictToken,
 	})
 	ts.NoError(err)
@@ -336,7 +336,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v2)
 
 	response3, err := dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
-		BuildID:       v2.BuildId,
+		BuildID:       v2.BuildID,
 		ConflictToken: response2.ConflictToken,
 	})
 	ts.NoError(err)
@@ -353,7 +353,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 	//time.Sleep(10 * time.Second)
 
 	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
-		BuildID:       v3.BuildId,
+		BuildID:       v3.BuildID,
 		ConflictToken: response3.ConflictToken,
 		Identity:      "client1",
 	})
@@ -370,7 +370,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 	ts.Equal(float32(0.0), desc.Info.RoutingConfig.RampingVersionPercentage)
 	ts.Equal(3, len(desc.Info.VersionSummaries))
 	sort.Slice(desc.Info.VersionSummaries, func(i, j int) bool {
-		return desc.Info.VersionSummaries[i].Version.BuildId < desc.Info.VersionSummaries[j].Version.BuildId
+		return desc.Info.VersionSummaries[i].Version.BuildID < desc.Info.VersionSummaries[j].Version.BuildID
 	})
 	ts.Equal(v1, desc.Info.VersionSummaries[0].Version)
 	ts.Equal(client.WorkerDeploymentVersionDrainageStatus(client.WorkerDeploymentVersionDrainageStatusDraining), desc.Info.VersionSummaries[0].DrainageStatus)
@@ -416,11 +416,11 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedOverrideInWorkflowOptions() {
 	deploymentName := "deploy-test-" + uuid.NewString()
 	v1 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
-		BuildId:        "1.0",
+		BuildID:        "1.0",
 	}
 	v2 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
-		BuildId:        "2.0",
+		BuildID:        "2.0",
 	}
 
 	// Two workers:
@@ -469,7 +469,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedOverrideInWorkflowOptions() {
 	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v1)
 
 	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
-		BuildID:       v1.BuildId,
+		BuildID:       v1.BuildID,
 		ConflictToken: response1.ConflictToken,
 	})
 	ts.NoError(err)
@@ -508,11 +508,11 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 	deploymentName := "deploy-test-" + uuid.NewString()
 	v1 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
-		BuildId:        "1.0",
+		BuildID:        "1.0",
 	}
 	v2 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
-		BuildId:        "2.0",
+		BuildID:        "2.0",
 	}
 
 	// Two workers:
@@ -562,7 +562,7 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v1)
 
 	response2, err := dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
-		BuildID:       v1.BuildId,
+		BuildID:       v1.BuildID,
 		ConflictToken: response1.ConflictToken,
 	})
 	ts.NoError(err)
@@ -632,7 +632,7 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 	ts.Equal(options.VersioningOverride, &client.AutoUpgradeVersioningOverride{})
 
 	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
-		BuildID:       v2.BuildId,
+		BuildID:       v2.BuildID,
 		ConflictToken: response2.ConflictToken,
 	})
 	ts.NoError(err)
@@ -673,15 +673,15 @@ func (ts *WorkerDeploymentTestSuite) TestListDeployments() {
 	deploymentName2 := uuid + "-deploy-test2"
 	v1 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName1,
-		BuildId:        "1.0",
+		BuildID:        "1.0",
 	}
 	v2 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName2,
-		BuildId:        "2.0",
+		BuildID:        "2.0",
 	}
 	v3 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName2,
-		BuildId:        "3.0",
+		BuildID:        "3.0",
 	}
 
 	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
@@ -751,11 +751,11 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 	deploymentName := "deploy-test-" + uuid.NewString()
 	v1 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
-		BuildId:        "1.0",
+		BuildID:        "1.0",
 	}
 	v2 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
-		BuildId:        "2.0",
+		BuildID:        "2.0",
 	}
 
 	// Start two workers:
@@ -809,7 +809,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v1)
 
 	response2, err := dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
-		BuildID:       v1.BuildId,
+		BuildID:       v1.BuildID,
 		ConflictToken: response1.ConflictToken,
 	})
 	ts.NoError(err)
@@ -817,7 +817,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 	// Show no drainage
 
 	desc, err := dHandle.DescribeVersion(ctx, client.WorkerDeploymentDescribeVersionOptions{
-		BuildID: v1.BuildId,
+		BuildID: v1.BuildID,
 	})
 	ts.NoError(err)
 	// Current
@@ -825,7 +825,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 
 	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v2)
 	desc, err = dHandle.DescribeVersion(ctx, client.WorkerDeploymentDescribeVersionOptions{
-		BuildID: v2.BuildId,
+		BuildID: v2.BuildID,
 	})
 	ts.NoError(err)
 	// No workflows started
@@ -840,17 +840,17 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 
 	// SetCurrent to 2.0)
 	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
-		BuildID:       v2.BuildId,
+		BuildID:       v2.BuildID,
 		ConflictToken: response2.ConflictToken,
 	})
 	ts.NoError(err)
 
 	// Show 1.0) Draining and 2.0) not
 
-	ts.waitForDrainage(ctx, dHandle, v1.BuildId, client.WorkerDeploymentVersionDrainageStatusDraining)
+	ts.waitForDrainage(ctx, dHandle, v1.BuildID, client.WorkerDeploymentVersionDrainageStatusDraining)
 
 	desc, err = dHandle.DescribeVersion(ctx, client.WorkerDeploymentDescribeVersionOptions{
-		BuildID: v2.BuildId,
+		BuildID: v2.BuildID,
 	})
 	ts.NoError(err)
 	// Current
@@ -871,10 +871,10 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 
 	// 1.0) Drained 2.0) current/no drainage
 
-	ts.waitForDrainage(ctx, dHandle, v1.BuildId, client.WorkerDeploymentVersionDrainageStatusDrained)
+	ts.waitForDrainage(ctx, dHandle, v1.BuildID, client.WorkerDeploymentVersionDrainageStatusDrained)
 
 	desc, err = dHandle.DescribeVersion(ctx, client.WorkerDeploymentDescribeVersionOptions{
-		BuildID: v2.BuildId,
+		BuildID: v2.BuildID,
 	})
 	ts.NoError(err)
 	// Current
@@ -891,11 +891,11 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 	deploymentName := "deploy-test-" + uuid.NewString()
 	v1 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
-		BuildId:        "1.0",
+		BuildID:        "1.0",
 	}
 	v2 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
-		BuildId:        "2.0",
+		BuildID:        "2.0",
 	}
 
 	// Two workers:
@@ -949,7 +949,7 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v1)
 
 	response2, err := dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
-		BuildID:       v1.BuildId,
+		BuildID:       v1.BuildID,
 		ConflictToken: response1.ConflictToken,
 	})
 	ts.NoError(err)
@@ -959,7 +959,7 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 	// Ramp 100% to 2.0
 
 	response3, err := dHandle.SetRampingVersion(ctx, client.WorkerDeploymentSetRampingVersionOptions{
-		BuildID:       v2.BuildId,
+		BuildID:       v2.BuildID,
 		ConflictToken: response2.ConflictToken,
 		Percentage:    float32(100.0),
 	})
@@ -970,7 +970,7 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 
 	// Ramp 0% to 2.0
 	response4, err := dHandle.SetRampingVersion(ctx, client.WorkerDeploymentSetRampingVersionOptions{
-		BuildID:       v2.BuildId,
+		BuildID:       v2.BuildID,
 		ConflictToken: response3.ConflictToken,
 		Percentage:    float32(0.0),
 	})
@@ -981,7 +981,7 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 
 	// Ramp 0% to 2.0
 	_, err = dHandle.SetRampingVersion(ctx, client.WorkerDeploymentSetRampingVersionOptions{
-		BuildID:       v2.BuildId,
+		BuildID:       v2.BuildID,
 		ConflictToken: response4.ConflictToken,
 		Percentage:    float32(50.0),
 	})
@@ -1005,7 +1005,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeleteDeployment() {
 	deploymentName := "deploy-test-" + uuid.NewString()
 	v1 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
-		BuildId:        "1.0",
+		BuildID:        "1.0",
 	}
 
 	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
@@ -1034,7 +1034,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeleteDeployment() {
 	// Delete version
 	ts.Eventually(func() bool {
 		_, err := dHandle.DeleteVersion(ctx, client.WorkerDeploymentDeleteVersionOptions{
-			BuildID:      v1.BuildId,
+			BuildID:      v1.BuildID,
 			SkipDrainage: true,
 		})
 		if err != nil {

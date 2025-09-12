@@ -39,7 +39,7 @@ func Test_WorkflowExecutionOptions_fromProtoResponse(t *testing.T) {
 				VersioningOverride: &PinnedVersioningOverride{
 					Version: WorkerDeploymentVersion{
 						DeploymentName: "my series",
-						BuildId:        "v1",
+						BuildID:        "v1",
 					},
 				}},
 		},

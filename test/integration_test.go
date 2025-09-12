@@ -6616,7 +6616,7 @@ func (ts *IntegrationTestSuite) TestNoVersioningBehaviorPanics() {
 			UseVersioning: true,
 			Version: worker.WorkerDeploymentVersion{
 				DeploymentName: seriesName,
-				BuildId:        "1.0",
+				BuildID:        "1.0",
 			},
 			// No DefaultVersioningBehavior
 		},
