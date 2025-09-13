@@ -96,6 +96,12 @@ type TracerOptions struct {
 	// DisableUpdateTracing can be set to disable update tracing.
 	DisableUpdateTracing bool
 
+	// EnableSpanLinks can be set to enable span links for spans disconnected from their parent span.
+	EnableSpanLinks bool
+
+	// DisconnectContinueAsNew can be set to disconnect ContinueAsNew workflows from their parent span.
+	DisconnectContinueAsNewWorkflows bool
+
 	// AllowInvalidParentSpans will swallow errors interpreting parent
 	// spans from headers. Useful when migrating from one tracing library
 	// to another, while workflows/activities may be in progress.
@@ -147,6 +153,9 @@ type TracerStartSpanOptions struct {
 	// IdempotencyKey should be treated as opaque data by Tracer implementations.
 	// Do not attempt to parse it, as the format is subject to change.
 	IdempotencyKey string
+
+	// Link is a link to a parent span.
+	Link TracerSpanRef
 }
 
 // TracerSpanRef represents a span reference such as a parent.
@@ -756,16 +765,54 @@ func (t *tracingWorkflowOutboundInterceptor) NewContinueAsNewError(
 	args ...interface{},
 ) error {
 	err := t.Next.NewContinueAsNewError(ctx, wfn, args...)
-	if !workflow.IsReplaying(ctx) {
-		if contErr, _ := err.(*workflow.ContinueAsNewError); contErr != nil {
-			// Get the current span and write header
-			if span, _ := ctx.Value(t.root.options.SpanContextKey).(TracerSpan); span != nil {
-				if writeErr := t.root.writeSpanToHeader(span, WorkflowHeader(ctx)); writeErr != nil {
-					return fmt.Errorf("failed writing span when creating continue as new error: %w", writeErr)
+
+	if !workflow.IsReplaying(ctx) && workflow.IsContinueAsNewError(err) {
+		// This will either be the parent span or a new root span
+		span, _ := ctx.Value(t.root.options.SpanContextKey).(TracerSpan)
+
+		if t.root.options.DisconnectContinueAsNewWorkflows {
+			info := workflow.GetInfo(ctx)
+
+			// Start a new root span detached from the parent
+			opts := &TracerStartSpanOptions{
+				Operation:  "ContinueAsNew",
+				Name:       info.WorkflowType.Name,
+				DependedOn: false,
+				Tags: map[string]string{
+					workflowIDTagKey: info.WorkflowExecution.ID,
+					runIDTagKey:      info.WorkflowExecution.RunID,
+				},
+				ToHeader: true,
+				Time:     time.Now(),
+				Link:     nil,
+			}
+
+			// Connect the new root span to the parent with a link
+			if t.root.options.EnableSpanLinks {
+				if parentSpan, ok := ctx.Value(t.root.options.SpanContextKey).(TracerSpan); ok {
+					opts.Link = parentSpan
 				}
+			}
+
+			s, err := t.root.tracer.StartSpan(opts)
+			if err != nil {
+				return fmt.Errorf("failed to start detached span for ContinueAsNew: %w", err)
+			}
+			span = s
+
+			var finishOpts TracerFinishSpanOptions
+			defer span.Finish(&finishOpts)
+		}
+
+		header := WorkflowHeader(ctx)
+
+		if span != nil {
+			if writeErr := t.root.writeSpanToHeader(span, header); writeErr != nil {
+				return fmt.Errorf("failed writing span when creating continue as new error: %w", writeErr)
 			}
 		}
 	}
+
 	return err
 }
 
