@@ -549,26 +549,22 @@ func TestOperationInfo(t *testing.T) {
 		return info.Namespace + ":" + info.TaskQueue, nil
 	})
 
-	wf := func(ctx workflow.Context, outcome string) error {
+	wf := func(ctx workflow.Context, outcome string) (string, error) {
 		c := workflow.NewNexusClient(tc.endpoint, "test")
 		fut := c.ExecuteOperation(ctx, op, outcome, workflow.NexusOperationOptions{})
 		var res string
 
 		var exec workflow.NexusOperationExecution
 		if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil && outcome == "successful" {
-			return fmt.Errorf("expected start to succeed: %w", err)
+			return "", fmt.Errorf("expected start to succeed: %w", err)
 		}
 		if exec.OperationToken != "" {
-			return fmt.Errorf("expected empty operation ID")
+			return "", fmt.Errorf("expected empty operation ID")
 		}
 		if err := fut.Get(ctx, &res); err != nil {
-			return err
+			return "", err
 		}
-		// If the operation didn't fail the only expected result is "successful".
-		if res != "successful" {
-			return fmt.Errorf("unexpected result: %v", res)
-		}
-		return nil
+		return res, nil
 	}
 
 	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
