@@ -20,6 +20,16 @@ import (
 	"go.temporal.io/sdk/log"
 )
 
+// Info contains information about a currently executing Nexus operation.
+//
+// Exposed as: [go.temporal.io/sdk/temporalnexus.Info]
+type NexusInfo struct {
+	// The namespace of the worker handling this Nexus operation.
+	Namespace string
+	// The task queue of the worker handling this Nexus operation.
+	TaskQueue string
+}
+
 // NexusOperationContext is an internal only struct that holds fields used by the temporalnexus functions.
 type NexusOperationContext struct {
 	client         Client
@@ -36,6 +46,17 @@ func (nc *NexusOperationContext) ResolveWorkflowName(wf any) (string, error) {
 
 type nexusOperationEnvironment struct {
 	NexusOperationOutboundInterceptorBase
+}
+
+func (nc *nexusOperationEnvironment) GetInfo(ctx context.Context) NexusInfo {
+	nctx, ok := NexusOperationContextFromGoContext(ctx)
+	if !ok {
+		panic("temporalnexus GetInfo: Not a valid Nexus context")
+	}
+	return NexusInfo{
+		Namespace: nctx.Namespace,
+		TaskQueue: nctx.TaskQueue,
+	}
 }
 
 func (nc *nexusOperationEnvironment) GetMetricsHandler(ctx context.Context) metrics.Handler {
@@ -74,6 +95,25 @@ var nexusOperationOutboundInterceptorKey = nexusOperationOutboundInterceptorKeyT
 func nexusOperationOutboundInterceptorFromGoContext(ctx context.Context) (nctx NexusOperationOutboundInterceptor, ok bool) {
 	nctx, ok = ctx.Value(nexusOperationOutboundInterceptorKey).(NexusOperationOutboundInterceptor)
 	return
+}
+
+// IsNexusOperation checks if the provided context is a Nexus operation context.
+//
+// Exposed as: [go.temporal.io/sdk/temporalnexus.IsNexusOperation]
+func IsNexusOperation(ctx context.Context) bool {
+	_, ok := NexusOperationContextFromGoContext(ctx)
+	return ok
+}
+
+// GetNexusOperationInfo returns information about the currently executing Nexus operation.
+//
+// Exposed as: [go.temporal.io/sdk/temporalnexus.GetInfo]
+func GetNexusOperationInfo(ctx context.Context) NexusInfo {
+	interceptor, ok := nexusOperationOutboundInterceptorFromGoContext(ctx)
+	if !ok {
+		panic("temporalnexus GetInfo: Not a valid Nexus context")
+	}
+	return interceptor.GetInfo(ctx)
 }
 
 // GetNexusOperationMetricsHandler returns a metrics handler to be used in a Nexus operation's context.

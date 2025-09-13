@@ -596,6 +596,11 @@ type NexusOperationOutboundInterceptorBase struct {
 	Next NexusOperationOutboundInterceptor
 }
 
+// GetInfo implements NexusOperationOutboundInterceptor.
+func (n *NexusOperationOutboundInterceptorBase) GetInfo(ctx context.Context) NexusInfo {
+	return n.Next.GetInfo(ctx)
+}
+
 // GetClient implements NexusOperationOutboundInterceptor.
 func (n *NexusOperationOutboundInterceptorBase) GetClient(ctx context.Context) Client {
 	return n.Next.GetClient(ctx)
