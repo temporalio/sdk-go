@@ -218,10 +218,15 @@ func propagateCancel(parent Context, child canceler) {
 			child.cancel(false, parentErr)
 		} else {
 			p.childrenLock.Lock()
-			if p.children == nil {
-				p.children = make(map[canceler]bool)
+			childExists := false
+			for _, c := range p.children {
+				if c == child {
+					childExists = true
+				}
 			}
-			p.children[child] = true
+			if !childExists {
+				p.children = append(p.children, child)
+			}
 			p.childrenLock.Unlock()
 		}
 	} else {
@@ -253,7 +258,16 @@ func removeChild(parent Context, child canceler) {
 	}
 	p.childrenLock.Lock()
 	if p.children != nil {
-		delete(p.children, child)
+		childIndex := -1
+		for i, c := range p.children {
+			if c == child {
+				childIndex = i
+				break
+			}
+		}
+		if childIndex >= 0 {
+			p.children = append(p.children[:childIndex], p.children[childIndex+1:]...)
+		}
 	}
 	p.childrenLock.Unlock()
 }
@@ -272,7 +286,7 @@ type cancelCtx struct {
 
 	done Channel // closed by the first cancel call.
 
-	children     map[canceler]bool // set to nil by the first cancel call
+	children     []canceler // set to nil by the first cancel call
 	childrenLock sync.Mutex
 	err          error // set to non-nil by the first cancel call
 	errLock      sync.RWMutex
@@ -314,7 +328,7 @@ func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 	children := c.children
 	c.children = nil
 	c.childrenLock.Unlock()
-	for child := range children {
+	for _, child := range children {
 		// NOTE: acquiring the child's lock while holding parent's lock.
 		child.cancel(false, err)
 	}
