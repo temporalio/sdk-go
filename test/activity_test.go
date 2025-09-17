@@ -105,6 +105,37 @@ func (a *Activities) ActivityToBePaused(ctx context.Context, completeOnPause boo
 	}
 }
 
+func (a *Activities) ActivityToBeReset(ctx context.Context) (string, error) {
+	a.append("ActivityToBeReset")
+	info := activity.GetInfo(ctx)
+	go func() {
+		// Reset the activity
+		activity.GetClient(ctx).WorkflowService().ResetActivity(context.Background(), &workflowservice.ResetActivityRequest{
+			Namespace: info.WorkflowNamespace,
+			Execution: &commonpb.WorkflowExecution{
+				WorkflowId: info.WorkflowExecution.ID,
+				RunId:      info.WorkflowExecution.RunID,
+			},
+			Activity: &workflowservice.ResetActivityRequest_Id{
+				Id: info.ActivityID,
+			},
+		})
+	}()
+	for {
+		select {
+		case <-time.After(1 * time.Second):
+			activity.RecordHeartbeat(ctx, "here are some details")
+		case <-ctx.Done():
+			if errors.Is(context.Cause(ctx), activity.ErrActivityReset) {
+				hb_details_exist := activity.HasHeartbeatDetails(ctx)
+				num_attempts := activity.GetInfo(ctx).Attempt
+				return fmt.Sprintf("I am stopped by Reset, hb details? %t, num attempts? %d", hb_details_exist, num_attempts), nil
+			}
+			return "I am canceled by Done", nil
+		}
+	}
+}
+
 func (a *Activities) EmptyActivity(ctx context.Context) error {
 	a.append("EmptyActivity")
 	return nil

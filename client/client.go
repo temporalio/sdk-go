@@ -1043,7 +1043,7 @@ type (
 		// taskToken - is the value of the binary "TaskToken" field of the "ActivityInfo" struct retrieved inside the activity.
 		// details - is the progress you want to record along with heart beat for this activity. If the activity is canceled,
 		// the error returned will be a CanceledError. If the activity is paused by the server, the error returned will be a
-		// ErrActivityPaused.
+		// ErrActivityPaused. If the activity is reset by the server, the error returned will be a ErrActivityReset.
 		// Otherwise the errors it can return:
 		//  - serviceerror.NotFound
 		//  - serviceerror.Internal
@@ -1053,7 +1053,7 @@ type (
 		// RecordActivityHeartbeatByID records heartbeat for an activity.
 		// details - is the progress you want to record along with heart beat for this activity. If the activity is canceled,
 		// the error returned will be a CanceledError. If the activity is paused by the server, the error returned will be a
-		// ErrActivityPaused.
+		// ErrActivityPaused. If the activity is reset by the server, the error returned will be a ErrActivityReset.
 		// The errors it can return:
 		//  - serviceerror.NotFound
 		//  - serviceerror.Internal
