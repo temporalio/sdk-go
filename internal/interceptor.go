@@ -560,8 +560,8 @@ type NexusOperationInboundInterceptor interface {
 //
 // Note: Experimental
 type NexusOperationOutboundInterceptor interface {
-	// GetInfo intercepts temporalnexus.GetInfo.
-	GetInfo(ctx context.Context) NexusOperationInfo
+	// GetOperationInfo intercepts temporalnexus.GetOperationInfo.
+	GetOperationInfo(ctx context.Context) NexusOperationInfo
 	// GetClient intercepts temporalnexus.GetClient.
 	GetClient(ctx context.Context) Client
 	// GetLogger intercepts temporalnexus.GetLogger.

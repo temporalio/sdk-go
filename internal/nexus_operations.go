@@ -48,7 +48,7 @@ type nexusOperationEnvironment struct {
 	NexusOperationOutboundInterceptorBase
 }
 
-func (nc *nexusOperationEnvironment) GetInfo(ctx context.Context) NexusOperationInfo {
+func (nc *nexusOperationEnvironment) GetOperationInfo(ctx context.Context) NexusOperationInfo {
 	nctx, ok := NexusOperationContextFromGoContext(ctx)
 	if !ok {
 		panic("temporalnexus GetInfo: Not a valid Nexus context")
@@ -107,13 +107,13 @@ func IsNexusOperation(ctx context.Context) bool {
 
 // GetNexusOperationInfo returns information about the currently executing Nexus operation.
 //
-// Exposed as: [go.temporal.io/sdk/temporalnexus.GetInfo]
+// Exposed as: [go.temporal.io/sdk/temporalnexus.GetOperationInfo]
 func GetNexusOperationInfo(ctx context.Context) NexusOperationInfo {
 	interceptor, ok := nexusOperationOutboundInterceptorFromGoContext(ctx)
 	if !ok {
-		panic("temporalnexus GetInfo: Not a valid Nexus context")
+		panic("temporalnexus GetOperationInfo: Not a valid Nexus context")
 	}
-	return interceptor.GetInfo(ctx)
+	return interceptor.GetOperationInfo(ctx)
 }
 
 // GetNexusOperationMetricsHandler returns a metrics handler to be used in a Nexus operation's context.
