@@ -597,7 +597,7 @@ type NexusOperationOutboundInterceptorBase struct {
 }
 
 // GetInfo implements NexusOperationOutboundInterceptor.
-func (n *NexusOperationOutboundInterceptorBase) GetInfo(ctx context.Context) NexusInfo {
+func (n *NexusOperationOutboundInterceptorBase) GetInfo(ctx context.Context) NexusOperationInfo {
 	return n.Next.GetInfo(ctx)
 }
 

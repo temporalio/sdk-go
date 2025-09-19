@@ -23,7 +23,7 @@ import (
 // Info contains information about a currently executing Nexus operation.
 //
 // Exposed as: [go.temporal.io/sdk/temporalnexus.Info]
-type NexusInfo struct {
+type NexusOperationInfo struct {
 	// The namespace of the worker handling this Nexus operation.
 	Namespace string
 	// The task queue of the worker handling this Nexus operation.
@@ -48,12 +48,12 @@ type nexusOperationEnvironment struct {
 	NexusOperationOutboundInterceptorBase
 }
 
-func (nc *nexusOperationEnvironment) GetInfo(ctx context.Context) NexusInfo {
+func (nc *nexusOperationEnvironment) GetInfo(ctx context.Context) NexusOperationInfo {
 	nctx, ok := NexusOperationContextFromGoContext(ctx)
 	if !ok {
 		panic("temporalnexus GetInfo: Not a valid Nexus context")
 	}
-	return NexusInfo{
+	return NexusOperationInfo{
 		Namespace: nctx.Namespace,
 		TaskQueue: nctx.TaskQueue,
 	}
@@ -108,7 +108,7 @@ func IsNexusOperation(ctx context.Context) bool {
 // GetNexusOperationInfo returns information about the currently executing Nexus operation.
 //
 // Exposed as: [go.temporal.io/sdk/temporalnexus.GetInfo]
-func GetNexusOperationInfo(ctx context.Context) NexusInfo {
+func GetNexusOperationInfo(ctx context.Context) NexusOperationInfo {
 	interceptor, ok := nexusOperationOutboundInterceptorFromGoContext(ctx)
 	if !ok {
 		panic("temporalnexus GetInfo: Not a valid Nexus context")

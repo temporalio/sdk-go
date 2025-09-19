@@ -31,16 +31,16 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-// Info contains information about a currently executing Nexus operation.
-type Info = internal.NexusInfo
+// OperationInfo contains information about a currently executing Nexus operation.
+type OperationInfo = internal.NexusOperationInfo
 
 // IsNexusOperation checks if the context is a Nexus operation context.
 func IsNexusOperation(ctx context.Context) bool {
 	return internal.IsNexusOperation(ctx)
 }
 
-// GetInfo returns information about the currently executing Nexus operation.
-func GetInfo(ctx context.Context) Info {
+// GetOperationInfo returns information about the currently executing Nexus operation.
+func GetOperationInfo(ctx context.Context) OperationInfo {
 	return internal.GetNexusOperationInfo(ctx)
 }
 
