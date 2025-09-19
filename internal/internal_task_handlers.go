@@ -1321,44 +1321,42 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 			workflowID := task.WorkflowExecution.GetWorkflowId()
 			runID := task.WorkflowExecution.GetRunId()
 
-			// Perform the reset asynchronously to avoid blocking the workflow task completion
-			go func() {
-				resetCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-				defer cancel()
+			resetCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
 
-				resetEventId, err := getFirstWorkflowTaskEventID(resetCtx, w.wth.client, workflowID, runID)
-				if err != nil {
-					w.wth.logger.Error("Failed to get reset event ID for workflow execution",
-						tagWorkflowType, task.WorkflowType.GetName(),
-						tagWorkflowID, workflowID,
-						tagRunID, runID,
-						tagError, err)
-					return
-				}
+			resetEventId, err := getFirstWorkflowTaskEventID(resetCtx, w.wth.client, workflowID, runID)
+			if err != nil {
+				w.wth.logger.Error("Failed to get reset event ID for workflow execution",
+					tagWorkflowType, task.WorkflowType.GetName(),
+					tagWorkflowID, workflowID,
+					tagRunID, runID,
+					tagError, err)
+				return nil, workflowError
+			}
 
-				_, resetErr := w.wth.client.ResetWorkflowExecution(resetCtx, &workflowservice.ResetWorkflowExecutionRequest{
-					Namespace: w.wth.namespace,
-					WorkflowExecution: &commonpb.WorkflowExecution{
-						WorkflowId: workflowID,
-						RunId:      runID,
-					},
-					Reason:                    "RestartWorkflow panic policy triggered due to workflow panic",
-					WorkflowTaskFinishEventId: resetEventId,
-				})
-				if resetErr != nil {
-					w.wth.logger.Error("Failed to reset workflow execution",
-						tagWorkflowType, task.WorkflowType.GetName(),
-						tagWorkflowID, workflowID,
-						tagRunID, runID,
-						tagError, resetErr)
-				} else {
-					w.wth.logger.Info("Successfully reset workflow execution",
-						tagWorkflowType, task.WorkflowType.GetName(),
-						tagWorkflowID, workflowID,
-						tagRunID, runID,
-						"resetEventId", resetEventId)
-				}
-			}()
+			_, resetErr := w.wth.client.ResetWorkflowExecution(resetCtx, &workflowservice.ResetWorkflowExecutionRequest{
+				Namespace: w.wth.namespace,
+				WorkflowExecution: &commonpb.WorkflowExecution{
+					WorkflowId: workflowID,
+					RunId:      runID,
+				},
+				Reason:                    "RestartWorkflow panic policy triggered due to workflow panic",
+				WorkflowTaskFinishEventId: resetEventId,
+			})
+			if resetErr != nil {
+				w.wth.logger.Error("Failed to reset workflow execution",
+					tagWorkflowType, task.WorkflowType.GetName(),
+					tagWorkflowID, workflowID,
+					tagRunID, runID,
+					tagError, resetErr)
+				return nil, workflowError
+			}
+
+			w.wth.logger.Info("Successfully reset workflow execution",
+				tagWorkflowType, task.WorkflowType.GetName(),
+				tagWorkflowID, workflowID,
+				tagRunID, runID,
+				"resetEventId", resetEventId)
 
 			// Return error to complete the current workflow task with failure
 			return nil, workflowError
