@@ -49,6 +49,11 @@ var (
 	//
 	// WARNING: Activity pause is currently experimental
 	ErrActivityPaused = errors.New("activity paused")
+
+	// ErrActivityReset is returned from an activity heartbeat or the cause of an activity's context to indicate that the activity has been reset.
+	//
+	// WARNING: Activity reset is currently experimental
+	ErrActivityReset = errors.New("activity reset")
 )
 
 type (
@@ -2155,8 +2160,8 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 	case nil:
 		// No error, do nothing.
 	default:
-		if errors.Is(err, ErrActivityPaused) {
-			// We are asked to pause. inform the activity about cancellation through context.
+		if errors.Is(err, ErrActivityPaused) || errors.Is(err, ErrActivityReset) {
+			// We are asked to pause/reset. inform the activity about cancellation through context.
 			i.cancelHandler(err)
 			isActivityCanceled = true
 		}
@@ -2414,6 +2419,8 @@ func recordActivityHeartbeat(ctx context.Context, service workflowservice.Workfl
 			return NewCanceledError()
 		} else if heartbeatResponse.GetActivityPaused() {
 			return ErrActivityPaused
+		} else if heartbeatResponse.GetActivityReset() {
+			return ErrActivityReset
 		}
 	}
 	return err

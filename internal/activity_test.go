@@ -102,6 +102,23 @@ func (s *activityTestSuite) TestActivityHeartbeat_PauseRequested() {
 	require.ErrorIs(s.T(), context.Cause(ctx), ErrActivityPaused)
 }
 
+func (s *activityTestSuite) TestActivityHeartbeat_ResetRequested() {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, metrics.NopHandler, cancel,
+		1*time.Second, make(chan struct{}), s.namespace, &atomic.Bool{})
+	ctx, _ = newActivityContext(ctx, nil, &activityEnvironment{
+		serviceInvoker: invoker,
+		logger:         getLogger()})
+
+	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.RecordActivityTaskHeartbeatResponse{ActivityReset: true}, nil).Times(1)
+
+	RecordActivityHeartbeat(ctx, "testDetails")
+	<-ctx.Done()
+	require.Equal(s.T(), ctx.Err(), context.Canceled)
+	require.ErrorIs(s.T(), context.Cause(ctx), ErrActivityReset)
+}
+
 func (s *activityTestSuite) TestActivityHeartbeat_EntityNotExist() {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, metrics.NopHandler, cancel,
