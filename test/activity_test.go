@@ -269,6 +269,9 @@ func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQue
 	if info.StartToCloseTimeout != startToCloseTimeout {
 		return fmt.Errorf("expected StartToCloseTimeout %v but got %v", startToCloseTimeout, info.StartToCloseTimeout)
 	}
+	if info.RetryPolicy != nil {
+		return fmt.Errorf("expected RetryPolicy %v but got %v", nil, info.RetryPolicy)
+	}
 	return nil
 }
 
