@@ -545,7 +545,7 @@ func TestOperationInfo(t *testing.T) {
 	tc := newTestContext(t, ctx)
 
 	op := nexus.NewSyncOperation("op", func(ctx context.Context, outcome string, o nexus.StartOperationOptions) (string, error) {
-		info := temporalnexus.GetInfo(ctx)
+		info := temporalnexus.GetOperationInfo(ctx)
 		return info.Namespace + ":" + info.TaskQueue, nil
 	})
 
