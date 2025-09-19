@@ -421,6 +421,13 @@ const (
 	//
 	// Exposed as: [go.temporal.io/sdk/worker.FailWorkflow]
 	FailWorkflow
+	// RestartWorkflow restarts workflow execution with the same workflow type and original input arguments
+	// if workflow code throws panic or detects non-determinism. The workflow will be restarted using
+	// ContinueAsNew with fresh state but identical parameters. This can be useful for recovering from
+	// transient issues while preserving the original workflow execution intent.
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.RestartWorkflow]
+	RestartWorkflow
 )
 
 // ReplayNamespace is namespace for replay because startEvent doesn't contain it
