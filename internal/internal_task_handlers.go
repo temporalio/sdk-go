@@ -1306,10 +1306,10 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 			w.getEventHandler().Complete(nil, NewApplicationError(
 				"Workflow failed on panic due to FailWorkflow workflow panic policy",
 				"", false, workflowError))
-		case RestartWorkflow:
+		case ResetWorkflow:
 			// Reset workflow execution to restart from the beginning
 			if w.wth.client == nil {
-				w.wth.logger.Error("RestartWorkflow panic policy requires client but none available",
+				w.wth.logger.Error("ResetWorkflow panic policy requires client but none available",
 					tagWorkflowType, task.WorkflowType.GetName(),
 					tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 					tagRunID, task.WorkflowExecution.GetRunId())
@@ -1340,7 +1340,7 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 					WorkflowId: workflowID,
 					RunId:      runID,
 				},
-				Reason:                    "RestartWorkflow panic policy triggered due to workflow panic",
+				Reason:                    "ResetWorkflow panic policy triggered due to workflow panic",
 				WorkflowTaskFinishEventId: resetEventId,
 			})
 			if resetErr != nil {

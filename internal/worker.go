@@ -421,13 +421,13 @@ const (
 	//
 	// Exposed as: [go.temporal.io/sdk/worker.FailWorkflow]
 	FailWorkflow
-	// RestartWorkflow restarts workflow execution from the beginning if workflow code throws panic or detects
-	// non-determinism. The workflow will be restarted using ResetWorkflowExecution to replay from the
+	// ResetWorkflow resets workflow execution from the beginning if workflow code throws panic or detects
+	// non-determinism. The workflow will be reset using ResetWorkflowExecution to replay from the
 	// first workflow task with the same workflow ID but a new run ID. This can be useful for recovering from
 	// transient issues while maintaining workflow state consistency.
 	//
-	// Exposed as: [go.temporal.io/sdk/worker.RestartWorkflow]
-	RestartWorkflow
+	// Exposed as: [go.temporal.io/sdk/worker.ResetWorkflow]
+	ResetWorkflow
 )
 
 // ReplayNamespace is namespace for replay because startEvent doesn't contain it
