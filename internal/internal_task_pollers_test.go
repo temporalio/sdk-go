@@ -52,7 +52,7 @@ func TestWFTRacePrevention(t *testing.T) {
 		ctrl             = gomock.NewController(t)
 		client           = workflowservicemock.NewMockWorkflowServiceClient(ctrl)
 		resultsChan      = make(chan error, 2)
-		innerTaskHandler = newWorkflowTaskHandler(params, nil, newRegistry())
+		innerTaskHandler = newWorkflowTaskHandler(params, nil, newRegistry(), nil)
 		taskHandler      = &countingTaskHandler{WorkflowTaskHandler: innerTaskHandler}
 		contextManager   = taskHandler
 		codec            = binary.LittleEndian
@@ -153,7 +153,7 @@ func TestWFTCorruption(t *testing.T) {
 		wfe              = commonpb.WorkflowExecution{RunId: runID, WorkflowId: wfID}
 		ctrl             = gomock.NewController(t)
 		client           = workflowservicemock.NewMockWorkflowServiceClient(ctrl)
-		innerTaskHandler = newWorkflowTaskHandler(params, nil, reg)
+		innerTaskHandler = newWorkflowTaskHandler(params, nil, reg, nil)
 		taskHandler      = &countingTaskHandler{WorkflowTaskHandler: innerTaskHandler}
 		contextManager   = taskHandler
 		completionChans  = []chan struct{}{make(chan struct{}), make(chan struct{})}
@@ -290,7 +290,7 @@ func TestWFTReset(t *testing.T) {
 		wfe              = commonpb.WorkflowExecution{RunId: runID, WorkflowId: wfID}
 		ctrl             = gomock.NewController(t)
 		client           = workflowservicemock.NewMockWorkflowServiceClient(ctrl)
-		innerTaskHandler = newWorkflowTaskHandler(params, nil, reg)
+		innerTaskHandler = newWorkflowTaskHandler(params, nil, reg, nil)
 		taskHandler      = &countingTaskHandler{WorkflowTaskHandler: innerTaskHandler}
 		contextManager   = taskHandler
 		pollResp0        = workflowservice.PollWorkflowTaskQueueResponse{
@@ -389,7 +389,7 @@ func TestWFTPanicInTaskHandler(t *testing.T) {
 		wfe              = commonpb.WorkflowExecution{RunId: runID, WorkflowId: wfID}
 		ctrl             = gomock.NewController(t)
 		client           = workflowservicemock.NewMockWorkflowServiceClient(ctrl)
-		innerTaskHandler = newWorkflowTaskHandler(params, nil, newRegistry())
+		innerTaskHandler = newWorkflowTaskHandler(params, nil, newRegistry(), nil)
 		taskHandler      = &panickingTaskHandler{WorkflowTaskHandler: innerTaskHandler}
 		contextManager   = taskHandler
 		codec            = binary.LittleEndian

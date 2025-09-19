@@ -256,10 +256,10 @@ const (
 	// detects non-determinism. This feature is convenient during development.
 	// WARNING: enabling this in production can cause all open workflows to fail on a single bug or bad deployment.
 	FailWorkflow = internal.FailWorkflow
-	// RestartWorkflow WorkflowPanicPolicy restarts workflow execution with the same workflow type and original input arguments
-	// if workflow code throws panic or detects non-determinism. The workflow will be restarted using
-	// ContinueAsNew with fresh state but identical parameters. This can be useful for recovering from
-	// transient issues while preserving the original workflow execution intent.
+	// RestartWorkflow WorkflowPanicPolicy restarts workflow execution from the beginning if workflow code throws panic or detects
+	// non-determinism. The workflow will be restarted using ResetWorkflowExecution to replay from the
+	// first workflow task with the same workflow ID but a new run ID. This can be useful for recovering from
+	// transient issues while maintaining workflow state consistency.
 	RestartWorkflow = internal.RestartWorkflow
 )
 

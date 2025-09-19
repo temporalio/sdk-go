@@ -1622,7 +1622,7 @@ func (s *internalWorkerTestSuite) testWorkflowTaskHandlerHelper(params workerExe
 		PreviousStartedEventId: 0,
 	}
 
-	r := newWorkflowTaskHandler(params, nil, s.registry)
+	r := newWorkflowTaskHandler(params, nil, s.registry, nil)
 	wfctx, err := r.GetOrCreateWorkflowContext(task, nil)
 	s.NoError(err)
 	_, err = r.ProcessWorkflowTask(&workflowTask{task: task}, wfctx, nil)

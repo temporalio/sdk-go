@@ -133,6 +133,7 @@ type (
 		cache                     *WorkerCache
 		deadlockDetectionTimeout  time.Duration
 		capabilities              *workflowservice.GetSystemInfoResponse_Capabilities
+		client                    *WorkflowClient // Added for ResetWorkflowExecution support
 	}
 
 	activityProvider func(name string) activity
@@ -546,7 +547,7 @@ func inferMessageFromAcceptedEvent(attrs *historypb.WorkflowExecutionUpdateAccep
 }
 
 // newWorkflowTaskHandler returns an implementation of workflow task handler.
-func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePointMgr, registry *registry) WorkflowTaskHandler {
+func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePointMgr, registry *registry, client *WorkflowClient) WorkflowTaskHandler {
 	ensureRequiredParams(&params)
 	return &workflowTaskHandlerImpl{
 		namespace:                 params.Namespace,
@@ -567,6 +568,7 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		cache:                     params.cache,
 		deadlockDetectionTimeout:  params.DeadlockDetectionTimeout,
 		capabilities:              params.capabilities,
+		client:                    client,
 	}
 }
 
@@ -1305,25 +1307,64 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 				"Workflow failed on panic due to FailWorkflow workflow panic policy",
 				"", false, workflowError))
 		case RestartWorkflow:
-			// Complete workflow with ContinueAsNew to restart the same workflow with original input
-			var workflowArgs []interface{}
-			if len(workflowTask.task.History.Events) > 0 {
-				if startedEvent := workflowTask.task.History.Events[0]; startedEvent != nil {
-					if attributes := startedEvent.GetWorkflowExecutionStartedEventAttributes(); attributes != nil {
-						if attributes.Input != nil {
-							// Convert payloads to interface{} args - for simplicity, we'll pass the raw payloads
-							workflowArgs = []interface{}{attributes.Input}
+			// Reset workflow execution to restart from the beginning
+			if w.wth.client == nil {
+				w.wth.logger.Error("RestartWorkflow panic policy requires client but none available",
+					tagWorkflowType, task.WorkflowType.GetName(),
+					tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+					tagRunID, task.WorkflowExecution.GetRunId())
+				// Fallback to failing the workflow
+				return nil, workflowError
+			}
+
+			// Find the WorkflowTaskFinishEventId after WorkflowExecutionStarted (typically event ID 3)
+			var resetEventId int64 = 3 // Default to reset after first workflow task
+			if len(workflowTask.task.History.Events) > 3 {
+				// Look for the first WorkflowTaskCompleted event
+				for _, event := range workflowTask.task.History.Events {
+					if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
+						resetEventId = event.GetEventId()
+						break
+					}
+					if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED {
+						if resetEventId == 0 {
+							resetEventId = event.GetEventId() + 1
 						}
 					}
 				}
 			}
-			// Create workflow context from the event handler's environment
-			_, ctx, err := newWorkflowContext(w.getEventHandler(), w.wth.registry.interceptors)
-			if err != nil {
-				return nil, err
-			}
-			continueAsNewErr := NewContinueAsNewError(ctx, task.WorkflowType.GetName(), workflowArgs...)
-			w.getEventHandler().Complete(nil, continueAsNewErr)
+
+			// Perform the reset asynchronously to avoid blocking the workflow task completion
+			go func() {
+				resetCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancel()
+
+				_, resetErr := w.wth.client.ResetWorkflowExecution(resetCtx, &workflowservice.ResetWorkflowExecutionRequest{
+					Namespace: w.wth.namespace,
+					WorkflowExecution: &commonpb.WorkflowExecution{
+						WorkflowId: task.WorkflowExecution.GetWorkflowId(),
+						RunId:      task.WorkflowExecution.GetRunId(),
+					},
+					Reason:                    "RestartWorkflow panic policy triggered due to workflow panic",
+					WorkflowTaskFinishEventId: resetEventId,
+				})
+				if resetErr != nil {
+					w.wth.logger.Error("Failed to reset workflow execution",
+						tagWorkflowType, task.WorkflowType.GetName(),
+						tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+						tagRunID, task.WorkflowExecution.GetRunId(),
+						tagError, resetErr)
+				} else {
+					w.wth.logger.Info("Successfully reset workflow execution",
+						tagWorkflowType, task.WorkflowType.GetName(),
+						tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+						tagRunID, task.WorkflowExecution.GetRunId(),
+						"resetEventId", resetEventId)
+				}
+			}()
+
+			// Return error to complete the current workflow task with failure
+			return nil, workflowError
 		case BlockWorkflow:
 			// return error here will be convert to WorkflowTaskFailed for the first time, and ignored for subsequent
 			// attempts which will cause WorkflowTaskTimeout and server will retry forever until issue got fixed or

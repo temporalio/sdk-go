@@ -539,7 +539,7 @@ func (t *TaskHandlersTestSuite) testWorkflowTaskWorkflowExecutionStartedHelper(p
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
 	}
 	task := createWorkflowTask(testEvents, 0, "HelloWorld_Workflow")
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	wftask := workflowTask{task: task}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -583,7 +583,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 	}
 	task := createWorkflowTask(testEvents, 8, "BinaryChecksumWorkflow")
 	params := t.getTestWorkerExecutionParams()
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	wftask := workflowTask{task: task}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -614,7 +614,7 @@ func (t *TaskHandlersTestSuite) TestRespondsToWFTWithWorkerBinaryID() {
 	task := createWorkflowTask(testEvents, 0, "HelloWorld_Workflow")
 	params := t.getTestWorkerExecutionParams()
 	params.WorkerBuildID = workerBuildID
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	wftask := workflowTask{task: task}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -637,7 +637,7 @@ func (t *TaskHandlersTestSuite) TestStickyLegacyQueryTaskOnEvictedCache() {
 	}
 	task := createWorkflowTask(testEvents, 0, "HelloWorld_Workflow")
 	params := t.getTestWorkerExecutionParams()
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	wftask := workflowTask{task: task}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	wfctx.Unlock(nil)
@@ -675,7 +675,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 	}
 	task := createWorkflowTask(testEvents[0:3], 0, "HelloWorld_Workflow")
 	params := t.getTestWorkerExecutionParams()
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	wftask := workflowTask{task: task}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -723,7 +723,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_Sticky() {
 		createTestEventActivityTaskCompleted(7, &historypb.ActivityTaskCompletedEventAttributes{ScheduledEventId: 5}),
 	}
 	params := t.getTestWorkerExecutionParams()
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 
 	// first make progress on the workflow
 	task := createWorkflowTask(testEvents[0:1], 0, "HelloWorld_Workflow")
@@ -773,7 +773,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_NonSticky() {
 
 	// query after first workflow task (notice the previousStartEventID is always the last eventID for query task)
 	task := createQueryTask(testEvents[0:3], 3, "HelloWorld_Workflow", queryType)
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	wftask := workflowTask{task: task}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	response, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -782,7 +782,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_NonSticky() {
 
 	// query after activity task complete but before second workflow task started
 	task = createQueryTask(testEvents[0:7], 7, "HelloWorld_Workflow", queryType)
-	taskHandler = newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler = newWorkflowTaskHandler(params, nil, t.registry, nil)
 	wftask = workflowTask{task: task}
 	wfctx = t.mustWorkflowContextImpl(&wftask, taskHandler)
 	response, _ = taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -791,7 +791,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_NonSticky() {
 
 	// query after second workflow task
 	task = createQueryTask(testEvents[0:8], 8, "HelloWorld_Workflow", queryType)
-	taskHandler = newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler = newWorkflowTaskHandler(params, nil, t.registry, nil)
 	wftask = workflowTask{task: task}
 	wfctx = t.mustWorkflowContextImpl(&wftask, taskHandler)
 	response, _ = taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -800,7 +800,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_NonSticky() {
 
 	// query after second workflow task with extra events
 	task = createQueryTask(testEvents[0:9], 9, "HelloWorld_Workflow", queryType)
-	taskHandler = newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler = newWorkflowTaskHandler(params, nil, t.registry, nil)
 	wftask = workflowTask{task: task}
 	wfctx = t.mustWorkflowContextImpl(&wftask, taskHandler)
 	response, _ = taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -808,7 +808,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_NonSticky() {
 	t.verifyQueryResult(response, "done")
 
 	task = createQueryTask(testEvents[0:9], 9, "HelloWorld_Workflow", "invalid-query-type")
-	taskHandler = newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler = newWorkflowTaskHandler(params, nil, t.registry, nil)
 	wftask = workflowTask{task: task}
 	wfctx = t.mustWorkflowContextImpl(&wftask, taskHandler)
 	response, _ = taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -848,7 +848,7 @@ func (t *TaskHandlersTestSuite) TestCacheEvictionWhenErrorOccurs() {
 	params := t.getTestWorkerExecutionParams()
 	params.WorkflowPanicPolicy = BlockWorkflow
 
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	// now change the history event so it does not match to command produced via replay
 	testEvents[4].GetActivityTaskScheduledEventAttributes().ActivityType.Name = "some-other-activity"
 	task := createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
@@ -884,7 +884,7 @@ func (t *TaskHandlersTestSuite) TestWithMissingHistoryEvents() {
 
 	for _, startEventID := range []int64{0, 3} {
 		t.Run(fmt.Sprintf("startEventID=%v", startEventID), func() {
-			taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+			taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 			task := createWorkflowTask(testEvents, startEventID, "HelloWorld_Workflow")
 			// newWorkflowTaskWorkerInternal will set the laTunnel in taskHandler, without it, ProcessWorkflowTask()
 			// will fail as it can't find laTunnel in newWorkerCache().
@@ -935,7 +935,7 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 	for i, tc := range testCases {
 		cacheSize := params.cache.getWorkflowCache().Size()
 
-		taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+		taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 		task := createWorkflowTask(testEvents, tc.previousStartedEventID, "HelloWorld_Workflow")
 		// Cut the workflow task scheduled ans started events
 		task.History.Events = task.History.Events[:len(task.History.Events)-2]
@@ -1005,7 +1005,7 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(cacheSize int) {
 	params := t.getTestWorkerExecutionParams()
 	params.cache = newWorkerCache(myWorkerCachePtr, &myWorkerCacheLock, cacheSize)
 
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	task := createWorkflowTask(testEvents, 0, workflowName)
 	wftask := workflowTask{task: task}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
@@ -1041,7 +1041,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	params.WorkflowPanicPolicy = BlockWorkflow
 	params.WorkerStopChannel = stopC
 
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	wftask := workflowTask{task: task}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -1068,7 +1068,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	// now, create a new task handler with fail nondeterministic workflow policy
 	// and verify that it handles the mismatching history correctly.
 	params.WorkflowPanicPolicy = FailWorkflow
-	failOnNondeterminismTaskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	failOnNondeterminismTaskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	task = createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
 	wftask = workflowTask{task: task}
 	wfctx = t.mustWorkflowContextImpl(&wftask, failOnNondeterminismTaskHandler)
@@ -1110,7 +1110,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowReturnsPanicError() {
 	params := t.getTestWorkerExecutionParams()
 	params.WorkflowPanicPolicy = BlockWorkflow
 
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	wftask := workflowTask{task: task}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -1135,7 +1135,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
 	params := t.getTestWorkerExecutionParams()
 	params.WorkflowPanicPolicy = BlockWorkflow
 
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	wftask := workflowTask{task: task}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	_, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -1183,7 +1183,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	params := t.getTestWorkerExecutionParams()
 	params.WorkflowPanicPolicy = BlockWorkflow
 
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	wftask := workflowTask{task: task}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -1216,7 +1216,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_InvalidQueryTask() {
 	params := t.getTestWorkerExecutionParams()
 	params.WorkflowPanicPolicy = BlockWorkflow
 
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
 	}
@@ -1267,7 +1267,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 
 	params := t.getTestWorkerExecutionParams()
 
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	wftask := workflowTask{task: task}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -1336,7 +1336,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CancelActivityBeforeSent() {
 	task := createWorkflowTask(testEvents, 0, "HelloWorld_WorkflowCancel")
 
 	params := t.getTestWorkerExecutionParams()
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	wftask := workflowTask{task: task}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -1371,7 +1371,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_PageToken() {
 			return &historypb.History{Events: nextEvents}, nil, nil
 		},
 	}
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	wftask := workflowTask{task: task, historyIterator: historyIterator}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -1434,7 +1434,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_DuplicateMessagesPanic() {
 			return &historypb.History{Events: nil}, nil, nil
 		},
 	}
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	wftask := workflowTask{task: task, historyIterator: historyIterator}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -1534,7 +1534,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_Messages() {
 			return &historypb.History{Events: nextEvents}, nil, nil
 		},
 	}
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	wftask := workflowTask{task: task, historyIterator: historyIterator}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -1644,7 +1644,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_Message_Mixed_Types() {
 	}
 
 	params := t.getTestWorkerExecutionParams()
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	wftask := workflowTask{task: task}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -1759,7 +1759,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_Message_Admitted_Paged() {
 			return &historypb.History{Events: nextEvents}, nil, nil
 		},
 	}
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	wftask := workflowTask{task: task, historyIterator: historyIterator}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -1821,7 +1821,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 	params.WorkerStopChannel = stopCh
 	defer close(stopCh)
 
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	laStopCh := make(chan struct{})
 	defer close(laStopCh)
 	laTunnel := newLocalActivityTunnel(laStopCh)
@@ -1905,7 +1905,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 	params.WorkerStopChannel = stopCh
 	defer close(stopCh)
 
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry, nil)
 	laTunnel := newLocalActivityTunnel(params.WorkerStopChannel)
 	taskHandlerImpl, ok := taskHandler.(*workflowTaskHandlerImpl)
 	t.True(ok)
