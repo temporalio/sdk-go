@@ -539,6 +539,54 @@ func TestOperationSummary(t *testing.T) {
 	require.Equal(t, "nexus operation summary", str)
 }
 
+func TestOperationInfo(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
+	defer cancel()
+	tc := newTestContext(t, ctx)
+
+	op := nexus.NewSyncOperation("op", func(ctx context.Context, outcome string, o nexus.StartOperationOptions) (string, error) {
+		info := temporalnexus.GetOperationInfo(ctx)
+		return info.Namespace + ":" + info.TaskQueue, nil
+	})
+
+	wf := func(ctx workflow.Context, outcome string) (string, error) {
+		c := workflow.NewNexusClient(tc.endpoint, "test")
+		fut := c.ExecuteOperation(ctx, op, outcome, workflow.NexusOperationOptions{})
+		var res string
+
+		var exec workflow.NexusOperationExecution
+		if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil && outcome == "successful" {
+			return "", fmt.Errorf("expected start to succeed: %w", err)
+		}
+		if exec.OperationToken != "" {
+			return "", fmt.Errorf("expected empty operation ID")
+		}
+		if err := fut.Get(ctx, &res); err != nil {
+			return "", err
+		}
+		return res, nil
+	}
+
+	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
+	service := nexus.NewService("test")
+	require.NoError(t, service.Register(op))
+	w.RegisterNexusService(service)
+	w.RegisterWorkflow(wf)
+	require.NoError(t, w.Start())
+	t.Cleanup(w.Stop)
+
+	run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		TaskQueue: tc.taskQueue,
+		// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
+		// timeout to speed up the attempts.
+		WorkflowTaskTimeout: time.Second,
+	}, wf, "successful")
+	require.NoError(t, err)
+	var result string
+	require.NoError(t, run.Get(ctx, &result))
+	require.Equal(t, tc.testConfig.Namespace+":"+tc.taskQueue, result)
+}
+
 func TestSyncOperationFromWorkflow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
