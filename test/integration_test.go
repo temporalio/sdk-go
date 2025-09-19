@@ -588,7 +588,7 @@ func (ts *IntegrationTestSuite) TestActivityPause() {
 	// ActivityToBePaused activity twice, the first call will test pausing an activity successfully
 	// and the second call will test completing the activity after it is resumed
 	run, err := ts.client.ExecuteWorkflow(ctx,
-		ts.startWorkflowOptions("test-activity-pause"), ts.workflows.ActivityHeartbeat)
+		ts.startWorkflowOptions("test-activity-pause"), ts.workflows.ActivityHeartbeatPause)
 	ts.NoError(err)
 	// Wait for the workflow to finish
 	var result string
@@ -617,6 +617,28 @@ func (ts *IntegrationTestSuite) TestActivityPause() {
 	ts.NotNil(desc.GetPendingActivities()[0].GetLastFailure())
 	ts.Equal(desc.GetPendingActivities()[0].GetLastFailure().GetMessage(), "activity paused")
 	ts.True(desc.GetPendingActivities()[0].GetPaused())
+}
+
+func (ts *IntegrationTestSuite) TestActivityReset() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	// Run ActivityHeartbeat workflow, this workflow will call
+	// ActivityToBeReset activity twice, the first call will test resetting an activity successfully
+	// and the second call will test completing the activity after it has been reset
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-activity-reset"), ts.workflows.ActivityHeartbeatReset)
+	ts.NoError(err)
+	// Wait for the workflow to finish
+	var result []string
+	err = run.Get(ctx, &result)
+	ts.NoError(err)
+	// Verify that the activity was called three times:
+	// - completeOnReset=false: two calls due to reset/retry
+	// - completeOnReset=true: single call to due completion
+	expectedActivities := []string{"ActivityToBeReset", "ActivityToBeReset", "ActivityToBeReset"}
+	ts.EqualValues(expectedActivities, ts.activities.invoked())
+	ts.Equal("hb details? true, attempts: 2, details: heartbeat-details", result[0])
+	ts.Equal("I am canceled by Reset", result[1])
 }
 
 func (ts *IntegrationTestSuite) TestContinueAsNew() {
