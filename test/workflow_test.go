@@ -486,7 +486,7 @@ func (w *Workflows) ActivityHeartbeatPause(ctx workflow.Context) (string, error)
 	return result, err
 }
 
-func (w *Workflows) ActivityHeartbeatReset(ctx workflow.Context) (string, error) {
+func (w *Workflows) ActivityHeartbeatReset(ctx workflow.Context) ([]string, error) {
 	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: 4 * time.Second,
 		HeartbeatTimeout:    2 * time.Second,
@@ -494,8 +494,13 @@ func (w *Workflows) ActivityHeartbeatReset(ctx workflow.Context) (string, error)
 
 	var activities *Activities
 	var result string
-	err := workflow.ExecuteActivity(ctx, activities.ActivityToBeReset).Get(ctx, &result)
-	return result, err
+	err := workflow.ExecuteActivity(ctx, activities.ActivityToBeReset, false).Get(ctx, &result)
+	if err != nil {
+		return []string{}, err
+	}
+	var result2 string
+	err = workflow.ExecuteActivity(ctx, activities.ActivityToBeReset, true).Get(ctx, &result2)
+	return []string{result, result2}, err
 }
 
 func (w *Workflows) ContinueAsNew(ctx workflow.Context, count int, taskQueue string) (int, error) {

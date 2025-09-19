@@ -629,14 +629,16 @@ func (ts *IntegrationTestSuite) TestActivityReset() {
 		ts.startWorkflowOptions("test-activity-reset"), ts.workflows.ActivityHeartbeatReset)
 	ts.NoError(err)
 	// Wait for the workflow to finish
-	var result string
+	var result []string
 	err = run.Get(ctx, &result)
 	ts.NoError(err)
-	// Check the result - ensure ErrActivityReset was thrown, heartbeat details were reset, and num attempts were reset
-	ts.Equal("I am stopped by Reset, hb details? false, num attempts? 1", result)
-	// Verify that the activity was called once
-	expectedActivities := []string{"ActivityToBeReset"}
+	// Verify that the activity was called three times:
+	// - completeOnReset=false: two calls due to reset/retry
+	// - completeOnReset=true: single call to due completion
+	expectedActivities := []string{"ActivityToBeReset", "ActivityToBeReset", "ActivityToBeReset"}
 	ts.EqualValues(expectedActivities, ts.activities.invoked())
+	ts.Equal("hb details? true, attempts: 2, details: heartbeat-details", result[0])
+	ts.Equal("I am canceled by Reset", result[1])
 }
 
 func (ts *IntegrationTestSuite) TestContinueAsNew() {

@@ -105,9 +105,20 @@ func (a *Activities) ActivityToBePaused(ctx context.Context, completeOnPause boo
 	}
 }
 
-func (a *Activities) ActivityToBeReset(ctx context.Context) (string, error) {
+func (a *Activities) ActivityToBeReset(ctx context.Context, completeOnReset bool) (string, error) {
 	a.append("ActivityToBeReset")
 	info := activity.GetInfo(ctx)
+	// Activity only has heartbeat details past attempt 1 (i.e. it has retried).
+	if activity.HasHeartbeatDetails(ctx) {
+		var hbDetails string
+		activity.GetHeartbeatDetails(ctx, &hbDetails)
+		return fmt.Sprintf("hb details? %t, attempts: %d, details: %s",
+			activity.HasHeartbeatDetails(ctx),
+			activity.GetInfo(ctx).Attempt,
+			hbDetails,
+		), nil
+	}
+
 	go func() {
 		// Reset the activity
 		activity.GetClient(ctx).WorkflowService().ResetActivity(context.Background(), &workflowservice.ResetActivityRequest{
@@ -124,12 +135,13 @@ func (a *Activities) ActivityToBeReset(ctx context.Context) (string, error) {
 	for {
 		select {
 		case <-time.After(1 * time.Second):
-			activity.RecordHeartbeat(ctx, "here are some details")
+			activity.RecordHeartbeat(ctx, "heartbeat-details")
 		case <-ctx.Done():
 			if errors.Is(context.Cause(ctx), activity.ErrActivityReset) {
-				hb_details_exist := activity.HasHeartbeatDetails(ctx)
-				num_attempts := activity.GetInfo(ctx).Attempt
-				return fmt.Sprintf("I am stopped by Reset, hb details? %t, num attempts? %d", hb_details_exist, num_attempts), nil
+				if completeOnReset {
+					return "I am canceled by Reset", nil
+				}
+				return "", context.Cause(ctx)
 			}
 			return "I am canceled by Done", nil
 		}
