@@ -1317,33 +1317,30 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 				return nil, workflowError
 			}
 
-			// Find the WorkflowTaskFinishEventId after WorkflowExecutionStarted (typically event ID 3)
-			var resetEventId int64 = 3 // Default to reset after first workflow task
-			if len(workflowTask.task.History.Events) > 3 {
-				// Look for the first WorkflowTaskCompleted event
-				for _, event := range workflowTask.task.History.Events {
-					if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
-						resetEventId = event.GetEventId()
-						break
-					}
-					if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED {
-						if resetEventId == 0 {
-							resetEventId = event.GetEventId() + 1
-						}
-					}
-				}
-			}
+			// Get the proper reset event ID using tctl logic
+			workflowID := task.WorkflowExecution.GetWorkflowId()
+			runID := task.WorkflowExecution.GetRunId()
 
 			// Perform the reset asynchronously to avoid blocking the workflow task completion
 			go func() {
 				resetCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 				defer cancel()
 
+				resetEventId, err := getFirstWorkflowTaskEventID(resetCtx, w.wth.client, workflowID, runID)
+				if err != nil {
+					w.wth.logger.Error("Failed to get reset event ID for workflow execution",
+						tagWorkflowType, task.WorkflowType.GetName(),
+						tagWorkflowID, workflowID,
+						tagRunID, runID,
+						tagError, err)
+					return
+				}
+
 				_, resetErr := w.wth.client.ResetWorkflowExecution(resetCtx, &workflowservice.ResetWorkflowExecutionRequest{
 					Namespace: w.wth.namespace,
 					WorkflowExecution: &commonpb.WorkflowExecution{
-						WorkflowId: task.WorkflowExecution.GetWorkflowId(),
-						RunId:      task.WorkflowExecution.GetRunId(),
+						WorkflowId: workflowID,
+						RunId:      runID,
 					},
 					Reason:                    "RestartWorkflow panic policy triggered due to workflow panic",
 					WorkflowTaskFinishEventId: resetEventId,
@@ -1351,14 +1348,14 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 				if resetErr != nil {
 					w.wth.logger.Error("Failed to reset workflow execution",
 						tagWorkflowType, task.WorkflowType.GetName(),
-						tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
-						tagRunID, task.WorkflowExecution.GetRunId(),
+						tagWorkflowID, workflowID,
+						tagRunID, runID,
 						tagError, resetErr)
 				} else {
 					w.wth.logger.Info("Successfully reset workflow execution",
 						tagWorkflowType, task.WorkflowType.GetName(),
-						tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
-						tagRunID, task.WorkflowExecution.GetRunId(),
+						tagWorkflowID, workflowID,
+						tagRunID, runID,
 						"resetEventId", resetEventId)
 				}
 			}()
@@ -2503,6 +2500,34 @@ func recordActivityHeartbeatByID(ctx context.Context, service workflowservice.Wo
 		return NewCanceledError()
 	}
 	return err
+}
+
+// getFirstWorkflowTaskEventID returns id of the first workflow task completed event or if it doesn't exist then id of the event
+// after task scheduled event. This is used as the event ID to reset the workflow to when we want to
+// restart the workflow. The following logic is modeled on tctl code.
+// See github.com/temporalio/tctl/blob/b0d624495c90afedc045ac44282f12b6a670c5ad/cli/workflow_commands.go#L1341-L1378
+func getFirstWorkflowTaskEventID(ctx context.Context, cli Client, workflowID, runID string) (
+	workflowTaskEventID int64, err error) {
+	hist := cli.GetWorkflowHistory(ctx, workflowID, runID, false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for hist.HasNext() {
+		event, err := hist.Next()
+		if err != nil {
+			return workflowTaskEventID, fmt.Errorf("failed to list history: %w", err)
+		}
+		if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
+			workflowTaskEventID = event.GetEventId()
+			return workflowTaskEventID, nil
+		}
+		if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED {
+			if workflowTaskEventID == 0 {
+				workflowTaskEventID = event.GetEventId() + 1
+			}
+		}
+	}
+	if workflowTaskEventID == 0 {
+		return workflowTaskEventID, fmt.Errorf("unable to find any scheduled or completed task. wid: %s", workflowID)
+	}
+	return
 }
 
 // This enables verbose logging in the client library.
