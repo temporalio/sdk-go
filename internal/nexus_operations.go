@@ -20,9 +20,9 @@ import (
 	"go.temporal.io/sdk/log"
 )
 
-// Info contains information about a currently executing Nexus operation.
+// NexusOperationInfo contains information about a currently executing Nexus operation.
 //
-// Exposed as: [go.temporal.io/sdk/temporalnexus.Info]
+// Exposed as: [go.temporal.io/sdk/temporalnexus.OperationInfo]
 type NexusOperationInfo struct {
 	// The namespace of the worker handling this Nexus operation.
 	Namespace string
