@@ -1510,8 +1510,8 @@ func (w *Workflows) InspectActivityInfo(ctx workflow.Context) error {
 	namespace := info.Namespace
 	wfType := info.WorkflowType.Name
 	taskQueue := info.TaskQueueName
-	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
-	return workflow.ExecuteActivity(ctx, "inspectActivityInfo", namespace, taskQueue, wfType, false, 5*time.Second, 5*time.Second).Get(ctx, nil)
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptionsWithRetry())
+	return workflow.ExecuteActivity(ctx, "inspectActivityInfo", namespace, taskQueue, wfType, false, 5*time.Second, 5*time.Second, w.defaultRetryPolicy()).Get(ctx, nil)
 }
 
 func (w *Workflows) InspectLocalActivityInfo(ctx workflow.Context) error {
@@ -1519,10 +1519,10 @@ func (w *Workflows) InspectLocalActivityInfo(ctx workflow.Context) error {
 	namespace := info.Namespace
 	wfType := info.WorkflowType.Name
 	taskQueue := info.TaskQueueName
-	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
+	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptionsWithRetry())
 	var activities *Activities
 	return workflow.ExecuteLocalActivity(
-		ctx, activities.InspectActivityInfo, namespace, taskQueue, wfType, true, 5*time.Second, 5*time.Second).Get(ctx, nil)
+		ctx, activities.InspectActivityInfo, namespace, taskQueue, wfType, true, 5*time.Second, 5*time.Second, w.defaultRetryPolicy()).Get(ctx, nil)
 }
 
 func (w *Workflows) WorkflowWithLocalActivityCtxPropagation(ctx workflow.Context) (string, error) {
@@ -3725,15 +3725,22 @@ func (w *Workflows) defaultLocalActivityOptions() workflow.LocalActivityOptions 
 }
 
 func (w *Workflows) defaultActivityOptionsWithRetry() workflow.ActivityOptions {
-	return workflow.ActivityOptions{
-		ScheduleToStartTimeout: 5 * time.Second,
-		ScheduleToCloseTimeout: 5 * time.Second,
-		StartToCloseTimeout:    9 * time.Second,
-		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval:    time.Second,
-			BackoffCoefficient: 2.0,
-			MaximumInterval:    time.Second,
-			MaximumAttempts:    3,
-		},
+	options := w.defaultActivityOptions()
+	options.RetryPolicy = w.defaultRetryPolicy()
+	return options
+}
+
+func (w *Workflows) defaultLocalActivityOptionsWithRetry() workflow.LocalActivityOptions {
+	options := w.defaultLocalActivityOptions()
+	options.RetryPolicy = w.defaultRetryPolicy()
+	return options
+}
+
+func (w *Workflows) defaultRetryPolicy() *temporal.RetryPolicy {
+	return &temporal.RetryPolicy{
+		InitialInterval:    time.Second,
+		BackoffCoefficient: 2.0,
+		MaximumInterval:    time.Second,
+		MaximumAttempts:    3,
 	}
 }
