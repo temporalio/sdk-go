@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"go.opentelemetry.io/otel/baggage"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -235,7 +236,7 @@ func (a *Activities) failNTimes(_ context.Context, times int, id int) error {
 	return errFailOnPurpose
 }
 
-func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQueue, wfType string, isLocalActivity bool, scheduleToCloseTimeout, startToCloseTimeout time.Duration) error {
+func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQueue, wfType string, isLocalActivity bool, scheduleToCloseTimeout, startToCloseTimeout time.Duration, retryPolicy *temporal.RetryPolicy) error {
 	a.append("inspectActivityInfo")
 	if !activity.IsActivity(ctx) {
 		return fmt.Errorf("expected InActivity to return %v but got %v", true, activity.IsActivity(ctx))
@@ -268,6 +269,9 @@ func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQue
 	}
 	if info.StartToCloseTimeout != startToCloseTimeout {
 		return fmt.Errorf("expected StartToCloseTimeout %v but got %v", startToCloseTimeout, info.StartToCloseTimeout)
+	}
+	if !cmp.Equal(info.RetryPolicy, retryPolicy) {
+		return fmt.Errorf("expected RetryPolicy %v but got %v", retryPolicy, info.RetryPolicy)
 	}
 	return nil
 }
