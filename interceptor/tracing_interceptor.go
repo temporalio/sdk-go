@@ -63,7 +63,7 @@ type Tracer interface {
 // BaseTracer is a default implementation of Tracer meant for embedding.
 type BaseTracer struct{}
 
-func (BaseTracer) GetLogger(logger log.Logger, ref TracerSpanRef) log.Logger {
+func (BaseTracer) GetLogger(logger log.Logger, _ TracerSpanRef) log.Logger {
 	return logger
 }
 func (BaseTracer) SpanName(options *TracerStartSpanOptions) string {
@@ -194,7 +194,7 @@ func (t *tracingInterceptor) InterceptClient(next ClientOutboundInterceptor) Cli
 }
 
 func (t *tracingInterceptor) InterceptActivity(
-	ctx context.Context,
+	_ context.Context,
 	next ActivityInboundInterceptor,
 ) ActivityInboundInterceptor {
 	i := &tracingActivityInboundInterceptor{root: t}
@@ -212,7 +212,7 @@ func (t *tracingInterceptor) InterceptWorkflow(
 }
 
 func (t *tracingInterceptor) InterceptNexusOperation(
-	ctx context.Context,
+	_ context.Context,
 	next NexusOperationInboundInterceptor,
 ) NexusOperationInboundInterceptor {
 	i := &tracingNexusOperationInboundInterceptor{root: t}
@@ -1073,6 +1073,6 @@ type childWorkflowFuture struct{ workflow.Future }
 
 func (e childWorkflowFuture) GetChildWorkflowExecution() workflow.Future { return e }
 
-func (e childWorkflowFuture) SignalChildWorkflow(ctx workflow.Context, signalName string, data any) workflow.Future {
+func (e childWorkflowFuture) SignalChildWorkflow(_ workflow.Context, _ string, _ any) workflow.Future {
 	return e
 }
