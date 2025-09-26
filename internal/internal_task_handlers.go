@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	deploymentpb "go.temporal.io/api/deployment/v1"
@@ -1327,7 +1328,7 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 			workflowID := task.WorkflowExecution.GetWorkflowId()
 			runID := task.WorkflowExecution.GetRunId()
 
-			resetCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second) // Arbitrary?
+			resetCtx, cancel := context.WithTimeout(context.Background(), defaultRPCTimeout)
 			defer cancel()
 
 			resetEventId, err := getFirstWorkflowTaskEventID(resetCtx, w.wth.service, w.wth.namespace, workflowID, runID)
@@ -1336,11 +1337,12 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 					tagWorkflowType, task.WorkflowType.GetName(),
 					tagWorkflowID, workflowID,
 					tagRunID, runID,
-					tagError, err)
+					tagError, fmt.Errorf("getFirstWorkflowTaskEventID: %w", err))
 				return nil, workflowError
 			}
 
 			_, resetErr := w.wth.service.ResetWorkflowExecution(resetCtx, &workflowservice.ResetWorkflowExecutionRequest{
+				RequestId: uuid.NewString(),
 				Namespace: w.wth.namespace,
 				WorkflowExecution: &commonpb.WorkflowExecution{
 					WorkflowId: workflowID,
