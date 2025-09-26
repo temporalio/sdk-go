@@ -27,6 +27,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"go.temporal.io/sdk/internal/common/retry"
+	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/internal/protocol"
 
 	"go.temporal.io/sdk/converter"
@@ -138,7 +139,7 @@ type (
 		cache                     *WorkerCache
 		deadlockDetectionTimeout  time.Duration
 		capabilities              *workflowservice.GetSystemInfoResponse_Capabilities
-		client                    *WorkflowClient // Added for ResetWorkflowExecution support
+		service                   workflowservice.WorkflowServiceClient
 	}
 
 	activityProvider func(name string) activity
@@ -552,7 +553,7 @@ func inferMessageFromAcceptedEvent(attrs *historypb.WorkflowExecutionUpdateAccep
 }
 
 // newWorkflowTaskHandler returns an implementation of workflow task handler.
-func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePointMgr, registry *registry, client *WorkflowClient) WorkflowTaskHandler {
+func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePointMgr, registry *registry, service workflowservice.WorkflowServiceClient) WorkflowTaskHandler {
 	ensureRequiredParams(&params)
 	return &workflowTaskHandlerImpl{
 		namespace:                 params.Namespace,
@@ -573,7 +574,7 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		cache:                     params.cache,
 		deadlockDetectionTimeout:  params.DeadlockDetectionTimeout,
 		capabilities:              params.capabilities,
-		client:                    client,
+		service:                   service,
 	}
 }
 
@@ -1313,7 +1314,7 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 				"", false, workflowError))
 		case ResetWorkflow:
 			// Reset workflow execution to restart from the beginning
-			if w.wth.client == nil {
+			if w.wth.service == nil {
 				w.wth.logger.Error("ResetWorkflow panic policy requires client but none available",
 					tagWorkflowType, task.WorkflowType.GetName(),
 					tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
@@ -1329,7 +1330,7 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 			resetCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 
-			resetEventId, err := getFirstWorkflowTaskEventID(resetCtx, w.wth.client, workflowID, runID)
+			resetEventId, err := getFirstWorkflowTaskEventID(resetCtx, w.wth.service, w.wth.namespace, workflowID, runID)
 			if err != nil {
 				w.wth.logger.Error("Failed to get reset event ID for workflow execution",
 					tagWorkflowType, task.WorkflowType.GetName(),
@@ -1339,7 +1340,7 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 				return nil, workflowError
 			}
 
-			_, resetErr := w.wth.client.ResetWorkflowExecution(resetCtx, &workflowservice.ResetWorkflowExecutionRequest{
+			_, resetErr := w.wth.service.ResetWorkflowExecution(resetCtx, &workflowservice.ResetWorkflowExecutionRequest{
 				Namespace: w.wth.namespace,
 				WorkflowExecution: &commonpb.WorkflowExecution{
 					WorkflowId: workflowID,
@@ -2511,23 +2512,44 @@ func recordActivityHeartbeatByID(ctx context.Context, service workflowservice.Wo
 // after task scheduled event. This is used as the event ID to reset the workflow to when we want to
 // restart the workflow. The following logic is modeled on tctl code.
 // See github.com/temporalio/tctl/blob/b0d624495c90afedc045ac44282f12b6a670c5ad/cli/workflow_commands.go#L1341-L1378
-func getFirstWorkflowTaskEventID(ctx context.Context, cli Client, workflowID, runID string) (
+func getFirstWorkflowTaskEventID(ctx context.Context, service workflowservice.WorkflowServiceClient, namespace, workflowID, runID string) (
 	workflowTaskEventID int64, err error) {
-	hist := cli.GetWorkflowHistory(ctx, workflowID, runID, false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-	for hist.HasNext() {
-		event, err := hist.Next()
+	request := &workflowservice.GetWorkflowExecutionHistoryRequest{
+		Namespace: namespace,
+		Execution: &commonpb.WorkflowExecution{
+			WorkflowId: workflowID,
+			RunId:      runID,
+		},
+		HistoryEventFilterType: enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT,
+	}
+
+	for {
+		response, err := service.GetWorkflowExecutionHistory(ctx, request)
 		if err != nil {
-			return workflowTaskEventID, fmt.Errorf("failed to list history: %w", err)
+			return workflowTaskEventID, fmt.Errorf("getting workflow execution history: %w", err)
 		}
-		if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
-			workflowTaskEventID = event.GetEventId()
-			return workflowTaskEventID, nil
+		if response.RawHistory != nil {
+			history, err := serializer.DeserializeBlobDataToHistoryEvents(response.RawHistory, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+			if err != nil {
+				return workflowTaskEventID, fmt.Errorf("deserializing history: %w", err)
+			}
+			response.History = history
 		}
-		if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED {
-			if workflowTaskEventID == 0 {
-				workflowTaskEventID = event.GetEventId() + 1
+		for _, event := range response.GetHistory().GetEvents() {
+			if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
+				workflowTaskEventID = event.GetEventId()
+				return workflowTaskEventID, nil
+			}
+			if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED {
+				if workflowTaskEventID == 0 {
+					workflowTaskEventID = event.GetEventId() + 1
+				}
 			}
 		}
+		if len(response.GetNextPageToken()) == 0 {
+			break
+		}
+		request.NextPageToken = response.GetNextPageToken()
 	}
 	if workflowTaskEventID == 0 {
 		return workflowTaskEventID, fmt.Errorf("unable to find any scheduled or completed task. wid: %s", workflowID)

@@ -308,7 +308,7 @@ func newWorkflowWorkerInternal(client *WorkflowClient, params workerExecutionPar
 	if overrides != nil && overrides.workflowTaskHandler != nil {
 		taskHandler = overrides.workflowTaskHandler
 	} else {
-		taskHandler = newWorkflowTaskHandler(params, ppMgr, registry, client)
+		taskHandler = newWorkflowTaskHandler(params, ppMgr, registry, client.workflowService)
 	}
 	return newWorkflowTaskWorkerInternal(taskHandler, taskHandler, client, params, workerStopChannel, registry.interceptors)
 }
@@ -1696,7 +1696,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 	if aw.disableDeadlockDetection {
 		params.DeadlockDetectionTimeout = math.MaxInt64
 	}
-	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry, nil) // No client needed for replay
+	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry, service)
 	wfctx, err := taskHandler.GetOrCreateWorkflowContext(task, iterator)
 	defer wfctx.Unlock(err)
 	if err != nil {
