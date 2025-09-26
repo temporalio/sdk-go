@@ -1315,7 +1315,7 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 		case ResetWorkflow:
 			// Reset workflow execution to restart from the beginning
 			if w.wth.service == nil {
-				w.wth.logger.Error("ResetWorkflow panic policy requires client but none available",
+				w.wth.logger.Error("ResetWorkflow panic policy requires service but none available",
 					tagWorkflowType, task.WorkflowType.GetName(),
 					tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 					tagRunID, task.WorkflowExecution.GetRunId())
@@ -1327,7 +1327,7 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 			workflowID := task.WorkflowExecution.GetWorkflowId()
 			runID := task.WorkflowExecution.GetRunId()
 
-			resetCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			resetCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second) // Arbitrary?
 			defer cancel()
 
 			resetEventId, err := getFirstWorkflowTaskEventID(resetCtx, w.wth.service, w.wth.namespace, workflowID, runID)
