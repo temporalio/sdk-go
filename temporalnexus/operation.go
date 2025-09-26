@@ -31,6 +31,19 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
+// OperationInfo contains information about a currently executing Nexus operation.
+type OperationInfo = internal.NexusOperationInfo
+
+// IsNexusOperation checks if the context is a Nexus operation context.
+func IsNexusOperation(ctx context.Context) bool {
+	return internal.IsNexusOperation(ctx)
+}
+
+// GetOperationInfo returns information about the currently executing Nexus operation.
+func GetOperationInfo(ctx context.Context) OperationInfo {
+	return internal.GetNexusOperationInfo(ctx)
+}
+
 // GetMetricsHandler returns a metrics handler to be used in a Nexus operation's context.
 func GetMetricsHandler(ctx context.Context) metrics.Handler {
 	return internal.GetNexusOperationMetricsHandler(ctx)
