@@ -1088,6 +1088,44 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	t.Equal(closeCommand.CommandType, enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION)
 	t.Contains(closeCommand.GetFailWorkflowExecutionCommandAttributes().GetFailure().GetMessage(), "FailWorkflow")
 
+	// now, create a new task handler with reset workflow policy
+	// and verify that it handles the mismatching history correctly.
+	params.WorkflowPanicPolicy = ResetWorkflow
+	mockCtrl := gomock.NewController(t.T())
+	defer mockCtrl.Finish()
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+
+	// Mock GetWorkflowExecutionHistory for getFirstWorkflowTaskEventID call
+	mockService.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any()).Return(
+		&workflowservice.GetWorkflowExecutionHistoryResponse{
+			History: &historypb.History{
+				Events: []*historypb.HistoryEvent{
+					createTestEventWorkflowExecutionStarted(1, nil),
+					createTestEventWorkflowTaskScheduled(2, nil),
+					createTestEventWorkflowTaskStarted(3),
+					createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 2}),
+				},
+			},
+		}, nil)
+
+	// Mock ResetWorkflowExecution call
+	mockService.EXPECT().ResetWorkflowExecution(gomock.Any(), gomock.Any()).Return(
+		&workflowservice.ResetWorkflowExecutionResponse{
+			RunId: "new-run-id",
+		}, nil)
+
+	resetOnNondeterminismTaskHandler := newWorkflowTaskHandler(params, nil, t.registry, mockService)
+	task = createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
+	wftask = workflowTask{task: task}
+	wfctx = t.mustWorkflowContextImpl(&wftask, resetOnNondeterminismTaskHandler)
+	request, err = resetOnNondeterminismTaskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
+	wfctx.Unlock(err)
+	// When ResetWorkflow policy is set, task handler returns an error,
+	// similar to BlockWorkflow policy, after attempting to reset the workflow.
+	t.Error(err)
+	t.Nil(request)
+	t.Contains(err.Error(), "nondeterministic")
+
 	// now with different package name to activity type
 	testEvents[4].GetActivityTaskScheduledEventAttributes().ActivityType.Name = "new-package.Greeter_Activity"
 	task = createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
