@@ -118,7 +118,11 @@ func (m MetricsHandler) Gauge(name string) client.MetricsGauge {
 }
 
 func (m MetricsHandler) Timer(name string) client.MetricsTimer {
-	h, err := m.meter.Float64Histogram(name, metric.WithUnit("s"))
+	h, err := m.meter.Float64Histogram(name, metric.WithUnit("s"), metric.WithExplicitBucketBoundaries(
+		0.001, 0.002, 0.005, 0.010, 0.020, 0.050,
+		0.100, 0.200, 0.300, 0.400, 0.500, 0.600, 0.700, 0.800, 0.900,
+		1.000, 1.500, 2.000, 3.000, 4.000, 5.000, 7.000, 10.000,
+	))
 	if err != nil {
 		m.onError(err)
 		return client.MetricsNopHandler.Timer(name)
