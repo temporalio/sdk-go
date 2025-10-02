@@ -235,6 +235,52 @@ type (
 		PreviousPercentage float32
 	}
 
+	// WorkerDeploymentSetManagerIdentityOptions provides options for
+	// [WorkerDeploymentHandle.SetManagerIdentity].
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentSetManagerIdentityOptions]
+	WorkerDeploymentSetManagerIdentityOptions struct {
+		// ManagerIdentity - string to set as the Worker Deployment's ManagerIdentity.
+		// An empty string will clear the ManagerIdentity field.
+		ManagerIdentity string
+
+		// Self - If true, ignore the ManagerIdentity option and set the Worker Deployment's
+		// ManagerIdentity field to the identity of the user submitting this request.
+		Self bool
+
+		// ConflictToken - Token to serialize Worker Deployment operations. Passing a non-empty
+		// conflict token will cause this request to fail with
+		// `serviceerror.FailedPrecondition` if the
+		// Deployment's configuration has been modified between the API call that
+		// generated the token and this one.
+		// The current token can be obtained with [WorkerDeploymentHandle.Describe],
+		// or returned by other successful Worker Deployment operations.
+		//
+		// Optional: defaulted to empty token, which bypasses conflict detection.
+		ConflictToken []byte
+
+		// Identity: The identity of the client who initiated this request.
+		//
+		// Optional: default to the identity of the underlying workflow client.
+		Identity string
+	}
+
+	// WorkerDeploymentSetManagerIdentityResponse is the response for
+	// [WorkerDeploymentHandle.SetManagerIdentity].
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentSetManagerIdentityResponse]
+	WorkerDeploymentSetManagerIdentityResponse struct {
+		// ConflictToken - Token to serialize Worker Deployment operations.
+		ConflictToken []byte
+
+		// PreviousManagerIdentity - The Manager Identity before executing this operation, if any.
+		PreviousManagerIdentity string
+	}
+
 	// WorkerDeploymentDescribeVersionOptions provides options for
 	// [WorkerDeploymentHandle.DescribeVersion].
 	//
