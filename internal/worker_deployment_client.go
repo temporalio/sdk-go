@@ -240,7 +240,7 @@ type (
 	//
 	// NOTE: Experimental
 	//
-	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentSetManagerIdentityOptions]
+	// Exposed as:
 	WorkerDeploymentSetManagerIdentityOptions struct {
 		// ManagerIdentity - string to set as the Worker Deployment's ManagerIdentity.
 		// An empty string will clear the ManagerIdentity field.
@@ -272,7 +272,7 @@ type (
 	//
 	// NOTE: Experimental
 	//
-	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentSetManagerIdentityResponse]
+	// Exposed as:
 	WorkerDeploymentSetManagerIdentityResponse struct {
 		// ConflictToken - Token to serialize Worker Deployment operations.
 		ConflictToken []byte
