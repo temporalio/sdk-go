@@ -468,6 +468,11 @@ type (
 		// NOTE: Experimental
 		SetRampingVersion(ctx context.Context, options WorkerDeploymentSetRampingVersionOptions) (WorkerDeploymentSetRampingVersionResponse, error)
 
+		// SetManagerIdentity changes the Manager Identity of this Worker Deployment.
+		//
+		// NOTE: Experimental
+		SetManagerIdentity(ctx context.Context, options WorkerDeploymentSetManagerIdentityOptions) (WorkerDeploymentSetManagerIdentityResponse, error)
+
 		// DescribeVersion gives a description of one the Versions in this Worker Deployment.
 		//
 		// NOTE: Experimental
