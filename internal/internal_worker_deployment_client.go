@@ -140,6 +140,7 @@ func workerDeploymentInfoFromProto(info *deployment.WorkerDeploymentInfo) Worker
 		VersionSummaries:     workerDeploymentVersionSummariesFromProto(info.VersionSummaries),
 		RoutingConfig:        workerDeploymentRoutingConfigFromProto(info.RoutingConfig),
 		LastModifierIdentity: info.LastModifierIdentity,
+		ManagerIdentity:      info.ManagerIdentity,
 	}
 
 }

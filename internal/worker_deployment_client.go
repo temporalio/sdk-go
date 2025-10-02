@@ -99,6 +99,11 @@ type (
 		// LastModifierIdentity - The identity of the last client that modified the
 		// configuration of this Deployment.
 		LastModifierIdentity string
+
+		// ManagerIdentity - When present, clients whose identity does not match `ManagerIdentity` will not
+		// be able to make changes to this Worker Deployment. They can either set their own identity as the
+		// manager or unset the field to proceed. Empty by default.
+		ManagerIdentity string
 	}
 
 	// WorkerDeploymentDescribeResponse is the response type for [WorkerDeploymentHandle.Describe].
