@@ -1232,3 +1232,37 @@ func TestDynamicWorkflows(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "dynamic-activity - grape - cherry", result)
 }
+
+func SleepHour(ctx Context) error {
+	return Sleep(ctx, time.Hour)
+}
+
+func SleepThenCancel(ctx Context) error {
+	cwf := ExecuteChildWorkflow(
+		ctx,
+		SleepHour,
+	)
+	var res WorkflowExecution
+	if err := cwf.GetChildWorkflowExecution().Get(ctx, &res); err != nil {
+		return err
+	}
+
+	// Canceling an external workflow that causes a timer to cancel used to fail due to
+	// "illegal access from outside of workflow context"
+	err := RequestCancelExternalWorkflow(ctx, res.ID, res.RunID).Get(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	// Give the workflow time to finish canceling the child workflow
+	return Sleep(ctx, 1*time.Second)
+}
+
+func TestRequestCancelExternalWorkflowInSelector(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(SleepHour)
+	env.ExecuteWorkflow(SleepThenCancel)
+	require.NoError(t, env.GetWorkflowError())
+	env.IsWorkflowCompleted()
+}
