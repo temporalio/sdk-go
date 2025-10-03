@@ -240,14 +240,16 @@ type (
 	//
 	// NOTE: Experimental
 	//
-	// Exposed as:
+	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentSetManagerIdentityOptions]
 	WorkerDeploymentSetManagerIdentityOptions struct {
 		// ManagerIdentity - string to set as the Worker Deployment's ManagerIdentity.
 		// An empty string will clear the ManagerIdentity field.
+		// It is invalid to set Self=true and ManagerIdentity != "".
 		ManagerIdentity string
 
-		// Self - If true, ignore the ManagerIdentity option and set the Worker Deployment's
-		// ManagerIdentity field to the identity of the user submitting this request.
+		// Self - If true, set the Worker Deployment's ManagerIdentity field to the identity
+		// of the user submitting this request.
+		// It is invalid to set Self=true and ManagerIdentity != "".
 		Self bool
 
 		// ConflictToken - Token to serialize Worker Deployment operations. Passing a non-empty
@@ -272,7 +274,7 @@ type (
 	//
 	// NOTE: Experimental
 	//
-	// Exposed as:
+	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentSetManagerIdentityResponse]
 	WorkerDeploymentSetManagerIdentityResponse struct {
 		// ConflictToken - Token to serialize Worker Deployment operations.
 		ConflictToken []byte

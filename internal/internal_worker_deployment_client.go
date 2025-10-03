@@ -291,6 +291,9 @@ func (h *workerDeploymentHandleImpl) SetManagerIdentity(ctx context.Context, opt
 		Identity:       identity,
 	}
 	if options.Self {
+		if options.ManagerIdentity != "" {
+			return WorkerDeploymentSetManagerIdentityResponse{}, fmt.Errorf("invalid input: if Self is true, ManagerIdentity must be empty but was '%s'", options.ManagerIdentity)
+		}
 		request.NewManagerIdentity = &workflowservice.SetWorkerDeploymentManagerRequest_Self{Self: true}
 	} else {
 		request.NewManagerIdentity = &workflowservice.SetWorkerDeploymentManagerRequest_ManagerIdentity{ManagerIdentity: options.ManagerIdentity}
