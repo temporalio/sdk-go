@@ -158,6 +158,15 @@ type (
 		//
 		// Optional: default to reject request when queues are missing.
 		IgnoreMissingTaskQueues bool
+
+		// AllowNoPollers - Override protection against accidentally sending tasks to a version without pollers.
+		// When false this request will be rejected if no pollers have been seen for the proposed Current Version,
+		// in order to protect users from routing tasks to pollers that do not exist, leading to possible timeouts.
+		// Pass `true` here to bypass this protection.
+		// WARNING: setting this flag could lead to tasks being sent to a version that has no pollers.
+		//
+		// Optional: default to reject request when version has never had pollers.
+		AllowNoPollers bool
 	}
 
 	// WorkerDeploymentSetCurrentVersionResponse is the response for
@@ -216,6 +225,15 @@ type (
 		//
 		// Optional: default to reject request when queues are missing.
 		IgnoreMissingTaskQueues bool
+
+		// AllowNoPollers - Override protection against accidentally sending tasks to a version without pollers.
+		// When false this request will be rejected if no pollers have been seen for the proposed Current Version,
+		// in order to protect users from routing tasks to pollers that do not exist, leading to possible timeouts.
+		// Pass `true` here to bypass this protection.
+		// WARNING: setting this flag could lead to tasks being sent to a version that has no pollers.
+		//
+		// Optional: default to reject request when version has never had pollers.
+		AllowNoPollers bool
 	}
 
 	// WorkerDeploymentSetRampingVersionResponse is the response for
