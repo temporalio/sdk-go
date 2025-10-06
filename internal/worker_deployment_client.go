@@ -141,7 +141,7 @@ type (
 		// Optional: defaulted to empty token, which bypasses conflict detection.
 		ConflictToken []byte
 
-		// Identity: The identity of the client who initiated this request.
+		// Identity - The identity of the client who initiated this request.
 		//
 		// Optional: default to the identity of the underlying workflow client.
 		Identity string
@@ -199,7 +199,7 @@ type (
 		// Optional: defaulted to empty token, which bypasses conflict detection.
 		ConflictToken []byte
 
-		// Identity: The identity of the client who initiated this request.
+		// Identity - The identity of the client who initiated this request.
 		//
 		// Optional: default to the identity of the underlying workflow client.
 		Identity string
@@ -263,7 +263,7 @@ type (
 		// Optional: defaulted to empty token, which bypasses conflict detection.
 		ConflictToken []byte
 
-		// Identity: The identity of the client who initiated this request.
+		// Identity - The identity of the client who initiated this request.
 		//
 		// Optional: default to the identity of the underlying workflow client.
 		Identity string
