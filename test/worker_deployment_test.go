@@ -1073,7 +1073,7 @@ func (ts *WorkerDeploymentTestSuite) TestSetManagerIdentity() {
 	_, err = dHandle.SetManagerIdentity(ctx, client.WorkerDeploymentSetManagerIdentityOptions{
 		ManagerIdentity: "foo",
 		Self:            true,
-		ConflictToken:   response5.ConflictToken,
+		ConflictToken:   response7.ConflictToken,
 	})
 	ts.Error(err)
 }
