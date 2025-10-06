@@ -138,12 +138,12 @@ type (
 		// The current token can be obtained with [WorkerDeploymentHandle.Describe],
 		// or returned by other successful Worker Deployment operations.
 		//
-		// Optional: defaulted to empty token, which bypasses conflict detection.
+		// Optional: defaults to empty token, which bypasses conflict detection.
 		ConflictToken []byte
 
 		// Identity - The identity of the client who initiated this request.
 		//
-		// Optional: default to the identity of the underlying workflow client.
+		// Optional: defaults to the identity of the underlying workflow client.
 		Identity string
 
 		// IgnoreMissingTaskQueues - Override protection against accidental removal of Task Queues.
@@ -196,12 +196,12 @@ type (
 		// The current token can be obtained with [WorkerDeploymentHandle.Describe],
 		// or returned by other successful Worker Deployment operations.
 		//
-		// Optional: defaulted to empty token, which bypasses conflict detection.
+		// Optional: defaults to empty token, which bypasses conflict detection.
 		ConflictToken []byte
 
 		// Identity - The identity of the client who initiated this request.
 		//
-		// Optional: default to the identity of the underlying workflow client.
+		// Optional: defaults to the identity of the underlying workflow client.
 		Identity string
 
 		// IgnoreMissingTaskQueues - Override protection against accidental removal of Task Queues.
@@ -260,12 +260,12 @@ type (
 		// The current token can be obtained with [WorkerDeploymentHandle.Describe],
 		// or returned by other successful Worker Deployment operations.
 		//
-		// Optional: defaulted to empty token, which bypasses conflict detection.
+		// Optional: defaults to empty token, which bypasses conflict detection.
 		ConflictToken []byte
 
 		// Identity - The identity of the client who initiated this request.
 		//
-		// Optional: default to the identity of the underlying workflow client.
+		// Optional: defaults to the identity of the underlying workflow client.
 		Identity string
 	}
 
@@ -392,7 +392,7 @@ type (
 
 		// Identity - The identity of the client who initiated this request.
 		//
-		// Optional: default to the identity of the underlying workflow client.
+		// Optional: defaults to the identity of the underlying workflow client.
 		Identity string
 	}
 
@@ -590,7 +590,7 @@ type (
 
 		// Identity - The identity of the client who initiated this request.
 		//
-		// Optional: default to the identity of the underlying workflow client.
+		// Optional: defaults to the identity of the underlying workflow client.
 		Identity string
 	}
 
