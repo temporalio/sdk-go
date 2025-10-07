@@ -993,6 +993,171 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 	}, 10*time.Second, 300*time.Millisecond)
 }
 
+func (ts *WorkerDeploymentTestSuite) TestRampVersion_AllowNoPollers() {
+	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
+		ts.T().Skip("temporal server 1.27+ required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	deploymentName := "deploy-test-" + uuid.NewString()
+	v1 := worker.WorkerDeploymentVersion{
+		DeploymentName: deploymentName,
+		BuildID:        "1.0",
+	}
+
+	dHandle := ts.client.WorkerDeploymentClient().GetHandle(deploymentName)
+
+	// Setting Ramp without the AllowNoPollers flag fails when there are no pollers
+	_, err := dHandle.SetRampingVersion(ctx, client.WorkerDeploymentSetRampingVersionOptions{
+		BuildID:       v1.BuildID,
+		ConflictToken: nil,
+		Percentage:    float32(100.0),
+	})
+	ts.Error(err)
+
+	// Setting Ramp with the AllowNoPollers flag succeeds when there are no pollers
+	response1, err := dHandle.SetRampingVersion(ctx, client.WorkerDeploymentSetRampingVersionOptions{
+		BuildID:        v1.BuildID,
+		ConflictToken:  nil,
+		Percentage:     float32(100.0),
+		AllowNoPollers: true,
+	})
+	ts.NoError(err)
+	ts.Nil(response1.PreviousVersion)
+
+	// Verify RoutingConfig is as expected
+	response2, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
+	ts.NoError(err)
+	ts.Equal(v1.BuildID, response2.Info.RoutingConfig.RampingVersion.BuildID)
+	ts.Equal(float32(100.0), response2.Info.RoutingConfig.RampingVersionPercentage)
+	ts.Nil(response2.Info.RoutingConfig.CurrentVersion)
+}
+
+func (ts *WorkerDeploymentTestSuite) TestSetManagerIdentity() {
+	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
+		ts.T().Skip("temporal server 1.27+ required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	deploymentName := "deploy-test-" + uuid.NewString()
+	v1 := worker.WorkerDeploymentVersion{
+		DeploymentName: deploymentName,
+		BuildID:        "1.0",
+	}
+
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		DeploymentOptions: worker.DeploymentOptions{
+			UseVersioning: true,
+			Version:       v1,
+		},
+	})
+	worker1.RegisterWorkflowWithOptions(ts.workflows.WaitSignalToStartVersionedOne, workflow.RegisterOptions{
+		Name:               "WaitSignalToStartVersioned",
+		VersioningBehavior: workflow.VersioningBehaviorPinned,
+	})
+
+	ts.NoError(worker1.Start())
+	defer worker1.Stop()
+
+	dHandle := ts.client.WorkerDeploymentClient().GetHandle(deploymentName)
+
+	ts.waitForWorkerDeployment(ctx, dHandle)
+
+	// Check that initial manager identity is empty
+	response1, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
+	ts.NoError(err)
+	ts.Equal("", response1.Info.ManagerIdentity)
+
+	// Set arbitrary ManagerIdentity
+	response2, err := dHandle.SetManagerIdentity(ctx, client.WorkerDeploymentSetManagerIdentityOptions{
+		ManagerIdentity: "foo",
+		ConflictToken:   response1.ConflictToken,
+	})
+	ts.NoError(err)
+	ts.Equal("", response2.PreviousManagerIdentity)
+
+	// Check that manager identity is set to foo
+	response3, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
+	ts.NoError(err)
+	ts.Equal("foo", response3.Info.ManagerIdentity)
+
+	// Set self as ManagerIdentity
+	response4, err := dHandle.SetManagerIdentity(ctx, client.WorkerDeploymentSetManagerIdentityOptions{
+		Self:          true,
+		Identity:      "my-identity",
+		ConflictToken: response3.ConflictToken,
+	})
+	ts.NoError(err)
+	ts.Equal("foo", response4.PreviousManagerIdentity)
+
+	// Check that manager identity is set to self
+	response5, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
+	ts.NoError(err)
+	ts.Equal("my-identity", response5.Info.ManagerIdentity)
+
+	// Unset ManagerIdentity
+	response6, err := dHandle.SetManagerIdentity(ctx, client.WorkerDeploymentSetManagerIdentityOptions{
+		ManagerIdentity: "",
+		ConflictToken:   response5.ConflictToken,
+	})
+	ts.NoError(err)
+	ts.Equal("my-identity", response6.PreviousManagerIdentity)
+
+	// Check that manager identity is empty
+	response7, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
+	ts.NoError(err)
+	ts.Equal("", response7.Info.ManagerIdentity)
+
+	// Invalid set ManagerIdentity
+	_, err = dHandle.SetManagerIdentity(ctx, client.WorkerDeploymentSetManagerIdentityOptions{
+		ManagerIdentity: "foo",
+		Self:            true,
+		ConflictToken:   response7.ConflictToken,
+	})
+	ts.Error(err)
+}
+
+func (ts *WorkerDeploymentTestSuite) TestCurrentVersion_AllowNoPollers() {
+	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
+		ts.T().Skip("temporal server 1.27+ required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	deploymentName := "deploy-test-" + uuid.NewString()
+	v1 := worker.WorkerDeploymentVersion{
+		DeploymentName: deploymentName,
+		BuildID:        "1.0",
+	}
+
+	dHandle := ts.client.WorkerDeploymentClient().GetHandle(deploymentName)
+
+	// Setting Current without the AllowNoPollers flag fails when there are no pollers
+	_, err := dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
+		BuildID:       v1.BuildID,
+		ConflictToken: nil,
+	})
+	ts.Error(err)
+
+	// Setting Current with the AllowNoPollers flag succeeds when there are no pollers
+	response1, err := dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
+		BuildID:        v1.BuildID,
+		ConflictToken:  nil,
+		AllowNoPollers: true,
+	})
+	ts.NoError(err)
+	ts.Nil(response1.PreviousVersion)
+
+	// Verify RoutingConfig is as expected
+	response2, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
+	ts.NoError(err)
+	ts.Equal(v1.BuildID, response2.Info.RoutingConfig.CurrentVersion.BuildID)
+	ts.Equal(float32(0), response2.Info.RoutingConfig.RampingVersionPercentage)
+	ts.Nil(response2.Info.RoutingConfig.RampingVersion)
+}
+
 func (ts *WorkerDeploymentTestSuite) TestDeleteDeployment() {
 	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
 		ts.T().Skip("temporal server 1.27+ required")
