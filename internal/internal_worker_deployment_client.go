@@ -213,6 +213,7 @@ func (h *workerDeploymentHandleImpl) SetCurrentVersion(ctx context.Context, opti
 		ConflictToken:           options.ConflictToken,
 		Identity:                identity,
 		IgnoreMissingTaskQueues: options.IgnoreMissingTaskQueues,
+		AllowNoPollers:          options.AllowNoPollers,
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
@@ -252,6 +253,7 @@ func (h *workerDeploymentHandleImpl) SetRampingVersion(ctx context.Context, opti
 		ConflictToken:           options.ConflictToken,
 		Identity:                identity,
 		IgnoreMissingTaskQueues: options.IgnoreMissingTaskQueues,
+		AllowNoPollers:          options.AllowNoPollers,
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
