@@ -2167,6 +2167,58 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 	t.NotNil(r)
 }
 
+func (t *TaskHandlersTestSuite) TestActivityCancellationUsesIsCanceledError() {
+	activityName := "activityCancellationIsCanceledError"
+	cancelContextActivity := func(ctx context.Context) error {
+		env := getActivityEnv(ctx)
+		invoker, ok := env.serviceInvoker.(*temporalInvoker)
+		t.Require().True(ok, "expected temporalInvoker")
+		invoker.cancelHandler(NewCanceledError())
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	t.registry.RegisterActivityWithOptions(
+		cancelContextActivity,
+		RegisterActivityOptions{Name: activityName, DisableAlreadyRegisteredCheck: true},
+	)
+
+	mockCtrl := gomock.NewController(t.T())
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	client := WorkflowClient{workflowService: mockService}
+	wep := t.getTestWorkerExecutionParams()
+	activityHandler := newActivityTaskHandler(&client, wep, t.registry)
+	now := time.Now()
+	pats := &workflowservice.PollActivityTaskQueueResponse{
+		Attempt:   1,
+		TaskToken: []byte("token"),
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: "wID",
+			RunId:      "rID",
+		},
+		ActivityType:           &commonpb.ActivityType{Name: activityName},
+		ActivityId:             uuid.NewString(),
+		ScheduledTime:          timestamppb.New(now),
+		ScheduleToCloseTimeout: durationpb.New(time.Second),
+		StartedTime:            timestamppb.New(now),
+		StartToCloseTimeout:    durationpb.New(time.Second),
+		HeartbeatTimeout:       durationpb.New(time.Second),
+		WorkflowType: &commonpb.WorkflowType{
+			Name: "wType",
+		},
+		WorkflowNamespace: wep.Namespace,
+	}
+
+	result, err := activityHandler.Execute(taskqueue, pats)
+	t.Require().NoError(err)
+
+	canceledReq, ok := result.(*workflowservice.RespondActivityTaskCanceledRequest)
+	t.Require().True(ok, "expected cancel response")
+	t.Equal(pats.TaskToken, canceledReq.TaskToken)
+	t.Equal(wep.Identity, canceledReq.Identity)
+	t.Equal(wep.Namespace, canceledReq.Namespace)
+}
+
 func Test_NonDeterministicCheck(t *testing.T) {
 	unimplementedCommands := []int32{
 		int32(enumspb.COMMAND_TYPE_UNSPECIFIED),
