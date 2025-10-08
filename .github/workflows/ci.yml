@@ -20,7 +20,7 @@ jobs:
             # We only want to check docker compose on a single target
             testDockerCompose: true
           - os: macos-intel
-            runsOn: macos-13
+            runsOn: macos-15-intel
           - os: macos-arm
             runsOn: macos-14
     runs-on: ${{ matrix.runsOn || matrix.os }}
