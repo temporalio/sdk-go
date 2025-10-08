@@ -12,6 +12,7 @@ type eagerWorkerMock struct {
 	releaseCalled            bool
 	tryReserveSlotCallback   func() *SlotPermit
 	processTaskAsyncCallback func(eagerTask)
+	deploymentOptions        WorkerDeploymentOptions
 }
 
 func (e *eagerWorkerMock) tryReserveSlot() *SlotPermit {
@@ -24,6 +25,10 @@ func (e *eagerWorkerMock) releaseSlot(_ *SlotPermit, _ SlotReleaseReason) {
 
 func (e *eagerWorkerMock) pushEagerTask(task eagerTask) {
 	e.processTaskAsyncCallback(task)
+}
+
+func (e *eagerWorkerMock) getDeploymentOptions() WorkerDeploymentOptions {
+	return e.deploymentOptions
 }
 
 func TestEagerWorkflowDispatchNoWorkerOnTaskQueue(t *testing.T) {
