@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.temporal.io/api/enums/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
-	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 )
 
@@ -104,14 +104,12 @@ func TestEagerWorkflowDispatchWithDeploymentOptions(t *testing.T) {
 	require.Equal(t, workerWithDeployment, exec.worker)
 	require.True(t, request.GetRequestEagerExecution())
 
-	// Verify that VersioningOverride was set correctly
-	require.NotNil(t, request.VersioningOverride)
-	pinnedOverride := request.VersioningOverride.GetPinned()
-	require.NotNil(t, pinnedOverride)
-	require.Equal(t, workflowpb.VersioningOverride_PINNED_OVERRIDE_BEHAVIOR_PINNED, pinnedOverride.Behavior)
-	require.NotNil(t, pinnedOverride.Version)
-	require.Equal(t, "test-deployment", pinnedOverride.Version.DeploymentName)
-	require.Equal(t, "test-build-id", pinnedOverride.Version.BuildId)
+	// Verify that deployment options were set correctly
+	require.NotNil(t, request.EagerWorkerDeploymentOptions)
+	ewdo := request.EagerWorkerDeploymentOptions
+	require.Equal(t, "test-deployment", ewdo.DeploymentName)
+	require.Equal(t, "test-build-id", ewdo.BuildId)
+	require.Equal(t, enums.WORKER_VERSIONING_MODE_VERSIONED, ewdo.WorkerVersioningMode)
 }
 
 func TestEagerWorkflowDispatchWithoutDeploymentVersioning(t *testing.T) {
@@ -141,8 +139,8 @@ func TestEagerWorkflowDispatchWithoutDeploymentVersioning(t *testing.T) {
 
 	require.NotNil(t, exec)
 	require.True(t, request.GetRequestEagerExecution())
-	// VersioningOverride should NOT be set when UseVersioning is false
-	require.Nil(t, request.VersioningOverride)
+	// Deployment options should NOT be set when UseVersioning is false
+	require.Nil(t, request.EagerWorkerDeploymentOptions)
 }
 
 func TestEagerWorkflowExecutor(t *testing.T) {

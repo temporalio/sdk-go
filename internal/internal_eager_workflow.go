@@ -5,7 +5,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	workflowpb "go.temporal.io/api/workflow/v1"
+	"go.temporal.io/api/deployment/v1"
+	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
 )
 
@@ -49,16 +50,13 @@ func (e *eagerWorkflowDispatcher) applyToRequest(request *workflowservice.StartW
 		maybePermit := worker.tryReserveSlot()
 		if maybePermit != nil {
 			request.RequestEagerExecution = true
-			// Attach deployment version override if worker has deployment versioning enabled
+			// Attach deployment options if worker has deployment versioning enabled
 			deploymentOpts := worker.getDeploymentOptions()
 			if deploymentOpts.UseVersioning && (deploymentOpts.Version != WorkerDeploymentVersion{}) {
-				request.VersioningOverride = &workflowpb.VersioningOverride{
-					Override: &workflowpb.VersioningOverride_Pinned{
-						Pinned: &workflowpb.VersioningOverride_PinnedOverride{
-							Behavior: workflowpb.VersioningOverride_PINNED_OVERRIDE_BEHAVIOR_PINNED,
-							Version:  deploymentOpts.Version.toProto(),
-						},
-					},
+				request.EagerWorkerDeploymentOptions = &deployment.WorkerDeploymentOptions{
+					DeploymentName:       deploymentOpts.Version.DeploymentName,
+					BuildId:              deploymentOpts.Version.BuildID,
+					WorkerVersioningMode: enums.WORKER_VERSIONING_MODE_VERSIONED,
 				}
 			}
 			return &eagerWorkflowExecutor{
