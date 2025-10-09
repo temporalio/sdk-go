@@ -2229,6 +2229,7 @@ func newServiceInvoker(
 func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice.PollActivityTaskQueueResponse) (result interface{}, err error) {
 	traceLog(func() {
 		ath.logger.Debug("Processing new activity task",
+			tagWorkflowType, t.WorkflowType.GetName(),
 			tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
 			tagRunID, t.WorkflowExecution.GetRunId(),
 			tagActivityType, t.ActivityType.GetName(),
@@ -2280,6 +2281,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			topLine := fmt.Sprintf("activity for %s [panic]:", ath.taskQueueName)
 			st := getStackTraceRaw(topLine, 7, 0)
 			ath.logger.Error("Activity panic.",
+				tagWorkflowType, workflowType,
 				tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
 				tagRunID, t.WorkflowExecution.GetRunId(),
 				tagActivityType, activityType,
@@ -2313,6 +2315,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	dlCancelFunc()
 	if <-ctx.Done(); ctx.Err() == context.DeadlineExceeded {
 		ath.logger.Info("Activity complete after timeout.",
+			tagWorkflowType, workflowType,
 			tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
 			tagRunID, t.WorkflowExecution.GetRunId(),
 			tagActivityType, activityType,
@@ -2328,6 +2331,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			logFunc = ath.logger.Debug // Downgrade to Debug for benign application errors
 		}
 		logFunc("Activity error.",
+			tagWorkflowType, workflowType,
 			tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
 			tagRunID, t.WorkflowExecution.GetRunId(),
 			tagActivityType, activityType,
