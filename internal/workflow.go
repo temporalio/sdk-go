@@ -604,6 +604,14 @@ type (
 		// NOTE: Experimental
 		TimerOptions TimerOptions
 	}
+
+	// SideEffectOptions are options when creating a side effect.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.SideEffectOptions]
+	SideEffectOptions struct {
+		// Override default name "SideEffect" for timeline readability
+		Name string
+	}
 )
 
 // Await blocks the calling thread until condition() returns true
@@ -2062,7 +2070,17 @@ func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedV
 	return i.SideEffect(ctx, f)
 }
 
+func SideEffectWithOptions(ctx Context, f func(ctx Context) interface{}, options SideEffectOptions) converter.EncodedValue {
+	assertNotInReadOnlyState(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
+	return i.SideEffectWithOptions(ctx, f, options)
+}
+
 func (wc *workflowEnvironmentInterceptor) SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedValue {
+	return wc.SideEffectWithOptions(ctx, f, SideEffectOptions{})
+}
+
+func (wc *workflowEnvironmentInterceptor) SideEffectWithOptions(ctx Context, f func(ctx Context) interface{}, options SideEffectOptions) converter.EncodedValue {
 	dc := getDataConverterFromWorkflowContext(ctx)
 	future, settable := NewFuture(ctx)
 	wrapperFunc := func() (*commonpb.Payloads, error) {
@@ -2075,7 +2093,7 @@ func (wc *workflowEnvironmentInterceptor) SideEffect(ctx Context, f func(ctx Con
 	resultCallback := func(result *commonpb.Payloads, err error) {
 		settable.Set(EncodedValue{result, dc}, err)
 	}
-	wc.env.SideEffect(wrapperFunc, resultCallback)
+	wc.env.SideEffect(wrapperFunc, resultCallback, options)
 	var encoded EncodedValue
 	if err := future.Get(ctx, &encoded); err != nil {
 		panic(err)

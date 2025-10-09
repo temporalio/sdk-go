@@ -363,6 +363,15 @@ func (w *WorkflowOutboundInterceptorBase) SideEffect(
 	return w.Next.SideEffect(ctx, f)
 }
 
+// SideEffectWithOptions implements WorkflowOutboundInterceptor.SideEffectWithOptions.
+func (w *WorkflowOutboundInterceptorBase) SideEffectWithOptions(
+	ctx Context,
+	f func(ctx Context) interface{},
+	options SideEffectOptions,
+) converter.EncodedValue {
+	return w.Next.SideEffectWithOptions(ctx, f, options)
+}
+
 // MutableSideEffect implements WorkflowOutboundInterceptor.MutableSideEffect.
 func (w *WorkflowOutboundInterceptorBase) MutableSideEffect(
 	ctx Context,

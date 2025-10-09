@@ -2740,7 +2740,7 @@ func (env *testWorkflowEnvironmentImpl) makeUniqueNexusOperationToken(
 	return fmt.Sprintf("%s_%s_%s", service, operation, token)
 }
 
-func (env *testWorkflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler) {
+func (env *testWorkflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler, options SideEffectOptions) {
 	callback(f())
 }
 

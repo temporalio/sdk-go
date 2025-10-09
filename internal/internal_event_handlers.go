@@ -932,7 +932,7 @@ func getChangeVersion(changeID string, version Version) string {
 	return fmt.Sprintf("%s-%v", changeID, version)
 }
 
-func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler) {
+func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler, options SideEffectOptions) {
 	sideEffectID := wc.getNextSideEffectID()
 	var result *commonpb.Payloads
 	if wc.isReplay {
@@ -961,7 +961,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 		}
 	}
 
-	wc.commandsHelper.recordSideEffectMarker(sideEffectID, result, wc.dataConverter)
+	wc.commandsHelper.recordSideEffectMarker(sideEffectID, result, wc.dataConverter, options.Name)
 
 	callback(result, nil)
 	wc.logger.Debug("SideEffect Marker added", tagSideEffectID, sideEffectID)

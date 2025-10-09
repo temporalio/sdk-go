@@ -297,6 +297,9 @@ type WorkflowOutboundInterceptor interface {
 	// SideEffect intercepts workflow.SideEffect.
 	SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedValue
 
+	// SideEffectWithOptions intercepts workflow.SideEffectWithOptions.
+	SideEffectWithOptions(ctx Context, f func(ctx Context) interface{}, options SideEffectOptions) converter.EncodedValue
+
 	// MutableSideEffect intercepts workflow.MutableSideEffect.
 	MutableSideEffect(
 		ctx Context,

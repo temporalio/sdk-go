@@ -79,7 +79,7 @@ type (
 		AsyncActivityClient
 		LocalActivityClient
 		WorkflowTimerClient
-		SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler)
+		SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler, options SideEffectOptions)
 		GetVersion(changeID string, minSupported, maxSupported Version) Version
 		WorkflowInfo() *WorkflowInfo
 		TypedSearchAttributes() SearchAttributes
