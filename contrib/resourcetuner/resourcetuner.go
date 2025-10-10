@@ -31,8 +31,6 @@ type ResourceBasedTunerOptions struct {
 
 // NewResourceBasedTuner creates a WorkerTuner that dynamically adjusts the number of slots based
 // on system resources. Specify the target CPU and memory usage as a value between 0 and 1.
-//
-// WARNING: Resource based tuning is currently experimental.
 func NewResourceBasedTuner(opts ResourceBasedTunerOptions) (worker.WorkerTuner, error) {
 	options := DefaultResourceControllerOptions()
 	options.MemTargetPercent = opts.TargetMem
@@ -71,8 +69,6 @@ func NewResourceBasedTuner(opts ResourceBasedTunerOptions) (worker.WorkerTuner, 
 }
 
 // ResourceBasedSlotSupplierOptions configures a particular ResourceBasedSlotSupplier.
-//
-// WARNING: Resource based tuning is currently experimental.
 type ResourceBasedSlotSupplierOptions struct {
 	// MinSlots is minimum number of slots that will be issued without any resource checks.
 	MinSlots int
@@ -101,8 +97,6 @@ func defaultActivityResourceBasedSlotSupplierOptions() ResourceBasedSlotSupplier
 
 // ResourceBasedSlotSupplier is a worker.SlotSupplier that issues slots based on system resource
 // usage.
-//
-// WARNING: Resource based tuning is currently experimental.
 type ResourceBasedSlotSupplier struct {
 	controller *ResourceController
 	options    ResourceBasedSlotSupplierOptions
@@ -114,8 +108,6 @@ type ResourceBasedSlotSupplier struct {
 // NewResourceBasedSlotSupplier creates a ResourceBasedSlotSupplier given the provided
 // ResourceController and ResourceBasedSlotSupplierOptions. All ResourceBasedSlotSupplier instances
 // must use the same ResourceController.
-//
-// WARNING: Resource based tuning is currently experimental.
 func NewResourceBasedSlotSupplier(
 	controller *ResourceController,
 	options ResourceBasedSlotSupplierOptions,
@@ -185,8 +177,6 @@ func (r *ResourceBasedSlotSupplier) MaxSlots() int {
 }
 
 // SystemInfoSupplier implementations provide information about system resources.
-//
-// WARNING: Resource based tuning is currently experimental.
 type SystemInfoSupplier interface {
 	// GetMemoryUsage returns the current system memory usage as a fraction of total memory between
 	// 0 and 1.
@@ -203,8 +193,6 @@ type SystemInfoContext struct {
 // ResourceControllerOptions contains configurable parameters for a ResourceController.
 // It is recommended to use DefaultResourceControllerOptions to create a ResourceControllerOptions
 // and only modify the mem/cpu target percent fields.
-//
-// WARNING: Resource based tuning is currently experimental.
 type ResourceControllerOptions struct {
 	// MemTargetPercent is the target overall system memory usage as value 0 and 1 that the
 	// controller will attempt to maintain.
@@ -228,8 +216,6 @@ type ResourceControllerOptions struct {
 }
 
 // DefaultResourceControllerOptions returns a ResourceControllerOptions with default values.
-//
-// WARNING: Resource based tuning is currently experimental.
 func DefaultResourceControllerOptions() ResourceControllerOptions {
 	return ResourceControllerOptions{
 		MemTargetPercent:   0.8,
@@ -247,8 +233,6 @@ func DefaultResourceControllerOptions() ResourceControllerOptions {
 
 // A ResourceController is used by ResourceBasedSlotSupplier to make decisions about whether slots
 // should be issued based on system resource usage.
-//
-// WARNING: Resource based tuning is currently experimental.
 type ResourceController struct {
 	options ResourceControllerOptions
 
@@ -263,8 +247,6 @@ type ResourceController struct {
 // WARNING: It is important that you do not create multiple ResourceController instances. Since
 // the controller looks at overall system resources, multiple instances with different configs can
 // only conflict with one another.
-//
-// WARNING: Resource based tuning is currently experimental.
 func NewResourceController(options ResourceControllerOptions) *ResourceController {
 	var infoSupplier SystemInfoSupplier
 	if options.InfoSupplier == nil {
