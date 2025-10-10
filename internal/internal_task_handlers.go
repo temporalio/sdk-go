@@ -561,8 +561,8 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		identity:                  params.Identity,
 		workerBuildID:             params.getBuildID(),
 		useBuildIDForVersioning:   params.UseBuildIDForVersioning,
-		workerDeploymentVersion:   params.WorkerDeploymentVersion,
-		defaultVersioningBehavior: params.DefaultVersioningBehavior,
+		workerDeploymentVersion:   params.DeploymentOptions.Version,
+		defaultVersioningBehavior: params.DeploymentOptions.DefaultVersioningBehavior,
 		enableLoggingInReplay:     params.EnableLoggingInReplay,
 		registry:                  registry,
 		workflowPanicPolicy:       params.WorkflowPanicPolicy,
@@ -2025,8 +2025,8 @@ func newActivityTaskHandlerWithCustomProvider(
 	activityProvider activityProvider,
 ) ActivityTaskHandler {
 	seriesName := ""
-	if (params.WorkerDeploymentVersion != WorkerDeploymentVersion{}) {
-		seriesName = params.WorkerDeploymentVersion.DeploymentName
+	if (params.DeploymentOptions.Version != WorkerDeploymentVersion{}) {
+		seriesName = params.DeploymentOptions.Version.DeploymentName
 	}
 	return &activityTaskHandlerImpl{
 		taskQueueName:                    params.TaskQueue,
@@ -2054,7 +2054,7 @@ func newActivityTaskHandlerWithCustomProvider(
 		},
 		workerDeploymentOptions: workerDeploymentOptionsToProto(
 			params.UseBuildIDForVersioning,
-			params.WorkerDeploymentVersion,
+			params.DeploymentOptions.Version,
 		),
 	}
 }
