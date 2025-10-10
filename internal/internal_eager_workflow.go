@@ -52,11 +52,15 @@ func (e *eagerWorkflowDispatcher) applyToRequest(request *workflowservice.StartW
 			request.RequestEagerExecution = true
 			// Attach deployment options if worker has deployment versioning enabled
 			deploymentOpts := worker.getDeploymentOptions()
-			if deploymentOpts.UseVersioning && (deploymentOpts.Version != WorkerDeploymentVersion{}) {
+			if (deploymentOpts.Version != WorkerDeploymentVersion{}) {
+				wvMode := enums.WORKER_VERSIONING_MODE_UNVERSIONED
+				if deploymentOpts.UseVersioning {
+					wvMode = enums.WORKER_VERSIONING_MODE_VERSIONED
+				}
 				request.EagerWorkerDeploymentOptions = &deployment.WorkerDeploymentOptions{
 					DeploymentName:       deploymentOpts.Version.DeploymentName,
 					BuildId:              deploymentOpts.Version.BuildID,
-					WorkerVersioningMode: enums.WORKER_VERSIONING_MODE_VERSIONED,
+					WorkerVersioningMode: wvMode,
 				}
 			}
 			return &eagerWorkflowExecutor{

@@ -104,7 +104,6 @@ func TestEagerWorkflowDispatchWithDeploymentOptions(t *testing.T) {
 	require.Equal(t, workerWithDeployment, exec.worker)
 	require.True(t, request.GetRequestEagerExecution())
 
-	// Verify that deployment options were set correctly
 	require.NotNil(t, request.EagerWorkerDeploymentOptions)
 	ewdo := request.EagerWorkerDeploymentOptions
 	require.Equal(t, "test-deployment", ewdo.DeploymentName)
@@ -139,8 +138,11 @@ func TestEagerWorkflowDispatchWithoutDeploymentVersioning(t *testing.T) {
 
 	require.NotNil(t, exec)
 	require.True(t, request.GetRequestEagerExecution())
-	// Deployment options should NOT be set when UseVersioning is false
-	require.Nil(t, request.EagerWorkerDeploymentOptions)
+	require.NotNil(t, request.EagerWorkerDeploymentOptions)
+	ewdo := request.EagerWorkerDeploymentOptions
+	require.Equal(t, "test-deployment", ewdo.DeploymentName)
+	require.Equal(t, "test-build-id", ewdo.BuildId)
+	require.Equal(t, enums.WORKER_VERSIONING_MODE_UNVERSIONED, ewdo.WorkerVersioningMode)
 }
 
 func TestEagerWorkflowExecutor(t *testing.T) {
