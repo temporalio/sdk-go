@@ -123,6 +123,8 @@ type (
 	// NOTE: Experimental
 	UpdateHandlerOptions = internal.UpdateHandlerOptions
 
+	SideEffectOptions = internal.SideEffectOptions
+
 	// NOTE to maintainers, this interface definition is duplicated in the internal package to provide a better UX.
 
 	// NexusClient is a client for executing Nexus Operations from a workflow.
@@ -392,6 +394,10 @@ func GetSignalChannelWithOptions(ctx Context, signalName string, options SignalC
 //	}
 func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedValue {
 	return internal.SideEffect(ctx, f)
+}
+
+func SideEffectWithOptions(ctx Context, f func(ctx Context) interface{}, options SideEffectOptions) converter.EncodedValue {
+	return internal.SideEffectWithOptions(ctx, f, options)
 }
 
 // MutableSideEffect executes the provided function once, then it looks up the history for the value with the given id.

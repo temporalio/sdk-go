@@ -1322,15 +1322,20 @@ func (h *commandsHelper) handleVersionMarker(eventID int64, changeID string, sea
 	}
 }
 
-func (h *commandsHelper) recordSideEffectMarker(sideEffectID int64, data *commonpb.Payloads, dc converter.DataConverter) commandStateMachine {
+func (h *commandsHelper) recordSideEffectMarker(sideEffectID int64, data *commonpb.Payloads, dc converter.DataConverter, overrideName string) commandStateMachine {
 	markerID := fmt.Sprintf("%v_%v", sideEffectMarkerName, sideEffectID)
 	sideEffectIDPayload, err := dc.ToPayloads(sideEffectID)
 	if err != nil {
 		panic(err)
 	}
 
+	markerName := sideEffectMarkerName
+	if overrideName != "" {
+		markerName = overrideName
+	}
+
 	attributes := &commandpb.RecordMarkerCommandAttributes{
-		MarkerName: sideEffectMarkerName,
+		MarkerName: markerName,
 		Details: map[string]*commonpb.Payloads{
 			sideEffectMarkerIDName:   sideEffectIDPayload,
 			sideEffectMarkerDataName: data,
