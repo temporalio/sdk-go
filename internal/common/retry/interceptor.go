@@ -191,7 +191,11 @@ func isGrpcMessageTooLargeStatus(status *status.Status) bool {
 		return false
 	}
 	message := status.Message()
+	// Source: https://github.com/search?q=repo%3Agrpc%2Fgrpc-go+ResourceExhausted&type=code
 	return strings.HasPrefix(message, "grpc: received message larger than max") ||
 		strings.HasPrefix(message, "grpc: message after decompression larger than max") ||
-		strings.HasPrefix(message, "grpc: received message after decompression larger than max")
+		strings.HasPrefix(message, "grpc: received message after decompression larger than max") ||
+		strings.HasPrefix(message, "grpc: trying to send message larger than max") ||
+		strings.HasPrefix(message, "grpc: message too large") ||
+		strings.HasPrefix(message, "trying to send message larger than max")
 }

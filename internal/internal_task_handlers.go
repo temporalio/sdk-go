@@ -1842,6 +1842,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		if err != nil {
 			queryCompletedRequest.CompletedType = enumspb.QUERY_RESULT_TYPE_FAILED
 			queryCompletedRequest.ErrorMessage = err.Error()
+			queryCompletedRequest.Failure = wth.failureConverter.ErrorToFailure(err)
 		} else {
 			queryCompletedRequest.CompletedType = enumspb.QUERY_RESULT_TYPE_ANSWERED
 			queryCompletedRequest.QueryResult = result
