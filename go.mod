@@ -11,7 +11,7 @@ require (
 	github.com/google/go-cmp v0.6.0
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
-	github.com/nexus-rpc/sdk-go v0.3.0
+	github.com/nexus-rpc/sdk-go v0.5.0
 	github.com/robfig/cron v1.2.0
 	github.com/stretchr/testify v1.10.0
 	go.temporal.io/api v1.54.0
