@@ -7786,7 +7786,7 @@ func (ts *IntegrationTestSuite) TestGrpcMessageTooLarge() {
 		ts.Fail("Workflow task failed event not found in history")
 	}
 
-	veryLargeData := strings.Repeat("Very Large Data ", 500_000) // circa 8MB, double the default 4MB limit
+	veryLargeData := slices.Repeat([]byte{1}, 8_000_000) // double the default 4MB limit
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -7799,16 +7799,16 @@ func (ts *IntegrationTestSuite) TestGrpcMessageTooLarge() {
 		if success {
 			return workflow.ExecuteActivity(ctx, activityFn, veryLargeData).Get(ctx, nil)
 		} else {
-			return errors.New(veryLargeData)
+			return temporal.NewApplicationError("We should not see this error", "", veryLargeData)
 		}
 	}
 
 	failureInQueryTaskWorkflowFn := func(ctx workflow.Context) error {
-		return workflow.SetQueryHandler(ctx, "too-large-query", func(success bool) (string, error) {
+		return workflow.SetQueryHandler(ctx, "too-large-query", func(success bool) ([]byte, error) {
 			if success {
 				return veryLargeData, nil
 			} else {
-				return "", errors.New(veryLargeData)
+				return nil, temporal.NewApplicationError("We should not see this error", "", veryLargeData)
 			}
 		})
 	}
@@ -7843,6 +7843,6 @@ func (ts *IntegrationTestSuite) TestGrpcMessageTooLarge() {
 		ts.NoError(run.Get(ctx, nil))
 		_, err = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "too-large-query", false)
 		ts.Error(err)
-		ts.Contains(err.Error(), "grpc: received message larger than max")
+		ts.Contains(err.Error(), "message larger than max")
 	})
 }
