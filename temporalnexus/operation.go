@@ -321,6 +321,7 @@ func ExecuteUntypedWorkflow[R any](
 			nexusOptions.CallbackHeader = make(nexus.Header)
 		}
 
+		// This field is expected to be populated by servers older than 1.27.0.
 		nexusOptions.CallbackHeader.Set("nexus-operation-id", encodedToken)
 		nexusOptions.CallbackHeader.Set(nexus.HeaderOperationToken, encodedToken)
 		internal.SetCallbacksOnStartWorkflowOptions(&startWorkflowOptions, []*common.Callback{
