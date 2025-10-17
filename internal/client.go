@@ -40,6 +40,9 @@ const (
 
 	// QueryTypeWorkflowMetadata is the query name for the workflow metadata.
 	QueryTypeWorkflowMetadata string = "__temporal_workflow_metadata"
+
+	// SignalTypeSuggestContinueAsNew is the signal name to set ContinueAsNewSuggested=true in the workflow env.
+	SignalTypeSuggestContinueAsNew = "__suggest_continue_as_new"
 )
 
 type (

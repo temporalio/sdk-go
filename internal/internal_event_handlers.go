@@ -1199,6 +1199,9 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		// Update workflow info fields
 		weh.workflowInfo.currentHistoryLength = int(event.EventId)
 		weh.workflowInfo.continueAsNewSuggested = event.GetWorkflowTaskStartedEventAttributes().GetSuggestContinueAsNew()
+		weh.workflowInfo.continueAsNewSuggestedReason = convertContinueAsNewSuggestedReason(
+			event.GetWorkflowTaskStartedEventAttributes().GetContinueAsNewSuggestedReason(),
+		)
 		weh.workflowInfo.currentHistorySize = int(event.GetWorkflowTaskStartedEventAttributes().GetHistorySizeBytes())
 		// Reset the counter on command helper used for generating ID for commands
 		weh.commandsHelper.setCurrentWorkflowTaskStartedEventID(event.GetEventId())
@@ -1751,7 +1754,33 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionSignaled(
 	attributes *historypb.WorkflowExecutionSignaledEventAttributes,
 ) error {
+	switch attributes.GetSignalName() {
+	case SignalTypeSuggestContinueAsNew:
+		weh.workflowInfo.continueAsNewSuggested = true
+		var reason enumspb.ContinueAsNewSuggestedReason
+		err := weh.dataConverter.FromPayload(attributes.GetInput().GetPayloads()[0], &reason)
+		if err != nil {
+			return fmt.Errorf("unable to convert continue-as-new suggested reason: %w", err)
+		}
+		weh.workflowInfo.continueAsNewSuggestedReason = convertContinueAsNewSuggestedReason(reason)
+	}
 	return weh.signalHandler(attributes.GetSignalName(), attributes.Input, attributes.Header)
+}
+
+// TODO(carlydf): move this helper somewhere appropriate
+func convertContinueAsNewSuggestedReason(reason enumspb.ContinueAsNewSuggestedReason) ContinueAsNewSuggestedReason {
+	switch reason {
+	case enumspb.CONTINUE_AS_NEW_SUGGESTED_REASON_UNSPECIFIED:
+		return ContinueAsNewSuggestedReasonUnspecified
+	case enumspb.CONTINUE_AS_NEW_SUGGESTED_REASON_UPDATE_REGISTRY_TOO_LARGE:
+		return ContinueAsNewSuggestedReasonUpdateRegistryTooLarge
+	case enumspb.CONTINUE_AS_NEW_SUGGESTED_REASON_HISTORY_SIZE_TOO_LARGE:
+		return ContinueAsNewSuggestedReasonHistorySizeTooLarge
+	case enumspb.CONTINUE_AS_NEW_SUGGESTED_REASON_WORKER_DEPLOYMENT_VERSION_CHANGED:
+		return ContinueAsNewSuggestedReasonWorkerDeploymentVersionChanged
+	default:
+		return ContinueAsNewSuggestedReasonUnspecified
+	}
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleStartChildWorkflowExecutionFailed(event *historypb.HistoryEvent) error {

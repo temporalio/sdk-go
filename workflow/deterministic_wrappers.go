@@ -53,6 +53,11 @@ type (
 	//
 	// NOTE: Experimental
 	AwaitOptions = internal.AwaitOptions
+
+	// ContinueAsNewSuggestedReason is the reason for ContinueAsNewSuggested
+	//
+	// NOTE: Experimental
+	ContinueAsNewSuggestedReason = internal.ContinueAsNewSuggestedReason
 )
 
 // Await blocks the calling thread until condition() returns true.

@@ -14,7 +14,7 @@ require (
 	github.com/nexus-rpc/sdk-go v0.3.0
 	github.com/robfig/cron v1.2.0
 	github.com/stretchr/testify v1.10.0
-	go.temporal.io/api v1.53.0
+	go.temporal.io/api v1.55.1-0.20251017163919-d527807d0d4e
 	golang.org/x/sync v0.13.0
 	golang.org/x/sys v0.32.0
 	golang.org/x/time v0.3.0
