@@ -187,7 +187,6 @@ func (o *workflowRunOperation[I, O]) Start(
 		nexus.AddHandlerLinks(ctx, handle.link())
 		return &nexus.HandlerStartOperationResultAsync{
 			OperationToken: handle.token(),
-			OperationID:    handle.token(),
 		}, nil
 	}
 
@@ -204,7 +203,6 @@ func (o *workflowRunOperation[I, O]) Start(
 	nexus.AddHandlerLinks(ctx, handle.link())
 	return &nexus.HandlerStartOperationResultAsync{
 		OperationToken: handle.token(),
-		OperationID:    handle.token(),
 	}, nil
 }
 
@@ -323,8 +321,7 @@ func ExecuteUntypedWorkflow[R any](
 			nexusOptions.CallbackHeader = make(nexus.Header)
 		}
 
-		//lint:ignore SA1019 this field is expected to be populated by servers older than 1.27.0.
-		nexusOptions.CallbackHeader.Set(nexus.HeaderOperationID, encodedToken)
+		nexusOptions.CallbackHeader.Set("nexus-operation-id", encodedToken)
 		nexusOptions.CallbackHeader.Set(nexus.HeaderOperationToken, encodedToken)
 		internal.SetCallbacksOnStartWorkflowOptions(&startWorkflowOptions, []*common.Callback{
 			{
