@@ -72,7 +72,7 @@ func (s *replayTestSuite) TestGenerateWorkflowHistory() {
 
 	// Now run:
 	// temporal workflow show --workflow-id replay-tests-workflow1 --output json > workflow1.json
-	// temporal workflow show --workflow-id replay-tests-workflow1 --output json > workflow2.json
+	// temporal workflow show --workflow-id replay-tests-workflow2 --output json > workflow2.json
 }
 
 func (s *replayTestSuite) TestReplayWorkflowHistoryFromFile() {
