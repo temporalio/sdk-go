@@ -41,9 +41,16 @@ env:
 jobs:
   throughput-stress:
     runs-on: ubuntu-latest-4-cores
-    timeout-minutes: ${{ fromJSON(inputs.job_timeout_minutes || vars.NIGHTLY_JOB_TIMEOUT_MINUTES || 420) }}
+    timeout-minutes: ${{ fromJSON(inputs.job_timeout_minutes || (vars.NIGHTLY_JOB_TIMEOUT_MINUTES || '420')) }}
 
     steps:
+      - name: Debug vars
+        run: |
+          echo "vars.NIGHTLY_TEST_DURATION: ${{ vars.NIGHTLY_TEST_DURATION }}"
+          echo "vars.NIGHTLY_JOB_TIMEOUT_MINUTES: ${{ vars.NIGHTLY_JOB_TIMEOUT_MINUTES }}"
+          echo "inputs.duration: ${{ inputs.duration }}"
+          echo "inputs.job_timeout_minutes: ${{ inputs.job_timeout_minutes }}"
+
       - name: Print test configuration
         run: |
           echo "=== Throughput Stress Test Configuration ==="
@@ -115,16 +122,16 @@ jobs:
 
           echo "SCENARIO_EXIT_CODE=${PIPESTATUS[0]}" >> $GITHUB_ENV
 
-      - name: Upload logs on failure
-        if: env.SCENARIO_EXIT_CODE != '0'
+      - name: Upload logs on failure/cancellation
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: throughput-stress-logs
           path: ${{ env.WORKER_LOG_DIR }}
           retention-days: 30
 
-      - name: Notify Slack on failure
-        if: env.SCENARIO_EXIT_CODE != '0'
+      - name: Notify Slack on failure/cancellation
+        if: failure() || cancelled()
         uses: slackapi/slack-github-action@v2
         with:
           webhook-type: incoming-webhook
