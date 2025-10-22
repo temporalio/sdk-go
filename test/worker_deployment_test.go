@@ -236,6 +236,57 @@ func (ts *WorkerDeploymentTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 	ts.Equal("2.0", lastBuildID)
 }
 
+func (ts *WorkerDeploymentTestSuite) TestBuildIDSession() {
+	ts.T().Skip("issue-1650: Build ID integration tests are flaky")
+	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
+		ts.T().Skip("temporal server 1.27+ required")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	deploymentName := "deploy-test-" + uuid.NewString()
+	v1 := worker.WorkerDeploymentVersion{
+		DeploymentName: deploymentName,
+		BuildID:        "1.0",
+	}
+
+	worker := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		DeploymentOptions: worker.DeploymentOptions{
+			UseVersioning: true,
+			Version:       v1,
+		},
+	})
+	worker.RegisterWorkflowWithOptions(ts.workflows.BasicSession, workflow.RegisterOptions{
+		Name:               "SessionBuildIDWorkflow",
+		VersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
+	})
+	worker.RegisterActivity(ts.activities)
+
+	ts.NoError(worker.Start())
+
+	dHandle := ts.client.WorkerDeploymentClient().GetHandle(deploymentName)
+
+	ts.waitForWorkerDeployment(ctx, dHandle)
+
+	response1, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
+	ts.NoError(err)
+
+	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v1)
+
+	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
+		BuildID:       v1.BuildID,
+		ConflictToken: response1.ConflictToken,
+	})
+	ts.NoError(err)
+
+	// start workflow1 with 1.0, BasicSession, auto-upgrade
+	wfHandle, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("evolving-wf-1"), "SessionBuildIDWorkflow")
+	ts.NoError(err)
+
+	ts.NoError(wfHandle.Get(ctx, nil))
+}
+
 func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
 		ts.T().Skip("temporal server 1.27+ required")
