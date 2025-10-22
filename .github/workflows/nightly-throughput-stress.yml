@@ -44,13 +44,6 @@ jobs:
     timeout-minutes: ${{ fromJSON(inputs.job_timeout_minutes || (vars.NIGHTLY_JOB_TIMEOUT_MINUTES || '420')) }}
 
     steps:
-      - name: Debug vars
-        run: |
-          echo "vars.NIGHTLY_TEST_DURATION: ${{ vars.NIGHTLY_TEST_DURATION }}"
-          echo "vars.NIGHTLY_JOB_TIMEOUT_MINUTES: ${{ vars.NIGHTLY_JOB_TIMEOUT_MINUTES }}"
-          echo "inputs.duration: ${{ inputs.duration }}"
-          echo "inputs.job_timeout_minutes: ${{ inputs.job_timeout_minutes }}"
-
       - name: Print test configuration
         run: |
           echo "=== Throughput Stress Test Configuration ==="
