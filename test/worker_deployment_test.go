@@ -237,7 +237,6 @@ func (ts *WorkerDeploymentTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 }
 
 func (ts *WorkerDeploymentTestSuite) TestBuildIDSession() {
-	ts.T().Skip("issue-1650: Build ID integration tests are flaky")
 	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
 		ts.T().Skip("temporal server 1.27+ required")
 	}
