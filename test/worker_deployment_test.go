@@ -256,6 +256,8 @@ func (ts *WorkerDeploymentTestSuite) TestBuildIDSession() {
 			Version:       v1,
 		},
 	})
+	defer worker.Stop()
+
 	worker.RegisterWorkflowWithOptions(ts.workflows.BasicSession, workflow.RegisterOptions{
 		Name:               "SessionBuildIDWorkflow",
 		VersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
