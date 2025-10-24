@@ -71,8 +71,8 @@ func (s *replayTestSuite) TestGenerateWorkflowHistory() {
 	_ = we2.Get(context.Background(), &res2)
 
 	// Now run:
-	// tctl workflow show --workflow_id replay-tests-workflow1 --of workflow1.json
-	// tctl workflow show --workflow_id replay-tests-workflow2 --of workflow2.json
+	// temporal workflow show --workflow-id replay-tests-workflow1 --output json > workflow1.json
+	// temporal workflow show --workflow-id replay-tests-workflow2 --output json > workflow2.json
 }
 
 func (s *replayTestSuite) TestReplayWorkflowHistoryFromFile() {
