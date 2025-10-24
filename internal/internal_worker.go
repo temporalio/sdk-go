@@ -448,8 +448,14 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 	creationTaskqueue := getCreationTaskqueue(params.TaskQueue)
 	params.BackgroundContext = context.WithValue(params.BackgroundContext, sessionEnvironmentContextKey, sessionEnvironment)
 	params.TaskQueue = sessionEnvironment.GetResourceSpecificTaskqueue()
+	// For the resource specific task queue, we don't need to include deployment options
+	// Save them to restore later
+	deployments := params.DeploymentOptions
+	params.DeploymentOptions = WorkerDeploymentOptions{}
 	activityWorker := newActivityWorker(client, params,
-		&workerOverrides{slotSupplier: params.Tuner.GetSessionActivitySlotSupplier()}, env, nil)
+		&workerOverrides{
+			slotSupplier: params.Tuner.GetSessionActivitySlotSupplier(),
+		}, env, nil)
 
 	params.ActivityTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(
 		PollerBehaviorSimpleMaximumOptions{
@@ -457,6 +463,7 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 		},
 	)
 	params.TaskQueue = creationTaskqueue
+	params.DeploymentOptions = deployments
 	// Although we have session token bucket to limit session size across creation
 	// and recreation, we also limit it here for creation only
 	overrides := &workerOverrides{}
@@ -518,7 +525,6 @@ func newActivityWorker(
 	} else {
 		slotSupplier = params.Tuner.GetActivityTaskSlotSupplier()
 	}
-
 	bwo := baseWorkerOptions{
 		pollerRate:       defaultPollerRate,
 		slotSupplier:     slotSupplier,
