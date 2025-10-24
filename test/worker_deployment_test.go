@@ -16,6 +16,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
 
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
@@ -236,10 +237,7 @@ func (ts *WorkerDeploymentTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 	ts.Equal("2.0", lastBuildID)
 }
 
-func (ts *WorkerDeploymentTestSuite) TestBuildIDSession() {
-	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
-		ts.T().Skip("temporal server 1.27+ required")
-	}
+func (ts *WorkerDeploymentTestSuite) TestBuildIDWithSession() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -251,20 +249,25 @@ func (ts *WorkerDeploymentTestSuite) TestBuildIDSession() {
 	}
 
 	worker := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		EnableSessionWorker: true,
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning: true,
 			Version:       v1,
 		},
 	})
-	defer worker.Stop()
 
 	worker.RegisterWorkflowWithOptions(ts.workflows.BasicSession, workflow.RegisterOptions{
 		Name:               "SessionBuildIDWorkflow",
 		VersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 	})
-	worker.RegisterActivity(ts.activities)
+
+	activities2 := &Activities2{}
+	result := &Activities{activities2: activities2}
+	activities2.impl = result
+	worker.RegisterActivityWithOptions(activities2, activity.RegisterOptions{Name: "Prefix_", DisableAlreadyRegisteredCheck: true})
 
 	ts.NoError(worker.Start())
+	defer worker.Stop()
 
 	dHandle := ts.client.WorkerDeploymentClient().GetHandle(deploymentName)
 
