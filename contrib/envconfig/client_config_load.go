@@ -32,7 +32,7 @@ func LoadDefaultClientOptions() (client.Options, error) {
 // LoadClientOptionsRequest are options for [LoadClientOptions].
 type LoadClientOptionsRequest struct {
 	// Override the file path to use to load the TOML file for config. Defaults to TEMPORAL_CONFIG_FILE environment
-	// variable or if that is unset/empty, defaults to [os.UserConfigDir]/temporal/temporal.toml. If ConfigFileData is
+	// variable or if that is unset/empty, defaults to [os.UserConfigDir]/temporalio/temporal.toml. If ConfigFileData is
 	// set, this cannot be set and no file loading from disk occurs. Ignored if DisableFile is true.
 	ConfigFilePath string
 
@@ -93,7 +93,7 @@ func LoadClientOptions(options LoadClientOptionsRequest) (client.Options, error)
 // [LoadClientConfigOptions] are options for [LoadClientConfig].
 type LoadClientConfigOptions struct {
 	// Override the file path to use to load the TOML file for config. Defaults to TEMPORAL_CONFIG_FILE environment
-	// variable or if that is unset/empty, defaults to [os.UserConfigDir]/temporal/temporal.toml. If ConfigFileData is
+	// variable or if that is unset/empty, defaults to [os.UserConfigDir]/temporalio/temporal.toml. If ConfigFileData is
 	// set, this cannot be set and no file loading from disk occurs.
 	ConfigFilePath string
 
@@ -158,7 +158,7 @@ func LoadClientConfig(options LoadClientConfigOptions) (ClientConfig, error) {
 // LoadClientConfigProfileOptions are options for [LoadClientConfigProfile].
 type LoadClientConfigProfileOptions struct {
 	// Override the file path to use to load the TOML file for config. Defaults to TEMPORAL_CONFIG_FILE environment
-	// variable or if that is unset/empty, defaults to [os.UserConfigDir]/temporal/temporal.toml. If ConfigFileData is
+	// variable or if that is unset/empty, defaults to [os.UserConfigDir]/temporalio/temporal.toml. If ConfigFileData is
 	// set, this cannot be set and no file loading from disk occurs. Ignored if DisableFile is true.
 	ConfigFilePath string
 
@@ -248,7 +248,7 @@ func LoadClientConfigProfile(options LoadClientConfigProfileOptions) (ClientConf
 // DefaultConfigFileProfile is the default profile used.
 const DefaultConfigFileProfile = "default"
 
-// DefaultConfigFilePath is the default config file path used. It is [os.UserConfigDir]/temporal/temporal.toml.
+// DefaultConfigFilePath is the default config file path used. It is [os.UserConfigDir]/temporalio/temporal.toml.
 //
 // WARNING: Environment configuration is currently experimental.
 func DefaultConfigFilePath() (string, error) {
