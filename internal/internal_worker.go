@@ -451,7 +451,9 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 	// For the resource specific task queue, we don't need to include deployment options
 	// Save them to restore later
 	deployments := params.DeploymentOptions
+	useBuildIDForVersioning := params.UseBuildIDForVersioning
 	params.DeploymentOptions = WorkerDeploymentOptions{}
+	params.UseBuildIDForVersioning = false
 	activityWorker := newActivityWorker(client, params,
 		&workerOverrides{
 			slotSupplier: params.Tuner.GetSessionActivitySlotSupplier(),
@@ -464,6 +466,7 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 	)
 	params.TaskQueue = creationTaskqueue
 	params.DeploymentOptions = deployments
+	params.UseBuildIDForVersioning = useBuildIDForVersioning
 	// Although we have session token bucket to limit session size across creation
 	// and recreation, we also limit it here for creation only
 	overrides := &workerOverrides{}
