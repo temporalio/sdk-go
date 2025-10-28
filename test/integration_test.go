@@ -588,7 +588,7 @@ func (ts *IntegrationTestSuite) TestActivityPause() {
 	// ActivityToBePaused activity twice, the first call will test pausing an activity successfully
 	// and the second call will test completing the activity after it is resumed
 	run, err := ts.client.ExecuteWorkflow(ctx,
-		ts.startWorkflowOptions("test-activity-pause"), ts.workflows.ActivityHeartbeat)
+		ts.startWorkflowOptions("test-activity-pause"), ts.workflows.ActivityHeartbeatPause)
 	ts.NoError(err)
 	// Wait for the workflow to finish
 	var result string
@@ -617,6 +617,28 @@ func (ts *IntegrationTestSuite) TestActivityPause() {
 	ts.NotNil(desc.GetPendingActivities()[0].GetLastFailure())
 	ts.Equal(desc.GetPendingActivities()[0].GetLastFailure().GetMessage(), "activity paused")
 	ts.True(desc.GetPendingActivities()[0].GetPaused())
+}
+
+func (ts *IntegrationTestSuite) TestActivityReset() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	// Run ActivityHeartbeat workflow, this workflow will call
+	// ActivityToBeReset activity twice, the first call will test resetting an activity successfully
+	// and the second call will test completing the activity after it has been reset
+	run, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions("test-activity-reset"), ts.workflows.ActivityHeartbeatReset)
+	ts.NoError(err)
+	// Wait for the workflow to finish
+	var result []string
+	err = run.Get(ctx, &result)
+	ts.NoError(err)
+	// Verify that the activity was called three times:
+	// - completeOnReset=false: two calls due to reset/retry
+	// - completeOnReset=true: single call to due completion
+	expectedActivities := []string{"ActivityToBeReset", "ActivityToBeReset", "ActivityToBeReset"}
+	ts.EqualValues(expectedActivities, ts.activities.invoked())
+	ts.Equal("hb details? true, attempts: 2, details: heartbeat-details", result[0])
+	ts.Equal("I am canceled by Reset", result[1])
 }
 
 func (ts *IntegrationTestSuite) TestContinueAsNew() {
@@ -6616,7 +6638,7 @@ func (ts *IntegrationTestSuite) TestNoVersioningBehaviorPanics() {
 			UseVersioning: true,
 			Version: worker.WorkerDeploymentVersion{
 				DeploymentName: seriesName,
-				BuildId:        "1.0",
+				BuildID:        "1.0",
 			},
 			// No DefaultVersioningBehavior
 		},
@@ -7764,7 +7786,7 @@ func (ts *IntegrationTestSuite) TestGrpcMessageTooLarge() {
 		ts.Fail("Workflow task failed event not found in history")
 	}
 
-	veryLargeData := strings.Repeat("Very Large Data ", 500_000) // circa 8MB, double the default 4MB limit
+	veryLargeData := slices.Repeat([]byte{1}, 8_000_000) // double the default 4MB limit
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -7777,16 +7799,16 @@ func (ts *IntegrationTestSuite) TestGrpcMessageTooLarge() {
 		if success {
 			return workflow.ExecuteActivity(ctx, activityFn, veryLargeData).Get(ctx, nil)
 		} else {
-			return errors.New(veryLargeData)
+			return temporal.NewApplicationError("We should not see this error", "", veryLargeData)
 		}
 	}
 
 	failureInQueryTaskWorkflowFn := func(ctx workflow.Context) error {
-		return workflow.SetQueryHandler(ctx, "too-large-query", func(success bool) (string, error) {
+		return workflow.SetQueryHandler(ctx, "too-large-query", func(success bool) ([]byte, error) {
 			if success {
 				return veryLargeData, nil
 			} else {
-				return "", errors.New(veryLargeData)
+				return nil, temporal.NewApplicationError("We should not see this error", "", veryLargeData)
 			}
 		})
 	}
@@ -7821,6 +7843,6 @@ func (ts *IntegrationTestSuite) TestGrpcMessageTooLarge() {
 		ts.NoError(run.Get(ctx, nil))
 		_, err = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "too-large-query", false)
 		ts.Error(err)
-		ts.Contains(err.Error(), "grpc: received message larger than max")
+		ts.Contains(err.Error(), "message larger than max")
 	})
 }

@@ -31,6 +31,19 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
+// OperationInfo contains information about a currently executing Nexus operation.
+type OperationInfo = internal.NexusOperationInfo
+
+// IsNexusOperation checks if the context is a Nexus operation context.
+func IsNexusOperation(ctx context.Context) bool {
+	return internal.IsNexusOperation(ctx)
+}
+
+// GetOperationInfo returns information about the currently executing Nexus operation.
+func GetOperationInfo(ctx context.Context) OperationInfo {
+	return internal.GetNexusOperationInfo(ctx)
+}
+
 // GetMetricsHandler returns a metrics handler to be used in a Nexus operation's context.
 func GetMetricsHandler(ctx context.Context) metrics.Handler {
 	return internal.GetNexusOperationMetricsHandler(ctx)
@@ -174,7 +187,6 @@ func (o *workflowRunOperation[I, O]) Start(
 		nexus.AddHandlerLinks(ctx, handle.link())
 		return &nexus.HandlerStartOperationResultAsync{
 			OperationToken: handle.token(),
-			OperationID:    handle.token(),
 		}, nil
 	}
 
@@ -191,7 +203,6 @@ func (o *workflowRunOperation[I, O]) Start(
 	nexus.AddHandlerLinks(ctx, handle.link())
 	return &nexus.HandlerStartOperationResultAsync{
 		OperationToken: handle.token(),
-		OperationID:    handle.token(),
 	}, nil
 }
 
@@ -310,8 +321,8 @@ func ExecuteUntypedWorkflow[R any](
 			nexusOptions.CallbackHeader = make(nexus.Header)
 		}
 
-		//lint:ignore SA1019 this field is expected to be populated by servers older than 1.27.0.
-		nexusOptions.CallbackHeader.Set(nexus.HeaderOperationID, encodedToken)
+		// This field is expected to be populated by servers older than 1.27.0.
+		nexusOptions.CallbackHeader.Set("nexus-operation-id", encodedToken)
 		nexusOptions.CallbackHeader.Set(nexus.HeaderOperationToken, encodedToken)
 		internal.SetCallbacksOnStartWorkflowOptions(&startWorkflowOptions, []*common.Callback{
 			{

@@ -168,7 +168,7 @@ func (c *ClientConfigTLS) toTLSConfig() (*tls.Config, error) {
 			if serverCAData, err = os.ReadFile(c.ServerCACertPath); err != nil {
 				return nil, fmt.Errorf("failed reading server CA cert path: %w", err)
 			}
-		} else if c.ServerCACertPath == "" {
+		} else if c.ServerCACertPath != "" {
 			return nil, fmt.Errorf("cannot have server CA cert path with data")
 		}
 		if !pool.AppendCertsFromPEM(serverCAData) {

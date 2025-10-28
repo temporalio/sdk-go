@@ -49,6 +49,11 @@ var (
 	//
 	// WARNING: Activity pause is currently experimental
 	ErrActivityPaused = errors.New("activity paused")
+
+	// ErrActivityReset is returned from an activity heartbeat or the cause of an activity's context to indicate that the activity has been reset.
+	//
+	// WARNING: Activity reset is currently experimental
+	ErrActivityReset = errors.New("activity reset")
 )
 
 type (
@@ -556,8 +561,8 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		identity:                  params.Identity,
 		workerBuildID:             params.getBuildID(),
 		useBuildIDForVersioning:   params.UseBuildIDForVersioning,
-		workerDeploymentVersion:   params.WorkerDeploymentVersion,
-		defaultVersioningBehavior: params.DefaultVersioningBehavior,
+		workerDeploymentVersion:   params.DeploymentOptions.Version,
+		defaultVersioningBehavior: params.DeploymentOptions.DefaultVersioningBehavior,
 		enableLoggingInReplay:     params.EnableLoggingInReplay,
 		registry:                  registry,
 		workflowPanicPolicy:       params.WorkflowPanicPolicy,
@@ -1837,6 +1842,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		if err != nil {
 			queryCompletedRequest.CompletedType = enumspb.QUERY_RESULT_TYPE_FAILED
 			queryCompletedRequest.ErrorMessage = err.Error()
+			queryCompletedRequest.Failure = wth.failureConverter.ErrorToFailure(err)
 		} else {
 			queryCompletedRequest.CompletedType = enumspb.QUERY_RESULT_TYPE_ANSWERED
 			queryCompletedRequest.QueryResult = result
@@ -2020,8 +2026,8 @@ func newActivityTaskHandlerWithCustomProvider(
 	activityProvider activityProvider,
 ) ActivityTaskHandler {
 	seriesName := ""
-	if (params.WorkerDeploymentVersion != WorkerDeploymentVersion{}) {
-		seriesName = params.WorkerDeploymentVersion.DeploymentName
+	if (params.DeploymentOptions.Version != WorkerDeploymentVersion{}) {
+		seriesName = params.DeploymentOptions.Version.DeploymentName
 	}
 	return &activityTaskHandlerImpl{
 		taskQueueName:                    params.TaskQueue,
@@ -2049,7 +2055,7 @@ func newActivityTaskHandlerWithCustomProvider(
 		},
 		workerDeploymentOptions: workerDeploymentOptionsToProto(
 			params.UseBuildIDForVersioning,
-			params.WorkerDeploymentVersion,
+			params.DeploymentOptions.Version,
 		),
 	}
 }
@@ -2155,8 +2161,8 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 	case nil:
 		// No error, do nothing.
 	default:
-		if errors.Is(err, ErrActivityPaused) {
-			// We are asked to pause. inform the activity about cancellation through context.
+		if errors.Is(err, ErrActivityPaused) || errors.Is(err, ErrActivityReset) {
+			// We are asked to pause/reset. inform the activity about cancellation through context.
 			i.cancelHandler(err)
 			isActivityCanceled = true
 		}
@@ -2303,7 +2309,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 
 	// Cancels that don't originate from the server will have separate cancel reasons, like
 	// ErrWorkerShutdown or ErrActivityPaused
-	isActivityCanceled := ctx.Err() == context.Canceled && errors.Is(context.Cause(ctx), &CanceledError{})
+	isActivityCanceled := ctx.Err() == context.Canceled && IsCanceledError(context.Cause(ctx))
 
 	dlCancelFunc()
 	if <-ctx.Done(); ctx.Err() == context.DeadlineExceeded {
@@ -2414,6 +2420,8 @@ func recordActivityHeartbeat(ctx context.Context, service workflowservice.Workfl
 			return NewCanceledError()
 		} else if heartbeatResponse.GetActivityPaused() {
 			return ErrActivityPaused
+		} else if heartbeatResponse.GetActivityReset() {
+			return ErrActivityReset
 		}
 	}
 	return err

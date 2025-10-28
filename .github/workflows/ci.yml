@@ -20,7 +20,7 @@ jobs:
             # We only want to check docker compose on a single target
             testDockerCompose: true
           - os: macos-intel
-            runsOn: macos-13
+            runsOn: macos-15-intel
           - os: macos-arm
             runsOn: macos-14
     runs-on: ${{ matrix.runsOn || matrix.os }}
@@ -127,3 +127,4 @@ jobs:
       go-repo-path: ${{github.event.pull_request.head.repo.full_name}}
       version: ${{github.event.pull_request.head.ref}}
       version-is-repo-ref: true
+      features-repo-ref: "build-id-breaking-change"

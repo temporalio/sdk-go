@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"go.opentelemetry.io/otel/baggage"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -105,6 +106,49 @@ func (a *Activities) ActivityToBePaused(ctx context.Context, completeOnPause boo
 	}
 }
 
+func (a *Activities) ActivityToBeReset(ctx context.Context, completeOnReset bool) (string, error) {
+	a.append("ActivityToBeReset")
+	info := activity.GetInfo(ctx)
+	// Activity only has heartbeat details past attempt 1 (i.e. it has retried).
+	if activity.HasHeartbeatDetails(ctx) {
+		var hbDetails string
+		activity.GetHeartbeatDetails(ctx, &hbDetails)
+		return fmt.Sprintf("hb details? %t, attempts: %d, details: %s",
+			activity.HasHeartbeatDetails(ctx),
+			activity.GetInfo(ctx).Attempt,
+			hbDetails,
+		), nil
+	}
+
+	go func() {
+		// Reset the activity
+		activity.GetClient(ctx).WorkflowService().ResetActivity(context.Background(), &workflowservice.ResetActivityRequest{
+			Namespace: info.WorkflowNamespace,
+			Execution: &commonpb.WorkflowExecution{
+				WorkflowId: info.WorkflowExecution.ID,
+				RunId:      info.WorkflowExecution.RunID,
+			},
+			Activity: &workflowservice.ResetActivityRequest_Id{
+				Id: info.ActivityID,
+			},
+		})
+	}()
+	for {
+		select {
+		case <-time.After(1 * time.Second):
+			activity.RecordHeartbeat(ctx, "heartbeat-details")
+		case <-ctx.Done():
+			if errors.Is(context.Cause(ctx), activity.ErrActivityReset) {
+				if completeOnReset {
+					return "I am canceled by Reset", nil
+				}
+				return "", context.Cause(ctx)
+			}
+			return "I am canceled by Done", nil
+		}
+	}
+}
+
 func (a *Activities) EmptyActivity(ctx context.Context) error {
 	a.append("EmptyActivity")
 	return nil
@@ -192,7 +236,7 @@ func (a *Activities) failNTimes(_ context.Context, times int, id int) error {
 	return errFailOnPurpose
 }
 
-func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQueue, wfType string, isLocalActivity bool, scheduleToCloseTimeout, startToCloseTimeout time.Duration) error {
+func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQueue, wfType string, isLocalActivity bool, scheduleToCloseTimeout, startToCloseTimeout time.Duration, retryPolicy *temporal.RetryPolicy) error {
 	a.append("inspectActivityInfo")
 	if !activity.IsActivity(ctx) {
 		return fmt.Errorf("expected InActivity to return %v but got %v", true, activity.IsActivity(ctx))
@@ -225,6 +269,9 @@ func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQue
 	}
 	if info.StartToCloseTimeout != startToCloseTimeout {
 		return fmt.Errorf("expected StartToCloseTimeout %v but got %v", startToCloseTimeout, info.StartToCloseTimeout)
+	}
+	if !cmp.Equal(info.RetryPolicy, retryPolicy) {
+		return fmt.Errorf("expected RetryPolicy %v but got %v", retryPolicy, info.RetryPolicy)
 	}
 	return nil
 }

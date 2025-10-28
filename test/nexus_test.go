@@ -38,6 +38,7 @@ import (
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/temporalnexus"
+	"go.temporal.io/sdk/test/nexusclient"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
@@ -123,13 +124,13 @@ func newTestContext(t *testing.T, ctx context.Context, optionFuncs ...testContex
 	return tc
 }
 
-func (tc *testContext) newNexusClient(t *testing.T, service string) *nexus.HTTPClient {
+func (tc *testContext) newNexusClient(t *testing.T, service string) *nexusclient.HTTPClient {
 	httpClient := http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: tc.testConfig.TLS,
 		},
 	}
-	nc, err := nexus.NewHTTPClient(nexus.HTTPClientOptions{
+	nc, err := nexusclient.NewHTTPClient(nexusclient.HTTPClientOptions{
 		BaseURL: tc.endpointBaseURL,
 		Service: service,
 		HTTPCaller: func(r *http.Request) (*http.Response, error) {
@@ -261,7 +262,7 @@ func TestNexusSyncOperation(t *testing.T) {
 
 	t.Run("ok", func(t *testing.T) {
 		tc.metricsHandler.Clear()
-		result, err := nexus.ExecuteOperation(ctx, nc, syncOp, "ok", nexus.ExecuteOperationOptions{
+		result, err := nexusclient.ExecuteOperation(ctx, nc, syncOp, "ok", nexus.StartOperationOptions{
 			RequestID:      "test-request-id",
 			Header:         nexus.Header{"test": "ok"},
 			CallbackURL:    "http://localhost/test",
@@ -279,7 +280,7 @@ func TestNexusSyncOperation(t *testing.T) {
 
 	t.Run("fail", func(t *testing.T) {
 		tc.metricsHandler.Clear()
-		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "fail", nexus.ExecuteOperationOptions{})
+		_, err := nexusclient.ExecuteOperation(ctx, nc, syncOp, "fail", nexus.StartOperationOptions{})
 		var opErr *nexus.OperationError
 		require.ErrorAs(t, err, &opErr)
 		require.Equal(t, nexus.OperationStateFailed, opErr.State)
@@ -295,7 +296,7 @@ func TestNexusSyncOperation(t *testing.T) {
 
 	t.Run("fmt-errorf", func(t *testing.T) {
 		tc.metricsHandler.Clear()
-		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "fmt-errorf", nexus.ExecuteOperationOptions{})
+		_, err := nexusclient.ExecuteOperation(ctx, nc, syncOp, "fmt-errorf", nexus.StartOperationOptions{})
 		var handlerErr *nexus.HandlerError
 		require.ErrorAs(t, err, &handlerErr)
 		require.Equal(t, nexus.HandlerErrorTypeInternal, handlerErr.Type)
@@ -310,7 +311,7 @@ func TestNexusSyncOperation(t *testing.T) {
 	})
 
 	t.Run("handlererror", func(t *testing.T) {
-		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "handlererror", nexus.ExecuteOperationOptions{})
+		_, err := nexusclient.ExecuteOperation(ctx, nc, syncOp, "handlererror", nexus.StartOperationOptions{})
 		var handlerErr *nexus.HandlerError
 		require.ErrorAs(t, err, &handlerErr)
 		require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
@@ -325,7 +326,7 @@ func TestNexusSyncOperation(t *testing.T) {
 	})
 
 	t.Run("already-started", func(t *testing.T) {
-		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "already-started", nexus.ExecuteOperationOptions{})
+		_, err := nexusclient.ExecuteOperation(ctx, nc, syncOp, "already-started", nexus.StartOperationOptions{})
 		var handlerErr *nexus.HandlerError
 		require.ErrorAs(t, err, &handlerErr)
 		require.Equal(t, nexus.HandlerErrorTypeInternal, handlerErr.Type)
@@ -343,7 +344,7 @@ func TestNexusSyncOperation(t *testing.T) {
 	})
 
 	t.Run("retryable-application-error", func(t *testing.T) {
-		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "retryable-application-error", nexus.ExecuteOperationOptions{})
+		_, err := nexusclient.ExecuteOperation(ctx, nc, syncOp, "retryable-application-error", nexus.StartOperationOptions{})
 		var handlerErr *nexus.HandlerError
 		require.ErrorAs(t, err, &handlerErr)
 		require.Equal(t, nexus.HandlerErrorTypeInternal, handlerErr.Type)
@@ -358,7 +359,7 @@ func TestNexusSyncOperation(t *testing.T) {
 	})
 
 	t.Run("non-retryable-application-error", func(t *testing.T) {
-		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "non-retryable-application-error", nexus.ExecuteOperationOptions{})
+		_, err := nexusclient.ExecuteOperation(ctx, nc, syncOp, "non-retryable-application-error", nexus.StartOperationOptions{})
 		var handlerErr *nexus.HandlerError
 		require.ErrorAs(t, err, &handlerErr)
 		require.Equal(t, nexus.HandlerErrorTypeInternal, handlerErr.Type)
@@ -376,7 +377,7 @@ func TestNexusSyncOperation(t *testing.T) {
 	})
 
 	t.Run("panic", func(t *testing.T) {
-		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "panic", nexus.ExecuteOperationOptions{})
+		_, err := nexusclient.ExecuteOperation(ctx, nc, syncOp, "panic", nexus.StartOperationOptions{})
 		var handlerErr *nexus.HandlerError
 		require.ErrorAs(t, err, &handlerErr)
 		require.Equal(t, nexus.HandlerErrorTypeInternal, handlerErr.Type)
@@ -391,7 +392,7 @@ func TestNexusSyncOperation(t *testing.T) {
 	})
 
 	t.Run("timeout", func(t *testing.T) {
-		_, err := nexus.ExecuteOperation(ctx, nc, syncOp, "timeout", nexus.ExecuteOperationOptions{
+		_, err := nexusclient.ExecuteOperation(ctx, nc, syncOp, "timeout", nexus.StartOperationOptions{
 			// Force shorter timeout to speed up the test and get a response back.
 			Header: nexus.Header{nexus.HeaderRequestTimeout: "300ms"},
 		})
@@ -435,7 +436,7 @@ func TestNexusWorkflowRunOperation(t *testing.T) {
 	}
 
 	workflowID := "nexus-handler-workflow-" + uuid.NewString()
-	result, err := nexus.StartOperation(ctx, nc, workflowOp, workflowID, nexus.StartOperationOptions{
+	result, err := nexusclient.StartOperation(ctx, nc, workflowOp, workflowID, nexus.StartOperationOptions{
 		CallbackURL:    "http://localhost/test",
 		CallbackHeader: nexus.Header{"test": "ok"},
 		Links:          []nexus.Link{temporalnexus.ConvertLinkWorkflowEventToNexusLink(link)},
@@ -537,6 +538,54 @@ func TestOperationSummary(t *testing.T) {
 	require.NoError(t, converter.GetDefaultDataConverter().FromPayload(
 		nexusScheduledWorkflowEvent.UserMetadata.Summary, &str))
 	require.Equal(t, "nexus operation summary", str)
+}
+
+func TestOperationInfo(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
+	defer cancel()
+	tc := newTestContext(t, ctx)
+
+	op := nexus.NewSyncOperation("op", func(ctx context.Context, outcome string, o nexus.StartOperationOptions) (string, error) {
+		info := temporalnexus.GetOperationInfo(ctx)
+		return info.Namespace + ":" + info.TaskQueue, nil
+	})
+
+	wf := func(ctx workflow.Context, outcome string) (string, error) {
+		c := workflow.NewNexusClient(tc.endpoint, "test")
+		fut := c.ExecuteOperation(ctx, op, outcome, workflow.NexusOperationOptions{})
+		var res string
+
+		var exec workflow.NexusOperationExecution
+		if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil && outcome == "successful" {
+			return "", fmt.Errorf("expected start to succeed: %w", err)
+		}
+		if exec.OperationToken != "" {
+			return "", fmt.Errorf("expected empty operation ID")
+		}
+		if err := fut.Get(ctx, &res); err != nil {
+			return "", err
+		}
+		return res, nil
+	}
+
+	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
+	service := nexus.NewService("test")
+	require.NoError(t, service.Register(op))
+	w.RegisterNexusService(service)
+	w.RegisterWorkflow(wf)
+	require.NoError(t, w.Start())
+	t.Cleanup(w.Stop)
+
+	run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		TaskQueue: tc.taskQueue,
+		// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
+		// timeout to speed up the attempts.
+		WorkflowTaskTimeout: time.Second,
+	}, wf, "successful")
+	require.NoError(t, err)
+	var result string
+	require.NoError(t, run.Get(ctx, &result))
+	require.Equal(t, tc.testConfig.Namespace+":"+tc.taskQueue, result)
 }
 
 func TestSyncOperationFromWorkflow(t *testing.T) {
@@ -1508,13 +1557,13 @@ func (o *manualAsyncOp) ErrorToFailure(err error) nexus.Failure {
 
 func (o *manualAsyncOp) Start(ctx context.Context, input nexus.NoValue, options nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[nexus.NoValue], error) {
 	// Complete before start.
-	completion, err := nexus.NewOperationCompletionUnsuccessful(nexus.NewFailedOperationError(errors.New("async failure")), nexus.OperationCompletionUnsuccessfulOptions{
+	completion, err := nexusclient.NewOperationCompletionUnsuccessful(nexus.NewOperationFailedError("async failure"), nexusclient.OperationCompletionUnsuccessfulOptions{
 		FailureConverter: o,
 	})
 	if err != nil {
 		return nil, err
 	}
-	req, err := nexus.NewCompletionHTTPRequest(ctx, options.CallbackURL, completion)
+	req, err := nexusclient.NewCompletionHTTPRequest(ctx, options.CallbackURL, completion)
 	if err != nil {
 		return nil, err
 	}
@@ -1526,7 +1575,7 @@ func (o *manualAsyncOp) Start(ctx context.Context, input nexus.NoValue, options 
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, nexus.NewFailedOperationError(fmt.Errorf("failed to post completion, got status: %v", resp.Status))
+		return nil, nexus.OperationFailedErrorf("failed to post completion, got status: %v", resp.Status)
 	}
 	// This result will be ignored.
 	return &nexus.HandlerStartOperationResultAsync{OperationToken: "dont-care"}, nil
