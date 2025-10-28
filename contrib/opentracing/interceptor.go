@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go.temporal.io/sdk/temporal"
 
 	"github.com/opentracing/opentracing-go"
 
@@ -165,19 +164,9 @@ type tracerSpanRef struct{ opentracing.SpanContext }
 type tracerSpan struct{ opentracing.Span }
 
 func (t *tracerSpan) Finish(opts *interceptor.TracerFinishSpanOptions) {
-	if opts.Error != nil && !isBenignApplicationError(opts.Error) {
+	if opts.Error != nil {
 		// Standard tag that can be bridged to OpenTelemetry
 		t.SetTag("error", "true")
 	}
 	t.Span.Finish()
-}
-
-func isBenignApplicationError(err error) bool {
-	var appErr *temporal.ApplicationError
-	if temporal.IsApplicationError(err) {
-		if errors.As(err, &appErr) {
-			return appErr.Category() == temporal.ApplicationErrorCategoryBenign
-		}
-	}
-	return false
 }

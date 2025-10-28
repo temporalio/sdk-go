@@ -50,17 +50,20 @@ func spanChildren(spans []sdktrace.ReadOnlySpan, parentID trace.SpanID) (ret []*
 func TestSpanKind(t *testing.T) {
 	tests := []struct {
 		operation    string
-		outbound     bool
+		toHeader     bool
+		fromHeader   bool
 		expectedKind trace.SpanKind
 	}{
 		{
 			operation:    "StartWorkflow",
-			outbound:     true,
+			toHeader:     true,
+			fromHeader:   false,
 			expectedKind: trace.SpanKindClient,
 		},
 		{
 			operation:    "RunWorkflow",
-			outbound:     false,
+			toHeader:     false,
+			fromHeader:   true,
 			expectedKind: trace.SpanKindServer,
 		},
 	}
@@ -74,9 +77,10 @@ func TestSpanKind(t *testing.T) {
 			require.NoError(t, err)
 
 			span, err := tracer.StartSpan(&interceptor.TracerStartSpanOptions{
-				Operation: tt.operation,
-				Name:      "test-span",
-				Outbound:  tt.outbound,
+				Operation:  tt.operation,
+				Name:       "test-span",
+				ToHeader:   tt.toHeader,
+				FromHeader: tt.fromHeader,
 			})
 			require.NoError(t, err)
 
@@ -87,8 +91,8 @@ func TestSpanKind(t *testing.T) {
 
 			foundSpan := spans[0]
 			assert.Equal(t, tt.expectedKind, foundSpan.SpanKind(),
-				"Expected span kind %v but got %v for operation %s (outbound=%v)",
-				tt.expectedKind, foundSpan.SpanKind(), tt.operation, tt.outbound)
+				"Expected span kind %v but got %v for operation %s",
+				tt.expectedKind, foundSpan.SpanKind(), tt.operation)
 		})
 	}
 }

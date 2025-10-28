@@ -126,6 +126,14 @@ type TracerStartSpanOptions struct {
 	// Tags are a set of span tags.
 	Tags map[string]string
 
+	// FromHeader is used internally, not by tracer implementations, to determine
+	// whether the parent span can be retrieved from the Temporal header.
+	FromHeader bool
+
+	// ToHeader is used internally, not by tracer implementations, to determine
+	// whether the span should be placed on the Temporal header.
+	ToHeader bool
+
 	// IdempotencyKey may optionally be used by tracing implementations to generate
 	// deterministic span IDs.
 	//
@@ -139,14 +147,6 @@ type TracerStartSpanOptions struct {
 	// IdempotencyKey should be treated as opaque data by Tracer implementations.
 	// Do not attempt to parse it, as the format is subject to change.
 	IdempotencyKey string
-
-	// Outbound is true if the span is outbound and false if it is inbound.
-	//
-	// This is used internally by the interceptor to determine whether to read
-	// from the header or write to the header, where outbound means the span should
-	// be placed on the Temporal header, and inbound means the parent span can be
-	// retrieved from the Temporal header.
-	Outbound bool
 }
 
 // TracerSpanRef represents a span reference such as a parent.
@@ -230,8 +230,8 @@ func (t *tracingClientOutboundInterceptor) CreateSchedule(ctx context.Context, i
 	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
 		Operation: "CreateSchedule",
 		Name:      in.Options.ID,
+		ToHeader:  true,
 		Time:      time.Now(),
-		Outbound:  true,
 	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
 	if err != nil {
 		return nil, err
@@ -253,8 +253,8 @@ func (t *tracingClientOutboundInterceptor) ExecuteWorkflow(
 		Operation: "StartWorkflow",
 		Name:      in.WorkflowType,
 		Tags:      map[string]string{workflowIDTagKey: in.Options.ID},
+		ToHeader:  true,
 		Time:      time.Now(),
-		Outbound:  true,
 	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
 	if err != nil {
 		return nil, err
@@ -277,8 +277,8 @@ func (t *tracingClientOutboundInterceptor) SignalWorkflow(ctx context.Context, i
 		Operation: "SignalWorkflow",
 		Name:      in.SignalName,
 		Tags:      map[string]string{workflowIDTagKey: in.WorkflowID},
+		ToHeader:  true,
 		Time:      time.Now(),
-		Outbound:  true,
 	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
 	if err != nil {
 		return err
@@ -300,7 +300,7 @@ func (t *tracingClientOutboundInterceptor) SignalWithStartWorkflow(
 		Operation: "SignalWithStartWorkflow",
 		Name:      in.WorkflowType,
 		Tags:      map[string]string{workflowIDTagKey: in.Options.ID},
-		Outbound:  true,
+		ToHeader:  true,
 	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
 	if err != nil {
 		return nil, err
@@ -326,8 +326,8 @@ func (t *tracingClientOutboundInterceptor) QueryWorkflow(
 		Operation: "QueryWorkflow",
 		Name:      in.QueryType,
 		Tags:      map[string]string{workflowIDTagKey: in.WorkflowID},
+		ToHeader:  true,
 		Time:      time.Now(),
-		Outbound:  true,
 	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
 	if err != nil {
 		return nil, err
@@ -353,8 +353,8 @@ func (t *tracingClientOutboundInterceptor) UpdateWorkflow(
 		Operation: "UpdateWorkflow",
 		Name:      in.UpdateName,
 		Tags:      map[string]string{workflowIDTagKey: in.WorkflowID},
+		ToHeader:  true,
 		Time:      time.Now(),
-		Outbound:  true,
 	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
 	if err != nil {
 		return nil, err
@@ -380,8 +380,8 @@ func (t *tracingClientOutboundInterceptor) UpdateWithStartWorkflow(
 		Operation: "UpdateWithStartWorkflow",
 		Name:      in.UpdateOptions.UpdateName,
 		Tags:      map[string]string{workflowIDTagKey: in.UpdateOptions.WorkflowID, updateIDTagKey: in.UpdateOptions.UpdateID},
+		ToHeader:  true,
 		Time:      time.Now(),
-		Outbound:  true,
 	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
 	if err != nil {
 		return nil, err
@@ -432,8 +432,8 @@ func (t *tracingActivityInboundInterceptor) ExecuteActivity(
 			runIDTagKey:      info.WorkflowExecution.RunID,
 			activityIDTagKey: info.ActivityID,
 		},
-		Time:     info.StartedTime,
-		Outbound: false,
+		FromHeader: true,
+		Time:       info.StartedTime,
 	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
 	if err != nil {
 		return nil, err
@@ -482,9 +482,9 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteWorkflow(
 			workflowIDTagKey: t.info.WorkflowExecution.ID,
 			runIDTagKey:      t.info.WorkflowExecution.RunID,
 		},
+		FromHeader:     true,
 		Time:           t.info.WorkflowStartTime,
 		IdempotencyKey: t.newIdempotencyKey(),
-		Outbound:       false,
 	}, t.root.workflowHeaderReader(ctx), t.root.workflowHeaderWriter(ctx))
 	if err != nil {
 		return nil, err
@@ -511,9 +511,9 @@ func (t *tracingWorkflowInboundInterceptor) HandleSignal(ctx workflow.Context, i
 			workflowIDTagKey: info.WorkflowExecution.ID,
 			runIDTagKey:      info.WorkflowExecution.RunID,
 		},
+		FromHeader:     true,
 		Time:           time.Now(),
 		IdempotencyKey: t.newIdempotencyKey(),
-		Outbound:       false,
 	}, t.root.workflowHeaderReader(ctx), t.root.workflowHeaderWriter(ctx))
 	if err != nil {
 		return err
@@ -543,8 +543,8 @@ func (t *tracingWorkflowInboundInterceptor) HandleQuery(
 			workflowIDTagKey: info.WorkflowExecution.ID,
 			runIDTagKey:      info.WorkflowExecution.RunID,
 		},
-		Time:     time.Now(),
-		Outbound: false,
+		FromHeader: true,
+		Time:       time.Now(),
 		// We intentionally do not set IdempotencyKey here because queries are not recorded in
 		// workflow history. When the tracing interceptor's span counter is reset between workflow
 		// replays, old queries will not be processed which could result in idempotency key
@@ -580,8 +580,8 @@ func (t *tracingWorkflowInboundInterceptor) ValidateUpdate(
 			runIDTagKey:      info.WorkflowExecution.RunID,
 			updateIDTagKey:   currentUpdateInfo.ID,
 		},
-		Time:     time.Now(),
-		Outbound: false,
+		FromHeader: true,
+		Time:       time.Now(),
 		// We intentionally do not set IdempotencyKey here because validation is not run on
 		// replay. When the tracing interceptor's span counter is reset between workflow
 		// replays, the validator will not be processed which could result in impotency key
@@ -618,9 +618,9 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteUpdate(
 			runIDTagKey:      info.WorkflowExecution.RunID,
 			updateIDTagKey:   currentUpdateInfo.ID,
 		},
+		FromHeader:     true,
 		Time:           time.Now(),
 		IdempotencyKey: t.newIdempotencyKey(),
-		Outbound:       false,
 	}, t.root.workflowHeaderReader(ctx), t.root.workflowHeaderWriter(ctx))
 	if err != nil {
 		return nil, err
@@ -794,8 +794,8 @@ func (t *tracingWorkflowOutboundInterceptor) startNonReplaySpan(
 			workflowIDTagKey: info.WorkflowExecution.ID,
 			runIDTagKey:      info.WorkflowExecution.RunID,
 		},
+		ToHeader: true,
 		Time:     time.Now(),
-		Outbound: true,
 	}, t.root.workflowHeaderReader(ctx), headerWriter)
 	if err != nil {
 		return nopSpan{}, ctx, workflowFutureFromErr(ctx, err)
@@ -816,8 +816,8 @@ func (t *tracingNexusOperationInboundInterceptor) CancelOperation(ctx context.Co
 		Operation:  "RunCancelNexusOperationHandler",
 		Name:       info.Service + "/" + info.Operation,
 		DependedOn: true,
+		FromHeader: true,
 		Time:       time.Now(),
-		Outbound:   false,
 	}, t.root.nexusHeaderReader(input.Options.Header), t.root.headerWriter(ctx))
 	if err != nil {
 		return err
@@ -838,8 +838,8 @@ func (t *tracingNexusOperationInboundInterceptor) StartOperation(ctx context.Con
 		Operation:  "RunStartNexusOperationHandler",
 		Name:       info.Service + "/" + info.Operation,
 		DependedOn: true,
+		FromHeader: true,
 		Time:       time.Now(),
-		Outbound:   false,
 	}, t.root.nexusHeaderReader(input.Options.Header), t.root.headerWriter(ctx))
 	if err != nil {
 		return nil, err
@@ -888,7 +888,7 @@ func (t *tracingInterceptor) startSpan(
 	headerWriter func(span TracerSpan) error,
 ) (TracerSpan, error) {
 	// Get parent span from header if not already present and allowed
-	if options.Parent == nil && !options.Outbound {
+	if options.Parent == nil && options.FromHeader {
 		if span, err := headerReader(); err != nil && !t.options.AllowInvalidParentSpans {
 			return nil, err
 		} else if span != nil {
@@ -908,7 +908,7 @@ func (t *tracingInterceptor) startSpan(
 	}
 
 	// Put span in header if wanted
-	if options.Outbound {
+	if options.ToHeader {
 		if err := headerWriter(span); err != nil {
 			return nil, err
 		}

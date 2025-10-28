@@ -3,7 +3,6 @@ package opentelemetry
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"go.opentelemetry.io/otel"
@@ -198,8 +197,12 @@ func (t *tracer) StartSpan(opts *interceptor.TracerStartSpanOptions) (intercepto
 		}
 	}
 
+	if opts.ToHeader && opts.FromHeader {
+		return nil, fmt.Errorf("cannot set both ToHeader and FromHeader for span")
+	}
+
 	spanKind := trace.SpanKindServer
-	if opts.Outbound {
+	if opts.ToHeader {
 		spanKind = trace.SpanKindClient
 	}
 
@@ -248,6 +251,8 @@ type tracerSpan struct {
 }
 
 func (t *tracerSpan) Finish(opts *interceptor.TracerFinishSpanOptions) {
+	t.RecordError(opts.Error)
+
 	if opts.Error != nil && !isBenignApplicationError(opts.Error) {
 		t.SetStatus(codes.Error, opts.Error.Error())
 	}
@@ -255,13 +260,8 @@ func (t *tracerSpan) Finish(opts *interceptor.TracerFinishSpanOptions) {
 }
 
 func isBenignApplicationError(err error) bool {
-	var appErr *temporal.ApplicationError
-	if temporal.IsApplicationError(err) {
-		if errors.As(err, &appErr) {
-			return appErr.Category() == temporal.ApplicationErrorCategoryBenign
-		}
-	}
-	return false
+	appError, _ := err.(*temporal.ApplicationError)
+	return appError != nil && appError.Category() == temporal.ApplicationErrorCategoryBenign
 }
 
 type textMapCarrier map[string]string
