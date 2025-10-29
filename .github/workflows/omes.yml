@@ -4,8 +4,14 @@ on:
     branches:
       - master
 
+permissions:
+  contents: read
+
 jobs:
   omes-image-build:
+    permissions:
+      contents: read
+      packages: write
     uses: temporalio/omes/.github/workflows/docker-images.yml@main
     secrets: inherit
     with:
