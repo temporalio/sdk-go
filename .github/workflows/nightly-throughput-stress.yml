@@ -25,6 +25,9 @@ on:
         default: 420
         type: number
 
+permissions:
+  contents: read
+
 env:
   # Workflow configuration
   TEST_DURATION: ${{ inputs.duration || vars.NIGHTLY_TEST_DURATION || '6h' }}
@@ -42,6 +45,9 @@ jobs:
   throughput-stress:
     runs-on: ubuntu-latest-4-cores
     timeout-minutes: ${{ fromJSON(inputs.job_timeout_minutes || (vars.NIGHTLY_JOB_TIMEOUT_MINUTES || '420')) }}
+    permissions:
+      contents: read
+      actions: write
 
     steps:
       - name: Print test configuration
