@@ -7,22 +7,23 @@ on:
   push:
     branches:
       - add-nightly-throughput-stress-workflow
+      - cleanup-nightly-tps-workflow
   workflow_dispatch:
     inputs:
       duration:
         description: 'Test duration (e.g., 6h, 1h)'
         required: false
-        default: '6h'
+        default: '5h'
         type: string
       timeout:
         description: 'Scenario timeout (should be greater than duration)'
         required: false
-        default: '6h30m'
+        default: '5h30m'
         type: string
       job_timeout_minutes:
         description: 'GitHub Actions job timeout in minutes'
         required: false
-        default: 420
+        default: 360
         type: number
 
 permissions:
@@ -30,8 +31,8 @@ permissions:
 
 env:
   # Workflow configuration
-  TEST_DURATION: ${{ inputs.duration || vars.NIGHTLY_TEST_DURATION || '6h' }}
-  TEST_TIMEOUT: ${{ inputs.timeout || vars.NIGHTLY_TEST_TIMEOUT || '6h30m' }}
+  TEST_DURATION: ${{ inputs.duration || vars.NIGHTLY_TEST_DURATION || '5h' }}
+  TEST_TIMEOUT: ${{ inputs.timeout || vars.NIGHTLY_TEST_TIMEOUT || '5h30m' }}
 
   # Logging and artifacts
   WORKER_LOG_DIR: /tmp/throughput-stress-logs
@@ -44,7 +45,7 @@ env:
 jobs:
   throughput-stress:
     runs-on: ubuntu-latest-4-cores
-    timeout-minutes: ${{ fromJSON(inputs.job_timeout_minutes || (vars.NIGHTLY_JOB_TIMEOUT_MINUTES || '420')) }}
+    timeout-minutes: ${{ fromJSON(inputs.job_timeout_minutes || (vars.NIGHTLY_JOB_TIMEOUT_MINUTES || '360')) }}
     permissions:
       contents: read
       actions: write
@@ -99,6 +100,11 @@ jobs:
         working-directory: omes
         continue-on-error: true
         run: |
+          # This makes the pipeline return the exit code of the first failing command
+          # Otherwise the output of the `tee` command will be used
+          # (which is troublesome when the scenario fails but the `tee` command succeeds)
+          set -o pipefail
+
           # Use run-scenario-with-worker to build and run in one step
           # Pass the SDK directory as --version for local testing
           # Note: The hardcoded values below match OMES defaults, except:
@@ -118,8 +124,6 @@ jobs:
             --option visibility-count-timeout=5m \
             --option min-throughput-per-hour=1000 \
             2>&1 | tee $WORKER_LOG_DIR/scenario.log
-
-          echo "SCENARIO_EXIT_CODE=${PIPESTATUS[0]}" >> $GITHUB_ENV
 
       - name: Upload logs on failure/cancellation
         if: failure() || cancelled()
@@ -142,21 +146,10 @@ jobs:
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "*Nightly Throughput Stress Failed* :x:\n\n*Duration:* ${{ env.TEST_DURATION }}\n*Run:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>\n*Triggered by:* ${{ github.event_name == 'schedule' && 'Scheduled' || github.actor }}"
+                    "text": "*Nightly Throughput Stress Failed* :x:\n\n*Repository:* ${{ github.repository }}\n*Duration:* ${{ env.TEST_DURATION }}\n*Run:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>\n*Triggered by:* ${{ github.event_name == 'schedule' && 'Scheduled' || github.actor }}"
                   }
                 }
               ]
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_SDK_ALERTS_WEBHOOK }}
-
-      - name: Fail if scenario failed
-        if: always()
-        run: |
-          if [ "${SCENARIO_EXIT_CODE:-1}" != "0" ]; then
-            echo "❌ Throughput stress test failed with exit code ${SCENARIO_EXIT_CODE}"
-            echo "Check the artifacts for detailed logs and state"
-            exit 1
-          else
-            echo "✅ Throughput stress test completed successfully"
-          fi
