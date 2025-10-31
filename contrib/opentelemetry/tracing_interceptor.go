@@ -14,6 +14,7 @@ import (
 
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/log"
+	"go.temporal.io/sdk/temporal"
 )
 
 // DefaultTextMapPropagator is the default OpenTelemetry TextMapPropagator used
@@ -196,8 +197,17 @@ func (t *tracer) StartSpan(opts *interceptor.TracerStartSpanOptions) (intercepto
 		}
 	}
 
+	if opts.ToHeader && opts.FromHeader {
+		return nil, fmt.Errorf("cannot set both ToHeader and FromHeader for span")
+	}
+
+	spanKind := trace.SpanKindServer
+	if opts.ToHeader {
+		spanKind = trace.SpanKindClient
+	}
+
 	// Create span
-	span := t.options.SpanStarter(ctx, t.options.Tracer, opts.Operation+":"+opts.Name, trace.WithTimestamp(opts.Time))
+	span := t.options.SpanStarter(ctx, t.options.Tracer, opts.Operation+":"+opts.Name, trace.WithTimestamp(opts.Time), trace.WithSpanKind(spanKind))
 
 	// Set tags
 	if len(opts.Tags) > 0 {
@@ -241,10 +251,17 @@ type tracerSpan struct {
 }
 
 func (t *tracerSpan) Finish(opts *interceptor.TracerFinishSpanOptions) {
-	if opts.Error != nil {
+	t.RecordError(opts.Error)
+
+	if opts.Error != nil && !isBenignApplicationError(opts.Error) {
 		t.SetStatus(codes.Error, opts.Error.Error())
 	}
 	t.End()
+}
+
+func isBenignApplicationError(err error) bool {
+	appError, _ := err.(*temporal.ApplicationError)
+	return appError != nil && appError.Category() == temporal.ApplicationErrorCategoryBenign
 }
 
 type textMapCarrier map[string]string

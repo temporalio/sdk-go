@@ -2,8 +2,11 @@ package opentelemetry_test
 
 import (
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
@@ -11,6 +14,7 @@ import (
 	"go.temporal.io/sdk/contrib/opentelemetry"
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/interceptortest"
+	"go.temporal.io/sdk/temporal"
 )
 
 func TestSpanPropagation(t *testing.T) {
@@ -41,4 +45,110 @@ func spanChildren(spans []sdktrace.ReadOnlySpan, parentID trace.SpanID) (ret []*
 		}
 	}
 	return
+}
+
+func TestSpanKind(t *testing.T) {
+	tests := []struct {
+		operation    string
+		toHeader     bool
+		fromHeader   bool
+		expectedKind trace.SpanKind
+	}{
+		{
+			operation:    "StartWorkflow",
+			toHeader:     true,
+			fromHeader:   false,
+			expectedKind: trace.SpanKindClient,
+		},
+		{
+			operation:    "RunWorkflow",
+			toHeader:     false,
+			fromHeader:   true,
+			expectedKind: trace.SpanKindServer,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.operation, func(t *testing.T) {
+			rec := tracetest.NewSpanRecorder()
+			tracer, err := opentelemetry.NewTracer(opentelemetry.TracerOptions{
+				Tracer: sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec)).Tracer(""),
+			})
+			require.NoError(t, err)
+
+			span, err := tracer.StartSpan(&interceptor.TracerStartSpanOptions{
+				Operation:  tt.operation,
+				Name:       "test-span",
+				ToHeader:   tt.toHeader,
+				FromHeader: tt.fromHeader,
+			})
+			require.NoError(t, err)
+
+			span.Finish(&interceptor.TracerFinishSpanOptions{})
+
+			spans := rec.Ended()
+			require.Equal(t, len(spans), 1)
+
+			foundSpan := spans[0]
+			assert.Equal(t, tt.expectedKind, foundSpan.SpanKind(),
+				"Expected span kind %v but got %v for operation %s",
+				tt.expectedKind, foundSpan.SpanKind(), tt.operation)
+		})
+	}
+}
+
+func TestBenignErrorSpanStatus(t *testing.T) {
+	tests := []struct {
+		name         string
+		err          error
+		expectError  bool
+		expectStatus codes.Code
+	}{
+		{
+			name:         "benign application error should not set error status",
+			err:          temporal.NewApplicationErrorWithOptions("benign error", "TestType", temporal.ApplicationErrorOptions{Category: temporal.ApplicationErrorCategoryBenign}),
+			expectError:  false,
+			expectStatus: codes.Unset,
+		},
+		{
+			name:         "regular application error should set error status",
+			err:          temporal.NewApplicationError("regular error", "TestType"),
+			expectError:  true,
+			expectStatus: codes.Error,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := tracetest.NewSpanRecorder()
+			tracer, err := opentelemetry.NewTracer(opentelemetry.TracerOptions{
+				Tracer: sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec)).Tracer(""),
+			})
+			require.NoError(t, err)
+
+			span, err := tracer.StartSpan(&interceptor.TracerStartSpanOptions{
+				Operation: "TestOperation",
+				Name:      "TestSpan",
+				Time:      time.Now(),
+			})
+			require.NoError(t, err)
+
+			span.Finish(&interceptor.TracerFinishSpanOptions{
+				Error: tt.err,
+			})
+
+			// Check recorded spans
+			spans := rec.Ended()
+			require.Len(t, spans, 1)
+
+			recordedSpan := spans[0]
+			assert.Equal(t, tt.expectStatus, recordedSpan.Status().Code)
+
+			if tt.expectError {
+				assert.NotEmpty(t, recordedSpan.Status().Description)
+			} else {
+				assert.Empty(t, recordedSpan.Status().Description)
+			}
+		})
+	}
 }
