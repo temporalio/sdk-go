@@ -29,12 +29,19 @@ const (
 	// SDKFlagBlockedSelectorSignalReceive will cause a signal to not be lost
 	// when the Default path is blocked.
 	SDKFlagBlockedSelectorSignalReceive = 5
-	SDKFlagUnknown                      = math.MaxUint32
+	// SDKFlagMemoUserDCEncode will use the user data converter when encoding a memo. If user data converter fails,
+	// we will fallback onto the default data converter. If the default DC fails, the user DC error will be returned.
+	SDKFlagMemoUserDCEncode = 6
+	SDKFlagUnknown          = math.MaxUint32
 )
 
 // unblockSelectorSignal exists to allow us to configure the default behavior of
 // SDKFlagBlockedSelectorSignalReceive. This is primarily useful with tests.
 var unblockSelectorSignal = os.Getenv("UNBLOCK_SIGNAL_SELECTOR") != ""
+
+// memoUserDCEncode exists to allow us to configure the default behavior of
+// SDKFlagMemoUserDCEncode. This is primarily useful with tests.
+var memoUserDCEncode = os.Getenv("MEMO_USER_DC_ENCODE") != ""
 
 func sdkFlagFromUint(value uint32) sdkFlag {
 	switch value {
@@ -129,4 +136,8 @@ func (sf *sdkFlags) gatherNewSDKFlags() []sdkFlag {
 // For test use only.
 func SetUnblockSelectorSignal(unblockSignal bool) {
 	unblockSelectorSignal = unblockSignal
+}
+
+func SetMemoUserDCEncode(userEncode bool) {
+	memoUserDCEncode = userEncode
 }

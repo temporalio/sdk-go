@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	iconverter "go.temporal.io/sdk/internal/converter"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -218,4 +219,102 @@ func (s *scheduleClientTestSuite) TestIteratorError() {
 	event, err = iter.Next()
 	s.Nil(event)
 	s.NotNil(err)
+}
+
+func (s *scheduleClientTestSuite) TestCreateScheduleWorkflowMemoDataConverter() {
+	testFn := func() {
+		dc := iconverter.NewTestDataConverter()
+		s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+
+		memo := map[string]interface{}{
+			"testMemo": "memo value",
+		}
+		wf := func(ctx Context) string { panic("this is just a stub") }
+
+		options := ScheduleOptions{
+			ID: scheduleID,
+			Spec: ScheduleSpec{
+				CronExpressions: []string{"*"},
+			},
+			Action: &ScheduleWorkflowAction{
+				Workflow:                 wf,
+				ID:                       workflowID,
+				TaskQueue:                taskqueue,
+				WorkflowExecutionTimeout: timeoutInSeconds,
+				WorkflowTaskTimeout:      timeoutInSeconds,
+				Memo:                     memo,
+			},
+		}
+		createResp := &workflowservice.CreateScheduleResponse{}
+		s.service.EXPECT().CreateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResp, nil).
+			Do(func(_ interface{}, req *workflowservice.CreateScheduleRequest, _ ...interface{}) {
+				startWorkflow := req.Schedule.Action.GetStartWorkflow()
+				encoding := string(startWorkflow.Memo.Fields["testMemo"].Metadata[converter.MetadataEncoding])
+				s.Equal("binary/gob", encoding)
+			})
+
+		_, err := s.client.ScheduleClient().Create(context.Background(), options)
+		s.NoError(err)
+	}
+	s.T().Run("old behavior", func(t *testing.T) {
+		previousFlag := memoUserDCEncode
+		SetMemoUserDCEncode(false)
+		defer SetMemoUserDCEncode(previousFlag)
+		testFn()
+	})
+	s.T().Run("new behavior", func(t *testing.T) {
+		previousFlag := memoUserDCEncode
+		SetMemoUserDCEncode(true)
+		defer SetMemoUserDCEncode(previousFlag)
+		testFn()
+	})
+
+}
+
+func (s *scheduleClientTestSuite) TestCreateScheduleWorkflowMemoUserAndDefaultConverterFail() {
+	testFn := func() {
+		dc := failingMemoDataConverter{
+			delegate: converter.GetDefaultDataConverter(),
+		}
+		s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+
+		memo := map[string]interface{}{
+			"testMemo": make(chan int),
+		}
+		wf := func(ctx Context) string { panic("this is just a stub") }
+
+		options := ScheduleOptions{
+			ID: scheduleID,
+			Spec: ScheduleSpec{
+				CronExpressions: []string{"*"},
+			},
+			Action: &ScheduleWorkflowAction{
+				Workflow:                 wf,
+				ID:                       workflowID,
+				TaskQueue:                taskqueue,
+				WorkflowExecutionTimeout: timeoutInSeconds,
+				WorkflowTaskTimeout:      timeoutInSeconds,
+				Memo:                     memo,
+			},
+		}
+
+		s.service.EXPECT().CreateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+		_, err := s.client.ScheduleClient().Create(context.Background(), options)
+		s.Error(err)
+		s.ErrorContains(err, "failingMemoDataConverter memo encoding failed")
+	}
+
+	s.T().Run("old behavior", func(t *testing.T) {
+		previousFlag := memoUserDCEncode
+		SetMemoUserDCEncode(false)
+		defer SetMemoUserDCEncode(previousFlag)
+		testFn()
+	})
+	s.T().Run("new behavior", func(t *testing.T) {
+		previousFlag := memoUserDCEncode
+		SetMemoUserDCEncode(true)
+		defer SetMemoUserDCEncode(previousFlag)
+		testFn()
+	})
 }

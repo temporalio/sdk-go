@@ -213,13 +213,13 @@ func Test_MergeSearchAttributes(t *testing.T) {
 
 func Test_ValidateAndSerializeMemo(t *testing.T) {
 	t.Parallel()
-	_, err := validateAndSerializeMemo(nil, nil)
+	_, err := validateAndSerializeMemo(nil, nil, nil)
 	require.EqualError(t, err, "memo is empty")
 
 	attr := map[string]interface{}{
 		"JustKey": make(chan int),
 	}
-	_, err = validateAndSerializeMemo(attr, nil)
+	_, err = validateAndSerializeMemo(attr, nil, nil)
 	require.EqualError(
 		t,
 		err,
@@ -229,7 +229,7 @@ func Test_ValidateAndSerializeMemo(t *testing.T) {
 	attr = map[string]interface{}{
 		"key": 1,
 	}
-	memo, err := validateAndSerializeMemo(attr, nil)
+	memo, err := validateAndSerializeMemo(attr, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(memo.Fields))
 	var resp int
