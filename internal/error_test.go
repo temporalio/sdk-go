@@ -1020,6 +1020,22 @@ func Test_convertErrorToFailure_NexusHandlerError(t *testing.T) {
 		Cause:         errors.New("custom cause"),
 		RetryBehavior: nexus.HandlerErrorRetryBehaviorNonRetryable,
 	})
+
+	// FIXME(JWH) Failing
+	// error_test.go:1023:
+	//             Error Trace:    revised/temporal-sdk-go/internal/error_test.go:1023
+	//             Error:          Not equal:
+	//                             expected: "handler error (INTERNAL): custom cause"
+	//                             actual  : ""
+	//
+	//                             Diff:
+	//                             --- Expected
+	//                             +++ Actual
+	//                             @@ -1 +1 @@
+	//                             -handler error (INTERNAL): custom cause
+	//                             +
+	//             Test:           Test_convertErrorToFailure_NexusHandlerError
+
 	require.Equal("handler error (INTERNAL): custom cause", f.GetMessage())
 	require.Equal(string(nexus.HandlerErrorTypeInternal), f.GetNexusHandlerFailureInfo().Type)
 	require.Equal(enumspb.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_NON_RETRYABLE, f.GetNexusHandlerFailureInfo().RetryBehavior)

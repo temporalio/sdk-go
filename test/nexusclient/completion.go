@@ -182,7 +182,10 @@ func NewOperationCompletionUnsuccessful(opErr *nexus.OperationError, options Ope
 	if options.FailureConverter == nil {
 		options.FailureConverter = nexus.DefaultFailureConverter()
 	}
-	failure := options.FailureConverter.ErrorToFailure(opErr.Cause)
+	failure, err := options.FailureConverter.ErrorToFailure(opErr.Cause)
+	if err != nil {
+		return nil, err
+	}
 
 	return &OperationCompletionUnsuccessful{
 		Header:         make(nexus.Header),

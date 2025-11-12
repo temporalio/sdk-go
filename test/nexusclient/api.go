@@ -25,11 +25,26 @@ const (
 	headerRetryable          = "nexus-request-retryable"
 )
 
+const (
+	StatusUpstreamTimeout = 520
+)
+
 // Query param for passing a callback URL.
 const queryCallbackURL = "callback"
 
 // HTTP status code for failed operation responses.
 const statusOperationFailed = http.StatusFailedDependency
+
+type OperationInfo struct {
+	// ID of the operation.
+	//
+	// Deprecated: Use Token instead.
+	ID string `json:"id"`
+	// Token for the operation.
+	Token string `json:"token"`
+	// State of the operation.
+	State nexus.OperationState `json:"state"`
+}
 
 func isMediaTypeJSON(contentType string) bool {
 	if contentType == "" {
