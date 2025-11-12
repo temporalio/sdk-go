@@ -452,7 +452,8 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 	// Save them to restore later
 	deployments := params.DeploymentOptions
 	useBuildIDForVersioning := params.UseBuildIDForVersioning
-	params.DeploymentOptions = WorkerDeploymentOptions{}
+	// Disable versioning for activity worker within session, but still send deployment name for debug purpose
+	params.DeploymentOptions.UseVersioning = false
 	params.UseBuildIDForVersioning = false
 	activityWorker := newActivityWorker(client, params,
 		&workerOverrides{
