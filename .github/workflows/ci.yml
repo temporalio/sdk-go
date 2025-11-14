@@ -5,6 +5,10 @@ on:
     branches:
       - master
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   build-and-test:
     strategy:
@@ -23,6 +27,10 @@ jobs:
             runsOn: macos-15-intel
           - os: macos-arm
             runsOn: macos-14
+    permissions:
+      contents: read
+      checks: write
+      statuses: write
     runs-on: ${{ matrix.runsOn || matrix.os }}
     steps:
       - name: Checkout repository
