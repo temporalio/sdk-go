@@ -1704,8 +1704,10 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 		return err
 	}
 
-	if failedReq, ok := resp.(*workflowservice.RespondWorkflowTaskFailedRequest); ok {
-		return fmt.Errorf("replay workflow failed with failure: %v", failedReq.GetFailure())
+	if resp != nil {
+		if failedReq, ok := resp.rawRequest.(*workflowservice.RespondWorkflowTaskFailedRequest); ok {
+			return fmt.Errorf("replay workflow failed with failure: %v", failedReq.GetFailure())
+		}
 	}
 
 	if last.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED && last.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CONTINUED_AS_NEW {
@@ -1713,7 +1715,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 	}
 
 	if resp != nil {
-		completeReq, ok := resp.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+		completeReq, ok := resp.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 		if ok {
 			for _, d := range completeReq.Commands {
 				if d.GetCommandType() == enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION {

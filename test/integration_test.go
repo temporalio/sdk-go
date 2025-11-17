@@ -7846,3 +7846,62 @@ func (ts *IntegrationTestSuite) TestGrpcMessageTooLarge() {
 		ts.Contains(err.Error(), "message larger than max")
 	})
 }
+
+func (ts *IntegrationTestSuite) TestUnhandledCommandAndMetrics() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Unhandled command can be triggered by sending a signal to a workflow
+	// while it is running
+	var alreadySent bool
+	localActivityFn := func(ctx context.Context) error {
+		if alreadySent {
+			return nil
+		}
+		alreadySent = true
+
+		client := activity.GetClient(ctx)
+		info := activity.GetInfo(ctx)
+		return client.SignalWorkflow(ctx, info.WorkflowExecution.ID, info.WorkflowExecution.RunID, "some-signal", nil)
+	}
+	workflowFn := func(ctx workflow.Context) error {
+		ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+			ScheduleToCloseTimeout: 5 * time.Second,
+			RetryPolicy:            &temporal.RetryPolicy{MaximumAttempts: 1},
+		})
+		return workflow.ExecuteLocalActivity(ctx, localActivityFn).Get(ctx, nil)
+	}
+
+	// Run workflow
+	ts.worker.RegisterWorkflowWithOptions(workflowFn, workflow.RegisterOptions{Name: "unhandled-command"})
+	run, err := ts.client.ExecuteWorkflow(
+		ctx,
+		client.StartWorkflowOptions{ID: "unhandled-command-" + uuid.NewString(), TaskQueue: ts.taskQueueName},
+		"unhandled-command",
+	)
+	ts.NoError(err)
+	ts.NoError(run.Get(ctx, nil))
+
+	// We expect an unhandled command task failure event to exist
+	var foundUnhandledCommandFailure bool
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		ts.NoError(err)
+		if event.GetWorkflowTaskFailedEventAttributes().GetCause() == enumspb.WORKFLOW_TASK_FAILED_CAUSE_UNHANDLED_COMMAND {
+			foundUnhandledCommandFailure = true
+			break
+		}
+	}
+	ts.True(foundUnhandledCommandFailure)
+
+	// We only expect a single workflow completed metric. Before this issue, this
+	// would have been reported multiple times.
+	var workflowCompletedCount int
+	for _, cnt := range ts.metricsHandler.Counters() {
+		if cnt.Name == "temporal_workflow_completed" && cnt.Tags["workflow_type"] == "unhandled-command" {
+			workflowCompletedCount += int(cnt.Value())
+		}
+	}
+	ts.Equal(1, workflowCompletedCount)
+}
