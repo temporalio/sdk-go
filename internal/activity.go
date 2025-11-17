@@ -424,7 +424,6 @@ func newActivityContext(
 	envInterceptor.inboundInterceptor = envInterceptor
 	envInterceptor.outboundInterceptor = envInterceptor
 	ctx = context.WithValue(ctx, activityEnvInterceptorContextKey, envInterceptor)
-	ctx = context.WithValue(ctx, activityInterceptorContextKey, envInterceptor.outboundInterceptor)
 
 	// Intercept, run init, and put the new outbound interceptor on the context
 	for i := len(interceptors) - 1; i >= 0; i-- {
