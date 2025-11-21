@@ -7847,6 +7847,80 @@ func (ts *IntegrationTestSuite) TestGrpcMessageTooLarge() {
 	})
 }
 
+func (ts *IntegrationTestSuite) TestWorkflowCompletionMetrics() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	workflowFn := func(ctx workflow.Context, scenario string) (string, error) {
+		switch scenario {
+		case "success":
+			return "success", nil
+		case "failure":
+			return "", temporal.NewApplicationError("failure", "Failure")
+		case "wait-for-cancel":
+			return "", workflow.Await(ctx, func() bool { return false })
+		case "continue-as-new":
+			return "", workflow.NewContinueAsNewError(ctx, workflow.GetInfo(ctx).WorkflowType.Name, "success")
+		default:
+			panic("unknown scenario")
+		}
+	}
+	ts.worker.RegisterWorkflowWithOptions(workflowFn, workflow.RegisterOptions{Name: "workflow-completion"})
+
+	// Continue as new + success
+	run, err := ts.client.ExecuteWorkflow(
+		ctx, client.StartWorkflowOptions{TaskQueue: ts.taskQueueName},
+		"workflow-completion", "continue-as-new")
+	ts.NoError(err)
+	var res string
+	ts.NoError(run.Get(ctx, &res))
+	ts.Equal("success", res)
+
+	// Failure
+	run, err = ts.client.ExecuteWorkflow(
+		ctx, client.StartWorkflowOptions{TaskQueue: ts.taskQueueName},
+		"workflow-completion", "failure")
+	ts.NoError(err)
+	var appErr *temporal.ApplicationError
+	ts.ErrorAs(run.Get(ctx, nil), &appErr)
+
+	// Cancel
+	run, err = ts.client.ExecuteWorkflow(
+		ctx, client.StartWorkflowOptions{TaskQueue: ts.taskQueueName},
+		"workflow-completion", "wait-for-cancel")
+	ts.NoError(err)
+	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+	var cancelErr *temporal.CanceledError
+	ts.ErrorAs(run.Get(ctx, nil), &cancelErr)
+
+	// Check metrics
+	var compCount, failCount, contCount, cancelCount, latencyCount int
+	for _, cnt := range ts.metricsHandler.Counters() {
+		if cnt.Tags["workflow_type"] == "workflow-completion" {
+			switch cnt.Name {
+			case "temporal_workflow_completed":
+				compCount += int(cnt.Value())
+			case "temporal_workflow_failed":
+				failCount += int(cnt.Value())
+			case "temporal_workflow_continue_as_new":
+				contCount += int(cnt.Value())
+			case "temporal_workflow_canceled":
+				cancelCount += int(cnt.Value())
+			}
+		}
+	}
+	ts.Equal(1, compCount)
+	ts.Equal(1, failCount)
+	ts.Equal(1, contCount)
+	ts.Equal(1, cancelCount)
+	for _, tim := range ts.metricsHandler.Timers() {
+		if tim.Tags["workflow_type"] == "workflow-completion" && tim.Name == "temporal_workflow_endtoend_latency" {
+			latencyCount += int(tim.Count())
+		}
+	}
+	ts.Equal(4, latencyCount)
+}
+
 func (ts *IntegrationTestSuite) TestUnhandledCommandAndMetrics() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
