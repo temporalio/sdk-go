@@ -84,6 +84,7 @@ func (t *tracerImpl) Options() interceptor.TracerOptions {
 		HeaderKey:            headerKey,
 		DisableSignalTracing: t.opts.DisableSignalTracing,
 		DisableQueryTracing:  t.opts.DisableQueryTracing,
+		DisableUpdateTracing: t.opts.DisableUpdateTracing,
 	}
 }
 
@@ -103,7 +104,11 @@ func (t *tracerImpl) UnmarshalSpan(m map[string]string) (interceptor.TracerSpanR
 
 func (t *tracerImpl) MarshalSpan(span interceptor.TracerSpan) (map[string]string, error) {
 	carrier := tracer.TextMapCarrier{}
-	if err := tracer.Inject(span.(*tracerSpan).Context(), carrier); err != nil {
+	tSpan, ok := span.(*tracerSpan)
+	if !ok {
+		return nil, fmt.Errorf("expected *tracerSpan, got %T", span)
+	}
+	if err := tracer.Inject(tSpan.Context(), &carrier); err != nil {
 		return nil, err
 	}
 	return carrier, nil
@@ -118,7 +123,11 @@ func (t *tracerImpl) SpanFromContext(ctx context.Context) interceptor.TracerSpan
 }
 
 func (t *tracerImpl) ContextWithSpan(ctx context.Context, span interceptor.TracerSpan) context.Context {
-	return tracer.ContextWithSpan(ctx, span.(*tracerSpan).Span)
+	tSpan, ok := span.(*tracerSpan)
+	if !ok {
+		return ctx
+	}
+	return tracer.ContextWithSpan(ctx, tSpan.Span)
 }
 
 // SpanFromWorkflowContext extracts the DataDog Span object from the workflow context.
@@ -182,7 +191,7 @@ func (t *tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (int
 	for k, v := range options.Tags {
 		// TODO when custom span support is added we might have to revisit this
 		// Display Temporal tags in a nested group in Datadog APM
-		tagKey := "temporal." + strings.TrimPrefix(k, "temporal")
+		tagKey := fmt.Sprintf("temporal.%s", strings.TrimPrefix(k, "temporal."))
 		startOpts = append(startOpts, tracer.Tag(tagKey, v))
 	}
 
