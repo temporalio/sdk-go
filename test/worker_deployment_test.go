@@ -1072,14 +1072,13 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersion_AllowNoPollers() {
 	ts.Error(err)
 
 	// Setting Ramp with the AllowNoPollers flag succeeds when there are no pollers
-	response1, err := dHandle.SetRampingVersion(ctx, client.WorkerDeploymentSetRampingVersionOptions{
+	_, err = dHandle.SetRampingVersion(ctx, client.WorkerDeploymentSetRampingVersionOptions{
 		BuildID:        v1.BuildID,
 		ConflictToken:  nil,
 		Percentage:     float32(100.0),
 		AllowNoPollers: true,
 	})
 	ts.NoError(err)
-	ts.Nil(response1.PreviousVersion)
 
 	// Verify RoutingConfig is as expected
 	response2, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
@@ -1126,12 +1125,11 @@ func (ts *WorkerDeploymentTestSuite) TestSetManagerIdentity() {
 	ts.Equal("", response1.Info.ManagerIdentity)
 
 	// Set arbitrary ManagerIdentity
-	response2, err := dHandle.SetManagerIdentity(ctx, client.WorkerDeploymentSetManagerIdentityOptions{
+	_, err = dHandle.SetManagerIdentity(ctx, client.WorkerDeploymentSetManagerIdentityOptions{
 		ManagerIdentity: "foo",
 		ConflictToken:   response1.ConflictToken,
 	})
 	ts.NoError(err)
-	ts.Equal("", response2.PreviousManagerIdentity)
 
 	// Check that manager identity is set to foo
 	response3, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
@@ -1139,13 +1137,12 @@ func (ts *WorkerDeploymentTestSuite) TestSetManagerIdentity() {
 	ts.Equal("foo", response3.Info.ManagerIdentity)
 
 	// Set self as ManagerIdentity
-	response4, err := dHandle.SetManagerIdentity(ctx, client.WorkerDeploymentSetManagerIdentityOptions{
+	_, err = dHandle.SetManagerIdentity(ctx, client.WorkerDeploymentSetManagerIdentityOptions{
 		Self:          true,
 		Identity:      "my-identity",
 		ConflictToken: response3.ConflictToken,
 	})
 	ts.NoError(err)
-	ts.Equal("foo", response4.PreviousManagerIdentity)
 
 	// Check that manager identity is set to self
 	response5, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
@@ -1153,12 +1150,11 @@ func (ts *WorkerDeploymentTestSuite) TestSetManagerIdentity() {
 	ts.Equal("my-identity", response5.Info.ManagerIdentity)
 
 	// Unset ManagerIdentity
-	response6, err := dHandle.SetManagerIdentity(ctx, client.WorkerDeploymentSetManagerIdentityOptions{
+	_, err = dHandle.SetManagerIdentity(ctx, client.WorkerDeploymentSetManagerIdentityOptions{
 		ManagerIdentity: "",
 		ConflictToken:   response5.ConflictToken,
 	})
 	ts.NoError(err)
-	ts.Equal("my-identity", response6.PreviousManagerIdentity)
 
 	// Check that manager identity is empty
 	response7, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
@@ -1197,13 +1193,12 @@ func (ts *WorkerDeploymentTestSuite) TestCurrentVersion_AllowNoPollers() {
 	ts.Error(err)
 
 	// Setting Current with the AllowNoPollers flag succeeds when there are no pollers
-	response1, err := dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
+	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
 		BuildID:        v1.BuildID,
 		ConflictToken:  nil,
 		AllowNoPollers: true,
 	})
 	ts.NoError(err)
-	ts.Nil(response1.PreviousVersion)
 
 	// Verify RoutingConfig is as expected
 	response2, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
