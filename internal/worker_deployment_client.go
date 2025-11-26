@@ -180,7 +180,8 @@ type (
 		ConflictToken []byte
 
 		// PreviousVersion - The Version that was current before executing this operation, if any.
-		// Deprecated, in favor of API idempotency. Use `Describe` before this API to get the previous
+        //
+		// Deprecated: in favor of API idempotency. Use `Describe` before this API to get the previous
 		// state. Pass the `ConflictToken` returned by `Describe` to this API to avoid race conditions.
 		PreviousVersion *WorkerDeploymentVersion
 	}
@@ -249,12 +250,14 @@ type (
 		ConflictToken []byte
 
 		// PreviousVersion - The Ramping Version before executing this operation, if any.
-		// Deprecated, in favor of API idempotency. Use `Describe` before this API to get the previous
+		//
+		// Deprecated: in favor of API idempotency. Use `Describe` before this API to get the previous
 		// state. Pass the `ConflictToken` returned by `Describe` to this API to avoid race conditions.
 		PreviousVersion *WorkerDeploymentVersion
 
 		// PreviousPercentage - The Ramping Version Percentage before executing this operation.
-		// Deprecated, in favor of API idempotency. Use `Describe` before this API to get the previous
+		//
+		// Deprecated: in favor of API idempotency. Use `Describe` before this API to get the previous
 		// state. Pass the `ConflictToken` returned by `Describe` to this API to avoid race conditions.
 		PreviousPercentage float32
 	}
@@ -304,7 +307,8 @@ type (
 		ConflictToken []byte
 
 		// PreviousManagerIdentity - The Manager Identity before executing this operation, if any.
-		// Deprecated, in favor of API idempotency. Use `Describe` before this API to get the previous
+		//
+		// Deprecated: in favor of API idempotency. Use `Describe` before this API to get the previous
 		// state. Pass the `ConflictToken` returned by `Describe` to this API to avoid race conditions.
 		PreviousManagerIdentity string
 	}
