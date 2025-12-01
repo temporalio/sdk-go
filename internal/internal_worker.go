@@ -1724,6 +1724,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 		return nil
 	}
 
+	var rawRequest proto.Message
 	if resp != nil {
 		completeReq, ok := resp.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 		if ok {
@@ -1743,8 +1744,9 @@ func (aw *WorkflowReplayer) replayWorkflowHistory(logger log.Logger, service wor
 				}
 			}
 		}
+		rawRequest = resp.rawRequest
 	}
-	return fmt.Errorf("replay workflow doesn't return the same result as the last event, resp: %[1]T{%[1]v}, last: %[2]T{%[2]v}", resp, last)
+	return fmt.Errorf("replay workflow doesn't return the same result as the last event, resp: %[1]T{%[1]v}, last: %[2]T{%[2]v}", rawRequest, last)
 }
 
 // HistoryFromJSON deserializes history from a reader of JSON bytes. This does
