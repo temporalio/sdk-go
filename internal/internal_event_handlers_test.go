@@ -244,6 +244,8 @@ func Test_UpsertMemo(t *testing.T) {
 	env := &workflowEnvironmentImpl{
 		commandsHelper: helper,
 		workflowInfo:   GetWorkflowInfo(ctx),
+		sdkFlags:       newSDKFlags(nil),
+		dataConverter:  converter.GetDefaultDataConverter(),
 	}
 	helper.setCurrentWorkflowTaskStartedEventID(4)
 	err := env.UpsertMemo(nil)
