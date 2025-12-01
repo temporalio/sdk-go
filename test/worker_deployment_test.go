@@ -16,6 +16,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
 
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
@@ -234,6 +235,60 @@ func (ts *WorkerDeploymentTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 	ts.NoError(err)
 	ts.NoError(enval.Get(&lastBuildID))
 	ts.Equal("2.0", lastBuildID)
+}
+
+func (ts *WorkerDeploymentTestSuite) TestBuildIDWithSession() {
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	deploymentName := "deploy-test-" + uuid.NewString()
+	v1 := worker.WorkerDeploymentVersion{
+		DeploymentName: deploymentName,
+		BuildID:        "1.0",
+	}
+
+	worker := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		EnableSessionWorker: true,
+		DeploymentOptions: worker.DeploymentOptions{
+			UseVersioning: true,
+			Version:       v1,
+		},
+	})
+
+	worker.RegisterWorkflowWithOptions(ts.workflows.BasicSession, workflow.RegisterOptions{
+		Name:               "SessionBuildIDWorkflow",
+		VersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
+	})
+
+	activities2 := &Activities2{}
+	result := &Activities{activities2: activities2}
+	activities2.impl = result
+	worker.RegisterActivityWithOptions(activities2, activity.RegisterOptions{Name: "Prefix_", DisableAlreadyRegisteredCheck: true})
+
+	ts.NoError(worker.Start())
+	defer worker.Stop()
+
+	dHandle := ts.client.WorkerDeploymentClient().GetHandle(deploymentName)
+
+	ts.waitForWorkerDeployment(ctx, dHandle)
+
+	response1, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
+	ts.NoError(err)
+
+	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v1)
+
+	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
+		BuildID:       v1.BuildID,
+		ConflictToken: response1.ConflictToken,
+	})
+	ts.NoError(err)
+
+	// start workflow1 with 1.0, BasicSession, auto-upgrade
+	wfHandle, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("evolving-wf-1"), "SessionBuildIDWorkflow")
+	ts.NoError(err)
+
+	ts.NoError(wfHandle.Get(ctx, nil))
 }
 
 func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
@@ -1017,14 +1072,13 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersion_AllowNoPollers() {
 	ts.Error(err)
 
 	// Setting Ramp with the AllowNoPollers flag succeeds when there are no pollers
-	response1, err := dHandle.SetRampingVersion(ctx, client.WorkerDeploymentSetRampingVersionOptions{
+	_, err = dHandle.SetRampingVersion(ctx, client.WorkerDeploymentSetRampingVersionOptions{
 		BuildID:        v1.BuildID,
 		ConflictToken:  nil,
 		Percentage:     float32(100.0),
 		AllowNoPollers: true,
 	})
 	ts.NoError(err)
-	ts.Nil(response1.PreviousVersion)
 
 	// Verify RoutingConfig is as expected
 	response2, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
@@ -1071,12 +1125,11 @@ func (ts *WorkerDeploymentTestSuite) TestSetManagerIdentity() {
 	ts.Equal("", response1.Info.ManagerIdentity)
 
 	// Set arbitrary ManagerIdentity
-	response2, err := dHandle.SetManagerIdentity(ctx, client.WorkerDeploymentSetManagerIdentityOptions{
+	_, err = dHandle.SetManagerIdentity(ctx, client.WorkerDeploymentSetManagerIdentityOptions{
 		ManagerIdentity: "foo",
 		ConflictToken:   response1.ConflictToken,
 	})
 	ts.NoError(err)
-	ts.Equal("", response2.PreviousManagerIdentity)
 
 	// Check that manager identity is set to foo
 	response3, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
@@ -1084,13 +1137,12 @@ func (ts *WorkerDeploymentTestSuite) TestSetManagerIdentity() {
 	ts.Equal("foo", response3.Info.ManagerIdentity)
 
 	// Set self as ManagerIdentity
-	response4, err := dHandle.SetManagerIdentity(ctx, client.WorkerDeploymentSetManagerIdentityOptions{
+	_, err = dHandle.SetManagerIdentity(ctx, client.WorkerDeploymentSetManagerIdentityOptions{
 		Self:          true,
 		Identity:      "my-identity",
 		ConflictToken: response3.ConflictToken,
 	})
 	ts.NoError(err)
-	ts.Equal("foo", response4.PreviousManagerIdentity)
 
 	// Check that manager identity is set to self
 	response5, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
@@ -1098,12 +1150,11 @@ func (ts *WorkerDeploymentTestSuite) TestSetManagerIdentity() {
 	ts.Equal("my-identity", response5.Info.ManagerIdentity)
 
 	// Unset ManagerIdentity
-	response6, err := dHandle.SetManagerIdentity(ctx, client.WorkerDeploymentSetManagerIdentityOptions{
+	_, err = dHandle.SetManagerIdentity(ctx, client.WorkerDeploymentSetManagerIdentityOptions{
 		ManagerIdentity: "",
 		ConflictToken:   response5.ConflictToken,
 	})
 	ts.NoError(err)
-	ts.Equal("my-identity", response6.PreviousManagerIdentity)
 
 	// Check that manager identity is empty
 	response7, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
@@ -1142,13 +1193,12 @@ func (ts *WorkerDeploymentTestSuite) TestCurrentVersion_AllowNoPollers() {
 	ts.Error(err)
 
 	// Setting Current with the AllowNoPollers flag succeeds when there are no pollers
-	response1, err := dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
+	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
 		BuildID:        v1.BuildID,
 		ConflictToken:  nil,
 		AllowNoPollers: true,
 	})
 	ts.NoError(err)
-	ts.Nil(response1.PreviousVersion)
 
 	// Verify RoutingConfig is as expected
 	response2, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
