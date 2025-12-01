@@ -474,6 +474,9 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 			wfctx,
 			func(response interface{}, startTime time.Time) (*workflowTask, error) {
 				wtp.logger.Debug("Force RespondWorkflowTaskCompleted.", "TaskStartedEventID", task.task.GetStartedEventId())
+				if wtp.stopping() {
+					return nil, errStop
+				}
 				heartbeatResponse, err := wtp.RespondTaskCompletedWithMetrics(response, nil, task.task, startTime)
 				if err != nil {
 					return nil, err
