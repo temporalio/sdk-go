@@ -57,6 +57,8 @@ func sdkFlagFromUint(value uint32) sdkFlag {
 		return SDKPriorityUpdateHandling
 	case uint32(SDKFlagBlockedSelectorSignalReceive):
 		return SDKFlagBlockedSelectorSignalReceive
+	case uint32(SDKFlagMemoUserDCEncode):
+		return SDKFlagMemoUserDCEncode
 	default:
 		return SDKFlagUnknown
 	}
