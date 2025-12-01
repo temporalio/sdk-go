@@ -250,7 +250,11 @@ func (s *scheduleClientTestSuite) TestCreateScheduleWorkflowMemoDataConverter() 
 			Do(func(_ interface{}, req *workflowservice.CreateScheduleRequest, _ ...interface{}) {
 				startWorkflow := req.Schedule.Action.GetStartWorkflow()
 				encoding := string(startWorkflow.Memo.Fields["testMemo"].Metadata[converter.MetadataEncoding])
-				s.Equal("binary/gob", encoding)
+				if memoUserDCEncode {
+					s.Equal("binary/gob", encoding)
+				} else {
+					s.Equal("json/plain", encoding)
+				}
 			})
 
 		_, err := s.client.ScheduleClient().Create(context.Background(), options)
@@ -302,7 +306,11 @@ func (s *scheduleClientTestSuite) TestCreateScheduleWorkflowMemoUserAndDefaultCo
 
 		_, err := s.client.ScheduleClient().Create(context.Background(), options)
 		s.Error(err)
-		s.ErrorContains(err, "failingMemoDataConverter memo encoding failed")
+		if memoUserDCEncode {
+			s.ErrorContains(err, "failingMemoDataConverter memo encoding failed")
+		} else {
+			s.ErrorContains(err, "unsupported type: chan int")
+		}
 	}
 
 	s.T().Run("old behavior", func(t *testing.T) {
