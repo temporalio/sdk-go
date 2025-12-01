@@ -145,7 +145,7 @@ In addition to those functions/vars, the following Go source constructs are cons
 * Iterating over a channel via `range`
 * Iterating over a map via `range`
 
-Many constructs that are known to be non-deterministic, such as mutating a global variable, are not able to be reliably
+Many constructs that are known to be non-deterministic, such as mutating a global variable, cannot be reliably
 distinguished from deterministic use in common cases. This tool intentionally does not flag them.
 
 In some cases, functions that are considered non-deterministic are commonly used in ways that only follow a

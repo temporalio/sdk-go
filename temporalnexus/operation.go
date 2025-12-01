@@ -219,6 +219,9 @@ type WorkflowHandle[T any] interface {
 	// Link to the WorkflowExecutionStarted event of the workflow represented by this handle.
 	link() nexus.Link
 	token() string // Cached operation token
+
+	// typeMarker is a no-op method to associate the generic type T with the interface.
+	typeMarker(T)
 }
 
 type workflowHandle[T any] struct {
@@ -258,6 +261,8 @@ func (h workflowHandle[T]) link() nexus.Link {
 func (h workflowHandle[T]) token() string {
 	return h.cachedToken
 }
+
+func (h workflowHandle[T]) typeMarker(T) {}
 
 // ExecuteWorkflow starts a workflow run for a [WorkflowRunOperationOptions] Handler, linking the execution chain to a
 // Nexus operation (subsequent runs started from continue-as-new and retries).

@@ -216,18 +216,12 @@ type (
 	Options = internal.WorkerOptions
 
 	// PollerBehavior is used to configure the behavior of the poller.
-	//
-	// NOTE: Experimental
 	PollerBehavior = internal.PollerBehavior
 
 	// PollerBehaviorAutoscalingOptions is the options for NewPollerBehaviorAutoscaling.
-	//
-	// NOTE: Experimental
 	PollerBehaviorAutoscalingOptions = internal.PollerBehaviorAutoscalingOptions
 
 	// PollerBehaviorSimpleMaximumOptions is the options for NewPollerBehaviorSimpleMaximum.
-	//
-	// NOTE: Experimental
 	PollerBehaviorSimpleMaximumOptions = internal.PollerBehaviorSimpleMaximumOptions
 
 	// WorkflowPanicPolicy is used for configuring how worker deals with workflow
@@ -325,8 +319,6 @@ func InterruptCh() <-chan interface{} {
 }
 
 // NewPollerBehaviorSimpleMaximum creates a PollerBehavior that allows the worker to start up to a maximum number of pollers.
-//
-// NOTE: Experimental
 func NewPollerBehaviorSimpleMaximum(
 	options PollerBehaviorSimpleMaximumOptions,
 ) PollerBehavior {
@@ -335,8 +327,6 @@ func NewPollerBehaviorSimpleMaximum(
 
 // NewPollerBehaviorAutoscaling creates a PollerBehavior that allows the worker to scale the number of pollers within a given range.
 // based on the workflow and feedback from the server.
-//
-// NOTE: Experimental
 func NewPollerBehaviorAutoscaling(
 	options PollerBehaviorAutoscalingOptions,
 ) PollerBehavior {
