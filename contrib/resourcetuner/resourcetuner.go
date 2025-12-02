@@ -3,6 +3,7 @@ package resourcetuner
 import (
 	"context"
 	"errors"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"runtime"
 	"sync"
 	"time"
@@ -157,7 +158,7 @@ func (r *ResourceBasedSlotSupplier) TryReserveSlot(info worker.SlotReservationIn
 	numIssued := info.NumIssuedSlots()
 	if numIssued < r.options.MinSlots || (numIssued < r.options.MaxSlots &&
 		time.Since(r.lastSlotIssuedAt) > r.options.RampThrottle) {
-		decision, err := r.controller.pidDecision(info.Logger())
+		decision, err := r.controller.pidDecision(info.Logger(), info.MetricsHandler())
 		if err != nil {
 			info.Logger().Error("Error calculating resource usage", "error", err)
 			return nil
@@ -276,7 +277,7 @@ func NewResourceController(options ResourceControllerOptions) *ResourceControlle
 	}
 }
 
-func (rc *ResourceController) pidDecision(logger log.Logger) (bool, error) {
+func (rc *ResourceController) pidDecision(logger log.Logger, metricsHandler metrics.Handler) (bool, error) {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
 
@@ -288,6 +289,7 @@ func (rc *ResourceController) pidDecision(logger log.Logger) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	rc.publishResourceMetrics(metricsHandler, memUsage, cpuUsage)
 	if memUsage >= rc.options.MemTargetPercent {
 		// Never allow going over the memory target
 		return false, nil
@@ -312,6 +314,14 @@ func (rc *ResourceController) pidDecision(logger log.Logger) (bool, error) {
 
 	return rc.memPid.State.ControlSignal > rc.options.MemOutputThreshold &&
 		rc.cpuPid.State.ControlSignal > rc.options.CpuOutputThreshold, nil
+}
+
+func (rc *ResourceController) publishResourceMetrics(metricsHandler metrics.Handler, memUsage, cpuUsage float64) {
+	if metricsHandler == nil {
+		return
+	}
+	metricsHandler.Gauge(metrics.ResourceSlotsMemUsage).Update(memUsage * 100)
+	metricsHandler.Gauge(metrics.ResourceSlotsCPUUsage).Update(cpuUsage * 100)
 }
 
 type psUtilSystemInfoSupplier struct {
