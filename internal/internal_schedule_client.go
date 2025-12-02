@@ -875,6 +875,10 @@ func encodeScheduleWorkflowMemo(dc converter.DataConverter, input map[string]int
 	}
 
 	memo := make(map[string]*commonpb.Payload)
+	if dc == nil {
+		dc = converter.GetDefaultDataConverter()
+	}
+
 	useUserDC := shouldUseMemoUserDataConverter(nil)
 	for k, v := range input {
 		if enc, ok := v.(*commonpb.Payload); ok {
