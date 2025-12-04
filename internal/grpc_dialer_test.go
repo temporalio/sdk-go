@@ -446,6 +446,9 @@ func TestCredentialsAPIKey(t *testing.T) {
 	client, err := DialClient(context.Background(), ClientOptions{
 		HostPort:    srv.addr,
 		Credentials: NewAPIKeyStaticCredentials("my-api-key"),
+		ConnectionOptions: ConnectionOptions{
+			TLSDisabled: true, // Test server doesn't use TLS
+		},
 	})
 	require.NoError(t, err)
 	defer client.Close()
@@ -484,6 +487,9 @@ func TestCredentialsAPIKey(t *testing.T) {
 		Credentials: NewAPIKeyDynamicCredentials(func(ctx context.Context) (string, error) {
 			return "my-callback-api-key", nil
 		}),
+		ConnectionOptions: ConnectionOptions{
+			TLSDisabled: true,
+		},
 	})
 	require.NoError(t, err)
 	defer client.Close()
