@@ -88,6 +88,14 @@ jobs:
       - name: Install Temporal CLI
         uses: temporalio/setup-temporal@v0
 
+      - name: Install Prometheus
+        run: |
+          PROM_VERSION="3.8.0"
+          wget -q https://github.com/prometheus/prometheus/releases/download/v${PROM_VERSION}/prometheus-${PROM_VERSION}.linux-amd64.tar.gz
+          tar xzf prometheus-${PROM_VERSION}.linux-amd64.tar.gz
+          sudo mv prometheus-${PROM_VERSION}.linux-amd64/prometheus /usr/local/bin/
+          prometheus --version
+
       - name: Setup log directory
         run: mkdir -p $WORKER_LOG_DIR
 
