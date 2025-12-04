@@ -542,6 +542,11 @@ type (
 		// TLS configures connection level security credentials.
 		TLS *tls.Config
 
+		// TLSDisabled explicitly disables TLS. When true, TLS will not be used even
+		// if API key credentials are provided (which would normally auto-enable TLS).
+		// This is not recommended for production use as it sends credentials in plaintext.
+		TLSDisabled bool
+
 		// Authority specifies the value to be used as the :authority pseudo-header.
 		// This value only used when TLS is nil.
 		Authority string
@@ -1210,7 +1215,13 @@ func NewAPIKeyDynamicCredentials(apiKeyCallback func(context.Context) (string, e
 	return apiKeyCredentials(apiKeyCallback)
 }
 
-func (apiKeyCredentials) applyToOptions(*ConnectionOptions) error { return nil }
+func (apiKeyCredentials) applyToOptions(opts *ConnectionOptions) error {
+	// Auto-enable TLS when API key is provided and TLS is not explicitly set/disabled
+	if opts.TLS == nil && !opts.TLSDisabled {
+		opts.TLS = &tls.Config{}
+	}
+	return nil
+}
 
 func (a apiKeyCredentials) gRPCInterceptor() grpc.UnaryClientInterceptor { return a.gRPCIntercept }
 
